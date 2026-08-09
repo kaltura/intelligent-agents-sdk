@@ -1,0 +1,13 @@
+{
+  "name": "kaltura-agentic-quickstart",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Kaltura Agentic Avatar — quickstart",
+  "scripts": {
+    "start": "node create-agent.mjs"
+  },
+  "dependencies": {
+    "@kaltura/intelligent-agents": "file:.."
+  }
+}

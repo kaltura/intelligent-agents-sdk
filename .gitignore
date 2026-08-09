@@ -1,0 +1,12 @@
+# macOS noise
+.DS_Store
+
+# Dependencies (this package is zero-dep, but devDeps of a future contribution env)
+node_modules/
+
+# Logs
+*.log
+
+# Editor
+.vscode/
+.idea/

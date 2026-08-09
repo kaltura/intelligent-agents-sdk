@@ -1,0 +1,61 @@
+name: CI
+
+# Runs on every push to main and on every PR targeting main.
+# Zero-dependency SDK, zero-devDependency test runner (node:test) — no real
+# Kaltura credentials are used or required anywhere in this workflow.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: 🧪 Run the SDK test suite (unit + integration + e2e + evals)
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Check out the repo
+        uses: actions/checkout@v4
+
+      - name: 🟢 Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: 🧪 node --test (all suites, offline — fakes inject fetch/socket/RTC)
+        run: npm test
+
+  constitution:
+    name: 📜 Verify the SDK Constitution (agent_verify.mjs)
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - name: 📥 Check out the repo
+        uses: actions/checkout@v4
+
+      - name: 🟢 Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: 📜 Check every rule in SDK_CONSTITUTION.md (isolation, security, resiliency, performance, DX)
+        run: npm run verify
+
+  docs-gate:
+    name: 📚 Check docs/code drift, secrets, and GFM hygiene (check-docs.mjs)
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - name: 📥 Check out the repo
+        uses: actions/checkout@v4
+
+      - name: 🟢 Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: 🔍 Run the docs CI gate (secrets, GFM, cross-doc links, SDK invariants)
+        run: npm run docs:gate

@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Kaltura Intelligent Agents — Experience SDK demo</title>
+  <style>body{font-family:system-ui;margin:2rem;max-width:720px} #avatar{width:512px;height:512px;background:#111;border-radius:12px} .row{display:flex;gap:.5rem;margin:1rem 0} input{flex:1;padding:.5rem} #cc{color:#a00;font-size:.9rem} #log{white-space:pre-wrap;font-family:monospace;font-size:.8rem;background:#f6f6f6;padding:1rem;border-radius:8px;max-height:240px;overflow:auto}</style>
+</head>
+<body>
+  <h1>Live avatar (Experience SDK)</h1>
+  <p id="cc"></p>
+  <div id="avatar"></div>
+  <div class="row"><input id="msg" placeholder="Say something to the avatar…" /><button id="say">Speak</button></div>
+  <div id="log"></div>
+
+  <!-- socket.io is YOUR dependency — injected, never bundled by the SDK. -->
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js" integrity="sha384-2huaZvOR9iDzHqslqwpR87isEmrfxqyWOF7hr7BY6KG0+hVKLoEXMPUJw3ynWuhO" crossorigin="anonymous"></script>
+  <script type="module">
+    import { KalturaAvatarSession } from '../src/experience/index.js';
+
+    const log = (m) => { const el = document.getElementById('log'); el.textContent += m + '\n'; el.scrollTop = el.scrollHeight; };
+
+    // 1) Get the runtime endpoints + conversation token from YOUR server.
+    //    Your server calls Management.application.appInit(widgetKs) and returns its result.
+    const init = await fetch('/appInit').then((r) => r.json());   // { ks, conversationManagerUrl, srsBaseUrl, turnServerUrl, avatars[] }
+
+    // 2) Render the avatar.
+    const video = document.createElement('video');
+    video.autoplay = true; video.playsInline = true;
+    document.getElementById('avatar').appendChild(video);
+
+    const session = new KalturaAvatarSession({
+      token: init.ks,
+      conversationManagerUrl: init.conversationManagerUrl,
+      srsBaseUrl: init.srsBaseUrl,
+      turnServerUrl: init.turnServerUrl,
+      videoEl: video,
+      socketFactory: (url, opts) => io(url, opts),               // ← inject socket.io
+      isFirefox: /firefox/i.test(navigator.userAgent),
+    });
+
+    session.on('disclosure', ({ disclosureText }) => { document.getElementById('cc').textContent = '⚠️ ' + disclosureText; });
+    session.on('transcript', ({ text, type }) => log(`[${type}] ${text}`));
+    session.on('avatarStartTalking', () => log('▶ avatar talking'));
+    session.on('interrupted', () => log('⏸ interrupted (barge-in)'));
+    session.on('error', (e) => log('✗ ' + e.code + ': ' + e.detail));
+    session.on('ended', () => log('— conversation ended'));
+
+    await session.connect();
+    log('connected — speak or type.');
+
+    document.getElementById('say').onclick = () => {
+      const m = document.getElementById('msg');
+      if (m.value.trim()) { session.speak(m.value.trim()); m.value = ''; }
+    };
+    window.addEventListener('beforeunload', () => session.disconnect());
+  </script>
+</body>
+</html>

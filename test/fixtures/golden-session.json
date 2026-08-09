@@ -1,0 +1,255 @@
+{
+  "_source": "historical capture from the since-removed apps/browser-explorer tool; see WIRE-PROTOCOL.md Evidence note",
+  "_note": "Hand-curated golden fixture, derived from the redacted real session in _source. Inbound = server→client events the SDK must handle; outbound = client→server emits the SDK must produce. Shapes are field→type maps. Keep in sync by hand if _source is re-captured.",
+  "channels": {
+    "meta": 2,
+    "http": 16,
+    "stream": 55,
+    "socket": 2051,
+    "rtc": 180
+  },
+  "inboundEvents": [
+    "agentInterrupted",
+    "agentTurnToTalk",
+    "agent_end_turn",
+    "agent_raw_text",
+    "agent_start_speech",
+    "askPermissions",
+    "asr-ice-candidate",
+    "asr-webrtc-answer",
+    "asr-webrtc-ready",
+    "availabilityResult",
+    "clientConfiguration",
+    "conversationResumed",
+    "debug_conversationStateChange",
+    "debug_llm_input",
+    "debug_stvTaskGenerated",
+    "debug_vad_speech_detected",
+    "generatingSpeech",
+    "hideTapToTalkButton",
+    "joinComplete",
+    "onServerConnected",
+    "showAgent",
+    "stvFinishedGenerating",
+    "stvFinishedTalking",
+    "stvNewSession",
+    "stvSpeechChunk",
+    "stvStartedTalking",
+    "userStartedTalking"
+  ],
+  "outboundEvents": [
+    "approvedPermissions",
+    "asr-webrtc-ice-candidate",
+    "asr-webrtc-init",
+    "asr-webrtc-offer",
+    "checkAvailability",
+    "debug_text_entered",
+    "join",
+    "muteUser",
+    "onTextEntered",
+    "pauseConversation",
+    "resumeConversation",
+    "stvNewSession",
+    "tapToTalkEnd",
+    "tapToTalkStart",
+    "unmuteUser"
+  ],
+  "shapes": {
+    "in onServerConnected": {
+      "finalUrl": "str",
+      "agentName": "str",
+      "hostName": "str"
+    },
+    "out join": {
+      "room": "str",
+      "channel": "str",
+      "kaltura": {
+        "force_experience": "str",
+        "capabilities": {
+          "avatar": "str",
+          "generate_followup_questions": "str"
+        }
+      },
+      "userAgent": "str",
+      "userAgentHints": "NoneType",
+      "isMobile": "bool",
+      "channel_password": "NoneType",
+      "peer_name": "str",
+      "peer_video": "bool",
+      "peer_audio": "bool"
+    },
+    "in clientConfiguration": {
+      "clientConfiguration": {
+        "configuration": {},
+        "nluFeatures": {},
+        "languageCode": "str",
+        "forwardLoopMode": "bool",
+        "imaginativeAiMode": "bool",
+        "isTapToTalk": "bool",
+        "interruptionsEnabled": "bool",
+        "pauseConversationEnabled": "bool",
+        "showTranscription": "bool",
+        "agentPersonaName": "NoneType",
+        "userName": "NoneType",
+        "isWebSearchEnabled": "bool",
+        "isScreenShareEnabled": "bool",
+        "isCameraAnalysisEnabled": "bool",
+        "youtubeUrl": "str",
+        "audioMode": "bool",
+        "phoneMode": "bool",
+        "shouldAggregateCurrentTurn": "bool",
+        "initialHtml": "str",
+        "visualPhotos": [],
+        "visualVideos": []
+      }
+    },
+    "in agent_raw_text": {
+      "speechId": "str",
+      "turnId": "str",
+      "delta": "str"
+    },
+    "in joinComplete": {},
+    "out checkAvailability": {},
+    "in availabilityResult": {
+      "available": "bool",
+      "details": {
+        "stvAvailable": "bool",
+        "whisperAvailable": "bool",
+        "activeCalls": "int",
+        "maxCalls": "int",
+        "capacityAvailable": "bool"
+      }
+    },
+    "out stvNewSession": {
+      "room_id": "str",
+      "cast_mode": "str"
+    },
+    "in showAgent": {},
+    "in stvNewSession": {
+      "session_id": "str",
+      "status": "str",
+      "webrtc_url": "str"
+    },
+    "in askPermissions": {
+      "constraints": {
+        "audio": "bool",
+        "video": "bool"
+      }
+    },
+    "out asr-webrtc-init": {
+      "sessionId": "str"
+    },
+    "in asr-webrtc-ready": {},
+    "out asr-webrtc-ice-candidate": {
+      "candidate": {
+        "candidate": "str",
+        "sdpMid": "str",
+        "sdpMLineIndex": "int",
+        "usernameFragment": "str"
+      }
+    },
+    "out asr-webrtc-offer": {
+      "offer": {
+        "sdp": "str",
+        "type": "str"
+      },
+      "is_reconnect": "bool"
+    },
+    "in asr-webrtc-answer": {
+      "answer": {
+        "type": "str",
+        "sdp": "str"
+      }
+    },
+    "in asr-ice-candidate": {
+      "uid": "str",
+      "type": "str",
+      "candidate": "str",
+      "sdpMLineIndex": "int"
+    },
+    "out approvedPermissions": {
+      "room": "str"
+    },
+    "in generatingSpeech": {
+      "text": "str",
+      "speechId": "str"
+    },
+    "in debug_conversationStateChange": {
+      "state": "str",
+      "preparingAnswerState": "str"
+    },
+    "in debug_stvTaskGenerated": {
+      "text": "str",
+      "speechId": "str",
+      "duration": "int"
+    },
+    "in agentTurnToTalk": {
+      "userTranscription": "str"
+    },
+    "in stvSpeechChunk": {
+      "text": "str",
+      "speechId": "str",
+      "durationMs": "int"
+    },
+    "in stvStartedTalking": {},
+    "in stvFinishedTalking": {
+      "agentContent": "str"
+    },
+    "in userStartedTalking": {},
+    "in debug_vad_speech_detected": {
+      "transcript": "str",
+      "isFinal": "bool",
+      "segmentType": "str",
+      "isSpeechStartEvent": "bool"
+    },
+    "in debug_llm_input": {
+      "userInput": "str",
+      "finalSegment": "str",
+      "pendingSegment": "str",
+      "speechId": "str",
+      "segmentType": "str",
+      "isFinal": "bool"
+    },
+    "in agent_start_speech": {
+      "speechId": "str",
+      "turnId": "str",
+      "isNewTurn": "bool"
+    },
+    "in agent_end_turn": {
+      "speechId": "str",
+      "turnId": "str"
+    },
+    "in stvFinishedGenerating": {
+      "speechId": "str"
+    },
+    "in agentInterrupted": {},
+    "out pauseConversation": {},
+    "out onTextEntered": {
+      "text": "str",
+      "isFinal": "bool"
+    },
+    "out debug_text_entered": {
+      "text": "str",
+      "isFinal": "bool"
+    },
+    "out resumeConversation": {},
+    "in conversationResumed": {},
+    "out tapToTalkEnd": {},
+    "out tapToTalkStart": {},
+    "in hideTapToTalkButton": {},
+    "out muteUser": {},
+    "out unmuteUser": {}
+  },
+  "observedIssues": {
+    "cast_mode_webrtc_whep_fails": "cast_mode:'webrtc' stvNewSession.webrtc_url embeds a private IP (redacted <PRIVATE-IP>) → browser 'Failed to fetch'; the STV peer never connects. cast_mode:'rtmp' returns a public SRS WHEP url → HTTP 201, connects. See GAPS.md R8.",
+    "speech_starts_before_playback_ready": "stvStartedTalking + first stvSpeechChunk fire ~150ms after generatingSpeech, before the WHEP peer reaches first-frame playback → opening words clipped. See GAPS.md R9."
+  },
+  "webrtcPolicies": [
+    "all",
+    "relay",
+    "all",
+    "relay",
+    "all",
+    "relay"
+  ]
+}
