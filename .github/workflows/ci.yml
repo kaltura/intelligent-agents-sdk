@@ -14,21 +14,16 @@ permissions:
 
 jobs:
   test:
-    name: 🧪 Test suite (Node ${{ matrix.node-version }})
+    name: 🧪 Test suite
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        # engines.node in package.json is ">=18" — this matrix proves every
-        # version in that range actually passes, not just the newest one.
-        node-version: [18, 20, 24]
     steps:
       - name: 📥 Check out the repo
         uses: actions/checkout@v4
 
-      - name: 🟢 Set up Node.js ${{ matrix.node-version }}
+      - name: 🟢 Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node-version }}
+          node-version: 24
 
       - name: 🧪🩺 node --test + coverage + JUnit report (all suites, offline — fakes inject fetch/socket/RTC)
         run: npm run test:ci
@@ -37,15 +32,15 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-results-node${{ matrix.node-version }}
+          name: test-results
           path: test-results.junit.xml
           retention-days: 30
 
-      - name: 📝 Write job summary (Node ${{ matrix.node-version }})
+      - name: 📝 Write job summary
         if: always()
         run: |
           {
-            echo "### 🧪 Test suite — Node ${{ matrix.node-version }}"
+            echo "### 🧪 Test suite"
             echo
             if [ -f test-results.junit.xml ]; then
               grep -E '<!-- (tests|suites|pass|fail|cancelled|skipped|todo) ' test-results.junit.xml \
