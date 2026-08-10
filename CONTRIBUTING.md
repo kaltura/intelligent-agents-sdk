@@ -1,12 +1,21 @@
 # Contributing
 
 This repo is private (Kaltura-internal) for now. The workflow below applies to
-internal contributors; it's written so it keeps working unchanged if the repo
-is later opened up.
+internal contributors with push access, cloning directly. Once the repo opens up,
+external contributors follow the same steps against a fork instead: fork on GitHub,
+clone your fork, then open a PR from a branch on your fork back to this repo — every
+step after Setup (tests, `verify`, `docs:gate`, PR description) is identical either way.
 
 ## Before you start
 
-Read [SDK_CONSTITUTION.md](SDK_CONSTITUTION.md) first — it's the rulebook this
+New to the SDK itself? Read [GETTING-STARTED.md](GETTING-STARTED.md) first to see it
+run end to end (including a zero-credential offline demo) before diving into the
+contribution workflow below.
+
+Read [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) — it applies to every interaction in
+this repo (issues, PRs, reviews).
+
+Read [SDK_CONSTITUTION.md](SDK_CONSTITUTION.md) next — it's the rulebook this
 SDK is held to, and every rule in it is machine-checked. A change that reads
 correctly but breaks a rule (e.g. adds a runtime dependency, adds a module-level
 `let`, or drops a `SECURITY.md` reference) fails CI before a human ever reviews it.
