@@ -11,12 +11,12 @@ is not acceptable.
 ## Part 1 — Isolation (multiple instances)
 
 **Rule I-1: No module-level mutable state.**
-Every module-level variable in `sdk/src/` must be `const` and must not be
+Every module-level variable in `src/` must be `const` and must not be
 mutated after its initializer runs. Arrays, Sets, Maps, and plain objects that
 are module-level must be either `Object.freeze()`d or provably local to the
 function that reads them.
 
-*Verify:* `agent_verify.mjs` greps `sdk/src/**/*.js` for `let ` at the module
+*Verify:* `agent_verify.mjs` greps `src/**/*.js` for `let ` at the module
 top level (before any `class` or `export function` declaration). Any hit is a
 violation.
 
@@ -26,7 +26,7 @@ Reads of platform APIs (`globalThis.fetch`, `globalThis.crypto`, etc.) are
 permitted; writes are not.
 
 *Verify:* grep for `globalThis\.\w+\s*=` / `window\.\w+\s*=` / `self\.\w+\s*=`
-in `sdk/src/`. No matches is the passing state.
+in `src/`. No matches is the passing state.
 
 **Rule I-3: Class-based encapsulation — no cross-instance state leakage.**
 All configuration (`partnerId`, `adminSecret`, endpoints, tokens) must be stored
@@ -36,13 +36,13 @@ instance only — never from a shared module-level cache or singleton.
 
 *Verify:* Instantiate two `Management` objects with different credentials in the
 same process and run ten concurrent token mints across both; confirm no
-credential bleed. This test lives in `sdk/test/unit/isolation.test.js`.
+credential bleed. This test lives in `test/unit/isolation.test.js`.
 
 **Rule I-4: Event-listener cleanup.**
 Any event listener added to `window`, `globalThis`, `document`, or a socket
 MUST be removed when the owning instance is disconnected or destroyed.
 
-*Verify:* The isolation test in `sdk/test/unit/isolation.test.js` asserts that
+*Verify:* The isolation test in `test/unit/isolation.test.js` asserts that
 `_unwireNetwork()` removes the `online`/`offline` handlers added by `_wireNetwork()`.
 
 ---
@@ -51,7 +51,7 @@ MUST be removed when the owning instance is disconnected or destroyed.
 
 **Rule S-1: No `eval()`, `new Function()`, or equivalent dynamic code execution.**
 `eval`, `new Function(…)`, `Function()`, `setTimeout(string, …)`,
-`setInterval(string, …)`, and `document.write()` are banned in `sdk/src/`.
+`setInterval(string, …)`, and `document.write()` are banned in `src/`.
 
 *Verify:* grep. Zero matches required.
 
@@ -60,7 +60,7 @@ All DOM mutation must go through `textContent`, `createElement`/`appendChild`,
 or similar structural DOM APIs. Comment nodes (`createComment`) are fine.
 
 *Verify:* grep for `\.innerHTML\s*=` / `\.outerHTML\s*=` /
-`insertAdjacentHTML\s*\(` in `sdk/src/`. Zero assignment matches required.
+`insertAdjacentHTML\s*\(` in `src/`. Zero assignment matches required.
 (Comment strings that say "no innerHTML" are not matches — grep for the
 assignment operator specifically.)
 
@@ -70,9 +70,9 @@ API response) before being set as `href`, `src`, or passed to `fetch` must be
 validated by `core/safety.js#safeUrl`. `safeUrl` returns `''` for `javascript:`,
 `data:`, and authority-relative `//host` patterns.
 
-*Verify:* The security test in `sdk/test/e2e/security.test.js` asserts that
+*Verify:* The security test in `test/e2e/security.test.js` asserts that
 `setDynamicPrompt` with a `javascript:` URL produces a safe (empty or
-https-only) link. The `safeUrl` unit test in `sdk/test/unit/safety.test.js`
+https-only) link. The `safeUrl` unit test in `test/unit/safety.test.js`
 covers the scheme allowlist.
 
 **Rule S-4: No prototype pollution.**
@@ -82,20 +82,20 @@ into any plain object. `sanitizeJson` strips `__proto__`, `constructor`, and
 `prototype` keys recursively.
 
 *Verify:* The compliance test asserts `setDynamicPrompt({ __proto__: { x: 1 } })`
-does not pollute `Object.prototype`. Confirm in `sdk/test/e2e/compliance.test.js`.
+does not pollute `Object.prototype`. Confirm in `test/e2e/compliance.test.js`.
 
 **Rule S-5: Admin secret non-enumerable and non-serializable.**
 `_adminSecret` must be stored with `Object.defineProperty` as
 `{ enumerable: false, configurable: false, writable: false }`. It must not
 appear in `JSON.stringify(instance)` or in a `for…in` loop over the instance.
 
-*Verify:* `sdk/test/unit/isolation.test.js` "admin secret non-enumerable" test.
+*Verify:* `test/unit/isolation.test.js` "admin secret non-enumerable" test.
 
 **Rule S-6: No hard-coded credentials or token literals.**
-`sdk/src/` must contain no string matching a KS token pattern (`djJ8…`) or a
+`src/` must contain no string matching a KS token pattern (`djJ8…`) or a
 32-character hex secret, outside of test fakes and the redaction regex itself.
 
-*Verify:* grep for `djJ8` and 32-char lowercase hex literals in `sdk/src/`.
+*Verify:* grep for `djJ8` and 32-char lowercase hex literals in `src/`.
 Only the regex pattern in `core/redact.js` and test fixtures are allowed.
 
 ---
@@ -136,7 +136,7 @@ The backoff delay must be injectable (`delayFn` option, default `(ms) =>
 new Promise(r => setTimeout(r, ms))`) so tests can pass `() => Promise.resolve()`
 and exercise all retry paths at zero wall-clock cost.
 
-*Verify:* `sdk/test/unit/http.test.js` must include tests that:
+*Verify:* `test/unit/http.test.js` must include tests that:
 (a) assert a 503 response is retried up to `maxRetries` times and then throws;
 (b) assert a 429 response is retried;
 (c) assert a 401 response is NOT retried;
@@ -155,7 +155,7 @@ default limit is 10 MB. If `Content-Length` exceeds the limit before reading,
 or if the accumulated body text exceeds the limit, throw a `KalturaError` with
 `code: 'response_too_large'`.
 
-*Verify:* `sdk/test/unit/http.test.js` asserts that a fake response whose
+*Verify:* `test/unit/http.test.js` asserts that a fake response whose
 `Content-Length` or body size exceeds `maxResponseBytes` throws `response_too_large`.
 
 **Rule P-2: No synchronous blocking operations in the SDK's hot paths.**
@@ -165,11 +165,11 @@ already runs after the response is received — Rule P-1's size guard is the
 enforcement point.
 
 **Rule P-3: The SDK has zero runtime dependencies.**
-`sdk/package.json` must list no `dependencies` (only `devDependencies` for test
+`package.json` must list no `dependencies` (only `devDependencies` for test
 tooling). Injectable transports (`fetch`, `socketFactory`, `rtcConstructor`,
 `getUserMedia`) are the deliberate points of external integration.
 
-*Verify:* Parse `sdk/package.json` and assert the `dependencies` key is absent
+*Verify:* Parse `package.json` and assert the `dependencies` key is absent
 or empty.
 
 ---
@@ -177,19 +177,19 @@ or empty.
 ## Part 5 — DX and Clean Code
 
 **Rule D-1: All public exports must carry JSDoc.**
-Every `export`ed `class`, `function`, and `const` in `sdk/src/` must have a
+Every `export`ed `class`, `function`, and `const` in `src/` must have a
 JSDoc block with at minimum: a one-line description plus `@param` for every
 named parameter and `@returns` for non-void returns.
 
 Private / internal helpers (unexported, or named with `_`) are exempt.
 
-*Verify:* `agent_verify.mjs` scans `sdk/src/**/*.js` for exported symbols
+*Verify:* `agent_verify.mjs` scans `src/**/*.js` for exported symbols
 without a preceding `/**` block.
 
 **Rule D-2: No dead code (exported symbols with zero consumers).**
 Symbols that are exported from an internal module but neither re-exported from
-an entry point (`sdk/src/management/index.js`, `sdk/src/experience/index.js`)
-nor used by any other module in `sdk/src/` are dead. Flag them. Do not delete
+an entry point (`src/management/index.js`, `src/experience/index.js`)
+nor used by any other module in `src/` are dead. Flag them. Do not delete
 without confirming they are also absent from all `apps/` and `tools/` consumers.
 
 *Verify:* `agent_verify.mjs` cross-references exports vs. imports. Any symbol
@@ -199,7 +199,7 @@ error, on first pass — must be manually confirmed before deletion).
 **Rule D-3: No `TODO`, `FIXME`, or `HACK` comments in shipped code.**
 These comments indicate incomplete implementations. Track them as a GitHub issue instead.
 
-*Verify:* grep `sdk/src/` for `TODO\|FIXME\|HACK\|XXX\|STUB`. Zero matches required.
+*Verify:* grep `src/` for `TODO\|FIXME\|HACK\|XXX\|STUB`. Zero matches required.
 
 ---
 
@@ -226,8 +226,13 @@ These comments indicate incomplete implementations. Track them as a GitHub issue
 | P-2 | Performance | **PASS** — JSON parsing is post-read | http.js |
 | P-3 | Performance | **PASS** — zero runtime deps | package.json |
 | D-1 | DX | **PASS** — all public exports have JSDoc | scan |
-| D-2 | DX | **PASS** — no dead exports found | grep |
+| D-2 | DX | **WARN** — 40 exported symbols with no detected in-`src/` consumer (confirm before deleting; not an error on first pass) | `node scripts/agent_verify.mjs` |
 | D-3 | DX | **PASS** — no TODO/FIXME/HACK found | grep |
 
-**Failing rules:** none. All 21 rules pass as of this audit — re-verified live via
-`cd sdk && npm test` (all passing) and `cd sdk && node tools/constitution-harness.mjs` (21 pass, 0 fail, exit 0).
+**Failing rules:** none. 20 of 21 rules pass cleanly as of this audit; D-2 is a warning
+by design (candidate dead exports require manual confirmation, since a symbol can be a
+consumer-facing part of the public API with no in-`src/` importer) — re-verified live via
+`cd sdk && npm test` (all passing), `cd sdk && node tools/constitution-harness.mjs` (21 pass,
+0 fail, exit 0 — its own narrower dead-export check confirms no export-of-undefined), and
+`cd sdk && node scripts/agent_verify.mjs` (`✓ ALL RULES PASS — 1 warning`, D-2's export/import
+cross-reference).

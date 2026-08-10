@@ -6,7 +6,7 @@ strict compliance would otherwise hurt usability the SDK keeps the ergonomic
 default and gives you a **config knob + a compliance note** to tighten it.
 
 - **No runtime dependencies, no install scripts.** Zero transitive supply-chain
-  surface — the SDK is sourced directly from git (`sdk/src/`), not a package
+  surface — the SDK is sourced directly from git (`src/`), not a package
   registry. Enforced in CI.
 - **All cryptography is delegated to the platform.** The SDK never rolls its own
   crypto — TLS, DTLS-SRTP, and base64 come from the host (Node `tls`/`crypto`,
@@ -160,7 +160,7 @@ teardown; nothing is shared or global (tested in `test/unit/isolation.test.js`).
 
 - **Zero runtime dependencies, no install lifecycle scripts** (CI-enforced).
 - **No registry publish step.** The SDK is consumed straight from its git tags
-  (`sdk/src/`, imported by path or served via jsDelivr's GitHub CDN once the
+  (`src/`, imported by path or served via jsDelivr's GitHub CDN once the
   repo is public) — there is no npm package, and so no registry-side
   supply-chain surface to audit.
 

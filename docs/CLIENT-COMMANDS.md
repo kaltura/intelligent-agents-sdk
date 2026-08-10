@@ -1,6 +1,6 @@
 # Client-Side Commands — how the avatar drives your UI
 
-How a Kaltura avatar silently triggers actions in *your* app — navigate a deck, render a widget, draw a chart — by calling a tool you defined. The brain decides *when*; the page decides *what happens*. This is the SDK's sharpest differentiator — reference apps built on it (e.g. `apps/earnings-avatar-q2`, a private Kaltura-internal deck app) drive client commands (`navigate_to_slide`/`show_widget`/`highlight_chart`/`open_filing`) off a single live avatar.
+How a Kaltura avatar silently triggers actions in *your* app — navigate a deck, render a widget, draw a chart — by calling a tool you defined. The brain decides *when*; the page decides *what happens*. This is the SDK's sharpest differentiator — apps built on it can drive client commands (`navigate_to_slide`/`show_widget`/`highlight_chart`/`open_filing`) off a single live avatar; see `examples/deck-presenter.html` for a self-contained slide-navigation demo.
 
 If you only read one thing: a "client command" is **not a special protocol feature**. It is a native Genie `type:"client"` tool that makes **no server-side call at all** — the *product* is the silent `type:"tool"` segment Genie streams when the LLM calls it. Your page captures that segment and runs whatever JS it wants.
 

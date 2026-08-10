@@ -6,7 +6,7 @@ This is the deep reference behind [ARCHITECTURE.md](ARCHITECTURE.md) → "Video 
 
 **How this was built.** Every event/payload below was (a) **captured live** from real human voice + text sessions against `conversation.avatar.us.kaltura.ai`, and (b) **cross-checked against the source implementation** of each client and server component. Each entry cites which component it came from. Where the live capture and the source disagree, the capture wins for "what actually fires" and the note explains why (e.g. the production state-machine subscribes to a subset; other events are handled by the embed SDK or debug panel).
 
-**Evidence.** A redacted snapshot of a real session (27 inbound + 15 outbound socket events, both WebRTC legs, ICE policies for every client) is committed at `sdk/test/fixtures/golden-session.json` — a hand-curated fixture derived from the original live capture (see the fixture's own `_source`/`_note` fields for provenance). There is no automated re-capture tool in this repo today; update the fixture by hand against fresh observations (e.g. `apps/earnings-avatar-q2`'s `?debug=1` log panel, or `socket.onAny` in a scratch client) when the wire protocol changes.
+**Evidence.** A redacted snapshot of a real session (27 inbound + 15 outbound socket events, both WebRTC legs, ICE policies for every client) is committed at `test/fixtures/golden-session.json` — a hand-curated fixture derived from the original live capture (see the fixture's own `_source`/`_note` fields for provenance). There is no automated re-capture tool in this repo today; update the fixture by hand against fresh observations (e.g. a `debugMode`-gated log panel wired to `session.on(...)`, or `socket.onAny` in a scratch client) when the wire protocol changes.
 
 ## Provenance / components
 
@@ -15,13 +15,13 @@ This is the deep reference behind [ARCHITECTURE.md](ARCHITECTURE.md) → "Video 
 | `CG` | The production runtime client | The XState-based avatar connection state machine embedded in Kaltura's own avatar UI. Authoritative for payload **schemas** and connect order. |
 | `RTC` | The WebRTC avatar engine | The client-side WebRTC session/signaling library the production runtime and this SDK both build on. Authoritative for **WebRTC** behavior: session setup, WHEP signaling, peer-connection management. |
 | `EMBED` | The embeddable avatar SDK | A second independent client used for anonymous/embedded widgets. Authoritative for **event semantics & ordering** and the server contract. |
-| `SDK` | `sdk/src/experience/session.js` | This repo's `KalturaAvatarSession` — the buildable client implementation. |
-| `CAP` | `sdk/test/fixtures/golden-session.json` | The redacted live-capture evidence (see §Evidence above). |
+| `SDK` | `src/experience/session.js` | This repo's `KalturaAvatarSession` — the buildable client implementation. |
+| `CAP` | `test/fixtures/golden-session.json` | The redacted live-capture evidence (see §Evidence above). |
 | `CM` | The conversation-manager service | The **server** runtime — the emitter of every server→client event. Owns session orchestration, ASR signaling relay, and the brain output stream. |
 
 > Server-emitted events are anchored to their real emit sites in `CM` (above); where a payload is confirmed against server-side behavior it cites `CM`. Items still derived only from the live capture or client contract are marked **(server-side; inferred from contract)**.
 
-> **Two more terms recur in the body without their own table row.** `class-genie` and `embed-sdk` (the per-client ICE-policy tables in §5/§6) are `CG`'s and `EMBED`'s own internal client names — the same two components above, not additional ones. **"Debug panel"** is a generic `debugMode`-gated developer log UI that recurs across clients (e.g. this repo's `apps/earnings-avatar-q2` `?debug=1` log panel) rather than a single component with its own source citation — a row citing it means "also visible in a debug UI," not a distinct client contract.
+> **Two more terms recur in the body without their own table row.** `class-genie` and `embed-sdk` (the per-client ICE-policy tables in §5/§6) are `CG`'s and `EMBED`'s own internal client names — the same two components above, not additional ones. **"Debug panel"** is a generic `debugMode`-gated developer log UI that recurs across clients rather than a single component with its own source citation — a row citing it means "also visible in a debug UI," not a distinct client contract.
 
 ---
 
@@ -213,7 +213,7 @@ The production text machine (`CG`) only *assembles* `text | unisphere-tool | err
 
 - **Format (source-verified, `CM`):** `` `${generateId(4)}-<trigger>-<payload>` `` — a 4-char nonce + the trigger + its content. Observed triggers: `transcript` (a user speech/text turn — `vadSpeechDetected`, the same handler `onTextEntered` feeds), `approved-permissions` (the opening greeting), plus `tap-to-talk`, `resume-replay`, `wake-up`, `begin-agent-conversation`, `contact-info-received`/`-rejected`, `html-element-click`, `iframe-completed`, `code-block-completed`, `hangup-message`. e.g. `4nkM-transcript-Hey, what's up?`, `1Yev-approved-permissions`.
 - **Minted per utterance**, and it maps 1:1 to the Genie request `uuid` in `CM` (`speechIdToUuid`). `stvStartedTalking`/`stvFinishedTalking` carry **no** `speechId` in their payload — attribute them to the `speechId` of the surrounding `stvSpeechChunk`s.
-- **The staleness guard = barge-in.** The CM tracks a single `latestSpeech.speechId`; every TTS/STV event whose `speechId !== latestSpeech.speechId` is **dropped** (`CM` `stvTaskGenerated`/`ttsTaskGenerated`/`ttsFinishedGenerating` handlers). When a new user turn arrives, `vadSpeechDetected` builds a new `transcript` `speechId` and replaces `latestSpeech` — instantly invalidating the prior utterance's in-flight audio. That is exactly what `agentInterrupted` reflects. **Verified against `sdk/test/fixtures/golden-session.json`:** the `stvSpeechChunk` `speechId` switches at each `agentInterrupted` (e.g. `4nkM-transcript-…` → `agentInterrupted` → `d1qD-transcript-…`); in that session 16 of 24 utterances ended in a barge-in.
+- **The staleness guard = barge-in.** The CM tracks a single `latestSpeech.speechId`; every TTS/STV event whose `speechId !== latestSpeech.speechId` is **dropped** (`CM` `stvTaskGenerated`/`ttsTaskGenerated`/`ttsFinishedGenerating` handlers). When a new user turn arrives, `vadSpeechDetected` builds a new `transcript` `speechId` and replaces `latestSpeech` — instantly invalidating the prior utterance's in-flight audio. That is exactly what `agentInterrupted` reflects. **Verified against `test/fixtures/golden-session.json`:** the `stvSpeechChunk` `speechId` switches at each `agentInterrupted` (e.g. `4nkM-transcript-…` → `agentInterrupted` → `d1qD-transcript-…`); in that session 16 of 24 utterances ended in a barge-in.
 
 ---
 
@@ -373,4 +373,4 @@ Barge-in: a new `debug_vad_speech_detected` (voice) or `→ onTextEntered {text:
 
 ## 9. Reproduce / re-capture
 
-See the "Evidence" note at the top of this doc for the committed fixture (`sdk/test/fixtures/golden-session.json`). To observe live traffic against a real session, run `apps/earnings-avatar-q2` with `?debug=1` (the log panel prints every socket event via `session.on(...)` handlers in `public/avatar-session.js`) or attach a scratch `socket.onAny` listener in a browser console — there is no dedicated capture tool in this repo today. The original snapshot the golden fixture derives from was taken against the reference account's `1_v1mj1kxb` widget + `configId 1222`.
+See the "Evidence" note at the top of this doc for the committed fixture (`test/fixtures/golden-session.json`). To observe live traffic against a real session, wire a `debugMode`-gated log panel to print every socket event via `session.on(...)` handlers, or attach a scratch `socket.onAny` listener in a browser console — there is no dedicated capture tool in this repo today. The original snapshot the golden fixture derives from was taken against the reference account's `1_v1mj1kxb` widget + `configId 1222` (see the sample values documented in this repo's tests).

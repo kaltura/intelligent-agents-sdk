@@ -9,7 +9,7 @@ This is the authoritative map — every runtime, its enabling capability, the ex
 shape, the SDK function/keys that parse and render it, the backend code flow it rides, and the
 restrictions that bite in practice.
 
-All claims here are anchored to repo source (`sdk/src/...`) and `WIRE-PROTOCOL.md`; where a
+All claims here are anchored to repo source (`src/...`) and `WIRE-PROTOCOL.md`; where a
 behavior is inferred rather than live-captured, it is marked **INFERRED**.
 
 ## The model in one paragraph
@@ -25,8 +25,8 @@ emits HTML; every string/URL is run through `core/safety.js` first.
 ## The first-class runtimes
 
 Backend key (`UNISPHERE_TOOLS`, defined in the Genie brain backend's experience-definitions module) → wire `runtimeName` → normalized
-dispatch key (the renderer registry key). Source: `sdk/src/core/stream.js` `UNISPHERE_RUNTIMES`;
-`sdk/src/experience/genui/parse.js` `RUNTIMES` (derived from `UNISPHERE_RUNTIMES`, so the two can
+dispatch key (the renderer registry key). Source: `src/core/stream.js` `UNISPHERE_RUNTIMES`;
+`src/experience/genui/parse.js` `RUNTIMES` (derived from `UNISPHERE_RUNTIMES`, so the two can
 never drift).
 
 | # | Backend key | Wire `runtimeName` | Normalized | Purpose |
@@ -74,14 +74,14 @@ fallback.
   `experiencesList` (arrival order), and `kindCounts.experience`. `segmentKind(seg)` classifies a
   `unisphere-tool` segment as `'experience'` (vs `'spoken'` for `text`/`avatar`/`avatar-filler`).
 - **Live avatar socket (`KalturaAvatarSession`)** — the join payload **hardcodes
-  `force_experience:'avatar_only'`** (`sdk/src/experience/wire.js`, `EXPERIENCES` join), so the socket emits
+  `force_experience:'avatar_only'`** (`src/experience/wire.js`, `EXPERIENCES` join), so the socket emits
   structured widgets **rarely**. `ExperienceRenderer.start()` subscribes to `brainSegment` and
   tolerates zero widgets. Don't rely on rich widgets on the live face path — drive visuals yourself
   via the client-command channel, or read widgets from the HTTP path.
 
 ## `force_experience` — a hint, not a contract
 
-- Valid values (single source of truth, `sdk/src/experience/wire.js` line 17;
+- Valid values (single source of truth, `src/experience/wire.js` line 17;
   `EXPERIENCES`): **`'markdown'`, `'summarization'`, `'flashcards'`, `'avatar_only'`**.
 - Parameters are validated on the **first iteration** (entering `for await`) in `conversations.stream`
   (`conversations.js` lines 120–121), NOT at call time — an invalid value throws a typed `validation_error`.
@@ -91,7 +91,7 @@ fallback.
 
 ## Per-runtime detail (model keys → descriptor)
 
-Each renderer lives in `sdk/src/experience/genui/renderers/<name>.js`, takes `(model, ctx)`, and
+Each renderer lives in `src/experience/genui/renderers/<name>.js`, takes `(model, ctx)`, and
 returns `{kind, data}`. `ctx.urlPolicy` (`{allow:[schemes]}`) is threaded from the
 `ExperienceRenderer`. Every renderer accepts **multiple input key aliases** (the model is untrusted
 LLM output) and clamps text via `safeText(str, max)` and URLs via `safeUrl(url, policy)`.
@@ -173,14 +173,13 @@ LLM output) and clamps text via `safeText(str, max)` and URLs via `safeUrl(url, 
 - **Report back:** the default (`user_properties_forms`-configured) path has the host call
   **`session.submitStructuredDataForm(info)`** (`session.js`), which `sanitizeJson`s the object
   and emits the socket event **`setFormLeadInfo`** — a fire-and-forget emit with no durable
-  server-side read-back. `apps/earnings-avatar-q2` takes a different, durable path instead: it
-  never configures `user_properties_forms` at all, and reaches this same `user-properties-form`
-  widget purely as one enum value of its own `show_widget` **client** tool
-  (`kaltura_genie_experiences` is OFF). Its host (`public/genui.js`'s `renderLeadCaptureForm`)
-  renders the widget into a dedicated full-screen blocking modal rather than a peer region, and
-  on submit bridges the collected values into `request_vars` (`{{ lead_email }}`/
-  `{{ lead_phone }}`) so the brain itself can call a server-side `save_lead_to_sheet` **api**
-  tool — see [STRUCTURED-DATA-FORMS.md](STRUCTURED-DATA-FORMS.md)'s "reference app" note.
+  server-side read-back. An app can instead take a different, durable path: never configure
+  `user_properties_forms` at all, and reach this same `user-properties-form` widget purely as
+  one enum value of its own `show_widget` **client** tool (`kaltura_genie_experiences` OFF),
+  rendering the widget into its own dedicated host UI and, on submit, bridging the collected
+  values into `request_vars` so the brain itself can call a server-side **api** tool that
+  persists them wherever you point it — see
+  [STRUCTURED-DATA-FORMS.md](STRUCTURED-DATA-FORMS.md).
 - For the full picture — configuration, the exact mandatory prompt injection, where
   `setFormLeadInfo` actually persists server-side, and how to deliver the collected data somewhere
   durable — see [STRUCTURED-DATA-FORMS.md](STRUCTURED-DATA-FORMS.md) and
@@ -200,16 +199,15 @@ LLM output) and clamps text via `safeText(str, max)` and URLs via `safeUrl(url, 
 - **Multi-item only.** The renderer always wraps `items` in a CSS grid sized for several
   thumbnails (`.kgenui__gallery`, `repeat(auto-fill, minmax(120px,1fr))`) — it does not branch
   on item count, so a single, image-less item stretches to the grid's full row width inside the
-  widget's full-slot frame and reads as an oversized, awkward card (live-observed on the Q2
-  earnings app). `apps/earnings-avatar-q2/public/styles.css`'s `:has(> .kgenui__gallery >
-  li:only-child)` rule gives that case `.chart-card`'s flex/centered treatment instead, and the
-  app's `show_widget` tool description steers the brain toward `summary` for a single text-only
+  widget's full-slot frame and reads as an oversized, awkward card. A `:has(> .kgenui__gallery >
+  li:only-child)` CSS rule can give that case a flex/centered treatment instead, and a
+  `show_widget` tool description can steer the brain toward `summary` for a single text-only
   point. Prefer `content-gallery` for 2+ image-bearing items; use `summary` for one.
 
 ## Authoring — which capability turns each widget on
 
 Capabilities are set **at intellect creation** (partner config caches ~24h; set them up front).
-Source of truth: `sdk/src/management/capabilities.js` (`CAPABILITY_INFO`, `CAPABILITY_DEFAULTS`,
+Source of truth: `src/management/capabilities.js` (`CAPABILITY_INFO`, `CAPABILITY_DEFAULTS`,
 `OFF_BY_DEFAULT`). `kind` is `tool` | `segment` | `mode` | `prompt`.
 
 | Capability | Default | Kind | Gates runtime | Notes |
@@ -299,11 +297,11 @@ SDK ships none): root `kgenui kgenui--{kind}` (`role="group"`, `aria-label`); `k
 visually-hidden "(opens in a new tab)" cue + `rel=noopener noreferrer` and are **dropped** when
 `safe:false`; images always have `alt`; form fields are real `<label for>`+`<input>` with
 `type`/`inputmode` from the field type and `aria-required`/`aria-describedby` from `required`/`description`.
-`apps/earnings-avatar-q2/public/styles.css` (the `.kgenui__*` block) is a complete reference theme.
+The SDK ships zero CSS for these class names — style the `.kgenui__*` block in your own stylesheet.
 
 ## Safety model (OWASP LLM05 — every widget passes through this)
 
-`sdk/src/core/safety.js`:
+`src/core/safety.js`:
 
 - `safeText(s, max=2000)` — coerces to string, strips ASCII control chars (the C0 range
   `U+0000`-`U+001F` plus `U+007F` DEL), length-clamps.
@@ -345,15 +343,15 @@ visually-hidden "(opens in a new tab)" cue + `rel=noopener noreferrer` and are *
 
 | Topic | File |
 |---|---|
-| Runtime catalog + normalize + parse | `sdk/src/experience/genui/parse.js` |
-| The 9 default renderers | `sdk/src/experience/genui/renderers/*.js` (+ `index.js` map + `WIDGET_KINDS`) |
-| DOM mount helper (`mountWidget` + `kgenui` classes) | `sdk/src/experience/genui/renderers/mount.js` |
-| Multi-fragment assembly | `sdk/src/experience/genui/segments.js` |
-| Dispatch + dual-mode + fallback | `sdk/src/experience/genui/renderer.js` |
-| Wire enums (`UNISPHERE_RUNTIMES`, `segmentKind`, `collectConverse`) | `sdk/src/core/stream.js` |
-| `force_experience` (`EXPERIENCES`) + join hardcode | `sdk/src/experience/wire.js` |
-| HTTP converse + validation | `sdk/src/management/conversations.js` |
-| Capability gating (`CAPABILITY_INFO`) | `sdk/src/management/capabilities.js` |
-| Safety primitives | `sdk/src/core/safety.js` |
-| `submitStructuredDataForm` / `sendScreenShot` | `sdk/src/experience/session.js` |
+| Runtime catalog + normalize + parse | `src/experience/genui/parse.js` |
+| The 9 default renderers | `src/experience/genui/renderers/*.js` (+ `index.js` map + `WIDGET_KINDS`) |
+| DOM mount helper (`mountWidget` + `kgenui` classes) | `src/experience/genui/renderers/mount.js` |
+| Multi-fragment assembly | `src/experience/genui/segments.js` |
+| Dispatch + dual-mode + fallback | `src/experience/genui/renderer.js` |
+| Wire enums (`UNISPHERE_RUNTIMES`, `segmentKind`, `collectConverse`) | `src/core/stream.js` |
+| `force_experience` (`EXPERIENCES`) + join hardcode | `src/experience/wire.js` |
+| HTTP converse + validation | `src/management/conversations.js` |
+| Capability gating (`CAPABILITY_INFO`) | `src/management/capabilities.js` |
+| Safety primitives | `src/core/safety.js` |
+| `submitStructuredDataForm` / `sendScreenShot` | `src/experience/session.js` |
 | Wire segment shape + `force_experience` | `WIRE-PROTOCOL.md` §4e, §7 |

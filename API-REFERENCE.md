@@ -6,6 +6,8 @@ Every endpoint, the full agent lifecycle, and a verified use-case catalog — co
 
 **Credentials** — all examples need `AGENTIC_PARTNER_ID` and `AGENTIC_ADMIN_SECRET` ([Rich Media CMS → Settings → Integration Settings](https://kmc.kaltura.com/index.php/kmcng/settings/integrationSettings)). Set them in a local `.env` (copy `.env.example`) or pass inline. Never hardcode the secret.
 
+**About the `node tools/agentic.mjs` / `node tools/genie.mjs` examples below** — these name an internal reference CLI that exercises every endpoint in this doc, but that CLI isn't shipped in this repo (`tools/` here only has `check-docs.mjs` and `constitution-harness.mjs`). Treat each one as shorthand for the equivalent SDK call — e.g. `node tools/agentic.mjs catalog-list Visual` means `mgmt.catalog.list({ type: 'Visual' })`, `node tools/genie.mjs converse-pretty` means `mgmt.converse(...)` or `mgmt.converseOnce(...)` — see [`README.md`](README.md) for the full `Management` method list.
+
 ---
 
 ## Contents
@@ -19,6 +21,14 @@ Every endpoint, the full agent lifecycle, and a verified use-case catalog — co
 | [Phase 3 — Deploy (embed + runtime init)](#phase-3--deploy) | [UC-7 Interactive Video Avatar](#use-case-catalog) |
 | [Phase 4 — Operate](#phase-4--operate) | [UC-12 Anonymous End-User Embed](#use-case-catalog) |
 | [Quick Reference](#quick-reference) | [UC-13 Custom Portrait Avatar](#use-case-catalog) |
+
+---
+
+**What can you build?** A concierge with memory (UC-2/UC-3), a GenUI-driven product demo (UC-4),
+a slide-deck walkthrough avatar (UC-10), a self-serve custom-voice/custom-portrait agent
+(UC-9/UC-13), an anonymous embeddable widget (UC-12), or a fleet of A/B-tested personas (UC-5) —
+see the full [Use-Case Catalog](#use-case-catalog) for all 13, each mapped to its key mechanism
+and a runnable script/tool.
 
 ---
 
@@ -161,14 +171,12 @@ Returns a `CatalogItemDto` whose `itemId` is the catalog visual. Pass it as `vis
 
 ### End-to-end: custom portrait avatar, server to browser
 
-No app demo ships a portrait-upload UI today — `apps/earnings-avatar-q2` reuses a
-fixed CEO avatar already in the catalog rather than uploading a new one — but the
-full path is exercised end-to-end by the SDK's own integration test
-(`sdk/test/integration/avatars-catalog.test.js`) plus this recipe:
+The full path is exercised end-to-end by the SDK's own integration test
+(`test/integration/avatars-catalog.test.js`) plus this recipe:
 
 1. Server: `catalog.createVisual(portraitBlob, { name, genderPresentation, background, skinTone, ageGroup, hairColor }, adminKs)` → `{ itemId }`.
 2. Server: `avatars.create({ voice: { id: voiceItemId }, visual: { id: itemId }, openingPhrase: '<blank>' }, adminKs)` → `agents.create` → `application.resolveWidgetId`.
-3. Browser: `sessions.createWidgetToken({ widgetId })` → `application.appInit(widgetKs)` → `new KalturaAvatarSession({ token: init.ks, conversationManagerUrl: init.conversationManagerUrl, srsBaseUrl: init.srsBaseUrl, turnServerUrl: init.turnServerUrl, videoEl })`. No admin secret ever reaches the browser — see `apps/earnings-avatar-q2/public/avatar-session.js` for this exact widget-KS pattern (steps happen against a fixed avatar there, but the session-construction code is identical for a freshly-uploaded portrait).
+3. Browser: `sessions.createWidgetToken({ widgetId })` → `application.appInit(widgetKs)` → `new KalturaAvatarSession({ token: init.ks, conversationManagerUrl: init.conversationManagerUrl, srsBaseUrl: init.srsBaseUrl, turnServerUrl: init.turnServerUrl, videoEl })`. No admin secret ever reaches the browser.
 4. The portrait avatar animates live in `videoEl`; type or speak to it and it replies in the portrait's face with the chosen voice.
 
 ---
@@ -243,7 +251,9 @@ POST https://genie.nvp1.ovp.kaltura.com/v1/intellect/update
 | `allow_client_variables` | Allow `{{vars}}` injection per request |
 | `knowledge_ids` | Knowledge record IDs for RAG — create with `POST /v1/knowledge/add` |
 | `name` / `description` / `tags` | Labels for organizing intellects |
-| `tools` | LLM-callable tools — see [§ Tools](#tools-api--csv--code) |
+| `tool_ids` | Tool entity uuid references — create/list the entities themselves via [§ Tools](#tools-api--csv--code) (`mgmt.tools`), then link the ids here via `intellectConfig.setToolIds` |
+| `skill_ids` | Skill entity uuid references — partner-level reusable-instruction CRUD at `mgmt.skills`, linked via `intellectConfig.setSkillIds` |
+| `mcp_servers` | MCP server configs the intellect can call — set via `intellectConfig.setMcpServers` (see `README.md`) |
 | `secrets` | Named secrets for tool OAuth (write-only, masked on read) |
 | `user_properties_forms` | Lead-capture form fields |
 
@@ -762,13 +772,13 @@ Each use case maps to a CLI tool command or a reference app. UC-1 has a quicksta
 | UC-4 | **GenUI Experiences** | `force_experience` hint + `capabilities`; render `unisphere-tool` segments by `metadata.runtimeName` | `node tools/genie.mjs converse-pretty` |
 | UC-5 | **Avatar Fleet / A-B Personas** | `avatar/create` variants, `avatar/clone` to fork, `agent/update avatarIds` to swap | `node tools/agentic.mjs avatar-clone` |
 | UC-6 | **Quality / Feedback Loop** | Capture `messageId` from converse → `mgmt.feedback.add()` → `report-summary` | `node tools/genie.mjs feedback-add` + `report-summary` |
-| UC-7 | **Interactive Video Avatar** | `resolveWidgetId` → widget KS → `appInit` → socket.io + WHEP runtime | `apps/earnings-avatar-q2/public/avatar-session.js` |
+| UC-7 | **Interactive Video Avatar** | `resolveWidgetId` → widget KS → `appInit` → socket.io + WHEP runtime | `examples/browser-experience.html` |
 | UC-8 | **Headless Streaming Text** | `assistant/converse` (`sse:true` or NDJSON); stream `type:"text"` chunks; persist `threadId` server-side | `node tools/genie.mjs converse-pretty` |
 | UC-9 | **Custom Voice Clone** | `catalog-item/create` (multipart, `~6 s+` audio) → `itemId` → `avatar/create voice.id` | `node tools/agentic.mjs voice-upload` |
-| UC-10 | **Slide-Deck Walkthrough** | Deck talking points in prompts; deterministic `navigate_to_slide` client-command tool call for nav; optional GenUI widget via `show_widget` | `apps/earnings-avatar-q2/` (full reference) |
+| UC-10 | **Slide-Deck Walkthrough** | Deck talking points in prompts; deterministic `navigate_to_slide` client-command tool call for nav; optional GenUI widget via `show_widget` | `examples/deck-presenter.html` |
 | UC-11 | **Usage Analytics** | `node tools/genie.mjs report-summary` → CSV aggregated client-side; includes `_meta` provenance receipt | `node tools/genie.mjs report-summary` |
-| UC-12 | **Anonymous End-User Embed** | `resolveWidgetId` once (server) → `sessions.createWidgetToken` (browser, no secret) → `appInit` → enriched KS | `apps/earnings-avatar-q2/public/avatar-session.js` |
-| UC-13 | **Custom Portrait Avatar** | `catalog-item/create` with portrait JPEG → `catalogItemId` → `avatar/create visual.id` → `appInit` → `KalturaAvatarSession` connects with the portrait animating live | § End-to-end recipe above + `sdk/test/integration/avatars-catalog.test.js` |
+| UC-12 | **Anonymous End-User Embed** | `resolveWidgetId` once (server) → `sessions.createWidgetToken` (browser, no secret) → `appInit` → enriched KS | `examples/browser-experience.html` |
+| UC-13 | **Custom Portrait Avatar** | `catalog-item/create` with portrait JPEG → `catalogItemId` → `avatar/create visual.id` → `appInit` → `KalturaAvatarSession` connects with the portrait animating live | § End-to-end recipe above + `test/integration/avatars-catalog.test.js` |
 
 ### Composition patterns
 

@@ -136,7 +136,7 @@ Exact order from the avatar runtime client's connection state machine. Each step
 
 Overall connecting timeout: 30s.
 
-> **Ordering matters — `approvedPermissions` triggers the opening line.** Subscribe to the STV video and wait until it is actually *decoding frames* (`<video>` `canplay`, readyState ≥ `HAVE_FUTURE_DATA`, plus a short jitter-buffer settle) **before** emitting `approvedPermissions`. ICE `connected` fires ~2s before the first frame decodes — approving on ICE alone means the first 1–2s of the greeting is spoken into a pipe the user can't see/hear yet and is clipped. The reference client gates approval on **both** mic-ready AND video-ready (the WebRTC avatar engine's permission-approval check); the SDK reproduces this in `sdk/src/experience/session.js` (`_approve`, gated on the same canplay/`HAVE_FUTURE_DATA` settle logic).
+> **Ordering matters — `approvedPermissions` triggers the opening line.** Subscribe to the STV video and wait until it is actually *decoding frames* (`<video>` `canplay`, readyState ≥ `HAVE_FUTURE_DATA`, plus a short jitter-buffer settle) **before** emitting `approvedPermissions`. ICE `connected` fires ~2s before the first frame decodes — approving on ICE alone means the first 1–2s of the greeting is spoken into a pipe the user can't see/hear yet and is clipped. The reference client gates approval on **both** mic-ready AND video-ready (the WebRTC avatar engine's permission-approval check); the SDK reproduces this in `src/experience/session.js` (`_approve`, gated on the same canplay/`HAVE_FUTURE_DATA` settle logic).
 
 ### The `join` payload (step 2) — this carries the agent/brain config
 
@@ -263,7 +263,7 @@ Two ways the user drives the conversation:
 2. **Text injection** — drive the live avatar by text instead of voice. This is a *socket* event
    (the same channel ASR transcripts use), NOT an `/assistant/converse` HTTP call — HTTP converse is
    a separate stateless chat that never reaches the avatar's speech engine, so the avatar stays
-   silent. Verified working via the SDK's own `session.speak()` (`sdk/src/experience/session.js`):
+   silent. Verified working via the SDK's own `session.speak()` (`src/experience/session.js`):
 
    ```js
    // the isSpeechStart marker interrupts a mid-sentence avatar (no-op if idle) — issue #39
@@ -393,19 +393,19 @@ The protocol above describes the **interactive** path. The scripted path is docu
 
 ## SDK Module Map & Data Flow
 
-The zero-dependency `@kaltura/intelligent-agents` SDK (`sdk/`) is the reference implementation of everything above, wrapped behind two entry points. This is the **source-of-truth map** of its internals — how a call flows from a typed method to the right backend. Use it to navigate the source; for the public surface + how-tos read [README.md](../README.md).
+The zero-dependency `@kaltura/intelligent-agents` SDK is the reference implementation of everything above, wrapped behind two entry points. This is the **source-of-truth map** of its internals — how a call flows from a typed method to the right backend. Use it to navigate the source; for the public surface + how-tos read [README.md](../README.md).
 
 ### Two entry points, one shared core
 
-- **`./management`** (`Management`, `sdk/src/management/client.js`) — the REST control plane. Holds the admin secret, mints tokens, routes to the two REST hosts (Agentic + Genie) and OVP, and enforces the two-KS guard via `assertAdmin`/`assertConversation` (`assertKind` in `client.js`) **before any network call**. Resource namespaces hang off it: `sessions`, `agents`, `avatars`, `catalog`, `application`, `intellects`, `intellectConfig`, `tools`, `conversations`, `threads`, `messages`, `feedback`, `followups`, `knowledge`. `tools` is a standalone, partner-level entity — an intellect only references it via `tool_ids`. One sub-resource mounts on `intellects`: `intellects.secrets`.
-- **`./experience`** (`KalturaAvatarSession`, `sdk/src/experience/session.js`) — the live socket+WHEP runtime from "Video Runtime Protocol" above. Takes only a short-lived conversation token; socket.io is INJECTED (`socketFactory`), never bundled. Two optional plugin subpaths hang off this same live runtime without loading into apps that don't need them: `./experience/presenter` (the `Presenter` deck helper) and `./experience/genui` (the `ExperienceRenderer` GenUI layer).
+- **`./management`** (`Management`, `src/management/client.js`) — the REST control plane. Holds the admin secret, mints tokens, routes to the two REST hosts (Agentic + Genie) and OVP, and enforces the two-KS guard via `assertAdmin`/`assertConversation` (`assertKind` in `client.js`) **before any network call**. Resource namespaces hang off it: `sessions`, `agents`, `avatars`, `catalog`, `application`, `intellects`, `intellectConfig`, `tools`, `conversations`, `threads`, `messages`, `feedback`, `followups`, `knowledge`. `tools` is a standalone, partner-level entity — an intellect only references it via `tool_ids`. One sub-resource mounts on `intellects`: `intellects.secrets`.
+- **`./experience`** (`KalturaAvatarSession`, `src/experience/session.js`) — the live socket+WHEP runtime from "Video Runtime Protocol" above. Takes only a short-lived conversation token; socket.io is INJECTED (`socketFactory`), never bundled. Two optional plugin subpaths hang off this same live runtime without loading into apps that don't need them: `./experience/presenter` (the `Presenter` deck helper) and `./experience/genui` (the `ExperienceRenderer` GenUI layer).
 - **`src/core/*`** — the shared leaf layer both fronts depend on: `http.js` (transport), `errors.js` (`KalturaError`, RFC 9457), `session.js` (`Sessions` token-minter + `makeAuditEmitter`), `stream.js` (converse NDJSON/SSE parser + `collectConverse`/`segmentKind`/`UNISPHERE_RUNTIMES`), `redact.js`, `safety.js`, `ids.js` (`meta()` receipts), `knowledge-enums.js` (`CHAPTER_TYPE`/`STRATEGY`/`EMBED`/`buildIndexerObjects`). Core never imports from `management/` or `experience/` (stays a leaf).
 
-> **Branch security on the minted `Token`, never on `inspectKs(realKs).kind`.** The public `inspectKs` export (`@kaltura/intelligent-agents/management`, `sdk/src/management/ks-inspect.js`) decodes only a KSv2 token's **plaintext header**: it reliably returns `{partnerId}`, but a real encrypted KS's privileges are AES-encrypted, so it returns `kind:'opaque'`, `disableEntitlement:null`, `encrypted:true`. `kind`/`disableEntitlement` are populated **only** for unencrypted test tokens. To decide what a token may do, read the `.kind` of the minted `Token` object (it records what it was minted with: `admin`/`conversation`/`agent`/`widget`), not `inspectKs` of an opaque production KS.
+> **Branch security on the minted `Token`, never on `inspectKs(realKs).kind`.** The public `inspectKs` export (`@kaltura/intelligent-agents/management`, `src/management/ks-inspect.js`) decodes only a KSv2 token's **plaintext header**: it reliably returns `{partnerId}`, but a real encrypted KS's privileges are AES-encrypted, so it returns `kind:'opaque'`, `disableEntitlement:null`, `encrypted:true`. `kind`/`disableEntitlement` are populated **only** for unencrypted test tokens. To decide what a token may do, read the `.kind` of the minted `Token` object (it records what it was minted with: `admin`/`conversation`/`agent`/`widget`), not `inspectKs` of an opaque production KS.
 
 ### Management modules (what each does, where it writes)
 
-| Module (`sdk/src/management/`) | Exposes | Backend the writes hit |
+| Module (`src/management/`) | Exposes | Backend the writes hit |
 |---|---|---|
 | `intellects.js` | `Intellects` — DTO CRUD (`add`/`get`/`update`/`delete`), `addExternal`/`listExternal`/`listInternal`, prompt authoring (`setPrompts`/`previewPrompt`/`snapshot`/`restore`/`diffSnapshots`), capabilities (`getCapabilities`/`setCapability`/`setCapabilities`/`resolveCapabilities`), `setClientVariablesEnabled`, brain config (`setBrainConfig`/`getBrainConfig`/`brainConfigAvailable`), `buildBrainConfigPatch`. Mounts `secrets` (tools are a separate top-level resource — see `tools.js`). | Genie `v1/intellect/*` for DTO fields; Genie `partner-config/update`/`get` for brain config (gated) |
 | `intellect-config.js` | `IntellectConfig` (`mgmt.intellectConfig`) — the ONE shared `patch(configId, patch\|fn, ks)` primitive + typed field setters incl. `setToolIds` (the intellect-side `tool_ids` reference list) + `describe()` (an `editable`/`readOnly` map). `buildUserPropertiesForms`. | Genie `v1/intellect/update` (read-modify-write, full-replace dicts; `tool_ids` is a plain array write) |
@@ -422,7 +422,7 @@ The top-level headless converse surface lives on the `Management` class itself: 
 
 ### `resolveCapabilities` return shape (the 15 names are nested, not top-level)
 
-`resolveCapabilities(layers)` (`sdk/src/management/capabilities.js`) returns a **two-key** object — `{ capabilities, _meta }` — so `Object.keys(result).length === 2`. The 15 `AssistantCapability` states live **under `.capabilities`**, keyed by name, NOT at the top level:
+`resolveCapabilities(layers)` (`src/management/capabilities.js`) returns a **two-key** object — `{ capabilities, _meta }` — so `Object.keys(result).length === 2`. The 15 `AssistantCapability` states live **under `.capabilities`**, keyed by name, NOT at the top level:
 
 ```js
 const { capabilities, _meta } = k.intellects.resolveCapabilities({
@@ -444,7 +444,7 @@ A **freshly created** intellect returns an **empty `capabilities {}`** from `get
 
 ### Experience GenUI layer
 
-`sdk/src/experience/genui/` turns brain `unisphere-tool` segments into framework-agnostic render descriptors:
+`src/experience/genui/` turns brain `unisphere-tool` segments into framework-agnostic render descriptors:
 
 - `parse.js` — pure: `normalizeRuntime` (strips the wire `-tool` suffix), `RUNTIMES` (the nine first-class widgets), `parseWidget`/`parseContent` (forgiving JSON-then-line parser; unknown keys → `.raw`, never throws), `isKnownRuntime`.
 - `segments.js` — `SegmentAssembler`: buffers deltas and flushes a complete widget on `runtimeName`/`speechId` change or turn end.
@@ -473,7 +473,7 @@ These are genuine public-API limits, surfaced via typed probes/receipts, never o
 - **Secrets are write-only** — values never read back; the no-leak guarantee is the name-only response contract, not `redact()`. Client-side encryption / BYOK is server-managed (not buildable).
 - **`previewPrompt`/`snapshot`/`restore` are client-side** — a replica of the author layer only (server-injected capability-conditional prompt blocks are not reproducible) and a browser-local history (the server has no versioning).
 - **`agent/list` has no server-side filter today** — `agents.list(ks)` must send `filter:{}` (every guessed key — `{objectType:'AgentListFilter'}`, `{displayNameLike}`, `{adminTagsMultiLikeOr}` — returns an opaque `bad_request`). Filter **client-side**: `await k.agents.list(ks).all().then(l => l.filter(a => a.adminTags?.includes('my-tag')))`. Tag the **agent** with `adminTags` at create time to group; avatars carry no tag field (`avatar/create`/`update` reject `adminTags`).
-The SDK's own `node:test` suite (`sdk/test/`) exercises every one of these surfaces against the real backend and against injected fakes — see `README.md` for the full command list.
+The SDK's own `node:test` suite (`test/`) exercises every one of these surfaces against the real backend and against injected fakes — see `README.md` for the full command list.
 
 ---
 

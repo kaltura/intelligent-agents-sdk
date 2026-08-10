@@ -4,7 +4,7 @@ How to wire a Kaltura agent to call out to an external REST API — write a supp
 booking system, look up inventory, upsert a CRM contact, or call anything else with an HTTP
 endpoint — including the real, backend-verified OAuth2 flow for endpoints that require it.
 
-This is a general integration mechanism: any `api` tool (`sdk/src/management/tools.js`'s
+This is a general integration mechanism: any `api` tool (`src/management/tools.js`'s
 `tools.api()`) the model can call, wired to whatever HTTP endpoint you point it at. CRM/marketing
 writes (HubSpot, Salesforce, Marketo) are one common use case and get their own example section
 below, but the same three-step pattern applies equally to a support desk, a booking system, a MAM
@@ -23,7 +23,7 @@ An external API integration is a custom `api` tool, linked to your intellect via
 pieces, always in this order:
 
 1. **Store the credential as a secret** — `mgmt.intellects.secrets.set(configId, {NAME: value},
-   adminKs)` (`sdk/src/management/secrets.js`). Secrets are write-only: every read masks values as
+   adminKs)` (`src/management/secrets.js`). Secrets are write-only: every read masks values as
    `"***"`, and there is no endpoint to read a plaintext value back — this is a genuine backend
    guarantee (server-encrypted at rest), not something the SDK layers on top.
 2. **Build and register the tool** — `tools.api({..., request: {..., headers: {Authorization:
@@ -92,7 +92,7 @@ const tool = api({
 });
 ```
 
-`buildAuth()` (`sdk/src/management/tools.js`) validates this block before any network call:
+`buildAuth()` (`src/management/tools.js`) validates this block before any network call:
 `type` must be `'oauth2'` (the only scheme the backend supports today), and — the one hard rule —
 `client_secret` **must** be a `secrets.<name>` reference matching `/^secrets\.[A-Za-z_][A-Za-z0-9_]*$/`.
 A plaintext secret is rejected by construction, so there's no path for it to leak into a tool
@@ -123,7 +123,7 @@ segment and show the user a link, which a static bearer token never requires.
 
 Any intellect that references `tool_ids` — an external-API tool is no exception — should set
 `capabilities: {kaltura_genie_experiences: 'off'}` **at creation time**.
-`mgmt.tools.clientToolReadiness(body)` (`sdk/src/management/tools.js`) is a pure lint you can run
+`mgmt.tools.clientToolReadiness(body)` (`src/management/tools.js`) is a pure lint you can run
 over your create/update body before sending it: it warns when tools are referenced but this
 capability isn't explicitly off, because the default-on capability injects a "you MUST call
 `get_experience_instructions`" instruction that out-competes your tool for the same "what do I do
@@ -153,7 +153,7 @@ builders for the most common cases.
 
 ### HubSpot
 
-`hubspotContactUpsert()` (`sdk/src/management/crm-recipes.js`) wraps HubSpot's Contacts v3 upsert
+`hubspotContactUpsert()` (`src/management/crm-recipes.js`) wraps HubSpot's Contacts v3 upsert
 endpoint (`POST /crm/v3/objects/contacts`) with a static bearer token (a HubSpot **private-app
 token**, not an OAuth2 flow — HubSpot's private-app tokens are long-lived and don't need refresh):
 

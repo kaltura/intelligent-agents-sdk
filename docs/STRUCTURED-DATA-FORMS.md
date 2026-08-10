@@ -13,7 +13,7 @@ method you call to report values back is `session.submitStructuredDataForm()`, o
 `setFormLeadInfo` — both named after the feature's most common use case, not its only one.
 
 All claims below are anchored to source: the Genie brain backend (the conversational AI backend
-service) and this repo's SDK (`sdk/src/`).
+service) and this repo's SDK (`src/`).
 
 ## What it is — and isn't
 
@@ -28,7 +28,7 @@ await mgmt.intellectConfig.setUserPropertiesForms(configId, [
 ], adminKs);
 ```
 
-`callStage` is one of `start` / `middle` / `end` (`CALL_STAGES` in `sdk/src/management/intellect-config.js`).
+`callStage` is one of `start` / `middle` / `end` (`CALL_STAGES` in `src/management/intellect-config.js`).
 Each property is `{key, type}`, where `type` is one of the six argument types the platform supports —
 `str`, `int`, `float`, `bool`, `list`, `dict` (`ARG_TYPES`, re-exported from `core/stream.js`'s
 `ARG_TYPE_NAMES`, the single source of truth). The renderer additionally recognizes `email`/`phone`/`text`
@@ -108,10 +108,10 @@ normalized to the same shape by the SDK:
    `unisphere-tool` segment with `metadata.runtimeName: "user-properties-form-tool"` (one of the
    nine `UNISPHERE_TOOLS` — see [GENUI-REFERENCE.md](GENUI-REFERENCE.md)).
 
-Both are routed to `ExperienceRenderer` (`sdk/src/experience/genui/renderer.js`), which
+Both are routed to `ExperienceRenderer` (`src/experience/genui/renderer.js`), which
 `normalizeRuntime()`s the runtime name (stripping a trailing `-tool`) and calls the registered
 renderer — by default `renderUserPropertiesForm()`
-(`sdk/src/experience/genui/renderers/user-properties-form.js`). That function is pure and
+(`src/experience/genui/renderers/user-properties-form.js`). That function is pure and
 defensive: it accepts `fields`/`properties`/`items` interchangeably, coerces an unrecognized type
 to `'str'`, runs every string through `safeText` (XSS-safe truncation), and drops any field with no
 key. The output is a framework-agnostic descriptor:
@@ -124,7 +124,7 @@ key. The output is a framework-agnostic descriptor:
 
 ## How the form is rendered
 
-If you hand `mountWidget` (`sdk/src/experience/genui/renderers/mount.js`) a real DOM element as the
+If you hand `mountWidget` (`src/experience/genui/renderers/mount.js`) a real DOM element as the
 mount target, it builds the whole thing for you: one `<form class="kgenui__form">`, one
 `<div class="kgenui__field">` per field with a `<label>` and an `<input>` — the input `type` is
 inferred from the field type (`email`/`phone`→`tel`/checkbox/etc. via `htmlInputType()`) — wired
@@ -132,34 +132,11 @@ inferred from the field type (`email`/`phone`→`tel`/checkbox/etc. via `htmlInp
 `innerHTML`, so brain-supplied text can't inject markup. On submit, it calls your
 `opts.onAction('submit', {values})` callback.
 
-**The reference app (`apps/earnings-avatar-q2`) does NOT use this `user_properties_forms` /
-mandatory-prompt-injection mechanism at all.** It reaches the same `user-properties-form` widget
-through a completely different path: `kaltura_genie_experiences` is off, and the widget is just
-one enum value of the app's own native `show_widget` **client** tool (`server/provision.mjs`),
-alongside `flashcards`/`summary`/`sources`/etc. The brain decides when to call it entirely from
-timing rules in `data/studio/OBEY_RULES.md`'s LEAD CAPTURE section (never on the opening turn,
-only after real value has been delivered, at most once per conversation) — there is no
-`call_stage`-driven mandatory injection pushing it.
-
-On the client side, `public/genui.js`'s `renderLeadCaptureForm()` mounts the widget into its own
-dedicated full-screen **blocking modal** (`#lead-capture-modal`), not a peer widget region like
-`highlight_chart`/other `show_widget` kinds — the brain asking for contact info needs the
-visitor's undivided attention. On submit, it does **not** call
-`session.submitStructuredDataForm()`. Per an explicit design constraint (the browser must never
-call external infrastructure directly), the collected `email`/`phone` values are instead merged
-into the shared `request_vars` map (`_st.syncRequestVars`) so the brain can read them back as
-`{{ lead_email }}` / `{{ lead_phone }}`, alongside `{{ lead_capture_status }}` (`pending` /
-`submitted` / `declined`). `OBEY_RULES.md` then instructs the brain to call a dedicated
-server-side **api** tool, `save_lead_to_sheet` (`server/provision.mjs`, gated on
-`LEAD_WEBHOOK_URL`/`LEAD_WEBHOOK_SECRET`), with those exact values — a genuine brain-initiated
-HTTP call to a Google Apps Script Web App that writes the lead to a spreadsheet. This makes the
-Sheets write happen once, from the brain, rather than as a client-side `fetch()`.
-
-Nothing about the general `user_properties_forms` mechanism described above is wrong for other
-apps — a different tenant can still configure `setUserPropertiesForms` and rely on the mandatory
-prompt injection + `setFormLeadInfo` path. The reference app simply demonstrates the alternative:
-reaching the same widget as a client tool enum value, with brain-authored timing rules and a
-durable server-side capture tool instead of the config-driven, transcript-only default.
+Nothing about the general `user_properties_forms` mechanism described above is the only option.
+An app can instead reach the same `user-properties-form` widget through a different path: keep
+`kaltura_genie_experiences` off, and expose the widget as one enum value of your own native
+`show_widget` **client** tool, with the brain deciding when to call it from your own prompt-level
+timing rules — no `call_stage`-driven mandatory injection required.
 
 ## How to customize or style the form
 
@@ -180,13 +157,12 @@ Two independent axes:
   `session.submitStructuredDataForm(values)` yourself when the user submits.
 - **Visual styling.** The default DOM path emits plain, unstyled class names only —
   `.kgenui__form`, `.kgenui__field`, `.kgenui__label`, `.kgenui__input`, `.kgenui__help`,
-  `.kgenui__submit`. The SDK ships **zero CSS**. The reference app's own stylesheet
-  (`apps/earnings-avatar-q2/public/styles.css`) is what actually styles those classes — any
-  consumer styles the same class names in their own stylesheet.
+  `.kgenui__submit`. The SDK ships **zero CSS** — any consumer styles the same class names in
+  their own stylesheet.
 
 ## Where the submitted data actually goes
 
-`session.submitStructuredDataForm(info)` (`sdk/src/experience/session.js`) is a fire-and-forget socket emit —
+`session.submitStructuredDataForm(info)` (`src/experience/session.js`) is a fire-and-forget socket emit —
 `this._socket.emit('setFormLeadInfo', sanitizeJson(info))` — with no acknowledgment payload, and no
 endpoint on the Genie/agentic management plane reads it back as structured `{key: value}` data. The
 conversation transcript is persisted to Postgres by the Genie brain backend (a `Message` table) and
@@ -203,11 +179,9 @@ That path is a genuine server-side HTTP request the agent makes on your behalf, 
 socket emit, so the data lands wherever you point the tool — no dependence on any surface outside
 the Genie/agentic management and conversation planes this toolkit talks to.
 
-The reference app (`apps/earnings-avatar-q2`) is itself a worked example of this pattern: it keeps
-the submitted values in browser memory (`_st.contactCollected`) for the current session, but the
-durable write happens via its `save_lead_to_sheet` tool (`server/provision.mjs`) — a brain-called,
-server-side `api` tool that posts to a Google Apps Script Web App, gated on `LEAD_WEBHOOK_URL`/
-`LEAD_WEBHOOK_SECRET` — rather than `setFormLeadInfo`. See the "reference app" note above and
+A worked pattern: keep the submitted values in browser memory for the current session, but do the
+durable write via your own brain-called, server-side `api` tool that posts to whatever external
+system you point it at — rather than `setFormLeadInfo`. See
 [EXTERNAL-API-INTEGRATIONS.md](EXTERNAL-API-INTEGRATIONS.md) for the general pattern this
 specializes.
 

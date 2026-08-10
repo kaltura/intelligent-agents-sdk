@@ -11,14 +11,39 @@ Two entry points, plus several optional plugin subpaths that don't bloat the bas
 - `./experience/analytics` — optional: `KavaAnalytics`, client-only KAVA Application Events (`pageLoad`/`buttonClicked`)
 - `./experience/noise-suppressor` — optional: `createNoiseSuppressor`, a zero-dependency AudioWorklet noise gate
 
-No build step required, no package registry involved: ship `src/` raw ESM directly (import from `src/...`, or via a jsDelivr CDN URL pinned to a git tag once the repo is public). `node:test` throughout.
+No build step, no npm registry publish — that's disabled by design (`"private": true`, no `publishConfig`, no publish workflow). Ship `src/` raw ESM directly: import from `src/...` server-side, or load it in the browser via a jsDelivr CDN URL pinned to a git tag once the repo is public. `node:test` throughout.
+
+**New here?** [GETTING-STARTED.md](GETTING-STARTED.md) walks through creating and talking to your
+first agent in about 10 minutes, including a zero-credential offline demo. Come back here once
+you're building a real app with the SDK. Also see [CONTRIBUTING.md](CONTRIBUTING.md) (how to
+contribute), [SDK_CONSTITUTION.md](SDK_CONSTITUTION.md) (the invariants every change must hold),
+and [CHANGELOG.md](CHANGELOG.md) (what changed between versions).
+
+**Security & compliance:** zero runtime dependencies, short-lived tokens, pre-redacted audit
+events, and a NIST 800-53 control matrix — designed for enterprise, HIPAA, and HITRUST
+deployments. See [Security posture](#security-posture) below or the full matrix in
+[SECURITY.md](SECURITY.md).
+
+**Why this over a hosted avatar SaaS (Tavus, HeyGen, Synthesia, etc.)?** Those platforms hand you
+a hosted widget with your integration living behind their API and their release schedule. This
+SDK ships as raw ESM source you own and can read line by line — no build step, no bundler-only
+`node_modules` black box, and (once a tag is public) no install step at all: import straight from
+a jsDelivr CDN URL pinned to a git tag. Zero runtime dependencies means no transitive supply-chain
+surface to audit. Voice and visual cloning are self-serve calls in this SDK
+(`catalog.importVoiceFromElevenLabs`/`importVoiceFromCartesia`, `catalog.createVisual`), not a
+support ticket. And the security posture — pre-redacted audit events, short-lived tokens, a NIST
+800-53 control matrix — is designed in from the start for enterprise/HIPAA/HITRUST deployments
+rather than bolted on. Full details in [SECURITY.md](SECURITY.md).
 
 ---
 
 ## Quick start
 
 ```bash
-# server: provision + headless converse
+# see it work — no account needed, fully offline (~105 s)
+npm test
+
+# server: provision + headless converse (needs a Kaltura account)
 export AGENTIC_PARTNER_ID=…
 export AGENTIC_ADMIN_SECRET=…
 node examples/server-token.mjs "A friendly yoga receptionist"
@@ -28,10 +53,25 @@ open examples/browser-experience.html
 
 # browser: Presenter / deck walkthrough demo
 open examples/deck-presenter.html
-
-# run all tests (~2 s, fully offline)
-npm test
 ```
+
+### Browser via jsDelivr (no bundler, no npm install)
+
+Once the repo has a tag pushed, jsDelivr serves any file straight from that tag by its real
+repo path — it has no awareness of package.json's `exports` map, so import the real `src/...`
+path, not a bare `@kaltura/intelligent-agents/...` specifier (those bare specifiers, used
+elsewhere in these docs, only resolve for a Node/bundler consumer that reads `exports`):
+
+```html
+<script type="module">
+  import { KalturaAvatarSession } from 'https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.0.0/src/experience/index.js';
+  // ... same API as the local examples — see examples/browser-experience.html
+</script>
+```
+
+Pin the `@v1.0.0` tag to whatever release you want to consume; `examples/browser-experience.html`
+and `examples/deck-presenter.html` demonstrate the same real-relative-path pattern locally
+(`../src/experience/index.js`).
 
 ---
 
@@ -444,7 +484,7 @@ new ExperienceRenderer({
 }).start();
 ```
 
-`mountWidget(descriptor, target, opts)` is the zero-dep, never-`innerHTML`, accessible renderer. It ships zero styling — you theme the stable `kgenui`/`kgenui__*` class contract. `onMount(root, descriptor)` is the progressive-enhancement seam for host-injected libraries (Mermaid, Chart.js, KaTeX) — see `sdk/test/unit/genui.test.js` for the hook's contract.
+`mountWidget(descriptor, target, opts)` is the zero-dep, never-`innerHTML`, accessible renderer. It ships zero styling — you theme the stable `kgenui`/`kgenui__*` class contract. `onMount(root, descriptor)` is the progressive-enhancement seam for host-injected libraries (Mermaid, Chart.js, KaTeX) — see `test/unit/genui.test.js` for the hook's contract.
 
 A `summary` widget's text is markdown-in-plain-text by default (LLM-authored), and the SDK renders it as flat escaped text unless you opt in: `mountWidget(descriptor, target, { markdown: true })` parses that same text as markdown — headings, bold/italic, inline code, links, lists, fenced code blocks, and GFM tables (rendered through the same safe `tableEl` builder the structured widgets use) — all as real, accessible DOM, never `innerHTML`. This is markdown-IN-plain-text rendering, not a new wire segment type; every link goes through `safeUrl` and every text run through `safeText`/`safeSource`, so a `javascript:` link or a raw `<script>` tag in the LLM output is neutralized the same way the rest of GenUI's renderers neutralize untrusted output. Default (flat text) behavior is unchanged, so no existing app regresses by upgrading.
 
@@ -452,7 +492,7 @@ A widget interrupted mid-stream (a different runtime/`speechId` arrives before i
 
 In LIVE mode (`.start()`), `ExperienceRenderer` also subscribes to the session's `turnStart` event (re-emitted from the raw `agent_start_speech` socket event — `{speechId, turnId, isNewTurn}`) and, by default (`clearOnTurnStart: true`), discards the assembler's in-flight buffer and clears `rendered`/`last` when `isNewTurn` is true, so a widget from a previous turn never lingers into the next one — the same correctness fix Genie's own web client applies by nulling its content on `AgentStartSpeechReceived`. A duplicate turn (`isNewTurn:false`, e.g. a CM-side `tap-to-talk` retrigger for a `turnId` already in flight) is ignored here, matching every other `turnStart`/`isNewTurn` consumer in the SDK — otherwise the duplicate would wipe an already-rendered widget out from under the viewer mid-turn. Pass `clearOnTurnStart: false` to keep pre-#28 behavior (accumulate/persist across turns).
 
-The `Presenter` helper (`./experience/presenter`, its own subpath so apps that don't need it never pay for its module graph) manages a deck walkthrough end to end: per-slide Dynamic Prompt injection, navigation via ONE deterministic, silent, idempotent mechanism (`onToolCall('navigate_to_slide')` — no speech-parsing fallback), duplicate-nav suppression, a sequential resume point (`reason:'resume'`), and session memory ("welcome back") — all pure logic over an injected `session`/`storage`, fully unit-testable. Read-only getters: `covered` (visited slide numbers), `questions`, `lastNav` (`{target, reason, at}`), `lastDppSlide`, `secondsOnCurrentSlide`, `memory`. Methods: `start()`, `goTo(n, reason)`, `refreshDpp()`, `saveMemory()`, `clearMemory()`, `recordQuestion(text)` for questions observed outside ASR (e.g. typed chat), and `appendSlide(slide)` to grow the deck at runtime (e.g. a brain-driven `create_slide` command) — it pushes onto `slides`/grows `total` and returns the new 1-based slide number, without navigating. Hooks for app-specific behavior without reimplementing Presenter: `extendDpp`, `extraMemory`/`restoreMemory`, `onTurnText`, `onSlideChange`, `metaFor`, and `dppSlide(slide, ctx)` — a full-replace hook for the DPP's `slide:` sub-object when your slide shape doesn't match the default `{title, talking_points, category, content, narrator_guidance}` vocabulary (e.g. `body`/`topics`/`track`/`level`). `oneNavPerTurn: true` guards against a brain "restart" firing two different nav targets within the same spoken turn — the second is silently suppressed until the next turn. See `examples/deck-presenter.html` for a self-contained runnable demo, and `apps/earnings-avatar-q2/public/avatar-session.js` for a full reference integration (construct Presenter right after the session, before `connect()`, with `requireDisclosureAck: true` and the `extendDpp`/`extraMemory`/`restoreMemory` hooks in action).
+The `Presenter` helper (`./experience/presenter`, its own subpath so apps that don't need it never pay for its module graph) manages a deck walkthrough end to end: per-slide Dynamic Prompt injection, navigation via ONE deterministic, silent, idempotent mechanism (`onToolCall('navigate_to_slide')` — no speech-parsing fallback), duplicate-nav suppression, a sequential resume point (`reason:'resume'`), and session memory ("welcome back") — all pure logic over an injected `session`/`storage`, fully unit-testable. Read-only getters: `covered` (visited slide numbers), `questions`, `lastNav` (`{target, reason, at}`), `lastDppSlide`, `secondsOnCurrentSlide`, `memory`. Methods: `start()`, `goTo(n, reason)`, `refreshDpp()`, `saveMemory()`, `clearMemory()`, `recordQuestion(text)` for questions observed outside ASR (e.g. typed chat), and `appendSlide(slide)` to grow the deck at runtime (e.g. a brain-driven `create_slide` command) — it pushes onto `slides`/grows `total` and returns the new 1-based slide number, without navigating. Hooks for app-specific behavior without reimplementing Presenter — each exists because a real app needed to extend one specific seam without forking the class: `extendDpp(slide, ctx)` merges app-specific fields into every DPP sent (e.g. an engagement block built from `secondsOnCurrentSlide`); `extraMemory(questions)`/`restoreMemory(memory)` are the write/read pair for persisting app-specific fields alongside Presenter's own "welcome back" session memory, instead of layering a second storage call; `onTurnText(text, full)` fires with the per-turn accumulated avatar text — the same text Presenter itself uses internally — so an app can drive its own analytics or triggers off it; `onSlideChange(n, slide, reason)` is your renderer hook, called right after the DPP goes out (e.g. to page a PDF viewer to the new slide); `metaFor(category)` returns per-category DPP meta flags (`disclaimer_required`/`non_gaap_cited`) when your compliance categories differ from the financial/legal default; and `dppSlide(slide, ctx)` is a full-replace hook for the DPP's `slide:` sub-object when your slide shape doesn't match the default `{title, talking_points, category, content, narrator_guidance}` vocabulary (e.g. `body`/`topics`/`track`/`level`). `oneNavPerTurn: true` guards against a brain "restart" firing two different nav targets within the same spoken turn — the second is silently suppressed until the next turn. See `examples/deck-presenter.html` for a self-contained runnable demo: construct Presenter right after the session, before `connect()`, with `requireDisclosureAck: true` and the `extendDpp`/`extraMemory`/`restoreMemory` hooks in action.
 
 ---
 
@@ -473,6 +513,8 @@ These are importable from their entry points and useful when composing custom pi
 | `randId(prefix?)` | Short collision-resistant ID with an optional prefix — used for idempotency keys and `_meta` receipts. |
 | `parseCsv(text)` | Zero-dep CSV parser (RFC 4180). Used by the `tools.api` CSV response path. |
 | `summarizeReport(rows, opts)` | Aggregates raw reporting rows into a `{ _meta, totals, byAgent, byThread }` summary — the same shape returned by `genie.mjs report-summary`. |
+| `lintPrompts(prompts)` / `validatePromptVars(text, vars)` / `lintGlossary(glossary)` / `assembleSystemPrompt(parts)` | The prompt-authoring toolchain (`management/prompt-lint.js`): lint a prompt set for the `SYS_VARS` an intellect actually supplies, validate a template's `{{var}}` references against a known var set, lint a glossary for duplicate/conflicting terms, and assemble a final system prompt from ordered parts. Use these to catch a broken prompt (an unresolvable `{{var}}`, a name collision) before it ships, not after a live conversation surfaces it. |
+| `resolveCapabilities(layers)` / `CAPABILITY_STATE` / `CAPABILITY_INFO` | `management/capabilities.js`'s typed capability resolver: merges the `env`/`partnerConfig`/`request` layers for each entry in `CAPABILITIES` down to one resolved `CAPABILITY_STATE` (`on`/`off`/`disabled`) plus a `resolvedFrom` provenance tag, so a caller can build an accurate "what can this agent do" view without re-deriving precedence from raw config fields. `CAPABILITY_INFO` carries the human-readable name/description per capability. |
 
 ### `./experience`
 
@@ -544,7 +586,7 @@ import { FakeSocket } from '@kaltura/intelligent-agents/test/fakes/socket.js';
 const session = new KalturaAvatarSession({ …, socketFactory: () => new FakeSocket() });
 ```
 
-For live-backend Playwright e2e (real agent + WebRTC connect), see a reference app built on this SDK — e.g. `earnings-avatar-q2` (private, Kaltura-internal) — for a worked example of a full mock + live Playwright suite.
+For live-backend Playwright e2e (real agent + WebRTC connect), boot a real session against `KalturaAvatarSession` with no `socketFactory`/fake transport override, then drive it the same way — `connect()`, wait for the ready state, assert on the resulting DOM/state.
 
 ---
 
@@ -647,4 +689,14 @@ await mgmt.knowledge.deleteRecord(rec.id, ks, { confirmPermanent: true });
 | [SECURITY.md](SECURITY.md) | NIST 800-53 matrix, FIPS mode, incident-response runbook |
 | [docs/CLIENT-COMMANDS.md](docs/CLIENT-COMMANDS.md) | The two deployment gotchas, gotcha-free authoring pattern, and tool-spiral defenses for client-command intellects |
 | [docs/GENUI-REFERENCE.md](docs/GENUI-REFERENCE.md) | All first-class GenUI widgets — wire shapes, SDK functions, rendering anchors |
+| [docs/DYNAMIC-DATA-INJECTION.md](docs/DYNAMIC-DATA-INJECTION.md) | Per-turn `request_vars`/DPP injection — how to hand the brain live, per-request data |
+| [docs/EXTERNAL-API-INTEGRATIONS.md](docs/EXTERNAL-API-INTEGRATIONS.md) | Wiring a brain-called tool to a durable write against your own external API (CRM, spreadsheet, ticketing) |
+| [docs/STRUCTURED-DATA-FORMS.md](docs/STRUCTURED-DATA-FORMS.md) | Collecting typed fields from the user mid-conversation (`user_properties_forms`) — schema, rendering, where submitted values go |
+| [docs/VOICE-INPUT-MODES.md](docs/VOICE-INPUT-MODES.md) | Choosing open-mic vs. push-to-talk, and the UX/accessibility/safety details around each |
 | `examples/` | One runnable example per use-case |
+
+## License
+
+MIT — see [LICENSE](LICENSE). No Kaltura account or credentials are needed to read, fork, or
+build on this SDK's source; a Kaltura account with the Agentic Avatar feature enabled is needed
+to call the live APIs it wraps — [start a free trial](https://subscription.kaltura.com/purchase-manager/purchase-manager/avatar-studio-free-trial).
