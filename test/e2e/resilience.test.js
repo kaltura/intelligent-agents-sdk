@@ -11,7 +11,7 @@ import { SPIRAL_RECOVERY_PREFIX } from '../../src/core/stream.js';
  * fault injection across all three channels (socket control / ASR uplink / STV
  * downlink), proving the SDK always reaches a defined state and NEVER silently
  * hangs or silently freezes. Complements the live battle-test in
- * sdk-earnings-avatar/tests/e2e/04-live-resilience.spec.js (real backend) and the
+ * earnings-avatar-q2/tests/e2e/04-live-resilience.spec.js (real backend) and the
  * Chrome/CDP network-condition harness (real Chrome, throttled networks).
  *
  * The matrix below covers:

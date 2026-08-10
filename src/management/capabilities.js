@@ -12,13 +12,13 @@
  * that PRESERVES omitted top-level fields; it is `capabilities` itself that is
  * replaced wholesale). See API-REFERENCE.md § Configure an Intellect.
  *
- * Source of truth: `apps/settings.py` `AssistantCapability` +
- * `DEFAULT_CAPABILITY_VALUES`, and `apps/search/assistant/utils/capabilities.py`
- * (`get_turned_on_capabilities`, 3-level priority with DISABLED veto).
+ * Source of truth: the backend's `AssistantCapability` enum and default-value
+ * table, resolved with 3-level priority (env → partner_config → per-request)
+ * and a DISABLED veto that always wins regardless of layer.
  *
- * HONEST LIMIT: no public endpoint enumerates AssistantCapability or per-partner settings. CAPABILITIES is a hand-transcribed snapshot of settings.py.
+ * HONEST LIMIT: no public endpoint enumerates AssistantCapability or per-partner settings. CAPABILITIES is a hand-transcribed snapshot of the backend's defaults.
  * {@link CAPABILITIES} and {@link CAPABILITY_DEFAULTS} are a hand-transcribed
- * SNAPSHOT of `settings.py`, GUARDED by the `check-docs.mjs` W7 assertion that
+ * SNAPSHOT of the backend's defaults, GUARDED by the `check-docs.mjs` W7 assertion that
  * this enum equals the API-REFERENCE.md capability catalogue. The DISABLED
  * veto plus the request/partner_config layers are authoritative (resolved by the
  * server the same way); the `env` layer this module ships is a best-effort
@@ -28,7 +28,7 @@ import { KalturaError } from '../core/errors.js';
 import { meta } from '../core/ids.js';
 
 /**
- * The 15 `AssistantCapability` names, frozen, in `settings.py` declaration order.
+ * The 15 `AssistantCapability` names, frozen, in the backend's declaration order.
  * Hand-transcribed snapshot — see the HONEST LIMIT note above.
  *
  * `think_process` is deliberately ABSENT: it appears in some GenUI experience
@@ -70,7 +70,7 @@ const VALID_STATES = Object.freeze([CAPABILITY_STATE.ON, CAPABILITY_STATE.OFF, C
 const CAPABILITY_SET = new Set(CAPABILITIES);
 
 /**
- * The OFF-by-default capabilities (`DEFAULT_CAPABILITY_VALUES` in `settings.py`):
+ * The OFF-by-default capabilities (the backend's `DEFAULT_CAPABILITY_VALUES`):
  * `avatar`, `avatar_filler`, `avatar_show_content`, `video_gallery`,
  * `external_video`, `show_link`, `use_web_search`, `screen_share_analysis`.
  * @type {readonly string[]}
@@ -83,8 +83,8 @@ const OFF_BY_DEFAULT = Object.freeze([
 /**
  * Per-capability default snapshot — the `env`/default layer.
  *
- * DOCUMENTED SNAPSHOT: a hand-transcribed copy of
- * `DEFAULT_CAPABILITY_VALUES` from `apps/settings.py`. There is NO public
+ * DOCUMENTED SNAPSHOT: a hand-transcribed copy of the backend's
+ * `DEFAULT_CAPABILITY_VALUES`. There is NO public
  * endpoint that returns per-partner env/settings overrides, so this is a
  * best-effort prediction of the env layer — NOT a live read. Eight capabilities
  * default OFF (see {@link OFF_BY_DEFAULT}); the other seven default ON
@@ -223,7 +223,7 @@ export function mergeCapabilityWrite(current, patch) {
 
 /**
  * The PURE 3-level resolver — mirrors the server's `get_turned_on_capabilities`
- * (`apps/search/assistant/utils/capabilities.py`). For EVERY one of the 15
+ * behavior. For EVERY one of the 15
  * {@link CAPABILITIES} it resolves a final state with EXACT precedence:
  *
  *   1. DISABLED VETO — if `env` OR `partnerConfig` marks the capability

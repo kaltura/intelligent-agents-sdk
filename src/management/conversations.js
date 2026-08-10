@@ -498,7 +498,7 @@ export class Knowledge {
     return this._.ovp('categoryentry', 'delete', { categoryId, entryId }, ks);
   }
 
-  // ─── The category-LINKAGE write (source-verified against ovp-genie config_service.py) ───
+  // ─── The category-LINKAGE write (source-verified against the backend's config service) ───
   // TWO PATHS link knowledge to an intellect (both end at one partner-config row):
   //   PATH A (preferred, UNGATED, verified live): mint a Knowledge record with
   //     `addRecord()` (`POST /v1/knowledge/add` on Genie — LIVE, requires admin KS), then pass its id as
@@ -569,8 +569,7 @@ export class Knowledge {
    * on the current deployment — call {@link linkAvailable} first; on a 403 this
    * returns `{applied:false, reason, code}` and NEVER throws (see API-REFERENCE.md § Ground the Agent).
    *
-   * Wire shape is the indexer's VERIFIED `categoryEntry` DTO (ovp-genie
-   * `apps/index/index.py:258-267` + `apps/shared/multi_tenant_helper.py:117-124`):
+   * Wire shape is the indexer's VERIFIED `categoryEntry` DTO:
    * `indexer.{filterType:'categoryEntry', chunkSize, categoryInfo:[{categoryId, language}]}`
    * — `categoryId` is SINGULAR (a string id; the server resolves the full id),
    * and `chunkSize` lives at the INDEXER level (the backend hard-reads

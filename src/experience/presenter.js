@@ -61,6 +61,8 @@
  */
 import { parseSlideNumber } from './slidenav.js';
 
+export { parseSlideNumber };
+
 export class Presenter {
   /**
    * @param {object} cfg
@@ -192,8 +194,7 @@ export class Presenter {
    * True once `oneNavPerTurn` has blocked a same-turn SECOND, different `navigate_to_slide`
    * target this turn (reset on the next `isNewTurn` turnStart). A sibling client command
    * (e.g. `show_widget`) fired later in the SAME turn has no way of knowing the deck never
-   * actually reached the slide its content describes unless it checks this — see
-   * `apps/earnings-avatar-q2/public/avatar-session.js`'s show_widget/highlight_chart guards.
+   * actually reached the slide its content describes unless it checks this property first.
    * Always `false` when `oneNavPerTurn` is off. @returns {boolean}
    */
   get navSuppressedThisTurn() { return this._navSuppressedThisTurn; }

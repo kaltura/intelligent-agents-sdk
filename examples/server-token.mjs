@@ -4,7 +4,7 @@
  * leaves this process. Run: AGENTIC_PARTNER_ID=… AGENTIC_ADMIN_SECRET=… node examples/server-token.mjs "A friendly yoga receptionist"
  *
  * NOTE (dev-local path): the import below resolves against the repo's src/ tree.
- * npm consumers should instead import from '@kaltura/intelligent-agents'.
+ * npm consumers should instead import from '@kaltura/intelligent-agents/management'.
  */
 import { Management } from '../src/management/index.js';
 

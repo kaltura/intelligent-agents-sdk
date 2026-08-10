@@ -37,10 +37,12 @@ function warn(rule, desc, detail) {
   if (detail) console.warn(`      ${detail}`);
 }
 
-/** Recursively collect all .js files under a directory. */
+/** Recursively collect all .js files under a directory, skipping node_modules (avoids a
+ * symlink loop back to the repo root via a `file:..` npm dependency, e.g. quickstart/). */
 function jsFiles(dir) {
   const out = [];
   for (const name of readdirSync(dir)) {
+    if (name === 'node_modules') continue;
     const full = join(dir, name);
     if (statSync(full).isDirectory()) out.push(...jsFiles(full));
     else if (name.endsWith('.js')) out.push(full);

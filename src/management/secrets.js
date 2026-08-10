@@ -245,7 +245,7 @@ function badRequest(where, detail) {
   return new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: `${where}: ${detail}` });
 }
 
-// CANONICAL form is `{{secrets.X}}`: ovp-genie renders prompts/tool configs with
+// CANONICAL form is `{{secrets.X}}`: the backend renders prompts/tool configs with
 // `Template(...).render(request_config.variables)` (flat Jinja), and secrets live at
 // `request_config.variables["secrets"]` — so `{{secrets.X}}` resolves and `{{variables.secrets.X}}`
 // does NOT (it renders as empty/literal). The matcher captures the OPTIONAL `variables.`
@@ -261,7 +261,7 @@ const REF_RE = /\{\{\s*(variables\.)?secrets\.([A-Za-z0-9_\-.]+)\s*\}\}/g;
  *   validateSecretRefs({ secretNames, tools?, prompts? })
  *   validateSecretRefs(toolConfig, secretNames)   // task convenience overload
  *
- * Canonical reference is `{{secrets.X}}` (ovp-genie renders with flat Jinja over
+ * Canonical reference is `{{secrets.X}}` (the backend renders with flat Jinja over
  * `request_config.variables`, where secrets live under the `secrets` key). The
  * non-resolving `{{variables.secrets.X}}` prefix is detected and reported as a
  * `badPrefix` entry (and forces `ok:false`) REGARDLESS of whether `X` is a known

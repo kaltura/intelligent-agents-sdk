@@ -10,7 +10,7 @@
  * The 80000-range "Immersive Agents" events (`callStarted`/`callEnded`/
  * `messageResponse`/`messageFeedbackSent`) are intentionally NOT implemented
  * here, and there is no code path in this module that can send them.
- * conversation-manager and ovp-genie already report all four server-side for
+ * The backend already reports all four server-side for
  * every session `KalturaAvatarSession` connects to (same socket, matching
  * event names, stickyId-routed pods) — a client-side copy would double-count
  * on the live analytics dashboards. If a real gap in that server-side

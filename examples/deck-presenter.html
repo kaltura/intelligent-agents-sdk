@@ -41,12 +41,22 @@
     video.autoplay = true; video.playsInline = true;
     document.getElementById('avatar').appendChild(video);
 
+    // requireDisclosureAck:true (EU AI Act Art. 50) blocks speak() until your app calls
+    // acknowledgeDisclosure() — here, once the viewer dismisses the disclosure banner below.
     const session = new KalturaAvatarSession({
       token: init.ks, conversationManagerUrl: init.conversationManagerUrl,
       srsBaseUrl: init.srsBaseUrl, turnServerUrl: init.turnServerUrl,
       videoEl: video, socketFactory: (url, opts) => io(url, opts),
+      requireDisclosureAck: true,
     });
-    session.on('disclosure', ({ disclosureText }) => { document.getElementById('cc').textContent = '⚠️ ' + disclosureText; });
+    session.on('disclosure', ({ disclosureText }) => {
+      const cc = document.getElementById('cc');
+      cc.textContent = '⚠️ ' + disclosureText + ' ';
+      const ackBtn = document.createElement('button');
+      ackBtn.textContent = 'OK';
+      ackBtn.onclick = () => { session.acknowledgeDisclosure(); cc.textContent = ''; };
+      cc.appendChild(ackBtn);
+    });
     session.on('reconnecting', () => { document.getElementById('cc').textContent = '… reconnecting'; });
     session.on('reconnected', () => { document.getElementById('cc').textContent = ''; });
 
@@ -63,9 +73,16 @@
       context: { company: 'Acme', deck: 'Investor Update' },   // merged into every per-slide prompt
       onSlideChange: renderSlide,
       storage: window.localStorage,                            // → "welcome back" session memory
+      // extendDpp: app-specific fields merged into every per-slide Dynamic Prompt (here, how
+      // long the viewer has lingered on the current slide — useful for a "still with me?" nudge).
+      extendDpp: (slide, ctx) => ({ secondsOnSlide: Math.round(presenter.secondsOnCurrentSlide) }),
+      // extraMemory / restoreMemory: round-trip an app-specific field through session memory
+      // alongside Presenter's own covered/lastNav/questions — here, the viewer's chosen locale.
+      extraMemory: (questions) => ({ locale: document.documentElement.lang || 'en' }),
+      restoreMemory: (memory) => ({ locale: memory.locale }),
     });
 
-    await session.connect();      // live runtime up
+    await session.connect();      // live runtime up — fires 'disclosure' above, holds speak() until acked
     await presenter.start();      // inject slide-1 prompt (+ memory if returning)
     renderSlide(1, SLIDES[0]);
 

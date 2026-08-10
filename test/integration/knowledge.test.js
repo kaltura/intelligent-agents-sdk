@@ -116,10 +116,10 @@ test('linkCategory writes the VERIFIED categoryEntry indexer DTO (singular categ
   assert.equal(call.body.id, 1505);
   assert.equal(idx.filterType, 'categoryEntry');
   // Backend reads category_info["categoryId"] (SINGULAR string) + ["language"] and
-  // index_config["chunkSize"] at the indexer level (ovp-genie apps/index/index.py:265-267).
+  // index_config["chunkSize"] at the indexer level.
   assert.equal(idx.categoryInfo[0].categoryId, '408750172');
   assert.equal(idx.categoryInfo[0].language, 'English');
-  assert.equal(idx.chunkSize, 5000);      // backend default (index.py:34)
+  assert.equal(idx.chunkSize, 5000);      // backend default
   assert.ok(!('categoryIds' in idx.categoryInfo[0]), 'must NOT emit categoryIds[] — the indexer reads singular categoryId');
   assert.ok(!('objects' in idx.categoryInfo[0]), 'must NOT fabricate objects[]/indexPosition — the indexer never reads them');
   assert.equal(call.body.config.capabilities.use_knowledge_base, 'on');

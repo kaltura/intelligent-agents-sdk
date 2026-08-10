@@ -41,7 +41,7 @@ if (!partnerId || !adminSecret) {
   console.error('  export AGENTIC_PARTNER_ID=your_partner_id');
   console.error('  export AGENTIC_ADMIN_SECRET=your_admin_secret');
   console.error('');
-  console.error('Or put them in a .env file in the repo root (vep/.env):');
+  console.error('Or put them in a .env file in the repo root (one directory above quickstart/):');
   console.error('  AGENTIC_PARTNER_ID=your_partner_id');
   console.error('  AGENTIC_ADMIN_SECRET=your_admin_secret');
   console.error('');
