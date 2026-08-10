@@ -24,6 +24,7 @@
     "test:integration": "node --test test/integration/*.test.js",
     "test:e2e": "node --test test/e2e/*.test.js",
     "test:evals": "node --test test/evals/*.test.js",
+    "test:ci": "node --experimental-test-coverage --test --test-concurrency=1 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=test-results.junit.xml 'test/**/*.test.js'",
     "verify": "node scripts/agent_verify.mjs",
     "docs:gate": "node tools/check-docs.mjs"
   },

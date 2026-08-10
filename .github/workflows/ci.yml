@@ -14,19 +14,46 @@ permissions:
 
 jobs:
   test:
-    name: 🧪 Run the SDK test suite (unit + integration + e2e + evals)
+    name: 🧪 Test suite (Node ${{ matrix.node-version }})
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # engines.node in package.json is ">=18" — this matrix proves every
+        # version in that range actually passes, not just the newest one.
+        node-version: [18, 20, 24]
     steps:
       - name: 📥 Check out the repo
         uses: actions/checkout@v4
 
-      - name: 🟢 Set up Node.js
+      - name: 🟢 Set up Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: ${{ matrix.node-version }}
 
-      - name: 🧪 node --test (all suites, offline — fakes inject fetch/socket/RTC)
-        run: npm test
+      - name: 🧪🩺 node --test + coverage + JUnit report (all suites, offline — fakes inject fetch/socket/RTC)
+        run: npm run test:ci
+
+      - name: 📤 Upload JUnit test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-node${{ matrix.node-version }}
+          path: test-results.junit.xml
+          retention-days: 30
+
+      - name: 📝 Write job summary (Node ${{ matrix.node-version }})
+        if: always()
+        run: |
+          {
+            echo "### 🧪 Test suite — Node ${{ matrix.node-version }}"
+            echo
+            if [ -f test-results.junit.xml ]; then
+              grep -E '<!-- (tests|suites|pass|fail|cancelled|skipped|todo) ' test-results.junit.xml \
+                | sed -E 's/^[[:space:]]*<!-- ([a-z]+) (.*) -->[[:space:]]*$/- **\1:** \2/'
+            else
+              echo "_No test-results.junit.xml produced — the run likely failed before reporting._"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
 
   constitution:
     name: 📜 Verify the SDK Constitution (agent_verify.mjs)
@@ -42,7 +69,21 @@ jobs:
           node-version: 24
 
       - name: 📜 Check every rule in SDK_CONSTITUTION.md (isolation, security, resiliency, performance, DX)
-        run: npm run verify
+        id: verify
+        run: |
+          set -o pipefail
+          npm run verify 2>&1 | tee verify-output.log
+
+      - name: 📝 Write job summary
+        if: always()
+        run: |
+          {
+            echo "### 📜 SDK Constitution verify — ${{ steps.verify.outcome }}"
+            echo
+            echo '```'
+            tail -n 25 verify-output.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
   docs-gate:
     name: 📚 Check docs/code drift, secrets, and GFM hygiene (check-docs.mjs)
@@ -58,4 +99,18 @@ jobs:
           node-version: 24
 
       - name: 🔍 Run the docs CI gate (secrets, GFM, cross-doc links, SDK invariants)
-        run: npm run docs:gate
+        id: docs_gate
+        run: |
+          set -o pipefail
+          npm run docs:gate 2>&1 | tee docs-gate-output.log
+
+      - name: 📝 Write job summary
+        if: always()
+        run: |
+          {
+            echo "### 📚 Docs CI gate — ${{ steps.docs_gate.outcome }}"
+            echo
+            echo '```'
+            tail -n 30 docs-gate-output.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
