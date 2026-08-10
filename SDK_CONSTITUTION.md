@@ -232,7 +232,7 @@ These comments indicate incomplete implementations. Track them as a GitHub issue
 **Failing rules:** none. 20 of 21 rules pass cleanly as of this audit; D-2 is a warning
 by design (candidate dead exports require manual confirmation, since a symbol can be a
 consumer-facing part of the public API with no in-`src/` importer) — re-verified live via
-`cd sdk && npm test` (all passing), `cd sdk && node tools/constitution-harness.mjs` (21 pass,
+`npm test` (all passing), `node tools/constitution-harness.mjs` (21 pass,
 0 fail, exit 0 — its own narrower dead-export check confirms no export-of-undefined), and
-`cd sdk && node scripts/agent_verify.mjs` (`✓ ALL RULES PASS — 1 warning`, D-2's export/import
+`node scripts/agent_verify.mjs` (`✓ ALL RULES PASS — 1 warning`, D-2's export/import
 cross-reference).

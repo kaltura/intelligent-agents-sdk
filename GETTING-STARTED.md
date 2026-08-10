@@ -12,6 +12,10 @@ This guide takes you from zero to a working, talking AI avatar in about 10 minut
 Before you get a Kaltura account, you can see the SDK actually run — offline, no network, no
 secrets — using the same fakes the test suite is built on:
 
+> This repo is currently private — cloning it requires collaborator access and an authenticated
+> git credential helper (SSH key or a git credential manager tied to your GitHub account), not
+> just the bare URL below.
+
 ```bash
 git clone https://github.com/kaltura/intelligent-agents-sdk.git
 cd intelligent-agents-sdk

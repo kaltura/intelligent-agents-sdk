@@ -19,6 +19,9 @@ you're building a real app with the SDK. Also see [CONTRIBUTING.md](CONTRIBUTING
 contribute), [SDK_CONSTITUTION.md](SDK_CONSTITUTION.md) (the invariants every change must hold),
 and [CHANGELOG.md](CHANGELOG.md) (what changed between versions).
 
+> Issue references like "(issue #N)" in this repo's docs and code comments point to the private
+> originating monorepo's history, not to an issue filed in this repo's own tracker.
+
 **Security & compliance:** zero runtime dependencies, short-lived tokens, pre-redacted audit
 events, and a NIST 800-53 control matrix — designed for enterprise, HIPAA, and HITRUST
 deployments. See [Security posture](#security-posture) below or the full matrix in
@@ -48,22 +51,24 @@ export AGENTIC_PARTNER_ID=…
 export AGENTIC_ADMIN_SECRET=…
 node examples/server-token.mjs "A friendly yoga receptionist"
 
-# browser: live avatar
+# browser: live avatar (needs a local server implementing /appInit to actually connect)
 open examples/browser-experience.html
 
-# browser: Presenter / deck walkthrough demo
+# browser: Presenter / deck walkthrough demo (needs a local server implementing /appInit to actually connect)
 open examples/deck-presenter.html
 ```
 
 ### Browser via jsDelivr (no bundler, no npm install)
 
-Once the repo has a tag pushed, jsDelivr serves any file straight from that tag by its real
-repo path — it has no awareness of package.json's `exports` map, so import the real `src/...`
-path, not a bare `@kaltura/intelligent-agents/...` specifier (those bare specifiers, used
-elsewhere in these docs, only resolve for a Node/bundler consumer that reads `exports`):
+Once the repo is public and has a tag pushed, jsDelivr serves any file straight from that tag by
+its real repo path — it has no awareness of package.json's `exports` map, so import the real
+`src/...` path, not a bare `@kaltura/intelligent-agents/...` specifier (those bare specifiers,
+used elsewhere in these docs, only resolve for a Node/bundler consumer that reads `exports`):
 
 ```html
 <script type="module">
+  // @v1.0.0 is illustrative — no tag has been cut yet, so this URL 404s until the repo is
+  // public and a real tag exists.
   import { KalturaAvatarSession } from 'https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.0.0/src/experience/index.js';
   // ... same API as the local examples — see examples/browser-experience.html
 </script>
@@ -694,6 +699,7 @@ await mgmt.knowledge.deleteRecord(rec.id, ks, { confirmPermanent: true });
 | [docs/STRUCTURED-DATA-FORMS.md](docs/STRUCTURED-DATA-FORMS.md) | Collecting typed fields from the user mid-conversation (`user_properties_forms`) — schema, rendering, where submitted values go |
 | [docs/VOICE-INPUT-MODES.md](docs/VOICE-INPUT-MODES.md) | Choosing open-mic vs. push-to-talk, and the UX/accessibility/safety details around each |
 | `examples/` | One runnable example per use-case |
+| [kaltura/earnings-avatar-q2](https://github.com/kaltura/earnings-avatar-q2) | The reference app built on this SDK — an interactive investor-deck presentation narrated by a live avatar (private repo, same org) |
 
 ## License
 

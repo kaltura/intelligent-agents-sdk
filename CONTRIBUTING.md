@@ -6,6 +6,10 @@ external contributors follow the same steps against a fork instead: fork on GitH
 clone your fork, then open a PR from a branch on your fork back to this repo — every
 step after Setup (tests, `verify`, `docs:gate`, PR description) is identical either way.
 
+Issue references like "(issue #N)" scattered through this repo's docs and code comments
+point to the private originating monorepo's issue history, not to an issue filed in this
+repo's own tracker (which starts from zero).
+
 ## Before you start
 
 New to the SDK itself? Read [GETTING-STARTED.md](GETTING-STARTED.md) first to see it
