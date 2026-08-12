@@ -5,8 +5,9 @@ import { Management } from '../../src/management/client.js';
 
 /**
  * Skills resource (wire, `/v1/skill/*`, partner-level) — verified live: add
- * returns the full uuid-id entity, delete replies `{id}` and a follow-up get
- * 404s, another partner's id 403s. There is NO skill/update endpoint.
+ * returns the full uuid-id entity, update re-checks the partner-unique-name
+ * constraint, delete replies `{id}` and a follow-up get 404s, another
+ * partner's id 403s.
  */
 
 const ADMIN_KS = 'djJ8' + 'A'.repeat(40); // looks like an opaque encrypted KS → server-enforced scope
@@ -71,18 +72,60 @@ test('skills.list posts a SkillListFilter and returns the first page (async-iter
   assert.equal(ff.calls[0].body.filter.objectType, 'SkillListFilter');
 });
 
-test('skills.delete requires confirmPermanent, then deletes by id with a _meta receipt', async () => {
+test('skills.update validates BEFORE any network call, then posts a patch to v1/skill/update', async () => {
+  const { mgmt, ff } = harness([
+    { match: 'v1/skill/update', respond: (req) => ({ status: 200, body: { ...SKILL, ...req.body } }) },
+  ]);
+  await assert.rejects(() => mgmt.skills.update('', { name: 'x' }, ADMIN_KS), (e) => e.code === 'bad_request');
+  await assert.rejects(() => mgmt.skills.update(SKILL.id, /** @type {any} */ (null), ADMIN_KS), (e) => e.code === 'bad_request');
+  await assert.rejects(() => mgmt.skills.update(SKILL.id, {}, ADMIN_KS), (e) => e.code === 'bad_request');
+  await assert.rejects(() => mgmt.skills.update(SKILL.id, { name: '' }, ADMIN_KS), (e) => e.code === 'bad_request');
+  await assert.rejects(() => mgmt.skills.update(SKILL.id, { instructions: /** @type {any} */ (42) }, ADMIN_KS), (e) => e.code === 'bad_request');
+  assert.equal(ff.calls.length, 0, 'no transport before validation passes');
+
+  const res = await mgmt.skills.update(SKILL.id, { name: 'greeter2', description: 'd2' }, ADMIN_KS);
+  assert.equal(res.name, 'greeter2');
+  assert.deepEqual(ff.calls[0].body, { id: SKILL.id, name: 'greeter2', description: 'd2' });
+});
+
+test('skills.delete requires confirmPermanent, then checks for referencing intellects, then deletes by id', async () => {
   const { mgmt, ff } = harness([
     { match: 'v1/skill/delete', respond: (req) => ({ status: 200, body: { id: req.body.id } }) },
+    { match: 'v1/intellect/list', respond: () => ({ status: 200, body: { totalCount: 0, objects: [] } }) },
   ]);
   await assert.rejects(() => mgmt.skills.delete(SKILL.id, ADMIN_KS, /** @type {any} */ ({})), (e) => e.code === 'confirmation_required');
   assert.equal(ff.calls.length, 0, 'no write before confirmation');
 
   const res = await mgmt.skills.delete(SKILL.id, ADMIN_KS, { confirmPermanent: true });
   assert.equal(res.removed, SKILL.id);
+  assert.equal(res.skippedInUseCheck, undefined);
   assert.match(res._meta.generatedAt, /^\d{4}-\d{2}-\d{2}T.*Z$/);
   assert.equal(res._meta.scope, `skill:${SKILL.id}`);
-  assert.equal(ff.calls[0].body.id, SKILL.id);
+  assert.match(ff.calls.at(-1).url, /v1\/skill\/delete$/);
+  assert.equal(ff.calls.at(-1).body.id, SKILL.id);
+});
+
+test('skills.delete refuses with skill_in_use when an intellect still carries the id in skill_ids', async () => {
+  const { mgmt, ff } = harness([
+    { match: 'v1/skill/delete', respond: () => ({ status: 200, body: {} }) },
+    { match: 'v1/intellect/list', respond: () => ({ status: 200, body: { totalCount: 1, objects: [{ id: 42 }] } }) },
+    { match: 'v1/intellect/get', respond: () => ({ status: 200, body: { id: 42, skill_ids: [{ id: SKILL.id, mode: 'auto' }] } }) },
+  ]);
+  await assert.rejects(
+    () => mgmt.skills.delete(SKILL.id, ADMIN_KS, { confirmPermanent: true }),
+    (e) => e.code === 'skill_in_use' && /42/.test(e.detail),
+  );
+  assert.equal(ff.calls.some((c) => /v1\/skill\/delete$/.test(c.url)), false, 'refuses before the destructive call');
+});
+
+test('skills.delete with {force:true} skips the reference check entirely', async () => {
+  const { mgmt, ff } = harness([
+    { match: 'v1/skill/delete', respond: () => ({ status: 200, body: {} }) },
+  ]);
+  const res = await mgmt.skills.delete(SKILL.id, ADMIN_KS, { confirmPermanent: true, force: true });
+  assert.equal(res.removed, SKILL.id);
+  assert.equal(res.skippedInUseCheck, true);
+  assert.equal(ff.calls.some((c) => /v1\/intellect\/list$/.test(c.url)), false, 'force bypasses the lookup entirely');
 });
 
 test('every skills wire method asserts admin scope (rejects a conversation token)', async () => {
@@ -90,6 +133,7 @@ test('every skills wire method asserts admin scope (rejects a conversation token
   const convToken = { ks: 'djJ8conv', kind: 'conversation' };
   await assert.rejects(async () => mgmt.skills.add({ name: 'x', description: 'd' }, convToken), (e) => e.code === 'wrong_token_scope');
   await assert.rejects(async () => mgmt.skills.get(SKILL.id, convToken), (e) => e.code === 'wrong_token_scope');
+  await assert.rejects(async () => mgmt.skills.update(SKILL.id, { name: 'x' }, convToken), (e) => e.code === 'wrong_token_scope');
   await assert.rejects(async () => mgmt.skills.delete(SKILL.id, convToken, { confirmPermanent: true }), (e) => e.code === 'wrong_token_scope');
   await assert.rejects(async () => mgmt.skills.list(convToken), (e) => e.code === 'wrong_token_scope');
 });

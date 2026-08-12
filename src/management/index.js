@@ -40,7 +40,7 @@ export {
 // (`waitForResponse`/`session.respondToTool`). `clientToolReadiness` lints the two
 // deployment gotchas any tool-referencing intellect hits (experiences out-compete + the
 // 24h capability cache).
-export { tools, clientToolReadiness, client, applyResponseMapping, TOOL_TYPES, HTTP_METHODS, ARG_TYPES } from './tools.js';
+export { tools, clientToolReadiness, client, applyResponseMapping, findIntellectsReferencingTool, TOOL_TYPES, HTTP_METHODS, ARG_TYPES } from './tools.js';
 // Secrets ref-checker: the CRUD class lives on `mgmt.intellects.secrets`; this is the pure helper.
 export { validateSecretRefs } from './secrets.js';
 // Prompt authoring depth: linters + client-side system-prompt preview.

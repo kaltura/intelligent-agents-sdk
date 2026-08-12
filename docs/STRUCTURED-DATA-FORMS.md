@@ -1,15 +1,14 @@
-# Structured Data Forms (`user_properties_forms`)
+# Collecting structured data from a viewer (`user_properties_forms`)
 
-How to make an agent ask the user for structured, typed data mid-conversation — a support
+How to make an agent ask the viewer for structured, typed data mid-conversation — a support
 ticket's category and urgency, a booking's preferred date, a survey rating, a sales lead's email
 and phone, or any other shape of data your use case needs — how the SDK renders that request, and
 where the submitted values actually go.
 
-`user_properties_forms` is a general-purpose "collect typed fields from the user" primitive: the
+`user_properties_forms` is a general-purpose "collect typed fields from the viewer" primitive: the
 fields, prompt injection, rendering, and reporting all work identically no matter what the fields
-represent — a support ticket's category, a booking date, a survey rating, or a sales lead's email
-are all the same mechanism. The one place this shows up in the SDK's own surface is naming: the
-method you call to report values back is `session.submitStructuredDataForm()`, over a wire event named
+represent. The one place this shows up in the SDK's own surface is naming: the method you call to
+report values back is `session.submitStructuredDataForm()`, over a wire event named
 `setFormLeadInfo` — both named after the feature's most common use case, not its only one.
 
 All claims below are anchored to source: the Genie brain backend (the conversational AI backend
@@ -189,12 +188,8 @@ specializes.
 
 If your intellect also uses custom `tool_ids` (e.g. a closed set of client commands like
 `navigate_to_slide`/`show_widget`), you'll likely set `capabilities: { kaltura_genie_experiences:
-'off' }` or `'disabled'`. That capability is the master switch for Genie's own **structured GenUI
-experiences** (flashcards, summary, markdown formatting) — when on, it injects a competing "you
-MUST call `get_experience_instructions`" instruction from the Genie brain backend's experiences
-module (`"Flashcards is your DEFAULT response format... ALL other requests → MUST use
-get_experience_instructions with args \`flashcards\`"`) that out-competes a custom tool for the
-same "what do I show" decision.
+'off' }` or `'disabled'` — see [EXTERNAL-API-INTEGRATIONS.md § Don't skip `kaltura_genie_experiences: 'off'`](EXTERNAL-API-INTEGRATIONS.md#dont-skip-kaltura_genie_experiences-off)
+for what that capability does and why.
 
 **This does not touch `user_properties_forms` at all.** The two mechanisms are independent code
 paths — `kaltura_genie_experiences` governs `UNISPHERE_TOOLS` families like `flashcards`/

@@ -15,6 +15,7 @@
 import { meta, uuidv4 } from '../core/ids.js';
 import { KalturaError } from '../core/errors.js';
 import { resolveIntellectId } from './agents.js';
+import { findIntellectsReferencingTool } from './tools.js';
 
 /**
  * @param {import('./client.js').Management} mgmt
@@ -162,21 +163,33 @@ async function applyCapabilities(mgmt, configId, patch, ks) {
 
 /**
  * OPTIONAL tools block. Each typed tool is created as a standalone Tool entity
- * via `mgmt.tools.add` (partner-level, NOT intellect-scoped) — IDEMPOTENT BY
- * NAME: an existing Tool sharing the definition's `name` is updated in place
- * rather than re-added (`add()` alone is NOT idempotent and a duplicate name
- * may be rejected server-side), so the same tool can be shared safely across
+ * via `mgmt.tools.add` (partner-level, NOT intellect-scoped) — UPSERT BY NAME:
+ * an existing Tool sharing the definition's `name` is reused rather than
+ * re-added (`add()` alone is NOT idempotent and a duplicate name may be
+ * rejected server-side), so the same tool can be shared safely across
  * repeated/parallel `provision()` calls. The whole batch of ids is then linked
- * in ONE `mgmt.intellectConfig.setToolIds` write. Overwriting the reference
- * list is safe here specifically because `configId` was just freshly created
- * by THIS SAME call (see `provision()` above) and so starts with no `tool_ids`
- * of its own to lose — this function is not meant for re-linking tools onto an
+ * in ONE `mgmt.intellectConfig.setToolIds` write. Overwriting THIS intellect's
+ * `tool_ids` list is safe because `configId` was just freshly created by THIS
+ * SAME call (see `provision()` above) and so starts with no `tool_ids` of its
+ * own to lose — this function is not meant for re-linking tools onto an
  * already-existing intellect from elsewhere.
+ *
+ * SHARED-BY-NAME HAZARD GUARD: a name match doesn't mean the existing Tool is
+ * "yours" — since `configId` is brand new it can't be one of the intellects
+ * already referencing that Tool, so ANY referencing intellect found is a
+ * DIFFERENT one relying on that entity's current `config` (see `tools.js`'s
+ * class doc). Before mutating a name-matched Tool in place, this runs the same
+ * reference check `Tools#delete` uses ({@link findIntellectsReferencingTool}):
+ * if the Tool is already in use elsewhere, its config is left untouched and
+ * its id is simply reused for linkage — recorded in the returned
+ * `skippedUpdates`, never silently overwritten out from under the other
+ * intellect(s).
+ *
  * Each tool create/update reports its own result so one bad tool never hides
  * the others, and a failure never fails the provision. Feature-detected.
  * @param {import('./client.js').Management} mgmt @param {number} configId
  * @param {object[]} toolDefs @param {string} ks
- * @returns {Promise<{attached:string[], failed:Array<{name?:string, reason:string}>, ids:string[], linked:boolean, linkReason?:string, applied:boolean, reason?:string}>}
+ * @returns {Promise<{attached:string[], failed:Array<{name?:string, reason:string}>, skippedUpdates?:Array<{name:string, toolId:string, referencedBy:number[]}>, ids:string[], linked:boolean, linkReason?:string, applied:boolean, reason?:string}>}
  */
 async function applyTools(mgmt, configId, toolDefs, ks) {
   const list = Array.isArray(toolDefs) ? toolDefs : [];
@@ -186,6 +199,7 @@ async function applyTools(mgmt, configId, toolDefs, ks) {
   }
   const attached = [];
   const failed = [];
+  const skippedUpdates = [];
   const ids = [];
   // Fetched at most once, lazily, and only if there's at least one named tool to look up.
   let existingByName;
@@ -199,8 +213,13 @@ async function applyTools(mgmt, configId, toolDefs, ks) {
       } else {
         existingByName ??= new Map((await toolsRes.list(ks).all()).map((t) => [t.name, t]));
         const existing = existingByName.get(name);
-        if (existing) await toolsRes.update(existing.id, { config: tool }, ks);
-        else existingByName.set(name, await toolsRes.add(tool, ks));
+        if (existing) {
+          const refs = await findIntellectsReferencingTool(mgmt._ctx, existing.id, ks);
+          if (refs.length > 0) skippedUpdates.push({ name, toolId: existing.id, referencedBy: refs });
+          else await toolsRes.update(existing.id, { config: tool }, ks);
+        } else {
+          existingByName.set(name, await toolsRes.add(tool, ks));
+        }
         ids.push(existingByName.get(name).id);
       }
       attached.push(name);
@@ -220,6 +239,7 @@ async function applyTools(mgmt, configId, toolDefs, ks) {
   }
   return {
     attached, failed, ids, linked,
+    ...(skippedUpdates.length ? { skippedUpdates } : {}),
     ...(linkReason ? { linkReason } : {}),
     applied: failed.length === 0 && linked,
   };

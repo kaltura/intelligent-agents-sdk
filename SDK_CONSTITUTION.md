@@ -205,34 +205,32 @@ These comments indicate incomplete implementations. Track them as a GitHub issue
 
 ## Compliance summary
 
-| Rule | Category | Status (as of audit) | How to verify |
-|------|----------|----------------------|---------------|
-| I-1 | Isolation | **PASS** — no `let` at module top level | grep |
-| I-2 | Isolation | **PASS** — one `globalThis` read only (`_networkAware` check) | grep |
-| I-3 | Isolation | **PASS** — tested in isolation.test.js | node:test |
-| I-4 | Isolation | **PASS** — `_unwireNetwork()` implemented | isolation.test.js |
-| S-1 | Security | **PASS** — zero eval / new Function | grep |
-| S-2 | Security | **PASS** — zero innerHTML assignments | grep |
-| S-3 | Security | **PASS** — safeUrl used at all link-build sites | security.test.js |
-| S-4 | Security | **PASS** — sanitizeJson in setDynamicPrompt | compliance.test.js |
-| S-5 | Security | **PASS** — non-enumerable secret | isolation.test.js |
-| S-6 | Security | **PASS** — no hardcoded tokens | grep |
-| R-1 | Resiliency | **PASS** — exponential backoff w/ full jitter in `Http.request()` | http.test.js |
-| R-2 | Resiliency | **PASS** — GETs retried on any transient failure | http.test.js |
-| R-3 | Resiliency | **PASS** — idempotency-key POSTs retried; non-keyed POSTs retried only on status-0 | http.test.js |
-| R-4 | Resiliency | **PASS** — abort signal stops the retry loop immediately | http.test.js |
-| R-5 | Resiliency | **PASS** — injectable `delayFn`, retries exercised at zero wall-clock cost | http.test.js |
-| P-1 | Performance | **PASS** — `maxResponseBytes` (default 10 MiB) enforced on `Content-Length` and body size | http.test.js |
-| P-2 | Performance | **PASS** — JSON parsing is post-read | http.js |
-| P-3 | Performance | **PASS** — zero runtime deps | package.json |
-| D-1 | DX | **PASS** — all public exports have JSDoc | scan |
-| D-2 | DX | **WARN** — 40 exported symbols with no detected in-`src/` consumer (confirm before deleting; not an error on first pass) | `node scripts/agent_verify.mjs` |
-| D-3 | DX | **PASS** — no TODO/FIXME/HACK found | grep |
+This table summarizes what each rule checks, not whether it currently passes — for
+current pass/fail status, run `npm run verify` (`scripts/agent_verify.mjs`), the only
+valid proof of compliance per the note at the top of this document.
 
-**Failing rules:** none. 20 of 21 rules pass cleanly as of this audit; D-2 is a warning
-by design (candidate dead exports require manual confirmation, since a symbol can be a
-consumer-facing part of the public API with no in-`src/` importer) — re-verified live via
-`npm test` (all passing), `node tools/constitution-harness.mjs` (21 pass,
-0 fail, exit 0 — its own narrower dead-export check confirms no export-of-undefined), and
-`node scripts/agent_verify.mjs` (`✓ ALL RULES PASS — 1 warning`, D-2's export/import
-cross-reference).
+| Rule | Category | What it checks | How to verify |
+|------|----------|-----------------|---------------|
+| I-1 | Isolation | No `let` at module top level | grep |
+| I-2 | Isolation | Only reads of `globalThis`/`window`/`self`, never writes | grep |
+| I-3 | Isolation | No cross-instance credential/state leakage | isolation.test.js |
+| I-4 | Isolation | Event listeners removed on disconnect/destroy | isolation.test.js |
+| S-1 | Security | No `eval` / `new Function` / equivalent | grep |
+| S-2 | Security | No `innerHTML`/`outerHTML`/`insertAdjacentHTML` assignments | grep |
+| S-3 | Security | Untrusted URLs pass through `safeUrl` | security.test.js |
+| S-4 | Security | Untrusted JSON passes through `sanitizeJson` | compliance.test.js |
+| S-5 | Security | Admin secret is non-enumerable | isolation.test.js |
+| S-6 | Security | No hardcoded credentials or token literals | grep |
+| R-1 | Resiliency | Exponential backoff with full jitter in `Http.request()` | http.test.js |
+| R-2 | Resiliency | GETs retried on any transient failure | http.test.js |
+| R-3 | Resiliency | Idempotency-key POSTs retried; non-keyed POSTs retried only on status-0 | http.test.js |
+| R-4 | Resiliency | Abort signal stops the retry loop immediately | http.test.js |
+| R-5 | Resiliency | Injectable `delayFn`, retries exercised at zero wall-clock cost | http.test.js |
+| P-1 | Performance | `maxResponseBytes` enforced on `Content-Length` and body size | http.test.js |
+| P-2 | Performance | JSON parsing happens post-read, size-guarded | http.js |
+| P-3 | Performance | Zero runtime dependencies | package.json |
+| D-1 | DX | All public exports carry JSDoc | scan |
+| D-2 | DX | See Rule D-2 above — candidate dead exports (warning, not error) | `node scripts/agent_verify.mjs` |
+| D-3 | DX | No TODO/FIXME/HACK/XXX/STUB found | grep |
+
+Rule D-2 warns rather than errors by design — see Rule D-2 above for why.

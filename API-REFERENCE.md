@@ -1,4 +1,4 @@
-# API Reference — Kaltura Agentic Avatar
+# API Reference — Kaltura Agentic Avatars
 
 Every endpoint, the full agent lifecycle, and a verified use-case catalog — copy-paste ready.
 
@@ -6,7 +6,8 @@ Every endpoint, the full agent lifecycle, and a verified use-case catalog — co
 
 **Credentials** — all examples need `AGENTIC_PARTNER_ID` and `AGENTIC_ADMIN_SECRET` ([Rich Media CMS → Settings → Integration Settings](https://kmc.kaltura.com/index.php/kmcng/settings/integrationSettings)). Set them in a local `.env` (copy `.env.example`) or pass inline. Never hardcode the secret.
 
-**About the `node tools/agentic.mjs` / `node tools/genie.mjs` examples below** — these name an internal reference CLI that exercises every endpoint in this doc, but that CLI isn't shipped in this repo (`tools/` here only has `check-docs.mjs` and `constitution-harness.mjs`). Treat each one as shorthand for the equivalent SDK call — e.g. `node tools/agentic.mjs catalog-list Visual` means `mgmt.catalog.list({ type: 'Visual' })`, `node tools/genie.mjs converse-pretty` means `mgmt.converse(...)` or `mgmt.converseOnce(...)` — see [`README.md`](README.md) for the full `Management` method list.
+Every endpoint below is shown as a raw HTTP call plus its SDK wrapper. The SDK is what ships in
+this repo — see [`README.md`](README.md) for the full `Management` method list.
 
 ---
 
@@ -16,18 +17,17 @@ Every endpoint, the full agent lifecycle, and a verified use-case catalog — co
 |-----------|---------------------|
 | [Authentication](#authentication) | [Management Operations](#management-operations) |
 | [The Five Services](#the-five-services) | [Common Errors](#common-errors) |
-| [Phase 1 — Design](#phase-1--design) | [Use-Case Catalog](#use-case-catalog) |
-| [Phase 2 — Build](#phase-2--build) | [UC-1 Agent Factory](#use-case-catalog) |
-| [Phase 3 — Deploy (embed + runtime init)](#phase-3--deploy) | [UC-7 Interactive Video Avatar](#use-case-catalog) |
-| [Phase 4 — Operate](#phase-4--operate) | [UC-12 Anonymous End-User Embed](#use-case-catalog) |
-| [Quick Reference](#quick-reference) | [UC-13 Custom Portrait Avatar](#use-case-catalog) |
+| [Phase 1 — Design](#phase-1--design) | [Use-Case Catalog](docs/USE-CASES.md) (13 use cases, UC-1 through UC-13) |
+| [Phase 2 — Build](#phase-2--build) | [Quick Reference](#quick-reference) |
+| [Phase 3 — Deploy (embed + runtime init)](#phase-3--deploy) | |
+| [Phase 4 — Operate](#phase-4--operate) | |
 
 ---
 
 **What can you build?** A concierge with memory (UC-2/UC-3), a GenUI-driven product demo (UC-4),
 a slide-deck walkthrough avatar (UC-10), a self-serve custom-voice/custom-portrait agent
 (UC-9/UC-13), an anonymous embeddable widget (UC-12), or a fleet of A/B-tested personas (UC-5) —
-see the full [Use-Case Catalog](#use-case-catalog) for all 13, each mapped to its key mechanism
+see the full [Use-Case Catalog](docs/USE-CASES.md) for all 13, each mapped to its key mechanism
 and a runnable script/tool.
 
 ---
@@ -75,7 +75,7 @@ An agent is built from five services that layer on top of each other. All calls 
 
 Once deployed, the **conversation surface** (`/assistant/converse`, `/v1/thread/`, `/mcp/`) lives on `genie.nvp1.ovp.kaltura.com`. Utility endpoints (`/application/`) for widget resolution and runtime init are on `api.avatar.us.kaltura.ai`.
 
-To embed a live avatar in a browser, go to [Phase 3 — Deploy](#phase-3--deploy) or jump straight to [UC-12 Anonymous End-User Embed](#use-case-catalog).
+To embed a live avatar in a browser, go to [Phase 3 — Deploy](#phase-3--deploy) or jump straight to [UC-12 Anonymous End-User Embed](docs/USE-CASES.md).
 
 ---
 
@@ -100,7 +100,7 @@ Change `typeEqual` to `"Voice"` for voices. Each item has an `itemId` — pass i
 
 **Voice preset fields:** `itemId`, `attributes.voice.{name, description, language}`, `voiceSampleUrl`.
 
-Tool: `node tools/agentic.mjs catalog-list Visual` or `catalog-list Voice`.
+SDK: `mgmt.catalog.list(ks, { type: 'Visual' })` or `{ type: 'Voice' }`.
 
 ---
 
@@ -162,8 +162,6 @@ adminTags=custom
 Returns a `CatalogItemDto` whose `itemId` is the catalog visual. Pass it as `visual.id` in `avatar/create` (or `visualId` in `provision`). The model **animates the portrait live at runtime** — no preprocessing, no ops involvement, self-serve. Verified: a real 2.4 MB portrait JPEG (`avatar-session/create` → `{success:true, sessionId}`).
 
 **Required fields** (API 400s if any are missing): `name`, `genderPresentation`, `background`, `skinTone`, `ageGroup`, `hairColor`. The gap today is video-clip ingest (a short clip → a higher-fidelity avatar model) — not yet self-serve.
-
-**Shell shortcut:** `node tools/agentic.mjs visual-upload <file.jpg> <name> <Masculine|Feminine> [skinTone] [ageGroup] [hairColor]`
 
 **SDK shortcut:** `catalog.createVisual(imageBlob, { name, genderPresentation, background, skinTone, ageGroup, hairColor }, adminKs)` — returns `{ itemId, loadingVideo }` (raw API response — field names come from the CatalogItemDto and are not SDK-normalized; treat as best-effort until the API contract is pinned).
 
@@ -464,7 +462,14 @@ Returns `agentId` (UUID). **Save this.**
 
 > `partner-config/update` access will be removed for non-superadmin partners. Don't build production workflows on it.
 
-The brain-model and rate-limit fields (`agent_llm`, `agent_fast_llm`, rate limits, and the best-effort `agent_avatar_llm`/`run_quota_check`/`web_search_config`) are **not in the intellect DTO** — `intellect/get`/`intellect/update` never expose or accept them. The only door is Genie's `partner-config/*` route family, split across three operations with different availability:
+Brain-model and rate-limit fields are **not in the intellect DTO** — `intellect/get`/`intellect/update` never expose or accept them. The only door is Genie's `partner-config/*` route family:
+
+| Class | Fields | Round-trip verified? |
+|---|---|---|
+| Class A | `agent_llm`, `agent_fast_llm`, rate limits | Yes |
+| Class B (best-effort) | `agent_avatar_llm`, `run_quota_check`, `web_search_config` | No — sendable via `setBrainConfig`, but unverified to persist |
+
+`partner-config/*` splits across three operations with different availability:
 
 | Operation | Route | KS | Works on a partner admin KS today? |
 |---|---|---|---|
@@ -490,7 +495,7 @@ const result = await mgmt.intellects.setBrainConfig(configId, {
 // { applied:true, sentKeys:[...], result } when the door is open.
 ```
 
-**Step 3 — read back what's actually persisted** (`setBrainConfig`'s `applied`/`sentKeys` list what was *sent*, not confirmed *persisted* — the Class-B subset `agent_avatar_llm`/`run_quota_check`/`web_search_config` is unverified to round-trip):
+**Step 3 — read back what's actually persisted** (`setBrainConfig`'s `applied`/`sentKeys` list what was *sent*, not confirmed *persisted* — see the Class B row above):
 
 ```js
 const { brainConfig, unsetUseDefault } = await mgmt.intellects.getBrainConfig(configId, ks);
@@ -498,7 +503,12 @@ const { brainConfig, unsetUseDefault } = await mgmt.intellects.getBrainConfig(co
 
 **SDK:** `mgmt.intellects.{brainConfigAvailable, setBrainConfig, getBrainConfig}`. `brainConfigAvailable`/`setBrainConfig` share a classifier with `knowledge.linkAvailable`/`linkRecords` (§ Ground the Agent Path B) — both probe the same `partner-config/*` door.
 
-**Why the SDK still ships this** given the write is gated and slated for removal: the reads are live and useful today (`getBrainConfig` is the only way to see `agent_llm`/rate limits at all — the intellect DTO doesn't carry them), and until the route is actually removed, `setBrainConfig` is the only client-side path to those fields for a deployment where it *is* open (e.g. a superadmin-provisioned partner). The probe-first design means a caller never gets a false success — a closed door returns `{applied:false, reason}`, never a silent no-op or a thrown 403.
+**Status of each part, despite the write being gated and slated for removal:**
+
+| Part | Status |
+|---|---|
+| `getBrainConfig` (read) | Live — the only way to see `agent_llm`/rate limits; the intellect DTO doesn't carry them |
+| `setBrainConfig` (write) | Client-side path to those fields where the door is open (e.g. a superadmin-provisioned partner); returns `{applied:false, reason}` rather than a silent no-op or a thrown 403 when it's closed |
 
 ---
 
@@ -629,9 +639,14 @@ All thread endpoints require an **admin KS** (`disableentitlement`). Pager: `{"p
 
 **Transcript response:** `{"status":"success","data":"human: …\nai: …"}` — plain text, one turn per line.
 
-**Delete** returns `{totalCount, objects[]}` (soft delete — data is retained server-side; this is a known GDPR Art. 17 gap).
+**Delete** returns `{totalCount, objects[]}` — a soft delete; data is retained server-side.
 
-Tool: `node tools/genie.mjs thread-list | thread-get | thread-rename | thread-delete | thread-transcripts`.
+SDK: `mgmt.threads.{list, get, rename, delete, transcript}`.
+
+> **Compliance note.** `threads.delete()` is not a full GDPR Art. 17 erasure — retention past
+> a soft delete is a server-side, operator-owned control. See
+> [SECURITY.md](SECURITY.md#shared-responsibility-control-matrix-nist-800-53) for what the SDK
+> provides versus what the operator must configure.
 
 ---
 
@@ -642,30 +657,24 @@ Feedback and follow-up suggestions route through internal Genie paths — use th
 - `mgmt.feedback.add({message_id, is_positive, comment?}, convKs)` — thumbs up/down on a message. `message_id` comes from the converse stream.
 - `mgmt.followups.getSuggested(ks)` — pre-configured starter questions. Per-answer follow-ups stream inline as `unisphere-tool` segments when `capabilities.generate_followup_questions:"on"`.
 
-Shell tools (`node tools/genie.mjs feedback-add`, `node tools/genie.mjs followup-get`) call these paths for debugging only.
-
 ---
 
 ### Usage Analytics
 
 Partner-scoped read-only CSV — contains end-user IDs and verbatim questions (treat as PII).
 
-Tool: `node tools/genie.mjs report` (raw CSV) · `node tools/genie.mjs report-summary` (volume + feedback ratio + top questions, with `_meta` provenance receipt).  
-SDK: `mgmt.messages.report(ks)` / `mgmt.messages.reportSummary(ks)`.  
-Example: `node tools/genie.mjs report-summary`.
+SDK: `mgmt.messages.report(ks)` (raw CSV) / `mgmt.messages.reportSummary(ks)` (volume + feedback ratio + top questions, with a `_meta` provenance receipt).
 
 ---
 
 ### Knowledge Search (MCP)
-
-**Official spec:** documented internally as `openapi-search-external.yaml` in the Genie brain backend's spec directory.
 
 ```
 POST https://genie.nvp1.ovp.kaltura.com/mcp/search
 { "query": "adaptive bitrate streaming" }
 ```
 
-Returns `{status, data}`. A partner with no indexed content returns a `"couldn't find relevant information"` error response. Tool: `node tools/genie.mjs mcp-search <query>`.
+Returns `{status, data}`. A partner with no indexed content returns a `"couldn't find relevant information"` error response. SDK: `mgmt.knowledge.search(query, ks)`.
 
 ---
 
@@ -685,7 +694,7 @@ All use the **admin KS**.
 
 `agent/list` has no server-side filtering — always send `"filter":{}` and filter client-side.
 
-`agent/getEmbedScript` replies `{"objectType":"Object","html":"<script…>"}` — a ready-to-paste `<script type='module'>` snippet that loads the Unisphere embeds loader and renders the agent's chat widget (`apis.genieChat.<embedType>(…)`). `embedType` is a closed enum; anything else 400s. SDK: `mgmt.agents.getEmbedScript(agentId, embedType, ks)` unwraps to the html string.
+`agent/getEmbedScript` replies `{"objectType":"Object","html":"<script…>"}` — a ready-to-paste `<script type='module'>` snippet that loads the Unisphere (the GenUI/runtime platform this SDK's `./experience/genui` renders against) embeds loader and renders the agent's chat widget (`apis.genieChat.<embedType>(…)`). `embedType` is a closed enum; anything else 400s. SDK: `mgmt.agents.getEmbedScript(agentId, embedType, ks)` unwraps to the html string.
 
 ### Avatars — `https://api.avatar.us.kaltura.ai`
 
@@ -724,14 +733,17 @@ Deleting a Tool does **not** cascade — an intellect that still lists the id in
 
 ### Skills — `https://genie.nvp1.ovp.kaltura.com`
 
-A standalone, partner-level reusable-instruction entity — `{id (uuid), name, description, instructions}`. All four operations verified live; there is **no `skill/update`** on the current deployment (recreate to change). SDK: `mgmt.skills`.
+A standalone, partner-level reusable-instruction entity — `{id (uuid), name, description, instructions}`. All five operations verified live. SDK: `mgmt.skills`. A Skill's `name` is checked against your partner id OR partner `0` (a shared global pool), so a name can collide with a global-pool Skill in ways invisible from a partner-scoped `list()` — the same nuance applies to Tools below.
 
 | Operation | Endpoint | Body |
 |-----------|----------|------|
 | List | `POST /v1/skill/list` | `{"filter":{"objectType":"SkillListFilter"},"pager":{"pageIndex":1,"pageSize":30}}` |
 | Get | `POST /v1/skill/get` | `{"id":"SKILL_UUID"}` |
 | Add | `POST /v1/skill/add` | `{"name":"...", "description":"...", "instructions"?}` |
+| Update | `POST /v1/skill/update` | `{"id":"SKILL_UUID", "name"?, "description"?, "instructions"?}` — idempotent; renames re-check the same partner-unique-name constraint as Add (409 on conflict) |
 | Delete | `POST /v1/skill/delete` | `{"id":"SKILL_UUID"}` — replies `{id}`; a follow-up get 404s |
+
+Before deleting a Skill, `mgmt.skills.delete` lists every intellect and refuses with a typed `skill_in_use` error naming each one still referencing the id in `skill_ids`, unless called with `{confirmPermanent:true, force:true}`. Tools' `mgmt.tools.delete` carries the identical `tool_in_use` guard.
 
 ### Knowledge records — `https://genie.nvp1.ovp.kaltura.com`
 
@@ -762,40 +774,22 @@ Deleting a record does **not** unlink it — an intellect's `knowledge_ids` keep
 
 ## Use-Case Catalog
 
-Each use case maps to a CLI tool command or a reference app. UC-1 has a quickstart script; UC-9 uses the CLI tool directly; UC-12/13 use the browser apps noted in the Script column.
-
-| # | Use case | Key mechanism | Script / Tool |
-|---|----------|--------------|--------|
-| UC-1 | **Agent Factory** | `generateAgentProfile` → `intellect/add` → configure → `avatar/create` → `agent/create` → `resolveWidgetId` | `node quickstart/create-agent.mjs "Your brief"` |
-| UC-2 | **Personalized Concierge** | Prompts with `{{firstName}}`/`{{plan}}` + `allow_client_variables:true`; pass `request_vars` per message | `node tools/genie.mjs converse-pretty` with `request_vars` |
-| UC-3 | **Memory Chatbot** | First `converse` returns `threadId`; pass it back. `v1/thread/get_transcripts` for the full record | `node tools/genie.mjs converse-pretty` + `thread-list` |
-| UC-4 | **GenUI Experiences** | `force_experience` hint + `capabilities`; render `unisphere-tool` segments by `metadata.runtimeName` | `node tools/genie.mjs converse-pretty` |
-| UC-5 | **Avatar Fleet / A-B Personas** | `avatar/create` variants, `avatar/clone` to fork, `agent/update avatarIds` to swap | `node tools/agentic.mjs avatar-clone` |
-| UC-6 | **Quality / Feedback Loop** | Capture `messageId` from converse → `mgmt.feedback.add()` → `report-summary` | `node tools/genie.mjs feedback-add` + `report-summary` |
-| UC-7 | **Interactive Video Avatar** | `resolveWidgetId` → widget KS → `appInit` → socket.io + WHEP runtime | `examples/browser-experience.html` |
-| UC-8 | **Headless Streaming Text** | `assistant/converse` (`sse:true` or NDJSON); stream `type:"text"` chunks; persist `threadId` server-side | `node tools/genie.mjs converse-pretty` |
-| UC-9 | **Custom Voice Clone** | `catalog-item/create` (multipart, `~6 s+` audio) → `itemId` → `avatar/create voice.id` | `node tools/agentic.mjs voice-upload` |
-| UC-10 | **Slide-Deck Walkthrough** | Deck talking points in prompts; deterministic `navigate_to_slide` client-command tool call for nav; optional GenUI widget via `show_widget` | `examples/deck-presenter.html` |
-| UC-11 | **Usage Analytics** | `node tools/genie.mjs report-summary` → CSV aggregated client-side; includes `_meta` provenance receipt | `node tools/genie.mjs report-summary` |
-| UC-12 | **Anonymous End-User Embed** | `resolveWidgetId` once (server) → `sessions.createWidgetToken` (browser, no secret) → `appInit` → enriched KS | `examples/browser-experience.html` |
-| UC-13 | **Custom Portrait Avatar** | `catalog-item/create` with portrait JPEG → `catalogItemId` → `avatar/create visual.id` → `appInit` → `KalturaAvatarSession` connects with the portrait animating live | § End-to-end recipe above + `test/integration/avatars-catalog.test.js` |
-
-### Composition patterns
-
-| Pattern | Built from |
-|---------|-----------|
-| Knowledge-grounded support bot | UC-3 + `capabilities.use_knowledge_base:on` + § Ground the Agent |
-| Multi-brand personas | UC-5 (voice) + UC-2 (`{{locale}}` var) |
-| Lead-capture avatar | UC-7 + `user_properties_forms` |
-| Scheduled / proactive avatar | UC-7 + your scheduler calls `speak()` on the socket |
+A "what can you build" catalog of all 13 use cases (UC-1 through UC-13) and composition patterns,
+each mapped to its key mechanism and a runnable script/SDK entry point, has moved to its own file:
+see [docs/USE-CASES.md](docs/USE-CASES.md).
 
 ---
 
 ## Quick Reference
 
-```bash
-node tools/agentic.mjs help
-node tools/genie.mjs help
-node tools/agentic.mjs agent-list  | python3 -m json.tool
-node tools/genie.mjs  intellect-list | python3 -m json.tool
+The full `Management` method surface (this doc's endpoints, wrapped) is listed in
+[`README.md`](README.md) → Management. Two common lookups:
+
+```js
+import { Management } from '@kaltura/intelligent-agents/management';
+const mgmt = new Management({ partnerId, adminSecret });
+const ks = await mgmt.sessions.createAdminToken();
+
+console.log(await mgmt.agents.list(ks).all());
+console.log(await mgmt.intellects.list(ks).all());
 ```

@@ -1,8 +1,8 @@
-# Genie GenUI — Complete Capabilities Reference
+# GenUI — Complete Capabilities Reference
 
 Everything an agent can put **on screen** beyond spoken text: the `unisphere-tool`
 runtimes (flashcards, summaries, sources, forms, Kaltura/external video, images, links)
-the Genie brain emits as `type:"unisphere-tool"` stream segments, and the SDK renders
+the Genie brain backend emits as `type:"unisphere-tool"` stream segments, and the SDK renders
 natively via `ExperienceRenderer`.
 
 This is the authoritative map — every runtime, its enabling capability, the exact wire
@@ -14,8 +14,8 @@ behavior is inferred rather than live-captured, it is marked **INFERRED**.
 
 ## The model in one paragraph
 
-The brain emits a **GenUI widget** by writing a fenced block carrying a `widgetName`. Genie's
-`message_service` (backend, the Genie brain backend) converts that into a stream segment of
+The brain emits a **GenUI widget** by writing a fenced block carrying a `widgetName`. The Genie
+brain backend's `message_service` converts that into a stream segment of
 `type:"unisphere-tool"` shaped `{ type, content, metadata:{ widgetName, runtimeName }, speechId?,
 threadId? }`. **All widgets share `widgetName:"unisphere.widget.genie"`** — the host keys off
 `metadata.runtimeName` (stripping the `-tool` suffix) to pick a renderer. The SDK turns each
@@ -98,78 +98,114 @@ LLM output) and clamps text via `safeText(str, max)` and URLs via `safeUrl(url, 
 
 ### 1. flashcards (`renderFlashcards`)
 
-- Cards from `model.cards` | `model.items` | `model.flashcards`.
-- Each card: `front` ← `front|question|term` (≤1000 chars); `back` ← `back|answer|definition`
-  (≤4000). Title ← `model.title` (≤300).
-- Descriptor: `{kind:'flashcards', data:{title, cards:[{front, back, label}]}}` — `label` ←
-  `label|front` (≤120) is the flip toggle's accessible name.
+Cards come from `model.cards`, `model.items`, or `model.flashcards`. Each card:
+
+| Field | Source keys (model) | Constraint |
+|---|---|---|
+| `front` | `front`, `question`, `term` | ≤1000 chars |
+| `back` | `back`, `answer`, `definition` | ≤4000 chars |
+| `title` | `title` | ≤300 chars |
+| `label` | `label`, `front` | ≤120 chars — the flip toggle's accessible name |
+
+Descriptor: `{kind:'flashcards', data:{title, cards:[{front, back, label}]}}`.
 
 ### 2. followups (`renderFollowups`)
 
-- Questions from `model.questions` | `model.followups` | `model.items`; each item is a string or
-  `{text|question}` (≤500 chars), empties filtered.
-- Descriptor: `{kind:'followups', data:{questions:[string]}}`.
-- Server-side `add_to_history:false` — chips are suggestions, not replayed into history.
+| Field | Source keys (model) | Constraint |
+|---|---|---|
+| `questions` | `questions`, `followups`, `items` — each item a string or `{text\|question}` | ≤500 chars per item; empty items filtered |
+
+Descriptor: `{kind:'followups', data:{questions:[string]}}`. Server-side `add_to_history:false` —
+chips are suggestions, not replayed into history.
 
 ### 3. sources (`renderSources`)
 
-- Items from `model.sources` | `model.items` | `model.citations`.
-- Each: `title` ← `title|name|label` (≤500); **`url` ← `url|link|href` via `safeUrl`** (unsafe scheme
-  → `''`); `snippet` ← `snippet|text|content` (≤2000).
-- Descriptor: `{kind:'sources', data:{sources:[{title, url, snippet, score?}]}}` — `score` ←
-  `score|relevance|similarity` is a **forward-compatible passthrough** (omitted when absent/non-numeric,
-  never `0`); RAG-driven emission is unverified, so it is NOT a claimed backend guarantee.
+Items come from `model.sources`, `model.items`, or `model.citations`. Each item:
+
+| Field | Source keys (model) | Constraint |
+|---|---|---|
+| `title` | `title`, `name`, `label` | ≤500 chars |
+| `url` | `url`, `link`, `href` (via `safeUrl`) | unsafe scheme → `''` |
+| `snippet` | `snippet`, `text`, `content` | ≤2000 chars |
+| `score` | `score`, `relevance`, `similarity` | forward-compatible passthrough — omitted when absent/non-numeric, never `0` |
+
+Descriptor: `{kind:'sources', data:{sources:[{title, url, snippet, score?}]}}`. RAG-driven emission
+is unverified, so `score`'s presence is NOT a claimed backend guarantee.
 
 ### 4. summary (`renderSummary`)
 
-- `summary` ← `summary|text|content|raw` (≤8000, **`safeSource`** — preserves `\n`/`\r`/`\t` so
-  markdown structure survives); `bullets` ← `bullets|points|items` (each ≤1000); title ≤300.
-- Descriptor: `{kind:'summary', data:{title, summary, bullets:[string]}}`. The summary stays
+| Field | Source keys (model) | Constraint |
+|---|---|---|
+| `summary` | `summary`, `text`, `content`, `raw` | ≤8000 chars; via `safeSource` — preserves `\n`/`\r`/`\t` so markdown structure survives |
+| `bullets` | `bullets`, `points`, `items` | ≤1000 chars per item |
+| `title` | `title` | ≤300 chars |
+
+Descriptor: `{kind:'summary', data:{title, summary, bullets:[string]}}`. The summary stays
   untrusted (LLM output); by default `mountWidget` renders it as flat escaped text. Pass
-  `mountWidget(descriptor, el, {markdown:true})` (issue #27) to opt into a first-party, allow-listed
+  `mountWidget(descriptor, el, {markdown:true})` to opt into a first-party, allow-listed
   markdown-to-DOM renderer instead — see "Markdown rendering" below. The SDK never emits raw HTML
   either way.
 
 ### 5. video-gallery (`renderVideoGallery`) — Kaltura clips
 
-- Items from `model.videos` | `model.entries` | `model.items`.
-- Each: **`entryId` ← `entryId|entry_id|id`** (≤100, preserved verbatim — host plays via the Kaltura
-  player); `title` ← `title|name`; `thumbnailUrl` ← `thumbnailUrl|thumbnail|thumb` (**`safeUrl`**);
-  `url` ← `url|playUrl|link` (**`safeUrl`**); `embedUrl` ← `embedUrl|embed_url|embedLink` (**`safeUrl`**);
-  `duration` ← `duration|length` (string-kept, ≤40, to
-  tolerate `"1:23"` or a seconds count); `description` ≤2000; `alt` ← `alt|title` (≤300, the image's
-  accessible name).
-- Descriptor: `{kind:'video-gallery', data:{title, videos:[{entryId, title, thumbnailUrl, url, embedUrl, duration, description, alt}]}}`.
-- This is the **in-platform video** widget: the host renders the Kaltura player against `entryId`.
+Items come from `model.videos`, `model.entries`, or `model.items`. Each item:
+
+| Field | Source keys (model) | Constraint |
+|---|---|---|
+| `entryId` | `entryId`, `entry_id`, `id` | ≤100 chars, preserved verbatim — host plays via the Kaltura player |
+| `title` | `title`, `name` | — |
+| `thumbnailUrl` | `thumbnailUrl`, `thumbnail`, `thumb` | via `safeUrl` |
+| `url` | `url`, `playUrl`, `link` | via `safeUrl` |
+| `embedUrl` | `embedUrl`, `embed_url`, `embedLink` | via `safeUrl` |
+| `duration` | `duration`, `length` | string-kept, ≤40 chars, to tolerate `"1:23"` or a seconds count |
+| `description` | `description` | ≤2000 chars |
+| `alt` | `alt`, `title` | ≤300 chars — the image's accessible name |
+
+Descriptor: `{kind:'video-gallery', data:{title, videos:[{entryId, title, thumbnailUrl, url, embedUrl, duration, description, alt}]}}`.
+This is the **in-platform video** widget: the host renders the Kaltura player against `entryId`.
 
 ### 6. show-link (`renderShowLink`) — links
 
-- `url` ← `url|linkUrl|link|href|mediaUrl` via `safeUrl`; `label` ← `label|linkText|title|text`
-  (falls back to the URL, ≤300); `description` ≤2000.
-- Descriptor: `{kind:'show-link', data:{url, label, description, safe}}` where **`safe:!!url`** — an
-  unsafe scheme yields `url:''` + `safe:false` so the host drops it (mirrors the earnings app's
-  `renderSafeLink` null-drop).
+| Field | Source keys (model) | Constraint |
+|---|---|---|
+| `url` | `url`, `linkUrl`, `link`, `href`, `mediaUrl` | via `safeUrl` |
+| `label` | `label`, `linkText`, `title`, `text` | ≤300 chars; falls back to the URL |
+| `description` | `description` | ≤2000 chars |
+
+Descriptor: `{kind:'show-link', data:{url, label, description, safe}}` where **`safe:!!url`** — an
+unsafe scheme yields `url:''` + `safe:false` so the host drops it (mirrors the earnings app's
+`renderSafeLink` null-drop).
 
 ### 7. external-video (`renderExternalVideo`) — non-Kaltura video embeds
 
-- `url` ← `url|videoUrl|mediaUrl|src|embedUrl`. **Requires an ABSOLUTE http(s) URL** — a non-`https?://`
-  value (relative path, `//host`, `mailto`) yields `url:''` (this is an iframe/`<video src>` surface).
-  `provider` ← `provider|source` (≤100); `poster` ← `poster|thumbnail|thumbnailUrl` (**`safeUrl`**, a
-  still to show before play); `description` ≤2000.
-- Descriptor: `{kind:'external-video', data:{url, title, provider, poster, description, safe}}`, `safe:!!url`.
-- The client check is **defense-in-depth**; the server-side media-URL validator is the primary
-  guard (**INFERRED** — server validator not in this repo).
+| Field | Source keys (model) | Constraint |
+|---|---|---|
+| `url` | `url`, `videoUrl`, `mediaUrl`, `src`, `embedUrl` | **requires an ABSOLUTE http(s) URL** — a non-`https?://` value (relative path, `//host`, `mailto`) yields `url:''`; this is an iframe/`<video src>` surface |
+| `provider` | `provider`, `source` | ≤100 chars |
+| `poster` | `poster`, `thumbnail`, `thumbnailUrl` | via `safeUrl` — a still to show before play |
+| `description` | `description` | ≤2000 chars |
+
+Descriptor: `{kind:'external-video', data:{url, title, provider, poster, description, safe}}`,
+`safe:!!url`. The client check is **defense-in-depth**; the server-side media-URL validator is the
+primary guard (**INFERRED** — server validator not in this repo).
 
 ### 8. user-properties-form (`renderUserPropertiesForm`) — structured data collection
 
-- Fields from `model.fields` | `model.properties` | `model.items`.
-- Each: `key` ← `key|name`; `type` ← `type` lowercased, validated against
-  **`{str,int,float,bool,list,dict,email,phone,text}`** (unknown → `'str'`); `label` ←
-  `label|prompt|key`; `knownValue` ← `knownValue|known_value` (a value the model already extracted,
-  for pre-fill); `required` ← `required === true`; `description` ← `description|help` (≤500). The
-  `required`/`description` fields let a host wire `aria-required`/`aria-describedby`/`inputmode`.
-  Fields without a `key` are dropped.
-- Descriptor: `{kind:'user-properties-form', data:{title, fields:[{key, type, label, knownValue, required, description}]}}`.
+Fields come from `model.fields`, `model.properties`, or `model.items`. A field without a `key` is
+dropped. Each field:
+
+| Field | Source keys (model) | Constraint |
+|---|---|---|
+| `key` | `key`, `name` | — |
+| `type` | `type` (lowercased) | validated against `{str,int,float,bool,list,dict,email,phone,text}`; unknown → `'str'` |
+| `label` | `label`, `prompt`, `key` | — |
+| `knownValue` | `knownValue`, `known_value` | a value the model already extracted, for pre-fill |
+| `required` | `required` | `true` only when `required === true` |
+| `description` | `description`, `help` | ≤500 chars |
+
+`required`/`description` let a host wire `aria-required`/`aria-describedby`/`inputmode`.
+
+Descriptor: `{kind:'user-properties-form', data:{title, fields:[{key, type, label, knownValue, required, description}]}}`.
 - **Report back:** the default (`user_properties_forms`-configured) path has the host call
   **`session.submitStructuredDataForm(info)`** (`session.js`), which `sanitizeJson`s the object
   and emits the socket event **`setFormLeadInfo`** — a fire-and-forget emit with no durable
@@ -187,13 +223,19 @@ LLM output) and clamps text via `safeText(str, max)` and URLs via `safeUrl(url, 
 
 ### 9. content-gallery (`renderContentGallery`) — image/content cards
 
-- Items from `model.items` | `model.slides` | `model.cards`.
-- Each: `id` ← `id|slideId|key` (≤100, addressable — slides are ordered, mirrors `entryId`);
-  `title` ← `title|name|heading`; `description` ← `description|text|body` (≤2000); **`imageUrl`
-  ← `imageUrl|image|thumbnail` (`safeUrl`)**; `url` ← `url|link|href` (`safeUrl`); `alt` ← `alt|title`
-  (≤300, the image's accessible name).
-- Descriptor: `{kind:'content-gallery', data:{title, items:[{id, title, description, imageUrl, url, alt}]}}`.
-- This is the **image-bearing** widget (a deck/gallery of cards with thumbnails). Note the backend
+Items come from `model.items`, `model.slides`, or `model.cards`. Each item:
+
+| Field | Source keys (model) | Constraint |
+|---|---|---|
+| `id` | `id`, `slideId`, `key` | ≤100 chars, addressable — slides are ordered, mirrors `entryId` |
+| `title` | `title`, `name`, `heading` | — |
+| `description` | `description`, `text`, `body` | ≤2000 chars |
+| `imageUrl` | `imageUrl`, `image`, `thumbnail` | via `safeUrl` |
+| `url` | `url`, `link`, `href` | via `safeUrl` |
+| `alt` | `alt`, `title` | ≤300 chars — the image's accessible name |
+
+Descriptor: `{kind:'content-gallery', data:{title, items:[{id, title, description, imageUrl, url, alt}]}}`.
+This is the **image-bearing** widget (a deck/gallery of cards with thumbnails). Note the backend
   key is `gallery_slides`, and the `video_gallery` capability summary says it permits both
   `video-gallery-tool` **and** `content-gallery-tool`.
 - **Multi-item only.** The renderer always wraps `items` in a CSS grid sized for several
@@ -212,7 +254,7 @@ Source of truth: `src/management/capabilities.js` (`CAPABILITY_INFO`, `CAPABILIT
 
 | Capability | Default | Kind | Gates runtime | Notes |
 |---|---|---|---|---|
-| `kaltura_genie_experiences` | **ON** | mode | (master) | Master switch for structured GenUI; turn OFF for command-only agents |
+| `kaltura_genie_experiences` | **ON** | mode | (master) | Master switch for structured GenUI. Leaving it on injects a competing instruction that out-competes a custom tool — turn it OFF for command-only agents; see [EXTERNAL-API-INTEGRATIONS.md § Don't skip `kaltura_genie_experiences: 'off'`](EXTERNAL-API-INTEGRATIONS.md#dont-skip-kaltura_genie_experiences-off) |
 | `generate_followup_questions` | **ON** | segment | `followups` | — |
 | `include_sources` | **ON** | segment | `sources` | Pairs with `use_knowledge_base` (RAG) |
 | `video_gallery` | **OFF** | segment | `video-gallery` (+ `content-gallery`) | — |
@@ -242,35 +284,49 @@ accessible by construction, and ships **zero styling** (it emits the `kgenui` / 
 contract for you to theme). Call it directly — `mountWidget(descriptor, targetEl, { replace?, onAction? })`
 — or let `ExperienceRenderer` call it when `mount` is an Element (or `target`).
 
-- **`ExperienceRenderer`** `({ session?, mount, target?, onAction?, renderers?, replace?, onUnhandled?,
-  urlPolicy?, partnerId?, uiConfId?, clearOnTurnStart? })` (`genui/renderer.js`). `uiConfId` (string or
-  number) enables `video-gallery` to build a player-embed iframe URL (requires `partnerId`). `mount` is a
-  `(descriptor)=>void` function (full control) **or** a DOM Element (auto-rendered via `mountWidget`).
-  - LIVE: `.start()` subscribes to `session.on('brainSegment')` + flushes on `turnEnd` /
-    `avatarStopTalking`, resets on `interrupted`. `clearOnTurnStart` (default `true`, issue #28) also
-    resets the assembler + `clear()`s `rendered`/`last` on the session's `turnStart` event (re-emitted
-    from the raw `agent_start_speech` socket event), so a widget from turn N never lingers into turn
-    N+1 — mirrors Genie's own web client nulling content on `AgentStartSpeechReceived`. Set `false` for
-    intentional cross-turn persistence.
-  - HEADLESS: `.render(runtimeName, widget)` (or `.render(segment)`) called per segment from a
-    `conversations.stream()` feed — the reliable path.
-  - `.register(runtimeName, fn)` adds/overrides a renderer (name normalized); `.has`, `.runtimes`,
-    `.last`, `.rendered`, `.clear()`. `replace:true` keeps only the latest widget per turn.
-  - Unknown runtime → `{kind:'unknown', data:{runtime, model}}` + fires `onUnhandled` (never throws).
-    A throwing custom renderer degrades to `{kind:'error', ...}`.
-  - `_meta` receipt stamps `{partnerId, source:'experience/genui', scope:'conversation (geniegpcid,
-    entitlement ON)', known, firstClass}` — `known` = this instance has a renderer (a registered
-    10th runtime is `known:true`); `firstClass` = one of the built-in set.
-- **`onAction(action, payload)`** surfaces interactions `mountWidget` can't fulfil itself: `'followup'`
-  `{question}` (→ `session.speak`), `'submit'` `{values}` (→ `session.submitStructuredDataForm`), `'play'`
-  `{entryId,url,embedUrl}`, `'open'` `{url}`.
-- **`WIDGET_KINDS`** (exported) is the frozen list of every `kind` (the first-class Genie
-  runtimes + `unknown` + `error`) — use it for an exhaustive host switch or a parity test.
-- **Escape hatch (hand-rolled):** you can still read `seg.metadata.runtimeName` and build DOM yourself
-  (use `renderSafeLink`/`safeText`/`safeUrl` so nothing un-sanitized hits the DOM). Prefer `mountWidget`
-  — the hand-rolled path is for a fully custom design system only.
+### `ExperienceRenderer` options
 
-### Markdown rendering (opt-in, issue #27)
+`new ExperienceRenderer({ session?, mount, target?, onAction?, renderers?, replace?, onUnhandled?,
+urlPolicy?, partnerId?, uiConfId?, clearOnTurnStart? })` (`genui/renderer.js`). `uiConfId` (string or
+number) enables `video-gallery` to build a player-embed iframe URL (requires `partnerId`). `mount` is a
+`(descriptor)=>void` function (full control) **or** a DOM Element (auto-rendered via `mountWidget`).
+
+### Live vs. headless dispatch
+
+In the live socket runtime, `.start()` subscribes to `session.on('brainSegment')` and flushes on
+`turnEnd`/`avatarStopTalking`, resetting on `interrupted`. `clearOnTurnStart` (default `true`) also
+resets the assembler and `clear()`s `rendered`/`last` on the session's `turnStart` event (re-emitted
+from the raw `agent_start_speech` socket event), so a widget from turn N never lingers into turn
+N+1 — mirrors the Genie brain backend's own web client nulling content on `AgentStartSpeechReceived`.
+Set `false` for intentional cross-turn persistence.
+
+Headless, call `.render(runtimeName, widget)` (or `.render(segment)`) per segment from a
+`conversations.stream()` feed — the reliable path.
+
+### Registration, fallback, and provenance
+
+- `.register(runtimeName, fn)` adds/overrides a renderer (name normalized); `.has`, `.runtimes`,
+  `.last`, `.rendered`, `.clear()`. `replace:true` keeps only the latest widget per turn.
+- An unknown runtime renders `{kind:'unknown', data:{runtime, model}}` and fires `onUnhandled`
+  (never throws). A throwing custom renderer degrades to `{kind:'error', ...}`.
+- `_meta` receipt stamps `{partnerId, source:'experience/genui', scope:'conversation (geniegpcid,
+  entitlement ON)', known, firstClass}` — `known` = this instance has a renderer (a registered
+  10th runtime is `known:true`); `firstClass` = one of the built-in set.
+
+### `onAction`, `WIDGET_KINDS`, and the hand-rolled escape hatch
+
+`onAction(action, payload)` surfaces interactions `mountWidget` can't fulfil itself: `'followup'`
+`{question}` (→ `session.speak`), `'submit'` `{values}` (→ `session.submitStructuredDataForm`), `'play'`
+`{entryId,url,embedUrl}`, `'open'` `{url}`.
+
+`WIDGET_KINDS` (exported) is the frozen list of every `kind` (the nine first-class GenUI runtimes +
+`unknown` + `error`) — use it for an exhaustive host switch or a parity test.
+
+You can still read `seg.metadata.runtimeName` and build DOM yourself (use
+`renderSafeLink`/`safeText`/`safeUrl` so nothing un-sanitized hits the DOM). Prefer `mountWidget` —
+the hand-rolled path is for a fully custom design system only.
+
+### Markdown rendering (opt-in)
 
 `mountWidget(descriptor, el, {markdown:true})` parses a `summary` widget's text
 (`genui/renderers/markdown.js`, `renderMarkdown`) as markdown instead of flat text — headings

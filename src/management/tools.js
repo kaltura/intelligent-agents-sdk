@@ -512,6 +512,40 @@ function requireToolId(v, name) {
 }
 
 /**
+ * List every intellect's configId that currently references `toolId` in its
+ * `tool_ids` — the safety check {@link Tools#delete} runs before deleting a
+ * PARTNER-LEVEL Tool that may be shared across intellects (see the class
+ * doc). Implemented via raw `ctx.genie` calls rather than the `Intellects`
+ * class to avoid a circular import (`intellects.js` already imports
+ * {@link clientToolReadiness} from this file). `v1/intellect/list` returns a
+ * lighter DTO that may omit `tool_ids`, so each candidate is confirmed via
+ * `v1/intellect/get`.
+ * Exported (not just used by {@link Tools#delete}) so callers upserting a Tool
+ * by name — e.g. `provision.js`'s `applyTools` — can run the identical check
+ * before mutating a name-matched EXISTING Tool's `config` in place, since that
+ * entity may already be load-bearing for a different intellect than the one
+ * they have in mind (see the SHARED-BY-NAME HAZARD paragraph on the class doc).
+ * @param {import('./client.js').Ctx} ctx @param {string} toolId @param {string} ks
+ * @returns {Promise<number[]>}
+ */
+export async function findIntellectsReferencingTool(ctx, toolId, ks) {
+  const refs = [];
+  const pageSize = 50;
+  for (let pageIndex = 1; ; pageIndex += 1) {
+    const page = (await ctx.genie('v1/intellect/list', { filter: {}, pager: { pageIndex, pageSize } }, ks)).data;
+    const objects = Array.isArray(page?.objects) ? page.objects : [];
+    for (const item of objects) {
+      if (item?.id === undefined) continue;
+      const full = await ctx.genie('v1/intellect/get', { id: item.id }, ks).then((r) => r.data).catch(() => null);
+      if (Array.isArray(full?.tool_ids) && full.tool_ids.includes(toolId)) refs.push(item.id);
+    }
+    const total = page?.totalCount;
+    if (objects.length === 0 || (typeof total === 'number' && pageIndex * pageSize >= total)) break;
+  }
+  return refs;
+}
+
+/**
  * Tools resource — CRUD over the standalone, PARTNER-LEVEL Tool entity via
  * Genie `/v1/tool/*` (NOT intellect-scoped, NOT `intellect/update`). Mounted
  * at `mgmt.tools`. A Tool is `{id, name, config, partner_id, created_at,
@@ -522,6 +556,18 @@ function requireToolId(v, name) {
  * Creating a Tool does NOT attach it to anything — link it to an intellect via
  * `tool_ids` (see `intellectConfig.setToolIds`, or pass `tool_ids` directly to
  * `intellects.create`/`update`).
+ *
+ * `name` is unique per partner OR against a shared GLOBAL pool: lookups match
+ * `partner_id IN (yours, 0)`, so a name you pick can collide with a partner-0
+ * global Tool in ways that aren't visible from a partner-scoped `list()`
+ * alone — the same nuance applies to {@link Skills}.
+ *
+ * SHARED-BY-NAME HAZARD: because `name` is the lookup key callers upsert
+ * against (see `sdk/src/management/provision.js`'s `applyTools`, or an app's
+ * own upsert-by-name helper), two independently-run provisioning flows for
+ * the SAME name silently converge on the SAME Tool entity — deleting it
+ * affects every intellect that references it, not just the one the caller
+ * has in mind. `delete()` below checks for exactly this before acting.
  */
 export class Tools {
   /** @param {import('./client.js').Ctx} ctx */
@@ -590,14 +636,33 @@ export class Tools {
    * Delete a Tool by id. WRITE — destructive (requires confirmation). Does NOT
    * cascade: any intellect still listing this id in `tool_ids` keeps a
    * dangling reference — drop it first via `intellectConfig.setToolIds`.
-   * @param {string} id @param {string} ks (admin) @param {{confirmPermanent:boolean}} confirm
-   * @returns {Promise<{removed:string, _meta:object}>}
+   *
+   * SAFETY CHECK (default on): before deleting, lists every intellect and
+   * refuses with a typed `tool_in_use` error naming each one still carrying
+   * this id in `tool_ids` — Tools are partner-level and shared by name (see
+   * the class doc), so a stale saved id can easily still be load-bearing for
+   * a DIFFERENT intellect than the caller has in mind. Pass
+   * `{confirmPermanent:true, force:true}` to skip the check and delete
+   * unconditionally (e.g. once you've confirmed via `intellectConfig.setToolIds`
+   * that every referencing intellect has already been updated).
+   * @param {string} id @param {string} ks (admin) @param {{confirmPermanent:boolean, force?:boolean}} confirm
+   * @returns {Promise<{removed:string, _meta:object, skippedInUseCheck?:boolean}>}
    */
   async delete(id, ks, confirm) {
     this._.assertAdmin(ks, 'tools.delete');
     requireToolId(id, 'tools.delete id');
     requireConfirm(confirm, 'tools.delete', id);
+    if (!confirm.force) {
+      const refs = await findIntellectsReferencingTool(this._, id, ks);
+      if (refs.length) {
+        bad('tool_in_use', `tool ${id} is still referenced in tool_ids by ${refs.length} intellect(s) (configId: ${refs.join(', ')}) — deleting it would break every one still calling it. Drop it from their tool_ids first via intellectConfig.setToolIds, or pass {confirmPermanent:true, force:true} to delete anyway.`);
+      }
+    }
     await this._.genie('v1/tool/delete', { id }, ks);
-    return { removed: id, _meta: meta({ partnerId: this._.partnerId, source: 'genie/tool.delete', scope: `tool:${id}` }) };
+    return {
+      removed: id,
+      ...(confirm.force ? { skippedInUseCheck: true } : {}),
+      _meta: meta({ partnerId: this._.partnerId, source: 'genie/tool.delete', scope: `tool:${id}` }),
+    };
   }
 }

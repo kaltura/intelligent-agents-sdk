@@ -1,14 +1,14 @@
 # Contributing
 
 This repo is private (Kaltura-internal) for now. The workflow below applies to
-internal contributors with push access, cloning directly. Once the repo opens up,
-external contributors follow the same steps against a fork instead: fork on GitHub,
-clone your fork, then open a PR from a branch on your fork back to this repo — every
-step after Setup (tests, `verify`, `docs:gate`, PR description) is identical either way.
+internal contributors with push access, cloning directly.
 
-Issue references like "(issue #N)" scattered through this repo's docs and code comments
-point to the private originating monorepo's issue history, not to an issue filed in this
-repo's own tracker (which starts from zero).
+> **Not yet applicable — TODO.** Once the repo opens up to external contributors, this
+> section will describe a fork-based workflow (fork on GitHub, clone your fork, open a
+> PR from a branch on your fork back to this repo). That workflow doesn't exist yet —
+> there is no external-contributor path today.
+
+See [README.md](README.md)'s note on issue references.
 
 ## Before you start
 
@@ -22,7 +22,8 @@ this repo (issues, PRs, reviews).
 Read [SDK_CONSTITUTION.md](SDK_CONSTITUTION.md) next — it's the rulebook this
 SDK is held to, and every rule in it is machine-checked. A change that reads
 correctly but breaks a rule (e.g. adds a runtime dependency, adds a module-level
-`let`, or drops a `SECURITY.md` reference) fails CI before a human ever reviews it.
+`let`, or introduces dead code with no consumer) fails CI before a human ever
+reviews it.
 
 ## Setup
 
@@ -66,6 +67,22 @@ on top of a broken baseline.
   on any failure.
 - If the change affects the public API surface (`exports` in `package.json`),
   add a `CHANGELOG.md` entry.
+
+## Commit and branch conventions
+
+Commit messages in this repo's history (`git log --oneline`) are a short, capitalized,
+imperative summary line — e.g. "Add release automation and CI test reporting", "Redact
+internal service/repo names from public docs", "Fix CI: revert Node 18/20/24 test
+matrix". Follow that style: lead with a verb, describe the *what* in one line, and use
+a `Prefix: detail` form (like the `Fix CI:` example) when a commit is scoped to one
+area. There is no branch-naming convention enforced today — this repo has had only one
+active branch (`main`) throughout its history so far.
+
+## CLA / licensing (external contributors)
+
+Licensing terms for external (non-Kaltura) contributions are **TBD** — there is no CLA
+process in place yet. This section will be filled in before the repo opens up to
+outside contributors; don't assume any specific CLA terms until then.
 
 ## Reporting a security issue
 

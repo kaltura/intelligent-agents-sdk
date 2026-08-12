@@ -1,32 +1,10 @@
 # Getting Started — Your First Talking AI Avatar
 
-This guide takes you from zero to a working, talking AI avatar in about 10 minutes — copy and paste the commands.
+This guide takes you from zero to a working, talking AI avatar in about 5 minutes, once you have
+a Kaltura account — copy and paste the commands.
 
 > **Windows?** Run these commands in WSL2, Git Bash, or PowerShell (the commands below are plain
 > `node`/`npm` calls with no Bash-only syntax, so they work as-is in PowerShell too).
-
----
-
-## Step 0 — see it work with zero credentials (under 2 minutes)
-
-Before you get a Kaltura account, you can see the SDK actually run — offline, no network, no
-secrets — using the same fakes the test suite is built on:
-
-> This repo is currently private — cloning it requires collaborator access and an authenticated
-> git credential helper (SSH key or a git credential manager tied to your GitHub account), not
-> just the bare URL below.
-
-```bash
-git clone https://github.com/kaltura/intelligent-agents-sdk.git
-cd intelligent-agents-sdk
-npm test
-```
-
-That runs the full suite (unit + integration + e2e + evals) against `test/fakes/fetch.js`,
-`test/fakes/socket.js`, and `test/fakes/rtc.js` — deterministic stand-ins for the real HTTP/socket/WebRTC
-backends. It takes about 105 seconds on a typical machine. It's the fastest way to confirm the SDK
-itself is sound on your machine before you touch a real account. Once you're ready to talk to a
-real, live agent, continue to Step 1.
 
 ---
 
@@ -42,7 +20,7 @@ That's it. You do **not** need to install anything from Kaltura.
 
 ---
 
-## Step 1 — Get your credentials
+## Step 1 — Get your credentials (~1 minute)
 
 Your Partner ID and Admin Secret are your keys to the system.
 
@@ -54,9 +32,13 @@ Your Partner ID and Admin Secret are your keys to the system.
 
 ---
 
-## Step 2 — Set up the project
+## Step 2 — Set up the project (~1 minute)
 
-Clone the repository (skip this if you already did it in Step 0) and install the quickstart's dependencies:
+> This repo is currently private — cloning it requires collaborator access and an authenticated
+> git credential helper (SSH key or a git credential manager tied to your GitHub account), not
+> just the bare URL below.
+
+Clone the repository and install the quickstart's dependencies:
 
 ```bash
 git clone https://github.com/kaltura/intelligent-agents-sdk.git
@@ -80,7 +62,7 @@ export AGENTIC_ADMIN_SECRET=your_admin_secret_here
 
 ---
 
-## Step 3 — Create your own agent from scratch
+## Step 3 — Create your own agent from scratch (1–3 minutes)
 
 This one command builds a brand-new agent — brain, face, voice, and all — from a plain-English description:
 
@@ -88,15 +70,15 @@ This one command builds a brand-new agent — brain, face, voice, and all — fr
 node create-agent.mjs "A friendly yoga studio receptionist who helps people book classes and answers questions about memberships"
 ```
 
-This takes 1–3 minutes — you'll see progress messages as it builds the brain, face, and voice. At the
+You'll see progress messages as it builds the brain, face, and voice. At the
 end it sends a smoke-test message and prints the reply, plus the new IDs (`configId`, `agentId`,
 `avatarId`, `widgetId`) you need to embed or extend the agent.
 
-> Building an agent by hand instead of via the one-line brief? See [API-REFERENCE.md](API-REFERENCE.md) → "Create an Agent".
+> Building an agent by hand instead of via the one-line brief? See [API-REFERENCE.md](API-REFERENCE.md#phase-2--build).
 
 ---
 
-## Step 4 — Talk to your agent again
+## Step 4 — Talk to your agent again (~30 seconds)
 
 `create-agent.mjs` already sent one smoke-test message for you. To send more, use the SDK's
 headless `converseOnce()` directly — save this as a small script (or adapt `quickstart/create-agent.mjs`):
@@ -114,8 +96,8 @@ console.log(reply.text);
 ```
 
 `converseOnce()` mints its own conversation token from the `configId` — the admin secret never
-leaves your process. See [API-REFERENCE.md](API-REFERENCE.md) for threaded conversations, streaming,
-and the full Management API surface.
+leaves your process. See [API-REFERENCE.md](API-REFERENCE.md#phase-4--operate) for threaded
+conversations, streaming, and the full Management API surface.
 
 ---
 
@@ -125,12 +107,12 @@ You now know how to create an agent and talk to it. Here's where to go for more:
 
 | If you want to… | Read this |
 |-----------------|-----------|
-| See every kind of app you can build (personalized greeters, memory agents, quizzes, video avatars, voice cloning…) | [API-REFERENCE.md](API-REFERENCE.md) → "Use-Case Catalog" |
-| Look up the exact API call for something | [API-REFERENCE.md](API-REFERENCE.md) |
-| Put a talking video avatar on a web page | [API-REFERENCE.md](API-REFERENCE.md) → "Use Case 12 — Anonymous End-User Embed" |
-| Use your **own voice** for the avatar | [API-REFERENCE.md](API-REFERENCE.md) → "Use Case 9 — Custom Voice" |
-| Use your **own face/portrait** for the avatar | [API-REFERENCE.md](API-REFERENCE.md) → "Use Case 13 — Custom Portrait Avatar" |
-| Build a real app with the JavaScript SDK | [README.md](README.md) |
+| See every kind of app you can build (personalized greeters, memory agents, quizzes, video avatars, voice cloning…) | [docs/USE-CASES.md](docs/USE-CASES.md) |
+| Look up the exact API call for something | [API-REFERENCE.md](API-REFERENCE.md#contents) |
+| Put a talking video avatar on a web page | [docs/USE-CASES.md](docs/USE-CASES.md) → UC-12 |
+| Use your **own voice** for the avatar | [API-REFERENCE.md](API-REFERENCE.md#upload-a-custom-voice-clone) |
+| Use your **own face/portrait** for the avatar | [API-REFERENCE.md](API-REFERENCE.md#upload-a-custom-visual-portrait--animated-avatar) |
+| Build a real app with the JavaScript SDK | [README.md](README.md#quick-start) |
 | Make the avatar drive your UI (slides, widgets, navigation) | [docs/CLIENT-COMMANDS.md](docs/CLIENT-COMMANDS.md) |
 | Put structured widgets on screen (quizzes, carousels, code blocks) | [docs/GENUI-REFERENCE.md](docs/GENUI-REFERENCE.md) |
 | Understand how the whole system works under the hood | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
@@ -141,28 +123,30 @@ You now know how to create an agent and talk to it. Here's where to go for more:
 
 ## Common questions
 
-**Do I need to keep the terminal open?** No. `create-agent.mjs` runs once and exits.
+**Do I need to keep the terminal open?** No — `create-agent.mjs` runs once and exits.
 
-**Will this cost money / use my quota?** Conversations and avatar sessions use your Kaltura plan's quota. Creating agents/avatars is cheap, but clean up test ones you don't need — see `agents.delete()` / `avatars.delete()` in [API-REFERENCE.md](API-REFERENCE.md).
+**Will this cost money / use my quota?** Conversations and avatar sessions use your Kaltura plan's quota. Creating agents/avatars is cheap, but clean up test ones you don't need — see `agents.delete()` / `avatars.delete()` in [API-REFERENCE.md](API-REFERENCE.md#management-operations).
 
-**How do I see everything I created?** Use the Management API's list calls:
+**How do I see everything I created?** Use the Management API's list calls — `kaltura.agents.list()` and `kaltura.avatars.list()`. See [API-REFERENCE.md](API-REFERENCE.md#management-operations).
 
-```js
-import { Management } from '@kaltura/intelligent-agents/management';
-const kaltura = new Management({ partnerId, adminSecret });
-console.log(await kaltura.agents.list());
-console.log(await kaltura.avatars.list());
+**How do I label the agents I create so I can find mine later?** Tag the **agent** (not the avatar) via `adminTags` on `agents.create()`, then filter `agents.list()` client-side. Details in [API-REFERENCE.md](API-REFERENCE.md#create-an-agent).
+
+**Can I use my own face or voice?** Yes, both — see [API-REFERENCE.md](API-REFERENCE.md#upload-a-custom-visual-portrait--animated-avatar) and [→ Custom Voice](API-REFERENCE.md#upload-a-custom-voice-clone).
+
+---
+
+## Appendix — Verify your checkout offline (~2 minutes)
+
+You don't need a Kaltura account to confirm the SDK runs correctly on your machine — run it
+offline, no network, no secrets, using the same fakes the test suite is built on. (Cloning
+requires collaborator access — see the note in Step 2.)
+
+```bash
+git clone https://github.com/kaltura/intelligent-agents-sdk.git
+cd intelligent-agents-sdk
+npm test
 ```
 
-**How do I label the agents I create so I can find mine later?** Tag the **agent** (not the
-avatar). Pass `adminTags` (e.g. `["yoga-demo"]`) to `agents.create()`, then filter `agents.list()`
-results client-side by that tag — there's no server-side agent filter today. Avatars do **not**
-carry a tag field — `avatar/create` and `avatar/update` reject an `adminTags` property — so group by
-tagging the parent agent instead.
-
-**Can I use my own face?** Yes — both voice and face. Upload a portrait image via
-`catalog.createVisual()` with an image file (or `catalog.importVoiceFromElevenLabs`/
-`importVoiceFromCartesia` for a provider voice), then pass the returned `itemId` as `visualId` in
-`avatars.create()`. The model animates your portrait at runtime — no ops involvement, no
-pre-processing. The gap today is a video-clip ingest pipeline (a higher-fidelity model from a short
-clip); image-based custom visuals work end-to-end self-serve.
+That runs the full suite (unit + integration + e2e + evals) against `test/fakes/fetch.js`,
+`test/fakes/socket.js`, and `test/fakes/rtc.js` — deterministic stand-ins for the real
+HTTP/socket/WebRTC backends. It takes about 105 seconds on a typical machine.

@@ -1,6 +1,6 @@
 # @kaltura/intelligent-agents
 
-Zero-dependency JavaScript SDK for Kaltura conversational avatar agents.
+The **Agentic Avatars SDK** — a zero-dependency JavaScript SDK for building and operating **Kaltura Agentic Avatars**, Kaltura's conversational agents with a visual, human-like avatar interface.
 
 Two entry points, plus several optional plugin subpaths that don't bloat the base runtime:
 
@@ -14,8 +14,8 @@ Two entry points, plus several optional plugin subpaths that don't bloat the bas
 No build step, no npm registry publish — that's disabled by design (`"private": true`, no `publishConfig`, no publish workflow). Ship `src/` raw ESM directly: import from `src/...` server-side, or load it in the browser via a jsDelivr CDN URL pinned to a git tag once the repo is public. `node:test` throughout.
 
 **New here?** [GETTING-STARTED.md](GETTING-STARTED.md) walks through creating and talking to your
-first agent in about 10 minutes, including a zero-credential offline demo. Come back here once
-you're building a real app with the SDK. Also see [CONTRIBUTING.md](CONTRIBUTING.md) (how to
+first agent in about 5 minutes. Come back here once you're building a real app with the SDK. Also
+see [CONTRIBUTING.md](CONTRIBUTING.md) (how to
 contribute), [SDK_CONSTITUTION.md](SDK_CONSTITUTION.md) (the invariants every change must hold),
 and [CHANGELOG.md](CHANGELOG.md) (what changed between versions).
 
@@ -27,16 +27,48 @@ events, and a NIST 800-53 control matrix — designed for enterprise, HIPAA, and
 deployments. See [Security posture](#security-posture) below or the full matrix in
 [SECURITY.md](SECURITY.md).
 
-**Why this over a hosted avatar SaaS (Tavus, HeyGen, Synthesia, etc.)?** Those platforms hand you
-a hosted widget with your integration living behind their API and their release schedule. This
-SDK ships as raw ESM source you own and can read line by line — no build step, no bundler-only
-`node_modules` black box, and (once a tag is public) no install step at all: import straight from
-a jsDelivr CDN URL pinned to a git tag. Zero runtime dependencies means no transitive supply-chain
-surface to audit. Voice and visual cloning are self-serve calls in this SDK
-(`catalog.importVoiceFromElevenLabs`/`importVoiceFromCartesia`, `catalog.createVisual`), not a
+**Why this SDK?** You own raw ESM source you can read line by line — no build step, no
+bundler-only `node_modules` black box, and (once a tag is public) no install step at all: import
+straight from a jsDelivr CDN URL pinned to a git tag. Zero runtime dependencies means no
+transitive supply-chain surface to audit. Voice and visual cloning are self-serve calls in this
+SDK (`catalog.importVoiceFromElevenLabs`/`importVoiceFromCartesia`, `catalog.createVisual`), not a
 support ticket. And the security posture — pre-redacted audit events, short-lived tokens, a NIST
 800-53 control matrix — is designed in from the start for enterprise/HIPAA/HITRUST deployments
 rather than bolted on. Full details in [SECURITY.md](SECURITY.md).
+
+---
+
+## Contents
+
+- [Quick start](#quick-start)
+- [Architecture](#architecture)
+- [Management](#management)
+- [Experience](#experience)
+  - [`{{var}}` Jinja personalization (`request_vars`)](#var-jinja-personalization-request_vars)
+  - [Tap-to-talk (push-to-talk voice)](#tap-to-talk-push-to-talk-voice)
+  - [Resilience: brain stalls and tool-call spirals](#resilience-brain-stalls-and-tool-call-spirals)
+  - [Devices and media quality](#devices-and-media-quality)
+  - [Noise suppression (Tier-1 default + Tier-2 BYO-DSP)](#noise-suppression-tier-1-default--tier-2-byo-dsp)
+  - [KAVA analytics (opt-in, client-only Application Events)](#kava-analytics-opt-in-client-only-application-events)
+  - [Connectivity beacon (opt-in)](#connectivity-beacon-opt-in)
+- [Accessibility (WCAG 2.2 AA / captions) + AI-disclosure gate](#accessibility-wcag-22-aa--captions--ai-disclosure-gate)
+- [Security posture](#security-posture)
+- [Key design rules](#key-design-rules)
+- [Client-side commands](#client-side-commands)
+  - [Native client tools with a real wire ACK](#native-client-tools-with-a-real-wire-ack)
+  - [Handler results (local only, unless `waitForResponse:true`)](#handler-results-local-only-unless-waitforresponsetrue)
+  - [Arg validation before dispatch](#arg-validation-before-dispatch)
+  - [Fused multi-tool turns (handled automatically on the live session)](#fused-multi-tool-turns-handled-automatically-on-the-live-session)
+- [AI-SDR / CRM lead capture](#ai-sdr--crm-lead-capture)
+- [GenUI](#genui)
+- [Advanced / building-block exports](#advanced--building-block-exports)
+- [Testing](#testing)
+- [Intellect configuration](#intellect-configuration)
+- [Skills, voice import, and the embed snippet](#skills-voice-import-and-the-embed-snippet)
+- [RAG (knowledge base)](#rag-knowledge-base)
+- [Honest limits](#honest-limits)
+- [Reference](#reference)
+- [License](#license)
 
 ---
 
@@ -100,6 +132,8 @@ and `examples/deck-presenter.html` demonstrate the same real-relative-path patte
 
 **Core** (`src/core/`): injectable transports, RFC 9457 errors, NDJSON/SSE parser, redaction, idempotency, `_meta` receipts.
 
+An **intellect** is the brain half of an agent: its prompts, tools, capabilities, and knowledge linkage — everything that decides what the agent says and does. An **avatar** is the face and voice half. `Agents — CRUD` above combines one of each into the deployed, callable actor.
+
 ---
 
 ## Management
@@ -128,7 +162,7 @@ console.log(result.text, result.threadId);
 
 `converseOnce` returns `{ text, threadId, messageId, segments, toolCalls, experiences, experiencesList, kindCounts, spiralStopped, truncated, _meta }`. `spiralStopped:true` means a tool spiral was detected and cut short — check `toolCalls[0]` and re-prompt. `truncated:true` means the stream hit `maxSegments` (a runaway-non-tool-segment guard, default 2000) before finishing — gathered content is returned but the turn is incomplete.
 
-Pass `recoverFromSpiral: true` (to `converseOnce` or `conversations.send`) to auto-recover from the empty-spiral case: a tool-call loop so long the brain never reaches a spoken sentence in that turn (`spiralStopped:true` with `text:''`) leaves nothing to fall back to in the same turn, since headless HTTP has no live-socket `interrupt()`/reconnect to fall back on. When this happens, exactly one follow-up turn is sent on the same thread, prefixing the original message with `SPIRAL_RECOVERY_PREFIX` ("Please answer in words only this turn, without calling any tool. "). The result then carries `spiralRecovered` (`true`/`false`) and `firstAttempt: {toolCalls, spiralStopped}` from the discarded empty attempt. Never retries more than once, and off by default — omit the option for the original untouched behavior.
+Pass `recoverFromSpiral: true` (to `converseOnce` or `conversations.send`) to auto-recover from the empty-spiral case: a tool-call loop so long the brain never reaches a spoken sentence in that turn (`spiralStopped:true` with `text:''`) leaves nothing to fall back to in the same turn, since headless HTTP has no live-socket `interrupt()`/reconnect to fall back on. The result then carries `spiralRecovered` (`true`/`false`) and `firstAttempt: {toolCalls, spiralStopped}` from the discarded empty attempt. Off by default — omit the option for the original untouched behavior. See [Spiral recovery auto-resend](#resilience-brain-stalls-and-tool-call-spirals) below for how the shared `SPIRAL_RECOVERY_PREFIX` resend mechanism works; the headless path triggers it from an empty first attempt rather than a hard-spiral cold reconnect.
 
 ---
 
@@ -186,7 +220,7 @@ session.on('tapToTalkStarted', () => micButton.setAttribute('aria-pressed', 'tru
 session.on('tapToTalkEnded', () => micButton.setAttribute('aria-pressed', 'false'));
 ```
 
-`startTapToTalk()` throws `capability_disabled` unless `session.capabilities.tapToTalk` (from `clientConfiguration.isTapToTalk`) is true — verified against the live conversation-manager source that this is not optional: an open-mic agent's VAD turn-cutting branches on the *config* flag, not on tapped state, so it keeps minting turns unconditionally through a tap window, racing the same session state the tap bracket mutates. Treat `isTapToTalk` as a fixed, per-agent deployment choice, never a live per-session toggle a UI switches between — this matches how every push-to-talk/open-mic product surveyed (Discord, Alexa, automotive assistants) draws the line: one active capture mechanism at a time, chosen at configuration time, not offered as two live parallel controls. Build the UI conditionally on the flag instead:
+`startTapToTalk()` throws `capability_disabled` unless `session.capabilities.tapToTalk` (from `clientConfiguration.isTapToTalk`) is true. Treat `isTapToTalk` as a fixed, per-agent deployment choice, never a live per-session toggle — build the UI conditionally on the flag instead:
 
 ```js
 if (session.capabilities.tapToTalk) {
@@ -201,11 +235,13 @@ if (session.capabilities.tapToTalk) {
 }
 ```
 
-`speak()`/`interrupt()` throw `invalid_state` while a tap is open (they'd otherwise bracket the CM's tapped-mode window with the typed-text `isSpeechStart` marker, minting a duplicate turn); `startTapToTalk()`/`endTapToTalk()` throw `invalid_state` if called out of order, and are gated by the same `requireDisclosureAck` disclosure gate as `speak()`. Use click-to-toggle, not press-and-hold — for utterances longer than a short command (an investor Q&A question, not a walkie-talkie call sign), sustained-hold breaks usability and is poorly supported by screen readers; toggle also satisfies WCAG 2.5.2 Pointer Cancellation more simply (the down-event never fires the action). Pair it with silence-based auto-stop and a hard max-duration cap so an abandoned tap (tab closed, navigation away) can't leave a capture window open forever — treat a `disconnect`/`pagehide` while `tapToTalkActive` as an implicit `endTapToTalk()`.
+`speak()`/`interrupt()` throw `invalid_state` while a tap is open (they'd otherwise bracket the CM's tapped-mode window with the typed-text `isSpeechStart` marker, minting a duplicate turn); `startTapToTalk()`/`endTapToTalk()` throw `invalid_state` if called out of order, and are gated by the same `requireDisclosureAck` disclosure gate as `speak()`. Pair it with silence-based auto-stop and a hard max-duration cap so an abandoned tap (tab closed, navigation away) can't leave a capture window open forever — treat a `disconnect`/`pagehide` while `tapToTalkActive` as an implicit `endTapToTalk()`.
+
+Build the control as click-to-toggle, not press-and-hold: it's more usable for longer utterances and satisfies WCAG 2.5.2 Pointer Cancellation more simply, since the down-event never fires the action.
 
 ### Resilience: brain stalls and tool-call spirals
 
-`KalturaAvatarSession` watches for a brain that goes quiet or loops instead of answering — see [ARCHITECTURE.md](docs/ARCHITECTURE.md#resilience--failure-handling) for the full failure-mode matrix.
+`KalturaAvatarSession` watches for a brain that goes quiet or loops instead of answering — see [ARCHITECTURE-REFERENCE.md](docs/ARCHITECTURE-REFERENCE.md#resilience--failure-handling) for the full failure-mode matrix.
 
 - **Brain-stall watchdog** (`brainStallMs`, default on) — emits `brainStalled` (`{count}`), repeating for as long as nothing perceivable (spoken/avatar content or a GenUI widget) follows a turn.
 - **Tool-call spiral circuit breaker** — a two-tier guard against a brain that re-issues the same client command instead of narrating. Soft (`toolSpiralLimit`, default 10, per turn): emits `toolSpiralDetected` — signal only, does NOT call `interrupt()` (a mid-turn barge-in was found to truncate the turn's own narration with no recovery — see `docs/CLIENT-COMMANDS.md`'s "Tool spirals starve the voice"). Hard (`hardToolSpiralLimit`, default `toolSpiralLimit * 3`, session-scoped, immune to turn-boundary resets): emits `toolSpiralRecovering` (`{count, limit, lastTurnText}`) and forces a cold reconnect — a brand-new socket, replaying `threadId` so brain memory continues.
@@ -340,7 +376,7 @@ session.acknowledgeDisclosure();
 
 ## Security posture
 
-Designed for enterprise, HIPAA, HITRUST, and regulated frameworks. Full control matrix in [SECURITY.md](SECURITY.md).
+Designed for enterprise, HIPAA, HITRUST, and regulated frameworks. Full control matrix in [SECURITY.md](SECURITY.md). For Kaltura's authoritative legal/compliance positions, see [Kaltura's AI Principles](https://corp.kaltura.com/legal/compliance/kalturas-artificial-intelligence-principles/) and the [subprocessors list](https://corp.kaltura.com/legal/privacy/subprocessors-list/).
 
 | Control | What the SDK does |
 |---------|------------------|
@@ -497,7 +533,45 @@ A widget interrupted mid-stream (a different runtime/`speechId` arrives before i
 
 In LIVE mode (`.start()`), `ExperienceRenderer` also subscribes to the session's `turnStart` event (re-emitted from the raw `agent_start_speech` socket event — `{speechId, turnId, isNewTurn}`) and, by default (`clearOnTurnStart: true`), discards the assembler's in-flight buffer and clears `rendered`/`last` when `isNewTurn` is true, so a widget from a previous turn never lingers into the next one — the same correctness fix Genie's own web client applies by nulling its content on `AgentStartSpeechReceived`. A duplicate turn (`isNewTurn:false`, e.g. a CM-side `tap-to-talk` retrigger for a `turnId` already in flight) is ignored here, matching every other `turnStart`/`isNewTurn` consumer in the SDK — otherwise the duplicate would wipe an already-rendered widget out from under the viewer mid-turn. Pass `clearOnTurnStart: false` to keep pre-#28 behavior (accumulate/persist across turns).
 
-The `Presenter` helper (`./experience/presenter`, its own subpath so apps that don't need it never pay for its module graph) manages a deck walkthrough end to end: per-slide Dynamic Prompt injection, navigation via ONE deterministic, silent, idempotent mechanism (`onToolCall('navigate_to_slide')` — no speech-parsing fallback), duplicate-nav suppression, a sequential resume point (`reason:'resume'`), and session memory ("welcome back") — all pure logic over an injected `session`/`storage`, fully unit-testable. Read-only getters: `covered` (visited slide numbers), `questions`, `lastNav` (`{target, reason, at}`), `lastDppSlide`, `secondsOnCurrentSlide`, `memory`. Methods: `start()`, `goTo(n, reason)`, `refreshDpp()`, `saveMemory()`, `clearMemory()`, `recordQuestion(text)` for questions observed outside ASR (e.g. typed chat), and `appendSlide(slide)` to grow the deck at runtime (e.g. a brain-driven `create_slide` command) — it pushes onto `slides`/grows `total` and returns the new 1-based slide number, without navigating. Hooks for app-specific behavior without reimplementing Presenter — each exists because a real app needed to extend one specific seam without forking the class: `extendDpp(slide, ctx)` merges app-specific fields into every DPP sent (e.g. an engagement block built from `secondsOnCurrentSlide`); `extraMemory(questions)`/`restoreMemory(memory)` are the write/read pair for persisting app-specific fields alongside Presenter's own "welcome back" session memory, instead of layering a second storage call; `onTurnText(text, full)` fires with the per-turn accumulated avatar text — the same text Presenter itself uses internally — so an app can drive its own analytics or triggers off it; `onSlideChange(n, slide, reason)` is your renderer hook, called right after the DPP goes out (e.g. to page a PDF viewer to the new slide); `metaFor(category)` returns per-category DPP meta flags (`disclaimer_required`/`non_gaap_cited`) when your compliance categories differ from the financial/legal default; and `dppSlide(slide, ctx)` is a full-replace hook for the DPP's `slide:` sub-object when your slide shape doesn't match the default `{title, talking_points, category, content, narrator_guidance}` vocabulary (e.g. `body`/`topics`/`track`/`level`). `oneNavPerTurn: true` guards against a brain "restart" firing two different nav targets within the same spoken turn — the second is silently suppressed until the next turn. See `examples/deck-presenter.html` for a self-contained runnable demo: construct Presenter right after the session, before `connect()`, with `requireDisclosureAck: true` and the `extendDpp`/`extraMemory`/`restoreMemory` hooks in action.
+The `Presenter` helper (`./experience/presenter`, its own subpath so apps that don't need it never pay for its module graph) manages a deck walkthrough end to end: per-slide Dynamic Prompt (**DPP**) injection via `session.setDynamicPrompt()` — a structured context blob telling the brain what's on screen right now — navigation via ONE deterministic, silent, idempotent mechanism (`onToolCall('navigate_to_slide')` — no speech-parsing fallback), duplicate-nav suppression, a sequential resume point (`reason:'resume'`), and session memory ("welcome back") — all pure logic over an injected `session`/`storage`, fully unit-testable.
+
+**Getters** (read-only):
+
+| Getter | Returns |
+|--------|---------|
+| `covered` | Visited slide numbers |
+| `questions` | Questions recorded so far |
+| `lastNav` | `{target, reason, at}` |
+| `lastDppSlide` | The `slide:` sub-object last sent in a DPP |
+| `secondsOnCurrentSlide` | Seconds spent on the current slide |
+| `memory` | The current session-memory object |
+
+**Methods:**
+
+| Method | Purpose |
+|--------|---------|
+| `start()` | Begin the walkthrough |
+| `goTo(n, reason)` | Navigate to slide `n` |
+| `refreshDpp()` | Resend the current slide's Dynamic Prompt |
+| `saveMemory()` | Persist "welcome back" session memory |
+| `clearMemory()` | Clear session memory |
+| `recordQuestion(text)` | Record a question observed outside ASR (e.g. typed chat) |
+| `appendSlide(slide)` | Grow the deck at runtime (e.g. a brain-driven `create_slide` command); pushes onto `slides`, grows `total`, and returns the new 1-based slide number without navigating |
+
+**App hooks** (each exists because a real app needed to extend one specific seam without forking the class):
+
+| Hook | Signature | Purpose |
+|------|-----------|---------|
+| `extendDpp` | `(slide, ctx)` | Merges app-specific fields into every DPP sent (e.g. an engagement block built from `secondsOnCurrentSlide`) |
+| `extraMemory` / `restoreMemory` | `(questions)` / `(memory)` | Write/read pair for persisting app-specific fields alongside Presenter's own "welcome back" session memory, instead of layering a second storage call |
+| `onTurnText` | `(text, full)` | Fires with the per-turn accumulated avatar text — the same text Presenter itself uses internally — so an app can drive its own analytics or triggers off it |
+| `onSlideChange` | `(n, slide, reason)` | Your renderer hook, called right after the DPP goes out (e.g. to page a PDF viewer to the new slide) |
+| `metaFor` | `(category)` | Returns per-category DPP meta flags (`disclaimer_required`/`non_gaap_cited`) when your compliance categories differ from the financial/legal default |
+| `dppSlide` | `(slide, ctx)` | Full-replace hook for the DPP's `slide:` sub-object when your slide shape doesn't match the default `{title, talking_points, category, content, narrator_guidance}` vocabulary (e.g. `body`/`topics`/`track`/`level`) |
+
+The constructor option `oneNavPerTurn: true` guards against a brain "restart" firing two different nav targets within the same spoken turn — the second is silently suppressed until the next turn.
+
+See `examples/deck-presenter.html` for a self-contained runnable demo: construct Presenter right after the session, before `connect()`, with `requireDisclosureAck: true` and the `extendDpp`/`extraMemory`/`restoreMemory` hooks in action.
 
 ---
 
@@ -520,6 +594,7 @@ These are importable from their entry points and useful when composing custom pi
 | `summarizeReport(rows, opts)` | Aggregates raw reporting rows into a `{ _meta, totals, byAgent, byThread }` summary — the same shape returned by `genie.mjs report-summary`. |
 | `lintPrompts(prompts)` / `validatePromptVars(text, vars)` / `lintGlossary(glossary)` / `assembleSystemPrompt(parts)` | The prompt-authoring toolchain (`management/prompt-lint.js`): lint a prompt set for the `SYS_VARS` an intellect actually supplies, validate a template's `{{var}}` references against a known var set, lint a glossary for duplicate/conflicting terms, and assemble a final system prompt from ordered parts. Use these to catch a broken prompt (an unresolvable `{{var}}`, a name collision) before it ships, not after a live conversation surfaces it. |
 | `resolveCapabilities(layers)` / `CAPABILITY_STATE` / `CAPABILITY_INFO` | `management/capabilities.js`'s typed capability resolver: merges the `env`/`partnerConfig`/`request` layers for each entry in `CAPABILITIES` down to one resolved `CAPABILITY_STATE` (`on`/`off`/`disabled`) plus a `resolvedFrom` provenance tag, so a caller can build an accurate "what can this agent do" view without re-deriving precedence from raw config fields. `CAPABILITY_INFO` carries the human-readable name/description per capability. |
+| `findIntellectsReferencingTool(mgmt, toolId, ks)` | Lists every intellect's configId that currently references `toolId` in its `tool_ids`. This is the reuse-safety check `mgmt.tools.delete` runs by default before deleting a partner-level Tool — call it yourself to preview what a delete would break, or to build the same shared-by-name guard around your own upsert-by-name logic (`mgmt.skills`'s `delete` runs the analogous `findIntellectsReferencingSkill` check internally). |
 
 ### `./experience`
 
@@ -569,7 +644,7 @@ These are importable from their entry points and useful when composing custom pi
 | `buildPageLoadParams(common, fields)` / `buildButtonClickedParams(common, fields)` | Pure param-builders for the two valid client-side event types, used internally by `KavaAnalytics` and importable directly for a custom transport. |
 | `EVENT_TYPES` | `{pageLoad:10003, buttonClicked:10002}` — the only two valid client-side codes. |
 | `PAGE_TYPES` | The closed enum `pageLoad`'s `pageType` field is validated against. |
-| `HOSTING_APPLICATIONS` | `hostingKalturaApplication` values by name (`genieChat`, `agents`, `modelsSdk`, `conversationManager`, `avatarVideos`, `agenticAvatarsStudio`, `unisphereOs`, `kaiVendor`). |
+| `HOSTING_APPLICATIONS` | `hostingKalturaApplication` values by name: `genieChat`, `agents`, `modelsSdk`, `conversationManager`, `avatarVideos`, `agenticAvatarsStudio`, plus two internal analytics-only identifiers carried over from the backend's own dashboard naming — `unisphereOs` (the GenUI/runtime platform this SDK's `./experience/genui` renders against) and `kaiVendor` (a legacy internal hosting-app id with no public product meaning; kept only so KAVA event attribution matches the backend's existing dashboards). |
 | `DEFAULT_ANALYTICS_URL` | The KAVA ingestion endpoint (`https://analytics.kaltura.com/api_v3/index.php`). |
 
 ---
@@ -620,14 +695,19 @@ await mgmt.intellectConfig.setMcpServers(configId, { docs: { url: 'https://mcp.e
 
 ## Skills, voice import, and the embed snippet
 
-**Skills** (`mgmt.skills`) are standalone, partner-level reusable instruction entities on Genie (`v1/skill/*`) — `{id (uuid), name, description, instructions}`. Full lifecycle verified live; there is **no `skill/update` endpoint** on the current deployment, so recreate a skill to change it:
+**Skills** (`mgmt.skills`) are standalone, partner-level reusable instruction entities on Genie (`v1/skill/*`) — `{id (uuid), name, description, instructions}`. Full lifecycle verified live, including `update`:
 
 ```js
 const skill = await mgmt.skills.add({ name: 'greeter', description: 'Greets warmly.', instructions: 'Always say hi.' }, ks);
 const page = await mgmt.skills.list(ks);          // async-iterable + awaitable first page
 const one = await mgmt.skills.get(skill.id, ks);
+await mgmt.skills.update(skill.id, { instructions: 'Always say hi, in one short sentence.' }, ks);  // idempotent; renaming re-checks the unique-name constraint (409 on conflict)
 await mgmt.skills.delete(skill.id, ks, { confirmPermanent: true });
 ```
+
+`name` is checked against your partner id OR partner `0` (a shared global pool), so a name can collide with a global-pool Skill in ways invisible from a partner-scoped `list()` — the same nuance applies to Tools.
+
+Before deleting, `mgmt.skills.delete` lists every intellect and refuses with a typed `skill_in_use` error naming each one still referencing the id in `skill_ids`, unless called with `{confirmPermanent:true, force:true}` — Tools' `mgmt.tools.delete` carries the identical `tool_in_use` guard.
 
 Attach a Skill to an intellect via `intellectConfig.setSkillIds` — the intellect only holds a reference list (`{id, mode}` pairs), the skill body itself lives in `mgmt.skills`. `mode` is `'preloaded'` (instructions go in the system prompt every turn) or `'adhoc'` (the brain pulls it in only when relevant) — see the exported `SKILL_MODES`:
 
@@ -690,7 +770,9 @@ await mgmt.knowledge.deleteRecord(rec.id, ks, { confirmPermanent: true });
 |----------|---------------|
 | [API-REFERENCE.md](API-REFERENCE.md) | Every endpoint, payload, lifecycle, and use-case catalog |
 | [docs/WIRE-PROTOCOL.md](docs/WIRE-PROTOCOL.md) | Socket events, `speechId`, WHEP, ICE — verified by live capture |
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Backends, runtime, scale, and resilience model |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Backends, runtime, scale, and resilience model — the map |
+| [docs/ARCHITECTURE-REFERENCE.md](docs/ARCHITECTURE-REFERENCE.md) | Exact connect sequence, wire shapes, scaling internals, SDK module routing, failure-mode tables |
+| [docs/ARCHITECTURE-RECIPE.md](docs/ARCHITECTURE-RECIPE.md) | From-scratch reimplementation recipe, no Kaltura libs |
 | [SECURITY.md](SECURITY.md) | NIST 800-53 matrix, FIPS mode, incident-response runbook |
 | [docs/CLIENT-COMMANDS.md](docs/CLIENT-COMMANDS.md) | The two deployment gotchas, gotcha-free authoring pattern, and tool-spiral defenses for client-command intellects |
 | [docs/GENUI-REFERENCE.md](docs/GENUI-REFERENCE.md) | All first-class GenUI widgets — wire shapes, SDK functions, rendering anchors |
@@ -699,7 +781,7 @@ await mgmt.knowledge.deleteRecord(rec.id, ks, { confirmPermanent: true });
 | [docs/STRUCTURED-DATA-FORMS.md](docs/STRUCTURED-DATA-FORMS.md) | Collecting typed fields from the user mid-conversation (`user_properties_forms`) — schema, rendering, where submitted values go |
 | [docs/VOICE-INPUT-MODES.md](docs/VOICE-INPUT-MODES.md) | Choosing open-mic vs. push-to-talk, and the UX/accessibility/safety details around each |
 | `examples/` | One runnable example per use-case |
-| [kaltura/earnings-avatar-q2](https://github.com/kaltura/earnings-avatar-q2) | The reference app built on this SDK — an interactive investor-deck presentation narrated by a live avatar (private repo, same org) |
+| earnings-avatar-q2 | A reference app built on this SDK — an interactive investor-deck presentation narrated by a live avatar (private repo, not linked here) |
 
 ## License
 

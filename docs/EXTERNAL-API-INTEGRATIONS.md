@@ -10,7 +10,7 @@ writes (HubSpot, Salesforce, Marketo) are one common use case and get their own 
 below, but the same three-step pattern applies equally to a support desk, a booking system, a MAM
 (media asset management) API, an inventory lookup, or any other REST integration.
 
-If your use case is specifically getting the *user's own submitted data* (from a
+If your use case is specifically getting the *viewer's own submitted data* (from a
 `user_properties_forms` prompt) onto external infrastructure, read
 [STRUCTURED-DATA-FORMS.md](STRUCTURED-DATA-FORMS.md) first — it explains why
 `session.submitStructuredDataForm()` alone does **not** get you durable, retrievable data with this
@@ -31,13 +31,15 @@ pieces, always in this order:
    partner-level entity (`/v1/tool/*`), not embedded in the intellect.
 3. **Link it** — `mgmt.intellectConfig.setToolIds(configId, [toolId], adminKs)`.
 
-The secret reference must be the literal string `secrets.<name>` inside `{{...}}` — `buildAuth()`
-and every string field in an `api` tool's `request` block get this pattern resolved server-side by
-Jinja-templating over `request_config.variables`. It only resolves as `{{secrets.X}}`; a
-`{{variables.secrets.X}}` prefix silently renders empty at runtime — a real, discovered defect
-class. Run `mgmt.intellects.secrets.validate(configId, adminKs)` after wiring a tool: it scans every
-tool/prompt for secret references and flags exactly this `badPrefix` case, plus any reference to a
-secret name that doesn't exist yet.
+- **Secret references use one exact syntax.** Write `{{secrets.<name>}}` inside any string field of
+  an `api` tool's `request` block — `buildAuth()` and every request field resolve this pattern
+  server-side via Jinja-templating over `request_config.variables`.
+- **A `{{variables.secrets.X}}` prefix is a silent no-op.** Only the bare `{{secrets.X}}` form
+  resolves; the extra `variables.` prefix renders empty at runtime with no error — a real,
+  discovered defect class to watch for.
+- **Validate before you trust it.** Run `mgmt.intellects.secrets.validate(configId, adminKs)` after
+  wiring a tool — it scans every tool/prompt for secret references and flags both the `badPrefix`
+  mistake above and any reference to a secret name that doesn't exist yet.
 
 If instead you want the model to trigger *your own page-side JS* rather than a server-side HTTP
 call — e.g. push data into a client SDK already loaded in the browser — use a `type: "client"` tool
@@ -58,13 +60,13 @@ Most external APIs need one of two authentication shapes, both supported directl
   ```
 
   You own rotation for this credential — the platform doesn't refresh it.
-- **OAuth2 authorization-code flow** — for providers that require user consent and issue an
+- **OAuth2 authorization-code flow** — for providers that require viewer consent and issue an
   expiring, refreshable token. Covered in its own section below since it's a real, distinct
   backend-managed mechanism, not just a header.
 
 ## When you actually need OAuth2 — the real, backend-managed flow
 
-If your target API requires a proper three-legged OAuth2 authorization-code flow (a user must
+If your target API requires a proper three-legged OAuth2 authorization-code flow (a viewer must
 grant consent; the resulting token expires and needs refreshing), the platform has that — it's
 implemented, real, and lives entirely on the backend. Pass an `authentication` block instead of a
 static bearer header in an `api` tool's `request`:
@@ -98,26 +100,27 @@ const tool = api({
 A plaintext secret is rejected by construction, so there's no path for it to leak into a tool
 config at rest.
 
-What actually happens server-side (verified against the Genie brain backend's OAuth handler) is a
-genuine authorization-code exchange, not a pre-minted static token wearing an OAuth label:
+This is a genuine authorization-code exchange, not a pre-minted static token wearing an OAuth
+label. Here's what to build for and expect:
 
-- The first time the tool needs a token and none is cached, the backend raises an
-  `OAuthRequiredException`, which the conversation layer turns into an
-  `interruption` stream segment carrying a real `auth_url` — built with
-  `response_type=code&client_id=...&redirect_uri=...&state=...`, where `state` is a
-  sha256-derived value the backend can verify on callback. Your app needs to surface that URL to
-  the end user (open it in a new tab/window) so they can complete the provider's consent screen.
-- Once the provider redirects back with a `code`, the backend exchanges it for an access + refresh
-  token pair and caches them in a server-side token cache keyed to the tool/intellect for
-  **30 days** (`30 * 24 * 60 * 60` seconds).
-- On every subsequent call, if the cached access token is expired, the backend automatically uses
-  the `refresh_token` grant to get a new one — no user interaction, no redirect. Only if the refresh
-  itself fails does it raise `OAuthRequiredException` again, sending the user back through consent.
+- **First call, no cached token: handle the consent redirect.** The backend raises an
+  `OAuthRequiredException`, which the conversation layer turns into an `interruption` stream
+  segment carrying a real `auth_url` — built with
+  `response_type=code&client_id=...&redirect_uri=...&state=...`, where `state` is a sha256-derived
+  value the backend verifies on callback. Your app must surface that URL to the viewer (open it in
+  a new tab/window) so they can complete the provider's consent screen.
+- **After consent: tokens are cached for you.** Once the provider redirects back with a `code`,
+  the backend exchanges it for an access + refresh token pair and caches them in a server-side
+  token cache keyed to the tool/intellect for **30 days** (`30 * 24 * 60 * 60` seconds).
+- **Refresh is automatic.** On every subsequent call, if the cached access token is expired, the
+  backend uses the `refresh_token` grant to get a new one — no viewer interaction, no redirect.
+  Only if the refresh itself fails does it raise `OAuthRequiredException` again, sending the viewer
+  back through consent.
 
-This means: unlike a static-bearer-token tool (where *you* own token rotation), a tool wired
-through `authentication: {type: 'oauth2', ...}` gets consent and refresh handled for you by the
-platform. The tradeoff is the interruption/consent UX — your app has to handle the `interruption`
-segment and show the user a link, which a static bearer token never requires.
+Unlike a static-bearer-token tool (where *you* own token rotation), a tool wired through
+`authentication: {type: 'oauth2', ...}` gets consent and refresh handled for you by the platform.
+The tradeoff is the interruption/consent UX — your app has to handle the `interruption` segment and
+show the viewer a link, which a static bearer token never requires.
 
 ## Don't skip `kaltura_genie_experiences: 'off'`
 
@@ -232,12 +235,12 @@ secret, following the exact same three-step pattern as HubSpot/Salesforce above:
 
 - **Airtable** — a personal access token as a `Bearer` header, `POST` to
   `https://api.airtable.com/v0/{baseId}/{tableName}` with `body: {fields: {...}}`.
-- **Google Sheets** — Google's Sheets API requires OAuth2 (a service account or user consent), so
+- **Google Sheets** — Google's Sheets API requires OAuth2 (a service account or viewer consent), so
   use the `authentication: {type: 'oauth2', ...}` pattern above rather than a static token.
 - **Google Forms (prefill-and-submit link)** — Forms has no lead-write REST endpoint at all; the
   common workaround is a `client` tool that opens a pre-filled Forms URL (`viewform?usp=pp_url&
-  entry.<id>=<value>`) for the user, which is a UX handoff, not a server-side write — decide whether
-  that fits your flow before reaching for it.
+  entry.<id>=<value>`) for the viewer, which is a UX handoff, not a server-side write — decide
+  whether that fits your flow before reaching for it.
 - **Any other REST API** — same shape: static secret → `Authorization` header, or OAuth2 block if
   the provider requires it. This is exactly how you'd wire a MAM (media asset management) lookup, a
   support-ticketing system, a booking API, or anything else with an HTTP interface.

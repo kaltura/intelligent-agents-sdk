@@ -11,34 +11,29 @@ and for the exact socket events see [WIRE-PROTOCOL.md](WIRE-PROTOCOL.md) (`tapTo
 
 **Pick one mode per agent, at configuration time. Never offer both live in the same session.**
 
-This is not a UI-polish preference — it is a correctness requirement. The conversation-manager's own
-VAD turn-cutting branches on the agent's *configured* `isTapToTalk` flag, not on whether a tap window
-is currently open. An open-mic agent (`isTapToTalk:false`) keeps auto-cutting turns from its VAD
-unconditionally, even while a tap-to-talk bracket is open — the two mechanisms race the same
-`conversationStatus`/`latestSpeech` state with no mutual exclusion server-side (see WIRE-PROTOCOL.md's
-`tapToTalkStart`/`tapToTalkEnd` row for the verified source citation). The SDK enforces this client-side
-(`startTapToTalk()` throws `capability_disabled` unless `session.capabilities.tapToTalk`), but that gate
-exists because the server will not stop you from getting this wrong.
+This is not a UI-polish preference — it is a correctness requirement. The conversation-manager service (`CM`, the server runtime)'s own VAD turn-cutting branches on the agent's *configured* `isTapToTalk` flag, not on whether a tap window is currently open. An open-mic agent (`isTapToTalk:false`) keeps auto-cutting turns from its VAD unconditionally, even while a tap-to-talk bracket is open — the two mechanisms race the same `conversationStatus`/`latestSpeech` state with no mutual exclusion server-side (see WIRE-PROTOCOL.md's `tapToTalkStart`/`tapToTalkEnd` row for the verified source citation). The SDK enforces this client-side (`startTapToTalk()` throws `capability_disabled` unless `session.capabilities.tapToTalk`), but that gate exists because the server will not stop you from getting this wrong.
 
-Every push-to-talk/open-mic product surveyed for this guidance — Discord (single Input Mode setting),
-Amazon Alexa/Ford SYNC (wake-word vs. PTT-button as alternate *triggers* for one active capture
-mechanism, not two concurrent ones), WhatsApp (hold-to-record voice notes, no separate open-mic mode) —
-draws the same line: one active capture mechanism, chosen once, not a live per-session toggle exposing
-both.
+Every push-to-talk/open-mic product draws the same line — one active capture mechanism, chosen once, not a live per-session toggle exposing both:
+
+| Product | How it handles capture mode |
+|---|---|
+| Discord | Single Input Mode setting — no per-session switch |
+| Amazon Alexa / Ford SYNC | Wake-word vs. PTT-button are alternate *triggers* for one active capture mechanism, not two concurrent ones |
+| WhatsApp | Hold-to-record voice notes only — no separate open-mic mode |
 
 ## Deciding which mode fits your app
 
 | Use open-mic (VAD) when… | Use push-to-talk when… |
 |---|---|
-| Users ask longer, exploratory questions (investor Q&A, tutoring, free-form conversation) | Utterances are short, command-like bursts (a wake word, a walkie-talkie-style call) |
+| Viewers ask longer, exploratory questions (investor Q&A, tutoring, free-form conversation) | Utterances are short, command-like bursts (a wake word, a walkie-talkie-style call) |
 | The environment is relatively quiet / single-speaker (a kiosk, a 1:1 demo) | The environment is noisy or multi-speaker, and VAD would false-trigger on background talk |
-| You want zero-friction "just speak naturally" — no button to find or learn | Users need an explicit, deliberate boundary on when the mic is live (privacy-sensitive settings, shared/public devices) |
+| You want zero-friction "just speak naturally" — no button to find or learn | Viewers need an explicit, deliberate boundary on when the mic is live (privacy-sensitive settings, shared/public devices) |
 
-If your app's users will regularly speak in full sentences or ask multi-part questions, open-mic is
-the better default — the market research behind this doc found user complaints in both directions
-(ChatGPT iOS's press-and-hold caused thumb strain and blocked scrolling while dictating; Gemini Live's
-toggle/VAD mode cut off users mid-thought on long unstructured reasoning), and the complaints track
-utterance length more than any inherent superiority of one mode.
+If your viewers will regularly speak in full sentences or ask multi-part questions, open-mic is the
+better default. Complaints run in both directions — ChatGPT iOS's press-and-hold caused thumb strain
+and blocked scrolling while dictating; Gemini Live's toggle/VAD mode cut off speakers mid-thought on
+long unstructured reasoning (both widely reported in app-store reviews and tech press) — and they
+track utterance length more than any inherent superiority of one mode.
 
 ## UX pattern: click-to-toggle, not press-and-hold
 
@@ -69,9 +64,9 @@ Give the viewer three redundant signals that the mic is live, not one:
    recording icon, not just an `aria-pressed` attribute change).
 2. **An animated level indicator** — a waveform, pulsing glow, or (simplest, and already available)
    this SDK's `localMicLevel` event (`{level}`, 0–1, ~50ms tick) driving a CSS custom property, exactly
-   as the reference app's mute button already does for open-mic. A single static icon alone was
-   explicitly criticized in the market research (NN/g's critique of Amazon Echo's single light ring as
-   "a far cry from rich textual feedback").
+   as the reference app's mute button already does for open-mic. A single static icon alone is not
+   enough (NN/g's critique of Amazon Echo's single light ring as "a far cry from rich textual
+   feedback").
 3. **A live-region text or caption update** (`aria-live`) confirming state changes ("Listening…" /
    "Sent") — necessary for screen-reader users who can't see the icon/waveform at all. Pair with an
    audio cue (a short start/stop tone) as an additional non-visual channel if your app's audio design
@@ -86,8 +81,8 @@ CM's `InTappedMode` state stuck. Layer these on top of `startTapToTalk()`/`endTa
   so a forgotten "open" mic doesn't stay live indefinitely.
 - **A hard max-duration cap** — an absolute ceiling regardless of speech/silence, as a backstop.
 - **Treat disconnect/`pagehide`/`visibilitychange` as an implicit close** — the browser's own
-  `getUserMedia`/socket teardown on tab close is the only mechanism that reliably fires when the user
-  abandons the tab mid-recording; call `endTapToTalk()` (or just let `disconnect` naturally end the
+  `getUserMedia`/socket teardown on tab close is the only mechanism that reliably fires when the
+  viewer abandons the tab mid-recording; call `endTapToTalk()` (or just let `disconnect` naturally end the
   session) from those events rather than assuming a clean call will always arrive.
 
 ## Implementation checklist

@@ -479,6 +479,62 @@ export class Knowledge {
   }
 
   /**
+   * Upload markdown text into a knowledge category by attaching a
+   * KalturaMarkdownAsset directly. WRITE — NOT idempotent. The indexer only
+   * scans an entry's ATTACHMENT assets for a `markdown.markdown` asset, never
+   * an entry's own primary content — a raw `.md` set as an entry's content
+   * (via {@link uploadDocument}'s path) is invisible to it, and the backend's
+   * async PDF→markdown-attachment conversion only fires for PDF entries. This
+   * method skips both: it creates the backing entry (kept in sync for
+   * browsability), then attaches the SAME markdown as its own
+   * `KalturaMarkdownAsset` via a second, independent upload token — the thing
+   * the indexer actually indexes. Returns `{entryId, categoryId, markdownAssetId}`.
+   * @param {object} opts
+   * @param {string} opts.markdown
+   * @param {string} opts.name
+   * @param {number} opts.categoryId   The agent's knowledge category (from {@link getLinkage}).
+   * @param {string} ks (admin)
+   */
+  async uploadMarkdown(opts, ks) {
+    this._.assertAdmin(ks, 'knowledge.uploadMarkdown');
+    if (!opts?.markdown) throw new KalturaError({ type: 'about:blank', title: 'markdown required', code: 'bad_request', detail: 'knowledge.uploadMarkdown needs a { markdown } string.' });
+    if (!opts.categoryId) throw new KalturaError({ type: 'about:blank', title: 'categoryId required', code: 'bad_request', detail: 'Pass the agent knowledge categoryId (knowledge.getLinkage).' });
+    const name = opts.name || 'document.md';
+    // 1) backing document entry + its own upload token (multirequest)
+    const created = await this._.ovpMulti([
+      { service: 'baseentry', action: 'add', entry: { objectType: 'KalturaDocumentEntry', name, type: '10', documentType: 11 } },
+      { service: 'uploadtoken', action: 'add', uploadToken: { objectType: 'KalturaUploadToken', fileName: name } },
+    ], ks);
+    const entryId = created?.[0]?.id;
+    const entryTokenId = created?.[1]?.id;
+    if (!entryId || !entryTokenId) throw new KalturaError({ type: 'about:blank', title: 'markdown upload init failed', code: 'server_error', detail: 'baseentry/uploadtoken add returned no ids', body: created });
+    const entryFd = newFormData();
+    entryFd.append('fileData', new Blob([opts.markdown], { type: 'text/markdown' }), name);
+    await this._.ovpUpload(entryTokenId, entryFd, ks);
+    // 2) attach content to the entry + assign to the knowledge category (multirequest)
+    const linked = await this._.ovpMulti([
+      { service: 'baseentry', action: 'updateContent', entryId, resource: { objectType: 'KalturaUploadedFileTokenResource', token: entryTokenId } },
+      { service: 'categoryentry', action: 'add', categoryEntry: { objectType: 'KalturaCategoryEntry', categoryId: opts.categoryId, entryId } },
+    ], ks);
+    const linkErr = (linked || []).find((r) => r?.objectType === 'KalturaAPIException');
+    if (linkErr) throw new KalturaError({ type: 'about:blank', title: linkErr.code, code: 'ovp_error', detail: linkErr.message, body: linkErr });
+    // 3) the thing the indexer actually scans for: a SEPARATE KalturaMarkdownAsset
+    // attachment, uploaded via its own token — bypasses the backend's PDF
+    // conversion pipeline entirely.
+    const assetToken = await this._.ovp('uploadtoken', 'add', { uploadToken: { objectType: 'KalturaUploadToken', fileName: name } }, ks);
+    const assetFd = newFormData();
+    assetFd.append('fileData', new Blob([opts.markdown], { type: 'text/markdown' }), name);
+    await this._.ovpUpload(assetToken.id, assetFd, ks);
+    const asset = await this._.ovp('attachment_attachmentasset', 'add', {
+      entryId, attachmentAsset: { objectType: 'KalturaMarkdownAsset', filename: name, fileExt: 'md', format: 5 },
+    }, ks);
+    await this._.ovp('attachment_attachmentasset', 'setContent', {
+      id: asset.id, contentResource: { objectType: 'KalturaUploadedFileTokenResource', token: assetToken.id },
+    }, ks);
+    return { entryId, categoryId: opts.categoryId, markdownAssetId: asset.id };
+  }
+
+  /**
    * Attach an EXISTING Kaltura entry to a knowledge category. WRITE — idempotent
    * (categoryEntry is unique per pair). @param {string} entryId @param {number} categoryId @param {string} ks (admin)
    */

@@ -43,6 +43,9 @@ function provisionFetch({ configId, agentId, avatarId, widgetId, voiceItemId, vi
     { match: '/catalog-item/list', respond: (req) => ({ body: { objects: [{ itemId: req.body?.filter?.typeEqual === 'Voice' ? voiceItemId : visualItemId }], totalCount: 1 } }) },
     { match: '/avatar/create', respond: () => ({ body: { id: avatarId } }) },
     { match: '/application/resolveWidgetId', respond: () => ({ body: { widgetId } }) },
+    // applyTools()'s shared-by-name hazard guard checks this before overwriting a
+    // name-matched existing Tool's config — no other intellect references it here.
+    { match: '/v1/intellect/list', respond: () => ({ body: { totalCount: 0, objects: [] } }) },
   ]);
 }
 

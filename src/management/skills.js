@@ -4,8 +4,23 @@
  * `{id (uuid), name, description, instructions, partner_id, created_at,
  * updated_at}` — a named, reusable behavior description the brain can draw on
  * (verified live: add returns the full entity; delete → get 404s "Skill not
- * found"; another partner's id 403s). There is no `skill/update` endpoint on
- * the current deployment — recreate to change one.
+ * found"; another partner's id 403s). `update()` below is the idempotent
+ * re-edit path — `/v1/skill/update` is live (renames re-check the same
+ * partner-unique-name constraint as `add`, 409 on conflict).
+ *
+ * `name` is unique per partner OR against a shared GLOBAL pool: lookups match
+ * `partner_id IN (yours, 0)`, so a name can collide with a partner-0 global
+ * Skill in ways that aren't visible from a partner-scoped `list()` alone —
+ * the same nuance applies to {@link Tools} (see its class doc).
+ *
+ * SHARED-BY-NAME HAZARD: because `name` is the lookup key callers upsert
+ * against (see `sdk/src/management/provision.js`'s `applyTools` for the
+ * identical pattern applied to Tools, or an app's own upsert-by-name helper),
+ * two independently-run provisioning flows for
+ * the SAME name silently converge on the SAME Skill entity — deleting (or
+ * unexpectedly editing) it affects every intellect that references it, not
+ * just the one the caller has in mind. `delete()` below checks for exactly
+ * this before acting.
  */
 import { paginate } from './paginate.js';
 import { uuidv4, meta } from '../core/ids.js';
@@ -17,6 +32,33 @@ function requireSkillId(v, where) {
   if (typeof v !== 'string' || !v.trim()) {
     throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: `${where} id must be a non-empty string (the Skill entity's uuid).` });
   }
+}
+
+/**
+ * List every intellect's configId that currently references `skillId` in its
+ * `skill_ids` (each entry is `{id, mode}` — mode is irrelevant to the check).
+ * The safety check {@link Skills#delete} runs before deleting a PARTNER-LEVEL
+ * Skill that may be shared across intellects (see the class doc). Mirrors
+ * `tools.js`'s `findIntellectsReferencingTool` exactly, adapted to the
+ * `SkillRef[]` shape.
+ * @param {import('./client.js').Ctx} ctx @param {string} skillId @param {string} ks
+ * @returns {Promise<number[]>}
+ */
+async function findIntellectsReferencingSkill(ctx, skillId, ks) {
+  const refs = [];
+  const pageSize = 50;
+  for (let pageIndex = 1; ; pageIndex += 1) {
+    const page = (await ctx.genie('v1/intellect/list', { filter: {}, pager: { pageIndex, pageSize } }, ks)).data;
+    const objects = Array.isArray(page?.objects) ? page.objects : [];
+    for (const item of objects) {
+      if (item?.id === undefined) continue;
+      const full = await ctx.genie('v1/intellect/get', { id: item.id }, ks).then((r) => r.data).catch(() => null);
+      if (Array.isArray(full?.skill_ids) && full.skill_ids.some((ref) => ref?.id === skillId)) refs.push(item.id);
+    }
+    const total = page?.totalCount;
+    if (objects.length === 0 || (typeof total === 'number' && pageIndex * pageSize >= total)) break;
+  }
+  return refs;
 }
 
 export class Skills {
@@ -78,16 +120,71 @@ export class Skills {
   }
 
   /**
+   * Update a Skill's name/description/instructions. WRITE — idempotent.
+   * `/v1/skill/update` re-checks the partner-unique-name constraint on a
+   * rename (409 on conflict, same as `add`).
+   * @param {string} id @param {{name?:string, description?:string, instructions?:string}} patch
+   * @param {string} ks (admin)
+   * @returns {Promise<{id:string, name:string, description:string, instructions:string|null, partner_id:number, created_at:string, updated_at:string}>}
+   */
+  async update(id, patch, ks) {
+    this._.assertAdmin(ks, 'skills.update');
+    requireSkillId(id, 'skills.update');
+    if (!patch || typeof patch !== 'object' || Array.isArray(patch)) {
+      throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: 'skills.update needs a patch object {name?, description?, instructions?}.' });
+    }
+    if (patch.name === undefined && patch.description === undefined && patch.instructions === undefined) {
+      throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: 'skills.update needs at least one of name/description/instructions.' });
+    }
+    /** @type {Record<string,unknown>} */
+    const body = { id };
+    if (patch.name !== undefined) {
+      if (typeof patch.name !== 'string' || !patch.name.trim()) throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: 'skills.update patch.name must be a non-empty string.' });
+      body.name = patch.name;
+    }
+    if (patch.description !== undefined) {
+      if (typeof patch.description !== 'string' || !patch.description.trim()) throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: 'skills.update patch.description must be a non-empty string.' });
+      body.description = patch.description;
+    }
+    if (patch.instructions !== undefined) {
+      if (typeof patch.instructions !== 'string') throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: 'skills.update patch.instructions, when given, must be a string.' });
+      body.instructions = patch.instructions;
+    }
+    return (await this._.genie('v1/skill/update', body, ks, { idempotencyKey: uuidv4() })).data;
+  }
+
+  /**
    * Delete a Skill by id. WRITE — destructive (requires confirmation). The
    * wire reply is `{id}`; a follow-up `get` 404s (verified live).
-   * @param {string} id @param {string} ks (admin) @param {{confirmPermanent:boolean}} confirm
-   * @returns {Promise<{removed:string, _meta:object}>}
+   *
+   * SAFETY CHECK (default on): before deleting, lists every intellect and
+   * refuses with a typed `skill_in_use` error naming each one still carrying
+   * this id in `skill_ids` — Skills are partner-level and shared by name (see
+   * the class doc), so a stale saved id can easily still be load-bearing for
+   * a DIFFERENT intellect than the caller has in mind. Pass
+   * `{confirmPermanent:true, force:true}` to skip the check and delete
+   * unconditionally.
+   * @param {string} id @param {string} ks (admin) @param {{confirmPermanent:boolean, force?:boolean}} confirm
+   * @returns {Promise<{removed:string, _meta:object, skippedInUseCheck?:boolean}>}
    */
   async delete(id, ks, confirm) {
     this._.assertAdmin(ks, 'skills.delete');
     requireSkillId(id, 'skills.delete');
     requireConfirm(confirm, 'skills.delete', id);
+    if (!confirm.force) {
+      const refs = await findIntellectsReferencingSkill(this._, id, ks);
+      if (refs.length) {
+        throw new KalturaError({
+          type: 'about:blank', title: 'skill in use', code: 'skill_in_use',
+          detail: `skill ${id} is still referenced in skill_ids by ${refs.length} intellect(s) (configId: ${refs.join(', ')}) — deleting it would break every one still calling it. Drop it from their skill_ids first via intellectConfig.setSkillIds, or pass {confirmPermanent:true, force:true} to delete anyway.`,
+        });
+      }
+    }
     await this._.genie('v1/skill/delete', { id }, ks);
-    return { removed: id, _meta: meta({ partnerId: this._.partnerId, source: 'genie/skill.delete', scope: `skill:${id}` }) };
+    return {
+      removed: id,
+      ...(confirm.force ? { skippedInUseCheck: true } : {}),
+      _meta: meta({ partnerId: this._.partnerId, source: 'genie/skill.delete', scope: `skill:${id}` }),
+    };
   }
 }

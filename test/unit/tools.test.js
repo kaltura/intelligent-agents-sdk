@@ -349,17 +349,43 @@ test('update requires at least one of name/config', async () => {
   assert.equal(ff.calls.length, 0);
 });
 
-test('delete requires confirmPermanent, then deletes by id', async () => {
+test('delete requires confirmPermanent, then checks for referencing intellects, then deletes by id', async () => {
   const { mgmt, ff } = harness([
     { match: 'v1/tool/delete', respond: () => ({ status: 200, body: {} }) },
+    { match: 'v1/intellect/list', respond: () => ({ status: 200, body: { totalCount: 0, objects: [] } }) },
   ]);
   await assert.rejects(() => mgmt.tools.delete('tool-1', ADMIN_KS, {}), (e) => e.code === 'confirmation_required');
   assert.equal(ff.calls.length, 0, 'no write before confirmation');
 
   const res = await mgmt.tools.delete('tool-1', ADMIN_KS, { confirmPermanent: true });
   assert.equal(res.removed, 'tool-1');
+  assert.equal(res.skippedInUseCheck, undefined);
   assert.match(res._meta.generatedAt, /^\d{4}-\d{2}-\d{2}T.*Z$/);
-  assert.equal(ff.calls[0].body.id, 'tool-1');
+  assert.match(ff.calls.at(-1).url, /v1\/tool\/delete$/);
+  assert.equal(ff.calls.at(-1).body.id, 'tool-1');
+});
+
+test('delete refuses with tool_in_use when an intellect still carries the id in tool_ids', async () => {
+  const { mgmt, ff } = harness([
+    { match: 'v1/tool/delete', respond: () => ({ status: 200, body: {} }) },
+    { match: 'v1/intellect/list', respond: () => ({ status: 200, body: { totalCount: 1, objects: [{ id: 42 }] } }) },
+    { match: 'v1/intellect/get', respond: () => ({ status: 200, body: { id: 42, tool_ids: ['tool-1'] } }) },
+  ]);
+  await assert.rejects(
+    () => mgmt.tools.delete('tool-1', ADMIN_KS, { confirmPermanent: true }),
+    (e) => e.code === 'tool_in_use' && /42/.test(e.detail),
+  );
+  assert.equal(ff.calls.some((c) => /v1\/tool\/delete$/.test(c.url)), false, 'refuses before the destructive call');
+});
+
+test('delete with {force:true} skips the reference check entirely', async () => {
+  const { mgmt, ff } = harness([
+    { match: 'v1/tool/delete', respond: () => ({ status: 200, body: {} }) },
+  ]);
+  const res = await mgmt.tools.delete('tool-1', ADMIN_KS, { confirmPermanent: true, force: true });
+  assert.equal(res.removed, 'tool-1');
+  assert.equal(res.skippedInUseCheck, true);
+  assert.equal(ff.calls.some((c) => /v1\/intellect\/list$/.test(c.url)), false, 'force bypasses the lookup entirely');
 });
 
 test('every wire method asserts admin scope (rejects a conversation token)', async () => {

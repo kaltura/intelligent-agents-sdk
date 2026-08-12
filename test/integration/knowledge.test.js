@@ -93,6 +93,40 @@ test('uploadDocument runs the 4-step flow: entry+token → upload → addContent
   assert.ok(f.calls.some((c) => c.url.includes('/uploadtoken/action/upload')));
 });
 
+test('uploadMarkdown creates the entry, links it, then attaches a KalturaMarkdownAsset via a separate token', async () => {
+  const seen = { multi: [], addTokens: 0 };
+  const f = fakeFetch([
+    { match: '/service/multirequest', respond: (req) => {
+        seen.multi.push(req.body);
+        // first multirequest = baseentry.add + uploadtoken.add (backing entry)
+        if (req.body['0']?.service === 'baseentry' && req.body['0']?.action === 'add') return { body: [{ id: '1_md' }, { id: '1_entrytok' }] };
+        // second = baseentry.updateContent + categoryentry.add
+        return { body: [{ id: '1_md' }, { categoryId: 413804062, entryId: '1_md' }] };
+      } },
+    { match: '/uploadtoken/action/upload', respond: () => ({ body: { id: '1_assettok', fileName: 'facts.md' } }) },
+    { match: '/service/uploadtoken/action/add', respond: () => { seen.addTokens += 1; return { body: { id: '1_assettok' } }; } },
+    { match: '/service/attachment_attachmentasset/action/add', respond: () => ({ body: { id: '1_asset', objectType: 'KalturaMarkdownAsset' } }) },
+    { match: '/service/attachment_attachmentasset/action/setContent', respond: () => ({ body: { id: '1_asset' } }) },
+  ]);
+  const m = new Management({ partnerId: 6516742, adminSecret: 'a'.repeat(32), fetch: f });
+  const r = await m.knowledge.uploadMarkdown({ markdown: '# Facts\n\nRevenue was $1.\n', name: 'facts.md', categoryId: 413804062 }, ADMIN);
+  assert.equal(r.entryId, '1_md');
+  assert.equal(r.categoryId, 413804062);
+  assert.equal(r.markdownAssetId, '1_asset');
+  // backing entry: a document entry, not a PDF-conversion dependency
+  assert.equal(seen.multi[0]['0'].entry.objectType, 'KalturaDocumentEntry');
+  // linked into the category
+  assert.equal(seen.multi[1]['1'].service, 'categoryentry');
+  assert.equal(seen.multi[1]['1'].categoryEntry.categoryId, 413804062);
+  // a SEPARATE upload token was minted for the markdown asset (not reusing the entry's token)
+  assert.equal(seen.addTokens, 1);
+  // the attachment itself is the markdown asset the indexer scans for
+  assert.ok(f.calls.some((c) => c.url.includes('/attachment_attachmentasset/action/add')));
+  assert.ok(f.calls.some((c) => c.url.includes('/attachment_attachmentasset/action/setContent')));
+  // two independent upload passes happened (entry content + asset content)
+  assert.equal(f.calls.filter((c) => c.url.includes('/uploadtoken/action/upload')).length, 2);
+});
+
 test('attachEntry assigns an existing entry; detachEntry needs confirmation', async () => {
   const f = fakeFetch([{ match: '/categoryentry/action/add', respond: () => ({ body: { categoryId: 5, entryId: '1_x' } }) }]);
   const m = new Management({ partnerId: 6516742, adminSecret: 'a'.repeat(32), fetch: f });

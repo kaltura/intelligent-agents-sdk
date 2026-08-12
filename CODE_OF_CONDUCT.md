@@ -11,7 +11,7 @@ Examples of behavior that contributes to a positive environment:
 
 - Being respectful of differing viewpoints and experiences.
 - Giving and gracefully accepting constructive feedback.
-- Focusing on what is best for the project and its users.
+- Focusing on what is best for the project and the people who rely on it.
 
 Examples of unacceptable behavior:
 
@@ -22,8 +22,10 @@ Examples of unacceptable behavior:
 
 ## Enforcement
 
-Instances of unacceptable behavior may be reported to **security@kaltura.com**.
-All complaints will be reviewed and investigated promptly and fairly.
+Instances of unacceptable behavior may be reported to **community@kaltura.com**
+(do not use `security@kaltura.com`, which is [SECURITY.md](SECURITY.md)'s
+vulnerability-disclosure address, not a conduct inbox). All complaints will be
+reviewed and investigated promptly and fairly.
 
 ## Attribution
 

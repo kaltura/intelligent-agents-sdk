@@ -27,10 +27,11 @@ const SELF = 'tools/check-docs.mjs';
 
 const DOCS = [
   'README.md', 'API-REFERENCE.md', 'GETTING-STARTED.md',
-  'docs/ARCHITECTURE.md', 'docs/WIRE-PROTOCOL.md', 'docs/GENUI-REFERENCE.md',
+  'docs/ARCHITECTURE.md', 'docs/ARCHITECTURE-REFERENCE.md', 'docs/ARCHITECTURE-RECIPE.md',
+  'docs/WIRE-PROTOCOL.md', 'docs/GENUI-REFERENCE.md',
   'docs/CLIENT-COMMANDS.md', 'docs/DYNAMIC-DATA-INJECTION.md',
   'docs/STRUCTURED-DATA-FORMS.md', 'docs/EXTERNAL-API-INTEGRATIONS.md',
-  'docs/VOICE-INPUT-MODES.md', 'SECURITY.md', 'SDK_CONSTITUTION.md',
+  'docs/VOICE-INPUT-MODES.md', 'docs/USE-CASES.md', 'SECURITY.md', 'SDK_CONSTITUTION.md',
 ];
 
 /** Read a file relative to ROOT, return empty string if missing. */

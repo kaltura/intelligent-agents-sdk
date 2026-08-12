@@ -21,7 +21,7 @@ This is the deep reference behind [ARCHITECTURE.md](ARCHITECTURE.md) → "Video 
 
 > Server-emitted events are anchored to their real emit sites in `CM` (above); where a payload is confirmed against server-side behavior it cites `CM`. Items still derived only from the live capture or client contract are marked **(server-side; inferred from contract)**.
 
-> **Two more terms recur in the body without their own table row.** `class-genie` and `embed-sdk` (the per-client ICE-policy tables in §5/§6) are `CG`'s and `EMBED`'s own internal client names — the same two components above, not additional ones. **"Debug panel"** is a generic `debugMode`-gated developer log UI that recurs across clients rather than a single component with its own source citation — a row citing it means "also visible in a debug UI," not a distinct client contract.
+> **One more term recurs in the body without its own table row.** **"Debug panel"** is a generic `debugMode`-gated developer log UI that recurs across clients rather than a single component with its own source citation — a row citing it means "also visible in a debug UI," not a distinct client contract.
 
 ---
 
@@ -107,7 +107,7 @@ Direction: `→` client emits, `←` server emits. "Captured" = seen in the live
 | `asr-webrtc-ice-candidate` | `{ candidate:{candidate,sdpMLineIndex} }` | `CG` (`RTC`) | Trickle a local ICE candidate for the ASR pc (the SDK extracts only these two fields). |
 | `approvedPermissions` | clients emit `{ client, room }` — **server consumes nothing from it** | `CM` `socket.on('approvedPermissions')` (derives room from `socket.id`); `CG` | Mic+video ready → sets `userReadyForConversation=true` and **starts the conversation/greeting**. |
 | `onTextEntered` (server handler) / `debug_text_entered` (captured client emit) | server reads `{ text, isFinal, isSpeechStart? }` | server: `CM` `socket.on('onTextEntered')`; client emit implemented as `SDK:session.js speak()`/`interrupt()` (`buildTextEntered`), debug mirror captured as `debug_text_entered` (`EMBED`) | **Drive the avatar by text** instead of voice — routed to the same path as ASR transcripts (`conversationManager.vadSpeechDetected(text, …, isFinal?'final':'partial', …)`), NOT `/assistant/converse` HTTP (that never reaches the speech engine). `isFinal:false` for a partial; `isSpeechStart:true` (with `text:''`) is the correct barge-in marker — it interrupts a mid-sentence avatar (no-op if idle) and is sent BEFORE the real text on every `speak()` call, plus alone from `interrupt()`. The server routes by the socket's own room (`room: socket.id`) and **does not read `room_id`/`session_id`** — those fields seen in captures are ignored server-side. |
-| `tapToTalkStart` / `tapToTalkEnd` | `{}` | `CM`'s tap-to-talk handlers (registered unconditionally, regardless of `isTapToTalk`) | Push-to-talk voice-capture mode (a button tap, not typed text) — flips `conversationStatus` to `InTappedMode` and resets `latestSpeech`; `tapToTalkEnd` schedules a 300ms timer that mints the turn from whatever was buffered. **Do not use for typed-text barge-in**: bracketing `onTextEntered` in this pair mints a duplicate turn with no invalidation of the first. The SDK emits this pair from `KalturaAvatarSession#startTapToTalk()`/`#endTapToTalk()`; the resulting turn arrives via the existing `agentTurnToTalk` handler like any open-mic turn. **Only safe when the agent is configured `isTapToTalk:true`** — verified against the live CM behavior: the transcript handler branches on the *config* flag `isTapToTalk` (not on `InTappedMode`) to decide whether to buffer transcripts for the tap window or auto-cut a turn immediately, so an open-mic (`isTapToTalk:false`) agent's VAD keeps minting turns unconditionally through a tap window, racing the same `conversationStatus`/`latestSpeech` state with no mutual exclusion server-side. The SDK enforces this client-side (`startTapToTalk()` throws `capability_disabled` unless `capabilities.tapToTalk`) since the server accepts the events either way. For the app-level decision of when to use this mode and how to design its UI, see [VOICE-INPUT-MODES.md](VOICE-INPUT-MODES.md). |
+| `tapToTalkStart` / `tapToTalkEnd` | `{}` | `CM`'s tap-to-talk handlers (registered unconditionally, regardless of `isTapToTalk`) | Push-to-talk voice-capture mode (a button tap, not typed text) — flips `conversationStatus` to `InTappedMode` and resets `latestSpeech`. **Only safe when the agent is configured `isTapToTalk:true`** — see below for why, and for the SDK's client-side guard. |
 | `isValidSession` | `{ client, clickId, hashClickId, userAgent }` | `CM` `socket.on('isValidSession')` | Ask the server to validate the entry/session before joining → replies `validSession` (or `throwToBadRequest`/`throwToExceededTier`). |
 | `checkAvailability` | `{}` (server reads mode/language from `clientConfiguration`, not the arg) | `CM` `socket.on('checkAvailability')` | Poll for a free agent slot without queuing — platform has no server-side queue; client-side polling only. Replies `availabilityResult`. |
 | `pauseConversation` / `resumeConversation` | `{}` | `CM` | Pause/resume the live turn loop. |
@@ -115,6 +115,29 @@ Direction: `→` client emits, `←` server emits. "Captured" = seen in the live
 | `setDebugMode` | `{ debugMode }` | `CM` | Toggle the `debug_*` event stream at runtime (complements the `?debugMode` query param). |
 | `userCameraShot` / `userScreenShareShot` | `{ data }` (ArrayBuffer) | `CM` | Push a camera / screen-share still for vision analysis (gated by the camera/screen-share capabilities). |
 | `onHtmlElementClick` / `iframeComplete` / `codeBlockComplete` / `setDynamicPrompt` / `setFormLeadInfo` | per handler (e.g. `{ htmlText }`, `{ message }`, `{ data }`) | `CM` | GenUI / structured-data-form interaction callbacks. |
+
+#### `tapToTalkStart`/`tapToTalkEnd` in detail
+
+`tapToTalkEnd` schedules a 300ms timer that mints the turn from whatever was buffered during the
+tap window. The SDK emits this pair from `KalturaAvatarSession#startTapToTalk()`/`#endTapToTalk()`;
+the resulting turn arrives via the existing `agentTurnToTalk` handler like any open-mic turn.
+
+**Do not use for typed-text barge-in.** Bracketing `onTextEntered` inside this pair mints a
+duplicate turn, since neither `tapToTalkStart` nor `tapToTalkEnd` invalidates a turn already in
+flight.
+
+**Why `isTapToTalk:true` is required, not optional.** `CM` registers its tap-to-talk handlers
+unconditionally, regardless of how the agent is configured — the server accepts these events
+either way. Safety comes from a different branch: the transcript handler decides whether to
+buffer transcripts for the tap window or auto-cut a turn immediately by checking the *config* flag
+`isTapToTalk`, not the live `InTappedMode` conversation state. On an open-mic (`isTapToTalk:false`)
+agent, VAD keeps minting turns unconditionally through a tap window, racing the same
+`conversationStatus`/`latestSpeech` state with no mutual exclusion server-side. The SDK closes this
+gap client-side instead: `startTapToTalk()` throws `capability_disabled` unless
+`capabilities.tapToTalk` is set.
+
+For the app-level decision of when to use this mode and how to design its UI, see
+[VOICE-INPUT-MODES.md](VOICE-INPUT-MODES.md).
 
 ### 4b. Server → Client (on) — handshake/session phase
 
@@ -193,13 +216,48 @@ Always-present fields are `role` (always `"assistant"`), `type`, `content`, `seg
 |---|---|---|
 | `text` | parser default (un-fenced) | brain prose; what the typed-chat UI renders |
 | `think` | control | "preparing to answer…"; start/end bracket the thinking phase; final `think` carries `isFinal:true` |
-| `tool` / `tool_response` | control (`:218,247,264,277`) | a tool call + result. `content` is the wire form `"<toolName> <json-args>"` (e.g. `navigate_to_slide {"slide_num": 4}`); the `tool` segment fires BEFORE server execution, `tool_response` after. **Three kinds:** internal (e.g. `get_experience_instructions` for GenUI formatting) fire on the text path regardless of config; external web-search is gated by `isWebSearchEnabled` (when off, the agent may *narrate* a search but emit **no** `tool` segment); and **a partner-configured tool referenced via `tool_ids`** — the **client-side-command channel**: a `tool` segment is NOT in the TTS gate, so its name+args ride silently (clean audio) for the host app to act on (`navigate_to_slide`, `call_page_function`, realtime content). Parse it with the SDK's `parseToolCall(seg)` / `session.onToolCall(name)` / `collectConverse().toolCalls`; author the tool with `tools.client(...)`. Verified live. (NB: the `kaltura_genie_experiences` capability makes the model prefer `get_experience_instructions` over a custom tool — turn it off for a command-driven intellect; and partner config is cached ~24h so set capabilities at creation.) |
-| `unisphere-tool` | control (`:308-311,364`) | structured-experience block. First segment carries `metadata:{widgetName, runtimeName}`; observed runtimes `followups-tool`, `flashcards-tool`. See §7. |
-| `error` | control (`:428`) | brain/runtime error (`isFinal:true`) |
-| `interruption` / `user-interruption` | control (`:401,197`) | OAuth interruption / user-abort |
+| `tool` / `tool_response` | control (Genie backend's response-formatter, tool-call/tool-result emission) | a tool call + result. `content` is the wire form `"<toolName> <json-args>"` (e.g. `navigate_to_slide {"slide_num": 4}`); the `tool` segment fires BEFORE server execution, `tool_response` after. **Three kinds:** internal (e.g. `get_experience_instructions` for GenUI formatting) fire on the text path regardless of config; external web-search is gated by `isWebSearchEnabled` (when off, the agent may *narrate* a search but emit **no** `tool` segment); and **a partner-configured tool referenced via `tool_ids`** — the **client-side-command channel**: a `tool` segment is NOT in the TTS gate, so its name+args ride silently (clean audio) for the host app to act on (`navigate_to_slide`, `call_page_function`, realtime content). Parse it with the SDK's `parseToolCall(seg)` / `session.onToolCall(name)` / `collectConverse().toolCalls`; author the tool with `tools.client(...)`. Verified live. See [EXTERNAL-API-INTEGRATIONS.md § Don't skip `kaltura_genie_experiences: 'off'`](EXTERNAL-API-INTEGRATIONS.md#dont-skip-kaltura_genie_experiences-off) for why a command-driven intellect must turn that capability off, and at creation time. |
+| `unisphere-tool` | control (Genie backend's response-formatter, structured-experience emission) | structured-experience block. First segment carries `metadata:{widgetName, runtimeName}`; observed runtimes `followups-tool`, `flashcards-tool`. See §7. |
+| `error` | control (Genie backend's response-formatter, error emission) | brain/runtime error (`isFinal:true`) |
+| `interruption` / `user-interruption` | control (Genie backend's response-formatter, interruption/abort emission) | OAuth interruption / user-abort |
 | `avatar`, `share`, `thread`, … | fence tag (LLM-chosen) | fenced blocks the model emits: `avatar` (spoken-runtime text), `share` (`{canShare:bool}`; `segmentStart&&segmentEnd` ⇒ message complete), `thread` (e.g. auto-title), and any other tag the prompt defines. `avatar` is in the parser's set of block types that stream chunk-by-chunk rather than all-at-once. |
 
-> **Fused multi-tool `tool` segments (live-verified).** When a turn calls 2+ tools, the server can emit **one** `type:"tool"` segment whose `content` concatenates every called tool's JSON args back-to-back, but names only the **last** one — e.g. captured live: `open_filing {"quarters": [...], "metric": "total_revenue"}{"quarter": "q1_2026", "docType": "press_release"}` (the `highlight_chart` call that preceded `open_filing` rides in the same string, unnamed). The `tool_response` segments that follow still echo **every** called tool by name, in call order (`highlight_chart responded with size 113` then `open_filing responded with size 104`), which is the only reliable client-side signal for attributing the earlier, unnamed blob to its real tool. The SDK's `parseToolCall(seg)` recovers the named tool's own args correctly (the last JSON object) and surfaces earlier blobs as `call.fusedArgs` (array, arrival order); `parseToolResponseName(seg)` extracts a `tool_response`'s echoed name. `KalturaAvatarSession` pairs the two automatically — an ASR-sub-turn-scoped queue of un-attributed `fusedArgs` blobs, drained by the next `tool_response` name not already dispatched this sub-turn — so every `onToolCall(name)` handler fires with correct args even on a fused turn; no app-level change is needed. The queue and its dispatched-names guard reset on **every** `agent_start_speech`, `isNewTurn` or not (issue #41): a name dispatched directly in one ASR sub-turn must not block that same name's fused recovery in the next sub-turn of the same `turnId` — it's a distinct call with distinct args, not a repeat. This is narrower than the cross-turn `_firedToolCalls` dedup below, which stays keyed to a real `isNewTurn` boundary. Headless `collectConverse()` gets the corrected named-tool args for free but does **not** run this pairing recovery, so an earlier fused blob is only reachable via `fusedArgs` on that one `ToolCall`, not as its own `toolCalls` entry.
+#### Fused multi-tool `tool` segments (live-verified)
+
+When a turn calls 2+ tools, the server can emit **one** `type:"tool"` segment whose `content`
+concatenates every called tool's JSON args back-to-back, but names only the **last** one — e.g.
+captured live: `open_filing {"quarters": [...], "metric": "total_revenue"}{"quarter": "q1_2026",
+"docType": "press_release"}` (the `highlight_chart` call that preceded `open_filing` rides in the
+same string, unnamed).
+
+##### How the response echoes the missing name
+
+The `tool_response` segments that follow still echo **every** called tool by name, in call order
+(`highlight_chart responded with size 113` then `open_filing responded with size 104`), which is
+the only reliable client-side signal for attributing the earlier, unnamed blob to its real tool.
+
+##### How the SDK recovers it
+
+The SDK's `parseToolCall(seg)` recovers the named tool's own args correctly (the last JSON object)
+and surfaces earlier blobs as `call.fusedArgs` (array, arrival order); `parseToolResponseName(seg)`
+extracts a `tool_response`'s echoed name. `KalturaAvatarSession` pairs the two automatically — an
+ASR-sub-turn-scoped queue of un-attributed `fusedArgs` blobs, drained by the next `tool_response`
+name not already dispatched this sub-turn — so every `onToolCall(name)` handler fires with correct
+args even on a fused turn; no app-level change is needed.
+
+##### Queue reset boundary
+
+The queue and its dispatched-names guard reset on **every** `agent_start_speech`, `isNewTurn` or
+not: a name dispatched directly in one ASR sub-turn must not block that same name's fused recovery
+in the next sub-turn of the same `turnId` — it's a distinct call with distinct args, not a repeat.
+This is narrower than the cross-turn `_firedToolCalls` dedup below, which stays keyed to a real
+`isNewTurn` boundary.
+
+##### Headless caveat
+
+Headless `collectConverse()` gets the corrected named-tool args for free but does **not** run this
+pairing recovery, so an earlier fused blob is only reachable via `fusedArgs` on that one `ToolCall`,
+not as its own `toolCalls` entry.
 
 > `init_response` is **NOT** an HTTP-converse segment — it's a **WebSocket** event type defined in the Genie backend's websocket layer. In the live runtime it arrives as the `delta` of the first `agent_raw_text` socket event (carrying `openingPhrase`/`threadId`/`messageId`); it never appears in an `/assistant/converse` HTTP stream.
 
@@ -238,12 +296,12 @@ new RTCPeerConnection({
 })
 ```
 
-- **ASR `iceTransportPolicy` differs by client — and it doesn't matter functionally.** The resolved value is `forceAsrRelay && !isFirefox ? 'relay' : 'all'` (`RTC`; `forceAsrRelay` defaults to `false` at `:211`). What each client passes:
+- **ASR `iceTransportPolicy` differs by client — and it doesn't matter functionally.** The resolved value is `forceAsrRelay && !isFirefox ? 'relay' : 'all'` (`RTC`; `forceAsrRelay` defaults to `false` in `RTC`'s `buildIceConfiguration`). What each client passes:
 
   | Client | passes | ASR policy (non-Firefox) | Source |
   |---|---|---|---|
-  | `class-genie` (production runtime) | `forceAsrRelay: true` | **`relay`** | `CG` |
-  | `embed-sdk` | hardcoded | **`all`** | `EMBED` |
+  | `CG` (the production runtime client) | `forceAsrRelay: true` | **`relay`** | `CG` |
+  | `EMBED` (the embeddable avatar SDK) | hardcoded | **`all`** | `EMBED` |
   | `SDK` (this repo) | hardcoded | **`all`** | `SDK:wire.js iceConfig()` |
 
   Either resolves to the same media path: the server's only ICE candidate is a **private `10.x typ host`** (captured), unreachable directly, so the selected pair is **`relay`↔`host` through TURN** regardless. `'relay'` forces that; `'all'` also gathers host/srflx but still ends up on the relay pair. On **Firefox both clients force `'all'`** (relay-only candidate handling differs in `RTC`).
@@ -283,7 +341,7 @@ A receive-only WebRTC peer connection fed via **WHEP** (WebRTC-HTTP Egress Proto
 
 The client POSTs whichever `webrtc_url` the server returns, verbatim. **The browser always plays via WebRTC/WHEP regardless of mode** — "rtmp" is only the server-side ingest the renderer uses, never a browser transport.
 
-**ICE config:** same TURN URL block as §5. STV resolves `forceStvRelay && !isFirefox ? 'relay' : 'all'` (`RTC`). **All three clients agree here** — `class-genie` (`forceStvRelay:true`, `CG`), `embed-sdk` (default `'relay'`, `EMBED`), and `SDK` (`SDK:wire.js iceConfig()`) — so:
+**ICE config:** same TURN URL block as §5. STV resolves `forceStvRelay && !isFirefox ? 'relay' : 'all'` (`RTC`). **All three clients agree here** — `CG` (`forceStvRelay:true`), `EMBED` (default `'relay'`), and `SDK` (`SDK:wire.js iceConfig()`) — so:
 
 ```js
 iceTransportPolicy: "relay"     // STV → 'relay' (non-Firefox); 'all' on Firefox

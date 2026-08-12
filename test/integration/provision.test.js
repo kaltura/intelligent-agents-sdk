@@ -13,6 +13,9 @@ function provisionFetch() {
     { match: '/catalog-item/list', respond: (req) => ({ body: { objects: [{ itemId: req.body?.filter?.typeEqual === 'Voice' ? 'voice-1' : 'visual-1' }], totalCount: 1 } }) },
     { match: '/avatar/create', respond: () => ({ body: { id: '6a07d63d8ccd85cbfafc5416' } }) },
     { match: '/application/resolveWidgetId', respond: () => ({ body: { widgetId: '1_v1mj1kxb' } }) },
+    // applyTools()'s shared-by-name hazard guard checks this before overwriting a
+    // name-matched existing Tool's config — no other intellect references it by default.
+    { match: '/v1/intellect/list', respond: () => ({ body: { totalCount: 0, objects: [] } }) },
   ]);
 }
 
@@ -151,6 +154,42 @@ test('opts.tools reuses (updates) an existing Tool entity sharing the definition
   assert.deepEqual(r.blocks.tools.ids, ['id-existing'], 'the pre-existing id is linked, not a freshly-minted one');
   assert.deepEqual(r.blocks.tools.attached, ['good']);
 });
+
+test('opts.tools SKIPS overwriting a name-matched existing Tool that is already referenced by another intellect (shared-by-name hazard guard)', async () => {
+  // A DIFFERENT intellect (999) still carries "id-existing" in its tool_ids —
+  // the fake transport reports that instead of the usual empty /v1/intellect/list.
+  const m = new Management({ partnerId: 6496302, adminSecret: 'a'.repeat(32), fetch: fakeFetchWithReferencingIntellect() });
+  const updated = [];
+  m.tools = {
+    list: () => ({ all: async () => [{ id: 'id-existing', name: 'good', config: {} }] }),
+    add: async (tool) => ({ id: `id-${tool.name}` }),
+    update: async (id, patch) => { updated.push({ id, name: patch.config.name }); return { id }; },
+  };
+  m.intellectConfig.setToolIds = async () => ({ applied: true });
+  const r = await m.provision({
+    brief: 'x', ks: ADMIN_KS,
+    tools: [{ type: 'code', name: 'good', description: 'd', code: '1' }],
+  });
+  assert.deepEqual(updated, [], 'update() must NOT be called — the entity is load-bearing for another intellect');
+  assert.deepEqual(r.blocks.tools.skippedUpdates, [{ name: 'good', toolId: 'id-existing', referencedBy: [999] }]);
+  assert.deepEqual(r.blocks.tools.ids, ['id-existing'], 'the existing id is still reused for THIS intellect\'s own linkage');
+  assert.equal(r.blocks.tools.applied, true, 'a skipped (not failed) update does not block applied:true');
+});
+
+/** provisionFetch() + an /v1/intellect/list-and-get pair reporting configId 999 as a referencer of "id-existing". */
+function fakeFetchWithReferencingIntellect() {
+  return fakeFetch([
+    { match: '/application/generateAgentProfile', respond: () => ({ body: { name: 'YogaBot', openingPhrase: 'Namaste!' } }) },
+    { match: '/v1/intellect/add', respond: () => ({ body: { id: 1389, status: 2, prompts: [] } }) },
+    { match: '/v1/intellect/update', respond: () => ({ body: { id: 1389, status: 2 } }) },
+    { match: '/agent/create', respond: () => ({ body: { agentId: 'agent-xyz' } }) },
+    { match: '/catalog-item/list', respond: (req) => ({ body: { objects: [{ itemId: req.body?.filter?.typeEqual === 'Voice' ? 'voice-1' : 'visual-1' }], totalCount: 1 } }) },
+    { match: '/avatar/create', respond: () => ({ body: { id: '6a07d63d8ccd85cbfafc5416' } }) },
+    { match: '/application/resolveWidgetId', respond: () => ({ body: { widgetId: '1_v1mj1kxb' } }) },
+    { match: '/v1/intellect/list', respond: () => ({ body: { totalCount: 1, objects: [{ id: 999 }] } }) },
+    { match: '/v1/intellect/get', respond: () => ({ body: { id: 999, tool_ids: ['id-existing'] } }) },
+  ]);
+}
 
 test('opts.knowledge creates a category and links when ungated', async () => {
   const { m } = baseProvision();
