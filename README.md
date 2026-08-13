@@ -99,14 +99,27 @@ used elsewhere in these docs, only resolve for a Node/bundler consumer that read
 
 ```html
 <script type="module">
+  // Pinned to a release tag — recommended for anything you ship, since the file content at
+  // this URL never changes once published (jsDelivr's immutable, long-cached tag path).
   import { KalturaAvatarSession } from 'https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.0.0/src/experience/index.js';
   // ... same API as the local examples — see examples/browser-experience.html
 </script>
 ```
 
-Pin the `@v1.0.0` tag to whatever release you want to consume; `examples/browser-experience.html`
-and `examples/deck-presenter.html` demonstrate the same real-relative-path pattern locally
-(`../src/experience/index.js`).
+Pin the tag (`@v1.0.0`, or whatever release you want) for anything you ship — jsDelivr caches a
+tagged path forever, so a pin is both stable and fast. For local prototyping only, `@latest`
+resolves to the newest tag without editing the URL on every release:
+
+```html
+<script type="module">
+  import { KalturaAvatarSession } from 'https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@latest/src/experience/index.js';
+</script>
+```
+
+`@latest` is **not cached the same way** — jsDelivr re-checks it periodically, so a new tag can
+change what this URL serves without warning. Never use `@latest` in production; pin a real tag.
+`examples/browser-experience.html` and `examples/deck-presenter.html` demonstrate the same
+real-relative-path pattern locally (`../src/experience/index.js`).
 
 ---
 
