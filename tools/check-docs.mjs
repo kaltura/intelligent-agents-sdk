@@ -7,11 +7,10 @@
  *
  * Zero deps beyond node: builtins (fs, path, child_process, test).
  *
- * Forked from the agentic-avatar-toolkit monorepo's tools/check-docs.mjs —
- * this copy keeps only the SDK-scoped checks (secrets/IP leakage, GFM
- * hygiene, cross-doc links, SDK invariants) and drops the monorepo-tool
- * checks (payload/tool-annotation/JSON-injection tests against
- * tools/agentic.mjs, genie.mjs, session.mjs), which don't exist in this repo.
+ * This copy keeps only the SDK-scoped checks (secrets/IP leakage, GFM
+ * hygiene, cross-doc links, SDK invariants) — no CLI-tool-specific checks
+ * (payload/tool-annotation/JSON-injection tests), since this repo ships an
+ * SDK, not a CLI toolkit.
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';

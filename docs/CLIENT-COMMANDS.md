@@ -1,6 +1,6 @@
 # Client-Side Commands — how the avatar drives your UI
 
-How a Kaltura avatar silently triggers actions in *your* app — navigate a deck, render a widget, draw a chart — by calling a tool you defined. The brain decides *when*; the page decides *what happens*. This is the SDK's sharpest differentiator — apps built on it can drive client commands (`navigate_to_slide`/`show_widget`/`highlight_chart`/`open_filing`) off a single live avatar; see `examples/deck-presenter.html` for a self-contained slide-navigation demo.
+How a Kaltura avatar silently triggers actions in *your* app — navigate a deck, render a widget, draw a chart — by calling a tool you defined. The brain decides *when*; the page decides *what happens*. This is the mechanism that lets an app drive client commands (`navigate_to_slide`/`show_widget`/`highlight_chart`/`open_filing`) off a single live avatar; see `examples/deck-presenter.html` for a self-contained slide-navigation demo.
 
 If you only read one thing: a "client command" is **not a special protocol feature**. It is a native Genie `type:"client"` tool that makes **no server-side call at all** — the *product* is the silent `type:"tool"` segment Genie streams when the LLM calls it. Your page captures that segment and runs whatever JS it wants.
 
@@ -8,7 +8,7 @@ If you only read one thing: a "client command" is **not a special protocol featu
 
 ## Why it exists
 
-Without this channel, an avatar can only *talk*. With it, the avatar drives a live experience the way a human presenter would: it jumps to the relevant slide when you ask a question, generates a new slide for an off-curriculum topic, shows a chart, switches tracks. The **Unisphere Platform Runtimes** — the brain's built-in structured-widget system (flashcards, sources, forms, and the other GenUI widgets; see [GENUI-REFERENCE.md](GENUI-REFERENCE.md)) — do not expose a client-command surface, and **`GenieCapabilities`** (the enum of togglable brain behaviors, e.g. `use_knowledge_base`, `avatar`, `kaltura_genie_experiences`) has no mechanism for the brain to invoke a page-defined function. This SDK ships that mechanism, documented and tested, in `tools.client` + `session.onToolCall`.
+Without this channel, an avatar can only *talk*. With it, the avatar drives a live experience the way a human presenter would: it jumps to the relevant slide when you ask a question, generates a new slide for an off-curriculum topic, shows a chart, switches tracks. Prompt-only experience runtimes — the brain's built-in structured-widget system (flashcards, sources, forms, and the other GenUI widgets; see [GENUI-REFERENCE.md](GENUI-REFERENCE.md)) — have no client-command surface, and **`GenieCapabilities`** (the enum of togglable brain behaviors, e.g. `use_knowledge_base`, `avatar`, `kaltura_genie_experiences`) has no mechanism for the brain to invoke a page-defined function. This SDK ships that mechanism, documented and tested, in `tools.client` + `session.onToolCall`.
 
 ---
 
@@ -127,7 +127,7 @@ But a spiral can exhaust the segment budget before the brain ever reaches a spok
 
 #### Root cause of one class of spiral
 
-The `agent_start_speech` handler used to clear the tool-call dedup set (`_firedToolCalls`) and promote the new `speechId` as current unconditionally, on every event — not gated on `isNewTurn` like every other consumer of that flag (`presenter.js`, `avatar-session.js`, and now `ExperienceRenderer`'s `turnStart` handler). A duplicate turn (`isNewTurn:false`, the same CM-side `tap-to-talk` retrigger [described in ARCHITECTURE-REFERENCE.md](ARCHITECTURE-REFERENCE.md#tool-call-spiral-what-happened-and-how-its-mitigated) for the soft-limit default) wiped out the first turn's already-fired calls, so an already-successful `show_widget` replayed as if new — directly feeding a spiral rather than merely tripping its detectors. The handler now clears/promotes state only when `isNewTurn` is true.
+A duplicate-turn edge case (`isNewTurn:false`) used to let an already-successful tool call replay as if new, directly feeding a spiral rather than merely tripping its detectors — see [ARCHITECTURE-REFERENCE.md's "Tool-call spiral: what happened and how it's mitigated"](ARCHITECTURE-REFERENCE.md#tool-call-spiral-what-happened-and-how-its-mitigated) for the full mechanism. The `agent_start_speech` handler now clears/promotes tool-call dedup state only when `isNewTurn` is true.
 
 ### The LLM has no real-time clock
 

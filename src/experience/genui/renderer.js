@@ -222,7 +222,7 @@ export class ExperienceRenderer {
         source: 'experience/genui',
         scope: 'conversation (geniegpcid, entitlement ON)',
         // `known`: this instance has a renderer for it (a registered 10th runtime is known too).
-        // `firstClass`: one of the nine built-in UNISPHERE_TOOLS runtimes.
+        // `firstClass`: one of the nine built-in GenUI runtimes.
         known: this._registry.has(runtime),
         firstClass: RUNTIMES.includes(runtime),
       }),

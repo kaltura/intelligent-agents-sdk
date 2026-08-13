@@ -1,5 +1,5 @@
 /**
- * Default renderer for the `sources` runtime (UNISPHERE_TOOLS["sources"] →
+ * Default renderer for the `sources` runtime (backend tool key "sources" →
  * `sources-tool`). Citation cards for RAG-retrieved sources. URLs are
  * scheme-checked via `safeUrl` (an unsafe `javascript:`/`data:` href becomes '',
  * never survives — OWASP LLM05). Framework-agnostic `{kind:'sources', data}`.

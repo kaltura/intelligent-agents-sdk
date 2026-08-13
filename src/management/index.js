@@ -56,6 +56,6 @@ export {
 } from '../core/knowledge-enums.js';
 // Converse stream helpers: segment classification + the runtime-name set +
 // the client-side-command tool-call parser (the headless peer of session.onToolCall).
-export { UNISPHERE_RUNTIMES, segmentKind, parseToolCall, parseToolResponseName } from '../core/stream.js';
+export { GENUI_RUNTIMES, segmentKind, parseToolCall, parseToolResponseName } from '../core/stream.js';
 // CRM AI-SDR recipes: validated api-tool builders for HubSpot/Salesforce contact upsert.
 export { hubspotContactUpsert, salesforceContactUpsert } from './crm-recipes.js';

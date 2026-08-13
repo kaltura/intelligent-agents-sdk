@@ -1,5 +1,5 @@
 /**
- * Default renderer for the `summary` runtime (UNISPHERE_TOOLS["summarization"]
+ * Default renderer for the `summary` runtime (backend tool key "summarization"
  * → `summary-tool`). A markdown/text summary block. Framework-agnostic
  * `{kind:'summary', data}`. The summary text stays UNTRUSTED (LLM output) — by
  * default the SDK renders it as flat escaped text; `mountWidget(descriptor, el,

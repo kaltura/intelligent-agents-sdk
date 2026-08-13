@@ -1,6 +1,6 @@
 /**
  * Default renderer for the `content-gallery` runtime
- * (UNISPHERE_TOOLS["gallery_slides"] → `content-gallery-tool`). A deck/gallery
+ * (backend tool key "gallery_slides" → `content-gallery-tool`). A deck/gallery
  * of content slides/cards. Each item's image/link URL is scheme-checked.
  * Framework-agnostic `{kind:'content-gallery', data}`.
  */

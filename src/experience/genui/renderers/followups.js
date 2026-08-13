@@ -1,5 +1,5 @@
 /**
- * Default renderer for the `followups` runtime (UNISPHERE_TOOLS["followups"] →
+ * Default renderer for the `followups` runtime (backend tool key "followups" →
  * `followups-tool`). Suggested next-question chips. `add_to_history:false`
  * server-side (not replayed). Framework-agnostic `{kind:'followups', data}`.
  */

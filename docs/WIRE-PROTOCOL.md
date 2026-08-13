@@ -281,7 +281,7 @@ A WebRTC peer connection that publishes the mic. SDP/ICE are relayed **over the 
 
 > **ASR signaling is a three-hop relay.** (1) The browser emits `asr-webrtc-*` over the browser↔conversation-manager Socket.IO socket. (2) The conversation-manager's WebRTC signaling proxy (`CM`) re-emits these as JSON `{type:'webrtc_offer'|'ice_candidate', …}` over a **separate `ws://` WebSocket** to the ASR service (the CM↔ASR transport). (3) The ASR service terminates the WebRTC peer (GStreamer `webrtcbin`) and runs Whisper. Note the ASR server's `webrtcbin` is configured with **no STUN/TURN** — the browser-side relay (TURN, below) is what carries the media; the browser↔ASR ICE works because the server offers a reachable candidate via the proxy.
 
-**ICE config (implemented in `SDK:wire.js iceConfig()`; TURN URL list from `RTC` `buildIceConfiguration`):**
+**ICE config (implemented in `SDK:wire.js iceConfig()`; TURN URL list from `RTC` `buildIceConfiguration`). `username`/`credential` default to the values in `wire.js`'s `turnServers()` and can be overridden via `creds`:**
 
 ```js
 new RTCPeerConnection({
@@ -290,7 +290,7 @@ new RTCPeerConnection({
             "turn:turn.avatar.us.kaltura.ai:443?transport=udp",
             "turn:turn.avatar.us.kaltura.ai:80?transport=tcp",
             "turns:turn.avatar.us.kaltura.ai:443?transport=tcp" ],
-    username: "kaltura", credential: "avatar" }],
+    username: "<default-username>", credential: "<default-credential>" }],
   iceTransportPolicy: <see matrix below>,
   bundlePolicy: "max-bundle"
 })

@@ -209,7 +209,7 @@ For the app-level decision of whether to use this at all, and the UI/accessibili
 around it, see [docs/VOICE-INPUT-MODES.md](docs/VOICE-INPUT-MODES.md) — this section is the API
 reference.
 
-`startTapToTalk()`/`endTapToTalk()` are a distinct voice-input mode from typed-text `speak()`/`interrupt()` — see issue #40. The ASR mic uplink is always connected once `connect()` resolves; tapping just tells the conversation-manager to mark a capture window (`tapToTalkStart` → `InTappedMode`) and, on release, mint the turn from whatever it captured (`tapToTalkEnd` → its own ~300ms `processTapToTalkInput` timer). That turn then arrives through the same `agentTurnToTalk`/`transcript` pipeline as any open-mic turn — no separate transcript path to wire up.
+`startTapToTalk()`/`endTapToTalk()` are a distinct voice-input mode from typed-text `speak()`/`interrupt()`. The ASR mic uplink is always connected once `connect()` resolves; tapping just tells the conversation-manager to mark a capture window (`tapToTalkStart` → `InTappedMode`) and, on release, mint the turn from whatever it captured (`tapToTalkEnd` → its own ~300ms `processTapToTalkInput` timer). That turn then arrives through the same `agentTurnToTalk`/`transcript` pipeline as any open-mic turn — no separate transcript path to wire up.
 
 ```js
 micButton.addEventListener('click', () => {
@@ -237,7 +237,7 @@ if (session.capabilities.tapToTalk) {
 
 `speak()`/`interrupt()` throw `invalid_state` while a tap is open (they'd otherwise bracket the CM's tapped-mode window with the typed-text `isSpeechStart` marker, minting a duplicate turn); `startTapToTalk()`/`endTapToTalk()` throw `invalid_state` if called out of order, and are gated by the same `requireDisclosureAck` disclosure gate as `speak()`. Pair it with silence-based auto-stop and a hard max-duration cap so an abandoned tap (tab closed, navigation away) can't leave a capture window open forever — treat a `disconnect`/`pagehide` while `tapToTalkActive` as an implicit `endTapToTalk()`.
 
-Build the control as click-to-toggle, not press-and-hold: it's more usable for longer utterances and satisfies WCAG 2.5.2 Pointer Cancellation more simply, since the down-event never fires the action.
+Build the control as click-to-toggle, not press-and-hold: it's more usable for longer utterances, and it satisfies WCAG 2.5.2 Pointer Cancellation on its own, since the down-event never fires the action.
 
 ### Resilience: brain stalls and tool-call spirals
 
@@ -531,7 +531,7 @@ A `summary` widget's text is markdown-in-plain-text by default (LLM-authored), a
 
 A widget interrupted mid-stream (a different runtime/`speechId` arrives before its JSON body finishes writing — e.g. a barge-in) is never mounted as a silently-truncated widget: `SegmentAssembler` recognizes the cut-off JSON shape and `ExperienceRenderer` mounts the same typed fallback it uses for a throwing custom renderer, `{kind:'error', data:{runtime, message}}`, distinguishable from any complete widget's descriptor.
 
-In LIVE mode (`.start()`), `ExperienceRenderer` also subscribes to the session's `turnStart` event (re-emitted from the raw `agent_start_speech` socket event — `{speechId, turnId, isNewTurn}`) and, by default (`clearOnTurnStart: true`), discards the assembler's in-flight buffer and clears `rendered`/`last` when `isNewTurn` is true, so a widget from a previous turn never lingers into the next one — the same correctness fix Genie's own web client applies by nulling its content on `AgentStartSpeechReceived`. A duplicate turn (`isNewTurn:false`, e.g. a CM-side `tap-to-talk` retrigger for a `turnId` already in flight) is ignored here, matching every other `turnStart`/`isNewTurn` consumer in the SDK — otherwise the duplicate would wipe an already-rendered widget out from under the viewer mid-turn. Pass `clearOnTurnStart: false` to keep pre-#28 behavior (accumulate/persist across turns).
+In LIVE mode (`.start()`), `ExperienceRenderer` also subscribes to the session's `turnStart` event (re-emitted from the raw `agent_start_speech` socket event — `{speechId, turnId, isNewTurn}`) and, by default (`clearOnTurnStart: true`), discards the assembler's in-flight buffer and clears `rendered`/`last` when `isNewTurn` is true, so a widget from a previous turn never lingers into the next one — the same correctness fix Genie's own web client applies by nulling its content on `AgentStartSpeechReceived`. A duplicate turn (`isNewTurn:false`, e.g. a CM-side `tap-to-talk` retrigger for a `turnId` already in flight) is ignored here, matching every other `turnStart`/`isNewTurn` consumer in the SDK — otherwise the duplicate would wipe an already-rendered widget out from under the viewer mid-turn. Pass `clearOnTurnStart: false` to keep the previous default behavior (accumulate/persist across turns).
 
 The `Presenter` helper (`./experience/presenter`, its own subpath so apps that don't need it never pay for its module graph) manages a deck walkthrough end to end: per-slide Dynamic Prompt (**DPP**) injection via `session.setDynamicPrompt()` — a structured context blob telling the brain what's on screen right now — navigation via ONE deterministic, silent, idempotent mechanism (`onToolCall('navigate_to_slide')` — no speech-parsing fallback), duplicate-nav suppression, a sequential resume point (`reason:'resume'`), and session memory ("welcome back") — all pure logic over an injected `session`/`storage`, fully unit-testable.
 
@@ -626,7 +626,7 @@ These are importable from their entry points and useful when composing custom pi
 |--------|-------------|
 | `ExperienceRenderer` | 2-line happy-path renderer for all first-class GenUI widgets — see the [GenUI](#genui) section above. |
 | `mountWidget(descriptor, target, opts)` | Zero-dep, never-`innerHTML`, accessible single-widget renderer with an `onMount` progressive-enhancement seam. |
-| `parseWidget(segment)` / `normalizeRuntime` / `RUNTIMES` / `UNISPHERE_WIDGET_NAME` | Wire-shape parsing helpers for building a custom GenUI renderer. |
+| `parseWidget(segment)` / `normalizeRuntime` / `RUNTIMES` / `GENUI_WIDGET_NAME` | Wire-shape parsing helpers for building a custom GenUI renderer. |
 | `DEFAULT_RENDERERS` / `WIDGET_KINDS` | The default per-kind renderer map and the frozen list of kinds it dispatches on. |
 | `SegmentAssembler` | Collects typed stream segments from the live socket into the same assembled shape as `collectConverse` — use when replaying socket captures or building a custom turn handler. `onMalformed({runtime, runtimeName, speechId, reason, message})` fires instead of `onWidget` when a fragment sequence is interrupted (`reason:'boundary'`) before its JSON body finishes — a natural end-of-turn (`'turnEnd'`) or `stop()` flush is never flagged malformed. |
 
@@ -644,7 +644,7 @@ These are importable from their entry points and useful when composing custom pi
 | `buildPageLoadParams(common, fields)` / `buildButtonClickedParams(common, fields)` | Pure param-builders for the two valid client-side event types, used internally by `KavaAnalytics` and importable directly for a custom transport. |
 | `EVENT_TYPES` | `{pageLoad:10003, buttonClicked:10002}` — the only two valid client-side codes. |
 | `PAGE_TYPES` | The closed enum `pageLoad`'s `pageType` field is validated against. |
-| `HOSTING_APPLICATIONS` | `hostingKalturaApplication` values by name: `genieChat`, `agents`, `modelsSdk`, `conversationManager`, `avatarVideos`, `agenticAvatarsStudio`, plus two internal analytics-only identifiers carried over from the backend's own dashboard naming — `unisphereOs` (the GenUI/runtime platform this SDK's `./experience/genui` renders against) and `kaiVendor` (a legacy internal hosting-app id with no public product meaning; kept only so KAVA event attribution matches the backend's existing dashboards). |
+| `HOSTING_APPLICATIONS` | `hostingKalturaApplication` values by name: `genieChat`, `agents`, `modelsSdk`, `conversationManager`, `avatarVideos`, `agenticAvatarsStudio`, plus an internal analytics-only identifier carried over from the backend's own dashboard naming — `kaiVendor` (a legacy internal hosting-app id with no public product meaning; kept only so KAVA event attribution matches the backend's existing dashboards). |
 | `DEFAULT_ANALYTICS_URL` | The KAVA ingestion endpoint (`https://analytics.kaltura.com/api_v3/index.php`). |
 
 ---
@@ -751,7 +751,7 @@ await mgmt.knowledge.updateRecord(rec.id, { name: 'Docs v2' }, ks); // rename/ed
 await mgmt.knowledge.deleteRecord(rec.id, ks, { confirmPermanent: true });
 ```
 
-`deleteRecord` does **NOT** unlink the record from intellects that reference it — an intellect's `knowledge_ids` keeps the dangling id. Clear it yourself (`intellectConfig.setKnowledgeIds(configId, [], ks)`) when retiring a record. A deleted or unknown record id → typed `not_found`; another partner's → `forbidden`.
+`deleteRecord` does **NOT** unlink the record from intellects that reference it — an intellect's `knowledge_ids` keeps the dangling id. Clear it yourself (`intellectConfig.setKnowledgeIds(configId, [], ks)`) when retiring a record. A deleted or unknown record id → typed `not_found`; another partner's → `forbidden`. A record with more than one `sources` entry (e.g. `internal` + `web` together) can 500 on delete on the current deployment — see Honest limits below.
 
 ---
 
@@ -761,6 +761,7 @@ await mgmt.knowledge.deleteRecord(rec.id, ks, { confirmPermanent: true });
 - **No verbatim speech** — `speak()` goes through the brain; the avatar may rephrase.
 - **Custom face works self-serve** — upload a portrait image via `catalog.createVisual`, pass `itemId` as `visualId` in `provision`/`avatars.create`. The model animates the portrait at runtime. Video-clip ingest (higher-fidelity model) is not yet self-serve.
 - **`force_experience` and `model_type:'fast'`** are hints; the SDK can't prove which model replied or which experience rendered.
+- **Multi-source Knowledge records can fail to delete.** A record created with more than one `sources` entry (e.g. `internal` + `web` together) reliably 500s on `deleteRecord` on the current deployment (verified live, reproduced 3x, ruled out call ordering and lingering intellect references) — the record itself becomes an orphan (its backing category/entries can still be torn down separately). Single-source records delete cleanly. Until the backend fixes this, avoid mixing source types in one record if you expect to delete it later; use separate records per source type instead.
 
 ---
 
@@ -781,7 +782,6 @@ await mgmt.knowledge.deleteRecord(rec.id, ks, { confirmPermanent: true });
 | [docs/STRUCTURED-DATA-FORMS.md](docs/STRUCTURED-DATA-FORMS.md) | Collecting typed fields from the user mid-conversation (`user_properties_forms`) — schema, rendering, where submitted values go |
 | [docs/VOICE-INPUT-MODES.md](docs/VOICE-INPUT-MODES.md) | Choosing open-mic vs. push-to-talk, and the UX/accessibility/safety details around each |
 | `examples/` | One runnable example per use-case |
-| earnings-avatar-q2 | A reference app built on this SDK — an interactive investor-deck presentation narrated by a live avatar (private repo, not linked here) |
 
 ## License
 

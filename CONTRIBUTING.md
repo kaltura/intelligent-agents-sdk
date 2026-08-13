@@ -1,12 +1,8 @@
 # Contributing
 
-This repo is private (Kaltura-internal) for now. The workflow below applies to
-internal contributors with push access, cloning directly.
-
-> **Not yet applicable — TODO.** Once the repo opens up to external contributors, this
-> section will describe a fork-based workflow (fork on GitHub, clone your fork, open a
-> PR from a branch on your fork back to this repo). That workflow doesn't exist yet —
-> there is no external-contributor path today.
+Kaltura maintainers push directly; everyone else contributes via the standard GitHub
+fork workflow: fork this repo, clone your fork, push a branch to your fork, then open a
+PR from that branch back to `kaltura/intelligent-agents-sdk`'s `main`.
 
 See [README.md](README.md)'s note on issue references.
 
@@ -78,11 +74,10 @@ a `Prefix: detail` form (like the `Fix CI:` example) when a commit is scoped to 
 area. There is no branch-naming convention enforced today — this repo has had only one
 active branch (`main`) throughout its history so far.
 
-## CLA / licensing (external contributors)
+## Licensing (external contributors)
 
-Licensing terms for external (non-Kaltura) contributions are **TBD** — there is no CLA
-process in place yet. This section will be filled in before the repo opens up to
-outside contributors; don't assume any specific CLA terms until then.
+This repo is [MIT licensed](LICENSE). By opening a PR, you agree your contribution is
+licensed under that same MIT license — no separate CLA is required.
 
 ## Reporting a security issue
 

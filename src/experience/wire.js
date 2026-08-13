@@ -4,7 +4,7 @@
  * captures/session-evidence.json). No I/O, no state — unit-testable in isolation
  * and reused by the session machine.
  */
-import { parseToolCall, UNISPHERE_RUNTIMES } from '../core/stream.js';
+import { parseToolCall, GENUI_RUNTIMES } from '../core/stream.js';
 import { isPrivateOrLoopbackHost } from '../core/net-guard.js';
 
 /** Default conversation-manager host (overridden by appInit's conversationManagerUrl). */
@@ -63,7 +63,7 @@ export function modelTypeWire(sel) {
  * Mapping (→ `_gateAgentAction` action types):
  *   - `type:"tool"` native function call → `tool-call` (runtime = the tool name)
  *   - `user-properties-form`            → `structured-data-form`
- *   - any other genui runtime (the nine UNISPHERE tools)  → `render-genui`
+ *   - any other genui runtime (the nine built-in tools)  → `render-genui`
  *   - `navigate` (synthetic only)       → `navigate`
  *   - spoken/control/empty              → `null` (not gated)
  *
@@ -105,12 +105,12 @@ export function classifyAgentAction(seg) {
 
 /**
  * The adapter-normalized GenUI runtime keys (after `-tool` stripping). DERIVED
- * from `core/stream.js`'s `UNISPHERE_RUNTIMES` (the single source of truth) —
+ * from `core/stream.js`'s `GENUI_RUNTIMES` (the single source of truth) —
  * the same derivation `genui/parse.js`'s `RUNTIMES` uses — so the two lists can
  * never drift (previously hand-rolled here with a stray `'summarization'` that
  * doesn't match the wire's actual `'summary-tool'`).
  */
-const RUNTIME_KEYS = new Set(UNISPHERE_RUNTIMES.map((r) => r.replace(/-tool$/, '')));
+const RUNTIME_KEYS = new Set(GENUI_RUNTIMES.map((r) => r.replace(/-tool$/, '')));
 
 /** Strip a trailing `-tool` suffix from a wire type/runtime; '' for non-strings. @param {unknown} v */
 function stripTool(v) { return typeof v === 'string' ? v.trim().replace(/-tool$/, '') : ''; }

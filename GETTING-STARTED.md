@@ -34,10 +34,6 @@ Your Partner ID and Admin Secret are your keys to the system.
 
 ## Step 2 — Set up the project (~1 minute)
 
-> This repo is currently private — cloning it requires collaborator access and an authenticated
-> git credential helper (SSH key or a git credential manager tied to your GitHub account), not
-> just the bare URL below.
-
 Clone the repository and install the quickstart's dependencies:
 
 ```bash
@@ -138,8 +134,7 @@ You now know how to create an agent and talk to it. Here's where to go for more:
 ## Appendix — Verify your checkout offline (~2 minutes)
 
 You don't need a Kaltura account to confirm the SDK runs correctly on your machine — run it
-offline, no network, no secrets, using the same fakes the test suite is built on. (Cloning
-requires collaborator access — see the note in Step 2.)
+offline, no network, no secrets, using the same fakes the test suite is built on.
 
 ```bash
 git clone https://github.com/kaltura/intelligent-agents-sdk.git

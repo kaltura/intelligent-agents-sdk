@@ -36,7 +36,7 @@ export const EVENT_TYPES = Object.freeze({ pageLoad: 10003, buttonClicked: 10002
  */
 export const HOSTING_APPLICATIONS = Object.freeze({
   genieChat: 23, agents: 25, modelsSdk: 26, conversationManager: 27,
-  avatarVideos: 28, agenticAvatarsStudio: 29, unisphereOs: 30, kaiVendor: 31,
+  avatarVideos: 28, agenticAvatarsStudio: 29, kaiVendor: 31,
 });
 
 /** Closed enum for `pageType` (the field is validated; `buttonType` is not — the guide leaves it open-ended). */

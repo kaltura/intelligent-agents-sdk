@@ -1,5 +1,5 @@
 /**
- * Default renderer for the `show-link` runtime (UNISPHERE_TOOLS["show_link"] →
+ * Default renderer for the `show-link` runtime (backend tool key "show_link" →
  * `show-link-tool`). A single link card. The href is scheme-checked via
  * `safeUrl` (the classic XSS link vector — `javascript:`/`data:` → ''); when the
  * URL is unsafe the descriptor reports `safe:false` with an empty url so the

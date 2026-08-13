@@ -95,7 +95,7 @@ function parseLine(raw, sse) {
  * segment without importing the experience layer (core stays leaf).
  * @type {readonly string[]}
  */
-export const UNISPHERE_RUNTIMES = Object.freeze([
+export const GENUI_RUNTIMES = Object.freeze([
   'flashcards-tool',
   'followups-tool',
   'sources-tool',

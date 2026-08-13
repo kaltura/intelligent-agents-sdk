@@ -1,5 +1,5 @@
 /**
- * Default renderer for the `flashcards` runtime (UNISPHERE_TOOLS["flashcards"]
+ * Default renderer for the `flashcards` runtime (backend tool key "flashcards"
  * → `flashcards-tool`). Framework-agnostic: returns a plain descriptor
  * `{kind:'flashcards', data}` the host maps to DOM. Never touches the DOM, never
  * depends on a UI framework.

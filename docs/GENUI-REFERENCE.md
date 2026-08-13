@@ -12,6 +12,12 @@ restrictions that bite in practice.
 All claims here are anchored to repo source (`src/...`) and `WIRE-PROTOCOL.md`; where a
 behavior is inferred rather than live-captured, it is marked **INFERRED**.
 
+> **Naming note.** `unisphere-tool` and `unisphere.widget.genie` below are the Genie brain's
+> literal, on-the-wire constant values — carried over from a naming decision made outside this
+> SDK, and preserved verbatim here because changing them would break real interoperability. They
+> are unrelated to "GenUI," this doc's own name for the feature; don't read them as a reference to
+> a different product.
+
 ## The model in one paragraph
 
 The brain emits a **GenUI widget** by writing a fenced block carrying a `widgetName`. The Genie
@@ -24,9 +30,9 @@ emits HTML; every string/URL is run through `core/safety.js` first.
 
 ## The first-class runtimes
 
-Backend key (`UNISPHERE_TOOLS`, defined in the Genie brain backend's experience-definitions module) → wire `runtimeName` → normalized
-dispatch key (the renderer registry key). Source: `src/core/stream.js` `UNISPHERE_RUNTIMES`;
-`src/experience/genui/parse.js` `RUNTIMES` (derived from `UNISPHERE_RUNTIMES`, so the two can
+Backend tool key (defined in the Genie brain backend's experience-definitions module) → wire `runtimeName` → normalized
+dispatch key (the renderer registry key). Source: `src/core/stream.js` `GENUI_RUNTIMES`;
+`src/experience/genui/parse.js` `RUNTIMES` (derived from `GENUI_RUNTIMES`, so the two can
 never drift).
 
 | # | Backend key | Wire `runtimeName` | Normalized | Purpose |
@@ -404,7 +410,7 @@ The SDK ships zero CSS for these class names — style the `.kgenui__*` block in
 | DOM mount helper (`mountWidget` + `kgenui` classes) | `src/experience/genui/renderers/mount.js` |
 | Multi-fragment assembly | `src/experience/genui/segments.js` |
 | Dispatch + dual-mode + fallback | `src/experience/genui/renderer.js` |
-| Wire enums (`UNISPHERE_RUNTIMES`, `segmentKind`, `collectConverse`) | `src/core/stream.js` |
+| Wire enums (`GENUI_RUNTIMES`, `segmentKind`, `collectConverse`) | `src/core/stream.js` |
 | `force_experience` (`EXPERIENCES`) + join hardcode | `src/experience/wire.js` |
 | HTTP converse + validation | `src/management/conversations.js` |
 | Capability gating (`CAPABILITY_INFO`) | `src/management/capabilities.js` |

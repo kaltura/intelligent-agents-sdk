@@ -12,7 +12,7 @@ export { ExperienceRenderer } from './renderer.js';
 export { SegmentAssembler } from './segments.js';
 export {
   normalizeRuntime, isKnownRuntime, parseContent, parseWidget,
-  RUNTIMES, UNISPHERE_WIDGET_NAME,
+  RUNTIMES, GENUI_WIDGET_NAME,
 } from './parse.js';
 export { DEFAULT_RENDERERS, WIDGET_KINDS } from './renderers/index.js';
 export { mountWidget } from './renderers/mount.js';

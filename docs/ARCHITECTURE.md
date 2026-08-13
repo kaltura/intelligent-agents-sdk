@@ -39,7 +39,7 @@ The system is three planes. An app uses only the planes it needs.
 | Genie brain backend | `genie.nvp1.ovp.kaltura.com` | The brain: `assistant/converse`, intellect CRUD, threads, messages, feedback, followups |
 | conversation-manager | `conversation.avatar.us.kaltura.ai` | Live-avatar control plane (Socket.IO): session orchestration, ASR signaling relay, brain output stream |
 | STV + media server | `srs.avatar.us.kaltura.ai` (egress host) | Video origin. The **STV controller** renders the talking face and pushes it via **RTMP into OvenMediaEngine (OME)**; clients always receive it via **WHEP** (never RTMP). Two egress modes via `cast_mode`: **SRS WHEP** (wire `cast_mode:'rtmp'`, the working default) → `{srsBaseUrl}/rtc/v1/whep/?app=app&stream={session_id}`; **STV-direct** (wire `cast_mode:'webrtc'`) → the STV server's own `/whep/session/{session_id}` (fails when encryptAddress key is not configured server-side — leaks a private IP; default SRS path unaffected). Played with **OvenPlayer**. |
-| TURN | `turn.avatar.us.kaltura.ai` | WebRTC relay for both media legs (user `kaltura` / cred `avatar`). Addressed with explicit ports+transports (see [ARCHITECTURE-REFERENCE.md](ARCHITECTURE-REFERENCE.md#endpoints--credentials)). STV uses `iceTransportPolicy:'relay'`; ASR's policy is client-dependent but **relays via TURN either way** (the ASR server only advertises a private candidate). See [WIRE-PROTOCOL.md §5](WIRE-PROTOCOL.md) for the per-client matrix. |
+| TURN | `turn.avatar.us.kaltura.ai` | WebRTC relay for both media legs (default username/credential in `wire.js`'s `turnServers()`, overridable via `creds`). Addressed with explicit ports+transports (see [ARCHITECTURE-REFERENCE.md](ARCHITECTURE-REFERENCE.md#endpoints--credentials)). STV uses `iceTransportPolicy:'relay'`; ASR's policy is client-dependent but **relays via TURN either way** (the ASR server only advertises a private candidate). See [WIRE-PROTOCOL.md §5](WIRE-PROTOCOL.md) for the per-client matrix. |
 | ML services | internal | Machine-learning services behind `application/generateAgentProfile` |
 
 ---
@@ -80,7 +80,7 @@ A full interactive agentic avatar is **three concurrent channels** over one Sock
 
 The brain (Genie) runs entirely server-side. The client never calls an LLM — it publishes audio, receives video, and receives the brain's text as `agent_raw_text` deltas (identical format to the `/assistant/converse` NDJSON).
 
-> For the exact connect sequence, wire shapes, endpoints, and scaling model, see **[ARCHITECTURE-REFERENCE.md](ARCHITECTURE-REFERENCE.md)**. For the **exhaustive** map — every socket event with its captured payload + repo source, the exact ICE/SDP/WHEP config, the parsed `agent_raw_text` delta types, and a turn-by-turn event trace — see **[WIRE-PROTOCOL.md](WIRE-PROTOCOL.md)** (built from a live capture cross-referenced to the private repos). This section is the orientation; those docs are the reference.
+> For the exact connect sequence, wire shapes, endpoints, and scaling model, see **[ARCHITECTURE-REFERENCE.md](ARCHITECTURE-REFERENCE.md)**. For the **exhaustive** map — every socket event with its captured payload + repo source, the exact ICE/SDP/WHEP config, the parsed `agent_raw_text` delta types, and a turn-by-turn event trace — see **[WIRE-PROTOCOL.md](WIRE-PROTOCOL.md)** (built from a live capture, verified against the running system). This section is the orientation; those docs are the reference.
 
 ---
 
@@ -112,14 +112,6 @@ For the full module-by-module map (each management module's exposed surface and 
 
 ## Resilience & Failure Handling — Overview
 
-How the system behaves under network failures, disconnects, and device problems. There are **three reconnection tiers**, only loosely coordinated:
+How the system behaves under network failures, disconnects, and device problems: **three reconnection tiers** — Socket.IO transport, the WebRTC media peers (ASR + STV), and this SDK's own avatar-session recovery — only loosely coordinated with each other. The SDK wires the WebRTC-peer tier to its own session-recovery tier (`_recoverMedia` → `_coldReconnect`); a custom client that skips `KalturaAvatarSession` must wire that itself.
 
-| Tier | Layer | Auto-recovers? | Scope |
-|---|---|---|---|
-| 1. Socket.IO transport | control socket | ✅ built-in (backoff + jitter + state recovery) | the websocket only |
-| 2. WebRTC peer (ASR + STV) | the WebRTC avatar engine's session client | ✅ 5 attempts × 2s, independent per channel | the media peer connections |
-| 3. Avatar session | **this SDK** (`KalturaAvatarSession`) | ✅ socket-transport recovery: a recoverable drop → `reconnecting` → `reconnected` (same-pod, ≤~20s, no re-`join`); non-recoverable → clean `ended`. | the whole conversation |
-
-The headline risk: **tiers 2 and 3 are not wired together for custom non-SDK clients** — the SDK wires them via `_recoverMedia` → `_coldReconnect`; when the WebRTC layer exhausts retries and emits `'failed'`, a custom client that does not use the SDK's `KalturaAvatarSession` must handle this itself.
-
-For the full failure-mode matrix, device-permission handling, WebRTC media-peer reconnection detail, and the tool-call-spiral circuit breaker mechanism, see **[ARCHITECTURE-REFERENCE.md's "Resilience & Failure Handling"](ARCHITECTURE-REFERENCE.md#resilience--failure-handling)**.
+For the full three-tier table, the headline risk in detail, the failure-mode matrix, device-permission handling, WebRTC media-peer reconnection detail, and the tool-call-spiral circuit breaker mechanism, see **[ARCHITECTURE-REFERENCE.md's "Resilience & Failure Handling"](ARCHITECTURE-REFERENCE.md#resilience--failure-handling)**.

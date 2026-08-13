@@ -244,3 +244,11 @@ secret, following the exact same three-step pattern as HubSpot/Salesforce above:
 - **Any other REST API** — same shape: static secret → `Authorization` header, or OAuth2 block if
   the provider requires it. This is exactly how you'd wire a MAM (media asset management) lookup, a
   support-ticketing system, a booking API, or anything else with an HTTP interface.
+
+## Related docs
+
+| Doc | What it adds |
+|-----|---------------|
+| [STRUCTURED-DATA-FORMS.md](STRUCTURED-DATA-FORMS.md) | Collecting the values this doc shows you how to forward durably |
+| [DYNAMIC-DATA-INJECTION.md](DYNAMIC-DATA-INJECTION.md) | Feeding data *into* the conversation, the opposite direction from this doc |
+| [CLIENT-COMMANDS.md](CLIENT-COMMANDS.md) | The avatar-driving-your-UI channel — a client-side, not server-side, mechanism |

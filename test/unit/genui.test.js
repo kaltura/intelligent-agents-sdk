@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   normalizeRuntime, isKnownRuntime, parseContent, parseWidget,
-  RUNTIMES, UNISPHERE_WIDGET_NAME,
+  RUNTIMES, GENUI_WIDGET_NAME,
 } from '../../src/experience/genui/parse.js';
 import { SegmentAssembler } from '../../src/experience/genui/segments.js';
 import { ExperienceRenderer } from '../../src/experience/genui/renderer.js';
@@ -60,10 +60,10 @@ test('parseWidget extracts widgetName/runtimeName/runtime/model from a live segm
   const seg = {
     type: 'unisphere-tool',
     content: { questions: ['q1', 'q2'] },
-    metadata: { widgetName: UNISPHERE_WIDGET_NAME, runtimeName: 'followups-tool' },
+    metadata: { widgetName: GENUI_WIDGET_NAME, runtimeName: 'followups-tool' },
   };
   const w = parseWidget(seg);
-  assert.equal(w.widgetName, UNISPHERE_WIDGET_NAME);
+  assert.equal(w.widgetName, GENUI_WIDGET_NAME);
   assert.equal(w.runtimeName, 'followups-tool');
   assert.equal(w.runtime, 'followups');
   assert.deepEqual(w.model, { questions: ['q1', 'q2'] });
@@ -72,7 +72,7 @@ test('parseWidget extracts widgetName/runtimeName/runtime/model from a live segm
 test('parseWidget handles a flattened headless feed + string content', () => {
   const w = parseWidget({ runtimeName: 'summary', content: '```\nsummary: Q1 was strong\n```' });
   assert.equal(w.runtime, 'summary');
-  assert.equal(w.widgetName, UNISPHERE_WIDGET_NAME);
+  assert.equal(w.widgetName, GENUI_WIDGET_NAME);
   assert.equal(w.model.summary, 'Q1 was strong');
 });
 
@@ -159,7 +159,7 @@ test('a throwing mount sink never breaks render', () => {
 
 // ─────────────────────────── each default renderer shape ───────────────────────────
 
-test('default renderers cover exactly the nine genie unisphere-tool runtimes', () => {
+test('default renderers cover exactly the nine built-in GenUI runtimes', () => {
   assert.equal(Object.keys(DEFAULT_RENDERERS).length, 9);
   for (const rt of RUNTIMES) assert.equal(typeof DEFAULT_RENDERERS[rt], 'function');   // the nine
 });

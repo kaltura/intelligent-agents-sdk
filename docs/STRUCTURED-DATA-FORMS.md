@@ -58,7 +58,7 @@ Two things follow directly from this wording, verified against the live template
   "consider asking." In practice the model interprets `call_stage` loosely (a `start` stage can
   fire on the very first turn), but it is not free to skip the block once its stage arrives.
 - **Pre-fill is real.** If the model has already seen a value for a configured field elsewhere in
-  the conversation (e.g. the user mentioned their preferred date in passing), it can attach a
+  the conversation (e.g. the viewer mentioned their preferred date in passing), it can attach a
   `known_value` to that field, and your form should pre-fill it rather than ask again.
 
 The backend DTO (`UserPropertiesCollectionConfig`, in the Genie brain backend) also
@@ -105,7 +105,7 @@ normalized to the same shape by the SDK:
    (headless/HTTP converse).
 2. **The unisphere-tool segment path** — on the live avatar socket, it arrives as a
    `unisphere-tool` segment with `metadata.runtimeName: "user-properties-form-tool"` (one of the
-   nine `UNISPHERE_TOOLS` — see [GENUI-REFERENCE.md](GENUI-REFERENCE.md)).
+   nine backend tool keys — see [GENUI-REFERENCE.md](GENUI-REFERENCE.md)).
 
 Both are routed to `ExperienceRenderer` (`src/experience/genui/renderer.js`), which
 `normalizeRuntime()`s the runtime name (stripping a trailing `-tool`) and calls the registered
@@ -153,7 +153,7 @@ Two independent axes:
 
   Or skip the SDK's default DOM builder entirely by passing a mount **function** instead of an
   `Element` — you get the descriptor and build any UI you want (React, a modal, whatever), calling
-  `session.submitStructuredDataForm(values)` yourself when the user submits.
+  `session.submitStructuredDataForm(values)` yourself when the viewer submits.
 - **Visual styling.** The default DOM path emits plain, unstyled class names only —
   `.kgenui__form`, `.kgenui__field`, `.kgenui__label`, `.kgenui__input`, `.kgenui__help`,
   `.kgenui__submit`. The SDK ships **zero CSS** — any consumer styles the same class names in
@@ -167,10 +167,10 @@ endpoint on the Genie/agentic management plane reads it back as structured `{key
 conversation transcript is persisted to Postgres by the Genie brain backend (a `Message` table) and
 exposed read-only via `POST /thread/get_transcripts` — exactly what this repo's `tools/genie.mjs
 thread-transcripts` wraps. That reconstructs a plain-text transcript from `USER`-type message rows;
-it does **not** carry the structured form field values, only what the user said/typed and the
+it does **not** carry the structured form field values, only what the viewer said/typed and the
 model's replies — a paraphrase, not the raw object.
 
-**If you need durable, retrievable access to what the user submitted, don't rely on
+**If you need durable, retrievable access to what the viewer submitted, don't rely on
 `submitStructuredDataForm`/`setFormLeadInfo`.** Capture-and-forward via your own tool instead — see
 [EXTERNAL-API-INTEGRATIONS.md](EXTERNAL-API-INTEGRATIONS.md) for wiring a durable write (a CRM, a
 support system, a spreadsheet, or any other external API) directly from the model's own tool call.
@@ -192,10 +192,19 @@ If your intellect also uses custom `tool_ids` (e.g. a closed set of client comma
 for what that capability does and why.
 
 **This does not touch `user_properties_forms` at all.** The two mechanisms are independent code
-paths — `kaltura_genie_experiences` governs `UNISPHERE_TOOLS` families like `flashcards`/
+paths — `kaltura_genie_experiences` governs backend tool-key families like `flashcards`/
 `summarization`/`followups`/`sources`/`gallery_slides`; `user_properties_forms` has its own
 dedicated DTO field and its own dedicated prompt injection (`sys_prompt_user_properties`),
 unrelated to the experiences capability. Verified live: with `kaltura_genie_experiences: 'disabled'`,
 an agent still fires a genuine `show_widget` call with `kind: "user_properties_form"` and a genuine
 `user-properties-form-tool` segment. Disabling experiences only removes Genie's own competing
 navigation/formatting instinct — it has no effect on structured-data-form logic.
+
+## Related docs
+
+| Doc | What it adds |
+|-----|---------------|
+| [EXTERNAL-API-INTEGRATIONS.md](EXTERNAL-API-INTEGRATIONS.md) | Wiring a durable, server-side write for the values this doc's forms collect |
+| [DYNAMIC-DATA-INJECTION.md](DYNAMIC-DATA-INJECTION.md) | The opposite direction — feeding data *into* the conversation instead of collecting it |
+| [CLIENT-COMMANDS.md](CLIENT-COMMANDS.md) | The avatar-driving-your-UI channel, a different silent mechanism from this doc's forms |
+| [GENUI-REFERENCE.md](GENUI-REFERENCE.md) | The full GenUI runtime map this form is one entry in |

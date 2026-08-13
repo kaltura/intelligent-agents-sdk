@@ -1,6 +1,6 @@
 /**
  * Default renderer for the `user-properties-form` runtime
- * (UNISPHERE_TOOLS["user_properties_form"] → `user-properties-form-tool`). A
+ * (backend tool key "user_properties_form" → `user-properties-form-tool`). A
  * structured-data form the model emits per `user_properties_forms`. Each field
  * is `{key, type, label, knownValue}` (the model may pre-fill a `known_value` it
  * already extracted). The host renders inputs, collects, and reports back via

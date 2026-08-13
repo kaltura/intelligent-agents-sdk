@@ -30,17 +30,17 @@ Every push-to-talk/open-mic product draws the same line — one active capture m
 | You want zero-friction "just speak naturally" — no button to find or learn | Viewers need an explicit, deliberate boundary on when the mic is live (privacy-sensitive settings, shared/public devices) |
 
 If your viewers will regularly speak in full sentences or ask multi-part questions, open-mic is the
-better default. Complaints run in both directions — ChatGPT iOS's press-and-hold caused thumb strain
-and blocked scrolling while dictating; Gemini Live's toggle/VAD mode cut off speakers mid-thought on
-long unstructured reasoning (both widely reported in app-store reviews and tech press) — and they
-track utterance length more than any inherent superiority of one mode.
+better default. Neither mode is inherently better — press-and-hold can strain a viewer's hand on a
+long dictation, and VAD-based toggle can cut a speaker off mid-thought on long unstructured
+reasoning. Which complaint you'll hear from your own viewers tracks utterance length, not a fixed
+advantage of one mode over the other.
 
 ## UX pattern: click-to-toggle, not press-and-hold
 
 Prefer a single click/tap to open the capture window and a second click/tap to close it, over
 press-and-hold-to-record. Reasons, in order of weight:
 
-- **Accessibility.** WCAG 2.5.2 (Pointer Cancellation, Level A) is satisfied more simply by toggle —
+- **Accessibility.** Toggle satisfies WCAG 2.5.2 (Pointer Cancellation, Level A) on its own —
   the down-event never fires the action, so an accidental touch can be dragged away before commit.
   Press-and-hold can satisfy it too (release-to-stop counts as an "up reversal"), but only if release
   doesn't also irreversibly submit the utterance.

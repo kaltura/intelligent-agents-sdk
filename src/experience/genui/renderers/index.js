@@ -1,5 +1,5 @@
 /**
- * Default renderer registry — one framework-agnostic renderer per UNISPHERE_TOOLS
+ * Default renderer registry — one framework-agnostic renderer per built-in GenUI
  * runtime. Each `fn(model, ctx) -> {kind, data}` returns a plain descriptor the
  * host maps to DOM; none depend on a UI framework or touch the DOM directly. The
  * keys are the NORMALIZED runtime names (post `-tool` strip) from `parse.js`

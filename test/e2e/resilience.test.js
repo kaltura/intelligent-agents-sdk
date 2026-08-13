@@ -194,7 +194,7 @@ test('STV: ICE failed → WHEP re-subscribe (recovered)', async () => {
 });
 
 test('STV: WHEP 404 on re-subscribe (session truly gone) → cold reconnect with a distinct "session gone" reason', async () => {
-  // Adopted from unisphere-rtc's WhepStatus.NO_ACTIVE_SESSION check: a 404 on the
+  // A 404 on the
   // re-subscribe POST means the server has discarded the STV session — vs. a
   // transient failure on some other status. Both still cold-reconnect today, but the
   // 404 case must be an explicit, greppable branch (not an accident of "everything
@@ -223,7 +223,7 @@ test('ICE watchdog: a pc stuck in "new"/"checking" past 10s escalates to media r
   // A pc that never starts gathering (or whose every candidate fails to connect) can sit in
   // 'new'/'checking' forever — oniceconnectionstatechange never fires again from that state, so
   // _onIceStateChange alone can never see it. _armIceNewWatchdog is the proactive backstop
-  // (adopted from unisphere-rtc's IceHandler pattern); this proves it actually fires at 10s
+  // this proves it actually fires at 10s
   // without waiting 10 real seconds, by capturing the watchdog's own setTimeout callback.
   const { session, socket } = newSession();
   scriptHappyPath(socket);
@@ -249,7 +249,7 @@ test('ICE watchdog: a pc stuck in "new"/"checking" past 10s escalates to media r
 });
 
 test('ICE watchdog: zero candidates gathered by the time gathering completes escalates fast (past the 3s floor, before the 10s timer)', async () => {
-  // Adopted from unisphere-rtc's IceHandler: a dead network path (e.g. TURN unreachable)
+  // A dead network path (e.g. TURN unreachable)
   // never produces a single candidate, so `iceGatheringState` reaches 'complete' with
   // candCount===0 — there's no reason to wait out the full 10s watchdog for that case.
   const { session, socket } = newSession();

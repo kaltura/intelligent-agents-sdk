@@ -18,22 +18,22 @@
  * actually shows up and forgives malformed content (never throws).
  */
 
-import { UNISPHERE_RUNTIMES } from '../../core/stream.js';
+import { GENUI_RUNTIMES } from '../../core/stream.js';
 
-/** The shared `widgetName` every UNISPHERE_TOOLS segment carries. */
-export const UNISPHERE_WIDGET_NAME = 'unisphere.widget.genie';
+/** The shared `widgetName` every built-in GenUI runtime segment carries. */
+export const GENUI_WIDGET_NAME = 'unisphere.widget.genie';
 
 /**
- * The nine UNISPHERE_TOOLS runtime names AFTER `-tool` stripping (the keys the
+ * The nine built-in GenUI runtime names AFTER `-tool` stripping (the keys the
  * renderer dispatches on). DERIVED from the wire list `core/stream.js`
- * `UNISPHERE_RUNTIMES` (the single source of truth) so the two can never drift —
+ * `GENUI_RUNTIMES` (the single source of truth) so the two can never drift —
  * `experience → core` is the allowed dependency direction (core stays leaf).
- * Source: `experiences_definitions.py` UNISPHERE_TOOLS. This is the SDK's first-class set; any other runtime the
+ * Source: `experiences_definitions.py`'s backend tool-key registry. This is the SDK's first-class set; any other runtime the
  * backend may add (e.g. `gen-ui-composer`) falls through `onUnhandled`/a safe
  * fallback descriptor rather than being faked into a known kind.
  * @type {readonly string[]}
  */
-export const RUNTIMES = Object.freeze(UNISPHERE_RUNTIMES.map((r) => r.replace(/-tool$/, '')));
+export const RUNTIMES = Object.freeze(GENUI_RUNTIMES.map((r) => r.replace(/-tool$/, '')));
 
 const RUNTIME_SET = new Set(RUNTIMES);
 
@@ -164,7 +164,7 @@ export function parseWidget(segment) {
   const metadata = (seg.metadata && typeof seg.metadata === 'object') ? /** @type {Record<string, unknown>} */ (seg.metadata) : {};
 
   const runtimeName = pickString(metadata.runtimeName, seg.runtimeName, seg.runtime_name, seg.runtime) || '';
-  const widgetName = pickString(metadata.widgetName, seg.widgetName, seg.widget_name) || (runtimeName ? UNISPHERE_WIDGET_NAME : '');
+  const widgetName = pickString(metadata.widgetName, seg.widgetName, seg.widget_name) || (runtimeName ? GENUI_WIDGET_NAME : '');
 
   // The body lives under `content` (live) or `model`/`data` (flattened feed).
   const body = seg.content !== undefined ? seg.content

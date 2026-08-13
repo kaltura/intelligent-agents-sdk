@@ -488,7 +488,7 @@ const probe = await mgmt.intellects.brainConfigAvailable(ks);
 
 ```js
 const result = await mgmt.intellects.setBrainConfig(configId, {
-  agentLlm: 'us.anthropic.claude-sonnet-5',
+  agentLlm: '<your-agent-llm-id>',
   rateLimits: { perMinute: 60, perHour: 1000 },
 }, ks);
 // { applied:false, code:'forbidden', reason:'...' } when gated — NEVER throws or fakes success.
@@ -694,7 +694,7 @@ All use the **admin KS**.
 
 `agent/list` has no server-side filtering — always send `"filter":{}` and filter client-side.
 
-`agent/getEmbedScript` replies `{"objectType":"Object","html":"<script…>"}` — a ready-to-paste `<script type='module'>` snippet that loads the Unisphere (the GenUI/runtime platform this SDK's `./experience/genui` renders against) embeds loader and renders the agent's chat widget (`apis.genieChat.<embedType>(…)`). `embedType` is a closed enum; anything else 400s. SDK: `mgmt.agents.getEmbedScript(agentId, embedType, ks)` unwraps to the html string.
+`agent/getEmbedScript` replies `{"objectType":"Object","html":"<script…>"}` — a ready-to-paste `<script type='module'>` snippet that loads Kaltura's embeds loader and renders the agent's chat widget (`apis.genieChat.<embedType>(…)`). `embedType` is a closed enum; anything else 400s. SDK: `mgmt.agents.getEmbedScript(agentId, embedType, ks)` unwraps to the html string.
 
 ### Avatars — `https://api.avatar.us.kaltura.ai`
 
@@ -757,6 +757,8 @@ Full record lifecycle (all verified live). SDK: `mgmt.knowledge`. Linkage to an 
 | Delete | `POST /v1/knowledge/delete` | `{"id":2049}` — HTTP 200, body `null`; a follow-up get 404s |
 
 Deleting a record does **not** unlink it — an intellect's `knowledge_ids` keeps the dangling id; clear it via `mgmt.intellectConfig.setKnowledgeIds(configId, [], ks)`.
+
+A record with more than one `sources` entry (e.g. `internal` + `web` together) reliably 500s on Delete on the current deployment (verified live, reproduced 3x; single-source records delete cleanly) — see README.md's Honest limits. It becomes an orphan; its backing category/entries can still be torn down separately.
 
 ---
 

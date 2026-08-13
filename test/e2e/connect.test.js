@@ -450,7 +450,7 @@ test('waitForCapacity: rejects with capacity_timeout after maxWaitMs when never 
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
 test('capacity backoff: onAvail applies ±15% jitter at the consumption site (exact schedule stays untouched — see wire.test.js)', async () => {
-  // Adopted from unisphere-rtc: jittering the wait at the point it's consumed (not the exported
+  // Jittering the wait at the point it's consumed (not the exported
   // CAPACITY_BACKOFF array) means concurrently-waiting clients don't all re-poll in lockstep,
   // while wire.test.js's exact-array assertion on CAPACITY_BACKOFF itself still holds.
   const socket = new FakeSocket();

@@ -1,6 +1,6 @@
 /**
  * Default renderer for the `external-video` runtime
- * (UNISPHERE_TOOLS["external_video"] → `external-video-tool`). Embeds a
+ * (backend tool key "external_video" → `external-video-tool`). Embeds a
  * non-Kaltura video. When the URL is a recognized embed host (YouTube/Vimeo)
  * it emits an `embedUrl` the host renders as a real `<iframe>` PLAYER; otherwise
  * it falls back to a scheme-checked link (`url`). The media URL is scheme-checked

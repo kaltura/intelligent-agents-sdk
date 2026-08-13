@@ -7,7 +7,7 @@ import {
   parseToolCall,
   parseToolResponseName,
   validateToolArgs,
-  UNISPHERE_RUNTIMES,
+  GENUI_RUNTIMES,
 } from '../../src/core/stream.js';
 import { streamFrom, streamFromChunks } from '../fakes/fetch.js';
 
@@ -295,11 +295,11 @@ test('collectConverse: no toolArgSchemas → toolCallsInvalid is always empty (n
   assert.equal(r.toolCalls.length, 1, 'unrecognized tool name in schema map still passes through unchanged');
 });
 
-test('UNISPHERE_RUNTIMES is the 9 wire-form (-tool) runtime names, frozen', () => {
-  assert.equal(UNISPHERE_RUNTIMES.length, 9);
-  assert.ok(UNISPHERE_RUNTIMES.includes('flashcards-tool'));
-  assert.ok(UNISPHERE_RUNTIMES.every((n) => n.endsWith('-tool')));
-  assert.ok(Object.isFrozen(UNISPHERE_RUNTIMES));
+test('GENUI_RUNTIMES is the 9 wire-form (-tool) runtime names, frozen', () => {
+  assert.equal(GENUI_RUNTIMES.length, 9);
+  assert.ok(GENUI_RUNTIMES.includes('flashcards-tool'));
+  assert.ok(GENUI_RUNTIMES.every((n) => n.endsWith('-tool')));
+  assert.ok(Object.isFrozen(GENUI_RUNTIMES));
 });
 
 test('collectConverse adds _meta/experiencesList/kindCounts without breaking back-compat shape', async () => {
