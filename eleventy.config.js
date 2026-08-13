@@ -14,6 +14,19 @@ function githubSlugify(s) {
 module.exports = function (eleventyConfig) {
   eleventyConfig.addPassthroughCopy('src/assets');
 
+  // GitHub Pages serves this repo as a project site under /<repo>/, not at the
+  // domain root, but every href/src in base.njk, nav.js, and the migrated docs
+  // is root-absolute (e.g. "/getting-started/"). CI passes the real subpath via
+  // ELEVENTY_PATH_PREFIX (from actions/configure-pages' base_path output); local
+  // builds leave it unset, so this is a no-op for local preview.
+  const pathPrefix = (process.env.ELEVENTY_PATH_PREFIX || '').replace(/\/$/, '');
+  if (pathPrefix) {
+    eleventyConfig.addTransform('pathPrefix', (content, outputPath) => {
+      if (!outputPath || !outputPath.endsWith('.html')) return content;
+      return content.replace(/(href|src)="\/(?!\/)/g, `$1="${pathPrefix}/`);
+    });
+  }
+
   const md = markdownIt({ html: true, breaks: false, linkify: true }).use(
     markdownItAnchor,
     { slugify: githubSlugify }
