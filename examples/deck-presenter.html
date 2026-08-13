@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Kaltura Intelligent Agents — Deck Presenter demo</title>
+  <style>body{font-family:system-ui;margin:2rem;max-width:900px;display:grid;grid-template-columns:512px 1fr;gap:1.5rem} #avatar{width:512px;height:512px;background:#111;border-radius:12px} #slide{padding:1.5rem;border:1px solid #ddd;border-radius:12px} #slide h2{margin-top:0} .nav{margin-top:1rem;display:flex;gap:.5rem} #cc{grid-column:1/-1;color:#a00}</style>
+</head>
+<body>
+  <p id="cc"></p>
+  <div id="avatar"></div>
+  <div id="slide">
+    <small id="counter"></small>
+    <h2 id="title"></h2>
+    <ul id="points"></ul>
+    <div class="nav"><button id="prev">◀ Prev</button><button id="next">Next ▶</button></div>
+  </div>
+
+  <!-- socket.io is YOUR dependency — injected, never bundled by the SDK. -->
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js" integrity="sha384-2huaZvOR9iDzHqslqwpR87isEmrfxqyWOF7hr7BY6KG0+hVKLoEXMPUJw3ynWuhO" crossorigin="anonymous"></script>
+  <script type="module">
+    // A complete avatar-guided deck in ~50 lines: the Presenter owns the
+    // conversation wiring (DPP, deterministic tool-call navigation, session
+    // memory); you supply the slides + a renderer.
+    import { KalturaAvatarSession } from '../src/experience/index.js';
+    import { Presenter } from '../src/experience/presenter.js';
+
+    const SLIDES = [
+      { title: 'Welcome', talking_points: ['Who we are', 'What this deck covers'], category: 'intro' },
+      { title: 'The Problem', talking_points: ['Pain point', 'Why now'], category: 'narrative' },
+      { title: 'Our Solution', talking_points: ['How it works', 'Key differentiator'], category: 'narrative' },
+      { title: 'Results', talking_points: ['Up 40% YoY', 'Customer proof'], category: 'financial', content: { yoy: '40%' } },
+      { title: 'Q&A', talking_points: ['Ask me anything about any slide'], category: 'closing' },
+    ];
+
+    // 1) Runtime endpoints + conversation token come from YOUR server (appInit).
+    const init = await fetch('/appInit').then((r) => r.json());
+
+    // 2) Render the avatar video.
+    const video = document.createElement('video');
+    video.autoplay = true; video.playsInline = true;
+    document.getElementById('avatar').appendChild(video);
+
+    // requireDisclosureAck:true (EU AI Act Art. 50) blocks speak() until your app calls
+    // acknowledgeDisclosure() — here, once the viewer dismisses the disclosure banner below.
+    const session = new KalturaAvatarSession({
+      token: init.ks, conversationManagerUrl: init.conversationManagerUrl,
+      srsBaseUrl: init.srsBaseUrl, turnServerUrl: init.turnServerUrl,
+      videoEl: video, socketFactory: (url, opts) => io(url, opts),
+      requireDisclosureAck: true,
+    });
+    session.on('disclosure', ({ disclosureText }) => {
+      const cc = document.getElementById('cc');
+      cc.textContent = '⚠️ ' + disclosureText + ' ';
+      const ackBtn = document.createElement('button');
+      ackBtn.textContent = 'OK';
+      ackBtn.onclick = () => { session.acknowledgeDisclosure(); cc.textContent = ''; };
+      cc.appendChild(ackBtn);
+    });
+    session.on('reconnecting', () => { document.getElementById('cc').textContent = '… reconnecting'; });
+    session.on('reconnected', () => { document.getElementById('cc').textContent = ''; });
+
+    // 3) The Presenter wires the deck to the brain. YOUR only job is renderSlide().
+    const renderSlide = (n, slide) => {
+      document.getElementById('counter').textContent = `Slide ${n} / ${SLIDES.length}`;
+      document.getElementById('title').textContent = slide.title;
+      const ul = document.getElementById('points');
+      ul.textContent = '';
+      (slide.talking_points || []).forEach((p) => { const li = document.createElement('li'); li.textContent = p; ul.appendChild(li); });
+    };
+    const presenter = new Presenter({
+      session, slides: SLIDES,
+      context: { company: 'Acme', deck: 'Investor Update' },   // merged into every per-slide prompt
+      onSlideChange: renderSlide,
+      storage: window.localStorage,                            // → "welcome back" session memory
+      // extendDpp: app-specific fields merged into every per-slide Dynamic Prompt (here, how
+      // long the viewer has lingered on the current slide — useful for a "still with me?" nudge).
+      extendDpp: (slide, ctx) => ({ secondsOnSlide: Math.round(presenter.secondsOnCurrentSlide) }),
+      // extraMemory / restoreMemory: round-trip an app-specific field through session memory
+      // alongside Presenter's own covered/lastNav/questions — here, the viewer's chosen locale.
+      extraMemory: (questions) => ({ locale: document.documentElement.lang || 'en' }),
+      restoreMemory: (memory) => ({ locale: memory.locale }),
+    });
+
+    await session.connect();      // live runtime up — fires 'disclosure' above, holds speak() until acked
+    await presenter.start();      // inject slide-1 prompt (+ memory if returning)
+    renderSlide(1, SLIDES[0]);
+
+    // Manual controls — the avatar navigates by calling the navigate_to_slide tool, never by speech.
+    document.getElementById('next').onclick = () => presenter.goTo(presenter.current + 1);
+    document.getElementById('prev').onclick = () => presenter.goTo(presenter.current - 1);
+    window.addEventListener('beforeunload', () => session.disconnect());
+  </script>
+</body>
+</html>

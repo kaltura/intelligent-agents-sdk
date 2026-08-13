@@ -1,0 +1,115 @@
+name: CI
+
+# Runs on every push to main and on every PR targeting main.
+# Zero-dependency SDK, zero-devDependency test runner (node:test) — no real
+# Kaltura credentials are used or required anywhere in this workflow.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: 🧪 Test suite
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Check out the repo
+        uses: actions/checkout@v4
+
+      - name: 🟢 Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: 🧪🩺 node --test + coverage + JUnit report (all suites, offline — fakes inject fetch/socket/RTC)
+        run: npm run test:ci
+
+      - name: 📤 Upload JUnit test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: test-results.junit.xml
+          retention-days: 30
+
+      - name: 📝 Write job summary
+        if: always()
+        run: |
+          {
+            echo "### 🧪 Test suite"
+            echo
+            if [ -f test-results.junit.xml ]; then
+              grep -E '<!-- (tests|suites|pass|fail|cancelled|skipped|todo) ' test-results.junit.xml \
+                | sed -E 's/^[[:space:]]*<!-- ([a-z]+) (.*) -->[[:space:]]*$/- **\1:** \2/'
+            else
+              echo "_No test-results.junit.xml produced — the run likely failed before reporting._"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  constitution:
+    name: 📜 Verify the SDK Constitution (agent_verify.mjs)
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - name: 📥 Check out the repo
+        uses: actions/checkout@v4
+
+      - name: 🟢 Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: 📜 Check every rule in SDK_CONSTITUTION.md (isolation, security, resiliency, performance, DX)
+        id: verify
+        run: |
+          set -o pipefail
+          npm run verify 2>&1 | tee verify-output.log
+
+      - name: 📝 Write job summary
+        if: always()
+        run: |
+          {
+            echo "### 📜 SDK Constitution verify — ${{ steps.verify.outcome }}"
+            echo
+            echo '```'
+            tail -n 25 verify-output.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  docs-gate:
+    name: 📚 Check docs/code drift, secrets, and GFM hygiene (check-docs.mjs)
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - name: 📥 Check out the repo
+        uses: actions/checkout@v4
+
+      - name: 🟢 Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: 🔍 Run the docs CI gate (secrets, GFM, cross-doc links, SDK invariants)
+        id: docs_gate
+        run: |
+          set -o pipefail
+          npm run docs:gate 2>&1 | tee docs-gate-output.log
+
+      - name: 📝 Write job summary
+        if: always()
+        run: |
+          {
+            echo "### 📚 Docs CI gate — ${{ steps.docs_gate.outcome }}"
+            echo
+            echo '```'
+            tail -n 30 docs-gate-output.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

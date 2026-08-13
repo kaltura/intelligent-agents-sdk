@@ -1,0 +1,8 @@
+version: 2
+updates:
+  # This SDK ships zero runtime/dev dependencies, but its CI workflows pin
+  # GitHub Actions by floating tag (@v4) — Dependabot keeps those current.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"

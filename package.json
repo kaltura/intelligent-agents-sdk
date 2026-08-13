@@ -1,0 +1,35 @@
+{
+  "name": "@kaltura/intelligent-agents",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Zero-dependency SDK for Kaltura conversational avatar agents — Management (provision/configure/measure) + Experience (live interactive runtime). Grounded only in what the public APIs deliver today.",
+  "license": "MIT",
+  "type": "module",
+  "engines": { "node": ">=18" },
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.js",
+    "./management": "./src/management/index.js",
+    "./experience": "./src/experience/index.js",
+    "./experience/presenter": "./src/experience/presenter.js",
+    "./experience/genui": "./src/experience/genui/index.js",
+    "./experience/noise-suppressor": "./src/experience/noise-suppressor.js",
+    "./experience/analytics": "./src/experience/analytics.js",
+    "./test/fakes/*": "./test/fakes/*"
+  },
+  "files": ["src", "examples", "test/fakes", "README.md", "CHANGELOG.md", "SECURITY.md", "LICENSE"],
+  "scripts": {
+    "test": "node --test --test-concurrency=1 'test/**/*.test.js'",
+    "test:unit": "node --test test/unit/*.test.js",
+    "test:integration": "node --test test/integration/*.test.js",
+    "test:e2e": "node --test test/e2e/*.test.js",
+    "test:evals": "node --test test/evals/*.test.js",
+    "test:ci": "node --experimental-test-coverage --test --test-concurrency=1 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=test-results.junit.xml 'test/**/*.test.js'",
+    "verify": "node scripts/agent_verify.mjs",
+    "docs:gate": "node tools/check-docs.mjs"
+  },
+  "keywords": ["kaltura", "avatar", "conversational-ai", "webrtc", "genie", "agent"],
+  "repository": { "type": "git", "url": "git+https://github.com/kaltura/intelligent-agents-sdk.git" },
+  "bugs": { "url": "https://github.com/kaltura/intelligent-agents-sdk/issues" },
+  "homepage": "https://github.com/kaltura/intelligent-agents-sdk#readme"
+}

@@ -1,0 +1,354 @@
+/**
+ * Presenter — the reusable "avatar guides through a deck/document" layer on top
+ * of {@link KalturaAvatarSession}. It encapsulates the glue that EVERY deck app
+ * otherwise rewrites by hand (proven in the earnings reference app):
+ *
+ *   - per-slide Dynamic Prompt (DPP) building + injection via setDynamicPrompt
+ *   - navigation via ONE deterministic, silent, idempotent mechanism:
+ *     `session.onToolCall('navigate_to_slide', …)`. This is the only way the
+ *     brain drives navigation — there is no speech-parsing fallback, so nav
+ *     never depends on exact wording and never misfires on ordinary narration
+ *     (a resume/back-nav phrase mentioned in passing can't be mistaken for a command)
+ *   - slide-number word parsing ("twenty-four" → 24) for non-numeric tool args
+ *   - session memory (where the user left off, what they covered/asked) for
+ *     "welcome back" continuity — storage is injected (zero-dep, isomorphic);
+ *     extensible with app-specific fields via `extraMemory`
+ *   - duplicate-nav suppression + a sequential "resume" point
+ *   - `extendDpp` — a hook for per-turn, app-specific DPP fields (e.g. an
+ *     engagement/session block) without the app reimplementing DPP assembly
+ *   - `onTurnText` — the SAME accumulated-per-turn text Presenter uses for its
+ *     own nav parsing, exposed so an app's OTHER text-driven detectors (e.g.
+ *     "the user asked for contact info", "the avatar is ending the session")
+ *     can piggyback on one accumulator instead of duplicating it
+ *   - reconnect resilience: re-sends the current slide's DPP on `reconnected`
+ *     (and re-arms the "welcome back" memory injection on a cold reconnect,
+ *     `recovered:false`) — plus a public `refreshDpp()` for any other
+ *     app-driven re-grounding moment (e.g. resuming from a pause)
+ *   - `restoreMemory` — the inverse of `extraMemory`: remaps app-specific stored
+ *     memory fields back into the first DPP's `memory` block (e.g. a stored
+ *     `contactDeclined` boolean → `memory.contact_declined`) — plus a public
+ *     `saveMemory()` and a `secondsOnCurrentSlide` getter so an app never needs
+ *     its own beforeunload flush or slide-entry timestamp
+ *   - `dppSlide` — a full-replace hook for the DPP's `slide` sub-object, for
+ *     decks whose slide shape doesn't match the default `{title, talking_points,
+ *     category, content, narrator_guidance}` vocabulary
+ *   - `appendSlide(slide)` — grow the deck at runtime (e.g. a `create_slide`
+ *     client command), without the app reimplementing array/total bookkeeping
+ *   - `oneNavPerTurn` — a brain-restart guard: suppresses a second, DIFFERENT
+ *     avatar-driven nav target within the same turn (complements, and is
+ *     distinct from, the same-target `dupSuppressMs` window) — exposed via the
+ *     `navSuppressedThisTurn` getter so a sibling client command (e.g.
+ *     `show_widget`) can tell its content was grounded in a nav that never landed
+ *
+ * The app supplies slides + a tiny renderer; the Presenter owns the conversation
+ * wiring. Pure logic over an injected session + storage — fully unit-testable.
+ * Presenter is an optional plugin: it is a separately-importable class with no
+ * effect on `KalturaAvatarSession` or any other SDK surface until constructed.
+ *
+ * @example
+ * import { KalturaAvatarSession } from '@kaltura/intelligent-agents/experience';
+ * import { Presenter } from '@kaltura/intelligent-agents/experience/presenter';
+ * const session = new KalturaAvatarSession({ token, …appInit, videoEl, socketFactory });
+ * const presenter = new Presenter({
+ *   session,
+ *   slides,                                  // [{ title, talking_points, category, content }]
+ *   context: { financials, guidance },        // extra data merged into every DPP
+ *   onSlideChange: (n, slide) => renderPdfPage(n),   // YOUR renderer
+ *   storage: window.localStorage,             // optional → session memory
+ * });
+ * await session.connect();
+ * await presenter.start();                    // injects slide-1 DPP (+ memory)
+ */
+import { parseSlideNumber } from './slidenav.js';
+
+export { parseSlideNumber };
+
+export class Presenter {
+  /**
+   * @param {object} cfg
+   * @param {import('./session.js').KalturaAvatarSession} cfg.session
+   * @param {Array<{title?:string,talking_points?:string[],category?:string,content?:object,narrator_guidance?:string}>} cfg.slides
+   * @param {object} [cfg.context]              Extra data merged into every DPP (financials, guidance, …).
+   * @param {(slideNum:number, slide:object, reason:string)=>void} [cfg.onSlideChange]  Your renderer (1-based).
+   * @param {Storage|{getItem,setItem,removeItem}} [cfg.storage]  Where to persist session memory (e.g. localStorage). Omit to disable memory.
+   * @param {string} [cfg.memoryKey]
+   * @param {number} [cfg.dupSuppressMs]        Suppress a repeat nav to the same slide within this window (default 3000).
+   * @param {(category?:string)=>{disclaimer_required?:boolean,non_gaap_cited?:boolean}} [cfg.metaFor]  Per-category DPP meta flags.
+   * @param {string} [cfg.mode]                 DPP `mode` tag (default 'presentation').
+   * @param {() => number} [cfg.now]            Clock injection (defaults to Date.now) — for tests/determinism.
+   * @param {string|false} [cfg.toolCallName]   Client-command name for navigation via `session.onToolCall` — the
+   *   ONLY navigation mechanism (default `'navigate_to_slide'`, expects `{ slide_num, reason? }`; `reason:'resume'`
+   *   marks the nav as returning to the sequential point rather than a fresh jump). Pass `false` to disable —
+   *   there is no other nav path; Presenter then never navigates on its own.
+   * @param {(slide:object, ctx:{current:number,total:number})=>object} [cfg.extendDpp]  Merged into every DPP
+   *   alongside `context` — for per-turn/dynamic fields (e.g. an engagement block) that `context` (static) can't express.
+   * @param {(questions:string[])=>object} [cfg.extraMemory]  Extra fields to persist into session memory (e.g.
+   *   `{contact}`), merged alongside the built-in `lastSlide`/`covered`/`interests` shape.
+   * @param {(memory:object)=>object} [cfg.restoreMemory]  The inverse of `extraMemory` — maps the loaded memory
+   *   object (the same shape `extraMemory` wrote) onto extra fields for the first DPP's `memory` block (e.g.
+   *   `(m) => ({contact: m.contact, contact_declined: m.contactDeclined})`).
+   * @param {(text:string, full:string)=>void} [cfg.onTurnText]  Fires with the per-turn accumulated avatar text
+   *   (chunks joined as they stream in) — lets an app's own text-driven detectors (e.g. "the avatar said the
+   *   closing line") reuse this accumulator instead of duplicating one. Not used for navigation.
+   * @param {(slide:object, ctx:{current:number,total:number,content:object})=>object} [cfg.dppSlide]  FULL REPLACE
+   *   for the DPP's `slide` sub-object — use when your slide shape doesn't match the default
+   *   `{title, talking_points, category, content, narrator_guidance}` vocabulary. `ctx.content` is the
+   *   already visual-stripped `slide.content` object, for convenience. Omit to keep the default shape.
+   * @param {boolean} [cfg.oneNavPerTurn]  Suppress a SECOND avatar-driven `navigate_to_slide` call within the
+   *   SAME turn (`speechId`) — guards against a brain "restart" that fires two different nav targets in one
+   *   response. Default `false`. Independent of `dupSuppressMs`, which only suppresses a repeat to the SAME
+   *   target within a time window.
+   */
+  constructor(cfg) {
+    if (!cfg?.session) throw new Error('Presenter needs { session }');
+    if (!Array.isArray(cfg.slides) || !cfg.slides.length) throw new Error('Presenter needs a non-empty slides array');
+    this._now = cfg.now || (() => Date.now());
+    this.session = cfg.session;
+    this.slides = cfg.slides;
+    this.total = cfg.slides.length;
+    this.context = cfg.context || {};
+    this._onSlideChange = cfg.onSlideChange || (() => {});
+    this._storage = cfg.storage || null;
+    this._memoryKey = cfg.memoryKey || 'kaltura_presenter_memory';
+    this._dupMs = cfg.dupSuppressMs ?? 3000;
+    this._metaFor = cfg.metaFor || ((cat) => ({ disclaimer_required: cat === 'financial' || cat === 'legal', non_gaap_cited: cat === 'financial' }));
+    this._mode = cfg.mode || 'presentation';
+    this._toolCallName = cfg.toolCallName === false ? null : (cfg.toolCallName || 'navigate_to_slide');
+    this._extendDpp = cfg.extendDpp || null;
+    this._extraMemory = cfg.extraMemory || null;
+    this._restoreMemory = cfg.restoreMemory || null;
+    this._onTurnText = cfg.onTurnText || null;
+    this._dppSlide = cfg.dppSlide || null;
+    this._oneNavPerTurn = !!cfg.oneNavPerTurn;
+
+    this.current = 1;
+    this._lastSequential = 1;
+    this._lastNavTarget = null; this._lastNavTime = 0;
+    this._lastNav = null;   // {target, reason, at} — the most recent navigation (any source)
+    this._slideEnteredAt = this._now();
+    this._covered = new Set();
+    this._questions = [];
+    this._turnSpeechId = null; this._turnText = '';
+    this._turnNavFiredFor = undefined;   // distinct from a legit `null` speechId — never blocks the very first nav
+    this._navSuppressedThisTurn = false;   // true once oneNavPerTurn blocks a same-turn second nav target — see navSuppressedThisTurn
+    this._memoryInjected = false;
+    this._lastDppSlide = 0;   // slide number of the last DPP that actually reached the session (0 = none yet)
+    this._memory = this._loadMemory();
+    if (this._memory && typeof this._memory.lastSequential === 'number') this._lastSequential = this._memory.lastSequential;
+
+    this._wire();
+  }
+
+  /** Begin: mark slide 1 covered and inject its DPP (with memory on the first injection). */
+  async start() { this._covered.add(this.current); this._injectDPP(); }
+
+  /**
+   * Navigate the deck programmatically (user button/keyboard/TOC/autoplay — any
+   * app-driven source). `reason` is passed straight through to the DPP's `nav.why`
+   * field, so an app can pass its own taxonomy (e.g. `'user_btn'`/`'user_key'`/
+   * `'autoplay'`) instead of being limited to Presenter's own `'user'`/`'avatar'`/
+   * `'resume'`. `'avatar'` and `'resume'` both skip updating the sequential "resume"
+   * point — every other reason anchors it. Excluding `'resume'` (as well as
+   * `'avatar'`) is what makes `resume` idempotent: `_nav` RESOLVES a `'resume'`
+   * target by READING `_lastSequential`, so if `goTo` let a `'resume'` nav WRITE
+   * that same field, N resume calls in a row would each resolve to the previous
+   * call's own landing spot instead of all landing on the same anchor (issue #18).
+   * @param {number} n @param {string} [reason]
+   */
+  goTo(n, reason = 'user') {
+    if (n < 1 || n > this.total || n === this.current) return;
+    if ((reason !== 'avatar' && reason !== 'resume') || n === this.current + 1) this._lastSequential = n;
+    const from = this.current;
+    this.current = n; this._slideEnteredAt = this._now(); this._covered.add(n);
+    this._lastNav = { target: n, reason, at: this._slideEnteredAt };   // causality: WHO drove this nav
+    // DPP goes out BEFORE onSlideChange fires — an app hook (e.g. a "[SLIDE CHANGE]" grounding
+    // speak()) must never reach the brain ahead of the DPP for the slide it's grounding.
+    this._injectDPP({ from, why: reason });
+    this._onSlideChange(n, this.slides[n - 1], reason);
+    this._saveMemory();
+  }
+
+  /** The current slide object. */
+  get slide() { return this.slides[this.current - 1]; }
+  /** The memory object (or null) — exposes resume/covered/interests for UI. */
+  get memory() { return this._memory; }
+
+  /** The set of slide numbers covered this session (ascending) — coverage tracking for UI/analytics. @returns {number[]} */
+  get covered() { return [...this._covered].sort((a, b) => a - b); }
+
+  /** The user's questions captured this session (in order) — read-only copy. @returns {string[]} */
+  get questions() { return [...this._questions]; }
+
+  /**
+   * The most recent navigation: `{target, reason, at}` (or null before any nav).
+   * `reason` persists WHO drove it (`'user'`/`'avatar'`/`'resume'`) so a caller
+   * can assert causality (e.g. that `goTo(N,'avatar')` came from the avatar).
+   * @returns {{target:number, reason:string, at:number}|null}
+   */
+  get lastNav() { return this._lastNav ? { ...this._lastNav } : null; }
+
+  /** The slide number of the last DPP that actually reached the session (0 = none yet — e.g. not connected). @returns {number} */
+  get lastDppSlide() { return this._lastDppSlide; }
+
+  /**
+   * True once `oneNavPerTurn` has blocked a same-turn SECOND, different `navigate_to_slide`
+   * target this turn (reset on the next `isNewTurn` turnStart). A sibling client command
+   * (e.g. `show_widget`) fired later in the SAME turn has no way of knowing the deck never
+   * actually reached the slide its content describes unless it checks this property first.
+   * Always `false` when `oneNavPerTurn` is off. @returns {boolean}
+   */
+  get navSuppressedThisTurn() { return this._navSuppressedThisTurn; }
+
+  /** Seconds spent on the current slide so far — for an engagement block in `extendDpp`/analytics. @returns {number} */
+  get secondsOnCurrentSlide() { return Math.round((this._now() - this._slideEnteredAt) / 1000); }
+
+  /** Clear persisted session memory (the "start fresh" / GDPR control). */
+  clearMemory() { this._memory = null; this._memoryInjected = false; this._covered = new Set([this.current]); this._questions = []; this._lastSequential = 1; try { this._storage?.removeItem?.(this._memoryKey); } catch { /* */ } }
+
+  /** Re-send the current slide's DPP (e.g. after resume/pause, or any app-driven refresh outside a nav). */
+  refreshDpp() { this._injectDPP(); }
+
+  /** Flush session memory now (e.g. on `beforeunload`) — the same write `goTo`/`avatarStopTalking` already do. */
+  saveMemory() { this._saveMemory(); }
+
+  /**
+   * Record a user question observed through a channel other than ASR (e.g. typed chat) —
+   * the same bookkeeping the internal `transcript` (type:'user') handler does for spoken
+   * questions, so an app with BOTH voice and typed input never needs its own question list.
+   * @param {string} text
+   */
+  recordQuestion(text) { if (text) { this._questions.push(text); this._injectDPP(); this._saveMemory(); } }
+
+  /**
+   * Append a runtime-generated slide (e.g. the brain's `create_slide` command) and grow
+   * `total` to match. Does not navigate — call `goTo(this.total, reason)` after, if wanted.
+   * @param {object} slide @returns {number} the 1-based slide number just appended
+   */
+  appendSlide(slide) {
+    this.slides.push(slide);
+    this.total = this.slides.length;
+    return this.total;
+  }
+
+  // ─────────────────────────── internals ───────────────────────────
+
+  _wire() {
+    const s = this.session;
+    // The ONLY navigation mechanism: a client-command tool call. Deterministic (an explicit
+    // slide number, never inferred from wording), silent (no speech is parsed or required),
+    // and idempotent (routed through `_nav`'s duplicate suppression below).
+    if (this._toolCallName && typeof s.onToolCall === 'function') {
+      s.onToolCall(this._toolCallName, (args) => {
+        const n = typeof args?.slide_num === 'number' ? args.slide_num : parseSlideNumber(args?.slide_num, this.total);
+        if (!n) return;
+        if (this._oneNavPerTurn) {
+          if (this._turnNavFiredFor === this._turnSpeechId) { this._navSuppressedThisTurn = true; return; }   // second nav this turn — suppressed (brain restart guard)
+          this._turnNavFiredFor = this._turnSpeechId;
+        }
+        this._nav(n, args?.reason === 'resume' ? 'resume' : 'avatar');
+      });
+    }
+    // Accumulate the avatar's spoken text per turn for `onTurnText` — an app-hook accumulator
+    // only; Presenter itself never inspects this text (navigation never depends on wording).
+    s.on('turnStart', (p) => { if (p?.isNewTurn) { this._turnSpeechId = p.speechId || null; this._turnText = ''; this._navSuppressedThisTurn = false; } });
+    s.on('transcript', (tr) => {
+      if (tr?.type === 'user') { if (tr.text) { this._questions.push(tr.text); this._injectDPP(); this._saveMemory(); } }
+      else if (tr?.type === 'final') this._accumulate(tr.text, tr.speechId);   // clean sentence (generatingSpeech)
+    });
+    s.on('brainSegment', (seg) => { if ((seg?.type === 'avatar' || seg?.type === 'avatar-filler') && seg.content) this._accumulate(seg.content, seg.speechId); });
+    s.on('avatarStopTalking', () => { this._turnSpeechId = null; this._turnText = ''; this._saveMemory(); });
+    s.on('interrupted', () => { this._turnSpeechId = null; this._turnText = ''; });
+    s.on('ended', () => this._saveMemory());
+    // A cold reconnect (recovered:false) means the brain lost its context — re-arm the
+    // "welcome back" memory injection and re-send the current slide's DPP so grounding
+    // survives the reconnect exactly as it did on first connect.
+    s.on('reconnected', (p) => { if (p && p.recovered === false) this._memoryInjected = false; this._injectDPP(); });
+  }
+
+  _accumulate(text, speechId) {
+    if (!text) return;
+    if (speechId && speechId !== this._turnSpeechId) { this._turnSpeechId = speechId; this._turnText = ''; }
+    this._turnText += text;
+    if (this._onTurnText) { try { this._onTurnText(text, this._turnText); } catch { /* app hook — never break Presenter */ } }
+  }
+
+  /**
+   * Route a tool-driven nav through duplicate suppression, resolving `reason:'resume'` to the
+   * sequential resume point. When `_lastSequential` already equals `current` there are two
+   * distinct cases that look identical from that comparison alone: (a) a prior resume call
+   * already landed here — repeating it must resolve to the SAME target (idempotent, a no-op),
+   * or (b) there is genuinely nothing to resume from (the anchor was never displaced by an
+   * avatar jump) — the documented fallback is to advance one slide (see
+   * `KNOWLEDGE_BASE_PROMPT.md`'s "if nav.resume is null -> next slide in order"). Disambiguate
+   * via `_lastNav`: only take the advance-by-one fallback when the immediately preceding nav
+   * was NOT itself a resume landing on this same slide (issue #18).
+   * @param {number} target @param {'avatar'|'resume'} reason
+   */
+  _nav(target, reason) {
+    if (reason === 'resume') {
+      target = this._lastSequential !== this.current
+        ? this._lastSequential
+        : (this._lastNav?.reason === 'resume' ? this.current : this.current + 1);
+    }
+    if (target < 1 || target > this.total) return;
+    const now = this._now();
+    if (target === this._lastNavTarget && now - this._lastNavTime < this._dupMs) return;   // duplicate suppression
+    this._lastNavTarget = target; this._lastNavTime = now;
+    if (target === this.current) return;
+    this.goTo(target, reason);
+  }
+
+  /** Build + send the DPP for the current slide. @param {{from?:number,why?:string}} [nav] */
+  _injectDPP(nav) {
+    const slide = this.slide || {};
+    const content = { ...(slide.content || {}) }; delete content.visual;
+    const dpp = {
+      v: '3', mode: this._mode,
+      current_slide: this.current, total_slides: this.total,
+      slide: this._dppSlide
+        ? this._dppSlide(slide, { current: this.current, total: this.total, content })
+        : { title: slide.title, talking_points: slide.talking_points, category: slide.category, content, narrator_guidance: slide.narrator_guidance || null },
+      nav: nav ? { from: nav.from, why: nav.why, resume: (this._lastSequential !== this.current ? this._lastSequential : null) } : null,
+      ...this.context,
+      ...(this._extendDpp ? this._extendDpp(slide, { current: this.current, total: this.total }) : null),
+      meta: this._metaFor(slide.category),
+      memory: this._memoryForDPP(),
+    };
+    try { this.session.setDynamicPrompt(dpp); if (dpp.memory) this._memoryInjected = true; this._lastDppSlide = this.current; } catch { /* not connected yet — caller injects after connect */ }
+    return dpp;
+  }
+
+  // ── session memory (storage injected; never assumes a browser) ──
+  _loadMemory() {
+    if (!this._storage) return null;
+    try {
+      const raw = this._storage.getItem(this._memoryKey); if (!raw) return null;
+      const m = JSON.parse(raw);
+      const maxAge = 30 * 24 * 3600 * 1000;
+      if (!m?.timestamp || (this._now() - m.timestamp) > maxAge) { this._storage.removeItem(this._memoryKey); return null; }
+      return m;
+    } catch { return null; }
+  }
+  _saveMemory() {
+    if (!this._storage) return;
+    try {
+      const interests = [...new Set(this._questions.map((q) => String(q).trim()).filter(Boolean))]
+        .filter((q, i, a) => !a.slice(i + 1).some((o) => o.startsWith(q) || q.startsWith(o))).slice(-4);
+      const extra = this._extraMemory ? this._extraMemory(this._questions) : null;
+      this._storage.setItem(this._memoryKey, JSON.stringify({
+        timestamp: this._now(), lastSlide: this.current, lastSequential: this._lastSequential, covered: [...this._covered], interests,
+        ...extra,
+      }));
+    } catch { /* quota/unavailable — non-fatal */ }
+  }
+  _memoryForDPP() {
+    if (this._memoryInjected || !this._memory) return null;
+    const m = this._memory, out = {};
+    if (typeof m.lastSlide === 'number' && m.lastSlide > 1) out.resume = m.lastSlide;
+    if ((m.covered || []).length) out.covered = m.covered;
+    if ((m.interests || []).length) out.interests = m.interests;
+    if (m.timestamp) out.hours_ago = Math.round((this._now() - m.timestamp) / 3600000);
+    if (this._restoreMemory) { try { Object.assign(out, this._restoreMemory(m)); } catch { /* app hook — never break Presenter */ } }
+    return Object.keys(out).length ? out : null;
+  }
+}
