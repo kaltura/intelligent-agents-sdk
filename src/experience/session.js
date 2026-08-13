@@ -1360,10 +1360,13 @@ export class KalturaAvatarSession extends Emitter {
     }
     this._touchActivity();
     const gen = this._sessionGen;
+    // tool_invocation_id is a second required field the backend added independently of
+    // tool_id (live-verified: a body without it 422s with `detail:[{loc:["body","tool_invocation_id"]}]`)
+    // — same id value, just echoed under both keys since there's only one id on the wire.
     await this._fetch(`${this._genieUrl}/assistant/tool_response`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `KS ${this._token}` },
-      body: JSON.stringify({ tool_name: pending.name, tool_id: id, response: sanitizeJson(response) }),
+      body: JSON.stringify({ tool_name: pending.name, tool_id: id, tool_invocation_id: id, response: sanitizeJson(response) }),
     });
     this._pendingToolAcks.delete(id);
     // A cold reconnect mid-flight already discarded the server-side session this POST
