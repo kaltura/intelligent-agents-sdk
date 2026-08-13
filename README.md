@@ -99,8 +99,6 @@ used elsewhere in these docs, only resolve for a Node/bundler consumer that read
 
 ```html
 <script type="module">
-  // @v1.0.0 is illustrative — no tag has been cut yet, so this URL 404s until the repo is
-  // public and a real tag exists.
   import { KalturaAvatarSession } from 'https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.0.0/src/experience/index.js';
   // ... same API as the local examples — see examples/browser-experience.html
 </script>
