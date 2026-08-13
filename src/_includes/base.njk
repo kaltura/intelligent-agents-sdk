@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ title }} — @kaltura/intelligent-agents</title>
+  {% if description %}<meta name="description" content="{{ description }}">{% endif %}
+  <link rel="icon" href="/assets/logo/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Lato:wght@400;700;900&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/styles.css">
+  <script>
+    // Set the theme before first paint — respects a saved choice, then
+    // prefers-color-scheme, then defaults to dark (design doc §8).
+    (function () {
+      var saved = localStorage.getItem('theme');
+      var theme = saved || (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+      document.documentElement.setAttribute('data-theme', theme);
+    })();
+  </script>
+</head>
+<body>
+  <header class="site-header">
+    <div style="display:flex;align-items:center;gap:0.75rem;">
+      <button class="menu-toggle" id="menuToggle" aria-label="Toggle navigation" aria-expanded="false">
+        <span class="material-symbols-outlined">menu</span>
+      </button>
+      <a href="/" class="logo" aria-label="@kaltura/intelligent-agents home">
+        <img src="/assets/logo/logo-horizontal-color.svg" alt="Kaltura" data-logo="light">
+        <img src="/assets/logo/logo-horizontal-color-dark.svg" alt="Kaltura" data-logo="dark" style="display:none;">
+      </a>
+    </div>
+    <div class="header-actions">
+      <a class="gh-link" href="https://github.com/kaltura/intelligent-agents-sdk" target="_blank" rel="noopener">
+        <span class="material-symbols-outlined" aria-hidden="true">code</span>
+        GitHub
+      </a>
+      <button class="theme-toggle" id="themeToggle" aria-label="Toggle dark/light theme">
+        <span class="material-symbols-outlined" id="themeIcon" aria-hidden="true">dark_mode</span>
+      </button>
+    </div>
+  </header>
+
+  <nav class="sidebar" id="sidebar" aria-label="Documentation">
+    <div class="nav-group">
+      <ul>
+        <li><a href="/" {% if page.url == '/' %}aria-current="page"{% endif %}>Home</a></li>
+      </ul>
+    </div>
+    {% for section in nav %}
+    <div class="nav-group">
+      <div class="nav-group-label">{{ section.group }}</div>
+      <ul>
+        {% for item in section.pages %}
+        <li><a href="{{ item.url }}" {% if page.url == item.url %}aria-current="page"{% endif %}>{{ item.title }}</a></li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endfor %}
+  </nav>
+
+  <main class="content-wrapper">
+    {% if eyebrow %}<div class="eyebrow">{{ eyebrow }}</div>{% endif %}
+    {{ content | safe }}
+  </main>
+
+  <script>
+    (function () {
+      var root = document.documentElement;
+      var toggle = document.getElementById('themeToggle');
+      var icon = document.getElementById('themeIcon');
+      var lightLogo = document.querySelector('[data-logo="light"]');
+      var darkLogo = document.querySelector('[data-logo="dark"]');
+
+      function syncChrome() {
+        var theme = root.getAttribute('data-theme');
+        icon.textContent = theme === 'dark' ? 'dark_mode' : 'light_mode';
+        if (lightLogo && darkLogo) {
+          lightLogo.style.display = theme === 'dark' ? 'none' : 'block';
+          darkLogo.style.display = theme === 'dark' ? 'block' : 'none';
+        }
+      }
+      syncChrome();
+
+      toggle.addEventListener('click', function () {
+        var next = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+        root.setAttribute('data-theme', next);
+        localStorage.setItem('theme', next);
+        syncChrome();
+      });
+
+      var menuToggle = document.getElementById('menuToggle');
+      var sidebar = document.getElementById('sidebar');
+      menuToggle.addEventListener('click', function () {
+        var open = sidebar.classList.toggle('open');
+        menuToggle.setAttribute('aria-expanded', open);
+      });
+    })();
+  </script>
+</body>
+</html>

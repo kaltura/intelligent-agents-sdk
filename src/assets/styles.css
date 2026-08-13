@@ -1,0 +1,322 @@
+/* Kaltura Agents Design System — tokens per Kaltura_Agents_Design_System.md §2, §4, §8 */
+
+:root {
+  --ds-roundness-1: 4px;
+  --ds-roundness-2: 8px;
+  --ds-roundness-3: 12px;
+  --ds-font-family: 'Lato', sans-serif;
+  --sidebar-width: 17rem;
+  --header-height: 4rem;
+}
+
+[data-theme='dark'] {
+  --ds-primary: #006efa;
+  --ds-danger: #ca1c2d;
+  --ds-warning: #e86925;
+  --ds-screen-green: #00a078;
+
+  --ds-tone-1: #ffffff;
+  --ds-tone-2: #cccccc;
+  --ds-tone-3: #999999;
+  --ds-tone-4: #666666;
+  --ds-tone-5: #525252;
+  --ds-tone-6: #383838;
+  --ds-tone-7: #212121;
+  --ds-tone-8: #000000;
+
+  --page-bg: #121212;
+  --card-bg: #242424;
+  --elevated-bg: #333333;
+  --page-text: var(--ds-tone-1);
+  --secondary-text: var(--ds-tone-2);
+  --border-color: rgba(153, 153, 153, 0.25);
+  --hover-bg: var(--ds-tone-5);
+  --code-bg: #1a1a1a;
+}
+
+[data-theme='light'] {
+  --ds-primary: #3525cd;
+  --ds-danger: #ba1a1a;
+  --ds-warning: #95002b;
+  --ds-screen-green: #006c49;
+
+  --page-bg: #f8f9ff;
+  --card-bg: #ffffff;
+  --elevated-bg: #eff4ff;
+  --page-text: #0b1c30;
+  --secondary-text: #464555;
+  --border-color: rgba(199, 196, 216, 0.35);
+  --hover-bg: #dce9ff;
+  --code-bg: #eef1fb;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--page-bg);
+  color: var(--page-text);
+  font-family: var(--ds-font-family);
+  font-size: 16px;
+  line-height: 1.6;
+  transition: background-color 200ms ease, color 200ms ease;
+}
+
+a {
+  color: var(--ds-primary);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+h1 {
+  font-size: 2rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+h2 {
+  font-size: 1.4rem;
+  margin-top: 2.5rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+h3 {
+  font-size: 1.15rem;
+  margin-top: 2rem;
+}
+
+/* Code — monospace is a functional requirement for reading/copying real code
+   samples on a developer reference site, not decorative chrome; scoped only
+   to pre/code so prose stays on the DS type scale. */
+code,
+pre {
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 0.875em;
+}
+
+code {
+  background: var(--code-bg);
+  padding: 0.15em 0.4em;
+  border-radius: var(--ds-roundness-1);
+}
+
+pre {
+  background: var(--code-bg);
+  padding: 1rem;
+  border-radius: var(--ds-roundness-2);
+  overflow-x: auto;
+  border: 1px solid var(--border-color);
+}
+
+pre code {
+  background: none;
+  padding: 0;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0;
+  font-size: 0.9rem;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border-color);
+  vertical-align: top;
+}
+
+th {
+  color: var(--secondary-text);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+blockquote {
+  margin: 1rem 0;
+  padding: 0.25rem 1rem;
+  border-left: 4px solid var(--ds-primary);
+  color: var(--secondary-text);
+}
+
+/* Layout shell — design doc §6 */
+
+.site-header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--header-height);
+  background: var(--elevated-bg);
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 1.5rem;
+  z-index: 10;
+}
+
+.site-header .logo img {
+  height: 28px;
+  display: block;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.theme-toggle {
+  background: none;
+  border: 1px solid var(--border-color);
+  color: var(--page-text);
+  border-radius: var(--ds-roundness-3);
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.theme-toggle:hover {
+  background: var(--hover-bg);
+}
+
+.gh-link {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--page-text);
+}
+
+.sidebar {
+  position: fixed;
+  top: var(--header-height);
+  left: 0;
+  bottom: 0;
+  width: var(--sidebar-width);
+  background: var(--elevated-bg);
+  border-right: 1px solid var(--border-color);
+  overflow-y: auto;
+  padding: 1.5rem 0;
+}
+
+.nav-group {
+  margin-bottom: 1.5rem;
+}
+
+.nav-group-label {
+  font-size: 0.7rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--secondary-text);
+  padding: 0 1.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.nav-group ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.nav-group a {
+  display: block;
+  padding: 0.5rem 1.5rem;
+  color: var(--secondary-text);
+  font-size: 0.9rem;
+  font-weight: 500;
+  border-right: 3px solid transparent;
+}
+
+.nav-group a:hover {
+  background: var(--hover-bg);
+  text-decoration: none;
+}
+
+.nav-group a[aria-current='page'] {
+  color: var(--ds-primary);
+  border-right-color: var(--ds-primary);
+  background: var(--hover-bg);
+  font-weight: 700;
+}
+
+.content-wrapper {
+  margin-left: var(--sidebar-width);
+  margin-top: var(--header-height);
+  padding: 2.5rem 3rem;
+  max-width: 860px;
+}
+
+.eyebrow {
+  font-size: 0.7rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ds-primary);
+}
+
+.material-symbols-outlined {
+  font-family: 'Material Symbols Outlined';
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+  font-size: 22px;
+  line-height: 1;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+.menu-toggle {
+  display: none;
+  background: none;
+  border: none;
+  color: var(--page-text);
+  cursor: pointer;
+}
+
+@media (max-width: 900px) {
+  .sidebar {
+    transform: translateX(-100%);
+    transition: transform 200ms ease-in-out;
+    z-index: 9;
+  }
+
+  .sidebar.open {
+    transform: translateX(0);
+  }
+
+  .content-wrapper {
+    margin-left: 0;
+    padding: 1.5rem;
+  }
+
+  .menu-toggle {
+    display: flex;
+  }
+}

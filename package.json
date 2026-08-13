@@ -1,0 +1,18 @@
+{
+  "name": "intelligent-agents-sdk-site",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "build": "eleventy",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "@11ty/eleventy": "^3.1.6",
+    "markdown-it-anchor": "^9.2.1"
+  }
+}
