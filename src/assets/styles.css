@@ -390,15 +390,25 @@ blockquote {
   position: absolute;
   inset: 0;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 0.85rem;
   text-align: center;
-  padding: 1.5rem;
+  /* Extra bottom padding balances the panel's own footprint at the base of
+     the card, so the centered icon/text reads as centered in the video
+     card's usable area instead of drifting toward the empty upper half. */
+  padding: 1.5rem 1.5rem 5rem;
   color: #fff;
   font-size: 1rem;
   font-weight: 600;
   background: linear-gradient(180deg, rgba(0, 0, 0, 0.1), rgba(0, 0, 0, 0.55));
   cursor: pointer;
+}
+
+.nova-placeholder-icon {
+  font-size: 2.75rem;
+  opacity: 0.8;
 }
 
 .nova-placeholder.hidden {
@@ -711,8 +721,12 @@ body.home .nova-hero {
   flex: 0 1 380px;
   width: 100%;
   max-width: 380px;
-  aspect-ratio: 4 / 5;
-  max-height: min(60vh, 460px);
+  /* Square, not portrait — a 4/5 card left a lot of dead gray space above
+     the controls with nothing to fill it (no avatar poster image exists
+     yet); a squarer card reads as a compact call card instead of an empty
+     slab. */
+  aspect-ratio: 1 / 1;
+  max-height: min(50vh, 380px);
 }
 
 @media (max-width: 900px) {
@@ -733,7 +747,7 @@ body.home .nova-hero {
 
   .nova-hero-visual {
     max-width: 320px;
-    max-height: min(48vh, 400px);
+    max-height: min(45vh, 320px);
   }
 }
 
@@ -749,6 +763,6 @@ body.home .nova-hero {
 
   .nova-hero-visual {
     max-width: 260px;
-    max-height: min(40vh, 340px);
+    max-height: min(38vh, 260px);
   }
 }
