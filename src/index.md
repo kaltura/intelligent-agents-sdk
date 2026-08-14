@@ -20,6 +20,13 @@ interface.
       Management API and grounded on this site's own documentation. She knows
       every page here — ask her what the SDK does, whether it fits your use
       case, or which page to read next, and she'll take you there herself.</p>
+      <div class="nova-hero-prompts" role="group" aria-label="Suggested questions for Nova">
+        <span class="nova-hero-prompts-label">Try asking:</span>
+        <button type="button" class="nova-chip" data-prompt="What can you help me do on this site?">What can you do?</button>
+        <button type="button" class="nova-chip" data-prompt="Show me a quick code example to get started.">Show me a code example</button>
+        <button type="button" class="nova-chip" data-prompt="Is this SDK free to use, and do I need a Kaltura account?">Is it free to use?</button>
+        <button type="button" class="nova-chip" data-prompt="Take me to the Getting Started guide.">Take me to Getting Started</button>
+      </div>
     </div>
     <div class="nova-hero-visual" id="nova-hero-slot"></div>
   </div>

@@ -40,6 +40,9 @@ const els = {
   mute: document.getElementById('nova-mute'),
   muteIcon: document.getElementById('nova-mute-icon'),
   end: document.getElementById('nova-end'),
+  videoWrap: document.getElementById('nova-video-wrap'),
+  promptsRow: document.querySelector('.nova-hero-prompts'),
+  chips: Array.from(document.querySelectorAll('.nova-chip')),
 };
 
 initDock();
@@ -85,8 +88,9 @@ function ensureSocketIo() {
   });
 }
 
-async function connect() {
+async function connect(pendingPrompt) {
   els.start.disabled = true;
+  els.videoWrap?.classList.add('is-connecting');
   setStatus('Connecting…');
   try {
     await ensureSocketIo();
@@ -110,9 +114,12 @@ async function connect() {
     session.on('transcript', (tr) => {
       if (tr.type === 'user' && tr.text && tr.text !== KICKOFF_TRIGGER) appendTranscript('you', tr.text);
     });
+    session.on('avatarStartTalking', () => els.videoWrap?.classList.add('is-talking'));
     session.on('avatarStopTalking', (p) => {
+      els.videoWrap?.classList.remove('is-talking');
       if (p?.text) appendTranscript('nova', p.text);
     });
+    session.on('interrupted', () => els.videoWrap?.classList.remove('is-talking'));
 
     session.on('disclosure', () => {
       els.disclosure.classList.remove('hidden');
@@ -128,7 +135,9 @@ async function connect() {
     initHighlighter(session);
 
     await session.connect();
+    els.videoWrap?.classList.remove('is-connecting');
     els.placeholder.classList.add('hidden');
+    els.promptsRow?.classList.add('hidden');
     els.mute.disabled = false;
     els.end.disabled = false;
     setStatus('Connected — ask Nova anything about the SDK.');
@@ -138,7 +147,9 @@ async function connect() {
     const openingCleared = new Promise((resolve) => session.once('avatarStopTalking', resolve));
     await Promise.race([openingCleared, new Promise((r) => setTimeout(r, 3000))]);
     await session.speak(KICKOFF_TRIGGER);
+    if (pendingPrompt) await session.speak(pendingPrompt);
   } catch (e) {
+    els.videoWrap?.classList.remove('is-connecting');
     setStatus(`Could not connect: ${e.detail || e.message || 'unknown error'}`);
     els.start.disabled = false;
   }
@@ -164,7 +175,9 @@ function endSession() {
 
 function resetUi() {
   session = null;
+  els.videoWrap?.classList.remove('is-connecting', 'is-talking');
   els.placeholder.classList.remove('hidden');
+  els.promptsRow?.classList.remove('hidden');
   els.disclosure.classList.add('hidden');
   els.disclosureChip.classList.add('hidden');
   els.start.disabled = false;
@@ -181,3 +194,14 @@ els.placeholder.addEventListener('click', () => {
 });
 els.mute.addEventListener('click', toggleMute);
 els.end.addEventListener('click', endSession);
+
+// NN/g-validated "use-case prompt suggestion" pattern (the same one ChatGPT/
+// Claude/Poe use pre-auth): each chip both starts the session AND asks its
+// exact question, instead of dropping a visitor into a blank "now what?" call.
+els.chips.forEach((chip) => {
+  chip.addEventListener('click', () => {
+    const prompt = chip.dataset.prompt;
+    if (session) session.speak(prompt);
+    else connect(prompt);
+  });
+});

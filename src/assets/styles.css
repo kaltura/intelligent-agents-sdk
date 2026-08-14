@@ -395,6 +395,40 @@ blockquote {
   }
 }
 
+/* Three explicit agent states, mirroring the idle/thinking/talking
+   vocabulary conversational-AI widgets use (e.g. ElevenLabs UI's Orb) —
+   adapted to this card's own radial-gradient/box-shadow system instead of a
+   WebGL orb, keeping the SDK's zero-runtime-dependency, no-bundler stance. */
+.nova-video-wrap.is-connecting {
+  animation: nova-connecting-pulse 1s ease-in-out infinite;
+}
+
+@keyframes nova-connecting-pulse {
+  0%,
+  100% {
+    filter: brightness(1);
+  }
+  50% {
+    filter: brightness(1.18);
+  }
+}
+
+.nova-video-wrap.is-talking {
+  animation: nova-talk-pulse 900ms ease-in-out infinite;
+}
+
+@keyframes nova-talk-pulse {
+  0%,
+  100% {
+    box-shadow: 0 20px 60px -24px rgba(0, 0, 0, 0.45), 0 0 0 4px color-mix(in srgb, var(--ds-primary) 45%, transparent),
+      0 0 24px 6px color-mix(in srgb, var(--ds-primary) 25%, transparent);
+  }
+  50% {
+    box-shadow: 0 20px 60px -24px rgba(0, 0, 0, 0.45), 0 0 0 7px color-mix(in srgb, var(--ds-primary) 65%, transparent),
+      0 0 40px 12px color-mix(in srgb, var(--ds-primary) 45%, transparent);
+  }
+}
+
 
 .nova-video-wrap video {
   width: 100%;
@@ -741,6 +775,53 @@ body.home .nova-hero {
   color: var(--secondary-text);
 }
 
+/* NN/g's "use-case prompt suggestion" pattern (the pills ChatGPT/Claude/Poe
+   show pre-auth): real, focusable buttons — not decorative chrome — that
+   both start the session and ask their exact question in one click. */
+.nova-hero-prompts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 1.5rem;
+}
+
+.nova-hero-prompts.hidden {
+  display: none;
+}
+
+.nova-hero-prompts-label {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--secondary-text);
+  margin-right: 0.15rem;
+}
+
+.nova-chip {
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--page-text);
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+  transition: transform 150ms ease, box-shadow 150ms ease, background-color 150ms ease, border-color 150ms ease;
+}
+
+.nova-chip:hover {
+  background: var(--hover-bg);
+  border-color: var(--ds-primary);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px -8px rgba(0, 0, 0, 0.35);
+}
+
+.nova-chip:focus-visible {
+  outline: 2px solid var(--ds-primary);
+  outline-offset: 2px;
+}
+
 .nova-hero-visual {
   position: relative;
   flex: 0 1 380px;
@@ -752,6 +833,19 @@ body.home .nova-hero {
      slab. */
   aspect-ratio: 1 / 1;
   max-height: min(50vh, 380px);
+  transition: transform 200ms ease;
+}
+
+/* Lift-on-hover affordance (Fitts's-law-style visual feedback that the card
+   is a real target) — scoped to before a session starts, so a live call's
+   controls/transcript don't jitter under the pointer. */
+.nova-hero-visual:has(.nova-placeholder:not(.hidden)):hover {
+  transform: translateY(-3px);
+  cursor: pointer;
+}
+
+.nova-hero-visual:has(.nova-placeholder:not(.hidden)):hover .nova-video-wrap {
+  box-shadow: 0 28px 70px -22px rgba(0, 0, 0, 0.55), 0 0 0 1px color-mix(in srgb, var(--ds-primary) 30%, transparent);
 }
 
 @media (max-width: 900px) {
