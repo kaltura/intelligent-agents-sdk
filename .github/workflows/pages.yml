@@ -40,3 +40,17 @@ jobs:
     steps:
       - id: deployment
         uses: actions/deploy-pages@v4
+      - name: Remind about redeploying Nova
+        run: |
+          {
+            echo "### Reminder: redeploy Nova if this changed page content"
+            echo ""
+            echo "Nova (the live avatar embedded on this site) is grounded on a snapshot of"
+            echo "these docs taken at her own last redeploy, not on this site's live HTML — a"
+            echo "page addition, rename, or content change here does not reach her until"
+            echo "someone redeploys her separately."
+            echo ""
+            echo "If this deploy changed page content (not just styling), trigger"
+            echo "kaltura/docs-site-avatar's **Redeploy Nova** workflow"
+            echo "(Actions → Redeploy Nova → Run workflow)."
+          } >> "$GITHUB_STEP_SUMMARY"
