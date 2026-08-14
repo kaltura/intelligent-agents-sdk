@@ -3,6 +3,7 @@ layout: base.njk
 title: Home
 description: A zero-dependency JavaScript SDK for building and operating Kaltura Agentic Avatars — conversational agents with a visual, human-like avatar interface.
 eyebrow: Agentic Avatars SDK
+bodyClass: home
 ---
 
 # @kaltura/intelligent-agents
@@ -10,6 +11,23 @@ eyebrow: Agentic Avatars SDK
 A zero-dependency JavaScript SDK for building and operating **Kaltura Agentic
 Avatars** — Kaltura's conversational agents with a visual, human-like avatar
 interface.
+
+<section class="nova-hero">
+  <div class="nova-hero-inner">
+    <div class="nova-hero-copy">
+      <h2>Meet Nova</h2>
+      <p>Nova is a live Kaltura Agentic Avatar, provisioned with this SDK's own
+      Management API and grounded on this site's own documentation. She knows
+      every page here — ask her what the SDK does, whether it fits your use
+      case, or which page to read next, and she'll take you there herself.</p>
+      <span class="nova-hero-invite">
+        <span class="material-symbols-outlined" aria-hidden="true">graphic_eq</span>
+        Say hi to Nova — she's listening
+      </span>
+    </div>
+    <div class="nova-hero-visual" id="nova-hero-slot"></div>
+  </div>
+</section>
 
 Two entry points, plus optional plugin subpaths that don't bloat the base
 runtime:
@@ -38,6 +56,8 @@ later.
 Once a tag is pinned, jsDelivr serves the SDK straight from GitHub — no
 `npm install`, no bundler:
 
+<div data-nova-target="jsdelivr-quickstart" data-nova-label="Quick-start browser code example">
+
 ```html
 <script type="module">
   import { KalturaAvatarSession } from 'https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.0.0/src/experience/index.js';
@@ -45,10 +65,14 @@ Once a tag is pinned, jsDelivr serves the SDK straight from GitHub — no
 </script>
 ```
 
+</div>
+
 Pin the tag for anything you ship — jsDelivr caches a tagged path forever, so
 a pin is both stable and fast.
 
 ## Where to go next
+
+<div data-nova-target="where-to-go-next" data-nova-label="Where to go next">
 
 **New to the SDK?** Start with [Getting Started](/getting-started/) — from
 zero to a talking AI avatar in about five minutes, once you have a Kaltura
@@ -67,6 +91,8 @@ the full use-case catalog.
 **Want the bigger picture?** Platform Architecture, under Explanation,
 covers the two backends, the live-video runtime, and how the pieces fit
 together — read it when you want to understand *why*, not just *how*.
+
+</div>
 
 ## Security and compliance
 

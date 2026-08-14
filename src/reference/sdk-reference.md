@@ -43,6 +43,8 @@ Pass `recoverFromSpiral: true` (to `converseOnce` or `conversations.send`) to au
 
 ## Experience
 
+<div data-nova-target="sdk-reference-experience" data-nova-label="Experience runtime example">
+
 ```js
 import { KalturaAvatarSession } from '@kaltura/intelligent-agents/experience';
 
@@ -63,6 +65,8 @@ session.onToolCall('navigate_to_slide', ({ slide_num }) => deck.goTo(slide_num))
 ```
 
 **All transports are injected** — `socketFactory`, `rtcConstructor`, `fetch`, `getUserMedia`. Tests pass fakes; the SDK stays zero-dependency.
+
+</div>
 
 ### `{{var}}` Jinja personalization (`request_vars`)
 

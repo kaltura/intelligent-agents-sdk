@@ -34,6 +34,8 @@ This is the deep reference behind [ARCHITECTURE.md](/explanation/architecture/) 
 
 ## 1. Channels at a glance
 
+<div data-nova-target="wire-protocol-channels" data-nova-label="Channels at a glance">
+
 | Channel | Transport | Direction | Carries | Source of truth |
 |---|---|---|---|---|
 | **Control plane** | Socket.IO (WebSocket) to `conversation.avatar.us.kaltura.ai` | duplex | handshake, session orchestration, brain text stream, turn/talking state, ASR signaling relay | §2–§4 |
@@ -41,6 +43,8 @@ This is the deep reference behind [ARCHITECTURE.md](/explanation/architecture/) 
 | **STV downlink** | WebRTC `RTCPeerConnection` (pc2) via SRS **WHEP** | server → client | avatar video (H264) + audio (OPUS); SDP over **plain HTTP** | §6 |
 
 Two separate peer connections by design (per `EMBED`'s own architecture notes): WHEP is receive-only, ASR is send-only, and they use **different ICE policies** (§5/§6) — separating them gives independent negotiation and failure isolation.
+
+</div>
 
 ---
 

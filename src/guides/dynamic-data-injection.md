@@ -137,6 +137,8 @@ Consider an interactive product walkthrough: viewer identity is known at connect
 through sections as the viewer explores, and partway through, the agent asks the viewer for an
 email address via a structured data form.
 
+<div data-nova-target="dynamic-data-worked-example" data-nova-label="Dynamic data injection worked example">
+
 ```js
 // 1. Connect — personalization the prompt substitutes via {{user_name}}.
 const session = new KalturaAvatarSession({ token, /* … */, requestVars: { user_name: 'Ada' } });
@@ -158,6 +160,8 @@ function onEmailFormClosed(email) {
   session.speak(`[EMAIL FORM] The form just closed — the viewer ${email ? 'submitted an email' : 'declined'}.`);
 }
 ```
+
+</div>
 
 The pattern that repeats: **update context, then actively nudge, in that order, for anything that
 just happened and needs an immediate reaction.** Use `request_vars` only for the slow-changing

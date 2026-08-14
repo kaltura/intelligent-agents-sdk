@@ -20,8 +20,16 @@
       document.documentElement.setAttribute('data-theme', theme);
     })();
   </script>
+  <script>
+    // Nova's router/navigator read these globally rather than fetching the
+    // route list — same data nav.js already drives the sidebar from (see
+    // src/_data/routes.js). Bare, unprefixed URLs; runtime code applies its
+    // own withPrefix() before fetch()/pushState() (see router.js).
+    window.__SITE_ROUTES__ = {{ routes | dump | safe }};
+    window.__SITE_PATH_PREFIX__ = {{ pathPrefix | dump | safe }};
+  </script>
 </head>
-<body>
+<body class="{{ bodyClass | default('') }}">
   <header class="site-header">
     <div style="display:flex;align-items:center;gap:0.75rem;">
       <button class="menu-toggle" id="menuToggle" aria-label="Toggle navigation" aria-expanded="false">
@@ -65,6 +73,36 @@
     {% if eyebrow %}<div class="eyebrow">{{ eyebrow }}</div>{% endif %}
     {{ content | safe }}
   </main>
+
+  <!-- Nova — one persistent widget, present on every page (see
+       src/assets/nova/*.js). Lives outside <main> so client-side navigation
+       (router.js) never touches it, keeping her live session alive across
+       "page" changes on this static multi-page site. -->
+  <div class="nova-widget" id="nova-widget">
+    <div class="nova-video-wrap" id="nova-video-wrap">
+      <video id="nova-video" autoplay playsinline></video>
+      <div class="nova-placeholder" id="nova-placeholder">Click to talk with Nova — she knows this whole SDK.</div>
+      <div class="nova-disclosure hidden" id="nova-disclosure">You are talking with an AI avatar, not a human.</div>
+      <div class="nova-disclosure-chip hidden" id="nova-disclosure-chip" title="You are talking with an AI avatar, not a human." aria-label="You are talking with an AI avatar, not a human.">AI</div>
+    </div>
+    <div class="nova-panel" id="nova-panel">
+      <div class="nova-controls">
+        <button class="nova-btn primary" id="nova-start" aria-label="Talk to Nova">
+          <span class="material-symbols-outlined" aria-hidden="true">mic</span>
+          <span class="nova-btn-label">Talk to Nova</span>
+        </button>
+        <button class="nova-btn" id="nova-mute" disabled aria-label="Mute">
+          <span class="material-symbols-outlined" aria-hidden="true" id="nova-mute-icon">mic</span>
+        </button>
+        <button class="nova-btn" id="nova-end" disabled aria-label="End conversation">
+          <span class="material-symbols-outlined" aria-hidden="true">call_end</span>
+        </button>
+      </div>
+      <div class="nova-status" id="nova-status"></div>
+      <div class="nova-transcript" id="nova-transcript"></div>
+    </div>
+  </div>
+  <script type="module" src="/assets/nova/connect.js"></script>
 
   <script>
     (function () {

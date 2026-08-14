@@ -78,6 +78,8 @@ grant consent; the resulting token expires and needs refreshing), the platform h
 implemented, real, and lives entirely on the backend. Pass an `authentication` block instead of a
 static bearer header in an `api` tool's `request`:
 
+<div data-nova-target="external-api-oauth2-example" data-nova-label="Real OAuth2 authorization-code flow example">
+
 ```js
 import { api } from '@kaltura/intelligent-agents/management';
 
@@ -100,6 +102,8 @@ const tool = api({
   responseMapping: { result: 'result' },
 });
 ```
+
+</div>
 
 `buildAuth()` (`src/management/tools.js`) validates this block before any network call:
 `type` must be `'oauth2'` (the only scheme the backend supports today), and — the one hard rule —

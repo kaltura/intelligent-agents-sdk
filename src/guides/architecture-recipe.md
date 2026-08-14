@@ -9,6 +9,8 @@ eyebrow: How-to Guide
 
 A from-scratch reimplementation of the live avatar runtime, using nothing but `socket.io-client` and the browser's native `RTCPeerConnection`. Read [ARCHITECTURE.md](/explanation/architecture/) for the big picture and [ARCHITECTURE-REFERENCE.md](/reference/architecture-reference/) for the exact wire shapes each step below relies on.
 
+<div data-nova-target="architecture-recipe-steps" data-nova-label="Minimal reimplementation recipe steps">
+
 ```
 1. Backend: POST /v1/application/appInit (widget KS)
    → { ks, conversationManagerUrl, srsBaseUrl, turnServerUrl, avatars[] }
@@ -31,6 +33,8 @@ A from-scratch reimplementation of the live avatar runtime, using nothing but `s
 8. User speaks → ASR pc carries audio → server transcribes → brain → avatar speaks (STV) + agent_raw_text
    (or inject text: emit debug_text_entered {text, isFinal:true} → server handler onTextEntered)
 ```
+
+</div>
 
 Dependencies: `socket.io-client` + the browser's native `RTCPeerConnection`. Nothing else. The WebRTC avatar engine's client package is just a convenience wrapper around exactly these steps (`joinASR` = the socket-relayed offer/answer; `joinSTV` = the WHEP subscribe).
 

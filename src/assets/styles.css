@@ -320,3 +320,435 @@ blockquote {
     display: flex;
   }
 }
+
+@media (max-width: 600px) {
+  .content-wrapper {
+    padding: 1rem;
+  }
+
+  h1 {
+    font-size: 1.6rem;
+  }
+}
+
+/* Nova — the live docs-avatar widget, persistent site-wide (base.njk).
+   #nova-widget is always position:fixed and never re-parented; its inline
+   top/left/width/height are written entirely by nova/dock.js — either
+   tracking #nova-hero-slot's rect (hero mode, homepage only) or the
+   standing dock rect (every other page/state). overflow stays visible on
+   the widget itself so .nova-panel can spill outside the small dock
+   circle; the circular/rounded clip lives on .nova-video-wrap instead. */
+
+.nova-widget {
+  position: fixed;
+  overflow: visible;
+  z-index: 20;
+}
+
+.nova-video-wrap {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  /* Idle (no video yet): a soft radial glow, not a flat black slab — the
+     avatar feed itself supplies the black once it's actually playing. */
+  background: radial-gradient(circle at 50% 42%, var(--hover-bg), var(--elevated-bg) 70%);
+  border-radius: var(--ds-roundness-3);
+  overflow: hidden;
+  box-shadow: 0 20px 60px -24px rgba(0, 0, 0, 0.45);
+  -webkit-mask-image: linear-gradient(to bottom, black 90%, transparent 100%);
+  mask-image: linear-gradient(to bottom, black 90%, transparent 100%);
+  transition: border-radius 420ms cubic-bezier(0.22, 1, 0.36, 1);
+  animation: nova-idle-breathe 4s ease-in-out infinite;
+}
+
+/* .nova-placeholder gets .hidden the moment connect.js's session.connect()
+   resolves — reuse that as the "video is actually live" signal rather than
+   introducing a separate JS-set flag. */
+.nova-video-wrap:has(.nova-placeholder.hidden) {
+  animation: none;
+  background: #000;
+}
+
+@keyframes nova-idle-breathe {
+  0%,
+  100% {
+    filter: brightness(1);
+  }
+  50% {
+    filter: brightness(1.06);
+  }
+}
+
+.nova-video-wrap video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.nova-placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 1.5rem;
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 600;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.1), rgba(0, 0, 0, 0.55));
+  cursor: pointer;
+}
+
+.nova-placeholder.hidden {
+  display: none;
+}
+
+.nova-disclosure {
+  position: absolute;
+  left: 0.75rem;
+  right: 0.75rem;
+  /* .nova-panel now overlays the video's bottom edge and grows upward with
+     the transcript — anchoring the disclosure banner to the top instead
+     keeps it clear of that overlay regardless of how tall the panel gets. */
+  top: 0.75rem;
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff;
+  font-size: 0.7rem;
+  text-align: center;
+  padding: 0.4rem 0.65rem;
+  border-radius: var(--ds-roundness-1);
+}
+
+.nova-disclosure.hidden,
+.nova-widget.dock-mode .nova-disclosure {
+  display: none;
+}
+
+.nova-disclosure-chip {
+  position: absolute;
+  bottom: -4px;
+  right: -4px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--ds-primary);
+  color: #fff;
+  font-size: 0.6rem;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--page-bg);
+  cursor: default;
+}
+
+.nova-disclosure-chip.hidden,
+.nova-widget:not(.dock-mode) .nova-disclosure-chip {
+  display: none;
+}
+
+/* Hero mode: the panel (controls/status/transcript) overlays the bottom of
+   the video itself, like a real video-call control tray — not a separate
+   block floating in the page background below it. A scrim keeps it legible
+   over any video content; growth stays inside the video's own footprint. */
+.nova-panel {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  padding: 2.5rem 1rem 1rem;
+  background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.7) 60%);
+  border-radius: 0 0 var(--ds-roundness-3) var(--ds-roundness-3);
+  color: #fff;
+}
+
+.nova-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.nova-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+  color: var(--page-text);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 150ms ease;
+}
+
+.nova-btn:hover:not(:disabled) {
+  background: var(--hover-bg);
+}
+
+.nova-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* Mute/End only mean anything once a session exists — connect.js disables
+   them at rest and enables them on session.connect(); showing them
+   greyed-out the whole time reads as two redundant mic affordances next to
+   the primary "Talk to Nova" button. Hide instead of just dimming. */
+#nova-mute:disabled,
+#nova-end:disabled {
+  display: none;
+}
+
+/* Once mute/end are live (a session exists), the primary CTA has done its
+   job — replacing it avoids three controls competing for attention. */
+.nova-controls:has(#nova-mute:not(:disabled)) #nova-start {
+  display: none;
+}
+
+.nova-btn.primary {
+  background: var(--ds-primary);
+  color: #fff;
+  border-color: transparent;
+}
+
+.nova-btn.primary:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+#nova-start {
+  width: auto;
+  padding: 0 1.2rem 0 1rem;
+  border-radius: var(--ds-roundness-3);
+  gap: 0.5rem;
+}
+
+.nova-btn-label {
+  font-size: 0.9rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.nova-status {
+  margin-top: 0.6rem;
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.8);
+  min-height: 1.2em;
+}
+
+.nova-transcript {
+  margin-top: 0.5rem;
+  /* .nova-panel overlays the video's own bottom edge (see .nova-panel) — this
+     cap keeps a full transcript from growing tall enough to cover most of
+     the video above it, not to reserve page space below the hero. */
+  max-height: 6rem;
+  overflow-y: auto;
+  font-size: 0.85rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.25);
+  padding-top: 0.5rem;
+}
+
+/* No messages yet: don't render a dangling border/gap on the video overlay. */
+.nova-transcript:empty {
+  display: none;
+}
+
+.nova-transcript p {
+  margin: 0.4rem 0;
+}
+
+.nova-transcript .nova-you {
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.nova-transcript .nova-nova {
+  color: #fff;
+}
+
+/* Dock mode — small circular floating widget, standing in a viewport
+   corner (rect computed by dock.js). The panel can't render inline at
+   this size, so it collapses to a click-to-expand flyout. */
+.nova-widget.dock-mode {
+  cursor: pointer;
+}
+
+.nova-widget.dock-mode .nova-video-wrap {
+  border-radius: 50%;
+  mask-image: none;
+  -webkit-mask-image: none;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+/* A full sentence can't read in a 96px circle — swap it for a mic glyph. */
+.nova-widget.dock-mode .nova-placeholder {
+  font-size: 0;
+  padding: 0;
+}
+
+.nova-widget.dock-mode .nova-placeholder::before {
+  content: 'mic';
+  font-family: 'Material Symbols Outlined';
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+  font-size: 28px;
+  color: #fff;
+}
+
+.nova-widget.dock-mode .nova-panel {
+  display: none;
+}
+
+.nova-widget.dock-mode.expanded .nova-panel {
+  display: block;
+  position: absolute;
+  bottom: calc(100% + 0.75rem);
+  right: 0;
+  top: auto;
+  left: auto;
+  width: 280px;
+  max-width: calc(100vw - 48px);
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: var(--ds-roundness-3);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25);
+  padding: 1rem;
+  z-index: 21;
+}
+
+.nova-highlight-ring {
+  position: fixed;
+  border: 2px solid var(--ds-primary);
+  border-radius: var(--ds-roundness-2);
+  pointer-events: none;
+  z-index: 19;
+  animation: nova-ring-pulse 1.1s ease-in-out infinite;
+}
+
+@keyframes nova-ring-pulse {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* Hero section — homepage only. Full-bleed to the viewport's right edge
+   while its inner content stays aligned with the normal reading column
+   (the standard margin-inline: calc(50% - 50vw) trick, adapted for this
+   layout's fixed, non-centered sidebar offset). */
+body.home .nova-hero {
+  position: relative;
+  left: calc(-1 * (var(--sidebar-width) + 3rem));
+  width: 100vw;
+  margin: 2rem 0 3rem;
+  padding: 3.5rem 3rem 3.5rem calc(var(--sidebar-width) + 3rem);
+  background: linear-gradient(180deg, var(--elevated-bg), var(--page-bg));
+}
+
+.nova-hero-inner {
+  display: flex;
+  /* The visual column (video + floating panel) runs taller than the copy
+     column — centering them vertically strands the "Talk to Nova" button
+     far below the copy's own CTA. Sharing a top edge keeps both calls to
+     action in the same visual band. */
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 3rem;
+  max-width: 1400px;
+}
+
+.nova-hero-copy {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 34rem;
+}
+
+.nova-hero-copy h2 {
+  margin: 0 0 1rem;
+  font-size: 2.25rem;
+  letter-spacing: -0.01em;
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.nova-hero-copy p {
+  max-width: 32rem;
+  font-size: 1.05rem;
+  color: var(--secondary-text);
+}
+
+.nova-hero-invite {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 1.25rem;
+  padding: 0.65rem 1.25rem;
+  background: var(--ds-primary);
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.9rem;
+  border-radius: var(--ds-roundness-3);
+  animation: nova-invite-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes nova-invite-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.04);
+  }
+}
+
+.nova-hero-visual {
+  position: relative;
+  flex: 0 1 380px;
+  width: 100%;
+  max-width: 380px;
+  aspect-ratio: 4 / 5;
+  max-height: min(60vh, 460px);
+}
+
+@media (max-width: 900px) {
+  body.home .nova-hero {
+    left: -1.5rem;
+    padding: 2.5rem 1.5rem;
+  }
+
+  .nova-hero-inner {
+    flex-direction: column;
+    justify-content: flex-start;
+    gap: 2rem;
+  }
+
+  .nova-hero-copy {
+    max-width: none;
+  }
+
+  .nova-hero-visual {
+    max-width: 320px;
+    max-height: min(48vh, 400px);
+  }
+}
+
+@media (max-width: 600px) {
+  body.home .nova-hero {
+    left: -1rem;
+    padding: 2rem 1rem;
+  }
+
+  .nova-hero-copy h2 {
+    font-size: 1.75rem;
+  }
+
+  .nova-hero-visual {
+    max-width: 260px;
+    max-height: min(40vh, 340px);
+  }
+}

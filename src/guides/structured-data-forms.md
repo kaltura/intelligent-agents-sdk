@@ -25,6 +25,8 @@ service) and this repo's SDK (`src/`).
 
 You configure it once, at intellect creation or update, as a list of "stages":
 
+<div data-nova-target="structured-data-forms-example" data-nova-label="Configure structured data forms example">
+
 ```js
 await mgmt.intellectConfig.setUserPropertiesForms(configId, [
   { callStage: 'middle', properties: [
@@ -33,6 +35,8 @@ await mgmt.intellectConfig.setUserPropertiesForms(configId, [
   ] },
 ], adminKs);
 ```
+
+</div>
 
 `callStage` is one of `start` / `middle` / `end` (`CALL_STAGES` in `src/management/intellect-config.js`).
 Each property is `{key, type}`, where `type` is one of the six argument types the platform supports —

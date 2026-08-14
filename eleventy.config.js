@@ -18,8 +18,10 @@ module.exports = function (eleventyConfig) {
   // domain root, but every href/src in base.njk, nav.js, and the migrated docs
   // is root-absolute (e.g. "/getting-started/"). CI passes the real subpath via
   // ELEVENTY_PATH_PREFIX (from actions/configure-pages' base_path output); local
-  // builds leave it unset, so this is a no-op for local preview.
-  const pathPrefix = (process.env.ELEVENTY_PATH_PREFIX || '').replace(/\/$/, '');
+  // builds leave it unset, so this is a no-op for local preview. Shared with
+  // src/_data/pathPrefix.js so the build-time transform and the runtime value
+  // embedded in every page (for router.js/navigator.js) can never drift.
+  const pathPrefix = require('./src/_data/pathPrefix.js');
   if (pathPrefix) {
     eleventyConfig.addTransform('pathPrefix', (content, outputPath) => {
       if (!outputPath || !outputPath.endsWith('.html')) return content;
@@ -41,6 +43,12 @@ module.exports = function (eleventyConfig) {
       return `/${file.toLowerCase()}/${anchor || ''}`;
     });
   });
+
+  // Embeds routes.js as a JSON literal in base.njk's <head> (window.__SITE_ROUTES__)
+  // — bare, unprefixed URLs; the pathPrefix transform above only rewrites
+  // href=/src= attributes, so runtime code (router.js/navigator.js) applies
+  // its own withPrefix() to these before fetch()/pushState().
+  eleventyConfig.addFilter('dump', (value) => JSON.stringify(value));
 
   return {
     dir: {

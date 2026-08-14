@@ -791,6 +791,8 @@ see [docs/USE-CASES.md](/reference/use-cases/).
 
 ## Quick Reference
 
+<div data-nova-target="api-reference-quickref" data-nova-label="Quick Reference example">
+
 The full `Management` method surface (this doc's endpoints, wrapped) is listed in
 [`README.md`](/reference/sdk-reference/) → Management. Two common lookups:
 
@@ -802,3 +804,5 @@ const ks = await mgmt.sessions.createAdminToken();
 console.log(await mgmt.agents.list(ks).all());
 console.log(await mgmt.intellects.list(ks).all());
 ```
+
+</div>

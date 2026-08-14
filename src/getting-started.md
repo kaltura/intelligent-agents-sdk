@@ -44,11 +44,15 @@ Our Partner ID and Admin Secret are our keys to the system.
 
 We'll clone the repository and install the quickstart's dependencies:
 
+<div data-nova-target="getting-started-clone" data-nova-label="Clone and install commands">
+
 ```bash
 git clone https://github.com/kaltura/intelligent-agents-sdk.git
 cd intelligent-agents-sdk/quickstart
 npm install
 ```
+
+</div>
 
 Then we'll set our credentials for this shell session:
 
@@ -97,9 +101,13 @@ admin secret never leaves the process.
 
 ## What we just did
 
+<div data-nova-target="getting-started-success" data-nova-label="What we just did">
+
 We created a complete agent — an intellect (brain) paired with an avatar
 (face and voice) — and had a conversation with it, entirely from the command
 line.
+
+</div>
 
 ## Where to go next
 

@@ -22,11 +22,15 @@ This is not a UI-polish preference — it is a correctness requirement. The conv
 
 Every push-to-talk/open-mic product draws the same line — one active capture mechanism, chosen once, not a live per-session toggle exposing both:
 
+<div data-nova-target="voice-input-modes-table" data-nova-label="How other products handle capture mode">
+
 | Product | How it handles capture mode |
 |---|---|
 | Discord | Single Input Mode setting — no per-session switch |
 | Amazon Alexa / Ford SYNC | Wake-word vs. PTT-button are alternate *triggers* for one active capture mechanism, not two concurrent ones |
 | WhatsApp | Hold-to-record voice notes only — no separate open-mic mode |
+
+</div>
 
 ## Deciding which mode fits your app
 

@@ -27,6 +27,8 @@ Three pieces. Author the command, the brain calls it, the page captures it.
 
 `tools.client({name, description, args?, waitForResponse?, timeout?})` builds a native `type:"client"` tool. Unlike the `api`/`csv`/`code` tool types, it has no `request` block, no echo endpoint, and no response shaper — the model calls it, the backend emits the `type:"tool"` segment, and that's the entire server-side contract.
 
+<div data-nova-target="client-commands-example" data-nova-label="Author a client command example">
+
 ```js
 import { Management, tools } from '@kaltura/intelligent-agents/management';
 
@@ -46,6 +48,8 @@ await mgmt.intellects.create({
   prompts: [/* … */],
 }, adminKs);
 ```
+
+</div>
 
 `tool_ids` is in the Genie intellect DTO allow-list, so linking a tool persists through **`v1/intellect/update`** (Genie host, admin token) — **not** `partner-config/update`, so there is no 403. The tool BODY itself lives on the separate `/v1/tool/*` entity (`mgmt.tools`), not inside the intellect config.
 
