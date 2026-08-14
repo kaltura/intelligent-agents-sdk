@@ -741,30 +741,6 @@ body.home .nova-hero {
   color: var(--secondary-text);
 }
 
-.nova-hero-invite {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-top: 1.25rem;
-  padding: 0.65rem 1.25rem;
-  background: var(--ds-primary);
-  color: #fff;
-  font-weight: 700;
-  font-size: 0.9rem;
-  border-radius: var(--ds-roundness-3);
-  animation: nova-invite-pulse 2.4s ease-in-out infinite;
-}
-
-@keyframes nova-invite-pulse {
-  0%,
-  100% {
-    transform: scale(1);
-  }
-  50% {
-    transform: scale(1.04);
-  }
-}
-
 .nova-hero-visual {
   position: relative;
   flex: 0 1 380px;

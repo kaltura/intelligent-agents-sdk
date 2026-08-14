@@ -20,10 +20,6 @@ interface.
       Management API and grounded on this site's own documentation. She knows
       every page here — ask her what the SDK does, whether it fits your use
       case, or which page to read next, and she'll take you there herself.</p>
-      <span class="nova-hero-invite">
-        <span class="material-symbols-outlined" aria-hidden="true">graphic_eq</span>
-        Say hi to Nova — she's listening
-      </span>
     </div>
     <div class="nova-hero-visual" id="nova-hero-slot"></div>
   </div>
