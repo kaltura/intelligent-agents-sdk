@@ -12,10 +12,10 @@ A zero-dependency JavaScript SDK for building and operating **Kaltura Agentic
 Avatars** — Kaltura's conversational agents with a visual, human-like avatar
 interface.
 
-<section class="nova-hero">
+<section class="nova-hero" aria-labelledby="nova-hero-heading">
   <div class="nova-hero-inner">
     <div class="nova-hero-copy">
-      <h2>Meet Nova</h2>
+      <h2 id="nova-hero-heading">Meet Nova</h2>
       <p>Nova is a live Kaltura Agentic Avatar, provisioned with this SDK's own
       Management API and grounded on this site's own documentation. She knows
       every page here — ask her what the SDK does, whether it fits your use

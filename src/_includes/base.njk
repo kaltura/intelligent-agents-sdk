@@ -101,8 +101,8 @@
           <span class="material-symbols-outlined" aria-hidden="true">call_end</span>
         </button>
       </div>
-      <div class="nova-status" id="nova-status"></div>
-      <div class="nova-transcript" id="nova-transcript"></div>
+      <div class="nova-status" id="nova-status" role="status" aria-live="polite"></div>
+      <div class="nova-transcript" id="nova-transcript" role="log" aria-live="polite" aria-label="Conversation transcript"></div>
     </div>
   </div>
   <script type="module" src="/assets/nova/connect.js"></script>

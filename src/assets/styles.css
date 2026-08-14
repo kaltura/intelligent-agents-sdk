@@ -206,6 +206,13 @@ blockquote {
   background: var(--hover-bg);
 }
 
+.theme-toggle:focus-visible,
+.menu-toggle:focus-visible,
+.nova-btn:focus-visible {
+  outline: 2px solid var(--ds-primary);
+  outline-offset: 2px;
+}
+
 .gh-link {
   display: flex;
   align-items: center;
@@ -225,6 +232,12 @@ blockquote {
   border-right: 1px solid var(--border-color);
   overflow-y: auto;
   padding: 1.5rem 0;
+  /* body.home .nova-hero is full-bleed (width:100vw, negative left offset) so
+     it spans underneath the fixed sidebar's screen area too; both are
+     positioned with z-index:auto, so without this the hero — later in DOM —
+     paints over the sidebar and blocks its nav links wherever they overlap
+     vertically. */
+  z-index: 5;
 }
 
 .nav-group {
