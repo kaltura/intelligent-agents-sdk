@@ -349,9 +349,12 @@ blockquote {
   position: relative;
   width: 100%;
   height: 100%;
-  /* Idle (no video yet): a soft radial glow, not a flat black slab — the
-     avatar feed itself supplies the black once it's actually playing. */
-  background: radial-gradient(circle at 50% 42%, var(--hover-bg), var(--elevated-bg) 70%);
+  /* Idle (no video yet): a layered, slowly-drifting glow standing in for
+     the avatar feed — one flat radial gradient read as a big empty gray
+     box; three overlapping tinted layers (two off-center, one centered)
+     give it depth and motion so the card feels alive, not placeholder-y. */
+  background: radial-gradient(circle at 30% 25%, color-mix(in srgb, var(--ds-primary) 35%, transparent), transparent 55%),
+    radial-gradient(circle at 75% 75%, var(--hover-bg), transparent 60%), radial-gradient(circle at 50% 42%, var(--hover-bg), var(--elevated-bg) 70%);
   border-radius: var(--ds-roundness-3);
   overflow: hidden;
   box-shadow: 0 20px 60px -24px rgba(0, 0, 0, 0.45);
@@ -378,6 +381,7 @@ blockquote {
     filter: brightness(1.06);
   }
 }
+
 
 .nova-video-wrap video {
   width: 100%;
@@ -406,9 +410,41 @@ blockquote {
   cursor: pointer;
 }
 
+/* A soft glowing orb behind the icon gives the mostly-empty card a real
+   focal point (like a voice-assistant listening indicator) instead of
+   just flat gradient color filling the space. */
+.nova-placeholder::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: min(65%, 220px);
+  height: min(65%, 220px);
+  transform: translate(-50%, -60%);
+  border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--ds-primary) 55%, transparent), transparent 72%);
+  filter: blur(4px);
+  animation: nova-idle-breathe 4s ease-in-out infinite;
+  pointer-events: none;
+  z-index: -1;
+}
+
 .nova-placeholder-icon {
   font-size: 2.75rem;
   opacity: 0.8;
+  animation: nova-icon-pulse 2.6s ease-in-out infinite;
+}
+
+@keyframes nova-icon-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.7;
+  }
+  50% {
+    transform: scale(1.12);
+    opacity: 1;
+  }
 }
 
 .nova-placeholder.hidden {
