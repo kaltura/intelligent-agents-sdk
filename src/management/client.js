@@ -31,7 +31,7 @@ import { inspectKs } from './ks-inspect.js';
  * @property {(path:string, fd:FormData, ks:string, opts?:{idempotencyKey?:string})=>Promise<{data:any,requestId:string}>} agenticMultipart
  * @property {(path:string, body:unknown, ks:string, opts?:{idempotencyKey?:string})=>Promise<{data:any,requestId:string}>} genie
  * @property {(path:string, ks:string)=>Promise<{data:any,requestId:string}>} genieGet
- * @property {(path:string, body:unknown, ks:string)=>Promise<ReadableStream<Uint8Array>>} genieStream
+ * @property {(path:string, body:unknown, ks:string, opts?:{signal?:AbortSignal})=>Promise<ReadableStream<Uint8Array>>} genieStream
  * @property {(service:string, action:string, params:object, ks:string)=>Promise<any>} ovp Kaltura OVP single call (www.kaltura.com/api_v3).
  * @property {(calls:object[], ks:string)=>Promise<any>} ovpMulti Kaltura OVP multirequest (chained calls).
  * @property {(uploadTokenId:string, fd:FormData, ks:string)=>Promise<any>} ovpUpload Upload file bytes to an upload token.
@@ -75,10 +75,24 @@ export class Management {
       agenticMultipart: (path, fd, ks, opts) => http.request({ method: 'POST', url: `${agenticUrl}/${path}`, ks: ksString(ks), body: fd, json: false, idempotencyKey: opts?.idempotencyKey }),
       genie: (path, body, ks, opts) => http.postJson({ url: `${genieUrl}/${path}`, ks: ksString(ks), body, idempotencyKey: opts?.idempotencyKey }),
       genieGet: (path, ks) => http.request({ method: 'GET', url: `${genieUrl}/${path}`, ks: ksString(ks) }),
-      genieStream: async (path, body, ks) => {
-        const res = await http._fetch(`${genieUrl}/${path}`, {
-          method: 'POST', headers: { Authorization: `KS ${ksString(ks)}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body),
-        });
+      // Unlike every other endpoint here, this bypasses http.request()/postJson() (it needs the
+      // raw ReadableStream body, not a parsed JSON response) — which means it also bypasses
+      // Http's built-in per-request AbortController/timeout. A caller that wants to bound (or
+      // cancel) a stalled/slow-trickling stream must supply its own `signal` (mirrors
+      // Http#request's `req.signal`); without one this can hang open indefinitely, same as any
+      // unbounded fetch.
+      genieStream: async (path, body, ks, opts) => {
+        const signal = opts?.signal;
+        let res;
+        try {
+          res = await http._fetch(`${genieUrl}/${path}`, {
+            method: 'POST', headers: { Authorization: `KS ${ksString(ks)}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+            signal,
+          });
+        } catch (err) {
+          if (signal?.aborted) throw errorFromResponse({ status: 0, path: `/${path}`, body: 'aborted by caller', requestId: '' });
+          throw err;
+        }
         if (!res.ok) {
           // Route through errorFromResponse so a 422 maps to a typed validation_error and the
           // server's actual message (incl. FastAPI array-shaped `detail`) surfaces in `.detail`,

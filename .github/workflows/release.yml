@@ -37,6 +37,38 @@ jobs:
           fi
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
+      - name: 🌐 Smoke-test jsDelivr GitHub-CDN URLs for this tag
+        run: |
+          TAG="${{ github.ref_name }}"
+          ENTRY_POINTS=(
+            "src/index.js"
+            "src/management/index.js"
+            "src/experience/index.js"
+            "src/experience/presenter.js"
+            "src/experience/genui/index.js"
+            "src/experience/noise-suppressor.js"
+            "src/experience/analytics.js"
+          )
+          for path in "${ENTRY_POINTS[@]}"; do
+            url="https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@${TAG}/${path}"
+            echo "checking $url"
+            ok=""
+            for attempt in 1 2 3 4 5; do
+              status=$(curl -s -o /dev/null -w '%{http_code}' "$url")
+              if [ "$status" = "200" ]; then
+                ok=1
+                echo "  ✓ 200 OK (attempt $attempt)"
+                break
+              fi
+              echo "  attempt $attempt: HTTP $status — retrying in 10s"
+              sleep 10
+            done
+            if [ -z "$ok" ]; then
+              echo "✗ jsDelivr never returned 200 for $url after 5 attempts"
+              exit 1
+            fi
+          done
+
       - name: 📦 Create the GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}

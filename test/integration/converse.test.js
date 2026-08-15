@@ -36,6 +36,33 @@ test('conversations.stream yields segments lazily', async () => {
   assert.deepEqual(types, ['think', 'text', 'text', 'unisphere-tool']);
 });
 
+test('conversations.stream forwards a caller-supplied signal to the underlying fetch (so a caller can actually cancel a stalled stream)', async () => {
+  let capturedSignal;
+  const f = async (url, init = {}) => {
+    capturedSignal = init.signal;
+    return { ok: true, status: 200, headers: { get: () => null }, text: async () => STREAM, body: streamFrom(STREAM) };
+  };
+  const m = new Management({ partnerId: 123, adminSecret: 'a'.repeat(32), fetch: f });
+  const ctrl = new AbortController();
+  for await (const _ of m.conversations.stream({ userMessage: 'hi', signal: ctrl.signal }, CONV_KS)) { /* drain */ }
+  assert.equal(capturedSignal, ctrl.signal);
+});
+
+test('conversations.stream rejects with a typed error when the caller aborts before the fetch resolves (no built-in timeout of its own — see client.js genieStream)', async () => {
+  const ctrl = new AbortController();
+  const f = async (url, init = {}) => {
+    ctrl.abort();
+    const e = new Error('The operation was aborted.');
+    e.name = 'AbortError';
+    throw e;
+  };
+  const m = new Management({ partnerId: 123, adminSecret: 'a'.repeat(32), fetch: f });
+  await assert.rejects(
+    async () => { for await (const _ of m.conversations.stream({ userMessage: 'hi', signal: ctrl.signal }, CONV_KS)) { /* */ } },
+    (e) => e.status === 0 && e.detail === 'aborted by caller',
+  );
+});
+
 test('converse rejects an admin token (entitlement must stay ON)', async () => {
   const adminKs = 'djJ8' + Buffer.from('v2|123|disableentitlement').toString('base64url');
   const m = new Management({ partnerId: 123, adminSecret: 'a'.repeat(32), fetch: fakeFetch([]) });

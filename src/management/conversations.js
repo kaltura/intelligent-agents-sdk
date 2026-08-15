@@ -122,9 +122,14 @@ export class Conversations {
    * );
    * console.log(reply.text);
    *
-   * @param {object} opts {userMessage, threadId?, sse?, model_type?, force_experience?, request_vars?, capabilities?}
+   * @param {object} opts {userMessage, threadId?, sse?, model_type?, force_experience?, request_vars?, capabilities?, signal?}
    *   `force_experience` must be one of EXPERIENCES (markdown|summarization|flashcards|avatar_only); anything else 422s.
    *   `capabilities` is a per-message `{name:state}` override (validated pre-network); the stored DISABLED veto still wins.
+   *   `signal` (optional `AbortSignal`) lets the caller cancel a stalled or unbounded-length
+   *   stream — this call has no built-in timeout of its own (see `genieStream` in client.js), so
+   *   a caller racing this against its own timeout MUST abort this signal when that timeout
+   *   fires, or the underlying connection (and this generator's `for await` loop) keeps running
+   *   detached, holding the socket open indefinitely.
    * @param {string} ks conversation token
    * @returns {AsyncGenerator<import('../core/stream.js').ConverseSegment>}
    */
@@ -150,7 +155,7 @@ export class Conversations {
     }
     let stream;
     try {
-      stream = await this._.genieStream('assistant/converse', body, ks);
+      stream = await this._.genieStream('assistant/converse', body, ks, { signal: opts.signal });
     } catch (e) {
       throw remapConverseError(e);
     }
