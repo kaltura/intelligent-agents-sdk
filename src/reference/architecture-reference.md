@@ -146,7 +146,7 @@ PeerConnection config: TURN `turn.avatar.us.kaltura.ai` (default username/creden
 
 ## STV Channel — Avatar Video Downlink (after CONNECTED)
 
-Standard **SRS WHEP** — completely independent of the socket. From the avatar runtime client's SRS signaling adapter:
+Standard **WHEP** — completely independent of the socket. From the avatar runtime client's signaling adapter:
 
 ```js
 const playUrl = stvNewSession.webrtc_url
@@ -250,7 +250,7 @@ The single most important scaling detail. A live avatar session is **stateful an
 - The load balancer hashes/affixes on it to route all of that session's requests to one conversation-manager pod.
 - Generated per-connection, not persisted: a brand-new `connect()` gets a new pod assignment. There is **no session migration** across pods — a pod loss ends the session (see recovery below).
 
-The STV video channel does **not** need stickiness — it's stateless SRS WHEP (`srs.avatar.us.kaltura.ai`), scaled independently and frontable by CDN/anycast.
+The STV video channel does **not** need stickiness — it's stateless WHEP (`srs.avatar.us.kaltura.ai`), scaled independently and frontable by CDN/anycast.
 
 ### Capacity & the queue (`throwToNoAgent` / `throwToExceededTier`)
 
@@ -286,7 +286,7 @@ Pods are stateless-enough to scale because shared state lives in managed backing
 | **Valkey/Redis** (`avatar-cm-cache`, `resource-manager-avatar`, `front-proxy`, `cnc`, `cnc-polls`) | Conversation-manager cache, resource/slot accounting, front-proxy routing state, command-and-control — cluster-mode, multi-node-group, replicated |
 | **SQS** (+ DLQ) | Async work between renderer / brain / pipeline stages; 30s visibility timeout, 24h retention |
 | **DynamoDB** | Durable session/agent registry & coordination |
-| **STV renderer + media server** (`c7i.xlarge`) | Video origin — the STV controller renders the face and pushes it via **RTMP into OvenMediaEngine (OME)**, egressed to clients via **WHEP** (URL varies by `cast_mode`; played with OvenPlayer). Scaled independently of the control plane |
+| **STV renderer + media server** | Video origin — renders the face server-side and egresses it to clients via **WHEP**. Scaled independently of the control plane |
 | **CloudFront + WAF** | Edge for the public surface; the WAF enforces origin/CDN-header validation on public API endpoints |
 
 So "agent availability" isn't per-pod guesswork — slot accounting is centralized in Redis/Valkey, which is what `checkAvailability` consults. Concretely (the conversation-manager's agent-availability service), a slot is available when **STV has free capacity** (unless the call is speech-only) **AND Whisper/ASR is available AND `activeCalls < maxCalls`**; `maxCalls` comes from the `CALL_CAPACITY` env via the conversation-manager's call-capacity config (default 20 in prod / 12 in non-prod). `availabilityResult.details` surfaces exactly these: `{stvAvailable, whisperAvailable, activeCalls, maxCalls, capacityAvailable}`. The brain conversation/thread state is also externalized (the same thread is resumable via `threadId` regardless of which pod handles a later turn over the text API).

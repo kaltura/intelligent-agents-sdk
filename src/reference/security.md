@@ -218,8 +218,8 @@ RFC 7635) over the static fallback; the SDK warns when it falls back.
   `__proto__`/`constructor`/`prototype` before it touches the wire.
 - CSP: the SDK uses no `eval`/`new Function`. A working policy sets
   `connect-src` to your CM (Conversation Manager — the live-session
-  control-plane host, `conversationManagerUrl`) plus SRS (the WHEP
-  video-egress host, `srsBaseUrl`) plus your TURN host; `media-src blob:`;
+  control-plane host, `conversationManagerUrl`) plus your WHEP
+  video-egress host (`srsBaseUrl`) plus your TURN host; `media-src blob:`;
   `script-src` your injected socket.io origin, pinned with SRI (see the
   README's "Injecting socket.io securely"). Set `frame-ancestors` on the
   embedding page — a mic-capable widget warrants anti-clickjacking headers.
@@ -418,5 +418,5 @@ new KalturaAvatarSession({
 ```
 
 Plus: pin the injected socket.io with SRI; set a strict CSP (`connect-src`
-your CM+SRS+TURN; `media-src blob:`; no inline script/`unsafe-eval`) and
+your CM + WHEP host + TURN; `media-src blob:`; no inline script/`unsafe-eval`) and
 `frame-ancestors` on the embedding page; render the disclosure accessibly.

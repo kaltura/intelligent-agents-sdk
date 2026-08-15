@@ -26,6 +26,13 @@ export function knownRoutes() {
   return ROUTES;
 }
 
+/** The bare route for wherever the visitor actually is right now — same
+ * normalization as resolveRoute, so it compares equal to a navigate_to_page
+ * target that resolves to the current page. */
+export function currentRoute() {
+  return resolveRoute(location.pathname);
+}
+
 function stripPrefix(pathname) {
   if (PREFIX && pathname.startsWith(PREFIX)) return pathname.slice(PREFIX.length) || '/';
   return pathname;

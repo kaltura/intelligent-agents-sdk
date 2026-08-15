@@ -33,7 +33,7 @@ The system is three planes. An app uses only the planes it needs.
 |-------|-------------|-------------|------------------|
 | **Management** | Create/configure agents, avatars, intellects, catalog, sessions | `api.avatar.us.kaltura.ai` | [API-REFERENCE.md](/reference/api-reference/) |
 | **Conversation (text)** | The AI brain — chat, memory, structured output | `genie.nvp1.ovp.kaltura.com` | "Text Conversation Flow" below |
-| **Runtime (video)** | Live photorealistic talking avatar over WebRTC | conversation-manager + SRS + brain | "Video Runtime Protocol" below |
+| **Runtime (video)** | Live photorealistic talking avatar over WebRTC | conversation-manager + STV/media server + brain | "Video Runtime Protocol" below |
 
 ---
 
@@ -45,7 +45,7 @@ The system is three planes. An app uses only the planes it needs.
 | scripted-video control service | `api.avatar.us.kaltura.ai/v1/avatar-session/*` (nginx-proxied) | The **scripted-video** control API: `avatar-session/create` (KS) → `init-client` → `keep-alive` (10s) → `end`. Served by the scripted-video control service, NOT the avatar management backend — only the host/path prefix is shared via proxy. |
 | Genie brain backend | `genie.nvp1.ovp.kaltura.com` | The brain: `assistant/converse`, intellect CRUD, threads, messages, feedback, followups |
 | conversation-manager | `conversation.avatar.us.kaltura.ai` | Live-avatar control plane (Socket.IO): session orchestration, ASR signaling relay, brain output stream |
-| STV + media server | `srs.avatar.us.kaltura.ai` (egress host) | Video origin. The **STV controller** renders the talking face and pushes it via **RTMP into OvenMediaEngine (OME)**; clients always receive it via **WHEP** (never RTMP). Two egress modes via `cast_mode`: **SRS WHEP** (wire `cast_mode:'rtmp'`, the working default) → `{srsBaseUrl}/rtc/v1/whep/?app=app&stream={session_id}`; **STV-direct** (wire `cast_mode:'webrtc'`) → the STV server's own `/whep/session/{session_id}` (fails when encryptAddress key is not configured server-side — leaks a private IP; default SRS path unaffected). Played with **OvenPlayer**. |
+| STV + media server | `srs.avatar.us.kaltura.ai` (egress host) | Video origin — renders the talking face server-side and always egresses it to clients over **WHEP** (never RTMP; that's a server-internal detail, not part of the client contract). Send `cast_mode: "rtmp"` in `stvNewSession` (or omit it — that's the client default) to get the working URL shape: `{srsBaseUrl}/rtc/v1/whep/?app=app&stream={session_id}`. |
 | TURN | `turn.avatar.us.kaltura.ai` | WebRTC relay for both media legs (default username/credential in `wire.js`'s `turnServers()`, overridable via `creds`). Addressed with explicit ports+transports (see [ARCHITECTURE-REFERENCE.md](/reference/architecture-reference/#endpoints--credentials)). STV uses `iceTransportPolicy:'relay'`; ASR's policy is client-dependent but **relays via TURN either way** (the ASR server only advertises a private candidate). See [WIRE-PROTOCOL.md §5](/reference/wire-protocol/) for the per-client matrix. |
 | ML services | internal | Machine-learning services behind `application/generateAgentProfile` |
 
@@ -76,14 +76,14 @@ A full interactive agentic avatar is **three concurrent channels** over one Sock
    │          │  WebRTC (ASR, mic→server)   via socket-relayed SDP/ICE
    │          │═════════════════════════════════════════►  speech-to-text + brain
    │          │
-   │          │  WebRTC (STV, server→video) via SRS WHEP (HTTP SDP)
+   │          │  WebRTC (STV, server→video) via WHEP (HTTP SDP)
    │  <video> │◄═════════════════════════════════════════  srs.avatar.us.kaltura.ai
    └──────────┘
 ```
 
 - **Control plane** — one Socket.IO connection. Carries the handshake, the agent's streaming text, talking state, and ASR signaling.
 - **ASR channel (uplink)** — a WebRTC peer connection that publishes your **microphone** to the server. SDP offer/answer + ICE are relayed **through the Socket.IO connection** (custom `asr-webrtc-*` events). The server runs speech-to-text → feeds the Genie brain.
-- **STV channel (downlink)** — a WebRTC peer connection that receives the **avatar video+audio**. Uses standard **SRS WHEP** (plain-SDP-over-HTTP), independent of the socket.
+- **STV channel (downlink)** — a WebRTC peer connection that receives the **avatar video+audio**. Uses standard **WHEP** (plain-SDP-over-HTTP), independent of the socket.
 
 The brain (Genie) runs entirely server-side. The client never calls an LLM — it publishes audio, receives video, and receives the brain's text as `agent_raw_text` deltas (identical format to the `/assistant/converse` NDJSON).
 

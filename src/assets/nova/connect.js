@@ -11,6 +11,7 @@
  * private monorepo — safe to ship client-side (see sessions.createWidgetToken).
  */
 import './router.js';
+import { withPrefix } from './router.js';
 import { initDock, enterDockMode } from './dock.js';
 import { initNavigator } from './navigator.js';
 import { initHighlighter } from './highlighter.js';
@@ -36,7 +37,6 @@ const els = {
   disclosureChip: document.getElementById('nova-disclosure-chip'),
   status: document.getElementById('nova-status'),
   transcript: document.getElementById('nova-transcript'),
-  start: document.getElementById('nova-start'),
   mute: document.getElementById('nova-mute'),
   muteIcon: document.getElementById('nova-mute-icon'),
   end: document.getElementById('nova-end'),
@@ -44,6 +44,14 @@ const els = {
   promptsRow: document.querySelector('.nova-hero-prompts'),
   chips: Array.from(document.querySelectorAll('.nova-chip')),
 };
+
+// Nova's real catalog-visual likeness, shown via <video poster> so her face
+// is always on screen — before connect, while connecting, and as the first
+// frame — instead of the browser's native black box while WebRTC has no
+// frames yet. eleventy's pathPrefix transform only rewrites href=/src=, not
+// poster=, so this has to be set at runtime via the same withPrefix() the
+// router already uses.
+if (els.video) els.video.poster = withPrefix('/assets/nova/img/nova-portrait.webp');
 
 initDock();
 
@@ -62,6 +70,7 @@ els.widget.addEventListener('click', (e) => {
 });
 
 let session = null;
+let connecting = false;
 
 function setStatus(text) {
   els.status.textContent = text;
@@ -89,7 +98,8 @@ function ensureSocketIo() {
 }
 
 async function connect(pendingPrompt) {
-  els.start.disabled = true;
+  if (connecting || session) return;
+  connecting = true;
   els.videoWrap?.classList.add('is-connecting');
   setStatus('Connecting…');
   try {
@@ -135,6 +145,7 @@ async function connect(pendingPrompt) {
     initHighlighter(session);
 
     await session.connect();
+    connecting = false;
     els.videoWrap?.classList.remove('is-connecting');
     els.placeholder.classList.add('hidden');
     els.promptsRow?.classList.add('hidden');
@@ -149,9 +160,9 @@ async function connect(pendingPrompt) {
     await session.speak(KICKOFF_TRIGGER);
     if (pendingPrompt) await session.speak(pendingPrompt);
   } catch (e) {
+    connecting = false;
     els.videoWrap?.classList.remove('is-connecting');
     setStatus(`Could not connect: ${e.detail || e.message || 'unknown error'}`);
-    els.start.disabled = false;
   }
 }
 
@@ -175,12 +186,12 @@ function endSession() {
 
 function resetUi() {
   session = null;
+  connecting = false;
   els.videoWrap?.classList.remove('is-connecting', 'is-talking');
   els.placeholder.classList.remove('hidden');
   els.promptsRow?.classList.remove('hidden');
   els.disclosure.classList.add('hidden');
   els.disclosureChip.classList.add('hidden');
-  els.start.disabled = false;
   els.mute.disabled = true;
   els.muteIcon.textContent = 'mic';
   els.mute.setAttribute('aria-label', 'Mute');
@@ -188,9 +199,14 @@ function resetUi() {
   setStatus('Session ended.');
 }
 
-els.start.addEventListener('click', connect);
 els.placeholder.addEventListener('click', () => {
   if (!session) connect();
+});
+els.placeholder.addEventListener('keydown', (e) => {
+  if ((e.key === 'Enter' || e.key === ' ') && !session) {
+    e.preventDefault();
+    connect();
+  }
 });
 els.mute.addEventListener('click', toggleMute);
 els.end.addEventListener('click', endSession);

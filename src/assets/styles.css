@@ -362,18 +362,12 @@ blockquote {
   position: relative;
   width: 100%;
   height: 100%;
-  /* Idle (no video yet): a layered, slowly-drifting glow standing in for
-     the avatar feed — one flat radial gradient read as a big empty gray
-     box; three overlapping tinted layers (two off-center, one centered)
-     give it depth and motion so the card feels alive, not placeholder-y. */
+  /* Idle fallback only — the <video poster> (Nova's real portrait, set in
+     connect.js) covers this almost immediately, so this gradient is just
+     what's visible for an instant before the poster paints. */
   background: radial-gradient(circle at 30% 25%, color-mix(in srgb, var(--ds-primary) 35%, transparent), transparent 55%),
     radial-gradient(circle at 75% 75%, var(--hover-bg), transparent 60%), radial-gradient(circle at 50% 42%, var(--hover-bg), var(--elevated-bg) 70%);
-  border-radius: var(--ds-roundness-3);
   overflow: hidden;
-  box-shadow: 0 20px 60px -24px rgba(0, 0, 0, 0.45);
-  -webkit-mask-image: linear-gradient(to bottom, black 90%, transparent 100%);
-  mask-image: linear-gradient(to bottom, black 90%, transparent 100%);
-  transition: border-radius 420ms cubic-bezier(0.22, 1, 0.36, 1);
   animation: nova-idle-breathe 4s ease-in-out infinite;
 }
 
@@ -382,7 +376,6 @@ blockquote {
    introducing a separate JS-set flag. */
 .nova-video-wrap:has(.nova-placeholder.hidden) {
   animation: none;
-  background: #000;
 }
 
 @keyframes nova-idle-breathe {
@@ -417,15 +410,16 @@ blockquote {
   animation: nova-talk-pulse 900ms ease-in-out infinite;
 }
 
+/* box-shadow would draw a hard rectangle behind the vignette mask (masks
+   clip the whole element, shadow included) — a saturate/brightness pulse on
+   the masked content itself reads as "alive" without redrawing an edge. */
 @keyframes nova-talk-pulse {
   0%,
   100% {
-    box-shadow: 0 20px 60px -24px rgba(0, 0, 0, 0.45), 0 0 0 4px color-mix(in srgb, var(--ds-primary) 45%, transparent),
-      0 0 24px 6px color-mix(in srgb, var(--ds-primary) 25%, transparent);
+    filter: brightness(1) saturate(1);
   }
   50% {
-    box-shadow: 0 20px 60px -24px rgba(0, 0, 0, 0.45), 0 0 0 7px color-mix(in srgb, var(--ds-primary) 65%, transparent),
-      0 0 40px 12px color-mix(in srgb, var(--ds-primary) 45%, transparent);
+    filter: brightness(1.1) saturate(1.15);
   }
 }
 
@@ -435,50 +429,38 @@ blockquote {
   height: 100%;
   object-fit: cover;
   display: block;
+  /* Frameless: the mask lives on the video/poster itself, not the wrap, so
+     the CTA caption + controls layered on top (siblings in the wrap) stay
+     fully legible — only the portrait's own outer ring fades to
+     transparent, bleeding into --page-bg instead of a hard rectangle edge. */
+  -webkit-mask-image: radial-gradient(ellipse 55% 62% at 50% 42%, black 55%, transparent 100%);
+  mask-image: radial-gradient(ellipse 55% 62% at 50% 42%, black 55%, transparent 100%);
 }
 
+/* Nova's real portrait (the <video poster>) is the focal point now — this
+   overlay is just a bottom-anchored CTA caption over it, like Docket's
+   "Talk to Aura" prompt over its own always-visible avatar, not an opaque
+   scrim that hides the face behind flat color. */
 .nova-placeholder {
   position: absolute;
   inset: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 0.85rem;
+  justify-content: flex-end;
+  gap: 0.5rem;
   text-align: center;
-  /* Extra bottom padding balances the panel's own footprint at the base of
-     the card, so the centered icon/text reads as centered in the video
-     card's usable area instead of drifting toward the empty upper half. */
-  padding: 1.5rem 1.5rem 5rem;
+  padding: 1.5rem 1.5rem 2.5rem;
   color: #fff;
   font-size: 1rem;
   font-weight: 600;
-  background: linear-gradient(180deg, rgba(0, 0, 0, 0.1), rgba(0, 0, 0, 0.55));
+  background: linear-gradient(180deg, transparent 60%, rgba(0, 0, 0, 0.7) 100%);
   cursor: pointer;
 }
 
-/* A soft glowing orb behind the icon gives the mostly-empty card a real
-   focal point (like a voice-assistant listening indicator) instead of
-   just flat gradient color filling the space. */
-.nova-placeholder::before {
-  content: '';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: min(65%, 220px);
-  height: min(65%, 220px);
-  transform: translate(-50%, -60%);
-  border-radius: 50%;
-  background: radial-gradient(circle, color-mix(in srgb, var(--ds-primary) 55%, transparent), transparent 72%);
-  filter: blur(4px);
-  animation: nova-idle-breathe 4s ease-in-out infinite;
-  pointer-events: none;
-  z-index: -1;
-}
-
 .nova-placeholder-icon {
-  font-size: 2.75rem;
-  opacity: 0.8;
+  font-size: 1.75rem;
+  opacity: 0.9;
   animation: nova-icon-pulse 2.6s ease-in-out infinite;
 }
 
@@ -590,40 +572,12 @@ blockquote {
 
 /* Mute/End only mean anything once a session exists — connect.js disables
    them at rest and enables them on session.connect(); showing them
-   greyed-out the whole time reads as two redundant mic affordances next to
-   the primary "Talk to Nova" button. Hide instead of just dimming. */
+   greyed-out the whole time reads as a redundant affordance next to the
+   video itself, which is the click target that starts a session. Hide
+   instead of just dimming. */
 #nova-mute:disabled,
 #nova-end:disabled {
   display: none;
-}
-
-/* Once mute/end are live (a session exists), the primary CTA has done its
-   job — replacing it avoids three controls competing for attention. */
-.nova-controls:has(#nova-mute:not(:disabled)) #nova-start {
-  display: none;
-}
-
-.nova-btn.primary {
-  background: var(--ds-primary);
-  color: #fff;
-  border-color: transparent;
-}
-
-.nova-btn.primary:hover:not(:disabled) {
-  filter: brightness(1.08);
-}
-
-#nova-start {
-  width: auto;
-  padding: 0 1.2rem 0 1rem;
-  border-radius: var(--ds-roundness-3);
-  gap: 0.5rem;
-}
-
-.nova-btn-label {
-  font-size: 0.9rem;
-  font-weight: 700;
-  white-space: nowrap;
 }
 
 .nova-status {
@@ -671,9 +625,12 @@ blockquote {
 
 .nova-widget.dock-mode .nova-video-wrap {
   border-radius: 50%;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+.nova-widget.dock-mode .nova-video-wrap video {
   mask-image: none;
   -webkit-mask-image: none;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
 }
 
 /* A full sentence can't read in a 96px circle — swap it for a mic glyph. */
@@ -684,9 +641,14 @@ blockquote {
 
 .nova-widget.dock-mode .nova-placeholder::before {
   content: 'mic';
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   font-family: 'Material Symbols Outlined';
   font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
-  font-size: 28px;
+  font-size: 56px;
   color: #fff;
 }
 
@@ -824,28 +786,27 @@ body.home .nova-hero {
 
 .nova-hero-visual {
   position: relative;
-  flex: 0 1 380px;
+  flex: 0 1 440px;
   width: 100%;
-  max-width: 380px;
-  /* Square, not portrait — a 4/5 card left a lot of dead gray space above
-     the controls with nothing to fill it (no avatar poster image exists
-     yet); a squarer card reads as a compact call card instead of an empty
-     slab. */
-  aspect-ratio: 1 / 1;
-  max-height: min(50vh, 380px);
+  max-width: 440px;
+  /* A tall, human portrait ratio (matching Nova's actual catalog-visual
+     framing) instead of a square — reads as a person-sized presence, not
+     an icon-sized call card. */
+  aspect-ratio: 3 / 4;
+  max-height: min(65vh, 560px);
   transition: transform 200ms ease;
 }
 
-/* Lift-on-hover affordance (Fitts's-law-style visual feedback that the card
-   is a real target) — scoped to before a session starts, so a live call's
-   controls/transcript don't jitter under the pointer. */
+/* Lift-on-hover affordance (Fitts's-law-style visual feedback that the
+   avatar is a real target) — scoped to before a session starts, so a live
+   call's controls/transcript don't jitter under the pointer. */
 .nova-hero-visual:has(.nova-placeholder:not(.hidden)):hover {
   transform: translateY(-3px);
   cursor: pointer;
 }
 
 .nova-hero-visual:has(.nova-placeholder:not(.hidden)):hover .nova-video-wrap {
-  box-shadow: 0 28px 70px -22px rgba(0, 0, 0, 0.55), 0 0 0 1px color-mix(in srgb, var(--ds-primary) 30%, transparent);
+  filter: brightness(1.04);
 }
 
 @media (max-width: 900px) {
@@ -866,7 +827,7 @@ body.home .nova-hero {
 
   .nova-hero-visual {
     max-width: 320px;
-    max-height: min(45vh, 320px);
+    max-height: min(55vh, 420px);
   }
 }
 
@@ -882,6 +843,6 @@ body.home .nova-hero {
 
   .nova-hero-visual {
     max-width: 260px;
-    max-height: min(38vh, 260px);
+    max-height: min(48vh, 340px);
   }
 }

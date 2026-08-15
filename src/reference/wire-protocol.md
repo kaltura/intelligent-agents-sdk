@@ -40,7 +40,7 @@ This is the deep reference behind [ARCHITECTURE.md](/explanation/architecture/) 
 |---|---|---|---|---|
 | **Control plane** | Socket.IO (WebSocket) to `conversation.avatar.us.kaltura.ai` | duplex | handshake, session orchestration, brain text stream, turn/talking state, ASR signaling relay | §2–§4 |
 | **ASR uplink** | WebRTC `RTCPeerConnection` (pc1) | client → server | your microphone (OPUS); SDP/ICE relayed **over the socket** | §5 |
-| **STV downlink** | WebRTC `RTCPeerConnection` (pc2) via SRS **WHEP** | server → client | avatar video (H264) + audio (OPUS); SDP over **plain HTTP** | §6 |
+| **STV downlink** | WebRTC `RTCPeerConnection` (pc2) via **WHEP** | server → client | avatar video (H264) + audio (OPUS); SDP over **plain HTTP** | §6 |
 
 Two separate peer connections by design (per `EMBED`'s own architecture notes): WHEP is receive-only, ASR is send-only, and they use **different ICE policies** (§5/§6) — separating them gives independent negotiation and failure isolation.
 
@@ -112,7 +112,7 @@ Direction: `→` client emits, `←` server emits. "Captured" = seen in the live
 | Event | Payload (captured) | Source | Meaning |
 |---|---|---|---|
 | `join` | `{ room, channel, kaltura:{ entryId?, context_id?, threadId?, force_experience:"avatar_only", capabilities:{ avatar:"on", generate_followup_questions:"on", use_knowledge_base?:"off" } }, userAgent, userAgentHints, isMobile, channel_password:null, peer_name:"unknown", peer_video:false, peer_audio:true, client? }` | `CG` | Join the room; carries the agent/brain config. The server binds the room from **`channel`** (`session.roomId = channel`) and reads `peer_*` + `kaltura.{ks,entryId,threadId}`; the top-level `room` field and the `force_experience`/`capabilities` keys are **not** consumed server-side (`force_experience` is pinned in the CM→Genie bridge — see §7). `use_knowledge_base:"off"` only when `context.type==='entry'`. |
-| `stvNewSession` | `{ room_id, cast_mode? }` — `cast_mode` is the `StvCastMode` enum `"webrtc"\|"rtmp"`, **optional** (client default `"rtmp"` = the **SRS WHEP** egress) | `CG`; `cast_mode` from `CG`; server `CM` `buildWebRtcUrl()` | Ask server to create the STV (avatar video) session. `cast_mode` selects the WHEP egress URL shape — **SRS WHEP** (`rtmp`/omit, works) vs **STV-direct** (`webrtc`, broken here); see §6. |
+| `stvNewSession` | `{ room_id, cast_mode? }` — `cast_mode` is a `StvCastMode` string, **optional**; always send `"rtmp"` (or omit it — that's the client default) | `CG`; server `CM` `buildWebRtcUrl()` | Ask server to create the STV (avatar video) session; see §6 for the resulting WHEP URL. |
 | `asr-webrtc-init` | `{ sessionId }` (client sends its socket id) | `CG`; server `CM` `socket.on('asr-webrtc-init')` | Ask backend to prepare the ASR WebRTC endpoint. The `sessionId` is **advisory/ignored server-side** — the handler keys everything off `socket.id`. |
 | `asr-webrtc-offer` | `{ offer:{type,sdp}, is_reconnect:false }` | `CG` | SDP offer for the mic uplink; awaits `asr-webrtc-answer`. |
 | `asr-webrtc-ice-candidate` | `{ candidate:{candidate,sdpMLineIndex} }` | `CG` (`RTC`) | Trickle a local ICE candidate for the ASR pc (the SDK extracts only these two fields). |
@@ -343,14 +343,11 @@ This is distinct from §5 (where the *client* offers the mic uplink and STT runs
 
 ## 6. STV downlink (pc2) — avatar video+audio → you
 
-A receive-only WebRTC peer connection fed via **WHEP** (WebRTC-HTTP Egress Protocol). Signaling is **plain SDP over HTTP**, independent of the socket. (Server-side, the STV controller renders the face and pushes RTMP into **OvenMediaEngine (OME)**, which provides the WHEP egress — `srs.avatar.*` is the egress host name, not necessarily an ossrs/SRS server; see ARCHITECTURE.md.)
+A receive-only WebRTC peer connection fed via **WHEP** (WebRTC-HTTP Egress Protocol). Signaling is **plain SDP over HTTP**, independent of the socket. The browser only ever speaks WHEP here — how the server renders and originates that video server-side is not part of the client contract.
 
-**`cast_mode` selects the egress URL shape** (`StvCastMode` enum, optional in the `stvNewSession` body; the production client sends `'rtmp'` by default, `'webrtc'` only for the `unistv` player). Think of the two modes by their egress, not the wire word:
+**Always send `cast_mode: "rtmp"` in the `stvNewSession` body — or omit the field, since that's the client default** (`buildWebRtcUrl` only branches away from this path on the literal string `"webrtc"`, which this SDK never sends). The server replies with a `webrtc_url` shaped `{srsBaseUrl}/rtc/v1/whep/?app=app&stream={session_id}` (the captured form below); POST to it verbatim.
 
-- **SRS WHEP** (wire `cast_mode:'rtmp'`, *or* omit it, *or* any non-`webrtc` value — `buildWebRtcUrl` only branches on `=== 'webrtc'`) → `{srsBaseUrl}/rtc/v1/whep/?app=app&stream={session_id}` (the captured form below). The server renders the face and re-serves it over SRS WHEP; **this is the working path.**
-- **STV-direct** (wire `cast_mode:'webrtc'`) → the STV server's own `/whep/session/{session_id}` (direct when `STV_URL` is set, else via the conversation-manager proxy `{basePublicProxyUrl}/rtc/v1/stv/{…}/whep/session/{session_id}`). Currently broken in this deployment.
-
-The client POSTs whichever `webrtc_url` the server returns, verbatim. **The browser always plays via WebRTC/WHEP regardless of mode** — "rtmp" is only the server-side ingest the renderer uses, never a browser transport.
+The client POSTs whichever `webrtc_url` the server returns, verbatim. **The browser always plays via WebRTC/WHEP** — `"rtmp"` only names the ingest mode the server renders with, never a browser transport.
 
 **ICE config:** same TURN URL block as §5. STV resolves `forceStvRelay && !isFirefox ? 'relay' : 'all'` (`RTC`). **All three clients agree here** — `CG` (`forceStvRelay:true`), `EMBED` (default `'relay'`), and `SDK` (`SDK:wire.js iceConfig()`) — so:
 
@@ -371,7 +368,7 @@ bundlePolicy: "max-bundle"
 - **SDP:** offer carries full video codec list + audio; server answer selects `m=video … 109 H264/90000` + `m=audio … 111 OPUS/48000/2`, both `a=sendonly` / `a=setup:passive`.
 - **Captured stats (healthy):** `inbound-rtp video` `frameWidth/Height: 512`, `framesDecoded` 256 → 1036, `bytesReceived` ~2.6 MB; selected pair `nominated:true state:succeeded`, **both candidates `relay`**.
 - **Greeting gate:** wait for `<video>` `canplay` (+~300ms) before `approvedPermissions` (§3 step 10–11).
-- `cast_mode:"rtmp"` (sent in `stvNewSession`) = the server renders the face and ingests it via **RTMP into OvenMediaEngine (OME)**; the client only ever does WHEP egress. The client never touches RTMP.
+- `cast_mode: "rtmp"` (sent in `stvNewSession`) is the ingest mode the server renders with; the client only ever does WHEP egress and never touches RTMP directly.
 
 ---
 

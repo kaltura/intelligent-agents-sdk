@@ -7,9 +7,12 @@
  * turn) plus a short duplicate-suppression window for a repeated identical
  * target. Unlike navigate_to_slide this tool is `waitForResponse:true`, so
  * every branch acks via session.respondToTool — a silently-swallowed ack
- * would otherwise leave the brain narrating a nav that never happened.
+ * would otherwise leave the brain narrating a nav that never happened. If
+ * the resolved target is wherever the visitor already is, acks
+ * `alreadyHere:true` and skips navigateTo() — otherwise Nova narrates a
+ * fresh navigation to a page the visitor never actually left.
  */
-import { resolveRoute, withPrefix, navigateTo } from './router.js';
+import { resolveRoute, withPrefix, navigateTo, currentRoute } from './router.js';
 
 const DUP_SUPPRESS_MS = 3000;
 
@@ -35,6 +38,11 @@ export function initNavigator(session) {
     const resolved = resolveRoute(typeof args?.path === 'string' ? args.path : '');
     if (!resolved) {
       await ack({ ok: false, error: 'not_found' });
+      return;
+    }
+
+    if (resolved === currentRoute()) {
+      await ack({ ok: true, path: resolved, alreadyHere: true });
       return;
     }
 
