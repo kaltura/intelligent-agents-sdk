@@ -6,3 +6,12 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+  # intelligent-agents-sdk-site is this same repo, checked out as a worktree
+  # on gh-pages-src — Dependabot only ever reads config from a repo's default
+  # branch, so this entry (not one committed under gh-pages-src) is what
+  # covers the site's own Eleventy build deps.
+  - package-ecosystem: "npm"
+    directory: "/"
+    target-branch: "gh-pages-src"
+    schedule:
+      interval: "weekly"

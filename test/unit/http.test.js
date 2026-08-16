@@ -221,3 +221,34 @@ test('P-1: response_too_large is NOT retried', async () => {
   });
   assert.equal(calls, 1, 'response_too_large must not be retried');
 });
+
+// ── Streaming response size guard (S-1) ───────────────────────────────────────
+
+test('S-1: chunked body without Content-Length is aborted mid-stream, not fully buffered first', async () => {
+  const chunkSize = 500;
+  const totalChunks = 20; // 10 000 bytes total — far bigger than the 1 000-byte limit below
+  let pulled = 0;
+  const stream = new ReadableStream({
+    pull(controller) {
+      if (pulled >= totalChunks) { controller.close(); return; }
+      pulled++;
+      controller.enqueue(new TextEncoder().encode('x'.repeat(chunkSize)));
+    },
+  });
+  const fake = async () => ({
+    ok: true, status: 200,
+    headers: { get: () => null }, // no Content-Length — forces the streaming guard to do the work
+    body: stream,
+    // No text() provided: proves the streaming path never falls back to buffering the full body.
+  });
+  const http = new Http({ fetch: fake, maxResponseBytes: 1000, maxRetries: 0 });
+  await assert.rejects(() => http.postJson({ url: 'https://x/y', ks: 'k', body: {} }), (e) => {
+    assert.ok(e instanceof KalturaError);
+    assert.equal(e.code, 'response_too_large');
+    return true;
+  });
+  // The 1000-byte limit is crossed on the 3rd 500-byte chunk (1500 bytes running total).
+  // A small look-ahead margin is allowed for stream backpressure, but the reader must stop
+  // long before all 20 chunks (10 000 bytes) are pulled — i.e. aborted mid-stream.
+  assert.ok(pulled <= 5, `expected reading to stop shortly after the limit was crossed, but pulled ${pulled}/${totalChunks} chunks`);
+});

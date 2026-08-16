@@ -101,12 +101,12 @@ used elsewhere in these docs, only resolve for a Node/bundler consumer that read
 <script type="module">
   // Pinned to a release tag — recommended for anything you ship, since the file content at
   // this URL never changes once published (jsDelivr's immutable, long-cached tag path).
-  import { KalturaAvatarSession } from 'https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.0.0/src/experience/index.js';
+  import { KalturaAvatarSession } from 'https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.0.1/src/experience/index.js';
   // ... same API as the local examples — see examples/browser-experience.html
 </script>
 ```
 
-Pin the tag (`@v1.0.0`, or whatever release you want) for anything you ship — jsDelivr caches a
+Pin the tag (`@v1.0.1`, or whatever release you want) for anything you ship — jsDelivr caches a
 tagged path forever, so a pin is both stable and fast. For local prototyping only, `@latest`
 resolves to the newest tag without editing the URL on every release:
 
@@ -793,6 +793,7 @@ await mgmt.knowledge.deleteRecord(rec.id, ks, { confirmPermanent: true });
 | [docs/STRUCTURED-DATA-FORMS.md](docs/STRUCTURED-DATA-FORMS.md) | Collecting typed fields from the user mid-conversation (`user_properties_forms`) — schema, rendering, where submitted values go |
 | [docs/VOICE-INPUT-MODES.md](docs/VOICE-INPUT-MODES.md) | Choosing open-mic vs. push-to-talk, and the UX/accessibility/safety details around each |
 | `examples/` | One runnable example per use-case |
+| [.claude/skills/agentic-avatar/SKILL.md](.claude/skills/agentic-avatar/SKILL.md) | Agent Skill — load this SDK's whole surface into Claude Code or any [agentskills.io](https://agentskills.io)-compatible agent |
 
 ## License
 

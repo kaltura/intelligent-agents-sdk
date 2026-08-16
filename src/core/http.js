@@ -11,8 +11,11 @@
  * - Diagnostic logging routes through {@link redact}; a token can't leak.
  * - Transient failures (429/502/503/504, network error) are retried with
  *   truncated exponential backoff + full jitter.
- * - Response bodies are size-capped at `maxResponseBytes` (default 10 MiB).
- *   A response exceeding the cap throws `response_too_large`.
+ * - Response bodies are size-capped at `maxResponseBytes` (default 10 MiB),
+ *   enforced incrementally while streaming the body (not after buffering it
+ *   in full) so a chunked response without an honest Content-Length can't
+ *   exhaust memory before the guard fires. A response exceeding the cap
+ *   throws `response_too_large`.
  */
 import { errorFromResponse, errorFromOkBody } from './errors.js';
 import { redact } from './redact.js';
@@ -141,19 +144,9 @@ export class Http {
             code: 'response_too_large',
           });
         }
-        text = await res.text();
-        // Also enforce after reading (covers chunked responses without Content-Length)
-        if (text.length > this._maxResponseBytes) {
-          clearTimeout(t);
-          throw new KalturaError({
-            type: 'https://docs.kaltura.com/agentic/errors/response_too_large',
-            title: 'response too large',
-            status: res.status,
-            detail: `Response body ${text.length} bytes exceeds limit of ${this._maxResponseBytes} bytes`,
-            instance: path,
-            code: 'response_too_large',
-          });
-        }
+        // Read the body incrementally so a chunked response without an honest
+        // Content-Length is never fully buffered before the size guard fires (S-1).
+        text = await readBodyWithLimit(res, this._maxResponseBytes, path, ctrl);
       } catch (err) {
         clearTimeout(t);
         // response_too_large is not retriable — re-throw immediately
@@ -193,6 +186,60 @@ export class Http {
     // Should only reach here if all retries exhausted
     throw lastErr;
   }
+}
+
+/**
+ * Read a Response body up to `maxBytes`, aborting the moment the running byte
+ * count exceeds the limit instead of buffering the whole thing first (S-1).
+ * Falls back to `res.text()` when no streaming body is available (e.g. a
+ * test fake, or a runtime without a spec-compliant `ReadableStream` body) —
+ * the same post-hoc length check the previous implementation always used.
+ * @param {Response} res @param {number} maxBytes @param {string} path @param {AbortController} ctrl
+ * @returns {Promise<string>}
+ */
+async function readBodyWithLimit(res, maxBytes, path, ctrl) {
+  const body = res.body;
+  if (!body || typeof body.getReader !== 'function') {
+    const text = await res.text();
+    if (text.length > maxBytes) {
+      throw new KalturaError({
+        type: 'https://docs.kaltura.com/agentic/errors/response_too_large',
+        title: 'response too large',
+        status: res.status,
+        detail: `Response body ${text.length} bytes exceeds limit of ${maxBytes} bytes`,
+        instance: path,
+        code: 'response_too_large',
+      });
+    }
+    return text;
+  }
+
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let total = 0;
+  let out = '';
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      // Stop pulling further chunks and tear down the underlying request —
+      // the guard must fire before the rest of the body is ever read.
+      try { await reader.cancel(); } catch { /* already closed/errored */ }
+      try { ctrl.abort(); } catch { /* no-op if already aborted */ }
+      throw new KalturaError({
+        type: 'https://docs.kaltura.com/agentic/errors/response_too_large',
+        title: 'response too large',
+        status: res.status,
+        detail: `Response body exceeds limit of ${maxBytes} bytes (aborted after ${total} bytes)`,
+        instance: path,
+        code: 'response_too_large',
+      });
+    }
+    out += decoder.decode(value, { stream: true });
+  }
+  out += decoder.decode();
+  return out;
 }
 
 /** @param {string} text @param {string} contentType */
