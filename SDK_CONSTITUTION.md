@@ -68,12 +68,16 @@ assignment operator specifically.)
 Any URL that originates from untrusted input (LLM output, user message, external
 API response) before being set as `href`, `src`, or passed to `fetch` must be
 validated by `core/safety.js#safeUrl`. `safeUrl` returns `''` for `javascript:`,
-`data:`, and authority-relative `//host` patterns.
+`data:`, and authority-relative `//host` patterns. It also returns `''` for any
+URL carrying embedded userinfo credentials (`https://user:pass@host/...`) — a
+phishing/link-spoofing vector distinct from classic XSS, since an
+attacker-controlled label could otherwise point at a credential-dressed host
+that looks trusted.
 
-*Verify:* The security test in `test/e2e/security.test.js` asserts that
-`setDynamicPrompt` with a `javascript:` URL produces a safe (empty or
-https-only) link. The `safeUrl` unit test in `test/unit/safety.test.js`
-covers the scheme allowlist.
+*Verify:* The `safeUrl` unit test in `test/unit/safety.test.js` asserts that
+`javascript:`/`data:`/`vbscript:` schemes, authority-relative `//host` URLs, and
+embedded-userinfo URLs (`user:pass@host`) all resolve to `''`, while the
+https/http/mailto/tel allowlist and relative paths pass through unchanged.
 
 **Rule S-4: No prototype pollution.**
 JSON objects arriving from any external source (LLM, API response, user input)
@@ -217,7 +221,7 @@ valid proof of compliance per the note at the top of this document.
 | I-4 | Isolation | Event listeners removed on disconnect/destroy | isolation.test.js |
 | S-1 | Security | No `eval` / `new Function` / equivalent | grep |
 | S-2 | Security | No `innerHTML`/`outerHTML`/`insertAdjacentHTML` assignments | grep |
-| S-3 | Security | Untrusted URLs pass through `safeUrl` | security.test.js |
+| S-3 | Security | Untrusted URLs pass through `safeUrl` | safety.test.js |
 | S-4 | Security | Untrusted JSON passes through `sanitizeJson` | compliance.test.js |
 | S-5 | Security | Admin secret is non-enumerable | isolation.test.js |
 | S-6 | Security | No hardcoded credentials or token literals | grep |

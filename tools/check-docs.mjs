@@ -82,12 +82,38 @@ function scanFiles() {
   return trackedFiles().filter((f) => SCAN_EXTS.test(f) && !isExcluded(f));
 }
 
+// Secret-SHAPE scans (below, in "1. Secrets") must NOT exclude test/tests —
+// a real secret pasted into a fixture is exactly as dangerous as one pasted
+// into a doc, and excluding whole directories let that slip past silently.
+// Only non-content dirs (deps, build artifacts, recordings) stay excluded.
+const SECRET_SCAN_EXCLUDE_DIRS = SCAN_EXCLUDE_DIRS.filter((d) => d !== 'test' && d !== 'tests');
+
+// test/unit/redaction.test.js intentionally embeds a djJ8-shaped fake token
+// (as a literal string) to prove core/redact.js's KS-token regex scrubs it —
+// same precedent as the net-guard.js exemption in the private-IP check below:
+// the secret-shaped literal IS the test fixture under test, not a leaked
+// credential. Allow-listed by exact file path, not by directory, so any OTHER
+// real secret pasted anywhere else under test/ still fails the scan.
+const SECRET_SCAN_EXCLUDE_FILES = ['test/unit/redaction.test.js'];
+
+function isExcludedFromSecretScan(f) {
+  const parts = f.split('/');
+  if (SECRET_SCAN_EXCLUDE_DIRS.some((d) => parts.includes(d))) return true;
+  if (SCAN_EXCLUDE_FILES.some((s) => f.endsWith(s))) return true;
+  if (SECRET_SCAN_EXCLUDE_FILES.includes(f)) return true;
+  return false;
+}
+
+function scanFilesForSecrets() {
+  return trackedFiles().filter((f) => SCAN_EXTS.test(f) && !isExcludedFromSecretScan(f));
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 1) SECRETS
 // ─────────────────────────────────────────────────────────────────────────────
 describe('1. Secrets', () => {
   test('no raw KS token (djJ8…) in tracked files', () => {
-    const files = scanFiles();
+    const files = scanFilesForSecrets();
     const offenders = [];
     for (const f of files) {
       const content = read(f);
@@ -96,6 +122,27 @@ describe('1. Secrets', () => {
     assert.deepEqual(offenders, [], `raw KS tokens found in: ${offenders.join(', ')}`);
   });
 
+  test('no 32-char hex secret-shaped string in tracked files', () => {
+    // Unanchored (\b...\b, not ^...$) — catches a hex secret embedded inside a
+    // longer string (e.g. `Bearer <32hex>`, `token=<32hex>`), not just a bare
+    // exactly-quoted 32-char literal. Mirrors core/redact.js's HEX32_RE shape.
+    const re = /\b[a-f0-9]{32}\b/;
+    const files = scanFilesForSecrets();
+    const offenders = [];
+    for (const f of files) {
+      if (re.test(read(f))) offenders.push(f);
+    }
+    assert.deepEqual(offenders, [], `hex-secret-shaped string found in: ${offenders.join(', ')}`);
+  });
+
+  // Local pre-commit safety net, NOT a CI gate: CI never checks out a .env
+  // file (it's gitignored and never provisioned by the pipeline), so this
+  // test's "no .env — skip" early-return fires on every CI run and the check
+  // silently no-ops there. It only has teeth on a maintainer's own machine,
+  // where .env holds a real AGENTIC_ADMIN_SECRET that could otherwise get
+  // pasted into a doc/fixture by accident. A CI-enforced version of this
+  // check would need to source the secret from a CI secret store, not a
+  // local .env file — out of scope for this script.
   test('no Admin Secret leaked into tracked files', () => {
     const envPath = join(ROOT, '.env');
     if (!existsSync(envPath)) return; // no .env — skip
@@ -104,7 +151,7 @@ describe('1. Secrets', () => {
       .find((l) => l.startsWith('AGENTIC_ADMIN_SECRET='))
       ?.split('=').slice(1).join('=').trim().replace(/^['"]|['"]$/g, '');
     if (!secret) return;
-    const files = scanFiles();
+    const files = scanFilesForSecrets();
     const offenders = [];
     for (const f of files) {
       if (read(f).includes(secret)) offenders.push(f);

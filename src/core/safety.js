@@ -28,7 +28,10 @@ const SAFE_URL_SCHEMES = new Set(['https:', 'http:', 'mailto:', 'tel:']);
  * classic XSS link vector). A scheme-relative path (`/foo`, `foo/bar`) is allowed, but an
  * authority-relative URL (`//host`, `\\host`) is REJECTED — the browser resolves it to the
  * current protocol + an arbitrary cross-origin host (open-redirect / embed-hijack vector).
- * @param {unknown} url @param {{allow?:string[]}} [opts]
+ * Also rejects (returns '') any URL carrying embedded userinfo credentials
+ * (`https://user:pass@host/...`) — not classic XSS, but a phishing / link-spoofing vector:
+ * a `user:pass@` prefix lets an attacker-controlled label point at a credential-dressed
+ * hostname that looks trusted. @param {unknown} url @param {{allow?:string[]}} [opts]
  */
 export function safeUrl(url, opts = {}) {
   const raw = String(url == null ? '' : url).trim().replace(CONTROL_CHARS, '');
@@ -37,7 +40,12 @@ export function safeUrl(url, opts = {}) {
   const m = /^([a-z][a-z0-9+.\-]*):/i.exec(raw);
   if (!m) return raw;   // no scheme → relative path → allow
   const allow = opts.allow ? new Set(opts.allow.map((s) => (s.endsWith(':') ? s : s + ':').toLowerCase())) : SAFE_URL_SCHEMES;
-  return allow.has(m[1].toLowerCase() + ':') ? raw : '';
+  if (!allow.has(m[1].toLowerCase() + ':')) return '';
+  try {
+    const parsed = new URL(raw);
+    if (parsed.username || parsed.password) return '';   // embedded credentials → phishing/link-spoofing vector
+  } catch { /* not parseable as an absolute URL (e.g. a bare `mailto:`/`tel:` value) → no authority, no userinfo risk */ }
+  return raw;
 }
 
 /**
