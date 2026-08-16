@@ -61,9 +61,11 @@ Once a tag is pinned, jsDelivr serves the SDK straight from GitHub — no
 
 <div data-nova-target="jsdelivr-quickstart" data-nova-label="Quick-start browser code example">
 
+<!-- SDK version pin -- keep in sync with: intelligent-agents-sdk-site/src/assets/nova/connect.js
+     (SDK_TAG constant) and docs-site-avatar/scripts/fetch-sdk.mjs (DEFAULT_TAG). -->
 ```html
 <script type="module">
-  import { KalturaAvatarSession } from 'https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.0.0/src/experience/index.js';
+  import { KalturaAvatarSession } from 'https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.0.1/src/experience/index.js';
   // ... same API as the local examples in the repo's examples/ directory
 </script>
 ```

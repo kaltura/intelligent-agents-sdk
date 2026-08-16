@@ -16,6 +16,8 @@ import { initDock, enterDockMode } from './dock.js';
 import { initNavigator } from './navigator.js';
 import { initHighlighter } from './highlighter.js';
 
+// SDK version pin -- keep in sync with: intelligent-agents-sdk-site/src/index.md
+// (quick-start jsDelivr pin) and docs-site-avatar/scripts/fetch-sdk.mjs (DEFAULT_TAG).
 const SDK_TAG = 'v1.0.1';
 const SDK_BASE = `https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@${SDK_TAG}`;
 
