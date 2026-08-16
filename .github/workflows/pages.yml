@@ -23,6 +23,7 @@ jobs:
         with:
           node-version: 20
       - run: npm ci
+      - run: node scripts/check-sdk-pin-sync.mjs
       - id: pages
         uses: actions/configure-pages@v5
       - run: npm run build
