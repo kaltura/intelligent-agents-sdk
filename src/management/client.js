@@ -14,6 +14,7 @@ import { Sessions, makeAuditEmitter } from '../core/session.js';
 import { KalturaError, errorFromResponse } from '../core/errors.js';
 import { Agents } from './agents.js';
 import { Avatars } from './avatars.js';
+import { AvatarSessions } from './avatar-sessions.js';
 import { Catalog } from './catalog.js';
 import { Application } from './application.js';
 import { Intellects } from './intellects.js';
@@ -29,6 +30,8 @@ import { inspectKs } from './ks-inspect.js';
  * @property {string} partnerId
  * @property {(path:string, body:unknown, ks:string, opts?:{idempotencyKey?:string})=>Promise<{data:any,requestId:string}>} agentic
  * @property {(path:string, fd:FormData, ks:string, opts?:{idempotencyKey?:string})=>Promise<{data:any,requestId:string}>} agenticMultipart
+ * @property {(path:string, body:unknown, bearerToken:string, opts?:{idempotencyKey?:string})=>Promise<{data:any,requestId:string}>} avatarSessionCall Bearer-authed (not KS) call on the scripted-video `avatar-session/*` API — see avatar-sessions.js.
+ * @property {(path:string, fd:FormData, bearerToken:string, opts?:{idempotencyKey?:string})=>Promise<{data:any,requestId:string}>} avatarSessionMultipart Bearer-authed multipart call (`say-audio`).
  * @property {(path:string, body:unknown, ks:string, opts?:{idempotencyKey?:string})=>Promise<{data:any,requestId:string}>} genie
  * @property {(path:string, ks:string)=>Promise<{data:any,requestId:string}>} genieGet
  * @property {(path:string, body:unknown, ks:string, opts?:{signal?:AbortSignal})=>Promise<ReadableStream<Uint8Array>>} genieStream
@@ -73,6 +76,13 @@ export class Management {
       partnerId,
       agentic: (path, body, ks, opts) => http.postJson({ url: `${agenticUrl}/${path}`, ks: ksString(ks), body, idempotencyKey: opts?.idempotencyKey }),
       agenticMultipart: (path, fd, ks, opts) => http.request({ method: 'POST', url: `${agenticUrl}/${path}`, ks: ksString(ks), body: fd, json: false, idempotencyKey: opts?.idempotencyKey }),
+      // The scripted-video `avatar-session/*` API is the one agentic-host surface that does NOT
+      // authenticate with a KS after creation — every call following `create` carries the
+      // session's own short-lived Bearer JWT instead (verified live: a KS on these routes is
+      // simply ignored/rejected). Omitting `ks` here skips http.request's `Authorization: KS …`
+      // assignment entirely, leaving our own header in place (see avatar-sessions.js).
+      avatarSessionCall: (path, body, bearerToken, opts) => http.request({ method: 'POST', url: `${agenticUrl}/${path}`, headers: { Authorization: `Bearer ${bearerToken}` }, body, json: true, idempotencyKey: opts?.idempotencyKey }),
+      avatarSessionMultipart: (path, fd, bearerToken, opts) => http.request({ method: 'POST', url: `${agenticUrl}/${path}`, headers: { Authorization: `Bearer ${bearerToken}` }, body: fd, json: false, idempotencyKey: opts?.idempotencyKey }),
       genie: (path, body, ks, opts) => http.postJson({ url: `${genieUrl}/${path}`, ks: ksString(ks), body, idempotencyKey: opts?.idempotencyKey }),
       genieGet: (path, ks) => http.request({ method: 'GET', url: `${genieUrl}/${path}`, ks: ksString(ks) }),
       // Unlike every other endpoint here, this bypasses http.request()/postJson() (it needs the
@@ -142,6 +152,9 @@ export class Management {
 
     this.agents = new Agents(ctx);
     this.avatars = new Avatars(ctx);
+    // Scripted-video (STV-only) session lifecycle — a separate, brain-free backend from
+    // `application`/the conversational runtime. See avatar-sessions.js's class doc.
+    this.avatarSessions = new AvatarSessions(ctx);
     this.catalog = new Catalog(ctx);
     this.application = new Application(ctx);
     this.intellects = new Intellects(ctx);

@@ -30,6 +30,9 @@
  * session.speak('Hello! How can I help you today?');
  */
 export { KalturaAvatarSession } from './session.js';
+// The brain-free, WHEP-only sibling — pairs with `Management#avatarSessions`
+// (`@kaltura/intelligent-agents/management`) for scripted-video (STV-only) sessions.
+export { KalturaScriptedVideoSession } from './scripted-video-session.js';
 export { CaptionService } from './captions.js';
 // Kaltura media-URL helpers (real thumbnail / player-embed from an entryId; external embeds).
 export { thumbnailUrl, playerEmbedUrl, externalEmbedUrl, EMBED_HOSTS } from '../core/kaltura-media.js';

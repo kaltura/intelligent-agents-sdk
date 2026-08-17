@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Kaltura Intelligent Agents — Scripted-Video (STV-only) demo</title>
+  <style>body{font-family:system-ui;margin:2rem;max-width:720px} video{width:512px;height:288px;background:#111;border-radius:12px} .row{display:flex;gap:.5rem;margin:1rem 0} input,textarea{flex:1;padding:.5rem;font:inherit} button{padding:.5rem 1rem;font:inherit;cursor:pointer} #status{color:#666;font-size:.9rem}</style>
+</head>
+<body>
+  <h1>Scripted-video (STV-only) — no brain, you provide the audio</h1>
+  <p id="status">Not connected.</p>
+  <video id="video" autoplay playsinline></video>
+  <div class="row">
+    <button id="start">Start session</button>
+    <button id="end" disabled>End session</button>
+  </div>
+  <div class="row">
+    <input id="text" placeholder="Text for the demo tone's duration…" value="Hello, this is a scripted-video test." />
+    <button id="speak" disabled>Speak</button>
+  </div>
+
+  <script type="module">
+    import { KalturaScriptedVideoSession } from '../src/experience/index.js';
+
+    const els = {
+      video: document.getElementById('video'),
+      status: document.getElementById('status'),
+      start: document.getElementById('start'),
+      end: document.getElementById('end'),
+      speak: document.getElementById('speak'),
+      text: document.getElementById('text'),
+    };
+    const setStatus = (s) => { els.status.textContent = s; };
+
+    /** @type {KalturaScriptedVideoSession|null} */
+    let view = null;
+
+    els.start.onclick = async () => {
+      els.start.disabled = true;
+      setStatus('Starting session…');
+      try {
+        const { whepUrl, turn } = await fetch('/api/start', { method: 'POST' }).then((r) => r.json());
+        view = new KalturaScriptedVideoSession({ whepUrl, turn, videoEl: els.video });
+        view.on('warning', (w) => console.warn(w.code, w.message));
+        setStatus('Connecting video…');
+        await view.connect();
+        setStatus('Connected. Type something and hit Speak.');
+        els.end.disabled = false;
+        els.speak.disabled = false;
+      } catch (e) {
+        setStatus(`Error: ${e.message}`);
+        els.start.disabled = false;
+      }
+    };
+
+    els.speak.onclick = async () => {
+      els.speak.disabled = true;
+      setStatus('Speaking…');
+      try {
+        const { durationSeconds } = await fetch('/api/speak', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ text: els.text.value }),
+        }).then((r) => r.json());
+        setStatus(`Sent (${durationSeconds.toFixed(1)}s of audio). Avatar should be speaking now.`);
+      } catch (e) {
+        setStatus(`Error: ${e.message}`);
+      } finally {
+        els.speak.disabled = false;
+      }
+    };
+
+    els.end.onclick = async () => {
+      els.end.disabled = true;
+      els.speak.disabled = true;
+      await fetch('/api/end', { method: 'POST' });
+      view?.disconnect();
+      view = null;
+      els.start.disabled = false;
+      setStatus('Session ended.');
+    };
+
+    window.addEventListener('beforeunload', () => view?.disconnect());
+  </script>
+</body>
+</html>

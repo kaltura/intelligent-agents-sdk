@@ -28,6 +28,11 @@ export { PROTECTED_TAGS, matchProtectedTag, resolveIntellectId, EMBED_TYPES } fr
 // Skills — partner-level reusable instruction snippets (`v1/skill/*` on Genie).
 // The resource instance lives on `mgmt.skills`; the class export is for typing/extension.
 export { Skills } from './skills.js';
+// Scripted-video (STV-only) sessions — a brain-free `avatar-session/*` backend, independent
+// of `application`/the conversational runtime. The resource instance lives on
+// `mgmt.avatarSessions`; the class export is for typing/extension. Pair with
+// `KalturaScriptedVideoSession` from `@kaltura/intelligent-agents/experience` for playback.
+export { AvatarSessions } from './avatar-sessions.js';
 export {
   CAPABILITIES, CAPABILITY_STATE, CAPABILITY_DEFAULTS, CAPABILITY_INFO,
   assertCapability, assertCapabilityState, validateCapabilities,
