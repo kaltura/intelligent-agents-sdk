@@ -608,6 +608,39 @@ An unknown provider id creates **nothing** and raises a typed `voice_not_found_e
 
 ---
 
+## Scripted-Video (STV-only) Sessions
+
+A second, independent backend (`avatar-session/*`) for a brain-free avatar: no LLM, no ASR, no socket.io — you drive it entirely from your own server by handing it pre-rendered speech audio. Use it when you already have the text (and optionally the TTS audio) and just need a talking-head video, e.g. reading back a scripted announcement or a pre-approved script.
+
+```js
+import { Management } from '@kaltura/intelligent-agents/management';
+
+const mgmt = new Management({ partnerId, adminSecret });
+const admin = await mgmt.sessions.createAdminToken();
+
+const session = await mgmt.avatarSessions.create({ visualConfig: { id: avatarId } }, admin.ks);
+const { whepUrl, turn } = await mgmt.avatarSessions.initClient(session);
+// hand { whepUrl, turn } to the browser — non-secret, safe to send over your own API
+
+await mgmt.avatarSessions.say(session, audioBytes, { duration: durationSeconds });
+// duration is required — the server has no duration probe of its own; measure your own audio
+
+await mgmt.avatarSessions.end(session);
+```
+
+```js
+import { KalturaScriptedVideoSession } from '@kaltura/intelligent-agents/experience';
+
+const view = new KalturaScriptedVideoSession({ whepUrl, turn, videoEl: document.querySelector('video') });
+await view.connect();   // negotiates WHEP, resolves once the stream is playable
+// ...later
+view.disconnect();
+```
+
+`create` authenticates with your own **admin KS** (`mgmt.sessions.createAdminToken()`); every call after it (`initClient`/`say`/`interrupt`/`keepAlive`/`end`) authenticates with the **session's own Bearer token** instead — `create()`'s return value is a receipt (`{sessionId, token, isExpired(), secondsRemaining()}`), pass it straight to the other methods rather than re-deriving a KS. `say-audio` (wrapped as `say()`) is the only speech-injection mechanism this backend exposes — there is no verbatim text-to-speech endpoint on it (`say-text` 503s on the live deployment; `set-emotion`/`queue-status`/`status` don't exist). See [API Reference § Scripted-Video (STV-only) Sessions](/reference/api-reference/#scripted-video-stv-only-sessions) for the full auth/lifecycle table, and `examples/scripted-video-session.mjs` + `.html` in the SDK repo for a complete runnable server+browser pair (including a stand-in for your real TTS call).
+
+---
+
 ## RAG (knowledge base)
 
 ```js

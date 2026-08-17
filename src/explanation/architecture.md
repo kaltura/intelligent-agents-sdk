@@ -100,10 +100,10 @@ There are two avatar runtimes. They are NOT interchangeable.
 | Avatar video (STV/WHEP) | ✅ | ✅ |
 | Mic / ASR uplink | ❌ | ✅ (`asr-webrtc-*`) |
 | Genie brain | ❌ (you supply every line of text) | ✅ (server-side, streams `agent_raw_text`) |
-| You call | `sayText()` / `sayAudio()` | nothing — the user speaks, the brain answers |
+| You call | `mgmt.avatarSessions.say()` (audio only — see below) | nothing — the user speaks, the brain answers |
 | Use for | **scripted / puppet** avatars (you drive the words) | **interactive agentic** avatars (autonomous conversation) |
 
-The protocol above describes the **interactive** path. The scripted path is documented in [API-REFERENCE.md](/reference/api-reference/) → "Show the Avatar on a Web Page".
+The protocol above describes the **interactive** path. The scripted path has no text-in of its own: the service's `say-text` route 503s on every call (a live server bug), so the SDK wraps only `say-audio` — you provide pre-rendered speech audio (e.g. from your own TTS call) and its duration. Full auth/lifecycle details: [API-REFERENCE.md § Scripted-Video (STV-only) Sessions](/reference/api-reference/#scripted-video-stv-only-sessions); runnable example: `examples/scripted-video-session.mjs` + `.html`.
 
 ---
 
