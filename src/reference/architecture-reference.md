@@ -68,6 +68,8 @@ const socket = io(conversationManagerUrl, {   // from appInit
 
 Exact order from the avatar runtime client's connection state machine. Each step waits for the named inbound event before advancing; timeouts in parens.
 
+<div data-nova-target="full-connect-sequence-table" data-nova-label="Full connect sequence (state-machine order)">
+
 | # | Client does | Emits (→) / Waits (←) | Inbound event | Timeout |
 |---|-------------|----------------------|---------------|---------|
 | 0 | Init WebRTC session (TURN config) + `getUserMedia(audio:true,video:false)` | — | (browser mic prompt) | — |
@@ -83,6 +85,8 @@ Exact order from the avatar runtime client's connection state machine. Each step
 | 10 | Subscribe STV video (WHEP) **and wait until it is *playable*** | → WHEP `POST` → wait `<video>` `canplay` + ~300ms settle | first decoded frame | 5s |
 | 11 | Approve — this is what starts the spoken greeting | → `approvedPermissions` `{client, room}` | — | — |
 | → | **CONNECTED** | listen for `agent_raw_text`, `generatingSpeech`, `stvStartedTalking` | — | — |
+
+</div>
 
 Overall connecting timeout: 30s.
 

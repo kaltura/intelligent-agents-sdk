@@ -66,6 +66,8 @@ automatically regardless of configuration: the idle-timeout auto-logoff
 (900000 ms, 15 minutes, by default — pass `0` to disable) and the AI-disclosure
 event, which fires before the avatar's first words on every connect.
 
+<div data-nova-target="ai-application-controls-list" data-nova-label="AI-application controls: OWASP LLM/Agentic + HIPAA technical safeguards">
+
 - **Output handling (LLM05).** Opt-in: `safeUrl` / `safeText` / `renderSafeLink`
   (DOM-built, scheme-checked — never `innerHTML`) — call these yourself when
   rendering avatar text. On by default: inbound clamping of captions/segments.
@@ -85,6 +87,8 @@ event, which fires before the avatar's first words on every connect.
   connect; `getDisclosure()` is queryable any time. Opt-in:
   `requireDisclosureAck` (also a biometric-consent gate); an optional
   `consentRef` on voice/visual cloning.
+
+</div>
 
 ## The two-token invariant (AC-3 / AC-6 / IA-2)
 

@@ -95,6 +95,8 @@ The brain (Genie) runs entirely server-side. The client never calls an LLM — i
 
 There are two avatar runtimes. They are NOT interchangeable.
 
+<div data-nova-target="two-runtime-sdk-paths-table" data-nova-label="Two Runtime SDK Paths comparison">
+
 | | scripted-video control service client (`/v1/avatar-session`) | avatar runtime client (`conversation.avatar` socket) |
 |---|---|---|
 | Avatar video (STV/WHEP) | ✅ | ✅ |
@@ -102,6 +104,8 @@ There are two avatar runtimes. They are NOT interchangeable.
 | Genie brain | ❌ (you supply every line of text) | ✅ (server-side, streams `agent_raw_text`) |
 | You call | `mgmt.avatarSessions.say()` (audio only — see below) | nothing — the user speaks, the brain answers |
 | Use for | **scripted / puppet** avatars (you drive the words) | **interactive agentic** avatars (autonomous conversation) |
+
+</div>
 
 The protocol above describes the **interactive** path. The scripted path has no text-in of its own: the service's `say-text` route 503s on every call (a live server bug), so the SDK wraps only `say-audio` — you provide pre-rendered speech audio (e.g. from your own TTS call) and its duration. Full auth/lifecycle details: [API-REFERENCE.md § Scripted-Video (STV-only) Sessions](/reference/api-reference/#scripted-video-stv-only-sessions); runnable example: `examples/scripted-video-session.mjs` + `.html`.
 

@@ -42,6 +42,8 @@ dispatch key (the renderer registry key). Source: `src/core/stream.js` `GENUI_RU
 `src/experience/genui/parse.js` `RUNTIMES` (derived from `GENUI_RUNTIMES`, so the two can
 never drift).
 
+<div data-nova-target="genui-runtimes-table" data-nova-label="The first-class GenUI runtimes">
+
 | # | Backend key | Wire `runtimeName` | Normalized | Purpose |
 |---|---|---|---|---|
 | 1 | `flashcards` | `flashcards-tool` | `flashcards` | Study Q/A cards |
@@ -53,6 +55,8 @@ never drift).
 | 7 | `external_video` | `external-video-tool` | `external-video` | Embed a **non-Kaltura** video |
 | 8 | `user_properties_form` | `user-properties-form-tool` | `user-properties-form` | Structured data-collection form |
 | 9 | `gallery_slides` | `content-gallery-tool` | `content-gallery` | Gallery of content slides/cards (with **images**) |
+
+</div>
 
 `normalizeRuntime(name)` (`parse.js` lines 54–58) strips a trailing `-tool` and trims; it tolerates
 an already-normalized name and a non-string (→ `''`). `isKnownRuntime(name)` tests membership in this set.
