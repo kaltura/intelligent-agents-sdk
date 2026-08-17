@@ -327,6 +327,8 @@ sent to `POST /v1/intellect/update`.
 
 `response_mapping`, `response_template`, and `response_chapters` are mutually exclusive. Reference secrets as `"secrets.NAME"` — never plaintext.
 
+**Security note:** an `api` tool's `request` fires server-to-server, outside the SDK's reach. The model/system-prompt scoping that led to the call is not a security boundary — your endpoint must independently authenticate and authorize each request (validate the caller's Kaltura Session and permissions), the same way you would for any other server-to-server API call. Treat interpolated `request_vars` (client-suppliable when `allow_client_variables:true` — see [Converse](#converse)) as untrusted input, never as an authorization claim.
+
 **`csv` tool** — inline lookup table:
 
 ```json
