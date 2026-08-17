@@ -257,7 +257,7 @@ POST https://genie.nvp1.ovp.kaltura.com/v1/intellect/update
 | `allow_client_variables` | Allow `{{vars}}` injection per request |
 | `knowledge_ids` | Knowledge record IDs for RAG — create with `POST /v1/knowledge/add` |
 | `name` / `description` / `tags` | Labels for organizing intellects |
-| `tool_ids` | Tool entity uuid references — create/list the entities themselves via [§ Tools](#tools-api--csv--code) (`mgmt.tools`), then link the ids here via `intellectConfig.setToolIds` |
+| `tool_ids` | Tool entity uuid references — create/list the entities themselves via [§ Tools](#tools-api-csv-code) (`mgmt.tools`), then link the ids here via `intellectConfig.setToolIds` |
 | `skill_ids` | Skill entity uuid references — partner-level reusable-instruction CRUD at `mgmt.skills`, linked via `intellectConfig.setSkillIds` |
 | `mcp_servers` | MCP server configs the intellect can call — set via `intellectConfig.setMcpServers` (see `README.md`) |
 | `secrets` | Named secrets for tool OAuth (write-only, masked on read) |
@@ -333,6 +333,8 @@ intellect:
 sent to `POST /v1/intellect/update`.
 
 `response_mapping`, `response_template`, and `response_chapters` are mutually exclusive. Reference secrets as `"secrets.NAME"` — never plaintext.
+
+**Security note:** an `api` tool's `request` fires server-to-server, outside the SDK's reach. The model/system-prompt scoping that led to the call is not a security boundary — your endpoint must independently authenticate and authorize each request (validate the caller's Kaltura Session and permissions), the same way you would for any other server-to-server API call. Treat interpolated `request_vars` (client-suppliable when `allow_client_variables:true` — see [Converse](#converse)) as untrusted input, never as an authorization claim.
 
 **`csv` tool** — inline lookup table:
 
