@@ -749,13 +749,13 @@ const { configId } = await mgmt.intellects.create({
   knowledge_ids: [rec.id],
   capabilities: { use_knowledge_base: 'on' },
 }, ks);
-// index-delta-v2 runs every ~1 min — RAG is active after indexing
-await mgmt.knowledge.isIndexed(rec.id, ks); // poll until {ready:true}
+// index-delta-v2 runs every ~1 min — call isIndexed() again until it reports {ready:true}
+const status = await mgmt.knowledge.isIndexed(rec.id, ks);
 ```
 
 Content modalities indexed: captions, OCR, document attachments. Don't use
-`knowledge.search`'s "couldn't find relevant information" reply, or
-`knowledge.corpusStatus`'s `populated` flag, as an indexing-status
+`knowledge.search()`'s "couldn't find relevant information" reply, or
+`knowledge.corpusStatus()`'s `populated` flag, as an indexing-status
 signal — see API-REFERENCE.md § Ground the Agent for why.
 
 Knowledge records have full lifecycle CRUD (all verified live):

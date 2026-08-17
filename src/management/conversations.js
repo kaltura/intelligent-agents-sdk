@@ -868,10 +868,11 @@ export class Knowledge {
     this._.assertAdmin(ks, 'knowledge.isIndexed');
     const rec = await this.getRecord(id, ks);
     const indexers = (rec?.config?.sources || []).flatMap((s) => s.indexers || []);
+    const withPosition = indexers.find((idx) => idx?.index_position != null);
     return {
       ready: rec?.status === 'READY',
       status: rec?.status ?? null,
-      indexPosition: indexers[0]?.index_position ?? null,
+      indexPosition: withPosition?.index_position ?? null,
     };
   }
 }

@@ -315,6 +315,18 @@ test('isIndexed reports not-ready for any non-READY status, with no indexers pre
   assert.deepEqual(st, { ready: false, status: 'PENDING', indexPosition: null });
 });
 
+test('isIndexed skips a leading indexer with a null index_position and reports the next one that has it', async () => {
+  const f = fakeFetch([
+    { match: '/v1/knowledge/get', respond: () => ({ body: { id: 3, status: 'READY', config: { sources: [
+      { indexers: [{ index_position: null, type: 3, strategy: 'EmbedDocumentV1' }] },
+      { indexers: [{ index_position: 42, type: 3, strategy: 'EmbedDocumentV1' }] },
+    ] } } }) },
+  ]);
+  const m = new Management({ partnerId: 1, adminSecret: 'a'.repeat(32), fetch: f });
+  const st = await m.knowledge.isIndexed(3, ADMIN);
+  assert.deepEqual(st, { ready: true, status: 'READY', indexPosition: 42 });
+});
+
 test('deleteRecord requires confirmPermanent, posts v1/knowledge/delete, and returns a {removed,_meta} receipt (wire body is null)', async () => {
   const f = fakeFetch([
     { match: '/v1/knowledge/delete', respond: () => ({ status: 200, body: null }) },
