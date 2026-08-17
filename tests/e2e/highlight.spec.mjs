@@ -13,13 +13,19 @@ test('pointAt ring survives its own caller scrollIntoView() without self-clearin
   const result = await page.evaluate(async () => {
     const mod = await import('/assets/nova/dock.js');
     const headings = [...document.querySelectorAll('main.content-wrapper h2, main.content-wrapper h3')];
+    if (!headings.length) return { error: 'no headings on page — test fixture broken' };
     const target = headings.find((h) => h.getBoundingClientRect().top > window.innerHeight) || headings[headings.length - 1];
+    const scrollYBefore = window.scrollY;
     target.scrollIntoView({ behavior: 'auto', block: 'center' });
+    if (window.scrollY === scrollYBefore) {
+      return { error: 'scrollIntoView() did not move the page — test would no longer exercise the scroll-echo race' };
+    }
     mod.pointAt(target);
     for (let i = 0; i < 6; i++) await new Promise((r) => requestAnimationFrame(r));
     await new Promise((r) => setTimeout(r, 200));
     return { ringExists: !!document.querySelector('.nova-highlight-ring') };
   });
+  expect(result.error).toBeUndefined();
   expect(result.ringExists).toBe(true);
 });
 

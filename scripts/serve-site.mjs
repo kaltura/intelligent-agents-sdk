@@ -1,8 +1,10 @@
 import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
-import { extname, join } from 'node:path';
+import { dirname, extname, join, resolve, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const ROOT = join(import.meta.dirname, '..', '_site');
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const ROOT = resolve(__dirname, '..', '_site');
 const PORT = Number(process.env.PORT || 8811);
 
 const MIME = {
@@ -15,9 +17,28 @@ const MIME = {
   '.png': 'image/png',
 };
 
+// Resolves req.url's pathname against ROOT and rejects anything that escapes it (leading
+// `//`, `..` traversal, or a decoded absolute path) — join(ROOT, path) alone would let a
+// path starting with `/` or containing `..` walk out of `_site` onto the runner's filesystem.
+// Returns null for a malformed/escaping path so the caller can 400/404 instead of serving it.
+function resolveRequestPath(url) {
+  let pathname;
+  try {
+    pathname = decodeURIComponent(new URL(url, 'http://localhost').pathname);
+  } catch {
+    return null;
+  }
+  const filePath = resolve(ROOT, '.' + pathname);
+  if (filePath !== ROOT && !filePath.startsWith(ROOT + sep)) return null;
+  return filePath;
+}
+
 createServer(async (req, res) => {
-  let path = decodeURIComponent(req.url.split('?')[0]);
-  let filePath = join(ROOT, path);
+  let filePath = resolveRequestPath(req.url);
+  if (!filePath) {
+    res.writeHead(400).end('Bad request');
+    return;
+  }
   try {
     if ((await stat(filePath)).isDirectory()) filePath = join(filePath, 'index.html');
   } catch {
