@@ -1,9 +1,11 @@
 name: Release
 
 # Runs only when a git tag matching v*.*.* is pushed (e.g. v1.0.0). Creates a
-# GitHub Release with notes pulled straight from CHANGELOG.md — it does NOT
-# publish to npm (npm publish stays disabled by design; jsDelivr serves this
-# repo's raw files straight from the tag — see README.md's Quick start).
+# GitHub Release with notes GitHub auto-generates from the merged PRs since the
+# previous tag (--generate-notes) — no hand-maintained CHANGELOG.md to drift
+# out of sync with what actually shipped. Does NOT publish to npm (npm publish
+# stays disabled by design; jsDelivr serves this repo's raw files straight from
+# the tag — see README.md's Quick start).
 on:
   push:
     tags:
@@ -14,28 +16,13 @@ permissions:
 
 jobs:
   release:
-    name: 📦 Draft GitHub Release from CHANGELOG.md
+    name: 📦 Draft GitHub Release from merged PRs
     runs-on: ubuntu-latest
     steps:
       - name: 📥 Check out the repo
         uses: actions/checkout@v7
-
-      - name: 📝 Extract this version's CHANGELOG.md section
-        id: notes
-        run: |
-          TAG="${GITHUB_REF_NAME#v}"
-          # Pull the block between "## [<version>]" and the next "## [" heading.
-          # ver is escaped in BEGIN so "." in a semver tag can't match "any character".
-          awk -v ver="$TAG" '
-            BEGIN { gsub(/[.[\]\\^$*+?(){}|]/, "\\\\&", ver) }
-            $0 ~ "^## \\[" ver "\\]" { found=1; next }
-            found && /^## \[/ { exit }
-            found { print }
-          ' CHANGELOG.md > release-notes.md
-          if [ ! -s release-notes.md ]; then
-            echo "⚠️ No CHANGELOG.md section found for version $TAG — add one before tagging." > release-notes.md
-          fi
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+        with:
+          fetch-depth: 0
 
       - name: 🌐 Smoke-test jsDelivr GitHub-CDN URLs for this tag
         run: |
@@ -74,5 +61,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "${{ github.ref_name }}" \
-            --title "v${{ steps.notes.outputs.tag }}" \
-            --notes-file release-notes.md
+            --title "${{ github.ref_name }}" \
+            --generate-notes

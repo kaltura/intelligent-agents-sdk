@@ -16,8 +16,9 @@ No build step, no npm registry publish — that's disabled by design (`"private"
 **New here?** [GETTING-STARTED.md](GETTING-STARTED.md) walks through creating and talking to your
 first agent in about 5 minutes. Come back here once you're building a real app with the SDK. Also
 see [CONTRIBUTING.md](CONTRIBUTING.md) (how to
-contribute), [SDK_CONSTITUTION.md](SDK_CONSTITUTION.md) (the invariants every change must hold),
-and [CHANGELOG.md](CHANGELOG.md) (what changed between versions).
+contribute) and [SDK_CONSTITUTION.md](SDK_CONSTITUTION.md) (the invariants every change must hold).
+[What changed between versions](https://github.com/kaltura/intelligent-agents-sdk/releases) lives
+in GitHub Releases, generated from merged PRs at tag time — not a hand-maintained file.
 
 > Issue references like "(issue #N)" in this repo's docs and code comments point to the private
 > originating monorepo's history, not to an issue filed in this repo's own tracker.

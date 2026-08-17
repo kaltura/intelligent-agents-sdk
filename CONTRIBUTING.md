@@ -61,8 +61,6 @@ on top of a broken baseline.
 - Confirm in the PR description that `npm test`, `npm run verify`, and
   `npm run docs:gate` all pass locally; CI re-runs all three and blocks merge
   on any failure.
-- If the change affects the public API surface (`exports` in `package.json`),
-  add a `CHANGELOG.md` entry.
 
 ## Commit and branch conventions
 

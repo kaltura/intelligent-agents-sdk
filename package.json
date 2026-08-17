@@ -1,6 +1,6 @@
 {
   "name": "@kaltura/intelligent-agents",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "private": true,
   "description": "Zero-dependency SDK for Kaltura conversational avatar agents — Management (provision/configure/measure) + Experience (live interactive runtime). Grounded only in what the public APIs deliver today.",
   "license": "MIT",
@@ -17,7 +17,7 @@
     "./experience/analytics": "./src/experience/analytics.js",
     "./test/fakes/*": "./test/fakes/*"
   },
-  "files": ["src", "examples", "test/fakes", "README.md", "CHANGELOG.md", "SECURITY.md", "LICENSE"],
+  "files": ["src", "examples", "test/fakes", "README.md", "SECURITY.md", "LICENSE"],
   "scripts": {
     "test": "node --test --test-concurrency=1 'test/**/*.test.js'",
     "test:unit": "node --test test/unit/*.test.js",
