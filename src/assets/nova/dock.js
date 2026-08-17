@@ -294,11 +294,25 @@ export function pointAt(targetEl) {
     applyRect({ top, left, width: size, height: size });
   }
 
+  // The caller almost always just did its own scrollIntoView() to bring targetEl into view
+  // before calling pointAt() — that scroll's `scroll` event always fires async (next tick),
+  // landing here after the ring is already drawn. Without this guard that echo is
+  // indistinguishable from a genuine user scroll and instantly kills the ring before it's
+  // ever visible. Comparing against the position captured at ring-creation time filters the
+  // echo out while still treating any further, real scroll as an immediate interrupt.
+  const scrollXAtPoint = window.scrollX;
+  const scrollYAtPoint = window.scrollY;
+  const onScroll = () => {
+    if (window.scrollX === scrollXAtPoint && window.scrollY === scrollYAtPoint) return;
+    clearPointing(true);
+  };
   const onInterrupt = () => clearPointing(true);
-  window.addEventListener('scroll', onInterrupt, { passive: true, once: true });
+  window.addEventListener('scroll', onScroll, { passive: true });
+  window.addEventListener('resize', onInterrupt);
   document.addEventListener('nova:pagechange', onInterrupt, { once: true });
   detachRingInterrupts = () => {
-    window.removeEventListener('scroll', onInterrupt);
+    window.removeEventListener('scroll', onScroll);
+    window.removeEventListener('resize', onInterrupt);
     document.removeEventListener('nova:pagechange', onInterrupt);
   };
 
