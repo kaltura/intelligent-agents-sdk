@@ -44,7 +44,7 @@ const INCLUDE_ANSWER = Object.freeze([false, 'basic', 'advanced']);
  * validated against an enum (the API accepts `us.`/`eu.` prefixes + free-form
  * stored values — known-good defaults are documented, not enforced).
  *
- * Tiers (plan §6 / W1):
+ * Tiers:
  *   VERIFIED (confirmed settable): agentLlm, agentFastLlm, rateLimits, anonymousRateLimits.
  *   UNVERIFIED (best-effort, may be dropped server-side): agentAvatarLlm,
  *     runQuotaCheck, webSearch (→ web_search_config; its mere presence flips
@@ -261,7 +261,7 @@ export class Intellects {
     };
   }
 
-  // ─────────────────────────── W7 — capabilities ───────────────────────────
+  // ─────────────────────────── capabilities ───────────────────────────
 
   /**
    * Read the stored `capabilities` dict. READ. @param {number} configId @param {string} ks (admin)
@@ -354,7 +354,7 @@ export class Intellects {
     return resolved;
   }
 
-  // ─────────────────────────── W5 — client variables gate ───────────────────────────
+  // ─────────────────────────── client variables gate ───────────────────────────
 
   /**
    * Toggle `allow_client_variables` — the gate on per-request `request_vars`
@@ -373,7 +373,7 @@ export class Intellects {
     return (await this._.genie('v1/intellect/update', body, ks)).data;
   }
 
-  // ─────────────────────────── W10 — prompt authoring ───────────────────────────
+  // ─────────────────────────── prompt authoring ───────────────────────────
 
   /**
    * Replace the `prompts[]` list (full-replace) and optionally `base_directive`/
@@ -527,7 +527,7 @@ export class Intellects {
     };
   }
 
-  // ─────────────────────────── W1 — brain config (partner-config routed, probe-gated) ───────────────────────────
+  // ─────────────────────────── brain config (partner-config routed, probe-gated) ───────────────────────────
 
   /**
    * Set the brain config (models + rate limits + the UNVERIFIED Class-B subset)

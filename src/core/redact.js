@@ -12,7 +12,7 @@
  * sensitive-key wholesale redaction (`secret`/`password`/`credential`/`token`/
  * `ks`); (3) a STRUCTURAL `request_vars` rule — converse client variables hold
  * arbitrary PII scalars under arbitrary keys that match no pattern, so the
- * whole sub-tree is replaced by key-name (W5 must-fix).
+ * whole sub-tree is replaced by key-name.
  */
 
 import { PRIVATE_IP_RE } from './net-guard.js';
@@ -37,7 +37,7 @@ export function redact(value) {
     /** @type {Record<string, unknown>} */
     const out = {};
     for (const [k, v] of Object.entries(value)) {
-      // STRUCTURAL rule (W5 must-fix): `request_vars` carries arbitrary
+      // STRUCTURAL rule: `request_vars` carries arbitrary
       // caller-supplied client variables — PII scalars under arbitrary keys
       // (`firstName`, `email`) that match NEITHER a sensitive-key regex NOR a
       // secret value pattern. Replace the WHOLE sub-tree by key-name match,

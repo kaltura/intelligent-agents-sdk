@@ -11,7 +11,7 @@ import {
 import { KalturaError } from '../../src/core/errors.js';
 
 /**
- * Knowledge/RAG indexer enums + pure objects[] builder (W8). The load-bearing
+ * Knowledge/RAG indexer enums + pure objects[] builder. The load-bearing
  * facts: ChapterType CAPTION=1/OCR=2/DOCUMENT=3,
  * StrategyEnum Embed{Caption,Ocr,Document}V1, and the wire field is
  * `indexPosition` (camelCase) NOT `index_position`.

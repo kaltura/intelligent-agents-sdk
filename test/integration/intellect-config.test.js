@@ -167,7 +167,7 @@ test('intellects.setBrainConfig returns {applied:false, reason} on a 403 probe W
 
 test('intellects.setBrainConfig returns {applied:false} on a GET-200/UPDATE-403 split WITHOUT throwing (write 403 caught)', async () => {
   // The probe READ succeeds but the WRITE is still privilege-gated — the honest
-  // receipt must come back, not a raw 403 throw (audit #3).
+  // receipt must come back, not a raw 403 throw.
   const { m, f } = mkMgmt([
     { match: '/partner-config/get', respond: () => ({ body: { id: 0, config: {} } }) },        // probe OK
     { match: '/partner-config/update', respond: () => ({ status: 403, body: { detail: '403 Forbidden' } }) }, // write gated

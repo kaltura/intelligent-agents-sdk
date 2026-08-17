@@ -12,7 +12,7 @@ import {
   resolveCapabilities,
 } from '../../src/management/capabilities.js';
 
-/** W7 — typed capability set + pure 3-level resolver with DISABLED veto. */
+/** Typed capability set + pure 3-level resolver with DISABLED veto. */
 
 const OFF_DEFAULTS = [
   'avatar', 'avatar_filler', 'avatar_show_content', 'video_gallery',

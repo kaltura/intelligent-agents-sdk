@@ -5,7 +5,7 @@ import { fakeFetch } from '../fakes/fetch.js';
 import { Management } from '../../src/management/client.js';
 
 /**
- * W3 — Tools builder/validators (PURE) + `mgmt.tools` resource (wire) tests.
+ * Tools builder/validators (PURE) + `mgmt.tools` resource (wire) tests.
  * Pure tests run with no transport; class tests drive the real SDK through
  * fakeFetch and assert the `/v1/tool/*` request bodies (standalone Tool entity,
  * not intellect-embedded).

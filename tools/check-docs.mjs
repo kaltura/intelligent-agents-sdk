@@ -434,7 +434,7 @@ describe('7. SDK invariants', () => {
     }
   });
 
-  test('CAPABILITIES enum matches API-REFERENCE.md catalogue (W7)', () => {
+  test('CAPABILITIES enum matches API-REFERENCE.md catalogue', () => {
     const capSrc = read('src/management/capabilities.js');
     const m = capSrc.match(/CAPABILITIES\s*=\s*Object\.freeze\(\[([\s\S]*?)\]\)/);
     assert.ok(m, 'could not parse CAPABILITIES array from capabilities.js');
@@ -455,7 +455,7 @@ describe('7. SDK invariants', () => {
     assert.deepEqual(missingCode, [], `in catalogue but not in code: ${missingCode.join(', ')}`);
   });
 
-  test('W15 client-tool channel wired + documented', () => {
+  test('client-tool channel wired + documented', () => {
     assert.ok(read('src/management/tools.js').includes('export function client('), 'tools.client missing');
     assert.ok(read('src/management/tools.js').includes('export function clientToolReadiness'), 'tools.clientToolReadiness missing');
     assert.ok(read('src/core/stream.js').includes('export function parseToolCall'), 'parseToolCall missing');

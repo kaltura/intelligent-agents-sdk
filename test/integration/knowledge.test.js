@@ -197,7 +197,7 @@ test('createCategory rejects an empty name BEFORE the network call', async () =>
   assert.equal(f.calls.length, 0);
 });
 
-test('corpusStatus counts an explicit container categoryId via baseentry totalCount (W8 must-fix)', async () => {
+test('corpusStatus counts an explicit container categoryId via baseentry totalCount', async () => {
   const f = fakeFetch([{ match: '/service/baseentry/action/list', respond: () => ({ body: { objects: [], totalCount: 3 } }) }]);
   const m = new Management({ partnerId: 6516742, adminSecret: 'a'.repeat(32), fetch: f });
   const st = await m.knowledge.corpusStatus({ categoryId: 408750172 }, ADMIN);
@@ -231,7 +231,7 @@ test('corpusStatus requires at least one of categoryId/categoryIds/configId', as
   assert.equal(f.calls.length, 0);
 });
 
-test('corpusStatus with ONLY a configId whose linkage is empty returns gated (does NOT throw — W8 must-fix)', async () => {
+test('corpusStatus with ONLY a configId whose linkage is empty returns gated (does NOT throw)', async () => {
   // The real-world case: an in-use agent whose knowledge linkage is not on the read façade
   // (deployment-gated — see API-REFERENCE.md § Ground the Agent). corpusStatus must
   // report it honestly, not raise bad_request.
@@ -242,7 +242,7 @@ test('corpusStatus with ONLY a configId whose linkage is empty returns gated (do
   const st = await m.knowledge.corpusStatus({ configId: 1507 }, ADMIN);
   assert.equal(st.populated, false);
   assert.equal(st.entryCount, 0);
-  // retrievalGated/reason live in _meta (single stable place — audit #16), not top-level.
+  // retrievalGated/reason live in _meta (single stable place), not top-level.
   assert.equal(st._meta.retrievalGated, true);
   assert.match(st._meta.reason, /gated|privilege|linkage/i);
   assert.equal(st.retrievalGated, undefined, 'not duplicated at top-level');
@@ -295,6 +295,24 @@ test('getRecord/updateRecord hit v1/knowledge/get|update with a validated intege
   const upd = await m.knowledge.updateRecord(7, { name: 'kb2', description: 'd2' }, ADMIN);
   assert.equal(upd.name, 'kb2');
   assert.deepEqual(f.calls[1].body, { id: 7, name: 'kb2', description: 'd2' });
+});
+
+test('isIndexed reads status+index_position off getRecord', async () => {
+  const f = fakeFetch([
+    { match: '/v1/knowledge/get', respond: () => ({ body: { id: 2428, status: 'READY', config: { sources: [{ indexers: [{ index_position: 1786936785, type: 3, strategy: 'EmbedDocumentV1' }] }] } } }) },
+  ]);
+  const m = new Management({ partnerId: 1, adminSecret: 'a'.repeat(32), fetch: f });
+  const st = await m.knowledge.isIndexed(2428, ADMIN);
+  assert.deepEqual(st, { ready: true, status: 'READY', indexPosition: 1786936785 });
+});
+
+test('isIndexed reports not-ready for any non-READY status, with no indexers present', async () => {
+  const f = fakeFetch([
+    { match: '/v1/knowledge/get', respond: () => ({ body: { id: 9, status: 'PENDING', config: { sources: [] } } }) },
+  ]);
+  const m = new Management({ partnerId: 1, adminSecret: 'a'.repeat(32), fetch: f });
+  const st = await m.knowledge.isIndexed(9, ADMIN);
+  assert.deepEqual(st, { ready: false, status: 'PENDING', indexPosition: null });
 });
 
 test('deleteRecord requires confirmPermanent, posts v1/knowledge/delete, and returns a {removed,_meta} receipt (wire body is null)', async () => {

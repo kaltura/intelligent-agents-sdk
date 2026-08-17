@@ -46,7 +46,7 @@ export { KalturaError } from '../core/errors.js';
 export { redact } from '../core/redact.js';
 // Output-handling safety helpers (OWASP LLM05) — make the safe render path the easy one.
 export { safeText, safeUrl, renderSafeLink, sanitizeJson, clampInbound } from '../core/safety.js';
-// Capability consts/validators/resolver (W7) — same surface on both entry points
+// Capability consts/validators/resolver — same surface on both entry points
 // so per-message `toggleCapabilities` can be authored client-side.
 export {
   CAPABILITIES, CAPABILITY_STATE, CAPABILITY_DEFAULTS, CAPABILITY_INFO,

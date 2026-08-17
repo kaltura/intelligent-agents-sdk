@@ -5,7 +5,7 @@ import { IntellectSecrets, validateSecretRefs, MASK } from '../../src/management
 import { fakeFetch } from '../fakes/fetch.js';
 
 /**
- * W4 — Secrets lifecycle. Secrets are WRITE-ONLY (masked "***" on read) with a
+ * Secrets lifecycle. Secrets are WRITE-ONLY (masked "***" on read) with a
  * server-side merge-keep guard: re-sending "***" preserves the stored value.
  * Every op is a read-merge-write of the FULL config.secrets dict. These tests
  * drive the REAL Management Ctx (scope guard + genie transport) via the fetch

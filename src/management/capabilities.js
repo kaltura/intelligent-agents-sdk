@@ -16,10 +16,10 @@
  * table, resolved with 3-level priority (env → partner_config → per-request)
  * and a DISABLED veto that always wins regardless of layer.
  *
- * HONEST LIMIT: no public endpoint enumerates AssistantCapability or per-partner settings. CAPABILITIES is a hand-transcribed snapshot of the backend's defaults.
+ * No public endpoint enumerates AssistantCapability or per-partner settings.
  * {@link CAPABILITIES} and {@link CAPABILITY_DEFAULTS} are a hand-transcribed
- * SNAPSHOT of the backend's defaults, GUARDED by the `check-docs.mjs` W7 assertion that
- * this enum equals the API-REFERENCE.md capability catalogue. The DISABLED
+ * snapshot of the backend's defaults, checked by `tools/check-docs.mjs` against
+ * the API-REFERENCE.md capability catalogue. The DISABLED
  * veto plus the request/partner_config layers are authoritative (resolved by the
  * server the same way); the `env` layer this module ships is a best-effort
  * documented prediction, not a live per-partner read.

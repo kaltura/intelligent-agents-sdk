@@ -50,8 +50,7 @@ export function modelTypeWire(sel) {
  * `null` for spoken/control segments (text/avatar/think/turn) so the gate is
  * SKIPPED — the default-allow path keeps existing nav/GenUI flowing untouched.
  *
- * WIRE TRUTH (W14 must-fix, verified against the CM adapter + the earnings app's
- * `handleBrainSegment`): a real GenUI segment carries its runtime in
+ * A real GenUI segment carries its runtime in
  * `seg.metadata.runtimeName` (NOT a top-level `seg.runtimeName`) and an
  * adapter-normalized `seg.type` ending in `-tool` (e.g. `followups-tool`). We
  * read BOTH and strip the trailing `-tool`. The synthetic `navigate` action has

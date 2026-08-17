@@ -402,7 +402,9 @@ Writes through the intellect DTO — no `partner-config/update`, no 403. RAG ret
 | `ocr` | On-screen text |
 | `document` | PDF / Markdown attachments |
 
-**SDK:** `knowledge.addRecord()` + `knowledge.uploadDocument()` + `intellectConfig.setKnowledgeIds()` (Path A, verified live). Re-pointing an EXISTING intellect via the `partner-config/update` path (Path B — `knowledge.linkRecords()`, probed first with `knowledge.linkAvailable()`) is still gated (403s for a partner admin KS today) — prefer Path A for new agents; only reach for Path B if the intellect already exists and you can't recreate it. `knowledge.indexStatus(ks)` reads indexing progress (`partner-config/stats`, unaffected by the write gate — a read, like `getBrainConfig` in § Configure the Brain).
+**SDK:** `knowledge.addRecord()` + `knowledge.uploadDocument()` + `intellectConfig.setKnowledgeIds()` (Path A, verified live). Re-pointing an EXISTING intellect via the `partner-config/update` path (Path B — `knowledge.linkRecords()`, probed first with `knowledge.linkAvailable()`) is still gated (403s for a partner admin KS today) — prefer Path A for new agents; only reach for Path B if the intellect already exists and you can't recreate it.
+
+**Checking whether indexing has finished:** use `knowledge.isIndexed(id, ks)` — reads `knowledge.getRecord(id, ks).status`, returning `{ready, status, indexPosition}`. Don't use `knowledge.search()` for this — its "couldn't find relevant information" reply fires for an unindexed KB, an indexed KB with `use_knowledge_base:'off'`, or a genuine no-match query alike, so it can't signal indexing status. `knowledge.corpusStatus()` only counts entries that exist in the category, not whether they've finished embedding. `knowledge.indexStatus()` (`partner-config/stats`) 403s for a partner admin KS on at least one deployment — the same privilege wall as the Path B write.
 
 ---
 
@@ -755,6 +757,8 @@ Full record lifecycle (all verified live). SDK: `mgmt.knowledge`. Linkage to an 
 | Get | `POST /v1/knowledge/get` | `{"id":2049}` |
 | Update | `POST /v1/knowledge/update` | `{"id":2049, ...fields}` |
 | Delete | `POST /v1/knowledge/delete` | `{"id":2049}` — HTTP 200, body `null`; a follow-up get 404s |
+
+`mgmt.knowledge.isIndexed(id, ks)` wraps Get and reads `status`/`config.sources[].indexers[].index_position` — see § Ground the Agent for why this, not `search()`/`corpusStatus()`/`indexStatus()`, is the real indexing-completion check.
 
 Deleting a record does **not** unlink it — an intellect's `knowledge_ids` keeps the dangling id; clear it via `mgmt.intellectConfig.setKnowledgeIds(configId, [], ks)`.
 

@@ -100,7 +100,7 @@ test('a server 422 with FastAPI array detail surfaces the actionable message (no
   );
 });
 
-// ─────────── W5/W12: assertRequestVars (pure) ───────────
+// ─────────── assertRequestVars (pure) ───────────
 
 test('assertRequestVars rejects a RESERVED_VARS collision (sys__/secrets)', () => {
   for (const k of RESERVED_VARS) {
