@@ -9,12 +9,15 @@ const widget = document.getElementById('nova-widget');
 
 const DOCK_MARGIN = 24;
 const DOCK_SIZE = window.matchMedia('(max-width: 600px)').matches ? 180 : 240;
-const HIGHLIGHT_MS = 4000;
+const HIGHLIGHT_MS = 5000;
+const RING_FADE_MS = 300;
 
 let mode = 'none'; // 'hero' | 'dock'
 let rafPending = false;
 let dockRect = null;
 let revertTimer = null;
+let activeRing = null;
+let detachRingInterrupts = null;
 
 function heroSlot() {
   return document.getElementById('nova-hero-slot');
@@ -231,12 +234,42 @@ export function enterDockMode() {
   window.addEventListener('resize', redockOnResize);
 }
 
+/** Ends whatever pointAt() is currently doing — the natural HIGHLIGHT_MS expiry fades the
+ * ring out smoothly, but a scroll or a real nav (nova:pagechange) invalidates the ring's
+ * position/target instantly (it's `position: fixed` at a rect captured once, so it visually
+ * drifts off the target the moment the page scrolls, and a nav can swap it out from under
+ * `<main>` entirely) — those interrupts remove it immediately, no fade. */
+function clearPointing(immediate) {
+  clearTimeout(revertTimer);
+  revertTimer = null;
+  if (detachRingInterrupts) {
+    detachRingInterrupts();
+    detachRingInterrupts = null;
+  }
+
+  if (mode === 'dock' && widget.classList.contains('pointing')) {
+    widget.classList.remove('pointing');
+    dockRect = computeDockRect();
+    applyRect(dockRect);
+  }
+
+  const ring = activeRing;
+  activeRing = null;
+  if (!ring) return;
+  if (immediate) {
+    ring.remove();
+    return;
+  }
+  ring.classList.add('is-leaving');
+  setTimeout(() => ring.remove(), RING_FADE_MS);
+}
+
 /** Rings targetEl for HIGHLIGHT_MS; in dock mode also briefly FLIPs the
  * widget itself toward it first. In hero mode the widget stays put (it's
  * already large and on-page) and only the ring renders. Cosmetic/best-effort. */
 export function pointAt(targetEl) {
   if (!targetEl) return;
-  clearTimeout(revertTimer);
+  clearPointing(true); // drop any still-showing previous ring before starting a new one
   const targetRect = targetEl.getBoundingClientRect();
 
   const ring = document.createElement('div');
@@ -246,6 +279,7 @@ export function pointAt(targetEl) {
   ring.style.width = `${targetRect.width + 12}px`;
   ring.style.height = `${targetRect.height + 12}px`;
   document.body.appendChild(ring);
+  activeRing = ring;
 
   if (mode === 'dock') {
     const size = currentDockSize();
@@ -260,14 +294,15 @@ export function pointAt(targetEl) {
     applyRect({ top, left, width: size, height: size });
   }
 
-  revertTimer = setTimeout(() => {
-    if (mode === 'dock') {
-      widget.classList.remove('pointing');
-      dockRect = computeDockRect();
-      applyRect(dockRect);
-    }
-    ring.remove();
-  }, HIGHLIGHT_MS);
+  const onInterrupt = () => clearPointing(true);
+  window.addEventListener('scroll', onInterrupt, { passive: true, once: true });
+  document.addEventListener('nova:pagechange', onInterrupt, { once: true });
+  detachRingInterrupts = () => {
+    window.removeEventListener('scroll', onInterrupt);
+    document.removeEventListener('nova:pagechange', onInterrupt);
+  };
+
+  revertTimer = setTimeout(() => clearPointing(false), HIGHLIGHT_MS);
 }
 
 export function dockActive() {

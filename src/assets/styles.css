@@ -675,21 +675,47 @@ blockquote {
 
 .nova-highlight-ring {
   position: fixed;
-  border: 2px solid var(--ds-primary);
+  border: 1.5px solid var(--ds-primary);
   border-radius: var(--ds-roundness-2);
   pointer-events: none;
   z-index: 19;
-  animation: nova-ring-pulse 1.1s ease-in-out infinite;
+  animation:
+    nova-ring-in 320ms cubic-bezier(0.22, 1, 0.36, 1) both,
+    nova-ring-pulse 2.2s ease-in-out 320ms infinite;
+}
+
+@keyframes nova-ring-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 @keyframes nova-ring-pulse {
   0%,
   100% {
-    opacity: 0.55;
+    box-shadow:
+      0 0 0 3px color-mix(in srgb, var(--ds-primary) 16%, transparent),
+      0 0 20px 2px color-mix(in srgb, var(--ds-primary) 28%, transparent);
   }
   50% {
-    opacity: 1;
+    box-shadow:
+      0 0 0 5px color-mix(in srgb, var(--ds-primary) 24%, transparent),
+      0 0 32px 6px color-mix(in srgb, var(--ds-primary) 42%, transparent);
   }
+}
+
+/* Natural expiry only (see dock.js's clearPointing) — a scroll/nav interrupt removes the
+   ring outright with no transition, since its position is stale the instant either happens. */
+.nova-highlight-ring.is-leaving {
+  animation: none;
+  transition: opacity 300ms ease, transform 300ms ease;
+  opacity: 0;
+  transform: scale(0.98);
 }
 
 /* Hero section — homepage only. Full-bleed to the viewport's right edge

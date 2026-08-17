@@ -11,8 +11,20 @@
  * the resolved target is wherever the visitor already is, acks
  * `alreadyHere:true` and skips navigateTo() — otherwise Nova narrates a
  * fresh navigation to a page the visitor never actually left.
+ *
+ * The ack also carries `highlightable` (the target page's heading/data-nova-target
+ * list, via highlighter.js's currentTargets()) — confirmed live that a combined
+ * "go there AND highlight X" request otherwise fails: highlighter.js's own
+ * setDynamicPrompt push (fired off document's nova:pagechange listener) only
+ * merges into the brain's context on its NEXT turn, too late for a highlight_element
+ * decision made in the SAME turn as the nav. A tool ack, unlike DPP, is
+ * synchronously visible within the current turn, so this is the only channel that
+ * can carry fresh page context in time. That's also why the new-navigation branch
+ * below now awaits navigateTo() before acking instead of firing the ack first —
+ * currentTargets() has to run against the swapped-in <main>, not the page being left.
  */
 import { resolveRoute, withPrefix, navigateTo, currentRoute } from './router.js';
+import { currentTargets } from './highlighter.js';
 
 const DUP_SUPPRESS_MS = 3000;
 
@@ -42,13 +54,13 @@ export function initNavigator(session) {
     }
 
     if (resolved === currentRoute()) {
-      await ack({ ok: true, path: resolved, alreadyHere: true });
+      await ack({ ok: true, path: resolved, alreadyHere: true, highlightable: currentTargets() });
       return;
     }
 
     const now = Date.now();
     if (resolved === lastPath && now - lastNavTime < DUP_SUPPRESS_MS) {
-      await ack({ ok: true, path: resolved });
+      await ack({ ok: true, path: resolved, highlightable: currentTargets() });
       return;
     }
 
@@ -56,7 +68,7 @@ export function initNavigator(session) {
     lastPath = resolved;
     lastNavTime = now;
 
-    await ack({ ok: true, path: resolved });
-    navigateTo(withPrefix(resolved));
+    await navigateTo(withPrefix(resolved));
+    await ack({ ok: true, path: resolved, highlightable: currentTargets() });
   });
 }
