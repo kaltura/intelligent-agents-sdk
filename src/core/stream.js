@@ -395,8 +395,8 @@ export function parseToolResponseName(seg) {
  *   applies. Empty when no schema is supplied (opt-in, no behavior change).
  * - `_meta` — provenance receipt (`meta()`); source `sdk/core/stream`, scope
  *   `converse-stream (client-collected)`.
- * TOOL-SPIRAL GUARD (W6): a tool-eager brain can loop the SAME client command dozens of
- * times in one turn (e.g. re-emitting `show_widget` 25× — a real, observed runaway). Left
+ * TOOL-SPIRAL GUARD: a tool-eager brain can loop the SAME client command dozens of
+ * times in one turn (e.g. re-emitting `show_widget` 25× in a single turn). Left
  * unbounded the collector would consume the whole spiral and block to the request timeout.
  * `collectConverse` therefore DEDUPES identical calls (by name + {@link canonicalJson} of
  * `args`, matching the live session's `_dispatchToolCall` — an LLM retry of the identical

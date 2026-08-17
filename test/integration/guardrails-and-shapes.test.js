@@ -162,7 +162,7 @@ test('#11 conversation resource methods send the EXACT documented request bodies
   assert.equal(seen.mcp.body.query, 'q');
 });
 
-// ─────────────────────────── W15 client-side command dispatch (onToolCall) ───────────────────────────
+// ─────────────────────────── client-side command dispatch (onToolCall) ───────────────────────────
 
 /** A native tool-call brain segment as the server streams it (type:"tool", content "name {json}"). */
 function toolDelta(content) { return { delta: JSON.stringify({ type: 'tool', content }) }; }

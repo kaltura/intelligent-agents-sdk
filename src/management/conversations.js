@@ -141,15 +141,15 @@ export class Conversations {
       throw new KalturaError({ type: 'https://docs.kaltura.com/agentic/errors/validation_error', title: 'invalid force_experience', code: 'validation_error', detail: `force_experience must be one of: ${EXPERIENCES.join(', ')} (got "${opts.force_experience}").` });
     }
     // Validate request_vars (reserved-key collisions + non-scalar values) BEFORE the
-    // network call — the brain silently drops/ignores these, so fail fast & typed (W5/W12).
+    // network call — the brain silently drops/ignores these, so fail fast & typed.
     assertRequestVars(opts.request_vars, 'conversations.stream.request_vars');
     // Validate the per-message capabilities override (every key a known capability,
     // every value on/off/disabled). The server-side DISABLED veto still wins at
-    // runtime; this just rejects typos before the wire (W12).
+    // runtime; this just rejects typos before the wire.
     if (opts.capabilities !== undefined) validateCapabilities(opts.capabilities, 'conversations.stream.capabilities');
     const body = { userMessage: opts.userMessage, sse: opts.sse ?? false };
     // model_type stays lowercase ('fast'); OMIT for the primary model — there is no 'DEFAULT'
-    // literal (API-REFERENCE §4.1). Passed through verbatim, no normalization (W5/W12 must-fix).
+    // literal (API-REFERENCE §4.1). Passed through verbatim, no normalization.
     for (const k of ['threadId', 'model_type', 'force_experience', 'request_vars', 'capabilities']) {
       if (opts[k] !== undefined) body[k] = opts[k];
     }
@@ -377,9 +377,11 @@ export class Knowledge {
   constructor(ctx) { this._ = ctx; }
 
   /**
-   * MCP knowledge-base search (RAG query). READ. On an empty/unindexed KB the
-   * backend replies `{status:'error', data:'…couldn't find relevant
-   * information…'}` — returned as-is, not thrown.
+   * MCP knowledge-base search (RAG query). READ. On an empty/unindexed KB, an
+   * indexed KB with `use_knowledge_base:'off'`, or a genuine no-match query,
+   * the backend replies the same `{status:'error', data:"…couldn't find
+   * relevant information…"}` (returned as-is, not thrown) — so this can't
+   * tell those cases apart. Use {@link isIndexed} for indexing status instead.
    * @param {string} query @param {string} ks
    */
   async search(query, ks) {
@@ -415,7 +417,7 @@ export class Knowledge {
    * read-merge-writes the capabilities dict specifically (via
    * {@link mergeCapabilityWrite}), flipping only `use_knowledge_base`, and
    * re-asserts `{id,type,status}`. We still re-send the rest of the current
-   * config defensively (matching the W11 `patch()` convention), but the
+   * config defensively (matching `IntellectConfig.patch()`'s convention), but the
    * load-bearing reason is the dict full-replace, not a top-level wipe.
    * @param {number} configId @param {boolean} enabled @param {string} ks
    */
@@ -659,7 +661,7 @@ export class Knowledge {
       return { applied: true, result };
     } catch (e) {
       // Deployment-gated: 403 (higher privilege required) / 404 (route not deployed) — surface
-      // the typed reason WITHOUT throwing, never fake success (plan §6).
+      // the typed reason WITHOUT throwing, never fake success.
       if (e instanceof KalturaError && (e.status === 403 || e.status === 404)) {
         const { code, reason } = classifyPartnerConfigError(e);
         return { applied: false, code, reason };
@@ -674,15 +676,18 @@ export class Knowledge {
    * (the container `createCategory`/`uploadDocument` used) AND/OR an intellect
    * `configId` to also fold in the linked categories from {@link getLinkage}.
    *
-   * This is the W8 must-fix: `getLinkage` returns EMPTY when the linkage is gated
-   * (the whole premise of W8 — the link write 403s), so counting via linkage
-   * alone reports `populated:false` despite N uploaded entries. Passing the
+   * `getLinkage` returns EMPTY when the linkage is gated (the link write
+   * 403s), so counting via linkage alone reports `populated:false` despite N
+   * uploaded entries. Passing the
    * explicit container id(s) makes "corpus populated (N), retrieval gated"
    * observable. Uses `baseentry/list` `totalCount` (one call/category) for an
    * exact count — no per-entry probe loop.
    *
    * `_meta` surfaces `retrievalGated` + `reason` when a `configId` was given and
    * its linkage is empty/gated, so a UI badge has a machine-readable source.
+   *
+   * Counts entries that EXIST — not whether they've finished indexing. Use
+   * {@link isIndexed} for that.
    * @param {object} opts {categoryId?, categoryIds?, configId?}
    * @param {string} ks (admin)
    * @returns {Promise<{entryCount:number, populated:boolean, categoryIds:number[], perCategory:Record<number,number>, _meta:object}>}
@@ -711,7 +716,7 @@ export class Knowledge {
       return {
         entryCount: 0, populated: false, categoryIds: [], perCategory: {},
         // retrievalGated/reason live in _meta ONLY (consistent with the populated
-        // branch below) so consumers read one stable place — audit #16.
+        // branch below) so consumers read one stable place.
         _meta: meta({
           partnerId: this._.partnerId, source: 'knowledge.corpusStatus (no linkage on read façade)',
           scope: `configId:${opts.configId}`, retrievalGated: true, reason: linkageReason,
@@ -766,9 +771,11 @@ export class Knowledge {
   /**
    * Get a Knowledge record by id (`POST /v1/knowledge/get`). READ. Returns the
    * full record `{id, partner_id, name, description, tags, status, user_id,
-   * config:{sources:[...]}, created_at, updated_at}` (verified live). A
-   * deleted/unknown id → typed `not_found`; another partner's id → typed
-   * `forbidden` ("Does not belong to your partner").
+   * config:{sources:[{indexers:[{index_position, type, strategy}]}]},
+   * created_at, updated_at}` (verified live). A deleted/unknown id → typed
+   * `not_found`; another partner's id → typed `forbidden` ("Does not belong
+   * to your partner"). `status` is the indexing-completion field (`"READY"`
+   * once done) — see {@link isIndexed}.
    * @param {number} id @param {string} ks (admin)
    */
   async getRecord(id, ks) {
@@ -836,10 +843,37 @@ export class Knowledge {
     return (await this._.genie('partner-config/update', { id: configId, config: { knowledge_ids: knowledgeIds, capabilities: { use_knowledge_base: 'on' } } }, ks)).data;
   }
 
-  /** Read indexing status for the partner's knowledge (partner-config/stats). READ. @param {string} ks */
+  /**
+   * Read indexing status for the partner's knowledge (`partner-config/stats`). READ.
+   * GATED: 403s for a partner admin KS on at least one deployment — same
+   * privilege wall as {@link linkRecords}, not a read exempt from it. Use
+   * {@link isIndexed} instead if this 403s.
+   * @param {string} ks
+   */
   async indexStatus(ks) {
     this._.assertAdmin(ks, 'knowledge.indexStatus');
     return (await this._.genie('partner-config/stats', { filter: {} }, ks)).data;
+  }
+
+  /**
+   * Whether a Knowledge record has finished indexing (`getRecord(id,
+   * ks).status === 'READY'`). READ. Prefer this over {@link search} (its
+   * "no relevant information" reply also fires when indexing is done but
+   * `use_knowledge_base` is off, so it can't signal indexing status) or
+   * {@link indexStatus} (gated on some deployments).
+   * @param {number} id @param {string} ks (admin)
+   * @returns {Promise<{ready:boolean, status:string|null, indexPosition:number|null}>}
+   */
+  async isIndexed(id, ks) {
+    this._.assertAdmin(ks, 'knowledge.isIndexed');
+    const rec = await this.getRecord(id, ks);
+    const indexers = (rec?.config?.sources || []).flatMap((s) => s.indexers || []);
+    const withPosition = indexers.find((idx) => idx?.index_position != null);
+    return {
+      ready: rec?.status === 'READY',
+      status: rec?.status ?? null,
+      indexPosition: withPosition?.index_position ?? null,
+    };
   }
 }
 
@@ -848,7 +882,7 @@ export class Knowledge {
  * typed `client_variables_disabled` ONLY when the upstream body actually says
  * "Client variables are not allowed" — a 403 can ALSO come from token-scope /
  * cross-partner guards, and mislabeling those as a variables problem would
- * mislead the caller (W5/W12 must-fix). Every other error is passed through
+ * mislead the caller. Every other error is passed through
  * unchanged. Pure: no network, no side effects.
  * @param {any} e
  * @returns {any}

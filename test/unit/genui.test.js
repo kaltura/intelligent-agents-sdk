@@ -9,7 +9,7 @@ import { SegmentAssembler } from '../../src/experience/genui/segments.js';
 import { ExperienceRenderer } from '../../src/experience/genui/renderer.js';
 import { DEFAULT_RENDERERS } from '../../src/experience/genui/renderers/index.js';
 
-/** GenUI segment→widget layer (W6). Pure parse + dispatch + fallback + each default renderer shape. */
+/** GenUI segment→widget layer. Pure parse + dispatch + fallback + each default renderer shape. */
 
 // ─────────────────────────── normalizeRuntime ───────────────────────────
 

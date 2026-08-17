@@ -10,7 +10,7 @@ import {
   assembleSystemPrompt,
 } from '../../src/management/prompt-lint.js';
 
-/** Pure prompt-authoring lint/preview helpers (W10). No network, no KS. */
+/** Pure prompt-authoring lint/preview helpers. No network, no KS. */
 
 const hasFinding = (findings, code) => findings.some((f) => f.code === code);
 

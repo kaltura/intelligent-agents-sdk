@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { classifyAgentAction, modelTypeWire, MODEL_TYPES } from '../../src/experience/wire.js';
 
 /**
- * classifyAgentAction (W14) — maps a streamed brain segment to the AGENT-initiated
+ * classifyAgentAction — maps a streamed brain segment to the AGENT-initiated
  * action the guardrail gate operates on. Asserted over the REAL adapter-normalized
  * type strings (trailing `-tool`) and `metadata.runtimeName` (NOT a top-level field).
  */
@@ -81,7 +81,7 @@ test('an empty/odd tool segment is NOT an action', () => {
   assert.equal(classifyAgentAction({ type: 'tool_response', content: 'x responded' }), null);
 });
 
-// ── MODEL_TYPES / modelTypeWire (W5) ──
+// ── MODEL_TYPES / modelTypeWire ──
 test('MODEL_TYPES: fast is lowercase, primary is the omit sentinel (null) — no DEFAULT', () => {
   assert.equal(MODEL_TYPES.fast, 'fast');
   assert.equal(MODEL_TYPES.primary, null);

@@ -13,8 +13,7 @@
  *   - `glossary`, when set, is wrapped by `sys_prompt_glossary` and appended;
  *   - `{{var}}` placeholders are interpolated last (`apply_variables()`).
  *
- * HONEST LIMIT (plan §6 — "No server prompt-preview or version history"):
- * {@link assembleSystemPrompt} reproduces ONLY this author layer. It CANNOT
+ * LIMITATION: {@link assembleSystemPrompt} reproduces ONLY this author layer. It CANNOT
  * reproduce the capability-conditional Jinja blocks (video_gallery /
  * avatar_show_content / web_search_enabled / user_properties) that Genie
  * injects server-side, nor the server's built-in default base_directive. The
@@ -386,7 +385,7 @@ export const SERVER_DEFAULT_DIRECTIVE_MARKER = '<<server default directive>>';
  * joins them with a blank line, prepends `base_directive`, and appends the
  * glossary — mirroring `get_partner_prompts()`/`get_system_prompt()`.
  *
- * HONEST LIMITS (plan §6):
+ * LIMITATIONS:
  *   - This is `client-side-replica`, NOT byte-exact. It does NOT reproduce the
  *     server's capability-conditional Jinja blocks (video_gallery /
  *     avatar_show_content / web_search_enabled / user_properties), which are

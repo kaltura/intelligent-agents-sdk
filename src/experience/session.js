@@ -304,7 +304,7 @@ export class KalturaAvatarSession extends Emitter {
     this._optimistic = null;
     this._capacityPolls = 0;
     this._clientConfig = null;
-    // Client-side-command dispatch (W15): name → handler registered via onToolCall().
+    // Client-side-command dispatch: name → handler registered via onToolCall().
     // `_firedToolCalls` dedups within a turn (the same tool segment can re-arrive on
     // the live socket) and is CLEARED on turnStart so the same command can fire again
     // next turn. Keyed by name + sorted-key JSON of args (semantic, not the verbatim
@@ -1577,12 +1577,12 @@ export class KalturaAvatarSession extends Emitter {
       if (action && (this._agentActions || this._onAgentAction)) {
         if (!await this._gateAgentAction(action)) return;
         // Allowed GenUI/tool surfacing → observability-by-proxy audit (NOT a server tool-exec
-        // log; use Genie report/report-summary for authoritative analytics — plan §6/W13).
+        // log; use Genie report/report-summary for authoritative analytics).
         if (action.type === 'render-genui' || action.type === 'structured-data-form') {
           this._audit('tool.invoke', 'success', { action: action.runtime || action.type });
         }
       }
-      // Client-side command dispatch (W15): a `type:"tool"` segment is a native
+      // Client-side command dispatch: a `type:"tool"` segment is a native
       // function call the host app handles in JS (navigate a deck, call a page fn,
       // inject content). Fire AFTER the gate (a vetoed action already returned), once
       // per turn, to onToolCall(name) handlers + the 'toolCall' event. This is the
