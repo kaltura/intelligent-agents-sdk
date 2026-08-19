@@ -100,6 +100,34 @@ The protocol above describes the **interactive** path. The scripted path has no 
 
 ---
 
+## Displaying the Avatar Video
+
+The SDK assigns the WHEP stream to `cfg.videoEl.srcObject` and does nothing else — no CSS, no sizing. The backend's rendered aspect ratio is not a published contract (see [API-REFERENCE.md § Upload a Custom Visual](../API-REFERENCE.md) on `catalog.createVisual` preprocessing), so size the box with `object-fit: cover` rather than assuming a fixed aspect ratio — it fills the box and crops evenly no matter what the stream's actual aspect ratio turns out to be:
+
+```css
+.avatar-box {
+  width: 320px;
+  aspect-ratio: 1 / 1;      /* pick whatever the fixed side of YOUR layout needs */
+  overflow: hidden;
+  border-radius: 12px;      /* optional */
+}
+.avatar-box video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;        /* fills the box, crops evenly — no letterbox/pillarbox bars */
+}
+```
+
+For a circular picture-in-picture mask, swap `border-radius` + `overflow: hidden` for `clip-path: circle(50%)` on `.avatar-box` (or directly on the `<video>`).
+
+`object-fit: cover` never shows bars regardless of the source's actual aspect ratio — that's why it's the right default even without a published backend resolution to size against.
+
+Omit `videoEl` entirely for a headless/custom-render integration (canvas, WebGL, a circular-mask renderer) — both `KalturaAvatarSession` and `KalturaScriptedVideoSession` fire a `'track'` event (`{track, streams}`) the moment their STV peer's `ontrack` fires, whether or not `videoEl` is configured.
+
+For a dynamic crop/`object-position` instead of generic `object-fit: cover`, both classes also fire `'videoMetadata'` (`{videoWidth, videoHeight}`) once per connect, as soon as the decoder resolves the stream's actual dimensions. There's no fixed/published output resolution to hardcode against — this event is the source of truth.
+
+---
+
 ## SDK Module Map — Overview
 
 For the public surface, entry points, and how-tos, read [README.md](../README.md) — its ["Architecture" section](../README.md#architecture) has the module-to-resource map.

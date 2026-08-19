@@ -20,6 +20,14 @@
  * convention as `KalturaAvatarSession` — so this is unit-testable with the
  * repo's `test/fakes/rtc.js` doubles without a real browser or network.
  *
+ * Fires 'track' ({track, streams}) the moment the WHEP peer's ontrack fires,
+ * whether or not videoEl is configured — the headless/custom-render escape
+ * hatch. When videoEl IS configured, also fires 'videoMetadata'
+ * ({videoWidth, videoHeight}) once per connect, as soon as the decoder
+ * resolves the stream's native dimensions (the backend's actual output
+ * resolution isn't a published/fixed contract — see docs/ARCHITECTURE.md §
+ * Displaying the Avatar Video).
+ *
  * @example
  * // server:
  * //   const admin = await k.sessions.createAdminToken();
@@ -43,7 +51,7 @@ export class KalturaScriptedVideoSession extends Emitter {
    * @param {object} cfg
    * @param {string} cfg.whepUrl  From `avatarSessions.initClient()`.
    * @param {{url:string, username?:string, credential?:string}} cfg.turn  The `turn` object from `initClient()` (bare TURN host + creds — passed through {@link turnServers}).
-   * @param {any} [cfg.videoEl]  An `HTMLVideoElement`. Omit for audio-only/headless use — `ontrack` still fires and you can read `e.streams[0]` off `stateChanged`/your own `pc`.
+   * @param {any} [cfg.videoEl]  An `HTMLVideoElement`. Omit for audio-only/headless use — `ontrack` still fires and you can read `e.streams[0]` off `stateChanged`/your own `pc`. The SDK only sets `.srcObject` — size/frame it yourself with `object-fit: cover` (see docs/ARCHITECTURE.md § Displaying the Avatar Video).
    * @param {typeof RTCPeerConnection} [cfg.rtcConstructor]
    * @param {typeof fetch} [cfg.fetch]
    * @param {boolean} [cfg.isFirefox]  Firefox needs `iceTransportPolicy:'all'` (see {@link iceConfig}).
@@ -94,12 +102,20 @@ export class KalturaScriptedVideoSession extends Emitter {
 
       const playable = new Promise((resolve) => {
         let done = false;
+        let videoMetadataSent = false;
         const finish = () => { if (!done) { done = true; resolve(); } };
         pc.ontrack = (e) => {
           this.emit('track', { track: e.track, streams: e.streams });
           const v = this._videoEl;
           if (!v) return finish();
           v.srcObject = e.streams && e.streams[0];
+          // ontrack fires once per track (video + audio) — gate so 'videoMetadata' fires
+          // at most once per connect, not once per track.
+          if (!videoMetadataSent && typeof v.addEventListener === 'function') {
+            const emitVideoMetadata = () => { if (videoMetadataSent) return; videoMetadataSent = true; this.emit('videoMetadata', { videoWidth: v.videoWidth, videoHeight: v.videoHeight }); };
+            if (v.videoWidth || v.videoHeight) emitVideoMetadata();
+            else v.addEventListener('loadedmetadata', emitVideoMetadata, { once: true });
+          }
           if (typeof v.play === 'function') { try { const pr = v.play(); if (pr?.catch) pr.catch(() => {}); } catch { /* autoplay policies vary; ontrack/canplay already fired */ } }
           if (v.readyState >= 3) finish();
           else if (typeof v.addEventListener === 'function') v.addEventListener('canplay', finish, { once: true });

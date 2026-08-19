@@ -113,3 +113,31 @@ jobs:
             tail -n 30 docs-gate-output.log
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+  sast:
+    name: 🛡️ SAST scan (semgrep)
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - name: 📥 Check out the repo
+        uses: actions/checkout@v7
+
+      - name: 🐍 Install semgrep
+        run: pip install semgrep
+
+      - name: 🛡️ Run the custom SAST ruleset (scripts/harness/semgrep-rules.yml)
+        id: sast
+        run: |
+          set -o pipefail
+          semgrep --config scripts/harness/semgrep-rules.yml --error src test tools scripts examples 2>&1 | tee sast-output.log
+
+      - name: 📝 Write job summary
+        if: always()
+        run: |
+          {
+            echo "### 🛡️ SAST scan — ${{ steps.sast.outcome }}"
+            echo
+            echo '```'
+            tail -n 30 sast-output.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -45,6 +45,35 @@ test('provision runs the full documented sequence and returns every id', async (
   assert.ok(agentCreate.headers['idempotency-key'], 'agent create must send Idempotency-Key');
 });
 
+// see issue #17 — persona-name consistency lint surfaces on every provision()
+// call (not opt-in like the optional blocks), since it's a cheap pure check.
+test('provision surfaces a personaLint result, clean for a freshly-generated profile', async () => {
+  const { m } = baseProvision();
+  const r = await m.provision({ brief: 'A friendly yoga-studio receptionist', ks: ADMIN_KS });
+  // openingPhrase 'Namaste!' names no proper noun → detectedName is null → clean by construction.
+  assert.equal(r.personaLint.ok, true);
+  assert.equal(r.personaLint.detectedName, null);
+  assert.deepEqual(r.personaLint.findings, []);
+});
+
+test('provision surfaces a personaLint warning when the generated openingPhrase names a different persona than profile.name', async () => {
+  const f = fakeFetch([
+    { match: '/application/generateAgentProfile', respond: () => ({ body: { name: 'Nova', openingPhrase: "Hi! I'm Luna, ready to help!", goal: 'help', targetAudience: 'students', restrictedTopics: 'none' } }) },
+    { match: '/v1/intellect/add', respond: () => ({ body: { id: 1389, status: 2, prompts: [] } }) },
+    { match: '/v1/intellect/update', respond: () => ({ body: { id: 1389, status: 2 } }) },
+    { match: '/agent/create', respond: () => ({ body: { agentId: 'agent-xyz' } }) },
+    { match: '/catalog-item/list', respond: (req) => ({ body: { objects: [{ itemId: req.body?.filter?.typeEqual === 'Voice' ? 'voice-1' : 'visual-1' }], totalCount: 1 } }) },
+    { match: '/avatar/create', respond: () => ({ body: { id: '6a07d63d8ccd85cbfafc5416' } }) },
+    { match: '/application/resolveWidgetId', respond: () => ({ body: { widgetId: '1_v1mj1kxb' } }) },
+    { match: '/v1/intellect/list', respond: () => ({ body: { totalCount: 0, objects: [] } }) },
+  ]);
+  const m = new Management({ partnerId: 6496302, adminSecret: 'a'.repeat(32), fetch: f });
+  const r = await m.provision({ brief: 'x', ks: ADMIN_KS });
+  assert.equal(r.personaLint.detectedName, 'Luna');
+  assert.ok(r.personaLint.findings.some((fnd) => fnd.code === 'persona_name_mismatch'));
+  assert.equal(r.agentId, 'agent-xyz', 'a persona-name warning never fails the provision');
+});
+
 test('provision surfaces the failing step on partial failure', async () => {
   const f = fakeFetch([
     { match: '/application/generateAgentProfile', respond: () => ({ body: { name: 'X' } }) },

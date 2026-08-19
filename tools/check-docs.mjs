@@ -485,3 +485,96 @@ describe('7. SDK invariants', () => {
     }
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 8) Preprocessing-claim accuracy (see issue #15)
+// ─────────────────────────────────────────────────────────────────────────────
+describe('8. Preprocessing-claim accuracy', () => {
+  // Scoped to "no preprocessing" specifically, not "no-op"/"unmodified" —
+  // those are legitimate, common terms elsewhere (idempotent methods, or
+  // issue #16's deliberate "raw, unmodified upload" passthrough annotation)
+  // and would collide with correct docs if flagged here. The actual defect
+  // (issue #15) is a false claim about backend image processing, so the
+  // check only fires where that specific claim and visual-content
+  // vocabulary co-occur without a citation naming how it was verified.
+  const ABSOLUTE_CLAIM = /\bno preprocessing\b/i;
+  const VISUAL_CONTEXT = /\b(portrait|visual|image|face|avatar likeness)\b/i;
+  const CITED = /verified:.*\b(preprocessing|crop|pad|face|frame|ratio)\b/i;
+
+  // Split into paragraph-or-list-item units — a blank-line paragraph split
+  // alone merges unrelated bullets under one Markdown list into a single
+  // "paragraph" (e.g. SECURITY.md's LLM01/deepfake bullets), producing
+  // false positives across bullets that share nothing but proximity.
+  function claimUnits(text) {
+    const units = [];
+    let cur = [];
+    for (const line of text.split('\n')) {
+      const startsListItem = /^\s*[-*]\s/.test(line);
+      if ((line.trim() === '' || startsListItem) && cur.length) {
+        units.push(cur.join('\n'));
+        cur = [];
+      }
+      if (line.trim() !== '') cur.push(line);
+    }
+    if (cur.length) units.push(cur.join('\n'));
+    return units;
+  }
+
+  test('absolute preprocessing/processing claims about visual content are paired with a citation that actually verifies them', () => {
+    const mdFiles = [...DOCS, 'README.md'].filter((f, i, a) => a.indexOf(f) === i);
+    const offenders = [];
+    for (const f of mdFiles) {
+      const text = read(f);
+      if (!text) continue;
+      for (const unit of claimUnits(text)) {
+        if (ABSOLUTE_CLAIM.test(unit) && VISUAL_CONTEXT.test(unit) && !CITED.test(unit)) {
+          offenders.push(`${f}: "${unit.match(ABSOLUTE_CLAIM)[0]}" (visual-content context) without a citation that verifies the processing claim itself`);
+        }
+      }
+    }
+    assert.deepEqual(offenders, [], `uncited absolute visual-processing claims:\n  ${offenders.join('\n  ')}`);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 9) Preview/loading field annotation (see issue #16)
+// ─────────────────────────────────────────────────────────────────────────────
+describe('9. Preview/loading field annotation', () => {
+  const FIELD = /^\w*(preview\w*|imageurl|videourl)\w*$/i;
+  const ANNOTATED = /\b(raw|passthrough|rendered)\b/i;
+
+  test('preview*/*ImageUrl/*VideoUrl field references in API-REFERENCE.md carry a raw-passthrough or rendered annotation on the same line', () => {
+    const text = read('API-REFERENCE.md');
+    const offenders = [];
+    for (const [i, line] of text.split('\n').entries()) {
+      const codeSpans = line.match(/`([^`]+)`/g) || [];
+      const hasField = codeSpans.some((c) => c.slice(1, -1).split(/[^a-zA-Z]+/).some((word) => FIELD.test(word)));
+      if (hasField && !ANNOTATED.test(line)) {
+        offenders.push(`API-REFERENCE.md:${i + 1}: ${line.trim()}`);
+      }
+    }
+    assert.deepEqual(offenders, [], `unannotated preview/loading field references:\n  ${offenders.join('\n  ')}`);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 10) Avatar video framing (see issue #18)
+// ─────────────────────────────────────────────────────────────────────────────
+describe('10. Avatar video framing', () => {
+  // File-level, not selector-level: precise per-file selector coverage is
+  // proven in test/unit/examples-video-css.test.js. This gate exists so a
+  // FUTURE example added under examples/ with a bare <video> and zero CSS
+  // (the exact issue #18 defect) fails loudly here too, without needing to
+  // know that new file's specific markup shape in advance.
+  test('every examples/*.html file with a <video> element declares object-fit somewhere in its <style> block', () => {
+    const htmlFiles = trackedFiles().filter((f) => f.startsWith('examples/') && f.endsWith('.html'));
+    const offenders = [];
+    for (const f of htmlFiles) {
+      const content = read(f);
+      if (!/<video\b/i.test(content)) continue;
+      const style = content.match(/<style>([\s\S]*?)<\/style>/i)?.[1] ?? '';
+      if (!/object-fit/i.test(style)) offenders.push(f);
+    }
+    assert.deepEqual(offenders, [], `examples with a <video> but no object-fit rule: ${offenders.join(', ')}`);
+  });
+});

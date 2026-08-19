@@ -97,7 +97,7 @@ POST https://api.avatar.us.kaltura.ai/v1/catalog-item/list
 
 Change `typeEqual` to `"Voice"` for voices. Each item has an `itemId` — pass it to avatar creation.
 
-**Visual preset fields:** `itemId`, `attributes.visual.{name, genderPresentation, skinTone, ageGroup, hairColor, clothing, background}`, `imageUrl`, `loadingVideo`.
+**Visual preset fields:** `itemId`, `attributes.visual.{name, genderPresentation, skinTone, ageGroup, hairColor, clothing, background}`, `imageUrl`, `loadingVideo` — raw backend asset URLs (an upload echo for a custom visual, a preset asset URL for a catalog item), not the rendered composite the live WHEP stream shows.
 
 **Voice preset fields:** `itemId`, `attributes.voice.{name, description, language}`, `voiceSampleUrl`.
 
@@ -160,7 +160,9 @@ attributes={"visual":{"name":"My Portrait","genderPresentation":"Feminine","back
 adminTags=custom
 ```
 
-Returns a `CatalogItemDto` whose `itemId` is the catalog visual. Pass it as `visual.id` in `avatar/create` (or `visualId` in `provision`). The model **animates the portrait live at runtime** — no preprocessing, no ops involvement, self-serve. Verified: a real 2.4 MB portrait JPEG (`avatar-session/create` → `{success:true, sessionId}`).
+Returns a `CatalogItemDto` whose `itemId` is the catalog visual. Pass it as `visual.id` in `avatar/create` (or `visualId` in `provision`). The model **animates the portrait live at runtime** — no ops involvement, self-serve. Verified: a real 2.4 MB portrait JPEG (`avatar-session/create` → `{success:true, sessionId}`).
+
+The backend does preprocess the uploaded image before rendering: it crop-fits the source to a fixed face-height-to-frame ratio and centers it on the render canvas. A tight "headshot"-style crop — the intuitive upload — is the worst case: the bigger the face already fills the source frame, the more the backend downscales it to hit that ratio, and the bigger the resulting black borders around the rendered avatar. One confirmed case: padding the source out to roughly 2600×2600 (face occupying a small fraction of the frame) produced an edge-to-edge render with no borders. This is an observed data point from one real upload, not a documented API contract — the exact ratio isn't published, so pad generously and check the result in a live session rather than assuming this number is precise.
 
 **Required fields** (API 400s if any are missing): `name`, `genderPresentation`, `background`, `skinTone`, `ageGroup`, `hairColor`. The gap today is video-clip ingest (a short clip → a higher-fidelity avatar model) — not yet self-serve.
 
@@ -553,7 +555,7 @@ Response:
 | `conversationManagerUrl` | Socket.IO control-plane host |
 | `srsBaseUrl` | WHEP video-stream host |
 | `turnServerUrl` | TURN host |
-| `avatars[]` | `[{id, previewImageUrl, loadingVideoUrl}]` |
+| `avatars[]` | `[{id, previewImageUrl, loadingVideoUrl}]` — raw backend asset URLs (an upload echo for a custom visual, a preset asset URL for a catalog item), not the rendered composite the live WHEP stream shows |
 
 The admin secret never touches the browser — `appInit` derives the agent from the widget KS.
 

@@ -38,7 +38,11 @@ export class Application {
    * runtime endpoints + an enriched conversation KS:
    *   {ks, conversationManagerUrl, srsBaseUrl, turnServerUrl, avatars[], widgetConfig?, embedConfig?}
    * The returned `ks` carries `geniegpcid` (entitlement ON) — hand it to
-   * {@link KalturaAvatarSession}. READ (no resource mutation).
+   * {@link KalturaAvatarSession}. Returned verbatim, no SDK-side transform:
+   * `avatars[].previewImageUrl`/`loadingVideoUrl` are raw backend asset URLs
+   * (an upload echo for a custom visual, a preset asset URL for a catalog
+   * item), not the rendered composite the live WHEP stream shows. READ (no
+   * resource mutation).
    * @param {string} widgetKs A widget KS (NOT an admin KS).
    */
   async appInit(widgetKs) {

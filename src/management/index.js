@@ -50,7 +50,7 @@ export { tools, clientToolReadiness, client, applyResponseMapping, findIntellect
 export { validateSecretRefs } from './secrets.js';
 // Prompt authoring depth: linters + client-side system-prompt preview.
 export {
-  lintPrompts, validatePromptVars, lintGlossary, assembleSystemPrompt, SYS_VARS, SYS_NAMESPACES,
+  lintPrompts, validatePromptVars, lintGlossary, lintPersonaIdentity, assembleSystemPrompt, SYS_VARS, SYS_NAMESPACES,
 } from './prompt-lint.js';
 // Brain-config + intellect-config helpers.
 export { buildBrainConfigPatch } from './intellects.js';

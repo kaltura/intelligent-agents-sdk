@@ -1,0 +1,40 @@
+rules:
+  - id: no-eval-or-dynamic-function
+    languages: [javascript]
+    severity: ERROR
+    message: >-
+      Dynamic code execution (eval/new Function) — matches SDK_CONSTITUTION.md
+      Rule S-1. Untrusted input reaching this is an injection vector.
+    patterns:
+      - pattern-either:
+          - pattern: eval(...)
+          - pattern: new Function(...)
+
+  - id: no-html-sink-assignment
+    languages: [javascript]
+    severity: ERROR
+    message: >-
+      Assignment to innerHTML/outerHTML/insertAdjacentHTML — matches
+      SDK_CONSTITUTION.md Rule S-2. Untrusted content reaching a DOM HTML
+      sink is an XSS vector.
+    patterns:
+      - pattern-either:
+          - pattern: $EL.innerHTML = ...
+          - pattern: $EL.outerHTML = ...
+          - pattern: $EL.insertAdjacentHTML(...)
+
+  - id: no-hardcoded-credential-literal
+    languages: [javascript]
+    severity: ERROR
+    message: >-
+      Hardcoded credential-shaped literal assigned to a secret/token/key
+      field — matches SDK_CONSTITUTION.md Rule S-6. Secrets must come from
+      env/caller input only, never a literal in source.
+    patterns:
+      - pattern-either:
+          - pattern: $X.adminSecret = "..."
+          - pattern: $X.apiKey = "..."
+          - pattern: $X.password = "..."
+      - metavariable-regex:
+          metavariable: $X
+          regex: .+
