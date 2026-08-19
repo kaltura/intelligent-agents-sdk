@@ -1,6 +1,6 @@
 {
   "name": "@kaltura/intelligent-agents",
-  "version": "2.0.0",
+  "version": "1.2.0",
   "private": true,
   "description": "Zero-dependency SDK for Kaltura conversational avatar agents — Management (provision/configure/measure) + Experience (live interactive runtime). Grounded only in what the public APIs deliver today.",
   "license": "MIT",
