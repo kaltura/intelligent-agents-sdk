@@ -9,10 +9,10 @@ class FakeSession extends Emitter {
   constructor() { super(); this.dpps = []; this.connected = true; this._toolCallHandlers = new Map(); }
   setDynamicPrompt(data) { if (!this.connected) { const e = new Error('not connected'); e.code = 'invalid_state'; throw e; } this.dpps.push(data); }
   get lastDpp() { return this.dpps[this.dpps.length - 1]; }
-  /** Mirrors the real session.onToolCall(name, handler) surface for tests — including its unsubscribe-closure return contract. */
+  /** Mirrors the real session.js#onToolCall(name, handler) surface for tests — including its exact unsubscribe-closure contract: once the last handler for `name` is removed, the map key itself is deleted (not just emptied). */
   onToolCall(name, handler) {
     const l = this._toolCallHandlers.get(name) || []; l.push(handler); this._toolCallHandlers.set(name, l);
-    return () => { const list = this._toolCallHandlers.get(name); if (!list) return; const i = list.indexOf(handler); if (i >= 0) list.splice(i, 1); };
+    return () => { const list = this._toolCallHandlers.get(name); if (!list) return; const i = list.indexOf(handler); if (i >= 0) list.splice(i, 1); if (!list.length) this._toolCallHandlers.delete(name); };
   }
   /** Test helper: fire a registered tool-call handler as the real session would. */
   fireToolCall(name, args) { for (const h of this._toolCallHandlers.get(name) || []) h(args); }
@@ -499,4 +499,104 @@ test('two independent Presenter instances (own sessions) run in parallel with ze
   assert.equal(a.p.current, 2);
   assert.equal(b.p.current, 4);
   assert.notEqual(a.session, b.session, 'each Presenter owns its own session');
+});
+
+test('after destroy(), every public mutator is a silent no-op (never touches session/storage again)', () => {
+  const storage = new MemStorage();
+  const { session, p } = newPresenter({ storage });
+  p.start();
+  p.goTo(3, 'user');
+  p.destroy();
+
+  const dppsBefore = session.dpps.length;
+  const totalBefore = p.total;
+  const memoryBefore = storage.getItem('kaltura_presenter_memory');
+  assert.ok(memoryBefore, 'goTo() before destroy() persisted memory as usual');
+
+  p.start();
+  p.goTo(2, 'user');
+  p.refreshDpp();
+  p.recordQuestion('are you still there?');
+  p.saveMemory();
+  p.clearMemory();
+  const appended = p.appendSlide({ title: 'extra' });
+
+  assert.equal(session.dpps.length, dppsBefore, 'no new DPP reached the session after destroy()');
+  assert.equal(p.current, 3, 'goTo() after destroy() never moves the current slide');
+  assert.equal(appended, totalBefore, 'appendSlide() after destroy() returns the unchanged total, never grows the deck');
+  assert.equal(p.total, totalBefore, 'total is unchanged after destroy()');
+  assert.equal(p.questions.length, 0, 'recordQuestion() after destroy() never records');
+  assert.equal(storage.getItem('kaltura_presenter_memory'), memoryBefore, 'clearMemory() after destroy() never touches storage');
+});
+
+test('stop() is an alias for destroy()', () => {
+  const { session, p } = newPresenter();
+  p.start();
+  const before = [...session._listeners.values()].reduce((n, set) => n + set.size, 0);
+  assert.ok(before > 0);
+  p.stop();
+  const after = [...session._listeners.values()].reduce((n, set) => n + set.size, 0);
+  assert.equal(after, 0, 'stop() removes listeners exactly like destroy()');
+  const dppsBefore = session.dpps.length;
+  p.goTo(2, 'user');
+  assert.equal(session.dpps.length, dppsBefore, 'stop()-ed Presenter is inert, same as destroy()');
+});
+
+test('constructing a second live Presenter on the same session warns (forgot destroy()/stop())', () => {
+  const session = new FakeSession();
+  const warnings = [];
+  const originalWarn = console.warn;
+  console.warn = (...args) => warnings.push(args.join(' '));
+  try {
+    new Presenter({ session, slides: SLIDES });
+    new Presenter({ session, slides: SLIDES });
+    assert.equal(warnings.length, 1, 'a second live Presenter on the same session logs exactly one warning');
+    assert.match(warnings[0], /already has one still live/);
+  } finally {
+    console.warn = originalWarn;
+  }
+});
+
+test('no collision warning when the previous Presenter was destroy()-ed first', () => {
+  const session = new FakeSession();
+  const warnings = [];
+  const originalWarn = console.warn;
+  console.warn = (...args) => warnings.push(args.join(' '));
+  try {
+    const a = new Presenter({ session, slides: SLIDES });
+    a.destroy();
+    new Presenter({ session, slides: SLIDES });
+    assert.equal(warnings.length, 0, 'destroying the old instance first avoids the collision warning');
+  } finally {
+    console.warn = originalWarn;
+  }
+});
+
+test('two live Presenters sharing one storage + the default memoryKey warn (silent memory collision otherwise)', () => {
+  const storage = new MemStorage();
+  const warnings = [];
+  const originalWarn = console.warn;
+  console.warn = (...args) => warnings.push(args.join(' '));
+  try {
+    new Presenter({ session: new FakeSession(), slides: SLIDES, storage });
+    new Presenter({ session: new FakeSession(), slides: SLIDES, storage });
+    assert.equal(warnings.length, 1, 'sharing storage + memoryKey across two live Presenters logs exactly one warning');
+    assert.match(warnings[0], /memoryKey/);
+  } finally {
+    console.warn = originalWarn;
+  }
+});
+
+test('a distinct memoryKey avoids the storage-collision warning', () => {
+  const storage = new MemStorage();
+  const warnings = [];
+  const originalWarn = console.warn;
+  console.warn = (...args) => warnings.push(args.join(' '));
+  try {
+    new Presenter({ session: new FakeSession(), slides: SLIDES, storage, memoryKey: 'deck_a' });
+    new Presenter({ session: new FakeSession(), slides: SLIDES, storage, memoryKey: 'deck_b' });
+    assert.equal(warnings.length, 0, 'distinct memoryKeys on the same storage never collide');
+  } finally {
+    console.warn = originalWarn;
+  }
 });

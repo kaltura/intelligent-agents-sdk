@@ -45,12 +45,16 @@
  * Presenter is an optional plugin: it is a separately-importable class with no
  * effect on `KalturaAvatarSession` or any other SDK surface until constructed.
  * The constructor wires several listeners onto `cfg.session` (an `Emitter`) —
- * call {@link Presenter#destroy} to remove them (e.g. before constructing a
- * new Presenter against the same still-connected session), mirroring
- * `ExperienceRenderer#stop()` and `createNoiseSuppressor()`'s `stop()`. Each
- * Presenter instance is independent — no module-level or shared state — so any
- * number of instances can run in parallel across different sessions without
- * collision.
+ * call {@link Presenter#destroy} (aliased `stop()`, matching
+ * `ExperienceRenderer#stop()`/`createNoiseSuppressor()`'s verb) to remove them
+ * before constructing a new Presenter against the same still-connected session.
+ * After `destroy()`, every public method on that instance is a no-op — it never
+ * touches the session or storage again. Each Presenter instance is functionally
+ * independent: no data or behavior flows between instances. The module DOES keep
+ * two GC-safe `WeakSet`/`WeakMap` trackers (keyed by `session`/`storage`, exactly
+ * like `noise-suppressor.js`'s `registeredContexts`) whose ONLY job is a
+ * `console.warn` when a still-live instance's session or `{memoryKey, storage}`
+ * pair collides with a new one — a misuse guard, not shared app state.
  *
  * @example
  * import { KalturaAvatarSession } from '@kaltura/intelligent-agents/experience';
@@ -70,6 +74,13 @@ import { parseSlideNumber } from './slidenav.js';
 
 export { parseSlideNumber };
 
+// Dev-time-only misuse guards (not app state — see the class doc comment above). Both are
+// keyed by an externally-owned object, so they self-clear via GC and never leak, exactly like
+// noise-suppressor.js's `registeredContexts` WeakSet. Neither is read anywhere except to decide
+// whether to `console.warn`; no Presenter behavior branches on them.
+const sessionsWithLivePresenter = new WeakSet();
+const memoryKeysByStorage = new WeakMap();   // storage -> Set<memoryKey> currently claimed by a live Presenter
+
 export class Presenter {
   /**
    * @param {object} cfg
@@ -78,7 +89,10 @@ export class Presenter {
    * @param {object} [cfg.context]              Extra data merged into every DPP (financials, guidance, …).
    * @param {(slideNum:number, slide:object, reason:string)=>void} [cfg.onSlideChange]  Your renderer (1-based).
    * @param {Storage|{getItem,setItem,removeItem}} [cfg.storage]  Where to persist session memory (e.g. localStorage). Omit to disable memory.
-   * @param {string} [cfg.memoryKey]
+   * @param {string} [cfg.memoryKey]  Storage key for session memory (default `'kaltura_presenter_memory'` — a
+   *   literal shared by every Presenter that doesn't override it). Pass a distinct key whenever more than one
+   *   live Presenter shares one `storage` object (e.g. two decks on the same page), or they silently overwrite
+   *   each other's memory; a live collision on the SAME default logs a `console.warn`.
    * @param {number} [cfg.dupSuppressMs]        Suppress a repeat nav to the same slide within this window (default 3000).
    * @param {(category?:string)=>{disclaimer_required?:boolean,non_gaap_cited?:boolean}} [cfg.metaFor]  Per-category DPP meta flags.
    * @param {string} [cfg.mode]                 DPP `mode` tag (default 'presentation').
@@ -142,14 +156,33 @@ export class Presenter {
     this._lastDppSlide = 0;   // slide number of the last DPP that actually reached the session (0 = none yet)
     this._memory = this._loadMemory();
     if (this._memory && typeof this._memory.lastSequential === 'number') this._lastSequential = this._memory.lastSequential;
+    this._destroyed = false;
 
     /** @type {Array<() => void>} unsubscribe closures for every `session.on(...)` this instance registered. */
     this._unsubs = [];
+    this._warnOnCollision();
     this._wire();
   }
 
-  /** Begin: mark slide 1 covered and inject its DPP (with memory on the first injection). */
-  async start() { this._covered.add(this.current); this._injectDPP(); }
+  /** Dev-time-only: warn on the two collisions this file's own tests exercise deliberately avoiding — a forgotten `destroy()`/`stop()` before a replacement Presenter shares a session, or two live Presenters sharing one `storage` + `memoryKey`. Never throws, never changes behavior. */
+  _warnOnCollision() {
+    if (typeof console === 'undefined') return;
+    if (sessionsWithLivePresenter.has(this.session)) {
+      console.warn('[Presenter] constructing a new Presenter against a session that already has one still live — call destroy() (or stop()) on the previous instance first, or both will keep injecting DPPs, navigating, and saving memory against the same session.');
+    }
+    sessionsWithLivePresenter.add(this.session);
+    if (this._storage) {
+      const claimed = memoryKeysByStorage.get(this._storage) || new Set();
+      if (claimed.has(this._memoryKey)) {
+        console.warn(`[Presenter] another live Presenter is already using memoryKey "${this._memoryKey}" on this same storage — pass a distinct { memoryKey } to each, or they will overwrite each other's session memory.`);
+      }
+      claimed.add(this._memoryKey);
+      memoryKeysByStorage.set(this._storage, claimed);
+    }
+  }
+
+  /** Begin: mark slide 1 covered and inject its DPP (with memory on the first injection). No-op after {@link Presenter#destroy}. */
+  async start() { if (this._destroyed) return; this._covered.add(this.current); this._injectDPP(); }
 
   /**
    * Navigate the deck programmatically (user button/keyboard/TOC/autoplay — any
@@ -165,6 +198,7 @@ export class Presenter {
    * @param {number} n @param {string} [reason]
    */
   goTo(n, reason = 'user') {
+    if (this._destroyed) return;
     if (n < 1 || n > this.total || n === this.current) return;
     if ((reason !== 'avatar' && reason !== 'resume') || n === this.current + 1) this._lastSequential = n;
     const from = this.current;
@@ -211,29 +245,32 @@ export class Presenter {
   /** Seconds spent on the current slide so far — for an engagement block in `extendDpp`/analytics. @returns {number} */
   get secondsOnCurrentSlide() { return Math.round((this._now() - this._slideEnteredAt) / 1000); }
 
-  /** Clear persisted session memory (the "start fresh" / GDPR control). */
-  clearMemory() { this._memory = null; this._memoryInjected = false; this._covered = new Set([this.current]); this._questions = []; this._lastSequential = 1; try { this._storage?.removeItem?.(this._memoryKey); } catch { /* */ } }
+  /** Clear persisted session memory (the "start fresh" / GDPR control). No-op after {@link Presenter#destroy}. */
+  clearMemory() { if (this._destroyed) return; this._memory = null; this._memoryInjected = false; this._covered = new Set([this.current]); this._questions = []; this._lastSequential = 1; try { this._storage?.removeItem?.(this._memoryKey); } catch { /* */ } }
 
-  /** Re-send the current slide's DPP (e.g. after resume/pause, or any app-driven refresh outside a nav). */
-  refreshDpp() { this._injectDPP(); }
+  /** Re-send the current slide's DPP (e.g. after resume/pause, or any app-driven refresh outside a nav). No-op after {@link Presenter#destroy}. */
+  refreshDpp() { if (this._destroyed) return; this._injectDPP(); }
 
-  /** Flush session memory now (e.g. on `beforeunload`) — the same write `goTo`/`avatarStopTalking` already do. */
-  saveMemory() { this._saveMemory(); }
+  /** Flush session memory now (e.g. on `beforeunload`) — the same write `goTo`/`avatarStopTalking` already do. No-op after {@link Presenter#destroy}. */
+  saveMemory() { if (this._destroyed) return; this._saveMemory(); }
 
   /**
    * Record a user question observed through a channel other than ASR (e.g. typed chat) —
    * the same bookkeeping the internal `transcript` (type:'user') handler does for spoken
    * questions, so an app with BOTH voice and typed input never needs its own question list.
+   * No-op after {@link Presenter#destroy}.
    * @param {string} text
    */
-  recordQuestion(text) { if (text) { this._questions.push(text); this._injectDPP(); this._saveMemory(); } }
+  recordQuestion(text) { if (this._destroyed || !text) return; this._questions.push(text); this._injectDPP(); this._saveMemory(); }
 
   /**
    * Append a runtime-generated slide (e.g. the brain's `create_slide` command) and grow
    * `total` to match. Does not navigate — call `goTo(this.total, reason)` after, if wanted.
+   * No-op after {@link Presenter#destroy} (returns the unchanged `total`).
    * @param {object} slide @returns {number} the 1-based slide number just appended
    */
   appendSlide(slide) {
+    if (this._destroyed) return this.total;
     this.slides.push(slide);
     this.total = this.slides.length;
     return this.total;
@@ -271,24 +308,36 @@ export class Presenter {
     this._unsubs.push(s.on('avatarStopTalking', () => { this._turnSpeechId = null; this._turnText = ''; this._saveMemory(); }));
     this._unsubs.push(s.on('interrupted', () => { this._turnSpeechId = null; this._turnText = ''; }));
     this._unsubs.push(s.on('ended', () => this._saveMemory()));
-    // A cold reconnect (recovered:false) means the brain lost its context — re-arm the
-    // "welcome back" memory injection and re-send the current slide's DPP so grounding
-    // survives the reconnect exactly as it did on first connect.
+    // Every reconnect re-sends the current slide's DPP, since the brain may have lost grounding
+    // either way. A cold reconnect (recovered:false) additionally means the brain lost its
+    // context entirely, so also re-arm the one-time "welcome back" memory injection.
     this._unsubs.push(s.on('reconnected', (p) => { if (p && p.recovered === false) this._memoryInjected = false; this._injectDPP(); }));
   }
 
   /**
-   * Remove every listener this instance registered on `session` (Rule I-4). Idempotent —
-   * safe to call more than once, or on a Presenter that never fully wired. Call this before
-   * discarding a Presenter whose `session` stays connected (e.g. swapping decks mid-session) —
-   * otherwise the old instance keeps injecting DPPs/navigating/saving memory alongside any
-   * replacement, and its listeners leak on the session's `Emitter` for the session's lifetime.
-   * Does not disconnect or otherwise touch `session` itself, and does not flush memory —
-   * call `saveMemory()` first if you want the current state persisted.
+   * Tear down this instance: remove every listener it registered on `session` (Rule I-4)
+   * AND mark it destroyed, so every other public mutator (`start`, `goTo`, `refreshDpp`,
+   * `recordQuestion`, `appendSlide`, `saveMemory`, `clearMemory`) becomes a silent no-op from
+   * here on — the instance can no longer touch `session` or `storage`, period. Idempotent —
+   * safe to call more than once, or on a Presenter that never fully wired. Call this (or its
+   * alias {@link Presenter#stop}) before discarding a Presenter whose `session` stays connected
+   * (e.g. swapping decks mid-session) — otherwise the old instance keeps injecting DPPs/
+   * navigating/saving memory alongside any replacement, and its listeners leak on the
+   * session's `Emitter` for the session's lifetime. Terminal, unlike `ExperienceRenderer`'s
+   * resumable `start()`/`stop()` pair — there is no `start()`-after-`destroy()` for a Presenter.
+   * Does not disconnect `session` itself, and does not flush memory — call `saveMemory()`
+   * first if you want the current state persisted.
    */
   destroy() {
+    if (this._destroyed) return;
+    this._destroyed = true;
+    sessionsWithLivePresenter.delete(this.session);
+    if (this._storage) { const claimed = memoryKeysByStorage.get(this._storage); if (claimed) claimed.delete(this._memoryKey); }
     for (const off of this._unsubs.splice(0)) { try { off(); } catch { /* */ } }
   }
+
+  /** Alias for {@link Presenter#destroy} — matches the `stop()` verb `ExperienceRenderer`/`createNoiseSuppressor` use. */
+  stop() { this.destroy(); }
 
   _accumulate(text, speechId) {
     if (!text) return;
