@@ -485,3 +485,51 @@ describe('7. SDK invariants', () => {
     }
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 8) Preprocessing-claim accuracy (see issue #15)
+// ─────────────────────────────────────────────────────────────────────────────
+describe('8. Preprocessing-claim accuracy', () => {
+  // Scoped to visual/portrait content specifically — "no-op"/"unmodified" are
+  // legitimate, common terms elsewhere (e.g. describing idempotent methods)
+  // and would be pure noise if flagged repo-wide. The actual defect (issue
+  // #15) is a false claim about backend image processing, so the check only
+  // fires where an absolute claim and visual-content vocabulary co-occur.
+  const ABSOLUTE_CLAIM = /\b(no preprocessing|no-op|unmodified)\b/i;
+  const VISUAL_CONTEXT = /\b(portrait|visual|image|face|avatar likeness)\b/i;
+  const CITED = /verified:.*\b(preprocessing|crop|pad|face|frame|ratio)\b/i;
+
+  // Split into paragraph-or-list-item units — a blank-line paragraph split
+  // alone merges unrelated bullets under one Markdown list into a single
+  // "paragraph" (e.g. SECURITY.md's LLM01/deepfake bullets), producing
+  // false positives across bullets that share nothing but proximity.
+  function claimUnits(text) {
+    const units = [];
+    let cur = [];
+    for (const line of text.split('\n')) {
+      const startsListItem = /^\s*[-*]\s/.test(line);
+      if ((line.trim() === '' || startsListItem) && cur.length) {
+        units.push(cur.join('\n'));
+        cur = [];
+      }
+      if (line.trim() !== '') cur.push(line);
+    }
+    if (cur.length) units.push(cur.join('\n'));
+    return units;
+  }
+
+  test('absolute preprocessing/processing claims about visual content are paired with a citation that actually verifies them', () => {
+    const mdFiles = [...DOCS, 'README.md'].filter((f, i, a) => a.indexOf(f) === i);
+    const offenders = [];
+    for (const f of mdFiles) {
+      const text = read(f);
+      if (!text) continue;
+      for (const unit of claimUnits(text)) {
+        if (ABSOLUTE_CLAIM.test(unit) && VISUAL_CONTEXT.test(unit) && !CITED.test(unit)) {
+          offenders.push(`${f}: "${unit.match(ABSOLUTE_CLAIM)[0]}" (visual-content context) without a citation that verifies the processing claim itself`);
+        }
+      }
+    }
+    assert.deepEqual(offenders, [], `uncited absolute visual-processing claims:\n  ${offenders.join('\n  ')}`);
+  });
+});
