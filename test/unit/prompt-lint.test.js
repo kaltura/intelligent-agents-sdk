@@ -7,6 +7,7 @@ import {
   validatePromptVars,
   lintPrompts,
   lintGlossary,
+  lintPersonaIdentity,
   assembleSystemPrompt,
 } from '../../src/management/prompt-lint.js';
 
@@ -215,6 +216,75 @@ test('assembleSystemPrompt: bad shapes throw KalturaError before rendering', () 
   assert.throws(() => assembleSystemPrompt({ prompts: 'no' }), (e) => e.name === 'KalturaError');
   assert.throws(() => assembleSystemPrompt({ baseDirective: 5 }), (e) => e.name === 'KalturaError');
   assert.throws(() => assembleSystemPrompt(7), (e) => e.name === 'KalturaError');
+});
+
+// see issue #17 — persona-name consistency across openingPhrase/base_directive/prompts[]
+
+test('lintPersonaIdentity: consistent name across all fields → no warning', () => {
+  const r = lintPersonaIdentity({
+    name: 'Nova',
+    openingPhrase: "Hi! I'm Nova, your friendly guide.",
+    baseDirective: 'You are Nova. Be concise and helpful.',
+    prompts: [{ key: 'name', value: 'Nova' }],
+  });
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.findings, []);
+  assert.equal(r.detectedName, 'Nova');
+});
+
+test('lintPersonaIdentity: openingPhrase renamed, base_directive/prompts still say the old name → warnings fire', () => {
+  const r = lintPersonaIdentity({
+    name: 'Nova',
+    openingPhrase: "Hi! I'm Luna, ready to help!",
+    baseDirective: 'You are Nova. Be concise and helpful.',
+    prompts: [{ key: 'name', value: 'Nova' }],
+  });
+  // warnings never flip ok to false in this file's convention (see lintPrompts'
+  // renderer_skip warning tests) — only errors do, and this lint never errors.
+  assert.equal(r.ok, true);
+  assert.equal(r.detectedName, 'Luna');
+  assert.equal(hasFinding(r.findings, 'persona_name_mismatch'), true);
+  assert.equal(hasFinding(r.findings, 'persona_name_drift'), true);
+});
+
+test('lintPersonaIdentity: possessive form is still detected', () => {
+  const r = lintPersonaIdentity({
+    name: 'Nova',
+    openingPhrase: 'Nova’s here to help you today!',
+    baseDirective: 'You are Nova. Be concise and helpful.',
+    prompts: [],
+  });
+  assert.equal(r.detectedName, 'Nova');
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.findings, []);
+});
+
+test('lintPersonaIdentity: no proper name present in openingPhrase → no false warning', () => {
+  const r = lintPersonaIdentity({
+    name: 'Nova',
+    openingPhrase: 'Hello! How can I help you today?',
+    baseDirective: 'You are Nova. Be concise and helpful.',
+    prompts: [],
+  });
+  assert.equal(r.detectedName, null);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.findings, []);
+});
+
+test('lintPersonaIdentity: empty baseDirective/prompts haystack skips the drift check (no false positive on minimal input)', () => {
+  const r = lintPersonaIdentity({ name: 'Nova', openingPhrase: "I'm Nova." });
+  assert.equal(r.detectedName, 'Nova');
+  assert.equal(hasFinding(r.findings, 'persona_name_drift'), false);
+});
+
+test('lintPersonaIdentity: non-object throws KalturaError', () => {
+  assert.throws(() => lintPersonaIdentity('nope'), (e) => e.name === 'KalturaError' && e.code === 'bad_request');
+});
+
+test('lintPersonaIdentity: carries a _meta receipt', () => {
+  const r = lintPersonaIdentity({});
+  assert.equal(r._meta.source, 'prompt-lint');
+  assert.equal(r._meta.scope, 'persona-identity');
 });
 
 test('assembleSystemPrompt: prototype-pollution-safe requestVars lookup', () => {

@@ -16,6 +16,7 @@ import { meta, uuidv4 } from '../core/ids.js';
 import { KalturaError } from '../core/errors.js';
 import { resolveIntellectId } from './agents.js';
 import { findIntellectsReferencingTool } from './tools.js';
+import { lintPersonaIdentity } from './prompt-lint.js';
 
 /**
  * @param {import('./client.js').Management} mgmt
@@ -30,7 +31,7 @@ import { findIntellectsReferencingTool } from './tools.js';
  * @param {Record<string,'on'|'off'|'disabled'>} [opts.capabilities]   OPTIONAL — capability patch applied AFTER configure via `mgmt.intellects.setCapabilities` (read-merge-write full-replace sub-dict). Off by default.
  * @param {object[]} [opts.tools]            OPTIONAL — typed tool definitions (see `tools.api/csv/code`), each created as a standalone Tool entity via `mgmt.tools.add` and linked via `mgmt.intellectConfig.setToolIds`. Off by default.
  * @param {object} [opts.knowledge]          OPTIONAL — RAG corpus + linkage. `{name?, parentId?, description?, categoryId?, language?, modalities?, autoLink?}`. createCategory (OVP) is admin-allowed; the intellect LINKAGE is deployment-gated (see API-REFERENCE.md § Ground the Agent) — a 403 records `{linked:false, reason}` and NEVER fails the provision. Off by default.
- * @returns {Promise<{name:string,configId:number,avatarId:string,agentId:string,widgetId:string,profile:object,blocks?:object,_meta:object}>}
+ * @returns {Promise<{name:string,configId:number,avatarId:string,agentId:string,widgetId:string,profile:object,personaLint:object,blocks?:object,_meta:object}>}
  */
 export async function provision(mgmt, opts) {
   const created = /** @type {{configId?:number, avatarId?:string, agentId?:string}} */ ({});
@@ -48,7 +49,16 @@ export async function provision(mgmt, opts) {
     created.configId = configId;
 
     step = 'intellect.update';
-    await mgmt.intellects.update(intellectBody(configId, profile), opts.ks);
+    const body = intellectBody(configId, profile);
+    await mgmt.intellects.update(body, opts.ks);
+
+    // see issue #17 — catches a persona rename (e.g. a caller editing profile.name
+    // separately) that didn't propagate to openingPhrase/base_directive/prompts[].
+    // Warning-only, never fails provision: a fresh profile-derived body is
+    // consistent by construction, so this mainly guards later re-edits.
+    const personaLint = lintPersonaIdentity({
+      name: profile?.name, openingPhrase: opening, baseDirective: body.base_directive, prompts: body.prompts,
+    });
 
     step = 'pick catalog';
     const voiceId = opts.voiceId || (await firstPreset(mgmt, 'Voice', opts.ks));
@@ -94,7 +104,7 @@ export async function provision(mgmt, opts) {
     const ranBlocks = Object.keys(blocks).length > 0;
 
     return {
-      name, configId, avatarId, agentId, widgetId, profile,
+      name, configId, avatarId, agentId, widgetId, profile, personaLint,
       ...(ranBlocks ? { blocks } : {}),
       _meta: meta({
         partnerId: mgmt._ctx.partnerId, source: 'sdk/provision', scope: 'admin (disableentitlement)',

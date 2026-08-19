@@ -376,6 +376,123 @@ export function lintGlossary(glossary, opts = {}) {
   };
 }
 
+// Common sentence-initial words that would otherwise be misread as a
+// capitalized proper name (see issue #17 test case "no proper name present").
+const GREETING_STOPWORDS = new Set([
+  'Hi', 'Hello', 'Hey', 'Hiya', 'Welcome', 'Greetings', 'Good', 'Thanks', 'Thank',
+  'You', 'Your', 'Yours', 'My', 'Please', 'Sure', 'Sorry', 'How', 'What', 'Why',
+  'When', 'Where', 'Who', 'Can', 'Could', 'Would', 'Will', 'Let', 'Today', 'Here',
+  'This', 'That', 'It', 'The', 'A', 'An', 'Ready', 'Happy', 'Excited', 'I',
+]);
+
+/** @param {string} word */
+function bareName(word) {
+  return word.replace(/(?:'s|’s)$/, '');
+}
+
+/**
+ * Extract a proper name from free text (an `openingPhrase`), or `null` when
+ * no plausible name is found — deliberately conservative, since a false
+ * "detected name" would produce a false-positive warning downstream.
+ * Recognizes, in priority order: (1) a self-introduction ("I'm X", "my name
+ * is X"), (2) a possessive form ("X's"), (3) any other capitalized word not
+ * in {@link GREETING_STOPWORDS} and not at the start of a sentence (sentence-
+ * initial capitals — "How", "Thanks", or an exclamation like "Namaste!" — are
+ * structurally common and not names; a name is only inferred mid-sentence).
+ * @param {string} text
+ * @returns {string|null}
+ */
+function extractProperName(text) {
+  if (typeof text !== 'string' || text.trim() === '') return null;
+
+  const selfIntro = text.match(/\b(?:I'm|I am|my name is|this is)\s+([A-Z][a-zA-Z]*(?:'s|’s)?)/i);
+  if (selfIntro) return bareName(selfIntro[1]);
+
+  const possessive = text.match(/\b([A-Z][a-zA-Z]*(?:'s|’s))\b/);
+  if (possessive && !GREETING_STOPWORDS.has(bareName(possessive[1]))) return bareName(possessive[1]);
+
+  const tokens = text.split(/\s+/);
+  let sentenceStart = true;
+  for (const raw of tokens) {
+    const word = raw.replace(/^[^A-Za-z]+|[^A-Za-z']+$/g, '');
+    const isCapitalized = /^[A-Z][a-zA-Z]*$/.test(word);
+    if (isCapitalized && !GREETING_STOPWORDS.has(word) && !sentenceStart) {
+      return word;
+    }
+    sentenceStart = /[.!?]$/.test(raw);
+  }
+  return null;
+}
+
+/**
+ * Lint persona-name consistency across `openingPhrase` / `baseDirective` /
+ * `prompts[].value`. HEURISTIC (warning-only, never blocking): extracts a
+ * proper name from `openingPhrase` via {@link extractProperName} and, only
+ * when one is found, warns if (a) it disagrees with the declared `name`, or
+ * (b) neither `baseDirective` nor any `prompts[].value` mention it — either
+ * signals a persona rename that didn't propagate to every field. Absence of
+ * a detectable name in `openingPhrase` never warns (avoids false positives
+ * on a coincidence of phrasing rather than an actual rename).
+ *
+ * @param {{name?:string, openingPhrase?:string, baseDirective?:string, prompts?:Array<{value?:string}>}} input
+ * @returns {{
+ *   ok: boolean,
+ *   summary: {errors:number, warnings:number, ok:boolean},
+ *   findings: LintFinding[],
+ *   detectedName: string|null,
+ *   _meta: ReturnType<typeof meta>,
+ * }}
+ */
+export function lintPersonaIdentity(input) {
+  if (!isPlainObject(input)) {
+    throw new KalturaError({
+      type: 'about:blank',
+      title: 'object required',
+      code: 'bad_request',
+      detail: 'lintPersonaIdentity(input) expects an object {name?, openingPhrase?, baseDirective?, prompts?}.',
+    });
+  }
+  const { name, openingPhrase, baseDirective, prompts } = input;
+
+  /** @type {LintFinding[]} */
+  const findings = [];
+  const detectedName = extractProperName(typeof openingPhrase === 'string' ? openingPhrase : '');
+
+  if (detectedName) {
+    const declaredName = typeof name === 'string' && name.trim() !== '' ? name.trim() : null;
+    if (declaredName && declaredName !== detectedName) {
+      findings.push({
+        severity: 'warning',
+        code: 'persona_name_mismatch',
+        message: `openingPhrase names "${detectedName}" but the declared persona name is "${declaredName}" — a persona rename may be incomplete.`,
+        path: 'openingPhrase',
+      });
+    }
+
+    const promptValues = Array.isArray(prompts)
+      ? prompts.filter((p) => isPlainObject(p) && typeof p.value === 'string').map((p) => p.value)
+      : [];
+    const haystack = [typeof baseDirective === 'string' ? baseDirective : '', ...promptValues].join(' ');
+    if (haystack.trim() !== '' && !haystack.includes(detectedName)) {
+      findings.push({
+        severity: 'warning',
+        code: 'persona_name_drift',
+        message: `openingPhrase names "${detectedName}" but base_directive/prompts[] never mention it — a persona rename may be incomplete.`,
+        path: 'openingPhrase',
+      });
+    }
+  }
+
+  const summary = summarize(findings);
+  return {
+    ok: summary.ok,
+    summary,
+    findings,
+    detectedName,
+    _meta: meta({ source: SOURCE, scope: 'persona-identity' }),
+  };
+}
+
 /** Marker rendered in place of the server's built-in default directive. */
 export const SERVER_DEFAULT_DIRECTIVE_MARKER = '<<server default directive>>';
 
