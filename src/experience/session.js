@@ -91,7 +91,7 @@ export class KalturaAvatarSession extends Emitter {
    * @param {string} cfg.srsBaseUrl         From appInit (WHEP egress host).
    * @param {string} cfg.turnServerUrl      From appInit (TURN host).
    * @param {(url:string,opts:object)=>any} cfg.socketFactory  socket.io-compatible factory (INJECTED; never bundled).
-   * @param {any} [cfg.videoEl]             HTMLVideoElement for the downlink (omit ⇒ audio/headless).
+   * @param {any} [cfg.videoEl]             HTMLVideoElement for the downlink (omit ⇒ audio/headless). The SDK only sets `.srcObject` — size/frame it yourself with `object-fit: cover` (see docs/ARCHITECTURE.md § Displaying the Avatar Video).
    * @param {typeof RTCPeerConnection} [cfg.rtcConstructor]
    * @param {typeof fetch} [cfg.fetch]
    * @param {()=>Promise<any>} [cfg.getUserMedia]

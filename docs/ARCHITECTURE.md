@@ -100,6 +100,30 @@ The protocol above describes the **interactive** path. The scripted path has no 
 
 ---
 
+## Displaying the Avatar Video
+
+The SDK assigns the WHEP stream to `cfg.videoEl.srcObject` and does nothing else — no CSS, no sizing. The backend's rendered aspect ratio is not a published contract (see [API-REFERENCE.md § Upload a Custom Visual](../API-REFERENCE.md) on `catalog.createVisual` preprocessing), so size the box with `object-fit: cover` rather than assuming a fixed aspect ratio — it fills the box and crops evenly no matter what the stream's actual aspect ratio turns out to be:
+
+```css
+.avatar-box {
+  width: 320px;
+  aspect-ratio: 1 / 1;      /* pick whatever the fixed side of YOUR layout needs */
+  overflow: hidden;
+  border-radius: 12px;      /* optional */
+}
+.avatar-box video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;        /* fills the box, crops evenly — no letterbox/pillarbox bars */
+}
+```
+
+For a circular picture-in-picture mask, swap `border-radius` + `overflow: hidden` for `clip-path: circle(50%)` on `.avatar-box` (or directly on the `<video>`).
+
+`object-fit: cover` never shows bars regardless of the source's actual aspect ratio — that's why it's the right default even without a published backend resolution to size against.
+
+---
+
 ## SDK Module Map — Overview
 
 For the public surface, entry points, and how-tos, read [README.md](../README.md) — its ["Architecture" section](../README.md#architecture) has the module-to-resource map.

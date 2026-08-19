@@ -207,6 +207,8 @@ session.onToolCall('navigate_to_slide', ({ slide_num }) => deck.goTo(slide_num))
 
 **All transports are injected** — `socketFactory`, `rtcConstructor`, `fetch`, `getUserMedia`. Tests pass fakes; the SDK stays zero-dependency.
 
+The SDK assigns the stream to `videoEl.srcObject` and applies no CSS of its own — size the box yourself with `object-fit: cover` (aspect-agnostic, no letterbox/pillarbox bars) — see [docs/ARCHITECTURE.md § Displaying the Avatar Video](docs/ARCHITECTURE.md#displaying-the-avatar-video).
+
 ### `{{var}}` Jinja personalization (`request_vars`)
 
 Pass slow-changing personalization values (viewer name, account tier) that the brain's prompt reads via `{{var}}` templating — join-time via `cfg.requestVars`, or mid-session via `updateRequestVars()`:

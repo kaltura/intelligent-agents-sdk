@@ -556,3 +556,25 @@ describe('9. Preview/loading field annotation', () => {
     assert.deepEqual(offenders, [], `unannotated preview/loading field references:\n  ${offenders.join('\n  ')}`);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 10) Avatar video framing (see issue #18)
+// ─────────────────────────────────────────────────────────────────────────────
+describe('10. Avatar video framing', () => {
+  // File-level, not selector-level: precise per-file selector coverage is
+  // proven in test/unit/examples-video-css.test.js. This gate exists so a
+  // FUTURE example added under examples/ with a bare <video> and zero CSS
+  // (the exact issue #18 defect) fails loudly here too, without needing to
+  // know that new file's specific markup shape in advance.
+  test('every examples/*.html file with a <video> element declares object-fit somewhere in its <style> block', () => {
+    const htmlFiles = trackedFiles().filter((f) => f.startsWith('examples/') && f.endsWith('.html'));
+    const offenders = [];
+    for (const f of htmlFiles) {
+      const content = read(f);
+      if (!/<video\b/i.test(content)) continue;
+      const style = content.match(/<style>([\s\S]*?)<\/style>/i)?.[1] ?? '';
+      if (!/object-fit/i.test(style)) offenders.push(f);
+    }
+    assert.deepEqual(offenders, [], `examples with a <video> but no object-fit rule: ${offenders.join(', ')}`);
+  });
+});

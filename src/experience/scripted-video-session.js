@@ -43,7 +43,7 @@ export class KalturaScriptedVideoSession extends Emitter {
    * @param {object} cfg
    * @param {string} cfg.whepUrl  From `avatarSessions.initClient()`.
    * @param {{url:string, username?:string, credential?:string}} cfg.turn  The `turn` object from `initClient()` (bare TURN host + creds — passed through {@link turnServers}).
-   * @param {any} [cfg.videoEl]  An `HTMLVideoElement`. Omit for audio-only/headless use — `ontrack` still fires and you can read `e.streams[0]` off `stateChanged`/your own `pc`.
+   * @param {any} [cfg.videoEl]  An `HTMLVideoElement`. Omit for audio-only/headless use — `ontrack` still fires and you can read `e.streams[0]` off `stateChanged`/your own `pc`. The SDK only sets `.srcObject` — size/frame it yourself with `object-fit: cover` (see docs/ARCHITECTURE.md § Displaying the Avatar Video).
    * @param {typeof RTCPeerConnection} [cfg.rtcConstructor]
    * @param {typeof fetch} [cfg.fetch]
    * @param {boolean} [cfg.isFirefox]  Firefox needs `iceTransportPolicy:'all'` (see {@link iceConfig}).
