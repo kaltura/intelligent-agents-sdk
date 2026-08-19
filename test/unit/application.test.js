@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { Application } from '../../src/management/application.js';
 import { KalturaError } from '../../src/core/errors.js';
 
@@ -62,6 +63,32 @@ test('appInit: happy path returns .data payload and routes to application/appIni
   assert.equal(ctx.calls.length, 1);
   assert.equal(ctx.calls[0].path, 'application/appInit');
   assert.equal(ctx.calls[0].ks, 'widget-ks-token');
+});
+
+// see issue #16 — locks the verbatim-passthrough contract for avatars[]'s
+// preview/loading fields specifically, so a future accidental reshape (e.g.
+// dropping previewImageUrl, renaming loadingVideoUrl) is caught.
+test('appInit: avatars[] preview/loading fields pass through unmodified, including an unexpected extra field', async () => {
+  const payload = {
+    ks: 'genie-ks', conversationManagerUrl: 'https://cm.example', srsBaseUrl: 'https://srs.example', turnServerUrl: 'https://turn.example',
+    avatars: [
+      { id: 'agent-1', previewImageUrl: 'https://cdn.example/raw-upload.jpg', loadingVideoUrl: 'https://cdn.example/raw-upload.mp4', futureField: 'unexpected' },
+    ],
+  };
+  const ctx = fakeCtx({
+    agenticRoutes: { 'application/appInit': () => ({ data: payload, requestId: 'r2b' }) },
+  });
+  const result = await new Application(ctx).appInit('widget-ks-token');
+  assert.deepEqual(result, payload);
+});
+
+// see issue #16 — the raw-passthrough caveat must be documented at the call
+// site, not just in API-REFERENCE.md, since JSDoc isn't scanned by
+// tools/check-docs.mjs (markdown-only scope).
+test('appInit: JSDoc documents that previewImageUrl/loadingVideoUrl are raw, unmodified uploads', async () => {
+  const src = await readFile(new URL('../../src/management/application.js', import.meta.url), 'utf8');
+  const jsdoc = src.slice(src.indexOf('/**', src.indexOf('async appInit') - 800), src.indexOf('async appInit'));
+  assert.match(jsdoc, /raw, unmodified upload/i);
 });
 
 // ── generateProfile ───────────────────────────────────────────────────────────

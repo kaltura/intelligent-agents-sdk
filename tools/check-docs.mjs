@@ -490,12 +490,14 @@ describe('7. SDK invariants', () => {
 // 8) Preprocessing-claim accuracy (see issue #15)
 // ─────────────────────────────────────────────────────────────────────────────
 describe('8. Preprocessing-claim accuracy', () => {
-  // Scoped to visual/portrait content specifically — "no-op"/"unmodified" are
-  // legitimate, common terms elsewhere (e.g. describing idempotent methods)
-  // and would be pure noise if flagged repo-wide. The actual defect (issue
-  // #15) is a false claim about backend image processing, so the check only
-  // fires where an absolute claim and visual-content vocabulary co-occur.
-  const ABSOLUTE_CLAIM = /\b(no preprocessing|no-op|unmodified)\b/i;
+  // Scoped to "no preprocessing" specifically, not "no-op"/"unmodified" —
+  // those are legitimate, common terms elsewhere (idempotent methods, or
+  // issue #16's deliberate "raw, unmodified upload" passthrough annotation)
+  // and would collide with correct docs if flagged here. The actual defect
+  // (issue #15) is a false claim about backend image processing, so the
+  // check only fires where that specific claim and visual-content
+  // vocabulary co-occur without a citation naming how it was verified.
+  const ABSOLUTE_CLAIM = /\bno preprocessing\b/i;
   const VISUAL_CONTEXT = /\b(portrait|visual|image|face|avatar likeness)\b/i;
   const CITED = /verified:.*\b(preprocessing|crop|pad|face|frame|ratio)\b/i;
 
@@ -531,5 +533,26 @@ describe('8. Preprocessing-claim accuracy', () => {
       }
     }
     assert.deepEqual(offenders, [], `uncited absolute visual-processing claims:\n  ${offenders.join('\n  ')}`);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 9) Preview/loading field annotation (see issue #16)
+// ─────────────────────────────────────────────────────────────────────────────
+describe('9. Preview/loading field annotation', () => {
+  const FIELD = /^\w*(preview\w*|imageurl|videourl)\w*$/i;
+  const ANNOTATED = /\b(raw|passthrough|rendered)\b/i;
+
+  test('preview*/*ImageUrl/*VideoUrl field references in API-REFERENCE.md carry a raw-passthrough or rendered annotation on the same line', () => {
+    const text = read('API-REFERENCE.md');
+    const offenders = [];
+    for (const [i, line] of text.split('\n').entries()) {
+      const codeSpans = line.match(/`([^`]+)`/g) || [];
+      const hasField = codeSpans.some((c) => c.slice(1, -1).split(/[^a-zA-Z]+/).some((word) => FIELD.test(word)));
+      if (hasField && !ANNOTATED.test(line)) {
+        offenders.push(`API-REFERENCE.md:${i + 1}: ${line.trim()}`);
+      }
+    }
+    assert.deepEqual(offenders, [], `unannotated preview/loading field references:\n  ${offenders.join('\n  ')}`);
   });
 });
