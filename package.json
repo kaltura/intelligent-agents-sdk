@@ -26,7 +26,8 @@
     "test:evals": "node --test test/evals/*.test.js",
     "test:ci": "node --experimental-test-coverage --test --test-concurrency=1 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=test-results.junit.xml 'test/**/*.test.js'",
     "verify": "node scripts/agent_verify.mjs",
-    "docs:gate": "node tools/check-docs.mjs"
+    "docs:gate": "node tools/check-docs.mjs",
+    "harness": "node scripts/harness/run.mjs"
   },
   "keywords": ["kaltura", "avatar", "conversational-ai", "webrtc", "genie", "agent"],
   "repository": { "type": "git", "url": "git+https://github.com/kaltura/intelligent-agents-sdk.git" },
