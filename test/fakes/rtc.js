@@ -160,11 +160,15 @@ export class FakeVideoEl {
     /** @type {Map<string,Function[]>} */ this._listeners = new Map();
     this.played = false;
     this.playCount = 0;
+    this.videoWidth = 0;
+    this.videoHeight = 0;
   }
   addEventListener(ev, fn) { (this._listeners.get(ev) || this._listeners.set(ev, []).get(ev)).push(fn); }
   play() { this.played = true; this.playCount += 1; return Promise.resolve(); }
   /** Test helper: signal the video is now playable. */
   fireCanPlay() { this.readyState = 4; (this._listeners.get('canplay') || []).forEach((fn) => fn()); }
+  /** Test helper: simulate the decoder resolving the stream's native dimensions. */
+  fireLoadedMetadata(width, height) { this.videoWidth = width; this.videoHeight = height; (this._listeners.get('loadedmetadata') || []).forEach((fn) => fn()); }
   /** @param {string} deviceId */
   setSinkId(deviceId) {
     if (this._sinkIdFailTimes > 0) { this._sinkIdFailTimes--; return Promise.reject(new Error('setSinkId failed')); }

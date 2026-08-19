@@ -21,6 +21,12 @@
  * the STV peer's ontrack fires, whether or not videoEl is configured. Same
  * event, same shape, as KalturaScriptedVideoSession's own 'track' event.
  *
+ * When videoEl IS configured, 'videoMetadata' ({videoWidth, videoHeight})
+ * fires once per connect, as soon as the decoder resolves the stream's
+ * native dimensions — the backend's actual output resolution isn't a
+ * published/fixed contract (see docs/ARCHITECTURE.md § Displaying the Avatar
+ * Video), so this event is the only reliable source of truth for it.
+ *
  * The constructor REFUSES a token carrying `disableentitlement`: an end-user
  * runtime must keep entitlement ON (the two-KS-type invariant).
  */
@@ -548,6 +554,7 @@ export class KalturaAvatarSession extends Emitter {
 
     const playable = new Promise((resolve) => {
       let done = false;
+      let videoMetadataSent = false;
       /** @type {Set<any>} */ const timers = new Set();
       const arm = (fn, ms) => { const id = setTimeout(fn, ms); timers.add(id); id.unref?.(); return id; };
       const finish = () => { for (const id of timers) clearTimeout(id); timers.clear(); resolve(); };
@@ -557,6 +564,13 @@ export class KalturaAvatarSession extends Emitter {
         const v = this._videoEl;
         if (v) {
           v.srcObject = e.streams && e.streams[0];
+          // ontrack fires once per track (video + audio) — gate so 'videoMetadata' fires
+          // at most once per connect, not once per track (see issue #19's Phase-4 finding).
+          if (!videoMetadataSent && typeof v.addEventListener === 'function') {
+            const emitVideoMetadata = () => { if (videoMetadataSent) return; videoMetadataSent = true; this.emit('videoMetadata', { videoWidth: v.videoWidth, videoHeight: v.videoHeight }); };
+            if (v.videoWidth || v.videoHeight) emitVideoMetadata();
+            else v.addEventListener('loadedmetadata', emitVideoMetadata, { once: true });
+          }
           // play() returns a promise that rejects (AbortError) when srcObject swaps mid-play
           // — e.g. during STV re-subscribe recovery. Swallow it; it's not an SDK failure.
           if (typeof v.play === 'function') { try { const pr = v.play(); if (pr && typeof pr.catch === 'function') pr.catch(() => {}); } catch { /* */ } }

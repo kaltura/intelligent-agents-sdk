@@ -55,3 +55,33 @@ test('regression: videoEl.srcObject/.play() attach behavior is unchanged (no dou
   assert.equal(videoEl.playCount, 2, 'play() call count unchanged by the new emit');
   session.disconnect();
 });
+
+// issue #20: videoWidth/videoHeight exposure
+test("emits 'videoMetadata' once decoded dimensions are known (videoEl configured)", async () => {
+  const videoEl = new FakeVideoEl({ autoCanPlay: false });
+  const { session, socket } = newSession({ videoEl });
+  scriptHappyPath(socket);
+  const events = [];
+  session.on('videoMetadata', (p) => events.push(p));
+  const connectP = session.connect();
+  await delay(20);
+  videoEl.fireLoadedMetadata(960, 540);
+  videoEl.fireCanPlay();
+  await connectP;
+  assert.deepEqual(events, [{ videoWidth: 960, videoHeight: 540 }]);
+  assert.equal(events.length, 1, 'exactly once per connect, despite ontrack firing for both video and audio tracks');
+  session.disconnect();
+});
+
+test("regression: 'videoMetadata' never fires when videoEl is omitted (headless)", async () => {
+  const { session, socket } = newSession({ videoEl: null });
+  scriptHappyPath(socket);
+  const events = [];
+  session.on('videoMetadata', (p) => events.push(p));
+  await session.connect();
+  assert.equal(events.length, 0);
+  assert.equal(session.state, 'connected', 'still connects normally without a videoEl');
+  session.disconnect();
+});
+
+function delay(ms) { return new Promise((r) => setTimeout(r, ms)); }

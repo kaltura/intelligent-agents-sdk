@@ -122,3 +122,35 @@ test('disconnect() before connect() is a safe no-op', () => {
   v.disconnect();
   assert.equal(v.state, 'disconnected');
 });
+
+// issue #20: videoWidth/videoHeight exposure
+test("emits 'videoMetadata' once decoded dimensions are known (videoEl configured)", async () => {
+  const f = fakeFetch([{ match: '/whep/abc123', respond: () => ({ status: 201, body: 'v=0\r\nfake-answer\r\n' }) }]);
+  const videoEl = new FakeVideoEl({ autoCanPlay: false });
+  const v = view({ videoEl, fetch: f });
+  const events = [];
+  v.on('videoMetadata', (p) => events.push(p));
+
+  const connectP = v.connect();
+  await delay(20);
+  videoEl.fireLoadedMetadata(960, 540);
+  videoEl.fireCanPlay();
+  await connectP;
+
+  assert.deepEqual(events, [{ videoWidth: 960, videoHeight: 540 }]);
+  assert.equal(events.length, 1, 'exactly once per connect, despite ontrack firing for both video and audio tracks');
+});
+
+test("regression: 'videoMetadata' never fires when videoEl is omitted (headless)", async () => {
+  const f = fakeFetch([{ match: '/whep/abc123', respond: () => ({ status: 201, body: 'v=0\r\nfake-answer\r\n' }) }]);
+  const v = view({ videoEl: undefined, fetch: f });
+  const events = [];
+  v.on('videoMetadata', (p) => events.push(p));
+
+  await v.connect();
+
+  assert.equal(events.length, 0);
+  assert.equal(v.state, 'connected', 'still connects normally without a videoEl');
+});
+
+function delay(ms) { return new Promise((r) => setTimeout(r, ms)); }
