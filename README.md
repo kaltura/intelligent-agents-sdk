@@ -62,6 +62,7 @@ rather than bolted on. Full details in [SECURITY.md](SECURITY.md).
   - [Fused multi-tool turns (handled automatically on the live session)](#fused-multi-tool-turns-handled-automatically-on-the-live-session)
 - [AI-SDR / CRM lead capture](#ai-sdr--crm-lead-capture)
 - [GenUI](#genui)
+- [Presenter](#presenter)
 - [Advanced / building-block exports](#advanced--building-block-exports)
 - [Testing](#testing)
 - [Intellect configuration](#intellect-configuration)
@@ -550,6 +551,10 @@ A widget interrupted mid-stream (a different runtime/`speechId` arrives before i
 
 In LIVE mode (`.start()`), `ExperienceRenderer` also subscribes to the session's `turnStart` event (re-emitted from the raw `agent_start_speech` socket event — `{speechId, turnId, isNewTurn}`) and, by default (`clearOnTurnStart: true`), discards the assembler's in-flight buffer and clears `rendered`/`last` when `isNewTurn` is true, so a widget from a previous turn never lingers into the next one — the same correctness fix Genie's own web client applies by nulling its content on `AgentStartSpeechReceived`. A duplicate turn (`isNewTurn:false`, e.g. a CM-side `tap-to-talk` retrigger for a `turnId` already in flight) is ignored here, matching every other `turnStart`/`isNewTurn` consumer in the SDK — otherwise the duplicate would wipe an already-rendered widget out from under the viewer mid-turn. Pass `clearOnTurnStart: false` to keep the previous default behavior (accumulate/persist across turns).
 
+---
+
+## Presenter
+
 The `Presenter` helper (`./experience/presenter`, its own subpath so apps that don't need it never pay for its module graph) manages a deck walkthrough end to end: per-slide Dynamic Prompt (**DPP**) injection via `session.setDynamicPrompt()` — a structured context blob telling the brain what's on screen right now — navigation via ONE deterministic, silent, idempotent mechanism (`onToolCall('navigate_to_slide')` — no speech-parsing fallback), duplicate-nav suppression, a sequential resume point (`reason:'resume'`), and session memory ("welcome back") — all pure logic over an injected `session`/`storage`, fully unit-testable.
 
 **Getters** (read-only):
@@ -635,7 +640,7 @@ These are importable from their entry points and useful when composing custom pi
 
 | Export | Description |
 |--------|-------------|
-| `Presenter` | Deck-walkthrough plugin — see the [Presenter](#genui) section above. Its own subpath so apps that don't present a deck never load it. |
+| `Presenter` | Deck-walkthrough plugin — see the [Presenter](#presenter) section above. Its own subpath so apps that don't present a deck never load it. |
 | `parseSlideNumber` | Parses a `slide_num` tool-call argument (number, numeric string, or ordinal word like `"next"`/`"third"`) against a known slide total. |
 
 ### `./experience/genui`
