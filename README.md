@@ -574,6 +574,7 @@ The `Presenter` helper (`./experience/presenter`, its own subpath so apps that d
 | `clearMemory()` | Clear session memory |
 | `recordQuestion(text)` | Record a question observed outside ASR (e.g. typed chat) |
 | `appendSlide(slide)` | Grow the deck at runtime (e.g. a brain-driven `create_slide` command); pushes onto `slides`, grows `total`, and returns the new 1-based slide number without navigating |
+| `destroy()` | Remove every listener this Presenter registered on `session`. Idempotent. Call it before discarding a Presenter whose session stays connected (e.g. swapping decks mid-session) — otherwise the old instance keeps injecting DPPs/navigating/saving memory alongside any replacement |
 
 **App hooks** (each exists because a real app needed to extend one specific seam without forking the class):
 

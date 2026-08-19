@@ -44,6 +44,13 @@
  * wiring. Pure logic over an injected session + storage — fully unit-testable.
  * Presenter is an optional plugin: it is a separately-importable class with no
  * effect on `KalturaAvatarSession` or any other SDK surface until constructed.
+ * The constructor wires several listeners onto `cfg.session` (an `Emitter`) —
+ * call {@link Presenter#destroy} to remove them (e.g. before constructing a
+ * new Presenter against the same still-connected session), mirroring
+ * `ExperienceRenderer#stop()` and `createNoiseSuppressor()`'s `stop()`. Each
+ * Presenter instance is independent — no module-level or shared state — so any
+ * number of instances can run in parallel across different sessions without
+ * collision.
  *
  * @example
  * import { KalturaAvatarSession } from '@kaltura/intelligent-agents/experience';
@@ -136,6 +143,8 @@ export class Presenter {
     this._memory = this._loadMemory();
     if (this._memory && typeof this._memory.lastSequential === 'number') this._lastSequential = this._memory.lastSequential;
 
+    /** @type {Array<() => void>} unsubscribe closures for every `session.on(...)` this instance registered. */
+    this._unsubs = [];
     this._wire();
   }
 
@@ -234,11 +243,14 @@ export class Presenter {
 
   _wire() {
     const s = this.session;
+    // Every listener registered below returns an unsubscribe closure, captured in `_unsubs`
+    // so `destroy()` can remove all of them (Rule I-4; mirrors `ExperienceRenderer#stop()`'s
+    // identical pattern in ./genui/renderer.js).
     // The ONLY navigation mechanism: a client-command tool call. Deterministic (an explicit
     // slide number, never inferred from wording), silent (no speech is parsed or required),
     // and idempotent (routed through `_nav`'s duplicate suppression below).
     if (this._toolCallName && typeof s.onToolCall === 'function') {
-      s.onToolCall(this._toolCallName, (args) => {
+      this._unsubs.push(s.onToolCall(this._toolCallName, (args) => {
         const n = typeof args?.slide_num === 'number' ? args.slide_num : parseSlideNumber(args?.slide_num, this.total);
         if (!n) return;
         if (this._oneNavPerTurn) {
@@ -246,23 +258,36 @@ export class Presenter {
           this._turnNavFiredFor = this._turnSpeechId;
         }
         this._nav(n, args?.reason === 'resume' ? 'resume' : 'avatar');
-      });
+      }));
     }
     // Accumulate the avatar's spoken text per turn for `onTurnText` — an app-hook accumulator
     // only; Presenter itself never inspects this text (navigation never depends on wording).
-    s.on('turnStart', (p) => { if (p?.isNewTurn) { this._turnSpeechId = p.speechId || null; this._turnText = ''; this._navSuppressedThisTurn = false; } });
-    s.on('transcript', (tr) => {
+    this._unsubs.push(s.on('turnStart', (p) => { if (p?.isNewTurn) { this._turnSpeechId = p.speechId || null; this._turnText = ''; this._navSuppressedThisTurn = false; } }));
+    this._unsubs.push(s.on('transcript', (tr) => {
       if (tr?.type === 'user') { if (tr.text) { this._questions.push(tr.text); this._injectDPP(); this._saveMemory(); } }
       else if (tr?.type === 'final') this._accumulate(tr.text, tr.speechId);   // clean sentence (generatingSpeech)
-    });
-    s.on('brainSegment', (seg) => { if ((seg?.type === 'avatar' || seg?.type === 'avatar-filler') && seg.content) this._accumulate(seg.content, seg.speechId); });
-    s.on('avatarStopTalking', () => { this._turnSpeechId = null; this._turnText = ''; this._saveMemory(); });
-    s.on('interrupted', () => { this._turnSpeechId = null; this._turnText = ''; });
-    s.on('ended', () => this._saveMemory());
+    }));
+    this._unsubs.push(s.on('brainSegment', (seg) => { if ((seg?.type === 'avatar' || seg?.type === 'avatar-filler') && seg.content) this._accumulate(seg.content, seg.speechId); }));
+    this._unsubs.push(s.on('avatarStopTalking', () => { this._turnSpeechId = null; this._turnText = ''; this._saveMemory(); }));
+    this._unsubs.push(s.on('interrupted', () => { this._turnSpeechId = null; this._turnText = ''; }));
+    this._unsubs.push(s.on('ended', () => this._saveMemory()));
     // A cold reconnect (recovered:false) means the brain lost its context — re-arm the
     // "welcome back" memory injection and re-send the current slide's DPP so grounding
     // survives the reconnect exactly as it did on first connect.
-    s.on('reconnected', (p) => { if (p && p.recovered === false) this._memoryInjected = false; this._injectDPP(); });
+    this._unsubs.push(s.on('reconnected', (p) => { if (p && p.recovered === false) this._memoryInjected = false; this._injectDPP(); }));
+  }
+
+  /**
+   * Remove every listener this instance registered on `session` (Rule I-4). Idempotent —
+   * safe to call more than once, or on a Presenter that never fully wired. Call this before
+   * discarding a Presenter whose `session` stays connected (e.g. swapping decks mid-session) —
+   * otherwise the old instance keeps injecting DPPs/navigating/saving memory alongside any
+   * replacement, and its listeners leak on the session's `Emitter` for the session's lifetime.
+   * Does not disconnect or otherwise touch `session` itself, and does not flush memory —
+   * call `saveMemory()` first if you want the current state persisted.
+   */
+  destroy() {
+    for (const off of this._unsubs.splice(0)) { try { off(); } catch { /* */ } }
   }
 
   _accumulate(text, speechId) {

@@ -9,8 +9,11 @@ class FakeSession extends Emitter {
   constructor() { super(); this.dpps = []; this.connected = true; this._toolCallHandlers = new Map(); }
   setDynamicPrompt(data) { if (!this.connected) { const e = new Error('not connected'); e.code = 'invalid_state'; throw e; } this.dpps.push(data); }
   get lastDpp() { return this.dpps[this.dpps.length - 1]; }
-  /** Mirrors the real session.onToolCall(name, handler) surface for tests. */
-  onToolCall(name, handler) { const l = this._toolCallHandlers.get(name) || []; l.push(handler); this._toolCallHandlers.set(name, l); }
+  /** Mirrors the real session.onToolCall(name, handler) surface for tests — including its unsubscribe-closure return contract. */
+  onToolCall(name, handler) {
+    const l = this._toolCallHandlers.get(name) || []; l.push(handler); this._toolCallHandlers.set(name, l);
+    return () => { const list = this._toolCallHandlers.get(name); if (!list) return; const i = list.indexOf(handler); if (i >= 0) list.splice(i, 1); };
+  }
   /** Test helper: fire a registered tool-call handler as the real session would. */
   fireToolCall(name, args) { for (const h of this._toolCallHandlers.get(name) || []) h(args); }
 }
@@ -445,4 +448,55 @@ test('oneNavPerTurn: default false — no suppression unless explicitly opted in
   session.fireToolCall('navigate_to_slide', { slide_num: 4 });
   session.fireToolCall('navigate_to_slide', { slide_num: 2 });
   assert.equal(p.current, 2, 'without oneNavPerTurn, a second different nav in the same turn still fires');
+});
+
+test('destroy() removes every listener this Presenter registered on the session', () => {
+  const { session, p } = newPresenter();
+  p.start();
+  const before = [...session._listeners.values()].reduce((n, set) => n + set.size, 0);
+  assert.ok(before > 0, 'Presenter wired at least one session.on(...) listener');
+  const toolCallHandlersBefore = session._toolCallHandlers.get('navigate_to_slide')?.length || 0;
+  assert.equal(toolCallHandlersBefore, 1, 'Presenter registered its nav tool-call handler');
+
+  p.destroy();
+
+  const after = [...session._listeners.values()].reduce((n, set) => n + set.size, 0);
+  assert.equal(after, 0, 'destroy() removed every session.on(...) listener');
+  assert.equal(session._toolCallHandlers.get('navigate_to_slide')?.length || 0, 0, 'destroy() also removed the onToolCall handler');
+});
+
+test('destroy() is idempotent — safe to call more than once', () => {
+  const { p } = newPresenter();
+  p.start();
+  p.destroy();
+  assert.doesNotThrow(() => p.destroy());
+});
+
+test('destroy() stops a discarded Presenter from reacting to further session events (no collision with a replacement)', () => {
+  const { session, p: oldPresenter } = newPresenter();
+  oldPresenter.start();
+  oldPresenter.goTo(3, 'user');
+  oldPresenter.destroy();
+
+  const dppCountBeforeReplacement = session.dpps.length;
+  const replacement = new Presenter({ session, slides: SLIDES });
+  replacement.start();
+
+  // The discarded Presenter's own state must not move, and the session must not receive
+  // a second, conflicting DPP from it after destroy() — only the replacement's.
+  assert.equal(oldPresenter.current, 3, 'destroyed instance keeps its last state, but is inert going forward');
+  session.fireToolCall('navigate_to_slide', { slide_num: 5 });
+  assert.equal(oldPresenter.current, 3, 'destroyed Presenter never reacts to a tool call after destroy()');
+  assert.equal(replacement.current, 5, 'only the replacement Presenter navigates');
+  assert.ok(session.dpps.length > dppCountBeforeReplacement, 'the replacement still injects DPPs normally');
+});
+
+test('two independent Presenter instances (own sessions) run in parallel with zero shared state', () => {
+  const a = newPresenter();
+  const b = newPresenter();
+  a.p.goTo(2, 'user');
+  b.p.goTo(4, 'user');
+  assert.equal(a.p.current, 2);
+  assert.equal(b.p.current, 4);
+  assert.notEqual(a.session, b.session, 'each Presenter owns its own session');
 });
