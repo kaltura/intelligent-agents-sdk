@@ -97,7 +97,7 @@ POST https://api.avatar.us.kaltura.ai/v1/catalog-item/list
 
 Change `typeEqual` to `"Voice"` for voices. Each item has an `itemId` — pass it to avatar creation.
 
-**Visual preset fields:** `itemId`, `attributes.visual.{name, genderPresentation, skinTone, ageGroup, hairColor, clothing, background}`, `imageUrl`, `loadingVideo` — raw, unmodified upload URLs, not the rendered composite the live WHEP stream shows.
+**Visual preset fields:** `itemId`, `attributes.visual.{name, genderPresentation, skinTone, ageGroup, hairColor, clothing, background}`, `imageUrl`, `loadingVideo` — raw backend asset URLs (an upload echo for a custom visual, a preset asset URL for a catalog item), not the rendered composite the live WHEP stream shows.
 
 **Voice preset fields:** `itemId`, `attributes.voice.{name, description, language}`, `voiceSampleUrl`.
 
@@ -555,7 +555,7 @@ Response:
 | `conversationManagerUrl` | Socket.IO control-plane host |
 | `srsBaseUrl` | WHEP video-stream host |
 | `turnServerUrl` | TURN host |
-| `avatars[]` | `[{id, previewImageUrl, loadingVideoUrl}]` — raw, unmodified upload echoes, not the rendered composite the live WHEP stream shows |
+| `avatars[]` | `[{id, previewImageUrl, loadingVideoUrl}]` — raw backend asset URLs (an upload echo for a custom visual, a preset asset URL for a catalog item), not the rendered composite the live WHEP stream shows |
 
 The admin secret never touches the browser — `appInit` derives the agent from the widget KS.
 

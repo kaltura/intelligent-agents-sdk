@@ -85,10 +85,10 @@ test('appInit: avatars[] preview/loading fields pass through unmodified, includi
 // see issue #16 — the raw-passthrough caveat must be documented at the call
 // site, not just in API-REFERENCE.md, since JSDoc isn't scanned by
 // tools/check-docs.mjs (markdown-only scope).
-test('appInit: JSDoc documents that previewImageUrl/loadingVideoUrl are raw, unmodified uploads', async () => {
+test('appInit: JSDoc documents that previewImageUrl/loadingVideoUrl are raw backend asset URLs', async () => {
   const src = await readFile(new URL('../../src/management/application.js', import.meta.url), 'utf8');
   const jsdoc = src.slice(src.indexOf('/**', src.indexOf('async appInit') - 800), src.indexOf('async appInit'));
-  assert.match(jsdoc, /raw, unmodified upload/i);
+  assert.match(jsdoc, /raw backend asset URLs/i);
 });
 
 // ── generateProfile ───────────────────────────────────────────────────────────

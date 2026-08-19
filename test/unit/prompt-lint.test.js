@@ -271,6 +271,32 @@ test('lintPersonaIdentity: no proper name present in openingPhrase → no false 
   assert.deepEqual(r.findings, []);
 });
 
+// see PR #21 Copilot review — extractProperName()'s self-introduction match
+// must respect GREETING_STOPWORDS too, not just the possessive/generic paths.
+test('lintPersonaIdentity: self-intro on a stopword ("I\'m Ready") is not mistaken for a name', () => {
+  const r = lintPersonaIdentity({
+    name: 'Nova',
+    openingPhrase: "I'm Ready to help you today!",
+    baseDirective: 'You are Nova. Be concise and helpful.',
+    prompts: [],
+  });
+  assert.equal(r.detectedName, null);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.findings, []);
+});
+
+test('lintPersonaIdentity: self-intro on a stopword ("my name is Happy") is not mistaken for a name', () => {
+  const r = lintPersonaIdentity({
+    name: 'Nova',
+    openingPhrase: 'my name is Happy to assist you.',
+    baseDirective: 'You are Nova. Be concise and helpful.',
+    prompts: [],
+  });
+  assert.equal(r.detectedName, null);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.findings, []);
+});
+
 test('lintPersonaIdentity: empty baseDirective/prompts haystack skips the drift check (no false positive on minimal input)', () => {
   const r = lintPersonaIdentity({ name: 'Nova', openingPhrase: "I'm Nova." });
   assert.equal(r.detectedName, 'Nova');

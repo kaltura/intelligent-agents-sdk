@@ -406,7 +406,7 @@ function extractProperName(text) {
   if (typeof text !== 'string' || text.trim() === '') return null;
 
   const selfIntro = text.match(/\b(?:I'm|I am|my name is|this is)\s+([A-Z][a-zA-Z]*(?:'s|’s)?)/i);
-  if (selfIntro) return bareName(selfIntro[1]);
+  if (selfIntro && !GREETING_STOPWORDS.has(bareName(selfIntro[1]))) return bareName(selfIntro[1]);
 
   const possessive = text.match(/\b([A-Z][a-zA-Z]*(?:'s|’s))\b/);
   if (possessive && !GREETING_STOPWORDS.has(bareName(possessive[1]))) return bareName(possessive[1]);
