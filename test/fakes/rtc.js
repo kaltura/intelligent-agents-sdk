@@ -159,9 +159,10 @@ export class FakeVideoEl {
     this._auto = autoCanPlay;
     /** @type {Map<string,Function[]>} */ this._listeners = new Map();
     this.played = false;
+    this.playCount = 0;
   }
   addEventListener(ev, fn) { (this._listeners.get(ev) || this._listeners.set(ev, []).get(ev)).push(fn); }
-  play() { this.played = true; return Promise.resolve(); }
+  play() { this.played = true; this.playCount += 1; return Promise.resolve(); }
   /** Test helper: signal the video is now playable. */
   fireCanPlay() { this.readyState = 4; (this._listeners.get('canplay') || []).forEach((fn) => fn()); }
   /** @param {string} deviceId */

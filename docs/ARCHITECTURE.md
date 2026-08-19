@@ -122,6 +122,8 @@ For a circular picture-in-picture mask, swap `border-radius` + `overflow: hidden
 
 `object-fit: cover` never shows bars regardless of the source's actual aspect ratio — that's why it's the right default even without a published backend resolution to size against.
 
+Omit `videoEl` entirely for a headless/custom-render integration (canvas, WebGL, a circular-mask renderer) — both `KalturaAvatarSession` and `KalturaScriptedVideoSession` fire a `'track'` event (`{track, streams}`) the moment their STV peer's `ontrack` fires, whether or not `videoEl` is configured.
+
 ---
 
 ## SDK Module Map — Overview

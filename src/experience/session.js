@@ -16,6 +16,11 @@
  *   - videoEl — an HTMLVideoElement (or playable-shim in tests) for the downlink
  * So the whole machine is unit-testable in plain Node with fakes — no browser.
  *
+ * `videoEl` is optional: omit it for a headless/custom-render integration and
+ * listen for the 'track' event ({track, streams}) instead — fired the moment
+ * the STV peer's ontrack fires, whether or not videoEl is configured. Same
+ * event, same shape, as KalturaScriptedVideoSession's own 'track' event.
+ *
  * The constructor REFUSES a token carrying `disableentitlement`: an end-user
  * runtime must keep entitlement ON (the two-KS-type invariant).
  */
@@ -91,7 +96,7 @@ export class KalturaAvatarSession extends Emitter {
    * @param {string} cfg.srsBaseUrl         From appInit (WHEP egress host).
    * @param {string} cfg.turnServerUrl      From appInit (TURN host).
    * @param {(url:string,opts:object)=>any} cfg.socketFactory  socket.io-compatible factory (INJECTED; never bundled).
-   * @param {any} [cfg.videoEl]             HTMLVideoElement for the downlink (omit ⇒ audio/headless). The SDK only sets `.srcObject` — size/frame it yourself with `object-fit: cover` (see docs/ARCHITECTURE.md § Displaying the Avatar Video).
+   * @param {any} [cfg.videoEl]             HTMLVideoElement for the downlink (omit ⇒ audio/headless — listen for 'track' instead). The SDK only sets `.srcObject` — size/frame it yourself with `object-fit: cover` (see docs/ARCHITECTURE.md § Displaying the Avatar Video).
    * @param {typeof RTCPeerConnection} [cfg.rtcConstructor]
    * @param {typeof fetch} [cfg.fetch]
    * @param {()=>Promise<any>} [cfg.getUserMedia]
@@ -548,6 +553,7 @@ export class KalturaAvatarSession extends Emitter {
       const finish = () => { for (const id of timers) clearTimeout(id); timers.clear(); resolve(); };
       const settle = () => { if (!done) { done = true; arm(finish, 300); } }; // +300ms jitter settle
       pc.ontrack = (e) => {
+        this.emit('track', { track: e.track, streams: e.streams });
         const v = this._videoEl;
         if (v) {
           v.srcObject = e.streams && e.streams[0];
