@@ -108,12 +108,12 @@ used elsewhere in these docs, only resolve for a Node/bundler consumer that read
 <script type="module">
   // Pinned to a release tag — recommended for anything you ship, since the file content at
   // this URL never changes once published (jsDelivr's immutable, long-cached tag path).
-  import { KalturaAvatarSession } from 'https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.3.0/src/experience/index.js';
+  import { KalturaAvatarSession } from 'https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.4.0/src/experience/index.js';
   // ... same API as the local examples — see examples/browser-experience.html
 </script>
 ```
 
-Pin the tag (`@v1.3.0`, or whatever release you want) for anything you ship — jsDelivr caches a
+Pin the tag (`@v1.4.0`, or whatever release you want) for anything you ship — jsDelivr caches a
 tagged path forever, so a pin is both stable and fast. For local prototyping only, `@latest`
 resolves to the newest tag without editing the URL on every release:
 
