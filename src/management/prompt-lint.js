@@ -425,14 +425,26 @@ function extractProperName(text) {
 }
 
 /**
- * Lint persona-name consistency across `openingPhrase` / `baseDirective` /
- * `prompts[].value`. HEURISTIC (warning-only, never blocking): extracts a
- * proper name from `openingPhrase` via {@link extractProperName} and, only
- * when one is found, warns if (a) it disagrees with the declared `name`, or
- * (b) neither `baseDirective` nor any `prompts[].value` mention it — either
- * signals a persona rename that didn't propagate to every field. Absence of
- * a detectable name in `openingPhrase` never warns (avoids false positives
- * on a coincidence of phrasing rather than an actual rename).
+ * Lint persona-name consistency across `name` / `openingPhrase` /
+ * `baseDirective` / `prompts[].value`. HEURISTIC (warning-only, never
+ * blocking). Two independent checks, each with its own trigger:
+ *   - `persona_name_mismatch`: only when {@link extractProperName} finds a
+ *     name in `openingPhrase` (`detectedName`) AND a declared `name` is also
+ *     given AND they disagree — needs both fields, since it is comparing one
+ *     against the other.
+ *   - `persona_name_drift`: neither `baseDirective` nor any `prompts[].value`
+ *     mention a name that should be there. Runs once per name in play — off
+ *     the declared `name` whenever one is given (independent of
+ *     `openingPhrase`; see issue #32 — a caller with no `openingPhrase`, or
+ *     one `extractProperName` can't parse a name out of, still gets a real
+ *     check), and separately off `detectedName` when it differs from the
+ *     declared name (skipped when they match, so a single rename shows one
+ *     finding, not two).
+ * Absence of a detectable name in `openingPhrase` never blocks the
+ * `name`-based drift check, and never itself warns (avoids false positives
+ * on a coincidence of phrasing rather than an actual rename). An empty
+ * `baseDirective`+`prompts[]` haystack skips drift entirely — nothing to
+ * compare against yet is not evidence of a rename.
  *
  * @param {{name?:string, openingPhrase?:string, baseDirective?:string, prompts?:Array<{value?:string}>}} input
  * @returns {{
@@ -457,30 +469,37 @@ export function lintPersonaIdentity(input) {
   /** @type {LintFinding[]} */
   const findings = [];
   const detectedName = extractProperName(typeof openingPhrase === 'string' ? openingPhrase : '');
+  const declaredName = typeof name === 'string' && name.trim() !== '' ? name.trim() : null;
 
-  if (detectedName) {
-    const declaredName = typeof name === 'string' && name.trim() !== '' ? name.trim() : null;
-    if (declaredName && declaredName !== detectedName) {
-      findings.push({
-        severity: 'warning',
-        code: 'persona_name_mismatch',
-        message: `openingPhrase names "${detectedName}" but the declared persona name is "${declaredName}" — a persona rename may be incomplete.`,
-        path: 'openingPhrase',
-      });
-    }
+  if (detectedName && declaredName && declaredName !== detectedName) {
+    findings.push({
+      severity: 'warning',
+      code: 'persona_name_mismatch',
+      message: `openingPhrase names "${detectedName}" but the declared persona name is "${declaredName}" — a persona rename may be incomplete.`,
+      path: 'openingPhrase',
+    });
+  }
 
-    const promptValues = Array.isArray(prompts)
-      ? prompts.filter((p) => isPlainObject(p) && typeof p.value === 'string').map((p) => p.value)
-      : [];
-    const haystack = [typeof baseDirective === 'string' ? baseDirective : '', ...promptValues].join(' ');
-    if (haystack.trim() !== '' && !haystack.includes(detectedName)) {
-      findings.push({
-        severity: 'warning',
-        code: 'persona_name_drift',
-        message: `openingPhrase names "${detectedName}" but base_directive/prompts[] never mention it — a persona rename may be incomplete.`,
-        path: 'openingPhrase',
-      });
-    }
+  const promptValues = Array.isArray(prompts)
+    ? prompts.filter((p) => isPlainObject(p) && typeof p.value === 'string').map((p) => p.value)
+    : [];
+  const haystack = [typeof baseDirective === 'string' ? baseDirective : '', ...promptValues].join(' ');
+
+  if (declaredName && haystack.trim() !== '' && !haystack.includes(declaredName)) {
+    findings.push({
+      severity: 'warning',
+      code: 'persona_name_drift',
+      message: `Declared persona name "${declaredName}" is not mentioned in base_directive/prompts[] — a persona rename may be incomplete.`,
+      path: 'name',
+    });
+  }
+  if (detectedName && detectedName !== declaredName && haystack.trim() !== '' && !haystack.includes(detectedName)) {
+    findings.push({
+      severity: 'warning',
+      code: 'persona_name_drift',
+      message: `openingPhrase names "${detectedName}" but base_directive/prompts[] never mention it — a persona rename may be incomplete.`,
+      path: 'openingPhrase',
+    });
   }
 
   const summary = summarize(findings);

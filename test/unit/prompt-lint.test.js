@@ -303,6 +303,61 @@ test('lintPersonaIdentity: empty baseDirective/prompts haystack skips the drift 
   assert.equal(hasFinding(r.findings, 'persona_name_drift'), false);
 });
 
+// see issue #32 — persona_name_drift must fire off a declared `name` alone,
+// not only when openingPhrase yields a parseable detectedName.
+
+test('lintPersonaIdentity (#32): declared-name drift fires with no openingPhrase at all', () => {
+  const r = lintPersonaIdentity({
+    name: 'Nova',
+    baseDirective: 'You are a friendly assistant.',
+    prompts: [{ key: 'goal', value: 'Help users find docs.' }],
+  });
+  assert.equal(r.detectedName, null);
+  assert.equal(hasFinding(r.findings, 'persona_name_drift'), true);
+});
+
+test('lintPersonaIdentity (#32): no drift finding when the declared name is mentioned, still no openingPhrase', () => {
+  const r = lintPersonaIdentity({
+    name: 'Nova',
+    baseDirective: 'You are Nova, a friendly assistant.',
+    prompts: [{ key: 'goal', value: 'Help users find docs.' }],
+  });
+  assert.equal(hasFinding(r.findings, 'persona_name_drift'), false);
+  assert.equal(r.ok, true);
+});
+
+test('lintPersonaIdentity (#32): matches Nova\'s real shape — name declared via prompts[], openingPhrase has no parseable name', () => {
+  const r = lintPersonaIdentity({
+    name: 'Nova',
+    openingPhrase: '<break time="1s"/>', // SSML silence-tag crash workaround, never a real name
+    baseDirective: 'You are a documentation assistant.',
+    prompts: [{ key: 'name', value: 'You are Nova, the docs assistant.' }],
+  });
+  assert.equal(r.detectedName, null);
+  assert.equal(hasFinding(r.findings, 'persona_name_drift'), false);
+  assert.equal(r.ok, true);
+});
+
+test('lintPersonaIdentity: persona_name_mismatch still requires an openingPhrase-derived detectedName (unchanged)', () => {
+  const noOpeningPhrase = lintPersonaIdentity({
+    name: 'Nova',
+    baseDirective: 'You are Luna, a friendly assistant.',
+    prompts: [],
+  });
+  assert.equal(hasFinding(noOpeningPhrase.findings, 'persona_name_mismatch'), false);
+});
+
+test('lintPersonaIdentity (#32): declaredName === detectedName does not double-fire drift for the same rename', () => {
+  const r = lintPersonaIdentity({
+    name: 'Nova',
+    openingPhrase: "I'm Nova, ready to help!",
+    baseDirective: 'You are a friendly assistant.', // never mentions Nova
+    prompts: [],
+  });
+  const driftFindings = r.findings.filter((f) => f.code === 'persona_name_drift');
+  assert.equal(driftFindings.length, 1);
+});
+
 test('lintPersonaIdentity: non-object throws KalturaError', () => {
   assert.throws(() => lintPersonaIdentity('nope'), (e) => e.name === 'KalturaError' && e.code === 'bad_request');
 });
