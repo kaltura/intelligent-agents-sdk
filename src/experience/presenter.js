@@ -119,6 +119,11 @@ export class Presenter {
    *   SAME turn (`speechId`) — guards against a brain "restart" that fires two different nav targets in one
    *   response. Default `false`. Independent of `dupSuppressMs`, which only suppresses a repeat to the SAME
    *   target within a time window.
+   * @param {boolean} [cfg.deckOutline]  Include a full-deck `{slide_num, title}[]` outline in every DPP (as
+   *   `dpp.outline`), so the brain can resolve a topic → slide number mapping for `navigate_to_slide` without
+   *   an integrator hand-rolling one into `BASE_DIRECTIVE`. Title collisions are disambiguated by appending the
+   *   colliding slide's first talking point (or its slide number, if it has none). Stays correct after
+   *   `appendSlide()` grows the deck — no invalidation needed. Default `false` (no `outline` key at all).
    */
   constructor(cfg) {
     if (!cfg?.session) throw new Error('Presenter needs { session }');
@@ -141,6 +146,7 @@ export class Presenter {
     this._onTurnText = cfg.onTurnText || null;
     this._dppSlide = cfg.dppSlide || null;
     this._oneNavPerTurn = !!cfg.oneNavPerTurn;
+    this._deckOutline = !!cfg.deckOutline;
 
     this.current = 1;
     this._lastSequential = 1;
@@ -372,6 +378,25 @@ export class Presenter {
     this.goTo(target, reason);
   }
 
+  /**
+   * Build the full-deck `{slide_num, title}[]` outline for `dpp.outline` (see `cfg.deckOutline`).
+   * Reads `this.slides` fresh every call — no cache — so a runtime `appendSlide()` growth is
+   * always reflected in the very next call with zero invalidation logic.
+   * @returns {Array<{slide_num:number, title:string}>}
+   */
+  _buildOutline() {
+    const titleCounts = new Map();
+    for (const s of this.slides) titleCounts.set(s.title, (titleCounts.get(s.title) || 0) + 1);
+    return this.slides.map((s, i) => {
+      const slide_num = i + 1;
+      const collides = (titleCounts.get(s.title) || 0) > 1;
+      if (!collides) return { slide_num, title: s.title };
+      const disambiguator = s.talking_points?.[0];
+      const title = disambiguator ? `${s.title} — ${disambiguator}` : `${s.title} (${slide_num})`;
+      return { slide_num, title };
+    });
+  }
+
   /** Build + send the DPP for the current slide. @param {{from?:number,why?:string}} [nav] */
   _injectDPP(nav) {
     const slide = this.slide || {};
@@ -388,6 +413,7 @@ export class Presenter {
       meta: this._metaFor(slide.category),
       memory: this._memoryForDPP(),
     };
+    if (this._deckOutline) dpp.outline = this._buildOutline();
     try { this.session.setDynamicPrompt(dpp); if (dpp.memory) this._memoryInjected = true; this._lastDppSlide = this.current; } catch { /* not connected yet — caller injects after connect */ }
     return dpp;
   }
