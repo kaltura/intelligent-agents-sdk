@@ -53,6 +53,8 @@ await mgmt.intellects.create({
 
 `tool_ids` is in the Genie intellect DTO allow-list, so linking a tool persists through **`v1/intellect/update`** (Genie host, admin token) — **not** `partner-config/update`, so there is no 403. The tool BODY itself lives on the separate `/v1/tool/*` entity (`mgmt.tools`), not inside the intellect config.
 
+`navigate_to_slide`'s description asks the brain to pass "the most relevant slide number" — but the brain can only resolve a topic to a slide number from something in its context. If you're using the [`Presenter`](/reference/sdk-reference/#presenter) helper, pass `deckOutline: true` to its constructor instead of hand-rolling a topic→slide mapping into `BASE_DIRECTIVE`: it adds a full-deck `{slide_num, title}[]` outline to every Dynamic Prompt, stays correct after a runtime `appendSlide()` (a static `BASE_DIRECTIVE` outline does not), and disambiguates duplicate slide titles automatically.
+
 `waitForResponse` controls whether the model's turn blocks on a real client-supplied result. **Omitting it is not the same as passing `false`** — the backend's own wire default for an absent `wait_for_response` field is `true` (blocking), so pass it explicitly. `false` gives fire-and-forget dispatch (confirmed live: ~2.9s full turn); `true` makes the backend poll up to `timeout` seconds (default 30) for an ACK via `POST /assistant/tool_response` — the host app supplies that ACK with `session.respondToTool(call.toolMetadata.id, response)`.
 
 ### 2. The brain calls it → Genie streams a silent segment
