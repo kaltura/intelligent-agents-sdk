@@ -32,7 +32,7 @@ const SLIDES = [
 ];
 const newPresenter = (over = {}) => {
   const session = new FakeSession();
-  const p = new Presenter({ session, slides: over.slides || SLIDES, context: over.context, onSlideChange: over.onSlideChange, storage: over.storage, ...over.cfg });
+  const p = new Presenter({ session, slides: over.slides || [...SLIDES], context: over.context, onSlideChange: over.onSlideChange, storage: over.storage, ...over.cfg });
   return { session, p };
 };
 
@@ -418,6 +418,13 @@ test('appendSlide: does not navigate on its own', () => {
   p.start();
   p.appendSlide({ title: 'New Slide' });
   assert.equal(p.current, 1, 'appendSlide alone never moves the deck');
+});
+
+test('appendSlide: mutating one Presenter\'s slides never grows the shared default SLIDES fixture (see issue #27)', () => {
+  const { p } = newPresenter();
+  p.appendSlide({ title: 'New Slide' });
+  const { p: p2 } = newPresenter();
+  assert.equal(p2.total, 5, 'a fresh Presenter using the default fixture must start at 5 slides, not leak a prior test\'s appendSlide()');
 });
 
 test('oneNavPerTurn: a second, DIFFERENT avatar nav within the same turn is suppressed; a new turn reopens it', () => {
