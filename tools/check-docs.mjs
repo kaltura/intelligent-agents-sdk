@@ -589,3 +589,16 @@ describe('11. Dead-air event documentation', () => {
     assert.deepEqual(missing, [], `dead-air events not documented in README.md/docs/*.md: ${missing.join(', ')}`);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 12) avatar_filler steerability disclosure (see issue #23)
+// ─────────────────────────────────────────────────────────────────────────────
+describe('12. avatar_filler steerability disclosure', () => {
+  test("avatar_filler's summary in capabilities.js states its phrasing is not directive-steerable", () => {
+    const src = read('src/management/capabilities.js');
+    const m = src.match(/avatar_filler:\s*\{[^}]*summary:\s*'([^']*)'/);
+    assert.ok(m, "could not find avatar_filler's summary field in capabilities.js");
+    assert.match(m[1], /directive|persona|server-side|fixed/i,
+      `avatar_filler summary must state it is not steerable via base_directive/persona: "${m[1]}"`);
+  });
+});

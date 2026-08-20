@@ -117,7 +117,7 @@ export const CAPABILITY_INFO = Object.freeze({
   external_video: { kind: 'segment', runtime: 'external-video', defaultState: CAPABILITY_DEFAULTS.external_video, summary: 'Permits an external-video-tool segment (embed a non-Kaltura video).' },
   show_link: { kind: 'segment', runtime: 'show-link', defaultState: CAPABILITY_DEFAULTS.show_link, summary: 'Permits a show-link-tool segment (render a link card).' },
   avatar: { kind: 'mode', defaultState: CAPABILITY_DEFAULTS.avatar, summary: 'Enables the live avatar face/voice channel; switches the model to agent_avatar_llm.' },
-  avatar_filler: { kind: 'prompt', defaultState: CAPABILITY_DEFAULTS.avatar_filler, summary: 'Avatar speaks short filler phrases while thinking.' },
+  avatar_filler: { kind: 'prompt', defaultState: CAPABILITY_DEFAULTS.avatar_filler, summary: 'Avatar speaks short filler phrases while thinking. Phrasing is server-generated per turn and NOT reliably steerable via base_directive or other persona instructions, despite streaming as a "spoken" segment type alongside avatar/text — disable this capability if the default phrasing does not fit your persona.' },
   avatar_show_content: { kind: 'prompt', defaultState: CAPABILITY_DEFAULTS.avatar_show_content, summary: 'Lets the avatar push visual content (slides/cards) alongside speech.' },
   kaltura_genie_experiences: { kind: 'mode', defaultState: CAPABILITY_DEFAULTS.kaltura_genie_experiences, summary: 'Master switch for structured GenUI (flashcards/summary/markdown experiences).' },
   use_web_search: { kind: 'tool', defaultState: CAPABILITY_DEFAULTS.use_web_search, summary: 'search_web (live external search), parameterized by web_search_config. Auto-on if web_search_config is set.' },

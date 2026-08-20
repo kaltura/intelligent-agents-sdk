@@ -263,7 +263,7 @@ POST https://genie.nvp1.ovp.kaltura.com/v1/intellect/update
 | Key | Default | What it does |
 |-----|---------|-------------|
 | `avatar` | OFF | Enable avatar video conversation |
-| `avatar_filler` | OFF | Avatar speaks filler while thinking |
+| `avatar_filler` | OFF | Avatar speaks filler while thinking — phrasing is server-generated, not steerable via `base_directive`/persona |
 | `generate_followup_questions` | ON | Suggest next questions |
 | `use_knowledge_base` | ON | RAG over the linked knowledge base |
 | `use_content_search` | ON | Search media entry metadata |

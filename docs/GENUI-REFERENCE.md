@@ -256,7 +256,13 @@ This is the **image-bearing** widget (a deck/gallery of cards with thumbnails). 
 
 Capabilities are set **at intellect creation** (partner config caches ~24h; set them up front).
 Source of truth: `src/management/capabilities.js` (`CAPABILITY_INFO`, `CAPABILITY_DEFAULTS`,
-`OFF_BY_DEFAULT`). `kind` is `tool` | `segment` | `mode` | `prompt`.
+`OFF_BY_DEFAULT`). `kind` is `tool` | `segment` | `mode` | `prompt` — this only names the
+mechanism that gates the capability on/off, not whether its *content* is persona-steerable.
+`avatar_filler` (`kind: 'prompt'`) is the exception to watch for: its filler phrasing is
+server-generated per turn and NOT reliably steerable via `base_directive`, even though it
+streams as a "spoken" segment alongside `avatar`/`text` (see
+[WIRE-PROTOCOL.md § 4e](WIRE-PROTOCOL.md#4e-agent_raw_textdelta--the-brain-stream-parsed)) —
+disable the capability if the default phrasing doesn't fit your persona.
 
 | Capability | Default | Kind | Gates runtime | Notes |
 |---|---|---|---|---|
