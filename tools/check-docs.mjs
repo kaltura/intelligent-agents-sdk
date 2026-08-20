@@ -577,3 +577,15 @@ describe('10. Avatar video framing', () => {
     assert.deepEqual(offenders, [], `examples with a <video> but no object-fit rule: ${offenders.join(', ')}`);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 11) Dead-air event documentation (see issue #24)
+// ─────────────────────────────────────────────────────────────────────────────
+describe('11. Dead-air event documentation', () => {
+  test("'responsePending' and 'responseSettled' are each documented in README.md or docs/*.md", () => {
+    const mdFiles = ['README.md', ...DOCS.filter((f) => f.startsWith('docs/'))];
+    const text = mdFiles.map(read).join('\n');
+    const missing = ['responsePending', 'responseSettled'].filter((name) => !text.includes(name));
+    assert.deepEqual(missing, [], `dead-air events not documented in README.md/docs/*.md: ${missing.join(', ')}`);
+  });
+});

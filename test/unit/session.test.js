@@ -85,3 +85,43 @@ test("regression: 'videoMetadata' never fires when videoEl is omitted (headless)
 });
 
 function delay(ms) { return new Promise((r) => setTimeout(r, ms)); }
+
+// Proves issue #24: the dead-air masking contract ('thinking…' affordance).
+test("'responsePending' fires with {} the moment a turn starts awaiting brain output", async () => {
+  const { session, socket } = newSession();
+  scriptHappyPath(socket);
+  await session.connect();
+  const events = [];
+  session.on('responsePending', (p) => events.push(p));
+  socket.server('agentTurnToTalk', { userTranscription: 'hello?' });
+  assert.deepEqual(events, [{}]);
+  assert.equal(session.responsePending, true);
+  session.disconnect();
+});
+
+test("'responseSettled' fires with {} once the avatar's first perceivable output arrives", async () => {
+  const { session, socket } = newSession();
+  scriptHappyPath(socket);
+  await session.connect();
+  const events = [];
+  session.on('responseSettled', (p) => events.push(p));
+  socket.server('agentTurnToTalk', { userTranscription: 'hello?' });
+  assert.equal(session.responsePending, true, 'armed while awaiting output');
+  socket.server('stvStartedTalking', {});
+  assert.deepEqual(events, [{}]);
+  assert.equal(session.responsePending, false);
+  session.disconnect();
+});
+
+test("'responseSettled' also fires on interruption, so the affordance never gets stuck showing", async () => {
+  const { session, socket } = newSession();
+  scriptHappyPath(socket);
+  await session.connect();
+  const events = [];
+  session.on('responseSettled', (p) => events.push(p));
+  socket.server('agentTurnToTalk', { userTranscription: 'hello?' });
+  socket.server('agentInterrupted', {});
+  assert.deepEqual(events, [{}]);
+  assert.equal(session.responsePending, false);
+  session.disconnect();
+});
