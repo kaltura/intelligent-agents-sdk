@@ -58,7 +58,7 @@ KS=$(curl -s -X POST "https://www.kaltura.com/api_v3/service/session/action/star
 | Agent | `agentid:<agentId>` | Agent-scoped calls targeting a specific agent |
 | Widget | auto-derived from `widgetId` | End-user embed — no admin secret in the browser |
 
-**Keep `disableentitlement` server-side, for management/admin operations only.** The SDK can't detect or stop a `disableentitlement` KS from being handed to a conversation/end-user session — a real KS's privileges are encrypted and unreadable client-side — so nothing will warn you if you do this by mistake. See [SECURITY.md](SECURITY.md#ks-kaltura-session-guidance-for-agents-ac-3--ac-6--ia-2) and Kaltura's own [KS/privilege reference](https://github.com/kaltura/developer-platform-docs/blob/master/documentation/VPaaS-API-Getting-Started/Kaltura_API_Authentication_and_Security.md).
+**Keep `disableentitlement` server-side, for management/admin operations only.** The SDK can't detect or stop a `disableentitlement` KS from being handed to a conversation/end-user session — a real KS's privileges are encrypted and unreadable client-side — so nothing will warn you if you do this by mistake. See [SECURITY.md](SECURITY.md#ks-kaltura-session-guidance-for-agents-ac-3--ac-6--ia-2) and Kaltura's own [KS/privilege reference](https://kaltura.md/KALTURA_SESSION_GUIDE/).
 
 ---
 
@@ -263,7 +263,7 @@ POST https://genie.nvp1.ovp.kaltura.com/v1/intellect/update
 | Key | Default | What it does |
 |-----|---------|-------------|
 | `avatar` | OFF | Enable avatar video conversation |
-| `avatar_filler` | OFF | Avatar speaks filler while thinking |
+| `avatar_filler` | OFF | Avatar speaks filler while thinking — phrasing is server-generated, not steerable via `base_directive`/persona |
 | `generate_followup_questions` | ON | Suggest next questions |
 | `use_knowledge_base` | ON | RAG over the linked knowledge base |
 | `use_content_search` | ON | Search media entry metadata |

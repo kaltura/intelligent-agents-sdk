@@ -600,3 +600,82 @@ test('a distinct memoryKey avoids the storage-collision warning', () => {
     console.warn = originalWarn;
   }
 });
+
+// ─────────────────────────── deckOutline (issue #22) ───────────────────────────
+
+test('deckOutline unset (default): session.lastDpp has no outline key at all', () => {
+  const { session, p } = newPresenter();
+  p.start();
+  assert.equal('outline' in session.lastDpp, false);
+  p.goTo(3);
+  assert.equal('outline' in session.lastDpp, false);
+});
+
+test('deckOutline: true → outline has exactly `total` entries, each {slide_num, title}, matching the deck 1:1', () => {
+  const slides = [
+    { title: 'Title', talking_points: ['hi'], category: 'intro' },
+    { title: 'Revenue', talking_points: ['up 12%'], category: 'financial' },
+    { title: 'Outlook', talking_points: ['guidance'], category: 'financial' },
+  ];
+  const { session, p } = newPresenter({ slides, cfg: { deckOutline: true } });
+  p.start();
+  const outline = session.lastDpp.outline;
+  assert.equal(outline.length, slides.length);
+  outline.forEach((entry, i) => {
+    assert.equal(entry.slide_num, i + 1);
+    assert.equal(entry.title, slides[i].title);
+  });
+});
+
+test('deckOutline: two slides with an identical title get distinct, disambiguated outline entries', () => {
+  const slides = [
+    { title: 'Overview', talking_points: ['company snapshot'], category: 'intro' },
+    { title: 'Overview', talking_points: ['market snapshot'], category: 'intro' },
+  ];
+  const { session, p } = newPresenter({ slides, cfg: { deckOutline: true } });
+  p.start();
+  const [a, b] = session.lastDpp.outline;
+  assert.notEqual(a.title, b.title);
+  assert.ok(a.title.startsWith('Overview'));
+  assert.ok(b.title.startsWith('Overview'));
+});
+
+test('deckOutline: a duplicate-titled slide with no talking_points falls back to the (slide_num) suffix', () => {
+  const slides = [
+    { title: 'Overview', category: 'intro' },   // no talking_points
+    { title: 'Overview', talking_points: ['market snapshot'], category: 'intro' },
+  ];
+  const { session, p } = newPresenter({ slides, cfg: { deckOutline: true } });
+  p.start();
+  const [a, b] = session.lastDpp.outline;
+  assert.equal(a.title, 'Overview (1)');
+  assert.equal(b.title, 'Overview — market snapshot');
+  assert.notEqual(a.title, b.title);
+});
+
+test('deckOutline: a slide appended via appendSlide() appears in the very next DPP\'s outline', () => {
+  const slides = [
+    { title: 'Title', talking_points: ['hi'], category: 'intro' },
+    { title: 'Revenue', talking_points: ['up 12%'], category: 'financial' },
+  ];
+  const { session, p } = newPresenter({ slides, cfg: { deckOutline: true } });
+  p.start();
+  p.appendSlide({ title: 'Bonus round', talking_points: ['surprise'], category: 'closing' });
+  p.goTo(slides.length);
+  const outline = session.lastDpp.outline;
+  assert.equal(outline.length, slides.length);
+  assert.deepEqual(outline[outline.length - 1], { slide_num: slides.length, title: 'Bonus round' });
+});
+
+test('deckOutline: two Presenter instances in one process never share outline state', () => {
+  const deckA = [{ title: 'A1' }, { title: 'A2' }];
+  const deckB = [{ title: 'B1' }, { title: 'B2' }, { title: 'B3' }];
+  const { session: sessionA, p: pA } = newPresenter({ slides: deckA, cfg: { deckOutline: true } });
+  const { session: sessionB, p: pB } = newPresenter({ slides: deckB, cfg: { deckOutline: true } });
+  pA.start();
+  pB.start();
+  assert.equal(sessionA.lastDpp.outline.length, 2);
+  assert.equal(sessionB.lastDpp.outline.length, 3);
+  assert.deepEqual(sessionA.lastDpp.outline.map((o) => o.title), ['A1', 'A2']);
+  assert.deepEqual(sessionB.lastDpp.outline.map((o) => o.title), ['B1', 'B2', 'B3']);
+});

@@ -577,3 +577,28 @@ describe('10. Avatar video framing', () => {
     assert.deepEqual(offenders, [], `examples with a <video> but no object-fit rule: ${offenders.join(', ')}`);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 11) Dead-air event documentation (see issue #24)
+// ─────────────────────────────────────────────────────────────────────────────
+describe('11. Dead-air event documentation', () => {
+  test("'responsePending' and 'responseSettled' are each documented in README.md or docs/*.md", () => {
+    const mdFiles = ['README.md', ...DOCS.filter((f) => f.startsWith('docs/'))];
+    const text = mdFiles.map(read).join('\n');
+    const missing = ['responsePending', 'responseSettled'].filter((name) => !text.includes(name));
+    assert.deepEqual(missing, [], `dead-air events not documented in README.md/docs/*.md: ${missing.join(', ')}`);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 12) avatar_filler steerability disclosure (see issue #23)
+// ─────────────────────────────────────────────────────────────────────────────
+describe('12. avatar_filler steerability disclosure', () => {
+  test("avatar_filler's summary in capabilities.js states its phrasing is not directive-steerable", () => {
+    const src = read('src/management/capabilities.js');
+    const m = src.match(/avatar_filler:\s*\{[^}]*summary:\s*'([^']*)'/);
+    assert.ok(m, "could not find avatar_filler's summary field in capabilities.js");
+    assert.match(m[1], /directive|persona|server-side|fixed/i,
+      `avatar_filler summary must state it is not steerable via base_directive/persona: "${m[1]}"`);
+  });
+});
