@@ -65,7 +65,7 @@ KS=$(curl -s -X POST "https://www.kaltura.com/api_v3/service/session/action/star
 | Agent | `agentid:<agentId>` | Agent-scoped calls targeting a specific agent |
 | Widget | auto-derived from `widgetId` | End-user embed — no admin secret in the browser |
 
-`disableentitlement` is for admin operations only. Never pass it to a conversation or end-user session.
+**Keep `disableentitlement` server-side, for management/admin operations only.** The SDK can't detect or stop a `disableentitlement` KS from being handed to a conversation/end-user session — a real KS's privileges are encrypted and unreadable client-side — so nothing will warn you if you do this by mistake. See [SECURITY.md](/reference/security/#ks-kaltura-session-guidance-for-agents-ac-3-ac-6-ia-2) and Kaltura's own [KS/privilege reference](https://kaltura.md/KALTURA_SESSION_GUIDE/).
 
 ---
 
@@ -104,7 +104,7 @@ POST https://api.avatar.us.kaltura.ai/v1/catalog-item/list
 
 Change `typeEqual` to `"Voice"` for voices. Each item has an `itemId` — pass it to avatar creation.
 
-**Visual preset fields:** `itemId`, `attributes.visual.{name, genderPresentation, skinTone, ageGroup, hairColor, clothing, background}`, `imageUrl`, `loadingVideo`.
+**Visual preset fields:** `itemId`, `attributes.visual.{name, genderPresentation, skinTone, ageGroup, hairColor, clothing, background}`, `imageUrl`, `loadingVideo` — raw backend asset URLs (an upload echo for a custom visual, a preset asset URL for a catalog item), not the rendered composite the live WHEP stream shows.
 
 **Voice preset fields:** `itemId`, `attributes.voice.{name, description, language}`, `voiceSampleUrl`.
 
@@ -167,7 +167,9 @@ attributes={"visual":{"name":"My Portrait","genderPresentation":"Feminine","back
 adminTags=custom
 ```
 
-Returns a `CatalogItemDto` whose `itemId` is the catalog visual. Pass it as `visual.id` in `avatar/create` (or `visualId` in `provision`). The model **animates the portrait live at runtime** — no preprocessing, no ops involvement, self-serve. Verified: a real 2.4 MB portrait JPEG (`avatar-session/create` → `{success:true, sessionId}`).
+Returns a `CatalogItemDto` whose `itemId` is the catalog visual. Pass it as `visual.id` in `avatar/create` (or `visualId` in `provision`). The model **animates the portrait live at runtime** — no ops involvement, self-serve. Verified: a real 2.4 MB portrait JPEG (`avatar-session/create` → `{success:true, sessionId}`).
+
+The backend does preprocess the uploaded image before rendering: it crop-fits the source to a fixed face-height-to-frame ratio and centers it on the render canvas. A tight "headshot"-style crop — the intuitive upload — is the worst case: the bigger the face already fills the source frame, the more the backend downscales it to hit that ratio, and the bigger the resulting black borders around the rendered avatar. One confirmed case: padding the source out to roughly 2600×2600 (face occupying a small fraction of the frame) produced an edge-to-edge render with no borders. This is an observed data point from one real upload, not a documented API contract — the exact ratio isn't published, so pad generously and check the result in a live session rather than assuming this number is precise.
 
 **Required fields** (API 400s if any are missing): `name`, `genderPresentation`, `background`, `skinTone`, `ageGroup`, `hairColor`. The gap today is video-clip ingest (a short clip → a higher-fidelity avatar model) — not yet self-serve.
 
@@ -268,7 +270,7 @@ POST https://genie.nvp1.ovp.kaltura.com/v1/intellect/update
 | Key | Default | What it does |
 |-----|---------|-------------|
 | `avatar` | OFF | Enable avatar video conversation |
-| `avatar_filler` | OFF | Avatar speaks filler while thinking |
+| `avatar_filler` | OFF | Avatar speaks filler while thinking — phrasing is server-generated, not steerable via `base_directive`/persona |
 | `generate_followup_questions` | ON | Suggest next questions |
 | `use_knowledge_base` | ON | RAG over the linked knowledge base |
 | `use_content_search` | ON | Search media entry metadata |
@@ -560,7 +562,7 @@ Response:
 | `conversationManagerUrl` | Socket.IO control-plane host |
 | `srsBaseUrl` | WHEP video-stream host |
 | `turnServerUrl` | TURN host |
-| `avatars[]` | `[{id, previewImageUrl, loadingVideoUrl}]` |
+| `avatars[]` | `[{id, previewImageUrl, loadingVideoUrl}]` — raw backend asset URLs (an upload echo for a custom visual, a preset asset URL for a catalog item), not the rendered composite the live WHEP stream shows |
 
 The admin secret never touches the browser — `appInit` derives the agent from the widget KS.
 
