@@ -403,9 +403,8 @@ describe('7. SDK invariants', () => {
     assert.deepEqual(offenders, [], `not_implemented in: ${offenders.join(', ')}`);
   });
 
-  test('two-KS-type guard in core/session.js + experience/session.js', () => {
+  test('mint-time entitlement guard in core/session.js', () => {
     assert.ok(read('src/core/session.js').includes('assertEntitlementOn'), 'assertEntitlementOn missing from core/session.js');
-    assert.ok(read('src/experience/session.js').includes('entitlement_violation'), 'entitlement_violation missing from experience/session.js');
   });
 
   test('socket.io never imported in src (only injected)', () => {

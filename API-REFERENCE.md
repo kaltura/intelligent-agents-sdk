@@ -58,7 +58,7 @@ KS=$(curl -s -X POST "https://www.kaltura.com/api_v3/service/session/action/star
 | Agent | `agentid:<agentId>` | Agent-scoped calls targeting a specific agent |
 | Widget | auto-derived from `widgetId` | End-user embed — no admin secret in the browser |
 
-`disableentitlement` is for admin operations only. Never pass it to a conversation or end-user session.
+**Keep `disableentitlement` server-side, for management/admin operations only.** The SDK can't detect or stop a `disableentitlement` KS from being handed to a conversation/end-user session — a real KS's privileges are encrypted and unreadable client-side — so nothing will warn you if you do this by mistake. See [SECURITY.md](SECURITY.md#ks-kaltura-session-guidance-for-agents-ac-3--ac-6--ia-2) and Kaltura's own [KS/privilege reference](https://github.com/kaltura/developer-platform-docs/blob/master/documentation/VPaaS-API-Getting-Started/Kaltura_API_Authentication_and_Security.md).
 
 ---
 

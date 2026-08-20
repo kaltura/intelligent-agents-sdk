@@ -27,8 +27,11 @@
  * published/fixed contract (see docs/ARCHITECTURE.md § Displaying the Avatar
  * Video), so this event is the only reliable source of truth for it.
  *
- * The constructor REFUSES a token carrying `disableentitlement`: an end-user
- * runtime must keep entitlement ON (the two-KS-type invariant).
+ * Does NOT police `token`'s entitlement scope — a real KS's privileges are
+ * AES-encrypted with the partner secret and unreadable client-side (see
+ * ks-inspect.js), so any such check is inert for production tokens. Which KS
+ * kind a browser session should carry is an app-level decision made when you
+ * mint the token server-side (see SECURITY.md's KS guidance for agents).
  */
 import { Emitter } from './emitter.js';
 import { TranscriptTracker } from './transcript.js';
@@ -96,7 +99,7 @@ const FATAL_CODE = {
 export class KalturaAvatarSession extends Emitter {
   /**
    * @param {object} cfg
-   * @param {string} cfg.token              Enriched conversation KS from appInit (entitlement ON). THROWS if it carries disableentitlement.
+   * @param {string} cfg.token              Enriched conversation KS from appInit (entitlement ON for the standard flow — see SECURITY.md's KS guidance for agents).
    * @param {string} [cfg.conversationManagerUrl] From appInit (default the US prod host).
    * @param {string} [cfg.genieUrl]         Genie host for `respondToTool()`'s direct ACK POST (default `https://genie.nvp1.ovp.kaltura.com`, matching `Management`'s own default).
    * @param {string} cfg.srsBaseUrl         From appInit (WHEP egress host).
@@ -130,12 +133,9 @@ export class KalturaAvatarSession extends Emitter {
     super();
     if (!cfg || !cfg.token) throw new KalturaError({ type: 'about:blank', title: 'token required', code: 'bad_request', detail: 'KalturaAvatarSession needs an enriched conversation token from appInit.' });
     const info = inspectKs(cfg.token);
-    if (info.ok && info.disableEntitlement) {
-      throw new KalturaError({
-        type: 'https://docs.kaltura.com/agentic/errors/entitlement_violation', title: 'entitlement violation', code: 'entitlement_violation',
-        detail: 'KalturaAvatarSession refuses a disableentitlement token — the live runtime must keep entitlement ON. Pass the geniegpcid token from appInit.',
-      });
-    }
+    // Assume the entitlement-ON contract this class expects; only flip to false when a
+    // (synthetic/plaintext) token proves otherwise — a real, encrypted KS can't be inspected.
+    this._entitlementEnforced = !(info.ok && info.disableEntitlement === true);
     if (typeof cfg.socketFactory !== 'function') throw new KalturaError({ type: 'about:blank', title: 'socketFactory required', code: 'bad_request', detail: 'Inject a socket.io-compatible socketFactory(url, opts) — the SDK never bundles socket.io.' });
 
     // Diagnostics first (the transport-security checks below warn through these).
@@ -433,7 +433,7 @@ export class KalturaAvatarSession extends Emitter {
       this._wireNetwork();
       this._touchActivity();   // HIPAA auto-logoff: start the idle clock
       this._startStatsBeacon();
-      this._audit('session.connect', 'success', { kind: 'conversation', entitlementEnforced: true, action: this.mode });
+      this._audit('session.connect', 'success', { kind: 'conversation', entitlementEnforced: this._entitlementEnforced, action: this.mode });
     } catch (err) {
       this._setState('error');
       this._teardownTransports();
@@ -797,10 +797,10 @@ export class KalturaAvatarSession extends Emitter {
     const ks = token && typeof token === 'object' ? token.ks : token;
     if (!ks || typeof ks !== 'string') throw new KalturaError({ type: 'about:blank', title: 'token required', code: 'bad_request', detail: 'setToken needs a fresh conversation KS (string or Token).' });
     const info = inspectKs(ks);
-    if (info.ok && info.disableEntitlement) throw new KalturaError({ type: 'https://docs.kaltura.com/agentic/errors/entitlement_violation', title: 'entitlement violation', code: 'entitlement_violation', detail: 'setToken refuses a disableentitlement token — the live runtime must keep entitlement ON.' });
+    this._entitlementEnforced = !(info.ok && info.disableEntitlement === true);
     this._token = ks;
     if (this._socket?.auth) this._socket.auth.token = ks;
-    this._audit('token.refresh', 'success', { kind: 'conversation', entitlementEnforced: true });
+    this._audit('token.refresh', 'success', { kind: 'conversation', entitlementEnforced: this._entitlementEnforced });
   }
 
   /** Mute the user's mic (stop sending audio) + tell the server. */
