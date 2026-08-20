@@ -348,9 +348,10 @@ Mint the browser-side token client-side with no server or secret:
 (the widget KS itself needs no admin secret — see `docs-site-avatar`'s
 `public/avatar-session.js` for a real example, in the sibling repo).
 
-The constructor **throws** if `token` carries `disableentitlement` — the live
-runtime refuses an admin-scoped token, enforcing the two-KS-type invariant on
-the client side too.
+The constructor does not police which KS kind `token` carries — a real KS's
+privileges are encrypted and unreadable client-side, so that check would be
+inert anyway. Mint a `geniegpcid`/`agentid`/widget token server-side for the
+live runtime; see SECURITY.md's KS guidance for agents.
 
 ### Key session methods
 

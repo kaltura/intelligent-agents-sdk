@@ -11,7 +11,6 @@ import { FakeRTCPeerConnection, FakeVideoEl, fakeGetUserMedia } from '../fakes/r
  * mid-session token rotation, and structured audit events (NIST AU-2/AU-3).
  */
 const KS = 'djJ8' + Buffer.from('v2|123|geniegpcid:1222').toString('base64url');
-const ADMIN_KS = 'djJ8' + Buffer.from('v2|123|disableentitlement').toString('base64url');
 
 function mk(over = {}) {
   FakeRTCPeerConnection.reset();
@@ -25,10 +24,6 @@ function mk(over = {}) {
   });
   return { s, socket };
 }
-
-test('refuses a disableentitlement token at construction (two-KS invariant)', () => {
-  assert.throws(() => mk({ token: ADMIN_KS }).s, (e) => e.code === 'entitlement_violation');
-});
 
 test('transport: insecure conversationManagerUrl throws insecure_transport', () => {
   assert.throws(() => mk({ conversationManagerUrl: 'http://cm.evil.example' }).s, (e) => e.code === 'insecure_transport');
@@ -95,13 +90,12 @@ test('token field is non-enumerable and dropped on disconnect', async () => {
   assert.equal(s._token, null, 'token reference dropped on disconnect (bounded blast radius)');
 });
 
-test('setToken rotates the conversation token; refuses disableentitlement', async () => {
+test('setToken rotates the conversation token', async () => {
   const { s, socket } = mk();
   scriptHappyPath(socket);
   await s.connect();
   const fresh = 'djJ8' + Buffer.from('v2|123|geniegpcid:1222').toString('base64url');
   assert.doesNotThrow(() => s.setToken(fresh));
-  assert.throws(() => s.setToken(ADMIN_KS), (e) => e.code === 'entitlement_violation');
   s.disconnect();
 });
 

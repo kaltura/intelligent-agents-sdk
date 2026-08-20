@@ -32,7 +32,7 @@ operator's reporting duty; this is the vendor contact).
 ## Table of contents
 
 - [AI-application controls](#ai-application-controls-owasp-llmagentic-hipaa-technical-safeguards)
-- [The two-token invariant](#the-two-token-invariant-ac-3--ac-6--ia-2)
+- [KS guidance for agents](#ks-kaltura-session-guidance-for-agents-ac-3--ac-6--ia-2)
 - [Token lifecycle](#token-lifecycle-rfc-9700-oauth-20-security-bcp-nist-ac-family)
 - [Audit logging](#audit-logging-nist-au-2--au-3--au-12-owasp-logging-soc-2-cc7)
 - [Transport security](#transport-security-nist-sc-8-owasp-wsstls)
@@ -79,21 +79,35 @@ event, which fires before the avatar's first words on every connect.
   `requireDisclosureAck` (also a biometric-consent gate); an optional
   `consentRef` on voice/visual cloning.
 
-## The two-token invariant (AC-3 / AC-6 / IA-2)
+## KS (Kaltura Session) guidance for agents (AC-3 / AC-6 / IA-2)
 
-There are exactly two kinds of Kaltura Session (KS) token, and they never mix:
+A KS carries the privileges that decide what it can do. The full privilege
+reference is Kaltura's own docs, not this file — see [Kaltura API
+Authentication and
+Security](https://github.com/kaltura/developer-platform-docs/blob/master/documentation/VPaaS-API-Getting-Started/Kaltura_API_Authentication_and_Security.md).
+What follows is only what matters for agent/avatar deployments.
 
-| Token | Privilege | Entitlement | Where |
-|-------|-----------|-------------|-------|
-| **admin** | `disableentitlement` (bypasses access control) | OFF | server-side only — `sessions.createAdminToken()` |
-| **conversation / agent / widget** | `geniegpcid:<configId>` / `agentid:<id>` / widget | ON | safe to hand to a browser |
+| Token | Mint with | Privilege | Entitlement | Typical use |
+|-------|-----------|-----------|-------------|--------------|
+| **admin** | `sessions.createAdminToken()` | `disableentitlement` | OFF | Management-plane calls (provisioning, config) — server-side |
+| **conversation / agent** | `sessions.createConversationToken()` / `createAgentToken()` | `geniegpcid:<configId>` / `agentid:<id>` | ON | The token your server hands a live avatar/chat session |
+| **widget** | `sessions.createWidgetToken({widgetId})` | server-derived | ON | Public, secret-free anonymous embed — safe to mint straight from the browser |
 
-It is structurally impossible to mint an entitlement-bypassing token from a
-client surface: `createConversationToken`/`createAgentToken` throw
-`entitlement_violation` if asked, and `KalturaAvatarSession` refuses a
-`disableentitlement` token at construction *and* on `setToken()`. This invariant
-is tested (`test/unit/scope-guard.test.js`, `test/e2e/security.test.js`) and
-gated, so it can't silently regress.
+Default recommendation: mint `conversation`/`agent`/`widget` tokens for
+anything reaching a browser, and keep `admin` tokens server-side.
+`createConversationToken`/`createAgentToken` refuse `extraPrivileges` that
+disable entitlement, so neither method can be tricked into minting an
+entitlement-bypassing token — tested and gated
+(`test/unit/scope-guard.test.js`, `test/integration/sessions.test.js`).
+
+Whether a given browser session should instead carry broadened
+(entitlement-bypassing) access is an **application-level decision** you make
+when you mint that session's token server-side — not something this SDK
+enforces on the client. A real KS's privileges are AES-encrypted with the
+partner secret and are not client-readable (`inspectKs()` reports
+`disableEntitlement: null` for a real token; see
+`src/management/ks-inspect.js`), so a client-side check would be inert for
+production tokens and isn't attempted.
 
 ## Token lifecycle (RFC 9700 OAuth 2.0 Security BCP; NIST AC family)
 
@@ -301,7 +315,7 @@ vs **Operator** (your duty, fed by the SDK's hooks/events).
 | **164.312(a)(2)(iii) Automatic logoff** | `idleTimeoutMs` (default ON, 900000 ms) → `disconnect()` + `idleWarning` + `session.timeout` audit | Choose the timeout per care setting |
 | **164.312(a)(2)(i) Unique user identification** | Optional opaque `subjectId` threaded onto every AuditEvent | Supply an opaque id (never the patient's name/PHI) |
 | **164.312(a)(1) Access control** | Two-token invariant; entitlement-ON conversation tokens; least-privilege `restrictions` | Role/entitlement config in Kaltura |
-| **164.312(d) Person/entity authentication** | Authenticates the session (KS); refuses admin tokens client-side | Proof the patient before minting the conversation token; bind via `subjectId` |
+| **164.312(d) Person/entity authentication** | Authenticates the session (KS), minted server-side under your control | Proof the patient before minting the conversation token; bind via `subjectId` |
 | **164.502(b) Minimum necessary** | Redaction chokepoint; SDK persists no transcripts/captions/screenshots | Don't persist captions/screenshots beyond minimum necessary; apply retention |
 | **164.402 Breach / safe harbor** | PHI encrypted in transit + no token/PHI at rest → supports the encryption safe harbor for the SDK-controlled path | At-rest encryption; breach detection + 164.404/164.410 notification |
 | **164.316(b)(2) Retention** | Emits the records | Tamper-evident storage + 6-year retention |
