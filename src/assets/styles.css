@@ -671,6 +671,27 @@ blockquote {
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25);
   padding: 1rem;
   z-index: 21;
+  /* Unlike the inline/hero .nova-panel, this flyout sits on the themed
+     --card-bg, not a permanent black video scrim — the white text/border
+     values above are tuned for that scrim and read as invisible-on-white
+     in light mode without these resets. */
+  color: var(--page-text);
+}
+
+.nova-widget.dock-mode.expanded .nova-status {
+  color: var(--secondary-text);
+}
+
+.nova-widget.dock-mode.expanded .nova-transcript {
+  border-top-color: var(--border-color);
+}
+
+.nova-widget.dock-mode.expanded .nova-transcript .nova-you {
+  color: var(--secondary-text);
+}
+
+.nova-widget.dock-mode.expanded .nova-transcript .nova-nova {
+  color: var(--page-text);
 }
 
 .nova-highlight-ring {
@@ -833,6 +854,29 @@ body.home .nova-hero {
 
 .nova-hero-visual:has(.nova-placeholder:not(.hidden)):hover .nova-video-wrap {
   filter: brightness(1.04);
+}
+
+/* Between this and the sidebar-collapse breakpoint (900px, see .sidebar's own
+   media query), the sidebar is still fixed and visible, so .nova-hero itself
+   keeps its normal offset/padding — only the copy/visual pair stacks. Without
+   this, default flex-shrink crushes .nova-hero-visual down to ~225px at
+   common "small laptop" widths like 1024x768 well before the 900px
+   breakpoint, wrapping the caption onto 3 cramped lines. */
+@media (max-width: 1200px) and (min-width: 901px) {
+  .nova-hero-inner {
+    flex-direction: column;
+    justify-content: flex-start;
+    gap: 2rem;
+  }
+
+  .nova-hero-copy {
+    max-width: none;
+  }
+
+  .nova-hero-visual {
+    max-width: 320px;
+    max-height: min(55vh, 420px);
+  }
 }
 
 @media (max-width: 900px) {
