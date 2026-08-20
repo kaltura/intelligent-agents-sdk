@@ -133,6 +133,9 @@ export class KalturaAvatarSession extends Emitter {
     super();
     if (!cfg || !cfg.token) throw new KalturaError({ type: 'about:blank', title: 'token required', code: 'bad_request', detail: 'KalturaAvatarSession needs an enriched conversation token from appInit.' });
     const info = inspectKs(cfg.token);
+    // Assume the entitlement-ON contract this class expects; only flip to false when a
+    // (synthetic/plaintext) token proves otherwise — a real, encrypted KS can't be inspected.
+    this._entitlementEnforced = !(info.ok && info.disableEntitlement === true);
     if (typeof cfg.socketFactory !== 'function') throw new KalturaError({ type: 'about:blank', title: 'socketFactory required', code: 'bad_request', detail: 'Inject a socket.io-compatible socketFactory(url, opts) — the SDK never bundles socket.io.' });
 
     // Diagnostics first (the transport-security checks below warn through these).
@@ -430,7 +433,7 @@ export class KalturaAvatarSession extends Emitter {
       this._wireNetwork();
       this._touchActivity();   // HIPAA auto-logoff: start the idle clock
       this._startStatsBeacon();
-      this._audit('session.connect', 'success', { kind: 'conversation', entitlementEnforced: true, action: this.mode });
+      this._audit('session.connect', 'success', { kind: 'conversation', entitlementEnforced: this._entitlementEnforced, action: this.mode });
     } catch (err) {
       this._setState('error');
       this._teardownTransports();
@@ -793,9 +796,11 @@ export class KalturaAvatarSession extends Emitter {
   setToken(token) {
     const ks = token && typeof token === 'object' ? token.ks : token;
     if (!ks || typeof ks !== 'string') throw new KalturaError({ type: 'about:blank', title: 'token required', code: 'bad_request', detail: 'setToken needs a fresh conversation KS (string or Token).' });
+    const info = inspectKs(ks);
+    this._entitlementEnforced = !(info.ok && info.disableEntitlement === true);
     this._token = ks;
     if (this._socket?.auth) this._socket.auth.token = ks;
-    this._audit('token.refresh', 'success', { kind: 'conversation', entitlementEnforced: true });
+    this._audit('token.refresh', 'success', { kind: 'conversation', entitlementEnforced: this._entitlementEnforced });
   }
 
   /** Mute the user's mic (stop sending audio) + tell the server. */
