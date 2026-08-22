@@ -783,6 +783,17 @@ SDK: `mgmt.threads.{list, get, rename, delete, transcript}`.
 > [issue #59](https://github.com/kaltura/intelligent-agents-sdk/issues/59) — not implemented, and
 > not implied by anything in this SDK today.
 
+> **Backend-blocked, dated 2026-08-22 (tracks issue #44).** There is no public API today for
+> getting a summary of a thread. Backend investigation confirms summarization logic already
+> exists server-side, in more than one form used internally at different points in a
+> conversation's lifecycle, but none of it is exposed as an endpoint an integrator can call
+> directly. Building "give me a summary of this thread" today means replaying the transcript
+> (via `threads.transcript()`) into a separate prompt yourself. Once the backend exposes a
+> public summarization endpoint, the SDK would add a thin `Conversations.summarize(threadId)`-
+> style method following the same non-2xx error-handling conventions as the rest of
+> `Conversations` — but that endpoint does not exist yet, and nothing in this SDK should be read
+> as implying otherwise.
+
 ---
 
 ### Feedback and Follow-ups (SDK)
