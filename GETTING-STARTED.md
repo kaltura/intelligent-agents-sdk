@@ -95,6 +95,22 @@ console.log(reply.text);
 leaves your process. See [API-REFERENCE.md](API-REFERENCE.md#phase-4--operate) for threaded
 conversations, streaming, and the full Management API surface.
 
+**Talking on behalf of a real, known user?** Mint the conversation token yourself with `userId`
+instead of letting `converseOnce()` auto-mint an anonymous one — this binds the KS to that user so
+per-user memory and analytics attribute the conversation correctly:
+
+```js
+const conv = await kaltura.sessions.createConversationToken({
+  configId: '<configId from Step 3>',
+  userId: 'learner-123',   // any stable id you use to identify this person
+});
+const reply = await kaltura.converseOnce('<configId from Step 3>', 'Hello again!', {}, conv);
+```
+
+`userId` is optional everywhere it's accepted — omit it and you get the same anonymous behavior
+shown above. See [API-REFERENCE.md](API-REFERENCE.md#authentication) → "Bind a session to a real
+end-user identity" for the full picture.
+
 ---
 
 ## What's next?
