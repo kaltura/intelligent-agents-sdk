@@ -141,7 +141,7 @@ matching `Threads`'s guard.
 | `delete` on a key that doesn't exist | Backend TBD: idempotent no-op (delete-of-nonexistent succeeds) vs. `not_found`. **Proposed default: idempotent no-op**, consistent with `Rule R-3`-style idempotency the rest of the SDK favors, but this is a genuine open question for the backend team, not a settled decision. | `not_found` if backend chooses non-idempotent |
 | Concurrent writes to the same `(userId, key)` | **Proposed:** optimistic concurrency via `version` — `set(..., {ifMatch: <version>})` fails if the stored version has moved on since the caller last read it. Omitting `ifMatch` always overwrites (last-write-wins), matching the "opts is optional" pattern the rest of the SDK uses for opt-in strictness. | `conflict` |
 | Backend storage unavailable / 5xx | Passed through the SDK's existing `errorFromResponse()` normalization (`src/core/errors.js`) — no special-casing | `server_error` (or whatever `codeForStatus` maps) |
-| Session's KS is a conversation token, not admin | Throw before any network call, same `assertAdmin` guard every other admin-only method uses | `forbidden` (`assertKind` in `src/management/client.js`) |
+| Session's KS is a conversation token, not admin | Throw before any network call, same `assertKind` guard every other admin-only method uses | `wrong_token_scope` (`assertKind` in `src/management/client.js`) |
 
 ### Versioning
 
