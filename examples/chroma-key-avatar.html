@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Kaltura Intelligent Agents — Chroma-key Avatar demo</title>
+  <style>body{font-family:system-ui;margin:2rem;max-width:720px} #composited{width:512px;height:512px;background:#0a3d1c repeating-linear-gradient(45deg,#0a3d1c 0,#0a3d1c 10px,#0c4a22 10px,#0c4a22 20px);border-radius:12px;overflow:hidden} #source{position:absolute;left:-9999px;width:512px;height:512px;object-fit:cover} #cc{color:#a00;font-size:.9rem}</style>
+</head>
+<body>
+  <h1>Chroma-key avatar (transparent-background compositing)</h1>
+  <p>
+    The avatar's own video is keyed live and composited over this page's own background
+    (the green checker below stands in for YOUR page content) — no green box, no fixed
+    rectangle.
+  </p>
+  <p id="cc"></p>
+  <div id="composited"></div>
+
+  <!-- The session's OWN video element. Never shown directly — chroma-key-video reads frames
+       from it and paints the composited (transparent-background) result into #composited
+       instead. Off-screen, not display:none, so the browser still decodes it. -->
+  <video id="source" autoplay playsinline muted></video>
+
+  <!-- socket.io is YOUR dependency — injected, never bundled by the SDK. -->
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js" integrity="sha384-2huaZvOR9iDzHqslqwpR87isEmrfxqyWOF7hr7BY6KG0+hVKLoEXMPUJw3ynWuhO" crossorigin="anonymous"></script>
+  <script type="module">
+    // chroma-key-video is YOUR dependency too — the SDK never bundles or imports it. Any
+    // class shaped `new ChromaKeyVideo(videoEl, options)` with a `.mount(container)` and a
+    // `.destroy()` works; this example pulls a real one from a CDN.
+    import { KalturaAvatarSession } from '../src/experience/index.js';
+    import { attachChromaKeyAvatar } from '../src/experience/chroma-key.js';
+    import ChromaKeyVideo from 'https://esm.sh/chroma-key-video@1';
+
+    const cc = document.getElementById('cc');
+
+    // 1) Runtime endpoints + conversation token come from YOUR server (appInit).
+    const init = await fetch('/appInit').then((r) => r.json());
+
+    // 2) The session renders into its OWN <video> element, same as every other example —
+    //    chroma-key-avatar changes nothing about how the session itself works.
+    const video = document.getElementById('source');
+    const session = new KalturaAvatarSession({
+      token: init.ks, conversationManagerUrl: init.conversationManagerUrl,
+      srsBaseUrl: init.srsBaseUrl, turnServerUrl: init.turnServerUrl,
+      videoEl: video, socketFactory: (url, opts) => io(url, opts),
+    });
+    session.on('disclosure', ({ disclosureText }) => { cc.textContent = '⚠️ ' + disclosureText; });
+    session.on('reconnecting', () => { cc.textContent = '… reconnecting'; });
+    session.on('reconnected', () => { cc.textContent = ''; });
+
+    // 3) attachChromaKeyAvatar() must be passed session.videoEl (the SAME element the
+    //    session itself renders into) — construction is synchronous, no Promise. The
+    //    returned `player` is the raw chroma-key-video instance, unwrapped: listen on IT
+    //    directly for its own events, and destroy() fires automatically when this session
+    //    ends or hits a fatal error — no extra teardown call needed on disconnect.
+    const player = attachChromaKeyAvatar({
+      session,
+      videoEl: session.videoEl,
+      ChromaKeyVideo,
+      options: { keyColor: [0, 255, 0], similarity: 0.4 },
+      container: document.getElementById('composited'),
+    });
+    player.on?.('ready', () => cc.textContent = '');
+
+    await session.connect();
+    window.addEventListener('beforeunload', () => session.disconnect());
+  </script>
+</body>
+</html>
