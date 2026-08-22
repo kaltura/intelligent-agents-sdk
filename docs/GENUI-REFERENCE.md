@@ -252,6 +252,82 @@ This is the **image-bearing** widget (a deck/gallery of cards with thumbnails). 
   `show_widget` tool description can steer the brain toward `summary` for a single text-only
   point. Prefer `content-gallery` for 2+ image-bearing items; use `summary` for one.
 
+### 10. graded-question (`renderGradedQuestion`) — a host-registered "10th runtime"
+
+Unlike sections 1–9, this is **not** one of the nine backend `unisphere-tool` runtimes — there is
+no Genie brain tool that emits `graded-question-tool`. It's a comprehension-check widget you
+register yourself, via the exact "10th runtime" extensibility seam described below
+(`.register()` / `cfg.renderers`): a prompt with either multiple-choice options or a free-text
+answer, an optional answer key, and an optional explanation, graded client-side.
+
+```js
+import { ExperienceRenderer, renderGradedQuestion } from '@kaltura/intelligent-agents/experience/genui';
+
+const renderer = new ExperienceRenderer({
+  mount: document.getElementById('widgets'),
+  renderers: { 'graded-question': renderGradedQuestion },
+  onAction: (action, payload) => {
+    if (action === 'answer') console.log(payload.questionId, payload.correct, payload.value);
+  },
+});
+
+// however your app decides to show a check-in question — e.g. after a video chapter —
+// render + mount it, same as any custom widget:
+renderer.render('graded-question', {
+  questionId: 'q1',
+  prompt: 'Which HTTP method is idempotent?',
+  options: [{ id: 'a', text: 'POST' }, { id: 'b', text: 'PUT' }],
+  correctOptionId: 'b',
+  explanation: 'PUT replaces a resource; calling it twice has the same effect as once.',
+});
+```
+
+Because it isn't backend-emitted, the LLM itself never authors this widget's model over the wire —
+your app supplies `data` directly (e.g. from your own quiz content). `renderGradedQuestion` still
+accepts a handful of common source-key aliases for convenience/forward-compat, and every field is
+run through `safeText` twice — once in the renderer, once again in `mountWidget`'s DOM builder — so
+a hand-built descriptor that skips the renderer entirely is exactly as safe.
+
+| Field | Source keys (model) | Constraint |
+|---|---|---|
+| `questionId` | `questionId`, `id`, `key` | ≤200 chars; falls back to a slug derived from the prompt |
+| `variant` | *(derived)* `'choice'` when `options` is non-empty, else `'text'` | not settable directly |
+| `prompt` | `prompt`, `question`, `text` | ≤2000 chars |
+| `options` | `options`, `choices`, `answers` — each `{id?, text}` | ≤8 options; each `text` ≤500 chars; a missing `id` gets a stable slug fallback |
+| `correctOptionId` | `correctOptionId`, `correctId`, `answerId`, `correct` | must name a real option's `id`, else `null` (choice variant only) |
+| `acceptedAnswers` | `acceptedAnswers`, `answer`, `correctText`, `expectedAnswer`/`expectedAnswers` (string or array) | each entry ≤500 chars, case-insensitive/trimmed match (text variant only) |
+| `explanation` | `explanation`, `feedback`, `rationale` | ≤2000 chars — revealed after answering |
+
+Descriptor: `{kind:'graded-question', data:{questionId, variant, prompt, options:[{id,text}], correctOptionId, acceptedAnswers, explanation}}`.
+
+**Grading is client-side, not tamper-proof.** The answer key (`correctOptionId`/`acceptedAnswers`)
+travels inside the descriptor itself — the same trust model every other GenUI widget's model data
+already uses. Treat this as a comprehension-check for a cooperative learner (e.g. a knowledge-check
+after a video chapter), not a proctored or high-stakes assessment primitive.
+
+**`correct` is nullable by design.** `null` means "no answer key was authored" (an open-ended,
+ungraded question) — distinct from `false` (a definitively wrong answer). A choice question with no
+`correctOptionId`, or a free-text question with no `acceptedAnswers`, always grades `null`.
+
+**Interaction event.** Once the learner submits (one answer per mount — a second submit is a
+no-op), `mountWidget`'s builder calls:
+
+```js
+onAction('answer', {
+  questionId,          // string — the descriptor's questionId
+  variant,              // 'choice' | 'text'
+  correct,               // boolean | null — null = no answer key authored
+  value,                  // the chosen option's text (choice) or the sanitized free-text answer (text)
+  explanation,             // string — '' if none was authored
+  optionId,                 // string — present only for the 'choice' variant (the chosen option's id)
+});
+```
+
+A listening integration branches conversation flow off `correct`/`questionId` — e.g.
+`session.speak(...)` a hint on `correct:false`, or advance a lesson plan on `correct:true`. See
+`examples/genui-graded-question.mjs` for a full runnable walkthrough of both variants, including the
+exact `onAction` payloads for a right answer, a wrong answer, and an ungraded (open-ended) one.
+
 ## Authoring — which capability turns each widget on
 
 Capabilities are set **at intellect creation** (partner config caches ~24h; set them up front).
@@ -324,12 +400,16 @@ Headless, call `.render(runtimeName, widget)` (or `.render(segment)`) per segmen
 - `_meta` receipt stamps `{partnerId, source:'experience/genui', scope:'conversation (geniegpcid,
   entitlement ON)', known, firstClass}` — `known` = this instance has a renderer (a registered
   10th runtime is `known:true`); `firstClass` = one of the built-in set.
+- `graded-question` (§ 10 below) is a concrete, shipped example of a registered 10th runtime — it's
+  exported (`renderGradedQuestion`) but deliberately excluded from `DEFAULT_RENDERERS`/`RUNTIMES`,
+  so it stays `known:false` until a host explicitly registers it.
 
 ### `onAction`, `WIDGET_KINDS`, and the hand-rolled escape hatch
 
 `onAction(action, payload)` surfaces interactions `mountWidget` can't fulfil itself: `'followup'`
 `{question}` (→ `session.speak`), `'submit'` `{values}` (→ `session.submitStructuredDataForm`), `'play'`
-`{entryId,url,embedUrl}`, `'open'` `{url}`.
+`{entryId,url,embedUrl}`, `'open'` `{url}`, `'answer'` `{questionId, variant, correct, value,
+explanation, optionId?}` (a `graded-question` was answered — see § 10 below).
 
 `WIDGET_KINDS` (exported) is the frozen list of every `kind` (the nine first-class GenUI runtimes +
 `unknown` + `error`) — use it for an exhaustive host switch or a parity test.
@@ -413,6 +493,7 @@ The SDK ships zero CSS for these class names — style the `.kgenui__*` block in
 |---|---|
 | Runtime catalog + normalize + parse | `src/experience/genui/parse.js` |
 | The 9 default renderers | `src/experience/genui/renderers/*.js` (+ `index.js` map + `WIDGET_KINDS`) |
+| `graded-question` (host-registered 10th runtime) | `src/experience/genui/renderers/graded-question.js` (+ its `mountWidget` builder); runnable example: `examples/genui-graded-question.mjs` |
 | DOM mount helper (`mountWidget` + `kgenui` classes) | `src/experience/genui/renderers/mount.js` |
 | Multi-fragment assembly | `src/experience/genui/segments.js` |
 | Dispatch + dual-mode + fallback | `src/experience/genui/renderer.js` |
