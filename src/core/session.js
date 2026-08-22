@@ -24,7 +24,11 @@
  *     revocation-cascade semantics (see {@link Sessions.revoke}).
  *   - Auditability (NIST AU-2/AU-3): every mint/revoke fires a redacted audit
  *     event and returns a `scope` receipt; the admin secret is NEVER returned,
- *     logged, enumerable, or attached to a token.
+ *     logged, enumerable, or attached to a token. When a caller binds a real
+ *     end-user identity via `userId` (issue #36), it rides the mint call as a
+ *     per-call parameter ONLY (never cached on `this` or module state) and
+ *     populates the audit event's `actor.subjectId` — the first attributable
+ *     actor this SDK's audit trail has ever had.
  *
  * Token-mint hits the OVP session service (`session/start`,
  * `startWidgetSession`, `session/end`). The admin secret is read once at
@@ -44,7 +48,7 @@ import { redact } from './redact.js';
  * @property {boolean} entitlementEnforced  true for conversation/widget; false only for admin.
  * @property {string} privileges        The privilege string baked in.
  * @property {number} expiresAt         Unix epoch seconds (best-effort; 0 if unknown).
- * @property {object} scope             Audit receipt: {generatedAt, partnerId, kind, privileges, entitlementEnforced}.
+ * @property {object} scope             Audit receipt: {generatedAt, partnerId, kind, privileges, entitlementEnforced, userId?}.
  * @property {() => boolean} isExpired   true once past expiresAt (false if unknown). Non-enumerable.
  * @property {() => number} secondsRemaining  Seconds until expiry (Infinity if unknown, 0 if past). Non-enumerable.
  */
@@ -96,7 +100,14 @@ export class Sessions {
    * 7 days (604800s). Pass anything above that and the mint throws
    * `ttl_too_long` BEFORE any network call (see {@link clampTtl}); re-mint from
    * your server instead of issuing a multi-day admin token.
-   * @param {{ttlSeconds?:number}} [opts]  ttlSeconds default 3600, max 604800.
+   * @param {{ttlSeconds?:number, userId?:string|number}} [opts]  ttlSeconds default
+   *   3600, max 604800. `userId` binds the minted KS to a real end-user identity
+   *   (passed straight through to `session/start`'s `userId` field) — omit it for
+   *   the pre-existing anonymous behavior (zero behavior change for callers that
+   *   don't pass it). Per-call only: never cached on the `Sessions` instance or
+   *   any module-level state (SDK_CONSTITUTION.md "no shared mutable state").
+   *   This is what makes the `sys__user_id` reserved template variable resolve
+   *   to something other than `''` in prompts/converse (see issue #36).
    * @returns {Promise<Token>}  expiresAt is authoritative (= now + ttlSeconds), so
    *   isExpired()/secondsRemaining() are reliable for this kind.
    * @example
@@ -107,9 +118,13 @@ export class Sessions {
    * if (admin.secondsRemaining() < 60) {
    *   // re-mint proactively rather than risk a mid-flight expiry
    * }
+   * @example
+   * // Bind the admin token itself to a real actor for audit attribution.
+   * const admin = await k.sessions.createAdminToken({ userId: 'ops-console-42' });
    */
   async createAdminToken(opts = {}) {
-    return this._start(DISABLE_ENTITLEMENT, 'admin', false, opts.ttlSeconds);
+    const userId = normalizeUserId(opts.userId, 'createAdminToken');
+    return this._start(DISABLE_ENTITLEMENT, 'admin', false, opts.ttlSeconds, userId);
   }
 
   /**
@@ -117,18 +132,31 @@ export class Sessions {
    * the token a server hands to a browser/end-user. Short-lived by default.
    * Refuses any attempt to also disable entitlement. Tighten scope with
    * `restrictions` (least privilege) instead of hand-crafting `extraPrivileges`.
-   * @param {{configId:string|number, ttlSeconds?:number, restrictions?:Restrictions, extraPrivileges?:string}} opts
+   * @param {{configId:string|number, ttlSeconds?:number, restrictions?:Restrictions, extraPrivileges?:string, userId?:string|number}} opts
+   *   `userId` binds this end-user-facing KS to a real end-user identity (passed
+   *   straight through to `session/start`'s `userId` field) — omit it for the
+   *   pre-existing anonymous behavior (zero behavior change for callers that
+   *   don't pass it). Per-call only: never cached on the `Sessions` instance or
+   *   any module-level state (SDK_CONSTITUTION.md "no shared mutable state").
+   *   This is what makes the `sys__user_id` reserved template variable resolve
+   *   to something other than `''` in prompts/converse (see issue #36).
    * @returns {Promise<Token>}
+   * @example
+   * // Bind a per-user conversation so `{{ sys__user_id }}` resolves server-side
+   * // and per-user memory/analytics can attribute this turn correctly.
+   * const conv = await k.sessions.createConversationToken({ configId, userId: 'learner-123' });
+   * const reply = await k.converseOnce(configId, 'What have we covered so far?', {}, conv);
    */
   async createConversationToken(opts) {
     if (opts.configId === undefined || opts.configId === null || opts.configId === '') {
       throw new KalturaError({ type: 'about:blank', title: 'configId required', code: 'bad_request', detail: 'createConversationToken needs a configId.' });
     }
+    const userId = normalizeUserId(opts.userId, 'createConversationToken');
     let priv = `geniegpcid:${opts.configId}`;
     priv += compileRestrictions(opts.restrictions);
     if (opts.extraPrivileges) priv += `,${opts.extraPrivileges}`;
     assertEntitlementOn(priv, 'createConversationToken');
-    return this._start(priv, 'conversation', true, opts.ttlSeconds);
+    return this._start(priv, 'conversation', true, opts.ttlSeconds, userId);
   }
 
   /**
@@ -231,8 +259,10 @@ export class Sessions {
   /**
    * Internal: OVP `session/start` (type=2). Requires the admin secret (or vault callback).
    * @param {string} privileges @param {TokenKind} kind @param {boolean} entitlementEnforced @param {number} [ttl]
+   * @param {string} [userId]  Pre-normalized (via {@link normalizeUserId}) end-user identity to
+   *   bind on the KS. Per-call parameter only — never stored on `this` (see issue #36 / I-3).
    */
-  async _start(privileges, kind, entitlementEnforced, ttl) {
+  async _start(privileges, kind, entitlementEnforced, ttl, userId) {
     const secret = await this._resolveSecret();
     if (!secret) {
       throw new KalturaError({ type: 'about:blank', title: 'admin secret required', code: 'no_secret', detail: `${kind} token mint needs adminSecret or getAdminSecret (server-side only).` });
@@ -243,21 +273,22 @@ export class Sessions {
       format: '1', secret, partnerId: this._partnerId,
       type: '2', expiry: String(ttlSeconds), privileges,
     });
+    if (userId !== undefined) form.set('userId', userId);
     let data, requestId;
     try {
       ({ data, requestId } = await this._http.request({ method: 'POST', url, body: form, headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }));
     } catch (err) {
-      this._audit('token.mint', 'fail', { kind, privileges, entitlementEnforced, reason: err && err.code });
+      this._audit('token.mint', 'fail', { kind, privileges, entitlementEnforced, reason: err && err.code, subjectId: userId });
       throw err;
     }
     const ks = typeof data === 'string' ? data : (data && data.ks);
     if (!ks || typeof ks !== 'string' || !ks.startsWith('djJ8')) {
-      this._audit('token.mint', 'fail', { kind, privileges, entitlementEnforced, reason: 'no_ks' });
+      this._audit('token.mint', 'fail', { kind, privileges, entitlementEnforced, reason: 'no_ks', subjectId: userId });
       throw new KalturaError({ type: 'about:blank', title: 'session start failed', code: 'session_failed', detail: 'session/start did not return a KS', body: data });
     }
     const expiresAt = Math.floor(Date.now() / 1000) + ttlSeconds;
-    this._audit('token.mint', 'success', { kind, privileges, entitlementEnforced, expiresAt, requestId });
-    return this._receipt(ks, kind, entitlementEnforced, privileges, expiresAt);
+    this._audit('token.mint', 'success', { kind, privileges, entitlementEnforced, expiresAt, requestId, subjectId: userId });
+    return this._receipt(ks, kind, entitlementEnforced, privileges, expiresAt, userId);
   }
 
   /** Resolve the admin secret: vault callback first (ephemeral), else the stored secret. */
@@ -266,11 +297,11 @@ export class Sessions {
     return this._adminSecret;
   }
 
-  /** @returns {Token} */
-  _receipt(ks, kind, entitlementEnforced, privileges, expiresAt) {
+  /** @param {string} [userId] Present only when the caller bound a real end-user identity. @returns {Token} */
+  _receipt(ks, kind, entitlementEnforced, privileges, expiresAt, userId) {
     const token = {
       ks, kind, entitlementEnforced, privileges, expiresAt,
-      scope: meta({ partnerId: this._partnerId, source: 'ovp/session', kind, privileges, entitlementEnforced }),
+      scope: meta({ partnerId: this._partnerId, source: 'ovp/session', kind, privileges, entitlementEnforced, ...(userId !== undefined ? { userId } : {}) }),
     };
     // Ergonomic, non-enumerable helpers (don't pollute JSON.stringify / logs).
     Object.defineProperty(token, 'isExpired', { value: () => expiresAt > 0 && Math.floor(Date.now() / 1000) >= expiresAt, enumerable: false });
@@ -293,6 +324,24 @@ function compileRestrictions(r) {
   if (r.uriRestrict) parts.push(`urirestrict:${r.uriRestrict}`);
   if (r.sessionGroupId) parts.push(`sessionid:${r.sessionGroupId}`);
   return parts.length ? `,${parts.join(',')}` : '';
+}
+
+/**
+ * Validate + normalize a caller-supplied `userId` to a string, or `undefined`
+ * if none was given (⇒ the pre-existing anonymous mint, byte-for-byte). Throws
+ * BEFORE any network call if a non-scalar (object/array) was passed — the same
+ * pre-flight-reject shape as the `configId` guard above (issue #36, Security).
+ * @param {unknown} userId @param {string} where @returns {string|undefined}
+ */
+function normalizeUserId(userId, where) {
+  if (userId === undefined || userId === null || userId === '') return undefined;
+  if (typeof userId !== 'string' && typeof userId !== 'number') {
+    throw new KalturaError({
+      type: 'about:blank', title: 'invalid userId', code: 'bad_request',
+      detail: `${where}: userId must be a string or number, got ${Array.isArray(userId) ? 'array' : typeof userId}.`,
+    });
+  }
+  return String(userId);
 }
 
 /** Clamp/default a TTL per kind. @param {number|undefined} ttl @param {TokenKind} kind */

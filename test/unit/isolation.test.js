@@ -78,6 +78,49 @@ test('module scope holds no mutable credential state (fresh Sessions has its own
   assert.ok(!Object.keys(s2).includes('_adminSecret'));
 });
 
+// ─────────────────────────── issue #36 rule 1: userId is a per-call param, never shared state ───────────────────────────
+
+test('concurrent mints with different userIds across two Sessions instances never bleed (issue #36)', async () => {
+  const fa = fakeFetch([{ match: '/service/session/action/start', respond: () => ({ body: 'djJ8' + Buffer.from('v2|111|geniegpcid:1').toString('base64url') }) }]);
+  const fb = fakeFetch([{ match: '/service/session/action/start', respond: () => ({ body: 'djJ8' + Buffer.from('v2|222|geniegpcid:2').toString('base64url') }) }]);
+  const auditA = [], auditB = [];
+  const a = new Management({ partnerId: '111', adminSecret: A, fetch: fa, onAuditEvent: (e) => auditA.push(e) });
+  const b = new Management({ partnerId: '222', adminSecret: B, fetch: fb, onAuditEvent: (e) => auditB.push(e) });
+
+  // Interleave: two mints per instance, each with a DIFFERENT userId, all in flight at once.
+  const [a1, b1, a2, b2] = await Promise.all([
+    a.sessions.createConversationToken({ configId: 1, userId: 'learner-a1' }),
+    b.sessions.createConversationToken({ configId: 2, userId: 'learner-b1' }),
+    a.sessions.createAdminToken({ userId: 'ops-a2' }),
+    b.sessions.createAdminToken({ userId: 'ops-b2' }),
+  ]);
+
+  // Each token's own scope carries only ITS OWN userId — no cross-call/cross-instance bleed.
+  assert.equal(a1.scope.userId, 'learner-a1');
+  assert.equal(b1.scope.userId, 'learner-b1');
+  assert.equal(a2.scope.userId, 'ops-a2');
+  assert.equal(b2.scope.userId, 'ops-b2');
+
+  // Sessions never cached userId on the instance (per SDK_CONSTITUTION "no shared mutable state").
+  assert.ok(!('_userId' in a.sessions) && !('_userId' in b.sessions), 'userId is not retained on the Sessions instance');
+
+  // Instance A's audit trail only ever names A's own subjects, never B's (and vice versa).
+  const subjectsA = auditA.map((e) => e.actor.subjectId);
+  const subjectsB = auditB.map((e) => e.actor.subjectId);
+  assert.deepEqual(new Set(subjectsA), new Set(['learner-a1', 'ops-a2']));
+  assert.deepEqual(new Set(subjectsB), new Set(['learner-b1', 'ops-b2']));
+});
+
+test('userId omitted on either method is a byte-for-byte no-op (zero behavior change for anonymous callers)', async () => {
+  const KS = 'djJ8' + Buffer.from('v2|123|x').toString('base64url');
+  const f = fakeFetch([{ match: '/service/session/action/start', respond: () => ({ body: `"${KS}"` }) }]);
+  const m = new Management({ partnerId: 123, adminSecret: A, fetch: f });
+  const t = await m.sessions.createConversationToken({ configId: 1222 });
+  assert.equal(t.scope.userId, undefined, 'no userId key on the scope receipt when none was passed');
+  const call = f.calls.find((c) => c.url.includes('/session/action/start'));
+  assert.doesNotMatch(String(call.body), /userId/i, 'no userId field sent on the wire when omitted');
+});
+
 // ─────────────────────────── issue #31 rule 1.1: KalturaAvatarSession per-instance state ───────────────────────────
 
 test('two KalturaAvatarSession instances never leak requestVars or pending tool-ACK state (issue #31 rule 1.1)', async () => {
