@@ -119,7 +119,7 @@ function list(userId, opts) {}
  *                    a delete a caller thinks succeeded, and a real delete must not be
  *                    reachable by accident.
  * @returns {Promise<void>}
- * @throws {KalturaError} bad_request | not_found | precondition_required (confirm missing)
+ * @throws {KalturaError} bad_request | not_found | confirmation_required (confirm missing)
  */
 async function del(userId, key, confirm) {}
 ```
@@ -137,7 +137,7 @@ matching `Threads`'s guard.
 | `value` serialized exceeds the size budget (proposed: 4 KB per value, TBD with backend) | Throw | `value_too_large` |
 | `userId` well-formed but unknown to the backend (no session has ever bound it) | **Proposed:** not an error — `set` creates the first fact for that `userId` on demand (no separate "create user" step), `get`/`list` behave as if no facts exist (`null` / empty page) | n/a (no error) |
 | `get`/`list` on a `userId` with zero facts recorded | Not an error — `get` returns `null`, `list` returns an empty page | n/a (no error) |
-| `delete` called without `{confirmPermanent: true}` | Throw before any network call, same as `Threads.delete()` | `precondition_required` (proposed; `Threads.delete()`'s existing `requireConfirm` throws `bad_request` today — needs backend-team alignment on whether Memory reuses that code or gets its own) |
+| `delete` called without `{confirmPermanent: true}` | Throw before any network call, reusing the existing `requireConfirm()` helper (`src/management/agents.js`) that `Threads.delete()`/`agents.delete()`/`avatars.delete()` already share | `confirmation_required` (matches `requireConfirm()`'s existing code — no new code needed) |
 | `delete` on a key that doesn't exist | Backend TBD: idempotent no-op (delete-of-nonexistent succeeds) vs. `not_found`. **Proposed default: idempotent no-op**, consistent with `Rule R-3`-style idempotency the rest of the SDK favors, but this is a genuine open question for the backend team, not a settled decision. | `not_found` if backend chooses non-idempotent |
 | Concurrent writes to the same `(userId, key)` | **Proposed:** optimistic concurrency via `version` — `set(..., {ifMatch: <version>})` fails if the stored version has moved on since the caller last read it. Omitting `ifMatch` always overwrites (last-write-wins), matching the "opts is optional" pattern the rest of the SDK uses for opt-in strictness. | `conflict` |
 | Backend storage unavailable / 5xx | Passed through the SDK's existing `errorFromResponse()` normalization (`src/core/errors.js`) — no special-casing | `server_error` (or whatever `codeForStatus` maps) |
