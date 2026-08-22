@@ -776,6 +776,16 @@ SDK: `mgmt.threads.{list, get, rename, delete, transcript}`.
 > [SECURITY.md](SECURITY.md#shared-responsibility-control-matrix-nist-800-53) for what the SDK
 > provides versus what the operator must configure.
 
+> **Backend-blocked, dated 2026-08-22 (tracks issue #42).** True hard-delete — the thread and its
+> messages becoming irrecoverably removed, not just hidden from listings — requires a backend
+> change. Backend investigation confirms the erasure logic already exists in the backend codebase,
+> but is wired only to an internal cleanup path today, not to the public delete API; exposing it on
+> the public route is backend-owned work, not something this SDK can do. Once the backend exposes
+> hard-delete publicly, the SDK will either need no change (if `threads.delete()`'s method name and
+> response shape stay the same) or will get an explicit new option distinguishing "hide" from
+> "erase" — which shape it takes depends on the backend fix, per issue #42. Until then, treat
+> `threads.delete()` as soft-delete only for any compliance workflow.
+
 ---
 
 ### Feedback and Follow-ups (SDK)

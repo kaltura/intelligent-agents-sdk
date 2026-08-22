@@ -271,6 +271,11 @@ cannot provide (retention, tamper-evidence, non-repudiation).
 | IR-6, SI-2 | Incident/flaw response | Security contact; coordinated disclosure | US-CERT/agency reporting timelines |
 | GDPR Art. 17 | Right to erasure | `threads.delete()` and `knowledge.deleteRecord()` (management API) | Neither is a bulk-erasure endpoint: `threads.delete()` is a soft delete (data retained server-side, per [API-REFERENCE.md § Threads](API-REFERENCE.md#threads)) and `knowledge.deleteRecord()` doesn't unlink the record from intellects that reference it. Erasure requests currently require operator-side manual deletion via the management API; no dedicated bulk-erasure endpoint exists yet |
 
+> **Backend-blocked, dated 2026-08-22 (tracks issue #42).** `threads.delete()` hard-delete is
+> backend-blocked — backend investigation confirms the erasure logic exists in the backend but is
+> wired only to an internal cleanup path, not the public delete API. See
+> [API-REFERENCE.md § Threads](API-REFERENCE.md#threads) for the full note.
+
 ## FIPS mode (how-to)
 
 ```bash
