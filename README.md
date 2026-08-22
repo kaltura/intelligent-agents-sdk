@@ -830,6 +830,7 @@ await mgmt.knowledge.deleteRecord(rec.id, ks, { confirmPermanent: true });
 - **Custom face works self-serve** — upload a portrait image via `catalog.createVisual`, pass `itemId` as `visualId` in `provision`/`avatars.create`. The model animates the portrait at runtime. Video-clip ingest (higher-fidelity model) is not yet self-serve.
 - **`force_experience` and `model_type:'fast'`** are hints; the SDK can't prove which model replied or which experience rendered.
 - **Multi-source Knowledge records can fail to delete.** A record created with more than one `sources` entry (e.g. `internal` + `web` together) reliably 500s on `deleteRecord` on the current deployment (verified live, reproduced 3x, ruled out call ordering and lingering intellect references) — the record itself becomes an orphan (its backing category/entries can still be torn down separately). Single-source records delete cleanly. Until the backend fixes this, avoid mixing source types in one record if you expect to delete it later; use separate records per source type instead.
+- **No structured per-user memory yet.** The only way to give an agent continuity across sessions today is replaying a prior thread's transcript (`Threads.transcript()`) back into a new one — no key/value fact store. A draft API contract for one exists (not implemented, not backend-reviewed) — see [docs/PROPOSED-APIS.md](docs/PROPOSED-APIS.md).
 
 ---
 
@@ -849,6 +850,7 @@ await mgmt.knowledge.deleteRecord(rec.id, ks, { confirmPermanent: true });
 | [docs/EXTERNAL-API-INTEGRATIONS.md](docs/EXTERNAL-API-INTEGRATIONS.md) | Wiring a brain-called tool to a durable write against your own external API (CRM, spreadsheet, ticketing) |
 | [docs/STRUCTURED-DATA-FORMS.md](docs/STRUCTURED-DATA-FORMS.md) | Collecting typed fields from the user mid-conversation (`user_properties_forms`) — schema, rendering, where submitted values go |
 | [docs/VOICE-INPUT-MODES.md](docs/VOICE-INPUT-MODES.md) | Choosing open-mic vs. push-to-talk, and the UX/accessibility/safety details around each |
+| [docs/PROPOSED-APIS.md](docs/PROPOSED-APIS.md) | **Not implemented.** Draft, not-backend-reviewed design contracts for capabilities blocked on new backend primitives (e.g. structured per-user Memory) |
 | `examples/` | One runnable example per use-case |
 | [.claude/skills/agentic-avatar/SKILL.md](.claude/skills/agentic-avatar/SKILL.md) | Agent Skill — load this SDK's whole surface into Claude Code or any [agentskills.io](https://agentskills.io)-compatible agent |
 

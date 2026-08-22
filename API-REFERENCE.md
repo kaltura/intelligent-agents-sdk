@@ -21,7 +21,7 @@ this repo — see [`README.md`](README.md) for the full `Management` method list
 | [Phase 2 — Build](#phase-2--build) | [Quick Reference](#quick-reference) |
 | [Phase 3 — Deploy (embed + runtime init)](#phase-3--deploy) | |
 | [Phase 4 — Operate](#phase-4--operate) | |
-| [Scripted-Video (STV-only) Sessions](#scripted-video-stv-only-sessions) | |
+| [Scripted-Video (STV-only) Sessions](#scripted-video-stv-only-sessions) | [Proposed APIs](docs/PROPOSED-APIS.md) (not implemented) |
 
 ---
 
@@ -843,6 +843,10 @@ Full record lifecycle (all verified live). SDK: `mgmt.knowledge`. Linkage to an 
 Deleting a record does **not** unlink it — an intellect's `knowledge_ids` keeps the dangling id; clear it via `mgmt.intellectConfig.setKnowledgeIds(configId, [], ks)`.
 
 A record with more than one `sources` entry (e.g. `internal` + `web` together) reliably 500s on Delete on the current deployment (verified live, reproduced 3x; single-source records delete cleanly) — see README.md's Honest limits. It becomes an orphan; its backing category/entries can still be torn down separately.
+
+### Memory — structured per-user facts (NOT IMPLEMENTED — proposed contract only)
+
+There is no `mgmt.memory` today and no backend endpoint behind it. A draft, not-yet-backend-reviewed API contract (`Memory.set/get/list/delete`, method shapes, error codes, versioning) is tracked in **[docs/PROPOSED-APIS.md](docs/PROPOSED-APIS.md)**, per [issue #38](https://github.com/kaltura/intelligent-agents-sdk/issues/38). Do not build against it — it will change once the backend team reviews it and a real implementation ships. Until then, per-session continuity means replaying a prior thread's transcript (`mgmt.threads.transcript()`) into a new one.
 
 ---
 
