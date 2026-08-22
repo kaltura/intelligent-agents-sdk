@@ -663,7 +663,7 @@ since those collide with a server-managed variable; it does not yet name-check `
 |----------|-------------|-------|
 | `sys__thread_id` | Current conversation thread id | |
 | `sys__message_id` | Current message id | |
-| `sys__user_id` | The bound end-user id | Empty by default (an anonymous KS). Bind a real identity with `Sessions.createConversationToken({ userId })` (or `createAdminToken({ userId })`) so this resolves server-side instead of always being empty — see issue #36 / PR #48. |
+| `sys__user_id` | The bound end-user id | Empty today, on every session — the SDK's mint call never binds a real identity yet. **PR #48 (issue #36), not yet merged**, adds an optional `userId` on `Sessions.createConversationToken()`/`createAdminToken()` so this resolves server-side once merged. Until then, passing `userId` to either method is silently ignored (no error, no wire field) — don't rely on it before #48 lands. |
 | `sys__user_message` | The current turn's user text | |
 | `sys__is_new_thread` | `true` on the first turn of a new thread, `false` otherwise | |
 | `sys__ks` | The raw Kaltura Session token for the current request | ⚠️ **Security warning: never reference `sys__ks` in a prompt whose output could be echoed back to a user or logged.** It is a live credential — rendering it as plain text in a model response, chat transcript, or log turns that surface into a credential leak. See [SECURITY.md](SECURITY.md#ks-kaltura-session-guidance-for-agents-ac-3--ac-6--ia-2). |
@@ -675,8 +675,13 @@ since those collide with a server-managed variable; it does not yet name-check `
 > zero-error turn failure — confirmed independent of whether the session has a bound user identity. This is
 > backend behavior (the streaming `/assistant/converse` response has already sent a success status before
 > the failure happens, so nothing surfaces as a normal error) and is **not fixable from this SDK**. Until the
-> underlying backend fix ships, the available mitigation is catching the risk before you ship the prompt:
-> `intellects.previewPrompt()`'s rendered output flags an unresolved `sys__user_obj.*` reference with a `reserved_user_attr_unresolved` warning (issue #45 / PR #49) instead of rendering the placeholder as if it were safe — treat any such warning as a hard stop before shipping that prompt to production.
+> underlying backend fix ships, the mitigation is catching the risk before you ship the prompt: **PR #49
+> (issue #45), not yet merged**, will make `intellects.previewPrompt()`'s rendered output flag an unresolved
+> `sys__user_obj.*` reference with a `reserved_user_attr_unresolved` warning instead of rendering the
+> placeholder as if it were safe — treat any such warning as a hard stop once #49 lands. **Until #49 merges,
+> `previewPrompt()` does not emit this warning** — an unresolved `sys__user_obj.*` reference is rendered silently
+> as an empty/literal placeholder in preview too, with no signal that the live turn will fail. Don't assume
+> the preview-time safety net exists before confirming #49 is merged.
 
 ---
 
