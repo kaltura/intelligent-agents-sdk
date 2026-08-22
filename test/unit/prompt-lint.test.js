@@ -4,6 +4,7 @@ import {
   SYS_VARS,
   SYS_NAMESPACES,
   SERVER_DEFAULT_DIRECTIVE_MARKER,
+  RESERVED_USER_OBJ_ATTRS,
   validatePromptVars,
   lintPrompts,
   lintGlossary,
@@ -373,4 +374,82 @@ test('assembleSystemPrompt: prototype-pollution-safe requestVars lookup', () => 
   // `toString` is on Object.prototype but not an own key → left unresolved, not coerced.
   assert.equal(r.text, '{{toString}}');
   assert.deepEqual(r.unresolvedVariables, ['toString']);
+});
+
+// see issue #45 — flag unresolvable reserved-variable references instead of
+// silently rendering literal/empty output.
+
+test('assembleSystemPrompt (#45): fully-resolved prompt has NO warnings key (regression — unchanged from today)', () => {
+  const r = assembleSystemPrompt({
+    baseDirective: 'Thread {{sys__thread_id}}, user {{sys__user_id}}',
+    prompts: [{ key: 'k', headerTemplate: 'H', value: 'Hi {{sys__user_message}}' }],
+    requestVars: { sys__thread_id: 't-1', sys__user_id: 'u-1', sys__user_message: 'hello' },
+  });
+  assert.equal('warnings' in r, false);
+  assert.deepEqual(r.unresolvedVariables, []);
+});
+
+test('assembleSystemPrompt (#45): a prompt with NO reserved-variable references has no warnings', () => {
+  const r = assembleSystemPrompt({ baseDirective: 'Hello {{topic}}', requestVars: {} });
+  assert.equal('warnings' in r, false);
+  assert.deepEqual(r.unresolvedVariables, ['topic']);
+});
+
+test('assembleSystemPrompt (#45): unresolved scalar reserved var (sys__ks) is flagged, name only, not the value', () => {
+  const r = assembleSystemPrompt({ baseDirective: 'Token: {{sys__ks}}', requestVars: {} });
+  assert.equal(r.warnings.length, 1);
+  assert.equal(r.warnings[0].code, 'reserved_var_unresolved');
+  assert.match(r.warnings[0].message, /sys__ks/);
+  // no value was ever supplied, but assert defensively that even a hypothetical
+  // token-shaped string could never appear — the message is built from `name` only.
+  assert.equal(/djJ8|ks-[a-z0-9]/i.test(r.warnings[0].message), false);
+  assert.equal(r.text, 'Token: {{sys__ks}}', 'literal placeholder unchanged (backward compatible)');
+});
+
+test('assembleSystemPrompt (#45): unresolved sys__user_obj.* attribute is flagged distinctly, names issue #37', () => {
+  assert.ok(RESERVED_USER_OBJ_ATTRS.includes('first_name'));
+  const r = assembleSystemPrompt({ baseDirective: 'Hi {{sys__user_obj.first_name}}', requestVars: {} });
+  assert.equal(r.warnings.length, 1);
+  assert.equal(r.warnings[0].code, 'reserved_user_attr_unresolved');
+  assert.match(r.warnings[0].message, /sys__user_obj\.first_name/);
+  assert.match(r.warnings[0].message, /issue #37/);
+});
+
+test('assembleSystemPrompt (#45): sys__user_obj.* resolves cleanly (no warning) once bound via requestVars', () => {
+  const r = assembleSystemPrompt({
+    baseDirective: 'Hi {{sys__user_obj.first_name}}',
+    requestVars: { 'sys__user_obj.first_name': 'Jane' },
+  });
+  assert.equal('warnings' in r, false);
+  assert.equal(r.text, 'Hi Jane');
+});
+
+test('assembleSystemPrompt (#45): an unrecognized sys__user_obj.* attribute is not flagged as reserved (unknown client-shaped var)', () => {
+  const r = assembleSystemPrompt({ baseDirective: 'Hi {{sys__user_obj.nickname}}', requestVars: {} });
+  assert.equal('warnings' in r, false);
+});
+
+test('assembleSystemPrompt (#45): unresolved secrets.* reference is flagged (preview cannot read secret values)', () => {
+  const r = assembleSystemPrompt({ baseDirective: 'Key: {{secrets.API_KEY}}', requestVars: {} });
+  assert.equal(r.warnings.length, 1);
+  assert.equal(r.warnings[0].code, 'reserved_secret_unresolved');
+  assert.match(r.warnings[0].message, /API_KEY/);
+});
+
+test('assembleSystemPrompt (#45): a reserved var with an explicit null value in requestVars still warns (no value available)', () => {
+  const r = assembleSystemPrompt({ baseDirective: 'User {{sys__user_id}}', requestVars: { sys__user_id: null } });
+  assert.equal(r.warnings.length, 1);
+  assert.equal(r.warnings[0].code, 'reserved_var_unresolved');
+  // existing text/unresolved behavior for a present-but-null value is unchanged: renders empty, not "unresolved".
+  assert.equal(r.text, 'User ');
+  assert.deepEqual(r.unresolvedVariables, []);
+});
+
+test('assembleSystemPrompt (#45): multiple distinct reserved-var references each warn once, deduplicated on repeat', () => {
+  const r = assembleSystemPrompt({
+    baseDirective: 'A {{sys__ks}} B {{sys__is_new_thread}} C {{sys__ks}}',
+    requestVars: {},
+  });
+  assert.equal(r.warnings.length, 2);
+  assert.deepEqual(r.warnings.map((w) => w.code).sort(), ['reserved_var_unresolved', 'reserved_var_unresolved']);
 });
