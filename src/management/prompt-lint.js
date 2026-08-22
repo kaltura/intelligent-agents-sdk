@@ -109,7 +109,7 @@ function reservedVarWarning(name, info) {
     return {
       severity: 'warning',
       code: 'reserved_secret_unresolved',
-      message: `\`{{${name}}}\` has no value in this preview's requestVars. previewPrompt() cannot read secret values (write-only) to confirm "${info.secretName}" is configured — check intellects.secrets.listNames() before shipping; an unset secret renders empty in a live turn.`,
+      message: `\`{{${name}}}\` has no value in this preview's requestVars. previewPrompt() cannot read secret values (write-only) to confirm "${info.secretName}" is configured — check intellects.secrets.listNames() before shipping; live-turn behavior for an unset secret is unconfirmed (not verified against a real backend) — treat "${info.secretName}" as unresolved rather than assuming it renders empty.`,
     };
   }
   return {
