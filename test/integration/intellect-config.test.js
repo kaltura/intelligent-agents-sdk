@@ -112,6 +112,35 @@ test('intellects.previewPrompt renders the author layer client-side', async () =
   const p = await m.intellects.previewPrompt(1481, ADMIN, { requestVars: {} });
   assert.match(p.text, /## Goal/);
   assert.equal(p._meta.renderer, 'client-side-replica');
+  assert.equal('warnings' in p, false, 'no reserved-var references in this DTO → no warnings (issue #45 regression)');
+});
+
+// see issue #45 — previewPrompt() must surface unresolvable reserved-variable
+// references as warnings instead of failing silently.
+
+test('intellects.previewPrompt (#45): flags an unresolvable sys__user_obj.* reference in a draft prompt', async () => {
+  const { m } = mkMgmt([getDto()]);
+  const p = await m.intellects.previewPrompt(1481, ADMIN, {
+    draftPrompts: [{ key: 'greet', headerTemplate: 'Greeting', value: 'Hi {{sys__user_obj.first_name}}', type: 'custom' }],
+    draftBaseDirective: 'You are Ron.',
+    draftGlossary: '',
+    requestVars: {},
+  });
+  assert.equal(p.warnings.length, 1);
+  assert.equal(p.warnings[0].code, 'reserved_user_attr_unresolved');
+  assert.match(p.warnings[0].message, /sys__user_obj\.first_name/);
+});
+
+test('intellects.previewPrompt (#45): no warnings when every reserved variable resolves', async () => {
+  const { m } = mkMgmt([getDto()]);
+  const p = await m.intellects.previewPrompt(1481, ADMIN, {
+    draftPrompts: [{ key: 'greet', headerTemplate: 'Greeting', value: 'Hi {{sys__user_id}}', type: 'custom' }],
+    draftBaseDirective: 'You are Ron.',
+    draftGlossary: '',
+    requestVars: { sys__user_id: 'learner-123' },
+  });
+  assert.equal('warnings' in p, false);
+  assert.match(p.text, /Hi learner-123/);
 });
 
 test('intellects.snapshot → diffSnapshots detects modified + reorder', async () => {
