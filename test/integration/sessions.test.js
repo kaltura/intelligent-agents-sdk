@@ -139,3 +139,13 @@ test('userId flows into the redacted audit event as actor.subjectId, never along
   assert.equal(mintEvent.actor.subjectId, 'learner-123');
   assert.ok(!JSON.stringify(events).includes(secret), 'the admin secret never rides an audit event alongside userId');
 });
+
+test('createAgentToken rejects userId explicitly instead of silently dropping it (out of scope for issue #36)', async () => {
+  const f = sessionFetch();
+  const m = new Management({ partnerId: 123, adminSecret: 'a'.repeat(32), fetch: f });
+  await assert.rejects(
+    () => m.sessions.createAgentToken({ agentId: '1_abc123', userId: 'learner-123' }),
+    (e) => e.code === 'bad_request',
+  );
+  assert.equal(f.calls.length, 0, 'rejected before touching the network — no silent anonymous mint');
+});

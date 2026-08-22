@@ -168,6 +168,12 @@ export class Sessions {
    * `extraPrivileges`. TTL follows the same short-lived-by-default/max-TTL rules
    * as `conversation` (default 1800s, capped at 86400s — see {@link DEFAULT_TTL}/
    * {@link MAX_TTL}).
+   *
+   * `userId` is intentionally NOT supported here (issue #36 scoped it to
+   * {@link createAdminToken} and {@link createConversationToken} only — this
+   * method mints a token scoped to a single agent, not to an end-user
+   * identity). Passing `userId` throws rather than silently dropping it — use
+   * `createConversationToken` if you need `{{ sys__user_id }}` to resolve.
    * @param {{agentId:string, ttlSeconds?:number, restrictions?:Restrictions, extraPrivileges?:string}} opts
    * @returns {Promise<Token>}
    * @example
@@ -176,6 +182,14 @@ export class Sessions {
    * const t = await k.sessions.createAgentToken({ agentId: '1_abc123' });
    */
   async createAgentToken(opts) {
+    if (opts.userId !== undefined) {
+      throw new KalturaError({
+        type: 'about:blank',
+        title: 'unsupported option',
+        code: 'bad_request',
+        detail: 'createAgentToken does not support userId (see issue #36) — use createConversationToken (or createAdminToken) to bind a session to an end-user identity.',
+      });
+    }
     let priv = `agentid:${opts.agentId}`;
     priv += compileRestrictions(opts.restrictions);
     if (opts.extraPrivileges) priv += `,${opts.extraPrivileges}`;
