@@ -618,6 +618,37 @@ POST https://genie.nvp1.ovp.kaltura.com/assistant/abort
 
 ---
 
+### Reserved Template Variables (`sys__*`)
+
+The server sets these on every turn. They're available to `{{ ... }}` interpolation in
+`base_directive` / `prompts[].value` / `glossary` (see [Configure an Intellect](#configure-an-intellect))
+regardless of `allow_client_variables`. The SDK's own `request_vars` pre-flight guard rejects a
+client-supplied value for 5 of these 8 names before any network call — `sys__thread_id`,
+`sys__message_id`, `sys__user_id`, `sys__user_message`, `secrets` (see `request_vars` above) —
+since those collide with a server-managed variable; it does not yet name-check `sys__ks`,
+`sys__is_new_thread`, or `sys__user_obj.*` the same way:
+
+| Variable | Resolves to | Notes |
+|----------|-------------|-------|
+| `sys__thread_id` | Current conversation thread id | |
+| `sys__message_id` | Current message id | |
+| `sys__user_id` | The bound end-user id | Empty by default (an anonymous KS). Bind a real identity with `Sessions.createConversationToken({ userId })` (or `createAdminToken({ userId })`) so this resolves server-side instead of always being empty — see issue #36 / PR #48. |
+| `sys__user_message` | The current turn's user text | |
+| `sys__is_new_thread` | `true` on the first turn of a new thread, `false` otherwise | |
+| `sys__ks` | The raw Kaltura Session token for the current request | ⚠️ **Security warning: never reference `sys__ks` in a prompt whose output could be echoed back to a user or logged.** It is a live credential — a placeholder that renders it as plain text turns any transcript, chat log, or model response that includes it into a credential leak. See [SECURITY.md](SECURITY.md#ks-kaltura-session-guidance-for-agents-ac-3--ac-6--ia-2). |
+| `sys__user_obj.first_name` / `.last_name` / `.title` / `.company` / `.gender` / `.email` | Attributes of the bound-user object | See the dated note below — an unresolved attribute currently fails the whole turn silently, not just this placeholder. |
+| `secrets.<NAME>` | A named secret configured on the intellect | Write-only — see [§ Secrets](#secrets-write-only). |
+
+> **Known issue, dated 2026-08-22 — `sys__user_obj.*` causes a silent turn failure (tracks issue #37).**
+> Referencing any `sys__user_obj.*` attribute in a live prompt reproducibly causes a silent, zero-response,
+> zero-error turn failure — confirmed independent of whether the session has a bound user identity. This is
+> backend behavior (the streaming `/assistant/converse` response has already sent a success status before
+> the failure happens, so nothing surfaces as a normal error) and is **not fixable from this SDK**. Until the
+> underlying backend fix ships, the available mitigation is catching the risk before you ship the prompt:
+> `intellects.previewPrompt()`'s rendered output flags an unresolved `sys__user_obj.*` reference with a `reserved_user_attr_unresolved` warning (issue #45 / PR #49) instead of rendering the placeholder as if it were safe — treat any such warning as a hard stop before shipping that prompt to production.
+
+---
+
 ### Check Status
 
 ```
