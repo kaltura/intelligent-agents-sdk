@@ -7,6 +7,7 @@ Two entry points, plus several optional plugin subpaths that don't bloat the bas
 - `./management` — provision, configure, and measure agents (server-side)
 - `./experience` — the live interactive runtime: socket + WHEP video (browser)
 - `./experience/presenter` — optional: the `Presenter` deck-walkthrough plugin
+- `./experience/chroma-key` — optional: transparent-background avatar compositor (bring your own chroma-key-video)
 - `./experience/genui` — optional: `ExperienceRenderer`/`mountWidget` GenUI widget rendering
 - `./experience/analytics` — optional: `KavaAnalytics`, client-only KAVA Application Events (`pageLoad`/`buttonClicked`)
 - `./experience/noise-suppressor` — optional: `createNoiseSuppressor`, a zero-dependency AudioWorklet noise gate
@@ -63,6 +64,7 @@ rather than bolted on. Full details in [SECURITY.md](SECURITY.md).
 - [AI-SDR / CRM lead capture](#ai-sdr--crm-lead-capture)
 - [GenUI](#genui)
 - [Presenter](#presenter)
+- [Chroma-key Avatar Compositor](#chroma-key-avatar-compositor)
 - [Advanced / building-block exports](#advanced--building-block-exports)
 - [Testing](#testing)
 - [Intellect configuration](#intellect-configuration)
@@ -650,6 +652,67 @@ See `examples/deck-presenter.html` for a self-contained runnable demo: construct
 
 ---
 
+## Chroma-key Avatar Compositor
+
+`attachChromaKeyAvatar()` (`./experience/chroma-key`, its own subpath so apps that don't composite
+the avatar never load it) wires a **bring-your-own** transparent-background compositor — any
+`chroma-key-video`-shaped class — directly onto a `KalturaAvatarSession`'s own avatar `<video>`
+element, and keeps that compositor's lifecycle in lockstep with the session's. The SDK never
+bundles, imports, or depends on `chroma-key-video` (or any keying/matting library) itself — this
+is glue, the same constructor-injection pattern `./experience/noise-suppressor` uses for
+`audioWorkletNodeConstructor`:
+
+```js
+import { KalturaAvatarSession } from '@kaltura/intelligent-agents/experience';
+import { attachChromaKeyAvatar } from '@kaltura/intelligent-agents/experience/chroma-key';
+import ChromaKeyVideo from 'https://esm.sh/chroma-key-video';   // YOUR dependency, not the SDK's
+
+const session = new KalturaAvatarSession({ token, …appInit, videoEl, socketFactory });
+const player = attachChromaKeyAvatar({
+  session,
+  videoEl: session.videoEl,     // must be the SAME element the session itself renders into
+  ChromaKeyVideo,
+  options: { keyColor: [0, 255, 0] },
+  container: document.getElementById('composited'),   // omit to skip .mount() entirely
+});
+await session.connect();
+// No extra teardown needed: player.destroy() fires automatically on session 'ended' or a
+// fatal session 'error' — session.disconnect() alone is enough.
+```
+
+**Behavior:**
+
+- **Construction is synchronous** — `attachChromaKeyAvatar()` returns the live `ChromaKeyVideo`
+  instance immediately, no `Promise`.
+- **`videoEl` must be `session.videoEl`** — the session's own read-only getter for the element its
+  WHEP downlink actually assigns `srcObject` to. Passing a second, different reference throws a
+  `KalturaError` — this catches a stale/duplicated element before it silently keys the wrong
+  stream.
+- **Returned unwrapped, zero shadow API** — the returned `player` is the exact instance
+  `ChromaKeyVideo` constructed, with no proxy or wrapping. Listen on `player` directly for its own
+  events (e.g. a `chroma-key-video`-specific `'ready'`/`'contextlost'`) — `attachChromaKeyAvatar()`
+  never re-emits them onto `session`.
+- **Auto-cleanup** — `player.destroy()` is called exactly once, on the session's `'ended'` event or
+  any FATAL `'error'` (`capacity_unavailable`/`tier_exceeded`/`bad_request`/`peer_removed`/
+  `unsupported_client`). A transient/recoverable error (e.g. a socket hiccup the session itself
+  reconnects from) does NOT destroy the player. Checks the player's own `isDestroyed` flag first,
+  so an integrator who already called `player.destroy()` themselves never gets a second call.
+- **Idempotent, no double-wiring** — a second `attachChromaKeyAvatar()` call against a session that
+  already has a live compositor logs `console.warn` and returns the EXISTING instance instead of
+  constructing (and WebGL-context-leaking) a second one. Never throws for this.
+- **No reconnect ceremony** — a WHEP reconnect reassigns `srcObject` on the SAME `videoEl` the
+  compositor was already constructed against; no re-`attachChromaKeyAvatar()` call is needed.
+
+**Non-goals:** this plugin does not reimplement chroma-keying, matting, backend fallback, or
+WebGL context-loss recovery — that's entirely `chroma-key-video`'s (or your chosen library's) job.
+If your app keys a URL-sourced clip with `chroma-key-video` directly, bypassing this plugin
+entirely, running that URL through `safeUrl()` first is still your obligation (this plugin never
+accepts or fetches a URL, only the session's own live video element).
+
+See `examples/chroma-key-avatar.html` for a self-contained runnable demo.
+
+---
+
 ## Advanced / building-block exports
 
 These are importable from their entry points and useful when composing custom pipelines or renderers outside the high-level helpers.
@@ -695,6 +758,12 @@ These are importable from their entry points and useful when composing custom pi
 |--------|-------------|
 | `Presenter` | Deck-walkthrough plugin — see the [Presenter](#presenter) section above. Its own subpath so apps that don't present a deck never load it. |
 | `parseSlideNumber` | Parses a `slide_num` tool-call argument (number, numeric string, or ordinal word like `"next"`/`"third"`) against a known slide total. |
+
+### `./experience/chroma-key`
+
+| Export | Description |
+|--------|-------------|
+| `attachChromaKeyAvatar(cfg)` | Wires a bring-your-own `chroma-key-video`-shaped compositor onto a session's own avatar video — see the [Chroma-key Avatar Compositor](#chroma-key-avatar-compositor) section above. Its own subpath so apps that don't composite the avatar never load it. |
 
 ### `./experience/genui`
 

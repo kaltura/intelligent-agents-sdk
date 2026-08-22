@@ -126,6 +126,37 @@ Omit `videoEl` entirely for a headless/custom-render integration (canvas, WebGL,
 
 For a dynamic crop/`object-position` instead of generic `object-fit: cover`, both classes also fire `'videoMetadata'` (`{videoWidth, videoHeight}`) once per connect, as soon as the decoder resolves the stream's actual dimensions. There's no fixed/published output resolution to hardcode against — this event is the source of truth.
 
+### Compositing a transparent-background avatar (chroma key)
+
+The rendered avatar stream is opaque — there's no alpha channel or published green/blue-screen
+backdrop to key against as a platform guarantee. If your layout needs the avatar composited over
+arbitrary page content (not a fixed rectangle), key it live with a bring-your-own
+`chroma-key-video`-shaped compositor via `./experience/chroma-key`'s `attachChromaKeyAvatar()`:
+
+```js
+import { KalturaAvatarSession } from '@kaltura/intelligent-agents/experience';
+import { attachChromaKeyAvatar } from '@kaltura/intelligent-agents/experience/chroma-key';
+import ChromaKeyVideo from 'https://esm.sh/chroma-key-video';   // YOUR dependency, not the SDK's
+
+const session = new KalturaAvatarSession({ token, …appInit, videoEl, socketFactory });
+const player = attachChromaKeyAvatar({
+  session, videoEl: session.videoEl, ChromaKeyVideo,
+  options: { keyColor: [0, 255, 0] },
+  container: document.getElementById('composited'),
+});
+await session.connect();
+```
+
+Same pattern as `object-fit: cover` above but one layer earlier: `attachChromaKeyAvatar()`
+constructs the injected `ChromaKeyVideo` class against the session's OWN video element
+(`session.videoEl`, not a second reference — verified, not assumed) and keeps its lifecycle in
+lockstep with the session's — `player.destroy()` fires automatically on the session's `'ended'`
+event or a fatal `'error'`, so `session.disconnect()` alone is enough teardown. It never
+reimplements chroma-keying, matting, or WebGL context-loss recovery itself, and returns the
+constructed player instance UNWRAPPED — listen on `player` directly for its own events, never on
+`session`. Full behavior contract, misuse guard, and the `videoEl` source element are the SDK's
+zero-dependency rule in miniature: see [README.md § `./experience/chroma-key`](../README.md#experiencechroma-key).
+
 ---
 
 ## SDK Module Map — Overview

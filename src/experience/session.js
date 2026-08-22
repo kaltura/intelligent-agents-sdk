@@ -1524,6 +1524,16 @@ export class KalturaAvatarSession extends Emitter {
    */
   get micEnabled() { return this._micEnabled; }
 
+  /**
+   * The `videoEl` this session was constructed with (read-only), or `null` for the
+   * headless/custom-render path. Single source of truth for the element this session's
+   * WHEP downlink (`pc.ontrack`) assigns `srcObject` to — lets a plugin (e.g.
+   * `./experience/chroma-key`) verify it is being handed the session's own video element
+   * rather than trusting a second, possibly-stale caller-supplied reference.
+   * @returns {HTMLVideoElement|null}
+   */
+  get videoEl() { return this._videoEl; }
+
   // ─────────────────────────── internals ───────────────────────────
 
   /** @param {any} socket */

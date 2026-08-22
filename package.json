@@ -14,6 +14,7 @@
     "./management": "./src/management/index.js",
     "./experience": "./src/experience/index.js",
     "./experience/presenter": "./src/experience/presenter.js",
+    "./experience/chroma-key": "./src/experience/chroma-key.js",
     "./experience/genui": "./src/experience/genui/index.js",
     "./experience/noise-suppressor": "./src/experience/noise-suppressor.js",
     "./experience/analytics": "./src/experience/analytics.js",

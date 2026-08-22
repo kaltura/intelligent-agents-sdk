@@ -582,6 +582,14 @@ Response:
 
 The admin secret never touches the browser — `appInit` derives the agent from the widget KS.
 
+Feed this response straight into `new KalturaAvatarSession({ token: ks, conversationManagerUrl,
+srsBaseUrl, turnServerUrl, videoEl, socketFactory })` (`./experience`) to bring the runtime up in
+the browser. Optional `./experience` plugins layer on top of that same session — deck walkthroughs
+(`./experience/presenter`), a transparent-background compositor for the avatar video
+(`./experience/chroma-key`), noise suppression, GenUI widgets, and KAVA analytics. All of them are
+documented in [README.md](README.md#experience) alongside their runnable `examples/*.html` demos,
+not here — this reference covers the server-side Management API surface only.
+
 ---
 
 ## Phase 4 — Operate
