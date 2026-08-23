@@ -136,12 +136,15 @@ arbitrary page content (not a fixed rectangle), key it live with a bring-your-ow
 ```js
 import { KalturaAvatarSession } from '@kaltura/intelligent-agents/experience';
 import { attachChromaKeyAvatar } from '@kaltura/intelligent-agents/experience/chroma-key';
-import ChromaKeyVideo from 'https://esm.sh/chroma-key-video';   // YOUR dependency, not the SDK's
+// YOUR dependency, not the SDK's — there is no npm package for chroma-key-video; load it by
+// bundling https://github.com/kaltura/chroma-key-video locally, or straight from jsDelivr's
+// GitHub-CDN mode, pinned to a released tag:
+import { ChromaKeyVideo } from 'https://cdn.jsdelivr.net/gh/kaltura/chroma-key-video@v1.2.0/src/chromakey.js';
 
 const session = new KalturaAvatarSession({ token, …appInit, videoEl, socketFactory });
 const player = attachChromaKeyAvatar({
   session, videoEl: session.videoEl, ChromaKeyVideo,
-  options: { keyColor: [0, 255, 0] },
+  options: { autoTune: true },
   container: document.getElementById('composited'),
 });
 await session.connect();
