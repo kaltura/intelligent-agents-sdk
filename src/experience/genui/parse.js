@@ -84,11 +84,12 @@ export function parseContent(content) {
   }
 
   // 2) Loose `key: value` line block (YAML-ish), with ONE level of nesting
-  //    support: `key:` followed by an indented `- sub: val` list (the exact
+  //    support: `key:` followed by a `- sub: val` list, indented (the exact
   //    shape Genie's own `user_properties_form` template streams for its
-  //    `fields:` list — see `sys_prompt_user_properties`). Anything else that
-  //    isn't a clean `key: value` line is kept verbatim under `.raw` so we
-  //    never lose data.
+  //    `fields:` list — see `sys_prompt_user_properties`) OR flush-left (the
+  //    shape Genie's `followups` tool streams — e.g. `- "What...?"` with zero
+  //    leading whitespace; see issue #56). Anything else that isn't a clean
+  //    `key: value` line is kept verbatim under `.raw` so we never lose data.
   /** @type {Record<string, unknown>} */
   const model = {};
   const leftover = [];
@@ -99,7 +100,7 @@ export function parseContent(content) {
     if (m) {
       const key = m[1];
       const val = m[2].trim();
-      if (!val && i + 1 < lines.length && /^\s+-\s/.test(lines[i + 1])) {
+      if (!val && i + 1 < lines.length && /^\s*-\s/.test(lines[i + 1])) {
         const { list, next } = parseYamlList(lines, i + 1);
         model[key] = list;
         i = next - 1;
@@ -115,12 +116,16 @@ export function parseContent(content) {
 }
 
 /**
- * Parse an indented YAML list of flat maps starting at `lines[start]` (a `- `
- * item). Each `- ` at the list's own indentation starts a new object; any
- * more-indented `key: value` line that follows fills that object; a line back
- * at or below the list's indentation ends the list. Pure, never throws.
+ * Parse a YAML list starting at `lines[start]` (a `- ` item), indented or
+ * flush-left (dash indentation is whatever `lines[start]` uses — often `0`
+ * for the live backend's `followups` shape, see issue #56). Each `- ` at the
+ * list's own indentation starts a new item: a `- key: val` item starts a map
+ * (any more-indented `key: value` line that follows fills that same map); a
+ * plain `- value` item (no `key:` prefix, e.g. a quoted question string) is
+ * pushed as a scalar via `coerceScalar`. A line back at or below the list's
+ * indentation ends the list. Pure, never throws.
  * @param {string[]} lines @param {number} start
- * @returns {{list:Record<string,unknown>[], next:number}}
+ * @returns {{list:Array<Record<string,unknown>|unknown>, next:number}}
  */
 function parseYamlList(lines, start) {
   const list = [];
@@ -132,11 +137,16 @@ function parseYamlList(lines, start) {
     if (!line.trim()) continue;
     const dash = /^(\s*)-\s*(.*)$/.exec(line);
     if (dash && dash[1].length === dashIndent) {
-      current = {};
-      list.push(current);
       const rest = dash[2];
       const kv = /^([A-Za-z_][\w-]*)\s*:\s*(.*)$/.exec(rest);
-      if (kv) current[kv[1]] = coerceScalar(kv[2].trim());
+      if (kv) {
+        current = {};
+        list.push(current);
+        current[kv[1]] = coerceScalar(kv[2].trim());
+      } else {
+        current = null;   // scalar item — no nested `key: value` lines expected
+        list.push(coerceScalar(rest.trim()));
+      }
       continue;
     }
     const kv = /^(\s+)([A-Za-z_][\w-]*)\s*:\s*(.*)$/.exec(line);
@@ -188,13 +198,29 @@ function stripFence(s) {
   return m ? m[1] : s;
 }
 
-/** Coerce a bare scalar token from the line parser (true/false/number stay strings otherwise). @param {string} v */
+/**
+ * Coerce a bare scalar token from the line parser (true/false/number stay
+ * strings otherwise). Also strips one matching pair of surrounding quotes
+ * (`"..."` or `'...'`) — the live backend emits quoted string values (e.g. a
+ * `show-link` widget's `link: "https://example.com/widgetron"`, see issue
+ * #56) whose literal quote characters must not leak into the scalar. Only a
+ * genuine surrounding pair is stripped — a lone leading/trailing quote (e.g.
+ * an unbalanced quote, or an apostrophe that isn't paired) is left as-is.
+ * @param {string} v
+ */
 function coerceScalar(v) {
   if (v === 'true') return true;
   if (v === 'false') return false;
   if (v === 'null') return null;
   if (/^-?\d+$/.test(v)) return Number(v);
   if (/^-?\d*\.\d+$/.test(v)) return Number(v);
+  if (v.length >= 2) {
+    const first = v[0];
+    const last = v[v.length - 1];
+    if ((first === '"' && last === '"') || (first === "'" && last === "'")) {
+      return v.slice(1, -1);
+    }
+  }
   return v;
 }
 
