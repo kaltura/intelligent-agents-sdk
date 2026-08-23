@@ -620,14 +620,17 @@ is glue, the same constructor-injection pattern `./experience/noise-suppressor` 
 ```js
 import { KalturaAvatarSession } from '@kaltura/intelligent-agents/experience';
 import { attachChromaKeyAvatar } from '@kaltura/intelligent-agents/experience/chroma-key';
-import ChromaKeyVideo from 'https://esm.sh/chroma-key-video';   // YOUR dependency, not the SDK's
+// YOUR dependency, not the SDK's — there is no npm package for chroma-key-video; load it by
+// bundling https://github.com/kaltura/chroma-key-video locally, or straight from jsDelivr's
+// GitHub-CDN mode, pinned to a released tag:
+import { ChromaKeyVideo } from 'https://cdn.jsdelivr.net/gh/kaltura/chroma-key-video@v1.2.0/src/chromakey.js';
 
 const session = new KalturaAvatarSession({ token, …appInit, videoEl, socketFactory });
 const player = attachChromaKeyAvatar({
   session,
   videoEl: session.videoEl,     // must be the SAME element the session itself renders into
   ChromaKeyVideo,
-  options: { keyColor: [0, 255, 0] },
+  options: { autoTune: true },
   container: document.getElementById('composited'),   // omit to skip .mount() entirely
 });
 await session.connect();
@@ -645,9 +648,10 @@ await session.connect();
   `KalturaError` — this catches a stale/duplicated element before it silently keys the wrong
   stream.
 - **Returned unwrapped, zero shadow API** — the returned `player` is the exact instance
-  `ChromaKeyVideo` constructed, with no proxy or wrapping. Listen on `player` directly for its own
-  events (e.g. a `chroma-key-video`-specific `'ready'`/`'contextlost'`) — `attachChromaKeyAvatar()`
-  never re-emits them onto `session`.
+  `ChromaKeyVideo` constructed, with no proxy or wrapping. It's a standard `EventTarget` — listen
+  on `player` directly via `addEventListener` for its own events (e.g. `chroma-key-video`'s
+  `'started'`/`'backend'`/`'error'`) — `attachChromaKeyAvatar()` never re-emits them onto
+  `session`.
 - **Auto-cleanup** — `player.destroy()` is called exactly once, on the session's `'ended'` event, any
   FATAL `'error'` (`capacity_unavailable`/`tier_exceeded`/`bad_request`/`peer_removed`/
   `unsupported_client`), or the session reaching its `'disconnected'` state — which is what

@@ -26,10 +26,12 @@
   <script type="module">
     // chroma-key-video is YOUR dependency too — the SDK never bundles or imports it. Any
     // class shaped `new ChromaKeyVideo(videoEl, options)` with a `.mount(container)` and a
-    // `.destroy()` works; this example pulls a real one from a CDN.
+    // `.destroy()` works; this example pulls the real one. There is no npm package for it —
+    // load it by bundling https://github.com/kaltura/chroma-key-video locally, or straight
+    // from jsDelivr's GitHub-CDN mode, pinned to a released tag:
     import { KalturaAvatarSession } from '../src/experience/index.js';
     import { attachChromaKeyAvatar } from '../src/experience/chroma-key.js';
-    import ChromaKeyVideo from 'https://esm.sh/chroma-key-video@1';
+    import { ChromaKeyVideo } from 'https://cdn.jsdelivr.net/gh/kaltura/chroma-key-video@v1.2.0/src/chromakey.js';
 
     const cc = document.getElementById('cc');
 
@@ -57,10 +59,10 @@
       session,
       videoEl: session.videoEl,
       ChromaKeyVideo,
-      options: { keyColor: [0, 255, 0], similarity: 0.4 },
+      options: { channel: 'green', autoTune: true },
       container: document.getElementById('composited'),
     });
-    player.on?.('ready', () => cc.textContent = '');
+    player.addEventListener?.('started', () => cc.textContent = '');
 
     await session.connect();
     window.addEventListener('beforeunload', () => session.disconnect());

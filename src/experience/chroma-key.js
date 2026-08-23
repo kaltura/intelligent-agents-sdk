@@ -39,7 +39,7 @@
  * (and two WebGL contexts) fighting over the same `<video>`.
  *
  * No shadow event system: this function never re-emits the player's own events (e.g. a
- * `chroma-key-video`-specific `'contextlost'`) onto `session` or anywhere else —
+ * `chroma-key-video`-specific `'started'`/`'backend'`) onto `session` or anywhere else —
  * integrators listen on the returned player instance directly.
  *
  * `safeUrl()` (Rule S-3) is not this plugin's concern — it never accepts or fetches a URL,
@@ -51,7 +51,10 @@
  * @example
  * import { KalturaAvatarSession } from '@kaltura/intelligent-agents/experience';
  * import { attachChromaKeyAvatar } from '@kaltura/intelligent-agents/experience/chroma-key';
- * import ChromaKeyVideo from 'https://esm.sh/chroma-key-video';   // YOUR dependency, not the SDK's
+ * // YOUR dependency, not the SDK's — there is no npm package for chroma-key-video; load it by
+ * // bundling https://github.com/kaltura/chroma-key-video locally, or straight from jsDelivr's
+ * // GitHub-CDN mode, pinned to a released tag:
+ * import { ChromaKeyVideo } from 'https://cdn.jsdelivr.net/gh/kaltura/chroma-key-video@v1.2.0/src/chromakey.js';
  *
  * const video = document.createElement('video');
  * video.autoplay = true; video.playsInline = true;
@@ -59,11 +62,12 @@
  *
  * const player = attachChromaKeyAvatar({
  *   session, videoEl: video, ChromaKeyVideo,
- *   options: { keyColor: [0, 255, 0] },
+ *   options: { autoTune: true },
  *   container: document.getElementById('composited'),
  * });
- * // `player` is the raw chroma-key-video instance — listen on it directly, e.g.:
- * player.on?.('ready', () => console.log('compositor live'));
+ * // `player` is the raw chroma-key-video instance — it's a standard EventTarget, listen on
+ * // it directly, e.g.:
+ * player.addEventListener?.('started', () => console.log('compositor live'));
  *
  * await session.connect();
  * // No explicit teardown needed: player.destroy() fires automatically on session 'ended',
