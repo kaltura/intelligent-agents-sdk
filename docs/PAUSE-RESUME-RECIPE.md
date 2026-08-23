@@ -43,9 +43,10 @@ session isn't a published constant; don't rely on an exact number, and always re
 the triggers below rather than assuming a pause lasts as long as you need it to.
 
 **Calling `resume()` is safe in every case that matters for this recipe** — live-verified
-immediately after `pause()` (zero delay), when the session was never paused, when it was already
-resumed, and even when the SDK's own connectivity recovery independently rebuilt the session
-*while* you were paused (a stalled/expired media channel can trigger an internal
+immediately after `pause()` (zero delay), when the session was never paused, and when it was
+already resumed. It's also safe (verified by a dedicated regression test, not yet reproduced
+live against the real backend) when the SDK's own connectivity recovery independently rebuilt
+the session *while* you were paused (a stalled/expired media channel can trigger an internal
 `_coldReconnect()` that restores the conversation on its own, without your app calling
 `resume()` at all — see [WIRE-PROTOCOL.md](WIRE-PROTOCOL.md) for the recovery events). That
 internal recovery clears `session.paused` and the "server released this session" flag as part of
