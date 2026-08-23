@@ -18,18 +18,19 @@ This is the registry for capabilities from the [SDK roadmap](https://github.com/
 
 | Capability | Tracking issue | Blocked on |
 |---|---|---|
-| [Memory — structured per-user key/value facts](#memory--structured-per-user-key-value-facts-issue-38) | [#38](https://github.com/kaltura/intelligent-agents-sdk/issues/38) | New backend storage primitive (none exists today) + [#36](https://github.com/kaltura/intelligent-agents-sdk/issues/36) (session→userId binding, **PR [#48](https://github.com/kaltura/intelligent-agents-sdk/pull/48), not yet merged**) |
+| [Memory storage — structured per-user key/value facts, Kaltura-hosted](#memory-storage--structured-per-user-key-value-facts-issue-38) | [#38](https://github.com/kaltura/intelligent-agents-sdk/issues/38) | New backend storage primitive (none exists today) + [#36](https://github.com/kaltura/intelligent-agents-sdk/issues/36) (session→userId binding, **PR [#48](https://github.com/kaltura/intelligent-agents-sdk/pull/48), not yet merged**) |
+| [Memory delivery — reliable per-turn fetch-and-inject, Kaltura-native or bring-your-own](https://github.com/kaltura/intelligent-agents-sdk/issues/66) | [#66](https://github.com/kaltura/intelligent-agents-sdk/issues/66) | New backend orchestration hook (none exists today) — Kaltura's backend must call a memory source automatically before assembling each turn's context. Backend-owned; no SDK contract belongs in this file (see "Why two issues" below). |
 
 ---
 
-## Memory — structured per-user key/value facts (issue #38)
+## Memory storage — structured per-user key/value facts (issue #38)
 
 **Status: DRAFT CONTRACT — NOT IMPLEMENTED.** No backend storage primitive for
 structured per-user facts exists today (confirmed by investigation in issue #38). This
 section is the SDK-side interface the issue's own "How" asks for, so the backend team has
 a concrete contract to build against — it is not a preview of an in-progress feature.
 
-### Why this shape
+### Why two issues, and why this shape
 
 Today the only way to give an agent continuity across sessions is to replay a prior
 thread's full transcript into a new conversation (`Threads.transcript()` +
@@ -39,6 +40,31 @@ key/value layer for discrete facts (preferences, progress state, prior answers) 
 alongside transcript replay, not instead of it. **Existing full-transcript-replay
 integrations are unaffected by this contract** — nothing about `Threads`/`Conversations`
 changes.
+
+An earlier draft of this section stopped there: ship the CRUD below, and let the
+integrator's own server call `get()` and thread the result into `request_vars` before each
+turn, the same way transcript replay works today. That assumption doesn't hold up — it
+makes memory only as reliable as every integrator's own discipline. Nothing forces the
+fetch to happen on every turn; an integrator who forgets, races a timeout, or ships a bug
+silently loses memory for that turn, with no error and no signal. That's true regardless of
+whether the facts live in Kaltura's own storage (this section) or a customer's own store —
+the reliability gap is in the delivery mechanism, not in who hosts the storage.
+
+Reliable, on-every-turn memory requires the fetch-and-inject step to be automatic, driven by
+Kaltura's own backend orchestration loop before it assembles each turn's context — not by
+integrator-side `request_vars` wiring. That capability doesn't exist in this SDK's
+architecture today (there is no tool-calling or pre-turn hook seam here — "Genie brain" tool
+definitions are entirely backend-owned) and cannot be built client-side. It's now tracked
+separately, as **issue #66**, because it's a different kind of capability: a backend
+orchestration hook, not a KV-store contract, and it applies equally to Kaltura-hosted
+storage (this section) and to a customer-hosted memory service (bring-your-own, also #66).
+
+**What this means for this section specifically:** the CRUD contract below is still a
+reasonable shape for a Kaltura-hosted storage primitive, and still useful on its own for
+out-of-band reads/writes — batch jobs, admin tooling, migrating facts from a previous
+system. But CRUD access alone does not deliver reliable in-conversation memory. That
+property comes from the per-turn auto-injection hook tracked in #66, which this storage
+would plug into once both exist.
 
 ### Dependency on issue #36
 
@@ -66,6 +92,9 @@ iteration needs a narrower "read my own facts" conversation-scoped call, that is
 additive contract — not part of this draft.
 
 ### Method signatures
+
+These four methods are the storage CRUD only — out-of-band access to Kaltura-hosted facts,
+not the mechanism that gets a fact into a live turn's context. That mechanism is #66.
 
 ```js
 /**
@@ -156,18 +185,25 @@ method.
 | Issue #38 success criterion | Status |
 |---|---|
 | "A documented, versioned API contract exists for `Memory.set/get/list`, reviewed with the backend team." | **Partially met.** The contract is documented and versioned (this section, v1 draft). It has **not** been reviewed with the backend team — that review is still pending. Do not treat this document as backend-approved. |
-| "Once backing storage ships: writing a fact for a user in one session and reading it back in a later session works live, verified by a test." | **Not met — blocked.** No backend storage primitive exists. This is future work gated on the backend team building it, then the SDK team implementing the real client against this (or a revised) contract, then a live round-trip test. |
-| "Existing full-transcript-replay integrations are unaffected — this is additive, not a replacement." | **Met by design.** Nothing in this contract touches `Conversations`, `Threads`, or `Messages`; see "Why this shape" above. |
+| "Once backing storage ships: writing a fact for a user in one session and reading it back in a later session works live, verified by a test." | **Not met — blocked**, and only partially answerable by this contract even once storage exists. The CRUD here can prove "write in one session, read back via a direct `get()` call in another" — but that's not the same as "reliably present in a live turn's context," which needs #66's auto-injection hook. Both are gated on backend work that doesn't exist yet. |
+| "Existing full-transcript-replay integrations are unaffected — this is additive, not a replacement." | **Met by design.** Nothing in this contract touches `Conversations`, `Threads`, or `Messages`; see "Why two issues, and why this shape" above. |
 
 ### Next steps (for a human / the backend team)
 
 1. Backend team reviews this contract (method shapes, error codes, value-size limit,
    concurrency model, delete idempotency) and either approves it or proposes changes.
 2. Backend team builds the real storage primitive + endpoint(s).
-3. SDK team implements the real `Memory` class in `src/management/`, exported from
+3. Backend team designs the per-turn auto-injection hook tracked in **#66** — shared
+   infrastructure that both this storage and a customer-hosted webhook/MCP would plug into.
+   This is the piece that makes memory reliable, not just possible; it should not be
+   deferred as a "nice to have" once storage ships.
+4. SDK team implements the real `Memory` class in `src/management/`, exported from
    `src/management/index.js`, following the reviewed contract (which may differ from this
-   draft after step 1).
-4. Move this section from `docs/PROPOSED-APIS.md` into `API-REFERENCE.md` as shipped
+   draft after step 1) — this remains an admin-side CRUD/config surface, not a runtime
+   per-turn call.
+5. Move this section from `docs/PROPOSED-APIS.md` into `API-REFERENCE.md` as shipped
    documentation, with a worked example.
-5. Write the live round-trip test issue #38's success criteria calls for (write in one
-   session/thread, read back in a different one) — cannot be written honestly before step 2.
+6. Write the live round-trip test issue #38's success criteria calls for (write in one
+   session/thread, read back in a later one) — cannot be written honestly before step 2, and
+   should be extended to prove auto-injection (step 3) once #66 ships, not just direct
+   `get()` reads.
