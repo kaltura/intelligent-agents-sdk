@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Kaltura Intelligent Agents — Chroma-key Avatar demo</title>
-  <style>body{font-family:system-ui;margin:2rem;max-width:720px} #composited{width:512px;height:512px;background:#0a3d1c repeating-linear-gradient(45deg,#0a3d1c 0,#0a3d1c 10px,#0c4a22 10px,#0c4a22 20px);border-radius:12px;overflow:hidden} #source{position:absolute;left:-9999px;width:512px;height:512px;object-fit:cover} #cc{color:#a00;font-size:.9rem}</style>
+  <style>body{font-family:system-ui;margin:2rem;max-width:720px} #composited{width:512px;height:512px;background:#0a3d1c repeating-linear-gradient(45deg,#0a3d1c 0,#0a3d1c 10px,#0c4a22 10px,#0c4a22 20px);border-radius:12px;overflow:hidden} #composited canvas{width:100%;height:100%;display:block;transform-origin:0 0} #source{position:absolute;left:-9999px;width:512px;height:512px;object-fit:cover} #cc{color:#a00;font-size:.9rem}</style>
 </head>
 <body>
   <h1>Chroma-key avatar (transparent-background compositing)</h1>
@@ -55,14 +55,88 @@
     //    returned `player` is the raw chroma-key-video instance, unwrapped: listen on IT
     //    directly for its own events, and destroy() fires automatically when this session
     //    ends or hits a fatal error — no extra teardown call needed on disconnect.
+    // autoTune: 'adaptive' keeps re-deriving key params (min-key/bias/softness/spill) as
+    // frames stream in, instead of locking to whatever the first frame's lighting looked like
+    // (autoTune: true tunes once and stops). chroma-key-video keys by dominant-channel ratio,
+    // not distance to a fixed target color, so adaptive tuning against the real decoded
+    // footage is the library's own "best fit" path, not an approximation of one.
     const player = attachChromaKeyAvatar({
       session,
       videoEl: session.videoEl,
       ChromaKeyVideo,
-      options: { channel: 'green', autoTune: true },
+      options: { channel: 'green', autoTune: 'adaptive' },
       container: document.getElementById('composited'),
     });
-    player.addEventListener?.('started', () => cc.textContent = '');
+
+    // Kaltura's avatar renderer insets the animated subject within a margin of the native
+    // frame (confirmed asymmetric — larger on some edges than others, independent of the
+    // uploaded visual's own aspect ratio). chroma-key-video only removes GREEN pixels, so
+    // that margin stays fully opaque black no matter how keying is tuned — every integrator
+    // hits this, not just green-screen footage with a stray border. There's no server-side
+    // option to remove it, so this detects the real, non-black content region straight from
+    // the decoded video (not hardcoded per-avatar) and zooms/re-centers the canvas via CSS
+    // transform once the compositor is live, so the visible box shows only the subject
+    // (#composited's own overflow:hidden clips the rest).
+    function detectContentBBox(sourceVideo) {
+      const w = sourceVideo.videoWidth, h = sourceVideo.videoHeight;
+      if (!w || !h) return null;
+      const c = document.createElement('canvas');
+      c.width = w; c.height = h;
+      const sctx = c.getContext('2d', { willReadFrequently: true });
+      sctx.drawImage(sourceVideo, 0, 0, w, h);
+      const data = sctx.getImageData(0, 0, w, h).data;
+      let minX = w, maxX = -1, minY = h, maxY = -1;
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          const i = (y * w + x) * 4;
+          if (data[i] >= 15 || data[i + 1] >= 15 || data[i + 2] >= 15) {
+            if (x < minX) minX = x;
+            if (x > maxX) maxX = x;
+            if (y < minY) minY = y;
+            if (y > maxY) maxY = y;
+          }
+        }
+      }
+      return maxX < 0 || maxY < 0 ? null : { w, h, minX, maxX, minY, maxY };
+    }
+
+    // A talking head moves (mouth, slight head turn), so one frame's bbox isn't a safe crop —
+    // it would clip a later frame that reaches slightly further. Union the bbox across ~2.5s
+    // of real frames before locking the crop.
+    let cropUnion = null;
+    function sampleIntoUnion(sourceVideo) {
+      const bbox = detectContentBBox(sourceVideo);
+      if (!bbox) return;
+      const { w, h, minX, maxX, minY, maxY } = bbox;
+      const contentW = maxX - minX, contentH = maxY - minY;
+      if (contentW < w * 0.2 || contentH < h * 0.2 || (contentW > w * 0.97 && contentH > h * 0.97)) return;
+      if (!cropUnion) { cropUnion = { w, h, minX, maxX, minY, maxY }; return; }
+      cropUnion.minX = Math.min(cropUnion.minX, minX);
+      cropUnion.maxX = Math.max(cropUnion.maxX, maxX);
+      cropUnion.minY = Math.min(cropUnion.minY, minY);
+      cropUnion.maxY = Math.max(cropUnion.maxY, maxY);
+    }
+    function applyCropFromUnion(canvasEl) {
+      if (!cropUnion) return false;
+      const { w, h, minX, maxX, minY, maxY } = cropUnion;
+      const contentW = maxX - minX, contentH = maxY - minY;
+      const SAFETY_ZOOM = 1.06; // absorbs edge-interpolation bleed and motion past the sampled window
+      const scale = Math.min(Math.max(w / contentW, h / contentH) * SAFETY_ZOOM, 1.8);
+      const cx = (minX + maxX) / 2 / w, cy = (minY + maxY) / 2 / h;
+      const tx = (0.5 - cx * scale) * 100, ty = (0.5 - cy * scale) * 100;
+      canvasEl.style.transform = `translate(${tx}%, ${ty}%) scale(${scale})`;
+      return true;
+    }
+
+    player.addEventListener?.('started', () => {
+      cc.textContent = '';
+      const sampleTimer = setInterval(() => sampleIntoUnion(video), 150);
+      setTimeout(() => {
+        clearInterval(sampleTimer);
+        const canvasEl = document.querySelector('#composited canvas');
+        if (canvasEl) applyCropFromUnion(canvasEl);
+      }, 2500);
+    });
 
     await session.connect();
     window.addEventListener('beforeunload', () => session.disconnect());
