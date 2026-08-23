@@ -2136,6 +2136,14 @@ export class KalturaAvatarSession extends Emitter {
       await this._runConnectSequence(socket, overall);
       this._approve(socket);
       this._reconnectAttempt = 0;
+      // A cold reconnect that fires while paused (e.g. a stale-STV WHEP 404 during a long
+      // pause — issue #58) has already rebuilt the socket/transports/session from scratch,
+      // which is exactly what resume()'s "released" branch exists to do. Clear both flags
+      // here so a resume() call afterward takes the cheap `resumeConversation`-only path
+      // instead of awaiting a fresh stvNewSession that is never coming (nothing requested
+      // one — this cold reconnect already got its own).
+      this.paused = false;
+      this._sessionReleased = false;
       this._setState('connected');
       // Re-arm the hard-spiral breaker: a spiral never emits a spoken/genui segment, so
       // _wireSocket's own reset (line ~967) structurally can't fire while one is active,

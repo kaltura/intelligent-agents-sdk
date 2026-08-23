@@ -42,25 +42,22 @@ picks the right one for you. The exact length of the pause window before the ser
 session isn't a published constant; don't rely on an exact number, and always resume via one of
 the triggers below rather than assuming a pause lasts as long as you need it to.
 
-**Calling `resume()` is safe in the cases that matter for this recipe** — live-verified immediately
-after `pause()` (zero delay), when the session was never paused, and when it was already resumed.
-In each of those, it returns cleanly with `session.paused === false` and never throws or hangs,
-which is why the edge-case handling below is just "call `resume()` from every exit path,
-unconditionally," for any pause in the seconds-to-low-minutes range this recipe is meant for.
+**Calling `resume()` is safe in every case that matters for this recipe** — live-verified
+immediately after `pause()` (zero delay), when the session was never paused, when it was already
+resumed, and even when the SDK's own connectivity recovery independently rebuilt the session
+*while* you were paused (a stalled/expired media channel can trigger an internal
+`_coldReconnect()` that restores the conversation on its own, without your app calling
+`resume()` at all — see [WIRE-PROTOCOL.md](WIRE-PROTOCOL.md) for the recovery events). That
+internal recovery clears `session.paused` and the "server released this session" flag as part of
+its own rebuild, so a `resume()` you call afterward correctly takes the cheap path (just
+`resumeConversation`, no redundant rebuild) instead of attempting to re-negotiate transports that
+are already live. In every one of these cases `resume()` returns cleanly with
+`session.paused === false` and never hangs — which is why the edge-case handling below is just
+"call `resume()` from every exit path, unconditionally."
 
-**One case where it isn't safe, live-verified:** pause for long enough (several minutes, well past
-your content ever needing to run) and the SDK's own connectivity recovery can step in *before* your
-app calls `resume()` — a stalled/expired media channel triggers an internal `_coldReconnect()` that
-rebuilds the session and restores the conversation on its own, silently, without ever clearing
-`session.paused` or the internal "server released this session" flag `resume()` checks. Call
-`resume()` after that has already happened and it takes the "rebuild transports" branch on a
-session that doesn't need rebuilding — live-verified, this made `resume()` reject after a 30s
-timeout (`ASRConnectionFailed: timed out waiting for the server`) even though the conversation was
-already working again by the time `resume()` was called and kept working afterward.  Practical
-takeaway: keep your safety-net timeout well under the multi-minute range (the example below uses
-60s, not 5 minutes) so you always resume before this can happen, and treat a `resume()` rejection
-defensively — catch it, and if `session.state` is still `'connected'`, the session likely already
-recovered on its own and there's nothing further to do.
+`resume()` can still reject for reasons unrelated to pause duration (a genuinely dead session, a
+real network failure mid-rebuild) — treat any rejection defensively regardless: catch it, and if
+`session.state` is still `'connected'`, the session is fine and there's nothing further to do.
 
 You don't need to listen for any event to know resume worked — `await session.resume()`
 resolving is the only signal your app needs. Two events exist for optional UX polish, but neither
@@ -139,9 +136,9 @@ Runtime](../API-REFERENCE.md#initialize-the-runtime)).
         resumed = true;
         overlay.hidden = true;
         session.resume().catch((e) => {
-          // A rejection here almost always means the pause ran long enough that the SDK's own
-          // connectivity recovery already restored the session on its own (see "The mechanism"
-          // above) — check session.state before treating this as fatal.
+          // Defensive: resume() can still reject for reasons unrelated to this recipe (a
+          // genuinely dead session, a network failure mid-rebuild) — check session.state
+          // before treating it as fatal.
           if (session.state !== 'connected') console.error('resume failed', e);
         });
       };
@@ -149,8 +146,7 @@ Runtime](../API-REFERENCE.md#initialize-the-runtime)).
       clip.addEventListener('ended', resumeOnce, { once: true });   // happy path: content finished
       clip.addEventListener('error', resumeOnce, { once: true });   // content failed to load
       document.getElementById('skip').onclick = resumeOnce;          // user skipped it
-      setTimeout(resumeOnce, 60_000);                                 // safety net: never leave the avatar stuck paused —
-                                                                       // keep this well under the multi-minute range (see caveat above)
+      setTimeout(resumeOnce, 60_000);                                 // safety net: never leave the avatar stuck paused
     };
   </script>
 </body>
@@ -176,12 +172,11 @@ above:
 | User clicks away / hits a "skip" control | your own `skip` handler |
 | Content hangs, or you simply forget to wire an end event | the `setTimeout` safety net |
 
-Whichever path fires, it calls the same `resume()`, and `resume()` handles both the cheap path and
-the rebuild-transports path for you — as long as you call it within a reasonable window (seconds to
-low minutes). That's why the safety-net `setTimeout` above is 60 seconds, not something open-ended:
-past the multi-minute range, the SDK's own recovery may already have stepped in first, and
-`resume()`'s rebuild attempt can then reject (see the caveat under "The mechanism"). Keep the
-safety net short and this never comes up in practice.
+Whichever path fires, it calls the same `resume()`, and `resume()` handles the cheap path, the
+rebuild-transports path, and a session the SDK's own connectivity recovery already rebuilt during
+the pause — all transparently. A short safety-net `setTimeout` (the example above uses 60 seconds)
+is still good practice: it hands the turn loop back promptly instead of leaving the avatar paused
+indefinitely if nothing else fires.
 
 ---
 

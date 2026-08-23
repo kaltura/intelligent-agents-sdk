@@ -219,6 +219,72 @@ test('STV: WHEP 404 on re-subscribe (session truly gone) → cold reconnect with
   session.disconnect();
 });
 
+test('issue #58: _coldReconnect() firing while paused clears paused/_sessionReleased, so resume() takes the cheap path afterward', async () => {
+  // Live-reproduced scenario: a long pause independently triggers a stale-STV WHEP 404
+  // (unrelated to the pause itself) → _coldReconnect() rebuilds the socket/transports/session
+  // and the conversation keeps working — but (pre-fix) `paused`/`_sessionReleased` stayed
+  // stuck at their pre-recovery values. A later resume() then saw `_sessionReleased===true`
+  // and took the "rebuild from a fresh stvNewSession" branch — except no fresh stvNewSession
+  // was ever coming (this cold reconnect already got its own) — so resume() would hang/reject
+  // instead of taking the already-correct cheap path.
+  let whepPosts = 0;
+  const fetch = async (url, init) => {
+    if (init?.method === 'DELETE') return { ok: true, status: 200, text: async () => '', headers: { get: () => null } };
+    whepPosts++;
+    if (whepPosts === 2) return { ok: false, status: 404, text: async () => 'gone' };   // the re-subscribe that's "gone"
+    return { ok: true, status: 201, text: async () => 'v=0\r\nanswer\r\n', headers: { get: () => 'https://srs/whep/r/' + whepPosts } };
+  };
+  const { session, socket } = newSession({ fetch });
+  scriptHappyPath(socket);
+  await session.connect();
+
+  // Enter the exact pre-condition: paused, with the server having already released the
+  // session (the real trigger for a long pause — sessionReadyForResume, session.js:1567 —
+  // independent of and unrelated to the STV 404 below).
+  session.pause();
+  socket.server('sessionReadyForResume', {});
+  assert.equal(session.paused, true);
+  assert.equal(session._sessionReleased, true);
+
+  let reconnected = null;
+  session.on('reconnected', (p) => { reconnected = p; });
+
+  // Real entry point, not the private method called directly: a WHEP 404 on STV
+  // re-subscribe (the stvSessionGone branch, session.js:1856-1858) escalates to a real
+  // _coldReconnect() call, exactly as it would live.
+  stvPeer().setIce('failed');
+  await delay(400);
+
+  assert.ok(reconnected, 'cold reconnect must complete and reach connected again');
+  assert.equal(reconnected.recovered, false);
+  assert.equal(session.state, 'connected');
+
+  // The fix: a successful cold reconnect already did the equivalent of resume()'s rebuild —
+  // both flags must be cleared, not left stuck at their pre-recovery values.
+  assert.equal(session.paused, false, 'paused must be cleared by a successful cold reconnect');
+  assert.equal(session._sessionReleased, false, '_sessionReleased must be cleared by a successful cold reconnect');
+
+  // resume() must now take the cheap path: emit resumeConversation and return, WITHOUT
+  // re-requesting a session — a new stvNewSession/checkAvailability emit is exactly what the
+  // expensive, doomed-to-hang rebuild branch would have sent (nothing on the server side would
+  // ever answer it, since the cold reconnect already consumed its own fresh session).
+  const stvNewSessionsBefore = socket.emitsOf('stvNewSession').length;
+  const checkAvailBefore = socket.emitsOf('checkAvailability').length;
+  const resumeConvBefore = socket.emitsOf('resumeConversation').length;
+
+  const start = Date.now();
+  await session.resume();
+  const elapsedMs = Date.now() - start;
+
+  assert.equal(session.paused, false);
+  assert.equal(socket.emitsOf('stvNewSession').length, stvNewSessionsBefore, 'resume() must not re-request a session after a cold reconnect already got one');
+  assert.equal(socket.emitsOf('checkAvailability').length, checkAvailBefore, 'resume() must not re-poll capacity after a cold reconnect already got a session');
+  assert.equal(socket.emitsOf('resumeConversation').length, resumeConvBefore + 1, 'resume() must still tell the server the turn loop is back');
+  assert.ok(elapsedMs < 100, `resume() must resolve immediately on the cheap path, not after a rebuild round-trip (took ${elapsedMs}ms)`);
+
+  session.disconnect();
+});
+
 test('ICE watchdog: a pc stuck in "new"/"checking" past 10s escalates to media recovery (never reaches "failed")', async () => {
   // A pc that never starts gathering (or whose every candidate fails to connect) can sit in
   // 'new'/'checking' forever — oniceconnectionstatechange never fires again from that state, so
