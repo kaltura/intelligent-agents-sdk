@@ -20,11 +20,18 @@
  * Lifecycle: constructs `new ChromaKeyVideo(videoEl, options)` synchronously against the
  * SESSION'S OWN video element (verified via `session.videoEl`, never a second,
  * possibly-stale caller-supplied reference), optionally `.mount(container)`s it, then
- * listens for the session's `'ended'` event and any FATAL `'error'` event to call
- * `player.destroy()` exactly once. It deliberately does NOT destroy on a
- * transient/recoverable `'error'` (e.g. a socket hiccup the session itself reconnects
- * from) — doing so would strand the compositor with no way to re-attach, since the
- * misuse guard below refuses to construct a second player on a still-registered session.
+ * listens for the session's `'ended'` event, any FATAL `'error'` event, and the session
+ * reaching its `'disconnected'` state (via `'stateChange'`) to call `player.destroy()`
+ * exactly once. The `'stateChange'` listener is what catches `session.disconnect()` /
+ * `session.stop()` — the SDK's documented human-in-the-loop kill switch — which never
+ * emits `'ended'` itself (only `_setState('disconnected')`, i.e. a normal "hang up"
+ * button, not a server- or error-initiated end). Without it the compositor (and, with a
+ * real WebGL-backed `chroma-key-video`, its WebGL context) would leak for the lifetime of
+ * the page every time an integrator's own UI ends the call on purpose. It deliberately
+ * does NOT destroy on a transient/recoverable `'error'` (e.g. a socket hiccup the session
+ * itself reconnects from) — doing so would strand the compositor with no way to
+ * re-attach, since the misuse guard below refuses to construct a second player on a
+ * still-registered session.
  *
  * Idempotent: a second `attachChromaKeyAvatar()` call against a session that already has
  * a live compositor logs `console.warn` and returns the EXISTING instance instead of
@@ -59,8 +66,9 @@
  * player.on?.('ready', () => console.log('compositor live'));
  *
  * await session.connect();
- * // No explicit teardown needed: player.destroy() fires automatically on session 'ended'
- * // or a fatal session 'error' — session.disconnect() alone is enough.
+ * // No explicit teardown needed: player.destroy() fires automatically on session 'ended',
+ * // a fatal session 'error', or session.disconnect()/stop() (the normal "hang up" path) —
+ * // calling session.disconnect() alone is enough.
  */
 import { KalturaError } from '../core/errors.js';
 
@@ -154,6 +162,19 @@ export function attachChromaKeyAvatar(cfg) {
     // Only a FATAL error code ends the session unrecoverably (see FATAL_ERROR_CODES above);
     // every other 'error' is a transient condition the session may itself recover from.
     unsubs.push(session.on('error', (err) => { if (err && FATAL_ERROR_CODES.has(err.code)) doDestroy(); }));
+    // session.disconnect()/stop() (session.js's documented human-in-the-loop kill switch)
+    // never emits 'ended' — it only transitions state to 'disconnected' via _setState(),
+    // which emits 'stateChange'. Catch that here too, so the normal "hang up" path tears
+    // the compositor down exactly like a server-initiated 'ended' does. 'disconnecting'
+    // (the intermediate state disconnect() sets first) is deliberately NOT matched here —
+    // it's a transient step of the same synchronous call, never a stable end state on its
+    // own, and destroying on it would be premature (before _teardownTransports() has even
+    // run). doDestroy() is idempotent (the `destroyed` flag above), so no double-teardown
+    // and no leaked listener regardless of which of these three listeners fires first, or
+    // if more than one fires (e.g. a fatal error followed by the caller also calling
+    // disconnect(), or _endWith()'s own 'disconnected' state change firing before its
+    // 'ended' emit).
+    unsubs.push(session.on('stateChange', (p) => { if (p && p.state === 'disconnected') doDestroy(); }));
   } catch (err) {
     for (const off of unsubs.splice(0)) { try { off(); } catch { /* */ } }
     if (err instanceof KalturaError) throw err;
