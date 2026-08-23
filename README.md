@@ -679,8 +679,9 @@ const player = attachChromaKeyAvatar({
   container: document.getElementById('composited'),   // omit to skip .mount() entirely
 });
 await session.connect();
-// No extra teardown needed: player.destroy() fires automatically on session 'ended' or a
-// fatal session 'error' — session.disconnect() alone is enough.
+// No extra teardown needed: player.destroy() fires automatically on session 'ended', a
+// fatal session 'error', or session.disconnect()/stop() (the normal "hang up" path) —
+// calling session.disconnect() alone is enough.
 ```
 
 **Behavior:**
@@ -696,11 +697,15 @@ await session.connect();
   on `player` directly via `addEventListener` for its own events (e.g. `chroma-key-video`'s
   `'started'`/`'backend'`/`'error'`) — `attachChromaKeyAvatar()` never re-emits them onto
   `session`.
-- **Auto-cleanup** — `player.destroy()` is called exactly once, on the session's `'ended'` event or
-  any FATAL `'error'` (`capacity_unavailable`/`tier_exceeded`/`bad_request`/`peer_removed`/
-  `unsupported_client`). A transient/recoverable error (e.g. a socket hiccup the session itself
-  reconnects from) does NOT destroy the player. Checks the player's own `isDestroyed` flag first,
-  so an integrator who already called `player.destroy()` themselves never gets a second call.
+- **Auto-cleanup** — `player.destroy()` is called exactly once, on the session's `'ended'` event, any
+  FATAL `'error'` (`capacity_unavailable`/`tier_exceeded`/`bad_request`/`peer_removed`/
+  `unsupported_client`), or the session reaching its `'disconnected'` state — which is what
+  `session.disconnect()`/`session.stop()` (the human-in-the-loop kill switch, e.g. a "leave call"
+  button) triggers; that path never emits `'ended'` on its own. A transient/recoverable error (e.g.
+  a socket hiccup the session itself reconnects from) does NOT destroy the player. Checks the
+  player's own `isDestroyed` flag first, so an integrator who already called `player.destroy()`
+  themselves never gets a second call, and all three teardown paths are safe to fire together or in
+  any order.
 - **Idempotent, no double-wiring** — a second `attachChromaKeyAvatar()` call against a session that
   already has a live compositor logs `console.warn` and returns the EXISTING instance instead of
   constructing (and WebGL-context-leaking) a second one. Never throws for this.

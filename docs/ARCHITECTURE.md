@@ -154,7 +154,9 @@ Same pattern as `object-fit: cover` above but one layer earlier: `attachChromaKe
 constructs the injected `ChromaKeyVideo` class against the session's OWN video element
 (`session.videoEl`, not a second reference — verified, not assumed) and keeps its lifecycle in
 lockstep with the session's — `player.destroy()` fires automatically on the session's `'ended'`
-event or a fatal `'error'`, so `session.disconnect()` alone is enough teardown. It never
+event, a fatal `'error'`, or the session's own `disconnect()`/`stop()` (its documented
+human-in-the-loop kill switch, e.g. a "leave call" button), so `session.disconnect()` alone is
+enough teardown. It never
 reimplements chroma-keying, matting, or WebGL context-loss recovery itself, and returns the
 constructed player instance UNWRAPPED — listen on `player` directly for its own events, never on
 `session`. Full behavior contract, misuse guard, and the `videoEl` source element are the SDK's
