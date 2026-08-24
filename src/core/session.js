@@ -193,7 +193,7 @@ export class Sessions {
    * const t = await k.sessions.createAgentToken({ agentId: '1_abc123' });
    */
   async createAgentToken(opts) {
-    if (opts.userId !== undefined) {
+    if (opts.userId !== undefined && opts.userId !== null && opts.userId !== '') {
       throw new KalturaError({
         type: 'about:blank',
         title: 'unsupported option',
@@ -359,6 +359,9 @@ function compileRestrictions(r) {
  * if none was given (⇒ the pre-existing anonymous mint, byte-for-byte). Throws
  * BEFORE any network call if a non-scalar (object/array) was passed — the same
  * pre-flight-reject shape as the `configId` guard above (issue #36, Security).
+ * Sanitized via `oneLine` (strips CR/LF/TAB, caps at 512 chars) — the returned
+ * value rides into `Token.scope` (a caller-facing, commonly-logged receipt) as
+ * well as the audit event, so it gets the same log-injection defense both places.
  * @param {unknown} userId @param {string} where @returns {string|undefined}
  */
 function normalizeUserId(userId, where) {
@@ -369,7 +372,14 @@ function normalizeUserId(userId, where) {
       detail: `${where}: userId must be a string or number, got ${Array.isArray(userId) ? 'array' : typeof userId}.`,
     });
   }
-  return String(userId);
+  if (typeof userId === 'number' && !isFinite(userId)) {
+    throw new KalturaError({
+      type: 'about:blank', title: 'invalid userId', code: 'bad_request',
+      detail: `${where}: userId must be a finite number, got ${userId}.`,
+    });
+  }
+  const normalized = oneLine(String(userId));
+  return normalized === '' ? undefined : normalized;
 }
 
 /** Clamp/default a TTL per kind. @param {number|undefined} ttl @param {TokenKind} kind */

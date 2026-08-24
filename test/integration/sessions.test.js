@@ -149,3 +149,35 @@ test('createAgentToken rejects userId explicitly instead of silently dropping it
   );
   assert.equal(f.calls.length, 0, 'rejected before touching the network — no silent anonymous mint');
 });
+
+test('createAgentToken treats userId: null/"" as absent, same as omitting it — no reject', async () => {
+  const f = sessionFetch();
+  const m = new Management({ partnerId: 123, adminSecret: 'a'.repeat(32), fetch: f });
+  const a = await m.sessions.createAgentToken({ agentId: '1_abc123', userId: null });
+  const b = await m.sessions.createAgentToken({ agentId: '1_abc123', userId: '' });
+  assert.equal(a.kind, 'agent');
+  assert.equal(b.kind, 'agent');
+});
+
+test('a non-finite numeric userId (NaN/Infinity) is rejected before any network call', async () => {
+  const f = sessionFetch();
+  const m = new Management({ partnerId: 123, adminSecret: 'a'.repeat(32), fetch: f });
+  await assert.rejects(
+    () => m.sessions.createConversationToken({ configId: 1222, userId: NaN }),
+    (e) => e.code === 'bad_request',
+  );
+  await assert.rejects(
+    () => m.sessions.createConversationToken({ configId: 1222, userId: Infinity }),
+    (e) => e.code === 'bad_request',
+  );
+  assert.equal(f.calls.length, 0, 'rejected before touching the network');
+});
+
+test('a userId containing CR/LF is sanitized (one-lined, no raw newline) in both the wire body and the token scope', async () => {
+  const f = sessionFetch();
+  const m = new Management({ partnerId: 123, adminSecret: 'a'.repeat(32), fetch: f });
+  const t = await m.sessions.createConversationToken({ configId: 1222, userId: 'learner\r\nX-Injected: evil' });
+  assert.doesNotMatch(t.scope.userId, /[\r\n]/);
+  const call = f.calls.find((c) => c.url.includes('/session/action/start'));
+  assert.doesNotMatch(String(call.body), /%0D%0A|\r|\n/);
+});
