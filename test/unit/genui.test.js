@@ -8,6 +8,7 @@ import {
 import { SegmentAssembler } from '../../src/experience/genui/segments.js';
 import { ExperienceRenderer } from '../../src/experience/genui/renderer.js';
 import { DEFAULT_RENDERERS } from '../../src/experience/genui/renderers/index.js';
+import { renderFollowups } from '../../src/experience/genui/renderers/followups.js';
 
 /** GenUI segment→widget layer. Pure parse + dispatch + fallback + each default renderer shape. */
 
@@ -52,6 +53,53 @@ test('parseContent: loose key:value line block, leftovers under .raw, never thro
   assert.equal(m.raw, 'just some prose');
   // garbage never throws
   assert.deepEqual(parseContent('{not valid json'), { raw: '{not valid json' });
+});
+
+// ─────────────────────────── issue #56: quote-stripping + flush-left dash lists ───────────────────────────
+
+test('parseContent (issue #56): coerceScalar strips a matching pair of surrounding quotes from a live show-link URL', () => {
+  // Live-observed shape: a show-link widget's model comes back with the literal
+  // quote characters retained around the URL, e.g. {link: '"https://example.com/widgetron"'}.
+  const m = parseContent('link: "https://example.com/widgetron"');
+  assert.equal(m.link, 'https://example.com/widgetron');
+  // single-quote pair is stripped too
+  assert.equal(parseContent("label: 'Go to site'").label, 'Go to site');
+});
+
+test('parseContent: quote-stripping never eats a lone/unbalanced quote or an internal apostrophe', () => {
+  // no surrounding pair — leading quote only → left as-is
+  assert.equal(parseContent('label: "unterminated').label, '"unterminated');
+  // internal apostrophe, not a surrounding pair → left as-is
+  assert.equal(parseContent("note: it's fine").note, "it's fine");
+  // too short to be a pair (single char) → left as-is
+  assert.equal(parseContent('key: "').key, '"');
+});
+
+test('parseContent + renderFollowups (issue #56): flush-left dash list populates model.questions as a real array, verified through the followups renderer', () => {
+  // Exact live-observed shape: the backend emits a flush-left dash list (zero
+  // leading whitespace) for the followups tool's `questions:` field.
+  const content = 'questions:\n- "What specific feature are you most excited about?"\n- "How does this compare to your current solution?"';
+  const model = parseContent(content);
+  assert.deepEqual(model.questions, [
+    'What specific feature are you most excited about?',
+    'How does this compare to your current solution?',
+  ]);
+  assert.equal(model.raw, undefined);   // previously the dash lines leaked into .raw as an unparsed blob
+
+  const rendered = renderFollowups(model);
+  assert.deepEqual(rendered.data.questions, [
+    'What specific feature are you most excited about?',
+    'How does this compare to your current solution?',
+  ]);
+});
+
+test('parseContent: indented "- key: value" sub-map list (e.g. fields:) still parses as maps, unaffected by the flush-left fix', () => {
+  const content = 'fields:\n  - key: email\n    type: email\n  - key: role\n    type: str';
+  const model = parseContent(content);
+  assert.deepEqual(model.fields, [
+    { key: 'email', type: 'email' },
+    { key: 'role', type: 'str' },
+  ]);
 });
 
 // ─────────────────────────── parseWidget ───────────────────────────
