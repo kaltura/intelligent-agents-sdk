@@ -403,6 +403,11 @@ Transport: prefers `navigator.sendBeacon` (survives page-unload); falls back to 
 - Common params set once at construction and attached to every event: `partnerId`, `ks`, `entryId`, `sessionId`, `referrer`, `userId`, `hostingKalturaApplication`/`hostingKalturaApplicationVer`, `customId1`/`customId2`.
 - `buildPageLoadParams`/`buildButtonClickedParams` are the pure param-builders behind the class — unit-testable in isolation, or usable directly if you want your own transport.
 
+Reporting a **GenUI widget interaction** specifically (which chip/link/answer the learner picked)?
+See [GENUI-REFERENCE.md § Widget-interaction analytics](docs/GENUI-REFERENCE.md#widget-interaction-analytics-avoiding-double-counting)
+for the recipe, live-verified against two widget types, plus the exact list of signals the
+platform already tracks server-side so you don't duplicate one client-side.
+
 ### Connectivity beacon (opt-in)
 
 ```js
