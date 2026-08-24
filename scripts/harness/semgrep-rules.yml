@@ -38,3 +38,34 @@ rules:
       - metavariable-regex:
           metavariable: $X
           regex: .+
+
+  - id: no-dynamic-shell-command
+    languages: [javascript]
+    severity: ERROR
+    message: >-
+      child_process exec/execSync called with a dynamically-built command
+      (template literal or string concatenation), or spawn/spawnSync called
+      with shell:true — untrusted input reaching this is a shell-injection
+      vector. Use a static command string with an argv array instead.
+    patterns:
+      - pattern-either:
+          - pattern: exec(`...${$X}...`, ...)
+          - pattern: exec($A + $B, ...)
+          - pattern: execSync(`...${$X}...`, ...)
+          - pattern: execSync($A + $B, ...)
+          - pattern: 'spawn($CMD, ..., {..., shell: true, ...})'
+          - pattern: 'spawnSync($CMD, ..., {..., shell: true, ...})'
+
+  - id: no-raw-fetch-bypass
+    languages: [javascript]
+    severity: ERROR
+    message: >-
+      Raw global fetch() call outside the injectable Http transport
+      (core/http.js). This bypasses the shared retry/backoff and
+      response-size budgeting in http.js — and if the target URL comes
+      from caller input, it also skips the isPrivateOrLoopbackHost
+      SSRF check that wire.js/session.js apply before their fetch calls.
+    paths:
+      exclude:
+        - '**/src/core/http.js'
+    pattern: fetch(...)

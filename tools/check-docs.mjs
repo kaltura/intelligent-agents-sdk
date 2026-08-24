@@ -135,6 +135,32 @@ describe('1. Secrets', () => {
     assert.deepEqual(offenders, [], `hex-secret-shaped string found in: ${offenders.join(', ')}`);
   });
 
+  // Beyond the KS-token/hex32 shapes above (this SDK's own credential shapes),
+  // catch the common third-party credential shapes a doc example or fixture
+  // could accidentally paste in real: cloud provider keys, VCS/chat-platform
+  // tokens, PEM key material, and JWTs. GitHub's platform-level secret
+  // scanning is the primary backstop for these; this is a fast, offline
+  // second check that runs on every PR without waiting on that scan.
+  test('no generic third-party credential-shaped string in tracked files', () => {
+    const PATTERNS = [
+      ['AWS access key ID', /\bAKIA[0-9A-Z]{16}\b/],
+      ['GitHub token', /\bgh[pousr]_[A-Za-z0-9]{36,}\b/],
+      ['Slack token', /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/],
+      ['Google API key', /\bAIza[0-9A-Za-z_-]{35}\b/],
+      ['PEM private key', /-----BEGIN [A-Z ]*PRIVATE KEY-----/],
+      ['JWT', /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/],
+    ];
+    const files = scanFilesForSecrets();
+    const offenders = [];
+    for (const f of files) {
+      const content = read(f);
+      for (const [name, re] of PATTERNS) {
+        if (re.test(content)) offenders.push(`${f} (${name})`);
+      }
+    }
+    assert.deepEqual(offenders, [], `credential-shaped string found in: ${offenders.join(', ')}`);
+  });
+
   // Local pre-commit safety net, NOT a CI gate: CI never checks out a .env
   // file (it's gitignored and never provisioned by the pipeline), so this
   // test's "no .env — skip" early-return fires on every CI run and the check
