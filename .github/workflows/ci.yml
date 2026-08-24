@@ -1,12 +1,15 @@
 name: CI
 
-# Runs on every push to main and on every PR targeting main.
+# Runs on every push to main, every PR targeting main, and every merge-queue
+# check run (merge_group) once a PR is enqueued to merge into main.
 # Zero-dependency SDK, zero-devDependency test runner (node:test) — no real
 # Kaltura credentials are used or required anywhere in this workflow.
 on:
   push:
     branches: [main]
   pull_request:
+    branches: [main]
+  merge_group:
     branches: [main]
 
 permissions:
