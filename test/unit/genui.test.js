@@ -942,3 +942,283 @@ test('renderMarkdown is isomorphic-gated by mountWidget (no document → mountWi
   const { mountWidget } = await import('../../src/experience/genui/renderers/mount.js');
   assert.equal(mountWidget({ kind: 'summary', data: { summary: '# x' } }, null, { markdown: true }), null);
 });
+
+// ─────────────────────────── issue #39: graded-question widget ───────────────────────────
+// NOT one of the nine backend runtimes — a host-registered "10th runtime" widget
+// (see the "registry-derived known + contract" section above). renderGradedQuestion
+// is imported directly (never through DEFAULT_RENDERERS/WIDGET_KINDS), and mountWidget
+// dispatches on descriptor.kind alone, so BUILDERS['graded-question'] is reachable
+// whether or not the host ever registers the runtime with an ExperienceRenderer.
+
+test('renderGradedQuestion: choice variant shape when options are present', async () => {
+  const { renderGradedQuestion } = await import('../../src/experience/genui/renderers/graded-question.js');
+  const d = renderGradedQuestion({
+    questionId: 'q1', prompt: 'Pick the primary color', options: [{ id: 'r', text: 'Red' }, { id: 'g', text: 'Green' }],
+    correctOptionId: 'r', explanation: 'Red is primary.',
+  });
+  assert.equal(d.kind, 'graded-question');
+  assert.deepEqual(d.data, {
+    questionId: 'q1', variant: 'choice', prompt: 'Pick the primary color',
+    options: [{ id: 'r', text: 'Red' }, { id: 'g', text: 'Green' }],
+    correctOptionId: 'r', acceptedAnswers: [], explanation: 'Red is primary.',
+  });
+});
+
+test('renderGradedQuestion: free-text variant shape when no options are given', async () => {
+  const { renderGradedQuestion } = await import('../../src/experience/genui/renderers/graded-question.js');
+  const d = renderGradedQuestion({ questionId: 'q2', prompt: 'Name the capital of France', acceptedAnswers: ['Paris', 'paris, france'] });
+  assert.equal(d.data.variant, 'text');
+  assert.deepEqual(d.data.options, []);
+  assert.equal(d.data.correctOptionId, null);
+  assert.deepEqual(d.data.acceptedAnswers, ['Paris', 'paris, france']);
+});
+
+test('renderGradedQuestion: no answer key authored → correctOptionId/acceptedAnswers stay empty (nullable, honest "ungraded" signal)', async () => {
+  const { renderGradedQuestion } = await import('../../src/experience/genui/renderers/graded-question.js');
+  const choice = renderGradedQuestion({ prompt: 'Open-ended', options: [{ id: 'a', text: 'A' }] });
+  assert.equal(choice.data.correctOptionId, null);
+  const text = renderGradedQuestion({ prompt: 'Open-ended' });
+  assert.deepEqual(text.data.acceptedAnswers, []);
+});
+
+test('renderGradedQuestion: a correctOptionId that names no real option is dropped, not trusted blindly', async () => {
+  const { renderGradedQuestion } = await import('../../src/experience/genui/renderers/graded-question.js');
+  const d = renderGradedQuestion({ prompt: 'P', options: [{ id: 'a', text: 'A' }], correctOptionId: 'not-an-option' });
+  assert.equal(d.data.correctOptionId, null);
+});
+
+test('renderGradedQuestion: options are capped at 8 (issue #39 rule 4.1)', async () => {
+  const { renderGradedQuestion } = await import('../../src/experience/genui/renderers/graded-question.js');
+  const options = Array.from({ length: 50 }, (_, i) => ({ id: 'o' + i, text: 'Option ' + i }));
+  const d = renderGradedQuestion({ prompt: 'P', options });
+  assert.equal(d.data.options.length, 8);
+});
+
+test('renderGradedQuestion is total over adversarial models (never throws, always {kind,data})', async () => {
+  const { renderGradedQuestion } = await import('../../src/experience/genui/renderers/graded-question.js');
+  const garbage = [null, undefined, 42, 'x', true, { options: 'notarray' }, { options: [null, 1, true, {}] }, { a: { b: { c: {} } } }];
+  for (const model of garbage) {
+    let out;
+    assert.doesNotThrow(() => { out = renderGradedQuestion(model); }, `renderGradedQuestion threw on ${JSON.stringify(model)}`);
+    assert.equal(out.kind, 'graded-question');
+    assert.equal(typeof out.data, 'object');
+  }
+});
+
+test('renderGradedQuestion returns fresh descriptors with no shared references across calls (issue #39 rule 1.1)', async () => {
+  const { renderGradedQuestion } = await import('../../src/experience/genui/renderers/graded-question.js');
+  const a = renderGradedQuestion({ prompt: 'A', options: [{ id: '1', text: 'one' }] });
+  const b = renderGradedQuestion({ prompt: 'B', options: [{ id: '1', text: 'one' }] });
+  assert.notEqual(a, b);
+  assert.notEqual(a.data, b.data);
+  assert.notEqual(a.data.options, b.data.options);
+  a.data.options.push({ id: 'x', text: 'mutated' });
+  assert.equal(b.data.options.length, 1);   // mutating one output's arrays never affects the other
+});
+
+test('a host-registered graded-question runtime is known:true but firstClass:false (same 10th-runtime seam as any custom widget)', async () => {
+  const { renderGradedQuestion } = await import('../../src/experience/genui/renderers/graded-question.js');
+  const r = new ExperienceRenderer({ renderers: { 'graded-question': renderGradedQuestion } });
+  const d = r.render('graded-question', { prompt: 'P', options: [{ id: 'a', text: 'A' }] });
+  assert.equal(d.kind, 'graded-question');
+  assert.equal(d._meta.known, true);
+  assert.equal(d._meta.firstClass, false);
+});
+
+/** Wraps fakeDom() so every created node's addEventListener pushes {node, ev, fn} into `listeners`, mirroring the existing 'mountWidget form submit + followup click fire onAction' test's pattern. */
+function listenerCapturingDom(listeners) {
+  const baseMake = fakeDom().createElement;
+  return { createElement: (t) => { const n = baseMake(t); n.addEventListener = (ev, fn) => listeners.push({ node: n, ev, fn }); return n; } };
+}
+
+test('mountWidget graded-question (choice): selecting the correct option fires onAction("answer", ...) with the documented shape', async () => {
+  const listeners = [];
+  globalThis.document = listenerCapturingDom(listeners);
+  try {
+    const { mountWidget } = await import('../../src/experience/genui/renderers/mount.js');
+    const actions = [];
+    const data = { questionId: 'q1', options: [{ id: 'a', text: 'A' }, { id: 'b', text: 'B' }], correctOptionId: 'b', explanation: 'because b' };
+    mountWidget({ kind: 'graded-question', data }, document.createElement('div'), { onAction: (a, p) => actions.push([a, p]) });
+    const radios = listeners.filter((l) => l.ev === 'change');
+    assert.equal(radios.length, 2);
+    radios[1].fn();                                   // select option 'b' (the correct one)
+    const clicks = listeners.filter((l) => l.ev === 'click');
+    assert.equal(clicks.length, 1);
+    clicks[0].fn();                                    // submit
+    assert.equal(actions.length, 1);
+    const [action, payload] = actions[0];
+    assert.equal(action, 'answer');
+    assert.deepEqual(payload, { questionId: 'q1', variant: 'choice', correct: true, value: 'B', explanation: 'because b', optionId: 'b' });
+  } finally { delete globalThis.document; }
+});
+
+test('mountWidget graded-question (choice): a wrong selection reports correct:false; no correctOptionId reports correct:null; unanswered submit is a no-op', async () => {
+  const listeners = [];
+  globalThis.document = listenerCapturingDom(listeners);
+  try {
+    const { mountWidget } = await import('../../src/experience/genui/renderers/mount.js');
+    const actions = [];
+    const data = { questionId: 'q1', options: [{ id: 'a', text: 'A' }, { id: 'b', text: 'B' }], correctOptionId: 'b' };
+    mountWidget({ kind: 'graded-question', data }, document.createElement('div'), { onAction: (a, p) => actions.push([a, p]) });
+    const clicks = listeners.filter((l) => l.ev === 'click');
+    clicks[0].fn();                                    // submit with no selection made yet
+    assert.equal(actions.length, 0, 'a submit with no selection is a no-op, never a false-graded answer');
+    listeners.filter((l) => l.ev === 'change')[0].fn();  // select the wrong option 'a'
+    clicks[0].fn();
+    assert.equal(actions.length, 1);
+    assert.equal(actions[0][1].correct, false);
+  } finally { delete globalThis.document; }
+});
+
+test('mountWidget graded-question (choice): with no correctOptionId authored, correct is null (honest "ungraded"), never false', async () => {
+  const listeners = [];
+  globalThis.document = listenerCapturingDom(listeners);
+  try {
+    const { mountWidget } = await import('../../src/experience/genui/renderers/mount.js');
+    const actions = [];
+    mountWidget({ kind: 'graded-question', data: { questionId: 'q1', options: [{ id: 'a', text: 'A' }] } }, document.createElement('div'), { onAction: (a, p) => actions.push([a, p]) });
+    listeners.filter((l) => l.ev === 'change')[0].fn();
+    listeners.filter((l) => l.ev === 'click')[0].fn();
+    assert.equal(actions[0][1].correct, null);
+  } finally { delete globalThis.document; }
+});
+
+test('mountWidget graded-question (text): the free-text answer is sanitized before grading AND before any DOM insertion (issue #39 rule 2.2)', async () => {
+  const listeners = [];
+  globalThis.document = listenerCapturingDom(listeners);
+  try {
+    const { mountWidget } = await import('../../src/experience/genui/renderers/mount.js');
+    const actions = [];
+    const data = { questionId: 'q2', prompt: 'Name the capital', acceptedAnswers: ['Paris'], explanation: 'It is Paris.' };
+    const root = mountWidget({ kind: 'graded-question', data }, document.createElement('div'), { onAction: (a, p) => actions.push([a, p]) });
+    const inputListener = listeners.find((l) => l.ev === 'input');
+    assert.ok(inputListener);
+    inputListener.node.value = 'Par\x00is\x07<script>alert(1)</script>';
+    inputListener.fn();
+    listeners.filter((l) => l.ev === 'click')[0].fn();
+    assert.equal(actions.length, 1);
+    const [action, payload] = actions[0];
+    assert.equal(action, 'answer');
+    // control chars stripped by safeText; the <script> text survives only as inert text, never a parsed element
+    assert.equal(payload.value, 'Paris<script>alert(1)</script>');
+    assert.equal(payload.correct, false);   // sanitized value != 'paris' exactly → gradeable, never a crash
+    let scriptTags = 0, sawEcho = false;
+    walk(root, (n) => {
+      if (n.tagName === 'SCRIPT') scriptTags++;
+      if (n._cls && n._cls.includes('kgenui__answer-echo')) {
+        sawEcho = true;
+        // eslint-disable-next-line no-control-regex -- asserting control chars are ABSENT, not a lint mistake
+        assert.ok(!/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(n.textContent));
+      }
+    });
+    assert.equal(scriptTags, 0, 'never a parsed <script> element — textContent only, never innerHTML');
+    assert.ok(sawEcho, 'the sanitized answer is echoed back into the DOM');
+  } finally { delete globalThis.document; }
+});
+
+test('mountWidget graded-question (choice): the options list sits inside a <fieldset>/<legend> naming the question, not a bare list', async () => {
+  const listeners = [];
+  globalThis.document = listenerCapturingDom(listeners);
+  try {
+    const { mountWidget } = await import('../../src/experience/genui/renderers/mount.js');
+    const data = { questionId: 'q1', prompt: 'Pick the capital of France', options: [{ id: 'a', text: 'Paris' }, { id: 'b', text: 'Rome' }] };
+    const root = mountWidget({ kind: 'graded-question', data }, document.createElement('div'));
+    let fieldset = null, legend = null;
+    walk(root, (n) => {
+      if (n.tagName === 'FIELDSET') fieldset = n;
+      if (n.tagName === 'LEGEND') legend = n;
+    });
+    assert.ok(fieldset, 'the radiogroup is wrapped in a <fieldset>');
+    assert.ok(legend, 'the <fieldset> has a <legend>');
+    assert.ok(fieldset.children.includes(legend), 'the <legend> belongs to the <fieldset>, not a sibling');
+    assert.equal(legend.textContent, data.prompt, 'the legend names the question so the radiogroup has an accessible group name');
+    assert.ok(legend.className.includes('kgenui__sr-only'), 'the legend is screen-reader-only — the prompt is already shown visibly above');
+  } finally { delete globalThis.document; }
+});
+
+test('mountWidget graded-question: the role="status" feedback region is mounted (present, not hidden) before any answer, so AT can announce its later update', async () => {
+  const listeners = [];
+  globalThis.document = listenerCapturingDom(listeners);
+  try {
+    const { mountWidget } = await import('../../src/experience/genui/renderers/mount.js');
+    const data = { questionId: 'q1', options: [{ id: 'a', text: 'A' }], correctOptionId: 'a' };
+    const root = mountWidget({ kind: 'graded-question', data }, document.createElement('div'));
+    let feedback = null;
+    walk(root, (n) => { if (n.className && n.className.includes('kgenui__feedback')) feedback = n; });
+    assert.ok(feedback, 'the feedback element exists in the DOM before any answer is submitted');
+    assert.equal(feedback.hidden, false, 'never `.hidden` from mount — a hidden element is pulled from the a11y tree, defeating role="status"');
+    assert.equal(feedback.getAttribute('role'), 'status');
+    assert.equal(feedback.textContent, '', 'empty until answered — presence, not content, is what must exist upfront');
+  } finally { delete globalThis.document; }
+});
+
+test('mountWidget graded-question (text): pressing Enter in the answer input submits, same as clicking the button', async () => {
+  const listeners = [];
+  globalThis.document = listenerCapturingDom(listeners);
+  try {
+    const { mountWidget } = await import('../../src/experience/genui/renderers/mount.js');
+    const actions = [];
+    const data = { questionId: 'q2', prompt: 'Name the capital', acceptedAnswers: ['Paris'] };
+    mountWidget({ kind: 'graded-question', data }, document.createElement('div'), { onAction: (a, p) => actions.push([a, p]) });
+    const inputListener = listeners.find((l) => l.ev === 'input');
+    inputListener.node.value = 'Paris';
+    inputListener.fn();
+    const keydownListener = listeners.find((l) => l.ev === 'keydown');
+    assert.ok(keydownListener, 'the input has a keydown listener for Enter-to-submit');
+    keydownListener.fn({ key: 'Shift' });   // a non-Enter key must never submit
+    assert.equal(actions.length, 0);
+    keydownListener.fn({ key: 'Enter' });
+    assert.equal(actions.length, 1);
+    assert.equal(actions[0][1].correct, true);
+  } finally { delete globalThis.document; }
+});
+
+test('mountWidget graded-question (text): no accepted answers authored → correct is null (honest "ungraded"), never false', async () => {
+  const listeners = [];
+  globalThis.document = listenerCapturingDom(listeners);
+  try {
+    const { mountWidget } = await import('../../src/experience/genui/renderers/mount.js');
+    const actions = [];
+    mountWidget({ kind: 'graded-question', data: { questionId: 'q3', prompt: 'Reflect on this' } }, document.createElement('div'), { onAction: (a, p) => actions.push([a, p]) });
+    listeners.find((l) => l.ev === 'input').node.value = 'my open-ended reflection';
+    listeners.find((l) => l.ev === 'input').fn();
+    listeners.filter((l) => l.ev === 'click')[0].fn();
+    assert.equal(actions[0][1].correct, null);
+  } finally { delete globalThis.document; }
+});
+
+test('two mounted graded-question widgets in one process never share selection/answered state (issue #39 rule 1.2)', async () => {
+  const listeners = [];
+  globalThis.document = listenerCapturingDom(listeners);
+  try {
+    const { mountWidget } = await import('../../src/experience/genui/renderers/mount.js');
+    const actionsA = [], actionsB = [];
+    const shared = { options: [{ id: 'x', text: 'X' }, { id: 'y', text: 'Y' }] };
+
+    const beforeA = listeners.length;
+    mountWidget({ kind: 'graded-question', data: { ...shared, questionId: 'a', correctOptionId: 'x' } }, document.createElement('div'), { onAction: (a, p) => actionsA.push([a, p]) });
+    const listenersA = listeners.slice(beforeA);
+
+    const beforeB = listeners.length;
+    mountWidget({ kind: 'graded-question', data: { ...shared, questionId: 'b', correctOptionId: 'y' } }, document.createElement('div'), { onAction: (a, p) => actionsB.push([a, p]) });
+    const listenersB = listeners.slice(beforeB);
+
+    // Answer only A (select its wrong option 'y') — B must be completely untouched.
+    listenersA.filter((l) => l.ev === 'change')[1].fn();
+    listenersA.filter((l) => l.ev === 'click')[0].fn();
+    assert.equal(actionsA.length, 1);
+    assert.equal(actionsA[0][1].correct, false);
+    assert.equal(actionsB.length, 0, 'mounting/answering A never fires B\'s onAction');
+
+    // B's submit with no selection is still a no-op — its own selection state was never set by A.
+    listenersB.filter((l) => l.ev === 'click')[0].fn();
+    assert.equal(actionsB.length, 0);
+
+    // Now answer B correctly (select 'y', its correct option) — independent of A's already-answered state.
+    listenersB.filter((l) => l.ev === 'change')[1].fn();
+    listenersB.filter((l) => l.ev === 'click')[0].fn();
+    assert.equal(actionsB.length, 1);
+    assert.equal(actionsB[0][1].correct, true);
+    assert.equal(actionsA.length, 1, 'B\'s answer never re-fires or mutates A\'s already-recorded action');
+  } finally { delete globalThis.document; }
+});

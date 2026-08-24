@@ -591,7 +591,7 @@ import { ExperienceRenderer } from '@kaltura/intelligent-agents/experience/genui
 new ExperienceRenderer({
   session,
   mount: document.getElementById('widgets'),
-  onAction: (action, payload) => { /* followup / submit / play / open */ },
+  onAction: (action, payload) => { /* followup / submit / play / open / answer */ },
 }).start();
 ```
 
@@ -600,6 +600,8 @@ new ExperienceRenderer({
 A `summary` widget's text is markdown-in-plain-text by default (LLM-authored), and the SDK renders it as flat escaped text unless you opt in: `mountWidget(descriptor, target, { markdown: true })` parses that same text as markdown — headings, bold/italic, inline code, links, lists, fenced code blocks, and GFM tables (rendered through the same safe `tableEl` builder the structured widgets use) — all as real, accessible DOM, never `innerHTML`. This is markdown-IN-plain-text rendering, not a new wire segment type; every link goes through `safeUrl` and every text run through `safeText`/`safeSource`, so a `javascript:` link or a raw `<script>` tag in the LLM output is neutralized the same way the rest of GenUI's renderers neutralize untrusted output. Default (flat text) behavior is unchanged, so no existing app regresses by upgrading.
 
 A widget interrupted mid-stream (a different runtime/`speechId` arrives before its JSON body finishes writing — e.g. a barge-in) is never mounted as a silently-truncated widget: `SegmentAssembler` recognizes the cut-off JSON shape and `ExperienceRenderer` mounts the same typed fallback it uses for a throwing custom renderer, `{kind:'error', data:{runtime, message}}`, distinguishable from any complete widget's descriptor.
+
+`graded-question` (a prompt with either multiple-choice options or a free-text answer, an optional answer key, and an optional explanation) is NOT one of the nine backend runtimes above — there's no Genie brain tool that emits it. It's a host-registered widget: `import { renderGradedQuestion } from '@kaltura/intelligent-agents/experience/genui'`, then `new ExperienceRenderer({ renderers: { 'graded-question': renderGradedQuestion } })`, the same "10th runtime" extensibility seam any custom widget uses (see "Registration, fallback, and provenance" in `docs/GENUI-REFERENCE.md`). Grading happens client-side in `mountWidget` — a comprehension-check primitive, not a tamper-proof assessment, since the answer key travels in the descriptor itself. Full shape, the `onAction('answer', ...)` event, and a runnable example are in [docs/GENUI-REFERENCE.md](docs/GENUI-REFERENCE.md#10-graded-question-rendergradedquestion--a-host-registered-10th-runtime) and `examples/genui-graded-question.mjs`.
 
 In LIVE mode (`.start()`), `ExperienceRenderer` also subscribes to the session's `turnStart` event (re-emitted from the raw `agent_start_speech` socket event — `{speechId, turnId, isNewTurn}`) and, by default (`clearOnTurnStart: true`), discards the assembler's in-flight buffer and clears `rendered`/`last` when `isNewTurn` is true, so a widget from a previous turn never lingers into the next one — the same correctness fix Genie's own web client applies by nulling its content on `AgentStartSpeechReceived`. A duplicate turn (`isNewTurn:false`, e.g. a CM-side `tap-to-talk` retrigger for a `turnId` already in flight) is ignored here, matching every other `turnStart`/`isNewTurn` consumer in the SDK — otherwise the duplicate would wipe an already-rendered widget out from under the viewer mid-turn. Pass `clearOnTurnStart: false` to keep the previous default behavior (accumulate/persist across turns).
 
@@ -782,6 +784,7 @@ These are importable from their entry points and useful when composing custom pi
 | `mountWidget(descriptor, target, opts)` | Zero-dep, never-`innerHTML`, accessible single-widget renderer with an `onMount` progressive-enhancement seam. |
 | `parseWidget(segment)` / `normalizeRuntime` / `RUNTIMES` / `GENUI_WIDGET_NAME` | Wire-shape parsing helpers for building a custom GenUI renderer. |
 | `DEFAULT_RENDERERS` / `WIDGET_KINDS` | The default per-kind renderer map and the frozen list of kinds it dispatches on. |
+| `renderGradedQuestion` | Renderer for the `graded-question` comprehension-check widget — NOT in `DEFAULT_RENDERERS`/`WIDGET_KINDS` (there's no backend runtime for it). Register it yourself: `new ExperienceRenderer({ renderers: { 'graded-question': renderGradedQuestion } })`. See the [GenUI](#genui) section above and `docs/GENUI-REFERENCE.md` § 10. |
 | `SegmentAssembler` | Collects typed stream segments from the live socket into the same assembled shape as `collectConverse` — use when replaying socket captures or building a custom turn handler. `onMalformed({runtime, runtimeName, speechId, reason, message})` fires instead of `onWidget` when a fragment sequence is interrupted (`reason:'boundary'`) before its JSON body finishes — a natural end-of-turn (`'turnEnd'`) or `stop()` flush is never flagged malformed. |
 
 ### `./experience/noise-suppressor`

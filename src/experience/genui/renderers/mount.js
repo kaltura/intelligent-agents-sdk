@@ -21,6 +21,9 @@
  *   - 'play'      {entryId?, url?, id?} → host plays the clip / opens the slide
  *   - 'open'      {url}                  → a link/source/content card was activated
  *   - 'submit'    {values}              → a structured-data form was submitted (→ session.submitStructuredDataForm)
+ *   - 'answer'    {questionId, variant, correct, value, explanation, optionId?}
+ *                                        → a `graded-question` (issue #39) was answered; `correct` is
+ *                                          `boolean|null` (`null` = no answer key authored, ungraded)
  *
  * @module
  */
@@ -254,7 +257,128 @@ const BUILDERS = {
     form.addEventListener('submit', (e) => { if (e && e.preventDefault) e.preventDefault(); onAction('submit', { values: { ...values } }); });
     root.appendChild(form);
   },
+
+  // issue #39 — NOT one of the nine backend runtimes; reached only when a host
+  // registers this kind via `new ExperienceRenderer({ renderers: {...} })` or
+  // `.register(...)`. Grading is client-side: the answer key travels in `data`
+  // itself, same trust model as every other GenUI widget's model data — this is
+  // a comprehension-check primitive, not a tamper-proof assessment. All text is
+  // re-sanitized here (never trusts the renderer already did it), matching every
+  // other builder's contract for hand-built descriptors.
+  'graded-question'(root, data, onAction) {
+    const prompt = safeText(data.prompt, 2000);
+    if (prompt) root.appendChild(el('p', 'kgenui__prompt', prompt));
+
+    const options = asArray(data.options).slice(0, MAX_GQ_OPTIONS).map((o) => {
+      const src = (o && typeof o === 'object') ? o : {};
+      return { id: safeText(src.id, 200) || 'opt', text: safeText(src.text, 500) };
+    }).filter((o) => o.text);
+    const variant = options.length > 0 ? 'choice' : 'text';
+    const questionId = safeText(data.questionId, 200) || 'q';
+    const explanation = safeText(data.explanation, 2000);
+    const correctOptionId = typeof data.correctOptionId === 'string' ? safeText(data.correctOptionId, 200) : null;
+    const acceptedAnswers = asArray(data.acceptedAnswers).map((a) => safeText(a, 500)).filter(Boolean);
+
+    // role="status" must be present in the DOM before its text changes — an
+    // AT-hidden-until-reveal element toggled to visible+populated in the same
+    // tick is a common pattern that many screen readers fail to announce.
+    // So this stays mounted and empty, never `.hidden`, from the start.
+    const feedback = el('p', 'kgenui__feedback');
+    feedback.setAttribute('role', 'status');
+    const explanationEl = el('p', 'kgenui__explanation', explanation);
+    explanationEl.hidden = true;
+
+    // Per-mount closure state (issue #39 rule 1.2) — never module-level, so two
+    // mounted graded-question widgets in one process never share an answer.
+    let answered = false;
+    const reveal = (correct, value, optionId) => {
+      if (answered) return;   // one answer per mount
+      answered = true;
+      feedback.textContent = correct === true ? 'Correct.' : correct === false ? 'Not quite.' : 'Answer recorded.';
+      feedback.classList.add('kgenui__feedback--' + (correct === true ? 'correct' : correct === false ? 'incorrect' : 'neutral'));
+      if (explanation) explanationEl.hidden = false;
+      const payload = { questionId, variant, correct, value, explanation };
+      if (optionId != null) payload.optionId = optionId;
+      onAction('answer', payload);
+    };
+
+    if (variant === 'choice') {
+      let selectedId = null;
+      const inputs = [];
+      const groupName = 'kgenui-gq-' + cssToken(questionId);
+      // <fieldset>/<legend> ties the radiogroup's accessible name back to the
+      // question — without it, a screen reader announces each option with no
+      // indication of which question they answer. The legend duplicates the
+      // prompt already shown visibly above, so it's screen-reader-only.
+      const fieldset = el('fieldset', 'kgenui__options-group');
+      const legend = el('legend', 'kgenui__sr-only', prompt || 'Answer choices');
+      fieldset.appendChild(legend);
+      const list = el('ul', 'kgenui__list kgenui__options');
+      list.setAttribute('role', 'list');
+      for (const o of options) {
+        const li = el('li');
+        const id = groupName + '-' + cssToken(o.id);
+        const input = el('input', 'kgenui__radio');
+        input.type = 'radio'; input.name = groupName; input.id = id; input.value = o.id;
+        input.addEventListener('change', () => { selectedId = o.id; });
+        inputs.push(input);
+        const lbl = el('label', 'kgenui__option-label', o.text);
+        lbl.htmlFor = id;
+        li.append(input, lbl);
+        list.appendChild(li);
+      }
+      fieldset.appendChild(list);
+      root.appendChild(fieldset);
+      const submit = el('button', 'kgenui__submit', 'Submit answer');
+      submit.type = 'button';
+      submit.addEventListener('click', () => {
+        if (!selectedId) return;   // require a selection before grading
+        const opt = options.find((o) => o.id === selectedId);
+        const correct = correctOptionId == null ? null : selectedId === correctOptionId;
+        reveal(correct, (opt && opt.text) || '', selectedId);
+        submit.disabled = true;
+        for (const inp of inputs) inp.disabled = true;
+      });
+      root.appendChild(submit);
+    } else {
+      let textValue = '';
+      const input = el('input', 'kgenui__input');
+      input.type = 'text';
+      input.setAttribute('aria-label', prompt || 'Your answer');
+      input.addEventListener('input', () => { textValue = input.value; });
+      root.appendChild(input);
+      // Pre-built hidden, like flashcards' answer span — revealed via .textContent + .hidden,
+      // never insertBefore (mirrors this module's existing toggle pattern; never a DOM-query API).
+      const echo = el('p', 'kgenui__answer-echo');
+      echo.hidden = true;
+      const submit = el('button', 'kgenui__submit', 'Submit answer');
+      submit.type = 'button';
+      const submitAnswer = () => {
+        // Sanitize BEFORE grading AND before any DOM insertion (issue #39 rule 2.2) —
+        // never grade or echo the raw input value.
+        const sanitized = safeText(textValue, 2000);
+        const correct = acceptedAnswers.length === 0 ? null
+          : acceptedAnswers.some((a) => a.toLowerCase() === sanitized.trim().toLowerCase());
+        submit.disabled = true;
+        input.disabled = true;
+        echo.textContent = 'Your answer: ' + sanitized;   // sanitized value only — never the raw one
+        echo.hidden = false;
+        reveal(correct, sanitized, null);
+      };
+      submit.addEventListener('click', submitAnswer);
+      // Enter submits, matching a real <form>'s implicit-submit behavior — this
+      // isn't wrapped in a <form> (mountWidget never nests forms inside a host
+      // page's own), so without this a keyboard user must Tab to the button.
+      input.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') submitAnswer(); });
+      root.appendChild(submit);
+      root.appendChild(echo);
+    }
+    root.append(feedback, explanationEl);
+  },
 };
+
+/** Hard cap on rendered graded-question options — bounds DOM size against a malformed/adversarial descriptor (issue #39 rule 4.1). */
+const MAX_GQ_OPTIONS = 8;
 
 function buildUnknown(root, data) {
   root.classList.add('kgenui--unknown');

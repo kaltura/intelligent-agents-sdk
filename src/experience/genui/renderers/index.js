@@ -14,11 +14,17 @@ import { renderShowLink } from './show-link.js';
 import { renderExternalVideo } from './external-video.js';
 import { renderUserPropertiesForm } from './user-properties-form.js';
 import { renderContentGallery } from './content-gallery.js';
+import { renderGradedQuestion } from './graded-question.js';
 
+// renderGradedQuestion (issue #39) is NOT one of the nine backend runtimes exported
+// below — it's a host-registered "10th runtime" widget, deliberately excluded from
+// DEFAULT_RENDERERS/WIDGET_KINDS. Wire it in via
+// `new ExperienceRenderer({ renderers: { 'graded-question': renderGradedQuestion } })`.
 export {
   renderFlashcards, renderFollowups, renderSources, renderSummary,
   renderVideoGallery, renderShowLink, renderExternalVideo,
   renderUserPropertiesForm, renderContentGallery,
+  renderGradedQuestion,
 };
 
 /**
