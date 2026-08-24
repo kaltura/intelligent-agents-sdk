@@ -48,6 +48,78 @@ const SYS_NS_SET = new Set(SYS_NAMESPACES);
 const SOURCE = 'prompt-lint';
 
 /**
+ * The two additional server-set scalar `sys__*` variables confirmed live but
+ * not yet part of {@link RESERVED_VARS} (see issue #37) — `sys__ks` (the raw
+ * session token) and `sys__is_new_thread`. Combined with {@link SYS_VARS} this
+ * is the full known-reserved-scalar surface {@link assembleSystemPrompt} uses
+ * to flag an unresolvable reference (see issue #45); it does NOT feed
+ * `assertRequestVars`'s collision guard — that list is tracked separately in
+ * `conversations.js` and extending it is out of scope here.
+ * @type {readonly string[]}
+ */
+const RESERVED_EXTRA_SCALARS = Object.freeze(['sys__ks', 'sys__is_new_thread']);
+const RESERVED_SCALAR_SET = new Set([...SYS_VARS, ...RESERVED_EXTRA_SCALARS]);
+
+/** Dotted prefix for the reserved bound-user object (see issue #37). */
+const RESERVED_USER_OBJ_PREFIX = 'sys__user_obj';
+
+/**
+ * Attributes of the reserved `sys__user_obj` variable confirmed live (see
+ * issue #37). Referencing an unbound attribute in a live turn today causes a
+ * silent turn failure, not an empty render — {@link assembleSystemPrompt}
+ * flags this case explicitly rather than letting the preview look harmless.
+ * @type {readonly string[]}
+ */
+export const RESERVED_USER_OBJ_ATTRS = Object.freeze(['first_name', 'last_name', 'title', 'company', 'gender', 'email']);
+
+/**
+ * Classify a `{{name}}` reference as one of the known reserved-variable kinds
+ * simulated by {@link assembleSystemPrompt} (scalar `sys__*`, a `sys__user_obj.*`
+ * attribute, or a `secrets.*` named secret), or `null` when it is an ordinary
+ * client variable. PURE — no network, no state. @param {string} name
+ * @returns {{kind:'scalar'}|{kind:'userObjAttr', attr:string}|{kind:'secret', secretName:string}|null}
+ */
+function classifyReservedVar(name) {
+  if (RESERVED_SCALAR_SET.has(name)) return { kind: 'scalar' };
+  if (name.startsWith(`${RESERVED_USER_OBJ_PREFIX}.`)) {
+    const attr = name.slice(RESERVED_USER_OBJ_PREFIX.length + 1);
+    if (RESERVED_USER_OBJ_ATTRS.includes(attr)) return { kind: 'userObjAttr', attr };
+    return null;
+  }
+  if (name.startsWith('secrets.')) return { kind: 'secret', secretName: name.slice('secrets.'.length) };
+  return null;
+}
+
+/**
+ * Build the `LintFinding`-shaped warning for an unresolved reserved-variable
+ * reference. Names the variable only — NEVER a value — even when one happens
+ * to be present but falsy (relevant for `sys__ks`, a raw session token; see
+ * issue #37). PURE. @param {string} name @param {{kind:string, attr?:string, secretName?:string}} info
+ * @returns {LintFinding}
+ */
+function reservedVarWarning(name, info) {
+  if (info.kind === 'userObjAttr') {
+    return {
+      severity: 'warning',
+      code: 'reserved_user_attr_unresolved',
+      message: `\`{{${name}}}\` has no bound value in this preview's requestVars. Referencing an unbound sys__user_obj.* attribute in a LIVE turn currently causes a silent turn failure, not an empty render (see issue #37) — bind a user (Sessions.createConversationToken({userId})) or supply "${name}" in requestVars to simulate the bound case before shipping this prompt.`,
+    };
+  }
+  if (info.kind === 'secret') {
+    return {
+      severity: 'warning',
+      code: 'reserved_secret_unresolved',
+      message: `\`{{${name}}}\` has no value in this preview's requestVars. previewPrompt() cannot read secret values (write-only) to confirm "${info.secretName}" is configured — check intellects.secrets.listNames() before shipping; live-turn behavior for an unset secret is unconfirmed (not verified against a real backend) — treat "${info.secretName}" as unresolved rather than assuming it renders empty.`,
+    };
+  }
+  return {
+    severity: 'warning',
+    code: 'reserved_var_unresolved',
+    message: `\`{{${name}}}\` is a reserved system variable with no value in this preview's requestVars — it renders as an empty/literal placeholder here, which may not match its live behavior. Supply "${name}" in requestVars to simulate the value the server would set.`,
+  };
+}
+
+/**
  * One finding from a lint pass.
  * @typedef {object} LintFinding
  * @property {'error'|'warning'} severity
@@ -532,6 +604,15 @@ export const SERVER_DEFAULT_DIRECTIVE_MARKER = '<<server default directive>>';
  *   - `{{var}}` placeholders are interpolated ONLY when you pass `requestVars`
  *     (system vars too); otherwise they are left literal. `sys__*` values you
  *     pass are a SIMULATION of what the server sets per turn.
+ *   - HARDENING (issue #45): a reference to a known reserved variable
+ *     (`sys__thread_id`/`sys__message_id`/`sys__user_id`/`sys__user_message`/
+ *     `sys__ks`/`sys__is_new_thread`, a `sys__user_obj.*` attribute, or a
+ *     `secrets.*` name) with no value in `requestVars` is flagged in the
+ *     returned `warnings[]` — distinct from an ordinary unresolved client
+ *     variable, since the same reference would misbehave live (for
+ *     `sys__user_obj.*`, a silent whole-turn failure — see issue #37).
+ *     `warnings` is present ONLY when non-empty, so a fully-resolved preview's
+ *     return shape is unchanged from before this hardening.
  *
  * @param {{
  *   prompts?: Array<object>,
@@ -549,6 +630,7 @@ export const SERVER_DEFAULT_DIRECTIVE_MARKER = '<<server default directive>>';
  *   skippedKeys: string[],
  *   usedDefaultDirective: boolean,
  *   unresolvedVariables: string[],
+ *   warnings?: LintFinding[],
  *   _meta: ReturnType<typeof meta>,
  * }}
  */
@@ -611,9 +693,24 @@ export function assembleSystemPrompt(subset = {}) {
 
   // Interpolation (last step, mirroring apply_variables()).
   const unresolved = [];
+  const warnings = [];
+  const warnedReserved = new Set();
   const interpolate = subset.interpolate !== false && isPlainObject(subset.requestVars);
   const vars = isPlainObject(subset.requestVars) ? subset.requestVars : {};
   text = text.replace(/\{\{\s*([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)\s*\}\}/g, (whole, name) => {
+    // HARDENING (issue #45): flag a known reserved variable with no value
+    // available in this simulated context — independent of `interpolate`
+    // (a caller who set interpolate:false but DID supply a value still has a
+    // resolvable simulation; only an ABSENT/null/undefined value warrants a
+    // warning).
+    const hasValue = Object.prototype.hasOwnProperty.call(vars, name) && vars[name] !== null && vars[name] !== undefined;
+    if (!hasValue && !warnedReserved.has(name)) {
+      const reserved = classifyReservedVar(name);
+      if (reserved) {
+        warnedReserved.add(name);
+        warnings.push(reservedVarWarning(name, reserved));
+      }
+    }
     if (interpolate && Object.prototype.hasOwnProperty.call(vars, name)) {
       const v = vars[name];
       return v === null || v === undefined ? '' : String(v);
@@ -627,6 +724,7 @@ export function assembleSystemPrompt(subset = {}) {
     skippedKeys,
     usedDefaultDirective,
     unresolvedVariables: unresolved,
+    ...(warnings.length ? { warnings } : {}),
     _meta: meta({
       source: SOURCE,
       scope: 'system-prompt',
