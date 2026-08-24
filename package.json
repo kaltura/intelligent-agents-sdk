@@ -14,6 +14,7 @@
     "./management": "./src/management/index.js",
     "./experience": "./src/experience/index.js",
     "./experience/presenter": "./src/experience/presenter.js",
+    "./experience/chroma-key": "./src/experience/chroma-key.js",
     "./experience/genui": "./src/experience/genui/index.js",
     "./experience/noise-suppressor": "./src/experience/noise-suppressor.js",
     "./experience/analytics": "./src/experience/analytics.js",
@@ -41,7 +42,8 @@
     "typecheck": "tsc -p jsconfig.json",
     "circular": "madge --circular --extensions js src/",
     "harness:constitution": "node tools/constitution-harness.mjs",
-    "sri:map": "node tools/sri-map.mjs"
+    "sri:map": "node tools/sri-map.mjs",
+    "live-verify:browser": "node scripts/live-verify-browser.mjs"
   },
   "keywords": [
     "kaltura",
@@ -65,6 +67,7 @@
     "eslint": "^10.9.0",
     "jsdom": "^29.0.0",
     "madge": "^8.0.0",
+    "playwright": "^1.62.1",
     "typescript": "^5.9.3"
   }
 }
