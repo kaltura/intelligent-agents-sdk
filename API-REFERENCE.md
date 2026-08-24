@@ -771,6 +771,18 @@ All thread endpoints require an **admin KS** (`disableentitlement`). Pager: `{"p
 
 SDK: `mgmt.threads.{list, get, rename, delete, transcript}`.
 
+> **Backend-blocked, dated 2026-08-22 (tracks issue #43).** Thread history has no documented size
+> limit, and there is no default cap in practice: the full transcript is sent as context on every
+> turn, regardless of thread length. A long-running thread (for example, a multi-week coaching
+> relationship) will keep growing its per-turn token cost indefinitely. Backend investigation
+> confirms a token-budget-based trimming/summarization mechanism exists server-side, but it is a
+> global on/off switch today, with no per-partner or per-session control exposed via the SDK (and
+> no published token-budget figures to cite here). Integrators running long-lived threads should
+> plan for per-turn cost that scales with thread length, with no current SDK-level way to bound it.
+> A real per-session/per-partner history-window control is tracked separately as
+> [issue #59](https://github.com/kaltura/intelligent-agents-sdk/issues/59) — not implemented, and
+> not implied by anything in this SDK today.
+
 ---
 
 ### Feedback and Follow-ups (SDK)
