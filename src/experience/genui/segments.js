@@ -5,10 +5,11 @@
  * splitting that breaks naive spoken-text parsers — see `Presenter._accumulate`);
  * this re-assembles the body before it is handed to a renderer.
  *
- * BOUNDARY RULES (marked INFERRED per docs/GENUI-REFERENCE.md "Restrictions &
- * gotchas": only `followups-tool`/`flashcards-tool` are captured live, so the
- * multi-fragment boundary is not live-verified — it is unit-tested with a
- * red/green cycle but NOT claimed as live-verified). A buffered widget flushes when:
+ * BOUNDARY RULES (per docs/GENUI-REFERENCE.md "Restrictions & gotchas":
+ * `followups-tool`, `flashcards-tool`, and `show-link-tool` are captured live —
+ * including the `followups-tool`/`show-link-tool` boundary flush, live-verified
+ * end to end. The other six runtimes remain INFERRED: unit-tested with a
+ * red/green cycle but not live-verified). A buffered widget flushes when:
  *   - a fragment with a DIFFERENT normalized `runtime` arrives, OR
  *   - a fragment with a different `speechId` arrives, OR
  *   - `onTurnEnd(speechId)` is called (end of the brain turn).

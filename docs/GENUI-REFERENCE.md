@@ -569,9 +569,13 @@ non-duplicated events tied to one conversation, not two copies of the same one.
   join (`wire.js`). Use the HTTP converse path for reliable widgets.
 - **`force_experience` is a hint** — never assume the requested experience arrived; the renderer
   parses whatever shows up.
-- **Only `followups-tool` + `flashcards-tool` are live-captured** — the other seven runtimes and the
-  multi-fragment `SegmentAssembler` boundary rules are **INFERRED** (unit-tested red/green, not
-  live-verified). Source: `genui/segments.js` header.
+- **`followups-tool`, `flashcards-tool`, and `show-link-tool` are live-captured** — including the
+  `followups-tool`/`show-link-tool` boundary flush (a different runtime arriving mid-stream closes
+  the prior widget correctly) live-verified end to end through real `SegmentAssembler` →
+  `ExperienceRenderer` → `mountWidget` → click → `KavaAnalytics.buttonClicked()` (see
+  [Widget-interaction analytics](#widget-interaction-analytics-avoiding-double-counting)). The
+  other six runtimes are still **INFERRED** (unit-tested red/green, not live-verified). Source:
+  `genui/segments.js` header.
 - **RAG-driven vs. config-driven emission is unverified** — whether `video_gallery` /
   `external_video` / `show_link` fire from RAG hits or pure prompt tuning is **not documented**;
   the author-time lever is the capability + prompt, but the trigger is the brain's discretion.
