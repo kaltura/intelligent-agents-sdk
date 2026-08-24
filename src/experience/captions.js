@@ -41,6 +41,8 @@
  * captions.destroy(); // when done
  */
 
+import { Teardown } from './teardown.js';
+
 /** Strip HTML tags from a chunk of text (never rendered raw). @param {string} text */
 function stripHtml(text) { return text.replace(/<[^>]+>/g, ''); }
 
@@ -222,7 +224,6 @@ export class CaptionService {
    * }} [opts]
    */
   constructor(session, opts = {}) {
-    this._session = session;
     this._holdAfterEndMs = opts.holdAfterEndMs ?? 2000;
 
     this._segmenter = new CaptionSegmenter(opts.maxCharsPerLine ?? 47, opts.maxLines ?? 2);
@@ -261,9 +262,11 @@ export class CaptionService {
     // Scheduler cancel list (heuristic path)
     this._schedulerTimers = [];
 
-    // Bind event handlers
-    this._onSpeechChunk = ({ text, durationMs, speechId }) => this._onServerChunk(text, speechId, durationMs);
-    this._onTranscript = (tr) => {
+    // Subscribe to the session — every `on(...)` call's unsubscribe closure is tracked via
+    // `_teardown` (see {@link Teardown}), the same mechanism `Presenter`/`ExperienceRenderer` use.
+    this._teardown = new Teardown();
+    this._teardown.track(session.on('speechChunk', ({ text, durationMs, speechId }) => this._onServerChunk(text, speechId, durationMs)));
+    this._teardown.track(session.on('transcript', (tr) => {
       if (tr.type === 'final') {
         // Ground truth: pre-TTS clean text — never render, use for word-boundary accuracy
         this._onGeneratingSpeech(tr.text, tr.speechId);
@@ -271,18 +274,11 @@ export class CaptionService {
         // Heuristic fallback path (only active when no speechChunk arrives)
         this._onChunk(tr.text, tr.speechId);
       }
-    };
-    this._onSpeakingStart = () => this._onAvatarStartTalking();
-    this._onSpeakingEnd = ({ text }) => this._onAvatarStopTalking(text);
-    this._onInterrupt = () => this._interrupt();
-    this._onUserTalking = () => this._interrupt();
-
-    session.on('speechChunk', this._onSpeechChunk);
-    session.on('transcript', this._onTranscript);
-    session.on('avatarStartTalking', this._onSpeakingStart);
-    session.on('avatarStopTalking', this._onSpeakingEnd);
-    session.on('interrupted', this._onInterrupt);
-    session.on('userStartedTalking', this._onUserTalking);
+    }));
+    this._teardown.track(session.on('avatarStartTalking', () => this._onAvatarStartTalking()));
+    this._teardown.track(session.on('avatarStopTalking', ({ text }) => this._onAvatarStopTalking(text)));
+    this._teardown.track(session.on('interrupted', () => this._interrupt()));
+    this._teardown.track(session.on('userStartedTalking', () => this._interrupt()));
   }
 
   /**
@@ -308,12 +304,7 @@ export class CaptionService {
     this._stopTick();
     this._resetServer();
     clearTimeout(this._drainPollTimer);
-    this._session.off('speechChunk', this._onSpeechChunk);
-    this._session.off('transcript', this._onTranscript);
-    this._session.off('avatarStartTalking', this._onSpeakingStart);
-    this._session.off('avatarStopTalking', this._onSpeakingEnd);
-    this._session.off('interrupted', this._onInterrupt);
-    this._session.off('userStartedTalking', this._onUserTalking);
+    this._teardown.run();
     this._callbacks.clear();
   }
 

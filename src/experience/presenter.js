@@ -71,6 +71,7 @@
  * await presenter.start();                    // injects slide-1 DPP (+ memory)
  */
 import { parseSlideNumber } from './slidenav.js';
+import { Teardown } from './teardown.js';
 
 export { parseSlideNumber };
 
@@ -164,8 +165,8 @@ export class Presenter {
     if (this._memory && typeof this._memory.lastSequential === 'number') this._lastSequential = this._memory.lastSequential;
     this._destroyed = false;
 
-    /** @type {Array<() => void>} unsubscribe closures for every `session.on(...)` this instance registered. */
-    this._unsubs = [];
+    /** Tracks every `session.on(...)` unsubscribe closure this instance registered — see {@link Teardown}. */
+    this._teardown = new Teardown();
     this._warnOnCollision();
     this._wire();
   }
@@ -286,14 +287,14 @@ export class Presenter {
 
   _wire() {
     const s = this.session;
-    // Every listener registered below returns an unsubscribe closure, captured in `_unsubs`
-    // so `destroy()` can remove all of them (Rule I-4; mirrors `ExperienceRenderer#stop()`'s
-    // identical pattern in ./genui/renderer.js).
+    // Every listener registered below returns an unsubscribe closure, tracked via `_teardown`
+    // so `destroy()` can remove all of them (Rule I-4; the same {@link Teardown} instance
+    // `ExperienceRenderer` and `CaptionService` use).
     // The ONLY navigation mechanism: a client-command tool call. Deterministic (an explicit
     // slide number, never inferred from wording), silent (no speech is parsed or required),
     // and idempotent (routed through `_nav`'s duplicate suppression below).
     if (this._toolCallName && typeof s.onToolCall === 'function') {
-      this._unsubs.push(s.onToolCall(this._toolCallName, (args) => {
+      this._teardown.track(s.onToolCall(this._toolCallName, (args) => {
         const n = typeof args?.slide_num === 'number' ? args.slide_num : parseSlideNumber(args?.slide_num, this.total);
         if (!n) return;
         if (this._oneNavPerTurn) {
@@ -305,19 +306,19 @@ export class Presenter {
     }
     // Accumulate the avatar's spoken text per turn for `onTurnText` — an app-hook accumulator
     // only; Presenter itself never inspects this text (navigation never depends on wording).
-    this._unsubs.push(s.on('turnStart', (p) => { if (p?.isNewTurn) { this._turnSpeechId = p.speechId || null; this._turnText = ''; this._navSuppressedThisTurn = false; } }));
-    this._unsubs.push(s.on('transcript', (tr) => {
+    this._teardown.track(s.on('turnStart', (p) => { if (p?.isNewTurn) { this._turnSpeechId = p.speechId || null; this._turnText = ''; this._navSuppressedThisTurn = false; } }));
+    this._teardown.track(s.on('transcript', (tr) => {
       if (tr?.type === 'user') { if (tr.text) { this._questions.push(tr.text); this._injectDPP(); this._saveMemory(); } }
       else if (tr?.type === 'final') this._accumulate(tr.text, tr.speechId);   // clean sentence (generatingSpeech)
     }));
-    this._unsubs.push(s.on('brainSegment', (seg) => { if ((seg?.type === 'avatar' || seg?.type === 'avatar-filler') && seg.content) this._accumulate(seg.content, seg.speechId); }));
-    this._unsubs.push(s.on('avatarStopTalking', () => { this._turnSpeechId = null; this._turnText = ''; this._saveMemory(); }));
-    this._unsubs.push(s.on('interrupted', () => { this._turnSpeechId = null; this._turnText = ''; }));
-    this._unsubs.push(s.on('ended', () => this._saveMemory()));
+    this._teardown.track(s.on('brainSegment', (seg) => { if ((seg?.type === 'avatar' || seg?.type === 'avatar-filler') && seg.content) this._accumulate(seg.content, seg.speechId); }));
+    this._teardown.track(s.on('avatarStopTalking', () => { this._turnSpeechId = null; this._turnText = ''; this._saveMemory(); }));
+    this._teardown.track(s.on('interrupted', () => { this._turnSpeechId = null; this._turnText = ''; }));
+    this._teardown.track(s.on('ended', () => this._saveMemory()));
     // Every reconnect re-sends the current slide's DPP, since the brain may have lost grounding
     // either way. A cold reconnect (recovered:false) additionally means the brain lost its
     // context entirely, so also re-arm the one-time "welcome back" memory injection.
-    this._unsubs.push(s.on('reconnected', (p) => { if (p && p.recovered === false) this._memoryInjected = false; this._injectDPP(); }));
+    this._teardown.track(s.on('reconnected', (p) => { if (p && p.recovered === false) this._memoryInjected = false; this._injectDPP(); }));
   }
 
   /**
@@ -339,7 +340,7 @@ export class Presenter {
     this._destroyed = true;
     sessionsWithLivePresenter.delete(this.session);
     if (this._storage) { const claimed = memoryKeysByStorage.get(this._storage); if (claimed) claimed.delete(this._memoryKey); }
-    for (const off of this._unsubs.splice(0)) { try { off(); } catch { /* */ } }
+    this._teardown.run();
   }
 
   /** Alias for {@link Presenter#destroy} — matches the `stop()` verb `ExperienceRenderer`/`createNoiseSuppressor` use. */

@@ -30,6 +30,7 @@ import { normalizeRuntime, parseWidget, RUNTIMES } from './parse.js';
 import { SegmentAssembler } from './segments.js';
 import { DEFAULT_RENDERERS } from './renderers/index.js';
 import { mountWidget } from './renderers/mount.js';
+import { Teardown } from '../teardown.js';
 
 /**
  * Duck-type a DOM Element so `mount` can be a container, not just a callback.
@@ -92,8 +93,8 @@ export class ExperienceRenderer {
       onWidget: (w) => this._renderWidget(w),
       onMalformed: (info) => this._renderMalformed(info),
     });
-    /** @type {Array<()=>void>} */
-    this._unsubs = [];
+    /** Tracks every `session.on(...)` unsubscribe closure this instance registered — see {@link Teardown}. */
+    this._teardown = new Teardown();
     this._started = false;
   }
 
@@ -130,22 +131,22 @@ export class ExperienceRenderer {
     if (this._started || !this.session || typeof this.session.on !== 'function') { this._started = true; return this; }
     this._started = true;
     const s = this.session;
-    this._unsubs.push(s.on('brainSegment', (seg) => { try { this._assembler.ingest(seg); } catch { /* never break the session */ } }));
-    this._unsubs.push(s.on('turnEnd', (p) => { try { this._assembler.onTurnEnd(p && p.speechId); } catch { /* */ } }));
-    this._unsubs.push(s.on('avatarStopTalking', () => { try { this._assembler.flush(); } catch { /* */ } }));
-    this._unsubs.push(s.on('interrupted', () => this._assembler.reset()));
+    this._teardown.track(s.on('brainSegment', (seg) => { try { this._assembler.ingest(seg); } catch { /* never break the session */ } }));
+    this._teardown.track(s.on('turnEnd', (p) => { try { this._assembler.onTurnEnd(p && p.speechId); } catch { /* */ } }));
+    this._teardown.track(s.on('avatarStopTalking', () => { try { this._assembler.flush(); } catch { /* */ } }));
+    this._teardown.track(s.on('interrupted', () => this._assembler.reset()));
     if (this._clearOnTurnStart) {
       // Gate on isNewTurn like every other turnStart consumer (presenter.js, avatar-session.js) —
       // a duplicate turn (isNewTurn:false, e.g. speak()'s barge-in tap-to-talk race) must not wipe
       // an already-rendered widget out from under the viewer mid-turn.
-      this._unsubs.push(s.on('turnStart', (p) => { if (p?.isNewTurn) { this._assembler.reset(); this.clear(); } }));
+      this._teardown.track(s.on('turnStart', (p) => { if (p?.isNewTurn) { this._assembler.reset(); this.clear(); } }));
     }
     return this;
   }
 
   /** Stop LIVE mode: unsubscribe + flush any in-flight buffer. Returns `this`. */
   stop() {
-    for (const off of this._unsubs.splice(0)) { try { off(); } catch { /* */ } }
+    this._teardown.run();
     try { this._assembler.flush('stop'); } catch { /* */ }
     this._started = false;
     return this;
