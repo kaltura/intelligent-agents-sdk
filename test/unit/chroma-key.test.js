@@ -213,6 +213,59 @@ test("attachChromaKeyAvatar: a NON-fatal session 'error' (e.g. transient socket 
   assert.equal(player.destroyCalls, 0, 'transient/recoverable errors must not tear down the compositor');
 });
 
+// ─────────────────────────── lifecycle wiring: auto-destroy on session.disconnect()/stop() (issue #62) ───────────────────────────
+
+test("attachChromaKeyAvatar: session.disconnect()'s 'stateChange' to 'disconnected' calls player.destroy() exactly once", () => {
+  FakeChromaKeyVideo.reset();
+  const videoEl = new FakeVideoEl();
+  const session = new FakeSession(videoEl);
+  const player = attachChromaKeyAvatar({ session, videoEl, ChromaKeyVideo: FakeChromaKeyVideo });
+  // Mirrors the real KalturaAvatarSession.disconnect(): _setState('disconnecting') then
+  // _setState('disconnected'), each emitting 'stateChange' — never 'ended'.
+  session.emit('stateChange', { state: 'disconnecting' });
+  assert.equal(player.destroyCalls, 0, "the intermediate 'disconnecting' state must not destroy the player");
+  session.emit('stateChange', { state: 'disconnected' });
+  assert.equal(player.destroyCalls, 1);
+  assert.equal(player.isDestroyed, true);
+  session.emit('stateChange', { state: 'disconnected' });
+  assert.equal(player.destroyCalls, 1, 'a second disconnected stateChange must not call destroy() again');
+});
+
+test('attachChromaKeyAvatar: non-disconnected stateChange values (connecting/connected/reconnecting) do not destroy the player', () => {
+  FakeChromaKeyVideo.reset();
+  const videoEl = new FakeVideoEl();
+  const session = new FakeSession(videoEl);
+  const player = attachChromaKeyAvatar({ session, videoEl, ChromaKeyVideo: FakeChromaKeyVideo });
+  for (const state of ['connecting', 'connected', 'reconnecting', 'resuming']) session.emit('stateChange', { state });
+  assert.equal(player.destroyCalls, 0);
+});
+
+test("attachChromaKeyAvatar: a fatal 'error' followed by session.disconnect()'s 'stateChange' still destroys exactly once (idempotent across both paths)", () => {
+  FakeChromaKeyVideo.reset();
+  const videoEl = new FakeVideoEl();
+  const session = new FakeSession(videoEl);
+  const player = attachChromaKeyAvatar({ session, videoEl, ChromaKeyVideo: FakeChromaKeyVideo });
+  session.emit('error', { code: 'bad_request' });
+  assert.equal(player.destroyCalls, 1);
+  // An integrator (or the SDK's own error-handling glue) calling disconnect() right after a
+  // fatal error must not trigger a second, redundant destroy() call.
+  session.emit('stateChange', { state: 'disconnecting' });
+  session.emit('stateChange', { state: 'disconnected' });
+  assert.equal(player.destroyCalls, 1, 'destroy() must not fire twice across the error and stateChange paths');
+});
+
+test("attachChromaKeyAvatar: session.disconnect()'s 'stateChange' followed by a later 'ended' (e.g. _endWith's own emit order) still destroys exactly once", () => {
+  FakeChromaKeyVideo.reset();
+  const videoEl = new FakeVideoEl();
+  const session = new FakeSession(videoEl);
+  const player = attachChromaKeyAvatar({ session, videoEl, ChromaKeyVideo: FakeChromaKeyVideo });
+  // _endWith() in session.js sets state to 'disconnected' BEFORE emitting 'ended' — the
+  // stateChange listener fires first here, and the later 'ended' must be a no-op.
+  session.emit('stateChange', { state: 'disconnected' });
+  session.emit('ended', { reason: 'reconnect_timeout' });
+  assert.equal(player.destroyCalls, 1, 'destroy() must not fire twice across the stateChange and ended paths');
+});
+
 test("attachChromaKeyAvatar: 'error' then 'ended' (the session's own emit order) still destroys exactly once", () => {
   FakeChromaKeyVideo.reset();
   const videoEl = new FakeVideoEl();
@@ -230,9 +283,11 @@ test('attachChromaKeyAvatar: cleanup removes this plugin\'s own listeners from t
   attachChromaKeyAvatar({ session, videoEl, ChromaKeyVideo: FakeChromaKeyVideo });
   assert.ok(session.listenerCount('ended') > 0);
   assert.ok(session.listenerCount('error') > 0);
+  assert.ok(session.listenerCount('stateChange') > 0);
   session.emit('ended', {});
   assert.equal(session.listenerCount('ended'), 0, 'the ended listener this plugin registered must be gone after cleanup');
   assert.equal(session.listenerCount('error'), 0, 'the error listener this plugin registered must be gone after cleanup');
+  assert.equal(session.listenerCount('stateChange'), 0, 'the stateChange listener this plugin registered must be gone after cleanup');
 
   // The misuse-guard's internal bookkeeping was cleared too — a fresh attach on the SAME
   // (now-ended) session constructs a brand-new player, with no stale warning.
