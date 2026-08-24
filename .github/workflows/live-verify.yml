@@ -1,0 +1,75 @@
+name: Live verification
+
+# Runs a real, credentialed smoke test against the live Kaltura API — session
+# mint, one converse turn, cleanup. Everything ci.yml runs is offline (fakes
+# inject fetch/socket/RTC); this is the one workflow that actually touches
+# the backend with AGENTIC_* secrets, so it never runs on every push/PR:
+#
+#   - workflow_dispatch: manual, on demand.
+#   - pull_request: only when the PR carries the `run-live-verify` label —
+#     an untrusted fork PR can't add that label to itself, so opening a PR
+#     alone can never exfiltrate secrets through this job.
+#
+# The job is also gated on the `live-verify` GitHub Environment, so the
+# AGENTIC_* secrets are scoped to it, not available repo-wide.
+#
+# Known gap: this covers the server-side management/conversation path only.
+# A true live-*browser* test (WebRTC/WHEP via KalturaAvatarSession) needs a
+# headed Playwright job with real media devices — a bigger, separate lift,
+# deliberately not half-built here.
+on:
+  workflow_dispatch: {}
+  pull_request:
+    types: [labeled]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-verify
+  cancel-in-progress: false
+
+jobs:
+  live-verify:
+    name: 🔴 Live verification
+    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'run-live-verify'
+    runs-on: ubuntu-latest
+    environment: live-verify
+    steps:
+      - name: 📥 Check out the repo
+        uses: actions/checkout@v7
+
+      - name: 🟢 Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: 🔴 Session creation → one converse turn → cleanup, against the real Kaltura API
+        id: live_verify
+        env:
+          AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
+          AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
+        run: |
+          set -o pipefail
+          node scripts/live-verify.mjs 2>&1 | tee live-verify-output.log
+
+      - name: 📤 Upload live-verify artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: live-verify-artifacts
+          path: |
+            live-verify-artifacts/
+            live-verify-output.log
+          retention-days: 30
+
+      - name: 📝 Write job summary
+        if: always()
+        run: |
+          {
+            echo "### 🔴 Live verification — ${{ steps.live_verify.outcome }}"
+            echo
+            echo '```'
+            tail -n 40 live-verify-output.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
