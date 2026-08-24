@@ -1105,7 +1105,11 @@ test('mountWidget graded-question (text): the free-text answer is sanitized befo
     let scriptTags = 0, sawEcho = false;
     walk(root, (n) => {
       if (n.tagName === 'SCRIPT') scriptTags++;
-      if (n._cls && n._cls.includes('kgenui__answer-echo')) { sawEcho = true; assert.ok(!/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(n.textContent)); }
+      if (n._cls && n._cls.includes('kgenui__answer-echo')) {
+        sawEcho = true;
+        // eslint-disable-next-line no-control-regex -- asserting control chars are ABSENT, not a lint mistake
+        assert.ok(!/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(n.textContent));
+      }
     });
     assert.equal(scriptTags, 0, 'never a parsed <script> element — textContent only, never innerHTML');
     assert.ok(sawEcho, 'the sanitized answer is echoed back into the DOM');

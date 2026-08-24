@@ -279,8 +279,11 @@ const BUILDERS = {
     const correctOptionId = typeof data.correctOptionId === 'string' ? safeText(data.correctOptionId, 200) : null;
     const acceptedAnswers = asArray(data.acceptedAnswers).map((a) => safeText(a, 500)).filter(Boolean);
 
+    // role="status" must be present in the DOM before its text changes — an
+    // AT-hidden-until-reveal element toggled to visible+populated in the same
+    // tick is a common pattern that many screen readers fail to announce.
+    // So this stays mounted and empty, never `.hidden`, from the start.
     const feedback = el('p', 'kgenui__feedback');
-    feedback.hidden = true;
     feedback.setAttribute('role', 'status');
     const explanationEl = el('p', 'kgenui__explanation', explanation);
     explanationEl.hidden = true;
@@ -291,7 +294,6 @@ const BUILDERS = {
     const reveal = (correct, value, optionId) => {
       if (answered) return;   // one answer per mount
       answered = true;
-      feedback.hidden = false;
       feedback.textContent = correct === true ? 'Correct.' : correct === false ? 'Not quite.' : 'Answer recorded.';
       feedback.classList.add('kgenui__feedback--' + (correct === true ? 'correct' : correct === false ? 'incorrect' : 'neutral'));
       if (explanation) explanationEl.hidden = false;
@@ -304,6 +306,13 @@ const BUILDERS = {
       let selectedId = null;
       const inputs = [];
       const groupName = 'kgenui-gq-' + cssToken(questionId);
+      // <fieldset>/<legend> ties the radiogroup's accessible name back to the
+      // question — without it, a screen reader announces each option with no
+      // indication of which question they answer. The legend duplicates the
+      // prompt already shown visibly above, so it's screen-reader-only.
+      const fieldset = el('fieldset', 'kgenui__options-group');
+      const legend = el('legend', 'kgenui__sr-only', prompt || 'Answer choices');
+      fieldset.appendChild(legend);
       const list = el('ul', 'kgenui__list kgenui__options');
       list.setAttribute('role', 'list');
       for (const o of options) {
@@ -318,7 +327,8 @@ const BUILDERS = {
         li.append(input, lbl);
         list.appendChild(li);
       }
-      root.appendChild(list);
+      fieldset.appendChild(list);
+      root.appendChild(fieldset);
       const submit = el('button', 'kgenui__submit', 'Submit answer');
       submit.type = 'button';
       submit.addEventListener('click', () => {

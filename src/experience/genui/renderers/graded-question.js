@@ -38,7 +38,7 @@ export function renderGradedQuestion(model = {}) {
         : [];
 
   const options = rawOptions.slice(0, MAX_OPTIONS).map((o, i) => {
-    const src = (o && typeof o === 'object') ? /** @type {Record<string,unknown>} */ (o) : { text: o };
+    const src = /** @type {Record<string,unknown>} */ ((o && typeof o === 'object') ? o : { text: o });
     const text = safeText(src.text ?? src.label ?? src.value ?? '', 500);
     const id = safeText(src.id ?? src.key ?? '', 200) || fallbackId(text, i);
     return { id, text };
