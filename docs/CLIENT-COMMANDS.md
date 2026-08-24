@@ -157,3 +157,4 @@ A command not on the allow-list is denied before any handler runs (audited as `a
 | [README.md](../README.md) | The SDK how-to: `tools.client` → `onToolCall` → `parseToolCall`, the builders (`tools.api`/`csv`/`code`), and the deployment gotcha in context. |
 | [WIRE-PROTOCOL.md](WIRE-PROTOCOL.md) | The exact `type:"tool"` segment wire shape and why it is outside the TTS gate. |
 | [GENUI-REFERENCE.md](GENUI-REFERENCE.md) | The nine GenUI widgets `show_widget` can render. |
+| [PAUSE-RESUME-RECIPE.md](PAUSE-RESUME-RECIPE.md) | The sibling mechanism for the other direction: *you* pausing the avatar (e.g. while a client command shows a video) instead of the avatar driving your UI. |

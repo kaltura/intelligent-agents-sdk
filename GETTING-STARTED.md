@@ -126,6 +126,7 @@ You now know how to create an agent and talk to it. Here's where to go for more:
 | Use your **own face/portrait** for the avatar | [API-REFERENCE.md](API-REFERENCE.md#upload-a-custom-visual-portrait--animated-avatar) |
 | Build a real app with the JavaScript SDK | [README.md](README.md#quick-start) |
 | Make the avatar drive your UI (slides, widgets, navigation) | [docs/CLIENT-COMMANDS.md](docs/CLIENT-COMMANDS.md) |
+| Pause the avatar for a video/interactive element, then resume | [docs/PAUSE-RESUME-RECIPE.md](docs/PAUSE-RESUME-RECIPE.md) |
 | Put structured widgets on screen (quizzes, carousels, code blocks) | [docs/GENUI-REFERENCE.md](docs/GENUI-REFERENCE.md) |
 | Understand how the whole system works under the hood | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
 | See a complete browser example with a live avatar | [examples/browser-experience.html](examples/browser-experience.html) |
