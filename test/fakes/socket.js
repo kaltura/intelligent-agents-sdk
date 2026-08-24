@@ -51,6 +51,7 @@ export class FakeSocket {
  */
 export function scriptHappyPath(socket, opts = {}) {
   let busyLeft = opts.capacityBusyTimes || 0;
+  let stvNewSessionCount = 0;
   // Each phase is delivered on its OWN tick so the SDK's sequential awaits have
   // attached the relevant listener before the event arrives — modelling real
   // network framing (frames don't all arrive in one synchronous burst).
@@ -75,6 +76,11 @@ export function scriptHappyPath(socket, opts = {}) {
     else if (ev === 'stvNewSession') soon(() => {
       if (opts.noCapacity) { socket.server('throwToNoAgent', {}); return; }          // capacity exhausted
       if (opts.tierExceeded) { socket.server('throwToExceededTier', {}); return; }   // plan limit
+      // A SECOND stvNewSession only happens on a resume() rebuild path (the first
+      // is the initial connect) — per WIRE-PROTOCOL.md, the real server sends
+      // `resumingSession` before rebuilding, preceding `conversationResumed`.
+      stvNewSessionCount += 1;
+      if (stvNewSessionCount > 1) socket.server('resumingSession', {});
       if (opts.audioMode) socket.server('stvNewSession', { status: 'audio/phone mode - no STV session' });
       else socket.server('stvNewSession', { session_id: 'sess-123', status: 'session started', webrtc_url: 'https://srs.example/rtc/v1/whep/?app=app&stream=sess-123' });
       // Agent + permissions arrive on a later tick (after the session reply is processed).

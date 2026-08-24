@@ -1089,6 +1089,7 @@ export class KalturaAvatarSession extends Emitter {
     try { this._pcAsr?.close?.(); } catch { /* */ } this._pcAsr = null;
     await this._runConnectSequence(this._socket, overall, { skipAgentWait: true });
     this._approve(this._socket);
+    this._setState('connected');
   }
 
   /** The sticky id pinning this session to its pod — persist it to resume the SAME session across a tab reload. */
