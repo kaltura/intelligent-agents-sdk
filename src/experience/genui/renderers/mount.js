@@ -353,7 +353,7 @@ const BUILDERS = {
       echo.hidden = true;
       const submit = el('button', 'kgenui__submit', 'Submit answer');
       submit.type = 'button';
-      submit.addEventListener('click', () => {
+      const submitAnswer = () => {
         // Sanitize BEFORE grading AND before any DOM insertion (issue #39 rule 2.2) —
         // never grade or echo the raw input value.
         const sanitized = safeText(textValue, 2000);
@@ -364,7 +364,12 @@ const BUILDERS = {
         echo.textContent = 'Your answer: ' + sanitized;   // sanitized value only — never the raw one
         echo.hidden = false;
         reveal(correct, sanitized, null);
-      });
+      };
+      submit.addEventListener('click', submitAnswer);
+      // Enter submits, matching a real <form>'s implicit-submit behavior — this
+      // isn't wrapped in a <form> (mountWidget never nests forms inside a host
+      // page's own), so without this a keyboard user must Tab to the button.
+      input.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') submitAnswer(); });
       root.appendChild(submit);
       root.appendChild(echo);
     }

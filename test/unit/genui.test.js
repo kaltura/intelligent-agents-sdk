@@ -1116,6 +1116,63 @@ test('mountWidget graded-question (text): the free-text answer is sanitized befo
   } finally { delete globalThis.document; }
 });
 
+test('mountWidget graded-question (choice): the options list sits inside a <fieldset>/<legend> naming the question, not a bare list', async () => {
+  const listeners = [];
+  globalThis.document = listenerCapturingDom(listeners);
+  try {
+    const { mountWidget } = await import('../../src/experience/genui/renderers/mount.js');
+    const data = { questionId: 'q1', prompt: 'Pick the capital of France', options: [{ id: 'a', text: 'Paris' }, { id: 'b', text: 'Rome' }] };
+    const root = mountWidget({ kind: 'graded-question', data }, document.createElement('div'));
+    let fieldset = null, legend = null;
+    walk(root, (n) => {
+      if (n.tagName === 'FIELDSET') fieldset = n;
+      if (n.tagName === 'LEGEND') legend = n;
+    });
+    assert.ok(fieldset, 'the radiogroup is wrapped in a <fieldset>');
+    assert.ok(legend, 'the <fieldset> has a <legend>');
+    assert.ok(fieldset.children.includes(legend), 'the <legend> belongs to the <fieldset>, not a sibling');
+    assert.equal(legend.textContent, data.prompt, 'the legend names the question so the radiogroup has an accessible group name');
+    assert.ok(legend.className.includes('kgenui__sr-only'), 'the legend is screen-reader-only — the prompt is already shown visibly above');
+  } finally { delete globalThis.document; }
+});
+
+test('mountWidget graded-question: the role="status" feedback region is mounted (present, not hidden) before any answer, so AT can announce its later update', async () => {
+  const listeners = [];
+  globalThis.document = listenerCapturingDom(listeners);
+  try {
+    const { mountWidget } = await import('../../src/experience/genui/renderers/mount.js');
+    const data = { questionId: 'q1', options: [{ id: 'a', text: 'A' }], correctOptionId: 'a' };
+    const root = mountWidget({ kind: 'graded-question', data }, document.createElement('div'));
+    let feedback = null;
+    walk(root, (n) => { if (n.className && n.className.includes('kgenui__feedback')) feedback = n; });
+    assert.ok(feedback, 'the feedback element exists in the DOM before any answer is submitted');
+    assert.equal(feedback.hidden, false, 'never `.hidden` from mount — a hidden element is pulled from the a11y tree, defeating role="status"');
+    assert.equal(feedback.getAttribute('role'), 'status');
+    assert.equal(feedback.textContent, '', 'empty until answered — presence, not content, is what must exist upfront');
+  } finally { delete globalThis.document; }
+});
+
+test('mountWidget graded-question (text): pressing Enter in the answer input submits, same as clicking the button', async () => {
+  const listeners = [];
+  globalThis.document = listenerCapturingDom(listeners);
+  try {
+    const { mountWidget } = await import('../../src/experience/genui/renderers/mount.js');
+    const actions = [];
+    const data = { questionId: 'q2', prompt: 'Name the capital', acceptedAnswers: ['Paris'] };
+    mountWidget({ kind: 'graded-question', data }, document.createElement('div'), { onAction: (a, p) => actions.push([a, p]) });
+    const inputListener = listeners.find((l) => l.ev === 'input');
+    inputListener.node.value = 'Paris';
+    inputListener.fn();
+    const keydownListener = listeners.find((l) => l.ev === 'keydown');
+    assert.ok(keydownListener, 'the input has a keydown listener for Enter-to-submit');
+    keydownListener.fn({ key: 'Shift' });   // a non-Enter key must never submit
+    assert.equal(actions.length, 0);
+    keydownListener.fn({ key: 'Enter' });
+    assert.equal(actions.length, 1);
+    assert.equal(actions[0][1].correct, true);
+  } finally { delete globalThis.document; }
+});
+
 test('mountWidget graded-question (text): no accepted answers authored → correct is null (honest "ungraded"), never false', async () => {
   const listeners = [];
   globalThis.document = listenerCapturingDom(listeners);
