@@ -13,13 +13,15 @@
     (the green checker below stands in for YOUR page content) — no green box, no fixed
     rectangle.
   </p>
-  <p id="cc"></p>
-  <div id="composited"></div>
+  <p id="cc" role="status"></p>
+  <div id="composited" role="img" aria-label="Live avatar video"></div>
 
   <!-- The session's OWN video element. Never shown directly — chroma-key-video reads frames
        from it and paints the composited (transparent-background) result into #composited
-       instead. Off-screen, not display:none, so the browser still decodes it. -->
-  <video id="source" autoplay playsinline muted></video>
+       instead. Off-screen, not display:none, so the browser still decodes it. aria-hidden
+       because it's a pure relay with no informational value of its own — the accessible
+       description of the avatar lives on #composited, the element AT users actually reach. -->
+  <video id="source" autoplay playsinline muted aria-hidden="true"></video>
 
   <!-- socket.io is YOUR dependency — injected, never bundled by the SDK. -->
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js" integrity="sha384-2huaZvOR9iDzHqslqwpR87isEmrfxqyWOF7hr7BY6KG0+hVKLoEXMPUJw3ynWuhO" crossorigin="anonymous"></script>
