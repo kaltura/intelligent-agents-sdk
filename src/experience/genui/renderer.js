@@ -31,8 +31,12 @@ import { SegmentAssembler } from './segments.js';
 import { DEFAULT_RENDERERS } from './renderers/index.js';
 import { mountWidget } from './renderers/mount.js';
 
-/** Duck-type a DOM Element so `mount` can be a container, not just a callback. */
-function isElement(x) { return !!x && typeof x === 'object' && typeof x.appendChild === 'function' && x.nodeType === 1; }
+/**
+ * Duck-type a DOM Element so `mount` can be a container, not just a callback.
+ * @param {unknown} x
+ * @returns {x is Element}
+ */
+function isElement(x) { return !!x && typeof x === 'object' && typeof (/** @type {any} */ (x)).appendChild === 'function' && (/** @type {any} */ (x)).nodeType === 1; }
 
 export class ExperienceRenderer {
   /**
@@ -70,8 +74,8 @@ export class ExperienceRenderer {
     this._partnerId = cfg.partnerId !== undefined ? String(cfg.partnerId)
       : (this.session && this.session.partnerId != null ? String(this.session.partnerId) : undefined);
     // Optional Kaltura player uiConf id — lets video-gallery build a player-embed URL.
-    this._uiConfId = cfg.uiConfId !== undefined ? String(cfg.uiConfId)
-      : (this.session && this.session.uiConfId != null ? String(this.session.uiConfId) : undefined);
+    // (No session-side fallback: KalturaAvatarSession never carries a uiConfId.)
+    this._uiConfId = cfg.uiConfId !== undefined ? String(cfg.uiConfId) : undefined;
 
     /** @type {Map<string, (model:Record<string,unknown>, ctx?:object)=>{kind:string,data:object}>} */
     this._registry = new Map(Object.entries(DEFAULT_RENDERERS));

@@ -8,7 +8,7 @@ const KS = 'djJ8' + Buffer.from('v2|123|x').toString('base64url');
 function sessionFetch() {
   return fakeFetch([
     { match: '/service/session/action/startWidgetSession', respond: () => ({ body: { ks: KS } }) },
-    { match: '/service/session/action/start', respond: (req) => ({ body: `"${KS}"` }) }, // OVP returns a quoted string
+    { match: '/service/session/action/start', respond: (_req) => ({ body: `"${KS}"` }) }, // OVP returns a quoted string
   ]);
 }
 

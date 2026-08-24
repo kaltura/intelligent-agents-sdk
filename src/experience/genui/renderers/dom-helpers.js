@@ -8,7 +8,14 @@
  */
 import { safeText } from '../../../core/safety.js';
 
-/** Build an element with an optional class + textContent (never innerHTML). @param {string} tag @param {string} [className] @param {unknown} [text] */
+/**
+ * Build an element with an optional class + textContent (never innerHTML).
+ * @template {keyof HTMLElementTagNameMap} K
+ * @param {K} tag
+ * @param {string} [className]
+ * @param {unknown} [text]
+ * @returns {HTMLElementTagNameMap[K]}
+ */
 export function el(tag, className, text) {
   const node = document.createElement(tag);
   if (className) node.className = className;

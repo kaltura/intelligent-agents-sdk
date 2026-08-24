@@ -57,8 +57,8 @@ test('#9 agentActions policy {genui:false} DROPS the render-genui segment (no br
 
 test('#9 onAgentAction hook returning false vetoes the action (no brainSegment); returning true allows it', async () => {
   // veto
-  let v = await connect({ onAgentAction: () => false });
-  let allowed = [];
+  const v = await connect({ onAgentAction: () => false });
+  const allowed = [];
   v.session.on('brainSegment', (d) => allowed.push(d.type));
   v.session.server = undefined;
   v.socket.server('agent_raw_text', genuiDelta());

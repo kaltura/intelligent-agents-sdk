@@ -159,7 +159,7 @@ test('goTo: DPP is sent BEFORE onSlideChange fires (grounding must never race ah
   // a stale DPP while the UI has already rendered the new slide (the "thought it was on
   // slide 4 when it was actually on slide 1" desync).
   const seenDppSlideAtCallbackTime = [];
-  const { p } = newPresenter({ onSlideChange: (n) => seenDppSlideAtCallbackTime.push(p.lastDppSlide) });
+  const { p } = newPresenter({ onSlideChange: (_n) => seenDppSlideAtCallbackTime.push(p.lastDppSlide) });
   p.start();
   p.goTo(3, 'user');
   assert.deepEqual(seenDppSlideAtCallbackTime, [3], 'lastDppSlide already reflects the new slide when onSlideChange fires');

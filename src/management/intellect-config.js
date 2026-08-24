@@ -50,8 +50,8 @@
  */
 import { KalturaError } from '../core/errors.js';
 import { meta } from '../core/ids.js';
-import { requireInt } from './intellects.js';
-import { validateCapabilities, assertCapability, assertCapabilityState, mergeCapabilityWrite, CAPABILITIES, CAPABILITY_INFO } from './capabilities.js';
+import { requireInt } from './intellect-body.js';
+import { validateCapabilities, assertCapability, assertCapabilityState, mergeCapabilityWrite, CAPABILITIES } from './capabilities.js';
 import { ARG_TYPES } from './tools.js';
 import { MASK, maskExisting } from './secrets.js';
 
@@ -180,7 +180,10 @@ export class IntellectConfig {
    */
   async setCapabilities(configId, dict, ks) {
     validateCapabilities(dict, 'intellectConfig.setCapabilities');
-    return this.patch(configId, (cur) => ({ capabilities: mergeCapabilityWrite(cur.capabilities, dict) }), ks);
+    // `cur` is `patch()`'s generic whole-intellect-body param (Record<string,unknown>) —
+    // `cur.capabilities` is genuinely unknown to TS here; mergeCapabilityWrite itself
+    // validates the value at runtime regardless of this cast.
+    return this.patch(configId, (cur) => ({ capabilities: mergeCapabilityWrite(/** @type {Record<string,'on'|'off'|'disabled'>|undefined} */ (cur.capabilities), dict) }), ks);
   }
 
   /**
@@ -193,7 +196,8 @@ export class IntellectConfig {
   async setCapability(configId, name, state, ks) {
     assertCapability(name, 'intellectConfig.setCapability');
     assertCapabilityState(state, `intellectConfig.setCapability.${name}`);
-    return this.patch(configId, (cur) => ({ capabilities: mergeCapabilityWrite(cur.capabilities, { [name]: state }) }), ks);
+    // See setCapabilities' comment above — same `cur.capabilities` cast.
+    return this.patch(configId, (cur) => ({ capabilities: mergeCapabilityWrite(/** @type {Record<string,'on'|'off'|'disabled'>|undefined} */ (cur.capabilities), { [name]: state }) }), ks);
   }
 
   // ─────────────────────────── Tool linkage (tool_ids) ───────────────────────────
@@ -267,7 +271,10 @@ export class IntellectConfig {
       if (v === MASK) throw bad(`cannot store the literal "${MASK}" for "${name}" — it is the merge-keep sentinel, not a value.`);
     }
     return this.patch(configId, (cur) => {
-      const existing = (cur.secrets && typeof cur.secrets === 'object' && !Array.isArray(cur.secrets)) ? cur.secrets : {};
+      // `cur.secrets` is `unknown` (patch()'s generic whole-body param); the runtime guard
+      // just above already proves it's a plain object — secret values are always strings by
+      // the stored-secrets contract, which maskExisting itself doesn't re-validate.
+      const existing = /** @type {Record<string,string>} */ ((cur.secrets && typeof cur.secrets === 'object' && !Array.isArray(cur.secrets)) ? cur.secrets : {});
       const next = maskExisting(existing); // every prior secret as "***" → server keeps it
       for (const [k, v] of Object.entries(entries)) next[k] = v;
       return { secrets: next };

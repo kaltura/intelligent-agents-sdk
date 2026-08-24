@@ -128,6 +128,51 @@ change what this URL serves without warning. Never use `@latest` in production; 
 `examples/browser-experience.html` and `examples/deck-presenter.html` demonstrate the same
 real-relative-path pattern locally (`../src/experience/index.js`).
 
+#### Subresource Integrity (SRI) for the jsDelivr import
+
+Pinning a tag stops the URL from silently pointing at different code later, but it doesn't verify
+what jsDelivr actually served you matches this repo — that needs Subresource Integrity. An import
+map can carry an `integrity` entry per module URL; a browser that supports it refuses to execute
+a module whose fetched bytes don't hash to the pinned value (Chrome/Edge/Opera 127+, Firefox 138+
+at the time of writing — check the current table at
+[MDN: `<script type="importmap">`](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/script/type/importmap#browser_compatibility)).
+Browsers that don't yet support the `integrity` key simply skip the check — it degrades gracefully,
+never breaks the import.
+
+A single hash on `experience/index.js` alone would NOT be real protection: it's a barrel file that
+re-exports from ~10 other modules (`session.js`, `wire.js`, `core/safety.js`, …), and import-map
+`integrity` only checks the exact URLs it lists. Tampering with any of those other files would go
+undetected unless they're hashed too. `tools/sri-map.mjs` generates the hash for the FULL
+transitive local-import graph of a given entry point, read from the actual tagged git commit (not
+your working tree, so it always matches what jsDelivr serves for that tag):
+
+```bash
+node tools/sri-map.mjs --entry src/experience/index.js --tag v1.4.0
+```
+
+Paste the `integrity` object it prints into an import map, declared before the module script:
+
+```html
+<script type="importmap">
+{
+  "integrity": {
+    "https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.4.0/src/experience/index.js": "sha384-T+W7ayOfRNUbRCROS0T4isj2NsGsdiNr5ODeqPnfjlJ4VX3bcxBqnMlMO61qlNZV",
+    "https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.4.0/src/experience/session.js": "sha384-…",
+    "https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.4.0/src/core/safety.js": "sha384-…"
+    /* … one entry per file `tools/sri-map.mjs` printed — run it, don't hand-copy this excerpt */
+  }
+}
+</script>
+<script type="module">
+  import { KalturaAvatarSession } from 'https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.4.0/src/experience/index.js';
+</script>
+```
+
+Regenerate this whenever you move your pin to a new tag — a hash is tied to that exact release's
+file content and won't match the next one. The other browser entry points
+(`src/experience/presenter.js`, `src/experience/genui/index.js`, `src/experience/analytics.js`,
+`src/experience/noise-suppressor.js`) each need their own run of the same command if you load them.
+
 ---
 
 ## Architecture

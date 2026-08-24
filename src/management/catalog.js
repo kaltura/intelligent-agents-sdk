@@ -166,7 +166,8 @@ export class Catalog {
    * ['custom']`. Use {@link appendAdminTags} for the correct single-parse shape.
    * (Mirrors the same fix in tools/agentic.mjs `voice-upload`/`visual-upload`
    * and API-REFERENCE §1.1 — keep all three in sync.)
-   * @param {Blob|File} file @param {object} attributes @param {string} ks @param {string} [mime]
+   * @param {Blob|File} file @param {object} attributes @param {import('./client.js').KsLike} ks @param {string} [mime]
+   * @param {string} [consentRef] @param {string} [kind]
    */
   async _upload(file, attributes, ks, mime, consentRef, kind) {
     const fd = newFormData();

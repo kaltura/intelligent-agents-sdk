@@ -23,3 +23,6 @@ test-results.junit.xml
 
 # Live-verify run artifacts (scripts/live-verify.mjs) — uploaded as a CI artifact, never committed
 live-verify-artifacts/
+
+# Claude Code agent worktree scratch space — regenerated per run, never committed
+.claude/worktrees/

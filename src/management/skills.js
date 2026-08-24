@@ -37,7 +37,7 @@ function requireSkillId(v, where) {
 /**
  * List every intellect's configId that currently references `skillId` in its
  * `skill_ids` (each entry is `{id, mode}` — mode is irrelevant to the check).
- * The safety check {@link Skills#delete} runs before deleting a PARTNER-LEVEL
+ * The safety check `Skills#delete` runs before deleting a PARTNER-LEVEL
  * Skill that may be shared across intellects (see the class doc). Mirrors
  * `tools.js`'s `findIntellectsReferencingTool` exactly, adapted to the
  * `SkillRef[]` shape.

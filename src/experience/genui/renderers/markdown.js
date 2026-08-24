@@ -104,7 +104,7 @@ export function renderMarkdown(source) {
     const heading = /^(#{1,6})\s+(.*)$/.exec(line);
     if (heading) {
       flushPara();
-      const h = el('h' + heading[1].length, 'kgenui__md-h');
+      const h = el(/** @type {keyof HTMLElementTagNameMap} */ ('h' + heading[1].length), 'kgenui__md-h');
       renderInline(h, heading[2]);
       root.appendChild(h);
       i++;

@@ -24,7 +24,7 @@
  */
 import { KalturaError } from '../core/errors.js';
 import { meta } from '../core/ids.js';
-import { requireInt } from './intellects.js';
+import { requireInt } from './intellect-body.js';
 import { requireConfirm } from './agents.js';
 
 /** The server-side mask + merge-keep sentinel. Sending it back PRESERVES the stored value. */

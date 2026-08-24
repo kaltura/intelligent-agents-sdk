@@ -23,8 +23,8 @@ import { api } from './tools.js';
  * semantics via `POST /crm/v3/objects/contacts`). The agent collects the fields
  * listed in `propertiesToCapture` and writes them to the HubSpot contact.
  *
- * @param {object} cfg
- * @param {string} cfg.secretName        Name of the HubSpot private-app token secret (set via `setSecrets`).
+ * @param {object} [cfg]
+ * @param {string} [cfg.secretName]      Name of the HubSpot private-app token secret (set via `setSecrets`) — REQUIRED (checked at runtime; declared optional in the JSDoc only so an omitted `cfg` degrades to the same TypeError below instead of crashing on `undefined.secretName`).
  * @param {string[]} [cfg.propertiesToCapture]  HubSpot property keys to send (default: `['email','firstname','lastname']`).
  * @param {string} [cfg.name]            Tool name (default: `'hubspot_contact_upsert'`).
  * @param {string} [cfg.description]     Tool description fed to the LLM (default: auto-generated).
@@ -71,9 +71,9 @@ export function hubspotContactUpsert(cfg = {}) {
  * External ID field. Requires a Salesforce Connected App OAuth2 access token
  * stored as a secret.
  *
- * @param {object} cfg
- * @param {string} cfg.secretName         Name of the Salesforce access-token secret (set via `setSecrets`).
- * @param {string} cfg.instanceUrl        Salesforce instance URL (e.g. `https://yourorg.my.salesforce.com`).
+ * @param {object} [cfg]
+ * @param {string} [cfg.secretName]       Name of the Salesforce access-token secret (set via `setSecrets`) — REQUIRED (checked at runtime; declared optional in the JSDoc only so an omitted `cfg` degrades to the same TypeError below instead of crashing on `undefined.secretName`).
+ * @param {string} [cfg.instanceUrl]      Salesforce instance URL (e.g. `https://yourorg.my.salesforce.com`) — REQUIRED (same runtime-checked contract as `secretName` above).
  * @param {string} [cfg.externalIdField]  External ID field on Contact used for upsert (default: `'Email'`).
  * @param {string[]} [cfg.fieldsToCapture] Salesforce field API names to capture (default: `['Email','FirstName','LastName']`).
  * @param {string} [cfg.name]             Tool name (default: `'salesforce_contact_upsert'`).

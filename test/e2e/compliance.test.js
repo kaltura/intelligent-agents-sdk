@@ -114,7 +114,7 @@ test('gate fires on a flagged agent_raw_text action → brainSegment SUPPRESSED 
 test('gate ALLOWS a non-vetoed action → brainSegment flows + tool.invoke audit', async () => {
   const events = [];
   const segs = [];
-  const { s, socket } = await connected({ agentActions: { genui: false }, onAuditEvent: (e) => events.push(e) });
+  const { s } = await connected({ agentActions: { genui: false }, onAuditEvent: (e) => events.push(e) });
   s.on('brainSegment', (d) => segs.push(d));
   // sources is render-genui but NOT vetoed by genui:false? genui:false vetoes ALL render-genui;
   // use a policy that only disables navigate so this genui segment is allowed + surfaces tool.invoke.

@@ -29,7 +29,7 @@ import { EMBED_HOSTS } from '../../../core/kaltura-media.js';
 import { el, cssToken } from './dom-helpers.js';
 import { renderMarkdown } from './markdown.js';
 
-/** @typedef {{kind:string, data:object, runtime?:string, runtimeName?:string}} GenUIDescriptor */
+/** @typedef {{kind:string, data:object, runtime?:string, runtimeName?:string, category?:string}} GenUIDescriptor */
 
 /**
  * Render a GenUI descriptor into `target`. Returns the mounted root `<section>`
@@ -37,7 +37,7 @@ import { renderMarkdown } from './markdown.js';
  *
  * @param {GenUIDescriptor} descriptor  A descriptor from `ExperienceRenderer` (or a hand-built one).
  * @param {Element} target              The host container to append (or replace) into.
- * @param {{replace?:boolean, onAction?:(action:string, payload:object)=>void, onMount?:(root:Element, descriptor:GenUIDescriptor)=>void}} [opts]
+ * @param {{replace?:boolean, onAction?:(action:string, payload:object)=>void, onMount?:(root:Element, descriptor:GenUIDescriptor)=>void, markdown?:boolean}} [opts]
  *   `replace` clears `target` first; `onAction` receives interaction intents (see module doc).
  *   `onMount(root, descriptor)` fires AFTER the safe subtree is built + appended — a
  *   host-enhancement seam for a registered custom `kind` (e.g. syntax-highlighting a
@@ -303,7 +303,7 @@ function link(url, label, onAction) {
 function safeIframe(url, title) {
   const src = safeUrl(url, { allow: ['https'] });
   if (!src) return null;
-  let host = '';
+  let host;
   try { host = new URL(src).host.toLowerCase(); } catch { return null; }
   if (!EMBED_HOSTS.includes(host)) return null;
   const wrap = el('div', 'kgenui__embed');

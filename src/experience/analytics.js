@@ -154,7 +154,7 @@ export class KavaAnalytics {
     return this._send(buildButtonClickedParams(this._common, fields));
   }
 
-  /** @param {Record<string,string>} params @returns {Promise<{ok:boolean, transport:string}>} */
+  /** @param {Record<string,string>} params @returns {Promise<{ok:boolean, transport:'beacon'|'fetch'|'disabled'|'none'}>} */
   _send(params) {
     if (!this._enabled) return Promise.resolve({ ok: false, transport: 'disabled' });
     const body = new URLSearchParams(params).toString();

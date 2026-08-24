@@ -21,7 +21,7 @@ export function renderUserPropertiesForm(model = {}) {
       : Array.isArray(model.items) ? model.items
         : [];
   const fields = src.map((f) => {
-    const o = (f && typeof f === 'object') ? /** @type {Record<string,unknown>} */ (f) : { key: f };
+    const o = /** @type {Record<string,unknown>} */ ((f && typeof f === 'object') ? f : { key: f });
     const key = safeText(o.key ?? o.name ?? '', 200);
     const rawType = safeText(o.type ?? 'str', 50).toLowerCase();
     return {

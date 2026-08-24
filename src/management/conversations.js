@@ -130,7 +130,7 @@ export class Conversations {
    *   a caller racing this against its own timeout MUST abort this signal when that timeout
    *   fires, or the underlying connection (and this generator's `for await` loop) keeps running
    *   detached, holding the socket open indefinitely.
-   * @param {string} ks conversation token
+   * @param {import('./client.js').KsLike} ks conversation token
    * @returns {AsyncGenerator<import('../core/stream.js').ConverseSegment>}
    */
   async *stream(opts, ks) {
@@ -196,7 +196,8 @@ export class Conversations {
    * as-is with `spiralRecovered:false`. Off by default (back-compat): a caller
    * that wants raw `spiralStopped` visibility unchanged sees no new behavior.
    * @param {object} opts {userMessage, threadId?, sse?, model_type?, force_experience?, request_vars?, capabilities?, recoverFromSpiral?}
-   * @param {string} ks conversation token (`geniegpcid:<configId>`)
+   * @param {import('./client.js').KsLike} ks conversation token (`geniegpcid:<configId>`)
+   * @returns {Promise<{text:string, threadId:string, messageId:string, segments:object[], toolCalls:object[], experiences:Record<string,object[]>, experiencesList:object[], kindCounts:object, spiralStopped:boolean, truncated:boolean, spiralRecovered?:boolean, firstAttempt?:object, _meta:object}>}
    */
   async send(opts, ks) {
     const first = await collectConverse(this.stream(opts, ks));
@@ -442,8 +443,11 @@ export class Knowledge {
     return paginate({
       style: 'index', pageSize: opts.pageSize ?? 30,
       fetchPage: async (pager) => {
+        // `style: 'index'` above means paginate.js always hands this an IndexPager at
+        // runtime — the cast just narrows off the OffsetPager half of its shared union type.
+        const idxPager = /** @type {import('./paginate.js').IndexPager} */ (pager);
         const filter = { objectType: 'KalturaBaseEntryFilter', categoryAncestorIdIn: String(categoryId), orderBy: '-createdAt', ...KNOWLEDGE_ENTRY_STATUS_TYPE_FILTER };
-        const res = await this._.ovp('baseentry', 'list', { filter, pager: { objectType: 'KalturaFilterPager', pageSize: pager.pageSize, pageIndex: pager.pageIndex } }, ks);
+        const res = await this._.ovp('baseentry', 'list', { filter, pager: { objectType: 'KalturaFilterPager', pageSize: idxPager.pageSize, pageIndex: idxPager.pageIndex } }, ks);
         return { objects: res?.objects || [], totalCount: res?.totalCount };
       },
     });

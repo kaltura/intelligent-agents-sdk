@@ -18,7 +18,7 @@ export function renderContentGallery(model = {}, ctx = {}) {
       : Array.isArray(model.cards) ? model.cards
         : [];
   const items = src.map((c) => {
-    const o = (c && typeof c === 'object') ? /** @type {Record<string,unknown>} */ (c) : { title: c };
+    const o = /** @type {Record<string,unknown>} */ ((c && typeof c === 'object') ? c : { title: c });
     const title = safeText(o.title ?? o.name ?? o.heading ?? '', 500);
     const description = safeText(o.description ?? o.text ?? o.body ?? '', 2000);
     return {
