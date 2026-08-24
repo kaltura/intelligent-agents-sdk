@@ -663,7 +663,7 @@ since those collide with a server-managed variable; it does not yet name-check `
 |----------|-------------|-------|
 | `sys__thread_id` | Current conversation thread id | |
 | `sys__message_id` | Current message id | |
-| `sys__user_id` | The bound end-user id | Empty today, on every session — the SDK's mint call never binds a real identity yet. **PR #48 (issue #36), not yet merged**, adds an optional `userId` on `Sessions.createConversationToken()`/`createAdminToken()` so this resolves server-side once merged. Until then, passing `userId` to either method is silently ignored (no error, no wire field) — don't rely on it before #48 lands. |
+| `sys__user_id` | The bound end-user id | Empty by default (an anonymous KS). Bind a real identity with `Sessions.createConversationToken({ userId })` (or `createAdminToken({ userId })`) so this resolves server-side instead of always being empty — see § Bind a session to a real end-user identity above. |
 | `sys__user_message` | The current turn's user text | |
 | `sys__is_new_thread` | `true` on the first turn of a new thread, `false` otherwise | |
 | `sys__ks` | The raw Kaltura Session token for the current request | ⚠️ **Security warning: never reference `sys__ks` in a prompt whose output could be echoed back to a user or logged.** It is a live credential — rendering it as plain text in a model response, chat transcript, or log turns that surface into a credential leak. See [SECURITY.md](SECURITY.md#ks-kaltura-session-guidance-for-agents-ac-3--ac-6--ia-2). |
