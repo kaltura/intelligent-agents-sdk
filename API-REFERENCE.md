@@ -60,6 +60,29 @@ KS=$(curl -s -X POST "https://www.kaltura.com/api_v3/service/session/action/star
 
 **Keep `disableentitlement` server-side, for management/admin operations only.** The SDK can't detect or stop a `disableentitlement` KS from being handed to a conversation/end-user session — a real KS's privileges are encrypted and unreadable client-side — so nothing will warn you if you do this by mistake. See [SECURITY.md](SECURITY.md#ks-kaltura-session-guidance-for-agents-ac-3--ac-6--ia-2) and Kaltura's own [KS/privilege reference](https://kaltura.md/KALTURA_SESSION_GUIDE/).
 
+**Bind a session to a real end-user identity (`userId`).** By default every minted KS is anonymous — the reserved `{{ sys__user_id }}` template variable (see § Converse) resolves to an empty string in every prompt/converse call. Pass `userId` to bind the KS to a real end-user id instead — the value flows straight through to `session/start`'s own `userId` field, per-call only (never cached), so it makes `sys__user_id` resolve server-side and lets converse-side memory/analytics attribute the turn to a real user:
+
+```js
+import { Management } from '@kaltura/intelligent-agents/management';
+
+const mgmt = new Management({ partnerId, adminSecret });
+
+// Any conversation/admin token can carry a real user identity.
+const conv = await mgmt.sessions.createConversationToken({ configId, userId: 'learner-123' });
+const reply = await mgmt.converseOnce(configId, 'What have we covered so far?', {}, conv);
+```
+
+Raw wire equivalent:
+
+```bash
+CONV_KS=$(curl -s -X POST "https://www.kaltura.com/api_v3/service/session/action/start" \
+  -d "format=1" -d "secret=$AGENTIC_ADMIN_SECRET" -d "partnerId=$AGENTIC_PARTNER_ID" \
+  -d "userId=learner-123" -d "type=2" -d "expiry=1800" \
+  -d "privileges=geniegpcid:1389" | tr -d '"')
+```
+
+`userId` is optional on both `createAdminToken()` and `createConversationToken()` — omit it and behavior is unchanged (anonymous, exactly as before).
+
 ---
 
 ## The Five Services
@@ -593,7 +616,7 @@ CONV_KS=$(curl -s -X POST "https://www.kaltura.com/api_v3/service/session/action
 | `sse` | `false` = NDJSON (default); `true` = SSE |
 | `model_type` | `"fast"` for cheaper/faster model |
 | `force_experience` | Hint only — not a guarantee |
-| `request_vars` | Per-message `{{var}}` interpolation; needs `allow_client_variables:true` on the intellect |
+| `request_vars` | Per-message `{{var}}` interpolation; needs `allow_client_variables:true` on the intellect. Reserved `sys__*` keys (including `sys__user_id`) are server-injected and rejected if you try to set them yourself — see § Bind a session to a real end-user identity above for how `sys__user_id` gets populated. |
 | `capabilities` | Per-message capability override |
 
 **Stream segments** (each line is a JSON object):

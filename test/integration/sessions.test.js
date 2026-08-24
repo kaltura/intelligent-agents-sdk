@@ -70,3 +70,114 @@ test('admin-token mint without a secret throws (server-side only)', async () => 
   const m = new Management({ partnerId: 123, fetch: sessionFetch() });
   await assert.rejects(() => m.sessions.createAdminToken(), (e) => e.code === 'no_secret');
 });
+
+// ─────────────────────────── issue #36: userId on session mint ───────────────────────────
+
+test('createAdminToken with userId sends it on the wire and binds it on the token scope', async () => {
+  const f = sessionFetch();
+  const m = new Management({ partnerId: 123, adminSecret: 'a'.repeat(32), fetch: f });
+  const t = await m.sessions.createAdminToken({ userId: 'ops-console-42' });
+  assert.equal(t.scope.userId, 'ops-console-42');
+  const call = f.calls.find((c) => c.url.includes('/session/action/start'));
+  assert.match(String(call.body), /userId=ops-console-42/);
+});
+
+test('createConversationToken with userId sends it on the wire and binds it on the token scope', async () => {
+  const f = sessionFetch();
+  const m = new Management({ partnerId: 123, adminSecret: 'a'.repeat(32), fetch: f });
+  const t = await m.sessions.createConversationToken({ configId: 1222, userId: 'learner-123' });
+  assert.equal(t.scope.userId, 'learner-123');
+  const call = f.calls.find((c) => c.url.includes('/session/action/start'));
+  assert.match(String(call.body), /userId=learner-123/);
+});
+
+test('a numeric userId is accepted and stringified', async () => {
+  const f = sessionFetch();
+  const m = new Management({ partnerId: 123, adminSecret: 'a'.repeat(32), fetch: f });
+  const t = await m.sessions.createConversationToken({ configId: 1222, userId: 42 });
+  assert.equal(t.scope.userId, '42');
+});
+
+test('createAdminToken and createConversationToken WITHOUT userId are unchanged (no field on the wire, no userId in scope)', async () => {
+  const f = sessionFetch();
+  const m = new Management({ partnerId: 123, adminSecret: 'a'.repeat(32), fetch: f });
+  const admin = await m.sessions.createAdminToken();
+  const conv = await m.sessions.createConversationToken({ configId: 1222 });
+  assert.equal(admin.scope.userId, undefined);
+  assert.equal(conv.scope.userId, undefined);
+  for (const call of f.calls) assert.doesNotMatch(String(call.body), /userId=/);
+});
+
+test('a non-scalar userId (object) is rejected before any network call', async () => {
+  const f = sessionFetch();
+  const m = new Management({ partnerId: 123, adminSecret: 'a'.repeat(32), fetch: f });
+  await assert.rejects(
+    () => m.sessions.createConversationToken({ configId: 1222, userId: { nope: true } }),
+    (e) => e.code === 'bad_request',
+  );
+  assert.equal(f.calls.length, 0, 'rejected before touching the network');
+});
+
+test('a non-scalar userId (array) is rejected before any network call, for createAdminToken too', async () => {
+  const f = sessionFetch();
+  const m = new Management({ partnerId: 123, adminSecret: 'a'.repeat(32), fetch: f });
+  await assert.rejects(
+    () => m.sessions.createAdminToken({ userId: ['nope'] }),
+    (e) => e.code === 'bad_request',
+  );
+  assert.equal(f.calls.length, 0, 'rejected before touching the network');
+});
+
+test('userId flows into the redacted audit event as actor.subjectId, never alongside the admin secret', async () => {
+  const f = sessionFetch();
+  const events = [];
+  const secret = 'a'.repeat(32);
+  const m = new Management({ partnerId: 123, adminSecret: secret, fetch: f, onAuditEvent: (e) => events.push(e) });
+  await m.sessions.createConversationToken({ configId: 1222, userId: 'learner-123' });
+  const mintEvent = events.find((e) => e.type === 'token.mint');
+  assert.ok(mintEvent, 'a token.mint audit event was fired');
+  assert.equal(mintEvent.actor.subjectId, 'learner-123');
+  assert.ok(!JSON.stringify(events).includes(secret), 'the admin secret never rides an audit event alongside userId');
+});
+
+test('createAgentToken rejects userId explicitly instead of silently dropping it (out of scope for issue #36)', async () => {
+  const f = sessionFetch();
+  const m = new Management({ partnerId: 123, adminSecret: 'a'.repeat(32), fetch: f });
+  await assert.rejects(
+    () => m.sessions.createAgentToken({ agentId: '1_abc123', userId: 'learner-123' }),
+    (e) => e.code === 'bad_request',
+  );
+  assert.equal(f.calls.length, 0, 'rejected before touching the network — no silent anonymous mint');
+});
+
+test('createAgentToken treats userId: null/"" as absent, same as omitting it — no reject', async () => {
+  const f = sessionFetch();
+  const m = new Management({ partnerId: 123, adminSecret: 'a'.repeat(32), fetch: f });
+  const a = await m.sessions.createAgentToken({ agentId: '1_abc123', userId: null });
+  const b = await m.sessions.createAgentToken({ agentId: '1_abc123', userId: '' });
+  assert.equal(a.kind, 'agent');
+  assert.equal(b.kind, 'agent');
+});
+
+test('a non-finite numeric userId (NaN/Infinity) is rejected before any network call', async () => {
+  const f = sessionFetch();
+  const m = new Management({ partnerId: 123, adminSecret: 'a'.repeat(32), fetch: f });
+  await assert.rejects(
+    () => m.sessions.createConversationToken({ configId: 1222, userId: NaN }),
+    (e) => e.code === 'bad_request',
+  );
+  await assert.rejects(
+    () => m.sessions.createConversationToken({ configId: 1222, userId: Infinity }),
+    (e) => e.code === 'bad_request',
+  );
+  assert.equal(f.calls.length, 0, 'rejected before touching the network');
+});
+
+test('a userId containing CR/LF is sanitized (one-lined, no raw newline) in both the wire body and the token scope', async () => {
+  const f = sessionFetch();
+  const m = new Management({ partnerId: 123, adminSecret: 'a'.repeat(32), fetch: f });
+  const t = await m.sessions.createConversationToken({ configId: 1222, userId: 'learner\r\nX-Injected: evil' });
+  assert.doesNotMatch(t.scope.userId, /[\r\n]/);
+  const call = f.calls.find((c) => c.url.includes('/session/action/start'));
+  assert.doesNotMatch(String(call.body), /%0D%0A|\r|\n/);
+});
