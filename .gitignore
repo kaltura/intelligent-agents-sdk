@@ -20,3 +20,6 @@ test-results.junit.xml
 
 # Harness run output (scripts/harness/run.mjs) — regenerated every run, never committed
 .harness-output/
+
+# Live-verify run artifacts (scripts/live-verify.mjs) — uploaded as a CI artifact, never committed
+live-verify-artifacts/
