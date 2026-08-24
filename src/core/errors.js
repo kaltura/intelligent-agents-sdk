@@ -49,7 +49,9 @@ export class KalturaError extends Error {
 
 const BASE = 'https://docs.kaltura.com/agentic/errors/';
 
-/** Map a known upstream error string to a stable SDK code. */
+/** Map a known upstream error string to a stable SDK code.
+ * @type {Array<[RegExp, string]>}
+ */
 const CODE_BY_PATTERN = [
   [/AGENT_PARTNER_CONFIG_GENIE_ID_MISMATCH/i, 'genie_id_mismatch'],
   [/AGENT_PARTNER_CONFIG_NOT_FOUND/i, 'intellect_not_found'],

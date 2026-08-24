@@ -28,7 +28,7 @@ export function renderSummary(model = {}) {
     rawBullets = rawBullets ?? nested.bullets ?? nested.points ?? nested.items;
     summary = nested.summary ?? nested.text ?? nested.content ?? nested.raw ?? '';
   }
-  summary = safeSource(summary ?? model.text ?? model.content ?? model.raw ?? '', 8000);
+  const summaryText = safeSource(summary ?? model.text ?? model.content ?? model.raw ?? '', 8000);
   const src = Array.isArray(rawBullets) ? rawBullets
     : Array.isArray(model.points) ? model.points
       : Array.isArray(model.items) ? model.items
@@ -39,5 +39,5 @@ export function renderSummary(model = {}) {
   const bullets = src
     .map((b) => safeText((b && typeof b === 'object') ? (/** @type {any} */ (b).summary ?? /** @type {any} */ (b).text ?? /** @type {any} */ (b).label ?? /** @type {any} */ (b).content ?? '') : b, 1000))
     .filter(Boolean);
-  return { kind: 'summary', data: { title: safeText(title ?? '', 300), summary, bullets } };
+  return { kind: 'summary', data: { title: safeText(title ?? '', 300), summary: summaryText, bullets } };
 }

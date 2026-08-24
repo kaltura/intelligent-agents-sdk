@@ -135,7 +135,7 @@ export class AvatarSessions {
    *
    * @param {{sessionId:string, token:string}} session  From {@link create}.
    * @param {Blob|ArrayBuffer|Uint8Array} audio  Encoded audio bytes (mp3, or whatever your TTS provider returns — only mp3 has been live-verified).
-   * @param {{duration:number, turnId?:string, mimeType?:string}} opts  `duration` in seconds, > 0 — REQUIRED. `turnId` defaults to a fresh uuid. `mimeType` defaults to `'audio/mpeg'`.
+   * @param {{duration?:number, turnId?:string, mimeType?:string}} [opts]  `duration` in seconds, > 0 — REQUIRED (checked at runtime; the JSDoc type is optional only so an omitted `opts` degrades to the same `bad_request` below instead of a raw TypeError). `turnId` defaults to a fresh uuid. `mimeType` defaults to `'audio/mpeg'`.
    * @returns {Promise<{turnId:string, success:boolean}>}
    * @throws {KalturaError} `bad_request` if `session` is missing or `opts.duration`/`audio` is missing.
    * @example
@@ -158,7 +158,11 @@ export class AvatarSessions {
       });
     }
     const turnId = opts.turnId || uuidv4();
-    const blob = (typeof Blob !== 'undefined' && audio instanceof Blob) ? audio : new Blob([audio], { type: opts.mimeType || 'audio/mpeg' });
+    // The `audio instanceof Blob` check above already rules out Blob here at runtime, but a
+    // compound `&&` condition doesn't narrow the ternary's else-branch type (TS can't prove
+    // audio isn't Blob just because the OTHER half of the && was false) — cast to the
+    // Blob constructor's own accepted type rather than re-deriving the narrowed union.
+    const blob = (typeof Blob !== 'undefined' && audio instanceof Blob) ? audio : new Blob([/** @type {BlobPart} */ (audio)], { type: opts.mimeType || 'audio/mpeg' });
     const fd = new FormData();
     fd.append('turnId', turnId);
     fd.append('duration', String(opts.duration));
@@ -245,7 +249,7 @@ function sessionRef(session, where) {
   return { sessionId, token };
 }
 
-/** Build the `create()` return value, with `exp`-derived expiry helpers attached non-enumerably (mirrors the {@link import('../core/session.js').Token} receipt pattern). @param {string} sessionId @param {string} token */
+/** Build the `create()` return value, with `exp`-derived expiry helpers attached non-enumerably (mirrors the {@link import('../core/session.js').Token} receipt pattern). @param {string} sessionId @param {string} token @returns {{sessionId:string, token:string, isExpired:()=>boolean, secondsRemaining:()=>number}} */
 function sessionReceipt(sessionId, token) {
   const exp = decodeJwtExp(token);
   const session = { sessionId, token };
@@ -257,7 +261,9 @@ function sessionReceipt(sessionId, token) {
     value: () => (typeof exp === 'number' ? Math.max(0, exp - Math.floor(Date.now() / 1000)) : Infinity),
     enumerable: false,
   });
-  return session;
+  // isExpired/secondsRemaining are attached above via defineProperty (kept non-enumerable
+  // on purpose), so the static type can't see them on the object literal itself.
+  return /** @type {{sessionId:string, token:string, isExpired:()=>boolean, secondsRemaining:()=>number}} */ (session);
 }
 
 /** Decode a JWT's `exp` claim without verifying the signature — we don't hold the signing key; the server is the enforcement point. Pure, never throws. @param {string} token */

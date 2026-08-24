@@ -5,7 +5,9 @@
   "description": "Zero-dependency SDK for Kaltura conversational avatar agents — Management (provision/configure/measure) + Experience (live interactive runtime). Grounded only in what the public APIs deliver today.",
   "license": "MIT",
   "type": "module",
-  "engines": { "node": ">=18" },
+  "engines": {
+    "node": ">=18"
+  },
   "sideEffects": false,
   "exports": {
     ".": "./src/index.js",
@@ -17,20 +19,52 @@
     "./experience/analytics": "./src/experience/analytics.js",
     "./test/fakes/*": "./test/fakes/*"
   },
-  "files": ["src", "examples", "test/fakes", "README.md", "SECURITY.md", "LICENSE"],
+  "files": [
+    "src",
+    "examples",
+    "test/fakes",
+    "README.md",
+    "SECURITY.md",
+    "LICENSE"
+  ],
   "scripts": {
     "test": "node --test --test-concurrency=1 'test/**/*.test.js'",
     "test:unit": "node --test test/unit/*.test.js",
     "test:integration": "node --test test/integration/*.test.js",
     "test:e2e": "node --test test/e2e/*.test.js",
     "test:evals": "node --test test/evals/*.test.js",
-    "test:ci": "node --experimental-test-coverage --test --test-concurrency=1 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=test-results.junit.xml 'test/**/*.test.js'",
+    "test:ci": "node --experimental-test-coverage --test-coverage-lines=95 --test-coverage-functions=88 --test-coverage-branches=80 --test --test-concurrency=1 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=test-results.junit.xml 'test/**/*.test.js'",
     "verify": "node scripts/agent_verify.mjs",
     "docs:gate": "node tools/check-docs.mjs",
-    "harness": "node scripts/harness/run.mjs"
+    "harness": "node scripts/harness/run.mjs",
+    "lint": "eslint .",
+    "typecheck": "tsc -p jsconfig.json",
+    "circular": "madge --circular --extensions js src/",
+    "harness:constitution": "node tools/constitution-harness.mjs",
+    "sri:map": "node tools/sri-map.mjs"
   },
-  "keywords": ["kaltura", "avatar", "conversational-ai", "webrtc", "genie", "agent"],
-  "repository": { "type": "git", "url": "git+https://github.com/kaltura/intelligent-agents-sdk.git" },
-  "bugs": { "url": "https://github.com/kaltura/intelligent-agents-sdk/issues" },
-  "homepage": "https://github.com/kaltura/intelligent-agents-sdk#readme"
+  "keywords": [
+    "kaltura",
+    "avatar",
+    "conversational-ai",
+    "webrtc",
+    "genie",
+    "agent"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kaltura/intelligent-agents-sdk.git"
+  },
+  "bugs": {
+    "url": "https://github.com/kaltura/intelligent-agents-sdk/issues"
+  },
+  "homepage": "https://github.com/kaltura/intelligent-agents-sdk#readme",
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "axe-core": "^4.13.0",
+    "eslint": "^10.9.0",
+    "jsdom": "^29.0.0",
+    "madge": "^8.0.0",
+    "typescript": "^5.9.3"
+  }
 }

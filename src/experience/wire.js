@@ -143,8 +143,10 @@ export function turnServers(turnServerUrl, creds = {}) {
  * Firefox). Either relays in practice (the ASR server offers only a private
  * candidate) — but the policy is set to match the production clients.
  * @param {'asr'|'stv'} channel @param {ReturnType<typeof turnServers>} turn @param {boolean} [isFirefox]
+ * @returns {RTCConfiguration}
  */
 export function iceConfig(channel, turn, isFirefox = false) {
+  /** @type {RTCIceTransportPolicy} */
   const policy = channel === 'stv' ? (isFirefox ? 'all' : 'relay') : 'all';
   return { iceServers: turn ? [turn] : [], iceTransportPolicy: policy, bundlePolicy: 'max-bundle' };
 }

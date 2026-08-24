@@ -24,7 +24,7 @@ export function renderVideoGallery(model = {}, ctx = {}) {
       : Array.isArray(model.items) ? model.items
         : [];
   const videos = src.map((v) => {
-    const o = (v && typeof v === 'object') ? /** @type {Record<string,unknown>} */ (v) : { title: v };
+    const o = /** @type {Record<string,unknown>} */ ((v && typeof v === 'object') ? v : { title: v });
     const title = safeText(o.title ?? o.name ?? '', 500);
     const entryId = safeText(o.entryId ?? o.entry_id ?? o.id ?? '', 100);
     // Prefer an explicit thumbnail; else derive the canonical CDN thumbnail from the id+partnerId.

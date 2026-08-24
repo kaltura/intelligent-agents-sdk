@@ -18,7 +18,7 @@ export function renderSources(model = {}, ctx = {}) {
       : Array.isArray(model.citations) ? model.citations
         : [];
   const sources = src.map((s) => {
-    const o = (s && typeof s === 'object') ? /** @type {Record<string,unknown>} */ (s) : { title: s };
+    const o = /** @type {Record<string,unknown>} */ ((s && typeof s === 'object') ? s : { title: s });
     // Forward-compatible passthrough: RAG retrieval may carry a relevance score so a host can
     // rank/badge citations. Absent or non-numeric → field omitted (NOT 0). Not a claimed
     // backend guarantee — emission is unverified (see GENUI-REFERENCE "Restrictions").

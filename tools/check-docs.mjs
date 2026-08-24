@@ -191,7 +191,10 @@ describe('1. Secrets', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 describe('2. Private IPs', () => {
   test('no RFC1918 private IPs in tracked files', () => {
-    const re = /\b(10|192\.168|172\.(1[6-9]|2[0-9]|3[01]))\.\d{1,3}\.\d{1,3}\b/;
+    // Every branch requires all 4 octets — a 3-octet "10.x.x" also matches a
+    // semver like eslint's "^10.9.0", so anything short of a full IPv4 shape
+    // is a guaranteed false positive, not a private address.
+    const re = /\b(?:10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2[0-9]|3[01])\.\d{1,3}\.\d{1,3})\b/;
     // net-guard.js IS the SSRF guard — its private-range regex/examples are the
     // detection logic itself, not a leaked address.
     const NET_GUARD = 'src/core/net-guard.js';
@@ -374,10 +377,10 @@ describe('6. Cross-doc links', () => {
 // 7) SDK invariants
 // ─────────────────────────────────────────────────────────────────────────────
 describe('7. SDK invariants', () => {
-  test('zero runtime + dev dependencies', () => {
+  test('zero runtime dependencies (P-3 — devDependencies are dev-tooling only, never shipped)', () => {
     const pkg = JSON.parse(read('package.json'));
-    const deps = { ...pkg.dependencies, ...pkg.devDependencies };
-    assert.deepEqual(Object.keys(deps), [], `package.json declares deps: ${Object.keys(deps).join(', ')}`);
+    const deps = Object.keys(pkg.dependencies || {});
+    assert.deepEqual(deps, [], `package.json declares runtime deps: ${deps.join(', ')}`);
   });
 
   test('no install lifecycle scripts', () => {

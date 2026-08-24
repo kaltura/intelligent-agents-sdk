@@ -26,21 +26,23 @@ import { provision } from './provision.js';
 import { inspectKs } from './ks-inspect.js';
 
 /**
+ * @typedef {string|{ks:string,kind?:string,entitlementEnforced?:boolean}} KsLike A raw KS string or a minted {@link import('../core/session.js').Token}.
  * @typedef {object} Ctx Internal context shared with every resource namespace.
  * @property {string} partnerId
- * @property {(path:string, body:unknown, ks:string, opts?:{idempotencyKey?:string})=>Promise<{data:any,requestId:string}>} agentic
- * @property {(path:string, fd:FormData, ks:string, opts?:{idempotencyKey?:string})=>Promise<{data:any,requestId:string}>} agenticMultipart
+ * @property {(path:string, body:unknown, ks:KsLike, opts?:{idempotencyKey?:string})=>Promise<{data:any,requestId:string}>} agentic
+ * @property {(path:string, fd:FormData, ks:KsLike, opts?:{idempotencyKey?:string})=>Promise<{data:any,requestId:string}>} agenticMultipart
  * @property {(path:string, body:unknown, bearerToken:string, opts?:{idempotencyKey?:string})=>Promise<{data:any,requestId:string}>} avatarSessionCall Bearer-authed (not KS) call on the scripted-video `avatar-session/*` API — see avatar-sessions.js.
  * @property {(path:string, fd:FormData, bearerToken:string, opts?:{idempotencyKey?:string})=>Promise<{data:any,requestId:string}>} avatarSessionMultipart Bearer-authed multipart call (`say-audio`).
- * @property {(path:string, body:unknown, ks:string, opts?:{idempotencyKey?:string})=>Promise<{data:any,requestId:string}>} genie
- * @property {(path:string, ks:string)=>Promise<{data:any,requestId:string}>} genieGet
- * @property {(path:string, body:unknown, ks:string, opts?:{signal?:AbortSignal})=>Promise<ReadableStream<Uint8Array>>} genieStream
- * @property {(service:string, action:string, params:object, ks:string)=>Promise<any>} ovp Kaltura OVP single call (www.kaltura.com/api_v3).
- * @property {(calls:object[], ks:string)=>Promise<any>} ovpMulti Kaltura OVP multirequest (chained calls).
- * @property {(uploadTokenId:string, fd:FormData, ks:string)=>Promise<any>} ovpUpload Upload file bytes to an upload token.
- * @property {(ks:string, where:string)=>void} assertAdmin
- * @property {(ks:string, where:string)=>void} assertConversation
- * @property {(ks:string, where:string)=>void} assertAny
+ * @property {(path:string, body:unknown, ks:KsLike, opts?:{idempotencyKey?:string})=>Promise<{data:any,requestId:string}>} genie
+ * @property {(path:string, ks:KsLike)=>Promise<{data:any,requestId:string}>} genieGet
+ * @property {(path:string, body:unknown, ks:KsLike, opts?:{signal?:AbortSignal})=>Promise<ReadableStream<Uint8Array>>} genieStream
+ * @property {(service:string, action:string, params:object, ks:KsLike)=>Promise<any>} ovp Kaltura OVP single call (www.kaltura.com/api_v3).
+ * @property {(calls:object[], ks:KsLike)=>Promise<any>} ovpMulti Kaltura OVP multirequest (chained calls).
+ * @property {(uploadTokenId:string, fd:FormData, ks:KsLike)=>Promise<any>} ovpUpload Upload file bytes to an upload token.
+ * @property {(ks:KsLike, where:string)=>void} assertAdmin
+ * @property {(ks:KsLike, where:string)=>void} assertConversation
+ * @property {(ks:KsLike, where:string)=>void} assertAny
+ * @property {(type:string, outcome:string, fields?:object)=>void} audit Redacted structured security/audit event emitter (no-op if the caller passed no `onAuditEvent` hook).
  */
 
 export class Management {
@@ -203,8 +205,8 @@ export class Management {
    * @param {number} configId
    * @param {string} message
    * @param {object} [opts]  Same shape as {@link Management#converse}, plus `recoverFromSpiral?`.
-   * @param {string|{ks:string}} [ks]
-   * @returns {Promise<{text:string, threadId:string, messageId:string, segments:object[], toolCalls:object[], experiences:object[], experiencesList:object[], kindCounts:object, spiralStopped:boolean, truncated:boolean, spiralRecovered?:boolean, firstAttempt?:object, _meta:object}>}
+   * @param {KsLike} [ks]
+   * @returns {Promise<{text:string, threadId:string, messageId:string, segments:object[], toolCalls:object[], experiences:Record<string,object[]>, experiencesList:object[], kindCounts:object, spiralStopped:boolean, truncated:boolean, spiralRecovered?:boolean, firstAttempt?:object, _meta:object}>}
    */
   async converseOnce(configId, message, opts = {}, ks) {
     const conv = ks || (await this.sessions.createConversationToken({ configId }));

@@ -495,7 +495,7 @@ test('ExperienceRenderer LIVE mode: brainSegment → assembled widget → mount;
 test('ExperienceRenderer LIVE mode: interrupted discards the in-flight buffer', () => {
   const session = new FakeSession();
   const out = [];
-  const r = new ExperienceRenderer({ session, mount: (d) => out.push(d) }).start();
+  new ExperienceRenderer({ session, mount: (d) => out.push(d) }).start();
   session.emit('brainSegment', { metadata: { runtimeName: 'summary-tool' }, content: 'partial', speechId: 'sp1' });
   session.emit('interrupted', {});
   session.emit('turnEnd', { speechId: 'sp1' });
@@ -534,7 +534,7 @@ test('ExperienceRenderer LIVE mode default: turnStart clears a widget rendered i
 test('ExperienceRenderer LIVE mode default: turnStart discards an in-flight (not-yet-flushed) buffer, not just rendered history', () => {
   const session = new FakeSession();
   const out = [];
-  const r = new ExperienceRenderer({ session, mount: (d) => out.push(d) }).start();
+  new ExperienceRenderer({ session, mount: (d) => out.push(d) }).start();
   session.emit('brainSegment', { metadata: { runtimeName: 'summary-tool' }, content: 'partial from turn 1', speechId: 'sp1' });
   session.emit('turnStart', { speechId: 'sp2', turnId: 't2', isNewTurn: true });
   session.emit('brainSegment', { metadata: { runtimeName: 'summary-tool' }, content: 'turn 2 body', speechId: 'sp2' });

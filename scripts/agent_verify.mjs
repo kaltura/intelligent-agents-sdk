@@ -64,7 +64,6 @@ function grepSrc(pattern, flags = 'g') {
   const results = [];
   for (const f of jsFiles(SDK_SRC)) {
     const src = read(f);
-    let m;
     const lines = src.split('\n');
     for (let i = 0; i < lines.length; i++) {
       if (re.test(lines[i])) {
@@ -309,16 +308,28 @@ section('Part 5 — DX and Clean Code');
 {
   const exportedNames = new Set();
   const importedNames = new Set();
+  // A symbol exported directly from a file that package.json's own `exports`
+  // map names as an entry point IS the public API by construction — nothing
+  // inside this repo needs to "consume" it for it to be live, real code.
+  const pkg = JSON.parse(read(SDK_PKG));
+  const entryPointFiles = new Set(Object.values(pkg.exports || {}).map((p) => join(ROOT, p)));
   for (const f of jsFiles(SDK_SRC)) {
     const src = read(f);
     // Collect exports
     for (const m of src.matchAll(/export\s+(?:function|class|const|let)\s+(\w+)/g)) {
       exportedNames.add(m[1]);
+      if (entryPointFiles.has(f)) importedNames.add(m[1]);
     }
-    for (const m of src.matchAll(/export\s*\{([^}]+)\}/g)) {
+    for (const m of src.matchAll(/export\s*\{([^}]+)\}\s*(from\s*['"][^'"]+['"])?/g)) {
+      const isReExport = !!m[2];
       for (const name of m[1].split(',')) {
         const n = name.trim().split(/\s+as\s+/)[0].trim();
-        if (n) exportedNames.add(n);
+        if (!n) continue;
+        exportedNames.add(n);
+        // `export { X } from './leaf.js'` is exactly how this SDK's own barrel
+        // entry points (src/index.js, management/index.js, …) re-export leaf
+        // modules' symbols — that re-export IS a live consumer of X.
+        if (isReExport || entryPointFiles.has(f)) importedNames.add(n);
       }
     }
     // Collect imports
@@ -328,12 +339,10 @@ section('Part 5 — DX and Clean Code');
         if (n) importedNames.add(n);
       }
     }
-    for (const m of src.matchAll(/from\s+['"][^'"]+['"]/g)) {
-      /* just ensure we parse the import side above */
-    }
   }
-  // Also scan tools/, apps/, examples/ for external consumers
-  const consumerDirs = ['tools', 'apps', 'examples', 'quickstart'].map(d => join(ROOT, d));
+  // Also scan tools/, apps/, examples/, quickstart/, and the test suite itself
+  // for consumers — a symbol only ever imported by its own tests is still live.
+  const consumerDirs = ['tools', 'apps', 'examples', 'quickstart', 'test'].map((d) => join(ROOT, d));
   for (const dir of consumerDirs) {
     if (!existsSync(dir)) continue;
     for (const f of jsFiles(dir)) {
@@ -346,7 +355,7 @@ section('Part 5 — DX and Clean Code');
       }
     }
   }
-  const dead = [...exportedNames].filter(n => !importedNames.has(n));
+  const dead = [...exportedNames].filter((n) => !importedNames.has(n));
   // These are common utility exports intentionally kept for library users — skip them
   const KNOWN_INTENTIONAL = new Set(['KalturaError', 'Management', 'Sessions', 'Http',
     'CAPABILITIES', 'CAPABILITY_STATE', 'tools', 'CHAPTER_TYPE', 'STRATEGY', 'EMBED',

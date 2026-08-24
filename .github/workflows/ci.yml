@@ -32,6 +32,9 @@ jobs:
         with:
           node-version: 24
 
+      - name: 📦 Install devDependencies (jsdom/axe-core for the a11y suite)
+        run: npm ci
+
       - name: 🧪🩺 node --test + coverage + JUnit report (all suites, offline — fakes inject fetch/socket/RTC)
         run: npm run test:ci
 
@@ -70,6 +73,9 @@ jobs:
         with:
           node-version: 24
 
+      - name: 📦 Install devDependencies (jsdom/axe-core for the a11y suite)
+        run: npm ci
+
       - name: 📜 Check every rule in SDK_CONSTITUTION.md (isolation, security, resiliency, performance, DX)
         id: verify
         run: |
@@ -87,6 +93,90 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: 📜 Supplementary constitution checks (thresholds/contracts agent_verify.mjs can't reach)
+        id: harness
+        run: |
+          set -o pipefail
+          npm run harness:constitution 2>&1 | tee harness-output.log
+
+      - name: 📝 Write job summary
+        if: always()
+        run: |
+          {
+            echo "### 📜 Constitution harness — ${{ steps.harness.outcome }}"
+            echo
+            echo '```'
+            tail -n 25 harness-output.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  dx-gates:
+    name: 🧹 Lint, typecheck, circular-import
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - name: 📥 Check out the repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: 🟢 Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+
+      - name: 📦 Install devDependencies (eslint, madge, typescript)
+        run: npm ci
+
+      - name: 🧹 Lint
+        id: lint
+        run: |
+          set -o pipefail
+          npm run lint 2>&1 | tee lint-output.log
+
+      - name: 📝 Write lint job summary
+        if: always()
+        run: |
+          {
+            echo "### 🧹 Lint — ${{ steps.lint.outcome }}"
+            echo
+            echo '```'
+            tail -n 30 lint-output.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 🧾 Typecheck (tsc over JSDoc via jsconfig.json)
+        id: typecheck
+        run: |
+          set -o pipefail
+          npm run typecheck 2>&1 | tee typecheck-output.log
+
+      - name: 📝 Write typecheck job summary
+        if: always()
+        run: |
+          {
+            echo "### 🧾 Typecheck — ${{ steps.typecheck.outcome }}"
+            echo
+            echo '```'
+            tail -n 30 typecheck-output.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 🔄 Circular-import check (madge)
+        id: circular
+        run: |
+          set -o pipefail
+          npm run circular 2>&1 | tee circular-output.log
+
+      - name: 📝 Write circular-import job summary
+        if: always()
+        run: |
+          {
+            echo "### 🔄 Circular-import check — ${{ steps.circular.outcome }}"
+            echo
+            echo '```'
+            tail -n 30 circular-output.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
   docs-gate:
     name: 📚 Check docs/code drift, secrets, and GFM hygiene (check-docs.mjs)
     runs-on: ubuntu-latest
@@ -99,6 +189,9 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: 24
+
+      - name: 📦 Install devDependencies (jsdom/axe-core for the a11y suite)
+        run: npm ci
 
       - name: 🔍 Run the docs CI gate (secrets, GFM, cross-doc links, SDK invariants)
         id: docs_gate

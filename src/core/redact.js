@@ -31,7 +31,7 @@ const HEX32_RE = /\b[a-f0-9]{32}\b/g;
  * @returns {T}
  */
 export function redact(value) {
-  if (typeof value === 'string') return redactString(value);
+  if (typeof value === 'string') return /** @type {T} */ (redactString(value));
   if (Array.isArray(value)) return /** @type {T} */ (value.map(redact));
   if (value && typeof value === 'object') {
     /** @type {Record<string, unknown>} */

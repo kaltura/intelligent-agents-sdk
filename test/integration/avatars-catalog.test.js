@@ -14,10 +14,6 @@ import { fakeFetch } from '../fakes/fetch.js';
 
 const ADMIN = 'djJ8MXxb=ADMIN-token-placeholder';
 
-function mgmt(routes) {
-  return new Management({ partnerId: 6516742, adminSecret: 'a'.repeat(32), fetch: fakeFetch(routes) });
-}
-
 test('avatars.create rejects a stray adminTags pre-network with an actionable error (no avatar/create call fires)', async () => {
   const f = fakeFetch([{ match: '/avatar/create', respond: () => ({ body: { id: 'av1' } }) }]);
   const k = new Management({ partnerId: 6516742, adminSecret: 'a'.repeat(32), fetch: f });

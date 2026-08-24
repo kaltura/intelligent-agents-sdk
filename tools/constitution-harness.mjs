@@ -1,41 +1,34 @@
 #!/usr/bin/env node
 /**
- * @kaltura/intelligent-agents — Constitution Harness
+ * @kaltura/intelligent-agents — Constitution Harness (supplementary)
  *
- * Standalone, zero-dependency proof script that enforces five structural
- * rules across the SDK source tree, plus a handful of issue-closure checks
- * for specific merged features. Complements (does not replace) `check-docs.mjs`,
- * which owns doc↔code drift; this script owns SDK-source-only invariants that
- * check-docs.mjs doesn't cover (global-state writes, CSP-unsafe patterns,
- * retry/backoff shape, response-size caps, JSDoc coverage, dead exports).
+ * `scripts/agent_verify.mjs` is the canonical SDK_CONSTITUTION.md verifier and
+ * already runs in CI (the `constitution` job) — it owns every grep-shaped rule:
+ * I-1/I-2 (isolation), S-1/S-2/S-6 (AppSec), R-1..R-5 and P-1 (presence checks
+ * on http.js), D-1/D-2/D-3 (JSDoc/dead-export/stub scans). `scripts/harness/
+ * semgrep-rules.yml` additionally covers eval/innerHTML/shell-injection/raw-fetch
+ * as proper SAST rules. This script does NOT duplicate any of that — it only
+ * covers what neither reaches:
  *
- * Rules:
- *   C1 — Isolation    : no global-state mutations (no `window.X =`, no `globalThis.X =` writes)
- *   C2 — AppSec       : no `eval()`, no `innerHTML =`, no `new Function(`, no `document.write(`
- *   C3 — Resiliency   : all HTTP I/O routes through Http transport with documented retry/backoff
- *   C4 — Performance  : response size cap enforced (maxResponseBytes), no uncapped reads
- *   C5 — DX/JSDoc     : all public exports carry at least one JSDoc comment; no TODO/FIXME/stub
- *
- * Issue-closure checks (features that shipped and should never silently regress):
- *   I4  — resolveIntellectId exists in agents.js (E1/D2 — no genieId probe needed)
- *   I5  — requireDisclosureAck + acknowledgeDisclosure + disclosure_required present in session.js (P5)
- *   I6  — CaptionService exported from experience index
- *   I7  — createConversationToken present in core/session.js (D5 one-call token)
- *   I10 — hubspotContactUpsert + salesforceContactUpsert exported from management index
- *   I11 — Presenter + parseSlideNumber exported from experience index
- *   I12 — meta() present in ids.js with generatedAt
- *   I13 — waitForCapacity present in session.js (R4)
- *   I14 — whep_private_ip error code present in session.js (R8, additive Location check)
+ *   - A numeric THRESHOLD on `maxResponseBytes`, not just presence of the guard
+ *     (agent_verify.mjs's P-1 passes as soon as the word appears; it can't tell
+ *     a sane 10 MiB cap from a useless 1-byte one).
+ *   - The bounded-accumulation guard in `core/stream.js` — no other gate reads
+ *     this file at all.
+ *   - The fetch-injectability CONTRACT in `experience/session.js` (`cfg.fetch ||
+ *     globalThis.fetch`) — no other gate reads this file either.
+ *   - Issue-closure checks: named symbols from specific shipped features that
+ *     must never silently vanish in a refactor. This is the one category no
+ *     other gate replaces — it's institutional memory, not a pattern match.
  *
  * Exit code: 0 on all checks green, 1 on any failure.
  */
 
-import { readFileSync, readdirSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 // script lives at sdk/tools/constitution-harness.mjs → sdk/ is one level up
 const SDK_ROOT = new URL('../', import.meta.url).pathname.replace(/\/$/, '');
-const ROOT = SDK_ROOT;
 const SDK_SRC = join(SDK_ROOT, 'src');
 
 let pass = 0;
@@ -54,175 +47,16 @@ function ng(label, detail) {
 function section(name) {
   process.stdout.write(`\n▶ ${name}\n`);
 }
-
-// ─── File helpers ───────────────────────────────────────────────────────────
-
-function allFiles(dir, exts = ['.js', '.mjs']) {
-  const out = [];
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    const full = join(dir, entry.name);
-    if (entry.isDirectory()) {
-      out.push(...allFiles(full, exts));
-    } else if (exts.some((e) => entry.name.endsWith(e))) {
-      out.push(full);
-    }
-  }
-  return out;
-}
-
 function read(path) {
   return readFileSync(path, 'utf8');
 }
 
-const srcFiles = allFiles(SDK_SRC);
+// ─── Performance: response-size THRESHOLD + bounded accumulation ───────────
 
-// ─── C1: Isolation — no global-state mutations ──────────────────────────────
-
-section('C1 — Isolation: no global-state mutations');
-{
-  // Reads are fine (globalThis.fetch, globalThis.crypto); writes are forbidden.
-  const WRITE_GLOBAL = /(?:globalThis|window)\s*\.\s*[A-Za-z_$][A-Za-z0-9_$]*\s*=(?![=>])/;
-  const violations = [];
-  for (const f of srcFiles) {
-    const lines = read(f).split('\n');
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      if (WRITE_GLOBAL.test(line) && !line.trimStart().startsWith('//')) {
-        violations.push(`${relative(ROOT, f)}:${i + 1}: ${line.trim()}`);
-      }
-    }
-  }
-  if (violations.length === 0) {
-    ok('no global-state writes (globalThis.X= / window.X=)');
-  } else {
-    ng('global-state writes found', violations.join('\n    '));
-  }
-
-  // Multi-instance: Management constructor must not share any module-level mutable state.
-  const clientSrc = read(join(SDK_SRC, 'management/client.js'));
-  const moduleLevelMutable = /^(?:let|var)\s+/m.test(clientSrc);
-  if (!moduleLevelMutable) {
-    ok('client.js has no module-level mutable `let`/`var` declarations');
-  } else {
-    ng('client.js has module-level mutable state (let/var)', 'multi-instance isolation at risk');
-  }
-}
-
-// ─── C2: AppSec — no eval / no dynamic code / no unsafe HTML injection ─────
-
-section('C2 — AppSec: eval / new Function / innerHTML / document.write');
-{
-  const BANNED = [
-    { re: /\beval\s*\(/, label: 'eval(' },
-    { re: /new\s+Function\s*\(/, label: 'new Function(' },
-    { re: /\binnerHTML\s*=(?!=)/, label: 'innerHTML =' },
-    { re: /document\.write\s*\(/, label: 'document.write(' },
-  ];
-
-  const violations = [];
-  for (const f of srcFiles) {
-    const lines = read(f).split('\n');
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      if (line.trimStart().startsWith('//')) continue;
-      for (const { re, label } of BANNED) {
-        if (re.test(line)) {
-          violations.push(`${label} at ${relative(ROOT, f)}:${i + 1}`);
-        }
-      }
-    }
-  }
-  if (violations.length === 0) {
-    ok('no eval / new Function / innerHTML= / document.write in sdk/src');
-  } else {
-    ng('CSP-violating patterns found', violations.join('\n    '));
-  }
-
-  // No TODO/FIXME/stub markers (sanity double-check; check-docs.mjs already enforces)
-  const markers = [];
-  for (const f of srcFiles) {
-    const content = read(f);
-    const found = [...content.matchAll(/\b(?:TODO|FIXME|XXX|STUB|not_implemented)\b/g)];
-    if (found.length) markers.push(`${relative(ROOT, f)}: ${found.length} marker(s)`);
-  }
-  if (markers.length === 0) {
-    ok('no TODO/FIXME/XXX/STUB markers in sdk/src');
-  } else {
-    ng('stub/TODO markers present', markers.join('; '));
-  }
-}
-
-// ─── C3: Resiliency — retry/backoff is documented and present in Http ────────
-
-section('C3 — Resiliency: retry/backoff in Http transport');
+section('Performance — size threshold + bounded accumulation');
 {
   const httpSrc = read(join(SDK_SRC, 'core/http.js'));
 
-  const hasRetriable = /RETRIABLE_STATUSES/.test(httpSrc);
-  const hasMaxRetries = /maxRetries/.test(httpSrc);
-  const hasBaseDelay = /baseDelayMs/.test(httpSrc);
-  const hasMaxDelay = /maxDelayMs/.test(httpSrc);
-  const hasExponential = /exponential|backoff|jitter/i.test(httpSrc);
-
-  if (hasRetriable && hasMaxRetries && hasBaseDelay && hasMaxDelay && hasExponential) {
-    ok('Http: RETRIABLE_STATUSES + maxRetries + baseDelayMs + maxDelayMs + backoff/jitter');
-  } else {
-    ng(
-      'Http retry/backoff incomplete',
-      `RETRIABLE_STATUSES=${hasRetriable} maxRetries=${hasMaxRetries} ` +
-        `baseDelayMs=${hasBaseDelay} maxDelayMs=${hasMaxDelay} exponential/jitter=${hasExponential}`,
-    );
-  }
-
-  // Verify that direct fetch calls outside Http are not present in management src
-  const mgmtFiles = allFiles(join(SDK_SRC, 'management'));
-  const rawFetchCalls = [];
-  for (const f of mgmtFiles) {
-    const lines = read(f).split('\n');
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      if (
-        /(?:^|[^.\w])fetch\s*\(/.test(line) &&
-        !line.includes('this._fetch') &&
-        !line.includes('opts.fetch') &&
-        !line.includes('cfg.fetch') &&
-        !line.trimStart().startsWith('//') &&
-        !line.trimStart().startsWith('*')
-      ) {
-        rawFetchCalls.push(`${relative(ROOT, f)}:${i + 1}: ${line.trim()}`);
-      }
-    }
-  }
-  if (rawFetchCalls.length === 0) {
-    ok('management src: no raw fetch() calls outside Http transport');
-  } else {
-    ng('management src has raw fetch() bypass', rawFetchCalls.join('\n    '));
-  }
-
-  // Verify inject pattern in session.js
-  const sessionSrc = read(join(SDK_SRC, 'experience/session.js'));
-  const hasInjectFetch = /cfg\.fetch\s*\|\|/.test(sessionSrc);
-  if (hasInjectFetch) {
-    ok('session.js: fetch is injectable (cfg.fetch || globalThis.fetch)');
-  } else {
-    ng('session.js: fetch not injectable', 'missing `cfg.fetch || globalThis.fetch` pattern');
-  }
-}
-
-// ─── C4: Performance — response size budgets, no uncapped body reads ─────────
-
-section('C4 — Performance: payload size caps enforced');
-{
-  const httpSrc = read(join(SDK_SRC, 'core/http.js'));
-
-  const hasSizeCap = /maxResponseBytes/.test(httpSrc) && /response_too_large/.test(httpSrc);
-  if (hasSizeCap) {
-    ok('Http: maxResponseBytes cap + response_too_large error defined');
-  } else {
-    ng('Http: missing maxResponseBytes cap or response_too_large error', '');
-  }
-
-  // Verify default cap is sensible (>= 1 MiB).
   const mibForm = httpSrc.includes('10 * 1024 * 1024') || httpSrc.includes('10485760');
   const plainMatch = httpSrc.match(/maxResponseBytes\s*\?\?\s*(\d[\d_]*)\b/);
   if (mibForm) {
@@ -232,86 +66,29 @@ section('C4 — Performance: payload size caps enforced');
     if (cap >= 1024 * 1024) {
       ok(`Http: default maxResponseBytes = ${(cap / (1024 * 1024)).toFixed(0)} MiB`);
     } else {
-      ng('Http: default maxResponseBytes too small', `${cap} bytes`);
+      ng('Http: default maxResponseBytes too small', `${cap} bytes — agent_verify.mjs's P-1 only checks the guard exists, not that its default is sane`);
     }
   } else {
     ng('Http: default maxResponseBytes cap not found', '');
   }
 
-  // Constitution rule: stream.js collectConverse must not accumulate unboundedly.
   const streamSrc = read(join(SDK_SRC, 'core/stream.js'));
-  const hasSpokenTypes = /SPOKEN_TYPES/.test(streamSrc);
-  if (hasSpokenTypes) {
+  if (/SPOKEN_TYPES/.test(streamSrc)) {
     ok('stream.js: SPOKEN_TYPES guard present (text accumulation is bounded by type)');
   } else {
     ng('stream.js: SPOKEN_TYPES guard absent', 'collectConverse may accumulate unboundedly');
   }
 }
 
-// ─── C5: DX / JSDoc — public interface documentation ─────────────────────────
+// ─── Resiliency: fetch is injectable in the Experience runtime ─────────────
 
-section('C5 — DX/JSDoc: public interfaces documented');
+section('Resiliency — session.js fetch injectability contract');
 {
-  const REQUIRED_JSDOC = [
-    'management/client.js',
-    'management/agents.js',
-    'management/avatars.js',
-    'management/intellects.js',
-    'management/intellect-config.js',
-    'management/crm-recipes.js',
-    'management/tools.js',
-    'management/capabilities.js',
-    'management/provision.js',
-    'experience/session.js',
-    'core/http.js',
-    'core/errors.js',
-    'core/stream.js',
-    'core/ids.js',
-    'core/session.js',
-  ];
-
-  const missingJsdoc = [];
-  for (const rel of REQUIRED_JSDOC) {
-    const full = join(SDK_SRC, rel);
-    try {
-      const src = read(full);
-      if (!/\/\*\*/.test(src)) missingJsdoc.push(rel);
-    } catch {
-      missingJsdoc.push(`${rel} (not found)`);
-    }
-  }
-  if (missingJsdoc.length === 0) {
-    ok(`all ${REQUIRED_JSDOC.length} public modules have JSDoc blocks`);
+  const sessionSrc = read(join(SDK_SRC, 'experience/session.js'));
+  if (/cfg\.fetch\s*\|\|/.test(sessionSrc)) {
+    ok('session.js: fetch is injectable (cfg.fetch || globalThis.fetch)');
   } else {
-    ng('modules missing JSDoc', missingJsdoc.join(', '));
-  }
-
-  // No dead-code: verify key exports from management/index.js are actually defined
-  // in the source files they claim to come from (dead export = export of undefined).
-  const mgmtIndex = read(join(SDK_SRC, 'management/index.js'));
-  const exportedSymbols = [
-    { symbol: 'Management', file: 'management/client.js' },
-    { symbol: 'resolveIntellectId', file: 'management/agents.js' },
-    { symbol: 'IntellectConfig', file: 'management/intellect-config.js' },
-    { symbol: 'hubspotContactUpsert', file: 'management/crm-recipes.js' },
-    { symbol: 'salesforceContactUpsert', file: 'management/crm-recipes.js' },
-  ];
-  const deadExports = [];
-  for (const { symbol, file } of exportedSymbols) {
-    const src = read(join(SDK_SRC, file));
-    const defined = new RegExp(
-      `export\\s+(?:function|class|const|async function)\\s+${symbol}\\b|export\\s*\\{[^}]*\\b${symbol}\\b[^}]*\\}`,
-    ).test(src);
-    if (!defined) deadExports.push(`${symbol} (in ${file})`);
-  }
-  // Also confirm management/index.js itself re-exports each symbol.
-  for (const { symbol } of exportedSymbols) {
-    if (!new RegExp(`\\b${symbol}\\b`).test(mgmtIndex)) deadExports.push(`${symbol} (not re-exported from management/index.js)`);
-  }
-  if (deadExports.length === 0) {
-    ok('no dead exports — all key symbols verified present in their source files and re-exported');
-  } else {
-    ng('dead exports found (exported but not defined, or not re-exported)', deadExports.join(', '));
+    ng('session.js: fetch not injectable', 'missing `cfg.fetch || globalThis.fetch` pattern');
   }
 }
 

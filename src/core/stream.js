@@ -162,6 +162,8 @@ export function segmentKind(seg) {
  * @property {ToolCallMetadata} [toolMetadata]  Present when the segment carried a
  * wire `tool_metadata` object (WIRE-PROTOCOL §4e); absent for older/synthetic
  * segments that don't. Required to satisfy a `waitForResponse:true` call.
+ * @property {object[]} [fusedArgs]  Present only for a fused multi-tool segment —
+ * earlier tool-call arg objects this segment doesn't name (see `parseToolCall`).
  */
 
 /**

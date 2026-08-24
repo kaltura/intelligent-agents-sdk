@@ -128,6 +128,22 @@ export class KalturaAvatarSession extends Emitter {
    * @param {number} [cfg.maxReconnectAttempts]  Passed through as socket.io's own `reconnectionAttempts` (caps its native reconnection engine) AND surfaced as `attempt`/`maxAttempts` on `reconnecting`/`connectivityChanged`. Default 5.
    * @param {number} [cfg.reconnectWindowMs]  Bounds the 'reconnecting' state independent of socket.io's own attempt count — if no recovery lands within this window, the session ends cleanly rather than hanging. Default 22000.
    * @param {Record<string, string|number|boolean|null>} [cfg.requestVars]  Join-time `{{var}}` Jinja values — sent on every `join`/reconnect `buildJoin()` call; validated with the same `assertRequestVars` as {@link updateRequestVars}.
+   * @param {number} [cfg.localVadThreshold]  Client-side VAD amplitude threshold (0-32767ish) gating `localSpeakingChanged`. Default 300.
+   * @param {()=>AudioContext} [cfg.getAudioContext]  Factory for the VAD `AudioContext` (default `() => new AudioContext()`).
+   * @param {typeof MediaStream} [cfg.mediaStreamConstructor]
+   * @param {string} [cfg.subjectId]  Opaque, operator-assigned subject id (HIPAA 164.312(a)(2)(i)) stamped onto every audit event. NEVER the patient's name/PHI.
+   * @param {(text:string, ctx?:object)=>(string|undefined|false|Promise<string|undefined|false>)} [cfg.onBeforeSend]  Inspect/transform/BLOCK outbound user text before it reaches the brain (OWASP LLM01/LLM06). Return a string to send that instead, `undefined` to send unchanged, `false`/throw to block the turn.
+   * @param {(action:{type:string,payload?:any})=>(boolean|Promise<boolean>)} [cfg.onAgentAction]  Gate an agent-initiated action (OWASP LLM06 Excessive Agency; Agentic ASI 01/02). Return/resolve `false` to veto.
+   * @param {{navigate?:'off', genui?:boolean, structuredDataForm?:boolean, toolCall?:boolean|string[]}} [cfg.agentActions]  Declarative capability policy checked before `onAgentAction`.
+   * @param {number} [cfg.maxTurnsPerMinute]  Rate-limit user turns per rolling minute (0 disables). Default 0.
+   * @param {()=>number} [cfg.now]  Injectable clock (deterministic tests). Default `Date.now`.
+   * @param {boolean} [cfg.debug]  Enable debug-only socket emissions.
+   * @param {number} [cfg.idleTimeoutMs]  Disconnect after this much inactivity (0 disables). Default 900000 (15 min).
+   * @param {string} [cfg.stickyId]  Sticky routing id for load-balanced reconnects. Default a random id.
+   * @param {number} [cfg.brainStallMs]  How long to wait for a brain response before surfacing a stall signal. Default 12000.
+   * @param {number} [cfg.toolSpiralLimit]  Soft tool-call-loop limit before nudging the agent to stop (Agentic ASI loop guard). Default 10.
+   * @param {number} [cfg.hardToolSpiralLimit]  Hard tool-call-loop limit that forces a cold reconnect. Default `toolSpiralLimit * 3`.
+   * @param {boolean} [cfg.networkAware]  React to `online`/`offline` browser events. Default true when `addEventListener` exists.
    */
   constructor(cfg) {
     super();
@@ -320,7 +336,7 @@ export class KalturaAvatarSession extends Emitter {
     // the live socket) and is CLEARED on turnStart so the same command can fire again
     // next turn. Keyed by name + sorted-key JSON of args (semantic, not the verbatim
     // wire string) — see `_dispatchToolCall`.
-    /** @type {Map<string, Array<(args:object, call:object)=>void>>} */
+    /** @type {Map<string, Array<(args:object, call:object)=>unknown>>} */
     this._toolCallHandlers = new Map();
     this._firedToolCalls = new Set();
     this._toolCallSchemas = new Map();   // name -> argsSchema, set by onToolCall's optional 3rd param
@@ -344,7 +360,7 @@ export class KalturaAvatarSession extends Emitter {
     // window can legitimately span past a single turn boundary. Entries are removed only on a
     // successful respondToTool(), or wholesale on disconnect()/cold-reconnect (below) so this
     // never grows unbounded across a long-lived session.
-    /** @type {Map<string, {name:string}>} */
+    /** @type {Map<string, {name:string, at:number}>} */
     this._pendingToolAcks = new Map();
     // Tool-call spiral circuit breaker state (see `_toolSpiralLimit` above). Counts RAW
     // `type:"tool"` segments per turn (before dedup — a spiral's repeats are exactly
@@ -454,7 +470,6 @@ export class KalturaAvatarSession extends Emitter {
   async _createSessionWithCapacity(socket, overall) {
     return new Promise((resolve, reject) => {
       let requested = false, settled = false;
-      /** @type {ReturnType<typeof setInterval>} */ let guard;
       const cleanup = () => {
         clearInterval(guard);
         if (this._optimistic) { clearTimeout(this._optimistic); this._optimistic = null; }
@@ -495,7 +510,8 @@ export class KalturaAvatarSession extends Emitter {
       // capacity-aware server can still gate via availabilityResult if it chooses.
       create();
       poll();
-      guard = setInterval(() => { if (overall.expired()) finish(reject, timeoutErr('ConnectTimeout')); }, 250);
+      /** @type {ReturnType<typeof setInterval>} */
+      const guard = setInterval(() => { if (overall.expired()) finish(reject, timeoutErr('ConnectTimeout')); }, 250);
       guard.unref?.();
     });
   }
@@ -1304,8 +1320,8 @@ export class KalturaAvatarSession extends Emitter {
       let result;
       try { result = h(call.args, call); }
       catch (e) { this._log('error', `onToolCall("${call.name}") handler threw`, e); this.emit('toolCallResult', { call, ok: false, error: e }); continue; }
-      if (result && typeof result.then === 'function') {
-        result.then(
+      if (result && typeof (/** @type {any} */ (result)).then === 'function') {
+        /** @type {Promise<unknown>} */ (result).then(
           (value) => { if (value !== undefined) this.emit('toolCallResult', { call, ok: true, value }); },
           (error) => { this._log('error', `onToolCall("${call.name}") handler rejected`, error); this.emit('toolCallResult', { call, ok: false, error }); },
         );
@@ -1498,6 +1514,9 @@ export class KalturaAvatarSession extends Emitter {
   /** The per-session agent config received at step 3 (read-only). */
   get clientConfig() { return this._clientConfig; }
 
+  /** The partner id this session connected with (read-only) — lets a consumer (e.g. `ExperienceRenderer`) fall back to it instead of re-passing it. @returns {string} */
+  get partnerId() { return this._partnerId; }
+
   /**
    * Whether the user's mic is currently sending audio (read-only). Reflects
    * unmute() (true) vs mute() (false). Starts true.
@@ -1532,7 +1551,7 @@ export class KalturaAvatarSession extends Emitter {
           // nudge in _wireNetwork: without this, a channel silently stuck in ICE_DOWN never
           // recovers until some LATER unrelated trigger stumbles onto it — e.g. the avatar
           // video staying frozen with the session otherwise reporting 'connected'. [issue #53b]
-          for (const ch of ['asr', 'stv']) { const pc = ch === 'asr' ? this._pcAsr : this._pcStv; if (pc && ICE_DOWN.has(pc.iceConnectionState)) this._recoverMedia(ch, pc); }
+          for (const ch of /** @type {readonly ('asr'|'stv')[]} */ (['asr', 'stv'])) { const pc = ch === 'asr' ? this._pcAsr : this._pcStv; if (pc && ICE_DOWN.has(pc.iceConnectionState)) this._recoverMedia(ch, pc); }
         } else {
           this._coldReconnect('socket recovery not available').catch((err) => this._endWith(err));
         }
@@ -1962,8 +1981,8 @@ export class KalturaAvatarSession extends Emitter {
     if (this._onAgentAction) {
       let res;
       try { res = this._onAgentAction(a); } catch { return this._denyAction(a, 'onAgentAction threw'); }
-      if (res && typeof res.then === 'function') {
-        try { res = await res; } catch { return this._denyAction(a, 'onAgentAction threw'); }
+      if (res && typeof (/** @type {any} */ (res)).then === 'function') {
+        try { res = await /** @type {Promise<boolean>} */ (res); } catch { return this._denyAction(a, 'onAgentAction threw'); }
       }
       if (res === false) return this._denyAction(a, 'onAgentAction returned false');
     }
@@ -2001,7 +2020,7 @@ export class KalturaAvatarSession extends Emitter {
     const onOnline = () => {
       this.emit('connectivityChanged', { channel: 'network', state: 'online' });
       // Returning from offline: nudge a stalled media channel to recover promptly.
-      if (this.state === 'connected') { for (const ch of ['asr', 'stv']) { const pc = ch === 'asr' ? this._pcAsr : this._pcStv; if (pc && ICE_DOWN.has(pc.iceConnectionState)) this._recoverMedia(ch, pc); } }
+      if (this.state === 'connected') { for (const ch of /** @type {readonly ('asr'|'stv')[]} */ (['asr', 'stv'])) { const pc = ch === 'asr' ? this._pcAsr : this._pcStv; if (pc && ICE_DOWN.has(pc.iceConnectionState)) this._recoverMedia(ch, pc); } }
     };
     globalThis.addEventListener('online', onOnline);
     globalThis.addEventListener('offline', onOffline);

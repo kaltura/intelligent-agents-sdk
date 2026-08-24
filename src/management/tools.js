@@ -165,7 +165,10 @@ function buildRequest(request) {
   assertHttpUrl(request.url, 'request.url');
 
   const method = request.method === undefined ? 'GET' : String(request.method).toUpperCase();
-  if (!HTTP_METHODS.includes(method)) bad('bad_request', `api tool \`request.method\` must be one of ${HTTP_METHODS.join(', ')}, got ${JSON.stringify(request.method)}.`);
+  // `method` is an arbitrary uppercased string until this very check proves it's one of
+  // HTTP_METHODS's literals — widen the array's type for the membership test itself rather
+  // than falsely asserting `method` already matches the narrower union.
+  if (!(/** @type {readonly string[]} */ (HTTP_METHODS)).includes(method)) bad('bad_request', `api tool \`request.method\` must be one of ${HTTP_METHODS.join(', ')}, got ${JSON.stringify(request.method)}.`);
 
   let timeout = 10;
   if (request.timeout !== undefined) {
@@ -513,14 +516,14 @@ function requireToolId(v, name) {
 
 /**
  * List every intellect's configId that currently references `toolId` in its
- * `tool_ids` — the safety check {@link Tools#delete} runs before deleting a
+ * `tool_ids` — the safety check `Tools#delete` runs before deleting a
  * PARTNER-LEVEL Tool that may be shared across intellects (see the class
  * doc). Implemented via raw `ctx.genie` calls rather than the `Intellects`
  * class to avoid a circular import (`intellects.js` already imports
  * {@link clientToolReadiness} from this file). `v1/intellect/list` returns a
  * lighter DTO that may omit `tool_ids`, so each candidate is confirmed via
  * `v1/intellect/get`.
- * Exported (not just used by {@link Tools#delete}) so callers upserting a Tool
+ * Exported (not just used by `Tools#delete`) so callers upserting a Tool
  * by name — e.g. `provision.js`'s `applyTools` — can run the identical check
  * before mutating a name-matched EXISTING Tool's `config` in place, since that
  * entity may already be load-bearing for a different intellect than the one

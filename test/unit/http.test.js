@@ -10,7 +10,7 @@ import { KalturaError } from '../../src/core/errors.js';
  */
 test('default fetch is bound to globalThis (no Illegal invocation)', async () => {
   // A native-like fetch that throws if called with the wrong receiver.
-  const native = function fetch(url, init) {
+  const native = function fetch(_url, _init) {
     if (this !== globalThis && this !== undefined) throw new TypeError("Failed to execute 'fetch' on 'Window': Illegal invocation");
     return Promise.resolve({ ok: true, status: 200, headers: { get: () => null }, text: async () => '{"ok":true}' });
   };

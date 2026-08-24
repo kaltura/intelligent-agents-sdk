@@ -50,7 +50,7 @@ test('conversations.stream forwards a caller-supplied signal to the underlying f
 
 test('conversations.stream rejects with a typed error when the caller aborts before the fetch resolves (no built-in timeout of its own — see client.js genieStream)', async () => {
   const ctrl = new AbortController();
-  const f = async (url, init = {}) => {
+  const f = async (_url, _init = {}) => {
     ctrl.abort();
     const e = new Error('The operation was aborted.');
     e.name = 'AbortError';

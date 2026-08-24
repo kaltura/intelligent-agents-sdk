@@ -107,7 +107,7 @@ const CONTROL_CHARS_SOURCE = /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g;
  * Length-bounded text for verbatim source content (code, diagram definitions, LaTeX).
  * Unlike safeText(), this preserves \\n, \\r, and \\t so multi-line source is not collapsed
  * into a single unreadable line. Only strips non-printable C0 chars that are never valid
- * in source content. @param {unknown} s @param {number} [max]
+ * in source content. @param {unknown} s @param {number} [max] @returns {string}
  */
 export function safeSource(s, max = 100000) {
   return String(s == null ? '' : s).replace(CONTROL_CHARS_SOURCE, '').slice(0, max);

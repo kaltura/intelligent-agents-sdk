@@ -20,7 +20,7 @@ import {
 import { lintPrompts, lintGlossary, assembleSystemPrompt } from './prompt-lint.js';
 import { clientToolReadiness } from './tools.js';
 import { IntellectSecrets } from './secrets.js';
-import { stripServerManaged } from './intellect-body.js';
+import { stripServerManaged, requireInt } from './intellect-body.js';
 import { classifyPartnerConfigError, probePartnerConfigRoute } from './partner-config-probe.js';
 
 /**
@@ -265,7 +265,7 @@ export class Intellects {
 
   /**
    * Read the stored `capabilities` dict. READ. @param {number} configId @param {string} ks (admin)
-   * @returns {Promise<{capabilities:Record<string,string>, _meta:object}>}
+   * @returns {Promise<{capabilities:Record<string,'on'|'off'|'disabled'>, _meta:object}>}
    */
   async getCapabilities(configId, ks) {
     this._.assertAdmin(ks, 'intellects.getCapabilities');
@@ -629,11 +629,4 @@ export class Intellects {
     return (await this._.genie('v1/intellect/delete', { id }, ks)).data;
   }
 
-}
-
-/** @param {unknown} v @param {string} name */
-export function requireInt(v, name) {
-  if (typeof v !== 'number' || !Number.isInteger(v) || v < 0) {
-    throw new KalturaError({ type: 'about:blank', title: 'integer required', code: 'bad_request', detail: `${name} must be a non-negative integer (the API expects a JSON number), got ${JSON.stringify(v)}.` });
-  }
 }

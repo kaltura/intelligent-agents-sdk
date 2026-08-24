@@ -30,6 +30,7 @@
  * `startWidgetSession`, `session/end`). The admin secret is read once at
  * construction, stored non-enumerable, and is NEVER returned or serialized.
  */
+// eslint-disable-next-line no-unused-vars -- referenced only in the @param {Http} JSDoc type below
 import { Http } from './http.js';
 import { meta } from './ids.js';
 import { KalturaError } from './errors.js';
@@ -67,7 +68,16 @@ const DEFAULT_TTL = { admin: 3600, conversation: 1800, agent: 1800 };
 // multi-year leak window). Admin is server-side and may legitimately run longer flows.
 const MAX_TTL = { conversation: 86400, agent: 86400, admin: 7 * 86400 };
 
+/** Mints, tracks, and revokes Kaltura Session (KS) tokens — see the module docstring above for the two-KS-type security invariant. */
 export class Sessions {
+  // Declared as bare class fields (typed via JSDoc) so tsc's checkJs sees the shape —
+  // the constructor overwrites both as non-enumerable via Object.defineProperty (below),
+  // which is a legal re-definition of an already-configurable field.
+  /** @type {string|undefined} */
+  _adminSecret;
+  /** @type {(() => (string|Promise<string>))|undefined} */
+  _getAdminSecret;
+
   /**
    * @param {object} cfg
    * @param {string|number} cfg.partnerId
@@ -224,7 +234,7 @@ export class Sessions {
       this._audit('token.revoke', 'fail', { kind, reason: err && err.code });
       throw err;
     }
-    const m = meta({ partnerId: this._partnerId, source: 'ovp/session/end', kind });
+    const m = meta({ partnerId: this._partnerId, source: 'ovp/session/end', scope: kind || 'unknown', kind });
     return { revokedAt: m.generatedAt, partnerId: this._partnerId, _meta: m };
   }
 
@@ -270,12 +280,15 @@ export class Sessions {
   _receipt(ks, kind, entitlementEnforced, privileges, expiresAt) {
     const token = {
       ks, kind, entitlementEnforced, privileges, expiresAt,
-      scope: meta({ partnerId: this._partnerId, source: 'ovp/session', kind, privileges, entitlementEnforced }),
+      scope: meta({ partnerId: this._partnerId, source: 'ovp/session', scope: kind, kind, privileges, entitlementEnforced }),
     };
     // Ergonomic, non-enumerable helpers (don't pollute JSON.stringify / logs).
     Object.defineProperty(token, 'isExpired', { value: () => expiresAt > 0 && Math.floor(Date.now() / 1000) >= expiresAt, enumerable: false });
     Object.defineProperty(token, 'secondsRemaining', { value: () => (expiresAt > 0 ? Math.max(0, expiresAt - Math.floor(Date.now() / 1000)) : Infinity), enumerable: false });
-    return token;
+    // isExpired/secondsRemaining are added above via defineProperty (kept non-enumerable
+    // on purpose, so they don't pollute JSON.stringify/logs) rather than in the object
+    // literal, so the static type can't see them on `token` itself.
+    return /** @type {Token} */ (token);
   }
 }
 

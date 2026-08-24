@@ -107,8 +107,7 @@ export class SegmentAssembler {
       try { this._onMalformed(info); } catch { /* a throwing host callback never breaks assembly */ }
       return true;
     }
-    const widget = parseWidget({ metadata: { runtimeName: open.runtimeName }, content });
-    widget.speechId = open.speechId;
+    const widget = { ...parseWidget({ metadata: { runtimeName: open.runtimeName }, content }), speechId: open.speechId };
     try { this._onWidget(widget); } catch { /* a throwing host callback never breaks assembly */ }
     return true;
   }

@@ -19,7 +19,7 @@ export function renderFlashcards(model = {}) {
       : Array.isArray(model.flashcards) ? model.flashcards
         : [];
   const cards = src.map((c) => {
-    const card = (c && typeof c === 'object') ? /** @type {Record<string,unknown>} */ (c) : { front: c };
+    const card = /** @type {Record<string,unknown>} */ ((c && typeof c === 'object') ? c : { front: c });
     const front = safeText(card.front ?? card.question ?? card.term ?? '', 1000);
     return {
       front,
