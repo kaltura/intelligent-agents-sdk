@@ -767,14 +767,9 @@ All thread endpoints require an **admin KS** (`disableentitlement`). Pager: `{"p
 
 **Transcript response:** `{"status":"success","data":"human: …\nai: …"}` — plain text, one turn per line.
 
-**Delete** returns `{totalCount, objects[]}` — a soft delete; data is retained server-side.
+**Delete** returns `{totalCount, objects[]}` — a soft delete, followed by a scheduled infra-level purge of the underlying data.
 
 SDK: `mgmt.threads.{list, get, rename, delete, transcript}`.
-
-> **Compliance note.** `threads.delete()` is not a full GDPR Art. 17 erasure — retention past
-> a soft delete is a server-side, operator-owned control. See
-> [SECURITY.md](SECURITY.md#shared-responsibility-control-matrix-nist-800-53) for what the SDK
-> provides versus what the operator must configure.
 
 ---
 
