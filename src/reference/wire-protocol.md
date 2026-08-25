@@ -9,7 +9,7 @@ eyebrow: Reference
 
 The complete, verified map of **every event, payload, config, and flow** on the two channels that power the interactive live avatar: the **Socket.IO control plane** and the **two WebRTC peer connections** (ASR mic-uplink + STV video-downlink).
 
-This is the deep reference behind [ARCHITECTURE.md](/explanation/architecture/) → "Video Runtime Protocol". Read ARCHITECTURE.md first for the big picture; read this when you need the exact field of an exact event, the exact ICE config, or the exact order things fire.
+This is the deep reference behind [Platform Architecture](/explanation/architecture/) → "Video Runtime Protocol". Read Platform Architecture first for the big picture; read this when you need the exact field of an exact event, the exact ICE config, or the exact order things fire.
 
 **How this was built.** Every event/payload below was (a) **captured live** from real human voice + text sessions against `conversation.avatar.us.kaltura.ai`, and (b) **cross-checked against the source implementation** of each client and server component. Each entry cites which component it came from. Where the live capture and the source disagree, the capture wins for "what actually fires" and the note explains why (e.g. the production state-machine subscribes to a subset; other events are handled by the embed SDK or debug panel).
 
@@ -40,7 +40,7 @@ This is the deep reference behind [ARCHITECTURE.md](/explanation/architecture/) 
 |---|---|---|---|---|
 | **Control plane** | Socket.IO (WebSocket) to `conversation.avatar.us.kaltura.ai` | duplex | handshake, session orchestration, brain text stream, turn/talking state, ASR signaling relay | §2–§4 |
 | **ASR uplink** | WebRTC `RTCPeerConnection` (pc1) | client → server | your microphone (OPUS); SDP/ICE relayed **over the socket** | §5 |
-| **STV downlink** | WebRTC `RTCPeerConnection` (pc2) via **WHEP** | server → client | avatar video (H264) + audio (OPUS); SDP over **plain HTTP** | §6 |
+| **STV downlink** | WebRTC `RTCPeerConnection` (pc2) via SRS **WHEP** | server → client | avatar video (H264) + audio (OPUS); SDP over **plain HTTP** | §6 |
 
 Two separate peer connections by design (per `EMBED`'s own architecture notes): WHEP is receive-only, ASR is send-only, and they use **different ICE policies** (§5/§6) — separating them gives independent negotiation and failure isolation.
 
@@ -114,7 +114,7 @@ Direction: `→` client emits, `←` server emits. "Captured" = seen in the live
 | Event | Payload (captured) | Source | Meaning |
 |---|---|---|---|
 | `join` | `{ room, channel, kaltura:{ entryId?, context_id?, threadId?, force_experience:"avatar_only", capabilities:{ avatar:"on", generate_followup_questions:"on", use_knowledge_base?:"off" } }, userAgent, userAgentHints, isMobile, channel_password:null, peer_name:"unknown", peer_video:false, peer_audio:true, client? }` | `CG` | Join the room; carries the agent/brain config. The server binds the room from **`channel`** (`session.roomId = channel`) and reads `peer_*` + `kaltura.{ks,entryId,threadId}`; the top-level `room` field and the `force_experience`/`capabilities` keys are **not** consumed server-side (`force_experience` is pinned in the CM→Genie bridge — see §7). `use_knowledge_base:"off"` only when `context.type==='entry'`. |
-| `stvNewSession` | `{ room_id, cast_mode? }` — `cast_mode` is a `StvCastMode` string, **optional**; always send `"rtmp"` (or omit it — that's the client default) | `CG`; server `CM` `buildWebRtcUrl()` | Ask server to create the STV (avatar video) session; see §6 for the resulting WHEP URL. |
+| `stvNewSession` | `{ room_id, cast_mode? }` — `cast_mode` is the `StvCastMode` enum `"webrtc"\|"rtmp"`, **optional** (client default `"rtmp"` = the **SRS WHEP** egress) | `CG`; `cast_mode` from `CG`; server `CM` `buildWebRtcUrl()` | Ask server to create the STV (avatar video) session. `cast_mode` selects the WHEP egress URL shape — **SRS WHEP** (`rtmp`/omit, works) vs **STV-direct** (`webrtc`, broken — see §6). |
 | `asr-webrtc-init` | `{ sessionId }` (client sends its socket id) | `CG`; server `CM` `socket.on('asr-webrtc-init')` | Ask backend to prepare the ASR WebRTC endpoint. The `sessionId` is **advisory/ignored server-side** — the handler keys everything off `socket.id`. |
 | `asr-webrtc-offer` | `{ offer:{type,sdp}, is_reconnect:false }` | `CG` | SDP offer for the mic uplink; awaits `asr-webrtc-answer`. |
 | `asr-webrtc-ice-candidate` | `{ candidate:{candidate,sdpMLineIndex} }` | `CG` (`RTC`) | Trickle a local ICE candidate for the ASR pc (the SDK extracts only these two fields). |
@@ -150,7 +150,7 @@ gap client-side instead: `startTapToTalk()` throws `capability_disabled` unless
 `capabilities.tapToTalk` is set.
 
 For the app-level decision of when to use this mode and how to design its UI, see
-[VOICE-INPUT-MODES.md](/guides/voice-input-modes/).
+[Voice Input Modes](/guides/voice-input-modes/).
 
 ### 4b. Server → Client (on) — handshake/session phase
 
@@ -206,7 +206,7 @@ These fire once `approvedPermissions` is sent. All **captured live**. Several ar
 | `stvTaskFail` | `{}` | `CM` | STV send failed → the server hangs up the session. |
 | `smartTurnStatus` | `{ status, timeout_ms?, probability? }` | `CM` | Forwarded smart-turn VAD end-of-turn indicator. |
 | `conversationTimeExpired` | `{}` | `CM` | Active-session time expired — sent immediately before `conversationEnded`. |
-| `sessionReadyForResume` | `{}` | `CM`; `SDK:session.js` | Server-side session is recoverable for a same-pod reconnect (see [ARCHITECTURE.md](/explanation/architecture/) → resilience / connectionStateRecovery). SDK emits `resumeReady`. |
+| `sessionReadyForResume` | `{}` | `CM`; `SDK:session.js` | Server-side session is recoverable for a same-pod reconnect (see [Platform Architecture](/explanation/architecture/) → resilience / connectionStateRecovery). SDK emits `resumeReady`. |
 | `pauseSessionExpired` | `{}` | `CM`; `SDK:session.js` | The pause window (started by a client `pauseConversation`) expired server-side before a `resumeConversation` arrived — the session is no longer recoverable. SDK emits `timeExpired` with `{type:'pause_expiry'}`, distinct from a hard `conversationEnded`. |
 | `resumingSession` | `{}` | `SDK:session.js` | Server has accepted a client `resumeConversation` and is rebuilding the STV/ASR pipeline; precedes `conversationResumed`. SDK transitions to the `resuming` connection state. |
 | `conversationResumed` | `{}` (captured: `[{}, "<ackId>"]` — a socket.io ack callback id may trail) | `CM`; `SDK:session.js` | Reply to a client `resumeConversation` — the paused turn loop has resumed. |
@@ -229,7 +229,7 @@ Always-present fields are `role` (always `"assistant"`), `type`, `content`, `seg
 |---|---|---|
 | `text` | parser default (un-fenced) | brain prose; what the typed-chat UI renders |
 | `think` | control | "preparing to answer…"; start/end bracket the thinking phase; final `think` carries `isFinal:true` |
-| `tool` / `tool_response` | control (Genie backend's response-formatter, tool-call/tool-result emission) | a tool call + result. `content` is the wire form `"<toolName> <json-args>"` (e.g. `navigate_to_slide {"slide_num": 4}`); the `tool` segment fires BEFORE server execution, `tool_response` after. **Three kinds:** internal (e.g. `get_experience_instructions` for GenUI formatting) fire on the text path regardless of config; external web-search is gated by `isWebSearchEnabled` (when off, the agent may *narrate* a search but emit **no** `tool` segment); and **a partner-configured tool referenced via `tool_ids`** — the **client-side-command channel**: a `tool` segment is NOT in the TTS gate, so its name+args ride silently (clean audio) for the host app to act on (`navigate_to_slide`, `call_page_function`, realtime content). Parse it with the SDK's `parseToolCall(seg)` / `session.onToolCall(name)` / `collectConverse().toolCalls`; author the tool with `tools.client(...)`. Verified live. See [EXTERNAL-API-INTEGRATIONS.md § Don't skip `kaltura_genie_experiences: 'off'`](/guides/external-api-integrations/#dont-skip-kaltura_genie_experiences-off) for why a command-driven intellect must turn that capability off, and at creation time. |
+| `tool` / `tool_response` | control (Genie backend's response-formatter, tool-call/tool-result emission) | a tool call + result. `content` is the wire form `"<toolName> <json-args>"` (e.g. `navigate_to_slide {"slide_num": 4}`); the `tool` segment fires BEFORE server execution, `tool_response` after. **Three kinds:** internal (e.g. `get_experience_instructions` for GenUI formatting) fire on the text path regardless of config; external web-search is gated by `isWebSearchEnabled` (when off, the agent may *narrate* a search but emit **no** `tool` segment); and **a partner-configured tool referenced via `tool_ids`** — the **client-side-command channel**: a `tool` segment is NOT in the TTS gate, so its name+args ride silently (clean audio) for the host app to act on (`navigate_to_slide`, `call_page_function`, realtime content). Parse it with the SDK's `parseToolCall(seg)` / `session.onToolCall(name)` / `collectConverse().toolCalls`; author the tool with `tools.client(...)`. Verified live. See [External API Integrations § Don't skip `kaltura_genie_experiences: 'off'`](/guides/external-api-integrations/#dont-skip-kaltura_genie_experiences-off) for why a command-driven intellect must turn that capability off, and at creation time. |
 | `unisphere-tool` | control (Genie backend's response-formatter, structured-experience emission) | structured-experience block. First segment carries `metadata:{widgetName, runtimeName}`; observed runtimes `followups-tool`, `flashcards-tool`. See §7. |
 | `error` | control (Genie backend's response-formatter, error emission) | brain/runtime error (`isFinal:true`) |
 | `interruption` / `user-interruption` | control (Genie backend's response-formatter, interruption/abort emission) | OAuth interruption / user-abort |
@@ -274,7 +274,7 @@ not as its own `toolCalls` entry.
 
 > `init_response` is **NOT** an HTTP-converse segment — it's a **WebSocket** event type defined in the Genie backend's websocket layer. In the live runtime it arrives as the `delta` of the first `agent_raw_text` socket event (carrying `openingPhrase`/`threadId`/`messageId`); it never appears in an `/assistant/converse` HTTP stream.
 
-> **Avatar-runtime segment handling (verified against `CM`).** The `type` values above are the **raw Genie** types; the conversation-manager's brain-bridge adapter **rewrites** a `type === 'unisphere-tool'` segment to its `metadata.runtimeName` (minus the `-tool` suffix) before yielding downstream, so a runtime client sees the adapter-normalized type, not the raw `unisphere-tool` name. The adapter yields **all** segment types (it doesn't drop non-spoken ones) along with `start`/`end`/`final`/`delta`. Because the bridge pins `force_experience: 'avatar_only'`, the brain's spoken content arrives primarily as `avatar` (streamed) / `avatar-filler` segments while control/structured types (`think`/`tool`/`unisphere-tool`/`share`/`thread`/`error`) stream alongside for the transcript/UI. *(The exact segment→TTS gating lives further down `CM`'s speech pipeline and is not re-asserted here beyond what the adapter shows.)* **Note:** grouping `avatar-filler` under "spoken" here describes wire mechanics only — unlike `avatar`/`text`, its phrasing is server-generated per turn and NOT reliably steerable via `base_directive` (see the `avatar_filler` capability note in [GENUI-REFERENCE.md](/reference/genui-reference/#authoring--which-capability-turns-each-widget-on)).
+> **Avatar-runtime segment handling (verified against `CM`).** The `type` values above are the **raw Genie** types; the conversation-manager's brain-bridge adapter **rewrites** a `type === 'unisphere-tool'` segment to its `metadata.runtimeName` (minus the `-tool` suffix) before yielding downstream, so a runtime client sees the adapter-normalized type, not the raw `unisphere-tool` name. The adapter yields **all** segment types (it doesn't drop non-spoken ones) along with `start`/`end`/`final`/`delta`. Because the bridge pins `force_experience: 'avatar_only'`, the brain's spoken content arrives primarily as `avatar` (streamed) / `avatar-filler` segments while control/structured types (`think`/`tool`/`unisphere-tool`/`share`/`thread`/`error`) stream alongside for the transcript/UI. *(The exact segment→TTS gating lives further down `CM`'s speech pipeline and is not re-asserted here beyond what the adapter shows.)* **Note:** grouping `avatar-filler` under "spoken" here describes wire mechanics only — unlike `avatar`/`text`, its phrasing is server-generated per turn and NOT reliably steerable via `base_directive` (see the `avatar_filler` capability note in [GenUI Reference](/reference/genui-reference/#authoring--which-capability-turns-each-widget-on)).
 
 The production text machine (`CG`) only *assembles* `text | unisphere-tool | error` into the transcript and treats a start+end `share` as message-complete; it ignores `avatar | think | tool | tool_response` (those drive the live runtime). Frame counts from one captured text session: `text`×159, `think`×13, `share`×6, `unisphere-tool`×6, `thread`×5.
 
@@ -345,11 +345,14 @@ This is distinct from §5 (where the *client* offers the mic uplink and STT runs
 
 ## 6. STV downlink (pc2) — avatar video+audio → you
 
-A receive-only WebRTC peer connection fed via **WHEP** (WebRTC-HTTP Egress Protocol). Signaling is **plain SDP over HTTP**, independent of the socket. The browser only ever speaks WHEP here — how the server renders and originates that video server-side is not part of the client contract.
+A receive-only WebRTC peer connection fed via **WHEP** (WebRTC-HTTP Egress Protocol). Signaling is **plain SDP over HTTP**, independent of the socket. (Server-side, the STV controller renders the face and pushes RTMP into **OvenMediaEngine (OME)**, which provides the WHEP egress — `srs.avatar.*` is the egress host name, not necessarily an ossrs/SRS server; see [Platform Architecture](/explanation/architecture/).)
 
-**Always send `cast_mode: "rtmp"` in the `stvNewSession` body — or omit the field, since that's the client default** (`buildWebRtcUrl` only branches away from this path on the literal string `"webrtc"`, which this SDK never sends). The server replies with a `webrtc_url` shaped `{srsBaseUrl}/rtc/v1/whep/?app=app&stream={session_id}` (the captured form below); POST to it verbatim.
+**`cast_mode` selects the egress URL shape** (`StvCastMode` enum, optional in the `stvNewSession` body; this SDK sends `"rtmp"` by default and never sends `"webrtc"`). Think of the two modes by their egress, not the wire word:
 
-The client POSTs whichever `webrtc_url` the server returns, verbatim. **The browser always plays via WebRTC/WHEP** — `"rtmp"` only names the ingest mode the server renders with, never a browser transport.
+- **SRS WHEP** (wire `cast_mode:'rtmp'`, *or* omit it, *or* any non-`webrtc` value — `buildWebRtcUrl` only branches on `=== 'webrtc'`) → `{srsBaseUrl}/rtc/v1/whep/?app=app&stream={session_id}` (the captured form below). The server renders the face and re-serves it over SRS WHEP; **this is the working path.**
+- **STV-direct** (wire `cast_mode:'webrtc'`) → the STV server's own `/whep/session/{session_id}`. Fails when the server-side host isn't configured for direct egress — leaks a private IP; the default SRS WHEP path is unaffected.
+
+The client POSTs whichever `webrtc_url` the server returns, verbatim. **The browser always plays via WebRTC/WHEP regardless of mode** — `"rtmp"` is only the server-side ingest the renderer uses, never a browser transport.
 
 **ICE config:** same TURN URL block as §5. STV resolves `forceStvRelay && !isFirefox ? 'relay' : 'all'` (`RTC`). **All three clients agree here** — `CG` (`forceStvRelay:true`), `EMBED` (default `'relay'`), and `SDK` (`SDK:wire.js iceConfig()`) — so:
 
@@ -370,7 +373,7 @@ bundlePolicy: "max-bundle"
 - **SDP:** offer carries full video codec list + audio; server answer selects `m=video … 109 H264/90000` + `m=audio … 111 OPUS/48000/2`, both `a=sendonly` / `a=setup:passive`.
 - **Captured stats (healthy):** `inbound-rtp video` `frameWidth/Height: 512`, `framesDecoded` 256 → 1036, `bytesReceived` ~2.6 MB; selected pair `nominated:true state:succeeded`, **both candidates `relay`**.
 - **Greeting gate:** wait for `<video>` `canplay` (+~300ms) before `approvedPermissions` (§3 step 10–11).
-- `cast_mode: "rtmp"` (sent in `stvNewSession`) is the ingest mode the server renders with; the client only ever does WHEP egress and never touches RTMP directly.
+- `cast_mode:"rtmp"` (sent in `stvNewSession`) = the server renders the face and ingests it via **RTMP into OvenMediaEngine (OME)**; the client only ever does WHEP egress and never touches RTMP directly.
 
 ---
 
@@ -442,3 +445,16 @@ Barge-in: a new `debug_vad_speech_detected` (voice) or `→ onTextEntered {text:
 ## 9. Reproduce / re-capture
 
 See the "Evidence" note at the top of this doc for the committed fixture (`test/fixtures/golden-session.json`). To observe live traffic against a real session, wire a `debugMode`-gated log panel to print every socket event via `session.on(...)` handlers, or attach a scratch `socket.onAny` listener in a browser console — there is no dedicated capture tool in this repo today. The original snapshot the golden fixture derives from was taken against the reference account's `1_v1mj1kxb` widget + `configId 1222` (see the sample values documented in this repo's tests).
+
+---
+
+## Related docs
+
+| Doc | What it adds |
+|-----|---------------|
+| [Platform Architecture](/explanation/architecture/) | The big-picture protocol diagram this doc's event catalog fills in field-by-field |
+| [Architecture Reference](/reference/architecture-reference/) | The connect sequence, scaling model, and SDK module map this doc's wire shapes plug into |
+| [Architecture Recipe](/guides/architecture-recipe/) | A from-scratch client built directly on the event shapes documented here |
+| [SDK Reference](/reference/sdk-reference/) | The maintained SDK that speaks this wire protocol for you |
+| [Client-Side Commands](/guides/client-commands/) | The `type:"tool"` segment shape from this doc's message catalog, in application context |
+| [GenUI Reference](/reference/genui-reference/) | The `unisphere-tool` segment shape from this doc's message catalog, in application context |

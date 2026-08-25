@@ -5,7 +5,7 @@ description: "How to make an agent ask a viewer for structured, typed data mid-c
 eyebrow: How-to Guide
 ---
 
-# Collecting structured data from a viewer (`user_properties_forms`)
+# Structured Data Forms — collecting typed fields from a viewer
 
 How to make an agent ask the viewer for structured, typed data mid-conversation — a support
 ticket's category and urgency, a booking's preferred date, a survey rating, a sales lead's email
@@ -116,7 +116,7 @@ normalized to the same shape by the SDK:
    (headless/HTTP converse).
 2. **The unisphere-tool segment path** — on the live avatar socket, it arrives as a
    `unisphere-tool` segment with `metadata.runtimeName: "user-properties-form-tool"` (one of the
-   nine backend tool keys — see [GENUI-REFERENCE.md](/reference/genui-reference/)).
+   nine backend tool keys — see [GenUI Reference](/reference/genui-reference/)).
 
 Both are routed to `ExperienceRenderer` (`src/experience/genui/renderer.js`), which
 `normalizeRuntime()`s the runtime name (stripping a trailing `-tool`) and calls the registered
@@ -175,15 +175,15 @@ Two independent axes:
 `session.submitStructuredDataForm(info)` (`src/experience/session.js`) is a fire-and-forget socket emit —
 `this._socket.emit('setFormLeadInfo', sanitizeJson(info))` — with no acknowledgment payload, and no
 endpoint on the Genie/agentic management plane reads it back as structured `{key: value}` data. The
-conversation transcript is persisted to Postgres by the Genie brain backend (a `Message` table) and
-exposed read-only via `POST /thread/get_transcripts` — exactly what this repo's `tools/genie.mjs
-thread-transcripts` wraps. That reconstructs a plain-text transcript from `USER`-type message rows;
+conversation transcript is persisted server-side and exposed read-only via `POST
+/thread/get_transcripts` — the management SDK wraps this as `mgmt.threads.transcript(threadId, ks)`
+(`src/management/conversations.js`). That reconstructs a plain-text transcript from what was said;
 it does **not** carry the structured form field values, only what the viewer said/typed and the
 model's replies — a paraphrase, not the raw object.
 
 **If you need durable, retrievable access to what the viewer submitted, don't rely on
 `submitStructuredDataForm`/`setFormLeadInfo`.** Capture-and-forward via your own tool instead — see
-[EXTERNAL-API-INTEGRATIONS.md](/guides/external-api-integrations/) for wiring a durable write (a CRM, a
+[External API Integrations](/guides/external-api-integrations/) for wiring a durable write (a CRM, a
 support system, a spreadsheet, or any other external API) directly from the model's own tool call.
 That path is a genuine server-side HTTP request the agent makes on your behalf, not a client-side
 socket emit, so the data lands wherever you point the tool — no dependence on any surface outside
@@ -192,14 +192,14 @@ the Genie/agentic management and conversation planes this toolkit talks to.
 A worked pattern: keep the submitted values in browser memory for the current session, but do the
 durable write via your own brain-called, server-side `api` tool that posts to whatever external
 system you point it at — rather than `setFormLeadInfo`. See
-[EXTERNAL-API-INTEGRATIONS.md](/guides/external-api-integrations/) for the general pattern this
+[External API Integrations](/guides/external-api-integrations/) for the general pattern this
 specializes.
 
 ## Related: `kaltura_genie_experiences` — a different, unrelated capability
 
 If your intellect also uses custom `tool_ids` (e.g. a closed set of client commands like
 `navigate_to_slide`/`show_widget`), you'll likely set `capabilities: { kaltura_genie_experiences:
-'off' }` or `'disabled'` — see [EXTERNAL-API-INTEGRATIONS.md § Don't skip `kaltura_genie_experiences: 'off'`](/guides/external-api-integrations/#dont-skip-kaltura_genie_experiences-off)
+'off' }` or `'disabled'` — see [External API Integrations § Don't skip `kaltura_genie_experiences: 'off'`](/guides/external-api-integrations/#dont-skip-kaltura_genie_experiences-off)
 for what that capability does and why.
 
 **This does not touch `user_properties_forms` at all.** The two mechanisms are independent code
@@ -215,7 +215,7 @@ navigation/formatting instinct — it has no effect on structured-data-form logi
 
 | Doc | What it adds |
 |-----|---------------|
-| [EXTERNAL-API-INTEGRATIONS.md](/guides/external-api-integrations/) | Wiring a durable, server-side write for the values this doc's forms collect |
-| [DYNAMIC-DATA-INJECTION.md](/guides/dynamic-data-injection/) | The opposite direction — feeding data *into* the conversation instead of collecting it |
-| [CLIENT-COMMANDS.md](/guides/client-commands/) | The avatar-driving-your-UI channel, a different silent mechanism from this doc's forms |
-| [GENUI-REFERENCE.md](/reference/genui-reference/) | The full GenUI runtime map this form is one entry in |
+| [External API Integrations](/guides/external-api-integrations/) | Wiring a durable, server-side write for the values this doc's forms collect |
+| [Dynamic Data Injection](/guides/dynamic-data-injection/) | The opposite direction — feeding data *into* the conversation instead of collecting it |
+| [Client-Side Commands](/guides/client-commands/) | The avatar-driving-your-UI channel, a different silent mechanism from this doc's forms |
+| [GenUI Reference](/reference/genui-reference/) | The full GenUI runtime map this form is one entry in |

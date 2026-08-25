@@ -7,26 +7,28 @@ eyebrow: Reference
 
 # Architecture Reference
 
-The exact field-by-field mechanics behind [ARCHITECTURE.md](/explanation/architecture/) — the connect sequence, wire shapes, scaling internals, SDK module routing, and failure-mode tables. Read ARCHITECTURE.md first for the big picture; consult this doc for an exact field, timeout, or module boundary. For a from-scratch reimplementation walkthrough, see [ARCHITECTURE-RECIPE.md](/guides/architecture-recipe/). For the exhaustive socket-event-by-event capture, see [WIRE-PROTOCOL.md](/reference/wire-protocol/).
+Keep this page open while implementing or debugging against the live protocol — it's the map for exactly what to build against, and where, when the overview isn't precise enough.
+
+The exact field-by-field mechanics behind [Platform Architecture](/explanation/architecture/) — the connect sequence, wire shapes, scaling internals, SDK module routing, and failure-mode tables. Read Platform Architecture first for the big picture; consult this doc for an exact field, timeout, or module boundary. For a from-scratch reimplementation walkthrough, see [Architecture Recipe](/guides/architecture-recipe/). For the exhaustive socket-event-by-event capture, see [Wire Protocol](/reference/wire-protocol/).
 
 **Contents**
 
-- [Endpoints & Credentials](#endpoints--credentials)
-- [Socket.IO Connection](#socketio-connection)
-- [Full Connect Sequence (state-machine order)](#full-connect-sequence-state-machine-order)
-- [The `join` Payload — Agent/Brain Config](#the-join-payload-step-2--this-carries-the-agentbrain-config)
-- [ASR Channel — Microphone Uplink](#asr-channel--microphone-uplink-step-9)
-- [STV Channel — Avatar Video Downlink](#stv-channel--avatar-video-downlink-after-connected)
-- [Conversation Phase — What Streams While Connected](#conversation-phase--what-streams-while-connected)
-- [Sending User Input](#sending-user-input)
-- [Complete Message Catalog](#complete-message-catalog)
-- [Scale & Sticky Sessions](#scale--sticky-sessions)
-- [SDK Module Map & Data Flow](#sdk-module-map--data-flow)
-- [Resilience & Failure Handling](#resilience--failure-handling)
+- [Endpoints & credentials](#endpoints--credentials)
+- [Socket.IO connection](#socketio-connection)
+- [Full connect sequence (state-machine order)](#full-connect-sequence-state-machine-order)
+- [The `join` payload — agent/brain config](#the-join-payload-step-2--this-carries-the-agentbrain-config)
+- [ASR channel — microphone uplink](#asr-channel--microphone-uplink-step-9)
+- [STV channel — avatar video downlink](#stv-channel--avatar-video-downlink-after-connected)
+- [Conversation phase — what streams while connected](#conversation-phase--what-streams-while-connected)
+- [Sending user input](#sending-user-input)
+- [Complete message catalog](#complete-message-catalog)
+- [Scale & sticky sessions](#scale--sticky-sessions)
+- [SDK module map & data flow](#sdk-module-map--data-flow)
+- [Resilience & failure handling](#resilience--failure-handling)
 
 ---
 
-## Endpoints & Credentials
+## Endpoints & credentials
 
 | Thing | Value |
 |---|---|
@@ -34,14 +36,14 @@ The exact field-by-field mechanics behind [ARCHITECTURE.md](/explanation/archite
 | STV WHEP base | `https://srs.avatar.us.kaltura.ai` |
 | STV play URL | `{srsBaseUrl}/rtc/v1/play/?app=app&stream={session_id}` (or `webrtc_url` from `stvNewSession`) |
 | STV WHEP signaling | `POST {srsBaseUrl}/rtc/v1/whep/?app=app&stream={session_id}` (body: plain SDP, `Content-Type: application/sdp`) |
-| TURN | `turn.avatar.us.kaltura.ai` (default username/credential in `wire.js`'s `turnServers()`, overridable via `creds`). **Address it with explicit ports + transports** — a bare `turn:host` yields no relay candidate (→ `packetsSent=0`, the avatar can't hear you). Use all four: `turn:HOST:80?transport=udp`, `turn:HOST:443?transport=udp`, `turn:HOST:80?transport=tcp`, `turns:HOST:443?transport=tcp`. **`iceTransportPolicy` resolves as `forceRelay && !isFirefox ? 'relay' : 'all'`** per leg (in the WebRTC avatar engine's session client). STV → `'relay'` in every client; ASR is `'relay'` in the production runtime (`forceAsrRelay:true`) but `'all'` in the embed SDK / debug-app — **functionally identical**, because the ASR server advertises only a private host candidate so the pair relays through TURN regardless. Firefox forces `'all'` on both. So the TURN URLs are what must be correct, not the policy. Full per-client matrix + source lines: [WIRE-PROTOCOL.md §5](/reference/wire-protocol/). |
+| TURN | `turn.avatar.us.kaltura.ai` (default username/credential in `wire.js`'s `turnServers()`, overridable via `creds`). **Address it with explicit ports + transports** — a bare `turn:host` yields no relay candidate (→ `packetsSent=0`, the avatar can't hear you). Use all four: `turn:HOST:80?transport=udp`, `turn:HOST:443?transport=udp`, `turn:HOST:80?transport=tcp`, `turns:HOST:443?transport=tcp`. **`iceTransportPolicy` resolves as `forceRelay && !isFirefox ? 'relay' : 'all'`** per leg (in the WebRTC avatar engine's session client). STV → `'relay'` in every client; ASR is `'relay'` in the production runtime (`forceAsrRelay:true`) but `'all'` in the embed SDK / debug-app — **functionally identical**, because the ASR server advertises only a private host candidate so the pair relays through TURN regardless. Firefox forces `'all'` on both. So the TURN URLs are what must be correct, not the policy. Full per-client matrix + source lines: [Wire Protocol §5](/reference/wire-protocol/). |
 | Auth | Socket.IO `auth: { token: <enrichedKS> }` + `query.partnerId` |
 
-All of `conversationManagerUrl`, `srsBaseUrl`, `turnServerUrl`, and the enriched `ks` come from **`POST https://api.avatar.us.kaltura.ai/v1/application/appInit`** (see [API-REFERENCE.md](/reference/api-reference/)). The agent is identified by `partnerId` (from the KS) + the KS itself — NOT `clientId`/`flowId` (those belong to a separate, unrelated demo integration and play no role in this system).
+All of `conversationManagerUrl`, `srsBaseUrl`, `turnServerUrl`, and the enriched `ks` come from **`POST https://api.avatar.us.kaltura.ai/v1/application/appInit`** (see [API Reference](/reference/api-reference/)). The agent is identified by `partnerId` (from the KS) + the KS itself — NOT `clientId`/`flowId` (those belong to a separate, unrelated demo integration and play no role in this system).
 
 ---
 
-## Socket.IO Connection
+## Socket.IO connection
 
 ```js
 import { io } from 'socket.io-client';
@@ -64,7 +66,7 @@ const socket = io(conversationManagerUrl, {   // from appInit
 
 ---
 
-## Full Connect Sequence (state-machine order)
+## Full connect sequence (state-machine order)
 
 Exact order from the avatar runtime client's connection state machine. Each step waits for the named inbound event before advancing; timeouts in parens.
 
@@ -123,11 +125,11 @@ socket.emit('join', {
 - **Which `join` fields the server actually reads.** Of the `kaltura` sub-fields the client sends in `join`, the conversation-manager server's join handler consumes `ks`, `entryId`, `threadId`, `contextId`, `contextType`, `capabilities`, and `request_vars` when present.
 - **`force_experience` is hardcoded server-side, not read from the client.** `force_experience` alone is **not** read by the server; it is set instead in the conversation-manager-to-Genie bridge, which **hardcodes** `force_experience: 'avatar_only'` and `model_type: 'fast'` (per its in-source TODO) on every converse call — so the avatar runtime never requests `flashcards`/`summarization` experiences regardless of what the client sends.
 - **`capabilities` and `request_vars` are genuinely client-controlled.** By contrast, these two are read at `join` time and can also be updated mid-session via the `updateGenieContext` socket event, then merged over defaults with no server-side allowlist before being forwarded to Genie.
-- **The bridge's own transport.** The bridge itself is a **WebSocket** client to Genie at `/assistant/ws`, not HTTP `/assistant/converse`: it exchanges JSON frames `{event:'init'|'converse'|'abort', data:{…}}` and streams `agent_raw_text` back. HTTP `/assistant/converse`, documented in [API-REFERENCE.md](/reference/api-reference/), is the path for headless/text integrations; the live runtime uses the socket.
+- **The bridge's own transport.** The bridge itself is a **WebSocket** client to Genie at `/assistant/ws`, not HTTP `/assistant/converse`: it exchanges JSON frames `{event:'init'|'converse'|'abort', data:{…}}` and streams `agent_raw_text` back. HTTP `/assistant/converse`, documented in [API Reference](/reference/api-reference/), is the path for headless/text integrations; the live runtime uses the socket.
 
 ---
 
-## ASR Channel — Microphone Uplink (step 9)
+## ASR channel — microphone uplink (step 9)
 
 A WebRTC peer connection whose SDP/ICE are relayed **through the socket** (NOT WHEP). From the avatar runtime client's ASR connection handler:
 
@@ -148,9 +150,9 @@ PeerConnection config: TURN `turn.avatar.us.kaltura.ai` (default username/creden
 
 ---
 
-## STV Channel — Avatar Video Downlink (after CONNECTED)
+## STV channel — avatar video downlink (after CONNECTED)
 
-Standard **WHEP** — completely independent of the socket. From the avatar runtime client's signaling adapter:
+Standard **SRS WHEP** — completely independent of the socket. From the avatar runtime client's SRS signaling adapter:
 
 ```js
 const playUrl = stvNewSession.webrtc_url
@@ -174,7 +176,7 @@ That's it — a vanilla WHEP subscribe. The avatar's face+voice stream into your
 
 ---
 
-## Conversation Phase — What Streams While Connected
+## Conversation phase — what streams while connected
 
 Three parallel listeners (the avatar runtime client's connected-state handler):
 
@@ -190,7 +192,7 @@ socket.on('agent_raw_text', ({ speechId, turnId, delta }) => {
 });
 ```
 
-`type` values: `think`, `text`, `unisphere-tool`, `tool`, `tool_response`, `avatar`, `error`, `share`, `thread` — the same set as `/assistant/converse` (the live runtime wraps the same brain stream). The first `agent_raw_text` on the live socket additionally carries an **`init_response`** delta (`openingPhrase`/`threadId`/`messageId`) — that one is a WebSocket-only frame from the Genie brain backend's websocket handler, not an HTTP-converse segment. The `type` is the LLM's code-fence tag (open-ended) for content blocks, plus the fixed control types `think`/`tool`/`tool_response`/`error`; see [WIRE-PROTOCOL.md §4e](/reference/wire-protocol/).
+`type` values: `think`, `text`, `unisphere-tool`, `tool`, `tool_response`, `avatar`, `error`, `share`, `thread` — the same set as `/assistant/converse` (the live runtime wraps the same brain stream). The first `agent_raw_text` on the live socket additionally carries an **`init_response`** delta (`openingPhrase`/`threadId`/`messageId`) — that one is a WebSocket-only frame from the Genie brain backend's websocket handler, not an HTTP-converse segment. The `type` is the LLM's code-fence tag (open-ended) for content blocks, plus the fixed control types `think`/`tool`/`tool_response`/`error`; see [Wire Protocol §4e](/reference/wire-protocol/).
 
 - Only `text`, `unisphere-tool`, `error` carry display content; the rest are agent-internal.
 - A `share` chunk with `segmentStart && segmentEnd` marks **message complete**.
@@ -215,7 +217,7 @@ socket.on('conversationTimeWarning', ({remainingTime}) => {/* seconds left */});
 
 ---
 
-## Sending User Input
+## Sending user input
 
 Two ways the user drives the conversation:
 
@@ -227,21 +229,21 @@ Two ways the user drives the conversation:
    silent. Verified working via the SDK's own `session.speak()` (`src/experience/session.js`):
 
    ```js
-   // the isSpeechStart marker interrupts a mid-sentence avatar (no-op if idle) — issue #39
-   socket.emit('debug_text_entered', { text: '', isFinal: false, isSpeechStart: true });
-   socket.emit('debug_text_entered', { text, isFinal: true });   // captured client emit name
+   // the isSpeechStart marker interrupts a mid-sentence avatar (no-op if idle)
+   socket.emit('onTextEntered', { text: '', isFinal: false, isSpeechStart: true });
+   socket.emit('onTextEntered', { text, isFinal: true });   // the same event speak() always emits
    ```
-   The server handler is `onTextEntered` (the conversation-manager's text-injection handler), which reads only `{ text, isFinal, isSpeechStart? }` and routes the text to the same pipeline as ASR transcripts (`vadSpeechDetected`), keyed by the socket's own room (`room: socket.id`). It does **not** read `room_id`/`session_id` — those appear in captures but are ignored server-side. (The avatar runtime client's own text-entry emitter sends only `{text,isFinal}` and its TODO says "this event does nothing," but the live capture confirms the injected text **is** spoken.) For purely **typed** chat (no avatar), the production chat UI instead calls Genie `/assistant/converse` directly with the `geniegpcid` KS. See [WIRE-PROTOCOL.md §4a](/reference/wire-protocol/).
+   The server handler is `onTextEntered` (the conversation-manager's text-injection handler), which reads only `{ text, isFinal, isSpeechStart? }` and routes the text to the same pipeline as ASR transcripts (`vadSpeechDetected`), keyed by the socket's own room (`room: socket.id`). It does **not** read `room_id`/`session_id` — those appear in captures but are ignored server-side. `debug_text_entered` is a secondary mirror the server sends only when the session was created with `debug:true` — it carries no functional weight of its own. For purely **typed** chat (no avatar), the production chat UI instead calls Genie `/assistant/converse` directly with the `geniegpcid` KS. See [Wire Protocol §4a](/reference/wire-protocol/).
 
 ---
 
-## Complete Message Catalog
+## Complete message catalog
 
-The exhaustive, field-by-field event catalog — every client emit and server event with its captured payload, source cite, and subscriber — lives in **[WIRE-PROTOCOL.md §4](/reference/wire-protocol/)** (§4a client→server, §4b–§4d server→client, §4e the parsed `agent_raw_text.delta` types). The connect-sequence steps above name the key events in order; that doc is the reference for each one's exact shape.
+The exhaustive, field-by-field event catalog — every client emit and server event with its captured payload, source cite, and subscriber — lives in **[Wire Protocol §4](/reference/wire-protocol/)** (§4a client→server, §4b–§4d server→client, §4e the parsed `agent_raw_text.delta` types). The connect-sequence steps above name the key events in order; that doc is the reference for each one's exact shape.
 
 ---
 
-## Scale & Sticky Sessions
+## Scale & sticky sessions
 
 The conversation manager is a **horizontally-scaled pool of pods** behind a load balancer, with a fixed number of concurrent avatar "agent slots" per pod. Three mechanisms make this work: sticky routing, a capacity queue, and shared cross-pod state.
 
@@ -254,7 +256,7 @@ The single most important scaling detail. A live avatar session is **stateful an
 - The load balancer hashes/affixes on it to route all of that session's requests to one conversation-manager pod.
 - Generated per-connection, not persisted: a brand-new `connect()` gets a new pod assignment. There is **no session migration** across pods — a pod loss ends the session (see recovery below).
 
-The STV video channel does **not** need stickiness — it's stateless WHEP (`srs.avatar.us.kaltura.ai`), scaled independently and frontable by CDN/anycast.
+The STV video channel does **not** need stickiness — it's stateless SRS WHEP (`srs.avatar.us.kaltura.ai`), scaled independently and frontable by CDN/anycast.
 
 ### Capacity & the queue (`throwToNoAgent` / `throwToExceededTier`)
 
@@ -290,23 +292,23 @@ Pods are stateless-enough to scale because shared state lives in managed backing
 | **Valkey/Redis** (`avatar-cm-cache`, `resource-manager-avatar`, `front-proxy`, `cnc`, `cnc-polls`) | Conversation-manager cache, resource/slot accounting, front-proxy routing state, command-and-control — cluster-mode, multi-node-group, replicated |
 | **SQS** (+ DLQ) | Async work between renderer / brain / pipeline stages; 30s visibility timeout, 24h retention |
 | **DynamoDB** | Durable session/agent registry & coordination |
-| **STV renderer + media server** | Video origin — renders the face server-side and egresses it to clients via **WHEP**. Scaled independently of the control plane |
+| **STV renderer + media server** (`c7i.xlarge`) | Video origin — the STV controller renders the face and pushes it via **RTMP into OvenMediaEngine (OME)**, egressed to clients via **WHEP** (URL varies by `cast_mode`; played with OvenPlayer). Scaled independently of the control plane |
 | **CloudFront + WAF** | Edge for the public surface; the WAF enforces origin/CDN-header validation on public API endpoints |
 
 So "agent availability" isn't per-pod guesswork — slot accounting is centralized in Redis/Valkey, which is what `checkAvailability` consults. Concretely (the conversation-manager's agent-availability service), a slot is available when **STV has free capacity** (unless the call is speech-only) **AND Whisper/ASR is available AND `activeCalls < maxCalls`**; `maxCalls` comes from the `CALL_CAPACITY` env via the conversation-manager's call-capacity config (default 20 in prod / 12 in non-prod). `availabilityResult.details` surfaces exactly these: `{stvAvailable, whisperAvailable, activeCalls, maxCalls, capacityAvailable}`. The brain conversation/thread state is also externalized (the same thread is resumable via `threadId` regardless of which pod handles a later turn over the text API).
 
-For what a custom (no-Kaltura-lib) client must implement to work correctly with this scaling model, see [ARCHITECTURE-RECIPE.md's "Implications for a Custom Client"](/guides/architecture-recipe/#implications-for-a-custom-no-kaltura-lib-client).
+For what a custom (no-Kaltura-lib) client must implement to work correctly with this scaling model, see [Architecture Recipe's "Implications for a Custom Client"](/guides/architecture-recipe/#implications-for-a-custom-no-kaltura-lib-client).
 
 ---
 
-## SDK Module Map & Data Flow
+## SDK module map & data flow
 
 This section is the **source-of-truth map** of the SDK's internals: how a call flows from a typed method to the right backend, and the routing/data-flow rules README doesn't cover.
 
 ### Two entry points, one shared core
 
 - **`./management`** (`Management`, `src/management/client.js`) — the REST control plane. Holds the admin secret, mints tokens, routes to the two REST hosts (Agentic + Genie) and OVP, and enforces the two-KS guard via `assertAdmin`/`assertConversation` (`assertKind` in `client.js`) **before any network call**. Resource namespaces hang off it: `sessions`, `agents`, `avatars`, `catalog`, `application`, `intellects`, `intellectConfig`, `tools`, `conversations`, `threads`, `messages`, `feedback`, `followups`, `knowledge`. `tools` is a standalone, partner-level entity — an intellect only references it via `tool_ids`. One sub-resource mounts on `intellects`: `intellects.secrets`.
-- **`./experience`** (`KalturaAvatarSession`, `src/experience/session.js`) — the live socket+WHEP runtime from [ARCHITECTURE.md's "Video Runtime Protocol"](/explanation/architecture/#video-runtime-protocol--the-big-picture). Takes only a short-lived conversation token; socket.io is INJECTED (`socketFactory`), never bundled. Two optional plugin subpaths hang off this same live runtime without loading into apps that don't need them: `./experience/presenter` (the `Presenter` deck helper) and `./experience/genui` (the `ExperienceRenderer` GenUI layer).
+- **`./experience`** (`KalturaAvatarSession`, `src/experience/session.js`) — the live socket+WHEP runtime from [Platform Architecture's "Video Runtime Protocol"](/explanation/architecture/#video-runtime-protocol--the-big-picture). Takes only a short-lived conversation token; socket.io is INJECTED (`socketFactory`), never bundled. Two optional plugin subpaths hang off this same live runtime without loading into apps that don't need them: `./experience/presenter` (the `Presenter` deck helper) and `./experience/genui` (the `ExperienceRenderer` GenUI layer).
 - **`src/core/*`** — the shared leaf layer both fronts depend on: `http.js` (transport), `errors.js` (`KalturaError`, RFC 9457), `session.js` (`Sessions` token-minter + `makeAuditEmitter`), `stream.js` (converse NDJSON/SSE parser + `collectConverse`/`segmentKind`/`GENUI_RUNTIMES` — the closed enum of GenUI runtime names the brain's `unisphere-tool` segments can carry), `redact.js`, `safety.js`, `ids.js` (`meta()` receipts), `knowledge-enums.js` (`CHAPTER_TYPE`/`STRATEGY`/`EMBED`/`buildIndexerObjects`). Core never imports from `management/` or `experience/` (stays a leaf).
 
 > **Branch security on the minted `Token`, never on `inspectKs(realKs).kind`.** The public `inspectKs` export (`@kaltura/intelligent-agents/management`, `src/management/ks-inspect.js`) decodes only a KSv2 token's **plaintext header**: it reliably returns `{partnerId}`, but a real encrypted KS's privileges are AES-encrypted, so it returns `kind:'opaque'`, `disableEntitlement:null`, `encrypted:true`. `kind`/`disableEntitlement` are populated **only** for unencrypted test tokens. To decide what a token may do, read the `.kind` of the minted `Token` object (it records what it was minted with: `admin`/`conversation`/`agent`/`widget`), not `inspectKs` of an opaque production KS.
@@ -318,7 +320,7 @@ This section is the **source-of-truth map** of the SDK's internals: how a call f
 | `intellects.js` | `Intellects` — DTO CRUD (`add`/`get`/`update`/`delete`), `addExternal`/`listExternal`/`listInternal`, prompt authoring (`setPrompts`/`previewPrompt`/`snapshot`/`restore`/`diffSnapshots`), capabilities (`getCapabilities`/`setCapability`/`setCapabilities`/`resolveCapabilities`), `setClientVariablesEnabled`, brain config (`setBrainConfig`/`getBrainConfig`/`brainConfigAvailable`), `buildBrainConfigPatch`. Mounts `secrets` (tools are a separate top-level resource — see `tools.js`). | Genie `v1/intellect/*` for DTO fields; Genie `partner-config/update`/`get` for brain config (gated) |
 | `intellect-config.js` | `IntellectConfig` (`mgmt.intellectConfig`) — the ONE shared `patch(configId, patch\|fn, ks)` primitive + typed field setters incl. `setToolIds` (the intellect-side `tool_ids` reference list) + `describe()` (an `editable`/`readOnly` map). `buildUserPropertiesForms`. | Genie `v1/intellect/update` (read-modify-write, full-replace dicts; `tool_ids` is a plain array write) |
 | `capabilities.js` | `CAPABILITIES`/`CAPABILITY_STATE`/`CAPABILITY_DEFAULTS`/`CAPABILITY_INFO`, `assertCapability`/`validateCapabilities`, `resolveCapabilities` (pure layered resolver), `mergeCapabilityWrite`. Re-exported from BOTH entry points. | pure — no network |
-| `tools.js` | `tools.api`/`csv`/`code` builders + `tools.client` (authors a native, silent client-side command tool with NO server-side call — requires `kaltura_genie_experiences:'off'`; see [CLIENT-COMMANDS.md](/guides/client-commands/)) + `tools.clientToolReadiness` + `tools.validate`, `class Tools` (`mgmt.tools`: `add`/`get`/`list`/`update`/`remove` over the standalone Tool entity), `applyResponseMapping`. | Genie `v1/tool/*` (partner-level entity CRUD — NOT `intellect/update`; link via `intellectConfig.setToolIds`'s `tool_ids`) |
+| `tools.js` | `tools.api`/`csv`/`code` builders + `tools.client` (authors a native, silent client-side command tool with NO server-side call — requires `kaltura_genie_experiences:'off'`; see [Client-Side Commands](/guides/client-commands/)) + `tools.clientToolReadiness` + `tools.validate`, `class Tools` (`mgmt.tools`: `add`/`get`/`list`/`update`/`remove` over the standalone Tool entity), `applyResponseMapping`. | Genie `v1/tool/*` (partner-level entity CRUD — NOT `intellect/update`; link via `intellectConfig.setToolIds`'s `tool_ids`) |
 | `secrets.js` | `IntellectSecrets` (`mgmt.intellects.secrets`: `listNames`/`has`/`set`/`remove`/`replaceAll`/`validate`), `validateSecretRefs`. Write-only values; name-only read contract (no `redact()` reliance). | Genie `v1/intellect/update` `config.secrets` (mask-and-keep merge) |
 | `prompt-lint.js` | pure: `lintPrompts`/`validatePromptVars`/`lintGlossary`/`assembleSystemPrompt`/`SYS_VARS`. Client-side prompt-preview replica (author layer only). | pure — no network |
 | `conversations.js` | `Conversations` (`stream`/`send`, `assertRequestVars`), `Threads`/`Messages`/`Feedback`/`Followups`, `Knowledge` (`addRecord` + `knowledge_ids` linkage — Path A, ungated; `uploadDocument`, `createCategory`/`findOrCreateCategory`, `linkCategory`/`linkRecords`/`linkAvailable`, `corpusStatus`, `getLinkage`, `setEnabled`, `search`, `isIndexed`). | Genie `assistant/converse` (converse); Genie `v1/knowledge/add` + intellect `knowledge_ids` (Path A, ungated); OVP `category/*`+upload (containers); Genie `partner-config/update` (Path B re-point, gated) |
@@ -366,13 +368,13 @@ A **freshly created** intellect returns an **empty `capabilities {}`** from `get
 This is the load-bearing design rule for the management layer — **a write goes to exactly one of two doors, and they have different auth gates**:
 
 - **Intellect DTO** → Genie `v1/intellect/*`. Carries `prompts`, `base_directive`, `glossary`, `capabilities`, `tools`, `secrets`, `user_properties_forms`, `allow_client_variables`, `knowledge_ids`, `name`/`description`/`tags`/`status`. Writable with a **partner admin KS** today. **Knowledge linkage Path A rides this door**: first call `POST /v1/knowledge/add` on Genie (LIVE — returns an `{id,...}` record), then pass the returned id as `knowledge_ids` in the intellect create/update DTO — linkage + `use_knowledge_base:'on'` persist with no `partner-config/update` and no 403. It is a `model_fields_set` PATCH (omitted TOP-LEVEL fields are preserved) — but `capabilities`/`secrets` are **full-replace sub-dicts**, so the SDK read-merge-writes them (via `mergeCapabilityWrite` / the secrets mask-and-keep guard); `IntellectConfig.patch` is the one place that logic lives.
-- **Partner-config DTO** → Genie `partner-config/update`/`get`. Carries brain config (`agent_llm`/`agent_fast_llm`/rate limits + the best-effort `agent_avatar_llm`/`run_quota_check`/`web_search_config`), and the **Path B** knowledge `indexer` re-point (re-pointing an *existing* intellect at a category corpus). These are **deployment-gated** — `partner-config/update` 403s for a partner admin KS on the current deployment (see § Configure the Brain in API-REFERENCE.md). Every such write PROBES first (`brainConfigAvailable`/`linkAvailable`) and, when the door is closed, returns `{applied:false, code, reason}` WITHOUT throwing or faking success. (Note: this gate is Path B only — the ungated `knowledge_ids` Path A above does NOT touch this door.)
+- **Partner-config DTO** → Genie `partner-config/update`/`get`. Carries brain config (`agent_llm`/`agent_fast_llm`/rate limits + the best-effort `agent_avatar_llm`/`run_quota_check`/`web_search_config`), and the **Path B** knowledge `indexer` re-point (re-pointing an *existing* intellect at a category corpus). These are **deployment-gated** — `partner-config/update` 403s for a partner admin KS (see § Configure the Brain in API-REFERENCE.md). Every such write PROBES first (`brainConfigAvailable`/`linkAvailable`) and, when the door is closed, returns `{applied:false, code, reason}` WITHOUT throwing or faking success. (Note: this gate is Path B only — the ungated `knowledge_ids` Path A above does NOT touch this door.)
 
 When designing a new field setter, decide its door by which DTO genuinely accepts it (the `IntellectConfig` `EDITABLE_FIELDS` vs `READ_ONLY_FIELDS` constants encode this), and route reads to the SAME door — `getBrainConfig` reads `partner-config/get`, NOT `intellects.get`, because the intellect read DTO does not expose those fields (reading them via `intellects.get` would falsely report persisted values as unset).
 
 ### Honest limits surfaced by the SDK
 
-[README.md's "Honest limits"](/reference/sdk-reference/#honest-limits) covers the partner-config 403 gate, no-verbatim-speech, and the `force_experience`/`model_type` hint caveats — read that first. The rest are architecture-level limits not covered there:
+[SDK Reference's "Honest limits"](/reference/sdk-reference/#honest-limits) covers the partner-config 403 gate, no-verbatim-speech, and the `force_experience`/`model_type` hint caveats — read that first. The rest are architecture-level limits not covered there:
 
 - **External intellects are stored but NOT wired** — `addExternal` persists `{url, protocol}` and lists them, but the Genie brain backend does not delegate to them at converse time. The SDK stamps `_meta.runtimeWired:false`.
 - **Secrets are write-only** — values never read back; the no-leak guarantee is the name-only response contract, not `redact()`. Client-side encryption / BYOK is server-managed (not buildable).
@@ -383,7 +385,7 @@ The SDK's own `node:test` suite (`test/`) exercises every one of these surfaces 
 
 ---
 
-## Resilience & Failure Handling
+## Resilience & failure handling
 
 How the system behaves under network failures, disconnects, and device problems. There are **three reconnection tiers**, only loosely coordinated:
 
@@ -421,7 +423,7 @@ The headline risk: **tiers 2 and 3 are not wired together for custom non-SDK cli
 | STV server session gone (404) | WHEP status | Give up; app must recreate session |
 | Control socket transient drop | Socket.IO `disconnect` | Socket.IO auto-recovers… but the runtime client's error handler may also tear down |
 | Control socket permanent drop | Socket.IO `disconnect` (`!active`) | Teardown + "reconnect" notification |
-| All agent slots busy | `throwToNoAgent` | Availability queue + poll (see [Scale & Sticky Sessions](#scale--sticky-sessions) above) |
+| All agent slots busy | `throwToNoAgent` | Availability queue + poll (see [Scale & sticky sessions](#scale--sticky-sessions) above) |
 | Plan/tier exceeded | `throwToExceededTier` | Fatal, clear message |
 | Connect hangs | SDK: `setTimeout` (`TIMEOUTS` constants); avatar runtime client: xstate `after` timeouts | 5–30s timeouts → error (well covered) |
 | Player/video element error | `onPlayerError` chain | → `Disconnect` (`PlayerConnectionFailed`) |
@@ -446,16 +448,29 @@ Because the control socket is still live at this point (unlike a genuine transpo
 
 The hard guard re-arms on a successful cold reconnect, not just on perceivable output — a spiral by definition never produces spoken/GenUI content, so that's the only reset path that can actually fire while one is running. Without this re-arm, a second spiral later in the same session would find the guard permanently latched from the first recovery and hang indefinitely, reproducing the original symptom just delayed to the second occurrence.
 
-A cold reconnect restores connectivity and brain memory (`threadId`) but otherwise abandons the turn that triggered it. With `recoverFromSpiral` (default `true`), the SDK auto-resends that turn's tracked text once (from `speak()` or ASR's `userTranscription`), prefixed with `SPIRAL_RECOVERY_PREFIX` (the same nudge proven live on the headless `Conversations#send({recoverFromSpiral:true})` path), and emits `spiralRecovered {text}`. `recoverFromSpiral:false` suppresses the resend and leaves it to the app via `lastTurnText`. All three thresholds (`brainStallMs`, `toolSpiralLimit`, `hardToolSpiralLimit`) are configurable at construction; `0` disables any of them. The avatar runtime client (the non-SDK reference implementation) has no such breaker. Author-side mitigation (a tool-call budget in the system prompt) and the headless-path equivalent are covered in [CLIENT-COMMANDS.md](/guides/client-commands/)'s "Tool spirals starve the voice" — this section documents only the SDK's own recovery mechanism.
+A cold reconnect restores connectivity and brain memory (`threadId`) but otherwise abandons the turn that triggered it. With `recoverFromSpiral` (default `true`), the SDK auto-resends that turn's tracked text once (from `speak()` or ASR's `userTranscription`), prefixed with `SPIRAL_RECOVERY_PREFIX` (the same nudge proven live on the headless `Conversations#send({recoverFromSpiral:true})` path), and emits `spiralRecovered {text}`. `recoverFromSpiral:false` suppresses the resend and leaves it to the app via `lastTurnText`. All three thresholds (`brainStallMs`, `toolSpiralLimit`, `hardToolSpiralLimit`) are configurable at construction; `0` disables any of them. The avatar runtime client (the non-SDK reference implementation) has no such breaker. Author-side mitigation (a tool-call budget in the system prompt) and the headless-path equivalent are covered in [Client-Side Commands](/guides/client-commands/)'s "Tool spirals starve the voice" — this section documents only the SDK's own recovery mechanism.
 
 ### What's already solid (don't regress)
 
 - Connect-phase hang protection (per-substate timeouts).
 - Clean teardown (no stale connection state; player-ready reset).
 - Permission-denied UX (silent, retryable).
-- TURN relay for connectivity behind hostile NATs (STV forces relay; ASR relays in practice regardless of policy — see [Endpoints & Credentials](#endpoints--credentials) above).
+- TURN relay for connectivity behind hostile NATs (STV forces relay; ASR relays in practice regardless of policy — see [Endpoints & credentials](#endpoints--credentials) above).
 - Mute-state preservation across ASR reconnects.
 - Capacity queue (graceful waiting vs hard failure).
 - Distinct, user-readable disconnect reasons.
 - WHEP 404 short-circuit.
+
+---
+
+## Related docs
+
+| Doc | What it adds |
+|-----|---------------|
+| [Platform Architecture](/explanation/architecture/) | The map this page fills in field-by-field |
+| [Wire Protocol](/reference/wire-protocol/) | The exhaustive event catalog, live capture, and turn-by-turn trace behind the connect sequence and message catalog above |
+| [Architecture Recipe](/guides/architecture-recipe/) | A from-scratch reimplementation recipe built on the mechanics documented here |
+| [API Reference](/reference/api-reference/) | The management-plane endpoints this page's SDK module map routes to |
+| [SDK Reference](/reference/sdk-reference/) | The public SDK surface this page's module map and resilience tiers back |
+| [Client-Side Commands](/guides/client-commands/) | The tool-call-spiral author-side mitigation this page's circuit breaker complements |
 - **SDK (`KalturaAvatarSession`) implements**: ICE restart (`_recoverMedia`), socket-transport recovery, a repeating brain-stall watchdog + `brainStalled` event and a two-tier tool-call-spiral circuit breaker (`toolSpiralDetected` soft, `toolSpiralRecovering` + cold reconnect hard), granular device error codes — `NotAllowed`/`NotFound`/`NotReadable`, and `online`/`offline`/`visibilitychange` handling. These limitations apply only to custom clients that bypass the SDK.

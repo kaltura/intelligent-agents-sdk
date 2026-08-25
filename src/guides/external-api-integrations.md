@@ -19,7 +19,7 @@ below, but the same three-step pattern applies equally to a support desk, a book
 
 If your use case is specifically getting the *viewer's own submitted data* (from a
 `user_properties_forms` prompt) onto external infrastructure, read
-[STRUCTURED-DATA-FORMS.md](/guides/structured-data-forms/) first — it explains why
+[Structured Data Forms](/guides/structured-data-forms/) first — it explains why
 `session.submitStructuredDataForm()` alone does **not** get you durable, retrievable data with this
 toolkit's credentials, and everything here is the alternative: a **tool call** the model makes
 directly, landing on infrastructure you control.
@@ -51,7 +51,7 @@ pieces, always in this order:
 If instead you want the model to trigger *your own page-side JS* rather than a server-side HTTP
 call — e.g. push data into a client SDK already loaded in the browser — use a `type: "client"` tool
 (`tools.client()`) and `session.onToolCall(name, handler)` instead. See
-[CLIENT-COMMANDS.md](/guides/client-commands/) for that path; everything below assumes a server-side
+[Client-Side Commands](/guides/client-commands/) for that path; everything below assumes a server-side
 `api` tool.
 
 ## Authenticating the call
@@ -81,9 +81,9 @@ static bearer header in an `api` tool's `request`:
 <div data-nova-target="external-api-oauth2-example" data-nova-label="Real OAuth2 authorization-code flow example">
 
 ```js
-import { api } from '@kaltura/intelligent-agents/management';
+import { tools } from '@kaltura/intelligent-agents/management';
 
-const tool = api({
+const tool = tools.api({
   name: 'update_marketo_lead',
   description: "Update the user's lead record in Marketo once you have their email.",
   args: { email: { type: 'str', prompt: "The user's email", required: true } },
@@ -137,14 +137,16 @@ show the viewer a link, which a static bearer token never requires.
 
 Any intellect that references `tool_ids` — an external-API tool is no exception — should set
 `capabilities: {kaltura_genie_experiences: 'off'}` **at creation time**.
-`mgmt.tools.clientToolReadiness(body)` (`src/management/tools.js`) is a pure lint you can run
-over your create/update body before sending it: it warns when tools are referenced but this
-capability isn't explicitly off, because the default-on capability injects a "you MUST call
-`get_experience_instructions`" instruction that out-competes your tool for the same "what do I do
-with this turn" decision. `intellects.create()` and `intellects.update()` already run this lint
-automatically and log its warnings — but the fix (setting the capability) only takes effect
-immediately at **creation**; flipping it on an existing intellect is defeated by the ~24h
-partner-config cache.
+`clientToolReadiness(body)` (`tools.clientToolReadiness()` on the same namespace as `tools.api()` —
+`src/management/tools.js`) is a pure lint you can run over your create/update body before sending
+it: it warns when tools are referenced but this capability isn't explicitly off, because the
+default-on capability injects a "you MUST call `get_experience_instructions`" instruction that
+out-competes your tool for the same "what do I do with this turn" decision. `intellects.create()`
+already runs this lint automatically and attaches any warnings to the returned receipt (`warnings`
+array — nothing is logged for you); `intellects.update()` doesn't run it at all, so run
+`clientToolReadiness()` yourself before an update if you want the check. Either way, the fix
+(setting the capability) only takes effect immediately at **creation**; flipping it on an existing
+intellect is defeated by the ~24h partner-config cache.
 
 ## Verifying the wiring before you rely on it
 
@@ -260,6 +262,6 @@ secret, following the exact same three-step pattern as HubSpot/Salesforce above:
 
 | Doc | What it adds |
 |-----|---------------|
-| [STRUCTURED-DATA-FORMS.md](/guides/structured-data-forms/) | Collecting the values this doc shows you how to forward durably |
-| [DYNAMIC-DATA-INJECTION.md](/guides/dynamic-data-injection/) | Feeding data *into* the conversation, the opposite direction from this doc |
-| [CLIENT-COMMANDS.md](/guides/client-commands/) | The avatar-driving-your-UI channel — a client-side, not server-side, mechanism |
+| [Structured Data Forms](/guides/structured-data-forms/) | Collecting the values this doc shows you how to forward durably |
+| [Dynamic Data Injection](/guides/dynamic-data-injection/) | Feeding data *into* the conversation, the opposite direction from this doc |
+| [Client-Side Commands](/guides/client-commands/) | The avatar-driving-your-UI channel — a client-side, not server-side, mechanism |

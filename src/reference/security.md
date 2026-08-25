@@ -218,8 +218,10 @@ Every event carries this AU-3 content shape:
 ## Transport security (NIST SC-8; OWASP WSS/TLS)
 
 `KalturaAvatarSession` rejects non-TLS `conversationManagerUrl`/`srsBaseUrl`
-(`insecure_transport`). `localhost`/`127.0.0.1` is allowed for dev with a loud
-one-time warning; non-localhost cleartext requires an explicit
+(`insecure_transport`). Loopback and private hosts (`localhost`/`127.0.0.1`,
+RFC 1918 ranges, link-local, and their IPv6 equivalents — see
+`isPrivateOrLoopbackHost` in `src/core/net-guard.js`) are allowed for dev with
+a loud one-time warning; cleartext to a public host requires an explicit
 `allowInsecureTransport:true` (dev/test only — never production). Prefer
 server-minted ephemeral TURN credentials (`turnCredentials` from appInit,
 RFC 7635) over the static fallback; the SDK warns when it falls back.
@@ -280,7 +282,7 @@ cannot provide (retention, tamper-evidence, non-repudiation).
 | SC-4 | Info in shared resources | Per-instance isolation; non-enumerable secrets | Process/tenant separation |
 | SI-10 | Input validation | Inbound payload validation; prototype-pollution scrub | — |
 | IR-6, SI-2 | Incident/flaw response | Security contact; coordinated disclosure | US-CERT/agency reporting timelines |
-| GDPR Art. 17 | Right to erasure | `threads.delete()` and `knowledge.deleteRecord()` (management API) | `threads.delete()` soft-deletes immediately, with a scheduled infra-level purge erasing the data later (per [API-REFERENCE.md § Threads](/reference/api-reference/#threads)); `knowledge.deleteRecord()` doesn't unlink the record from intellects that reference it, so that case needs operator-side follow-up via the management API |
+| GDPR Art. 17 | Right to erasure | `threads.delete()` and `knowledge.deleteRecord()` (management API) | `threads.delete()` soft-deletes immediately, with a scheduled infra-level purge erasing the data later (per [API Reference § Threads](/reference/api-reference/#threads)); `knowledge.deleteRecord()` doesn't unlink the record from intellects that reference it, so that case needs operator-side follow-up via the management API |
 
 ## FIPS mode (how-to)
 
@@ -385,7 +387,7 @@ actions surface.
 
 | Threat | Control |
 |---|---|
-| **ASI 01 Goal Hijack** / **ASI 02 Tool Misuse** | `onAgentAction(action)` chokepoint — every agent-initiated action (`navigate`/`render-genui`/`structured-data-form`/…) passes through it before taking effect; veto via false/throw. **Operator (server-side `api`/`code`/`csv` tools):** these fire server-to-server, outside the SDK's reach — independently authorize each call against the caller's real session/permissions; never treat model/system-prompt tool scoping, or a client-suppliable `request_vars` value, as an authorization claim. See [API-REFERENCE.md § Tools](/reference/api-reference/#tools-api--csv--code). |
+| **ASI 01 Goal Hijack** / **ASI 02 Tool Misuse** | `onAgentAction(action)` chokepoint — every agent-initiated action (`navigate`/`render-genui`/`structured-data-form`/…) passes through it before taking effect; veto via false/throw. **Operator (server-side `api`/`code`/`csv` tools):** these fire server-to-server, outside the SDK's reach — independently authorize each call against the caller's real session/permissions; never treat model/system-prompt tool scoping, or a client-suppliable `request_vars` value, as an authorization claim. See [API Reference § Tools](/reference/api-reference/#tools-api--csv--code). |
 | **ASI 03 Identity & Privilege Abuse** | Scoped, entitlement-ON, short-TTL, revocable token; least-privilege `restrictions`; `agentActions` policy (e.g. `navigate:'off'`). |
 | **ASI 06 Memory & Context Poisoning** | `Presenter` session memory is bounded and operator-cleared via `clearMemory()`; persisted memory is replayed context — operator owns the storage choice. |
 | **ASI 08 Cascading Failures** | Reconnect-window bound, media-recovery escalation, brain-liveness watchdog, client rate valve. |

@@ -58,7 +58,7 @@ never drift).
 
 </div>
 
-`normalizeRuntime(name)` (`parse.js` lines 54–58) strips a trailing `-tool` and trims; it tolerates
+`normalizeRuntime(name)` (`parse.js`) strips a trailing `-tool` and trims; it tolerates
 an already-normalized name and a non-string (→ `''`). `isKnownRuntime(name)` tests membership in this set.
 Any other runtime (e.g. the backend's `gen-ui-composer-tool`, `gen-ui-components-tool`,
 `kaltura-video-player-tool` — see **Restrictions**) is NOT in this set and falls through to a safe
@@ -98,10 +98,10 @@ fallback.
 
 ## `force_experience` — a hint, not a contract
 
-- Valid values (single source of truth, `src/experience/wire.js` line 17;
+- Valid values (single source of truth, `src/experience/wire.js`,
   `EXPERIENCES`): **`'markdown'`, `'summarization'`, `'flashcards'`, `'avatar_only'`**.
 - Parameters are validated on the **first iteration** (entering `for await`) in `conversations.stream`
-  (`conversations.js` lines 120–121), NOT at call time — an invalid value throws a typed `validation_error`.
+  (`conversations.js`), NOT at call time — an invalid value throws a typed `validation_error`.
 - It is a **HINT**: the brain decides which widget(s) to actually emit from the prompt + intellect.
   Asking for `flashcards` may yield `flashcards-tool` **and** `followups-tool`, or neither. The
   renderer renders whatever `runtimeName` arrives; tests are lenient by design.
@@ -171,7 +171,7 @@ Items come from `model.videos`, `model.entries`, or `model.items`. Each item:
 |---|---|---|
 | `entryId` | `entryId`, `entry_id`, `id` | ≤100 chars, preserved verbatim — host plays via the Kaltura player |
 | `title` | `title`, `name` | — |
-| `thumbnailUrl` | `thumbnailUrl`, `thumbnail`, `thumb` | via `safeUrl` |
+| `thumbnailUrl` | `thumbnailUrl`, `thumbnail`, `thumb` | via `safeUrl`; when unset AND the render ctx has `partnerId`, falls back to a derived CDN thumbnail — `thumbnailUrl(entryId, partnerId, {width:480})` (`core/kaltura-media.js`) — so the gallery still shows a real image from just an `entryId` |
 | `url` | `url`, `playUrl`, `link` | via `safeUrl` |
 | `embedUrl` | *(output — derived, not read from the model)* | `playerEmbedUrl(entryId, partnerId, {uiConfId})` (`core/kaltura-media.js`) when the render ctx has `partnerId`; `''` otherwise |
 | `duration` | `duration`, `length` | string-kept, ≤40 chars, to tolerate `"1:23"` or a seconds count |
@@ -199,6 +199,7 @@ unsafe scheme yields `url:''` + `safe:false` so the host drops it (mirrors the e
 |---|---|---|
 | `url` | `url`, `videoUrl`, `mediaUrl`, `src`, `embedUrl` | **requires an ABSOLUTE http(s) URL** — a non-`https?://` value (relative path, `//host`, `mailto`) yields `url:''`; this is an iframe/`<video src>` surface |
 | `embedUrl` | *(output — derived from `url`)* | `externalEmbedUrl()` (`core/kaltura-media.js`) promotes a recognized YouTube/Vimeo URL to a real iframe-embed URL (`youtube-nocookie.com/embed/…`, `player.vimeo.com/video/…`); any other host → `''` so the host falls back to a plain link |
+| `title` | `title`, `name` | ≤500 chars |
 | `provider` | `provider`, `source` | ≤100 chars; when absent, auto-filled from the embed match (`'YouTube'` / `'Vimeo'`) |
 | `poster` | `poster`, `thumbnail`, `thumbnailUrl` | via `safeUrl` — a still to show before play |
 | `description` | `description` | ≤2000 chars |
@@ -233,11 +234,11 @@ Descriptor: `{kind:'user-properties-form', data:{title, fields:[{key, type, labe
   rendering the widget into its own dedicated host UI and, on submit, bridging the collected
   values into `request_vars` so the brain itself can call a server-side **api** tool that
   persists them wherever you point it — see
-  [STRUCTURED-DATA-FORMS.md](/guides/structured-data-forms/).
+  [Structured Data Forms](/guides/structured-data-forms/).
 - For the full picture — configuration, the exact mandatory prompt injection, where
   `setFormLeadInfo` actually persists server-side, and how to deliver the collected data somewhere
-  durable — see [STRUCTURED-DATA-FORMS.md](/guides/structured-data-forms/) and
-  [EXTERNAL-API-INTEGRATIONS.md](/guides/external-api-integrations/).
+  durable — see [Structured Data Forms](/guides/structured-data-forms/) and
+  [External API Integrations](/guides/external-api-integrations/).
 
 ### 9. content-gallery (`renderContentGallery`) — image/content cards
 
@@ -250,7 +251,7 @@ Items come from `model.items`, `model.slides`, or `model.cards`. Each item:
 | `description` | `description`, `text`, `body` | ≤2000 chars |
 | `imageUrl` | `imageUrl`, `image`, `thumbnail` | via `safeUrl` |
 | `url` | `url`, `link`, `href` | via `safeUrl` |
-| `alt` | `alt`, `title` | ≤300 chars — the image's accessible name |
+| `alt` | `alt` ?? `title` ?? `description` (3-level fallback) | ≤300 chars — the image's accessible name |
 
 Descriptor: `{kind:'content-gallery', data:{title, items:[{id, title, description, imageUrl, url, alt}]}}`.
 This is the **image-bearing** widget (a deck/gallery of cards with thumbnails). Note the backend
@@ -305,7 +306,7 @@ a hand-built descriptor that skips the renderer entirely is exactly as safe.
 | `questionId` | `questionId`, `id`, `key` | ≤200 chars; falls back to a slug derived from the prompt |
 | `variant` | *(derived)* `'choice'` when `options` is non-empty, else `'text'` | not settable directly |
 | `prompt` | `prompt`, `question`, `text` | ≤2000 chars |
-| `options` | `options`, `choices`, `answers` — each `{id?, text}` | ≤8 options; each `text` ≤500 chars; a missing `id` gets a stable slug fallback |
+| `options` | `options`, `choices`, `answers` — each `{id?, text}`, with per-option `text` from `text`/`label`/`value` and `id` from `id`/`key` | ≤8 options; each `text` ≤500 chars; a missing `id` gets a stable slug fallback |
 | `correctOptionId` | `correctOptionId`, `correctId`, `answerId`, `correct` | must name a real option's `id`, else `null` (choice variant only) |
 | `acceptedAnswers` | `acceptedAnswers`, `answer`, `correctText`, `expectedAnswer`/`expectedAnswers` (string or array) | each entry ≤500 chars, case-insensitive/trimmed match (text variant only) |
 | `explanation` | `explanation`, `feedback`, `rationale` | ≤2000 chars — revealed after answering |
@@ -349,12 +350,12 @@ mechanism that gates the capability on/off, not whether its *content* is persona
 `avatar_filler` (`kind: 'prompt'`) is the exception to watch for: its filler phrasing is
 server-generated per turn and NOT reliably steerable via `base_directive`, even though it
 streams as a "spoken" segment alongside `avatar`/`text` (see
-[WIRE-PROTOCOL.md § 4e](/reference/wire-protocol/#4e-agent_raw_textdelta--the-brain-stream-parsed)) —
+[Wire Protocol § 4e](/reference/wire-protocol/#4e-agent_raw_textdelta--the-brain-stream-parsed)) —
 disable the capability if the default phrasing doesn't fit your persona.
 
 | Capability | Default | Kind | Gates runtime | Notes |
 |---|---|---|---|---|
-| `kaltura_genie_experiences` | **ON** | mode | (master) | Master switch for structured GenUI. Leaving it on injects a competing instruction that out-competes a custom tool — turn it OFF for command-only agents; see [EXTERNAL-API-INTEGRATIONS.md § Don't skip `kaltura_genie_experiences: 'off'`](/guides/external-api-integrations/#dont-skip-kaltura_genie_experiences-off) |
+| `kaltura_genie_experiences` | **ON** | mode | (master) | Master switch for structured GenUI. Leaving it on injects a competing instruction that out-competes a custom tool — turn it OFF for command-only agents; see [External API Integrations § Don't skip `kaltura_genie_experiences: 'off'`](/guides/external-api-integrations/#dont-skip-kaltura_genie_experiences-off) |
 | `generate_followup_questions` | **ON** | segment | `followups` | — |
 | `include_sources` | **ON** | segment | `sources` | Pairs with `use_knowledge_base` (RAG) |
 | `video_gallery` | **OFF** | segment | `video-gallery` (+ `content-gallery`) | — |
@@ -401,7 +402,9 @@ In the live socket runtime, `.start()` subscribes to `session.on('brainSegment')
 resets the assembler and `clear()`s `rendered`/`last` on the session's `turnStart` event (re-emitted
 from the raw `agent_start_speech` socket event), so a widget from turn N never lingers into turn
 N+1 — mirrors the Genie brain backend's own web client nulling content on `AgentStartSpeechReceived`.
-Set `false` for intentional cross-turn persistence.
+The reset only fires when that `turnStart` payload has `isNewTurn:true`; a duplicate/barge-in
+`turnStart` (`isNewTurn:false`) leaves widgets alone, same gate every other `turnStart` consumer in
+the SDK uses. Set `false` for intentional cross-turn persistence.
 
 Headless, call `.render(runtimeName, widget)` (or `.render(segment)`) per segment from a
 `conversations.stream()` feed — the reliable path.
@@ -455,7 +458,14 @@ upgrading.
 SDK ships none): root `kgenui kgenui--{kind}` (`role="group"`, `aria-label`); `kgenui__title`,
 `kgenui__text`, `kgenui__list`, `kgenui__chip`, `kgenui__card`, `kgenui__flip`, `kgenui__back`,
 `kgenui__link`, `kgenui__img`, `kgenui__gallery`, `kgenui__form`, `kgenui__field`, `kgenui__label`,
-`kgenui__input`, `kgenui__help`, `kgenui__submit`, `kgenui__sr-only`. Built-in a11y: flashcards are
+`kgenui__input`, `kgenui__help`, `kgenui__submit`, `kgenui__sr-only`. The full class surface also
+covers: `kgenui__bullet`, `kgenui__chips`, `kgenui__source`, `kgenui__score`, `kgenui__snippet`,
+`kgenui__muted`, `kgenui__meta`, `kgenui__player`, `kgenui__play`, `kgenui__play-glyph`,
+`kgenui__embed`, `kgenui__prompt`, `kgenui__feedback` (+ `--correct`/`--incorrect`/`--neutral`
+modifiers), `kgenui__explanation`, `kgenui__options-group`, `kgenui__option-label`, `kgenui__radio`,
+`kgenui__options`, `kgenui__answer-echo`, `kgenui--unknown`, `kgenui--error`, `kgenui__table`,
+`kgenui__markdown`, `kgenui__md-p`, `kgenui__md-h`, `kgenui__md-code`, `kgenui__md-pre`,
+`kgenui__md-link`, `kgenui__md-list`. Built-in a11y: flashcards are
 `<button aria-pressed>` flip toggles; followups are `<button>` chips in a labeled list; links carry a
 visually-hidden "(opens in a new tab)" cue + `rel=noopener noreferrer` and are **dropped** when
 `safe:false`; images always have `alt`; form fields are real `<label for>`+`<input>` with
@@ -548,7 +558,7 @@ Apply the same two-line pattern to any other `onAction` intent with no server-si
 `'play'` (`{entryId, url, embedUrl}` — a video-gallery clip opened) and `'submit'` (`{values}` — a
 `user-properties-form` was submitted; report only that it happened and which fields were filled,
 not the raw values if they're personal data — see
-[STRUCTURED-DATA-FORMS.md](/guides/structured-data-forms/) for where that data durably belongs instead).
+[Structured Data Forms](/guides/structured-data-forms/) for where that data durably belongs instead).
 
 ### Live-verified
 

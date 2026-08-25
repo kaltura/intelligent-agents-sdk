@@ -99,7 +99,7 @@ shape changes turn to turn, or when your prompt needs to reason over the data ra
 substitute it into fixed template slots.
 
 If you're using the SDK's `Presenter` plugin for a slide-deck-style walkthrough, it already
-manages per-slide dynamic-prompt injection for you — see [README.md → Presenter](/reference/sdk-reference/#presenter)
+manages per-slide dynamic-prompt injection for you — see [SDK Reference → Presenter](/reference/sdk-reference/#presenter)
 for the deck-specific API surface. `Presenter.refreshDpp()` re-sends the current context outside
 of a navigation, which is exactly the building block the worked example below relies on.
 
@@ -137,7 +137,7 @@ place, not racing it.
 The three mechanisms above all push data from your app *to* the brain. There's also a path in the
 other direction: your agent's configuration can require the brain to ask the viewer for specific
 structured fields at some point in the conversation (an email, a booking date, a support ticket's
-category) — see [STRUCTURED-DATA-FORMS.md](/guides/structured-data-forms/) for how to configure what it
+category) — see [Structured Data Forms](/guides/structured-data-forms/) for how to configure what it
 asks for. Once your UI collects the viewer's answer, hand it back with:
 
 ```js
@@ -197,15 +197,15 @@ facts that rarely change after connect.
 
 If instead you need the *avatar* to drive your UI — navigate, open a panel, highlight something —
 that's a different, silent channel (`session.onToolCall()`), not a data-injection mechanism. See
-[CLIENT-COMMANDS.md](/guides/client-commands/).
+[Client-Side Commands](/guides/client-commands/).
 
 ## Related docs
 
 | Doc | What it adds |
 |-----|---------------|
-| [README.md → `{{var}}` Jinja personalization](/reference/sdk-reference/#var-jinja-personalization-request_vars) | The `request_vars` API reference |
-| [README.md → Experience](/reference/sdk-reference/#experience) | `KalturaAvatarSession`, the live session this doc's worked example builds on |
-| [README.md → Presenter](/reference/sdk-reference/#presenter) | The deck-walkthrough plugin's `refreshDpp()` and full API surface |
-| [STRUCTURED-DATA-FORMS.md](/guides/structured-data-forms/) | Configuring what the brain asks the viewer for, and how it's rendered |
-| [CLIENT-COMMANDS.md](/guides/client-commands/) | The avatar-driving-your-UI channel — the opposite direction from this doc |
-| [WIRE-PROTOCOL.md](/reference/wire-protocol/) | The exact socket events behind each mechanism, for anyone debugging at the wire level |
+| [SDK Reference → `{{var}}` Jinja personalization](/reference/sdk-reference/#var-jinja-personalization-request_vars) | The `request_vars` API reference |
+| [SDK Reference → Experience](/reference/sdk-reference/#experience) | `KalturaAvatarSession`, the live session this doc's worked example builds on |
+| [SDK Reference → Presenter](/reference/sdk-reference/#presenter) | The deck-walkthrough plugin's `refreshDpp()` and full API surface |
+| [Structured Data Forms](/guides/structured-data-forms/) | Configuring what the brain asks the viewer for, and how it's rendered |
+| [Client-Side Commands](/guides/client-commands/) | The avatar-driving-your-UI channel — the opposite direction from this doc |
+| [Wire Protocol](/reference/wire-protocol/) | The exact socket events behind each mechanism, for anyone debugging at the wire level |
