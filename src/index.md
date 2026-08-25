@@ -50,15 +50,17 @@ When someone talks with an Agentic Avatar, three flows run at once: **Conversati
 
 ## Why this SDK
 
-You own raw ESM source you can read line by line — no build step, no
-bundler-only `node_modules` black box, and no install step at all: import
-straight from a [jsDelivr CDN URL](#quick-start-in-the-browser) pinned to a
-git tag. Zero runtime dependencies means no transitive supply-chain surface
-to audit. Voice and visual cloning are self-serve calls in this SDK, not a
-support ticket. And the security posture — pre-redacted audit events,
-short-lived tokens, a NIST 800-53 control matrix — is designed in from the
-start for enterprise, HIPAA, and HITRUST deployments rather than bolted on
-later.
+- **Readable source, no build step** — raw ESM you can read line by line;
+  import straight from a [jsDelivr CDN URL](#quick-start-in-the-browser)
+  pinned to a git tag. No install step, no bundler-only `node_modules`
+  black box.
+- **Zero runtime dependencies** — no transitive supply-chain surface to
+  audit.
+- **Self-serve cloning** — voice and visual cloning are SDK calls, not a
+  support ticket.
+- **Security designed in** — pre-redacted audit events, short-lived tokens,
+  and a NIST 800-53 control matrix, built for enterprise, HIPAA, and
+  HITRUST deployments from the start.
 
 ## Quick start in the browser
 

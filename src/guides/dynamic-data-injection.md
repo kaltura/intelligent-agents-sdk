@@ -17,6 +17,8 @@ needed the brain to react *right now*, or using the active one for something tha
 quiet background context. This doc explains why each exists, when to reach for it, and how they
 compose into one coherent update flow.
 
+**On this page:** [Four mechanisms](#four-ways-to-get-information-to-the-brain) · [`request_vars`](#personalization-request_vars) · [Dynamic prompt](#per-turn-context-the-dynamic-prompt) · [`speak()`](#the-active-nudge-speak) · [Form answers](#answering-a-brain-initiated-request) · [Worked example](#how-they-work-together--a-worked-example) · [Which one do I want?](#which-one-do-i-want) · [Related docs](#related-docs)
+
 ## Four ways to get information to the brain
 
 | Mechanism | What it's for | Does it make the avatar talk? |

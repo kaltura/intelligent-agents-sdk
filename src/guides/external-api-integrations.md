@@ -24,6 +24,8 @@ If your use case is specifically getting the *viewer's own submitted data* (from
 toolkit's credentials, and everything here is the alternative: a **tool call** the model makes
 directly, landing on infrastructure you control.
 
+**On this page:** [Building blocks](#the-building-blocks) · [Authenticating](#authenticating-the-call) · [OAuth2 flow](#when-you-actually-need-oauth2--the-real-backend-managed-flow) · [`kaltura_genie_experiences: 'off'`](#dont-skip-kaltura_genie_experiences-off) · [Verifying the wiring](#verifying-the-wiring-before-you-rely-on-it) · [CRM examples](#example-crm--marketing-automation-integration) · [Related docs](#related-docs)
+
 ## The building blocks
 
 An external API integration is a custom `api` tool, linked to your intellect via `tool_ids`. Three

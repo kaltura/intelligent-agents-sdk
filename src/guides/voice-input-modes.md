@@ -18,7 +18,17 @@ and for the exact socket events see [Wire Protocol](/reference/wire-protocol/) (
 
 **Pick one mode per agent, at configuration time. Never offer both live in the same session.**
 
-This is not a UI-polish preference — it is a correctness requirement. The conversation-manager service (`CM`, the server runtime)'s own VAD turn-cutting branches on the agent's *configured* `isTapToTalk` flag, not on whether a tap window is currently open. An open-mic agent (`isTapToTalk:false`) keeps auto-cutting turns from its VAD unconditionally, even while a tap-to-talk bracket is open — the two mechanisms race the same `conversationStatus`/`latestSpeech` state with no mutual exclusion server-side (see WIRE-PROTOCOL.md's `tapToTalkStart`/`tapToTalkEnd` row for the verified source citation). The SDK enforces this client-side (`startTapToTalk()` throws `capability_disabled` unless `session.capabilities.tapToTalk`), but that gate exists because the server will not stop you from getting this wrong.
+This is not a UI-polish preference — it is a correctness requirement:
+
+- The conversation-manager service (`CM`, the server runtime)'s own VAD turn-cutting branches on
+  the agent's *configured* `isTapToTalk` flag, not on whether a tap window is currently open.
+- An open-mic agent (`isTapToTalk:false`) keeps auto-cutting turns from its VAD unconditionally,
+  even while a tap-to-talk bracket is open — the two mechanisms race the same
+  `conversationStatus`/`latestSpeech` state with no mutual exclusion server-side (see
+  WIRE-PROTOCOL.md's `tapToTalkStart`/`tapToTalkEnd` row for the verified source citation).
+- The SDK enforces this client-side: `startTapToTalk()` throws `capability_disabled` unless
+  `session.capabilities.tapToTalk`. That gate exists because the server will not stop you from
+  getting this wrong.
 
 Every push-to-talk/open-mic product draws the same line — one active capture mechanism, chosen once, not a live per-session toggle exposing both:
 
