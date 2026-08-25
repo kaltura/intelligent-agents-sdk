@@ -404,7 +404,7 @@ Headless, call `.render(runtimeName, widget)` (or `.render(segment)`) per segmen
 - `_meta` receipt stamps `{partnerId, source:'experience/genui', scope:'conversation (geniegpcid,
   entitlement ON)', known, firstClass}` — `known` = this instance has a renderer (a registered
   10th runtime is `known:true`); `firstClass` = one of the built-in set.
-- `graded-question` (§ 10 below) is a concrete, shipped example of a registered 10th runtime — it's
+- `graded-question` (§ 10 above) is a concrete, shipped example of a registered 10th runtime — it's
   exported (`renderGradedQuestion`) but deliberately excluded from `DEFAULT_RENDERERS`/`RUNTIMES`,
   so it stays `known:false` until a host explicitly registers it.
 
@@ -413,7 +413,7 @@ Headless, call `.render(runtimeName, widget)` (or `.render(segment)`) per segmen
 `onAction(action, payload)` surfaces interactions `mountWidget` can't fulfil itself: `'followup'`
 `{question}` (→ `session.speak`), `'submit'` `{values}` (→ `session.submitStructuredDataForm`), `'play'`
 `{entryId,url,embedUrl}`, `'open'` `{url}`, `'answer'` `{questionId, variant, correct, value,
-explanation, optionId?}` (a `graded-question` was answered — see § 10 below).
+explanation, optionId?}` (a `graded-question` was answered — see § 10 above).
 
 `WIDGET_KINDS` (exported) is the frozen list of every `kind` (the nine first-class GenUI runtimes +
 `unknown` + `error`) — use it for an exhaustive host switch or a parity test.
