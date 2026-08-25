@@ -41,6 +41,7 @@ runtime:
 - **`./experience/genui`** — `ExperienceRenderer`/`mountWidget` GenUI widget rendering
 - **`./experience/analytics`** — `KavaAnalytics`, client-only KAVA Application Events
 - **`./experience/noise-suppressor`** — a zero-dependency AudioWorklet noise gate
+- **`./experience/chroma-key`** — transparent-background avatar compositor (bring your own `chroma-key-video`)
 
 ## Why this SDK
 
