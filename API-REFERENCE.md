@@ -446,7 +446,7 @@ Use `tools.client(...)` in the SDK, which validates the tool before any network 
 
 `secrets` is a dict `{name: value}` on `config`. A read masks every value as `"***"`. A `"***"` value on update is preserved server-side — read-modify-write never clobbers a sibling. Reference as `"secrets.NAME"` in tool configs or `{{secrets.NAME}}` in prompts.
 
-**SDK:** `mgmt.intellects.secrets.{listNames, set, remove, replaceAll, validate}`.
+**SDK:** `mgmt.intellects.secrets.{listNames, has, set, delete, replaceAll, validate}`. `delete(configId, name, ks, confirm)` is permanent and requires `confirm = { confirmPermanent: true }`.
 
 ---
 
@@ -475,6 +475,8 @@ Returns `{ "id": 42, ... }`. Save the `id`.
 ```
 
 Writes through the intellect DTO — no `partner-config/update`, no 403. RAG retrieval works after async indexing (~1 minute).
+
+> **`knowledge_ids` is capped at ONE record** despite the plural array shape — the Genie validator (`at_most_one_knowledge_id`) rejects more. The SDK's `intellectConfig.setKnowledgeIds()` enforces this client-side with a typed `bad_request` before any network call. To ground one agent in several content sources, upload them all into a single knowledge record.
 
 **Step 3 — Upload content** via `knowledge.uploadDocument()` (SDK) or the Kaltura OVP media ingest APIs.
 
@@ -729,13 +731,9 @@ since those collide with a server-managed variable; it does not yet name-check `
 > zero-error turn failure — confirmed independent of whether the session has a bound user identity. This is
 > backend behavior (the streaming `/assistant/converse` response has already sent a success status before
 > the failure happens, so nothing surfaces as a normal error) and is **not fixable from this SDK**. Until the
-> underlying backend fix ships, the mitigation is catching the risk before you ship the prompt: **PR #49
-> (issue #45), not yet merged**, will make `intellects.previewPrompt()`'s rendered output flag an unresolved
-> `sys__user_obj.*` reference with a `reserved_user_attr_unresolved` warning instead of rendering the
-> placeholder as if it were safe — treat any such warning as a hard stop once #49 lands. **Until #49 merges,
-> `previewPrompt()` does not emit this warning** — an unresolved `sys__user_obj.*` reference is rendered silently
-> as an empty/literal placeholder in preview too, with no signal that the live turn will fail. Don't assume
-> the preview-time safety net exists before confirming #49 is merged.
+> underlying backend fix ships, the mitigation is catching the risk before you ship the prompt:
+> `intellects.previewPrompt()` flags an unresolved `sys__user_obj.*` reference with a `reserved_user_attr_unresolved` warning — the placeholder is not rendered as if it were safe.
+> Treat any such warning as a hard stop. See § Preview a Prompt above.
 
 ---
 

@@ -162,7 +162,7 @@ Items come from `model.videos`, `model.entries`, or `model.items`. Each item:
 | `title` | `title`, `name` | — |
 | `thumbnailUrl` | `thumbnailUrl`, `thumbnail`, `thumb` | via `safeUrl` |
 | `url` | `url`, `playUrl`, `link` | via `safeUrl` |
-| `embedUrl` | `embedUrl`, `embed_url`, `embedLink` | via `safeUrl` |
+| `embedUrl` | *(output — derived, not read from the model)* | `playerEmbedUrl(entryId, partnerId, {uiConfId})` (`core/kaltura-media.js`) when the render ctx has `partnerId`; `''` otherwise |
 | `duration` | `duration`, `length` | string-kept, ≤40 chars, to tolerate `"1:23"` or a seconds count |
 | `description` | `description` | ≤2000 chars |
 | `alt` | `alt`, `title` | ≤300 chars — the image's accessible name |
@@ -187,11 +187,12 @@ unsafe scheme yields `url:''` + `safe:false` so the host drops it (mirrors the e
 | Field | Source keys (model) | Constraint |
 |---|---|---|
 | `url` | `url`, `videoUrl`, `mediaUrl`, `src`, `embedUrl` | **requires an ABSOLUTE http(s) URL** — a non-`https?://` value (relative path, `//host`, `mailto`) yields `url:''`; this is an iframe/`<video src>` surface |
-| `provider` | `provider`, `source` | ≤100 chars |
+| `embedUrl` | *(output — derived from `url`)* | `externalEmbedUrl()` (`core/kaltura-media.js`) promotes a recognized YouTube/Vimeo URL to a real iframe-embed URL (`youtube-nocookie.com/embed/…`, `player.vimeo.com/video/…`); any other host → `''` so the host falls back to a plain link |
+| `provider` | `provider`, `source` | ≤100 chars; when absent, auto-filled from the embed match (`'YouTube'` / `'Vimeo'`) |
 | `poster` | `poster`, `thumbnail`, `thumbnailUrl` | via `safeUrl` — a still to show before play |
 | `description` | `description` | ≤2000 chars |
 
-Descriptor: `{kind:'external-video', data:{url, title, provider, poster, description, safe}}`,
+Descriptor: `{kind:'external-video', data:{url, embedUrl, title, provider, poster, description, safe}}`,
 `safe:!!url`. The client check is **defense-in-depth**; the server-side media-URL validator is the
 primary guard (**INFERRED** — server validator not in this repo).
 
@@ -375,9 +376,12 @@ contract for you to theme). Call it directly — `mountWidget(descriptor, target
 ### `ExperienceRenderer` options
 
 `new ExperienceRenderer({ session?, mount, target?, onAction?, renderers?, replace?, onUnhandled?,
-urlPolicy?, partnerId?, uiConfId?, clearOnTurnStart? })` (`genui/renderer.js`). `uiConfId` (string or
-number) enables `video-gallery` to build a player-embed iframe URL (requires `partnerId`). `mount` is a
+urlPolicy?, partnerId?, uiConfId?, clearOnTurnStart?, maxRendered? })` (`genui/renderer.js`).
+`partnerId` alone enables `video-gallery` to build a player-embed iframe URL from each `entryId`;
+`uiConfId` (string or number) is optional and pins a specific player uiConf in that URL. `mount` is a
 `(descriptor)=>void` function (full control) **or** a DOM Element (auto-rendered via `mountWidget`).
+`maxRendered` (default `100`) caps the `rendered` history — the oldest descriptor is dropped when
+the cap is exceeded, so a long-lived session can't grow memory unboundedly.
 
 ### Live vs. headless dispatch
 
@@ -586,8 +590,8 @@ non-duplicated events tied to one conversation, not two copies of the same one.
   + `knowledge_ids` (ungated; see API-REFERENCE.md § Ground the Agent). `sources` then renders the
   brain's real retrieved citations.
 - **`entryId` playback needs the Kaltura player** — `video-gallery` preserves `entryId`; when
-  `embedUrl` is present (requires `partnerId`+`uiConfId`), the SDK renders an inline player; without
-  those the host renders by `entryId`.
+  `embedUrl` is present (requires `partnerId`; `uiConfId` is optional and only pins a specific
+  player uiConf), the SDK renders an inline player; without it the host renders by `entryId`.
 
 ## Pointers (source of truth)
 
