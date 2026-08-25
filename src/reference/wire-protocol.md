@@ -86,7 +86,7 @@ Order from `CG`'s connecting-state machine (steps 0–9, 11) plus the `SDK`/`EMB
 | 0 | init RTC session + `getUserMedia({audio:true,video:false})` | — | (mic prompt) | — |
 | 1 | open socket | `←` | `onServerConnected` | 10s (`ConnectionTimeout`) |
 | 2 | join room | `→ join` | — | — |
-| 3 | wait config + ack (parallel) | `← clientConfiguration`, `← joinComplete` | both required | 5s (`JoinRoomTimeout`) |
+| 3 | wait config + ack (parallel) | `← clientConfiguration`, `← joinComplete` | both required | `clientConfiguration` 5s, `joinComplete` **20s** (both `JoinRoomTimeout`) |
 | 4 | create STV session | `→ stvNewSession {room_id, cast_mode}` | — | — |
 | 5 | wait session | `← stvNewSession {session_id, webrtc_url?}` (or `← throwToNoAgent`) | sets `sessionId` + `webrtcUrl` | — |
 | 6 | wait agent | `← showAgent` | agent joined | 10s (`AgentResponseTimeout`) |
@@ -98,6 +98,8 @@ Order from `CG`'s connecting-state machine (steps 0–9, 11) plus the `SDK`/`EMB
 | → | **CONNECTED** | listen for `agent_raw_text`, `generatingSpeech`, `stv*Talking`, VAD (§4) | — | — |
 
 Top-level machine states (`CG`'s connection state machine): `preparing → connecting → connected → (disconnecting / disconnected / error)`. Overall connecting timeout 30s. Step timeouts are from `CG`'s connecting state (`30e3` overall, `10000` server-connect, `5e3` join-room, `10000` agent, ASR 30s).
+
+> **Why `joinComplete` gets 20s, not 5s (deliberate deviation from `CG`'s single 5s join-room budget):** the server (`CM`) emits `clientConfiguration` immediately on join, but emits `joinComplete` only after an awaited context-update call that can exceed 5s under load. This SDK therefore budgets the two waits separately — `clientConfiguration` 5s, `joinComplete` 20s (`SDK:session.js` `TIMEOUTS.joinRoom` / `TIMEOUTS.joinComplete`). A client that reuses `CG`'s single 5s budget for both will see spurious `JoinRoomTimeout` failures on loaded rooms.
 
 > **Steps 10–11 are a client-side refinement, not part of the `CG` machine.** The bare `CG` connecting-state machine approves on `connectToASR` **onDone** (`sendApprovedPermissions` → `done` → `#connected`) — its STV video is subscribed later, in the player layer. The **`SDK` and `EMBED` clients** instead gate `approvedPermissions` on STV video being playable first (`SDK:session.js _approve` gated on the same canplay/`HAVE_FUTURE_DATA` settle logic; `EMBED`'s own permission-approval check requires `_micReady && _videoReady`). **Why it matters (verified by capture):** `approvedPermissions` is what makes the server speak the opening line, and ICE `connected` fires ~2s before the first frame decodes — so approving before `<video>` `canplay` (readyState ≥ `HAVE_FUTURE_DATA`, + ~300ms jitter settle) clips the greeting. This SDK does the gate; do the same in your client.
 

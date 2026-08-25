@@ -280,7 +280,7 @@ cannot provide (retention, tamper-evidence, non-repudiation).
 | SC-4 | Info in shared resources | Per-instance isolation; non-enumerable secrets | Process/tenant separation |
 | SI-10 | Input validation | Inbound payload validation; prototype-pollution scrub | — |
 | IR-6, SI-2 | Incident/flaw response | Security contact; coordinated disclosure | US-CERT/agency reporting timelines |
-| GDPR Art. 17 | Right to erasure | `threads.delete()` and `knowledge.deleteRecord()` (management API) | Neither is a bulk-erasure endpoint: `threads.delete()` is a soft delete (data retained server-side, per [API-REFERENCE.md § Threads](/reference/api-reference/#threads)) and `knowledge.deleteRecord()` doesn't unlink the record from intellects that reference it. Erasure requests currently require operator-side manual deletion via the management API; no dedicated bulk-erasure endpoint exists yet |
+| GDPR Art. 17 | Right to erasure | `threads.delete()` and `knowledge.deleteRecord()` (management API) | `threads.delete()` soft-deletes immediately, with a scheduled infra-level purge erasing the data later (per [API-REFERENCE.md § Threads](/reference/api-reference/#threads)); `knowledge.deleteRecord()` doesn't unlink the record from intellects that reference it, so that case needs operator-side follow-up via the management API |
 
 ## FIPS mode (how-to)
 
