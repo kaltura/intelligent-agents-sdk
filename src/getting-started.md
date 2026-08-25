@@ -1,7 +1,7 @@
 ---
 layout: base.njk
-title: Getting Started
-description: Go from zero to a talking AI avatar in about five minutes.
+title: "Getting Started"
+description: "Go from zero to a talking AI avatar in about five minutes."
 eyebrow: Tutorial
 ---
 
@@ -64,6 +64,12 @@ export AGENTIC_ADMIN_SECRET=your_admin_secret_here
 > **On PowerShell?** Use `$env:AGENTIC_PARTNER_ID="1234567"` instead of
 > `export`.
 
+> **Prefer a file over exporting every time?** Create a `.env` file in the
+> repo root (one directory up from `quickstart/`) with `AGENTIC_PARTNER_ID=...`
+> and `AGENTIC_ADMIN_SECRET=...` on their own lines — `create-agent.mjs` reads
+> it automatically if present. It's already covered by `.gitignore`, so it
+> never gets committed.
+
 ## Step 3 — Create our own agent from scratch
 
 This one command builds a brand-new agent — brain, face, voice, and all —
@@ -99,6 +105,23 @@ console.log(reply.text);
 `converseOnce()` mints its own conversation token from the `configId` — our
 admin secret never leaves the process.
 
+**Talking on behalf of a real, known user?** Mint the conversation token
+ourselves with `userId` instead of letting `converseOnce()` auto-mint an
+anonymous one — this binds the token to that user so per-user memory and
+analytics attribute the conversation correctly:
+
+```js
+const conv = await kaltura.sessions.createConversationToken({
+  configId: '<configId from Step 3>',
+  userId: 'learner-123',   // any stable id we use to identify this person
+});
+const reply = await kaltura.converseOnce('<configId from Step 3>', 'Hello again!', {}, conv);
+```
+
+`userId` is optional everywhere it's accepted — omit it and we get the same
+anonymous behavior shown above. See [API Reference § Authentication](/reference/api-reference/#authentication)
+for the full picture.
+
 ## What we just did
 
 <div data-nova-target="getting-started-success" data-nova-label="What we just did">
@@ -117,4 +140,6 @@ line.
 | Look up the exact API call for something | [API Reference](/reference/api-reference/) |
 | Make the avatar drive your UI (slides, widgets, navigation) | [Client-Side Commands](/guides/client-commands/) |
 | Put structured widgets on screen | [GenUI Reference](/reference/genui-reference/) |
+| Use our **own voice** for the avatar | [API Reference § Upload a Custom Voice (clone)](/reference/api-reference/#upload-a-custom-voice-clone) |
+| Use our **own face/portrait** for the avatar | [API Reference § Upload a Custom Visual](/reference/api-reference/#upload-a-custom-visual-portrait--animated-avatar) |
 | Understand how the whole system works under the hood | [Platform Architecture](/explanation/architecture/) |

@@ -1,7 +1,7 @@
 ---
 layout: base.njk
-title: Home
-description: A zero-dependency JavaScript SDK for building and operating Kaltura Agentic Avatars — conversational agents with a visual, human-like avatar interface.
+title: "Home"
+description: "A zero-dependency JavaScript SDK for building and operating Kaltura Agentic Avatars — conversational agents with a visual, human-like avatar interface."
 eyebrow: Agentic Avatars SDK
 bodyClass: home
 ---

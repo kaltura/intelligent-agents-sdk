@@ -10,8 +10,8 @@ eyebrow: How-to Guide
 Design guidance for app builders deciding **how a viewer's mic reaches the avatar**: continuous
 open-mic listening (VAD auto-cuts turns) or push-to-talk (the viewer explicitly opens and closes a
 capture window). This doc is about the **decision and the UI** — for the wire mechanics of
-`startTapToTalk()`/`endTapToTalk()` see [README.md](/reference/sdk-reference/#tap-to-talk-push-to-talk-voice),
-and for the exact socket events see [WIRE-PROTOCOL.md](/reference/wire-protocol/) (`tapToTalkStart`/`tapToTalkEnd`,
+`startTapToTalk()`/`endTapToTalk()` see [SDK Reference](/reference/sdk-reference/#tap-to-talk-push-to-talk-voice),
+and for the exact socket events see [Wire Protocol](/reference/wire-protocol/) (`tapToTalkStart`/`tapToTalkEnd`,
 `isTapToTalk`).
 
 ## The one rule that overrides everything else here
@@ -106,7 +106,7 @@ CM's `InTappedMode` state stuck. Layer these on top of `startTapToTalk()`/`endTa
    both a tap-to-talk control and an open-mic affordance for the same session.
 3. Wire click-to-toggle calling `session.startTapToTalk()`/`session.endTapToTalk()`, updating
    `aria-pressed` and an icon/level indicator on `tapToTalkStarted`/`tapToTalkEnded` — see the
-   conditional-UI example in [README.md](/reference/sdk-reference/#tap-to-talk-push-to-talk-voice).
+   conditional-UI example in [SDK Reference](/reference/sdk-reference/#tap-to-talk-push-to-talk-voice).
 4. Add the silence/max-duration/abandonment safeguards above; the SDK does not impose them for you.
 5. Update any UI copy that currently assumes continuous listening (e.g. a text-input placeholder like
    "...or just speak naturally") — that copy is wrong for a tap-to-talk agent and should describe the
@@ -116,6 +116,6 @@ CM's `InTappedMode` state stuck. Layer these on top of `startTapToTalk()`/`endTa
 
 | Doc | What it adds |
 |-----|---------------|
-| [README.md](/reference/sdk-reference/#tap-to-talk-push-to-talk-voice) | The SDK API: `startTapToTalk()`/`endTapToTalk()`, the `capability_disabled` gate, `tapToTalkActive`/`capabilities.tapToTalk` |
-| [WIRE-PROTOCOL.md](/reference/wire-protocol/) | The exact `tapToTalkStart`/`tapToTalkEnd` socket events and the verified CM source finding behind the mixed-mode gate |
-| [CLIENT-COMMANDS.md](/guides/client-commands/) | A different silent client→page channel (tool calls), not voice input — useful contrast for what this doc is *not* about |
+| [SDK Reference](/reference/sdk-reference/#tap-to-talk-push-to-talk-voice) | The SDK API: `startTapToTalk()`/`endTapToTalk()`, the `capability_disabled` gate, `tapToTalkActive`/`capabilities.tapToTalk` |
+| [Wire Protocol](/reference/wire-protocol/) | The exact `tapToTalkStart`/`tapToTalkEnd` socket events and the verified CM source finding behind the mixed-mode gate |
+| [Client-Side Commands](/guides/client-commands/) | A different silent client→page channel (tool calls), not voice input — useful contrast for what this doc is *not* about |

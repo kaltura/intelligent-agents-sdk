@@ -9,6 +9,21 @@ eyebrow: Reference
 
 This page documents the `@kaltura/intelligent-agents` JavaScript SDK's own object-level API — its classes, functions, and constructor options across the `Management` and `Experience` entry points. For the raw backend HTTP endpoints the SDK wraps, see the [API Reference](/reference/api-reference/).
 
+## Contents
+
+| Core surfaces | Configuration & operations |
+|---|---|
+| [Management](#management) | [Intellect configuration](#intellect-configuration) |
+| [Experience](#experience) | [Skills, voice import, and the embed snippet](#skills-voice-import-and-the-embed-snippet) |
+| [Client-side commands](#client-side-commands) | [Scripted-Video (STV-only) Sessions](#scripted-video-stv-only-sessions) |
+| [GenUI](#genui) | [RAG (knowledge base)](#rag-knowledge-base) |
+| [Presenter](#presenter) | [AI-SDR / CRM lead capture](#ai-sdr--crm-lead-capture) |
+| [Chroma-key Avatar Compositor](#chroma-key-avatar-compositor) | [Testing](#testing) |
+| [Advanced / building-block exports](#advanced--building-block-exports) | [Accessibility (WCAG 2.2 AA / captions) + AI-disclosure gate](#accessibility-wcag-22-aa--captions--ai-disclosure-gate) |
+| | [Security posture](#security-posture) |
+| | [Key design rules](#key-design-rules) |
+| | [Honest limits](#honest-limits) |
+
 ---
 
 ## Management
@@ -84,12 +99,12 @@ session.updateRequestVars({ user_name: 'Ada', account_tier: 'enterprise' });
 
 `updateRequestVars(vars)` always sends the **full current map** — conversation-manager resets `request_vars` to exactly what you send, it does not merge with the join-time map or a previous call. For a full per-turn context blob the brain reads fresh every turn (not just `{{var}}` substitution), use `session.setDynamicPrompt()` instead — the two mechanisms are distinct.
 
-For the full picture of when to use `request_vars` vs. `setDynamicPrompt()` vs. actively nudging the brain with `speak()` vs. answering a brain-initiated request with `submitStructuredDataForm()` — and a worked example showing how they compose — see [docs/DYNAMIC-DATA-INJECTION.md](/guides/dynamic-data-injection/).
+For the full picture of when to use `request_vars` vs. `setDynamicPrompt()` vs. actively nudging the brain with `speak()` vs. answering a brain-initiated request with `submitStructuredDataForm()` — and a worked example showing how they compose — see [Dynamic Data Injection](/guides/dynamic-data-injection/).
 
 ### Tap-to-talk (push-to-talk voice)
 
 For the app-level decision of whether to use this at all, and the UI/accessibility/safety design
-around it, see [docs/VOICE-INPUT-MODES.md](/guides/voice-input-modes/) — this section is the API
+around it, see [Voice Input Modes](/guides/voice-input-modes/) — this section is the API
 reference.
 
 `startTapToTalk()`/`endTapToTalk()` are a distinct voice-input mode from typed-text `speak()`/`interrupt()`. The ASR mic uplink is always connected once `connect()` resolves; tapping just tells the conversation-manager to mark a capture window (`tapToTalkStart` → `InTappedMode`) and, on release, mint the turn from whatever it captured (`tapToTalkEnd` → its own ~300ms `processTapToTalkInput` timer). That turn then arrives through the same `agentTurnToTalk`/`transcript` pipeline as any open-mic turn — no separate transcript path to wire up.
@@ -124,7 +139,7 @@ Build the control as click-to-toggle, not press-and-hold: it's more usable for l
 
 ### Resilience: brain stalls and tool-call spirals
 
-`KalturaAvatarSession` watches for a brain that goes quiet or loops instead of answering — see [ARCHITECTURE-REFERENCE.md](/reference/architecture-reference/#resilience--failure-handling) for the full failure-mode matrix.
+`KalturaAvatarSession` watches for a brain that goes quiet or loops instead of answering — see [Architecture Reference](/reference/architecture-reference/#resilience--failure-handling) for the full failure-mode matrix.
 
 - **Brain-stall watchdog** (`brainStallMs`, default on) — emits `brainStalled` (`{count}`), repeating for as long as nothing perceivable (spoken/avatar content or a GenUI widget) follows a turn.
 - **Dead-air masking** (`responsePending`/`responseSettled`) — `responsePending` (`{}`) fires the moment a turn starts awaiting the brain's first perceivable output (spoken/avatar/GenUI content); `responseSettled` (`{}`) fires once that output arrives, the turn ends, an interruption occurs, or the session tears down. Use this pair to show/hide a "thinking…" affordance instead of leaving the avatar's face frozen during the gap — see `examples/browser-experience.html` for a working example.
@@ -217,6 +232,8 @@ Transport: prefers `navigator.sendBeacon` (survives page-unload); falls back to 
 - Common params set once at construction and attached to every event: `partnerId`, `ks`, `entryId`, `sessionId`, `referrer`, `userId`, `hostingKalturaApplication`/`hostingKalturaApplicationVer`, `customId1`/`customId2`.
 - `buildPageLoadParams`/`buildButtonClickedParams` are the pure param-builders behind the class — unit-testable in isolation, or usable directly if you want your own transport.
 
+Reporting a **GenUI widget interaction** specifically (which chip/link/answer the viewer picked)? See [GenUI Reference § Widget-interaction analytics](/reference/genui-reference/#widget-interaction-analytics-avoiding-double-counting) for the recipe, live-verified against two widget types, plus the exact list of signals the platform already tracks server-side so you don't duplicate one client-side.
+
 ### Connectivity beacon (opt-in)
 
 ```js
@@ -260,7 +277,7 @@ session.acknowledgeDisclosure();
 
 ## Security posture
 
-Designed for enterprise, HIPAA, HITRUST, and regulated frameworks. Full control matrix in [SECURITY.md](/reference/security/). For Kaltura's authoritative legal/compliance positions, see [Kaltura's AI Principles](https://corp.kaltura.com/legal/compliance/kalturas-artificial-intelligence-principles/) and the [subprocessors list](https://corp.kaltura.com/legal/privacy/subprocessors-list/).
+Designed for enterprise, HIPAA, HITRUST, and regulated frameworks. Full control matrix in [Security](/reference/security/). For Kaltura's authoritative legal/compliance positions, see [Kaltura's AI Principles](https://corp.kaltura.com/legal/compliance/kalturas-artificial-intelligence-principles/) and the [subprocessors list](https://corp.kaltura.com/legal/privacy/subprocessors-list/).
 
 | Control | What the SDK does |
 |---------|------------------|
@@ -275,7 +292,7 @@ Designed for enterprise, HIPAA, HITRUST, and regulated frameworks. Full control 
 
 ## Key design rules
 
-- **Keep `disableentitlement` (management) server-side.** `KalturaAvatarSession` expects a `geniegpcid`/`agentid`/widget token (entitlement ON) — see [SECURITY.md](/reference/security/#ks-kaltura-session-guidance-for-agents-ac-3--ac-6--ia-2) for the full guidance and the rare case where an app deliberately needs to hand a browser broader access.
+- **Keep `disableentitlement` (management) server-side.** `KalturaAvatarSession` expects a `geniegpcid`/`agentid`/widget token (entitlement ON) — see [Security](/reference/security/#ks-kaltura-session-guidance-for-agents-ac-3--ac-6--ia-2) for the full guidance and the rare case where an app deliberately needs to hand a browser broader access.
 - **Destructive ops require `{ confirmPermanent: true }`.** Never a flag on a read operation.
 - **Capabilities are a full-replace dict.** A partial update drops keys you omit. Use `intellects.setCapability(configId, name, state, ks)` — it reads, merges, and writes.
 - **`kaltura_genie_experiences` competes with client tools.** Set it `'off'` at creation for tool-driven intellects (the capability injects a system rule that out-competes custom tools). Set at creation — partner config is cached ~24 h server-side. `tools.clientToolReadiness(body)` lints for this.
@@ -392,7 +409,7 @@ await mgmt.intellectConfig.setToolIds(configId, [id], ks);
 
 Both recipes validate their config (via `tools.api()`) and throw a typed error for a missing `secretName`/`instanceUrl` before any write. See `src/management/crm-recipes.js` for the full arg list (`propertiesToCapture`/`fieldsToCapture`, `externalIdField`).
 
-For Marketo, Airtable, Google Sheets/Forms, or any other REST target, plus the real backend-managed OAuth2 authorization-code flow (consent + auto-refresh) for providers that require it, see [docs/EXTERNAL-API-INTEGRATIONS.md](/guides/external-api-integrations/).
+For Marketo, Airtable, Google Sheets/Forms, or any other REST target, plus the real backend-managed OAuth2 authorization-code flow (consent + auto-refresh) for providers that require it, see [External API Integrations](/guides/external-api-integrations/).
 
 ---
 
@@ -405,7 +422,7 @@ import { ExperienceRenderer } from '@kaltura/intelligent-agents/experience/genui
 new ExperienceRenderer({
   session,
   mount: document.getElementById('widgets'),
-  onAction: (action, payload) => { /* followup / submit / play / open */ },
+  onAction: (action, payload) => { /* followup / submit / play / open / answer */ },
 }).start();
 ```
 
@@ -414,6 +431,8 @@ new ExperienceRenderer({
 A `summary` widget's text is markdown-in-plain-text by default (LLM-authored), and the SDK renders it as flat escaped text unless you opt in: `mountWidget(descriptor, target, { markdown: true })` parses that same text as markdown — headings, bold/italic, inline code, links, lists, fenced code blocks, and GFM tables (rendered through the same safe `tableEl` builder the structured widgets use) — all as real, accessible DOM, never `innerHTML`. This is markdown-IN-plain-text rendering, not a new wire segment type; every link goes through `safeUrl` and every text run through `safeText`/`safeSource`, so a `javascript:` link or a raw `<script>` tag in the LLM output is neutralized the same way the rest of GenUI's renderers neutralize untrusted output. Default (flat text) behavior is unchanged, so no existing app regresses by upgrading.
 
 A widget interrupted mid-stream (a different runtime/`speechId` arrives before its JSON body finishes writing — e.g. a barge-in) is never mounted as a silently-truncated widget: `SegmentAssembler` recognizes the cut-off JSON shape and `ExperienceRenderer` mounts the same typed fallback it uses for a throwing custom renderer, `{kind:'error', data:{runtime, message}}`, distinguishable from any complete widget's descriptor.
+
+`graded-question` (a prompt with either multiple-choice options or a free-text answer, an optional answer key, and an optional explanation) is NOT one of the nine backend runtimes above — there's no Genie brain tool that emits it. It's a host-registered widget: `import { renderGradedQuestion } from '@kaltura/intelligent-agents/experience/genui'`, then `new ExperienceRenderer({ renderers: { 'graded-question': renderGradedQuestion } })`, the same "10th runtime" extensibility seam any custom widget uses (see [GenUI Reference § Registration, fallback, and provenance](/reference/genui-reference/#registration-fallback-and-provenance)). Grading happens client-side in `mountWidget` — a comprehension-check primitive, not a tamper-proof assessment, since the answer key travels in the descriptor itself. Full shape and the `onAction('answer', ...)` event are in [GenUI Reference § 10. graded-question](/reference/genui-reference/#10-graded-question-rendergradedquestion--a-host-registered-10th-runtime).
 
 In LIVE mode (`.start()`), `ExperienceRenderer` also subscribes to the session's `turnStart` event (re-emitted from the raw `agent_start_speech` socket event — `{speechId, turnId, isNewTurn}`) and, by default (`clearOnTurnStart: true`), discards the assembler's in-flight buffer and clears `rendered`/`last` when `isNewTurn` is true, so a widget from a previous turn never lingers into the next one — the same correctness fix Genie's own web client applies by nulling its content on `AgentStartSpeechReceived`. A duplicate turn (`isNewTurn:false`, e.g. a CM-side `tap-to-talk` retrigger for a `turnId` already in flight) is ignored here, matching every other `turnStart`/`isNewTurn` consumer in the SDK — otherwise the duplicate would wipe an already-rendered widget out from under the viewer mid-turn. Pass `clearOnTurnStart: false` to keep the previous default behavior (accumulate/persist across turns).
 
@@ -523,7 +542,7 @@ These are importable from their entry points and useful when composing custom pi
 | `uuidv4()` | Cryptographically random UUID v4 (uses `crypto.randomUUID` when available, pure-JS fallback). |
 | `randId(prefix?)` | Short collision-resistant ID with an optional prefix — used for idempotency keys and `_meta` receipts. |
 | `parseCsv(text)` | Zero-dep CSV parser (RFC 4180). Used by the `tools.api` CSV response path. |
-| `summarizeReport(rows, opts)` | Aggregates raw reporting rows into a `{ _meta, totals, byAgent, byThread }` summary — the same shape returned by `genie.mjs report-summary`. |
+| `summarizeReport(rows, opts)` | Aggregates raw reporting rows into a `{ _meta, totals, byAgent, byThread }` summary. |
 | `lintPrompts(prompts)` / `validatePromptVars(text, vars)` / `lintGlossary(glossary)` / `assembleSystemPrompt(parts)` | The prompt-authoring toolchain (`management/prompt-lint.js`): lint a prompt set for the `SYS_VARS` an intellect actually supplies, validate a template's `{{var}}` references against a known var set, lint a glossary for duplicate/conflicting terms, and assemble a final system prompt from ordered parts. Use these to catch a broken prompt (an unresolvable `{{var}}`, a name collision) before it ships, not after a live conversation surfaces it. |
 | `lintPersonaIdentity({name?, openingPhrase?, baseDirective?, prompts?})` | Warns when a persona rename didn't fully propagate. `persona_name_drift` fires whenever a declared `name` (or an `openingPhrase`-derived name that differs from it) is missing from `base_directive`/`prompts[]` — it doesn't need `openingPhrase` at all, so it also catches intellects that only declare `name` and skip `openingPhrase` entirely. `persona_name_mismatch` still needs an `openingPhrase` that parses to a name different from the declared `name`. Returns `{ok, summary, findings, detectedName, _meta}` — warning-only, never throws. `mgmt.provision()` runs this automatically and returns the result as `personaLint` (see above); call it directly to re-check an intellect you're editing outside of `provision()`. |
 | `resolveCapabilities(layers)` / `CAPABILITY_STATE` / `CAPABILITY_INFO` | `management/capabilities.js`'s typed capability resolver: merges the `env`/`partnerConfig`/`request` layers for each entry in `CAPABILITIES` down to one resolved `CAPABILITY_STATE` (`on`/`off`/`disabled`) plus a `resolvedFrom` provenance tag, so a caller can build an accurate "what can this agent do" view without re-deriving precedence from raw config fields. `CAPABILITY_INFO` carries the human-readable name/description per capability. |
@@ -562,6 +581,7 @@ These are importable from their entry points and useful when composing custom pi
 | `parseWidget(segment)` / `normalizeRuntime` / `RUNTIMES` / `GENUI_WIDGET_NAME` | Wire-shape parsing helpers for building a custom GenUI renderer. |
 | `DEFAULT_RENDERERS` / `WIDGET_KINDS` | The default per-kind renderer map and the frozen list of kinds it dispatches on. |
 | `SegmentAssembler` | Collects typed stream segments from the live socket into the same assembled shape as `collectConverse` — use when replaying socket captures or building a custom turn handler. `onMalformed({runtime, runtimeName, speechId, reason, message})` fires instead of `onWidget` when a fragment sequence is interrupted (`reason:'boundary'`) before its JSON body finishes — a natural end-of-turn (`'turnEnd'`) or `stop()` flush is never flagged malformed. |
+| `renderGradedQuestion` | Renderer for the `graded-question` comprehension-check widget — NOT in `DEFAULT_RENDERERS`/`WIDGET_KINDS` (there's no backend runtime for it). Register it yourself: `new ExperienceRenderer({ renderers: { 'graded-question': renderGradedQuestion } })`. See [GenUI](#genui) above and [GenUI Reference § 10](/reference/genui-reference/#10-graded-question-rendergradedquestion--a-host-registered-10th-runtime). |
 
 ### `./experience/noise-suppressor`
 
@@ -697,7 +717,7 @@ await view.connect();   // negotiates WHEP, resolves once the stream is playable
 view.disconnect();
 ```
 
-`create` authenticates with your own **admin KS** (`mgmt.sessions.createAdminToken()`); every call after it (`initClient`/`say`/`interrupt`/`keepAlive`/`end`) authenticates with the **session's own Bearer token** instead — `create()`'s return value is a receipt (`{sessionId, token, isExpired(), secondsRemaining()}`), pass it straight to the other methods rather than re-deriving a KS. `say-audio` (wrapped as `say()`) is the only speech-injection mechanism this backend exposes — there is no verbatim text-to-speech endpoint on it (`say-text` 503s on the live deployment; `set-emotion`/`queue-status`/`status` don't exist). See [API Reference § Scripted-Video (STV-only) Sessions](/reference/api-reference/#scripted-video-stv-only-sessions) for the full auth/lifecycle table, and `examples/scripted-video-session.mjs` + `.html` in the SDK repo for a complete runnable server+browser pair (including a stand-in for your real TTS call).
+`create` authenticates with your own **admin KS** (`mgmt.sessions.createAdminToken()`); every call after it (`initClient`/`say`/`interrupt`/`keepAlive`/`end`) authenticates with the **session's own Bearer token** instead — `create()`'s return value is a receipt (`{sessionId, token, isExpired(), secondsRemaining()}`), pass it straight to the other methods rather than re-deriving a KS. `say-audio` (wrapped as `say()`) is the only speech-injection mechanism this backend exposes — there is no verbatim text-to-speech endpoint on it (`say-text` 503s on the live deployment; `set-emotion`/`queue-status`/`status` don't exist). See [API Reference § Scripted-video (STV-only) sessions](/reference/api-reference/#scripted-video-stv-only-sessions) for the full auth/lifecycle table, and `examples/scripted-video-session.mjs` + `.html` in the SDK repo for a complete runnable server+browser pair (including a stand-in for your real TTS call).
 
 ---
 
@@ -727,7 +747,7 @@ await mgmt.knowledge.updateRecord(rec.id, { name: 'Docs v2' }, ks); // rename/ed
 await mgmt.knowledge.deleteRecord(rec.id, ks, { confirmPermanent: true });
 ```
 
-`deleteRecord` does **NOT** unlink the record from intellects that reference it — an intellect's `knowledge_ids` keeps the dangling id. Clear it yourself (`intellectConfig.setKnowledgeIds(configId, [], ks)`) when retiring a record. A deleted or unknown record id → typed `not_found`; another partner's → `forbidden`. A record with more than one `sources` entry (e.g. `internal` + `web` together) can 500 on delete on the current deployment — see Honest limits below.
+`deleteRecord` does **NOT** unlink the record from intellects that reference it — an intellect's `knowledge_ids` keeps the dangling id. Clear it yourself (`intellectConfig.setKnowledgeIds(configId, [], ks)`) when retiring a record. A deleted or unknown record id → typed `not_found`; another partner's → `forbidden`.
 
 ---
 
@@ -737,4 +757,16 @@ await mgmt.knowledge.deleteRecord(rec.id, ks, { confirmPermanent: true });
 - **No verbatim speech** — `speak()` goes through the brain; the avatar may rephrase.
 - **Custom face works self-serve** — upload a portrait image via `catalog.createVisual`, pass `itemId` as `visualId` in `provision`/`avatars.create`. The model animates the portrait at runtime. Video-clip ingest (higher-fidelity model) is not yet self-serve.
 - **`force_experience` and `model_type:'fast'`** are hints; the SDK can't prove which model replied or which experience rendered.
-- **Multi-source Knowledge records can fail to delete.** A record created with more than one `sources` entry (e.g. `internal` + `web` together) reliably 500s on `deleteRecord` on the current deployment (verified live, reproduced 3x, ruled out call ordering and lingering intellect references) — the record itself becomes an orphan (its backing category/entries can still be torn down separately). Single-source records delete cleanly. Until the backend fixes this, avoid mixing source types in one record if you expect to delete it later; use separate records per source type instead.
+
+---
+
+## Related docs
+
+| Doc | What it adds |
+|-----|---------------|
+| [Getting Started](/getting-started/) | First working agent in about five minutes |
+| [API Reference](/reference/api-reference/) | The raw HTTP endpoints behind every SDK method here |
+| [Platform Architecture](/explanation/architecture/) | How `./management` and `./experience` fit into the backend services and runtime protocol as a whole |
+| [Architecture Reference](/reference/architecture-reference/) | The module-by-module data-flow map and failure-mode tables behind this page's SDK surface |
+| [Wire Protocol](/reference/wire-protocol/) | The exact socket/WebRTC wire shapes `KalturaAvatarSession` speaks |
+| [Security](/reference/security/) | The control matrix and KS-handling guidance behind this SDK's auth model |

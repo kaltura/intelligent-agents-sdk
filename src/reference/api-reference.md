@@ -9,12 +9,12 @@ eyebrow: Reference
 
 Every endpoint, the full agent lifecycle, and a verified use-case catalog — copy-paste ready.
 
-**New here?** Start with [GETTING-STARTED.md](/getting-started/). Runtime details live in [docs/ARCHITECTURE.md](/explanation/architecture/). The zero-dependency SDK is in [`README.md`](/reference/sdk-reference/).
+**New here?** Start with [Getting Started](/getting-started/). Runtime details live in [Platform Architecture](/explanation/architecture/). The zero-dependency SDK is in [SDK Reference](/reference/sdk-reference/).
 
 **Credentials** — all examples need `AGENTIC_PARTNER_ID` and `AGENTIC_ADMIN_SECRET` ([Rich Media CMS → Settings → Integration Settings](https://kmc.kaltura.com/index.php/kmcng/settings/integrationSettings)). Set them in a local `.env` (copy `.env.example`) or pass inline. Never hardcode the secret.
 
 Every endpoint below is shown as a raw HTTP call plus its SDK wrapper. The SDK is what ships in
-this repo — see [`README.md`](/reference/sdk-reference/) for the full `Management` method list.
+this repo — see [SDK Reference](/reference/sdk-reference/) for the full `Management` method list.
 
 ---
 
@@ -22,13 +22,13 @@ this repo — see [`README.md`](/reference/sdk-reference/) for the full `Managem
 
 | Lifecycle | Reference & Catalog |
 |-----------|---------------------|
-| [Authentication](#authentication) | [Management Operations](#management-operations) |
-| [The Five Services](#the-five-services) | [Common Errors](#common-errors) |
-| [Phase 1 — Design](#phase-1--design) | [Use-Case Catalog](/reference/use-cases/) (13 use cases, UC-1 through UC-13) |
-| [Phase 2 — Build](#phase-2--build) | [Quick Reference](#quick-reference) |
-| [Phase 3 — Deploy (embed + runtime init)](#phase-3--deploy) | |
-| [Phase 4 — Operate](#phase-4--operate) | |
-| [Scripted-Video (STV-only) Sessions](#scripted-video-stv-only-sessions) | |
+| [Authentication](#authentication) | [Management operations](#management-operations) |
+| [The five services](#the-five-services) | [Common errors](#common-errors) |
+| [Phase 1 — design](#phase-1--design) | [Use-Case Catalog](/reference/use-cases/) (13 use cases, UC-1 through UC-13) |
+| [Phase 2 — build](#phase-2--build) | [Quick reference](#quick-reference) |
+| [Phase 3 — deploy (embed + runtime init)](#phase-3--deploy) | |
+| [Phase 4 — operate](#phase-4--operate) | |
+| [Scripted-video (STV-only) sessions](#scripted-video-stv-only-sessions) | |
 
 ---
 
@@ -65,7 +65,7 @@ KS=$(curl -s -X POST "https://www.kaltura.com/api_v3/service/session/action/star
 | Agent | `agentid:<agentId>` | Agent-scoped calls targeting a specific agent |
 | Widget | auto-derived from `widgetId` | End-user embed — no admin secret in the browser |
 
-**Keep `disableentitlement` server-side, for management/admin operations only.** The SDK can't detect or stop a `disableentitlement` KS from being handed to a conversation/end-user session — a real KS's privileges are encrypted and unreadable client-side — so nothing will warn you if you do this by mistake. See [SECURITY.md](/reference/security/#ks-kaltura-session-guidance-for-agents-ac-3--ac-6--ia-2) and Kaltura's own [KS/privilege reference](https://kaltura.md/KALTURA_SESSION_GUIDE/).
+**Keep `disableentitlement` server-side, for management/admin operations only.** The SDK can't detect or stop a `disableentitlement` KS from being handed to a conversation/end-user session — a real KS's privileges are encrypted and unreadable client-side — so nothing will warn you if you do this by mistake. See [Security](/reference/security/#ks-kaltura-session-guidance-for-agents-ac-3--ac-6--ia-2) and Kaltura's own [KS/privilege reference](https://kaltura.md/KALTURA_SESSION_GUIDE/).
 
 **Bind a session to a real end-user identity (`userId`).** By default every minted KS is anonymous — the reserved `{{ sys__user_id }}` template variable (see § Converse) resolves to an empty string in every prompt/converse call. Pass `userId` to bind the KS to a real end-user id instead — the value flows straight through to `session/start`'s own `userId` field, per-call only (never cached), so it makes `sys__user_id` resolve server-side and lets converse-side memory/analytics attribute the turn to a real user:
 
@@ -92,7 +92,7 @@ CONV_KS=$(curl -s -X POST "https://www.kaltura.com/api_v3/service/session/action
 
 ---
 
-## The Five Services
+## The five services
 
 An agent is built from five services that layer on top of each other. All calls use `POST` with JSON (`GET /assistant/status` is the one exception).
 
@@ -110,7 +110,7 @@ To embed a live avatar in a browser, go to [Phase 3 — Deploy](#phase-3--deploy
 
 ---
 
-## Phase 1 — Design
+## Phase 1 — design
 
 ### Browse the Catalog
 
@@ -165,6 +165,8 @@ Returns a `CatalogItemDto` whose `itemId` is the ElevenLabs clone. Pair with any
 
 **Gotchas:** `description` must be non-empty; audio under ~6 s returns `500`; send `adminTags=custom` bare (not a JSON array string).
 
+**SDK shortcut:** `mgmt.catalog.createVoice(file, { name, description, language?, consentRef? }, ks)` builds the multipart body for you and throws a typed `bad_request` client-side if `description` is empty, before the request ever leaves your process.
+
 ### Import a Provider Voice by id (no audio upload)
 
 Already have a voice on ElevenLabs or Cartesia? Create the catalog Voice item directly from its provider voice id:
@@ -212,7 +214,7 @@ The full path is exercised end-to-end by the SDK's own integration test
 
 ---
 
-## Phase 2 — Build
+## Phase 2 — build
 
 ### Create an Intellect
 
@@ -339,7 +341,7 @@ It is **not byte-exact** with the live prompt — server-injected capability-con
 | `sys__user_message` | The user's current turn text |
 | `sys__is_new_thread` | `true` on the first turn of a thread |
 | `sys__ks` | The raw session token. **Never reference this in a prompt that could be echoed back to a user or logged** — it is a live credential. |
-| `sys__user_obj.first_name` / `.last_name` / `.title` / `.company` / `.gender` / `.email` | Attributes of the bound-user object. Referencing an attribute with no bound user currently causes a silent, empty **turn failure** live (backend behavior, not fixable from the SDK — see the issue tracker), not just an empty render. |
+| `sys__user_obj.first_name` / `.last_name` / `.title` / `.company` / `.gender` / `.email` | Attributes of the bound-user object. The rendered preview from `previewPrompt()` carries a `reserved_user_attr_unresolved` warning when a prompt references these — treat it as a hard stop before shipping. |
 | `secrets.NAME` | A named secret configured on the intellect (write-only — `previewPrompt()` never has access to the raw value, so it cannot confirm one is set) |
 
 **Unresolvable-reserved-variable warnings (hardening):** if a prompt references one of the variables above and no value is available in the simulated context (no `requestVars` entry, or an explicit `null`/`undefined`), `previewPrompt()` returns a `warnings[]` entry naming the variable and why — instead of the placeholder being silently rendered as literal/empty text as if the prompt were safe to ship. `warnings` is an **additive** field: it is present only when non-empty, so a fully-resolved preview's return shape is unchanged from before this hardening.
@@ -356,9 +358,8 @@ p.warnings;
 //   severity: 'warning',
 //   code: 'reserved_user_attr_unresolved',
 //   message: '`{{sys__user_obj.first_name}}` has no bound value in this preview\'s
-//              requestVars. Referencing an unbound sys__user_obj.* attribute in a
-//              LIVE turn currently causes a silent turn failure, not an empty
-//              render — bind a user (Sessions.createConversationToken({userId}))
+//              requestVars. previewPrompt flags this as reserved_user_attr_unresolved —
+//              bind a user (Sessions.createConversationToken({userId}))
 //              or supply "sys__user_obj.first_name" in requestVars to simulate
 //              the bound case before shipping this prompt.'
 // }]
@@ -427,7 +428,7 @@ sent to `POST /v1/intellect/update`.
 { "name": "fx_rate", "config": { "type": "code", "description": "Convert currency", "code": "def main(request_config):\n    return 'ok'" } }
 ```
 
-**`client` tool** — a native function-calling tool that makes NO server-side call at all. The model calls it, the backend emits a silent `type:"tool"` segment (see [WIRE-PROTOCOL.md](/reference/wire-protocol/)), and that's the entire contract — no `request` block, no echo endpoint, no response shaper:
+**`client` tool** — a native function-calling tool that makes NO server-side call at all. The model calls it, the backend emits a silent `type:"tool"` segment (see [Wire Protocol](/reference/wire-protocol/)), and that's the entire contract — no `request` block, no echo endpoint, no response shaper:
 
 ```json
 {
@@ -605,7 +606,7 @@ const { brainConfig, unsetUseDefault } = await mgmt.intellects.getBrainConfig(co
 
 ---
 
-## Phase 3 — Deploy
+## Phase 3 — deploy
 
 ### Resolve Widget ID
 
@@ -655,7 +656,7 @@ not here — this reference covers the server-side Management API surface only.
 
 ---
 
-## Phase 4 — Operate
+## Phase 4 — operate
 
 ### Converse
 
@@ -729,18 +730,9 @@ since those collide with a server-managed variable; it does not yet name-check `
 | `sys__user_id` | The bound end-user id | Empty by default (an anonymous KS). Bind a real identity with `Sessions.createConversationToken({ userId })` (or `createAdminToken({ userId })`) so this resolves server-side instead of always being empty — see § Bind a session to a real end-user identity above. |
 | `sys__user_message` | The current turn's user text | |
 | `sys__is_new_thread` | `true` on the first turn of a new thread, `false` otherwise | |
-| `sys__ks` | The raw Kaltura Session token for the current request | ⚠️ **Security warning: never reference `sys__ks` in a prompt whose output could be echoed back to a user or logged.** It is a live credential — rendering it as plain text in a model response, chat transcript, or log turns that surface into a credential leak. See [SECURITY.md](/reference/security/#ks-kaltura-session-guidance-for-agents-ac-3--ac-6--ia-2). |
-| `sys__user_obj.first_name` / `.last_name` / `.title` / `.company` / `.gender` / `.email` | Attributes of the bound-user object | See the dated note below — an unresolved attribute currently fails the whole turn silently, not just this placeholder. |
+| `sys__ks` | The raw Kaltura Session token for the current request | ⚠️ **Security warning: never reference `sys__ks` in a prompt whose output could be echoed back to a user or logged.** It is a live credential — rendering it as plain text in a model response, chat transcript, or log turns that surface into a credential leak. See [Security](/reference/security/#ks-kaltura-session-guidance-for-agents-ac-3--ac-6--ia-2). |
+| `sys__user_obj.first_name` / `.last_name` / `.title` / `.company` / `.gender` / `.email` | Attributes of the bound-user object | Verify these resolve with `intellects.previewPrompt()` before shipping a prompt — the rendered preview flags unresolved references with a `reserved_user_attr_unresolved` warning. |
 | `secrets.<NAME>` | A named secret configured on the intellect | Write-only — see [§ Secrets](#secrets-write-only). |
-
-> **Known issue, dated 2026-08-22 — `sys__user_obj.*` causes a silent turn failure (tracks issue #37).**
-> Referencing any `sys__user_obj.*` attribute in a live prompt reproducibly causes a silent, zero-response,
-> zero-error turn failure — confirmed independent of whether the session has a bound user identity. This is
-> backend behavior (the streaming `/assistant/converse` response has already sent a success status before
-> the failure happens, so nothing surfaces as a normal error) and is **not fixable from this SDK**. Until the
-> underlying backend fix ships, the mitigation is catching the risk before you ship the prompt:
-> `intellects.previewPrompt()` flags an unresolved `sys__user_obj.*` reference with a `reserved_user_attr_unresolved` warning — the placeholder is not rendered as if it were safe.
-> Treat any such warning as a hard stop. See § Preview a Prompt above.
 
 ---
 
@@ -778,31 +770,11 @@ SDK: `mgmt.threads.{list, get, rename, delete, transcript}`.
 
 > **Compliance note.** `threads.delete()` soft-deletes immediately; a scheduled infra-level purge
 > erases the underlying data later. See
-> [SECURITY.md](/reference/security/#shared-responsibility-control-matrix-nist-800-53) for what the SDK
+> [Security](/reference/security/#shared-responsibility-control-matrix-nist-800-53) for what the SDK
 > provides versus what the operator must configure.
 
-> **Backend-blocked, dated 2026-08-22 (tracks issue #43).** Thread history has no documented size
-> limit, and there is no default cap in practice: the full transcript is sent as context on every
-> turn, regardless of thread length. A long-running thread (for example, a multi-week coaching
-> relationship) will keep growing its per-turn token cost indefinitely. Backend investigation
-> confirms a token-budget-based trimming/summarization mechanism exists server-side, but it is a
-> global on/off switch today, with no per-partner or per-session control exposed via the SDK (and
-> no published token-budget figures to cite here). Integrators running long-lived threads should
-> plan for per-turn cost that scales with thread length, with no current SDK-level way to bound it.
-> A real per-session/per-partner history-window control is tracked separately as
-> [issue #59](https://github.com/kaltura/intelligent-agents-sdk/issues/59) — not implemented, and
-> not implied by anything in this SDK today.
-
-> **Backend-blocked, dated 2026-08-22 (tracks issue #44).** There is no public API today for
-> getting a summary of a thread. Backend investigation confirms summarization logic already
-> exists server-side, in more than one form used internally at different points in a
-> conversation's lifecycle, but none of it is exposed as an endpoint an integrator can call
-> directly. Building "give me a summary of this thread" today means replaying the transcript
-> (via `threads.transcript()`) into a separate prompt yourself. Once the backend exposes a
-> public summarization endpoint, the SDK would add a thin `Conversations.summarize(threadId)`-
-> style method following the same non-2xx error-handling conventions as the rest of
-> `Conversations` — but that endpoint does not exist yet, and nothing in this SDK should be read
-> as implying otherwise.
+The full transcript is sent as model context on every turn, so per-turn cost grows with thread
+length — plan long-running threads accordingly.
 
 ---
 
@@ -834,7 +806,7 @@ Returns `{status, data}`. A partner with no indexed content returns a `"couldn't
 
 ---
 
-## Scripted-Video (STV-only) Sessions
+## Scripted-video (STV-only) sessions
 
 A second, INDEPENDENT session type — `https://api.avatar.us.kaltura.ai/v1/avatar-session/*` — that
 sits next to, not on top of, everything in Phases 1–4 above. No LLM, no ASR, no socket.io: REST +
@@ -873,8 +845,7 @@ just desyncs the mouth from the audio, it doesn't error), and pass both to `say-
 itself is async/queued: it resolves in roughly 100ms once the server accepts the turn, not once
 playback finishes — call `interrupt` to cut off whatever's currently playing.
 
-`set-emotion`, `queue-status`, `status`, and `session-status` all 404 on the current deployment and
-are not wrapped.
+`set-emotion`, `queue-status`, `status`, and `session-status` all 404 and are not wrapped.
 
 ```js
 import { Management } from '@kaltura/intelligent-agents/management';
@@ -909,7 +880,7 @@ See the runnable example in the SDK repo: `examples/scripted-video-session.mjs` 
 
 ---
 
-## Management Operations
+## Management operations
 
 All use the **admin KS**.
 
@@ -991,11 +962,9 @@ Full record lifecycle (all verified live). SDK: `mgmt.knowledge`. Linkage to an 
 
 Deleting a record does **not** unlink it — an intellect's `knowledge_ids` keeps the dangling id; clear it via `mgmt.intellectConfig.setKnowledgeIds(configId, [], ks)`.
 
-A record with more than one `sources` entry (e.g. `internal` + `web` together) reliably 500s on Delete on the current deployment (verified live, reproduced 3x; single-source records delete cleanly) — see README.md's Honest limits. It becomes an orphan; its backing category/entries can still be torn down separately.
-
 ---
 
-## Common Errors
+## Common errors
 
 | Status | Code / Detail | Fix |
 |--------|--------------|-----|
@@ -1011,16 +980,16 @@ A record with more than one `sources` entry (e.g. `internal` + `web` together) r
 
 A "what can you build" catalog of all 13 use cases (UC-1 through UC-13) and composition patterns,
 each mapped to its key mechanism and a runnable script/SDK entry point, has moved to its own file:
-see [docs/USE-CASES.md](/reference/use-cases/).
+see [Use-Case Catalog](/reference/use-cases/).
 
 ---
 
-## Quick Reference
+## Quick reference
 
 <div data-nova-target="api-reference-quickref" data-nova-label="Quick Reference example">
 
 The full `Management` method surface (this doc's endpoints, wrapped) is listed in
-[`README.md`](/reference/sdk-reference/) → Management. Two common lookups:
+[SDK Reference](/reference/sdk-reference/) → Management. Two common lookups:
 
 ```js
 import { Management } from '@kaltura/intelligent-agents/management';
@@ -1032,3 +1001,15 @@ console.log(await mgmt.intellects.list(ks).all());
 ```
 
 </div>
+
+---
+
+## Related docs
+
+| Doc | What it adds |
+|-----|---------------|
+| [Getting Started](/getting-started/) | First working agent in about five minutes |
+| [Platform Architecture](/explanation/architecture/) | How these endpoints fit into the backend services and runtime protocol as a whole |
+| [SDK Reference](/reference/sdk-reference/) | The full `Management`/`Experience` method surface each endpoint above wraps |
+| [Use-Case Catalog](/reference/use-cases/) | All 13 use cases, each mapped to its key mechanism and a runnable script |
+| [Security](/reference/security/) | The control matrix and KS-handling guidance behind the auth section above |
