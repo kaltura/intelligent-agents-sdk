@@ -218,6 +218,9 @@ export class KalturaAvatarSession extends Emitter {
     this._requireDisclosureAck = !!cfg.requireDisclosureAck;
     this._disclosureAcked = false;
     this._pendingApprove = null;
+    // Approve held by a cold reconnect that fired mid-pause (issue #80) — released by
+    // resume(). Separate from _pendingApprove so acknowledgeDisclosure() can't release it.
+    this._pausedPendingApprove = null;
     this._disclosure = null;   // populated at connect; queryable via getDisclosure()
     this._disclosurePending = false;   // set true at connect when requireDisclosureAck blocks speak()
     // Opaque, operator-assigned subject id (HIPAA 164.312(a)(2)(i) unique user id) — stamped
@@ -1087,6 +1090,16 @@ export class KalturaAvatarSession extends Emitter {
   async resume() {
     this._requireConnected('resume');
     this.paused = false;
+    // A cold reconnect during the pause rebuilt a fresh server-side session but held its
+    // approve (issue #80 — approve is what starts the avatar speaking). Releasing it now
+    // IS the resume: the rebuilt session was never approved or paused server-side, so
+    // `resumeConversation` would have nothing to act on.
+    if (this._pausedPendingApprove) {
+      const s = this._pausedPendingApprove;
+      this._pausedPendingApprove = null;
+      this._approve(s);
+      return;
+    }
     if (!this._sessionReleased) { this._socket.emit('resumeConversation', {}); return; }
     // released → expect a fresh stvNewSession; rebuild transports on it.
     this._sessionReleased = false;
@@ -2142,15 +2155,21 @@ export class KalturaAvatarSession extends Emitter {
       ]);
       await this._createSessionWithCapacity(socket, overall);
       await this._runConnectSequence(socket, overall);
-      this._approve(socket);
+      // Issue #80 (verified live): `approvedPermissions` is what makes the avatar speak —
+      // a rebuilt session replays its opening line the moment approve lands (speechId
+      // `*-approved-permissions`). If the app deliberately paused, approving here would
+      // audibly break the pause, so hold the approve and let resume() release it. The
+      // fresh server-side session was never approved, so nothing arms until then.
+      if (this.paused) this._pausedPendingApprove = socket;
+      else this._approve(socket);
       this._reconnectAttempt = 0;
       // A cold reconnect that fires while paused (e.g. a stale-STV WHEP 404 during a long
       // pause — issue #58) has already rebuilt the socket/transports/session from scratch,
-      // which is exactly what resume()'s "released" branch exists to do. Clear both flags
-      // here so a resume() call afterward takes the cheap `resumeConversation`-only path
-      // instead of awaiting a fresh stvNewSession that is never coming (nothing requested
-      // one — this cold reconnect already got its own).
-      this.paused = false;
+      // which is exactly what resume()'s "released" branch exists to do. Clear the released
+      // flag so resume() doesn't await a fresh stvNewSession that is never coming (this
+      // cold reconnect already got its own). `paused` intentionally survives: resume()
+      // releases the held approve above instead of emitting `resumeConversation` — the
+      // rebuilt session was never approved, so there is nothing to resume yet.
       this._sessionReleased = false;
       this._setState('connected');
       // Re-arm the hard-spiral breaker: a spiral never emits a spoken/genui segment, so
@@ -2195,6 +2214,7 @@ export class KalturaAvatarSession extends Emitter {
     // Shared by disconnect() and _endWith() — any ACK still pending when the session ends
     // can never be delivered (rule 4.2: cleared on disconnect, not left to grow unbounded).
     this._pendingToolAcks.clear();
+    this._pausedPendingApprove = null;   // a held approve (issue #80) dies with the session
     this._clearBrainWatchdog();
     this._settleResponsePending();   // never leave the pending signal stuck across teardown
     this._clearIdleTimers();

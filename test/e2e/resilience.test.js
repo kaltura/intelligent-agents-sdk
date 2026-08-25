@@ -219,14 +219,17 @@ test('STV: WHEP 404 on re-subscribe (session truly gone) → cold reconnect with
   session.disconnect();
 });
 
-test('issue #58: _coldReconnect() firing while paused clears paused/_sessionReleased, so resume() takes the cheap path afterward', async () => {
-  // Live-reproduced scenario: a long pause independently triggers a stale-STV WHEP 404
+test('issues #58/#80: _coldReconnect() while paused holds the approve and clears _sessionReleased; resume() releases the approve instantly', async () => {
+  // Live-reproduced scenario (#58): a long pause independently triggers a stale-STV WHEP 404
   // (unrelated to the pause itself) → _coldReconnect() rebuilds the socket/transports/session
-  // and the conversation keeps working — but (pre-fix) `paused`/`_sessionReleased` stayed
-  // stuck at their pre-recovery values. A later resume() then saw `_sessionReleased===true`
-  // and took the "rebuild from a fresh stvNewSession" branch — except no fresh stvNewSession
-  // was ever coming (this cold reconnect already got its own) — so resume() would hang/reject
-  // instead of taking the already-correct cheap path.
+  // and the conversation keeps working — but (pre-fix) `_sessionReleased` stayed stuck, so a
+  // later resume() took the "rebuild from a fresh stvNewSession" branch and hung (no fresh
+  // stvNewSession was ever coming — this cold reconnect already got its own).
+  // #80 refines the fix: `approvedPermissions` is what makes the avatar SPEAK (verified live —
+  // the replayed greeting's speechId is `*-approved-permissions`), so the rebuild must NOT
+  // approve while paused. It holds the approve; resume() releases it, which both starts the
+  // fresh session and IS the resume (the rebuilt session was never approved or paused
+  // server-side, so `resumeConversation` would have nothing to act on).
   let whepPosts = 0;
   const fetch = async (url, init) => {
     if (init?.method === 'DELETE') return { ok: true, status: 200, text: async () => '', headers: { get: () => null } };
@@ -248,6 +251,7 @@ test('issue #58: _coldReconnect() firing while paused clears paused/_sessionRele
 
   let reconnected = null;
   session.on('reconnected', (p) => { reconnected = p; });
+  const approvesBefore = socket.emitsOf('approvedPermissions').length;
 
   // Real entry point, not the private method called directly: a WHEP 404 on STV
   // re-subscribe (the stvSessionGone branch, session.js:1856-1858) escalates to a real
@@ -259,15 +263,17 @@ test('issue #58: _coldReconnect() firing while paused clears paused/_sessionRele
   assert.equal(reconnected.recovered, false);
   assert.equal(session.state, 'connected');
 
-  // The fix: a successful cold reconnect already did the equivalent of resume()'s rebuild —
-  // both flags must be cleared, not left stuck at their pre-recovery values.
-  assert.equal(session.paused, false, 'paused must be cleared by a successful cold reconnect');
+  // #80: the rebuild must NOT approve while paused — approve is what makes the avatar
+  // speak, and the app deliberately paused. The pause survives the rebuild.
+  assert.equal(socket.emitsOf('approvedPermissions').length, approvesBefore, 'a paused cold reconnect must hold the approve, not replay the greeting');
+  assert.equal(session.paused, true, 'paused must survive a cold reconnect — the app never resumed');
+  // #58: the released flag is still cleared — this rebuild already consumed its own fresh
+  // stvNewSession, so resume() must never wait for another one.
   assert.equal(session._sessionReleased, false, '_sessionReleased must be cleared by a successful cold reconnect');
 
-  // resume() must now take the cheap path: emit resumeConversation and return, WITHOUT
-  // re-requesting a session — a new stvNewSession/checkAvailability emit is exactly what the
-  // expensive, doomed-to-hang rebuild branch would have sent (nothing on the server side would
-  // ever answer it, since the cold reconnect already consumed its own fresh session).
+  // resume() releases the held approve and returns instantly: no resumeConversation (the
+  // fresh session was never paused server-side), no stvNewSession/checkAvailability re-request
+  // (the doomed-to-hang rebuild branch — nothing server-side would ever answer it).
   const stvNewSessionsBefore = socket.emitsOf('stvNewSession').length;
   const checkAvailBefore = socket.emitsOf('checkAvailability').length;
   const resumeConvBefore = socket.emitsOf('resumeConversation').length;
@@ -277,11 +283,44 @@ test('issue #58: _coldReconnect() firing while paused clears paused/_sessionRele
   const elapsedMs = Date.now() - start;
 
   assert.equal(session.paused, false);
+  assert.equal(socket.emitsOf('approvedPermissions').length, approvesBefore + 1, 'resume() must release the held approve — that is what starts the rebuilt session');
   assert.equal(socket.emitsOf('stvNewSession').length, stvNewSessionsBefore, 'resume() must not re-request a session after a cold reconnect already got one');
   assert.equal(socket.emitsOf('checkAvailability').length, checkAvailBefore, 'resume() must not re-poll capacity after a cold reconnect already got a session');
-  assert.equal(socket.emitsOf('resumeConversation').length, resumeConvBefore + 1, 'resume() must still tell the server the turn loop is back');
-  assert.ok(elapsedMs < 100, `resume() must resolve immediately on the cheap path, not after a rebuild round-trip (took ${elapsedMs}ms)`);
+  assert.equal(socket.emitsOf('resumeConversation').length, resumeConvBefore, 'resume() must not emit resumeConversation at an unapproved fresh session — the held approve is the resume');
+  assert.ok(elapsedMs < 100, `resume() must resolve immediately on the approve-release path, not after a rebuild round-trip (took ${elapsedMs}ms)`);
 
+  session.disconnect();
+});
+
+test('issue #80: cold reconnect while NOT paused still approves immediately (greeting restart is correct there)', async () => {
+  const { session, socket } = newSession({ cfg: { reconnectWindowMs: 5000 } });
+  scriptHappyPath(socket);
+  await session.connect();
+  const approvesBefore = socket.emitsOf('approvedPermissions').length;
+  let reconnected = null; session.on('reconnected', (p) => { reconnected = p; });
+  await session._coldReconnect('media asr failed');
+  assert.ok(reconnected, 'cold reconnect must complete');
+  assert.equal(session.state, 'connected');
+  assert.equal(socket.emitsOf('approvedPermissions').length, approvesBefore + 1, 'an unpaused cold reconnect must approve — that is what re-arms the turn loop');
+  assert.equal(session.paused, false);
+  session.disconnect();
+});
+
+test('issue #80: acknowledgeDisclosure() cannot release a pause-held approve (separate holds, no crosstalk)', async () => {
+  // The disclosure gate (requireDisclosureAck) and the paused-cold-reconnect hold both defer
+  // `approvedPermissions`, but through separate fields: an app calling the documented
+  // "no-op otherwise" acknowledgeDisclosure() mid-pause must not audibly break the pause.
+  const { session, socket } = newSession({ cfg: { reconnectWindowMs: 5000 } });
+  scriptHappyPath(socket);
+  await session.connect();
+  session.pause();
+  const approvesBefore = socket.emitsOf('approvedPermissions').length;
+  await session._coldReconnect('media asr failed');
+  assert.equal(session.paused, true);
+  session.acknowledgeDisclosure();   // documented no-op when no disclosure ack is pending
+  assert.equal(socket.emitsOf('approvedPermissions').length, approvesBefore, 'acknowledgeDisclosure() must not release the pause-held approve');
+  await session.resume();
+  assert.equal(socket.emitsOf('approvedPermissions').length, approvesBefore + 1, 'only resume() releases it');
   session.disconnect();
 });
 
