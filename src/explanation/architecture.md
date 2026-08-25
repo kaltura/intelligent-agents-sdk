@@ -19,7 +19,7 @@ For **platform developers**: how the whole system works end to end — the backe
 - [Backend services map](#backend-services-map)
 - [Text conversation flow](#text-conversation-flow)
 - [Video runtime protocol — the big picture](#video-runtime-protocol--the-big-picture)
-- [Two runtime SDK paths (choose the right one)](#two-runtime-sdk-paths-choose-the-right-one)
+- [Two session modes (choose the right one)](#two-session-modes-choose-the-right-one)
 - [SDK module map — overview](#sdk-module-map--overview)
 - [Resilience & failure handling — overview](#resilience--failure-handling--overview)
 
@@ -34,6 +34,16 @@ The system is three planes. An app uses only the planes it needs.
 | **Management** | Create/configure agents, avatars, intellects, catalog, sessions | `api.avatar.us.kaltura.ai` | [API Reference](/reference/api-reference/) |
 | **Conversation (text)** | The AI brain — chat, memory, structured output | `genie.nvp1.ovp.kaltura.com` | "Text Conversation Flow" below |
 | **Runtime (video)** | Live photorealistic talking avatar over WebRTC | conversation-manager + SRS + brain | "Video Runtime Protocol" below |
+
+### The three flows in every live conversation
+
+The planes above describe *infrastructure*. A live conversation itself runs **three flows** at once:
+
+1. **Conversation Control** — turn-taking, interruptions, real-time sync of speech recognition, voice, avatar video, and language models, emotion, recording, device coverage. Kaltura, always.
+2. **Agent Orchestration** — the server-side reasoning loop while the person talks: knowledge grounding (RAG), tool calls, routing to expert agents. Kaltura, always.
+3. **Your Expertise** — your knowledge bases, APIs, models, and expert agents, plugged into flow 2.
+
+Full explanation and plug points: [Inside a Live Conversation](/explanation/inside-a-live-conversation/).
 
 ---
 
@@ -91,11 +101,11 @@ The brain (Genie) runs entirely server-side. The client never calls an LLM — i
 
 ---
 
-## Two runtime SDK paths (choose the right one)
+## Two session modes (choose the right one)
 
-There are two avatar runtimes. They are NOT interchangeable.
+There are two session modes, and they are NOT interchangeable. Scripted sessions render speech you author, line by line. Interactive sessions run all [three conversation flows](/explanation/inside-a-live-conversation/) for you: conversation control, agent orchestration, and your plugged-in expertise. **Interactive agentic** is the product experience; **scripted (puppet)** is a narrow authoring tool.
 
-<div data-nova-target="two-runtime-sdk-paths-table" data-nova-label="Two Runtime SDK Paths comparison">
+<div data-nova-target="two-runtime-sdk-paths-table" data-nova-label="Two session modes comparison">
 
 | | scripted-video control service client (`/v1/avatar-session`) | avatar runtime client (`conversation.avatar` socket) |
 |---|---|---|

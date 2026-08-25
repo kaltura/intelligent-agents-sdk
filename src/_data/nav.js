@@ -18,7 +18,10 @@ module.exports = [
   },
   {
     group: 'Explanation',
-    pages: [{ title: 'Platform Architecture', url: '/explanation/architecture/' }],
+    pages: [
+      { title: 'Inside a Live Conversation', url: '/explanation/inside-a-live-conversation/' },
+      { title: 'Platform Architecture', url: '/explanation/architecture/' },
+    ],
   },
   {
     group: 'Reference',
