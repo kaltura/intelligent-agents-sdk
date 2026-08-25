@@ -453,7 +453,7 @@ Use `tools.client(...)` in the SDK, which validates the tool before any network 
 
 `secrets` is a dict `{name: value}` on `config`. A read masks every value as `"***"`. A `"***"` value on update is preserved server-side — read-modify-write never clobbers a sibling. Reference as `"secrets.NAME"` in tool configs or `{{secrets.NAME}}` in prompts.
 
-**SDK:** `mgmt.intellects.secrets.{listNames, set, remove, replaceAll, validate}`.
+**SDK:** `mgmt.intellects.secrets.{listNames, has, set, delete, replaceAll, validate}`. `delete(configId, name, ks, confirm)` is permanent and requires `confirm = { confirmPermanent: true }`.
 
 ---
 
@@ -482,6 +482,8 @@ Returns `{ "id": 42, ... }`. Save the `id`.
 ```
 
 Writes through the intellect DTO — no `partner-config/update`, no 403. RAG retrieval works after async indexing (~1 minute).
+
+> **`knowledge_ids` is capped at ONE record** despite the plural array shape — the Genie validator (`at_most_one_knowledge_id`) rejects more. The SDK's `intellectConfig.setKnowledgeIds()` enforces this client-side with a typed `bad_request` before any network call. To ground one agent in several content sources, upload them all into a single knowledge record.
 
 **Step 3 — Upload content** via `knowledge.uploadDocument()` (SDK) or the Kaltura OVP media ingest APIs.
 
@@ -643,6 +645,14 @@ Response:
 
 The admin secret never touches the browser — `appInit` derives the agent from the widget KS.
 
+Feed this response straight into `new KalturaAvatarSession({ token: ks, conversationManagerUrl,
+srsBaseUrl, turnServerUrl, videoEl, socketFactory })` (`./experience`) to bring the runtime up in
+the browser. Optional `./experience` plugins layer on top of that same session — deck walkthroughs
+(`./experience/presenter`), a transparent-background compositor for the avatar video
+(`./experience/chroma-key`), noise suppression, GenUI widgets, and KAVA analytics. All of them are
+documented in [SDK Reference § Experience](/reference/sdk-reference/#experience) alongside their runnable `examples/*.html` demos,
+not here — this reference covers the server-side Management API surface only.
+
 ---
 
 ## Phase 4 — Operate
@@ -677,7 +687,7 @@ CONV_KS=$(curl -s -X POST "https://www.kaltura.com/api_v3/service/session/action
 | `sse` | `false` = NDJSON (default); `true` = SSE |
 | `model_type` | `"fast"` for cheaper/faster model |
 | `force_experience` | Hint only — not a guarantee |
-| `request_vars` | Per-message `{{var}}` interpolation; needs `allow_client_variables:true` on the intellect |
+| `request_vars` | Per-message `{{var}}` interpolation; needs `allow_client_variables:true` on the intellect. Reserved `sys__*` keys (including `sys__user_id`) are server-injected and rejected if you try to set them yourself — see § Bind a session to a real end-user identity above for how `sys__user_id` gets populated. |
 | `capabilities` | Per-message capability override |
 
 **Stream segments** (each line is a JSON object):
@@ -762,14 +772,37 @@ All thread endpoints require an **admin KS** (`disableentitlement`). Pager: `{"p
 
 **Transcript response:** `{"status":"success","data":"human: …\nai: …"}` — plain text, one turn per line.
 
-**Delete** returns `{totalCount, objects[]}` — a soft delete; data is retained server-side.
+**Delete** returns `{totalCount, objects[]}` — a soft delete, followed by a scheduled infra-level purge of the underlying data.
 
 SDK: `mgmt.threads.{list, get, rename, delete, transcript}`.
 
-> **Compliance note.** `threads.delete()` is not a full GDPR Art. 17 erasure — retention past
-> a soft delete is a server-side, operator-owned control. See
+> **Compliance note.** `threads.delete()` soft-deletes immediately; a scheduled infra-level purge
+> erases the underlying data later. See
 > [SECURITY.md](/reference/security/#shared-responsibility-control-matrix-nist-800-53) for what the SDK
 > provides versus what the operator must configure.
+
+> **Backend-blocked, dated 2026-08-22 (tracks issue #43).** Thread history has no documented size
+> limit, and there is no default cap in practice: the full transcript is sent as context on every
+> turn, regardless of thread length. A long-running thread (for example, a multi-week coaching
+> relationship) will keep growing its per-turn token cost indefinitely. Backend investigation
+> confirms a token-budget-based trimming/summarization mechanism exists server-side, but it is a
+> global on/off switch today, with no per-partner or per-session control exposed via the SDK (and
+> no published token-budget figures to cite here). Integrators running long-lived threads should
+> plan for per-turn cost that scales with thread length, with no current SDK-level way to bound it.
+> A real per-session/per-partner history-window control is tracked separately as
+> [issue #59](https://github.com/kaltura/intelligent-agents-sdk/issues/59) — not implemented, and
+> not implied by anything in this SDK today.
+
+> **Backend-blocked, dated 2026-08-22 (tracks issue #44).** There is no public API today for
+> getting a summary of a thread. Backend investigation confirms summarization logic already
+> exists server-side, in more than one form used internally at different points in a
+> conversation's lifecycle, but none of it is exposed as an endpoint an integrator can call
+> directly. Building "give me a summary of this thread" today means replaying the transcript
+> (via `threads.transcript()`) into a separate prompt yourself. Once the backend exposes a
+> public summarization endpoint, the SDK would add a thin `Conversations.summarize(threadId)`-
+> style method following the same non-2xx error-handling conventions as the rest of
+> `Conversations` — but that endpoint does not exist yet, and nothing in this SDK should be read
+> as implying otherwise.
 
 ---
 
