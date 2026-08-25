@@ -61,7 +61,7 @@ const testGlobals = {
 export default [
   js.configs.recommended,
   {
-    ignores: ['node_modules/**', 'intelligent-agents-sdk-site/**', '.harness-output/**', '.claude/worktrees/**'],
+    ignores: ['node_modules/**', '.harness-output/**', '.claude/worktrees/**'],
   },
   {
     files: ['src/management/**/*.js', 'src/core/**/*.js', 'scripts/**/*.js', 'scripts/**/*.mjs', 'tools/**/*.js', 'tools/**/*.mjs', 'examples/**/*.mjs', 'quickstart/**/*.mjs'],

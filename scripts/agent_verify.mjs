@@ -391,11 +391,15 @@ section('Part 5 — DX and Clean Code');
 section('SDK Test Suite (npm test)');
 
 {
+  // The suite normally finishes well under 2 minutes, but a cold npm cache or a
+  // loaded CI runner can push past it — a timeout kill must read as "timed out",
+  // never as a test failure (issue #78). Override with AGENT_VERIFY_TEST_TIMEOUT_MS.
+  const timeoutMs = Number(process.env.AGENT_VERIFY_TEST_TIMEOUT_MS) || 300_000;
   const result = spawnSync('npm', ['test'], {
     cwd: SDK_TEST,
     stdio: 'pipe',
     encoding: 'utf8',
-    timeout: 120_000,
+    timeout: timeoutMs,
   });
   const out = (result.stdout || '') + (result.stderr || '');
   // Extract the summary line
@@ -404,6 +408,9 @@ section('SDK Test Suite (npm test)');
   const summary = summaryMatch ? summaryMatch[0].replace(/\n/g, ' ') : out.slice(-400).replace(/\n/g, ' ');
   if (result.status === 0) {
     pass('I-3/I-4/S-3/S-4/S-5', `SDK tests pass — ${summary || 'all suites green'}`);
+  } else if (result.signal) {
+    fail('SDK-TESTS', `SDK test run KILLED by ${result.signal} after ${timeoutMs / 1000}s — a timeout, not a test failure. Re-run, or raise AGENT_VERIFY_TEST_TIMEOUT_MS.`,
+      summary || out.slice(-800));
   } else {
     fail('SDK-TESTS', 'SDK test suite failed', summary || out.slice(-800));
     // Print full output so the caller can diagnose

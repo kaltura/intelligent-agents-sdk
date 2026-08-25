@@ -27,15 +27,24 @@ jobs:
       - name: 🌐 Smoke-test jsDelivr GitHub-CDN URLs for this tag
         run: |
           TAG="${{ github.ref_name }}"
-          ENTRY_POINTS=(
-            "src/index.js"
-            "src/management/index.js"
-            "src/experience/index.js"
-            "src/experience/presenter.js"
-            "src/experience/genui/index.js"
-            "src/experience/noise-suppressor.js"
-            "src/experience/analytics.js"
-          )
+          # Derive the entry-point list from package.json's exports map so a new
+          # export can never ship without CDN coverage (issue #85 — chroma-key was
+          # missing from a hand-maintained copy of this list). Wildcard subpaths
+          # (./test/fakes/*) resolve to no single file and are skipped.
+          ENTRY_POINTS=()
+          while IFS= read -r path; do
+            ENTRY_POINTS+=("$path")
+          done < <(node -e '
+            const { exports: map } = require("./package.json");
+            for (const target of Object.values(map)) {
+              if (!target.includes("*")) console.log(target.replace(/^\.\//, ""));
+            }
+          ')
+          if [ "${#ENTRY_POINTS[@]}" -eq 0 ]; then
+            echo "✗ derived zero entry points from package.json exports"
+            exit 1
+          fi
+          echo "entry points under test: ${ENTRY_POINTS[*]}"
           for path in "${ENTRY_POINTS[@]}"; do
             url="https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@${TAG}/${path}"
             echo "checking $url"
