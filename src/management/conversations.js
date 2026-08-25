@@ -27,6 +27,15 @@ const GENIE_MESSAGE_FILTER = 'GenieListMessageFilter';
 // (list + count-only) always agree on what "in the knowledge base" means.
 const KNOWLEDGE_ENTRY_STATUS_TYPE_FILTER = { statusIn: '-1,-2,0,1,2,7,4', typeIn: '1,7,10' };
 
+// categoryEntry is unique per (categoryId, entryId), and the transport retries
+// transient failures (429/502/503/504/network — see core/http.js). A retry can
+// re-run a categoryentry.add the server already applied; Kaltura then reports
+// CATEGORY_ENTRY_ALREADY_EXISTS ("Entry already assigned to this category").
+// The link exists — that's the outcome the caller asked for, not a failure.
+// Live-hit: two consecutive corpus re-uploads (16 docs, ~130 chunks) died
+// mid-run on exactly this before it was tolerated.
+const isDuplicateCategoryEntry = (e) => e?.code === 'CATEGORY_ENTRY_ALREADY_EXISTS' || /already assigned to this category/i.test(e?.message || '');
+
 // Re-exported for back-compat — existing callers import this from here. Canonical
 // definition now lives in core/stream.js so KalturaAvatarSession's live-socket spiral
 // recovery (session.js) can share the exact same literal without a management→experience
@@ -485,7 +494,10 @@ export class Knowledge {
       { service: 'document_documents', action: 'addContent', entryId, resource: { objectType: 'KalturaUploadedFileTokenResource', token: tokenId } },
       { service: 'categoryentry', action: 'add', categoryEntry: { objectType: 'KalturaCategoryEntry', categoryId: opts.categoryId, entryId } },
     ], ks);
-    if (done && done.objectType === 'KalturaAPIException') throw new KalturaError({ type: 'about:blank', title: done.code, code: 'ovp_error', detail: done.message, body: done });
+    const doneErr = Array.isArray(done)
+      ? done.find((r) => r?.objectType === 'KalturaAPIException' && !isDuplicateCategoryEntry(r))
+      : (done?.objectType === 'KalturaAPIException' ? done : null);
+    if (doneErr) throw new KalturaError({ type: 'about:blank', title: doneErr.code, code: 'ovp_error', detail: doneErr.message, body: doneErr });
     return { entryId, categoryId: opts.categoryId };
   }
 
@@ -527,7 +539,7 @@ export class Knowledge {
       { service: 'baseentry', action: 'updateContent', entryId, resource: { objectType: 'KalturaUploadedFileTokenResource', token: entryTokenId } },
       { service: 'categoryentry', action: 'add', categoryEntry: { objectType: 'KalturaCategoryEntry', categoryId: opts.categoryId, entryId } },
     ], ks);
-    const linkErr = (linked || []).find((r) => r?.objectType === 'KalturaAPIException');
+    const linkErr = (linked || []).find((r) => r?.objectType === 'KalturaAPIException' && !isDuplicateCategoryEntry(r));
     if (linkErr) throw new KalturaError({ type: 'about:blank', title: linkErr.code, code: 'ovp_error', detail: linkErr.message, body: linkErr });
     // 3) the thing the indexer actually scans for: a SEPARATE KalturaMarkdownAsset
     // attachment, uploaded via its own token — bypasses the backend's PDF
@@ -547,11 +559,17 @@ export class Knowledge {
 
   /**
    * Attach an EXISTING Kaltura entry to a knowledge category. WRITE — idempotent
-   * (categoryEntry is unique per pair). @param {string} entryId @param {number} categoryId @param {string} ks (admin)
+   * (categoryEntry is unique per pair; an already-linked pair resolves to the
+   * link instead of throwing). @param {string} entryId @param {number} categoryId @param {string} ks (admin)
    */
   async attachEntry(entryId, categoryId, ks) {
     this._.assertAdmin(ks, 'knowledge.attachEntry');
-    return this._.ovp('categoryentry', 'add', { categoryEntry: { objectType: 'KalturaCategoryEntry', categoryId, entryId } }, ks);
+    try {
+      return await this._.ovp('categoryentry', 'add', { categoryEntry: { objectType: 'KalturaCategoryEntry', categoryId, entryId } }, ks);
+    } catch (e) {
+      if (isDuplicateCategoryEntry(e?.body)) return { objectType: 'KalturaCategoryEntry', categoryId, entryId };
+      throw e;
+    }
   }
 
   /**

@@ -127,6 +127,69 @@ test('uploadMarkdown creates the entry, links it, then attaches a KalturaMarkdow
   assert.equal(f.calls.filter((c) => c.url.includes('/uploadtoken/action/upload')).length, 2);
 });
 
+test('uploadMarkdown tolerates a duplicate categoryentry.add (transport retry re-ran an applied multirequest)', async () => {
+  const f = fakeFetch([
+    { match: '/service/multirequest', respond: (req) => {
+        if (req.body['0']?.service === 'baseentry' && req.body['0']?.action === 'add') return { body: [{ id: '1_md' }, { id: '1_entrytok' }] };
+        // the retried second multirequest: updateContent fine, categoryentry.add reports the pair as already linked
+        return { body: [{ id: '1_md' }, { objectType: 'KalturaAPIException', code: 'CATEGORY_ENTRY_ALREADY_EXISTS', message: 'Entry already assigned to this category' }] };
+      } },
+    { match: '/uploadtoken/action/upload', respond: () => ({ body: { id: '1_tok' } }) },
+    { match: '/service/uploadtoken/action/add', respond: () => ({ body: { id: '1_assettok' } }) },
+    { match: '/service/attachment_attachmentasset/action/add', respond: () => ({ body: { id: '1_asset', objectType: 'KalturaMarkdownAsset' } }) },
+    { match: '/service/attachment_attachmentasset/action/setContent', respond: () => ({ body: { id: '1_asset' } }) },
+  ]);
+  const m = new Management({ partnerId: 6516742, adminSecret: 'a'.repeat(32), fetch: f });
+  const r = await m.knowledge.uploadMarkdown({ markdown: '# Facts\n', name: 'facts.md', categoryId: 413804062 }, ADMIN);
+  // the flow continued past the duplicate and still attached the indexable markdown asset
+  assert.equal(r.entryId, '1_md');
+  assert.equal(r.markdownAssetId, '1_asset');
+});
+
+test('uploadMarkdown still throws on a REAL link-step exception (not a duplicate link)', async () => {
+  const f = fakeFetch([
+    { match: '/service/multirequest', respond: (req) => {
+        if (req.body['0']?.service === 'baseentry' && req.body['0']?.action === 'add') return { body: [{ id: '1_md' }, { id: '1_entrytok' }] };
+        return { body: [{ objectType: 'KalturaAPIException', code: 'UPLOAD_TOKEN_NOT_FOUND', message: 'Upload token not found' }, { categoryId: 413804062, entryId: '1_md' }] };
+      } },
+    { match: '/uploadtoken/action/upload', respond: () => ({ body: { id: '1_tok' } }) },
+  ]);
+  const m = new Management({ partnerId: 6516742, adminSecret: 'a'.repeat(32), fetch: f });
+  await assert.rejects(
+    () => m.knowledge.uploadMarkdown({ markdown: '# Facts\n', name: 'facts.md', categoryId: 413804062 }, ADMIN),
+    (e) => e.code === 'ovp_error' && e.title === 'UPLOAD_TOKEN_NOT_FOUND',
+  );
+});
+
+test('uploadDocument surfaces a per-slot link-step exception (was silently passed) but tolerates a duplicate link', async () => {
+  const multi = (linkSlot) => fakeFetch([
+    { match: '/service/multirequest', respond: (req) => {
+        if (req.body['0']?.service === 'baseentry') return { body: [{ id: '1_doc' }, { id: '1_tok' }] };
+        return { body: [{ id: '1_doc' }, linkSlot] };
+      } },
+    { match: '/uploadtoken/action/upload', respond: () => ({ body: { id: '1_tok' } }) },
+  ]);
+  const file = new Blob([new Uint8Array([1])], { type: 'application/pdf' });
+  // duplicate link → success
+  const ok = new Management({ partnerId: 6516742, adminSecret: 'a'.repeat(32), fetch: multi({ objectType: 'KalturaAPIException', code: 'CATEGORY_ENTRY_ALREADY_EXISTS', message: 'Entry already assigned to this category' }) });
+  const r = await ok.knowledge.uploadDocument({ file, name: 'deck.pdf', categoryId: 408750172 }, ADMIN);
+  assert.equal(r.entryId, '1_doc');
+  // real per-slot exception → throws (regression: the old check only caught a whole-request exception)
+  const bad = new Management({ partnerId: 6516742, adminSecret: 'a'.repeat(32), fetch: multi({ objectType: 'KalturaAPIException', code: 'CATEGORY_NOT_FOUND', message: 'Category not found' }) });
+  await assert.rejects(
+    () => bad.knowledge.uploadDocument({ file, name: 'deck.pdf', categoryId: 408750172 }, ADMIN),
+    (e) => e.code === 'ovp_error' && e.title === 'CATEGORY_NOT_FOUND',
+  );
+});
+
+test('attachEntry resolves (not throws) when the pair is already linked — idempotent as documented', async () => {
+  const f = fakeFetch([{ match: '/categoryentry/action/add', respond: () => ({ body: { objectType: 'KalturaAPIException', code: 'CATEGORY_ENTRY_ALREADY_EXISTS', message: 'Entry already assigned to this category' } }) }]);
+  const m = new Management({ partnerId: 6516742, adminSecret: 'a'.repeat(32), fetch: f });
+  const r = await m.knowledge.attachEntry('1_x', 5, ADMIN);
+  assert.equal(r.categoryId, 5);
+  assert.equal(r.entryId, '1_x');
+});
+
 test('attachEntry assigns an existing entry; detachEntry needs confirmation', async () => {
   const f = fakeFetch([{ match: '/categoryentry/action/add', respond: () => ({ body: { categoryId: 5, entryId: '1_x' } }) }]);
   const m = new Management({ partnerId: 6516742, adminSecret: 'a'.repeat(32), fetch: f });
