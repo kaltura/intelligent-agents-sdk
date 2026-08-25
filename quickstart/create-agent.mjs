@@ -103,10 +103,10 @@ try {
     if (avatarId) console.error('  Avatar (avatarId):', avatarId);
     if (agentId) console.error('  Agent (agentId):', agentId);
     console.error('');
-    console.error('Clean them up with:');
-    if (agentId) console.error(`  node tools/agentic.mjs agent-delete ${agentId}`);
-    if (avatarId) console.error(`  node tools/agentic.mjs avatar-delete ${avatarId}`);
-    if (configId) console.error(`  node tools/genie.mjs intellect-delete ${configId}`);
+    console.error('Clean them up from a Node REPL with the same Management client:');
+    if (agentId) console.error(`  await kaltura.agents.delete('${agentId}', adminToken, { confirmPermanent: true });`);
+    if (avatarId) console.error(`  await kaltura.avatars.delete('${avatarId}', adminToken, { confirmPermanent: true });`);
+    if (configId) console.error(`  await kaltura.intellects.delete('${configId}', adminToken, { confirmPermanent: true });`);
   }
   process.exit(1);
 }
@@ -138,7 +138,7 @@ try {
   console.error('');
   console.error('The agent was created successfully — the conversation error is not fatal.');
   console.error('You can test conversation later with:');
-  console.error(`  node tools/genie.mjs converse-pretty ${configId} "Hello!"`);
+  console.error(`  await kaltura.converseOnce('${configId}', 'Hello!');`);
   // Don't exit(1) — the agent itself is ready even if the smoke test failed.
   reply = null;
 }
@@ -171,6 +171,6 @@ console.log('To embed a live talking avatar in a web page, see:');
 console.log('  API-REFERENCE.md → Use Case 12 (Embed a live avatar)');
 console.log('');
 
-console.log('To delete this agent:');
-console.log('  use node tools/agentic.mjs agent-delete (or the SDK\'s agents.delete())');
+console.log('To delete this agent later (deletion is permanent, hence the confirm flag):');
+console.log(`  await kaltura.agents.delete('${agentId}', adminToken, { confirmPermanent: true });`);
 console.log('');

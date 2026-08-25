@@ -165,8 +165,8 @@ Two independent axes:
 `this._socket.emit('setFormLeadInfo', sanitizeJson(info))` — with no acknowledgment payload, and no
 endpoint on the Genie/agentic management plane reads it back as structured `{key: value}` data. The
 conversation transcript is persisted to Postgres by the Genie brain backend (a `Message` table) and
-exposed read-only via `POST /thread/get_transcripts` — exactly what this repo's `tools/genie.mjs
-thread-transcripts` wraps. That reconstructs a plain-text transcript from `USER`-type message rows;
+exposed read-only via `POST /thread/get_transcripts` — exactly what the management SDK's
+`threads.transcript(threadId, ks)` wraps. That reconstructs a plain-text transcript from `USER`-type message rows;
 it does **not** carry the structured form field values, only what the viewer said/typed and the
 model's replies — a paraphrase, not the raw object.
 

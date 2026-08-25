@@ -90,6 +90,15 @@ section('Resiliency — session.js fetch injectability contract');
   } else {
     ng('session.js: fetch not injectable', 'missing `cfg.fetch || globalThis.fetch` pattern');
   }
+
+  // Same contract on the management plane (issue #77): every Http request must
+  // honor an injected fetch so tests/consumers never hit the real network.
+  const httpSrc = read(join(SDK_SRC, 'core/http.js'));
+  if (/opts\.fetch\s*\|\|/.test(httpSrc)) {
+    ok('core/http.js: fetch is injectable (opts.fetch || globalThis.fetch)');
+  } else {
+    ng('core/http.js: fetch not injectable', 'missing `opts.fetch || globalThis.fetch` pattern');
+  }
 }
 
 // ─── Issue closure checks ────────────────────────────────────────────────────
