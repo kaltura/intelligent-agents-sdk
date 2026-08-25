@@ -47,7 +47,7 @@ never drift).
 | 8 | `user_properties_form` | `user-properties-form-tool` | `user-properties-form` | Structured data-collection form |
 | 9 | `gallery_slides` | `content-gallery-tool` | `content-gallery` | Gallery of content slides/cards (with **images**) |
 
-`normalizeRuntime(name)` (`parse.js` lines 54–58) strips a trailing `-tool` and trims; it tolerates
+`normalizeRuntime(name)` (`parse.js`) strips a trailing `-tool` and trims; it tolerates
 an already-normalized name and a non-string (→ `''`). `isKnownRuntime(name)` tests membership in this set.
 Any other runtime (e.g. the backend's `gen-ui-composer-tool`, `gen-ui-components-tool`,
 `kaltura-video-player-tool` — see **Restrictions**) is NOT in this set and falls through to a safe
@@ -87,10 +87,10 @@ fallback.
 
 ## `force_experience` — a hint, not a contract
 
-- Valid values (single source of truth, `src/experience/wire.js` line 17;
+- Valid values (single source of truth, `src/experience/wire.js`
   `EXPERIENCES`): **`'markdown'`, `'summarization'`, `'flashcards'`, `'avatar_only'`**.
 - Parameters are validated on the **first iteration** (entering `for await`) in `conversations.stream`
-  (`conversations.js` lines 120–121), NOT at call time — an invalid value throws a typed `validation_error`.
+  (`conversations.js`), NOT at call time — an invalid value throws a typed `validation_error`.
 - It is a **HINT**: the brain decides which widget(s) to actually emit from the prompt + intellect.
   Asking for `flashcards` may yield `flashcards-tool` **and** `followups-tool`, or neither. The
   renderer renders whatever `runtimeName` arrives; tests are lenient by design.

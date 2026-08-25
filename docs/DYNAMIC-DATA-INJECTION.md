@@ -52,6 +52,23 @@ Use this for values your prompt's `{{ }}` placeholders reference by name, and th
 every turn. It is not the right tool for "what's on screen right now" — for that, see the dynamic
 prompt below.
 
+### Calling converse directly? Enable `allow_client_variables` first
+
+The snippets above go through the SDK session. If you instead call the
+[converse endpoint](../API-REFERENCE.md#converse) and pass `request_vars` with a message,
+the intellect must have `allow_client_variables` set to `true` — otherwise the request is
+rejected with HTTP 403. Calling the raw endpoint yourself, you get that 403 as a plain HTTP
+error; going through the management SDK's converse helpers, it surfaces as a typed
+`client_variables_disabled` error. Enable the flag once, server-side, with an admin KS:
+
+```js
+await mgmt.intellects.setClientVariablesEnabled(configId, true, adminKs);
+```
+
+Reserved `sys__*` keys (like `sys__user_id`) are server-injected on every turn and rejected if
+you try to set them yourself, regardless of this flag — see
+[Reserved Template Variables](../API-REFERENCE.md#reserved-template-variables-sys__).
+
 ## Per-turn context: the dynamic prompt
 
 `setDynamicPrompt()` sends a full, structured JSON blob the brain reads as live context for its

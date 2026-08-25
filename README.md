@@ -455,7 +455,7 @@ Designed for enterprise, HIPAA, HITRUST, and regulated frameworks. Full control 
 
 | Control | What the SDK does |
 |---------|------------------|
-| **Two-token invariant** | `disableentitlement` reachable only via `sessions.createAdminToken()` — no client surface can escalate |
+| **Two-token invariant** | `disableentitlement` reachable only via `sessions.createAdminToken()` — no client surface can escalate. `createConversationToken()`/`createAgentToken()` actively refuse any `extraPrivileges` value that would disable entitlement: the SDK throws a typed `entitlement_violation` error before any network call |
 | **Short-lived tokens** | Admin: 1h default; conversation/agent: 30min default. `revoke()` for active revocation; `setToken()` for mid-session rotation; `restrictions` for least privilege |
 | **Audit stream** | `onAuditEvent` emits structured, pre-redacted events (`token.mint`, `guard.reject`, `tool.invoke`, …) to your SIEM |
 | **Transport** | `https`/`wss` enforced; cleartext rejected; ephemeral TURN credentials preferred |
@@ -950,7 +950,7 @@ await mgmt.knowledge.updateRecord(rec.id, { name: 'Docs v2' }, ks); // rename/ed
 await mgmt.knowledge.deleteRecord(rec.id, ks, { confirmPermanent: true });
 ```
 
-`deleteRecord` does **NOT** unlink the record from intellects that reference it — an intellect's `knowledge_ids` keeps the dangling id. Clear it yourself (`intellectConfig.setKnowledgeIds(configId, [], ks)`) when retiring a record. A deleted or unknown record id → typed `not_found`; another partner's → `forbidden`. A record with more than one `sources` entry (e.g. `internal` + `web` together) can 500 on delete on the current deployment — see Honest limits below.
+`deleteRecord` does **NOT** unlink the record from intellects that reference it — an intellect's `knowledge_ids` keeps the dangling id. Clear it yourself (`intellectConfig.setKnowledgeIds(configId, [], ks)`) when retiring a record. A deleted or unknown record id → typed `not_found`; another partner's → `forbidden`.
 
 ---
 
@@ -960,7 +960,6 @@ await mgmt.knowledge.deleteRecord(rec.id, ks, { confirmPermanent: true });
 - **No verbatim speech** — `speak()` goes through the brain; the avatar may rephrase.
 - **Custom face works self-serve** — upload a portrait image via `catalog.createVisual`, pass `itemId` as `visualId` in `provision`/`avatars.create`. The model animates the portrait at runtime. Video-clip ingest (higher-fidelity model) is not yet self-serve.
 - **`force_experience` and `model_type:'fast'`** are hints; the SDK can't prove which model replied or which experience rendered.
-- **Multi-source Knowledge records can fail to delete.** A record created with more than one `sources` entry (e.g. `internal` + `web` together) reliably 500s on `deleteRecord` on the current deployment (verified live, reproduced 3x, ruled out call ordering and lingering intellect references) — the record itself becomes an orphan (its backing category/entries can still be torn down separately). Single-source records delete cleanly. Until the backend fixes this, avoid mixing source types in one record if you expect to delete it later; use separate records per source type instead.
 
 ---
 

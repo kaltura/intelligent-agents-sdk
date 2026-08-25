@@ -207,8 +207,10 @@ Every event carries this AU-3 content shape:
 ## Transport security (NIST SC-8; OWASP WSS/TLS)
 
 `KalturaAvatarSession` rejects non-TLS `conversationManagerUrl`/`srsBaseUrl`
-(`insecure_transport`). `localhost`/`127.0.0.1` is allowed for dev with a loud
-one-time warning; non-localhost cleartext requires an explicit
+(`insecure_transport`). Loopback and private hosts (`localhost`/`127.0.0.1`,
+RFC 1918 ranges, link-local, and their IPv6 equivalents — see
+`isPrivateOrLoopbackHost` in `src/core/net-guard.js`) are allowed for dev with
+a loud one-time warning; cleartext to a public host requires an explicit
 `allowInsecureTransport:true` (dev/test only — never production). Prefer
 server-minted ephemeral TURN credentials (`turnCredentials` from appInit,
 RFC 7635) over the static fallback; the SDK warns when it falls back.
