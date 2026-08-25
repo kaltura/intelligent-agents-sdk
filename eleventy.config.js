@@ -3,12 +3,17 @@ const markdownItAnchor = require('markdown-it-anchor');
 
 // Mirrors GitHub's heading-slug algorithm so links copied verbatim from the
 // original .md cross-refs (e.g. "#use-case-catalog") keep resolving on the site.
+// Each space becomes its own hyphen, NOT collapsed: "Endpoints & Credentials"
+// slugs to "endpoints--credentials" on GitHub (the "&" is stripped, leaving two
+// spaces), and the migrated docs link to exactly that form.
+// scripts/check-anchors.mjs verifies every in-site fragment against the built
+// ids on each build.
 function githubSlugify(s) {
   return String(s)
     .trim()
     .toLowerCase()
     .replace(/[^\w\s-]/g, '')
-    .replace(/\s+/g, '-');
+    .replace(/\s/g, '-');
 }
 
 module.exports = function (eleventyConfig) {

@@ -272,7 +272,7 @@ mechanism that gates the capability on/off, not whether its *content* is persona
 `avatar_filler` (`kind: 'prompt'`) is the exception to watch for: its filler phrasing is
 server-generated per turn and NOT reliably steerable via `base_directive`, even though it
 streams as a "spoken" segment alongside `avatar`/`text` (see
-[WIRE-PROTOCOL.md § 4e](/reference/wire-protocol/#4e-agent_raw_textdelta-the-brain-stream-parsed)) —
+[WIRE-PROTOCOL.md § 4e](/reference/wire-protocol/#4e-agent_raw_textdelta--the-brain-stream-parsed)) —
 disable the capability if the default phrasing doesn't fit your persona.
 
 | Capability | Default | Kind | Gates runtime | Notes |
