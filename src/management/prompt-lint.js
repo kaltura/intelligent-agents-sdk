@@ -194,7 +194,18 @@ export function validatePromptVars(text, opts = {}) {
   const seen = new Set();
 
   // Detect malformed `{{` with no matching `}}` before the next `{{` / EOF.
-  const malformed = /\{\{(?:(?!\}\})[\s\S])*$/.test(text) && text.lastIndexOf('{{') > text.lastIndexOf('}}');
+  // Scan every `{{` occurrence — a lastIndexOf comparison only sees the LAST one,
+  // so an earlier unclosed `{{` followed by a later closed `{{…}}` slips through
+  // (e.g. `{{oops unclosed and then {{valid}} elsewhere`).
+  let malformed = false;
+  for (let i = text.indexOf('{{'); i !== -1; i = text.indexOf('{{', i + 2)) {
+    const close = text.indexOf('}}', i + 2);
+    const next = text.indexOf('{{', i + 2);
+    if (close === -1 || (next !== -1 && next < close)) {
+      malformed = true;
+      break;
+    }
+  }
   if (malformed) {
     findings.push({
       severity: 'error',
