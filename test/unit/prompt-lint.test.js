@@ -61,6 +61,22 @@ test('validatePromptVars flags malformed and empty references', () => {
   assert.equal(hasFinding(bad.findings, 'malformed_variable'), true);
 });
 
+test('validatePromptVars flags an earlier unclosed {{ even when a later {{...}} is closed (issue #84)', () => {
+  const r = validatePromptVars('{{oops unclosed and then {{valid}} elsewhere');
+  assert.equal(r.ok, false);
+  assert.equal(hasFinding(r.findings, 'malformed_variable'), true);
+  assert.deepEqual(r.variables, ['valid'], 'the closed reference is still extracted');
+
+  // The mirror case — closed first, unclosed after — was already caught; keep it pinned.
+  const trailing = validatePromptVars('{{valid}} and then {{oops unclosed');
+  assert.equal(trailing.ok, false);
+  assert.equal(hasFinding(trailing.findings, 'malformed_variable'), true);
+
+  // No false positive: two well-formed references and stray SINGLE braces are fine.
+  const clean = validatePromptVars('{{a}} mid {text} {{b.c}}');
+  assert.equal(hasFinding(clean.findings, 'malformed_variable'), false);
+});
+
 test('validatePromptVars deduplicates repeated references', () => {
   const r = validatePromptVars('{{topic}} and again {{topic}}');
   assert.deepEqual(r.variables, ['topic']);
