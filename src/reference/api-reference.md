@@ -808,6 +808,11 @@ Returns `{status, data}`. A partner with no indexed content returns a `"couldn't
 
 ## Scripted-video (STV-only) sessions
 
+> **When to use this:** pre-authored speech only — you supply every line. Interactive
+> conversation, knowledge grounding, tool calls, and analytics come from full agentic
+> sessions. See [what you'd take on yourself](/explanation/inside-a-live-conversation/#what-youd-take-on-yourself)
+> before choosing this path.
+
 A second, INDEPENDENT session type — `https://api.avatar.us.kaltura.ai/v1/avatar-session/*` — that
 sits next to, not on top of, everything in Phases 1–4 above. No LLM, no ASR, no socket.io: REST +
 WHEP only. The avatar speaks exactly the audio you hand it, in the order you hand it. Use this when

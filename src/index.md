@@ -26,6 +26,7 @@ interface.
         <button type="button" class="nova-chip" data-prompt="Show me a quick code example to get started.">Show me a code example</button>
         <button type="button" class="nova-chip" data-prompt="Is this SDK free to use, and do I need a Kaltura account?">Is it free to use?</button>
         <button type="button" class="nova-chip" data-prompt="Take me to the Getting Started guide.">Take me to Getting Started</button>
+        <button type="button" class="nova-chip" data-prompt="We already have our own AI. What does Kaltura's runtime add?">I have my own AI — why Kaltura?</button>
       </div>
     </div>
     <div class="nova-hero-visual" id="nova-hero-slot"></div>
@@ -42,6 +43,10 @@ runtime:
 - **`./experience/analytics`** — `KavaAnalytics`, client-only KAVA Application Events
 - **`./experience/noise-suppressor`** — a zero-dependency AudioWorklet noise gate
 - **`./experience/chroma-key`** — transparent-background avatar compositor (bring your own `chroma-key-video`)
+
+## One avatar, three flows
+
+When someone talks with an Agentic Avatar, three flows run at once: **Conversation Control** (turn-taking, interruptions, real-time sync of speech, video, and language models), **Agent Orchestration** (knowledge grounding, tool calls, expert-agent routing), and **Your Expertise** (your knowledge bases, APIs, and models). The first two run for you the moment you connect. Yours plugs in — [see how the flows fit together](/explanation/inside-a-live-conversation/).
 
 ## Why this SDK
 
