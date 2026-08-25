@@ -24,8 +24,9 @@ call made while paused is accepted client-side (no throw) but the server produce
 brain simply doesn't respond until you resume. Don't drive the avatar with `speak()`/ASR while
 your content is on screen; that's on your app, the SDK doesn't block it for you.
 
-**`resume()`** always sets `session.paused = false` immediately, then takes one of two paths
-depending on how long you were paused:
+**`resume()`** always sets `session.paused = false` immediately, then takes the right path for
+how the pause played out — two common ones depending on how long you were paused (a third,
+rarer one is covered below):
 
 - **Short pause (the common case):** the server still has your session held open. `resume()`
   just emits `resumeConversation` and returns — cheap, near-instant (live-verified: resolved in
@@ -44,17 +45,17 @@ the triggers below rather than assuming a pause lasts as long as you need it to.
 
 **Calling `resume()` is safe in every case that matters for this recipe** — live-verified
 immediately after `pause()` (zero delay), when the session was never paused, and when it was
-already resumed. It's also safe (verified by a dedicated regression test, not yet reproduced
-live against the real backend) when the SDK's own connectivity recovery independently rebuilt
-the session *while* you were paused (a stalled/expired media channel can trigger an internal
-`_coldReconnect()` that restores the conversation on its own, without your app calling
-`resume()` at all — see [WIRE-PROTOCOL.md](WIRE-PROTOCOL.md) for the recovery events). That
-internal recovery clears `session.paused` and the "server released this session" flag as part of
-its own rebuild, so a `resume()` you call afterward correctly takes the cheap path (just
-`resumeConversation`, no redundant rebuild) instead of attempting to re-negotiate transports that
-are already live. In every one of these cases `resume()` returns cleanly with
-`session.paused === false` and never hangs — which is why the edge-case handling below is just
-"call `resume()` from every exit path, unconditionally."
+already resumed. It's also safe (live-verified) when the SDK's own connectivity recovery rebuilt
+the session *while* you were paused: a stalled/expired media channel can trigger an internal
+`_coldReconnect()` that rebuilds the transports on its own, without your app calling `resume()`
+(see [WIRE-PROTOCOL.md](WIRE-PROTOCOL.md) for the recovery events). Your pause survives that
+rebuild — the SDK keeps `session.paused` true and *holds* the rebuilt session's start signal
+instead of letting the avatar speak over your content. The moment you call `resume()`, the SDK
+releases that held signal: the rebuilt session starts and the avatar speaks its opening line
+(no `resumeConversation` is sent on this path — the fresh session was never paused server-side,
+so there's nothing to "resume", only a start to release). In every one of these cases `resume()`
+returns cleanly with `session.paused === false` and never hangs — which is why the edge-case
+handling below is just "call `resume()` from every exit path, unconditionally."
 
 `resume()` can still reject for reasons unrelated to pause duration (a genuinely dead session, a
 real network failure mid-rebuild) — treat any rejection defensively regardless: catch it, and if
@@ -66,7 +67,7 @@ is required:
 
 | Event | When it fires | Use it for |
 |---|---|---|
-| `'resumed'` | The server's own `conversationResumed` ack arrives (after a `resumeConversation` you sent — from your own `resume()` call, whichever path it took) | Optional confirmation toast/log — `resume()`'s promise already told you it's done |
+| `'resumed'` | The server's own `conversationResumed` ack arrives, after a `resumeConversation` you sent from your own `resume()` call. (One path sends no `resumeConversation` — releasing a session the SDK rebuilt mid-pause — so no `'resumed'` fires there; the promise resolving is still your signal) | Optional confirmation toast/log — `resume()`'s promise already told you it's done |
 | `'resumeReady'` / `'timeExpired'` (`{type:'pause_expiry'}`) | The pause window expired *while you were still paused, before you called `resume()`* | Optional "still there?" UI while paused long — not required; `resume()` handles this transparently whenever you do call it |
 
 ---
