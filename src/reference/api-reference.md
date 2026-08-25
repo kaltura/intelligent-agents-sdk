@@ -67,6 +67,29 @@ KS=$(curl -s -X POST "https://www.kaltura.com/api_v3/service/session/action/star
 
 **Keep `disableentitlement` server-side, for management/admin operations only.** The SDK can't detect or stop a `disableentitlement` KS from being handed to a conversation/end-user session — a real KS's privileges are encrypted and unreadable client-side — so nothing will warn you if you do this by mistake. See [SECURITY.md](/reference/security/#ks-kaltura-session-guidance-for-agents-ac-3--ac-6--ia-2) and Kaltura's own [KS/privilege reference](https://kaltura.md/KALTURA_SESSION_GUIDE/).
 
+**Bind a session to a real end-user identity (`userId`).** By default every minted KS is anonymous — the reserved `{{ sys__user_id }}` template variable (see § Converse) resolves to an empty string in every prompt/converse call. Pass `userId` to bind the KS to a real end-user id instead — the value flows straight through to `session/start`'s own `userId` field, per-call only (never cached), so it makes `sys__user_id` resolve server-side and lets converse-side memory/analytics attribute the turn to a real user:
+
+```js
+import { Management } from '@kaltura/intelligent-agents/management';
+
+const mgmt = new Management({ partnerId, adminSecret });
+
+// Any conversation/admin token can carry a real user identity.
+const conv = await mgmt.sessions.createConversationToken({ configId, userId: 'learner-123' });
+const reply = await mgmt.converseOnce(configId, 'What have we covered so far?', {}, conv);
+```
+
+Raw wire equivalent:
+
+```bash
+CONV_KS=$(curl -s -X POST "https://www.kaltura.com/api_v3/service/session/action/start" \
+  -d "format=1" -d "secret=$AGENTIC_ADMIN_SECRET" -d "partnerId=$AGENTIC_PARTNER_ID" \
+  -d "userId=learner-123" -d "type=2" -d "expiry=1800" \
+  -d "privileges=geniegpcid:1389" | tr -d '"')
+```
+
+`userId` is optional on both `createAdminToken()` and `createConversationToken()` — omit it and behavior is unchanged (anonymous, exactly as before).
+
 ---
 
 ## The Five Services
@@ -288,6 +311,60 @@ POST https://genie.nvp1.ovp.kaltura.com/v1/intellect/update
 > `capabilities` is a **full-replace** sub-dict. To change one key, read the current dict first and re-send it with your overlay. The SDK handles this automatically via `mgmt.intellects.setCapability`.
 
 `force_experience` (a hint for default rendering): `"markdown"`, `"summarization"`, `"flashcards"`, `"avatar_only"`. Not a guarantee.
+
+---
+
+### Preview a Prompt (client-side)
+
+**SDK:** `mgmt.intellects.previewPrompt(configId, ks, opts)`. READ — no write. The returned `text` is rendered client-side, a replica of the author layer (`prompts[]` + `base_directive` + `glossary`) assembled the same way the server's `get_partner_prompts()`/`get_system_prompt()` do, so you can check a prompt template before shipping it. By default it fetches and renders the intellect's *current stored* config; pass `draftPrompts`/`draftBaseDirective`/`draftGlossary` to preview an unsaved edit instead.
+
+```js
+const p = await mgmt.intellects.previewPrompt(configId, adminKs, {
+  requestVars: { sys__user_id: 'learner-123', topic: 'billing' },
+});
+p.text;                // the assembled system prompt, `{{var}}` interpolated
+p.unresolvedVariables; // names left literal because no value was supplied
+p.warnings;             // present ONLY when a reserved variable is unresolved (see below)
+```
+
+It is **not byte-exact** with the live prompt — server-injected capability-conditional blocks (`video_gallery`/`avatar_show_content`/`web_search_enabled`/`user_properties`) are not reproduced, and `sys__*` values you pass via `requestVars` are a *simulation* of what the server sets per turn, not a live read.
+
+**Reserved variables** the server sets per turn (always available to `{{...}}` regardless of `allow_client_variables`):
+
+| Variable | Notes |
+|----------|-------|
+| `sys__thread_id` | Current conversation thread id |
+| `sys__message_id` | Current message id |
+| `sys__user_id` | Bound end-user id — see `Sessions.createConversationToken({userId})` |
+| `sys__user_message` | The user's current turn text |
+| `sys__is_new_thread` | `true` on the first turn of a thread |
+| `sys__ks` | The raw session token. **Never reference this in a prompt that could be echoed back to a user or logged** — it is a live credential. |
+| `sys__user_obj.first_name` / `.last_name` / `.title` / `.company` / `.gender` / `.email` | Attributes of the bound-user object. Referencing an attribute with no bound user currently causes a silent, empty **turn failure** live (backend behavior, not fixable from the SDK — see the issue tracker), not just an empty render. |
+| `secrets.NAME` | A named secret configured on the intellect (write-only — `previewPrompt()` never has access to the raw value, so it cannot confirm one is set) |
+
+**Unresolvable-reserved-variable warnings (hardening):** if a prompt references one of the variables above and no value is available in the simulated context (no `requestVars` entry, or an explicit `null`/`undefined`), `previewPrompt()` returns a `warnings[]` entry naming the variable and why — instead of the placeholder being silently rendered as literal/empty text as if the prompt were safe to ship. `warnings` is an **additive** field: it is present only when non-empty, so a fully-resolved preview's return shape is unchanged from before this hardening.
+
+```js
+const p = await mgmt.intellects.previewPrompt(configId, adminKs, {
+  draftPrompts: [{ key: 'greet', headerTemplate: 'Greeting', value: 'Hi {{sys__user_obj.first_name}}', type: 'custom' }],
+  draftBaseDirective: 'You are Ron.',
+  draftGlossary: '',
+  requestVars: {}, // no bound user simulated
+});
+p.warnings;
+// [{
+//   severity: 'warning',
+//   code: 'reserved_user_attr_unresolved',
+//   message: '`{{sys__user_obj.first_name}}` has no bound value in this preview\'s
+//              requestVars. Referencing an unbound sys__user_obj.* attribute in a
+//              LIVE turn currently causes a silent turn failure, not an empty
+//              render — bind a user (Sessions.createConversationToken({userId}))
+//              or supply "sys__user_obj.first_name" in requestVars to simulate
+//              the bound case before shipping this prompt.'
+// }]
+```
+
+Supplying the value in `requestVars` (e.g. `{ 'sys__user_obj.first_name': 'Jane' }`, or `{ sys__user_id: 'learner-123' }`) simulates the bound case and clears the warning. Warning `code`s: `reserved_var_unresolved` (a scalar `sys__*` variable), `reserved_user_attr_unresolved` (a `sys__user_obj.*` attribute — the class of reference that can crash a live turn), `reserved_secret_unresolved` (a `secrets.*` reference `previewPrompt()` cannot verify, since only the rendered text is ever available to it, never a raw secret value).
 
 ---
 
@@ -622,6 +699,38 @@ Key envelope fields: `threadId` (save for follow-ups), `messageId` (save for fee
 POST https://genie.nvp1.ovp.kaltura.com/assistant/abort
 { "threadId": "154a05c4-..." }
 ```
+
+---
+
+### Reserved Template Variables (`sys__*`)
+
+The server sets these on every turn. They're available to `{{ ... }}` interpolation in
+`base_directive` / `prompts[].value` / `glossary` (see [Configure an Intellect](#configure-an-intellect))
+regardless of `allow_client_variables`. The SDK's own `request_vars` pre-flight guard rejects a
+client-supplied value for 5 of these 8 names before any network call — `sys__thread_id`,
+`sys__message_id`, `sys__user_id`, `sys__user_message`, `secrets` (see `request_vars` above) —
+since those collide with a server-managed variable; it does not yet name-check `sys__ks`,
+`sys__is_new_thread`, or `sys__user_obj.*` the same way:
+
+| Variable | Resolves to | Notes |
+|----------|-------------|-------|
+| `sys__thread_id` | Current conversation thread id | |
+| `sys__message_id` | Current message id | |
+| `sys__user_id` | The bound end-user id | Empty by default (an anonymous KS). Bind a real identity with `Sessions.createConversationToken({ userId })` (or `createAdminToken({ userId })`) so this resolves server-side instead of always being empty — see § Bind a session to a real end-user identity above. |
+| `sys__user_message` | The current turn's user text | |
+| `sys__is_new_thread` | `true` on the first turn of a new thread, `false` otherwise | |
+| `sys__ks` | The raw Kaltura Session token for the current request | ⚠️ **Security warning: never reference `sys__ks` in a prompt whose output could be echoed back to a user or logged.** It is a live credential — rendering it as plain text in a model response, chat transcript, or log turns that surface into a credential leak. See [SECURITY.md](/reference/security/#ks-kaltura-session-guidance-for-agents-ac-3--ac-6--ia-2). |
+| `sys__user_obj.first_name` / `.last_name` / `.title` / `.company` / `.gender` / `.email` | Attributes of the bound-user object | See the dated note below — an unresolved attribute currently fails the whole turn silently, not just this placeholder. |
+| `secrets.<NAME>` | A named secret configured on the intellect | Write-only — see [§ Secrets](#secrets-write-only). |
+
+> **Known issue, dated 2026-08-22 — `sys__user_obj.*` causes a silent turn failure (tracks issue #37).**
+> Referencing any `sys__user_obj.*` attribute in a live prompt reproducibly causes a silent, zero-response,
+> zero-error turn failure — confirmed independent of whether the session has a bound user identity. This is
+> backend behavior (the streaming `/assistant/converse` response has already sent a success status before
+> the failure happens, so nothing surfaces as a normal error) and is **not fixable from this SDK**. Until the
+> underlying backend fix ships, the mitigation is catching the risk before you ship the prompt:
+> `intellects.previewPrompt()` flags an unresolved `sys__user_obj.*` reference with a `reserved_user_attr_unresolved` warning — the placeholder is not rendered as if it were safe.
+> Treat any such warning as a hard stop. See § Preview a Prompt above.
 
 ---
 
