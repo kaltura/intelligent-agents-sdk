@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { attachChromaKeyAvatar } from '../../src/experience/chroma-key.js';
+import { FATAL_ERROR_CODES } from '../../src/experience/session.js';
 import { KalturaError } from '../../src/core/errors.js';
 import { Emitter } from '../../src/experience/emitter.js';
 
@@ -152,6 +153,55 @@ test('attachChromaKeyAvatar: construction/mount errors are caught and re-thrown 
   );
 });
 
+test('attachChromaKeyAvatar: destroys the already-constructed player when .mount() throws (no WebGL context leak, issue #74)', () => {
+  FakeChromaKeyVideo.reset();
+  class MountThrowingChromaKeyVideo extends FakeChromaKeyVideo {
+    mount() { throw new Error('container detached from DOM'); }
+  }
+  const videoEl = new FakeVideoEl();
+  const session = new FakeSession(videoEl);
+  assert.throws(
+    () => attachChromaKeyAvatar({ session, videoEl, ChromaKeyVideo: MountThrowingChromaKeyVideo, container: { id: 'composited' } }),
+    (err) => err instanceof KalturaError && /container detached from DOM/.test(err.detail || ''),
+  );
+  assert.equal(FakeChromaKeyVideo.instances.length, 1, 'the constructor DID run — the failure was in mount()');
+  const orphan = FakeChromaKeyVideo.instances[0];
+  assert.equal(orphan.destroyCalls, 1, 'the orphaned player must be destroyed exactly once before the throw');
+  assert.equal(orphan.isDestroyed, true);
+  assert.equal(session.listenerCount('ended'), 0, 'no session listeners survive a failed attach');
+  assert.equal(session.listenerCount('error'), 0);
+  assert.equal(session.listenerCount('stateChange'), 0);
+
+  // No stale registry entry: a retry constructs a brand-new player with no misuse warning.
+  withWarnSpy((warnings) => {
+    const retried = attachChromaKeyAvatar({ session, videoEl, ChromaKeyVideo: FakeChromaKeyVideo });
+    assert.equal(FakeChromaKeyVideo.instances.length, 2);
+    assert.equal(retried, FakeChromaKeyVideo.instances[1]);
+    assert.equal(warnings.length, 0, 'a fresh attach after a failed one must not warn');
+  });
+});
+
+test('attachChromaKeyAvatar: destroys the constructed player when .mount is missing entirely but a container was given', () => {
+  FakeChromaKeyVideo.reset();
+  class MountlessChromaKeyVideo {
+    constructor() {
+      MountlessChromaKeyVideo.instances.push(this);
+      this.isDestroyed = false;
+      this.destroyCalls = 0;
+    }
+    destroy() { this.destroyCalls += 1; this.isDestroyed = true; }
+  }
+  MountlessChromaKeyVideo.instances = [];
+  const videoEl = new FakeVideoEl();
+  const session = new FakeSession(videoEl);
+  assert.throws(
+    () => attachChromaKeyAvatar({ session, videoEl, ChromaKeyVideo: MountlessChromaKeyVideo, container: { id: 'composited' } }),
+    (err) => err instanceof KalturaError,
+  );
+  assert.equal(MountlessChromaKeyVideo.instances.length, 1);
+  assert.equal(MountlessChromaKeyVideo.instances[0].destroyCalls, 1, 'the mountless player must still be destroyed before the throw');
+});
+
 // ─────────────────────────── misuse guard (idempotent, no double-wiring) ───────────────────────────
 
 test('attachChromaKeyAvatar: a second call against the same session warns and does not construct a second player', () => {
@@ -201,6 +251,24 @@ test("attachChromaKeyAvatar: a FATAL session 'error' calls player.destroy() exac
   assert.equal(player.destroyCalls, 1);
   session.emit('error', { code: 'capacity_unavailable' });
   assert.equal(player.destroyCalls, 1, 'a second fatal error must not call destroy() again');
+});
+
+test("chroma-key's fatal-code set is session.js's own exported FATAL_ERROR_CODES (derived from FATAL_CODE — drift impossible, issue #75)", () => {
+  // The plugin imports this exact set, so asserting its contents here pins the contract:
+  // exactly the five codes session.js's FATAL_CODE table maps to, and nothing else.
+  assert.deepEqual(
+    [...FATAL_ERROR_CODES].sort(),
+    ['bad_request', 'capacity_unavailable', 'peer_removed', 'tier_exceeded', 'unsupported_client'],
+  );
+  // And behaviorally: every exported fatal code destroys; each gets a fresh session/player.
+  for (const code of FATAL_ERROR_CODES) {
+    FakeChromaKeyVideo.reset();
+    const videoEl = new FakeVideoEl();
+    const session = new FakeSession(videoEl);
+    const player = attachChromaKeyAvatar({ session, videoEl, ChromaKeyVideo: FakeChromaKeyVideo });
+    session.emit('error', { code });
+    assert.equal(player.destroyCalls, 1, `fatal code '${code}' must destroy the compositor`);
+  }
 });
 
 test("attachChromaKeyAvatar: a NON-fatal session 'error' (e.g. transient socket hiccup) does not destroy the player", () => {
