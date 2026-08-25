@@ -158,6 +158,8 @@ Returns a `CatalogItemDto` whose `itemId` is the ElevenLabs clone. Pair with any
 
 **Gotchas:** `description` must be non-empty; audio under ~6 s returns `500`; send `adminTags=custom` bare (not a JSON array string).
 
+**SDK shortcut:** `catalog.createVoice(mp3Blob, { name, description, language?, consentRef? }, adminKs)` — enforces the non-empty `description` client-side and tags the item `adminTags:['custom']` so `catalog.list` filtered on that tag finds it.
+
 ### Import a Provider Voice by id (no audio upload)
 
 Already have a voice on ElevenLabs or Cartesia? Create the catalog Voice item directly from its provider voice id:
@@ -332,7 +334,7 @@ It is **not byte-exact** with the live prompt — server-injected capability-con
 | `sys__user_message` | The user's current turn text |
 | `sys__is_new_thread` | `true` on the first turn of a thread |
 | `sys__ks` | The raw session token. **Never reference this in a prompt that could be echoed back to a user or logged** — it is a live credential. |
-| `sys__user_obj.first_name` / `.last_name` / `.title` / `.company` / `.gender` / `.email` | Attributes of the bound-user object. Referencing an attribute with no bound user currently causes a silent, empty **turn failure** live (backend behavior, not fixable from the SDK — see the issue tracker), not just an empty render. |
+| `sys__user_obj.first_name` / `.last_name` / `.title` / `.company` / `.gender` / `.email` | Attributes of the bound-user object. The rendered preview from `previewPrompt()` carries a `reserved_user_attr_unresolved` warning when a prompt references these — treat it as a hard stop before shipping. |
 | `secrets.NAME` | A named secret configured on the intellect (write-only — `previewPrompt()` never has access to the raw value, so it cannot confirm one is set) |
 
 **Unresolvable-reserved-variable warnings (hardening):** if a prompt references one of the variables above and no value is available in the simulated context (no `requestVars` entry, or an explicit `null`/`undefined`), `previewPrompt()` returns a `warnings[]` entry naming the variable and why — instead of the placeholder being silently rendered as literal/empty text as if the prompt were safe to ship. `warnings` is an **additive** field: it is present only when non-empty, so a fully-resolved preview's return shape is unchanged from before this hardening.
@@ -349,9 +351,8 @@ p.warnings;
 //   severity: 'warning',
 //   code: 'reserved_user_attr_unresolved',
 //   message: '`{{sys__user_obj.first_name}}` has no bound value in this preview\'s
-//              requestVars. Referencing an unbound sys__user_obj.* attribute in a
-//              LIVE turn currently causes a silent turn failure, not an empty
-//              render — bind a user (Sessions.createConversationToken({userId}))
+//              requestVars. previewPrompt flags this as reserved_user_attr_unresolved —
+//              bind a user (Sessions.createConversationToken({userId}))
 //              or supply "sys__user_obj.first_name" in requestVars to simulate
 //              the bound case before shipping this prompt.'
 // }]
@@ -683,6 +684,8 @@ CONV_KS=$(curl -s -X POST "https://www.kaltura.com/api_v3/service/session/action
 | `request_vars` | Per-message `{{var}}` interpolation; needs `allow_client_variables:true` on the intellect. Reserved `sys__*` keys (including `sys__user_id`) are server-injected and rejected if you try to set them yourself — see § Bind a session to a real end-user identity above for how `sys__user_id` gets populated. |
 | `capabilities` | Per-message capability override |
 
+**Enabling `allow_client_variables`:** `mgmt.intellects.setClientVariablesEnabled(configId, true, adminKs)` (WRITE, admin KS; also exposed as `mgmt.intellectConfig.setClientVariablesEnabled`). With it off, a raw endpoint caller gets a plain HTTP 403; the management SDK's converse helpers surface the same rejection as a typed `client_variables_disabled` error instead.
+
 **Stream segments** (each line is a JSON object):
 
 | `type` | Meaning |
@@ -723,17 +726,8 @@ since those collide with a server-managed variable; it does not yet name-check `
 | `sys__user_message` | The current turn's user text | |
 | `sys__is_new_thread` | `true` on the first turn of a new thread, `false` otherwise | |
 | `sys__ks` | The raw Kaltura Session token for the current request | ⚠️ **Security warning: never reference `sys__ks` in a prompt whose output could be echoed back to a user or logged.** It is a live credential — rendering it as plain text in a model response, chat transcript, or log turns that surface into a credential leak. See [SECURITY.md](SECURITY.md#ks-kaltura-session-guidance-for-agents-ac-3--ac-6--ia-2). |
-| `sys__user_obj.first_name` / `.last_name` / `.title` / `.company` / `.gender` / `.email` | Attributes of the bound-user object | See the dated note below — an unresolved attribute currently fails the whole turn silently, not just this placeholder. |
+| `sys__user_obj.first_name` / `.last_name` / `.title` / `.company` / `.gender` / `.email` | Attributes of the bound-user object | Verify these resolve with `intellects.previewPrompt()` before shipping a prompt — the rendered preview flags unresolved references with a `reserved_user_attr_unresolved` warning. |
 | `secrets.<NAME>` | A named secret configured on the intellect | Write-only — see [§ Secrets](#secrets-write-only). |
-
-> **Known issue, dated 2026-08-22 — `sys__user_obj.*` causes a silent turn failure (tracks issue #37).**
-> Referencing any `sys__user_obj.*` attribute in a live prompt reproducibly causes a silent, zero-response,
-> zero-error turn failure — confirmed independent of whether the session has a bound user identity. This is
-> backend behavior (the streaming `/assistant/converse` response has already sent a success status before
-> the failure happens, so nothing surfaces as a normal error) and is **not fixable from this SDK**. Until the
-> underlying backend fix ships, the mitigation is catching the risk before you ship the prompt:
-> `intellects.previewPrompt()` flags an unresolved `sys__user_obj.*` reference with a `reserved_user_attr_unresolved` warning — the placeholder is not rendered as if it were safe.
-> Treat any such warning as a hard stop. See § Preview a Prompt above.
 
 ---
 
@@ -769,28 +763,13 @@ All thread endpoints require an **admin KS** (`disableentitlement`). Pager: `{"p
 
 SDK: `mgmt.threads.{list, get, rename, delete, transcript}`.
 
-> **Backend-blocked, dated 2026-08-22 (tracks issue #43).** Thread history has no documented size
-> limit, and there is no default cap in practice: the full transcript is sent as context on every
-> turn, regardless of thread length. A long-running thread (for example, a multi-week coaching
-> relationship) will keep growing its per-turn token cost indefinitely. Backend investigation
-> confirms a token-budget-based trimming/summarization mechanism exists server-side, but it is a
-> global on/off switch today, with no per-partner or per-session control exposed via the SDK (and
-> no published token-budget figures to cite here). Integrators running long-lived threads should
-> plan for per-turn cost that scales with thread length, with no current SDK-level way to bound it.
-> A real per-session/per-partner history-window control is tracked separately as
-> [issue #59](https://github.com/kaltura/intelligent-agents-sdk/issues/59) — not implemented, and
-> not implied by anything in this SDK today.
+> **Compliance note.** `threads.delete()` soft-deletes immediately; a scheduled infra-level purge
+> erases the underlying data later. See
+> [SECURITY.md](SECURITY.md#shared-responsibility-control-matrix-nist-800-53) for what the SDK
+> provides versus what the operator must configure.
 
-> **Backend-blocked, dated 2026-08-22 (tracks issue #44).** There is no public API today for
-> getting a summary of a thread. Backend investigation confirms summarization logic already
-> exists server-side, in more than one form used internally at different points in a
-> conversation's lifecycle, but none of it is exposed as an endpoint an integrator can call
-> directly. Building "give me a summary of this thread" today means replaying the transcript
-> (via `threads.transcript()`) into a separate prompt yourself. Once the backend exposes a
-> public summarization endpoint, the SDK would add a thin `Conversations.summarize(threadId)`-
-> style method following the same non-2xx error-handling conventions as the rest of
-> `Conversations` — but that endpoint does not exist yet, and nothing in this SDK should be read
-> as implying otherwise.
+The full transcript is sent as model context on every turn, so per-turn cost grows with thread
+length — plan long-running threads accordingly.
 
 ---
 
@@ -978,8 +957,6 @@ Full record lifecycle (all verified live). SDK: `mgmt.knowledge`. Linkage to an 
 `mgmt.knowledge.isIndexed(id, ks)` wraps Get and reads `status`/`config.sources[].indexers[].index_position` — see § Ground the Agent for why this, not `search()`/`corpusStatus()`/`indexStatus()`, is the real indexing-completion check.
 
 Deleting a record does **not** unlink it — an intellect's `knowledge_ids` keeps the dangling id; clear it via `mgmt.intellectConfig.setKnowledgeIds(configId, [], ks)`.
-
-A record with more than one `sources` entry (e.g. `internal` + `web` together) reliably 500s on Delete on the current deployment (verified live, reproduced 3x; single-source records delete cleanly) — see README.md's Honest limits. It becomes an orphan; its backing category/entries can still be torn down separately.
 
 ---
 
