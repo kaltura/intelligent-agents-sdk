@@ -62,13 +62,22 @@
     // (autoTune: true tunes once and stops). chroma-key-video keys by dominant-channel ratio,
     // not distance to a fixed target color, so adaptive tuning against the real decoded
     // footage is the library's own "best fit" path, not an approximation of one.
-    const player = attachChromaKeyAvatar({
-      session,
-      videoEl: session.videoEl,
-      ChromaKeyVideo,
-      options: { channel: 'green', autoTune: 'adaptive' },
-      container: document.getElementById('composited'),
-    });
+    let player;
+    try {
+      player = attachChromaKeyAvatar({
+        session,
+        videoEl: session.videoEl,
+        ChromaKeyVideo,
+        options: { channel: 'green', autoTune: 'adaptive' },
+        container: document.getElementById('composited'),
+      });
+    } catch (err) {
+      // Surface the failure on the page (the #cc status region) instead of leaving a
+      // silent blank box — attachChromaKeyAvatar() throws a KalturaError with the cause
+      // (e.g. WebGL unavailable) in `detail`.
+      cc.textContent = '⚠️ Chroma-key compositor failed to start: ' + (err?.detail || err?.message || err);
+      throw err;
+    }
 
     // Kaltura's avatar renderer insets the animated subject within a margin of the native
     // frame (confirmed asymmetric — larger on some edges than others, independent of the

@@ -75,16 +75,12 @@
  * // calling session.disconnect() alone is enough.
  */
 import { KalturaError } from '../core/errors.js';
-
-// Mirrors session.js's FATAL_CODE table (the codes it maps to at its "// Fatal error
-// events." emit site) — session.js doesn't export that table, so the 5 literal codes are
-// duplicated here deliberately. Only these end the session's underlying connection
+// Derived by session.js from its own FATAL_CODE table, so it can never drift from what the
+// session actually emits. Only these codes end the session's underlying connection
 // unrecoverably; every other 'error' code (e.g. socket_error, stv_task_fail) is a
 // transient/recoverable condition the session itself may reconnect from, so destroying the
 // compositor on those would strand it with no way to re-attach (see the misuse guard below).
-const FATAL_ERROR_CODES = new Set([
-  'capacity_unavailable', 'tier_exceeded', 'bad_request', 'peer_removed', 'unsupported_client',
-]);
+import { FATAL_ERROR_CODES } from './session.js';
 
 // Dev-time-only bookkeeping (not app state): the ONE currently-live player per session,
 // keyed by the session object itself so it self-clears via GC — same externally-owned-key
@@ -180,6 +176,12 @@ export function attachChromaKeyAvatar(cfg) {
     // 'ended' emit).
     unsubs.push(session.on('stateChange', (p) => { if (p && p.state === 'disconnected') doDestroy(); }));
   } catch (err) {
+    // The player may already be constructed (e.g. `.mount()` threw after the constructor
+    // succeeded) — destroy it here or its WebGL context leaks for the lifetime of the page,
+    // with no handle for the caller to clean up (this function throws instead of returning).
+    if (player) {
+      try { if (!player.isDestroyed) player.destroy(); } catch { /* BYO player — never let its own destroy() mask the original error */ }
+    }
     for (const off of unsubs.splice(0)) { try { off(); } catch { /* */ } }
     if (err instanceof KalturaError) throw err;
     throw new KalturaError({

@@ -96,6 +96,14 @@ const FATAL_CODE = {
   unsupportedClient: { code: 'unsupported_client', num: 0, retry: false },
 };
 
+/**
+ * The SDK error codes that end a session unrecoverably (derived from FATAL_CODE above, so
+ * it can never drift from what `_wireSocket()` actually emits). Exported for plugins —
+ * e.g. `./chroma-key.js` — that must distinguish a fatal `'error'` event (tear down now)
+ * from a transient/recoverable one (the session may reconnect on its own).
+ */
+export const FATAL_ERROR_CODES = Object.freeze(new Set(Object.values(FATAL_CODE).map((v) => v.code)));
+
 export class KalturaAvatarSession extends Emitter {
   /**
    * @param {object} cfg
