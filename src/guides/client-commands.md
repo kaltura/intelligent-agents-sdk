@@ -7,17 +7,19 @@ eyebrow: How-to Guide
 
 # Client-Side Commands — how the avatar drives your UI
 
-How a Kaltura avatar silently triggers actions in *your* app — navigate a deck, render a widget, draw a chart — by calling a tool you defined. The brain decides *when*; the page decides *what happens*. This is the mechanism that lets an app drive client commands (`navigate_to_slide`/`show_widget`/`highlight_chart`/`open_filing`) off a single live avatar; see `examples/deck-presenter.html` for a self-contained slide-navigation demo.
+How a Kaltura avatar silently triggers actions in *your* app — navigate a deck, render a widget, draw a chart — by calling a tool you defined. The brain decides *when*; the page decides *what happens*.
+
+If you only read one thing: a "client command" is **not a special protocol feature**. It is a native Genie `type:"client"` tool that makes **no server-side call at all** — the *product* is the silent `type:"tool"` segment Genie streams when the LLM calls it. Your page captures that segment and runs whatever JS it wants.
+
+**On this page:** [Why it exists](#why-it-exists) · [The mechanism, end to end](#the-mechanism-end-to-end) · [Limits and gotchas](#limits-and-gotchas) · [Related docs](#related-docs)
 
 ---
 
 ## Why it exists
 
-Without this channel, an avatar can only *talk*. With it, the avatar drives a live experience the way a human presenter would: it jumps to the relevant slide when you ask a question, generates a new slide for an off-curriculum topic, shows a chart, switches tracks. Prompt-only experience runtimes — the brain's built-in structured-widget system (flashcards, sources, forms, and the other GenUI widgets; see [GenUI Reference](/reference/genui-reference/)) — have no client-command surface, and **`GenieCapabilities`** (the enum of togglable brain behaviors, e.g. `use_knowledge_base`, `avatar`, `kaltura_genie_experiences`) has no mechanism for the brain to invoke a page-defined function. This SDK ships that mechanism, documented and tested, in `tools.client` + `session.onToolCall`.
+Without this channel, an avatar can only *talk*. With it, the avatar drives a live experience the way a human presenter would: it jumps to the relevant slide when you ask a question, shows a chart, switches tracks. See `examples/deck-presenter.html` for a self-contained slide-navigation demo.
 
----
-
-If you only read one thing: a "client command" is **not a special protocol feature**. It is a native Genie `type:"client"` tool that makes **no server-side call at all** — the *product* is the silent `type:"tool"` segment Genie streams when the LLM calls it. Your page captures that segment and runs whatever JS it wants.
+No other surface provides this. The brain's built-in structured-widget system (flashcards, sources, forms — see [GenUI Reference](/reference/genui-reference/)) has no client-command surface, and **`GenieCapabilities`** (the enum of togglable brain behaviors, e.g. `use_knowledge_base`, `avatar`, `kaltura_genie_experiences`) has no mechanism for the brain to invoke a page-defined function. This SDK ships that mechanism, documented and tested, in `tools.client` + `session.onToolCall`.
 
 ---
 

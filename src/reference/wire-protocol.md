@@ -15,6 +15,8 @@ This is the deep reference behind [Platform Architecture](/explanation/architect
 
 **Evidence.** A redacted snapshot of a real session (27 inbound + 15 outbound socket events, both WebRTC legs, ICE policies for every client) is committed at `test/fixtures/golden-session.json` — a hand-curated fixture derived from the original live capture (see the fixture's own `_source`/`_note` fields for provenance). There is no automated re-capture tool in this repo today; update the fixture by hand against fresh observations (e.g. a `debugMode`-gated log panel wired to `session.on(...)`, or `socket.onAny` in a scratch client) when the wire protocol changes.
 
+**On this page:** [Provenance](#provenance--components) · [Channels](#1-channels-at-a-glance) · [Socket.IO connection](#2-socketio-connection) · [Connect sequence](#3-connect-sequence-state-machine-order) · [Event catalog](#4-socketio-events--developer-facing-catalog) · [ASR uplink](#5-asr-uplink-pc1--microphone--server) · [STV downlink](#6-stv-downlink-pc2--avatar-videoaudio--you) · [`clientConfiguration`](#7-clientconfiguration-fields-per-session-agent-config) · [End-to-end turn](#8-end-to-end-turn-what-fires-in-order) · [Re-capture](#9-reproduce--re-capture) · [Related docs](#related-docs)
+
 ## Provenance / components
 
 | Symbol | Component | What it is |
@@ -101,7 +103,11 @@ Top-level machine states (`CG`'s connection state machine): `preparing → conne
 
 > **Why `joinComplete` gets 20s, not 5s (deliberate deviation from `CG`'s single 5s join-room budget):** the server (`CM`) emits `clientConfiguration` immediately on join, but emits `joinComplete` only after an awaited context-update call that can exceed 5s under load. This SDK therefore budgets the two waits separately — `clientConfiguration` 5s, `joinComplete` 20s (`SDK:session.js` `TIMEOUTS.joinRoom` / `TIMEOUTS.joinComplete`). A client that reuses `CG`'s single 5s budget for both will see spurious `JoinRoomTimeout` failures on loaded rooms.
 
-> **Steps 10–11 are a client-side refinement, not part of the `CG` machine.** The bare `CG` connecting-state machine approves on `connectToASR` **onDone** (`sendApprovedPermissions` → `done` → `#connected`) — its STV video is subscribed later, in the player layer. The **`SDK` and `EMBED` clients** instead gate `approvedPermissions` on STV video being playable first (`SDK:session.js _approve` gated on the same canplay/`HAVE_FUTURE_DATA` settle logic; `EMBED`'s own permission-approval check requires `_micReady && _videoReady`). **Why it matters (verified by capture):** `approvedPermissions` is what makes the server speak the opening line, and ICE `connected` fires ~2s before the first frame decodes — so approving before `<video>` `canplay` (readyState ≥ `HAVE_FUTURE_DATA`, + ~300ms jitter settle) clips the greeting. This SDK does the gate; do the same in your client.
+> **Steps 10–11 are a client-side refinement, not part of the `CG` machine.** This SDK gates `approvedPermissions` on the video being playable; do the same in your client.
+>
+> - The bare `CG` connecting-state machine approves on `connectToASR` **onDone** (`sendApprovedPermissions` → `done` → `#connected`) — its STV video is subscribed later, in the player layer.
+> - The **`SDK` and `EMBED` clients** instead gate `approvedPermissions` on STV video being playable first (`SDK:session.js _approve` gated on the same canplay/`HAVE_FUTURE_DATA` settle logic; `EMBED`'s own permission-approval check requires `_micReady && _videoReady`).
+> - **Why it matters (verified by capture):** `approvedPermissions` is what makes the server speak the opening line, and ICE `connected` fires ~2s before the first frame decodes. Approving before `<video>` `canplay` (readyState ≥ `HAVE_FUTURE_DATA`, + ~300ms jitter settle) clips the greeting.
 
 ---
 
@@ -274,7 +280,13 @@ not as its own `toolCalls` entry.
 
 > `init_response` is **NOT** an HTTP-converse segment — it's a **WebSocket** event type defined in the Genie backend's websocket layer. In the live runtime it arrives as the `delta` of the first `agent_raw_text` socket event (carrying `openingPhrase`/`threadId`/`messageId`); it never appears in an `/assistant/converse` HTTP stream.
 
-> **Avatar-runtime segment handling (verified against `CM`).** The `type` values above are the **raw Genie** types; the conversation-manager's brain-bridge adapter **rewrites** a `type === 'unisphere-tool'` segment to its `metadata.runtimeName` (minus the `-tool` suffix) before yielding downstream, so a runtime client sees the adapter-normalized type, not the raw `unisphere-tool` name. The adapter yields **all** segment types (it doesn't drop non-spoken ones) along with `start`/`end`/`final`/`delta`. Because the bridge pins `force_experience: 'avatar_only'`, the brain's spoken content arrives primarily as `avatar` (streamed) / `avatar-filler` segments while control/structured types (`think`/`tool`/`unisphere-tool`/`share`/`thread`/`error`) stream alongside for the transcript/UI. *(The exact segment→TTS gating lives further down `CM`'s speech pipeline and is not re-asserted here beyond what the adapter shows.)* **Note:** grouping `avatar-filler` under "spoken" here describes wire mechanics only — unlike `avatar`/`text`, its phrasing is server-generated per turn and NOT reliably steerable via `base_directive` (see the `avatar_filler` capability note in [GenUI Reference](/reference/genui-reference/#authoring--which-capability-turns-each-widget-on)).
+> **Avatar-runtime segment handling (verified against `CM`).** The `type` values above are the **raw Genie** types; a live-runtime client sees the conversation-manager's adapter-normalized stream instead:
+>
+> - The brain-bridge adapter **rewrites** a `type === 'unisphere-tool'` segment to its `metadata.runtimeName` (minus the `-tool` suffix) before yielding downstream — a runtime client never sees the raw `unisphere-tool` name.
+> - The adapter yields **all** segment types (it doesn't drop non-spoken ones) along with `start`/`end`/`final`/`delta`.
+> - Because the bridge pins `force_experience: 'avatar_only'`, the brain's spoken content arrives primarily as `avatar` (streamed) / `avatar-filler` segments while control/structured types (`think`/`tool`/`unisphere-tool`/`share`/`thread`/`error`) stream alongside for the transcript/UI.
+> - The exact segment→TTS gating lives further down `CM`'s speech pipeline and is not re-asserted here beyond what the adapter shows.
+> - Grouping `avatar-filler` under "spoken" describes wire mechanics only — unlike `avatar`/`text`, its phrasing is server-generated per turn and NOT reliably steerable via `base_directive` (see the `avatar_filler` capability note in [GenUI Reference](/reference/genui-reference/#authoring--which-capability-turns-each-widget-on)).
 
 The production text machine (`CG`) only *assembles* `text | unisphere-tool | error` into the transcript and treats a start+end `share` as message-complete; it ignores `avatar | think | tool | tool_response` (those drive the live runtime). Frame counts from one captured text session: `text`×159, `think`×13, `share`×6, `unisphere-tool`×6, `thread`×5.
 

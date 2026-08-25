@@ -24,10 +24,12 @@ default and gives you a config knob plus a compliance note to tighten it.
   `Management`; the browser `KalturaAvatarSession` takes only a short-lived,
   entitlement-ON conversation token.
 
+In a hurry? Jump straight to the copy-paste
+[secure production baseline](#secure-production-baseline-cm-6) config.
 Framework crosswalks — HIPAA, HITRUST, the OWASP LLM/Agentic Top 10, and
 avatar/deepfake/voice-clone law (EU AI Act Art. 50, NO FAKES, CA SB 1001, BIPA,
-C2PA) — are mapped control-by-control in the [framework crosswalks](#framework-crosswalks)
-below, with a copy-paste secure production baseline config.
+C2PA) — are mapped control-by-control in the
+[framework crosswalks](#framework-crosswalks) below.
 
 ## Reporting a vulnerability
 
@@ -39,6 +41,7 @@ operator's reporting duty; this is the vendor contact).
 ## Table of contents
 
 - [AI-application controls](#ai-application-controls-owasp-llmagentic-hipaa-technical-safeguards)
+- [Secure production baseline](#secure-production-baseline-cm-6)
 - [KS guidance for agents](#ks-kaltura-session-guidance-for-agents-ac-3--ac-6--ia-2)
 - [Token lifecycle](#token-lifecycle-rfc-9700-oauth-20-security-bcp-nist-ac-family)
 - [Audit logging](#audit-logging-nist-au-2--au-3--au-12-owasp-logging-soc-2-cc7)
@@ -55,7 +58,7 @@ operator's reporting duty; this is the vendor contact).
   - [OWASP Top 10 for LLM Applications](#owasp-top-10-for-llm-applications-2025)
   - [OWASP Agentic](#owasp-agentic-agentic-security-initiative--top-10-for-agentic-apps)
   - [Avatar / digital-human / deepfake / voice-clone](#avatar--digital-human--deepfake--voice-clone)
-  - [Secure production baseline](#secure-production-baseline-cm-6)
+- [Related docs](#related-docs)
 
 ## AI-application controls (OWASP LLM/Agentic; HIPAA technical safeguards)
 
@@ -89,6 +92,40 @@ event, which fires before the avatar's first words on every connect.
   `consentRef` on voice/visual cloning.
 
 </div>
+
+## Secure production baseline (CM-6)
+
+Copy-paste hardened configuration for a regulated deployment:
+
+```js
+// Server — Management
+new Management({
+  partnerId, getAdminSecret: () => vault.fetch('kaltura-admin'),  // or adminSecret
+  onAuditEvent: (e) => siem.write(e),
+});
+const token = await mgmt.sessions.createConversationToken({
+  configId, ttlSeconds: 1800,                 // short-lived (RFC 9700)
+  restrictions: { actionsLimit: 200, sessionGroupId: caseId },   // least privilege + revocable family
+});
+
+// Browser — Experience
+new KalturaAvatarSession({
+  token, conversationManagerUrl, srsBaseUrl, turnServerUrl,      // all https/wss
+  turnCredentials,                            // ephemeral (RFC 7635), not the static fallback
+  allowInsecureTransport: false,              // never true in production
+  requireDisclosureAck: true,                 // EU AI Act / biometric jurisdictions
+  idleTimeoutMs: 900000,                      // HIPAA auto-logoff
+  subjectId: opaqueUserId,                    // HIPAA unique-user-id (never PHI)
+  maxTurnsPerMinute: 30,                      // LLM10 valve
+  onBeforeSend: (t) => myGuardrail(t),        // LLM01 input filter
+  onAgentAction: (a) => myPolicy(a),          // LLM06 / Agentic action gate
+  onAuditEvent: (e) => siem.write(e),
+});
+```
+
+Plus: pin the injected socket.io with SRI; set a strict CSP (`connect-src`
+your CM + WHEP host + TURN; `media-src blob:`; no inline script/`unsafe-eval`) and
+`frame-ancestors` on the embedding page; render the disclosure accessibly.
 
 ## KS (Kaltura Session) guidance for agents (AC-3 / AC-6 / IA-2)
 
@@ -407,36 +444,11 @@ actions surface.
 | Voice/likeness clone consent | NO FAKES Act; TN ELVIS Act; CA AB 1836/2602; FTC impersonation rule | **SDK:** Management voice/visual provisioning accepts optional `consentRef` stored in `data._consent` on the returned catalog item. A `clone.consent` audit event is emitted. **Operator:** obtain and retain the source individual's consent. |
 | Emotion / biometric categorisation notice | EU AI Act Art. 50(3) | Operator, if such features are enabled. |
 
-### Secure production baseline (CM-6)
+## Related docs
 
-Copy-paste hardened configuration for a regulated deployment:
-
-```js
-// Server — Management
-new Management({
-  partnerId, getAdminSecret: () => vault.fetch('kaltura-admin'),  // or adminSecret
-  onAuditEvent: (e) => siem.write(e),
-});
-const token = await mgmt.sessions.createConversationToken({
-  configId, ttlSeconds: 1800,                 // short-lived (RFC 9700)
-  restrictions: { actionsLimit: 200, sessionGroupId: caseId },   // least privilege + revocable family
-});
-
-// Browser — Experience
-new KalturaAvatarSession({
-  token, conversationManagerUrl, srsBaseUrl, turnServerUrl,      // all https/wss
-  turnCredentials,                            // ephemeral (RFC 7635), not the static fallback
-  allowInsecureTransport: false,              // never true in production
-  requireDisclosureAck: true,                 // EU AI Act / biometric jurisdictions
-  idleTimeoutMs: 900000,                      // HIPAA auto-logoff
-  subjectId: opaqueUserId,                    // HIPAA unique-user-id (never PHI)
-  maxTurnsPerMinute: 30,                      // LLM10 valve
-  onBeforeSend: (t) => myGuardrail(t),        // LLM01 input filter
-  onAgentAction: (a) => myPolicy(a),          // LLM06 / Agentic action gate
-  onAuditEvent: (e) => siem.write(e),
-});
-```
-
-Plus: pin the injected socket.io with SRI; set a strict CSP (`connect-src`
-your CM + WHEP host + TURN; `media-src blob:`; no inline script/`unsafe-eval`) and
-`frame-ancestors` on the embedding page; render the disclosure accessibly.
+| Doc | What it adds |
+|-----|---------------|
+| [API Reference](/reference/api-reference/) | The management endpoints behind token minting, `restrictions`, revocation, and server-side tools |
+| [SDK Reference](/reference/sdk-reference/) | The full `KalturaAvatarSession` option surface the baseline config draws from |
+| [Wire Protocol](/reference/wire-protocol/) | The exact socket/WebRTC channels the transport controls above protect |
+| [Platform Architecture](/explanation/architecture/) | Where each control sits in the end-to-end system |

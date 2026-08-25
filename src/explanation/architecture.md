@@ -9,7 +9,7 @@ eyebrow: Explanation
 
 For **platform developers**: how the whole system works end to end — the backend services, the text-conversation flow, the live-video runtime wire protocol, how it scales, and how it handles failure. Enough detail to reimplement any layer with **zero dependency** on Kaltura's apps, widgets, or libraries (just a Socket.IO client + standard WebRTC).
 
-**Source of truth.** Reverse-engineered and verified against the running system: the avatar management backend (management plane — organized internally into agent / avatar / catalog / intellect / application modules), the Genie brain backend (organized internally into assistant / thread / message / feedback / followup / intellect / knowledge modules), the avatar runtime client (the browser-side connection state machine + XState connect machine), the WebRTC avatar engine (the client-side session object driving the ASR/STV peer connections), the scripted-video control service (the scripted-video control API at `/v1/avatar-session/*`), and the avatar infrastructure module. Symbol names below are the stable contracts to navigate by; exact details live in [Wire Protocol](/reference/wire-protocol/).
+**Source of truth.** Everything here is reverse-engineered and verified against the running system (the services in the [Backend services map](#backend-services-map) below); symbol names are the stable contracts to navigate by, and exact wire details live in [Wire Protocol](/reference/wire-protocol/).
 
 **Companion docs.** New here? [Getting Started](/getting-started/). Building an app? [API Reference](/reference/api-reference/). Driving your UI from the avatar? [Client-Side Commands](/guides/client-commands/). This page is the map — the exact field-by-field mechanics (connect sequence, ASR/STV wire shapes, scaling internals, SDK module routing, failure-mode tables) live in **[Architecture Reference](/reference/architecture-reference/)**; a from-scratch reimplementation recipe lives in **[Architecture Recipe](/guides/architecture-recipe/)**.
 
@@ -63,7 +63,11 @@ Full explanation and plug points: [Inside a Live Conversation](/explanation/insi
 
 ## Text conversation flow
 
-The simplest intelligent path — no video, fully headless. Client → `POST https://genie.nvp1.ovp.kaltura.com/assistant/converse` with a `geniegpcid:<configId>` KS. The response is an NDJSON (or SSE) stream of segments; the brain runs server-side. Segment `type` values and parsing rules are identical to the avatar's `agent_raw_text` stream (see [Architecture Reference's "Conversation Phase"](/reference/architecture-reference/#conversation-phase--what-streams-while-connected)). Full endpoint details: [API Reference](/reference/api-reference/).
+The simplest intelligent path — no video, fully headless: `POST https://genie.nvp1.ovp.kaltura.com/assistant/converse` with a `geniegpcid:<configId>` KS.
+
+- The response is an NDJSON (or SSE) stream of segments; the brain runs server-side.
+- Segment `type` values and parsing rules are identical to the avatar's `agent_raw_text` stream — see [Architecture Reference's "Conversation Phase"](/reference/architecture-reference/#conversation-phase--what-streams-while-connected).
+- Full endpoint details: [API Reference](/reference/api-reference/).
 
 ---
 

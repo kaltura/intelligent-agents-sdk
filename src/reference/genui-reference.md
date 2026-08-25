@@ -19,6 +19,8 @@ restrictions that bite in practice.
 All claims here are anchored to repo source (`src/...`) and `WIRE-PROTOCOL.md`; where a
 behavior is inferred rather than live-captured, it is marked **INFERRED**.
 
+**On this page:** [The model](#the-model-in-one-paragraph) · [Quick start](#quick-start) · [Runtimes](#the-first-class-runtimes) · [Data flow](#how-a-widget-reaches-your-screen-the-data-flow) · [Two delivery paths](#two-delivery-paths-this-is-the-1-gotcha) · [`force_experience`](#force_experience--a-hint-not-a-contract) · [Per-runtime detail](#per-runtime-detail-model-keys--descriptor) · [Authoring](#authoring--which-capability-turns-each-widget-on) · [Consuming](#consuming-widgets-in-your-app) · [Analytics](#widget-interaction-analytics-avoiding-double-counting) · [Safety](#safety-model-owasp-llm05--every-widget-passes-through-this) · [Restrictions](#restrictions--gotchas-read-before-you-build) · [Pointers](#pointers-source-of-truth)
+
 > **Naming note.** `unisphere-tool` and `unisphere.widget.genie` below are the Genie brain's
 > literal, on-the-wire constant values — carried over from a naming decision made outside this
 > SDK, and preserved verbatim here because changing them would break real interoperability. They
@@ -27,13 +29,27 @@ behavior is inferred rather than live-captured, it is marked **INFERRED**.
 
 ## The model in one paragraph
 
-The brain emits a **GenUI widget** by writing a fenced block carrying a `widgetName`. The Genie
-brain backend's `message_service` converts that into a stream segment of
-`type:"unisphere-tool"` shaped `{ type, content, metadata:{ widgetName, runtimeName }, speechId?,
-threadId? }`. **All widgets share `widgetName:"unisphere.widget.genie"`** — the host keys off
-`metadata.runtimeName` (stripping the `-tool` suffix) to pick a renderer. The SDK turns each
-segment into a framework-agnostic descriptor `{kind, data}` your app maps to DOM. Nothing here
-emits HTML; every string/URL is run through `core/safety.js` first.
+The brain emits a **GenUI widget** by writing a fenced block carrying a `widgetName`. The SDK
+turns each one into a framework-agnostic descriptor `{kind, data}` your app maps to DOM.
+
+- The Genie brain backend's `message_service` converts the fenced block into a stream segment of
+  `type:"unisphere-tool"` shaped `{ type, content, metadata:{ widgetName, runtimeName },
+  speechId?, threadId? }`.
+- **All widgets share `widgetName:"unisphere.widget.genie"`** — the host keys off
+  `metadata.runtimeName` (stripping the `-tool` suffix) to pick a renderer.
+- Nothing here emits HTML; every string/URL is run through `core/safety.js` first.
+
+## Quick start
+
+Two lines put every first-class widget on screen with the SDK's built-in DOM renderer:
+
+```js
+import { ExperienceRenderer } from '@kaltura/intelligent-agents/experience/genui';
+new ExperienceRenderer({ session, mount: document.getElementById('widgets'), onAction }).start();
+```
+
+Everything below is the detail behind those two lines — the runtimes, wire shapes, and options.
+For the consuming-side API surface, jump to [Consuming widgets in your app](#consuming-widgets-in-your-app).
 
 ## The first-class runtimes
 

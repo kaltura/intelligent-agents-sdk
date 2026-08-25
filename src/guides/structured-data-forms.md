@@ -18,6 +18,8 @@ represent. The one place this shows up in the SDK's own surface is naming: the m
 report values back is `session.submitStructuredDataForm()`, over a wire event named
 `setFormLeadInfo` — both named after the feature's most common use case, not its only one.
 
+**On this page:** [What it is](#what-it-is--and-isnt) · [How the brain sees the schema](#how-the-brain-is-made-aware-of-the-schema) · [Possible / not possible](#whats-possible--whats-not) · [How the SDK handles it](#how-the-sdk-handles-it--two-observation-points-one-descriptor) · [Rendering](#how-the-form-is-rendered) · [Customizing](#how-to-customize-or-style-the-form) · [Where the data goes](#where-the-submitted-data-actually-goes) · [Related docs](#related-docs)
+
 All claims below are anchored to source: the Genie brain backend (the conversational AI backend
 service) and this repo's SDK (`src/`).
 
@@ -172,14 +174,17 @@ Two independent axes:
 
 ## Where the submitted data actually goes
 
-`session.submitStructuredDataForm(info)` (`src/experience/session.js`) is a fire-and-forget socket emit —
-`this._socket.emit('setFormLeadInfo', sanitizeJson(info))` — with no acknowledgment payload, and no
-endpoint on the Genie/agentic management plane reads it back as structured `{key: value}` data. The
-conversation transcript is persisted server-side and exposed read-only via `POST
-/thread/get_transcripts` — the management SDK wraps this as `mgmt.threads.transcript(threadId, ks)`
-(`src/management/conversations.js`). That reconstructs a plain-text transcript from what was said;
-it does **not** carry the structured form field values, only what the viewer said/typed and the
-model's replies — a paraphrase, not the raw object.
+Short answer: into the conversation, and nowhere you can read it back as structured data.
+
+- `session.submitStructuredDataForm(info)` (`src/experience/session.js`) is a fire-and-forget
+  socket emit — `this._socket.emit('setFormLeadInfo', sanitizeJson(info))` — with no
+  acknowledgment payload.
+- No endpoint on the Genie/agentic management plane reads it back as structured `{key: value}`
+  data.
+- The conversation transcript is persisted server-side and exposed read-only via
+  `POST /thread/get_transcripts`, wrapped as `mgmt.threads.transcript(threadId, ks)`
+  (`src/management/conversations.js`). It reconstructs plain text from what was said — it does
+  **not** carry the structured form field values. A paraphrase, not the raw object.
 
 **If you need durable, retrievable access to what the viewer submitted, don't rely on
 `submitStructuredDataForm`/`setFormLeadInfo`.** Capture-and-forward via your own tool instead — see

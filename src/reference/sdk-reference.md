@@ -382,7 +382,11 @@ Validated fields, top-level keys only: `type` (one of `str`/`int`/`float`/`bool`
 
 ### Fused multi-tool turns (handled automatically on the live session)
 
-When a turn calls 2+ tools, the server can stream them as **one** `type:"tool"` segment that names only the last tool, with earlier tools' JSON args concatenated into the same string (live-verified — see `WIRE-PROTOCOL.md` §4e). `parseToolCall(segment)` recovers the named tool's own args correctly either way, and exposes any earlier, unnamed blobs as `call.fusedArgs` (array, arrival order — absent when the segment wasn't fused). On `KalturaAvatarSession`, you don't need to do anything: it pairs each queued `fusedArgs` blob with the `tool_response` segment that echoes its real tool name (via `parseToolResponseName(segment)`) and dispatches it through the normal `onToolCall` path — same dedup, same schema validation, same `toolCallResult`/`toolCallInvalid` events. This queue is turn-scoped and clears on the next `agent_start_speech`, so a stray echo never leaks a recovery into the wrong turn.
+When a turn calls 2+ tools, the server can stream them as **one** `type:"tool"` segment that names only the last tool, with earlier tools' JSON args concatenated into the same string (live-verified — see `WIRE-PROTOCOL.md` §4e). On `KalturaAvatarSession`, you don't need to do anything — the SDK recovers every fused call:
+
+- `parseToolCall(segment)` recovers the named tool's own args correctly either way, and exposes any earlier, unnamed blobs as `call.fusedArgs` (array, arrival order — absent when the segment wasn't fused).
+- The session pairs each queued `fusedArgs` blob with the `tool_response` segment that echoes its real tool name (via `parseToolResponseName(segment)`) and dispatches it through the normal `onToolCall` path — same dedup, same schema validation, same `toolCallResult`/`toolCallInvalid` events.
+- The queue is turn-scoped and clears on the next `agent_start_speech`, so a stray echo never leaks a recovery into the wrong turn.
 
 Headless `collectConverse()` gets the corrected named-tool args for free but does **not** run this pairing — an earlier fused blob in a headless turn is reachable only via `fusedArgs` on that one `ToolCall`, not as its own `toolCalls` entry. If you need full recovery headlessly, replay `toolCalls` and pair each `fusedArgs` blob with the matching `tool_response`-derived name yourself using `parseToolResponseName`.
 
@@ -440,7 +444,15 @@ In LIVE mode (`.start()`), `ExperienceRenderer` also subscribes to the session's
 
 ## Presenter
 
-The `Presenter` helper (`./experience/presenter`, its own subpath so apps that don't need it never pay for its module graph) manages a deck walkthrough end to end: per-slide Dynamic Prompt (**DPP**) injection via `session.setDynamicPrompt()` — a structured context blob telling the brain what's on screen right now — navigation via ONE deterministic, silent, idempotent mechanism (`onToolCall('navigate_to_slide')` — no speech-parsing fallback), duplicate-nav suppression, a sequential resume point (`reason:'resume'`), and session memory ("welcome back") — all pure logic over an injected `session`/`storage`, fully unit-testable.
+The `Presenter` helper (`./experience/presenter`, its own subpath so apps that don't need it never pay for its module graph) manages a deck walkthrough end to end:
+
+- Per-slide Dynamic Prompt (**DPP**) injection via `session.setDynamicPrompt()` — a structured context blob telling the brain what's on screen right now.
+- Navigation via ONE deterministic, silent, idempotent mechanism: `onToolCall('navigate_to_slide')` — no speech-parsing fallback.
+- Duplicate-nav suppression.
+- A sequential resume point (`reason:'resume'`).
+- Session memory ("welcome back").
+
+All of it is pure logic over an injected `session`/`storage`, fully unit-testable.
 
 **Getters** (read-only):
 
