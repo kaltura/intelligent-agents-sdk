@@ -6,7 +6,7 @@
   "scripts": {
     "build": "eleventy",
     "pretest": "npm run build",
-    "test": "playwright test"
+    "test": "node scripts/check-anchors.mjs && playwright test"
   },
   "keywords": [],
   "author": "",

@@ -124,7 +124,7 @@ Build the control as click-to-toggle, not press-and-hold: it's more usable for l
 
 ### Resilience: brain stalls and tool-call spirals
 
-`KalturaAvatarSession` watches for a brain that goes quiet or loops instead of answering — see [ARCHITECTURE-REFERENCE.md](/reference/architecture-reference/#resilience-failure-handling) for the full failure-mode matrix.
+`KalturaAvatarSession` watches for a brain that goes quiet or loops instead of answering — see [ARCHITECTURE-REFERENCE.md](/reference/architecture-reference/#resilience--failure-handling) for the full failure-mode matrix.
 
 - **Brain-stall watchdog** (`brainStallMs`, default on) — emits `brainStalled` (`{count}`), repeating for as long as nothing perceivable (spoken/avatar content or a GenUI widget) follows a turn.
 - **Dead-air masking** (`responsePending`/`responseSettled`) — `responsePending` (`{}`) fires the moment a turn starts awaiting the brain's first perceivable output (spoken/avatar/GenUI content); `responseSettled` (`{}`) fires once that output arrives, the turn ends, an interruption occurs, or the session tears down. Use this pair to show/hide a "thinking…" affordance instead of leaving the avatar's face frozen during the gap — see `examples/browser-experience.html` for a working example.
@@ -275,7 +275,7 @@ Designed for enterprise, HIPAA, HITRUST, and regulated frameworks. Full control 
 
 ## Key design rules
 
-- **Keep `disableentitlement` (management) server-side.** `KalturaAvatarSession` expects a `geniegpcid`/`agentid`/widget token (entitlement ON) — see [SECURITY.md](/reference/security/#ks-kaltura-session-guidance-for-agents-ac-3-ac-6-ia-2) for the full guidance and the rare case where an app deliberately needs to hand a browser broader access.
+- **Keep `disableentitlement` (management) server-side.** `KalturaAvatarSession` expects a `geniegpcid`/`agentid`/widget token (entitlement ON) — see [SECURITY.md](/reference/security/#ks-kaltura-session-guidance-for-agents-ac-3--ac-6--ia-2) for the full guidance and the rare case where an app deliberately needs to hand a browser broader access.
 - **Destructive ops require `{ confirmPermanent: true }`.** Never a flag on a read operation.
 - **Capabilities are a full-replace dict.** A partial update drops keys you omit. Use `intellects.setCapability(configId, name, state, ks)` — it reads, merges, and writes.
 - **`kaltura_genie_experiences` competes with client tools.** Set it `'off'` at creation for tool-driven intellects (the capability injects a system rule that out-competes custom tools). Set at creation — partner config is cached ~24 h server-side. `tools.clientToolReadiness(body)` lints for this.

@@ -48,4 +48,4 @@ If you reimplement the protocol per the recipe above, you MUST:
 4. **Keep the socket alive during queue waits**; only do a fresh `connect()` (new `stickyId`) on a permanent transport loss.
 5. Let the **STV/WHEP** video channel reconnect independently — it carries no sticky state.
 
-See [ARCHITECTURE-REFERENCE.md's "Scale & Sticky Sessions"](/reference/architecture-reference/#scale-sticky-sessions) for why each of these matters.
+See [ARCHITECTURE-REFERENCE.md's "Scale & Sticky Sessions"](/reference/architecture-reference/#scale--sticky-sessions) for why each of these matters.

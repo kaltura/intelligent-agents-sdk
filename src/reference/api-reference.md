@@ -65,7 +65,7 @@ KS=$(curl -s -X POST "https://www.kaltura.com/api_v3/service/session/action/star
 | Agent | `agentid:<agentId>` | Agent-scoped calls targeting a specific agent |
 | Widget | auto-derived from `widgetId` | End-user embed — no admin secret in the browser |
 
-**Keep `disableentitlement` server-side, for management/admin operations only.** The SDK can't detect or stop a `disableentitlement` KS from being handed to a conversation/end-user session — a real KS's privileges are encrypted and unreadable client-side — so nothing will warn you if you do this by mistake. See [SECURITY.md](/reference/security/#ks-kaltura-session-guidance-for-agents-ac-3-ac-6-ia-2) and Kaltura's own [KS/privilege reference](https://kaltura.md/KALTURA_SESSION_GUIDE/).
+**Keep `disableentitlement` server-side, for management/admin operations only.** The SDK can't detect or stop a `disableentitlement` KS from being handed to a conversation/end-user session — a real KS's privileges are encrypted and unreadable client-side — so nothing will warn you if you do this by mistake. See [SECURITY.md](/reference/security/#ks-kaltura-session-guidance-for-agents-ac-3--ac-6--ia-2) and Kaltura's own [KS/privilege reference](https://kaltura.md/KALTURA_SESSION_GUIDE/).
 
 ---
 
@@ -259,7 +259,7 @@ POST https://genie.nvp1.ovp.kaltura.com/v1/intellect/update
 | `allow_client_variables` | Allow `{{vars}}` injection per request |
 | `knowledge_ids` | Knowledge record IDs for RAG — create with `POST /v1/knowledge/add` |
 | `name` / `description` / `tags` | Labels for organizing intellects |
-| `tool_ids` | Tool entity uuid references — create/list the entities themselves via [§ Tools](#tools-api-csv-code) (`mgmt.tools`), then link the ids here via `intellectConfig.setToolIds` |
+| `tool_ids` | Tool entity uuid references — create/list the entities themselves via [§ Tools](#tools-api--csv--code) (`mgmt.tools`), then link the ids here via `intellectConfig.setToolIds` |
 | `skill_ids` | Skill entity uuid references — partner-level reusable-instruction CRUD at `mgmt.skills`, linked via `intellectConfig.setSkillIds` |
 | `mcp_servers` | MCP server configs the intellect can call — set via `intellectConfig.setMcpServers` (see `README.md`) |
 | `secrets` | Named secrets for tool OAuth (write-only, masked on read) |

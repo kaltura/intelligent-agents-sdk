@@ -39,7 +39,7 @@ operator's reporting duty; this is the vendor contact).
 ## Table of contents
 
 - [AI-application controls](#ai-application-controls-owasp-llmagentic-hipaa-technical-safeguards)
-- [KS guidance for agents](#ks-kaltura-session-guidance-for-agents-ac-3-ac-6-ia-2)
+- [KS guidance for agents](#ks-kaltura-session-guidance-for-agents-ac-3--ac-6--ia-2)
 - [Token lifecycle](#token-lifecycle-rfc-9700-oauth-20-security-bcp-nist-ac-family)
 - [Audit logging](#audit-logging-nist-au-2--au-3--au-12-owasp-logging-soc-2-cc7)
 - [Transport security](#transport-security-nist-sc-8-owasp-wsstls)
@@ -385,7 +385,7 @@ actions surface.
 
 | Threat | Control |
 |---|---|
-| **ASI 01 Goal Hijack** / **ASI 02 Tool Misuse** | `onAgentAction(action)` chokepoint — every agent-initiated action (`navigate`/`render-genui`/`structured-data-form`/…) passes through it before taking effect; veto via false/throw. **Operator (server-side `api`/`code`/`csv` tools):** these fire server-to-server, outside the SDK's reach — independently authorize each call against the caller's real session/permissions; never treat model/system-prompt tool scoping, or a client-suppliable `request_vars` value, as an authorization claim. See [API-REFERENCE.md § Tools](/reference/api-reference/#tools-api-csv-code). |
+| **ASI 01 Goal Hijack** / **ASI 02 Tool Misuse** | `onAgentAction(action)` chokepoint — every agent-initiated action (`navigate`/`render-genui`/`structured-data-form`/…) passes through it before taking effect; veto via false/throw. **Operator (server-side `api`/`code`/`csv` tools):** these fire server-to-server, outside the SDK's reach — independently authorize each call against the caller's real session/permissions; never treat model/system-prompt tool scoping, or a client-suppliable `request_vars` value, as an authorization claim. See [API-REFERENCE.md § Tools](/reference/api-reference/#tools-api--csv--code). |
 | **ASI 03 Identity & Privilege Abuse** | Scoped, entitlement-ON, short-TTL, revocable token; least-privilege `restrictions`; `agentActions` policy (e.g. `navigate:'off'`). |
 | **ASI 06 Memory & Context Poisoning** | `Presenter` session memory is bounded and operator-cleared via `clearMemory()`; persisted memory is replayed context — operator owns the storage choice. |
 | **ASI 08 Cascading Failures** | Reconnect-window bound, media-recovery escalation, brain-liveness watchdog, client rate valve. |
