@@ -62,13 +62,14 @@ prompt below.
 ### Calling converse directly? Enable `allow_client_variables` first
 
 The snippets above go through the SDK session. If you instead call the
-[converse endpoint](/reference/api-reference/#converse) directly and pass `request_vars` with a
-message, the intellect must have `allow_client_variables` set to `true` — otherwise the request
-is rejected with HTTP 403, which the SDK surfaces as a typed `client_variables_disabled` error.
-Enable it from the management SDK:
+[converse endpoint](/reference/api-reference/#converse) and pass `request_vars` with a message,
+the intellect must have `allow_client_variables` set to `true` — otherwise the request is
+rejected with HTTP 403. Calling the raw endpoint yourself, you get that 403 as a plain HTTP
+error; going through the management SDK's converse helpers, it surfaces as a typed
+`client_variables_disabled` error. Enable the flag once, server-side, with an admin KS:
 
 ```js
-await mgmt.intellects.setClientVariablesEnabled(configId, true, ks);
+await mgmt.intellects.setClientVariablesEnabled(configId, true, adminKs);
 ```
 
 Reserved `sys__*` keys (like `sys__user_id`) are server-injected on every turn and rejected if
