@@ -13,8 +13,8 @@
  * "chat without video" affordance to skip WebRTC and mic permissions.
  *
  * PARTNER_ID/WIDGET_ID identify the live "Nova — SDK Docs Assistant" agent
- * provisioned by apps/docs-site-avatar/server/provision.mjs in the SDK's
- * private monorepo — safe to ship client-side (see sessions.createWidgetToken).
+ * provisioned by server/provision.mjs in the kaltura/docs-site-avatar repo —
+ * safe to ship client-side (see sessions.createWidgetToken).
  */
 import './router.js';
 import { withPrefix } from './router.js';
@@ -24,7 +24,7 @@ import { initHighlighter } from './highlighter.js';
 
 // SDK version pin -- keep in sync with: intelligent-agents-sdk-site/src/index.md
 // (quick-start jsDelivr pin) and docs-site-avatar/scripts/fetch-sdk.mjs (DEFAULT_TAG).
-const SDK_TAG = 'v1.6.0';
+const SDK_TAG = 'v1.7.0';
 const SDK_BASE = `https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@${SDK_TAG}`;
 
 const { KalturaAgentSession } = await import(`${SDK_BASE}/src/experience/index.js`);
