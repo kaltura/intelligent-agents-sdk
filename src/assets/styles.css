@@ -723,6 +723,75 @@ blockquote {
   color: #fff;
 }
 
+/* Speaker labels in Kaltura logo colors. These two are the bright variants
+   that read on the video overlay's permanent dark scrim; the themed drawer/
+   dock contexts below swap in the design-system tokens, which carry their
+   own light-mode contrast adjustment. */
+.nova-transcript .nova-you .nova-label {
+  color: #5bc686;
+}
+
+.nova-transcript .nova-nova .nova-label {
+  color: #41beff;
+}
+
+/* "Nova is thinking" — four dots in the Kaltura logo colors, bouncing in
+   sequence. Chat has no talking avatar, so this is the only signal that a
+   reply is coming during the seconds before the first segment streams in. */
+.nova-thinking {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0.65rem 0;
+  min-height: 1em;
+}
+
+.nova-thinking span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  animation: nova-think-bounce 1.2s ease-in-out infinite;
+}
+
+.nova-thinking span:nth-child(1) {
+  background: #006efa;
+}
+
+.nova-thinking span:nth-child(2) {
+  background: #00a078;
+  animation-delay: 0.15s;
+}
+
+.nova-thinking span:nth-child(3) {
+  background: #ffaa00;
+  animation-delay: 0.3s;
+}
+
+.nova-thinking span:nth-child(4) {
+  background: #ff3d23;
+  animation-delay: 0.45s;
+}
+
+@keyframes nova-think-bounce {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.5;
+  }
+  30% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nova-thinking span {
+    animation: none;
+    opacity: 0.75;
+  }
+}
+
 /* Dock mode — small circular floating widget, standing in a viewport
    corner (rect computed by dock.js). The panel can't render inline at
    this size, so it collapses to a click-to-expand flyout. */
@@ -799,6 +868,14 @@ blockquote {
 
 .nova-widget.dock-mode.expanded .nova-transcript .nova-nova {
   color: var(--page-text);
+}
+
+.nova-widget.dock-mode.expanded .nova-transcript .nova-you .nova-label {
+  color: var(--ds-screen-green);
+}
+
+.nova-widget.dock-mode.expanded .nova-transcript .nova-nova .nova-label {
+  color: var(--ds-primary);
 }
 
 .nova-widget.dock-mode.expanded #nova-input {
@@ -961,6 +1038,14 @@ blockquote {
 
 .nova-widget.drawer-mode .nova-transcript .nova-nova {
   color: var(--page-text);
+}
+
+.nova-widget.drawer-mode .nova-transcript .nova-you .nova-label {
+  color: var(--ds-screen-green);
+}
+
+.nova-widget.drawer-mode .nova-transcript .nova-nova .nova-label {
+  color: var(--ds-primary);
 }
 
 .nova-widget.drawer-mode #nova-input {

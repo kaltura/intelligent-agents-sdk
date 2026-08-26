@@ -19,6 +19,7 @@
 import './router.js';
 import { withPrefix } from './router.js';
 import { initDock, enterDockMode, enterDrawerMode, exitDrawerMode } from './dock.js';
+import { initTranscript, appendTranscript, showThinking, hideThinking } from './transcript.js';
 import { initNavigator } from './navigator.js';
 import { initHighlighter } from './highlighter.js';
 
@@ -133,21 +134,7 @@ function setStatus(text) {
   els.status.textContent = text;
 }
 
-function appendTranscript(who, text) {
-  const cls = who === 'you' ? 'nova-you' : 'nova-nova';
-  const last = els.transcript.lastElementChild;
-  // Nova's replies stream in segments — glue consecutive same-speaker
-  // segments into one paragraph instead of a "Nova:"-prefixed line each.
-  if (last && last.className === cls) {
-    last.textContent += `${/\s$/.test(last.textContent) || /^\s/.test(text) ? '' : ' '}${text}`;
-  } else {
-    const p = document.createElement('p');
-    p.className = cls;
-    p.textContent = `${who === 'you' ? 'You' : 'Nova'}: ${text}`;
-    els.transcript.appendChild(p);
-  }
-  els.transcript.scrollTop = els.transcript.scrollHeight;
-}
+initTranscript(els.transcript);
 
 function showDisclosure() {
   els.disclosure.classList.remove('hidden');
@@ -247,17 +234,25 @@ async function connect(pendingPrompt, mode = 'avatar') {
     // visitor's turn, 'final' carries each of Nova's reply segments.
     session.on('transcript', (tr) => {
       if (tr.type === 'user' && tr.text && tr.text !== KICKOFF_TRIGGER) appendTranscript('you', tr.text);
-      else if (tr.type === 'final' && tr.text) appendTranscript('nova', tr.text);
+      else if (tr.type === 'final' && tr.text) {
+        hideThinking();
+        appendTranscript('nova', tr.text);
+      }
       // The server assigns/echoes the thread id as the conversation flows —
       // persist it on every message so the next visit resumes this thread.
       const tid = session?.threadId;
       if (tid) storeSet(STORE_THREAD, String(tid));
     });
-    session.on('error', (e) => setStatus(`Connection issue: ${e.detail || e.code}`));
+    session.on('error', (e) => {
+      hideThinking();
+      setStatus(`Connection issue: ${e.detail || e.code}`);
+    });
     session.on('ended', () => resetUi());
     session.on('transportChanged', ({ mode: m, transport }) => wireTransport(transport, m));
-    session.on('modeChanged', ({ mode: m }) =>
-      setStatus(m === 'chat' ? 'Text chat — same conversation, no video.' : 'Live video — same conversation.'));
+    session.on('modeChanged', ({ mode: m }) => {
+      if (m === 'avatar') hideThinking();
+      setStatus(m === 'chat' ? 'Text chat — same conversation, no video.' : 'Live video — same conversation.');
+    });
 
     initNavigator(session);
     initHighlighter(session);
@@ -281,6 +276,9 @@ async function connect(pendingPrompt, mode = 'avatar') {
       const openingCleared = new Promise((resolve) => session.transport.once('avatarStopTalking', resolve));
       await Promise.race([openingCleared, new Promise((r) => setTimeout(r, 3000))]);
     }
+    // Chat-mode sends show the thinking dots (kickoff included) — in video
+    // mode the avatar's own presence covers the wait.
+    if (mode === 'chat') showThinking();
     await session.sendText(KICKOFF_TRIGGER);
     if (pendingPrompt) await session.sendText(pendingPrompt);
   } catch (e) {
@@ -301,9 +299,11 @@ async function connect(pendingPrompt, mode = 'avatar') {
 
 async function sendUserText(text) {
   if (!session || session.state !== 'connected') return;
+  if (session.mode === 'chat') showThinking();
   try {
     await session.sendText(text);
   } catch (e) {
+    hideThinking();
     setStatus(`Could not send: ${e.detail || e.message || 'unknown error'}`);
   }
 }
@@ -365,6 +365,7 @@ function newConversation() {
 function resetUi() {
   session = null;
   connecting = false;
+  hideThinking();
   els.widget.classList.remove('chat-mode');
   exitDrawerMode();
   els.videoWrap?.classList.remove('is-connecting', 'is-talking');
