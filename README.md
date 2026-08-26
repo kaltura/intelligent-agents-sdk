@@ -112,12 +112,12 @@ used elsewhere in these docs, only resolve for a Node/bundler consumer that read
 <script type="module">
   // Pinned to a release tag — recommended for anything you ship, since the file content at
   // this URL never changes once published (jsDelivr's immutable, long-cached tag path).
-  import { KalturaAvatarSession } from 'https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.6.0/src/experience/index.js';
+  import { KalturaAvatarSession } from 'https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.7.0/src/experience/index.js';
   // ... same API as the local examples — see examples/browser-experience.html
 </script>
 ```
 
-Pin the tag (`@v1.6.0`, or whatever release you want) for anything you ship — jsDelivr caches a
+Pin the tag (`@v1.7.0`, or whatever release you want) for anything you ship — jsDelivr caches a
 tagged path forever, so a pin is both stable and fast. For local prototyping only, `@latest`
 resolves to the newest tag without editing the URL on every release:
 
@@ -151,7 +151,7 @@ transitive local-import graph of a given entry point, read from the actual tagge
 your working tree, so it always matches what jsDelivr serves for that tag):
 
 ```bash
-node tools/sri-map.mjs --entry src/experience/index.js --tag v1.6.0
+node tools/sri-map.mjs --entry src/experience/index.js --tag v1.7.0
 ```
 
 Paste the `integrity` object it prints into an import map, declared before the module script:
@@ -160,15 +160,15 @@ Paste the `integrity` object it prints into an import map, declared before the m
 <script type="importmap">
 {
   "integrity": {
-    "https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.6.0/src/experience/index.js": "sha384-T+W7ayOfRNUbRCROS0T4isj2NsGsdiNr5ODeqPnfjlJ4VX3bcxBqnMlMO61qlNZV",
-    "https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.6.0/src/experience/session.js": "sha384-…",
-    "https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.6.0/src/core/safety.js": "sha384-…"
+    "https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.7.0/src/experience/index.js": "sha384-dTRuF4/wfbcshlef1vuVSy8yhIPAY8JYTpve85JNJm847+ycNzFvKbxOPEmVole3",
+    "https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.7.0/src/experience/session.js": "sha384-…",
+    "https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.7.0/src/core/safety.js": "sha384-…"
     /* … one entry per file `tools/sri-map.mjs` printed — run it, don't hand-copy this excerpt */
   }
 }
 </script>
 <script type="module">
-  import { KalturaAvatarSession } from 'https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.6.0/src/experience/index.js';
+  import { KalturaAvatarSession } from 'https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.7.0/src/experience/index.js';
 </script>
 ```
 
