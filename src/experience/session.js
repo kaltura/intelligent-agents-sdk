@@ -47,7 +47,7 @@ import { randId } from '../core/ids.js';
 import { makeAuditEmitter } from '../core/session.js';
 import { sanitizeJson, clampInbound } from '../core/safety.js';
 import { SPOKEN_TYPES, canonicalJson, SPIRAL_RECOVERY_PREFIX, validateToolArgs, parseToolResponseName } from '../core/stream.js';
-import { isPrivateOrLoopbackHost } from '../core/net-guard.js';
+import { assertSecureTransport } from '../core/transport-guard.js';
 
 const DEFAULT_GENIE_URL = 'https://genie.nvp1.ovp.kaltura.com';
 
@@ -1621,6 +1621,15 @@ export class KalturaAvatarSession extends Emitter {
   get micEnabled() { return this._micEnabled; }
 
   /**
+   * The conversation thread id (read-only). `undefined` until the server
+   * assigns one on the first turn, unless the session was seeded with
+   * `cfg.threadId`. Hand this to another transport (e.g. a
+   * `KalturaChatSession`) to continue the same conversation there.
+   * @returns {string|undefined}
+   */
+  get threadId() { return this._threadId; }
+
+  /**
    * The `videoEl` this session was constructed with (read-only), or `null` for the
    * headless/custom-render path. Single source of truth for the element this session's
    * WHEP downlink (`pc.ontrack`) assigns `srcObject` to — lets a plugin (e.g.
@@ -2320,29 +2329,6 @@ function fatal(event) {
   return new KalturaError({ type: `https://docs.kaltura.com/agentic/errors/${info.code}`, title: info.code.replace(/_/g, ' '), code: info.code, status: info.num || undefined, detail: `${event}${info.num ? ` (${info.num})` : ''}` });
 }
 /** Map a getUserMedia rejection to a distinct SDK code + actionable guidance (R6). */
-/**
- * Enforce TLS on a transport URL (OWASP WSS/TLS; NIST SC-8). https/wss pass.
- * http/ws fail UNLESS allowInsecure (localhost/dev) — then warn loudly, once.
- * An empty URL is left to the connect-time default. @param {string} url @param {string} field @param {boolean} allowInsecure @param {(m:string)=>void} warn
- */
-function assertSecureTransport(url, field, allowInsecure, warn) {
-  if (!url) return;
-  let u;
-  try { u = new URL(url); } catch { return; }   // malformed → leave to downstream
-  const secure = u.protocol === 'https:' || u.protocol === 'wss:';
-  if (secure) return;
-  const insecure = u.protocol === 'http:' || u.protocol === 'ws:';
-  if (!insecure) return;                          // unknown scheme → don't block
-  const isLocal = isPrivateOrLoopbackHost(u.hostname);
-  if (allowInsecure || isLocal) {
-    warn(`${field} uses an insecure (${u.protocol}) transport${isLocal ? ' on localhost' : ''}. NEVER ship cleartext to production — use https/wss (NIST SC-8).`);
-    return;
-  }
-  throw new KalturaError({
-    type: 'https://docs.kaltura.com/agentic/errors/insecure_transport', title: 'insecure transport', code: 'insecure_transport',
-    detail: `${field} must use https/wss (got ${u.protocol}//). Tokens and media must not travel in cleartext (OWASP/NIST SC-8). For localhost dev only, pass allowInsecureTransport:true.`,
-  });
-}
 
 /** Resolve a possibly-relative URL against a base (so a relative WHEP Location → absolute). @param {string} maybeRelative @param {string} base */
 function resolveUrl(maybeRelative, base) {

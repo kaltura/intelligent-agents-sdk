@@ -294,10 +294,11 @@ export function validatePromptVars(text, opts = {}) {
  *
  * Requires the intellect's `allow_client_variables` gate to be ON (the server
  * default — pin it anyway via `intellects.setClientVariablesEnabled(id, true)`).
- * With the gate off, an HTTP converse call sending request variables gets a 403
- * (remapped to a typed `client_variables_disabled` error), while the live
- * socket path fails silently with an empty turn (the session then emits the
- * `empty_turn_with_request_vars` warning). Frozen — spread-copy
+ * With the gate off, a converse turn sending request variables fails SILENTLY
+ * with an empty turn on BOTH paths — HTTP streaming and live socket alike
+ * (live-verified; the server's 403 fires after the response stream has opened,
+ * so no error ever reaches the wire). Both session classes then emit the
+ * once-per-session `empty_turn_with_request_vars` warning. Frozen — spread-copy
  * (`{...PAGE_CONTEXT_PROMPT}`) to customize the label or wording.
  * @type {Readonly<{key:string,label:string,headerTemplate:string,type:'custom',value:string}>}
  */

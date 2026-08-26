@@ -30,6 +30,11 @@
  * session.speak('Hello! How can I help you today?');
  */
 export { KalturaAvatarSession } from './session.js';
+// The text-only transport — same brain, same thread, same tool contract as the
+// avatar, over plain HTTPS (no mic, no socket, no WebRTC).
+export { KalturaChatSession } from './chat-session.js';
+// One conversation, switchable transports (avatar ⇄ chat mid-thread).
+export { KalturaAgentSession } from './agent-session.js';
 // The brain-free, WHEP-only sibling — pairs with `Management#avatarSessions`
 // (`@kaltura/intelligent-agents/management`) for scripted-video (STV-only) sessions.
 export { KalturaScriptedVideoSession } from './scripted-video-session.js';

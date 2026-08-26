@@ -8,10 +8,15 @@
  * drifted to cover a different subset of the same threat:
  * - {@link isPrivateOrLoopbackHost} — the general-purpose predicate, used by
  *   `experience/wire.js` (WHEP-URL private-IP rejection) and
- *   `experience/session.js` (local-host detection for the insecure-transport
+ *   `core/transport-guard.js` (local-host detection for the insecure-transport
  *   warning).
  * - {@link PRIVATE_IP_RE} — the free-text scrubbing regex consumed by
  *   `core/redact.js` to keep these addresses out of logs/audit output.
+ *
+ * This module must stay dependency-free: `core/redact.js` (and through it
+ * `core/errors.js`) imports from here, so importing errors.js here would
+ * close an import cycle. TLS enforcement, which throws a typed KalturaError,
+ * lives in `core/transport-guard.js` for that reason.
  */
 
 // IPv4 range fragments (shared by the free-text scrub and the anchored host check):

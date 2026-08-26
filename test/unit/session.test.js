@@ -199,3 +199,20 @@ test('an empty turn with NO request variables never warns (nothing was sent, not
   assert.deepEqual(warnings, []);
   session.disconnect();
 });
+
+// The threadId getter — the handle another transport (KalturaChatSession /
+// KalturaAgentSession) needs to continue this conversation.
+test('threadId getter: reflects cfg seed immediately, captures the wire value on first delta', async () => {
+  const seeded = newSession({ cfg: { threadId: 'seed-9' } });
+  assert.equal(seeded.session.threadId, 'seed-9', 'seed visible before connect');
+
+  const { session, socket } = newSession();
+  assert.equal(session.threadId, undefined);
+  scriptHappyPath(socket);
+  await session.connect();
+  socket.server('agent_raw_text', { delta: JSON.stringify({ type: 'text', content: 'hi', threadId: 't-wire-1' }) });
+  assert.equal(session.threadId, 't-wire-1');
+  socket.server('agent_raw_text', { delta: JSON.stringify({ type: 'text', content: 'more', threadId: 't-other' }) });
+  assert.equal(session.threadId, 't-wire-1', 'first capture wins');
+  session.disconnect();
+});
