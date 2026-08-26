@@ -119,6 +119,7 @@ export class KalturaAvatarSession extends Emitter {
    * @param {()=>Promise<any>} [cfg.getUserMedia]
    * @param {object|false} [cfg.micConstraints]  Browser-native `MediaTrackConstraints` merged into every `getUserMedia({audio})` call this session makes (`connect()`, `switchMic()`). Default `{echoCancellation:true, noiseSuppression:true, autoGainControl:true}` — the standard Tier-1 browser-native baseline. Pass `false` to send bare `audio:true` (e.g. when `cfg.noiseProcessor` expects RAW, unprocessed audio — stacking browser-native suppression under a second DSP stage double-processes the signal and can degrade quality). Pass a partial object to override individual fields.
    * @param {(stream:any)=>Promise<any>} [cfg.noiseProcessor]  Pluggable, externally-supplied DSP hook (BYO — a third-party lib's processor or a bespoke one; the SDK core bundles none). Called with the raw `MediaStream` from `getUserMedia` at `connect()` and every `switchMic()`; must return a `MediaStream` (or the same one, unmodified) whose audio track is what actually reaches the ASR uplink. Errors propagate as a `noise_processor_failed` KalturaError (mic acquisition fails closed, same as a `getUserMedia` rejection) — a processor must not silently swallow its own setup failure. See `./experience/noise-suppressor` for a ready-made `AudioWorklet`-based implementation of this interface.
+   * @param {'immediate'|'deferred'} [cfg.micStartMode]  When to acquire the mic. `'immediate'` (default) calls `getUserMedia` inside `connect()`. `'deferred'` connects with NO mic — the ASR uplink negotiates a sendonly audio slot with no track (the CM handshake is byte-identical to the immediate path) — and the app calls {@link KalturaAvatarSession#startMic} later, from a real user gesture, so the browser's permission prompt is click-anchored. Until `startMic()` resolves, `startTapToTalk()`/`switchMic()` throw `mic_not_started`; typed turns (`speak()`) and `mute()`/`unmute()` work normally.
    * @param {string} [cfg.threadId]         Resume a prior conversation's memory.
    * @param {string} [cfg.partnerId]
    * @param {boolean} [cfg.isFirefox]       Forces ICE policy 'all' on both channels.
@@ -206,6 +207,11 @@ export class KalturaAvatarSession extends Emitter {
     // (same fix as core/http.js). A user-injected fetch is bound harmlessly.
     { const f = cfg.fetch || globalThis.fetch; this._fetch = typeof f === 'function' ? f.bind(globalThis) : f; }
     this._getUserMedia = cfg.getUserMedia || defaultGetUserMedia;
+    if (cfg.micStartMode != null && cfg.micStartMode !== 'immediate' && cfg.micStartMode !== 'deferred') {
+      throw new KalturaError({ type: 'about:blank', title: 'invalid micStartMode', code: 'bad_request', detail: `cfg.micStartMode must be 'immediate' or 'deferred' (got "${cfg.micStartMode}").` });
+    }
+    this._micStartMode = cfg.micStartMode || 'immediate';
+    this._asrAudioSender = null;   // the ASR uplink's audio RTCRtpSender — set by _connectAsr on both the tracked and trackless paths, so startMic()/switchMic() replaceTrack on one uniform handle
     // Tier-1 WebRTC constraints baseline (standard browser-native defaults — see cfg.micConstraints doc).
     // `false` opts all the way out (bare audio:true); an object merges over the default.
     this._micConstraints = cfg.micConstraints === false ? false : { ...DEFAULT_MIC_CONSTRAINTS, ...(cfg.micConstraints || {}) };
@@ -415,15 +421,18 @@ export class KalturaAvatarSession extends Emitter {
       throw new KalturaError({ type: 'about:blank', title: 'already connecting', code: 'invalid_state', detail: `connect() called in state "${this.state}".` });
     }
     this._setState('preparing');
-    // Step 0 — mic (no camera).
-    try {
-      this._micStream = await this._acquireMic();
-    } catch (err) {
-      this._setState('error');
-      throw err.code ? err : micError(err);   // R6: map NotAllowed/NotFound/NotReadable/Overconstrained to distinct codes + guidance
+    // Step 0 — mic (no camera). Skipped whole in deferred mode: _connectAsr negotiates a
+    // trackless sendonly slot instead, and startMic() attaches the track later.
+    if (this._micStartMode !== 'deferred') {
+      try {
+        this._micStream = await this._acquireMic();
+      } catch (err) {
+        this._setState('error');
+        throw err.code ? err : micError(err);   // R6: map NotAllowed/NotFound/NotReadable/Overconstrained to distinct codes + guidance
+      }
+      this._initHardwareMuteWatch(this._micStream);
+      this._syncVad();
     }
-    this._initHardwareMuteWatch(this._micStream);
-    this._syncVad();
 
     this._roomId = randId(12);
     const overall = deadline(TIMEOUTS.overall);
@@ -574,7 +583,14 @@ export class KalturaAvatarSession extends Emitter {
     pc.onicecandidate = (e) => { if (e.candidate) socket.emit('asr-webrtc-ice-candidate', { candidate: e.candidate }); };
     this._armIceNewWatchdog('asr', pc);
     socket.on('asr-ice-candidate', (c) => { try { pc.addIceCandidate(c); } catch { /* non-fatal */ } });
-    for (const track of this._micStream.getAudioTracks()) pc.addTrack(track, this._micStream);
+    if (this._micStream) {
+      for (const track of this._micStream.getAudioTracks()) this._asrAudioSender = pc.addTrack(track, this._micStream);
+    } else {
+      // Deferred mic (micStartMode:'deferred'): negotiate a sendonly audio slot with no
+      // track — the offer/answer handshake stays byte-identical to the tracked path, and
+      // startMic() attaches the real track later via replaceTrack() with no renegotiation.
+      this._asrAudioSender = pc.addTransceiver('audio', { direction: 'sendonly' })?.sender || null;
+    }
     if (this._maxAsrBitrateKbps != null) await this._applyAsrBitrate(this._maxAsrBitrateKbps);
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
@@ -720,6 +736,9 @@ export class KalturaAvatarSession extends Emitter {
    */
   startTapToTalk() {
     this._requireConnected('startTapToTalk');
+    if (!this._micStream) {
+      throw new KalturaError({ type: 'about:blank', title: 'mic not started', code: 'mic_not_started', detail: 'startTapToTalk() requires a live mic — this session connected with micStartMode:"deferred"; call startMic() from a user gesture first.' });
+    }
     if (!this._clientConfig?.isTapToTalk) {
       throw new KalturaError({ type: 'about:blank', title: 'tap-to-talk disabled', code: 'capability_disabled', detail: 'startTapToTalk() requires clientConfiguration.isTapToTalk=true on this agent — mixing it with an open-mic agent races the CM\'s VAD turn-cutting (unverified/unsafe server-side).' });
     }
@@ -966,6 +985,9 @@ export class KalturaAvatarSession extends Emitter {
    */
   async switchMic(deviceId) {
     this._requireConnected('switchMic');
+    if (!this._micStream) {
+      throw new KalturaError({ type: 'about:blank', title: 'mic not started', code: 'mic_not_started', detail: 'switchMic() requires a live mic — this session connected with micStartMode:"deferred"; call startMic() first.' });
+    }
     const oldStop = this._noiseProcessorStop;
     const stream = await this._acquireMic({ deviceId: { exact: deviceId } });
     try { oldStop?.(); } catch { /* */ }
@@ -977,6 +999,39 @@ export class KalturaAvatarSession extends Emitter {
     this._initHardwareMuteWatch(stream);
     this._syncVad();
     try { oldStream?.getAudioTracks().forEach((t) => { t.onmute = t.onunmute = null; t.stop(); }); } catch { /* */ }
+  }
+
+  /**
+   * Acquire the mic and attach it to the already-negotiated ASR uplink — the second half of
+   * `micStartMode:'deferred'`. Call it from a real user gesture (click/tap) so the browser's
+   * permission prompt is gesture-anchored. Runs the exact pipeline an immediate-mode
+   * `connect()` would have: Tier-1 `micConstraints` baseline, Tier-2 `noiseProcessor` hook,
+   * hardware-mute watch, VAD sync, and a re-apply of `maxAsrBitrateKbps` (the connect-time
+   * apply found no audio track to cap). Honors a `mute()` issued before the mic existed.
+   * Attaches via `RTCRtpSender.replaceTrack()` — no renegotiation, no reconnect. Emits
+   * `micStarted` on success. Idempotent: resolves as a no-op when a mic is already live
+   * (immediate mode, or a repeat call). Rejects with the same R6-mapped mic errors
+   * `connect()` throws (`mic_permission_denied`, `mic_not_found`, …), leaving the session
+   * connected so the app can retry.
+   * @returns {Promise<void>}
+   */
+  async startMic() {
+    this._requireConnected('startMic');
+    if (this._micStream) return;
+    let stream;
+    try {
+      stream = await this._acquireMic();
+    } catch (err) {
+      throw err.code ? err : micError(err);   // R6: same mapping as connect() step 0
+    }
+    this._micStream = stream;
+    this._initHardwareMuteWatch(stream);
+    const [track] = stream.getAudioTracks();
+    if (track) track.enabled = this._micEnabled;   // honor a mute() issued pre-mic
+    if (this._asrAudioSender) await this._asrAudioSender.replaceTrack(track || null);
+    if (this._maxAsrBitrateKbps != null) await this._applyAsrBitrate(this._maxAsrBitrateKbps);
+    this._syncVad();
+    this.emit('micStarted', {});
   }
 
   /**
@@ -1619,6 +1674,15 @@ export class KalturaAvatarSession extends Emitter {
    * @returns {boolean}
    */
   get micEnabled() { return this._micEnabled; }
+
+  /**
+   * Whether a mic stream is live on this session (read-only). Always true after an
+   * immediate-mode `connect()`; with `micStartMode:'deferred'` it stays false until
+   * {@link KalturaAvatarSession#startMic} resolves. Distinct from {@link micEnabled},
+   * which tracks mute()/unmute() intent.
+   * @returns {boolean}
+   */
+  get micStarted() { return !!this._micStream; }
 
   /**
    * The conversation thread id (read-only). `undefined` until the server
@@ -2316,7 +2380,7 @@ export class KalturaAvatarSession extends Emitter {
     try { this._micStream?.getTracks?.().forEach((t) => { t.onmute = t.onunmute = null; t.stop?.(); }); } catch { /* */ }
     try { this._socket?.removeAllListeners?.(); this._socket?.disconnect?.(); } catch { /* */ }
     if (this._capacityTimer) { clearTimeout(this._capacityTimer); this._capacityTimer = null; }
-    this._pcAsr = this._pcStv = this._micStream = this._socket = null;
+    this._pcAsr = this._pcStv = this._micStream = this._socket = this._asrAudioSender = null;
   }
 
   _setState(s) { this.state = s; this.emit('stateChange', { state: s }); }

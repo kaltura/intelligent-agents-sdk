@@ -22,7 +22,9 @@ export class FakeRTCPeerConnection {
     FakeRTCPeerConnection.instances.push(this);
   }
   addTransceiver(kind, opts) {
-    const t = { kind, ...opts, setCodecPreferences(codecs) { this._codecPrefs = codecs; } };
+    // Real RTCRtpTransceivers always carry a sender (track-less until replaceTrack) —
+    // the deferred-mic path relies on `.sender` of a sendonly audio transceiver.
+    const t = { kind, ...opts, sender: this._makeSender(null), setCodecPreferences(codecs) { this._codecPrefs = codecs; } };
     this.transceivers.push(t);
     return t;
   }
