@@ -773,8 +773,11 @@ SDK: `mgmt.threads.{list, get, rename, delete, transcript}`.
 > [Security](/reference/security/#shared-responsibility-control-matrix-nist-800-53) for what the SDK
 > provides versus what the operator must configure.
 
-The full transcript is sent as model context on every turn, so per-turn cost grows with thread
-length — plan long-running threads accordingly.
+### Thread History and Per-Turn Cost
+
+There is no documented cap on how long a thread's history can grow. The full transcript is sent
+as model context on every turn, so per-turn cost grows with thread length — plan long-running
+threads accordingly: start a fresh thread per task, and delete threads you no longer need.
 
 ---
 
