@@ -393,6 +393,13 @@ export class KalturaAvatarSession extends Emitter {
     // wake-up nudge mid-spiral can't hide a spiral that survives across it.
     this._sessionToolSegCount = 0;
     this._hardSpiralRecovering = false;
+    // Silent-empty-turn diagnostic (live-verified failure mode): with the
+    // intellect's `allow_client_variables` gate OFF, a converse call that sends
+    // request variables completes with NO output and NO error — nothing else
+    // surfaces it at runtime. Tracks whether the current turn produced any
+    // perceivable output; starts true so a stray turn-end before the first
+    // turnStart never misfires. See `_checkEmptyTurn`.
+    this._turnSawOutput = true;
   }
 
   // ─────────────────────────── connect ───────────────────────────
@@ -1575,6 +1582,31 @@ export class KalturaAvatarSession extends Emitter {
   /** Emit a one-time warning through the logger (insecure transport / static TURN). @param {string} key @param {string} msg */
   _warnOnce(key, msg) { if (this._warned && !this._warned.has(key)) { this._warned.add(key); this._log('warn', '[security] ' + msg); } }
 
+  /**
+   * Diagnose the silent-empty-turn failure mode (live-verified): with the
+   * intellect's `allow_client_variables` gate OFF, a converse call that sends
+   * request variables (join `requestVars`, `updateRequestVars`,
+   * `setDynamicPrompt`) completes with NO output and NO error — the server
+   * never rejects it. Called on turn end. When the turn produced no
+   * perceivable output while request variables are in play, emits a typed
+   * `warning` event (`code: 'empty_turn_with_request_vars'`, with the var
+   * KEYS only — never values) at most once per session. A single empty turn
+   * can be benign (barge-in races), so this is a diagnostic, never an error.
+   */
+  _checkEmptyTurn() {
+    if (this._turnSawOutput) return;
+    this._turnSawOutput = true;  // agent_end_turn + stvFinishedGenerating can both fire for one turn
+    const keys = Object.keys(this._requestVars || {});
+    if (!keys.length || this._warned.has('empty-turn-request-vars')) return;
+    this._warned.add('empty-turn-request-vars');
+    this._log('warn', `turn ended with no output while request variables were sent (keys: ${keys.join(', ')}) — if this repeats, the intellect's allow_client_variables gate is likely OFF (this failure is silent; no error is returned). Enable it via intellects.setClientVariablesEnabled(id, true).`);
+    this.emit('warning', {
+      code: 'empty_turn_with_request_vars',
+      message: 'Turn produced no output while request variables were sent — likely allow_client_variables is off on the intellect (a silent failure; the server returns no error).',
+      requestVarKeys: keys,
+    });
+  }
+
   /** The per-session agent config received at step 3 (read-only). */
   get clientConfig() { return this._clientConfig; }
 
@@ -1716,7 +1748,7 @@ export class KalturaAvatarSession extends Emitter {
       // session-scoped hard-spiral counter (`_sessionToolSegCount`) rides the SAME
       // condition — it must NOT reset on agent_start_speech/turnStart (an idle wake-up
       // nudge fires that mid-spiral) but SHOULD reset once the brain genuinely recovers.
-      if (d && (SPOKEN_TYPES.has(d.type) || (action && action.type === 'render-genui'))) { this._clearBrainWatchdog(); this._sessionToolSegCount = 0; this._hardSpiralRecovering = false; }
+      if (d && (SPOKEN_TYPES.has(d.type) || (action && action.type === 'render-genui'))) { this._clearBrainWatchdog(); this._sessionToolSegCount = 0; this._hardSpiralRecovering = false; this._turnSawOutput = true; }
       // First real OUTPUT segment settles the dead-air signal — an avatar/text/tool/genui
       // segment is the brain actually producing something. A `think` segment is still the
       // gap (it's the "preparing…" phase), so it does NOT settle.
@@ -1753,12 +1785,13 @@ export class KalturaAvatarSession extends Emitter {
       if (p?.isNewTurn) {
         this._firedToolCalls.clear();
         this._turnToolSegCount = 0; this._toolSpiralSignaled = false;
+        this._turnSawOutput = false;
         if (p?.speechId) this._tracker.beginUtterance(p.speechId);
       }
       this.emit('turnStart', { speechId: p?.speechId, turnId: p?.turnId, isNewTurn: p?.isNewTurn });
     });
-    socket.on('agent_end_turn', (p) => { this._settleResponsePending(); this.emit('turnEnd', { speechId: p?.speechId, turnId: p?.turnId }); });
-    socket.on('stvFinishedGenerating', (p) => { this._settleResponsePending(); this.emit('turnEnd', { speechId: p?.speechId }); });
+    socket.on('agent_end_turn', (p) => { this._settleResponsePending(); this._checkEmptyTurn(); this.emit('turnEnd', { speechId: p?.speechId, turnId: p?.turnId }); });
+    socket.on('stvFinishedGenerating', (p) => { this._settleResponsePending(); this._checkEmptyTurn(); this.emit('turnEnd', { speechId: p?.speechId }); });
     socket.on('generatingSpeech', (p) => { if (p?.speechId) this._tracker.beginUtterance(p.speechId); this.emit('transcript', { text: clampInbound(p?.text || ''), type: 'final', speechId: p?.speechId, words: [] }); });
 
     // Captions (authoritative).
@@ -1771,9 +1804,9 @@ export class KalturaAvatarSession extends Emitter {
 
     // Talking state. Content-free turn audit events (HIPAA 164.312(b) — record that a
     // PHI-bearing exchange occurred, NEVER its content) + activity touch (auto-logoff reset).
-    socket.on('stvStartedTalking', () => { this._clearBrainWatchdog(); this._settleResponsePending(); this._touchActivity(); this.speaking = true; this._audit('turn.avatar_spoke', 'success', {}); this.emit('avatarStartTalking', {}); });
+    socket.on('stvStartedTalking', () => { this._clearBrainWatchdog(); this._settleResponsePending(); this._touchActivity(); this.speaking = true; this._turnSawOutput = true; this._audit('turn.avatar_spoke', 'success', {}); this.emit('avatarStartTalking', {}); });
     socket.on('stvFinishedTalking', (p) => { this.speaking = false; this._tracker.finishUtterance(); this.emit('avatarStopTalking', { text: clampInbound(p?.agentContent) }); });
-    socket.on('agentInterrupted', () => { this.speaking = false; this._settleResponsePending(); this.emit('interrupted', {}); });
+    socket.on('agentInterrupted', () => { this.speaking = false; this._settleResponsePending(); this._turnSawOutput = true; this.emit('interrupted', {}); });
     socket.on('userStartedTalking', () => { this._clearBrainWatchdog(); this._touchActivity(); this.emit('userStartedTalking', {}); });
     // The user's turn produced a transcription → the brain should now respond; watch for a stall (R5)
     // and flip the response-pending signal so the app can mask the dead-air gap until output lands.

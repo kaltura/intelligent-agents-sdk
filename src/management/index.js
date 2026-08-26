@@ -48,9 +48,12 @@ export {
 export { tools, clientToolReadiness, client, applyResponseMapping, findIntellectsReferencingTool, TOOL_TYPES, HTTP_METHODS, ARG_TYPES } from './tools.js';
 // Secrets ref-checker: the CRUD class lives on `mgmt.intellects.secrets`; this is the pure helper.
 export { validateSecretRefs } from './secrets.js';
-// Prompt authoring depth: linters + client-side system-prompt preview.
+// Prompt authoring depth: linters + client-side system-prompt preview +
+// the ONE canonical page-context block (spread into setPrompts wherever an
+// intellect receives page context via setDynamicPrompt / request_vars).
 export {
   lintPrompts, validatePromptVars, lintGlossary, lintPersonaIdentity, assembleSystemPrompt, SYS_VARS, SYS_NAMESPACES,
+  PAGE_CONTEXT_PROMPT,
 } from './prompt-lint.js';
 // Brain-config + intellect-config helpers.
 export { buildBrainConfigPatch } from './intellects.js';

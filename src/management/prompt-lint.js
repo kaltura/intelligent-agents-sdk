@@ -153,8 +153,9 @@ function summarize(findings) {
  * @param {{allowClientVariables?: boolean, knownVars?: string[], path?: string}} [opts]
  *   `allowClientVariables` (default `true`) mirrors the intellect's
  *   `allow_client_variables` gate: when `false`, any non-system variable is a
- *   `client_variable_not_allowed` ERROR (a converse call sending it gets HTTP
- *   403). `knownVars` are additional names you expect to inject at request
+ *   `client_variable_not_allowed` ERROR (live-verified: a converse call sending
+ *   it produces a SILENT EMPTY TURN — no error surfaces to the caller).
+ *   `knownVars` are additional names you expect to inject at request
  *   time; an unknown client variable is a `unknown_variable` WARNING.
  * @returns {{
  *   ok: boolean,
@@ -256,7 +257,7 @@ export function validatePromptVars(text, opts = {}) {
       findings.push({
         severity: 'error',
         code: 'client_variable_not_allowed',
-        message: `\`{{${raw}}}\` is a client variable but allow_client_variables is off — a converse call sending it returns HTTP 403.`,
+        message: `\`{{${raw}}}\` is a client variable but allow_client_variables is off — a converse call sending request variables produces a SILENT EMPTY TURN (live-verified; no error is returned). Enable the gate via intellects.setClientVariablesEnabled(id, true) or remove the reference.`,
         path: opts.path || undefined,
       });
     } else if (!known.has(raw)) {
@@ -281,11 +282,48 @@ export function validatePromptVars(text, opts = {}) {
 }
 
 /**
+ * The ONE canonical page-context prompt block. Any intellect that receives
+ * page context — `KalturaAvatarSession.setDynamicPrompt(data)` delivers it as
+ * the `page_context` request variable (a JSON string) — must have a prompt
+ * block referencing `{{page_context}}`, or the context is silently ignored.
+ * Spread this block into the `prompts[]` you pass to `intellects.setPrompts`
+ * (quickstarts, examples, and provisioning scripts should all use this same
+ * block rather than hand-rolling their own):
+ *
+ *   await mgmt.intellects.setPrompts(id, [PAGE_CONTEXT_PROMPT, ...rest]);
+ *
+ * Requires the intellect's `allow_client_variables` gate to be ON (the server
+ * default — pin it anyway via `intellects.setClientVariablesEnabled(id, true)`;
+ * with the gate off, a converse call sending request variables produces a
+ * silent empty turn). Frozen — spread-copy (`{...PAGE_CONTEXT_PROMPT}`) to
+ * customize the label or wording.
+ * @type {Readonly<{key:string,label:string,headerTemplate:string,type:'custom',value:string}>}
+ */
+export const PAGE_CONTEXT_PROMPT = Object.freeze({
+  key: 'page_context',
+  label: 'Live page context',
+  headerTemplate: 'Live page context',
+  type: 'custom',
+  value: 'The client application streams what the user is currently looking at (page, slide, or app state) into the JSON below. It updates as the user navigates and persists for the rest of the conversation. Treat it as the source of truth for the user\'s CURRENT view: when it conflicts with earlier conversation, the JSON wins. If it is empty, no context has been sent yet. Never read the raw JSON back to the user or mention this mechanism.\n\n{{page_context}}',
+});
+
+/**
  * Lint a `prompts[]` list (the `List[DynamicPrompt]` DTO). Each block must be
  * `{key, label, headerTemplate, type:"custom", value}`. Surfaces structural
  * errors (missing/empty key, wrong/missing `type`, duplicate keys) and
  * renderer-skip WARNINGS (empty `value` OR empty `headerTemplate` ⇒ the server
  * silently drops the block), plus every `{{var}}` finding per block.
+ *
+ * Gate/placeholder mismatch checks (both are silent failures live, so lint is
+ * the only place they surface):
+ *   - `vars_gate_unreferenced` WARNING: `allowClientVariables` is explicitly
+ *     `true` but no block references any client `{{variable}}` — every request
+ *     variable sent at converse time (including `page_context` from
+ *     `setDynamicPrompt`) is accepted and then silently ignored.
+ *   - `known_var_unreferenced` WARNING (per var): a name in `knownVars` is
+ *     never referenced by any block — that variable is sent but never rendered.
+ *   - The opposite direction (gate OFF but client variables referenced) is the
+ *     per-reference `client_variable_not_allowed` ERROR.
  *
  * @param {Array<object>} prompts
  * @param {{allowClientVariables?: boolean, knownVars?: string[]}} [opts]
@@ -294,6 +332,7 @@ export function validatePromptVars(text, opts = {}) {
  *   summary: {errors:number, warnings:number, ok:boolean},
  *   findings: LintFinding[],
  *   variables: string[],
+ *   clientVariables: string[],
  *   skippedKeys: string[],
  *   _meta: ReturnType<typeof meta>,
  * }}
@@ -319,6 +358,7 @@ export function lintPrompts(prompts, opts = {}) {
   /** @type {LintFinding[]} */
   const findings = [];
   const variables = [];
+  const clientVariables = [];
   const skippedKeys = [];
   const keySeen = new Map();
 
@@ -374,8 +414,30 @@ export function lintPrompts(prompts, opts = {}) {
       const v = validatePromptVars(txt, { allowClientVariables: opts.allowClientVariables, knownVars: opts.knownVars, path: `${path}.${field}` });
       for (const f of v.findings) findings.push({ ...f, path: f.path || `${path}.${field}` });
       for (const name of v.variables) if (!variables.includes(name)) variables.push(name);
+      for (const name of v.clientVariables) if (!clientVariables.includes(name)) clientVariables.push(name);
     }
   });
+
+  // Gate/placeholder mismatch — live, both directions fail SILENTLY (ignored
+  // vars / empty turns), so lint is the only surface. The gate-off direction
+  // is already the per-reference `client_variable_not_allowed` error above.
+  const knownVars = Array.isArray(opts.knownVars) ? opts.knownVars : [];
+  if (opts.allowClientVariables === true && clientVariables.length === 0) {
+    findings.push({
+      severity: 'warning',
+      code: 'vars_gate_unreferenced',
+      message: 'allow_client_variables is on but no prompt block references a client `{{variable}}` — request variables sent at converse time (including `page_context` from setDynamicPrompt) are accepted and then silently ignored. Add a block that references them (see PAGE_CONTEXT_PROMPT) or stop sending them.',
+    });
+  }
+  for (const name of knownVars) {
+    if (typeof name === 'string' && name && !clientVariables.includes(name)) {
+      findings.push({
+        severity: 'warning',
+        code: 'known_var_unreferenced',
+        message: `knownVars declares "${name}" but no prompt block references \`{{${name}}}\` — the variable is sent every converse call and silently ignored.`,
+      });
+    }
+  }
 
   const summary = summarize(findings);
   return {
@@ -383,6 +445,7 @@ export function lintPrompts(prompts, opts = {}) {
     summary,
     findings,
     variables,
+    clientVariables,
     skippedKeys,
     _meta: meta({ source: SOURCE, scope: 'prompts', renderer: 'client-side-replica' }),
   };

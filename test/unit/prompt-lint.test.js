@@ -10,6 +10,7 @@ import {
   lintGlossary,
   lintPersonaIdentity,
   assembleSystemPrompt,
+  PAGE_CONTEXT_PROMPT,
 } from '../../src/management/prompt-lint.js';
 
 /** Pure prompt-authoring lint/preview helpers. No network, no KS. */
@@ -37,10 +38,15 @@ test('validatePromptVars: knownVars suppresses the unknown_variable warning', ()
   assert.deepEqual(r.clientVariables, ['topic']);
 });
 
-test('validatePromptVars: client var with allow_client_variables off is an ERROR (403 gate)', () => {
+test('validatePromptVars: client var with allow_client_variables off is an ERROR (silent-empty-turn gate)', () => {
   const r = validatePromptVars('Hello {{topic}}', { allowClientVariables: false });
   assert.equal(r.ok, false);
   assert.equal(hasFinding(r.findings, 'client_variable_not_allowed'), true);
+  // Live-verified failure mode: the gate does NOT return HTTP 403 — the turn
+  // completes empty with no error. The message must say so, not claim a 403.
+  const f = r.findings.find((x) => x.code === 'client_variable_not_allowed');
+  assert.match(f.message, /SILENT EMPTY TURN/);
+  assert.doesNotMatch(f.message, /403/);
 });
 
 test('validatePromptVars: system vars stay allowed even when client vars are off', () => {
@@ -141,6 +147,58 @@ test('lintPrompts: variables found in headers and values, var rules honored', ()
 
 test('lintPrompts: non-array throws KalturaError', () => {
   assert.throws(() => lintPrompts('nope'), (e) => e.name === 'KalturaError' && e.code === 'bad_request');
+});
+
+// ─── §4a.3: gate/placeholder mismatch + the canonical page-context block ───
+
+test('lintPrompts: gate explicitly ON with no client {{var}} anywhere → vars_gate_unreferenced warning', () => {
+  const r = lintPrompts([
+    { key: 'goal', headerTemplate: 'Goal', type: 'custom', value: 'Help users. {{sys__user_id}}' },
+  ], { allowClientVariables: true });
+  assert.equal(hasFinding(r.findings, 'vars_gate_unreferenced'), true);
+  assert.equal(r.ok, true, 'a warning, never an error');
+  assert.deepEqual(r.clientVariables, []);
+});
+
+test('lintPrompts: default gate (unspecified) with no client vars stays silent — no noise on plain prompt sets', () => {
+  const r = lintPrompts([{ key: 'goal', headerTemplate: 'Goal', type: 'custom', value: 'Help users.' }]);
+  assert.equal(hasFinding(r.findings, 'vars_gate_unreferenced'), false);
+  assert.deepEqual(r.findings, []);
+});
+
+test('lintPrompts: gate ON with a client var referenced → no vars_gate_unreferenced', () => {
+  const r = lintPrompts([
+    { key: 'ctx', headerTemplate: 'Context', type: 'custom', value: '{{page_context}}' },
+  ], { allowClientVariables: true, knownVars: ['page_context'] });
+  assert.equal(hasFinding(r.findings, 'vars_gate_unreferenced'), false);
+  assert.deepEqual(r.findings, []);
+  assert.deepEqual(r.clientVariables, ['page_context']);
+});
+
+test('lintPrompts: a knownVar never referenced by any block → known_var_unreferenced (sent every call, silently ignored)', () => {
+  const r = lintPrompts([
+    { key: 'ctx', headerTemplate: 'Context', type: 'custom', value: '{{tier}}' },
+  ], { knownVars: ['tier', 'page_context'] });
+  const f = r.findings.filter((x) => x.code === 'known_var_unreferenced');
+  assert.equal(f.length, 1);
+  assert.match(f[0].message, /page_context/);
+  assert.equal(f[0].severity, 'warning');
+});
+
+test('PAGE_CONTEXT_PROMPT: frozen canonical block, references {{page_context}}, lints clean with the gate on', () => {
+  assert.equal(PAGE_CONTEXT_PROMPT.key, 'page_context');
+  assert.equal(PAGE_CONTEXT_PROMPT.type, 'custom');
+  assert.match(PAGE_CONTEXT_PROMPT.value, /\{\{page_context\}\}/);
+  assert.throws(() => { PAGE_CONTEXT_PROMPT.value = 'x'; });
+  const r = lintPrompts([PAGE_CONTEXT_PROMPT], { allowClientVariables: true, knownVars: ['page_context'] });
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.findings, []);
+});
+
+test('PAGE_CONTEXT_PROMPT: with the gate OFF the same block is the client_variable_not_allowed error (mismatch, other direction)', () => {
+  const r = lintPrompts([PAGE_CONTEXT_PROMPT], { allowClientVariables: false });
+  assert.equal(r.ok, false);
+  assert.equal(hasFinding(r.findings, 'client_variable_not_allowed'), true);
 });
 
 test('lintGlossary: detects json vs text vs empty', () => {
