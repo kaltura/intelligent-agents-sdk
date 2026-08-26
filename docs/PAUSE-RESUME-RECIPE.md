@@ -77,7 +77,7 @@ is required:
 Plain HTML/JS, no build step — matches the pattern in `examples/browser-experience.html`. Assumes
 a server endpoint `/appInit` that calls `Management.application.appInit()` for you (see
 [GETTING-STARTED.md](../GETTING-STARTED.md) and [API-REFERENCE.md § Initialize the
-Runtime](../API-REFERENCE.md#initialize-the-runtime)).
+Runtime](api/deploy.md#initialize-the-runtime)).
 
 ```html
 <!doctype html>

@@ -128,7 +128,7 @@ const lint = lintPrompts(prompts, { allowClientVariables: true, knownVars: ['pag
 
 Reserved `sys__*` keys (like `sys__user_id` and `sys__thread_id`) are server-injected on every
 turn and rejected if you try to set them yourself, regardless of the gate — see
-[Reserved Template Variables](../API-REFERENCE.md#reserved-template-variables-sys__). The SDK's
+[Reserved Template Variables](api/operate.md#reserved-template-variables-sys__). The SDK's
 own pre-flight rejects them (and non-string values) client-side before anything hits the wire.
 
 ### Server-side tools read them too
@@ -136,7 +136,7 @@ own pre-flight rejects them (and non-string values) client-side before anything 
 Request variables aren't limited to prompt text. A server-side `api` tool's request template can
 interpolate them (`{{account_id}}` in a URL, header, or body), so a value your app set turns into
 a parameter of a backend call the brain makes — including variables from earlier turns that were
-never mentioned in conversation. See [API-REFERENCE.md § Tools](../API-REFERENCE.md#tools-api--csv--code).
+never mentioned in conversation. See [API-REFERENCE.md § Tools](api/build.md#tools-api--csv--code).
 
 **Security stance:** request variables are client-suppliable *and* thread-persistent. Never treat
 one as an authorization claim — your endpoints must independently authorize every call — and
@@ -251,7 +251,7 @@ that's a different, silent channel (`session.onToolCall()`), not a data-injectio
 |-----|---------------|
 | [README.md → `{{var}}` Jinja personalization](../README.md#var-jinja-personalization-request_vars) | The `request_vars` API reference |
 | [README.md → Experience](../README.md#experience) | `KalturaAvatarSession` and the `Presenter` deck plugin this doc's worked example builds on |
-| [API-REFERENCE.md → Converse](../API-REFERENCE.md#converse) | Sending `request_vars` on the headless HTTP path, and the `sys__*` reserved set |
+| [API-REFERENCE.md → Converse](api/operate.md#converse) | Sending `request_vars` on the headless HTTP path, and the `sys__*` reserved set |
 | [STRUCTURED-DATA-FORMS.md](STRUCTURED-DATA-FORMS.md) | Configuring what the brain asks the viewer for, and how it's rendered |
 | [CLIENT-COMMANDS.md](CLIENT-COMMANDS.md) | The avatar-driving-your-UI channel — the opposite direction from this doc |
 | [WIRE-PROTOCOL.md](WIRE-PROTOCOL.md) | The exact socket events behind each mechanism, for anyone debugging at the wire level |

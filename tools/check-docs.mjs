@@ -26,6 +26,9 @@ const SELF = 'tools/check-docs.mjs';
 
 const DOCS = [
   'README.md', 'API-REFERENCE.md', 'GETTING-STARTED.md',
+  'docs/api/authentication.md', 'docs/api/design.md', 'docs/api/build.md',
+  'docs/api/deploy.md', 'docs/api/operate.md', 'docs/api/scripted-video.md',
+  'docs/api/management-operations.md',
   'docs/ARCHITECTURE.md', 'docs/ARCHITECTURE-REFERENCE.md', 'docs/ARCHITECTURE-RECIPE.md',
   'docs/WIRE-PROTOCOL.md', 'docs/GENUI-REFERENCE.md',
   'docs/CLIENT-COMMANDS.md', 'docs/DYNAMIC-DATA-INJECTION.md',
@@ -469,13 +472,13 @@ describe('7. SDK invariants', () => {
     const codeSet = new Set(m[1].match(/'([a-z_]+)'/g)?.map((s) => s.slice(1, -1)) ?? []);
     assert.ok(codeSet.size > 0, 'CAPABILITIES array is empty');
 
-    const docText = read('API-REFERENCE.md');
+    const docText = read('docs/api/build.md');
     const catSet = new Set(
       [...docText.matchAll(/^\|\s*`([a-z_]+)`\s*\|\s*(?:ON|OFF)\s*\|/gm)].map(
         (x) => x[1],
       ),
     );
-    assert.ok(catSet.size > 0, 'no capability rows found in API-REFERENCE.md');
+    assert.ok(catSet.size > 0, 'no capability rows found in docs/api/build.md');
 
     const missingDoc  = [...codeSet].filter((c) => !catSet.has(c));
     const missingCode = [...catSet].filter((c) => !codeSet.has(c));
@@ -573,14 +576,16 @@ describe('9. Preview/loading field annotation', () => {
   const FIELD = /^\w*(preview\w*|imageurl|videourl)\w*$/i;
   const ANNOTATED = /\b(raw|passthrough|rendered)\b/i;
 
-  test('preview*/*ImageUrl/*VideoUrl field references in API-REFERENCE.md carry a raw-passthrough or rendered annotation on the same line', () => {
-    const text = read('API-REFERENCE.md');
+  test('preview*/*ImageUrl/*VideoUrl field references in the API reference carry a raw-passthrough or rendered annotation on the same line', () => {
+    const files = DOCS.filter((f) => f === 'API-REFERENCE.md' || f.startsWith('docs/api/'));
     const offenders = [];
-    for (const [i, line] of text.split('\n').entries()) {
-      const codeSpans = line.match(/`([^`]+)`/g) || [];
-      const hasField = codeSpans.some((c) => c.slice(1, -1).split(/[^a-zA-Z]+/).some((word) => FIELD.test(word)));
-      if (hasField && !ANNOTATED.test(line)) {
-        offenders.push(`API-REFERENCE.md:${i + 1}: ${line.trim()}`);
+    for (const f of files) {
+      for (const [i, line] of read(f).split('\n').entries()) {
+        const codeSpans = line.match(/`([^`]+)`/g) || [];
+        const hasField = codeSpans.some((c) => c.slice(1, -1).split(/[^a-zA-Z]+/).some((word) => FIELD.test(word)));
+        if (hasField && !ANNOTATED.test(line)) {
+          offenders.push(`${f}:${i + 1}: ${line.trim()}`);
+        }
       }
     }
     assert.deepEqual(offenders, [], `unannotated preview/loading field references:\n  ${offenders.join('\n  ')}`);
