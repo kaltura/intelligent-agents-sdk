@@ -5,9 +5,10 @@
  * on every nova:pagechange (and once at initial connect), and pushes the
  * current page's identity + {id,label} target list to the brain in ONE
  * session.setDynamicPrompt call — mirroring how the SDK's own Presenter
- * plugin feeds per-slide DPP content. setDynamicPrompt has no server-side
- * merge across calls (it's a whole-blob replace), so this is the only call
- * site that may ever push page-scoped DPP data; a future caller must add its
+ * plugin feeds per-slide context via the same page_context request variable.
+ * setDynamicPrompt has no server-side merge across calls (it's a whole-blob
+ * replace), so this is the only call site that may ever push page-scoped
+ * context; a future caller must add its
  * key HERE rather than firing a second setDynamicPrompt that would silently
  * clobber this one. The page identity matters because a visitor can navigate
  * by clicking a sidebar link directly (router.js's own click handler) with

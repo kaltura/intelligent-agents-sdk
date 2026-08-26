@@ -87,11 +87,15 @@
       </div>
       <div class="nova-disclosure hidden" id="nova-disclosure">You are talking with an AI avatar, not a human.</div>
       <div class="nova-disclosure-chip hidden" id="nova-disclosure-chip" title="You are talking with an AI avatar, not a human." aria-label="You are talking with an AI avatar, not a human.">AI</div>
+      <button class="nova-chat-start" id="nova-chat-start" type="button">Prefer text? Chat without video</button>
     </div>
     <div class="nova-panel" id="nova-panel">
       <div class="nova-controls">
         <button class="nova-btn" id="nova-mute" disabled aria-label="Mute">
           <span class="material-symbols-outlined" aria-hidden="true" id="nova-mute-icon">mic</span>
+        </button>
+        <button class="nova-btn" id="nova-mode" disabled aria-label="Switch to text chat" title="Switch to text chat">
+          <span class="material-symbols-outlined" aria-hidden="true" id="nova-mode-icon">chat</span>
         </button>
         <button class="nova-btn" id="nova-end" disabled aria-label="End conversation">
           <span class="material-symbols-outlined" aria-hidden="true">call_end</span>
@@ -99,6 +103,12 @@
       </div>
       <div class="nova-status" id="nova-status" role="status" aria-live="polite"></div>
       <div class="nova-transcript" id="nova-transcript" role="log" aria-live="polite" aria-label="Conversation transcript"></div>
+      <form class="nova-input-row" id="nova-input-row" autocomplete="off">
+        <input type="text" id="nova-input" placeholder="Message Nova…" aria-label="Message Nova" maxlength="2000">
+        <button class="nova-btn nova-send" id="nova-send" type="submit" aria-label="Send">
+          <span class="material-symbols-outlined" aria-hidden="true">send</span>
+        </button>
+      </form>
     </div>
   </div>
   <script type="module" src="/assets/nova/connect.js"></script>

@@ -17,7 +17,8 @@
  * "go there AND highlight X" request otherwise fails: highlighter.js's own
  * setDynamicPrompt push (fired off document's nova:pagechange listener) only
  * merges into the brain's context on its NEXT turn, too late for a highlight_element
- * decision made in the SAME turn as the nav. A tool ack, unlike DPP, is
+ * decision made in the SAME turn as the nav. A tool ack, unlike the page_context
+ * request variable, is
  * synchronously visible within the current turn, so this is the only channel that
  * can carry fresh page context in time. That's also why the new-navigation branch
  * below now awaits navigateTo() before acking instead of firing the ack first —
