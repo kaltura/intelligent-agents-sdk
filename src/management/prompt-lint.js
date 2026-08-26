@@ -293,10 +293,12 @@ export function validatePromptVars(text, opts = {}) {
  *   await mgmt.intellects.setPrompts(id, [PAGE_CONTEXT_PROMPT, ...rest]);
  *
  * Requires the intellect's `allow_client_variables` gate to be ON (the server
- * default — pin it anyway via `intellects.setClientVariablesEnabled(id, true)`;
- * with the gate off, a converse call sending request variables produces a
- * silent empty turn). Frozen — spread-copy (`{...PAGE_CONTEXT_PROMPT}`) to
- * customize the label or wording.
+ * default — pin it anyway via `intellects.setClientVariablesEnabled(id, true)`).
+ * With the gate off, an HTTP converse call sending request variables gets a 403
+ * (remapped to a typed `client_variables_disabled` error), while the live
+ * socket path fails silently with an empty turn (the session then emits the
+ * `empty_turn_with_request_vars` warning). Frozen — spread-copy
+ * (`{...PAGE_CONTEXT_PROMPT}`) to customize the label or wording.
  * @type {Readonly<{key:string,label:string,headerTemplate:string,type:'custom',value:string}>}
  */
 export const PAGE_CONTEXT_PROMPT = Object.freeze({

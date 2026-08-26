@@ -361,8 +361,8 @@ live runtime; see SECURITY.md's KS guidance for agents.
 | `speak(text)` | Inject text as if spoken — reaches the speech engine (unlike HTTP `converse`). |
 | `interrupt()` | Barge-in: stop the avatar mid-turn. |
 | `startTapToTalk()` / `endTapToTalk()` | Push-to-talk mic control — see `docs/VOICE-INPUT-MODES.md` for open-mic vs push-to-talk tradeoffs. |
-| `setDynamicPrompt(data)` | Per-turn context blob the brain reads fresh every turn (DPP). |
-| `updateRequestVars(vars)` | Update the `{{var}}` Jinja map for the rest of the session — resets (not merges) the whole map. |
+| `setDynamicPrompt(data)` | Serialize `data` into the `page_context` request variable — the "what's on screen" context the brain reads via `{{page_context}}` (pair with the `PAGE_CONTEXT_PROMPT` block from `./management`). |
+| `updateRequestVars(vars)` | Merge `vars` into the `{{var}}` Jinja map — send only changed keys; values persist on the thread for the rest of the session. |
 | `onToolCall(name, handler, argsSchema?)` | Register a handler for an agent-driven client-side command (navigate, render widget, …). Returns an unsubscribe function. |
 | `respondToTool(id, response)` | ACK a `waitForResponse:true` tool call with a real result the brain can see. |
 | `notifyHtmlElementClick(info)` / `submitStructuredDataForm(values)` | App-initiated signals back to the brain (ungated — these aren't agent-pushed actions). |
@@ -416,8 +416,8 @@ per-widget wire shapes and rendering anchors: `docs/GENUI-REFERENCE.md`.
 ### Presenter (deck-walkthrough plugin)
 
 For a "the avatar guides through a deck" app, `Presenter` wraps
-`KalturaAvatarSession` and owns the DPP-per-slide + navigation glue every deck
-app otherwise hand-rolls:
+`KalturaAvatarSession` and owns the per-slide context injection + navigation
+glue every deck app otherwise hand-rolls:
 
 ```js
 import { Presenter } from '@kaltura/intelligent-agents/experience/presenter';
@@ -425,7 +425,7 @@ import { Presenter } from '@kaltura/intelligent-agents/experience/presenter';
 const presenter = new Presenter({
   session,
   slides,                                        // [{title, talking_points, category, content}]
-  context: { financials, guidance },              // merged into every DPP
+  context: { financials, guidance },              // merged into every context payload
   onSlideChange: (n, slide) => renderPdfPage(n),   // your renderer
   storage: window.localStorage,                    // optional — enables session memory
   oneNavPerTurn: true,                             // guards against a brain-restart double-nav
@@ -437,11 +437,11 @@ await presenter.start();
 Navigation runs through exactly one deterministic mechanism —
 `session.onToolCall('navigate_to_slide', …)` — never speech-parsing, so an
 ordinary narration mentioning a slide number can never misfire as a nav
-command. `goTo(n, reason)`, `refreshDpp()`, `saveMemory()`, `clearMemory()`,
+command. `goTo(n, reason)`, `refreshContext()`, `saveMemory()`, `clearMemory()`,
 `recordQuestion(text)`, `appendSlide(slide)` are the public control-surface
-methods; `covered`/`questions`/`lastNav`/`lastDppSlide`/`secondsOnCurrentSlide`/
+methods; `covered`/`questions`/`lastNav`/`lastContextSlide`/`secondsOnCurrentSlide`/
 `navSuppressedThisTurn` are read-only getters for UI/analytics. App hooks
-(`extendDpp`, `extraMemory`/`restoreMemory`, `onTurnText`, `dppSlide`) let a
+(`extendContext`, `extraMemory`/`restoreMemory`, `onTurnText`, `slideContext`) let a
 non-default slide shape or extra per-app state plug into the same machinery
 instead of re-implementing it. Full constructor JSDoc: `src/experience/presenter.js`.
 

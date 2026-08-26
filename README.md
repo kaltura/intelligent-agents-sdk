@@ -260,17 +260,19 @@ The SDK assigns the stream to `videoEl.srcObject` and applies no CSS of its own 
 
 ### `{{var}}` Jinja personalization (`request_vars`)
 
-Pass slow-changing personalization values (viewer name, account tier) that the brain's prompt reads via `{{var}}` templating — join-time via `cfg.requestVars`, or mid-session via `updateRequestVars()`:
+Request variables are the SDK's one channel for app-supplied context: values the brain's prompt reads via `{{var}}` templating — a viewer's name, an account tier, or a whole JSON context blob. Seed them join-time via `cfg.requestVars`, update them mid-session via `updateRequestVars()`:
 
 ```js
 const session = new KalturaAvatarSession({ token, /* … */, requestVars: { user_name: 'Ada' } });
 // later, once you learn more about the viewer:
-session.updateRequestVars({ user_name: 'Ada', account_tier: 'enterprise' });
+session.updateRequestVars({ account_tier: 'enterprise' });
 ```
 
-`updateRequestVars(vars)` always sends the **full current map** — conversation-manager resets `request_vars` to exactly what you send, it does not merge with the join-time map or a previous call. For a full per-turn context blob the brain reads fresh every turn (not just `{{var}}` substitution), use `session.setDynamicPrompt()` instead — the two mechanisms are distinct.
+`updateRequestVars(vars)` **merges** what you pass into the session's canonical map — send only the keys that changed; omitted keys keep their values. Values persist on the thread for every later turn (no per-turn resend; the SDK also re-sends the full map on reconnect). `session.setDynamicPrompt(data)` is sugar over the same channel: it serializes `data` into the single well-known variable `page_context` — pair it with the `PAGE_CONTEXT_PROMPT` block exported from `./management` so the prompt actually references `{{page_context}}`.
 
-For the full picture of when to use `request_vars` vs. `setDynamicPrompt()` vs. actively nudging the brain with `speak()` vs. answering a brain-initiated request with `submitStructuredDataForm()` — and a worked example showing how they compose — see [docs/DYNAMIC-DATA-INJECTION.md](docs/DYNAMIC-DATA-INJECTION.md).
+The intellect must have `allow_client_variables: true` (`intellects.setClientVariablesEnabled(configId, true)`), or every variable you send is rejected — as a typed `client_variables_disabled` error on the HTTP converse path, but **silently** on the live socket path: the turn just comes back empty. The session detects that and emits a once-per-session `warning` event, `{ code: 'empty_turn_with_request_vars', message, requestVarKeys }` (variable names only, never values).
+
+For merge/persistence semantics in depth, the ~31 KB size headroom, server-side tool interpolation, the `lintPrompts` pre-flight, and a worked example composing `request_vars` with `speak()` and `submitStructuredDataForm()` — see [docs/DYNAMIC-DATA-INJECTION.md](docs/DYNAMIC-DATA-INJECTION.md).
 
 ### Tap-to-talk (push-to-talk voice)
 
@@ -614,7 +616,7 @@ In LIVE mode (`.start()`), `ExperienceRenderer` also subscribes to the session's
 
 ## Presenter
 
-The `Presenter` helper (`./experience/presenter`, its own subpath so apps that don't need it never pay for its module graph) manages a deck walkthrough end to end: per-slide Dynamic Prompt (**DPP**) injection via `session.setDynamicPrompt()` — a structured context blob telling the brain what's on screen right now — navigation via ONE deterministic, silent, idempotent mechanism (`onToolCall('navigate_to_slide')` — no speech-parsing fallback), duplicate-nav suppression, a sequential resume point (`reason:'resume'`), and session memory ("welcome back") — all pure logic over an injected `session`/`storage`, fully unit-testable.
+The `Presenter` helper (`./experience/presenter`, its own subpath so apps that don't need it never pay for its module graph) manages a deck walkthrough end to end: per-slide **context injection** via `session.setDynamicPrompt()` — a structured `page_context` payload telling the brain what's on screen right now — navigation via ONE deterministic, silent, idempotent mechanism (`onToolCall('navigate_to_slide')` — no speech-parsing fallback), duplicate-nav suppression, a sequential resume point (`reason:'resume'`), and session memory ("welcome back") — all pure logic over an injected `session`/`storage`, fully unit-testable.
 
 **Getters** (read-only):
 
@@ -623,7 +625,7 @@ The `Presenter` helper (`./experience/presenter`, its own subpath so apps that d
 | `covered` | Visited slide numbers |
 | `questions` | Questions recorded so far |
 | `lastNav` | `{target, reason, at}` |
-| `lastDppSlide` | The `slide:` sub-object last sent in a DPP |
+| `lastContextSlide` | The slide number of the last context payload delivered to the session (`0` = none yet) |
 | `secondsOnCurrentSlide` | Seconds spent on the current slide |
 | `memory` | The current session-memory object |
 
@@ -633,29 +635,29 @@ The `Presenter` helper (`./experience/presenter`, its own subpath so apps that d
 |--------|---------|
 | `start()` | Begin the walkthrough |
 | `goTo(n, reason)` | Navigate to slide `n` |
-| `refreshDpp()` | Resend the current slide's Dynamic Prompt |
+| `refreshContext()` | Resend the current slide's context payload |
 | `saveMemory()` | Persist "welcome back" session memory |
 | `clearMemory()` | Clear session memory |
 | `recordQuestion(text)` | Record a question observed outside ASR (e.g. typed chat) |
 | `appendSlide(slide)` | Grow the deck at runtime (e.g. a brain-driven `create_slide` command); pushes onto `slides`, grows `total`, and returns the new 1-based slide number without navigating |
-| `destroy()` (alias `stop()`) | Remove every listener this Presenter registered on `session`, and make every other method above a no-op from then on. Idempotent. Call it before discarding a Presenter whose session stays connected (e.g. swapping decks mid-session) — otherwise the old instance keeps injecting DPPs/navigating/saving memory alongside any replacement, and (in dev) a skipped `destroy()`/`stop()` logs a `console.warn` the moment the replacement is constructed |
+| `destroy()` (alias `stop()`) | Remove every listener this Presenter registered on `session`, and make every other method above a no-op from then on. Idempotent. Call it before discarding a Presenter whose session stays connected (e.g. swapping decks mid-session) — otherwise the old instance keeps injecting context/navigating/saving memory alongside any replacement, and (in dev) a skipped `destroy()`/`stop()` logs a `console.warn` the moment the replacement is constructed |
 
 **App hooks** (each exists because a real app needed to extend one specific seam without forking the class):
 
 | Hook | Signature | Purpose |
 |------|-----------|---------|
-| `extendDpp` | `(slide, ctx)` | Merges app-specific fields into every DPP sent (e.g. an engagement block built from `secondsOnCurrentSlide`) |
+| `extendContext` | `(slide, ctx)` | Merges app-specific fields into every context payload sent (e.g. an engagement block built from `secondsOnCurrentSlide`) |
 | `extraMemory` / `restoreMemory` | `(questions)` / `(memory)` | Write/read pair for persisting app-specific fields alongside Presenter's own "welcome back" session memory, instead of layering a second storage call |
 | `onTurnText` | `(text, full)` | Fires with the per-turn accumulated avatar text — the same text Presenter itself uses internally — so an app can drive its own analytics or triggers off it |
-| `onSlideChange` | `(n, slide, reason)` | Your renderer hook, called right after the DPP goes out (e.g. to page a PDF viewer to the new slide) |
-| `metaFor` | `(category)` | Returns per-category DPP meta flags (`disclaimer_required`/`non_gaap_cited`) when your compliance categories differ from the financial/legal default |
-| `dppSlide` | `(slide, ctx)` | Full-replace hook for the DPP's `slide:` sub-object when your slide shape doesn't match the default `{title, talking_points, category, content, narrator_guidance}` vocabulary (e.g. `body`/`topics`/`track`/`level`) |
+| `onSlideChange` | `(n, slide, reason)` | Your renderer hook, called right after the context payload goes out (e.g. to page a PDF viewer to the new slide) |
+| `metaFor` | `(category)` | Returns per-category context meta flags (`disclaimer_required`/`non_gaap_cited`) when your compliance categories differ from the financial/legal default |
+| `slideContext` | `(slide, ctx)` | Full-replace hook for the payload's `slide:` sub-object when your slide shape doesn't match the default `{title, talking_points, category, content, narrator_guidance}` vocabulary (e.g. `body`/`topics`/`track`/`level`) |
 
 The constructor option `oneNavPerTurn: true` guards against a brain "restart" firing two different nav targets within the same spoken turn — the second is silently suppressed until the next turn.
 
-The constructor option `deckOutline: true` adds a full-deck `{slide_num, title}[]` outline to every DPP as `dpp.outline` — the SDK-native alternative to hand-rolling a topic→slide mapping into `BASE_DIRECTIVE` (which also goes stale after a runtime `appendSlide()`, since `BASE_DIRECTIVE` is static). Duplicate titles are disambiguated automatically (the colliding slide's first talking point, or its slide number if it has none). Default `false` — no `outline` key at all unless requested.
+The constructor option `deckOutline: true` adds a full-deck `{slide_num, title}[]` outline to every context payload as a top-level `outline` key — the SDK-native alternative to hand-rolling a topic→slide mapping into `BASE_DIRECTIVE` (which also goes stale after a runtime `appendSlide()`, since `BASE_DIRECTIVE` is static). Duplicate titles are disambiguated automatically (the colliding slide's first talking point, or its slide number if it has none). Default `false` — no `outline` key at all unless requested.
 
-See `examples/deck-presenter.html` for a self-contained runnable demo: construct Presenter right after the session, before `connect()`, with `requireDisclosureAck: true` and the `extendDpp`/`extraMemory`/`restoreMemory` hooks in action.
+See `examples/deck-presenter.html` for a self-contained runnable demo: construct Presenter right after the session, before `connect()`, with `requireDisclosureAck: true` and the `extendContext`/`extraMemory`/`restoreMemory` hooks in action.
 
 ---
 
@@ -746,7 +748,8 @@ These are importable from their entry points and useful when composing custom pi
 | `randId(prefix?)` | Short collision-resistant ID with an optional prefix — used for idempotency keys and `_meta` receipts. |
 | `parseCsv(text)` | Zero-dep CSV parser (RFC 4180). Used by the `tools.api` CSV response path. |
 | `summarizeReport(rows, opts)` | Aggregates raw reporting rows into a `{ _meta, totals, byAgent, byThread }` summary — the same shape returned by `genie.mjs report-summary`. |
-| `lintPrompts(prompts)` / `validatePromptVars(text, vars)` / `lintGlossary(glossary)` / `assembleSystemPrompt(parts)` | The prompt-authoring toolchain (`management/prompt-lint.js`): lint a prompt set for the `SYS_VARS` an intellect actually supplies, validate a template's `{{var}}` references against a known var set, lint a glossary for duplicate/conflicting terms, and assemble a final system prompt from ordered parts. Use these to catch a broken prompt (an unresolvable `{{var}}`, a name collision) before it ships, not after a live conversation surfaces it. |
+| `lintPrompts(prompts, opts?)` / `validatePromptVars(text, vars)` / `lintGlossary(glossary)` / `assembleSystemPrompt(parts)` | The prompt-authoring toolchain (`management/prompt-lint.js`): lint a prompt set for the `SYS_VARS` an intellect actually supplies, validate a template's `{{var}}` references against a known var set, lint a glossary for duplicate/conflicting terms, and assemble a final system prompt from ordered parts. `lintPrompts` also takes `{allowClientVariables, knownVars}` and flags both gate/prompt mismatch directions — `client_variable_not_allowed` (error: a block references a client var but the gate is off), `vars_gate_unreferenced` and `known_var_unreferenced` (warnings: gate on / var sent, but no block reads it). Both mismatches fail silently live, so this lint is the only surface that catches them before a conversation does. |
+| `PAGE_CONTEXT_PROMPT` | The canonical, frozen prompt block that renders `{{page_context}}` — spread it into the `prompts[]` you provision instead of hand-rolling one, so `session.setDynamicPrompt()` payloads actually reach the brain. See [docs/DYNAMIC-DATA-INJECTION.md](docs/DYNAMIC-DATA-INJECTION.md). |
 | `lintPersonaIdentity({name?, openingPhrase?, baseDirective?, prompts?})` | Warns when a persona rename didn't fully propagate. `persona_name_drift` fires whenever a declared `name` (or an `openingPhrase`-derived name that differs from it) is missing from `base_directive`/`prompts[]` — it doesn't need `openingPhrase` at all, so it also catches intellects that only declare `name` and skip `openingPhrase` entirely. `persona_name_mismatch` still needs an `openingPhrase` that parses to a name different from the declared `name`. Returns `{ok, summary, findings, detectedName, _meta}` — warning-only, never throws. `mgmt.provision()` runs this automatically and returns the result as `personaLint` (see below); call it directly to re-check an intellect you're editing outside of `provision()`. |
 | `resolveCapabilities(layers)` / `CAPABILITY_STATE` / `CAPABILITY_INFO` | `management/capabilities.js`'s typed capability resolver: merges the `env`/`partnerConfig`/`request` layers for each entry in `CAPABILITIES` down to one resolved `CAPABILITY_STATE` (`on`/`off`/`disabled`) plus a `resolvedFrom` provenance tag, so a caller can build an accurate "what can this agent do" view without re-deriving precedence from raw config fields. `CAPABILITY_INFO` carries the human-readable name/description per capability. |
 | `findIntellectsReferencingTool(mgmt, toolId, ks)` | Lists every intellect's configId that currently references `toolId` in its `tool_ids`. This is the reuse-safety check `mgmt.tools.delete` runs by default before deleting a partner-level Tool — call it yourself to preview what a delete would break, or to build the same shared-by-name guard around your own upsert-by-name logic (`mgmt.skills`'s `delete` runs the analogous `findIntellectsReferencingSkill` check internally). |
@@ -975,7 +978,7 @@ await mgmt.knowledge.deleteRecord(rec.id, ks, { confirmPermanent: true });
 | [SECURITY.md](SECURITY.md) | NIST 800-53 matrix, FIPS mode, incident-response runbook |
 | [docs/CLIENT-COMMANDS.md](docs/CLIENT-COMMANDS.md) | The two deployment gotchas, gotcha-free authoring pattern, and tool-spiral defenses for client-command intellects |
 | [docs/GENUI-REFERENCE.md](docs/GENUI-REFERENCE.md) | All first-class GenUI widgets — wire shapes, SDK functions, rendering anchors |
-| [docs/DYNAMIC-DATA-INJECTION.md](docs/DYNAMIC-DATA-INJECTION.md) | Per-turn `request_vars`/DPP injection — how to hand the brain live, per-request data |
+| [docs/DYNAMIC-DATA-INJECTION.md](docs/DYNAMIC-DATA-INJECTION.md) | `request_vars` — the app-supplied context channel: merge/persistence semantics, `page_context`, and when to nudge with `speak()` |
 | [docs/EXTERNAL-API-INTEGRATIONS.md](docs/EXTERNAL-API-INTEGRATIONS.md) | Wiring a brain-called tool to a durable write against your own external API (CRM, spreadsheet, ticketing) |
 | [docs/STRUCTURED-DATA-FORMS.md](docs/STRUCTURED-DATA-FORMS.md) | Collecting typed fields from the user mid-conversation (`user_properties_forms`) — schema, rendering, where submitted values go |
 | [docs/VOICE-INPUT-MODES.md](docs/VOICE-INPUT-MODES.md) | Choosing open-mic vs. push-to-talk, and the UX/accessibility/safety details around each |
