@@ -6,9 +6,9 @@ import { Emitter } from '../../src/experience/emitter.js';
 
 /** A fake session: an Emitter that records every setDynamicPrompt payload. */
 class FakeSession extends Emitter {
-  constructor() { super(); this.dpps = []; this.connected = true; this._toolCallHandlers = new Map(); }
-  setDynamicPrompt(data) { if (!this.connected) { const e = new Error('not connected'); e.code = 'invalid_state'; throw e; } this.dpps.push(data); }
-  get lastDpp() { return this.dpps[this.dpps.length - 1]; }
+  constructor() { super(); this.sent = []; this.connected = true; this._toolCallHandlers = new Map(); }
+  setDynamicPrompt(data) { if (!this.connected) { const e = new Error('not connected'); e.code = 'invalid_state'; throw e; } this.sent.push(data); }
+  get lastContext() { return this.sent[this.sent.length - 1]; }
   /** Mirrors the real session.js#onToolCall(name, handler) surface for tests — including its exact unsubscribe-closure contract: once the last handler for `name` is removed, the map key itself is deleted (not just emptied). */
   onToolCall(name, handler) {
     const l = this._toolCallHandlers.get(name) || []; l.push(handler); this._toolCallHandlers.set(name, l);
@@ -54,29 +54,29 @@ test('constructor validates session + non-empty slides', () => {
   assert.throws(() => new Presenter({ session: new FakeSession(), slides: [] }), /non-empty slides/);
 });
 
-test('start injects slide-1 DPP with category + merged context, visual stripped', () => {
+test('start injects slide-1 context with category + merged context, visual stripped', () => {
   const { session, p } = newPresenter({ context: { ticker: 'KLTR' } });
   p.start();
-  const d = session.lastDpp;
+  const d = session.lastContext;
   assert.equal(d.current_slide, 1);
   assert.equal(d.total_slides, 5);
   assert.equal(d.slide.title, 'Title');
   assert.equal(d.ticker, 'KLTR', 'context merged');
   // financial meta defaults
   p.goTo(2);
-  assert.equal(session.lastDpp.meta.disclaimer_required, true);
-  assert.equal(session.lastDpp.meta.non_gaap_cited, true);
-  assert.equal(session.lastDpp.slide.content.visual, undefined, 'visual stripped from DPP');
-  assert.equal(session.lastDpp.slide.content.rev, 100);
+  assert.equal(session.lastContext.meta.disclaimer_required, true);
+  assert.equal(session.lastContext.meta.non_gaap_cited, true);
+  assert.equal(session.lastContext.slide.content.visual, undefined, 'visual stripped from context');
+  assert.equal(session.lastContext.slide.content.rev, 100);
 });
 
-test('goTo: bounds, dedupe-to-same, fires onSlideChange + DPP, tracks current', () => {
+test('goTo: bounds, dedupe-to-same, fires onSlideChange + context, tracks current', () => {
   const seen = [];
   const { session, p } = newPresenter({ onSlideChange: (n, _s, r) => seen.push([n, r]) });
   p.start();
-  const before = session.dpps.length;
+  const before = session.sent.length;
   p.goTo(0); p.goTo(99); p.goTo(1);            // all no-ops (out of range / same)
-  assert.equal(session.dpps.length, before, 'no DPP for invalid/same nav');
+  assert.equal(session.sent.length, before, 'no context for invalid/same nav');
   p.goTo(3, 'user');
   assert.equal(p.current, 3);
   assert.deepEqual(seen, [[3, 'user']]);
@@ -153,16 +153,16 @@ test('REGRESSION (issue #18): repeated resume navs are idempotent — the resume
   assert.equal(p.current, 3, 'a second resume call resolves to the SAME target — it must not advance past the resume point');
 });
 
-test('goTo: DPP is sent BEFORE onSlideChange fires (grounding must never race ahead of state)', () => {
+test('goTo: context is sent BEFORE onSlideChange fires (grounding must never race ahead of state)', () => {
   // Real bug: an app's onSlideChange hook (e.g. a "[SLIDE CHANGE]" grounding speak()) must
-  // see the DPP for the NEW slide already in flight — otherwise the brain answers against
-  // a stale DPP while the UI has already rendered the new slide (the "thought it was on
+  // see the context for the NEW slide already in flight — otherwise the brain answers against
+  // a stale context while the UI has already rendered the new slide (the "thought it was on
   // slide 4 when it was actually on slide 1" desync).
-  const seenDppSlideAtCallbackTime = [];
-  const { p } = newPresenter({ onSlideChange: (_n) => seenDppSlideAtCallbackTime.push(p.lastDppSlide) });
+  const seenContextSlideAtCallbackTime = [];
+  const { p } = newPresenter({ onSlideChange: (_n) => seenContextSlideAtCallbackTime.push(p.lastContextSlide) });
   p.start();
   p.goTo(3, 'user');
-  assert.deepEqual(seenDppSlideAtCallbackTime, [3], 'lastDppSlide already reflects the new slide when onSlideChange fires');
+  assert.deepEqual(seenContextSlideAtCallbackTime, [3], 'lastContextSlide already reflects the new slide when onSlideChange fires');
 });
 
 test('session memory: saves progress; injects "welcome back" on next session; clearMemory wipes', () => {
@@ -174,17 +174,17 @@ test('session memory: saves progress; injects "welcome back" on next session; cl
   assert.equal(saved.lastSlide, 3);
   assert.deepEqual(saved.covered, [1, 2, 3]);
   assert.deepEqual(saved.interests, ['what about margins?']);
-  // session 2: memory present → first DPP carries memory.resume/covered/interests
+  // session 2: memory present → first context carries memory.resume/covered/interests
   now += 2 * 3600 * 1000;                   // 2 hours later
   const { session: s2, p: p2 } = newPresenter({ storage, cfg: { now: () => now } });
   p2.start();
-  const mem = s2.lastDpp.memory;
+  const mem = s2.lastContext.memory;
   assert.equal(mem.resume, 3);
   assert.equal(mem.hours_ago, 2);
   assert.deepEqual(mem.interests, ['what about margins?']);
-  // memory injected ONCE — a later DPP omits it
+  // memory injected ONCE — a later context omits it
   p2.goTo(2, 'user');
-  assert.equal(s2.lastDpp.memory, null, 'memory injected once, not every turn');
+  assert.equal(s2.lastContext.memory, null, 'memory injected once, not every turn');
   // clear control
   p2.clearMemory();
   assert.equal(storage.getItem('kaltura_presenter_memory'), null);
@@ -218,7 +218,7 @@ test('lastNav is null before any navigation', () => {
   const { p } = newPresenter();
   assert.equal(p.lastNav, null);
   p.start();
-  assert.equal(p.lastNav, null, 'start() injects DPP but does not navigate');
+  assert.equal(p.lastNav, null, 'start() injects context but does not navigate');
 });
 
 test('memory: expired (>30d) is discarded on load', () => {
@@ -226,22 +226,22 @@ test('memory: expired (>30d) is discarded on load', () => {
   storage.setItem('kaltura_presenter_memory', JSON.stringify({ timestamp: 1, lastSlide: 4, covered: [1, 2, 3, 4], interests: [] }));
   const { session, p } = newPresenter({ storage });
   p.start();
-  assert.equal(session.lastDpp.memory, null, 'stale memory not injected');
+  assert.equal(session.lastContext.memory, null, 'stale memory not injected');
   assert.equal(storage.getItem('kaltura_presenter_memory'), null, 'and purged');
 });
 
 test('no storage → no memory, still functions', () => {
   const { session, p } = newPresenter();
   p.start();
-  assert.equal(session.lastDpp.memory, null);
+  assert.equal(session.lastContext.memory, null);
   assert.equal(p.memory, null);
 });
 
-test('DPP before connect is swallowed (caller injects after connect)', () => {
+test('context before connect is swallowed (caller injects after connect)', () => {
   const session = new FakeSession(); session.connected = false;
   const p = new Presenter({ session, slides: SLIDES });
   assert.doesNotThrow(() => p.start(), 'invalid_state from setDynamicPrompt is caught');
-  assert.equal(session.dpps.length, 0);
+  assert.equal(session.sent.length, 0);
 });
 
 test('deterministic nav: onToolCall("navigate_to_slide") drives goTo directly', () => {
@@ -264,12 +264,12 @@ test('deterministic nav: toolCallName:false disables onToolCall registration ent
   assert.equal(p.current, 1, 'no speech-parsing fallback — narration never navigates');
 });
 
-test('extendDpp merges app-specific per-turn fields into every DPP', () => {
-  const { session, p } = newPresenter({ cfg: { extendDpp: (slide, ctx) => ({ session_turn: ctx.current * 10 }) } });
+test('extendContext merges app-specific per-turn fields into every context payload', () => {
+  const { session, p } = newPresenter({ cfg: { extendContext: (slide, ctx) => ({ session_turn: ctx.current * 10 }) } });
   p.start();
-  assert.equal(session.lastDpp.session_turn, 10);
+  assert.equal(session.lastContext.session_turn, 10);
   p.goTo(2, 'user');
-  assert.equal(session.lastDpp.session_turn, 20);
+  assert.equal(session.lastContext.session_turn, 20);
 });
 
 test('extraMemory persists + restores app-specific memory fields', () => {
@@ -279,7 +279,7 @@ test('extraMemory persists + restores app-specific memory fields', () => {
   assert.equal(saved.contact, 'a@b.com');
 });
 
-test('reconnected: re-injects DPP for the current slide; cold reconnect (recovered:false) re-arms memory', () => {
+test('reconnected: warm (recovered:true) injects NOTHING — the session rejoin resends the canonical map; cold (recovered:false) re-injects with memory', () => {
   const storage = new MemStorage();
   let now = 10_000_000;
   { const { session, p } = newPresenter({ storage, cfg: { now: () => now } }); p.start(); p.goTo(3, 'user'); session.emit('transcript', { type: 'user', text: 'what about margins?' }); }
@@ -287,36 +287,36 @@ test('reconnected: re-injects DPP for the current slide; cold reconnect (recover
   const { session, p } = newPresenter({ storage, cfg: { now: () => now } });
   p.start();
   p.goTo(2, 'user');
-  const before = session.dpps.length;
+  const before = session.sent.length;
   session.emit('reconnected', { recovered: true });
-  assert.equal(session.dpps.length, before + 1, 'reconnected re-sends the DPP for the current slide');
-  assert.equal(session.lastDpp.current_slide, 2);
-  assert.equal(session.lastDpp.memory, null, 'warm reconnect does not re-arm memory');
+  assert.equal(session.sent.length, before, 'warm reconnect injects nothing — buildJoin already re-sent the canonical request_vars map');
   session.emit('reconnected', { recovered: false });
-  assert.ok(session.lastDpp.memory, 'cold reconnect (recovered:false) re-arms the welcome-back memory injection');
-  assert.equal(session.lastDpp.memory.resume, 3);
+  assert.equal(session.sent.length, before + 1, 'cold reconnect re-injects the current slide context');
+  assert.equal(session.lastContext.current_slide, 2);
+  assert.ok(session.lastContext.memory, 'cold reconnect (recovered:false) re-arms the welcome-back memory injection');
+  assert.equal(session.lastContext.memory.resume, 3);
 });
 
-test('refreshDpp() re-sends the current slide DPP on demand', () => {
+test('refreshContext() re-sends the current slide context on demand', () => {
   const { session, p } = newPresenter();
   p.start();
-  const before = session.dpps.length;
-  p.refreshDpp();
-  assert.equal(session.dpps.length, before + 1);
-  assert.equal(session.lastDpp.current_slide, 1);
+  const before = session.sent.length;
+  p.refreshContext();
+  assert.equal(session.sent.length, before + 1);
+  assert.equal(session.lastContext.current_slide, 1);
 });
 
-test('lastDppSlide tracks the slide of the last DPP that actually reached the session', () => {
+test('lastContextSlide tracks the slide of the last context payload that actually reached the session', () => {
   const session = new FakeSession(); session.connected = false;
   const p = new Presenter({ session, slides: SLIDES });
-  assert.equal(p.lastDppSlide, 0, 'nothing sent yet — not connected');
+  assert.equal(p.lastContextSlide, 0, 'nothing sent yet — not connected');
   p.start();
-  assert.equal(p.lastDppSlide, 0, 'start() swallowed (not connected) — still 0');
+  assert.equal(p.lastContextSlide, 0, 'start() swallowed (not connected) — still 0');
   session.connected = true;
-  p.refreshDpp();
-  assert.equal(p.lastDppSlide, 1);
+  p.refreshContext();
+  assert.equal(p.lastContextSlide, 1);
   p.goTo(3, 'user');
-  assert.equal(p.lastDppSlide, 3);
+  assert.equal(p.lastContextSlide, 3);
 });
 
 test('goTo: any non-"avatar" reason anchors the sequential resume point (app-specific reason taxonomy)', () => {
@@ -350,25 +350,25 @@ test('saveMemory() flushes on demand (e.g. beforeunload) without a nav/transcrip
   assert.equal(saved.lastSlide, 3);
 });
 
-test('restoreMemory: inverse of extraMemory — remaps stored fields back into the first DPP memory block', () => {
+test('restoreMemory: inverse of extraMemory — remaps stored fields back into the first context memory block', () => {
   const storage = new MemStorage();
   let now = 10_000_000;
   { const { p } = newPresenter({ storage, cfg: { now: () => now, extraMemory: () => ({ contact: 'a@b.com', contactDeclined: true }) } }); p.start(); p.goTo(2, 'user'); }
   now += 3600 * 1000;
   const { session, p } = newPresenter({ storage, cfg: { now: () => now, restoreMemory: (m) => ({ contact: m.contact, contact_declined: m.contactDeclined || undefined }) } });
   p.start();
-  assert.equal(session.lastDpp.memory.contact, 'a@b.com');
-  assert.equal(session.lastDpp.memory.contact_declined, true);
+  assert.equal(session.lastContext.memory.contact, 'a@b.com');
+  assert.equal(session.lastContext.memory.contact_declined, true);
 });
 
-test('recordQuestion: records a question from a non-ASR channel (e.g. typed chat) and re-injects DPP', () => {
+test('recordQuestion: records a question from a non-ASR channel (e.g. typed chat) and re-injects context', () => {
   const storage = new MemStorage();
   const { session, p } = newPresenter({ storage });
   p.start();
-  const before = session.dpps.length;
+  const before = session.sent.length;
   p.recordQuestion('what about margins?');
   assert.deepEqual(p.questions, ['what about margins?']);
-  assert.equal(session.dpps.length, before + 1, 'DPP re-injected');
+  assert.equal(session.sent.length, before + 1, 'context re-injected');
   assert.equal(JSON.parse(storage.getItem('kaltura_presenter_memory')).interests[0], 'what about margins?');
   p.recordQuestion('');   // no-op on empty text
   assert.equal(p.questions.length, 1);
@@ -384,18 +384,18 @@ test('onTurnText fires with chunk + accumulated-full-text pairs', () => {
   assert.deepEqual(seen, [['Hello ', 'Hello '], ['there.', 'Hello there.']]);
 });
 
-test('dppSlide: full-replace hook for decks whose shape does not match the default vocabulary', () => {
+test('slideContext: full-replace hook for decks whose shape does not match the default vocabulary', () => {
   const slides = [{ id: 1, body: 'Intro body', topics: ['a', 'b'] }, { id: 2, body: 'Second body', topics: ['c'] }];
-  const { session, p } = newPresenter({ slides, cfg: { dppSlide: (slide, ctx) => ({ id: slide.id, body: slide.body, topics: slide.topics, at: ctx.current, of: ctx.total }) } });
+  const { session, p } = newPresenter({ slides, cfg: { slideContext: (slide, ctx) => ({ id: slide.id, body: slide.body, topics: slide.topics, at: ctx.current, of: ctx.total }) } });
   p.start();
-  assert.deepEqual(session.lastDpp.slide, { id: 1, body: 'Intro body', topics: ['a', 'b'], at: 1, of: 2 });
-  assert.equal(session.lastDpp.slide.title, undefined, 'default fields are NOT merged in — full replace');
+  assert.deepEqual(session.lastContext.slide, { id: 1, body: 'Intro body', topics: ['a', 'b'], at: 1, of: 2 });
+  assert.equal(session.lastContext.slide.title, undefined, 'default fields are NOT merged in — full replace');
 });
 
-test('dppSlide: ctx.content is the already visual-stripped slide.content, for convenience', () => {
+test('slideContext: ctx.content is the already visual-stripped slide.content, for convenience', () => {
   const slides = [{ title: 'Chart', content: { rev: 100, visual: 'chart.png' } }];
   let seenContent;
-  const { p } = newPresenter({ slides, cfg: { dppSlide: (slide, ctx) => { seenContent = ctx.content; return { title: slide.title }; } } });
+  const { p } = newPresenter({ slides, cfg: { slideContext: (slide, ctx) => { seenContent = ctx.content; return { title: slide.title }; } } });
   p.start();
   assert.deepEqual(seenContent, { rev: 100 }, 'visual stripped before reaching the hook');
 });
@@ -410,7 +410,7 @@ test('appendSlide: grows slides + total; the new slide is navigable', () => {
   assert.equal(p.slides.length, 6);
   p.goTo(6, 'avatar');
   assert.equal(p.current, 6);
-  assert.equal(session.lastDpp.slide.title, 'New Slide');
+  assert.equal(session.lastContext.slide.title, 'New Slide');
 });
 
 test('appendSlide: does not navigate on its own', () => {
@@ -485,17 +485,17 @@ test('destroy() stops a discarded Presenter from reacting to further session eve
   oldPresenter.goTo(3, 'user');
   oldPresenter.destroy();
 
-  const dppCountBeforeReplacement = session.dpps.length;
+  const sentCountBeforeReplacement = session.sent.length;
   const replacement = new Presenter({ session, slides: SLIDES });
   replacement.start();
 
   // The discarded Presenter's own state must not move, and the session must not receive
-  // a second, conflicting DPP from it after destroy() — only the replacement's.
+  // a second, conflicting context from it after destroy() — only the replacement's.
   assert.equal(oldPresenter.current, 3, 'destroyed instance keeps its last state, but is inert going forward');
   session.fireToolCall('navigate_to_slide', { slide_num: 5 });
   assert.equal(oldPresenter.current, 3, 'destroyed Presenter never reacts to a tool call after destroy()');
   assert.equal(replacement.current, 5, 'only the replacement Presenter navigates');
-  assert.ok(session.dpps.length > dppCountBeforeReplacement, 'the replacement still injects DPPs normally');
+  assert.ok(session.sent.length > sentCountBeforeReplacement, 'the replacement still injects context payloads normally');
 });
 
 test('two independent Presenter instances (own sessions) run in parallel with zero shared state', () => {
@@ -515,20 +515,20 @@ test('after destroy(), every public mutator is a silent no-op (never touches ses
   p.goTo(3, 'user');
   p.destroy();
 
-  const dppsBefore = session.dpps.length;
+  const sentBefore = session.sent.length;
   const totalBefore = p.total;
   const memoryBefore = storage.getItem('kaltura_presenter_memory');
   assert.ok(memoryBefore, 'goTo() before destroy() persisted memory as usual');
 
   p.start();
   p.goTo(2, 'user');
-  p.refreshDpp();
+  p.refreshContext();
   p.recordQuestion('are you still there?');
   p.saveMemory();
   p.clearMemory();
   const appended = p.appendSlide({ title: 'extra' });
 
-  assert.equal(session.dpps.length, dppsBefore, 'no new DPP reached the session after destroy()');
+  assert.equal(session.sent.length, sentBefore, 'no new context reached the session after destroy()');
   assert.equal(p.current, 3, 'goTo() after destroy() never moves the current slide');
   assert.equal(appended, totalBefore, 'appendSlide() after destroy() returns the unchanged total, never grows the deck');
   assert.equal(p.total, totalBefore, 'total is unchanged after destroy()');
@@ -544,9 +544,9 @@ test('stop() is an alias for destroy()', () => {
   p.stop();
   const after = [...session._listeners.values()].reduce((n, set) => n + set.size, 0);
   assert.equal(after, 0, 'stop() removes listeners exactly like destroy()');
-  const dppsBefore = session.dpps.length;
+  const sentBefore = session.sent.length;
   p.goTo(2, 'user');
-  assert.equal(session.dpps.length, dppsBefore, 'stop()-ed Presenter is inert, same as destroy()');
+  assert.equal(session.sent.length, sentBefore, 'stop()-ed Presenter is inert, same as destroy()');
 });
 
 test('constructing a second live Presenter on the same session warns (forgot destroy()/stop())', () => {
@@ -610,12 +610,12 @@ test('a distinct memoryKey avoids the storage-collision warning', () => {
 
 // ─────────────────────────── deckOutline (issue #22) ───────────────────────────
 
-test('deckOutline unset (default): session.lastDpp has no outline key at all', () => {
+test('deckOutline unset (default): session.lastContext has no outline key at all', () => {
   const { session, p } = newPresenter();
   p.start();
-  assert.equal('outline' in session.lastDpp, false);
+  assert.equal('outline' in session.lastContext, false);
   p.goTo(3);
-  assert.equal('outline' in session.lastDpp, false);
+  assert.equal('outline' in session.lastContext, false);
 });
 
 test('deckOutline: true → outline has exactly `total` entries, each {slide_num, title}, matching the deck 1:1', () => {
@@ -626,7 +626,7 @@ test('deckOutline: true → outline has exactly `total` entries, each {slide_num
   ];
   const { session, p } = newPresenter({ slides, cfg: { deckOutline: true } });
   p.start();
-  const outline = session.lastDpp.outline;
+  const outline = session.lastContext.outline;
   assert.equal(outline.length, slides.length);
   outline.forEach((entry, i) => {
     assert.equal(entry.slide_num, i + 1);
@@ -641,7 +641,7 @@ test('deckOutline: two slides with an identical title get distinct, disambiguate
   ];
   const { session, p } = newPresenter({ slides, cfg: { deckOutline: true } });
   p.start();
-  const [a, b] = session.lastDpp.outline;
+  const [a, b] = session.lastContext.outline;
   assert.notEqual(a.title, b.title);
   assert.ok(a.title.startsWith('Overview'));
   assert.ok(b.title.startsWith('Overview'));
@@ -654,13 +654,13 @@ test('deckOutline: a duplicate-titled slide with no talking_points falls back to
   ];
   const { session, p } = newPresenter({ slides, cfg: { deckOutline: true } });
   p.start();
-  const [a, b] = session.lastDpp.outline;
+  const [a, b] = session.lastContext.outline;
   assert.equal(a.title, 'Overview (1)');
   assert.equal(b.title, 'Overview — market snapshot');
   assert.notEqual(a.title, b.title);
 });
 
-test('deckOutline: a slide appended via appendSlide() appears in the very next DPP\'s outline', () => {
+test('deckOutline: a slide appended via appendSlide() appears in the very next context\'s outline', () => {
   const slides = [
     { title: 'Title', talking_points: ['hi'], category: 'intro' },
     { title: 'Revenue', talking_points: ['up 12%'], category: 'financial' },
@@ -669,7 +669,7 @@ test('deckOutline: a slide appended via appendSlide() appears in the very next D
   p.start();
   p.appendSlide({ title: 'Bonus round', talking_points: ['surprise'], category: 'closing' });
   p.goTo(slides.length);
-  const outline = session.lastDpp.outline;
+  const outline = session.lastContext.outline;
   assert.equal(outline.length, slides.length);
   assert.deepEqual(outline[outline.length - 1], { slide_num: slides.length, title: 'Bonus round' });
 });
@@ -681,8 +681,38 @@ test('deckOutline: two Presenter instances in one process never share outline st
   const { session: sessionB, p: pB } = newPresenter({ slides: deckB, cfg: { deckOutline: true } });
   pA.start();
   pB.start();
-  assert.equal(sessionA.lastDpp.outline.length, 2);
-  assert.equal(sessionB.lastDpp.outline.length, 3);
-  assert.deepEqual(sessionA.lastDpp.outline.map((o) => o.title), ['A1', 'A2']);
-  assert.deepEqual(sessionB.lastDpp.outline.map((o) => o.title), ['B1', 'B2', 'B3']);
+  assert.equal(sessionA.lastContext.outline.length, 2);
+  assert.equal(sessionB.lastContext.outline.length, 3);
+  assert.deepEqual(sessionA.lastContext.outline.map((o) => o.title), ['A1', 'A2']);
+  assert.deepEqual(sessionB.lastContext.outline.map((o) => o.title), ['B1', 'B2', 'B3']);
+});
+
+// ─────────────────────────── legacy alias compatibility ───────────────────────────
+
+test('legacy aliases keep working: extendDpp/dppSlide cfg keys, refreshDpp(), lastDppSlide', () => {
+  const { session, p } = newPresenter({ cfg: {
+    extendDpp: () => ({ legacy: true }),
+    dppSlide: (slide) => ({ t: slide.title }),
+  } });
+  p.start();
+  assert.equal(session.lastContext.legacy, true, 'extendDpp alias feeds extendContext');
+  assert.deepEqual(session.lastContext.slide, { t: 'Title' }, 'dppSlide alias feeds slideContext (full replace)');
+  const before = session.sent.length;
+  p.refreshDpp();
+  assert.equal(session.sent.length, before + 1, 'refreshDpp() alias still re-sends');
+  p.goTo(3, 'user');
+  assert.equal(p.lastDppSlide, 3, 'lastDppSlide alias getter tracks the same value');
+  assert.equal(p.lastDppSlide, p.lastContextSlide);
+});
+
+test('new hook names win when both old and new are passed', () => {
+  const { session, p } = newPresenter({ cfg: {
+    extendContext: () => ({ picked: 'new' }),
+    extendDpp: () => ({ picked: 'old' }),
+    slideContext: (slide) => ({ from: 'new', title: slide.title }),
+    dppSlide: (slide) => ({ from: 'old', title: slide.title }),
+  } });
+  p.start();
+  assert.equal(session.lastContext.picked, 'new');
+  assert.equal(session.lastContext.slide.from, 'new');
 });

@@ -4,33 +4,33 @@ Design guidance for app builders on **getting your app's state into the conversa
 viewer is, what's currently on screen, and what just happened in your UI — so the brain reasons
 with fresh, correct context instead of a stale snapshot from when the session first connected.
 
-The SDK gives you four distinct mechanisms for this, each solving a different problem. Reaching
-for the wrong one is the most common integration mistake: using a passive mechanism when you
-needed the brain to react *right now*, or using the active one for something that should just be
-quiet background context. This doc explains why each exists, when to reach for it, and how they
-compose into one coherent update flow.
+The SDK gives you three mechanisms, each solving a different problem. Reaching for the wrong one
+is the most common integration mistake: using a passive mechanism when you needed the brain to
+react *right now*, or using the active one for something that should just be quiet background
+context. This doc explains why each exists, when to reach for it, and how they compose into one
+coherent update flow.
 
-## Four ways to get information to the brain
+## Three ways to get information to the brain
 
 | Mechanism | What it's for | Does it make the avatar talk? |
 |---|---|---|
-| [`requestVars` / `session.updateRequestVars()`](#personalization-request_vars) | Slow-changing personalization substituted into `{{var}}` prompt templates (viewer name, account tier) | No — passive |
-| [`session.setDynamicPrompt()`](#per-turn-context-the-dynamic-prompt) | A full, structured context blob the brain reads fresh on its next turn (what's on screen right now) | No — passive |
-| [`session.speak()`](#the-active-nudge-speak) | Actively provoke a new turn — the brain reacts immediately, in this turn | Yes — this is the only one of the four that does |
+| [Request variables](#the-context-channel-request-variables) — `requestVars` / `updateRequestVars()` / `setDynamicPrompt()` | Everything the brain should *know*: viewer facts for `{{var}}` prompt slots, and a full structured page-context blob. Persists for the whole thread. | No — passive |
+| [`session.speak()`](#the-active-nudge-speak) | Actively provoke a new turn — the brain reacts immediately, in this turn | Yes — the only one that does |
 | [`session.submitStructuredDataForm()`](#answering-a-brain-initiated-request) | Answer a request the brain itself made for structured fields | No — feeds the answer back into the conversation |
 
-The first two are **passive**: they update what the brain will see, whenever its next turn
+Request variables are **passive**: they update what the brain will see, whenever its next turn
 happens to occur. `speak()` is the only **active** one — it's the trigger that makes a turn happen
 right now. Getting this distinction right is the key to reliable behavior: if you need the brain
 to react to something the instant it happens (a modal just closed, a background action just
 finished), a passive update alone will sit there unread until some *other* turn happens to occur —
 sometimes much later, sometimes never in a short session.
 
-## Personalization: `request_vars`
+## The context channel: request variables
 
-Pass slow-changing facts about the viewer that your prompt substitutes directly via `{{var}}`
-templating — a name, an account tier, a language preference, anything your prompt's own template
-references by key. Set it once at connect time, and update it again later as you learn more:
+Request variables (`request_vars`) are the SDK's one channel for app-supplied context. Each
+variable is a string value the brain's prompt reads via `{{var}}` templating — a viewer's name, an
+account tier, or a whole JSON document the prompt reasons over. Seed them at connect time, update
+them any time after:
 
 ```js
 const session = new KalturaAvatarSession({
@@ -39,42 +39,27 @@ const session = new KalturaAvatarSession({
 });
 
 // later, once you learn more about the viewer:
-session.updateRequestVars({ user_name: 'Ada', account_tier: 'enterprise' });
+session.updateRequestVars({ account_tier: 'enterprise' });
 ```
 
-The one rule that matters: **`updateRequestVars()` always sends the full current map.** The
-backend resets `request_vars` to exactly what you send — it does not merge with the join-time map
-or a previous call. If you only send `{ account_tier: 'enterprise' }`, you have just erased
-`user_name` for the rest of the session. Keep the full map in your own app state and resend all of
-it on every call.
+Three properties make this channel do the heavy lifting:
 
-Use this for values your prompt's `{{ }}` placeholders reference by name, and that don't change
-every turn. It is not the right tool for "what's on screen right now" — for that, see the dynamic
-prompt below.
+- **Updates merge.** `updateRequestVars(vars)` merges what you pass into the session's canonical
+  map — send only the keys that changed; keys you omit keep their values. (The full merged map
+  goes to the server each time, and the server also merges per-thread, so a headless
+  `converse` call sending a delta behaves the same way.)
+- **Values persist for the whole thread.** Send a variable once and every later turn on that
+  thread still sees it — you don't resend per turn. A new thread starts clean. On a warm
+  reconnect the SDK re-sends the full map automatically.
+- **Values are strings, and can be big.** Tens of kilobytes of JSON in one variable works —
+  the SDK's live verification pushes a ~31 KB blob through and reads it back (see
+  [Verified live](#verified-live) below).
 
-### Calling converse directly? Enable `allow_client_variables` first
+### Page context: `setDynamicPrompt()`
 
-The snippets above go through the SDK session. If you instead call the
-[converse endpoint](../API-REFERENCE.md#converse) and pass `request_vars` with a message,
-the intellect must have `allow_client_variables` set to `true` — otherwise the request is
-rejected with HTTP 403. Calling the raw endpoint yourself, you get that 403 as a plain HTTP
-error; going through the management SDK's converse helpers, it surfaces as a typed
-`client_variables_disabled` error. Enable the flag once, server-side, with an admin KS:
-
-```js
-await mgmt.intellects.setClientVariablesEnabled(configId, true, adminKs);
-```
-
-Reserved `sys__*` keys (like `sys__user_id`) are server-injected on every turn and rejected if
-you try to set them yourself, regardless of this flag — see
-[Reserved Template Variables](../API-REFERENCE.md#reserved-template-variables-sys__).
-
-## Per-turn context: the dynamic prompt
-
-`setDynamicPrompt()` sends a full, structured JSON blob the brain reads as live context for its
-next turns — not a set of named template substitutions, but a whole object your prompt can reason
-over freely (the current slide's data, the current page section, the state of a task the viewer is
-in the middle of).
+For "what's on screen right now" — the current slide, page section, or task state — you don't
+hand-pick variables. `setDynamicPrompt(data)` serializes any JSON-safe object into one
+well-known request variable, `page_context`, and sends it through the same channel:
 
 ```js
 session.setDynamicPrompt({
@@ -83,18 +68,90 @@ session.setDynamicPrompt({
 });
 ```
 
-This is **context, not speech** — calling it does not make the avatar say anything. It just
-updates what the brain will read the next time it takes a turn, whenever that happens to be
-(a user's next utterance, a tool call response, or an active nudge — see below).
+Each call replaces the previous `page_context` whole (it's one variable — no deep merge), and it
+persists on the thread like any other variable. This is **context, not speech** — calling it does
+not make the avatar say anything. It just updates what the brain reads the next time it takes a
+turn.
 
-Reach for this over `request_vars` when you have more than a handful of named values, when the
-shape changes turn to turn, or when your prompt needs to reason over the data rather than just
-substitute it into fixed template slots.
+**The prompt must reference `{{page_context}}`, or the brain never sees it.** The management
+entry point exports the canonical prompt block for this — spread `PAGE_CONTEXT_PROMPT` into the
+`prompts[]` you provision instead of hand-rolling your own:
+
+```js
+import { PAGE_CONTEXT_PROMPT } from '@kaltura/intelligent-agents/management';
+await mgmt.intellects.setPrompts(configId, [PAGE_CONTEXT_PROMPT, ...otherBlocks]);
+```
 
 If you're using the SDK's `Presenter` plugin for a slide-deck-style walkthrough, it already
-manages per-slide dynamic-prompt injection for you — see [README.md → Presenter](../README.md#experience)
-for the deck-specific API surface. `Presenter.refreshDpp()` re-sends the current context outside
-of a navigation, which is exactly the building block the worked example below relies on.
+manages per-slide page-context injection for you — see [README.md → Presenter](../README.md#presenter)
+for the deck-specific API surface. `Presenter.refreshContext()` re-sends the current context
+outside of a navigation, which is exactly the building block the worked example below relies on.
+
+### The gate: `allow_client_variables`
+
+The intellect must have `allow_client_variables: true`, or every request variable you send —
+including `page_context` — is rejected. Enable it once, server-side, with an admin KS:
+
+```js
+await mgmt.intellects.setClientVariablesEnabled(configId, true, adminKs);
+```
+
+How the rejection surfaces depends on the path:
+
+- **HTTP converse** (the management SDK's `converse`/`converseOnce`, or the raw endpoint):
+  HTTP 403, which the SDK remaps to a typed `client_variables_disabled` error.
+- **Live socket session:** no error at all — the turn comes back as a **silent empty reply**.
+  The session detects this and emits a once-per-session `warning` event,
+  `{ code: 'empty_turn_with_request_vars', message, requestVarKeys }` (variable *names* only,
+  never values), pointing at the gate:
+
+```js
+session.on('warning', (w) => {
+  if (w.code === 'empty_turn_with_request_vars') console.warn(w.message);
+});
+```
+
+The mirror-image misconfiguration — gate on, but no prompt block referencing any client
+`{{variable}}` — is also silent live: the server accepts your variables and ignores them. Catch
+both before shipping with the `lintPrompts` pre-flight:
+
+```js
+import { lintPrompts } from '@kaltura/intelligent-agents/management';
+const lint = lintPrompts(prompts, { allowClientVariables: true, knownVars: ['page_context'] });
+// findings to look for:
+//   vars_gate_unreferenced  — gate on, but NO block references any client {{variable}}
+//   known_var_unreferenced  — a var you send is never referenced by any block
+//   client_variable_not_allowed — a block references a client var but the gate is off
+```
+
+### Reserved `sys__*` variables
+
+Reserved `sys__*` keys (like `sys__user_id` and `sys__thread_id`) are server-injected on every
+turn and rejected if you try to set them yourself, regardless of the gate — see
+[Reserved Template Variables](../API-REFERENCE.md#reserved-template-variables-sys__). The SDK's
+own pre-flight rejects them (and non-string values) client-side before anything hits the wire.
+
+### Server-side tools read them too
+
+Request variables aren't limited to prompt text. A server-side `api` tool's request template can
+interpolate them (`{{account_id}}` in a URL, header, or body), so a value your app set turns into
+a parameter of a backend call the brain makes — including variables from earlier turns that were
+never mentioned in conversation. See [API-REFERENCE.md § Tools](../API-REFERENCE.md#tools-api--csv--code).
+
+**Security stance:** request variables are client-suppliable *and* thread-persistent. Never treat
+one as an authorization claim — your endpoints must independently authorize every call — and
+remember a poisoned value outlives its turn: it keeps interpolating into prompts and tool calls
+for the rest of the thread. Don't pass unsanitized end-user text into `setDynamicPrompt`, and
+never put secrets in any request variable.
+
+### Verified live
+
+Every behavior above is exercised against the real API by two runnable scripts:
+
+- `examples/request-vars-live-context.mjs` — a five-turn walkthrough of seed → persist → merge →
+  large `page_context` → fresh-thread reset.
+- `npm run live-verify:request-vars` — the full verification suite (persistence, merge, tool
+  interpolation, `sys__*` injection, ~31 KB payload, thread isolation).
 
 ## The active nudge: `speak()`
 
@@ -121,13 +178,13 @@ putting synthetic text in the viewer's own mouth. Design your own tag vocabulary
 events your app needs the brain to react to instantly.
 
 **Pair it with a context update, in this order:** call `setDynamicPrompt()` (or
-`Presenter.refreshDpp()`) first, then `speak()` immediately after. That way the nudge that
+`Presenter.refreshContext()`) first, then `speak()` immediately after. That way the nudge that
 provokes the turn arrives *after* the context it needs to reason correctly about is already in
 place, not racing it.
 
 ## Answering a brain-initiated request
 
-The three mechanisms above all push data from your app *to* the brain. There's also a path in the
+The mechanisms above all push data from your app *to* the brain. There's also a path in the
 other direction: your agent's configuration can require the brain to ask the viewer for specific
 structured fields at some point in the conversation (an email, a booking date, a support ticket's
 category) — see [STRUCTURED-DATA-FORMS.md](STRUCTURED-DATA-FORMS.md) for how to configure what it
@@ -161,25 +218,25 @@ function onSectionChange(section) {
 // 3. The brain asks for an email; your UI renders the form and the viewer submits it.
 function onEmailFormClosed(email) {
   if (email) session.submitStructuredDataForm({ email });
-  // The form closing either way is a real, immediate event — refresh context, then
+  // The form closing either way is a real, immediate event — update a variable, then
   // nudge, exactly like a section change, rather than waiting for whatever turn
   // happens next to pick it up.
-  session.setDynamicPrompt({ email_form_status: email ? 'submitted' : 'declined' });
+  session.updateRequestVars({ email_form_status: email ? 'submitted' : 'declined' });
   session.speak(`[EMAIL FORM] The form just closed — the viewer ${email ? 'submitted an email' : 'declined'}.`);
 }
 ```
 
 The pattern that repeats: **update context, then actively nudge, in that order, for anything that
-just happened and needs an immediate reaction.** Use `request_vars` only for the slow-changing
-facts that rarely change after connect.
+just happened and needs an immediate reaction.**
 
 ## Which one do I want?
 
 | I need to… | Use |
 |---|---|
-| Substitute the viewer's name/tier into my prompt template | `request_vars` (`updateRequestVars()`) |
-| Give the brain a full snapshot of what's on screen, for whenever it next speaks | `setDynamicPrompt()` |
+| Substitute the viewer's name/tier into my prompt template | `updateRequestVars({ user_name: 'Ada' })` |
+| Give the brain a full snapshot of what's on screen, for whenever it next speaks | `setDynamicPrompt(data)` |
 | Make the brain react to something *right now*, not whenever it next happens to speak | `setDynamicPrompt()` + `speak()` |
+| Feed a value into a server-side `api` tool the brain calls | Any request variable the tool's template interpolates |
 | Get an answer back for a field the brain itself asked for | `submitStructuredDataForm()` |
 
 ## Related but distinct: client-side commands
@@ -194,6 +251,7 @@ that's a different, silent channel (`session.onToolCall()`), not a data-injectio
 |-----|---------------|
 | [README.md → `{{var}}` Jinja personalization](../README.md#var-jinja-personalization-request_vars) | The `request_vars` API reference |
 | [README.md → Experience](../README.md#experience) | `KalturaAvatarSession` and the `Presenter` deck plugin this doc's worked example builds on |
+| [API-REFERENCE.md → Converse](../API-REFERENCE.md#converse) | Sending `request_vars` on the headless HTTP path, and the `sys__*` reserved set |
 | [STRUCTURED-DATA-FORMS.md](STRUCTURED-DATA-FORMS.md) | Configuring what the brain asks the viewer for, and how it's rendered |
 | [CLIENT-COMMANDS.md](CLIENT-COMMANDS.md) | The avatar-driving-your-UI channel — the opposite direction from this doc |
 | [WIRE-PROTOCOL.md](WIRE-PROTOCOL.md) | The exact socket events behind each mechanism, for anyone debugging at the wire level |

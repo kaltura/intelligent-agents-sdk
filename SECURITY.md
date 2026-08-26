@@ -323,8 +323,10 @@ vs **Operator** (your duty, fed by the SDK's hooks/events).
 | **164.316(b)(2) Retention** | Emits the records | Tamper-evident storage + 6-year retention |
 
 PHI note: a patient may speak PHI to the avatar, so captions, transcripts,
-screenshots, and `setDynamicPrompt` context can carry PHI. The SDK surfaces
-these to your app but persists none of them; treat them as PHI in your app.
+screenshots, and request-variable context (`setDynamicPrompt`'s `page_context`)
+can carry PHI. The SDK surfaces these to your app but persists none of them;
+treat them as PHI in your app — and remember request variables persist on the
+conversation thread server-side for the rest of the thread.
 
 ### HITRUST CSF (incl. the AI Security Assessment)
 
@@ -347,20 +349,22 @@ source.
 > Prompt-injection note: the prototype-pollution scrub on
 > `setDynamicPrompt`/inbound is object-injection defense, not prompt-injection
 > defense, and `redact()` is log-scoped, not an output content filter. Don't
-> pass unsanitized end-user text into `setDynamicPrompt`; instruction/data
-> separation, source allow-listing, and model guardrails are operator/platform
-> duties.
+> pass unsanitized end-user text into `setDynamicPrompt` or any request
+> variable — request variables are thread-persistent, so a poisoned value
+> outlives its turn and keeps interpolating into prompts and server-side tool
+> calls for the rest of the thread. Instruction/data separation, source
+> allow-listing, and model guardrails are operator/platform duties.
 
 ### OWASP Top 10 for LLM Applications (2025)
 
 | Item | Status |
 |---|---|
 | **LLM01 Prompt Injection** | `onBeforeSend(text, ctx)` input-filter hook (block/transform). Model-side detection is operator/platform. |
-| **LLM02 Sensitive Info Disclosure** | Redaction of secrets in logs/audit; `onBeforeSend` lets you mask outbound PII. Don't put secrets in the DPP (Dynamic Prompt — the per-turn context payload sent to the model via `setDynamicPrompt`). |
+| **LLM02 Sensitive Info Disclosure** | Redaction of secrets in logs/audit; `onBeforeSend` lets you mask outbound PII. Never put secrets in any request variable — including the `page_context` payload `setDynamicPrompt` sends; values persist on the thread and interpolate into prompts and server-side tool calls. |
 | **LLM03 Supply Chain** | Zero runtime deps, no install scripts, no registry publish step, SRI on the injected socket.io (CI-gated). |
 | **LLM05 Improper Output Handling** | `safeUrl` (scheme allow-list), `safeText`, `renderSafeLink` (DOM-built, never `innerHTML`), inbound clamping of captions/segments. Reference app uses the safe sink. Treat avatar text/GenUI (the SDK's on-screen widget layer — flashcards, forms, images rendered from brain output) as untrusted. |
 | **LLM06 Excessive Agency** | `onAgentAction` gate + declarative `agentActions` policy + `capabilities` surface + `requireDisclosureAck`/`requireActionAck` HITL. |
-| **LLM07 System-Prompt Leakage** | Documented: never embed secrets/authz rules in the provisioned prompt or `setDynamicPrompt`. |
+| **LLM07 System-Prompt Leakage** | Documented: never embed secrets/authz rules in the provisioned prompt or any request variable (`setDynamicPrompt` included). |
 | **LLM10 Unbounded Consumption** | Client `maxTurnsPerMinute` valve (`rate_limited`); server quota is authoritative. |
 | LLM04 / LLM08 / LLM09 | Operator: data/model poisoning, RAG/embedding ACLs, and misinformation/overreliance UX are out of a client SDK's control. |
 

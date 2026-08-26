@@ -112,7 +112,15 @@ test('post-connect: setDynamicPrompt / notifyHtmlElementClick / submitStructured
   session.setDynamicPrompt({ current_slide: 5, title: 'Revenue' });
   session.notifyHtmlElementClick({ htmlText: 'press release' });
   session.submitStructuredDataForm({ message: 'me@firm.com' });
-  assert.deepEqual(socket.emitsOf('setDynamicPrompt')[0], { data: { current_slide: 5, title: 'Revenue' } });
+  // setDynamicPrompt is sugar over request_vars: it rides updateGenieContext as
+  // the page_context var, ALWAYS alongside the session's own capabilities (the
+  // server replaces stored context wholesale — a bare {request_vars} emit would
+  // wipe them; regression for the capabilities-preservation invariant).
+  assert.equal(socket.didEmit('setDynamicPrompt'), false, 'legacy setDynamicPrompt wire event is never emitted');
+  assert.deepEqual(socket.emitsOf('updateGenieContext')[0], {
+    capabilities: { avatar: 'on', generate_followup_questions: 'on' },
+    request_vars: { page_context: JSON.stringify({ current_slide: 5, title: 'Revenue' }) },
+  });
   assert.deepEqual(socket.emitsOf('onHtmlElementClick')[0], { htmlText: 'press release' });
   assert.deepEqual(socket.emitsOf('setFormLeadInfo')[0], { message: 'me@firm.com' });
   // these are CONTEXT, not speech — must not emit onTextEntered
@@ -123,6 +131,24 @@ test('post-connect: setDynamicPrompt / notifyHtmlElementClick / submitStructured
 test('setDynamicPrompt before connect throws invalid_state', () => {
   const { session } = newSession();
   assert.throws(() => session.setDynamicPrompt({ a: 1 }), (e) => e.code === 'invalid_state');
+});
+
+test('request_vars merge: updateRequestVars deltas and setDynamicPrompt page_context coexist in one canonical map', async () => {
+  const { session, socket } = newSession({ cfg: { requestVars: { user_name: 'Ada' } } });
+  scriptHappyPath(socket);
+  await session.connect();
+  session.setDynamicPrompt({ slide: 2 });
+  session.updateRequestVars({ tier: 'gold' });
+  // The second emit still carries page_context (merge, not reset) AND the
+  // join-time var AND capabilities.
+  assert.deepEqual(socket.emitsOf('updateGenieContext').pop(), {
+    capabilities: { avatar: 'on', generate_followup_questions: 'on' },
+    request_vars: { user_name: 'Ada', page_context: JSON.stringify({ slide: 2 }), tier: 'gold' },
+  });
+  // Overwriting page_context via setDynamicPrompt keeps the other vars.
+  session.setDynamicPrompt({ slide: 3 });
+  assert.deepEqual(socket.emitsOf('updateGenieContext').pop().request_vars, { user_name: 'Ada', page_context: JSON.stringify({ slide: 3 }), tier: 'gold' });
+  session.disconnect();
 });
 
 test('barge-in: interrupted event flips speaking + transcript drops stale chunks', async () => {

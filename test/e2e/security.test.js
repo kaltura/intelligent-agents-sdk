@@ -73,9 +73,10 @@ test('setDynamicPrompt scrubs prototype-pollution keys, keeps real data', async 
   await s.connect();
   const evil = JSON.parse('{"slide":5,"title":"Rev","__proto__":{"polluted":true}}');
   s.setDynamicPrompt(evil);
-  const sent = socket.emitsOf('setDynamicPrompt')[0];
-  assert.equal(sent.data.slide, 5);
-  assert.equal(sent.data.title, 'Rev');
+  const sent = socket.emitsOf('updateGenieContext')[0];
+  const ctx = JSON.parse(sent.request_vars.page_context);
+  assert.equal(ctx.slide, 5);
+  assert.equal(ctx.title, 'Rev');
   assert.equal({}.polluted, undefined, 'global prototype not polluted');
   assert.ok(!JSON.stringify(sent).includes('polluted'), '__proto__ payload dropped from the wire');
   s.disconnect();

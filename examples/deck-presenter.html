@@ -20,8 +20,8 @@
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js" integrity="sha384-2huaZvOR9iDzHqslqwpR87isEmrfxqyWOF7hr7BY6KG0+hVKLoEXMPUJw3ynWuhO" crossorigin="anonymous"></script>
   <script type="module">
     // A complete avatar-guided deck in ~50 lines: the Presenter owns the
-    // conversation wiring (DPP, deterministic tool-call navigation, session
-    // memory); you supply the slides + a renderer.
+    // conversation wiring (per-slide page context, deterministic tool-call
+    // navigation, session memory); you supply the slides + a renderer.
     import { KalturaAvatarSession } from '../src/experience/index.js';
     import { Presenter } from '../src/experience/presenter.js';
 
@@ -70,12 +70,12 @@
     };
     const presenter = new Presenter({
       session, slides: SLIDES,
-      context: { company: 'Acme', deck: 'Investor Update' },   // merged into every per-slide prompt
+      context: { company: 'Acme', deck: 'Investor Update' },   // merged into every per-slide context payload
       onSlideChange: renderSlide,
       storage: window.localStorage,                            // → "welcome back" session memory
-      // extendDpp: app-specific fields merged into every per-slide Dynamic Prompt (here, how
-      // long the viewer has lingered on the current slide — useful for a "still with me?" nudge).
-      extendDpp: (slide, ctx) => ({ secondsOnSlide: Math.round(presenter.secondsOnCurrentSlide) }),
+      // extendContext: app-specific fields merged into every per-slide context payload (here,
+      // how long the viewer has lingered on the current slide — useful for a "still with me?" nudge).
+      extendContext: (slide, ctx) => ({ secondsOnSlide: Math.round(presenter.secondsOnCurrentSlide) }),
       // extraMemory / restoreMemory: round-trip an app-specific field through session memory
       // alongside Presenter's own covered/lastNav/questions — here, the viewer's chosen locale.
       extraMemory: (questions) => ({ locale: document.documentElement.lang || 'en' }),

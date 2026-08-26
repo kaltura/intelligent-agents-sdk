@@ -18,6 +18,7 @@ function newSession(overrides = {}) {
     token: CONV_KS, srsBaseUrl: 'https://srs.example', turnServerUrl: 'turn.avatar.us.kaltura.ai',
     videoEl, socketFactory: () => socket, rtcConstructor: FakeRTCPeerConnection,
     fetch: whepFetch, getUserMedia: overrides.getUserMedia ?? fakeGetUserMedia(),
+    ...(overrides.cfg || {}),
   });
   return { session, socket, videoEl };
 }
@@ -123,5 +124,78 @@ test("'responseSettled' also fires on interruption, so the affordance never gets
   socket.server('agentInterrupted', {});
   assert.deepEqual(events, [{}]);
   assert.equal(session.responsePending, false);
+  session.disconnect();
+});
+
+// ─── §4a.3: silent-empty-turn diagnostic (allow_client_variables gate OFF produces
+// an empty turn with NO error — live-verified; this warning is the only surface) ───
+
+async function connectWithVars(vars) {
+  const { session, socket } = newSession(vars ? { cfg: { requestVars: vars } } : {});
+  scriptHappyPath(socket);
+  await session.connect();
+  const warnings = [];
+  session.on('warning', (w) => warnings.push(w));
+  return { session, socket, warnings };
+}
+
+test("empty turn while request variables are in play → one 'warning' with code empty_turn_with_request_vars, var KEYS only", async () => {
+  const { session, socket, warnings } = await connectWithVars({ page_context: '{"page":"pricing"}', tier: 'gold' });
+  socket.server('agent_start_speech', { isNewTurn: true, speechId: 's1', turnId: 't1' });
+  socket.server('agent_end_turn', { speechId: 's1', turnId: 't1' });
+  assert.equal(warnings.length, 1);
+  assert.equal(warnings[0].code, 'empty_turn_with_request_vars');
+  assert.deepEqual([...warnings[0].requestVarKeys].sort(), ['page_context', 'tier']);
+  const dump = JSON.stringify(warnings);
+  assert.ok(!dump.includes('pricing') && !dump.includes('gold'), 'variable VALUES never leak into the warning');
+  session.disconnect();
+});
+
+test('the warning fires at most once per session (dedup across duplicate end events and later empty turns)', async () => {
+  const { session, socket, warnings } = await connectWithVars({ tier: 'gold' });
+  socket.server('agent_start_speech', { isNewTurn: true, speechId: 's1' });
+  // Real CM can fire BOTH end events for one turn.
+  socket.server('agent_end_turn', { speechId: 's1' });
+  socket.server('stvFinishedGenerating', { speechId: 's1' });
+  // A second fully empty turn.
+  socket.server('agent_start_speech', { isNewTurn: true, speechId: 's2' });
+  socket.server('agent_end_turn', { speechId: 's2' });
+  assert.equal(warnings.length, 1);
+  session.disconnect();
+});
+
+test('a turn with perceivable output never warns (spoken segment path)', async () => {
+  const { session, socket, warnings } = await connectWithVars({ tier: 'gold' });
+  socket.server('agent_start_speech', { isNewTurn: true, speechId: 's1' });
+  socket.server('agent_raw_text', { speechId: 's1', delta: JSON.stringify({ type: 'text', content: 'Here you go.' }) });
+  await delay(0);   // agent_raw_text handler is async
+  socket.server('agent_end_turn', { speechId: 's1' });
+  assert.deepEqual(warnings, []);
+  session.disconnect();
+});
+
+test('a turn where the avatar started talking never warns (stvStartedTalking path)', async () => {
+  const { session, socket, warnings } = await connectWithVars({ tier: 'gold' });
+  socket.server('agent_start_speech', { isNewTurn: true, speechId: 's1' });
+  socket.server('stvStartedTalking', {});
+  socket.server('stvFinishedGenerating', { speechId: 's1' });
+  assert.deepEqual(warnings, []);
+  session.disconnect();
+});
+
+test('an interrupted turn never warns (barge-in is a benign empty turn)', async () => {
+  const { session, socket, warnings } = await connectWithVars({ tier: 'gold' });
+  socket.server('agent_start_speech', { isNewTurn: true, speechId: 's1' });
+  socket.server('agentInterrupted', {});
+  socket.server('agent_end_turn', { speechId: 's1' });
+  assert.deepEqual(warnings, []);
+  session.disconnect();
+});
+
+test('an empty turn with NO request variables never warns (nothing was sent, nothing to diagnose)', async () => {
+  const { session, socket, warnings } = await connectWithVars(null);
+  socket.server('agent_start_speech', { isNewTurn: true, speechId: 's1' });
+  socket.server('agent_end_turn', { speechId: 's1' });
+  assert.deepEqual(warnings, []);
   session.disconnect();
 });

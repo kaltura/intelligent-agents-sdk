@@ -681,10 +681,10 @@ CONV_KS=$(curl -s -X POST "https://www.kaltura.com/api_v3/service/session/action
 | `sse` | `false` = NDJSON (default); `true` = SSE |
 | `model_type` | `"fast"` for cheaper/faster model |
 | `force_experience` | Hint only — not a guarantee |
-| `request_vars` | Per-message `{{var}}` interpolation; needs `allow_client_variables:true` on the intellect. Reserved `sys__*` keys (including `sys__user_id`) are server-injected and rejected if you try to set them yourself — see § Bind a session to a real end-user identity above for how `sys__user_id` gets populated. |
+| `request_vars` | `{{var}}` interpolation values; needs `allow_client_variables:true` on the intellect. Values **persist on the thread** (the server merges each message's map into what's stored — send only deltas; a new thread starts clean) and interpolate into both prompt blocks and server-side `api`-tool templates. Reserved `sys__*` keys (including `sys__user_id`) are server-injected and rejected if you try to set them yourself — see § Bind a session to a real end-user identity above for how `sys__user_id` gets populated. Semantics in depth: [docs/DYNAMIC-DATA-INJECTION.md](docs/DYNAMIC-DATA-INJECTION.md). |
 | `capabilities` | Per-message capability override |
 
-**Enabling `allow_client_variables`:** `mgmt.intellects.setClientVariablesEnabled(configId, true, adminKs)` (WRITE, admin KS; also exposed as `mgmt.intellectConfig.setClientVariablesEnabled`). With it off, a raw endpoint caller gets a plain HTTP 403; the management SDK's converse helpers surface the same rejection as a typed `client_variables_disabled` error instead.
+**Enabling `allow_client_variables`:** `mgmt.intellects.setClientVariablesEnabled(configId, true, adminKs)` (WRITE, admin KS; also exposed as `mgmt.intellectConfig.setClientVariablesEnabled`). With it off, a raw endpoint caller gets a plain HTTP 403; the management SDK's converse helpers surface the same rejection as a typed `client_variables_disabled` error instead. The live socket path is different: it fails **silently** with an empty turn — `KalturaAvatarSession` detects that and emits a `warning` event (`code: 'empty_turn_with_request_vars'`).
 
 **Stream segments** (each line is a JSON object):
 

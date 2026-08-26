@@ -43,7 +43,8 @@
     "circular": "madge --circular --extensions js src/",
     "harness:constitution": "node tools/constitution-harness.mjs",
     "sri:map": "node tools/sri-map.mjs",
-    "live-verify:browser": "node scripts/live-verify-browser.mjs"
+    "live-verify:browser": "node scripts/live-verify-browser.mjs",
+    "live-verify:request-vars": "node scripts/live-verify-request-vars.mjs"
   },
   "keywords": [
     "kaltura",

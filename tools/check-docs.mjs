@@ -502,7 +502,9 @@ describe('7. SDK invariants', () => {
     const result = spawnSync(
       process.execPath,
       ['--test', '--test-concurrency=1', ...testFiles],
-      { cwd: ROOT, encoding: 'utf8', timeout: 120_000 },
+      // The full suite runs ~2 min on an unloaded machine; leave headroom so
+      // host load can't kill the child mid-run and report a phantom failure.
+      { cwd: ROOT, encoding: 'utf8', timeout: 300_000 },
     );
     if (result.status !== 0) {
       const out = (result.stdout || '') + (result.stderr || '');
