@@ -70,7 +70,7 @@ You'll see progress messages as it builds the brain, face, and voice. At the
 end it sends a smoke-test message and prints the reply, plus the new IDs (`configId`, `agentId`,
 `avatarId`, `widgetId`) you need to embed or extend the agent.
 
-> Building an agent by hand instead of via the one-line brief? See [API-REFERENCE.md](API-REFERENCE.md#phase-2--build).
+> Building an agent by hand instead of via the one-line brief? See [API-REFERENCE.md](docs/api/build.md).
 
 ---
 
@@ -92,7 +92,7 @@ console.log(reply.text);
 ```
 
 `converseOnce()` mints its own conversation token from the `configId` — the admin secret never
-leaves your process. See [API-REFERENCE.md](API-REFERENCE.md#phase-4--operate) for threaded
+leaves your process. See [API-REFERENCE.md](docs/api/operate.md) for threaded
 conversations, streaming, and the full Management API surface.
 
 **Talking on behalf of a real, known user?** Mint the conversation token yourself with `userId`
@@ -108,7 +108,7 @@ const reply = await kaltura.converseOnce('<configId from Step 3>', 'Hello again!
 ```
 
 `userId` is optional everywhere it's accepted — omit it and you get the same anonymous behavior
-shown above. See [API-REFERENCE.md](API-REFERENCE.md#authentication) → "Bind a session to a real
+shown above. See [API-REFERENCE.md](docs/api/authentication.md#authentication) → "Bind a session to a real
 end-user identity" for the full picture.
 
 ---
@@ -122,8 +122,8 @@ You now know how to create an agent and talk to it. Here's where to go for more:
 | See every kind of app you can build (personalized greeters, memory agents, quizzes, video avatars, voice cloning…) | [docs/USE-CASES.md](docs/USE-CASES.md) |
 | Look up the exact API call for something | [API-REFERENCE.md](API-REFERENCE.md#contents) |
 | Put a talking video avatar on a web page | [docs/USE-CASES.md](docs/USE-CASES.md) → UC-12 |
-| Use your **own voice** for the avatar | [API-REFERENCE.md](API-REFERENCE.md#upload-a-custom-voice-clone) |
-| Use your **own face/portrait** for the avatar | [API-REFERENCE.md](API-REFERENCE.md#upload-a-custom-visual-portrait--animated-avatar) |
+| Use your **own voice** for the avatar | [API-REFERENCE.md](docs/api/design.md#upload-a-custom-voice-clone) |
+| Use your **own face/portrait** for the avatar | [API-REFERENCE.md](docs/api/design.md#upload-a-custom-visual-portrait--animated-avatar) |
 | Build a real app with the JavaScript SDK | [README.md](README.md#quick-start) |
 | Make the avatar drive your UI (slides, widgets, navigation) | [docs/CLIENT-COMMANDS.md](docs/CLIENT-COMMANDS.md) |
 | Pause the avatar for a video/interactive element, then resume | [docs/PAUSE-RESUME-RECIPE.md](docs/PAUSE-RESUME-RECIPE.md) |
@@ -138,13 +138,13 @@ You now know how to create an agent and talk to it. Here's where to go for more:
 
 **Do I need to keep the terminal open?** No — `create-agent.mjs` runs once and exits.
 
-**Will this cost money / use my quota?** Conversations and avatar sessions use your Kaltura plan's quota. Creating agents/avatars is cheap, but clean up test ones you don't need — see `agents.delete()` / `avatars.delete()` in [API-REFERENCE.md](API-REFERENCE.md#management-operations).
+**Will this cost money / use my quota?** Conversations and avatar sessions use your Kaltura plan's quota. Creating agents/avatars is cheap, but clean up test ones you don't need — see `agents.delete()` / `avatars.delete()` in [API-REFERENCE.md](docs/api/management-operations.md).
 
-**How do I see everything I created?** Use the Management API's list calls — `kaltura.agents.list()` and `kaltura.avatars.list()`. See [API-REFERENCE.md](API-REFERENCE.md#management-operations).
+**How do I see everything I created?** Use the Management API's list calls — `kaltura.agents.list()` and `kaltura.avatars.list()`. See [API-REFERENCE.md](docs/api/management-operations.md).
 
-**How do I label the agents I create so I can find mine later?** Tag the **agent** (not the avatar) via `adminTags` on `agents.create()`, then filter `agents.list()` client-side. Details in [API-REFERENCE.md](API-REFERENCE.md#create-an-agent).
+**How do I label the agents I create so I can find mine later?** Tag the **agent** (not the avatar) via `adminTags` on `agents.create()`, then filter `agents.list()` client-side. Details in [API-REFERENCE.md](docs/api/build.md#create-an-agent).
 
-**Can I use my own face or voice?** Yes, both — see [API-REFERENCE.md](API-REFERENCE.md#upload-a-custom-visual-portrait--animated-avatar) and [→ Custom Voice](API-REFERENCE.md#upload-a-custom-voice-clone).
+**Can I use my own face or voice?** Yes, both — see [API-REFERENCE.md](docs/api/design.md#upload-a-custom-visual-portrait--animated-avatar) and [→ Custom Voice](docs/api/design.md#upload-a-custom-voice-clone).
 
 ---
 
