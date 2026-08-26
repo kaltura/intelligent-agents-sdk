@@ -538,6 +538,20 @@ blockquote {
   background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.7) 60%);
   border-radius: 0 0 var(--ds-roundness-3) var(--ds-roundness-3);
   color: #fff;
+  /* The panel paints above the video-wrap (whose filter animation caps the
+     z-index of everything inside it, .nova-chat-start included) — so only
+     its interactive children may take clicks, never the overlay itself or
+     its text-only surfaces. */
+  pointer-events: none;
+}
+
+.nova-panel > * {
+  pointer-events: auto;
+}
+
+.nova-panel .nova-status,
+.nova-panel .nova-drawer-head {
+  pointer-events: none;
 }
 
 .nova-controls {
@@ -577,7 +591,21 @@ blockquote {
    instead of just dimming. */
 #nova-mute:disabled,
 #nova-mode:disabled,
-#nova-end:disabled {
+#nova-new:disabled,
+#nova-end:disabled,
+#nova-close:disabled {
+  display: none;
+}
+
+/* One set of controls per mode, no overlap: video/audio shows mute + a
+   hang-up that drops the call to text chat (the conversation continues);
+   chat shows the video toggle, "new conversation", and a × that actually
+   closes. The hang-up icon never appears in chat — there's no call to end. */
+.nova-widget:not(.chat-mode) #nova-mode,
+.nova-widget:not(.chat-mode) #nova-new,
+.nova-widget:not(.chat-mode) #nova-close,
+.nova-widget.chat-mode #nova-mute,
+.nova-widget.chat-mode #nova-end {
   display: none;
 }
 
@@ -586,7 +614,12 @@ blockquote {
    element inside a role="button" breaks its accessible name. */
 .nova-chat-start {
   position: absolute;
-  bottom: 0.6rem;
+  /* Above the panel's always-rendered input row — the video-wrap's filter
+     animation caps this pill's z-index inside its own stacking context, so
+     the panel paints over it wherever they overlap. The panel's
+     non-interactive surfaces are also pointer-events:none (see .nova-panel)
+     so they never swallow this pill's clicks. */
+  bottom: 4.2rem;
   left: 50%;
   transform: translateX(-50%);
   z-index: 2;
@@ -782,6 +815,192 @@ blockquote {
    the talk-pulse (voice activity) animation has nothing true to say. */
 .nova-widget.chat-mode .nova-video-wrap.is-talking {
   animation: none;
+}
+
+/* Chat drawer — a chat session renders the widget as a full-height side
+   drawer (dock.js's enterDrawerMode clears the inline rect and stops all
+   rect tracking, so these class rules own the geometry). Same fixed,
+   never-reparented #nova-widget, so switching drawer<->video mid-session
+   never disturbs the live session. Sized for reading: real page-text
+   colors on the themed card background, 1rem transcript type — not the
+   tiny white-on-scrim tray the video overlay uses. */
+.nova-widget.drawer-mode {
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: auto;
+  width: min(400px, 100vw);
+  height: 100vh;
+  height: 100dvh;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  background: var(--card-bg);
+  border-left: 1px solid var(--border-color);
+  box-shadow: -12px 0 32px rgba(0, 0, 0, 0.18);
+  cursor: default;
+}
+
+/* The video-wrap collapses to the header avatar circle (poster portrait). */
+.nova-widget.drawer-mode .nova-video-wrap {
+  position: absolute;
+  top: 12px;
+  left: 14px;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  animation: none;
+  box-shadow: none;
+  z-index: 2;
+}
+
+.nova-widget.drawer-mode .nova-video-wrap video {
+  mask-image: none;
+  -webkit-mask-image: none;
+}
+
+.nova-widget.drawer-mode .nova-placeholder,
+.nova-widget.drawer-mode .nova-chat-start,
+.nova-widget.drawer-mode .nova-disclosure {
+  display: none;
+}
+
+/* The "AI" chip stays pinned to the header avatar — with the banner-style
+   disclosure hidden above, this chip plus the header's "AI assistant"
+   sub-line carry the always-visible AI disclosure in the drawer. */
+.nova-widget.drawer-mode .nova-disclosure-chip:not(.hidden) {
+  display: flex;
+}
+
+.nova-drawer-head {
+  display: none;
+}
+
+.nova-widget.drawer-mode .nova-drawer-head {
+  display: block;
+  position: absolute;
+  top: 12px;
+  left: 68px;
+  right: 140px;
+  z-index: 2;
+}
+
+.nova-drawer-title {
+  display: block;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--page-text);
+}
+
+.nova-drawer-sub {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--secondary-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nova-widget.drawer-mode .nova-panel {
+  position: static;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  width: auto;
+  padding: 68px 16px 12px;
+  background: none;
+  border-radius: 0;
+  color: var(--page-text);
+}
+
+.nova-widget.drawer-mode .nova-controls {
+  position: absolute;
+  top: 12px;
+  right: 10px;
+  gap: 0.35rem;
+  flex-wrap: nowrap;
+  z-index: 2;
+}
+
+.nova-widget.drawer-mode .nova-btn {
+  width: 38px;
+  height: 38px;
+}
+
+.nova-widget.drawer-mode .nova-status {
+  margin-top: 0;
+  font-size: 0.8rem;
+  color: var(--secondary-text);
+}
+
+.nova-widget.drawer-mode .nova-transcript {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  font-size: 1rem;
+  line-height: 1.55;
+  border-top-color: var(--border-color);
+}
+
+/* The drawer reserves the transcript area even before the first message —
+   collapsing it (the video-overlay behavior) would jam the input against
+   the header. */
+.nova-widget.drawer-mode .nova-transcript:empty {
+  display: block;
+  border-top: none;
+}
+
+.nova-widget.drawer-mode .nova-transcript p {
+  margin: 0.65rem 0;
+}
+
+.nova-widget.drawer-mode .nova-transcript .nova-you {
+  color: var(--secondary-text);
+}
+
+.nova-widget.drawer-mode .nova-transcript .nova-nova {
+  color: var(--page-text);
+}
+
+.nova-widget.drawer-mode #nova-input {
+  border-color: var(--border-color);
+  background: var(--page-bg);
+  color: var(--page-text);
+  font-size: 1rem;
+  padding: 0.6rem 1rem;
+}
+
+.nova-widget.drawer-mode #nova-input::placeholder {
+  color: var(--secondary-text);
+}
+
+.nova-widget.drawer-mode .nova-btn.nova-send {
+  width: 42px;
+  height: 42px;
+}
+
+.nova-drawer-note {
+  display: none;
+}
+
+.nova-widget.drawer-mode .nova-drawer-note {
+  display: block;
+  margin: 0.45rem 0 0;
+  font-size: 0.7rem;
+  text-align: center;
+  color: var(--secondary-text);
+}
+
+/* Small screens (phones, narrow windows): the drawer takes the full
+   viewport — a 400px strip beside content doesn't fit, and a full sheet
+   with 1rem type and 38px+ tap targets stays usable on older low-res
+   laptops and for less dexterous visitors alike. */
+@media (max-width: 640px) {
+  .nova-widget.drawer-mode {
+    width: 100vw;
+    border-left: none;
+  }
 }
 
 .nova-highlight-ring {

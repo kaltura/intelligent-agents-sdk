@@ -18,7 +18,7 @@
  */
 import './router.js';
 import { withPrefix } from './router.js';
-import { initDock, enterDockMode } from './dock.js';
+import { initDock, enterDockMode, enterDrawerMode, exitDrawerMode } from './dock.js';
 import { initNavigator } from './navigator.js';
 import { initHighlighter } from './highlighter.js';
 
@@ -37,6 +37,41 @@ const WIDGET_ID = '1_g7ntgoq2';
 // the brain otherwise stays silent until a visitor speaks first.
 const KICKOFF_TRIGGER = 'hi, start session!';
 
+/**
+ * Conversation continuity, kept deliberately privacy-light:
+ * - `nova:uid` — a random UUID with no PII, minted only when the visitor
+ *   actually starts a conversation (never on a passive page view). It's this
+ *   browser's stable, first-party-only identity for the conversation
+ *   backend's audit trail (the SDK's opaque `subjectId`).
+ * - `nova:threadId` — the server-side conversation thread, saved as Nova
+ *   replies and silently re-seeded on the next connect, so a returning
+ *   visitor picks up where they left off on this browser.
+ * Both are strictly functional (resuming the conversation the visitor
+ * started), never used for tracking, and clearable in one click via the
+ * "New conversation" button in the chat drawer.
+ */
+const STORE_UID = 'nova:uid';
+const STORE_THREAD = 'nova:threadId';
+
+function storeGet(key) {
+  try { return localStorage.getItem(key); } catch { return null; }
+}
+function storeSet(key, value) {
+  try { localStorage.setItem(key, value); } catch { /* storage disabled — session still works, just won't resume */ }
+}
+function storeDel(key) {
+  try { localStorage.removeItem(key); } catch { /* ditto */ }
+}
+
+function visitorId() {
+  let id = storeGet(STORE_UID);
+  if (!id) {
+    id = crypto.randomUUID();
+    storeSet(STORE_UID, id);
+  }
+  return id;
+}
+
 const els = {
   widget: document.getElementById('nova-widget'),
   video: document.getElementById('nova-video'),
@@ -50,7 +85,9 @@ const els = {
   muteIcon: document.getElementById('nova-mute-icon'),
   mode: document.getElementById('nova-mode'),
   modeIcon: document.getElementById('nova-mode-icon'),
+  newConvo: document.getElementById('nova-new'),
   end: document.getElementById('nova-end'),
+  close: document.getElementById('nova-close'),
   inputRow: document.getElementById('nova-input-row'),
   input: document.getElementById('nova-input'),
   send: document.getElementById('nova-send'),
@@ -97,10 +134,18 @@ function setStatus(text) {
 }
 
 function appendTranscript(who, text) {
-  const p = document.createElement('p');
-  p.className = who === 'you' ? 'nova-you' : 'nova-nova';
-  p.textContent = `${who === 'you' ? 'You' : 'Nova'}: ${text}`;
-  els.transcript.appendChild(p);
+  const cls = who === 'you' ? 'nova-you' : 'nova-nova';
+  const last = els.transcript.lastElementChild;
+  // Nova's replies stream in segments — glue consecutive same-speaker
+  // segments into one paragraph instead of a "Nova:"-prefixed line each.
+  if (last && last.className === cls) {
+    last.textContent += `${/\s$/.test(last.textContent) || /^\s/.test(text) ? '' : ' '}${text}`;
+  } else {
+    const p = document.createElement('p');
+    p.className = cls;
+    p.textContent = `${who === 'you' ? 'You' : 'Nova'}: ${text}`;
+    els.transcript.appendChild(p);
+  }
   els.transcript.scrollTop = els.transcript.scrollHeight;
 }
 
@@ -130,10 +175,12 @@ function ensureSocketIo() {
 function wireTransport(transport, mode) {
   els.widget.classList.toggle('chat-mode', mode === 'chat');
   els.mute.disabled = mode !== 'avatar';
-  els.modeIcon.textContent = mode === 'avatar' ? 'chat' : 'videocam';
-  const label = mode === 'avatar' ? 'Switch to text chat' : 'Switch to live video';
-  els.mode.setAttribute('aria-label', label);
-  els.mode.title = label;
+  // Chat renders as the full-height side drawer; video renders in the hero
+  // card / corner dock. Which buttons show in each mode is pure CSS keyed on
+  // .chat-mode — video: mute + hang-up (drops to chat); chat: video toggle,
+  // new conversation, close.
+  if (mode === 'chat') enterDrawerMode();
+  else exitDrawerMode();
 
   if (mode === 'avatar') {
     transport.on('avatarStartTalking', () => els.videoWrap?.classList.add('is-talking'));
@@ -164,7 +211,13 @@ async function connect(pendingPrompt, mode = 'avatar') {
   if (connecting || session) return;
   connecting = true;
   els.videoWrap?.classList.add('is-connecting');
+  // Chat opens as the drawer immediately — the visitor sees where the
+  // conversation will live while it connects, not a spinner in the corner.
+  if (mode === 'chat') enterDrawerMode();
   setStatus(mode === 'chat' ? 'Starting chat…' : 'Connecting…');
+  // A previous visit's thread resumes silently; if the server rejects it
+  // (expired/purged), the catch below clears it and retries fresh once.
+  const savedThread = storeGet(STORE_THREAD) || undefined;
   try {
     if (mode === 'avatar') await ensureSocketIo();
     const kaltura = new Management({ partnerId: PARTNER_ID });
@@ -174,6 +227,8 @@ async function connect(pendingPrompt, mode = 'avatar') {
     session = new KalturaAgentSession({
       token: init.ks,
       mode,
+      threadId: savedThread,
+      subjectId: visitorId(),
       // Avatar cfg is needed even for a chat-first session: switchMode()
       // builds the avatar transport from it later. Chat cfg is omitted —
       // the SDK's production genieUrl default is exactly where Nova lives.
@@ -193,6 +248,10 @@ async function connect(pendingPrompt, mode = 'avatar') {
     session.on('transcript', (tr) => {
       if (tr.type === 'user' && tr.text && tr.text !== KICKOFF_TRIGGER) appendTranscript('you', tr.text);
       else if (tr.type === 'final' && tr.text) appendTranscript('nova', tr.text);
+      // The server assigns/echoes the thread id as the conversation flows —
+      // persist it on every message so the next visit resumes this thread.
+      const tid = session?.threadId;
+      if (tid) storeSet(STORE_THREAD, String(tid));
     });
     session.on('error', (e) => setStatus(`Connection issue: ${e.detail || e.code}`));
     session.on('ended', () => resetUi());
@@ -211,6 +270,8 @@ async function connect(pendingPrompt, mode = 'avatar') {
     els.promptsRow?.classList.add('hidden');
     els.mode.disabled = false;
     els.end.disabled = false;
+    els.newConvo.disabled = false;
+    els.close.disabled = false;
     setStatus('Connected — ask Nova anything about the SDK.');
 
     if (mode === 'avatar') {
@@ -225,6 +286,15 @@ async function connect(pendingPrompt, mode = 'avatar') {
   } catch (e) {
     connecting = false;
     els.videoWrap?.classList.remove('is-connecting');
+    // A resumed thread that the server no longer accepts shouldn't strand
+    // the visitor — forget it and retry once from a clean slate (the retry
+    // runs with no saved thread, so it can't loop).
+    if (savedThread) {
+      storeDel(STORE_THREAD);
+      try { session?.disconnect(); } catch { /* already dead */ }
+      session = null;
+      return connect(pendingPrompt, mode);
+    }
     setStatus(`Could not connect: ${e.detail || e.message || 'unknown error'}`);
   }
 }
@@ -274,15 +344,29 @@ function toggleMute() {
   }
 }
 
+/** The × on the chat drawer: close the conversation UI entirely. The saved
+ * thread stays in localStorage, so reopening later resumes where they left
+ * off; "New conversation" is the affordance that actually forgets it. */
 function endSession() {
   session?.disconnect();
   resetUi();
+}
+
+/** Forget the saved thread and start over in a fresh chat — the one-click
+ * "clear what this browser remembers about me" affordance. */
+function newConversation() {
+  storeDel(STORE_THREAD);
+  session?.disconnect();
+  resetUi();
+  els.transcript.innerHTML = '';
+  connect(undefined, 'chat');
 }
 
 function resetUi() {
   session = null;
   connecting = false;
   els.widget.classList.remove('chat-mode');
+  exitDrawerMode();
   els.videoWrap?.classList.remove('is-connecting', 'is-talking');
   els.placeholder.classList.remove('hidden');
   els.chatStart?.classList.remove('hidden');
@@ -293,8 +377,9 @@ function resetUi() {
   els.muteIcon.textContent = 'mic';
   els.mute.setAttribute('aria-label', 'Mute');
   els.mode.disabled = true;
-  els.modeIcon.textContent = 'chat';
+  els.newConvo.disabled = true;
   els.end.disabled = true;
+  els.close.disabled = true;
   if (els.video) {
     els.video.srcObject = null;
     els.video.load();
@@ -315,8 +400,14 @@ els.chatStart?.addEventListener('click', () => {
   if (!session) connect(undefined, 'chat');
 });
 els.mute.addEventListener('click', toggleMute);
+// Chat mode's camera button and video mode's hang-up are the same action
+// seen from either side: switchMode() on the same thread. Hanging up video
+// doesn't end the conversation — it continues in the chat drawer; only the
+// drawer's × (endSession) actually closes it.
 els.mode.addEventListener('click', toggleMode);
-els.end.addEventListener('click', endSession);
+els.end.addEventListener('click', toggleMode);
+els.newConvo.addEventListener('click', newConversation);
+els.close.addEventListener('click', endSession);
 
 // Typing works in every state: mid-session it sends on the current transport
 // (the avatar speaks her answer, chat streams it as text); with no session

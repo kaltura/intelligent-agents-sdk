@@ -90,15 +90,29 @@
       <button class="nova-chat-start" id="nova-chat-start" type="button">Prefer text? Chat without video</button>
     </div>
     <div class="nova-panel" id="nova-panel">
+      <!-- Drawer-only header (chat mode renders the widget as a side drawer,
+           see styles.css .drawer-mode). The video-wrap shrinks to the avatar
+           circle beside this title; the sub-line doubles as the EU AI Act
+           disclosure alongside the "AI" chip on the avatar itself. -->
+      <div class="nova-drawer-head" id="nova-drawer-head">
+        <span class="nova-drawer-title">Nova</span>
+        <span class="nova-drawer-sub">AI assistant — knows this whole site</span>
+      </div>
       <div class="nova-controls">
         <button class="nova-btn" id="nova-mute" disabled aria-label="Mute">
           <span class="material-symbols-outlined" aria-hidden="true" id="nova-mute-icon">mic</span>
         </button>
-        <button class="nova-btn" id="nova-mode" disabled aria-label="Switch to text chat" title="Switch to text chat">
-          <span class="material-symbols-outlined" aria-hidden="true" id="nova-mode-icon">chat</span>
+        <button class="nova-btn" id="nova-mode" disabled aria-label="Switch to live video" title="Switch to live video">
+          <span class="material-symbols-outlined" aria-hidden="true" id="nova-mode-icon">videocam</span>
         </button>
-        <button class="nova-btn" id="nova-end" disabled aria-label="End conversation">
+        <button class="nova-btn" id="nova-new" disabled aria-label="Start a new conversation" title="Start a new conversation">
+          <span class="material-symbols-outlined" aria-hidden="true">restart_alt</span>
+        </button>
+        <button class="nova-btn" id="nova-end" disabled aria-label="End video — continue in chat" title="End video — continue in chat">
           <span class="material-symbols-outlined" aria-hidden="true">call_end</span>
+        </button>
+        <button class="nova-btn" id="nova-close" disabled aria-label="Close chat" title="Close chat">
+          <span class="material-symbols-outlined" aria-hidden="true">close</span>
         </button>
       </div>
       <div class="nova-status" id="nova-status" role="status" aria-live="polite"></div>
@@ -109,6 +123,7 @@
           <span class="material-symbols-outlined" aria-hidden="true">send</span>
         </button>
       </form>
+      <p class="nova-drawer-note">Chats resume on this browser. “New conversation” starts fresh.</p>
     </div>
   </div>
   <script type="module" src="/assets/nova/connect.js"></script>
