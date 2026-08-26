@@ -46,7 +46,7 @@ in real time, and your expertise feeds the answers.
 | Flow | Name | What it covers | Who runs it |
 |---|---|---|---|
 | 1 | **Conversation Control** | Turn-taking and interruptions, real-time sync of speech recognition, voice, avatar video, and language models, expression and emotion control, session recording, device and cross-platform coverage, screen share. [Read more →](/explanation/architecture/) | Kaltura, always |
-| 2 | **Agent Orchestration** | The server-side reasoning loop that runs while the person talks: grounding answers in knowledge (RAG), calling tools, routing to expert agents. [Read more →](/reference/api-reference/#ground-the-agent-in-your-content-rag) | Kaltura, always |
+| 2 | **Agent Orchestration** | The server-side reasoning loop that runs while the person talks: grounding answers in knowledge (RAG), calling tools, routing to expert agents. [Read more →](/reference/api/build/#ground-the-agent-in-your-content-rag) | Kaltura, always |
 | 3 | **Your Expertise** | Your knowledge bases, your APIs and data, your own models and expert agents, your IP. [Read more →](/guides/external-api-integrations/) | You, plugged into flow 2 |
 
 </div>
@@ -57,7 +57,7 @@ Your existing AI stack isn't a replacement for flows 1 and 2. It's flow 3.
 The SDK ships the plug points today:
 
 - **Knowledge base grounding** — index your content and the agent cites it
-  live (`use_knowledge_base`). See [Ground the Agent](/reference/api-reference/#ground-the-agent-in-your-content-rag).
+  live (`use_knowledge_base`). See [Ground the Agent](/reference/api/build/#ground-the-agent-in-your-content-rag).
 - **External API and tool integrations** — the agent calls your endpoints
   mid-conversation, with server-held secrets. See
   [External API Integrations](/guides/external-api-integrations/).
@@ -96,7 +96,7 @@ A self-built pipeline has to recreate that measurement loop too.
 
 Pre-authored narration, puppet-style playback, and demo reels are real use
 cases — you author every word, and the avatar performs it. That's what
-[scripted avatar sessions](/reference/api-reference/#scripted-video-stv-only-sessions)
+[scripted avatar sessions](/reference/api/scripted-video/)
 are for. For anything a visitor talks back to, you want all three flows.
 
 ## Next steps

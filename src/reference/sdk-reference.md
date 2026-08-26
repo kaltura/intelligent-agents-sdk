@@ -729,7 +729,7 @@ await view.connect();   // negotiates WHEP, resolves once the stream is playable
 view.disconnect();
 ```
 
-`create` authenticates with your own **admin KS** (`mgmt.sessions.createAdminToken()`); every call after it (`initClient`/`say`/`interrupt`/`keepAlive`/`end`) authenticates with the **session's own Bearer token** instead — `create()`'s return value is a receipt (`{sessionId, token, isExpired(), secondsRemaining()}`), pass it straight to the other methods rather than re-deriving a KS. `say-audio` (wrapped as `say()`) is the only speech-injection mechanism this backend exposes — there is no verbatim text-to-speech endpoint on it (`say-text` 503s on the live deployment; `set-emotion`/`queue-status`/`status` don't exist). See [API Reference § Scripted-video (STV-only) sessions](/reference/api-reference/#scripted-video-stv-only-sessions) for the full auth/lifecycle table, and `examples/scripted-video-session.mjs` + `.html` in the SDK repo for a complete runnable server+browser pair (including a stand-in for your real TTS call).
+`create` authenticates with your own **admin KS** (`mgmt.sessions.createAdminToken()`); every call after it (`initClient`/`say`/`interrupt`/`keepAlive`/`end`) authenticates with the **session's own Bearer token** instead — `create()`'s return value is a receipt (`{sessionId, token, isExpired(), secondsRemaining()}`), pass it straight to the other methods rather than re-deriving a KS. `say-audio` (wrapped as `say()`) is the only speech-injection mechanism this backend exposes — there is no verbatim text-to-speech endpoint on it (`say-text` 503s on the live deployment; `set-emotion`/`queue-status`/`status` don't exist). See [API Reference § Scripted-video (STV-only) sessions](/reference/api/scripted-video/) for the full auth/lifecycle table, and `examples/scripted-video-session.mjs` + `.html` in the SDK repo for a complete runnable server+browser pair (including a stand-in for your real TTS call).
 
 ---
 
@@ -749,7 +749,7 @@ const status = await mgmt.knowledge.isIndexed(rec.id, ks);
 Content modalities indexed: captions, OCR, document attachments. Don't use
 `knowledge.search()`'s "couldn't find relevant information" reply, or
 `knowledge.corpusStatus()`'s `populated` flag, as an indexing-status
-signal — see [API Reference § Ground the Agent](/reference/api-reference/#ground-the-agent-in-your-content-rag) for why.
+signal — see [API Reference § Ground the Agent](/reference/api/build/#ground-the-agent-in-your-content-rag) for why.
 
 Knowledge records have full lifecycle CRUD (all verified live):
 

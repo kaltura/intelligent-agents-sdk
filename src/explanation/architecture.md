@@ -121,7 +121,7 @@ There are two session modes, and they are NOT interchangeable. Scripted sessions
 
 </div>
 
-The protocol above describes the **interactive** path. The scripted path has no text-in of its own: the service's `say-text` route 503s on every call (a live server bug), so the SDK wraps only `say-audio` — you provide pre-rendered speech audio (e.g. from your own TTS call) and its duration. Full auth/lifecycle details: [API Reference § Scripted-video (STV-only) sessions](/reference/api-reference/#scripted-video-stv-only-sessions); runnable example: `examples/scripted-video-session.mjs` + `.html`.
+The protocol above describes the **interactive** path. The scripted path has no text-in of its own: the service's `say-text` route 503s on every call (a live server bug), so the SDK wraps only `say-audio` — you provide pre-rendered speech audio (e.g. from your own TTS call) and its duration. Full auth/lifecycle details: [API Reference § Scripted-video (STV-only) sessions](/reference/api/scripted-video/); runnable example: `examples/scripted-video-session.mjs` + `.html`.
 
 ---
 
