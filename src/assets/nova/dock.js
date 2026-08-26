@@ -13,6 +13,13 @@ const HIGHLIGHT_MS = 5000;
 const RING_FADE_MS = 300;
 
 let mode = 'none'; // 'hero' | 'dock'
+/** Chat sessions render the widget as a full-height side drawer, positioned
+ * purely by the .drawer-mode CSS class — while this flag is set, every
+ * rect-writing path in this module (scroll tracking, resize redock, nav
+ * docking, pointAt's FLIP) must stay hands-off so inline styles never
+ * override the drawer layout. Same no-reparenting rule as hero<->dock: the
+ * drawer is still the one fixed #nova-widget, so the live session survives. */
+let drawerActive = false;
 let rafPending = false;
 let dockRect = null;
 let revertTimer = null;
@@ -49,7 +56,7 @@ function computeDockRect() {
 }
 
 function redockOnResize() {
-  if (mode !== 'dock' || widget.classList.contains('pointing')) return;
+  if (drawerActive || mode !== 'dock' || widget.classList.contains('pointing')) return;
   dockRect = computeDockRect();
   applyRect(dockRect);
 }
@@ -156,6 +163,7 @@ function updateHeroScrollProgress() {
  * scroll) — used by scroll, resize, and page-change handlers alike so they
  * never fall out of sync with each other. */
 function refreshHero() {
+  if (drawerActive) return;
   if (!wideViewport()) {
     if (mode === 'hero') trackHero();
     return;
@@ -223,7 +231,7 @@ export function initDock() {
  * hero mode never returns (see dockedByScroll for the scroll-caused case,
  * which is reversible). */
 export function enterDockMode() {
-  if (mode === 'dock') return;
+  if (drawerActive || mode === 'dock') return;
   mode = 'dock';
   widget.classList.add('dock-mode');
   widget.style.transition = 'top 420ms cubic-bezier(0.22, 1, 0.36, 1), left 420ms cubic-bezier(0.22, 1, 0.36, 1), width 420ms cubic-bezier(0.22, 1, 0.36, 1), height 420ms cubic-bezier(0.22, 1, 0.36, 1)';
@@ -232,6 +240,48 @@ export function enterDockMode() {
   dockRect = computeDockRect();
   applyRect(dockRect);
   window.addEventListener('resize', redockOnResize);
+}
+
+/** Chat mode: hand the widget's geometry over to the .drawer-mode CSS class
+ * (full-height side drawer / mobile sheet). Clears the inline rect this
+ * module wrote so the stylesheet wins; every tracking path above is gated on
+ * drawerActive until exitDrawerMode(). */
+export function enterDrawerMode() {
+  if (drawerActive) return;
+  drawerActive = true;
+  clearPointing(true);
+  widget.classList.remove('dock-mode', 'expanded', 'pointing');
+  widget.classList.add('drawer-mode');
+  widget.style.transition = 'none';
+  widget.style.top = '';
+  widget.style.left = '';
+  widget.style.width = '';
+  widget.style.height = '';
+  const wrap = widget.querySelector('.nova-video-wrap');
+  if (wrap) wrap.style.borderRadius = '';
+}
+
+/** Back to video (or session over): resume normal geometry — hero if this
+ * page still has the slot (so switching to video on the unscrolled homepage
+ * puts the live video back in the hero card), the corner dock otherwise. */
+export function exitDrawerMode() {
+  if (!drawerActive) return;
+  drawerActive = false;
+  widget.classList.remove('drawer-mode');
+  widget.style.transition = 'none';
+  if (heroSlot()) {
+    mode = 'hero';
+    widget.classList.remove('dock-mode');
+    refreshHero();
+    syncScrollTracking();
+  } else {
+    mode = 'dock';
+    dockedByScroll = false;
+    widget.classList.add('dock-mode');
+    dockRect = computeDockRect();
+    applyRect(dockRect);
+    window.addEventListener('resize', redockOnResize);
+  }
 }
 
 /** Ends whatever pointAt() is currently doing — the natural HIGHLIGHT_MS expiry fades the
@@ -281,7 +331,7 @@ export function pointAt(targetEl) {
   document.body.appendChild(ring);
   activeRing = ring;
 
-  if (mode === 'dock') {
+  if (mode === 'dock' && !drawerActive) {
     const size = currentDockSize();
     const margin = 16;
     let left = targetRect.right + margin;
