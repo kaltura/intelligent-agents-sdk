@@ -909,7 +909,7 @@ export class Knowledge {
  * @param {any} e
  * @returns {any}
  */
-function remapConverseError(e) {
+export function remapConverseError(e) {
   if (!(e instanceof KalturaError) || e.status !== 403) return e;
   const hay = `${e.detail || ''} ${typeof e.body === 'string' ? e.body : JSON.stringify(e.body || {})}`;
   if (!/Client variables are not allowed/i.test(hay)) return e;   // leave a scope-403 as a scope-403

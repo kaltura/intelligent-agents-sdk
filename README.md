@@ -46,6 +46,8 @@ rather than bolted on. Full details in [SECURITY.md](SECURITY.md).
 - [Architecture](#architecture)
 - [Management](#management)
 - [Experience](#experience)
+  - [Text-only chat (`KalturaChatSession`)](#text-only-chat-kalturachatsession)
+  - [One conversation, switchable transports (`KalturaAgentSession`)](#one-conversation-switchable-transports-kalturaagentsession)
   - [`{{var}}` Jinja personalization (`request_vars`)](#var-jinja-personalization-request_vars)
   - [Tap-to-talk (push-to-talk voice)](#tap-to-talk-push-to-talk-voice)
   - [Resilience: brain stalls and tool-call spirals](#resilience-brain-stalls-and-tool-call-spirals)
@@ -258,6 +260,69 @@ session.onToolCall('navigate_to_slide', ({ slide_num }) => deck.goTo(slide_num))
 
 The SDK assigns the stream to `videoEl.srcObject` and applies no CSS of its own — size the box yourself with `object-fit: cover` (aspect-agnostic, no letterbox/pillarbox bars) — see [docs/ARCHITECTURE.md § Displaying the Avatar Video](docs/ARCHITECTURE.md#displaying-the-avatar-video).
 
+### Text-only chat (`KalturaChatSession`)
+
+The same brain, thread, and tool contract as the avatar, over plain HTTPS — no mic, no camera, no
+video element, no socket. The class never imports `getUserMedia`, WHEP, or a socket factory, so a
+chat-only page ships none of that and never triggers a browser permission prompt.
+
+```js
+import { KalturaChatSession } from '@kaltura/intelligent-agents/experience';
+
+const chat = new KalturaChatSession({ token });   // same conversation KS as the avatar
+await chat.connect();                             // no network — marks the session live
+
+chat.on('transcript', ({ text, type }) => render(type, text));
+chat.onToolCall('navigate_to_page', ({ page }) => router.go(page));
+
+const turn = await chat.sendText('What does the Presenter plugin do?');
+console.log(turn.text, chat.threadId);
+```
+
+Each `sendText()` is one streamed `POST /assistant/converse` turn; turns are serialized, and
+segments are processed mid-stream, so an `onToolCall` handler that calls
+`respondToTool(call.toolMetadata.id, result)` unblocks a `waitForResponse:true` tool within the
+same turn — the identical wire ACK the avatar transport sends (see
+[docs/WIRE-PROTOCOL.md](docs/WIRE-PROTOCOL.md)). `updateRequestVars()` / `setDynamicPrompt()` carry
+the same merge semantics as the avatar session; the full map rides every turn.
+
+Thread continuity is symmetric and live-verified in both directions: seed `cfg.threadId` with
+another session's `threadId` getter to continue that conversation here, or hand this session's
+`threadId` to a `KalturaAvatarSession`. The `allow_client_variables` gate-off failure mode is the
+same here as on the socket: a silent empty turn plus a once-per-session
+`empty_turn_with_request_vars` warning (see the `{{var}}` section below).
+
+### One conversation, switchable transports (`KalturaAgentSession`)
+
+A facade that runs a single conversation over either transport and switches mid-conversation
+without losing the thread:
+
+```js
+import { KalturaAgentSession } from '@kaltura/intelligent-agents/experience';
+
+const agent = new KalturaAgentSession({
+  token,
+  mode: 'chat',                                  // start text-only: zero permission prompts
+  avatar: { videoEl, conversationManagerUrl, srsBaseUrl, turnServerUrl, socketFactory },
+  chat: {},                                      // per-transport cfg
+});
+await agent.connect();
+agent.onToolCall('navigate_to_page', go);        // registered once, survives every switch
+
+await agent.sendText('Hi!');
+await agent.switchMode('avatar');                // call from a real click — mic prompt needs a user gesture
+agent.on('modeChanged', ({ mode, threadContinuity }) => showBanner(mode, threadContinuity));
+```
+
+The facade owns the state machine (`idle → connecting → connected ⇄ switching → closed | failed`),
+the canonical `request_vars` map, and the `onToolCall` registry — all three carry over on every
+`switchMode()`. Switching is tear-down-and-reconstruct: the old transport disconnects, the new one
+is constructed seeded with the live `threadId` and full context, and `sendText()` calls during the
+blip are buffered (up to 8). Mode-specific APIs (mic control, `interrupt()`, `videoEl`…) are not
+mirrored — use the `transport` getter and rewire on each `transportChanged` event. For the full
+state-transition table and switch UX rules, see
+[docs/VOICE-INPUT-MODES.md](docs/VOICE-INPUT-MODES.md#switching-between-avatar-and-chat-mid-conversation).
+
 ### `{{var}}` Jinja personalization (`request_vars`)
 
 Request variables are the SDK's one channel for app-supplied context: values the brain's prompt reads via `{{var}}` templating — a viewer's name, an account tier, or a whole JSON context blob. Seed them join-time via `cfg.requestVars`, update them mid-session via `updateRequestVars()`:
@@ -270,7 +335,7 @@ session.updateRequestVars({ account_tier: 'enterprise' });
 
 `updateRequestVars(vars)` **merges** what you pass into the session's canonical map — send only the keys that changed; omitted keys keep their values. Values persist on the thread for every later turn (no per-turn resend; the SDK also re-sends the full map on reconnect). `session.setDynamicPrompt(data)` is sugar over the same channel: it serializes `data` into the single well-known variable `page_context` — pair it with the `PAGE_CONTEXT_PROMPT` block exported from `./management` so the prompt actually references `{{page_context}}`.
 
-The intellect must have `allow_client_variables: true` (`intellects.setClientVariablesEnabled(configId, true)`), or every variable you send is rejected — as a typed `client_variables_disabled` error on the HTTP converse path, but **silently** on the live socket path: the turn just comes back empty. The session detects that and emits a once-per-session `warning` event, `{ code: 'empty_turn_with_request_vars', message, requestVarKeys }` (variable names only, never values).
+The intellect must have `allow_client_variables: true` (`intellects.setClientVariablesEnabled(configId, true)`), or every variable you send is rejected — **silently**, on every path (live-verified on both the socket and the HTTP converse stream): the turn just comes back empty, with no error on the wire. Both session classes detect that and emit a once-per-session `warning` event, `{ code: 'empty_turn_with_request_vars', message, requestVarKeys }` (variable names only, never values).
 
 For merge/persistence semantics in depth, the ~31 KB size headroom, server-side tool interpolation, the `lintPrompts` pre-flight, and a worked example composing `request_vars` with `speak()` and `submitStructuredDataForm()` — see [docs/DYNAMIC-DATA-INJECTION.md](docs/DYNAMIC-DATA-INJECTION.md).
 
@@ -425,6 +490,8 @@ session.on('connectionQuality', ({ channel, rttMs, packetLossPct, jitterMs, bitr
 ---
 
 ## Accessibility (WCAG 2.2 AA / captions) + AI-disclosure gate
+
+For EN 301 549 §6.2.1.2 (real-time text alongside voice), offer a text input next to either voice mode: an avatar session accepts typed turns via `speak(text)`, and [`KalturaChatSession`](#text-only-chat-kalturachatsession) / [`KalturaAgentSession`](#one-conversation-switchable-transports-kalturaagentsession) give viewers a full text-only path — same brain, same thread, no mic permission at all. See [docs/VOICE-INPUT-MODES.md](docs/VOICE-INPUT-MODES.md) for the input-mode decision table.
 
 Live captions satisfy WCAG 1.2.4 (Live Captions) — render them from `CaptionService`, which handles segmentation, timing, and barge-in invalidation for you:
 

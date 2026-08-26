@@ -1,15 +1,32 @@
-# Voice Input Modes — choosing and building open-mic vs. push-to-talk
+# Input Modes — open-mic, push-to-talk, and text-only chat
 
-Design guidance for app builders deciding **how a viewer's mic reaches the avatar**: continuous
-open-mic listening (VAD auto-cuts turns) or push-to-talk (the viewer explicitly opens and closes a
-capture window). This doc is about the **decision and the UI** — for the wire mechanics of
-`startTapToTalk()`/`endTapToTalk()` see [README.md](../README.md#tap-to-talk-push-to-talk-voice),
-and for the exact socket events see [WIRE-PROTOCOL.md](WIRE-PROTOCOL.md) (`tapToTalkStart`/`tapToTalkEnd`,
-`isTapToTalk`).
+Design guidance for app builders deciding **how a viewer's input reaches the agent**. Three modes:
+
+| Mode | Session class | Mic permission | How a turn starts |
+|---|---|---|---|
+| **Open-mic** (VAD) | `KalturaAvatarSession` | Prompted at connect | Viewer just speaks; server VAD cuts the turn |
+| **Push-to-talk** | `KalturaAvatarSession` (`isTapToTalk`) | Prompted at connect | Viewer opens/closes a capture window (`startTapToTalk()`/`endTapToTalk()`) |
+| **Chat (text-only)** | `KalturaChatSession` | **Never requested** — the class never touches `getUserMedia` or WebRTC | `sendText('…')` over plain HTTPS |
+
+The first two are **voice-capture** modes on the live avatar transport; most of this doc is about
+choosing between them and building their UI. Chat mode is a full text-only transport — same brain,
+same tools, same thread — covered in [README.md](../README.md#text-only-chat-kalturachatsession),
+with mid-conversation switching between avatar and chat via `KalturaAgentSession`
+([switching section below](#switching-between-avatar-and-chat-mid-conversation)). For the wire
+mechanics of `startTapToTalk()`/`endTapToTalk()` see
+[README.md](../README.md#tap-to-talk-push-to-talk-voice), and for the exact socket events see
+[WIRE-PROTOCOL.md](WIRE-PROTOCOL.md) (`tapToTalkStart`/`tapToTalkEnd`, `isTapToTalk`).
+
+Text input is not voice-mode-exclusive: an avatar session accepts typed turns too (`session.speak(text)`
+— see [CLIENT-COMMANDS.md](CLIENT-COMMANDS.md) and README). Offering a text box *alongside* either
+voice mode is how the SDK satisfies EN 301 549 §6.2.1.2 (concurrent voice and text) — see
+[README.md](../README.md#accessibility-wcag-22-aa--captions--ai-disclosure-gate).
 
 ## The one rule that overrides everything else here
 
-**Pick one mode per agent, at configuration time. Never offer both live in the same session.**
+**Pick one VOICE mode per agent, at configuration time. Never offer both voice modes live in the
+same session.** (Chat text-only input is exempt — typed turns don't touch the VAD/capture machinery
+this rule protects, so text can coexist with either voice mode, or replace voice entirely.)
 
 This is not a UI-polish preference — it is a correctness requirement. The conversation-manager service (`CM`, the server runtime)'s own VAD turn-cutting branches on the agent's *configured* `isTapToTalk` flag, not on whether a tap window is currently open. An open-mic agent (`isTapToTalk:false`) keeps auto-cutting turns from its VAD unconditionally, even while a tap-to-talk bracket is open — the two mechanisms race the same `conversationStatus`/`latestSpeech` state with no mutual exclusion server-side (see WIRE-PROTOCOL.md's `tapToTalkStart`/`tapToTalkEnd` row for the verified source citation). The SDK enforces this client-side (`startTapToTalk()` throws `capability_disabled` unless `session.capabilities.tapToTalk`), but that gate exists because the server will not stop you from getting this wrong.
 
@@ -23,11 +40,11 @@ Every push-to-talk/open-mic product draws the same line — one active capture m
 
 ## Deciding which mode fits your app
 
-| Use open-mic (VAD) when… | Use push-to-talk when… |
-|---|---|
-| Viewers ask longer, exploratory questions (investor Q&A, tutoring, free-form conversation) | Utterances are short, command-like bursts (a wake word, a walkie-talkie-style call) |
-| The environment is relatively quiet / single-speaker (a kiosk, a 1:1 demo) | The environment is noisy or multi-speaker, and VAD would false-trigger on background talk |
-| You want zero-friction "just speak naturally" — no button to find or learn | Viewers need an explicit, deliberate boundary on when the mic is live (privacy-sensitive settings, shared/public devices) |
+| Use open-mic (VAD) when… | Use push-to-talk when… | Use chat (text-only) when… |
+|---|---|---|
+| Viewers ask longer, exploratory questions (investor Q&A, tutoring, free-form conversation) | Utterances are short, command-like bursts (a wake word, a walkie-talkie-style call) | The viewer can't or won't speak (open office, quiet space, no mic) or won't grant mic permission |
+| The environment is relatively quiet / single-speaker (a kiosk, a 1:1 demo) | The environment is noisy or multi-speaker, and VAD would false-trigger on background talk | Bandwidth is constrained — no video, no WebRTC, just HTTPS request/response |
+| You want zero-friction "just speak naturally" — no button to find or learn | Viewers need an explicit, deliberate boundary on when the mic is live (privacy-sensitive settings, shared/public devices) | You need a zero-permission-prompt entry point; the viewer can switch up to the full avatar later without losing the thread |
 
 If your viewers will regularly speak in full sentences or ask multi-part questions, open-mic is the
 better default. Neither mode is inherently better — press-and-hold can strain a viewer's hand on a
@@ -101,6 +118,37 @@ CM's `InTappedMode` state stuck. Layer these on top of `startTapToTalk()`/`endTa
    "...or just speak naturally") — that copy is wrong for a tap-to-talk agent and should describe the
    button instead.
 
+## Switching between avatar and chat mid-conversation
+
+`KalturaAgentSession` runs one conversation over either transport and switches between them with
+`switchMode('avatar' | 'chat')` — the thread, the `request_vars` context, and every `onToolCall`
+handler carry over automatically. One state machine:
+
+| From | Call / event | To | Notes |
+|---|---|---|---|
+| `idle` | `connect()` | `connecting` → `connected` | Once-only; a second `connect()` throws `invalid_state` |
+| `connected` | `switchMode(other)` | `switching` → `connected` | Emits `transportChanged`, then `modeChanged {mode, threadContinuity}` |
+| `connected` | `switchMode(current)` | `connected` | Idempotent no-op — nothing tears down |
+| `switching` | switch fails | `failed` (`reason: 'transport_failed'`) | No rollback; buffered sends reject with the switch error |
+| `connected` | transport dies | `failed` + `ended` forwarded | Socket drop, server end |
+| any | `disconnect()` | `closed` | Idempotent; exactly one `ended {reason:'disconnected'}` |
+
+`modeChanged.threadContinuity` is the honest signal: `true` means the new transport was seeded with
+the live thread (show "conversation restored"); `false` means no turn had happened yet, so there was
+no thread to carry.
+
+Two UX rules for the switch:
+
+- **Switching INTO a voice mode prompts for the mic.** Browsers require a live user gesture for
+  `getUserMedia`, and a prior grant in chat mode doesn't exist to reuse. Route `switchMode('avatar')`
+  through a real click target (a "Continue with video" button), never a state-change callback — a
+  programmatic call outside a gesture gets auto-denied, landing the session in `failed`
+  (`reason: 'permission_denied'` on the initial connect path).
+- **Expect a brief reconnect blip.** Switching is tear-down-and-reconstruct by design — show a
+  transient "switching…" state on the facade's `stateChange {state:'switching'}` event rather than
+  hiding it. `sendText()` calls during the blip are buffered (up to 8) and delivered in order on the
+  new transport.
+
 ## Related docs
 
 | Doc | What it adds |
@@ -108,3 +156,4 @@ CM's `InTappedMode` state stuck. Layer these on top of `startTapToTalk()`/`endTa
 | [README.md](../README.md#tap-to-talk-push-to-talk-voice) | The SDK API: `startTapToTalk()`/`endTapToTalk()`, the `capability_disabled` gate, `tapToTalkActive`/`capabilities.tapToTalk` |
 | [WIRE-PROTOCOL.md](WIRE-PROTOCOL.md) | The exact `tapToTalkStart`/`tapToTalkEnd` socket events and the verified CM source finding behind the mixed-mode gate |
 | [CLIENT-COMMANDS.md](CLIENT-COMMANDS.md) | A different silent client→page channel (tool calls), not voice input — useful contrast for what this doc is *not* about |
+| [README.md](../README.md#text-only-chat-kalturachatsession) | `KalturaChatSession` (text-only transport) and `KalturaAgentSession` (mode switching) — full API |

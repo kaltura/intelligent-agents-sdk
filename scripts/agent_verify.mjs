@@ -384,6 +384,27 @@ section('Part 5 — DX and Clean Code');
   }
 }
 
+// D-4: Lifecycle discipline — typed invalid_state + idempotent teardown
+{
+  const sessionFiles = ['session.js', 'chat-session.js', 'agent-session.js', 'scripted-video-session.js']
+    .map((f) => join(SDK_SRC, 'experience', f));
+  const missingTyped = sessionFiles.filter((f) => !/code:\s*'invalid_state'/.test(read(f)));
+  const lifecycleTests = [
+    { file: join(ROOT, 'test', 'unit', 'chat-session.test.js'), needle: 'disconnect idempotent' },
+    { file: join(ROOT, 'test', 'unit', 'agent-session.test.js'), needle: 'same-target' },
+  ];
+  const missingTests = lifecycleTests.filter((t) => !read(t.file).includes(t.needle));
+  if (missingTyped.length === 0 && missingTests.length === 0) {
+    pass('D-4', 'Session classes throw typed invalid_state; idempotent-teardown lifecycle tests present (run below)');
+  } else {
+    const detail = [
+      ...missingTyped.map((f) => `${relative(ROOT, f)}: no code: 'invalid_state' construction`),
+      ...missingTests.map((t) => `${relative(ROOT, t.file)}: lifecycle test "${t.needle}" not found`),
+    ].join('\n      ');
+    fail('D-4', 'Lifecycle discipline not verifiable', detail);
+  }
+}
+
 // ══════════════════════════════════════════════════════════════════════════
 // SDK TEST SUITE (node:test)
 // ══════════════════════════════════════════════════════════════════════════

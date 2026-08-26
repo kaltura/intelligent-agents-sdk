@@ -65,6 +65,8 @@ session.onToolCall('navigate_to_slide', ({ slide_num }) => deck.goTo(slide_num))
 session.onToolCall('create_slide',       (slide)      => deck.append(slide));
 ```
 
+**Chat (text-only) transport:** `KalturaChatSession` (and the mode-switching `KalturaAgentSession`) carries the identical `onToolCall(name, handler, argsSchema?)` contract — same parsing, same semantic dedup, same guardrail order — dispatching mid-stream while a `sendText()` turn is being read. `respondToTool(call.toolMetadata.id, response)` ACKs a `waitForResponse:true` tool over HTTPS with the session's own conversation KS; the model receives the result and speaks it in the *same* turn. One tool definition works unmodified on both transports (the wire ACK is one shared contract — see [WIRE-PROTOCOL.md](WIRE-PROTOCOL.md)). On `KalturaAgentSession`, register handlers once on the facade — they re-attach automatically across mode switches.
+
 **Headless / SSE:** read `collectConverse(...).toolCalls` — a flat array of `{name,args,raw}` for every tool segment in the turn — or call `parseToolCall(seg)` yourself while iterating a stream.
 
 ```js

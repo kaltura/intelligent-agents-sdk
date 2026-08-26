@@ -262,6 +262,32 @@ Headless `collectConverse()` gets the corrected named-tool args for free but doe
 pairing recovery, so an earlier fused blob is only reachable via `fusedArgs` on that one `ToolCall`,
 not as its own `toolCalls` entry.
 
+#### The `wait_for_response` ACK — one wire contract, two transports
+
+A `tools.client` tool built `waitForResponse:true` blocks the model's turn until the host app
+supplies a result: the Genie backend polls up to `timeout` seconds (default 30) for an ACK. The ACK
+is **not a socket event** — on both transports it is the same plain HTTPS POST, authorized by the
+session's own conversation KS (live-verified: the model speaks the acked value in the *same* turn):
+
+```
+POST {genieUrl}/assistant/tool_response
+Content-Type: application/json
+Authorization: KS <conversation ks>
+
+{ "tool_name": "<toolName>", "tool_id": "<toolMetadata.id>",
+  "tool_invocation_id": "<toolMetadata.id>", "response": { …your JSON result… } }
+
+→ 200 {}
+```
+
+`tool_id` and `tool_invocation_id` are both the `toolMetadata.id` from the parsed `tool` segment.
+This is exactly what `KalturaAvatarSession#respondToTool` (`SDK:session.js`) and
+`KalturaChatSession#respondToTool` (`SDK:chat-session.js`) send — the `tool` segment may arrive over
+the socket (`agent_raw_text`, above) or over the HTTP `/assistant/converse` chat stream, but the ACK
+path is identical, so one `waitForResponse:true` tool definition works unmodified on both
+transports. See [CLIENT-COMMANDS.md](CLIENT-COMMANDS.md) for the app-level contract
+(`onToolCall` → `respondToTool`).
+
 > `init_response` is **NOT** an HTTP-converse segment — it's a **WebSocket** event type defined in the Genie backend's websocket layer. In the live runtime it arrives as the `delta` of the first `agent_raw_text` socket event (carrying `openingPhrase`/`threadId`/`messageId`); it never appears in an `/assistant/converse` HTTP stream.
 
 > **Avatar-runtime segment handling (verified against `CM`).** The `type` values above are the **raw Genie** types; the conversation-manager's brain-bridge adapter **rewrites** a `type === 'unisphere-tool'` segment to its `metadata.runtimeName` (minus the `-tool` suffix) before yielding downstream, so a runtime client sees the adapter-normalized type, not the raw `unisphere-tool` name. The adapter yields **all** segment types (it doesn't drop non-spoken ones) along with `start`/`end`/`final`/`delta`. Because the bridge pins `force_experience: 'avatar_only'`, the brain's spoken content arrives primarily as `avatar` (streamed) / `avatar-filler` segments while control/structured types (`think`/`tool`/`unisphere-tool`/`share`/`thread`/`error`) stream alongside for the transcript/UI. *(The exact segment→TTS gating lives further down `CM`'s speech pipeline and is not re-asserted here beyond what the adapter shows.)* **Note:** grouping `avatar-filler` under "spoken" here describes wire mechanics only — unlike `avatar`/`text`, its phrasing is server-generated per turn and NOT reliably steerable via `base_directive` (see the `avatar_filler` capability note in [GENUI-REFERENCE.md](GENUI-REFERENCE.md#authoring--which-capability-turns-each-widget-on)).

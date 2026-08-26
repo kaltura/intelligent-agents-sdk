@@ -205,6 +205,28 @@ These comments indicate incomplete implementations. Track them as a GitHub issue
 
 *Verify:* grep `src/` for `TODO\|FIXME\|HACK\|XXX\|STUB`. Zero matches required.
 
+**Rule D-4: Lifecycle discipline — typed `invalid_state`, idempotent teardown.**
+Every session class (`KalturaAvatarSession`, `KalturaChatSession`,
+`KalturaAgentSession`, `KalturaScriptedVideoSession`) must:
+
+- (a) throw a `KalturaError` with `code: 'invalid_state'` when a lifecycle
+  method is called from a state where it cannot act (`sendText()` before
+  `connect()`, a second `connect()`, any post-`disconnect()` call);
+- (b) make teardown-shaped methods (`disconnect()`) and same-target
+  transitions (`switchMode(<current mode>)`) idempotent no-ops — a repeat
+  call must not throw, change state, or emit a duplicate `ended`.
+
+This is deliberately NOT blanket idempotency: constructive lifecycle calls
+(`connect()`, `switchMode(<other mode>)`) stay once-only and throw typed
+`invalid_state` on misuse, so callers discover sequencing bugs immediately
+instead of silently double-connecting.
+
+*Verify:* `agent_verify.mjs` asserts every session class constructs
+`code: 'invalid_state'` errors, and that the lifecycle tests
+(`test/unit/chat-session.test.js` "connect is once-only; disconnect
+idempotent", `test/unit/agent-session.test.js` same-target no-op +
+idempotent disconnect) exist; the suite run proves them green.
+
 ---
 
 ## Compliance summary
@@ -236,5 +258,6 @@ valid proof of compliance per the note at the top of this document.
 | D-1 | DX | All public exports carry JSDoc | scan |
 | D-2 | DX | See Rule D-2 above — candidate dead exports (warning, not error) | `node scripts/agent_verify.mjs` |
 | D-3 | DX | No TODO/FIXME/HACK/XXX/STUB found | grep |
+| D-4 | DX | Typed `invalid_state` on lifecycle misuse; idempotent teardown/same-target no-ops | grep + lifecycle tests |
 
 Rule D-2 warns rather than errors by design — see Rule D-2 above for why.

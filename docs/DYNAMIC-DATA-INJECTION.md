@@ -96,14 +96,12 @@ including `page_context` — is rejected. Enable it once, server-side, with an a
 await mgmt.intellects.setClientVariablesEnabled(configId, true, adminKs);
 ```
 
-How the rejection surfaces depends on the path:
-
-- **HTTP converse** (the management SDK's `converse`/`converseOnce`, or the raw endpoint):
-  HTTP 403, which the SDK remaps to a typed `client_variables_disabled` error.
-- **Live socket session:** no error at all — the turn comes back as a **silent empty reply**.
-  The session detects this and emits a once-per-session `warning` event,
-  `{ code: 'empty_turn_with_request_vars', message, requestVarKeys }` (variable *names* only,
-  never values), pointing at the gate:
+The rejection is **silent on every path** (live-verified): the turn comes back as an empty
+reply — no HTTP error, no socket error. The server's 403 fires inside its streaming pipeline
+*after* the response has already opened, so it never reaches the wire. Both session classes
+(`KalturaAvatarSession` and `KalturaChatSession`) detect the pattern and emit a once-per-session
+`warning` event, `{ code: 'empty_turn_with_request_vars', message, requestVarKeys }` (variable
+*names* only, never values), pointing at the gate:
 
 ```js
 session.on('warning', (w) => {
