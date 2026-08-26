@@ -132,8 +132,15 @@ test('two KalturaAvatarSession instances never leak requestVars or pending tool-
   assert.deepEqual(two.session._requestVars, { user_name: 'Grace' });
 
   // updateRequestVars on one instance's socket never touches the other's.
-  one.session.updateRequestVars({ user_name: 'Ada', tier: 'enterprise' });
-  assert.deepEqual(one.socket.emitsOf('updateGenieContext').pop(), { request_vars: { user_name: 'Ada', tier: 'enterprise' } });
+  // The emit carries the FULL merged map plus the session's own capabilities
+  // (the server replaces stored context wholesale — omitting capabilities
+  // would wipe them).
+  one.session.updateRequestVars({ tier: 'enterprise' });
+  assert.deepEqual(one.socket.emitsOf('updateGenieContext').pop(), {
+    capabilities: { avatar: 'on', generate_followup_questions: 'on' },
+    request_vars: { user_name: 'Ada', tier: 'enterprise' },
+  });
+  assert.deepEqual(one.session._requestVars, { user_name: 'Ada', tier: 'enterprise' }, 'delta merged into the canonical map');
   assert.equal(two.socket.didEmit('updateGenieContext'), false, 'the second session never saw the first\'s updateRequestVars call');
   assert.deepEqual(two.session._requestVars, { user_name: 'Grace' }, 'the second session\'s own requestVars is untouched');
 

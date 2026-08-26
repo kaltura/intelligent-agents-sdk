@@ -135,7 +135,7 @@ export class KalturaAvatarSession extends Emitter {
    * @param {boolean} [cfg.recoverFromSpiral]  After a `tool_spiral_hard_limit` cold reconnect succeeds, auto-resend the abandoned turn (nudged to answer in words only) so the user's question isn't silently dropped — see `_checkHardToolSpiral`/`_coldReconnect`. Default true; set false to only get `toolSpiralRecovering`'s `lastTurnText` and handle the resend yourself.
    * @param {number} [cfg.maxReconnectAttempts]  Passed through as socket.io's own `reconnectionAttempts` (caps its native reconnection engine) AND surfaced as `attempt`/`maxAttempts` on `reconnecting`/`connectivityChanged`. Default 5.
    * @param {number} [cfg.reconnectWindowMs]  Bounds the 'reconnecting' state independent of socket.io's own attempt count — if no recovery lands within this window, the session ends cleanly rather than hanging. Default 22000.
-   * @param {Record<string, string|number|boolean|null>} [cfg.requestVars]  Join-time `{{var}}` Jinja values — sent on every `join`/reconnect `buildJoin()` call; validated with the same `assertRequestVars` as {@link updateRequestVars}.
+   * @param {Record<string, string|number|boolean|null>} [cfg.requestVars]  Join-time `{{var}}` Jinja values — seeds the session's canonical request_vars map, sent on every `join`/reconnect `buildJoin()` call and updated mid-session by {@link updateRequestVars}/{@link setDynamicPrompt}; validated with the same `assertRequestVars` as {@link updateRequestVars}.
    * @param {number} [cfg.localVadThreshold]  Client-side VAD amplitude threshold (0-32767ish) gating `localSpeakingChanged`. Default 300.
    * @param {()=>AudioContext} [cfg.getAudioContext]  Factory for the VAD `AudioContext` (default `() => new AudioContext()`).
    * @param {typeof MediaStream} [cfg.mediaStreamConstructor]
@@ -173,7 +173,16 @@ export class KalturaAvatarSession extends Emitter {
     this._genieUrl = (cfg.genieUrl || DEFAULT_GENIE_URL).replace(/\/$/, '');
     // Join-time request_vars — validated up front so a bad value
     // fails at construction, not silently at the first join/reconnect.
+    // This map is CANONICAL for the whole session: updateRequestVars()/
+    // setDynamicPrompt() merge into it, every join/reconnect resends it via
+    // buildJoin, and every mid-session updateGenieContext emit sends it whole
+    // (conversation-manager REPLACES its stored context on that event — an
+    // omitted field is an explicit clear, not "keep current").
     this._requestVars = assertRequestVars(cfg.requestVars, 'KalturaAvatarSession requestVars');
+    // The session's genie capabilities — single source of truth, sent on every
+    // join AND re-sent verbatim on every mid-session context update so an
+    // update can never wipe them (see _emitGenieContext).
+    this._capabilities = { avatar: 'on', generate_followup_questions: 'on' };
     // Transport-security enforcement (OWASP WSS/TLS; NIST SC-8). Production must use
     // https/wss; localhost/dev may opt out with allowInsecureTransport (loud warning).
     this._allowInsecure = !!cfg.allowInsecureTransport;
@@ -428,7 +437,7 @@ export class KalturaAvatarSession extends Emitter {
       this.emit('streamReady', { finalUrl: onConn?.finalUrl, agentName: onConn?.agentName, hostName: onConn?.hostName });
 
       // Step 2 — join.
-      socket.emit('join', buildJoin({ room: this._roomId, ks: this._token, threadId: this._threadId, userAgent: ua(), isMobile: false, requestVars: this._requestVars }));
+      socket.emit('join', buildJoin({ room: this._roomId, ks: this._token, threadId: this._threadId, userAgent: ua(), isMobile: false, requestVars: this._requestVars, capabilities: this._capabilities }));
 
       // Step 3 — clientConfiguration AND joinComplete (both required).
       const [cc] = await Promise.all([
@@ -1127,23 +1136,50 @@ export class KalturaAvatarSession extends Emitter {
   sendScreenShot(data) { this._requireVision('isScreenShareEnabled', 'sendScreenShot'); this._socket.emit('userScreenShareShot', { data }); }
 
   /**
-   * Inject a structured "dynamic prompt" the brain reads as live context for the
-   * next turns — e.g. the data behind the slide currently on screen (a presenter
-   * pattern). Routed to the server's `setDynamicPrompt` handler (WIRE-PROTOCOL
-   * §4a). This is CONTEXT, not speech: it does not make the avatar talk (use
-   * {@link speak} for that). The object is sent verbatim; keep it JSON-clean.
-   * APP-initiated (correctly UNGATED — the `_gateAgentAction` guardrail is for
-   * AGENT-pushed actions, not your own calls).
-   * @param {object} data Arbitrary JSON context (the app's "DPP" payload).
+   * Emit the session's FULL genie context — the canonical `request_vars` map
+   * plus this session's own capabilities — to conversation-manager's
+   * `updateGenieContext` handler (WIRE-PROTOCOL §4a). The full shape matters:
+   * the server REPLACES its stored context with exactly what arrives, treating
+   * an omitted field as an explicit clear. A bare `{request_vars}` emit would
+   * silently wipe the join-time capabilities (avatar / followup generation),
+   * so capabilities always ride along. Only the session's OWN remembered
+   * capabilities are re-sent — never caller-supplied ones — so this is not a
+   * second client-side path into the capability gate; it just preserves what
+   * the client already set at join. contextId/contextType are omitted on
+   * purpose: SDK sessions never set them, so omission matches the join state.
+   */
+  _emitGenieContext() {
+    this._socket.emit('updateGenieContext', {
+      capabilities: { ...this._capabilities },
+      request_vars: sanitizeJson(this._requestVars || {}),
+    });
+  }
+
+  /**
+   * Inject a structured context payload the brain reads as live grounding for
+   * the next turns — e.g. the data behind the slide currently on screen (a
+   * presenter pattern). Convenience sugar over {@link updateRequestVars}: the
+   * object is JSON-stringified and merged into the session's `request_vars`
+   * map as the `page_context` variable, so the intellect's prompt must
+   * reference `{{page_context}}` (see the management module's page-context
+   * prompt preset) and the intellect must allow client variables. This is
+   * CONTEXT, not speech: it does not make the avatar talk (use {@link speak}
+   * for that). Because it rides `request_vars`, the payload persists on the
+   * thread server-side and is resent automatically on reconnect — no re-push
+   * needed. APP-initiated (correctly UNGATED — the `_gateAgentAction`
+   * guardrail is for AGENT-pushed actions, not your own calls).
+   * @param {object} data Arbitrary JSON context for the current page/slide.
    */
   setDynamicPrompt(data) {
     this._requireConnected('setDynamicPrompt');
     this._touchActivity();
-    // Sent verbatim to the brain — scrub prototype-pollution keys so an app passing
-    // a server-derived object can't inject __proto__/constructor (OWASP deserialization).
-    // NOTE: this is object-injection defense, NOT prompt-injection defense — don't put
-    // unsanitized end-user free text (or secrets/authz) in the DPP (LLM01/LLM07; see SECURITY.md).
-    this._socket.emit('setDynamicPrompt', { data: sanitizeJson(data) });
+    // Scrub prototype-pollution keys before serializing, so an app passing a
+    // server-derived object can't inject __proto__/constructor (OWASP
+    // deserialization). NOTE: object-injection defense, NOT prompt-injection
+    // defense — don't put unsanitized end-user free text (or secrets/authz)
+    // in the payload (LLM01/LLM07; see SECURITY.md).
+    this._requestVars = { ...(this._requestVars || {}), page_context: JSON.stringify(sanitizeJson(data) ?? null) };
+    this._emitGenieContext();
   }
 
   /**
@@ -1174,24 +1210,29 @@ export class KalturaAvatarSession extends Emitter {
 
   /**
    * Update the `{{var}}` Jinja `request_vars` map for the rest of this live
-   * session (issue #31 gap 3) — the mid-session peer of the join-time
-   * `cfg.requestVars` constructor option, routed to conversation-manager's
-   * `updateGenieContext` handler (already fully wired server-side). Use for
-   * slow-changing personalization (viewer name, account tier) — for a full
-   * per-turn context blob the brain reads fresh every turn, use
-   * {@link setDynamicPrompt} instead — the two mechanisms are distinct.
+   * session — the mid-session peer of the join-time `cfg.requestVars`
+   * constructor option. MERGE semantics: the vars you pass are merged into the
+   * session's canonical map (send a delta; existing keys you omit are kept,
+   * keys you pass are overwritten), then the FULL map is emitted via
+   * {@link _emitGenieContext} — matching the server's own per-thread merge
+   * behavior, and keeping reconnects consistent (the same canonical map rides
+   * every `buildJoin`). To clear a var, overwrite it (e.g. with `''` or
+   * `null`); new threads always start blank.
    *
-   * conversation-manager RESETS `request_vars` to exactly what's sent here (no
-   * merge with the join-time or a previously-sent map) — always send the FULL
-   * current map, not a delta.
+   * Use for personalization (viewer name, account tier) and any `{{var}}` the
+   * intellect's prompts, api-tools, or MCP headers reference. For a large
+   * structured page/slide context blob, {@link setDynamicPrompt} is sugar over
+   * this method's `page_context` variable.
    *
    * Reuses {@link import('../management/conversations.js').assertRequestVars}
    * (rule 2.2) — rejects a `sys__*`/`secrets` key or a non-scalar value BEFORE
-   * the socket emit. Never accepts/forwards a `capabilities` key (rule 2.3) —
-   * the emitted payload is always exactly `{request_vars: vars}`, so this
-   * cannot become a second client-side path into the
-   * `kaltura_genie_experiences` gate (see docs/CLIENT-COMMANDS.md Gotcha 1 —
-   * it's a capability, not a request_var).
+   * the socket emit. Never accepts a caller-supplied `capabilities` key (rule
+   * 2.3): the emit re-sends only the session's own join-time capabilities (see
+   * {@link _emitGenieContext}), so this cannot become a second client-side
+   * path into the capability gate.
+   *
+   * Requires the intellect's `allow_client_variables` gate ON (the default).
+   * When it's OFF the turn fails as a SILENT EMPTY reply — no error surfaces.
    * @param {Record<string, string|number|boolean|null>} vars
    * @example
    * session.updateRequestVars({ user_name: 'Ada', account_tier: 'enterprise' });
@@ -1200,7 +1241,8 @@ export class KalturaAvatarSession extends Emitter {
     this._requireConnected('updateRequestVars');
     const checked = assertRequestVars(vars, 'updateRequestVars');
     this._touchActivity();
-    this._socket.emit('updateGenieContext', { request_vars: sanitizeJson(checked || {}) });
+    this._requestVars = { ...(this._requestVars || {}), ...(checked || {}) };
+    this._emitGenieContext();
   }
 
   /**
@@ -2148,7 +2190,7 @@ export class KalturaAvatarSession extends Emitter {
       }
       // Re-join the room (threadId carries brain memory forward), then re-run the session create.
       this._roomId = randId(12);
-      socket.emit('join', buildJoin({ room: this._roomId, ks: this._token, threadId: this._threadId, userAgent: ua(), isMobile: false, requestVars: this._requestVars }));
+      socket.emit('join', buildJoin({ room: this._roomId, ks: this._token, threadId: this._threadId, userAgent: ua(), isMobile: false, requestVars: this._requestVars, capabilities: this._capabilities }));
       await Promise.all([
         this._await(socket, 'clientConfiguration', TIMEOUTS.joinRoom, 'JoinRoomTimeout', overall),
         this._await(socket, 'joinComplete', TIMEOUTS.joinComplete, 'JoinRoomTimeout', overall),
