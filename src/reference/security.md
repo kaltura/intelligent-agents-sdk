@@ -319,7 +319,7 @@ cannot provide (retention, tamper-evidence, non-repudiation).
 | SC-4 | Info in shared resources | Per-instance isolation; non-enumerable secrets | Process/tenant separation |
 | SI-10 | Input validation | Inbound payload validation; prototype-pollution scrub | — |
 | IR-6, SI-2 | Incident/flaw response | Security contact; coordinated disclosure | US-CERT/agency reporting timelines |
-| GDPR Art. 17 | Right to erasure | `threads.delete()` and `knowledge.deleteRecord()` (management API) | `threads.delete()` soft-deletes immediately, with a scheduled infra-level purge erasing the data later (per [API Reference § Threads](/reference/api-reference/#threads)); `knowledge.deleteRecord()` doesn't unlink the record from intellects that reference it, so that case needs operator-side follow-up via the management API |
+| GDPR Art. 17 | Right to erasure | `threads.delete()` and `knowledge.deleteRecord()` (management API) | `threads.delete()` soft-deletes immediately, with a scheduled infra-level purge erasing the data later (per [API Reference § Threads](/reference/api/operate/#threads)); `knowledge.deleteRecord()` doesn't unlink the record from intellects that reference it, so that case needs operator-side follow-up via the management API |
 
 ## FIPS mode (how-to)
 
@@ -424,7 +424,7 @@ actions surface.
 
 | Threat | Control |
 |---|---|
-| **ASI 01 Goal Hijack** / **ASI 02 Tool Misuse** | `onAgentAction(action)` chokepoint — every agent-initiated action (`navigate`/`render-genui`/`structured-data-form`/…) passes through it before taking effect; veto via false/throw. **Operator (server-side `api`/`code`/`csv` tools):** these fire server-to-server, outside the SDK's reach — independently authorize each call against the caller's real session/permissions; never treat model/system-prompt tool scoping, or a client-suppliable `request_vars` value, as an authorization claim. See [API Reference § Tools](/reference/api-reference/#tools-api--csv--code). |
+| **ASI 01 Goal Hijack** / **ASI 02 Tool Misuse** | `onAgentAction(action)` chokepoint — every agent-initiated action (`navigate`/`render-genui`/`structured-data-form`/…) passes through it before taking effect; veto via false/throw. **Operator (server-side `api`/`code`/`csv` tools):** these fire server-to-server, outside the SDK's reach — independently authorize each call against the caller's real session/permissions; never treat model/system-prompt tool scoping, or a client-suppliable `request_vars` value, as an authorization claim. See [API Reference § Tools](/reference/api/build/#tools-api--csv--code). |
 | **ASI 03 Identity & Privilege Abuse** | Scoped, entitlement-ON, short-TTL, revocable token; least-privilege `restrictions`; `agentActions` policy (e.g. `navigate:'off'`). |
 | **ASI 06 Memory & Context Poisoning** | `Presenter` session memory is bounded and operator-cleared via `clearMemory()`; persisted memory is replayed context — operator owns the storage choice. |
 | **ASI 08 Cascading Failures** | Reconnect-window bound, media-recovery escalation, brain-liveness watchdog, client rate valve. |

@@ -64,7 +64,7 @@ prompt below.
 ### Calling converse directly? Enable `allow_client_variables` first
 
 The snippets above go through the SDK session. If you instead call the
-[converse endpoint](/reference/api-reference/#converse) and pass `request_vars` with a message,
+[converse endpoint](/reference/api/operate/#converse) and pass `request_vars` with a message,
 the intellect must have `allow_client_variables` set to `true` — otherwise the request is
 rejected with HTTP 403. Calling the raw endpoint yourself, you get that 403 as a plain HTTP
 error; going through the management SDK's converse helpers, it surfaces as a typed
@@ -76,7 +76,7 @@ await mgmt.intellects.setClientVariablesEnabled(configId, true, adminKs);
 
 Reserved `sys__*` keys (like `sys__user_id`) are server-injected on every turn and rejected if
 you try to set them yourself, regardless of this flag — see
-[Reserved Template Variables](/reference/api-reference/#reserved-template-variables-sys__).
+[Reserved Template Variables](/reference/api/operate/#reserved-template-variables-sys__).
 
 ## Per-turn context: the dynamic prompt
 

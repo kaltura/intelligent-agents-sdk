@@ -28,6 +28,13 @@ module.exports = [
     pages: [
       { title: 'SDK Reference', url: '/reference/sdk-reference/' },
       { title: 'API Reference', url: '/reference/api-reference/' },
+      { title: 'API · Authentication & Services', url: '/reference/api/authentication/' },
+      { title: 'API · Phase 1 — Design', url: '/reference/api/design/' },
+      { title: 'API · Phase 2 — Build', url: '/reference/api/build/' },
+      { title: 'API · Phase 3 — Deploy', url: '/reference/api/deploy/' },
+      { title: 'API · Phase 4 — Operate', url: '/reference/api/operate/' },
+      { title: 'API · Scripted Video (STV)', url: '/reference/api/scripted-video/' },
+      { title: 'API · Management Operations', url: '/reference/api/management-operations/' },
       { title: 'Architecture Reference', url: '/reference/architecture-reference/' },
       { title: 'Wire Protocol', url: '/reference/wire-protocol/' },
       { title: 'GenUI Reference', url: '/reference/genui-reference/' },

@@ -119,7 +119,7 @@ const reply = await kaltura.converseOnce('<configId from Step 3>', 'Hello again!
 ```
 
 `userId` is optional everywhere it's accepted — omit it and we get the same
-anonymous behavior shown above. See [API Reference § Authentication](/reference/api-reference/#authentication)
+anonymous behavior shown above. See [API Reference § Authentication](/reference/api/authentication/)
 for the full picture.
 
 ## What we just did
@@ -140,6 +140,6 @@ line.
 | Look up the exact API call for something | [API Reference](/reference/api-reference/) |
 | Make the avatar drive your UI (slides, widgets, navigation) | [Client-Side Commands](/guides/client-commands/) |
 | Put structured widgets on screen | [GenUI Reference](/reference/genui-reference/) |
-| Use our **own voice** for the avatar | [API Reference § Upload a Custom Voice (clone)](/reference/api-reference/#upload-a-custom-voice-clone) |
-| Use our **own face/portrait** for the avatar | [API Reference § Upload a Custom Visual](/reference/api-reference/#upload-a-custom-visual-portrait--animated-avatar) |
+| Use our **own voice** for the avatar | [API Reference § Upload a Custom Voice (clone)](/reference/api/design/#upload-a-custom-voice-clone) |
+| Use our **own face/portrait** for the avatar | [API Reference § Upload a Custom Visual](/reference/api/design/#upload-a-custom-visual-portrait--animated-avatar) |
 | Understand how the whole system works under the hood | [Platform Architecture](/explanation/architecture/) |
