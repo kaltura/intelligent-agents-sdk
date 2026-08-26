@@ -4,9 +4,14 @@ Design guidance for app builders deciding **how a viewer's input reaches the age
 
 | Mode | Session class | Mic permission | How a turn starts |
 |---|---|---|---|
-| **Open-mic** (VAD) | `KalturaAvatarSession` | Prompted at connect | Viewer just speaks; server VAD cuts the turn |
-| **Push-to-talk** | `KalturaAvatarSession` (`isTapToTalk`) | Prompted at connect | Viewer opens/closes a capture window (`startTapToTalk()`/`endTapToTalk()`) |
+| **Open-mic** (VAD) | `KalturaAvatarSession` | Prompted at connect* | Viewer just speaks; server VAD cuts the turn |
+| **Push-to-talk** | `KalturaAvatarSession` (`isTapToTalk`) | Prompted at connect* | Viewer opens/closes a capture window (`startTapToTalk()`/`endTapToTalk()`) |
 | **Chat (text-only)** | `KalturaChatSession` | **Never requested** — the class never touches `getUserMedia` or WebRTC | `sendText('…')` over plain HTTPS |
+
+\* Or deferred: `micStartMode: 'deferred'` connects the avatar session with no mic at all, and the
+app calls `startMic()` later from a real user click, so the permission prompt is gesture-anchored
+instead of firing on page load. Until then, typed turns work; `startTapToTalk()` throws
+`mic_not_started`. See [README.md](../README.md#devices-and-media-quality).
 
 The first two are **voice-capture** modes on the live avatar transport; most of this doc is about
 choosing between them and building their UI. Chat mode is a full text-only transport — same brain,
