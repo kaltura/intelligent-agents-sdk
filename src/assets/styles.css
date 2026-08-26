@@ -576,8 +576,82 @@ blockquote {
    video itself, which is the click target that starts a session. Hide
    instead of just dimming. */
 #nova-mute:disabled,
+#nova-mode:disabled,
 #nova-end:disabled {
   display: none;
+}
+
+/* Text-first entry point, layered over the placeholder's bottom scrim. A
+   sibling of .nova-placeholder (not a child) — nesting a second interactive
+   element inside a role="button" breaks its accessible name. */
+.nova-chat-start {
+  position: absolute;
+  bottom: 0.6rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.45);
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 0.75rem;
+  padding: 0.3rem 0.8rem;
+  cursor: pointer;
+}
+
+.nova-chat-start:hover {
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff;
+}
+
+/* Set by connect.js when navigator.connection reports a 2g-class link —
+   text chat skips WebRTC entirely, so nudge (never force) it. */
+.nova-chat-start.nova-slow-net {
+  border-color: var(--ds-primary);
+  color: #fff;
+}
+
+.nova-chat-start.hidden,
+.nova-widget.dock-mode .nova-chat-start {
+  display: none;
+}
+
+.nova-input-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+}
+
+#nova-input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.35);
+  color: #fff;
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 0.45rem 0.9rem;
+}
+
+#nova-input::placeholder {
+  color: rgba(255, 255, 255, 0.55);
+}
+
+#nova-input:focus-visible {
+  outline: 2px solid var(--ds-primary);
+  outline-offset: 1px;
+}
+
+.nova-btn.nova-send {
+  width: 36px;
+  height: 36px;
+  flex: none;
+}
+
+.nova-btn.nova-send .material-symbols-outlined {
+  font-size: 1.1rem;
 }
 
 .nova-status {
@@ -692,6 +766,22 @@ blockquote {
 
 .nova-widget.dock-mode.expanded .nova-transcript .nova-nova {
   color: var(--page-text);
+}
+
+.nova-widget.dock-mode.expanded #nova-input {
+  border-color: var(--border-color);
+  background: var(--page-bg);
+  color: var(--page-text);
+}
+
+.nova-widget.dock-mode.expanded #nova-input::placeholder {
+  color: var(--secondary-text);
+}
+
+/* Chat mode: no live video — the poster portrait stays as the visual, so
+   the talk-pulse (voice activity) animation has nothing true to say. */
+.nova-widget.chat-mode .nova-video-wrap.is-talking {
+  animation: none;
 }
 
 .nova-highlight-ring {
