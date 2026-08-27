@@ -284,6 +284,23 @@ Writes through the intellect DTO — no `partner-config/update`, no 403. RAG ret
 
 **Checking whether indexing has finished:** use `knowledge.isIndexed(id, ks)` — reads `knowledge.getRecord(id, ks).status`, returning `{ready, status, indexPosition}`. Don't use `knowledge.search()` for this — its "couldn't find relevant information" reply fires for an unindexed KB, an indexed KB with `use_knowledge_base:'off'`, or a genuine no-match query alike, so it can't signal indexing status. `knowledge.corpusStatus()` only counts entries that exist in the category, not whether they've finished embedding. `knowledge.indexStatus()` (`partner-config/stats`) 403s for a partner admin KS on at least one deployment — the same privilege wall as the Path B write.
 
+Poll it with a bounded retry loop rather than a fixed sleep — indexing over a cold KB can take 45-90s+:
+
+```js
+async function waitForIndexing(kaltura, recordId, ks) {
+  const delaysMs = [5000, 10000, 15000, 20000, 30000]; // ~80s total after the immediate check
+  for (let attempt = 0; ; attempt++) {
+    const status = await kaltura.knowledge.isIndexed(recordId, ks);
+    if (status.ready) return true;
+    const delay = delaysMs[attempt];
+    if (delay === undefined) return false; // still not ready — caller decides whether to set use_knowledge_base:'off' or retry later
+    await new Promise((resolve) => setTimeout(resolve, delay));
+  }
+}
+```
+
+Resolve the poll **before** you create or update the intellect, and send the result in that same `intellectConfig` call alongside `knowledge_ids` — not as a follow-up capability patch. Partner config is Redis-cached for up to 24h server-side (see [CLIENT-COMMANDS.md's Gotcha 2](../CLIENT-COMMANDS.md)); a two-step create-then-flip risks the cache latching onto the transient `off` value from step one and never seeing step two's `on`. A single write after polling avoids that race entirely for a fresh create.
+
 ---
 
 ## Create an Avatar
