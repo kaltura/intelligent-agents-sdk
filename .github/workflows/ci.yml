@@ -20,8 +20,37 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    name: 🔍 Detect changed paths
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - name: 📥 Check out the repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: 🔍 Does this push/PR touch anything other than docs?
+        id: filter
+        uses: dorny/paths-filter@0e4a8c6effa4802afeda77dc8d303f8176d7dfad # v3.0.4
+        with:
+          filters: |
+            code:
+              - 'src/**'
+              - 'test/**'
+              - 'scripts/**'
+              - 'tools/**'
+              - 'examples/**'
+              - 'package.json'
+              - 'package-lock.json'
+              - 'jsconfig.json'
+              - '.eslintrc*'
+              - 'eslint.config.*'
+              - '.github/workflows/**'
+
   test:
     name: 🧪 Test suite
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: 📥 Check out the repo
@@ -180,7 +209,12 @@ jobs:
   docs-gate:
     name: 📚 Check docs/code drift, secrets, and GFM hygiene (check-docs.mjs)
     runs-on: ubuntu-latest
-    needs: test
+    # Deliberately depends on `changes`, not `test` — this gate (secrets, GFM
+    # hygiene, cross-doc links, doc-vs-code drift) is exactly as relevant to a
+    # docs-only push as to a code push, so it must run either way. Its one
+    # test-running sub-check is skipped below when code didn't change, since
+    # the `test` job already covers that case.
+    needs: changes
     steps:
       - name: 📥 Check out the repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -195,6 +229,8 @@ jobs:
 
       - name: 🔍 Run the docs CI gate (secrets, GFM, cross-doc links, SDK invariants)
         id: docs_gate
+        env:
+          CI_CODE_CHANGED: ${{ needs.changes.outputs.code }}
         run: |
           set -o pipefail
           npm run docs:gate 2>&1 | tee docs-gate-output.log

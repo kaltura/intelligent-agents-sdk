@@ -21,22 +21,18 @@ contribute) and [SDK_CONSTITUTION.md](SDK_CONSTITUTION.md) (the invariants every
 [What changed between versions](https://github.com/kaltura/intelligent-agents-sdk/releases) lives
 in GitHub Releases, generated from merged PRs at tag time — not a hand-maintained file.
 
-> Issue references like "(issue #N)" in this repo's docs and code comments point to the private
-> originating monorepo's history, not to an issue filed in this repo's own tracker.
+**Why this SDK:**
 
-**Security & compliance:** zero runtime dependencies, short-lived tokens, pre-redacted audit
-events, and a NIST 800-53 control matrix — designed for enterprise, HIPAA, and HITRUST
-deployments. See [Security posture](#security-posture) below or the full matrix in
-[SECURITY.md](SECURITY.md).
-
-**Why this SDK?** You own raw ESM source you can read line by line — no build step, no
-bundler-only `node_modules` black box, and (once a tag is public) no install step at all: import
-straight from a jsDelivr CDN URL pinned to a git tag. Zero runtime dependencies means no
-transitive supply-chain surface to audit. Voice and visual cloning are self-serve calls in this
-SDK (`catalog.importVoiceFromElevenLabs`/`importVoiceFromCartesia`, `catalog.createVisual`), not a
-support ticket. And the security posture — pre-redacted audit events, short-lived tokens, a NIST
-800-53 control matrix — is designed in from the start for enterprise/HIPAA/HITRUST deployments
-rather than bolted on. Full details in [SECURITY.md](SECURITY.md).
+- **You own the source, no black box.** Raw ESM in `src/` — read it line by line. No build step,
+  no bundler-only `node_modules`, and (once a tag is public) no install step at all: import
+  straight from a jsDelivr CDN URL pinned to a git tag.
+- **Zero runtime dependencies** — no transitive supply-chain surface to audit.
+- **Voice/visual cloning is self-serve**, not a support ticket —
+  `catalog.importVoiceFromElevenLabs`/`importVoiceFromCartesia`, `catalog.createVisual`.
+- **Security designed in, not bolted on** — pre-redacted audit events, short-lived tokens, and a
+  NIST 800-53 control matrix, built for enterprise, HIPAA, and HITRUST deployments from the start.
+  Summary in [Security posture](#security-posture) below, full matrix in
+  [SECURITY.md](SECURITY.md).
 
 ---
 
@@ -81,7 +77,7 @@ rather than bolted on. Full details in [SECURITY.md](SECURITY.md).
 ## Quick start
 
 ```bash
-# see it work — no account needed, fully offline (~105 s)
+# see it work — no account needed, fully offline (~2 min)
 npm test
 
 # server: provision + headless converse (needs a Kaltura account)
@@ -1035,6 +1031,9 @@ await mgmt.knowledge.deleteRecord(rec.id, ks, { confirmPermanent: true });
 ---
 
 ## Reference
+
+> Issue references like "(issue #N)" in this repo's docs and code comments point to the private
+> originating monorepo's history, not to an issue filed in this repo's own tracker.
 
 | Resource | What it covers |
 |----------|---------------|
