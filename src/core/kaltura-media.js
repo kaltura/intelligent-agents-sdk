@@ -59,7 +59,7 @@ export function externalEmbedUrl(url) {
   const u = String(url || '').trim();
   if (!/^https?:\/\//i.test(u)) return { embedUrl: '', provider: '' };
   // YouTube: watch?v=ID | youtu.be/ID | /embed/ID | /shorts/ID
-  const yt = u.match(/(?:youtube\.com\/(?:watch\?(?:.*&)?v=|embed\/|shorts\/|v\/)|youtu\.be\/)([A-Za-z0-9_-]{6,})/i);
+  const yt = u.match(/(?:youtube\.com\/(?:watch\?(?:[^&]*&)*v=|embed\/|shorts\/|v\/)|youtu\.be\/)([A-Za-z0-9_-]{6,})/i);
   if (yt) return { embedUrl: `https://www.youtube-nocookie.com/embed/${yt[1]}`, provider: 'YouTube' };
   // Vimeo: vimeo.com/ID | player.vimeo.com/video/ID
   const vm = u.match(/vimeo\.com\/(?:video\/)?(\d{4,})/i);

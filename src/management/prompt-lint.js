@@ -216,10 +216,10 @@ export function validatePromptVars(text, opts = {}) {
     });
   }
 
-  const re = /\{\{\s*([^{}]*?)\s*\}\}/g;
+  const re = /\{\{([^{}]*)\}\}/g;
   let m;
   while ((m = re.exec(text)) !== null) {
-    const raw = m[1];
+    const raw = m[1].trim();
     if (raw === '') {
       findings.push({
         severity: 'error',
@@ -563,7 +563,7 @@ function extractProperName(text) {
   const tokens = text.split(/\s+/);
   let sentenceStart = true;
   for (const raw of tokens) {
-    const word = raw.replace(/^[^A-Za-z]+|[^A-Za-z']+$/g, '');
+    const word = raw.replace(/^[^A-Za-z]+/, '').replace(/[^A-Za-z']+$/, '');
     const isCapitalized = /^[A-Z][a-zA-Z]*$/.test(word);
     if (isCapitalized && !GREETING_STOPWORDS.has(word) && !sentenceStart) {
       return word;

@@ -43,8 +43,18 @@
 
 import { Teardown } from './teardown.js';
 
-/** Strip HTML tags from a chunk of text (never rendered raw). @param {string} text */
-function stripHtml(text) { return text.replace(/<[^>]+>/g, ''); }
+/** Strip HTML tags from a chunk of text (never rendered raw). Loops to
+ * defeat a residue that reforms a tag after one pass (e.g. `<scr<script>ipt>`).
+ * @param {string} text */
+function stripHtml(text) {
+  let prev = text;
+  let curr = prev.replace(/<[^>]*>/g, '');
+  while (curr !== prev) {
+    prev = curr;
+    curr = prev.replace(/<[^>]*>/g, '');
+  }
+  return curr;
+}
 
 // ─── CaptionFilter ────────────────────────────────────────────────────────────
 

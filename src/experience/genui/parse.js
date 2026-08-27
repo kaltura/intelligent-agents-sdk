@@ -96,7 +96,7 @@ export function parseContent(content) {
   const lines = trimmed.split(/\r?\n/);
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    const m = /^([A-Za-z_][\w-]*)\s*:\s*(.*)$/.exec(line);
+    const m = /^([A-Za-z_][\w-]*)\s*:(.*)$/.exec(line);
     if (m) {
       const key = m[1];
       const val = m[2].trim();
@@ -135,21 +135,21 @@ function parseYamlList(lines, start) {
   for (; i < lines.length; i++) {
     const line = lines[i];
     if (!line.trim()) continue;
-    const dash = /^(\s*)-\s*(.*)$/.exec(line);
+    const dash = /^(\s*)-(.*)$/.exec(line);
     if (dash && dash[1].length === dashIndent) {
-      const rest = dash[2];
-      const kv = /^([A-Za-z_][\w-]*)\s*:\s*(.*)$/.exec(rest);
+      const rest = dash[2].trim();
+      const kv = /^([A-Za-z_][\w-]*)\s*:(.*)$/.exec(rest);
       if (kv) {
         current = {};
         list.push(current);
         current[kv[1]] = coerceScalar(kv[2].trim());
       } else {
         current = null;   // scalar item — no nested `key: value` lines expected
-        list.push(coerceScalar(rest.trim()));
+        list.push(coerceScalar(rest));
       }
       continue;
     }
-    const kv = /^(\s+)([A-Za-z_][\w-]*)\s*:\s*(.*)$/.exec(line);
+    const kv = /^(\s+)([A-Za-z_][\w-]*)\s*:(.*)$/.exec(line);
     if (kv && kv[1].length > dashIndent && current) {
       current[kv[2]] = coerceScalar(kv[3].trim());
       continue;
