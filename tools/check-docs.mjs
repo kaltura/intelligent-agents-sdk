@@ -496,7 +496,7 @@ describe('7. SDK invariants', () => {
     assert.ok(read('docs/WIRE-PROTOCOL.md').includes('client-side-command channel'), 'WIRE-PROTOCOL.md missing type:tool channel note');
   });
 
-  test('all tests pass', () => {
+  test('all tests pass', { skip: process.env.CI_CODE_CHANGED === 'false' && 'no code/test files changed in this push — the dedicated test job already covers this' }, () => {
     const testFiles = execSync('find test -name "*.test.js"', {
       cwd: ROOT, encoding: 'utf8',
     }).trim().split('\n').filter(Boolean);
