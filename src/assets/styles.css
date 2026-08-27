@@ -649,6 +649,28 @@ blockquote {
   display: none;
 }
 
+/* Session-gated in JS via :disabled (inverted from the other controls —
+   visible before a session exists, hidden once one does), mode-gated here
+   via .dock-mode so it never shows over the hero video or the drawer. */
+.nova-dock-chat {
+  display: none;
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  width: 36px;
+  height: 36px;
+  z-index: 5;
+  background: var(--card-bg);
+}
+
+.nova-widget.dock-mode .nova-dock-chat {
+  display: flex;
+}
+
+.nova-dock-chat:disabled {
+  display: none;
+}
+
 .nova-input-row {
   display: flex;
   align-items: center;
