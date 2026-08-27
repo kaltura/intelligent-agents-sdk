@@ -68,9 +68,13 @@ export function appendTranscript(who, text) {
 }
 
 /** Replays a prior visit's rendered transcript from localStorage — call once
- * at startup, before any live session exists. No-op with nothing saved. */
+ * at startup, before any live session exists. No-op with nothing saved, and
+ * no-op if the transcript already has content: connect.js's own call is
+ * gated behind a network fetch (the jsDelivr SDK import), so on a slow
+ * connection it can land after real messages already arrived — restoring
+ * over those would duplicate them instead of restoring a blank transcript. */
 export function restoreHistory() {
-  if (!transcriptEl) return;
+  if (!transcriptEl || transcriptEl.children.length) return;
   let entries;
   try { entries = JSON.parse(localStorage.getItem(STORE_HISTORY) || '[]'); } catch { entries = null; }
   if (!Array.isArray(entries)) return;
