@@ -21,6 +21,7 @@ module.exports = [
     pages: [
       { title: 'Inside a Live Conversation', url: '/explanation/inside-a-live-conversation/' },
       { title: 'Platform Architecture', url: '/explanation/architecture/' },
+      { title: 'Case Study: Nova', url: '/explanation/case-study-nova/' },
     ],
   },
   {
