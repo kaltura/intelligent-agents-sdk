@@ -6,7 +6,7 @@ test('hubspotContactUpsert builds a valid api tool targeting HubSpot CRM', () =>
   const tool = hubspotContactUpsert({ secretName: 'HUBSPOT_TOKEN' });
   assert.equal(tool.type, 'api');
   assert.equal(tool.name, 'hubspot_contact_upsert');
-  assert.ok(tool.request.url.includes('hubapi.com'));
+  assert.equal(new URL(tool.request.url).hostname, 'api.hubapi.com');
   assert.equal(tool.request.method, 'POST');
   assert.ok(tool.request.headers.Authorization.includes('HUBSPOT_TOKEN'));
   assert.ok('email' in tool.args, 'email arg present');
@@ -35,7 +35,7 @@ test('salesforceContactUpsert builds a valid PATCH api tool targeting Salesforce
   });
   assert.equal(tool.type, 'api');
   assert.equal(tool.name, 'salesforce_contact_upsert');
-  assert.ok(tool.request.url.includes('myorg.my.salesforce.com'));
+  assert.equal(new URL(tool.request.url).hostname, 'myorg.my.salesforce.com');
   assert.equal(tool.request.method, 'PATCH');
   assert.ok('Email' in tool.args);
   assert.equal(tool.args.Email.required, true, 'external ID field is required');

@@ -38,9 +38,18 @@ export function uuidv4() {
  * @param {number} [n]
  */
 export function randId(n = 16) {
-  const b = randomBytes(n);
+  // Rejection sampling: 256 isn't a multiple of ALNUM.length (36), so a plain
+  // `byte % 36` is biased toward the low remainders. Reject any byte at or
+  // above the largest multiple of 36 that fits in a byte, so every kept byte
+  // maps to a uniformly distributed character.
+  const limit = 256 - (256 % ALNUM.length);
   let s = '';
-  for (let i = 0; i < n; i++) s += ALNUM[b[i] % ALNUM.length];
+  while (s.length < n) {
+    const b = randomBytes(n - s.length);
+    for (let i = 0; i < b.length && s.length < n; i++) {
+      if (b[i] < limit) s += ALNUM[b[i] % ALNUM.length];
+    }
+  }
   return s;
 }
 

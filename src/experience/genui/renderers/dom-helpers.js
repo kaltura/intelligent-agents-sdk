@@ -24,7 +24,13 @@ export function el(tag, className, text) {
 }
 
 /** Slugify a string into a safe CSS class/token fragment (never empty). @param {unknown} s */
-export function cssToken(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '') || 'x'; }
+export function cssToken(s) {
+  const t = String(s || '').toLowerCase().replace(/[^a-z0-9_-]+/g, '-');
+  let start = 0, end = t.length;
+  while (start < end && t[start] === '-') start++;
+  while (end > start && t[end - 1] === '-') end--;
+  return t.slice(start, end) || 'x';
+}
 
 /** A safe `<table>` from `{title?, headers, rows}` — also the `showChart`/chart-fallback data table. @param {Element} root @param {{title?:string, headers?:unknown[], rows?:unknown[][]}} data @param {boolean} [noHead] */
 export function tableEl(root, data, noHead) {
