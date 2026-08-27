@@ -125,6 +125,13 @@
       </form>
       <p class="nova-drawer-note">Chats resume on this browser. “New conversation” starts fresh.</p>
     </div>
+    <!-- Docked bubble, no session yet: the mic circle starts a video call, so
+         this badge is the only way in to text-only chat without expanding
+         the flyout first — mirrors .nova-chat-start's hero-mode pill, sized
+         for the corner of a small circle instead of overlaid on full video. -->
+    <button class="nova-btn nova-dock-chat" id="nova-dock-chat" type="button" aria-label="Chat without video" title="Chat without video">
+      <span class="material-symbols-outlined" aria-hidden="true">chat</span>
+    </button>
   </div>
   <script type="module" src="/assets/nova/connect.js"></script>
 

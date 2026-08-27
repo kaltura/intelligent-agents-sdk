@@ -19,7 +19,7 @@
 import './router.js';
 import { withPrefix } from './router.js';
 import { initDock, enterDockMode, enterDrawerMode, exitDrawerMode } from './dock.js';
-import { initTranscript, appendTranscript, showThinking, hideThinking } from './transcript.js';
+import { initTranscript, appendTranscript, showThinking, hideThinking, restoreHistory, clearHistory } from './transcript.js';
 import { initNavigator } from './navigator.js';
 import { initHighlighter } from './highlighter.js';
 
@@ -78,6 +78,7 @@ const els = {
   video: document.getElementById('nova-video'),
   placeholder: document.getElementById('nova-placeholder'),
   chatStart: document.getElementById('nova-chat-start'),
+  dockChat: document.getElementById('nova-dock-chat'),
   disclosure: document.getElementById('nova-disclosure'),
   disclosureChip: document.getElementById('nova-disclosure-chip'),
   status: document.getElementById('nova-status'),
@@ -135,6 +136,10 @@ function setStatus(text) {
 }
 
 initTranscript(els.transcript);
+// Chats resume server-side via STORE_THREAD, but a fresh page load has no
+// DOM — replay last visit's rendered transcript so "continuing" doesn't look
+// like starting blank even though Nova herself remembers everything.
+restoreHistory();
 
 function showDisclosure() {
   els.disclosure.classList.remove('hidden');
@@ -262,6 +267,7 @@ async function connect(pendingPrompt, mode = 'avatar') {
     els.videoWrap?.classList.remove('is-connecting');
     els.placeholder.classList.add('hidden');
     els.chatStart?.classList.add('hidden');
+    if (els.dockChat) els.dockChat.disabled = true;
     els.promptsRow?.classList.add('hidden');
     els.mode.disabled = false;
     els.end.disabled = false;
@@ -289,6 +295,8 @@ async function connect(pendingPrompt, mode = 'avatar') {
     // runs with no saved thread, so it can't loop).
     if (savedThread) {
       storeDel(STORE_THREAD);
+      clearHistory();
+      els.transcript.innerHTML = '';
       try { session?.disconnect(); } catch { /* already dead */ }
       session = null;
       return connect(pendingPrompt, mode);
@@ -356,6 +364,7 @@ function endSession() {
  * "clear what this browser remembers about me" affordance. */
 function newConversation() {
   storeDel(STORE_THREAD);
+  clearHistory();
   session?.disconnect();
   resetUi();
   els.transcript.innerHTML = '';
@@ -371,6 +380,7 @@ function resetUi() {
   els.videoWrap?.classList.remove('is-connecting', 'is-talking');
   els.placeholder.classList.remove('hidden');
   els.chatStart?.classList.remove('hidden');
+  if (els.dockChat) els.dockChat.disabled = false;
   els.promptsRow?.classList.remove('hidden');
   els.disclosure.classList.add('hidden');
   els.disclosureChip.classList.add('hidden');
@@ -398,6 +408,11 @@ els.placeholder.addEventListener('keydown', (e) => {
   }
 });
 els.chatStart?.addEventListener('click', () => {
+  if (!session) connect(undefined, 'chat');
+});
+// Docked bubble's only other click target is the mic circle (avatar mode) —
+// this is chat's way in without expanding the flyout first.
+els.dockChat?.addEventListener('click', () => {
   if (!session) connect(undefined, 'chat');
 });
 els.mute.addEventListener('click', toggleMute);

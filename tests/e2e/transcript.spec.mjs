@@ -77,3 +77,46 @@ test('thinking dots render four Kaltura-colored dots, stay below new messages, a
   await page.evaluate(() => window.__transcript.hideThinking());
   await expect(thinking).toHaveCount(0);
 });
+
+test('ASR/TTS control tokens like "<blank>" never render, even mid-glue', async ({ page }) => {
+  await setup(page);
+  await page.evaluate(() => {
+    window.__transcript.appendTranscript('nova', '<blank>');
+    window.__transcript.appendTranscript('you', '  <blank>  ');
+    window.__transcript.appendTranscript('nova', 'Real reply.');
+    window.__transcript.appendTranscript('nova', '<blank>');
+    window.__transcript.appendTranscript('nova', 'still real.');
+  });
+  await expect(page.locator('#nova-transcript > *')).toHaveCount(1);
+  await expect(page.locator('.nova-nova .nova-msg')).toHaveText('Real reply. still real.');
+});
+
+test('rendered transcript persists to localStorage and replays on restore', async ({ page }) => {
+  await setup(page);
+  await page.evaluate(() => {
+    window.__transcript.appendTranscript('you', 'What is GenUI?');
+    window.__transcript.appendTranscript('nova', 'GenUI renders widgets.');
+  });
+
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('nova:history')));
+  expect(saved).toEqual([
+    { who: 'you', text: 'What is GenUI?' },
+    { who: 'nova', text: 'GenUI renders widgets.' },
+  ]);
+
+  // A fresh page load re-initializes the module against an empty transcript
+  // element — restoreHistory() should replay the saved paragraphs into it.
+  await page.evaluate(async () => {
+    const mod = await import('/assets/nova/transcript.js');
+    const el = document.getElementById('nova-transcript');
+    el.innerHTML = '';
+    mod.initTranscript(el);
+    mod.restoreHistory();
+  });
+  await expect(page.locator('.nova-you .nova-msg')).toHaveText('What is GenUI?');
+  await expect(page.locator('.nova-nova .nova-msg')).toHaveText('GenUI renders widgets.');
+
+  await page.evaluate(() => window.__transcript.clearHistory());
+  const cleared = await page.evaluate(() => localStorage.getItem('nova:history'));
+  expect(cleared).toBeNull();
+});
