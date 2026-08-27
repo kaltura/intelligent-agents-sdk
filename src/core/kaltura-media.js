@@ -58,12 +58,29 @@ export function playerEmbedUrl(entryId, partnerId, opts = {}) {
 export function externalEmbedUrl(url) {
   const u = String(url || '').trim();
   if (!/^https?:\/\//i.test(u)) return { embedUrl: '', provider: '' };
-  // YouTube: watch?v=ID | youtu.be/ID | /embed/ID | /shorts/ID
-  const yt = u.match(/(?:youtube\.com\/(?:watch\?(?:[^&]*&)*v=|embed\/|shorts\/|v\/)|youtu\.be\/)([A-Za-z0-9_-]{6,})/i);
-  if (yt) return { embedUrl: `https://www.youtube-nocookie.com/embed/${yt[1]}`, provider: 'YouTube' };
-  // Vimeo: vimeo.com/ID | player.vimeo.com/video/ID
-  const vm = u.match(/vimeo\.com\/(?:video\/)?(\d{4,})/i);
-  if (vm) return { embedUrl: `https://player.vimeo.com/video/${vm[1]}`, provider: 'Vimeo' };
+  /** @type {URL} */
+  let parsed;
+  try { parsed = new URL(u); } catch { return { embedUrl: '', provider: '' }; }
+  const host = parsed.hostname.toLowerCase();
+  const isId = (id) => /^[A-Za-z0-9_-]{6,}$/.test(id);
+
+  if (host === 'youtu.be') {
+    const id = parsed.pathname.split('/')[1] || '';
+    if (isId(id)) return { embedUrl: `https://www.youtube-nocookie.com/embed/${id}`, provider: 'YouTube' };
+  } else if (host === 'youtube.com' || host === 'www.youtube.com' || host === 'm.youtube.com') {
+    // watch?v=ID | /embed/ID | /shorts/ID | /v/ID — host is exact-matched above
+    // (not a substring check), so a lookalike host can't spoof this branch.
+    let id = parsed.pathname === '/watch' ? (parsed.searchParams.get('v') || '') : '';
+    if (!id) {
+      const seg = parsed.pathname.split('/');
+      if (['embed', 'shorts', 'v'].includes(seg[1])) id = seg[2] || '';
+    }
+    if (isId(id)) return { embedUrl: `https://www.youtube-nocookie.com/embed/${id}`, provider: 'YouTube' };
+  } else if (host === 'vimeo.com' || host === 'www.vimeo.com' || host === 'player.vimeo.com') {
+    const seg = parsed.pathname.split('/');
+    const id = seg[1] === 'video' ? seg[2] : seg[1];
+    if (/^\d{4,}$/.test(id || '')) return { embedUrl: `https://player.vimeo.com/video/${id}`, provider: 'Vimeo' };
+  }
   return { embedUrl: '', provider: '' };
 }
 

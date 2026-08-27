@@ -563,7 +563,11 @@ function extractProperName(text) {
   const tokens = text.split(/\s+/);
   let sentenceStart = true;
   for (const raw of tokens) {
-    const word = raw.replace(/^[^A-Za-z]+/, '').replace(/[^A-Za-z']+$/, '');
+    const isLetter = (ch) => (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z');
+    let start = 0, end = raw.length;
+    while (start < end && !isLetter(raw[start])) start++;
+    while (end > start && !(isLetter(raw[end - 1]) || raw[end - 1] === "'")) end--;
+    const word = raw.slice(start, end);
     const isCapitalized = /^[A-Z][a-zA-Z]*$/.test(word);
     if (isCapitalized && !GREETING_STOPWORDS.has(word) && !sentenceStart) {
       return word;

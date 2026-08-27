@@ -43,17 +43,23 @@
 
 import { Teardown } from './teardown.js';
 
-/** Strip HTML tags from a chunk of text (never rendered raw). Loops to
- * defeat a residue that reforms a tag after one pass (e.g. `<scr<script>ipt>`).
- * @param {string} text */
+/** Strip HTML tags from a chunk of text (never rendered raw). A single
+ * character-by-character scan, not a regex — nothing to reconstitute a tag
+ * from and no backtracking. Everything from `<` through the next `>` is
+ * dropped; an unclosed `<` drops the rest of the string. @param {string} text */
 function stripHtml(text) {
-  let prev = text;
-  let curr = prev.replace(/<[^>]*>/g, '');
-  while (curr !== prev) {
-    prev = curr;
-    curr = prev.replace(/<[^>]*>/g, '');
+  let out = '';
+  let inTag = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === '<') { inTag = true; continue; }
+    if (inTag) {
+      if (ch === '>') inTag = false;
+      continue;
+    }
+    out += ch;
   }
-  return curr;
+  return out;
 }
 
 // ─── CaptionFilter ────────────────────────────────────────────────────────────
