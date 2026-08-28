@@ -267,13 +267,18 @@ await kaltura.intellects.setCapability(configId, 'use_knowledge_base', 'on', adm
 
 `knowledge_ids` is capped at one record per intellect (`setKnowledgeIds`
 throws before any network call if you pass more than one). RAG retrieval
-works only after async indexing completes — poll
-`kaltura.knowledge.isIndexed(record.id, admin.ks)` until `ready:true` before
-assuming the knowledge base is searchable. Don't use `knowledge.corpusStatus`
-(counts entries that exist, not whether they've finished embedding) or
+works only after async indexing completes — but
+`kaltura.knowledge.isIndexed(record.id, admin.ks)` does NOT tell you that: its
+`ready` flag reflects the knowledge record's own container-lifecycle status
+(`ready:true` immediately on creation, before any entry has indexed), not
+whether indexing has finished. Don't use `knowledge.corpusStatus` (counts
+entries that exist, not whether they've finished embedding) or
 `knowledge.search`'s "couldn't find relevant information" reply (fires
 identically for an unindexed KB, an indexed KB with `use_knowledge_base` off,
-or a genuine no-match query) as an indexing-status signal — see
+or a genuine no-match query) as an indexing-status signal either. A per-entry
+check (`kaltura.knowledge.entryStatus()`) is coming, with general rollout
+expected in early September 2026 — don't build on it yet. Until then, budget a
+fixed wait after upload before assuming content is searchable — see
 API-REFERENCE.md § Ground the Agent.
 
 ## Talking to an agent — conversations, threads, messages
