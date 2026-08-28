@@ -24,15 +24,20 @@ them directly into your own build.
 Ground a Kaltura Agentic Avatar in your own content and there's a gap between
 uploading it and the avatar being able to cite it: indexing runs
 asynchronously and can take 45-90 seconds or more on a cold knowledge base.
-Nova's own provisioning script closes that gap with a bounded poll loop,
-checking `knowledge.isIndexed()` on a short backoff schedule before it ever
-creates or updates her intellect — the same pattern documented as a runnable
-recipe in [Ground the Agent in Your Content (RAG)](/reference/api/build/#ground-the-agent-in-your-content-rag).
+There's no reliable signal yet that tells you indexing has actually finished —
+`knowledge.isIndexed()` reads the knowledge record's own container status,
+which reports ready the instant the record exists, before any of the entries
+you just uploaded have indexed. A real per-entry check
+(`knowledge.entryStatus()`) is coming, with general rollout expected in early
+September 2026 — don't build on it yet. Until then, Nova's own provisioning
+script budgets a fixed best-effort wait before it ever creates or updates her
+intellect — the same pattern documented in
+[Ground the Agent in Your Content (RAG)](/reference/api/build/#ground-the-agent-in-your-content-rag).
 
-Nova resolves the indexing result *before* the create/update call, not after,
-because partner configuration is cached for up to 24 hours server-side. A
-capability flip sent as a follow-up patch can miss that cache window
-entirely. See [`server/provision.mjs`](https://github.com/kaltura/docs-site-avatar/blob/main/server/provision.mjs)
+Nova resolves that wait *before* the create/update call, not after, because
+partner configuration is cached for up to 24 hours server-side. A capability
+flip sent as a follow-up patch can miss that cache window entirely. See
+[`server/provision.mjs`](https://github.com/kaltura/docs-site-avatar/blob/main/server/provision.mjs)
 for the live version of this sequencing.
 
 ## Running evals against your agent

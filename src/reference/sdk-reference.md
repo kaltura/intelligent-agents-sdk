@@ -742,14 +742,17 @@ const { configId } = await mgmt.intellects.create({
   knowledge_ids: [rec.id],
   capabilities: { use_knowledge_base: 'on' },
 }, ks);
-// index-delta-v2 runs every ~1 min — call isIndexed() again until it reports {ready:true}
+// isIndexed() reports the record's own lifecycle status (ready:true immediately,
+// before any entry has indexed) — it is NOT an indexing-completion check, see below.
 const status = await mgmt.knowledge.isIndexed(rec.id, ks);
 ```
 
 Content modalities indexed: captions, OCR, document attachments. Don't use
-`knowledge.search()`'s "couldn't find relevant information" reply, or
-`knowledge.corpusStatus()`'s `populated` flag, as an indexing-status
-signal — see [API Reference § Ground the Agent](/reference/api/build/#ground-the-agent-in-your-content-rag) for why.
+`knowledge.isIndexed()`'s `ready` flag, `knowledge.search()`'s "couldn't find
+relevant information" reply, or `knowledge.corpusStatus()`'s `populated` flag,
+as an indexing-status signal — see [API Reference § Ground the Agent](/reference/api/build/#ground-the-agent-in-your-content-rag) for why.
+A per-entry check (`knowledge.entryStatus()`) is coming, with general rollout
+expected in early September 2026 — don't build on it yet.
 
 Knowledge records have full lifecycle CRUD (all verified live):
 
