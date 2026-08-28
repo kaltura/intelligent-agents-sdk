@@ -24,7 +24,7 @@ If your use case is specifically getting the *viewer's own submitted data* (from
 toolkit's credentials, and everything here is the alternative: a **tool call** the model makes
 directly, landing on infrastructure you control.
 
-**On this page:** [Building blocks](#the-building-blocks) · [Authenticating](#authenticating-the-call) · [OAuth2 flow](#when-you-actually-need-oauth2--the-real-backend-managed-flow) · [`kaltura_genie_experiences: 'off'`](#dont-skip-kaltura_genie_experiences-off) · [Verifying the wiring](#verifying-the-wiring-before-you-rely-on-it) · [CRM examples](#example-crm--marketing-automation-integration) · [Related docs](#related-docs)
+**On this page:** [Building blocks](#the-building-blocks) · [Authenticating](#authenticating-the-call) · [OAuth2 flow](#when-you-actually-need-oauth2--the-real-backend-managed-flow) · [`kaltura_genie_experiences: 'off'`](#dont-skip-kaltura_genie_experiences-off) · [Verifying the wiring](#verifying-the-wiring-before-you-rely-on-it) · [HubSpot](#hubspot) · [Salesforce](#salesforce) · [Marketo](#marketo--two-valid-integration-paths) · [Other DIY targets](#other-diy-crmmamspreadsheet-targets) · [Related docs](#related-docs)
 
 ## The building blocks
 
@@ -163,13 +163,11 @@ Two read-only checks, both worth running after setup and before believing an int
   that validates structurally can still fail at the HTTP layer (wrong URL, expired token, wrong
   field names) — only a real call proves the end-to-end path.
 
-## Example: CRM / marketing-automation integration
-
 A CRM or marketing-automation (MAM) write is a routine instance of the pattern above: the same
 secret → tool → link steps, pointed at a CRM's contact-upsert endpoint. The SDK ships two ready-made
 builders for the most common cases.
 
-### HubSpot
+## HubSpot
 
 `hubspotContactUpsert()` (`src/management/crm-recipes.js`) wraps HubSpot's Contacts v3 upsert
 endpoint (`POST /crm/v3/objects/contacts`) with a static bearer token (a HubSpot **private-app
@@ -194,7 +192,7 @@ just assembles and validates the `GenieToolConfig` that `mgmt.tools.add()` then 
 required: prop === 'email'}`) and a field in the outgoing `properties` body — the model fills them
 from the conversation and calls the tool; the server executes the actual HTTP request.
 
-### Salesforce
+## Salesforce
 
 `salesforceContactUpsert()` (same file) wraps Salesforce's REST `sobjects` upsert-by-external-ID
 endpoint (`PATCH {instanceUrl}/services/data/v59.0/sobjects/Contact/{externalIdField}/{value}`),
@@ -221,7 +219,7 @@ access token you mint and rotate yourself, but it does mean *you* are responsibl
 that token before it expires; the platform won't refresh it for you unless you route through the
 real OAuth2 flow instead.
 
-### Marketo — two valid integration paths
+## Marketo — two valid integration paths
 
 Marketo supports both connection models, and which one fits depends on how much you're allowed to
 ask of the visitor's session:
@@ -243,7 +241,7 @@ Pick the first path when you just need "get this lead into Marketo" and want zer
 management; reach for the second only when the model needs to do more than a one-shot form
 submission.
 
-### Other DIY CRM/MAM/spreadsheet targets
+## Other DIY CRM/MAM/spreadsheet targets
 
 None of these need a dedicated recipe — they're a plain `api` tool with a static bearer/API-key
 secret, following the exact same three-step pattern as HubSpot/Salesforce above:
