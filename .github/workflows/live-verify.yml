@@ -13,6 +13,11 @@ name: Live verification
 # The job is also gated on the `live-verify` GitHub Environment, so the
 # AGENTIC_* secrets are scoped to it, not available repo-wide.
 #
+# It's also skipped for a merge_group/labeled-PR run that touches nothing
+# but docs — this hits the real backend and has nothing to verify about a
+# docs-only change. workflow_dispatch always runs regardless, since that's
+# a deliberate manual request.
+#
 # The live-verify job covers the server-side management/conversation path
 # only. live-verify-browser (below) covers the actual browser/WebRTC path:
 # a real provisioned avatar, a headless Chromium with fake-but-real-pipeline
@@ -36,9 +41,39 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  changes:
+    name: 🔍 Detect changed paths
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - name: 📥 Check out the repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: 🔍 Does this push/PR touch anything other than docs?
+        id: filter
+        uses: dorny/paths-filter@0e4a8c6effa4802afeda77dc8d303f8176d7dfad # v3.0.4
+        with:
+          filters: |
+            code:
+              - 'src/**'
+              - 'test/**'
+              - 'scripts/**'
+              - 'tools/**'
+              - 'examples/**'
+              - 'package.json'
+              - 'package-lock.json'
+              - 'jsconfig.json'
+              - '.eslintrc*'
+              - 'eslint.config.*'
+              - '.github/workflows/**'
+
   live-verify:
     name: 🔴 Live verification
-    if: github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group' || github.event.label.name == 'run-live-verify'
+    needs: changes
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      ((github.event_name == 'merge_group' || github.event.label.name == 'run-live-verify') && needs.changes.outputs.code == 'true')
     runs-on: ubuntu-latest
     environment: live-verify
     steps:
@@ -82,7 +117,10 @@ jobs:
 
   live-verify-browser:
     name: 🔴🌐 Live browser verification
-    if: github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group' || github.event.label.name == 'run-live-verify'
+    needs: changes
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      ((github.event_name == 'merge_group' || github.event.label.name == 'run-live-verify') && needs.changes.outputs.code == 'true')
     runs-on: ubuntu-latest
     environment: live-verify
     steps:

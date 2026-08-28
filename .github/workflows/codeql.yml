@@ -1,0 +1,80 @@
+name: CodeQL
+
+# Replaces GitHub's "default setup" CodeQL scanning with an advanced-setup
+# workflow so it can skip docs-only pushes/PRs, same as ci.yml's code jobs.
+# Not a required status check (see branch protection) — it's a security
+# scan, not a merge gate.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  merge_group:
+    branches: [main]
+  schedule:
+    # Weekly full scan regardless of what changed, matching the previous
+    # default-setup cadence.
+    - cron: '30 1 * * 0'
+
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    name: 🔍 Detect changed paths
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - name: 📥 Check out the repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: 🔍 Does this push/PR touch anything other than docs?
+        id: filter
+        uses: dorny/paths-filter@0e4a8c6effa4802afeda77dc8d303f8176d7dfad # v3.0.4
+        with:
+          filters: |
+            code:
+              - 'src/**'
+              - 'test/**'
+              - 'scripts/**'
+              - 'tools/**'
+              - 'examples/**'
+              - 'package.json'
+              - 'package-lock.json'
+              - 'jsconfig.json'
+              - '.eslintrc*'
+              - 'eslint.config.*'
+              - '.github/workflows/**'
+
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    needs: changes
+    if: needs.changes.outputs.code == 'true' || github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: actions
+            build-mode: none
+          - language: javascript-typescript
+            build-mode: none
+    steps:
+      - name: 📥 Check out the repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: 🔎 Initialize CodeQL
+        uses: github/codeql-action/init@6f5948dfacef28e207b48d0905cf90c03365536d # v3.37.9
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+
+      - name: 🔎 Perform CodeQL analysis
+        uses: github/codeql-action/analyze@6f5948dfacef28e207b48d0905cf90c03365536d # v3.37.9
+        with:
+          category: "/language:${{ matrix.language }}"
