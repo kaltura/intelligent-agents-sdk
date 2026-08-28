@@ -796,8 +796,9 @@ export class Knowledge {
    * config:{sources:[{indexers:[{index_position, type, strategy}]}]},
    * created_at, updated_at}` (verified live). A deleted/unknown id → typed
    * `not_found`; another partner's id → typed `forbidden` ("Does not belong
-   * to your partner"). `status` is the indexing-completion field (`"READY"`
-   * once done) — see {@link isIndexed}.
+   * to your partner"). `status` is the record's own container-lifecycle flag
+   * (`"READY"`/`"DELETED"`), not an indexing-completion signal — see
+   * {@link isIndexed} and {@link entryStatus}.
    * @param {number} id @param {string} ks (admin)
    */
   async getRecord(id, ks) {
@@ -868,8 +869,10 @@ export class Knowledge {
   /**
    * Read indexing status for the partner's knowledge (`partner-config/stats`). READ.
    * GATED: 403s for a partner admin KS on at least one deployment — same
-   * privilege wall as {@link linkRecords}, not a read exempt from it. Use
-   * {@link isIndexed} instead if this 403s.
+   * privilege wall as {@link linkRecords}, not a read exempt from it. A
+   * knowledge-level status check that doesn't require elevated privilege is
+   * planned for a future release; this method will likely be updated to use
+   * it once that ships. Use {@link entryStatus} for per-entry status today.
    * @param {string} ks
    */
   async indexStatus(ks) {
@@ -878,11 +881,14 @@ export class Knowledge {
   }
 
   /**
-   * Whether a Knowledge record has finished indexing (`getRecord(id,
-   * ks).status === 'READY'`). READ. Prefer this over {@link search} (its
-   * "no relevant information" reply also fires when indexing is done but
-   * `use_knowledge_base` is off, so it can't signal indexing status) or
-   * {@link indexStatus} (gated on some deployments).
+   * Read a Knowledge record's own container status (`getRecord(id,
+   * ks).status`). READ. This is the record's lifecycle flag — `"READY"` once
+   * the record exists and is usable, `"DELETED"` once removed — NOT an
+   * indexing-completion signal: a knowledge base is open-ended (entries can be
+   * added at any time), so there's no single "fully indexed" state for the
+   * record as a whole. `status` reads `"READY"` immediately on creation, before
+   * any entry has been indexed. For whether specific entries have finished
+   * indexing, use {@link entryStatus} instead.
    * @param {number} id @param {string} ks (admin)
    * @returns {Promise<{ready:boolean, status:string|null, indexPosition:number|null}>}
    */
@@ -896,6 +902,37 @@ export class Knowledge {
       status: rec?.status ?? null,
       indexPosition: withPosition?.index_position ?? null,
     };
+  }
+
+  /**
+   * Per-entry indexing status (`POST v1/knowledge/entry_status`). READ. The
+   * correct way to check whether SPECIFIC uploaded content has finished
+   * indexing — unlike {@link isIndexed}/`getRecord().status`, which reflect the
+   * knowledge record's own container lifecycle, not entry-level progress.
+   *
+   * **Not yet generally available.** Verified working end-to-end on a
+   * pre-production test environment; general rollout is expected in early
+   * September 2026. Calling this before your deployment has it will fail —
+   * don't build on it yet.
+   *
+   * Returns the raw `{entries:[...]}` array, unmodified: one row per entry
+   * FOUND in the knowledge base (an unknown/not-yet-indexed entry id is
+   * silently omitted, not an error), each with a `documents[]` list of
+   * `{objectType, objectId, status}`. `status` is one of `SUCCEEDED`,
+   * `NO_CHAPTERS`, `PARSE_ERROR`, `TOO_SHORT`, or `null` (queued/in progress).
+   * `SUCCEEDED`/`TOO_SHORT` are the terminal-success statuses; `NO_CHAPTERS`/
+   * `PARSE_ERROR` are terminal failures — this method doesn't collapse that
+   * into a boolean, since "done" vs. "failed" is a caller decision.
+   * @param {number} knowledgeId @param {string[]} entryIds 1-500 Kaltura entry ids @param {string} ks (admin)
+   * @returns {Promise<{entries:Array<{entry_id:string, documents:Array<{objectType:string, objectId:string, status:string|null}>}>}>}
+   */
+  async entryStatus(knowledgeId, entryIds, ks) {
+    this._.assertAdmin(ks, 'knowledge.entryStatus');
+    requireRecordId(knowledgeId, 'knowledge.entryStatus');
+    if (!Array.isArray(entryIds) || entryIds.length < 1 || entryIds.length > 500 || !entryIds.every((v) => typeof v === 'string' && v.length > 0)) {
+      throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: 'knowledge.entryStatus needs entryIds as a non-empty array of 1-500 entry-id strings.' });
+    }
+    return (await this._.genie('v1/knowledge/entry_status', { knowledge_id: knowledgeId, entry_ids: entryIds }, ks)).data;
   }
 }
 

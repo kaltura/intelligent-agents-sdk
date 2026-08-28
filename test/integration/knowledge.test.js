@@ -390,6 +390,30 @@ test('isIndexed skips a leading indexer with a null index_position and reports t
   assert.deepEqual(st, { ready: true, status: 'READY', indexPosition: 42 });
 });
 
+test('entryStatus posts {knowledge_id, entry_ids} to v1/knowledge/entry_status and returns the raw {entries} array', async () => {
+  const f = fakeFetch([
+    { match: '/v1/knowledge/entry_status', respond: () => ({ body: { entries: [
+      { entry_id: '0_abc123', documents: [{ objectType: 'KalturaMarkdownAsset', objectId: '0_abc123', status: 'SUCCEEDED' }] },
+    ] } }) },
+  ]);
+  const m = new Management({ partnerId: 1, adminSecret: 'a'.repeat(32), fetch: f });
+  const res = await m.knowledge.entryStatus(2428, ['0_abc123', 'unknown-id'], ADMIN);
+  assert.deepEqual(res, { entries: [
+    { entry_id: '0_abc123', documents: [{ objectType: 'KalturaMarkdownAsset', objectId: '0_abc123', status: 'SUCCEEDED' }] },
+  ] });
+  assert.deepEqual(f.calls[0].body, { knowledge_id: 2428, entry_ids: ['0_abc123', 'unknown-id'] });
+});
+
+test('entryStatus rejects a bad knowledgeId or entryIds before any network call', async () => {
+  const f = fakeFetch([]);
+  const m = new Management({ partnerId: 1, adminSecret: 'a'.repeat(32), fetch: f });
+  await assert.rejects(() => m.knowledge.entryStatus(-1, ['x'], ADMIN), (e) => e.code === 'bad_request');
+  await assert.rejects(() => m.knowledge.entryStatus(2428, [], ADMIN), (e) => e.code === 'bad_request');
+  await assert.rejects(() => m.knowledge.entryStatus(2428, Array.from({ length: 501 }, (_, i) => `id${i}`), ADMIN), (e) => e.code === 'bad_request');
+  await assert.rejects(() => m.knowledge.entryStatus(2428, [123], ADMIN), (e) => e.code === 'bad_request');
+  assert.equal(f.calls.length, 0, 'no write on any validation failure');
+});
+
 test('deleteRecord requires confirmPermanent, posts v1/knowledge/delete, and returns a {removed,_meta} receipt (wire body is null)', async () => {
   const f = fakeFetch([
     { match: '/v1/knowledge/delete', respond: () => ({ status: 200, body: null }) },
