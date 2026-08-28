@@ -2,15 +2,18 @@
 
 The **Agentic Avatars SDK** — a zero-dependency JavaScript SDK for building and operating **Kaltura Agentic Avatars**, Kaltura's conversational agents with a visual, human-like avatar interface.
 
-Two entry points, plus several optional plugin subpaths that don't bloat the base runtime:
+Two entry points, plus optional plugins under `./experience` that don't bloat the base runtime:
 
 - `./management` — provision, configure, and measure agents (server-side)
 - `./experience` — the live interactive runtime: socket + WHEP video (browser)
-- `./experience/presenter` — optional: the `Presenter` deck-walkthrough plugin
-- `./experience/chroma-key` — optional: transparent-background avatar compositor (bring your own chroma-key-video)
-- `./experience/genui` — optional: `ExperienceRenderer`/`mountWidget` GenUI widget rendering
-- `./experience/analytics` — optional: `KavaAnalytics`, client-only KAVA Application Events (`pageLoad`/`buttonClicked`)
-- `./experience/noise-suppressor` — optional: `createNoiseSuppressor`, a zero-dependency AudioWorklet noise gate
+
+**Plugins** (each its own subpath — only pay for what you import):
+
+- `./experience/presenter` — the `Presenter` deck-walkthrough plugin
+- `./experience/chroma-key` — transparent-background avatar compositor (bring your own chroma-key video)
+- `./experience/genui` — `ExperienceRenderer`/`mountWidget` GenUI widget rendering
+- `./experience/analytics` — `KavaAnalytics`, client-only KAVA Application Events (`pageLoad`/`buttonClicked`)
+- `./experience/noise-suppressor` — `createNoiseSuppressor`, a zero-dependency AudioWorklet noise gate
 
 No build step, no npm registry publish — that's disabled by design (`"private": true`, no `publishConfig`, no publish workflow). Ship `src/` raw ESM directly: import from `src/...` server-side, or load it in the browser via a jsDelivr CDN URL pinned to a git tag once the repo is public. `node:test` throughout.
 
@@ -131,7 +134,12 @@ real-relative-path pattern locally (`../src/experience/index.js`).
 #### Subresource Integrity (SRI) for the jsDelivr import
 
 Pinning a tag stops the URL from silently pointing at different code later, but it doesn't verify
-what jsDelivr actually served you matches this repo — that needs Subresource Integrity. An import
+what jsDelivr actually served you matches this repo — that needs Subresource Integrity.
+
+<details>
+<summary>Generating and wiring an <code>integrity</code> map</summary>
+
+An import
 map can carry an `integrity` entry per module URL; a browser that supports it refuses to execute
 a module whose fetched bytes don't hash to the pinned value (Chrome/Edge/Opera 127+, Firefox 138+
 at the time of writing — check the current table at
@@ -172,6 +180,8 @@ Regenerate this whenever you move your pin to a new tag — a hash is tied to th
 file content and won't match the next one. The other browser entry points
 (`src/experience/presenter.js`, `src/experience/genui/index.js`, `src/experience/analytics.js`,
 `src/experience/noise-suppressor.js`) each need their own run of the same command if you load them.
+
+</details>
 
 ---
 
@@ -343,15 +353,6 @@ reference.
 
 `startTapToTalk()`/`endTapToTalk()` are a distinct voice-input mode from typed-text `speak()`/`interrupt()`. The ASR mic uplink is always connected once `connect()` resolves; tapping just tells the conversation-manager to mark a capture window (`tapToTalkStart` → `InTappedMode`) and, on release, mint the turn from whatever it captured (`tapToTalkEnd` → its own ~300ms `processTapToTalkInput` timer). That turn then arrives through the same `agentTurnToTalk`/`transcript` pipeline as any open-mic turn — no separate transcript path to wire up.
 
-```js
-micButton.addEventListener('click', () => {
-  if (session.tapToTalkActive) session.endTapToTalk();
-  else session.startTapToTalk();
-});
-session.on('tapToTalkStarted', () => micButton.setAttribute('aria-pressed', 'true'));
-session.on('tapToTalkEnded', () => micButton.setAttribute('aria-pressed', 'false'));
-```
-
 `startTapToTalk()` throws `capability_disabled` unless `session.capabilities.tapToTalk` (from `clientConfiguration.isTapToTalk`) is true. Treat `isTapToTalk` as a fixed, per-agent deployment choice, never a live per-session toggle — build the UI conditionally on the flag instead:
 
 ```js
@@ -387,10 +388,7 @@ session.on('toolSpiralRecovering', ({ lastTurnText }) => {
 });
 ```
 
-Two ICE-level failure modes get distinct, faster handling:
-
-- **Zero-candidates fail-fast** — if ICE gathering completes having produced no candidates at all (a dead network path, e.g. TURN unreachable), the SDK escalates to media recovery immediately rather than waiting out the full 10s stuck-in-`new`/`checking` watchdog (a 3s floor guards against a genuinely slow TURN-only network).
-- **Recoverable vs. session-gone** — an STV media-recovery failure carrying a WHEP 404 (the server session is truly gone, not just a transient drop) surfaces a distinct `connectivityChanged` `detail` (`'stv session gone (404)'`) before cold-reconnecting, so you can tell the two apart in logs/metrics even though both still cold-reconnect the same way today.
+Two ICE-level failure modes (zero-candidates fail-fast, and telling a transient drop apart from a server-gone WHEP 404) get distinct, faster handling — see [ARCHITECTURE-REFERENCE.md § Resilience & Failure Handling](docs/ARCHITECTURE-REFERENCE.md#resilience--failure-handling) for the exact timings and the `connectivityChanged` `detail` values.
 
 ### Devices and media quality
 
@@ -406,6 +404,9 @@ await session.setAudioOutput(speakers[1].deviceId); // HTMLMediaElement.setSinkI
 await session.setAsrBandwidth(24); // kbps, applied live via RTCRtpSender.setParameters
 ```
 
+<details>
+<summary><strong>Field reference</strong> — every event and option above</summary>
+
 - **`hardwareMuteChanged`** (`{muted}`) — fires when the OS/hardware mutes or unmutes the active mic track (`track.onmute`/`onunmute`). Mute is debounced 5s (many platforms blip `onmute` during device switches); unmute fires immediately.
 - **`localSpeakingChanged`** (`{speaking}`) — an instant local speaking indicator from client-side volume analysis (`AnalyserNode`, 50ms sampling, threshold via `localVadThreshold`, default 300) — independent of the server's own turn-taking signals. Lazily activated only while at least one listener is registered, so a session that never listens pays zero Web Audio cost; deactivates the moment the last listener unsubscribes.
 - **`localMicLevel`** (`{level}`, 0-1) — the same 50ms `AnalyserNode` sampler's continuous volume, normalized against the analyser's max possible byte-frequency sum, emitted on every tick rather than only on threshold transitions — drives a real-time UI meter (e.g. a mic button that visually fills with live input volume) without needing to bucket `localSpeakingChanged`. Shares the same lazy activate/deactivate lifecycle: registering a listener for either `localMicLevel` or `localSpeakingChanged` starts the sampler, and it stops only once every listener for both has unsubscribed.
@@ -415,6 +416,8 @@ await session.setAsrBandwidth(24); // kbps, applied live via RTCRtpSender.setPar
 - **`setAudioOutput(deviceId)`** — routes `videoEl` playback via `setSinkId`, retrying up to 5 times at 500ms; returns `false` (never throws) if the platform lacks `setSinkId` or every retry is exhausted.
 - **`preferredVideoCodec`** (constructor option, e.g. `'VP9'`) — filters the STV downlink's video transceiver to a single codec via `setCodecPreferences`. Silently falls back to browser-default negotiation if the codec isn't in this browser's `RTCRtpReceiver.getCapabilities('video')`.
 - **`maxAsrBitrateKbps`** (constructor option) / **`setAsrBandwidth(kbps)`** (mid-session) — caps the ASR mic uplink's bitrate via `RTCRtpSender.setParameters()`, no renegotiation.
+
+</details>
 
 ### Noise suppression (Tier-1 default + Tier-2 BYO-DSP)
 
@@ -439,9 +442,14 @@ const session = new KalturaAvatarSession({ token, /* … */,
 });
 ```
 
+<details>
+<summary><strong>Field reference</strong> — every option above</summary>
+
 - **`micConstraints`** (constructor option) — `MediaTrackConstraints` merged into every `getUserMedia({audio})` call this session makes (`connect()`, `switchMic()`). Default `{echoCancellation:true, noiseSuppression:true, autoGainControl:true}` — the standard browser-native Tier-1 baseline. Pass `false` to send bare `audio:true`; pass a partial object to override individual fields.
 - **`noiseProcessor`** (constructor option) — pluggable Tier-2 DSP hook: `(stream) => Promise<MediaStream|{stream,stop}>`. Called with the raw `getUserMedia` stream at `connect()` and every `switchMic()`; its returned stream (or `{stream,stop}`, if the processor owns a resource that needs explicit teardown — e.g. an `AudioWorkletNode` graph) is what actually reaches the ASR uplink. The SDK core bundles NO DSP library — bring a third-party processor (dynamically import it so apps that don't use it never load it) or a bespoke one; anything matching the shape works. A processor that throws fails mic acquisition closed with a typed `noise_processor_failed` error (same fail-closed behavior as a `getUserMedia` rejection).
 - **`createNoiseSuppressor(opts)`** (`./experience/noise-suppressor`, separately importable — zero effect until constructed and passed as `noiseProcessor`) — the SDK's own real, lightweight, dependency-free Tier-2 implementation: an adaptive RMS noise gate running as a pure-browser-native `AudioWorkletProcessor` (attack/release-smoothed envelope, adaptive noise-floor tracking — NOT spectral/ML denoising, which is a heavier Tier-2 DSP approach). Options: `thresholdDb` (default `-50`), `attackMs` (default `5`), `releaseMs` (default `150`), `floorAdaptMs` (default `2000`); `audioContext`/`getAudioContext`/`audioWorkletNodeConstructor` are injectable for testing, mirroring the rest of the SDK's constructor-injection style.
+
+</details>
 
 ### KAVA analytics (opt-in, client-only Application Events)
 
@@ -544,7 +552,7 @@ Designed for enterprise, HIPAA, HITRUST, and regulated frameworks. Full control 
 
 ## Client-side commands
 
-The cleanest way for the brain to drive your UI — no custom JSON, no fragile text parsing, no server-side echo call. `tools.client()` builds a native `type:"client"` tool: the model calls it, the backend emits a silent `type:"tool"` segment carrying `tool_metadata.id`, and that's the entire server-side contract — no `request` block, no echo endpoint, no response shaper.
+The cleanest way for the brain to drive your UI — no custom JSON, no fragile text parsing, no server-side echo call. `tools.client()` builds a native `type:"client"` tool: the model calls it, the backend emits a silent `type:"tool"` segment carrying `tool_metadata.id`, and that's the entire server-side contract. See [docs/CLIENT-COMMANDS.md](docs/CLIENT-COMMANDS.md) for the full mechanism end to end, plus the deployment gotchas (tool spirals starving the voice, the LLM having no real-time clock, guardrail/arg-scrubbing defaults). The rest of this section is the SDK-side API for consuming a client tool once it's authored.
 
 ```js
 // author once (server, admin KS)
@@ -668,19 +676,23 @@ new ExperienceRenderer({
 
 `mountWidget(descriptor, target, opts)` is the zero-dep, never-`innerHTML`, accessible renderer. It ships zero styling — you theme the stable `kgenui`/`kgenui__*` class contract. `onMount(root, descriptor)` is the progressive-enhancement seam for host-injected libraries (Mermaid, Chart.js, KaTeX) — see `test/unit/genui.test.js` for the hook's contract.
 
-A `summary` widget's text is markdown-in-plain-text by default (LLM-authored), and the SDK renders it as flat escaped text unless you opt in: `mountWidget(descriptor, target, { markdown: true })` parses that same text as markdown — headings, bold/italic, inline code, links, lists, fenced code blocks, and GFM tables (rendered through the same safe `tableEl` builder the structured widgets use) — all as real, accessible DOM, never `innerHTML`. This is markdown-IN-plain-text rendering, not a new wire segment type; every link goes through `safeUrl` and every text run through `safeText`/`safeSource`, so a `javascript:` link or a raw `<script>` tag in the LLM output is neutralized the same way the rest of GenUI's renderers neutralize untrusted output. Default (flat text) behavior is unchanged, so no existing app regresses by upgrading.
+A widget interrupted mid-stream (e.g. a barge-in) never mounts as silently truncated — it falls back to a typed `{kind:'error', ...}` descriptor instead.
 
-A widget interrupted mid-stream (a different runtime/`speechId` arrives before its JSON body finishes writing — e.g. a barge-in) is never mounted as a silently-truncated widget: `SegmentAssembler` recognizes the cut-off JSON shape and `ExperienceRenderer` mounts the same typed fallback it uses for a throwing custom renderer, `{kind:'error', data:{runtime, message}}`, distinguishable from any complete widget's descriptor.
+Two things worth knowing that have their own dedicated writeups:
 
-`graded-question` (a prompt with either multiple-choice options or a free-text answer, an optional answer key, and an optional explanation) is NOT one of the nine backend runtimes above — there's no Genie brain tool that emits it. It's a host-registered widget: `import { renderGradedQuestion } from '@kaltura/intelligent-agents/experience/genui'`, then `new ExperienceRenderer({ renderers: { 'graded-question': renderGradedQuestion } })`, the same "10th runtime" extensibility seam any custom widget uses (see "Registration, fallback, and provenance" in `docs/GENUI-REFERENCE.md`). Grading happens client-side in `mountWidget` — a comprehension-check primitive, not a tamper-proof assessment, since the answer key travels in the descriptor itself. Full shape, the `onAction('answer', ...)` event, and a runnable example are in [docs/GENUI-REFERENCE.md](docs/GENUI-REFERENCE.md#10-graded-question-rendergradedquestion--a-host-registered-10th-runtime) and `examples/genui-graded-question.mjs`.
+- **Markdown rendering** — a `summary` widget's LLM-authored text renders as flat escaped text by default; pass `{ markdown: true }` to `mountWidget` for real, safely-sanitized markdown DOM instead. See [docs/GENUI-REFERENCE.md § Markdown rendering (opt-in)](docs/GENUI-REFERENCE.md#markdown-rendering-opt-in).
+- **Turn boundaries** — in LIVE mode, `ExperienceRenderer` clears stale widgets on `turnStart` by default (`clearOnTurnStart: true`) so a widget from a previous turn never lingers. See [docs/GENUI-REFERENCE.md § Live vs. headless dispatch](docs/GENUI-REFERENCE.md#live-vs-headless-dispatch).
 
-In LIVE mode (`.start()`), `ExperienceRenderer` also subscribes to the session's `turnStart` event (re-emitted from the raw `agent_start_speech` socket event — `{speechId, turnId, isNewTurn}`) and, by default (`clearOnTurnStart: true`), discards the assembler's in-flight buffer and clears `rendered`/`last` when `isNewTurn` is true, so a widget from a previous turn never lingers into the next one — the same correctness fix Genie's own web client applies by nulling its content on `AgentStartSpeechReceived`. A duplicate turn (`isNewTurn:false`, e.g. a CM-side `tap-to-talk` retrigger for a `turnId` already in flight) is ignored here, matching every other `turnStart`/`isNewTurn` consumer in the SDK — otherwise the duplicate would wipe an already-rendered widget out from under the viewer mid-turn. Pass `clearOnTurnStart: false` to keep the previous default behavior (accumulate/persist across turns).
+`graded-question` (multiple-choice or free-text, with an optional answer key and explanation) is a host-registered widget, not one of the backend runtimes — `import { renderGradedQuestion } from '@kaltura/intelligent-agents/experience/genui'`, then `new ExperienceRenderer({ renderers: { 'graded-question': renderGradedQuestion } })`. Grading happens client-side — a comprehension-check primitive, not a tamper-proof assessment. Full shape, the `onAction('answer', ...)` event, and a runnable example are in [docs/GENUI-REFERENCE.md](docs/GENUI-REFERENCE.md#10-graded-question-rendergradedquestion--a-host-registered-10th-runtime) and `examples/genui-graded-question.mjs`.
 
 ---
 
 ## Presenter
 
 The `Presenter` helper (`./experience/presenter`, its own subpath so apps that don't need it never pay for its module graph) manages a deck walkthrough end to end: per-slide **context injection** via `session.setDynamicPrompt()` — a structured `page_context` payload telling the brain what's on screen right now — navigation via ONE deterministic, silent, idempotent mechanism (`onToolCall('navigate_to_slide')` — no speech-parsing fallback), duplicate-nav suppression, a sequential resume point (`reason:'resume'`), and session memory ("welcome back") — all pure logic over an injected `session`/`storage`, fully unit-testable.
+
+<details>
+<summary><strong>Full API</strong> — getters, methods, app hooks</summary>
 
 **Getters** (read-only):
 
@@ -716,6 +728,8 @@ The `Presenter` helper (`./experience/presenter`, its own subpath so apps that d
 | `onSlideChange` | `(n, slide, reason)` | Your renderer hook, called right after the context payload goes out (e.g. to page a PDF viewer to the new slide) |
 | `metaFor` | `(category)` | Returns per-category context meta flags (`disclaimer_required`/`non_gaap_cited`) when your compliance categories differ from the financial/legal default |
 | `slideContext` | `(slide, ctx)` | Full-replace hook for the payload's `slide:` sub-object when your slide shape doesn't match the default `{title, talking_points, category, content, narrator_guidance}` vocabulary (e.g. `body`/`topics`/`track`/`level`) |
+
+</details>
 
 The constructor option `oneNavPerTurn: true` guards against a brain "restart" firing two different nav targets within the same spoken turn — the second is silently suppressed until the next turn.
 
@@ -757,6 +771,9 @@ await session.connect();
 // calling session.disconnect() alone is enough.
 ```
 
+<details>
+<summary><strong>Behavior and non-goals</strong> — lifecycle, cleanup, error handling</summary>
+
 **Behavior:**
 
 - **Construction is synchronous** — `attachChromaKeyAvatar()` returns the live `ChromaKeyVideo`
@@ -791,6 +808,8 @@ If your app keys a URL-sourced clip with `chroma-key-video` directly, bypassing 
 entirely, running that URL through `safeUrl()` first is still your obligation (this plugin never
 accepts or fetches a URL, only the session's own live video element).
 
+</details>
+
 See `examples/chroma-key-avatar.html` for a self-contained runnable demo.
 
 ---
@@ -798,6 +817,9 @@ See `examples/chroma-key-avatar.html` for a self-contained runnable demo.
 ## Advanced / building-block exports
 
 These are importable from their entry points and useful when composing custom pipelines or renderers outside the high-level helpers.
+
+<details>
+<summary><strong>Full export tables</strong> — one per entry point</summary>
 
 ### `./management`
 
@@ -875,6 +897,8 @@ These are importable from their entry points and useful when composing custom pi
 | `PAGE_TYPES` | The closed enum `pageLoad`'s `pageType` field is validated against. |
 | `HOSTING_APPLICATIONS` | `hostingKalturaApplication` values by name: `genieChat`, `agents`, `modelsSdk`, `conversationManager`, `avatarVideos`, `agenticAvatarsStudio`, plus an internal analytics-only identifier carried over from the backend's own dashboard naming — `kaiVendor` (a legacy internal hosting-app id with no public product meaning; kept only so KAVA event attribution matches the backend's existing dashboards). |
 | `DEFAULT_ANALYTICS_URL` | The KAVA ingestion endpoint (`https://analytics.kaltura.com/api_v3/index.php`). |
+
+</details>
 
 ---
 
