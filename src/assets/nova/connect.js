@@ -25,7 +25,7 @@ import { initHighlighter } from './highlighter.js';
 
 // SDK version pin -- keep in sync with: intelligent-agents-sdk-site/src/index.md
 // (quick-start jsDelivr pin) and docs-site-avatar/scripts/fetch-sdk.mjs (DEFAULT_TAG).
-const SDK_TAG = 'v1.8.0';
+const SDK_TAG = 'v1.9.0';
 const SDK_BASE = `https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@${SDK_TAG}`;
 
 const { KalturaAgentSession } = await import(`${SDK_BASE}/src/experience/index.js`);
