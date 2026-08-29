@@ -339,3 +339,75 @@ test('onToolCall unsubscribe removes the handler and its schema', async () => {
   await session.sendText('probe');
   assert.equal(fired.length, 0);
 });
+
+// ───────────────────────── brain-liveness watchdog (peer of session.js's R5) ─────────────────────────
+
+/** A ReadableStream that enqueues each chunk after its own delay, then closes — for exercising real-time gaps between segments. */
+function timedStream(chunks) {
+  return new ReadableStream({
+    async start(controller) {
+      for (const c of chunks) {
+        if (c.delayMs) await new Promise((r) => setTimeout(r, c.delayMs));
+        controller.enqueue(new TextEncoder().encode(c.text));
+      }
+      controller.close();
+    },
+  });
+}
+function timedFetch(chunks) {
+  return async () => ({ ok: true, status: 200, headers: { get: () => null }, text: async () => '', body: timedStream(chunks) });
+}
+
+test('a bare keepalive does not settle "thinking", and a keepalive-only gap past brainStallMs surfaces brainStalled', async () => {
+  const fetch = timedFetch([
+    { delayMs: 0, text: seg({ type: 'keepalive', content: '' }) + '\n' },
+    { delayMs: 130, text: seg({ type: 'keepalive', content: '' }) + '\n' },   // past brainStallMs (100) with no progress
+    { delayMs: 130, text: seg({ type: 'text', content: 'Still here.' }) + '\n' },
+  ]);
+  const { session } = newSession({ fetch, cfg: { brainStallMs: 100 } });
+  await session.connect();
+  const pendingEvents = [];
+  session.on('responsePending', () => pendingEvents.push('pending'));
+  session.on('responseSettled', () => pendingEvents.push('settled'));
+  const stalls = [];
+  session.on('brainStalled', (p) => stalls.push(p));
+  const r = await session.sendText('hi');
+  assert.equal(r.text, 'Still here.');
+  assert.deepEqual(pendingEvents, ['pending', 'settled'], 'keepalives must not settle "thinking" early — only the real text segment does');
+  assert.ok(stalls.length >= 1, `a keepalive-only gap past brainStallMs must surface brainStalled (got ${stalls.length})`);
+  assert.equal(stalls[0].afterMs, 100);
+});
+
+test('brain watchdog: REPEATS on sustained keepalive-only traffic, and spoken output clears it', async () => {
+  const fetch = timedFetch([
+    { delayMs: 0, text: '' },   // stream opens with no data yet
+    { delayMs: 260, text: seg({ type: 'text', content: 'Done.' }) + '\n' },   // spans ~2-3 windows of 100ms
+  ]);
+  const { session } = newSession({ fetch, cfg: { brainStallMs: 100 } });
+  await session.connect();
+  const stalls = [];
+  session.on('brainStalled', (p) => stalls.push(p));
+  const r = await session.sendText('hi');
+  assert.equal(r.text, 'Done.');
+  assert.ok(stalls.length >= 2, `watchdog must repeat while nothing perceivable arrives (got ${stalls.length})`);
+  assert.deepEqual(stalls.map((s) => s.count), stalls.map((_, i) => i + 1), 'count must increment each repeat');
+  // Real text cleared the watchdog before the turn ended — no further fires after the reply.
+  const countAtReply = stalls.length;
+  await new Promise((r2) => setTimeout(r2, 250));
+  assert.equal(stalls.length, countAtReply, 'spoken output must cancel the watchdog, not just the turn end');
+});
+
+test('a tool-only segment does not clear the watchdog (tool spirals still surface brainStalled)', async () => {
+  const fetch = timedFetch([
+    { delayMs: 0, text: seg({ type: 'tool', content: 'go {"n":1}' }) + '\n' },
+    { delayMs: 150, text: seg({ type: 'text', content: 'ok' }) + '\n' },
+  ]);
+  const { session } = newSession({ fetch, cfg: { brainStallMs: 100 } });
+  await session.connect();
+  const stalls = [];
+  session.on('brainStalled', (p) => stalls.push(p));
+  session.onToolCall('go', () => {});
+  const r = await session.sendText('hi');
+  assert.equal(r.text, 'ok');
+  assert.ok(stalls.length >= 1, 'a tool segment must not clear the watchdog before real output arrives');
+});
