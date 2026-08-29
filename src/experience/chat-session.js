@@ -23,9 +23,10 @@
  *
  * Emits the transport-agnostic event subset (`transcript`, `turnStart`,
  * `turnEnd`, `toolCall`, `toolCallResult`, `toolCallInvalid`, `stateChange`,
- * `responsePending`, `responseSettled`, `warning`, `error`, `ended`) with the
- * same payload shapes as `KalturaAvatarSession`, so app code written against
- * the events works unchanged when `KalturaAgentSession` swaps transports.
+ * `responsePending`, `responseSettled`, `brainStalled`, `warning`, `error`,
+ * `ended`) with the same payload shapes as `KalturaAvatarSession`, so app code
+ * written against the events works unchanged when `KalturaAgentSession` swaps
+ * transports.
  *
  * ZERO runtime deps; `fetch` is injectable for tests (default global fetch).
  */
@@ -42,6 +43,14 @@ import {
   parseConverseStream, parseToolCall, parseToolResponseName, canonicalJson,
   validateToolArgs, SPOKEN_TYPES,
 } from '../core/stream.js';
+
+// A bare `keepalive` segment (Genie pinging a still-open-but-otherwise-quiet stream)
+// is not perceivable output — it must not settle the "thinking" signal or the
+// brain-stall watchdog below, the exact peer of KalturaAvatarSession excluding
+// `think` from the same two gates. Without this, the FIRST keepalive ping (which
+// can repeat forever if the backend call it's waiting on is stuck) silently
+// turns off "thinking" and never signals anything else — dead air with no warning.
+const NON_PERCEIVABLE_TYPES = new Set(['think', 'keepalive']);
 
 const DEFAULT_GENIE_URL = 'https://genie.nvp1.ovp.kaltura.com';
 
@@ -65,6 +74,10 @@ export class KalturaChatSession extends Emitter {
    * @param {string|number} [cfg.partnerId] Override for the audit partner id (else read from a plaintext token, if possible).
    * @param {boolean} [cfg.allowInsecureTransport] Localhost/dev only — allow an http:// genieUrl (loud warning).
    * @param {() => number} [cfg.now] Injectable clock (deterministic tests).
+   * @param {number} [cfg.brainStallMs] How long to wait for perceivable output before emitting a
+   *   repeating `brainStalled` warning — the exact peer of `KalturaAvatarSession`'s watchdog (same
+   *   event shape `{afterMs, count}`, same default, same "warn forever, never cancel the turn"
+   *   behavior — a tool-call turn or a stuck backend call can legitimately run long). Default 12000.
    */
   constructor(cfg) {
     super();
@@ -102,6 +115,9 @@ export class KalturaChatSession extends Emitter {
     this._sessionGen = 0;
     this._turnChain = Promise.resolve();   // serializes sendText turns (one converse at a time)
     this._activeTurnAbort = null;
+    this._brainStallMs = cfg.brainStallMs ?? 12000;
+    this._brainStallTimer = null;
+    this._brainStallFireCount = 0;
     /** @type {'idle'|'connected'|'closed'} */
     this.state = 'idle';
   }
@@ -172,6 +188,7 @@ export class KalturaChatSession extends Emitter {
     this.emit('transcript', { text, type: 'user', speechId: null, words: [] });
     this.emit('turnStart', { speechId: null, turnId, isNewTurn: true });
     this.emit('responsePending', {});
+    this._armBrainWatchdog();
     const body = { userMessage: text, sse: false };
     if (this._threadId) body.threadId = this._threadId;
     if (this._requestVars && Object.keys(this._requestVars).length) body.request_vars = this._requestVars;
@@ -183,7 +200,11 @@ export class KalturaChatSession extends Emitter {
     try {
       const stream = await this._converseFetch(body, ac.signal);
       for await (const seg of parseConverseStream(stream)) {
-        settle();
+        if (!(seg.type && NON_PERCEIVABLE_TYPES.has(seg.type))) settle();
+        // Watchdog clears ONLY on segments a caller can actually perceive — spoken content or a
+        // GenUI widget. `tool`/`tool_response`/`think`/`keepalive` never clear it, so a tool-only
+        // spiral (or a stuck backend call pinging bare keepalives) still surfaces `brainStalled`.
+        if (seg.type && (SPOKEN_TYPES.has(seg.type) || seg.type === 'unisphere-tool')) this._clearBrainWatchdog();
         segments.push(seg);
         if (seg.threadId && !this._threadId) this._threadId = seg.threadId;
         if (seg.messageId && !this._lastMessageId) this._lastMessageId = seg.messageId;
@@ -206,6 +227,7 @@ export class KalturaChatSession extends Emitter {
       throw err;
     } finally {
       settle();
+      this._clearBrainWatchdog();
       this._activeTurnAbort = null;
       this.emit('turnEnd', { speechId: null, turnId });
     }
@@ -317,6 +339,7 @@ export class KalturaChatSession extends Emitter {
   disconnect() {
     if (this.state === 'closed') return;
     this._sessionGen++;
+    this._clearBrainWatchdog();
     this._activeTurnAbort?.abort();
     this._pendingToolAcks.clear();
     this._token = null;   // don't hold the secret past the session
@@ -427,4 +450,24 @@ export class KalturaChatSession extends Emitter {
 
   /** @param {'idle'|'connected'|'closed'} s */
   _setState(s) { this.state = s; this.emit('stateChange', { state: s }); }
+
+  // ─────────────────────────── brain-liveness watchdog ───────────────────────────
+  // The exact peer of KalturaAvatarSession's `_armBrainWatchdog`/`_clearBrainWatchdog`
+  // (same event shape, same "warn forever, never cancel" behavior — a long tool-call
+  // turn or a slow backend call can legitimately outlast several fire cycles).
+
+  /** Arm the watchdog at turn start; fires `brainStalled` repeatedly (every `_brainStallMs`) until cleared by perceivable output. */
+  _armBrainWatchdog() {
+    if (!this._brainStallMs) return;
+    this._clearBrainWatchdog();
+    const fire = () => {
+      if (this.state !== 'connected') return;
+      this._brainStallFireCount++;
+      this.emit('brainStalled', { afterMs: this._brainStallMs, count: this._brainStallFireCount });
+      this._brainStallTimer = setTimeout(fire, this._brainStallMs);
+    };
+    this._brainStallTimer = setTimeout(fire, this._brainStallMs);
+  }
+  /** Stop the watchdog (real output arrived, or the turn/session ended). */
+  _clearBrainWatchdog() { if (this._brainStallTimer) { clearTimeout(this._brainStallTimer); this._brainStallTimer = null; } this._brainStallFireCount = 0; }
 }
