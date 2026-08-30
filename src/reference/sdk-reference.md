@@ -48,6 +48,15 @@ for await (const seg of mgmt.converse(configId, 'Hello!')) {
 // 3. assembled result (text + toolCalls + threadId + _meta)
 const result = await mgmt.converseOnce(configId, 'Hello!');
 console.log(result.text, result.threadId);
+
+// 4. react to session events automatically, server-side — no polling
+await mgmt.lifecycle.create({
+  name: 'Summarize on session end',
+  systemName: 'auto_summary_v1',
+  eventType: 'session_ended',
+  objectType: 'thread',
+  action: { actionType: 'triggerInsight', insights: [{ insightKey: 'SUMMARY', valueType: 'string' }] },
+}, admin.ks);
 ```
 
 `provision()` returns `{name, configId, avatarId, agentId, widgetId, profile, personaLint, blocks?, _meta}`. `personaLint` (see `lintPersonaIdentity` below) is a warning-only check for persona-name drift — it never fails `provision()`; inspect `personaLint.findings` yourself if you want to surface or act on it.
@@ -768,7 +777,7 @@ await mgmt.knowledge.deleteRecord(rec.id, ks, { confirmPermanent: true });
 
 ## Honest limits
 
-- **`partner-config/update` 403s today** for a partner admin KS. Brain config (`setBrainConfig`) and the knowledge re-point (Path B) are gated. Probe first; writes return `{applied:false, reason}`. Grounding a new agent via `knowledge_ids` (Path A) is NOT gated. (Lifecycle webhooks have no backend implementation at all — dropped from the SDK.)
+- **`partner-config/update` 403s today** for a partner admin KS. Brain config (`setBrainConfig`) and the knowledge re-point (Path B) are gated. Probe first; writes return `{applied:false, reason}`. Grounding a new agent via `knowledge_ids` (Path A) is NOT gated. (Event-driven session/thread rules ARE supported — see [API Reference § Lifecycle](/reference/api/build/#lifecycle-event-driven-rules).)
 - **No verbatim speech** — `speak()` goes through the brain; the avatar may rephrase.
 - **Custom face works self-serve** — upload a portrait image via `catalog.createVisual`, pass `itemId` as `visualId` in `provision`/`avatars.create`. The model animates the portrait at runtime. Video-clip ingest (higher-fidelity model) is not yet self-serve.
 - **`force_experience` and `model_type:'fast'`** are hints; the SDK can't prove which model replied or which experience rendered.

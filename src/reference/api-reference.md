@@ -25,7 +25,7 @@ this repo — see [SDK Reference](/reference/sdk-reference/) for the full `Manag
 |------|--------|
 | [Authentication & Services](/reference/api/authentication/) | KS types and minting, `userId` identity binding, the five services and their base URLs |
 | [Phase 1 — Design](/reference/api/design/) | Browse the catalog, generate an agent profile, custom voice (clone), provider voice import, custom visual (portrait), end-to-end portrait recipe |
-| [Phase 2 — Build](/reference/api/build/) | Intellects (create/configure/preview), tools, secrets, RAG grounding, avatars, agents, brain configuration |
+| [Phase 2 — Build](/reference/api/build/) | Intellects (create/configure/preview), tools, secrets, RAG grounding, avatars, agents, brain configuration, Lifecycle event-driven rules |
 | [Phase 3 — Deploy](/reference/api/deploy/) | Resolve a widget ID, initialize the browser runtime |
 | [Phase 4 — Operate](/reference/api/operate/) | Converse, reserved `sys__*` variables, threads and history cost, feedback, usage analytics, knowledge search |
 | [Scripted Video (STV)](/reference/api/scripted-video/) | Scripted-video-only sessions: auth, lifecycle, `say-audio` speech injection |

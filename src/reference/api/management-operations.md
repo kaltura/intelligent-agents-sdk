@@ -1,7 +1,7 @@
 ---
 layout: base.njk
 title: "API · Management Operations"
-description: "CRUD endpoints for agents, avatars, intellects, tools, skills, and knowledge records."
+description: "CRUD endpoints for agents, avatars, intellects, tools, skills, knowledge records, and Lifecycle rules."
 eyebrow: Reference
 ---
 
@@ -34,6 +34,7 @@ All use the **admin KS**.
 | Update | `POST /v1/avatar/update` | `{"id":"24-char-hex", ...fields}` |
 | Clone | `POST /v1/avatar/clone` | `{"id":"24-char-hex"}` |
 | Delete | `POST /v1/avatar/delete` | `{"id":"24-char-hex"}` |
+| List templates | `POST /v1/avatar-template/list` | `{"pager":{"offset":0,"limit":30}}` — curated `{voice,face}` presets ([§ Create an Avatar](/reference/api/build/#create-an-avatar)). SDK: `mgmt.avatars.listTemplates(ks, opts)`. |
 
 ## Intellects — `https://genie.nvp1.ovp.kaltura.com`
 
@@ -80,6 +81,7 @@ Full record lifecycle (all verified live). SDK: `mgmt.knowledge`. Linkage to an 
 
 | Operation | Endpoint | Body |
 |-----------|----------|------|
+| List | `POST /v1/knowledge/list` | `{"filter":{},"pager":{"pageIndex":1,"pageSize":30}}` — discover records without knowing ids up front. SDK: `mgmt.knowledge.listRecords(ks, opts)`. Distinct from `mgmt.knowledge.list(categoryId, ks)`, which lists KMS entries inside a category (Path A), not Knowledge record containers. |
 | Add | `POST /v1/knowledge/add` | `{"name":"..."}` |
 | Get | `POST /v1/knowledge/get` | `{"id":2049}` |
 | Update | `POST /v1/knowledge/update` | `{"id":2049, ...fields}` |
@@ -89,4 +91,22 @@ Full record lifecycle (all verified live). SDK: `mgmt.knowledge`. Linkage to an 
 `mgmt.knowledge.isIndexed(id, ks)` wraps Get and reads `status`/`config.sources[].indexers[].index_position` — `status` is the record's own container-lifecycle flag, not an indexing-completion signal (see § Ground the Agent). `mgmt.knowledge.entryStatus(knowledgeId, entryIds, ks)` wraps the new per-entry endpoint above and is the real indexing-completion check, once generally available.
 
 Deleting a record does **not** unlink it — an intellect's `knowledge_ids` keeps the dangling id; clear it via `mgmt.intellectConfig.setKnowledgeIds(configId, [], ks)`.
+
+## Lifecycle — `https://api.avatar.us.kaltura.ai`
+
+An event-driven rule engine ([§ Lifecycle](/reference/api/build/#lifecycle-event-driven-rules)) — not embedded in an intellect. SDK: `mgmt.lifecycle`.
+
+| Operation | Endpoint | Body |
+|-----------|----------|------|
+| List | `POST /v1/lifecycle/list` | `{"filter":{},"pager":{"offset":0,"limit":30}}` |
+| Get | `POST /v1/lifecycle/get` | `{"id":"RULE_UUID"}` |
+| Create | `POST /v1/lifecycle/create` | `{"name":"...", "systemName":"...", "eventType":"...", "objectType":"thread", "action":{...}}` |
+| Update | `POST /v1/lifecycle/update` | `{"id":"RULE_UUID", ...fields}` — idempotent |
+| Delete | `POST /v1/lifecycle/delete` | `{"id":"RULE_UUID"}` — replies `{success}`, not `{id}` |
+| Match (dry-run) | `POST /v1/lifecycle/match` | `{"objectType":"thread", "eventType":"session_ended", "eventData":{"object":{...}}}` |
+| List object types | `POST /v1/lifecycle/listObjects` | `{}` |
+| List events for a type | `POST /v1/lifecycle/listEvents` | `{"objectType":"thread"}` |
+| Describe filterable fields | `POST /v1/lifecycle/describeFields` | `{"objectType":"thread", "eventType":"session_ended"}` |
+
+Production ships a system-seeded preset rule (`preset__overridable_summary_on_session_ended`) that matches every `session_ended`/`thread` event for every partner by default — `match`'s response can include it grouped alongside your own rules (see [§ Lifecycle](/reference/api/build/#lifecycle-event-driven-rules) for a worked example).
 
