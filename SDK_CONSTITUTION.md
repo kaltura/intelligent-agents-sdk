@@ -85,8 +85,12 @@ must pass through `sanitizeJson()` from `core/safety.js` before being merged
 into any plain object. `sanitizeJson` strips `__proto__`, `constructor`, and
 `prototype` keys recursively.
 
-*Verify:* The compliance test asserts `setDynamicPrompt({ __proto__: { x: 1 } })`
-does not pollute `Object.prototype`. Confirm in `test/e2e/compliance.test.js`.
+*Verify:* `test/unit/safety.test.js` ("sanitizeJson drops prototype-pollution
+keys, keeps data") asserts `sanitizeJson()` strips `__proto__` from a plain
+object. `test/e2e/security.test.js` ("setDynamicPrompt scrubs
+prototype-pollution keys, keeps real data") asserts the same for
+`setDynamicPrompt({ __proto__: { x: 1 } })` end-to-end: it does not pollute
+`Object.prototype`.
 
 **Rule S-5: Admin secret non-enumerable and non-serializable.**
 `_adminSecret` must be stored with `Object.defineProperty` as
@@ -122,6 +126,10 @@ Retry parameters (defaults, all configurable via `HttpOptions`):
 **Rule R-2: Idempotent GETs are always safe to retry.**
 `GET` requests carry no body and are safe to retry on any transient failure
 without an idempotency key.
+
+*Verify:* `test/unit/http.test.js` ("R-2: GET requires no idempotency key to
+be retry-safe") asserts a GET is retried on a transient failure with no
+`idempotencyKey` passed at all.
 
 **Rule R-3: POSTs that carry an `Idempotency-Key` header are retry-safe.**
 `Http.postJson()` already accepts an `idempotencyKey` option and forwards it as
@@ -244,7 +252,7 @@ valid proof of compliance per the note at the top of this document.
 | S-1 | Security | No `eval` / `new Function` / equivalent | grep |
 | S-2 | Security | No `innerHTML`/`outerHTML`/`insertAdjacentHTML` assignments | grep |
 | S-3 | Security | Untrusted URLs pass through `safeUrl` | safety.test.js |
-| S-4 | Security | Untrusted JSON passes through `sanitizeJson` | compliance.test.js |
+| S-4 | Security | Untrusted JSON passes through `sanitizeJson` | safety.test.js + security.test.js |
 | S-5 | Security | Admin secret is non-enumerable | isolation.test.js |
 | S-6 | Security | No hardcoded credentials or token literals | grep |
 | R-1 | Resiliency | Exponential backoff with full jitter in `Http.request()` | http.test.js |

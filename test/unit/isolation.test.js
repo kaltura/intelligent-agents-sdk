@@ -149,3 +149,30 @@ test('two KalturaAvatarSession instances never leak requestVars or pending tool-
   one.session._pendingToolAcks.set('req-1', { name: 'navigate_to_slide' });
   assert.equal(two.session._pendingToolAcks.has('req-1'), false, 'a pending ACK on one instance is invisible to the other');
 });
+
+// ─────────────────────────── I-4: event-listener cleanup ───────────────────────────
+
+test('_unwireNetwork() removes exactly the online/offline handlers _wireNetwork() added (two instances, no cross-instance leakage)', async () => {
+  // Node has no global addEventListener; stub one so `_wireNetwork()` (gated on its presence) engages.
+  const handlers = new Map(); // type -> Set(fn)
+  const origAdd = globalThis.addEventListener, origRemove = globalThis.removeEventListener;
+  globalThis.addEventListener = (type, fn) => { (handlers.get(type) || handlers.set(type, new Set()).get(type)).add(fn); };
+  globalThis.removeEventListener = (type, fn) => { handlers.get(type)?.delete(fn); };
+  try {
+    const one = await connectSession({ networkAware: true });
+    const two = await connectSession({ networkAware: true });
+    assert.equal(handlers.get('online').size, 2, 'both instances registered their own online handler');
+    assert.equal(handlers.get('offline').size, 2, 'both instances registered their own offline handler');
+
+    one.session.disconnect();
+    assert.equal(handlers.get('online').size, 1, 'disconnecting A removes only A\'s online handler');
+    assert.equal(handlers.get('offline').size, 1, 'disconnecting A removes only A\'s offline handler');
+
+    two.session.disconnect();
+    assert.equal(handlers.get('online').size, 0, 'disconnecting B removes its own online handler too');
+    assert.equal(handlers.get('offline').size, 0, 'disconnecting B removes its own offline handler too');
+  } finally {
+    globalThis.addEventListener = origAdd;
+    globalThis.removeEventListener = origRemove;
+  }
+});
