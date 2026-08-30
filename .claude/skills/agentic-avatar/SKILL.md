@@ -1,5 +1,7 @@
 ---
-name: agentic-avatar description: Create, configure, and run Kaltura Agentic Avatar agents (face + voice + brain) using the `@kaltura/intelligent-agents` SDK's `Management` class — no raw curl calls, no hand-built JSON bodies. license: MIT
+name: agentic-avatar
+description: Create, configure, and run Kaltura Agentic Avatar agents (face + voice + brain) using the `@kaltura/intelligent-agents` SDK's `Management` class — no raw curl calls, no hand-built JSON bodies.
+license: MIT
 ---
 
 # Kaltura Agentic Avatar — SDK Skill
@@ -28,7 +30,7 @@ const kaltura = new Management({
 });
 ```
 
-One `Management` instance mounts every resource namespace: `sessions`, `agents`, `avatars`, `catalog`, `application`, `intellects`, `intellectConfig`, `tools`, `skills`, `conversations`, `threads`, `messages`, `feedback`, `followups`, `knowledge` — plus top-level `converse`/`converseOnce`/`provision` convenience methods. Full constructor options and every method's JSDoc: `src/management/client.js`.
+One `Management` instance mounts every resource namespace: `sessions`, `agents`, `avatars`, `catalog`, `application`, `intellects`, `intellectConfig`, `tools`, `skills`, `conversations`, `threads`, `messages`, `feedback`, `followups`, `knowledge`, `lifecycle` — plus top-level `converse`/`converseOnce`/`provision` convenience methods. Full constructor options and every method's JSDoc: `src/management/client.js`.
 
 ## KS (session token) types
 
@@ -73,14 +75,14 @@ console.log(reply.text);
    }, admin.ks);
    const configId = intellect.configId;
    ```
-3. **Write its prompts.** `kaltura.intellects.setPrompts(configId, { goal, targetAudience, restrictedTopics }, admin.ks)` — lints by default (see Prompt authoring below).
-4. **Pick a voice + visual from the catalog.**
+3. **Write its prompts.** `kaltura.intellects.setPrompts(configId, { goal, targetAudience, restrictedTopics }, admin.ks)` — lints by default (see Prompt authoring below). `kaltura.application.getCustomPrompts(ks)` returns the backend's own field schema for this input (`goal`/`targetAudience`/`restrictedTopics`/`name`/`knowledge`, each with a `label` and `headerTemplate`) — render a "describe your agent" form from it directly instead of hardcoding the 5 fields.
+4. **Pick a voice + visual from the catalog** — or skip straight to a curated preset with `kaltura.avatars.listTemplates(ks, {pageSize})`, which returns ready-made `{voice, face}` bundles (feed `template.voice.id`/`template.face.id` straight into `avatars.create` below) instead of pairing a voice and visual by hand.
 
    ```js
    const voices = await kaltura.catalog.list(admin.ks, { type: 'voice', pageSize: 1 });
    const visuals = await kaltura.catalog.list(admin.ks, { type: 'visual', pageSize: 1 });
    ```
-Note the argument order: **`ks` first, `opts` second** — this is the convention across nearly every `.list()` method in the SDK (`agents.list`, `avatars.list`, `intellects.list`, `tools.list`, `skills.list`, `threads.list`, `messages.list`).
+Note the argument order: **`ks` first, `opts` second** — this is the convention across nearly every `.list()` method in the SDK (`agents.list`, `avatars.list`, `avatars.listTemplates`, `intellects.list`, `tools.list`, `skills.list`, `threads.list`, `messages.list`, `knowledge.listRecords`, `lifecycle.list`).
 5. **Create the avatar (face + voice binding).** `const avatar = await kaltura.avatars.create({ voiceId, visualId, name }, admin.ks);`
 6. **Create the agent — needs only the intellect's configId.**
 
@@ -178,6 +180,8 @@ const linkStatus = await kaltura.knowledge.linkAvailable(ks);
 
 Path A is fully SDK-native with zero 403s. Path B (re-pointing an *existing* intellect via `partner-config/update` / `knowledge.linkRecords`) is still gated — check `knowledge.linkAvailable(ks)` before reaching for it.
 
+`kaltura.knowledge.listRecords(ks, {filter?, pageSize?})` discovers existing records without knowing ids up front (e.g. for a picker UI letting a user attach an existing knowledge base to a new agent) — `filter` accepts `nameEquals`/`nameLike`/`statusEquals`/`statusIn`.
+
 ```js
 const category = await kaltura.knowledge.findOrCreateCategory({ name: 'Yoga Studio Docs' }, admin.ks);
 const doc = await kaltura.knowledge.uploadMarkdown({
@@ -192,6 +196,32 @@ await kaltura.intellects.setCapability(configId, 'use_knowledge_base', 'on', adm
 ```
 
 `knowledge_ids` is capped at one record per intellect (`setKnowledgeIds` throws before any network call if you pass more than one). RAG retrieval works only after async indexing completes — but `kaltura.knowledge.isIndexed(record.id, admin.ks)` does NOT tell you that: its `ready` flag reflects the knowledge record's own container-lifecycle status (`ready:true` immediately on creation, before any entry has indexed), not whether indexing has finished. Don't use `knowledge.corpusStatus` (counts entries that exist, not whether they've finished embedding) or `knowledge.search`'s "couldn't find relevant information" reply (fires identically for an unindexed KB, an indexed KB with `use_knowledge_base` off, or a genuine no-match query) as an indexing-status signal either. A per-entry check (`kaltura.knowledge.entryStatus()`) is coming, with general rollout expected in early September 2026 — don't build on it yet. Until then, budget a fixed wait after upload before assuming content is searchable — see API-REFERENCE.md § Ground the Agent.
+
+## Lifecycle — react to session/thread events without polling
+
+A **rule** = `eventType` + `objectType` (currently only `'thread'`) + optional `eventConditions[]` + one **action** (`triggerInsight` or `sendInsightEmail`). The backend evaluates every active rule (yours plus its own system-seeded presets) whenever a matching event fires — no polling required.
+
+```js
+const rule = await kaltura.lifecycle.create({
+  name: 'Summarize every ended session',
+  eventType: 'session_ended',
+  objectType: 'thread',
+  action: { actionType: 'triggerInsight', insights: [{ insightKey: 'SUMMARY', valueType: 'string' }] },
+}, admin.ks);
+
+const rules = await kaltura.lifecycle.list(admin.ks, { pageSize: 30 });
+
+const result = await kaltura.lifecycle.match(
+  'thread', 'session_ended',
+  { object: { agent_id, thread_id, user_id } },
+  admin.ks,
+);
+// result.matchedRules[] groups related rules under a groupKey — expect the
+// backend's own system-seeded presets to show up alongside rules you created,
+// not just what you configured.
+```
+
+`eventConditions[]` entries are `{field, operator, value}` (a dot-path into the event payload, e.g. `{field:'object.agent_id', operator:'eq', value:'<uuid>'}`) — a `{path, op}` shape 400s. `create` is a WRITE — NOT idempotent (a repeat call creates a second rule); `update`/`delete` are the usual idempotent/destructive-with-`confirm` pair. `listObjects(ks)`/`listEvents(objectType, ks)`/`describeFields(objectType, eventType, ks)` are read-only discovery calls for building a no-code rule editor instead of hardcoding enums. Full 9-method reference: `src/management/lifecycle.js`; worked examples and the `sendInsightEmail` data-egress note: `docs/api/build.md` § Lifecycle.
 
 ## Talking to an agent — conversations, threads, messages
 

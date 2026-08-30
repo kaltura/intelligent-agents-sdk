@@ -166,7 +166,7 @@ The SDK generates and protects the records and enforces the client-side controls
 | SC-4 | Info in shared resources | Per-instance isolation; non-enumerable secrets | Process/tenant separation |
 | SI-10 | Input validation | Inbound payload validation; prototype-pollution scrub | — |
 | IR-6, SI-2 | Incident/flaw response | Security contact; coordinated disclosure | US-CERT/agency reporting timelines |
-| GDPR Art. 17 | Right to erasure | `threads.delete()` and `knowledge.deleteRecord()` (management API) | `threads.delete()` soft-deletes immediately, with a scheduled infra-level purge erasing the data later; `knowledge.deleteRecord()` doesn't unlink the record from intellects that reference it, so that case needs operator-side follow-up via the management API |
+| GDPR Art. 17 | Right to erasure | `threads.delete()` and `knowledge.deleteRecord()` (management API) | `threads.delete()` soft-deletes immediately, with a scheduled infra-level purge erasing the data later; `knowledge.deleteRecord()` refuses while an intellect still references the record (`{force:true}` bypasses). A `lifecycle` rule's `sendInsightEmail` action delivers thread-derived content to an operator-supplied `recipients` list BEFORE any delete — that copy has already left the Kaltura boundary into a third-party mailbox and is outside `threads.delete()`'s erasure reach; treat the recipient list as a data-processing decision under your own retention/consent obligations |
 
 ## FIPS mode (how-to)
 
@@ -181,6 +181,8 @@ In the browser, FIPS validation is a property of the OS/browser crypto module. D
 ## Data residency (SC-7)
 
 The SDK is a thin client. It contacts only the Kaltura endpoints you configure (`agenticUrl`/`genieUrl`/`ovpUrl`/`conversationManagerUrl`/`srsBaseUrl`/ `turnServerUrl`) — no telemetry, analytics, or hidden beacons. Point every URL at your in-boundary (e.g. US-Gov) hosts to keep all data within your authorization boundary.
+
+This residency guarantee covers the SDK's own configured endpoints only. A `lifecycle` rule's `sendInsightEmail` action is a server-side, operator-configured email delivery of thread-derived content to an arbitrary `recipients` list — it has no residency control and isn't covered by the URL-pinning above. A PHI/PII-boundary-conscious deployment that uses this action is responsible for its own recipient vetting and residency review; the HIPAA BAA (below) names avatar/ASR/TTS/brain subprocessors, not an email-delivery subprocessor for insight content.
 
 ## Framework crosswalks
 

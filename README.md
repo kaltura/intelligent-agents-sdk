@@ -58,7 +58,7 @@ No build step, no npm registry publish — that's disabled by design (`"private"
 - [Advanced / building-block exports](#advanced--building-block-exports)
 - [Testing](#testing)
 - [Intellect configuration](#intellect-configuration)
-- [Skills, voice import, and the embed snippet](#skills-voice-import-and-the-embed-snippet)
+- [Skills and voice import](#skills-and-voice-import)
 - [RAG (knowledge base)](#rag-knowledge-base)
 - [Honest limits](#honest-limits)
 - [Reference](#reference)
@@ -861,7 +861,7 @@ await mgmt.intellectConfig.setMcpServers(configId, { docs: { url: 'https://mcp.e
 
 ---
 
-## Skills, voice import, and the embed snippet
+## Skills and voice import
 
 **Skills** (`mgmt.skills`) are standalone, partner-level reusable instruction entities (`v1/skill/*`) — `{id (uuid), name, description, instructions}`. Full lifecycle including `update`:
 
@@ -952,13 +952,13 @@ await mgmt.knowledge.updateRecord(rec.id, { name: 'Docs v2' }, ks); // rename/ed
 await mgmt.knowledge.deleteRecord(rec.id, ks, { confirmPermanent: true });
 ```
 
-`deleteRecord` does **NOT** unlink the record from intellects that reference it — an intellect's `knowledge_ids` keeps the dangling id. Clear it yourself (`intellectConfig.setKnowledgeIds(configId, [], ks)`) when retiring a record. A deleted or unknown record id → typed `not_found`; another partner's → `forbidden`.
+`deleteRecord` lists every intellect and refuses with a typed `knowledge_in_use` error naming each one still carrying the id in `knowledge_ids`, unless called with `{confirmPermanent:true, force:true}` — the same guard `tools.delete`/`skills.delete` run for their own entities. A deleted or unknown record id → typed `not_found`; another partner's → `forbidden`.
 
 ---
 
 ## Honest limits
 
-- **`partner-config/update` 403s today** for a partner admin KS. Brain config (`setBrainConfig`) and the knowledge re-point (Path B) are gated. Probe first; writes return `{applied:false, reason}`. Grounding a new agent via `knowledge_ids` (Path A) is NOT gated. (Lifecycle webhooks have no backend implementation at all — dropped from the SDK.)
+- **`partner-config/update` 403s today** for a partner admin KS. Brain config (`setBrainConfig`) and the knowledge re-point (Path B) are gated. Probe first; writes return `{applied:false, reason}`. Grounding a new agent via `knowledge_ids` (Path A) is NOT gated. (Event-driven session/thread rules ARE supported — see § Lifecycle in `docs/api/build.md`.)
 - **No verbatim speech** — `speak()` goes through the brain; the avatar may rephrase.
 - **Custom face works self-serve** — upload a portrait image via `catalog.createVisual`, pass `itemId` as `visualId` in `provision`/`avatars.create`. The model animates the portrait at runtime. Video-clip ingest (higher-fidelity model) is not yet self-serve.
 - **`force_experience` and `model_type:'fast'`** are hints; the SDK can't prove which model replied or which experience rendered.

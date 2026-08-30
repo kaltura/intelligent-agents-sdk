@@ -434,7 +434,7 @@ A rule is `{eventType, objectType, eventConditions, action}`:
 
 - `eventType` — e.g. `session_ended`, `analysis_updated`.
 - `objectType` — currently only `thread`.
-- `eventConditions[]` — dot-path matchers, e.g. `object.agent_id eq <uuid>`, `changed_keys has_all [...]`.
+- `eventConditions[]` — `{field, operator, value}` matchers, e.g. `{field:'object.agent_id', operator:'eq', value:'<uuid>'}`, `{field:'changed_keys', operator:'has_all', value:[...]}`. `field` is a dot-path into the event payload (see `describeFields` below for which paths exist per event) — confirmed live: a `{path, op}` shaped entry 400s.
 - `action` — a plain object, one of two shapes today. Passed straight through, not built by the SDK:
 - `{ actionType: 'triggerInsight', insights: [{ insightKey, valueType, prompt? }, ...] }` — fires up to 20 named LLM insight generations against the thread. `valueType` (`'string'`/`'number'`/`'boolean'`/`'arrayString'`/`'arrayNumber'`/`'arrayBoolean'`) is **required on every insight, even built-in keys** — omitting it 400s live. `SUMMARY`/`SENTIMENT`/`TOPIC` have built-in prompts; a custom `insightKey` needs an explicit `prompt`.
 - `{ actionType: 'sendInsightEmail', recipients: string[], templateId?: string, presetType?: string }` — mails a rendered insight summary to `recipients` (supports `{{template}}` placeholders like `{{object.user_id}}`), using either an explicit `templateId` or an auto-created `presetType` template. Only fires on `eventType:'analysis_updated'` — attaching it to a `session_ended` rule is a server-side no-op.
@@ -463,7 +463,7 @@ await mgmt.lifecycle.create({
   systemName: 'analysis_alert_v1',
   eventType: 'analysis_updated',
   objectType: 'thread',
-  eventConditions: [{ path: 'object.agent_id', op: 'eq', value: '<agent-uuid>' }],
+  eventConditions: [{ field: 'object.agent_id', operator: 'eq', value: '<agent-uuid>' }],
   action: { actionType: 'sendInsightEmail', recipients: ['support-lead@example.com'], presetType: 'conversationInsightExample' },
 }, ks);
 ```

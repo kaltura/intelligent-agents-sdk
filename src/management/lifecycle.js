@@ -1,6 +1,6 @@
 /**
- * Lifecycle — event-driven rule engine over ovp-agentic-api's `lifecycle/*`
- * (agentic-hosted, `{offset,limit}` pager). A rule is `{eventType, objectType,
+ * Lifecycle — event-driven rule engine on the Agentic host's `lifecycle/*`
+ * routes (agentic-hosted, `{offset,limit}` pager). A rule is `{eventType, objectType,
  * eventConditions[], action}` — when a matching backend event fires (e.g. a
  * thread's `session_ended`), every active rule (including partner-invisible,
  * system-seeded presets — see {@link Lifecycle#match}) is evaluated and its

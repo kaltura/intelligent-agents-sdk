@@ -343,7 +343,6 @@ describe('5b. Paragraph reflow', () => {
   // (tracked separately from the PR that added this check). Remove an entry
   // here as its file gets fixed; this list must reach empty, don't add to it.
   const HARDWRAP_GRANDFATHERED = new Set([
-    '.github/ISSUE_TEMPLATE/bug_report.md',
     '.github/ISSUE_TEMPLATE/feature_request.md',
     'CODE_OF_CONDUCT.md',
     'CONTRIBUTING.md',
@@ -356,9 +355,11 @@ describe('5b. Paragraph reflow', () => {
   ]);
 
   // Boundaries a paragraph never crosses: blanks, headings, tables, fences,
-  // rules, raw HTML, and list-item start lines. List-item continuation lines
-  // aren't checked (no wrapped list items exist today; buffering them would
-  // risk false positives on legitimately indented continuation content).
+  // rules, raw HTML block tags, and list-item start lines. List-item
+  // continuation lines aren't checked (no wrapped list items exist today;
+  // buffering them would risk false positives on legitimately indented
+  // continuation content). A bare autolink (`<https://...>`) is NOT a block
+  // boundary — it's inline prose and must stay eligible for hard-wrap checks.
   function isStructural(line) {
     const t = line.trim();
     if (t === '') return true;
@@ -366,7 +367,7 @@ describe('5b. Paragraph reflow', () => {
     if (t.startsWith('|')) return true;
     if (t.startsWith('```') || t.startsWith('~~~')) return true;
     if (/^(-{3,}|\*{3,}|_{3,})$/.test(t)) return true;
-    if (t.startsWith('<')) return true;
+    if (t.startsWith('<') && !/^<[a-zA-Z][a-zA-Z0-9+.-]*:\S*>$/.test(t)) return true;
     return false;
   }
   const isListStart = (line) => /^\s*([-*+]|\d+[.)])\s+/.test(line);
@@ -389,7 +390,15 @@ describe('5b. Paragraph reflow', () => {
       }
       para = [];
     }
-    for (let i = 0; i < lines.length; i++) {
+    // YAML frontmatter (a leading `---` fence through its closing `---`) is
+    // data, not prose — skip it entirely, same as a fenced code block.
+    let start = 0;
+    if (lines[0]?.trim() === '---') {
+      start = 1;
+      while (start < lines.length && lines[start].trim() !== '---') start++;
+      start++;
+    }
+    for (let i = start; i < lines.length; i++) {
       const line = lines[i];
       if (/^(```|~~~)/.test(line.trim())) { flush(); inFence = !inFence; continue; }
       if (inFence) continue;

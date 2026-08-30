@@ -44,7 +44,8 @@
     "harness:constitution": "node tools/constitution-harness.mjs",
     "sri:map": "node tools/sri-map.mjs",
     "live-verify:browser": "node scripts/live-verify-browser.mjs",
-    "live-verify:request-vars": "node scripts/live-verify-request-vars.mjs"
+    "live-verify:request-vars": "node scripts/live-verify-request-vars.mjs",
+    "live-verify:capabilities": "node scripts/live-verify-capabilities.mjs"
   },
   "keywords": [
     "kaltura",

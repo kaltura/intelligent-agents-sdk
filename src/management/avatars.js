@@ -125,7 +125,7 @@ export class Avatars {
   }
 
   /**
-   * List curated preset `{face, background}` template bundles — the fast
+   * List curated preset `{voice, face}` template bundles — the fast
    * path to a ready-made avatar instead of hand-picking a visual + voice via
    * {@link Catalog#list}. Each entry's `face.imageUrl` is batch-resolved
    * server-side. READ. `opts.idsIn` filters to specific template ids.

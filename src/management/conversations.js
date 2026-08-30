@@ -911,6 +911,12 @@ export class Knowledge {
    * `config` support — because the backend's `v1/knowledge/update` REPLACES
    * `config` wholesale, a bare passthrough would silently
    * drop every other source.
+   *
+   * NOT SAFE TO CALL CONCURRENTLY for the same record id: two overlapping
+   * calls both read the same pre-write `config.sources`, so the second
+   * write silently overwrites the first's addition (a lost update, not an
+   * error). Serialize calls per knowledge id, or re-read via {@link
+   * getRecord} and retry on conflict.
    * @param {number} id @param {object} source One entry of `config.sources[]`
    *   (e.g. `{type:'internal', language, categoryIds:[...], indexers:[...]}`).
    * @param {string} ks (admin)
@@ -936,7 +942,9 @@ export class Knowledge {
    * Remove one source from a Knowledge record's config (exact deep match).
    * WRITE — idempotent: if no matching source is found, this is a no-op
    * (`applied:false`) — no wire write. Symmetric counterpart to
-   * {@link addSource}; same read-merge-write shape.
+   * {@link addSource}; same read-merge-write shape, and the same
+   * concurrent-call caveat: two overlapping calls race on the same
+   * pre-write `config.sources` snapshot.
    * @param {number} id @param {object} source The exact source object to remove.
    * @param {string} ks (admin)
    * @returns {Promise<{applied:boolean, result?:any, sent?:object, _meta:object}>}

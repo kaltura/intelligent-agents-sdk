@@ -4,8 +4,8 @@ import { fakeFetch } from '../fakes/fetch.js';
 import { Management } from '../../src/management/client.js';
 
 /**
- * Avatars#listTemplates — curated preset {face,background} bundles
- * (`avatar-template/list`, agentic-hosted). Verified live: needs the
+ * Avatars#listTemplates — curated preset {voice,face} bundles
+ * (`avatar-template/list`, agentic-hosted). Needs the
  * `{offset,limit}` pager (a `{pageIndex,pageSize}` attempt 400s).
  */
 
