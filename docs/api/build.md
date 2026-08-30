@@ -60,6 +60,13 @@ POST https://genie.nvp1.ovp.kaltura.com/v1/intellect/update
 | `type` | Always `"custom"` |
 | `value` | Your content |
 
+**Don't guess at `key`/`headerTemplate` values** — `mgmt.application.getCustomPrompts(ks)` returns the backend's own live schema for this block: a 5-entry array (`goal`, `targetAudience`, `restrictedTopics`, `name`, `knowledge`), each `{key, label, headerTemplate, objectType}`. Render a "describe your agent" form straight from this call and the labels/instruction text you show always match what the backend actually splices into the system prompt — no hardcoded copy to keep in sync by hand. READ, no ids, no side effects, works with any KS kind (partner-agnostic, not partner data).
+
+```js
+const fields = await mgmt.application.getCustomPrompts(ks);
+// [{ key: 'goal', label: 'Goal', headerTemplate: 'The agent\'s goal is: {{value}}', objectType: 'Object' }, ...]
+```
+
 **Top-level fields:**
 
 | Field | Purpose |
@@ -157,12 +164,7 @@ Supplying the value in `requestVars` (e.g. `{ 'sys__user_obj.first_name': 'Jane'
 
 ## Tools (api / csv / code)
 
-Tools are a standalone, PARTNER-LEVEL entity with their own CRUD (`/v1/tool/add|get|list|update|delete`,
-Genie host) — **not** embedded in an intellect. An intellect only carries the `tool_ids` (an array
-of tool uuid strings) it may call. **SDK:** `import { tools } from '@kaltura/intelligent-agents/management'`
-builds and validates a tool's `config` before any network call; `mgmt.tools` is the CRUD surface;
-`mgmt.intellectConfig.setToolIds` (or `tool_ids` passed straight to `intellects.create`/`update`)
-links a tool to an intellect.
+Tools are a standalone, PARTNER-LEVEL entity with their own CRUD (`/v1/tool/add|get|list|update|delete`, Genie host) — **not** embedded in an intellect. An intellect only carries the `tool_ids` (an array of tool uuid strings) it may call. **SDK:** `import { tools } from '@kaltura/intelligent-agents/management'` builds and validates a tool's `config` before any network call; `mgmt.tools` is the CRUD surface; `mgmt.intellectConfig.setToolIds` (or `tool_ids` passed straight to `intellects.create`/`update`) links a tool to an intellect.
 
 **`api` tool** — calls an external HTTP endpoint. `POST /v1/tool/add`:
 
@@ -189,8 +191,7 @@ links a tool to an intellect.
 }
 ```
 
-Returns a `Tool` — `{id, name, config, partner_id, created_at, updated_at}`. Link its `id` into an
-intellect:
+Returns a `Tool` — `{id, name, config, partner_id, created_at, updated_at}`. Link its `id` into an intellect:
 
 ```json
 { "id": 42, "type": "internal", "status": 2, "tool_ids": ["<the returned id>"] }
@@ -258,6 +259,13 @@ POST https://genie.nvp1.ovp.kaltura.com/v1/knowledge/add
 
 Returns `{ "id": 42, ... }`. Save the `id`.
 
+**Don't already know the id?** `mgmt.knowledge.listRecords(ks, opts)` discovers a partner's existing records — pass `opts.filter.nameLike` to search by name. Use it to build a "pick an existing knowledge base" picker instead of hardcoding ids: a common Agent Factory flow is letting a user attach a knowledge base they created earlier to a brand-new agent. Distinct from `knowledge.list(categoryId, ks)` above, which lists KMS *entries* inside a category (Path A), not Knowledge *record* containers.
+
+```js
+const page = await mgmt.knowledge.listRecords(ks, { pageSize: 20, filter: { nameLike: 'Product' } });
+page[0]; // { id: 42, name: 'Product Documentation', status: 'READY', config: { sources: [...] }, ... }
+```
+
 **Step 2 — Link it to the intellect (at create or update):**
 
 ```json
@@ -274,13 +282,15 @@ Writes through the intellect DTO — no `partner-config/update`, no 403. RAG ret
 
 **Step 3 — Upload content** via `knowledge.uploadDocument()` (SDK) or the Kaltura OVP media ingest APIs.
 
+**Adding or removing a source on an EXISTING record:** `knowledge.addSource(id, source, ks)` / `knowledge.removeSource(id, source, ks)` read-merge-write one entry of `config.sources[]` without disturbing the others — both idempotent. Don't hand-assemble `config.sources` via `updateRecord({config}, ks)` directly unless you intend a full replace: the backend overwrites the entire `config` on that field.
+
 | Modality | Source |
 |----------|--------|
 | `caption` | Video captions (SRT) |
 | `ocr` | On-screen text |
 | `document` | PDF / Markdown attachments |
 
-**SDK:** `knowledge.addRecord()` + `knowledge.uploadDocument()` + `intellectConfig.setKnowledgeIds()` (Path A, verified live). Re-pointing an EXISTING intellect via the `partner-config/update` path (Path B — `knowledge.linkRecords()`, probed first with `knowledge.linkAvailable()`) is still gated (403s for a partner admin KS today) — prefer Path A for new agents; only reach for Path B if the intellect already exists and you can't recreate it.
+**SDK:** `knowledge.addRecord()` + `knowledge.uploadDocument()` + `intellectConfig.setKnowledgeIds()` (Path A). Re-pointing an EXISTING intellect via the `partner-config/update` path (Path B — `knowledge.linkRecords()`, probed first with `knowledge.linkAvailable()`) is still gated (403s for a partner admin KS today) — prefer Path A for new agents; only reach for Path B if the intellect already exists and you can't recreate it.
 
 **Checking whether indexing has finished:** `knowledge.isIndexed(id, ks)` reads `knowledge.getRecord(id, ks).status` — but `status` is the knowledge record's own container-lifecycle flag (`"READY"`/`"DELETED"`), not an indexing-completion signal. It reads `"READY"` immediately once the record exists, before any entry has been indexed, because a knowledge base is open-ended (you can always add more entries) — there's no single "fully indexed" state for the record as a whole. Don't treat `isIndexed()` returning `ready:true` as proof your content is searchable yet.
 
@@ -320,6 +330,14 @@ POST https://api.avatar.us.kaltura.ai/v1/avatar/create
 ```
 
 `voice.id` and `visual.id` come from the catalog (§ Browse the Catalog). Returns `id` (24-char hex). **No `adminTags`** — avatars reject unknown fields. Tag the parent agent instead.
+
+**Faster path — pick a curated preset instead of assembling voice+visual by hand:** `mgmt.avatars.listTemplates(ks, opts)` lists ready-made `{voice, face}` bundles (36 in production today — "Adam", "Amir", "Ben", ...). Useful for a fleet product that spins up many agents fast (one avatar per sales rep, a demo generator) and wants a "pick a good-looking preset" step instead of a build-your-own-face-plus-voice wizard every time.
+
+```js
+const templates = await mgmt.avatars.listTemplates(ks, { pageSize: 10 });
+const t = templates[0]; // { id, name: 'Adam', voice: { id }, face: { id, imageUrl } }
+await mgmt.avatars.create({ voice: t.voice, visual: { id: t.face.id }, openingPhrase: 'Hi!' }, ks);
+```
 
 ---
 
@@ -405,3 +423,98 @@ const { brainConfig, unsetUseDefault } = await mgmt.intellects.getBrainConfig(co
 |---|---|
 | `getBrainConfig` (read) | Live — the only way to see `agent_llm`/rate limits; the intellect DTO doesn't carry them |
 | `setBrainConfig` (write) | Client-side path to those fields where the door is open (e.g. a superadmin-provisioned partner); returns `{applied:false, reason}` rather than a silent no-op or a thrown 403 when it's closed |
+
+---
+
+## Lifecycle (event-driven rules)
+
+Today, "summarize every ended session and email the account owner" means polling for finished threads yourself. Lifecycle removes the polling: create a **rule** once, and the backend fires its **action** automatically every time a matching event happens, server-side. Mounted at `mgmt.lifecycle`.
+
+A rule is `{eventType, objectType, eventConditions, action}`:
+
+- `eventType` — e.g. `session_ended`, `analysis_updated`.
+- `objectType` — currently only `thread`.
+- `eventConditions[]` — `{field, operator, value}` matchers, e.g. `{field:'object.agent_id', operator:'eq', value:'<uuid>'}`, `{field:'changed_keys', operator:'has_all', value:[...]}`. `field` is a dot-path into the event payload (see `describeFields` below for which paths exist per event) — confirmed live: a `{path, op}` shaped entry 400s.
+- `action` — a plain object, one of two shapes today. Passed straight through, not built by the SDK:
+- `{ actionType: 'triggerInsight', insights: [{ insightKey, valueType, prompt? }, ...] }` — fires up to 20 named LLM insight generations against the thread. `valueType` (`'string'`/`'number'`/`'boolean'`/`'arrayString'`/`'arrayNumber'`/`'arrayBoolean'`) is **required on every insight, even built-in keys** — omitting it 400s live. `SUMMARY`/`SENTIMENT`/`TOPIC` have built-in prompts; a custom `insightKey` needs an explicit `prompt`.
+- `{ actionType: 'sendInsightEmail', recipients: string[], templateId?: string, presetType?: string }` — mails a rendered insight summary to `recipients` (supports `{{template}}` placeholders like `{{object.user_id}}`), using either an explicit `templateId` or an auto-created `presetType` template. Only fires on `eventType:'analysis_updated'` — attaching it to a `session_ended` rule is a server-side no-op.
+
+**Business use-case 1 — auto-summarize every ended session:**
+
+```js
+await mgmt.lifecycle.create({
+  name: 'Summarize on session end',
+  systemName: 'auto_summary_v1',
+  eventType: 'session_ended',
+  objectType: 'thread',
+  action: { actionType: 'triggerInsight', insights: [{ insightKey: 'SUMMARY', valueType: 'string' }, { insightKey: 'SENTIMENT', valueType: 'string' }, { insightKey: 'TOPIC', valueType: 'string' }] },
+}, ks);
+```
+
+Every conversation gets a structured recap the moment it ends, with zero app-side code.
+
+**Business use-case 2 — alert a human when a specific agent's analysis updates:**
+
+`eventConditions` can only filter on fields `describeFields` actually reports — for `thread`/`analysis_updated` today that's `object.agent_id`, `object.thread_id`, `object.user_id`, and `changed_keys` (which insight keys were updated), **not** an insight's computed value (e.g. there is no `object.sentiment` field to filter on — a sentiment score only exists as the *output* of a `triggerInsight` action, not an input `eventConditions` can inspect). Scope a rule to one agent instead:
+
+```js
+await mgmt.lifecycle.create({
+  name: 'Email support lead when this agent\'s analysis updates',
+  systemName: 'analysis_alert_v1',
+  eventType: 'analysis_updated',
+  objectType: 'thread',
+  eventConditions: [{ field: 'object.agent_id', operator: 'eq', value: '<agent-uuid>' }],
+  action: { actionType: 'sendInsightEmail', recipients: ['support-lead@example.com'], presetType: 'conversationInsightExample' },
+}, ks);
+```
+
+A support lead gets emailed every time this specific agent's conversation analysis updates, without polling.
+
+**Business use-case 3 — power a no-code rule editor:** the 4 discovery methods let a UI populate its own dropdowns instead of hardcoding enums that will drift from the backend:
+
+```js
+await mgmt.lifecycle.listObjects(ks);                              // [{ objectType: 'thread', description: '...' }]
+await mgmt.lifecycle.listEvents('thread', ks);                     // { objectType: 'thread', events: [{ eventType: 'session_ended', description: '...' }, ...] }
+await mgmt.lifecycle.describeFields('thread', 'session_ended', ks); // { objectType, eventType, fields: [{ path, type, description }, ...] }
+```
+
+**Dry-run a rule before a real event fires it** — `match(objectType, eventType, eventData, ks)`, where `eventData` is `{ object?, changed_keys? }` (not a bare `object` field). For `objectType:'thread'`, `object` is validated server-side: `agent_id`, `thread_id`, and `user_id` are all required strings — omitting any one 400s live:
+
+```js
+const { matchedRules } = await mgmt.lifecycle.match(
+  'thread', 'session_ended',
+  { object: { agent_id: 'agent-1', thread_id: 'thread-1', user_id: 'user-1' } },
+  ks,
+);
+```
+
+**Production already ships a system-seeded preset rule** — `match` can return rules you never created. Every partner, by default, has a preset rule (`id: "preset__overridable_summary_on_session_ended"`, `action.actionType: "triggerOverridableSummaryInsight"`) that matches every `session_ended`/`thread` event. `matchedRules[]` groups related rules under a shared `groupKey` with `isGrouped:true` — don't mistake a grouped preset for something you configured:
+
+```js
+{
+  matchedRules: [
+    {
+      rules: [
+        { id: 'preset__overridable_summary_on_session_ended', action: { actionType: 'triggerOverridableSummaryInsight' } },
+        { id: 'rule-you-created', action: { actionType: 'triggerInsight', insights: [{ insightKey: 'SUMMARY', valueType: 'string' }] } },
+      ],
+      isGrouped: true,
+      groupKey: '_system_grouped_kai_insights',
+    },
+  ],
+}
+```
+
+**Full CRUD + discovery surface:**
+
+| Method | Kind | Notes |
+|---|---|---|
+| `lifecycle.create(body, ks)` | WRITE, not idempotent | mirrors `Tools#add` |
+| `lifecycle.get(id, ks)` | READ | |
+| `lifecycle.list(ks, opts)` | READ | `{offset,limit}` pager (`PagerDto`); `opts.filter` (`eventTypeEqual`, `statusEqual`, `systemNameEqual`) and `opts.orderBy` (`+createdAt`/`-createdAt`) pass through 1:1 |
+| `lifecycle.update(id, patch, ks)` | WRITE, idempotent | mirrors `Tools#update` |
+| `lifecycle.delete(id, ks, confirm)` | WRITE, destructive | `requireConfirm` gate; response is `{success}`, not `{id}` |
+| `lifecycle.match(objectType, eventType, eventData, ks)` | READ (dry-run) | see above |
+| `lifecycle.listObjects(ks)` | READ | |
+| `lifecycle.listEvents(objectType, ks)` | READ | |
+| `lifecycle.describeFields(objectType, eventType, ks)` | READ | |

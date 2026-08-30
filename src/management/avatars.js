@@ -117,16 +117,26 @@ export class Avatars {
     return (await this._.agentic('avatar/update', body, ks)).data;
   }
 
-  /** Fork an avatar into a new one. WRITE — NOT idempotent. @param {string} id @param {string} ks */
-  async clone(id, ks) {
-    this._.assertAdmin(ks, 'avatars.clone');
-    return (await this._.agentic('avatar/clone', { id }, ks, { idempotencyKey: uuidv4() })).data;
-  }
-
   /** Delete an avatar. WRITE — DESTRUCTIVE (no cascade). @param {string} id @param {string} ks @param {{confirmPermanent:boolean}} confirm */
   async delete(id, ks, confirm) {
     this._.assertAdmin(ks, 'avatars.delete');
     requireConfirm(confirm, 'avatars.delete', id);
     return (await this._.agentic('avatar/delete', { id }, ks)).data;
+  }
+
+  /**
+   * List curated preset `{voice, face}` template bundles — the fast
+   * path to a ready-made avatar instead of hand-picking a visual + voice via
+   * {@link Catalog#list}. Each entry's `face.imageUrl` is batch-resolved
+   * server-side. READ. `opts.idsIn` filters to specific template ids.
+   * @param {string} ks @param {{idsIn?:string[], pageSize?:number}} [opts]
+   */
+  listTemplates(ks, opts = {}) {
+    this._.assertAdmin(ks, 'avatars.listTemplates');
+    const filter = opts.idsIn ? { idsIn: opts.idsIn } : undefined;
+    return paginate({
+      style: 'offset', pageSize: opts.pageSize,
+      fetchPage: (pager) => this._.agentic('avatar-template/list', filter ? { filter, pager } : { pager }, ks).then((r) => r.data),
+    });
   }
 }

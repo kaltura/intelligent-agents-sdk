@@ -4,7 +4,7 @@
  * downlink for a scripted-video (STV-only) `avatar-session/*` session (see
  * `Management#avatarSessions` in `@kaltura/intelligent-agents/management`).
  *
- * WHEP-only. No socket.io, no ASR/mic uplink, no conversation-manager
+ * WHEP-only. No socket.io, no ASR/mic uplink, no session-server
  * coupling, no tool calls, no captions. Construct it with just the
  * non-secret `{whepUrl, turn}` pair from `avatarSessions.initClient()` —
  * mint that server-side; this class never needs the session's Bearer token

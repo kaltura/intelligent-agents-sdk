@@ -4,7 +4,7 @@ import { Management } from '../../src/management/index.js';
 import { fakeFetch } from '../fakes/fetch.js';
 
 /**
- * Knowledge management — verified live against the Kaltura Knowledge tab: an agent's
+ * Knowledge management — against the Kaltura Knowledge tab: an agent's
  * knowledge is a Kaltura category of media entries; "add a file" = ingest a
  * Kaltura entry and categoryEntry.add it to that category. These tests assert
  * the SDK produces that exact call sequence against a fake OVP.
@@ -414,8 +414,9 @@ test('entryStatus rejects a bad knowledgeId or entryIds before any network call'
   assert.equal(f.calls.length, 0, 'no write on any validation failure');
 });
 
-test('deleteRecord requires confirmPermanent, posts v1/knowledge/delete, and returns a {removed,_meta} receipt (wire body is null)', async () => {
+test('deleteRecord requires confirmPermanent, scans for references, posts v1/knowledge/delete, and returns a {removed,_meta} receipt (wire body is null)', async () => {
   const f = fakeFetch([
+    { match: '/v1/intellect/list', respond: () => ({ body: { objects: [], totalCount: 0 } }) },
     { match: '/v1/knowledge/delete', respond: () => ({ status: 200, body: null }) },
   ]);
   const m = new Management({ partnerId: 1, adminSecret: 'a'.repeat(32), fetch: f });
@@ -426,5 +427,147 @@ test('deleteRecord requires confirmPermanent, posts v1/knowledge/delete, and ret
   assert.equal(res.removed, 7);
   assert.match(res._meta.generatedAt, /^\d{4}-\d{2}-\d{2}T.*Z$/);
   assert.equal(res._meta.scope, 'knowledge:7');
-  assert.deepEqual(f.calls[0].body, { id: 7 });
+  assert.deepEqual(f.calls.find((c) => c.url.includes('/v1/knowledge/delete')).body, { id: 7 });
+});
+
+test('deleteRecord throws knowledge_in_use when an intellect still references the id in knowledge_ids', async () => {
+  const f = fakeFetch([
+    { match: '/v1/intellect/list', respond: () => ({ body: { objects: [{ id: 1481 }], totalCount: 1 } }) },
+    { match: '/v1/intellect/get', respond: () => ({ body: { id: 1481, knowledge_ids: [7] } }) },
+    { match: '/v1/knowledge/delete', respond: () => ({ status: 200, body: null }) },
+  ]);
+  const m = new Management({ partnerId: 1, adminSecret: 'a'.repeat(32), fetch: f });
+  await assert.rejects(
+    () => m.knowledge.deleteRecord(7, ADMIN, { confirmPermanent: true }),
+    (e) => e.code === 'knowledge_in_use' && /1481/.test(e.detail),
+  );
+  assert.equal(f.calls.some((c) => c.url.includes('/v1/knowledge/delete')), false, 'no delete call once a reference is found');
+});
+
+test('deleteRecord with {force:true} skips the in-use scan entirely and reports skippedInUseCheck', async () => {
+  const f = fakeFetch([
+    { match: '/v1/knowledge/delete', respond: () => ({ status: 200, body: null }) },
+  ]);
+  const m = new Management({ partnerId: 1, adminSecret: 'a'.repeat(32), fetch: f });
+  const res = await m.knowledge.deleteRecord(7, ADMIN, { confirmPermanent: true, force: true });
+  assert.equal(res.removed, 7);
+  assert.equal(res.skippedInUseCheck, true);
+  assert.equal(f.calls.some((c) => c.url.includes('/v1/intellect/list')), false, 'force must skip the scan');
+});
+
+test('updateRecord accepts a config patch and sends it verbatim on the wire', async () => {
+  const f = fakeFetch([
+    { match: '/v1/knowledge/update', respond: (req) => ({ body: { id: req.body.id, config: req.body.config } }) },
+  ]);
+  const m = new Management({ partnerId: 1, adminSecret: 'a'.repeat(32), fetch: f });
+  const config = { sources: [{ type: 'internal', categoryIds: ['1'] }] };
+  const res = await m.knowledge.updateRecord(7, { config }, ADMIN);
+  assert.deepEqual(res.config, config);
+  assert.deepEqual(f.calls[0].body, { id: 7, config });
+});
+
+test('updateRecord still rejects a patch with none of name/description/config', async () => {
+  const f = fakeFetch([]);
+  const m = new Management({ partnerId: 1, adminSecret: 'a'.repeat(32), fetch: f });
+  await assert.rejects(() => m.knowledge.updateRecord(7, {}, ADMIN), (e) => e.code === 'bad_request');
+  assert.equal(f.calls.length, 0);
+});
+
+test('addSource unions a new source with the existing config.sources and returns applied:true', async () => {
+  const existing = { type: 'internal', categoryIds: ['1'] };
+  const added = { type: 'internal', categoryIds: ['2'] };
+  const f = fakeFetch([
+    { match: '/v1/knowledge/get', respond: () => ({ body: { id: 7, config: { sources: [existing] } } }) },
+    { match: '/v1/knowledge/update', respond: (req) => ({ body: { id: req.body.id, config: req.body.config } }) },
+  ]);
+  const m = new Management({ partnerId: 1, adminSecret: 'a'.repeat(32), fetch: f });
+  const res = await m.knowledge.addSource(7, added, ADMIN);
+  assert.equal(res.applied, true);
+  assert.deepEqual(f.calls.find((c) => c.url.includes('/v1/knowledge/update')).body.config.sources, [existing, added]);
+});
+
+test('addSource on a record with no prior config.sources produces [newSource] without crashing', async () => {
+  const added = { type: 'internal', categoryIds: ['2'] };
+  const f = fakeFetch([
+    { match: '/v1/knowledge/get', respond: () => ({ body: { id: 7, config: {} } }) },
+    { match: '/v1/knowledge/update', respond: (req) => ({ body: { id: req.body.id, config: req.body.config } }) },
+  ]);
+  const m = new Management({ partnerId: 1, adminSecret: 'a'.repeat(32), fetch: f });
+  const res = await m.knowledge.addSource(7, added, ADMIN);
+  assert.equal(res.applied, true);
+  assert.deepEqual(f.calls.find((c) => c.url.includes('/v1/knowledge/update')).body.config.sources, [added]);
+});
+
+test('addSource is idempotent: an exact-duplicate source is a no-op with no wire update call', async () => {
+  const existing = { type: 'internal', categoryIds: ['1'] };
+  const f = fakeFetch([
+    { match: '/v1/knowledge/get', respond: () => ({ body: { id: 7, config: { sources: [existing] } } }) },
+    { match: '/v1/knowledge/update', respond: () => { throw new Error('must not be called'); } },
+  ]);
+  const m = new Management({ partnerId: 1, adminSecret: 'a'.repeat(32), fetch: f });
+  const res = await m.knowledge.addSource(7, { type: 'internal', categoryIds: ['1'] }, ADMIN);
+  assert.equal(res.applied, false);
+  assert.equal(f.calls.some((c) => c.url.includes('/v1/knowledge/update')), false);
+});
+
+test('removeSource filters out a deep-equal match and returns applied:true', async () => {
+  const keep = { type: 'internal', categoryIds: ['1'] };
+  const drop = { type: 'internal', categoryIds: ['2'] };
+  const f = fakeFetch([
+    { match: '/v1/knowledge/get', respond: () => ({ body: { id: 7, config: { sources: [keep, drop] } } }) },
+    { match: '/v1/knowledge/update', respond: (req) => ({ body: { id: req.body.id, config: req.body.config } }) },
+  ]);
+  const m = new Management({ partnerId: 1, adminSecret: 'a'.repeat(32), fetch: f });
+  const res = await m.knowledge.removeSource(7, { type: 'internal', categoryIds: ['2'] }, ADMIN);
+  assert.equal(res.applied, true);
+  assert.deepEqual(f.calls.find((c) => c.url.includes('/v1/knowledge/update')).body.config.sources, [keep]);
+});
+
+test('removeSource is idempotent: no matching source is a no-op with no wire update call', async () => {
+  const keep = { type: 'internal', categoryIds: ['1'] };
+  const f = fakeFetch([
+    { match: '/v1/knowledge/get', respond: () => ({ body: { id: 7, config: { sources: [keep] } } }) },
+    { match: '/v1/knowledge/update', respond: () => { throw new Error('must not be called'); } },
+  ]);
+  const m = new Management({ partnerId: 1, adminSecret: 'a'.repeat(32), fetch: f });
+  const res = await m.knowledge.removeSource(7, { type: 'internal', categoryIds: ['999'] }, ADMIN);
+  assert.equal(res.applied, false);
+  assert.equal(f.calls.some((c) => c.url.includes('/v1/knowledge/update')), false);
+});
+
+// ── listRecords ───────────────────────────────────────────────────────────────
+// v1/knowledge/list — discover Knowledge RECORD containers, distinct from
+// Knowledge#list (above), which lists KMS media ENTRIES in a category.
+
+test('listRecords uses the Genie {pageIndex,pageSize} pager and returns the first page (async-iterable + awaitable)', async () => {
+  const record = { id: 7, name: 'Product FAQ', status: 'READY', config: { sources: [] } };
+  const f = fakeFetch([
+    { match: '/v1/knowledge/list', respond: () => ({ body: { totalCount: 1, objects: [record] } }) },
+  ]);
+  const m = new Management({ partnerId: 1, adminSecret: 'a'.repeat(32), fetch: f });
+  const page = await m.knowledge.listRecords(ADMIN);
+  assert.equal(page.length, 1);
+  assert.equal(page[0].id, 7);
+  const call = f.calls.find((c) => c.url.includes('/v1/knowledge/list'));
+  assert.ok('pageIndex' in call.body.pager && 'pageSize' in call.body.pager, 'Genie pageIndex/pageSize pager, not offset/limit');
+});
+
+test('listRecords passes filter fields through verbatim (nameLike, statusIn, etc.)', async () => {
+  const f = fakeFetch([
+    { match: '/v1/knowledge/list', respond: () => ({ body: { totalCount: 0, objects: [] } }) },
+  ]);
+  const m = new Management({ partnerId: 1, adminSecret: 'a'.repeat(32), fetch: f });
+  await m.knowledge.listRecords(ADMIN, { filter: { nameLike: 'faq', statusIn: ['READY'] } });
+  const call = f.calls.find((c) => c.url.includes('/v1/knowledge/list'));
+  assert.deepEqual(call.body.filter, { nameLike: 'faq', statusIn: ['READY'] });
+});
+
+test('listRecords defaults filter to {} when omitted', async () => {
+  const f = fakeFetch([
+    { match: '/v1/knowledge/list', respond: () => ({ body: { totalCount: 0, objects: [] } }) },
+  ]);
+  const m = new Management({ partnerId: 1, adminSecret: 'a'.repeat(32), fetch: f });
+  await m.knowledge.listRecords(ADMIN);
+  const call = f.calls.find((c) => c.url.includes('/v1/knowledge/list'));
+  assert.deepEqual(call.body.filter, {});
 });

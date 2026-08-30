@@ -107,6 +107,20 @@ test('R-1: non-retriable 403 is NOT retried', async () => {
   assert.equal(calls, 1, '403 must not be retried');
 });
 
+test('R-2: GET requires no idempotency key to be retry-safe', async () => {
+  let calls = 0;
+  const fake = async () => {
+    calls++;
+    if (calls < 2) return { ok: false, status: 503, headers: { get: () => null }, text: async () => 'err' };
+    return { ok: true, status: 200, headers: { get: () => null }, text: async () => '{"ok":true}' };
+  };
+  const http = new Http({ fetch: fake, maxRetries: 3, delayFn: () => Promise.resolve() });
+  // No idempotencyKey passed at all — a GET's retry-safety never depends on one.
+  const { data } = await http.request({ method: 'GET', url: 'https://x/y', ks: 'k' });
+  assert.deepEqual(data, { ok: true });
+  assert.equal(calls, 2, 'GET retried on 503 with no idempotency key involved');
+});
+
 test('R-3: POST with idempotency-key is retried on 503', async () => {
   let calls = 0;
   const fake = async () => {

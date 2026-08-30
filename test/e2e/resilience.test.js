@@ -73,7 +73,7 @@ test('socket: same-pod recovery (recovered=true) also nudges an STV/ASR peer tha
   // WebRTC peers' ICE state — they can fail independently during the same network blip.
   // Before this fix, a channel stuck 'failed'/'disconnected' at the moment `connect`
   // lands stayed stuck: nothing else re-checks it, which is exactly the avatar-video-
-  // never-comes-back bug (issue #53b) — the session reports 'connected' while STV is dead.
+  // never-comes-back bug — the session reports 'connected' while STV is dead.
   const { session, socket } = newSession();
   scriptHappyPath(socket);
   await session.connect();
@@ -219,13 +219,13 @@ test('STV: WHEP 404 on re-subscribe (session truly gone) → cold reconnect with
   session.disconnect();
 });
 
-test('issues #58/#80: _coldReconnect() while paused holds the approve and clears _sessionReleased; resume() releases the approve instantly', async () => {
-  // Live-reproduced scenario (#58): a long pause independently triggers a stale-STV WHEP 404
+test('_coldReconnect() while paused holds the approve and clears _sessionReleased; resume() releases the approve instantly', async () => {
+  // A long pause independently triggers a stale-STV WHEP 404
   // (unrelated to the pause itself) → _coldReconnect() rebuilds the socket/transports/session
   // and the conversation keeps working — but (pre-fix) `_sessionReleased` stayed stuck, so a
   // later resume() took the "rebuild from a fresh stvNewSession" branch and hung (no fresh
   // stvNewSession was ever coming — this cold reconnect already got its own).
-  // #80 refines the fix: `approvedPermissions` is what makes the avatar SPEAK (verified live —
+  // The fix: `approvedPermissions` is what makes the avatar SPEAK (confirmed —
   // the replayed greeting's speechId is `*-approved-permissions`), so the rebuild must NOT
   // approve while paused. It holds the approve; resume() releases it, which both starts the
   // fresh session and IS the resume (the rebuilt session was never approved or paused
@@ -292,7 +292,7 @@ test('issues #58/#80: _coldReconnect() while paused holds the approve and clears
   session.disconnect();
 });
 
-test('issue #80: cold reconnect while NOT paused still approves immediately (greeting restart is correct there)', async () => {
+test('cold reconnect while NOT paused still approves immediately (greeting restart is correct there)', async () => {
   const { session, socket } = newSession({ cfg: { reconnectWindowMs: 5000 } });
   scriptHappyPath(socket);
   await session.connect();
@@ -306,7 +306,7 @@ test('issue #80: cold reconnect while NOT paused still approves immediately (gre
   session.disconnect();
 });
 
-test('issue #80: acknowledgeDisclosure() cannot release a pause-held approve (separate holds, no crosstalk)', async () => {
+test('acknowledgeDisclosure() cannot release a pause-held approve (separate holds, no crosstalk)', async () => {
   // The disclosure gate (requireDisclosureAck) and the paused-cold-reconnect hold both defer
   // `approvedPermissions`, but through separate fields: an app calling the documented
   // "no-op otherwise" acknowledgeDisclosure() mid-pause must not audibly break the pause.
@@ -628,7 +628,7 @@ test('tool spiral HARD recovery: opens a genuinely NEW socket rather than re-joi
   // The server's `join` handler is idempotent-guarded per-connection (WIRE-PROTOCOL.md),
   // so re-`join`-ing the SAME still-connected socket is a silent no-op server-side —
   // reproduced live 3x as a JoinRoomTimeout. A real socket.io Manager hands back a
-  // brand-new client per call here (verified live), so the fix must actually request a
+  // brand-new client per call here, so the fix must actually request a
   // new one from the factory, not reuse `this._socket`. newSession()'s default factory
   // returns one singleton — build our own multi-instance factory to catch a regression.
   let factoryCalls = 0;

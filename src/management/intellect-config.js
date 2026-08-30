@@ -83,7 +83,7 @@ const READ_ONLY_FIELDS = Object.freeze({
  * Top-level fields the public Genie `intellect/*` DTO genuinely WRITES
  * (`CreateIntellect.update_partner_config`): the editable surface this facade's
  * setters target. `knowledge_ids` IS in this allow-list and writes ungated via
- * `create`/`update` ("Path A", verified live) — only the separate
+ * `create`/`update` ("Path A") — only the separate
  * `partner-config/update` re-point (`knowledge.linkRecords`, "Path B") still 403s.
  * `tool_ids` is likewise a direct, ungated reference-list write (the tool
  * BODIES live on the separate `mgmt.tools` entity, not here).
@@ -96,8 +96,8 @@ const EDITABLE_FIELDS = Object.freeze([
 ]);
 
 /**
- * The closed set of Genie-native `Skill` attach modes (`skill_ids[].mode` —
- * verified live: any other string 422s "Input should be 'adhoc' or
+ * The closed set of native `Skill` attach modes (`skill_ids[].mode` —
+ * any other string 422s "Input should be 'adhoc' or
  * 'preloaded'"). `preloaded` puts the skill's instructions in the system
  * prompt on every turn; `adhoc` makes it available for the brain to pull in
  * only when relevant.
@@ -228,7 +228,7 @@ export class IntellectConfig {
    * Set the intellect's `skill_ids` — the list of standalone Skill entities
    * (see `mgmt.skills`) this intellect may draw on, each with an attach `mode`
    * (see {@link SKILL_MODES}). WRITE — idempotent, UNGATED ("Path A", direct
-   * reference-list write like `tool_ids`/`knowledge_ids` — verified live via
+   * reference-list write like `tool_ids`/`knowledge_ids` — confirmed via
    * `intellect/add` + `intellect/get` round-trip). This only edits the
    * reference list — create/edit a Skill body via `mgmt.skills.add` first,
    * then pass its `id` here. Pass `[]` to detach every skill.
@@ -295,10 +295,10 @@ export class IntellectConfig {
   /**
    * Set `user_properties_forms` — the structured-data forms the agent emits, a
    * LIST of `{call_stage, properties:[{key,type}]}` (one form per stage;
-   * verified live: the server 422s a bare dict with "Input should be a valid
+   * the server 422s a bare dict with "Input should be a valid
    * list", and the list shape round-trips on read-back; the server enriches
    * each stored form with default `id`/`title`/`secondary_title` fields on
-   * read — see issue #33 A).
+   * read).
    * WRITE — idempotent. Validates every form (≥1 property, valid stage, valid
    * arg types) before any network call. Accepts a single form object as a
    * convenience — it is wrapped into a one-element list.
@@ -349,7 +349,7 @@ export class IntellectConfig {
    * Set `knowledge_ids` (≤1, partner-validated). WRITE — idempotent, UNGATED.
    * This is the "Path A" linkage: `knowledge_ids` is in the `v1/intellect/update`
    * DTO allow-list, so it writes through `patch()` directly — NO `partner-config/update`,
-   * NO 403 (verified live: an admin KS links an existing intellect's knowledge_ids
+   * NO 403 (an admin KS links an existing intellect's knowledge_ids
    * + `use_knowledge_base:on` via this path). Mint the record id first with
    * `knowledge.addRecord()`; for a brand-new agent you can also pass `knowledge_ids`
    * straight to {@link Intellects#create}. (Re-pointing via `partner-config/update`
@@ -373,7 +373,7 @@ export class IntellectConfig {
   /**
    * Set `mcp_servers` — the intellect's map of MCP servers the brain may call
    * (`{"<name>": {url}}`). WRITE — idempotent, UNGATED (`mcp_servers` is in the
-   * `v1/intellect/update` DTO allow-list; verified live). The backend
+   * `v1/intellect/update` DTO allow-list). The backend
    * NORMALIZES on read: each entry comes back expanded as `{type:'mcp', url,
    * transport:'streamable_http', headers:null, allowed_tools:null,
    * allowed_prompts:null, allowed_resources:null}` — so don't diff your input
@@ -464,8 +464,8 @@ export class IntellectConfig {
 
 /**
  * Validate + build the `user_properties_forms` wire shape — a LIST of
- * `{call_stage, properties:[{key,type}]}` (the server 422s a bare dict; see
- * issue #33 A). PURE; throws `bad_request` before any network call. A single
+ * `{call_stage, properties:[{key,type}]}` (the server 422s a bare dict).
+ * PURE; throws `bad_request` before any network call. A single
  * form object is accepted and wrapped into a one-element list.
  * @param {object|object[]} forms One `{callStage|call_stage, properties:[{key,type}]}` or a list of them.
  * @returns {{call_stage:string, properties:{key:string,type:string}[]}[]}

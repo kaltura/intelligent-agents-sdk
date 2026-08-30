@@ -78,9 +78,9 @@ test('module scope holds no mutable credential state (fresh Sessions has its own
   assert.ok(!Object.keys(s2).includes('_adminSecret'));
 });
 
-// ─────────────────────────── issue #36 rule 1: userId is a per-call param, never shared state ───────────────────────────
+// ─────────────────────────── userId is a per-call param, never shared state ───────────────────────────
 
-test('concurrent mints with different userIds across two Sessions instances never bleed (issue #36)', async () => {
+test('concurrent mints with different userIds across two Sessions instances never bleed', async () => {
   const fa = fakeFetch([{ match: '/service/session/action/start', respond: () => ({ body: 'djJ8' + Buffer.from('v2|111|geniegpcid:1').toString('base64url') }) }]);
   const fb = fakeFetch([{ match: '/service/session/action/start', respond: () => ({ body: 'djJ8' + Buffer.from('v2|222|geniegpcid:2').toString('base64url') }) }]);
   const auditA = [], auditB = [];
@@ -121,9 +121,9 @@ test('userId omitted on either method is a byte-for-byte no-op (zero behavior ch
   assert.doesNotMatch(String(call.body), /userId/i, 'no userId field sent on the wire when omitted');
 });
 
-// ─────────────────────────── issue #31 rule 1.1: KalturaAvatarSession per-instance state ───────────────────────────
+// ─────────────────────────── KalturaAvatarSession per-instance state ───────────────────────────
 
-test('two KalturaAvatarSession instances never leak requestVars or pending tool-ACK state (issue #31 rule 1.1)', async () => {
+test('two KalturaAvatarSession instances never leak requestVars or pending tool-ACK state', async () => {
   const one = await connectSession({ requestVars: { user_name: 'Ada' } });
   const two = await connectSession({ requestVars: { user_name: 'Grace' } });
 
@@ -148,4 +148,31 @@ test('two KalturaAvatarSession instances never leak requestVars or pending tool-
   assert.notEqual(one.session._pendingToolAcks, two.session._pendingToolAcks);
   one.session._pendingToolAcks.set('req-1', { name: 'navigate_to_slide' });
   assert.equal(two.session._pendingToolAcks.has('req-1'), false, 'a pending ACK on one instance is invisible to the other');
+});
+
+// ─────────────────────────── I-4: event-listener cleanup ───────────────────────────
+
+test('_unwireNetwork() removes exactly the online/offline handlers _wireNetwork() added (two instances, no cross-instance leakage)', async () => {
+  // Node has no global addEventListener; stub one so `_wireNetwork()` (gated on its presence) engages.
+  const handlers = new Map(); // type -> Set(fn)
+  const origAdd = globalThis.addEventListener, origRemove = globalThis.removeEventListener;
+  globalThis.addEventListener = (type, fn) => { (handlers.get(type) || handlers.set(type, new Set()).get(type)).add(fn); };
+  globalThis.removeEventListener = (type, fn) => { handlers.get(type)?.delete(fn); };
+  try {
+    const one = await connectSession({ networkAware: true });
+    const two = await connectSession({ networkAware: true });
+    assert.equal(handlers.get('online').size, 2, 'both instances registered their own online handler');
+    assert.equal(handlers.get('offline').size, 2, 'both instances registered their own offline handler');
+
+    one.session.disconnect();
+    assert.equal(handlers.get('online').size, 1, 'disconnecting A removes only A\'s online handler');
+    assert.equal(handlers.get('offline').size, 1, 'disconnecting A removes only A\'s offline handler');
+
+    two.session.disconnect();
+    assert.equal(handlers.get('online').size, 0, 'disconnecting B removes its own online handler too');
+    assert.equal(handlers.get('offline').size, 0, 'disconnecting B removes its own offline handler too');
+  } finally {
+    globalThis.addEventListener = origAdd;
+    globalThis.removeEventListener = origRemove;
+  }
 });

@@ -1,13 +1,12 @@
 /**
  * Wire helpers — pure functions that build the exact socket payloads and ICE
- * configs the live runtime expects (WIRE-PROTOCOL §2–§6; verified against
- * captures/session-evidence.json). No I/O, no state — unit-testable in isolation
- * and reused by the session machine.
+ * configs the live runtime expects (WIRE-PROTOCOL §2–§6). No I/O, no state —
+ * unit-testable in isolation and reused by the session machine.
  */
 import { parseToolCall, GENUI_RUNTIMES } from '../core/stream.js';
 import { isPrivateOrLoopbackHost } from '../core/net-guard.js';
 
-/** Default conversation-manager host (overridden by appInit's conversationManagerUrl). */
+/** Default session-server host (overridden by appInit's conversationManagerUrl). */
 export const DEFAULT_CM_URL = 'https://conversation.avatar.us.kaltura.ai';
 
 /**
@@ -156,8 +155,8 @@ export function iceConfig(channel, turn, isFirefox = false) {
  * `kaltura.{ks,entryId,threadId}` and routes by socket.id; the rest is sent for
  * parity with the production clients.
  *
- * IMPORTANT (verified live): `kaltura.ks` (the enriched conversation KS from
- * appInit) MUST be included — without it the conversation-manager accepts the
+ * IMPORTANT: `kaltura.ks` (the enriched conversation KS from
+ * appInit) MUST be included — without it the session server accepts the
  * socket and emits `onServerConnected` but then never responds to `join`
  * (no `clientConfiguration`/`joinComplete`), and the connect stalls/drops.
  * @param {object} opts {room, ks, threadId?, entryId?, contextId?, capabilities?, userAgent?, isMobile?, client?, requestVars?}
@@ -171,7 +170,7 @@ export function buildJoin(opts) {
   };
   if (opts.ks) kaltura.ks = opts.ks;          // required by the live runtime to advance past join
   if (opts.entryId) kaltura.entryId = opts.entryId;
-  // Join-time `{{var}}` Jinja values (issue #31 gap 3) — already validated by the caller
+  // Join-time `{{var}}` Jinja values — already validated by the caller
   // (`assertRequestVars`) before this is built; passed through as-is on the wire.
   if (opts.requestVars) kaltura.request_vars = opts.requestVars;
   return {

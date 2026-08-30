@@ -1,5 +1,5 @@
 /**
- * Transcript + barge-in tracker. The conversation-manager keys every utterance
+ * Transcript + barge-in tracker. The session server keys every utterance
  * by `speechId` (`${nonce}-<trigger>-<payload>`). The runtime drops any TTS/STV
  * event whose `speechId` isn't the latest — that staleness guard IS the
  * barge-in mechanism (WIRE-PROTOCOL §4f). This tracker mirrors it client-side so

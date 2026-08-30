@@ -43,7 +43,7 @@ test('buildJoin includes kaltura.ks when given (REQUIRED — live runtime stalls
   assert.ok(!('ks' in buildJoin({ room: 'r1' }).kaltura));
 });
 
-test('buildJoin passes requestVars through as kaltura.request_vars (issue #31 gap 3), omitted when absent', () => {
+test('buildJoin passes requestVars through as kaltura.request_vars, omitted when absent', () => {
   const j = buildJoin({ room: 'r1', requestVars: { user_name: 'Ada', tier: 'enterprise' } });
   assert.deepEqual(j.kaltura.request_vars, { user_name: 'Ada', tier: 'enterprise' });
   assert.ok(!('request_vars' in buildJoin({ room: 'r1' }).kaltura), 'no requestVars given → field omitted, not sent empty');

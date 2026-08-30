@@ -60,7 +60,7 @@ function mkInstance(partnerId, configId) {
   return { m, f, ks: adminKs(partnerId) };
 }
 
-describe('Isolation (issue #17 §1.1/1.2): per-instance state only, no module-level mutable state', () => {
+describe('Isolation: per-instance state only, no module-level mutable state', () => {
   test('two Management instances never share resource objects or ctx', () => {
     const a = mkInstance(1001, 111).m;
     const b = mkInstance(2002, 222).m;

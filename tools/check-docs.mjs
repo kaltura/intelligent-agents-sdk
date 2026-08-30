@@ -336,6 +336,99 @@ describe('5. GFM hygiene', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 5b) Paragraph reflow (no mid-sentence hard-wrap)
+// ─────────────────────────────────────────────────────────────────────────────
+describe('5b. Paragraph reflow', () => {
+  // GRANDFATHERED — not yet reflowed, pending a dedicated repo-wide pass
+  // (tracked separately from the PR that added this check). Remove an entry
+  // here as its file gets fixed; this list must reach empty, don't add to it.
+  const HARDWRAP_GRANDFATHERED = new Set([
+    '.github/ISSUE_TEMPLATE/feature_request.md',
+    'CODE_OF_CONDUCT.md',
+    'CONTRIBUTING.md',
+    'docs/api/deploy.md',
+    'docs/api/design.md',
+    'docs/EXTERNAL-API-INTEGRATIONS.md',
+    'GETTING-STARTED.md',
+    'quickstart/README.md',
+    'SDK_CONSTITUTION.md',
+  ]);
+
+  // Boundaries a paragraph never crosses: blanks, headings, tables, fences,
+  // rules, raw HTML block tags, and list-item start lines. List-item
+  // continuation lines aren't checked (no wrapped list items exist today;
+  // buffering them would risk false positives on legitimately indented
+  // continuation content). A bare autolink (`<https://...>`) is NOT a block
+  // boundary — it's inline prose and must stay eligible for hard-wrap checks.
+  function isStructural(line) {
+    const t = line.trim();
+    if (t === '') return true;
+    if (t.startsWith('#')) return true;
+    if (t.startsWith('|')) return true;
+    if (t.startsWith('```') || t.startsWith('~~~')) return true;
+    if (/^(-{3,}|\*{3,}|_{3,})$/.test(t)) return true;
+    if (t.startsWith('<') && !/^<[a-zA-Z][a-zA-Z0-9+.-]*:\S*>$/.test(t)) return true;
+    return false;
+  }
+  const isListStart = (line) => /^\s*([-*+]|\d+[.)])\s+/.test(line);
+  const isBlockquote = (line) => /^>/.test(line.trim());
+
+  // Blockquote lines accumulate as their OWN paragraph group (a multi-line
+  // quote is exactly as hard-wrappable as plain prose), everything else
+  // accumulates as a plain paragraph. A non-final line in either group must
+  // end in a two-space GFM hard break, or it's a hard-wrap violation.
+  function hardWrapLines(text) {
+    const issues = [];
+    const lines = text.split('\n');
+    let inFence = false;
+    let para = [];
+    function flush() {
+      if (para.length > 1) {
+        for (let i = 0; i < para.length - 1; i++) {
+          if (!/ {2}$/.test(para[i].text)) issues.push(para[i].idx + 1);
+        }
+      }
+      para = [];
+    }
+    // YAML frontmatter (a leading `---` fence through its closing `---`) is
+    // data, not prose — skip it entirely, same as a fenced code block.
+    let start = 0;
+    if (lines[0]?.trim() === '---') {
+      start = 1;
+      while (start < lines.length && lines[start].trim() !== '---') start++;
+      start++;
+    }
+    for (let i = start; i < lines.length; i++) {
+      const line = lines[i];
+      if (/^(```|~~~)/.test(line.trim())) { flush(); inFence = !inFence; continue; }
+      if (inFence) continue;
+      const bq = isBlockquote(line);
+      if (para.length && bq !== para[0].isBq) flush();
+      if (isStructural(line) && !bq) { flush(); continue; }
+      if (isListStart(line) && !bq) { flush(); continue; }
+      para.push({ idx: i, text: line, isBq: bq });
+    }
+    flush();
+    return issues;
+  }
+
+  test('no mid-sentence hard-wrapped paragraphs/blockquotes in tracked .md files', () => {
+    const mdFiles = trackedFiles().filter((f) => f.endsWith('.md') && !HARDWRAP_GRANDFATHERED.has(f));
+    const offenders = [];
+    for (const f of mdFiles) {
+      for (const lineNo of hardWrapLines(read(f))) offenders.push(`${f}:${lineNo}`);
+    }
+    assert.deepEqual(offenders, [], `hard-wrapped mid-sentence line — join into one flowing line, or add two trailing spaces for an intentional <br>:\n  ${offenders.join('\n  ')}`);
+  });
+
+  test('grandfather list has no stale entries (file fixed but not removed from the list)', () => {
+    const stillPresent = trackedFiles().filter((f) => f.endsWith('.md'));
+    const stale = [...HARDWRAP_GRANDFATHERED].filter((f) => stillPresent.includes(f) && hardWrapLines(read(f)).length === 0);
+    assert.deepEqual(stale, [], `already clean, remove from HARDWRAP_GRANDFATHERED: ${stale.join(', ')}`);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // 6) Cross-doc link resolution
 // ─────────────────────────────────────────────────────────────────────────────
 describe('6. Cross-doc links', () => {
@@ -520,14 +613,14 @@ describe('7. SDK invariants', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 8) Preprocessing-claim accuracy (see issue #15)
+// 8) Preprocessing-claim accuracy
 // ─────────────────────────────────────────────────────────────────────────────
 describe('8. Preprocessing-claim accuracy', () => {
   // Scoped to "no preprocessing" specifically, not "no-op"/"unmodified" —
   // those are legitimate, common terms elsewhere (idempotent methods, or
-  // issue #16's deliberate "raw, unmodified upload" passthrough annotation)
+  // the deliberate "raw, unmodified upload" passthrough annotation)
   // and would collide with correct docs if flagged here. The actual defect
-  // (issue #15) is a false claim about backend image processing, so the
+  // is a false claim about backend image processing, so the
   // check only fires where that specific claim and visual-content
   // vocabulary co-occur without a citation naming how it was verified.
   const ABSOLUTE_CLAIM = /\bno preprocessing\b/i;
@@ -570,7 +663,7 @@ describe('8. Preprocessing-claim accuracy', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 9) Preview/loading field annotation (see issue #16)
+// 9) Preview/loading field annotation
 // ─────────────────────────────────────────────────────────────────────────────
 describe('9. Preview/loading field annotation', () => {
   const FIELD = /^\w*(preview\w*|imageurl|videourl)\w*$/i;
@@ -593,13 +686,13 @@ describe('9. Preview/loading field annotation', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 10) Avatar video framing (see issue #18)
+// 10) Avatar video framing
 // ─────────────────────────────────────────────────────────────────────────────
 describe('10. Avatar video framing', () => {
   // File-level, not selector-level: precise per-file selector coverage is
   // proven in test/unit/examples-video-css.test.js. This gate exists so a
   // FUTURE example added under examples/ with a bare <video> and zero CSS
-  // (the exact issue #18 defect) fails loudly here too, without needing to
+  // fails loudly here too, without needing to
   // know that new file's specific markup shape in advance.
   test('every examples/*.html file with a <video> element declares object-fit somewhere in its <style> block', () => {
     const htmlFiles = trackedFiles().filter((f) => f.startsWith('examples/') && f.endsWith('.html'));
@@ -615,7 +708,7 @@ describe('10. Avatar video framing', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 11) Dead-air event documentation (see issue #24)
+// 11) Dead-air event documentation
 // ─────────────────────────────────────────────────────────────────────────────
 describe('11. Dead-air event documentation', () => {
   test("'responsePending' and 'responseSettled' are each documented in README.md or docs/*.md", () => {
@@ -627,7 +720,7 @@ describe('11. Dead-air event documentation', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 12) avatar_filler steerability disclosure (see issue #23)
+// 12) avatar_filler steerability disclosure
 // ─────────────────────────────────────────────────────────────────────────────
 describe('12. avatar_filler steerability disclosure', () => {
   test("avatar_filler's summary in capabilities.js states its phrasing is not directive-steerable", () => {

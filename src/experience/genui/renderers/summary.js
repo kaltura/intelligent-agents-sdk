@@ -3,7 +3,7 @@
  * → `summary-tool`). A markdown/text summary block. Framework-agnostic
  * `{kind:'summary', data}`. The summary text stays UNTRUSTED (LLM output) — by
  * default the SDK renders it as flat escaped text; `mountWidget(descriptor, el,
- * {markdown:true})` (issue #27) opts into rendering markdown-in-plain-text
+ * {markdown:true})` opts into rendering markdown-in-plain-text
  * (tables, bold, links, etc.) as safe DOM instead. The SDK never emits raw HTML.
  * `summary` is run through `safeSource` (not `safeText`) so line breaks survive
  * for that opt-in markdown path — flat-text rendering already collapses

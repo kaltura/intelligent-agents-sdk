@@ -35,7 +35,7 @@ CONV_KS=$(curl -s -X POST "https://www.kaltura.com/api_v3/service/session/action
 | `request_vars` | `{{var}}` interpolation values; needs `allow_client_variables:true` on the intellect. Values **persist on the thread** (the server merges each message's map into what's stored — send only deltas; a new thread starts clean) and interpolate into both prompt blocks and server-side `api`-tool templates. Reserved `sys__*` keys (including `sys__user_id`) are server-injected and rejected if you try to set them yourself — see § Bind a session to a real end-user identity above for how `sys__user_id` gets populated. Semantics in depth: [docs/DYNAMIC-DATA-INJECTION.md](../DYNAMIC-DATA-INJECTION.md). |
 | `capabilities` | Per-message capability override |
 
-**Enabling `allow_client_variables`:** `mgmt.intellects.setClientVariablesEnabled(configId, true, adminKs)` (WRITE, admin KS; also exposed as `mgmt.intellectConfig.setClientVariablesEnabled`). With it off, the rejection is **silent on every path** (live-verified): the turn streams back empty — no HTTP error on `converse`, no socket error. The server's 403 fires inside its streaming pipeline after the response has already opened, so it never reaches the wire. Both session classes (`KalturaAvatarSession`, `KalturaChatSession`) detect the pattern and emit a once-per-session `warning` event (`code: 'empty_turn_with_request_vars'`, variable names only, never values); the management converse helpers keep a defensive remap to a typed `client_variables_disabled` error for the pre-stream case, should the server ever start rejecting before the stream opens.
+**Enabling `allow_client_variables`:** `mgmt.intellects.setClientVariablesEnabled(configId, true, adminKs)` (WRITE, admin KS; also exposed as `mgmt.intellectConfig.setClientVariablesEnabled`). With it off, the rejection is **silent on every path**: the turn streams back empty — no HTTP error on `converse`, no socket error. The server's 403 fires inside its streaming pipeline after the response has already opened, so it never reaches the wire. Both session classes (`KalturaAvatarSession`, `KalturaChatSession`) detect the pattern and emit a once-per-session `warning` event (`code: 'empty_turn_with_request_vars'`, variable names only, never values); the management converse helpers keep a defensive remap to a typed `client_variables_disabled` error for the pre-stream case, should the server ever start rejecting before the stream opens.
 
 **Stream segments** (each line is a JSON object):
 
@@ -61,13 +61,7 @@ POST https://genie.nvp1.ovp.kaltura.com/assistant/abort
 
 ## Reserved Template Variables (`sys__*`)
 
-The server sets these on every turn. They're available to `{{ ... }}` interpolation in
-`base_directive` / `prompts[].value` / `glossary` (see [Configure an Intellect](build.md#configure-an-intellect))
-regardless of `allow_client_variables`. The SDK's own `request_vars` pre-flight guard rejects a
-client-supplied value for 5 of these 8 names before any network call — `sys__thread_id`,
-`sys__message_id`, `sys__user_id`, `sys__user_message`, `secrets` (see `request_vars` above) —
-since those collide with a server-managed variable; it does not yet name-check `sys__ks`,
-`sys__is_new_thread`, or `sys__user_obj.*` the same way:
+The server sets these on every turn. They're available to `{{ ... }}` interpolation in `base_directive` / `prompts[].value` / `glossary` (see [Configure an Intellect](build.md#configure-an-intellect)) regardless of `allow_client_variables`. The SDK's own `request_vars` pre-flight guard rejects a client-supplied value for 5 of these 8 names before any network call — `sys__thread_id`, `sys__message_id`, `sys__user_id`, `sys__user_message`, `secrets` (see `request_vars` above) — since those collide with a server-managed variable; it does not yet name-check `sys__ks`, `sys__is_new_thread`, or `sys__user_obj.*` the same way:
 
 | Variable | Resolves to | Notes |
 |----------|-------------|-------|
@@ -114,16 +108,11 @@ All thread endpoints require an **admin KS** (`disableentitlement`). Pager: `{"p
 
 SDK: `mgmt.threads.{list, get, rename, delete, transcript}`.
 
-> **Compliance note.** `threads.delete()` soft-deletes immediately; a scheduled infra-level purge
-> erases the underlying data later. See
-> [SECURITY.md](../../SECURITY.md#shared-responsibility-control-matrix-nist-800-53) for what the SDK
-> provides versus what the operator must configure.
+> **Compliance note.** `threads.delete()` soft-deletes immediately; a scheduled infra-level purge erases the underlying data later. See [SECURITY.md](../../SECURITY.md#shared-responsibility-control-matrix-nist-800-53) for what the SDK provides versus what the operator must configure.
 
 ## Thread History and Per-Turn Cost
 
-There is no documented cap on how long a thread's history can grow. The full transcript is sent
-as model context on every turn, so per-turn cost grows with thread length — plan long-running
-threads accordingly: start a fresh thread per task, and delete threads you no longer need.
+There is no documented cap on how long a thread's history can grow. The full transcript is sent as model context on every turn, so per-turn cost grows with thread length — plan long-running threads accordingly: start a fresh thread per task, and delete threads you no longer need.
 
 ---
 

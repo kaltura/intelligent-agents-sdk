@@ -153,7 +153,7 @@ test('attachChromaKeyAvatar: construction/mount errors are caught and re-thrown 
   );
 });
 
-test('attachChromaKeyAvatar: destroys the already-constructed player when .mount() throws (no WebGL context leak, issue #74)', () => {
+test('attachChromaKeyAvatar: destroys the already-constructed player when .mount() throws (no WebGL context leak)', () => {
   FakeChromaKeyVideo.reset();
   class MountThrowingChromaKeyVideo extends FakeChromaKeyVideo {
     mount() { throw new Error('container detached from DOM'); }
@@ -253,7 +253,7 @@ test("attachChromaKeyAvatar: a FATAL session 'error' calls player.destroy() exac
   assert.equal(player.destroyCalls, 1, 'a second fatal error must not call destroy() again');
 });
 
-test("chroma-key's fatal-code set is session.js's own exported FATAL_ERROR_CODES (derived from FATAL_CODE — drift impossible, issue #75)", () => {
+test("chroma-key's fatal-code set is session.js's own exported FATAL_ERROR_CODES (derived from FATAL_CODE — drift impossible)", () => {
   // The plugin imports this exact set, so asserting its contents here pins the contract:
   // exactly the five codes session.js's FATAL_CODE table maps to, and nothing else.
   assert.deepEqual(
@@ -281,7 +281,7 @@ test("attachChromaKeyAvatar: a NON-fatal session 'error' (e.g. transient socket 
   assert.equal(player.destroyCalls, 0, 'transient/recoverable errors must not tear down the compositor');
 });
 
-// ─────────────────────────── lifecycle wiring: auto-destroy on session.disconnect()/stop() (issue #62) ───────────────────────────
+// ─────────────────────────── lifecycle wiring: auto-destroy on session.disconnect()/stop() ───────────────────────────
 
 test("attachChromaKeyAvatar: session.disconnect()'s 'stateChange' to 'disconnected' calls player.destroy() exactly once", () => {
   FakeChromaKeyVideo.reset();

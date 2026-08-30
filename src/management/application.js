@@ -49,4 +49,22 @@ export class Application {
     if (!widgetKs) throw new KalturaError({ type: 'about:blank', title: 'widget KS required', code: 'bad_request', detail: 'appInit needs a widget KS (sessions.createWidgetToken).' });
     return (await this._.agentic('application/appInit', {}, widgetKs)).data;
   }
+
+  /**
+   * The fixed field schema `agents.create`/`agents.update`'s `customPrompt`
+   * input accepts — a static, partner-agnostic descriptor array (`goal`,
+   * `targetAudience`, `restrictedTopics`, `name`, `knowledge`), not a
+   * partner's saved prompts. Render an "describe your agent" form straight
+   * from this instead of hardcoding the 5 fields, so a new field the backend
+   * adds shows up with no SDK/app changes. READ — no state, no partner
+   * lookup (any valid KS works). Each entry also carries an unmodeled wire
+   * field `objectType:"Object"` (harmless serialization metadata, not a real
+   * field to model).
+   * @param {string} ks
+   * @returns {Promise<Array<{key:string, label:string, headerTemplate:string}>>}
+   */
+  async getCustomPrompts(ks) {
+    this._.assertAny(ks, 'application.getCustomPrompts');
+    return (await this._.agentic('application/getCustomPrompts', {}, ks)).data;
+  }
 }

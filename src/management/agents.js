@@ -33,14 +33,6 @@ export function matchProtectedTag(tags) {
   return null;
 }
 
-/**
- * The three embed layouts `agent/getEmbedScript` accepts (closed server enum —
- * anything else 400s: "embedType must be one of the following values:
- * contained, page, floater").
- * @type {readonly ('contained'|'page'|'floater')[]}
- */
-export const EMBED_TYPES = Object.freeze(['contained', 'page', 'floater']);
-
 export class Agents {
   /** @param {import('./client.js').Ctx} ctx */
   constructor(ctx) { this._ = ctx; }
@@ -72,30 +64,6 @@ export class Agents {
   async get(agentId, ks) {
     this._.assertAdmin(ks, 'agents.get');
     return (await this._.agentic('agent/get', { agentId }, ks)).data;
-  }
-
-  /**
-   * Get the ready-to-paste HTML embed snippet for an agent. READ — no state
-   * change. Returns the workspace-embed HTML (`embeds.workspace(...)` +
-   * `apis.genieChat.<embedType>(...)`) that renders the agent's chat widget on
-   * any page. `embedType` is validated against {@link EMBED_TYPES} BEFORE any
-   * network call (the server 400s on anything else — verified live).
-   * @param {string} agentId
-   * @param {'contained'|'page'|'floater'} embedType `contained` (inline box), `page` (full page), or `floater` (floating launcher).
-   * @param {string} ks (admin)
-   * @returns {Promise<string>} The HTML embed snippet.
-   */
-  async getEmbedScript(agentId, embedType, ks) {
-    this._.assertAdmin(ks, 'agents.getEmbedScript');
-    if (!EMBED_TYPES.includes(embedType)) {
-      throw new KalturaError({
-        type: 'about:blank', title: 'bad request', code: 'bad_request',
-        detail: `agents.getEmbedScript embedType must be one of ${EMBED_TYPES.join(', ')}, got ${JSON.stringify(embedType)}.`,
-      });
-    }
-    // Live wire replies `{objectType:'Object', html:'<script…>'}` — unwrap to the snippet.
-    const d = (await this._.agentic('agent/getEmbedScript', { agentId, embedType }, ks)).data;
-    return typeof d === 'string' ? d : d?.html;
   }
 
   /**

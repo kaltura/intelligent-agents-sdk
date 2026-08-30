@@ -55,9 +55,9 @@ test('parseContent: loose key:value line block, leftovers under .raw, never thro
   assert.deepEqual(parseContent('{not valid json'), { raw: '{not valid json' });
 });
 
-// ─────────────────────────── issue #56: quote-stripping + flush-left dash lists ───────────────────────────
+// ─────────────────────────── quote-stripping + flush-left dash lists ───────────────────────────
 
-test('parseContent (issue #56): coerceScalar strips a matching pair of surrounding quotes from a live show-link URL', () => {
+test('parseContent: coerceScalar strips a matching pair of surrounding quotes from a live show-link URL', () => {
   // Live-observed shape: a show-link widget's model comes back with the literal
   // quote characters retained around the URL, e.g. {link: '"https://example.com/widgetron"'}.
   const m = parseContent('link: "https://example.com/widgetron"');
@@ -75,7 +75,7 @@ test('parseContent: quote-stripping never eats a lone/unbalanced quote or an int
   assert.equal(parseContent('key: "').key, '"');
 });
 
-test('parseContent + renderFollowups (issue #56): flush-left dash list populates model.questions as a real array, verified through the followups renderer', () => {
+test('parseContent + renderFollowups: flush-left dash list populates model.questions as a real array, confirmed through the followups renderer', () => {
   // Exact live-observed shape: the backend emits a flush-left dash list (zero
   // leading whitespace) for the followups tool's `questions:` field.
   const content = 'questions:\n- "What specific feature are you most excited about?"\n- "How does this compare to your current solution?"';
@@ -380,7 +380,7 @@ test('SegmentAssembler concatenates string fragments for same runtime+speechId, 
   assert.equal(out[0].speechId, 's1');
 });
 
-test('SegmentAssembler (issue #53): realistic wire shape — only the FIRST fragment carries metadata, later fragments carry bare content and still get appended', () => {
+test('SegmentAssembler: realistic wire shape — only the FIRST fragment carries metadata, later fragments carry bare content and still get appended', () => {
   const out = [];
   const a = new SegmentAssembler({ onWidget: (w) => out.push(w) });
   a.ingest({ type: 'unisphere-tool', metadata: { widgetName: 'unisphere.widget.genie', runtimeName: 'summary-tool' }, content: '' });
@@ -394,7 +394,7 @@ test('SegmentAssembler (issue #53): realistic wire shape — only the FIRST frag
   assert.equal(out[0].model.summary, 'hi there');
 });
 
-test('SegmentAssembler (issue #53): a metadata-less fragment with no buffer open is still ignored as a non-widget segment', () => {
+test('SegmentAssembler: a metadata-less fragment with no buffer open is still ignored as a non-widget segment', () => {
   const out = [];
   const a = new SegmentAssembler({ onWidget: (w) => out.push(w) });
   assert.equal(a.ingest({ type: 'unisphere-tool', content: 'orphan fragment' }), false);
@@ -402,7 +402,7 @@ test('SegmentAssembler (issue #53): a metadata-less fragment with no buffer open
   assert.equal(out.length, 0);
 });
 
-test('SegmentAssembler (issue #53): a metadata-less non-unisphere-tool fragment never attaches to an open buffer', () => {
+test('SegmentAssembler: a metadata-less non-unisphere-tool fragment never attaches to an open buffer', () => {
   const out = [];
   const a = new SegmentAssembler({ onWidget: (w) => out.push(w) });
   a.ingest({ type: 'unisphere-tool', metadata: { runtimeName: 'summary-tool' }, content: 'sum' });
@@ -440,7 +440,7 @@ test('SegmentAssembler: a throwing onWidget never breaks assembly', () => {
   assert.doesNotThrow(() => a.flush());
 });
 
-// ─────────────────────────── issue #26: onMalformed ───────────────────────────
+// ─────────────────────────── onMalformed ───────────────────────────
 
 test('SegmentAssembler: interrupted by a new speechId before a JSON widget completes → onMalformed, not onWidget', () => {
   const widgets = []; const malformed = [];
@@ -556,7 +556,7 @@ test('ExperienceRenderer with no session: start() is a harmless no-op', () => {
   assert.doesNotThrow(() => r.stop());
 });
 
-// ─────────────────────────── issue #28: clearOnTurnStart ───────────────────────────
+// ─────────────────────────── clearOnTurnStart ───────────────────────────
 
 test('ExperienceRenderer LIVE mode default: turnStart clears a widget rendered in the previous turn before the next one mounts', () => {
   const session = new FakeSession();
@@ -591,7 +591,7 @@ test('ExperienceRenderer LIVE mode default: turnStart discards an in-flight (not
   assert.match(out[0].data.summary, /turn 2 body/);
 });
 
-test('ExperienceRenderer { clearOnTurnStart:false } preserves cross-turn accumulation exactly as before issue #28', () => {
+test('ExperienceRenderer { clearOnTurnStart:false } preserves cross-turn accumulation exactly as before', () => {
   const session = new FakeSession();
   const out = [];
   const r = new ExperienceRenderer({ session, mount: (d) => out.push(d), clearOnTurnStart: false }).start();
@@ -842,7 +842,7 @@ test('mountWidget form submit + followup click fire onAction', async () => {
   } finally { delete globalThis.document; }
 });
 
-// ─────────────────────────── issue #27: markdown renderer ───────────────────────────
+// ─────────────────────────── markdown renderer ───────────────────────────
 
 function textOf(node) { return node.textContent; }
 function findAll(root, pred) { const hits = []; walk(root, (n) => { if (pred(n)) hits.push(n); }); return hits; }
@@ -943,7 +943,7 @@ test('renderMarkdown is isomorphic-gated by mountWidget (no document → mountWi
   assert.equal(mountWidget({ kind: 'summary', data: { summary: '# x' } }, null, { markdown: true }), null);
 });
 
-// ─────────────────────────── issue #39: graded-question widget ───────────────────────────
+// ─────────────────────────── graded-question widget ───────────────────────────
 // NOT one of the nine backend runtimes — a host-registered "10th runtime" widget
 // (see the "registry-derived known + contract" section above). renderGradedQuestion
 // is imported directly (never through DEFAULT_RENDERERS/WIDGET_KINDS), and mountWidget
@@ -987,7 +987,7 @@ test('renderGradedQuestion: a correctOptionId that names no real option is dropp
   assert.equal(d.data.correctOptionId, null);
 });
 
-test('renderGradedQuestion: options are capped at 8 (issue #39 rule 4.1)', async () => {
+test('renderGradedQuestion: options are capped at 8', async () => {
   const { renderGradedQuestion } = await import('../../src/experience/genui/renderers/graded-question.js');
   const options = Array.from({ length: 50 }, (_, i) => ({ id: 'o' + i, text: 'Option ' + i }));
   const d = renderGradedQuestion({ prompt: 'P', options });
@@ -1005,7 +1005,7 @@ test('renderGradedQuestion is total over adversarial models (never throws, alway
   }
 });
 
-test('renderGradedQuestion returns fresh descriptors with no shared references across calls (issue #39 rule 1.1)', async () => {
+test('renderGradedQuestion returns fresh descriptors with no shared references across calls', async () => {
   const { renderGradedQuestion } = await import('../../src/experience/genui/renderers/graded-question.js');
   const a = renderGradedQuestion({ prompt: 'A', options: [{ id: '1', text: 'one' }] });
   const b = renderGradedQuestion({ prompt: 'B', options: [{ id: '1', text: 'one' }] });
@@ -1083,7 +1083,7 @@ test('mountWidget graded-question (choice): with no correctOptionId authored, co
   } finally { delete globalThis.document; }
 });
 
-test('mountWidget graded-question (text): the free-text answer is sanitized before grading AND before any DOM insertion (issue #39 rule 2.2)', async () => {
+test('mountWidget graded-question (text): the free-text answer is sanitized before grading AND before any DOM insertion', async () => {
   const listeners = [];
   globalThis.document = listenerCapturingDom(listeners);
   try {
@@ -1187,7 +1187,7 @@ test('mountWidget graded-question (text): no accepted answers authored → corre
   } finally { delete globalThis.document; }
 });
 
-test('two mounted graded-question widgets in one process never share selection/answered state (issue #39 rule 1.2)', async () => {
+test('two mounted graded-question widgets in one process never share selection/answered state', async () => {
   const listeners = [];
   globalThis.document = listenerCapturingDom(listeners);
   try {

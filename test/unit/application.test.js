@@ -24,6 +24,7 @@ function fakeCtx({ agenticRoutes = {} } = {}) {
         throw new KalturaError({ type: 'about:blank', title: 'scope', code: 'wrong_token_scope', detail: where });
       }
     },
+    assertAny: () => {},
     agentic: async (path, body, ks) => {
       calls.push({ path, body, ks });
       const handler = agenticRoutes[path];
@@ -65,7 +66,7 @@ test('appInit: happy path returns .data payload and routes to application/appIni
   assert.equal(ctx.calls[0].ks, 'widget-ks-token');
 });
 
-// see issue #16 — locks the verbatim-passthrough contract for avatars[]'s
+// Locks the verbatim-passthrough contract for avatars[]'s
 // preview/loading fields specifically, so a future accidental reshape (e.g.
 // dropping previewImageUrl, renaming loadingVideoUrl) is caught.
 test('appInit: avatars[] preview/loading fields pass through unmodified, including an unexpected extra field', async () => {
@@ -82,7 +83,7 @@ test('appInit: avatars[] preview/loading fields pass through unmodified, includi
   assert.deepEqual(result, payload);
 });
 
-// see issue #16 — the raw-passthrough caveat must be documented at the call
+// The raw-passthrough caveat must be documented at the call
 // site, not just in API-REFERENCE.md, since JSDoc isn't scanned by
 // tools/check-docs.mjs (markdown-only scope).
 test('appInit: JSDoc documents that previewImageUrl/loadingVideoUrl are raw backend asset URLs', async () => {
@@ -132,4 +133,32 @@ test('resolveWidgetId: happy path returns .data payload with admin KS', async ()
   assert.deepEqual(result, { widgetId: '1_v1mj1kxb' });
   assert.equal(ctx.calls[0].path, 'application/resolveWidgetId');
   assert.deepEqual(ctx.calls[0].body, { agentId: 'agent-uuid' });
+});
+
+// ── getCustomPrompts ──────────────────────────────────────────────────────────
+
+test('getCustomPrompts: happy path returns the static field descriptor array, no body sent', async () => {
+  const prompts = [
+    { key: 'goal', label: 'Goal', headerTemplate: 'The agent\'s goal is: {{value}}', objectType: 'Object' },
+    { key: 'targetAudience', label: 'Target Audience', headerTemplate: 'The target audience is: {{value}}', objectType: 'Object' },
+    { key: 'restrictedTopics', label: 'Restricted Topics', headerTemplate: 'Avoid discussing: {{value}}', objectType: 'Object' },
+    { key: 'name', label: 'Name', headerTemplate: 'The agent is named: {{value}}', objectType: 'Object' },
+    { key: 'knowledge', label: 'Knowledge', headerTemplate: 'Use this knowledge: {{value}}', objectType: 'Object' },
+  ];
+  const ctx = fakeCtx({
+    agenticRoutes: { 'application/getCustomPrompts': () => ({ data: prompts, requestId: 'r5' }) },
+  });
+  const result = await new Application(ctx).getCustomPrompts(ADMIN);
+  assert.deepEqual(result, prompts);
+  assert.equal(result.length, 5);
+  assert.equal(ctx.calls[0].path, 'application/getCustomPrompts');
+  assert.deepEqual(ctx.calls[0].body, {});
+});
+
+test('getCustomPrompts: works with a conversation-scoped KS too (assertAny, not assertAdmin)', async () => {
+  const ctx = fakeCtx({
+    agenticRoutes: { 'application/getCustomPrompts': () => ({ data: [], requestId: 'r6' }) },
+  });
+  const result = await new Application(ctx).getCustomPrompts(CONV);
+  assert.deepEqual(result, []);
 });

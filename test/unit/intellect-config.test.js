@@ -85,7 +85,7 @@ test('buildBrainConfigPatch: empty model-id string → bad_request', () => {
 
 test('buildUserPropertiesForms builds the LIST wire shape and accepts callStage or call_stage', () => {
   // The server 422s a bare dict ("Input should be a valid list") — the wire shape
-  // MUST be a list of forms, verified live on a scratch intellect (issue #33 A).
+  // MUST be a list of forms, confirmed on a scratch intellect.
   const a = buildUserPropertiesForms([{ callStage: 'middle', properties: [{ key: 'email', type: 'str' }] }]);
   assert.deepEqual(a, [{ call_stage: 'middle', properties: [{ key: 'email', type: 'str' }] }]);
   const b = buildUserPropertiesForms([{ call_stage: 'end', properties: [{ key: 'name' }] }]);

@@ -67,7 +67,7 @@ test('validatePromptVars flags malformed and empty references', () => {
   assert.equal(hasFinding(bad.findings, 'malformed_variable'), true);
 });
 
-test('validatePromptVars flags an earlier unclosed {{ even when a later {{...}} is closed (issue #84)', () => {
+test('validatePromptVars flags an earlier unclosed {{ even when a later {{...}} is closed', () => {
   const r = validatePromptVars('{{oops unclosed and then {{valid}} elsewhere');
   assert.equal(r.ok, false);
   assert.equal(hasFinding(r.findings, 'malformed_variable'), true);
@@ -293,7 +293,7 @@ test('assembleSystemPrompt: bad shapes throw KalturaError before rendering', () 
   assert.throws(() => assembleSystemPrompt(7), (e) => e.name === 'KalturaError');
 });
 
-// see issue #17 — persona-name consistency across openingPhrase/base_directive/prompts[]
+// Persona-name consistency across openingPhrase/base_directive/prompts[]
 
 test('lintPersonaIdentity: consistent name across all fields → no warning', () => {
   const r = lintPersonaIdentity({
@@ -378,10 +378,10 @@ test('lintPersonaIdentity: empty baseDirective/prompts haystack skips the drift 
   assert.equal(hasFinding(r.findings, 'persona_name_drift'), false);
 });
 
-// see issue #32 — persona_name_drift must fire off a declared `name` alone,
+// persona_name_drift must fire off a declared `name` alone,
 // not only when openingPhrase yields a parseable detectedName.
 
-test('lintPersonaIdentity (#32): declared-name drift fires with no openingPhrase at all', () => {
+test('lintPersonaIdentity: declared-name drift fires with no openingPhrase at all', () => {
   const r = lintPersonaIdentity({
     name: 'Nova',
     baseDirective: 'You are a friendly assistant.',
@@ -391,7 +391,7 @@ test('lintPersonaIdentity (#32): declared-name drift fires with no openingPhrase
   assert.equal(hasFinding(r.findings, 'persona_name_drift'), true);
 });
 
-test('lintPersonaIdentity (#32): no drift finding when the declared name is mentioned, still no openingPhrase', () => {
+test('lintPersonaIdentity: no drift finding when the declared name is mentioned, still no openingPhrase', () => {
   const r = lintPersonaIdentity({
     name: 'Nova',
     baseDirective: 'You are Nova, a friendly assistant.',
@@ -401,7 +401,7 @@ test('lintPersonaIdentity (#32): no drift finding when the declared name is ment
   assert.equal(r.ok, true);
 });
 
-test('lintPersonaIdentity (#32): matches Nova\'s real shape — name declared via prompts[], openingPhrase has no parseable name', () => {
+test('lintPersonaIdentity: matches Nova\'s real shape — name declared via prompts[], openingPhrase has no parseable name', () => {
   const r = lintPersonaIdentity({
     name: 'Nova',
     openingPhrase: '<break time="1s"/>', // SSML silence-tag crash workaround, never a real name
@@ -422,7 +422,7 @@ test('lintPersonaIdentity: persona_name_mismatch still requires an openingPhrase
   assert.equal(hasFinding(noOpeningPhrase.findings, 'persona_name_mismatch'), false);
 });
 
-test('lintPersonaIdentity (#32): declaredName === detectedName does not double-fire drift for the same rename', () => {
+test('lintPersonaIdentity: declaredName === detectedName does not double-fire drift for the same rename', () => {
   const r = lintPersonaIdentity({
     name: 'Nova',
     openingPhrase: "I'm Nova, ready to help!",
@@ -450,10 +450,10 @@ test('assembleSystemPrompt: prototype-pollution-safe requestVars lookup', () => 
   assert.deepEqual(r.unresolvedVariables, ['toString']);
 });
 
-// see issue #45 — flag unresolvable reserved-variable references instead of
+// Flag unresolvable reserved-variable references instead of
 // silently rendering literal/empty output.
 
-test('assembleSystemPrompt (#45): fully-resolved prompt has NO warnings key (regression — unchanged from today)', () => {
+test('assembleSystemPrompt: fully-resolved prompt has NO warnings key (regression — unchanged from today)', () => {
   const r = assembleSystemPrompt({
     baseDirective: 'Thread {{sys__thread_id}}, user {{sys__user_id}}',
     prompts: [{ key: 'k', headerTemplate: 'H', value: 'Hi {{sys__user_message}}' }],
@@ -463,13 +463,13 @@ test('assembleSystemPrompt (#45): fully-resolved prompt has NO warnings key (reg
   assert.deepEqual(r.unresolvedVariables, []);
 });
 
-test('assembleSystemPrompt (#45): a prompt with NO reserved-variable references has no warnings', () => {
+test('assembleSystemPrompt: a prompt with NO reserved-variable references has no warnings', () => {
   const r = assembleSystemPrompt({ baseDirective: 'Hello {{topic}}', requestVars: {} });
   assert.equal('warnings' in r, false);
   assert.deepEqual(r.unresolvedVariables, ['topic']);
 });
 
-test('assembleSystemPrompt (#45): unresolved scalar reserved var (sys__ks) is flagged, name only, not the value', () => {
+test('assembleSystemPrompt: unresolved scalar reserved var (sys__ks) is flagged, name only, not the value', () => {
   const r = assembleSystemPrompt({ baseDirective: 'Token: {{sys__ks}}', requestVars: {} });
   assert.equal(r.warnings.length, 1);
   assert.equal(r.warnings[0].code, 'reserved_var_unresolved');
@@ -480,16 +480,15 @@ test('assembleSystemPrompt (#45): unresolved scalar reserved var (sys__ks) is fl
   assert.equal(r.text, 'Token: {{sys__ks}}', 'literal placeholder unchanged (backward compatible)');
 });
 
-test('assembleSystemPrompt (#45): unresolved sys__user_obj.* attribute is flagged distinctly, names issue #37', () => {
+test('assembleSystemPrompt: unresolved sys__user_obj.* attribute is flagged distinctly', () => {
   assert.ok(RESERVED_USER_OBJ_ATTRS.includes('first_name'));
   const r = assembleSystemPrompt({ baseDirective: 'Hi {{sys__user_obj.first_name}}', requestVars: {} });
   assert.equal(r.warnings.length, 1);
   assert.equal(r.warnings[0].code, 'reserved_user_attr_unresolved');
   assert.match(r.warnings[0].message, /sys__user_obj\.first_name/);
-  assert.match(r.warnings[0].message, /issue #37/);
 });
 
-test('assembleSystemPrompt (#45): sys__user_obj.* resolves cleanly (no warning) once bound via requestVars', () => {
+test('assembleSystemPrompt: sys__user_obj.* resolves cleanly (no warning) once bound via requestVars', () => {
   const r = assembleSystemPrompt({
     baseDirective: 'Hi {{sys__user_obj.first_name}}',
     requestVars: { 'sys__user_obj.first_name': 'Jane' },
@@ -498,19 +497,19 @@ test('assembleSystemPrompt (#45): sys__user_obj.* resolves cleanly (no warning) 
   assert.equal(r.text, 'Hi Jane');
 });
 
-test('assembleSystemPrompt (#45): an unrecognized sys__user_obj.* attribute is not flagged as reserved (unknown client-shaped var)', () => {
+test('assembleSystemPrompt: an unrecognized sys__user_obj.* attribute is not flagged as reserved (unknown client-shaped var)', () => {
   const r = assembleSystemPrompt({ baseDirective: 'Hi {{sys__user_obj.nickname}}', requestVars: {} });
   assert.equal('warnings' in r, false);
 });
 
-test('assembleSystemPrompt (#45): unresolved secrets.* reference is flagged (preview cannot read secret values)', () => {
+test('assembleSystemPrompt: unresolved secrets.* reference is flagged (preview cannot read secret values)', () => {
   const r = assembleSystemPrompt({ baseDirective: 'Key: {{secrets.API_KEY}}', requestVars: {} });
   assert.equal(r.warnings.length, 1);
   assert.equal(r.warnings[0].code, 'reserved_secret_unresolved');
   assert.match(r.warnings[0].message, /API_KEY/);
 });
 
-test('assembleSystemPrompt (#45): a reserved var with an explicit null value in requestVars still warns (no value available)', () => {
+test('assembleSystemPrompt: a reserved var with an explicit null value in requestVars still warns (no value available)', () => {
   const r = assembleSystemPrompt({ baseDirective: 'User {{sys__user_id}}', requestVars: { sys__user_id: null } });
   assert.equal(r.warnings.length, 1);
   assert.equal(r.warnings[0].code, 'reserved_var_unresolved');
@@ -519,7 +518,7 @@ test('assembleSystemPrompt (#45): a reserved var with an explicit null value in 
   assert.deepEqual(r.unresolvedVariables, []);
 });
 
-test('assembleSystemPrompt (#45): multiple distinct reserved-var references each warn once, deduplicated on repeat', () => {
+test('assembleSystemPrompt: multiple distinct reserved-var references each warn once, deduplicated on repeat', () => {
   const r = assembleSystemPrompt({
     baseDirective: 'A {{sys__ks}} B {{sys__is_new_thread}} C {{sys__ks}}',
     requestVars: {},

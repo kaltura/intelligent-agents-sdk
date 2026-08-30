@@ -49,10 +49,10 @@ const SOURCE = 'prompt-lint';
 
 /**
  * The two additional server-set scalar `sys__*` variables confirmed live but
- * not yet part of {@link RESERVED_VARS} (see issue #37) — `sys__ks` (the raw
+ * not yet part of {@link RESERVED_VARS} — `sys__ks` (the raw
  * session token) and `sys__is_new_thread`. Combined with {@link SYS_VARS} this
  * is the full known-reserved-scalar surface {@link assembleSystemPrompt} uses
- * to flag an unresolvable reference (see issue #45); it does NOT feed
+ * to flag an unresolvable reference; it does NOT feed
  * `assertRequestVars`'s collision guard — that list is tracked separately in
  * `conversations.js` and extending it is out of scope here.
  * @type {readonly string[]}
@@ -60,12 +60,12 @@ const SOURCE = 'prompt-lint';
 const RESERVED_EXTRA_SCALARS = Object.freeze(['sys__ks', 'sys__is_new_thread']);
 const RESERVED_SCALAR_SET = new Set([...SYS_VARS, ...RESERVED_EXTRA_SCALARS]);
 
-/** Dotted prefix for the reserved bound-user object (see issue #37). */
+/** Dotted prefix for the reserved bound-user object. */
 const RESERVED_USER_OBJ_PREFIX = 'sys__user_obj';
 
 /**
- * Attributes of the reserved `sys__user_obj` variable confirmed live (see
- * issue #37). Referencing an unbound attribute in a live turn today causes a
+ * Attributes of the reserved `sys__user_obj` variable confirmed live.
+ * Referencing an unbound attribute in a live turn today causes a
  * silent turn failure, not an empty render — {@link assembleSystemPrompt}
  * flags this case explicitly rather than letting the preview look harmless.
  * @type {readonly string[]}
@@ -93,8 +93,8 @@ function classifyReservedVar(name) {
 /**
  * Build the `LintFinding`-shaped warning for an unresolved reserved-variable
  * reference. Names the variable only — NEVER a value — even when one happens
- * to be present but falsy (relevant for `sys__ks`, a raw session token; see
- * issue #37). PURE. @param {string} name @param {{kind:string, attr?:string, secretName?:string}} info
+ * to be present but falsy (relevant for `sys__ks`, a raw session token).
+ * PURE. @param {string} name @param {{kind:string, attr?:string, secretName?:string}} info
  * @returns {LintFinding}
  */
 function reservedVarWarning(name, info) {
@@ -102,7 +102,7 @@ function reservedVarWarning(name, info) {
     return {
       severity: 'warning',
       code: 'reserved_user_attr_unresolved',
-      message: `\`{{${name}}}\` has no bound value in this preview's requestVars. Referencing an unbound sys__user_obj.* attribute in a LIVE turn currently causes a silent turn failure, not an empty render (see issue #37) — bind a user (Sessions.createConversationToken({userId})) or supply "${name}" in requestVars to simulate the bound case before shipping this prompt.`,
+      message: `\`{{${name}}}\` has no bound value in this preview's requestVars. Referencing an unbound sys__user_obj.* attribute in a LIVE turn currently causes a silent turn failure, not an empty render — bind a user (Sessions.createConversationToken({userId})) or supply "${name}" in requestVars to simulate the bound case before shipping this prompt.`,
     };
   }
   if (info.kind === 'secret') {
@@ -153,7 +153,7 @@ function summarize(findings) {
  * @param {{allowClientVariables?: boolean, knownVars?: string[], path?: string}} [opts]
  *   `allowClientVariables` (default `true`) mirrors the intellect's
  *   `allow_client_variables` gate: when `false`, any non-system variable is a
- *   `client_variable_not_allowed` ERROR (live-verified: a converse call sending
+ *   `client_variable_not_allowed` ERROR (a converse call sending
  *   it produces a SILENT EMPTY TURN — no error surfaces to the caller).
  *   `knownVars` are additional names you expect to inject at request
  *   time; an unknown client variable is a `unknown_variable` WARNING.
@@ -257,7 +257,7 @@ export function validatePromptVars(text, opts = {}) {
       findings.push({
         severity: 'error',
         code: 'client_variable_not_allowed',
-        message: `\`{{${raw}}}\` is a client variable but allow_client_variables is off — a converse call sending request variables produces a SILENT EMPTY TURN (live-verified; no error is returned). Enable the gate via intellects.setClientVariablesEnabled(id, true) or remove the reference.`,
+        message: `\`{{${raw}}}\` is a client variable but allow_client_variables is off — a converse call sending request variables produces a SILENT EMPTY TURN (no error is returned). Enable the gate via intellects.setClientVariablesEnabled(id, true) or remove the reference.`,
         path: opts.path || undefined,
       });
     } else if (!known.has(raw)) {
@@ -296,7 +296,7 @@ export function validatePromptVars(text, opts = {}) {
  * default — pin it anyway via `intellects.setClientVariablesEnabled(id, true)`).
  * With the gate off, a converse turn sending request variables fails SILENTLY
  * with an empty turn on BOTH paths — HTTP streaming and live socket alike
- * (live-verified; the server's 403 fires after the response stream has opened,
+ * (the server's 403 fires after the response stream has opened,
  * so no error ever reaches the wire). Both session classes then emit the
  * once-per-session `empty_turn_with_request_vars` warning. Frozen — spread-copy
  * (`{...PAGE_CONTEXT_PROMPT}`) to customize the label or wording.
@@ -526,7 +526,7 @@ export function lintGlossary(glossary, opts = {}) {
 }
 
 // Common sentence-initial words that would otherwise be misread as a
-// capitalized proper name (see issue #17 test case "no proper name present").
+// capitalized proper name (the "no proper name present" test case).
 const GREETING_STOPWORDS = new Set([
   'Hi', 'Hello', 'Hey', 'Hiya', 'Welcome', 'Greetings', 'Good', 'Thanks', 'Thank',
   'You', 'Your', 'Yours', 'My', 'Please', 'Sure', 'Sorry', 'How', 'What', 'Why',
@@ -588,7 +588,7 @@ function extractProperName(text) {
  *   - `persona_name_drift`: neither `baseDirective` nor any `prompts[].value`
  *     mention a name that should be there. Runs once per name in play — off
  *     the declared `name` whenever one is given (independent of
- *     `openingPhrase`; see issue #32 — a caller with no `openingPhrase`, or
+ *     `openingPhrase` — a caller with no `openingPhrase`, or
  *     one `extractProperName` can't parse a name out of, still gets a real
  *     check), and separately off `detectedName` when it differs from the
  *     declared name (skipped when they match, so a single rename shows one
@@ -685,13 +685,13 @@ export const SERVER_DEFAULT_DIRECTIVE_MARKER = '<<server default directive>>';
  *   - `{{var}}` placeholders are interpolated ONLY when you pass `requestVars`
  *     (system vars too); otherwise they are left literal. `sys__*` values you
  *     pass are a SIMULATION of what the server sets per turn.
- *   - HARDENING (issue #45): a reference to a known reserved variable
+ *   - HARDENING: a reference to a known reserved variable
  *     (`sys__thread_id`/`sys__message_id`/`sys__user_id`/`sys__user_message`/
  *     `sys__ks`/`sys__is_new_thread`, a `sys__user_obj.*` attribute, or a
  *     `secrets.*` name) with no value in `requestVars` is flagged in the
  *     returned `warnings[]` — distinct from an ordinary unresolved client
  *     variable, since the same reference would misbehave live (for
- *     `sys__user_obj.*`, a silent whole-turn failure — see issue #37).
+ *     `sys__user_obj.*`, a silent whole-turn failure).
  *     `warnings` is present ONLY when non-empty, so a fully-resolved preview's
  *     return shape is unchanged from before this hardening.
  *
@@ -779,7 +779,7 @@ export function assembleSystemPrompt(subset = {}) {
   const interpolate = subset.interpolate !== false && isPlainObject(subset.requestVars);
   const vars = isPlainObject(subset.requestVars) ? subset.requestVars : {};
   text = text.replace(/\{\{\s*([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)\s*\}\}/g, (whole, name) => {
-    // HARDENING (issue #45): flag a known reserved variable with no value
+    // HARDENING: flag a known reserved variable with no value
     // available in this simulated context — independent of `interpolate`
     // (a caller who set interpolate:false but DID supply a value still has a
     // resolvable simulation; only an ABSENT/null/undefined value warrants a

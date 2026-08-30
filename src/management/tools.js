@@ -365,7 +365,7 @@ export function clientToolReadiness(body) {
  * bound to the LLM, so calling it is normal agent behavior — it does NOT trip
  * the "I can't run code / I'm a knowledge assistant" refusal a custom GenUI
  * block does. The `type:"tool"` segment is also NOT in the TTS gate, so the
- * voice track stays clean. Verified live (navigate_to_slide / call_page_function).
+ * voice track stays clean. Confirmed with `navigate_to_slide` / `call_page_function`.
  *
  * TWO DEPLOYMENT GOTCHAS (enforced nowhere server-side — author-time
  * discipline; see {@link clientToolReadiness}):

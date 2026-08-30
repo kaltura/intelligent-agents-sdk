@@ -57,20 +57,6 @@ test('catalog.createVisual sends adminTags as a single-parse comma string, NOT J
   assert.ok(!String(tagField).includes('['), 'adminTags must NOT be JSON-encoded (no brackets)');
 });
 
-test('agents.getEmbedScript validates embedType against the closed enum BEFORE any network call', async () => {
-  // Live wire replies `{objectType:'Object', html:'<script…>'}` — the SDK unwraps to the snippet string.
-  const f = fakeFetch([{ match: '/agent/getEmbedScript', respond: (req) => ({ body: { objectType: 'Object', html: `<script data-type="${req.body.embedType}"></script>` } }) }]);
-  const k = new Management({ partnerId: 6516742, adminSecret: 'a'.repeat(32), fetch: f });
-  await assert.rejects(() => k.agents.getEmbedScript('agent-1', 'popup', ADMIN), (e) => e.code === 'bad_request' && /contained, page, floater/.test(e.detail));
-  await assert.rejects(() => k.agents.getEmbedScript('agent-1', undefined, ADMIN), (e) => e.code === 'bad_request');
-  assert.equal(f.calls.length, 0, 'no transport before the enum guard passes');
-
-  const html = await k.agents.getEmbedScript('agent-1', 'floater', ADMIN);
-  assert.equal(typeof html, 'string', 'unwrapped to the raw snippet string');
-  assert.match(html, /data-type="floater"/);
-  assert.deepEqual(f.calls[0].body, { agentId: 'agent-1', embedType: 'floater' });
-});
-
 test('catalog.importVoiceFromElevenLabs/Cartesia post {voiceId}; empty voiceId rejected pre-network', async () => {
   const f = fakeFetch([
     { match: '/catalog-item/createVoiceFromElevenLabs', respond: (req) => ({ body: { itemId: 'v-el', type: 'Voice', voiceId: req.body.voiceId } }) },

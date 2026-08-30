@@ -138,7 +138,7 @@ test('tool call with reason:"resume" returns to the sequential point', () => {
   assert.equal(p.current, 3, 'resume returns to the last sequential slide regardless of slide_num sent');
 });
 
-test('REGRESSION (issue #18): repeated resume navs are idempotent — the resume anchor is not mutated by a resume nav itself', () => {
+test('REGRESSION: repeated resume navs are idempotent — the resume anchor is not mutated by a resume nav itself', () => {
   // The defect: _nav resolves reason:'resume' by reading _lastSequential, but goTo then
   // mutated _lastSequential as a side effect of THAT SAME navigation ('resume' !== 'avatar'),
   // so a second resume call (e.g. a duplicate the app failed to dedupe) resolved to a
@@ -420,7 +420,7 @@ test('appendSlide: does not navigate on its own', () => {
   assert.equal(p.current, 1, 'appendSlide alone never moves the deck');
 });
 
-test('appendSlide: mutating one Presenter\'s slides never grows the shared default SLIDES fixture (see issue #27)', () => {
+test('appendSlide: mutating one Presenter\'s slides never grows the shared default SLIDES fixture', () => {
   const { p } = newPresenter();
   p.appendSlide({ title: 'New Slide' });
   const { p: p2 } = newPresenter();
@@ -608,7 +608,7 @@ test('a distinct memoryKey avoids the storage-collision warning', () => {
   }
 });
 
-// ─────────────────────────── deckOutline (issue #22) ───────────────────────────
+// ─────────────────────────── deckOutline ───────────────────────────
 
 test('deckOutline unset (default): session.lastContext has no outline key at all', () => {
   const { session, p } = newPresenter();

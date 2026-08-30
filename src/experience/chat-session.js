@@ -1,15 +1,14 @@
 /**
  * KalturaChatSession — the text-only conversation transport.
  *
- * Talks to the SAME brain (Genie) and the SAME thread as `KalturaAvatarSession`,
+ * Talks to the SAME brain and the SAME thread as `KalturaAvatarSession`,
  * over plain HTTPS instead of a socket + WebRTC: each `sendText()` turn is one
  * `POST /assistant/converse` NDJSON stream, authenticated with the same
  * conversation KS. No mic, no camera, no video element, no socket.io — this
  * module never imports getUserMedia, WHEP, or a socket factory, so a chat-only
  * page ships none of that and never triggers a permission prompt.
  *
- * Feature parity with the avatar transport where the wire allows it
- * (live-verified end to end):
+ * Feature parity with the avatar transport where the wire allows it:
  *   - `request_vars` / `setDynamicPrompt` — same canonical-map merge semantics;
  *     the full map rides EVERY turn (HTTP has no join to persist it).
  *   - client-side commands — `onToolCall` with the same per-turn semantic dedup,
@@ -18,8 +17,8 @@
  *     `/assistant/tool_response` ACK with the same KS; because segments are
  *     parsed MID-STREAM, the brain unblocks and finishes the SAME turn.
  *   - thread continuity — seed `cfg.threadId` with another session's
- *     `threadId` getter to continue that conversation here (both directions
- *     avatar ⇄ chat are live-verified).
+ *     `threadId` getter to continue that conversation here (works both
+ *     directions, avatar ⇄ chat).
  *
  * Emits the transport-agnostic event subset (`transcript`, `turnStart`,
  * `turnEnd`, `toolCall`, `toolCallResult`, `toolCallInvalid`, `stateChange`,
@@ -143,7 +142,7 @@ export class KalturaChatSession extends Emitter {
    * second sendText() awaits the previous turn's stream end. Segments are
    * processed MID-STREAM, so an `onToolCall` handler that calls
    * {@link respondToTool} unblocks a `waitForResponse:true` brain within the
-   * same turn (live-verified).
+   * same turn.
    *
    * Events fired during the turn: `transcript` (`{text, type:'user'}`) for the
    * sent text, `turnStart`/`responsePending` at dispatch, `transcript`
@@ -151,7 +150,7 @@ export class KalturaChatSession extends Emitter {
    * `toolCallInvalid` per client command, then `responseSettled`/`turnEnd`.
    *
    * The intellect's `allow_client_variables` gate being OFF is a SILENT
-   * failure on this path too (live-verified): the turn resolves with empty
+   * failure on this path too: the turn resolves with empty
    * `text` and zero segments — no error reaches the wire. Like the live
    * socket, the session detects it and emits a once-per-session `warning`
    * (`code: 'empty_turn_with_request_vars'`, var KEYS only, never values).
@@ -277,7 +276,7 @@ export class KalturaChatSession extends Emitter {
    * POST, same KS auth, same graceful `{ok:false, reason:'unknown_or_stale'}`
    * degradation; see that method's doc for the full contract). Because chat
    * segments are parsed mid-stream, calling this from an `onToolCall` handler
-   * unblocks the brain within the SAME turn (live-verified).
+   * unblocks the brain within the SAME turn.
    * @param {string} id `call.toolMetadata.id` from the tool call being acknowledged.
    * @param {object} response JSON-serializable result (plain object).
    * @returns {Promise<{ok:boolean, reason?:string}>}
@@ -293,7 +292,7 @@ export class KalturaChatSession extends Emitter {
       return { ok: false, reason: 'unknown_or_stale' };
     }
     const gen = this._sessionGen;
-    // tool_invocation_id: second required field, same id echoed under both keys (live-verified 422 without it).
+    // tool_invocation_id: second required field, same id echoed under both keys (the backend 422s without it).
     await this._fetch(`${this._genieUrl}/assistant/tool_response`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `KS ${this._token}` },
@@ -427,7 +426,7 @@ export class KalturaChatSession extends Emitter {
 
   /**
    * Diagnose the silent-empty-turn failure mode — the exact peer of
-   * `KalturaAvatarSession._checkEmptyTurn` (live-verified on THIS path too):
+   * `KalturaAvatarSession._checkEmptyTurn`, confirmed on THIS path too:
    * with the intellect's `allow_client_variables` gate OFF, a converse turn
    * that sends request variables resolves with zero segments and NO error —
    * the 403 is raised server-side after the response stream has already

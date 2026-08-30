@@ -7,7 +7,7 @@
  * losing the thread: `switchMode()` tears down the current transport,
  * constructs the other one seeded with the same `threadId` and the same
  * canonical `request_vars` map, and reconnects. The brain sees one continuous
- * conversation (thread continuity is live-verified in both directions).
+ * conversation (thread continuity holds in both directions).
  *
  * What the facade owns:
  *   - one state machine: `idle → connecting → connected ⇄ switching → closed | failed`

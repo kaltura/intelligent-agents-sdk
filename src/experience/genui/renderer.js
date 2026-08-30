@@ -237,7 +237,7 @@ export class ExperienceRenderer {
 
   /**
    * A widget was interrupted before it finished streaming ({@link SegmentAssembler}'s
-   * `onMalformed`, issue #26) — reuses the SAME typed fallback shape `_renderWidget`
+   * `onMalformed`) — reuses the SAME typed fallback shape `_renderWidget`
    * already produces for a throwing custom renderer (`{kind:'error', data:{runtime,
    * message}}`), so a host handles both cases identically.
    * @param {{runtime:string,runtimeName:string,speechId:(string|null),reason:string,message:string}} info

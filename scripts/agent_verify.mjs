@@ -130,11 +130,42 @@ section('Part 1 — Isolation');
   }
 }
 
-// I-3 + I-4: Multi-instance isolation and event-listener cleanup — exercised by existing tests
-// (isolation.test.js). We run the SDK's unit tests as the verify step.
-// This is handled later in the "run SDK tests" section.
-pass('I-3', 'Multi-instance isolation — verified by test/unit/isolation.test.js (run below)');
-pass('I-4', 'Event-listener cleanup — verified by test/unit/isolation.test.js (run below)');
+// I-3: Class-based encapsulation — no cross-instance state leakage.
+// A rubber-stamped pass() here would keep reporting green even if the named
+// test below were deleted; needle-check the specific assertions the rule
+// claims exist, same pattern as D-4. The SDK test suite (run below) then
+// proves they're currently green, not just present.
+{
+  const isoTest = join(ROOT, 'test', 'unit', 'isolation.test.js');
+  const needles = [
+    'no credential bleed: instance A cannot observe instance B secret',
+    'concurrent token mints on two tenants do not cross tokens',
+  ];
+  const missing = needles.filter((n) => !read(isoTest).includes(n));
+  if (existsSync(isoTest) && missing.length === 0) {
+    pass('I-3', 'Multi-instance isolation tests present in test/unit/isolation.test.js (run below)');
+  } else {
+    fail('I-3', 'Multi-instance isolation test(s) missing from test/unit/isolation.test.js',
+      missing.length ? missing.map((n) => `missing test "${n}"`).join('\n      ') : `${relative(ROOT, isoTest)} not found`);
+  }
+}
+
+// I-4: Event-listener cleanup.
+{
+  const isoTest = join(ROOT, 'test', 'unit', 'isolation.test.js');
+  const sessionSrc = read(join(SDK_SRC, 'experience', 'session.js'));
+  const hasWiring = /_wireNetwork\s*\(/.test(sessionSrc) && /_unwireNetwork\s*\(/.test(sessionSrc);
+  const needle = '_unwireNetwork() removes exactly the online/offline handlers _wireNetwork() added';
+  const hasTest = read(isoTest).includes(needle);
+  if (hasWiring && hasTest) {
+    pass('I-4', 'Event-listener cleanup — _wireNetwork()/_unwireNetwork() implemented and tested in test/unit/isolation.test.js (run below)');
+  } else {
+    const detail = [];
+    if (!hasWiring) detail.push('src/experience/session.js missing _wireNetwork()/_unwireNetwork()');
+    if (!hasTest) detail.push(`test/unit/isolation.test.js missing test "${needle}"`);
+    fail('I-4', 'Event-listener cleanup not verifiable', detail.join('\n      '));
+  }
+}
 
 // ══════════════════════════════════════════════════════════════════════════
 // PART 2 — SECURITY
@@ -168,14 +199,49 @@ section('Part 2 — Security');
   }
 }
 
-// S-3: safeUrl used at link-build sites — verified by security.test.js
-pass('S-3', 'safeUrl() at all link-build sites — verified by test/e2e/security.test.js');
+// S-3: All user-supplied URLs must pass through safeUrl().
+{
+  const safetyTest = join(ROOT, 'test', 'unit', 'safety.test.js');
+  const needles = [
+    'safeUrl rejects authority-relative URLs',
+    'safeUrl rejects embedded userinfo credentials',
+  ];
+  const missing = needles.filter((n) => !read(safetyTest).includes(n));
+  if (existsSync(safetyTest) && missing.length === 0) {
+    pass('S-3', 'safeUrl() unit tests present in test/unit/safety.test.js (run below)');
+  } else {
+    fail('S-3', 'safeUrl() test(s) missing from test/unit/safety.test.js',
+      missing.length ? missing.map((n) => `missing test "${n}"`).join('\n      ') : `${relative(ROOT, safetyTest)} not found`);
+  }
+}
 
-// S-4: sanitizeJson in setDynamicPrompt — verified by compliance.test.js
-pass('S-4', 'sanitizeJson() on LLM/user input — verified by test/e2e/compliance.test.js');
+// S-4: No prototype pollution. SDK_CONSTITUTION.md previously named
+// test/e2e/compliance.test.js, which has no such test — the real coverage is
+// a unit test in safety.test.js plus an e2e test in security.test.js.
+{
+  const safetyTest = join(ROOT, 'test', 'unit', 'safety.test.js');
+  const securityTest = join(ROOT, 'test', 'e2e', 'security.test.js');
+  const hasUnit = read(safetyTest).includes('sanitizeJson drops prototype-pollution keys');
+  const hasE2e = read(securityTest).includes('setDynamicPrompt scrubs prototype-pollution keys');
+  if (hasUnit && hasE2e) {
+    pass('S-4', 'sanitizeJson() prototype-pollution tests present in test/unit/safety.test.js + test/e2e/security.test.js (run below)');
+  } else {
+    const detail = [];
+    if (!hasUnit) detail.push('test/unit/safety.test.js missing "sanitizeJson drops prototype-pollution keys"');
+    if (!hasE2e) detail.push('test/e2e/security.test.js missing "setDynamicPrompt scrubs prototype-pollution keys"');
+    fail('S-4', 'sanitizeJson() prototype-pollution test(s) missing', detail.join('\n      '));
+  }
+}
 
-// S-5: Admin secret non-enumerable — verified by isolation.test.js
-pass('S-5', '_adminSecret non-enumerable — verified by test/unit/isolation.test.js');
+// S-5: Admin secret non-enumerable and non-serializable.
+{
+  const isoTest = join(ROOT, 'test', 'unit', 'isolation.test.js');
+  if (read(isoTest).includes('admin secret is non-enumerable')) {
+    pass('S-5', '_adminSecret non-enumerable test present in test/unit/isolation.test.js (run below)');
+  } else {
+    fail('S-5', 'test/unit/isolation.test.js missing "admin secret is non-enumerable" test');
+  }
+}
 
 // S-6: No hardcoded KS tokens or 32-char hex secrets
 {
@@ -198,31 +264,40 @@ pass('S-5', '_adminSecret non-enumerable — verified by test/unit/isolation.tes
 
 section('Part 3 — Resiliency');
 
-// R-1 through R-5: Http retry/backoff — check that the implementation exists
+// R-1 through R-5: Http retry/backoff. A source-token heuristic alone can't
+// tell "the retry code exists" from "the retry code for THIS rule still has
+// a test" — pair it with a needle-check against the specific tagged test(s)
+// in http.test.js, so deleting one no longer leaves every rule green.
 {
   const httpSrc = read(join(SDK_SRC, 'core', 'http.js'));
+  const httpTestFile = join(ROOT, 'test', 'unit', 'http.test.js');
+  const httpTestSrc = read(httpTestFile);
   const hasRetry = /maxRetries/.test(httpSrc);
   const hasBackoff = /baseDelayMs|exponential|backoff/i.test(httpSrc);
   const hasDelayFn = /delayFn/.test(httpSrc);
   const hasRetryableCodes = /503|502|504|429/.test(httpSrc);
+  const implOk = hasRetry && hasBackoff && hasDelayFn && hasRetryableCodes;
+  const implMissing = [];
+  if (!hasRetry) implMissing.push('maxRetries missing');
+  if (!hasBackoff) implMissing.push('backoff delay logic missing');
+  if (!hasDelayFn) implMissing.push('injectable delayFn missing');
+  if (!hasRetryableCodes) implMissing.push('retriable status codes (429/502/503/504) missing');
 
-  if (hasRetry && hasBackoff && hasDelayFn && hasRetryableCodes) {
-    pass('R-1', 'Http has retry logic with configurable maxRetries');
-    pass('R-2', 'GET requests are retry-safe (covered by R-1 implementation)');
-    pass('R-3', 'Idempotency-Key POSTs are retry-safe (covered by R-1 implementation)');
-    pass('R-4', 'Retry loop respects caller AbortSignal');
-    pass('R-5', 'delayFn injectable — retry exercisable offline');
-  } else {
-    const missing = [];
-    if (!hasRetry) missing.push('maxRetries');
-    if (!hasBackoff) missing.push('backoff delay logic');
-    if (!hasDelayFn) missing.push('injectable delayFn');
-    if (!hasRetryableCodes) missing.push('retriable status codes (429/502/503/504)');
-    fail('R-1', `Http.request() missing: ${missing.join(', ')}`, 'See SDK_CONSTITUTION.md R-1 for spec');
-    fail('R-2', 'Cannot verify — R-1 not implemented');
-    fail('R-3', 'Cannot verify — R-1 not implemented');
-    fail('R-4', 'Cannot verify — R-1 not implemented');
-    fail('R-5', 'Cannot verify — R-1 not implemented');
+  const RULE_TEST_NEEDLES = {
+    'R-1': ['R-1: 503 GET is retried up to maxRetries times then throws', 'R-1: non-retriable 401 is NOT retried'],
+    'R-2': ['R-2: GET requires no idempotency key to be retry-safe'],
+    'R-3': ['R-3: POST with idempotency-key is retried on 503', 'R-3: POST without idempotency-key is retried on network error'],
+    'R-4': ['R-4: abort signal stops retry loop immediately'],
+    'R-5': ['R-5: delayFn is called between retries'],
+  };
+  for (const [rule, needles] of Object.entries(RULE_TEST_NEEDLES)) {
+    const missingTests = existsSync(httpTestFile) ? needles.filter((n) => !httpTestSrc.includes(n)) : needles;
+    if (implOk && missingTests.length === 0) {
+      pass(rule, `Http retry/backoff — verified by test/unit/http.test.js (run below)`);
+    } else {
+      const detail = [...implMissing, ...missingTests.map((n) => `test/unit/http.test.js missing "${n}"`)];
+      fail(rule, `${rule} not verifiable`, detail.join('\n      '));
+    }
   }
 }
 
@@ -235,11 +310,21 @@ section('Part 4 — Performance');
 // P-1: Response size budget in Http
 {
   const httpSrc = read(join(SDK_SRC, 'core', 'http.js'));
+  const httpTestFile = join(ROOT, 'test', 'unit', 'http.test.js');
+  const httpTestSrc = read(httpTestFile);
   const hasMaxBytes = /maxResponseBytes|response_too_large|Content-Length/.test(httpSrc);
-  if (hasMaxBytes) {
-    pass('P-1', 'Http enforces maxResponseBytes response size budget');
+  const needles = [
+    'P-1: response exceeding maxResponseBytes by Content-Length throws response_too_large',
+    'P-1: response body exceeding maxResponseBytes throws response_too_large',
+  ];
+  const missingTests = existsSync(httpTestFile) ? needles.filter((n) => !httpTestSrc.includes(n)) : needles;
+  if (hasMaxBytes && missingTests.length === 0) {
+    pass('P-1', 'Http response-size budget — verified by test/unit/http.test.js (run below)');
   } else {
-    fail('P-1', 'Http.request() has no response size budget (no maxResponseBytes check)', 'See SDK_CONSTITUTION.md P-1');
+    const detail = [];
+    if (!hasMaxBytes) detail.push('Http.request() has no response size budget (no maxResponseBytes check)');
+    missingTests.forEach((n) => detail.push(`test/unit/http.test.js missing "${n}"`));
+    fail('P-1', 'P-1 not verifiable', detail.join('\n      '));
   }
 }
 
@@ -414,7 +499,7 @@ section('SDK Test Suite (npm test)');
 {
   // The suite normally finishes well under 2 minutes, but a cold npm cache or a
   // loaded CI runner can push past it — a timeout kill must read as "timed out",
-  // never as a test failure (issue #78). Override with AGENT_VERIFY_TEST_TIMEOUT_MS.
+  // never as a test failure. Override with AGENT_VERIFY_TEST_TIMEOUT_MS.
   const timeoutMs = Number(process.env.AGENT_VERIFY_TEST_TIMEOUT_MS) || 300_000;
   const result = spawnSync('npm', ['test'], {
     cwd: SDK_TEST,
@@ -428,7 +513,7 @@ section('SDK Test Suite (npm test)');
                        out.match(/\d+ passing.*?\d+ failing/i);
   const summary = summaryMatch ? summaryMatch[0].replace(/\n/g, ' ') : out.slice(-400).replace(/\n/g, ' ');
   if (result.status === 0) {
-    pass('I-3/I-4/S-3/S-4/S-5', `SDK tests pass — ${summary || 'all suites green'}`);
+    pass('SDK-TESTS', `SDK tests pass — ${summary || 'all suites green'}`);
   } else if (result.signal) {
     fail('SDK-TESTS', `SDK test run KILLED by ${result.signal} after ${timeoutMs / 1000}s — a timeout, not a test failure. Re-run, or raise AGENT_VERIFY_TEST_TIMEOUT_MS.`,
       summary || out.slice(-800));

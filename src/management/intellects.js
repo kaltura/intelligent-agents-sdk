@@ -426,10 +426,10 @@ export class Intellects {
    * `'client-side-replica'` and `_meta.rendererBasis` names the server function
    * this mirrors (the author layer only — NOT byte-exact with the live prompt).
    *
-   * HARDENING (issue #45): a reference to a known reserved variable
+   * HARDENING: a reference to a known reserved variable
    * (`sys__thread_id`/`sys__message_id`/`sys__user_id`/`sys__user_message`/
    * `sys__ks`/`sys__is_new_thread`, a `sys__user_obj.*` attribute, or a
-   * `secrets.*` name — see issue #37) with no value in `requestVars` is
+   * `secrets.*` name) with no value in `requestVars` is
    * flagged in `warnings[]` instead of silently rendering as empty/literal.
    * `warnings` is present ONLY when non-empty — a fully-resolved preview's
    * return shape is unchanged from before this hardening.

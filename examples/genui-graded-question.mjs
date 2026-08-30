@@ -1,5 +1,5 @@
 /**
- * `graded-question` (issue #39) — a full worked example of the GenUI
+ * `graded-question` — a full worked example of the GenUI
  * comprehension-check widget: multiple-choice AND free-text variants, wired
  * through the SDK's existing "10th runtime" host-registration seam (the same
  * mechanism any custom widget uses — see docs/GENUI-REFERENCE.md § 10 and

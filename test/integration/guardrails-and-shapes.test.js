@@ -138,7 +138,7 @@ test('#11 conversation resource methods send the EXACT documented request bodies
   await m.followups.getSuggested(CONV_KS);
   await m.knowledge.search('q', ADMIN);
 
-  // v1/thread/list filter — NO "Genie" prefix (live-verified: 'GenieListThreadFilter' 422s)
+  // v1/thread/list filter — NO "Genie" prefix ('GenieListThreadFilter' 422s)
   assert.equal(seen.list.body.filter.objectType, 'ListThreadFilter');
   // thread/update {id,title}
   assert.equal(seen.rename.body.id, TID);
@@ -206,7 +206,7 @@ test('onToolCall dedups within a turn but re-fires after turnStart', async () =>
   assert.deepEqual(seen, [4, 4]);
 });
 
-test('REGRESSION (issue #18): dedup is semantic, not byte-string — differently-key-ordered JSON for the same call collapses to one dispatch', async () => {
+test('REGRESSION: dedup is semantic, not byte-string — differently-key-ordered JSON for the same call collapses to one dispatch', async () => {
   // The LLM can emit the same logical tool call twice with non-deterministic JSON key
   // order (e.g. {"reason":"resume","slide_num":18} then {"slide_num":18,"reason":"resume"}).
   // Byte-string dedup on the raw wire content lets both through; semantic dedup on
@@ -258,7 +258,7 @@ test('a throwing onToolCall handler is isolated — other handlers still run', a
   assert.deepEqual(ran, ['second']);
 });
 
-// ───────────────────── fused multi-tool segment recovery (live-verified bug fix) ─────────────────────
+// ───────────────────── fused multi-tool segment recovery ─────────────────────
 // Live capture: a two-tool turn (highlight_chart + open_filing) streamed as ONE type:"tool"
 // segment naming only "open_filing", with highlight_chart's args concatenated ahead of it.
 // Before the fix, highlight_chart's client-side action was silently lost while the server
@@ -327,7 +327,7 @@ test('non-fused calls are unaffected: a plain tool_response with no pending blob
   assert.deepEqual(calls, [{ slide_num: 4 }], 'exactly one dispatch — the response echo added nothing');
 });
 
-test('issue #41: a name dispatched directly in one ASR sub-turn does not block that same name\'s fused recovery in the NEXT sub-turn of the same turn', async () => {
+test('a name dispatched directly in one ASR sub-turn does not block that same name\'s fused recovery in the NEXT sub-turn of the same turn', async () => {
   const { session, socket } = await connect();
   const calls = [];
   session.onToolCall('navigate_to_slide', (args) => calls.push(args));
@@ -351,9 +351,9 @@ test('issue #41: a name dispatched directly in one ASR sub-turn does not block t
   assert.deepEqual(calls, [{ slide_num: 4 }, { slide_num: 7 }], 'sub-turn 2\'s fused navigate_to_slide recovers instead of being dropped');
 });
 
-// ─────────────────────────── issue #25: toolCallResult (local ack) ───────────────────────────
+// ─────────────────────────── toolCallResult (local ack) ───────────────────────────
 
-test('issue #25: a handler returning a value emits toolCallResult {ok:true, value}', async () => {
+test('a handler returning a value emits toolCallResult {ok:true, value}', async () => {
   const { session, socket } = await connect();
   const results = [];
   session.on('toolCallResult', (r) => results.push(r));
@@ -367,7 +367,7 @@ test('issue #25: a handler returning a value emits toolCallResult {ok:true, valu
   assert.equal(results[0].call.name, 'navigate_to_slide');
 });
 
-test('issue #25: a handler returning undefined emits no toolCallResult (no regression for existing handlers)', async () => {
+test('a handler returning undefined emits no toolCallResult (no regression for existing handlers)', async () => {
   const { session, socket } = await connect();
   const results = [];
   session.on('toolCallResult', (r) => results.push(r));
@@ -378,7 +378,7 @@ test('issue #25: a handler returning undefined emits no toolCallResult (no regre
   assert.equal(results.length, 0);
 });
 
-test('issue #25: a throwing handler emits toolCallResult {ok:false, error} in addition to being isolated', async () => {
+test('a throwing handler emits toolCallResult {ok:false, error} in addition to being isolated', async () => {
   const { session, socket } = await connect();
   const results = [];
   const ran = [];
@@ -394,7 +394,7 @@ test('issue #25: a throwing handler emits toolCallResult {ok:false, error} in ad
   assert.match(results[0].error.message, /boom/);
 });
 
-test('issue #25: an async handler that resolves a value emits toolCallResult after settling', async () => {
+test('an async handler that resolves a value emits toolCallResult after settling', async () => {
   const { session, socket } = await connect();
   const results = [];
   session.on('toolCallResult', (r) => results.push(r));
@@ -409,7 +409,7 @@ test('issue #25: an async handler that resolves a value emits toolCallResult aft
   assert.deepEqual(results[0].value, { saved: true });
 });
 
-test('issue #25: an async handler that rejects emits toolCallResult {ok:false, error}', async () => {
+test('an async handler that rejects emits toolCallResult {ok:false, error}', async () => {
   const { session, socket } = await connect();
   const results = [];
   session.on('toolCallResult', (r) => results.push(r));
@@ -423,7 +423,7 @@ test('issue #25: an async handler that rejects emits toolCallResult {ok:false, e
   assert.match(results[0].error.message, /network down/);
 });
 
-test('issue #25: an async handler that resolves undefined emits no toolCallResult', async () => {
+test('an async handler that resolves undefined emits no toolCallResult', async () => {
   const { session, socket } = await connect();
   const results = [];
   session.on('toolCallResult', (r) => results.push(r));
@@ -435,9 +435,9 @@ test('issue #25: an async handler that resolves undefined emits no toolCallResul
   assert.equal(results.length, 0);
 });
 
-// ─────────────────────────── issue #24: dispatch-time arg validation ───────────────────────────
+// ─────────────────────────── dispatch-time arg validation ───────────────────────────
 
-test('issue #24: onToolCall(name, handler, argsSchema) — a mismatched call never invokes the handler, emits toolCallInvalid instead of toolCall', async () => {
+test('onToolCall(name, handler, argsSchema) — a mismatched call never invokes the handler, emits toolCallInvalid instead of toolCall', async () => {
   const { session, socket } = await connect();
   const calls = []; const toolCallEvents = []; const invalid = [];
   session.onToolCall('navigate_to_slide', (args) => calls.push(args), { slide_num: { type: 'int', required: true } });
@@ -453,7 +453,7 @@ test('issue #24: onToolCall(name, handler, argsSchema) — a mismatched call nev
   assert.match(invalid[0].errors[0], /must be of type int/);
 });
 
-test('issue #24: a valid call still dispatches normally with a schema registered', async () => {
+test('a valid call still dispatches normally with a schema registered', async () => {
   const { session, socket } = await connect();
   const calls = []; const invalid = [];
   session.onToolCall('navigate_to_slide', (args) => calls.push(args), { slide_num: { type: 'int', required: true } });
@@ -465,7 +465,7 @@ test('issue #24: a valid call still dispatches normally with a schema registered
   assert.equal(invalid.length, 0);
 });
 
-test('issue #24: no schema passed → existing behavior unchanged (regression guard)', async () => {
+test('no schema passed → existing behavior unchanged (regression guard)', async () => {
   const { session, socket } = await connect();
   const calls = []; const invalid = [];
   session.onToolCall('navigate_to_slide', (args) => calls.push(args));   // no 3rd arg
@@ -477,7 +477,7 @@ test('issue #24: no schema passed → existing behavior unchanged (regression gu
   assert.equal(invalid.length, 0);
 });
 
-test('issue #24: an invalid call is still deduped within the turn (a retried bad call fires toolCallInvalid once)', async () => {
+test('an invalid call is still deduped within the turn (a retried bad call fires toolCallInvalid once)', async () => {
   const { session, socket } = await connect();
   const invalid = [];
   session.onToolCall('navigate_to_slide', () => {}, { slide_num: { type: 'int', required: true } });
@@ -489,7 +489,7 @@ test('issue #24: an invalid call is still deduped within the turn (a retried bad
   assert.equal(invalid.length, 1);
 });
 
-test('issue #24: enum mismatch is rejected the same way as a type mismatch', async () => {
+test('enum mismatch is rejected the same way as a type mismatch', async () => {
   const { session, socket } = await connect();
   const calls = []; const invalid = [];
   session.onToolCall('set_track', (args) => calls.push(args), { track: { type: 'str', enum: ['business', 'developer'] } });
@@ -505,7 +505,7 @@ test('issue #24: enum mismatch is rejected the same way as a type mismatch', asy
   assert.deepEqual(calls, [{ track: 'developer' }]);
 });
 
-// ─────────────────────────── issue #31 gap 2: respondToTool (wire ACK) ───────────────────────────
+// ─────────────────────────── respondToTool (wire ACK) ───────────────────────────
 
 /** A native tool-call segment carrying wire tool_metadata (a `waitForResponse:true` client tool). */
 function toolDeltaWithMetadata(content, id) {
@@ -579,7 +579,7 @@ test('respondToTool: a cold reconnect mid-flight resolves session_rebuilt instea
   session.disconnect();
 });
 
-test('a pending ACK older than the max age degrades to unknown_or_stale (issue #31 rule 4.2 — bounds the Map even with no disconnect)', async () => {
+test('a pending ACK older than the max age degrades to unknown_or_stale (bounds the Map even with no disconnect)', async () => {
   let clock = 1_000_000;
   const f = fakeFetch([
     { match: '/rtc/v1/whep/', respond: () => ({ status: 201, body: 'a', headers: { location: 'loc' } }) },
