@@ -1,6 +1,6 @@
 /**
  * Minimal, allow-listed markdown-to-DOM renderer for GenUI `text`/`summary`
- * content (issue #27) — an OPT-IN alternate `mountWidget` path
+ * content — an OPT-IN alternate `mountWidget` path
  * (`mountWidget(descriptor, el, {markdown:true})`) so the default flat-text
  * behavior never regresses for an app that doesn't ask for it. Supports
  * headings, bold/italic, links, tables, lists, inline code, and fenced code

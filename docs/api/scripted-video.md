@@ -14,7 +14,7 @@ YOU are the script (IVR-style flows, pre-recorded/TTS'd announcements, kiosk gre
 the conversational brain. SDK: `mgmt.avatarSessions` (management) +
 `KalturaScriptedVideoSession` (experience, browser-side playback).
 
-**Two-stage auth (verified live)** — this is the one surface on the whole agentic host that
+**Two-stage auth** — this is the one surface on the whole agentic host that
 switches auth schemes mid-flow:
 
 | Call | Auth |
@@ -35,7 +35,7 @@ needs the non-secret `{whepUrl, turn}` pair from `init-client`.
 | Keep alive | `POST /v1/avatar-session/{sessionId}/keep-alive` | Bearer | `{}` |
 | End | `POST /v1/avatar-session/{sessionId}/end` | Bearer | `{}` |
 
-`say-audio` is the ONLY speech-injection mechanism this backend exposes (verified live). There is
+`say-audio` is the ONLY speech-injection mechanism this backend exposes. There is
 no text-in: a sibling `say-text` route accepts the request but the server answers `503 Service
 temporarily unavailable` on every call, and a bare `say` route 404s — neither is wrapped by the
 SDK. Generate the audio yourself with any TTS provider (this backend has none of its own), measure

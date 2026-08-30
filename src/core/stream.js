@@ -62,7 +62,7 @@ export async function* parseConverseStream(stream, opts = {}) {
  * top level and silently drops nested keys absent from that top-level list — wrong
  * for nested tool args). Arrays keep their order (order is meaningful there); only
  * plain-object key order is normalized. Used to dedup semantically-identical tool
- * calls whose JSON key order the LLM emitted non-deterministically (issue #18).
+ * calls whose JSON key order the LLM emitted non-deterministically.
  * @param {unknown} value @returns {string}
  */
 export function canonicalJson(value) {
@@ -114,7 +114,7 @@ export const SPOKEN_TYPES = new Set(['text', 'avatar', 'avatar-filler']);
  * The one follow-up nudge {@link import('../management/conversations.js').Conversations#send}
  * sends when `recoverFromSpiral:true` and the first attempt came back `spiralStopped:true`
  * with empty text, and the same instruction `KalturaAvatarSession` prepends when auto-resending
- * a turn after a spiral-triggered `_coldReconnect()`. Verified live to reliably break a
+ * a turn after a spiral-triggered `_coldReconnect()`. Reliably breaks a
  * tool-call loop (the brain stops re-issuing the tool and answers in words) without discarding
  * the user's original question — it's prepended, not substituted. Lives here (not in either
  * `management/conversations.js` or `experience/session.js`) so both the headless and live-socket
@@ -148,7 +148,7 @@ export function segmentKind(seg) {
  * @typedef {object} ToolCallMetadata
  * @property {string} id  The request id to echo back on `/assistant/tool_response`
  * (via `respondToTool`/`conversations.respondToTool`) — NOT a Tools-entity UUID,
- * despite the wire field being named `tool_id` on that endpoint (issue #31 gap 2).
+ * despite the wire field being named `tool_id` on that endpoint.
  * @property {boolean} waitForResponse  `true` when the brain is blocked awaiting
  * an explicit ACK before it can continue the turn (wire `wait_for_response`).
  * @property {string} [type]  The tool's declared type (`'api'`|`'client'`|`'csv'`|`'code'`).
@@ -210,7 +210,7 @@ if (ARG_TYPE_NAMES.length !== Object.keys(TYPE_CHECKS).length || ARG_TYPE_NAMES.
  * only (the LLM-facing schema never nests). Root-cause motivation: a malformed
  * call that "looks like" a spiral (e.g. a bare string where an int was declared)
  * should be caught HERE, before a handler runs on bad data, rather than surfacing
- * only as a downstream failure (issue #24).
+ * only as a downstream failure.
  *
  * PURE, never throws — returns `{ok:true}` or `{ok:false, errors:string[]}` so a
  * caller decides what to do (emit a local event, log, drop the call) rather than
@@ -261,13 +261,13 @@ export function validateToolArgs(args, schema) {
  * never throws. Returns `null` for anything that is not a tool segment.
  *
  * Also lifts the segment's wire `tool_metadata` (id/name/args/type/wait_for_response
- * — WIRE-PROTOCOL §4e, live-verified through the conversation-manager relay hop
- * intact) into a camelCase `toolMetadata` field when present, so a caller of
+ * — WIRE-PROTOCOL §4e, carried intact through the session server's relay hop)
+ * into a camelCase `toolMetadata` field when present, so a caller of
  * `respondToTool()`/`onToolCall()`/`collectConverse().toolCalls` can satisfy a
- * `waitForResponse:true` call without dropping to raw `brainSegment` (issue #31
- * gap 2). Absent (not synthesized) when the segment carries no `tool_metadata`.
+ * `waitForResponse:true` call without dropping to raw `brainSegment`.
+ * Absent (not synthesized) when the segment carries no `tool_metadata`.
  *
- * FUSED MULTI-TOOL SEGMENTS (live-verified): when the brain calls more than one
+ * FUSED MULTI-TOOL SEGMENTS: when the brain calls more than one
  * tool in a single turn, the server can stream ONE `type:"tool"` segment whose
  * `content` is N concatenated JSON objects under a single printed name — e.g.
  * `open_filing {"quarters":[...],"metric":"total_revenue"}{"quarter":"q1_2026","docType":"press_release"}`.
@@ -355,7 +355,7 @@ function splitJsonObjects(s) {
  * (`"<toolName> responded with size <n>"`, WIRE-PROTOCOL §4e) — the reliable
  * signal for attributing an earlier blob in a fused `type:"tool"` segment (see
  * `parseToolCall`'s `fusedArgs`) to its real tool name: responses echo back in
- * the SAME order the tools were called server-side (live-verified). PURE,
+ * the SAME order the tools were called server-side. PURE,
  * never throws. Returns `null` for anything that doesn't match.
  * @param {ConverseSegment|undefined} seg
  * @returns {string|null}
@@ -391,7 +391,7 @@ export function parseToolResponseName(seg) {
  *   (e.g. `navigate_to_slide`) a non-avatar / SSE turn emitted.
  * - `toolCallsInvalid` — flat array of `{call, errors}` for a call whose `args`
  *   failed the schema supplied via `opts.toolArgSchemas[call.name]` ({@link
- *   validateToolArgs}, issue #24) — held OUT of `toolCalls` (a caller acting on
+ *   validateToolArgs}) — held OUT of `toolCalls` (a caller acting on
  *   `toolCalls` never sees an invalid call) so the headless path gets the same
  *   dispatch-time guard the live session's `onToolCall(name, handler, argsSchema)`
  *   applies. Empty when no schema is supplied (opt-in, no behavior change).
@@ -403,7 +403,7 @@ export function parseToolResponseName(seg) {
  * `collectConverse` therefore DEDUPES identical calls (by name + {@link canonicalJson} of
  * `args`, matching the live session's `_dispatchToolCall` — an LLM retry of the identical
  * logical call can arrive with non-deterministic JSON key order, which raw-string dedup would
- * fail to catch, issue #18), CAPS how many times any one tool name is collected (`maxPerTool`),
+ * fail to catch), CAPS how many times any one tool name is collected (`maxPerTool`),
  * and STOPS reading the stream once a spiral threshold is crossed (`maxToolCalls`) — returning
  * the good content already gathered + `spiralStopped:true` so the turn yields the valid first
  * widget instead of a timeout. Pass `{maxToolCalls:Infinity}` to disable (raw collection).
@@ -416,7 +416,7 @@ export function parseToolResponseName(seg) {
  * @param {number} [opts.maxToolCalls]  Maximum total `type:"tool"` segments before the spiral backstop fires (default 8). Pass `Infinity` to disable.
  * @param {number} [opts.maxPerTool]    Maximum times any single tool name is collected (default 3). Duplicates beyond this are dropped.
  * @param {number} [opts.maxSegments]   Maximum total segments collected before the loop breaks with `truncated:true` (default 2000).
- * @param {Record<string, Record<string, ToolArgSchema>>} [opts.toolArgSchemas]  Optional per-tool-name arg schema map ({@link validateToolArgs}, issue #24) — a call whose `args` fails its schema is diverted to `toolCallsInvalid` instead of `toolCalls`. No entry for a name → no check (opt-in).
+ * @param {Record<string, Record<string, ToolArgSchema>>} [opts.toolArgSchemas]  Optional per-tool-name arg schema map ({@link validateToolArgs}) — a call whose `args` fails its schema is diverted to `toolCallsInvalid` instead of `toolCalls`. No entry for a name → no check (opt-in).
  */
 export async function collectConverse(segments, opts = {}) {
   // Accept a positive number OR Infinity (disable); fall back to the default otherwise.

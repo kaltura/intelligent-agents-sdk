@@ -1,11 +1,11 @@
 /**
- * Skills — CRUD over the standalone, PARTNER-LEVEL Skill entity via Genie
+ * Skills — CRUD over the standalone, PARTNER-LEVEL Skill entity via the brain's
  * `/v1/skill/*` (NOT intellect-scoped). Mounted at `mgmt.skills`. A Skill is
  * `{id (uuid), name, description, instructions, partner_id, created_at,
  * updated_at}` — a named, reusable behavior description the brain can draw on
- * (verified live: add returns the full entity; delete → get 404s "Skill not
+ * (add returns the full entity; delete → get 404s "Skill not
  * found"; another partner's id 403s). `update()` below is the idempotent
- * re-edit path — `/v1/skill/update` is live (renames re-check the same
+ * re-edit path (renames re-check the same
  * partner-unique-name constraint as `add`, 409 on conflict).
  *
  * `name` is unique per partner OR against a shared GLOBAL pool: lookups match
@@ -97,7 +97,7 @@ export class Skills {
 
   /**
    * Get a Skill by id. READ. A deleted or unknown id → typed `not_found`;
-   * another partner's id → typed `forbidden` (both verified live).
+   * another partner's id → typed `forbidden`.
    * @param {string} id @param {string} ks (admin)
    */
   async get(id, ks) {
@@ -155,7 +155,7 @@ export class Skills {
 
   /**
    * Delete a Skill by id. WRITE — destructive (requires confirmation). The
-   * wire reply is `{id}`; a follow-up `get` 404s (verified live).
+   * wire reply is `{id}`; a follow-up `get` 404s.
    *
    * SAFETY CHECK (default on): before deleting, lists every intellect and
    * refuses with a typed `skill_in_use` error naming each one still carrying

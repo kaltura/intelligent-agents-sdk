@@ -520,14 +520,14 @@ describe('7. SDK invariants', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 8) Preprocessing-claim accuracy (see issue #15)
+// 8) Preprocessing-claim accuracy
 // ─────────────────────────────────────────────────────────────────────────────
 describe('8. Preprocessing-claim accuracy', () => {
   // Scoped to "no preprocessing" specifically, not "no-op"/"unmodified" —
   // those are legitimate, common terms elsewhere (idempotent methods, or
-  // issue #16's deliberate "raw, unmodified upload" passthrough annotation)
+  // the deliberate "raw, unmodified upload" passthrough annotation)
   // and would collide with correct docs if flagged here. The actual defect
-  // (issue #15) is a false claim about backend image processing, so the
+  // is a false claim about backend image processing, so the
   // check only fires where that specific claim and visual-content
   // vocabulary co-occur without a citation naming how it was verified.
   const ABSOLUTE_CLAIM = /\bno preprocessing\b/i;
@@ -570,7 +570,7 @@ describe('8. Preprocessing-claim accuracy', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 9) Preview/loading field annotation (see issue #16)
+// 9) Preview/loading field annotation
 // ─────────────────────────────────────────────────────────────────────────────
 describe('9. Preview/loading field annotation', () => {
   const FIELD = /^\w*(preview\w*|imageurl|videourl)\w*$/i;
@@ -593,13 +593,13 @@ describe('9. Preview/loading field annotation', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 10) Avatar video framing (see issue #18)
+// 10) Avatar video framing
 // ─────────────────────────────────────────────────────────────────────────────
 describe('10. Avatar video framing', () => {
   // File-level, not selector-level: precise per-file selector coverage is
   // proven in test/unit/examples-video-css.test.js. This gate exists so a
   // FUTURE example added under examples/ with a bare <video> and zero CSS
-  // (the exact issue #18 defect) fails loudly here too, without needing to
+  // fails loudly here too, without needing to
   // know that new file's specific markup shape in advance.
   test('every examples/*.html file with a <video> element declares object-fit somewhere in its <style> block', () => {
     const htmlFiles = trackedFiles().filter((f) => f.startsWith('examples/') && f.endsWith('.html'));
@@ -615,7 +615,7 @@ describe('10. Avatar video framing', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 11) Dead-air event documentation (see issue #24)
+// 11) Dead-air event documentation
 // ─────────────────────────────────────────────────────────────────────────────
 describe('11. Dead-air event documentation', () => {
   test("'responsePending' and 'responseSettled' are each documented in README.md or docs/*.md", () => {
@@ -627,7 +627,7 @@ describe('11. Dead-air event documentation', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 12) avatar_filler steerability disclosure (see issue #23)
+// 12) avatar_filler steerability disclosure
 // ─────────────────────────────────────────────────────────────────────────────
 describe('12. avatar_filler steerability disclosure', () => {
   test("avatar_filler's summary in capabilities.js states its phrasing is not directive-steerable", () => {

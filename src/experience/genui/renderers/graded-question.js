@@ -1,8 +1,8 @@
 /**
- * Renderer for `graded-question` (issue #39) — a graded interactive question:
+ * Renderer for `graded-question` — a graded interactive question:
  * a prompt, either multiple-choice options or a free-text answer, and an
  * optional answer key + explanation. NOT one of the nine backend `unisphere-tool`
- * runtimes (there's no Genie brain tool that emits it) — it's a host-registered
+ * runtimes (there's no brain tool that emits it) — it's a host-registered
  * "10th runtime" widget, wired in via `new ExperienceRenderer({ renderers: {
  * 'graded-question': renderGradedQuestion } })` or `.register(...)`, the same
  * extensibility seam any custom widget uses (see `docs/GENUI-REFERENCE.md`
@@ -11,11 +11,11 @@
  * key travels inside the descriptor itself: this is a comprehension-check
  * primitive for a cooperative learner, NOT a tamper-proof/proctored assessment.
  * Framework-agnostic `{kind:'graded-question', data}`, pure function, no
- * module-level state (issue #39 rule 1.1).
+ * module-level state.
  */
 import { safeText } from '../../../core/safety.js';
 
-/** Hard cap on rendered options — bounds DOM size against a malformed/adversarial model (issue #39 rule 4.1). */
+/** Hard cap on rendered options — bounds DOM size against a malformed/adversarial model. */
 const MAX_OPTIONS = 8;
 
 /**
@@ -66,7 +66,7 @@ export function renderGradedQuestion(model = {}) {
   };
 }
 
-/** A deterministic, pure fallback id derived from text content — never module state (issue #39 rule 1.1). */
+/** A deterministic, pure fallback id derived from text content — never module state. */
 function fallbackId(text, i) {
   const slug = String(text || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
   return (slug || 'q') + '-' + i;

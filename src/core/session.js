@@ -25,7 +25,7 @@
  *   - Auditability (NIST AU-2/AU-3): every mint/revoke fires a redacted audit
  *     event and returns a `scope` receipt; the admin secret is NEVER returned,
  *     logged, enumerable, or attached to a token. When a caller binds a real
- *     end-user identity via `userId` (issue #36), it rides the mint call as a
+ *     end-user identity via `userId`, it rides the mint call as a
  *     per-call parameter ONLY (never cached on `this` or module state) and
  *     populates the audit event's `actor.subjectId` — the first attributable
  *     actor this SDK's audit trail has ever had.
@@ -117,7 +117,7 @@ export class Sessions {
    *   don't pass it). Per-call only: never cached on the `Sessions` instance or
    *   any module-level state (SDK_CONSTITUTION.md "no shared mutable state").
    *   This is what makes the `sys__user_id` reserved template variable resolve
-   *   to something other than `''` in prompts/converse (see issue #36).
+   *   to something other than `''` in prompts/converse.
    * @returns {Promise<Token>}  expiresAt is authoritative (= now + ttlSeconds), so
    *   isExpired()/secondsRemaining() are reliable for this kind.
    * @example
@@ -149,7 +149,7 @@ export class Sessions {
    *   don't pass it). Per-call only: never cached on the `Sessions` instance or
    *   any module-level state (SDK_CONSTITUTION.md "no shared mutable state").
    *   This is what makes the `sys__user_id` reserved template variable resolve
-   *   to something other than `''` in prompts/converse (see issue #36).
+   *   to something other than `''` in prompts/converse.
    * @returns {Promise<Token>}
    * @example
    * // Bind a per-user conversation so `{{ sys__user_id }}` resolves server-side
@@ -179,7 +179,7 @@ export class Sessions {
    * as `conversation` (default 1800s, capped at 86400s — see {@link DEFAULT_TTL}/
    * {@link MAX_TTL}).
    *
-   * `userId` is intentionally NOT supported here (issue #36 scoped it to
+   * `userId` is intentionally NOT supported here (scoped to
    * {@link createAdminToken} and {@link createConversationToken} only — this
    * method mints a token scoped to a single agent, not to an end-user
    * identity). Passing `userId` throws rather than silently dropping it — use
@@ -198,7 +198,7 @@ export class Sessions {
         type: 'about:blank',
         title: 'unsupported option',
         code: 'bad_request',
-        detail: 'createAgentToken does not support userId (see issue #36) — use createConversationToken (or createAdminToken) to bind a session to an end-user identity.',
+        detail: 'createAgentToken does not support userId — use createConversationToken (or createAdminToken) to bind a session to an end-user identity.',
       });
     }
     let priv = `agentid:${opts.agentId}`;
@@ -251,7 +251,7 @@ export class Sessions {
    * leaked/abused token (RFC 9700 §5.2.1.1; SOC 2 CC6.2/CC6.3). Returns a redacted
    * `_meta` revocation receipt.
    *
-   * SESSION-GROUP CLAIM (asserted by design, NOT independently live-verified): if
+   * SESSION-GROUP CLAIM (asserted by design, NOT independently confirmed): if
    * the token was minted with `restrictions.sessionGroupId` (→ `sessionid:<id>`),
    * the intent is that ending any one member ends the whole family. This SDK has
    * only verified that the KS carries the `sessionid:<id>` privilege string
@@ -285,7 +285,7 @@ export class Sessions {
    * Internal: OVP `session/start` (type=2). Requires the admin secret (or vault callback).
    * @param {string} privileges @param {TokenKind} kind @param {boolean} entitlementEnforced @param {number} [ttl]
    * @param {string} [userId]  Pre-normalized (via {@link normalizeUserId}) end-user identity to
-   *   bind on the KS. Per-call parameter only — never stored on `this` (see issue #36 / I-3).
+   *   bind on the KS. Per-call parameter only — never stored on `this`.
    */
   async _start(privileges, kind, entitlementEnforced, ttl, userId) {
     const secret = await this._resolveSecret();
@@ -358,7 +358,7 @@ function compileRestrictions(r) {
  * Validate + normalize a caller-supplied `userId` to a string, or `undefined`
  * if none was given (⇒ the pre-existing anonymous mint, byte-for-byte). Throws
  * BEFORE any network call if a non-scalar (object/array) was passed — the same
- * pre-flight-reject shape as the `configId` guard above (issue #36, Security).
+ * pre-flight-reject shape as the `configId` guard above.
  * Sanitized via `oneLine` (strips CR/LF/TAB, caps at 512 chars) — the returned
  * value rides into `Token.scope` (a caller-facing, commonly-logged receipt) as
  * well as the audit event, so it gets the same log-injection defense both places.

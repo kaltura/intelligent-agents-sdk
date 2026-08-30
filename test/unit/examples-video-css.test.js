@@ -1,5 +1,4 @@
-// Proves issue #18's Phase-1 "Clean code" rules 2 and 3: every example's
-// <video> element is framed with object-fit, and the videoEl JSDoc in both
+// Every example's <video> element is framed with object-fit, and the videoEl JSDoc in both
 // session classes cross-links docs/ARCHITECTURE.md's new section.
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -8,7 +7,7 @@ import { readFileSync } from 'node:fs';
 const repoRoot = new URL('../../', import.meta.url);
 const read = (rel) => readFileSync(new URL(rel, repoRoot), 'utf8');
 
-describe('examples: <video> is framed with object-fit (issue #18)', () => {
+describe('examples: <video> is framed with object-fit', () => {
   test('browser-experience.html — video is appended into #avatar, styled via "#avatar video"', () => {
     const html = read('examples/browser-experience.html');
     const style = html.match(/<style>([\s\S]*?)<\/style>/)[1];
@@ -29,7 +28,7 @@ describe('examples: <video> is framed with object-fit (issue #18)', () => {
   });
 });
 
-describe('videoEl JSDoc cross-links docs/ARCHITECTURE.md (issue #18)', () => {
+describe('videoEl JSDoc cross-links docs/ARCHITECTURE.md', () => {
   test('KalturaAvatarSession (session.js)', () => {
     const src = read('src/experience/session.js');
     const line = src.split('\n').find((l) => l.includes('@param {any} [cfg.videoEl]'));

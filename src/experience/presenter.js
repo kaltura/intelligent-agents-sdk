@@ -209,7 +209,7 @@ export class Presenter {
    * `'avatar'`) is what makes `resume` idempotent: `_nav` RESOLVES a `'resume'`
    * target by READING `_lastSequential`, so if `goTo` let a `'resume'` nav WRITE
    * that same field, N resume calls in a row would each resolve to the previous
-   * call's own landing spot instead of all landing on the same anchor (issue #18).
+   * call's own landing spot instead of all landing on the same anchor.
    * @param {number} n @param {string} [reason]
    */
   goTo(n, reason = 'user') {
@@ -377,7 +377,7 @@ export class Presenter {
    * avatar jump) — the documented fallback is to advance one slide (see
    * `KNOWLEDGE_BASE_PROMPT.md`'s "if nav.resume is null -> next slide in order"). Disambiguate
    * via `_lastNav`: only take the advance-by-one fallback when the immediately preceding nav
-   * was NOT itself a resume landing on this same slide (issue #18).
+   * was NOT itself a resume landing on this same slide.
    * @param {number} target @param {'avatar'|'resume'} reason
    */
   _nav(target, reason) {

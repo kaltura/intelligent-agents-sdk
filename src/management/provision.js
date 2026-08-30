@@ -52,7 +52,7 @@ export async function provision(mgmt, opts) {
     const body = intellectBody(configId, profile);
     await mgmt.intellects.update(body, opts.ks);
 
-    // see issue #17 — catches a persona rename (e.g. a caller editing profile.name
+    // Catches a persona rename (e.g. a caller editing profile.name
     // separately) that didn't propagate to openingPhrase/base_directive/prompts[].
     // Warning-only, never fails provision: a fresh profile-derived body is
     // consistent by construction, so this mainly guards later re-edits.

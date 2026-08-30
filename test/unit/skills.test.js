@@ -4,7 +4,7 @@ import { fakeFetch } from '../fakes/fetch.js';
 import { Management } from '../../src/management/client.js';
 
 /**
- * Skills resource (wire, `/v1/skill/*`, partner-level) — verified live: add
+ * Skills resource (wire, `/v1/skill/*`, partner-level) — add
  * returns the full uuid-id entity, update re-checks the partner-unique-name
  * constraint, delete replies `{id}` and a follow-up get 404s, another
  * partner's id 403s.

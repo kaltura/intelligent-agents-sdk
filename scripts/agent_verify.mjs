@@ -414,7 +414,7 @@ section('SDK Test Suite (npm test)');
 {
   // The suite normally finishes well under 2 minutes, but a cold npm cache or a
   // loaded CI runner can push past it — a timeout kill must read as "timed out",
-  // never as a test failure (issue #78). Override with AGENT_VERIFY_TEST_TIMEOUT_MS.
+  // never as a test failure. Override with AGENT_VERIFY_TEST_TIMEOUT_MS.
   const timeoutMs = Number(process.env.AGENT_VERIFY_TEST_TIMEOUT_MS) || 300_000;
   const result = spawnSync('npm', ['test'], {
     cwd: SDK_TEST,

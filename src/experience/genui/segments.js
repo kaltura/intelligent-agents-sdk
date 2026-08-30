@@ -7,9 +7,9 @@
  *
  * BOUNDARY RULES (per docs/GENUI-REFERENCE.md "Restrictions & gotchas":
  * `followups-tool`, `flashcards-tool`, and `show-link-tool` are captured live —
- * including the `followups-tool`/`show-link-tool` boundary flush, live-verified
+ * including the `followups-tool`/`show-link-tool` boundary flush, confirmed
  * end to end. The other six runtimes remain INFERRED: unit-tested with a
- * red/green cycle but not live-verified). A buffered widget flushes when:
+ * red/green cycle but not confirmed live). A buffered widget flushes when:
  *   - a fragment with a DIFFERENT normalized `runtime` arrives, OR
  *   - a fragment with a different `speechId` arrives, OR
  *   - `onTurnEnd(speechId)` is called (end of the brain turn).
@@ -19,7 +19,7 @@
  * Pure over an injected `onWidget(parsedWidget)` callback — zero-dep, no DOM,
  * fully unit-testable. Never throws on malformed input.
  *
- * MALFORMED PATH (issue #26, INFERRED/unit-tested only — same honesty standard as the
+ * MALFORMED PATH (INFERRED/unit-tested only — same honesty standard as the
  * boundary rules above): a flush triggered by `reason:'boundary'` (a different
  * runtime/speechId arrived before the buffered fragment completed) whose string content
  * looks JSON-shaped (`{`/`[`) but fails to parse is a genuinely truncated widget, not a
@@ -60,7 +60,7 @@ export class SegmentAssembler {
     const runtime = normalizeRuntime(runtimeName);
     const content = s.content !== undefined ? s.content : (s.model !== undefined ? s.model : s.data);
 
-    // CONTINUATION fragment (issue #53): per WIRE-PROTOCOL §4e, only the FIRST fragment of
+    // CONTINUATION fragment: per WIRE-PROTOCOL §4e, only the FIRST fragment of
     // a streamed unisphere-tool widget carries metadata:{runtimeName} — every later fragment
     // carries only `content`, still typed 'unisphere-tool'. Such a fragment has no runtime/
     // speechId of its own to boundary-check against; it unconditionally belongs to whatever
@@ -76,7 +76,7 @@ export class SegmentAssembler {
     const speechId = typeof s.speechId === 'string' ? s.speechId : (typeof s.speech_id === 'string' ? s.speech_id : null);
 
     // Boundary: a different runtime or speechId closes the current widget — this is an
-    // INTERRUPTION (issue #26), not a natural end, so a truncated body here is malformed.
+    // INTERRUPTION, not a natural end, so a truncated body here is malformed.
     if (this._open && (this._open.runtime !== runtime || this._open.speechId !== speechId)) this.flush('boundary');
 
     if (!this._open) {
@@ -88,7 +88,7 @@ export class SegmentAssembler {
   }
 
   /**
-   * Flush the open widget (if any) to `onWidget` — or to `onMalformed` (issue #26)
+   * Flush the open widget (if any) to `onWidget` — or to `onMalformed`
    * when `reason:'boundary'` (an interruption, not a natural end) caught a JSON-
    * shaped string body mid-write (starts with `{`/`[` but doesn't parse — a
    * genuinely truncated widget, not a small-but-complete one). Idempotent — no-op

@@ -22,7 +22,7 @@
  *   - 'open'      {url}                  → a link/source/content card was activated
  *   - 'submit'    {values}              → a structured-data form was submitted (→ session.submitStructuredDataForm)
  *   - 'answer'    {questionId, variant, correct, value, explanation, optionId?}
- *                                        → a `graded-question` (issue #39) was answered; `correct` is
+ *                                        → a `graded-question` was answered; `correct` is
  *                                          `boolean|null` (`null` = no answer key authored, ungraded)
  *
  * @module
@@ -93,7 +93,7 @@ const BUILDERS = {
   summary(root, data, _onAction, renderOpts) {
     titleEl(root, data.title);
     if (data.summary) {
-      // Opt-in (issue #27): render markdown-in-plain-text (tables, bold, links, …) as
+      // Opt-in: render markdown-in-plain-text (tables, bold, links, …) as
       // real DOM. Default stays flat escaped text so no existing app regresses.
       if (renderOpts && renderOpts.markdown) root.appendChild(renderMarkdown(data.summary));
       else root.appendChild(el('p', 'kgenui__text', safeText(data.summary, 8000)));
@@ -258,7 +258,7 @@ const BUILDERS = {
     root.appendChild(form);
   },
 
-  // issue #39 — NOT one of the nine backend runtimes; reached only when a host
+  // NOT one of the nine backend runtimes; reached only when a host
   // registers this kind via `new ExperienceRenderer({ renderers: {...} })` or
   // `.register(...)`. Grading is client-side: the answer key travels in `data`
   // itself, same trust model as every other GenUI widget's model data — this is
@@ -288,7 +288,7 @@ const BUILDERS = {
     const explanationEl = el('p', 'kgenui__explanation', explanation);
     explanationEl.hidden = true;
 
-    // Per-mount closure state (issue #39 rule 1.2) — never module-level, so two
+    // Per-mount closure state — never module-level, so two
     // mounted graded-question widgets in one process never share an answer.
     let answered = false;
     const reveal = (correct, value, optionId) => {
@@ -354,7 +354,7 @@ const BUILDERS = {
       const submit = el('button', 'kgenui__submit', 'Submit answer');
       submit.type = 'button';
       const submitAnswer = () => {
-        // Sanitize BEFORE grading AND before any DOM insertion (issue #39 rule 2.2) —
+        // Sanitize BEFORE grading AND before any DOM insertion —
         // never grade or echo the raw input value.
         const sanitized = safeText(textValue, 2000);
         const correct = acceptedAnswers.length === 0 ? null
@@ -377,7 +377,7 @@ const BUILDERS = {
   },
 };
 
-/** Hard cap on rendered graded-question options — bounds DOM size against a malformed/adversarial descriptor (issue #39 rule 4.1). */
+/** Hard cap on rendered graded-question options — bounds DOM size against a malformed/adversarial descriptor. */
 const MAX_GQ_OPTIONS = 8;
 
 function buildUnknown(root, data) {

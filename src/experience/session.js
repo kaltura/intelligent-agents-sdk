@@ -1,7 +1,7 @@
 /**
  * KalturaAvatarSession — the live interactive avatar runtime as one class.
  *
- * Wraps the conversation-manager Socket.IO control plane + the two WebRTC peer
+ * Wraps the session server's Socket.IO control plane + the two WebRTC peer
  * connections (ASR mic uplink, STV WHEP video downlink) behind a typed event
  * surface and a small method set. Implements the documented connect machine
  * (WIRE-PROTOCOL §3, steps 0–11), the `speechId` barge-in guard (§4f), the
@@ -59,9 +59,9 @@ const DEFAULT_GENIE_URL = 'https://genie.nvp1.ovp.kaltura.com';
 // waiting on, so this only ever sweeps entries the backend has certainly already given up on.
 const PENDING_TOOL_ACK_MAX_AGE_MS = 10 * 60_000;
 
-// `joinRoom` covers `clientConfiguration` (fast — the CM has it in hand). `joinComplete`
-// gets its OWN, longer budget (`joinComplete`) because the CM only emits it AFTER an
-// awaited context-update call (a Genie thread-init round-trip for analytics), which can
+// `joinRoom` covers `clientConfiguration` (fast — the server has it in hand). `joinComplete`
+// gets its OWN, longer budget (`joinComplete`) because the server only emits it AFTER an
+// awaited context-update call (a brain thread-init round-trip for analytics), which can
 // exceed 5s under load — a 5s cap here surfaced a confusing JoinRoomTimeout while join was
 // about to complete. Still bounded by `overall`.
 const TIMEOUTS = { overall: 30000, serverConnect: 10000, joinRoom: 5000, joinComplete: 20000, agent: 10000, asr: 30000 };
@@ -78,7 +78,7 @@ const RECONNECT_WINDOW_MS = 22000;
 const ICE_DOWN = new Set(['failed', 'disconnected']);
 
 // Socket.IO disconnect reasons the server treats as RECOVERABLE (connection-state recovery,
-// same-pod, ≤20s) — verified in conversation-manager socket-constants.ts. Any other reason
+// same-pod, ≤20s) — per the server's socket-disconnect handling. Any other reason
 // (io server/client disconnect, namespace disconnect) is a real end, no recovery.
 const RECOVERABLE_DISCONNECT = new Set(['transport error', 'transport close', 'forced close', 'ping timeout']);
 
@@ -109,7 +109,7 @@ export class KalturaAvatarSession extends Emitter {
    * @param {object} cfg
    * @param {string} cfg.token              Enriched conversation KS from appInit (entitlement ON for the standard flow — see SECURITY.md's KS guidance for agents).
    * @param {string} [cfg.conversationManagerUrl] From appInit (default the US prod host).
-   * @param {string} [cfg.genieUrl]         Genie host for `respondToTool()`'s direct ACK POST (default `https://genie.nvp1.ovp.kaltura.com`, matching `Management`'s own default).
+   * @param {string} [cfg.genieUrl]         The brain's host for `respondToTool()`'s direct ACK POST (default `https://genie.nvp1.ovp.kaltura.com`, matching `Management`'s own default).
    * @param {string} cfg.srsBaseUrl         From appInit (WHEP egress host).
    * @param {string} cfg.turnServerUrl      From appInit (TURN host).
    * @param {(url:string,opts:object)=>any} cfg.socketFactory  socket.io-compatible factory (INJECTED; never bundled).
@@ -119,7 +119,7 @@ export class KalturaAvatarSession extends Emitter {
    * @param {()=>Promise<any>} [cfg.getUserMedia]
    * @param {object|false} [cfg.micConstraints]  Browser-native `MediaTrackConstraints` merged into every `getUserMedia({audio})` call this session makes (`connect()`, `switchMic()`). Default `{echoCancellation:true, noiseSuppression:true, autoGainControl:true}` — the standard Tier-1 browser-native baseline. Pass `false` to send bare `audio:true` (e.g. when `cfg.noiseProcessor` expects RAW, unprocessed audio — stacking browser-native suppression under a second DSP stage double-processes the signal and can degrade quality). Pass a partial object to override individual fields.
    * @param {(stream:any)=>Promise<any>} [cfg.noiseProcessor]  Pluggable, externally-supplied DSP hook (BYO — a third-party lib's processor or a bespoke one; the SDK core bundles none). Called with the raw `MediaStream` from `getUserMedia` at `connect()` and every `switchMic()`; must return a `MediaStream` (or the same one, unmodified) whose audio track is what actually reaches the ASR uplink. Errors propagate as a `noise_processor_failed` KalturaError (mic acquisition fails closed, same as a `getUserMedia` rejection) — a processor must not silently swallow its own setup failure. See `./experience/noise-suppressor` for a ready-made `AudioWorklet`-based implementation of this interface.
-   * @param {'immediate'|'deferred'} [cfg.micStartMode]  When to acquire the mic. `'immediate'` (default) calls `getUserMedia` inside `connect()`. `'deferred'` connects with NO mic — the ASR uplink negotiates a sendonly audio slot with no track (the CM handshake is byte-identical to the immediate path) — and the app calls {@link KalturaAvatarSession#startMic} later, from a real user gesture, so the browser's permission prompt is click-anchored. Until `startMic()` resolves, `startTapToTalk()`/`switchMic()` throw `mic_not_started`; typed turns (`speak()`) and `mute()`/`unmute()` work normally.
+   * @param {'immediate'|'deferred'} [cfg.micStartMode]  When to acquire the mic. `'immediate'` (default) calls `getUserMedia` inside `connect()`. `'deferred'` connects with NO mic — the ASR uplink negotiates a sendonly audio slot with no track (the session-server handshake is byte-identical to the immediate path) — and the app calls {@link KalturaAvatarSession#startMic} later, from a real user gesture, so the browser's permission prompt is click-anchored. Until `startMic()` resolves, `startTapToTalk()`/`switchMic()` throw `mic_not_started`; typed turns (`speak()`) and `mute()`/`unmute()` work normally.
    * @param {string} [cfg.threadId]         Resume a prior conversation's memory.
    * @param {string} [cfg.partnerId]
    * @param {boolean} [cfg.isFirefox]       Forces ICE policy 'all' on both channels.
@@ -177,7 +177,7 @@ export class KalturaAvatarSession extends Emitter {
     // This map is CANONICAL for the whole session: updateRequestVars()/
     // setDynamicPrompt() merge into it, every join/reconnect resends it via
     // buildJoin, and every mid-session updateGenieContext emit sends it whole
-    // (conversation-manager REPLACES its stored context on that event — an
+    // (the server REPLACES its stored context on that event — an
     // omitted field is an explicit clear, not "keep current").
     this._requestVars = assertRequestVars(cfg.requestVars, 'KalturaAvatarSession requestVars');
     // The session's genie capabilities — single source of truth, sent on every
@@ -233,7 +233,7 @@ export class KalturaAvatarSession extends Emitter {
     this._requireDisclosureAck = !!cfg.requireDisclosureAck;
     this._disclosureAcked = false;
     this._pendingApprove = null;
-    // Approve held by a cold reconnect that fired mid-pause (issue #80) — released by
+    // Approve held by a cold reconnect that fired mid-pause — released by
     // resume(). Separate from _pendingApprove so acknowledgeDisclosure() can't release it.
     this._pausedPendingApprove = null;
     this._disclosure = null;   // populated at connect; queryable via getDisclosure()
@@ -264,9 +264,9 @@ export class KalturaAvatarSession extends Emitter {
     this._idleTimeoutMs = cfg.idleTimeoutMs ?? 900000;   // 15 min; 0 disables (documented escape hatch)
     this._idleTimer = null; this._idleWarnTimer = null;
 
-    // stickyId pins the session to one conversation-manager pod; persisting it across a
+    // stickyId pins the session to one server pod; persisting it across a
     // reconnect lets Socket.IO connection-state-recovery resume the SAME session (same-pod,
-    // ≤20s window — verified in conversation-manager video-calls.ts). Embedders may pass
+    // ≤20s window). Embedders may pass
     // their own (e.g. from sessionStorage) to survive a tab reload.
     this._stickyId = cfg.stickyId || randId(16);
     this._maxReconnect = cfg.maxReconnectAttempts ?? 5;
@@ -285,7 +285,7 @@ export class KalturaAvatarSession extends Emitter {
     // it no longer calls interrupt()). 0 disables. Default 10: a legitimate turn can
     // double to 2x its real tool count when speak()'s barge-in branch (still-playing
     // TTS audio from a prior turn) spawns a parallel tap-to-talk stream for the same
-    // question (live-verified — a 3-tool turn duplicated into 6 raw segments this
+    // question (a 3-tool turn was observed duplicating into 6 raw segments this
     // way), so the limit must clear a doubled ordinary turn while still catching a
     // genuine spiral (observed live running into the hundreds).
     this._toolSpiralLimit = cfg.toolSpiralLimit ?? 10;
@@ -299,14 +299,14 @@ export class KalturaAvatarSession extends Emitter {
     // output (same clear condition as the brain-liveness watchdog) and is immune to
     // turn-boundary resets. Once it crosses this ceiling, soft interrupt() has
     // demonstrably failed and we force a real recovery (_coldReconnect — the same
-    // socket-rebuild mechanism already proven live to end a runaway spiral, since
+    // socket-rebuild mechanism already confirmed to end a runaway spiral, since
     // that is exactly how the incident this guards against actually terminated:
     // a `transport close` → `JoinRoomTimeout`). Default 3x the soft limit. 0 disables.
     this._hardToolSpiralLimit = cfg.hardToolSpiralLimit ?? (this._toolSpiralLimit ? this._toolSpiralLimit * 3 : 0);
     // A hard-spiral cold reconnect restores connectivity + replays threadId (brain memory)
     // but otherwise abandons the turn that triggered it — the user's original question is
     // simply dropped, which IS the "hang" symptom the whole circuit breaker exists to fix.
-    // The headless path (`Conversations#send({recoverFromSpiral:true})`) proved live that a
+    // The headless path (`Conversations#send({recoverFromSpiral:true})`) confirmed that a
     // single same-thread follow-up, prefixed with SPIRAL_RECOVERY_PREFIX, reliably breaks the
     // loop and gets a real spoken answer. `recoverFromSpiral` (default true) ports that same
     // fix here: once `_coldReconnect('tool_spiral_hard_limit')` succeeds, resend the last
@@ -366,7 +366,7 @@ export class KalturaAvatarSession extends Emitter {
     this._toolCallHandlers = new Map();
     this._firedToolCalls = new Set();
     this._toolCallSchemas = new Map();   // name -> argsSchema, set by onToolCall's optional 3rd param
-    // Fused-tool-segment recovery (live-verified server behavior: a multi-tool turn can
+    // Fused-tool-segment recovery (a real server behavior: a multi-tool turn can
     // arrive as ONE type:"tool" segment naming only its LAST tool, with earlier tools'
     // args concatenated into the same content string — see core/stream.js parseToolCall's
     // `fusedArgs`). `_pendingFusedBlobs` holds those un-attributed arg objects in arrival
@@ -374,14 +374,14 @@ export class KalturaAvatarSession extends Emitter {
     // (the printed name, or a prior recovery) so `_recoverFusedToolResponse` can pair the
     // next un-attributed blob with the next tool_response name that isn't already spoken
     // for. Both are ASR-sub-turn-scoped — cleared on EVERY agent_start_speech, unlike
-    // `_firedToolCalls` which only clears on a real isNewTurn boundary (see issue #41: a
+    // `_firedToolCalls` which only clears on a real isNewTurn boundary: a
     // name dispatched directly in sub-turn 1 must not block that same name's fused
-    // recovery in sub-turn 2 of the same turnId — a distinct call with distinct args).
+    // recovery in sub-turn 2 of the same turnId — a distinct call with distinct args.
     /** @type {object[]} */
     this._pendingFusedBlobs = [];
     /** @type {Set<string>} */
     this._turnDispatchedToolNames = new Set();
-    // Pending `wait_for_response:true` ACKs (issue #31 gap 2/rule 4.2): id -> {name}. Unlike
+    // Pending `wait_for_response:true` ACKs: id -> {name}. Unlike
     // `_firedToolCalls`, this is NOT cleared on agent_start_speech/turnStart — an ACK's blocking
     // window can legitimately span past a single turn boundary. Entries are removed only on a
     // successful respondToTool(), or wholesale on disconnect()/cold-reconnect (below) so this
@@ -399,7 +399,7 @@ export class KalturaAvatarSession extends Emitter {
     // wake-up nudge mid-spiral can't hide a spiral that survives across it.
     this._sessionToolSegCount = 0;
     this._hardSpiralRecovering = false;
-    // Silent-empty-turn diagnostic (live-verified failure mode): with the
+    // Silent-empty-turn diagnostic (a real failure mode): with the
     // intellect's `allow_client_variables` gate OFF, a converse call that sends
     // request variables completes with NO output and NO error — nothing else
     // surfaces it at runtime. Tracks whether the current turn produced any
@@ -624,7 +624,7 @@ export class KalturaAvatarSession extends Emitter {
         if (v) {
           v.srcObject = e.streams && e.streams[0];
           // ontrack fires once per track (video + audio) — gate so 'videoMetadata' fires
-          // at most once per connect, not once per track (see issue #19's Phase-4 finding).
+          // at most once per connect, not once per track.
           if (!videoMetadataSent && typeof v.addEventListener === 'function') {
             const emitVideoMetadata = () => { if (videoMetadataSent) return; videoMetadataSent = true; this.emit('videoMetadata', { videoWidth: v.videoWidth, videoHeight: v.videoHeight }); };
             if (v.videoWidth || v.videoHeight) emitVideoMetadata();
@@ -672,10 +672,10 @@ export class KalturaAvatarSession extends Emitter {
 
   /**
    * Drive the avatar by text — BRAIN-REASONED (routed to the same pipeline as
-   * ASR). Sends the CM's `isSpeechStart` marker first, which interrupts a
-   * mid-sentence avatar (no-op if idle) — see issue #39; `tapToTalkStart`/
+   * ASR). Sends the server's `isSpeechStart` marker first, which interrupts a
+   * mid-sentence avatar (no-op if idle); `tapToTalkStart`/
    * `tapToTalkEnd` are reserved for tap-to-talk button-hold mode and must NOT
-   * bracket typed text (they flip InTappedMode and mint a duplicate turn).
+   * bracket typed text (they flip the server's internal tap-mode state and mint a duplicate turn).
    * Never HTTP converse.
    *
    * Passes through the optional `onBeforeSend` guardrail (OWASP LLM01 input
@@ -689,7 +689,7 @@ export class KalturaAvatarSession extends Emitter {
   async speak(text) {
     this._requireConnected('speak');
     if (this._tapToTalkActive) {
-      throw new KalturaError({ type: 'about:blank', title: 'tap-to-talk active', code: 'invalid_state', detail: 'speak() cannot run while a tap-to-talk capture is open — call endTapToTalk() first (see issue #40).' });
+      throw new KalturaError({ type: 'about:blank', title: 'tap-to-talk active', code: 'invalid_state', detail: 'speak() cannot run while a tap-to-talk capture is open — call endTapToTalk() first.' });
     }
     if (this._disclosurePending) {
       throw new KalturaError({
@@ -708,28 +708,27 @@ export class KalturaAvatarSession extends Emitter {
     this._lastTurnText = text;     // for a possible spiral-recovery resend — see `recoverFromSpiral`
   }
 
-  /** Barge in on the avatar (yield the turn) — see issue #39. */
+  /** Barge in on the avatar (yield the turn). */
   interrupt() {
     this._requireConnected('interrupt');
     if (this._tapToTalkActive) {
-      throw new KalturaError({ type: 'about:blank', title: 'tap-to-talk active', code: 'invalid_state', detail: 'interrupt() cannot run while a tap-to-talk capture is open — call endTapToTalk() first (see issue #40).' });
+      throw new KalturaError({ type: 'about:blank', title: 'tap-to-talk active', code: 'invalid_state', detail: 'interrupt() cannot run while a tap-to-talk capture is open — call endTapToTalk() first.' });
     }
     this._socket.emit('onTextEntered', buildTextEntered('', false, true));
   }
 
   /**
-   * Start a tap-to-talk voice capture — the CM's push-to-talk mode, DISTINCT from
-   * typed-text `speak()`/`interrupt()` (see issue #39/#40). The always-on ASR uplink
-   * keeps streaming audio the whole session; this just tells the CM (`tapToTalkStart`
-   * → `onTapToTalkStart`) to flip into `InTappedMode` and start a fresh capture window.
-   * Call `endTapToTalk()` to close the window and let the CM mint the turn from
+   * Start a tap-to-talk voice capture — the server's push-to-talk mode, DISTINCT from
+   * typed-text `speak()`/`interrupt()`. The always-on ASR uplink
+   * keeps streaming audio the whole session; this just tells the server (`tapToTalkStart`
+   * → `onTapToTalkStart`) to flip into tap-mode and start a fresh capture window.
+   * Call `endTapToTalk()` to close the window and let the server mint the turn from
    * whatever it captured.
    *
-   * Gated on `clientConfiguration.isTapToTalk` — verified against the live CM source
-   * (`conversation-manager.ts`'s `vadSpeechDetected`) that this is NOT optional: an
+   * Gated on `clientConfiguration.isTapToTalk` — confirmed that this is NOT optional: an
    * agent configured for open-mic (`isTapToTalk:false`) keeps its own VAD turn-cutting
-   * running unconditionally, with no suppression while `InTappedMode` — the two
-   * mechanisms race the same `conversationStatus`/`latestSpeech` state with no mutual
+   * running unconditionally, with no suppression while in tap-mode — the two
+   * mechanisms race the same internal conversation state with no mutual
    * exclusion. The server accepts `tapToTalkStart`/`tapToTalkEnd` regardless of the
    * flag, so this client-side gate is the only thing preventing that race — see
    * `capabilities.tapToTalk` to check before offering tap-to-talk UI at all.
@@ -740,7 +739,7 @@ export class KalturaAvatarSession extends Emitter {
       throw new KalturaError({ type: 'about:blank', title: 'mic not started', code: 'mic_not_started', detail: 'startTapToTalk() requires a live mic — this session connected with micStartMode:"deferred"; call startMic() from a user gesture first.' });
     }
     if (!this._clientConfig?.isTapToTalk) {
-      throw new KalturaError({ type: 'about:blank', title: 'tap-to-talk disabled', code: 'capability_disabled', detail: 'startTapToTalk() requires clientConfiguration.isTapToTalk=true on this agent — mixing it with an open-mic agent races the CM\'s VAD turn-cutting (unverified/unsafe server-side).' });
+      throw new KalturaError({ type: 'about:blank', title: 'tap-to-talk disabled', code: 'capability_disabled', detail: 'startTapToTalk() requires clientConfiguration.isTapToTalk=true on this agent — mixing it with an open-mic agent races the session server\'s VAD turn-cutting (unverified/unsafe server-side).' });
     }
     if (this._tapToTalkActive) {
       throw new KalturaError({ type: 'about:blank', title: 'already tapped', code: 'invalid_state', detail: 'startTapToTalk() called while already active — call endTapToTalk() first.' });
@@ -759,7 +758,7 @@ export class KalturaAvatarSession extends Emitter {
 
   /**
    * End a tap-to-talk capture started with `startTapToTalk()`. Emits `tapToTalkEnd`
-   * (→ CM's `onTapToTalkEnd`), which schedules the CM's own ~300ms
+   * (→ the server's `onTapToTalkEnd`), which schedules the server's own ~300ms
    * `processTapToTalkInput` timer to mint the turn from the captured audio — the
    * resulting user turn arrives via the existing `agentTurnToTalk` handler exactly
    * like an open-mic turn (transcript, `_lastTurnText`, spiral-recovery all just work).
@@ -1154,7 +1153,7 @@ export class KalturaAvatarSession extends Emitter {
    * Resume the live turn loop. If the pause expired server-side (the session was
    * released — `sessionReadyForResume`/`pauseSessionExpired`), the old STV/ASR
    * transports are dead, so resume() rebuilds them against the FRESH stvNewSession
-   * the server emits on resume (conversation-manager onResumeConversation). Within
+   * the server emits on resume (the server's resume event). Within
    * the pause window it's a no-op resume (server just sends conversationResumed).
    * @returns {Promise<void>}
    */
@@ -1162,7 +1161,7 @@ export class KalturaAvatarSession extends Emitter {
     this._requireConnected('resume');
     this.paused = false;
     // A cold reconnect during the pause rebuilt a fresh server-side session but held its
-    // approve (issue #80 — approve is what starts the avatar speaking). Releasing it now
+    // approve (approve is what starts the avatar speaking). Releasing it now
     // IS the resume: the rebuilt session was never approved or paused server-side, so
     // `resumeConversation` would have nothing to act on.
     if (this._pausedPendingApprove) {
@@ -1199,7 +1198,7 @@ export class KalturaAvatarSession extends Emitter {
 
   /**
    * Emit the session's FULL genie context — the canonical `request_vars` map
-   * plus this session's own capabilities — to conversation-manager's
+   * plus this session's own capabilities — to the session server's
    * `updateGenieContext` handler (WIRE-PROTOCOL §4a). The full shape matters:
    * the server REPLACES its stored context with exactly what arrives, treating
    * an omitted field as an explicit clear. A bare `{request_vars}` emit would
@@ -1327,7 +1326,7 @@ export class KalturaAvatarSession extends Emitter {
    * return/resolve, `{call, ok:false, error}` for a throw/reject. A handler
    * returning `undefined` (the common case — most handlers just act, nothing to
    * report) emits no result event; this is LOCAL only (app-observable) — it does
-   * NOT change what Genie's brain sees UNLESS the tool was built with
+   * NOT change what the brain sees UNLESS the tool was built with
    * `waitForResponse:true`, in which case the handler must call
    * `session.respondToTool(call.toolMetadata.id, ...)` to give the brain a real
    * result (see {@link respondToTool}). Async (Promise-returning) handlers are
@@ -1339,7 +1338,7 @@ export class KalturaAvatarSession extends Emitter {
    * An optional third `argsSchema` — the SAME `args` object already declared in
    * {@link import('../management/tools.js').client}'s `args` — enables a
    * dispatch-time check of `call.args` (type/required/enum on top-level keys, via
-   * {@link import('../core/stream.js').validateToolArgs}, issue #24) BEFORE any
+   * {@link import('../core/stream.js').validateToolArgs}) BEFORE any
    * handler for `name` runs. A mismatch never reaches a handler: it's dropped and
    * re-emitted as `'toolCallInvalid'` (`{call, errors}`) instead of `'toolCall'`.
    * The root-cause motivation is a real incident where a malformed call surfaced
@@ -1380,15 +1379,15 @@ export class KalturaAvatarSession extends Emitter {
    * args), not on the raw wire string — an LLM retry of the identical logical call can
    * arrive with non-deterministic JSON key order (e.g. `{"reason":..,"slide_num":..}`
    * vs `{"slide_num":..,"reason":..}`), which byte-string dedup would fail to catch
-   * (issue #18). Returns `true` if this was a NEW call (handlers ran) or `false` if it
+   * Returns `true` if this was a NEW call (handlers ran) or `false` if it
    * was a duplicate retry (dropped). The spiral counter itself (`_checkToolSpiral`)
    * counts raw segments independent of this return value — see its own doc comment.
    *
    * Each handler's return value/throw is captured and re-emitted as `'toolCallResult'`
-   * (see `onToolCall`'s doc comment for the shape and its local-only scope — issue #25).
+   * (see `onToolCall`'s doc comment for the shape and its local-only scope).
    *
    * If a schema was registered for `call.name` (via `onToolCall`'s 3rd param), `call.args`
-   * is checked BEFORE any handler runs (issue #24) — a mismatch is dropped (no handler
+   * is checked BEFORE any handler runs — a mismatch is dropped (no handler
    * invoked, no 'toolCall' emitted) and re-emitted as `'toolCallInvalid'` instead. Still
    * counted into the per-turn dedup set first, so a repeated invalid call doesn't re-fire
    * the event every retry.
@@ -1397,7 +1396,7 @@ export class KalturaAvatarSession extends Emitter {
    */
   /**
    * Drop pending tool-ACK entries older than {@link PENDING_TOOL_ACK_MAX_AGE_MS}
-   * (issue #31 rule 4.2) — called on every new `waitForResponse:true` dispatch so
+   * — called on every new `waitForResponse:true` dispatch so
    * the Map self-bounds even in a long-lived session whose app never calls
    * `respondToTool()` for some call. Cheap (one Map scan) and only ever runs when
    * a fresh entry is about to be added, so it costs nothing on sessions that never
@@ -1416,7 +1415,7 @@ export class KalturaAvatarSession extends Emitter {
     if (this._firedToolCalls.has(key)) return false;   // already handled this turn
     this._firedToolCalls.add(key);
     this._turnDispatchedToolNames.add(call.name);
-    // Fused multi-tool segment (parseToolCall's `fusedArgs`, live-verified): earlier
+    // Fused multi-tool segment (parseToolCall's `fusedArgs`, a real server behavior): earlier
     // tools' arg blobs concatenated into this segment under a name that isn't theirs.
     // Queue them for `_recoverFusedToolResponse` to attribute + dispatch as the
     // matching `type:"tool_response"` names stream in right after this segment.
@@ -1462,7 +1461,7 @@ export class KalturaAvatarSession extends Emitter {
    * Recover a fused-segment blob (see `_dispatchToolCall`'s `_pendingFusedBlobs`)
    * using a `type:"tool_response"` segment's tool name as the attribution signal.
    * Server-side, each tool called this turn echoes its own `tool_response` in the
-   * SAME order it was called (live-verified) — so the first pending blob belongs
+   * SAME order it was called — so the first pending blob belongs
    * to the first `tool_response` name that hasn't already been dispatched this
    * turn. A name already in `_turnDispatchedToolNames` (the printed name from the
    * `type:"tool"` segment itself, or a prior recovery) is skipped rather than
@@ -1477,12 +1476,12 @@ export class KalturaAvatarSession extends Emitter {
   }
 
   /**
-   * ACK a `wait_for_response:true` client tool call (issue #31 gap 2) — POSTs
-   * to conversation-manager's `/assistant/tool_response` so the brain, which is
+   * ACK a `wait_for_response:true` client tool call — POSTs
+   * to the session server's `/assistant/tool_response` so the brain, which is
    * BLOCKED waiting for this, can resume the turn with a real result instead of
    * silently timing out. **If you set `waitForResponse:true` on a
    * {@link import('../management/tools.js').client} tool, you MUST call this** —
-   * live-verified: an unacknowledged `wait_for_response:true` call still gets a
+   * an unacknowledged `wait_for_response:true` call still gets a
    * confident, narrated "success" from the brain (it treats the timeout string
    * as a real result), so skipping this produces silently-wrong output, not a
    * visible failure.
@@ -1523,7 +1522,7 @@ export class KalturaAvatarSession extends Emitter {
     this._touchActivity();
     const gen = this._sessionGen;
     // tool_invocation_id is a second required field the backend added independently of
-    // tool_id (live-verified: a body without it 422s with `detail:[{loc:["body","tool_invocation_id"]}]`)
+    // tool_id (a body without it 422s with `detail:[{loc:["body","tool_invocation_id"]}]`)
     // — same id value, just echoed under both keys since there's only one id on the wire.
     await this._fetch(`${this._genieUrl}/assistant/tool_response`, {
       method: 'POST',
@@ -1603,7 +1602,7 @@ export class KalturaAvatarSession extends Emitter {
    * webSearch, interruptions, tapToTalk }`. Available after connect. `tapToTalk`
    * reflects the agent's configured input mode (push-to-talk vs open-mic) — apps
    * can use it to decide whether `startTapToTalk()`/`endTapToTalk()` should be the
-   * primary voice control or an optional secondary one (see issue #40).
+   * primary voice control or an optional secondary one.
    */
   get capabilities() {
     const c = this._clientConfig || {};
@@ -1638,7 +1637,7 @@ export class KalturaAvatarSession extends Emitter {
   _warnOnce(key, msg) { if (this._warned && !this._warned.has(key)) { this._warned.add(key); this._log('warn', '[security] ' + msg); } }
 
   /**
-   * Diagnose the silent-empty-turn failure mode (live-verified): with the
+   * Diagnose the silent-empty-turn failure mode: with the
    * intellect's `allow_client_variables` gate OFF, a converse call that sends
    * request variables (join `requestVars`, `updateRequestVars`,
    * `setDynamicPrompt`) completes with NO output and NO error — the server
@@ -1729,7 +1728,7 @@ export class KalturaAvatarSession extends Emitter {
           // outage (their own ICE, not multiplexed over the socket). Mirrors the online-event
           // nudge in _wireNetwork: without this, a channel silently stuck in ICE_DOWN never
           // recovers until some LATER unrelated trigger stumbles onto it — e.g. the avatar
-          // video staying frozen with the session otherwise reporting 'connected'. [issue #53b]
+          // video staying frozen with the session otherwise reporting 'connected'.
           for (const ch of /** @type {readonly ('asr'|'stv')[]} */ (['asr', 'stv'])) { const pc = ch === 'asr' ? this._pcAsr : this._pcStv; if (pc && ICE_DOWN.has(pc.iceConnectionState)) this._recoverMedia(ch, pc); }
         } else {
           this._coldReconnect('socket recovery not available').catch((err) => this._endWith(err));
@@ -1758,7 +1757,7 @@ export class KalturaAvatarSession extends Emitter {
     });
     socket.on('connect_error', (e) => this.emit('error', new KalturaError({ type: 'about:blank', title: 'socket connect error', code: 'socket_error', detail: String(e && e.message || e) })));
 
-    // Pause/resume lifecycle (server-verified, conversation-manager). A pause that EXPIRES
+    // Pause/resume lifecycle A pause that EXPIRES
     // server-side releases TTV+ASR but persists the session — it is NOT an 'ended'. resume()
     // then needs a fresh stvNewSession (handled in resume()).
     socket.on('pauseSessionExpired', () => { this._sessionReleased = true; this.emit('timeExpired', { type: 'pause_expiry' }); });
@@ -1784,7 +1783,7 @@ export class KalturaAvatarSession extends Emitter {
       // on the outer agent_raw_text envelope (`p`). Attach it here so every emitted
       // brainSegment carries the same speechId as the turnStart/turnEnd bracketing it;
       // otherwise a SegmentAssembler consumer can never match a buffered widget's speechId
-      // against onTurnEnd's real one (issue #53), and every widget gets silently dropped.
+      // against onTurnEnd's real one , and every widget gets silently dropped.
       if (d && d.speechId === undefined) d.speechId = p?.speechId ?? null;
       // OWASP LLM06 Excessive Agency: gate AGENT-pushed actions (GenUI/structured-data/nav) before
       // they reach the app. Only engages when this segment classifies AS an action AND a
@@ -1795,7 +1794,7 @@ export class KalturaAvatarSession extends Emitter {
       if (action && (this._agentActions || this._onAgentAction)) {
         if (!await this._gateAgentAction(action)) return;
         // Allowed GenUI/tool surfacing → observability-by-proxy audit (NOT a server tool-exec
-        // log; use Genie report/report-summary for authoritative analytics).
+        // log; use the brain's report/report-summary for authoritative analytics).
         if (action.type === 'render-genui' || action.type === 'structured-data-form') {
           this._audit('tool.invoke', 'success', { action: action.runtime || action.type });
         }
@@ -1839,7 +1838,7 @@ export class KalturaAvatarSession extends Emitter {
     // it a free pass for the remainder of a long, silent turn. We settle responsePending, and
     // finally clear the watchdog, only on real output below: an avatar/text/GenUI content
     // segment, the avatar talking, turn end, or an interruption.
-    // isNewTurn:false marks the CM's documented duplicate — a second speechId (observed
+    // isNewTurn:false marks the server's documented duplicate — a second speechId (observed
     // trigger `tap-to-talk`) for a turnId already in flight, born from speak()'s barge-in
     // branch racing `this.speaking` (see the constructor comment on `_hardToolSpiralLimit`).
     // Every other isNewTurn consumer in this codebase (presenter.js, avatar-session.js)
@@ -1847,7 +1846,7 @@ export class KalturaAvatarSession extends Emitter {
     // it wiped the tool dedup set out from under the FIRST turn's already-fired calls (so
     // they replay as if new, feeding the spiral) and promoted the duplicate speechId as the
     // tracker's "current" utterance, so its captions/audio played interleaved with the first.
-    // `_pendingFusedBlobs`/`_turnDispatchedToolNames` are the one exception (issue #41):
+    // `_pendingFusedBlobs`/`_turnDispatchedToolNames` are the one exception :
     // they reset on EVERY agent_start_speech, isNewTurn or not. A fused-segment recovery is
     // scoped to its own ASR sub-turn, not the whole turnId — a name dispatched directly in
     // sub-turn 1 is a distinct call from that same name arriving fused in sub-turn 2's
@@ -2242,9 +2241,9 @@ export class KalturaAvatarSession extends Emitter {
    * `join` — "the `join` handler skips re-init" keyed on `session.hasJoined`), so
    * re-emitting `join` on a still-live socket is a silent no-op server-side —
    * `clientConfiguration`/`joinComplete` never arrive and this times out
-   * (`JoinRoomTimeout`, verified live 3x, including a direct bypassing call proving
+   * (`JoinRoomTimeout`, confirmed repeatedly, including a direct bypassing call proving
    * it's independent of the tool-spiral trigger). A brand-new socket.io connection has
-   * no `hasJoined` history and joins clean (verified live). `this.state === 'reconnecting'`
+   * no `hasJoined` history and joins clean. `this.state === 'reconnecting'`
    * at entry is the exact discriminator: it means we got here via `_wireSocket`'s own
    * `connect` handler AFTER a genuine transport disconnect + `recovered:false` — the
    * server already discarded that session (a real new server-side connection), so the
@@ -2303,7 +2302,7 @@ export class KalturaAvatarSession extends Emitter {
       ]);
       await this._createSessionWithCapacity(socket, overall);
       await this._runConnectSequence(socket, overall);
-      // Issue #80 (verified live): `approvedPermissions` is what makes the avatar speak —
+      // `approvedPermissions` is what makes the avatar speak —
       // a rebuilt session replays its opening line the moment approve lands (speechId
       // `*-approved-permissions`). If the app deliberately paused, approving here would
       // audibly break the pause, so hold the approve and let resume() release it. The
@@ -2312,7 +2311,7 @@ export class KalturaAvatarSession extends Emitter {
       else this._approve(socket);
       this._reconnectAttempt = 0;
       // A cold reconnect that fires while paused (e.g. a stale-STV WHEP 404 during a long
-      // pause — issue #58) has already rebuilt the socket/transports/session from scratch,
+      // pause) has already rebuilt the socket/transports/session from scratch,
       // which is exactly what resume()'s "released" branch exists to do. Clear the released
       // flag so resume() doesn't await a fresh stvNewSession that is never coming (this
       // cold reconnect already got its own). `paused` intentionally survives: resume()
@@ -2325,7 +2324,7 @@ export class KalturaAvatarSession extends Emitter {
       // and this success path is the only other place the session recovers cleanly. Without
       // this, `_hardSpiralRecovering` stays a one-shot latch for the rest of the session —
       // a second spiral later in the same conversation would be completely unguarded and
-      // hang indefinitely (verified live: reproduces the original bug's symptom, just
+      // hang indefinitely (this reproduces the original bug's symptom, just
       // delayed to the 2nd occurrence).
       this._hardSpiralRecovering = false;
       this._sessionToolSegCount = 0;
@@ -2334,7 +2333,7 @@ export class KalturaAvatarSession extends Emitter {
       // reconnect above restored connectivity but abandoned the turn that triggered it — the
       // user's question would otherwise just be dropped. Resend it once, nudged to answer in
       // words only (the exact instruction the headless `Conversations#send({recoverFromSpiral})`
-      // path already proved live breaks the loop). Only for THIS why — a media-recovery or
+      // path already confirmed breaks the loop). Only for THIS why — a media-recovery or
       // transport-disconnect cold reconnect never abandoned a turn, so resending there would
       // inject an unrelated, unsolicited message.
       if (why === 'tool_spiral_hard_limit' && this._recoverSpiralTurn && this._lastTurnText) {
@@ -2362,7 +2361,7 @@ export class KalturaAvatarSession extends Emitter {
     // Shared by disconnect() and _endWith() — any ACK still pending when the session ends
     // can never be delivered (rule 4.2: cleared on disconnect, not left to grow unbounded).
     this._pendingToolAcks.clear();
-    this._pausedPendingApprove = null;   // a held approve (issue #80) dies with the session
+    this._pausedPendingApprove = null;   // a held approve dies with the session
     this._clearBrainWatchdog();
     this._settleResponsePending();   // never leave the pending signal stuck across teardown
     this._clearIdleTimers();

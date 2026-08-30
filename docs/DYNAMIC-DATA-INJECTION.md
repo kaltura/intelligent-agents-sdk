@@ -96,7 +96,7 @@ including `page_context` — is rejected. Enable it once, server-side, with an a
 await mgmt.intellects.setClientVariablesEnabled(configId, true, adminKs);
 ```
 
-The rejection is **silent on every path** (live-verified): the turn comes back as an empty
+The rejection is **silent on every path**: the turn comes back as an empty
 reply — no HTTP error, no socket error. The server's 403 fires inside its streaming pipeline
 *after* the response has already opened, so it never reaches the wire. Both session classes
 (`KalturaAvatarSession` and `KalturaChatSession`) detect the pattern and emit a once-per-session

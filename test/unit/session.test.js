@@ -1,4 +1,4 @@
-// Proves issue #19: KalturaAvatarSession's STV pc.ontrack emits 'track', the
+// KalturaAvatarSession's STV pc.ontrack emits 'track', the
 // same shape KalturaScriptedVideoSession already emits, with or without a
 // videoEl, and without disturbing the existing srcObject/play() attach path.
 import { test } from 'node:test';
@@ -57,7 +57,7 @@ test('regression: videoEl.srcObject/.play() attach behavior is unchanged (no dou
   session.disconnect();
 });
 
-// issue #20: videoWidth/videoHeight exposure
+// videoWidth/videoHeight exposure
 test("emits 'videoMetadata' once decoded dimensions are known (videoEl configured)", async () => {
   const videoEl = new FakeVideoEl({ autoCanPlay: false });
   const { session, socket } = newSession({ videoEl });
@@ -87,7 +87,7 @@ test("regression: 'videoMetadata' never fires when videoEl is omitted (headless)
 
 function delay(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
-// Proves issue #24: the dead-air masking contract ('thinking…' affordance).
+// The dead-air masking contract ('thinking…' affordance).
 test("'responsePending' fires with {} the moment a turn starts awaiting brain output", async () => {
   const { session, socket } = newSession();
   scriptHappyPath(socket);
@@ -128,7 +128,7 @@ test("'responseSettled' also fires on interruption, so the affordance never gets
 });
 
 // ─── §4a.3: silent-empty-turn diagnostic (allow_client_variables gate OFF produces
-// an empty turn with NO error — live-verified; this warning is the only surface) ───
+// an empty turn with NO error; this warning is the only surface) ───
 
 async function connectWithVars(vars) {
   const { session, socket } = newSession(vars ? { cfg: { requestVars: vars } } : {});

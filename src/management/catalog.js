@@ -93,7 +93,7 @@ export class Catalog {
    * call creates a new catalog item). An unknown voiceId creates NOTHING: the
    * server replies HTTP 200 with a `KalturaAPIException` envelope
    * (`VOICE_DOES_NOT_EXIST_ON_ELEVEN_LABS`), which the transport raises as a
-   * typed error with `code:'voice_not_found_elevenlabs'` (verified live).
+   * typed error with `code:'voice_not_found_elevenlabs'`.
    * @param {string} voiceId The provider-side ElevenLabs voice id.
    * @param {string} ks (admin)
    * @returns {Promise<object>} The created Voice catalog item.
@@ -109,8 +109,7 @@ export class Catalog {
    * catalog item. WRITE — NOT idempotent. Same contract as
    * {@link importVoiceFromElevenLabs}: an unknown voiceId creates NOTHING and
    * raises a typed error with `code:'voice_not_found_cartesia'`
-   * (`VOICE_DOES_NOT_EXIST_ON_CARTESIA`, HTTP-200 exception envelope —
-   * verified live).
+   * (`VOICE_DOES_NOT_EXIST_ON_CARTESIA`, HTTP-200 exception envelope).
    * @param {string} voiceId The provider-side Cartesia voice id.
    * @param {string} ks (admin)
    * @returns {Promise<object>} The created Voice catalog item.

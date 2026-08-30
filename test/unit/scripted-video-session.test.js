@@ -123,7 +123,7 @@ test('disconnect() before connect() is a safe no-op', () => {
   assert.equal(v.state, 'disconnected');
 });
 
-// issue #20: videoWidth/videoHeight exposure
+// videoWidth/videoHeight exposure
 test("emits 'videoMetadata' once decoded dimensions are known (videoEl configured)", async () => {
   const f = fakeFetch([{ match: '/whep/abc123', respond: () => ({ status: 201, body: 'v=0\r\nfake-answer\r\n' }) }]);
   const videoEl = new FakeVideoEl({ autoCanPlay: false });

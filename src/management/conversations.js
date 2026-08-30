@@ -18,7 +18,7 @@ import { newFormData as sharedNewFormData } from './catalog.js';
 import { classifyPartnerConfigError, probePartnerConfigRoute } from './partner-config-probe.js';
 
 // NOTE: unlike GENIE_MESSAGE_FILTER, the thread filter's objectType has no "Genie" prefix —
-// live-verified: 'GenieListThreadFilter' 422s with "Input should be 'ListThreadFilter'".
+// 'GenieListThreadFilter' 422s with "Input should be 'ListThreadFilter'".
 const GENIE_THREAD_FILTER = 'ListThreadFilter';
 const GENIE_MESSAGE_FILTER = 'GenieListMessageFilter';
 
@@ -185,7 +185,7 @@ export class Conversations {
    * there is nothing to fall back to in the SAME turn (the good content it
    * already gathered IS the tool calls; there's no spoken text hiding later in
    * the stream — `collectConverse` stopped reading precisely because the raw
-   * segment budget was exhausted). Live incident (Q2 earnings avatar, issue #22):
+   * segment budget was exhausted). Observed in production:
    * a two-metric guidance question made the brain re-emit an already-successful
    * `show_widget` call 8+ times with zero spoken segments ever produced, even
    * after fixing the tool's arg schema (str→dict) to remove double-JSON-encoding
@@ -193,7 +193,7 @@ export class Conversations {
    * zero spoken output): the loop would not have resolved on its own no matter
    * how long the caller waited. HTTP converse has no live-socket `interrupt()` to
    * fall back on (that's `KalturaAvatarSession`'s recovery, a different runtime),
-   * so the only proven lever is a follow-up turn: verified live that a same-
+   * so the only proven lever is a follow-up turn: a same-
    * thread nudge message reliably breaks the loop and gets a real spoken answer.
    * When `recoverFromSpiral` is on and the first attempt comes back
    * `spiralStopped:true` with empty `text`, this sends ONE follow-up turn on the
@@ -380,6 +380,39 @@ function requireRecordId(v, where) {
   if (typeof v !== 'number' || !Number.isInteger(v) || v < 0) {
     throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: `${where} id must be a non-negative integer (the Knowledge record's id).` });
   }
+}
+
+/** @param {unknown} a @param {unknown} b Exact deep-equality for plain JSON values (no Date/Map/etc). */
+function sourcesEqual(a, b) {
+  if (a === b) return true;
+  if (typeof a !== 'object' || typeof b !== 'object' || !a || !b) return false;
+  const ak = Object.keys(a), bk = Object.keys(b);
+  if (ak.length !== bk.length) return false;
+  return ak.every((k) => sourcesEqual(a[k], b[k]));
+}
+
+/**
+ * Find every intellect whose `knowledge_ids` still references `knowledgeId`.
+ * READ-only, paginated scan — same shape as `findIntellectsReferencingTool`
+ * (tools.js) / the skills.js equivalent, swapped to the `knowledge_ids` field.
+ * @param {import('./client.js').Ctx} ctx @param {number} knowledgeId @param {string} ks
+ * @returns {Promise<number[]>}
+ */
+export async function findIntellectsReferencingKnowledge(ctx, knowledgeId, ks) {
+  const refs = [];
+  const pageSize = 50;
+  for (let pageIndex = 1; ; pageIndex += 1) {
+    const page = (await ctx.genie('v1/intellect/list', { filter: {}, pager: { pageIndex, pageSize } }, ks)).data;
+    const objects = Array.isArray(page?.objects) ? page.objects : [];
+    for (const item of objects) {
+      if (item?.id === undefined) continue;
+      const full = await ctx.genie('v1/intellect/get', { id: item.id }, ks).then((r) => r.data).catch(() => null);
+      if (Array.isArray(full?.knowledge_ids) && full.knowledge_ids.includes(knowledgeId)) refs.push(item.id);
+    }
+    const total = page?.totalCount;
+    if (objects.length === 0 || (typeof total === 'number' && pageIndex * pageSize >= total)) break;
+  }
+  return refs;
 }
 
 export class Knowledge {
@@ -583,20 +616,20 @@ export class Knowledge {
     return this._.ovp('categoryentry', 'delete', { categoryId, entryId }, ks);
   }
 
-  // ─── The category-LINKAGE write (source-verified against the backend's config service) ───
+  // ─── The category-LINKAGE write ───
   // TWO PATHS link knowledge to an intellect (both end at one partner-config row):
-  //   PATH A (preferred, UNGATED, verified live): mint a Knowledge record with
-  //     `addRecord()` (`POST /v1/knowledge/add` on Genie — LIVE, requires admin KS), then pass its id as
+  //   PATH A (preferred, UNGATED): mint a Knowledge record with
+  //     `addRecord()` (`POST /v1/knowledge/add`, requires admin KS), then pass its id as
   //     `knowledge_ids:[id]` to `intellects.create`/`add`/`update`. The create/update DTO
   //     accepts `knowledge_ids` directly, so linkage + `use_knowledge_base:on` persist with
   //     NO `partner-config/update` and NO gate. RAG retrieval works after async indexing.
   //   PATH B (this `linkCategory`, and `linkRecords`): re-point an EXISTING intellect via
-  //     Genie `POST /partner-config/update` (the agentic studio-intellect proxy does NOT
-  //     accept it — verified). `partner_config_update` MERGES set fields, so we send only
-  //     `indexer`. NOTE (verified live): this route still returns 403 for a partner admin KS
+  //     `POST /partner-config/update` (the agentic studio-intellect proxy does NOT
+  //     accept it). `partner_config_update` MERGES set fields, so we send only
+  //     `indexer`. NOTE: this route still returns 403 for a partner admin KS
   //     (it needs a higher/service privilege than a partner admin holds) — see API-REFERENCE.md § Ground the Agent. So Path B can't
   //     re-point on a partner KS today; use Path A for new agents. `linkAvailable()` probes
-  //     Path B. (`/v1/knowledge/*` itself is LIVE — only the partner-config re-point is gated.)
+  //     Path B. (`/v1/knowledge/*` itself works — only the partner-config re-point is gated.)
 
   /**
    * Create a Kaltura CATEGORY to hold a knowledge corpus — the container that
@@ -794,7 +827,7 @@ export class Knowledge {
    * Get a Knowledge record by id (`POST /v1/knowledge/get`). READ. Returns the
    * full record `{id, partner_id, name, description, tags, status, user_id,
    * config:{sources:[{indexers:[{index_position, type, strategy}]}]},
-   * created_at, updated_at}` (verified live). A deleted/unknown id → typed
+   * created_at, updated_at}`. A deleted/unknown id → typed
    * `not_found`; another partner's id → typed `forbidden` ("Does not belong
    * to your partner"). `status` is the record's own container-lifecycle flag
    * (`"READY"`/`"DELETED"`), not an indexing-completion signal — see
@@ -808,16 +841,44 @@ export class Knowledge {
   }
 
   /**
-   * Update a Knowledge record's metadata (`POST /v1/knowledge/update`). WRITE —
-   * idempotent. Patches `name`/`description` and returns the updated record
-   * (verified live). Needs at least one field.
-   * @param {number} id @param {{name?:string, description?:string}} patch @param {string} ks (admin)
+   * List Knowledge records for the authenticated partner
+   * (`POST /v1/knowledge/list`). READ. Async-iterable + awaitable (first
+   * page) — mirrors {@link Tools#list}/{@link Skills#list}'s Genie
+   * `{pageIndex,pageSize}` pager. Named `listRecords`, NOT `list` —
+   * {@link Knowledge#list} (above) already means something unrelated: it
+   * lists KMS *media entries* inside a category, not Knowledge record
+   * containers.
+   *
+   * The "browse" step before every other Knowledge method's "act on a known
+   * id" step — e.g. an Agent Factory picker letting a user attach an
+   * existing knowledge base to a new agent by name, without hardcoding ids.
+   * @param {string} ks (admin)
+   * @param {{filter?:{nameEquals?:string, nameLike?:string, statusEquals?:string, statusIn?:string[]}, pageSize?:number}} [opts]
+   */
+  listRecords(ks, opts = {}) {
+    this._.assertAdmin(ks, 'knowledge.listRecords');
+    return paginate({
+      style: 'index', pageSize: opts.pageSize,
+      fetchPage: (pager) => this._.genie('v1/knowledge/list', { filter: opts.filter || {}, pager }, ks).then((r) => r.data),
+    });
+  }
+
+  /**
+   * Update a Knowledge record (`POST /v1/knowledge/update`). WRITE — idempotent.
+   * Patches `name`/`description`/`config` and returns the updated record.
+   * Needs at least one field.
+   *
+   * ⚠️ `config` is a FULL-REPLACE field on the backend — passing
+   * it here overwrites the ENTIRE config, including `sources` you didn't mean
+   * to touch. Use {@link addSource}/{@link removeSource} to add or remove one
+   * source without disturbing the others.
+   * @param {number} id @param {{name?:string, description?:string, config?:object}} patch @param {string} ks (admin)
    */
   async updateRecord(id, patch, ks) {
     this._.assertAdmin(ks, 'knowledge.updateRecord');
     requireRecordId(id, 'knowledge.updateRecord');
     if (!patch || typeof patch !== 'object' || Array.isArray(patch)) {
-      throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: 'knowledge.updateRecord needs a patch object {name?, description?}.' });
+      throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: 'knowledge.updateRecord needs a patch object {name?, description?, config?}.' });
     }
     /** @type {Record<string,unknown>} */
     const body = { id };
@@ -829,28 +890,109 @@ export class Knowledge {
       if (typeof patch.description !== 'string') throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: 'knowledge.updateRecord patch.description must be a string.' });
       body.description = patch.description;
     }
+    if (patch.config !== undefined) {
+      if (!patch.config || typeof patch.config !== 'object' || Array.isArray(patch.config)) {
+        throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: 'knowledge.updateRecord patch.config must be an object.' });
+      }
+      body.config = patch.config;
+    }
     if (Object.keys(body).length === 1) {
-      throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: 'knowledge.updateRecord needs at least one of name/description.' });
+      throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: 'knowledge.updateRecord needs at least one of name/description/config.' });
     }
     return (await this._.genie('v1/knowledge/update', body, ks)).data;
   }
 
   /**
+   * Add one source to a Knowledge record's config WITHOUT disturbing existing
+   * sources. WRITE — idempotent: if an identical source (exact deep match)
+   * already exists, this is a no-op (`applied:false`) — no wire write.
+   * READ-MERGE-WRITE: reads the current record, appends `source` to
+   * `config.sources`, and writes the union back via {@link updateRecord}'s
+   * `config` support — because the backend's `v1/knowledge/update` REPLACES
+   * `config` wholesale, a bare passthrough would silently
+   * drop every other source.
+   * @param {number} id @param {object} source One entry of `config.sources[]`
+   *   (e.g. `{type:'internal', language, categoryIds:[...], indexers:[...]}`).
+   * @param {string} ks (admin)
+   * @returns {Promise<{applied:boolean, result?:any, sent?:object, _meta:object}>}
+   */
+  async addSource(id, source, ks) {
+    this._.assertAdmin(ks, 'knowledge.addSource');
+    requireRecordId(id, 'knowledge.addSource');
+    if (!source || typeof source !== 'object' || Array.isArray(source)) {
+      throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: 'knowledge.addSource needs a source object (one entry of config.sources[]).' });
+    }
+    const cur = await this.getRecord(id, ks);
+    const existing = cur.config?.sources || [];
+    if (existing.some((s) => sourcesEqual(s, source))) {
+      return { applied: false, _meta: meta({ partnerId: this._.partnerId, source: 'genie/knowledge.update', scope: `knowledge:${id}`, reason: 'source already present (idempotent no-op)' }) };
+    }
+    const sent = { id, config: { ...cur.config, sources: [...existing, source] } };
+    const result = await this.updateRecord(id, { config: sent.config }, ks);
+    return { applied: true, result, sent, _meta: meta({ partnerId: this._.partnerId, source: 'genie/knowledge.update', scope: `knowledge:${id}`, readModifyWrite: true }) };
+  }
+
+  /**
+   * Remove one source from a Knowledge record's config (exact deep match).
+   * WRITE — idempotent: if no matching source is found, this is a no-op
+   * (`applied:false`) — no wire write. Symmetric counterpart to
+   * {@link addSource}; same read-merge-write shape.
+   * @param {number} id @param {object} source The exact source object to remove.
+   * @param {string} ks (admin)
+   * @returns {Promise<{applied:boolean, result?:any, sent?:object, _meta:object}>}
+   */
+  async removeSource(id, source, ks) {
+    this._.assertAdmin(ks, 'knowledge.removeSource');
+    requireRecordId(id, 'knowledge.removeSource');
+    const cur = await this.getRecord(id, ks);
+    const existing = cur.config?.sources || [];
+    const sources = existing.filter((s) => !sourcesEqual(s, source));
+    if (sources.length === existing.length) {
+      return { applied: false, _meta: meta({ partnerId: this._.partnerId, source: 'genie/knowledge.update', scope: `knowledge:${id}`, reason: 'no matching source found (idempotent no-op)' }) };
+    }
+    const sent = { id, config: { ...cur.config, sources } };
+    const result = await this.updateRecord(id, { config: sent.config }, ks);
+    return { applied: true, result, sent, _meta: meta({ partnerId: this._.partnerId, source: 'genie/knowledge.update', scope: `knowledge:${id}`, readModifyWrite: true }) };
+  }
+
+  /**
    * Delete a Knowledge record (`POST /v1/knowledge/delete`). WRITE —
    * DESTRUCTIVE (requires confirmation). The wire reply body is `null`
-   * (verified live: HTTP 200, get-after-delete 404s "Knowledge not found"), so
-   * this returns a `{removed, _meta}` receipt instead. Does NOT unlink: an
-   * intellect still carrying the id in `knowledge_ids` keeps a dangling
-   * reference — clear it first via `intellectConfig.setKnowledgeIds(configId, [], ks)`.
-   * @param {number} id @param {string} ks (admin) @param {{confirmPermanent:boolean}} confirm
-   * @returns {Promise<{removed:number, _meta:object}>}
+   * (HTTP 200, get-after-delete 404s "Knowledge not found"), so
+   * this returns a `{removed, _meta}` receipt instead. Does NOT unlink on its
+   * own — see the SAFETY CHECK below, which is what stops that from silently
+   * happening.
+   *
+   * SAFETY CHECK (default on): before deleting, lists every intellect and
+   * refuses with a typed `knowledge_in_use` error naming each one still
+   * carrying this id in `knowledge_ids` — same guard `tools.delete`/
+   * `skills.delete` already run for their own entities. Pass
+   * `{confirmPermanent:true, force:true}` to skip the check and delete
+   * unconditionally (e.g. once you've confirmed via
+   * `intellectConfig.setKnowledgeIds(configId, [], ks)` that every
+   * referencing intellect has already been updated).
+   * @param {number} id @param {string} ks (admin) @param {{confirmPermanent:boolean, force?:boolean}} confirm
+   * @returns {Promise<{removed:number, _meta:object, skippedInUseCheck?:boolean}>}
    */
   async deleteRecord(id, ks, confirm) {
     this._.assertAdmin(ks, 'knowledge.deleteRecord');
     requireRecordId(id, 'knowledge.deleteRecord');
     requireConfirm(confirm, 'knowledge.deleteRecord', String(id));
+    if (!confirm.force) {
+      const refs = await findIntellectsReferencingKnowledge(this._, id, ks);
+      if (refs.length) {
+        throw new KalturaError({
+          type: 'about:blank', title: 'knowledge in use', code: 'knowledge_in_use',
+          detail: `knowledge record ${id} is still referenced in knowledge_ids by ${refs.length} intellect(s) (configId: ${refs.join(', ')}) — deleting it would leave them pointing at a missing record. Drop it from their knowledge_ids first via intellectConfig.setKnowledgeIds(configId, [], ks), or pass {confirmPermanent:true, force:true} to delete anyway.`,
+        });
+      }
+    }
     await this._.genie('v1/knowledge/delete', { id }, ks);
-    return { removed: id, _meta: meta({ partnerId: this._.partnerId, source: 'genie/knowledge.delete', scope: `knowledge:${id}` }) };
+    return {
+      removed: id,
+      ...(confirm.force ? { skippedInUseCheck: true } : {}),
+      _meta: meta({ partnerId: this._.partnerId, source: 'genie/knowledge.delete', scope: `knowledge:${id}` }),
+    };
   }
 
   /**

@@ -1,6 +1,6 @@
 /**
  * Tiny zero-dep DOM builders shared by `mountWidget` and the markdown renderer
- * (issue #27) — kept in their own leaf module so `markdown.js` can reuse
+ * — kept in their own leaf module so `markdown.js` can reuse
  * `tableEl` (a markdown table renders through the SAME safe `<table>` builder
  * the structured `showVisualTable`/chart-fallback widgets use) without a
  * circular import back into `mount.js`. NEVER `innerHTML`.

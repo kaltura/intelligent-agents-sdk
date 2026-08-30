@@ -40,7 +40,7 @@ export class AvatarSessions {
    * Start a scripted-video session for one avatar. Returns a session
    * receipt — pass it, not a KS, to every other method on this class.
    *
-   * ADMIN TOKEN ONLY (verified live: a conversation KS is rejected with
+   * ADMIN TOKEN ONLY (a conversation KS is rejected with
    * `403 wrong_token_scope`-shaped detail). Mint one server-side with
    * `sessions.createAdminToken()` — never in a browser.
    *
@@ -114,7 +114,7 @@ export class AvatarSessions {
 
   /**
    * Speak pre-synthesized AUDIO on the avatar — the only speech-injection
-   * mechanism this backend actually exposes (verified live; see the class
+   * mechanism this backend actually exposes (see the class
    * doc for the confirmed-broken `say-text` sibling). Generate the audio
    * with any TTS provider — this backend has none of its own — and pass
    * the encoded bytes here.
@@ -125,16 +125,16 @@ export class AvatarSessions {
    * metadata) and pass it in. An inaccurate value doesn't error — it just
    * desyncs the avatar's mouth from the audio's actual length.
    *
-   * ASYNC/QUEUED (verified live): the call resolves in roughly 100ms once
+   * ASYNC/QUEUED: the call resolves in roughly 100ms once
    * the server accepts the turn — it does NOT block until playback
    * finishes. Calling `say()` again before the previous turn finishes
    * queues it; call {@link interrupt} to cut off whatever's currently
-   * playing (verified idempotent — safe with nothing playing).
+   * playing (idempotent — safe with nothing playing).
    *
    * WRITE — not idempotent; each call enqueues a new speaking turn.
    *
    * @param {{sessionId:string, token:string}} session  From {@link create}.
-   * @param {Blob|ArrayBuffer|Uint8Array} audio  Encoded audio bytes (mp3, or whatever your TTS provider returns — only mp3 has been live-verified).
+   * @param {Blob|ArrayBuffer|Uint8Array} audio  Encoded audio bytes (mp3, or whatever your TTS provider returns — only mp3 has been confirmed).
    * @param {{duration?:number, turnId?:string, mimeType?:string}} [opts]  `duration` in seconds, > 0 — REQUIRED (checked at runtime; the JSDoc type is optional only so an omitted `opts` degrades to the same `bad_request` below instead of a raw TypeError). `turnId` defaults to a fresh uuid. `mimeType` defaults to `'audio/mpeg'`.
    * @returns {Promise<{turnId:string, success:boolean}>}
    * @throws {KalturaError} `bad_request` if `session` is missing or `opts.duration`/`audio` is missing.

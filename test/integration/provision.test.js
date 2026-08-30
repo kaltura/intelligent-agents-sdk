@@ -45,7 +45,7 @@ test('provision runs the full documented sequence and returns every id', async (
   assert.ok(agentCreate.headers['idempotency-key'], 'agent create must send Idempotency-Key');
 });
 
-// see issue #17 — persona-name consistency lint surfaces on every provision()
+// Persona-name consistency lint surfaces on every provision()
 // call (not opt-in like the optional blocks), since it's a cheap pure check.
 test('provision surfaces a personaLint result, clean for a freshly-generated profile', async () => {
   const { m } = baseProvision();
@@ -328,14 +328,14 @@ test('all three optional blocks can fire together and ride the _meta receipt', a
   assert.equal(r.blocks.knowledge.linked, true);
 });
 
-// ─── issue #17 (rules 3.1 / 3.2) — applyTools() unnamed-tool correctness ────────
+// ─── applyTools() unnamed-tool correctness ────────
 // An unnamed tool def can never match an existing entry by name, so the
 // existing-tools list() lookup is dead work for that iteration, and the id
 // pushed into `ids` must be the id THIS iteration's own add() call returned —
 // never a stale value read back out of the `existingByName` map under the
 // `undefined` key (which silently holds whatever a PRIOR unnamed iteration set).
 
-test('applyTools skips the existing-tools list() call when the first (and only) tool def has no name (#17 rule 3.1)', async () => {
+test('applyTools skips the existing-tools list() call when the first (and only) tool def has no name', async () => {
   const { m } = baseProvision();
   let listCalls = 0;
   m.tools = {
@@ -350,7 +350,7 @@ test('applyTools skips the existing-tools list() call when the first (and only) 
   assert.equal(listCalls, 0, 'an unnamed-only tool batch can never match anything by name — list() must not be called');
 });
 
-test('applyTools pushes the freshly-created id for an unnamed tool, not a stale map entry (#17 rule 3.2)', async () => {
+test('applyTools pushes the freshly-created id for an unnamed tool, not a stale map entry', async () => {
   const { m } = baseProvision();
   let addSeq = 0;
   m.tools = {

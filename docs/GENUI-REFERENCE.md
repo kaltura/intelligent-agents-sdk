@@ -2,7 +2,7 @@
 
 Everything an agent can put **on screen** beyond spoken text: the `unisphere-tool`
 runtimes (flashcards, summaries, sources, forms, Kaltura/external video, images, links)
-the Genie brain backend emits as `type:"unisphere-tool"` stream segments, and the SDK renders
+the brain emits as `type:"unisphere-tool"` stream segments, and the SDK renders
 natively via `ExperienceRenderer`.
 
 This is the authoritative map — every runtime, its enabling capability, the exact wire
@@ -12,7 +12,7 @@ restrictions that bite in practice.
 All claims here are anchored to repo source (`src/...`) and `WIRE-PROTOCOL.md`; where a
 behavior is inferred rather than live-captured, it is marked **INFERRED**.
 
-> **Naming note.** `unisphere-tool` and `unisphere.widget.genie` below are the Genie brain's
+> **Naming note.** `unisphere-tool` and `unisphere.widget.genie` below are the brain's
 > literal, on-the-wire constant values — carried over from a naming decision made outside this
 > SDK, and preserved verbatim here because changing them would break real interoperability. They
 > are unrelated to "GenUI," this doc's own name for the feature; don't read them as a reference to
@@ -20,7 +20,7 @@ behavior is inferred rather than live-captured, it is marked **INFERRED**.
 
 ## The model in one paragraph
 
-The brain emits a **GenUI widget** by writing a fenced block carrying a `widgetName`. The Genie
+The brain emits a **GenUI widget** by writing a fenced block carrying a `widgetName`. The brain
 brain backend's `message_service` converts that into a stream segment of
 `type:"unisphere-tool"` shaped `{ type, content, metadata:{ widgetName, runtimeName }, speechId?,
 threadId? }`. **All widgets share `widgetName:"unisphere.widget.genie"`** — the host keys off
@@ -30,7 +30,7 @@ emits HTML; every string/URL is run through `core/safety.js` first.
 
 ## The first-class runtimes
 
-Backend tool key (defined in the Genie brain backend's experience-definitions module) → wire `runtimeName` → normalized
+Backend tool key (defined server-side) → wire `runtimeName` → normalized
 dispatch key (the renderer registry key). Source: `src/core/stream.js` `GENUI_RUNTIMES`;
 `src/experience/genui/parse.js` `RUNTIMES` (derived from `GENUI_RUNTIMES`, so the two can
 never drift).
@@ -256,7 +256,7 @@ This is the **image-bearing** widget (a deck/gallery of cards with thumbnails). 
 ### 10. graded-question (`renderGradedQuestion`) — a host-registered "10th runtime"
 
 Unlike sections 1–9, this is **not** one of the nine backend `unisphere-tool` runtimes — there is
-no Genie brain tool that emits `graded-question-tool`. It's a comprehension-check widget you
+no brain tool that emits `graded-question-tool`. It's a comprehension-check widget you
 register yourself, via the exact "10th runtime" extensibility seam described below
 (`.register()` / `cfg.renderers`): a prompt with either multiple-choice options or a free-text
 answer, an optional answer key, and an optional explanation, graded client-side.
@@ -389,7 +389,7 @@ In the live socket runtime, `.start()` subscribes to `session.on('brainSegment')
 `turnEnd`/`avatarStopTalking`, resetting on `interrupted`. `clearOnTurnStart` (default `true`) also
 resets the assembler and `clear()`s `rendered`/`last` on the session's `turnStart` event (re-emitted
 from the raw `agent_start_speech` socket event), so a widget from turn N never lingers into turn
-N+1 — mirrors the Genie brain backend's own web client nulling content on `AgentStartSpeechReceived`.
+N+1, matching the reset the platform's own client applies when a new turn starts speaking.
 Set `false` for intentional cross-turn persistence.
 
 Headless, call `.render(runtimeName, widget)` (or `.render(segment)`) per segment from a
@@ -459,7 +459,7 @@ duplicating anything the platform already tracks server-side.
 
 ### What not to report (read this first)
 
-The backend (conversation-manager + the Genie brain) already reports its own server-side KAVA
+The backend (the session server + the brain) already reports its own server-side KAVA
 events for every session a `KalturaAvatarSession` connects to — the 80000-range "Immersive
 Agents" events: `callStarted`, `callEnded`, `messageResponse` (message delivery), and
 `messageFeedbackSent` (feedback). `KavaAnalytics` has no code path that can send any of these (see
@@ -573,13 +573,13 @@ non-duplicated events tied to one conversation, not two copies of the same one.
   join (`wire.js`). Use the HTTP converse path for reliable widgets.
 - **`force_experience` is a hint** — never assume the requested experience arrived; the renderer
   parses whatever shows up.
-- **`followups-tool`, `flashcards-tool`, and `show-link-tool` are live-captured** — including the
-  `followups-tool`/`show-link-tool` boundary flush (a different runtime arriving mid-stream closes
-  the prior widget correctly) live-verified end to end through real `SegmentAssembler` →
+- **`followups-tool`, `flashcards-tool`, and `show-link-tool` are confirmed against real backend
+  output** — including the `followups-tool`/`show-link-tool` boundary flush (a different runtime
+  arriving mid-stream closes the prior widget correctly), end to end through `SegmentAssembler` →
   `ExperienceRenderer` → `mountWidget` → click → `KavaAnalytics.buttonClicked()` (see
   [Widget-interaction analytics](#widget-interaction-analytics-avoiding-double-counting)). The
-  other six runtimes are still **INFERRED** (unit-tested red/green, not live-verified). Source:
-  `genui/segments.js` header.
+  other six runtimes are still **INFERRED** (unit-tested red/green, not yet confirmed against real
+  backend output). Source: `genui/segments.js` header.
 - **RAG-driven vs. config-driven emission is unverified** — whether `video_gallery` /
   `external_video` / `show_link` fire from RAG hits or pure prompt tuning is **not documented**;
   the author-time lever is the capability + prompt, but the trigger is the brain's discretion.

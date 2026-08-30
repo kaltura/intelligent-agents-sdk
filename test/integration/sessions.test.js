@@ -71,7 +71,7 @@ test('admin-token mint without a secret throws (server-side only)', async () => 
   await assert.rejects(() => m.sessions.createAdminToken(), (e) => e.code === 'no_secret');
 });
 
-// ─────────────────────────── issue #36: userId on session mint ───────────────────────────
+// ─────────────────────────── userId on session mint ───────────────────────────
 
 test('createAdminToken with userId sends it on the wire and binds it on the token scope', async () => {
   const f = sessionFetch();
@@ -140,7 +140,7 @@ test('userId flows into the redacted audit event as actor.subjectId, never along
   assert.ok(!JSON.stringify(events).includes(secret), 'the admin secret never rides an audit event alongside userId');
 });
 
-test('createAgentToken rejects userId explicitly instead of silently dropping it (out of scope for issue #36)', async () => {
+test('createAgentToken rejects userId explicitly instead of silently dropping it', async () => {
   const f = sessionFetch();
   const m = new Management({ partnerId: 123, adminSecret: 'a'.repeat(32), fetch: f });
   await assert.rejects(

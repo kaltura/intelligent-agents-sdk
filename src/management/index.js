@@ -24,7 +24,7 @@ export { uuidv4, randId, meta } from '../core/ids.js';
 export { redact } from '../core/redact.js';
 // Production-resource delete guard: a cleanup-by-tag sweep must not nuke a real agent.
 // `agents.delete` refuses a PROTECTED_TAGS-tagged agent unless { allowProtected:true }.
-export { PROTECTED_TAGS, matchProtectedTag, resolveIntellectId, EMBED_TYPES } from './agents.js';
+export { PROTECTED_TAGS, matchProtectedTag, resolveIntellectId } from './agents.js';
 // Skills — partner-level reusable instruction snippets (`v1/skill/*` on Genie).
 // The resource instance lives on `mgmt.skills`; the class export is for typing/extension.
 export { Skills } from './skills.js';

@@ -89,7 +89,7 @@ test('parseToolCall: only a JSON OBJECT is read as args (a bare array is left in
   assert.deepEqual(c.args, { items: [1, 2, 3] });
 });
 
-// ─────────────────────────── fused multi-tool segments (live-verified) ───────────────────────────
+// ─────────────────────────── fused multi-tool segments ───────────────────────────
 // A brain turn that calls 2+ tools can arrive as ONE type:"tool" segment naming only the
 // LAST tool, with earlier tools' arg objects concatenated into the same content string —
 // e.g. captured live: `open_filing {"quarters":[...],"metric":"total_revenue"}{"quarter":"q1_2026","docType":"press_release"}`.
@@ -148,7 +148,7 @@ test('parseToolResponseName: non-matching / non-tool_response input → null (ne
   assert.equal(parseToolResponseName(undefined), null);
 });
 
-test('parseToolCall lifts tool_metadata (issue #31 rule 5.2/gap 2)', () => {
+test('parseToolCall lifts tool_metadata', () => {
   const c = parseToolCall({
     type: 'tool', content: 'navigate_to_slide {"slide_num": 4}',
     tool_metadata: { id: 'req-1', name: 'navigate_to_slide', args: { slide_num: 4 }, type: 'client', wait_for_response: true },
@@ -222,7 +222,7 @@ test('collectConverse tool-spiral guard caps DISTINCT valid tool calls too, not 
   assert.equal(r.toolCalls.length, N, `capped at maxToolCalls=${N} (got ${r.toolCalls.length})`);
 });
 
-// ─────────────────────────── issue #24: validateToolArgs ───────────────────────────
+// ─────────────────────────── validateToolArgs ───────────────────────────
 
 test('validateToolArgs: no schema (or non-object) never blocks', () => {
   assert.deepEqual(validateToolArgs({ slide_num: 'not-an-int' }, undefined), { ok: true });

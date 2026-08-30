@@ -87,8 +87,8 @@ export function parseContent(content) {
   //    support: `key:` followed by a `- sub: val` list, indented (the exact
   //    shape Genie's own `user_properties_form` template streams for its
   //    `fields:` list — see `sys_prompt_user_properties`) OR flush-left (the
-  //    shape Genie's `followups` tool streams — e.g. `- "What...?"` with zero
-  //    leading whitespace; see issue #56). Anything else that isn't a clean
+  //    shape the built-in `followups` tool streams — e.g. `- "What...?"` with zero
+  //    leading whitespace). Anything else that isn't a clean
   //    `key: value` line is kept verbatim under `.raw` so we never lose data.
   /** @type {Record<string, unknown>} */
   const model = {};
@@ -118,7 +118,7 @@ export function parseContent(content) {
 /**
  * Parse a YAML list starting at `lines[start]` (a `- ` item), indented or
  * flush-left (dash indentation is whatever `lines[start]` uses — often `0`
- * for the live backend's `followups` shape, see issue #56). Each `- ` at the
+ * for the live backend's `followups` shape). Each `- ` at the
  * list's own indentation starts a new item: a `- key: val` item starts a map
  * (any more-indented `key: value` line that follows fills that same map); a
  * plain `- value` item (no `key:` prefix, e.g. a quoted question string) is

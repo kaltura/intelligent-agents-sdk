@@ -29,7 +29,7 @@ how the pause played out — two common ones depending on how long you were paus
 rarer one is covered below):
 
 - **Short pause (the common case):** the server still has your session held open. `resume()`
-  just emits `resumeConversation` and returns — cheap, near-instant (live-verified: resolved in
+  just emits `resumeConversation` and returns — cheap, near-instant (resolved in
   ~1ms in a real session).
 - **Long pause (the server released the session):** if the pause window expired before you
   called `resume()`, the server already tore down your STV/ASR transports and told the SDK so
@@ -43,9 +43,9 @@ picks the right one for you. The exact length of the pause window before the ser
 session isn't a published constant; don't rely on an exact number, and always resume via one of
 the triggers below rather than assuming a pause lasts as long as you need it to.
 
-**Calling `resume()` is safe in every case that matters for this recipe** — live-verified
+**Calling `resume()` is safe in every case that matters for this recipe** — confirmed
 immediately after `pause()` (zero delay), when the session was never paused, and when it was
-already resumed. It's also safe (live-verified) when the SDK's own connectivity recovery rebuilt
+already resumed. It's also safe when the SDK's own connectivity recovery rebuilt
 the session *while* you were paused: a stalled/expired media channel can trigger an internal
 `_coldReconnect()` that rebuilds the transports on its own, without your app calling `resume()`
 (see [WIRE-PROTOCOL.md](WIRE-PROTOCOL.md) for the recovery events). Your pause survives that

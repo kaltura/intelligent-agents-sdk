@@ -11,7 +11,7 @@ represent. The one place this shows up in the SDK's own surface is naming: the m
 report values back is `session.submitStructuredDataForm()`, over a wire event named
 `setFormLeadInfo` — both named after the feature's most common use case, not its only one.
 
-All claims below are anchored to source: the Genie brain backend (the conversational AI backend
+All claims below are anchored to source: the brain (the conversational AI backend
 service) and this repo's SDK (`src/`).
 
 ## What it is — and isn't
@@ -42,7 +42,7 @@ early and a phone number later, in the same conversation.
 ## How the brain is made aware of the schema
 
 This isn't a passive schema the model infers — it's an explicit, mandatory prompt injection.
-The Genie brain backend's system-prompt builder walks every configured stage and renders the
+The brain's system-prompt builder walks every configured stage and renders the
 `sys_prompt_user_properties` template with that stage's exact field list:
 
 ```text
@@ -52,7 +52,7 @@ This block is REQUIRED in addition to your main response and must NEVER be omitt
 For each field, if you can extract its value from the conversation, add a known_value property.
 ```
 
-Two things follow directly from this wording, verified against the live template:
+Two things follow directly from this wording:
 
 - **It's a hard instruction, not a soft hint.** The prompt says "MUST" and "MANDATORY," not
   "consider asking." In practice the model interprets `call_stage` loosely (a `start` stage can
@@ -61,7 +61,7 @@ Two things follow directly from this wording, verified against the live template
   the conversation (e.g. the viewer mentioned their preferred date in passing), it can attach a
   `known_value` to that field, and your form should pre-fill it rather than ask again.
 
-The backend DTO (`UserPropertiesCollectionConfig`, in the Genie brain backend) also
+The backend's schema for this feature also
 carries a `title` and `secondary_title` with sensible defaults ("A few details about you" /
 "Tell me a bit about yourself so I can guide you with content that fits your needs"). **The SDK's
 `buildUserPropertiesForms()` does not currently expose either field** — it only accepts
@@ -92,8 +92,8 @@ the extra keys; today's SDK surface always falls back to the backend defaults.
 - Not a general dynamic-form builder — it's a flat list of typed fields per stage, not richer
   patterns (multi-step wizards, validation rules, fields dependent on other fields).
 - Editable only through the SDK/`intellect/*` surface — `user_properties_forms` is not in the
-  `partner-config/*` DTO at all, so it's authored once at provisioning time via the SDK/Genie
-  host, not tunable per-session through that other management surface.
+  `partner-config/*` surface at all, so it's authored once at provisioning time via the SDK against
+  the brain's API, not tunable per-session through that other management surface.
 
 ## How the SDK handles it — two observation points, one descriptor
 
@@ -163,8 +163,8 @@ Two independent axes:
 
 `session.submitStructuredDataForm(info)` (`src/experience/session.js`) is a fire-and-forget socket emit —
 `this._socket.emit('setFormLeadInfo', sanitizeJson(info))` — with no acknowledgment payload, and no
-endpoint on the Genie/agentic management plane reads it back as structured `{key: value}` data. The
-conversation transcript is persisted to Postgres by the Genie brain backend (a `Message` table) and
+endpoint on the brain/management API reads it back as structured `{key: value}` data. The
+conversation transcript is persisted by the brain (as a message record) and
 exposed read-only via `POST /thread/get_transcripts` — exactly what the management SDK's
 `threads.transcript(threadId, ks)` wraps. That reconstructs a plain-text transcript from `USER`-type message rows;
 it does **not** carry the structured form field values, only what the viewer said/typed and the
@@ -176,7 +176,7 @@ model's replies — a paraphrase, not the raw object.
 support system, a spreadsheet, or any other external API) directly from the model's own tool call.
 That path is a genuine server-side HTTP request the agent makes on your behalf, not a client-side
 socket emit, so the data lands wherever you point the tool — no dependence on any surface outside
-the Genie/agentic management and conversation planes this toolkit talks to.
+the brain/management APIs this toolkit talks to.
 
 A worked pattern: keep the submitted values in browser memory for the current session, but do the
 durable write via your own brain-called, server-side `api` tool that posts to whatever external
@@ -195,9 +195,9 @@ for what that capability does and why.
 paths — `kaltura_genie_experiences` governs backend tool-key families like `flashcards`/
 `summarization`/`followups`/`sources`/`gallery_slides`; `user_properties_forms` has its own
 dedicated DTO field and its own dedicated prompt injection (`sys_prompt_user_properties`),
-unrelated to the experiences capability. Verified live: with `kaltura_genie_experiences: 'disabled'`,
+unrelated to the experiences capability. With `kaltura_genie_experiences: 'disabled'`,
 an agent still fires a genuine `show_widget` call with `kind: "user_properties_form"` and a genuine
-`user-properties-form-tool` segment. Disabling experiences only removes Genie's own competing
+`user-properties-form-tool` segment. Disabling experiences only removes the brain's own competing
 navigation/formatting instinct — it has no effect on structured-data-form logic.
 
 ## Related docs

@@ -11,7 +11,7 @@ quickstart script; UC-7/12 use the browser example app; UC-13 is exercised by an
 | UC-2 | **Personalized Concierge** | Prompts with `{{firstName}}`/`{{plan}}` + `allow_client_variables:true`; pass `request_vars` per message | `mgmt.converse(configId, msg, { request_vars })` |
 | UC-3 | **Memory Chatbot** | First `converse` returns `threadId`; pass it back. `v1/thread/get_transcripts` for the full record | `mgmt.converse(...)` + `mgmt.threads.list`/`transcript` |
 | UC-4 | **GenUI Experiences** | `force_experience` hint + `capabilities`; render `unisphere-tool` segments by `metadata.runtimeName` | `mgmt.converse(...)` + `./experience/genui` |
-| UC-5 | **Avatar Fleet / A-B Personas** | `avatar/create` variants, `avatar/clone` to fork, `agent/update avatarIds` to swap | `mgmt.avatars.clone(id, ks)` |
+| UC-5 | **Avatar Fleet / A-B Personas** | `avatar/create` variants sharing a voice/visual, `agent/update avatarIds` to swap | `mgmt.avatars.create(...)` + `mgmt.agents.update(...)` |
 | UC-6 | **Quality / Feedback Loop** | Capture `messageId` from converse → `mgmt.feedback.add()` → `reportSummary` | `mgmt.feedback.add(...)` + `mgmt.messages.reportSummary(ks)` |
 | UC-7 | **Interactive Video Avatar** | `resolveWidgetId` → widget KS → `appInit` → socket.io + WHEP runtime | `examples/browser-experience.html` |
 | UC-8 | **Headless Streaming Text** | `assistant/converse` (`sse:true` or NDJSON); stream `type:"text"` chunks; persist `threadId` server-side | `mgmt.converse(...)` (or `mgmt.conversations.stream(opts, ks)` directly) |

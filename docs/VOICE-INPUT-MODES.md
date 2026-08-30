@@ -33,7 +33,7 @@ voice mode is how the SDK satisfies EN 301 549 §6.2.1.2 (concurrent voice and t
 same session.** (Chat text-only input is exempt — typed turns don't touch the VAD/capture machinery
 this rule protects, so text can coexist with either voice mode, or replace voice entirely.)
 
-This is not a UI-polish preference — it is a correctness requirement. The conversation-manager service (`CM`, the server runtime)'s own VAD turn-cutting branches on the agent's *configured* `isTapToTalk` flag, not on whether a tap window is currently open. An open-mic agent (`isTapToTalk:false`) keeps auto-cutting turns from its VAD unconditionally, even while a tap-to-talk bracket is open — the two mechanisms race the same `conversationStatus`/`latestSpeech` state with no mutual exclusion server-side (see WIRE-PROTOCOL.md's `tapToTalkStart`/`tapToTalkEnd` row for the verified source citation). The SDK enforces this client-side (`startTapToTalk()` throws `capability_disabled` unless `session.capabilities.tapToTalk`), but that gate exists because the server will not stop you from getting this wrong.
+This is not a UI-polish preference — it is a correctness requirement. The server's own VAD turn-cutting branches on the agent's *configured* `isTapToTalk` flag, not on whether a tap window is currently open. An open-mic agent (`isTapToTalk:false`) keeps auto-cutting turns from its VAD unconditionally, even while a tap-to-talk bracket is open — the two mechanisms race the same `conversationStatus`/`latestSpeech` state with no mutual exclusion server-side (see WIRE-PROTOCOL.md's `tapToTalkStart`/`tapToTalkEnd` row). The SDK enforces this client-side (`startTapToTalk()` throws `capability_disabled` unless `session.capabilities.tapToTalk`), but that gate exists because the server will not stop you from getting this wrong.
 
 Every push-to-talk/open-mic product draws the same line — one active capture mechanism, chosen once, not a live per-session toggle exposing both:
 
@@ -97,7 +97,7 @@ Give the viewer three redundant signals that the mic is live, not one:
 ## Safety: don't let a capture window hang open forever
 
 A tap window that never closes (tab closed mid-recording, app crash, network drop) must not leave the
-CM's `InTappedMode` state stuck. Layer these on top of `startTapToTalk()`/`endTapToTalk()`:
+server's tap-mode state stuck open. Layer these on top of `startTapToTalk()`/`endTapToTalk()`:
 
 - **Silence-based auto-stop** — close the window automatically after a period of continuous silence,
   so a forgotten "open" mic doesn't stay live indefinitely.
@@ -159,6 +159,6 @@ Two UX rules for the switch:
 | Doc | What it adds |
 |-----|---------------|
 | [README.md](../README.md#tap-to-talk-push-to-talk-voice) | The SDK API: `startTapToTalk()`/`endTapToTalk()`, the `capability_disabled` gate, `tapToTalkActive`/`capabilities.tapToTalk` |
-| [WIRE-PROTOCOL.md](WIRE-PROTOCOL.md) | The exact `tapToTalkStart`/`tapToTalkEnd` socket events and the verified CM source finding behind the mixed-mode gate |
+| [WIRE-PROTOCOL.md](WIRE-PROTOCOL.md) | The exact `tapToTalkStart`/`tapToTalkEnd` socket events and the finding behind the mixed-mode gate |
 | [CLIENT-COMMANDS.md](CLIENT-COMMANDS.md) | A different silent client→page channel (tool calls), not voice input — useful contrast for what this doc is *not* about |
 | [README.md](../README.md#text-only-chat-kalturachatsession) | `KalturaChatSession` (text-only transport) and `KalturaAgentSession` (mode switching) — full API |

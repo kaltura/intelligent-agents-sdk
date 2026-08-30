@@ -48,7 +48,7 @@ test('clientToolReadiness warns when tool_ids are set without kaltura_genie_expe
   assert.deepEqual(clientToolReadiness(undefined), { ok: true, warnings: [] });
 });
 
-// ---------- client (issue #31 rules 1.2, 2.4, 6.3) ----------
+// ---------- client ----------
 
 test('client builds a native type:"client" tool with no request/authentication block', () => {
   const t = client({ name: 'ask_user', description: 'Ask the viewer something.' });

@@ -98,7 +98,7 @@ test('post-connect: speak injects onTextEntered (brain), never HTTP converse', a
   await session.connect();
   await session.speak('hello there');
   const te = socket.emitsOf('onTextEntered');
-  assert.equal(te[0].isSpeechStart, true, 'the isSpeechStart marker opens/interrupts first — see issue #39');
+  assert.equal(te[0].isSpeechStart, true, 'the isSpeechStart marker opens/interrupts first');
   const final = te.pop();
   assert.equal(final.text, 'hello there');
   assert.equal(final.isFinal, true);
@@ -176,7 +176,7 @@ test('barge-in: interrupted event flips speaking + transcript drops stale chunks
   session.disconnect();
 });
 
-test('barge-in: speak() while the avatar is already talking uses the isSpeechStart marker, never tapToTalkStart/End (issue #39)', async () => {
+test('barge-in: speak() while the avatar is already talking uses the isSpeechStart marker, never tapToTalkStart/End', async () => {
   const { session, socket } = newSession();
   scriptHappyPath(socket);
   await session.connect();
@@ -184,7 +184,7 @@ test('barge-in: speak() while the avatar is already talking uses the isSpeechSta
   socket.server('stvStartedTalking', {});
   assert.equal(session.speaking, true);
   await session.speak('what about Q3');
-  assert.equal(socket.didEmit('tapToTalkStart'), false, 'tapToTalkStart mints a duplicate CM turn — see issue #39');
+  assert.equal(socket.didEmit('tapToTalkStart'), false, 'tapToTalkStart mints a duplicate session-server turn');
   assert.equal(socket.didEmit('tapToTalkEnd'), false);
   const te = socket.emitsOf('onTextEntered');
   assert.deepEqual(te[0], { text: '', isFinal: false, isSpeechStart: true });
@@ -192,7 +192,7 @@ test('barge-in: speak() while the avatar is already talking uses the isSpeechSta
   session.disconnect();
 });
 
-test('interrupt() sends only the isSpeechStart marker, no tapToTalkStart/End (issue #39)', async () => {
+test('interrupt() sends only the isSpeechStart marker, no tapToTalkStart/End', async () => {
   const { session, socket } = newSession();
   scriptHappyPath(socket);
   await session.connect();
@@ -203,11 +203,11 @@ test('interrupt() sends only the isSpeechStart marker, no tapToTalkStart/End (is
   session.disconnect();
 });
 
-// ─────────────────────────── Tap-to-talk (issue #40) ────────────────────────
-// startTapToTalk() requires clientConfiguration.isTapToTalk:true — verified against
-// the live CM source that an open-mic agent's VAD turn-cutting is never suppressed by
-// InTappedMode, so mixing the two races shared conversation state server-side. Tests
-// below opt a session into tap-to-talk mode via scriptHappyPath's clientConfig override.
+// ─────────────────────────── Tap-to-talk ────────────────────────
+// startTapToTalk() requires clientConfiguration.isTapToTalk:true — an open-mic agent's
+// VAD turn-cutting is never suppressed by tapped mode, so mixing the two races shared
+// conversation state server-side. Tests below opt a session into tap-to-talk mode via
+// scriptHappyPath's clientConfig override.
 
 function newTapToTalkSession(overrides = {}) {
   const s = newSession(overrides);
@@ -229,7 +229,7 @@ test('tap-to-talk: startTapToTalk/endTapToTalk emit the documented wire pair and
   assert.equal(session.tapToTalkActive, false);
   assert.deepEqual(socket.emitsOf('tapToTalkEnd'), [{}]);
   assert.deepEqual(events, ['started', 'ended']);
-  // never bracketed with the typed-text isSpeechStart marker (issue #39 stays isolated)
+  // never bracketed with the typed-text isSpeechStart marker (stays isolated)
   assert.equal(socket.didEmit('onTextEntered'), false);
   session.disconnect();
 });

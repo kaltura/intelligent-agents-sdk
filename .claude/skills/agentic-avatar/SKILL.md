@@ -194,7 +194,7 @@ await kaltura.intellectConfig.setToolIds(configId, [tool.id], admin.ks);
 | `tools` | `add(tool, ks)` | `get(id, ks)` | `list(ks, opts?)` | `update(id, patch, ks)` | `delete(id, ks, confirm)` |
 | `skills` | `add(body, ks)` | `get(id, ks)` | `list(ks, opts?)` | `update(id, patch, ks)` | `delete(id, ks, confirm)` |
 
-Both `update` methods are real and live-verified — don't assume Skills lacks
+Both `update` methods are real — don't assume Skills lacks
 one. Every `delete` takes an explicit `confirm` argument (destructive ops are
 never a bare flag on a read call). Before creating a Tool, check for a
 same-named one you should reuse instead of duplicate-erroring — `provision.js`'s
@@ -247,7 +247,7 @@ first in code you ship; the method itself won't throw on a 403, it returns
 
 ## Knowledge — ground the agent on documents ("Path A", ungated)
 
-Path A is fully SDK-native and live-verified with zero 403s. Path B
+Path A is fully SDK-native with zero 403s. Path B
 (re-pointing an *existing* intellect via `partner-config/update` /
 `knowledge.linkRecords`) is still gated — check `knowledge.linkAvailable(ks)`
 before reaching for it.
@@ -464,7 +464,7 @@ instead of re-implementing it. Full constructor JSDoc: `src/experience/presenter
    a custom image.
 6. **Opening phrase** — pass a real scripted line, or `'<blank>'` (the SSML
    silence sentinel) if you want no opening line at all — never `''`, which
-   crashes conversation-manager on the very first turn (a known bug; see
+   crashes the session server on the very first turn (a known bug; see
    `avatars.create`'s JSDoc for the exact reasoning).
 7. **Glossary** — `intellectConfig.patch(configId, {glossary}, ks)` for
    domain terms/pronunciations the brain should know verbatim.

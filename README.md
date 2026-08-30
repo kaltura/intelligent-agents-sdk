@@ -292,7 +292,7 @@ same turn — the identical wire ACK the avatar transport sends (see
 [docs/WIRE-PROTOCOL.md](docs/WIRE-PROTOCOL.md)). `updateRequestVars()` / `setDynamicPrompt()` carry
 the same merge semantics as the avatar session; the full map rides every turn.
 
-Thread continuity is symmetric and live-verified in both directions: seed `cfg.threadId` with
+Thread continuity is symmetric in both directions: seed `cfg.threadId` with
 another session's `threadId` getter to continue that conversation here, or hand this session's
 `threadId` to a `KalturaAvatarSession`. The `allow_client_variables` gate-off failure mode is the
 same here as on the socket: a silent empty turn plus a once-per-session
@@ -346,7 +346,7 @@ session.updateRequestVars({ account_tier: 'enterprise' });
 
 `updateRequestVars(vars)` **merges** what you pass into the session's canonical map — send only the keys that changed; omitted keys keep their values. Values persist on the thread for every later turn (no per-turn resend; the SDK also re-sends the full map on reconnect). `session.setDynamicPrompt(data)` is sugar over the same channel: it serializes `data` into the single well-known variable `page_context` — pair it with the `PAGE_CONTEXT_PROMPT` block exported from `./management` so the prompt actually references `{{page_context}}`.
 
-The intellect must have `allow_client_variables: true` (`intellects.setClientVariablesEnabled(configId, true)`), or every variable you send is rejected — **silently**, on every path (live-verified on both the socket and the HTTP converse stream): the turn just comes back empty, with no error on the wire. Both session classes detect that and emit a once-per-session `warning` event, `{ code: 'empty_turn_with_request_vars', message, requestVarKeys }` (variable names only, never values).
+The intellect must have `allow_client_variables: true` (`intellects.setClientVariablesEnabled(configId, true)`), or every variable you send is rejected — **silently**, on every path, both the socket and the HTTP converse stream: the turn just comes back empty, with no error on the wire. Both session classes detect that and emit a once-per-session `warning` event, `{ code: 'empty_turn_with_request_vars', message, requestVarKeys }` (variable names only, never values).
 
 For merge/persistence semantics in depth, the ~31 KB size headroom, server-side tool interpolation, the `lintPrompts` pre-flight, and a worked example composing `request_vars` with `speak()` and `submitStructuredDataForm()` — see [docs/DYNAMIC-DATA-INJECTION.md](docs/DYNAMIC-DATA-INJECTION.md).
 
@@ -356,7 +356,7 @@ For the app-level decision of whether to use this at all, and the UI/accessibili
 around it, see [docs/VOICE-INPUT-MODES.md](docs/VOICE-INPUT-MODES.md) — this section is the API
 reference.
 
-`startTapToTalk()`/`endTapToTalk()` are a distinct voice-input mode from typed-text `speak()`/`interrupt()`. The ASR mic uplink is always connected once `connect()` resolves; tapping just tells the conversation-manager to mark a capture window (`tapToTalkStart` → `InTappedMode`) and, on release, mint the turn from whatever it captured (`tapToTalkEnd` → its own ~300ms `processTapToTalkInput` timer). That turn then arrives through the same `agentTurnToTalk`/`transcript` pipeline as any open-mic turn — no separate transcript path to wire up.
+`startTapToTalk()`/`endTapToTalk()` are a distinct voice-input mode from typed-text `speak()`/`interrupt()`. The ASR mic uplink is always connected once `connect()` resolves; tapping just tells the session server to mark a capture window (`tapToTalkStart` → tapped mode) and, on release, mint the turn from whatever it captured (`tapToTalkEnd` → its own ~300ms capture-finalize timer). That turn then arrives through the same `agentTurnToTalk`/`transcript` pipeline as any open-mic turn — no separate transcript path to wire up.
 
 `startTapToTalk()` throws `capability_disabled` unless `session.capabilities.tapToTalk` (from `clientConfiguration.isTapToTalk`) is true. Treat `isTapToTalk` as a fixed, per-agent deployment choice, never a live per-session toggle — build the UI conditionally on the flag instead:
 
@@ -373,7 +373,7 @@ if (session.capabilities.tapToTalk) {
 }
 ```
 
-`speak()`/`interrupt()` throw `invalid_state` while a tap is open (they'd otherwise bracket the CM's tapped-mode window with the typed-text `isSpeechStart` marker, minting a duplicate turn); `startTapToTalk()`/`endTapToTalk()` throw `invalid_state` if called out of order, and are gated by the same `requireDisclosureAck` disclosure gate as `speak()`. Pair it with silence-based auto-stop and a hard max-duration cap so an abandoned tap (tab closed, navigation away) can't leave a capture window open forever — treat a `disconnect`/`pagehide` while `tapToTalkActive` as an implicit `endTapToTalk()`.
+`speak()`/`interrupt()` throw `invalid_state` while a tap is open (they'd otherwise bracket the session server's tapped-mode window with the typed-text `isSpeechStart` marker, minting a duplicate turn); `startTapToTalk()`/`endTapToTalk()` throw `invalid_state` if called out of order, and are gated by the same `requireDisclosureAck` disclosure gate as `speak()`. Pair it with silence-based auto-stop and a hard max-duration cap so an abandoned tap (tab closed, navigation away) can't leave a capture window open forever — treat a `disconnect`/`pagehide` while `tapToTalkActive` as an implicit `endTapToTalk()`.
 
 Build the control as click-to-toggle, not press-and-hold: it's more usable for longer utterances, and it satisfies WCAG 2.5.2 Pointer Cancellation on its own, since the down-event never fires the action.
 
@@ -384,7 +384,7 @@ Both session classes watch for a brain that goes quiet instead of answering; onl
 - **Brain-stall watchdog** (`brainStallMs`, default on, `KalturaAvatarSession` + `KalturaChatSession`) — emits `brainStalled` (`{count}`), repeating for as long as nothing perceivable (spoken/avatar content or a GenUI widget) follows a turn. On the chat transport, a bare `keepalive` segment does not count as perceivable output either.
 - **Dead-air masking** (`responsePending`/`responseSettled`, both transports) — `responsePending` (`{}`) fires the moment a turn starts awaiting the brain's first perceivable output (spoken/avatar/GenUI content); `responseSettled` (`{}`) fires once that output arrives, the turn ends, an interruption occurs, or the session tears down. Use this pair to show/hide a "thinking…" affordance instead of leaving the avatar's face frozen during the gap — see `examples/browser-experience.html` for a working example.
 - **Tool-call spiral circuit breaker** (`KalturaAvatarSession` only) — a two-tier guard against a brain that re-issues the same client command instead of narrating. Soft (`toolSpiralLimit`, default 10, per turn): emits `toolSpiralDetected` — signal only, does NOT call `interrupt()` (a mid-turn barge-in was found to truncate the turn's own narration with no recovery — see `docs/CLIENT-COMMANDS.md`'s "Tool spirals starve the voice"). Hard (`hardToolSpiralLimit`, default `toolSpiralLimit * 3`, session-scoped, immune to turn-boundary resets): emits `toolSpiralRecovering` (`{count, limit, lastTurnText}`) and forces a cold reconnect — a brand-new socket, replaying `threadId` so brain memory continues.
-- **Spiral recovery auto-resend** (`recoverFromSpiral`, default `true`) — a hard-spiral cold reconnect restores connectivity but would otherwise abandon the turn that triggered it (the user's question just silently dropped). With the default on, once the reconnect succeeds the SDK automatically resends that turn's text once, prefixed with the same `SPIRAL_RECOVERY_PREFIX` instruction proven live on the headless path (`Conversations#send({recoverFromSpiral:true})` — see [Management](#management) above), still passed through your `onBeforeSend` guardrail, and emits `spiralRecovered` (`{text}`, the original un-prefixed text — e.g. show "Let me get that for you" UI). Set `recoverFromSpiral: false` to opt out of the auto-resend and handle it yourself — `toolSpiralRecovering`'s `lastTurnText` still tells you what was abandoned.
+- **Spiral recovery auto-resend** (`recoverFromSpiral`, default `true`) — a hard-spiral cold reconnect restores connectivity but would otherwise abandon the turn that triggered it (the user's question just silently dropped). With the default on, once the reconnect succeeds the SDK automatically resends that turn's text once, prefixed with the same `SPIRAL_RECOVERY_PREFIX` instruction used on the headless path (`Conversations#send({recoverFromSpiral:true})` — see [Management](#management) above), still passed through your `onBeforeSend` guardrail, and emits `spiralRecovered` (`{text}`, the original un-prefixed text — e.g. show "Let me get that for you" UI). Set `recoverFromSpiral: false` to opt out of the auto-resend and handle it yourself — `toolSpiralRecovering`'s `lastTurnText` still tells you what was abandoned.
 
 ```js
 const session = new KalturaAvatarSession({ token, /* … */, recoverFromSpiral: false });
@@ -471,7 +471,7 @@ btnFeedbackDismiss.onclick = () => analytics.buttonClicked({ buttonType: 'Open',
 
 `KavaAnalytics` (`./experience/analytics`, its own subpath so apps that don't report analytics never load it) reports KAVA (Kaltura Video Analytics) events to `https://analytics.kaltura.com/api_v3/index.php` (`service=analytics&action=trackEvent`). It implements ONLY the 10000-range **Application Event** family — `pageLoad` (10003) and `buttonClicked` (10002) — for interactions the server has zero visibility into: a page/view landing, a UI-only click, a contact-form submit/skip, a widget dismiss. WRITE, best-effort, NOT idempotent (each call records a new row; there is no dedup contract) — fire-and-forget by design, so callers don't need to await it for correctness.
 
-**Deliberately does NOT implement the 80000-range "Immersive Agents" events** (`callStarted`/`callEnded`/`messageResponse`/`messageFeedbackSent`) — there is no code path in this module that can send them. conversation-manager and the Genie brain backend already report all four server-side for every session `KalturaAvatarSession` connects to (same socket, matching event names, stickyId-routed pods); a client-side copy would double-count on the live analytics dashboards. If a real gap in that server-side reporting is ever found, file it as a GitHub issue rather than adding a client resend.
+**Deliberately does NOT implement the 80000-range "Immersive Agents" events** (`callStarted`/`callEnded`/`messageResponse`/`messageFeedbackSent`) — there is no code path in this module that can send them. The session server and the brain backend already report all four server-side for every session `KalturaAvatarSession` connects to (same socket, matching event names); a client-side copy would double-count on the live analytics dashboards. If a real gap in that server-side reporting is ever found, file it as a GitHub issue rather than adding a client resend.
 
 Transport: prefers `navigator.sendBeacon` (survives page-unload); falls back to an injectable `fetch` with `keepalive:true` when unavailable or when the beacon queue is full. Never reads a response body. `enabled: false` no-ops every call without touching the network — use for offline/mock test runs.
 
@@ -482,7 +482,7 @@ Transport: prefers `navigator.sendBeacon` (survives page-unload); falls back to 
 
 Reporting a **GenUI widget interaction** specifically (which chip/link/answer the learner picked)?
 See [GENUI-REFERENCE.md § Widget-interaction analytics](docs/GENUI-REFERENCE.md#widget-interaction-analytics-avoiding-double-counting)
-for the recipe, live-verified against two widget types, plus the exact list of signals the
+for the recipe, confirmed against two widget types, plus the exact list of signals the
 platform already tracks server-side so you don't duplicate one client-side.
 
 ### Connectivity beacon (opt-in)
@@ -635,7 +635,7 @@ Validated fields, top-level keys only: `type` (one of `str`/`int`/`float`/`bool`
 
 ### Fused multi-tool turns (handled automatically on the live session)
 
-When a turn calls 2+ tools, the server can stream them as **one** `type:"tool"` segment that names only the last tool, with earlier tools' JSON args concatenated into the same string (live-verified — see `WIRE-PROTOCOL.md` §4e). `parseToolCall(segment)` recovers the named tool's own args correctly either way, and exposes any earlier, unnamed blobs as `call.fusedArgs` (array, arrival order — absent when the segment wasn't fused). On `KalturaAvatarSession`, you don't need to do anything: it pairs each queued `fusedArgs` blob with the `tool_response` segment that echoes its real tool name (via `parseToolResponseName(segment)`) and dispatches it through the normal `onToolCall` path — same dedup, same schema validation, same `toolCallResult`/`toolCallInvalid` events. This queue is turn-scoped and clears on the next `agent_start_speech`, so a stray echo never leaks a recovery into the wrong turn.
+When a turn calls 2+ tools, the server can stream them as **one** `type:"tool"` segment that names only the last tool, with earlier tools' JSON args concatenated into the same string (see `WIRE-PROTOCOL.md` §4e). `parseToolCall(segment)` recovers the named tool's own args correctly either way, and exposes any earlier, unnamed blobs as `call.fusedArgs` (array, arrival order — absent when the segment wasn't fused). On `KalturaAvatarSession`, you don't need to do anything: it pairs each queued `fusedArgs` blob with the `tool_response` segment that echoes its real tool name (via `parseToolResponseName(segment)`) and dispatches it through the normal `onToolCall` path — same dedup, same schema validation, same `toolCallResult`/`toolCallInvalid` events. This queue is turn-scoped and clears on the next `agent_start_speech`, so a stray echo never leaks a recovery into the wrong turn.
 
 Headless `collectConverse()` gets the corrected named-tool args for free but does **not** run this pairing — an earlier fused blob in a headless turn is reachable only via `fusedArgs` on that one `ToolCall`, not as its own `toolCalls` entry. If you need full recovery headlessly, replay `toolCalls` and pair each `fusedArgs` blob with the matching `tool_response`-derived name yourself using `parseToolResponseName`.
 
@@ -953,7 +953,7 @@ await mgmt.intellectConfig.setMcpServers(configId, { docs: { url: 'https://mcp.e
 
 ## Skills, voice import, and the embed snippet
 
-**Skills** (`mgmt.skills`) are standalone, partner-level reusable instruction entities on Genie (`v1/skill/*`) — `{id (uuid), name, description, instructions}`. Full lifecycle verified live, including `update`:
+**Skills** (`mgmt.skills`) are standalone, partner-level reusable instruction entities (`v1/skill/*`) — `{id (uuid), name, description, instructions}`. Full lifecycle including `update`:
 
 ```js
 const skill = await mgmt.skills.add({ name: 'greeter', description: 'Greets warmly.', instructions: 'Always say hi.' }, ks);
@@ -981,9 +981,7 @@ const v = await mgmt.catalog.importVoiceFromElevenLabs('EXAVITQu4vr4xnSDxMaL', k
 // or: await mgmt.catalog.importVoiceFromCartesia('<cartesia-voice-id>', ks);
 ```
 
-An unknown provider id creates **nothing** and raises a typed `voice_not_found_elevenlabs` / `voice_not_found_cartesia` error (the backend replies an HTTP-200 exception envelope; the SDK maps it — verified live).
-
-**Embed snippet** (`mgmt.agents.getEmbedScript(agentId, embedType, ks)`) returns the ready-to-paste HTML `<script type='module'>` that renders the agent's chat widget on any page. `embedType` is one of `contained` (inline box), `page` (full page), or `floater` (floating launcher) — validated against the exported `EMBED_TYPES` before any network call.
+An unknown provider id creates **nothing** and raises a typed `voice_not_found_elevenlabs` / `voice_not_found_cartesia` error (the backend replies an HTTP-200 exception envelope; the SDK maps it).
 
 ---
 
@@ -1023,7 +1021,7 @@ view.disconnect();
 ## RAG (knowledge base)
 
 ```js
-// Path A — ungated, verified live
+// Path A — ungated
 const rec = await mgmt.knowledge.addRecord({ name: 'Product Docs' }, ks);
 const { configId } = await mgmt.intellects.create({
   knowledge_ids: [rec.id],
@@ -1041,7 +1039,7 @@ as an indexing-status signal — see API-REFERENCE.md § Ground the Agent for wh
 A per-entry check (`knowledge.entryStatus()`) is coming, with general rollout
 expected in early September 2026 — don't build on it yet.
 
-Knowledge records have full lifecycle CRUD (all verified live):
+Knowledge records have full lifecycle CRUD:
 
 ```js
 const got = await mgmt.knowledge.getRecord(rec.id, ks);            // read one
@@ -1064,13 +1062,10 @@ await mgmt.knowledge.deleteRecord(rec.id, ks, { confirmPermanent: true });
 
 ## Reference
 
-> Issue references like "(issue #N)" in this repo's docs and code comments point to the private
-> originating monorepo's history, not to an issue filed in this repo's own tracker.
-
 | Resource | What it covers |
 |----------|---------------|
 | [API-REFERENCE.md](API-REFERENCE.md) | Every endpoint, payload, lifecycle, and use-case catalog |
-| [docs/WIRE-PROTOCOL.md](docs/WIRE-PROTOCOL.md) | Socket events, `speechId`, WHEP, ICE — verified by live capture |
+| [docs/WIRE-PROTOCOL.md](docs/WIRE-PROTOCOL.md) | Socket events, `speechId`, WHEP, ICE |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Backends, runtime, scale, and resilience model — the map |
 | [docs/ARCHITECTURE-REFERENCE.md](docs/ARCHITECTURE-REFERENCE.md) | Exact connect sequence, wire shapes, scaling internals, SDK module routing, failure-mode tables |
 | [docs/ARCHITECTURE-RECIPE.md](docs/ARCHITECTURE-RECIPE.md) | From-scratch reimplementation recipe, no Kaltura libs |

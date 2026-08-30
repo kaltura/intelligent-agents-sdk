@@ -21,6 +21,7 @@ import { Intellects } from './intellects.js';
 import { IntellectConfig } from './intellect-config.js';
 import { Tools } from './tools.js';
 import { Skills } from './skills.js';
+import { Lifecycle } from './lifecycle.js';
 import { Conversations, Threads, Messages, Feedback, Followups, Knowledge } from './conversations.js';
 import { provision } from './provision.js';
 import { inspectKs } from './ks-inspect.js';
@@ -80,7 +81,7 @@ export class Management {
       agenticMultipart: (path, fd, ks, opts) => http.request({ method: 'POST', url: `${agenticUrl}/${path}`, ks: ksString(ks), body: fd, json: false, idempotencyKey: opts?.idempotencyKey }),
       // The scripted-video `avatar-session/*` API is the one agentic-host surface that does NOT
       // authenticate with a KS after creation — every call following `create` carries the
-      // session's own short-lived Bearer JWT instead (verified live: a KS on these routes is
+      // session's own short-lived Bearer JWT instead (a KS on these routes is
       // simply ignored/rejected). Omitting `ks` here skips http.request's `Authorization: KS …`
       // assignment entirely, leaving our own header in place (see avatar-sessions.js).
       avatarSessionCall: (path, body, bearerToken, opts) => http.request({ method: 'POST', url: `${agenticUrl}/${path}`, headers: { Authorization: `Bearer ${bearerToken}` }, body, json: true, idempotencyKey: opts?.idempotencyKey }),
@@ -168,7 +169,7 @@ export class Management {
     // Link a created tool to an intellect via `intellectConfig.setToolIds` or `tool_ids`.
     this.tools = new Tools(ctx);
     // Standalone, PARTNER-LEVEL Skill entity CRUD (`/v1/skill/*`) — uuid-id
-    // named behaviors, distinct from Tools (verified live).
+    // named behaviors, distinct from Tools.
     this.skills = new Skills(ctx);
     this.conversations = new Conversations(ctx);
     this.threads = new Threads(ctx);
@@ -176,6 +177,9 @@ export class Management {
     this.feedback = new Feedback(ctx);
     this.followups = new Followups(ctx);
     this.knowledge = new Knowledge(ctx);
+    // Event-driven rule engine (`/lifecycle/*`) — react to session/thread
+    // events (e.g. session_ended) with server-owned actions, no polling.
+    this.lifecycle = new Lifecycle(ctx);
   }
 
   /**

@@ -78,9 +78,9 @@ test('module scope holds no mutable credential state (fresh Sessions has its own
   assert.ok(!Object.keys(s2).includes('_adminSecret'));
 });
 
-// ─────────────────────────── issue #36 rule 1: userId is a per-call param, never shared state ───────────────────────────
+// ─────────────────────────── userId is a per-call param, never shared state ───────────────────────────
 
-test('concurrent mints with different userIds across two Sessions instances never bleed (issue #36)', async () => {
+test('concurrent mints with different userIds across two Sessions instances never bleed', async () => {
   const fa = fakeFetch([{ match: '/service/session/action/start', respond: () => ({ body: 'djJ8' + Buffer.from('v2|111|geniegpcid:1').toString('base64url') }) }]);
   const fb = fakeFetch([{ match: '/service/session/action/start', respond: () => ({ body: 'djJ8' + Buffer.from('v2|222|geniegpcid:2').toString('base64url') }) }]);
   const auditA = [], auditB = [];
@@ -121,9 +121,9 @@ test('userId omitted on either method is a byte-for-byte no-op (zero behavior ch
   assert.doesNotMatch(String(call.body), /userId/i, 'no userId field sent on the wire when omitted');
 });
 
-// ─────────────────────────── issue #31 rule 1.1: KalturaAvatarSession per-instance state ───────────────────────────
+// ─────────────────────────── KalturaAvatarSession per-instance state ───────────────────────────
 
-test('two KalturaAvatarSession instances never leak requestVars or pending tool-ACK state (issue #31 rule 1.1)', async () => {
+test('two KalturaAvatarSession instances never leak requestVars or pending tool-ACK state', async () => {
   const one = await connectSession({ requestVars: { user_name: 'Ada' } });
   const two = await connectSession({ requestVars: { user_name: 'Grace' } });
 

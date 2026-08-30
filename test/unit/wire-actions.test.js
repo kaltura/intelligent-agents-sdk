@@ -56,7 +56,7 @@ test('navigate is SYNTHETIC (no real typed nav segment) — classified only for 
   assert.deepEqual(a.payload, { to: 24 });
 });
 
-test('a native tool call carrying tool_metadata surfaces toolMetadata on the payload (issue #31 gap 2, for respondToTool)', () => {
+test('a native tool call carrying tool_metadata surfaces toolMetadata on the payload (for respondToTool)', () => {
   const a = classifyAgentAction({
     type: 'tool', content: 'navigate_to_slide {"slide_num": 4}',
     tool_metadata: { id: 'req-1', name: 'navigate_to_slide', wait_for_response: true, type: 'client' },

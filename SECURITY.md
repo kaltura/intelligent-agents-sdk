@@ -138,7 +138,7 @@ production tokens and isn't attempted.
   ```js
   await management.sessions.revoke(leakedKs);   // or revoke(token)
   // if minted with restrictions.sessionGroupId: revoking any member is DESIGNED to end
-  // the family (asserted by design, not independently live-verified — see above).
+  // the family (asserted by design, not independently confirmed — see above).
   ```
 
 ## Audit logging (NIST AU-2 / AU-3 / AU-12; OWASP Logging; SOC 2 CC7)
@@ -226,7 +226,7 @@ RFC 7635) over the static fallback; the SDK warns when it falls back.
 - Prototype-pollution guard: `setDynamicPrompt` data is scrubbed of
   `__proto__`/`constructor`/`prototype` before it touches the wire.
 - CSP: the SDK uses no `eval`/`new Function`. A working policy sets
-  `connect-src` to your CM (Conversation Manager — the live-session
+  `connect-src` to your CM (the live-session
   control-plane host, `conversationManagerUrl`) plus SRS (the WHEP
   video-egress host, `srsBaseUrl`) plus your TURN host; `media-src blob:`;
   `script-src` your injected socket.io origin, pinned with SRI (see the
