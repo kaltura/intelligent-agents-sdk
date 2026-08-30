@@ -339,21 +339,6 @@ describe('5. GFM hygiene', () => {
 // 5b) Paragraph reflow (no mid-sentence hard-wrap)
 // ─────────────────────────────────────────────────────────────────────────────
 describe('5b. Paragraph reflow', () => {
-  // GRANDFATHERED — not yet reflowed, pending a dedicated repo-wide pass
-  // (tracked separately from the PR that added this check). Remove an entry
-  // here as its file gets fixed; this list must reach empty, don't add to it.
-  const HARDWRAP_GRANDFATHERED = new Set([
-    '.github/ISSUE_TEMPLATE/feature_request.md',
-    'CODE_OF_CONDUCT.md',
-    'CONTRIBUTING.md',
-    'docs/api/deploy.md',
-    'docs/api/design.md',
-    'docs/EXTERNAL-API-INTEGRATIONS.md',
-    'GETTING-STARTED.md',
-    'quickstart/README.md',
-    'SDK_CONSTITUTION.md',
-  ]);
-
   // Boundaries a paragraph never crosses: blanks, headings, tables, fences,
   // rules, raw HTML block tags, and list-item start lines. List-item
   // continuation lines aren't checked (no wrapped list items exist today;
@@ -413,18 +398,12 @@ describe('5b. Paragraph reflow', () => {
   }
 
   test('no mid-sentence hard-wrapped paragraphs/blockquotes in tracked .md files', () => {
-    const mdFiles = trackedFiles().filter((f) => f.endsWith('.md') && !HARDWRAP_GRANDFATHERED.has(f));
+    const mdFiles = trackedFiles().filter((f) => f.endsWith('.md'));
     const offenders = [];
     for (const f of mdFiles) {
       for (const lineNo of hardWrapLines(read(f))) offenders.push(`${f}:${lineNo}`);
     }
     assert.deepEqual(offenders, [], `hard-wrapped mid-sentence line — join into one flowing line, or add two trailing spaces for an intentional <br>:\n  ${offenders.join('\n  ')}`);
-  });
-
-  test('grandfather list has no stale entries (file fixed but not removed from the list)', () => {
-    const stillPresent = trackedFiles().filter((f) => f.endsWith('.md'));
-    const stale = [...HARDWRAP_GRANDFATHERED].filter((f) => stillPresent.includes(f) && hardWrapLines(read(f)).length === 0);
-    assert.deepEqual(stale, [], `already clean, remove from HARDWRAP_GRANDFATHERED: ${stale.join(', ')}`);
   });
 });
 

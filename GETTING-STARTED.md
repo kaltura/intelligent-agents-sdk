@@ -1,10 +1,8 @@
 # Getting Started — Your First Talking AI Avatar
 
-This guide takes you from zero to a working, talking AI avatar in about 5 minutes, once you have
-a Kaltura account — copy and paste the commands.
+This guide takes you from zero to a working, talking AI avatar in about 5 minutes, once you have a Kaltura account — copy and paste the commands.
 
-> **Windows?** Run these commands in WSL2, Git Bash, or PowerShell (the commands below are plain
-> `node`/`npm` calls with no Bash-only syntax, so they work as-is in PowerShell too).
+> **Windows?** Run these commands in WSL2, Git Bash, or PowerShell (the commands below are plain `node`/`npm` calls with no Bash-only syntax, so they work as-is in PowerShell too).
 
 ---
 
@@ -51,10 +49,7 @@ export AGENTIC_ADMIN_SECRET=your_admin_secret_here
 
 > **Windows PowerShell?** Use `$env:AGENTIC_PARTNER_ID="1234567"` instead of `export`.
 
-> **Prefer a file over exporting every time?** Create a `.env` file in the repo root (one directory
-> up from `quickstart/`) with `AGENTIC_PARTNER_ID=...` and `AGENTIC_ADMIN_SECRET=...` on their own
-> lines — `create-agent.mjs` reads it automatically if present. It's already covered by
-> `.gitignore`, so it never gets committed.
+> **Prefer a file over exporting every time?** Create a `.env` file in the repo root (one directory up from `quickstart/`) with `AGENTIC_PARTNER_ID=...` and `AGENTIC_ADMIN_SECRET=...` on their own lines — `create-agent.mjs` reads it automatically if present. It's already covered by `.gitignore`, so it never gets committed.
 
 ---
 
@@ -66,9 +61,7 @@ This one command builds a brand-new agent — brain, face, voice, and all — fr
 node create-agent.mjs "A friendly yoga studio receptionist who helps people book classes and answers questions about memberships"
 ```
 
-You'll see progress messages as it builds the brain, face, and voice. At the
-end it sends a smoke-test message and prints the reply, plus the new IDs (`configId`, `agentId`,
-`avatarId`, `widgetId`) you need to embed or extend the agent.
+You'll see progress messages as it builds the brain, face, and voice. At the end it sends a smoke-test message and prints the reply, plus the new IDs (`configId`, `agentId`, `avatarId`, `widgetId`) you need to embed or extend the agent.
 
 > Building an agent by hand instead of via the one-line brief? See [API-REFERENCE.md](docs/api/build.md).
 
@@ -76,8 +69,7 @@ end it sends a smoke-test message and prints the reply, plus the new IDs (`confi
 
 ## Step 4 — Talk to your agent again (~30 seconds)
 
-`create-agent.mjs` already sent one smoke-test message for you. To send more, use the SDK's
-headless `converseOnce()` directly — save this as a small script (or adapt `quickstart/create-agent.mjs`):
+`create-agent.mjs` already sent one smoke-test message for you. To send more, use the SDK's headless `converseOnce()` directly — save this as a small script (or adapt `quickstart/create-agent.mjs`):
 
 ```js
 import { Management } from '@kaltura/intelligent-agents/management';
@@ -91,13 +83,9 @@ const reply = await kaltura.converseOnce('<configId from Step 3>', 'Hello! What 
 console.log(reply.text);
 ```
 
-`converseOnce()` mints its own conversation token from the `configId` — the admin secret never
-leaves your process. See [API-REFERENCE.md](docs/api/operate.md) for threaded
-conversations, streaming, and the full Management API surface.
+`converseOnce()` mints its own conversation token from the `configId` — the admin secret never leaves your process. See [API-REFERENCE.md](docs/api/operate.md) for threaded conversations, streaming, and the full Management API surface.
 
-**Talking on behalf of a real, known user?** Mint the conversation token yourself with `userId`
-instead of letting `converseOnce()` auto-mint an anonymous one — this binds the KS to that user so
-per-user memory and analytics attribute the conversation correctly:
+**Talking on behalf of a real, known user?** Mint the conversation token yourself with `userId` instead of letting `converseOnce()` auto-mint an anonymous one — this binds the KS to that user so per-user memory and analytics attribute the conversation correctly:
 
 ```js
 const conv = await kaltura.sessions.createConversationToken({
@@ -107,9 +95,7 @@ const conv = await kaltura.sessions.createConversationToken({
 const reply = await kaltura.converseOnce('<configId from Step 3>', 'Hello again!', {}, conv);
 ```
 
-`userId` is optional everywhere it's accepted — omit it and you get the same anonymous behavior
-shown above. See [API-REFERENCE.md](docs/api/authentication.md#authentication) → "Bind a session to a real
-end-user identity" for the full picture.
+`userId` is optional everywhere it's accepted — omit it and you get the same anonymous behavior shown above. See [API-REFERENCE.md](docs/api/authentication.md#authentication) → "Bind a session to a real end-user identity" for the full picture.
 
 ---
 
@@ -150,8 +136,7 @@ You now know how to create an agent and talk to it. Here's where to go for more:
 
 ## Appendix — Verify your checkout offline (~2 minutes)
 
-You don't need a Kaltura account to confirm the SDK runs correctly on your machine — run it
-offline, no network, no secrets, using the same fakes the test suite is built on.
+You don't need a Kaltura account to confirm the SDK runs correctly on your machine — run it offline, no network, no secrets, using the same fakes the test suite is built on.
 
 ```bash
 git clone https://github.com/kaltura/intelligent-agents-sdk.git
@@ -159,6 +144,4 @@ cd intelligent-agents-sdk
 npm test
 ```
 
-That runs the full suite (unit + integration + e2e + evals) against `test/fakes/fetch.js`,
-`test/fakes/socket.js`, and `test/fakes/rtc.js` — deterministic stand-ins for the real
-HTTP/socket/WebRTC backends. It takes about 105 seconds on a typical machine.
+That runs the full suite (unit + integration + e2e + evals) against `test/fakes/fetch.js`, `test/fakes/socket.js`, and `test/fakes/rtc.js` — deterministic stand-ins for the real HTTP/socket/WebRTC backends. It takes about 105 seconds on a typical machine.

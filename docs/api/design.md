@@ -94,8 +94,7 @@ The backend does preprocess the uploaded image before rendering: it crop-fits th
 
 ## End-to-end: custom portrait avatar, server to browser
 
-The full path is exercised end-to-end by the SDK's own integration test
-(`test/integration/avatars-catalog.test.js`) plus this recipe:
+The full path is exercised end-to-end by the SDK's own integration test (`test/integration/avatars-catalog.test.js`) plus this recipe:
 
 1. Server: `catalog.createVisual(portraitBlob, { name, genderPresentation, background, skinTone, ageGroup, hairColor }, adminKs)` → `{ itemId }`.
 2. Server: `avatars.create({ voice: { id: voiceItemId }, visual: { id: itemId }, openingPhrase: '<blank>' }, adminKs)` → `agents.create` → `application.resolveWidgetId`.

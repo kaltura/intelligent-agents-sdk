@@ -1,8 +1,6 @@
 # Quickstart
 
-The commands behind [GETTING-STARTED.md](../GETTING-STARTED.md), the canonical path from zero to
-a talking agent. Start there for the full walkthrough (credentials, what each step does, what's
-next); this file is a pointer for when you already know the drill.
+The commands behind [GETTING-STARTED.md](../GETTING-STARTED.md), the canonical path from zero to a talking agent. Start there for the full walkthrough (credentials, what each step does, what's next); this file is a pointer for when you already know the drill.
 
 ## Run
 
@@ -14,11 +12,9 @@ export AGENTIC_ADMIN_SECRET=your_admin_secret
 node create-agent.mjs "A friendly yoga-studio receptionist"
 ```
 
-`npm install` here installs the quickstart's own dependencies (its `package.json`, separate from
-the SDK) — the `@kaltura/intelligent-agents` package itself stays zero-dependency.
+`npm install` here installs the quickstart's own dependencies (its `package.json`, separate from the SDK) — the `@kaltura/intelligent-agents` package itself stays zero-dependency.
 
-> **Windows?** Use PowerShell: replace `export VAR=value` with `$env:VAR="value"`.
-> Or put both vars in a `.env` file in the repo root and they are picked up automatically.
+> **Windows?** Use PowerShell: replace `export VAR=value` with `$env:VAR="value"`. Or put both vars in a `.env` file in the repo root and they are picked up automatically.
 
 The script provisions a complete agent (brain + face + voice), sends it a test message, and prints the response. It takes 1–3 minutes — you will see progress as it builds.
 
