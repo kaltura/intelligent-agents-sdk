@@ -336,6 +336,90 @@ describe('5. GFM hygiene', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 5b) Paragraph reflow (no mid-sentence hard-wrap)
+// ─────────────────────────────────────────────────────────────────────────────
+describe('5b. Paragraph reflow', () => {
+  // GRANDFATHERED — not yet reflowed, pending a dedicated repo-wide pass
+  // (tracked separately from the PR that added this check). Remove an entry
+  // here as its file gets fixed; this list must reach empty, don't add to it.
+  const HARDWRAP_GRANDFATHERED = new Set([
+    '.github/ISSUE_TEMPLATE/bug_report.md',
+    '.github/ISSUE_TEMPLATE/feature_request.md',
+    'CODE_OF_CONDUCT.md',
+    'CONTRIBUTING.md',
+    'docs/api/deploy.md',
+    'docs/api/design.md',
+    'docs/EXTERNAL-API-INTEGRATIONS.md',
+    'GETTING-STARTED.md',
+    'quickstart/README.md',
+    'SDK_CONSTITUTION.md',
+  ]);
+
+  // Boundaries a paragraph never crosses: blanks, headings, tables, fences,
+  // rules, raw HTML, and list-item start lines. List-item continuation lines
+  // aren't checked (no wrapped list items exist today; buffering them would
+  // risk false positives on legitimately indented continuation content).
+  function isStructural(line) {
+    const t = line.trim();
+    if (t === '') return true;
+    if (t.startsWith('#')) return true;
+    if (t.startsWith('|')) return true;
+    if (t.startsWith('```') || t.startsWith('~~~')) return true;
+    if (/^(-{3,}|\*{3,}|_{3,})$/.test(t)) return true;
+    if (t.startsWith('<')) return true;
+    return false;
+  }
+  const isListStart = (line) => /^\s*([-*+]|\d+[.)])\s+/.test(line);
+  const isBlockquote = (line) => /^>/.test(line.trim());
+
+  // Blockquote lines accumulate as their OWN paragraph group (a multi-line
+  // quote is exactly as hard-wrappable as plain prose), everything else
+  // accumulates as a plain paragraph. A non-final line in either group must
+  // end in a two-space GFM hard break, or it's a hard-wrap violation.
+  function hardWrapLines(text) {
+    const issues = [];
+    const lines = text.split('\n');
+    let inFence = false;
+    let para = [];
+    function flush() {
+      if (para.length > 1) {
+        for (let i = 0; i < para.length - 1; i++) {
+          if (!/ {2}$/.test(para[i].text)) issues.push(para[i].idx + 1);
+        }
+      }
+      para = [];
+    }
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (/^(```|~~~)/.test(line.trim())) { flush(); inFence = !inFence; continue; }
+      if (inFence) continue;
+      const bq = isBlockquote(line);
+      if (para.length && bq !== para[0].isBq) flush();
+      if (isStructural(line) && !bq) { flush(); continue; }
+      if (isListStart(line) && !bq) { flush(); continue; }
+      para.push({ idx: i, text: line, isBq: bq });
+    }
+    flush();
+    return issues;
+  }
+
+  test('no mid-sentence hard-wrapped paragraphs/blockquotes in tracked .md files', () => {
+    const mdFiles = trackedFiles().filter((f) => f.endsWith('.md') && !HARDWRAP_GRANDFATHERED.has(f));
+    const offenders = [];
+    for (const f of mdFiles) {
+      for (const lineNo of hardWrapLines(read(f))) offenders.push(`${f}:${lineNo}`);
+    }
+    assert.deepEqual(offenders, [], `hard-wrapped mid-sentence line — join into one flowing line, or add two trailing spaces for an intentional <br>:\n  ${offenders.join('\n  ')}`);
+  });
+
+  test('grandfather list has no stale entries (file fixed but not removed from the list)', () => {
+    const stillPresent = trackedFiles().filter((f) => f.endsWith('.md'));
+    const stale = [...HARDWRAP_GRANDFATHERED].filter((f) => stillPresent.includes(f) && hardWrapLines(read(f)).length === 0);
+    assert.deepEqual(stale, [], `already clean, remove from HARDWRAP_GRANDFATHERED: ${stale.join(', ')}`);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // 6) Cross-doc link resolution
 // ─────────────────────────────────────────────────────────────────────────────
 describe('6. Cross-doc links', () => {
