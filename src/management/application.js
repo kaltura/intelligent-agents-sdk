@@ -64,7 +64,7 @@ export class Application {
    * @returns {Promise<Array<{key:string, label:string, headerTemplate:string}>>}
    */
   async getCustomPrompts(ks) {
-    this._.assertAny(ks);
+    this._.assertAny(ks, 'application.getCustomPrompts');
     return (await this._.agentic('application/getCustomPrompts', {}, ks)).data;
   }
 }

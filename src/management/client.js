@@ -148,7 +148,13 @@ export class Management {
       },
       assertAdmin: (ks, where) => assertKind(ks, 'admin', where, audit),
       assertConversation: (ks, where) => assertKind(ks, 'conversation', where, audit),
-      assertAny: (ks) => ksString(ks),
+      assertAny: (ks, where) => {
+        const raw = ksString(ks);
+        if (!raw || typeof raw !== 'string') {
+          throw new KalturaError({ type: 'about:blank', title: 'KS required', code: 'bad_request', detail: `${where} needs a KS token (string or a minted Token).` });
+        }
+        return raw;
+      },
       audit,
     };
     this._ctx = ctx;
