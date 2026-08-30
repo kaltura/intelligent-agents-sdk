@@ -121,26 +121,13 @@ Direction: `→` client emits, `←` server emits. "Captured" = seen in the live
 
 #### `tapToTalkStart`/`tapToTalkEnd` in detail
 
-`tapToTalkEnd` schedules a 300ms timer that mints the turn from whatever was buffered during the
-tap window. The SDK emits this pair from `KalturaAvatarSession#startTapToTalk()`/`#endTapToTalk()`;
-the resulting turn arrives via the existing `agentTurnToTalk` handler like any open-mic turn.
+`tapToTalkEnd` schedules a 300ms timer that mints the turn from whatever was buffered during the tap window. The SDK emits this pair from `KalturaAvatarSession#startTapToTalk()`/`#endTapToTalk()`; the resulting turn arrives via the existing `agentTurnToTalk` handler like any open-mic turn.
 
-**Do not use for typed-text barge-in.** Bracketing `onTextEntered` inside this pair mints a
-duplicate turn, since neither `tapToTalkStart` nor `tapToTalkEnd` invalidates a turn already in
-flight.
+**Do not use for typed-text barge-in.** Bracketing `onTextEntered` inside this pair mints a duplicate turn, since neither `tapToTalkStart` nor `tapToTalkEnd` invalidates a turn already in flight.
 
-**Why `isTapToTalk:true` is required, not optional.** `CM` registers its tap-to-talk handlers
-unconditionally, regardless of how the agent is configured — the server accepts these events
-either way. Safety comes from a different branch: the transcript handler decides whether to
-buffer transcripts for the tap window or auto-cut a turn immediately by checking the *config* flag
-`isTapToTalk`, not the live tap-mode conversation state. On an open-mic (`isTapToTalk:false`)
-agent, VAD keeps minting turns unconditionally through a tap window, racing the same
-internal conversation state with no mutual exclusion server-side. The SDK closes this
-gap client-side instead: `startTapToTalk()` throws `capability_disabled` unless
-`capabilities.tapToTalk` is set.
+**Why `isTapToTalk:true` is required, not optional.** `CM` registers its tap-to-talk handlers unconditionally, regardless of how the agent is configured — the server accepts these events either way. Safety comes from a different branch: the transcript handler decides whether to buffer transcripts for the tap window or auto-cut a turn immediately by checking the *config* flag `isTapToTalk`, not the live tap-mode conversation state. On an open-mic (`isTapToTalk:false`) agent, VAD keeps minting turns unconditionally through a tap window, racing the same internal conversation state with no mutual exclusion server-side. The SDK closes this gap client-side instead: `startTapToTalk()` throws `capability_disabled` unless `capabilities.tapToTalk` is set.
 
-For the app-level decision of when to use this mode and how to design its UI, see
-[VOICE-INPUT-MODES.md](VOICE-INPUT-MODES.md).
+For the app-level decision of when to use this mode and how to design its UI, see [VOICE-INPUT-MODES.md](VOICE-INPUT-MODES.md).
 
 ### 4b. Server → Client (on) — handshake/session phase
 
@@ -227,47 +214,27 @@ Always-present fields are `role` (always `"assistant"`), `type`, `content`, `seg
 
 #### Fused multi-tool `tool` segments
 
-When a turn calls 2+ tools, the server can emit **one** `type:"tool"` segment whose `content`
-concatenates every called tool's JSON args back-to-back, but names only the **last** one — e.g.
-captured live: `open_filing {"quarters": [...], "metric": "total_revenue"}{"quarter": "q1_2026",
-"docType": "press_release"}` (the `highlight_chart` call that preceded `open_filing` rides in the
-same string, unnamed).
+When a turn calls 2+ tools, the server can emit **one** `type:"tool"` segment whose `content` concatenates every called tool's JSON args back-to-back, but names only the **last** one — e.g. captured live: `open_filing {"quarters": [...], "metric": "total_revenue"}{"quarter": "q1_2026", "docType": "press_release"}` (the `highlight_chart` call that preceded `open_filing` rides in the same string, unnamed).
 
 ##### How the response echoes the missing name
 
-The `tool_response` segments that follow still echo **every** called tool by name, in call order
-(`highlight_chart responded with size 113` then `open_filing responded with size 104`), which is
-the only reliable client-side signal for attributing the earlier, unnamed blob to its real tool.
+The `tool_response` segments that follow still echo **every** called tool by name, in call order (`highlight_chart responded with size 113` then `open_filing responded with size 104`), which is the only reliable client-side signal for attributing the earlier, unnamed blob to its real tool.
 
 ##### How the SDK recovers it
 
-The SDK's `parseToolCall(seg)` recovers the named tool's own args correctly (the last JSON object)
-and surfaces earlier blobs as `call.fusedArgs` (array, arrival order); `parseToolResponseName(seg)`
-extracts a `tool_response`'s echoed name. `KalturaAvatarSession` pairs the two automatically — an
-ASR-sub-turn-scoped queue of un-attributed `fusedArgs` blobs, drained by the next `tool_response`
-name not already dispatched this sub-turn — so every `onToolCall(name)` handler fires with correct
-args even on a fused turn; no app-level change is needed.
+The SDK's `parseToolCall(seg)` recovers the named tool's own args correctly (the last JSON object) and surfaces earlier blobs as `call.fusedArgs` (array, arrival order); `parseToolResponseName(seg)` extracts a `tool_response`'s echoed name. `KalturaAvatarSession` pairs the two automatically — an ASR-sub-turn-scoped queue of un-attributed `fusedArgs` blobs, drained by the next `tool_response` name not already dispatched this sub-turn — so every `onToolCall(name)` handler fires with correct args even on a fused turn; no app-level change is needed.
 
 ##### Queue reset boundary
 
-The queue and its dispatched-names guard reset on **every** `agent_start_speech`, `isNewTurn` or
-not: a name dispatched directly in one ASR sub-turn must not block that same name's fused recovery
-in the next sub-turn of the same `turnId` — it's a distinct call with distinct args, not a repeat.
-This is narrower than the cross-turn `_firedToolCalls` dedup below, which stays keyed to a real
-`isNewTurn` boundary.
+The queue and its dispatched-names guard reset on **every** `agent_start_speech`, `isNewTurn` or not: a name dispatched directly in one ASR sub-turn must not block that same name's fused recovery in the next sub-turn of the same `turnId` — it's a distinct call with distinct args, not a repeat. This is narrower than the cross-turn `_firedToolCalls` dedup below, which stays keyed to a real `isNewTurn` boundary.
 
 ##### Headless caveat
 
-Headless `collectConverse()` gets the corrected named-tool args for free but does **not** run this
-pairing recovery, so an earlier fused blob is only reachable via `fusedArgs` on that one `ToolCall`,
-not as its own `toolCalls` entry.
+Headless `collectConverse()` gets the corrected named-tool args for free but does **not** run this pairing recovery, so an earlier fused blob is only reachable via `fusedArgs` on that one `ToolCall`, not as its own `toolCalls` entry.
 
 #### The `wait_for_response` ACK — one wire contract, two transports
 
-A `tools.client` tool built `waitForResponse:true` blocks the model's turn until the host app
-supplies a result: the brain backend polls up to `timeout` seconds (default 30) for an ACK. The ACK
-is **not a socket event** — on both transports it is the same plain HTTPS POST, authorized by the
-session's own conversation KS (the model speaks the acked value in the *same* turn):
+A `tools.client` tool built `waitForResponse:true` blocks the model's turn until the host app supplies a result: the brain backend polls up to `timeout` seconds (default 30) for an ACK. The ACK is **not a socket event** — on both transports it is the same plain HTTPS POST, authorized by the session's own conversation KS (the model speaks the acked value in the *same* turn):
 
 ```
 POST {genieUrl}/assistant/tool_response
@@ -280,13 +247,7 @@ Authorization: KS <conversation ks>
 → 200 {}
 ```
 
-`tool_id` and `tool_invocation_id` are both the `toolMetadata.id` from the parsed `tool` segment.
-This is exactly what `KalturaAvatarSession#respondToTool` (`SDK:session.js`) and
-`KalturaChatSession#respondToTool` (`SDK:chat-session.js`) send — the `tool` segment may arrive over
-the socket (`agent_raw_text`, above) or over the HTTP `/assistant/converse` chat stream, but the ACK
-path is identical, so one `waitForResponse:true` tool definition works unmodified on both
-transports. See [CLIENT-COMMANDS.md](CLIENT-COMMANDS.md) for the app-level contract
-(`onToolCall` → `respondToTool`).
+`tool_id` and `tool_invocation_id` are both the `toolMetadata.id` from the parsed `tool` segment. This is exactly what `KalturaAvatarSession#respondToTool` (`SDK:session.js`) and `KalturaChatSession#respondToTool` (`SDK:chat-session.js`) send — the `tool` segment may arrive over the socket (`agent_raw_text`, above) or over the HTTP `/assistant/converse` chat stream, but the ACK path is identical, so one `waitForResponse:true` tool definition works unmodified on both transports. See [CLIENT-COMMANDS.md](CLIENT-COMMANDS.md) for the app-level contract (`onToolCall` → `respondToTool`).
 
 > `init_response` is **NOT** an HTTP-converse segment — it's a **WebSocket** event type defined in the brain backend's websocket layer. In the live runtime it arrives as the `delta` of the first `agent_raw_text` socket event (carrying `openingPhrase`/`threadId`/`messageId`); it never appears in an `/assistant/converse` HTTP stream.
 
@@ -333,7 +294,7 @@ new RTCPeerConnection({
   | `EMBED` (a first-party embeddable client) | hardcoded | **`all`** | `EMBED` |
   | `SDK` (this repo) | hardcoded | **`all`** | `SDK:wire.js iceConfig()` |
 
-  Either resolves to the same media path: the server's only ICE candidate is a **private `10.x typ host`** (captured), unreachable directly, so the selected pair is **`relay`↔`host` through TURN** regardless. `'relay'` forces that; `'all'` also gathers host/srflx but still ends up on the relay pair. On **Firefox both clients force `'all'`** (relay-only candidate handling differs in `RTC`).
+Either resolves to the same media path: the server's only ICE candidate is a **private `10.x typ host`** (captured), unreachable directly, so the selected pair is **`relay`↔`host` through TURN** regardless. `'relay'` forces that; `'all'` also gathers host/srflx but still ends up on the relay pair. On **Firefox both clients force `'all'`** (relay-only candidate handling differs in `RTC`).
 - **TURN URLs must carry explicit ports+transports** (the four-URL list above) — a bare `turn:host` yields no relay candidate and the uplink silently sends 0 packets. This is the field that actually matters, not the policy string.
 - **SDP:** offer `m=audio … OPUS/48000/2` (+ red, G722, PCMU/A, CN, telephone-event), `a=sendrecv`, `a=setup:actpass`; server answers `m=audio … 111` OPUS only, `a=setup:active`, `a=recvonly`.
 - **Captured stats (healthy):** `outbound-rtp audio` `packetsSent` climbing (637 → 2200 over the session), selected `candidate-pair` `nominated:true state:succeeded`, local `relay`/udp ↔ remote `host`/udp.
@@ -385,7 +346,7 @@ bundlePolicy: "max-bundle"
   Content-Type: application/sdp
   body: <client offer SDP>          → response body: <answer SDP>  (HTTP 201)
   ```
-  Teardown = `DELETE` to the `Location` header from the 201. WHEP status codes (`RTC`): `201` created, `404` no active session (must re-create), `409` already has a viewer, `415` wrong content-type.
+Teardown = `DELETE` to the `Location` header from the 201. WHEP status codes (`RTC`): `201` created, `404` no active session (must re-create), `409` already has a viewer, `415` wrong content-type.
 - **SDP:** offer carries full video codec list + audio; server answer selects `m=video … 109 H264/90000` + `m=audio … 111 OPUS/48000/2`, both `a=sendonly` / `a=setup:passive`.
 - **Captured stats (healthy):** `inbound-rtp video` `frameWidth/Height: 512`, `framesDecoded` 256 → 1036, `bytesReceived` ~2.6 MB; selected pair `nominated:true state:succeeded`, **both candidates `relay`**.
 - **Greeting gate:** wait for `<video>` `canplay` (+~300ms) before `approvedPermissions` (§3 step 10–11).

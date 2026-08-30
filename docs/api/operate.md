@@ -61,13 +61,7 @@ POST https://genie.nvp1.ovp.kaltura.com/assistant/abort
 
 ## Reserved Template Variables (`sys__*`)
 
-The server sets these on every turn. They're available to `{{ ... }}` interpolation in
-`base_directive` / `prompts[].value` / `glossary` (see [Configure an Intellect](build.md#configure-an-intellect))
-regardless of `allow_client_variables`. The SDK's own `request_vars` pre-flight guard rejects a
-client-supplied value for 5 of these 8 names before any network call — `sys__thread_id`,
-`sys__message_id`, `sys__user_id`, `sys__user_message`, `secrets` (see `request_vars` above) —
-since those collide with a server-managed variable; it does not yet name-check `sys__ks`,
-`sys__is_new_thread`, or `sys__user_obj.*` the same way:
+The server sets these on every turn. They're available to `{{ ... }}` interpolation in `base_directive` / `prompts[].value` / `glossary` (see [Configure an Intellect](build.md#configure-an-intellect)) regardless of `allow_client_variables`. The SDK's own `request_vars` pre-flight guard rejects a client-supplied value for 5 of these 8 names before any network call — `sys__thread_id`, `sys__message_id`, `sys__user_id`, `sys__user_message`, `secrets` (see `request_vars` above) — since those collide with a server-managed variable; it does not yet name-check `sys__ks`, `sys__is_new_thread`, or `sys__user_obj.*` the same way:
 
 | Variable | Resolves to | Notes |
 |----------|-------------|-------|
@@ -114,16 +108,11 @@ All thread endpoints require an **admin KS** (`disableentitlement`). Pager: `{"p
 
 SDK: `mgmt.threads.{list, get, rename, delete, transcript}`.
 
-> **Compliance note.** `threads.delete()` soft-deletes immediately; a scheduled infra-level purge
-> erases the underlying data later. See
-> [SECURITY.md](../../SECURITY.md#shared-responsibility-control-matrix-nist-800-53) for what the SDK
-> provides versus what the operator must configure.
+> **Compliance note.** `threads.delete()` soft-deletes immediately; a scheduled infra-level purge erases the underlying data later. See [SECURITY.md](../../SECURITY.md#shared-responsibility-control-matrix-nist-800-53) for what the SDK provides versus what the operator must configure.
 
 ## Thread History and Per-Turn Cost
 
-There is no documented cap on how long a thread's history can grow. The full transcript is sent
-as model context on every turn, so per-turn cost grows with thread length — plan long-running
-threads accordingly: start a fresh thread per task, and delete threads you no longer need.
+There is no documented cap on how long a thread's history can grow. The full transcript is sent as model context on every turn, so per-turn cost grows with thread length — plan long-running threads accordingly: start a fresh thread per task, and delete threads you no longer need.
 
 ---
 

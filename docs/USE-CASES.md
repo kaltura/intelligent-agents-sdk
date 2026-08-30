@@ -1,9 +1,6 @@
 # Use-Case Catalog
 
-A "what can you build" catalog for orienting a new integration — read it once, then use
-[API-REFERENCE.md](../API-REFERENCE.md) for the mechanism details behind each entry. Each use
-case maps to a runnable script/example in this repo, or the equivalent SDK call. UC-1 has a
-quickstart script; UC-7/12 use the browser example app; UC-13 is exercised by an integration test.
+A "what can you build" catalog for orienting a new integration — read it once, then use [API-REFERENCE.md](../API-REFERENCE.md) for the mechanism details behind each entry. Each use case maps to a runnable script/example in this repo, or the equivalent SDK call. UC-1 has a quickstart script; UC-7/12 use the browser example app; UC-13 is exercised by an integration test.
 
 | # | Use case | Key mechanism | Script / SDK entry point |
 |---|----------|--------------|--------|

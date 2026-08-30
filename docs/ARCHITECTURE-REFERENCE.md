@@ -210,17 +210,14 @@ Two ways the user drives the conversation:
 
 1. **Voice (primary)** — just speak. The ASR channel publishes mic audio; the server transcribes and feeds the brain. No client call needed.
 
-2. **Text injection** — drive the live avatar by text instead of voice. This is a *socket* event
-   (the same channel ASR transcripts use), NOT an `/assistant/converse` HTTP call — HTTP converse is
-   a separate stateless chat that never reaches the avatar's speech engine, so the avatar stays
-   silent. Verified working via the SDK's own `session.speak()` (`src/experience/session.js`):
+2. **Text injection** — drive the live avatar by text instead of voice. This is a *socket* event (the same channel ASR transcripts use), NOT an `/assistant/converse` HTTP call — HTTP converse is a separate stateless chat that never reaches the avatar's speech engine, so the avatar stays silent. Verified working via the SDK's own `session.speak()` (`src/experience/session.js`):
 
    ```js
    // the isSpeechStart marker interrupts a mid-sentence avatar (no-op if idle)
    socket.emit('debug_text_entered', { text: '', isFinal: false, isSpeechStart: true });
    socket.emit('debug_text_entered', { text, isFinal: true });   // captured client emit name
    ```
-   The server handler is `onTextEntered` (the session server's text-injection handler), which reads only `{ text, isFinal, isSpeechStart? }` and routes the text to the same pipeline as ASR transcripts (`vadSpeechDetected`), keyed by the socket's own room (`room: socket.id`). It does **not** read `room_id`/`session_id` — those are ignored server-side. (The client-side text-entry emitter only sends `{text,isFinal}` — despite that, the injected text is spoken.) For purely **typed** chat (no avatar), the production chat UI instead calls `/assistant/converse` directly with the `geniegpcid` KS. See [WIRE-PROTOCOL.md §4a](WIRE-PROTOCOL.md).
+The server handler is `onTextEntered` (the session server's text-injection handler), which reads only `{ text, isFinal, isSpeechStart? }` and routes the text to the same pipeline as ASR transcripts (`vadSpeechDetected`), keyed by the socket's own room (`room: socket.id`). It does **not** read `room_id`/`session_id` — those are ignored server-side. (The client-side text-entry emitter only sends `{text,isFinal}` — despite that, the injected text is spoken.) For purely **typed** chat (no avatar), the production chat UI instead calls `/assistant/converse` directly with the `geniegpcid` KS. See [WIRE-PROTOCOL.md §4a](WIRE-PROTOCOL.md).
 
 ---
 

@@ -17,25 +17,14 @@ Two entry points, plus optional plugins under `./experience` that don't bloat th
 
 No build step, no npm registry publish — that's disabled by design (`"private": true`, no `publishConfig`, no publish workflow). Ship `src/` raw ESM directly: import from `src/...` server-side, or load it in the browser via a jsDelivr CDN URL pinned to a git tag once the repo is public. `node:test` throughout.
 
-**New here?** [GETTING-STARTED.md](GETTING-STARTED.md) walks through creating and talking to your
-first agent in about 5 minutes. Come back here once you're building a real app with the SDK. Also
-see [CONTRIBUTING.md](CONTRIBUTING.md) (how to
-contribute) and [SDK_CONSTITUTION.md](SDK_CONSTITUTION.md) (the invariants every change must hold).
-[What changed between versions](https://github.com/kaltura/intelligent-agents-sdk/releases) lives
-in GitHub Releases, generated from merged PRs at tag time — not a hand-maintained file.
+**New here?** [GETTING-STARTED.md](GETTING-STARTED.md) walks through creating and talking to your first agent in about 5 minutes. Come back here once you're building a real app with the SDK. Also see [CONTRIBUTING.md](CONTRIBUTING.md) (how to contribute) and [SDK_CONSTITUTION.md](SDK_CONSTITUTION.md) (the invariants every change must hold). [What changed between versions](https://github.com/kaltura/intelligent-agents-sdk/releases) lives in GitHub Releases, generated from merged PRs at tag time — not a hand-maintained file.
 
 **Why this SDK:**
 
-- **You own the source, no black box.** Raw ESM in `src/` — read it line by line. No build step,
-  no bundler-only `node_modules`, and (once a tag is public) no install step at all: import
-  straight from a jsDelivr CDN URL pinned to a git tag.
+- **You own the source, no black box.** Raw ESM in `src/` — read it line by line. No build step, no bundler-only `node_modules`, and (once a tag is public) no install step at all: import straight from a jsDelivr CDN URL pinned to a git tag.
 - **Zero runtime dependencies** — no transitive supply-chain surface to audit.
-- **Voice/visual cloning is self-serve**, not a support ticket —
-  `catalog.importVoiceFromElevenLabs`/`importVoiceFromCartesia`, `catalog.createVisual`.
-- **Security designed in, not bolted on** — pre-redacted audit events, short-lived tokens, and a
-  NIST 800-53 control matrix, built for enterprise, HIPAA, and HITRUST deployments from the start.
-  Summary in [Security posture](#security-posture) below, full matrix in
-  [SECURITY.md](SECURITY.md).
+- **Voice/visual cloning is self-serve**, not a support ticket — `catalog.importVoiceFromElevenLabs`/`importVoiceFromCartesia`, `catalog.createVisual`.
+- **Security designed in, not bolted on** — pre-redacted audit events, short-lived tokens, and a NIST 800-53 control matrix, built for enterprise, HIPAA, and HITRUST deployments from the start. Summary in [Security posture](#security-posture) below, full matrix in [SECURITY.md](SECURITY.md).
 
 ---
 
@@ -45,23 +34,23 @@ in GitHub Releases, generated from merged PRs at tag time — not a hand-maintai
 - [Architecture](#architecture)
 - [Management](#management)
 - [Experience](#experience)
-  - [Text-only chat (`KalturaChatSession`)](#text-only-chat-kalturachatsession)
-  - [One conversation, switchable transports (`KalturaAgentSession`)](#one-conversation-switchable-transports-kalturaagentsession)
-  - [`{{var}}` Jinja personalization (`request_vars`)](#var-jinja-personalization-request_vars)
-  - [Tap-to-talk (push-to-talk voice)](#tap-to-talk-push-to-talk-voice)
-  - [Resilience: brain stalls and tool-call spirals](#resilience-brain-stalls-and-tool-call-spirals)
-  - [Devices and media quality](#devices-and-media-quality)
-  - [Noise suppression (Tier-1 default + Tier-2 BYO-DSP)](#noise-suppression-tier-1-default--tier-2-byo-dsp)
-  - [KAVA analytics (opt-in, client-only Application Events)](#kava-analytics-opt-in-client-only-application-events)
-  - [Connectivity beacon (opt-in)](#connectivity-beacon-opt-in)
+- [Text-only chat (`KalturaChatSession`)](#text-only-chat-kalturachatsession)
+- [One conversation, switchable transports (`KalturaAgentSession`)](#one-conversation-switchable-transports-kalturaagentsession)
+- [`{{var}}` Jinja personalization (`request_vars`)](#var-jinja-personalization-request_vars)
+- [Tap-to-talk (push-to-talk voice)](#tap-to-talk-push-to-talk-voice)
+- [Resilience: brain stalls and tool-call spirals](#resilience-brain-stalls-and-tool-call-spirals)
+- [Devices and media quality](#devices-and-media-quality)
+- [Noise suppression (Tier-1 default + Tier-2 BYO-DSP)](#noise-suppression-tier-1-default--tier-2-byo-dsp)
+- [KAVA analytics (opt-in, client-only Application Events)](#kava-analytics-opt-in-client-only-application-events)
+- [Connectivity beacon (opt-in)](#connectivity-beacon-opt-in)
 - [Accessibility (WCAG 2.2 AA / captions) + AI-disclosure gate](#accessibility-wcag-22-aa--captions--ai-disclosure-gate)
 - [Security posture](#security-posture)
 - [Key design rules](#key-design-rules)
 - [Client-side commands](#client-side-commands)
-  - [Native client tools with a real wire ACK](#native-client-tools-with-a-real-wire-ack)
-  - [Handler results (local only, unless `waitForResponse:true`)](#handler-results-local-only-unless-waitforresponsetrue)
-  - [Arg validation before dispatch](#arg-validation-before-dispatch)
-  - [Fused multi-tool turns (handled automatically on the live session)](#fused-multi-tool-turns-handled-automatically-on-the-live-session)
+- [Native client tools with a real wire ACK](#native-client-tools-with-a-real-wire-ack)
+- [Handler results (local only, unless `waitForResponse:true`)](#handler-results-local-only-unless-waitforresponsetrue)
+- [Arg validation before dispatch](#arg-validation-before-dispatch)
+- [Fused multi-tool turns (handled automatically on the live session)](#fused-multi-tool-turns-handled-automatically-on-the-live-session)
 - [AI-SDR / CRM lead capture](#ai-sdr--crm-lead-capture)
 - [GenUI](#genui)
 - [Presenter](#presenter)
@@ -102,10 +91,7 @@ open http://localhost:8790
 
 ### Browser via jsDelivr (no bundler, no npm install)
 
-Once the repo is public and has a tag pushed, jsDelivr serves any file straight from that tag by
-its real repo path — it has no awareness of package.json's `exports` map, so import the real
-`src/...` path, not a bare `@kaltura/intelligent-agents/...` specifier (those bare specifiers,
-used elsewhere in these docs, only resolve for a Node/bundler consumer that reads `exports`):
+Once the repo is public and has a tag pushed, jsDelivr serves any file straight from that tag by its real repo path — it has no awareness of package.json's `exports` map, so import the real `src/...` path, not a bare `@kaltura/intelligent-agents/...` specifier (those bare specifiers, used elsewhere in these docs, only resolve for a Node/bundler consumer that reads `exports`):
 
 ```html
 <script type="module">
@@ -116,9 +102,7 @@ used elsewhere in these docs, only resolve for a Node/bundler consumer that read
 </script>
 ```
 
-Pin the tag (`@v1.7.0`, or whatever release you want) for anything you ship — jsDelivr caches a
-tagged path forever, so a pin is both stable and fast. For local prototyping only, `@latest`
-resolves to the newest tag without editing the URL on every release:
+Pin the tag (`@v1.7.0`, or whatever release you want) for anything you ship — jsDelivr caches a tagged path forever, so a pin is both stable and fast. For local prototyping only, `@latest` resolves to the newest tag without editing the URL on every release:
 
 ```html
 <script type="module">
@@ -126,33 +110,18 @@ resolves to the newest tag without editing the URL on every release:
 </script>
 ```
 
-`@latest` is **not cached the same way** — jsDelivr re-checks it periodically, so a new tag can
-change what this URL serves without warning. Never use `@latest` in production; pin a real tag.
-`examples/browser-experience.html` and `examples/deck-presenter.html` demonstrate the same
-real-relative-path pattern locally (`../src/experience/index.js`).
+`@latest` is **not cached the same way** — jsDelivr re-checks it periodically, so a new tag can change what this URL serves without warning. Never use `@latest` in production; pin a real tag. `examples/browser-experience.html` and `examples/deck-presenter.html` demonstrate the same real-relative-path pattern locally (`../src/experience/index.js`).
 
 #### Subresource Integrity (SRI) for the jsDelivr import
 
-Pinning a tag stops the URL from silently pointing at different code later, but it doesn't verify
-what jsDelivr actually served you matches this repo — that needs Subresource Integrity.
+Pinning a tag stops the URL from silently pointing at different code later, but it doesn't verify what jsDelivr actually served you matches this repo — that needs Subresource Integrity.
 
 <details>
 <summary>Generating and wiring an <code>integrity</code> map</summary>
 
-An import
-map can carry an `integrity` entry per module URL; a browser that supports it refuses to execute
-a module whose fetched bytes don't hash to the pinned value (Chrome/Edge/Opera 127+, Firefox 138+
-at the time of writing — check the current table at
-[MDN: `<script type="importmap">`](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/script/type/importmap#browser_compatibility)).
-Browsers that don't yet support the `integrity` key simply skip the check — it degrades gracefully,
-never breaks the import.
+An import map can carry an `integrity` entry per module URL; a browser that supports it refuses to execute a module whose fetched bytes don't hash to the pinned value (Chrome/Edge/Opera 127+, Firefox 138+ at the time of writing — check the current table at [MDN: `<script type="importmap">`](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/script/type/importmap#browser_compatibility)). Browsers that don't yet support the `integrity` key simply skip the check — it degrades gracefully, never breaks the import.
 
-A single hash on `experience/index.js` alone would NOT be real protection: it's a barrel file that
-re-exports from ~10 other modules (`session.js`, `wire.js`, `core/safety.js`, …), and import-map
-`integrity` only checks the exact URLs it lists. Tampering with any of those other files would go
-undetected unless they're hashed too. `tools/sri-map.mjs` generates the hash for the FULL
-transitive local-import graph of a given entry point, read from the actual tagged git commit (not
-your working tree, so it always matches what jsDelivr serves for that tag):
+A single hash on `experience/index.js` alone would NOT be real protection: it's a barrel file that re-exports from ~10 other modules (`session.js`, `wire.js`, `core/safety.js`, …), and import-map `integrity` only checks the exact URLs it lists. Tampering with any of those other files would go undetected unless they're hashed too. `tools/sri-map.mjs` generates the hash for the FULL transitive local-import graph of a given entry point, read from the actual tagged git commit (not your working tree, so it always matches what jsDelivr serves for that tag):
 
 ```bash
 node tools/sri-map.mjs --entry src/experience/index.js --tag v1.7.0
@@ -176,10 +145,7 @@ Paste the `integrity` object it prints into an import map, declared before the m
 </script>
 ```
 
-Regenerate this whenever you move your pin to a new tag — a hash is tied to that exact release's
-file content and won't match the next one. The other browser entry points
-(`src/experience/presenter.js`, `src/experience/genui/index.js`, `src/experience/analytics.js`,
-`src/experience/noise-suppressor.js`) each need their own run of the same command if you load them.
+Regenerate this whenever you move your pin to a new tag — a hash is tied to that exact release's file content and won't match the next one. The other browser entry points (`src/experience/presenter.js`, `src/experience/genui/index.js`, `src/experience/analytics.js`, `src/experience/noise-suppressor.js`) each need their own run of the same command if you load them.
 
 </details>
 
@@ -268,9 +234,7 @@ The SDK assigns the stream to `videoEl.srcObject` and applies no CSS of its own 
 
 ### Text-only chat (`KalturaChatSession`)
 
-The same brain, thread, and tool contract as the avatar, over plain HTTPS — no mic, no camera, no
-video element, no socket. The class never imports `getUserMedia`, WHEP, or a socket factory, so a
-chat-only page ships none of that and never triggers a browser permission prompt.
+The same brain, thread, and tool contract as the avatar, over plain HTTPS — no mic, no camera, no video element, no socket. The class never imports `getUserMedia`, WHEP, or a socket factory, so a chat-only page ships none of that and never triggers a browser permission prompt.
 
 ```js
 import { KalturaChatSession } from '@kaltura/intelligent-agents/experience';
@@ -285,28 +249,15 @@ const turn = await chat.sendText('What does the Presenter plugin do?');
 console.log(turn.text, chat.threadId);
 ```
 
-Each `sendText()` is one streamed `POST /assistant/converse` turn; turns are serialized, and
-segments are processed mid-stream, so an `onToolCall` handler that calls
-`respondToTool(call.toolMetadata.id, result)` unblocks a `waitForResponse:true` tool within the
-same turn — the identical wire ACK the avatar transport sends (see
-[docs/WIRE-PROTOCOL.md](docs/WIRE-PROTOCOL.md)). `updateRequestVars()` / `setDynamicPrompt()` carry
-the same merge semantics as the avatar session; the full map rides every turn.
+Each `sendText()` is one streamed `POST /assistant/converse` turn; turns are serialized, and segments are processed mid-stream, so an `onToolCall` handler that calls `respondToTool(call.toolMetadata.id, result)` unblocks a `waitForResponse:true` tool within the same turn — the identical wire ACK the avatar transport sends (see [docs/WIRE-PROTOCOL.md](docs/WIRE-PROTOCOL.md)). `updateRequestVars()` / `setDynamicPrompt()` carry the same merge semantics as the avatar session; the full map rides every turn.
 
-Thread continuity is symmetric in both directions: seed `cfg.threadId` with
-another session's `threadId` getter to continue that conversation here, or hand this session's
-`threadId` to a `KalturaAvatarSession`. The `allow_client_variables` gate-off failure mode is the
-same here as on the socket: a silent empty turn plus a once-per-session
-`empty_turn_with_request_vars` warning (see the `{{var}}` section below).
+Thread continuity is symmetric in both directions: seed `cfg.threadId` with another session's `threadId` getter to continue that conversation here, or hand this session's `threadId` to a `KalturaAvatarSession`. The `allow_client_variables` gate-off failure mode is the same here as on the socket: a silent empty turn plus a once-per-session `empty_turn_with_request_vars` warning (see the `{{var}}` section below).
 
-`KalturaChatSession` carries the same brain-stall watchdog and dead-air masking as the avatar
-transport (`brainStallMs`/`brainStalled`, `responsePending`/`responseSettled` — see
-[Resilience](#resilience-brain-stalls-and-tool-call-spirals) below); it has no tool-call-spiral
-circuit breaker, since there's no socket/cold-reconnect to recover through.
+`KalturaChatSession` carries the same brain-stall watchdog and dead-air masking as the avatar transport (`brainStallMs`/`brainStalled`, `responsePending`/`responseSettled` — see [Resilience](#resilience-brain-stalls-and-tool-call-spirals) below); it has no tool-call-spiral circuit breaker, since there's no socket/cold-reconnect to recover through.
 
 ### One conversation, switchable transports (`KalturaAgentSession`)
 
-A facade that runs a single conversation over either transport and switches mid-conversation
-without losing the thread:
+A facade that runs a single conversation over either transport and switches mid-conversation without losing the thread:
 
 ```js
 import { KalturaAgentSession } from '@kaltura/intelligent-agents/experience';
@@ -325,14 +276,7 @@ await agent.switchMode('avatar');                // call from a real click — m
 agent.on('modeChanged', ({ mode, threadContinuity }) => showBanner(mode, threadContinuity));
 ```
 
-The facade owns the state machine (`idle → connecting → connected ⇄ switching → closed | failed`),
-the canonical `request_vars` map, and the `onToolCall` registry — all three carry over on every
-`switchMode()`. Switching is tear-down-and-reconstruct: the old transport disconnects, the new one
-is constructed seeded with the live `threadId` and full context, and `sendText()` calls during the
-blip are buffered (up to 8). Mode-specific APIs (mic control, `interrupt()`, `videoEl`…) are not
-mirrored — use the `transport` getter and rewire on each `transportChanged` event. For the full
-state-transition table and switch UX rules, see
-[docs/VOICE-INPUT-MODES.md](docs/VOICE-INPUT-MODES.md#switching-between-avatar-and-chat-mid-conversation).
+The facade owns the state machine (`idle → connecting → connected ⇄ switching → closed | failed`), the canonical `request_vars` map, and the `onToolCall` registry — all three carry over on every `switchMode()`. Switching is tear-down-and-reconstruct: the old transport disconnects, the new one is constructed seeded with the live `threadId` and full context, and `sendText()` calls during the blip are buffered (up to 8). Mode-specific APIs (mic control, `interrupt()`, `videoEl`…) are not mirrored — use the `transport` getter and rewire on each `transportChanged` event. For the full state-transition table and switch UX rules, see [docs/VOICE-INPUT-MODES.md](docs/VOICE-INPUT-MODES.md#switching-between-avatar-and-chat-mid-conversation).
 
 ### `{{var}}` Jinja personalization (`request_vars`)
 
@@ -352,9 +296,7 @@ For merge/persistence semantics in depth, the ~31 KB size headroom, server-side 
 
 ### Tap-to-talk (push-to-talk voice)
 
-For the app-level decision of whether to use this at all, and the UI/accessibility/safety design
-around it, see [docs/VOICE-INPUT-MODES.md](docs/VOICE-INPUT-MODES.md) — this section is the API
-reference.
+For the app-level decision of whether to use this at all, and the UI/accessibility/safety design around it, see [docs/VOICE-INPUT-MODES.md](docs/VOICE-INPUT-MODES.md) — this section is the API reference.
 
 `startTapToTalk()`/`endTapToTalk()` are a distinct voice-input mode from typed-text `speak()`/`interrupt()`. The ASR mic uplink is always connected once `connect()` resolves; tapping just tells the session server to mark a capture window (`tapToTalkStart` → tapped mode) and, on release, mint the turn from whatever it captured (`tapToTalkEnd` → its own ~300ms capture-finalize timer). That turn then arrives through the same `agentTurnToTalk`/`transcript` pipeline as any open-mic turn — no separate transcript path to wire up.
 
@@ -480,10 +422,7 @@ Transport: prefers `navigator.sendBeacon` (survives page-unload); falls back to 
 - Common params set once at construction and attached to every event: `partnerId`, `ks`, `entryId`, `sessionId`, `referrer`, `userId`, `hostingKalturaApplication`/`hostingKalturaApplicationVer`, `customId1`/`customId2`.
 - `buildPageLoadParams`/`buildButtonClickedParams` are the pure param-builders behind the class — unit-testable in isolation, or usable directly if you want your own transport.
 
-Reporting a **GenUI widget interaction** specifically (which chip/link/answer the learner picked)?
-See [GENUI-REFERENCE.md § Widget-interaction analytics](docs/GENUI-REFERENCE.md#widget-interaction-analytics-avoiding-double-counting)
-for the recipe, confirmed against two widget types, plus the exact list of signals the
-platform already tracks server-side so you don't duplicate one client-side.
+Reporting a **GenUI widget interaction** specifically (which chip/link/answer the learner picked)? See [GENUI-REFERENCE.md § Widget-interaction analytics](docs/GENUI-REFERENCE.md#widget-interaction-analytics-avoiding-double-counting) for the recipe, confirmed against two widget types, plus the exact list of signals the platform already tracks server-side so you don't duplicate one client-side.
 
 ### Connectivity beacon (opt-in)
 
@@ -746,13 +685,7 @@ See `examples/deck-presenter.html` for a self-contained runnable demo: construct
 
 ## Chroma-key Avatar Compositor
 
-`attachChromaKeyAvatar()` (`./experience/chroma-key`, its own subpath so apps that don't composite
-the avatar never load it) wires a **bring-your-own** transparent-background compositor — any
-`chroma-key-video`-shaped class — directly onto a `KalturaAvatarSession`'s own avatar `<video>`
-element, and keeps that compositor's lifecycle in lockstep with the session's. The SDK never
-bundles, imports, or depends on `chroma-key-video` (or any keying/matting library) itself — this
-is glue, the same constructor-injection pattern `./experience/noise-suppressor` uses for
-`audioWorkletNodeConstructor`:
+`attachChromaKeyAvatar()` (`./experience/chroma-key`, its own subpath so apps that don't composite the avatar never load it) wires a **bring-your-own** transparent-background compositor — any `chroma-key-video`-shaped class — directly onto a `KalturaAvatarSession`'s own avatar `<video>` element, and keeps that compositor's lifecycle in lockstep with the session's. The SDK never bundles, imports, or depends on `chroma-key-video` (or any keying/matting library) itself — this is glue, the same constructor-injection pattern `./experience/noise-suppressor` uses for `audioWorkletNodeConstructor`:
 
 ```js
 import { KalturaAvatarSession } from '@kaltura/intelligent-agents/experience';
@@ -781,37 +714,14 @@ await session.connect();
 
 **Behavior:**
 
-- **Construction is synchronous** — `attachChromaKeyAvatar()` returns the live `ChromaKeyVideo`
-  instance immediately, no `Promise`.
-- **`videoEl` must be `session.videoEl`** — the session's own read-only getter for the element its
-  WHEP downlink actually assigns `srcObject` to. Passing a second, different reference throws a
-  `KalturaError` — this catches a stale/duplicated element before it silently keys the wrong
-  stream.
-- **Returned unwrapped, zero shadow API** — the returned `player` is the exact instance
-  `ChromaKeyVideo` constructed, with no proxy or wrapping. It's a standard `EventTarget` — listen
-  on `player` directly via `addEventListener` for its own events (e.g. `chroma-key-video`'s
-  `'started'`/`'backend'`/`'error'`) — `attachChromaKeyAvatar()` never re-emits them onto
-  `session`.
-- **Auto-cleanup** — `player.destroy()` is called exactly once, on the session's `'ended'` event, any
-  FATAL `'error'` (`capacity_unavailable`/`tier_exceeded`/`bad_request`/`peer_removed`/
-  `unsupported_client`), or the session reaching its `'disconnected'` state — which is what
-  `session.disconnect()`/`session.stop()` (the human-in-the-loop kill switch, e.g. a "leave call"
-  button) triggers; that path never emits `'ended'` on its own. A transient/recoverable error (e.g.
-  a socket hiccup the session itself reconnects from) does NOT destroy the player. Checks the
-  player's own `isDestroyed` flag first, so an integrator who already called `player.destroy()`
-  themselves never gets a second call, and all three teardown paths are safe to fire together or in
-  any order.
-- **Idempotent, no double-wiring** — a second `attachChromaKeyAvatar()` call against a session that
-  already has a live compositor logs `console.warn` and returns the EXISTING instance instead of
-  constructing (and WebGL-context-leaking) a second one. Never throws for this.
-- **No reconnect ceremony** — a WHEP reconnect reassigns `srcObject` on the SAME `videoEl` the
-  compositor was already constructed against; no re-`attachChromaKeyAvatar()` call is needed.
+- **Construction is synchronous** — `attachChromaKeyAvatar()` returns the live `ChromaKeyVideo` instance immediately, no `Promise`.
+- **`videoEl` must be `session.videoEl`** — the session's own read-only getter for the element its WHEP downlink actually assigns `srcObject` to. Passing a second, different reference throws a `KalturaError` — this catches a stale/duplicated element before it silently keys the wrong stream.
+- **Returned unwrapped, zero shadow API** — the returned `player` is the exact instance `ChromaKeyVideo` constructed, with no proxy or wrapping. It's a standard `EventTarget` — listen on `player` directly via `addEventListener` for its own events (e.g. `chroma-key-video`'s `'started'`/`'backend'`/`'error'`) — `attachChromaKeyAvatar()` never re-emits them onto `session`.
+- **Auto-cleanup** — `player.destroy()` is called exactly once, on the session's `'ended'` event, any FATAL `'error'` (`capacity_unavailable`/`tier_exceeded`/`bad_request`/`peer_removed`/ `unsupported_client`), or the session reaching its `'disconnected'` state — which is what `session.disconnect()`/`session.stop()` (the human-in-the-loop kill switch, e.g. a "leave call" button) triggers; that path never emits `'ended'` on its own. A transient/recoverable error (e.g. a socket hiccup the session itself reconnects from) does NOT destroy the player. Checks the player's own `isDestroyed` flag first, so an integrator who already called `player.destroy()` themselves never gets a second call, and all three teardown paths are safe to fire together or in any order.
+- **Idempotent, no double-wiring** — a second `attachChromaKeyAvatar()` call against a session that already has a live compositor logs `console.warn` and returns the EXISTING instance instead of constructing (and WebGL-context-leaking) a second one. Never throws for this.
+- **No reconnect ceremony** — a WHEP reconnect reassigns `srcObject` on the SAME `videoEl` the compositor was already constructed against; no re-`attachChromaKeyAvatar()` call is needed.
 
-**Non-goals:** this plugin does not reimplement chroma-keying, matting, backend fallback, or
-WebGL context-loss recovery — that's entirely `chroma-key-video`'s (or your chosen library's) job.
-If your app keys a URL-sourced clip with `chroma-key-video` directly, bypassing this plugin
-entirely, running that URL through `safeUrl()` first is still your obligation (this plugin never
-accepts or fetches a URL, only the session's own live video element).
+**Non-goals:** this plugin does not reimplement chroma-keying, matting, backend fallback, or WebGL context-loss recovery — that's entirely `chroma-key-video`'s (or your chosen library's) job. If your app keys a URL-sourced clip with `chroma-key-video` directly, bypassing this plugin entirely, running that URL through `safeUrl()` first is still your obligation (this plugin never accepts or fetches a URL, only the session's own live video element).
 
 </details>
 
@@ -1032,12 +942,7 @@ const { configId } = await mgmt.intellects.create({
 const status = await mgmt.knowledge.isIndexed(rec.id, ks);
 ```
 
-Content modalities indexed: captions, OCR, document attachments. Don't use
-`knowledge.isIndexed()`'s `ready` flag, `knowledge.search()`'s "couldn't find
-relevant information" reply, or `knowledge.corpusStatus()`'s `populated` flag,
-as an indexing-status signal — see API-REFERENCE.md § Ground the Agent for why.
-A per-entry check (`knowledge.entryStatus()`) is coming, with general rollout
-expected in early September 2026 — don't build on it yet.
+Content modalities indexed: captions, OCR, document attachments. Don't use `knowledge.isIndexed()`'s `ready` flag, `knowledge.search()`'s "couldn't find relevant information" reply, or `knowledge.corpusStatus()`'s `populated` flag, as an indexing-status signal — see API-REFERENCE.md § Ground the Agent for why. A per-entry check (`knowledge.entryStatus()`) is coming, with general rollout expected in early September 2026 — don't build on it yet.
 
 Knowledge records have full lifecycle CRUD:
 
@@ -1081,6 +986,4 @@ await mgmt.knowledge.deleteRecord(rec.id, ks, { confirmPermanent: true });
 
 ## License
 
-MIT — see [LICENSE](LICENSE). No Kaltura account or credentials are needed to read, fork, or
-build on this SDK's source; a Kaltura account with the Agentic Avatar feature enabled is needed
-to call the live APIs it wraps — [start a free trial](https://subscription.kaltura.com/purchase-manager/purchase-manager/avatar-studio-free-trial).
+MIT — see [LICENSE](LICENSE). No Kaltura account or credentials are needed to read, fork, or build on this SDK's source; a Kaltura account with the Agentic Avatar feature enabled is needed to call the live APIs it wraps — [start a free trial](https://subscription.kaltura.com/purchase-manager/purchase-manager/avatar-studio-free-trial).

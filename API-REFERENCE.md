@@ -1,14 +1,12 @@
 # API Reference — Kaltura Agentic Avatars
 
-Every endpoint, the full agent lifecycle, and a verified use-case catalog — copy-paste ready.
-This page is the index; the reference itself lives in focused files under [`docs/api/`](docs/api/).
+Every endpoint, the full agent lifecycle, and a verified use-case catalog — copy-paste ready. This page is the index; the reference itself lives in focused files under [`docs/api/`](docs/api/).
 
 **New here?** Start with [GETTING-STARTED.md](GETTING-STARTED.md). Runtime details live in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). The zero-dependency SDK is in [`README.md`](README.md).
 
 **Credentials** — all examples need `AGENTIC_PARTNER_ID` and `AGENTIC_ADMIN_SECRET` ([Rich Media CMS → Settings → Integration Settings](https://kmc.kaltura.com/index.php/kmcng/settings/integrationSettings)). Set them in a local `.env` (copy `.env.example`) or pass inline. Never hardcode the secret.
 
-Every endpoint is shown as a raw HTTP call plus its SDK wrapper. The SDK is what ships in
-this repo — see [`README.md`](README.md) for the full `Management` method list.
+Every endpoint is shown as a raw HTTP call plus its SDK wrapper. The SDK is what ships in this repo — see [`README.md`](README.md) for the full `Management` method list.
 
 ---
 
@@ -29,11 +27,7 @@ this repo — see [`README.md`](README.md) for the full `Management` method list
 
 ---
 
-**What can you build?** A concierge with memory (UC-2/UC-3), a GenUI-driven product demo (UC-4),
-a slide-deck walkthrough avatar (UC-10), a self-serve custom-voice/custom-portrait agent
-(UC-9/UC-13), an anonymous embeddable widget (UC-12), or a fleet of A/B-tested personas (UC-5) —
-see the full [Use-Case Catalog](docs/USE-CASES.md) for all 13, each mapped to its key mechanism
-and a runnable script/tool.
+**What can you build?** A concierge with memory (UC-2/UC-3), a GenUI-driven product demo (UC-4), a slide-deck walkthrough avatar (UC-10), a self-serve custom-voice/custom-portrait agent (UC-9/UC-13), an anonymous embeddable widget (UC-12), or a fleet of A/B-tested personas (UC-5) — see the full [Use-Case Catalog](docs/USE-CASES.md) for all 13, each mapped to its key mechanism and a runnable script/tool.
 
 ---
 
@@ -51,8 +45,7 @@ and a runnable script/tool.
 
 ## Quick Reference
 
-The full `Management` method surface (this doc's endpoints, wrapped) is listed in
-[`README.md`](README.md) → Management. Two common lookups:
+The full `Management` method surface (this doc's endpoints, wrapped) is listed in [`README.md`](README.md) → Management. Two common lookups:
 
 ```js
 import { Management } from '@kaltura/intelligent-agents/management';

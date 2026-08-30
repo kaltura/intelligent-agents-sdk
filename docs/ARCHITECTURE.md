@@ -138,10 +138,7 @@ For a dynamic crop/`object-position` instead of generic `object-fit: cover`, bot
 
 ### Compositing a transparent-background avatar (chroma key)
 
-The rendered avatar stream is opaque — there's no alpha channel or published green/blue-screen
-backdrop to key against as a platform guarantee. If your layout needs the avatar composited over
-arbitrary page content (not a fixed rectangle), key it live with a bring-your-own
-`chroma-key-video`-shaped compositor via `./experience/chroma-key`'s `attachChromaKeyAvatar()`:
+The rendered avatar stream is opaque — there's no alpha channel or published green/blue-screen backdrop to key against as a platform guarantee. If your layout needs the avatar composited over arbitrary page content (not a fixed rectangle), key it live with a bring-your-own `chroma-key-video`-shaped compositor via `./experience/chroma-key`'s `attachChromaKeyAvatar()`:
 
 ```js
 import { KalturaAvatarSession } from '@kaltura/intelligent-agents/experience';
@@ -160,17 +157,7 @@ const player = attachChromaKeyAvatar({
 await session.connect();
 ```
 
-Same pattern as `object-fit: cover` above but one layer earlier: `attachChromaKeyAvatar()`
-constructs the injected `ChromaKeyVideo` class against the session's OWN video element
-(`session.videoEl`, not a second reference) and keeps its lifecycle in
-lockstep with the session's — `player.destroy()` fires automatically on the session's `'ended'`
-event, a fatal `'error'`, or the session's own `disconnect()`/`stop()` (its documented
-human-in-the-loop kill switch, e.g. a "leave call" button), so `session.disconnect()` alone is
-enough teardown. It never
-reimplements chroma-keying, matting, or WebGL context-loss recovery itself, and returns the
-constructed player instance UNWRAPPED — listen on `player` directly for its own events, never on
-`session`. Full behavior contract, misuse guard, and the `videoEl` source element are the SDK's
-zero-dependency rule in miniature: see [README.md § `./experience/chroma-key`](../README.md#experiencechroma-key).
+Same pattern as `object-fit: cover` above but one layer earlier: `attachChromaKeyAvatar()` constructs the injected `ChromaKeyVideo` class against the session's OWN video element (`session.videoEl`, not a second reference) and keeps its lifecycle in lockstep with the session's — `player.destroy()` fires automatically on the session's `'ended'` event, a fatal `'error'`, or the session's own `disconnect()`/`stop()` (its documented human-in-the-loop kill switch, e.g. a "leave call" button), so `session.disconnect()` alone is enough teardown. It never reimplements chroma-keying, matting, or WebGL context-loss recovery itself, and returns the constructed player instance UNWRAPPED — listen on `player` directly for its own events, never on `session`. Full behavior contract, misuse guard, and the `videoEl` source element are the SDK's zero-dependency rule in miniature: see [README.md § `./experience/chroma-key`](../README.md#experiencechroma-key).
 
 ---
 

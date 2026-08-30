@@ -164,12 +164,7 @@ Supplying the value in `requestVars` (e.g. `{ 'sys__user_obj.first_name': 'Jane'
 
 ## Tools (api / csv / code)
 
-Tools are a standalone, PARTNER-LEVEL entity with their own CRUD (`/v1/tool/add|get|list|update|delete`,
-Genie host) — **not** embedded in an intellect. An intellect only carries the `tool_ids` (an array
-of tool uuid strings) it may call. **SDK:** `import { tools } from '@kaltura/intelligent-agents/management'`
-builds and validates a tool's `config` before any network call; `mgmt.tools` is the CRUD surface;
-`mgmt.intellectConfig.setToolIds` (or `tool_ids` passed straight to `intellects.create`/`update`)
-links a tool to an intellect.
+Tools are a standalone, PARTNER-LEVEL entity with their own CRUD (`/v1/tool/add|get|list|update|delete`, Genie host) — **not** embedded in an intellect. An intellect only carries the `tool_ids` (an array of tool uuid strings) it may call. **SDK:** `import { tools } from '@kaltura/intelligent-agents/management'` builds and validates a tool's `config` before any network call; `mgmt.tools` is the CRUD surface; `mgmt.intellectConfig.setToolIds` (or `tool_ids` passed straight to `intellects.create`/`update`) links a tool to an intellect.
 
 **`api` tool** — calls an external HTTP endpoint. `POST /v1/tool/add`:
 
@@ -196,8 +191,7 @@ links a tool to an intellect.
 }
 ```
 
-Returns a `Tool` — `{id, name, config, partner_id, created_at, updated_at}`. Link its `id` into an
-intellect:
+Returns a `Tool` — `{id, name, config, partner_id, created_at, updated_at}`. Link its `id` into an intellect:
 
 ```json
 { "id": 42, "type": "internal", "status": 2, "tool_ids": ["<the returned id>"] }
@@ -442,8 +436,8 @@ A rule is `{eventType, objectType, eventConditions, action}`:
 - `objectType` — currently only `thread`.
 - `eventConditions[]` — dot-path matchers, e.g. `object.agent_id eq <uuid>`, `changed_keys has_all [...]`.
 - `action` — a plain object, one of two shapes today. Passed straight through, not built by the SDK:
-  - `{ actionType: 'triggerInsight', insights: [{ insightKey, valueType, prompt? }, ...] }` — fires up to 20 named LLM insight generations against the thread. `valueType` (`'string'`/`'number'`/`'boolean'`/`'arrayString'`/`'arrayNumber'`/`'arrayBoolean'`) is **required on every insight, even built-in keys** — omitting it 400s live. `SUMMARY`/`SENTIMENT`/`TOPIC` have built-in prompts; a custom `insightKey` needs an explicit `prompt`.
-  - `{ actionType: 'sendInsightEmail', recipients: string[], templateId?: string, presetType?: string }` — mails a rendered insight summary to `recipients` (supports `{{template}}` placeholders like `{{object.user_id}}`), using either an explicit `templateId` or an auto-created `presetType` template. Only fires on `eventType:'analysis_updated'` — attaching it to a `session_ended` rule is a server-side no-op.
+- `{ actionType: 'triggerInsight', insights: [{ insightKey, valueType, prompt? }, ...] }` — fires up to 20 named LLM insight generations against the thread. `valueType` (`'string'`/`'number'`/`'boolean'`/`'arrayString'`/`'arrayNumber'`/`'arrayBoolean'`) is **required on every insight, even built-in keys** — omitting it 400s live. `SUMMARY`/`SENTIMENT`/`TOPIC` have built-in prompts; a custom `insightKey` needs an explicit `prompt`.
+- `{ actionType: 'sendInsightEmail', recipients: string[], templateId?: string, presetType?: string }` — mails a rendered insight summary to `recipients` (supports `{{template}}` placeholders like `{{object.user_id}}`), using either an explicit `templateId` or an auto-created `presetType` template. Only fires on `eventType:'analysis_updated'` — attaching it to a `session_ended` rule is a server-side no-op.
 
 **Business use-case 1 — auto-summarize every ended session:**
 
