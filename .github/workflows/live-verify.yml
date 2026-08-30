@@ -3,33 +3,37 @@ name: Live verification
 # Runs a real, credentialed smoke test against the live Kaltura API — session
 # mint, one converse turn, cleanup. Everything ci.yml runs is offline (fakes
 # inject fetch/socket/RTC); this is the one workflow that actually touches
-# the backend with AGENTIC_* secrets, so it never runs on every push/PR:
+# the backend with AGENTIC_* secrets, so its jobs only ever EXECUTE when:
 #
 #   - workflow_dispatch: manual, on demand.
 #   - pull_request: only when the PR carries the `run-live-verify` label —
 #     an untrusted fork PR can't add that label to itself, so opening a PR
 #     alone can never exfiltrate secrets through this job.
+#   - merge_group: every merge into main gets one real live-API round trip
+#     before it lands, not just PRs someone remembered to label.
 #
 # The job is also gated on the `live-verify` GitHub Environment, so the
 # AGENTIC_* secrets are scoped to it, not available repo-wide.
 #
-# It's also skipped for a merge_group/labeled-PR run that touches nothing
-# but docs — this hits the real backend and has nothing to verify about a
-# docs-only change. workflow_dispatch always runs regardless, since that's
-# a deliberate manual request.
+# "Live verification" is a required status check on main, so it needs a
+# reported status on every PR's head SHA — not just the label/merge_group
+# runs above. `pull_request: [opened, synchronize, reopened]` gives it that:
+# the workflow runs on every PR push, but its jobs' `if:` still only executes
+# on label/merge_group/dispatch, so a plain PR push reports `skipped` (which
+# satisfies a required check) instead of never reporting at all and leaving
+# the check stuck on "waiting for status to be reported" until someone labels
+# it or the merge queue picks it up. This also means the same `code`
+# path-filter below correctly resolves to skipped for a docs-only PR — it has
+# nothing to verify against the real backend either way.
 #
 # The live-verify job covers the server-side management/conversation path
 # only. live-verify-browser (below) covers the actual browser/WebRTC path:
 # a real provisioned avatar, a headless Chromium with fake-but-real-pipeline
 # media flags, and a real chroma-key compositor — see scripts/live-verify-browser.mjs.
-#
-# Also runs on merge_group so it's a required check on the merge queue —
-# every merge into main gets one real live-API round trip before it lands,
-# not just PRs someone remembered to label.
 on:
   workflow_dispatch: {}
   pull_request:
-    types: [labeled]
+    types: [opened, synchronize, reopened, labeled]
   merge_group:
     branches: [main]
 
