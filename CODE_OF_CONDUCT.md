@@ -2,8 +2,7 @@
 
 ## Our pledge
 
-We want participation in this project to be a harassment-free, respectful
-experience for everyone, regardless of background or experience level.
+We want participation in this project to be a harassment-free, respectful experience for everyone, regardless of background or experience level.
 
 ## Standards
 
@@ -22,10 +21,7 @@ Examples of unacceptable behavior:
 
 ## Enforcement
 
-Instances of unacceptable behavior may be reported to **community@kaltura.com**
-(do not use `security@kaltura.com`, which is [SECURITY.md](SECURITY.md)'s
-vulnerability-disclosure address, not a conduct inbox). All complaints will be
-reviewed and investigated promptly and fairly.
+Instances of unacceptable behavior may be reported to **community@kaltura.com** (do not use `security@kaltura.com`, which is [SECURITY.md](SECURITY.md)'s vulnerability-disclosure address, not a conduct inbox). All complaints will be reviewed and investigated promptly and fairly.
 
 ## Attribution
 
