@@ -411,3 +411,50 @@ test('a tool-only segment does not clear the watchdog (tool spirals still surfac
   assert.equal(r.text, 'ok');
   assert.ok(stalls.length >= 1, 'a tool segment must not clear the watchdog before real output arrives');
 });
+
+// ───────────────────────── tool spiral soft-limit signal ─────────────────────────
+// The KalturaAvatarSession peer of these lives in test/e2e/resilience.test.js. Chat mode
+// has no socket to cold-reconnect, so only the soft signal is ported here — see
+// _checkToolSpiral's doc comment in chat-session.js.
+
+function spiralReply(n) {
+  return Array.from({ length: n }, () => seg({ type: 'tool', content: 'show_widget {"kind":"summary"}' })).join('\n') + '\n';
+}
+
+test('tool spiral soft signal: trips after N raw tool segments in one turn', async () => {
+  const { session } = newSession({ cfg: { toolSpiralLimit: 4 }, reply: spiralReply(4) });
+  await session.connect();
+  let detected = null; session.on('toolSpiralDetected', (p) => { detected = p; });
+  await session.sendText('show me the revenue widget');
+  assert.ok(detected, 'the soft breaker must trip once the spiral limit is reached');
+  assert.equal(detected.count, 4);
+  assert.equal(detected.limit, 4);
+});
+
+test('tool spiral soft signal: fires toolSpiralDetected AT MOST ONCE per turn', async () => {
+  const { session } = newSession({ cfg: { toolSpiralLimit: 3 }, reply: spiralReply(10) });
+  await session.connect();
+  let fireCount = 0; session.on('toolSpiralDetected', () => { fireCount++; });
+  await session.sendText('show me the revenue widget');
+  assert.equal(fireCount, 1, 'toolSpiralDetected must not re-fire on every subsequent retry past the limit');
+});
+
+test('tool spiral soft signal: does NOT trip on normal, distinct tool calls under the limit', async () => {
+  const { session } = newSession({ cfg: { toolSpiralLimit: 4 }, reply: spiralReply(2) });
+  await session.connect();
+  let detected = false; session.on('toolSpiralDetected', () => { detected = true; });
+  await session.sendText('walk me through slide 3');
+  assert.equal(detected, false, 'two ordinary tool segments must not trip a breaker sized for a real spiral');
+});
+
+test('tool spiral soft signal: resets its count each turn (a fresh sendText)', async () => {
+  // Same fake route answers both sendText calls (fakeFetch matches by URL, not call
+  // count) — 2 tool segments per turn is deliberately under the limit of 3 on its own;
+  // the assertion is that the SECOND turn doesn't inherit the first turn's count.
+  const { session } = newSession({ cfg: { toolSpiralLimit: 3 }, reply: spiralReply(2) });
+  await session.connect();
+  let fireCount = 0; session.on('toolSpiralDetected', () => { fireCount++; });
+  await session.sendText('turn one');
+  await session.sendText('turn two');
+  assert.equal(fireCount, 0, 'a fresh turn must not inherit the previous turn\'s tool-segment count');
+});

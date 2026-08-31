@@ -77,6 +77,13 @@ export class KalturaChatSession extends Emitter {
    *   repeating `brainStalled` warning — the exact peer of `KalturaAvatarSession`'s watchdog (same
    *   event shape `{afterMs, count}`, same default, same "warn forever, never cancel the turn"
    *   behavior — a tool-call turn or a stuck backend call can legitimately run long). Default 12000.
+   * @param {number} [cfg.toolSpiralLimit] Soft tool-call-loop limit before emitting
+   *   `toolSpiralDetected` — the peer of `KalturaAvatarSession`'s `cfg.toolSpiralLimit` (same
+   *   signal-only contract: counts raw `type:"tool"` segments per turn, dedup-independent, and
+   *   fires at most once per turn once the count reaches this limit). Unlike the avatar transport
+   *   there is no hard-limit cold-reconnect escalation here — a chat turn is a plain HTTPS request
+   *   with no socket to rebuild, so a stuck turn is bounded by the caller's own `sendText({signal})`
+   *   abort, not by this session. Default 10. Set 0/false to disable.
    */
   constructor(cfg) {
     super();
@@ -117,6 +124,12 @@ export class KalturaChatSession extends Emitter {
     this._brainStallMs = cfg.brainStallMs ?? 12000;
     this._brainStallTimer = null;
     this._brainStallFireCount = 0;
+    // Tool-call spiral soft-limit signal — see `_checkToolSpiral` and the cfg.toolSpiralLimit
+    // doc above. Per-turn counter, reset in `_converseTurn` at the same point the other
+    // per-turn dedup state resets.
+    this._toolSpiralLimit = cfg.toolSpiralLimit ?? 10;
+    this._turnToolSegCount = 0;
+    this._toolSpiralSignaled = false;
     /** @type {'idle'|'connected'|'closed'} */
     this.state = 'idle';
   }
@@ -184,6 +197,8 @@ export class KalturaChatSession extends Emitter {
     this._firedToolCalls.clear();
     this._turnDispatchedToolNames.clear();
     this._pendingFusedBlobs = [];
+    this._turnToolSegCount = 0;
+    this._toolSpiralSignaled = false;
     this.emit('transcript', { text, type: 'user', speechId: null, words: [] });
     this.emit('turnStart', { speechId: null, turnId, isNewTurn: true });
     this.emit('responsePending', {});
@@ -207,6 +222,7 @@ export class KalturaChatSession extends Emitter {
         segments.push(seg);
         if (seg.threadId && !this._threadId) this._threadId = seg.threadId;
         if (seg.messageId && !this._lastMessageId) this._lastMessageId = seg.messageId;
+        if (seg.type === 'tool') this._checkToolSpiral();
         const call = parseToolCall(seg);
         if (call) this._dispatchToolCall(call);
         else this._recoverFusedToolResponse(parseToolResponseName(seg));
@@ -229,6 +245,27 @@ export class KalturaChatSession extends Emitter {
       this._clearBrainWatchdog();
       this._activeTurnAbort = null;
       this.emit('turnEnd', { speechId: null, turnId });
+    }
+  }
+
+  /**
+   * Soft-limit signal for a runaway tool-call spiral — the `KalturaAvatarSession`
+   * peer of `_checkToolSpiral`, minus the hard-limit cold-reconnect escalation
+   * (there is no socket here to rebuild). Counts every RAW `type:"tool"` segment
+   * in the turn, dedup-independent — a spiral IS repeats of the same call, and
+   * `_dispatchToolCall`'s own dedup already drops those before a handler runs, so
+   * counting only new dispatches would never trip. Fires `toolSpiralDetected`
+   * exactly once per turn once the count reaches `_toolSpiralLimit` — SIGNAL
+   * ONLY, the app decides how to react (e.g. `respondToTool` an `ok:false` and
+   * let the persona's own "never retry" rule take it from there).
+   */
+  _checkToolSpiral() {
+    if (!this._toolSpiralLimit) return;
+    this._turnToolSegCount++;
+    if (!this._toolSpiralSignaled && this._turnToolSegCount >= this._toolSpiralLimit) {
+      this._toolSpiralSignaled = true;
+      this._audit('tool.spiral_detected', 'fail', { count: this._turnToolSegCount });
+      this.emit('toolSpiralDetected', { count: this._turnToolSegCount, limit: this._toolSpiralLimit });
     }
   }
 
