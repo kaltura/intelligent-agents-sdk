@@ -30,20 +30,25 @@ import { currentTargets } from './highlighter.js';
 const DUP_SUPPRESS_MS = 3000;
 
 export function initNavigator(session) {
-  let turnSpeechId;
+  let turnId;
   let turnNavFiredFor;
   let lastPath = null;
   let lastNavTime = 0;
 
+  // Reset key is turnId, not speechId: speechId is a voice/ASR concept and is
+  // always null in text-chat sessions (KalturaChatSession never sets it), so
+  // a speechId-keyed guard never actually resets after the first navigation
+  // in chat mode. turnId is minted fresh by the SDK on every turn in both
+  // transports, so it's the only reset key that actually varies here.
   session.on('turnStart', (p) => {
-    if (p?.isNewTurn) turnSpeechId = p.speechId || null;
+    if (p?.isNewTurn) turnId = p.turnId || null;
   });
 
   session.onToolCall('navigate_to_page', async (args, call) => {
     const id = call?.toolMetadata?.id;
     const ack = (response) => (id ? session.respondToTool(id, response) : Promise.resolve());
 
-    if (turnNavFiredFor === turnSpeechId) {
+    if (turnNavFiredFor === turnId) {
       await ack({ ok: false, error: 'suppressed_second_nav_this_turn' });
       return;
     }
@@ -65,7 +70,7 @@ export function initNavigator(session) {
       return;
     }
 
-    turnNavFiredFor = turnSpeechId;
+    turnNavFiredFor = turnId;
     lastPath = resolved;
     lastNavTime = now;
 
