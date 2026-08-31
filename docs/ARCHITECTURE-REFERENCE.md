@@ -434,6 +434,8 @@ The hard guard re-arms on a successful cold reconnect, not just on perceivable o
 
 A cold reconnect restores connectivity and brain memory (`threadId`) but otherwise abandons the turn that triggered it. With `recoverFromSpiral` (default `true`), the SDK auto-resends that turn's tracked text once (from `speak()` or ASR's `userTranscription`), prefixed with `SPIRAL_RECOVERY_PREFIX` (the same nudge used on the headless `Conversations#send({recoverFromSpiral:true})` path), and emits `spiralRecovered {text}`. `recoverFromSpiral:false` suppresses the resend and leaves it to the app via `lastTurnText`. All three thresholds (`brainStallMs`, `toolSpiralLimit`, `hardToolSpiralLimit`) are configurable at construction; `0` disables any of them. The platform's built-in client has no such breaker. Author-side mitigation (a tool-call budget in the system prompt) and the headless-path equivalent are covered in [CLIENT-COMMANDS.md](CLIENT-COMMANDS.md)'s "Tool spirals starve the voice" — this section documents only the SDK's own recovery mechanism.
 
+`KalturaChatSession` (the HTTP text transport) ports the soft tier only: `cfg.toolSpiralLimit` (default 10, same counting rule) emits the same `toolSpiralDetected {count, limit}` once per turn. There's no hard tier here — a chat turn is one stateless HTTPS request with no socket to cold-reconnect, so a stuck turn is bounded by the caller's own `sendText({signal})` abort, not by a session-level recovery mechanism.
+
 ### What's already solid (don't regress)
 
 - Connect-phase hang protection (per-substate timeouts).
