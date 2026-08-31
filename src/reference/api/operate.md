@@ -42,7 +42,7 @@ CONV_KS=$(curl -s -X POST "https://www.kaltura.com/api_v3/service/session/action
 | `request_vars` | Per-message `{{var}}` interpolation; needs `allow_client_variables:true` on the intellect. Reserved `sys__*` keys (including `sys__user_id`) are server-injected and rejected if you try to set them yourself — see [§ Bind a session to a real end-user identity](/reference/api/authentication/) for how `sys__user_id` gets populated. |
 | `capabilities` | Per-message capability override |
 
-**Stream segments** (each line is a JSON object):
+**Stream segments** (each line is a JSON object). This is the common subset you'll see over HTTP; for the complete catalog — including the fence-tag-driven open-ended types — see [Wire Protocol §4e](/reference/wire-protocol/#4e-agent_raw_textdelta--the-brain-stream-parsed):
 
 | `type` | Meaning |
 |--------|---------|
@@ -50,17 +50,13 @@ CONV_KS=$(curl -s -X POST "https://www.kaltura.com/api_v3/service/session/action
 | `"text"` | Response content — concatenate `content` fields |
 | `"tool"` / `"tool_response"` | Server tool call + result; `content` carries client commands |
 | `"unisphere-tool"` | GenUI widget — `metadata.runtimeName` names the widget |
+| `"avatar"` | Spoken response content (avatar-driven experiences) |
+| `"share"` | Shareable content block |
 | `"error"` | Brain error |
-| `"user-interruption"` | User barged in |
 
 Key envelope fields: `threadId` (save for follow-ups), `messageId` (save for feedback), `isFinal:true` (stream done).
 
-**Abort a running turn:**
-
-```
-POST https://genie.nvp1.ovp.kaltura.com/assistant/abort
-{ "threadId": "154a05c4-..." }
-```
+**Cancelling a running turn:** there is no `/assistant/abort` HTTP endpoint — abort the client-side request instead (e.g. an `AbortSignal` passed into your fetch/stream call). Genie's actual interruption mechanism (`interruption`/`user-interruption`, tied to a WebSocket `abort` frame) exists only on the live-socket path, not HTTP converse — see the "Abort on interruption" bullet in [Wire Protocol §8](/reference/wire-protocol/#8-end-to-end-turn-what-fires-in-order).
 
 ---
 

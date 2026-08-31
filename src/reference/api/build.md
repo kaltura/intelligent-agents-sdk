@@ -131,18 +131,7 @@ p.warnings;             // present ONLY when a reserved variable is unresolved (
 
 It is **not byte-exact** with the live prompt — server-injected capability-conditional blocks (`video_gallery`/`avatar_show_content`/`web_search_enabled`/`user_properties`) are not reproduced, and `sys__*` values you pass via `requestVars` are a *simulation* of what the server sets per turn, not a live read.
 
-**Reserved variables** the server sets per turn (always available to `{{...}}` regardless of `allow_client_variables`):
-
-| Variable | Notes |
-|----------|-------|
-| `sys__thread_id` | Current conversation thread id |
-| `sys__message_id` | Current message id |
-| `sys__user_id` | Bound end-user id — see `Sessions.createConversationToken({userId})` |
-| `sys__user_message` | The user's current turn text |
-| `sys__is_new_thread` | `true` on the first turn of a thread |
-| `sys__ks` | The raw session token. **Never reference this in a prompt that could be echoed back to a user or logged** — it is a live credential. |
-| `sys__user_obj.first_name` / `.last_name` / `.title` / `.company` / `.gender` / `.email` | Attributes of the bound-user object. The rendered preview from `previewPrompt()` carries a `reserved_user_attr_unresolved` warning when a prompt references these — treat it as a hard stop before shipping. |
-| `secrets.NAME` | A named secret configured on the intellect (write-only — `previewPrompt()` never has access to the raw value, so it cannot confirm one is set) |
+**Reserved variables** the server sets per turn (always available to `{{...}}` regardless of `allow_client_variables`) — see [API § Reserved Template Variables](/reference/api/operate/#reserved-template-variables-sys__) for the full list and what each one resolves to.
 
 **Unresolvable-reserved-variable warnings (hardening):** if a prompt references one of the variables above and no value is available in the simulated context (no `requestVars` entry, or an explicit `null`/`undefined`), `previewPrompt()` returns a `warnings[]` entry naming the variable and why — instead of the placeholder being silently rendered as literal/empty text as if the prompt were safe to ship. `warnings` is an **additive** field: it is present only when non-empty, so a fully-resolved preview's return shape is unchanged from before this hardening.
 
@@ -242,9 +231,9 @@ sent to `POST /v1/intellect/update`.
 }
 ```
 
-`wait_for_response` (SDK: `waitForResponse`) controls whether the model's turn blocks on a real client ACK. **Omitting it is not the same as `false`** — the backend's own wire default for an absent field is `true` (blocking); pass `false` explicitly for fire-and-forget dispatch. When `true`, the backend polls up to `timeout` seconds (default 30) for an ACK via `POST /assistant/tool_response` (SDK: `session.respondToTool(id, response)`).
+`wait_for_response` (SDK: `waitForResponse`) controls whether the model's turn blocks on a real client ACK — pass it explicitly; omitting it defaults to blocking, not fire-and-forget. See [Client Commands § the brain calls it](/guides/client-commands/#2-the-brain-calls-it--genie-streams-a-silent-segment) for the full blocking-default explanation and the ACK flow.
 
-**Client-tool gotcha** — a requirement that must be met at authoring time for ANY tool-referencing intellect (client, api, csv, or code): **`kaltura_genie_experiences` must be `'off'` at creation.** The experiences capability injects a system rule that out-competes custom tool calls. Set it to `'off'` when you call `intellect/add` — partner config is cached ~24 h server-side, so updating it later has no immediate effect.
+**Client-tool gotcha:** any tool-referencing intellect must set `kaltura_genie_experiences:'off'` **at creation** — see [External API Integrations § Don't skip `kaltura_genie_experiences: 'off'`](/guides/external-api-integrations/#dont-skip-kaltura_genie_experiences-off) for why and why creation time matters.
 
 Use `tools.client(...)` in the SDK, which validates the tool before any network call; `clientToolReadiness(body)` lints an intellect body's `tool_ids` + `capabilities` for this gotcha.
 
