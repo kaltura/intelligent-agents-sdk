@@ -43,6 +43,7 @@ No build step, no npm registry publish — that's disabled by design (`"private"
 - [Noise suppression (Tier-1 default + Tier-2 BYO-DSP)](#noise-suppression-tier-1-default--tier-2-byo-dsp)
 - [KAVA analytics (opt-in, client-only Application Events)](#kava-analytics-opt-in-client-only-application-events)
 - [Connectivity beacon (opt-in)](#connectivity-beacon-opt-in)
+- [Ending a conversation cleanly (`session_completed` signal)](#ending-a-conversation-cleanly-session_completed-signal)
 - [Accessibility (WCAG 2.2 AA / captions) + AI-disclosure gate](#accessibility-wcag-22-aa--captions--ai-disclosure-gate)
 - [Security posture](#security-posture)
 - [Key design rules](#key-design-rules)
@@ -435,6 +436,41 @@ session.on('connectionQuality', ({ channel, rttMs, packetLossPct, jitterMs, bitr
 
 - **`statsIntervalMs`** (constructor option) — polls `RTCPeerConnection.getStats()` on both the ASR uplink and STV downlink at this interval and emits `connectionQuality` (adopted from the WebRTC avatar engine's `PeerConnectionWebrtcStats`, but the raw numbers only — no scoring engine or telemetry-backend wiring, so you can feed them into whatever metrics pipeline you already run). Unset (the default) disables the beacon entirely, so a session that never opts in pays zero `getStats()` cost.
 - **`connectionQuality`** (`{channel: 'asr'|'stv', rttMs, packetLossPct, jitterMs, bitrateKbps}`) — `rttMs` comes from the active candidate-pair's `currentRoundTripTime`; `packetLossPct`/`jitterMs` come from the RTP stream stats (`outbound-rtp` for ASR, `inbound-rtp` for STV); `bitrateKbps` is a byte-count delta against the previous poll, so it's `null` on the first tick for each channel. Any field the browser didn't report is `null` rather than a guessed value.
+
+### Ending a conversation cleanly (`session_completed` signal)
+
+Both session classes tell genie the moment a conversation is genuinely over — not just when your own `disconnect()` runs, but on tab-close, backgrounding, and bfcache too — so backend lifecycle rules (summaries, insights, CRM pushes) fire in seconds instead of waiting for the server's ~10-minute idle scanner. On by default; nothing to wire up.
+
+```js
+session.on('sessionCompleted', ({ reason, sent, suppressed, peers }) => {
+  // best-effort — on a real tab-close there may be no listener left alive to run this
+});
+
+// App-owned teardown (server-side logout hook, a cross-device "end session" button
+// a same-device BroadcastChannel can't see) — send the signal without tearing anything down:
+await session.completeThread();
+```
+
+| Option | Default | Meaning |
+|---|---|---|
+| `sessionCompleteOnEnd` | `true` | Master switch. `false` restores pre-1.12 behavior exactly — no POST, no listeners. |
+| `sessionCompletePath` | `'/thread/session_completed'` | Escape hatch if the route ever moves. |
+| `sessionCompleteTimeoutMs` | `5000` | Abort budget for `completeThread()`'s POST. Never applied on the tab-close path — an abort timer can't run on a dying page. |
+| `pageLifecycleAware` | `true` in a browser | Wire `pagehide`/`visibilitychange`/`pageshow`. Silent no-op in Node/SSR, same posture as `networkAware`. |
+| `hiddenGraceMs` | `30000` | After the page goes hidden (tab switch, minimize, lock), wait this long, then complete — catches iOS Safari / Chrome Android tab-kills where `pagehide` never fires. Any activity (a turn, avatar speech) re-arms this timer, so a hidden tab that's still talking is never completed mid-turn. Cancelled by returning to visible. |
+| `completeOnHiddenGrace` | `true` | Kill-switch for the heuristic above. |
+| `completeOnBfcache` | `true` | Fire on `pagehide` with `persisted:true` — the SDK can't survive a back-forward-cache round-trip anyway (socket/WHEP are already torn down, no auto-resume). |
+| `completeOnServerEnd` | `false` | Fire when the server itself ends the conversation (`conversationEnded`). Off by default — the backend already knows, so signalling again just wastes a redundant lifecycle-rule evaluation. |
+| `crossTabPresence` | `true` in a browser | Suppress the signal while another tab/window has the same thread open, via `BroadcastChannel`. Same-origin/same-device only by design — a duplicate session open on a different device relies on genie's own self-healing on the thread's next real message. |
+| `presenceChannelPrefix` | `'kaltura-agents:thread'` | Channel name is `` `${prefix}:${threadId}` ``. |
+| `presenceHeartbeatMs` | `4000` | Liveness beat interval between tabs. |
+| `presenceStaleMs` | `12000` | Drop a peer tab unseen this long (3 missed beats) before it can wrongly suppress the signal forever. |
+
+`disconnect(opts)` now takes `{final?: boolean, reason?: string}` — `final: false` skips the signal for an internal teardown that isn't a real end (e.g. `KalturaAgentSession.switchMode()` tearing down the old transport while keeping the same thread); zero-arg calls keep meaning "final", so this is fully backward compatible. `stop()` is unchanged, an alias for `disconnect({reason:'stop'})`.
+
+A `visibilitychange` to `hidden` fires when the **whole page** leaves the screen — tab switch, minimize, app switch, lock, close — not on scroll, resize, partial occlusion, devtools, or fullscreen video. It is the right signal for "did the user leave the page", not for "is the avatar widget itself visible on screen" (that's `IntersectionObserver`).
+
+Verified against the real Kaltura API on every merge, matrixed across Chromium/Firefox/WebKit (`npm run live-verify:session-complete`, `scripts/live-verify-session-complete.mjs`). Real mobile OS backgrounding and tab-kill behavior isn't reachable from any desktop-based browser automation — see [manual-testing/session-complete/README.md](manual-testing/session-complete/README.md) for the device test plan and the interactive harness it uses.
 
 ---
 

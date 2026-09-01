@@ -255,6 +255,22 @@ Authorization: KS <conversation ks>
 
 The built-in client's text-assembly logic (`CG`) only *assembles* `text | unisphere-tool | error` into the transcript and treats a start+end `share` as message-complete; it ignores `avatar | think | tool | tool_response` (those drive the live runtime). Frame counts from one captured text session: `text`×159, `think`×13, `share`×6, `unisphere-tool`×6, `thread`×5.
 
+#### Session-completion signal — tell the backend a conversation is truly over
+
+Same auth model as the ACK above (conversation KS, no elevation), but fire-and-forget in the opposite direction — client tells server, no response payload to parse:
+
+```
+POST {genieUrl}/thread/session_completed
+Content-Type: application/json
+Authorization: KS <conversation ks>
+
+{ "id": "<threadId>" }
+
+→ 200 {}
+```
+
+Idempotent (a repeat POST for the same thread is a server-side no-op); no rate limit; can block up to ~10s on a backend publish-ack, so a client must never `await` it on a page-unload path — send with `fetch(url, {keepalive:true})`, never `navigator.sendBeacon` (can't carry `Authorization`). `KalturaAvatarSession`/`KalturaChatSession`/`KalturaAgentSession` send this automatically on `disconnect()` and on tab-close/backgrounding/bfcache-freeze; see [ARCHITECTURE-REFERENCE.md § Session-completion signal](ARCHITECTURE-REFERENCE.md#session-completion-signal-session_completed--telling-the-backend-a-conversation-is-truly-over) for the full trigger table and [README.md § Ending a conversation cleanly](../README.md#ending-a-conversation-cleanly-session_completed-signal) for the config surface.
+
 ### 4f. `speechId` — the per-utterance key (and the barge-in mechanism)
 
 `speechId` appears on `agent_raw_text`, `agent_start_speech`, `agent_end_turn`, `generatingSpeech`, `stvSpeechChunk`, `debug_stvTaskGenerated`, `stvFinishedGenerating` — it is the **session server's identifier for one agent utterance**, and it is how you group a turn's events (do **not** group by timestamp — barge-ins interleave turns).
@@ -324,7 +340,7 @@ This is distinct from §5 (where the *client* offers the mic uplink and STT runs
 
 A receive-only WebRTC peer connection fed via **WHEP** (WebRTC-HTTP Egress Protocol). Signaling is **plain SDP over HTTP**, independent of the socket. (Server-side, the STV controller renders the face and streams it into a media relay that provides the WHEP egress; see ARCHITECTURE.md.)
 
-**`cast_mode` selects the STV egress** (`StvCastMode` enum `"webrtc"|"rtmp"`, optional in the `stvNewSession` body). This SDK never sends it — `buildStvNewSession()` (`SDK:wire.js`) always omits the field, so this SDK only ever takes the server's fully-omitted-default path, not either named value:
+**`cast_mode` selects the STV egress** (`StvCastMode` enum `"webrtc"\|"rtmp"`, optional in the `stvNewSession` body). This SDK never sends it — `buildStvNewSession()` (`SDK:wire.js`) always omits the field, so this SDK only ever takes the server's fully-omitted-default path, not either named value:
 
 - **Default (cast_mode omitted)** — the only path this SDK uses. The server returns a `webrtc_url`; in the current deployment that's shaped `{basePublicProxyUrl}/rtc/v1/stv/{room_id}/whep/session/{session_id}` (the session-server's STV proxy). Verified live, real H264 video decoded, across Chromium, Firefox, and WebKit — this is the working path for this SDK. If the server ever omits `webrtc_url` too, the client falls back to building `{srsBaseUrl}/rtc/v1/whep/?app=app&stream={session_id}` itself (`SDK:wire.js whepUrl()`) — not something current live testing has actually observed the server do.
 - **Explicit `cast_mode:'webrtc'`** (sent only by the `unistv` player, never by this SDK) — previously observed to resolve to a private IP in this deployment, so the browser's `fetch` never connects. `whepUrlHasPrivateIp()` (`SDK:wire.js`) guards this regardless of which cast_mode produced the URL.

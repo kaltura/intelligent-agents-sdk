@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>session-complete live verify</title></head>
+<body>
+<script type="module">
+  import { KalturaChatSession } from '/src/experience/chat-session.js';
+
+  const params = new URLSearchParams(location.search);
+  const token = params.get('token');
+  const hiddenGraceMs = Number(params.get('hiddenGraceMs') || 30000);
+  const threadId = params.get('threadId') || undefined;
+  const genieUrl = params.get('genieUrl') || undefined;
+
+  window.__events = [];
+
+  if (token) {
+    window.session = new KalturaChatSession({
+      token,
+      hiddenGraceMs,
+      ...(threadId ? { threadId } : {}),
+      ...(genieUrl ? { genieUrl } : {}),
+    });
+
+    window.session.on('sessionCompleted', (payload) => {
+      window.__events.push({ type: 'sessionCompleted', payload, at: Date.now() });
+    });
+  }
+
+  window.testConnect = () => window.session.connect();
+
+  window.testSend = async (text) => {
+    const res = await window.session.sendText(text || 'Live CI verification turn — reply briefly.');
+    return { threadId: window.session.threadId, textLen: res?.text?.length ?? null };
+  };
+
+  window.testDisconnect = (opts) => window.session.disconnect(opts);
+
+  window.testCompleteThread = () => window.session.completeThread();
+
+  window.__ready = true;
+</script>
+</body>
+</html>

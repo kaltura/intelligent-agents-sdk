@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>session_completed manual test harness</title>
+<style>
+  body { font-family: -apple-system, system-ui, sans-serif; margin: 0; padding: 16px; background: #111; color: #eee; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .sub { color: #888; font-size: 12px; margin-bottom: 16px; }
+  .status { background: #1b1b1b; border: 1px solid #333; border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; font-size: 13px; line-height: 1.6; }
+  .status b { color: #9cf; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+  button { flex: 1 1 auto; min-width: 120px; padding: 12px 10px; font-size: 14px; border-radius: 8px; border: 1px solid #444; background: #222; color: #eee; }
+  button:active { background: #333; }
+  button.danger { border-color: #833; }
+  button.warn { border-color: #a70; }
+  #newTabLink { display: none; margin-bottom: 12px; }
+  #log { background: #000; border: 1px solid #333; border-radius: 8px; padding: 8px; font-family: ui-monospace, Menlo, monospace; font-size: 11px; white-space: pre-wrap; word-break: break-word; height: 45vh; overflow-y: auto; }
+  .ok { color: #6f6; }
+  .bad { color: #f66; }
+  .dim { color: #888; }
+</style>
+</head>
+<body>
+<h1>session_completed manual test harness</h1>
+<div class="sub">See manual-testing/session-complete/README.md for the full test plan.</div>
+
+<div class="status" id="status">loading…</div>
+
+<div class="row">
+  <button id="btnConnect">Connect</button>
+  <button id="btnSend">Send test turn</button>
+</div>
+<div class="row">
+  <button id="btnDisconnect" class="danger">Disconnect (final)</button>
+  <button id="btnDisconnectNonFinal" class="warn">Disconnect (final:false)</button>
+</div>
+<div class="row">
+  <button id="btnComplete">Complete thread (no teardown)</button>
+</div>
+<div class="row">
+  <a id="newTabLink" href="#" target="_blank">Open same thread in a new tab →</a>
+</div>
+
+<div id="log"></div>
+
+<script type="module">
+  import { KalturaChatSession } from '/src/experience/chat-session.js';
+
+  const params = new URLSearchParams(location.search);
+  const token = params.get('token');
+  const threadId = params.get('threadId') || undefined;
+  const hiddenGraceMs = Number(params.get('hiddenGraceMs') || 30000);
+
+  const logEl = document.getElementById('log');
+  const statusEl = document.getElementById('status');
+  const newTabLink = document.getElementById('newTabLink');
+
+  // Best-effort local trace only, purely for this harness's own diagnostics —
+  // the SDK's own pagehide listener is unaffected. A page mid-unload may never
+  // get to run a console.log or update the DOM (confirmed unreliable during
+  // this SDK's own development), but a synchronous localStorage write does
+  // survive, so the NEXT load can prove pagehide really fired on this device.
+  const lastHide = localStorage.getItem('manual-verify-last-pagehide');
+  if (lastHide) {
+    log(`dim`, `Previous page instance recorded a pagehide at ${lastHide} (before this reload/tab).`);
+  }
+  window.addEventListener('pagehide', () => {
+    try { localStorage.setItem('manual-verify-last-pagehide', new Date().toISOString()); } catch { /* best-effort */ }
+  });
+
+  function log(cls, msg) {
+    const line = document.createElement('div');
+    if (cls) line.className = cls;
+    line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+    logEl.appendChild(line);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  function renderStatus() {
+    const s = window.session;
+    statusEl.innerHTML = `
+      <div>state: <b>${s?.state ?? 'no session'}</b></div>
+      <div>threadId: <b>${s?.threadId ?? '(none yet)'}</b></div>
+      <div>document.visibilityState: <b>${document.visibilityState}</b></div>
+      <div>navigator.onLine: <b>${navigator.onLine}</b></div>
+      <div>hiddenGraceMs: <b>${hiddenGraceMs}</b></div>
+    `;
+    if (s?.threadId) {
+      const u = new URL(location.href);
+      u.searchParams.set('threadId', s.threadId);
+      newTabLink.href = u.toString();
+      newTabLink.style.display = 'block';
+    }
+  }
+
+  if (!token) {
+    log('bad', 'No ?token= in the URL — open the link mint.mjs printed, not this file directly.');
+  } else {
+    // genieUrl points back at mint.mjs's own server (same origin — no CORS), which
+    // transparently proxies to the real backend. That's what lets this harness log
+    // every session_completed hit server-side, even ones fired from a dying page.
+    window.session = new KalturaChatSession({ token, genieUrl: location.origin, hiddenGraceMs, ...(threadId ? { threadId } : {}) });
+
+    window.session.on('sessionCompleted', (payload) => {
+      log(payload.sent ? 'ok' : 'bad', `sessionCompleted: ${JSON.stringify(payload)}`);
+      renderStatus();
+    });
+    window.session.on('stateChange', ({ state }) => { log('dim', `stateChange: ${state}`); renderStatus(); });
+    window.session.on('error', (err) => log('bad', `error: ${err?.message || err}`));
+    window.session.on('ended', (p) => log('dim', `ended: ${JSON.stringify(p)}`));
+
+    document.addEventListener('visibilitychange', renderStatus);
+    window.addEventListener('online', renderStatus);
+    window.addEventListener('offline', renderStatus);
+    setInterval(renderStatus, 1000);
+    renderStatus();
+    log('dim', `Ready. Token present. ${threadId ? `Seeded with threadId ${threadId} (second-tab mode).` : 'No threadId yet — tap Connect, then Send.'}`);
+  }
+
+  document.getElementById('btnConnect').onclick = async () => {
+    try { await window.session.connect(); log('ok', 'connect() resolved.'); }
+    catch (e) { log('bad', `connect() threw: ${e?.message || e}`); }
+    renderStatus();
+  };
+
+  document.getElementById('btnSend').onclick = async () => {
+    try {
+      const res = await window.session.sendText('Manual test turn — reply briefly.');
+      log('ok', `sendText() resolved: "${res?.text ?? ''}"`);
+    } catch (e) { log('bad', `sendText() threw: ${e?.message || e}`); }
+    renderStatus();
+  };
+
+  // disconnect() is synchronous — it fires the completion signal in the background and
+  // returns immediately, same as a real tab-close would. Watch the terminal running
+  // mint.mjs for the actual POST landing, not this log.
+  document.getElementById('btnDisconnect').onclick = () => {
+    try { window.session.disconnect(); log('dim', 'disconnect() returned — signal fires in the background, check the mint.mjs terminal.'); }
+    catch (e) { log('bad', `disconnect() threw: ${e?.message || e}`); }
+    renderStatus();
+  };
+
+  document.getElementById('btnDisconnectNonFinal').onclick = () => {
+    try { window.session.disconnect({ final: false, reason: 'manual_non_final' }); log('ok', 'disconnect({final:false}) returned — should NOT send a signal (check mint.mjs terminal stays quiet).'); }
+    catch (e) { log('bad', `disconnect({final:false}) threw: ${e?.message || e}`); }
+    renderStatus();
+  };
+
+  document.getElementById('btnComplete').onclick = async () => {
+    try {
+      const res = await window.session.completeThread();
+      log('ok', `completeThread() resolved: ${JSON.stringify(res)}`);
+    } catch (e) { log('bad', `completeThread() threw: ${e?.code || e?.message || e}`); }
+    renderStatus();
+  };
+</script>
+</body>
+</html>

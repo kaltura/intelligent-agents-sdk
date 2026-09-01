@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { KalturaAvatarSession } from '../../src/experience/index.js';
+import { KalturaAvatarSession, KalturaAgentSession } from '../../src/experience/index.js';
 import { FakeSocket, scriptHappyPath } from '../fakes/socket.js';
 import { FakeRTCPeerConnection, FakeVideoEl, fakeGetUserMedia } from '../fakes/rtc.js';
 
@@ -513,4 +513,118 @@ test('capacity backoff: onAvail applies ±15% jitter at the consumption site (ex
     assert.ok(waits[i] >= base * 0.85 - 1 && waits[i] <= base * 1.15 + 1, `wait[${i}]=${waits[i]}ms must land within ±15% of ${base}ms`);
   });
   assert.ok(waits.some((w, i) => w !== [30, 45, 60][i] * 1000), 'jitter must actually perturb at least one wait off the exact base');
+});
+
+// ─────────────────────────── session_completed signal ───────────────────────
+// The wire mechanism itself (POST shape, presence, hidden-grace, bfcache) is
+// unit-tested in isolation in test/unit/session-complete.test.js. These prove
+// it end to end against the real KalturaAvatarSession / KalturaAgentSession —
+// the same fetch doubles as WHEP's and genie's, since both share `cfg.fetch`.
+
+/** A fetch double that answers WHEP/DELETE as usual and separately records every `/thread/session_completed` POST. */
+function genieAwareFetch() {
+  const genieCalls = [];
+  const fn = async (url, init = {}) => {
+    const u = String(url);
+    if (u.includes('/thread/session_completed')) {
+      genieCalls.push({ url: u, init });
+      return { ok: true, status: 200, text: async () => '', headers: { get: () => null } };
+    }
+    if (init.method === 'DELETE') return { ok: true, status: 200, text: async () => '', headers: { get: () => null } };
+    return { ok: true, status: 201, text: async () => 'v=0\r\nanswer\r\n', headers: { get: () => 'https://srs/whep/resource/1' } };
+  };
+  fn.genieCalls = genieCalls;
+  return fn;
+}
+
+/** Fire the socket event that carries the real threadId, same shape as WIRE-PROTOCOL §4e. */
+const fireThreadId = (socket, threadId) => socket.server('agent_raw_text', { delta: JSON.stringify({ type: 'text', content: 'hi', threadId }) });
+
+test('session_completed: disconnect() POSTs {id:threadId} once genie has a real threadId', async () => {
+  const fetch = genieAwareFetch();
+  const { session, socket } = newSession({ fetch });
+  scriptHappyPath(socket);
+  await session.connect();
+  fireThreadId(socket, 'thread-e2e-1');
+  session.disconnect();
+  await delay(10);
+  assert.equal(fetch.genieCalls.length, 1);
+  const call = fetch.genieCalls[0];
+  assert.equal(call.url, 'https://genie.nvp1.ovp.kaltura.com/thread/session_completed');
+  assert.equal(call.init.method, 'POST');
+  assert.equal(call.init.keepalive, true);
+  assert.equal(call.init.headers.Authorization, `KS ${CONV_KS}`);
+  assert.deepEqual(JSON.parse(call.init.body), { id: 'thread-e2e-1' });
+});
+
+test('session_completed: completeThread() then disconnect() — idempotent, exactly one POST', async () => {
+  const fetch = genieAwareFetch();
+  const { session, socket } = newSession({ fetch });
+  scriptHappyPath(socket);
+  await session.connect();
+  fireThreadId(socket, 'thread-e2e-2');
+  const r = await session.completeThread();
+  assert.deepEqual(r, { ok: true, reason: 'manual' });
+  session.disconnect();
+  await delay(10);
+  assert.equal(fetch.genieCalls.length, 1, 'disconnect() must not re-send once already sent');
+});
+
+test('session_completed: no threadId yet — disconnect() sends nothing', async () => {
+  const fetch = genieAwareFetch();
+  const { session, socket } = newSession({ fetch });
+  scriptHappyPath(socket);
+  await session.connect();
+  session.disconnect();
+  await delay(10);
+  assert.equal(fetch.genieCalls.length, 0);
+});
+
+test('session_completed: server conversationEnded defaults to final:false — no POST (the backend already knows)', async () => {
+  const fetch = genieAwareFetch();
+  const { session, socket } = newSession({ fetch });
+  scriptHappyPath(socket);
+  await session.connect();
+  fireThreadId(socket, 'thread-e2e-3');
+  let ended = null;
+  session.on('ended', (p) => { ended = p; });
+  socket.server('conversationEnded', {});
+  await delay(10);
+  assert.equal(fetch.genieCalls.length, 0, 're-signalling a server-initiated end would waste a redundant lifecycle-rule evaluation');
+  assert.equal(session.state, 'disconnected');
+  assert.ok(ended);
+});
+
+test('session_completed: sessionCompleteOnEnd:false — disconnect() never POSTs', async () => {
+  const fetch = genieAwareFetch();
+  const { session, socket } = newSession({ fetch, cfg: { sessionCompleteOnEnd: false } });
+  scriptHappyPath(socket);
+  await session.connect();
+  fireThreadId(socket, 'thread-e2e-4');
+  session.disconnect();
+  await delay(10);
+  assert.equal(fetch.genieCalls.length, 0);
+});
+
+test('KalturaAgentSession: switchMode() never fires session_completed; the facade disconnect() after a switch fires exactly once', async () => {
+  FakeRTCPeerConnection.reset();
+  const fetch = genieAwareFetch();
+  const socket = new FakeSocket();
+  const videoEl = new FakeVideoEl({ autoCanPlay: true });
+  const agent = new KalturaAgentSession({
+    token: CONV_KS,
+    avatar: { srsBaseUrl: 'https://srs.example', turnServerUrl: 'turn.avatar.us.kaltura.ai', videoEl, socketFactory: () => socket, rtcConstructor: FakeRTCPeerConnection, fetch, getUserMedia: fakeGetUserMedia() },
+    chat: { fetch },
+  });
+  scriptHappyPath(socket);
+  await agent.connect();
+  fireThreadId(socket, 'thread-e2e-switch');
+  await agent.switchMode('chat');
+  assert.equal(agent.mode, 'chat');
+  assert.equal(agent.threadId, 'thread-e2e-switch', 'thread continuity survives the switch');
+  assert.equal(fetch.genieCalls.length, 0, 'switchMode() tears down the old transport internally — never a real end');
+  agent.disconnect();
+  await delay(10);
+  assert.equal(fetch.genieCalls.length, 1, 'the facade disconnect() is the real end, fired exactly once');
+  assert.deepEqual(JSON.parse(fetch.genieCalls[0].init.body), { id: 'thread-e2e-switch' });
 });

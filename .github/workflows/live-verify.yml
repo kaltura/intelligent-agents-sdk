@@ -30,6 +30,13 @@ name: Live verification
 # only. live-verify-browser (below) covers the actual browser/WebRTC path:
 # a real provisioned avatar, a headless Chromium with fake-but-real-pipeline
 # media flags, and a real chroma-key compositor — see scripts/live-verify-browser.mjs.
+# live-verify-session-complete covers the `session_completed` lifecycle signal
+# (KalturaChatSession's disconnect/tab-close/backgrounding/cross-tab-presence
+# mechanism) with a real conversation KS and real browser-native
+# pagehide/visibilitychange/BroadcastChannel, matrixed across Chromium,
+# Firefox and WebKit — see scripts/live-verify-session-complete.mjs. Real
+# mobile OS backgrounding/tab-kill behavior isn't reachable from any
+# Playwright engine; see manual-testing/session-complete/ for that.
 on:
   workflow_dispatch: {}
   pull_request:
@@ -167,13 +174,24 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   live-verify-browser:
-    name: 🔴🌐 Live browser verification
+    name: 🔴🌐 Live browser verification (${{ matrix.engine }})
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' ||
       ((github.event_name == 'merge_group' || github.event.label.name == 'run-live-verify') && needs.changes.outputs.code == 'true')
     runs-on: ubuntu-latest
     environment: live-verify
+    strategy:
+      fail-fast: false
+      matrix:
+        # firefox: Playwright's bundled headless Firefox has no H264 in
+        # RTCRtpReceiver.getCapabilities('video') until its OpenH264 GMP plugin is
+        # fetched (off by default in this launch profile — the SRS WHEP server only
+        # serves H264 video, so without it the server answers Firefox's VP8/VP9/AV1
+        # offer with `a=inactive` and no frame arrives). live-verify-browser.mjs
+        # enables the GMP fetch via firefoxUserPrefs and waits (measured 20-40s
+        # against Mozilla's real update service, 120s budget) before navigating.
+        engine: [chromium, firefox, webkit]
     steps:
       - name: 📥 Check out the repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -186,14 +204,15 @@ jobs:
       - name: 📦 Install dependencies
         run: npm ci
 
-      - name: 🎭 Install Chromium
-        run: npx playwright install --with-deps chromium
+      - name: 🎭 Install ${{ matrix.engine }}
+        run: npx playwright install --with-deps ${{ matrix.engine }}
 
-      - name: 🔴🌐 Provision a real avatar → render in headless Chromium → verify chroma-key → cleanup
+      - name: 🔴🌐 Provision a real avatar → render in headless ${{ matrix.engine }} → verify chroma-key + mic audio flow → cleanup
         id: live_verify_browser
         env:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
           AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
+          LIVE_VERIFY_BROWSER: ${{ matrix.engine }}
         run: |
           set -o pipefail
           node scripts/live-verify-browser.mjs 2>&1 | tee live-verify-browser-output.log
@@ -202,7 +221,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: live-verify-browser-artifacts
+          name: live-verify-browser-artifacts-${{ matrix.engine }}
           path: |
             live-verify-artifacts/
             live-verify-browser-output.log
@@ -212,7 +231,7 @@ jobs:
         if: always()
         run: |
           {
-            echo "### 🔴🌐 Live browser verification — ${{ steps.live_verify_browser.outcome }}"
+            echo "### 🔴🌐 Live browser verification (${{ matrix.engine }}) — ${{ steps.live_verify_browser.outcome }}"
             echo
             echo '```'
             tail -n 40 live-verify-browser-output.log
@@ -225,4 +244,65 @@ jobs:
               b64=$(base64 -w 0 "$shot" 2>/dev/null || base64 "$shot")
               echo "![chroma-key composited output](data:image/png;base64,$b64)"
             fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  live-verify-session-complete:
+    name: 🔴🌐 Live verification (session_completed signal, ${{ matrix.engine }})
+    needs: changes
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      ((github.event_name == 'merge_group' || github.event.label.name == 'run-live-verify') && needs.changes.outputs.code == 'true')
+    runs-on: ubuntu-latest
+    environment: live-verify
+    strategy:
+      fail-fast: false
+      matrix:
+        # webkit here is desktop Safari's engine, not iOS Safari — real mobile
+        # OS backgrounding/tab-kill behavior isn't reachable from any Playwright
+        # engine, see manual-testing/session-complete/ for that coverage.
+        engine: [chromium, firefox, webkit]
+    steps:
+      - name: 📥 Check out the repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: 🟢 Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+
+      - name: 📦 Install dependencies
+        run: npm ci
+
+      - name: 🎭 Install ${{ matrix.engine }}
+        run: npx playwright install --with-deps ${{ matrix.engine }}
+
+      - name: 🔴🌐 Real conversation KS, real headless ${{ matrix.engine }}, real pagehide/visibilitychange/BroadcastChannel, real /thread/session_completed → cleanup
+        id: live_verify_session_complete
+        env:
+          AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
+          AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
+          LIVE_VERIFY_BROWSER: ${{ matrix.engine }}
+        run: |
+          set -o pipefail
+          npm run live-verify:session-complete 2>&1 | tee live-verify-session-complete-output.log
+
+      - name: 📤 Upload live-verify-session-complete artifact
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: live-verify-session-complete-artifacts-${{ matrix.engine }}
+          path: |
+            live-verify-artifacts/
+            live-verify-session-complete-output.log
+          retention-days: 30
+
+      - name: 📝 Write job summary
+        if: always()
+        run: |
+          {
+            echo "### 🔴🌐 Live verification (session_completed signal, ${{ matrix.engine }}) — ${{ steps.live_verify_session_complete.outcome }}"
+            echo
+            echo '```'
+            tail -n 60 live-verify-session-complete-output.log
+            echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
