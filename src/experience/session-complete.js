@@ -47,6 +47,7 @@ export function createSessionCompleter(opts) {
 
   let threadId = null;
   let sent = false;
+  let wired = false;
   const teardown = new Teardown();
   let hiddenTimer = null;
   let channel = null;
@@ -94,12 +95,16 @@ export function createSessionCompleter(opts) {
     const controller = useTimeout ? new AbortController() : null;
     const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
     try {
-      await fetchImpl(`${genieUrl}${path}`, {
+      const res = await fetchImpl(`${genieUrl}${path}`, {
         method: 'POST', keepalive: true,
         headers: { 'Content-Type': 'application/json', Authorization: `KS ${token}` },
         body: JSON.stringify({ id }),
         ...(controller ? { signal: controller.signal } : {}),
       });
+      if (res && res.ok === false) {
+        audit('session.complete', 'fail', { target: 'thread', action: reason, reason: `http_${res.status}` });
+        return { ok: false, reason: 'http_error', status: res.status };
+      }
       audit('session.complete', 'success', { target: 'thread', action: reason });
       return { ok: true, reason };
     } catch (e) {
@@ -162,16 +167,17 @@ export function createSessionCompleter(opts) {
       threadId = id;
       openPresence();
     },
-    /** Wire `pagehide`/`visibilitychange`/`pageshow`. No-op in Node/SSR or when disabled. */
+    /** Wire `pagehide`/`visibilitychange`/`pageshow`. No-op in Node/SSR, when disabled, or if already wired. */
     wire() {
-      if (!enabled || !pageLifecycleAware || typeof document === 'undefined' || typeof document.addEventListener !== 'function') return;
+      if (wired || !enabled || !pageLifecycleAware || typeof document === 'undefined' || typeof document.addEventListener !== 'function') return;
+      wired = true;
       const add = (target, type, fn) => { target.addEventListener(type, fn); teardown.track(() => { try { target.removeEventListener(type, fn); } catch { /* */ } }); };
       add(document, 'visibilitychange', onVisibilityChange);
       add(globalThis, 'pagehide', onPageHide);
       add(globalThis, 'pageshow', onPageShow);
     },
     /** Remove every listener/timer this instance ever added. Idempotent (Teardown.run). */
-    unwire() { clearHiddenTimer(); teardown.run(); },
+    unwire() { wired = false; clearHiddenTimer(); teardown.run(); },
     /** Re-arm the hidden-grace timer on activity — an actively-talking hidden tab must never grace-complete mid-turn. */
     touch() { if (hiddenTimer) armHiddenGrace(); },
     finalize,

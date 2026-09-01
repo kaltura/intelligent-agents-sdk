@@ -165,6 +165,15 @@ test('fetch rejection never throws — resolves network_error and audits a fail 
   assert.equal(audits[0].fields.reason, 'offline');
 });
 
+test('an HTTP error response (res.ok:false) is not reported as success', async () => {
+  const { completer, audits } = makeCompleter({ fetchImpl: async () => ({ ok: false, status: 500 }) });
+  completer.noteThreadId('thread-1');
+  const r = await completer.finalize('pagehide');
+  assert.deepEqual(r, { ok: false, reason: 'http_error', status: 500 });
+  assert.equal(audits[0].outcome, 'fail');
+  assert.equal(audits[0].fields.reason, 'http_500');
+});
+
 test('complete(reason) is the public entry point for finalize()', async () => {
   const { completer, calls } = makeCompleter();
   completer.noteThreadId('thread-1');
@@ -188,6 +197,21 @@ test('wire()/unwire() add and remove exactly their own listeners (idempotent unw
     assert.equal(dom.winHandlerCount('pagehide'), 0);
     assert.equal(dom.winHandlerCount('pageshow'), 0);
     completer.unwire();   // idempotent — no throw, nothing left to remove
+  } finally { dom.restore(); }
+});
+
+test('wire() called twice does not double-register listeners', () => {
+  const { completer } = makeCompleter();
+  const dom = stubDom();
+  try {
+    completer.wire();
+    completer.wire();
+    assert.equal(dom.docHandlerCount('visibilitychange'), 1);
+    assert.equal(dom.winHandlerCount('pagehide'), 1);
+    assert.equal(dom.winHandlerCount('pageshow'), 1);
+    completer.unwire();
+    completer.wire();   // wire() after unwire() re-wires normally
+    assert.equal(dom.docHandlerCount('visibilitychange'), 1);
   } finally { dom.restore(); }
 });
 
