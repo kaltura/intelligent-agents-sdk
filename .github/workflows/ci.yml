@@ -89,6 +89,49 @@ jobs:
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
+  noise-suppressor:
+    name: 🎙️ Noise-suppressor DSP check (${{ matrix.engine }})
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [chromium, firefox, webkit]
+    steps:
+      - name: 📥 Check out the repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: 🟢 Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+
+      - name: 📦 Install dependencies
+        run: npm ci
+
+      - name: 🎭 Install ${{ matrix.engine }}
+        run: npx playwright install --with-deps ${{ matrix.engine }}
+
+      - name: 🎙️ Real headless ${{ matrix.engine }}, real AudioWorklet — noise gate passes loud audio, attenuates quiet
+        id: verify_noise_suppressor
+        env:
+          VERIFY_BROWSER: ${{ matrix.engine }}
+        run: |
+          set -o pipefail
+          npm run verify:noise-suppressor 2>&1 | tee verify-noise-suppressor-output.log
+
+      - name: 📝 Write job summary
+        if: always()
+        run: |
+          {
+            echo "### 🎙️ Noise-suppressor DSP check (${{ matrix.engine }}) — ${{ steps.verify_noise_suppressor.outcome }}"
+            echo
+            echo '```'
+            tail -n 30 verify-noise-suppressor-output.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
   constitution:
     name: 📜 Verify the SDK Constitution (agent_verify.mjs)
     runs-on: ubuntu-latest

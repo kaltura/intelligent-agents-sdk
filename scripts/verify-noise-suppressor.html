@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>noise-suppressor DSP verify</title></head>
+<body>
+<!-- A click satisfies WebKit's autoplay/gesture requirement for
+     AudioContext.resume() — without one, resume() never settles when this
+     script runs unattended. The driver script clicks this before starting. -->
+<button id="go">go</button>
+<script type="module">
+  import { createNoiseSuppressor } from '/src/experience/noise-suppressor.js';
+
+  // Six 600ms segments, alternating loud (a sine tone) and quiet (low-amplitude
+  // noise), built directly into an AudioBuffer so each segment's true input RMS
+  // is known exactly from the samples we wrote — no need to also measure the
+  // raw input through a second analyser tap.
+  const SEGMENT_SEC = 0.6;
+  const SEGMENT_TYPES = ['loud', 'quiet', 'loud', 'quiet', 'loud', 'quiet'];
+  const LOUD_AMPLITUDE = 0.4;
+  const QUIET_AMPLITUDE = 0.001;
+
+  function rms(samples) {
+    let sum = 0;
+    for (const s of samples) sum += s * s;
+    return Math.sqrt(sum / samples.length);
+  }
+
+  async function run() {
+    const ctx = new AudioContext();
+    if (ctx.state === 'suspended') await ctx.resume();
+
+    const sr = ctx.sampleRate;
+    const totalSec = SEGMENT_SEC * SEGMENT_TYPES.length;
+    const buffer = ctx.createBuffer(1, Math.ceil(totalSec * sr), sr);
+    const data = buffer.getChannelData(0);
+
+    const segmentInputRms = [];
+    for (let i = 0; i < SEGMENT_TYPES.length; i++) {
+      const start = Math.floor(i * SEGMENT_SEC * sr);
+      const end = Math.floor((i + 1) * SEGMENT_SEC * sr);
+      const isLoud = SEGMENT_TYPES[i] === 'loud';
+      const segment = new Float32Array(end - start);
+      for (let n = 0; n < segment.length; n++) {
+        segment[n] = isLoud
+          ? LOUD_AMPLITUDE * Math.sin((2 * Math.PI * 440 * n) / sr)
+          : QUIET_AMPLITUDE * (Math.random() * 2 - 1);
+      }
+      data.set(segment, start);
+      segmentInputRms.push(rms(segment));
+    }
+
+    const bufSrc = ctx.createBufferSource();
+    bufSrc.buffer = buffer;
+    const synthDest = ctx.createMediaStreamDestination();
+    bufSrc.connect(synthDest);
+
+    const suppress = createNoiseSuppressor({
+      audioContext: ctx,
+      thresholdDb: -40,
+      attackMs: 5,
+      releaseMs: 50,
+      floorAdaptMs: 100,
+    });
+    const { stream: outStream, stop } = await suppress(synthDest.stream);
+
+    const outSource = ctx.createMediaStreamSource(outStream);
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 2048;
+    outSource.connect(analyser);
+    // AnalyserNode only receives fresh render data while it's part of the graph
+    // actually being pulled from ctx.destination — connect it through so it's live.
+    analyser.connect(ctx.destination);
+
+    const buckets = SEGMENT_TYPES.map(() => []);
+    const pollBuf = new Float32Array(analyser.fftSize);
+    const GUARD_SEC = 0.2; // skip the first 200ms of each segment (gate settling time)
+
+    const t0 = ctx.currentTime;
+    function poll() {
+      const elapsed = ctx.currentTime - t0;
+      const segIndex = Math.floor(elapsed / SEGMENT_SEC);
+      const withinSeg = elapsed - segIndex * SEGMENT_SEC;
+      if (segIndex >= 0 && segIndex < buckets.length && withinSeg > GUARD_SEC) {
+        analyser.getFloatTimeDomainData(pollBuf);
+        buckets[segIndex].push(rms(pollBuf));
+      }
+    }
+
+    const pollTimer = setInterval(poll, 20);
+    await new Promise((resolvePlay) => {
+      bufSrc.onended = resolvePlay;
+      bufSrc.start();
+    });
+    clearInterval(pollTimer);
+
+    stop();
+    await ctx.close();
+
+    window.__result = {
+      segments: SEGMENT_TYPES.map((type, i) => ({
+        type,
+        inputRms: segmentInputRms[i],
+        outputRms: buckets[i].length ? rms(buckets[i]) : null,
+        samples: buckets[i].length,
+      })),
+    };
+  }
+
+  window.__start = () => {
+    run().catch((err) => {
+      window.__result = { error: err?.message || String(err) };
+    });
+  };
+</script>
+</body>
+</html>
