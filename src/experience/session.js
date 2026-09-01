@@ -128,7 +128,7 @@ export class KalturaAvatarSession extends Emitter {
    * @param {{username:string,credential:string,expiry?:number}} [cfg.turnCredentials]  Server-minted EPHEMERAL TURN creds (RFC 7635). Preferred over the static fallback.
    * @param {boolean} [cfg.allowInsecureTransport]  Permit ws/http transport (localhost/dev ONLY — emits a loud warning; never in production).
    * @param {(event:object)=>void} [cfg.onAuditEvent]  Redacted structured security events (session.connect/disconnect/auth.fail/protocol.violation). NIST AU-2/AU-3.
-   * @param {string} [cfg.preferredVideoCodec]  Force a specific codec for the STV downlink via `setCodecPreferences` (e.g. `'VP8'`, `'H264'`, `'VP9'`, `'AV1'`). Falls back silently to the browser default if the codec isn't in `RTCRtpReceiver.getCapabilities('video')`.
+   * @param {string} [cfg.preferredVideoCodec]  Force a specific codec for the STV downlink via `setCodecPreferences`. Leave unset — the backend only ever encodes H264 video, so any other value (`'VP8'`, `'VP9'`, `'AV1'`) still negotiates successfully but the video track never produces a frame (audio is unaffected, no error is thrown).
    * @param {number} [cfg.maxAsrBitrateKbps]  Cap the ASR mic uplink's bitrate via `setParameters()` (applied to the audio sender). Adjustable mid-session via `setAsrBandwidth()`.
    * @param {typeof RTCRtpReceiver} [cfg.rtcRtpReceiverConstructor]
    * @param {number} [cfg.statsIntervalMs]  Poll `RTCPeerConnection.getStats()` on both channels at this interval and emit `connectionQuality` (RTT/packet-loss/jitter/bitrate) — a portable connectivity beacon reporting the raw `getStats()` numbers only, no scoring/telemetry-backend wiring. Unset (default) disables it; a session that never opts in pays zero `getStats()` cost.
@@ -643,7 +643,7 @@ export class KalturaAvatarSession extends Emitter {
 
     const url = this._webrtcUrl;
     if (whepUrlHasPrivateIp(url)) {
-      throw new KalturaError({ type: 'https://docs.kaltura.com/agentic/errors/whep_private_ip', title: 'WHEP private IP', code: 'whep_private_ip', detail: 'STV egress returned a private IP (the broken cast_mode:webrtc path). The SDK only uses SRS WHEP.' });
+      throw new KalturaError({ type: 'https://docs.kaltura.com/agentic/errors/whep_private_ip', title: 'WHEP private IP', code: 'whep_private_ip', detail: 'STV egress returned a private IP — unreachable from a browser.' });
     }
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
@@ -659,7 +659,7 @@ export class KalturaAvatarSession extends Emitter {
     // egress host after the initial request-URL check above passed) — checked separately
     // since it's only known post-response (additive to the pre-request check).
     if (this._whepLocation && whepUrlHasPrivateIp(this._whepLocation)) {
-      throw new KalturaError({ type: 'https://docs.kaltura.com/agentic/errors/whep_private_ip', title: 'WHEP private IP', code: 'whep_private_ip', detail: 'STV WHEP Location resolved to a private IP (the broken cast_mode:webrtc path). The SDK only uses SRS WHEP.' });
+      throw new KalturaError({ type: 'https://docs.kaltura.com/agentic/errors/whep_private_ip', title: 'WHEP private IP', code: 'whep_private_ip', detail: 'STV WHEP Location resolved to a private IP — unreachable from a browser.' });
     }
     await pc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
     await playable;
