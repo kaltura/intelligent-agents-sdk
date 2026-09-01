@@ -6,13 +6,32 @@
  *
  * Provisions a throwaway agent+avatar+intellect, serves `examples/chroma-key-avatar.html`
  * from a local HTTP server (with `/appInit` backed by the real appInit response),
- * loads it in headless Chromium with fake-but-real-pipeline media flags
- * (`--use-fake-ui/device-for-media-stream` only auto-grants getUserMedia — the
- * actual WHEP downlink and chroma-key compositing are unfaked), waits for the
- * chroma-key compositor to render real, varying, partially-transparent frames
- * (proof the green screen is actually being keyed, not just present-or-blank),
- * captures a screenshot of the composited output for human visual QA, then
- * tears down all three provisioned resources.
+ * loads it in a real headless browser with fake-but-real-pipeline media flags
+ * (auto-grants getUserMedia — the actual WHEP downlink, mic uplink, and
+ * chroma-key compositing are unfaked), waits for the chroma-key compositor to
+ * render real, varying, partially-transparent frames (proof the green screen
+ * is actually being keyed, not just present-or-blank), asserts real mic audio
+ * actually reached the ASR peer (`RTCPeerConnection.getStats()` outbound-rtp
+ * `bytesSent > 0`), captures a screenshot of the composited output for human
+ * visual QA, then tears down all three provisioned resources.
+ *
+ * Engine: LIVE_VERIFY_BROWSER=chromium|firefox|webkit (default chromium).
+ * All three pass end-to-end against the real backend.
+ * webkit needed a real fix to get there: its native RTCPeerConnection
+ * rejects any `?transport=` query string on a turn:/turns: URL, which
+ * src/experience/wire.js's createPeerConnection() now retries around (see
+ * that function's comment). webkit here is desktop Safari's engine, not
+ * iOS Safari — real mobile OS behavior isn't reachable from any Playwright
+ * engine (see manual-testing/session-complete/ for that coverage).
+ *
+ * firefox needed its OpenH264 GMP plugin fetch explicitly enabled via
+ * firefoxUserPrefs (off by default in Playwright's launch profile) plus a
+ * wait for the fetch to land before navigating (measured 20-40s against
+ * Mozilla's real update service across repeated runs, 120s budget) — without it,
+ * RTCRtpReceiver.getCapabilities('video') has no H264, and since the SRS
+ * WHEP server only serves H264 video, the server answers Firefox's
+ * VP8/VP9/AV1-only offer with `a=inactive` on the video m-line (ICE/DTLS
+ * still connect fine; only video is silently dropped).
  *
  * Credentials: AGENTIC_PARTNER_ID / AGENTIC_ADMIN_SECRET, from the environment
  * or a .env file in the repo root (same convention as scripts/live-verify.mjs).
@@ -21,8 +40,16 @@ import { readFileSync, writeFileSync, mkdirSync, createReadStream, existsSync, s
 import { resolve, dirname, extname, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'node:http';
-import { chromium } from 'playwright';
+import { chromium, firefox, webkit } from 'playwright';
 import { Management } from '../src/management/index.js';
+
+const ENGINES = { chromium, firefox, webkit };
+const engineName = process.env.LIVE_VERIFY_BROWSER || 'chromium';
+const engine = ENGINES[engineName];
+if (!engine) {
+  console.error(`Unknown LIVE_VERIFY_BROWSER "${engineName}" — expected one of: ${Object.keys(ENGINES).join(', ')}`);
+  process.exit(1);
+}
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, '..');
@@ -46,7 +73,7 @@ if (!partnerId || !adminSecret) {
 }
 
 const startedAt = new Date().toISOString();
-const runId = `ci-live-verify-browser-${Date.now()}`;
+const runId = `ci-live-verify-browser-${engineName}-${Date.now()}`;
 const artifact = { runId, startedAt, partnerId, steps: [] };
 
 function record(step, ok, detail) {
@@ -87,6 +114,7 @@ let failed = false;
 // partial object — but the error carries exactly which ids were already created
 // (see src/management/provision.js), so cleanup below can still reach them.
 let createdSoFar = null;
+const pageErrors = [];
 
 try {
   admin = await kaltura.sessions.createAdminToken();
@@ -117,13 +145,62 @@ try {
   const port = server.address().port;
   record('local-server-start', true, { port });
 
-  browser = await chromium.launch({
-    args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', '--autoplay-policy=no-user-gesture-required'],
-  });
-  const page = await browser.newPage();
-  const pageErrors = [];
+  browser = await engine.launch(
+    engineName === 'chromium'
+      ? { args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', '--autoplay-policy=no-user-gesture-required'] }
+      : engineName === 'firefox'
+        ? {
+          firefoxUserPrefs: {
+            'media.navigator.streams.fake': true,
+            'media.navigator.permission.disabled': true,
+            'media.autoplay.default': 0,
+            // Playwright's bundled Firefox has no H264 support until its OpenH264 GMP
+            // plugin is fetched — off by default in this launch profile. These turn
+            // the fetch on; the SRS WHEP server only serves H264 (WIRE-PROTOCOL.md §6),
+            // so without this the video m-line always comes back `a=inactive`.
+            'media.gmp-manager.updateEnabled': true,
+            'media.gmp-provider.enabled': true,
+            'media.gmp-gmpopenh264.enabled': true,
+            'media.gmp-gmpopenh264.autoupdate': true,
+          },
+        }
+        : {},
+  );
+  const context = engineName === 'webkit'
+    ? await browser.newContext({ permissions: ['camera', 'microphone'] })
+    : browser;
+  const page = await context.newPage();
   page.on('console', (msg) => { if (msg.type() === 'error') pageErrors.push(msg.text()); });
   page.on('pageerror', (err) => pageErrors.push(String(err)));
+
+  if (engineName === 'firefox') {
+    // The GMP fetch runs in the background after launch, on its own schedule — measured
+    // 20-40s across repeated real runs against Mozilla's actual update service, no fixed
+    // interval. 120s budget covers that with real margin before the ASR/STV peer
+    // connections negotiate without H264.
+    const ffGmpStart = Date.now();
+    await page.goto('data:text/html,<h1>gmp warmup</h1>');
+    await page.waitForFunction(
+      () => window.RTCRtpReceiver.getCapabilities('video').codecs.some((c) => /h264/i.test(c.mimeType)),
+      null,
+      { timeout: 120000, polling: 2000 },
+    );
+    record('firefox-openh264-ready', true, { waitedMs: Date.now() - ffGmpStart });
+  }
+
+  // The example never exposes its RTCPeerConnections on window — wrap the
+  // constructor before any SDK code runs so getStats() below can find the
+  // real ASR uplink peer without touching examples/chroma-key-avatar.html.
+  await page.addInitScript(() => {
+    window.__pcs = [];
+    const OrigPC = window.RTCPeerConnection;
+    window.RTCPeerConnection = function (...args) {
+      const pc = new OrigPC(...args);
+      window.__pcs.push(pc);
+      return pc;
+    };
+    window.RTCPeerConnection.prototype = OrigPC.prototype;
+  });
 
   await page.goto(`http://127.0.0.1:${port}/examples/chroma-key-avatar.html`, { waitUntil: 'domcontentloaded' });
 
@@ -159,6 +236,27 @@ try {
   const stats = await statsHandle.jsonValue();
   record('compositor-keying-verified', true, stats);
 
+  // Real mic audio must actually reach a peer, not just get captured locally —
+  // find an outbound-rtp audio report with real bytes sent, on any of the
+  // page's RTCPeerConnections (the ASR uplink is whichever one negotiates a
+  // sendonly/sendrecv audio m-line; we don't need to know which by name).
+  const audioFlow = await page.waitForFunction(
+    async () => {
+      for (const pc of window.__pcs || []) {
+        const report = await pc.getStats();
+        for (const stat of report.values()) {
+          if (stat.type === 'outbound-rtp' && stat.kind === 'audio' && stat.bytesSent > 0) {
+            return { bytesSent: stat.bytesSent, packetsSent: stat.packetsSent };
+          }
+        }
+      }
+      return false;
+    },
+    null,
+    { timeout: 20000, polling: 500 },
+  ).then((h) => h.jsonValue());
+  record('mic-audio-flow-verified', true, audioFlow);
+
   // Let the example's own 2.5s auto-crop union settle before the human-reviewable shot.
   await page.waitForTimeout(3000);
 
@@ -171,7 +269,7 @@ try {
 } catch (err) {
   failed = true;
   createdSoFar = err?.body?.createdSoFar || null;
-  record('live-verify-browser', false, { message: err?.detail || err?.message || String(err), code: err?.code, createdSoFar });
+  record('live-verify-browser', false, { message: err?.detail || err?.message || String(err), code: err?.code, createdSoFar, pageErrors });
 } finally {
   if (browser) { try { await browser.close(); } catch { /* best-effort teardown */ } }
   if (server) { try { await new Promise((r) => server.close(r)); } catch { /* best-effort teardown */ } }
