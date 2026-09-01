@@ -40,7 +40,14 @@ if (!engine) {
 
 function startServer() {
   const server = createServer((req, res) => {
-    const urlPath = normalize(decodeURIComponent(req.url.split('?')[0]));
+    let urlPath;
+    try {
+      urlPath = normalize(decodeURIComponent(req.url.split('?')[0]));
+    } catch {
+      res.writeHead(400);
+      res.end('bad request');
+      return;
+    }
     const filePath = resolve(repoRoot, `.${urlPath}`);
     if (!filePath.startsWith(repoRoot) || !existsSync(filePath) || !statSync(filePath).isFile()) {
       res.writeHead(404);
@@ -71,7 +78,15 @@ try {
     engineName === 'chromium'
       ? { args: ['--autoplay-policy=no-user-gesture-required'] }
       : engineName === 'firefox'
-        ? { firefoxUserPrefs: { 'media.autoplay.default': 0, 'media.autoplay.block-webaudio': false } }
+        ? {
+            firefoxUserPrefs: {
+              'media.autoplay.default': 0,
+              'media.autoplay.block-webaudio': false,
+              // CI runners with no real audio device otherwise stall createMediaStreamDestination()/
+              // createMediaStreamSource() indefinitely — same fake-media-backend fix as live-verify-browser.mjs.
+              'media.navigator.streams.fake': true,
+            },
+          }
         : {},
   );
   const page = await browser.newPage();
@@ -84,7 +99,7 @@ try {
   await page.evaluate(() => window.__start());
   let result;
   try {
-    result = await page.waitForFunction(() => window.__result, null, { timeout: 20000 }).then((h) => h.jsonValue());
+    result = await page.waitForFunction(() => window.__result, null, { timeout: 40000 }).then((h) => h.jsonValue());
   } catch (timeoutErr) {
     console.error(`[${engineName}] page never produced a result within the timeout.`);
     if (consoleErrors.length) console.error(`[${engineName}] page console:`, consoleErrors);

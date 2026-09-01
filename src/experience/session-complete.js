@@ -90,7 +90,8 @@ export function createSessionCompleter(opts) {
   async function send(reason) {
     const token = getToken();
     const id = threadId;
-    if (!id || !token) return { ok: false, reason: 'no_thread' };
+    if (!id) return { ok: false, reason: 'no_thread' };
+    if (!token) return { ok: false, reason: 'no_token' };
     const useTimeout = !!timeoutMs && !UNLOAD_REASONS.has(reason) && typeof AbortController === 'function';
     const controller = useTimeout ? new AbortController() : null;
     const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
@@ -134,6 +135,9 @@ export function createSessionCompleter(opts) {
       return { ok: true, reason: 'suppressed', peers: peers.size };
     }
     const result = await send(reason);
+    // A failed attempt must not permanently lock out retries — only a genuine
+    // success (or a suppress, handled above) is a terminal outcome.
+    if (!result.ok) sent = false;
     emit('sessionCompleted', { reason, sent: result.ok, suppressed: false, peers: 0 });
     return result;
   }
@@ -169,7 +173,7 @@ export function createSessionCompleter(opts) {
     },
     /** Wire `pagehide`/`visibilitychange`/`pageshow`. No-op in Node/SSR, when disabled, or if already wired. */
     wire() {
-      if (wired || !enabled || !pageLifecycleAware || typeof document === 'undefined' || typeof document.addEventListener !== 'function') return;
+      if (wired || !enabled || !pageLifecycleAware || typeof document === 'undefined' || typeof document.addEventListener !== 'function' || typeof globalThis.addEventListener !== 'function') return;
       wired = true;
       const add = (target, type, fn) => { target.addEventListener(type, fn); teardown.track(() => { try { target.removeEventListener(type, fn); } catch { /* */ } }); };
       add(document, 'visibilitychange', onVisibilityChange);

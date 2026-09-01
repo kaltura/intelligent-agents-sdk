@@ -156,6 +156,32 @@ test('no threadId yet — finalize() sends nothing', async () => {
   assert.equal(calls.length, 0);
 });
 
+test('threadId present but no token — finalize() sends nothing, distinct reason from no_thread', async () => {
+  const { completer, calls } = makeCompleter({ getToken: () => null });
+  completer.noteThreadId('thread-1');
+  const r = await completer.finalize('disconnect');
+  assert.deepEqual(r, { ok: false, reason: 'no_token' });
+  assert.equal(calls.length, 0);
+});
+
+test('a failed send() does not permanently lock out retries — a later finalize() call can still succeed', async () => {
+  let shouldFail = true;
+  const { completer, calls } = makeCompleter({
+    fetchImpl: async (url, init) => {
+      calls.push({ url, init });
+      if (shouldFail) return { ok: false, status: 500 };
+      return { ok: true, status: 200 };
+    },
+  });
+  completer.noteThreadId('thread-1');
+  const first = await completer.finalize('pagehide');
+  assert.deepEqual(first, { ok: false, reason: 'http_error', status: 500 });
+  shouldFail = false;
+  const second = await completer.finalize('pagehide');
+  assert.deepEqual(second, { ok: true, reason: 'pagehide' });
+  assert.equal(calls.length, 2, 'the failed attempt did not lock out the retry');
+});
+
 test('fetch rejection never throws — resolves network_error and audits a fail with a reason', async () => {
   const { completer, audits } = makeCompleter({ fetchImpl: async () => { throw new Error('offline'); } });
   completer.noteThreadId('thread-1');
@@ -183,6 +209,20 @@ test('complete(reason) is the public entry point for finalize()', async () => {
 });
 
 // ───────────────────────── page lifecycle listeners ─────────────────────────
+
+test('wire() is a no-op when globalThis has no addEventListener (document exists but window does not)', () => {
+  const { completer } = makeCompleter();
+  const dom = stubDom();
+  const origAdd = globalThis.addEventListener;
+  delete globalThis.addEventListener;
+  try {
+    completer.wire();
+    assert.equal(dom.docHandlerCount('visibilitychange'), 0);
+  } finally {
+    globalThis.addEventListener = origAdd;
+    dom.restore();
+  }
+});
 
 test('wire()/unwire() add and remove exactly their own listeners (idempotent unwire)', () => {
   const { completer } = makeCompleter();

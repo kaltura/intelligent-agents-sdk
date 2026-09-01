@@ -10,6 +10,7 @@ When a conversation ends, the SDK POSTs `{genieUrl}/thread/session_completed` so
 
 1. From the repo root, export `AGENTIC_PARTNER_ID` and `AGENTIC_ADMIN_SECRET` (or drop a `.env` file in the repo root — same convention as `scripts/live-verify-session-complete.mjs`).
 2. Run:
+
    ```bash
    node manual-testing/session-complete/mint.mjs
    ```

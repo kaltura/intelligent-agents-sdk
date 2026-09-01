@@ -18,6 +18,7 @@ This covers the real avatar pipeline (mic capture → ASR uplink → STV/WHEP vi
 
 1. From the repo root, export `AGENTIC_PARTNER_ID` and `AGENTIC_ADMIN_SECRET` (or drop a `.env` file in the repo root).
 2. Run:
+
    ```bash
    node manual-testing/voice-video/mint.mjs
    ```
