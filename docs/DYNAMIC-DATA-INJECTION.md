@@ -64,7 +64,7 @@ The intellect must have `allow_client_variables: true`, or every request variabl
 await mgmt.intellects.setClientVariablesEnabled(configId, true, adminKs);
 ```
 
-The rejection is **silent on every path**: the turn comes back as an empty reply — no HTTP error, no socket error. The server's 403 fires inside its streaming pipeline *after* the response has already opened, so it never reaches the wire. Both session classes (`KalturaAvatarSession` and `KalturaChatSession`) detect the pattern and emit a once-per-session `warning` event, `{ code: 'empty_turn_with_request_vars', message, requestVarKeys }` (variable *names* only, never values), pointing at the gate:
+The rejection is **silent on every path**. The turn comes back as an empty reply: no HTTP error, no socket error. The server's 403 fires inside its streaming pipeline *after* the response has already opened, so it never reaches the wire. Both session classes (`KalturaAvatarSession` and `KalturaChatSession`) detect the pattern and emit a once-per-session `warning` event, `{ code: 'empty_turn_with_request_vars', message, requestVarKeys }` (variable *names* only, never values), pointing at the gate:
 
 ```js
 session.on('warning', (w) => {

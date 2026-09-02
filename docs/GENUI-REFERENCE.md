@@ -10,7 +10,7 @@ All claims here are anchored to repo source (`src/...`) and `WIRE-PROTOCOL.md`; 
 
 ## The model in one paragraph
 
-The brain emits a **GenUI widget** by writing a fenced block carrying a `widgetName`. The brain brain backend's `message_service` converts that into a stream segment of `type:"unisphere-tool"` shaped `{ type, content, metadata:{ widgetName, runtimeName }, speechId?, threadId? }`. **All widgets share `widgetName:"unisphere.widget.genie"`** — the host keys off `metadata.runtimeName` (stripping the `-tool` suffix) to pick a renderer. The SDK turns each segment into a framework-agnostic descriptor `{kind, data}` your app maps to DOM. Nothing here emits HTML; every string/URL is run through `core/safety.js` first.
+The brain emits a **GenUI widget** by writing a fenced block carrying a `widgetName`. The brain backend's `message_service` converts that into a stream segment of `type:"unisphere-tool"` shaped `{ type, content, metadata:{ widgetName, runtimeName }, speechId?, threadId? }`. **All widgets share `widgetName:"unisphere.widget.genie"`** — the host keys off `metadata.runtimeName` (stripping the `-tool` suffix) to pick a renderer. The SDK turns each segment into a framework-agnostic descriptor `{kind, data}` your app maps to DOM. Nothing here emits HTML; every string/URL is run through `core/safety.js` first.
 
 ## The first-class runtimes
 
@@ -398,3 +398,5 @@ Both `followups-tool` and `show-link-tool` (the second requires enabling the `sh
 | `submitStructuredDataForm` / `sendScreenShot` | `src/experience/session.js` |
 | Widget-interaction analytics (`KavaAnalytics.buttonClicked`) | `src/experience/analytics.js` |
 | Wire segment shape + `force_experience` | `WIRE-PROTOCOL.md` §4e, §7 |
+
+**`screen_share_analysis` / `sendScreenShot(data)`.** `screen_share_analysis` is the capability that lets an agent receive and reason about a still image of the user's screen. Turn it on via `mgmt.intellects.setCapability(configId, 'screen_share_analysis', 'on', ks)` (it's `OFF_BY_DEFAULT` — see above). On a live session, call `session.sendScreenShot(data)` (`data` is an `ArrayBuffer`/`Uint8Array` image capture) to push one still for vision analysis; it throws unless the server's `clientConfiguration.isScreenShareEnabled` is true, which only happens once the capability is on for that intellect.

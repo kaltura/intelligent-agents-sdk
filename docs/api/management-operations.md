@@ -15,6 +15,8 @@ All use the **admin KS**.
 
 `agent/list` has no server-side filtering — always send `"filter":{}` and filter client-side.
 
+`mgmt.agents.delete` refuses to delete an agent whose `adminTags` match a production marker (`prod`, `production`, `keep`, `do-not-delete`, `live` — see `PROTECTED_TAGS` in `src/management/agents.js`), unless called with `{confirmPermanent:true, allowProtected:true}`. This guards against an automated cleanup-by-tag sweep deleting a real, in-use agent.
+
 ## Avatars — `https://api.avatar.us.kaltura.ai`
 
 | Operation | Endpoint | Body |
@@ -48,7 +50,7 @@ A standalone, partner-level entity (see § Tools above) — not embedded in an i
 | Update | `POST /v1/tool/update` | `{"id":"TOOL_UUID", "name"?, "config"?}` |
 | Delete | `POST /v1/tool/delete` | `{"id":"TOOL_UUID"}` |
 
-Deleting a Tool does **not** cascade — an intellect that still lists the id in `tool_ids` keeps a dangling reference; drop it first via `mgmt.intellectConfig.setToolIds`.
+Deleting a Tool does **not** cascade: an intellect that still lists the id in `tool_ids` keeps a dangling reference. Drop it first via `mgmt.intellectConfig.setToolIds`.
 
 ## Skills — `https://genie.nvp1.ovp.kaltura.com`
 
@@ -63,6 +65,20 @@ A standalone, partner-level reusable-instruction entity — `{id (uuid), name, d
 | Delete | `POST /v1/skill/delete` | `{"id":"SKILL_UUID"}` — replies `{id}`; a follow-up get 404s |
 
 Before deleting a Skill, `mgmt.skills.delete` lists every intellect and refuses with a typed `skill_in_use` error naming each one still referencing the id in `skill_ids`, unless called with `{confirmPermanent:true, force:true}`. Tools' `mgmt.tools.delete` carries the identical `tool_in_use` guard.
+
+## Threads — `https://genie.nvp1.ovp.kaltura.com`
+
+All thread endpoints require an **admin KS** (`disableentitlement`). SDK: `mgmt.threads.{list, get, rename, delete, transcript}`.
+
+| Operation | Endpoint | Body |
+|-----------|----------|------|
+| List | `POST /v1/thread/list` | `{"filter":{"objectType":"ListThreadFilter"},"pager":{"pageIndex":1,"pageSize":30}}` |
+| Get | `POST /v1/thread/get` | `{"id":"UUID"}` |
+| Rename | `POST /v1/thread/update` | `{"id":"UUID","title":"New name"}` |
+| Delete | `POST /v1/thread/delete` | `{"thread_ids":["UUID"]}` — soft delete, followed by a scheduled infra-level purge |
+| Transcript | `POST /v1/thread/get_transcripts` | `{"id":"UUID"}` |
+
+See [operate.md § Threads](operate.md#threads) for response shapes and the compliance note on delete's soft-delete/purge timing.
 
 ## Knowledge records — `https://genie.nvp1.ovp.kaltura.com`
 

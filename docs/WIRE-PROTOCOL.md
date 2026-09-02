@@ -181,7 +181,7 @@ These fire once `approvedPermissions` is sent. All **captured live**. Several ar
 | `conversationEnded` | `{}` | `CG`; `SDK:session.js` | Server ended the conversation → tear down. |
 | `showTapToTalkButton` | `{}` | `CM` | Counterpart to `hideTapToTalkButton` — show the tap-to-talk affordance. |
 | `stvTaskFail` | `{}` | `CM` | STV send failed → the server hangs up the session. |
-| `smartTurnStatus` | `{ status, timeout_ms?, probability? }` | `CM` | Forwarded smart-turn VAD end-of-turn indicator. |
+| `smartTurnStatus` | `{ status, timeout_ms?, probability? }` | `CM` | Forwarded smart-turn VAD end-of-turn indicator — the server's assessment of whether the user has finished their turn (`probability`) and how long it will wait before deciding (`timeout_ms`). Passthrough only: the SDK re-emits it as its own `smartTurnStatus` event (`session.js`) but doesn't act on `status`'s value itself — see the event's JSDoc for the exact re-emitted shape. |
 | `conversationTimeExpired` | `{}` | `CM` | Active-session time expired — sent immediately before `conversationEnded`. |
 | `sessionReadyForResume` | `{}` | `CM`; `SDK:session.js` | Server-side session is recoverable for a same-pod reconnect (see [ARCHITECTURE.md](ARCHITECTURE.md) → resilience / connectionStateRecovery). SDK emits `resumeReady`. |
 | `pauseSessionExpired` | `{}` | `CM`; `SDK:session.js` | The pause window (started by a client `pauseConversation`) expired server-side before a `resumeConversation` arrived — the session is no longer recoverable. SDK emits `timeExpired` with `{type:'pause_expiry'}`, distinct from a hard `conversationEnded`. |
@@ -343,7 +343,7 @@ A receive-only WebRTC peer connection fed via **WHEP** (WebRTC-HTTP Egress Proto
 **`cast_mode` selects the STV egress** (`StvCastMode` enum `"webrtc"\|"rtmp"`, optional in the `stvNewSession` body). This SDK never sends it — `buildStvNewSession()` (`SDK:wire.js`) always omits the field, so this SDK only ever takes the server's fully-omitted-default path, not either named value:
 
 - **Default (cast_mode omitted)** — the only path this SDK uses. The server returns a `webrtc_url`; in the current deployment that's shaped `{basePublicProxyUrl}/rtc/v1/stv/{room_id}/whep/session/{session_id}` (the session-server's STV proxy). Verified live, real H264 video decoded, across Chromium, Firefox, and WebKit — this is the working path for this SDK. If the server ever omits `webrtc_url` too, the client falls back to building `{srsBaseUrl}/rtc/v1/whep/?app=app&stream={session_id}` itself (`SDK:wire.js whepUrl()`) — not something current live testing has actually observed the server do.
-- **Explicit `cast_mode:'webrtc'`** (sent only by the `unistv` player, never by this SDK) — previously observed to resolve to a private IP in this deployment, so the browser's `fetch` never connects. `whepUrlHasPrivateIp()` (`SDK:wire.js`) guards this regardless of which cast_mode produced the URL.
+- **Explicit `cast_mode:'webrtc'`** (sent only by the runtime client, never by this SDK) — previously observed to resolve to a private IP in this deployment, so the browser's `fetch` never connects. `whepUrlHasPrivateIp()` (`SDK:wire.js`) guards this regardless of which cast_mode produced the URL.
 
 The URL *shape* alone doesn't tell you which path is safe — the guard above checks the resolved host, not the shape. The client POSTs whichever `webrtc_url` the server returns, verbatim. **The browser always plays via WebRTC/WHEP regardless of mode** — "rtmp" is only the server-side ingest the renderer uses, never a browser transport.
 

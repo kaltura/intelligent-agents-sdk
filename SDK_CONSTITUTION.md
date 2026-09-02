@@ -157,13 +157,13 @@ This table summarizes what each rule checks, not whether it currently passes —
 | S-4 | Security | Untrusted JSON passes through `sanitizeJson` | safety.test.js + security.test.js |
 | S-5 | Security | Admin secret is non-enumerable | isolation.test.js |
 | S-6 | Security | No hardcoded credentials or token literals | grep |
-| R-1 | Resiliency | Exponential backoff with full jitter in `Http.request()` | http.test.js |
+| R-1 | Resiliency | Exponential backoff with full jitter in `Http.request()` | see R-5 |
 | R-2 | Resiliency | GETs retried on any transient failure | http.test.js |
-| R-3 | Resiliency | Idempotency-key POSTs retried; non-keyed POSTs retried only on status-0 | http.test.js |
+| R-3 | Resiliency | Idempotency-key POSTs retried; non-keyed POSTs retried only on status-0 | see R-5 |
 | R-4 | Resiliency | Abort signal stops the retry loop immediately | http.test.js |
 | R-5 | Resiliency | Injectable `delayFn`, retries exercised at zero wall-clock cost | http.test.js |
 | P-1 | Performance | `maxResponseBytes` enforced on `Content-Length` and body size | http.test.js |
-| P-2 | Performance | JSON parsing happens post-read, size-guarded | http.js |
+| P-2 | Performance | JSON parsing happens post-read, size-guarded | see P-1 |
 | P-3 | Performance | Zero runtime dependencies | package.json |
 | D-1 | DX | All public exports carry JSDoc | scan |
 | D-2 | DX | See Rule D-2 above — candidate dead exports (warning, not error) | `node scripts/agent_verify.mjs` |

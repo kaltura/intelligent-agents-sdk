@@ -133,7 +133,7 @@ It is **not byte-exact** with the live prompt — server-injected capability-con
 | `sys__user_id` | Bound end-user id — see `Sessions.createConversationToken({userId})` |
 | `sys__user_message` | The user's current turn text |
 | `sys__is_new_thread` | `true` on the first turn of a thread |
-| `sys__ks` | The raw session token. **Never reference this in a prompt that could be echoed back to a user or logged** — it is a live credential. |
+| `sys__ks` | The raw session token. **Never reference this in a prompt that could be echoed back to a user or logged.** It is a live credential. |
 | `sys__user_obj.first_name` / `.last_name` / `.title` / `.company` / `.gender` / `.email` | Attributes of the bound-user object. The rendered preview from `previewPrompt()` carries a `reserved_user_attr_unresolved` warning when a prompt references these — treat it as a hard stop before shipping. |
 | `secrets.NAME` | A named secret configured on the intellect (write-only — `previewPrompt()` never has access to the raw value, so it cannot confirm one is set) |
 
@@ -290,13 +290,13 @@ Writes through the intellect DTO — no `partner-config/update`, no 403. RAG ret
 | `ocr` | On-screen text |
 | `document` | PDF / Markdown attachments |
 
-**SDK:** `knowledge.addRecord()` + `knowledge.uploadDocument()` + `intellectConfig.setKnowledgeIds()` (Path A). Re-pointing an EXISTING intellect via the `partner-config/update` path (Path B — `knowledge.linkRecords()`, probed first with `knowledge.linkAvailable()`) is still gated (403s for a partner admin KS today) — prefer Path A for new agents; only reach for Path B if the intellect already exists and you can't recreate it.
+**SDK:** `knowledge.addRecord()` + `knowledge.uploadDocument()` + `intellectConfig.setKnowledgeIds()` (Path A). Re-pointing an EXISTING intellect via the `partner-config/update` path (Path B: `knowledge.linkRecords()`, probed first with `knowledge.linkAvailable()`) is still gated (403s for a partner admin KS today). Prefer Path A for new agents. Only reach for Path B if the intellect already exists and you can't recreate it.
 
-**Checking whether indexing has finished:** `knowledge.isIndexed(id, ks)` reads `knowledge.getRecord(id, ks).status` — but `status` is the knowledge record's own container-lifecycle flag (`"READY"`/`"DELETED"`), not an indexing-completion signal. It reads `"READY"` immediately once the record exists, before any entry has been indexed, because a knowledge base is open-ended (you can always add more entries) — there's no single "fully indexed" state for the record as a whole. Don't treat `isIndexed()` returning `ready:true` as proof your content is searchable yet.
+**Checking whether indexing has finished:** `knowledge.isIndexed(id, ks)` reads `knowledge.getRecord(id, ks).status`. But `status` is the knowledge record's own container-lifecycle flag (`"READY"`/`"DELETED"`), not an indexing-completion signal. It reads `"READY"` immediately once the record exists, before any entry has been indexed, because a knowledge base is open-ended (you can always add more entries), so there's no single "fully indexed" state for the record as a whole. Don't treat `isIndexed()` returning `ready:true` as proof your content is searchable yet.
 
-Don't use `knowledge.search()` as a substitute either — its "couldn't find relevant information" reply fires for an unindexed KB, an indexed KB with `use_knowledge_base:'off'`, or a genuine no-match query alike, so it can't signal indexing status. `knowledge.corpusStatus()` only counts entries that exist in the category, not whether they've finished embedding. `knowledge.indexStatus()` (`partner-config/stats`) 403s for a partner admin KS on at least one deployment.
+Don't use `knowledge.search()` as a substitute either. Its "couldn't find relevant information" reply fires alike for an unindexed KB, an indexed KB with `use_knowledge_base:'off'`, or a genuine no-match query, so it can't signal indexing status. `knowledge.corpusStatus()` only counts entries that exist in the category, not whether they've finished embedding. `knowledge.indexStatus()` (`partner-config/stats`) 403s for a partner admin KS on at least one deployment.
 
-A per-entry indexing-status check (`knowledge.entryStatus(knowledgeId, entryIds, ks)`) is coming and will be the correct way to verify specific uploaded content has finished indexing, with general rollout expected in early September 2026 — don't build on it yet. A knowledge-level status check that doesn't require elevated privilege is coming soon too.
+A per-entry indexing-status check (`knowledge.entryStatus(knowledgeId, entryIds, ks)`) is coming. It will be the correct way to verify specific uploaded content has finished indexing, with general rollout expected in early September 2026 — don't build on it yet. A knowledge-level status check that doesn't require elevated privilege is coming soon too.
 
 Until then, there's no reliable completion signal to poll — budget a fixed wait after upload instead of polling `isIndexed()` (which is `ready:true` from the first call and never tells you more):
 
@@ -308,7 +308,7 @@ async function waitForIndexingBestEffort(waitMs = 60000) {
 }
 ```
 
-Resolve that wait **before** you create or update the intellect, and send `use_knowledge_base:'on'` in that same `intellectConfig` call alongside `knowledge_ids` — not as a follow-up capability patch. Partner config is Redis-cached for up to 24h server-side (see [CLIENT-COMMANDS.md's Gotcha 2](../CLIENT-COMMANDS.md)); a two-step create-then-flip risks the cache latching onto the transient `off` value from step one and never seeing step two's `on`. A single write after the wait avoids that race entirely for a fresh create.
+Resolve that wait **before** you create or update the intellect, and send `use_knowledge_base:'on'` in that same `intellectConfig` call alongside `knowledge_ids`, not as a follow-up capability patch. Partner config is Redis-cached for up to 24h server-side (see [CLIENT-COMMANDS.md's Gotcha 2](../CLIENT-COMMANDS.md)). A two-step create-then-flip risks the cache latching onto the transient `off` value from step one and never seeing step two's `on`. A single write after the wait avoids that race entirely for a fresh create.
 
 ---
 
@@ -455,7 +455,7 @@ Every conversation gets a structured recap the moment it ends, with zero app-sid
 
 **Business use-case 2 — alert a human when a specific agent's analysis updates:**
 
-`eventConditions` can only filter on fields `describeFields` actually reports — for `thread`/`analysis_updated` today that's `object.agent_id`, `object.thread_id`, `object.user_id`, and `changed_keys` (which insight keys were updated), **not** an insight's computed value (e.g. there is no `object.sentiment` field to filter on — a sentiment score only exists as the *output* of a `triggerInsight` action, not an input `eventConditions` can inspect). Scope a rule to one agent instead:
+`eventConditions` can only filter on fields `describeFields` actually reports. For `thread`/`analysis_updated` today that's `object.agent_id`, `object.thread_id`, `object.user_id`, and `changed_keys` (which insight keys were updated), **not** an insight's computed value. For example, there is no `object.sentiment` field to filter on: a sentiment score only exists as the *output* of a `triggerInsight` action, not an input `eventConditions` can inspect. Scope a rule to one agent instead:
 
 ```js
 await mgmt.lifecycle.create({

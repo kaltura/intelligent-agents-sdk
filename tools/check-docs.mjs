@@ -446,6 +446,24 @@ describe('6. Cross-doc links', () => {
     }
     assert.deepEqual(broken, [], `broken links:\n  ${broken.join('\n  ')}`);
   });
+
+  test('all same-file #anchor links resolve', () => {
+    const broken = [];
+    for (const rel of DOCS) {
+      const full = join(ROOT, rel);
+      if (!existsSync(full)) continue;
+      const content = readFileSync(full, 'utf8');
+      const anchors = anchorsOf(full);
+      for (const m of content.matchAll(/\]\((#[^)]+)\)/g)) {
+        const frag = m[1];
+        const slug = frag.slice(1).toLowerCase();
+        if (!anchors.has(slug)) {
+          broken.push(`${rel} → ${frag} (stale same-file anchor)`);
+        }
+      }
+    }
+    assert.deepEqual(broken, [], `broken same-file anchors:\n  ${broken.join('\n  ')}`);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
