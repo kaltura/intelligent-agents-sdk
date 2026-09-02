@@ -402,9 +402,11 @@ A rule is `{eventType, objectType, eventConditions, action}`:
 - `eventType` — e.g. `session_ended`, `analysis_updated`.
 - `objectType` — currently only `thread`.
 - `eventConditions[]` — `{field, operator, value}` matchers, e.g. `{field:'object.agent_id', operator:'eq', value:'<uuid>'}`, `{field:'changed_keys', operator:'has_all', value:[...]}`. `field` is a dot-path into the event payload (see `describeFields` below for which paths exist per event) — confirmed live: a `{path, op}` shaped entry 400s.
-- `action` — a plain object, one of two shapes today. Passed straight through, not built by the SDK:
-- `{ actionType: 'triggerInsight', insights: [{ insightKey, valueType, prompt? }, ...] }` — fires up to 20 named LLM insight generations against the thread. `valueType` (`'string'`/`'number'`/`'boolean'`/`'arrayString'`/`'arrayNumber'`/`'arrayBoolean'`) is **required on every insight, even built-in keys** — omitting it 400s live. `SUMMARY`/`SENTIMENT`/`TOPIC` have built-in prompts; a custom `insightKey` needs an explicit `prompt`.
+- `action` — a plain object, passed straight through, not built by the SDK. The backend recognizes four `actionType` values; only the first two are meant for you to create — the other two are system-internal and creating them yourself is a no-op you don't want (full explanation: [`docs/LIFECYCLE-INSIGHTS-RECIPE.md`](../LIFECYCLE-INSIGHTS-RECIPE.md#the-four-action-types-and-why-you-only-need-two)):
+- `{ actionType: 'triggerInsight', insights: [{ insightKey, valueType, prompt? }, ...] }` — fires up to 20 named LLM insight generations against the thread. `valueType` (`'string'`/`'number'`/`'boolean'`/`'arrayString'`/`'arrayNumber'`/`'arrayBoolean'`) is **required on every insight, even built-in keys** — omitting it 400s live. `SUMMARY`/`SENTIMENT`/`TOPIC` have built-in prompts; a custom `insightKey` needs an explicit `prompt`. Every rule extracting insights on the same event merges into one LLM batch — don't ask for `SUMMARY` yourself, see below.
 - `{ actionType: 'sendInsightEmail', recipients: string[], templateId?: string, presetType?: string }` — mails a rendered insight summary to `recipients` (supports `{{template}}` placeholders like `{{object.user_id}}`), using either an explicit `templateId` or an auto-created `presetType` template. Only fires on `eventType:'analysis_updated'` — attaching it to a `session_ended` rule is a server-side no-op.
+- `{ actionType: 'triggerOverridableSummaryInsight' }` — system preset only. Every partner already has an always-on rule (`preset__overridable_summary_on_session_ended`) using this action, extracting one fixed `SUMMARY` insight per `session_ended` event. Customize its prompt with `mgmt.agents.update({agentId, summaryOverridePrompt}, ks)` — an agent-level field, not a rule. Creating your own rule with this `actionType` is accepted but ignores anything you pass.
+- `{ actionType: 'triggerDataToCollectInsight' }` — system preset only, and that preset is currently disabled account-wide. Not something to create yourself.
 
 **Business use-case 1 — auto-summarize every ended session:**
 
@@ -414,11 +416,11 @@ await mgmt.lifecycle.create({
   systemName: 'auto_summary_v1',
   eventType: 'session_ended',
   objectType: 'thread',
-  action: { actionType: 'triggerInsight', insights: [{ insightKey: 'SUMMARY', valueType: 'string' }, { insightKey: 'SENTIMENT', valueType: 'string' }, { insightKey: 'TOPIC', valueType: 'string' }] },
+  action: { actionType: 'triggerInsight', insights: [{ insightKey: 'SENTIMENT', valueType: 'string' }, { insightKey: 'TOPIC', valueType: 'string' }] },
 }, ks);
 ```
 
-Every conversation gets a structured recap the moment it ends, with zero app-side code.
+Every conversation gets a structured recap the moment it ends, with zero app-side code. `SUMMARY` is deliberately not requested — every partner already has an always-on preset rule producing one for free, merged into the same batch as this rule's own insights.
 
 **Business use-case 2 — alert a human when a specific agent's analysis updates:**
 

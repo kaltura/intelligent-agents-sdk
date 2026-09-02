@@ -5,8 +5,11 @@
  * What this shows, against the real API:
  *   1. Discover what's available: listObjects/listEvents/describeFields —
  *      the same calls a no-code rule-editor UI would make.
- *   2. Create rule A: on session_ended, extract SUMMARY + TOPIC + CUSTOM
- *      (the three keys the built-in email preset needs — see the guide).
+ *   2. Create rule A: on session_ended, extract TOPIC + CUSTOM. SUMMARY
+ *      (the third key the built-in email preset needs) isn't requested here
+ *      — every session already gets one for free from the always-on system
+ *      preset, and asking for your own would be silently overridden — see
+ *      the guide's "four action types" section.
  *   3. Create rule B: on analysis_updated, email a human using the
  *      zero-setup 'conversationInsightExample' preset.
  *   4. Dry-run both rules with match() — instant, synthetic, no real
@@ -48,9 +51,12 @@ console.log('Filterable fields for session_ended:', fields);
 let summaryRule;
 let emailRule;
 try {
-  // 2. Rule A: extract SUMMARY + TOPIC + CUSTOM the instant a session ends.
-  // CUSTOM isn't a built-in key (only SUMMARY/SENTIMENT/TOPIC are), so it
-  // needs its own prompt. valueType is required on every insight.
+  // 2. Rule A: extract TOPIC + CUSTOM the instant a session ends. CUSTOM
+  // isn't a built-in key (only SUMMARY/SENTIMENT/TOPIC are), so it needs its
+  // own prompt. valueType is required on every insight. SUMMARY is
+  // deliberately not requested here — every session already gets one for
+  // free from the always-on system preset, and it merges into this same
+  // batch automatically.
   summaryRule = await kaltura.lifecycle.create({
     name: 'Demo — summarize on session end',
     systemName: `demo_recipe_summary_${Date.now()}`,
@@ -59,7 +65,6 @@ try {
     action: {
       actionType: 'triggerInsight',
       insights: [
-        { insightKey: 'SUMMARY', valueType: 'string' },
         { insightKey: 'TOPIC', valueType: 'string' },
         { insightKey: 'CUSTOM', valueType: 'string', prompt: 'One actionable next step for the support team, or "none".' },
       ],

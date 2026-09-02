@@ -4,16 +4,26 @@
  * eventConditions[], action}` — when a matching backend event fires (e.g. a
  * thread's `session_ended`), every active rule (including partner-invisible,
  * system-seeded presets — see {@link Lifecycle#match}) is evaluated and its
- * `action` runs server-side. Two action shapes exist today, passed through
- * as plain objects (not built by the SDK): `{actionType:'triggerInsight',
- * insights:[{insightKey, valueType, prompt?}, ...]}` (`valueType` is
- * REQUIRED on every insight, even built-in keys like `SUMMARY` — omitting it
- * 400s live: "action.insights.0.valueType must be one of the following
- * values: string, number, boolean, arrayString, arrayNumber, arrayBoolean")
- * and `{actionType:'sendInsightEmail', recipients:string[], templateId?:string,
+ * `action` runs server-side. Four action shapes exist, passed through as
+ * plain objects (not built by the SDK), but only the first two are meant to
+ * be created here — the other two only exist to power system preset rules
+ * and ignore anything a caller passes:
+ * `{actionType:'triggerInsight', insights:[{insightKey, valueType, prompt?}, ...]}`
+ * (`valueType` is REQUIRED on every insight, even built-in keys like
+ * `SUMMARY` — omitting it 400s live: "action.insights.0.valueType must be
+ * one of the following values: string, number, boolean, arrayString,
+ * arrayNumber, arrayBoolean"; every rule extracting insights on the same
+ * event merges into one LLM batch, so don't request `SUMMARY` — every
+ * partner already has an always-on preset producing one for free),
+ * `{actionType:'sendInsightEmail', recipients:string[], templateId?:string,
  * presetType?:string}` (only fires on `eventType:'analysis_updated'` — a
- * `session_ended` rule with this action type is a no-op server-side).
- * Mounted at `mgmt.lifecycle`.
+ * `session_ended` rule with this action type is a no-op server-side),
+ * `{actionType:'triggerOverridableSummaryInsight'}` (system preset only —
+ * customize its prompt via `agents.update({agentId, summaryOverridePrompt})`,
+ * not a rule), and `{actionType:'triggerDataToCollectInsight'}` (system
+ * preset only, currently disabled account-wide). See
+ * `docs/LIFECYCLE-INSIGHTS-RECIPE.md` for the full explanation. Mounted at
+ * `mgmt.lifecycle`.
  */
 import { paginate } from './paginate.js';
 import { uuidv4, meta } from '../core/ids.js';

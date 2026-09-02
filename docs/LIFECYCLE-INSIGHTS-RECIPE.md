@@ -29,12 +29,13 @@ await mgmt.lifecycle.create({
   action: {
     actionType: 'triggerInsight',
     insights: [
-      { insightKey: 'SUMMARY', valueType: 'string' },
       { insightKey: 'TOPIC', valueType: 'string' },
     ],
   },
 }, adminKs);
 ```
+
+Notice there's no `SUMMARY` in that list. Every partner already gets one for free — see [below](#the-four-action-types-and-why-you-only-need-two) for why asking for your own is pointless.
 
 `SUMMARY`, `SENTIMENT`, and `TOPIC` are the only insight keys with a built-in prompt — ask for any other key and you must supply your own `prompt`:
 
@@ -70,17 +71,50 @@ Three things about this action that aren't obvious from the field names:
 
 ### The gotcha that will bite you first: token mismatch
 
-`conversationInsightExample`'s template needs three insight values by name: **`SUMMARY`, `TOPIC`, and `CUSTOM`** (exactly those keys, case-sensitive). `AGENTNAME`, `CTAURL`, and `USER` are filled in automatically — you never provide those. If your `triggerInsight` rule (Recipe A) doesn't produce all three of `SUMMARY`/`TOPIC`/`CUSTOM`, the email send is skipped — logged as an error server-side, but nothing surfaces back to your app or the SDK. To use this preset, Recipe A's insights array needs all three:
+`conversationInsightExample`'s template needs three insight values by name: **`SUMMARY`, `TOPIC`, and `CUSTOM`** (exactly those keys, case-sensitive). `AGENTNAME`, `CTAURL`, and `USER` are filled in automatically — you never provide those. If the thread's analysis doesn't have all three of `SUMMARY`/`TOPIC`/`CUSTOM`, the email send is skipped — logged as an error server-side, but nothing surfaces back to your app or the SDK. `SUMMARY` comes free from the always-on system preset (see [below](#the-four-action-types-and-why-you-only-need-two)); Recipe A's own insights array only needs to add the other two:
 
 ```js
 insights: [
-  { insightKey: 'SUMMARY', valueType: 'string' },
   { insightKey: 'TOPIC', valueType: 'string' },
   { insightKey: 'CUSTOM', valueType: 'string', prompt: 'One actionable next step for the support team, or "none".' },
 ]
 ```
 
 `CUSTOM` isn't a built-in key (only `SUMMARY`/`SENTIMENT`/`TOPIC` are), so it needs its own `prompt` — pick whatever prompt fits your use case, the key name `CUSTOM` is what the preset template looks for, not the prompt text.
+
+---
+
+## The four action types, and why you only need two
+
+The backend recognizes four `actionType` values, not two. Two are meant for you to create — `triggerInsight` and `sendInsightEmail`, both covered above. The other two only exist to power system preset rules; creating them yourself is accepted by the API but pointless.
+
+| `actionType` | Who creates it | What it does |
+|---|---|---|
+| `triggerInsight` | You | Extracts whatever insights you ask for |
+| `sendInsightEmail` | You | Emails a human |
+| `triggerOverridableSummaryInsight` | Nobody — system preset only | Always extracts exactly one fixed `SUMMARY` insight, no `insights` array to configure |
+| `triggerDataToCollectInsight` | Nobody — tied to a preset that's currently disabled account-wide | Would extract one insight per `user_properties_forms` field, if that preset were ever turned on |
+
+### Every session already gets a `SUMMARY`, for free
+
+A system-seeded rule, `preset__overridable_summary_on_session_ended`, runs `triggerOverridableSummaryInsight` on every `session_ended` event, for every agent, with no opt-out. This is the rule `match()` always shows even when you've created nothing yourself (see the "Test both rules in seconds" section below).
+
+Here's the mechanic that matters: **every rule whose action extracts insights on the same event gets merged into one batch, one LLM call — not one call per rule.** Create your own `triggerInsight` rule on `session_ended`, and it runs in the *same batch* as this preset. The result is one combined `thread_metadata.analysis` containing the preset's `SUMMARY` plus whatever you asked for.
+
+Two consequences:
+
+1. **Don't put `SUMMARY` in your own rule's `insights` array.** You already get it for free, which is why Recipe A above only asks for `TOPIC` (and `CUSTOM`, once you add the email action).
+2. **If you ask for `SUMMARY` anyway, your prompt never takes effect.** The batch is built with your rule's insights first and the preset's insight appended after; when both name the same key, the later one wins. The preset's default prompt is what reaches the LLM, not yours — asking for `SUMMARY` yourself doesn't break anything, it's just a no-op.
+
+Want a custom prompt for that default summary instead of the built-in one? That's an agent-level setting, not a lifecycle rule, because the preset runs whether you've configured lifecycle at all or not:
+
+```js
+await mgmt.agents.update({ agentId, summaryOverridePrompt: 'Summarize in one sentence, written for a support manager.' }, adminKs);
+```
+
+### What the LLM actually sees
+
+None of this pushes the conversation transcript through the rule itself. `triggerInsight` (and the two system actions) send the backend's insight service a `threadId` and the schema of what to extract; that service fetches the transcript itself. You're only ever specifying *what to extract*, never *what to extract from* — there's no transcript size or format for you to manage on the SDK side.
 
 ---
 
@@ -147,6 +181,8 @@ node examples/lifecycle-insights-and-email.mjs
 | `eventConditions` on `object.agent_id` never matches | The thread was created with a plain conversation token, not an agent-scoped one | Mint with `mgmt.sessions.createAgentToken({agentId})` |
 | `lifecycle.match` 400s: `eventData.object.user_id: Invalid input...` | A required field missing from the dry-run `object` | Always pass `agent_id`, `thread_id`, and `user_id` together |
 | A custom `insightKey` 400s or silently produces nothing | No `prompt` supplied | Every key outside `SUMMARY`/`SENTIMENT`/`TOPIC` needs its own `prompt` |
+| A custom `SUMMARY` prompt on your own rule is silently ignored | Every partner has an always-on `SUMMARY` preset that merges into the same batch and overwrites your entry | Don't request `SUMMARY` yourself — set `agent.summaryOverridePrompt` instead (see "The four action types") |
+| You create a `triggerOverridableSummaryInsight` or `triggerDataToCollectInsight` rule and nothing you configured takes effect | Both are system-internal — they ignore any fields you pass | Use `triggerInsight` instead; it's the only action type where you control what gets extracted |
 
 ---
 
@@ -154,6 +190,6 @@ node examples/lifecycle-insights-and-email.mjs
 
 | Doc | What it adds |
 |---|---|
-| [`docs/api/build.md` § Lifecycle](api/build.md#lifecycle-event-driven-rules) | The full field-by-field reference: every rule shape, both action types, the full CRUD + discovery method table |
+| [`docs/api/build.md` § Lifecycle](api/build.md#lifecycle-event-driven-rules) | The full field-by-field reference: every rule shape, all four action types, the full CRUD + discovery method table |
 | [`examples/lifecycle-insights-and-email.mjs`](../examples/lifecycle-insights-and-email.mjs) | The runnable example this recipe walks through |
 | [`GETTING-STARTED.md`](../GETTING-STARTED.md) | Where `configId`/`agentId` and the admin token in the examples above come from |
