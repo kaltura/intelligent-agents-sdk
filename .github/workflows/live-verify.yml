@@ -193,7 +193,7 @@ jobs:
     if: |
       github.event_name == 'workflow_dispatch' ||
       ((github.event_name == 'merge_group' || github.event.label.name == 'run-live-verify') && needs.changes.outputs.browser == 'true')
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     environment: live-verify
     strategy:
       fail-fast: false
@@ -206,20 +206,17 @@ jobs:
         # enables the GMP fetch via firefoxUserPrefs and waits (measured 20-40s
         # against Mozilla's real update service, 120s budget) before navigating.
         #
-        # webkit runs on macos-14, not ubuntu-latest: Linux WebKitGTK has no
-        # built-in H264 decoder and, confirmed by real CI runs, apt-installing
-        # GStreamer's H264 plugins doesn't fix it either — Playwright's WebKit
-        # build on Linux doesn't decode through them. macOS WebKit decodes H264
-        # natively via AVFoundation, matching what already passes reliably in
-        # local dev. macOS runner minutes bill at ~10x Linux's rate, but this
-        # job only runs on merge_group/label/dispatch, not every PR push.
-        include:
-          - engine: chromium
-            os: ubuntu-latest
-          - engine: firefox
-            os: ubuntu-latest
-          - engine: webkit
-            os: macos-14
+        # webkit is known to fail here and is left in the matrix anyway so the
+        # failure stays visible rather than silently dropped. Root cause confirmed
+        # by real CI runs: Linux WebKitGTK has no built-in H264 decoder, and
+        # apt-installing GStreamer's H264 plugins doesn't fix it either —
+        # Playwright's WebKit build on Linux doesn't decode through them. Running
+        # this leg on a macos-14 runner instead (which decodes H264 natively via
+        # AVFoundation) was tried and hit a different, worse blocker: the job hung
+        # indefinitely requesting camera/mic permissions, almost certainly macOS's
+        # TCC privacy prompt with no UI to dismiss headlessly. Real-Safari coverage
+        # for this path is manual — see manual-testing/voice-video/README.md.
+        engine: [chromium, firefox, webkit]
     steps:
       - name: 📥 Check out the repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
