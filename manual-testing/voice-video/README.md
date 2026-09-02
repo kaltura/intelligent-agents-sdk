@@ -5,7 +5,7 @@ This covers the real avatar pipeline (mic capture → ASR uplink → STV/WHEP vi
 ## What's already automated (don't re-test these)
 
 - **Noise-suppressor DSP correctness** — `npm run verify:noise-suppressor`, a real AudioWorklet run in real headless Chromium, Firefox, and WebKit, asserting the gate passes loud audio and attenuates quiet audio. Runs on every push (`.github/workflows/ci.yml`, `noise-suppressor` job). No network, no live credentials.
-- **WHEP video decode + chroma-key correctness, mic-to-ASR audio flow, on Chromium and Firefox** — `scripts/live-verify-browser.mjs`, against the real Kaltura backend, on `merge_group`/`run-live-verify` (`.github/workflows/live-verify.yml`, `live-verify-browser` job). Asserts the composited canvas is actually painting varying, partially-transparent frames (real chroma-keying, not a blank or fully-opaque frame) and that real mic audio actually reaches a peer (`RTCPeerConnection.getStats()` outbound-rtp `bytesSent > 0`). WebKit is in this job's matrix too, but it's a known, tracked failure, not real signal — see flow #2 below for why, and for the manual coverage that replaces it.
+- **WHEP video decode + chroma-key correctness, mic-to-ASR audio flow, on Chromium and Firefox** — `scripts/live-verify-browser.mjs`, against the real Kaltura backend, on `merge_group`/`run-live-verify` (`.github/workflows/live-verify.yml`, `live-verify-browser` job). Asserts the composited canvas is actually painting varying, partially-transparent frames (real chroma-keying, not a blank or fully-opaque frame) and that real mic audio actually reaches a peer (`RTCPeerConnection.getStats()` outbound-rtp `bytesSent > 0`). WebKit isn't in this job's matrix — Linux WebKit has no working H264 decode path, so it can never pass here — see flow #2 below for why, and for the manual coverage that replaces it.
 - **`session_completed` lifecycle signal, all three engines** — separate mechanism, separate test plan: see `manual-testing/session-complete/README.md`.
 - **presenter.js / chroma-key.js SDK-side wiring** — unit-tested (`test/unit/`), mocked transport.
 
@@ -35,7 +35,7 @@ Open the URL in real desktop Firefox with its default settings (not the Playwrig
 
 ### 2. Real Safari (macOS and iOS) — this is the WebKit engine's real coverage
 
-Playwright's `webkit` engine is desktop Safari's rendering engine, not the actual Safari app, and iOS Safari isn't reachable by any Playwright engine at all. Worse, on Linux CI, Playwright's WebKit build has no working H264 decode path at all — it has no built-in decoder, and installing GStreamer's H264 plugins on the runner doesn't fix it, since that WebKit build doesn't decode through system GStreamer. Running that leg on a macOS runner instead (real AVFoundation decode) was tried and hit a worse problem: the job hangs indefinitely requesting camera/mic access, almost certainly macOS's TCC privacy prompt with no UI to dismiss headlessly. So `live-verify-browser`'s webkit leg stays on Linux and is a known, expected failure (tracked, not actionable) — **this flow is the actual verification for the WebKit/Safari path**, not a supplementary sanity check.
+Playwright's `webkit` engine is desktop Safari's rendering engine, not the actual Safari app, and iOS Safari isn't reachable by any Playwright engine at all. Worse, on Linux CI, Playwright's WebKit build has no working H264 decode path at all — it has no built-in decoder, and installing GStreamer's H264 plugins on the runner doesn't fix it, since that WebKit build doesn't decode through system GStreamer. Running that leg on a macOS runner instead (real AVFoundation decode) was tried and hit a worse problem: the job hangs indefinitely requesting camera/mic access, almost certainly macOS's TCC privacy prompt with no UI to dismiss headlessly. Since neither runner can pass this leg, `live-verify-browser` doesn't run webkit at all — **this flow is the actual verification for the WebKit/Safari path**, not a supplementary sanity check.
 
 Open the URL in real Safari on macOS, and in real Safari on an iPhone/iPad. Confirm connection succeeds (this is exactly the TURN-URL fix's real-world test — a regression here would mean the fix doesn't hold on real Safari the way it did on Playwright's WebKit) and video/chroma-key render correctly.
 
@@ -79,7 +79,6 @@ A lighter pass, since GenUI widget logic itself is unit-tested — this is purel
 | macOS Safari | Required | Real engine differs from Playwright's `webkit` build. |
 | Android Chrome | Required | Primary target for flow 3's mobile interrupts. |
 | Desktop Chrome | Optional | Already covered by CI. |
-| Desktop Safari via WebKit engine equivalent | Optional | Already covered by CI post-fix; re-testing here is a sanity check only. |
 
 ## Results log
 

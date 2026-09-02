@@ -206,17 +206,19 @@ jobs:
         # enables the GMP fetch via firefoxUserPrefs and waits (measured 20-40s
         # against Mozilla's real update service, 120s budget) before navigating.
         #
-        # webkit is known to fail here and is left in the matrix anyway so the
-        # failure stays visible rather than silently dropped. Root cause confirmed
-        # by real CI runs: Linux WebKitGTK has no built-in H264 decoder, and
-        # apt-installing GStreamer's H264 plugins doesn't fix it either —
-        # Playwright's WebKit build on Linux doesn't decode through them. Running
-        # this leg on a macos-14 runner instead (which decodes H264 natively via
-        # AVFoundation) was tried and hit a different, worse blocker: the job hung
-        # indefinitely requesting camera/mic permissions, almost certainly macOS's
-        # TCC privacy prompt with no UI to dismiss headlessly. Real-Safari coverage
-        # for this path is manual — see manual-testing/voice-video/README.md.
-        engine: [chromium, firefox, webkit]
+        # webkit is deliberately NOT in this matrix. Linux WebKitGTK has no
+        # built-in H264 decoder, and apt-installing GStreamer's H264 plugins
+        # doesn't fix it either — Playwright's WebKit build on Linux doesn't
+        # decode through them, so this leg can never pass on ubuntu-latest.
+        # A macos-14 runner (real AVFoundation decode) was tried instead and
+        # hit a worse, unresolved blocker: the job hangs indefinitely
+        # requesting camera/mic permissions, almost certainly macOS's TCC
+        # privacy prompt with no UI to dismiss headlessly. Real-Safari
+        # coverage for this path is manual — see
+        # manual-testing/voice-video/README.md. webkit stays in the
+        # noise-suppressor (ci.yml) and live-verify-session-complete matrices
+        # below, since both pass on it.
+        engine: [chromium, firefox]
     steps:
       - name: 📥 Check out the repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
