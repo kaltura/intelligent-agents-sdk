@@ -216,8 +216,9 @@ jobs:
         # privacy prompt with no UI to dismiss headlessly. Real-Safari
         # coverage for this path is manual — see
         # manual-testing/voice-video/README.md. webkit stays in the
-        # noise-suppressor (ci.yml) and live-verify-session-complete matrices
-        # below, since both pass on it.
+        # live-verify-session-complete matrix below and in ci.yml's
+        # noise-suppressor matrix (a different workflow file), since both
+        # pass on it.
         engine: [chromium, firefox]
     steps:
       - name: 📥 Check out the repo
