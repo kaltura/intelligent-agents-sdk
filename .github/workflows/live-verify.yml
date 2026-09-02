@@ -207,6 +207,12 @@ jobs:
       - name: 🎭 Install ${{ matrix.engine }}
         run: npx playwright install --with-deps ${{ matrix.engine }}
 
+      - name: 🎞️ Install GStreamer H264 decode plugins (Linux WebKitGTK has no built-in H264 decoder — `--with-deps` doesn't pull one in, unlike macOS/iOS WebKit's native AVFoundation decode)
+        if: matrix.engine == 'webkit'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq gstreamer1.0-plugins-bad gstreamer1.0-libav
+
       - name: 🔴🌐 Provision a real avatar → render in headless ${{ matrix.engine }} → verify chroma-key + mic audio flow → cleanup
         id: live_verify_browser
         env:
