@@ -82,7 +82,7 @@ console.log(reply.text);
    const voices = await kaltura.catalog.list(admin.ks, { type: 'voice', pageSize: 1 });
    const visuals = await kaltura.catalog.list(admin.ks, { type: 'visual', pageSize: 1 });
    ```
-Note the argument order: **`ks` first, `opts` second** — this is the convention across nearly every `.list()` method in the SDK (`agents.list`, `avatars.list`, `avatars.listTemplates`, `intellects.list`, `tools.list`, `skills.list`, `threads.list`, `messages.list`, `knowledge.listRecords`, `lifecycle.list`).
+Note the argument order: **`ks` first, `opts` second** — this is the convention across nearly every `.list()` method in the SDK (`agents.list`, `avatars.list`, `avatars.listTemplates`, `intellects.list`, `tools.list`, `skills.list`, `threads.list`, `messages.list`, `knowledge.list`, `lifecycle.list`). `knowledge.listCategoryEntries(categoryId, ks)` is the one exception, since it acts on a specific category rather than browsing a partner-wide list.
 5. **Create the avatar (face + voice binding).** `const avatar = await kaltura.avatars.create({ voiceId, visualId, name }, admin.ks);`
 6. **Create the agent — needs only the intellect's configId.**
 
@@ -168,7 +168,7 @@ Write-only, per-intellect, via `src/management/secrets.js` (also mirrored on `in
 
 ## Knowledge — ground the agent on documents (ungated)
 
-`kaltura.knowledge.listRecords(ks, {filter?, pageSize?})` discovers existing records without knowing ids up front (e.g. for a picker UI letting a user attach an existing knowledge base to a new agent) — `filter` accepts `nameEquals`/`nameLike`/`statusEquals`/`statusIn`.
+`kaltura.knowledge.list(ks, {filter?, pageSize?})` discovers existing records without knowing ids up front (e.g. for a picker UI letting a user attach an existing knowledge base to a new agent) — `filter` accepts `nameEquals`/`nameLike`/`statusEquals`/`statusIn`.
 
 ```js
 const category = await kaltura.knowledge.findOrCreateCategory({ name: 'Yoga Studio Docs' }, admin.ks);

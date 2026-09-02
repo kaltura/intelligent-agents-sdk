@@ -259,10 +259,10 @@ POST https://genie.nvp1.ovp.kaltura.com/v1/knowledge/add
 
 Returns `{ "id": 42, ... }`. Save the `id`.
 
-**Don't already know the id?** `mgmt.knowledge.listRecords(ks, opts)` discovers a partner's existing records — pass `opts.filter.nameLike` to search by name. Use it to build a "pick an existing knowledge base" picker instead of hardcoding ids: a common Agent Factory flow is letting a user attach a knowledge base they created earlier to a brand-new agent. Distinct from `knowledge.list(categoryId, ks)` above, which lists KMS *entries* inside a category, not Knowledge *record* containers.
+**Don't already know the id?** `mgmt.knowledge.list(ks, opts)` discovers a partner's existing records — pass `opts.filter.nameLike` to search by name. Use it to build a "pick an existing knowledge base" picker instead of hardcoding ids: a common Agent Factory flow is letting a user attach a knowledge base they created earlier to a brand-new agent. Distinct from `knowledge.listCategoryEntries(categoryId, ks)`, which lists KMS *entries* inside one category, not Knowledge *record* containers.
 
 ```js
-const page = await mgmt.knowledge.listRecords(ks, { pageSize: 20, filter: { nameLike: 'Product' } });
+const page = await mgmt.knowledge.list(ks, { pageSize: 20, filter: { nameLike: 'Product' } });
 page[0]; // { id: 42, name: 'Product Documentation', status: 'READY', config: { sources: [...] }, ... }
 ```
 

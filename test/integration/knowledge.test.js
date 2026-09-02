@@ -473,39 +473,39 @@ test('removeSource is idempotent: no matching source is a no-op with no wire upd
   assert.equal(f.calls.some((c) => c.url.includes('/v1/knowledge/update')), false);
 });
 
-// ── listRecords ───────────────────────────────────────────────────────────────
+// ── list ───────────────────────────────────────────────────────────────
 // v1/knowledge/list — discover Knowledge RECORD containers, distinct from
-// Knowledge#list (above), which lists KMS media ENTRIES in a category.
+// Knowledge#listCategoryEntries (above), which lists KMS media ENTRIES in a category.
 
-test('listRecords uses the Genie {pageIndex,pageSize} pager and returns the first page (async-iterable + awaitable)', async () => {
+test('list uses the Genie {pageIndex,pageSize} pager and returns the first page (async-iterable + awaitable)', async () => {
   const record = { id: 7, name: 'Product FAQ', status: 'READY', config: { sources: [] } };
   const f = fakeFetch([
     { match: '/v1/knowledge/list', respond: () => ({ body: { totalCount: 1, objects: [record] } }) },
   ]);
   const m = new Management({ partnerId: 1, adminSecret: 'a'.repeat(32), fetch: f });
-  const page = await m.knowledge.listRecords(ADMIN);
+  const page = await m.knowledge.list(ADMIN);
   assert.equal(page.length, 1);
   assert.equal(page[0].id, 7);
   const call = f.calls.find((c) => c.url.includes('/v1/knowledge/list'));
   assert.ok('pageIndex' in call.body.pager && 'pageSize' in call.body.pager, 'Genie pageIndex/pageSize pager, not offset/limit');
 });
 
-test('listRecords passes filter fields through verbatim (nameLike, statusIn, etc.)', async () => {
+test('list passes filter fields through verbatim (nameLike, statusIn, etc.)', async () => {
   const f = fakeFetch([
     { match: '/v1/knowledge/list', respond: () => ({ body: { totalCount: 0, objects: [] } }) },
   ]);
   const m = new Management({ partnerId: 1, adminSecret: 'a'.repeat(32), fetch: f });
-  await m.knowledge.listRecords(ADMIN, { filter: { nameLike: 'faq', statusIn: ['READY'] } });
+  await m.knowledge.list(ADMIN, { filter: { nameLike: 'faq', statusIn: ['READY'] } });
   const call = f.calls.find((c) => c.url.includes('/v1/knowledge/list'));
   assert.deepEqual(call.body.filter, { nameLike: 'faq', statusIn: ['READY'] });
 });
 
-test('listRecords defaults filter to {} when omitted', async () => {
+test('list defaults filter to {} when omitted', async () => {
   const f = fakeFetch([
     { match: '/v1/knowledge/list', respond: () => ({ body: { totalCount: 0, objects: [] } }) },
   ]);
   const m = new Management({ partnerId: 1, adminSecret: 'a'.repeat(32), fetch: f });
-  await m.knowledge.listRecords(ADMIN);
+  await m.knowledge.list(ADMIN);
   const call = f.calls.find((c) => c.url.includes('/v1/knowledge/list'));
   assert.deepEqual(call.body.filter, {});
 });

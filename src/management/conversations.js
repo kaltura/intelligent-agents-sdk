@@ -474,10 +474,14 @@ export class Knowledge {
 
   /**
    * List the media entries currently in a knowledge category (the agent's
-   * documents/videos). READ. @param {number} categoryId @param {string} ks (admin) @param {{pageSize?:number}} [opts]
+   * documents/videos). READ. Named `listCategoryEntries`, NOT `list` — {@link
+   * Knowledge#list} is the real `POST /v1/knowledge/list` Knowledge-record
+   * listing; this method lists KMS *entries* inside one category container,
+   * not Knowledge record containers.
+   * @param {number} categoryId @param {string} ks (admin) @param {{pageSize?:number}} [opts]
    */
-  list(categoryId, ks, opts = {}) {
-    this._.assertAdmin(ks, 'knowledge.list');
+  listCategoryEntries(categoryId, ks, opts = {}) {
+    this._.assertAdmin(ks, 'knowledge.listCategoryEntries');
     return paginate({
       style: 'index', pageSize: opts.pageSize ?? 30,
       fetchPage: async (pager) => {
@@ -766,10 +770,9 @@ export class Knowledge {
    * List Knowledge records for the authenticated partner
    * (`POST /v1/knowledge/list`). READ. Async-iterable + awaitable (first
    * page) — mirrors {@link Tools#list}/{@link Skills#list}'s Genie
-   * `{pageIndex,pageSize}` pager. Named `listRecords`, NOT `list` —
-   * {@link Knowledge#list} (above) already means something unrelated: it
-   * lists KMS *media entries* inside a category, not Knowledge record
-   * containers.
+   * `{pageIndex,pageSize}` pager. This is the real Knowledge-service `list`
+   * action — see {@link Knowledge#listCategoryEntries} for the unrelated
+   * "media entries inside one category" listing.
    *
    * The "browse" step before every other Knowledge method's "act on a known
    * id" step — e.g. an Agent Factory picker letting a user attach an
@@ -777,8 +780,8 @@ export class Knowledge {
    * @param {string} ks (admin)
    * @param {{filter?:{nameEquals?:string, nameLike?:string, statusEquals?:string, statusIn?:string[]}, pageSize?:number}} [opts]
    */
-  listRecords(ks, opts = {}) {
-    this._.assertAdmin(ks, 'knowledge.listRecords');
+  list(ks, opts = {}) {
+    this._.assertAdmin(ks, 'knowledge.list');
     return paginate({
       style: 'index', pageSize: opts.pageSize,
       fetchPage: (pager) => this._.genie('v1/knowledge/list', { filter: opts.filter || {}, pager }, ks).then((r) => r.data),

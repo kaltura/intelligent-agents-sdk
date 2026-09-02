@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Live-backend verification for 4 newly-added capabilities — real Kaltura
- * API, no fakes: Knowledge#listRecords, Application#getCustomPrompts,
+ * API, no fakes: Knowledge#list, Application#getCustomPrompts,
  * Avatars#listTemplates, and the full Lifecycle domain (9 methods).
  *
  * Mints an admin token, exercises each method against production, and for
@@ -57,9 +57,9 @@ try {
   admin = await kaltura.sessions.createAdminToken();
   record('admin-token-mint', true, { secondsRemaining: admin.secondsRemaining() });
 
-  // ── Knowledge#listRecords ──────────────────────────────────────────────
-  const records = await kaltura.knowledge.listRecords(admin, { pageSize: 5 });
-  record('knowledge.listRecords', true, {
+  // ── Knowledge#list ──────────────────────────────────────────────────────
+  const records = await kaltura.knowledge.list(admin, { pageSize: 5 });
+  record('knowledge.list', true, {
     count: records.length,
     sample: records.slice(0, 2).map((r) => ({ id: r.id, name: r.name, status: r.status })),
   });
