@@ -115,6 +115,7 @@ let failed = false;
 // (see src/management/provision.js), so cleanup below can still reach them.
 let createdSoFar = null;
 const pageErrors = [];
+const consoleLog = [];
 
 try {
   admin = await kaltura.sessions.createAdminToken();
@@ -170,7 +171,10 @@ try {
     ? await browser.newContext({ permissions: ['camera', 'microphone'] })
     : browser;
   const page = await context.newPage();
-  page.on('console', (msg) => { if (msg.type() === 'error') pageErrors.push(msg.text()); });
+  page.on('console', (msg) => {
+    consoleLog.push(`[${msg.type()}] ${msg.text()}`);
+    if (msg.type() === 'error') pageErrors.push(msg.text());
+  });
   page.on('pageerror', (err) => pageErrors.push(String(err)));
 
   if (engineName === 'firefox') {
@@ -191,11 +195,18 @@ try {
   // The example never exposes its RTCPeerConnections on window — wrap the
   // constructor before any SDK code runs so getStats() below can find the
   // real ASR uplink peer without touching examples/chroma-key-avatar.html.
+  // ICE/connection-state transitions are logged via console.log (captured into
+  // consoleLog above) purely so a timeout below has a diagnostic trail instead
+  // of a bare "Timeout Xms exceeded" — this traced a real WebKit CI timeout to
+  // slow-but-correct ICE/decode on the runner rather than a stuck connection.
   await page.addInitScript(() => {
     window.__pcs = [];
     const OrigPC = window.RTCPeerConnection;
     window.RTCPeerConnection = function (...args) {
       const pc = new OrigPC(...args);
+      const label = `pc${window.__pcs.length}`;
+      pc.addEventListener('iceconnectionstatechange', () => console.log(`[rtc:${label}] iceConnectionState=${pc.iceConnectionState}`));
+      pc.addEventListener('connectionstatechange', () => console.log(`[rtc:${label}] connectionState=${pc.connectionState}`));
       window.__pcs.push(pc);
       return pc;
     };
@@ -231,7 +242,12 @@ try {
       return (lumSpread > 15 && alphaSpread > 10) ? { lumSpread, alphaSpread, w: off.width, h: off.height } : false;
     },
     null,
-    { timeout: 45000, polling: 500 },
+    // WebKit on the CI runner's constrained, GPU-less hardware decodes real H264
+    // measurably slower than on a dev machine (confirmed via manual instrumented
+    // repro: identical code path clears this same check in 1-2s locally) — 90s
+    // gives real margin without masking an actually-stuck connection, which the
+    // ICE/connection-state console logging above would surface either way.
+    { timeout: 90000, polling: 500 },
   );
   const stats = await statsHandle.jsonValue();
   record('compositor-keying-verified', true, stats);
@@ -269,7 +285,10 @@ try {
 } catch (err) {
   failed = true;
   createdSoFar = err?.body?.createdSoFar || null;
-  record('live-verify-browser', false, { message: err?.detail || err?.message || String(err), code: err?.code, createdSoFar, pageErrors });
+  record('live-verify-browser', false, {
+    message: err?.detail || err?.message || String(err), code: err?.code, createdSoFar, pageErrors,
+    consoleTail: consoleLog.slice(-40),
+  });
 } finally {
   if (browser) { try { await browser.close(); } catch { /* best-effort teardown */ } }
   if (server) { try { await new Promise((r) => server.close(r)); } catch { /* best-effort teardown */ } }
