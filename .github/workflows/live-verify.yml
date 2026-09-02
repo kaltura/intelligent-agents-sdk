@@ -29,7 +29,8 @@ name: Live verification
 # live-verify-browser gates on its own narrower `browser` path-filter output,
 # not `code` — it only needs to run when something that actually affects the
 # browser/WebRTC path changed (src/experience/**, examples/**, its own
-# script, or this workflow file), not on every merge that touches src/**.
+# script, package.json/package-lock.json, or this workflow file), not on
+# every merge that touches src/**.
 #
 # The live-verify job covers the server-side management/conversation path
 # only. live-verify-browser (below) covers the actual browser/WebRTC path:
