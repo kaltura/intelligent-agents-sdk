@@ -1,6 +1,6 @@
 # Client-Side Commands — how the avatar drives your UI
 
-How a Kaltura avatar silently triggers actions in *your* app — navigate a deck, render a widget, draw a chart — by calling a tool you defined. The brain decides *when*; the page decides *what happens*. This is the mechanism that lets an app drive client commands (`navigate_to_slide`/`show_widget`/`highlight_chart`/`open_filing`) off a single live avatar; see `examples/deck-presenter.html` for a self-contained slide-navigation demo.
+How a Kaltura avatar silently triggers actions in *your* app — navigate a deck, render a widget, draw a chart — by calling a tool you defined. The brain decides *when*; the page decides *what happens*. This is the mechanism that lets an app drive client commands (`navigate_to_slide`/`show_widget`/`highlight_chart`/`open_filing`) off a single live avatar; see [`../examples/deck-presenter.html`](../examples/deck-presenter.html) for a self-contained slide-navigation demo.
 
 If you only read one thing: a "client command" is **not a special protocol feature**. It is a native `type:"client"` tool that makes **no server-side call at all** — the *product* is the silent `type:"tool"` segment the brain streams when the LLM calls it. Your page captures that segment and runs whatever JS it wants.
 
@@ -78,7 +78,7 @@ for await (const seg of session) {
 }
 ```
 
-**Validating args yourself:** `validateToolArgs(args, schema)` (`@kaltura/intelligent-agents/experience`) is the runtime check both `onToolCall`'s optional `argsSchema` param and `collectConverse`'s `toolArgSchemas` option run internally — call it directly if you're parsing segments by hand via `parseToolCall`. `schema` is a `Record<string, ToolArgSchema>` (same shape you already pass to `tools.client({args})`): each key has an optional `type` (`'str'|'int'|'float'|'bool'|'list'|'dict'`), `required`, and `enum`. Returns `{ok:true}` or `{ok:false, errors:string[]}`.
+**Validating args yourself:** `validateToolArgs(args, schema)` (`@kaltura/intelligent-agents/experience`) is the runtime check both `onToolCall`'s optional `argsSchema` param and `collectConverse`'s `toolArgSchemas` option run internally. Call it directly if you're parsing segments by hand via `parseToolCall`. `schema` is a `Record<string, ToolArgSchema>` (same shape you already pass to `tools.client({args})`): each key has an optional `type` (`'str'|'int'|'float'|'bool'|'list'|'dict'`), `required`, and `enum`. Returns `{ok:true}` or `{ok:false, errors:string[]}`.
 
 ```js
 import { parseToolCall, validateToolArgs } from '@kaltura/intelligent-agents/experience';
@@ -102,7 +102,7 @@ These are the lessons that cost real debugging time. None of them is enforced se
 
 On any command-driven intellect, set `capabilities: { kaltura_genie_experiences: 'off' }` at creation — see [EXTERNAL-API-INTEGRATIONS.md § Don't skip `kaltura_genie_experiences: 'off'`](EXTERNAL-API-INTEGRATIONS.md#dont-skip-kaltura_genie_experiences-off) for why it competes with your tool and why creation time matters.
 
-RAG and client commands coexist fine with this off — the teaching avatar proves it (knowledge retrieval ON, experiences OFF, commands win).
+RAG and client commands coexist fine with this off. The teaching avatar proves it: knowledge retrieval ON, experiences OFF, commands win.
 
 ### Gotcha 2 — partner config is cached ~24h. Set capabilities at CREATION, not after.
 

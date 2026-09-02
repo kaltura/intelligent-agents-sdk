@@ -81,6 +81,8 @@ Overall connecting timeout: 30s.
 
 **Why step 3 has two timeouts, not one:** the server emits `clientConfiguration` immediately on join, but emits `joinComplete` only after an awaited context-update call that can exceed 5s under load. The SDK budgets the two waits separately (`clientConfiguration` 5s, `joinComplete` 20s) — see [WIRE-PROTOCOL.md §3](WIRE-PROTOCOL.md) for the full rationale. Conflating them into one 5s budget causes spurious `JoinRoomTimeout` failures on loaded rooms.
 
+This 30s figure is unrelated to the platform's built-in client's own internal per-attempt connect timeout used by the capacity queue — see [Capacity & the queue](#capacity--the-queue-throwtonoagent--throwtoexceededtier) below for that separate constant and how the two don't compose.
+
 > **Ordering matters — `approvedPermissions` triggers the opening line.** Subscribe to the STV video and wait until it is actually *decoding frames* (`<video>` `canplay`, readyState ≥ `HAVE_FUTURE_DATA`, plus a short jitter-buffer settle) **before** emitting `approvedPermissions`. ICE `connected` fires ~2s before the first frame decodes — approving on ICE alone means the first 1–2s of the greeting is spoken into a pipe the user can't see/hear yet and is clipped. The platform's built-in client gates approval on **both** mic-ready AND video-ready; the SDK reproduces this in `src/experience/session.js` (`_approve`, gated on the same canplay/`HAVE_FUTURE_DATA` settle logic).
 
 ---

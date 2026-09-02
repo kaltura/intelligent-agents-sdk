@@ -118,7 +118,7 @@ An agent with no avatar attached (create it with `avatarIds` omitted) is treated
 
 ## Displaying the Avatar Video
 
-The SDK assigns the WHEP stream to `cfg.videoEl.srcObject` and does nothing else — no CSS, no sizing. The backend's rendered aspect ratio is not a published contract (see [API-REFERENCE.md § Upload a Custom Visual](../API-REFERENCE.md) on `catalog.createVisual` preprocessing), so size the box with `object-fit: cover` rather than assuming a fixed aspect ratio — it fills the box and crops evenly no matter what the stream's actual aspect ratio turns out to be:
+The SDK assigns the WHEP stream to `cfg.videoEl.srcObject` and does nothing else — no CSS, no sizing. The backend's rendered aspect ratio is not a published contract (see [Upload a Custom Visual](api/design.md#upload-a-custom-visual-portrait--animated-avatar) on `catalog.createVisual` preprocessing), so size the box with `object-fit: cover` rather than assuming a fixed aspect ratio — it fills the box and crops evenly no matter what the stream's actual aspect ratio turns out to be:
 
 ```css
 .avatar-box {

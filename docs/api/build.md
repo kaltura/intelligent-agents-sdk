@@ -308,7 +308,7 @@ async function waitForIndexingBestEffort(waitMs = 60000) {
 }
 ```
 
-Resolve that wait **before** you create or update the intellect, and send `use_knowledge_base:'on'` in that same `intellectConfig` call alongside `knowledge_ids`, not as a follow-up capability patch. Partner config is Redis-cached for up to 24h server-side (see [CLIENT-COMMANDS.md's Gotcha 2](../CLIENT-COMMANDS.md)). A two-step create-then-flip risks the cache latching onto the transient `off` value from step one and never seeing step two's `on`. A single write after the wait avoids that race entirely for a fresh create.
+Resolve that wait **before** you create or update the intellect, and send `use_knowledge_base:'on'` in that same `intellectConfig` call alongside `knowledge_ids`, not as a follow-up capability patch. Partner config is Redis-cached for up to 24h server-side (see [CLIENT-COMMANDS.md's Gotcha 2](../CLIENT-COMMANDS.md#gotcha-2--partner-config-is-cached-24h-set-capabilities-at-creation-not-after)). A two-step create-then-flip risks the cache latching onto the transient `off` value from step one and never seeing step two's `on`. A single write after the wait avoids that race entirely for a fresh create.
 
 ---
 
@@ -331,7 +331,7 @@ POST https://api.avatar.us.kaltura.ai/v1/avatar/create
 
 `voice.id` and `visual.id` come from the catalog (§ Browse the Catalog). Returns `id` (24-char hex). **No `adminTags`** — avatars reject unknown fields. Tag the parent agent instead.
 
-**Faster path — pick a curated preset instead of assembling voice+visual by hand:** `mgmt.avatars.listTemplates(ks, opts)` lists ready-made `{voice, face}` bundles (36 in production today — "Adam", "Amir", "Ben", ...). Useful for a fleet product that spins up many agents fast (one avatar per sales rep, a demo generator) and wants a "pick a good-looking preset" step instead of a build-your-own-face-plus-voice wizard every time.
+**Faster path — pick a curated preset instead of assembling voice+visual by hand:** `mgmt.avatars.listTemplates(ks, opts)` lists ready-made `{voice, face}` bundles (dozens of curated presets — "Adam", "Amir", "Ben", ...). Useful for a fleet product that spins up many agents fast (one avatar per sales rep, a demo generator) and wants a "pick a good-looking preset" step instead of a build-your-own-face-plus-voice wizard every time.
 
 ```js
 const templates = await mgmt.avatars.listTemplates(ks, { pageSize: 10 });
