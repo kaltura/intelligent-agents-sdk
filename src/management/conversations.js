@@ -12,10 +12,8 @@ import { requireConfirm } from './agents.js';
 import { KalturaError } from '../core/errors.js';
 import { EXPERIENCES } from '../experience/wire.js';   // single source of truth for force_experience values
 import { validateCapabilities, mergeCapabilityWrite } from './capabilities.js';
-import { buildIndexerObjects } from '../core/knowledge-enums.js';
 import { stripServerManaged } from './intellect-body.js';
 import { newFormData as sharedNewFormData } from './catalog.js';
-import { classifyPartnerConfigError, probePartnerConfigRoute } from './partner-config-probe.js';
 
 // NOTE: unlike GENIE_MESSAGE_FILTER, the thread filter's objectType has no "Genie" prefix —
 // 'GenieListThreadFilter' 422s with "Input should be 'ListThreadFilter'".
@@ -23,8 +21,8 @@ const GENIE_THREAD_FILTER = 'ListThreadFilter';
 const GENIE_MESSAGE_FILTER = 'GenieListMessageFilter';
 
 // Status/type scope for a knowledge-category media listing — shared by
-// Knowledge#list and Knowledge#corpusStatus so the two entry-count queries
-// (list + count-only) always agree on what "in the knowledge base" means.
+// Knowledge#listCategoryEntries and Knowledge#corpusStatus so the two entry-count
+// queries (list + count-only) always agree on what "in the knowledge base" means.
 const KNOWLEDGE_ENTRY_STATUS_TYPE_FILTER = { statusIn: '-1,-2,0,1,2,7,4', typeIn: '1,7,10' };
 
 // categoryEntry is unique per (categoryId, entryId), and the transport retries
@@ -368,12 +366,10 @@ export class Followups {
  *
  * SCOPE (honest, verified): the SDK can upload + attach entries, list them,
  * detach them, read the linked knowledge record IDs, and toggle
- * `use_knowledge_base`. It CANNOT create or repoint the `config.knowledgeBase`
- * category linkage — `v1/intellect/update` rejects it, and the only other write
- * door (`partner-config/update`) is deployment-gated (see API-REFERENCE.md §
- * Ground the Agent). So knowledge
- * management works on agents that ALREADY have a knowledge record linked
- * (read it via `knowledge.getLinkage(id).knowledgeIds`).
+ * `use_knowledge_base`. Linkage itself is set/repointed via `v1/intellect/update`
+ * — either at create time (`knowledge_ids` in the create/add/update DTO) or
+ * later via {@link IntellectConfig#setKnowledgeIds}, capped at ONE record per
+ * intellect. No elevated privilege needed; this is a real, ungated public route.
  */
 /** @param {unknown} v @param {string} where */
 function requireRecordId(v, where) {
@@ -617,29 +613,21 @@ export class Knowledge {
   }
 
   // ─── The category-LINKAGE write ───
-  // TWO PATHS link knowledge to an intellect (both end at one partner-config row):
-  //   PATH A (preferred, UNGATED): mint a Knowledge record with
-  //     `addRecord()` (`POST /v1/knowledge/add`, requires admin KS), then pass its id as
-  //     `knowledge_ids:[id]` to `intellects.create`/`add`/`update`. The create/update DTO
-  //     accepts `knowledge_ids` directly, so linkage + `use_knowledge_base:on` persist with
-  //     NO `partner-config/update` and NO gate. RAG retrieval works after async indexing.
-  //   PATH B (this `linkCategory`, and `linkRecords`): re-point an EXISTING intellect via
-  //     `POST /partner-config/update` (the agentic studio-intellect proxy does NOT
-  //     accept it). `partner_config_update` MERGES set fields, so we send only
-  //     `indexer`. NOTE: this route still returns 403 for a partner admin KS
-  //     (it needs a higher/service privilege than a partner admin holds) — see API-REFERENCE.md § Ground the Agent. So Path B can't
-  //     re-point on a partner KS today; use Path A for new agents. `linkAvailable()` probes
-  //     Path B. (`/v1/knowledge/*` itself works — only the partner-config re-point is gated.)
+  // Mint a Knowledge record with `addRecord()` (`POST /v1/knowledge/add`, requires
+  // admin KS), then pass its id as `knowledge_ids:[id]` to `intellects.create`/`add`/
+  // `update` (or later via `intellectConfig.setKnowledgeIds` to re-point an existing
+  // intellect). The create/update DTO accepts `knowledge_ids` directly, so linkage +
+  // `use_knowledge_base:on` persist in one write — no separate linking call, no gate.
+  // RAG retrieval works after async indexing (see {@link entryStatus}).
 
   /**
    * Create a Kaltura CATEGORY to hold a knowledge corpus — the container that
-   * `uploadDocument`/`attachEntry` assign entries to and `linkCategory` later
-   * binds to an intellect. WRITE — **NOT idempotent** (a retry creates a SECOND
-   * category with the same name, orphaning the first corpus — use
-   * {@link findCategory}/{@link findOrCreateCategory} to dedupe). Routes through
-   * OVP `category/add` at ADMIN scope — a real public endpoint that does NOT
-   * violate the knowledge-linkage gate (which forbids writing the *intellect linkage* / activating
-   * retrieval — which stays gated; creating the container does not).
+   * `uploadDocument`/`attachEntry` assign entries to. The category itself is
+   * never linked to an intellect directly; a Knowledge record ({@link addRecord})
+   * is what gets linked, via `knowledge_ids`. WRITE — **NOT idempotent** (a
+   * retry creates a SECOND category with the same name, orphaning the first
+   * corpus — use {@link findCategory}/{@link findOrCreateCategory} to dedupe).
+   * Routes through OVP `category/add` at ADMIN scope.
    * Returns the new `{id, fullName, fullIds}`-bearing KalturaCategory.
    * @param {object} opts
    * @param {string} opts.name
@@ -681,65 +669,16 @@ export class Knowledge {
   }
 
   /**
-   * Link a knowledge CATEGORY to an intellect for RAG (the indexer linkage) and
-   * turn `use_knowledge_base` on. WRITE — idempotent. GATED: routes through Genie
-   * `partner-config/update` (`config.indexer`), which 403s for a partner admin KS
-   * on the current deployment — call {@link linkAvailable} first; on a 403 this
-   * returns `{applied:false, reason, code}` and NEVER throws (see API-REFERENCE.md § Ground the Agent).
-   *
-   * Wire shape is the indexer's VERIFIED `categoryEntry` DTO:
-   * `indexer.{filterType:'categoryEntry', chunkSize, categoryInfo:[{categoryId, language}]}`
-   * — `categoryId` is SINGULAR (a string id; the server resolves the full id),
-   * and `chunkSize` lives at the INDEXER level (the backend hard-reads
-   * `index_config["chunkSize"]`). NOTE: the indexer does NOT read a per-category
-   * `objects[]`/`indexPosition`/`strategy` array — those modality embed-strategy
-   * primitives ({@link buildIndexerObjects}) are validated here as INPUT (to
-   * reject an unknown modality before the wire) and returned in `_meta.modalities`,
-   * but are not part of the indexer's read path, so they are not sent. `documentTypes`
-   * is a deprecated alias for `modalities`. `chunkSize` defaults to 5000 (the
-   * backend default at `index.py:34`).
-   * @param {object} opts {configId, categoryId, language?, modalities?, documentTypes?, chunkSize?} @param {string} ks (admin)
-   * @returns {Promise<{applied:boolean, reason?:string, code?:string, result?:any, _meta?:object}>}
-   */
-  async linkCategory(opts, ks) {
-    this._.assertAdmin(ks, 'knowledge.linkCategory');
-    if (!opts?.configId || !opts?.categoryId) throw new KalturaError({ type: 'about:blank', title: 'configId+categoryId required', code: 'bad_request', detail: 'knowledge.linkCategory needs { configId, categoryId }.' });
-    // Validate modalities BEFORE the wire (rejects an unknown/duplicate modality with a
-    // typed bad_request) — but the indexer reads only {categoryId, language} + indexer-level
-    // chunkSize, so we do NOT fabricate an objects[]/indexPosition array on the wire.
-    if (opts.modalities || opts.documentTypes) buildIndexerObjects(opts.modalities || opts.documentTypes);
-    const chunkSize = opts.chunkSize == null ? 5000 : opts.chunkSize;
-    if (typeof chunkSize !== 'number' || !Number.isInteger(chunkSize) || chunkSize <= 0) throw new KalturaError({ type: 'about:blank', title: 'bad chunkSize', code: 'bad_request', detail: 'knowledge.linkCategory chunkSize must be a positive integer.' });
-    const config = { indexer: { filterType: 'categoryEntry', chunkSize, categoryInfo: [{ categoryId: String(opts.categoryId), language: opts.language || 'English' }] }, capabilities: { use_knowledge_base: 'on' } };
-    try {
-      const result = (await this._.genie('partner-config/update', { id: opts.configId, config }, ks)).data;
-      return { applied: true, result };
-    } catch (e) {
-      // Deployment-gated: 403 (higher privilege required) / 404 (route not deployed) — surface
-      // the typed reason WITHOUT throwing, never fake success.
-      if (e instanceof KalturaError && (e.status === 403 || e.status === 404)) {
-        const { code, reason } = classifyPartnerConfigError(e);
-        return { applied: false, code, reason };
-      }
-      throw e;
-    }
-  }
-
-  /**
    * Count the media entries in one or more knowledge CONTAINER categories (the
    * self-created corpus). READ. Accepts an explicit `categoryId`/`categoryIds`
    * (the container `createCategory`/`uploadDocument` used) AND/OR an intellect
-   * `configId` to also fold in the linked categories from {@link getLinkage}.
+   * `configId` to also fold in its linked categories via {@link getLinkage}.
    *
-   * `getLinkage` returns EMPTY when the linkage is gated (the link write
-   * 403s), so counting via linkage alone reports `populated:false` despite N
-   * uploaded entries. Passing the
-   * explicit container id(s) makes "corpus populated (N), retrieval gated"
-   * observable. Uses `baseentry/list` `totalCount` (one call/category) for an
-   * exact count — no per-entry probe loop.
-   *
-   * `_meta` surfaces `retrievalGated` + `reason` when a `configId` was given and
-   * its linkage is empty/gated, so a UI badge has a machine-readable source.
+   * A `configId` with no `knowledge_ids` linked yet (before {@link addRecord} +
+   * {@link IntellectConfig#setKnowledgeIds}, or before create-time `knowledge_ids`)
+   * reports `populated:false` with `_meta.unlinked:true` — a normal pre-setup
+   * state, not an error. Pass the explicit container id(s) to inspect a corpus
+   * before it's linked to any intellect.
    *
    * Counts entries that EXIST — not whether they've finished indexing. Use
    * {@link isIndexed} for that.
@@ -752,29 +691,24 @@ export class Knowledge {
     const explicit = []
       .concat(opts?.categoryIds || [])
       .concat(opts?.categoryId !== undefined && opts?.categoryId !== null ? [opts.categoryId] : []);
-    /** @type {string|undefined} */ let linkageReason;
-    /** @type {boolean} */ let retrievalGated = false;
     let linked = [];
     if (opts?.configId) {
       const link = await this.getLinkage(opts.configId, ks);
       linked = link.knowledgeIds;
-      if (!linked.length) { retrievalGated = true; linkageReason = 'no indexer linkage on the read façade (linkage write is deployment-gated — see API-REFERENCE.md § Ground the Agent)'; }
     }
     const ids = [...new Set([...explicit, ...linked].map(Number).filter((n) => Number.isFinite(n)))];
     // Nothing to scope on AND no configId given → a genuine usage error.
     if (!ids.length && !opts?.configId) {
       throw new KalturaError({ type: 'about:blank', title: 'categoryId or configId required', code: 'bad_request', detail: 'knowledge.corpusStatus needs at least one of { categoryId, categoryIds, configId }.' });
     }
-    // A configId WAS provided but resolved to no linked categories — the documented
-    // deployment-gated linkage case (see API-REFERENCE.md § Ground the Agent), NOT a usage error. Report it honestly.
+    // A configId WAS provided but has no knowledge_ids linked yet — a normal
+    // pre-setup state, NOT a usage error. Report it honestly.
     if (!ids.length) {
       return {
         entryCount: 0, populated: false, categoryIds: [], perCategory: {},
-        // retrievalGated/reason live in _meta ONLY (consistent with the populated
-        // branch below) so consumers read one stable place.
         _meta: meta({
-          partnerId: this._.partnerId, source: 'knowledge.corpusStatus (no linkage on read façade)',
-          scope: `configId:${opts.configId}`, retrievalGated: true, reason: linkageReason,
+          partnerId: this._.partnerId, source: 'knowledge.corpusStatus (no knowledge_ids linked)',
+          scope: `configId:${opts.configId}`, unlinked: true,
         }),
       };
     }
@@ -794,28 +728,16 @@ export class Knowledge {
       _meta: meta({
         partnerId: this._.partnerId, source: 'ovp/baseentry.list (totalCount per category)',
         scope: 'admin KS (disableentitlement); knowledge container categories',
-        ...(retrievalGated ? { retrievalGated: true, reason: linkageReason } : {}),
       }),
     };
   }
 
   /**
-   * Probe whether the knowledge-linkage write path is usable on THIS deployment
-   * (the route + the partner KS's privilege). READ — no state change. Returns
-   * `{ available, reason }` so an app/provisioner can decide whether to attempt
-   * RAG linkage or fall back to prompt/glossary grounding. @param {string} ks (admin)
-   */
-  async linkAvailable(ks) {
-    this._.assertAdmin(ks, 'knowledge.linkAvailable');
-    // A no-op-ish probe: partner-config/get must succeed (route deployed + authorized).
-    return probePartnerConfigRoute(this._, ks, 'partner-config route reachable');
-  }
-
-  /**
    * Create a Knowledge record (`POST /v1/knowledge/add` on Genie). WRITE — NOT idempotent.
-   * LIVE on the current deployment (verified) — returns `{id,...}`. This is
-   * "Path A": pass the returned `id` as `knowledge_ids:[id]` to {@link Intellects.create}/
-   * `add` (or `update`) to LINK it at write time — no `partner-config/update`, no gate.
+   * LIVE on the current deployment (verified) — returns `{id,...}`. Pass the
+   * returned `id` as `knowledge_ids:[id]` to {@link Intellects.create}/`add`
+   * (or `update`, or {@link IntellectConfig#setKnowledgeIds} for an existing
+   * intellect) to LINK it — no separate linking call, no gate.
    * @param {object} body {name,description?,config?} @param {string} ks (admin)
    */
   async addRecord(body, ks) {
@@ -1001,33 +923,6 @@ export class Knowledge {
       ...(confirm.force ? { skippedInUseCheck: true } : {}),
       _meta: meta({ partnerId: this._.partnerId, source: 'genie/knowledge.delete', scope: `knowledge:${id}` }),
     };
-  }
-
-  /**
-   * Re-point an EXISTING intellect's `knowledge_ids` via `partner-config/update` ("Path B").
-   * WRITE — idempotent. GATED: this route 403s for a partner admin KS on the current
-   * deployment (verified — needs a higher privilege; see API-REFERENCE.md § Ground the Agent). For a NEW agent prefer Path A
-   * (pass `knowledge_ids` to {@link Intellects.create}, which writes it in the create DTO
-   * with no gate). Call {@link linkAvailable} first; on 403 this throws a typed `forbidden`.
-   * @param {number} configId @param {number[]} knowledgeIds @param {string} ks (admin)
-   */
-  async linkRecords(configId, knowledgeIds, ks) {
-    this._.assertAdmin(ks, 'knowledge.linkRecords');
-    return (await this._.genie('partner-config/update', { id: configId, config: { knowledge_ids: knowledgeIds, capabilities: { use_knowledge_base: 'on' } } }, ks)).data;
-  }
-
-  /**
-   * Read indexing status for the partner's knowledge (`partner-config/stats`). READ.
-   * GATED: 403s for a partner admin KS on at least one deployment — same
-   * privilege wall as {@link linkRecords}, not a read exempt from it. A
-   * knowledge-level status check that doesn't require elevated privilege is
-   * planned for a future release; this method will likely be updated to use
-   * it once that ships. Use {@link entryStatus} for per-entry status today.
-   * @param {string} ks
-   */
-  async indexStatus(ks) {
-    this._.assertAdmin(ks, 'knowledge.indexStatus');
-    return (await this._.genie('partner-config/stats', { filter: {} }, ks)).data;
   }
 
   /**

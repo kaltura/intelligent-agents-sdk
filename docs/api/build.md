@@ -259,7 +259,7 @@ POST https://genie.nvp1.ovp.kaltura.com/v1/knowledge/add
 
 Returns `{ "id": 42, ... }`. Save the `id`.
 
-**Don't already know the id?** `mgmt.knowledge.listRecords(ks, opts)` discovers a partner's existing records — pass `opts.filter.nameLike` to search by name. Use it to build a "pick an existing knowledge base" picker instead of hardcoding ids: a common Agent Factory flow is letting a user attach a knowledge base they created earlier to a brand-new agent. Distinct from `knowledge.list(categoryId, ks)` above, which lists KMS *entries* inside a category (Path A), not Knowledge *record* containers.
+**Don't already know the id?** `mgmt.knowledge.listRecords(ks, opts)` discovers a partner's existing records — pass `opts.filter.nameLike` to search by name. Use it to build a "pick an existing knowledge base" picker instead of hardcoding ids: a common Agent Factory flow is letting a user attach a knowledge base they created earlier to a brand-new agent. Distinct from `knowledge.list(categoryId, ks)` above, which lists KMS *entries* inside a category, not Knowledge *record* containers.
 
 ```js
 const page = await mgmt.knowledge.listRecords(ks, { pageSize: 20, filter: { nameLike: 'Product' } });
@@ -290,25 +290,31 @@ Writes through the intellect DTO — no `partner-config/update`, no 403. RAG ret
 | `ocr` | On-screen text |
 | `document` | PDF / Markdown attachments |
 
-**SDK:** `knowledge.addRecord()` + `knowledge.uploadDocument()` + `intellectConfig.setKnowledgeIds()` (Path A). Re-pointing an EXISTING intellect via the `partner-config/update` path (Path B: `knowledge.linkRecords()`, probed first with `knowledge.linkAvailable()`) is still gated (403s for a partner admin KS today). Prefer Path A for new agents. Only reach for Path B if the intellect already exists and you can't recreate it.
+**SDK:** `knowledge.addRecord()` + `knowledge.uploadDocument()` + `intellectConfig.setKnowledgeIds()`. Re-pointing an EXISTING intellect to a new or different knowledge record works the same way — call `setKnowledgeIds()` again with the new id. It's a normal `v1/intellect/update` write, no separate linking call, no gate.
 
 **Checking whether indexing has finished:** `knowledge.isIndexed(id, ks)` reads `knowledge.getRecord(id, ks).status`. But `status` is the knowledge record's own container-lifecycle flag (`"READY"`/`"DELETED"`), not an indexing-completion signal. It reads `"READY"` immediately once the record exists, before any entry has been indexed, because a knowledge base is open-ended (you can always add more entries), so there's no single "fully indexed" state for the record as a whole. Don't treat `isIndexed()` returning `ready:true` as proof your content is searchable yet.
 
-Don't use `knowledge.search()` as a substitute either. Its "couldn't find relevant information" reply fires alike for an unindexed KB, an indexed KB with `use_knowledge_base:'off'`, or a genuine no-match query, so it can't signal indexing status. `knowledge.corpusStatus()` only counts entries that exist in the category, not whether they've finished embedding. `knowledge.indexStatus()` (`partner-config/stats`) 403s for a partner admin KS on at least one deployment.
+Don't use `knowledge.search()` as a substitute either. Its "couldn't find relevant information" reply fires alike for an unindexed KB, an indexed KB with `use_knowledge_base:'off'`, or a genuine no-match query, so it can't signal indexing status. `knowledge.corpusStatus()` only counts entries that exist in the category, not whether they've finished embedding.
 
-A per-entry indexing-status check, `knowledge.entryStatus(knowledgeId, entryIds, ks)`, exists in the SDK and is the correct way to verify specific uploaded content has finished indexing. It's not yet generally available on every deployment — check with your Kaltura account team before relying on it. A knowledge-level status check that doesn't require elevated privilege is planned for a future release.
-
-Until then, there's no reliable completion signal to poll — budget a fixed wait after upload instead of polling `isIndexed()` (which is `ready:true` from the first call and never tells you more):
+`knowledge.entryStatus(knowledgeId, entryIds, ks)` is the official per-entry indexing-status check, and the correct way to verify specific uploaded content has finished indexing. Poll it instead of guessing with a fixed wait:
 
 ```js
-async function waitForIndexingBestEffort(waitMs = 60000) {
-  // No reliable per-entry signal is available yet — this is a fixed budget, not a poll.
-  // Swap this for a poll against knowledge.entryStatus() once it's generally available.
-  await new Promise((resolve) => setTimeout(resolve, waitMs));
+async function pollUntilIndexed(mgmt, knowledgeId, entryIds, ks, { intervalMs = 5000, timeoutMs = 90000 } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  const pending = new Set(entryIds);
+  while (pending.size && Date.now() < deadline) {
+    const { entries } = await mgmt.knowledge.entryStatus(knowledgeId, [...pending], ks);
+    // entries omits an id until it's finished indexing, then reports its documents' status.
+    for (const entry of entries) {
+      if (entry.documents?.every((d) => d.status)) pending.delete(entry.entry_id);
+    }
+    if (pending.size) await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+  return pending.size === 0; // false means the timeout ran out before every entry confirmed
 }
 ```
 
-Resolve that wait **before** you create or update the intellect, and send `use_knowledge_base:'on'` in that same `intellectConfig` call alongside `knowledge_ids`, not as a follow-up capability patch. Partner config is Redis-cached for up to 24h server-side (see [CLIENT-COMMANDS.md's Gotcha 2](../CLIENT-COMMANDS.md#gotcha-2--partner-config-is-cached-24h-set-capabilities-at-creation-not-after)). A two-step create-then-flip risks the cache latching onto the transient `off` value from step one and never seeing step two's `on`. A single write after the wait avoids that race entirely for a fresh create.
+Resolve that poll **before** you create or update the intellect, and send `use_knowledge_base:'on'` in that same `intellectConfig` call alongside `knowledge_ids`, not as a follow-up capability patch. Partner config is Redis-cached for up to 24h server-side (see [CLIENT-COMMANDS.md's Gotcha 2](../CLIENT-COMMANDS.md#gotcha-2--partner-config-is-cached-24h-set-capabilities-at-creation-not-after)). A two-step create-then-flip risks the cache latching onto the transient `off` value from step one and never seeing step two's `on`. A single write after the poll avoids that race entirely for a fresh create.
 
 ---
 
@@ -372,57 +378,16 @@ Returns `agentId` (UUID). **Save this.**
 
 ---
 
-## Configure the Brain (deployment-gated)
+## Brain-Model & Rate-Limit Fields (not in the public API)
 
-> `partner-config/update` access will be removed for non-superadmin partners. Don't build production workflows on it.
+`agent_llm`, `agent_fast_llm`, `agent_avatar_llm`, `run_quota_check`, `web_search_config`, and the four rate-limit fields (`rate_limit_per_minute`, `rate_limit_per_hour`, `anonymous_rate_limit_per_minute`, `anonymous_rate_limit_per_hour`) exist on the backend intellect record, but no public route reads or writes them — `intellect/get`/`intellect/update` never expose or accept them, and there is no separate endpoint that does. They're set by internal tooling only.
 
-Brain-model and rate-limit fields are **not in the intellect DTO** — `intellect/get`/`intellect/update` never expose or accept them. The only door is Genie's `partner-config/*` route family:
-
-| Class | Fields | Round-trip verified? |
-|---|---|---|
-| Class A | `agent_llm`, `agent_fast_llm`, rate limits | Yes |
-| Class B (best-effort) | `agent_avatar_llm`, `run_quota_check`, `web_search_config` | No — sendable via `setBrainConfig`, but unverified to persist |
-
-`partner-config/*` splits across three operations with different availability:
-
-| Operation | Route | KS | Works on a partner admin KS today? |
-|---|---|---|---|
-| Read the brain config | `partner-config/get` | admin | **Yes** — a plain read, no gate |
-| Probe write availability | `partner-config/get` (id:0) | admin | **Yes** — same read, used as a liveness check |
-| Write the brain config | `partner-config/update` | admin | **No** — 403s; needs a higher/service privilege |
-
-**Step 1 — probe before writing:**
+**SDK:** `mgmt.intellectConfig.describe(configId, ks)` lists every one of these under its `readOnly` map, each with a short note, so a UI can render them as informational without hardcoding the list:
 
 ```js
-const probe = await mgmt.intellects.brainConfigAvailable(ks);
-// { available: false, code: 'forbidden', reason: 'partner-config/update needs a higher privilege than a partner admin KS (deployment-gated)' }
+const { readOnly } = await mgmt.intellectConfig.describe(configId, ks);
+readOnly.agent_llm; // { value: <whatever intellect/get returns for this key, if anything>, note: 'set by internal tooling only, not writable via the public API' }
 ```
-
-**Step 2 — write (only if `available:true`; otherwise skip and treat as read-only):**
-
-```js
-const result = await mgmt.intellects.setBrainConfig(configId, {
-  agentLlm: '<your-agent-llm-id>',
-  rateLimits: { perMinute: 60, perHour: 1000 },
-}, ks);
-// { applied:false, code:'forbidden', reason:'...' } when gated — NEVER throws or fakes success.
-// { applied:true, sentKeys:[...], result } when the door is open.
-```
-
-**Step 3 — read back what's actually persisted** (`setBrainConfig`'s `applied`/`sentKeys` list what was *sent*, not confirmed *persisted* — see the Class B row above):
-
-```js
-const { brainConfig, unsetUseDefault } = await mgmt.intellects.getBrainConfig(configId, ks);
-```
-
-**SDK:** `mgmt.intellects.{brainConfigAvailable, setBrainConfig, getBrainConfig}`. `brainConfigAvailable`/`setBrainConfig` share a classifier with `knowledge.linkAvailable`/`linkRecords` (§ Ground the Agent Path B) — both probe the same `partner-config/*` door.
-
-**Status of each part, despite the write being gated and slated for removal:**
-
-| Part | Status |
-|---|---|
-| `getBrainConfig` (read) | Live — the only way to see `agent_llm`/rate limits; the intellect DTO doesn't carry them |
-| `setBrainConfig` (write) | Client-side path to those fields where the door is open (e.g. a superadmin-provisioned partner); returns `{applied:false, reason}` rather than a silent no-op or a thrown 403 when it's closed |
 
 ---
 

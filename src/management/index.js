@@ -55,8 +55,7 @@ export {
   lintPrompts, validatePromptVars, lintGlossary, lintPersonaIdentity, assembleSystemPrompt, SYS_VARS, SYS_NAMESPACES,
   PAGE_CONTEXT_PROMPT,
 } from './prompt-lint.js';
-// Brain-config + intellect-config helpers.
-export { buildBrainConfigPatch } from './intellects.js';
+// Intellect-config helpers.
 export { IntellectConfig, buildUserPropertiesForms, CALL_STAGES, SKILL_MODES } from './intellect-config.js';
 // Knowledge / RAG indexer enums — ChapterType/Strategy + the objects[] builder.
 export {

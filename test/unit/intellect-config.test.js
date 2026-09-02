@@ -1,85 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildBrainConfigPatch } from '../../src/management/intellects.js';
 import { buildUserPropertiesForms } from '../../src/management/intellect-config.js';
 
 /**
- * PURE unit tests for the G1 (intellects + intellect-config) validation/merge
- * surface: brain-config patch builder + user-properties builder. No network.
+ * PURE unit tests for {@link buildUserPropertiesForms}. No network.
  */
-
-// ─────────────────────────── buildBrainConfigPatch ───────────────────────────
-
-test('buildBrainConfigPatch maps the verified tier to snake keys + lists applied', () => {
-  const { config, applied } = buildBrainConfigPatch({
-    agentLlm: 'us.anthropic.claude-sonnet-4-20250514-v1:0',
-    agentFastLlm: 'us.anthropic.claude-haiku-4-5-20251001-v1:0',
-    rateLimits: { perMinute: 250, perHour: 2500 },
-    anonymousRateLimits: { perMinute: 30, perHour: 200 },
-  });
-  assert.equal(config.agent_llm, 'us.anthropic.claude-sonnet-4-20250514-v1:0');
-  assert.equal(config.agent_fast_llm, 'us.anthropic.claude-haiku-4-5-20251001-v1:0');
-  assert.equal(config.rate_limit_per_minute, 250);
-  assert.equal(config.rate_limit_per_hour, 2500);
-  assert.equal(config.anonymous_rate_limit_per_minute, 30);
-  assert.equal(config.anonymous_rate_limit_per_hour, 200);
-  for (const k of ['agent_llm', 'agent_fast_llm', 'rate_limit_per_minute', 'rate_limit_per_hour', 'anonymous_rate_limit_per_minute', 'anonymous_rate_limit_per_hour']) {
-    assert.ok(applied.includes(k), `applied lists ${k}`);
-  }
-});
-
-test('buildBrainConfigPatch: partial fill writes ONLY the supplied key (merge/PATCH proof)', () => {
-  const { config, applied } = buildBrainConfigPatch({ agentLlm: 'us.x' });
-  assert.deepEqual(Object.keys(config), ['agent_llm']);
-  assert.deepEqual(applied, ['agent_llm']);
-});
-
-test('buildBrainConfigPatch maps the unverified Class-B tier + web search', () => {
-  const { config, applied } = buildBrainConfigPatch({
-    agentAvatarLlm: 'models/gemini-3.1-flash-lite',
-    runQuotaCheck: true,
-    webSearch: { includeDomains: ['kaltura.com'], includeAnswer: 'advanced', searchDepth: 'advanced', maxResults: 8 },
-  });
-  assert.equal(config.agent_avatar_llm, 'models/gemini-3.1-flash-lite');
-  assert.equal(config.run_quota_check, true);
-  assert.deepEqual(config.web_search_config, { include_domains: ['kaltura.com'], include_answer: 'advanced', search_depth: 'advanced', max_results: 8 });
-  assert.ok(applied.includes('web_search_config') && applied.includes('agent_avatar_llm') && applied.includes('run_quota_check'));
-});
-
-test('buildBrainConfigPatch: webSearch defaults search_depth=ultra-fast + max_results=5', () => {
-  const { config } = buildBrainConfigPatch({ webSearch: {} });
-  assert.equal(config.web_search_config.search_depth, 'ultra-fast');
-  assert.equal(config.web_search_config.max_results, 5);
-});
-
-test('buildBrainConfigPatch: empty config → bad_request', () => {
-  assert.throws(() => buildBrainConfigPatch({}), (e) => e.code === 'bad_request');
-});
-
-test('buildBrainConfigPatch: bad searchDepth → bad_request naming the key', () => {
-  assert.throws(() => buildBrainConfigPatch({ webSearch: { searchDepth: 'turbo' } }), (e) => e.code === 'bad_request' && /searchDepth/.test(e.detail));
-});
-
-test('buildBrainConfigPatch: bad includeAnswer → bad_request', () => {
-  assert.throws(() => buildBrainConfigPatch({ webSearch: { includeAnswer: 'full' } }), (e) => e.code === 'bad_request');
-});
-
-test('buildBrainConfigPatch: negative rate limit → bad_request', () => {
-  assert.throws(() => buildBrainConfigPatch({ rateLimits: { perMinute: -1 } }), (e) => e.code === 'bad_request');
-});
-
-test('buildBrainConfigPatch: maxResults must be > 0', () => {
-  assert.throws(() => buildBrainConfigPatch({ webSearch: { maxResults: 0 } }), (e) => e.code === 'bad_request');
-});
-
-test('buildBrainConfigPatch: anonymous 0 limit is ALLOWED (blocks all anon, a footgun, not an error)', () => {
-  const { config } = buildBrainConfigPatch({ anonymousRateLimits: { perMinute: 0 } });
-  assert.equal(config.anonymous_rate_limit_per_minute, 0);
-});
-
-test('buildBrainConfigPatch: empty model-id string → bad_request', () => {
-  assert.throws(() => buildBrainConfigPatch({ agentLlm: '   ' }), (e) => e.code === 'bad_request');
-});
 
 // ───────────────────────── buildUserPropertiesForms ─────────────────────────
 

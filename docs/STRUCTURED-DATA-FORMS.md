@@ -56,7 +56,7 @@ The backend's schema for this feature also carries a `title` and `secondary_titl
 - No conditional logic beyond the model's own judgment — there's no "only ask if X wasn't already provided" you can express declaratively.
 - No precise timing control. `call_stage` is an instruction the model interprets, not a deterministic trigger pinned to a specific turn number.
 - Not a general dynamic-form builder — it's a flat list of typed fields per stage, not richer patterns (multi-step wizards, validation rules, fields dependent on other fields).
-- Editable only through the SDK/`intellect/*` surface — `user_properties_forms` is not in the `partner-config/*` surface at all, so it's authored once at provisioning time via the SDK against the brain's API, not tunable per-session through that other management surface.
+- Editable only through the SDK/`intellect/*` surface — `user_properties_forms` is authored once at provisioning time via the SDK against the brain's API, not tunable per-session through any other surface.
 
 ## How the SDK handles it — two observation points, one descriptor
 

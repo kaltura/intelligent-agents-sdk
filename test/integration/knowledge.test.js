@@ -203,46 +203,7 @@ test('uploadDocument requires a categoryId (no silent no-op)', async () => {
   const file = new Blob([new Uint8Array([1])], { type: 'application/pdf' });
   await assert.rejects(() => m.knowledge.uploadDocument({ file, name: 'x.pdf' }, ADMIN), (e) => e.code === 'bad_request');
 });
-test('linkCategory writes the VERIFIED categoryEntry indexer DTO (singular categoryId + indexer-level chunkSize) via partner-config/update', async () => {
-  const f = fakeFetch([{ match: '/partner-config/update', respond: (req) => ({ body: { id: req.body.id, config: req.body.config } }) }]);
-  const m = new Management({ partnerId: 6516742, adminSecret: 'a'.repeat(32), fetch: f });
-  const r = await m.knowledge.linkCategory({ configId: 1505, categoryId: 408750172 }, ADMIN);
-  assert.equal(r.applied, true);   // succeeded (not gated) on the fake
-  const call = f.calls.find((c) => c.url.includes('/partner-config/update'));
-  const idx = call.body.config.indexer;
-  assert.equal(call.body.id, 1505);
-  assert.equal(idx.filterType, 'categoryEntry');
-  // Backend reads category_info["categoryId"] (SINGULAR string) + ["language"] and
-  // index_config["chunkSize"] at the indexer level.
-  assert.equal(idx.categoryInfo[0].categoryId, '408750172');
-  assert.equal(idx.categoryInfo[0].language, 'English');
-  assert.equal(idx.chunkSize, 5000);      // backend default
-  assert.ok(!('categoryIds' in idx.categoryInfo[0]), 'must NOT emit categoryIds[] — the indexer reads singular categoryId');
-  assert.ok(!('objects' in idx.categoryInfo[0]), 'must NOT fabricate objects[]/indexPosition — the indexer never reads them');
-  assert.equal(call.body.config.capabilities.use_knowledge_base, 'on');
-});
-
-test('linkCategory validates modalities pre-wire but does NOT send a fabricated objects[]; honors chunkSize', async () => {
-  const f = fakeFetch([{ match: '/partner-config/update', respond: (req) => ({ body: { id: req.body.id, config: req.body.config } }) }]);
-  const m = new Management({ partnerId: 6516742, adminSecret: 'a'.repeat(32), fetch: f });
-  await m.knowledge.linkCategory({ configId: 1505, categoryId: 7, modalities: ['ocr', 'document'], chunkSize: 2000 }, ADMIN);
-  const idx = f.calls.find((c) => c.url.includes('/partner-config/update')).body.config.indexer;
-  assert.equal(idx.chunkSize, 2000);
-  assert.ok(!('objects' in idx.categoryInfo[0]), 'valid modalities accepted but not emitted as objects[]');
-  // an UNKNOWN modality is still rejected BEFORE the wire (input validation preserved)
-  await assert.rejects(() => m.knowledge.linkCategory({ configId: 1505, categoryId: 7, modalities: ['bogus'] }, ADMIN), /bad_request|modality/i);
-});
-
-test('linkCategory is GATED: a 403 returns {applied:false} and NEVER throws', async () => {
-  const f = fakeFetch([{ match: '/partner-config/update', respond: () => ({ status: 403, body: { detail: '403 Forbidden' } }) }]);
-  const m = new Management({ partnerId: 6516742, adminSecret: 'a'.repeat(32), fetch: f });
-  const r = await m.knowledge.linkCategory({ configId: 1505, categoryId: 7 }, ADMIN);
-  assert.equal(r.applied, false);
-  assert.equal(r.code, 'forbidden');
-  assert.match(r.reason, /privilege/);
-});
-
-test('createCategory hits OVP category/add at admin scope (NOT the gated linkage op)', async () => {
+test('createCategory hits OVP category/add at admin scope', async () => {
   const f = fakeFetch([{ match: '/service/category/action/add', respond: (req) => ({ body: { objectType: 'KalturaCategory', id: 99, name: req.body.category.name } }) }]);
   const m = new Management({ partnerId: 6516742, adminSecret: 'a'.repeat(32), fetch: f });
   const cat = await m.knowledge.createCategory({ name: 'Agent KB', parentId: 5, description: 'corpus' }, ADMIN);
@@ -273,18 +234,16 @@ test('corpusStatus counts an explicit container categoryId via baseentry totalCo
   assert.equal(f.calls.filter((c) => c.url.includes('/service/baseentry/action/list')).length, 1);
 });
 
-test('corpusStatus surfaces retrievalGated when configId linkage is empty/gated', async () => {
+test('corpusStatus counts via an explicit categoryId even when configId linkage is empty', async () => {
   const f = fakeFetch([
     { match: '/v1/intellect/get', respond: () => ({ body: { id: 1505, knowledge_ids: [], capabilities: {} } }) },
     { match: '/service/baseentry/action/list', respond: () => ({ body: { objects: [], totalCount: 4 } }) },
   ]);
   const m = new Management({ partnerId: 6516742, adminSecret: 'a'.repeat(32), fetch: f });
-  // explicit container id counts (4), linkage is empty → gated flag set
   const st = await m.knowledge.corpusStatus({ configId: 1505, categoryId: 99 }, ADMIN);
   assert.equal(st.entryCount, 4);
   assert.equal(st.populated, true);
-  assert.equal(st._meta.retrievalGated, true);
-  assert.match(st._meta.reason, /gated|privilege/);
+  assert.equal(st._meta.unlinked, undefined, 'not unlinked — the explicit categoryId supplied the count');
 });
 
 test('corpusStatus requires at least one of categoryId/categoryIds/configId', async () => {
@@ -294,10 +253,10 @@ test('corpusStatus requires at least one of categoryId/categoryIds/configId', as
   assert.equal(f.calls.length, 0);
 });
 
-test('corpusStatus with ONLY a configId whose linkage is empty returns gated (does NOT throw)', async () => {
-  // The real-world case: an in-use agent whose knowledge linkage is not on the read façade
-  // (deployment-gated — see API-REFERENCE.md § Ground the Agent). corpusStatus must
-  // report it honestly, not raise bad_request.
+test('corpusStatus with ONLY a configId whose knowledge_ids is empty reports unlinked (does NOT throw)', async () => {
+  // The normal pre-setup case: an intellect that hasn't had a knowledge record
+  // linked yet (no knowledge_ids). corpusStatus must report it honestly, not
+  // raise bad_request.
   const f = fakeFetch([
     { match: '/v1/intellect/get', respond: () => ({ body: { id: 1507, knowledge_ids: [], capabilities: {} } }) },
   ]);
@@ -305,39 +264,18 @@ test('corpusStatus with ONLY a configId whose linkage is empty returns gated (do
   const st = await m.knowledge.corpusStatus({ configId: 1507 }, ADMIN);
   assert.equal(st.populated, false);
   assert.equal(st.entryCount, 0);
-  // retrievalGated/reason live in _meta (single stable place), not top-level.
-  assert.equal(st._meta.retrievalGated, true);
-  assert.match(st._meta.reason, /gated|privilege|linkage/i);
-  assert.equal(st.retrievalGated, undefined, 'not duplicated at top-level');
+  assert.equal(st._meta.unlinked, true);
   assert.deepEqual(st.categoryIds, []);
   assert.ok(st._meta.generatedAt, 'provenance receipt present');
   // No baseentry list call happens when there are no categories to count.
   assert.equal(f.calls.filter((c) => c.url.includes('/service/baseentry/action/list')).length, 0);
 });
 
-test('linkAvailable reports forbidden (deployment-gated) vs not_deployed vs available', async () => {
-  const forbidden = new Management({ partnerId: 1, adminSecret: 'a'.repeat(32), fetch: fakeFetch([{ match: '/partner-config/get', respond: () => ({ status: 403, body: { detail: '403 Forbidden' } }) }]) });
-  assert.deepEqual((await forbidden.knowledge.linkAvailable(ADMIN)).code, 'forbidden');
-  const missing = new Management({ partnerId: 1, adminSecret: 'a'.repeat(32), fetch: fakeFetch([{ match: '/partner-config/get', respond: () => ({ status: 404, body: { detail: 'Not Found' } }) }]) });
-  assert.deepEqual((await missing.knowledge.linkAvailable(ADMIN)).code, 'not_deployed');
-  const ok = new Management({ partnerId: 1, adminSecret: 'a'.repeat(32), fetch: fakeFetch([{ match: '/partner-config/get', respond: () => ({ body: { id: 0, config: {} } }) }]) });
-  assert.equal((await ok.knowledge.linkAvailable(ADMIN)).available, true);
-});
-
-test('linkRecords + addRecord + indexStatus hit the documented routes', async () => {
-  const f = fakeFetch([
-    { match: '/v1/knowledge/add', respond: () => ({ body: { id: 7, config: { sources: [] } } }) },
-    { match: '/partner-config/update', respond: (req) => ({ body: { config: req.body.config } }) },
-    { match: '/partner-config/stats', respond: () => ({ body: { objects: [] } }) },
-  ]);
+test('addRecord hits v1/knowledge/add and returns the minted id', async () => {
+  const f = fakeFetch([{ match: '/v1/knowledge/add', respond: () => ({ body: { id: 7, config: { sources: [] } } }) }]);
   const m = new Management({ partnerId: 1, adminSecret: 'a'.repeat(32), fetch: f });
   const rec = await m.knowledge.addRecord({ name: 'kb' }, ADMIN);
   assert.equal(rec.id, 7);
-  await m.knowledge.linkRecords(1505, [7], ADMIN);
-  const link = f.calls.find((c) => c.url.includes('/partner-config/update'));
-  assert.deepEqual(link.body.config.knowledge_ids, [7]);
-  await m.knowledge.indexStatus(ADMIN);
-  assert.ok(f.calls.some((c) => c.url.includes('/partner-config/stats')));
 });
 
 test('getRecord/updateRecord hit v1/knowledge/get|update with a validated integer id', async () => {

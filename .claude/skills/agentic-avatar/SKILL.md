@@ -114,12 +114,11 @@ For the full endpoint/DTO reference behind every one of these calls (exact paylo
 | `setUserPropertiesForms(configId, forms, ks)` / `clearUserPropertiesForms(configId, ks)` | Structured-data forms the agent emits (lead capture etc). |
 | `setAllowClientVariables(configId, enabled, ks)` | Toggle the per-request `request_vars` gate. |
 | `setMetadata(configId, {name?, description?, tags?}, ks)` | Row metadata. |
-| `setKnowledgeIds(configId, knowledgeIds, ks)` | Ungated Path A knowledge linkage — capped at one id. |
+| `setKnowledgeIds(configId, knowledgeIds, ks)` | Ungated knowledge linkage — capped at one id. |
 | `setMcpServers(configId, servers, ks)` | Map of `{name: {url}}` — ungated. |
-| `setBrainConfig(configId, cfg, ks)` / `brainConfigAvailable(ks)` | Deployment-gated (see below). |
 | `describe(configId, ks)` | One-shot read of the whole editable surface, partitioned `editable`/`readOnly` with a note on every read-only field. |
 
-`EDITABLE_FIELDS`: `prompts`, `base_directive`, `glossary`, `capabilities`, `tool_ids`, `secrets`, `user_properties_forms`, `mcp_servers`, `allow_client_variables`, `knowledge_ids`, `skill_ids`, `name`, `description`, `tags`, `status`. `type` is immutable — `patch()` throws if you try to change it. Everything else (`web_search_config`, `run_quota_check`, `agent_avatar_llm`, `avatar_config`) is read-only; `describe()` surfaces why.
+`EDITABLE_FIELDS`: `prompts`, `base_directive`, `glossary`, `capabilities`, `tool_ids`, `secrets`, `user_properties_forms`, `mcp_servers`, `allow_client_variables`, `knowledge_ids`, `skill_ids`, `name`, `description`, `tags`, `status`. `type` is immutable — `patch()` throws if you try to change it. Everything else (`web_search_config`, `run_quota_check`, `agent_avatar_llm`, `agent_llm`, `agent_fast_llm`, rate limits, `avatar_config`) is set by internal tooling only and not writable via the public API at all; `describe()` surfaces why.
 
 ## Capabilities
 
@@ -163,22 +162,11 @@ Write-only, per-intellect, via `src/management/secrets.js` (also mirrored on `in
 
 `intellects.snapshot(configId, ks)` / `restore(snapshot, ks, opts)` / `diffSnapshots(a, b)` — all client-side. `restore` takes the **full snapshot object first** (it reads `configId` from `snapshot.configId` internally), ks second.
 
-## Deployment-gated writes — probe, never fake success
+## Brain-model and rate-limit fields — not in the public API
 
-Two write paths route through `partner-config/update`, which 403s for a partner admin KS on the current deployment. Both probe first and return a typed, non-throwing receipt instead of pretending the write landed:
+`agent_llm`, `agent_fast_llm`, `agent_avatar_llm`, `run_quota_check`, `web_search_config`, and the four rate-limit fields exist on the backend intellect record, but no public route reads or writes them — they're set by internal tooling only. `intellectConfig.describe(configId, ks)` lists them under `readOnly` with a note; there is no setter for any of them.
 
-```js
-const status = await kaltura.intellects.brainConfigAvailable(ks);   // {available:false, reason?}
-if (status.available) await kaltura.intellects.setBrainConfig(configId, cfg, ks);
-
-const linkStatus = await kaltura.knowledge.linkAvailable(ks);
-```
-
-`intellectConfig.setBrainConfig`/`brainConfigAvailable` just delegate to the same `Intellects` methods — use whichever namespace you already have in scope. Never call `setBrainConfig` without checking `brainConfigAvailable` first in code you ship; the method itself won't throw on a 403, it returns `{applied:false, reason}`.
-
-## Knowledge — ground the agent on documents ("Path A", ungated)
-
-Path A is fully SDK-native with zero 403s. Path B (re-pointing an *existing* intellect via `partner-config/update` / `knowledge.linkRecords`) is still gated — check `knowledge.linkAvailable(ks)` before reaching for it.
+## Knowledge — ground the agent on documents (ungated)
 
 `kaltura.knowledge.listRecords(ks, {filter?, pageSize?})` discovers existing records without knowing ids up front (e.g. for a picker UI letting a user attach an existing knowledge base to a new agent) — `filter` accepts `nameEquals`/`nameLike`/`statusEquals`/`statusIn`.
 
