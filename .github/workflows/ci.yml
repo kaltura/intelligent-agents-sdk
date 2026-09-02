@@ -113,6 +113,14 @@ jobs:
       - name: 🎭 Install ${{ matrix.engine }}
         run: npx playwright install --with-deps ${{ matrix.engine }}
 
+      - name: 🔊 Start a virtual audio device (this runner has no sound card; Firefox's cubeb backend needs one to render real-time AudioContext audio at all — Chromium/WebKit's audio stacks don't)
+        if: matrix.engine == 'firefox'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq pulseaudio
+          pulseaudio -D --exit-idle-time=-1 --disallow-exit
+          pactl load-module module-null-sink
+
       - name: 🎙️ Real headless ${{ matrix.engine }}, real AudioWorklet — noise gate passes loud audio, attenuates quiet
         id: verify_noise_suppressor
         env:

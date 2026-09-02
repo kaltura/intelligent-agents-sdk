@@ -82,9 +82,6 @@ try {
             firefoxUserPrefs: {
               'media.autoplay.default': 0,
               'media.autoplay.block-webaudio': false,
-              // CI runners with no real audio device otherwise stall createMediaStreamDestination()/
-              // createMediaStreamSource() indefinitely — same fake-media-backend fix as live-verify-browser.mjs.
-              'media.navigator.streams.fake': true,
             },
           }
         : {},
