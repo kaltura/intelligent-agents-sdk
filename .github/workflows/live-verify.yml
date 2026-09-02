@@ -26,6 +26,11 @@ name: Live verification
 # path-filter below correctly resolves to skipped for a docs-only PR — it has
 # nothing to verify against the real backend either way.
 #
+# live-verify-browser gates on its own narrower `browser` path-filter output,
+# not `code` — it only needs to run when something that actually affects the
+# browser/WebRTC path changed (src/experience/**, examples/**, its own
+# script, or this workflow file), not on every merge that touches src/**.
+#
 # The live-verify job covers the server-side management/conversation path
 # only. live-verify-browser (below) covers the actual browser/WebRTC path:
 # a real provisioned avatar, a headless Chromium with fake-but-real-pipeline
@@ -57,6 +62,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       code: ${{ steps.filter.outputs.code }}
+      browser: ${{ steps.filter.outputs.browser }}
     steps:
       - name: 📥 Check out the repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -78,6 +84,13 @@ jobs:
               - '.eslintrc*'
               - 'eslint.config.*'
               - '.github/workflows/**'
+            browser:
+              - 'src/experience/**'
+              - 'examples/**'
+              - 'scripts/live-verify-browser.mjs'
+              - 'package.json'
+              - 'package-lock.json'
+              - '.github/workflows/live-verify.yml'
 
   live-verify:
     name: 🔴 Live verification
@@ -178,7 +191,7 @@ jobs:
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' ||
-      ((github.event_name == 'merge_group' || github.event.label.name == 'run-live-verify') && needs.changes.outputs.code == 'true')
+      ((github.event_name == 'merge_group' || github.event.label.name == 'run-live-verify') && needs.changes.outputs.browser == 'true')
     runs-on: ubuntu-latest
     environment: live-verify
     strategy:
