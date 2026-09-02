@@ -5,7 +5,7 @@ This covers the real avatar pipeline (mic capture → ASR uplink → STV/WHEP vi
 ## What's already automated (don't re-test these)
 
 - **Noise-suppressor DSP correctness** — `npm run verify:noise-suppressor`, a real AudioWorklet run in real headless Chromium, Firefox, and WebKit, asserting the gate passes loud audio and attenuates quiet audio. Runs on every push (`.github/workflows/ci.yml`, `noise-suppressor` job). No network, no live credentials.
-- **WHEP video decode + chroma-key correctness, mic-to-ASR audio flow, on Chromium, Firefox, and WebKit** — `scripts/live-verify-browser.mjs`, against the real Kaltura backend, on `merge_group`/`run-live-verify` (`.github/workflows/live-verify.yml`, `live-verify-browser` job). Asserts the composited canvas is actually painting varying, partially-transparent frames (real chroma-keying, not a blank or fully-opaque frame) and that real mic audio actually reaches a peer (`RTCPeerConnection.getStats()` outbound-rtp `bytesSent > 0`).
+- **WHEP video decode + chroma-key correctness, mic-to-ASR audio flow, on Chromium and Firefox** — `scripts/live-verify-browser.mjs`, against the real Kaltura backend, on `merge_group`/`run-live-verify` (`.github/workflows/live-verify.yml`, `live-verify-browser` job). Asserts the composited canvas is actually painting varying, partially-transparent frames (real chroma-keying, not a blank or fully-opaque frame) and that real mic audio actually reaches a peer (`RTCPeerConnection.getStats()` outbound-rtp `bytesSent > 0`). WebKit is in this job's matrix too, but it's a known, tracked failure, not real signal — see flow #2 below for why, and for the manual coverage that replaces it.
 - **`session_completed` lifecycle signal, all three engines** — separate mechanism, separate test plan: see `manual-testing/session-complete/README.md`.
 - **presenter.js / chroma-key.js SDK-side wiring** — unit-tested (`test/unit/`), mocked transport.
 
@@ -33,9 +33,11 @@ This covers the real avatar pipeline (mic capture → ASR uplink → STV/WHEP vi
 
 Open the URL in real desktop Firefox with its default settings (not the Playwright-bundled build, and don't touch `media.gmp-gmpopenh264.enabled`). Confirm real video renders (not a blank/frozen frame) and the chroma-key correctly removes the green background. CI already covers this on Playwright's Firefox build (see "Confirmed defects" above); this flow is a sanity check that a real, unmodified Firefox install behaves the same way. Note the Firefox version tested.
 
-### 2. Real Safari (macOS and iOS)
+### 2. Real Safari (macOS and iOS) — this is the WebKit engine's real coverage
 
-Playwright's `webkit` engine is desktop Safari's rendering engine, not the actual Safari app, and iOS Safari isn't reachable by any Playwright engine at all. Open the URL in real Safari on macOS, and in real Safari on an iPhone/iPad. Confirm connection succeeds (this is exactly the TURN-URL fix's real-world test — a regression here would mean the fix doesn't hold on real Safari the way it did on Playwright's WebKit) and video/chroma-key render correctly.
+Playwright's `webkit` engine is desktop Safari's rendering engine, not the actual Safari app, and iOS Safari isn't reachable by any Playwright engine at all. Worse, on Linux CI, Playwright's WebKit build has no working H264 decode path at all — it has no built-in decoder, and installing GStreamer's H264 plugins on the runner doesn't fix it, since that WebKit build doesn't decode through system GStreamer. Running that leg on a macOS runner instead (real AVFoundation decode) was tried and hit a worse problem: the job hangs indefinitely requesting camera/mic access, almost certainly macOS's TCC privacy prompt with no UI to dismiss headlessly. So `live-verify-browser`'s webkit leg stays on Linux and is a known, expected failure (tracked, not actionable) — **this flow is the actual verification for the WebKit/Safari path**, not a supplementary sanity check.
+
+Open the URL in real Safari on macOS, and in real Safari on an iPhone/iPad. Confirm connection succeeds (this is exactly the TURN-URL fix's real-world test — a regression here would mean the fix doesn't hold on real Safari the way it did on Playwright's WebKit) and video/chroma-key render correctly.
 
 ### 3. Real hardware/OS interrupts
 
