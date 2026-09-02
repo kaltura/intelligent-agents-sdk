@@ -280,9 +280,9 @@ Writes through the intellect DTO — no `partner-config/update`, no 403. RAG ret
 
 > **`knowledge_ids` is capped at ONE record** despite the plural array shape — the Genie validator (`at_most_one_knowledge_id`) rejects more. The SDK's `intellectConfig.setKnowledgeIds()` enforces this client-side with a typed `bad_request` before any network call. To ground one agent in several content sources, upload them all into a single knowledge record.
 
-**Step 3 — Upload content** via `knowledge.uploadDocument()` (SDK) or the Kaltura OVP media ingest APIs.
+**Step 3 — Upload content into a KMS category:** `knowledge.uploadDocument()` (SDK) or the Kaltura OVP media ingest APIs put the actual media entries into a KMS category — `knowledge.createCategory()` creates that category if you don't already have one. A category is just a container; on its own it's not connected to the knowledge record from Step 1.
 
-**Adding or removing a source on an EXISTING record:** `knowledge.addSource(id, source, ks)` / `knowledge.removeSource(id, source, ks)` read-merge-write one entry of `config.sources[]` without disturbing the others — both idempotent. Don't hand-assemble `config.sources` via `updateRecord({config}, ks)` directly unless you intend a full replace: the backend overwrites the entire `config` on that field.
+**Step 4 — Point the record at that category:** `knowledge.addSource(id, { type: 'internal', categoryIds: [String(categoryId)] }, ks)`. This is the step that actually makes the uploaded content retrievable — a knowledge record with no `config.sources[]` entry has nothing to search, even with `knowledge_ids` linked and `use_knowledge_base: "on"`. `knowledge.removeSource(id, source, ks)` is the inverse. Both read-merge-write one entry of `config.sources[]` without disturbing the others, and are idempotent. Don't hand-assemble `config.sources` via `updateRecord({config}, ks)` directly unless you intend a full replace: the backend overwrites the entire `config` on that field.
 
 | Modality | Source |
 |----------|--------|
@@ -290,7 +290,7 @@ Writes through the intellect DTO — no `partner-config/update`, no 403. RAG ret
 | `ocr` | On-screen text |
 | `document` | PDF / Markdown attachments |
 
-**SDK:** `knowledge.addRecord()` + `knowledge.uploadDocument()` + `intellectConfig.setKnowledgeIds()`. Re-pointing an EXISTING intellect to a new or different knowledge record works the same way — call `setKnowledgeIds()` again with the new id. It's a normal `v1/intellect/update` write, no separate linking call, no gate.
+**SDK, full sequence:** `knowledge.addRecord()` → `knowledge.createCategory()` (or reuse an existing category) → `knowledge.uploadDocument()` → `knowledge.addSource()` → `intellectConfig.setKnowledgeIds()` → `knowledge.setEnabled(configId, true, ks)` (equivalent to the `capabilities.use_knowledge_base` write in Step 2). Skipping `addSource` is the most common way to end up with a linked, enabled, but silently empty knowledge base. Re-pointing an EXISTING intellect to a new or different knowledge record works the same way — call `setKnowledgeIds()` again with the new id. It's a normal `v1/intellect/update` write, no separate linking call, no gate.
 
 **Checking whether indexing has finished:** `knowledge.isIndexed(id, ks)` reads `knowledge.getRecord(id, ks).status`. But `status` is the knowledge record's own container-lifecycle flag (`"READY"`/`"DELETED"`), not an indexing-completion signal. It reads `"READY"` immediately once the record exists, before any entry has been indexed, because a knowledge base is open-ended (you can always add more entries), so there's no single "fully indexed" state for the record as a whole. Don't treat `isIndexed()` returning `ready:true` as proof your content is searchable yet.
 

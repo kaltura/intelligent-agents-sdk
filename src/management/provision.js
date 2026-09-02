@@ -30,7 +30,7 @@ import { lintPersonaIdentity } from './prompt-lint.js';
  * @param {string} [opts.idempotencyKey]
  * @param {Record<string,'on'|'off'|'disabled'>} [opts.capabilities]   OPTIONAL — capability patch applied AFTER configure via `mgmt.intellects.setCapabilities` (read-merge-write full-replace sub-dict). Off by default.
  * @param {object[]} [opts.tools]            OPTIONAL — typed tool definitions (see `tools.api/csv/code`), each created as a standalone Tool entity via `mgmt.tools.add` and linked via `mgmt.intellectConfig.setToolIds`. Off by default.
- * @param {object} [opts.knowledge]          OPTIONAL — RAG corpus + linkage. `{name?, parentId?, description?, categoryId?, autoLink?}`. createCategory (OVP) and the knowledge_ids linkage (via `knowledge.addRecord` + `intellectConfig.setKnowledgeIds`) are both ungated — a failure records `{linked:false, reason}` and NEVER fails the provision. Off by default.
+ * @param {object} [opts.knowledge]          OPTIONAL — RAG corpus + linkage. `{name?, parentId?, description?, categoryId?, autoLink?}`. createCategory (OVP), and when `autoLink:true` the full `knowledge.addRecord` -> `knowledge.addSource` -> `intellectConfig.setKnowledgeIds` -> `knowledge.setEnabled` sequence, are all ungated — a failure records `{linked:false, reason}` and NEVER fails the provision. Off by default.
  * @returns {Promise<{name:string,configId:number,avatarId:string,agentId:string,widgetId:string,profile:object,personaLint:object,blocks?:object,_meta:object}>}
  */
 export async function provision(mgmt, opts) {
@@ -256,18 +256,22 @@ async function applyTools(mgmt, configId, toolDefs, ks) {
 }
 
 /**
- * OPTIONAL knowledge block — corpus container + intellect linkage. Both
+ * OPTIONAL knowledge block — corpus container + intellect linkage. All
  * writes are real and ungated:
  *   1. creates/reuses the corpus category (when `mgmt.knowledge.createCategory`
  *      is mounted, Stage-B G2) — recording the categoryId either way;
- *   2. when `autoLink` is requested, mints a Knowledge record via
- *      `knowledge.addRecord` and links it onto the intellect via
- *      `intellectConfig.setKnowledgeIds` (capped at ONE record).
- * Category membership (which entries live in the container — via
- * `uploadMarkdown`/`uploadDocument`, not run here) and the intellect's
- * `knowledge_ids` link are independent; this block only mints the record and
- * links it. A failure at either step never fails the provision — it's
- * recorded in the returned `{linked, reason}`.
+ *   2. when `autoLink` is requested: mints a Knowledge record via
+ *      `knowledge.addRecord`, points it at the corpus category via
+ *      `knowledge.addSource` (a bare record has no `config.sources` and so
+ *      nothing to retrieve — see docs/api/build.md § Ground the Agent), links
+ *      it onto the intellect via `intellectConfig.setKnowledgeIds` (capped at
+ *      ONE record), then turns RAG on via `knowledge.setEnabled` — `knowledge_ids`
+ *      alone does not enable retrieval, `capabilities.use_knowledge_base` must
+ *      also be `"on"`.
+ * `linked:true` here means all four of those writes succeeded — the intellect
+ * is actually ready to retrieve from the uploaded corpus, not just holding a
+ * dangling `knowledge_ids` reference. A failure at any step never fails the
+ * provision — it's recorded in the returned `{linked, reason}`.
  *
  * @param {import('./client.js').Management} mgmt @param {number} configId
  * @param {object} kn {name?, parentId?, description?, categoryId?, autoLink?}
@@ -299,14 +303,16 @@ async function applyKnowledge(mgmt, configId, kn, ks) {
   if (!kn || kn.autoLink !== true) {
     return { categoryId, created, linked: false, reason: 'autoLink not requested (corpus container created; linkage skipped)' };
   }
-  if (typeof k.addRecord !== 'function' || typeof mgmt.intellectConfig?.setKnowledgeIds !== 'function') {
-    return { categoryId, created, linked: false, reason: 'knowledge.addRecord / intellectConfig.setKnowledgeIds not available (Stage-B mount missing)' };
+  if (typeof k.addRecord !== 'function' || typeof k.addSource !== 'function' || typeof k.setEnabled !== 'function' || typeof mgmt.intellectConfig?.setKnowledgeIds !== 'function') {
+    return { categoryId, created, linked: false, reason: 'knowledge.addRecord / knowledge.addSource / knowledge.setEnabled / intellectConfig.setKnowledgeIds not available (Stage-B mount missing)' };
   }
   try {
     const rec = await k.addRecord({ name: (kn && kn.name) || 'Knowledge', description: kn && kn.description }, ks);
     const knowledgeId = rec && rec.id;
     if (!knowledgeId) return { categoryId, created, linked: false, reason: 'knowledge.addRecord returned no id' };
+    await k.addSource(knowledgeId, { type: 'internal', categoryIds: [String(categoryId)] }, ks);
     await mgmt.intellectConfig.setKnowledgeIds(configId, [knowledgeId], ks);
+    await k.setEnabled(configId, true, ks);
     return { categoryId, created, knowledgeId, linked: true };
   } catch (e) {
     return { categoryId, created, linked: false, reason: reasonOf(e) };

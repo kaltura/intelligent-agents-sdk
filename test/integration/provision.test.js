@@ -220,12 +220,16 @@ function fakeFetchWithReferencingIntellect() {
   ]);
 }
 
-test('opts.knowledge creates a category, mints a knowledge record, and links it', async () => {
+test('opts.knowledge creates a category, mints a knowledge record, points it at the category, links it, and enables RAG', async () => {
   const { m } = baseProvision();
   let linkedConfigId = null;
   let linkedIds = null;
+  let addedSource = null;
+  let enabledCall = null;
   m.knowledge.createCategory = async () => ({ id: 4242 });
   m.knowledge.addRecord = async () => ({ id: 55 });
+  m.knowledge.addSource = async (knowledgeId, source) => { addedSource = { knowledgeId, source }; return { applied: true }; };
+  m.knowledge.setEnabled = async (configId, enabled) => { enabledCall = { configId, enabled }; return {}; };
   m.intellectConfig.setKnowledgeIds = async (configId, ids) => { linkedConfigId = configId; linkedIds = ids; return { applied: true }; };
   const r = await m.provision({
     brief: 'x', ks: ADMIN_KS,
@@ -235,8 +239,12 @@ test('opts.knowledge creates a category, mints a knowledge record, and links it'
   assert.equal(r.blocks.knowledge.categoryId, 4242);
   assert.equal(r.blocks.knowledge.knowledgeId, 55);
   assert.equal(r.blocks.knowledge.linked, true);
+  // the record is pointed at the corpus category — not left with an empty config.sources
+  assert.deepEqual(addedSource, { knowledgeId: 55, source: { type: 'internal', categoryIds: ['4242'] } });
   assert.equal(linkedConfigId, 1389);
   assert.deepEqual(linkedIds, [55]);
+  // use_knowledge_base is turned on — knowledge_ids alone doesn't enable RAG
+  assert.deepEqual(enabledCall, { configId: 1389, enabled: true });
 });
 
 test('opts.knowledge records a failure without failing the provision', async () => {
@@ -268,6 +276,8 @@ test('all three optional blocks can fire together and ride the _meta receipt', a
   m.intellectConfig.setToolIds = async () => ({ applied: true });
   m.knowledge.createCategory = async () => ({ id: 1 });
   m.knowledge.addRecord = async () => ({ id: 55 });
+  m.knowledge.addSource = async () => ({ applied: true });
+  m.knowledge.setEnabled = async () => ({});
   m.intellectConfig.setKnowledgeIds = async () => ({ applied: true });
   const r = await m.provision({
     brief: 'x', ks: ADMIN_KS,

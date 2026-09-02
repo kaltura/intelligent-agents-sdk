@@ -676,13 +676,20 @@ export class Knowledge {
    * Count the media entries in one or more knowledge CONTAINER categories (the
    * self-created corpus). READ. Accepts an explicit `categoryId`/`categoryIds`
    * (the container `createCategory`/`uploadDocument` used) AND/OR an intellect
-   * `configId` to also fold in its linked categories via {@link getLinkage}.
+   * `configId` to also fold in its linked categories.
+   *
+   * `configId`'s `knowledge_ids` (via {@link getLinkage}) are Knowledge RECORD
+   * ids, NOT category ids — a record's actual container categories live in its
+   * OWN `config.sources[].categoryIds` (see {@link addSource}). So a `configId`
+   * is resolved in two hops: {@link getLinkage} for the linked record ids, then
+   * {@link getRecord} on each one for the category ids it actually indexes.
    *
    * A `configId` with no `knowledge_ids` linked yet (before {@link addRecord} +
-   * {@link IntellectConfig#setKnowledgeIds}, or before create-time `knowledge_ids`)
-   * reports `populated:false` with `_meta.unlinked:true` — a normal pre-setup
-   * state, not an error. Pass the explicit container id(s) to inspect a corpus
-   * before it's linked to any intellect.
+   * {@link IntellectConfig#setKnowledgeIds}, or before create-time `knowledge_ids`),
+   * or whose linked record(s) have no `config.sources[].categoryIds` yet (before
+   * {@link addSource}), reports `populated:false` with `_meta.unlinked:true` — a
+   * normal pre-setup state, not an error. Pass the explicit container id(s) to
+   * inspect a corpus before it's linked to any intellect.
    *
    * Counts entries that EXIST — not whether they've finished indexing. Use
    * {@link isIndexed} for that.
@@ -695,23 +702,43 @@ export class Knowledge {
     const explicit = []
       .concat(opts?.categoryIds || [])
       .concat(opts?.categoryId !== undefined && opts?.categoryId !== null ? [opts.categoryId] : []);
-    let linked = [];
-    if (opts?.configId) {
-      const link = await this.getLinkage(opts.configId, ks);
-      linked = link.knowledgeIds;
-    }
-    const ids = [...new Set([...explicit, ...linked].map(Number).filter((n) => Number.isFinite(n)))];
     // Nothing to scope on AND no configId given → a genuine usage error.
-    if (!ids.length && !opts?.configId) {
+    if (!explicit.length && !opts?.configId) {
       throw new KalturaError({ type: 'about:blank', title: 'categoryId or configId required', code: 'bad_request', detail: 'knowledge.corpusStatus needs at least one of { categoryId, categoryIds, configId }.' });
     }
+    let knowledgeIds = [];
+    if (opts?.configId) {
+      const link = await this.getLinkage(opts.configId, ks);
+      knowledgeIds = link.knowledgeIds;
+    }
     // A configId WAS provided but has no knowledge_ids linked yet — a normal
-    // pre-setup state, NOT a usage error. Report it honestly.
-    if (!ids.length) {
+    // pre-setup state, NOT a usage error. Report it honestly (and skip the
+    // getRecord round-trips below — there's nothing linked to resolve).
+    if (!explicit.length && !knowledgeIds.length) {
       return {
         entryCount: 0, populated: false, categoryIds: [], perCategory: {},
         _meta: meta({
           partnerId: this._.partnerId, source: 'knowledge.corpusStatus (no knowledge_ids linked)',
+          scope: `configId:${opts.configId}`, unlinked: true,
+        }),
+      };
+    }
+    // Resolve each linked RECORD id to the category ids it actually indexes.
+    const linkedCategoryIds = [];
+    for (const knowledgeId of knowledgeIds) {
+      const record = await this.getRecord(knowledgeId, ks);
+      for (const source of record?.config?.sources || []) {
+        linkedCategoryIds.push(...(source?.categoryIds || []));
+      }
+    }
+    const ids = [...new Set([...explicit, ...linkedCategoryIds].map(Number).filter((n) => Number.isFinite(n)))];
+    // Linked record(s) exist but carry no categoryIds yet (before addSource) —
+    // same normal pre-setup state as "no knowledge_ids linked", just one hop later.
+    if (!ids.length) {
+      return {
+        entryCount: 0, populated: false, categoryIds: [], perCategory: {},
+        _meta: meta({
+          partnerId: this._.partnerId, source: 'knowledge.corpusStatus (linked record has no config.sources[].categoryIds yet)',
           scope: `configId:${opts.configId}`, unlinked: true,
         }),
       };

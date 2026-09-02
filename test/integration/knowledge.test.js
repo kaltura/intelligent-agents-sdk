@@ -271,6 +271,28 @@ test('corpusStatus with ONLY a configId whose knowledge_ids is empty reports unl
   assert.equal(f.calls.filter((c) => c.url.includes('/service/baseentry/action/list')).length, 0);
 });
 
+test('REGRESSION: corpusStatus with a configId resolves linked knowledge_ids (RECORD ids) to their config.sources[].categoryIds (CONTAINER ids) — never counts the record id itself as a category', async () => {
+  // configId 1509's knowledge_ids holds RECORD id 55 — corpusStatus must hop
+  // through getRecord to find the categoryIds that record actually indexes
+  // (99), and query baseentry.list scoped to 99, never to 55.
+  const seenCategoryAncestors = [];
+  const f = fakeFetch([
+    { match: '/v1/intellect/get', respond: () => ({ body: { id: 1509, knowledge_ids: [55], capabilities: {} } }) },
+    { match: '/v1/knowledge/get', respond: (req) => ({ body: { id: req.body.id, name: 'kb', config: { sources: [{ type: 'internal', categoryIds: ['99'] }] } } }) },
+    { match: '/service/baseentry/action/list', respond: (req) => {
+        seenCategoryAncestors.push(req.body.filter.categoryAncestorIdIn);
+        return { body: { objects: [], totalCount: 6 } };
+      } },
+  ]);
+  const m = new Management({ partnerId: 6516742, adminSecret: 'a'.repeat(32), fetch: f });
+  const st = await m.knowledge.corpusStatus({ configId: 1509 }, ADMIN);
+  assert.deepEqual(st.categoryIds, [99], 'the resolved category id, not the knowledge record id (55)');
+  assert.equal(st.entryCount, 6);
+  assert.equal(st.populated, true);
+  assert.deepEqual(seenCategoryAncestors, ['99'], 'baseentry.list must be scoped to the real container category');
+  assert.ok(!seenCategoryAncestors.includes('55'), 'must never query the knowledge record id as if it were a category');
+});
+
 test('addRecord hits v1/knowledge/add and returns the minted id', async () => {
   const f = fakeFetch([{ match: '/v1/knowledge/add', respond: () => ({ body: { id: 7, config: { sources: [] } } }) }]);
   const m = new Management({ partnerId: 1, adminSecret: 'a'.repeat(32), fetch: f });
