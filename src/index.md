@@ -111,7 +111,7 @@ together — read it when you want to understand *why*, not just *how*.
 
 Zero runtime dependencies, short-lived tokens, pre-redacted audit events, and
 a NIST 800-53 control matrix — designed for enterprise, HIPAA, and HITRUST
-deployments. See `SECURITY.md` in the repository for the full control
+deployments. See [`SECURITY.md`](https://github.com/kaltura/intelligent-agents-sdk/blob/main/SECURITY.md) in the repository for the full control
 matrix.
 
 ## License

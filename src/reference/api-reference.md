@@ -12,7 +12,7 @@ This page is the index; the reference itself lives in focused pages, one per lif
 
 **New here?** Start with [Getting Started](/getting-started/). Runtime details live in [Platform Architecture](/explanation/architecture/). The zero-dependency SDK is in [SDK Reference](/reference/sdk-reference/).
 
-**Credentials** — all examples need `AGENTIC_PARTNER_ID` and `AGENTIC_ADMIN_SECRET` ([Rich Media CMS → Settings → Integration Settings](https://kmc.kaltura.com/index.php/kmcng/settings/integrationSettings)). Set them in a local `.env` (copy `.env.example`) or pass inline. Never hardcode the secret.
+**Credentials** — all examples need `AGENTIC_PARTNER_ID` and `AGENTIC_ADMIN_SECRET` (log in to the [Kaltura Rich Media CMS](https://kmc.kaltura.com) → Settings → Integration Settings). Export them inline or drop a `.env` file in the repo root — this repo ships no `.env.example`. Never hardcode the secret.
 
 Every endpoint is shown as a raw HTTP call plus its SDK wrapper. The SDK is what ships in
 this repo — see [SDK Reference](/reference/sdk-reference/) for the full `Management` method list.

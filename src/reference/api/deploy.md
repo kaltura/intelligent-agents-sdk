@@ -19,7 +19,7 @@ POST https://api.avatar.us.kaltura.ai/v1/application/resolveWidgetId
 { "agentId": "33b7c8b7-f67b-4ca3-b853-0f7ced06a6a3" }
 ```
 
-Returns `{ "widgetId": "1_v1mj1kxb" }`. Idempotent.
+Returns `{ "widgetId": "1_xxxxxxxx" }`. Idempotent.
 
 ---
 
@@ -31,7 +31,7 @@ POST https://api.avatar.us.kaltura.ai/v1/application/appInit   (widget KS, no bo
 
 ```bash
 WIDGET_KS=$(curl -s -X POST "https://www.kaltura.com/api_v3/service/session/action/startWidgetSession" \
-  -d "format=1" -d "widgetId=1_v1mj1kxb" \
+  -d "format=1" -d "widgetId=1_xxxxxxxx" \
   | python3 -c "import json,sys; print(json.load(sys.stdin)['ks'])")
 ```
 

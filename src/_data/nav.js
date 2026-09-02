@@ -9,6 +9,7 @@ module.exports = [
     group: 'How-to Guides',
     pages: [
       { title: 'Client-Side Commands', url: '/guides/client-commands/' },
+      { title: 'Pause/Resume for Video', url: '/guides/pause-resume/' },
       { title: 'Dynamic Data Injection', url: '/guides/dynamic-data-injection/' },
       { title: 'Voice Input Modes', url: '/guides/voice-input-modes/' },
       { title: 'Structured Data Forms', url: '/guides/structured-data-forms/' },

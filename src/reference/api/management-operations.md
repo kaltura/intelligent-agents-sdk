@@ -86,7 +86,7 @@ Full record lifecycle (all verified live). SDK: `mgmt.knowledge`. Linkage to an 
 | Get | `POST /v1/knowledge/get` | `{"id":2049}` |
 | Update | `POST /v1/knowledge/update` | `{"id":2049, ...fields}` |
 | Delete | `POST /v1/knowledge/delete` | `{"id":2049}` — HTTP 200, body `null`; a follow-up get 404s |
-| Per-entry status *(not yet GA — coming ~early Sept 2026)* | `POST /v1/knowledge/entry_status` | `{"knowledge_id":2049, "entry_ids":["0_abc123"]}` |
+| Per-entry status *(not yet GA on every deployment — check with your Kaltura account team)* | `POST /v1/knowledge/entry_status` | `{"knowledge_id":2049, "entry_ids":["0_abc123"]}` |
 
 `mgmt.knowledge.isIndexed(id, ks)` wraps Get and reads `status`/`config.sources[].indexers[].index_position` — `status` is the record's own container-lifecycle flag, not an indexing-completion signal (see § Ground the Agent). `mgmt.knowledge.entryStatus(knowledgeId, entryIds, ks)` wraps the new per-entry endpoint above and is the real indexing-completion check, once generally available.
 

@@ -28,10 +28,10 @@ There's no reliable signal yet that tells you indexing has actually finished —
 `knowledge.isIndexed()` reads the knowledge record's own container status,
 which reports ready the instant the record exists, before any of the entries
 you just uploaded have indexed. A real per-entry check
-(`knowledge.entryStatus()`) is coming, with general rollout expected in early
-September 2026 — don't build on it yet. Until then, Nova's own provisioning
-script budgets a fixed best-effort wait before it ever creates or updates her
-intellect — the same pattern documented in
+(`knowledge.entryStatus()`) exists but is not yet generally available on every
+deployment — check with your Kaltura account team before building on it. Until
+then, Nova's own provisioning script budgets a fixed best-effort wait before
+it ever creates or updates her intellect — the same pattern documented in
 [Ground the Agent in Your Content (RAG)](/reference/api/build/#ground-the-agent-in-your-content-rag).
 
 Nova resolves that wait *before* the create/update call, not after, because
