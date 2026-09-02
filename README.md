@@ -97,22 +97,20 @@ Once the repo is public and has a tag pushed, jsDelivr serves any file straight 
 
 ```html
 <script type="module">
-  // Pinned to a release tag — recommended for anything you ship, since the file content at
-  // this URL never changes once published (jsDelivr's immutable, long-cached tag path).
-  import { KalturaAvatarSession } from 'https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.11.0/src/experience/index.js';
+  import { KalturaAvatarSession } from 'https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@latest/src/experience/index.js';
   // ... same API as the local examples — see examples/browser-experience.html
 </script>
 ```
 
-Pin the tag (`@v1.11.0`, or whatever release you want) for anything you ship — jsDelivr caches a tagged path forever, so a pin is both stable and fast. For local prototyping only, `@latest` resolves to the newest tag without editing the URL on every release:
+`@latest` resolves to the newest tag, so this URL always matches the current README without an editing pass on every release. It's **not cached the same way** as a tagged path, though — jsDelivr re-checks it periodically, so what it serves can change without warning. For anything you ship, pin to a real tag instead (`@v1.12.0`, or whichever release you're on) — jsDelivr caches a tagged path forever, so a pin is both stable and fast:
 
 ```html
 <script type="module">
-  import { KalturaAvatarSession } from 'https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@latest/src/experience/index.js';
+  import { KalturaAvatarSession } from 'https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.12.0/src/experience/index.js';
 </script>
 ```
 
-`@latest` is **not cached the same way** — jsDelivr re-checks it periodically, so a new tag can change what this URL serves without warning. Never use `@latest` in production; pin a real tag. `examples/browser-experience.html` and `examples/deck-presenter.html` demonstrate the same real-relative-path pattern locally (`../src/experience/index.js`).
+`examples/browser-experience.html` and `examples/deck-presenter.html` demonstrate the same real-relative-path pattern locally (`../src/experience/index.js`).
 
 #### Subresource Integrity (SRI) for the jsDelivr import
 
@@ -126,7 +124,7 @@ An import map can carry an `integrity` entry per module URL; a browser that supp
 A single hash on `experience/index.js` alone would NOT be real protection: it's a barrel file that re-exports from ~10 other modules (`session.js`, `wire.js`, `core/safety.js`, …), and import-map `integrity` only checks the exact URLs it lists. Tampering with any of those other files would go undetected unless they're hashed too. `tools/sri-map.mjs` generates the hash for the FULL transitive local-import graph of a given entry point, read from the actual tagged git commit (not your working tree, so it always matches what jsDelivr serves for that tag):
 
 ```bash
-node tools/sri-map.mjs --entry src/experience/index.js --tag v1.11.0
+node tools/sri-map.mjs --entry src/experience/index.js --tag vX.Y.Z   # the tag you're pinning to
 ```
 
 Paste the `integrity` object it prints into an import map, declared before the module script:
@@ -135,15 +133,15 @@ Paste the `integrity` object it prints into an import map, declared before the m
 <script type="importmap">
 {
   "integrity": {
-    "https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.11.0/src/experience/index.js": "sha384-dTRuF4/wfbcshlef1vuVSy8yhIPAY8JYTpve85JNJm847+ycNzFvKbxOPEmVole3",
-    "https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.11.0/src/experience/session.js": "sha384-…",
-    "https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.11.0/src/core/safety.js": "sha384-…"
+    "https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@vX.Y.Z/src/experience/index.js": "sha384-dTRuF4/wfbcshlef1vuVSy8yhIPAY8JYTpve85JNJm847+ycNzFvKbxOPEmVole3",
+    "https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@vX.Y.Z/src/experience/session.js": "sha384-…",
+    "https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@vX.Y.Z/src/core/safety.js": "sha384-…"
     /* … one entry per file `tools/sri-map.mjs` printed — run it, don't hand-copy this excerpt */
   }
 }
 </script>
 <script type="module">
-  import { KalturaAvatarSession } from 'https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.11.0/src/experience/index.js';
+  import { KalturaAvatarSession } from 'https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@vX.Y.Z/src/experience/index.js';
 </script>
 ```
 
