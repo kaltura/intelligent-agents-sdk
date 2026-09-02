@@ -216,6 +216,42 @@ const session = new KalturaAvatarSession({ token, /* … */,
 - **`noiseProcessor`** (constructor option) — pluggable Tier-2 DSP hook: `(stream) => Promise<MediaStream|{stream,stop}>`. Called with the raw `getUserMedia` stream at `connect()` and every `switchMic()`; its returned stream (or `{stream,stop}`, if the processor owns a resource that needs explicit teardown — e.g. an `AudioWorkletNode` graph) is what actually reaches the ASR uplink. The SDK core bundles NO DSP library — bring a third-party processor (dynamically import it so apps that don't use it never load it) or a bespoke one; anything matching the shape works. A processor that throws fails mic acquisition closed with a typed `noise_processor_failed` error (same fail-closed behavior as a `getUserMedia` rejection).
 - **`createNoiseSuppressor(opts)`** (`./experience/noise-suppressor`, separately importable — zero effect until constructed and passed as `noiseProcessor`) — the SDK's own real, lightweight, dependency-free Tier-2 implementation: an adaptive RMS noise gate running as a pure-browser-native `AudioWorkletProcessor` (attack/release-smoothed envelope, adaptive noise-floor tracking — NOT spectral/ML denoising, which is a heavier Tier-2 DSP approach). Options: `thresholdDb` (default `-50`), `attackMs` (default `5`), `releaseMs` (default `150`), `floorAdaptMs` (default `2000`); `audioContext`/`getAudioContext`/`audioWorkletNodeConstructor` are injectable for testing, mirroring the rest of the SDK's constructor-injection style.
 
+### Text-only chat and switchable transports (`KalturaChatSession` / `KalturaAgentSession`)
+
+`KalturaChatSession` talks to the **same brain and the same thread** as `KalturaAvatarSession`, over plain HTTPS instead of a socket + WebRTC — no mic, no camera, no video element, no `socket.io`, so a chat-only page never triggers a permission prompt:
+
+```js
+import { KalturaChatSession } from '@kaltura/intelligent-agents/experience';
+
+const chat = new KalturaChatSession({ token /* conversation KS */ });
+await chat.connect();   // no network — marks the session live for API parity with the avatar transport
+
+const { text, threadId } = await chat.sendText('What have we covered so far?');
+chat.onToolCall('navigate_to_slide', ({ slide_num }) => deck.goTo(slide_num));
+```
+
+Feature parity with the avatar transport, wherever the wire allows it: `request_vars`/`setDynamicPrompt` (same canonical-map merge semantics — the full map rides every turn, since HTTP has no join to persist it), `onToolCall` with the same per-turn dedup/schema-check/fused-segment recovery, `respondToTool()` for `waitForResponse:true` tools, and thread continuity (seed `cfg.threadId` with another session's `threadId` getter to continue that conversation on the other transport). It emits the same transport-agnostic event subset as the avatar transport (`transcript`, `turnStart`, `turnEnd`, `toolCall`, `toolCallResult`, `toolCallInvalid`, `stateChange`, `responsePending`, `responseSettled`, `brainStalled`, `warning`, `error`, `ended`), so app code written against those events works unchanged when `KalturaAgentSession` swaps transports underneath it. `sendText()` turns are serialized — a second call awaits the previous turn's stream end.
+
+`KalturaAgentSession` is a facade that runs one conversation over either transport and can `switchMode()` between them **mid-conversation** without losing the thread — it tears down the current transport, constructs the other one seeded with the same `threadId` and the same canonical `request_vars` map, and reconnects:
+
+```js
+import { KalturaAgentSession } from '@kaltura/intelligent-agents/experience';
+
+const agent = new KalturaAgentSession({
+  token, mode: 'avatar',   // starting transport — 'avatar' (default) or 'chat'
+  avatar: { videoEl, conversationManagerUrl, srsBaseUrl, turnServerUrl, socketFactory },
+  chat: { genieUrl },
+});
+await agent.connect();
+agent.onToolCall('navigate_to_slide', ({ slide_num }) => deck.goTo(slide_num));
+
+// later, drop to text-only without losing context:
+await agent.switchMode('chat');
+agent.on('transportChanged', ({ mode, transport }) => { /* rewire mode-specific listeners */ });
+```
+
+The facade owns one state machine (`idle → connecting → connected ⇄ switching → closed | failed`) and forwards the transport-agnostic event subset 1:1; mode-specific APIs (mic control, `interrupt()`, tap-to-talk, disclosure, `videoEl`, …) are **not** mirrored on the facade — use the `transport` getter and rewire such listeners on each `transportChanged` event. Switching is tear-down-and-reconstruct by design: no live mutation of a running transport. A `sendText()` that arrives mid-switch is buffered (up to 8 calls) and dispatched on the new transport, or rejected with the switch error if the switch fails.
+
 ### KAVA analytics (opt-in, client-only Application Events)
 
 ```js
@@ -225,7 +261,7 @@ const analytics = new KavaAnalytics({
   partnerId: AGENTIC_PARTNER_ID, sessionId: session.threadId,
   hostingKalturaApplication: 28,   // see HOSTING_APPLICATIONS — Avatar Videos in this example
 });
-analytics.pageLoad({ pageType: 'View', pageName: 'earnings-deck' });
+analytics.pageLoad({ pageType: 'View', pageName: 'product-deck' });
 btnFeedbackDismiss.onclick = () => analytics.buttonClicked({ buttonType: 'Open', buttonName: 'feedback-dismiss' });
 ```
 
@@ -390,11 +426,11 @@ Validated fields, top-level keys only: `type` (one of `str`/`int`/`float`/`bool`
 
 ### Fused multi-tool turns (handled automatically on the live session)
 
-When a turn calls 2+ tools, the server can stream them as **one** `type:"tool"` segment that names only the last tool, with earlier tools' JSON args concatenated into the same string (live-verified — see `WIRE-PROTOCOL.md` §4e). On `KalturaAvatarSession`, you don't need to do anything — the SDK recovers every fused call:
+When a turn calls 2+ tools, the server can stream them as **one** `type:"tool"` segment that names only the last tool, with earlier tools' JSON args concatenated into the same string (live-verified — see [Wire Protocol §4e](/reference/wire-protocol/#4e-agent_raw_textdelta--the-brain-stream-parsed)). On `KalturaAvatarSession`, you don't need to do anything — the SDK recovers every fused call:
 
 - `parseToolCall(segment)` recovers the named tool's own args correctly either way, and exposes any earlier, unnamed blobs as `call.fusedArgs` (array, arrival order — absent when the segment wasn't fused).
 - The session pairs each queued `fusedArgs` blob with the `tool_response` segment that echoes its real tool name (via `parseToolResponseName(segment)`) and dispatches it through the normal `onToolCall` path — same dedup, same schema validation, same `toolCallResult`/`toolCallInvalid` events.
-- The queue is turn-scoped and clears on the next `agent_start_speech`, so a stray echo never leaks a recovery into the wrong turn.
+- The queue is ASR-sub-turn-scoped and clears on every `agent_start_speech`, so a name dispatched directly in one sub-turn never blocks that same name's fused recovery in the next sub-turn of the same turn, and a stray echo never leaks a recovery into the wrong turn.
 
 Headless `collectConverse()` gets the corrected named-tool args for free but does **not** run this pairing — an earlier fused blob in a headless turn is reachable only via `fusedArgs` on that one `ToolCall`, not as its own `toolCalls` entry. If you need full recovery headlessly, replay `toolCalls` and pair each `fusedArgs` blob with the matching `tool_response`-derived name yourself using `parseToolResponseName`.
 
@@ -623,7 +659,7 @@ These are importable from their entry points and useful when composing custom pi
 | `buildPageLoadParams(common, fields)` / `buildButtonClickedParams(common, fields)` | Pure param-builders for the two valid client-side event types, used internally by `KavaAnalytics` and importable directly for a custom transport. |
 | `EVENT_TYPES` | `{pageLoad:10003, buttonClicked:10002}` — the only two valid client-side codes. |
 | `PAGE_TYPES` | The closed enum `pageLoad`'s `pageType` field is validated against. |
-| `HOSTING_APPLICATIONS` | `hostingKalturaApplication` values by name: `genieChat`, `agents`, `modelsSdk`, `conversationManager`, `avatarVideos`, `agenticAvatarsStudio`, plus an internal analytics-only identifier carried over from the backend's own dashboard naming — `kaiVendor` (a legacy internal hosting-app id with no public product meaning; kept only so KAVA event attribution matches the backend's existing dashboards). |
+| `HOSTING_APPLICATIONS` | `hostingKalturaApplication` values by name: `genieChat`, `agents`, `modelsSdk`, `conversationManager`, `avatarVideos`, `agenticAvatarsStudio`, `kaiVendor`. |
 | `DEFAULT_ANALYTICS_URL` | The KAVA ingestion endpoint (`https://analytics.kaltura.com/api_v3/index.php`). |
 
 ---
@@ -759,8 +795,9 @@ Content modalities indexed: captions, OCR, document attachments. Don't use
 `knowledge.isIndexed()`'s `ready` flag, `knowledge.search()`'s "couldn't find
 relevant information" reply, or `knowledge.corpusStatus()`'s `populated` flag,
 as an indexing-status signal — see [API Reference § Ground the Agent](/reference/api/build/#ground-the-agent-in-your-content-rag) for why.
-A per-entry check (`knowledge.entryStatus()`) is coming, with general rollout
-expected in early September 2026 — don't build on it yet.
+A per-entry check (`knowledge.entryStatus()`) exists but is not yet generally
+available on every deployment — check with your Kaltura account team before
+building on it.
 
 Knowledge records have full lifecycle CRUD (all verified live):
 

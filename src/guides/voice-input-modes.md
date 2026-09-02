@@ -25,7 +25,7 @@ This is not a UI-polish preference — it is a correctness requirement:
 - An open-mic agent (`isTapToTalk:false`) keeps auto-cutting turns from its VAD unconditionally,
   even while a tap-to-talk bracket is open — the two mechanisms race the same
   `conversationStatus`/`latestSpeech` state with no mutual exclusion server-side (see
-  WIRE-PROTOCOL.md's `tapToTalkStart`/`tapToTalkEnd` row for the verified source citation).
+  [Wire Protocol](/reference/wire-protocol/)'s `tapToTalkStart`/`tapToTalkEnd` row for the verified source citation).
 - The SDK enforces this client-side: `startTapToTalk()` throws `capability_disabled` unless
   `session.capabilities.tapToTalk`. That gate exists because the server will not stop you from
   getting this wrong.

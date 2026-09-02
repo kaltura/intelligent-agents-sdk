@@ -129,7 +129,7 @@ Direction: `→` client emits, `←` server emits. "Captured" = seen in the live
 | `tapToTalkStart` / `tapToTalkEnd` | `{}` | `CM`'s tap-to-talk handlers (registered unconditionally, regardless of `isTapToTalk`) | Push-to-talk voice-capture mode (a button tap, not typed text) — flips `conversationStatus` to `InTappedMode` and resets `latestSpeech`. **Only safe when the agent is configured `isTapToTalk:true`** — see below for why, and for the SDK's client-side guard. |
 | `isValidSession` | `{ client, clickId, hashClickId, userAgent }` | `CM` `socket.on('isValidSession')` | Ask the server to validate the entry/session before joining → replies `validSession` (or `throwToBadRequest`/`throwToExceededTier`). |
 | `checkAvailability` | `{}` (server reads mode/language from `clientConfiguration`, not the arg) | `CM` `socket.on('checkAvailability')` | Poll for a free agent slot without queuing — platform has no server-side queue; client-side polling only. Replies `availabilityResult`. |
-| `pauseConversation` / `resumeConversation` | `{}` | `CM` | Pause/resume the live turn loop. |
+| `pauseConversation` / `resumeConversation` | `{}` | `CM` | Pause/resume the live turn loop — SDK: `session.pause()`/`session.resume()`. See [Pause/Resume for Video](/guides/pause-resume/) for the full recipe. |
 | `muteUser` / `unmuteUser` | `{}` | `SDK:session.js micEnabled` setter; `CM` | Notify the server of mic mute/unmute. Muting is client-side (`track.enabled`); the server reads nothing from the payload and uses it only for logging/analytics/turn-taking. |
 | `setDebugMode` | `{ debugMode }` | `CM` | Toggle the `debug_*` event stream at runtime (complements the `?debugMode` query param). |
 | `userCameraShot` / `userScreenShareShot` | `{ data }` (ArrayBuffer) | `CM` | Push a camera / screen-share still for vision analysis (gated by the camera/screen-share capabilities). |
@@ -245,14 +245,14 @@ Always-present fields are `role` (always `"assistant"`), `type`, `content`, `seg
 
 When a turn calls 2+ tools, the server can emit **one** `type:"tool"` segment whose `content`
 concatenates every called tool's JSON args back-to-back, but names only the **last** one — e.g.
-captured live: `open_filing {"quarters": [...], "metric": "total_revenue"}{"quarter": "q1_2026",
-"docType": "press_release"}` (the `highlight_chart` call that preceded `open_filing` rides in the
-same string, unnamed).
+captured live: `get_weather {"city": "Springfield", "unit": "celsius"}{"city": "Portland",
+"unit": "celsius"}` (the `list_forecast` call that preceded `get_weather` rides in the same
+string, unnamed).
 
 ##### How the response echoes the missing name
 
 The `tool_response` segments that follow still echo **every** called tool by name, in call order
-(`highlight_chart responded with size 113` then `open_filing responded with size 104`), which is
+(`list_forecast responded with size 113` then `get_weather responded with size 104`), which is
 the only reliable client-side signal for attributing the earlier, unnamed blob to its real tool.
 
 ##### How the SDK recovers it
@@ -456,7 +456,7 @@ Barge-in: a new `debug_vad_speech_detected` (voice) or `→ onTextEntered {text:
 
 ## 9. Reproduce / re-capture
 
-See the "Evidence" note at the top of this doc for the committed fixture (`test/fixtures/golden-session.json`). To observe live traffic against a real session, wire a `debugMode`-gated log panel to print every socket event via `session.on(...)` handlers, or attach a scratch `socket.onAny` listener in a browser console — there is no dedicated capture tool in this repo today. The original snapshot the golden fixture derives from was taken against the reference account's `1_v1mj1kxb` widget + `configId 1222` (see the sample values documented in this repo's tests).
+See the "Evidence" note at the top of this doc for the committed fixture (`test/fixtures/golden-session.json`). To observe live traffic against a real session, wire a `debugMode`-gated log panel to print every socket event via `session.on(...)` handlers, or attach a scratch `socket.onAny` listener in a browser console — there is no dedicated capture tool in this repo today. The original snapshot the golden fixture derives from was taken against a test widget + config id (see the sample values documented in this repo's tests) — substitute your own `<your-widget-id>` / `<your-config-id>` when reproducing.
 
 ---
 

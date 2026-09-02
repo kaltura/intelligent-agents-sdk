@@ -181,3 +181,4 @@ A command not on the allow-list is denied before any handler runs (audited as `a
 | [SDK Reference](/reference/sdk-reference/) | The SDK how-to: `tools.client` → `onToolCall` → `parseToolCall`, the builders (`tools.api`/`csv`/`code`), and the deployment gotcha in context. |
 | [Wire Protocol](/reference/wire-protocol/) | The exact `type:"tool"` segment wire shape and why it is outside the TTS gate. |
 | [GenUI Reference](/reference/genui-reference/) | The nine GenUI widgets `show_widget` can render. |
+| [Pause/Resume for Video](/guides/pause-resume/) | The sibling mechanism for letting *you* drive the avatar's pause state (as opposed to this doc, where the avatar drives your UI) |

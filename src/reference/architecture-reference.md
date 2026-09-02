@@ -285,15 +285,15 @@ Session validity is checked separately via `isValidSession` → `validSession` /
 
 ### Cross-pod shared state (data plane)
 
-Pods are stateless-enough to scale because shared state lives in managed backing services (provisioned via the avatar infrastructure module):
+Pods are stateless-enough to scale because shared state lives in managed backing services:
 
 | Service | Role in scaling |
 |---|---|
-| **Valkey/Redis** (`avatar-cm-cache`, `resource-manager-avatar`, `front-proxy`, `cnc`, `cnc-polls`) | Conversation-manager cache, resource/slot accounting, front-proxy routing state, command-and-control — cluster-mode, multi-node-group, replicated |
-| **SQS** (+ DLQ) | Async work between renderer / brain / pipeline stages; 30s visibility timeout, 24h retention |
-| **DynamoDB** | Durable session/agent registry & coordination |
-| **STV renderer + media server** (`c7i.xlarge`) | Video origin — the STV controller renders the face and pushes it via **RTMP into OvenMediaEngine (OME)**, egressed to clients via **WHEP** (URL varies by `cast_mode`; played with OvenPlayer). Scaled independently of the control plane |
-| **CloudFront + WAF** | Edge for the public surface; the WAF enforces origin/CDN-header validation on public API endpoints |
+| **Valkey/Redis** | Conversation-manager cache, resource/slot accounting, front-proxy routing state, command-and-control — cluster-mode, multi-node-group, replicated |
+| **A durable queue** (+ dead-letter queue) | Async work between renderer / brain / pipeline stages; ~30s visibility timeout, 24h retention |
+| **A durable key-value store** | Durable session/agent registry & coordination |
+| **STV renderer + media server** | Video origin — the STV controller renders the face and pushes it via **RTMP into OvenMediaEngine (OME)**, egressed to clients via **WHEP** (URL varies by `cast_mode`; played with OvenPlayer). Scaled independently of the control plane |
+| **CDN + WAF** | Edge for the public surface; the WAF enforces origin/CDN-header validation on public API endpoints |
 
 So "agent availability" isn't per-pod guesswork — slot accounting is centralized in Redis/Valkey, which is what `checkAvailability` consults. Concretely (the conversation-manager's agent-availability service), a slot is available when **STV has free capacity** (unless the call is speech-only) **AND Whisper/ASR is available AND `activeCalls < maxCalls`**; `maxCalls` comes from the `CALL_CAPACITY` env via the conversation-manager's call-capacity config (default 20 in prod / 12 in non-prod). `availabilityResult.details` surfaces exactly these: `{stvAvailable, whisperAvailable, activeCalls, maxCalls, capacityAvailable}`. The brain conversation/thread state is also externalized (the same thread is resumable via `threadId` regardless of which pod handles a later turn over the text API).
 
@@ -380,7 +380,7 @@ A **freshly created** intellect returns an **empty `capabilities {}`** from `get
 This is the load-bearing design rule for the management layer — **a write goes to exactly one of two doors, and they have different auth gates**:
 
 - **Intellect DTO** → Genie `v1/intellect/*`. Carries `prompts`, `base_directive`, `glossary`, `capabilities`, `tools`, `secrets`, `user_properties_forms`, `allow_client_variables`, `knowledge_ids`, `name`/`description`/`tags`/`status`. Writable with a **partner admin KS** today. **Knowledge linkage Path A rides this door**: first call `POST /v1/knowledge/add` on Genie (LIVE — returns an `{id,...}` record), then pass the returned id as `knowledge_ids` in the intellect create/update DTO — linkage + `use_knowledge_base:'on'` persist with no `partner-config/update` and no 403. It is a `model_fields_set` PATCH (omitted TOP-LEVEL fields are preserved) — but `capabilities`/`secrets` are **full-replace sub-dicts**, so the SDK read-merge-writes them (via `mergeCapabilityWrite` / the secrets mask-and-keep guard); `IntellectConfig.patch` is the one place that logic lives.
-- **Partner-config DTO** → Genie `partner-config/update`/`get`. Carries brain config (`agent_llm`/`agent_fast_llm`/rate limits + the best-effort `agent_avatar_llm`/`run_quota_check`/`web_search_config`), and the **Path B** knowledge `indexer` re-point (re-pointing an *existing* intellect at a category corpus). These are **deployment-gated** — `partner-config/update` 403s for a partner admin KS (see § Configure the Brain in API-REFERENCE.md). Every such write PROBES first (`brainConfigAvailable`/`linkAvailable`) and, when the door is closed, returns `{applied:false, code, reason}` WITHOUT throwing or faking success. (Note: this gate is Path B only — the ungated `knowledge_ids` Path A above does NOT touch this door.)
+- **Partner-config DTO** → Genie `partner-config/update`/`get`. Carries brain config (`agent_llm`/`agent_fast_llm`/rate limits + the best-effort `agent_avatar_llm`/`run_quota_check`/`web_search_config`), and the **Path B** knowledge `indexer` re-point (re-pointing an *existing* intellect at a category corpus). These are **deployment-gated** — `partner-config/update` 403s for a partner admin KS (see [§ Configure the Brain](/reference/api/build/#configure-the-brain-deployment-gated)). Every such write PROBES first (`brainConfigAvailable`/`linkAvailable`) and, when the door is closed, returns `{applied:false, code, reason}` WITHOUT throwing or faking success. (Note: this gate is Path B only — the ungated `knowledge_ids` Path A above does NOT touch this door.)
 
 When designing a new field setter, decide its door by which DTO genuinely accepts it (the `IntellectConfig` `EDITABLE_FIELDS` vs `READ_ONLY_FIELDS` constants encode this), and route reads to the SAME door — `getBrainConfig` reads `partner-config/get`, NOT `intellects.get`, because the intellect read DTO does not expose those fields (reading them via `intellects.get` would falsely report persisted values as unset).
 
@@ -393,7 +393,7 @@ When designing a new field setter, decide its door by which DTO genuinely accept
 - **`previewPrompt`/`snapshot`/`restore` are client-side** — a replica of the author layer only (server-injected capability-conditional prompt blocks are not reproducible) and a browser-local history (the server has no versioning).
 - **`agent/list` has no server-side filter today** — `agents.list(ks)` must send `filter:{}` (every guessed key — `{objectType:'AgentListFilter'}`, `{displayNameLike}`, `{adminTagsMultiLikeOr}` — returns an opaque `bad_request`). Filter **client-side**: `await k.agents.list(ks).all().then(l => l.filter(a => a.adminTags?.includes('my-tag')))`. Tag the **agent** with `adminTags` at create time to group; avatars carry no tag field (`avatar/create`/`update` reject `adminTags`).
 
-The SDK's own `node:test` suite (`test/`) exercises every one of these surfaces against the real backend and against injected fakes — see `README.md` for the full command list.
+The SDK's own `node:test` suite (`test/`) exercises every one of these surfaces against the real backend and against injected fakes — see the [SDK repo's README](https://github.com/kaltura/intelligent-agents-sdk/blob/main/README.md) for the full command list.
 
 ---
 
@@ -452,7 +452,7 @@ A tool-eager brain can loop the *same* client command many times in one turn ins
 **Soft tier — signal only.** Once a *turn* accumulates `toolSpiralLimit` (default 10) raw `type:"tool"` segments — counted before dedup, since a spiral IS the same call repeating — the SDK emits `toolSpiralDetected` once. It deliberately does **not** call `interrupt()`:
 
 - A live repro proved `interrupt()` has no observable effect on a spiral already running server-side — the identical call kept repeating until the socket itself died (`transport close` → `JoinRoomTimeout`).
-- Worse, a mid-turn `tapToTalkStart` forces an early `stvFinishedTalking` with **truncated** `agentContent` (WIRE-PROTOCOL.md's barge-in semantics) — so interrupting was silently cutting the turn's own narration.
+- Worse, a mid-turn `tapToTalkStart` forces an early `stvFinishedTalking` with **truncated** `agentContent` (see [Wire Protocol](/reference/wire-protocol/)'s barge-in semantics) — so interrupting was silently cutting the turn's own narration.
 - The default is 10, not lower, because `speak()`'s barge-in branch (still-playing TTS from a prior turn) can double a legitimate turn's raw tool-segment count — a 3-tool turn duplicating into 6 raw segments must not trip the breaker.
 
 **Hard tier — the actual fix.** A **session-scoped hard counter** (`hardToolSpiralLimit`, default `toolSpiralLimit * 3`) counts raw tool segments since the last perceivable output and is immune to turn-boundary resets — a server-pushed idle wake-up mid-spiral cannot hide it (it resets only the *per-turn* soft counter). Once it's crossed, the SDK emits `toolSpiralRecovering` (carrying `lastTurnText`, the abandoned turn) and forces `_coldReconnect()` — the same full media rebuild already used for a dead media channel, replaying `threadId` so brain memory continues. This turns the eventual uncontrolled `JoinRoomTimeout` into a deliberate, bounded, self-healing reconnect.

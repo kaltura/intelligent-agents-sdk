@@ -79,7 +79,7 @@ POST https://genie.nvp1.ovp.kaltura.com/v1/intellect/update
 | `name` / `description` / `tags` | Labels for organizing intellects |
 | `tool_ids` | Tool entity uuid references — create/list the entities themselves via [§ Tools](#tools-api--csv--code) (`mgmt.tools`), then link the ids here via `intellectConfig.setToolIds` |
 | `skill_ids` | Skill entity uuid references — partner-level reusable-instruction CRUD at `mgmt.skills`, linked via `intellectConfig.setSkillIds` |
-| `mcp_servers` | MCP server configs the intellect can call — set via `intellectConfig.setMcpServers` (see `README.md`) |
+| `mcp_servers` | MCP server configs the intellect can call — set via `intellectConfig.setMcpServers` (see the [SDK repo's README](https://github.com/kaltura/intelligent-agents-sdk/blob/main/README.md)) |
 | `secrets` | Named secrets for tool OAuth (write-only, masked on read) |
 | `user_properties_forms` | Lead-capture form fields |
 
@@ -296,7 +296,7 @@ Writes through the intellect DTO — no `partner-config/update`, no 403. RAG ret
 
 Don't use `knowledge.search()` as a substitute either — its "couldn't find relevant information" reply fires for an unindexed KB, an indexed KB with `use_knowledge_base:'off'`, or a genuine no-match query alike, so it can't signal indexing status. `knowledge.corpusStatus()` only counts entries that exist in the category, not whether they've finished embedding. `knowledge.indexStatus()` (`partner-config/stats`) 403s for a partner admin KS on at least one deployment.
 
-A per-entry indexing-status check (`knowledge.entryStatus(knowledgeId, entryIds, ks)`) is coming and will be the correct way to verify specific uploaded content has finished indexing, with general rollout expected in early September 2026 — don't build on it yet. A knowledge-level status check that doesn't require elevated privilege is coming soon too.
+A per-entry indexing-status check, `knowledge.entryStatus(knowledgeId, entryIds, ks)`, exists in the SDK and is the correct way to verify specific uploaded content has finished indexing. It's not yet generally available on every deployment — check with your Kaltura account team before relying on it. A knowledge-level status check that doesn't require elevated privilege is planned for a future release.
 
 Until then, there's no reliable completion signal to poll — budget a fixed wait after upload instead of polling `isIndexed()` (which is `ready:true` from the first call and never tells you more):
 

@@ -16,7 +16,7 @@ This is the authoritative map — every runtime, its enabling capability, the ex
 shape, the SDK function/keys that parse and render it, the backend code flow it rides, and the
 restrictions that bite in practice.
 
-All claims here are anchored to repo source (`src/...`) and `WIRE-PROTOCOL.md`; where a
+All claims here are anchored to repo source (`src/...`) and [Wire Protocol](/reference/wire-protocol/); where a
 behavior is inferred rather than live-captured, it is marked **INFERRED**.
 
 **On this page:** [The model](#the-model-in-one-paragraph) · [Quick start](#quick-start) · [Runtimes](#the-first-class-runtimes) · [Data flow](#how-a-widget-reaches-your-screen-the-data-flow) · [Two delivery paths](#two-delivery-paths-this-is-the-1-gotcha) · [`force_experience`](#force_experience--a-hint-not-a-contract) · [Per-runtime detail](#per-runtime-detail-model-keys--descriptor) · [Authoring](#authoring--which-capability-turns-each-widget-on) · [Consuming](#consuming-widgets-in-your-app) · [Analytics](#widget-interaction-analytics-avoiding-double-counting) · [Safety](#safety-model-owasp-llm05--every-widget-passes-through-this) · [Restrictions](#restrictions--gotchas-read-before-you-build) · [Pointers](#pointers-source-of-truth)
@@ -206,8 +206,8 @@ This is the **in-platform video** widget: the host renders the Kaltura player ag
 | `description` | `description` | ≤2000 chars |
 
 Descriptor: `{kind:'show-link', data:{url, label, description, safe}}` where **`safe:!!url`** — an
-unsafe scheme yields `url:''` + `safe:false` so the host drops it (mirrors the earnings app's
-`renderSafeLink` null-drop).
+unsafe scheme yields `url:''` + `safe:false` so the host drops it (the same null-drop pattern
+`renderSafeLink` uses).
 
 ### 7. external-video (`renderExternalVideo`) — non-Kaltura video embeds
 
@@ -624,7 +624,7 @@ non-duplicated events tied to one conversation, not two copies of the same one.
   `gen-ui-components-tool`, `kaltura-video-player-tool`. They are NOT in `RUNTIMES`; the
   renderer routes them to `{kind:'unknown'}` + `onUnhandled` rather than faking a known kind.
 - **`sources` needs a knowledge base to cite from** — ground a new agent via `knowledge.addRecord`
-  + `knowledge_ids` (ungated; see API-REFERENCE.md § Ground the Agent). `sources` then renders the
+  + `knowledge_ids` (ungated; see [§ Ground the Agent](/reference/api/build/#ground-the-agent-in-your-content-rag)). `sources` then renders the
   brain's real retrieved citations.
 - **`entryId` playback needs the Kaltura player** — `video-gallery` preserves `entryId`; when
   `embedUrl` is present (requires `partnerId`; `uiConfId` is optional and only pins a specific
@@ -647,4 +647,4 @@ non-duplicated events tied to one conversation, not two copies of the same one.
 | Safety primitives | `src/core/safety.js` |
 | `submitStructuredDataForm` / `sendScreenShot` | `src/experience/session.js` |
 | Widget-interaction analytics (`KavaAnalytics.buttonClicked`) | `src/experience/analytics.js` |
-| Wire segment shape + `force_experience` | `WIRE-PROTOCOL.md` §4e, §7 |
+| Wire segment shape + `force_experience` | [Wire Protocol](/reference/wire-protocol/) §4e, §7 |
