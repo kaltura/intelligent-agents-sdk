@@ -122,18 +122,15 @@ export class Agents {
 }
 
 /**
- * Resolve the intellect id field, normalizing across the backend's id-field
- * migrations on the Agent DTO's embedded `intellect` sub-object: `id` →
- * `configId` → `intellectId` (the backend keeps `configId` on the wire for
- * backward compatibility, but is deprecating it in favor of `intellectId` —
- * they name the same underlying id). `intellectId` is preferred when present,
- * falling back through `configId` to `id` for older responses.
- * @param {{id?:number, configId?:number, intellectId?:number, [k:string]:unknown}} intellect
+ * Resolve the intellect id field. A fetched agent's `intellect` exposes a
+ * numeric `id` (the `configId` field the backend used to also send has been
+ * removed). Returns that id, or `undefined` if absent/non-numeric.
+ * @param {{id?:number, [k:string]:unknown}} intellect
  * @returns {number|undefined}
  */
 export function resolveIntellectId(intellect) {
   if (!intellect || typeof intellect !== 'object') return undefined;
-  const v = intellect.intellectId ?? intellect.configId ?? intellect.id;
+  const v = intellect.id;
   return typeof v === 'number' ? v : undefined;
 }
 
