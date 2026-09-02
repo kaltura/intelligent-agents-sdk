@@ -2,8 +2,6 @@
 
 Kaltura maintainers push directly; everyone else contributes via the standard GitHub fork workflow: fork this repo, clone your fork, push a branch to your fork, then open a PR from that branch back to `kaltura/intelligent-agents-sdk`'s `main`.
 
-See [README.md](README.md)'s note on issue references.
-
 ## Before you start
 
 New to the SDK itself? Read [GETTING-STARTED.md](GETTING-STARTED.md) first to see it run end to end (including a zero-credential offline demo) before diving into the contribution workflow below.

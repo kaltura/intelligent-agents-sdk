@@ -8,7 +8,7 @@ license: MIT
 
 Build and operate conversational AI avatar agents entirely through the `@kaltura/intelligent-agents` SDK's `Management` client. Every operation below is a typed method call, not a curl command — the SDK owns argument validation, KS-type enforcement, read-merge-write safety, and deployment-gate probing.
 
-Ships as part of this repo (`kaltura/intelligent-agents-sdk`) — every file path below is relative to the repo root. `docs-site-avatar` (Nova, a reference app built on this SDK) is a separate sibling repo; see its own `server/provision.mjs` for a complete real-world example of everything in this skill.
+Ships as part of this repo (`kaltura/intelligent-agents-sdk`) — every file path below is relative to the repo root. `docs-site-avatar` (https://github.com/kaltura/docs-site-avatar; Nova, a reference app built on this SDK) is a separate sibling repo; see its own `server/provision.mjs` for a complete real-world example of everything in this skill.
 
 ## Setup
 
@@ -195,7 +195,7 @@ await kaltura.intellectConfig.setKnowledgeIds(configId, [record.id], admin.ks);
 await kaltura.intellects.setCapability(configId, 'use_knowledge_base', 'on', admin.ks);
 ```
 
-`knowledge_ids` is capped at one record per intellect (`setKnowledgeIds` throws before any network call if you pass more than one). RAG retrieval works only after async indexing completes — but `kaltura.knowledge.isIndexed(record.id, admin.ks)` does NOT tell you that: its `ready` flag reflects the knowledge record's own container-lifecycle status (`ready:true` immediately on creation, before any entry has indexed), not whether indexing has finished. Don't use `knowledge.corpusStatus` (counts entries that exist, not whether they've finished embedding) or `knowledge.search`'s "couldn't find relevant information" reply (fires identically for an unindexed KB, an indexed KB with `use_knowledge_base` off, or a genuine no-match query) as an indexing-status signal either. A per-entry check (`kaltura.knowledge.entryStatus()`) is coming, with general rollout expected in early September 2026 — don't build on it yet. Until then, budget a fixed wait after upload before assuming content is searchable — see API-REFERENCE.md § Ground the Agent.
+`knowledge_ids` is capped at one record per intellect (`setKnowledgeIds` throws before any network call if you pass more than one). RAG retrieval works only after async indexing completes, and `kaltura.knowledge.isIndexed(record.id, admin.ks)` does NOT tell you that. See API-REFERENCE.md § Ground the Agent for why (its `ready` flag is a container-lifecycle status, not an indexing-completion signal), which other signal to reach for, and why to budget a fixed wait instead of polling for now.
 
 ## Lifecycle — react to session/thread events without polling
 

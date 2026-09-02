@@ -9,7 +9,7 @@ cd quickstart
 npm install
 export AGENTIC_PARTNER_ID=your_partner_id
 export AGENTIC_ADMIN_SECRET=your_admin_secret
-node create-agent.mjs "A friendly yoga-studio receptionist"
+node create-agent.mjs "A friendly yoga studio receptionist who helps people book classes and answers questions about memberships"
 ```
 
 `npm install` here installs the quickstart's own dependencies (its `package.json`, separate from the SDK) — the `@kaltura/intelligent-agents` package itself stays zero-dependency.

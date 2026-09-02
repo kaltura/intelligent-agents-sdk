@@ -48,7 +48,7 @@ Full explanation and plug points: [Inside a Live Conversation](https://kaltura.g
 | scripted-video control API | `api.avatar.us.kaltura.ai/v1/avatar-session/*` | The **scripted-video** control API: `avatar-session/create` (KS) → `init-client` → `keep-alive` (10s) → `end`. A distinct service from the management API — only the host/path prefix is shared. |
 | brain API | `genie.nvp1.ovp.kaltura.com` | The brain: `assistant/converse`, intellect CRUD, threads, messages, feedback, followups |
 | session server | `conversation.avatar.us.kaltura.ai` | Live-avatar control plane (Socket.IO): session orchestration, ASR signaling relay, brain output stream |
-| STV + media relay | `srs.avatar.us.kaltura.ai` (egress host) | Video origin. Renders the talking face and egresses it to clients via **WHEP** (never RTMP, regardless of internal transport). The `cast_mode` field selects the egress; the SDK never sends it, so it always takes the server's fully-omitted-default path, verified working with real video (see [WIRE-PROTOCOL.md §6](WIRE-PROTOCOL.md)). Explicit `cast_mode:'webrtc'` (`unistv` player only, never this SDK) has resolved to a private IP in this deployment — the SDK's `whepUrlHasPrivateIp()` guard exists for that case. |
+| STV + media relay | `srs.avatar.us.kaltura.ai` (egress host) | Video origin. Renders the talking face and egresses it to clients via **WHEP** (never RTMP, regardless of internal transport). The `cast_mode` field selects the egress; the SDK never sends it, so it always takes the server's fully-omitted-default path, verified working with real video (see [WIRE-PROTOCOL.md §6](WIRE-PROTOCOL.md)). Explicit `cast_mode:'webrtc'` (the runtime client only, never this SDK) has resolved to a private IP in this deployment — the SDK's `whepUrlHasPrivateIp()` guard exists for that case. |
 | TURN | `turn.avatar.us.kaltura.ai` | WebRTC relay for both media legs (default username/credential in `wire.js`'s `turnServers()`, overridable via `creds`). Addressed with explicit ports+transports (see [ARCHITECTURE-REFERENCE.md](ARCHITECTURE-REFERENCE.md#endpoints--credentials)). STV uses `iceTransportPolicy:'relay'`; ASR's policy is client-dependent but **relays via TURN either way** (the ASR server only advertises a private candidate). See [WIRE-PROTOCOL.md §5](WIRE-PROTOCOL.md) for the per-client matrix. |
 | ML services | internal | Machine-learning services behind `application/generateAgentProfile` |
 
@@ -108,11 +108,17 @@ There are two session modes, and they are NOT interchangeable. Scripted sessions
 
 The protocol above describes the **interactive** path. The scripted path has no text-in of its own: the service's `say-text` route 503s on every call (a live server bug), so the SDK wraps only `say-audio` — you provide pre-rendered speech audio (e.g. from your own TTS call) and its duration. Full auth/lifecycle details: [API-REFERENCE.md § Scripted-Video (STV-only) Sessions](api/scripted-video.md); runnable example: `examples/scripted-video-session.mjs` + `.html`.
 
+### Audio-mode / phone-mode agents (partial support)
+
+An agent with no avatar attached (create it with `avatarIds` omitted) is treated server-side as audio/phone-mode: `stvNewSession` replies with a "no STV session" status instead of a video session, and the `clientConfiguration` the server sends carries `audioMode`/`phoneMode` flags (see [WIRE-PROTOCOL.md §7](WIRE-PROTOCOL.md)). `KalturaAvatarSession` detects this and sets `session.mode = 'audio'`, skipping the STV video pipeline entirely.
+
+**This SDK does not implement the audio-mode WebRTC downlink** ([WIRE-PROTOCOL.md §5b](WIRE-PROTOCOL.md)) that carries the agent's spoken audio when there's no STV session — that peer connection is signaled over a separate event family (`webrtc-create-offer`/`webrtc-offer`/`webrtc-answer`) the SDK never emits or listens for. So today, `mode:'audio'` is detected but not functional end-to-end: the mic uplink (ASR) still connects, but you won't receive the agent's spoken reply through this SDK. Treat audio/phone-mode as INFERRED wire behavior, not a supported feature, until the downlink is implemented.
+
 ---
 
 ## Displaying the Avatar Video
 
-The SDK assigns the WHEP stream to `cfg.videoEl.srcObject` and does nothing else — no CSS, no sizing. The backend's rendered aspect ratio is not a published contract (see [API-REFERENCE.md § Upload a Custom Visual](../API-REFERENCE.md) on `catalog.createVisual` preprocessing), so size the box with `object-fit: cover` rather than assuming a fixed aspect ratio — it fills the box and crops evenly no matter what the stream's actual aspect ratio turns out to be:
+The SDK assigns the WHEP stream to `cfg.videoEl.srcObject` and does nothing else — no CSS, no sizing. The backend's rendered aspect ratio is not a published contract (see [Upload a Custom Visual](api/design.md#upload-a-custom-visual-portrait--animated-avatar) on `catalog.createVisual` preprocessing), so size the box with `object-fit: cover` rather than assuming a fixed aspect ratio — it fills the box and crops evenly no matter what the stream's actual aspect ratio turns out to be:
 
 ```css
 .avatar-box {
@@ -157,7 +163,7 @@ const player = attachChromaKeyAvatar({
 await session.connect();
 ```
 
-Same pattern as `object-fit: cover` above but one layer earlier: `attachChromaKeyAvatar()` constructs the injected `ChromaKeyVideo` class against the session's OWN video element (`session.videoEl`, not a second reference) and keeps its lifecycle in lockstep with the session's — `player.destroy()` fires automatically on the session's `'ended'` event, a fatal `'error'`, or the session's own `disconnect()`/`stop()` (its documented human-in-the-loop kill switch, e.g. a "leave call" button), so `session.disconnect()` alone is enough teardown. It never reimplements chroma-keying, matting, or WebGL context-loss recovery itself, and returns the constructed player instance UNWRAPPED — listen on `player` directly for its own events, never on `session`. Full behavior contract, misuse guard, and the `videoEl` source element are the SDK's zero-dependency rule in miniature: see [README.md § `./experience/chroma-key`](../README.md#experiencechroma-key).
+Same pattern as `object-fit: cover` above but one layer earlier: `attachChromaKeyAvatar()` constructs the injected `ChromaKeyVideo` class against the session's OWN video element (`session.videoEl`, not a second reference). It keeps its lifecycle in lockstep with the session's: `player.destroy()` fires automatically on the session's `'ended'` event, a fatal `'error'`, or the session's own `disconnect()`/`stop()` (its documented human-in-the-loop kill switch, e.g. a "leave call" button), so `session.disconnect()` alone is enough teardown. It never reimplements chroma-keying, matting, or WebGL context-loss recovery itself, and returns the constructed player instance UNWRAPPED. Listen on `player` directly for its own events, never on `session`. Full behavior contract, misuse guard, and the `videoEl` source element are the SDK's zero-dependency rule in miniature: see [README.md § `./experience/chroma-key`](../README.md#experiencechroma-key).
 
 ---
 

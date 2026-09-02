@@ -1,6 +1,6 @@
 # Getting Started — Your First Talking AI Avatar
 
-This guide takes you from zero to a working, talking AI avatar in about 5 minutes, once you have a Kaltura account — copy and paste the commands.
+This guide takes you from zero to a working, talking AI avatar in about 5 minutes, once you have a Kaltura account. Copy and paste the commands.
 
 > **Windows?** Run these commands in WSL2, Git Bash, or PowerShell (the commands below are plain `node`/`npm` calls with no Bash-only syntax, so they work as-is in PowerShell too).
 
@@ -49,7 +49,7 @@ export AGENTIC_ADMIN_SECRET=your_admin_secret_here
 
 > **Windows PowerShell?** Use `$env:AGENTIC_PARTNER_ID="1234567"` instead of `export`.
 
-> **Prefer a file over exporting every time?** Create a `.env` file in the repo root (one directory up from `quickstart/`) with `AGENTIC_PARTNER_ID=...` and `AGENTIC_ADMIN_SECRET=...` on their own lines — `create-agent.mjs` reads it automatically if present. It's already covered by `.gitignore`, so it never gets committed.
+> **Prefer a file over exporting every time?** Create a `.env` file in the repo root (one directory up from `quickstart/`) with `AGENTIC_PARTNER_ID=...` and `AGENTIC_ADMIN_SECRET=...` on their own lines. `create-agent.mjs` reads it automatically if present. It's already covered by `.gitignore`, so it never gets committed.
 
 ---
 
@@ -85,7 +85,7 @@ console.log(reply.text);
 
 `converseOnce()` mints its own conversation token from the `configId` — the admin secret never leaves your process. See [API-REFERENCE.md](docs/api/operate.md) for threaded conversations, streaming, and the full Management API surface.
 
-**Talking on behalf of a real, known user?** Mint the conversation token yourself with `userId` instead of letting `converseOnce()` auto-mint an anonymous one — this binds the KS to that user so per-user memory and analytics attribute the conversation correctly:
+**Talking on behalf of a real, known user?** Mint the conversation token yourself with `userId` instead of letting `converseOnce()` auto-mint an anonymous one. This binds the [KS](docs/api/authentication.md#authentication) (Kaltura Session token) to that user so per-user memory and analytics attribute the conversation correctly:
 
 ```js
 const conv = await kaltura.sessions.createConversationToken({
@@ -126,9 +126,9 @@ You now know how to create an agent and talk to it. Here's where to go for more:
 
 **Will this cost money / use my quota?** Conversations and avatar sessions use your Kaltura plan's quota. Creating agents/avatars is cheap, but clean up test ones you don't need — see `agents.delete()` / `avatars.delete()` in [API-REFERENCE.md](docs/api/management-operations.md).
 
-**How do I see everything I created?** Use the Management API's list calls — `kaltura.agents.list()` and `kaltura.avatars.list()`. See [API-REFERENCE.md](docs/api/management-operations.md).
+**How do I see everything I created?** Use the Management API's list calls — `kaltura.agents.list(admin.ks)` and `kaltura.avatars.list(admin.ks)`. See [API-REFERENCE.md](docs/api/management-operations.md).
 
-**How do I label the agents I create so I can find mine later?** Tag the **agent** (not the avatar) via `adminTags` on `agents.create()`, then filter `agents.list()` client-side. Details in [API-REFERENCE.md](docs/api/build.md#create-an-agent).
+**How do I label the agents I create so I can find mine later?** Tag the **agent** (not the avatar) via `adminTags` on `agents.create()`, then filter `agents.list(admin.ks)` client-side. Details in [API-REFERENCE.md](docs/api/build.md#create-an-agent).
 
 **Can I use my own face or voice?** Yes, both — see [API-REFERENCE.md](docs/api/design.md#upload-a-custom-visual-portrait--animated-avatar) and [→ Custom Voice](docs/api/design.md#upload-a-custom-voice-clone).
 

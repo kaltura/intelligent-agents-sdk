@@ -1,6 +1,6 @@
 # Client-Side Commands — how the avatar drives your UI
 
-How a Kaltura avatar silently triggers actions in *your* app — navigate a deck, render a widget, draw a chart — by calling a tool you defined. The brain decides *when*; the page decides *what happens*. This is the mechanism that lets an app drive client commands (`navigate_to_slide`/`show_widget`/`highlight_chart`/`open_filing`) off a single live avatar; see `examples/deck-presenter.html` for a self-contained slide-navigation demo.
+How a Kaltura avatar silently triggers actions in *your* app — navigate a deck, render a widget, draw a chart — by calling a tool you defined. The brain decides *when*; the page decides *what happens*. This is the mechanism that lets an app drive client commands (`navigate_to_slide`/`show_widget`/`highlight_chart`/`open_filing`) off a single live avatar; see [`../examples/deck-presenter.html`](../examples/deck-presenter.html) for a self-contained slide-navigation demo.
 
 If you only read one thing: a "client command" is **not a special protocol feature**. It is a native `type:"client"` tool that makes **no server-side call at all** — the *product* is the silent `type:"tool"` segment the brain streams when the LLM calls it. Your page captures that segment and runs whatever JS it wants.
 
@@ -78,6 +78,16 @@ for await (const seg of session) {
 }
 ```
 
+**Validating args yourself:** `validateToolArgs(args, schema)` (`@kaltura/intelligent-agents/experience`) is the runtime check both `onToolCall`'s optional `argsSchema` param and `collectConverse`'s `toolArgSchemas` option run internally. Call it directly if you're parsing segments by hand via `parseToolCall`. `schema` is a `Record<string, ToolArgSchema>` (same shape you already pass to `tools.client({args})`): each key has an optional `type` (`'str'|'int'|'float'|'bool'|'list'|'dict'`), `required`, and `enum`. Returns `{ok:true}` or `{ok:false, errors:string[]}`.
+
+```js
+import { parseToolCall, validateToolArgs } from '@kaltura/intelligent-agents/experience';
+
+const call = parseToolCall(seg);
+const check = validateToolArgs(call.args, { slide_num: { type: 'int', required: true } });
+if (!check.ok) { /* check.errors */ }
+```
+
 `onToolCall` fires **after** the `onAgentAction` guardrail (a vetoed or allow-listed-out command never dispatches) and **at most once per turn** per identical call — the same segment can re-arrive on the live socket, so the SDK dedups semantically (tool name + sorted-key JSON of args, via `canonicalJson` — an LLM retry of the identical logical call can arrive with non-deterministic JSON key order, which raw-string dedup would miss) and resets each turn. Multiple handlers for one name all run in registration order; a throwing handler is isolated (logged, others still run). `onToolCall` returns an unsubscribe function.
 
 A handler's return value (or thrown/rejected error) is captured and re-emitted as `'toolCallResult'` (`{call, ok, value|error}`), but this is **local/app-observable only** unless the tool was built with `waitForResponse:true` — only then does `session.respondToTool(call.toolMetadata.id, response)` actually carry a result back to the model.
@@ -92,7 +102,7 @@ These are the lessons that cost real debugging time. None of them is enforced se
 
 On any command-driven intellect, set `capabilities: { kaltura_genie_experiences: 'off' }` at creation — see [EXTERNAL-API-INTEGRATIONS.md § Don't skip `kaltura_genie_experiences: 'off'`](EXTERNAL-API-INTEGRATIONS.md#dont-skip-kaltura_genie_experiences-off) for why it competes with your tool and why creation time matters.
 
-RAG and client commands coexist fine with this off — the teaching avatar proves it (knowledge retrieval ON, experiences OFF, commands win).
+RAG and client commands coexist fine with this off. The teaching avatar proves it: knowledge retrieval ON, experiences OFF, commands win.
 
 ### Gotcha 2 — partner config is cached ~24h. Set capabilities at CREATION, not after.
 
@@ -125,7 +135,7 @@ Put a hard TOOL-CALL BUDGET in the system prompt — e.g. max one `create_slide`
 | `maxPerTool` | 3 | Caps repeats of any single tool name before treating it as spiraling |
 | `maxToolCalls` | 8 (pass `Infinity` to disable) | Total tool-call budget for the turn before `collectConverse()` stops reading and returns `spiralStopped: true` |
 
-But a spiral can exhaust the segment budget before the brain ever reaches a spoken sentence, leaving `text: ''` with nothing to fall back to in that same turn: a two-metric guidance question made the brain re-emit an already-successful `show_widget` call repeatedly with zero spoken segments ever, and a 90-second/150+-segment uncapped read confirmed the loop does not self-resolve given more time. Headless HTTP has no live-socket `interrupt()`/`_coldReconnect()` to fall back on (that's the live-session mechanism in [ARCHITECTURE-REFERENCE.md](ARCHITECTURE-REFERENCE.md#tool-call-spiral-what-happened-and-how-its-mitigated)) — the only proven lever is a new turn. `conversations.send({..., recoverFromSpiral: true})` (or `converseOnce(cfg, msg, {recoverFromSpiral: true})`) opts into exactly that: when the first attempt comes back `spiralStopped:true` with empty text, it sends ONE follow-up turn on the same thread, prefixing the original message with `SPIRAL_RECOVERY_PREFIX` ("Please answer in words only this turn, without calling any tool. ") — this reliably breaks the loop and produces a correct, properly-caveated spoken answer. The result carries `spiralRecovered` (boolean) and `firstAttempt: {toolCalls, spiralStopped}` for diagnostics; never retries more than once; off by default (back-compat).
+But a spiral can exhaust the segment budget before the brain ever reaches a spoken sentence, leaving `text: ''` with nothing to fall back to in that same turn. A two-metric guidance question made the brain re-emit an already-successful `show_widget` call repeatedly with zero spoken segments ever, and a 90-second/150+-segment uncapped read confirmed the loop does not self-resolve given more time. Headless HTTP has no live-socket `interrupt()`/`_coldReconnect()` to fall back on (that's the live-session mechanism in [ARCHITECTURE-REFERENCE.md](ARCHITECTURE-REFERENCE.md#tool-call-spiral-what-happened-and-how-its-mitigated)). The only proven lever is a new turn. `conversations.send({..., recoverFromSpiral: true})` (or `converseOnce(cfg, msg, {recoverFromSpiral: true})`) opts into exactly that: when the first attempt comes back `spiralStopped:true` with empty text, it sends ONE follow-up turn on the same thread, prefixing the original message with `SPIRAL_RECOVERY_PREFIX` ("Please answer in words only this turn, without calling any tool. "). This reliably breaks the loop and produces a correct, properly-caveated spoken answer. The result carries `spiralRecovered` (boolean) and `firstAttempt: {toolCalls, spiralStopped}` for diagnostics. It never retries more than once, and is off by default (back-compat).
 
 #### SDK side (live session): see ARCHITECTURE-REFERENCE.md
 

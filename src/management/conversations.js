@@ -1060,10 +1060,10 @@ export class Knowledge {
    * indexing — unlike {@link isIndexed}/`getRecord().status`, which reflect the
    * knowledge record's own container lifecycle, not entry-level progress.
    *
-   * **Not yet generally available.** Verified working end-to-end on a
-   * pre-production test environment; general rollout is expected in early
-   * September 2026. Calling this before your deployment has it will fail —
-   * don't build on it yet.
+   * **Not yet generally available on every deployment.** Verified working
+   * end-to-end on a pre-production test environment. Calling this on a
+   * deployment that doesn't have it yet will fail — check with your Kaltura
+   * account team before building on it.
    *
    * Returns the raw `{entries:[...]}` array, unmodified: one row per entry
    * FOUND in the knowledge base (an unknown/not-yet-indexed entry id is

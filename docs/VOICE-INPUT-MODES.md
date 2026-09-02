@@ -18,7 +18,11 @@ Text input is not voice-mode-exclusive: an avatar session accepts typed turns to
 
 **Pick one VOICE mode per agent, at configuration time. Never offer both voice modes live in the same session.** (Chat text-only input is exempt — typed turns don't touch the VAD/capture machinery this rule protects, so text can coexist with either voice mode, or replace voice entirely.)
 
-This is not a UI-polish preference — it is a correctness requirement. The server's own VAD turn-cutting branches on the agent's *configured* `isTapToTalk` flag, not on whether a tap window is currently open. An open-mic agent (`isTapToTalk:false`) keeps auto-cutting turns from its VAD unconditionally, even while a tap-to-talk bracket is open — the two mechanisms race the same `conversationStatus`/`latestSpeech` state with no mutual exclusion server-side (see WIRE-PROTOCOL.md's `tapToTalkStart`/`tapToTalkEnd` row). The SDK enforces this client-side (`startTapToTalk()` throws `capability_disabled` unless `session.capabilities.tapToTalk`), but that gate exists because the server will not stop you from getting this wrong.
+This is not a UI-polish preference. It is a correctness requirement.
+
+**The server will not stop you from getting this wrong.** The SDK's own client-side gate (`startTapToTalk()` throws `capability_disabled` unless `session.capabilities.tapToTalk`) is the only thing standing between you and the failure below — the server itself never rejects the mismatch.
+
+The server's own VAD turn-cutting branches on the agent's *configured* `isTapToTalk` flag, not on whether a tap window is currently open. An open-mic agent (`isTapToTalk:false`) keeps auto-cutting turns from its VAD unconditionally, even while a tap-to-talk bracket is open. The two mechanisms race the same `conversationStatus`/`latestSpeech` state with no mutual exclusion server-side (see WIRE-PROTOCOL.md's `tapToTalkStart`/`tapToTalkEnd` row).
 
 Every push-to-talk/open-mic product draws the same line — one active capture mechanism, chosen once, not a live per-session toggle exposing both:
 

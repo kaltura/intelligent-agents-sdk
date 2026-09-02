@@ -60,6 +60,7 @@ No build step, no npm registry publish — that's disabled by design (`"private"
 - [Testing](#testing)
 - [Intellect configuration](#intellect-configuration)
 - [Skills and voice import](#skills-and-voice-import)
+- [Scripted-Video (STV-only) Sessions](#scripted-video-stv-only-sessions)
 - [RAG (knowledge base)](#rag-knowledge-base)
 - [Honest limits](#honest-limits)
 - [Reference](#reference)
@@ -76,7 +77,7 @@ npm test
 # server: provision + headless converse (needs a Kaltura account)
 export AGENTIC_PARTNER_ID=…
 export AGENTIC_ADMIN_SECRET=…
-node examples/server-token.mjs "A friendly yoga receptionist"
+node examples/server-token.mjs "A friendly yoga studio receptionist who helps people book classes and answers questions about memberships"
 
 # browser: live avatar (needs a local server implementing /appInit to actually connect)
 open examples/browser-experience.html
@@ -98,12 +99,12 @@ Once the repo is public and has a tag pushed, jsDelivr serves any file straight 
 <script type="module">
   // Pinned to a release tag — recommended for anything you ship, since the file content at
   // this URL never changes once published (jsDelivr's immutable, long-cached tag path).
-  import { KalturaAvatarSession } from 'https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.7.0/src/experience/index.js';
+  import { KalturaAvatarSession } from 'https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.11.0/src/experience/index.js';
   // ... same API as the local examples — see examples/browser-experience.html
 </script>
 ```
 
-Pin the tag (`@v1.7.0`, or whatever release you want) for anything you ship — jsDelivr caches a tagged path forever, so a pin is both stable and fast. For local prototyping only, `@latest` resolves to the newest tag without editing the URL on every release:
+Pin the tag (`@v1.11.0`, or whatever release you want) for anything you ship — jsDelivr caches a tagged path forever, so a pin is both stable and fast. For local prototyping only, `@latest` resolves to the newest tag without editing the URL on every release:
 
 ```html
 <script type="module">
@@ -125,7 +126,7 @@ An import map can carry an `integrity` entry per module URL; a browser that supp
 A single hash on `experience/index.js` alone would NOT be real protection: it's a barrel file that re-exports from ~10 other modules (`session.js`, `wire.js`, `core/safety.js`, …), and import-map `integrity` only checks the exact URLs it lists. Tampering with any of those other files would go undetected unless they're hashed too. `tools/sri-map.mjs` generates the hash for the FULL transitive local-import graph of a given entry point, read from the actual tagged git commit (not your working tree, so it always matches what jsDelivr serves for that tag):
 
 ```bash
-node tools/sri-map.mjs --entry src/experience/index.js --tag v1.7.0
+node tools/sri-map.mjs --entry src/experience/index.js --tag v1.11.0
 ```
 
 Paste the `integrity` object it prints into an import map, declared before the module script:
@@ -134,15 +135,15 @@ Paste the `integrity` object it prints into an import map, declared before the m
 <script type="importmap">
 {
   "integrity": {
-    "https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.7.0/src/experience/index.js": "sha384-dTRuF4/wfbcshlef1vuVSy8yhIPAY8JYTpve85JNJm847+ycNzFvKbxOPEmVole3",
-    "https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.7.0/src/experience/session.js": "sha384-…",
-    "https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.7.0/src/core/safety.js": "sha384-…"
+    "https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.11.0/src/experience/index.js": "sha384-dTRuF4/wfbcshlef1vuVSy8yhIPAY8JYTpve85JNJm847+ycNzFvKbxOPEmVole3",
+    "https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.11.0/src/experience/session.js": "sha384-…",
+    "https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.11.0/src/core/safety.js": "sha384-…"
     /* … one entry per file `tools/sri-map.mjs` printed — run it, don't hand-copy this excerpt */
   }
 }
 </script>
 <script type="module">
-  import { KalturaAvatarSession } from 'https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.7.0/src/experience/index.js';
+  import { KalturaAvatarSession } from 'https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.11.0/src/experience/index.js';
 </script>
 ```
 
@@ -325,8 +326,8 @@ Build the control as click-to-toggle, not press-and-hold: it's more usable for l
 Both session classes watch for a brain that goes quiet instead of answering; only `KalturaAvatarSession` also guards against one that loops instead of narrating (it has a socket to cold-reconnect through) — see [ARCHITECTURE-REFERENCE.md](docs/ARCHITECTURE-REFERENCE.md#resilience--failure-handling) for the full failure-mode matrix.
 
 - **Brain-stall watchdog** (`brainStallMs`, default on, `KalturaAvatarSession` + `KalturaChatSession`) — emits `brainStalled` (`{count}`), repeating for as long as nothing perceivable (spoken/avatar content or a GenUI widget) follows a turn. On the chat transport, a bare `keepalive` segment does not count as perceivable output either.
-- **Dead-air masking** (`responsePending`/`responseSettled`, both transports) — `responsePending` (`{}`) fires the moment a turn starts awaiting the brain's first perceivable output (spoken/avatar/GenUI content); `responseSettled` (`{}`) fires once that output arrives, the turn ends, an interruption occurs, or the session tears down. Use this pair to show/hide a "thinking…" affordance instead of leaving the avatar's face frozen during the gap — see `examples/browser-experience.html` for a working example.
-- **Tool-call spiral circuit breaker** (`KalturaAvatarSession` only) — a two-tier guard against a brain that re-issues the same client command instead of narrating. Soft (`toolSpiralLimit`, default 10, per turn): emits `toolSpiralDetected` — signal only, does NOT call `interrupt()` (a mid-turn barge-in was found to truncate the turn's own narration with no recovery — see `docs/CLIENT-COMMANDS.md`'s "Tool spirals starve the voice"). Hard (`hardToolSpiralLimit`, default `toolSpiralLimit * 3`, session-scoped, immune to turn-boundary resets): emits `toolSpiralRecovering` (`{count, limit, lastTurnText}`) and forces a cold reconnect — a brand-new socket, replaying `threadId` so brain memory continues.
+- **Dead-air masking** (`responsePending`/`responseSettled`, both transports) — `responsePending` (`{}`) fires the moment a turn starts awaiting the brain's first perceivable output (spoken/avatar/GenUI content). `responseSettled` (`{}`) fires once that output arrives, the turn ends, an interruption occurs, or the session tears down. Use this pair to show/hide a "thinking…" affordance instead of leaving the avatar's face frozen during the gap. See `examples/browser-experience.html` for a working example.
+- **Tool-call spiral circuit breaker** (`KalturaAvatarSession` only) — a two-tier guard against a brain that re-issues the same client command instead of narrating. Soft (`toolSpiralLimit`, default 10, per turn): emits `toolSpiralDetected`. This is signal only and does NOT call `interrupt()` (a mid-turn barge-in was found to truncate the turn's own narration with no recovery — see `docs/CLIENT-COMMANDS.md`'s "Tool spirals starve the voice"). Hard (`hardToolSpiralLimit`, default `toolSpiralLimit * 3`, session-scoped, immune to turn-boundary resets): emits `toolSpiralRecovering` (`{count, limit, lastTurnText}`) and forces a cold reconnect — a brand-new socket that replays `threadId` so brain memory continues.
 - **Spiral recovery auto-resend** (`recoverFromSpiral`, default `true`) — a hard-spiral cold reconnect restores connectivity but would otherwise abandon the turn that triggered it (the user's question just silently dropped). With the default on, once the reconnect succeeds the SDK automatically resends that turn's text once, prefixed with the same `SPIRAL_RECOVERY_PREFIX` instruction used on the headless path (`Conversations#send({recoverFromSpiral:true})` — see [Management](#management) above), still passed through your `onBeforeSend` guardrail, and emits `spiralRecovered` (`{text}`, the original un-prefixed text — e.g. show "Let me get that for you" UI). Set `recoverFromSpiral: false` to opt out of the auto-resend and handle it yourself — `toolSpiralRecovering`'s `lastTurnText` still tells you what was abandoned.
 
 ```js
@@ -359,9 +360,9 @@ await session.setAsrBandwidth(24); // kbps, applied live via RTCRtpSender.setPar
 - **`localSpeakingChanged`** (`{speaking}`) — an instant local speaking indicator from client-side volume analysis (`AnalyserNode`, 50ms sampling, threshold via `localVadThreshold`, default 300) — independent of the server's own turn-taking signals. Lazily activated only while at least one listener is registered, so a session that never listens pays zero Web Audio cost; deactivates the moment the last listener unsubscribes.
 - **`localMicLevel`** (`{level}`, 0-1) — the same 50ms `AnalyserNode` sampler's continuous volume, normalized against the analyser's max possible byte-frequency sum, emitted on every tick rather than only on threshold transitions — drives a real-time UI meter (e.g. a mic button that visually fills with live input volume) without needing to bucket `localSpeakingChanged`. Shares the same lazy activate/deactivate lifecycle: registering a listener for either `localMicLevel` or `localSpeakingChanged` starts the sampler, and it stops only once every listener for both has unsubscribed.
 - **`listDevices()`** — `{mics, speakers}` from `navigator.mediaDevices.enumerateDevices()` (video input omitted; an avatar session has no local camera). Returns empty lists headlessly/without permission rather than throwing.
-- **`switchMic(deviceId)`** — swaps the ASR uplink's sender track via `replaceTrack`, no renegotiation; rewires the hardware-mute watch and VAD onto the new stream and stops the old one.
+- **`switchMic(deviceId)`** — swaps the ASR uplink's sender track via `replaceTrack`, no renegotiation. It rewires the hardware-mute watch and VAD onto the new stream and stops the old one.
 - **`micStartMode: 'deferred'`** (constructor option) + **`startMic()`** + **`micStarted`** (getter and event) — connect with no mic at all: `connect()` skips `getUserMedia` entirely and the ASR uplink negotiates a track-less sendonly audio slot (the wire handshake is identical to the default `'immediate'` path). Call `startMic()` later **from a real user click** — that's the point: the browser's permission prompt is anchored to the gesture instead of firing on page load — and it acquires the mic, attaches it via `replaceTrack` (no renegotiation), honors any `mute()` issued before the mic existed, re-applies `maxAsrBitrateKbps`, and emits `micStarted`. Until then `micStarted` is `false`, typed turns (`speak()`) work normally, and `startTapToTalk()`/`switchMic()` throw `mic_not_started`. A denied prompt rejects `startMic()` with the same typed mic errors as `connect()` (`mic_permission_denied`, …) and leaves the session connected, so the viewer can retry or stay typed-only. `startMic()` is idempotent.
-- **`setAudioOutput(deviceId)`** — routes `videoEl` playback via `setSinkId`, retrying up to 5 times at 500ms; returns `false` (never throws) if the platform lacks `setSinkId` or every retry is exhausted.
+- **`setAudioOutput(deviceId)`** — routes `videoEl` playback via `setSinkId`, retrying up to 5 times at 500ms. Returns `false` (never throws) if the platform lacks `setSinkId` or every retry is exhausted.
 - **`preferredVideoCodec`** (constructor option) — filters the STV downlink's video transceiver to a single codec via `setCodecPreferences`. Leave this unset. The backend only ever encodes H264 video, so setting it to anything else (`'VP8'`, `'VP9'`, `'AV1'`) still connects — audio keeps working — but the video negotiation comes back inactive and no frame is ever decoded, with no error thrown.
 - **`maxAsrBitrateKbps`** (constructor option) / **`setAsrBandwidth(kbps)`** (mid-session) — caps the ASR mic uplink's bitrate via `RTCRtpSender.setParameters()`, no renegotiation.
 
@@ -393,8 +394,8 @@ const session = new KalturaAvatarSession({ token, /* … */,
 <details>
 <summary><strong>Field reference</strong> — every option above</summary>
 
-- **`micConstraints`** (constructor option) — `MediaTrackConstraints` merged into every `getUserMedia({audio})` call this session makes (`connect()`, `switchMic()`). Default `{echoCancellation:true, noiseSuppression:true, autoGainControl:true}` — the standard browser-native Tier-1 baseline. Pass `false` to send bare `audio:true`; pass a partial object to override individual fields.
-- **`noiseProcessor`** (constructor option) — pluggable Tier-2 DSP hook: `(stream) => Promise<MediaStream|{stream,stop}>`. Called with the raw `getUserMedia` stream at `connect()` and every `switchMic()`; its returned stream (or `{stream,stop}`, if the processor owns a resource that needs explicit teardown — e.g. an `AudioWorkletNode` graph) is what actually reaches the ASR uplink. The SDK core bundles NO DSP library — bring a third-party processor (dynamically import it so apps that don't use it never load it) or a bespoke one; anything matching the shape works. A processor that throws fails mic acquisition closed with a typed `noise_processor_failed` error (same fail-closed behavior as a `getUserMedia` rejection).
+- **`micConstraints`** (constructor option) — `MediaTrackConstraints` merged into every `getUserMedia({audio})` call this session makes (`connect()`, `switchMic()`). Default `{echoCancellation:true, noiseSuppression:true, autoGainControl:true}` — the standard browser-native Tier-1 baseline. Pass `false` to send bare `audio:true`. Pass a partial object to override individual fields.
+- **`noiseProcessor`** (constructor option) — pluggable Tier-2 DSP hook: `(stream) => Promise<MediaStream|{stream,stop}>`. Called with the raw `getUserMedia` stream at `connect()` and every `switchMic()`. Its returned stream (or `{stream,stop}`, if the processor owns a resource that needs explicit teardown — e.g. an `AudioWorkletNode` graph) is what actually reaches the ASR uplink. The SDK core bundles NO DSP library — bring a third-party processor (dynamically import it so apps that don't use it never load it) or a bespoke one. Anything matching the shape works. A processor that throws fails mic acquisition closed with a typed `noise_processor_failed` error (same fail-closed behavior as a `getUserMedia` rejection).
 - **`createNoiseSuppressor(opts)`** (`./experience/noise-suppressor`, separately importable — zero effect until constructed and passed as `noiseProcessor`) — the SDK's own real, lightweight, dependency-free Tier-2 implementation: an adaptive RMS noise gate running as a pure-browser-native `AudioWorkletProcessor` (attack/release-smoothed envelope, adaptive noise-floor tracking — NOT spectral/ML denoising, which is a heavier Tier-2 DSP approach). Options: `thresholdDb` (default `-50`), `attackMs` (default `5`), `releaseMs` (default `150`), `floorAdaptMs` (default `2000`); `audioContext`/`getAudioContext`/`audioWorkletNodeConstructor` are injectable for testing, mirroring the rest of the SDK's constructor-injection style.
 
 </details>
@@ -412,7 +413,7 @@ analytics.pageLoad({ pageType: 'View', pageName: 'earnings-deck' });
 btnFeedbackDismiss.onclick = () => analytics.buttonClicked({ buttonType: 'Open', buttonName: 'feedback-dismiss' });
 ```
 
-`KavaAnalytics` (`./experience/analytics`, its own subpath so apps that don't report analytics never load it) reports KAVA (Kaltura Video Analytics) events to `https://analytics.kaltura.com/api_v3/index.php` (`service=analytics&action=trackEvent`). It implements ONLY the 10000-range **Application Event** family — `pageLoad` (10003) and `buttonClicked` (10002) — for interactions the server has zero visibility into: a page/view landing, a UI-only click, a contact-form submit/skip, a widget dismiss. WRITE, best-effort, NOT idempotent (each call records a new row; there is no dedup contract) — fire-and-forget by design, so callers don't need to await it for correctness.
+`KavaAnalytics` (`./experience/analytics`, its own subpath so apps that don't report analytics never load it) reports KAVA (Kaltura Video Analytics) events to `https://analytics.kaltura.com/api_v3/index.php` (`service=analytics&action=trackEvent`). It implements ONLY the 10000-range **Application Event** family: `pageLoad` (10003) and `buttonClicked` (10002), for interactions the server has zero visibility into — a page/view landing, a UI-only click, a contact-form submit/skip, a widget dismiss. It's WRITE, best-effort, and NOT idempotent (each call records a new row; there is no dedup contract). It's fire-and-forget by design, so callers don't need to await it for correctness.
 
 **Deliberately does NOT implement the 80000-range "Immersive Agents" events** (`callStarted`/`callEnded`/`messageResponse`/`messageFeedbackSent`) — there is no code path in this module that can send them. The session server and the brain backend already report all four server-side for every session `KalturaAvatarSession` connects to (same socket, matching event names); a client-side copy would double-count on the live analytics dashboards. If a real gap in that server-side reporting is ever found, file it as a GitHub issue rather than adding a client resend.
 
@@ -669,7 +670,7 @@ Two things worth knowing that have their own dedicated writeups:
 
 ## Presenter
 
-The `Presenter` helper (`./experience/presenter`, its own subpath so apps that don't need it never pay for its module graph) manages a deck walkthrough end to end: per-slide **context injection** via `session.setDynamicPrompt()` — a structured `page_context` payload telling the brain what's on screen right now — navigation via ONE deterministic, silent, idempotent mechanism (`onToolCall('navigate_to_slide')` — no speech-parsing fallback), duplicate-nav suppression, a sequential resume point (`reason:'resume'`), and session memory ("welcome back") — all pure logic over an injected `session`/`storage`, fully unit-testable.
+The `Presenter` helper (`./experience/presenter`, its own subpath so apps that don't need it never pay for its module graph) manages a deck walkthrough end to end. It handles per-slide **context injection** via `session.setDynamicPrompt()` (a structured `page_context` payload telling the brain what's on screen right now), navigation via ONE deterministic, silent, idempotent mechanism (`onToolCall('navigate_to_slide')`, no speech-parsing fallback), duplicate-nav suppression, a sequential resume point (`reason:'resume'`), and session memory ("welcome back"). All of it is pure logic over an injected `session`/`storage`, fully unit-testable.
 
 <details>
 <summary><strong>Full API</strong> — getters, methods, app hooks</summary>
@@ -721,7 +722,7 @@ See `examples/deck-presenter.html` for a self-contained runnable demo: construct
 
 ## Chroma-key Avatar Compositor
 
-`attachChromaKeyAvatar()` (`./experience/chroma-key`, its own subpath so apps that don't composite the avatar never load it) wires a **bring-your-own** transparent-background compositor — any `chroma-key-video`-shaped class — directly onto a `KalturaAvatarSession`'s own avatar `<video>` element, and keeps that compositor's lifecycle in lockstep with the session's. The SDK never bundles, imports, or depends on `chroma-key-video` (or any keying/matting library) itself — this is glue, the same constructor-injection pattern `./experience/noise-suppressor` uses for `audioWorkletNodeConstructor`:
+`attachChromaKeyAvatar()` (`./experience/chroma-key`, its own subpath so apps that don't composite the avatar never load it) wires a **bring-your-own** transparent-background compositor (any `chroma-key-video`-shaped class) directly onto a `KalturaAvatarSession`'s own avatar `<video>` element, and keeps that compositor's lifecycle in lockstep with the session's. The SDK never bundles, imports, or depends on `chroma-key-video` (or any keying/matting library) itself. This is glue: the same constructor-injection pattern `./experience/noise-suppressor` uses for `audioWorkletNodeConstructor`:
 
 ```js
 import { KalturaAvatarSession } from '@kaltura/intelligent-agents/experience';
@@ -751,7 +752,7 @@ await session.connect();
 **Behavior:**
 
 - **Construction is synchronous** — `attachChromaKeyAvatar()` returns the live `ChromaKeyVideo` instance immediately, no `Promise`.
-- **`videoEl` must be `session.videoEl`** — the session's own read-only getter for the element its WHEP downlink actually assigns `srcObject` to. Passing a second, different reference throws a `KalturaError` — this catches a stale/duplicated element before it silently keys the wrong stream.
+- **`videoEl` must be `session.videoEl`** — the session's own read-only getter for the element its WHEP downlink actually assigns `srcObject` to. Passing a second, different reference throws a `KalturaError`, catching a stale/duplicated element before it silently keys the wrong stream.
 - **Returned unwrapped, zero shadow API** — the returned `player` is the exact instance `ChromaKeyVideo` constructed, with no proxy or wrapping. It's a standard `EventTarget` — listen on `player` directly via `addEventListener` for its own events (e.g. `chroma-key-video`'s `'started'`/`'backend'`/`'error'`) — `attachChromaKeyAvatar()` never re-emits them onto `session`.
 - **Auto-cleanup** — `player.destroy()` is called exactly once, on the session's `'ended'` event, any FATAL `'error'` (`capacity_unavailable`/`tier_exceeded`/`bad_request`/`peer_removed`/ `unsupported_client`), or the session reaching its `'disconnected'` state — which is what `session.disconnect()`/`session.stop()` (the human-in-the-loop kill switch, e.g. a "leave call" button) triggers; that path never emits `'ended'` on its own. A transient/recoverable error (e.g. a socket hiccup the session itself reconnects from) does NOT destroy the player. Checks the player's own `isDestroyed` flag first, so an integrator who already called `player.destroy()` themselves never gets a second call, and all three teardown paths are safe to fire together or in any order.
 - **Idempotent, no double-wiring** — a second `attachChromaKeyAvatar()` call against a session that already has a live compositor logs `console.warn` and returns the EXISTING instance instead of constructing (and WebGL-context-leaking) a second one. Never throws for this.
@@ -776,7 +777,7 @@ These are importable from their entry points and useful when composing custom pi
 
 | Export | Description |
 |--------|-------------|
-| `collectConverse(stream)` | Collects a `converse()` async-iterable into a single assembled result (`text`, `toolCalls`, `threadId`, `_meta`, etc.) — use when you need the full turn result without `converseOnce`. Dedupes tool calls semantically (by name + `canonicalJson(args)`, matching the live session's dispatch dedup — a non-deterministic JSON key order on an LLM retry doesn't defeat it) and caps spiraling tool calls (`spiralStopped`) and total segments (`truncated`). Does NOT itself recover from an empty spiral — see `conversations.send({recoverFromSpiral:true})`/`converseOnce` above. |
+| `collectConverse(stream)` | Collects a `converse()` async-iterable into a single assembled result (`text`, `toolCalls`, `threadId`, `_meta`, etc.). Use when you need the full turn result without `converseOnce`. Dedupes tool calls semantically (by name + `canonicalJson(args)`, matching the live session's dispatch dedup, so a non-deterministic JSON key order on an LLM retry doesn't defeat it) and caps spiraling tool calls (`spiralStopped`) and total segments (`truncated`). Does NOT itself recover from an empty spiral. See `conversations.send({recoverFromSpiral:true})`/`converseOnce` above. |
 | `SPIRAL_RECOVERY_PREFIX` | The exact nudge text (`'Please answer in words only this turn, without calling any tool. '`) that `conversations.send({recoverFromSpiral:true})` prepends on its one headless recovery retry, and that `KalturaAvatarSession`'s `recoverFromSpiral` (default `true`) prepends on its one live-session auto-resend after a hard-spiral cold reconnect. Exported from `core/stream.js` (re-exported from `management/conversations.js` for back-compat) so callers can detect/strip it if they inspect raw thread history. |
 | `canonicalJson(value)` | Deterministic JSON serialization with object keys sorted at every nesting level (arrays keep order). The key shape both `collectConverse` and the live session's `onToolCall` dispatch use to dedup semantically-identical tool calls whose JSON key order the LLM emitted non-deterministically. |
 | `parseConverseStream(readable)` | Low-level NDJSON/SSE line parser. Turns a raw fetch `ReadableStream` into typed `Segment` objects — the foundation `converse()` builds on. |
@@ -784,6 +785,7 @@ These are importable from their entry points and useful when composing custom pi
 | `uuidv4()` | Cryptographically random UUID v4 (uses `crypto.randomUUID` when available, pure-JS fallback). |
 | `randId(prefix?)` | Short collision-resistant ID with an optional prefix — used for idempotency keys and `_meta` receipts. |
 | `parseCsv(text)` | Zero-dep CSV parser (RFC 4180). Used by the `tools.api` CSV response path. |
+| `inspectKs(ks)` | Decodes a KSv2 token's plaintext header client-side, no network call — reliably returns `partnerId`, but `kind`/`disableEntitlement` are populated only for unencrypted test tokens (a real KS's privileges are AES-encrypted and return `kind:'opaque'`, `encrypted:true`). Don't branch security logic on it — check the minted `Token.kind` instead. See [docs/ARCHITECTURE-REFERENCE.md](docs/ARCHITECTURE-REFERENCE.md#two-entry-points-one-shared-core) for the full caveat. |
 | `summarizeReport(rows, opts)` | Aggregates raw reporting rows into a `{ _meta, totals, byAgent, byThread }` summary — the same shape returned by `genie.mjs report-summary`. |
 | `lintPrompts(prompts, opts?)` / `validatePromptVars(text, vars)` / `lintGlossary(glossary)` / `assembleSystemPrompt(parts)` | The prompt-authoring toolchain (`management/prompt-lint.js`): lint a prompt set for the `SYS_VARS` an intellect actually supplies, validate a template's `{{var}}` references against a known var set, lint a glossary for duplicate/conflicting terms, and assemble a final system prompt from ordered parts. `lintPrompts` also takes `{allowClientVariables, knownVars}` and flags both gate/prompt mismatch directions — `client_variable_not_allowed` (error: a block references a client var but the gate is off), `vars_gate_unreferenced` and `known_var_unreferenced` (warnings: gate on / var sent, but no block reads it). Both mismatches fail silently live, so this lint is the only surface that catches them before a conversation does. |
 | `PAGE_CONTEXT_PROMPT` | The canonical, frozen prompt block that renders `{{page_context}}` — spread it into the `prompts[]` you provision instead of hand-rolling one, so `session.setDynamicPrompt()` payloads actually reach the brain. See [docs/DYNAMIC-DATA-INJECTION.md](docs/DYNAMIC-DATA-INJECTION.md). |
@@ -923,7 +925,7 @@ await mgmt.intellectConfig.setSkillIds(configId, [{ id: skill.id, mode: 'adhoc' 
 **Provider voice import** (`mgmt.catalog`) creates a catalog Voice item directly from an ElevenLabs or Cartesia voice id — no audio upload:
 
 ```js
-const v = await mgmt.catalog.importVoiceFromElevenLabs('EXAVITQu4vr4xnSDxMaL', ks);
+const v = await mgmt.catalog.importVoiceFromElevenLabs('EXAVITQu4vr4xnSDxMaL', ks); // ElevenLabs' own public sample voice id, safe to use as-is
 // or: await mgmt.catalog.importVoiceFromCartesia('<cartesia-voice-id>', ks);
 ```
 
@@ -978,7 +980,7 @@ const { configId } = await mgmt.intellects.create({
 const status = await mgmt.knowledge.isIndexed(rec.id, ks);
 ```
 
-Content modalities indexed: captions, OCR, document attachments. Don't use `knowledge.isIndexed()`'s `ready` flag, `knowledge.search()`'s "couldn't find relevant information" reply, or `knowledge.corpusStatus()`'s `populated` flag, as an indexing-status signal — see API-REFERENCE.md § Ground the Agent for why. A per-entry check (`knowledge.entryStatus()`) is coming, with general rollout expected in early September 2026 — don't build on it yet.
+Content modalities indexed: captions, OCR, document attachments. Don't use `knowledge.isIndexed()`'s `ready` flag, `knowledge.search()`'s "couldn't find relevant information" reply, or `knowledge.corpusStatus()`'s `populated` flag, as an indexing-status signal — see API-REFERENCE.md § Ground the Agent for why. A per-entry check (`knowledge.entryStatus()`) exists but is not yet generally available on every deployment — check with your Kaltura account team before building on it.
 
 Knowledge records have full lifecycle CRUD:
 

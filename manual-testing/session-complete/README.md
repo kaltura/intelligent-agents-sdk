@@ -1,6 +1,6 @@
 # Manual test plan: `session_completed` lifecycle signal
 
-This covers everything about the `session_completed` signal (`src/experience/session-complete.js`) that automation can't verify. The automated coverage — `npm run live-verify:session-complete`, run against Chromium, Firefox, and WebKit on every merge (see `scripts/live-verify-session-complete.mjs` and `.github/workflows/live-verify.yml`) — already proves the mechanism works correctly across desktop browser engines, against the real Kaltura backend. What it *can't* reach is real mobile OS behavior: Playwright's `webkit` engine is desktop Safari's rendering engine, not the real iOS Safari runtime, and no browser-automation tool can simulate real OS-level backgrounding, memory-pressure tab kills, or force-quit. That gap is what this folder is for.
+This covers everything about the `session_completed` signal (`src/experience/session-complete.js`) that automation can't verify. The automated coverage (`npm run live-verify:session-complete`, run against Chromium, Firefox, and WebKit on every merge; see `scripts/live-verify-session-complete.mjs` and `.github/workflows/live-verify.yml`) already proves the mechanism works correctly across desktop browser engines, against the real Kaltura backend. What it *can't* reach is real mobile OS behavior. Playwright's `webkit` engine is desktop Safari's rendering engine, not the real iOS Safari runtime, and no browser-automation tool can simulate real OS-level backgrounding, memory-pressure tab kills, or force-quit. That gap is what this folder is for.
 
 ## What you're testing
 
@@ -15,14 +15,14 @@ When a conversation ends, the SDK POSTs `{genieUrl}/thread/session_completed` so
    node manual-testing/session-complete/mint.mjs
    ```
    This mints a throwaway intellect and a 4-hour conversation token, then serves the test app over your LAN and prints a URL like `http://192.168.x.x:4787/manual-testing/session-complete/app.html?token=...`.
-3. Open that URL on each device you're testing. All devices must be on the same Wi-Fi network as the machine running `mint.mjs` (it binds to your LAN IP, not just localhost). For a device that can't reach your LAN (a real cellular connection, a separate network), tunnel the port instead — e.g. `ngrok http 4787` — and use the tunnel's HTTPS URL in place of the LAN one printed above (some mobile browser features, like BroadcastChannel-based presence, work identically over HTTP or HTTPS, but prefer HTTPS when tunneling since it's closer to a real production deployment).
+3. Open that URL on each device you're testing. All devices must be on the same Wi-Fi network as the machine running `mint.mjs` (it binds to your LAN IP, not just localhost). For a device that can't reach your LAN (a real cellular connection, a separate network), tunnel the port instead (e.g. `ngrok http 4787`) and use the tunnel's HTTPS URL in place of the LAN one printed above. Some mobile browser features, like BroadcastChannel-based presence, work identically over HTTP or HTTPS. Still, prefer HTTPS when tunneling, since it's closer to a real production deployment.
 4. When you're done testing, press Ctrl+C in the `mint.mjs` terminal. It deletes the throwaway intellect automatically.
 
 Leave the `mint.mjs` terminal visible for the whole session — it's your primary source of truth (see below).
 
 ## Why the terminal log is the one that counts
 
-The app's `genieUrl` is pointed back at `mint.mjs` itself (`location.origin`), which transparently proxies every real `/assistant/*` and `/thread/*` call through to the real production backend. That's deliberate: for the flows this document exists to test — a tab that gets killed, a phone that gets locked, a browser that force-quits — the page may die before it gets a chance to render, log, or run any JavaScript at all. The on-page log panel is convenient for the golden-path flows where the page survives, but the `mint.mjs` terminal is the only log that's guaranteed to show what actually happened, because it's server-side and unaffected by the page's own death. For every flow below, treat a terminal line like this as the real result:
+The app's `genieUrl` is pointed back at `mint.mjs` itself (`location.origin`), which transparently proxies every real `/assistant/*` and `/thread/*` call through to the real production backend. That's deliberate. For the flows this document exists to test (a tab that gets killed, a phone that gets locked, a browser that force-quits), the page may die before it gets a chance to render, log, or run any JavaScript at all. The on-page log panel is convenient for the golden-path flows where the page survives. But the `mint.mjs` terminal is the only log that's guaranteed to show what actually happened, because it's server-side and unaffected by the page's own death. For every flow below, treat a terminal line like this as the real result:
 
 ```
 [2026-09-01T17:14:57.449Z] session_completed  thread=<id>  auth=present  from=<ip>
