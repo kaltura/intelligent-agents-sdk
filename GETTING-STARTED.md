@@ -97,6 +97,8 @@ const reply = await kaltura.converseOnce('<configId from Step 3>', 'Hello again!
 
 `userId` is optional everywhere it's accepted — omit it and you get the same anonymous behavior shown above. See [API-REFERENCE.md](docs/api/authentication.md#authentication) → "Bind a session to a real end-user identity" for the full picture.
 
+**Using [lifecycle rules](docs/api/build.md#lifecycle-event-driven-rules) scoped to a specific agent (`object.agent_id`)?** A thread created with a plain conversation token (as above) always gets `agent_id:"default"` and can never match those rules. Mint with `mgmt.sessions.createAgentToken({ agentId })` instead — see `docs/api/build.md`'s Lifecycle section for why.
+
 ---
 
 ## What's next?

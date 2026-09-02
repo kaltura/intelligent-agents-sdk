@@ -44,7 +44,7 @@ export async function provision(mgmt, opts) {
 
     step = 'intellect.add';
     const intel = await mgmt.intellects.add({ type: 'internal', status: 2 }, opts.ks);
-    const configId = resolveIntellectId(intel) ?? intel?.id;
+    const configId = resolveIntellectId(intel);
     if (!configId) throw new Error('intellect.add returned no id');
     created.configId = configId;
 

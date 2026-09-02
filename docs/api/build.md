@@ -435,6 +435,8 @@ await mgmt.lifecycle.create({
 
 A support lead gets emailed every time this specific agent's conversation analysis updates, without polling.
 
+**A rule filtering on `object.agent_id` only matches threads created with an agent-scoped KS.** Mint the conversation token with `mgmt.sessions.createAgentToken({ agentId })` (`agentid:<agentId>`), not `createConversationToken({ configId })` (`geniegpcid:<configId>`) — the latter has no agent claim at all, so the resulting thread's `agent_id` is `"default"` and can never match a rule scoped to a real agent uuid. This applies whether the conversation happens over `mgmt.conversations.send()`/`.stream()` or a real avatar/socket session — the agent binding lives entirely in the KS's privilege claim, not in the call itself. See [`createAgentToken`](../../src/core/session.js) for details.
+
 **Business use-case 3 — power a no-code rule editor:** the 4 discovery methods let a UI populate its own dropdowns instead of hardcoding enums that will drift from the backend:
 
 ```js

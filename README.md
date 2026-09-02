@@ -205,6 +205,8 @@ console.log(result.text, result.threadId);
 
 Pass `recoverFromSpiral: true` (to `converseOnce` or `conversations.send`) to auto-recover from the empty-spiral case: a tool-call loop so long the brain never reaches a spoken sentence in that turn (`spiralStopped:true` with `text:''`) leaves nothing to fall back to in the same turn, since headless HTTP has no live-socket `interrupt()`/reconnect to fall back on. The result then carries `spiralRecovered` (`true`/`false`) and `firstAttempt: {toolCalls, spiralStopped}` from the discarded empty attempt. Off by default — omit the option for the original untouched behavior. See [Spiral recovery auto-resend](#resilience-brain-stalls-and-tool-call-spirals) below for how the shared `SPIRAL_RECOVERY_PREFIX` resend mechanism works; the headless path triggers it from an empty first attempt rather than a hard-spiral cold reconnect.
 
+`mgmt.converse()`/`converseOnce()` auto-mint a plain conversation token (`geniegpcid:<configId>`) — fine for talking to the intellect, but the resulting thread's `agent_id` is `"default"`, so it can never match a [lifecycle rule](docs/api/build.md#lifecycle-event-driven-rules) scoped to `object.agent_id`. For that, mint with `mgmt.sessions.createAgentToken({ agentId })` and pass it as the `ks` argument instead.
+
 ---
 
 ## Experience
