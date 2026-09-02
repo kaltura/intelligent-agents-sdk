@@ -91,7 +91,7 @@ Full record lifecycle. SDK: `mgmt.knowledge`. Linkage to an intellect is via `kn
 | Get | `POST /v1/knowledge/get` | `{"id":2049}` |
 | Update | `POST /v1/knowledge/update` | `{"id":2049, ...fields}` — `config` is accepted but is a FULL REPLACE on the backend; use `addSource`/`removeSource` below instead of hand-assembling `config.sources` |
 | Delete | `POST /v1/knowledge/delete` | `{"id":2049}` — HTTP 200, body `null`; a follow-up get 404s |
-| Per-entry status *(not yet GA — coming ~early Sept 2026)* | `POST /v1/knowledge/entry_status` | `{"knowledge_id":2049, "entry_ids":["0_abc123"]}` |
+| Per-entry status *(not yet GA on every deployment — check with your Kaltura account team)* | `POST /v1/knowledge/entry_status` | `{"knowledge_id":2049, "entry_ids":["0_abc123"]}` |
 
 `mgmt.knowledge.isIndexed(id, ks)` wraps Get and reads `status`/`config.sources[].indexers[].index_position`. `status` is the record's own container-lifecycle flag, not an indexing-completion signal: see [build.md § Ground the Agent](build.md#ground-the-agent-in-your-content-rag) for why, and for the real indexing-completion check.
 

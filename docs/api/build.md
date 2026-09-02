@@ -296,7 +296,7 @@ Writes through the intellect DTO — no `partner-config/update`, no 403. RAG ret
 
 Don't use `knowledge.search()` as a substitute either. Its "couldn't find relevant information" reply fires alike for an unindexed KB, an indexed KB with `use_knowledge_base:'off'`, or a genuine no-match query, so it can't signal indexing status. `knowledge.corpusStatus()` only counts entries that exist in the category, not whether they've finished embedding. `knowledge.indexStatus()` (`partner-config/stats`) 403s for a partner admin KS on at least one deployment.
 
-A per-entry indexing-status check (`knowledge.entryStatus(knowledgeId, entryIds, ks)`) is coming. It will be the correct way to verify specific uploaded content has finished indexing, with general rollout expected in early September 2026 — don't build on it yet. A knowledge-level status check that doesn't require elevated privilege is coming soon too.
+A per-entry indexing-status check, `knowledge.entryStatus(knowledgeId, entryIds, ks)`, exists in the SDK and is the correct way to verify specific uploaded content has finished indexing. It's not yet generally available on every deployment — check with your Kaltura account team before relying on it. A knowledge-level status check that doesn't require elevated privilege is planned for a future release.
 
 Until then, there's no reliable completion signal to poll — budget a fixed wait after upload instead of polling `isIndexed()` (which is `ready:true` from the first call and never tells you more):
 

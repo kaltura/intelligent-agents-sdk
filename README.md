@@ -980,7 +980,7 @@ const { configId } = await mgmt.intellects.create({
 const status = await mgmt.knowledge.isIndexed(rec.id, ks);
 ```
 
-Content modalities indexed: captions, OCR, document attachments. Don't use `knowledge.isIndexed()`'s `ready` flag, `knowledge.search()`'s "couldn't find relevant information" reply, or `knowledge.corpusStatus()`'s `populated` flag, as an indexing-status signal — see API-REFERENCE.md § Ground the Agent for why. A per-entry check (`knowledge.entryStatus()`) is coming, with general rollout expected in early September 2026 — don't build on it yet.
+Content modalities indexed: captions, OCR, document attachments. Don't use `knowledge.isIndexed()`'s `ready` flag, `knowledge.search()`'s "couldn't find relevant information" reply, or `knowledge.corpusStatus()`'s `populated` flag, as an indexing-status signal — see API-REFERENCE.md § Ground the Agent for why. A per-entry check (`knowledge.entryStatus()`) exists but is not yet generally available on every deployment — check with your Kaltura account team before building on it.
 
 Knowledge records have full lifecycle CRUD:
 
