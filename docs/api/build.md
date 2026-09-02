@@ -395,6 +395,8 @@ readOnly.agent_llm; // { value: <whatever intellect/get returns for this key, if
 
 Today, "summarize every ended session and email the account owner" means polling for finished threads yourself. Lifecycle removes the polling: create a **rule** once, and the backend fires its **action** automatically every time a matching event happens, server-side. Mounted at `mgmt.lifecycle`.
 
+New to this? [`docs/LIFECYCLE-INSIGHTS-RECIPE.md`](../LIFECYCLE-INSIGHTS-RECIPE.md) is a hands-on walkthrough of the two action types below, with a runnable example — this section is the field-by-field reference it links back to.
+
 A rule is `{eventType, objectType, eventConditions, action}`:
 
 - `eventType` — e.g. `session_ended`, `analysis_updated`.

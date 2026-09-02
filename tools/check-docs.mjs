@@ -33,7 +33,8 @@ const DOCS = [
   'docs/WIRE-PROTOCOL.md', 'docs/GENUI-REFERENCE.md',
   'docs/CLIENT-COMMANDS.md', 'docs/DYNAMIC-DATA-INJECTION.md',
   'docs/STRUCTURED-DATA-FORMS.md', 'docs/EXTERNAL-API-INTEGRATIONS.md',
-  'docs/VOICE-INPUT-MODES.md', 'docs/USE-CASES.md', 'SECURITY.md', 'SDK_CONSTITUTION.md',
+  'docs/VOICE-INPUT-MODES.md', 'docs/USE-CASES.md', 'docs/LIFECYCLE-INSIGHTS-RECIPE.md',
+  'SECURITY.md', 'SDK_CONSTITUTION.md',
 ];
 
 /** Read a file relative to ROOT, return empty string if missing. */
