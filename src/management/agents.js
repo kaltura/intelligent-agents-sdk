@@ -122,9 +122,8 @@ export class Agents {
 }
 
 /**
- * Resolve the intellect id field. A fetched agent's `intellect` exposes a
- * numeric `id` (the `configId` field the backend used to also send has been
- * removed). Returns that id, or `undefined` if absent/non-numeric.
+ * Guard for an agent's `intellect.id`. Returns the id only if `intellect` is
+ * an object and `id` is a number; `undefined` otherwise.
  * @param {{id?:number, [k:string]:unknown}} intellect
  * @returns {number|undefined}
  */
