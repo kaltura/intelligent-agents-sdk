@@ -26,6 +26,12 @@ name: Live verification
 # path-filter below correctly resolves to skipped for a docs-only PR — it has
 # nothing to verify against the real backend either way.
 #
+# live-verify-browser gates on its own narrower `browser` path-filter output,
+# not `code` — it only needs to run when something that actually affects the
+# browser/WebRTC path changed (src/experience/**, examples/**, its own
+# script, package.json/package-lock.json, or this workflow file), not on
+# every merge that touches src/**.
+#
 # The live-verify job covers the server-side management/conversation path
 # only. live-verify-browser (below) covers the actual browser/WebRTC path:
 # a real provisioned avatar, a headless Chromium with fake-but-real-pipeline
@@ -57,6 +63,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       code: ${{ steps.filter.outputs.code }}
+      browser: ${{ steps.filter.outputs.browser }}
     steps:
       - name: 📥 Check out the repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -78,6 +85,13 @@ jobs:
               - '.eslintrc*'
               - 'eslint.config.*'
               - '.github/workflows/**'
+            browser:
+              - 'src/experience/**'
+              - 'examples/**'
+              - 'scripts/live-verify-browser.mjs'
+              - 'package.json'
+              - 'package-lock.json'
+              - '.github/workflows/live-verify.yml'
 
   live-verify:
     name: 🔴 Live verification
@@ -178,8 +192,8 @@ jobs:
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' ||
-      ((github.event_name == 'merge_group' || github.event.label.name == 'run-live-verify') && needs.changes.outputs.code == 'true')
-    runs-on: ubuntu-latest
+      ((github.event_name == 'merge_group' || github.event.label.name == 'run-live-verify') && needs.changes.outputs.browser == 'true')
+    runs-on: ${{ matrix.os }}
     environment: live-verify
     strategy:
       fail-fast: false
@@ -191,7 +205,21 @@ jobs:
         # offer with `a=inactive` and no frame arrives). live-verify-browser.mjs
         # enables the GMP fetch via firefoxUserPrefs and waits (measured 20-40s
         # against Mozilla's real update service, 120s budget) before navigating.
-        engine: [chromium, firefox, webkit]
+        #
+        # webkit runs on macos-14, not ubuntu-latest: Linux WebKitGTK has no
+        # built-in H264 decoder and, confirmed by real CI runs, apt-installing
+        # GStreamer's H264 plugins doesn't fix it either — Playwright's WebKit
+        # build on Linux doesn't decode through them. macOS WebKit decodes H264
+        # natively via AVFoundation, matching what already passes reliably in
+        # local dev. macOS runner minutes bill at ~10x Linux's rate, but this
+        # job only runs on merge_group/label/dispatch, not every PR push.
+        include:
+          - engine: chromium
+            os: ubuntu-latest
+          - engine: firefox
+            os: ubuntu-latest
+          - engine: webkit
+            os: macos-14
     steps:
       - name: 📥 Check out the repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -206,12 +234,6 @@ jobs:
 
       - name: 🎭 Install ${{ matrix.engine }}
         run: npx playwright install --with-deps ${{ matrix.engine }}
-
-      - name: 🎞️ Install GStreamer H264 decode plugins (Linux WebKitGTK has no built-in H264 decoder — `--with-deps` doesn't pull one in, unlike macOS/iOS WebKit's native AVFoundation decode)
-        if: matrix.engine == 'webkit'
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq gstreamer1.0-plugins-bad gstreamer1.0-libav
 
       - name: 🔴🌐 Provision a real avatar → render in headless ${{ matrix.engine }} → verify chroma-key + mic audio flow → cleanup
         id: live_verify_browser
