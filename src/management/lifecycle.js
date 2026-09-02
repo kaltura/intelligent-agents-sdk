@@ -21,7 +21,9 @@
  * `{actionType:'triggerOverridableSummaryInsight'}` (system preset only —
  * customize its prompt via `agents.update({agentId, summaryOverridePrompt})`,
  * not a rule), and `{actionType:'triggerDataToCollectInsight'}` (system
- * preset only, currently disabled account-wide). See
+ * preset only, currently disabled account-wide — would extract one insight
+ * per configured lead-capture field, `intellectConfig.user_properties_forms`,
+ * if enabled). See
  * `docs/LIFECYCLE-INSIGHTS-RECIPE.md` for the full explanation. Mounted at
  * `mgmt.lifecycle`.
  */

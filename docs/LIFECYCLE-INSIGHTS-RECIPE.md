@@ -86,14 +86,14 @@ insights: [
 
 ## The four action types, and why you only need two
 
-The backend recognizes four `actionType` values, not two. Two are meant for you to create — `triggerInsight` and `sendInsightEmail`, both covered above. The other two only exist to power system preset rules; creating them yourself is accepted by the API but pointless.
+The backend recognizes four `actionType` values, not two. Two are meant for you to create; the other two only exist to power system preset rules — creating them yourself is accepted by the API but has no effect, because their behavior is hardcoded and ignores anything you pass.
 
-| `actionType` | Who creates it | What it does |
-|---|---|---|
-| `triggerInsight` | You | Extracts whatever insights you ask for |
-| `sendInsightEmail` | You | Emails a human |
-| `triggerOverridableSummaryInsight` | Nobody — system preset only | Always extracts exactly one fixed `SUMMARY` insight, no `insights` array to configure |
-| `triggerDataToCollectInsight` | Nobody — tied to a preset that's currently disabled account-wide | Would extract one insight per `user_properties_forms` field, if that preset were ever turned on |
+| `actionType` | Who creates it | What it does | Why / when you'd use it |
+|---|---|---|---|
+| `triggerInsight` | You | Runs an LLM over the conversation and writes back exactly the fields you defined in `insights` — a built-in key (`SUMMARY`/`SENTIMENT`/`TOPIC`, each with a ready-made prompt) or any custom key name paired with your own `prompt` | Whenever you need a specific piece of structured data pulled out of a conversation: a topic tag for a dashboard, a lead-quality score, a recommended next step. This is Recipe A. |
+| `sendInsightEmail` | You | Sends an email to a Kaltura user, filling an email template from the thread's already-extracted insight values | Whenever a human needs to know the moment a specific insight is ready — e.g. alert a support lead as soon as a conversation's analysis lands. This is Recipe B. |
+| `triggerOverridableSummaryInsight` | Nobody — system preset only | Always produces one fixed insight, key `SUMMARY`, using a built-in prompt (or your agent's `summaryOverridePrompt`, if set) | Never create this yourself — every agent already gets it automatically, with no rule needed. Its only lever is `agents.update({agentId, summaryOverridePrompt})`, covered below. |
+| `triggerDataToCollectInsight` | Nobody — powers a preset that's disabled for every account today | If ever enabled, would turn each of the intellect's configured lead-capture form fields (`intellectConfig.user_properties_forms` — the fields you'd ask a lead for, e.g. name/company/email) into its own insight | Not usable today under any account. Ignore it. |
 
 ### Every session already gets a `SUMMARY`, for free
 
