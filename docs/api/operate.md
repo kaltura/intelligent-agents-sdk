@@ -110,6 +110,18 @@ SDK: `mgmt.threads.{list, get, rename, delete, transcript}`.
 
 > **Compliance note.** `threads.delete()` soft-deletes immediately; a scheduled infra-level purge erases the underlying data later. See [SECURITY.md](../../SECURITY.md#shared-responsibility-control-matrix-nist-800-53) for what the SDK provides versus what the operator must configure.
 
+## Session-Completion Signal
+
+Unlike the admin-KS thread endpoints above, this one is called from the browser client itself, with the same **conversation KS** (`geniegpcid`) used for every other client-facing call — it mints nothing new and needs no elevated privilege.
+
+| Operation | Endpoint | Body | Auth |
+|-----------|----------|------|------|
+| Session completed | `POST {genieUrl}/thread/session_completed` | `{"id":"<threadId>"}` | `Authorization: KS <conversation ks>` |
+
+`{genieUrl}` defaults to `https://genie.nvp1.ovp.kaltura.com` (no `/v1` prefix — a different route family from the thread CRUD above). Idempotent (a repeat call for the same thread is a no-op server-side); no rate limit; can block up to ~10s on a backend publish-ack, so a client must never await it on a page-unload path.
+
+Tell the backend a conversation is genuinely over the moment it happens, instead of waiting for the ~10-minute idle scanner — so end-of-conversation lifecycle rules (summaries, insights, CRM pushes) fire in seconds. SDK: `KalturaAvatarSession`/`KalturaChatSession`/`KalturaAgentSession` call this automatically on `disconnect()` (`sessionCompleteOnEnd`, default `true`) and on tab-close/backgrounding/bfcache — see [README.md § Ending a conversation cleanly](../../README.md#ending-a-conversation-cleanly-session_completed-signal) for the full config surface, and [WIRE-PROTOCOL.md](../WIRE-PROTOCOL.md) for the exact request shape.
+
 ## Thread History and Per-Turn Cost
 
 There is no documented cap on how long a thread's history can grow. The full transcript is sent as model context on every turn, so per-turn cost grows with thread length — plan long-running threads accordingly: start a fresh thread per task, and delete threads you no longer need.

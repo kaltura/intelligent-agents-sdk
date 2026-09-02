@@ -42,6 +42,7 @@ import {
   parseConverseStream, parseToolCall, parseToolResponseName, canonicalJson,
   validateToolArgs, SPOKEN_TYPES,
 } from '../core/stream.js';
+import { createSessionCompleter } from './session-complete.js';
 
 // A bare `keepalive` segment (Genie pinging a still-open-but-otherwise-quiet stream)
 // is not perceivable output — it must not settle the "thinking" signal or the
@@ -84,6 +85,17 @@ export class KalturaChatSession extends Emitter {
    *   there is no hard-limit cold-reconnect escalation here — a chat turn is a plain HTTPS request
    *   with no socket to rebuild, so a stuck turn is bounded by the caller's own `sendText({signal})`
    *   abort, not by this session. Default 10. Set 0/false to disable.
+   * @param {boolean} [cfg.sessionCompleteOnEnd] Signal genie (`POST {genieUrl}/thread/session_completed`) the moment this conversation truly ends. Default true; `false` restores pre-1.12 behavior exactly. See `KalturaAvatarSession`'s cfg doc for the full option set (identical names/defaults on both transports).
+   * @param {string} [cfg.sessionCompletePath] Default `'/thread/session_completed'`.
+   * @param {number} [cfg.sessionCompleteTimeoutMs] Default 5000.
+   * @param {boolean} [cfg.pageLifecycleAware] Default true when `document.addEventListener` exists.
+   * @param {number} [cfg.hiddenGraceMs] Default 30000.
+   * @param {boolean} [cfg.completeOnHiddenGrace] Default true.
+   * @param {boolean} [cfg.completeOnBfcache] Default true.
+   * @param {boolean} [cfg.crossTabPresence] Default true in a browser (`document` + `BroadcastChannel` both exist) — Node has a global `BroadcastChannel` too, but presence tracking is a same-device-tab feature and must not open one server-side.
+   * @param {string} [cfg.presenceChannelPrefix] Default `'kaltura-agents:thread'`.
+   * @param {number} [cfg.presenceHeartbeatMs] Default 4000.
+   * @param {number} [cfg.presenceStaleMs] Default 12000.
    */
   constructor(cfg) {
     super();
@@ -130,6 +142,33 @@ export class KalturaChatSession extends Emitter {
     this._toolSpiralLimit = cfg.toolSpiralLimit ?? 10;
     this._turnToolSegCount = 0;
     this._toolSpiralSignaled = false;
+    // Signal genie the moment the conversation truly ends — the exact peer of
+    // KalturaAvatarSession's completer (see session-complete.js).
+    this._completer = createSessionCompleter({
+      fetch: this._fetch,
+      genieUrl: this._genieUrl,
+      path: cfg.sessionCompletePath || '/thread/session_completed',
+      getToken: () => this._token,
+      audit: this._audit,
+      emit: (ev, payload) => this.emit(ev, payload),
+      log: this._log,
+      now: this._now,
+      enabled: cfg.sessionCompleteOnEnd ?? true,
+      timeoutMs: cfg.sessionCompleteTimeoutMs ?? 5000,
+      pageLifecycleAware: cfg.pageLifecycleAware ?? (typeof document !== 'undefined' && typeof document.addEventListener === 'function'),
+      hiddenGraceMs: cfg.hiddenGraceMs ?? 30000,
+      completeOnHiddenGrace: cfg.completeOnHiddenGrace ?? true,
+      completeOnBfcache: cfg.completeOnBfcache ?? true,
+      // Gated on `document` too, not just the constructor — Node ships a global
+      // BroadcastChannel that would otherwise open a real channel (and keep the
+      // process alive) outside a browser. Presence tracking is a same-device-tab
+      // feature; it has no meaning server-side.
+      crossTabPresence: cfg.crossTabPresence ?? (typeof document !== 'undefined' && typeof BroadcastChannel === 'function'),
+      presenceChannelPrefix: cfg.presenceChannelPrefix || 'kaltura-agents:thread',
+      presenceHeartbeatMs: cfg.presenceHeartbeatMs ?? 4000,
+      presenceStaleMs: cfg.presenceStaleMs ?? 12000,
+    });
+    if (this._threadId) this._completer.noteThreadId(this._threadId);
     /** @type {'idle'|'connected'|'closed'} */
     this.state = 'idle';
   }
@@ -148,6 +187,7 @@ export class KalturaChatSession extends Emitter {
       throw new KalturaError({ type: 'about:blank', title: 'already started', code: 'invalid_state', detail: `connect() is only valid once, from state "idle" (state="${this.state}") — construct a new KalturaChatSession to reconnect.` });
     }
     this._setState('connected');
+    this._completer.wire();
   }
 
   /**
@@ -220,7 +260,8 @@ export class KalturaChatSession extends Emitter {
         // spiral (or a stuck backend call pinging bare keepalives) still surfaces `brainStalled`.
         if (seg.type && (SPOKEN_TYPES.has(seg.type) || seg.type === 'unisphere-tool')) this._clearBrainWatchdog();
         segments.push(seg);
-        if (seg.threadId && !this._threadId) this._threadId = seg.threadId;
+        this._completer.touch();
+        if (seg.threadId && !this._threadId) { this._threadId = seg.threadId; this._completer.noteThreadId(this._threadId); }
         if (seg.messageId && !this._lastMessageId) this._lastMessageId = seg.messageId;
         if (seg.type === 'tool') this._checkToolSpiral();
         const call = parseToolCall(seg);
@@ -371,17 +412,37 @@ export class KalturaChatSession extends Emitter {
    * End the session. Idempotent: safe to call from any state, repeat calls
    * no-op. Aborts an in-flight turn, clears pending tool ACKs, and drops the
    * token. Terminal — construct a new KalturaChatSession to talk again.
+   * @param {{final?:boolean, reason?:string}} [opts]  `final` (default true) signals genie
+   *   that the conversation is truly over (`POST {genieUrl}/thread/session_completed`); pass
+   *   `{final:false}` for an internal teardown that isn't a real end (e.g. a mode switch
+   *   elsewhere preserving thread continuity). `reason` rides the `session.complete` audit event.
    */
-  disconnect() {
+  disconnect(opts = {}) {
     if (this.state === 'closed') return;
     this._sessionGen++;
     this._clearBrainWatchdog();
     this._activeTurnAbort?.abort();
     this._pendingToolAcks.clear();
+    // Fire the completion signal before the token is dropped below — finalize() reads the
+    // token synchronously before its first await, same posture as KalturaAvatarSession.disconnect.
+    if (opts.final !== false) this._completer.finalize(opts.reason || 'disconnect').catch(() => {});
+    this._completer.unwire();
     this._token = null;   // don't hold the secret past the session
     this._audit('session.disconnect', 'success', {});
     this._setState('closed');
     this.emit('ended', { reason: 'disconnected' });
+  }
+
+  /**
+   * Send the "conversation is truly over" signal to genie without tearing anything down —
+   * for apps with their own teardown flow (server-side, logout hooks, cross-device end-session
+   * buttons a same-device `BroadcastChannel` can't see). Idempotent: a second call (including
+   * one already triggered by `disconnect()`) resolves `{ok:true, reason:'already_sent'}`.
+   * @returns {Promise<{ok:boolean, reason?:string, peers?:number}>}
+   */
+  async completeThread() {
+    if (this.state === 'closed') throw new KalturaError({ type: 'about:blank', title: 'not connected', code: 'invalid_state', detail: 'completeThread() requires a session that has not already disconnected.' });
+    return this._completer.finalize('manual');
   }
 
   /**

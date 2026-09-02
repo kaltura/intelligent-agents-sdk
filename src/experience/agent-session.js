@@ -109,7 +109,7 @@ export class KalturaAgentSession extends Emitter {
       await t.connect();
       this._setState('connected');
     } catch (e) {
-      this._teardownTransport();
+      this._teardownTransport({ final: false });
       this._setState('failed', e && e.code === 'permission_denied' ? 'permission_denied' : 'transport_failed');
       throw e;
     }
@@ -140,7 +140,7 @@ export class KalturaAgentSession extends Emitter {
       this._setState('switching', 'user_requested');
       this._threadId = this._transport.threadId ?? this._threadId;
       const hadThread = this._threadId !== undefined && this._threadId !== null;
-      this._teardownTransport();
+      this._teardownTransport({ final: false });
       const t = this._buildTransport(target);
       this._mode = target;   // before _attach so transportChanged carries the new mode
       this._attach(t);
@@ -154,7 +154,7 @@ export class KalturaAgentSession extends Emitter {
       const buffered = this._switchBuffer.splice(0);
       for (const b of buffered) b.resolve(this._deliver(b.text, b.opts));
     } catch (e) {
-      this._teardownTransport();
+      this._teardownTransport({ final: false });
       this._setState('failed', 'transport_failed');
       const buffered = this._switchBuffer.splice(0);
       for (const b of buffered) b.reject(e);
@@ -258,10 +258,12 @@ export class KalturaAgentSession extends Emitter {
    * live transport (if any), drops the token, and emits a single
    * `ended {reason:'disconnected'}`. Terminal — construct a new
    * KalturaAgentSession to talk again.
+   * @param {{final?:boolean, reason?:string}} [opts]  Passed straight through
+   *   to the live transport's `disconnect(opts)` — see `KalturaAvatarSession.disconnect`.
    */
-  disconnect() {
+  disconnect(opts = {}) {
     if (this.state === 'closed') return;
-    this._teardownTransport();
+    this._teardownTransport(opts);
     this._token = null;
     const buffered = this._switchBuffer.splice(0);
     const err = new KalturaError({ type: 'about:blank', title: 'disconnected', code: 'invalid_state', detail: 'session was disconnected while a sendText() was buffered.' });
@@ -333,13 +335,13 @@ export class KalturaAgentSession extends Emitter {
     this.emit('transportChanged', { mode: this._mode, transport: t });
   }
 
-  /** Detach the bridge, unbind tool handlers, disconnect and drop the transport. */
-  _teardownTransport() {
+  /** Detach the bridge, unbind tool handlers, disconnect and drop the transport. @param {{final?:boolean, reason?:string}} [opts] */
+  _teardownTransport(opts) {
     for (const fn of this._detachFns.splice(0)) { try { fn(); } catch { /* listener already gone */ } }
     for (const list of this._toolRegistry.values()) for (const entry of list) entry.rebind(null);
     const t = this._transport;
     this._transport = null;
-    if (t) { try { t.disconnect(); } catch (e) { this._cfg.logger?.('warn', 'transport disconnect threw', e); } }
+    if (t) { try { t.disconnect(opts); } catch (e) { this._cfg.logger?.('warn', 'transport disconnect threw', e); } }
   }
 
   /** @param {string} where */

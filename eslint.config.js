@@ -49,9 +49,12 @@ const browserGlobals = {
   registerProcessor: 'readonly',
   CustomEvent: 'readonly',
   Event: 'readonly',
+  PageTransitionEvent: 'readonly',
   HTMLElement: 'readonly',
   requestAnimationFrame: 'readonly',
   cancelAnimationFrame: 'readonly',
+  crypto: 'readonly',
+  BroadcastChannel: 'readonly',
 };
 
 const testGlobals = {
@@ -77,6 +80,27 @@ export default [
       ecmaVersion: 2024,
       sourceType: 'module',
       globals: browserGlobals,
+    },
+  },
+  {
+    // Node script, but its page.evaluate() callback bodies are genuinely
+    // browser-context code (Playwright serializes them to run inside the
+    // page) — give this file both worlds rather than scripts/**'s Node-only set.
+    files: ['scripts/live-verify-session-complete.mjs', 'scripts/verify-noise-suppressor.mjs', 'scripts/live-verify-browser.mjs'],
+    languageOptions: {
+      ecmaVersion: 2024,
+      sourceType: 'module',
+      globals: browserGlobals,
+    },
+  },
+  {
+    // Node script that also proxies HTTP requests, hence the one addition
+    // (`fetch`) beyond nodeGlobals — everything else here is plain server-side Node.
+    files: ['manual-testing/**/*.mjs'],
+    languageOptions: {
+      ecmaVersion: 2024,
+      sourceType: 'module',
+      globals: { ...nodeGlobals, fetch: 'readonly' },
     },
   },
   {

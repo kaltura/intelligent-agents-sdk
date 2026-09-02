@@ -151,6 +151,33 @@ export function iceConfig(channel, turn, isFirefox = false) {
 }
 
 /**
+ * `new RTCCtor(config)`, with one feature-detected fallback: WebKit's native
+ * ICE-server URL parser rejects ANY `?transport=` query string on a
+ * `turn:`/`turns:` URL (confirmed live — `new RTCPeerConnection()` throws
+ * synchronously, "Invalid TURN URL query string", before any connection
+ * attempt). Retried once with those query strings stripped — `turn:host:443`
+ * still defaults to UDP and `turns:host:443` still defaults to TCP+TLS per
+ * RFC 7065, so 3 of the 4 urls() built by turnServers() keep working
+ * unchanged; only the plain-TCP-on-port-80 fallback (which has no
+ * query-less spelling) is lost, on this engine only.
+ * @param {new (config: RTCConfiguration) => RTCPeerConnection} RTCCtor
+ * @param {RTCConfiguration} config
+ */
+export function createPeerConnection(RTCCtor, config) {
+  try {
+    return new RTCCtor(config);
+  } catch (err) {
+    const hasQuery = config.iceServers?.some((s) => (Array.isArray(s.urls) ? s.urls : [s.urls]).some((u) => typeof u === 'string' && u.includes('?')));
+    if (!hasQuery || !/turn url query string/i.test(String(err?.message))) throw err;
+    const stripped = config.iceServers.map((s) => ({
+      ...s,
+      urls: (Array.isArray(s.urls) ? s.urls : [s.urls]).map((u) => (typeof u === 'string' ? u.split('?')[0] : u)),
+    }));
+    return new RTCCtor({ ...config, iceServers: stripped });
+  }
+}
+
+/**
  * The `join` payload (WIRE-PROTOCOL §4a; evidence `out join`). The server reads
  * `kaltura.{ks,entryId,threadId}` and routes by socket.id; the rest is sent for
  * parity with the production clients.
@@ -208,7 +235,7 @@ export function whepUrl(webrtcUrl, srsBaseUrl, sessionId) {
   return `${String(srsBaseUrl).replace(/\/$/, '')}/rtc/v1/whep/?app=app&stream=${sessionId}`;
 }
 
-/** True if a WHEP URL's host is a private/loopback/link-local address (the broken STV-direct egress). @param {string} url */
+/** True if a WHEP URL's host is a private/loopback/link-local address — the shape that's actually broken (unreachable from a browser), regardless of which cast_mode produced it. @param {string} url */
 export function whepUrlHasPrivateIp(url) {
   return isPrivateOrLoopbackHost(String(url));
 }

@@ -36,7 +36,7 @@
 import { Emitter } from './emitter.js';
 import { TranscriptTracker } from './transcript.js';
 import {
-  turnServers, iceConfig, buildJoin, buildStvNewSession, whepUrl, whepUrlHasPrivateIp,
+  turnServers, iceConfig, createPeerConnection, buildJoin, buildStvNewSession, whepUrl, whepUrlHasPrivateIp,
   buildTextEntered, isAudioMode, CAPACITY_BACKOFF, DEFAULT_CM_URL, classifyAgentAction,
 } from './wire.js';
 import { inspectKs } from '../management/ks-inspect.js';
@@ -48,6 +48,7 @@ import { makeAuditEmitter } from '../core/session.js';
 import { sanitizeJson, clampInbound } from '../core/safety.js';
 import { SPOKEN_TYPES, canonicalJson, SPIRAL_RECOVERY_PREFIX, validateToolArgs, parseToolResponseName } from '../core/stream.js';
 import { assertSecureTransport } from '../core/transport-guard.js';
+import { createSessionCompleter } from './session-complete.js';
 
 const DEFAULT_GENIE_URL = 'https://genie.nvp1.ovp.kaltura.com';
 
@@ -128,7 +129,7 @@ export class KalturaAvatarSession extends Emitter {
    * @param {{username:string,credential:string,expiry?:number}} [cfg.turnCredentials]  Server-minted EPHEMERAL TURN creds (RFC 7635). Preferred over the static fallback.
    * @param {boolean} [cfg.allowInsecureTransport]  Permit ws/http transport (localhost/dev ONLY — emits a loud warning; never in production).
    * @param {(event:object)=>void} [cfg.onAuditEvent]  Redacted structured security events (session.connect/disconnect/auth.fail/protocol.violation). NIST AU-2/AU-3.
-   * @param {string} [cfg.preferredVideoCodec]  Force a specific codec for the STV downlink via `setCodecPreferences` (e.g. `'VP8'`, `'H264'`, `'VP9'`, `'AV1'`). Falls back silently to the browser default if the codec isn't in `RTCRtpReceiver.getCapabilities('video')`.
+   * @param {string} [cfg.preferredVideoCodec]  Force a specific codec for the STV downlink via `setCodecPreferences`. Leave unset — the backend only ever encodes H264 video, so any other value (`'VP8'`, `'VP9'`, `'AV1'`) still negotiates successfully but the video track never produces a frame (audio is unaffected, no error is thrown).
    * @param {number} [cfg.maxAsrBitrateKbps]  Cap the ASR mic uplink's bitrate via `setParameters()` (applied to the audio sender). Adjustable mid-session via `setAsrBandwidth()`.
    * @param {typeof RTCRtpReceiver} [cfg.rtcRtpReceiverConstructor]
    * @param {number} [cfg.statsIntervalMs]  Poll `RTCPeerConnection.getStats()` on both channels at this interval and emit `connectionQuality` (RTT/packet-loss/jitter/bitrate) — a portable connectivity beacon reporting the raw `getStats()` numbers only, no scoring/telemetry-backend wiring. Unset (default) disables it; a session that never opts in pays zero `getStats()` cost.
@@ -153,6 +154,18 @@ export class KalturaAvatarSession extends Emitter {
    * @param {number} [cfg.toolSpiralLimit]  Soft tool-call-loop limit before nudging the agent to stop (Agentic ASI loop guard). Default 10.
    * @param {number} [cfg.hardToolSpiralLimit]  Hard tool-call-loop limit that forces a cold reconnect. Default `toolSpiralLimit * 3`.
    * @param {boolean} [cfg.networkAware]  React to `online`/`offline` browser events. Default true when `addEventListener` exists.
+   * @param {boolean} [cfg.sessionCompleteOnEnd]  Master switch for signalling genie (`POST {genieUrl}/thread/session_completed`) the moment this conversation truly ends — tab close, backgrounding, or an explicit disconnect() — instead of waiting for the backend's ~10-minute idle scanner. Default true. `false` restores pre-1.12 behavior exactly (no POST, no listeners).
+   * @param {string} [cfg.sessionCompletePath]  Escape hatch if the route moves. Default `'/thread/session_completed'`.
+   * @param {number} [cfg.sessionCompleteTimeoutMs]  Abort budget for the signal when sent from `completeThread()` or the idle auto-logoff — never applied on a page-lifecycle (`pagehide`/hidden-grace) path, which must never await anything. Default 5000.
+   * @param {boolean} [cfg.pageLifecycleAware]  Wire `pagehide`/`visibilitychange`/`pageshow` so the signal fires on tab-close/backgrounding. Default true when `document.addEventListener` exists (mirrors `cfg.networkAware`).
+   * @param {number} [cfg.hiddenGraceMs]  After the page goes hidden, wait this long with no activity before completing — catches iOS Safari / Chrome Android tab-kills where `pagehide` never fires. Cancelled by returning to visible, by `pageshow`, or by any conversation activity. Default 30000.
+   * @param {boolean} [cfg.completeOnHiddenGrace]  Kill-switch for the hidden-grace heuristic. Default true.
+   * @param {boolean} [cfg.completeOnBfcache]  Fire on `pagehide {persisted:true}` (the page is being frozen into the back/forward cache) — the SDK can't survive that freeze anyway (socket/WHEP already torn down). Default true.
+   * @param {boolean} [cfg.completeOnServerEnd]  Fire when the server itself ends the conversation (`conversationEnded`). Default false — the backend already knows, so signalling again just wastes a redundant lifecycle-rule evaluation.
+   * @param {boolean} [cfg.crossTabPresence]  Suppress the signal while another tab/window has the same thread open (via `BroadcastChannel`). Default true in a browser (`document` + `BroadcastChannel` both exist) — Node has a global `BroadcastChannel` too, but presence tracking is a same-device-tab feature and must not open one server-side. Same-origin/same-device only by design — cross-device duplicate sessions rely on genie's own self-healing.
+   * @param {string} [cfg.presenceChannelPrefix]  Channel name is `` `${prefix}:${threadId}` ``. Default `'kaltura-agents:thread'`.
+   * @param {number} [cfg.presenceHeartbeatMs]  Cross-tab liveness beat interval. Default 4000.
+   * @param {number} [cfg.presenceStaleMs]  Drop a peer tab unseen this long. Default 12000.
    */
   constructor(cfg) {
     super();
@@ -323,6 +336,35 @@ export class KalturaAvatarSession extends Emitter {
     this._lastTurnText = null;
     // Optional network/visibility awareness (browser only). On by default in a browser.
     this._networkAware = cfg.networkAware ?? (typeof globalThis.addEventListener === 'function');
+    // conversationEnded means the backend already knows the thread is over — signalling
+    // again would just waste a redundant lifecycle-rule evaluation. Off by default.
+    this._completeOnServerEnd = !!cfg.completeOnServerEnd;
+    // Signal genie the moment the conversation truly ends (tab close, backgrounding, an
+    // explicit disconnect) instead of waiting for the ~10-min idle scanner. See session-complete.js.
+    this._completer = createSessionCompleter({
+      fetch: this._fetch,
+      genieUrl: this._genieUrl,
+      path: cfg.sessionCompletePath || '/thread/session_completed',
+      getToken: () => this._token,
+      audit: this._audit,
+      emit: (ev, payload) => this.emit(ev, payload),
+      log: this._log,
+      now: this._now,
+      enabled: cfg.sessionCompleteOnEnd ?? true,
+      timeoutMs: cfg.sessionCompleteTimeoutMs ?? 5000,
+      pageLifecycleAware: cfg.pageLifecycleAware ?? (typeof document !== 'undefined' && typeof document.addEventListener === 'function'),
+      hiddenGraceMs: cfg.hiddenGraceMs ?? 30000,
+      completeOnHiddenGrace: cfg.completeOnHiddenGrace ?? true,
+      completeOnBfcache: cfg.completeOnBfcache ?? true,
+      // Gated on `document` too, not just the constructor — Node ships a global
+      // BroadcastChannel that would otherwise open a real channel (and keep the
+      // process alive) outside a browser. Presence tracking is a same-device-tab
+      // feature; it has no meaning server-side.
+      crossTabPresence: cfg.crossTabPresence ?? (typeof document !== 'undefined' && typeof BroadcastChannel === 'function'),
+      presenceChannelPrefix: cfg.presenceChannelPrefix || 'kaltura-agents:thread',
+      presenceHeartbeatMs: cfg.presenceHeartbeatMs ?? 4000,
+      presenceStaleMs: cfg.presenceStaleMs ?? 12000,
+    });
 
     /** @type {'idle'|'preparing'|'connecting'|'connected'|'reconnecting'|'resuming'|'disconnecting'|'disconnected'|'error'} */
     this.state = 'idle';
@@ -483,6 +525,7 @@ export class KalturaAvatarSession extends Emitter {
       else this._approve(socket);
       this._setState('connected');
       this._wireNetwork();
+      this._wireLifecycle();
       this._touchActivity();   // HIPAA auto-logoff: start the idle clock
       this._startStatsBeacon();
       this._audit('session.connect', 'success', { kind: 'conversation', entitlementEnforced: this._entitlementEnforced, action: this.mode });
@@ -577,7 +620,7 @@ export class KalturaAvatarSession extends Emitter {
   async _connectAsr(socket) {
     socket.emit('asr-webrtc-init', { sessionId: socket.id });
     await this._await(socket, 'asr-webrtc-ready', TIMEOUTS.asr, 'ASRConnectionFailed');
-    const pc = new this._RTC(iceConfig('asr', this._turn, this._isFirefox));
+    const pc = createPeerConnection(this._RTC, iceConfig('asr', this._turn, this._isFirefox));
     this._pcAsr = pc;
     pc.oniceconnectionstatechange = () => { this.emit('connectivityChanged', { channel: 'asr', state: pc.iceConnectionState }); this._onIceStateChange('asr', pc); };
     pc.onicecandidate = (e) => { if (e.candidate) socket.emit('asr-webrtc-ice-candidate', { candidate: e.candidate }); };
@@ -603,7 +646,7 @@ export class KalturaAvatarSession extends Emitter {
 
   /** WHEP subscribe, then resolve only when the video is playable (greeting-clip fix). */
   async _connectStv() {
-    const pc = new this._RTC(iceConfig('stv', this._turn, this._isFirefox));
+    const pc = createPeerConnection(this._RTC, iceConfig('stv', this._turn, this._isFirefox));
     this._pcStv = pc;
     const videoTransceiver = pc.addTransceiver('video', { direction: 'recvonly' });
     pc.addTransceiver('audio', { direction: 'recvonly' });
@@ -643,7 +686,7 @@ export class KalturaAvatarSession extends Emitter {
 
     const url = this._webrtcUrl;
     if (whepUrlHasPrivateIp(url)) {
-      throw new KalturaError({ type: 'https://docs.kaltura.com/agentic/errors/whep_private_ip', title: 'WHEP private IP', code: 'whep_private_ip', detail: 'STV egress returned a private IP (the broken cast_mode:webrtc path). The SDK only uses SRS WHEP.' });
+      throw new KalturaError({ type: 'https://docs.kaltura.com/agentic/errors/whep_private_ip', title: 'WHEP private IP', code: 'whep_private_ip', detail: 'STV egress returned a private IP — unreachable from a browser.' });
     }
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
@@ -659,7 +702,7 @@ export class KalturaAvatarSession extends Emitter {
     // egress host after the initial request-URL check above passed) — checked separately
     // since it's only known post-response (additive to the pre-request check).
     if (this._whepLocation && whepUrlHasPrivateIp(this._whepLocation)) {
-      throw new KalturaError({ type: 'https://docs.kaltura.com/agentic/errors/whep_private_ip', title: 'WHEP private IP', code: 'whep_private_ip', detail: 'STV WHEP Location resolved to a private IP (the broken cast_mode:webrtc path). The SDK only uses SRS WHEP.' });
+      throw new KalturaError({ type: 'https://docs.kaltura.com/agentic/errors/whep_private_ip', title: 'WHEP private IP', code: 'whep_private_ip', detail: 'STV WHEP Location resolved to a private IP — unreachable from a browser.' });
     }
     await pc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
     await playable;
@@ -846,7 +889,7 @@ export class KalturaAvatarSession extends Emitter {
   }
 
   /** Human-in-the-loop kill switch (HITRUST AI.NI.a "humans can intervene"): alias of disconnect(). */
-  stop() { this.disconnect(); }
+  stop() { this.disconnect({ reason: 'stop' }); }
 
   /**
    * Rotate the conversation token mid-session WITHOUT a full reconnect (OWASP
@@ -1615,8 +1658,15 @@ export class KalturaAvatarSession extends Emitter {
     };
   }
 
-  /** Tear down the WHEP resource, peer connections, mic, socket, and drop the token. Always call when done. */
-  disconnect() {
+  /**
+   * Tear down the WHEP resource, peer connections, mic, socket, and drop the token. Always
+   * call when done. Idempotent — repeat calls no-op.
+   * @param {{final?:boolean, reason?:string}} [opts]  `final` (default true) signals genie
+   *   that the conversation is truly over (`POST {genieUrl}/thread/session_completed`); pass
+   *   `{final:false}` for an internal teardown that isn't a real end (e.g. a mode switch
+   *   elsewhere preserving thread continuity). `reason` rides the `session.complete` audit event.
+   */
+  disconnect(opts = {}) {
     if (this.state === 'disconnected') return;
     this._setState('disconnecting');
     // DELETE the WHEP resource (release the server-side STV session) if we have a Location.
@@ -1627,10 +1677,26 @@ export class KalturaAvatarSession extends Emitter {
         .then((r) => { if (r && r.ok === false) this._audit('whep.release', 'fail', { action: 'DELETE', reason: `HTTP ${r.status}` }); })
         .catch((e) => this._audit('whep.release', 'fail', { action: 'DELETE', reason: String(e && e.message || e) }));
     }
+    // Fire the completion signal before the token is dropped below — same posture as the
+    // WHEP DELETE above, which already captures its resource into a local before its own
+    // async hop, since `finalize()` reads the token synchronously before its first await.
+    if (opts.final !== false) this._completer.finalize(opts.reason || 'disconnect').catch(() => {});
     this._teardownTransports();
     this._token = null;   // don't hold the secret past the session (NIST AC-6/SC-4; bounded blast radius)
     this._audit('session.disconnect', 'success', {});
     this._setState('disconnected');
+  }
+
+  /**
+   * Send the "conversation is truly over" signal to genie without tearing anything down —
+   * for apps with their own teardown flow (server-side, logout hooks, cross-device end-session
+   * buttons a same-device `BroadcastChannel` can't see). Idempotent: a second call (including
+   * one already triggered by `disconnect()`) resolves `{ok:true, reason:'already_sent'}`.
+   * @returns {Promise<{ok:boolean, reason?:string, peers?:number}>}
+   */
+  async completeThread() {
+    if (this.state === 'disconnected') throw new KalturaError({ type: 'about:blank', title: 'not connected', code: 'invalid_state', detail: 'completeThread() requires a session that has not already disconnected.' });
+    return this._completer.finalize('manual');
   }
 
   /** Emit a one-time warning through the logger (insecure transport / static TURN). @param {string} key @param {string} msg */
@@ -1777,7 +1843,7 @@ export class KalturaAvatarSession extends Emitter {
     socket.on('agent_raw_text', async (p) => {
       let d; try { d = JSON.parse(p.delta); } catch { d = { type: 'text', content: p.delta }; }
       if (d && typeof d.content === 'string') d.content = clampInbound(d.content);
-      if (d && d.threadId && !this._threadId) this._threadId = d.threadId;
+      if (d && d.threadId && !this._threadId) { this._threadId = d.threadId; this._completer.noteThreadId(this._threadId); }
       // The parsed delta never carries speechId (WIRE-PROTOCOL §4e's extra keys are
       // threadId/messageId/segmentStart/segmentEnd/isFinal, not speechId) — it lives only
       // on the outer agent_raw_text envelope (`p`). Attach it here so every emitted
@@ -1876,20 +1942,20 @@ export class KalturaAvatarSession extends Emitter {
 
     // Talking state. Content-free turn audit events (HIPAA 164.312(b) — record that a
     // PHI-bearing exchange occurred, NEVER its content) + activity touch (auto-logoff reset).
-    socket.on('stvStartedTalking', () => { this._clearBrainWatchdog(); this._settleResponsePending(); this._touchActivity(); this.speaking = true; this._turnSawOutput = true; this._audit('turn.avatar_spoke', 'success', {}); this.emit('avatarStartTalking', {}); });
-    socket.on('stvFinishedTalking', (p) => { this.speaking = false; this._tracker.finishUtterance(); this.emit('avatarStopTalking', { text: clampInbound(p?.agentContent) }); });
+    socket.on('stvStartedTalking', () => { this._clearBrainWatchdog(); this._settleResponsePending(); this._touchActivity(); this._completer.touch(); this.speaking = true; this._turnSawOutput = true; this._audit('turn.avatar_spoke', 'success', {}); this.emit('avatarStartTalking', {}); });
+    socket.on('stvFinishedTalking', (p) => { this.speaking = false; this._tracker.finishUtterance(); this._completer.touch(); this.emit('avatarStopTalking', { text: clampInbound(p?.agentContent) }); });
     socket.on('agentInterrupted', () => { this.speaking = false; this._settleResponsePending(); this._turnSawOutput = true; this.emit('interrupted', {}); });
     socket.on('userStartedTalking', () => { this._clearBrainWatchdog(); this._touchActivity(); this.emit('userStartedTalking', {}); });
     // The user's turn produced a transcription → the brain should now respond; watch for a stall (R5)
     // and flip the response-pending signal so the app can mask the dead-air gap until output lands.
-    socket.on('agentTurnToTalk', (p) => { this._armBrainWatchdog(); this._armResponsePending(); this._touchActivity(); if (p && p.userTranscription) { this._audit('turn.user_captured', 'success', {}); this._lastTurnText = clampInbound(p.userTranscription); this.emit('transcript', { text: this._lastTurnText, type: 'user', speechId: null, words: [] }); } });
+    socket.on('agentTurnToTalk', (p) => { this._armBrainWatchdog(); this._armResponsePending(); this._touchActivity(); this._completer.touch(); if (p && p.userTranscription) { this._audit('turn.user_captured', 'success', {}); this._lastTurnText = clampInbound(p.userTranscription); this.emit('transcript', { text: this._lastTurnText, type: 'user', speechId: null, words: [] }); } });
     // Forwarded smart-turn VAD end-of-turn indicator (WIRE-PROTOCOL §4b) — passthrough, no SDK-side logic depends on it yet.
     socket.on('smartTurnStatus', (p) => this.emit('smartTurnStatus', { status: p?.status, timeoutMs: p?.timeout_ms, probability: p?.probability }));
 
     // Lifecycle.
     socket.on('conversationTimeWarning', (p) => this.emit('timeWarning', { remainingTime: p?.remainingTime }));
     socket.on('conversationTimeExpired', () => this.emit('timeExpired', {}));
-    socket.on('conversationEnded', () => { this.emit('ended', {}); this.disconnect(); });
+    socket.on('conversationEnded', () => { this.emit('ended', {}); this.disconnect({ final: this._completeOnServerEnd, reason: 'conversation_ended' }); });
     socket.on('conversationResumed', () => { this.paused = false; this.emit('resumed', {}); });
     socket.on('stvTaskFail', () => this.emit('error', new KalturaError({ type: 'about:blank', title: 'STV task failed', code: 'stv_task_fail', detail: 'The server failed to render/send the avatar video.' })));
 
@@ -2184,7 +2250,7 @@ export class KalturaAvatarSession extends Emitter {
       if (this.state === 'disconnected' || this.state === 'disconnecting') return;
       this._audit('session.timeout', 'success', { action: 'idle auto-logoff', reason: `idle > ${this._idleTimeoutMs}ms` });
       this.emit('timeExpired', { type: 'idle_timeout' });
-      this.disconnect();
+      this.disconnect({ reason: 'idle_timeout' });
     }, this._idleTimeoutMs);
     this._idleTimer.unref?.();
   }
@@ -2206,6 +2272,11 @@ export class KalturaAvatarSession extends Emitter {
     this._netHandlers = () => { try { globalThis.removeEventListener('online', onOnline); globalThis.removeEventListener('offline', onOffline); } catch { /* */ } };
   }
   _unwireNetwork() { if (this._netHandlers) { this._netHandlers(); this._netHandlers = null; } }
+
+  /** Wire the session-completion page-lifecycle listeners (see session-complete.js). No-op if already wired, disabled, or non-browser. */
+  _wireLifecycle() { this._completer.wire(); }
+  /** Remove the session-completion page-lifecycle listeners. Idempotent. */
+  _unwireLifecycle() { this._completer.unwire(); }
 
   /** Bound the 'reconnecting' state — if recovery doesn't land in the window, end cleanly (no hang). */
   _armReconnectTimer() {
@@ -2370,6 +2441,7 @@ export class KalturaAvatarSession extends Emitter {
       if (this._iceNewTimers[ch]) { clearTimeout(this._iceNewTimers[ch]); this._iceNewTimers[ch] = null; }
     }
     this._unwireNetwork();
+    this._unwireLifecycle();
     try { this._pcAsr?.close?.(); } catch { /* */ }
     try { this._pcStv?.close?.(); } catch { /* */ }
     try { this._hwMuteTimers.forEach(clearTimeout); this._hwMuteTimers = []; } catch { /* */ }

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  turnServers, iceConfig, buildJoin, buildStvNewSession, whepUrl, whepUrlHasPrivateIp,
+  turnServers, iceConfig, createPeerConnection, buildJoin, buildStvNewSession, whepUrl, whepUrlHasPrivateIp,
   buildTextEntered, isAudioMode, CAPACITY_BACKOFF,
 } from '../../src/experience/wire.js';
 
@@ -25,6 +25,50 @@ test('iceConfig: STV=relay, ASR=all (non-Firefox); both all on Firefox', () => {
   assert.equal(iceConfig('asr', turn).iceTransportPolicy, 'all');
   assert.equal(iceConfig('stv', turn, true).iceTransportPolicy, 'all');
   assert.equal(iceConfig('asr', turn).bundlePolicy, 'max-bundle');
+});
+
+test('createPeerConnection: happy path constructs directly, no retry', () => {
+  let calls = 0;
+  class FakeRTC { constructor(cfg) { calls++; this.cfg = cfg; } }
+  const config = iceConfig('asr', turnServers('h'));
+  const pc = createPeerConnection(FakeRTC, config);
+  assert.equal(calls, 1);
+  assert.equal(pc.cfg, config);
+});
+
+test('createPeerConnection: WebKit "Invalid TURN URL query string" retried with `?...` stripped', () => {
+  const seenConfigs = [];
+  class FakeRTC {
+    constructor(cfg) {
+      seenConfigs.push(cfg);
+      if (cfg.iceServers.some((s) => s.urls.some((u) => u.includes('?')))) {
+        throw new Error('Invalid TURN URL query string');
+      }
+    }
+  }
+  const config = iceConfig('asr', turnServers('h'));
+  const pc = createPeerConnection(FakeRTC, config);
+  assert.ok(pc instanceof FakeRTC);
+  assert.equal(seenConfigs.length, 2);
+  assert.ok(seenConfigs[0].iceServers[0].urls.some((u) => u.includes('?')));
+  const strippedUrls = seenConfigs[1].iceServers[0].urls;
+  assert.ok(strippedUrls.every((u) => !u.includes('?')));
+  assert.ok(strippedUrls.includes('turn:h:80'));
+  assert.ok(strippedUrls.includes('turns:h:443'));
+  // original config object must be untouched (no in-place mutation of caller state)
+  assert.ok(config.iceServers[0].urls.some((u) => u.includes('?')));
+});
+
+test('createPeerConnection: unrelated construction errors are not swallowed', () => {
+  class FakeRTC { constructor() { throw new Error('some other native error'); } }
+  const config = iceConfig('asr', turnServers('h'));
+  assert.throws(() => createPeerConnection(FakeRTC, config), /some other native error/);
+});
+
+test('createPeerConnection: query-string error with no query-string urls still rethrows', () => {
+  class FakeRTC { constructor() { throw new Error('Invalid TURN URL query string'); } }
+  const config = { iceServers: [{ urls: ['turn:h:443'] }] };
+  assert.throws(() => createPeerConnection(FakeRTC, config), /Invalid TURN URL query string/);
 });
 
 test('buildJoin pins avatar_only + channel=room, server-ignored extras present', () => {

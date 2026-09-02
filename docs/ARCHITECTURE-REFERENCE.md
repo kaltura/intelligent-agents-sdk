@@ -436,6 +436,24 @@ A cold reconnect restores connectivity and brain memory (`threadId`) but otherwi
 
 `KalturaChatSession` (the HTTP text transport) ports the soft tier only: `cfg.toolSpiralLimit` (default 10, same counting rule) emits the same `toolSpiralDetected {count, limit}` once per turn. There's no hard tier here — a chat turn is one stateless HTTPS request with no socket to cold-reconnect, so a stuck turn is bounded by the caller's own `sendText({signal})` abort, not by a session-level recovery mechanism.
 
+### Session-completion signal (`session_completed`) — telling the backend a conversation is truly over
+
+Without this, the backend only learns a thread is done when its idle scanner sweeps (~10 min default), so end-of-conversation lifecycle rules (summaries, insights, CRM pushes) fire minutes late, and a closed tab looks identical to a user who just walked away. `KalturaAvatarSession`, `KalturaChatSession`, and `KalturaAgentSession` all POST `{genieUrl}/thread/session_completed` (`{"id":"<threadId>"}`, the same conversation KS as every other client call) the moment a conversation genuinely ends — including tab-close, backgrounding, and bfcache freeze — without ever firing on an internal transition like a mode switch, and without ending a thread another tab is still using. Full config surface: [README.md § Ending a conversation cleanly](../README.md#ending-a-conversation-cleanly-session_completed-signal). Wire shape: [WIRE-PROTOCOL.md](WIRE-PROTOCOL.md).
+
+| Trigger | Fires? | Why |
+|---|---|---|
+| App calls `disconnect()` / `stop()` | yes | Unambiguous hangup |
+| Idle auto-logoff | yes | Real end of session |
+| `pagehide` (tab/window closed, navigated away) | yes | The primary win over the idle-scanner fallback |
+| `pagehide` with `persisted:true` (bfcache freeze) | yes, by default | The SDK can't survive the freeze anyway — media/socket are already torn down |
+| Hidden longer than `hiddenGraceMs` (default 30s) | yes, by default | Catches iOS Safari / Chrome Android tab-kills where `pagehide` never fires |
+| Server ends the conversation (`conversationEnded`) | no, by default | The backend already knows; re-signaling wastes a redundant lifecycle-rule evaluation |
+| `KalturaAgentSession.switchMode()` tearing down the old transport | no | Thread continuity is the entire point of switching modes |
+| Fatal/unrecoverable error (`_endWith()`) | no | An error isn't a clean end; the app may reconnect and continue the same thread |
+| A second tab on the same thread is still alive (`crossTabPresence`, same-origin/same-device only via `BroadcastChannel`) | no — suppressed | Avoids ending a thread another tab is actively using; the last tab standing still fires |
+
+The signal is idempotent (a repeat POST for the same thread is a server-side no-op) and never awaited on the unload path — `fetch(url, {keepalive:true})`, not `navigator.sendBeacon` (which can't carry the `Authorization` header). Cross-device duplicate tabs are out of scope by design (`BroadcastChannel` is same-origin/same-device only); the backend's own self-healing on the next real message covers that case.
+
 ### What's already solid (don't regress)
 
 - Connect-phase hang protection (per-substate timeouts).

@@ -103,7 +103,7 @@ Direction: `→` client emits, `←` server emits. "Captured" = seen in the live
 | Event | Payload (captured) | Source | Meaning |
 |---|---|---|---|
 | `join` | `{ room, channel, kaltura:{ entryId?, context_id?, threadId?, request_vars?, force_experience:"avatar_only", capabilities:{ avatar:"on", generate_followup_questions:"on", use_knowledge_base?:"off" } }, userAgent, userAgentHints, isMobile, channel_password:null, peer_name:"unknown", peer_video:false, peer_audio:true, client? }` | `CG` | Join the room; carries the agent/brain config. The server binds the room from **`channel`** (`session.roomId = channel`) and reads `peer_*` + `kaltura.{ks,entryId,threadId,contextId,contextType,capabilities,request_vars}` (see [ARCHITECTURE-REFERENCE.md §join](ARCHITECTURE-REFERENCE.md)); the top-level `room` field and the `force_experience` key are **not** consumed server-side (`force_experience` is pinned in the session server's brain bridge — see §7). `use_knowledge_base:"off"` only when `context.type==='entry'`. |
-| `stvNewSession` | `{ room_id, cast_mode? }` — `cast_mode` is the `StvCastMode` enum `"webrtc"\|"rtmp"`, **optional** (client default `"rtmp"` = the **relay WHEP** egress) | `CG`; `cast_mode` from `CG`; server `CM` | Ask server to create the STV (avatar video) session. `cast_mode` selects the WHEP egress URL shape — **relay WHEP** (`rtmp`/omit, works) vs **STV-direct** (`webrtc`, broken here); see §6. |
+| `stvNewSession` | `{ room_id, cast_mode? }` — `cast_mode` is the `StvCastMode` enum `"webrtc"\|"rtmp"`, **optional**; `CG` sends `"rtmp"` explicitly, this SDK always omits it entirely | `CG`; `cast_mode` from `CG`; server `CM` | Ask server to create the STV (avatar video) session. `cast_mode` selects the STV egress; this SDK only ever takes the fully-omitted default path — verified working, real video, in the current deployment; see §6. |
 | `asr-webrtc-init` | `{ sessionId }` (client sends its socket id) | `CG`; server `CM` | Ask backend to prepare the ASR WebRTC endpoint. The `sessionId` is **advisory/ignored server-side** — the handler keys everything off `socket.id`. |
 | `asr-webrtc-offer` | `{ offer:{type,sdp}, is_reconnect:false }` | `CG` | SDP offer for the mic uplink; awaits `asr-webrtc-answer`. |
 | `asr-webrtc-ice-candidate` | `{ candidate:{candidate,sdpMLineIndex} }` | `CG` (`RTC`) | Trickle a local ICE candidate for the ASR pc (the SDK extracts only these two fields). |
@@ -255,6 +255,22 @@ Authorization: KS <conversation ks>
 
 The built-in client's text-assembly logic (`CG`) only *assembles* `text | unisphere-tool | error` into the transcript and treats a start+end `share` as message-complete; it ignores `avatar | think | tool | tool_response` (those drive the live runtime). Frame counts from one captured text session: `text`×159, `think`×13, `share`×6, `unisphere-tool`×6, `thread`×5.
 
+#### Session-completion signal — tell the backend a conversation is truly over
+
+Same auth model as the ACK above (conversation KS, no elevation), but fire-and-forget in the opposite direction — client tells server, no response payload to parse:
+
+```
+POST {genieUrl}/thread/session_completed
+Content-Type: application/json
+Authorization: KS <conversation ks>
+
+{ "id": "<threadId>" }
+
+→ 200 {}
+```
+
+Idempotent (a repeat POST for the same thread is a server-side no-op); no rate limit; can block up to ~10s on a backend publish-ack, so a client must never `await` it on a page-unload path — send with `fetch(url, {keepalive:true})`, never `navigator.sendBeacon` (can't carry `Authorization`). `KalturaAvatarSession`/`KalturaChatSession`/`KalturaAgentSession` send this automatically on `disconnect()` and on tab-close/backgrounding/bfcache-freeze; see [ARCHITECTURE-REFERENCE.md § Session-completion signal](ARCHITECTURE-REFERENCE.md#session-completion-signal-session_completed--telling-the-backend-a-conversation-is-truly-over) for the full trigger table and [README.md § Ending a conversation cleanly](../README.md#ending-a-conversation-cleanly-session_completed-signal) for the config surface.
+
 ### 4f. `speechId` — the per-utterance key (and the barge-in mechanism)
 
 `speechId` appears on `agent_raw_text`, `agent_start_speech`, `agent_end_turn`, `generatingSpeech`, `stvSpeechChunk`, `debug_stvTaskGenerated`, `stvFinishedGenerating` — it is the **session server's identifier for one agent utterance**, and it is how you group a turn's events (do **not** group by timestamp — barge-ins interleave turns).
@@ -324,12 +340,12 @@ This is distinct from §5 (where the *client* offers the mic uplink and STT runs
 
 A receive-only WebRTC peer connection fed via **WHEP** (WebRTC-HTTP Egress Protocol). Signaling is **plain SDP over HTTP**, independent of the socket. (Server-side, the STV controller renders the face and streams it into a media relay that provides the WHEP egress; see ARCHITECTURE.md.)
 
-**`cast_mode` selects the egress URL shape** (`StvCastMode` enum, optional in the `stvNewSession` body; the production client sends `'rtmp'` by default, `'webrtc'` only for the `unistv` player). Think of the two modes by their egress, not the wire word:
+**`cast_mode` selects the STV egress** (`StvCastMode` enum `"webrtc"\|"rtmp"`, optional in the `stvNewSession` body). This SDK never sends it — `buildStvNewSession()` (`SDK:wire.js`) always omits the field, so this SDK only ever takes the server's fully-omitted-default path, not either named value:
 
-- **Relay WHEP** (wire `cast_mode:'rtmp'`, *or* omit it, *or* any non-`webrtc` value) → `{srsBaseUrl}/rtc/v1/whep/?app=app&stream={session_id}` (the captured form below). The server renders the face and re-serves it over this relay's WHEP endpoint; **this is the working path.**
-- **STV-direct** (wire `cast_mode:'webrtc'`) → the STV server's own `/whep/session/{session_id}` (direct when `STV_URL` is set, else via the session-server proxy `{basePublicProxyUrl}/rtc/v1/stv/{…}/whep/session/{session_id}`). Currently broken in this deployment.
+- **Default (cast_mode omitted)** — the only path this SDK uses. The server returns a `webrtc_url`; in the current deployment that's shaped `{basePublicProxyUrl}/rtc/v1/stv/{room_id}/whep/session/{session_id}` (the session-server's STV proxy). Verified live, real H264 video decoded, across Chromium, Firefox, and WebKit — this is the working path for this SDK. If the server ever omits `webrtc_url` too, the client falls back to building `{srsBaseUrl}/rtc/v1/whep/?app=app&stream={session_id}` itself (`SDK:wire.js whepUrl()`) — not something current live testing has actually observed the server do.
+- **Explicit `cast_mode:'webrtc'`** (sent only by the `unistv` player, never by this SDK) — previously observed to resolve to a private IP in this deployment, so the browser's `fetch` never connects. `whepUrlHasPrivateIp()` (`SDK:wire.js`) guards this regardless of which cast_mode produced the URL.
 
-The client POSTs whichever `webrtc_url` the server returns, verbatim. **The browser always plays via WebRTC/WHEP regardless of mode** — "rtmp" is only the server-side ingest the renderer uses, never a browser transport.
+The URL *shape* alone doesn't tell you which path is safe — the guard above checks the resolved host, not the shape. The client POSTs whichever `webrtc_url` the server returns, verbatim. **The browser always plays via WebRTC/WHEP regardless of mode** — "rtmp" is only the server-side ingest the renderer uses, never a browser transport.
 
 **ICE config:** same TURN URL block as §5. STV resolves `forceStvRelay && !isFirefox ? 'relay' : 'all'` (`RTC`). **All three clients agree here** — `CG` (`forceStvRelay:true`), `EMBED` (default `'relay'`), and `SDK` (`SDK:wire.js iceConfig()`) — so:
 
@@ -339,7 +355,7 @@ bundlePolicy: "max-bundle"
 ```
 
 - **Transceivers:** `addTransceiver('video',{direction:'recvonly'})` + `addTransceiver('audio',{direction:'recvonly'})` (`RTC`).
-- **WHEP request** — the URL is the server-provided `webrtc_url` from `stvNewSession` (captured form below); `RTC` POSTs to it verbatim, and `EMBED` / `SDK:wire.js whepUrl()` build the same shape from `srsBaseUrl`:
+- **WHEP request** — the URL is the server-provided `webrtc_url` from `stvNewSession`, POSTed verbatim (`RTC`; `SDK:wire.js whepUrl()`). This SDK's own live captures show `{basePublicProxyUrl}/rtc/v1/stv/{room_id}/whep/session/{session_id}` (§6). If the server ever omits `webrtc_url`, `EMBED` / `SDK:wire.js whepUrl()` build this fallback shape from `srsBaseUrl` instead — not something this SDK's live testing has actually observed the server do:
 
   ```
   POST {srsBaseUrl}/rtc/v1/whep/?app=app&stream={session_id}
@@ -347,7 +363,7 @@ bundlePolicy: "max-bundle"
   body: <client offer SDP>          → response body: <answer SDP>  (HTTP 201)
   ```
 Teardown = `DELETE` to the `Location` header from the 201. WHEP status codes (`RTC`): `201` created, `404` no active session (must re-create), `409` already has a viewer, `415` wrong content-type.
-- **SDP:** offer carries full video codec list + audio; server answer selects `m=video … 109 H264/90000` + `m=audio … 111 OPUS/48000/2`, both `a=sendonly` / `a=setup:passive`.
+- **SDP:** offer carries full video codec list + audio; server answer selects `m=video … 109 H264/90000` + `m=audio … 111 OPUS/48000/2`, both `a=sendonly` / `a=setup:passive`. The server only ever encodes H264 video. If the client restricts the offer to a different codec (e.g. via `preferredVideoCodec`), the request still returns 201 with a syntactically valid answer, but the video `m=` line comes back `a=inactive` — no frame is ever decoded, and no error is surfaced anywhere in the negotiation. The audio `m=` line is unaffected either way. Verified live across Chromium, Firefox, and WebKit.
 - **Captured stats (healthy):** `inbound-rtp video` `frameWidth/Height: 512`, `framesDecoded` 256 → 1036, `bytesReceived` ~2.6 MB; selected pair `nominated:true state:succeeded`, **both candidates `relay`**.
 - **Greeting gate:** wait for `<video>` `canplay` (+~300ms) before `approvedPermissions` (§3 step 10–11).
 - `cast_mode:"rtmp"` (sent in `stvNewSession`) = the server renders the face and ingests it into the relay via **RTMP**; the client only ever does WHEP egress. The client never touches RTMP.
