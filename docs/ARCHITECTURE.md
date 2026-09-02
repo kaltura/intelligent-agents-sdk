@@ -173,7 +173,7 @@ For the public surface, entry points, and how-tos, read [README.md](../README.md
 
 Both SDK entry points share one core: `src/core/*` is the shared leaf layer both `./management` and `./experience` depend on (`http.js` transport, `errors.js`, `session.js`, `stream.js`, `redact.js`, `safety.js`, `ids.js`, `knowledge-enums.js`). Core never imports from `management/` or `experience/`. `./management` (`Management`, `src/management/client.js`) enforces the two-KS guard via `assertAdmin`/`assertConversation` before any network call; `./experience` (`KalturaAvatarSession`, `src/experience/session.js`) is the live socket+WHEP runtime from "Video Runtime Protocol" above, taking only a short-lived conversation token, with socket.io INJECTED, never bundled.
 
-For the full module-by-module map (each management module's exposed surface and which backend door it writes to), the capabilities-resolution return shape, the GenUI rendering layer, and the partner-config-DTO-vs-intellect-DTO routing rule, see **[ARCHITECTURE-REFERENCE.md's "SDK Module Map & Data Flow"](ARCHITECTURE-REFERENCE.md#sdk-module-map--data-flow)**.
+For the full module-by-module map (each management module's exposed surface and which backend door it writes to), the capabilities-resolution return shape, and the GenUI rendering layer, see **[ARCHITECTURE-REFERENCE.md's "SDK Module Map & Data Flow"](ARCHITECTURE-REFERENCE.md#sdk-module-map--data-flow)**.
 
 ---
 

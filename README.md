@@ -102,11 +102,11 @@ Once the repo is public and has a tag pushed, jsDelivr serves any file straight 
 </script>
 ```
 
-`@latest` resolves to the newest tag, so this URL always matches the current README without an editing pass on every release. It's **not cached the same way** as a tagged path, though — jsDelivr re-checks it periodically, so what it serves can change without warning. For anything you ship, pin to a real tag instead (`@v1.12.0`, or whichever release you're on) — jsDelivr caches a tagged path forever, so a pin is both stable and fast:
+`@latest` resolves to the newest tag, so this URL always matches the current README without an editing pass on every release. It's **not cached the same way** as a tagged path, though — jsDelivr re-checks it periodically, so what it serves can change without warning. For anything you ship, pin to a real tag instead (`@v1.13.0`, or whichever release you're on) — jsDelivr caches a tagged path forever, so a pin is both stable and fast:
 
 ```html
 <script type="module">
-  import { KalturaAvatarSession } from 'https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.12.0/src/experience/index.js';
+  import { KalturaAvatarSession } from 'https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.13.0/src/experience/index.js';
 </script>
 ```
 
@@ -525,7 +525,6 @@ Designed for enterprise, HIPAA, HITRUST, and regulated frameworks. Full control 
 - **`kaltura_genie_experiences` competes with client tools.** Set it `'off'` at creation for tool-driven intellects (the capability injects a system rule that out-competes custom tools). Set at creation — partner config is cached ~24 h server-side. `tools.clientToolReadiness(body)` lints for this.
 - **`force_experience` is a hint, not a contract.** The live runtime hardcodes `avatar_only`; structured widgets arrive reliably only on the HTTP converse path.
 - **Group turn events by `speechId`, never timestamp.** A new utterance invalidates the prior one's in-flight captions (barge-in guard).
-- **Probe deployment-gated writes before calling them.** `intellects.brainConfigAvailable(ks)` / `knowledge.linkAvailable(ks)` return `{available, reason}`. Gated writes return `{applied:false, reason}` — they never throw or fake success.
 
 ---
 
@@ -887,7 +886,7 @@ await mgmt.intellects.setCapability(configId, 'use_knowledge_base', 'on', ks);
 const { id: toolId } = await mgmt.tools.add(myTool, ks);       // tools are a separate, partner-level entity
 await mgmt.intellectConfig.setToolIds(configId, [toolId], ks); // then link it
 await mgmt.intellects.secrets.set(configId, { API_KEY: value }, ks);  // write-only
-await mgmt.intellectConfig.setKnowledgeIds(configId, [knowledgeId], ks);  // Path A, ungated
+await mgmt.intellectConfig.setKnowledgeIds(configId, [knowledgeId], ks);  // ungated
 await mgmt.intellectConfig.setMcpServers(configId, { docs: { url: 'https://mcp.example.com/sse' } }, ks);  // ungated
 ```
 
@@ -967,7 +966,6 @@ view.disconnect();
 ## RAG (knowledge base)
 
 ```js
-// Path A — ungated
 const rec = await mgmt.knowledge.addRecord({ name: 'Product Docs' }, ks);
 const { configId } = await mgmt.intellects.create({
   knowledge_ids: [rec.id],
@@ -978,7 +976,7 @@ const { configId } = await mgmt.intellects.create({
 const status = await mgmt.knowledge.isIndexed(rec.id, ks);
 ```
 
-Content modalities indexed: captions, OCR, document attachments. Don't use `knowledge.isIndexed()`'s `ready` flag, `knowledge.search()`'s "couldn't find relevant information" reply, or `knowledge.corpusStatus()`'s `populated` flag, as an indexing-status signal — see API-REFERENCE.md § Ground the Agent for why. A per-entry check (`knowledge.entryStatus()`) exists but is not yet generally available on every deployment — check with your Kaltura account team before building on it.
+Content modalities indexed: captions, OCR, document attachments. Don't use `knowledge.isIndexed()`'s `ready` flag, `knowledge.search()`'s "couldn't find relevant information" reply, or `knowledge.corpusStatus()`'s `populated` flag, as an indexing-status signal — see API-REFERENCE.md § Ground the Agent for why. Use `knowledge.entryStatus()` instead: it's the official per-entry completion check.
 
 Knowledge records have full lifecycle CRUD:
 
@@ -994,7 +992,7 @@ await mgmt.knowledge.deleteRecord(rec.id, ks, { confirmPermanent: true });
 
 ## Honest limits
 
-- **`partner-config/update` 403s today** for a partner admin KS. Brain config (`setBrainConfig`) and the knowledge re-point (Path B) are gated. Probe first; writes return `{applied:false, reason}`. Grounding a new agent via `knowledge_ids` (Path A) is NOT gated. (Event-driven session/thread rules ARE supported — see § Lifecycle in `docs/api/build.md`.)
+- **Brain-model and rate-limit fields aren't in the public API.** `agent_llm`/`agent_fast_llm`/rate limits and a few others are set by internal tooling only — see `intellectConfig.describe()`'s `readOnly` map. Knowledge grounding via `knowledge_ids` is fully public and ungated. (Event-driven session/thread rules ARE supported — see § Lifecycle in `docs/api/build.md`.)
 - **No verbatim speech** — `speak()` goes through the brain; the avatar may rephrase.
 - **Custom face works self-serve** — upload a portrait image via `catalog.createVisual`, pass `itemId` as `visualId` in `provision`/`avatars.create`. The model animates the portrait at runtime. Video-clip ingest (higher-fidelity model) is not yet self-serve.
 - **`force_experience` and `model_type:'fast'`** are hints; the SDK can't prove which model replied or which experience rendered.

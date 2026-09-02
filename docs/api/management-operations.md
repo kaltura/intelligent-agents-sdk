@@ -82,11 +82,11 @@ See [operate.md § Threads](operate.md#threads) for response shapes and the comp
 
 ## Knowledge records — `https://genie.nvp1.ovp.kaltura.com`
 
-Full record lifecycle. SDK: `mgmt.knowledge`. Linkage to an intellect is via `knowledge_ids` (Path A — see § Ground the Agent).
+Full record lifecycle. SDK: `mgmt.knowledge`. Linkage to an intellect is via `knowledge_ids` — see § Ground the Agent.
 
 | Operation | Endpoint | Body |
 |-----------|----------|------|
-| List | `POST /v1/knowledge/list` | `{"filter":{},"pager":{"pageIndex":1,"pageSize":30}}` — discover records without knowing ids up front. SDK: `mgmt.knowledge.listRecords(ks, opts)`. Distinct from `mgmt.knowledge.list(categoryId, ks)`, which lists KMS entries inside a category (Path A), not Knowledge record containers. |
+| List | `POST /v1/knowledge/list` | `{"filter":{},"pager":{"pageIndex":1,"pageSize":30}}` — discover records without knowing ids up front. SDK: `mgmt.knowledge.list(ks, opts)`. Distinct from `mgmt.knowledge.listCategoryEntries(categoryId, ks)`, which lists KMS entries inside one category, not Knowledge record containers. |
 | Add | `POST /v1/knowledge/add` | `{"name":"..."}` |
 | Get | `POST /v1/knowledge/get` | `{"id":2049}` |
 | Update | `POST /v1/knowledge/update` | `{"id":2049, ...fields}` — `config` is accepted but is a FULL REPLACE on the backend; use `addSource`/`removeSource` below instead of hand-assembling `config.sources` |

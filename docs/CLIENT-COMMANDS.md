@@ -40,7 +40,7 @@ await mgmt.intellects.create({
 }, adminKs);
 ```
 
-`tool_ids` is one of the intellect's allow-listed fields, so linking a tool persists through **`v1/intellect/update`** (the brain's host, admin token) — **not** `partner-config/update`, so there is no 403. The tool BODY itself lives on the separate `/v1/tool/*` entity (`mgmt.tools`), not inside the intellect config.
+`tool_ids` is one of the intellect's allow-listed fields, so linking a tool persists through **`v1/intellect/update`** (the brain's host, admin token). The tool BODY itself lives on the separate `/v1/tool/*` entity (`mgmt.tools`), not inside the intellect config.
 
 `navigate_to_slide`'s description asks the brain to pass "the most relevant slide number" — but the brain can only resolve a topic to a slide number from something in its context. If you're using the [`Presenter`](../README.md#presenter) helper, pass `deckOutline: true` to its constructor instead of hand-rolling a topic→slide mapping into `BASE_DIRECTIVE`: it adds a full-deck `{slide_num, title}[]` outline to every per-slide context payload (the `page_context` request variable), stays correct after a runtime `appendSlide()` (a static `BASE_DIRECTIVE` outline does not), and disambiguates duplicate slide titles automatically.
 

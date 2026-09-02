@@ -38,15 +38,13 @@
  * (capabilities via {@link mergeCapabilityWrite}; secrets via the
  * mask-and-keep guard) and the rest is re-sent intact. `tool_ids`/`skill_ids`
  * are plain arrays (not dicts), so `setToolIds`/`setSkillIds` write them
- * directly with no merge step — same "Path A" pattern as `setKnowledgeIds`.
+ * directly with no merge step, same as `setKnowledgeIds`.
  *
- * PHANTOM-WRITE DISCIPLINE: `web_search_config`,
- * `run_quota_check`, `agent_avatar_llm`, `avatar_config`
- * are NOT writable via either public DTO. They appear in `describe().readOnly`
- * with a "set by internal tooling only" note and have NO setters here.
- * The partner-config-routable subset of brain config (agent_llm/agent_fast_llm/
- * rate limits) is handled by {@link Intellects#setBrainConfig}, which is
- * probe-gated and never fakes success — this facade delegates to it.
+ * PHANTOM-WRITE DISCIPLINE: `web_search_config`, `run_quota_check`,
+ * `agent_avatar_llm`, `avatar_config`, `agent_llm`, `agent_fast_llm`, and rate
+ * limits are NOT writable via the public API at all — they appear in
+ * `describe().readOnly` with a "set by internal tooling only" note and have
+ * NO setters here.
  */
 import { KalturaError } from '../core/errors.js';
 import { meta } from '../core/ids.js';
@@ -67,15 +65,19 @@ export const CALL_STAGES = Object.freeze(['start', 'middle', 'end']);
  * Fields that exist on the stored `PartnerConfigSchema` and are READ by the
  * runtime but are NOT in EITHER public create/update DTO allow-list — so they
  * are read-only via the public surfaces. The facade exposes them under
- * `describe().readOnly` and provides NO setter (phantom-write discipline). The
- * partner-config-routable subset (agent_llm/agent_fast_llm/rate limits) is
- * NOT here — it is handled by the probe-gated {@link Intellects#setBrainConfig}.
+ * `describe().readOnly` and provides NO setter (phantom-write discipline).
  * @type {Readonly<Record<string,string>>}
  */
 const READ_ONLY_FIELDS = Object.freeze({
-  web_search_config: 'web-search parameters — set by internal tooling only; routable best-effort via intellects.setBrainConfig (UNVERIFIED)',
-  run_quota_check: 'pre-turn quota enforcement — set by internal tooling only; routable best-effort via intellects.setBrainConfig (UNVERIFIED)',
-  agent_avatar_llm: 'avatar-mode model — set by internal tooling only; routable best-effort via intellects.setBrainConfig (UNVERIFIED)',
+  web_search_config: 'web-search parameters — set by internal tooling only, not writable via the public API',
+  run_quota_check: 'pre-turn quota enforcement — set by internal tooling only, not writable via the public API',
+  agent_avatar_llm: 'avatar-mode model — set by internal tooling only, not writable via the public API',
+  agent_llm: 'primary brain model — set by internal tooling only, not writable via the public API',
+  agent_fast_llm: 'fast/cheap fallback model — set by internal tooling only, not writable via the public API',
+  rate_limit_per_minute: 'authed rate limit — set by internal tooling only, not writable via the public API',
+  rate_limit_per_hour: 'authed rate limit — set by internal tooling only, not writable via the public API',
+  anonymous_rate_limit_per_minute: 'anonymous rate limit — set by internal tooling only, not writable via the public API',
+  anonymous_rate_limit_per_hour: 'anonymous rate limit — set by internal tooling only, not writable via the public API',
   avatar_config: 'live-avatar WebRTC/SRS endpoints — server-managed (overlaid from AVATAR_CONFIG_DEFAULTS at converse time); never your input',
 });
 
@@ -83,10 +85,9 @@ const READ_ONLY_FIELDS = Object.freeze({
  * Top-level fields the public Genie `intellect/*` DTO genuinely WRITES
  * (`CreateIntellect.update_partner_config`): the editable surface this facade's
  * setters target. `knowledge_ids` IS in this allow-list and writes ungated via
- * `create`/`update` ("Path A") — only the separate
- * `partner-config/update` re-point (`knowledge.linkRecords`, "Path B") still 403s.
- * `tool_ids` is likewise a direct, ungated reference-list write (the tool
- * BODIES live on the separate `mgmt.tools` entity, not here).
+ * `create`/`update`/`setKnowledgeIds`. `tool_ids` is likewise a direct, ungated
+ * reference-list write (the tool BODIES live on the separate `mgmt.tools`
+ * entity, not here).
  * @type {readonly string[]}
  */
 const EDITABLE_FIELDS = Object.freeze([
@@ -205,7 +206,7 @@ export class IntellectConfig {
   /**
    * Set the intellect's `tool_ids` — the list of standalone Tool entities (see
    * `mgmt.tools`) this intellect may call. WRITE — idempotent. `tool_ids` is a
-   * direct, ungated reference-list write ("Path A", like `knowledge_ids`), but
+   * direct, ungated reference-list write (like `knowledge_ids`), but
    * UNCAPPED (no maxItems in the DTO). This only edits the reference list — to
    * create/edit a tool BODY, use `mgmt.tools.add`/`update`/`remove` first, then
    * pass its `id` here. Pass `[]` to detach every tool.
@@ -227,7 +228,7 @@ export class IntellectConfig {
   /**
    * Set the intellect's `skill_ids` — the list of standalone Skill entities
    * (see `mgmt.skills`) this intellect may draw on, each with an attach `mode`
-   * (see {@link SKILL_MODES}). WRITE — idempotent, UNGATED ("Path A", direct
+   * (see {@link SKILL_MODES}). WRITE — idempotent, UNGATED (direct
    * reference-list write like `tool_ids`/`knowledge_ids` — confirmed via
    * `intellect/add` + `intellect/get` round-trip). This only edits the
    * reference list — create/edit a Skill body via `mgmt.skills.add` first,
@@ -347,13 +348,10 @@ export class IntellectConfig {
 
   /**
    * Set `knowledge_ids` (≤1, partner-validated). WRITE — idempotent, UNGATED.
-   * This is the "Path A" linkage: `knowledge_ids` is in the `v1/intellect/update`
-   * DTO allow-list, so it writes through `patch()` directly — NO `partner-config/update`,
-   * NO 403 (an admin KS links an existing intellect's knowledge_ids
-   * + `use_knowledge_base:on` via this path). Mint the record id first with
-   * `knowledge.addRecord()`; for a brand-new agent you can also pass `knowledge_ids`
-   * straight to {@link Intellects#create}. (Re-pointing via `partner-config/update`
-   * — `knowledge.linkRecords` — is the separate, still-gated "Path B".)
+   * `knowledge_ids` is in the `v1/intellect/update` DTO allow-list, so it
+   * writes through `patch()` directly — no separate linking call, no gate.
+   * Mint the record id first with `knowledge.addRecord()`; for a brand-new
+   * agent you can also pass `knowledge_ids` straight to {@link Intellects#create}.
    * @param {number} configId @param {number[]} knowledgeIds @param {string} ks (admin)
    * @returns {Promise<{applied:boolean, result?:any, sent?:object, _meta:object}>}
    */
@@ -403,23 +401,6 @@ export class IntellectConfig {
     return { applied: true, result, sent, _meta: meta({ partnerId: this._.partnerId, source: 'genie/intellect.mcp_servers', scope: `configId:${configId}` }) };
   }
 
-  // ─────────────────────────── Brain config (probe-gated, delegated) ───────────────────────────
-
-  /**
-   * Set the partner-config-routable brain config (models + rate limits, plus the
-   * UNVERIFIED Class-B subset). WRITE, idempotent — but probe-gated: returns
-   * `{applied:false, reason}` on 403 WITHOUT throwing. Delegates to
-   * {@link Intellects#setBrainConfig}. @param {number} configId @param {object} cfg @param {string} ks (admin)
-   */
-  setBrainConfig(configId, cfg, ks) {
-    return this._intellects.setBrainConfig(configId, cfg, ks);
-  }
-
-  /** Probe whether the brain-config write path is usable on this deployment. READ. @param {string} ks (admin) */
-  brainConfigAvailable(ks) {
-    return this._intellects.brainConfigAvailable(ks);
-  }
-
   // ─────────────────────────── Describe (the full editable surface) ───────────────────────────
 
   /**
@@ -457,7 +438,7 @@ export class IntellectConfig {
       editable,
       readOnly,
       capabilityNames: CAPABILITIES,
-      _meta: meta({ partnerId: this._.partnerId, source: 'genie/intellect.get', scope: `configId:${configId}`, brainConfig: 'agent_llm/agent_fast_llm/rate-limits via intellects.setBrainConfig (probe-gated)' }),
+      _meta: meta({ partnerId: this._.partnerId, source: 'genie/intellect.get', scope: `configId:${configId}` }),
     };
   }
 }

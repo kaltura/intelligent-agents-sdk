@@ -11,12 +11,11 @@
  * backend indexer): it reads ONLY `indexer.categoryInfo[].{categoryId,
  * language}` + indexer-level `indexer.chunkSize` for a `categoryEntry`
  * link — it does NOT read a
- * per-category `objects[]`/`indexPosition`/`strategy` array. So
- * {@link buildIndexerObjects} is used by `Knowledge.linkCategory` purely to
- * VALIDATE the caller's `modalities` (reject an unknown/duplicate modality with
- * a typed `bad_request` before the wire); its `{indexPosition,type,strategy}`
- * output is the documented per-modality mapping (kept for callers/tooling that
- * inspect it), but it is NOT serialized onto the linkage wire body.
+ * per-category `objects[]`/`indexPosition`/`strategy` array.
+ * {@link buildIndexerObjects} VALIDATES a caller's `modalities` (rejects an
+ * unknown/duplicate modality with a typed `bad_request` before any wire call)
+ * and returns the documented `{indexPosition,type,strategy}` per-modality
+ * mapping, for callers/tooling that build or inspect indexer objects directly.
  *
  * This is a PURE module — no network, no KS, no side effects. It throws a
  * {@link KalturaError} (`code:'bad_request'`) on invalid input so callers fail

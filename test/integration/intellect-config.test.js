@@ -5,8 +5,8 @@ import { IntellectConfig } from '../../src/management/intellect-config.js';
 import { fakeFetch } from '../fakes/fetch.js';
 
 /**
- * G1 integration (fetch-fake): assert the EXACT update/partner-config bodies and
- * the honest probe-gated behavior for the intellects + intellect-config surface.
+ * G1 integration (fetch-fake): assert the EXACT `v1/intellect/update` bodies
+ * for the intellects + intellect-config surface.
  */
 const ADMIN = { ks: 'djJ8' + Buffer.from('v2|6516742|x').toString('base64url'), kind: 'admin', entitlementEnforced: false };
 const PID = 6516742;
@@ -165,71 +165,6 @@ test('intellects.restore writes back the snapshot author layer (skips secrets)',
   assert.equal(sent.base_directive, 'You are Ron…');
 });
 
-// ─────────────────────────── brain config (partner-config routed, probe-gated) ───────────────────────────
-
-test('intellects.setBrainConfig sends the verified subset to partner-config/update when available', async () => {
-  const { m, f } = mkMgmt([
-    { match: '/partner-config/get', respond: () => ({ body: { id: 0, config: {} } }) },
-    { match: '/partner-config/update', respond: (req) => ({ body: { id: req.body.id, config: req.body.config } }) },
-  ]);
-  const r = await m.intellects.setBrainConfig(1481, { agentLlm: 'us.sonnet', rateLimits: { perMinute: 250 } }, ADMIN);
-  assert.equal(r.applied, true);
-  const call = f.calls.find((c) => c.url.includes('/partner-config/update'));
-  assert.equal(call.body.id, 1481);
-  assert.equal(call.body.config.agent_llm, 'us.sonnet');
-  assert.equal(call.body.config.rate_limit_per_minute, 250);
-  assert.ok(r.sentKeys.includes('agent_llm'));
-});
-
-test('intellects.setBrainConfig returns {applied:false, reason} on a 403 probe WITHOUT throwing or writing', async () => {
-  const { m, f } = mkMgmt([
-    { match: '/partner-config/get', respond: () => ({ status: 403, body: { detail: '403 Forbidden' } }) },
-    { match: '/partner-config/update', respond: () => ({ body: {} }) },
-  ]);
-  const r = await m.intellects.setBrainConfig(1481, { agentLlm: 'us.sonnet' }, ADMIN);
-  assert.equal(r.applied, false);
-  assert.equal(r.code, 'forbidden');
-  assert.match(r.reason, /privilege/);
-  assert.equal(r._meta.deploymentGated, true);
-  assert.ok(!f.calls.some((c) => c.url.includes('/partner-config/update')), 'no write attempted when gated');
-});
-
-test('intellects.setBrainConfig returns {applied:false} on a GET-200/UPDATE-403 split WITHOUT throwing (write 403 caught)', async () => {
-  // The probe READ succeeds but the WRITE is still privilege-gated — the honest
-  // receipt must come back, not a raw 403 throw.
-  const { m, f } = mkMgmt([
-    { match: '/partner-config/get', respond: () => ({ body: { id: 0, config: {} } }) },        // probe OK
-    { match: '/partner-config/update', respond: () => ({ status: 403, body: { detail: '403 Forbidden' } }) }, // write gated
-  ]);
-  const r = await m.intellects.setBrainConfig(1481, { agentLlm: 'us.sonnet' }, ADMIN);
-  assert.equal(r.applied, false);
-  assert.equal(r.code, 'forbidden');
-  assert.equal(r._meta.deploymentGated, true);
-  assert.ok(f.calls.some((c) => c.url.includes('/partner-config/update')), 'the write WAS attempted (probe passed) and its 403 was caught');
-});
-
-test('intellects.setBrainConfig validates BEFORE probing (bad searchDepth, zero fetch)', async () => {
-  const { m, f } = mkMgmt([{ match: '/partner-config/get', respond: () => ({ body: {} }) }]);
-  await assert.rejects(() => m.intellects.setBrainConfig(1481, { webSearch: { searchDepth: 'turbo' } }, ADMIN), (e) => e.code === 'bad_request');
-  assert.equal(f.calls.length, 0, 'validation throws before any network call');
-});
-
-test('intellects.getBrainConfig reads partner-config/get and reports unsetUseDefault', async () => {
-  const { m } = mkMgmt([{ match: '/partner-config/get', respond: () => ({ body: { config: { agent_llm: 'us.sonnet', rate_limit_per_minute: 250 } } }) }]);
-  const r = await m.intellects.getBrainConfig(1481, ADMIN);
-  assert.equal(r.brainConfig.agent_llm, 'us.sonnet');
-  assert.ok(r.unsetUseDefault.includes('web_search_config'), 'absent key reported, not predicted off');
-});
-
-test('intellects.brainConfigAvailable mirrors linkAvailable shape', async () => {
-  const ok = mkMgmt([{ match: '/partner-config/get', respond: () => ({ body: {} }) }]);
-  assert.equal((await ok.m.intellects.brainConfigAvailable(ADMIN)).available, true);
-  const gated = mkMgmt([{ match: '/partner-config/get', respond: () => ({ status: 403, body: {} }) }]);
-  assert.equal((await gated.m.intellects.brainConfigAvailable(ADMIN)).code, 'forbidden');
-  const missing = mkMgmt([{ match: '/partner-config/get', respond: () => ({ status: 404, body: {} }) }]);
-  assert.equal((await missing.m.intellects.brainConfigAvailable(ADMIN)).code, 'not_deployed');
-});
-
 // ─────────────────────────── create defaults ───────────────────────────
 
 test('intellects.create applies defaults + echoes resolved type; rejects url/protocol (external/BYO-LLM is unwired)', async () => {
@@ -283,7 +218,7 @@ test('intellectConfig.setSkillIds writes the skill_ids reference list directly (
   assert.equal(r.applied, true);
   const sent = f.calls.find((c) => c.url.includes('/v1/intellect/update')).body;
   assert.deepEqual(sent.skill_ids, [{ id: 'skill-1', mode: 'adhoc' }, { id: 'skill-2', mode: 'preloaded' }]);
-  assert.ok(!f.calls.some((c) => c.url.includes('/partner-config')), 'Path A writes via the intellect DTO, never partner-config');
+  assert.ok(!f.calls.some((c) => c.url.includes('/partner-config')), 'writes via the intellect DTO, never partner-config');
 });
 
 test('intellectConfig.setSkillIds accepts [] to detach every skill', async () => {
@@ -338,15 +273,15 @@ test('intellectConfig.setMetadata patches only the supplied row fields', async (
   assert.deepEqual(sent.tags, ['qa']);
 });
 
-test('intellectConfig.setKnowledgeIds writes ungated via the update DTO (Path A — no partner-config probe)', async () => {
+test('intellectConfig.setKnowledgeIds writes ungated via the update DTO (no partner-config probe)', async () => {
   // Verified live: knowledge_ids is in the v1/intellect/update DTO allow-list and writes
-  // with NO partner-config/update and NO 403. setKnowledgeIds must NOT probe the gate.
+  // with NO partner-config/update and NO 403. setKnowledgeIds must NOT probe any gate.
   const { cfg, f } = mkMgmt([getDto(), updateEcho]);
   const r = await cfg.setKnowledgeIds(1481, [7], ADMIN);
   assert.equal(r.applied, true);
   const sent = f.calls.find((c) => c.url.includes('/v1/intellect/update')).body;
   assert.deepEqual(sent.knowledge_ids, [7]);
-  assert.ok(!f.calls.some((c) => c.url.includes('/partner-config')), 'Path A writes via the intellect DTO, never partner-config');
+  assert.ok(!f.calls.some((c) => c.url.includes('/partner-config')), 'writes via the intellect DTO, never partner-config');
 });
 
 test('intellectConfig.setKnowledgeIds rejects >1 id BEFORE any network', async () => {
@@ -366,17 +301,6 @@ test('intellectConfig.describe partitions editable vs readOnly (phantom-write di
     assert.match(d.readOnly[k].note, /internal tooling|server-managed/);
   }
   assert.equal(d.capabilityNames.length, 15);
-});
-
-test('intellectConfig.setBrainConfig + brainConfigAvailable delegate to intellects', async () => {
-  const { cfg, f } = mkMgmt([
-    { match: '/partner-config/get', respond: () => ({ body: {} }) },
-    { match: '/partner-config/update', respond: (req) => ({ body: { config: req.body.config } }) },
-  ]);
-  assert.equal((await cfg.brainConfigAvailable(ADMIN)).available, true);
-  const r = await cfg.setBrainConfig(1481, { agentFastLlm: 'us.haiku' }, ADMIN);
-  assert.equal(r.applied, true);
-  assert.ok(f.calls.some((c) => c.url.includes('/partner-config/update')));
 });
 
 test('patch + setters require an admin KS (scope guard)', async () => {

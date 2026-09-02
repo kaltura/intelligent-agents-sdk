@@ -220,92 +220,53 @@ function fakeFetchWithReferencingIntellect() {
   ]);
 }
 
-test('opts.knowledge creates a category and links when ungated', async () => {
+test('opts.knowledge creates a category, mints a knowledge record, points it at the category, links it, and enables RAG', async () => {
   const { m } = baseProvision();
-  // createCategory is the Stage-B G2 landing — simulate it; linkAvailable says OK.
-  let linked = null;
+  let linkedConfigId = null;
+  let linkedIds = null;
+  let addedSource = null;
+  let enabledCall = null;
   m.knowledge.createCategory = async () => ({ id: 4242 });
-  m.knowledge.linkAvailable = async () => ({ available: true, reason: 'reachable' });
-  m.knowledge.linkCategory = async (opts) => { linked = opts; return { ok: true }; };
+  m.knowledge.addRecord = async () => ({ id: 55 });
+  m.knowledge.addSource = async (knowledgeId, source) => { addedSource = { knowledgeId, source }; return { applied: true }; };
+  m.knowledge.setEnabled = async (configId, enabled) => { enabledCall = { configId, enabled }; return {}; };
+  m.intellectConfig.setKnowledgeIds = async (configId, ids) => { linkedConfigId = configId; linkedIds = ids; return { applied: true }; };
   const r = await m.provision({
     brief: 'x', ks: ADMIN_KS,
-    knowledge: { name: 'Docs', autoLink: true, modalities: ['document', 'ocr'] },
+    knowledge: { name: 'Docs', autoLink: true },
   });
   assert.equal(r.blocks.knowledge.created, true);
   assert.equal(r.blocks.knowledge.categoryId, 4242);
+  assert.equal(r.blocks.knowledge.knowledgeId, 55);
   assert.equal(r.blocks.knowledge.linked, true);
-  assert.equal(r.blocks.knowledge.gated, false);
-  assert.equal(linked.configId, 1389);
-  assert.equal(linked.categoryId, 4242);
-  assert.deepEqual(linked.modalities, ['document', 'ocr']);
+  // the record is pointed at the corpus category — not left with an empty config.sources
+  assert.deepEqual(addedSource, { knowledgeId: 55, source: { type: 'internal', categoryIds: ['4242'] } });
+  assert.equal(linkedConfigId, 1389);
+  assert.deepEqual(linkedIds, [55]);
+  // use_knowledge_base is turned on — knowledge_ids alone doesn't enable RAG
+  assert.deepEqual(enabledCall, { configId: 1389, enabled: true });
 });
 
-test('opts.knowledge records the HONEST gate (403) without failing the provision', async () => {
+test('opts.knowledge records a failure without failing the provision', async () => {
   const { m } = baseProvision();
   m.knowledge.createCategory = async () => ({ id: 7 });
-  // The linkage write is deployment-gated → linkAvailable reports unavailable.
-  m.knowledge.linkAvailable = async () => ({ available: false, reason: 'partner-config/update needs a higher privilege than a partner admin KS (deployment-gated)' });
-  let linkCalled = false;
-  m.knowledge.linkCategory = async () => { linkCalled = true; throw new Error('should not be called when gated'); };
+  m.knowledge.addRecord = async () => { throw new Error('genie unavailable'); };
   const r = await m.provision({ brief: 'x', ks: ADMIN_KS, knowledge: { name: 'Docs', autoLink: true } });
-  assert.equal(linkCalled, false, 'short-circuits on the gate; never attempts the 403 write');
   assert.equal(r.blocks.knowledge.created, true);
   assert.equal(r.blocks.knowledge.categoryId, 7);
   assert.equal(r.blocks.knowledge.linked, false);
-  assert.equal(r.blocks.knowledge.gated, true);
-  assert.match(r.blocks.knowledge.reason, /privilege|403/);
-  assert.equal(r.agentId, 'agent-xyz', 'gated linkage NEVER fails the provision');
+  assert.match(r.blocks.knowledge.reason, /genie unavailable/);
+  assert.equal(r.agentId, 'agent-xyz', 'a knowledge-linkage failure NEVER fails the provision');
 });
 
-test('opts.knowledge surfaces a runtime 403 from linkCategory as gated, not fatal', async () => {
+test('opts.knowledge without autoLink creates the category but skips linkage', async () => {
   const { m } = baseProvision();
   m.knowledge.createCategory = async () => ({ id: 9 });
-  m.knowledge.linkAvailable = async () => ({ available: true, reason: 'reachable' }); // probe passes…
-  m.knowledge.linkCategory = async () => { const e = new Error('Forbidden'); e.status = 403; throw e; }; // …but the write 403s
-  const r = await m.provision({ brief: 'x', ks: ADMIN_KS, knowledge: { categoryId: 9, autoLink: true } });
+  const r = await m.provision({ brief: 'x', ks: ADMIN_KS, knowledge: { categoryId: 9 } });
   assert.equal(r.blocks.knowledge.created, false, 'reused caller categoryId; nothing created');
   assert.equal(r.blocks.knowledge.linked, false);
-  assert.equal(r.blocks.knowledge.gated, true);
-  assert.match(r.blocks.knowledge.reason, /403/);
+  assert.match(r.blocks.knowledge.reason, /autoLink not requested/);
   assert.equal(r.agentId, 'agent-xyz');
-});
-
-test('opts.knowledge honors the REAL linkCategory contract: applied:false (not a throw) → gated, never faked linked:true', async () => {
-  const { m } = baseProvision();
-  m.knowledge.createCategory = async () => ({ id: 11 });
-  m.knowledge.linkAvailable = async () => ({ available: true, reason: 'reachable' }); // probe passes…
-  // The LANDED Knowledge.linkCategory (conversations.js) does NOT throw on the deployment gate —
-  // it catches the 403 and RETURNS {applied:false, code:'forbidden', reason}. provision
-  // must inspect that and report gated, NOT fake linked:true off a resolved promise.
-  m.knowledge.linkCategory = async () => ({ applied: false, code: 'forbidden', reason: 'partner-config/update needs a higher privilege than a partner admin KS (deployment-gated)' });
-  const r = await m.provision({ brief: 'x', ks: ADMIN_KS, knowledge: { name: 'Docs', autoLink: true } });
-  assert.equal(r.blocks.knowledge.created, true);
-  assert.equal(r.blocks.knowledge.categoryId, 11);
-  assert.equal(r.blocks.knowledge.linked, false, 'must NOT fake linked:true when the real method returns applied:false');
-  assert.equal(r.blocks.knowledge.gated, true);
-  assert.match(r.blocks.knowledge.reason, /privilege|403|forbidden/);
-  assert.equal(r.agentId, 'agent-xyz', 'gated linkage NEVER fails the provision');
-});
-
-test('opts.knowledge: a 404 not_deployed from the real linkCategory is gated, not linked', async () => {
-  const { m } = baseProvision();
-  m.knowledge.createCategory = async () => ({ id: 12 });
-  m.knowledge.linkAvailable = async () => ({ available: true });
-  m.knowledge.linkCategory = async () => ({ applied: false, code: 'not_deployed', reason: 'partner-config route not on this deployment' });
-  const r = await m.provision({ brief: 'x', ks: ADMIN_KS, knowledge: { categoryId: 12, autoLink: true } });
-  assert.equal(r.blocks.knowledge.linked, false);
-  assert.equal(r.blocks.knowledge.gated, true);
-  assert.equal(r.agentId, 'agent-xyz');
-});
-
-test('opts.knowledge: a genuine applied:true from linkCategory reports linked:true', async () => {
-  const { m } = baseProvision();
-  m.knowledge.createCategory = async () => ({ id: 13 });
-  m.knowledge.linkAvailable = async () => ({ available: true });
-  m.knowledge.linkCategory = async () => ({ applied: true, result: { ok: true } });
-  const r = await m.provision({ brief: 'x', ks: ADMIN_KS, knowledge: { categoryId: 13, autoLink: true } });
-  assert.equal(r.blocks.knowledge.linked, true);
-  assert.equal(r.blocks.knowledge.gated, false);
 });
 
 test('all three optional blocks can fire together and ride the _meta receipt', async () => {
@@ -314,8 +275,10 @@ test('all three optional blocks can fire together and ride the _meta receipt', a
   m.tools = { list: () => ({ all: async () => [] }), add: async () => ({ id: 'id-good' }) };
   m.intellectConfig.setToolIds = async () => ({ applied: true });
   m.knowledge.createCategory = async () => ({ id: 1 });
-  m.knowledge.linkAvailable = async () => ({ available: true });
-  m.knowledge.linkCategory = async () => ({});
+  m.knowledge.addRecord = async () => ({ id: 55 });
+  m.knowledge.addSource = async () => ({ applied: true });
+  m.knowledge.setEnabled = async () => ({});
+  m.intellectConfig.setKnowledgeIds = async () => ({ applied: true });
   const r = await m.provision({
     brief: 'x', ks: ADMIN_KS,
     capabilities: { avatar: 'on' },
