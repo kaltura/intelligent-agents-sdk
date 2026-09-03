@@ -155,6 +155,8 @@ Omit `videoEl` entirely for a headless/custom-render integration (canvas, WebGL,
 
 For a dynamic crop/`object-position` instead of generic `object-fit: cover`, both classes also fire `'videoMetadata'` (`{videoWidth, videoHeight}`) once per connect, as soon as the decoder resolves the stream's actual dimensions. There's no fixed/published output resolution to hardcode against — this event is the source of truth.
 
+**`KalturaAvatarSession` only — don't hide a loading UI on `'streamReady'`** — despite the name, it fires at the initial signaling handshake (`connect()` step 1), before any video track exists; there can be a real gap of a second or more between it and actual video. Listen for `'mediaReady'` instead: it fires once per connect, unconditionally — `{mode:'video', videoWidth, videoHeight}` once the STV media is playable (using `'videoMetadata'`'s dimensions if they resolved in time, `0` if they didn't — e.g. no `videoEl`, or a decoder that never fires `loadedmetadata`), or `{mode:'audio'}` immediately if the session falls back to audio-only — so a loading spinner has one deterministic event to hide on, in either mode, with no fallback timeout to guess. `KalturaScriptedVideoSession` has no signaling handshake and emits neither event.
+
 ### Compositing a transparent-background avatar (chroma key)
 
 The rendered avatar stream is opaque — there's no alpha channel or published green/blue-screen backdrop to key against as a platform guarantee. If your layout needs the avatar composited over arbitrary page content (not a fixed rectangle), key it live with a bring-your-own `chroma-key-video`-shaped compositor via `./experience/chroma-key`'s `attachChromaKeyAvatar()`:
