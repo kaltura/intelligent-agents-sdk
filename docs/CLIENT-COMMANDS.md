@@ -20,6 +20,8 @@ Three pieces. Author the command, the brain calls it, the page captures it.
 
 `tools.client({name, description, args?, waitForResponse?, timeout?})` builds a native `type:"client"` tool. Unlike the `api`/`csv`/`code` tool types, it has no `request` block, no echo endpoint, and no response shaper — the model calls it, the backend emits the `type:"tool"` segment, and that's the entire server-side contract.
 
+<!-- nova-target: client-commands-example | Author a client command example -->
+
 ```js
 import { Management, tools } from '@kaltura/intelligent-agents/management';
 
@@ -39,6 +41,7 @@ await mgmt.intellects.create({
   prompts: [/* … */],
 }, adminKs);
 ```
+<!-- /nova-target -->
 
 `tool_ids` is one of the intellect's allow-listed fields, so linking a tool persists through **`v1/intellect/update`** (the brain's host, admin token). The tool BODY itself lives on the separate `/v1/tool/*` entity (`mgmt.tools`), not inside the intellect config.
 

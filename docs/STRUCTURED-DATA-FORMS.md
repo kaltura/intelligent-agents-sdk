@@ -10,6 +10,8 @@ All claims below are anchored to source: the brain (the conversational AI backen
 
 You configure it once, at intellect creation or update, as a list of "stages":
 
+<!-- nova-target: structured-data-forms-example | Configure structured data forms example -->
+
 ```js
 await mgmt.intellectConfig.setUserPropertiesForms(configId, [
   { callStage: 'middle', properties: [
@@ -18,6 +20,7 @@ await mgmt.intellectConfig.setUserPropertiesForms(configId, [
   ] },
 ], adminKs);
 ```
+<!-- /nova-target -->
 
 `callStage` is one of `start` / `middle` / `end` (`CALL_STAGES` in `src/management/intellect-config.js`). Each property is `{key, type}`, where `type` is one of the six argument types the platform supports — `str`, `int`, `float`, `bool`, `list`, `dict` (`ARG_TYPES`, re-exported from `core/stream.js`'s `ARG_TYPE_NAMES`, the single source of truth). The renderer additionally recognizes `email`/`phone`/`text` as presentation hints (see "Rendering" below) — the wire/backend schema itself only stores the six base types. `buildUserPropertiesForms()` validates all of this purely, before any network call, and throws a typed `bad_request` on an invalid stage, an empty `properties` array, or an unknown type.
 

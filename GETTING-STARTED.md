@@ -34,11 +34,14 @@ Your Partner ID and Admin Secret are your keys to the system.
 
 Clone the repository and install the quickstart's dependencies:
 
+<!-- nova-target: getting-started-clone | Clone and install commands -->
+
 ```bash
 git clone https://github.com/kaltura/intelligent-agents-sdk.git
 cd intelligent-agents-sdk/quickstart
 npm install
 ```
+<!-- /nova-target -->
 
 Then set your credentials for this shell session:
 

@@ -2,6 +2,8 @@
 
 A from-scratch reimplementation of the live avatar runtime, using nothing but `socket.io-client` and the browser's native `RTCPeerConnection`. Read [ARCHITECTURE.md](ARCHITECTURE.md) for the big picture and [ARCHITECTURE-REFERENCE.md](ARCHITECTURE-REFERENCE.md) for the exact wire shapes each step below relies on.
 
+<!-- nova-target: architecture-recipe-steps | Minimal reimplementation recipe steps -->
+
 ```
 1. Backend: POST /v1/application/appInit (widget KS)
    → { ks, conversationManagerUrl, srsBaseUrl, turnServerUrl, avatars[] }
@@ -25,6 +27,7 @@ A from-scratch reimplementation of the live avatar runtime, using nothing but `s
    (or inject text: emit onTextEntered {text, isFinal:true} — the same event speak() always emits;
    debug_text_entered is a secondary mirror the server sends only when the session was created with debug:true)
 ```
+<!-- /nova-target -->
 
 Dependencies: `socket.io-client` + the browser's native `RTCPeerConnection`. Nothing else. The WebRTC avatar engine's client package is just a convenience wrapper around exactly these steps (`joinASR` = the socket-relayed offer/answer; `joinSTV` = the WHEP subscribe).
 

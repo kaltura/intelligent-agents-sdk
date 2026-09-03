@@ -17,8 +17,7 @@
 - **`followups-tool`, `flashcards-tool`, and `show-link-tool` are confirmed against real backend output** — including the `followups-tool`/`show-link-tool` boundary flush (a different runtime arriving mid-stream closes the prior widget correctly), end to end through `SegmentAssembler` → `ExperienceRenderer` → `mountWidget` → click → `KavaAnalytics.buttonClicked()` (see [analytics.md](analytics.md)). The other six runtimes are still **INFERRED** (unit-tested red/green, not yet confirmed against real backend output). Source: `genui/segments.js` header.
 - **RAG-driven vs. config-driven emission is unverified** — whether `video_gallery` / `external_video` / `show_link` fire from RAG hits or pure prompt tuning is **not documented**; the author-time lever is the capability + prompt, but the trigger is the brain's discretion.
 - **Backend may add runtimes outside this set** — e.g. `gen-ui-composer-tool`, `gen-ui-components-tool`, `kaltura-video-player-tool`. They are NOT in `RUNTIMES`; the renderer routes them to `{kind:'unknown'}` + `onUnhandled` rather than faking a known kind.
-- **`sources` needs a knowledge base to cite from** — ground a new agent via `knowledge.addRecord`
-+ `knowledge_ids` (ungated; see API-REFERENCE.md § Ground the Agent). `sources` then renders the brain's real retrieved citations.
+- **`sources` needs a knowledge base to cite from** — ground a new agent via `knowledge.addRecord` + `knowledge_ids` (ungated; see API-REFERENCE.md § Ground the Agent). `sources` then renders the brain's real retrieved citations.
 - **`entryId` playback needs the Kaltura player** — `video-gallery` preserves `entryId`; when `embedUrl` is present (requires `partnerId`; `uiConfId` is optional and only pins a specific player uiConf), the SDK renders an inline player; without it the host renders by `entryId`.
 
 ## Related docs

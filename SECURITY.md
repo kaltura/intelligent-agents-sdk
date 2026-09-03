@@ -37,12 +37,14 @@ Email `security@kaltura.com` with details and a PoC if available. Please do not 
 
 Beyond the platform controls below, the SDK exposes DX-first guardrails for the AI/agent layer, detailed in the [framework crosswalks](#framework-crosswalks) below. Most require you to opt in by passing a callback or option. Two run automatically regardless of configuration: the idle-timeout auto-logoff (900000 ms, 15 minutes, by default — pass `0` to disable) and the AI-disclosure event, which fires before the avatar's first words on every connect.
 
+<!-- nova-target: ai-application-controls-list | AI-application controls: OWASP LLM/Agentic + HIPAA technical safeguards -->
 - **Output handling (LLM05).** Opt-in: `safeUrl` / `safeText` / `renderSafeLink` (DOM-built, scheme-checked — never `innerHTML`) — call these yourself when rendering avatar text. On by default: inbound clamping of captions/segments.
 - **Input guardrail (LLM01).** Opt-in: `onBeforeSend(text, ctx)` may transform or block a turn — a no-op until you pass it.
 - **Agentic gate (LLM06 / ASI 01-02).** Opt-in: `onAgentAction(action)` and the declarative `agentActions` policy. Always available: the read-only `capabilities` surface and the `stop()` kill switch.
 - **Consumption valve (LLM10).** Opt-in: `maxTurnsPerMinute` (unlimited until you set it).
 - **HIPAA technical safeguards.** On by default: `idleTimeoutMs` auto-logoff (164.312(a)(2)(iii)), 900000 ms (15 minutes) — pass `0` to disable. Opt-in: the opaque `subjectId` unique-user-id (164.312(a)(2)(i)); content-free turn audit events (164.312(b)) fire automatically once you wire `onAuditEvent`.
 - **Avatar/deepfake.** On by default: disclosure-before-speech with `synthetic`/`provenance` data, fired before the avatar's first words on every connect; `getDisclosure()` is queryable any time. Opt-in: `requireDisclosureAck` (also a biometric-consent gate); an optional `consentRef` on voice/visual cloning.
+<!-- /nova-target -->
 
 ## KS (Kaltura Session) guidance for agents (AC-3 / AC-6 / IA-2)
 

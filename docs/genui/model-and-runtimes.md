@@ -8,6 +8,8 @@ The brain emits a **GenUI widget** by writing a fenced block carrying a `widgetN
 
 Backend tool key (defined server-side) → wire `runtimeName` → normalized dispatch key (the renderer registry key). Source: `src/core/stream.js` `GENUI_RUNTIMES`; `src/experience/genui/parse.js` `RUNTIMES` (derived from `GENUI_RUNTIMES`, so the two can never drift).
 
+<!-- nova-target: genui-runtimes-table | The first-class GenUI runtimes -->
+
 | # | Backend key | Wire `runtimeName` | Normalized | Purpose |
 |---|---|---|---|---|
 | 1 | `flashcards` | `flashcards-tool` | `flashcards` | Study Q/A cards |
@@ -19,6 +21,7 @@ Backend tool key (defined server-side) → wire `runtimeName` → normalized dis
 | 7 | `external_video` | `external-video-tool` | `external-video` | Embed a **non-Kaltura** video |
 | 8 | `user_properties_form` | `user-properties-form-tool` | `user-properties-form` | Structured data-collection form |
 | 9 | `gallery_slides` | `content-gallery-tool` | `content-gallery` | Gallery of content slides/cards (with **images**) |
+<!-- /nova-target -->
 
 `normalizeRuntime(name)` (`parse.js`) strips a trailing `-tool` and trims; it tolerates an already-normalized name and a non-string (→ `''`). `isKnownRuntime(name)` tests membership in this set. Any other runtime (e.g. the backend's `gen-ui-composer-tool`, `gen-ui-components-tool`, `kaltura-video-player-tool` — see [safety-and-restrictions.md](safety-and-restrictions.md)) is NOT in this set and falls through to a safe fallback.
 

@@ -26,11 +26,14 @@ The server's own VAD turn-cutting branches on the agent's *configured* `isTapToT
 
 Every push-to-talk/open-mic product draws the same line — one active capture mechanism, chosen once, not a live per-session toggle exposing both:
 
+<!-- nova-target: voice-input-modes-table | How other products handle capture mode -->
+
 | Product | How it handles capture mode |
 |---|---|
 | Discord | Single Input Mode setting — no per-session switch |
 | Amazon Alexa / Ford SYNC | Wake-word vs. PTT-button are alternate *triggers* for one active capture mechanism, not two concurrent ones |
 | WhatsApp | Hold-to-record voice notes only — no separate open-mic mode |
+<!-- /nova-target -->
 
 ## Deciding which mode fits your app
 

@@ -25,11 +25,14 @@
 
 ## 1. Channels at a glance
 
+<!-- nova-target: wire-protocol-channels | Channels at a glance -->
+
 | Channel | Transport | Direction | Carries | Source of truth |
 |---|---|---|---|---|
 | **Control plane** | Socket.IO (WebSocket) to `conversation.avatar.us.kaltura.ai` | duplex | handshake, session orchestration, brain text stream, turn/talking state, ASR signaling relay | [§2](#2-socketio-connection)–[§3](#3-connect-sequence-state-machine-order), [events catalog](events-catalog.md) |
 | **ASR uplink** | WebRTC `RTCPeerConnection` (pc1) | client → server | your microphone (OPUS); SDP/ICE relayed **over the socket** | [§5](audio-channels.md#5-asr-uplink-pc1--microphone--server) |
 | **STV downlink** | WebRTC `RTCPeerConnection` (pc2) via **WHEP** | server → client | avatar video (H264) + audio (OPUS); SDP over **plain HTTP** | [§6](audio-channels.md#6-stv-downlink-pc2--avatar-videoaudio--you) |
+<!-- /nova-target -->
 
 Two separate peer connections by design (per `EMBED`'s own architecture notes): WHEP is receive-only, ASR is send-only, and they use **different ICE policies** ([§5](audio-channels.md#5-asr-uplink-pc1--microphone--server)/[§6](audio-channels.md#6-stv-downlink-pc2--avatar-videoaudio--you)) — separating them gives independent negotiation and failure isolation.
 

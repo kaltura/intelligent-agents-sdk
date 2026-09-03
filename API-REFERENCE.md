@@ -46,6 +46,7 @@ Every endpoint is shown as a raw HTTP call plus its SDK wrapper. The SDK is what
 
 ## Quick Reference
 
+<!-- nova-target: api-reference-quickref | Quick Reference example -->
 The full `Management` method surface (this doc's endpoints, wrapped) is listed in [`README.md`](README.md) → Management. Two common lookups:
 
 ```js
@@ -56,3 +57,4 @@ const ks = await mgmt.sessions.createAdminToken();
 console.log(await mgmt.agents.list(ks).all());
 console.log(await mgmt.intellects.list(ks).all());
 ```
+<!-- /nova-target -->
