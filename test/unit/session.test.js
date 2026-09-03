@@ -108,6 +108,34 @@ test("emits 'mediaReady' with {mode:'video', videoWidth, videoHeight} at the sam
   session.disconnect();
 });
 
+test("emits 'mediaReady' with {mode:'video', videoWidth:0, videoHeight:0} when the decoder never resolves dimensions (videoEl configured, no loadedmetadata)", async () => {
+  const videoEl = new FakeVideoEl({ autoCanPlay: false });
+  const { session, socket } = newSession({ videoEl });
+  scriptHappyPath(socket);
+  const mediaReady = [];
+  const videoMetadata = [];
+  session.on('mediaReady', (p) => mediaReady.push(p));
+  session.on('videoMetadata', (p) => videoMetadata.push(p));
+  const connectP = session.connect();
+  await delay(20);
+  videoEl.fireCanPlay(); // canplay only — loadedmetadata never fires
+  await connectP;
+  assert.deepEqual(mediaReady, [{ mode: 'video', videoWidth: 0, videoHeight: 0 }], 'mediaReady still fires, unlike videoMetadata, so a spinner is never stuck on a slow/absent decoder');
+  assert.equal(videoMetadata.length, 0, "'videoMetadata' correctly never fires without loadedmetadata");
+  session.disconnect();
+});
+
+test("emits 'mediaReady' with {mode:'video', videoWidth:0, videoHeight:0} even when videoEl is omitted (headless video mode)", async () => {
+  const { session, socket } = newSession({ videoEl: null });
+  scriptHappyPath(socket);
+  const mediaReady = [];
+  session.on('mediaReady', (p) => mediaReady.push(p));
+  await session.connect();
+  assert.deepEqual(mediaReady, [{ mode: 'video', videoWidth: 0, videoHeight: 0 }], 'mediaReady is mode-agnostic and must not depend on videoEl the way videoMetadata does');
+  assert.equal(session.mode, 'video');
+  session.disconnect();
+});
+
 test("emits 'mediaReady' with {mode:'audio'} immediately on audio-only fallback — no 'videoMetadata' wait needed", async () => {
   const { session, socket } = newSession();
   scriptHappyPath(socket, { audioMode: true });

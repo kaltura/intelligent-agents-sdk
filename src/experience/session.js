@@ -32,12 +32,14 @@
  * signaling server", not "video is visible"; don't use it to hide a loading
  * UI. Use 'mediaReady' (below) or 'videoMetadata' instead.
  *
- * 'mediaReady' fires exactly once per connect, as soon as the SDK knows what
- * media is actually coming: `{mode:'video', videoWidth, videoHeight}` at the
- * same point 'videoMetadata' fires (so it also requires `videoEl`), or
- * `{mode:'audio'}` immediately when the session falls back to audio-only
- * (no STV capacity) — the one case where 'videoMetadata' never fires. This
- * is the event to gate a loading UI on.
+ * 'mediaReady' fires exactly once per connect, unconditionally — unlike
+ * 'videoMetadata', it does NOT require `videoEl` and does NOT wait
+ * indefinitely on the decoder: `{mode:'video', videoWidth, videoHeight}` once
+ * the STV media is playable, using 'videoMetadata's dimensions if they
+ * resolved in time or `0` if they didn't (headless, or a decoder that never
+ * fires `loadedmetadata`) — or `{mode:'audio'}` immediately when the session
+ * falls back to audio-only (no STV capacity). This is the event to gate a
+ * loading UI on.
  *
  * Does NOT police `token`'s entitlement scope — a real KS's privileges are
  * AES-encrypted with the partner secret and unreadable client-side (see
@@ -676,9 +678,18 @@ export class KalturaAvatarSession extends Emitter {
     const playable = new Promise((resolve) => {
       let done = false;
       let videoMetadataSent = false;
+      let mediaReadySent = false;
       /** @type {Set<any>} */ const timers = new Set();
       const arm = (fn, ms) => { const id = setTimeout(fn, ms); timers.add(id); id.unref?.(); return id; };
-      const finish = () => { for (const id of timers) clearTimeout(id); timers.clear(); resolve(); };
+      // Guaranteed exactly once per connect, unlike 'videoMetadata': falls back to
+      // whatever dimensions are known (possibly 0) if the decoder never fires
+      // 'loadedmetadata' before canplay/hard-cap settle, or if there's no videoEl at all.
+      const emitMediaReady = (v) => {
+        if (mediaReadySent) return;
+        mediaReadySent = true;
+        this.emit('mediaReady', { mode: 'video', videoWidth: v?.videoWidth || 0, videoHeight: v?.videoHeight || 0 });
+      };
+      const finish = () => { for (const id of timers) clearTimeout(id); timers.clear(); emitMediaReady(this._videoEl); resolve(); };
       const settle = () => { if (!done) { done = true; arm(finish, 300); } }; // +300ms jitter settle
       pc.ontrack = (e) => {
         this.emit('track', { track: e.track, streams: e.streams });
@@ -692,7 +703,7 @@ export class KalturaAvatarSession extends Emitter {
               if (videoMetadataSent) return;
               videoMetadataSent = true;
               this.emit('videoMetadata', { videoWidth: v.videoWidth, videoHeight: v.videoHeight });
-              this.emit('mediaReady', { mode: 'video', videoWidth: v.videoWidth, videoHeight: v.videoHeight });
+              emitMediaReady(v);
             };
             if (v.videoWidth || v.videoHeight) emitVideoMetadata();
             else v.addEventListener('loadedmetadata', emitVideoMetadata, { once: true });
