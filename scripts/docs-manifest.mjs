@@ -245,18 +245,8 @@ export const manifest = [
     navTitle: 'API · Phase 4 — Operate',
     generated: true,
   },
-  {
-    source: 'docs/api/scripted-video.md',
-    target: 'reference/api/scripted-video.md',
-    url: '/reference/api/scripted-video/',
-    title: 'API · Scripted Video (STV)',
-    description: 'Scripted-video-only sessions: auth, lifecycle, and say-audio speech injection.',
-    eyebrow: 'Reference',
-    h1: 'Scripted-video (STV-only) sessions',
-    group: 'Reference',
-    navTitle: 'API · Scripted Video (STV)',
-    generated: true,
-  },
+  // Note: docs/api/scripted-video.md is intentionally NOT ported to the site — see
+  // DOCS_SUBTREE_IGNORE in generate-docs.mjs. Stays SDK-repo-only reference on GitHub.
   {
     source: 'docs/api/management-operations.md',
     target: 'reference/api/management-operations.md',

@@ -40,7 +40,6 @@ module.exports = [
       { title: "API · Phase 2 — Build", url: "/reference/api/build/" },
       { title: "API · Phase 3 — Deploy", url: "/reference/api/deploy/" },
       { title: "API · Phase 4 — Operate", url: "/reference/api/operate/" },
-      { title: "API · Scripted Video (STV)", url: "/reference/api/scripted-video/" },
       { title: "API · Management Operations", url: "/reference/api/management-operations/" },
       { title: "Lifecycle", url: "/reference/lifecycle/" },
       { title: "Architecture Recipe", url: "/reference/architecture-recipe/" },

@@ -96,7 +96,7 @@ A self-built pipeline has to recreate that measurement loop too.
 
 Pre-authored narration, puppet-style playback, and demo reels are real use
 cases — you author every word, and the avatar performs it. That's what
-[scripted avatar sessions](/reference/api/scripted-video/)
+[scripted avatar sessions](https://github.com/kaltura/intelligent-agents-sdk/blob/main/docs/api/scripted-video.md)
 are for. For anything a visitor talks back to, you want all three flows.
 
 ## Next steps

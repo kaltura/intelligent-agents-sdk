@@ -21,6 +21,14 @@ const GITHUB_BLOB_BASE = 'https://github.com/kaltura/intelligent-agents-sdk/blob
 // silently miss the site the way docs/lifecycle/ once did.
 const ROOT_DOC_IGNORE = new Set(['README.md', 'CODE_OF_CONDUCT.md', 'CONTRIBUTING.md', 'SDK_CONSTITUTION.md']);
 
+// docs/ subtree files intentionally never ported to the site: the source doc stays
+// in the SDK repo (readable on GitHub) but doesn't get a public site page. Scripted-
+// video sessions are a narrow, brain-free niche next to the full agentic avatar —
+// a dedicated site page reads as parity with the main product and confuses customers
+// into thinking it's an equivalent path. Any generated page that links to one of
+// these falls back to a GitHub blob URL instead (see the link-rewrite step below).
+const DOCS_SUBTREE_IGNORE = new Set(['docs/api/scripted-video.md']);
+
 function walkMarkdown(dir, base = dir) {
   const out = [];
   for (const ent of readdirSync(dir, { withFileTypes: true })) {
@@ -33,7 +41,7 @@ function walkMarkdown(dir, base = dir) {
 
 export function checkSourceCoverage(sdkDir) {
   const rootMd = readdirSync(sdkDir).filter((n) => n.endsWith('.md') && !ROOT_DOC_IGNORE.has(n));
-  const docsMd = walkMarkdown(resolve(sdkDir, 'docs')).map((p) => `docs/${p}`);
+  const docsMd = walkMarkdown(resolve(sdkDir, 'docs')).map((p) => `docs/${p}`).filter((p) => !DOCS_SUBTREE_IGNORE.has(p));
   const discovered = new Set([...rootMd, ...docsMd]);
   const manifestSources = new Set(manifest.filter((e) => e.source).map((e) => e.source));
   const missing = [...discovered].filter((s) => !manifestSources.has(s));
