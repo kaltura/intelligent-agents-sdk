@@ -2,6 +2,8 @@
 
 A "what can you build" catalog for orienting a new integration — read it once, then use [API-REFERENCE.md](../API-REFERENCE.md) for the mechanism details behind each entry. Each use case maps to a runnable script/example in this repo, or the equivalent SDK call. UC-1 has a quickstart script; UC-7/12 use the browser example app; UC-13 is exercised by an integration test.
 
+<!-- nova-target: use-case-catalog-table | Use-Case Catalog: all 13 use cases mapped to SDK entry points -->
+
 | # | Use case | Key mechanism | Script / SDK entry point |
 |---|----------|--------------|--------|
 | UC-1 | **Agent Factory** | `generateAgentProfile` → `intellect/add` → configure → `avatar/create` → `agent/create` → `resolveWidgetId` | `node quickstart/create-agent.mjs "Your brief"` |
@@ -17,6 +19,7 @@ A "what can you build" catalog for orienting a new integration — read it once,
 | UC-11 | **Usage Analytics** | Aggregated client-side; includes `_meta` provenance receipt | `mgmt.messages.reportSummary(ks)` |
 | UC-12 | **Anonymous End-User Embed** | `resolveWidgetId` once (server) → `sessions.createWidgetToken` (browser, no secret) → `appInit` → enriched KS | `examples/browser-experience.html` |
 | UC-13 | **Custom Portrait Avatar** | `catalog-item/create` with portrait JPEG → `catalogItemId` → `avatar/create visual.id` → `appInit` → `KalturaAvatarSession` connects with the portrait animating live | [§ End-to-end recipe](api/design.md#end-to-end-custom-portrait-avatar-server-to-browser) + `test/integration/avatars-catalog.test.js` |
+<!-- /nova-target -->
 
 ## Composition patterns
 

@@ -37,6 +37,8 @@ Most external APIs need one of two authentication shapes, both supported directl
 
 If your target API requires a proper three-legged OAuth2 authorization-code flow (a viewer must grant consent; the resulting token expires and needs refreshing), the platform has that — it's implemented, real, and lives entirely on the backend. Pass an `authentication` block instead of a static bearer header in an `api` tool's `request`:
 
+<!-- nova-target: external-api-oauth2-example | Real OAuth2 authorization-code flow example -->
+
 ```js
 import { api } from '@kaltura/intelligent-agents/management';
 
@@ -59,6 +61,7 @@ const tool = api({
   responseMapping: { result: 'result' },
 });
 ```
+<!-- /nova-target -->
 
 `buildAuth()` (`src/management/tools.js`) validates this block before any network call: `type` must be `'oauth2'` (the only scheme the backend supports today), and — the one hard rule — `client_secret` **must** be a `secrets.<name>` reference matching `/^secrets\.[A-Za-z_][A-Za-z0-9_]*$/`. A plaintext secret is rejected by construction, so there's no path for it to leak into a tool config at rest.
 

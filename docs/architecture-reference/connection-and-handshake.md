@@ -44,6 +44,8 @@ const socket = io(conversationManagerUrl, {   // from appInit
 
 Exact order from the platform's built-in client's connection state machine. Each step waits for the named inbound event before advancing; timeouts in parens.
 
+<!-- nova-target: full-connect-sequence-table | Full connect sequence (state-machine order) -->
+
 | # | Client does | Emits (→) / Waits (←) | Inbound event | Timeout |
 |---|-------------|----------------------|---------------|---------|
 | 0 | Init WebRTC session (TURN config) + `getUserMedia(audio:true,video:false)` | — | (browser mic prompt) | — |
@@ -59,6 +61,7 @@ Exact order from the platform's built-in client's connection state machine. Each
 | 10 | Subscribe STV video (WHEP) **and wait until it is *playable*, or give up waiting** | → WHEP `POST` (no timeout of its own) → wait `<video>` `canplay` + ~300ms settle, or a 6s hard cap if `canplay` never fires | first decoded frame, or the 6s cap elapsing | 6s (hard cap; settles either way) |
 | 11 | Approve — this is what starts the spoken greeting | → `approvedPermissions` `{client, room}` | — | — |
 | → | **CONNECTED** | listen for `agent_raw_text`, `generatingSpeech`, `stvStartedTalking` | — | — |
+<!-- /nova-target -->
 
 Overall connecting timeout: 30s.
 

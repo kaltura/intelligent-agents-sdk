@@ -98,6 +98,8 @@ The brain runs entirely server-side. The client never calls an LLM — it publis
 
 There are two session modes, and they are NOT interchangeable. Scripted sessions render speech you author, line by line. Interactive sessions run all [three conversation flows](https://kaltura.github.io/intelligent-agents-sdk/explanation/inside-a-live-conversation/) for you: conversation control, agent orchestration, and your plugged-in expertise. **Interactive agentic** is the product experience; **scripted (puppet)** is a narrow authoring tool.
 
+<!-- nova-target: two-runtime-sdk-paths-table | Two session modes comparison -->
+
 | | scripted-video client (`/v1/avatar-session`) | interactive avatar client (`conversation.avatar` socket) |
 |---|---|---|
 | Avatar video (STV/WHEP) | ✅ | ✅ |
@@ -105,6 +107,7 @@ There are two session modes, and they are NOT interchangeable. Scripted sessions
 | Brain | ❌ (you supply every line of text) | ✅ (server-side, streams `agent_raw_text`) |
 | You call | `mgmt.avatarSessions.say()` (audio only — see below) | nothing — the user speaks, the brain answers |
 | Use for | **scripted / puppet** avatars (you drive the words) | **interactive agentic** avatars (autonomous conversation) |
+<!-- /nova-target -->
 
 The protocol above describes the **interactive** path. The scripted path has no text-in of its own: the service's `say-text` route 503s on every call (a live server bug), so the SDK wraps only `say-audio` — you provide pre-rendered speech audio (e.g. from your own TTS call) and its duration. Full auth/lifecycle details: [API-REFERENCE.md § Scripted-Video (STV-only) Sessions](api/scripted-video.md); runnable example: `examples/scripted-video-session.mjs` + `.html`.
 
