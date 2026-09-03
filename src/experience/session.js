@@ -400,6 +400,7 @@ export class KalturaAvatarSession extends Emitter {
     this._socket = null;
     this._pcAsr = null;
     this._pcStv = null;
+    this._cancelStvPlayable = null;  // cancels _connectStv()'s pending mediaReady timers if teardown lands mid-connect
     this._micStream = null;
     this._roomId = null;
     this._sessionId = null;
@@ -676,6 +677,10 @@ export class KalturaAvatarSession extends Emitter {
     this._armIceNewWatchdog('stv', pc);
 
     let cancelPlayable = () => {};
+    // Exposed on `this` so _teardownTransports() can reach it — disconnect()/_endWith() called
+    // mid-connect (after this point, before `await playable` below resolves) closes _pcStv but
+    // otherwise has no handle into this closure's pending timers.
+    this._cancelStvPlayable = () => cancelPlayable();
     const playable = new Promise((resolve) => {
       let done = false;
       let videoMetadataSent = false;
@@ -692,10 +697,14 @@ export class KalturaAvatarSession extends Emitter {
       };
       const finish = () => { for (const id of timers) clearTimeout(id); timers.clear(); emitMediaReady(this._videoEl); resolve(); };
       const settle = () => { if (!done) { done = true; arm(finish, 300); } }; // +300ms jitter settle
-      // If the WHEP handshake itself fails (thrown below, before `await playable`),
-      // the hard-cap timer would otherwise survive and fire mediaReady minutes later
-      // on an already-failed/disconnected session — cancel it instead.
-      cancelPlayable = () => { done = true; mediaReadySent = true; for (const id of timers) clearTimeout(id); timers.clear(); };
+      // If the WHEP handshake itself fails (thrown below, before `await playable`), or the
+      // session tears down mid-connect (disconnect()/_endWith() via _teardownTransports(),
+      // through `this._cancelStvPlayable` above), the hard-cap timer would otherwise survive
+      // up to 6s and fire mediaReady on an already-failed/disconnected session — cancel it
+      // instead. Also resolves `playable` itself (never emitting mediaReady, since
+      // mediaReadySent is now true) so `await playable` below can't hang forever waiting on
+      // a track/timer that will never come from a peer connection teardown already closed.
+      cancelPlayable = () => { done = true; mediaReadySent = true; for (const id of timers) clearTimeout(id); timers.clear(); resolve(); };
       pc.ontrack = (e) => {
         this.emit('track', { track: e.track, streams: e.streams });
         const v = this._videoEl;
@@ -748,9 +757,11 @@ export class KalturaAvatarSession extends Emitter {
       await pc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
     } catch (err) {
       cancelPlayable();
+      this._cancelStvPlayable = null;
       throw err;
     }
     await playable;
+    this._cancelStvPlayable = null;
   }
 
   /** @param {any} socket */
@@ -2487,6 +2498,11 @@ export class KalturaAvatarSession extends Emitter {
     }
     this._unwireNetwork();
     this._unwireLifecycle();
+    // Teardown landing mid-connect (_connectStv() still awaiting `playable`) must cancel its
+    // pending mediaReady timers too — otherwise the hard-cap fires up to 6s later on a session
+    // that's already disconnected/errored, violating mediaReady's "once per connect" contract.
+    this._cancelStvPlayable?.();
+    this._cancelStvPlayable = null;
     try { this._pcAsr?.close?.(); } catch { /* */ }
     try { this._pcStv?.close?.(); } catch { /* */ }
     try { this._hwMuteTimers.forEach(clearTimeout); this._hwMuteTimers = []; } catch { /* */ }

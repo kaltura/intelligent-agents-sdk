@@ -149,6 +149,20 @@ test("regression: a failed WHEP handshake never fires 'mediaReady' later from th
   assert.equal(mediaReady.length, 0, "cancelPlayable() must clear the hard-cap timer so it can't fire mediaReady on a session that already failed");
 });
 
+test("regression: disconnect() mid-connect (WHEP succeeded, no canplay yet) cancels the pending hard-cap timer, not just the peer connection", { timeout: 15000 }, async () => {
+  const videoEl = new FakeVideoEl({ autoCanPlay: false });
+  const { session, socket } = newSession({ videoEl });
+  scriptHappyPath(socket);
+  const mediaReady = [];
+  session.on('mediaReady', (p) => mediaReady.push(p));
+  const connectP = session.connect();
+  await delay(20); // past the WHEP handshake and pc.ontrack; canplay/hard-cap still pending
+  session.disconnect();
+  await connectP.catch(() => {}); // pre-existing, out-of-scope gap: connect() doesn't abort on a concurrent disconnect()
+  await delay(6500); // past the 6s hard-cap the leaked timer used to fire on
+  assert.equal(mediaReady.length, 0, '_teardownTransports() must cancel _connectStv()\'s pending hard-cap timer so it can\'t fire mediaReady on an already-disconnected session');
+});
+
 test("emits 'mediaReady' with {mode:'audio'} immediately on audio-only fallback — no 'videoMetadata' wait needed", async () => {
   const { session, socket } = newSession();
   scriptHappyPath(socket, { audioMode: true });
