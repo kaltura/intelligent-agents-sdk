@@ -342,7 +342,6 @@ Designed for enterprise, HIPAA, HITRUST, and regulated frameworks. Full control 
 - **`kaltura_genie_experiences` competes with client tools.** Set it `'off'` at creation for tool-driven intellects (the capability injects a system rule that out-competes custom tools). Set at creation — partner config is cached ~24 h server-side. `tools.clientToolReadiness(body)` lints for this.
 - **`force_experience` is a hint, not a contract.** The live runtime hardcodes `avatar_only`; structured widgets arrive reliably only on the HTTP converse path.
 - **Group turn events by `speechId`, never timestamp.** A new utterance invalidates the prior one's in-flight captions (barge-in guard).
-- **Probe deployment-gated writes before calling them.** `intellects.brainConfigAvailable(ks)` / `knowledge.linkAvailable(ks)` return `{available, reason}`. Gated writes return `{applied:false, reason}` — they never throw or fake success.
 
 ---
 
@@ -698,7 +697,7 @@ await mgmt.intellects.setCapability(configId, 'use_knowledge_base', 'on', ks);
 const { id: toolId } = await mgmt.tools.add(myTool, ks);       // tools are a separate, partner-level entity
 await mgmt.intellectConfig.setToolIds(configId, [toolId], ks); // then link it
 await mgmt.intellects.secrets.set(configId, { API_KEY: value }, ks);  // write-only
-await mgmt.intellectConfig.setKnowledgeIds(configId, [knowledgeId], ks);  // Path A, ungated
+await mgmt.intellectConfig.setKnowledgeIds(configId, [knowledgeId], ks);  // ungated
 await mgmt.intellectConfig.setMcpServers(configId, { docs: { url: 'https://mcp.example.com/sse' } }, ks);  // ungated
 ```
 
@@ -780,7 +779,7 @@ view.disconnect();
 ## RAG (knowledge base)
 
 ```js
-// Path A — ungated, verified live
+// ungated, verified live
 const rec = await mgmt.knowledge.addRecord({ name: 'Product Docs' }, ks);
 const { configId } = await mgmt.intellects.create({
   knowledge_ids: [rec.id],
@@ -813,7 +812,7 @@ await mgmt.knowledge.deleteRecord(rec.id, ks, { confirmPermanent: true });
 
 ## Honest limits
 
-- **`partner-config/update` 403s today** for a partner admin KS. Brain config (`setBrainConfig`) and the knowledge re-point (Path B) are gated. Probe first; writes return `{applied:false, reason}`. Grounding a new agent via `knowledge_ids` (Path A) is NOT gated. (Event-driven session/thread rules ARE supported — see [API Reference § Lifecycle](/reference/api/build/#lifecycle-event-driven-rules).)
+- **Brain-model and rate-limit fields have no public write door.** `agent_llm`/`agent_fast_llm`/`agent_avatar_llm`/rate limits/`run_quota_check`/`web_search_config` are set by internal tooling only — no public route reads or writes them (`intellectConfig.describe()` surfaces their current values read-only, informationally). Grounding a new agent via `knowledge_ids` is fully ungated. (Event-driven session/thread rules ARE supported — see [API Reference § Lifecycle](/reference/api/build/#lifecycle-event-driven-rules).)
 - **No verbatim speech** — `speak()` goes through the brain; the avatar may rephrase.
 - **Custom face works self-serve** — upload a portrait image via `catalog.createVisual`, pass `itemId` as `visualId` in `provision`/`avatars.create`. The model animates the portrait at runtime. Video-clip ingest (higher-fidelity model) is not yet self-serve.
 - **`force_experience` and `model_type:'fast'`** are hints; the SDK can't prove which model replied or which experience rendered.

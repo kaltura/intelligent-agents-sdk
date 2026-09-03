@@ -261,10 +261,10 @@ POST https://genie.nvp1.ovp.kaltura.com/v1/knowledge/add
 
 Returns `{ "id": 42, ... }`. Save the `id`.
 
-**Don't already know the id?** `mgmt.knowledge.listRecords(ks, opts)` discovers a partner's existing records — pass `opts.filter.nameLike` to search by name. Use it to build a "pick an existing knowledge base" picker instead of hardcoding ids: a common Agent Factory flow is letting a user attach a knowledge base they created earlier to a brand-new agent. Distinct from `knowledge.list(categoryId, ks)` above, which lists KMS *entries* inside a category (Path A), not Knowledge *record* containers.
+**Don't already know the id?** `mgmt.knowledge.list(ks, opts)` discovers a partner's existing records — pass `opts.filter.nameLike` to search by name. Use it to build a "pick an existing knowledge base" picker instead of hardcoding ids: a common Agent Factory flow is letting a user attach a knowledge base they created earlier to a brand-new agent. Distinct from `knowledge.listCategoryEntries(categoryId, ks)`, which lists KMS *entries* inside one category, not Knowledge *record* containers.
 
 ```js
-const page = await mgmt.knowledge.listRecords(ks, { pageSize: 20, filter: { nameLike: 'Product' } });
+const page = await mgmt.knowledge.list(ks, { pageSize: 20, filter: { nameLike: 'Product' } });
 page[0]; // { id: 42, name: 'Product Documentation', status: 'READY', config: { sources: [...] }, ... }
 ```
 
@@ -282,7 +282,9 @@ Writes through the intellect DTO — no `partner-config/update`, no 403. RAG ret
 
 > **`knowledge_ids` is capped at ONE record** despite the plural array shape — the Genie validator (`at_most_one_knowledge_id`) rejects more. The SDK's `intellectConfig.setKnowledgeIds()` enforces this client-side with a typed `bad_request` before any network call. To ground one agent in several content sources, upload them all into a single knowledge record.
 
-**Step 3 — Upload content** via `knowledge.uploadDocument()` (SDK) or the Kaltura OVP media ingest APIs.
+**Step 3 — Upload content into a KMS category:** `knowledge.uploadDocument()` (SDK) or the Kaltura OVP media ingest APIs put the actual media entries into a KMS category — `knowledge.createCategory()` creates that category if you don't already have one. A category is just a container; on its own it's not connected to the knowledge record from Step 1.
+
+**Step 4 — Point the record at that category:** `knowledge.addSource(id, { type: 'internal', categoryIds: [String(categoryId)] }, ks)`. This is the step that actually makes the uploaded content retrievable — a knowledge record with no `config.sources[]` entry has nothing to search, even with `knowledge_ids` linked and `use_knowledge_base: "on"`. `knowledge.removeSource(id, source, ks)` is the inverse. Both read-merge-write one entry of `config.sources[]` without disturbing the others, and are idempotent. Don't hand-assemble `config.sources` via `updateRecord({config}, ks)` directly unless you intend a full replace: the backend overwrites the entire `config` on that field.
 
 | Modality | Source |
 |----------|--------|
@@ -290,25 +292,31 @@ Writes through the intellect DTO — no `partner-config/update`, no 403. RAG ret
 | `ocr` | On-screen text |
 | `document` | PDF / Markdown attachments |
 
-**SDK:** `knowledge.addRecord()` + `knowledge.uploadDocument()` + `intellectConfig.setKnowledgeIds()` (Path A, verified live). Re-pointing an EXISTING intellect via the `partner-config/update` path (Path B — `knowledge.linkRecords()`, probed first with `knowledge.linkAvailable()`) is still gated (403s for a partner admin KS today) — prefer Path A for new agents; only reach for Path B if the intellect already exists and you can't recreate it.
+**SDK, full sequence:** `knowledge.addRecord()` → `knowledge.createCategory()` (or reuse an existing category) → `knowledge.uploadDocument()` → `knowledge.addSource()` → `intellectConfig.setKnowledgeIds()` → `knowledge.setEnabled(configId, true, ks)` (equivalent to the `capabilities.use_knowledge_base` write in Step 2). Skipping `addSource` is the most common way to end up with a linked, enabled, but silently empty knowledge base. Re-pointing an EXISTING intellect to a new or different knowledge record works the same way — call `setKnowledgeIds()` again with the new id. It's a normal `v1/intellect/update` write, no separate linking call, no gate.
 
-**Checking whether indexing has finished:** `knowledge.isIndexed(id, ks)` reads `knowledge.getRecord(id, ks).status` — but `status` is the knowledge record's own container-lifecycle flag (`"READY"`/`"DELETED"`), not an indexing-completion signal. It reads `"READY"` immediately once the record exists, before any entry has been indexed, because a knowledge base is open-ended (you can always add more entries) — there's no single "fully indexed" state for the record as a whole. Don't treat `isIndexed()` returning `ready:true` as proof your content is searchable yet.
+**Checking whether indexing has finished:** `knowledge.isIndexed(id, ks)` reads `knowledge.getRecord(id, ks).status`. But `status` is the knowledge record's own container-lifecycle flag (`"READY"`/`"DELETED"`), not an indexing-completion signal. It reads `"READY"` immediately once the record exists, before any entry has been indexed, because a knowledge base is open-ended (you can always add more entries), so there's no single "fully indexed" state for the record as a whole. Don't treat `isIndexed()` returning `ready:true` as proof your content is searchable yet.
 
-Don't use `knowledge.search()` as a substitute either — its "couldn't find relevant information" reply fires for an unindexed KB, an indexed KB with `use_knowledge_base:'off'`, or a genuine no-match query alike, so it can't signal indexing status. `knowledge.corpusStatus()` only counts entries that exist in the category, not whether they've finished embedding. `knowledge.indexStatus()` (`partner-config/stats`) 403s for a partner admin KS on at least one deployment.
+Don't use `knowledge.search()` as a substitute either. Its "couldn't find relevant information" reply fires alike for an unindexed KB, an indexed KB with `use_knowledge_base:'off'`, or a genuine no-match query, so it can't signal indexing status. `knowledge.corpusStatus()` only counts entries that exist in the category, not whether they've finished embedding.
 
-A per-entry indexing-status check, `knowledge.entryStatus(knowledgeId, entryIds, ks)`, exists in the SDK and is the correct way to verify specific uploaded content has finished indexing. It's not yet generally available on every deployment — check with your Kaltura account team before relying on it. A knowledge-level status check that doesn't require elevated privilege is planned for a future release.
-
-Until then, there's no reliable completion signal to poll — budget a fixed wait after upload instead of polling `isIndexed()` (which is `ready:true` from the first call and never tells you more):
+`knowledge.entryStatus(knowledgeId, entryIds, ks)` is the official per-entry indexing-status check *(not yet GA on every deployment — check with your Kaltura account team)*, and the correct way to verify specific uploaded content has finished indexing. Poll it instead of guessing with a fixed wait:
 
 ```js
-async function waitForIndexingBestEffort(waitMs = 60000) {
-  // No reliable per-entry signal is available yet — this is a fixed budget, not a poll.
-  // Swap this for a poll against knowledge.entryStatus() once it's generally available.
-  await new Promise((resolve) => setTimeout(resolve, waitMs));
+async function pollUntilIndexed(mgmt, knowledgeId, entryIds, ks, { intervalMs = 5000, timeoutMs = 90000 } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  const pending = new Set(entryIds);
+  while (pending.size && Date.now() < deadline) {
+    const { entries } = await mgmt.knowledge.entryStatus(knowledgeId, [...pending], ks);
+    // entries omits an id until it's finished indexing, then reports its documents' status.
+    for (const entry of entries) {
+      if (entry.documents?.every((d) => d.status)) pending.delete(entry.entry_id);
+    }
+    if (pending.size) await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+  return pending.size === 0; // false means the timeout ran out before every entry confirmed
 }
 ```
 
-Resolve that wait **before** you create or update the intellect, and send `use_knowledge_base:'on'` in that same `intellectConfig` call alongside `knowledge_ids` — not as a follow-up capability patch. Partner config is Redis-cached for up to 24h server-side (see [Client-Side Commands' Gotcha 2](/guides/client-commands/#gotcha-2--partner-config-is-cached-24h-set-capabilities-at-creation-not-after)); a two-step create-then-flip risks the cache latching onto the transient `off` value from step one and never seeing step two's `on`. A single write after the wait avoids that race entirely for a fresh create.
+Resolve that poll **before** you create or update the intellect, and send `use_knowledge_base:'on'` in that same `intellectConfig` call alongside `knowledge_ids` — not as a follow-up capability patch. Partner config is Redis-cached for up to 24h server-side (see [Client-Side Commands' Gotcha 2](/guides/client-commands/#gotcha-2--partner-config-is-cached-24h-set-capabilities-at-creation-not-after)); a two-step create-then-flip risks the cache latching onto the transient `off` value from step one and never seeing step two's `on`. A single write after the wait avoids that race entirely for a fresh create.
 
 ---
 
@@ -330,6 +338,12 @@ POST https://api.avatar.us.kaltura.ai/v1/avatar/create
 ```
 
 `voice.id` and `visual.id` come from the catalog (§ Browse the Catalog). Returns `id` (24-char hex). **No `adminTags`** — avatars reject unknown fields. Tag the parent agent instead.
+
+If `visual.id` points at a custom uploaded portrait rather than a catalog preset, how you crop that source photo directly affects how the persona renders on this avatar — pad it generously rather than a tight headshot crop:
+
+![Tight headshot crops shrink onto the render canvas with black borders; a generously padded portrait scales to fill it edge-to-edge](/assets/img/avatar-photo-framing.svg)
+
+See [Phase 1 — Design § Upload a Custom Visual](/reference/api/design/#upload-a-custom-visual-portrait--animated-avatar) for the full crop-fit explanation.
 
 **Faster path — pick a curated preset instead of assembling voice+visual by hand:** `mgmt.avatars.listTemplates(ks, opts)` lists ready-made `{voice, face}` bundles (36 in production today — "Adam", "Amir", "Ben", ...). Useful for a fleet product that spins up many agents fast (one avatar per sales rep, a demo generator) and wants a "pick a good-looking preset" step instead of a build-your-own-face-plus-voice wizard every time.
 
@@ -372,57 +386,16 @@ Returns `agentId` (UUID). **Save this.**
 
 ---
 
-## Configure the Brain (deployment-gated)
+## Brain-Model & Rate-Limit Fields (not in the public API)
 
-> `partner-config/update` access will be removed for non-superadmin partners. Don't build production workflows on it.
+`agent_llm`, `agent_fast_llm`, `agent_avatar_llm`, `run_quota_check`, `web_search_config`, and the four rate-limit fields (`rate_limit_per_minute`, `rate_limit_per_hour`, `anonymous_rate_limit_per_minute`, `anonymous_rate_limit_per_hour`) exist on the backend intellect record, but no public route reads or writes them — `intellect/get`/`intellect/update` never expose or accept them, and there is no separate endpoint that does. They're set by internal tooling only.
 
-Brain-model and rate-limit fields are **not in the intellect DTO** — `intellect/get`/`intellect/update` never expose or accept them. The only door is Genie's `partner-config/*` route family:
-
-| Class | Fields | Round-trip verified? |
-|---|---|---|
-| Class A | `agent_llm`, `agent_fast_llm`, rate limits | Yes |
-| Class B (best-effort) | `agent_avatar_llm`, `run_quota_check`, `web_search_config` | No — sendable via `setBrainConfig`, but unverified to persist |
-
-`partner-config/*` splits across three operations with different availability:
-
-| Operation | Route | KS | Works on a partner admin KS today? |
-|---|---|---|---|
-| Read the brain config | `partner-config/get` | admin | **Yes** — a plain read, no gate |
-| Probe write availability | `partner-config/get` (id:0) | admin | **Yes** — same read, used as a liveness check |
-| Write the brain config | `partner-config/update` | admin | **No** — 403s; needs a higher/service privilege |
-
-**Step 1 — probe before writing:**
+**SDK:** `mgmt.intellectConfig.describe(configId, ks)` lists every one of these under its `readOnly` map, each with a short note, so a UI can render them as informational without hardcoding the list:
 
 ```js
-const probe = await mgmt.intellects.brainConfigAvailable(ks);
-// { available: false, code: 'forbidden', reason: 'partner-config/update needs a higher privilege than a partner admin KS (deployment-gated)' }
+const { readOnly } = await mgmt.intellectConfig.describe(configId, ks);
+readOnly.agent_llm; // { value: <whatever intellect/get returns for this key, if anything>, note: 'set by internal tooling only, not writable via the public API' }
 ```
-
-**Step 2 — write (only if `available:true`; otherwise skip and treat as read-only):**
-
-```js
-const result = await mgmt.intellects.setBrainConfig(configId, {
-  agentLlm: '<your-agent-llm-id>',
-  rateLimits: { perMinute: 60, perHour: 1000 },
-}, ks);
-// { applied:false, code:'forbidden', reason:'...' } when gated — NEVER throws or fakes success.
-// { applied:true, sentKeys:[...], result } when the door is open.
-```
-
-**Step 3 — read back what's actually persisted** (`setBrainConfig`'s `applied`/`sentKeys` list what was *sent*, not confirmed *persisted* — see the Class B row above):
-
-```js
-const { brainConfig, unsetUseDefault } = await mgmt.intellects.getBrainConfig(configId, ks);
-```
-
-**SDK:** `mgmt.intellects.{brainConfigAvailable, setBrainConfig, getBrainConfig}`. `brainConfigAvailable`/`setBrainConfig` share a classifier with `knowledge.linkAvailable`/`linkRecords` (§ Ground the Agent Path B) — both probe the same `partner-config/*` door.
-
-**Status of each part, despite the write being gated and slated for removal:**
-
-| Part | Status |
-|---|---|
-| `getBrainConfig` (read) | Live — the only way to see `agent_llm`/rate limits; the intellect DTO doesn't carry them |
-| `setBrainConfig` (write) | Client-side path to those fields where the door is open (e.g. a superadmin-provisioned partner); returns `{applied:false, reason}` rather than a silent no-op or a thrown 403 when it's closed |
 
 ---
 
@@ -435,9 +408,20 @@ A rule is `{eventType, objectType, eventConditions, action}`:
 - `eventType` — e.g. `session_ended`, `analysis_updated`.
 - `objectType` — currently only `thread`.
 - `eventConditions[]` — `{field, operator, value}` matchers, e.g. `{field:'object.agent_id', operator:'eq', value:'<uuid>'}`, `{field:'changed_keys', operator:'has_all', value:[...]}`. `field` is a dot-path into the event payload (see `describeFields` below for which paths exist per event) — confirmed live: a `{path, op}` shaped entry 400s.
-- `action` — a plain object, one of two shapes today. Passed straight through, not built by the SDK:
-- `{ actionType: 'triggerInsight', insights: [{ insightKey, valueType, prompt? }, ...] }` — fires up to 20 named LLM insight generations against the thread. `valueType` (`'string'`/`'number'`/`'boolean'`/`'arrayString'`/`'arrayNumber'`/`'arrayBoolean'`) is **required on every insight, even built-in keys** — omitting it 400s live. `SUMMARY`/`SENTIMENT`/`TOPIC` have built-in prompts; a custom `insightKey` needs an explicit `prompt`.
-- `{ actionType: 'sendInsightEmail', recipients: string[], templateId?: string, presetType?: string }` — mails a rendered insight summary to `recipients` (supports `{{template}}` placeholders like `{{object.user_id}}`), using either an explicit `templateId` or an auto-created `presetType` template. Only fires on `eventType:'analysis_updated'` — attaching it to a `session_ended` rule is a server-side no-op.
+- `action` — a plain object, passed straight through, not built by the SDK.
+
+**The backend recognizes four `actionType` values, not two.** Two are meant for you to create; the other two only exist to power system preset rules — creating them yourself is accepted by the API but has no effect, because their behavior is hardcoded and ignores anything you pass:
+
+| `actionType` | Who creates it | What it does |
+|---|---|---|
+| `triggerInsight` | You | Runs an LLM over the conversation and writes back exactly the fields you defined in `insights` — a built-in key (`SUMMARY`/`SENTIMENT`/`TOPIC`, each with a ready-made prompt) or any custom key name paired with your own `prompt` |
+| `sendInsightEmail` | You | Sends an email to a Kaltura user, filling an email template from the thread's already-extracted insight values |
+| `triggerOverridableSummaryInsight` | Nobody — system preset only | Always produces one fixed insight, key `SUMMARY`. Never create this yourself — every agent already gets it automatically, with no rule needed. Its only lever is `mgmt.agents.update({agentId, summaryOverridePrompt})`. |
+| `triggerDataToCollectInsight` | Nobody — powers a preset that's disabled for every account today | Not usable today under any account. Ignore it. |
+
+`{ actionType: 'triggerInsight', insights: [{ insightKey, valueType, prompt? }, ...] }` fires up to 20 named LLM insight generations against the thread. `valueType` (`'string'`/`'number'`/`'boolean'`/`'arrayString'`/`'arrayNumber'`/`'arrayBoolean'`) is **required on every insight, even built-in keys** — omitting it 400s live. `SUMMARY`/`SENTIMENT`/`TOPIC` have built-in prompts; a custom `insightKey` needs an explicit `prompt`.
+
+`{ actionType: 'sendInsightEmail', recipients: string[], templateId?: string, presetType?: string }` mails a rendered insight summary to `recipients` (Kaltura user ids, not raw email addresses — supports `{{template}}` placeholders like `{{object.user_id}}`), using either an explicit `templateId` or an auto-created `presetType` template. Only fires on `eventType:'analysis_updated'` — attaching it to a `session_ended` rule is a server-side no-op.
 
 **Business use-case 1 — auto-summarize every ended session:**
 
@@ -447,11 +431,13 @@ await mgmt.lifecycle.create({
   systemName: 'auto_summary_v1',
   eventType: 'session_ended',
   objectType: 'thread',
-  action: { actionType: 'triggerInsight', insights: [{ insightKey: 'SUMMARY', valueType: 'string' }, { insightKey: 'SENTIMENT', valueType: 'string' }, { insightKey: 'TOPIC', valueType: 'string' }] },
+  action: { actionType: 'triggerInsight', insights: [{ insightKey: 'SENTIMENT', valueType: 'string' }, { insightKey: 'TOPIC', valueType: 'string' }] },
 }, ks);
 ```
 
-Every conversation gets a structured recap the moment it ends, with zero app-side code.
+Every conversation gets a structured recap the moment it ends, with zero app-side code. `SUMMARY` is deliberately not requested — every partner already has an always-on preset rule producing one for free (see below), merged into the same batch as this rule's own insights.
+
+**Every session already gets a `SUMMARY`, for free.** A system-seeded rule, `preset__overridable_summary_on_session_ended`, runs `triggerOverridableSummaryInsight` on every `session_ended` event, for every agent, with no opt-out. The mechanic that matters: every rule whose action extracts insights on the same event gets merged into one batch, one LLM call — not one call per rule. Create your own `triggerInsight` rule on `session_ended`, and it runs in the *same batch* as this preset, producing one combined `thread_metadata.analysis` containing the preset's `SUMMARY` plus whatever you asked for. Don't put `SUMMARY` in your own rule's `insights` array — you already get it for free, and if you ask for it anyway, your prompt never takes effect (the preset's insight is appended after yours in the batch, and when both name the same key, the later one wins). Want a custom prompt for that default summary instead of the built-in one? That's an agent-level setting, not a lifecycle rule: `mgmt.agents.update({ agentId, summaryOverridePrompt: '...' }, ks)`.
 
 **Business use-case 2 — alert a human when a specific agent's analysis updates:**
 
@@ -464,11 +450,13 @@ await mgmt.lifecycle.create({
   eventType: 'analysis_updated',
   objectType: 'thread',
   eventConditions: [{ field: 'object.agent_id', operator: 'eq', value: '<agent-uuid>' }],
-  action: { actionType: 'sendInsightEmail', recipients: ['support-lead@example.com'], presetType: 'conversationInsightExample' },
+  action: { actionType: 'sendInsightEmail', recipients: ['<support-lead-kaltura-user-id>'], presetType: 'conversationInsightExample' },
 }, ks);
 ```
 
 A support lead gets emailed every time this specific agent's conversation analysis updates, without polling.
+
+**A rule filtering on `object.agent_id` only matches threads created with an agent-scoped KS.** Mint the conversation token with `mgmt.sessions.createAgentToken({ agentId })` (`agentid:<agentId>`), not `createConversationToken({ configId })` (`geniegpcid:<configId>`) — the latter has no agent claim at all, so the resulting thread's `agent_id` is `"default"` and can never match a rule scoped to a real agent uuid. This applies whether the conversation happens over `mgmt.conversations.send()`/`.stream()` or a real avatar/socket session — the agent binding lives entirely in the KS's privilege claim, not in the call itself.
 
 **Business use-case 3 — power a no-code rule editor:** the 4 discovery methods let a UI populate its own dropdowns instead of hardcoding enums that will drift from the backend:
 

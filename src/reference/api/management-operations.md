@@ -77,11 +77,11 @@ Before deleting a Skill, `mgmt.skills.delete` lists every intellect and refuses 
 
 ## Knowledge records — `https://genie.nvp1.ovp.kaltura.com`
 
-Full record lifecycle (all verified live). SDK: `mgmt.knowledge`. Linkage to an intellect is via `knowledge_ids` (Path A — see § Ground the Agent).
+Full record lifecycle (all verified live). SDK: `mgmt.knowledge`. Linkage to an intellect is via `knowledge_ids` — see [§ Ground the Agent](/reference/api/build/#ground-the-agent-in-your-content-rag).
 
 | Operation | Endpoint | Body |
 |-----------|----------|------|
-| List | `POST /v1/knowledge/list` | `{"filter":{},"pager":{"pageIndex":1,"pageSize":30}}` — discover records without knowing ids up front. SDK: `mgmt.knowledge.listRecords(ks, opts)`. Distinct from `mgmt.knowledge.list(categoryId, ks)`, which lists KMS entries inside a category (Path A), not Knowledge record containers. |
+| List | `POST /v1/knowledge/list` | `{"filter":{},"pager":{"pageIndex":1,"pageSize":30}}` — discover records without knowing ids up front. SDK: `mgmt.knowledge.list(ks, opts)`. Distinct from `mgmt.knowledge.listCategoryEntries(categoryId, ks, opts)`, which lists KMS entries inside a category, not Knowledge record containers. |
 | Add | `POST /v1/knowledge/add` | `{"name":"..."}` |
 | Get | `POST /v1/knowledge/get` | `{"id":2049}` |
 | Update | `POST /v1/knowledge/update` | `{"id":2049, ...fields}` |
