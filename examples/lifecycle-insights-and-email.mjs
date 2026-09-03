@@ -50,6 +50,7 @@ console.log('Filterable fields for session_ended:', fields);
 
 let summaryRule;
 let emailRule;
+const cleanupErrors = [];
 try {
   // 2. Rule A: extract TOPIC + CUSTOM the instant a session ends. CUSTOM
   // isn't a built-in key (only SUMMARY/SENTIMENT/TOPIC are), so it needs its
@@ -118,8 +119,9 @@ try {
   // 5. Clean up — lifecycle rules have no in-use scan, so delete is immediate.
   // Both deletions are attempted independently: if emailRule fails to delete,
   // summaryRule (a second live partner-wide rule) must still be cleaned up —
-  // not skipped because an earlier delete in the same block threw.
-  const cleanupErrors = [];
+  // not skipped because an earlier delete in the same block threw. Errors are
+  // collected rather than thrown here (no-unsafe-finally): throwing inside a
+  // finally block would silently replace any error from the try block above.
   if (emailRule) {
     try { await kaltura.lifecycle.delete(emailRule.id, admin, { confirmPermanent: true }); console.log('Cleaned up email rule:', emailRule.id); }
     catch (err) { cleanupErrors.push(err); }
@@ -128,5 +130,5 @@ try {
     try { await kaltura.lifecycle.delete(summaryRule.id, admin, { confirmPermanent: true }); console.log('Cleaned up summary rule:', summaryRule.id); }
     catch (err) { cleanupErrors.push(err); }
   }
-  if (cleanupErrors.length) throw new AggregateError(cleanupErrors, `${cleanupErrors.length} lifecycle rule(s) failed to clean up — delete manually via kaltura.lifecycle.delete().`);
 }
+if (cleanupErrors.length) throw new AggregateError(cleanupErrors, `${cleanupErrors.length} lifecycle rule(s) failed to clean up — delete manually via kaltura.lifecycle.delete().`);
