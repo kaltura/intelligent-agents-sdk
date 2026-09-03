@@ -101,7 +101,7 @@ new Management({ partnerId, adminSecret, onAuditEvent: (e) => siem.write(e) });
 | `agent.action.deny` | `onAgentAction` denies an agent-initiated action |
 | `clone.consent` | A `consentRef` is recorded on a voice/visual clone upload |
 | `whep.release` | The WHEP (WebRTC-HTTP Egress Protocol) video resource fails to release cleanly on disconnect |
-| `session.complete` | The session-completion signal (`POST /thread/session_completed`) fires on disconnect, tab-close, backgrounding, or bfcache freeze — reuses the session's own conversation KS, mints no new credential. `action` carries the trigger reason (`disconnect`, `pagehide`, `hidden_grace`, `suppressed:peers=N`, …); see [ARCHITECTURE-REFERENCE.md § Session-completion signal](docs/ARCHITECTURE-REFERENCE.md#session-completion-signal-session_completed--telling-the-backend-a-conversation-is-truly-over) |
+| `session.complete` | The session-completion signal (`POST /thread/session_completed`) fires on disconnect, tab-close, backgrounding, or bfcache freeze — reuses the session's own conversation KS, mints no new credential. `action` carries the trigger reason (`disconnect`, `pagehide`, `hidden_grace`, `suppressed:peers=N`, …); see [ARCHITECTURE-REFERENCE.md § Session-completion signal](docs/architecture-reference/resilience-and-failure-handling.md#session-completion-signal-session_completed--telling-the-backend-a-conversation-is-truly-over) |
 
 ### Event fields
 
@@ -248,7 +248,7 @@ The avatar's brain is an agent (navigates, renders GenUI, captures leads, search
 
 | Threat | Control |
 |---|---|
-| **ASI 01 Goal Hijack** / **ASI 02 Tool Misuse** | `onAgentAction(action)` chokepoint — every agent-initiated action (`navigate`/`render-genui`/`structured-data-form`/…) passes through it before taking effect; veto via false/throw. **Operator (server-side `api`/`code`/`csv` tools):** these fire server-to-server, outside the SDK's reach — independently authorize each call against the caller's real session/permissions; never treat model/system-prompt tool scoping, or a client-suppliable `request_vars` value, as an authorization claim. See [API-REFERENCE.md § Tools](docs/api/build.md#tools-api--csv--code). |
+| **ASI 01 Goal Hijack** / **ASI 02 Tool Misuse** | `onAgentAction(action)` chokepoint — every agent-initiated action (`navigate`/`render-genui`/`structured-data-form`/…) passes through it before taking effect; veto via false/throw. **Operator (server-side `api`/`code`/`csv` tools):** these fire server-to-server, outside the SDK's reach — independently authorize each call against the caller's real session/permissions; never treat model/system-prompt tool scoping, or a client-suppliable `request_vars` value, as an authorization claim. See [API-REFERENCE.md § Tools](docs/api/build/tools-and-secrets.md#tools-api--csv--code). |
 | **ASI 03 Identity & Privilege Abuse** | Scoped, entitlement-ON, short-TTL, revocable token; least-privilege `restrictions`; `agentActions` policy (e.g. `navigate:'off'`). |
 | **ASI 06 Memory & Context Poisoning** | `Presenter` session memory is bounded and operator-cleared via `clearMemory()`; persisted memory is replayed context — operator owns the storage choice. |
 | **ASI 08 Cascading Failures** | Reconnect-window bound, media-recovery escalation, brain-liveness watchdog, client rate valve. |

@@ -172,12 +172,15 @@ export class Sessions {
   /**
    * Agent-scoped token (`agentid:<agentId>`) — binds the token to a single
    * agent rather than an intellect config (contrast {@link createConversationToken}'s
-   * `geniegpcid:<configId>`). Entitlement stays ON; refuses any attempt to also
-   * disable entitlement (same guard as `createConversationToken`). Tighten scope
-   * with `restrictions` (least privilege) instead of hand-crafting
-   * `extraPrivileges`. TTL follows the same short-lived-by-default/max-TTL rules
-   * as `conversation` (default 1800s, capped at 86400s — see {@link DEFAULT_TTL}/
-   * {@link MAX_TTL}).
+   * `geniegpcid:<configId>`). This is what sets a converse-created thread's
+   * `agent_id` to the real agent uuid instead of `"default"` — required for
+   * any lifecycle rule filtering on `object.agent_id` to ever match a thread
+   * created via `conversations.send()`/`.stream()`. Entitlement stays ON;
+   * refuses any attempt to also disable entitlement (same guard as
+   * `createConversationToken`). Tighten scope with `restrictions` (least
+   * privilege) instead of hand-crafting `extraPrivileges`. TTL follows the
+   * same short-lived-by-default/max-TTL rules as `conversation` (default
+   * 1800s, capped at 86400s — see {@link DEFAULT_TTL}/{@link MAX_TTL}).
    *
    * `userId` is intentionally NOT supported here (scoped to
    * {@link createAdminToken} and {@link createConversationToken} only — this

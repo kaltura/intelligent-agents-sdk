@@ -44,7 +44,7 @@ export async function provision(mgmt, opts) {
 
     step = 'intellect.add';
     const intel = await mgmt.intellects.add({ type: 'internal', status: 2 }, opts.ks);
-    const configId = resolveIntellectId(intel) ?? intel?.id;
+    const configId = resolveIntellectId(intel);
     if (!configId) throw new Error('intellect.add returned no id');
     created.configId = configId;
 
@@ -263,7 +263,7 @@ async function applyTools(mgmt, configId, toolDefs, ks) {
  *   2. when `autoLink` is requested: mints a Knowledge record via
  *      `knowledge.addRecord`, points it at the corpus category via
  *      `knowledge.addSource` (a bare record has no `config.sources` and so
- *      nothing to retrieve — see docs/api/build.md § Ground the Agent), links
+ *      nothing to retrieve — see docs/api/build/knowledge-rag.md), links
  *      it onto the intellect via `intellectConfig.setKnowledgeIds` (capped at
  *      ONE record), then turns RAG on via `knowledge.setEnabled` — `knowledge_ids`
  *      alone does not enable retrieval, `capabilities.use_knowledge_base` must

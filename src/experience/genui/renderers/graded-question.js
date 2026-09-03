@@ -5,7 +5,7 @@
  * runtimes (there's no brain tool that emits it) — it's a host-registered
  * "10th runtime" widget, wired in via `new ExperienceRenderer({ renderers: {
  * 'graded-question': renderGradedQuestion } })` or `.register(...)`, the same
- * extensibility seam any custom widget uses (see `docs/GENUI-REFERENCE.md`
+ * extensibility seam any custom widget uses (see `docs/genui/authoring-and-consuming.md`
  * "Registration, fallback, and provenance"). Grading happens client-side in
  * `mountWidget`'s DOM builder — see `renderers/mount.js` — because the answer
  * key travels inside the descriptor itself: this is a comprehension-check

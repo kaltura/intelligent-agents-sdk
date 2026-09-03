@@ -93,7 +93,7 @@ Full record lifecycle. SDK: `mgmt.knowledge`. Linkage to an intellect is via `kn
 | Delete | `POST /v1/knowledge/delete` | `{"id":2049}` — HTTP 200, body `null`; a follow-up get 404s |
 | Per-entry status *(not yet GA on every deployment — check with your Kaltura account team)* | `POST /v1/knowledge/entry_status` | `{"knowledge_id":2049, "entry_ids":["0_abc123"]}` |
 
-`mgmt.knowledge.isIndexed(id, ks)` wraps Get and reads `status`/`config.sources[].indexers[].index_position`. `status` is the record's own container-lifecycle flag, not an indexing-completion signal: see [build.md § Ground the Agent](build.md#ground-the-agent-in-your-content-rag) for why, and for the real indexing-completion check.
+`mgmt.knowledge.isIndexed(id, ks)` wraps Get and reads `status`/`config.sources[].indexers[].index_position`. `status` is the record's own container-lifecycle flag, not an indexing-completion signal: see [build/knowledge-rag.md § Ground the Agent](build/knowledge-rag.md#ground-the-agent-in-your-content-rag) for why, and for the real indexing-completion check.
 
 `mgmt.knowledge.addSource(id, source, ks)` / `removeSource(id, source, ks)` read-merge-write one source into/out of `config.sources` without disturbing the others — both idempotent (`applied:false` if the source is already present / already absent).
 
@@ -101,18 +101,4 @@ Before deleting a record, `mgmt.knowledge.deleteRecord` lists every intellect an
 
 ## Lifecycle — `https://api.avatar.us.kaltura.ai`
 
-An event-driven rule engine (§ Lifecycle in [Phase 2 — Build](build.md)) — not embedded in an intellect. SDK: `mgmt.lifecycle`.
-
-| Operation | Endpoint | Body |
-|-----------|----------|------|
-| List | `POST /v1/lifecycle/list` | `{"filter":{},"pager":{"offset":0,"limit":30}}` |
-| Get | `POST /v1/lifecycle/get` | `{"id":"RULE_UUID"}` |
-| Create | `POST /v1/lifecycle/create` | `{"name":"...", "systemName":"...", "eventType":"...", "objectType":"thread", "action":{...}}` |
-| Update | `POST /v1/lifecycle/update` | `{"id":"RULE_UUID", ...fields}` — idempotent |
-| Delete | `POST /v1/lifecycle/delete` | `{"id":"RULE_UUID"}` — replies `{success}`, not `{id}` |
-| Match (dry-run) | `POST /v1/lifecycle/match` | `{"objectType":"thread", "eventType":"session_ended", "eventData":{"object":{...}}}` |
-| List object types | `POST /v1/lifecycle/listObjects` | `{}` |
-| List events for a type | `POST /v1/lifecycle/listEvents` | `{"objectType":"thread"}` |
-| Describe filterable fields | `POST /v1/lifecycle/describeFields` | `{"objectType":"thread", "eventType":"session_ended"}` |
-
-Production ships a system-seeded preset rule (`preset__overridable_summary_on_session_ended`) that matches every `session_ended`/`thread` event for every partner by default — `match`'s response can include it grouped alongside your own rules (see § Lifecycle for a worked example).
+An event-driven rule engine, not embedded in an intellect. SDK: `mgmt.lifecycle`. Full reference (rule shape, all 4 action types, CRUD + discovery methods) and a worked recipe: **[docs/lifecycle/README.md](../lifecycle/README.md)**.

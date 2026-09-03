@@ -1,9 +1,12 @@
 /**
  * Conversation plane (Genie): headless converse, threads, messages, feedback,
  * followups, knowledge search, and partner analytics. The conversation/converse
- * paths need a CONVERSATION token (`geniegpcid:<configId>`, entitlement ON);
- * thread/message/report management use an admin token. Source:
- * tools/genie.mjs + API-REFERENCE §4.
+ * paths need a non-admin token — either a CONVERSATION token
+ * (`geniegpcid:<configId>`, entitlement ON) or an AGENT token
+ * (`sessions.createAgentToken({agentId})`, `agentid:<agentId>`); the latter
+ * also scopes the resulting thread's `agent_id` for lifecycle-rule matching
+ * (see docs/lifecycle/README.md). Thread/message/report management use an
+ * admin token. Source: tools/genie.mjs + API-REFERENCE §4.
  */
 import { parseConverseStream, collectConverse, SPIRAL_RECOVERY_PREFIX } from '../core/stream.js';
 import { paginate } from './paginate.js';
@@ -100,8 +103,10 @@ export class Conversations {
 
   /**
    * Send a message and stream the response as an async iterator of segments.
-   * WRITE — appends to thread memory. Needs a CONVERSATION token
-   * (`geniegpcid:<configId>`). HTTP converse is HEADLESS TEXT ONLY — it never
+   * WRITE — appends to thread memory. Needs a non-admin token: a
+   * CONVERSATION token (`geniegpcid:<configId>`) or an AGENT token
+   * (`agentid:<agentId>`, use this one to scope the thread's `agent_id` for
+   * lifecycle-rule matching). HTTP converse is HEADLESS TEXT ONLY — it never
    * reaches the live speech engine (use {@link KalturaAvatarSession.speak} for
    * the avatar).
    *
@@ -137,7 +142,7 @@ export class Conversations {
    *   a caller racing this against its own timeout MUST abort this signal when that timeout
    *   fires, or the underlying connection (and this generator's `for await` loop) keeps running
    *   detached, holding the socket open indefinitely.
-   * @param {import('./client.js').KsLike} ks conversation token
+   * @param {import('./client.js').KsLike} ks conversation or agent token
    * @returns {AsyncGenerator<import('../core/stream.js').ConverseSegment>}
    */
   async *stream(opts, ks) {
@@ -203,7 +208,7 @@ export class Conversations {
    * as-is with `spiralRecovered:false`. Off by default (back-compat): a caller
    * that wants raw `spiralStopped` visibility unchanged sees no new behavior.
    * @param {object} opts {userMessage, threadId?, sse?, model_type?, force_experience?, request_vars?, capabilities?, recoverFromSpiral?}
-   * @param {import('./client.js').KsLike} ks conversation token (`geniegpcid:<configId>`)
+   * @param {import('./client.js').KsLike} ks conversation token (`geniegpcid:<configId>`) or agent token (`agentid:<agentId>`)
    * @returns {Promise<{text:string, threadId:string, messageId:string, segments:object[], toolCalls:object[], experiences:Record<string,object[]>, experiencesList:object[], kindCounts:object, spiralStopped:boolean, truncated:boolean, spiralRecovered?:boolean, firstAttempt?:object, _meta:object}>}
    */
   async send(opts, ks) {

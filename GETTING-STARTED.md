@@ -97,6 +97,8 @@ const reply = await kaltura.converseOnce('<configId from Step 3>', 'Hello again!
 
 `userId` is optional everywhere it's accepted — omit it and you get the same anonymous behavior shown above. See [API-REFERENCE.md](docs/api/authentication.md#authentication) → "Bind a session to a real end-user identity" for the full picture.
 
+**Using [lifecycle rules](docs/lifecycle/README.md#scoping-a-rule-to-one-agent) scoped to a specific agent (`object.agent_id`)?** A thread created with a plain conversation token (as above) always gets `agent_id:"default"` and can never match those rules. Mint with `mgmt.sessions.createAgentToken({ agentId })` instead — see `docs/lifecycle/README.md`'s scoping section for why. Note `createAgentToken` does **not** accept `userId`: you currently can't combine agent-scoped lifecycle matching with end-user identity binding on the same token.
+
 ---
 
 ## What's next?
@@ -113,6 +115,7 @@ You now know how to create an agent and talk to it. Here's where to go for more:
 | Build a real app with the JavaScript SDK | [README.md](README.md#quick-start) |
 | Make the avatar drive your UI (slides, widgets, navigation) | [docs/CLIENT-COMMANDS.md](docs/CLIENT-COMMANDS.md) |
 | Pause the avatar for a video/interactive element, then resume | [docs/PAUSE-RESUME-RECIPE.md](docs/PAUSE-RESUME-RECIPE.md) |
+| Auto-summarize every conversation and email a human when it's ready | [docs/lifecycle/recipes.md](docs/lifecycle/recipes.md) |
 | Put structured widgets on screen (quizzes, carousels, code blocks) | [docs/GENUI-REFERENCE.md](docs/GENUI-REFERENCE.md) |
 | Understand how the whole system works under the hood | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
 | See a complete browser example with a live avatar | [examples/browser-experience.html](examples/browser-experience.html) |
@@ -128,7 +131,7 @@ You now know how to create an agent and talk to it. Here's where to go for more:
 
 **How do I see everything I created?** Use the Management API's list calls — `kaltura.agents.list(admin.ks)` and `kaltura.avatars.list(admin.ks)`. See [API-REFERENCE.md](docs/api/management-operations.md).
 
-**How do I label the agents I create so I can find mine later?** Tag the **agent** (not the avatar) via `adminTags` on `agents.create()`, then filter `agents.list(admin.ks)` client-side. Details in [API-REFERENCE.md](docs/api/build.md#create-an-agent).
+**How do I label the agents I create so I can find mine later?** Tag the **agent** (not the avatar) via `adminTags` on `agents.create()`, then filter `agents.list(admin.ks)` client-side. Details in [API-REFERENCE.md](docs/api/build/avatar-and-agent.md#create-an-agent).
 
 **Can I use my own face or voice?** Yes, both — see [API-REFERENCE.md](docs/api/design.md#upload-a-custom-visual-portrait--animated-avatar) and [→ Custom Voice](docs/api/design.md#upload-a-custom-voice-clone).
 

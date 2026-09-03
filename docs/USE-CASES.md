@@ -22,7 +22,7 @@ A "what can you build" catalog for orienting a new integration — read it once,
 
 | Pattern | Built from |
 |---------|-----------|
-| Knowledge-grounded support bot | UC-3 + `capabilities.use_knowledge_base:on` + [§ Ground the Agent](api/build.md#ground-the-agent-in-your-content-rag) |
+| Knowledge-grounded support bot | UC-3 + `capabilities.use_knowledge_base:on` + [§ Ground the Agent](api/build/knowledge-rag.md#ground-the-agent-in-your-content-rag) |
 | Multi-brand personas | UC-5 (voice) + UC-2 (`{{locale}}` var) |
 | Lead-capture avatar | UC-7 + `user_properties_forms` |
 | Scheduled / proactive avatar | UC-7 + your scheduler calls `speak()` on the socket |

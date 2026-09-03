@@ -61,7 +61,7 @@ POST https://genie.nvp1.ovp.kaltura.com/assistant/abort
 
 ## Reserved Template Variables (`sys__*`)
 
-The server sets these on every turn. They're available to `{{ ... }}` interpolation in `base_directive` / `prompts[].value` / `glossary` (see [Configure an Intellect](build.md#configure-an-intellect)) regardless of `allow_client_variables`. The SDK's own `request_vars` pre-flight guard rejects a client-supplied value for 5 of these 8 names before any network call — `sys__thread_id`, `sys__message_id`, `sys__user_id`, `sys__user_message`, `secrets` (see `request_vars` above) — since those collide with a server-managed variable; it does not yet name-check `sys__ks`, `sys__is_new_thread`, or `sys__user_obj.*` the same way:
+The server sets these on every turn. They're available to `{{ ... }}` interpolation in `base_directive` / `prompts[].value` / `glossary` (see [Configure an Intellect](build/intellect.md#configure-an-intellect)) regardless of `allow_client_variables`. The SDK's own `request_vars` pre-flight guard rejects a client-supplied value for 5 of these 8 names before any network call — `sys__thread_id`, `sys__message_id`, `sys__user_id`, `sys__user_message`, `secrets` (see `request_vars` above) — since those collide with a server-managed variable; it does not yet name-check `sys__ks`, `sys__is_new_thread`, or `sys__user_obj.*` the same way:
 
 | Variable | Resolves to | Notes |
 |----------|-------------|-------|
@@ -72,7 +72,7 @@ The server sets these on every turn. They're available to `{{ ... }}` interpolat
 | `sys__is_new_thread` | `true` on the first turn of a new thread, `false` otherwise | |
 | `sys__ks` | The raw Kaltura Session token for the current request | ⚠️ **Security warning: never reference `sys__ks` in a prompt whose output could be echoed back to a user or logged.** It is a live credential — rendering it as plain text in a model response, chat transcript, or log turns that surface into a credential leak. See [SECURITY.md](../../SECURITY.md#ks-kaltura-session-guidance-for-agents-ac-3--ac-6--ia-2). |
 | `sys__user_obj.first_name` / `.last_name` / `.title` / `.company` / `.gender` / `.email` | Attributes of the bound-user object | Verify these resolve with `intellects.previewPrompt()` before shipping a prompt — the rendered preview flags unresolved references with a `reserved_user_attr_unresolved` warning. |
-| `secrets.<NAME>` | A named secret configured on the intellect | Write-only — see [§ Secrets](build.md#secrets-write-only). |
+| `secrets.<NAME>` | A named secret configured on the intellect | Write-only — see [§ Secrets](build/tools-and-secrets.md#secrets-write-only). |
 
 ---
 
@@ -120,7 +120,7 @@ Unlike the admin-KS thread endpoints above, this one is called from the browser 
 
 `{genieUrl}` defaults to `https://genie.nvp1.ovp.kaltura.com` (no `/v1` prefix — a different route family from the thread CRUD above). Idempotent (a repeat call for the same thread is a no-op server-side); no rate limit; can block up to ~10s on a backend publish-ack, so a client must never await it on a page-unload path.
 
-Tell the backend a conversation is genuinely over the moment it happens, instead of waiting for the ~10-minute idle scanner — so end-of-conversation lifecycle rules (summaries, insights, CRM pushes) fire in seconds. SDK: `KalturaAvatarSession`/`KalturaChatSession`/`KalturaAgentSession` call this automatically on `disconnect()` (`sessionCompleteOnEnd`, default `true`) and on tab-close/backgrounding/bfcache — see [README.md § Ending a conversation cleanly](../../README.md#ending-a-conversation-cleanly-session_completed-signal) for the full config surface, and [WIRE-PROTOCOL.md](../WIRE-PROTOCOL.md) for the exact request shape.
+Tell the backend a conversation is genuinely over the moment it happens, instead of waiting for the ~10-minute idle scanner — so end-of-conversation lifecycle rules (summaries, insights, CRM pushes) fire in seconds. SDK: `KalturaAvatarSession`/`KalturaChatSession`/`KalturaAgentSession` call this automatically on `disconnect()` (`sessionCompleteOnEnd`, default `true`) and on tab-close/backgrounding/bfcache — see [README.md § Ending a conversation cleanly](../../README.md#ending-a-conversation-cleanly-session_completed-signal) for the full config surface, and [wire-protocol/events-catalog.md § Session-completion signal](../wire-protocol/events-catalog.md#session-completion-signal--tell-the-backend-a-conversation-is-truly-over) for the exact request shape.
 
 ## Thread History and Per-Turn Cost
 

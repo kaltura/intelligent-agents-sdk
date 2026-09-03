@@ -86,6 +86,8 @@ Returns a `CatalogItemDto` whose `itemId` is the catalog visual. Pass it as `vis
 
 The backend does preprocess the uploaded image before rendering: it crop-fits the source to a fixed face-height-to-frame ratio and centers it on the render canvas. A tight "headshot"-style crop (the intuitive upload) is the worst case. The bigger the face already fills the source frame, the more the backend downscales it to hit that ratio, and the bigger the resulting black borders around the rendered avatar. One confirmed case: padding the source out to roughly 2600×2600 (face occupying a small fraction of the frame) produced an edge-to-edge render with no borders. This is an observed data point from one real upload, not a documented API contract. The exact ratio isn't published, so pad generously and check the result in a live session rather than assuming this number is precise.
 
+![Tight headshot crops shrink onto the render canvas with black borders; a generously padded portrait scales to fill it edge-to-edge](img/avatar-photo-framing.svg)
+
 **Required fields** (API 400s if any are missing): `name`, `genderPresentation`, `background`, `skinTone`, `ageGroup`, `hairColor`. The gap today is video-clip ingest (a short clip → a higher-fidelity avatar model) — not yet self-serve.
 
 **SDK shortcut:** `catalog.createVisual(imageBlob, { name, genderPresentation, background, skinTone, ageGroup, hairColor }, adminKs)` — returns `{ itemId, loadingVideo }` (raw API response — field names come from the CatalogItemDto and are not SDK-normalized; treat as best-effort until the API contract is pinned).
