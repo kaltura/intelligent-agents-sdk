@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 380" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif">
-  <rect x="0" y="0" width="760" height="380" fill="#ffffff"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 400" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif">
+  <rect x="0" y="0" width="760" height="400" fill="#ffffff"/>
 
   <!-- Column titles -->
   <text x="190" y="26" text-anchor="middle" font-size="15" font-weight="600" fill="#b3261e">Tight headshot crop — worst case</text>
@@ -13,14 +13,13 @@
 
   <!-- Arrow A -->
   <line x1="190" y1="208" x2="190" y2="238" stroke="#333" stroke-width="2" marker-end="url(#arrow)"/>
-  <text x="190" y="228" text-anchor="middle" font-size="10.5" fill="#333"></text>
 
   <!-- Column A result -->
   <text x="190" y="252" text-anchor="middle" font-size="12" fill="#444">rendered avatar canvas</text>
   <rect x="130" y="260" width="120" height="100" fill="#111111" stroke="#999" stroke-width="1.5"/>
   <rect x="163" y="270" width="54" height="80" fill="#f4f4f4"/>
   <ellipse cx="190" cy="308" rx="17" ry="20" fill="#e8c39e" stroke="#b3261e" stroke-width="1.5"/>
-  <text x="190" y="374" text-anchor="middle" font-size="11" fill="#b3261e">image shrinks to hit the target ratio → black borders on every side</text>
+  <text x="190" y="378" text-anchor="middle" font-size="11" fill="#b3261e">image shrinks to hit the target ratio → black borders on every side</text>
 
   <!-- ===== Column B: good source ===== -->
   <text x="570" y="52" text-anchor="middle" font-size="12" fill="#444">your source photo</text>
@@ -35,13 +34,10 @@
   <text x="570" y="252" text-anchor="middle" font-size="12" fill="#444">rendered avatar canvas</text>
   <rect x="510" y="260" width="120" height="100" fill="#f4f4f4" stroke="#999" stroke-width="1.5"/>
   <ellipse cx="570" cy="308" rx="17" ry="20" fill="#e8c39e" stroke="#1e6b3a" stroke-width="1.5"/>
-  <text x="570" y="374" text-anchor="middle" font-size="11" fill="#1e6b3a">image scales to fill the canvas edge-to-edge → no borders</text>
+  <text x="570" y="378" text-anchor="middle" font-size="11" fill="#1e6b3a">image scales to fill the canvas edge-to-edge → no borders</text>
 
-  <!-- Same target face-height ratio, called out on both results -->
-  <line x1="284" y1="288" x2="284" y2="328" stroke="#555" stroke-width="1" stroke-dasharray="3,2"/>
-  <line x1="664" y1="288" x2="664" y2="328" stroke="#555" stroke-width="1" stroke-dasharray="3,2"/>
-  <text x="380" y="312" text-anchor="middle" font-size="10.5" fill="#555" font-style="italic">same fixed face-height-to-frame ratio in both cases —</text>
-  <text x="380" y="326" text-anchor="middle" font-size="10.5" fill="#555" font-style="italic">only how much frame the source face already fills differs</text>
+  <!-- Shared-ratio footnote, full width below both columns -->
+  <text x="380" y="396" text-anchor="middle" font-size="11" fill="#555" font-style="italic">Both results target the same fixed face-height-to-frame ratio — only how much of the source frame the face already fills differs.</text>
 
   <defs>
     <marker id="arrow" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto">
