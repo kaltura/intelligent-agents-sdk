@@ -229,9 +229,16 @@ function rewriteImages(body, sourcePath, sdkDir, siteDir) {
 // SDK repo's prose changes.
 const NOVA_TARGET_RE = /<!--\s*nova-target:\s*([\w-]+)\s*\|\s*([^-][\s\S]*?)\s*-->\n([\s\S]*?)\n<!--\s*\/nova-target\s*-->/g;
 
+// Strips only leading/trailing blank *lines*, not whitespace within a kept
+// line — a marked block nested in a list relies on its first/last line's own
+// indentation to stay part of that list.
+function trimBlankLines(s) {
+  return s.replace(/^(?:[ \t]*\n)+/, '').replace(/(?:\n[ \t]*)+$/, '');
+}
+
 function applyNovaTargets(body) {
   return body.replace(NOVA_TARGET_RE, (whole, target, label, inner) => (
-    `<div data-nova-target="${target}" data-nova-label="${label}">\n\n${inner.trim()}\n\n</div>`
+    `<div data-nova-target="${target}" data-nova-label="${label}">\n\n${trimBlankLines(inner)}\n\n</div>`
   ));
 }
 
