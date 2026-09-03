@@ -1,4 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 400" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8 Z" fill="#333"/>
+    </marker>
+    <clipPath id="clipSourceA"><rect x="130" y="60" width="120" height="120"/></clipPath>
+    <clipPath id="clipResultA"><rect x="163" y="270" width="54" height="80"/></clipPath>
+    <clipPath id="clipSourceB"><rect x="490" y="55" width="160" height="130"/></clipPath>
+    <clipPath id="clipResultB"><rect x="510" y="260" width="120" height="100"/></clipPath>
+  </defs>
+
   <rect x="0" y="0" width="760" height="400" fill="#ffffff"/>
 
   <!-- Column titles -->
@@ -8,7 +18,10 @@
   <!-- ===== Column A: bad source ===== -->
   <text x="190" y="52" text-anchor="middle" font-size="12" fill="#444">your source photo</text>
   <rect x="130" y="60" width="120" height="120" fill="#f4f4f4" stroke="#999" stroke-width="1.5"/>
-  <ellipse cx="190" cy="118" rx="46" ry="54" fill="#e8c39e" stroke="#b3261e" stroke-width="2"/>
+  <g clip-path="url(#clipSourceA)">
+    <polygon points="169,145 211,145 259,200 121,200" fill="#e8c39e" stroke="#b3261e" stroke-width="2"/>
+    <ellipse cx="190" cy="118" rx="46" ry="54" fill="#e8c39e" stroke="#b3261e" stroke-width="2"/>
+  </g>
   <text x="190" y="196" text-anchor="middle" font-size="11" fill="#666">face fills most of the frame</text>
 
   <!-- Arrow A -->
@@ -18,13 +31,19 @@
   <text x="190" y="252" text-anchor="middle" font-size="12" fill="#444">rendered avatar canvas</text>
   <rect x="130" y="260" width="120" height="100" fill="#111111" stroke="#999" stroke-width="1.5"/>
   <rect x="163" y="270" width="54" height="80" fill="#f4f4f4"/>
-  <ellipse cx="190" cy="308" rx="17" ry="20" fill="#e8c39e" stroke="#b3261e" stroke-width="1.5"/>
+  <g clip-path="url(#clipResultA)">
+    <polygon points="182,318 198,318 216,360 164,360" fill="#e8c39e" stroke="#b3261e" stroke-width="1.5"/>
+    <ellipse cx="190" cy="308" rx="17" ry="20" fill="#e8c39e" stroke="#b3261e" stroke-width="1.5"/>
+  </g>
   <text x="190" y="378" text-anchor="middle" font-size="11" fill="#b3261e">image shrinks to hit the target ratio → black borders on every side</text>
 
   <!-- ===== Column B: good source ===== -->
   <text x="570" y="52" text-anchor="middle" font-size="12" fill="#444">your source photo</text>
   <rect x="490" y="55" width="160" height="130" fill="#f4f4f4" stroke="#999" stroke-width="1.5"/>
-  <ellipse cx="570" cy="120" rx="24" ry="28" fill="#e8c39e" stroke="#1e6b3a" stroke-width="2"/>
+  <g clip-path="url(#clipSourceB)">
+    <polygon points="559,134 581,134 606,210 534,210" fill="#e8c39e" stroke="#1e6b3a" stroke-width="2"/>
+    <ellipse cx="570" cy="120" rx="24" ry="28" fill="#e8c39e" stroke="#1e6b3a" stroke-width="2"/>
+  </g>
   <text x="570" y="200" text-anchor="middle" font-size="11" fill="#666">face is a small fraction of a generously padded frame</text>
 
   <!-- Arrow B -->
@@ -33,15 +52,12 @@
   <!-- Column B result -->
   <text x="570" y="252" text-anchor="middle" font-size="12" fill="#444">rendered avatar canvas</text>
   <rect x="510" y="260" width="120" height="100" fill="#f4f4f4" stroke="#999" stroke-width="1.5"/>
-  <ellipse cx="570" cy="308" rx="17" ry="20" fill="#e8c39e" stroke="#1e6b3a" stroke-width="1.5"/>
+  <g clip-path="url(#clipResultB)">
+    <polygon points="562,318 578,318 596,360 544,360" fill="#e8c39e" stroke="#1e6b3a" stroke-width="1.5"/>
+    <ellipse cx="570" cy="308" rx="17" ry="20" fill="#e8c39e" stroke="#1e6b3a" stroke-width="1.5"/>
+  </g>
   <text x="570" y="378" text-anchor="middle" font-size="11" fill="#1e6b3a">image scales to fill the canvas edge-to-edge → no borders</text>
 
   <!-- Shared-ratio footnote, full width below both columns -->
   <text x="380" y="396" text-anchor="middle" font-size="11" fill="#555" font-style="italic">Both results target the same fixed face-height-to-frame ratio — only how much of the source frame the face already fills differs.</text>
-
-  <defs>
-    <marker id="arrow" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto">
-      <path d="M0,0 L8,4 L0,8 Z" fill="#333"/>
-    </marker>
-  </defs>
 </svg>
