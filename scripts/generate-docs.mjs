@@ -231,7 +231,7 @@ const NOVA_TARGET_RE = /<!--\s*nova-target:\s*([\w-]+)\s*\|\s*([^-][\s\S]*?)\s*-
 
 function applyNovaTargets(body) {
   return body.replace(NOVA_TARGET_RE, (whole, target, label, inner) => (
-    `<div data-nova-target="${target}" data-nova-label="${label}">\n\n${inner}\n\n</div>`
+    `<div data-nova-target="${target}" data-nova-label="${label}">\n\n${inner.trim()}\n\n</div>`
   ));
 }
 
