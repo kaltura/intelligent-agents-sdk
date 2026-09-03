@@ -450,7 +450,10 @@ blockquote {
   justify-content: flex-end;
   gap: 0.5rem;
   text-align: center;
-  padding: 1.5rem 1.5rem 2.5rem;
+  /* Bottom padding clears the panel's always-rendered input row (see
+     .nova-input-row) and the chat-start pill above it — otherwise this
+     bottom-anchored CTA text runs straight into them. */
+  padding: 1.5rem 1.5rem 6.5rem;
   color: #fff;
   font-size: 1rem;
   font-weight: 600;
