@@ -85,6 +85,63 @@ test("regression: 'videoMetadata' never fires when videoEl is omitted (headless)
   session.disconnect();
 });
 
+// 'mediaReady' — a single deterministic "real media is coming" signal, so a
+// consumer doesn't have to gate a loading UI on the misleadingly-named
+// 'streamReady' (Step 1 handshake, no video yet) or hand-roll an audio-mode
+// fallback timeout.
+test("emits 'mediaReady' with {mode:'video', videoWidth, videoHeight} at the same point 'videoMetadata' fires", async () => {
+  const videoEl = new FakeVideoEl({ autoCanPlay: false });
+  const { session, socket } = newSession({ videoEl });
+  scriptHappyPath(socket);
+  const mediaReady = [];
+  const videoMetadata = [];
+  session.on('mediaReady', (p) => mediaReady.push(p));
+  session.on('videoMetadata', (p) => videoMetadata.push(p));
+  const connectP = session.connect();
+  await delay(20);
+  videoEl.fireLoadedMetadata(960, 540);
+  videoEl.fireCanPlay();
+  await connectP;
+  assert.deepEqual(mediaReady, [{ mode: 'video', videoWidth: 960, videoHeight: 540 }]);
+  assert.equal(mediaReady.length, 1, 'exactly once per connect, like videoMetadata');
+  assert.deepEqual(videoMetadata, [{ videoWidth: 960, videoHeight: 540 }], "'videoMetadata' payload/timing unchanged");
+  session.disconnect();
+});
+
+test("emits 'mediaReady' with {mode:'audio'} immediately on audio-only fallback — no 'videoMetadata' wait needed", async () => {
+  const { session, socket } = newSession();
+  scriptHappyPath(socket, { audioMode: true });
+  const mediaReady = [];
+  const videoMetadata = [];
+  session.on('mediaReady', (p) => mediaReady.push(p));
+  session.on('videoMetadata', (p) => videoMetadata.push(p));
+  await session.connect();
+  assert.deepEqual(mediaReady, [{ mode: 'audio' }]);
+  assert.equal(videoMetadata.length, 0, "'videoMetadata' never fires in audio-only mode — that's the gap mediaReady closes");
+  assert.equal(session.mode, 'audio');
+  assert.equal(session.state, 'connected');
+  session.disconnect();
+});
+
+test("regression: 'streamReady' still fires at Step 1, before 'mediaReady' resolves either branch", async () => {
+  const videoEl = new FakeVideoEl({ autoCanPlay: false });
+  const { session, socket } = newSession({ videoEl });
+  scriptHappyPath(socket);
+  const order = [];
+  session.on('streamReady', (p) => order.push({ event: 'streamReady', payload: p }));
+  session.on('mediaReady', (p) => order.push({ event: 'mediaReady', payload: p }));
+  const connectP = session.connect();
+  await delay(20);
+  videoEl.fireLoadedMetadata(960, 540);
+  videoEl.fireCanPlay();
+  await connectP;
+  assert.equal(order.length, 2);
+  assert.equal(order[0].event, 'streamReady');
+  assert.ok(order[0].payload.finalUrl, "'streamReady' payload unchanged");
+  assert.equal(order[1].event, 'mediaReady');
+  session.disconnect();
+});
+
 function delay(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
 // The dead-air masking contract ('thinking…' affordance).

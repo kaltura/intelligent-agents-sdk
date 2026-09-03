@@ -27,6 +27,18 @@
  * published/fixed contract (see docs/ARCHITECTURE.md § Displaying the Avatar
  * Video), so this event is the only reliable source of truth for it.
  *
+ * 'streamReady' fires much earlier, at the initial signaling handshake
+ * (§3 step 1) — before any video track exists. It means "we reached the
+ * signaling server", not "video is visible"; don't use it to hide a loading
+ * UI. Use 'mediaReady' (below) or 'videoMetadata' instead.
+ *
+ * 'mediaReady' fires exactly once per connect, as soon as the SDK knows what
+ * media is actually coming: `{mode:'video', videoWidth, videoHeight}` at the
+ * same point 'videoMetadata' fires (so it also requires `videoEl`), or
+ * `{mode:'audio'}` immediately when the session falls back to audio-only
+ * (no STV capacity) — the one case where 'videoMetadata' never fires. This
+ * is the event to gate a loading UI on.
+ *
  * Does NOT police `token`'s entitlement scope — a real KS's privileges are
  * AES-encrypted with the partner secret and unreadable client-side (see
  * ks-inspect.js), so any such check is inert for production tokens. Which KS
@@ -490,7 +502,8 @@ export class KalturaAvatarSession extends Emitter {
     this._wireSocket(socket);
 
     try {
-      // Step 1 — server handshake.
+      // Step 1 — server handshake. Signaling only, no video track yet — see the
+      // class doc above for why this isn't the event to gate a loading UI on.
       const onConn = await this._await(socket, 'onServerConnected', TIMEOUTS.serverConnect, 'ConnectionTimeout', overall);
       this.emit('streamReady', { finalUrl: onConn?.finalUrl, agentName: onConn?.agentName, hostName: onConn?.hostName });
 
@@ -560,7 +573,13 @@ export class KalturaAvatarSession extends Emitter {
       const create = () => { if (requested) return; requested = true; socket.emit('stvNewSession', buildStvNewSession(this._roomId)); };
       const poll = () => { if (!settled) socket.emit('checkAvailability', {}); };   // capacity query, independent of create()
       const onSession = (p) => {
-        if (isAudioMode(p)) { this.mode = 'audio'; this._sessionId = null; this._webrtcUrl = null; return finish(resolve); }
+        if (isAudioMode(p)) {
+          this.mode = 'audio'; this._sessionId = null; this._webrtcUrl = null;
+          // No STV session is coming — 'videoMetadata' will never fire, so tell
+          // a loading UI right now instead of leaving it to guess a timeout.
+          this.emit('mediaReady', { mode: 'audio' });
+          return finish(resolve);
+        }
         this._sessionId = p.session_id;
         this._webrtcUrl = whepUrl(p.webrtc_url, this._srsBaseUrl, p.session_id);
         finish(resolve);
@@ -669,7 +688,12 @@ export class KalturaAvatarSession extends Emitter {
           // ontrack fires once per track (video + audio) — gate so 'videoMetadata' fires
           // at most once per connect, not once per track.
           if (!videoMetadataSent && typeof v.addEventListener === 'function') {
-            const emitVideoMetadata = () => { if (videoMetadataSent) return; videoMetadataSent = true; this.emit('videoMetadata', { videoWidth: v.videoWidth, videoHeight: v.videoHeight }); };
+            const emitVideoMetadata = () => {
+              if (videoMetadataSent) return;
+              videoMetadataSent = true;
+              this.emit('videoMetadata', { videoWidth: v.videoWidth, videoHeight: v.videoHeight });
+              this.emit('mediaReady', { mode: 'video', videoWidth: v.videoWidth, videoHeight: v.videoHeight });
+            };
             if (v.videoWidth || v.videoHeight) emitVideoMetadata();
             else v.addEventListener('loadedmetadata', emitVideoMetadata, { once: true });
           }
