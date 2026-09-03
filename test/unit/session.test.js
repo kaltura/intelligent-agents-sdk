@@ -136,6 +136,19 @@ test("emits 'mediaReady' with {mode:'video', videoWidth:0, videoHeight:0} even w
   session.disconnect();
 });
 
+test("regression: a failed WHEP handshake never fires 'mediaReady' later from the hard-cap timer", { timeout: 15000 }, async () => {
+  const videoEl = new FakeVideoEl({ autoCanPlay: false });
+  const failingFetch = async () => ({ ok: false, status: 503, text: async () => '', headers: { get: () => null } });
+  const { session, socket } = newSession({ videoEl, fetch: failingFetch });
+  scriptHappyPath(socket);
+  const mediaReady = [];
+  session.on('mediaReady', (p) => mediaReady.push(p));
+  await assert.rejects(() => session.connect());
+  assert.equal(session.state, 'error');
+  await delay(6500); // past the 6s hard-cap the leaked timer used to fire on
+  assert.equal(mediaReady.length, 0, "cancelPlayable() must clear the hard-cap timer so it can't fire mediaReady on a session that already failed");
+});
+
 test("emits 'mediaReady' with {mode:'audio'} immediately on audio-only fallback — no 'videoMetadata' wait needed", async () => {
   const { session, socket } = newSession();
   scriptHappyPath(socket, { audioMode: true });

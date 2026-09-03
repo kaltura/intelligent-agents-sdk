@@ -675,6 +675,7 @@ export class KalturaAvatarSession extends Emitter {
     pc.oniceconnectionstatechange = () => { this.emit('connectivityChanged', { channel: 'stv', state: pc.iceConnectionState }); this._onIceStateChange('stv', pc); };
     this._armIceNewWatchdog('stv', pc);
 
+    let cancelPlayable = () => {};
     const playable = new Promise((resolve) => {
       let done = false;
       let videoMetadataSent = false;
@@ -691,6 +692,10 @@ export class KalturaAvatarSession extends Emitter {
       };
       const finish = () => { for (const id of timers) clearTimeout(id); timers.clear(); emitMediaReady(this._videoEl); resolve(); };
       const settle = () => { if (!done) { done = true; arm(finish, 300); } }; // +300ms jitter settle
+      // If the WHEP handshake itself fails (thrown below, before `await playable`),
+      // the hard-cap timer would otherwise survive and fire mediaReady minutes later
+      // on an already-failed/disconnected session — cancel it instead.
+      cancelPlayable = () => { done = true; mediaReadySent = true; for (const id of timers) clearTimeout(id); timers.clear(); };
       pc.ontrack = (e) => {
         this.emit('track', { track: e.track, streams: e.streams });
         const v = this._videoEl;
@@ -719,27 +724,32 @@ export class KalturaAvatarSession extends Emitter {
       arm(() => { if (!done) settle(); }, 6000); // hard cap
     });
 
-    const url = this._webrtcUrl;
-    if (whepUrlHasPrivateIp(url)) {
-      throw new KalturaError({ type: 'https://docs.kaltura.com/agentic/errors/whep_private_ip', title: 'WHEP private IP', code: 'whep_private_ip', detail: 'STV egress returned a private IP — unreachable from a browser.' });
+    try {
+      const url = this._webrtcUrl;
+      if (whepUrlHasPrivateIp(url)) {
+        throw new KalturaError({ type: 'https://docs.kaltura.com/agentic/errors/whep_private_ip', title: 'WHEP private IP', code: 'whep_private_ip', detail: 'STV egress returned a private IP — unreachable from a browser.' });
+      }
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      const res = await this._fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/sdp' }, body: offer.sdp });
+      const answerSdp = await res.text();
+      if (!res.ok) throw new KalturaError({ type: 'about:blank', title: 'WHEP failed', status: res.status, code: 'whep_failed', detail: whepStatusHint(res.status), body: redact(answerSdp).slice?.(0, 200) });
+      // The WHEP server's Location is often RELATIVE (e.g. "/rtc/v1/whip/?action=delete&…").
+      // Resolve it against the WHEP request URL NOW, so disconnect()'s DELETE hits SRS — not the
+      // page origin (which 404s and silently leaks the server-side STV session). [verified]
+      const loc = res.headers?.get?.('Location');
+      this._whepLocation = loc ? resolveUrl(loc, url) : null;
+      // The resolved Location can ALSO resolve to a private IP (the server rewrote the
+      // egress host after the initial request-URL check above passed) — checked separately
+      // since it's only known post-response (additive to the pre-request check).
+      if (this._whepLocation && whepUrlHasPrivateIp(this._whepLocation)) {
+        throw new KalturaError({ type: 'https://docs.kaltura.com/agentic/errors/whep_private_ip', title: 'WHEP private IP', code: 'whep_private_ip', detail: 'STV WHEP Location resolved to a private IP — unreachable from a browser.' });
+      }
+      await pc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
+    } catch (err) {
+      cancelPlayable();
+      throw err;
     }
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-    const res = await this._fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/sdp' }, body: offer.sdp });
-    const answerSdp = await res.text();
-    if (!res.ok) throw new KalturaError({ type: 'about:blank', title: 'WHEP failed', status: res.status, code: 'whep_failed', detail: whepStatusHint(res.status), body: redact(answerSdp).slice?.(0, 200) });
-    // The WHEP server's Location is often RELATIVE (e.g. "/rtc/v1/whip/?action=delete&…").
-    // Resolve it against the WHEP request URL NOW, so disconnect()'s DELETE hits SRS — not the
-    // page origin (which 404s and silently leaks the server-side STV session). [verified]
-    const loc = res.headers?.get?.('Location');
-    this._whepLocation = loc ? resolveUrl(loc, url) : null;
-    // The resolved Location can ALSO resolve to a private IP (the server rewrote the
-    // egress host after the initial request-URL check above passed) — checked separately
-    // since it's only known post-response (additive to the pre-request check).
-    if (this._whepLocation && whepUrlHasPrivateIp(this._whepLocation)) {
-      throw new KalturaError({ type: 'https://docs.kaltura.com/agentic/errors/whep_private_ip', title: 'WHEP private IP', code: 'whep_private_ip', detail: 'STV WHEP Location resolved to a private IP — unreachable from a browser.' });
-    }
-    await pc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
     await playable;
   }
 
