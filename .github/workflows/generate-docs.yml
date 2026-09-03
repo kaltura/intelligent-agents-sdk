@@ -46,7 +46,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          if git diff --quiet -- src _data 2>/dev/null && git diff --quiet; then
+          if [ -z "$(git status --porcelain -- src package.json)" ]; then
             echo "No changes — site already matches the SDK repo's docs."
             exit 0
           fi
