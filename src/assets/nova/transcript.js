@@ -20,26 +20,6 @@ export function initTranscript(el) {
 // reply that merely mentions "<foo>" as real text is never touched.
 const FILLER_TOKEN_RE = /^<[^<>]+>$/;
 
-// Chats resume on this browser (see connect.js's STORE_THREAD) but a fresh
-// page load has no DOM — without this, "continuing" a conversation looked
-// like starting a blank one even though Nova herself remembered everything.
-// Persisted as whole rendered paragraphs (post-glue, post-filler-filter), so
-// restoring just replays them through the same appendTranscript() a live
-// reply would use. Capped well past what the drawer's height can show at
-// once, so restoring never needs its own separate trim pass.
-const STORE_HISTORY = 'nova:history';
-const HISTORY_LIMIT = 40;
-
-function persistHistory() {
-  if (!transcriptEl) return;
-  const entries = [];
-  for (const el of transcriptEl.children) {
-    if (el === thinkingEl) continue;
-    entries.push({ who: el.classList.contains('nova-you') ? 'you' : 'nova', text: el.querySelector('.nova-msg')?.textContent ?? '' });
-  }
-  try { localStorage.setItem(STORE_HISTORY, JSON.stringify(entries.slice(-HISTORY_LIMIT))); } catch { /* storage disabled — history just won't persist */ }
-}
-
 export function appendTranscript(who, text) {
   if (FILLER_TOKEN_RE.test(text.trim())) return;
   const cls = who === 'you' ? 'nova-you' : 'nova-nova';
@@ -64,29 +44,6 @@ export function appendTranscript(who, text) {
     transcriptEl.insertBefore(p, thinkingEl);
   }
   transcriptEl.scrollTop = transcriptEl.scrollHeight;
-  persistHistory();
-}
-
-/** Replays a prior visit's rendered transcript from localStorage — call once
- * at startup, before any live session exists. No-op with nothing saved, and
- * no-op if the transcript already has content: connect.js's own call is
- * gated behind a network fetch (the jsDelivr SDK import), so on a slow
- * connection it can land after real messages already arrived — restoring
- * over those would duplicate them instead of restoring a blank transcript. */
-export function restoreHistory() {
-  if (!transcriptEl || transcriptEl.children.length) return;
-  let entries;
-  try { entries = JSON.parse(localStorage.getItem(STORE_HISTORY) || '[]'); } catch { entries = null; }
-  if (!Array.isArray(entries)) return;
-  for (const { who, text } of entries) {
-    if ((who === 'you' || who === 'nova') && text) appendTranscript(who, text);
-  }
-}
-
-/** Forget the saved transcript — paired with forgetting STORE_THREAD
- * (connect.js's "New conversation" and its stale-thread retry path). */
-export function clearHistory() {
-  try { localStorage.removeItem(STORE_HISTORY); } catch { /* ditto */ }
 }
 
 /**
