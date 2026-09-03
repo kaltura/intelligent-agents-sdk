@@ -13,6 +13,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   release:
@@ -72,3 +73,9 @@ jobs:
           gh release create "${{ github.ref_name }}" \
             --title "${{ github.ref_name }}" \
             --generate-notes
+
+      - name: 📚 Fire the docs site's generate-docs workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run generate-docs.yml --repo kaltura/intelligent-agents-sdk --ref gh-pages-src
