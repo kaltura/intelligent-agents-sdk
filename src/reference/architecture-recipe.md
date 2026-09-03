@@ -2,12 +2,10 @@
 layout: base.njk
 title: "Architecture Recipe"
 description: "A from-scratch reimplementation of the live avatar runtime using nothing but socket.io-client and the browser's native RTCPeerConnection."
-eyebrow: How-to Guide
+eyebrow: Reference
 ---
 
 # Architecture Recipe — Minimal Reimplementation (No Kaltura Libs)
-
-Most integrations should just use the SDK. Reach for this recipe when you genuinely can't — a different runtime/language, a minimal-footprint embed, or an audit of exactly what the SDK does under the hood — since it's the fastest path to a correct, zero-Kaltura-lib client.
 
 A from-scratch reimplementation of the live avatar runtime, using nothing but `socket.io-client` and the browser's native `RTCPeerConnection`. Read [Platform Architecture](/explanation/architecture/) for the big picture and [Architecture Reference](/reference/architecture-reference/) for the exact wire shapes each step below relies on.
 
@@ -22,7 +20,7 @@ A from-scratch reimplementation of the live avatar runtime, using nothing but `s
 3. socket = io(conversationManagerUrl, {path:'/socket.io', transports:['websocket'],
        auth:{token:ks}, query:{partnerId, level:'published', stickyId, billed_client:'', debugMode:true}})
 
-4. Run the connect sequence ([full state-machine order](/reference/architecture-reference/#full-connect-sequence-state-machine-order)): join → stvNewSession → showAgent → askPermissions
+4. Run the connect sequence ([full state-machine order](/reference/architecture-reference/connection-and-handshake/#full-connect-sequence-state-machine-order)): join → stvNewSession → showAgent → askPermissions
    → asr-webrtc handshake (publish mic pc via socket relay)
 
 5. STV: WHEP POST {srsBaseUrl}/rtc/v1/whep/?app=app&stream={session_id} with recvonly offer,
@@ -41,7 +39,7 @@ A from-scratch reimplementation of the live avatar runtime, using nothing but `s
 
 Dependencies: `socket.io-client` + the browser's native `RTCPeerConnection`. Nothing else. The WebRTC avatar engine's client package is just a convenience wrapper around exactly these steps (`joinASR` = the socket-relayed offer/answer; `joinSTV` = the WHEP subscribe).
 
-## Implications for a custom (no-Kaltura-lib) client
+## Implications for a Custom (No-Kaltura-Lib) Client
 
 If you reimplement the protocol per the recipe above, you MUST:
 
@@ -51,15 +49,5 @@ If you reimplement the protocol per the recipe above, you MUST:
 4. **Keep the socket alive during queue waits**; only do a fresh `connect()` (new `stickyId`) on a permanent transport loss.
 5. Let the **STV/WHEP** video channel reconnect independently — it carries no sticky state.
 
-See [Architecture Reference's "Scale & sticky sessions"](/reference/architecture-reference/#scale--sticky-sessions) for why each of these matters.
+See [Architecture Reference's "Scale & Sticky Sessions"](/reference/architecture-reference/scale-and-sticky-sessions/#scale--sticky-sessions) for why each of these matters.
 
----
-
-## Related docs
-
-| Doc | What it adds |
-|-----|---------------|
-| [Platform Architecture](/explanation/architecture/) | The big-picture map this recipe reimplements from scratch |
-| [Architecture Reference](/reference/architecture-reference/) | The exact wire shapes, connect-sequence order, and scaling model each step here relies on |
-| [Wire Protocol](/reference/wire-protocol/) | The field-by-field event catalog, for filling in any gap this recipe glosses over |
-| [SDK Reference](/reference/sdk-reference/) | The maintained SDK that already does all of this for you, if you don't need a from-scratch client |

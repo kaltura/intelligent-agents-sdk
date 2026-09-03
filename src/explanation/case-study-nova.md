@@ -32,7 +32,7 @@ you just uploaded have indexed. A real per-entry check
 deployment — check with your Kaltura account team before building on it. Until
 then, Nova's own provisioning script budgets a fixed best-effort wait before
 it ever creates or updates her intellect — the same pattern documented in
-[Ground the Agent in Your Content (RAG)](/reference/api/build/#ground-the-agent-in-your-content-rag).
+[Ground the Agent in Your Content (RAG)](/reference/api/build/knowledge-rag/#ground-the-agent-in-your-content-rag).
 
 Nova resolves that wait *before* the create/update call, not after, because
 partner configuration is cached for up to 24 hours server-side. A capability
@@ -59,6 +59,6 @@ probes.
 
 ## Where to go next
 
-- [Ground the Agent in Your Content (RAG)](/reference/api/build/#ground-the-agent-in-your-content-rag) — the indexing recipe in full
+- [Ground the Agent in Your Content (RAG)](/reference/api/build/knowledge-rag/#ground-the-agent-in-your-content-rag) — the indexing recipe in full
 - [docs-site-avatar on GitHub](https://github.com/kaltura/docs-site-avatar) — Nova's complete source, provisioning script, and eval suite
 - [Getting Started](/getting-started/) — build your first agent with this SDK

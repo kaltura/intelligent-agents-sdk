@@ -5,33 +5,23 @@ description: "Scripted-video-only sessions: auth, lifecycle, and say-audio speec
 eyebrow: Reference
 ---
 
-[← API Reference index](/reference/api-reference/)
-
 # Scripted-video (STV-only) sessions
 
-> **When to use this:** pre-authored speech only — you supply every line. Interactive
-> conversation, knowledge grounding, tool calls, and analytics come from full agentic
-> sessions. See [what you'd take on yourself](/explanation/inside-a-live-conversation/#what-youd-take-on-yourself)
-> before choosing this path.
+[← Back to the API Reference index](/reference/api-reference/)
 
-A second, INDEPENDENT session type — `https://api.avatar.us.kaltura.ai/v1/avatar-session/*` — that
-sits next to, not on top of, everything in Phases 1–4 above. No LLM, no ASR, no socket.io: REST +
-WHEP only. The avatar speaks exactly the audio you hand it, in the order you hand it. Use this when
-YOU are the script (IVR-style flows, pre-recorded/TTS'd announcements, kiosk greetings) rather than
-the conversational brain. SDK: `mgmt.avatarSessions` (management) +
-`KalturaScriptedVideoSession` (experience, browser-side playback).
 
-**Two-stage auth (verified live)** — this is the one surface on the whole agentic host that
-switches auth schemes mid-flow:
+> **When to use this:** pre-authored speech only — you supply every line. Interactive conversation, knowledge grounding, tool calls, and analytics come from full agentic sessions. See [what you'd take on yourself](https://kaltura.github.io/intelligent-agents-sdk/explanation/inside-a-live-conversation/#what-youd-take-on-yourself) before choosing this path.
+
+A second, INDEPENDENT session type — `https://api.avatar.us.kaltura.ai/v1/avatar-session/*` — that sits next to, not on top of, everything in Phases 1–4 above. No LLM, no ASR, no socket.io: REST + WHEP only. The avatar speaks exactly the audio you hand it, in the order you hand it. Use this when YOU are the script (IVR-style flows, pre-recorded/TTS'd announcements, kiosk greetings) rather than the conversational brain. SDK: `mgmt.avatarSessions` (management) + `KalturaScriptedVideoSession` (experience, browser-side playback).
+
+**Two-stage auth** — this is the one surface on the whole agentic host that switches auth schemes mid-flow:
 
 | Call | Auth |
 |------|------|
 | `create` | `Authorization: KS <admin-ks>` — your normal admin token |
 | every call after `create` | `Authorization: Bearer <session-token>` — the JWT `create` returns, NOT a KS |
 
-The Bearer token is valid roughly 24h (decoded from the JWT's own `exp` claim) and grants full
-control of the session — keep it server-side, exactly like an admin KS. The browser only ever
-needs the non-secret `{whepUrl, turn}` pair from `init-client`.
+The Bearer token is valid roughly 24h (decoded from the JWT's own `exp` claim) and grants full control of the session — keep it server-side, exactly like an admin KS. The browser only ever needs the non-secret `{whepUrl, turn}` pair from `init-client`.
 
 | Operation | Endpoint | Auth | Body |
 |-----------|----------|------|------|
@@ -42,16 +32,9 @@ needs the non-secret `{whepUrl, turn}` pair from `init-client`.
 | Keep alive | `POST /v1/avatar-session/{sessionId}/keep-alive` | Bearer | `{}` |
 | End | `POST /v1/avatar-session/{sessionId}/end` | Bearer | `{}` |
 
-`say-audio` is the ONLY speech-injection mechanism this backend exposes (verified live). There is
-no text-in: a sibling `say-text` route accepts the request but the server answers `503 Service
-temporarily unavailable` on every call, and a bare `say` route 404s — neither is wrapped by the
-SDK. Generate the audio yourself with any TTS provider (this backend has none of its own), measure
-its duration (e.g. `ffprobe` — the server has no duration probe of its own and an inaccurate value
-just desyncs the mouth from the audio, it doesn't error), and pass both to `say-audio`. The call
-itself is async/queued: it resolves in roughly 100ms once the server accepts the turn, not once
-playback finishes — call `interrupt` to cut off whatever's currently playing.
+`say-audio` is the ONLY speech-injection mechanism this backend exposes. There is no text-in: a sibling `say-text` route accepts the request but the server answers `503 Service temporarily unavailable` on every call, and a bare `say` route 404s. Neither is wrapped by the SDK. Generate the audio yourself with any TTS provider (this backend has none of its own), measure its duration (e.g. `ffprobe`; the server has no duration probe of its own, and an inaccurate value just desyncs the mouth from the audio, it doesn't error), and pass both to `say-audio`. The call itself is async/queued: it resolves in roughly 100ms once the server accepts the turn, not once playback finishes. Call `interrupt` to cut off whatever's currently playing.
 
-`set-emotion`, `queue-status`, `status`, and `session-status` all 404 and are not wrapped.
+`set-emotion`, `queue-status`, `status`, and `session-status` all 404 on the current deployment and are not wrapped.
 
 ```js
 import { Management } from '@kaltura/intelligent-agents/management';
@@ -70,8 +53,7 @@ await mgmt.avatarSessions.say(session, mp3, { duration });
 await mgmt.avatarSessions.end(session);
 ```
 
-Browser side, `KalturaScriptedVideoSession` renders the video/audio downlink from `{whepUrl, turn}`
-— it has no `speak()` of its own on purpose (that would need the Bearer token in the browser):
+Browser side, `KalturaScriptedVideoSession` renders the video/audio downlink from `{whepUrl, turn}` — it has no `speak()` of its own on purpose (that would need the Bearer token in the browser):
 
 ```js
 import { KalturaScriptedVideoSession } from '@kaltura/intelligent-agents/experience';
@@ -82,5 +64,5 @@ await view.connect();
 view.disconnect();
 ```
 
-See the runnable example in the SDK repo: `examples/scripted-video-session.mjs` + `examples/scripted-video-session.html`. Object-level API details (constructor options, events): [SDK Reference § Scripted-Video (STV-only) Sessions](/reference/sdk-reference/#scripted-video-stv-only-sessions).
+See the runnable example: [`examples/scripted-video-session.mjs`](https://github.com/kaltura/intelligent-agents-sdk/blob/main/examples/scripted-video-session.mjs) + [`examples/scripted-video-session.html`](https://github.com/kaltura/intelligent-agents-sdk/blob/main/examples/scripted-video-session.html).
 

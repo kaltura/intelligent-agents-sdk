@@ -5,9 +5,12 @@ description: "Resolve a widget ID and initialize the browser runtime."
 eyebrow: Reference
 ---
 
-[← API Reference index](/reference/api-reference/)
-
 # Phase 3 — deploy
+
+[← Back to the API Reference index](/reference/api-reference/)
+
+**On this page:** [Resolve Widget ID](#resolve-widget-id) · [Initialize the Runtime](#initialize-the-runtime)
+
 
 ## Resolve Widget ID
 
@@ -19,7 +22,7 @@ POST https://api.avatar.us.kaltura.ai/v1/application/resolveWidgetId
 { "agentId": "33b7c8b7-f67b-4ca3-b853-0f7ced06a6a3" }
 ```
 
-Returns `{ "widgetId": "1_xxxxxxxx" }`. Idempotent.
+Returns `{ "widgetId": "1_v1mj1kxb" }`. Idempotent.
 
 ---
 
@@ -31,7 +34,7 @@ POST https://api.avatar.us.kaltura.ai/v1/application/appInit   (widget KS, no bo
 
 ```bash
 WIDGET_KS=$(curl -s -X POST "https://www.kaltura.com/api_v3/service/session/action/startWidgetSession" \
-  -d "format=1" -d "widgetId=1_xxxxxxxx" \
+  -d "format=1" -d "widgetId=1_v1mj1kxb" \
   | python3 -c "import json,sys; print(json.load(sys.stdin)['ks'])")
 ```
 
@@ -47,11 +50,5 @@ Response:
 
 The admin secret never touches the browser — `appInit` derives the agent from the widget KS.
 
-Feed this response straight into `new KalturaAvatarSession({ token: ks, conversationManagerUrl,
-srsBaseUrl, turnServerUrl, videoEl, socketFactory })` (`./experience`) to bring the runtime up in
-the browser. Optional `./experience` plugins layer on top of that same session — deck walkthroughs
-(`./experience/presenter`), a transparent-background compositor for the avatar video
-(`./experience/chroma-key`), noise suppression, GenUI widgets, and KAVA analytics. All of them are
-documented in [SDK Reference § Experience](/reference/sdk-reference/#experience) alongside their runnable `examples/*.html` demos,
-not here — this reference covers the server-side Management API surface only.
+Feed this response straight into `new KalturaAvatarSession({ token: ks, conversationManagerUrl, srsBaseUrl, turnServerUrl, videoEl, socketFactory })` (`./experience`) to bring the runtime up in the browser. Optional `./experience` plugins layer on top of that same session — deck walkthroughs (`./experience/presenter`), a transparent-background compositor for the avatar video (`./experience/chroma-key`), noise suppression, GenUI widgets, and KAVA analytics. All of them are documented in [README.md](https://github.com/kaltura/intelligent-agents-sdk/blob/main/README.md#experience) alongside their runnable `examples/*.html` demos, not here — this reference covers the server-side Management API surface only.
 

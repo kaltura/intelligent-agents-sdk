@@ -7,42 +7,41 @@ eyebrow: Tutorial
 
 # Getting Started — Your First Talking AI Avatar
 
-We're going to take you from zero to a working, talking AI avatar in about
-five minutes, once you have a Kaltura account — copy and paste the commands
-as we go.
+This guide takes you from zero to a working, talking AI avatar in about 5 minutes, once you have a Kaltura account. Copy and paste the commands.
 
-> **On Windows?** Run these commands in WSL2, Git Bash, or PowerShell — every
-> command below is a plain `node`/`npm` call with no Bash-only syntax, so it
-> works as-is in PowerShell too.
+**On this page:** [What you need before you start](#what-you-need-before-you-start) · [Step 1 — Get your credentials (~1 minute)](#step-1--get-your-credentials-1-minute) · [Step 2 — Set up the project (~1 minute)](#step-2--set-up-the-project-1-minute) · [Step 3 — Create your own agent from scratch (1–3 minutes)](#step-3--create-your-own-agent-from-scratch-13-minutes) · [Step 4 — Talk to your agent again (~30 seconds)](#step-4--talk-to-your-agent-again-30-seconds) · [What's next?](#whats-next) · [Common questions](#common-questions) · [Appendix — Verify your checkout offline (~2 minutes)](#appendix--verify-your-checkout-offline-2-minutes)
+
+> **Windows?** Run these commands in WSL2, Git Bash, or PowerShell (the commands below are plain `node`/`npm` calls with no Bash-only syntax, so they work as-is in PowerShell too).
+
+---
 
 ## What you need before you start
 
-1. **A Kaltura account** with the Agentic Avatar feature enabled. No account
-   yet? [Start a free trial](https://subscription.kaltura.com/purchase-manager/purchase-manager/avatar-studio-free-trial).
-2. **Two pieces of information from your account** — we'll get them in Step 1:
+1. **A Kaltura account** with the Agentic Avatar feature enabled. No account yet? [Start a free trial →](https://subscription.kaltura.com/purchase-manager/purchase-manager/avatar-studio-free-trial)
+2. **Two pieces of information from your account** (we'll get them in Step 1):
    - your **Partner ID** (a number, like `1234567`)
    - your **Admin Secret** (a long string of letters and numbers)
-3. **A computer with a terminal** and **Node.js 18+** installed. Check with
-   `node --version`; install from [nodejs.org](https://nodejs.org) if it's
-   missing.
+3. **A computer with a terminal** (the Terminal app on Mac, or any command line) and **Node.js 18+** installed. Check with `node --version`; install from [nodejs.org](https://nodejs.org) if missing.
 
-That's it — we don't need to install anything from Kaltura.
+That's it. You do **not** need to install anything from Kaltura.
 
-## Step 1 — Get your credentials
+---
 
-Our Partner ID and Admin Secret are our keys to the system.
+## Step 1 — Get your credentials (~1 minute)
 
-1. Log in to the **Kaltura Rich Media CMS** at [kmc.kaltura.com](https://kmc.kaltura.com)
-   (or your account's custom URL, if your organization has one).
+Your Partner ID and Admin Secret are your keys to the system.
+
+1. Log in to the **Kaltura Rich Media CMS** at [kmc.kaltura.com](https://kmc.kaltura.com) (or your account's custom URL if your organization has one).
 2. Go to **Settings → Integration Settings**.
-3. Copy the **Partner ID** (shown at the top) and the **Administrator Secret**.
+3. Copy your **Partner ID** (shown at the top) and your **Administrator Secret**.
 
-> **Keep the Admin Secret private.** It's like a password — never paste it
-> into a public chat, a screenshot, or a file you might share.
+> **Keep your Admin Secret private.** It's like a password. Never paste it into a public chat, a screenshot, or a file you might share.
 
-## Step 2 — Set up the project
+---
 
-We'll clone the repository and install the quickstart's dependencies:
+## Step 2 — Set up the project (~1 minute)
+
+Clone the repository and install the quickstart's dependencies:
 
 <div data-nova-target="getting-started-clone" data-nova-label="Clone and install commands">
 
@@ -54,41 +53,36 @@ npm install
 
 </div>
 
-Then we'll set our credentials for this shell session:
+Then set your credentials for this shell session:
 
 ```bash
 export AGENTIC_PARTNER_ID=1234567
 export AGENTIC_ADMIN_SECRET=your_admin_secret_here
 ```
 
-> **On PowerShell?** Use `$env:AGENTIC_PARTNER_ID="1234567"` instead of
-> `export`.
+> **Windows PowerShell?** Use `$env:AGENTIC_PARTNER_ID="1234567"` instead of `export`.
 
-> **Prefer a file over exporting every time?** Create a `.env` file in the
-> repo root (one directory up from `quickstart/`) with `AGENTIC_PARTNER_ID=...`
-> and `AGENTIC_ADMIN_SECRET=...` on their own lines — `create-agent.mjs` reads
-> it automatically if present. It's already covered by `.gitignore`, so it
-> never gets committed.
+> **Prefer a file over exporting every time?** Create a `.env` file in the repo root (one directory up from `quickstart/`) with `AGENTIC_PARTNER_ID=...` and `AGENTIC_ADMIN_SECRET=...` on their own lines. `create-agent.mjs` reads it automatically if present. It's already covered by `.gitignore`, so it never gets committed.
 
-## Step 3 — Create our own agent from scratch
+---
 
-This one command builds a brand-new agent — brain, face, voice, and all —
-from a plain-English description:
+## Step 3 — Create your own agent from scratch (1–3 minutes)
+
+This one command builds a brand-new agent — brain, face, voice, and all — from a plain-English description:
 
 ```bash
 node create-agent.mjs "A friendly yoga studio receptionist who helps people book classes and answers questions about memberships"
 ```
 
-We'll see progress messages as it builds the brain, face, and voice. At the
-end it sends a smoke-test message and prints the reply, plus the new IDs
-(`configId`, `agentId`, `avatarId`, `widgetId`) we need to embed or extend
-the agent.
+You'll see progress messages as it builds the brain, face, and voice. At the end it sends a smoke-test message and prints the reply, plus the new IDs (`configId`, `agentId`, `avatarId`, `widgetId`) you need to embed or extend the agent.
 
-## Step 4 — Talk to our agent again
+> Building an agent by hand instead of via the one-line brief? See [API Reference](/reference/api/build/).
 
-`create-agent.mjs` already sent one smoke-test message for us. To send more,
-we'll use the SDK's headless `converseOnce()` directly — save this as a
-small script:
+---
+
+## Step 4 — Talk to your agent again (~30 seconds)
+
+`create-agent.mjs` already sent one smoke-test message for you. To send more, use the SDK's headless `converseOnce()` directly — save this as a small script (or adapt `quickstart/create-agent.mjs`):
 
 ```js
 import { Management } from '@kaltura/intelligent-agents/management';
@@ -102,44 +96,69 @@ const reply = await kaltura.converseOnce('<configId from Step 3>', 'Hello! What 
 console.log(reply.text);
 ```
 
-`converseOnce()` mints its own conversation token from the `configId` — our
-admin secret never leaves the process.
+`converseOnce()` mints its own conversation token from the `configId` — the admin secret never leaves your process. See [API Reference](/reference/api/operate/) for threaded conversations, streaming, and the full Management API surface.
 
-**Talking on behalf of a real, known user?** Mint the conversation token
-ourselves with `userId` instead of letting `converseOnce()` auto-mint an
-anonymous one — this binds the token to that user so per-user memory and
-analytics attribute the conversation correctly:
+**Talking on behalf of a real, known user?** Mint the conversation token yourself with `userId` instead of letting `converseOnce()` auto-mint an anonymous one. This binds the [KS](/reference/api/authentication/#authentication) (Kaltura Session token) to that user so per-user memory and analytics attribute the conversation correctly:
 
 ```js
 const conv = await kaltura.sessions.createConversationToken({
   configId: '<configId from Step 3>',
-  userId: 'learner-123',   // any stable id we use to identify this person
+  userId: 'learner-123',   // any stable id you use to identify this person
 });
 const reply = await kaltura.converseOnce('<configId from Step 3>', 'Hello again!', {}, conv);
 ```
 
-`userId` is optional everywhere it's accepted — omit it and we get the same
-anonymous behavior shown above. See [API Reference § Authentication](/reference/api/authentication/)
-for the full picture.
+`userId` is optional everywhere it's accepted — omit it and you get the same anonymous behavior shown above. See [API Reference](/reference/api/authentication/#authentication) → "Bind a session to a real end-user identity" for the full picture.
 
-## What we just did
+**Using [lifecycle rules](/reference/lifecycle/#scoping-a-rule-to-one-agent) scoped to a specific agent (`object.agent_id`)?** A thread created with a plain conversation token (as above) always gets `agent_id:"default"` and can never match those rules. Mint with `mgmt.sessions.createAgentToken({ agentId })` instead — see `docs/lifecycle/README.md`'s scoping section for why. Note `createAgentToken` does **not** accept `userId`: you currently can't combine agent-scoped lifecycle matching with end-user identity binding on the same token.
 
-<div data-nova-target="getting-started-success" data-nova-label="What we just did">
+---
 
-We created a complete agent — an intellect (brain) paired with an avatar
-(face and voice) — and had a conversation with it, entirely from the command
-line.
+## What's next?
 
-</div>
-
-## Where to go next
+You now know how to create an agent and talk to it. Here's where to go for more:
 
 | If you want to… | Read this |
 |-----------------|-----------|
-| See every kind of app you can build | [Use-Case Catalog](/reference/use-cases/) |
-| Look up the exact API call for something | [API Reference](/reference/api-reference/) |
+| See every kind of app you can build (personalized greeters, memory agents, quizzes, video avatars, voice cloning…) | [Use-Case Catalog](/reference/use-cases/) |
+| Look up the exact API call for something | [API Reference](/reference/api-reference/#contents) |
+| Put a talking video avatar on a web page | [Use-Case Catalog](/reference/use-cases/) → UC-12 |
+| Use your **own voice** for the avatar | [API Reference](/reference/api/design/#upload-a-custom-voice-clone) |
+| Use your **own face/portrait** for the avatar | [API Reference](/reference/api/design/#upload-a-custom-visual-portrait--animated-avatar) |
+| Build a real app with the JavaScript SDK | [README.md](https://github.com/kaltura/intelligent-agents-sdk/blob/main/README.md#quick-start) |
 | Make the avatar drive your UI (slides, widgets, navigation) | [Client-Side Commands](/guides/client-commands/) |
-| Put structured widgets on screen | [GenUI Reference](/reference/genui-reference/) |
-| Use our **own voice** for the avatar | [API Reference § Upload a Custom Voice (clone)](/reference/api/design/#upload-a-custom-voice-clone) |
-| Use our **own face/portrait** for the avatar | [API Reference § Upload a Custom Visual](/reference/api/design/#upload-a-custom-visual-portrait--animated-avatar) |
+| Pause the avatar for a video/interactive element, then resume | [Pause for Video/Interactive Content, Then Resume](/guides/pause-resume/) |
+| Auto-summarize every conversation and email a human when it's ready | [Lifecycle Recipes](/guides/lifecycle-recipes/) |
+| Put structured widgets on screen (quizzes, carousels, code blocks) | [GenUI Reference](/reference/genui-reference/) |
 | Understand how the whole system works under the hood | [Platform Architecture](/explanation/architecture/) |
+| See a complete browser example with a live avatar | [examples/browser-experience.html](https://github.com/kaltura/intelligent-agents-sdk/blob/main/examples/browser-experience.html) |
+| See a complete avatar-guided slide deck | [examples/deck-presenter.html](https://github.com/kaltura/intelligent-agents-sdk/blob/main/examples/deck-presenter.html) |
+
+---
+
+## Common questions
+
+**Do I need to keep the terminal open?** No — `create-agent.mjs` runs once and exits.
+
+**Will this cost money / use my quota?** Conversations and avatar sessions use your Kaltura plan's quota. Creating agents/avatars is cheap, but clean up test ones you don't need — see `agents.delete()` / `avatars.delete()` in [API Reference](/reference/api/management-operations/).
+
+**How do I see everything I created?** Use the Management API's list calls — `kaltura.agents.list(admin.ks)` and `kaltura.avatars.list(admin.ks)`. See [API Reference](/reference/api/management-operations/).
+
+**How do I label the agents I create so I can find mine later?** Tag the **agent** (not the avatar) via `adminTags` on `agents.create()`, then filter `agents.list(admin.ks)` client-side. Details in [API Reference](/reference/api/build/avatar-and-agent/#create-an-agent).
+
+**Can I use my own face or voice?** Yes, both — see [API Reference](/reference/api/design/#upload-a-custom-visual-portrait--animated-avatar) and [→ Custom Voice](/reference/api/design/#upload-a-custom-voice-clone).
+
+---
+
+## Appendix — Verify your checkout offline (~2 minutes)
+
+You don't need a Kaltura account to confirm the SDK runs correctly on your machine — run it offline, no network, no secrets, using the same fakes the test suite is built on.
+
+```bash
+git clone https://github.com/kaltura/intelligent-agents-sdk.git
+cd intelligent-agents-sdk
+npm test
+```
+
+That runs the full suite (unit + integration + e2e + evals) against `test/fakes/fetch.js`, `test/fakes/socket.js`, and `test/fakes/rtc.js` — deterministic stand-ins for the real HTTP/socket/WebRTC backends. It takes about 105 seconds on a typical machine.
+

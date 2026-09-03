@@ -148,11 +148,11 @@ Build the control as click-to-toggle, not press-and-hold: it's more usable for l
 
 ### Resilience: brain stalls and tool-call spirals
 
-`KalturaAvatarSession` watches for a brain that goes quiet or loops instead of answering — see [Architecture Reference](/reference/architecture-reference/#resilience--failure-handling) for the full failure-mode matrix.
+`KalturaAvatarSession` watches for a brain that goes quiet or loops instead of answering — see [Architecture Reference](/reference/architecture-reference/resilience-and-failure-handling/#resilience--failure-handling) for the full failure-mode matrix.
 
 - **Brain-stall watchdog** (`brainStallMs`, default on) — emits `brainStalled` (`{count}`), repeating for as long as nothing perceivable (spoken/avatar content or a GenUI widget) follows a turn.
 - **Dead-air masking** (`responsePending`/`responseSettled`) — `responsePending` (`{}`) fires the moment a turn starts awaiting the brain's first perceivable output (spoken/avatar/GenUI content); `responseSettled` (`{}`) fires once that output arrives, the turn ends, an interruption occurs, or the session tears down. Use this pair to show/hide a "thinking…" affordance instead of leaving the avatar's face frozen during the gap — see `examples/browser-experience.html` for a working example.
-- **Tool-call spiral circuit breaker** — constructor options `toolSpiralLimit` (default 10, per turn) and `hardToolSpiralLimit` (default `toolSpiralLimit * 3`, session-scoped); events `toolSpiralDetected` (soft) and `toolSpiralRecovering` (`{count, limit, lastTurnText}`, hard — triggers a cold reconnect). `recoverFromSpiral` (default `true`) auto-resends the abandoned turn's text once on reconnect and emits `spiralRecovered {text}`; set `false` to handle it yourself via `lastTurnText`. See [Architecture Reference § Tool-call spiral](/reference/architecture-reference/#tool-call-spiral-what-happened-and-how-its-mitigated) for why the two tiers exist and how recovery works.
+- **Tool-call spiral circuit breaker** — constructor options `toolSpiralLimit` (default 10, per turn) and `hardToolSpiralLimit` (default `toolSpiralLimit * 3`, session-scoped); events `toolSpiralDetected` (soft) and `toolSpiralRecovering` (`{count, limit, lastTurnText}`, hard — triggers a cold reconnect). `recoverFromSpiral` (default `true`) auto-resends the abandoned turn's text once on reconnect and emits `spiralRecovered {text}`; set `false` to handle it yourself via `lastTurnText`. See [Architecture Reference § Tool-call spiral](/reference/architecture-reference/resilience-and-failure-handling/#tool-call-spiral-what-happened-and-how-its-mitigated) for why the two tiers exist and how recovery works.
 
 ```js
 const session = new KalturaAvatarSession({ token, /* … */, recoverFromSpiral: false });
@@ -276,7 +276,7 @@ Transport: prefers `navigator.sendBeacon` (survives page-unload); falls back to 
 - Common params set once at construction and attached to every event: `partnerId`, `ks`, `entryId`, `sessionId`, `referrer`, `userId`, `hostingKalturaApplication`/`hostingKalturaApplicationVer`, `customId1`/`customId2`.
 - `buildPageLoadParams`/`buildButtonClickedParams` are the pure param-builders behind the class — unit-testable in isolation, or usable directly if you want your own transport.
 
-Reporting a **GenUI widget interaction** specifically (which chip/link/answer the viewer picked)? See [GenUI Reference § Widget-interaction analytics](/reference/genui-reference/#widget-interaction-analytics-avoiding-double-counting) for the recipe, live-verified against two widget types, plus the exact list of signals the platform already tracks server-side so you don't duplicate one client-side.
+Reporting a **GenUI widget interaction** specifically (which chip/link/answer the viewer picked)? See [GenUI Reference § Widget-interaction analytics](/reference/genui/analytics/#widget-interaction-analytics-avoiding-double-counting) for the recipe, live-verified against two widget types, plus the exact list of signals the platform already tracks server-side so you don't duplicate one client-side.
 
 ### Connectivity beacon (opt-in)
 
@@ -375,7 +375,7 @@ session.onToolCall('navigate_to_slide', ({ slide_num }) => deck.goTo(slide_num))
 const { toolCalls } = await mgmt.converseOnce(configId, 'tell me about pricing');
 ```
 
-`waitForResponse` controls whether the model's turn blocks on a real client-supplied result — pass it explicitly; see [Client Commands § the brain calls it](/guides/client-commands/#2-the-brain-calls-it--genie-streams-a-silent-segment) for why omitting it is not the same as `false`. Fire-and-forget tools (`waitForResponse:false`) have no response channel back to the model at all, so fold any "call once, then narrate" guidance directly into the tool's `description` rather than relying on a fixed success message.
+`waitForResponse` controls whether the model's turn blocks on a real client-supplied result — pass it explicitly; see [Client Commands § the brain calls it](/guides/client-commands/#2-the-brain-calls-it--it-streams-a-silent-segment) for why omitting it is not the same as `false`. Fire-and-forget tools (`waitForResponse:false`) have no response channel back to the model at all, so fold any "call once, then narrate" guidance directly into the tool's `description` rather than relying on a fixed success message.
 
 ### Native client tools with a real wire ACK
 
@@ -425,7 +425,7 @@ Validated fields, top-level keys only: `type` (one of `str`/`int`/`float`/`bool`
 
 ### Fused multi-tool turns (handled automatically on the live session)
 
-When a turn calls 2+ tools, the server can stream them as **one** `type:"tool"` segment that names only the last tool, with earlier tools' JSON args concatenated into the same string (live-verified — see [Wire Protocol §4e](/reference/wire-protocol/#4e-agent_raw_textdelta--the-brain-stream-parsed)). On `KalturaAvatarSession`, you don't need to do anything — the SDK recovers every fused call:
+When a turn calls 2+ tools, the server can stream them as **one** `type:"tool"` segment that names only the last tool, with earlier tools' JSON args concatenated into the same string (live-verified — see [Wire Protocol §4e](/reference/wire-protocol/events-catalog/#4e-agent_raw_textdelta--the-brain-stream-parsed)). On `KalturaAvatarSession`, you don't need to do anything — the SDK recovers every fused call:
 
 - `parseToolCall(segment)` recovers the named tool's own args correctly either way, and exposes any earlier, unnamed blobs as `call.fusedArgs` (array, arrival order — absent when the segment wasn't fused).
 - The session pairs each queued `fusedArgs` blob with the `tool_response` segment that echoes its real tool name (via `parseToolResponseName(segment)`) and dispatches it through the normal `onToolCall` path — same dedup, same schema validation, same `toolCallResult`/`toolCallInvalid` events.
@@ -475,11 +475,11 @@ new ExperienceRenderer({
 
 `mountWidget(descriptor, target, opts)` is the zero-dep, never-`innerHTML`, accessible renderer. It ships zero styling — you theme the stable `kgenui`/`kgenui__*` class contract. `onMount(root, descriptor)` is the progressive-enhancement seam for host-injected libraries (Mermaid, Chart.js, KaTeX) — see `test/unit/genui.test.js` for the hook's contract.
 
-A `summary` widget's text renders as flat escaped text by default; pass `mountWidget(descriptor, target, { markdown: true })` to opt into the allow-listed markdown-to-DOM renderer instead — see [GenUI Reference § Markdown rendering](/reference/genui-reference/#markdown-rendering-opt-in) for the full opt-in contract and what's sanitized.
+A `summary` widget's text renders as flat escaped text by default; pass `mountWidget(descriptor, target, { markdown: true })` to opt into the allow-listed markdown-to-DOM renderer instead — see [GenUI Reference § Markdown rendering](/reference/genui/authoring-and-consuming/#markdown-rendering-opt-in) for the full opt-in contract and what's sanitized.
 
 A widget interrupted mid-stream (a different runtime/`speechId` arrives before its JSON body finishes writing — e.g. a barge-in) is never mounted as a silently-truncated widget: `SegmentAssembler` recognizes the cut-off JSON shape and `ExperienceRenderer` mounts the same typed fallback it uses for a throwing custom renderer, `{kind:'error', data:{runtime, message}}`, distinguishable from any complete widget's descriptor.
 
-`graded-question` (a prompt with either multiple-choice options or a free-text answer, an optional answer key, and an optional explanation) is NOT one of the nine backend runtimes above — there's no Genie brain tool that emits it. It's a host-registered widget: `import { renderGradedQuestion } from '@kaltura/intelligent-agents/experience/genui'`, then `new ExperienceRenderer({ renderers: { 'graded-question': renderGradedQuestion } })`, the same "10th runtime" extensibility seam any custom widget uses (see [GenUI Reference § Registration, fallback, and provenance](/reference/genui-reference/#registration-fallback-and-provenance)). Grading happens client-side in `mountWidget` — a comprehension-check primitive, not a tamper-proof assessment, since the answer key travels in the descriptor itself. Full shape and the `onAction('answer', ...)` event are in [GenUI Reference § 10. graded-question](/reference/genui-reference/#10-graded-question-rendergradedquestion--a-host-registered-10th-runtime).
+`graded-question` (a prompt with either multiple-choice options or a free-text answer, an optional answer key, and an optional explanation) is NOT one of the nine backend runtimes above — there's no Genie brain tool that emits it. It's a host-registered widget: `import { renderGradedQuestion } from '@kaltura/intelligent-agents/experience/genui'`, then `new ExperienceRenderer({ renderers: { 'graded-question': renderGradedQuestion } })`, the same "10th runtime" extensibility seam any custom widget uses (see [GenUI Reference § Registration, fallback, and provenance](/reference/genui/authoring-and-consuming/#registration-fallback-and-provenance)). Grading happens client-side in `mountWidget` — a comprehension-check primitive, not a tamper-proof assessment, since the answer key travels in the descriptor itself. Full shape and the `onAction('answer', ...)` event are in [GenUI Reference § 10. graded-question](/reference/genui/widgets/#10-graded-question-rendergradedquestion--a-host-registered-10th-runtime).
 
 In LIVE mode (`.start()`), `ExperienceRenderer` also subscribes to the session's `turnStart` event (re-emitted from the raw `agent_start_speech` socket event — `{speechId, turnId, isNewTurn}`) and, by default (`clearOnTurnStart: true`), discards the assembler's in-flight buffer and clears `rendered`/`last` when `isNewTurn` is true, so a widget from a previous turn never lingers into the next one — the same correctness fix Genie's own web client applies by nulling its content on `AgentStartSpeechReceived`. A duplicate turn (`isNewTurn:false`, e.g. a CM-side `tap-to-talk` retrigger for a `turnId` already in flight) is ignored here, matching every other `turnStart`/`isNewTurn` consumer in the SDK — otherwise the duplicate would wipe an already-rendered widget out from under the viewer mid-turn. Pass `clearOnTurnStart: false` to keep the previous default behavior (accumulate/persist across turns).
 
@@ -636,7 +636,7 @@ These are importable from their entry points and useful when composing custom pi
 | `parseWidget(segment)` / `normalizeRuntime` / `RUNTIMES` / `GENUI_WIDGET_NAME` | Wire-shape parsing helpers for building a custom GenUI renderer. |
 | `DEFAULT_RENDERERS` / `WIDGET_KINDS` | The default per-kind renderer map and the frozen list of kinds it dispatches on. |
 | `SegmentAssembler` | Collects typed stream segments from the live socket into the same assembled shape as `collectConverse` — use when replaying socket captures or building a custom turn handler. `onMalformed({runtime, runtimeName, speechId, reason, message})` fires instead of `onWidget` when a fragment sequence is interrupted (`reason:'boundary'`) before its JSON body finishes — a natural end-of-turn (`'turnEnd'`) or `stop()` flush is never flagged malformed. |
-| `renderGradedQuestion` | Renderer for the `graded-question` comprehension-check widget — NOT in `DEFAULT_RENDERERS`/`WIDGET_KINDS` (there's no backend runtime for it). Register it yourself: `new ExperienceRenderer({ renderers: { 'graded-question': renderGradedQuestion } })`. See [GenUI](#genui) above and [GenUI Reference § 10](/reference/genui-reference/#10-graded-question-rendergradedquestion--a-host-registered-10th-runtime). |
+| `renderGradedQuestion` | Renderer for the `graded-question` comprehension-check widget — NOT in `DEFAULT_RENDERERS`/`WIDGET_KINDS` (there's no backend runtime for it). Register it yourself: `new ExperienceRenderer({ renderers: { 'graded-question': renderGradedQuestion } })`. See [GenUI](#genui) above and [GenUI Reference § 10](/reference/genui/widgets/#10-graded-question-rendergradedquestion--a-host-registered-10th-runtime). |
 
 ### `./experience/noise-suppressor`
 
@@ -793,7 +793,7 @@ const status = await mgmt.knowledge.isIndexed(rec.id, ks);
 Content modalities indexed: captions, OCR, document attachments. Don't use
 `knowledge.isIndexed()`'s `ready` flag, `knowledge.search()`'s "couldn't find
 relevant information" reply, or `knowledge.corpusStatus()`'s `populated` flag,
-as an indexing-status signal — see [API Reference § Ground the Agent](/reference/api/build/#ground-the-agent-in-your-content-rag) for why.
+as an indexing-status signal — see [API Reference § Ground the Agent](/reference/api/build/knowledge-rag/#ground-the-agent-in-your-content-rag) for why.
 A per-entry check (`knowledge.entryStatus()`) exists but is not yet generally
 available on every deployment — check with your Kaltura account team before
 building on it.
@@ -812,7 +812,7 @@ await mgmt.knowledge.deleteRecord(rec.id, ks, { confirmPermanent: true });
 
 ## Honest limits
 
-- **Brain-model and rate-limit fields have no public write door.** `agent_llm`/`agent_fast_llm`/`agent_avatar_llm`/rate limits/`run_quota_check`/`web_search_config` are set by internal tooling only — no public route reads or writes them (`intellectConfig.describe()` surfaces their current values read-only, informationally). Grounding a new agent via `knowledge_ids` is fully ungated. (Event-driven session/thread rules ARE supported — see [API Reference § Lifecycle](/reference/api/build/#lifecycle-event-driven-rules).)
+- **Brain-model and rate-limit fields have no public write door.** `agent_llm`/`agent_fast_llm`/`agent_avatar_llm`/rate limits/`run_quota_check`/`web_search_config` are set by internal tooling only — no public route reads or writes them (`intellectConfig.describe()` surfaces their current values read-only, informationally). Grounding a new agent via `knowledge_ids` is fully ungated. (Event-driven session/thread rules ARE supported — see [API Reference § Lifecycle](/reference/lifecycle/#lifecycle--event-driven-rules).)
 - **No verbatim speech** — `speak()` goes through the brain; the avatar may rephrase.
 - **Custom face works self-serve** — upload a portrait image via `catalog.createVisual`, pass `itemId` as `visualId` in `provision`/`avatars.create`. The model animates the portrait at runtime. Video-clip ingest (higher-fidelity model) is not yet self-serve.
 - **`force_experience` and `model_type:'fast'`** are hints; the SDK can't prove which model replied or which experience rendered.

@@ -5,9 +5,13 @@ description: "KS types and minting, userId identity binding, and the five backen
 eyebrow: Reference
 ---
 
-[← API Reference index](/reference/api-reference/)
-
 # Authentication
+
+[← Back to the API Reference index](/reference/api-reference/)
+
+**On this page:** [Authentication](#authentication) · [The Five Services](#the-five-services)
+
+## Authentication
 
 Every call requires a Kaltura Session (KS) token in the `Authorization` header.
 
@@ -32,9 +36,27 @@ KS=$(curl -s -X POST "https://www.kaltura.com/api_v3/service/session/action/star
 | Agent | `agentid:<agentId>` | Agent-scoped calls targeting a specific agent |
 | Widget | auto-derived from `widgetId` | End-user embed — no admin secret in the browser |
 
+**Mint an Agent KS** — scopes the token to a single agent (`agentid:<agentId>`) instead of a whole intellect config. Entitlement stays on; `userId` isn't supported (use Conversation or Admin for that):
+
+```js
+import { Management } from '@kaltura/intelligent-agents/management';
+
+const mgmt = new Management({ partnerId, adminSecret });
+const agentToken = await mgmt.sessions.createAgentToken({ agentId: '1_abc123' });
+```
+
+Raw wire equivalent:
+
+```bash
+AGENT_KS=$(curl -s -X POST "https://www.kaltura.com/api_v3/service/session/action/start" \
+  -d "format=1" -d "secret=$AGENTIC_ADMIN_SECRET" -d "partnerId=$AGENTIC_PARTNER_ID" \
+  -d "type=2" -d "expiry=1800" \
+  -d "privileges=agentid:1_abc123" | tr -d '"')
+```
+
 **Keep `disableentitlement` server-side, for management/admin operations only.** The SDK can't detect or stop a `disableentitlement` KS from being handed to a conversation/end-user session — a real KS's privileges are encrypted and unreadable client-side — so nothing will warn you if you do this by mistake. See [Security](/reference/security/#ks-kaltura-session-guidance-for-agents-ac-3--ac-6--ia-2) and Kaltura's own [KS/privilege reference](https://kaltura.md/KALTURA_SESSION_GUIDE/).
 
-**Bind a session to a real end-user identity (`userId`).** By default every minted KS is anonymous — the reserved `{{ sys__user_id }}` template variable (see [Converse](/reference/api/operate/#converse)) resolves to an empty string in every prompt/converse call. Pass `userId` to bind the KS to a real end-user id instead — the value flows straight through to `session/start`'s own `userId` field, per-call only (never cached), so it makes `sys__user_id` resolve server-side and lets converse-side memory/analytics attribute the turn to a real user:
+**Bind a session to a real end-user identity (`userId`).** By default every minted KS is anonymous — the reserved `{{ sys__user_id }}` template variable (see § Converse) resolves to an empty string in every prompt/converse call. Pass `userId` to bind the KS to a real end-user id instead — the value flows straight through to `session/start`'s own `userId` field, per-call only (never cached), so it makes `sys__user_id` resolve server-side and lets converse-side memory/analytics attribute the turn to a real user:
 
 ```js
 import { Management } from '@kaltura/intelligent-agents/management';
@@ -52,12 +74,14 @@ Raw wire equivalent:
 CONV_KS=$(curl -s -X POST "https://www.kaltura.com/api_v3/service/session/action/start" \
   -d "format=1" -d "secret=$AGENTIC_ADMIN_SECRET" -d "partnerId=$AGENTIC_PARTNER_ID" \
   -d "userId=learner-123" -d "type=2" -d "expiry=1800" \
-  -d "privileges=geniegpcid:<configId>" | tr -d '"')
+  -d "privileges=geniegpcid:1389" | tr -d '"')
 ```
 
 `userId` is optional on both `createAdminToken()` and `createConversationToken()` — omit it and behavior is unchanged (anonymous, exactly as before).
 
-## The five services
+---
+
+## The Five Services
 
 An agent is built from five services that layer on top of each other. All calls use `POST` with JSON (`GET /assistant/status` is the one exception).
 
@@ -71,5 +95,5 @@ An agent is built from five services that layer on top of each other. All calls 
 
 Once deployed, the **conversation surface** (`/assistant/converse`, `/v1/thread/`, `/mcp/`) lives on `genie.nvp1.ovp.kaltura.com`. Utility endpoints (`/application/`) for widget resolution and runtime init are on `api.avatar.us.kaltura.ai`.
 
-To embed a live avatar in a browser, go to [Phase 3 — Deploy](/reference/api/deploy/) or jump straight to [UC-12 Anonymous End-User Embed](/reference/use-cases/).
+To embed a live avatar in a browser, go to [Phase 3 — Deploy](/reference/api/deploy/#phase-3--deploy) or jump straight to [UC-12 Anonymous End-User Embed](/reference/use-cases/).
 
