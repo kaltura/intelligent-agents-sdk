@@ -21,6 +21,12 @@ POST https://api.avatar.us.kaltura.ai/v1/avatar/create
 
 `voice.id` and `visual.id` come from the catalog (see [Phase 1 — Design](../design.md) § Browse the Catalog). Returns `id` (24-char hex). **No `adminTags`** — avatars reject unknown fields. Tag the parent agent instead.
 
+If `visual.id` points at a custom uploaded portrait rather than a catalog preset, how you crop that source photo directly affects how the persona renders on this avatar — pad it generously rather than a tight headshot crop:
+
+![Tight headshot crops shrink onto the render canvas with black borders; a generously padded portrait scales to fill it edge-to-edge](../img/avatar-photo-framing.svg)
+
+See [Phase 1 — Design § Upload a Custom Visual](../design.md#upload-a-custom-visual-portrait--animated-avatar) for the full crop-fit explanation.
+
 **Faster path — pick a curated preset instead of assembling voice+visual by hand:** `mgmt.avatars.listTemplates(ks, opts)` lists ready-made `{voice, face}` bundles (dozens of curated presets — "Adam", "Amir", "Ben", ...). Useful for a fleet product that spins up many agents fast (one avatar per sales rep, a demo generator) and wants a "pick a good-looking preset" step instead of a build-your-own-face-plus-voice wizard every time.
 
 ```js
