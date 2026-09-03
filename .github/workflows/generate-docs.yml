@@ -1,0 +1,87 @@
+# Registration-only copy. GitHub will only let `gh workflow run <file>` /
+# the workflow-dispatch API target a workflow whose file exists on the repo's
+# default branch — even when you pass --ref to run a different branch's
+# version. The actual site repo (kaltura/intelligent-agents-sdk, gh-pages-src
+# branch) owns the real workflow; release.yml dispatches it with
+# `--ref gh-pages-src`, so GitHub always runs *that* branch's copy, checked
+# out explicitly in its own first step. This file just needs to exist here,
+# with matching triggers, so the dispatch resolves at all (issue: release.yml
+# was 404ing on this step because generate-docs.yml wasn't on main).
+#
+# Keep this in sync with intelligent-agents-sdk (gh-pages-src)'s
+# .github/workflows/generate-docs.yml if its triggers ever change.
+name: Generate docs from SDK repo
+
+on:
+  workflow_dispatch: {}
+  repository_dispatch:
+    types: [sdk-tag-released]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: generate-docs
+  cancel-in-progress: false
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the docs site (gh-pages-src)
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages-src
+
+      - name: Check out the SDK repo (main)
+        uses: actions/checkout@v4
+        with:
+          repository: kaltura/intelligent-agents-sdk
+          ref: main
+          path: sdk
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - run: npm ci
+
+      - name: Regenerate site pages from the SDK repo's own docs
+        env:
+          SDK_REPO_DIR: ${{ github.workspace }}/sdk
+        run: npm run generate
+
+      - name: Open a PR if the generated output changed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if [ -z "$(git status --porcelain -- src package.json)" ]; then
+            echo "No changes — site already matches the SDK repo's docs."
+            exit 0
+          fi
+          BRANCH="generate-docs/sync-$(date -u +%Y%m%dT%H%M%SZ)"
+          git checkout -b "$BRANCH"
+          git add -A src package.json
+          git commit -m "docs: regenerate site pages from SDK repo docs"
+          git push -u origin "$BRANCH"
+          gh pr create --base gh-pages-src --head "$BRANCH" \
+            --title "Sync generated docs with SDK repo" \
+            --body "Automated: the SDK repo's docs changed since the last sync. Review the diff, then merge to publish."
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### Generate-docs summary"
+            echo ""
+            echo "Regenerated \`src/**/*.md\` and \`src/_data/nav.js\` from the SDK repo's"
+            echo "own docs (manifest-driven, see \`scripts/docs-manifest.mjs\`). If a PR was"
+            echo "opened above, review and merge it to publish — merging triggers"
+            echo "\`pages.yml\` automatically."
+            echo ""
+            echo "If page content changed (not just styling), redeploy Nova afterward:"
+            echo "kaltura/docs-site-avatar → Actions → Redeploy Nova → Run workflow."
+          } >> "$GITHUB_STEP_SUMMARY"
