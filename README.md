@@ -234,6 +234,12 @@ session.onToolCall('navigate_to_slide', ({ slide_num }) => deck.goTo(slide_num))
 
 The SDK assigns the stream to `videoEl.srcObject` and applies no CSS of its own — size the box yourself with `object-fit: cover` (aspect-agnostic, no letterbox/pillarbox bars) — see [docs/ARCHITECTURE.md § Displaying the Avatar Video](docs/ARCHITECTURE.md#displaying-the-avatar-video).
 
+**Don't hide a loading spinner on `'streamReady'`** — it fires at the initial signaling handshake, before any video track exists. Listen for `'mediaReady'` instead: it fires once per connect, unconditionally, with `{mode:'video', videoWidth, videoHeight}` once the STV media is playable (dimensions are `0` if the decoder never resolved them, e.g. no `videoEl` — use `'videoMetadata'` if you need real dimensions), or `{mode:'audio'}` immediately if the session falls back to audio-only (capacity limited).
+
+```js
+session.on('mediaReady', ({ mode }) => spinner.hidden = true);   // covers both video and audio-only sessions
+```
+
 ### Text-only chat (`KalturaChatSession`)
 
 The same brain, thread, and tool contract as the avatar, over plain HTTPS — no mic, no camera, no video element, no socket. The class never imports `getUserMedia`, WHEP, or a socket factory, so a chat-only page ships none of that and never triggers a browser permission prompt.

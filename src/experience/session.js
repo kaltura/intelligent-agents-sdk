@@ -27,6 +27,20 @@
  * published/fixed contract (see docs/ARCHITECTURE.md § Displaying the Avatar
  * Video), so this event is the only reliable source of truth for it.
  *
+ * 'streamReady' fires much earlier, at the initial signaling handshake
+ * (§3 step 1) — before any video track exists. It means "we reached the
+ * signaling server", not "video is visible"; don't use it to hide a loading
+ * UI. Use 'mediaReady' (below) or 'videoMetadata' instead.
+ *
+ * 'mediaReady' fires exactly once per connect, unconditionally — unlike
+ * 'videoMetadata', it does NOT require `videoEl` and does NOT wait
+ * indefinitely on the decoder: `{mode:'video', videoWidth, videoHeight}` once
+ * the STV media is playable, using 'videoMetadata's dimensions if they
+ * resolved in time or `0` if they didn't (headless, or a decoder that never
+ * fires `loadedmetadata`) — or `{mode:'audio'}` immediately when the session
+ * falls back to audio-only (no STV capacity). This is the event to gate a
+ * loading UI on.
+ *
  * Does NOT police `token`'s entitlement scope — a real KS's privileges are
  * AES-encrypted with the partner secret and unreadable client-side (see
  * ks-inspect.js), so any such check is inert for production tokens. Which KS
@@ -386,6 +400,7 @@ export class KalturaAvatarSession extends Emitter {
     this._socket = null;
     this._pcAsr = null;
     this._pcStv = null;
+    this._cancelStvPlayable = null;  // cancels _connectStv()'s pending mediaReady timers if teardown lands mid-connect
     this._micStream = null;
     this._roomId = null;
     this._sessionId = null;
@@ -490,7 +505,8 @@ export class KalturaAvatarSession extends Emitter {
     this._wireSocket(socket);
 
     try {
-      // Step 1 — server handshake.
+      // Step 1 — server handshake. Signaling only, no video track yet — see the
+      // class doc above for why this isn't the event to gate a loading UI on.
       const onConn = await this._await(socket, 'onServerConnected', TIMEOUTS.serverConnect, 'ConnectionTimeout', overall);
       this.emit('streamReady', { finalUrl: onConn?.finalUrl, agentName: onConn?.agentName, hostName: onConn?.hostName });
 
@@ -560,7 +576,13 @@ export class KalturaAvatarSession extends Emitter {
       const create = () => { if (requested) return; requested = true; socket.emit('stvNewSession', buildStvNewSession(this._roomId)); };
       const poll = () => { if (!settled) socket.emit('checkAvailability', {}); };   // capacity query, independent of create()
       const onSession = (p) => {
-        if (isAudioMode(p)) { this.mode = 'audio'; this._sessionId = null; this._webrtcUrl = null; return finish(resolve); }
+        if (isAudioMode(p)) {
+          this.mode = 'audio'; this._sessionId = null; this._webrtcUrl = null;
+          // No STV session is coming — 'videoMetadata' will never fire, so tell
+          // a loading UI right now instead of leaving it to guess a timeout.
+          this.emit('mediaReady', { mode: 'audio' });
+          return finish(resolve);
+        }
         this._sessionId = p.session_id;
         this._webrtcUrl = whepUrl(p.webrtc_url, this._srsBaseUrl, p.session_id);
         finish(resolve);
@@ -654,13 +676,35 @@ export class KalturaAvatarSession extends Emitter {
     pc.oniceconnectionstatechange = () => { this.emit('connectivityChanged', { channel: 'stv', state: pc.iceConnectionState }); this._onIceStateChange('stv', pc); };
     this._armIceNewWatchdog('stv', pc);
 
+    let cancelPlayable = () => {};
+    // Exposed on `this` so _teardownTransports() can reach it — disconnect()/_endWith() called
+    // mid-connect (after this point, before `await playable` below resolves) closes _pcStv but
+    // otherwise has no handle into this closure's pending timers.
+    this._cancelStvPlayable = () => cancelPlayable();
     const playable = new Promise((resolve) => {
       let done = false;
       let videoMetadataSent = false;
+      let mediaReadySent = false;
       /** @type {Set<any>} */ const timers = new Set();
       const arm = (fn, ms) => { const id = setTimeout(fn, ms); timers.add(id); id.unref?.(); return id; };
-      const finish = () => { for (const id of timers) clearTimeout(id); timers.clear(); resolve(); };
+      // Guaranteed exactly once per connect, unlike 'videoMetadata': falls back to
+      // whatever dimensions are known (possibly 0) if the decoder never fires
+      // 'loadedmetadata' before canplay/hard-cap settle, or if there's no videoEl at all.
+      const emitMediaReady = (v) => {
+        if (mediaReadySent) return;
+        mediaReadySent = true;
+        this.emit('mediaReady', { mode: 'video', videoWidth: v?.videoWidth || 0, videoHeight: v?.videoHeight || 0 });
+      };
+      const finish = () => { for (const id of timers) clearTimeout(id); timers.clear(); emitMediaReady(this._videoEl); resolve(); };
       const settle = () => { if (!done) { done = true; arm(finish, 300); } }; // +300ms jitter settle
+      // If the WHEP handshake itself fails (thrown below, before `await playable`), or the
+      // session tears down mid-connect (disconnect()/_endWith() via _teardownTransports(),
+      // through `this._cancelStvPlayable` above), the hard-cap timer would otherwise survive
+      // up to 6s and fire mediaReady on an already-failed/disconnected session — cancel it
+      // instead. Also resolves `playable` itself (never emitting mediaReady, since
+      // mediaReadySent is now true) so `await playable` below can't hang forever waiting on
+      // a track/timer that will never come from a peer connection teardown already closed.
+      cancelPlayable = () => { done = true; mediaReadySent = true; for (const id of timers) clearTimeout(id); timers.clear(); resolve(); };
       pc.ontrack = (e) => {
         this.emit('track', { track: e.track, streams: e.streams });
         const v = this._videoEl;
@@ -669,7 +713,12 @@ export class KalturaAvatarSession extends Emitter {
           // ontrack fires once per track (video + audio) — gate so 'videoMetadata' fires
           // at most once per connect, not once per track.
           if (!videoMetadataSent && typeof v.addEventListener === 'function') {
-            const emitVideoMetadata = () => { if (videoMetadataSent) return; videoMetadataSent = true; this.emit('videoMetadata', { videoWidth: v.videoWidth, videoHeight: v.videoHeight }); };
+            const emitVideoMetadata = () => {
+              if (videoMetadataSent) return;
+              videoMetadataSent = true;
+              this.emit('videoMetadata', { videoWidth: v.videoWidth, videoHeight: v.videoHeight });
+              emitMediaReady(v);
+            };
             if (v.videoWidth || v.videoHeight) emitVideoMetadata();
             else v.addEventListener('loadedmetadata', emitVideoMetadata, { once: true });
           }
@@ -684,28 +733,35 @@ export class KalturaAvatarSession extends Emitter {
       arm(() => { if (!done) settle(); }, 6000); // hard cap
     });
 
-    const url = this._webrtcUrl;
-    if (whepUrlHasPrivateIp(url)) {
-      throw new KalturaError({ type: 'https://docs.kaltura.com/agentic/errors/whep_private_ip', title: 'WHEP private IP', code: 'whep_private_ip', detail: 'STV egress returned a private IP — unreachable from a browser.' });
+    try {
+      const url = this._webrtcUrl;
+      if (whepUrlHasPrivateIp(url)) {
+        throw new KalturaError({ type: 'https://docs.kaltura.com/agentic/errors/whep_private_ip', title: 'WHEP private IP', code: 'whep_private_ip', detail: 'STV egress returned a private IP — unreachable from a browser.' });
+      }
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      const res = await this._fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/sdp' }, body: offer.sdp });
+      const answerSdp = await res.text();
+      if (!res.ok) throw new KalturaError({ type: 'about:blank', title: 'WHEP failed', status: res.status, code: 'whep_failed', detail: whepStatusHint(res.status), body: redact(answerSdp).slice?.(0, 200) });
+      // The WHEP server's Location is often RELATIVE (e.g. "/rtc/v1/whip/?action=delete&…").
+      // Resolve it against the WHEP request URL NOW, so disconnect()'s DELETE hits SRS — not the
+      // page origin (which 404s and silently leaks the server-side STV session). [verified]
+      const loc = res.headers?.get?.('Location');
+      this._whepLocation = loc ? resolveUrl(loc, url) : null;
+      // The resolved Location can ALSO resolve to a private IP (the server rewrote the
+      // egress host after the initial request-URL check above passed) — checked separately
+      // since it's only known post-response (additive to the pre-request check).
+      if (this._whepLocation && whepUrlHasPrivateIp(this._whepLocation)) {
+        throw new KalturaError({ type: 'https://docs.kaltura.com/agentic/errors/whep_private_ip', title: 'WHEP private IP', code: 'whep_private_ip', detail: 'STV WHEP Location resolved to a private IP — unreachable from a browser.' });
+      }
+      await pc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
+    } catch (err) {
+      cancelPlayable();
+      this._cancelStvPlayable = null;
+      throw err;
     }
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-    const res = await this._fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/sdp' }, body: offer.sdp });
-    const answerSdp = await res.text();
-    if (!res.ok) throw new KalturaError({ type: 'about:blank', title: 'WHEP failed', status: res.status, code: 'whep_failed', detail: whepStatusHint(res.status), body: redact(answerSdp).slice?.(0, 200) });
-    // The WHEP server's Location is often RELATIVE (e.g. "/rtc/v1/whip/?action=delete&…").
-    // Resolve it against the WHEP request URL NOW, so disconnect()'s DELETE hits SRS — not the
-    // page origin (which 404s and silently leaks the server-side STV session). [verified]
-    const loc = res.headers?.get?.('Location');
-    this._whepLocation = loc ? resolveUrl(loc, url) : null;
-    // The resolved Location can ALSO resolve to a private IP (the server rewrote the
-    // egress host after the initial request-URL check above passed) — checked separately
-    // since it's only known post-response (additive to the pre-request check).
-    if (this._whepLocation && whepUrlHasPrivateIp(this._whepLocation)) {
-      throw new KalturaError({ type: 'https://docs.kaltura.com/agentic/errors/whep_private_ip', title: 'WHEP private IP', code: 'whep_private_ip', detail: 'STV WHEP Location resolved to a private IP — unreachable from a browser.' });
-    }
-    await pc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
     await playable;
+    this._cancelStvPlayable = null;
   }
 
   /** @param {any} socket */
@@ -2442,6 +2498,11 @@ export class KalturaAvatarSession extends Emitter {
     }
     this._unwireNetwork();
     this._unwireLifecycle();
+    // Teardown landing mid-connect (_connectStv() still awaiting `playable`) must cancel its
+    // pending mediaReady timers too — otherwise the hard-cap fires up to 6s later on a session
+    // that's already disconnected/errored, violating mediaReady's "once per connect" contract.
+    this._cancelStvPlayable?.();
+    this._cancelStvPlayable = null;
     try { this._pcAsr?.close?.(); } catch { /* */ }
     try { this._pcStv?.close?.(); } catch { /* */ }
     try { this._hwMuteTimers.forEach(clearTimeout); this._hwMuteTimers = []; } catch { /* */ }
