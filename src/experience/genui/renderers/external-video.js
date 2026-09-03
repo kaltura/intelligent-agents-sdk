@@ -6,7 +6,7 @@
  * it falls back to a scheme-checked link (`url`). The media URL is scheme-checked
  * client-side as defense-in-depth — the SERVER-side media-URL validator is the
  * primary guard (INFERRED — server validator not in this repo, see
- * docs/GENUI-REFERENCE.md §7 "external-video"); this client allow-list is an
+ * docs/genui/widgets.md §7 "external-video"); this client allow-list is an
  * additional layer. `safe:false` + empty url means the host must not embed.
  * Framework-agnostic `{kind:'external-video', data}`.
  */

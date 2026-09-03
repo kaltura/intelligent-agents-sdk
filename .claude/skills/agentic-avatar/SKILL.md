@@ -209,7 +209,7 @@ const result = await kaltura.lifecycle.match(
 // not just what you configured.
 ```
 
-`eventConditions[]` entries are `{field, operator, value}` (a dot-path into the event payload, e.g. `{field:'object.agent_id', operator:'eq', value:'<uuid>'}`) — a `{path, op}` shape 400s. `create` is a WRITE — NOT idempotent (a repeat call creates a second rule); `update`/`delete` are the usual idempotent/destructive-with-`confirm` pair. `listObjects(ks)`/`listEvents(objectType, ks)`/`describeFields(objectType, eventType, ks)` are read-only discovery calls for building a no-code rule editor instead of hardcoding enums. Full 9-method reference: `src/management/lifecycle.js`; worked examples and the `sendInsightEmail` data-egress note: `docs/api/build.md` § Lifecycle.
+`eventConditions[]` entries are `{field, operator, value}` (a dot-path into the event payload, e.g. `{field:'object.agent_id', operator:'eq', value:'<uuid>'}`) — a `{path, op}` shape 400s. `create` is a WRITE — NOT idempotent (a repeat call creates a second rule); `update`/`delete` are the usual idempotent/destructive-with-`confirm` pair. `listObjects(ks)`/`listEvents(objectType, ks)`/`describeFields(objectType, eventType, ks)` are read-only discovery calls for building a no-code rule editor instead of hardcoding enums. Full 9-method reference: `src/management/lifecycle.js`; worked examples and the `sendInsightEmail` data-egress note: `docs/lifecycle/README.md`.
 
 ## Talking to an agent — conversations, threads, messages
 

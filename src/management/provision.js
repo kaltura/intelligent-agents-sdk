@@ -263,7 +263,7 @@ async function applyTools(mgmt, configId, toolDefs, ks) {
  *   2. when `autoLink` is requested: mints a Knowledge record via
  *      `knowledge.addRecord`, points it at the corpus category via
  *      `knowledge.addSource` (a bare record has no `config.sources` and so
- *      nothing to retrieve — see docs/api/build.md § Ground the Agent), links
+ *      nothing to retrieve — see docs/api/build/knowledge-rag.md), links
  *      it onto the intellect via `intellectConfig.setKnowledgeIds` (capped at
  *      ONE record), then turns RAG on via `knowledge.setEnabled` — `knowledge_ids`
  *      alone does not enable retrieval, `capabilities.use_knowledge_base` must

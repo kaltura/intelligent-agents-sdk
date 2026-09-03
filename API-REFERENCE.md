@@ -16,11 +16,12 @@ Every endpoint is shown as a raw HTTP call plus its SDK wrapper. The SDK is what
 |------|--------|
 | [Authentication & Services](docs/api/authentication.md) | KS types and minting, `userId` binding, the five services and their base URLs |
 | [Phase 1 — Design](docs/api/design.md) | Browse the catalog, generate an agent profile, custom voice (clone), provider voice import, custom visual (portrait), end-to-end portrait recipe |
-| [Phase 2 — Build](docs/api/build.md) | Create/configure an intellect, preview a prompt, tools (`api`/`csv`/`code`), secrets, ground in your content (RAG), create an avatar, create an agent, brain-model/rate-limit fields, lifecycle rules |
+| [Phase 2 — Build](docs/api/build.md) | Create/configure an intellect, preview a prompt, tools (`api`/`csv`/`code`), secrets, ground in your content (RAG), create an avatar, create an agent, brain-model/rate-limit fields |
 | [Phase 3 — Deploy](docs/api/deploy.md) | Resolve widget ID, initialize the browser runtime |
 | [Phase 4 — Operate](docs/api/operate.md) | Converse (headless HTTP), reserved `sys__*` template variables, status, threads, feedback and follow-ups, usage analytics, knowledge search (MCP) |
 | [Scripted-Video (STV-only) Sessions](docs/api/scripted-video.md) | Pre-authored speech sessions — auth, lifecycle, `say-audio` |
-| [Management Operations](docs/api/management-operations.md) | CRUD tables for agents, avatars, intellects, tools, skills, knowledge records, lifecycle rules |
+| [Management Operations](docs/api/management-operations.md) | CRUD tables for agents, avatars, intellects, tools, skills, knowledge records |
+| [Lifecycle](docs/lifecycle/README.md) | Event-driven rules — reference + [recipe](docs/lifecycle/recipes.md) |
 | [Use-Case Catalog](docs/USE-CASES.md) | All 13 use cases (UC-1 through UC-13) mapped to mechanisms and runnable scripts |
 
 **Section shorthand.** Docs and source comments cite sections as `API-REFERENCE.md § <name>` — find the section in the table above. Common ones: § Tools, § Secrets, § Ground the Agent, § Configure an Intellect are all in [Phase 2 — Build](docs/api/build.md); § Converse and § Threads are in [Phase 4 — Operate](docs/api/operate.md); § Initialize the Runtime is in [Phase 3 — Deploy](docs/api/deploy.md).

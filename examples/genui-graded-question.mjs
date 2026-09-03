@@ -2,8 +2,9 @@
  * `graded-question` — a full worked example of the GenUI
  * comprehension-check widget: multiple-choice AND free-text variants, wired
  * through the SDK's existing "10th runtime" host-registration seam (the same
- * mechanism any custom widget uses — see docs/GENUI-REFERENCE.md § 10 and
- * "Registration, fallback, and provenance"), and reported back via the
+ * mechanism any custom widget uses — see docs/genui/widgets.md § 10 and
+ * docs/genui/authoring-and-consuming.md "Registration, fallback, and provenance"),
+ * and reported back via the
  * existing `onAction('answer', payload)` interaction-event path.
  *
  * Run:

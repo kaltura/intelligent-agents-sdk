@@ -24,7 +24,7 @@
  * preset only, currently disabled account-wide — would extract one insight
  * per configured lead-capture field, `intellectConfig.user_properties_forms`,
  * if enabled). See
- * `docs/LIFECYCLE-INSIGHTS-RECIPE.md` for the full explanation. Mounted at
+ * `docs/lifecycle/README.md` for the full explanation. Mounted at
  * `mgmt.lifecycle`.
  */
 import { paginate } from './paginate.js';

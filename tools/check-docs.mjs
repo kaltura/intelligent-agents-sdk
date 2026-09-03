@@ -27,13 +27,27 @@ const SELF = 'tools/check-docs.mjs';
 const DOCS = [
   'README.md', 'API-REFERENCE.md', 'GETTING-STARTED.md',
   'docs/api/authentication.md', 'docs/api/design.md', 'docs/api/build.md',
+  'docs/api/build/intellect.md', 'docs/api/build/preview-prompt.md',
+  'docs/api/build/tools-and-secrets.md', 'docs/api/build/knowledge-rag.md',
+  'docs/api/build/avatar-and-agent.md',
   'docs/api/deploy.md', 'docs/api/operate.md', 'docs/api/scripted-video.md',
   'docs/api/management-operations.md',
   'docs/ARCHITECTURE.md', 'docs/ARCHITECTURE-REFERENCE.md', 'docs/ARCHITECTURE-RECIPE.md',
-  'docs/WIRE-PROTOCOL.md', 'docs/GENUI-REFERENCE.md',
+  'docs/architecture-reference/connection-and-handshake.md', 'docs/architecture-reference/channels.md',
+  'docs/architecture-reference/conversation-flow.md', 'docs/architecture-reference/scale-and-sticky-sessions.md',
+  'docs/architecture-reference/module-map-and-data-flow.md', 'docs/architecture-reference/resilience-and-failure-handling.md',
+  'docs/WIRE-PROTOCOL.md',
+  'docs/wire-protocol/connection-basics.md', 'docs/wire-protocol/events-catalog.md',
+  'docs/wire-protocol/audio-channels.md', 'docs/wire-protocol/client-configuration.md',
+  'docs/wire-protocol/end-to-end-turn.md',
+  'docs/GENUI-REFERENCE.md',
+  'docs/genui/model-and-runtimes.md', 'docs/genui/widgets.md',
+  'docs/genui/authoring-and-consuming.md', 'docs/genui/analytics.md',
+  'docs/genui/safety-and-restrictions.md',
   'docs/CLIENT-COMMANDS.md', 'docs/DYNAMIC-DATA-INJECTION.md',
   'docs/STRUCTURED-DATA-FORMS.md', 'docs/EXTERNAL-API-INTEGRATIONS.md',
-  'docs/VOICE-INPUT-MODES.md', 'docs/USE-CASES.md', 'docs/LIFECYCLE-INSIGHTS-RECIPE.md',
+  'docs/VOICE-INPUT-MODES.md', 'docs/USE-CASES.md',
+  'docs/lifecycle/README.md', 'docs/lifecycle/recipes.md',
   'SECURITY.md', 'SDK_CONSTITUTION.md',
 ];
 
@@ -233,16 +247,20 @@ describe('3. ICE policy', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 4) Socket events: all captured events documented in WIRE-PROTOCOL.md
+// 4) Socket events: all captured events documented in docs/wire-protocol/*.md
 // ─────────────────────────────────────────────────────────────────────────────
 describe('4. Socket event coverage', () => {
-  test('all captured socket events (golden fixture) appear in WIRE-PROTOCOL.md', () => {
+  test('all captured socket events (golden fixture) appear in docs/wire-protocol/*.md', () => {
     const golden = JSON.parse(read('test/fixtures/golden-session.json'));
     const events = [...(golden.inboundEvents ?? []), ...(golden.outboundEvents ?? [])];
-    const wireDoc = read('docs/WIRE-PROTOCOL.md');
+    const wireDoc = [
+      'docs/wire-protocol/connection-basics.md', 'docs/wire-protocol/events-catalog.md',
+      'docs/wire-protocol/audio-channels.md', 'docs/wire-protocol/client-configuration.md',
+      'docs/wire-protocol/end-to-end-turn.md',
+    ].map(read).join('\n');
     const documented = new Set(wireDoc.match(/`([a-zA-Z_][a-zA-Z0-9_-]+)`/g)?.map((s) => s.slice(1, -1)) ?? []);
     const missing = events.filter((e) => !documented.has(e));
-    assert.deepEqual(missing, [], `socket events not in WIRE-PROTOCOL.md: ${missing.join(', ')}`);
+    assert.deepEqual(missing, [], `socket events not in docs/wire-protocol/*.md: ${missing.join(', ')}`);
   });
 });
 
@@ -563,13 +581,13 @@ describe('7. SDK invariants', () => {
     const codeSet = new Set(m[1].match(/'([a-z_]+)'/g)?.map((s) => s.slice(1, -1)) ?? []);
     assert.ok(codeSet.size > 0, 'CAPABILITIES array is empty');
 
-    const docText = read('docs/api/build.md');
+    const docText = read('docs/api/build/intellect.md');
     const catSet = new Set(
       [...docText.matchAll(/^\|\s*`([a-z_]+)`\s*\|\s*(?:ON|OFF)\s*\|/gm)].map(
         (x) => x[1],
       ),
     );
-    assert.ok(catSet.size > 0, 'no capability rows found in docs/api/build.md');
+    assert.ok(catSet.size > 0, 'no capability rows found in docs/api/build/intellect.md');
 
     const missingDoc  = [...codeSet].filter((c) => !catSet.has(c));
     const missingCode = [...catSet].filter((c) => !codeSet.has(c));
@@ -584,7 +602,7 @@ describe('7. SDK invariants', () => {
     assert.ok(read('src/experience/session.js').includes('onToolCall(name, handler)'), 'session.onToolCall missing');
     assert.ok(read('README.md').includes('tools.client'), 'README.md missing tools.client docs');
     assert.ok(read('README.md').includes('onToolCall'), 'README.md missing onToolCall docs');
-    assert.ok(read('docs/WIRE-PROTOCOL.md').includes('client-side-command channel'), 'WIRE-PROTOCOL.md missing type:tool channel note');
+    assert.ok(read('docs/wire-protocol/events-catalog.md').includes('client-side-command channel'), 'events-catalog.md missing type:tool channel note');
   });
 
   test('all tests pass', { skip: process.env.CI_CODE_CHANGED === 'false' && 'no code/test files changed in this push — the dedicated test job already covers this' }, () => {
@@ -673,7 +691,13 @@ describe('9. Preview/loading field annotation', () => {
     for (const f of files) {
       for (const [i, line] of read(f).split('\n').entries()) {
         const codeSpans = line.match(/`([^`]+)`/g) || [];
-        const hasField = codeSpans.some((c) => c.slice(1, -1).split(/[^a-zA-Z]+/).some((word) => FIELD.test(word)));
+        // Skip file-path-shaped spans (e.g. `build/preview-prompt.md`) — a field name is a
+        // bare identifier, never a slash-separated path ending in a file extension.
+        const hasField = codeSpans.some((c) => {
+          const inner = c.slice(1, -1);
+          if (/[/.]/.test(inner) && /\.(md|mjs|js|json|html)$/i.test(inner)) return false;
+          return inner.split(/[^a-zA-Z]+/).some((word) => FIELD.test(word));
+        });
         if (hasField && !ANNOTATED.test(line)) {
           offenders.push(`${f}:${i + 1}: ${line.trim()}`);
         }

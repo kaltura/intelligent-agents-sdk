@@ -11,7 +11,7 @@ A from-scratch reimplementation of the live avatar runtime, using nothing but `s
 3. socket = io(conversationManagerUrl, {path:'/socket.io', transports:['websocket'],
        auth:{token:ks}, query:{partnerId, level:'published', stickyId, billed_client:'', debugMode:true}})
 
-4. Run the connect sequence ([full state-machine order](ARCHITECTURE-REFERENCE.md#full-connect-sequence-state-machine-order)): join → stvNewSession → showAgent → askPermissions
+4. Run the connect sequence ([full state-machine order](architecture-reference/connection-and-handshake.md#full-connect-sequence-state-machine-order)): join → stvNewSession → showAgent → askPermissions
    → asr-webrtc handshake (publish mic pc via socket relay)
 
 5. STV: WHEP POST {srsBaseUrl}/rtc/v1/whep/?app=app&stream={session_id} with recvonly offer,
@@ -38,4 +38,4 @@ If you reimplement the protocol per the recipe above, you MUST:
 4. **Keep the socket alive during queue waits**; only do a fresh `connect()` (new `stickyId`) on a permanent transport loss.
 5. Let the **STV/WHEP** video channel reconnect independently — it carries no sticky state.
 
-See [ARCHITECTURE-REFERENCE.md's "Scale & Sticky Sessions"](ARCHITECTURE-REFERENCE.md#scale--sticky-sessions) for why each of these matters.
+See [ARCHITECTURE-REFERENCE.md's "Scale & Sticky Sessions"](architecture-reference/scale-and-sticky-sessions.md#scale--sticky-sessions) for why each of these matters.

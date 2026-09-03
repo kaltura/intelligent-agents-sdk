@@ -20,7 +20,7 @@
  * Real session_ended/analysis_updated events only fire via the backend's
  * own idle-session scan (there's no on-demand trigger), so this example
  * proves the rules are wired correctly with match() rather than waiting
- * for one. See docs/LIFECYCLE-INSIGHTS-RECIPE.md for the full walkthrough.
+ * for one. See docs/lifecycle/recipes.md for the full walkthrough.
  *
  * Run: AGENTIC_PARTNER_ID=… AGENTIC_ADMIN_SECRET=… node examples/lifecycle-insights-and-email.mjs
  *

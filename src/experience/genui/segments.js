@@ -5,7 +5,7 @@
  * splitting that breaks naive spoken-text parsers — see `Presenter._accumulate`);
  * this re-assembles the body before it is handed to a renderer.
  *
- * BOUNDARY RULES (per docs/GENUI-REFERENCE.md "Restrictions & gotchas":
+ * BOUNDARY RULES (per docs/genui/safety-and-restrictions.md "Restrictions & gotchas":
  * `followups-tool`, `flashcards-tool`, and `show-link-tool` are captured live —
  * including the `followups-tool`/`show-link-tool` boundary flush, confirmed
  * end to end. The other six runtimes remain INFERRED: unit-tested with a

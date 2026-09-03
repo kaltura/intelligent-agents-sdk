@@ -21,7 +21,7 @@ export function renderSources(model = {}, ctx = {}) {
     const o = /** @type {Record<string,unknown>} */ ((s && typeof s === 'object') ? s : { title: s });
     // Forward-compatible passthrough: RAG retrieval may carry a relevance score so a host can
     // rank/badge citations. Absent or non-numeric → field omitted (NOT 0). Not a claimed
-    // backend guarantee — emission is unverified (see GENUI-REFERENCE "Restrictions").
+    // backend guarantee — emission is unverified (see docs/genui/safety-and-restrictions.md "Restrictions").
     const score = Number(o.score ?? o.relevance ?? o.similarity);
     return {
       title: safeText(o.title ?? o.name ?? o.label ?? '', 500),
