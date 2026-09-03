@@ -5,9 +5,12 @@ description: "Converse, reserved template variables, threads and history cost, f
 eyebrow: Reference
 ---
 
-[← API Reference index](/reference/api-reference/)
-
 # Phase 4 — operate
+
+[← Back to the API Reference index](/reference/api-reference/)
+
+**On this page:** [Converse](#converse) · [Reserved Template Variables (`sys__*`)](#reserved-template-variables-sys__) · [Check Status](#check-status) · [Threads](#threads) · [Session-Completion Signal](#session-completion-signal) · [Thread History and Per-Turn Cost](#thread-history-and-per-turn-cost) · [Feedback and Follow-ups (SDK)](#feedback-and-follow-ups-sdk) · [Usage Analytics](#usage-analytics) · [Knowledge Search (MCP)](#knowledge-search-mcp)
+
 
 ## Converse
 
@@ -39,10 +42,12 @@ CONV_KS=$(curl -s -X POST "https://www.kaltura.com/api_v3/service/session/action
 | `sse` | `false` = NDJSON (default); `true` = SSE |
 | `model_type` | `"fast"` for cheaper/faster model |
 | `force_experience` | Hint only — not a guarantee |
-| `request_vars` | Per-message `{{var}}` interpolation; needs `allow_client_variables:true` on the intellect. Reserved `sys__*` keys (including `sys__user_id`) are server-injected and rejected if you try to set them yourself — see [§ Bind a session to a real end-user identity](/reference/api/authentication/) for how `sys__user_id` gets populated. |
+| `request_vars` | `{{var}}` interpolation values; needs `allow_client_variables:true` on the intellect. Values **persist on the thread** (the server merges each message's map into what's stored — send only deltas; a new thread starts clean) and interpolate into both prompt blocks and server-side `api`-tool templates. Reserved `sys__*` keys (including `sys__user_id`) are server-injected and rejected if you try to set them yourself — see § Bind a session to a real end-user identity above for how `sys__user_id` gets populated. Semantics in depth: [Dynamic Data Injection](/guides/dynamic-data-injection/). |
 | `capabilities` | Per-message capability override |
 
-**Stream segments** (each line is a JSON object). This is the common subset you'll see over HTTP; for the complete catalog — including the fence-tag-driven open-ended types — see [Wire Protocol §4e](/reference/wire-protocol/#4e-agent_raw_textdelta--the-brain-stream-parsed):
+**Enabling `allow_client_variables`:** `mgmt.intellects.setClientVariablesEnabled(configId, true, adminKs)` (WRITE, admin KS; also exposed as `mgmt.intellectConfig.setClientVariablesEnabled`). With it off, the rejection is **silent on every path**. The turn streams back empty: no HTTP error on `converse`, no socket error. The server's 403 fires inside its streaming pipeline after the response has already opened, so it never reaches the wire. Both session classes (`KalturaAvatarSession`, `KalturaChatSession`) detect the pattern and emit a once-per-session `warning` event (`code: 'empty_turn_with_request_vars'`, variable names only, never values). The management converse helpers keep a defensive remap to a typed `client_variables_disabled` error for the pre-stream case, should the server ever start rejecting before the stream opens.
+
+**Stream segments** (each line is a JSON object):
 
 | `type` | Meaning |
 |--------|---------|
@@ -50,36 +55,34 @@ CONV_KS=$(curl -s -X POST "https://www.kaltura.com/api_v3/service/session/action
 | `"text"` | Response content — concatenate `content` fields |
 | `"tool"` / `"tool_response"` | Server tool call + result; `content` carries client commands |
 | `"unisphere-tool"` | GenUI widget — `metadata.runtimeName` names the widget |
-| `"avatar"` | Spoken response content (avatar-driven experiences) |
-| `"share"` | Shareable content block |
 | `"error"` | Brain error |
+| `"user-interruption"` | User barged in |
 
 Key envelope fields: `threadId` (save for follow-ups), `messageId` (save for feedback), `isFinal:true` (stream done).
 
-**Cancelling a running turn:** there is no `/assistant/abort` HTTP endpoint — abort the client-side request instead (e.g. an `AbortSignal` passed into your fetch/stream call). Genie's actual interruption mechanism (`interruption`/`user-interruption`, tied to a WebSocket `abort` frame) exists only on the live-socket path, not HTTP converse — see the "Abort on interruption" bullet in [Wire Protocol §8](/reference/wire-protocol/#8-end-to-end-turn-what-fires-in-order).
+**Abort a running turn:**
+
+```
+POST https://genie.nvp1.ovp.kaltura.com/assistant/abort
+{ "threadId": "154a05c4-..." }
+```
 
 ---
 
 ## Reserved Template Variables (`sys__*`)
 
-The server sets these on every turn. They're available to `{{ ... }}` interpolation in
-`base_directive` / `prompts[].value` / `glossary` (see [Configure an Intellect](/reference/api/build/#configure-an-intellect))
-regardless of `allow_client_variables`. The SDK's own `request_vars` pre-flight guard rejects a
-client-supplied value for 5 of these 8 names before any network call — `sys__thread_id`,
-`sys__message_id`, `sys__user_id`, `sys__user_message`, `secrets` (see `request_vars` above) —
-since those collide with a server-managed variable; it does not yet name-check `sys__ks`,
-`sys__is_new_thread`, or `sys__user_obj.*` the same way:
+The server sets these on every turn. They're available to `{{ ... }}` interpolation in `base_directive` / `prompts[].value` / `glossary` (see [Configure an Intellect](/reference/api/build/intellect/#configure-an-intellect)) regardless of `allow_client_variables`. The SDK's own `request_vars` pre-flight guard rejects a client-supplied value for 5 of these 8 names before any network call — `sys__thread_id`, `sys__message_id`, `sys__user_id`, `sys__user_message`, `secrets` (see `request_vars` above) — since those collide with a server-managed variable; it does not yet name-check `sys__ks`, `sys__is_new_thread`, or `sys__user_obj.*` the same way:
 
 | Variable | Resolves to | Notes |
 |----------|-------------|-------|
 | `sys__thread_id` | Current conversation thread id | |
 | `sys__message_id` | Current message id | |
-| `sys__user_id` | The bound end-user id | Empty by default (an anonymous KS). Bind a real identity with `Sessions.createConversationToken({ userId })` (or `createAdminToken({ userId })`) so this resolves server-side instead of always being empty — see [§ Bind a session to a real end-user identity](/reference/api/authentication/). |
+| `sys__user_id` | The bound end-user id | Empty by default (an anonymous KS). Bind a real identity with `Sessions.createConversationToken({ userId })` (or `createAdminToken({ userId })`) so this resolves server-side instead of always being empty — see § Bind a session to a real end-user identity above. |
 | `sys__user_message` | The current turn's user text | |
 | `sys__is_new_thread` | `true` on the first turn of a new thread, `false` otherwise | |
 | `sys__ks` | The raw Kaltura Session token for the current request | ⚠️ **Security warning: never reference `sys__ks` in a prompt whose output could be echoed back to a user or logged.** It is a live credential — rendering it as plain text in a model response, chat transcript, or log turns that surface into a credential leak. See [Security](/reference/security/#ks-kaltura-session-guidance-for-agents-ac-3--ac-6--ia-2). |
 | `sys__user_obj.first_name` / `.last_name` / `.title` / `.company` / `.gender` / `.email` | Attributes of the bound-user object | Verify these resolve with `intellects.previewPrompt()` before shipping a prompt — the rendered preview flags unresolved references with a `reserved_user_attr_unresolved` warning. |
-| `secrets.<NAME>` | A named secret configured on the intellect | Write-only — see [§ Secrets](/reference/api/build/#secrets-write-only). |
+| `secrets.<NAME>` | A named secret configured on the intellect | Write-only — see [§ Secrets](/reference/api/build/tools-and-secrets/#secrets-write-only). |
 
 ---
 
@@ -115,16 +118,23 @@ All thread endpoints require an **admin KS** (`disableentitlement`). Pager: `{"p
 
 SDK: `mgmt.threads.{list, get, rename, delete, transcript}`.
 
-> **Compliance note.** `threads.delete()` soft-deletes immediately; a scheduled infra-level purge
-> erases the underlying data later. See
-> [Security](/reference/security/#shared-responsibility-control-matrix-nist-800-53) for what the SDK
-> provides versus what the operator must configure.
+> **Compliance note.** `threads.delete()` soft-deletes immediately; a scheduled infra-level purge erases the underlying data later. See [Security](/reference/security/#shared-responsibility-control-matrix-nist-800-53) for what the SDK provides versus what the operator must configure.
+
+## Session-Completion Signal
+
+Unlike the admin-KS thread endpoints above, this one is called from the browser client itself, with the same **conversation KS** (`geniegpcid`) used for every other client-facing call — it mints nothing new and needs no elevated privilege.
+
+| Operation | Endpoint | Body | Auth |
+|-----------|----------|------|------|
+| Session completed | `POST {genieUrl}/thread/session_completed` | `{"id":"<threadId>"}` | `Authorization: KS <conversation ks>` |
+
+`{genieUrl}` defaults to `https://genie.nvp1.ovp.kaltura.com` (no `/v1` prefix — a different route family from the thread CRUD above). Idempotent (a repeat call for the same thread is a no-op server-side); no rate limit; can block up to ~10s on a backend publish-ack, so a client must never await it on a page-unload path.
+
+Tell the backend a conversation is genuinely over the moment it happens, instead of waiting for the ~10-minute idle scanner — so end-of-conversation lifecycle rules (summaries, insights, CRM pushes) fire in seconds. SDK: `KalturaAvatarSession`/`KalturaChatSession`/`KalturaAgentSession` call this automatically on `disconnect()` (`sessionCompleteOnEnd`, default `true`) and on tab-close/backgrounding/bfcache — see [README.md § Ending a conversation cleanly](https://github.com/kaltura/intelligent-agents-sdk/blob/main/README.md#ending-a-conversation-cleanly-session_completed-signal) for the full config surface, and [Wire Protocol · Events Catalog § Session-completion signal](/reference/wire-protocol/events-catalog/#session-completion-signal--tell-the-backend-a-conversation-is-truly-over) for the exact request shape.
 
 ## Thread History and Per-Turn Cost
 
-There is no documented cap on how long a thread's history can grow. The full transcript is sent
-as model context on every turn, so per-turn cost grows with thread length — plan long-running
-threads accordingly: start a fresh thread per task, and delete threads you no longer need.
+There is no documented cap on how long a thread's history can grow. The full transcript is sent as model context on every turn, so per-turn cost grows with thread length — plan long-running threads accordingly: start a fresh thread per task, and delete threads you no longer need.
 
 ---
 

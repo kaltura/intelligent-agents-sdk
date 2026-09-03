@@ -9,13 +9,13 @@ eyebrow: How-to Guide
 
 How to pause a live avatar conversation while you show a video, quiz, or any other on-screen content, then hand the turn back to the avatar cleanly — covering both the happy path (content plays to completion) and the case where it's skipped or never finishes (don't leave the avatar stuck paused). Built entirely from two existing `KalturaAvatarSession` methods — no new SDK surface, no server-side glue.
 
-**On this page:** [The mechanism](#the-mechanism) · [Minimal runnable example](#minimal-runnable-example) · [The edge case](#the-edge-case-dont-leave-the-avatar-stuck-paused) · [Related docs](#related-docs)
+**On this page:** [The mechanism](#the-mechanism) · [Minimal runnable example](#minimal-runnable-example) · [The edge case: don't leave the avatar stuck paused](#the-edge-case-dont-leave-the-avatar-stuck-paused) · [Related docs](#related-docs)
 
 ---
 
 ## The mechanism
 
-Two methods on a connected `KalturaAvatarSession` (see [Wire Protocol](/reference/wire-protocol/) for the `pauseConversation`/`resumeConversation` wire shape):
+Two methods on a connected `KalturaAvatarSession` (see [Wire Protocol](/reference/wire-protocol/)'s `pauseConversation`/`resumeConversation` for the wire shape):
 
 ```js
 session.pause();          // sync — stops the turn loop
@@ -31,7 +31,7 @@ await session.resume();   // async — hands the turn loop back
 
 **You never need to branch on which path it takes.** Always just `await session.resume()` — it picks the right one for you. The exact length of the pause window before the server releases the session isn't a published constant; don't rely on an exact number, and always resume via one of the triggers below rather than assuming a pause lasts as long as you need it to.
 
-**Calling `resume()` is safe in every case that matters for this recipe.** This is confirmed immediately after `pause()` (zero delay), when the session was never paused, and when it was already resumed. It's also safe when the SDK's own connectivity recovery rebuilt the session *while* you were paused: a stalled/expired media channel can trigger an internal cold reconnect that rebuilds the transports on its own, without your app calling `resume()` (see [Wire Protocol](/reference/wire-protocol/) for the recovery events). Your pause survives that rebuild. The SDK keeps `session.paused` true and *holds* the rebuilt session's start signal instead of letting the avatar speak over your content. The moment you call `resume()`, the SDK releases that held signal: the rebuilt session starts and the avatar speaks its opening line. (No `resumeConversation` is sent on this path, since the fresh session was never paused server-side — there's nothing to "resume," only a start to release.) In every one of these cases `resume()` returns cleanly with `session.paused === false` and never hangs. That's why the edge-case handling below is just "call `resume()` from every exit path, unconditionally."
+**Calling `resume()` is safe in every case that matters for this recipe.** This is confirmed immediately after `pause()` (zero delay), when the session was never paused, and when it was already resumed. It's also safe when the SDK's own connectivity recovery rebuilt the session *while* you were paused: a stalled/expired media channel can trigger an internal `_coldReconnect()` that rebuilds the transports on its own, without your app calling `resume()` (see [Wire Protocol](/reference/wire-protocol/) for the recovery events). Your pause survives that rebuild. The SDK keeps `session.paused` true and *holds* the rebuilt session's start signal instead of letting the avatar speak over your content. The moment you call `resume()`, the SDK releases that held signal: the rebuilt session starts and the avatar speaks its opening line. (No `resumeConversation` is sent on this path, since the fresh session was never paused server-side — there's nothing to "resume," only a start to release.) In every one of these cases `resume()` returns cleanly with `session.paused === false` and never hangs. That's why the edge-case handling below is just "call `resume()` from every exit path, unconditionally."
 
 `resume()` can still reject for reasons unrelated to pause duration (a genuinely dead session, a real network failure mid-rebuild) — treat any rejection defensively regardless: catch it, and if `session.state` is still `'connected'`, the session is fine and there's nothing further to do.
 
@@ -46,7 +46,7 @@ You don't need to listen for any event to know resume worked — `await session.
 
 ## Minimal runnable example
 
-Plain HTML/JS, no build step — matches the pattern in `examples/browser-experience.html` in the SDK repo. Assumes a server endpoint `/appInit` that calls `Management.application.appInit()` for you (see [Getting Started](/getting-started/) and [API Reference § Initialize the Runtime](/reference/api/deploy/#initialize-the-runtime)).
+Plain HTML/JS, no build step — matches the pattern in `examples/browser-experience.html`. Assumes a server endpoint `/appInit` that calls `Management.application.appInit()` for you (see [Getting Started](/getting-started/) and [API Reference § Initialize the Runtime](/reference/api/deploy/#initialize-the-runtime)).
 
 ```html
 <!doctype html>
@@ -147,4 +147,5 @@ Whichever path fires, it calls the same `resume()`, and `resume()` handles the c
 | [Client-Side Commands](/guides/client-commands/) | The sibling mechanism for letting the avatar drive *your* UI (as opposed to this recipe, where *you* drive the avatar's pause state) |
 | [Wire Protocol](/reference/wire-protocol/) | The exact `pauseConversation`/`resumeConversation`/`pauseSessionExpired`/`sessionReadyForResume`/`conversationResumed` wire shapes |
 | [Getting Started](/getting-started/) | Where `/appInit` and the live avatar session come from in the first place |
-| [SDK Reference](/reference/sdk-reference/) | The full `KalturaAvatarSession` constructor/event surface |
+| [examples/browser-experience.html](https://github.com/kaltura/intelligent-agents-sdk/blob/main/examples/browser-experience.html) | The base live-avatar page this recipe extends |
+

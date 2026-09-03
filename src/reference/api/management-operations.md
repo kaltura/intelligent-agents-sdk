@@ -5,9 +5,12 @@ description: "CRUD endpoints for agents, avatars, intellects, tools, skills, kno
 eyebrow: Reference
 ---
 
-[← API Reference index](/reference/api-reference/)
-
 # Management operations
+
+[← Back to the API Reference index](/reference/api-reference/)
+
+**On this page:** [Agents — `https://api.avatar.us.kaltura.ai`](#agents--httpsapiavataruskalturaai) · [Avatars — `https://api.avatar.us.kaltura.ai`](#avatars--httpsapiavataruskalturaai) · [Intellects — `https://genie.nvp1.ovp.kaltura.com`](#intellects--httpsgenienvp1ovpkalturacom) · [Tools — `https://genie.nvp1.ovp.kaltura.com`](#tools--httpsgenienvp1ovpkalturacom) · [Skills — `https://genie.nvp1.ovp.kaltura.com`](#skills--httpsgenienvp1ovpkalturacom) · [Threads — `https://genie.nvp1.ovp.kaltura.com`](#threads--httpsgenienvp1ovpkalturacom) · [Knowledge records — `https://genie.nvp1.ovp.kaltura.com`](#knowledge-records--httpsgenienvp1ovpkalturacom) · [Lifecycle — `https://api.avatar.us.kaltura.ai`](#lifecycle--httpsapiavataruskalturaai)
+
 
 All use the **admin KS**.
 
@@ -17,13 +20,12 @@ All use the **admin KS**.
 |-----------|----------|------|
 | List | `POST /v1/agent/list` | `{"filter":{},"pager":{"offset":0,"limit":30}}` |
 | Get | `POST /v1/agent/get` | `{"agentId":"UUID"}` |
-| Embed snippet | `POST /v1/agent/getEmbedScript` | `{"agentId":"UUID","embedType":"contained\|page\|floater"}` |
 | Update | `POST /v1/agent/update` | `{"agentId":"UUID", ...fields}` |
 | Delete | `POST /v1/agent/delete` | `{"agentId":"UUID"}` |
 
 `agent/list` has no server-side filtering — always send `"filter":{}` and filter client-side.
 
-`agent/getEmbedScript` replies `{"objectType":"Object","html":"<script…>"}` — a ready-to-paste `<script type='module'>` snippet that loads Kaltura's embeds loader and renders the agent's chat widget (`apis.genieChat.<embedType>(…)`). `embedType` is a closed enum; anything else 400s. SDK: `mgmt.agents.getEmbedScript(agentId, embedType, ks)` unwraps to the html string.
+`mgmt.agents.delete` refuses to delete an agent whose `adminTags` match a production marker (`prod`, `production`, `keep`, `do-not-delete`, `live` — see `PROTECTED_TAGS` in `src/management/agents.js`), unless called with `{confirmPermanent:true, allowProtected:true}`. This guards against an automated cleanup-by-tag sweep deleting a real, in-use agent.
 
 ## Avatars — `https://api.avatar.us.kaltura.ai`
 
@@ -32,9 +34,8 @@ All use the **admin KS**.
 | List | `POST /v1/avatar/list` | `{"pager":{"offset":0,"limit":30}}` |
 | Get | `POST /v1/avatar/get` | `{"id":"24-char-hex"}` |
 | Update | `POST /v1/avatar/update` | `{"id":"24-char-hex", ...fields}` |
-| Clone | `POST /v1/avatar/clone` | `{"id":"24-char-hex"}` |
 | Delete | `POST /v1/avatar/delete` | `{"id":"24-char-hex"}` |
-| List templates | `POST /v1/avatar-template/list` | `{"pager":{"offset":0,"limit":30}}` — curated `{voice,face}` presets ([§ Create an Avatar](/reference/api/build/#create-an-avatar)). SDK: `mgmt.avatars.listTemplates(ks, opts)`. |
+| List templates | `POST /v1/avatar-template/list` | `{"pager":{"offset":0,"limit":30}}` — curated `{voice,face}` presets (§ Create an Avatar). SDK: `mgmt.avatars.listTemplates(ks, opts)`. |
 
 ## Intellects — `https://genie.nvp1.ovp.kaltura.com`
 
@@ -49,7 +50,7 @@ Deleting an agent does **not** delete its avatar or intellect.
 
 ## Tools — `https://genie.nvp1.ovp.kaltura.com`
 
-A standalone, partner-level entity (see [§ Tools](/reference/api/build/#tools-api--csv--code)) — not embedded in an intellect.
+A standalone, partner-level entity (see § Tools above) — not embedded in an intellect.
 
 | Operation | Endpoint | Body |
 |-----------|----------|------|
@@ -59,11 +60,11 @@ A standalone, partner-level entity (see [§ Tools](/reference/api/build/#tools-a
 | Update | `POST /v1/tool/update` | `{"id":"TOOL_UUID", "name"?, "config"?}` |
 | Delete | `POST /v1/tool/delete` | `{"id":"TOOL_UUID"}` |
 
-Deleting a Tool does **not** cascade — an intellect that still lists the id in `tool_ids` keeps a dangling reference; drop it first via `mgmt.intellectConfig.setToolIds`.
+Deleting a Tool does **not** cascade: an intellect that still lists the id in `tool_ids` keeps a dangling reference. Drop it first via `mgmt.intellectConfig.setToolIds`.
 
 ## Skills — `https://genie.nvp1.ovp.kaltura.com`
 
-A standalone, partner-level reusable-instruction entity — `{id (uuid), name, description, instructions}`. All five operations verified live. SDK: `mgmt.skills`. A Skill's `name` is checked against your partner id OR partner `0` (a shared global pool), so a name can collide with a global-pool Skill in ways invisible from a partner-scoped `list()` — the same nuance applies to Tools below.
+A standalone, partner-level reusable-instruction entity — `{id (uuid), name, description, instructions}`. SDK: `mgmt.skills`. A Skill's `name` is checked against your partner id OR partner `0` (a shared global pool), so a name can collide with a global-pool Skill in ways invisible from a partner-scoped `list()` — the same nuance applies to Tools below.
 
 | Operation | Endpoint | Body |
 |-----------|----------|------|
@@ -75,38 +76,40 @@ A standalone, partner-level reusable-instruction entity — `{id (uuid), name, d
 
 Before deleting a Skill, `mgmt.skills.delete` lists every intellect and refuses with a typed `skill_in_use` error naming each one still referencing the id in `skill_ids`, unless called with `{confirmPermanent:true, force:true}`. Tools' `mgmt.tools.delete` carries the identical `tool_in_use` guard.
 
-## Knowledge records — `https://genie.nvp1.ovp.kaltura.com`
+## Threads — `https://genie.nvp1.ovp.kaltura.com`
 
-Full record lifecycle (all verified live). SDK: `mgmt.knowledge`. Linkage to an intellect is via `knowledge_ids` — see [§ Ground the Agent](/reference/api/build/#ground-the-agent-in-your-content-rag).
+All thread endpoints require an **admin KS** (`disableentitlement`). SDK: `mgmt.threads.{list, get, rename, delete, transcript}`.
 
 | Operation | Endpoint | Body |
 |-----------|----------|------|
-| List | `POST /v1/knowledge/list` | `{"filter":{},"pager":{"pageIndex":1,"pageSize":30}}` — discover records without knowing ids up front. SDK: `mgmt.knowledge.list(ks, opts)`. Distinct from `mgmt.knowledge.listCategoryEntries(categoryId, ks, opts)`, which lists KMS entries inside a category, not Knowledge record containers. |
+| List | `POST /v1/thread/list` | `{"filter":{"objectType":"ListThreadFilter"},"pager":{"pageIndex":1,"pageSize":30}}` |
+| Get | `POST /v1/thread/get` | `{"id":"UUID"}` |
+| Rename | `POST /v1/thread/update` | `{"id":"UUID","title":"New name"}` |
+| Delete | `POST /v1/thread/delete` | `{"thread_ids":["UUID"]}` — soft delete, followed by a scheduled infra-level purge |
+| Transcript | `POST /v1/thread/get_transcripts` | `{"id":"UUID"}` |
+
+See [API · Phase 4 — Operate § Threads](/reference/api/operate/#threads) for response shapes and the compliance note on delete's soft-delete/purge timing.
+
+## Knowledge records — `https://genie.nvp1.ovp.kaltura.com`
+
+Full record lifecycle. SDK: `mgmt.knowledge`. Linkage to an intellect is via `knowledge_ids` — see § Ground the Agent.
+
+| Operation | Endpoint | Body |
+|-----------|----------|------|
+| List | `POST /v1/knowledge/list` | `{"filter":{},"pager":{"pageIndex":1,"pageSize":30}}` — discover records without knowing ids up front. SDK: `mgmt.knowledge.list(ks, opts)`. Distinct from `mgmt.knowledge.listCategoryEntries(categoryId, ks)`, which lists KMS entries inside one category, not Knowledge record containers. |
 | Add | `POST /v1/knowledge/add` | `{"name":"..."}` |
 | Get | `POST /v1/knowledge/get` | `{"id":2049}` |
-| Update | `POST /v1/knowledge/update` | `{"id":2049, ...fields}` |
+| Update | `POST /v1/knowledge/update` | `{"id":2049, ...fields}` — `config` is accepted but is a FULL REPLACE on the backend; use `addSource`/`removeSource` below instead of hand-assembling `config.sources` |
 | Delete | `POST /v1/knowledge/delete` | `{"id":2049}` — HTTP 200, body `null`; a follow-up get 404s |
 | Per-entry status *(not yet GA on every deployment — check with your Kaltura account team)* | `POST /v1/knowledge/entry_status` | `{"knowledge_id":2049, "entry_ids":["0_abc123"]}` |
 
-`mgmt.knowledge.isIndexed(id, ks)` wraps Get and reads `status`/`config.sources[].indexers[].index_position` — `status` is the record's own container-lifecycle flag, not an indexing-completion signal (see § Ground the Agent). `mgmt.knowledge.entryStatus(knowledgeId, entryIds, ks)` wraps the new per-entry endpoint above and is the real indexing-completion check, once generally available.
+`mgmt.knowledge.isIndexed(id, ks)` wraps Get and reads `status`/`config.sources[].indexers[].index_position`. `status` is the record's own container-lifecycle flag, not an indexing-completion signal: see [API · Build · Ground the Agent in Your Content (RAG) § Ground the Agent](/reference/api/build/knowledge-rag/#ground-the-agent-in-your-content-rag) for why, and for the real indexing-completion check.
 
-Deleting a record does **not** unlink it — an intellect's `knowledge_ids` keeps the dangling id; clear it via `mgmt.intellectConfig.setKnowledgeIds(configId, [], ks)`.
+`mgmt.knowledge.addSource(id, source, ks)` / `removeSource(id, source, ks)` read-merge-write one source into/out of `config.sources` without disturbing the others — both idempotent (`applied:false` if the source is already present / already absent).
+
+Before deleting a record, `mgmt.knowledge.deleteRecord` lists every intellect and refuses with a typed `knowledge_in_use` error naming each one still carrying the id in `knowledge_ids`, unless called with `{confirmPermanent:true, force:true}` — the same guard `mgmt.tools.delete`/`mgmt.skills.delete` run for their own entities.
 
 ## Lifecycle — `https://api.avatar.us.kaltura.ai`
 
-An event-driven rule engine ([§ Lifecycle](/reference/api/build/#lifecycle-event-driven-rules)) — not embedded in an intellect. SDK: `mgmt.lifecycle`.
-
-| Operation | Endpoint | Body |
-|-----------|----------|------|
-| List | `POST /v1/lifecycle/list` | `{"filter":{},"pager":{"offset":0,"limit":30}}` |
-| Get | `POST /v1/lifecycle/get` | `{"id":"RULE_UUID"}` |
-| Create | `POST /v1/lifecycle/create` | `{"name":"...", "systemName":"...", "eventType":"...", "objectType":"thread", "action":{...}}` |
-| Update | `POST /v1/lifecycle/update` | `{"id":"RULE_UUID", ...fields}` — idempotent |
-| Delete | `POST /v1/lifecycle/delete` | `{"id":"RULE_UUID"}` — replies `{success}`, not `{id}` |
-| Match (dry-run) | `POST /v1/lifecycle/match` | `{"objectType":"thread", "eventType":"session_ended", "eventData":{"object":{...}}}` |
-| List object types | `POST /v1/lifecycle/listObjects` | `{}` |
-| List events for a type | `POST /v1/lifecycle/listEvents` | `{"objectType":"thread"}` |
-| Describe filterable fields | `POST /v1/lifecycle/describeFields` | `{"objectType":"thread", "eventType":"session_ended"}` |
-
-Production ships a system-seeded preset rule (`preset__overridable_summary_on_session_ended`) that matches every `session_ended`/`thread` event for every partner by default — `match`'s response can include it grouped alongside your own rules (see [§ Lifecycle](/reference/api/build/#lifecycle-event-driven-rules) for a worked example).
+An event-driven rule engine, not embedded in an intellect. SDK: `mgmt.lifecycle`. Full reference (rule shape, all 4 action types, CRUD + discovery methods) and a worked recipe: **[Lifecycle](/reference/lifecycle/)**.
 

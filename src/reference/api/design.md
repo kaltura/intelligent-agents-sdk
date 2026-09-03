@@ -5,9 +5,12 @@ description: "Catalog browsing, agent profile generation, custom voice cloning, 
 eyebrow: Reference
 ---
 
-[← API Reference index](/reference/api-reference/)
-
 # Phase 1 — design
+
+[← Back to the API Reference index](/reference/api-reference/)
+
+**On this page:** [Browse the Catalog](#browse-the-catalog) · [Generate an Agent Profile](#generate-an-agent-profile) · [Upload a Custom Voice (clone)](#upload-a-custom-voice-clone) · [Import a Provider Voice by id (no audio upload)](#import-a-provider-voice-by-id-no-audio-upload) · [Upload a Custom Visual (portrait → animated avatar)](#upload-a-custom-visual-portrait--animated-avatar) · [End-to-end: custom portrait avatar, server to browser](#end-to-end-custom-portrait-avatar-server-to-browser)
+
 
 ## Browse the Catalog
 
@@ -62,7 +65,7 @@ Returns a `CatalogItemDto` whose `itemId` is the ElevenLabs clone. Pair with any
 
 **Gotchas:** `description` must be non-empty; audio under ~6 s returns `500`; send `adminTags=custom` bare (not a JSON array string).
 
-**SDK shortcut:** `mgmt.catalog.createVoice(file, { name, description, language?, consentRef? }, ks)` builds the multipart body for you and throws a typed `bad_request` client-side if `description` is empty, before the request ever leaves your process.
+**SDK shortcut:** `catalog.createVoice(mp3Blob, { name, description, language?, consentRef? }, adminKs)` — enforces the non-empty `description` client-side and tags the item `adminTags:['custom']` so `catalog.list` filtered on that tag finds it.
 
 ## Import a Provider Voice by id (no audio upload)
 
@@ -91,7 +94,7 @@ adminTags=custom
 
 Returns a `CatalogItemDto` whose `itemId` is the catalog visual. Pass it as `visual.id` in `avatar/create` (or `visualId` in `provision`). The model **animates the portrait live at runtime** — no ops involvement, self-serve. Verified: a real 2.4 MB portrait JPEG (`avatar-session/create` → `{success:true, sessionId}`).
 
-The backend does preprocess the uploaded image before rendering: it crop-fits the source to a fixed face-height-to-frame ratio and centers it on the render canvas. A tight "headshot"-style crop — the intuitive upload — is the worst case: the bigger the face already fills the source frame, the more the backend downscales it to hit that ratio, and the bigger the resulting black borders around the rendered avatar. One confirmed case: padding the source out to roughly 2600×2600 (face occupying a small fraction of the frame) produced an edge-to-edge render with no borders. This is an observed data point from one real upload, not a documented API contract — the exact ratio isn't published, so pad generously and check the result in a live session rather than assuming this number is precise.
+The backend does preprocess the uploaded image before rendering: it crop-fits the source to a fixed face-height-to-frame ratio and centers it on the render canvas. A tight "headshot"-style crop (the intuitive upload) is the worst case. The bigger the face already fills the source frame, the more the backend downscales it to hit that ratio, and the bigger the resulting black borders around the rendered avatar. One confirmed case: padding the source out to roughly 2600×2600 (face occupying a small fraction of the frame) produced an edge-to-edge render with no borders. This is an observed data point from one real upload, not a documented API contract. The exact ratio isn't published, so pad generously and check the result in a live session rather than assuming this number is precise.
 
 ![Tight headshot crops shrink onto the render canvas with black borders; a generously padded portrait scales to fill it edge-to-edge](/assets/img/avatar-photo-framing.svg)
 
@@ -103,8 +106,7 @@ The backend does preprocess the uploaded image before rendering: it crop-fits th
 
 ## End-to-end: custom portrait avatar, server to browser
 
-The full path is exercised end-to-end by the SDK's own integration test
-(`test/integration/avatars-catalog.test.js`) plus this recipe:
+The full path is exercised end-to-end by the SDK's own integration test (`test/integration/avatars-catalog.test.js`) plus this recipe:
 
 1. Server: `catalog.createVisual(portraitBlob, { name, genderPresentation, background, skinTone, ageGroup, hairColor }, adminKs)` → `{ itemId }`.
 2. Server: `avatars.create({ voice: { id: voiceItemId }, visual: { id: itemId }, openingPhrase: '<blank>' }, adminKs)` → `agents.create` → `application.resolveWidgetId`.

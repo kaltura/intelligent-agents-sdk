@@ -7,10 +7,7 @@ eyebrow: Reference
 
 # Use-Case Catalog
 
-A "what can you build" catalog for orienting a new integration — read it once, then use
-[API Reference](/reference/api-reference/) for the mechanism details behind each entry. Each use
-case maps to a runnable script/example in this repo, or the equivalent SDK call. UC-1 has a
-quickstart script; UC-7/12 use the browser example app; UC-13 is exercised by an integration test.
+A "what can you build" catalog for orienting a new integration — read it once, then use [API Reference](/reference/api-reference/) for the mechanism details behind each entry. Each use case maps to a runnable script/example in this repo, or the equivalent SDK call. UC-1 has a quickstart script; UC-7/12 use the browser example app; UC-13 is exercised by an integration test.
 
 <div data-nova-target="use-case-catalog-table" data-nova-label="Use-Case Catalog: all 13 use cases mapped to SDK entry points">
 
@@ -20,7 +17,7 @@ quickstart script; UC-7/12 use the browser example app; UC-13 is exercised by an
 | UC-2 | **Personalized Concierge** | Prompts with `{{firstName}}`/`{{plan}}` + `allow_client_variables:true`; pass `request_vars` per message | `mgmt.converse(configId, msg, { request_vars })` |
 | UC-3 | **Memory Chatbot** | First `converse` returns `threadId`; pass it back. `v1/thread/get_transcripts` for the full record | `mgmt.converse(...)` + `mgmt.threads.list`/`transcript` |
 | UC-4 | **GenUI Experiences** | `force_experience` hint + `capabilities`; render `unisphere-tool` segments by `metadata.runtimeName` | `mgmt.converse(...)` + `./experience/genui` |
-| UC-5 | **Avatar Fleet / A-B Personas** | `avatar/create` variants (reuse the same `voice.id`/`visual.id` to fork a persona), `agent/update avatarIds` to swap | `mgmt.avatars.create(...)` |
+| UC-5 | **Avatar Fleet / A-B Personas** | `avatar/create` variants sharing a voice/visual, `agent/update avatarIds` to swap | `mgmt.avatars.create(...)` + `mgmt.agents.update(...)` |
 | UC-6 | **Quality / Feedback Loop** | Capture `messageId` from converse → `mgmt.feedback.add()` → `reportSummary` | `mgmt.feedback.add(...)` + `mgmt.messages.reportSummary(ks)` |
 | UC-7 | **Interactive Video Avatar** | `resolveWidgetId` → widget KS → `appInit` → socket.io + WHEP runtime | `examples/browser-experience.html` |
 | UC-8 | **Headless Streaming Text** | `assistant/converse` (`sse:true` or NDJSON); stream `type:"text"` chunks; persist `threadId` server-side | `mgmt.converse(...)` (or `mgmt.conversations.stream(opts, ks)` directly) |
@@ -36,7 +33,8 @@ quickstart script; UC-7/12 use the browser example app; UC-13 is exercised by an
 
 | Pattern | Built from |
 |---------|-----------|
-| Knowledge-grounded support bot | UC-3 + `capabilities.use_knowledge_base:on` + [§ Ground the Agent](/reference/api/build/#ground-the-agent-in-your-content-rag) |
+| Knowledge-grounded support bot | UC-3 + `capabilities.use_knowledge_base:on` + [§ Ground the Agent](/reference/api/build/knowledge-rag/#ground-the-agent-in-your-content-rag) |
 | Multi-brand personas | UC-5 (voice) + UC-2 (`{{locale}}` var) |
 | Lead-capture avatar | UC-7 + `user_properties_forms` |
 | Scheduled / proactive avatar | UC-7 + your scheduler calls `speak()` on the socket |
+

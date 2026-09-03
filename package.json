@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "build": "eleventy",
+    "generate": "node scripts/generate-docs.mjs && npm run build && node scripts/check-anchors.mjs && node scripts/check-manifest-coverage.mjs && node scripts/check-sdk-pin-sync.mjs",
     "pretest": "npm run build",
     "test": "node scripts/check-anchors.mjs && playwright test"
   },
