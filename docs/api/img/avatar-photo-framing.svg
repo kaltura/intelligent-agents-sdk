@@ -25,7 +25,7 @@
   <text x="190" y="196" text-anchor="middle" font-size="11" fill="#666">face fills most of the frame</text>
 
   <!-- Arrow A -->
-  <line x1="190" y1="200" x2="190" y2="230" stroke="#333" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="190" y1="203" x2="190" y2="233" stroke="#333" stroke-width="2" marker-end="url(#arrow)"/>
 
   <!-- Column A result -->
   <text x="190" y="252" text-anchor="middle" font-size="12" fill="#444">rendered avatar canvas</text>
@@ -47,7 +47,7 @@
   <text x="570" y="200" text-anchor="middle" font-size="11" fill="#666">face is a small fraction of a generously padded frame</text>
 
   <!-- Arrow B -->
-  <line x1="570" y1="200" x2="570" y2="230" stroke="#333" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="570" y1="203" x2="570" y2="233" stroke="#333" stroke-width="2" marker-end="url(#arrow)"/>
 
   <!-- Column B result -->
   <text x="570" y="252" text-anchor="middle" font-size="12" fill="#444">rendered avatar canvas</text>
