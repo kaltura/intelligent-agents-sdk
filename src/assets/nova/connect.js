@@ -19,7 +19,7 @@
 import './router.js';
 import { withPrefix } from './router.js';
 import { initDock, enterDockMode, enterDrawerMode, exitDrawerMode } from './dock.js';
-import { initTranscript, appendTranscript, showThinking, hideThinking, restoreHistory, clearHistory } from './transcript.js';
+import { initTranscript, appendTranscript, showThinking, hideThinking } from './transcript.js';
 import { initNavigator } from './navigator.js';
 import { initHighlighter } from './highlighter.js';
 
@@ -39,29 +39,20 @@ const WIDGET_ID = '1_g7ntgoq2';
 const KICKOFF_TRIGGER = 'hi, start session!';
 
 /**
- * Conversation continuity, kept deliberately privacy-light:
- * - `nova:uid` — a random UUID with no PII, minted only when the visitor
- *   actually starts a conversation (never on a passive page view). It's this
- *   browser's stable, first-party-only identity for the conversation
- *   backend's audit trail (the SDK's opaque `subjectId`).
- * - `nova:threadId` — the server-side conversation thread, saved as Nova
- *   replies and silently re-seeded on the next connect, so a returning
- *   visitor picks up where they left off on this browser.
- * Both are strictly functional (resuming the conversation the visitor
- * started), never used for tracking, and clearable in one click via the
- * "New conversation" button in the chat drawer.
+ * `nova:uid` — a random UUID with no PII, minted only when the visitor
+ * actually starts a conversation (never on a passive page view). It's this
+ * browser's stable, first-party-only identity for the conversation backend's
+ * audit trail (the SDK's opaque `subjectId`). Purely functional, never used
+ * for tracking. Every page load starts a brand-new conversation thread —
+ * Nova never resumes a prior visit's chat.
  */
 const STORE_UID = 'nova:uid';
-const STORE_THREAD = 'nova:threadId';
 
 function storeGet(key) {
   try { return localStorage.getItem(key); } catch { return null; }
 }
 function storeSet(key, value) {
-  try { localStorage.setItem(key, value); } catch { /* storage disabled — session still works, just won't resume */ }
-}
-function storeDel(key) {
-  try { localStorage.removeItem(key); } catch { /* ditto */ }
+  try { localStorage.setItem(key, value); } catch { /* storage disabled — session still works */ }
 }
 
 function visitorId() {
@@ -136,10 +127,6 @@ function setStatus(text) {
 }
 
 initTranscript(els.transcript);
-// Chats resume server-side via STORE_THREAD, but a fresh page load has no
-// DOM — replay last visit's rendered transcript so "continuing" doesn't look
-// like starting blank even though Nova herself remembers everything.
-restoreHistory();
 
 function showDisclosure() {
   els.disclosure.classList.remove('hidden');
@@ -207,9 +194,6 @@ async function connect(pendingPrompt, mode = 'avatar') {
   // conversation will live while it connects, not a spinner in the corner.
   if (mode === 'chat') enterDrawerMode();
   setStatus(mode === 'chat' ? 'Starting chat…' : 'Connecting…');
-  // A previous visit's thread resumes silently; if the server rejects it
-  // (expired/purged), the catch below clears it and retries fresh once.
-  const savedThread = storeGet(STORE_THREAD) || undefined;
   try {
     if (mode === 'avatar') await ensureSocketIo();
     const kaltura = new Management({ partnerId: PARTNER_ID });
@@ -219,7 +203,6 @@ async function connect(pendingPrompt, mode = 'avatar') {
     session = new KalturaAgentSession({
       token: init.ks,
       mode,
-      threadId: savedThread,
       subjectId: visitorId(),
       // Avatar cfg is needed even for a chat-first session: switchMode()
       // builds the avatar transport from it later. Chat cfg is omitted —
@@ -243,10 +226,6 @@ async function connect(pendingPrompt, mode = 'avatar') {
         hideThinking();
         appendTranscript('nova', tr.text);
       }
-      // The server assigns/echoes the thread id as the conversation flows —
-      // persist it on every message so the next visit resumes this thread.
-      const tid = session?.threadId;
-      if (tid) storeSet(STORE_THREAD, String(tid));
     });
     session.on('error', (e) => {
       hideThinking();
@@ -290,17 +269,6 @@ async function connect(pendingPrompt, mode = 'avatar') {
   } catch (e) {
     connecting = false;
     els.videoWrap?.classList.remove('is-connecting');
-    // A resumed thread that the server no longer accepts shouldn't strand
-    // the visitor — forget it and retry once from a clean slate (the retry
-    // runs with no saved thread, so it can't loop).
-    if (savedThread) {
-      storeDel(STORE_THREAD);
-      clearHistory();
-      els.transcript.innerHTML = '';
-      try { session?.disconnect(); } catch { /* already dead */ }
-      session = null;
-      return connect(pendingPrompt, mode);
-    }
     setStatus(`Could not connect: ${e.detail || e.message || 'unknown error'}`);
   }
 }
@@ -352,19 +320,15 @@ function toggleMute() {
   }
 }
 
-/** The × on the chat drawer: close the conversation UI entirely. The saved
- * thread stays in localStorage, so reopening later resumes where they left
- * off; "New conversation" is the affordance that actually forgets it. */
+/** The × on the chat drawer: close the conversation UI entirely. */
 function endSession() {
   session?.disconnect();
   resetUi();
 }
 
-/** Forget the saved thread and start over in a fresh chat — the one-click
- * "clear what this browser remembers about me" affordance. */
+/** End the current thread and start a fresh one right away, without closing
+ * the drawer — same outcome a page reload gives, one click sooner. */
 function newConversation() {
-  storeDel(STORE_THREAD);
-  clearHistory();
   session?.disconnect();
   resetUi();
   els.transcript.innerHTML = '';
