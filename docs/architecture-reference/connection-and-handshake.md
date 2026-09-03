@@ -56,7 +56,7 @@ Exact order from the platform's built-in client's connection state machine. Each
 | 7 | Wait ready | ← `askPermissions` `{constraints:{audio,video}}` | server ready | — |
 | 8 | (optional) wait player-ready, 1s delay | — | — | — |
 | 9 | Connect ASR (mic uplink) | `asr-webrtc-*` handshake (below) | — | 30s |
-| 10 | Subscribe STV video (WHEP) **and wait until it is *playable*** | → WHEP `POST` → wait `<video>` `canplay` + ~300ms settle | first decoded frame | 5s |
+| 10 | Subscribe STV video (WHEP) **and wait until it is *playable*, or give up waiting** | → WHEP `POST` (no timeout of its own) → wait `<video>` `canplay` + ~300ms settle, or a 6s hard cap if `canplay` never fires | first decoded frame, or the 6s cap elapsing | 6s (hard cap; settles either way) |
 | 11 | Approve — this is what starts the spoken greeting | → `approvedPermissions` `{client, room}` | — | — |
 | → | **CONNECTED** | listen for `agent_raw_text`, `generatingSpeech`, `stvStartedTalking` | — | — |
 
@@ -66,7 +66,7 @@ Overall connecting timeout: 30s.
 
 This 30s figure is unrelated to the platform's built-in client's own internal per-attempt connect timeout used by the capacity queue — see [Capacity & the queue](../architecture-reference/scale-and-sticky-sessions.md#capacity--the-queue-throwtonoagent--throwtoexceededtier) for that separate constant and how the two don't compose.
 
-> **Ordering matters — `approvedPermissions` triggers the opening line.** Subscribe to the STV video and wait until it is actually *decoding frames* (`<video>` `canplay`, readyState ≥ `HAVE_FUTURE_DATA`, plus a short jitter-buffer settle) **before** emitting `approvedPermissions`. ICE `connected` fires ~2s before the first frame decodes — approving on ICE alone means the first 1–2s of the greeting is spoken into a pipe the user can't see/hear yet and is clipped. The platform's built-in client gates approval on **both** mic-ready AND video-ready; the SDK reproduces this in `src/experience/session.js` (`_approve`, gated on the same canplay/`HAVE_FUTURE_DATA` settle logic).
+> **Ordering matters — `approvedPermissions` triggers the opening line.** Subscribe to the STV video and wait until it is actually *decoding frames* (`<video>` `canplay`, readyState ≥ `HAVE_FUTURE_DATA`, plus a short jitter-buffer settle) **before** emitting `approvedPermissions`. ICE `connected` fires ~2s before the first frame decodes — approving on ICE alone means the first 1–2s of the greeting is spoken into a pipe the user can't see/hear yet and is clipped. This wait is not unconditional: if `canplay` never fires (a stalled or dropped video track), a 6s hard cap settles anyway and approval proceeds without a decoded frame, rather than hanging forever. The platform's built-in client gates approval on **both** mic-ready AND video-ready; the SDK reproduces this in `src/experience/session.js` (`_approve`, gated on the same canplay/`HAVE_FUTURE_DATA` settle logic, with the same 6s fallback).
 
 ---
 

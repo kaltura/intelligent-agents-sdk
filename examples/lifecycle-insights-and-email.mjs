@@ -74,12 +74,16 @@ try {
 
   // 3. Rule B: email a human once that analysis lands. The preset's
   // template needs exactly SUMMARY/TOPIC/CUSTOM from rule A above —
-  // AGENTNAME/CTAURL/USER are filled in automatically.
+  // AGENTNAME/CTAURL/USER are filled in automatically. eventConditions
+  // constrains the send to the update that actually completes that set —
+  // without it, the rule would also fire (and re-send) on any later,
+  // unrelated analysis_updated event on the same thread.
   emailRule = await kaltura.lifecycle.create({
     name: 'Demo — email support lead on analysis update',
     systemName: `demo_recipe_email_${Date.now()}`,
     eventType: 'analysis_updated',
     objectType: 'thread',
+    eventConditions: [{ field: 'changed_keys', operator: 'has_all', value: ['SUMMARY', 'TOPIC', 'CUSTOM'] }],
     action: {
       actionType: 'sendInsightEmail',
       recipients: [recipientUserId],
@@ -89,21 +93,40 @@ try {
   console.log('Created email rule:', emailRule.id);
 
   // 4. Dry-run both — proves the rules are wired correctly without waiting
-  // for a real conversation to end.
+  // for a real conversation to end. matchedRules[] can be a flat list of
+  // rules OR a grouped entry ({isGrouped:true, rules:[...]}) — the system
+  // preset and a partner rule on the same event/objectType merge into one
+  // group, so a naive .map(r => r.id) only ever sees the group's key and
+  // never actually checks that our own rule matched.
+  const flattenMatchedRuleIds = (matchedRules) => matchedRules.flatMap((entry) => (entry.isGrouped ? entry.rules.map((r) => r.id) : [entry.id]));
+
   const syntheticObject = { agent_id: 'demo-agent', thread_id: 'demo-thread', user_id: 'demo-user' };
   const sessionEndedMatch = await kaltura.lifecycle.match('thread', 'session_ended', { object: syntheticObject }, admin);
-  console.log('session_ended would match:', sessionEndedMatch.matchedRules.map((r) => r.id ?? r.groupKey));
+  const sessionEndedIds = flattenMatchedRuleIds(sessionEndedMatch.matchedRules);
+  console.log('session_ended would match rule ids:', sessionEndedIds);
+  if (!sessionEndedIds.includes(summaryRule.id)) throw new Error(`Dry run did not match the summary rule (${summaryRule.id}) — check eventType/objectType.`);
 
-  const analysisUpdatedMatch = await kaltura.lifecycle.match('thread', 'analysis_updated', { object: syntheticObject }, admin);
-  console.log('analysis_updated would match:', analysisUpdatedMatch.matchedRules.map((r) => r.id ?? r.groupKey));
+  const analysisUpdatedMatch = await kaltura.lifecycle.match(
+    'thread', 'analysis_updated',
+    { object: syntheticObject, changed_keys: ['SUMMARY', 'TOPIC', 'CUSTOM'] },
+    admin,
+  );
+  const analysisUpdatedIds = flattenMatchedRuleIds(analysisUpdatedMatch.matchedRules);
+  console.log('analysis_updated would match rule ids:', analysisUpdatedIds);
+  if (!analysisUpdatedIds.includes(emailRule.id)) throw new Error(`Dry run did not match the email rule (${emailRule.id}) — check eventConditions/changed_keys.`);
 } finally {
   // 5. Clean up — lifecycle rules have no in-use scan, so delete is immediate.
+  // Both deletions are attempted independently: if emailRule fails to delete,
+  // summaryRule (a second live partner-wide rule) must still be cleaned up —
+  // not skipped because an earlier delete in the same block threw.
+  const cleanupErrors = [];
   if (emailRule) {
-    await kaltura.lifecycle.delete(emailRule.id, admin, { confirmPermanent: true });
-    console.log('Cleaned up email rule:', emailRule.id);
+    try { await kaltura.lifecycle.delete(emailRule.id, admin, { confirmPermanent: true }); console.log('Cleaned up email rule:', emailRule.id); }
+    catch (err) { cleanupErrors.push(err); }
   }
   if (summaryRule) {
-    await kaltura.lifecycle.delete(summaryRule.id, admin, { confirmPermanent: true });
-    console.log('Cleaned up summary rule:', summaryRule.id);
+    try { await kaltura.lifecycle.delete(summaryRule.id, admin, { confirmPermanent: true }); console.log('Cleaned up summary rule:', summaryRule.id); }
+    catch (err) { cleanupErrors.push(err); }
   }
+  if (cleanupErrors.length) throw new AggregateError(cleanupErrors, `${cleanupErrors.length} lifecycle rule(s) failed to clean up — delete manually via kaltura.lifecycle.delete().`);
 }

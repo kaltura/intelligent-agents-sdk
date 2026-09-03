@@ -32,12 +32,13 @@ await mgmt.lifecycle.create({
     actionType: 'triggerInsight',
     insights: [
       { insightKey: 'TOPIC', valueType: 'string' },
+      { insightKey: 'CUSTOM', valueType: 'string', prompt: 'One actionable next step for the support team, or "none".' },
     ],
   },
 }, adminKs);
 ```
 
-Notice there's no `SUMMARY` in that list. Every partner already gets one for free — see [`README.md`'s action-type table](README.md#the-four-action-types) for why asking for your own is pointless.
+Notice there's no `SUMMARY` in that list. Every partner already gets one for free — see [`README.md`'s action-type table](README.md#the-four-action-types) for why asking for your own is pointless. `TOPIC` and `CUSTOM` are both included here because Recipe B's email preset needs all three of `SUMMARY`/`TOPIC`/`CUSTOM` present — see the gotcha below.
 
 `SUMMARY`, `SENTIMENT`, and `TOPIC` are the only insight keys with a built-in prompt — ask for any other key and you must supply your own `prompt`:
 
@@ -73,14 +74,7 @@ Three things about this action that aren't obvious from the field names:
 
 ### The gotcha that will bite you first: token mismatch
 
-`conversationInsightExample`'s template needs three insight values by name: **`SUMMARY`, `TOPIC`, and `CUSTOM`** (exactly those keys, case-sensitive). `AGENTNAME`, `CTAURL`, and `USER` are filled in automatically — you never provide those. If the thread's analysis doesn't have all three of `SUMMARY`/`TOPIC`/`CUSTOM`, the email send is skipped — logged as an error server-side, but nothing surfaces back to your app or the SDK. `SUMMARY` comes free from the always-on system preset (see [`README.md`](README.md#every-session-already-gets-a-summary-for-free)); Recipe A's own insights array only needs to add the other two:
-
-```js
-insights: [
-  { insightKey: 'TOPIC', valueType: 'string' },
-  { insightKey: 'CUSTOM', valueType: 'string', prompt: 'One actionable next step for the support team, or "none".' },
-]
-```
+`conversationInsightExample`'s template needs three insight values by name: **`SUMMARY`, `TOPIC`, and `CUSTOM`** (exactly those keys, case-sensitive). `AGENTNAME`, `CTAURL`, and `USER` are filled in automatically — you never provide those. If the thread's analysis doesn't have all three of `SUMMARY`/`TOPIC`/`CUSTOM`, the email send is skipped — logged as an error server-side, but nothing surfaces back to your app or the SDK. `SUMMARY` comes free from the always-on system preset (see [`README.md`](README.md#every-session-already-gets-a-summary-for-free)); Recipe A's own insights array above adds the other two (`TOPIC` and `CUSTOM`) for exactly this reason.
 
 `CUSTOM` isn't a built-in key (only `SUMMARY`/`SENTIMENT`/`TOPIC` are), so it needs its own `prompt` — pick whatever prompt fits your use case, the key name `CUSTOM` is what the preset template looks for, not the prompt text.
 
@@ -103,7 +97,7 @@ This only works if the conversation itself was started with an **agent-scoped** 
 Once `triggerInsight` finishes (it runs asynchronously — expect a short delay, not instant), the values land in the thread's `thread_metadata.analysis`:
 
 ```js
-const thread = await mgmt.conversations.threads.get(threadId, adminKs);
+const thread = await mgmt.threads.get(threadId, adminKs);
 console.log(thread.thread_metadata.analysis); // { SUMMARY: '...', TOPIC: '...', CUSTOM: '...' }
 ```
 
@@ -123,7 +117,7 @@ const { matchedRules } = await mgmt.lifecycle.match(
 );
 ```
 
-`object.agent_id`, `object.thread_id`, and `object.user_id` are all required strings for `objectType:'thread'` — omit one and it 400s naming the missing path. Expect to see your own rule in `matchedRules[]` alongside `preset__overridable_summary_on_session_ended` — every partner has that preset rule by default; it's not something you configured. Run this after creating each rule to confirm it matches before you ever touch a real conversation.
+`object.agent_id`, `object.thread_id`, and `object.user_id` are all required strings for `objectType:'thread'` — omit one and it 400s naming the missing path. Expect to see your own rule nested inside a grouped `matchedRules[]` entry's `rules[]` array, together with `preset__overridable_summary_on_session_ended` — every partner has that preset rule by default; it's not something you configured (see [`README.md`'s note on grouped matches](README.md#discovery-and-dry-run-testing)). Run this after creating each rule to confirm it matches before you ever touch a real conversation.
 
 ---
 

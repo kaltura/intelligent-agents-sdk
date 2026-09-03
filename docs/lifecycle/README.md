@@ -59,7 +59,7 @@ await mgmt.lifecycle.create({
   eventType: 'analysis_updated',
   objectType: 'thread',
   eventConditions: [{ field: 'object.agent_id', operator: 'eq', value: '<agent-uuid>' }],
-  action: { actionType: 'sendInsightEmail', recipients: ['support-lead@example.com'], presetType: 'conversationInsightExample' },
+  action: { actionType: 'sendInsightEmail', recipients: ['<support-lead-kaltura-user-id>'], presetType: 'conversationInsightExample' },
 }, ks);
 ```
 
