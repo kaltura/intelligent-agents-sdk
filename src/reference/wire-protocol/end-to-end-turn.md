@@ -45,7 +45,7 @@ Barge-in: a new `debug_vad_speech_detected` (voice) or `→ onTextEntered {text:
 
 ## 9. Reproduce / re-capture
 
-See `test/fixtures/golden-session.json` for the committed fixture. To observe live traffic against a real session, wire a `debugMode`-gated log panel to print every socket event via `session.on(...)` handlers, or attach a scratch `socket.onAny` listener in a browser console — there is no dedicated capture tool in this repo today.
+See the SDK's committed fixture at [`test/fixtures/golden-session.json`](https://github.com/kaltura/intelligent-agents-sdk/blob/main/test/fixtures/golden-session.json). To observe live traffic against a real session, wire a `debugMode`-gated log panel to print every socket event via `session.on(...)` handlers, or attach a scratch `socket.onAny` listener in a browser console — there is no dedicated capture tool in this repo today.
 
 ## Related docs
 

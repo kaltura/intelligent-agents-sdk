@@ -75,14 +75,14 @@ Whether a given browser session should instead carry broadened (entitlement-bypa
 
 - Short-lived by default: browser-bound tokens (`conversation`/`agent`) default to 30 minutes, admin to 1 hour. Short TTL is the primary revocation lever for a stateless KS (RFC 9700 §6.1). Override per call with `ttlSeconds`; absurd lifetimes on browser-bound kinds are rejected (`ttl_too_long`). UX note: "refresh" means your server re-mints a fresh short token, and the browser calls `session.setToken(freshKs)` to rotate mid-session without a reconnect.
 - Least privilege / binding (RFC 9700 §2.3, §4.10): tighten a token with the structured `restrictions` option instead of hand-crafting privilege strings — `{ role, actionsLimit, ipRestrict, uriRestrict, sessionGroupId }` compile to the matching Kaltura privileges (`setrole`/`actionslimit`/`iprestrict`/ `urirestrict`/`sessionid`). Defaults stay wide-open so nobody is surprise-locked out; tightening is opt-in.
-- Active revocation (RFC 9700 §5.2.1.1; SOC 2 CC6.2/CC6.3): `sessions.revoke(tokenOrKs)` ends a leaked token now (Kaltura `session/end`). Mint a family with `restrictions.sessionGroupId` and revoking any member of that family ends the whole family. Returns a `_meta` revocation receipt.
+- Active revocation (RFC 9700 §5.2.1.1; SOC 2 CC6.2/CC6.3): `sessions.revoke(tokenOrKs)` ends a leaked token now (Kaltura `session/end`). Mint a family with `restrictions.sessionGroupId` so revoking any member is intended by design to end the whole family — the SDK checks the KS carries the matching privilege string, but the server-side cascade itself is outside its control. Returns a `_meta` revocation receipt.
 - Vault/KMS (NIST IA-5): pass `getAdminSecret: () => fetchFromVault()` to fetch the secret per-mint instead of holding it; it is never stored as an enumerable field.
 - Incident runbook — revoke a leaked conversation token:
 
   ```js
   await management.sessions.revoke(leakedKs);   // or revoke(token)
-  // if minted with restrictions.sessionGroupId: revoking any member ends
-  // the whole family.
+  // if minted with restrictions.sessionGroupId: revoking any member is
+  // intended by design to end the whole family (server-side behavior).
   ```
 
 ## Audit logging (NIST AU-2 / AU-3 / AU-12; OWASP Logging; SOC 2 CC7)

@@ -12,7 +12,7 @@ eyebrow: Reference
 **On this page:** [1. Channels at a glance](#1-channels-at-a-glance) · [2. Socket.IO connection](#2-socketio-connection) · [3. Connect sequence (state-machine order)](#3-connect-sequence-state-machine-order) · [Related docs](#related-docs)
 
 
-A committed fixture at `test/fixtures/golden-session.json` shows one full real session's events, redacted.
+The SDK's committed fixture at [`test/fixtures/golden-session.json`](https://github.com/kaltura/intelligent-agents-sdk/blob/main/test/fixtures/golden-session.json) shows one full real session's events, redacted.
 
 ---
 
