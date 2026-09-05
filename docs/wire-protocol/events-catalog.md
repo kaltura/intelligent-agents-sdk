@@ -56,10 +56,10 @@ For the app-level decision of when to use this mode and how to design its UI, se
 
 | Event | Payload (captured) | Source | Meaning |
 |---|---|---|---|
-| `asr-webrtc-ready` | `{}` | built-in client | Backend ready for ASR WebRTC signaling. |
-| `asr-webrtc-answer` | `{ answer:{type:"answer", sdp} }` | built-in client | SDP answer for the mic uplink (server is `setup:active`). |
+| `asr-webrtc-ready` | `{}` | server; subscribed by built-in client | Backend ready for ASR WebRTC signaling. |
+| `asr-webrtc-answer` | `{ answer:{type:"answer", sdp} }` | server; subscribed by built-in client | SDP answer for the mic uplink (server is `setup:active`). |
 | `asr-ice-candidate` | `{ uid, type:"ice_candidate", candidate, sdpMLineIndex }` | server (relayed from the ASR server); subscribed by built-in client | A remote ICE candidate for the ASR pc. Captured value is a private `10.x typ host` — why ASR still relays through TURN ([§5](audio-channels.md#5-asr-uplink-pc1--microphone--server)). |
-| `asr-webrtc-error` | `{ error? }` | built-in client | ASR signaling error. |
+| `asr-webrtc-error` | `{ error? }` | server; subscribed by built-in client | ASR signaling error. |
 
 ### 4d. Server → Client (on) — conversation phase
 

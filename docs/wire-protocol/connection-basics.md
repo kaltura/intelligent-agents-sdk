@@ -2,7 +2,7 @@
 
 # Connection Basics
 
-A committed fixture at `test/fixtures/golden-session.json` shows one full real session's events, redacted.
+The SDK's committed fixture at [`test/fixtures/golden-session.json`](https://github.com/kaltura/intelligent-agents-sdk/blob/main/test/fixtures/golden-session.json) shows one full real session's events, redacted.
 
 ---
 
