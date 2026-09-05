@@ -12,7 +12,7 @@
  * here, and there is no code path in this module that can send them.
  * The backend already reports all four server-side for
  * every session `KalturaAvatarSession` connects to (same socket, matching
- * event names, stickyId-routed pods) — a client-side copy would double-count
+ * event names) — a client-side copy would double-count
  * on the live analytics dashboards. If a real gap in that server-side
  * reporting is ever found, file it as a GitHub issue rather than adding a
  * client resend.

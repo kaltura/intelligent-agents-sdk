@@ -10,12 +10,11 @@ import { SPIRAL_RECOVERY_PREFIX } from '../../src/core/stream.js';
  * Resilience stress suite — exercises EVERY failure path of the live runtime with
  * fault injection across all three channels (socket control / ASR uplink / STV
  * downlink), proving the SDK always reaches a defined state and NEVER silently
- * hangs or silently freezes. Complements the live battle-test in
- * earnings-avatar-q2/tests/e2e/04-live-resilience.spec.js (real backend) and the
- * Chrome/CDP network-condition harness (real Chrome, throttled networks).
+ * hangs or silently freezes. Complements the Chrome/CDP network-condition
+ * harness (real Chrome, throttled networks).
  *
  * The matrix below covers:
- *   - socket recoverable drop + same-pod recovery
+ *   - socket recoverable drop + same-instance recovery
  *   - socket recoverable drop, recovery UNAVAILABLE → bounded → ended (no hang)
  *   - socket reconnect with recovered=false → COLD reconnect
  *   - socket reconnect_failed / non-recoverable → clean ended
@@ -50,7 +49,7 @@ const asrPeer = () => FakeRTCPeerConnection.instances.find((p) => p.tracks.lengt
 
 // ─────────────────────────── socket-control channel ───────────────────────────
 
-test('socket: recoverable drop + same-pod recovery (recovered=true) → no re-join', async () => {
+test('socket: recoverable drop + same-instance recovery (recovered=true) → no re-join', async () => {
   const { session, socket } = newSession();
   scriptHappyPath(socket);
   await session.connect();
@@ -62,13 +61,13 @@ test('socket: recoverable drop + same-pod recovery (recovered=true) → no re-jo
   socket.recovered = true;
   socket.server('connect');
   assert.equal(session.state, 'connected');
-  assert.equal(socket.emitsOf('join').length, joins, 'same-pod recovery must NOT re-join');
+  assert.equal(socket.emitsOf('join').length, joins, 'same-instance recovery must NOT re-join');
   assert.deepEqual(ev.map((e) => e[0]), ['reconnecting', 'reconnected']);
   assert.equal(ev[1][1].recovered, true);
   session.disconnect();
 });
 
-test('socket: same-pod recovery (recovered=true) also nudges an STV/ASR peer that independently went ICE_DOWN during the same outage', async () => {
+test('socket: same-instance recovery (recovered=true) also nudges an STV/ASR peer that independently went ICE_DOWN during the same outage', async () => {
   // The socket surviving (connection-state recovery) says nothing about the separate
   // WebRTC peers' ICE state — they can fail independently during the same network blip.
   // Before this fix, a channel stuck 'failed'/'disconnected' at the moment `connect`
@@ -110,7 +109,7 @@ test('socket: reconnect with recovered=false → COLD reconnect (re-join + rebui
   const joins = socket.emitsOf('join').length;
   let reconnected = null; session.on('reconnected', (p) => { reconnected = p; });
   socket.server('disconnect', 'transport close');
-  socket.recovered = false;             // new socket / different pod — server session GONE
+  socket.recovered = false;             // new socket / different instance, server session GONE
   socket.server('connect');
   await delay(400);
   assert.ok(socket.emitsOf('join').length > joins, 'cold reconnect must re-join');
@@ -478,8 +477,8 @@ test('brain watchdog: agent_start_speech alone does NOT grant a lifetime pass fo
 
 test('brain watchdog: a tool-call retry spiral does NOT suppress brainStalled', async () => {
   // A tool-eager brain can re-emit the SAME tool call dozens of times in one turn with no
-  // spoken output (docs/CLIENT-COMMANDS.md "Tool spirals starve the voice" — observed live:
-  // show_widget retried 438x over 9 minutes, zero narration). `type:"tool"` segments are
+  // spoken output (docs/CLIENT-COMMANDS.md "Tool spirals starve the voice": one widget call
+  // retried hundreds of times over several minutes, zero narration). `type:"tool"` segments are
   // silent to the viewer by themselves (OBEY_RULES.md), so NONE of them — not even the
   // first — may clear the watchdog; only spoken/avatar/GenUI output may. If a tool segment
   // (first call or retry) cleared it, the viewer would get NO brainStalled warning for the
@@ -601,7 +600,7 @@ test('tool spiral HARD recovery: survives a turn-boundary reset and forces a col
   assert.equal(recovering.count, 6);
   assert.equal(recovering.limit, 6);
   assert.ok(socket.emitsOf('join').length > joins, 'hard recovery must force a real cold reconnect (re-join)');
-  assert.equal(reconnected?.recovered, false, 'the recovery is a cold rebuild, not a same-pod resume');
+  assert.equal(reconnected?.recovered, false, 'the recovery is a cold rebuild, not a same-instance resume');
   session.disconnect();
 });
 

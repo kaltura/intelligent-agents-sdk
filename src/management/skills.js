@@ -9,9 +9,10 @@
  * partner-unique-name constraint as `add`, 409 on conflict).
  *
  * `name` is unique per partner OR against a shared GLOBAL pool: lookups match
- * `partner_id IN (yours, 0)`, so a name can collide with a partner-0 global
- * Skill in ways that aren't visible from a partner-scoped `list()` alone —
- * the same nuance applies to {@link Tools} (see its class doc).
+ * your partner's entries plus the shared global pool (partner 0), so a name
+ * can collide with a global Skill in ways that aren't visible from a
+ * partner-scoped `list()` alone. The same nuance applies to {@link Tools}
+ * (see its class doc).
  *
  * SHARED-BY-NAME HAZARD: because `name` is the lookup key callers upsert
  * against (see `sdk/src/management/provision.js`'s `applyTools` for the

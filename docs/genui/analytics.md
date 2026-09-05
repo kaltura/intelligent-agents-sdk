@@ -61,9 +61,9 @@ Two rules keep the two events distinguishable and non-duplicated:
 
 Apply the same two-line pattern to any other `onAction` intent with no server-side equivalent: `'play'` (`{entryId, url, embedUrl}` — a video-gallery clip opened) and `'submit'` (`{values}` — a `user-properties-form` was submitted; report only that it happened and which fields were filled, not the raw values if they're personal data — see [../STRUCTURED-DATA-FORMS.md](../STRUCTURED-DATA-FORMS.md) for where that data durably belongs instead).
 
-## Live-verified
+## Why the two events stay distinct
 
-Both `followups-tool` and `show-link-tool` (the second requires enabling the `show_link` capability — OFF by default, see [authoring-and-consuming.md](authoring-and-consuming.md#authoring--which-capability-turns-each-widget-on)) were captured firing in the same real turn against a live agent over the HTTP converse path, assembled with `SegmentAssembler`, and run through the two `buttonClicked()` calls above with an injected transport so no test rows landed on production KAVA. The two resulting payloads shared the same `partnerId`/`sessionId` (same conversation) but differed in `buttonName`/`buttonType`/`buttonValue` — two distinguishable, non-duplicated events tied to one conversation, not two copies of the same one.
+`followups-tool` and `show-link-tool` (the second requires enabling the `show_link` capability — OFF by default, see [authoring-and-consuming.md](authoring-and-consuming.md#authoring--which-capability-turns-each-widget-on)) can arrive in the same turn. Run through the two `buttonClicked()` calls above, the resulting payloads share the same `partnerId`/`sessionId` (same conversation) but differ in `buttonName`/`buttonType`/`buttonValue` — two distinguishable, non-duplicated events tied to one conversation, not two copies of the same one. To test this without landing rows on your live KAVA data, pass an injected transport to `KavaAnalytics`.
 
 ## Related docs
 

@@ -36,7 +36,7 @@ No build step, no npm registry publish — that's disabled by design (`"private"
 - [Experience](#experience)
 - [Text-only chat (`KalturaChatSession`)](#text-only-chat-kalturachatsession)
 - [One conversation, switchable transports (`KalturaAgentSession`)](#one-conversation-switchable-transports-kalturaagentsession)
-- [`{{var}}` Jinja personalization (`request_vars`)](#var-jinja-personalization-request_vars)
+- [`{{var}}` personalization (`request_vars`)](#var-personalization-request_vars)
 - [Tap-to-talk (push-to-talk voice)](#tap-to-talk-push-to-talk-voice)
 - [Resilience: brain stalls and tool-call spirals](#resilience-brain-stalls-and-tool-call-spirals)
 - [Devices and media quality](#devices-and-media-quality)
@@ -286,7 +286,7 @@ agent.on('modeChanged', ({ mode, threadContinuity }) => showBanner(mode, threadC
 
 The facade owns the state machine (`idle → connecting → connected ⇄ switching → closed | failed`), the canonical `request_vars` map, and the `onToolCall` registry — all three carry over on every `switchMode()`. Switching is tear-down-and-reconstruct: the old transport disconnects, the new one is constructed seeded with the live `threadId` and full context, and `sendText()` calls during the blip are buffered (up to 8). Mode-specific APIs (mic control, `interrupt()`, `videoEl`…) are not mirrored — use the `transport` getter and rewire on each `transportChanged` event. For the full state-transition table and switch UX rules, see [docs/VOICE-INPUT-MODES.md](docs/VOICE-INPUT-MODES.md#switching-between-avatar-and-chat-mid-conversation).
 
-### `{{var}}` Jinja personalization (`request_vars`)
+### `{{var}}` personalization (`request_vars`)
 
 Request variables are the SDK's one channel for app-supplied context: values the brain's prompt reads via `{{var}}` templating — a viewer's name, an account tier, or a whole JSON context blob. Seed them join-time via `cfg.requestVars`, update them mid-session via `updateRequestVars()`:
 
@@ -430,7 +430,7 @@ Transport: prefers `navigator.sendBeacon` (survives page-unload); falls back to 
 - Common params set once at construction and attached to every event: `partnerId`, `ks`, `entryId`, `sessionId`, `referrer`, `userId`, `hostingKalturaApplication`/`hostingKalturaApplicationVer`, `customId1`/`customId2`.
 - `buildPageLoadParams`/`buildButtonClickedParams` are the pure param-builders behind the class — unit-testable in isolation, or usable directly if you want your own transport.
 
-Reporting a **GenUI widget interaction** specifically (which chip/link/answer the learner picked)? See [docs/genui/analytics.md § Widget-interaction analytics](docs/genui/analytics.md#widget-interaction-analytics-avoiding-double-counting) for the recipe, confirmed against two widget types, plus the exact list of signals the platform already tracks server-side so you don't duplicate one client-side.
+Reporting a **GenUI widget interaction** specifically (which chip/link/answer the learner picked)? See [docs/genui/analytics.md § Widget-interaction analytics](docs/genui/analytics.md#widget-interaction-analytics-avoiding-double-counting) for the recipe, plus the exact list of signals the platform already tracks server-side so you don't duplicate one client-side.
 
 ### Connectivity beacon (opt-in)
 
@@ -460,7 +460,7 @@ await session.completeThread();
 
 | Option | Default | Meaning |
 |---|---|---|
-| `sessionCompleteOnEnd` | `true` | Master switch. `false` restores pre-1.12 behavior exactly — no POST, no listeners. |
+| `sessionCompleteOnEnd` | `true` | Master switch. `false` disables the signal entirely: no POST, no listeners. |
 | `sessionCompletePath` | `'/thread/session_completed'` | Escape hatch if the route ever moves. |
 | `sessionCompleteTimeoutMs` | `5000` | Abort budget for `completeThread()`'s POST. Never applied on the tab-close path — an abort timer can't run on a dying page. |
 | `pageLifecycleAware` | `true` in a browser | Wire `pagehide`/`visibilitychange`/`pageshow`. Silent no-op in Node/SSR, same posture as `networkAware`. |
@@ -791,7 +791,7 @@ These are importable from their entry points and useful when composing custom pi
 | `randId(prefix?)` | Short collision-resistant ID with an optional prefix — used for idempotency keys and `_meta` receipts. |
 | `parseCsv(text)` | Zero-dep CSV parser (RFC 4180). Used by the `tools.api` CSV response path. |
 | `inspectKs(ks)` | Decodes a KSv2 token's plaintext header client-side, no network call — reliably returns `partnerId`, but `kind`/`disableEntitlement` are populated only for unencrypted test tokens (a real KS's privileges are AES-encrypted and return `kind:'opaque'`, `encrypted:true`). Don't branch security logic on it — check the minted `Token.kind` instead. See [docs/ARCHITECTURE-REFERENCE.md](docs/architecture-reference/module-map-and-data-flow.md#two-entry-points-one-shared-core) for the full caveat. |
-| `summarizeReport(rows, opts)` | Aggregates raw reporting rows into a `{ _meta, totals, byAgent, byThread }` summary — the same shape returned by `genie.mjs report-summary`. |
+| `summarizeReport(rows, opts)` | Aggregates raw reporting rows into a `{ _meta, totals, byAgent, byThread }` summary. |
 | `lintPrompts(prompts, opts?)` / `validatePromptVars(text, vars)` / `lintGlossary(glossary)` / `assembleSystemPrompt(parts)` | The prompt-authoring toolchain (`management/prompt-lint.js`): lint a prompt set for the `SYS_VARS` an intellect actually supplies, validate a template's `{{var}}` references against a known var set, lint a glossary for duplicate/conflicting terms, and assemble a final system prompt from ordered parts. `lintPrompts` also takes `{allowClientVariables, knownVars}` and flags both gate/prompt mismatch directions — `client_variable_not_allowed` (error: a block references a client var but the gate is off), `vars_gate_unreferenced` and `known_var_unreferenced` (warnings: gate on / var sent, but no block reads it). Both mismatches fail silently live, so this lint is the only surface that catches them before a conversation does. |
 | `PAGE_CONTEXT_PROMPT` | The canonical, frozen prompt block that renders `{{page_context}}` — spread it into the `prompts[]` you provision instead of hand-rolling one, so `session.setDynamicPrompt()` payloads actually reach the brain. See [docs/DYNAMIC-DATA-INJECTION.md](docs/DYNAMIC-DATA-INJECTION.md). |
 | `lintPersonaIdentity({name?, openingPhrase?, baseDirective?, prompts?})` | Warns when a persona rename didn't fully propagate. `persona_name_drift` fires whenever a declared `name` (or an `openingPhrase`-derived name that differs from it) is missing from `base_directive`/`prompts[]` — it doesn't need `openingPhrase` at all, so it also catches intellects that only declare `name` and skip `openingPhrase` entirely. `persona_name_mismatch` still needs an `openingPhrase` that parses to a name different from the declared `name`. Returns `{ok, summary, findings, detectedName, _meta}` — warning-only, never throws. `mgmt.provision()` runs this automatically and returns the result as `personaLint` (see below); call it directly to re-check an intellect you're editing outside of `provision()`. |
@@ -853,7 +853,7 @@ These are importable from their entry points and useful when composing custom pi
 | `buildPageLoadParams(common, fields)` / `buildButtonClickedParams(common, fields)` | Pure param-builders for the two valid client-side event types, used internally by `KavaAnalytics` and importable directly for a custom transport. |
 | `EVENT_TYPES` | `{pageLoad:10003, buttonClicked:10002}` — the only two valid client-side codes. |
 | `PAGE_TYPES` | The closed enum `pageLoad`'s `pageType` field is validated against. |
-| `HOSTING_APPLICATIONS` | `hostingKalturaApplication` values by name: `genieChat`, `agents`, `modelsSdk`, `conversationManager`, `avatarVideos`, `agenticAvatarsStudio`, plus an internal analytics-only identifier carried over from the backend's own dashboard naming — `kaiVendor` (a legacy internal hosting-app id with no public product meaning; kept only so KAVA event attribution matches the backend's existing dashboards). |
+| `HOSTING_APPLICATIONS` | `hostingKalturaApplication` values by name: `genieChat`, `agents`, `modelsSdk`, `conversationManager`, `avatarVideos`, `agenticAvatarsStudio`, `kaiVendor`. |
 | `DEFAULT_ANALYTICS_URL` | The KAVA ingestion endpoint (`https://analytics.kaltura.com/api_v3/index.php`). |
 
 </details>
@@ -901,6 +901,20 @@ await mgmt.intellectConfig.setMcpServers(configId, { docs: { url: 'https://mcp.e
 `setMcpServers` writes the intellect's `mcp_servers` map (`{"<name>": {url}}` — pass `{}` to clear). The backend normalizes on read (each entry comes back expanded with `type:'mcp'`, `transport:'streamable_http'`, and `null` header/allow-list fields), so never diff your input against a subsequent `get` byte-for-byte.
 
 `intellectConfig.describe(configId, ks)` returns every editable field partitioned into `editable` + `readOnly` — wire directly to a settings UI.
+
+### Forcing the reply language (`setForcedLanguage`)
+
+Setting `force_language` on the intellect config does not by itself change the reply language. The reply language follows an explicit instruction in `base_directive`. `mgmt.setForcedLanguage()` writes the three related fields together in one call:
+
+```js
+await mgmt.setForcedLanguage({ configId, agentId, language: 'he' }, admin.ks);
+// writes: a marker-wrapped instruction in base_directive, force_language,
+// and agent.asr.language, so speech recognition matches too.
+
+await mgmt.setForcedLanguage({ configId, agentId, language: null }, admin.ks); // clear
+```
+
+Idempotent: calling it again with a different language replaces the earlier instruction instead of stacking another one. `language` is an ISO 639-1 code. Pass `languageName` for a code that is not in `LANGUAGE_NAMES` (exported from `./management`).
 
 ---
 
@@ -1002,7 +1016,7 @@ await mgmt.knowledge.deleteRecord(rec.id, ks, { confirmPermanent: true });
 
 - **Brain-model and rate-limit fields aren't in the public API.** `agent_llm`/`agent_fast_llm`/rate limits and a few others are set by internal tooling only — see `intellectConfig.describe()`'s `readOnly` map. Knowledge grounding via `knowledge_ids` is fully public and ungated. (Event-driven session/thread rules ARE supported — see [docs/lifecycle/README.md](docs/lifecycle/README.md).)
 - **No verbatim speech** — `speak()` goes through the brain; the avatar may rephrase.
-- **Custom face works self-serve** — upload a portrait image via `catalog.createVisual`, pass `itemId` as `visualId` in `provision`/`avatars.create`. The model animates the portrait at runtime. Video-clip ingest (higher-fidelity model) is not yet self-serve.
+- **Custom face works self-serve** — upload a portrait image via `catalog.createVisual`, pass `itemId` as `visualId` in `provision`/`avatars.create`. The model animates the portrait at runtime. Video-clip ingest is not available through this API.
 - **`force_experience` and `model_type:'fast'`** are hints; the SDK can't prove which model replied or which experience rendered.
 
 ---

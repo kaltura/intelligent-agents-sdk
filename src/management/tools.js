@@ -120,8 +120,8 @@ export function validateArgs(args) {
 }
 
 /**
- * Structural dot-path sanity check (no eval, never executes). Matches the live
- * backend's `get_from_path` exactly: a bare, dot-separated sequence of field
+ * Structural dot-path sanity check (no eval, never executes). Matches the
+ * server's path-extraction behavior exactly: a bare, dot-separated sequence of field
  * names and/or list indices (e.g. `json.items.0.id`) — NO leading `$` (the
  * backend has no root token) and NO bracket/wildcard syntax (the backend has
  * no indexer for either). Rejects whitespace, parens (function calls), `$`,
@@ -381,14 +381,13 @@ export function clientToolReadiness(body) {
  * `waitForResponse` controls whether the model's turn BLOCKS on a real
  * client-supplied result. **Omitting it is NOT the same as passing `false`** —
  * this builder sends no field at all when omitted, and the backend's own
- * wire default for an absent `wait_for_response` is `true` (source-verified:
- * `dto.py:550`), so an omitted `waitForResponse` blocks. Pass it explicitly:
- *  - `false` — the backend doesn't wait; the turn continues immediately
- *    (confirmed live: ~2.9s full turn).
+ * wire default for an absent `wait_for_response` is `true`, so an omitted
+ * `waitForResponse` blocks. Pass it explicitly:
+ *  - `false` — the backend doesn't wait; the turn continues immediately.
  *  - `true` — the backend polls for up to `timeout` seconds for an ACK via
  *    `POST /assistant/tool_response` (see {@link import('../experience/session.js').KalturaAvatarSession#respondToTool}
- *    for the live-socket path) before the model gets a result. Confirmed live:
- *    both the 30s default and an explicit 15s `timeout` are honored.
+ *    for the live-socket path) before the model gets a result. Both the 30s
+ *    default and an explicit `timeout` are honored.
  *
  * PURE — returns a wire-ready {@link GenieToolConfig}; throws {@link KalturaError}
  * on bad input, before any network call.
@@ -467,7 +466,7 @@ export function validate(tool) {
 /**
  * Apply a `response_mapping` (`{outputKey: dot-path}`) to a parsed JSON
  * response, returning `{outputKey: extractedValue}`. This mirrors the server's
- * `get_from_path`/`apply_mapping` extraction exactly for client-side
+ * response-mapping behavior exactly for client-side
  * preview/testing (the server runs the real call): a bare, dot-separated
  * sequence of field names and/or list indices — no `$` root, no brackets, no
  * wildcards (the backend has none). Missing paths yield `undefined`. PURE —
@@ -486,7 +485,7 @@ export function applyResponseMapping(resp, mapping) {
   return out;
 }
 
-/** Evaluate a bare dot-path expression against `root`, mirroring `get_from_path`. @param {unknown} root @param {string} path */
+/** Evaluate a bare dot-path expression against `root`, mirroring the server's path lookup. @param {unknown} root @param {string} path */
 function evalPath(root, path) {
   if (typeof path !== 'string' || !path.length) return undefined;
   let node = root;
@@ -561,9 +560,9 @@ export async function findIntellectsReferencingTool(ctx, toolId, ks) {
  * `intellects.create`/`update`).
  *
  * `name` is unique per partner OR against a shared GLOBAL pool: lookups match
- * `partner_id IN (yours, 0)`, so a name you pick can collide with a partner-0
- * global Tool in ways that aren't visible from a partner-scoped `list()`
- * alone — the same nuance applies to {@link Skills}.
+ * your partner's entries plus the shared global pool (partner 0), so a name
+ * you pick can collide with a global Tool in ways that aren't visible from a
+ * partner-scoped `list()` alone. The same nuance applies to {@link Skills}.
  *
  * SHARED-BY-NAME HAZARD: because `name` is the lookup key callers upsert
  * against (see `sdk/src/management/provision.js`'s `applyTools`, or an app's

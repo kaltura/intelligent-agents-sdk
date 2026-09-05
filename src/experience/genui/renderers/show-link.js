@@ -3,7 +3,7 @@
  * `show-link-tool`). A single link card. The href is scheme-checked via
  * `safeUrl` (the classic XSS link vector — `javascript:`/`data:` → ''); when the
  * URL is unsafe the descriptor reports `safe:false` with an empty url so the
- * host can drop it (mirrors the earnings app's `renderSafeLink` null-drop).
+ * host can drop it (mirrors `renderSafeLink`'s null-drop).
  * Framework-agnostic `{kind:'show-link', data}`.
  */
 import { safeText, safeUrl } from '../../../core/safety.js';

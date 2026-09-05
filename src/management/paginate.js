@@ -3,7 +3,7 @@
  * `{offset,limit}` 0-indexed; Genie uses `{pageIndex,pageSize}` 1-indexed). The
  * SDK sends each host its native pager but exposes ONE async-iterator surface
  * to callers (`for await (const x of agents.list(ks))`), normalizing the
- * difference (the D9 client-side workaround the contract calls for).
+ * difference.
  *
  * Returns a {@link Page}: thenable (await it for the first page's array) AND
  * async-iterable (iterate to walk every page). So both styles work:

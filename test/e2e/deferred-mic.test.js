@@ -1,6 +1,6 @@
 /**
  * micStartMode:'deferred' — connect with NO mic (trackless sendonly ASR slot), then
- * startMic() attaches the track later via replaceTrack (no renegotiation). The CM
+ * startMic() attaches the track later via replaceTrack (no renegotiation). The server
  * handshake must stay byte-identical to the immediate path; mic errors move from
  * connect() to startMic(); tap-to-talk/switchMic are guarded until the mic is live.
  */
@@ -36,7 +36,7 @@ test('deferred connect: no getUserMedia, handshake identical, sendonly audio slo
   assert.equal(session.state, 'connected');
   assert.equal(getUserMedia.calls.length, 0, 'connect() must never touch the mic in deferred mode');
   assert.equal(session.micStarted, false);
-  // The CM handshake is byte-identical to the immediate path.
+  // The server handshake is byte-identical to the immediate path.
   assert.ok(socket.didEmit('asr-webrtc-init'));
   assert.ok(socket.didEmit('asr-webrtc-offer'));
   assert.ok(socket.didEmit('approvedPermissions'));

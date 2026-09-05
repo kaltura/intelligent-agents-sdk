@@ -4,8 +4,7 @@
  * model}` the renderer can dispatch on.
  *
  * Wire truth (verified
- * against `agent_raw_text`/`brainSegment` in `experience/session.js` and the
- * earnings reference app `handleBrainSegment`): Genie's `message_service`
+ * against `agent_raw_text`/`brainSegment` in `experience/session.js`): the server
  * converts a fenced block carrying a `widgetName` into a `unisphere-tool`
  * segment shaped `{ type, content, metadata:{ widgetName, runtimeName },
  * speechId?, threadId? }`. All nine UI segments share
@@ -28,7 +27,7 @@ export const GENUI_WIDGET_NAME = 'unisphere.widget.genie';
  * renderer dispatches on). DERIVED from the wire list `core/stream.js`
  * `GENUI_RUNTIMES` (the single source of truth) so the two can never drift —
  * `experience → core` is the allowed dependency direction (core stays leaf).
- * Source: `experiences_definitions.py`'s backend tool-key registry. This is the SDK's first-class set; any other runtime the
+ * Source: the nine backend GenUI runtime keys (see docs/genui/widgets.md). This is the SDK's first-class set; any other runtime the
  * backend may add (e.g. `gen-ui-composer`) falls through `onUnhandled`/a safe
  * fallback descriptor rather than being faked into a known kind.
  * @type {readonly string[]}
@@ -86,7 +85,7 @@ export function parseContent(content) {
   // 2) Loose `key: value` line block (YAML-ish), with ONE level of nesting
   //    support: `key:` followed by a `- sub: val` list, indented (the exact
   //    shape Genie's own `user_properties_form` template streams for its
-  //    `fields:` list — see `sys_prompt_user_properties`) OR flush-left (the
+  //    `fields:` list) OR flush-left (the
   //    shape the built-in `followups` tool streams — e.g. `- "What...?"` with zero
   //    leading whitespace). Anything else that isn't a clean
   //    `key: value` line is kept verbatim under `.raw` so we never lose data.

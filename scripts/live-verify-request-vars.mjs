@@ -13,8 +13,8 @@
  *      visitor_tier=platinum (persisted from turn 1, never referenced by any
  *      prompt) AND counter=55, and `response_mapping` shapes what comes back
  *   E  sys__* injection: a tool template renders `sys__thread_id` (echoed back
- *      and matched against THIS conversation's threadId) and a Jinja presence
- *      probe over `sys__ks` — proof the server injects live system variables.
+ *      and matched against THIS conversation's threadId) and a `{{var}}`
+ *      presence probe over `sys__ks` — proof the server injects live system variables.
  *      The KS itself NEVER leaves the tool template: only the boolean
  *      "present"/"absent" is sent (kaltura.com is not reachable from the tool
  *      executor, so calling session/get with the KS is not an
@@ -151,7 +151,7 @@ try {
   record('tool-create-echo', true, { toolId: echoTool.id, name: TOOL_ECHO });
 
   // sys__* injection tool: echoes sys__thread_id (harmless, matched against
-  // the live threadId below) and a Jinja PRESENCE probe over sys__ks. The raw
+  // the live threadId below) and a `{{var}}` presence probe over sys__ks. The raw
   // KS must never be interpolated toward any non-Kaltura endpoint, and the
   // tool executor cannot reach kaltura.com, so presence/shape
   // is the strongest safe assertion.

@@ -4,7 +4,7 @@
  * Lives in core/ so both management/ and experience/ can import it without a
  * layering violation (core/ has no dependency on either).
  *
- * Consolidates FOUR previously independent hand-rolled regexes that had each
+ * Consolidates four hand-rolled regexes that had each
  * drifted to cover a different subset of the same threat:
  * - {@link isPrivateOrLoopbackHost} — the general-purpose predicate, used by
  *   `experience/wire.js` (WHEP-URL private-IP rejection) and

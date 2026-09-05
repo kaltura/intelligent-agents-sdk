@@ -266,7 +266,7 @@ test("empty turn while request variables are in play → one 'warning' with code
 test('the warning fires at most once per session (dedup across duplicate end events and later empty turns)', async () => {
   const { session, socket, warnings } = await connectWithVars({ tier: 'gold' });
   socket.server('agent_start_speech', { isNewTurn: true, speechId: 's1' });
-  // Real CM can fire BOTH end events for one turn.
+  // The real server can fire BOTH end events for one turn.
   socket.server('agent_end_turn', { speechId: 's1' });
   socket.server('stvFinishedGenerating', { speechId: 's1' });
   // A second fully empty turn.

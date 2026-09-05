@@ -24,6 +24,7 @@ import { Skills } from './skills.js';
 import { Lifecycle } from './lifecycle.js';
 import { Conversations, Threads, Messages, Feedback, Followups, Knowledge } from './conversations.js';
 import { provision } from './provision.js';
+import { setForcedLanguage } from './set-forced-language.js';
 import { inspectKs } from './ks-inspect.js';
 
 /**
@@ -108,8 +109,8 @@ export class Management {
         }
         if (!res.ok) {
           // Route through errorFromResponse so a 422 maps to a typed validation_error and the
-          // server's actual message (incl. FastAPI array-shaped `detail`) surfaces in `.detail`,
-          // not buried in a stringified body (the force_experience-typo trap). [verified]
+          // server's actual message (incl. an array-shaped `detail`) surfaces in `.detail`,
+          // not buried in a stringified body (the force_experience-typo trap).
           const t = await res.text();
           let parsed = t; try { parsed = JSON.parse(t); } catch { /* keep text */ }
           const err = errorFromResponse({ status: res.status, path: `/${path}`, body: parsed, requestId: res.headers.get?.('x-request-id') || '' });
@@ -233,6 +234,22 @@ export class Management {
    */
   provision(opts) {
     return provision(this, opts);
+  }
+
+  /**
+   * Force an agent's reply language by writing three related fields together:
+   * `force_language` on the intellect, `asr.language` on the agent, and a
+   * marker-wrapped instruction in `base_directive`. `force_language` alone
+   * does not change the reply language; the `base_directive` instruction does.
+   * WRITE, idempotent. Pass `language: null` to remove the instruction and
+   * reset `asr.language`/`force_language` to their defaults. Requires an admin
+   * token.
+   * @param {object} opts {configId, agentId, language, languageName?, asrProvider?}
+   * @param {string} ks (admin)
+   * @see {@link setForcedLanguage}
+   */
+  setForcedLanguage(opts, ks) {
+    return setForcedLanguage(this, opts, ks);
   }
 }
 

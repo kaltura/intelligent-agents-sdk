@@ -7,6 +7,6 @@ The exact field-by-field mechanics behind [ARCHITECTURE.md](ARCHITECTURE.md) —
 | [architecture-reference/connection-and-handshake.md](architecture-reference/connection-and-handshake.md) | Endpoints & Credentials, Socket.IO Connection, Full Connect Sequence, the `join` payload |
 | [architecture-reference/channels.md](architecture-reference/channels.md) | ASR Channel — Microphone Uplink, STV Channel — Avatar Video Downlink |
 | [architecture-reference/conversation-flow.md](architecture-reference/conversation-flow.md) | Conversation Phase (brain output, talking state, lifecycle events), Sending User Input, Complete Message Catalog |
-| [architecture-reference/scale-and-sticky-sessions.md](architecture-reference/scale-and-sticky-sessions.md) | Sticky routing, the capacity queue, connection vs. session recovery, cross-pod shared state |
+| [architecture-reference/scale-and-sticky-sessions.md](architecture-reference/scale-and-sticky-sessions.md) | Sticky routing, the capacity queue, connection vs. session recovery, externalized session state |
 | [architecture-reference/module-map-and-data-flow.md](architecture-reference/module-map-and-data-flow.md) | SDK module map, `resolveCapabilities` shape, the GenUI layer, DTO routing rules, honest limits |
 | [architecture-reference/resilience-and-failure-handling.md](architecture-reference/resilience-and-failure-handling.md) | Reconnection tiers, device permissions, the failure-mode matrix, the tool-call-spiral breaker, session-completion signal |

@@ -215,9 +215,8 @@ section('Part 2 — Security');
   }
 }
 
-// S-4: No prototype pollution. SDK_CONSTITUTION.md previously named
-// test/e2e/compliance.test.js, which has no such test — the real coverage is
-// a unit test in safety.test.js plus an e2e test in security.test.js.
+// S-4: No prototype pollution. Coverage is a unit test in safety.test.js plus
+// an e2e test in security.test.js.
 {
   const safetyTest = join(ROOT, 'test', 'unit', 'safety.test.js');
   const securityTest = join(ROOT, 'test', 'e2e', 'security.test.js');

@@ -1,7 +1,7 @@
 /**
- * Agent factory — the UC-1 provision sequence as one call. Mirrors the
- * UC-1 provision sequence documented in API-REFERENCE.md, so the SDK and
- * the reference tooling produce the same agent.
+ * Agent factory — runs the provision sequence documented in
+ * API-REFERENCE.md as one call, so the SDK and the reference tooling
+ * produce the same agent.
  *
  * Sequence (all on documented endpoints; no new API):
  *   generateProfile → intellect.add → intellect.update (prompts) →
@@ -94,9 +94,8 @@ export async function provision(mgmt, opts) {
     // ── OPTIONAL, purely-additive post-configure blocks (default off) ──────────
     // These run AFTER the agent exists, never alter the core sequence/return
     // fields, and never fail the provision — each records its own partial result.
-    // The methods they call land in Stage-B (G1 capabilities, G2 knowledge); the
-    // tools resource is Stage-A. All are invoked DEFENSIVELY (feature-detected),
-    // so an unmounted method is reported as skipped rather than throwing.
+    // All are invoked DEFENSIVELY (feature-detected), so an unmounted method is
+    // reported as skipped rather than throwing.
     const blocks = {};
     if (opts.capabilities !== undefined) blocks.capabilities = await applyCapabilities(mgmt, configId, opts.capabilities, opts.ks);
     if (opts.tools !== undefined) blocks.tools = await applyTools(mgmt, configId, opts.tools, opts.ks);
@@ -120,7 +119,7 @@ export async function provision(mgmt, opts) {
   }
 }
 
-/** Build the full-format intellect prompt body from a generated profile (mirrors mkjson.py intellect_from_profile). */
+/** Build the full-format intellect prompt body from a generated profile (mirrors the server's profile-to-intellect defaults). */
 function intellectBody(configId, profile) {
   const p = (key, headerTemplate) => ({ key, label: key, headerTemplate, type: 'custom', value: (profile && profile[key]) || '' });
   return {
@@ -149,7 +148,7 @@ function reasonOf(e) {
 
 /**
  * OPTIONAL capabilities block. Applies the `{name:state}` patch via
- * `mgmt.intellects.setCapabilities` (Stage-B G1 — read-merge-write full-replace
+ * `mgmt.intellects.setCapabilities` (read-merge-write full-replace
  * sub-dict). Feature-detected: if the method isn't mounted yet, records
  * `{applied:false, reason}` instead of throwing.
  * @param {import('./client.js').Management} mgmt @param {number} configId
@@ -160,7 +159,7 @@ async function applyCapabilities(mgmt, configId, patch, ks) {
   const requested = patch && typeof patch === 'object' ? Object.keys(patch) : [];
   const fn = mgmt.intellects && /** @type {any} */ (mgmt.intellects).setCapabilities;
   if (typeof fn !== 'function') {
-    return { applied: false, requested, reason: 'intellects.setCapabilities not available (Stage-B G1 not mounted)' };
+    return { applied: false, requested, reason: 'intellects.setCapabilities not available' };
   }
   try {
     await fn.call(mgmt.intellects, configId, patch, ks);
@@ -205,7 +204,7 @@ async function applyTools(mgmt, configId, toolDefs, ks) {
   const list = Array.isArray(toolDefs) ? toolDefs : [];
   const toolsRes = /** @type {any} */ (mgmt).tools;
   if (!toolsRes || typeof toolsRes.add !== 'function' || typeof mgmt.intellectConfig?.setToolIds !== 'function') {
-    return { attached: [], failed: [], ids: [], linked: false, applied: false, reason: 'mgmt.tools.add / intellectConfig.setToolIds not available (Stage-B mount missing)' };
+    return { attached: [], failed: [], ids: [], linked: false, applied: false, reason: 'mgmt.tools.add / intellectConfig.setToolIds not available' };
   }
   const attached = [];
   const failed = [];
@@ -259,7 +258,7 @@ async function applyTools(mgmt, configId, toolDefs, ks) {
  * OPTIONAL knowledge block — corpus container + intellect linkage. All
  * writes are real and ungated:
  *   1. creates/reuses the corpus category (when `mgmt.knowledge.createCategory`
- *      is mounted, Stage-B G2) — recording the categoryId either way;
+ *      is mounted) — recording the categoryId either way;
  *   2. when `autoLink` is requested: mints a Knowledge record via
  *      `knowledge.addRecord`, points it at the corpus category via
  *      `knowledge.addSource` (a bare record has no `config.sources` and so
@@ -287,7 +286,7 @@ async function applyKnowledge(mgmt, configId, kn, ks) {
   let created = false;
   if (!categoryId) {
     if (typeof k.createCategory !== 'function') {
-      return { created: false, linked: false, reason: 'knowledge.createCategory not available (Stage-B G2 not mounted) and no categoryId supplied' };
+      return { created: false, linked: false, reason: 'knowledge.createCategory not available and no categoryId supplied' };
     }
     try {
       const cat = await k.createCategory({ name: (kn && kn.name) || 'Knowledge', parentId: kn && kn.parentId, description: kn && kn.description }, ks);
@@ -304,7 +303,7 @@ async function applyKnowledge(mgmt, configId, kn, ks) {
     return { categoryId, created, linked: false, reason: 'autoLink not requested (corpus container created; linkage skipped)' };
   }
   if (typeof k.addRecord !== 'function' || typeof k.addSource !== 'function' || typeof k.setEnabled !== 'function' || typeof mgmt.intellectConfig?.setKnowledgeIds !== 'function') {
-    return { categoryId, created, linked: false, reason: 'knowledge.addRecord / knowledge.addSource / knowledge.setEnabled / intellectConfig.setKnowledgeIds not available (Stage-B mount missing)' };
+    return { categoryId, created, linked: false, reason: 'knowledge.addRecord / knowledge.addSource / knowledge.setEnabled / intellectConfig.setKnowledgeIds not available' };
   }
   try {
     const rec = await k.addRecord({ name: (kn && kn.name) || 'Knowledge', description: kn && kn.description }, ks);

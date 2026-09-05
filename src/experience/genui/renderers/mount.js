@@ -1,8 +1,8 @@
 /**
  * mountWidget — the zero-dependency, framework-agnostic DOM renderer for a GenUI
  * descriptor (the `{kind, data}` an `ExperienceRenderer` produces). It is the
- * "last mile" the SDK used to leave to every app: turn a descriptor into a safe,
- * accessible DOM subtree in one call.
+ * "last mile" between a descriptor and a safe, accessible DOM subtree, built in
+ * one call instead of every app reimplementing it.
  *
  * CONTRACT (mirrors `renderSafeLink`):
  *   - Isomorphic: returns `null` when there's no DOM (`typeof document === 'undefined'`).

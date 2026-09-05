@@ -58,7 +58,7 @@ test('capacity: emits stvNewSession promptly AND checkAvailability in parallel, 
   // The runtime answers stvNewSession directly; many agents never send
   // availabilityResult. So the SDK emits stvNewSession right away (don't gate the
   // whole connect on a poll that may never reply) while still polling capacity in
-  // parallel for capacity-aware servers. Verified live: this is what advances the
+  // parallel for capacity-aware servers. This is what advances the
   // real handshake (stvNewSession → showAgent → askPermissions).
   const { session, socket } = newSession();
   scriptHappyPath(socket);
@@ -234,7 +234,7 @@ test('tap-to-talk: startTapToTalk/endTapToTalk emit the documented wire pair and
   session.disconnect();
 });
 
-test('tap-to-talk: startTapToTalk throws capability_disabled on an open-mic agent (isTapToTalk:false) — mixing races CM state', async () => {
+test('tap-to-talk: startTapToTalk throws capability_disabled on an open-mic agent (isTapToTalk:false) — mixing races server state', async () => {
   const { session, socket } = newSession();   // default happy-path fixture never sets isTapToTalk
   scriptHappyPath(socket);
   await session.connect();
@@ -250,7 +250,7 @@ test('tap-to-talk: a captured turn flows through the existing agentTurnToTalk/tr
   session.on('transcript', (t) => transcripts.push(t));
   session.startTapToTalk();
   session.endTapToTalk();
-  // CM mints the turn ~300ms after tapToTalkEnd, same event as an open-mic turn.
+  // The server mints the turn ~300ms after tapToTalkEnd, same event as an open-mic turn.
   socket.server('agentTurnToTalk', { userTranscription: 'what about Q3 margins' });
   assert.ok(transcripts.some((t) => t.type === 'user' && t.text === 'what about Q3 margins'));
   assert.equal(session._lastTurnText, 'what about Q3 margins');
@@ -394,7 +394,7 @@ test('resilience: pause expiry → timeExpired{pause_expiry}, NOT ended; resume 
   session.disconnect();
 });
 
-test('getStickyId is stable and reused across the session (same-pod resume)', async () => {
+test('getStickyId is stable and reused across the session (same-instance resume)', async () => {
   const { session, socket } = newSession();
   const sticky = session.getStickyId();
   assert.match(sticky, /^[a-z0-9]{16}$/);

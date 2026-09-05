@@ -2,9 +2,7 @@
 
 Everything an agent can put **on screen** beyond spoken text: the `unisphere-tool` runtimes (flashcards, summaries, sources, forms, Kaltura/external video, images, links) the brain emits as `type:"unisphere-tool"` stream segments, and the SDK renders natively via `ExperienceRenderer`.
 
-This is the authoritative map — every runtime, its enabling capability, the exact wire shape, the SDK function/keys that parse and render it, the backend code flow it rides, and the restrictions that bite in practice.
-
-All claims here are anchored to repo source (`src/...`) and `WIRE-PROTOCOL.md`; where a behavior is inferred rather than live-captured, it is marked **INFERRED**.
+This is the authoritative map — every runtime, its enabling capability, the exact wire shape, the SDK function/keys that parse and render it, and the restrictions that bite in practice.
 
 > **Naming note.** `unisphere-tool` and `unisphere.widget.genie` below are the brain's literal, on-the-wire constant values. They're carried over from a naming decision made outside this SDK, and preserved verbatim here because changing them would break real interoperability. They are unrelated to "GenUI," this doc's own name for the feature. Don't read them as a reference to a different product.
 

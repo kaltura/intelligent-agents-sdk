@@ -1,7 +1,7 @@
 /**
  * Application — utility operations on the Agentic host: AI profile generation,
- * widget resolution, and runtime init. Source: tools/agentic.mjs app-* +
- * API-REFERENCE §1.4 / §3.1 / §3.2.
+ * widget resolution, and runtime init. Source: API-REFERENCE §1.4 / §3.1 /
+ * §3.2.
  */
 import { KalturaError } from '../core/errors.js';
 

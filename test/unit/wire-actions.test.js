@@ -42,7 +42,7 @@ test('user-properties-form classifies as structured-data-form', () => {
   assert.equal(a.runtime, 'user-properties-form');
 });
 
-test('reads metadata.runtimeName even when seg.type is generic (CM-adapter shape)', () => {
+test('reads metadata.runtimeName even when seg.type is generic (server adapter shape)', () => {
   const a = classifyAgentAction({ type: 'unisphere-tool', metadata: { runtimeName: 'flashcards-tool', widgetName: 'unisphere.widget.genie' }, content: 'x' });
   assert.equal(a.type, 'render-genui');
   assert.equal(a.runtime, 'flashcards');

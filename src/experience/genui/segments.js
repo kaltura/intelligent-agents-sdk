@@ -5,11 +5,8 @@
  * splitting that breaks naive spoken-text parsers — see `Presenter._accumulate`);
  * this re-assembles the body before it is handed to a renderer.
  *
- * BOUNDARY RULES (per docs/genui/safety-and-restrictions.md "Restrictions & gotchas":
- * `followups-tool`, `flashcards-tool`, and `show-link-tool` are captured live —
- * including the `followups-tool`/`show-link-tool` boundary flush, confirmed
- * end to end. The other six runtimes remain INFERRED: unit-tested with a
- * red/green cycle but not confirmed live). A buffered widget flushes when:
+ * BOUNDARY RULES (per docs/genui/safety-and-restrictions.md "Restrictions & gotchas"). A buffered widget
+ * flushes when:
  *   - a fragment with a DIFFERENT normalized `runtime` arrives, OR
  *   - a fragment with a different `speechId` arrives, OR
  *   - `onTurnEnd(speechId)` is called (end of the brain turn).
@@ -19,8 +16,7 @@
  * Pure over an injected `onWidget(parsedWidget)` callback — zero-dep, no DOM,
  * fully unit-testable. Never throws on malformed input.
  *
- * MALFORMED PATH (INFERRED/unit-tested only — same honesty standard as the
- * boundary rules above): a flush triggered by `reason:'boundary'` (a different
+ * MALFORMED PATH: a flush triggered by `reason:'boundary'` (a different
  * runtime/speechId arrived before the buffered fragment completed) whose string content
  * looks JSON-shaped (`{`/`[`) but fails to parse is a genuinely truncated widget, not a
  * complete one — it is handed to `onMalformed(info)` instead of `onWidget`, so a host can

@@ -1,8 +1,8 @@
 /**
  * Agents — the deployable unit binding an intellect (brain) to avatars
  * (face+voice). Lives on the Agentic host; needs an admin token
- * (`disableentitlement`). Source of truth: tools/agentic.mjs agent-* +
- * API-REFERENCE §2.5 / Management Operations.
+ * (`disableentitlement`). Source of truth: API-REFERENCE §2.5 / Management
+ * Operations.
  */
 import { paginate } from './paginate.js';
 import { uuidv4 } from '../core/ids.js';
@@ -40,11 +40,10 @@ export class Agents {
   /**
    * List agents. READ. Async-iterable + awaitable (first page).
    *
-   * ⚠️ NO SERVER-SIDE FILTERING TODAY: `filter` must be `{}` (the default). Every
-   * guessed key returns an opaque `bad_request` — verified for
-   * `{objectType:'AgentListFilter'}`, `{displayNameLike}`, and
-   * `{adminTagsMultiLikeOr}`. Filter CLIENT-SIDE on the listed objects instead
-   * (agents carry `adminTags`, set via {@link create}/{@link update}).
+   * `filter` is passed through to `agent/list` as-is (default `{}`). The API
+   * documents no filter keys; an unrecognized key returns `bad_request`. Filter
+   * CLIENT-SIDE on the listed objects instead (agents carry `adminTags`, set via
+   * {@link create}/{@link update}).
    *
    * @example <caption>List all, then filter by tag client-side</caption>
    * const tagged = await k.agents.list(adminKs).all()
@@ -69,8 +68,8 @@ export class Agents {
   /**
    * Create an agent. WRITE — NOT idempotent (auto-sends an Idempotency-Key for
    * hygiene; the server ignores it today). `intellect.id` is the intellect's
-   * configId — no separate genieId is needed (verified against the current
-   * OpenAPI contract: `CreateAgentIntellectDto` has only `intellectType`+`id`).
+   * configId — no separate genieId is needed (`CreateAgentIntellectDto` has
+   * only `intellectType`+`id`).
    * @param {object} body {displayName,intellect:{intellectType:'genie',id},avatarIds?,adminTags?,maxConversationLength?,widgetConfig?,embedConfig?}
    * @param {string} ks
    * @param {{idempotencyKey?:string}} [opts]

@@ -4,17 +4,17 @@
  * written via `intellects.update`/`setPrompts`. No network, no KS, no state:
  * every export is a deterministic function over plain data.
  *
- * The renderer these helpers mirror lives server-side in Genie (the
- * partner-prompt/system-prompt builder):
+ * These helpers mirror the prompt-rendering rules the API applies
+ * server-side:
  *   - each prompt block renders as `## {headerTemplate}\n{value}`, joined;
  *   - blocks with an empty `value` OR empty `headerTemplate` are SKIPPED;
  *   - `base_directive` is prepended (server falls back to its built-in
  *     directive when empty — NOT reproducible client-side);
- *   - `glossary`, when set, is wrapped by `sys_prompt_glossary` and appended;
+ *   - `glossary`, when set, is wrapped by the server and appended;
  *   - `{{var}}` placeholders are interpolated last (`apply_variables()`).
  *
  * LIMITATION: {@link assembleSystemPrompt} reproduces ONLY this author layer. It CANNOT
- * reproduce the capability-conditional Jinja blocks (video_gallery /
+ * reproduce the capability-conditional template blocks (video_gallery /
  * avatar_show_content / web_search_enabled / user_properties) that Genie
  * injects server-side, nor the server's built-in default base_directive. The
  * result is a `client-side-replica`, never byte-exact — callers must treat it
@@ -48,8 +48,7 @@ const SYS_NS_SET = new Set(SYS_NAMESPACES);
 const SOURCE = 'prompt-lint';
 
 /**
- * The two additional server-set scalar `sys__*` variables confirmed live but
- * not yet part of {@link RESERVED_VARS} — `sys__ks` (the raw
+ * The two additional server-set scalar `sys__*` variables not yet part of {@link RESERVED_VARS} — `sys__ks` (the raw
  * session token) and `sys__is_new_thread`. Combined with {@link SYS_VARS} this
  * is the full known-reserved-scalar surface {@link assembleSystemPrompt} uses
  * to flag an unresolvable reference; it does NOT feed
@@ -64,7 +63,7 @@ const RESERVED_SCALAR_SET = new Set([...SYS_VARS, ...RESERVED_EXTRA_SCALARS]);
 const RESERVED_USER_OBJ_PREFIX = 'sys__user_obj';
 
 /**
- * Attributes of the reserved `sys__user_obj` variable confirmed live.
+ * Attributes of the reserved `sys__user_obj` variable.
  * Referencing an unbound attribute in a live turn today causes a
  * silent turn failure, not an empty render — {@link assembleSystemPrompt}
  * flags this case explicitly rather than letting the preview look harmless.
@@ -109,7 +108,7 @@ function reservedVarWarning(name, info) {
     return {
       severity: 'warning',
       code: 'reserved_secret_unresolved',
-      message: `\`{{${name}}}\` has no value in this preview's requestVars. previewPrompt() cannot read secret values (write-only) to confirm "${info.secretName}" is configured — check intellects.secrets.listNames() before shipping; live-turn behavior for an unset secret is unconfirmed (not verified against a real backend) — treat "${info.secretName}" as unresolved rather than assuming it renders empty.`,
+      message: `\`{{${name}}}\` has no value in this preview's requestVars. previewPrompt() cannot read secret values (write-only) to confirm "${info.secretName}" is configured — check intellects.secrets.listNames() before shipping, and treat "${info.secretName}" as unresolved rather than assuming it renders empty.`,
     };
   }
   return {
@@ -456,7 +455,7 @@ export function lintPrompts(prompts, opts = {}) {
 
 /**
  * Lint a glossary string. The glossary is a CLIENT HINT only — it is injected
- * verbatim (wrapped by `sys_prompt_glossary`) and is NOT a server contract, so
+ * verbatim (wrapped by the server) and is NOT a server contract, so
  * this only reports a detected `format` (`json` | `text`) and any `{{var}}`
  * findings. A glossary that PARSES as JSON but is not an object/array is
  * flagged as a `format` note (likely a stray value), never an error.
@@ -672,11 +671,11 @@ export const SERVER_DEFAULT_DIRECTIVE_MARKER = '<<server default directive>>';
  * Assemble a CLIENT-SIDE REPLICA of the AUTHOR layer of the system prompt.
  * Renders each non-skipped prompt block as `## {headerTemplate}\n{value}`,
  * joins them with a blank line, prepends `base_directive`, and appends the
- * glossary — mirroring `get_partner_prompts()`/`get_system_prompt()`.
+ * glossary, mirroring the server's prompt-rendering rules.
  *
  * LIMITATIONS:
  *   - This is `client-side-replica`, NOT byte-exact. It does NOT reproduce the
- *     server's capability-conditional Jinja blocks (video_gallery /
+ *     server's capability-conditional template blocks (video_gallery /
  *     avatar_show_content / web_search_enabled / user_properties), which are
  *     injected server-side and are not reproducible here.
  *   - When `base_directive` is empty, the server falls back to its built-in
@@ -703,7 +702,7 @@ export const SERVER_DEFAULT_DIRECTIVE_MARKER = '<<server default directive>>';
  *   interpolate?: boolean,
  * }} subset
  *   A subset of the intellect config: `prompts` (camelCase blocks),
- *   `baseDirective` (the `base_directive`/`sys_prompt_base_directive` string),
+ *   `baseDirective` (the `base_directive` string),
  *   `glossary`. `requestVars` supply interpolation values (set `interpolate`
  *   false to keep `{{...}}` literal even when vars are provided).
  * @returns {{
@@ -810,8 +809,8 @@ export function assembleSystemPrompt(subset = {}) {
       source: SOURCE,
       scope: 'system-prompt',
       renderer: 'client-side-replica',
-      rendererBasis: 'get_partner_prompts/get_system_prompt (author layer only)',
-      note: 'Author layer only — server-injected capability-conditional Jinja blocks and the built-in default directive are NOT reproduced; not byte-exact.',
+      rendererBasis: 'server prompt renderer (author layer only)',
+      note: 'Author layer only. Server-injected capability-conditional template blocks and the built-in default directive are NOT reproduced, so this is not byte-exact.',
     }),
   };
 }

@@ -109,13 +109,13 @@ There are two session modes, and they are NOT interchangeable. Scripted sessions
 | Use for | **scripted / puppet** avatars (you drive the words) | **interactive agentic** avatars (autonomous conversation) |
 <!-- /nova-target -->
 
-The protocol above describes the **interactive** path. The scripted path has no text-in of its own: the service's `say-text` route 503s on every call (a live server bug), so the SDK wraps only `say-audio` — you provide pre-rendered speech audio (e.g. from your own TTS call) and its duration. Full auth/lifecycle details: [API-REFERENCE.md § Scripted-Video (STV-only) Sessions](api/scripted-video.md); runnable example: `examples/scripted-video-session.mjs` + `.html`.
+The protocol above describes the **interactive** path. The scripted path has no text-in of its own: the service's `say-text` route 503s on every call, so the SDK wraps only `say-audio` — you provide pre-rendered speech audio (e.g. from your own TTS call) and its duration. Full auth/lifecycle details: [API-REFERENCE.md § Scripted-Video (STV-only) Sessions](api/scripted-video.md); runnable example: `examples/scripted-video-session.mjs` + `.html`.
 
 ### Audio-mode / phone-mode agents (partial support)
 
 An agent with no avatar attached (create it with `avatarIds` omitted) is treated server-side as audio/phone-mode: `stvNewSession` replies with a "no STV session" status instead of a video session, and the `clientConfiguration` the server sends carries `audioMode`/`phoneMode` flags (see [wire-protocol/client-configuration.md §7](wire-protocol/client-configuration.md#7-clientconfiguration-fields-per-session-agent-config)). `KalturaAvatarSession` detects this and sets `session.mode = 'audio'`, skipping the STV video pipeline entirely.
 
-**This SDK does not implement the audio-mode WebRTC downlink** ([wire-protocol/audio-channels.md §5b](wire-protocol/audio-channels.md#5b-audio-mode-webrtc-separate-from-the-asr-uplink)) that carries the agent's spoken audio when there's no STV session — that peer connection is signaled over a separate event family (`webrtc-create-offer`/`webrtc-offer`/`webrtc-answer`) the SDK never emits or listens for. So today, `mode:'audio'` is detected but not functional end-to-end: the mic uplink (ASR) still connects, but you won't receive the agent's spoken reply through this SDK. Treat audio/phone-mode as INFERRED wire behavior, not a supported feature, until the downlink is implemented.
+**This SDK does not implement the audio-mode WebRTC downlink** ([wire-protocol/audio-channels.md §5b](wire-protocol/audio-channels.md#5b-audio-mode-webrtc-separate-from-the-asr-uplink)) that carries the agent's spoken audio when there's no STV session — that peer connection is signaled over a separate event family (`webrtc-create-offer`/`webrtc-offer`/`webrtc-answer`) the SDK never emits or listens for. So today, `mode:'audio'` is detected but not functional end-to-end: the mic uplink (ASR) still connects, but you won't receive the agent's spoken reply through this SDK. Audio/phone mode is not a supported feature of this SDK.
 
 ---
 
