@@ -22,7 +22,7 @@ session.pause();          // sync — stops the turn loop
 await session.resume();   // async — hands the turn loop back
 ```
 
-**`pause()`** sets `session.paused = true` and tells the server to stop the turn loop (`pauseConversation`). It's synchronous — there's nothing to await. Live-verified: a `speak()` call made while paused is accepted client-side (no throw) but the server produces no reply — the brain simply doesn't respond until you resume. Don't drive the avatar with `speak()`/ASR while your content is on screen; that's on your app, the SDK doesn't block it for you.
+**`pause()`** sets `session.paused = true` and tells the server to stop the turn loop (`pauseConversation`). It's synchronous — there's nothing to await. A `speak()` call made while paused is accepted client-side (no throw) but the server produces no reply — the brain simply doesn't respond until you resume. Don't drive the avatar with `speak()`/ASR while your content is on screen; that's on your app, the SDK doesn't block it for you.
 
 **`resume()`** always sets `session.paused = false` immediately, then takes the right path for how the pause played out — two common ones depending on how long you were paused (a third, rarer one is covered below):
 

@@ -23,8 +23,8 @@ An external API integration is a custom `api` tool, linked to your intellect via
 2. **Build and register the tool** — `tools.api({..., request: {..., headers: {Authorization: 'Bearer {{secrets.NAME}}'}}})`, then `mgmt.tools.add(tool, adminKs)`. A tool is its own partner-level entity (`/v1/tool/*`), not embedded in the intellect.
 3. **Link it** — `mgmt.intellectConfig.setToolIds(configId, [toolId], adminKs)`.
 
-- **Secret references use one exact syntax.** Write `{{secrets.<name>}}` inside any string field of an `api` tool's `request` block — `buildAuth()` and every request field resolve this pattern server-side via Jinja-templating over `request_config.variables`.
-- **A `{{variables.secrets.X}}` prefix is a silent no-op.** Only the bare `{{secrets.X}}` form resolves; the extra `variables.` prefix renders empty at runtime with no error — a real, discovered defect class to watch for.
+- **Secret references use one exact syntax.** Write `{{secrets.<name>}}` inside any string field of an `api` tool's `request` block — `buildAuth()` and every request field resolve this pattern server-side by templating over `request_config.variables`.
+- **A `{{variables.secrets.X}}` prefix is a silent no-op.** Only the bare `{{secrets.X}}` form resolves; the extra `variables.` prefix renders empty at runtime with no error.
 - **Validate before you trust it.** Run `mgmt.intellects.secrets.validate(configId, adminKs)` after wiring a tool — it scans every tool/prompt for secret references and flags both the `badPrefix` mistake above and any reference to a secret name that doesn't exist yet.
 
 If instead you want the model to trigger *your own page-side JS* rather than a server-side HTTP call — e.g. push data into a client SDK already loaded in the browser — use a `type: "client"` tool (`tools.client()`) and `session.onToolCall(name, handler)` instead. See [Client-Side Commands](/guides/client-commands/) for that path; everything below assumes a server-side `api` tool.

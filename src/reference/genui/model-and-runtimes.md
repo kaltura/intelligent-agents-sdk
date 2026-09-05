@@ -10,7 +10,7 @@ eyebrow: Reference
 **On this page:** [The model in one paragraph](#the-model-in-one-paragraph) · [The first-class runtimes](#the-first-class-runtimes) · [How a widget reaches your screen (the data flow)](#how-a-widget-reaches-your-screen-the-data-flow) · [Two delivery paths (this is the #1 gotcha)](#two-delivery-paths-this-is-the-1-gotcha) · [`force_experience` — a hint, not a contract](#force_experience--a-hint-not-a-contract) · [Related docs](#related-docs)
 ## The model in one paragraph
 
-The brain emits a **GenUI widget** by writing a fenced block carrying a `widgetName`. The brain backend's `message_service` converts that into a stream segment of `type:"unisphere-tool"` shaped `{ type, content, metadata:{ widgetName, runtimeName }, speechId?, threadId? }`. **All widgets share `widgetName:"unisphere.widget.genie"`** — the host keys off `metadata.runtimeName` (stripping the `-tool` suffix) to pick a renderer. The SDK turns each segment into a framework-agnostic descriptor `{kind, data}` your app maps to DOM. Nothing here emits HTML; every string/URL is run through `core/safety.js` first.
+The brain emits a **GenUI widget** by writing a fenced block carrying a `widgetName`. The brain backend converts that into a stream segment of `type:"unisphere-tool"` shaped `{ type, content, metadata:{ widgetName, runtimeName }, speechId?, threadId? }`. **All widgets share `widgetName:"unisphere.widget.genie"`** — the host keys off `metadata.runtimeName` (stripping the `-tool` suffix) to pick a renderer. The SDK turns each segment into a framework-agnostic descriptor `{kind, data}` your app maps to DOM. Nothing here emits HTML; every string/URL is run through `core/safety.js` first.
 
 ## The first-class runtimes
 
@@ -36,8 +36,8 @@ Backend tool key (defined server-side) → wire `runtimeName` → normalized dis
 
 ## How a widget reaches your screen (the data flow)
 
-1. **Author** — at intellect creation, enable the gating capability (see [GenUI · Authoring and Consuming Widgets](/reference/genui/authoring-and-consuming/)). The capability injects a Jinja block into the system prompt telling the model when to emit that fenced widget.
-2. **Emit** — the brain writes a fenced block with `widgetName:"unisphere.widget.genie"` + `runtimeName`. `message_service` turns it into a `unisphere-tool` segment.
+1. **Author** — at intellect creation, enable the gating capability (see [GenUI · Authoring and Consuming Widgets](/reference/genui/authoring-and-consuming/)). The capability injects a template block into the system prompt telling the model when to emit that fenced widget.
+2. **Emit** — the brain writes a fenced block with `widgetName:"unisphere.widget.genie"` + `runtimeName`. The brain backend turns it into a `unisphere-tool` segment.
 3. **Stream** — segments arrive as `agent_raw_text` deltas (live socket) or SSE/NDJSON lines (HTTP converse). A single widget can span **multiple fragments**.
 4. **Assemble** — `SegmentAssembler` (`genui/segments.js`) buffers fragments and flushes a complete widget on a boundary change (different `runtime` or `speechId`, or turn end). If that boundary change interrupts a JSON body before it finishes writing, the fragment is flagged malformed (`onMalformed`) instead of flushed as a widget — `ExperienceRenderer` mounts the same typed `{kind:'error', data:{runtime, message}}` fallback it uses for a throwing custom renderer.
 5. **Parse** — `parseWidget(segment)` (`parse.js`) → `{widgetName, runtimeName, runtime, model}`. `parseContent` is forgiving: object content is used as-is; a string is JSON-parsed, else parsed as a loose `key: value` block, else preserved under `.raw`. Never throws.

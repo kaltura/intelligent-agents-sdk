@@ -330,7 +330,7 @@ export const manifest = [
     target: 'reference/architecture-reference/scale-and-sticky-sessions.md',
     url: '/reference/architecture-reference/scale-and-sticky-sessions/',
     title: 'Architecture Reference · Scale and Sticky Sessions',
-    description: 'Sticky routing, the capacity queue, connection vs. session recovery, and cross-pod shared state.',
+    description: 'Sticky routing, the capacity queue, connection vs. session recovery, and externalized session state.',
     eyebrow: 'Reference',
     h1: 'Scale & Sticky Sessions',
     generated: true,

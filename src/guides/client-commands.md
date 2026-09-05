@@ -123,11 +123,11 @@ Partner config is cached server-side for ~24h. Flipping a capability on an *exis
 
 ### Native tools work where the GenUI escape-hatch fails
 
-Do not try to ride the `unisphere-tool:<custom-name>` experiences path for custom commands. That path is real in the backend but lives in the lower-priority partner `prompts[]`, which the locked base system identity (`sys_prompt_base_directive`) overrides — so the agent refuses to emit it. A partner-configured `tool` is *bound to the LLM*, so calling it is normal agent behavior and does **not** trip the "I'm a knowledge assistant, I can't run JavaScript" refusal reflex. This is the whole reason `tools.client` works: a native tool call is normal agent behavior, not a text-generation request the model can decline.
+Do not try to ride the `unisphere-tool:<custom-name>` experiences path for custom commands. That path is real in the backend but lives in the lower-priority partner `prompts[]`, which the locked base system identity overrides — so the agent refuses to emit it. A partner-configured `tool` is *bound to the LLM*, so calling it is normal agent behavior and does **not** trip the "I'm a knowledge assistant, I can't run JavaScript" refusal reflex. This is the whole reason `tools.client` works: a native tool call is normal agent behavior, not a text-generation request the model can decline.
 
 ### Tool spirals starve the voice — budget tools per turn
 
-A tool-eager brain can loop the *same* command many times in one turn (we observed `show_widget` re-emitted 25×). When a turn spirals to 5-8+ calls with duplicates, the spoken `avatar` segments get starved and the turn returns **empty text** — a silent avatar, often on the most important question (23% of turns in a deep multi-persona live test, before the fix). Defend on both sides.
+A tool-eager brain can loop the *same* command many times in one turn. When a turn spirals to 5-8+ calls with duplicates, the spoken `avatar` segments get starved and the turn returns **empty text** — a silent avatar, often on the most important question. Defend on both sides.
 
 #### Author side: put a budget in the system prompt
 
@@ -135,7 +135,7 @@ Put a hard TOOL-CALL BUDGET in the system prompt — e.g. max one `create_slide`
 
 #### Tool side: fire-and-forget has zero result signal
 
-**Root cause.** The backend does not cap the model's client-tool call loop. A `tools.client` tool built with `waitForResponse:false` carries no response channel back to the model at all — there is no fixed success literal, no field, nothing — so a same-turn duplicate call looks, from the model's side, identical to the first: nothing in the tool's own (non-existent) result tells it to stop and speak.
+**Root cause.** A `tools.client` tool built with `waitForResponse:false` carries no response channel back to the model at all — there is no fixed success literal, no field, nothing — so a same-turn duplicate call looks, from the model's side, identical to the first: nothing in the tool's own (non-existent) result tells it to stop and speak.
 
 **Mitigation.** Fold an explicit stop-and-speak instruction directly into the tool's `description` field (e.g. `'... This tool has no reply to wait for — call it EXACTLY ONCE per turn, then immediately narrate it out loud in the SAME turn; never call it again to confirm or retry.'`) — the one LLM-facing channel a fire-and-forget `client` tool still has.
 

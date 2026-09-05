@@ -24,14 +24,12 @@ them directly into your own build.
 Ground a Kaltura Agentic Avatar in your own content and there's a gap between
 uploading it and the avatar being able to cite it: indexing runs
 asynchronously and can take 45-90 seconds or more on a cold knowledge base.
-There's no reliable signal yet that tells you indexing has actually finished —
-`knowledge.isIndexed()` reads the knowledge record's own container status,
-which reports ready the instant the record exists, before any of the entries
-you just uploaded have indexed. A real per-entry check
-(`knowledge.entryStatus()`) exists but is not yet generally available on every
-deployment — check with your Kaltura account team before building on it. Until
-then, Nova's own provisioning script budgets a fixed best-effort wait before
-it ever creates or updates her intellect — the same pattern documented in
+`knowledge.isIndexed()` is not the signal to wait on: it reads the knowledge
+record's own container status, which reports ready the instant the record
+exists, before any of the entries you just uploaded have indexed. The real
+per-entry check is `knowledge.entryStatus()`. Nova's own provisioning script
+polls it, up to a bounded budget, before it ever creates or updates her
+intellect. This is the same pattern documented in
 [Ground the Agent in Your Content (RAG)](/reference/api/build/knowledge-rag/#ground-the-agent-in-your-content-rag).
 
 Nova resolves that wait *before* the create/update call, not after, because

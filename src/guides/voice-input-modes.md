@@ -69,8 +69,8 @@ If your product genuinely needs walkie-talkie-style short bursts (not this SDK's
 
 Give the viewer three redundant signals that the mic is live, not one:
 
-1. **Icon/color change** on the button itself (e.g. this SDK's existing `#btn-mute` icon-swap pattern in the reference app — mirror that structure for a tap-to-talk button: swap an idle-mic icon for a recording icon, not just an `aria-pressed` attribute change).
-2. **An animated level indicator** — a waveform, pulsing glow, or (simplest, and already available) this SDK's `localMicLevel` event (`{level}`, 0–1, ~50ms tick) driving a CSS custom property, exactly as the reference app's mute button already does for open-mic. A single static icon alone is not enough (NN/g's critique of Amazon Echo's single light ring as "a far cry from rich textual feedback").
+1. **Icon/color change** on the button itself (e.g. this SDK's existing `#btn-mute` icon-swap pattern, mirror that structure for a tap-to-talk button: swap an idle-mic icon for a recording icon, not just an `aria-pressed` attribute change).
+2. **An animated level indicator** — a waveform, pulsing glow, or (simplest, and already available) this SDK's `localMicLevel` event (`{level}`, 0–1, ~50ms tick) driving a CSS custom property, exactly as this SDK's own mute button already does for open-mic. A single static icon alone is not enough (NN/g's critique of Amazon Echo's single light ring as "a far cry from rich textual feedback").
 3. **A live-region text or caption update** (`aria-live`) confirming state changes ("Listening…" / "Sent") — necessary for screen-reader users who can't see the icon/waveform at all. Pair with an audio cue (a short start/stop tone) as an additional non-visual channel if your app's audio design allows it.
 
 ## Safety: don't let a capture window hang open forever

@@ -38,7 +38,7 @@ You can pass one form object or an array of several — each stage gets its own 
 
 ## How the brain is made aware of the schema
 
-This isn't a passive schema the model infers — it's an explicit, mandatory prompt injection. The brain's system-prompt builder walks every configured stage and renders the `sys_prompt_user_properties` template with that stage's exact field list:
+This isn't a passive schema the model infers — it's an explicit, mandatory prompt injection. The brain's system-prompt builder walks every configured stage and renders a mandatory `user_properties_form` instruction block with that stage's exact field list:
 
 ```text
 MANDATORY: At the {call_stage} stage of the conversation, you MUST output a
@@ -110,7 +110,7 @@ Or skip the SDK's default DOM builder entirely by passing a mount **function** i
 
 ## Where the submitted data actually goes
 
-`session.submitStructuredDataForm(info)` (`src/experience/session.js`) is a fire-and-forget socket emit: `this._socket.emit('setFormLeadInfo', sanitizeJson(info))`. It has no acknowledgment payload, and no endpoint on the brain/management API reads it back as structured `{key: value}` data. The conversation transcript is persisted by the brain (as a message record) and exposed read-only via `POST /thread/get_transcripts`. That's exactly what the management SDK's `threads.transcript(threadId, ks)` wraps. That call reconstructs a plain-text transcript from `USER`-type message rows. It does **not** carry the structured form field values, only what the viewer said/typed and the model's replies: a paraphrase, not the raw object.
+`session.submitStructuredDataForm(info)` (`src/experience/session.js`) is a fire-and-forget socket emit: `this._socket.emit('setFormLeadInfo', sanitizeJson(info))`. It has no acknowledgment payload, and no endpoint on the brain/management API reads it back as structured `{key: value}` data. The conversation transcript is persisted by the brain (as a message record) and exposed read-only via `POST /thread/get_transcripts`. That's exactly what the management SDK's `threads.transcript(threadId, ks)` wraps. That call reconstructs a plain-text transcript from what the viewer and model said. It does **not** carry the structured form field values, only what the viewer said/typed and the model's replies: a paraphrase, not the raw object.
 
 **If you need durable, retrievable access to what the viewer submitted, don't rely on `submitStructuredDataForm`/`setFormLeadInfo`.** Capture-and-forward via your own tool instead — see [External API Integrations](/guides/external-api-integrations/) for wiring a durable write (a CRM, a support system, a spreadsheet, or any other external API) directly from the model's own tool call. That path is a genuine server-side HTTP request the agent makes on your behalf, not a client-side socket emit, so the data lands wherever you point the tool — no dependence on any surface outside the brain/management APIs this toolkit talks to.
 
@@ -120,7 +120,7 @@ A worked pattern: keep the submitted values in browser memory for the current se
 
 If your intellect also uses custom `tool_ids` (e.g. a closed set of client commands like `navigate_to_slide`/`show_widget`), you'll likely set `capabilities: { kaltura_genie_experiences: 'off' }` or `'disabled'` — see [External API Integrations § Don't skip `kaltura_genie_experiences: 'off'`](/guides/external-api-integrations/#dont-skip-kaltura_genie_experiences-off) for what that capability does and why.
 
-**This does not touch `user_properties_forms` at all.** The two mechanisms are independent code paths. `kaltura_genie_experiences` governs backend tool-key families like `flashcards`/`summarization`/`followups`/`sources`/`gallery_slides`. `user_properties_forms` has its own dedicated DTO field and its own dedicated prompt injection (`sys_prompt_user_properties`), unrelated to the experiences capability. With `kaltura_genie_experiences: 'disabled'`, an agent still fires a genuine `show_widget` call with `kind: "user_properties_form"` and a genuine `user-properties-form-tool` segment. Disabling experiences only removes the brain's own competing navigation/formatting instinct. It has no effect on structured-data-form logic.
+**This does not touch `user_properties_forms` at all.** The two mechanisms are independent code paths. `kaltura_genie_experiences` governs backend tool-key families like `flashcards`/`summarization`/`followups`/`sources`/`gallery_slides`. `user_properties_forms` has its own dedicated DTO field and its own dedicated prompt injection, unrelated to the experiences capability. With `kaltura_genie_experiences: 'disabled'`, an agent still fires a genuine `show_widget` call with `kind: "user_properties_form"` and a genuine `user-properties-form-tool` segment. Disabling experiences only removes the brain's own competing navigation/formatting instinct. It has no effect on structured-data-form logic.
 
 ## Related docs
 
