@@ -95,6 +95,33 @@ test('setForcedLanguage rejects an unknown language code with no override, befor
   assert.equal(f.calls.length, 0);
 });
 
+test('setForcedLanguage strips every marker block, not just the first, if more than one is present', async () => {
+  const doubled = 'You are Ron, a helpful assistant.\n\n'
+    + '<!-- sdk:forced-language --> Always respond in Hebrew, regardless of what language the user writes or speaks in. <!-- /sdk:forced-language -->\n\n'
+    + '<!-- sdk:forced-language --> Always respond in Arabic, regardless of what language the user writes or speaks in. <!-- /sdk:forced-language -->';
+  const { m, f } = mkMgmt([getDto({ base_directive: doubled }), updateEcho, agentUpdateEcho]);
+  await m.setForcedLanguage({ configId: 1481, agentId: 'agent-1', language: 'es' }, ADMIN);
+
+  const sent = f.calls.find((c) => c.url.includes('/v1/intellect/update')).body;
+  const markerCount = (sent.base_directive.match(/<!-- sdk:forced-language -->/g) || []).length;
+  assert.equal(markerCount, 1, 'both stale marker blocks removed, only the new one remains');
+  assert.match(sent.base_directive, /Spanish/);
+  assert.doesNotMatch(sent.base_directive, /Hebrew|Arabic/);
+});
+
+test('setForcedLanguage trims/normalizes opts.language and rejects a whitespace-only opts.languageName override', async () => {
+  const { m, f } = mkMgmt([getDto(), updateEcho, agentUpdateEcho]);
+  const r = await m.setForcedLanguage({ configId: 1481, agentId: 'agent-1', language: ' HE ', languageName: '   ' }, ADMIN);
+
+  const intellectSent = f.calls.find((c) => c.url.includes('/v1/intellect/update')).body;
+  assert.equal(intellectSent.force_language, 'Hebrew');
+  assert.match(intellectSent.base_directive, /Always respond in Hebrew,/);
+
+  const agentSent = f.calls.find((c) => c.url.includes('/agent/update')).body;
+  assert.equal(agentSent.asr.language, 'he');
+  assert.equal(r.language, 'he');
+});
+
 test('setForcedLanguage respects a custom asrProvider', async () => {
   const { m, f } = mkMgmt([getDto(), updateEcho, agentUpdateEcho]);
   await m.setForcedLanguage({ configId: 1481, agentId: 'agent-1', language: 'fr', asrProvider: 'other' }, ADMIN);

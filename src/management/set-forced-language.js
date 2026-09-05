@@ -19,7 +19,7 @@ import { requireInt } from './intellect-body.js';
 
 const MARKER_START = '<!-- sdk:forced-language -->';
 const MARKER_END = '<!-- /sdk:forced-language -->';
-const MARKER_RE = /\s*<!-- sdk:forced-language -->[\s\S]*?<!-- \/sdk:forced-language -->/;
+const MARKER_RE = /\s*<!-- sdk:forced-language -->[\s\S]*?<!-- \/sdk:forced-language -->/g;
 
 /**
  * ISO 639-1 code -> English display name, for the languages this helper can
@@ -59,14 +59,15 @@ export async function setForcedLanguage(mgmt, opts, ks) {
   if (typeof agentId !== 'string' || !agentId.trim()) {
     throw bad('setForcedLanguage needs a non-empty opts.agentId string.');
   }
-  const language = opts.language === null ? null : opts.language;
-  if (language !== null && (typeof language !== 'string' || !language.trim())) {
+  if (opts.language !== null && (typeof opts.language !== 'string' || !opts.language.trim())) {
     throw bad('setForcedLanguage needs opts.language as an ISO 639-1 code string, or null to clear.');
   }
+  const language = opts.language === null ? null : opts.language.trim().toLowerCase();
 
   let languageName;
   if (language !== null) {
-    languageName = opts.languageName || LANGUAGE_NAMES[language.toLowerCase()];
+    const languageNameOverride = typeof opts.languageName === 'string' ? opts.languageName.trim() : '';
+    languageName = languageNameOverride || LANGUAGE_NAMES[language];
     if (!languageName) {
       throw bad(`setForcedLanguage: no display name known for language code "${language}". Pass opts.languageName explicitly (e.g. "Hebrew").`);
     }
@@ -84,7 +85,7 @@ export async function setForcedLanguage(mgmt, opts, ks) {
 
   const agentResult = await mgmt.agents.update({
     agentId,
-    asr: { language: language === null ? 'en' : language.toLowerCase(), provider: asrProvider },
+    asr: { language: language === null ? 'en' : language, provider: asrProvider },
   }, ks);
 
   return {
