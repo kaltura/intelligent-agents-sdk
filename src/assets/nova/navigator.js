@@ -13,7 +13,7 @@
  * fresh navigation to a page the visitor never actually left.
  *
  * The ack also carries `highlightable` (the target page's heading/data-nova-target
- * list, via highlighter.js's currentTargets()) — confirmed live that a combined
+ * list, via highlighter.js's currentTargets()) because a combined
  * "go there AND highlight X" request otherwise fails: highlighter.js's own
  * setDynamicPrompt push (fired off document's nova:pagechange listener) only
  * merges into the brain's context on its NEXT turn, too late for a highlight_element

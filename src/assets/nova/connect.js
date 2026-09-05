@@ -256,7 +256,7 @@ async function connect(pendingPrompt, mode = 'avatar') {
 
     if (mode === 'avatar') {
       // Kick off the conversation — wait for the avatar's silent opening
-      // turn to clear (or time out) so this doesn't race the CM's own
+      // turn to clear (or time out) so this doesn't race the server's own
       // automatic turn. Chat has no automatic opening turn to race.
       const openingCleared = new Promise((resolve) => session.transport.once('avatarStopTalking', resolve));
       await Promise.race([openingCleared, new Promise((r) => setTimeout(r, 3000))]);

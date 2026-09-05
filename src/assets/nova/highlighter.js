@@ -27,7 +27,7 @@ import { currentRoute } from './router.js';
 
 // Exported so navigator.js's navigate_to_page ack can carry the SAME list — a combined "go
 // there and highlight X" request needs it in the ack (synchronously visible within the current
-// turn) because setDynamicPrompt only merges on the brain's NEXT turn (confirmed live: pushing
+// turn) because setDynamicPrompt only merges on the brain's NEXT turn (pushing
 // it via nova:pagechange right after the nav ack still isn't there yet for a highlight_element
 // decision made in that same turn).
 export function currentTargets() {

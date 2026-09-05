@@ -65,7 +65,7 @@ Returns a `CatalogItemDto` whose `itemId` is the ElevenLabs clone. Pair with any
 
 **Gotchas:** `description` must be non-empty; audio under ~6 s returns `500`; send `adminTags=custom` bare (not a JSON array string).
 
-**SDK shortcut:** `catalog.createVoice(mp3Blob, { name, description, language?, consentRef? }, adminKs)` — enforces the non-empty `description` client-side and tags the item `adminTags:['custom']` so `catalog.list` filtered on that tag finds it.
+**SDK shortcut:** `catalog.createVoice(mp3Blob, { name, description, language?, consentRef? }, adminKs)` — enforces the non-empty `description` client-side and tags the item `adminTags:['custom']` so `catalog.list` filtered on that tag finds it. `language` is an ISO 639-1 code and defaults to `'en'`.
 
 ## Import a Provider Voice by id (no audio upload)
 
@@ -98,7 +98,7 @@ The backend does preprocess the uploaded image before rendering: it crop-fits th
 
 ![Tight headshot crops shrink onto the render canvas with black borders; a generously padded portrait scales to fill it edge-to-edge](/assets/img/avatar-photo-framing.svg)
 
-**Required fields** (API 400s if any are missing): `name`, `genderPresentation`, `background`, `skinTone`, `ageGroup`, `hairColor`. The gap today is video-clip ingest (a short clip → a higher-fidelity avatar model) — not yet self-serve.
+**Required fields** (API 400s if any are missing): `name`, `genderPresentation`, `background`, `skinTone`, `ageGroup`, `hairColor`. Video-clip ingest is not available through this API.
 
 **SDK shortcut:** `catalog.createVisual(imageBlob, { name, genderPresentation, background, skinTone, ageGroup, hairColor }, adminKs)` — returns `{ itemId, loadingVideo }` (raw API response — field names come from the CatalogItemDto and are not SDK-normalized; treat as best-effort until the API contract is pinned).
 

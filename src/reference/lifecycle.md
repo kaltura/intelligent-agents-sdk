@@ -24,7 +24,7 @@ A rule is `{eventType, objectType, eventConditions, action}`:
 
 - `eventType` — e.g. `session_ended`, `analysis_updated`.
 - `objectType` — currently only `thread`.
-- `eventConditions[]` — `{field, operator, value}` matchers, e.g. `{field:'object.agent_id', operator:'eq', value:'<uuid>'}`, `{field:'changed_keys', operator:'has_all', value:[...]}`. `field` is a dot-path into the event payload (see [Discovery and dry-run testing](#discovery-and-dry-run-testing) for which paths exist per event) — confirmed live: a `{path, op}` shaped entry 400s.
+- `eventConditions[]` — `{field, operator, value}` matchers, e.g. `{field:'object.agent_id', operator:'eq', value:'<uuid>'}`, `{field:'changed_keys', operator:'has_all', value:[...]}`. `field` is a dot-path into the event payload (see [Discovery and dry-run testing](#discovery-and-dry-run-testing) for which paths exist per event). A `{path, op}` shaped entry is rejected with a 400.
 - `action` — a plain object, passed straight through, not built by the SDK. See [The four action types](#the-four-action-types) below.
 
 ---

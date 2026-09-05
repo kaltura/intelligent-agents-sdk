@@ -37,21 +37,21 @@ A user turn, as captured:
 
 Barge-in: a new `debug_vad_speech_detected` (voice) or `→ onTextEntered {text:'', isFinal:false, isSpeechStart:true}` (typed, via `speak()`/`interrupt()`) mid-turn produces `← agentInterrupted {}` and an early `stvFinishedTalking` with the truncated `agentContent`.
 
-**Live-runtime brain-bridge internals (`CM`, for integrators reasoning about turns):**
+**Live-runtime brain-bridge internals, for integrators reasoning about turns:**
 
 - **Turn segmentation** (server-side) — `agent_start_speech.isNewTurn` is `false` while incoming ASR text stays *similar* to the prior input: similar = the normalized new text is a prefix of the prior, OR Levenshtein similarity `(maxLen − distance)/maxLen ≥ 0.6`; normalization lowercases, strips `?.!,`, and collapses whitespace. Divergence below that threshold starts a new turn.
 - **Abort on interruption** (server-side) — the bridge sends a WebSocket `abort` frame to the brain `{ threadId, messageId, deleteFromHistory: !isUserInterruption }`: a **user** interruption keeps the partial answer in thread history; a **system** invalidation deletes it. The in-flight request and any late segments are then rejected.
-- **Audio/phone mode allocates no STV** — `CM` short-circuits to `{status:"audio/phone mode - no STV session"}` (no `webrtc_url`, no WHEP downlink). TTS `output_format` is `pcm_16000` (audio mode) / `ulaw_8000` (phone) / MP3 (video mode, the only mode that POSTs audio to STV).
+- **Audio/phone mode allocates no STV** — the server short-circuits to `{status:"audio/phone mode - no STV session"}` (no `webrtc_url`, no WHEP downlink). TTS `output_format` is `pcm_16000` (audio mode) / `ulaw_8000` (phone) / MP3 (video mode, the only mode that POSTs audio to STV).
 
 ## 9. Reproduce / re-capture
 
-See the Evidence note in [Wire Protocol · Connection Basics](/reference/wire-protocol/connection-basics/) for the committed fixture (`test/fixtures/golden-session.json`). To observe live traffic against a real session, wire a `debugMode`-gated log panel to print every socket event via `session.on(...)` handlers, or attach a scratch `socket.onAny` listener in a browser console — there is no dedicated capture tool in this repo today. The original snapshot the golden fixture derives from was taken against the reference account's `1_v1mj1kxb` widget + `configId 1222` (see the sample values documented in this repo's tests).
+See the SDK's committed fixture at [`test/fixtures/golden-session.json`](https://github.com/kaltura/intelligent-agents-sdk/blob/main/test/fixtures/golden-session.json). To observe live traffic against a real session, wire a `debugMode`-gated log panel to print every socket event via `session.on(...)` handlers, or attach a scratch `socket.onAny` listener in a browser console — there is no dedicated capture tool in this repo today.
 
 ## Related docs
 
 | Doc | Covers |
 |---|---|
-| [Wire Protocol · Connection Basics](/reference/wire-protocol/connection-basics/) | Provenance + the committed fixture this section reproduces |
+| [Wire Protocol · Connection Basics](/reference/wire-protocol/connection-basics/) | The connect sequence and committed fixture this section walks through |
 | [Wire Protocol · Events Catalog](/reference/wire-protocol/events-catalog/) | Every event named in the trace above |
 | [Wire Protocol](/reference/wire-protocol/) | Back to the index |
 

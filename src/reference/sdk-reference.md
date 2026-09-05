@@ -96,7 +96,7 @@ The SDK assigns the stream to `videoEl.srcObject` and applies no CSS of its own 
 
 </div>
 
-### `{{var}}` Jinja personalization (`request_vars`)
+### `{{var}}` personalization (`request_vars`)
 
 Pass slow-changing personalization values (viewer name, account tier) that the brain's prompt reads via `{{var}}` templating — join-time via `cfg.requestVars`, or mid-session via `updateRequestVars()`:
 
@@ -106,7 +106,7 @@ const session = new KalturaAvatarSession({ token, /* … */, requestVars: { user
 session.updateRequestVars({ user_name: 'Ada', account_tier: 'enterprise' });
 ```
 
-`updateRequestVars(vars)` always sends the **full current map** — conversation-manager resets `request_vars` to exactly what you send, it does not merge with the join-time map or a previous call. For a full per-turn context blob the brain reads fresh every turn (not just `{{var}}` substitution), use `session.setDynamicPrompt()` instead — the two mechanisms are distinct.
+`updateRequestVars(vars)` always sends the **full current map** — the server resets `request_vars` to exactly what you send, it does not merge with the join-time map or a previous call. For a full per-turn context blob the brain reads fresh every turn (not just `{{var}}` substitution), use `session.setDynamicPrompt()` instead — the two mechanisms are distinct.
 
 For the full picture of when to use `request_vars` vs. `setDynamicPrompt()` vs. actively nudging the brain with `speak()` vs. answering a brain-initiated request with `submitStructuredDataForm()` — and a worked example showing how they compose — see [Dynamic Data Injection](/guides/dynamic-data-injection/).
 
@@ -116,7 +116,7 @@ For the app-level decision of whether to use this at all, and the UI/accessibili
 around it, see [Voice Input Modes](/guides/voice-input-modes/) — this section is the API
 reference.
 
-`startTapToTalk()`/`endTapToTalk()` are a distinct voice-input mode from typed-text `speak()`/`interrupt()`. The ASR mic uplink is always connected once `connect()` resolves; tapping just tells the conversation-manager to mark a capture window (`tapToTalkStart` → `InTappedMode`) and, on release, mint the turn from whatever it captured (`tapToTalkEnd` → its own ~300ms `processTapToTalkInput` timer). That turn then arrives through the same `agentTurnToTalk`/`transcript` pipeline as any open-mic turn — no separate transcript path to wire up.
+`startTapToTalk()`/`endTapToTalk()` are a distinct voice-input mode from typed-text `speak()`/`interrupt()`. The ASR mic uplink is always connected once `connect()` resolves; tapping just tells the server to mark a capture window (`tapToTalkStart`) and, on release, mint the turn from whatever it captured (`tapToTalkEnd`, after a short server-side settle). That turn then arrives through the same `agentTurnToTalk`/`transcript` pipeline as any open-mic turn — no separate transcript path to wire up.
 
 ```js
 micButton.addEventListener('click', () => {
@@ -142,7 +142,7 @@ if (session.capabilities.tapToTalk) {
 }
 ```
 
-`speak()`/`interrupt()` throw `invalid_state` while a tap is open (they'd otherwise bracket the CM's tapped-mode window with the typed-text `isSpeechStart` marker, minting a duplicate turn); `startTapToTalk()`/`endTapToTalk()` throw `invalid_state` if called out of order, and are gated by the same `requireDisclosureAck` disclosure gate as `speak()`. Pair it with silence-based auto-stop and a hard max-duration cap so an abandoned tap (tab closed, navigation away) can't leave a capture window open forever — treat a `disconnect`/`pagehide` while `tapToTalkActive` as an implicit `endTapToTalk()`.
+`speak()`/`interrupt()` throw `invalid_state` while a tap is open (they'd otherwise bracket the server's tapped-mode window with the typed-text `isSpeechStart` marker, minting a duplicate turn); `startTapToTalk()`/`endTapToTalk()` throw `invalid_state` if called out of order, and are gated by the same `requireDisclosureAck` disclosure gate as `speak()`. Pair it with silence-based auto-stop and a hard max-duration cap so an abandoned tap (tab closed, navigation away) can't leave a capture window open forever — treat a `disconnect`/`pagehide` while `tapToTalkActive` as an implicit `endTapToTalk()`.
 
 Build the control as click-to-toggle, not press-and-hold: it's more usable for longer utterances, and it satisfies WCAG 2.5.2 Pointer Cancellation on its own, since the down-event never fires the action.
 
@@ -267,7 +267,7 @@ btnFeedbackDismiss.onclick = () => analytics.buttonClicked({ buttonType: 'Open',
 
 `KavaAnalytics` (`./experience/analytics`, its own subpath so apps that don't report analytics never load it) reports KAVA (Kaltura Video Analytics) events to `https://analytics.kaltura.com/api_v3/index.php` (`service=analytics&action=trackEvent`). It implements ONLY the 10000-range **Application Event** family — `pageLoad` (10003) and `buttonClicked` (10002) — for interactions the server has zero visibility into: a page/view landing, a UI-only click, a contact-form submit/skip, a widget dismiss. WRITE, best-effort, NOT idempotent (each call records a new row; there is no dedup contract) — fire-and-forget by design, so callers don't need to await it for correctness.
 
-**Deliberately does NOT implement the 80000-range "Immersive Agents" events** (`callStarted`/`callEnded`/`messageResponse`/`messageFeedbackSent`) — there is no code path in this module that can send them. conversation-manager and the Genie brain backend already report all four server-side for every session `KalturaAvatarSession` connects to (same socket, matching event names, stickyId-routed pods); a client-side copy would double-count on the live analytics dashboards. If a real gap in that server-side reporting is ever found, file it as a GitHub issue rather than adding a client resend.
+**Deliberately does NOT implement the 80000-range "Immersive Agents" events** (`callStarted`/`callEnded`/`messageResponse`/`messageFeedbackSent`) — there is no code path in this module that can send them. The backend already reports all four server-side for every session `KalturaAvatarSession` connects to (same socket, matching event names); a client-side copy would double-count on the live analytics dashboards. If a real gap in that server-side reporting is ever found, file it as a GitHub issue rather than adding a client resend.
 
 Transport: prefers `navigator.sendBeacon` (survives page-unload); falls back to an injectable `fetch` with `keepalive:true` when unavailable or when the beacon queue is full. Never reads a response body. `enabled: false` no-ops every call without touching the network — use for offline/mock test runs.
 
@@ -276,7 +276,7 @@ Transport: prefers `navigator.sendBeacon` (survives page-unload); falls back to 
 - Common params set once at construction and attached to every event: `partnerId`, `ks`, `entryId`, `sessionId`, `referrer`, `userId`, `hostingKalturaApplication`/`hostingKalturaApplicationVer`, `customId1`/`customId2`.
 - `buildPageLoadParams`/`buildButtonClickedParams` are the pure param-builders behind the class — unit-testable in isolation, or usable directly if you want your own transport.
 
-Reporting a **GenUI widget interaction** specifically (which chip/link/answer the viewer picked)? See [GenUI Reference § Widget-interaction analytics](/reference/genui/analytics/#widget-interaction-analytics-avoiding-double-counting) for the recipe, live-verified against two widget types, plus the exact list of signals the platform already tracks server-side so you don't duplicate one client-side.
+Reporting a **GenUI widget interaction** specifically (which chip/link/answer the viewer picked)? See [GenUI Reference § Widget-interaction analytics](/reference/genui/analytics/#widget-interaction-analytics-avoiding-double-counting) for the recipe, confirmed against two widget types, plus the exact list of signals the platform already tracks server-side so you don't duplicate one client-side.
 
 ### Connectivity beacon (opt-in)
 
@@ -425,7 +425,7 @@ Validated fields, top-level keys only: `type` (one of `str`/`int`/`float`/`bool`
 
 ### Fused multi-tool turns (handled automatically on the live session)
 
-When a turn calls 2+ tools, the server can stream them as **one** `type:"tool"` segment that names only the last tool, with earlier tools' JSON args concatenated into the same string (live-verified — see [Wire Protocol §4e](/reference/wire-protocol/events-catalog/#4e-agent_raw_textdelta--the-brain-stream-parsed)). On `KalturaAvatarSession`, you don't need to do anything — the SDK recovers every fused call:
+When a turn calls 2+ tools, the server can stream them as **one** `type:"tool"` segment that names only the last tool, with earlier tools' JSON args concatenated into the same string (see [Wire Protocol §4e](/reference/wire-protocol/events-catalog/#4e-agent_raw_textdelta--the-brain-stream-parsed)). On `KalturaAvatarSession`, you don't need to do anything — the SDK recovers every fused call:
 
 - `parseToolCall(segment)` recovers the named tool's own args correctly either way, and exposes any earlier, unnamed blobs as `call.fusedArgs` (array, arrival order — absent when the segment wasn't fused).
 - The session pairs each queued `fusedArgs` blob with the `tool_response` segment that echoes its real tool name (via `parseToolResponseName(segment)`) and dispatches it through the normal `onToolCall` path — same dedup, same schema validation, same `toolCallResult`/`toolCallInvalid` events.
@@ -481,7 +481,7 @@ A widget interrupted mid-stream (a different runtime/`speechId` arrives before i
 
 `graded-question` (a prompt with either multiple-choice options or a free-text answer, an optional answer key, and an optional explanation) is NOT one of the nine backend runtimes above — there's no Genie brain tool that emits it. It's a host-registered widget: `import { renderGradedQuestion } from '@kaltura/intelligent-agents/experience/genui'`, then `new ExperienceRenderer({ renderers: { 'graded-question': renderGradedQuestion } })`, the same "10th runtime" extensibility seam any custom widget uses (see [GenUI Reference § Registration, fallback, and provenance](/reference/genui/authoring-and-consuming/#registration-fallback-and-provenance)). Grading happens client-side in `mountWidget` — a comprehension-check primitive, not a tamper-proof assessment, since the answer key travels in the descriptor itself. Full shape and the `onAction('answer', ...)` event are in [GenUI Reference § 10. graded-question](/reference/genui/widgets/#10-graded-question-rendergradedquestion--a-host-registered-10th-runtime).
 
-In LIVE mode (`.start()`), `ExperienceRenderer` also subscribes to the session's `turnStart` event (re-emitted from the raw `agent_start_speech` socket event — `{speechId, turnId, isNewTurn}`) and, by default (`clearOnTurnStart: true`), discards the assembler's in-flight buffer and clears `rendered`/`last` when `isNewTurn` is true, so a widget from a previous turn never lingers into the next one — the same correctness fix Genie's own web client applies by nulling its content on `AgentStartSpeechReceived`. A duplicate turn (`isNewTurn:false`, e.g. a CM-side `tap-to-talk` retrigger for a `turnId` already in flight) is ignored here, matching every other `turnStart`/`isNewTurn` consumer in the SDK — otherwise the duplicate would wipe an already-rendered widget out from under the viewer mid-turn. Pass `clearOnTurnStart: false` to keep the previous default behavior (accumulate/persist across turns).
+In LIVE mode (`.start()`), `ExperienceRenderer` also subscribes to the session's `turnStart` event (re-emitted from the raw `agent_start_speech` socket event — `{speechId, turnId, isNewTurn}`) and, by default (`clearOnTurnStart: true`), discards the assembler's in-flight buffer and clears `rendered`/`last` when `isNewTurn` is true, so a widget from a previous turn never lingers into the next one — the same correctness fix Genie's own web client applies by nulling its content on `AgentStartSpeechReceived`. A duplicate turn (`isNewTurn:false`, e.g. a server-side `tap-to-talk` retrigger for a `turnId` already in flight) is ignored here, matching every other `turnStart`/`isNewTurn` consumer in the SDK — otherwise the duplicate would wipe an already-rendered widget out from under the viewer mid-turn. Pass `clearOnTurnStart: false` to keep the previous default behavior (accumulate/persist across turns).
 
 ---
 
@@ -709,7 +709,7 @@ await mgmt.intellectConfig.setMcpServers(configId, { docs: { url: 'https://mcp.e
 
 ## Skills, voice import, and the embed snippet
 
-**Skills** (`mgmt.skills`) are standalone, partner-level reusable instruction entities on Genie (`v1/skill/*`) — `{id (uuid), name, description, instructions}`. Full lifecycle verified live, including `update`:
+**Skills** (`mgmt.skills`) are standalone, partner-level reusable instruction entities on Genie (`v1/skill/*`) — `{id (uuid), name, description, instructions}`. Full lifecycle, including `update`:
 
 ```js
 const skill = await mgmt.skills.add({ name: 'greeter', description: 'Greets warmly.', instructions: 'Always say hi.' }, ks);
@@ -737,7 +737,7 @@ const v = await mgmt.catalog.importVoiceFromElevenLabs('EXAVITQu4vr4xnSDxMaL', k
 // or: await mgmt.catalog.importVoiceFromCartesia('<cartesia-voice-id>', ks);
 ```
 
-An unknown provider id creates **nothing** and raises a typed `voice_not_found_elevenlabs` / `voice_not_found_cartesia` error (the backend replies an HTTP-200 exception envelope; the SDK maps it — verified live).
+An unknown provider id creates **nothing** and raises a typed `voice_not_found_elevenlabs` / `voice_not_found_cartesia` error (the backend replies an HTTP-200 exception envelope; the SDK maps it).
 
 **Embed snippet** (`mgmt.agents.getEmbedScript(agentId, embedType, ks)`) returns the ready-to-paste HTML `<script type='module'>` that renders the agent's chat widget on any page. `embedType` is one of `contained` (inline box), `page` (full page), or `floater` (floating launcher) — validated against the exported `EMBED_TYPES` before any network call.
 
@@ -779,7 +779,6 @@ view.disconnect();
 ## RAG (knowledge base)
 
 ```js
-// ungated, verified live
 const rec = await mgmt.knowledge.addRecord({ name: 'Product Docs' }, ks);
 const { configId } = await mgmt.intellects.create({
   knowledge_ids: [rec.id],
@@ -794,11 +793,9 @@ Content modalities indexed: captions, OCR, document attachments. Don't use
 `knowledge.isIndexed()`'s `ready` flag, `knowledge.search()`'s "couldn't find
 relevant information" reply, or `knowledge.corpusStatus()`'s `populated` flag,
 as an indexing-status signal — see [API Reference § Ground the Agent](/reference/api/build/knowledge-rag/#ground-the-agent-in-your-content-rag) for why.
-A per-entry check (`knowledge.entryStatus()`) exists but is not yet generally
-available on every deployment — check with your Kaltura account team before
-building on it.
+Use `knowledge.entryStatus()` instead: it's the official per-entry completion check.
 
-Knowledge records have full lifecycle CRUD (all verified live):
+Knowledge records have full lifecycle CRUD:
 
 ```js
 const got = await mgmt.knowledge.getRecord(rec.id, ks);            // read one
@@ -814,7 +811,7 @@ await mgmt.knowledge.deleteRecord(rec.id, ks, { confirmPermanent: true });
 
 - **Brain-model and rate-limit fields have no public write door.** `agent_llm`/`agent_fast_llm`/`agent_avatar_llm`/rate limits/`run_quota_check`/`web_search_config` are set by internal tooling only — no public route reads or writes them (`intellectConfig.describe()` surfaces their current values read-only, informationally). Grounding a new agent via `knowledge_ids` is fully ungated. (Event-driven session/thread rules ARE supported — see [API Reference § Lifecycle](/reference/lifecycle/#lifecycle--event-driven-rules).)
 - **No verbatim speech** — `speak()` goes through the brain; the avatar may rephrase.
-- **Custom face works self-serve** — upload a portrait image via `catalog.createVisual`, pass `itemId` as `visualId` in `provision`/`avatars.create`. The model animates the portrait at runtime. Video-clip ingest (higher-fidelity model) is not yet self-serve.
+- **Custom face works self-serve** — upload a portrait image via `catalog.createVisual`, pass `itemId` as `visualId` in `provision`/`avatars.create`. The model animates the portrait at runtime. Video-clip ingest is not available through this API.
 - **`force_experience` and `model_type:'fast'`** are hints; the SDK can't prove which model replied or which experience rendered.
 
 ---
