@@ -72,6 +72,7 @@ const fields = await mgmt.application.getCustomPrompts(ks);
 | Field | Purpose |
 |-------|---------|
 | `base_directive` | Global system instruction |
+| `force_language` | Display name of the forced reply language (e.g. `"Hebrew"`). Has no effect on its own; set it via `mgmt.setForcedLanguage`, which also writes the reply-language instruction into `base_directive` and the agent's `asr.language` |
 | `glossary` | Domain terms (e.g. `"HLS: HTTP Live Streaming"`) |
 | `capabilities` | Enable/disable features — see table below |
 | `allow_client_variables` | Allow `{{vars}}` injection per request |

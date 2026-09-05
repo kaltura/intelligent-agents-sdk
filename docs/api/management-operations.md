@@ -13,7 +13,7 @@ All use the **admin KS**.
 | Update | `POST /v1/agent/update` | `{"agentId":"UUID", ...fields}` |
 | Delete | `POST /v1/agent/delete` | `{"agentId":"UUID"}` |
 
-`agent/list` has no server-side filtering — always send `"filter":{}` and filter client-side.
+`filter` is passed through to the server as-is; the API documents no filter keys, and an unrecognized key returns `bad_request`. SDK: `mgmt.agents.list(ks)` sends `filter:{}` and lists everything; filter client-side on `adminTags`.
 
 `mgmt.agents.delete` refuses to delete an agent whose `adminTags` match a production marker (`prod`, `production`, `keep`, `do-not-delete`, `live` — see `PROTECTED_TAGS` in `src/management/agents.js`), unless called with `{confirmPermanent:true, allowProtected:true}`. This guards against an automated cleanup-by-tag sweep deleting a real, in-use agent.
 
@@ -37,6 +37,8 @@ All use the **admin KS**.
 | Delete | `POST /v1/intellect/delete` | `{"id":1389}` |
 
 Deleting an agent does **not** delete its avatar or intellect.
+
+`mgmt.setForcedLanguage({ configId, agentId, language }, ks)` forces the reply language. It writes a marker-wrapped instruction into `base_directive`, sets `force_language`, and sets the agent's `asr.language` in one call. `force_language` alone does not change the reply language. Idempotent; `language: null` clears all three. See [README § Forcing the reply language](../../README.md#forcing-the-reply-language-setforcedlanguage).
 
 ## Tools — `https://genie.nvp1.ovp.kaltura.com`
 
@@ -91,11 +93,11 @@ Full record lifecycle. SDK: `mgmt.knowledge`. Linkage to an intellect is via `kn
 | Get | `POST /v1/knowledge/get` | `{"id":2049}` |
 | Update | `POST /v1/knowledge/update` | `{"id":2049, ...fields}` — `config` is accepted but is a FULL REPLACE on the backend; use `addSource`/`removeSource` below instead of hand-assembling `config.sources` |
 | Delete | `POST /v1/knowledge/delete` | `{"id":2049}` — HTTP 200, body `null`; a follow-up get 404s |
-| Per-entry status *(not yet GA on every deployment — check with your Kaltura account team)* | `POST /v1/knowledge/entry_status` | `{"knowledge_id":2049, "entry_ids":["0_abc123"]}` |
+| Per-entry status | `POST /v1/knowledge/entry_status` | `{"knowledge_id":2049, "entry_ids":["0_abc123"]}`. SDK: `mgmt.knowledge.entryStatus(id, entryIds, ks)`. |
 
 `mgmt.knowledge.isIndexed(id, ks)` wraps Get and reads `status`/`config.sources[].indexers[].index_position`. `status` is the record's own container-lifecycle flag, not an indexing-completion signal: see [build/knowledge-rag.md § Ground the Agent](build/knowledge-rag.md#ground-the-agent-in-your-content-rag) for why, and for the real indexing-completion check.
 
-`mgmt.knowledge.addSource(id, source, ks)` / `removeSource(id, source, ks)` read-merge-write one source into/out of `config.sources` without disturbing the others — both idempotent (`applied:false` if the source is already present / already absent).
+`mgmt.knowledge.addSource(id, source, ks)` / `removeSource(id, source, ks)` read-merge-write one source into/out of `config.sources` without disturbing the others. Both skip the write (`applied:false`) when an identical source object is already present / already absent.
 
 Before deleting a record, `mgmt.knowledge.deleteRecord` lists every intellect and refuses with a typed `knowledge_in_use` error naming each one still carrying the id in `knowledge_ids`, unless called with `{confirmPermanent:true, force:true}` — the same guard `mgmt.tools.delete`/`mgmt.skills.delete` run for their own entities.
 

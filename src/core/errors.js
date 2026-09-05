@@ -135,7 +135,7 @@ function extractMessage(body) {
     const b = /** @type {Record<string, unknown>} */ (body);
     if (typeof b.message === 'string') return b.message;
     if (typeof b.detail === 'string') return b.detail;
-    // FastAPI validation errors return detail as an array of {loc, msg, type} — join the msgs
+    // 422 validation errors return detail as an array of {loc, msg, type}; join the msgs
     // so the actionable text (e.g. "Input should be 'markdown','flashcards'…") surfaces.
     if (Array.isArray(b.detail)) {
       const msgs = b.detail.map((d) => (d && typeof d === 'object' && d.msg) ? String(d.msg) : (typeof d === 'string' ? d : '')).filter(Boolean);

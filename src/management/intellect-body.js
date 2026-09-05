@@ -19,7 +19,7 @@ import { KalturaError } from '../core/errors.js';
  * import it without pulling in intellects.js's own import graph, which
  * transitively reaches back into conversations.js (prompt-lint.js's
  * `RESERVED_VARS`) and would otherwise form an import cycle.
- * (Tools no longer ride along here — they are a separate entity, see `tools.js`.)
+ * (Tools are a separate entity, see `tools.js`.)
  * @param {Record<string,any>} cur  The current intellect DTO (from intellect/get).
  * @param {number} configId
  * @returns {Record<string,unknown>}

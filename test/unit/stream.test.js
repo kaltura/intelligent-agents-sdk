@@ -92,7 +92,7 @@ test('parseToolCall: only a JSON OBJECT is read as args (a bare array is left in
 // ─────────────────────────── fused multi-tool segments ───────────────────────────
 // A brain turn that calls 2+ tools can arrive as ONE type:"tool" segment naming only the
 // LAST tool, with earlier tools' arg objects concatenated into the same content string —
-// e.g. captured live: `open_filing {"quarters":[...],"metric":"total_revenue"}{"quarter":"q1_2026","docType":"press_release"}`.
+// e.g. `open_filing {"quarters":[...],"metric":"total_revenue"}{"quarter":"q1_2026","docType":"press_release"}`.
 // Before this fix, JSON.parse on the whole tail failed (SyntaxError: multiple JSON roots),
 // so `catch{}` silently dropped BOTH blobs and the printed tool dispatched with args:{}.
 

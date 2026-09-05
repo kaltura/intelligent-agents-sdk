@@ -35,7 +35,7 @@ Dependencies: `socket.io-client` + the browser's native `RTCPeerConnection`. Not
 
 If you reimplement the protocol per the recipe above, you MUST:
 
-1. **Send a stable `stickyId` query param** on the socket (random 16-char, once per connect) — without it, polling requests scatter across pods and the handshake fails intermittently under load.
+1. **Send a stable `stickyId` query param** on the socket (random 16-char, once per connect) — without it, polling requests scatter across server instances and the handshake fails intermittently under load.
 2. **Poll `checkAvailability` → `availabilityResult` BEFORE ever emitting `join`/`stvNewSession`**, and only proceed once `available:true`. `throwToNoAgent` is terminal, not something to recover from on the same socket: the server disconnects the socket right after emitting it. If it arrives anyway, treat the socket as dead — open a fresh socket (new `stickyId`) and go back to availability polling.
 3. **Treat `throwToExceededTier` as fatal** (don't retry — it's a plan limit, not capacity).
 4. **Keep the socket alive during queue waits**; only do a fresh `connect()` (new `stickyId`) on a permanent transport loss.

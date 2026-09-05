@@ -274,7 +274,7 @@ test('intellectConfig.setMetadata patches only the supplied row fields', async (
 });
 
 test('intellectConfig.setKnowledgeIds writes ungated via the update DTO (no partner-config probe)', async () => {
-  // Verified live: knowledge_ids is in the v1/intellect/update DTO allow-list and writes
+  // knowledge_ids is in the v1/intellect/update DTO allow-list and writes
   // with NO partner-config/update and NO 403. setKnowledgeIds must NOT probe any gate.
   const { cfg, f } = mkMgmt([getDto(), updateEcho]);
   const r = await cfg.setKnowledgeIds(1481, [7], ADMIN);

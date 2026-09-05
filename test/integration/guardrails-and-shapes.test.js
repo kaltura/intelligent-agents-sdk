@@ -549,7 +549,7 @@ test('respondToTool on an unknown id degrades gracefully — no throw, no networ
 });
 
 test('respondToTool: a cold reconnect mid-flight resolves session_rebuilt instead of a false ok:true', async () => {
-  // A comparable RTC client's regression suite flagged this exact gap: a cold reconnect that fires while
+  // The gap: a cold reconnect that fires while
   // respondToTool()'s POST is still in flight discards the server-side session the ACK
   // targeted — the caller must learn the ACK didn't really land, not get a false ok:true.
   let sawToolPost = false;

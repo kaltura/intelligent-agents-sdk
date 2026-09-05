@@ -6,7 +6,7 @@
  *
  * Secrets are WRITE-ONLY: reads mask every value as `"***"`. On update, a value
  * equal to `"***"` is replaced server-side with the stored secret (the
- * merge-keep guard in `partner_config_update`), so a read-modify-write round
+ * server's merge-keep guard for secret writes), so a read-modify-write round
  * trip never clobbers a sibling secret. There is NO per-secret endpoint and NO
  * way to read a plaintext value back — every op here is a read-merge-write of
  * the FULL `config.secrets` dict against {@link Intellects#get}, then
@@ -18,9 +18,9 @@
  * never echoes a value.
  *
  * HONEST LIMIT: client-side encryption / BYOK / CMK is NOT buildable.
- * Secrets are server-encrypted at rest (`EncryptedStr`); there is no public
- * key-wrap endpoint. This is a real backend capability gap, not a DX gap —
- * this module does not pretend to encrypt client-side.
+ * Secrets are encrypted at rest server-side; there is no public
+ * key-wrap endpoint. This is a real backend capability gap, not a DX gap,
+ * and this module does not pretend to encrypt client-side.
  */
 import { KalturaError } from '../core/errors.js';
 import { meta } from '../core/ids.js';
@@ -245,12 +245,13 @@ function badRequest(where, detail) {
   return new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: `${where}: ${detail}` });
 }
 
-// CANONICAL form is `{{secrets.X}}`: the backend renders prompts/tool configs with
-// `Template(...).render(request_config.variables)` (flat Jinja), and secrets live at
-// `request_config.variables["secrets"]` — so `{{secrets.X}}` resolves and `{{variables.secrets.X}}`
-// does NOT (it renders as empty/literal). The matcher captures the OPTIONAL `variables.`
-// prefix (group 1) so a mistyped ref is FLAGGED as `badPrefix` — never silently normalized
-// to the bare name and treated as resolved. Docs/placeholders must use `{{secrets.X}}`.
+// CANONICAL form is `{{secrets.X}}`: a secret is rendered server-side into the
+// prompt template at converse time under the `secrets` namespace, so
+// `{{secrets.X}}` resolves and `{{variables.secrets.X}}` does NOT (it renders
+// as empty/literal). The matcher captures the OPTIONAL `variables.` prefix
+// (group 1) so a mistyped ref is FLAGGED as `badPrefix`, never silently
+// normalized to the bare name and treated as resolved. Docs/placeholders must
+// use `{{secrets.X}}`.
 const REF_RE = /\{\{\s*(variables\.)?secrets\.([A-Za-z0-9_\-.]+)\s*\}\}/g;
 
 /**
@@ -261,8 +262,8 @@ const REF_RE = /\{\{\s*(variables\.)?secrets\.([A-Za-z0-9_\-.]+)\s*\}\}/g;
  *   validateSecretRefs({ secretNames, tools?, prompts? })
  *   validateSecretRefs(toolConfig, secretNames)   // task convenience overload
  *
- * Canonical reference is `{{secrets.X}}` (the backend renders with flat Jinja over
- * `request_config.variables`, where secrets live under the `secrets` key). The
+ * Canonical reference is `{{secrets.X}}` (rendered server-side into the prompt
+ * template at converse time, under the `secrets` namespace). The
  * non-resolving `{{variables.secrets.X}}` prefix is detected and reported as a
  * `badPrefix` entry (and forces `ok:false`) REGARDLESS of whether `X` is a known
  * secret — because that form renders empty at runtime, so referencing even an

@@ -83,7 +83,7 @@ const TIMEOUTS = { overall: 30000, serverConnect: 10000, joinRoom: 5000, joinCom
 
 // How long to wait in 'reconnecting' for Socket.IO connection-state recovery before
 // giving up. The server's recovery window is ~20s (CONNECTION_STATE_RECOVERY_TIMEOUT);
-// we wait a touch longer so a genuine same-pod recovery isn't cut off, then end cleanly
+// we wait a touch longer so a genuine same-instance recovery isn't cut off, then end cleanly
 // (never a silent hang). Overridable via cfg.reconnectWindowMs.
 const RECONNECT_WINDOW_MS = 22000;
 
@@ -93,7 +93,7 @@ const RECONNECT_WINDOW_MS = 22000;
 const ICE_DOWN = new Set(['failed', 'disconnected']);
 
 // Socket.IO disconnect reasons the server treats as RECOVERABLE (connection-state recovery,
-// same-pod, ≤20s) — per the server's socket-disconnect handling. Any other reason
+// same-instance, ≤20s) — per the server's socket-disconnect handling. Any other reason
 // (io server/client disconnect, namespace disconnect) is a real end, no recovery.
 const RECOVERABLE_DISCONNECT = new Set(['transport error', 'transport close', 'forced close', 'ping timeout']);
 
@@ -151,7 +151,7 @@ export class KalturaAvatarSession extends Emitter {
    * @param {boolean} [cfg.recoverFromSpiral]  After a `tool_spiral_hard_limit` cold reconnect succeeds, auto-resend the abandoned turn (nudged to answer in words only) so the user's question isn't silently dropped — see `_checkHardToolSpiral`/`_coldReconnect`. Default true; set false to only get `toolSpiralRecovering`'s `lastTurnText` and handle the resend yourself.
    * @param {number} [cfg.maxReconnectAttempts]  Passed through as socket.io's own `reconnectionAttempts` (caps its native reconnection engine) AND surfaced as `attempt`/`maxAttempts` on `reconnecting`/`connectivityChanged`. Default 5.
    * @param {number} [cfg.reconnectWindowMs]  Bounds the 'reconnecting' state independent of socket.io's own attempt count — if no recovery lands within this window, the session ends cleanly rather than hanging. Default 22000.
-   * @param {Record<string, string|number|boolean|null>} [cfg.requestVars]  Join-time `{{var}}` Jinja values — seeds the session's canonical request_vars map, sent on every `join`/reconnect `buildJoin()` call and updated mid-session by {@link updateRequestVars}/{@link setDynamicPrompt}; validated with the same `assertRequestVars` as {@link updateRequestVars}.
+   * @param {Record<string, string|number|boolean|null>} [cfg.requestVars]  Join-time `{{var}}` values — seeds the session's canonical request_vars map, sent on every `join`/reconnect `buildJoin()` call and updated mid-session by {@link updateRequestVars}/{@link setDynamicPrompt}; validated with the same `assertRequestVars` as {@link updateRequestVars}.
    * @param {number} [cfg.localVadThreshold]  Client-side VAD amplitude threshold (0-32767ish) gating `localSpeakingChanged`. Default 300.
    * @param {()=>AudioContext} [cfg.getAudioContext]  Factory for the VAD `AudioContext` (default `() => new AudioContext()`).
    * @param {typeof MediaStream} [cfg.mediaStreamConstructor]
@@ -168,7 +168,7 @@ export class KalturaAvatarSession extends Emitter {
    * @param {number} [cfg.toolSpiralLimit]  Soft tool-call-loop limit before nudging the agent to stop (Agentic ASI loop guard). Default 10.
    * @param {number} [cfg.hardToolSpiralLimit]  Hard tool-call-loop limit that forces a cold reconnect. Default `toolSpiralLimit * 3`.
    * @param {boolean} [cfg.networkAware]  React to `online`/`offline` browser events. Default true when `addEventListener` exists.
-   * @param {boolean} [cfg.sessionCompleteOnEnd]  Master switch for signalling genie (`POST {genieUrl}/thread/session_completed`) the moment this conversation truly ends — tab close, backgrounding, or an explicit disconnect() — instead of waiting for the backend's ~10-minute idle scanner. Default true. `false` restores pre-1.12 behavior exactly (no POST, no listeners).
+   * @param {boolean} [cfg.sessionCompleteOnEnd]  Master switch for signalling genie (`POST {genieUrl}/thread/session_completed`) the moment this conversation truly ends — tab close, backgrounding, or an explicit disconnect() — instead of waiting for the backend's ~10-minute idle scanner. Default true. `false` disables the POST and its listeners entirely.
    * @param {string} [cfg.sessionCompletePath]  Escape hatch if the route moves. Default `'/thread/session_completed'`.
    * @param {number} [cfg.sessionCompleteTimeoutMs]  Abort budget for the signal when sent from `completeThread()` or the idle auto-logoff — never applied on a page-lifecycle (`pagehide`/hidden-grace) path, which must never await anything. Default 5000.
    * @param {boolean} [cfg.pageLifecycleAware]  Wire `pagehide`/`visibilitychange`/`pageshow` so the signal fires on tab-close/backgrounding. Default true when `document.addEventListener` exists (mirrors `cfg.networkAware`).
@@ -291,8 +291,8 @@ export class KalturaAvatarSession extends Emitter {
     this._idleTimeoutMs = cfg.idleTimeoutMs ?? 900000;   // 15 min; 0 disables (documented escape hatch)
     this._idleTimer = null; this._idleWarnTimer = null;
 
-    // stickyId pins the session to one server pod; persisting it across a
-    // reconnect lets Socket.IO connection-state-recovery resume the SAME session (same-pod,
+    // stickyId pins the session to one server instance; persisting it across a
+    // reconnect lets Socket.IO connection-state-recovery resume the SAME session (same-instance,
     // ≤20s window). Embedders may pass
     // their own (e.g. from sessionStorage) to survive a tab reload.
     this._stickyId = cfg.stickyId || randId(16);
@@ -302,40 +302,39 @@ export class KalturaAvatarSession extends Emitter {
     // this window, surface a 'brainStalled' warning (R5). 0 disables. Default 12s.
     this._brainStallMs = cfg.brainStallMs ?? 12000;
     // Tool-call spiral circuit breaker: a tool-eager brain can re-emit the SAME (or
-    // key-order-shuffled) client-command call every ~1-2s with zero spoken output —
-    // observed live for 9-10+ minutes straight, eventually destabilizing the STV media
-    // channel into a session-ending JoinRoomTimeout (docs/CLIENT-COMMANDS.md "Tool
-    // spirals starve the voice"). `brainStalled` alone only warns once per turn and
-    // never stops the spiral. After this many RAW `type:"tool"` segments in one turn
-    // (counted before dedup — a spiral's repeats are exactly what this counts), emit
-    // `toolSpiralDetected` (signal only — see `_checkToolSpiral`'s doc comment for why
-    // it no longer calls interrupt()). 0 disables. Default 10: a legitimate turn can
-    // double to 2x its real tool count when speak()'s barge-in branch (still-playing
-    // TTS audio from a prior turn) spawns a parallel tap-to-talk stream for the same
-    // question (a 3-tool turn was observed duplicating into 6 raw segments this
-    // way), so the limit must clear a doubled ordinary turn while still catching a
-    // genuine spiral (observed live running into the hundreds).
+    // key-order-shuffled) client-command call every ~1-2s with zero spoken output,
+    // eventually destabilizing the STV media channel into a session-ending
+    // JoinRoomTimeout (docs/CLIENT-COMMANDS.md "Tool spirals starve the voice").
+    // `brainStalled` alone only warns once per turn and never stops the spiral. After
+    // this many RAW `type:"tool"` segments in one turn (counted before dedup — a
+    // spiral's repeats are exactly what this counts), emit `toolSpiralDetected`
+    // (signal only — see `_checkToolSpiral`'s doc comment for why it no longer calls
+    // interrupt()). 0 disables. Default 10: a legitimate turn can double to 2x its
+    // real tool count when speak()'s barge-in branch (still-playing TTS audio from a
+    // prior turn) spawns a parallel tap-to-talk stream for the same question (a
+    // 3-tool turn can arrive as 6 raw segments this way), so the limit must clear a
+    // doubled ordinary turn while still catching a genuine spiral, which can run into
+    // the hundreds of segments.
     this._toolSpiralLimit = cfg.toolSpiralLimit ?? 10;
-    // Hard recovery threshold (session-scoped, NOT per-turn): live evidence showed a
-    // server "wake-up" idle nudge fires its own agent_start_speech mid-spiral, which
-    // resets the per-turn counter above and lets _checkToolSpiral() "detect" + soft
-    // interrupt() again — while the underlying show_widget spiral kept running
-    // UNINTERRUPTED underneath those resets (interrupt() is a client-side barge-in
-    // signal; it cannot stop server-side generation — see interrupt() doc comment).
-    // This counter tracks RAW tool segments since the last genuinely PERCEIVABLE
-    // output (same clear condition as the brain-liveness watchdog) and is immune to
-    // turn-boundary resets. Once it crosses this ceiling, soft interrupt() has
-    // demonstrably failed and we force a real recovery (_coldReconnect — the same
-    // socket-rebuild mechanism already confirmed to end a runaway spiral, since
-    // that is exactly how the incident this guards against actually terminated:
-    // a `transport close` → `JoinRoomTimeout`). Default 3x the soft limit. 0 disables.
+    // Hard recovery threshold (session-scoped, NOT per-turn): a server "wake-up" idle
+    // nudge can fire its own agent_start_speech mid-spiral, which resets the per-turn
+    // counter above and lets _checkToolSpiral() "detect" + soft interrupt() again —
+    // while the underlying show_widget spiral keeps running UNINTERRUPTED underneath
+    // those resets (interrupt() is a client-side barge-in signal; it cannot stop
+    // server-side generation — see interrupt() doc comment). This counter tracks RAW
+    // tool segments since the last genuinely PERCEIVABLE output (same clear condition
+    // as the brain-liveness watchdog) and is immune to turn-boundary resets. Once it
+    // crosses this ceiling, soft interrupt() has demonstrably failed and we force a
+    // real recovery (_coldReconnect, the same socket-rebuild mechanism that ends a
+    // runaway spiral by forcing a `transport close` → `JoinRoomTimeout`). Default 3x
+    // the soft limit. 0 disables.
     this._hardToolSpiralLimit = cfg.hardToolSpiralLimit ?? (this._toolSpiralLimit ? this._toolSpiralLimit * 3 : 0);
     // A hard-spiral cold reconnect restores connectivity + replays threadId (brain memory)
     // but otherwise abandons the turn that triggered it — the user's original question is
     // simply dropped, which IS the "hang" symptom the whole circuit breaker exists to fix.
-    // The headless path (`Conversations#send({recoverFromSpiral:true})`) confirmed that a
-    // single same-thread follow-up, prefixed with SPIRAL_RECOVERY_PREFIX, reliably breaks the
-    // loop and gets a real spoken answer. `recoverFromSpiral` (default true) ports that same
+    // The headless path (`Conversations#send({recoverFromSpiral:true})`) sends a single
+    // same-thread follow-up, prefixed with SPIRAL_RECOVERY_PREFIX, to break the loop and
+    // get a real spoken answer. `recoverFromSpiral` (default true) ports that same
     // fix here: once `_coldReconnect('tool_spiral_hard_limit')` succeeds, resend the last
     // user turn (tracked below) wrapped in the same prefix, via onTextEntered — bypassing
     // enforceTurnRate (this is the runtime recovering its own dropped turn, not a new user
@@ -345,8 +344,8 @@ export class KalturaAvatarSession extends Emitter {
     this._recoverSpiralTurn = cfg.recoverFromSpiral ?? true;
     // Last user turn's text, for the resend above. Tracked from BOTH entry points a turn can
     // start from: speak()'s argument (typed/app-driven text) and agentTurnToTalk's
-    // userTranscription (ASR — the live incident this guards against started from voice, not
-    // speak()). Cleared after a successful resend so a later spiral doesn't replay stale text.
+    // userTranscription (ASR, since a spiral can start from voice, not just speak()).
+    // Cleared after a successful resend so a later spiral doesn't replay stale text.
     this._lastTurnText = null;
     // Optional network/visibility awareness (browser only). On by default in a browser.
     this._networkAware = cfg.networkAware ?? (typeof globalThis.addEventListener === 'function');
@@ -745,7 +744,7 @@ export class KalturaAvatarSession extends Emitter {
       if (!res.ok) throw new KalturaError({ type: 'about:blank', title: 'WHEP failed', status: res.status, code: 'whep_failed', detail: whepStatusHint(res.status), body: redact(answerSdp).slice?.(0, 200) });
       // The WHEP server's Location is often RELATIVE (e.g. "/rtc/v1/whip/?action=delete&…").
       // Resolve it against the WHEP request URL NOW, so disconnect()'s DELETE hits SRS — not the
-      // page origin (which 404s and silently leaks the server-side STV session). [verified]
+      // page origin (which 404s and silently leaks the server-side STV session).
       const loc = res.headers?.get?.('Location');
       this._whepLocation = loc ? resolveUrl(loc, url) : null;
       // The resolved Location can ALSO resolve to a private IP (the server rewrote the
@@ -824,7 +823,7 @@ export class KalturaAvatarSession extends Emitter {
    * Call `endTapToTalk()` to close the window and let the server mint the turn from
    * whatever it captured.
    *
-   * Gated on `clientConfiguration.isTapToTalk` — confirmed that this is NOT optional: an
+   * Gated on `clientConfiguration.isTapToTalk`. This is NOT optional: an
    * agent configured for open-mic (`isTapToTalk:false`) keeps its own VAD turn-cutting
    * running unconditionally, with no suppression while in tap-mode — the two
    * mechanisms race the same internal conversation state with no mutual
@@ -856,9 +855,8 @@ export class KalturaAvatarSession extends Emitter {
   }
 
   /**
-   * End a tap-to-talk capture started with `startTapToTalk()`. Emits `tapToTalkEnd`
-   * (→ the server's `onTapToTalkEnd`), which schedules the server's own ~300ms
-   * `processTapToTalkInput` timer to mint the turn from the captured audio — the
+   * End a tap-to-talk capture started with `startTapToTalk()`. Emits `tapToTalkEnd`;
+   * after a short settle the server mints the turn from the captured audio — the
    * resulting user turn arrives via the existing `agentTurnToTalk` handler exactly
    * like an open-mic turn (transcript, `_lastTurnText`, spiral-recovery all just work).
    * Arms the brain watchdog immediately (rather than waiting for that turn to land) so
@@ -1282,7 +1280,7 @@ export class KalturaAvatarSession extends Emitter {
     this._setState('connected');
   }
 
-  /** The sticky id pinning this session to its pod — persist it to resume the SAME session across a tab reload. */
+  /** The sticky id pinning this session to its server instance — persist it to resume the SAME session across a tab reload. */
   getStickyId() { return this._stickyId; }
 
   /** Keep the session/stickiness alive by re-polling capacity on the live socket. */
@@ -1369,7 +1367,7 @@ export class KalturaAvatarSession extends Emitter {
   }
 
   /**
-   * Update the `{{var}}` Jinja `request_vars` map for the rest of this live
+   * Update the `{{var}}` `request_vars` map for the rest of this live
    * session — the mid-session peer of the join-time `cfg.requestVars`
    * constructor option. MERGE semantics: the vars you pass are merged into the
    * session's canonical map (send a delta; existing keys you omit are kept,
@@ -1439,9 +1437,8 @@ export class KalturaAvatarSession extends Emitter {
    * dispatch-time check of `call.args` (type/required/enum on top-level keys, via
    * {@link import('../core/stream.js').validateToolArgs}) BEFORE any
    * handler for `name` runs. A mismatch never reaches a handler: it's dropped and
-   * re-emitted as `'toolCallInvalid'` (`{call, errors}`) instead of `'toolCall'`.
-   * The root-cause motivation is a real incident where a malformed call surfaced
-   * only as a repeated-retry spiral, not a typed error at the point of failure.
+   * re-emitted as `'toolCallInvalid'` (`{call, errors}`) instead of `'toolCall'`,
+   * so a malformed call surfaces as a typed error instead of a repeated-retry spiral.
    * Registering more than once for the same `name` with different schemas is
    * last-write-wins (one check runs per call, not per handler); omit it (or pass
    * nothing) for no behavior change.
@@ -1637,28 +1634,16 @@ export class KalturaAvatarSession extends Emitter {
   }
 
   /**
-   * Circuit breaker for a runaway tool-call spiral (see `_toolSpiralLimit` — the
-   * live incident this guards against ran `show_widget` 438x over 9 minutes with
-   * zero narration, eventually crashing the STV media channel). Counts every RAW
-   * `type:"tool"` segment in the turn (dedup-INDEPENDENT — a spiral IS repeats of
-   * the same call, which `_dispatchToolCall` already drops before handlers run,
-   * so counting only new dispatches would never trip). Once the per-turn limit is
-   * crossed, fires `toolSpiralDetected` exactly once for the turn — SIGNAL ONLY,
-   * the app decides how to react. This method used to also call `interrupt()`
-   * (`tapToTalkStart`/`tapToTalkEnd`) here; removed after a second live incident
-   * showed it was actively harmful, not just ineffective: per WIRE-PROTOCOL.md's
-   * documented barge-in semantics, a mid-turn `tapToTalkStart` forces an early
-   * `stvFinishedTalking` with TRUNCATED `agentContent` — so the soft trip silently
-   * cut the turn's own narration (`avatarStopTalking` fired with empty text) with
-   * no mechanism to reopen the talking channel once the brain went on to stream a
-   * complete, correct spoken answer for the same turn. It also never stopped the
-   * spiral itself: a follow-up live test showed the brain kept re-emitting the
-   * identical tool call for 5+ minutes past the interrupt(), through a
-   * server-pushed idle "wake-up" turn (which resets this per-turn counter,
-   * letting this method re-signal without the underlying spiral ever having
-   * stopped), until the socket itself died. The counter that actually forces
-   * recovery is the session-scoped one in `_checkHardToolSpiral` — see there for
-   * the real fix.
+   * Circuit breaker for a runaway tool-call spiral (see `_toolSpiralLimit`). Counts
+   * every RAW `type:"tool"` segment in the turn (dedup-INDEPENDENT — a spiral IS
+   * repeats of the same call, which `_dispatchToolCall` already drops before
+   * handlers run, so counting only new dispatches would never trip). Once the
+   * per-turn limit is crossed, fires `toolSpiralDetected` exactly once for the
+   * turn — SIGNAL ONLY, the app decides how to react. It does not call
+   * `interrupt()`: interrupting a server-side spiral has no effect on the brain's
+   * own generation and can truncate narration that would otherwise complete
+   * correctly. The counter that actually forces recovery is the session-scoped
+   * one in `_checkHardToolSpiral` — see there for the real fix.
    */
   _checkToolSpiral() {
     if (!this._toolSpiralLimit) return;
@@ -1676,8 +1661,8 @@ export class KalturaAvatarSession extends Emitter {
    * Hard-recovery escalation (see `_hardToolSpiralLimit`). Fires once per spiral —
    * `_hardSpiralRecovering` guards re-entry until perceivable output clears the
    * counter — and forces `_coldReconnect()` rather than relying on `interrupt()`
-   * again, since the live incident this guards against proved the soft signal has
-   * no effect on a server-side spiral already past the soft threshold. Also
+   * again, since the soft signal has no effect on a server-side spiral already
+   * past the soft threshold. Also
    * force-settles the app-visible "waiting on the brain" state immediately, since
    * a rebuilt socket abandons the stuck turn rather than ever resolving it.
    * `toolSpiralRecovering` carries `lastTurnText` (the tracked stuck turn, if any) so an
@@ -1835,10 +1820,10 @@ export class KalturaAvatarSession extends Emitter {
       //   recovered === true  → connection-state recovery succeeded: the server replayed
       //     buffered packets and SKIPPED join re-init (keys off hasJoined). The live STV/ASR
       //     session + state are intact — do NOT re-join, just return to 'connected'.
-      //   recovered !== true  → a brand-new socket on a (possibly different) pod: the old
+      //   recovered !== true  → a brand-new socket on a (possibly different) server instance: the old
       //     server session is gone. We must COLD-reconnect (re-join → new session → rebuild
       //     transports, replaying threadId). Silently treating this as recovered leaves a
-      //     "connected" session that is actually dead (no media, no brain). [verified gap]
+      //     "connected" session that is actually dead (no media, no brain).
       if (this.state === 'reconnecting') {
         this._clearReconnectTimer();
         if (socket.recovered === true) {
@@ -1865,8 +1850,8 @@ export class KalturaAvatarSession extends Emitter {
       if (this.state !== 'connected' && this.state !== 'reconnecting') return;
       if (recoverable) {
         // Let socket.io's reconnection + the server's connection-state-recovery do its thing
-        // (same-pod, ≤20s). We stay alive in 'reconnecting' and wait for a `connect` (above)
-        // or the bounded window to expire — then end cleanly. NEVER hang here. [verified gap]
+        // (same-instance, ≤20s). We stay alive in 'reconnecting' and wait for a `connect` (above)
+        // or the bounded window to expire — then end cleanly. NEVER hang here.
         this._reconnectAttempt++;
         this._setState('reconnecting');
         this.emit('reconnecting', { reason: r, attempt: this._reconnectAttempt, maxAttempts: this._maxReconnect });
@@ -1910,7 +1895,7 @@ export class KalturaAvatarSession extends Emitter {
       // OWASP LLM06 Excessive Agency: gate AGENT-pushed actions (GenUI/structured-data/nav) before
       // they reach the app. Only engages when this segment classifies AS an action AND a
       // policy/hook is configured — otherwise default-allow keeps spoken/nav/GenUI flowing
-      // untouched (the earnings app et al never see a behavior change). A vetoed action is
+      // untouched (existing integrations never see a behavior change). A vetoed action is
       // dropped: no brainSegment, so the app can't act on it.
       const action = classifyAgentAction(d);
       if (action && (this._agentActions || this._onAgentAction)) {
@@ -1954,14 +1939,14 @@ export class KalturaAvatarSession extends Emitter {
     // signal during the very dead air it's meant to cover). It RE-ARMS the brain watchdog
     // (fresh full window) rather than clearing it outright: it fires once at the top of EVERY
     // turn, well before any tool spiral, so an outright clear here would disarm the watchdog
-    // for the rest of the turn and mask the exact spiral it exists to catch (the live incident
-    // this guards against — see docs/CLIENT-COMMANDS.md "Tool spirals starve the voice"). A
+    // for the rest of the turn and mask the exact spiral it exists to catch (see
+    // docs/CLIENT-COMMANDS.md "Tool spirals starve the voice"). A
     // fresh window still gives the brain reasonable ack-to-first-token grace without granting
     // it a free pass for the remainder of a long, silent turn. We settle responsePending, and
     // finally clear the watchdog, only on real output below: an avatar/text/GenUI content
     // segment, the avatar talking, turn end, or an interruption.
-    // isNewTurn:false marks the server's documented duplicate — a second speechId (observed
-    // trigger `tap-to-talk`) for a turnId already in flight, born from speak()'s barge-in
+    // isNewTurn:false marks the server's documented duplicate — a second speechId (e.g.
+    // tap-to-talk) for a turnId already in flight, born from speak()'s barge-in
     // branch racing `this.speaking` (see the constructor comment on `_hardToolSpiralLimit`).
     // Every other isNewTurn consumer in this codebase (presenter.js, avatar-session.js)
     // already gates on it; clearing/promoting state here unconditionally was the one gap —
@@ -2368,8 +2353,7 @@ export class KalturaAvatarSession extends Emitter {
    * `join` — "the `join` handler skips re-init" keyed on `session.hasJoined`), so
    * re-emitting `join` on a still-live socket is a silent no-op server-side —
    * `clientConfiguration`/`joinComplete` never arrive and this times out
-   * (`JoinRoomTimeout`, confirmed repeatedly, including a direct bypassing call proving
-   * it's independent of the tool-spiral trigger). A brand-new socket.io connection has
+   * (`JoinRoomTimeout`, independent of the tool-spiral trigger). A brand-new socket.io connection has
    * no `hasJoined` history and joins clean. `this.state === 'reconnecting'`
    * at entry is the exact discriminator: it means we got here via `_wireSocket`'s own
    * `connect` handler AFTER a genuine transport disconnect + `recovered:false` — the
@@ -2460,7 +2444,7 @@ export class KalturaAvatarSession extends Emitter {
       // reconnect above restored connectivity but abandoned the turn that triggered it — the
       // user's question would otherwise just be dropped. Resend it once, nudged to answer in
       // words only (the exact instruction the headless `Conversations#send({recoverFromSpiral})`
-      // path already confirmed breaks the loop). Only for THIS why — a media-recovery or
+      // path uses to break the loop). Only for THIS why — a media-recovery or
       // transport-disconnect cold reconnect never abandoned a turn, so resending there would
       // inject an unrelated, unsolicited message.
       if (why === 'tool_spiral_hard_limit' && this._recoverSpiralTurn && this._lastTurnText) {

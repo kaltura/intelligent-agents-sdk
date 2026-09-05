@@ -1,8 +1,7 @@
 /**
  * Intellects — the AI "brain" config (prompts, base_directive, glossary,
  * capabilities, `tool_ids` linkage, knowledge linkage). OWNED BY GENIE (source
- * of truth). Genie host, admin token. Source: tools/genie.mjs intellect-* +
- * API-REFERENCE §2.1/§2.2.
+ * of truth). Genie host, admin token. Source: API-REFERENCE §2.1/§2.2.
  *
  * Tools themselves are a SEPARATE, partner-level entity (`mgmt.tools`,
  * `/v1/tool/*` — see `tools.js`) — an intellect only carries the `tool_ids` it
@@ -120,10 +119,10 @@ export class Intellects {
    * Create an intellect with the SDK defaults applied + the resolved `type`
    * echoed. WRITE — NOT idempotent (auto-sends an Idempotency-Key). Defaults
    * `type:'internal'` and `status:2` (ACTIVE — opt out with `status:1` for
-   * PENDING). REJECTS `url`/`protocol`: the `type:external` (BYO-LLM) config is a
-   * backend scaffold with no converse-time delegation (stored but not wired into
-   * the converse runtime), so the SDK does not offer a path to create one. The echoed `type` is SDK-resolved, not
-   * server-confirmed. @param {object} body @param {string} ks (admin)
+   * PENDING). REJECTS `url`/`protocol`: the `type:external` (BYO-LLM) config is
+   * not supported on the public API, so `create` rejects `url`/`protocol` and
+   * the SDK does not offer a path to create one. The echoed `type` is
+   * SDK-resolved, not server-confirmed. @param {object} body @param {string} ks (admin)
    * @returns {Promise<{configId:number|undefined, type:string, status:number, raw:any, _meta:object}>}
    */
   async create(body, ks) {
@@ -303,8 +302,8 @@ export class Intellects {
    * base_directive + glossary), interpolated with `requestVars`. READ — fetches
    * the current intellect (unless full drafts are supplied) and assembles a
    * `client-side-replica` via the prompt-lint module. HONEST: this reproduces
-   * ONLY the author layer — server-injected capability-conditional Jinja blocks
-   * and the built-in default directive are NOT reproduced (see prompt-lint
+   * ONLY the author layer — server-injected capability-conditional template
+   * blocks and the built-in default directive are NOT reproduced (see prompt-lint
    * `assembleSystemPrompt`). `sys__*` values are a SIMULATION of what the server
    * sets per turn.
    *

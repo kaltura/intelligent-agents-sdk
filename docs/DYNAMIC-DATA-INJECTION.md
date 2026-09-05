@@ -32,7 +32,7 @@ Three properties make this channel do the heavy lifting:
 
 - **Updates merge.** `updateRequestVars(vars)` merges what you pass into the session's canonical map — send only the keys that changed; keys you omit keep their values. (The full merged map goes to the server each time, and the server also merges per-thread, so a headless `converse` call sending a delta behaves the same way.)
 - **Values persist for the whole thread.** Send a variable once and every later turn on that thread still sees it — you don't resend per turn. A new thread starts clean. On a warm reconnect the SDK re-sends the full map automatically.
-- **Values are strings, and can be big.** Tens of kilobytes of JSON in one variable works — the SDK's live verification pushes a ~31 KB blob through and reads it back (see [Verified live](#verified-live) below).
+- **Values are strings, and can be big.** Tens of kilobytes of JSON in one variable works — the SDK's live verification pushes a ~31 KB blob through and reads it back (see [Runnable examples](#runnable-examples) below).
 
 ### Page context: `setDynamicPrompt()`
 
@@ -93,12 +93,12 @@ Request variables aren't limited to prompt text. A server-side `api` tool's requ
 
 **Security stance:** request variables are client-suppliable *and* thread-persistent. Never treat one as an authorization claim — your endpoints must independently authorize every call — and remember a poisoned value outlives its turn: it keeps interpolating into prompts and tool calls for the rest of the thread. Don't pass unsanitized end-user text into `setDynamicPrompt`, and never put secrets in any request variable.
 
-### Verified live
+### Runnable examples
 
-Every behavior above is exercised against the real API by two runnable scripts:
+Two scripts in this repo exercise every behavior above against the real API:
 
 - `examples/request-vars-live-context.mjs` — a five-turn walkthrough of seed → persist → merge → large `page_context` → fresh-thread reset.
-- `npm run live-verify:request-vars` — the full verification suite (persistence, merge, tool interpolation, `sys__*` injection, ~31 KB payload, thread isolation).
+- `npm run live-verify:request-vars` — persistence, merge, tool interpolation, server-side `sys__*` injection, ~31 KB payload, thread isolation.
 
 ## The active nudge: `speak()`
 
@@ -177,7 +177,7 @@ If instead you need the *avatar* to drive your UI — navigate, open a panel, hi
 
 | Doc | What it adds |
 |-----|---------------|
-| [README.md → `{{var}}` Jinja personalization](../README.md#var-jinja-personalization-request_vars) | The `request_vars` API reference |
+| [README.md → `{{var}}` personalization](../README.md#var-personalization-request_vars) | The `request_vars` API reference |
 | [README.md → Experience](../README.md#experience) | `KalturaAvatarSession` and the `Presenter` deck plugin this doc's worked example builds on |
 | [API-REFERENCE.md → Converse](api/operate.md#converse) | Sending `request_vars` on the headless HTTP path, and the `sys__*` reserved set |
 | [STRUCTURED-DATA-FORMS.md](STRUCTURED-DATA-FORMS.md) | Configuring what the brain asks the viewer for, and how it's rendered |

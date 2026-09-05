@@ -14,14 +14,14 @@
  *     Kaltura KS privileges (setrole/actionslimit/iprestrict/urirestrict) so
  *     callers tighten scope without learning the KS DSL.
  *   - Short-lived by default (RFC 9700 §6.1): browser-bound tokens default to
- *     30 min, not the legacy 24 h — short TTL is the primary revocation lever
+ *     30 min TTL; a short TTL is the primary revocation lever
  *     for a stateless KS. Absurd lifetimes on browser-bound kinds are rejected.
  *   - Active revocation (RFC 9700 §5.2.1.1, SOC 2 CC6.2/CC6.3): {@link
  *     Sessions.revoke} ends a leaked token now; an optional `sessionGroupId`
  *     bakes `sessionid:<id>` so a whole family is DESIGNED to die in one
- *     `revoke` — asserted by design, verified here only at the KS-privilege-
- *     string level, NOT independently confirmed against live backend
- *     revocation-cascade semantics (see {@link Sessions.revoke}).
+ *     `revoke` — asserted by design, and checked here only at the
+ *     KS-privilege-string level, not the actual revocation-cascade behavior
+ *     (see {@link Sessions.revoke}).
  *   - Auditability (NIST AU-2/AU-3): every mint/revoke fires a redacted audit
  *     event and returns a `scope` receipt; the admin secret is NEVER returned,
  *     logged, enumerable, or attached to a token. When a caller binds a real
@@ -254,14 +254,14 @@ export class Sessions {
    * leaked/abused token (RFC 9700 §5.2.1.1; SOC 2 CC6.2/CC6.3). Returns a redacted
    * `_meta` revocation receipt.
    *
-   * SESSION-GROUP CLAIM (asserted by design, NOT independently confirmed): if
+   * SESSION-GROUP CLAIM (asserted by design, not independently confirmed): if
    * the token was minted with `restrictions.sessionGroupId` (→ `sessionid:<id>`),
-   * the intent is that ending any one member ends the whole family. This SDK has
-   * only verified that the KS carries the `sessionid:<id>` privilege string
-   * correctly — the actual backend revocation-cascade behavior (that `session/end`
-   * on one member of the group really does invalidate every other KS sharing that
-   * `sessionid`) has not been confirmed against a live backend. Treat it as the
-   * documented design intent, not a proven guarantee, until independently verified.
+   * the intent is that ending any one member ends the whole family. This SDK
+   * only checks that the KS carries the `sessionid:<id>` privilege string
+   * correctly; the actual revocation-cascade behavior (that `session/end`
+   * on one member of the group really does invalidate every other KS sharing
+   * that `sessionid`) is server-side and outside this SDK's control. Treat it
+   * as the documented design intent, not a proven guarantee.
    * @param {string|Token} tokenOrKs
    * @returns {Promise<{revokedAt:string, partnerId:string, _meta:object}>}
    */

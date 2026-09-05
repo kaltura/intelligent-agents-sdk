@@ -16,8 +16,8 @@
  * `{sessionId, token}` object `create` returns, not a KS.
  *
  * A live `avatar-session/*` deployment exposes more routes than this class
- * calls. Two are confirmed broken/nonexistent server-side as of this
- * writing and are deliberately NOT wrapped here (wrapping a broken route
+ * calls. Some are not supported server-side and are deliberately NOT
+ * wrapped here (wrapping a broken route
  * would just hand you the same 500/404 with extra ceremony):
  *   - `say-text` — accepts the request but the server answers
  *     `503 Service temporarily unavailable` on every call. Use {@link say}
@@ -172,10 +172,9 @@ export class AvatarSessions {
   }
 
   /**
-   * Stop whatever's currently playing — barge-in. Verified idempotent: safe
+   * Stop whatever's currently playing — barge-in. Idempotent: safe
    * to call with nothing playing (no error, just a no-op on the server).
-   * Does not affect queued-but-not-yet-started turns beyond the current one
-   * per live testing at the time of writing.
+   * Does not affect queued-but-not-yet-started turns beyond the current one.
    *
    * WRITE — mutates playback state, but safely repeatable.
    *
@@ -191,12 +190,10 @@ export class AvatarSessions {
 
   /**
    * Signal activity so the server doesn't reclaim an idle session. The
-   * upstream toolkit documents roughly a 10s cadence; this SDK's own live
-   * testing found a session still alive after 70s of total silence with no
-   * keep-alive call at all, so the real GC threshold is looser than
-   * documented — treat ~10s as a safe, defensive interval to poll on, not a
-   * hard requirement verified to be the actual cutoff. This method makes
-   * ONE call; it does not start a timer — drive it from your own
+   * upstream toolkit documents roughly a 10s cadence; a long gap with no
+   * keep-alive call can still leave the session alive, so treat ~10s as a
+   * safe, defensive interval to poll on rather than a hard cutoff. This
+   * method makes ONE call; it does not start a timer — drive it from your own
    * `setInterval` while a session is open and you expect gaps between
    * `say()` calls.
    *

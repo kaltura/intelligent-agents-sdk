@@ -21,7 +21,7 @@ const OFF_DEFAULTS = [
 
 // ── const tables ────────────────────────────────────────────────────────────
 
-test('CAPABILITIES is the frozen 15-name set in settings.py order', () => {
+test('CAPABILITIES is the frozen 15-name set in canonical order', () => {
   assert.equal(CAPABILITIES.length, 15);
   assert.ok(Object.isFrozen(CAPABILITIES));
   assert.deepEqual([...CAPABILITIES], [

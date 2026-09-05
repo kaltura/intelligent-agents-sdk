@@ -6,7 +6,7 @@
  * (`sessions.createAgentToken({agentId})`, `agentid:<agentId>`); the latter
  * also scopes the resulting thread's `agent_id` for lifecycle-rule matching
  * (see docs/lifecycle/README.md). Thread/message/report management use an
- * admin token. Source: tools/genie.mjs + API-REFERENCE §4.
+ * admin token. Source: API-REFERENCE §4.
  */
 import { parseConverseStream, collectConverse, SPIRAL_RECOVERY_PREFIX } from '../core/stream.js';
 import { paginate } from './paginate.js';
@@ -33,8 +33,6 @@ const KNOWLEDGE_ENTRY_STATUS_TYPE_FILTER = { statusIn: '-1,-2,0,1,2,7,4', typeIn
 // re-run a categoryentry.add the server already applied; Kaltura then reports
 // CATEGORY_ENTRY_ALREADY_EXISTS ("Entry already assigned to this category").
 // The link exists — that's the outcome the caller asked for, not a failure.
-// Live-hit: two consecutive corpus re-uploads (16 docs, ~130 chunks) died
-// mid-run on exactly this before it was tolerated.
 const isDuplicateCategoryEntry = (e) => e?.code === 'CATEGORY_ENTRY_ALREADY_EXISTS' || /already assigned to this category/i.test(e?.message || '');
 
 // Re-exported for back-compat — existing callers import this from here. Canonical
@@ -55,7 +53,7 @@ export const RESERVED_VARS = Object.freeze([
 ]);
 
 /**
- * Validate a per-turn `request_vars` map (the `{{ X }}` Jinja interpolation
+ * Validate a per-turn `request_vars` map (the `{{ X }}` template interpolation
  * payload). PURE — no network. Rejects, with a typed `KalturaError`
  * (`code:'validation_error'`), BEFORE any wire call:
  *
@@ -188,17 +186,11 @@ export class Conversations {
    * there is nothing to fall back to in the SAME turn (the good content it
    * already gathered IS the tool calls; there's no spoken text hiding later in
    * the stream — `collectConverse` stopped reading precisely because the raw
-   * segment budget was exhausted). Observed in production:
-   * a two-metric guidance question made the brain re-emit an already-successful
-   * `show_widget` call 8+ times with zero spoken segments ever produced, even
-   * after fixing the tool's arg schema (str→dict) to remove double-JSON-encoding
-   * — confirmed via a direct, uncapped stream read (150+ segments, 90s, still
-   * zero spoken output): the loop would not have resolved on its own no matter
-   * how long the caller waited. HTTP converse has no live-socket `interrupt()` to
-   * fall back on (that's `KalturaAvatarSession`'s recovery, a different runtime),
-   * so the only proven lever is a follow-up turn: a same-
-   * thread nudge message reliably breaks the loop and gets a real spoken answer.
-   * When `recoverFromSpiral` is on and the first attempt comes back
+   * segment budget was exhausted). HTTP converse has no live-socket
+   * `interrupt()` to fall back on (that's `KalturaAvatarSession`'s recovery, a
+   * different runtime), so the only proven lever is a follow-up turn: a
+   * same-thread nudge message reliably breaks the loop and gets a real spoken
+   * answer. When `recoverFromSpiral` is on and the first attempt comes back
    * `spiralStopped:true` with empty `text`, this sends ONE follow-up turn on the
    * same thread wrapping the original `userMessage` in an explicit "answer in
    * words, no tool calls" instruction, and returns THAT result with
@@ -369,7 +361,7 @@ export class Followups {
  * "Add a file to the agent's brain" = ingest a Kaltura entry and assign it
  * (`categoryEntry.add`) to that category — all standard public media APIs.
  *
- * SCOPE (honest, verified): the SDK can upload + attach entries, list them,
+ * SCOPE: the SDK can upload + attach entries, list them,
  * detach them, read the linked knowledge record IDs, and toggle
  * `use_knowledge_base`. Linkage itself is set/repointed via `v1/intellect/update`
  * — either at create time (`knowledge_ids` in the create/add/update DTO) or
@@ -544,8 +536,8 @@ export class Knowledge {
    * KalturaMarkdownAsset directly. WRITE — NOT idempotent. The indexer only
    * scans an entry's ATTACHMENT assets for a `markdown.markdown` asset, never
    * an entry's own primary content — a raw `.md` set as an entry's content
-   * (via {@link uploadDocument}'s path) is invisible to it, and the backend's
-   * async PDF→markdown-attachment conversion only fires for PDF entries. This
+   * (via {@link uploadDocument}'s path) is invisible to it, and automatic
+   * PDF-to-markdown conversion only fires for PDF entries. This
    * method skips both: it creates the backing entry (kept in sync for
    * browsability), then attaches the SAME markdown as its own
    * `KalturaMarkdownAsset` via a second, independent upload token — the thing
@@ -770,7 +762,7 @@ export class Knowledge {
 
   /**
    * Create a Knowledge record (`POST /v1/knowledge/add` on Genie). WRITE — NOT idempotent.
-   * LIVE on the current deployment (verified) — returns `{id,...}`. Pass the
+   * Returns `{id,...}`. Pass the
    * returned `id` as `knowledge_ids:[id]` to {@link Intellects.create}/`add`
    * (or `update`, or {@link IntellectConfig#setKnowledgeIds} for an existing
    * intellect) to LINK it — no separate linking call, no gate.
@@ -990,11 +982,6 @@ export class Knowledge {
    * indexing — unlike {@link isIndexed}/`getRecord().status`, which reflect the
    * knowledge record's own container lifecycle, not entry-level progress.
    *
-   * **Not yet generally available on every deployment.** Verified working
-   * end-to-end on a pre-production test environment. Calling this on a
-   * deployment that doesn't have it yet will fail — check with your Kaltura
-   * account team before building on it.
-   *
    * Returns the raw `{entries:[...]}` array, unmodified: one row per entry
    * FOUND in the knowledge base (an unknown/not-yet-indexed entry id is
    * silently omitted, not an error), each with a `documents[]` list of
@@ -1048,8 +1035,9 @@ function newFormData() {
 
 /**
  * Aggregate a conversation-report CSV into volume/feedback/top-questions with a
- * provenance receipt. Pure function (no I/O) — mirrors genie.mjs
- * report-summary so the SDK and CLI agree byte-for-byte.
+ * provenance receipt. Pure function (no I/O). Returns volume counts, positive/
+ * negative feedback totals, distinct thread count, and the top 5 most-asked
+ * questions.
  * @param {string} csv @param {string} partnerId
  */
 export function summarizeReport(csv, partnerId) {

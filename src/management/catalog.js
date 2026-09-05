@@ -1,12 +1,11 @@
 /**
  * Catalog — the preset library of visuals (faces) and voices, plus custom
- * uploads. Agentic host, admin token. Source: tools/agentic.mjs catalog-*,
- * voice_upload, visual_upload + API-REFERENCE §1.1–§1.3b.
+ * uploads. Agentic host, admin token. Source: API-REFERENCE §1.1–§1.3b.
  *
  * IMPORTANT asymmetry: an uploaded VOICE clones for real (ElevenLabs)
  * and is immediately usable as a live voice. An uploaded VISUAL image becomes the
  * catalog item's visual content and is usable in avatar/create and avatar-session/create
- * for live animated sessions (verified: real portrait JPEG → success:true sessionId).
+ * for live animated sessions.
  */
 import { paginate } from './paginate.js';
 import { uuidv4, meta } from '../core/ids.js';
@@ -56,7 +55,7 @@ export class Catalog {
    * );
    *
    * @param {Blob|File} file
-   * @param {{name:string,description:string,language?:string,consentRef?:string}} attrs  `consentRef`: an opaque URI/attestation id for the source individual's voice-clone consent (NO FAKES Act / CA AB 1836 / FTC impersonation). Echoed on the result `_consent` receipt + audit; the SDK can't verify it but carries it auditably.
+   * @param {{name:string,description:string,language?:string,consentRef?:string}} attrs  `language`: ISO 639-1 code (e.g. `'en'`, `'he'`), defaults to `'en'`. `consentRef`: an opaque URI/attestation id for the source individual's voice-clone consent (NO FAKES Act / CA AB 1836 / FTC impersonation). Echoed on the result `_consent` receipt + audit; the SDK can't verify it but carries it auditably.
    * @param {string} ks
    */
   async createVoice(file, attrs, ks) {
@@ -64,7 +63,7 @@ export class Catalog {
     if (!attrs?.description) {
       throw new KalturaError({ type: 'about:blank', title: 'description required', code: 'bad_request', detail: 'Voice clone requires a non-empty description (the clone backend rejects empty).' });
     }
-    const attributes = { voice: { name: attrs.name, description: attrs.description, language: attrs.language || 'english' } };
+    const attributes = { voice: { name: attrs.name, description: attrs.description, language: attrs.language || 'en' } };
     return this._upload(file, attributes, ks, 'audio/mpeg', attrs.consentRef, 'voice');
   }
 
@@ -156,15 +155,14 @@ export class Catalog {
   /**
    * Multipart upload primitive for createVoice/createVisual.
    *
-   * adminTags ENCODING (verified, fixes a double-encode bug): the multipart
+   * adminTags ENCODING: the multipart
    * `adminTags` field is parsed by the API as a COMMA-SEPARATED bare string into
    * an array — so the value must be the bare `custom` (parsed once → stored
    * `["custom"]`), NOT `JSON.stringify(['custom'])`. Sending the JSON string
    * `["custom"]` makes the API re-wrap it, storing `["[\"custom\"]"]`, so the
    * item is then NOT findable by `catalog.list` filtered on `adminTagsIn:
    * ['custom']`. Use {@link appendAdminTags} for the correct single-parse shape.
-   * (Mirrors the same fix in tools/agentic.mjs `voice-upload`/`visual-upload`
-   * and API-REFERENCE §1.1 — keep all three in sync.)
+   * (Also documented in API-REFERENCE §1.1, keep both in sync.)
    * @param {Blob|File} file @param {object} attributes @param {import('./client.js').KsLike} ks @param {string} [mime]
    * @param {string} [consentRef] @param {string} [kind]
    */

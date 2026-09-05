@@ -71,7 +71,7 @@ Descriptor: `{kind:'video-gallery', data:{title, videos:[{entryId, title, thumbn
 | `label` | `label`, `linkText`, `title`, `text` | ≤300 chars; falls back to the URL |
 | `description` | `description` | ≤2000 chars |
 
-Descriptor: `{kind:'show-link', data:{url, label, description, safe}}` where **`safe:!!url`** — an unsafe scheme yields `url:''` + `safe:false` so the host drops it (mirrors the earnings app's `renderSafeLink` null-drop).
+Descriptor: `{kind:'show-link', data:{url, label, description, safe}}` where **`safe:!!url`** — an unsafe scheme yields `url:''` + `safe:false` so the host drops it.
 
 ### 7. external-video (`renderExternalVideo`) — non-Kaltura video embeds
 
@@ -83,7 +83,7 @@ Descriptor: `{kind:'show-link', data:{url, label, description, safe}}` where **`
 | `poster` | `poster`, `thumbnail`, `thumbnailUrl` | via `safeUrl` — a still to show before play |
 | `description` | `description` | ≤2000 chars |
 
-Descriptor: `{kind:'external-video', data:{url, embedUrl, title, provider, poster, description, safe}}`, `safe:!!url`. The client check is **defense-in-depth**; the server-side media-URL validator is the primary guard (**INFERRED** — server validator not in this repo).
+Descriptor: `{kind:'external-video', data:{url, embedUrl, title, provider, poster, description, safe}}`, `safe:!!url`. The client check is **defense-in-depth**; the server-side media-URL validator is the primary guard.
 
 ### 8. user-properties-form (`renderUserPropertiesForm`) — structured data collection
 

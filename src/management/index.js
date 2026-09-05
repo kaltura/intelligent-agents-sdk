@@ -57,6 +57,7 @@ export {
 } from './prompt-lint.js';
 // Intellect-config helpers.
 export { IntellectConfig, buildUserPropertiesForms, CALL_STAGES, SKILL_MODES } from './intellect-config.js';
+export { LANGUAGE_NAMES } from './set-forced-language.js';
 // Knowledge / RAG indexer enums — ChapterType/Strategy + the objects[] builder.
 export {
   CHAPTER_TYPE, STRATEGY, EMBED, MODALITIES, normalizeModality, buildIndexerObjects,

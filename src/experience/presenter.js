@@ -1,7 +1,7 @@
 /**
  * Presenter — the reusable "avatar guides through a deck/document" layer on top
  * of {@link KalturaAvatarSession}. It encapsulates the glue that EVERY deck app
- * otherwise rewrites by hand (proven in the earnings reference app):
+ * otherwise rewrites by hand:
  *
  *   - per-slide page-context building + injection via `session.setDynamicPrompt`,
  *     which delivers the payload as the thread-persistent `page_context` request
@@ -131,8 +131,8 @@ export class Presenter {
    *   an integrator hand-rolling one into `BASE_DIRECTIVE`. Title collisions are disambiguated by appending the
    *   colliding slide's first talking point (or its slide number, if it has none). Stays correct after
    *   `appendSlide()` grows the deck — no invalidation needed. Default `false` (no `outline` key at all).
-   * @param {(slide:object, ctx:{current:number,total:number})=>object} [cfg.extendDpp]  Legacy alias for `cfg.extendContext` — kept working, not documented elsewhere.
-   * @param {(slide:object, ctx:{current:number,total:number,content:object})=>object} [cfg.dppSlide]  Legacy alias for `cfg.slideContext` — kept working, not documented elsewhere.
+   * @param {(slide:object, ctx:{current:number,total:number})=>object} [cfg.extendDpp]  Alternate name for `cfg.extendContext` (both accepted).
+   * @param {(slide:object, ctx:{current:number,total:number,content:object})=>object} [cfg.dppSlide]  Alternate name for `cfg.slideContext` (both accepted).
    */
   constructor(cfg) {
     if (!cfg?.session) throw new Error('Presenter needs { session }');
@@ -149,11 +149,11 @@ export class Presenter {
     this._metaFor = cfg.metaFor || ((cat) => ({ disclaimer_required: cat === 'financial' || cat === 'legal', non_gaap_cited: cat === 'financial' }));
     this._mode = cfg.mode || 'presentation';
     this._toolCallName = cfg.toolCallName === false ? null : (cfg.toolCallName || 'navigate_to_slide');
-    this._extendContext = cfg.extendContext || cfg.extendDpp || null;   // extendDpp: working legacy alias, undocumented
+    this._extendContext = cfg.extendContext || cfg.extendDpp || null;   // extendDpp: alternate accepted key for extendContext
     this._extraMemory = cfg.extraMemory || null;
     this._restoreMemory = cfg.restoreMemory || null;
     this._onTurnText = cfg.onTurnText || null;
-    this._slideContext = cfg.slideContext || cfg.dppSlide || null;   // dppSlide: working legacy alias, undocumented
+    this._slideContext = cfg.slideContext || cfg.dppSlide || null;   // dppSlide: alternate accepted key for slideContext
     this._oneNavPerTurn = !!cfg.oneNavPerTurn;
     this._deckOutline = !!cfg.deckOutline;
 
@@ -248,7 +248,7 @@ export class Presenter {
   /** The slide number of the last context payload that actually reached the session (0 = none yet — e.g. not connected). @returns {number} */
   get lastContextSlide() { return this._lastContextSlide; }
 
-  /** Alias for {@link Presenter#lastContextSlide} (legacy name — kept working, not documented elsewhere). @returns {number} */
+  /** Alias for {@link Presenter#lastContextSlide}. @returns {number} */
   get lastDppSlide() { return this._lastContextSlide; }
 
   /**
@@ -269,7 +269,7 @@ export class Presenter {
   /** Re-send the current slide's context (e.g. after resume/pause, or any app-driven refresh outside a nav). No-op after {@link Presenter#destroy}. */
   refreshContext() { if (this._destroyed) return; this._injectContext(); }
 
-  /** Alias for {@link Presenter#refreshContext} (legacy name — kept working, not documented elsewhere). */
+  /** Alias for {@link Presenter#refreshContext}. */
   refreshDpp() { this.refreshContext(); }
 
   /** Flush session memory now (e.g. on `beforeunload`) — the same write `goTo`/`avatarStopTalking` already do. No-op after {@link Presenter#destroy}. */
@@ -374,8 +374,7 @@ export class Presenter {
    * distinct cases that look identical from that comparison alone: (a) a prior resume call
    * already landed here — repeating it must resolve to the SAME target (idempotent, a no-op),
    * or (b) there is genuinely nothing to resume from (the anchor was never displaced by an
-   * avatar jump) — the documented fallback is to advance one slide (see
-   * `KNOWLEDGE_BASE_PROMPT.md`'s "if nav.resume is null -> next slide in order"). Disambiguate
+   * avatar jump): if `nav.resume` is null, the next slide in order plays. Disambiguate
    * via `_lastNav`: only take the advance-by-one fallback when the immediately preceding nav
    * was NOT itself a resume landing on this same slide.
    * @param {number} target @param {'avatar'|'resume'} reason

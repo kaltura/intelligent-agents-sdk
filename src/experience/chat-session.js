@@ -85,7 +85,7 @@ export class KalturaChatSession extends Emitter {
    *   there is no hard-limit cold-reconnect escalation here — a chat turn is a plain HTTPS request
    *   with no socket to rebuild, so a stuck turn is bounded by the caller's own `sendText({signal})`
    *   abort, not by this session. Default 10. Set 0/false to disable.
-   * @param {boolean} [cfg.sessionCompleteOnEnd] Signal genie (`POST {genieUrl}/thread/session_completed`) the moment this conversation truly ends. Default true; `false` restores pre-1.12 behavior exactly. See `KalturaAvatarSession`'s cfg doc for the full option set (identical names/defaults on both transports).
+   * @param {boolean} [cfg.sessionCompleteOnEnd] Signal genie (`POST {genieUrl}/thread/session_completed`) the moment this conversation truly ends. Default true; `false` disables the POST and its listeners entirely. See `KalturaAvatarSession`'s cfg doc for the full option set (identical names/defaults on both transports).
    * @param {string} [cfg.sessionCompletePath] Default `'/thread/session_completed'`.
    * @param {number} [cfg.sessionCompleteTimeoutMs] Default 5000.
    * @param {boolean} [cfg.pageLifecycleAware] Default true when `document.addEventListener` exists.
@@ -524,7 +524,7 @@ export class KalturaChatSession extends Emitter {
 
   /**
    * Diagnose the silent-empty-turn failure mode — the exact peer of
-   * `KalturaAvatarSession._checkEmptyTurn`, confirmed on THIS path too:
+   * `KalturaAvatarSession._checkEmptyTurn` on THIS path too:
    * with the intellect's `allow_client_variables` gate OFF, a converse turn
    * that sends request variables resolves with zero segments and NO error —
    * the 403 is raised server-side after the response stream has already

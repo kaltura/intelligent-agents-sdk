@@ -105,8 +105,7 @@ export function classifyAgentAction(seg) {
  * The adapter-normalized GenUI runtime keys (after `-tool` stripping). DERIVED
  * from `core/stream.js`'s `GENUI_RUNTIMES` (the single source of truth) —
  * the same derivation `genui/parse.js`'s `RUNTIMES` uses — so the two lists can
- * never drift (previously hand-rolled here with a stray `'summarization'` that
- * doesn't match the wire's actual `'summary-tool'`).
+ * never drift.
  */
 const RUNTIME_KEYS = new Set(GENUI_RUNTIMES.map((r) => r.replace(/-tool$/, '')));
 
@@ -153,7 +152,7 @@ export function iceConfig(channel, turn, isFirefox = false) {
 /**
  * `new RTCCtor(config)`, with one feature-detected fallback: WebKit's native
  * ICE-server URL parser rejects ANY `?transport=` query string on a
- * `turn:`/`turns:` URL (confirmed live — `new RTCPeerConnection()` throws
+ * `turn:`/`turns:` URL (`new RTCPeerConnection()` throws
  * synchronously, "Invalid TURN URL query string", before any connection
  * attempt). Retried once with those query strings stripped — `turn:host:443`
  * still defaults to UDP and `turns:host:443` still defaults to TCP+TLS per
@@ -197,7 +196,7 @@ export function buildJoin(opts) {
   };
   if (opts.ks) kaltura.ks = opts.ks;          // required by the live runtime to advance past join
   if (opts.entryId) kaltura.entryId = opts.entryId;
-  // Join-time `{{var}}` Jinja values — already validated by the caller
+  // Join-time `{{var}}` values — already validated by the caller
   // (`assertRequestVars`) before this is built; passed through as-is on the wire.
   if (opts.requestVars) kaltura.request_vars = opts.requestVars;
   return {

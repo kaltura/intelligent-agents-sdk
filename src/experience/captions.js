@@ -1,9 +1,9 @@
 /**
  * CaptionService — SDK-level caption engine for a KalturaAvatarSession.
  *
- * A caption engine tuned against real production traffic. All accumulation,
- * segmentation, timing, and hold-then-clear logic lives here; the app only
- * provides a render callback.
+ * A caption engine with dual-source timing: server-authoritative when available,
+ * heuristic fallback otherwise. All accumulation, segmentation, timing, and
+ * hold-then-clear logic lives here; the app only provides a render callback.
  *
  * Dual-source timing:
  *

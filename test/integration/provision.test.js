@@ -110,7 +110,7 @@ test('optional blocks are ABSENT from the result when not requested (back-compat
 test('opts.capabilities fires intellects.setCapabilities and records {applied:true}', async () => {
   const { m } = baseProvision();
   const captured = [];
-  // Simulate the Stage-B G1 landing of intellects.setCapabilities.
+  // Stub intellects.setCapabilities and capture its calls.
   m.intellects.setCapabilities = async (configId, patch, ks) => { captured.push({ configId, patch, ks }); return { capabilities: patch }; };
   const r = await m.provision({ brief: 'x', ks: ADMIN_KS, capabilities: { use_web_search: 'on', avatar: 'on' } });
   assert.equal(captured.length, 1, 'setCapabilities called exactly once');
@@ -123,8 +123,8 @@ test('opts.capabilities fires intellects.setCapabilities and records {applied:tr
 
 test('opts.capabilities never fails the provision when the method is unmounted', async () => {
   const { m } = baseProvision();
-  // setCapabilities is now a PROTOTYPE method on Intellects (Stage-B G1 landed),
-  // so `delete` can't remove it; shadow it with an own `undefined` to faithfully
+  // setCapabilities is a PROTOTYPE method on Intellects, so `delete` can't
+  // remove it; shadow it with an own `undefined` to faithfully
   // simulate a deployment where the contract method is not (yet) a function —
   // exercising provision's feature-detection (typeof fn !== 'function') branch.
   Object.defineProperty(m.intellects, 'setCapabilities', { value: undefined, configurable: true, writable: true });
@@ -138,7 +138,7 @@ test('opts.tools creates each tool entity via mgmt.tools.add, then links the suc
   const { m } = baseProvision();
   const created = [];
   let linkedCall = null;
-  // Simulate the Stage-B mount of the standalone, partner-level Tools resource; second tool throws.
+  // Stub the standalone, partner-level Tools resource; second tool throws.
   m.tools = {
     list: () => ({ all: async () => [] }),   // no pre-existing tools — every name is a fresh create
     add: async (tool) => {

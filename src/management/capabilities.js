@@ -12,9 +12,9 @@
  * that PRESERVES omitted top-level fields; it is `capabilities` itself that is
  * replaced wholesale). See API-REFERENCE.md § Configure an Intellect.
  *
- * Source of truth: the backend's `AssistantCapability` enum and default-value
- * table, resolved with 3-level priority (env → partner_config → per-request)
- * and a DISABLED veto that always wins regardless of layer.
+ * Source of truth: the set of capability names the API accepts and their
+ * default-value table, resolved with 3-level priority (env → partner_config →
+ * per-request) and a DISABLED veto that always wins regardless of layer.
  *
  * No public endpoint enumerates AssistantCapability or per-partner settings.
  * {@link CAPABILITIES} and {@link CAPABILITY_DEFAULTS} are a hand-transcribed
@@ -32,8 +32,8 @@ import { meta } from '../core/ids.js';
  * Hand-transcribed snapshot — see the HONEST LIMIT note above.
  *
  * `think_process` is deliberately ABSENT: it appears in some GenUI experience
- * configs but is NOT an AssistantCapability — sending it in a capabilities map 500s
- * intellect creation live (verified 2026-08). {@link assertCapability} therefore
+ * configs but is NOT an AssistantCapability — sending it in a capabilities map
+ * 500s intellect creation. {@link assertCapability} therefore
  * rejects it BEFORE any network call, same as any other unknown name.
  * @type {readonly string[]}
  */
@@ -70,7 +70,7 @@ const VALID_STATES = Object.freeze([CAPABILITY_STATE.ON, CAPABILITY_STATE.OFF, C
 const CAPABILITY_SET = new Set(CAPABILITIES);
 
 /**
- * The OFF-by-default capabilities (the backend's `DEFAULT_CAPABILITY_VALUES`):
+ * The OFF-by-default capabilities (the API's capability defaults):
  * `avatar`, `avatar_filler`, `avatar_show_content`, `video_gallery`,
  * `external_video`, `show_link`, `use_web_search`, `screen_share_analysis`.
  * @type {readonly string[]}
@@ -83,8 +83,8 @@ const OFF_BY_DEFAULT = Object.freeze([
 /**
  * Per-capability default snapshot — the `env`/default layer.
  *
- * DOCUMENTED SNAPSHOT: a hand-transcribed copy of the backend's
- * `DEFAULT_CAPABILITY_VALUES`. There is NO public
+ * DOCUMENTED SNAPSHOT: a hand-transcribed copy of the API's capability
+ * defaults. There is NO public
  * endpoint that returns per-partner env/settings overrides, so this is a
  * best-effort prediction of the env layer — NOT a live read. Eight capabilities
  * default OFF (see {@link OFF_BY_DEFAULT}); the other seven default ON
@@ -222,7 +222,7 @@ export function mergeCapabilityWrite(current, patch) {
 }
 
 /**
- * The PURE 3-level resolver — mirrors the server's `get_turned_on_capabilities`
+ * The PURE 3-level resolver — mirrors the server's capability-resolution
  * behavior. For EVERY one of the 15
  * {@link CAPABILITIES} it resolves a final state with EXACT precedence:
  *

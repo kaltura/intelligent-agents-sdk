@@ -3,13 +3,9 @@
  * `chroma-key-video`-shaped class) directly onto a `KalturaAvatarSession`'s own avatar
  * `<video>` element, and keep its lifecycle in lockstep with the session's.
  *
- * Why a factory, not a class: every other optional SDK plugin in this family
- * (`./experience/presenter`, `./experience/noise-suppressor`) is a plain function that
- * wires itself onto an already-existing session — there is no state here worth owning in
- * a class of its own. The real state (canvas, WebGL context, chroma parameters) already
- * lives inside the injected `ChromaKeyVideo` instance, which this function returns
- * UNWRAPPED. A factory keeps that boundary obvious: this file is glue, not a second
- * player implementation.
+ * A factory function, not a class: it returns the injected `ChromaKeyVideo` instance
+ * UNWRAPPED, which owns the real state (canvas, WebGL context, chroma parameters). This
+ * file is glue, not a second player implementation.
  *
  * BYO-injection rationale: this plugin never imports a `chroma-key-video` package — there
  * is no such runtime dependency anywhere in this SDK (zero-dependency rule,

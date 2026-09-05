@@ -7,10 +7,9 @@
  *   ChapterType  : CAPTION=1 / OCR=2 / DOCUMENT=3   (+ a Genie-internal SUMMARY)
  *   StrategyEnum : EmbedCaptionV1 / EmbedOcrV1 / EmbedDocumentV1
  *
- * SCOPE — what the indexer actually reads (verified against the live
- * backend indexer): it reads ONLY `indexer.categoryInfo[].{categoryId,
- * language}` + indexer-level `indexer.chunkSize` for a `categoryEntry`
- * link — it does NOT read a
+ * SCOPE — what the indexer actually reads: it reads ONLY
+ * `indexer.categoryInfo[].{categoryId, language}` + indexer-level
+ * `indexer.chunkSize` for a `categoryEntry` link. It does NOT read a
  * per-category `objects[]`/`indexPosition`/`strategy` array.
  * {@link buildIndexerObjects} VALIDATES a caller's `modalities` (rejects an
  * unknown/duplicate modality with a typed `bad_request` before any wire call)
@@ -24,7 +23,7 @@
 import { KalturaError } from './errors.js';
 
 /**
- * Chapter types the indexer can embed (the backend's `ChapterType`).
+ * Chapter types the indexer can embed.
  * Numeric on the wire. `SUMMARY` is Genie-internal (produced server-side, not
  * a self-serve embed modality) so it is intentionally NOT a linkable modality
  * in {@link EMBED} / {@link MODALITIES}.
@@ -33,7 +32,7 @@ import { KalturaError } from './errors.js';
 export const CHAPTER_TYPE = Object.freeze({ CAPTION: 1, OCR: 2, DOCUMENT: 3 });
 
 /**
- * Embedding strategy string for each chapter type (the backend's `StrategyEnum`).
+ * Embedding strategy string for each chapter type.
  * @type {{CAPTION:'EmbedCaptionV1', OCR:'EmbedOcrV1', DOCUMENT:'EmbedDocumentV1'}}
  */
 export const STRATEGY = Object.freeze({
@@ -101,8 +100,9 @@ export function normalizeModality(token) {
 /**
  * Build the indexer `objects[]` array for one `categoryInfo` entry from a list
  * of modalities. Each entry is `{indexPosition, type, strategy}` with
- * `indexPosition` assigned by order (0-based) — the CORRECT camelCase wire
- * field (fixes the `index_position` bug) and the full OCR-capable mapping.
+ * `indexPosition` assigned by order (0-based). The request field is camelCase
+ * `indexPosition`; the server reports it back as `index_position` on read
+ * (see `knowledge.isIndexed`).
  *
  * Pure: no network, no KS. Duplicate modalities are rejected (the indexer
  * would otherwise embed the same chapter type twice at different positions);

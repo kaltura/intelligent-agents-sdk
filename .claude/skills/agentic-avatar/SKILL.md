@@ -8,7 +8,7 @@ license: MIT
 
 Build and operate conversational AI avatar agents entirely through the `@kaltura/intelligent-agents` SDK's `Management` client. Every operation below is a typed method call, not a curl command — the SDK owns argument validation, KS-type enforcement, read-merge-write safety, and deployment-gate probing.
 
-Ships as part of this repo (`kaltura/intelligent-agents-sdk`) — every file path below is relative to the repo root. `docs-site-avatar` (https://github.com/kaltura/docs-site-avatar; Nova, a reference app built on this SDK) is a separate sibling repo; see its own `server/provision.mjs` for a complete real-world example of everything in this skill.
+Ships as part of this repo (`kaltura/intelligent-agents-sdk`) — every file path below is relative to the repo root. `docs-site-avatar` (https://github.com/kaltura/docs-site-avatar; Nova, an agent built on this SDK) is a separate sibling repo; see its own `server/provision.mjs` for a complete real-world example of everything in this skill.
 
 ## Setup
 
@@ -286,7 +286,7 @@ The constructor does not police which KS kind `token` carries — a real KS's pr
 | `interrupt()` | Barge-in: stop the avatar mid-turn. |
 | `startTapToTalk()` / `endTapToTalk()` | Push-to-talk mic control — see `docs/VOICE-INPUT-MODES.md` for open-mic vs push-to-talk tradeoffs. |
 | `setDynamicPrompt(data)` | Serialize `data` into the `page_context` request variable — the "what's on screen" context the brain reads via `{{page_context}}` (pair with the `PAGE_CONTEXT_PROMPT` block from `./management`). |
-| `updateRequestVars(vars)` | Merge `vars` into the `{{var}}` Jinja map — send only changed keys; values persist on the thread for the rest of the session. |
+| `updateRequestVars(vars)` | Merge `vars` into the `{{var}}` template map — send only changed keys; values persist on the thread for the rest of the session. |
 | `onToolCall(name, handler, argsSchema?)` | Register a handler for an agent-driven client-side command (navigate, render widget, …). Returns an unsubscribe function. |
 | `respondToTool(id, response)` | ACK a `waitForResponse:true` tool call with a real result the brain can see. |
 | `notifyHtmlElementClick(info)` / `submitStructuredDataForm(values)` | App-initiated signals back to the brain (ungated — these aren't agent-pushed actions). |
@@ -342,7 +342,7 @@ Navigation runs through exactly one deterministic mechanism — `session.onToolC
 3. **Restricted topics** — `prompts.restrictedTopics` is enforced content, not a suggestion; use it for anything the agent must never discuss.
 4. **Voice selection** — pick from `catalog.list(ks, {type:'voice'})` or clone one (`catalog.createVoice`/`importVoiceFrom*`); match voice to persona.
 5. **Visual selection** — same for `type:'visual'`; `catalog.createVisual` for a custom image.
-6. **Opening phrase** — pass a real scripted line, or `'<blank>'` (the SSML silence sentinel) if you want no opening line at all — never `''`, which crashes the session server on the very first turn (a known bug; see `avatars.create`'s JSDoc for the exact reasoning).
+6. **Opening phrase** — pass a real scripted line, or `'<blank>'` (the SSML silence sentinel) if you want no opening line at all — never `''`: an empty opening phrase makes the first turn fail.
 7. **Glossary** — `intellectConfig.patch(configId, {glossary}, ks)` for domain terms/pronunciations the brain should know verbatim.
 8. **Motion control** — capabilities like `avatar_show_content` / `avatar_filler` shape how animated the avatar is between turns.
 9. **Max conversation length** — `provision()`'s `maxConversationLength` option, or set it directly via the intellect's editable fields.

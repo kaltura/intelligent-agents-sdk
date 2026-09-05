@@ -64,14 +64,14 @@ Whether a given browser session should instead carry broadened (entitlement-bypa
 
 - Short-lived by default: browser-bound tokens (`conversation`/`agent`) default to 30 minutes, admin to 1 hour. Short TTL is the primary revocation lever for a stateless KS (RFC 9700 §6.1). Override per call with `ttlSeconds`; absurd lifetimes on browser-bound kinds are rejected (`ttl_too_long`). UX note: "refresh" means your server re-mints a fresh short token, and the browser calls `session.setToken(freshKs)` to rotate mid-session without a reconnect.
 - Least privilege / binding (RFC 9700 §2.3, §4.10): tighten a token with the structured `restrictions` option instead of hand-crafting privilege strings — `{ role, actionsLimit, ipRestrict, uriRestrict, sessionGroupId }` compile to the matching Kaltura privileges (`setrole`/`actionslimit`/`iprestrict`/ `urirestrict`/`sessionid`). Defaults stay wide-open so nobody is surprise-locked out; tightening is opt-in.
-- Active revocation (RFC 9700 §5.2.1.1; SOC 2 CC6.2/CC6.3): `sessions.revoke(tokenOrKs)` ends a leaked token now (Kaltura `session/end`). Mint a family with `restrictions.sessionGroupId` and, by design, one `revoke` is intended to kill the whole group. This cascade is asserted by design and verified only at the KS-privilege-string level (the token really does carry `sessionid:<id>`), not independently confirmed against live backend revocation semantics. Returns a `_meta` revocation receipt.
+- Active revocation (RFC 9700 §5.2.1.1; SOC 2 CC6.2/CC6.3): `sessions.revoke(tokenOrKs)` ends a leaked token now (Kaltura `session/end`). Mint a family with `restrictions.sessionGroupId` so revoking any member is intended by design to end the whole family — the SDK checks the KS carries the matching privilege string, but the server-side cascade itself is outside its control. Returns a `_meta` revocation receipt.
 - Vault/KMS (NIST IA-5): pass `getAdminSecret: () => fetchFromVault()` to fetch the secret per-mint instead of holding it; it is never stored as an enumerable field.
 - Incident runbook — revoke a leaked conversation token:
 
   ```js
   await management.sessions.revoke(leakedKs);   // or revoke(token)
-  // if minted with restrictions.sessionGroupId: revoking any member is DESIGNED to end
-  // the family (asserted by design, not independently confirmed — see above).
+  // if minted with restrictions.sessionGroupId: revoking any member is
+  // intended by design to end the whole family (server-side behavior).
   ```
 
 ## Audit logging (NIST AU-2 / AU-3 / AU-12; OWASP Logging; SOC 2 CC7)
@@ -142,7 +142,7 @@ Every event carries this AU-3 content shape:
 - Memory-only token: the SDK keeps the token in a non-enumerable instance field and drops it on `disconnect()`. Do not put a conversation token in `localStorage`/`sessionStorage` (XSS-exfiltratable) — pass it directly and re-mint from your server on reload.
 - No token in URLs: tokens travel only in the socket `auth` field or the `Authorization` header, never a query string (OWASP API2:2023).
 - Prototype-pollution guard: `setDynamicPrompt` data is scrubbed of `__proto__`/`constructor`/`prototype` before it touches the wire.
-- CSP: the SDK uses no `eval`/`new Function`. A working policy sets `connect-src` to your CM (the live-session control-plane host, `conversationManagerUrl`) plus SRS (the WHEP video-egress host, `srsBaseUrl`) plus your TURN host; `media-src blob:`; `script-src` your injected socket.io origin, pinned with SRI (see the README's "Injecting socket.io securely"). Set `frame-ancestors` on the embedding page — a mic-capable widget warrants anti-clickjacking headers.
+- CSP: the SDK uses no `eval`/`new Function`. A working policy sets `connect-src` to your live-session control-plane host (`conversationManagerUrl`) plus the WHEP video-egress host (`srsBaseUrl`) plus your TURN host; `media-src blob:`; `script-src` your injected socket.io origin, pinned with SRI (see the README's "Injecting socket.io securely"). Set `frame-ancestors` on the embedding page — a mic-capable widget warrants anti-clickjacking headers.
 - AI disclosure (EU AI Act Art. 50): a `disclosure` event fires before the avatar's first words. `requireDisclosureAck` holds the avatar greeting until `acknowledgeDisclosure()`. Note: ASR (Automatic Speech Recognition — the mic-to-text channel) connects before disclosure, so obtain consent before `connect()` in IL/TX/WA.
 
 ## Isolation & multi-tenancy (NIST SC-4 / AC-6(4))
@@ -236,7 +236,7 @@ The SDK is an AI Application Provider component you can largely inherit in a HIT
 | **LLM01 Prompt Injection** | `onBeforeSend(text, ctx)` input-filter hook (block/transform). Model-side detection is operator/platform. |
 | **LLM02 Sensitive Info Disclosure** | Redaction of secrets in logs/audit; `onBeforeSend` lets you mask outbound PII. Never put secrets in any request variable — including the `page_context` payload `setDynamicPrompt` sends; values persist on the thread and interpolate into prompts and server-side tool calls. |
 | **LLM03 Supply Chain** | Zero runtime deps, no install scripts, no registry publish step, SRI on the injected socket.io (CI-gated). |
-| **LLM05 Improper Output Handling** | `safeUrl` (scheme allow-list), `safeText`, `renderSafeLink` (DOM-built, never `innerHTML`), inbound clamping of captions/segments. Reference app uses the safe sink. Treat avatar text/GenUI (the SDK's on-screen widget layer — flashcards, forms, images rendered from brain output) as untrusted. |
+| **LLM05 Improper Output Handling** | `safeUrl` (scheme allow-list), `safeText`, `renderSafeLink` (DOM-built, never `innerHTML`), inbound clamping of captions/segments. Treat avatar text/GenUI (the SDK's on-screen widget layer — flashcards, forms, images rendered from brain output) as untrusted. |
 | **LLM06 Excessive Agency** | `onAgentAction` gate + declarative `agentActions` policy + `capabilities` surface + `requireDisclosureAck`/`requireActionAck` HITL. |
 | **LLM07 System-Prompt Leakage** | Documented: never embed secrets/authz rules in the provisioned prompt or any request variable (`setDynamicPrompt` included). |
 | **LLM10 Unbounded Consumption** | Client `maxTurnsPerMinute` valve (`rate_limited`); server quota is authoritative. |
@@ -300,4 +300,4 @@ new KalturaAvatarSession({
 });
 ```
 
-Plus: pin the injected socket.io with SRI; set a strict CSP (`connect-src` your CM+SRS+TURN; `media-src blob:`; no inline script/`unsafe-eval`) and `frame-ancestors` on the embedding page; render the disclosure accessibly.
+Plus: pin the injected socket.io with SRI; set a strict CSP (`connect-src` your control-plane, WHEP and TURN hosts; `media-src blob:`; no inline script/`unsafe-eval`) and `frame-ancestors` on the embedding page; render the disclosure accessibly.

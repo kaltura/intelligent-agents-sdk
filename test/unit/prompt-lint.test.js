@@ -42,7 +42,7 @@ test('validatePromptVars: client var with allow_client_variables off is an ERROR
   const r = validatePromptVars('Hello {{topic}}', { allowClientVariables: false });
   assert.equal(r.ok, false);
   assert.equal(hasFinding(r.findings, 'client_variable_not_allowed'), true);
-  // Live-verified failure mode: the gate does NOT return HTTP 403 — the turn
+  // Failure mode: the gate does NOT return HTTP 403 — the turn
   // completes empty with no error. The message must say so, not claim a 403.
   const f = r.findings.find((x) => x.code === 'client_variable_not_allowed');
   assert.match(f.message, /SILENT EMPTY TURN/);

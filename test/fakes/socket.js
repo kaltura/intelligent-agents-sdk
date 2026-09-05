@@ -7,12 +7,12 @@ export class FakeSocket {
   constructor() {
     this.id = 'fake-' + Math.random().toString(36).slice(2, 10);
     this.connected = true;
-    this.recovered = false;   // socket.io connection-state-recovery flag (set true to model same-pod recovery)
+    this.recovered = false;   // socket.io connection-state-recovery flag (set true to model same-instance recovery)
     /** @type {Map<string,Set<Function>>} */ this._h = new Map();
     /** @type {{event:string,payload:any}[]} */ this.emitted = [];
     this._onEmit = null;
   }
-  /** Test helper: model a transport drop (recoverable) → optional same-pod recovery. */
+  /** Test helper: model a transport drop (recoverable) → optional same-instance recovery. */
   dropAndRecover(reason = 'transport close', { recovered = true } = {}) {
     this.connected = false; this.server('disconnect', reason);
     this.recovered = recovered; this.connected = true; this.server('connect');
@@ -60,7 +60,7 @@ export function scriptHappyPath(socket, opts = {}) {
   // Step 1 — initial server handshake, after connect()'s setup has run.
   soon(() => {
     socket.server('connect');
-    socket.server('onServerConnected', { finalUrl: 'https://srs.example', agentName: 'Avatar', hostName: 'pod-1' });
+    socket.server('onServerConnected', { finalUrl: 'https://srs.example', agentName: 'Avatar', hostName: 'host-1' });
   });
 
   socket.onEmit((ev) => {

@@ -136,7 +136,7 @@ test('DEFAULT-ALLOW: no policy + no hook → spoken AND genui segments flow, no 
   s.on('brainSegment', (d) => segs.push(d));
   socket.server('agent_raw_text', rawText({ type: 'avatar', content: 'hello' }));
   socket.server('agent_raw_text', rawText({ type: 'sources-tool', metadata: { runtimeName: 'sources-tool' }, content: {} }));
-  assert.equal(segs.length, 2, 'both segments flow untouched (earnings app unaffected)');
+  assert.equal(segs.length, 2, 'both segments flow untouched (existing integrations unaffected)');
   assert.ok(!events.some((e) => e.type === 'agent.action.allow' || e.type === 'agent.action.deny'), 'no gate audit when ungated');
   s.disconnect();
 });

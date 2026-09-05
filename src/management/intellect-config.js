@@ -43,8 +43,8 @@
  * PHANTOM-WRITE DISCIPLINE: `web_search_config`, `run_quota_check`,
  * `agent_avatar_llm`, `avatar_config`, `agent_llm`, `agent_fast_llm`, and rate
  * limits are NOT writable via the public API at all — they appear in
- * `describe().readOnly` with a "set by internal tooling only" note and have
- * NO setters here.
+ * `describe().readOnly` with a "server-managed; not writable via the public
+ * API" note and have NO setters here.
  */
 import { KalturaError } from '../core/errors.js';
 import { meta } from '../core/ids.js';
@@ -69,16 +69,16 @@ export const CALL_STAGES = Object.freeze(['start', 'middle', 'end']);
  * @type {Readonly<Record<string,string>>}
  */
 const READ_ONLY_FIELDS = Object.freeze({
-  web_search_config: 'web-search parameters — set by internal tooling only, not writable via the public API',
-  run_quota_check: 'pre-turn quota enforcement — set by internal tooling only, not writable via the public API',
-  agent_avatar_llm: 'avatar-mode model — set by internal tooling only, not writable via the public API',
-  agent_llm: 'primary brain model — set by internal tooling only, not writable via the public API',
-  agent_fast_llm: 'fast/cheap fallback model — set by internal tooling only, not writable via the public API',
-  rate_limit_per_minute: 'authed rate limit — set by internal tooling only, not writable via the public API',
-  rate_limit_per_hour: 'authed rate limit — set by internal tooling only, not writable via the public API',
-  anonymous_rate_limit_per_minute: 'anonymous rate limit — set by internal tooling only, not writable via the public API',
-  anonymous_rate_limit_per_hour: 'anonymous rate limit — set by internal tooling only, not writable via the public API',
-  avatar_config: 'live-avatar WebRTC/SRS endpoints — server-managed (overlaid from AVATAR_CONFIG_DEFAULTS at converse time); never your input',
+  web_search_config: 'web-search parameters — server-managed; not writable via the public API',
+  run_quota_check: 'pre-turn quota enforcement — server-managed; not writable via the public API',
+  agent_avatar_llm: 'avatar-mode model — server-managed; not writable via the public API',
+  agent_llm: 'primary brain model — server-managed; not writable via the public API',
+  agent_fast_llm: 'fast/cheap fallback model — server-managed; not writable via the public API',
+  rate_limit_per_minute: 'authed rate limit — server-managed; not writable via the public API',
+  rate_limit_per_hour: 'authed rate limit — server-managed; not writable via the public API',
+  anonymous_rate_limit_per_minute: 'anonymous rate limit — server-managed; not writable via the public API',
+  anonymous_rate_limit_per_hour: 'anonymous rate limit — server-managed; not writable via the public API',
+  avatar_config: 'live-avatar WebRTC/SRS endpoints — server-managed (overlaid with server defaults at converse time); never your input',
 });
 
 /**
@@ -362,7 +362,7 @@ export class IntellectConfig {
       throw bad('intellectConfig.setKnowledgeIds needs an array of non-negative integer knowledge record ids.');
     }
     if (knowledgeIds.length > 1) {
-      throw bad('knowledge_ids is capped at ONE record (Genie validator at_most_one_knowledge_id).');
+      throw bad('knowledge_ids is capped at ONE record; the server rejects more.');
     }
     const { result, sent } = await this.patch(configId, { knowledge_ids: knowledgeIds }, ks);
     return { applied: true, result, sent, _meta: meta({ partnerId: this._.partnerId, source: 'genie/intellect.knowledge_ids', scope: `configId:${configId}` }) };

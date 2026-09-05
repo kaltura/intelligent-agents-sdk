@@ -90,7 +90,7 @@ test('invalid force_experience is rejected BEFORE the network call (typed valida
   assert.equal(f.calls.filter((c) => c.url.includes('/assistant/converse')).length, 0);
 });
 
-test('a server 422 with FastAPI array detail surfaces the actionable message (not server_error)', async () => {
+test('a server 422 with array-shaped detail surfaces the actionable message (not server_error)', async () => {
   const detail = JSON.stringify({ detail: [{ loc: ['body', 'force_experience'], msg: "Input should be 'markdown','summarization','flashcards' or 'avatar_only'", type: 'enum' }] });
   const f = fakeFetch([{ match: '/assistant/converse', respond: () => ({ status: 422, body: detail }) }]);
   const m = new Management({ partnerId: 123, adminSecret: 'a'.repeat(32), fetch: f });

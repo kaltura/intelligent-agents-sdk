@@ -33,8 +33,9 @@ export function uuidv4() {
 }
 
 /**
- * Lowercase alphanumeric id of length `n` (matches the runtime's room/sticky id
- * shape — app.js `randId`). 16 chars for stickyId, 12 for roomId.
+ * Lowercase alphanumeric id of length `n` (matches the shape the live
+ * experience runtime expects for room and sticky ids). 16 chars for
+ * stickyId, 12 for roomId.
  * @param {number} [n]
  */
 export function randId(n = 16) {
