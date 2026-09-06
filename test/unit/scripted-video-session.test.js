@@ -8,7 +8,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { KalturaScriptedVideoSession } from '../../src/experience/scripted-video-session.js';
-import { FakeRTCPeerConnection, FakeVideoEl } from '../fakes/rtc.js';
+import { FakeRTCPeerConnection, FakeVideoEl, FakeMediaStreamCtor, fakeDom } from '../fakes/rtc.js';
 import { fakeFetch } from '../fakes/fetch.js';
 
 const TURN = { url: 'turn.example.com', username: 'kaltura', credential: 'avatar' };
@@ -20,6 +20,8 @@ function view(overrides = {}) {
     turn: TURN,
     videoEl: new FakeVideoEl(),
     rtcConstructor: FakeRTCPeerConnection,
+    mediaStreamConstructor: FakeMediaStreamCtor,
+    doc: overrides.doc ?? fakeDom(),
     ...overrides,
   });
 }
@@ -44,7 +46,7 @@ test('constructor allows a public cleartext http whepUrl (no scheme check beyond
   assert.equal(v.state, 'idle');
 });
 
-test('connect() negotiates WHEP, sets the video srcObject, and resolves to connected', async () => {
+test('connect() negotiates WHEP, routes video/audio to separate elements, and resolves to connected', async () => {
   const f = fakeFetch([{ match: '/whep/abc123', respond: () => ({ status: 201, body: 'v=0\r\nfake-answer\r\n' }) }]);
   const videoEl = new FakeVideoEl();
   const v = view({ videoEl, fetch: f });
@@ -55,7 +57,8 @@ test('connect() negotiates WHEP, sets the video srcObject, and resolves to conne
 
   assert.equal(v.state, 'connected');
   assert.deepEqual(states, ['connecting', 'connected']);
-  assert.ok(videoEl.srcObject, 'video srcObject was set from the WHEP ontrack');
+  assert.equal(videoEl.srcObject.getTracks()[0].kind, 'video', 'videoEl holds only the video track, never audio');
+  assert.equal(v.audioEl.srcObject.getTracks()[0].kind, 'audio', 'the audio track lands on its own SDK-managed element');
   assert.equal(f.calls.length, 1);
   assert.equal(f.calls[0].headers['content-type'], 'application/sdp');
 });
@@ -96,7 +99,7 @@ test('connect() cannot be called twice from a non-idle state', async () => {
   await assert.rejects(() => v.connect(), (e) => e.code === 'invalid_state');
 });
 
-test('disconnect() DELETEs the resolved WHEP Location, tears down the pc, and is safe to call twice', async () => {
+test('disconnect() DELETEs the resolved WHEP Location, tears down the pc, and detaches both video and audio elements', async () => {
   const f = fakeFetch([
     { match: '/whep/abc123/res1', respond: () => ({ status: 200 }) },
     { match: '/whep/abc123', respond: () => ({ status: 201, body: 'v=0\r\nfake-answer\r\n', headers: { Location: '/whep/abc123/res1' } }) },
@@ -104,12 +107,16 @@ test('disconnect() DELETEs the resolved WHEP Location, tears down the pc, and is
   const videoEl = new FakeVideoEl();
   const v = view({ videoEl, fetch: f });
   await v.connect();
+  const audioEl = v.audioEl;
 
   v.disconnect();
   await Promise.resolve(); // let the best-effort DELETE's microtask enqueue
 
   assert.equal(v.state, 'disconnected');
   assert.equal(videoEl.srcObject, null);
+  assert.equal(audioEl.srcObject, null);
+  assert.equal(audioEl.removed, true, 'the SDK-created audio element is removed from the DOM');
+  assert.equal(v.audioEl, null);
   assert.equal(FakeRTCPeerConnection.instances[0].closed, true);
 
   // Safe to call again — no throw, no duplicate network call.

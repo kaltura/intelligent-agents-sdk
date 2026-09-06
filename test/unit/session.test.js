@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { KalturaAvatarSession } from '../../src/experience/index.js';
 import { FakeSocket, scriptHappyPath } from '../fakes/socket.js';
-import { FakeRTCPeerConnection, FakeVideoEl, fakeGetUserMedia } from '../fakes/rtc.js';
+import { FakeRTCPeerConnection, FakeVideoEl, FakeMediaStreamCtor, fakeGetUserMedia, fakeDom } from '../fakes/rtc.js';
 
 const CONV_KS = 'djJ8' + Buffer.from('v2|123|geniegpcid:1222').toString('base64url');
 
@@ -18,6 +18,7 @@ function newSession(overrides = {}) {
     token: CONV_KS, srsBaseUrl: 'https://srs.example', turnServerUrl: 'turn.avatar.us.kaltura.ai',
     videoEl, socketFactory: () => socket, rtcConstructor: FakeRTCPeerConnection,
     fetch: whepFetch, getUserMedia: overrides.getUserMedia ?? fakeGetUserMedia(),
+    mediaStreamConstructor: FakeMediaStreamCtor, doc: overrides.doc ?? fakeDom(),
     ...(overrides.cfg || {}),
   });
   return { session, socket, videoEl };
@@ -45,16 +46,53 @@ test("emits 'track' even when videoEl is omitted (headless/custom-render path)",
   session.disconnect();
 });
 
-test('regression: videoEl.srcObject/.play() attach behavior is unchanged (no double-emit side effects)', async () => {
+test('regression: video and audio tracks land on separate elements, not clobbering each other', async () => {
   const { session, socket, videoEl } = newSession();
   scriptHappyPath(socket);
   await session.connect();
-  assert.ok(videoEl.srcObject, 'srcObject still assigned from the STV stream');
-  // Baseline is 2, not 1: the STV transceiver's ontrack fires once for the video
-  // track and once for the audio track (pre-existing, unrelated to this issue) —
-  // the point here is that adding the new emit('track', ...) call doesn't change it.
-  assert.equal(videoEl.playCount, 2, 'play() call count unchanged by the new emit');
+  assert.ok(videoEl.srcObject, 'srcObject assigned from the STV stream');
+  assert.equal(videoEl.srcObject.getTracks().length, 1, 'videoEl carries exactly the video track');
+  assert.equal(videoEl.srcObject.getTracks()[0].kind, 'video');
+  assert.equal(videoEl.playCount, 1, 'play() is called exactly once on videoEl — the audio track no longer touches it');
+  assert.ok(session.audioEl, 'the SDK created a dedicated audio element');
+  assert.equal(session.audioEl.srcObject.getTracks().length, 1, 'audioEl carries exactly the audio track');
+  assert.equal(session.audioEl.srcObject.getTracks()[0].kind, 'audio');
   session.disconnect();
+});
+
+test('regression: the video track still lands on videoEl even when audio arrives first (the exact clobbering bug reported)', async () => {
+  const { session, socket, videoEl } = newSession();
+  scriptHappyPath(socket);
+  // FakeRTCPeerConnection.setRemoteDescription always fires video then audio — swap
+  // fireTrack's kind for this one test to reproduce the reversed-order arrival that
+  // triggers the clobbering bug in the old (unfixed) code.
+  const origFireTrack = FakeRTCPeerConnection.prototype.fireTrack;
+  FakeRTCPeerConnection.prototype.fireTrack = function (kind = 'video') {
+    origFireTrack.call(this, kind === 'video' ? 'audio' : 'video');
+  };
+  try {
+    await session.connect();
+  } finally {
+    FakeRTCPeerConnection.prototype.fireTrack = origFireTrack;
+  }
+  assert.equal(videoEl.srcObject.getTracks()[0].kind, 'video', 'videoEl must hold the video track regardless of arrival order');
+  assert.equal(session.audioEl.srcObject.getTracks()[0].kind, 'audio');
+  session.disconnect();
+});
+
+test('disconnect() stops and detaches both the video and audio tracks, and removes the audio element', async () => {
+  const { session, socket, videoEl } = newSession();
+  scriptHappyPath(socket);
+  await session.connect();
+  const audioEl = session.audioEl;
+  const videoTrack = videoEl.srcObject.getTracks()[0];
+  const audioTrack = audioEl.srcObject.getTracks()[0];
+  session.disconnect();
+  assert.equal(videoTrack.readyState, 'ended', 'the video track is stopped on teardown');
+  assert.equal(audioTrack.readyState, 'ended', 'the audio track is stopped on teardown');
+  assert.equal(videoEl.srcObject, null);
+  assert.equal(audioEl.srcObject, null);
+  assert.equal(audioEl.removed, true, 'the SDK-created audio element is removed from the DOM');
 });
 
 // videoWidth/videoHeight exposure

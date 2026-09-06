@@ -45,15 +45,18 @@
 import { Emitter } from './emitter.js';
 import { KalturaError } from '../core/errors.js';
 import { turnServers, iceConfig, whepUrlHasPrivateIp } from './wire.js';
+import { createTrackSink } from './track-sink.js';
 
 export class KalturaScriptedVideoSession extends Emitter {
   /**
    * @param {object} cfg
    * @param {string} cfg.whepUrl  From `avatarSessions.initClient()`.
    * @param {{url:string, username?:string, credential?:string}} cfg.turn  The `turn` object from `initClient()` (bare TURN host + creds — passed through {@link turnServers}).
-   * @param {any} [cfg.videoEl]  An `HTMLVideoElement`. Omit for audio-only/headless use — `ontrack` still fires and you can read `e.streams[0]` off `stateChanged`/your own `pc`. The SDK only sets `.srcObject` — size/frame it yourself with `object-fit: cover` (see docs/ARCHITECTURE.md § Displaying the Avatar Video).
+   * @param {any} [cfg.videoEl]  An `HTMLVideoElement` for the downlink's VIDEO track only. Omit for audio-only/headless use — `ontrack` still fires and you can read `e.streams[0]` off `stateChanged`/your own `pc`. The SDK only sets `.srcObject` — size/frame it yourself with `object-fit: cover`. The downlink's audio track goes to a separate, SDK-managed `<audio>` element (see {@link KalturaScriptedVideoSession#audioEl}) — see docs/ARCHITECTURE.md § Displaying the Avatar Video.
    * @param {typeof RTCPeerConnection} [cfg.rtcConstructor]
    * @param {typeof fetch} [cfg.fetch]
+   * @param {typeof MediaStream} [cfg.mediaStreamConstructor]
+   * @param {any} [cfg.doc]  `document` double for tests/SSR (default the global `document` if present). Only used to lazily create the downlink's audio element.
    * @param {boolean} [cfg.isFirefox]  Firefox needs `iceTransportPolicy:'all'` (see {@link iceConfig}).
    * @throws {KalturaError} `bad_request` if `whepUrl`/`turn` is missing; `whep_private_ip` if `whepUrl` resolves to a private/loopback address (SSRF guard — no escape hatch, matches `KalturaAvatarSession`'s own WHEP check).
    */
@@ -75,6 +78,9 @@ export class KalturaScriptedVideoSession extends Emitter {
     const f = cfg.fetch || globalThis.fetch;
     this._fetch = typeof f === 'function' ? f.bind(globalThis) : f;
     this._isFirefox = !!cfg.isFirefox;
+    // One dedicated element per STV downlink track kind — see track-sink.js for why a
+    // single `.srcObject` gets clobbered by whichever track's ontrack fires last.
+    this._trackSink = createTrackSink({ videoEl: this._videoEl, mediaStreamConstructor: cfg.mediaStreamConstructor, doc: cfg.doc });
     this._pc = null;
     this._whepLocation = null;
     /** @type {'idle'|'connecting'|'connected'|'disconnecting'|'disconnected'|'error'} */
@@ -106,17 +112,18 @@ export class KalturaScriptedVideoSession extends Emitter {
         const finish = () => { if (!done) { done = true; resolve(); } };
         pc.ontrack = (e) => {
           this.emit('track', { track: e.track, streams: e.streams });
+          this._trackSink.attach(e.track, e.streams);
           const v = this._videoEl;
-          if (!v) return finish();
-          v.srcObject = e.streams && e.streams[0];
-          // ontrack fires once per track (video + audio) — gate so 'videoMetadata' fires
-          // at most once per connect, not once per track.
+          // Only the video track's arrival gates 'videoMetadata'/finish() below — the audio
+          // track lands on its own element (this._trackSink) and never touches `v`.
+          if (!v || e.track.kind !== 'video') { if (!v) finish(); return; }
+          // ontrack fires once per connect for the video track — gate so 'videoMetadata'
+          // fires at most once.
           if (!videoMetadataSent && typeof v.addEventListener === 'function') {
             const emitVideoMetadata = () => { if (videoMetadataSent) return; videoMetadataSent = true; this.emit('videoMetadata', { videoWidth: v.videoWidth, videoHeight: v.videoHeight }); };
             if (v.videoWidth || v.videoHeight) emitVideoMetadata();
             else v.addEventListener('loadedmetadata', emitVideoMetadata, { once: true });
           }
-          if (typeof v.play === 'function') { try { const pr = v.play(); if (pr?.catch) pr.catch(() => {}); } catch { /* autoplay policies vary; ontrack/canplay already fired */ } }
           if (v.readyState >= 3) finish();
           else if (typeof v.addEventListener === 'function') v.addEventListener('canplay', finish, { once: true });
           else finish();
@@ -169,8 +176,17 @@ export class KalturaScriptedVideoSession extends Emitter {
 
   _teardown() {
     if (this._pc) { try { this._pc.close(); } catch { /* already closed */ } this._pc = null; }
-    if (this._videoEl) this._videoEl.srcObject = null;
+    this._trackSink.teardown();
   }
+
+  /**
+   * The SDK-managed `<audio>` element the STV downlink's audio track is attached to
+   * (read-only), or `null` before the first audio track lands. Created lazily in
+   * `document.body` (see `./experience/track-sink`) — `null` forever in a headless/no-DOM
+   * environment.
+   * @returns {HTMLAudioElement|null}
+   */
+  get audioEl() { return this._trackSink.audioEl; }
 
   _setState(s) {
     this.state = s;

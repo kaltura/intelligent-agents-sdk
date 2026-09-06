@@ -71,8 +71,8 @@ export class FakeRTCPeerConnection {
   /** ICE restart (R7): real RTCPeerConnection re-gathers candidates; here just record it. */
   restartIce() { this.iceRestarted = (this.iceRestarted || 0) + 1; }
   close() { this.closed = true; }
-  /** Test helper: simulate a media track arriving. */
-  fireTrack(kind = 'video') { this.ontrack?.({ track: { kind }, streams: [new FakeMediaStream([{ kind }])] }); }
+  /** Test helper: simulate a media track arriving. e.track and e.streams[0] share the same track instance, matching real RTCPeerConnection. */
+  fireTrack(kind = 'video') { const track = makeFakeTrack(kind); this.ontrack?.({ track, streams: [new FakeMediaStream([track])] }); }
   /** Test helper: drive ICE state. */
   setIce(state) { this.iceConnectionState = state; this.oniceconnectionstatechange?.(); }
   /** Test helper: drive ICE gathering state (zero-candidates fail-fast tests). */
@@ -94,7 +94,10 @@ function makeFakeTrack(kind) {
 
 export class FakeMediaStream {
   constructor(tracks = [{ kind: 'audio' }]) {
-    this._tracks = tracks.map((t) => makeFakeTrack(t.kind));
+    // Accept either a plain {kind} descriptor (build a fresh fake track) or an
+    // already-constructed fake track (reuse it as-is) — real MediaStream/ontrack always
+    // share the exact same track instance between e.track and e.streams[0].getTracks().
+    this._tracks = tracks.map((t) => (typeof t.stop === 'function' ? t : makeFakeTrack(t.kind)));
   }
   getTracks() { return this._tracks; }
   getAudioTracks() { return this._tracks.filter((t) => t.kind === 'audio'); }
@@ -177,6 +180,19 @@ export class FakeVideoEl {
     this.sinkId = deviceId;
     return Promise.resolve();
   }
+  /** Test helper: track-sink.js's teardown() calls this on the audio element it created. */
+  remove() { this.removed = true; }
+}
+
+/**
+ * Minimal fake `document` — just enough for track-sink.js's audio-element creation
+ * (`doc.createElement('audio')` / `doc.body.appendChild`). Returns a fresh `FakeVideoEl`
+ * per `createElement` call, structurally close enough (srcObject/play/setSinkId/remove) to
+ * stand in for an `<audio>` element in tests.
+ */
+export function fakeDom() {
+  const body = { children: [], appendChild(el) { this.children.push(el); } };
+  return { createElement: () => new FakeVideoEl({ autoCanPlay: true }), body };
 }
 
 /** @param {object} [opts] */

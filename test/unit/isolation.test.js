@@ -5,7 +5,7 @@ import { Sessions } from '../../src/core/session.js';
 import { fakeFetch } from '../fakes/fetch.js';
 import { KalturaAvatarSession } from '../../src/experience/index.js';
 import { FakeSocket, scriptHappyPath } from '../fakes/socket.js';
-import { FakeRTCPeerConnection, FakeVideoEl, fakeGetUserMedia } from '../fakes/rtc.js';
+import { FakeRTCPeerConnection, FakeVideoEl, fakeGetUserMedia, FakeMediaStreamCtor, fakeDom } from '../fakes/rtc.js';
 
 const CONV_KS = 'djJ8' + Buffer.from('v2|123|geniegpcid:1222').toString('base64url');
 
@@ -17,7 +17,7 @@ async function connectSession(cfg = {}) {
     token: CONV_KS, srsBaseUrl: 'https://srs', turnServerUrl: 'turn.x', videoEl: new FakeVideoEl(),
     socketFactory: () => socket, rtcConstructor: FakeRTCPeerConnection,
     fetch: async () => ({ ok: true, status: 201, text: async () => 'a', headers: { get: () => 'loc' } }),
-    getUserMedia: fakeGetUserMedia(), ...cfg,
+    getUserMedia: fakeGetUserMedia(), mediaStreamConstructor: FakeMediaStreamCtor, doc: fakeDom(), ...cfg,
   });
   scriptHappyPath(socket);
   await session.connect();

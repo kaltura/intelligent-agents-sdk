@@ -121,7 +121,9 @@ An agent with no avatar attached (create it with `avatarIds` omitted) is treated
 
 ## Displaying the Avatar Video
 
-The SDK assigns the WHEP stream to `cfg.videoEl.srcObject` and does nothing else — no CSS, no sizing. The backend's rendered aspect ratio is not a published contract (see [Upload a Custom Visual](api/design.md#upload-a-custom-visual-portrait--animated-avatar) on `catalog.createVisual` preprocessing), so size the box with `object-fit: cover` rather than assuming a fixed aspect ratio — it fills the box and crops evenly no matter what the stream's actual aspect ratio turns out to be:
+The STV downlink carries two tracks — video and audio — each on its own `recvonly` transceiver. The SDK routes them to two separate elements rather than one: the video track goes to `cfg.videoEl.srcObject` and nothing else — no CSS, no sizing; the audio track goes to a dedicated `<audio autoplay>` element the SDK creates lazily in `document.body` the moment the first audio frame lands, exposed read-only as `session.audioEl` (`KalturaAvatarSession`) / `view.audioEl` (`KalturaScriptedVideoSession`), `null` until then. Both elements are torn down on `disconnect()` — tracks stopped, `srcObject` nulled, the audio element removed from the DOM. Pass `cfg.doc` to either constructor to inject a `document` double for tests/SSR; with no `document` available (headless/no-DOM), the audio track simply isn't rendered by the SDK — it's still reachable via the `'track'` event below for a custom consumer. Use `session.audioEl`, not `videoEl`, as the target for `setSinkId`/output-device routing (`setAudioOutput()` already does this internally).
+
+The backend's rendered aspect ratio is not a published contract (see [Upload a Custom Visual](api/design.md#upload-a-custom-visual-portrait--animated-avatar) on `catalog.createVisual` preprocessing), so size the box with `object-fit: cover` rather than assuming a fixed aspect ratio — it fills the box and crops evenly no matter what the stream's actual aspect ratio turns out to be:
 
 ```css
 .avatar-box {

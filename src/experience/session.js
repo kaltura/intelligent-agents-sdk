@@ -63,6 +63,7 @@ import { sanitizeJson, clampInbound } from '../core/safety.js';
 import { SPOKEN_TYPES, canonicalJson, SPIRAL_RECOVERY_PREFIX, validateToolArgs, parseToolResponseName } from '../core/stream.js';
 import { assertSecureTransport } from '../core/transport-guard.js';
 import { createSessionCompleter } from './session-complete.js';
+import { createTrackSink } from './track-sink.js';
 
 const DEFAULT_GENIE_URL = 'https://genie.nvp1.ovp.kaltura.com';
 
@@ -128,7 +129,8 @@ export class KalturaAvatarSession extends Emitter {
    * @param {string} cfg.srsBaseUrl         From appInit (WHEP egress host).
    * @param {string} cfg.turnServerUrl      From appInit (TURN host).
    * @param {(url:string,opts:object)=>any} cfg.socketFactory  socket.io-compatible factory (INJECTED; never bundled).
-   * @param {any} [cfg.videoEl]             HTMLVideoElement for the downlink (omit ⇒ audio/headless — listen for 'track' instead). The SDK only sets `.srcObject` — size/frame it yourself with `object-fit: cover` (see docs/ARCHITECTURE.md § Displaying the Avatar Video).
+   * @param {any} [cfg.videoEl]             HTMLVideoElement for the downlink's VIDEO track only (omit ⇒ audio/headless — listen for 'track' instead). The SDK only sets `.srcObject` — size/frame it yourself with `object-fit: cover`. The downlink's audio track goes to a separate, SDK-managed `<audio>` element (see {@link KalturaAvatarSession#audioEl}) — see docs/ARCHITECTURE.md § Displaying the Avatar Video.
+   * @param {any} [cfg.doc]                 `document` double for tests/SSR (default the global `document` if present). Only used to lazily create the downlink's audio element — irrelevant if `cfg.videoEl` is omitted and no DOM is available.
    * @param {typeof RTCPeerConnection} [cfg.rtcConstructor]
    * @param {typeof fetch} [cfg.fetch]
    * @param {()=>Promise<any>} [cfg.getUserMedia]
@@ -251,6 +253,11 @@ export class KalturaAvatarSession extends Emitter {
     this._vadThreshold = cfg.localVadThreshold ?? 300;
     this._getAudioContext = cfg.getAudioContext || (() => new AudioContext());
     this._MediaStreamCtor = cfg.mediaStreamConstructor || globalThis.MediaStream;
+    // One dedicated element per STV downlink track kind — video keeps going to the
+    // caller's videoEl, audio gets its own SDK-managed <audio> (see track-sink.js for why:
+    // the two tracks aren't guaranteed to share a MediaStream, so a single `.srcObject`
+    // gets clobbered by whichever track's ontrack fires last).
+    this._trackSink = createTrackSink({ videoEl: this._videoEl, mediaStreamConstructor: this._MediaStreamCtor, doc: cfg.doc });
     this._vadCtx = null; this._vadAnalyser = null; this._vadSource = null; this._vadData = null;
     this._vadTimer = null; this._vadTrack = null; this._vadSpeaking = false;
     this._threadId = cfg.threadId;
@@ -706,11 +713,14 @@ export class KalturaAvatarSession extends Emitter {
       cancelPlayable = () => { done = true; mediaReadySent = true; for (const id of timers) clearTimeout(id); timers.clear(); resolve(); };
       pc.ontrack = (e) => {
         this.emit('track', { track: e.track, streams: e.streams });
+        this._trackSink.attach(e.track, e.streams);
         const v = this._videoEl;
-        if (v) {
-          v.srcObject = e.streams && e.streams[0];
-          // ontrack fires once per track (video + audio) — gate so 'videoMetadata' fires
-          // at most once per connect, not once per track.
+        // Only the video track's arrival gates 'videoMetadata'/'mediaReady'/settle() below —
+        // the audio track now lands on its own element (this._trackSink) and never touches
+        // `v`. Without a videoEl (headless) there's nothing to gate on regardless of kind.
+        if (v && e.track.kind === 'video') {
+          // ontrack fires once per connect for the video track — gate so 'videoMetadata'
+          // fires at most once.
           if (!videoMetadataSent && typeof v.addEventListener === 'function') {
             const emitVideoMetadata = () => {
               if (videoMetadataSent) return;
@@ -721,13 +731,10 @@ export class KalturaAvatarSession extends Emitter {
             if (v.videoWidth || v.videoHeight) emitVideoMetadata();
             else v.addEventListener('loadedmetadata', emitVideoMetadata, { once: true });
           }
-          // play() returns a promise that rejects (AbortError) when srcObject swaps mid-play
-          // — e.g. during STV re-subscribe recovery. Swallow it; it's not an SDK failure.
-          if (typeof v.play === 'function') { try { const pr = v.play(); if (pr && typeof pr.catch === 'function') pr.catch(() => {}); } catch { /* */ } }
           if (v.readyState >= 3) settle();
           else if (typeof v.addEventListener === 'function') { v.addEventListener('canplay', settle, { once: true }); arm(() => { if (!done) settle(); }, 2000); }
           else settle();
-        } else settle(); // audio-only / headless: nothing to gate on
+        } else if (!v) settle(); // audio-only / headless: nothing to gate on
       };
       arm(() => { if (!done) settle(); }, 6000); // hard cap
     });
@@ -1132,15 +1139,28 @@ export class KalturaAvatarSession extends Emitter {
 
   /**
    * Route playback to a speaker device via `HTMLMediaElement.setSinkId`, retrying up to 5
-   * times at 500ms. Returns false (never throws) if the platform has no `setSinkId` or
-   * every retry is exhausted.
+   * times at 500ms. Targets the SDK-managed audio element ({@link KalturaAvatarSession#audioEl})
+   * — the element actually producing sound — which is created lazily on the first audio
+   * track, so an early call (before it exists yet) is covered by the same retry loop.
+   * Returns false (never throws) if the platform has no `setSinkId` or every retry is
+   * exhausted.
    * @param {string} deviceId @param {number} [attempt]
    * @returns {Promise<boolean>}
    */
   async setAudioOutput(deviceId, attempt = 0) {
-    if (!this._videoEl || typeof this._videoEl.setSinkId !== 'function') return false;
+    const el = this._trackSink?.audioEl;
+    // No audio track has landed yet — unlike an unsupported platform, this can resolve
+    // itself, so it shares the same retry budget rather than failing fast.
+    if (!el) {
+      if (attempt < 5) {
+        await new Promise((r) => setTimeout(r, 500));
+        return this.setAudioOutput(deviceId, attempt + 1);
+      }
+      return false;
+    }
+    if (typeof el.setSinkId !== 'function') return false;
     try {
-      await this._videoEl.setSinkId(deviceId);
+      await el.setSinkId(deviceId);
       return true;
     } catch (err) {
       if (attempt < 5) {
@@ -1808,6 +1828,16 @@ export class KalturaAvatarSession extends Emitter {
    * @returns {HTMLVideoElement|null}
    */
   get videoEl() { return this._videoEl; }
+
+  /**
+   * The SDK-managed `<audio>` element the STV downlink's audio track is attached to
+   * (read-only), or `null` before the first audio track lands. Created lazily in
+   * `document.body` (see `./experience/track-sink`) — `null` forever in a headless/no-DOM
+   * environment. Single source of truth for {@link KalturaAvatarSession#setAudioOutput} and
+   * anyone needing to control the avatar's actual audio playback element directly.
+   * @returns {HTMLAudioElement|null}
+   */
+  get audioEl() { return this._trackSink?.audioEl ?? null; }
 
   // ─────────────────────────── internals ───────────────────────────
 
@@ -2489,6 +2519,9 @@ export class KalturaAvatarSession extends Emitter {
     this._cancelStvPlayable = null;
     try { this._pcAsr?.close?.(); } catch { /* */ }
     try { this._pcStv?.close?.(); } catch { /* */ }
+    // Stop the STV downlink's video/audio tracks and remove the SDK-managed audio element —
+    // otherwise both keep playing/rendering after disconnect() (see track-sink.js).
+    this._trackSink?.teardown();
     try { this._hwMuteTimers.forEach(clearTimeout); this._hwMuteTimers = []; } catch { /* */ }
     this._stopVad();
     this._stopStatsBeacon();

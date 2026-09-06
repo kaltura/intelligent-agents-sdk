@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { KalturaAvatarSession } from '../../src/experience/index.js';
 import { FakeSocket, scriptHappyPath } from '../fakes/socket.js';
-import { FakeRTCPeerConnection, FakeVideoEl, fakeGetUserMedia } from '../fakes/rtc.js';
+import { FakeRTCPeerConnection, FakeVideoEl, fakeGetUserMedia, FakeMediaStreamCtor, fakeDom } from '../fakes/rtc.js';
 
 const CONV_KS = 'djJ8' + Buffer.from('v2|123|geniegpcid:1222').toString('base64url');
 
@@ -27,7 +27,7 @@ const TURN = [
 test('a full §8 turn drives the SDK event model coherently', async () => {
   FakeRTCPeerConnection.reset();
   const socket = new FakeSocket();
-  const session = new KalturaAvatarSession({ token: CONV_KS, srsBaseUrl: 'https://srs', turnServerUrl: 'turn.x', videoEl: new FakeVideoEl(), socketFactory: () => socket, rtcConstructor: FakeRTCPeerConnection, fetch: async () => ({ ok: true, status: 201, text: async () => 'a', headers: { get: () => 'loc' } }), getUserMedia: fakeGetUserMedia() });
+  const session = new KalturaAvatarSession({ token: CONV_KS, srsBaseUrl: 'https://srs', turnServerUrl: 'turn.x', videoEl: new FakeVideoEl(), socketFactory: () => socket, rtcConstructor: FakeRTCPeerConnection, fetch: async () => ({ ok: true, status: 201, text: async () => 'a', headers: { get: () => 'loc' } }), getUserMedia: fakeGetUserMedia(), mediaStreamConstructor: FakeMediaStreamCtor, doc: fakeDom() });
   scriptHappyPath(socket);
   await session.connect();
 
@@ -59,7 +59,7 @@ test('a full §8 turn drives the SDK event model coherently', async () => {
 test('responsePending: armed when the brain is prompted, settled on its first output', async () => {
   FakeRTCPeerConnection.reset();
   const socket = new FakeSocket();
-  const session = new KalturaAvatarSession({ token: CONV_KS, srsBaseUrl: 'https://srs', turnServerUrl: 'turn.x', videoEl: new FakeVideoEl(), socketFactory: () => socket, rtcConstructor: FakeRTCPeerConnection, fetch: async () => ({ ok: true, status: 201, text: async () => 'a', headers: { get: () => 'loc' } }), getUserMedia: fakeGetUserMedia() });
+  const session = new KalturaAvatarSession({ token: CONV_KS, srsBaseUrl: 'https://srs', turnServerUrl: 'turn.x', videoEl: new FakeVideoEl(), socketFactory: () => socket, rtcConstructor: FakeRTCPeerConnection, fetch: async () => ({ ok: true, status: 201, text: async () => 'a', headers: { get: () => 'loc' } }), getUserMedia: fakeGetUserMedia(), mediaStreamConstructor: FakeMediaStreamCtor, doc: fakeDom() });
   scriptHappyPath(socket);
   await session.connect();
   const order = [];
@@ -93,7 +93,7 @@ test('responsePending: armed when the brain is prompted, settled on its first ou
 test('barge-in interleaving: only at agentInterrupted does a new speechId take over', async () => {
   FakeRTCPeerConnection.reset();
   const socket = new FakeSocket();
-  const session = new KalturaAvatarSession({ token: CONV_KS, srsBaseUrl: 'https://srs', turnServerUrl: 'turn.x', videoEl: new FakeVideoEl(), socketFactory: () => socket, rtcConstructor: FakeRTCPeerConnection, fetch: async () => ({ ok: true, status: 201, text: async () => 'a', headers: { get: () => 'loc' } }), getUserMedia: fakeGetUserMedia() });
+  const session = new KalturaAvatarSession({ token: CONV_KS, srsBaseUrl: 'https://srs', turnServerUrl: 'turn.x', videoEl: new FakeVideoEl(), socketFactory: () => socket, rtcConstructor: FakeRTCPeerConnection, fetch: async () => ({ ok: true, status: 201, text: async () => 'a', headers: { get: () => 'loc' } }), getUserMedia: fakeGetUserMedia(), mediaStreamConstructor: FakeMediaStreamCtor, doc: fakeDom() });
   scriptHappyPath(socket);
   await session.connect();
   const captions = [];

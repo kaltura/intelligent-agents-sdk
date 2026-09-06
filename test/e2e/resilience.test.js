@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { KalturaAvatarSession } from '../../src/experience/index.js';
 import { FakeSocket, scriptHappyPath } from '../fakes/socket.js';
-import { FakeRTCPeerConnection, FakeVideoEl, fakeGetUserMedia, FakeAudioContext, FakeMediaStreamCtor, FakeRTCRtpReceiver, FakeMediaStream, FakeAudioWorkletNode } from '../fakes/rtc.js';
+import { FakeRTCPeerConnection, FakeVideoEl, fakeGetUserMedia, FakeAudioContext, FakeMediaStreamCtor, FakeRTCRtpReceiver, FakeMediaStream, FakeAudioWorkletNode, fakeDom } from '../fakes/rtc.js';
 import { createNoiseSuppressor } from '../../src/experience/noise-suppressor.js';
 import { SPIRAL_RECOVERY_PREFIX } from '../../src/core/stream.js';
 
@@ -40,6 +40,7 @@ function newSession(overrides = {}) {
     videoEl, socketFactory: () => socket, rtcConstructor: FakeRTCPeerConnection,
     fetch: whepFetch, getUserMedia: overrides.getUserMedia ?? fakeGetUserMedia(),
     networkAware: false,   // tests opt-in explicitly; avoid Node global listener leakage
+    mediaStreamConstructor: FakeMediaStreamCtor, doc: fakeDom(),
     ...overrides.cfg,
   });
   return { session, socket, videoEl };
@@ -1037,22 +1038,20 @@ test('switchMic: rewires hardware-mute watch + VAD onto the new stream', async (
 });
 
 test('setAudioOutput: calls setSinkId and resolves true on success', async () => {
-  const videoEl = new FakeVideoEl({ autoCanPlay: true });
-  const { session, socket } = newSession({ videoEl });
+  const { session, socket } = newSession();
   scriptHappyPath(socket);
   await session.connect();
   const ok = await session.setAudioOutput('spk-2');
   assert.equal(ok, true);
-  assert.equal(videoEl.sinkId, 'spk-2');
+  assert.equal(session.audioEl.sinkId, 'spk-2');
   session.disconnect();
 });
 
 test('setAudioOutput: retries up to 5x at 500ms on failure, then gives up returning false', async () => {
-  const videoEl = new FakeVideoEl({ autoCanPlay: true });
-  videoEl._sinkIdFailTimes = 6;   // fails every attempt: the initial call + all 5 retries
-  const { session, socket } = newSession({ videoEl });
+  const { session, socket } = newSession();
   scriptHappyPath(socket);
   await session.connect();
+  session.audioEl._sinkIdFailTimes = 6;   // fails every attempt: the initial call + all 5 retries
   const origSetTimeout = globalThis.setTimeout;
   let waits = 0;
   globalThis.setTimeout = (fn, ms) => (ms === 500 ? (waits++, origSetTimeout(fn, 0)) : origSetTimeout(fn, ms));
@@ -1065,11 +1064,10 @@ test('setAudioOutput: retries up to 5x at 500ms on failure, then gives up return
 });
 
 test('setAudioOutput: returns false without throwing when the platform has no setSinkId', async () => {
-  const videoEl = new FakeVideoEl({ autoCanPlay: true });
-  videoEl.setSinkId = undefined;   // setSinkId lives on the prototype; deleting the instance wouldn't shadow it
-  const { session, socket } = newSession({ videoEl });
+  const { session, socket } = newSession();
   scriptHappyPath(socket);
   await session.connect();
+  session.audioEl.setSinkId = undefined;   // setSinkId lives on the prototype; deleting the instance wouldn't shadow it
   const ok = await session.setAudioOutput('spk-2');
   assert.equal(ok, false);
   session.disconnect();
