@@ -71,8 +71,19 @@ export class FakeRTCPeerConnection {
   /** ICE restart (R7): real RTCPeerConnection re-gathers candidates; here just record it. */
   restartIce() { this.iceRestarted = (this.iceRestarted || 0) + 1; }
   close() { this.closed = true; }
-  /** Test helper: simulate a media track arriving. e.track and e.streams[0] share the same track instance, matching real RTCPeerConnection. */
-  fireTrack(kind = 'video') { const track = makeFakeTrack(kind); this.ontrack?.({ track, streams: [new FakeMediaStream([track])] }); }
+  /**
+   * Test helper: simulate a media track arriving. e.track and e.streams[0] share the same
+   * track instance, matching real RTCPeerConnection.
+   * @param {string} [kind]
+   * @param {{ stream?: FakeMediaStream | null, track?: object }} [opts] `stream` overrides
+   *   `e.streams[0]` (pass `null` for an empty `e.streams`, i.e. a server that sends no msid);
+   *   `track` reuses an existing fake track (same-track-twice tests).
+   */
+  fireTrack(kind = 'video', opts = {}) {
+    const track = opts.track || makeFakeTrack(kind);
+    const streams = opts.stream === null ? [] : [opts.stream || new FakeMediaStream([track])];
+    this.ontrack?.({ track, streams });
+  }
   /** Test helper: drive ICE state. */
   setIce(state) { this.iceConnectionState = state; this.oniceconnectionstatechange?.(); }
   /** Test helper: drive ICE gathering state (zero-candidates fail-fast tests). */
@@ -81,28 +92,42 @@ export class FakeRTCPeerConnection {
 FakeRTCPeerConnection.instances = [];
 FakeRTCPeerConnection.reset = () => { FakeRTCPeerConnection.instances = []; };
 
-function makeFakeTrack(kind) {
+let trackSeq = 0;
+/** Build a fake MediaStreamTrack. Exported so tests can hand the same instance to two `attach()` calls. @param {string} kind */
+export function makeFakeTrack(kind) {
   const t = {
-    kind, enabled: true, readyState: 'live', onmute: null, onunmute: null,
+    id: `${kind}-${++trackSeq}`, kind, enabled: true, muted: false, readyState: 'live',
+    onmute: null, onunmute: null, onended: null,
     stop() { this.readyState = 'ended'; },
     fireMute() { this.onmute?.(); },
     fireUnmute() { this.onunmute?.(); },
+    fireEnded() { this.readyState = 'ended'; this.onended?.(); },
     clone() { return makeFakeTrack(kind); },
   };
   return t;
 }
 
+let streamSeq = 0;
 export class FakeMediaStream {
   constructor(tracks = [{ kind: 'audio' }]) {
     // Accept either a plain {kind} descriptor (build a fresh fake track) or an
     // already-constructed fake track (reuse it as-is) — real MediaStream/ontrack always
     // share the exact same track instance between e.track and e.streams[0].getTracks().
     this._tracks = tracks.map((t) => (typeof t.stop === 'function' ? t : makeFakeTrack(t.kind)));
+    this.id = `stream-${++streamSeq}`;
+    FakeMediaStream.constructed += 1;
   }
   getTracks() { return this._tracks; }
   getAudioTracks() { return this._tracks.filter((t) => t.kind === 'audio'); }
   getVideoTracks() { return this._tracks.filter((t) => t.kind === 'video'); }
+  /** Real semantics: adding a track already present is a no-op. */
+  addTrack(track) { if (!this._tracks.includes(track)) this._tracks.push(track); }
+  /** Real semantics: removing an absent track is a no-op. Never stops the track. */
+  removeTrack(track) { const i = this._tracks.indexOf(track); if (i >= 0) this._tracks.splice(i, 1); }
 }
+/** Test helper: how many FakeMediaStream instances (incl. FakeMediaStreamCtor) were built since reset(). */
+FakeMediaStream.constructed = 0;
+FakeMediaStream.reset = () => { FakeMediaStream.constructed = 0; FakeMediaStreamCtor.constructed = 0; };
 
 /** Fake `RTCRtpReceiver.getCapabilities()` double (codec-preference tests). */
 export const FakeRTCRtpReceiver = {
@@ -117,11 +142,17 @@ export const FakeRTCRtpReceiver = {
   },
 };
 
-/** Fake `MediaStream` constructor double (Web Audio's `createMediaStreamSource` needs one). */
-export class FakeMediaStreamCtor {
-  constructor(tracks = []) { this._tracks = tracks; }
-  getTracks() { return this._tracks; }
+/**
+ * Fake `MediaStream` constructor double: what the SDK gets as `cfg.mediaStreamConstructor`
+ * (Web Audio's `createMediaStreamSource` and AvatarMedia's canonical/sink streams). Same
+ * behavior as FakeMediaStream but defaults to an EMPTY stream like `new MediaStream()`, and
+ * keeps its own `constructed` counter so a test can budget SDK-built streams separately from
+ * the `e.streams[0]` streams `fireTrack()` builds.
+ */
+export class FakeMediaStreamCtor extends FakeMediaStream {
+  constructor(tracks = []) { super(tracks); FakeMediaStreamCtor.constructed += 1; }
 }
+FakeMediaStreamCtor.constructed = 0;
 
 export class FakeAnalyserNode {
   constructor() { this.fftSize = 32; this.frequencyBinCount = 16; this._vol = 0; }
@@ -156,26 +187,70 @@ export class FakeAudioWorkletNode {
 FakeAudioWorkletNode.instances = [];
 FakeAudioWorkletNode.reset = () => { FakeAudioWorkletNode.instances = []; FakeAudioWorkletNode.lastArgs = null; };
 
-/** A video element double. `autoCanPlay:false` makes the test fire canplay manually (greeting-gate test). */
+/**
+ * A media element double (`<video>` or `<audio>`). `autoCanPlay:false` makes the test fire
+ * canplay manually (greeting-gate test). Every write the SDK can make is counted so tests
+ * can pin "srcObject set once, play() once, no redundant muted/volume writes".
+ */
 export class FakeVideoEl {
   constructor({ autoCanPlay = true } = {}) {
-    this.srcObject = null;
+    this._srcObject = null;
     this.readyState = autoCanPlay ? 4 : 0;
     this._auto = autoCanPlay;
-    /** @type {Map<string,Function[]>} */ this._listeners = new Map();
+    /** @type {Map<string,Array<{fn: Function, once: boolean}>>} */ this._listeners = new Map();
     this.played = false;
     this.playCount = 0;
+    this.paused = true;
     this.videoWidth = 0;
     this.videoHeight = 0;
+    this._muted = false;
+    this._volume = 1;
+    this.sinkId = '';
+    /** Test counters: every `srcObject =` write (incl. null), `muted =`, `volume =`, `setAttribute()`, `setSinkId()`. */
+    this.srcObjectAssignments = 0;
+    this.mutedWrites = 0;
+    this.volumeWrites = 0;
+    /** @type {Array<[string, string]>} */ this.attributeWrites = [];
+    /** @type {string[]} */ this.setSinkIdCalls = [];
+    this._failPlay = { times: 0, name: 'NotAllowedError' };
   }
-  addEventListener(ev, fn) { (this._listeners.get(ev) || this._listeners.set(ev, []).get(ev)).push(fn); }
-  play() { this.played = true; this.playCount += 1; return Promise.resolve(); }
+  get srcObject() { return this._srcObject; }
+  set srcObject(v) { this.srcObjectAssignments += 1; this._srcObject = v; }
+  get muted() { return this._muted; }
+  set muted(v) { this.mutedWrites += 1; this._muted = v; }
+  get volume() { return this._volume; }
+  set volume(v) { this.volumeWrites += 1; this._volume = v; }
+  setAttribute(name, value) { this.attributeWrites.push([name, String(value)]); }
+  /** Honors `{ once: true }` like the DOM, so leak checks measure real listener lifetime. */
+  addEventListener(ev, fn, opts) { (this._listeners.get(ev) || this._listeners.set(ev, []).get(ev)).push({ fn, once: !!(opts && opts.once) }); }
+  removeEventListener(ev, fn) { const l = this._listeners.get(ev); if (!l) return; const i = l.findIndex((e) => e.fn === fn); if (i >= 0) l.splice(i, 1); }
+  /** Test helper: live listeners for an event (I-4 leak checks). @param {string} ev */
+  listenerCount(ev) { return (this._listeners.get(ev) || []).length; }
+  /** Test helper: dispatch an event to its listeners (`emptied`, `resize`, `loadedmetadata`, `canplay`, ...). @param {string} ev */
+  emit(ev) {
+    const l = this._listeners.get(ev) || [];
+    for (const e of [...l]) { if (e.once) this.removeEventListener(ev, e.fn); e.fn({ type: ev, target: this }); }
+  }
+  /** Test helper: make the next `n` play() calls reject with `err.name = name` (autoplay-policy tests). */
+  failPlayTimes(n, name = 'NotAllowedError') { this._failPlay = { times: n, name }; }
+  play() {
+    this.playCount += 1;
+    if (this._failPlay.times > 0) {
+      this._failPlay.times -= 1;
+      const err = new Error(`play() rejected (${this._failPlay.name})`); err.name = this._failPlay.name;
+      return Promise.reject(err);
+    }
+    this.played = true; this.paused = false;
+    return Promise.resolve();
+  }
+  pause() { this.paused = true; }
   /** Test helper: signal the video is now playable. */
-  fireCanPlay() { this.readyState = 4; (this._listeners.get('canplay') || []).forEach((fn) => fn()); }
+  fireCanPlay() { this.readyState = 4; this.emit('canplay'); }
   /** Test helper: simulate the decoder resolving the stream's native dimensions. */
-  fireLoadedMetadata(width, height) { this.videoWidth = width; this.videoHeight = height; (this._listeners.get('loadedmetadata') || []).forEach((fn) => fn()); }
+  fireLoadedMetadata(width, height) { this.videoWidth = width; this.videoHeight = height; this.emit('loadedmetadata'); }
   /** @param {string} deviceId */
   setSinkId(deviceId) {
+    this.setSinkIdCalls.push(deviceId);
     if (this._sinkIdFailTimes > 0) { this._sinkIdFailTimes--; return Promise.reject(new Error('setSinkId failed')); }
     this.sinkId = deviceId;
     return Promise.resolve();

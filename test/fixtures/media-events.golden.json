@@ -1,0 +1,323 @@
+{
+  "_header": [
+    "Golden media-event log. Generated on `main` before the avatar-media rewrite, with the fakes in test/fakes/.",
+    "Events must match exactly. Counter drift is only allowed where PERMITTED_DIFF in test/unit/media-events-golden.test.js lists it:",
+    "the rewrite binds srcObject / calls play() once per element per connect or recovery, instead of once per ontrack.",
+    "Regenerate only on purpose: MEDIA_GOLDEN_RECORD=1 node --test test/unit/media-events-golden.test.js"
+  ],
+  "scenarios": {
+    "connect-simple": {
+      "events": [
+        "stateChange:preparing",
+        "stateChange:connecting",
+        "streamReady",
+        "track:video",
+        "track:audio",
+        "videoMetadata:960x540",
+        "mediaReady:video:960x540",
+        "stateChange:connected",
+        "stateChange:disconnecting",
+        "stateChange:disconnected"
+      ],
+      "counters": {
+        "afterConnect": {
+          "videoEl": {
+            "playCount": 2,
+            "srcObjectAssignments": 2
+          },
+          "audioEl": null
+        },
+        "afterDisconnect": {
+          "videoEl": {
+            "playCount": 2,
+            "srcObjectAssignments": 2
+          },
+          "audioEl": null
+        }
+      }
+    },
+    "connect-split": {
+      "events": [
+        "stateChange:preparing",
+        "stateChange:connecting",
+        "streamReady",
+        "track:video",
+        "track:audio",
+        "videoMetadata:960x540",
+        "mediaReady:video:960x540",
+        "stateChange:connected",
+        "stateChange:disconnecting",
+        "stateChange:disconnected"
+      ],
+      "counters": {
+        "afterConnect": {
+          "videoEl": {
+            "playCount": 2,
+            "srcObjectAssignments": 2
+          },
+          "audioEl": {
+            "playCount": 0,
+            "srcObjectAssignments": 0
+          }
+        },
+        "afterDisconnect": {
+          "videoEl": {
+            "playCount": 2,
+            "srcObjectAssignments": 2
+          },
+          "audioEl": {
+            "playCount": 0,
+            "srcObjectAssignments": 0
+          }
+        }
+      }
+    },
+    "connect-headless": {
+      "events": [
+        "stateChange:preparing",
+        "stateChange:connecting",
+        "streamReady",
+        "track:video",
+        "track:audio",
+        "mediaReady:video:0x0",
+        "stateChange:connected",
+        "stateChange:disconnecting",
+        "stateChange:disconnected"
+      ],
+      "counters": {
+        "afterConnect": {
+          "videoEl": null,
+          "audioEl": null
+        },
+        "afterDisconnect": {
+          "videoEl": null,
+          "audioEl": null
+        }
+      }
+    },
+    "connect-audio-mode": {
+      "events": [
+        "stateChange:preparing",
+        "stateChange:connecting",
+        "streamReady",
+        "mediaReady:audio",
+        "stateChange:connected",
+        "stateChange:disconnecting",
+        "stateChange:disconnected"
+      ],
+      "counters": {
+        "afterConnect": {
+          "videoEl": {
+            "playCount": 0,
+            "srcObjectAssignments": 0
+          },
+          "audioEl": null
+        },
+        "afterDisconnect": {
+          "videoEl": {
+            "playCount": 0,
+            "srcObjectAssignments": 0
+          },
+          "audioEl": null
+        }
+      }
+    },
+    "resubscribe": {
+      "events": [
+        "stateChange:preparing",
+        "stateChange:connecting",
+        "streamReady",
+        "track:video",
+        "track:audio",
+        "mediaReady:video:0x0",
+        "stateChange:connected",
+        "mediaRecovering:stv",
+        "track:video",
+        "track:audio",
+        "mediaReady:video:0x0",
+        "mediaRecovered:stv:re-subscribe",
+        "stateChange:disconnecting",
+        "stateChange:disconnected"
+      ],
+      "counters": {
+        "afterConnect": {
+          "videoEl": {
+            "playCount": 2,
+            "srcObjectAssignments": 2
+          },
+          "audioEl": null
+        },
+        "afterDisconnect": {
+          "videoEl": {
+            "playCount": 4,
+            "srcObjectAssignments": 4
+          },
+          "audioEl": null
+        }
+      }
+    },
+    "cold-reconnect": {
+      "events": [
+        "stateChange:preparing",
+        "stateChange:connecting",
+        "streamReady",
+        "track:video",
+        "track:audio",
+        "mediaReady:video:0x0",
+        "stateChange:connected",
+        "mediaRecovering:stv",
+        "stateChange:reconnecting",
+        "reconnecting:stv session gone (404)",
+        "stateChange:resuming",
+        "track:video",
+        "track:audio",
+        "mediaReady:video:0x0",
+        "stateChange:connected",
+        "reconnected:false",
+        "stateChange:disconnecting",
+        "stateChange:disconnected"
+      ],
+      "counters": {
+        "afterConnect": {
+          "videoEl": {
+            "playCount": 2,
+            "srcObjectAssignments": 2
+          },
+          "audioEl": null
+        },
+        "afterDisconnect": {
+          "videoEl": {
+            "playCount": 4,
+            "srcObjectAssignments": 4
+          },
+          "audioEl": null
+        }
+      }
+    },
+    "resume-after-release": {
+      "events": [
+        "stateChange:preparing",
+        "stateChange:connecting",
+        "streamReady",
+        "track:video",
+        "track:audio",
+        "mediaReady:video:0x0",
+        "stateChange:connected",
+        "stateChange:resuming",
+        "track:video",
+        "track:audio",
+        "mediaReady:video:0x0",
+        "stateChange:connected",
+        "stateChange:disconnecting",
+        "stateChange:disconnected"
+      ],
+      "counters": {
+        "afterConnect": {
+          "videoEl": {
+            "playCount": 2,
+            "srcObjectAssignments": 2
+          },
+          "audioEl": null
+        },
+        "afterDisconnect": {
+          "videoEl": {
+            "playCount": 4,
+            "srcObjectAssignments": 4
+          },
+          "audioEl": null
+        }
+      }
+    },
+    "teardown-mid-connect": {
+      "events": [
+        "stateChange:preparing",
+        "stateChange:connecting",
+        "streamReady",
+        "track:video",
+        "track:audio",
+        "stateChange:disconnecting",
+        "stateChange:disconnected",
+        "stateChange:connected"
+      ],
+      "counters": {
+        "afterConnect": {
+          "videoEl": {
+            "playCount": 2,
+            "srcObjectAssignments": 2
+          },
+          "audioEl": null
+        },
+        "afterDisconnect": {
+          "videoEl": {
+            "playCount": 2,
+            "srcObjectAssignments": 2
+          },
+          "audioEl": null
+        }
+      }
+    },
+    "whep-failure": {
+      "events": [
+        "stateChange:preparing",
+        "stateChange:connecting",
+        "streamReady",
+        "stateChange:error",
+        "connect:rejected:whep_failed"
+      ],
+      "counters": {
+        "afterConnect": {
+          "videoEl": {
+            "playCount": 0,
+            "srcObjectAssignments": 0
+          },
+          "audioEl": null
+        },
+        "afterDisconnect": {
+          "videoEl": {
+            "playCount": 0,
+            "srcObjectAssignments": 0
+          },
+          "audioEl": null
+        }
+      }
+    },
+    "connect-again": {
+      "events": [
+        "stateChange:preparing",
+        "stateChange:connecting",
+        "streamReady",
+        "track:video",
+        "track:audio",
+        "mediaReady:video:0x0",
+        "stateChange:connected",
+        "stateChange:disconnecting",
+        "stateChange:disconnected",
+        "stateChange:preparing",
+        "stateChange:connecting",
+        "streamReady",
+        "track:video",
+        "track:audio",
+        "mediaReady:video:0x0",
+        "stateChange:connected",
+        "stateChange:disconnecting",
+        "stateChange:disconnected"
+      ],
+      "counters": {
+        "afterConnect": {
+          "videoEl": {
+            "playCount": 4,
+            "srcObjectAssignments": 4
+          },
+          "audioEl": null
+        },
+        "afterDisconnect": {
+          "videoEl": {
+            "playCount": 4,
+            "srcObjectAssignments": 4
+          },
+          "audioEl": null
+        }
+      }
+    }
+  }
+}
