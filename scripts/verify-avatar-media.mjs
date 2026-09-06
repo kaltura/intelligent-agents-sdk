@@ -65,16 +65,28 @@ try {
   server = await startServer();
   browser = await engine.launch(LAUNCH[engineName]);
   const context = await browser.newContext({ permissions: engineName === 'chromium' ? ['microphone'] : [] });
-  const page = await context.newPage();
   const consoleErrors = [];
-  page.on('console', (msg) => { if (msg.type() === 'error') consoleErrors.push(msg.text()); });
-  page.on('pageerror', (err) => consoleErrors.push(`pageerror: ${err.message}`));
-  page.on('crash', () => consoleErrors.push('page crashed'));
-  if (process.env.VERIFY_AVATAR_MEDIA_DEBUG) page.on('console', (msg) => console.log(`[page:${msg.type()}] ${msg.text()}`));
-
-  await page.goto(`http://127.0.0.1:${PORT}${PAGE}`);
-  await page.click('#go');
-  await page.waitForFunction(() => window.__ready === true, null, { timeout: 10000 });
+  let cellLog = [];      // the page's console output during the current cell, printed when it fails
+  let crashed = false;
+  let page;
+  // A page crash (seen on WebKitGTK) kills every later evaluate on that page. Reopen the harness
+  // on a fresh page so the remaining cells still report; the crashed cell is recorded as failed.
+  const openHarness = async () => {
+    crashed = false;
+    page = await context.newPage();
+    page.on('console', (msg) => {
+      const line = `[${msg.type()}] ${msg.text()}`;
+      if (cellLog.length < 200) cellLog.push(line);
+      if (msg.type() === 'error') consoleErrors.push(msg.text());
+      if (process.env.VERIFY_AVATAR_MEDIA_DEBUG) console.log(`[page:${msg.type()}] ${msg.text()}`);
+    });
+    page.on('pageerror', (err) => consoleErrors.push(`pageerror: ${err.message}`));
+    page.on('crash', () => { crashed = true; consoleErrors.push('page crashed'); });
+    await page.goto(`http://127.0.0.1:${PORT}${PAGE}`);
+    await page.click('#go');
+    await page.waitForFunction(() => window.__ready === true, null, { timeout: 10000 });
+  };
+  await openHarness();
   const has = await page.evaluate(() => window.__has);
   let cells = await page.evaluate(() => window.__scenarios);
   const only = process.env.VERIFY_AVATAR_MEDIA_ONLY?.split(',').map((s) => s.trim()).filter(Boolean);
@@ -84,17 +96,20 @@ try {
   const results = [];
   for (const name of cells) {
     const errorsBefore = consoleErrors.length;
-    await page.evaluate((n) => { window.__result = null; window.__gestureWanted = false; window.__p = window.__run(n); }, name);
+    cellLog = [];
+    const started = Date.now();
     let result = null;
     try {
+      await page.evaluate((n) => { window.__result = null; window.__gestureWanted = false; window.__p = window.__run(n); }, name);
       // Autoplay cells park on `__gestureWanted`; a real click on #resume is the user gesture.
       await page.waitForFunction(() => window.__gestureWanted || window.__result, null, { timeout: CELL_TIMEOUT_MS });
       if (await page.evaluate(() => window.__gestureWanted && !window.__result)) await page.click('#resume');
       result = await page.waitForFunction(() => window.__result, null, { timeout: CELL_TIMEOUT_MS }).then((h) => h.jsonValue());
     } catch (e) {
-      result = { name, pass: false, checks: [{ name: 'cell timed out', ok: false, detail: e.message }], skipped: [], ms: CELL_TIMEOUT_MS };
-      // Recover the page so the following cells start clean.
-      await page.evaluate(() => window.__p?.catch?.(() => {}));
+      const why = crashed || page.isClosed() || /crashed/i.test(e.message) ? 'page crashed' : 'cell timed out';
+      result = { name, pass: false, checks: [{ name: why, ok: false, detail: e.message }], skipped: [], ms: Date.now() - started };
+      if (why === 'page crashed') await openHarness();
+      else await page.evaluate(() => window.__p?.catch?.(() => {})).catch(() => {});   // settle the cell's promise so the next cell starts clean
     }
     const newErrors = consoleErrors.slice(errorsBefore);
     if (newErrors.length) result.checks.push({ name: 'no console errors / page errors', ok: false, detail: newErrors.join(' | ') });
@@ -103,6 +118,10 @@ try {
     console.log(`[${engineName}] ${result.pass ? 'OK  ' : 'FAIL'} ${name} (${result.ms}ms, ${result.checks.length} checks${result.skipped.length ? `, ${result.skipped.length} skipped` : ''})`);
     for (const c of result.checks.filter((c) => !c.ok)) console.log(`         ✖ ${c.name}${c.detail ? `: ${c.detail}` : ''}`);
     for (const s of result.skipped) console.log(`         ~ skipped ${s.name}: ${s.reason}`);
+    if (!result.pass && cellLog.length) {
+      console.log(`         page console (last ${Math.min(cellLog.length, 40)} of ${cellLog.length} lines):`);
+      for (const line of cellLog.slice(-40)) console.log(`         │ ${line}`);
+    }
   }
 
   const failed = results.filter((r) => !r.pass);

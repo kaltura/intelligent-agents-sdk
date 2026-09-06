@@ -34,7 +34,8 @@ const has = {
   canvasCapture: typeof HTMLCanvasElement.prototype.captureStream === 'function',
 };
 const logEl = document.getElementById('log');
-const log = (...a) => { logEl.textContent += a.map((x) => (typeof x === 'string' ? x : JSON.stringify(x))).join(' ') + '\n'; };
+// Mirrored to console.debug so the runner can show the page's own trail when a cell fails or the page crashes.
+const log = (...a) => { const line = a.map((x) => (typeof x === 'string' ? x : JSON.stringify(x))).join(' '); logEl.textContent += line + '\n'; console.debug(line); };
 
 // ───────────────────────── harness state (reset per scenario) ─────────────────────────
 const H = {
@@ -682,13 +683,19 @@ async function autoplay(c, split) {
   c.check('playback_blocked warning per element', warns === (split ? 'audio,video' : 'video'), ev.of('warning'));
   c.check('warning names startPlayback()', ev.of('warning').every((w) => /startPlayback\(\)/.test(w.message)));
   c.check('connect still resolved, mediaReady once', session.state === 'connected' && ev.count('mediaReady') === 1, ev.count('mediaReady'));
-  c.check('elements paused', v.paused && (!a || a.paused));
+  // A rejected play() leaves the element paused (HTML spec). WebKitGTK starts MediaStream
+  // playback on its own anyway; then there is nothing to retry, and startPlayback() must
+  // still resolve true. Retries are asserted against what was actually paused.
+  const paused = { v: v.paused, a: a ? a.paused : null };
+  if (paused.v && (!a || paused.a)) c.check('elements paused', true);
+  else c.skip('elements paused', `engine started playback without a successful play(): ${JSON.stringify(paused)}`);
   H.gestureSession = session;
   const gesture = new Promise((r) => { H.gestureResolve = r; });
   window.__gestureWanted = true;
   const r = await Promise.race([gesture, sleep(15000).then(() => 'no-gesture')]);
   c.check('startPlayback() from the click → true', r === true, r);
-  c.check('one retry per blocked element', v.__w.play === 2 && (!a || a.__w.play === 2), { v: v.__w.play, a: a?.__w.play });
+  const retries = (el, wasPaused) => el.__w.play === (wasPaused ? 2 : 1);
+  c.check('one retry per blocked element', retries(v, paused.v) && (!a || retries(a, paused.a)), { v: v.__w.play, a: a?.__w.play, paused });
   c.check('video paints after gesture', ...pair2(await paints(v)));
   if (a) c.check('audio element playing after gesture', ...pair2(await advancing(a)));
   else c.check('element playing after gesture', !v.paused, v.paused);
@@ -809,6 +816,7 @@ window.__run = async (name) => {
   const c = ctx(name);
   const t0 = performance.now();
   const unhandled0 = H.unhandled;
+  log(`▶ ${name}`);
   try {
     if (!S[name]) throw new Error(`unknown scenario ${name}`);
     await S[name](c);
