@@ -200,6 +200,12 @@ test('pathPrefix is prepended to the URL and stripped from location', async () =
   assert.deepEqual(navigated, ['/docs/guides/pause-resume/#what-it-is']);
 });
 
+test('pathPrefix trailing slashes are all stripped, whatever their count', async () => {
+  const { session, navigated } = setup({ pathname: '/docs/', cfg: { pathPrefix: `/docs${'/'.repeat(5000)}` } });
+  await session.fireToolCall('go_to', { path: '/guides/pause-resume/' });
+  assert.deepEqual(navigated, ['/docs/guides/pause-resume/']);
+});
+
 test('a manifest path that is not a safe relative URL is dropped', async () => {
   const bad = { version: 1, lang: 'en', generatedAt: 't', pages: [{ path: '//evil.example/x', sections: [] }] };
   const { session, events, navigated } = setup({ manifest: bad });

@@ -46,6 +46,13 @@ const sessionsWithLiveNavigator = new WeakSet();
 /** Default size guard for a fetched manifest (P-1). */
 const DEFAULT_MANIFEST_MAX_BYTES = 512 * 1024;
 
+/** Linear-time `/\/+$/` strip: `pathPrefix` is host-supplied, so no backtracking regex on it. */
+function trimTrailingSlashes(s) {
+  let end = s.length;
+  while (end > 0 && s.charCodeAt(end - 1) === 47) end -= 1;
+  return s.slice(0, end);
+}
+
 /**
  * Passed to `navigate`, `scrollTo`, `point` and `onNavigate` for a call that resolved to a manifest page.
  * @typedef {object} SiteNavInfo
@@ -104,7 +111,7 @@ export class SiteNavigator {
     this._point = cfg.point || null;
     this._onNavigate = cfg.onNavigate || (() => {});
     this._currentPath = cfg.currentPath || null;
-    this._prefix = String(cfg.pathPrefix || '').replace(/\/+$/, '');
+    this._prefix = trimTrailingSlashes(String(cfg.pathPrefix || ''));
     this._toolCallName = cfg.toolCallName || 'go_to';
     this._oncePerTurn = cfg.oncePerTurn !== false;
     this._updateHash = cfg.updateHash !== false;
