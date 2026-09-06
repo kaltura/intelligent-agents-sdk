@@ -15,7 +15,7 @@ import { resolveSdkDir } from '../generate-docs.mjs';
 /** Where the manifest lands inside the Eleventy output dir. Same path the browser fetches. */
 export const MANIFEST_REL_PATH = 'nova/sections.json';
 
-/** Only h2 keys reach the model (about 25 tokens per page); h3 stays in the manifest for the resolver. */
+/** Only h2 headings (and hand-placed targets, which carry no level) become sections: about 25 tokens per page in the SITE MAP. Raise `depth` to 3 to include h3. */
 export const MANIFEST_OPTIONS = Object.freeze({ lang: 'en', depth: 2 });
 
 const MAIN_RE = /<main class="content-wrapper">([\s\S]*?)<\/main>/;

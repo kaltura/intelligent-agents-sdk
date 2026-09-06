@@ -1,6 +1,6 @@
 import { test as base, expect } from '@playwright/test';
 import { readFileSync, existsSync } from 'node:fs';
-import { join, extname } from 'node:path';
+import { join, extname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // Every spec imports `test` from here instead of '@playwright/test'. The auto
@@ -19,12 +19,20 @@ if (!existsSync(join(SDK_DIR, 'src', 'experience', 'index.js'))) {
   throw new Error(`tests/e2e: SDK checkout not found at ${SDK_DIR} (set SDK_REPO_DIR to a checkout at the pinned tag)`);
 }
 
+const SDK_SRC = resolve(SDK_DIR, 'src') + sep;
+
+/** Map a jsDelivr `src/...` path to a file inside the checkout's src/, or null if it escapes it. */
+export function sdkFileFor(rel) {
+  const file = resolve(SDK_DIR, decodeURIComponent(rel));
+  return file.startsWith(SDK_SRC) ? file : null;
+}
+
 export const test = base.extend({
   page: async ({ page }, use) => {
     await page.route(JSDELIVR, (route) => {
       const rel = route.request().url().match(JSDELIVR)[1];
-      const file = join(SDK_DIR, rel);
-      if (!existsSync(file)) return route.fulfill({ status: 404, body: `not in SDK checkout: ${rel}` });
+      const file = sdkFileFor(rel);
+      if (!file || !existsSync(file)) return route.fulfill({ status: 404, body: `not in SDK checkout: ${rel}` });
       return route.fulfill({ status: 200, contentType: MIME[extname(file)] || 'application/octet-stream', body: readFileSync(file) });
     });
     await use(page);
