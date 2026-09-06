@@ -145,6 +145,11 @@ export async function loadSectionsManifest(url, opts = {}) {
     const declared = Number(res.headers?.get?.('content-length'));
     if (declared > maxBytes) throw err('too_large', `sections manifest is ${declared} bytes (limit ${maxBytes})`);
     text = await res.text();
+  } catch (e) {
+    if (e instanceof KalturaError) throw e;
+    // Network, DNS, TLS or abort failures arrive as plain errors; keep the SDK-wide `err.code` contract.
+    if (ac.signal.aborted) throw err('timeout', `sections manifest fetch exceeded ${timeoutMs} ms`);
+    throw err('network_error', `sections manifest fetch failed: ${e?.message || e}`);
   } finally {
     clearTimeout(timer);
   }

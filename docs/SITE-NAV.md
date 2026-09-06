@@ -131,7 +131,7 @@ await m.intellects.create({
 | `siteMapPrompt(manifest, { key?, label?, maxTokens?, warn? })` | The SITE MAP prompt block (`type: 'custom'`). |
 | `SITE_NAV_RULES_PROMPT` | Frozen prompt block with four rules: call once when a SITE MAP page covers the topic, never call when none does, never two calls per reply, never mention the screen. This wording measured best live across the supported brain models. |
 | `PAGE_CONTEXT_PROMPT` | Optional. Renders `{{page_context}}` so the browser can tell the brain which page the visitor is on. Needs `allow_client_variables: true`. See [DYNAMIC-DATA-INJECTION.md](DYNAMIC-DATA-INJECTION.md). |
-| `loadSectionsManifest(url, { fetch?, maxBytes?, timeoutMs? })` | Fetches and validates the manifest at provisioning time. Size-guarded (512 KiB), 15 s timeout, throws `KalturaError` with `code` `bad_arg`, `http_error`, `too_large` or `bad_manifest`. |
+| `loadSectionsManifest(url, { fetch?, maxBytes?, timeoutMs? })` | Fetches and validates the manifest at provisioning time. Size-guarded (512 KiB), 15 s timeout, throws `KalturaError` with `code` `bad_arg`, `http_error`, `network_error`, `timeout`, `too_large` or `bad_manifest`. |
 | `SITE_NAV_TOOL_NAME` | `'go_to'`. Change the tool name only if you also rewrite the rules prompt. |
 | `estimateTokens(text)` | Rough estimate (characters / 3.2) used for the budget warning. |
 

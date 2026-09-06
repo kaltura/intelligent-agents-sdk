@@ -40,8 +40,8 @@ import { Teardown } from './teardown.js';
 import { safeUrl } from '../core/safety.js';
 import { normalizePath, resolvePath, resolveSection, validateSectionsManifest } from '../core/site-keys.js';
 
-/** Sessions that already have a live SiteNavigator, for the forgotten-destroy warning. Dev-time only, never affects behavior. */
-const sessionsWithLiveNavigator = new WeakSet();
+/** Live SiteNavigator count per session, for the forgotten-destroy warning. Dev-time only, never affects behavior. @type {WeakMap<object, number>} */
+const liveNavigators = new WeakMap();
 
 /** Default size guard for a fetched manifest (P-1). */
 const DEFAULT_MANIFEST_MAX_BYTES = 512 * 1024;
@@ -129,8 +129,9 @@ export class SiteNavigator {
      */
     this.ready = cfg.manifestUrl ? this._load(cfg.manifestUrl, cfg.manifestMaxBytes ?? DEFAULT_MANIFEST_MAX_BYTES) : Promise.resolve(this._manifest);
 
-    if (sessionsWithLiveNavigator.has(this.session)) this._warn('[SiteNavigator] a SiteNavigator is already live on this session. Call destroy() on the previous one first, or both will navigate on every go_to call.');
-    sessionsWithLiveNavigator.add(this.session);
+    const live = liveNavigators.get(this.session) || 0;
+    if (live > 0) this._warn('[SiteNavigator] a SiteNavigator is already live on this session. Call destroy() on the previous one first, or both will navigate on every go_to call.');
+    liveNavigators.set(this.session, live + 1);
     this._wire();
   }
 
@@ -273,7 +274,9 @@ export class SiteNavigator {
   destroy() {
     if (this._destroyed) return;
     this._destroyed = true;
-    sessionsWithLiveNavigator.delete(this.session);
+    const live = (liveNavigators.get(this.session) || 1) - 1;
+    if (live > 0) liveNavigators.set(this.session, live);
+    else liveNavigators.delete(this.session);
     this._teardown.run();
   }
 

@@ -54,6 +54,8 @@ function badManifest(detail) {
 }
 
 const DEFAULT_KEY_WORDS = 3;
+/** A key must survive the SITE MAP line format (`path: key1, key2`) unambiguously: no whitespace, comma or colon. */
+const SAFE_KEY_RE = /^[^\s,:]+$/u;
 const NUMERIC_RE = /^\p{N}+$/u;
 const INNER_PUNCT_RE = /(?<=[\p{L}\p{N}])[.'’](?=[\p{L}\p{N}])/gu;
 const SPLIT_RE = /[^\p{L}\p{N}]+/u;
@@ -381,10 +383,16 @@ export function validateSectionsManifest(raw) {
   if (m.version !== MANIFEST_VERSION) throw badManifest(`sections manifest version ${JSON.stringify(m.version)} not supported (want ${MANIFEST_VERSION})`);
   if (!Array.isArray(m.pages)) throw badManifest('sections manifest needs a pages array');
   m.pages.forEach((p, i) => {
-    if (!p || typeof p.path !== 'string' || !p.path.startsWith('/')) throw badManifest(`sections manifest page ${i}: path must be a string starting with "/"`);
+    if (!p || typeof p.path !== 'string' || !p.path.startsWith('/') || p.path.startsWith('//') || /[\s,:]/u.test(p.path)) {
+      throw badManifest(`sections manifest page ${i}: path must be a string starting with a single "/" and free of whitespace, "," and ":"`);
+    }
     if (!Array.isArray(p.sections)) throw badManifest(`sections manifest page ${p.path}: sections must be an array`);
+    const keys = new Set();
     for (const s of p.sections) {
       if (!s || typeof s.key !== 'string' || typeof s.id !== 'string') throw badManifest(`sections manifest page ${p.path}: every section needs string key and id`);
+      if (!SAFE_KEY_RE.test(s.key)) throw badManifest(`sections manifest page ${p.path}: key ${JSON.stringify(s.key)} must be non-empty and free of whitespace, "," and ":"`);
+      if (keys.has(s.key)) throw badManifest(`sections manifest page ${p.path}: duplicate key ${JSON.stringify(s.key)}`);
+      keys.add(s.key);
     }
   });
   return m;

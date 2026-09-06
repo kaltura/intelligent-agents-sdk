@@ -143,6 +143,14 @@ test('site-keys: validateSectionsManifest accepts the built shape and rejects ba
   rejects({ version: 1, pages: [{ path: '/x/', sections: 'nope' }] }, /sections must be an array/);
   rejects({ version: 1, pages: [{ path: '/x/', sections: [{ key: 'k' }] }] }, /string key and id/);
   rejects({ version: 1, pages: [{ path: '/x/', sections: [{ key: 1, id: 'a' }] }] }, /string key and id/);
+  rejects({ version: 1, pages: [{ path: '//evil.example/x', sections: [] }] }, /page 0: path/);
+  rejects({ version: 1, pages: [{ path: '/a b/', sections: [] }] }, /page 0: path/);
+  rejects({ version: 1, pages: [{ path: '/x/', sections: [{ key: 'two words', id: 'a' }] }] }, /key "two words" must be non-empty/);
+  rejects({ version: 1, pages: [{ path: '/x/', sections: [{ key: 'a,b', id: 'a' }] }] }, /key "a,b"/);
+  rejects({ version: 1, pages: [{ path: '/x/', sections: [{ key: 'a:b', id: 'a' }] }] }, /key "a:b"/);
+  rejects({ version: 1, pages: [{ path: '/x/', sections: [{ key: '', id: 'a' }] }] }, /key ""/);
+  rejects({ version: 1, pages: [{ path: '/x/', sections: [{ key: 'dup', id: 'a' }, { key: 'dup', id: 'b' }] }] }, /duplicate key "dup"/);
+  assert.ok(validateSectionsManifest({ version: 1, pages: [{ path: '/he/', sections: [{ key: 'שלום-עולם', id: 'a' }] }] }), 'non-Latin keys pass');
   const dirty = validateSectionsManifest(JSON.parse('{"version":1,"__proto__":{"x":1},"pages":[{"path":"/a/","constructor":{"y":1},"sections":[{"key":"k","id":"i","text":"T","fn":null}]}]}'));
   assert.equal(Object.prototype.hasOwnProperty.call(dirty, '__proto__'), false);
   assert.equal(Object.prototype.hasOwnProperty.call(dirty.pages[0], 'constructor'), false);

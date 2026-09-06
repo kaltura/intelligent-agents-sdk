@@ -243,9 +243,13 @@ test('two live navigators on one session warn; destroying the first clears it', 
   const b = mk();
   assert.equal(warnings.length, 1);
   assert.match(warnings[0], /already live on this session/);
-  a.destroy(); b.destroy();
+  a.destroy();
   mk().destroy();
-  assert.equal(warnings.length, 1);
+  assert.equal(warnings.length, 2, 'b is still live, so a third navigator warns');
+  b.destroy();
+  b.destroy();
+  mk().destroy();
+  assert.equal(warnings.length, 2, 'all destroyed (double destroy counted once): no warning');
 });
 
 test('manifestUrl: fetched, size-guarded, validated; inline manifest serves meanwhile', async () => {

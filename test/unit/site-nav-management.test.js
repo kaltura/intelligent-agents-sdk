@@ -111,7 +111,17 @@ test('loadSectionsManifest: rejects bad URL, missing fetch, HTTP error, oversize
   await code(loadSectionsManifest('https://x/s.json', { fetch: async () => response({ body: '[]' }) }), 'bad_manifest');
 });
 
-test('loadSectionsManifest: aborts through the timeout signal', async () => {
+test('loadSectionsManifest: the timeout surfaces as a KalturaError with code timeout', async () => {
   const f = (url, { signal }) => new Promise((_, reject) => { signal.addEventListener('abort', () => reject(new Error('aborted'))); });
-  await assert.rejects(loadSectionsManifest('https://x/s.json', { fetch: f, timeoutMs: 5 }), /aborted/);
+  const e = await loadSectionsManifest('https://x/s.json', { fetch: f, timeoutMs: 5 }).then(() => null, (x) => x);
+  assert.equal(e.code, 'timeout');
+  assert.match(e.detail, /exceeded 5 ms/);
+});
+
+test('loadSectionsManifest: a rejecting fetch (DNS, TLS, offline) surfaces as code network_error', async () => {
+  const e = await loadSectionsManifest('https://x/s.json', { fetch: async () => { throw new TypeError('fetch failed'); } }).then(() => null, (x) => x);
+  assert.equal(e.code, 'network_error');
+  assert.match(e.detail, /fetch failed/);
+  const bodyFail = await loadSectionsManifest('https://x/s.json', { fetch: async () => ({ ok: true, status: 200, headers: { get: () => null }, text: async () => { throw new Error('socket hang up'); } }) }).then(() => null, (x) => x);
+  assert.equal(bodyFail.code, 'network_error');
 });
