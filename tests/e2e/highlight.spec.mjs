@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures.mjs';
 
 // Regression coverage for the self-inflicted scroll-echo race: highlighter.js's tool-call
 // handler calls target.scrollIntoView() then pointAt(target) synchronously, but the browser

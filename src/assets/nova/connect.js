@@ -22,11 +22,8 @@ import { initDock, enterDockMode, enterDrawerMode, exitDrawerMode } from './dock
 import { initTranscript, appendTranscript, showThinking, hideThinking } from './transcript.js';
 import { initNavigator } from './navigator.js';
 import { initHighlighter } from './highlighter.js';
-
-// SDK version pin -- keep in sync with: intelligent-agents-sdk-site/src/index.md
-// (quick-start jsDelivr pin) and docs-site-avatar/scripts/fetch-sdk.mjs (DEFAULT_TAG).
-const SDK_TAG = 'v1.15.0';
-const SDK_BASE = `https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@${SDK_TAG}`;
+import { initSiteNav } from './site-nav.js';
+import { SDK_BASE } from './sdk.js';
 
 const { KalturaAgentSession } = await import(`${SDK_BASE}/src/experience/index.js`);
 const { Management } = await import(`${SDK_BASE}/src/management/index.js`);
@@ -120,6 +117,7 @@ els.widget.addEventListener('click', (e) => {
 });
 
 let session = null;
+let siteNav = null;
 let connecting = false;
 
 function setStatus(text) {
@@ -238,8 +236,9 @@ async function connect(pendingPrompt, mode = 'avatar') {
       setStatus(m === 'chat' ? 'Text chat — same conversation, no video.' : 'Live video — same conversation.');
     });
 
+    siteNav = initSiteNav(session);
     initNavigator(session);
-    initHighlighter(session);
+    initHighlighter(session, siteNav);
 
     await session.connect();
     connecting = false;
@@ -337,6 +336,8 @@ function newConversation() {
 
 function resetUi() {
   session = null;
+  siteNav?.destroy();
+  siteNav = null;
   connecting = false;
   hideThinking();
   els.widget.classList.remove('chat-mode');
