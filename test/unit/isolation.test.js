@@ -5,7 +5,7 @@ import { Sessions } from '../../src/core/session.js';
 import { fakeFetch } from '../fakes/fetch.js';
 import { KalturaAvatarSession } from '../../src/experience/index.js';
 import { FakeSocket, scriptHappyPath } from '../fakes/socket.js';
-import { FakeRTCPeerConnection, FakeVideoEl, fakeGetUserMedia, FakeMediaStreamCtor, fakeDom } from '../fakes/rtc.js';
+import { FakeRTCPeerConnection, FakeVideoEl, fakeGetUserMedia, FakeMediaStreamCtor } from '../fakes/rtc.js';
 
 const CONV_KS = 'djJ8' + Buffer.from('v2|123|geniegpcid:1222').toString('base64url');
 
@@ -17,7 +17,7 @@ async function connectSession(cfg = {}) {
     token: CONV_KS, srsBaseUrl: 'https://srs', turnServerUrl: 'turn.x', videoEl: new FakeVideoEl(),
     socketFactory: () => socket, rtcConstructor: FakeRTCPeerConnection,
     fetch: async () => ({ ok: true, status: 201, text: async () => 'a', headers: { get: () => 'loc' } }),
-    getUserMedia: fakeGetUserMedia(), mediaStreamConstructor: FakeMediaStreamCtor, doc: fakeDom(), ...cfg,
+    getUserMedia: fakeGetUserMedia(), mediaStreamConstructor: FakeMediaStreamCtor, ...cfg,
   });
   scriptHappyPath(socket);
   await session.connect();
@@ -175,4 +175,88 @@ test('_unwireNetwork() removes exactly the online/offline handlers _wireNetwork(
     globalThis.addEventListener = origAdd;
     globalThis.removeEventListener = origRemove;
   }
+});
+
+// ─────────────────────────── §5.5.8: avatar media isolation across sessions (multi-avatar) ───────────────────────────
+
+const kinds = (el) => el.srcObject.getTracks().map((t) => t.kind).sort();
+const tracksOf = (s) => new Set(s.avatarStream.getTracks());
+const disjoint = (a, b) => [...a].every((t) => !b.has(t));
+
+test('three sessions in one process (simple / split / headless): no shared track, stream or element; independent audio controls', async () => {
+  const globalsBefore = Object.keys(globalThis).sort();
+  const v1 = new FakeVideoEl();
+  const v2 = new FakeVideoEl(), a2 = new FakeVideoEl();
+  const one = await connectSession({ videoEl: v1 });
+  const two = await connectSession({ videoEl: v2, audioEl: a2 });
+  const three = await connectSession({ videoEl: null });
+  const sessions = [one.session, two.session, three.session];
+  for (const s of sessions) assert.equal(s.state, 'connected');
+
+  // Shapes.
+  assert.deepEqual(kinds(v1), ['audio', 'video']);
+  assert.deepEqual(kinds(v2), ['video']); assert.deepEqual(kinds(a2), ['audio']);
+  assert.equal(three.session.videoEl, null);
+  assert.deepEqual(three.session.avatarStream.getTracks().map((t) => t.kind).sort(), ['audio', 'video']);
+
+  // No cross-talk: every session's tracks and streams are its own.
+  const [t1, t2, t3] = sessions.map(tracksOf);
+  assert.ok(disjoint(t1, t2) && disjoint(t1, t3) && disjoint(t2, t3), 'no track is shared across sessions');
+  const streams = new Set(sessions.flatMap((s) => [s.avatarStream, s._avatarMedia._v, s._avatarMedia._a]).filter(Boolean));
+  assert.equal(streams.size, 2 + 3 + 1, 'simple 2 + split 3 + headless 1 distinct streams');
+  assert.ok(sessions.every((s) => s._avatarMedia !== one.session._avatarMedia || s === one.session));
+
+  // Independent controls: mute one, volume another, sink id the third.
+  one.session.muteAudioOutput();
+  two.session.setAudioOutputVolume(0.2);
+  assert.equal(await three.session.setAudioOutput('spk-3'), false, 'headless: stored, but no element to route to yet');
+  assert.equal(v1.muted, true); assert.equal(v2.mutedWrites, 0); assert.equal(a2.mutedWrites, 0);
+  assert.equal(a2.volume, 0.2); assert.equal(v1.volumeWrites, 0); assert.equal(v2.volumeWrites, 0);
+  assert.equal(one.session.audioOutputMuted, true); assert.equal(two.session.audioOutputMuted, false); assert.equal(three.session.audioOutputMuted, false);
+  assert.equal(two.session.audioOutputVolume, 0.2); assert.equal(one.session.audioOutputVolume, 1);
+  assert.deepEqual(v1.setSinkIdCalls, []); assert.deepEqual(a2.setSinkIdCalls, []);
+  assert.equal(await one.session.startPlayback(), true);
+  assert.equal(await three.session.startPlayback(), false, 'headless: nothing bound');
+
+  // Teardown of one leaves the others intact.
+  const ready = { two: 0, three: 0 };
+  two.session.on('mediaReady', () => { ready.two += 1; }); three.session.on('mediaReady', () => { ready.three += 1; });
+  one.session.disconnect();
+  assert.equal(v1.srcObject, null);
+  assert.ok([...t1].every((t) => t.readyState === 'ended'));
+  assert.deepEqual(kinds(v2), ['video']); assert.deepEqual(kinds(a2), ['audio']);
+  assert.ok([...t2, ...t3].every((t) => t.readyState === 'live'), 'other sessions keep their live tracks');
+  assert.equal(two.session.state, 'connected'); assert.equal(three.session.state, 'connected');
+  assert.deepEqual(ready, { two: 0, three: 0 }, 'no spurious mediaReady on the survivors');
+
+  two.session.disconnect(); three.session.disconnect();
+  assert.deepEqual(Object.keys(globalThis).sort(), globalsBefore, 'no global state added by three sessions');
+});
+
+test('headless session: a sink id set with no element is stored and applied to the element bound later', async () => {
+  const { session } = await connectSession({ videoEl: null });
+  assert.equal(await session.setAudioOutput('spk-9'), false, 'nothing to route to yet → false, never throws');
+  const el = new FakeVideoEl();
+  session.setVideoEl(el);
+  await Promise.resolve();
+  assert.deepEqual(el.setSinkIdCalls, ['spk-9']);
+  session.disconnect();
+});
+
+test('two sessions bound to the SAME video element: no throw, last writer wins, and disconnecting either leaves the other consistent', async () => {
+  const shared = new FakeVideoEl();
+  const first = await connectSession({ videoEl: shared });
+  const second = await connectSession({ videoEl: shared });
+  assert.equal(shared.srcObject, second.session._avatarMedia._v, 'last writer wins');
+  assert.equal(shared.srcObjectAssignments, 2);
+  assert.ok(disjoint(tracksOf(first.session), tracksOf(second.session)));
+  first.session.disconnect();
+  // The first session clears the element it believes it owns; the second still holds live tracks.
+  assert.equal(shared.srcObject, null, 'the app chose to share one element: the SDK cannot arbitrate, it releases on disconnect');
+  assert.ok([...tracksOf(second.session)].every((t) => t.readyState === 'live'), "the second session's downlink is untouched");
+  assert.equal(second.session.state, 'connected');
+  const el2 = new FakeVideoEl();
+  second.session.setVideoEl(el2);
+  assert.deepEqual(kinds(el2), ['audio', 'video'], 'rebinding the survivor to its own element works');
+  second.session.disconnect();
 });

@@ -490,6 +490,29 @@ section('Part 5 — DX and Clean Code');
 }
 
 // ══════════════════════════════════════════════════════════════════════════
+// PART 6 — MEDIA PATH
+// ══════════════════════════════════════════════════════════════════════════
+
+section('Part 6 — Media path');
+
+// M-1: avatar-media.js is pure track routing — no document, DOM creation, timers or console
+{
+  const file = join(SDK_SRC, 'experience', 'avatar-media.js');
+  const src = read(file);
+  const banned = ['document\\.', 'createElement', 'setTimeout', 'setInterval', 'requestAnimationFrame', 'console\\.'];
+  const hits = [];
+  if (!src) hits.push('src/experience/avatar-media.js is missing');
+  src.split('\n').forEach((text, i) => {
+    for (const b of banned) if (new RegExp(b).test(text)) hits.push(`src/experience/avatar-media.js:${i + 1}: /${b}/ → ${text.trim()}`);
+  });
+  if (hits.length === 0) {
+    pass('M-1', 'avatar-media.js has no document/DOM creation/timers/console (pure track routing)');
+  } else {
+    fail('M-1', `${hits.length} forbidden reference${hits.length > 1 ? 's' : ''} in avatar-media.js`, hits.join('\n      '));
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════
 // SDK TEST SUITE (node:test)
 // ══════════════════════════════════════════════════════════════════════════
 

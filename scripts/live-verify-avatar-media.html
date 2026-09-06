@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>avatar-media live verify</title></head>
+<body>
+  <!-- Both elements exist in both modes; in `simple` mode the audio element stays unbound. -->
+  <video id="v" autoplay playsinline style="width:320px;height:180px;background:#000"></video>
+  <audio id="a" autoplay></audio>
+  <!-- socket.io is the app's dependency — injected, never bundled by the SDK. -->
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js" integrity="sha384-2huaZvOR9iDzHqslqwpR87isEmrfxqyWOF7hr7BY6KG0+hVKLoEXMPUJw3ynWuhO" crossorigin="anonymous"></script>
+  <script type="module">
+    import { KalturaAvatarSession } from '/src/experience/index.js';
+
+    const params = new URLSearchParams(location.search);
+    const mode = params.get('mode') || 'simple';
+    // silent=1: keep the sink element muted end-to-end (used where the engine has no
+    // launch-level mute). Element mute never touches the track's `muted` flag or
+    // inbound RTP, so every check below still measures real media flow.
+    const silent = params.get('silent') === '1';
+    const videoEl = document.getElementById('v');
+    const audioEl = document.getElementById('a');
+    window.__events = [];
+    const log = (type, payload) => window.__events.push({ type, payload, at: performance.now() });
+
+    const init = await fetch('/appInit').then((r) => r.json());
+    const session = new KalturaAvatarSession({
+      token: init.ks, conversationManagerUrl: init.conversationManagerUrl,
+      srsBaseUrl: init.srsBaseUrl, turnServerUrl: init.turnServerUrl,
+      videoEl, audioEl: mode === 'split' ? audioEl : null,
+      socketFactory: (url, opts) => io(url, opts),
+    });
+    window.session = session;
+    if (silent) session.muteAudioOutput(); // stored now, applied to whichever element binds
+    for (const ev of ['streamReady', 'track', 'mediaReady', 'videoMetadata', 'warning', 'error', 'ended', 'stateChanged']) {
+      session.on(ev, (p) => log(ev, ev === 'track' ? { kind: p?.track?.kind } : ev === 'error' ? { code: p?.code, message: p?.message } : p));
+    }
+
+    const kinds = (el) => (el.srcObject ? el.srcObject.getTracks().map((t) => t.kind).sort() : null);
+    const frame = () => {
+      if (!videoEl.videoWidth) return { nonBlack: false, reason: 'no videoWidth' };
+      const c = document.createElement('canvas');
+      c.width = videoEl.videoWidth; c.height = videoEl.videoHeight;
+      const ctx = c.getContext('2d');
+      ctx.drawImage(videoEl, 0, 0);
+      const { data } = ctx.getImageData(0, 0, c.width, c.height);
+      let min = 255, max = 0, sum = 0, n = 0;
+      for (let i = 0; i < data.length; i += 64) { const l = (data[i] + data[i + 1] + data[i + 2]) / 3; if (l < min) min = l; if (l > max) max = l; sum += l; n++; }
+      return { nonBlack: max - min > 15 && sum / n > 10, lumSpread: max - min, mean: Math.round(sum / n) };
+    };
+
+    window.testConnect = () => session.connect();
+
+    /** Snapshot of where each track landed and whether media is really moving. */
+    window.testProbe = async () => {
+      const t0 = videoEl.currentTime;
+      await new Promise((r) => setTimeout(r, 500));
+      const sinkEl = mode === 'split' ? audioEl : videoEl;
+      const audioTrack = sinkEl.srcObject?.getAudioTracks()[0] || null;
+      return {
+        mode,
+        videoElTracks: kinds(videoEl), audioElTracks: kinds(audioEl),
+        // The canonical stream is never handed to an element (each element gets its own
+        // MediaStream over the same track objects), so identity differs but tracks are shared.
+        canonicalNotOnElements: videoEl.srcObject !== session.avatarStream && audioEl.srcObject !== session.avatarStream,
+        elementTracksAreCanonical: [videoEl, audioEl].every((el) => !el.srcObject || el.srcObject.getTracks().every((t) => session.avatarStream.getTracks().includes(t))),
+        avatarStreamKinds: session.avatarStream.getTracks().map((t) => t.kind).sort(),
+        audioTrackMuted: audioTrack ? audioTrack.muted : null,
+        audioTrackReadyState: audioTrack?.readyState || null,
+        videoWidth: videoEl.videoWidth, videoHeight: videoEl.videoHeight,
+        currentTimeAdvancing: videoEl.currentTime > t0,
+        videoPaused: videoEl.paused, audioPaused: audioEl.paused,
+        frame: frame(),
+        sessionGetters: { videoEl: session.videoEl === videoEl, audioEl: session.audioEl === (mode === 'split' ? audioEl : null), mode: session.mode },
+      };
+    };
+
+    /** Two inbound-rtp samples 2s apart, per kind, across every peer connection on the page. */
+    window.testInbound = async () => {
+      const sample = async () => {
+        const out = { audio: 0, video: 0 };
+        for (const pc of window.__pcs || []) {
+          const report = await pc.getStats();
+          for (const s of report.values()) if (s.type === 'inbound-rtp' && (s.kind === 'audio' || s.kind === 'video')) out[s.kind] += s.packetsReceived || 0;
+        }
+        return out;
+      };
+      const a = await sample();
+      await new Promise((r) => setTimeout(r, 2000));
+      const b = await sample();
+      return { before: a, after: b, audioGrew: b.audio > a.audio, videoGrew: b.video > a.video };
+    };
+
+    window.testControls = async () => {
+      const sinkEl = mode === 'split' ? audioEl : videoEl;
+      const otherEl = mode === 'split' ? videoEl : audioEl;
+      const out = { startedMuted: sinkEl.muted };
+      session.muteAudioOutput();
+      out.mutedApplied = sinkEl.muted === true && session.audioOutputMuted === true;
+      out.otherUntouchedByMute = mode === 'split' ? otherEl.muted === false : true;
+      session.unmuteAudioOutput();
+      out.unmutedApplied = sinkEl.muted === false && session.audioOutputMuted === false;
+      if (silent) session.muteAudioOutput(); // same tick: nothing reaches the speaker
+      session.setAudioOutputVolume(0.5);
+      out.volumeApplied = Math.abs(sinkEl.volume - 0.5) < 1e-6 && session.audioOutputVolume === 0.5;
+      out.setSinkIdSupported = typeof sinkEl.setSinkId === 'function';
+      // Route to a real enumerated output when the engine exposes one (Chromium's fake
+      // devices do), else to '' — the spec value for "system default" that every engine
+      // accepts. Chromium's 'default' pseudo-id is recorded only as information: Firefox
+      // rejects it with NotFoundError.
+      const outputs = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'audiooutput' && d.deviceId && d.deviceId !== 'default');
+      out.sinkTarget = outputs[0]?.deviceId ?? '';
+      out.setAudioOutputTarget = await session.setAudioOutput(out.sinkTarget);
+      out.sinkIdAfter = sinkEl.sinkId ?? null;
+      out.setAudioOutputChromiumDefault = await session.setAudioOutput('default');
+      out.setAudioOutputSystemDefault = await session.setAudioOutput('');
+      out.sinkIdReset = sinkEl.sinkId ?? null;
+      out.startPlayback = await session.startPlayback();
+      return out;
+    };
+
+    window.testDisconnect = async () => {
+      const tracks = session.avatarStream?.getTracks() || [];
+      session.disconnect();
+      await new Promise((r) => setTimeout(r, 100)); // WebKit flips readyState asynchronously
+      return {
+        videoSrcObjectCleared: videoEl.srcObject === null, audioSrcObjectCleared: audioEl.srcObject === null,
+        avatarStreamCleared: session.avatarStream === null,
+        tracksSeen: tracks.length, tracksEnded: tracks.filter((t) => t.readyState === 'ended').length,
+      };
+    };
+
+    window.__ready = true;
+  </script>
+</body>
+</html>

@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { KalturaAvatarSession } from '../../src/experience/index.js';
 import { FakeSocket, scriptHappyPath } from '../fakes/socket.js';
-import { FakeRTCPeerConnection, FakeVideoEl, FakeMediaStreamCtor, fakeGetUserMedia, fakeDom } from '../fakes/rtc.js';
+import { FakeRTCPeerConnection, FakeVideoEl, FakeMediaStreamCtor, fakeGetUserMedia } from '../fakes/rtc.js';
 
 const CONV_KS = 'djJ8' + Buffer.from('v2|123|geniegpcid:1222').toString('base64url');
 
@@ -18,7 +18,7 @@ function newSession(overrides = {}) {
     token: CONV_KS, srsBaseUrl: 'https://srs.example', turnServerUrl: 'turn.avatar.us.kaltura.ai',
     videoEl, socketFactory: () => socket, rtcConstructor: FakeRTCPeerConnection,
     fetch: whepFetch, getUserMedia: overrides.getUserMedia ?? fakeGetUserMedia(),
-    mediaStreamConstructor: FakeMediaStreamCtor, doc: overrides.doc ?? fakeDom(),
+    mediaStreamConstructor: FakeMediaStreamCtor,
     ...(overrides.cfg || {}),
   });
   return { session, socket, videoEl };
@@ -46,21 +46,20 @@ test("emits 'track' even when videoEl is omitted (headless/custom-render path)",
   session.disconnect();
 });
 
-test('regression: video and audio tracks land on separate elements, not clobbering each other', async () => {
+test('regression: both downlink tracks land on videoEl (one srcObject write, one play()), neither clobbers the other', async () => {
   const { session, socket, videoEl } = newSession();
   scriptHappyPath(socket);
   await session.connect();
   assert.ok(videoEl.srcObject, 'srcObject assigned from the STV stream');
-  assert.equal(videoEl.srcObject.getTracks().length, 1, 'videoEl carries exactly the video track');
-  assert.equal(videoEl.srcObject.getTracks()[0].kind, 'video');
-  assert.equal(videoEl.playCount, 1, 'play() is called exactly once on videoEl — the audio track no longer touches it');
-  assert.ok(session.audioEl, 'the SDK created a dedicated audio element');
-  assert.equal(session.audioEl.srcObject.getTracks().length, 1, 'audioEl carries exactly the audio track');
-  assert.equal(session.audioEl.srcObject.getTracks()[0].kind, 'audio');
+  assert.deepEqual(videoEl.srcObject.getTracks().map((t) => t.kind).sort(), ['audio', 'video'], 'videoEl carries both tracks');
+  assert.equal(videoEl.srcObjectAssignments, 1, 'srcObject is set once per connect, not once per track');
+  assert.equal(videoEl.playCount, 1, 'play() is called once per connect, not once per track');
+  assert.equal(session.audioEl, null, 'no SDK-created audio element in the default mode');
+  assert.deepEqual(session.avatarStream.getTracks().map((t) => t.kind).sort(), ['audio', 'video']);
   session.disconnect();
 });
 
-test('regression: the video track still lands on videoEl even when audio arrives first (the exact clobbering bug reported)', async () => {
+test('regression: both tracks land on videoEl even when audio arrives first (the exact clobbering bug reported)', async () => {
   const { session, socket, videoEl } = newSession();
   scriptHappyPath(socket);
   // FakeRTCPeerConnection.setRemoteDescription always fires video then audio — swap
@@ -75,24 +74,70 @@ test('regression: the video track still lands on videoEl even when audio arrives
   } finally {
     FakeRTCPeerConnection.prototype.fireTrack = origFireTrack;
   }
-  assert.equal(videoEl.srcObject.getTracks()[0].kind, 'video', 'videoEl must hold the video track regardless of arrival order');
-  assert.equal(session.audioEl.srcObject.getTracks()[0].kind, 'audio');
+  assert.deepEqual(videoEl.srcObject.getTracks().map((t) => t.kind).sort(), ['audio', 'video'], 'videoEl must hold both tracks regardless of arrival order');
+  assert.equal(videoEl.srcObjectAssignments, 1);
   session.disconnect();
 });
 
-test('disconnect() stops and detaches both the video and audio tracks, and removes the audio element', async () => {
+test('cfg.audioEl splits the audio track onto its own element; both bindings survive disconnect()', async () => {
+  const audioEl = new FakeVideoEl({ autoCanPlay: true });
+  const { session, socket, videoEl } = newSession({ cfg: { audioEl } });
+  scriptHappyPath(socket);
+  await session.connect();
+  assert.deepEqual(videoEl.srcObject.getTracks().map((t) => t.kind), ['video']);
+  assert.deepEqual(audioEl.srcObject.getTracks().map((t) => t.kind), ['audio']);
+  assert.equal(session.audioEl, audioEl);
+  assert.equal(videoEl.playCount, 1); assert.equal(audioEl.playCount, 1);
+  session.disconnect();
+  assert.equal(videoEl.srcObject, null); assert.equal(audioEl.srcObject, null);
+  assert.equal(session.audioEl, audioEl); assert.equal(session.videoEl, videoEl);
+});
+
+test('disconnect() stops both downlink tracks, clears srcObject, and leaves the element binding in place', async () => {
   const { session, socket, videoEl } = newSession();
   scriptHappyPath(socket);
   await session.connect();
-  const audioEl = session.audioEl;
-  const videoTrack = videoEl.srcObject.getTracks()[0];
-  const audioTrack = audioEl.srcObject.getTracks()[0];
+  const tracks = videoEl.srcObject.getTracks();
   session.disconnect();
-  assert.equal(videoTrack.readyState, 'ended', 'the video track is stopped on teardown');
-  assert.equal(audioTrack.readyState, 'ended', 'the audio track is stopped on teardown');
+  assert.ok(tracks.every((t) => t.readyState === 'ended'), 'both tracks are stopped on teardown');
   assert.equal(videoEl.srcObject, null);
-  assert.equal(audioEl.srcObject, null);
-  assert.equal(audioEl.removed, true, 'the SDK-created audio element is removed from the DOM');
+  assert.equal(session.avatarStream, null);
+  assert.equal(session.videoEl, videoEl);
+});
+
+test('a stale STV peer (closed by disconnect) firing ontrack does not touch the element or emit track', async () => {
+  const { session, socket, videoEl } = newSession();
+  scriptHappyPath(socket);
+  await session.connect();
+  const pc = FakeRTCPeerConnection.instances.find((p) => p.transceivers.some((t) => t.kind === 'video' && t.direction === 'recvonly'));
+  session.disconnect();
+  const writes = videoEl.srcObjectAssignments;
+  let tracks = 0;
+  session.on('track', () => tracks++);
+  pc.fireTrack('video');
+  assert.equal(videoEl.srcObjectAssignments, writes);
+  assert.equal(tracks, 0);
+  assert.equal(session.avatarStream, null);
+});
+
+test("an attach() failure surfaces as a 'media_attach_failed' warning and 'track' still fires", async () => {
+  const { session, socket } = newSession();
+  scriptHappyPath(socket);
+  const warnings = [], tracks = [];
+  session.on('warning', (w) => warnings.push(w));
+  session.on('track', (t) => tracks.push(t));
+  const pcs = FakeRTCPeerConnection.instances;
+  const origFireTrack = FakeRTCPeerConnection.prototype.fireTrack;
+  FakeRTCPeerConnection.prototype.fireTrack = function (kind) { origFireTrack.call(this, kind, { track: { kind: 'data', id: 'bogus' } }); };
+  try { await session.connect(); } finally { FakeRTCPeerConnection.prototype.fireTrack = origFireTrack; }
+  assert.ok(pcs.length > 0);
+  assert.equal(warnings.filter((w) => w.code === 'media_attach_failed').length, 2, 'one warning per bad track');
+  assert.equal(warnings[0].kind, 'data');
+  assert.equal(typeof warnings[0].message, 'string');
+  assert.ok(/bad_request|track\.kind/.test(warnings[0].detail));
+  assert.equal(tracks.length, 2, "'track' still fires so the app can render by hand");
+  assert.equal(session.state, 'connected');
+  session.disconnect();
 });
 
 // videoWidth/videoHeight exposure

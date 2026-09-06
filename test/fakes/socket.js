@@ -47,7 +47,8 @@ export class FakeSocket {
  * test hold the STV-playable gate (the greeting-clip test) — when true, the STV
  * ontrack/canplay is NOT auto-fired; the test fires it manually.
  * @param {FakeSocket} socket
- * @param {{audioMode?:boolean, capacityBusyTimes?:number, clientConfig?:object}} [opts]
+ * @param {{audioMode?:boolean, capacityBusyTimes?:number, clientConfig?:object, noCapacity?:boolean, tierExceeded?:boolean,
+ *   asrAnswer?: (offer: {type:string, sdp:string}) => Promise<{type:string, sdp:string}>}} [opts]
  */
 export function scriptHappyPath(socket, opts = {}) {
   let busyLeft = opts.capacityBusyTimes || 0;
@@ -63,7 +64,7 @@ export function scriptHappyPath(socket, opts = {}) {
     socket.server('onServerConnected', { finalUrl: 'https://srs.example', agentName: 'Avatar', hostName: 'host-1' });
   });
 
-  socket.onEmit((ev) => {
+  socket.onEmit((ev, payload) => {
     if (ev === 'join') soon(() => {
       const cc = opts.clientConfig || (opts.audioMode ? { audioMode: true } : { languageCode: 'en', interruptionsEnabled: true });
       socket.server('clientConfiguration', { clientConfiguration: cc });
@@ -87,6 +88,11 @@ export function scriptHappyPath(socket, opts = {}) {
       soon(() => { socket.server('showAgent', {}); soon(() => socket.server('askPermissions', { constraints: { audio: true, video: !opts.audioMode } })); });
     });
     else if (ev === 'asr-webrtc-init') soon(() => socket.server('asr-webrtc-ready', {}));
-    else if (ev === 'asr-webrtc-offer') soon(() => socket.server('asr-webrtc-answer', { answer: { type: 'answer', sdp: 'fake-answer' } }));
+    // `opts.asrAnswer(offer)` lets a real-browser harness answer the ASR offer with a live
+    // loopback RTCPeerConnection; the default is a placeholder answer for the node fakes.
+    else if (ev === 'asr-webrtc-offer') soon(async () => {
+      const answer = opts.asrAnswer ? await opts.asrAnswer(payload?.offer) : { type: 'answer', sdp: 'fake-answer' };
+      socket.server('asr-webrtc-answer', { answer });
+    });
   });
 }

@@ -117,7 +117,8 @@ export class FakeMediaStream {
     this.id = `stream-${++streamSeq}`;
     FakeMediaStream.constructed += 1;
   }
-  getTracks() { return this._tracks; }
+  /** Real semantics: a fresh array each call (mutating it never touches the stream). */
+  getTracks() { return [...this._tracks]; }
   getAudioTracks() { return this._tracks.filter((t) => t.kind === 'audio'); }
   getVideoTracks() { return this._tracks.filter((t) => t.kind === 'video'); }
   /** Real semantics: adding a track already present is a no-op. */
@@ -255,19 +256,6 @@ export class FakeVideoEl {
     this.sinkId = deviceId;
     return Promise.resolve();
   }
-  /** Test helper: track-sink.js's teardown() calls this on the audio element it created. */
-  remove() { this.removed = true; }
-}
-
-/**
- * Minimal fake `document` — just enough for track-sink.js's audio-element creation
- * (`doc.createElement('audio')` / `doc.body.appendChild`). Returns a fresh `FakeVideoEl`
- * per `createElement` call, structurally close enough (srcObject/play/setSinkId/remove) to
- * stand in for an `<audio>` element in tests.
- */
-export function fakeDom() {
-  const body = { children: [], appendChild(el) { this.children.push(el); } };
-  return { createElement: () => new FakeVideoEl({ autoCanPlay: true }), body };
 }
 
 /** @param {object} [opts] */

@@ -67,6 +67,9 @@ jobs:
       - name: 🧪🩺 node --test + coverage + JUnit report (all suites, offline — fakes inject fetch/socket/RTC)
         run: npm run test:ci
 
+      - name: 🎬 avatar-media.js at 100% line/branch/function coverage (constitution M-1 companion gate)
+        run: npm run test:ci:avatar-media
+
       - name: 📤 Upload JUnit test report
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -137,6 +140,57 @@ jobs:
             echo
             echo '```'
             tail -n 30 verify-noise-suppressor-output.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  avatar-media:
+    name: 🎬 Avatar media path, real browser (${{ matrix.engine }})
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [chromium, firefox, webkit]
+    steps:
+      - name: 📥 Check out the repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: 🟢 Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+
+      - name: 📦 Install dependencies
+        run: npm ci
+
+      - name: 🎭 Install ${{ matrix.engine }}
+        run: npx playwright install --with-deps ${{ matrix.engine }}
+
+      - name: 🔊 Start a virtual audio device (Firefox's cubeb backend needs a sink to play media elements at all)
+        if: matrix.engine == 'firefox'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq pulseaudio
+          pulseaudio -D --exit-idle-time=-1 --disallow-exit
+          pactl load-module module-null-sink
+
+      - name: 🎬 Real headless ${{ matrix.engine }}, loopback WebRTC — merged/split streams, paints, audio, autoplay, recovery, teardown
+        id: verify_avatar_media
+        env:
+          VERIFY_BROWSER: ${{ matrix.engine }}
+        run: |
+          set -o pipefail
+          npm run verify:avatar-media 2>&1 | tee verify-avatar-media-output.log
+
+      - name: 📝 Write job summary
+        if: always()
+        run: |
+          {
+            echo "### 🎬 Avatar media path (${{ matrix.engine }}) — ${{ steps.verify_avatar_media.outcome }}"
+            echo
+            echo '```'
+            tail -n 40 verify-avatar-media-output.log
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 

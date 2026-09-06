@@ -148,13 +148,16 @@ try {
 
   browser = await engine.launch(
     engineName === 'chromium'
-      ? { args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', '--autoplay-policy=no-user-gesture-required'] }
+      // --mute-audio / media.volume_scale: the example now plays the avatar's voice through
+      // its own <audio>; keep the run silent on whatever machine executes it.
+      ? { args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', '--autoplay-policy=no-user-gesture-required', '--mute-audio'] }
       : engineName === 'firefox'
         ? {
           firefoxUserPrefs: {
             'media.navigator.streams.fake': true,
             'media.navigator.permission.disabled': true,
             'media.autoplay.default': 0,
+            'media.volume_scale': '0.0',
             // Playwright's bundled Firefox has no H264 support until its OpenH264 GMP
             // plugin is fetched — off by default in this launch profile. These turn
             // the fetch on; the SRS WHEP server only serves H264 (WIRE-PROTOCOL.md §6),
@@ -272,6 +275,32 @@ try {
     { timeout: 20000, polling: 500 },
   ).then((h) => h.jsonValue());
   record('mic-audio-flow-verified', true, audioFlow);
+
+  // The keyed source <video> is muted, so the example routes the avatar's voice through
+  // its own <audio id="voice"> (the split layout). Prove the audio track landed there
+  // and is really flowing: exactly one audio track bound, and an inbound-rtp audio
+  // report with packets received on the WHEP peer.
+  const voiceFlow = await page.waitForFunction(
+    async () => {
+      const voice = document.getElementById('voice');
+      const tracks = voice?.srcObject?.getAudioTracks() || [];
+      if (tracks.length !== 1 || tracks[0].muted) return false;
+      for (const pc of window.__pcs || []) {
+        const report = await pc.getStats();
+        for (const stat of report.values()) {
+          if (stat.type === 'inbound-rtp' && stat.kind === 'audio' && stat.packetsReceived > 0) {
+            return { audioTracksOnVoice: tracks.length, packetsReceived: stat.packetsReceived, sourceVideoAudioTracks: document.getElementById('source').srcObject?.getAudioTracks().length ?? null };
+          }
+        }
+      }
+      return false;
+    },
+    null,
+    { timeout: 20000, polling: 500 },
+  ).then((h) => h.jsonValue());
+  const voiceSplitOk = voiceFlow.sourceVideoAudioTracks === 0;
+  if (!voiceSplitOk) failed = true;
+  record('avatar-voice-split-verified', voiceSplitOk, voiceFlow);
 
   // Let the example's own 2.5s auto-crop union settle before the human-reviewable shot.
   await page.waitForTimeout(3000);

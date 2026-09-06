@@ -42,7 +42,11 @@ const answerSdp = await fetch(`${srsBaseUrl}/rtc/v1/whep/?app=app&stream=${sessi
 }).then(r => r.text());                 // answer is plain SDP text
 
 await pc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
-pc.ontrack = (e) => { videoEl.srcObject = e.streams[0]; };  // the avatar video
+// ontrack fires twice (video, then audio). The server puts each track in its own
+// msid, so e.streams[0] differs per event — assigning it directly would drop the
+// first track. Collect both into one stream and bind that once.
+const avatar = new MediaStream();
+pc.ontrack = (e) => { avatar.addTrack(e.track); if (!videoEl.srcObject) videoEl.srcObject = avatar; };
 ```
 
 That's it — a vanilla WHEP subscribe. The avatar's face+voice stream into your `<video>`.

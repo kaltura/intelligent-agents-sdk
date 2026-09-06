@@ -380,7 +380,7 @@ test('attachChromaKeyAvatar: guards double-destroy by checking the player\'s own
   assert.equal(player.destroyCalls, 1, 'destroy() must not be called again once isDestroyed is already true');
 });
 
-// ─────────────────────────── srcObject reassignment (reconnect) needs no re-attach ───────────────────────────
+// ─────────────────────────── srcObject reassignment (reconnect after disconnect) needs no re-attach ───────────────────────────
 
 test('attachChromaKeyAvatar: reassigning videoEl.srcObject on the SAME element after attach raises no error and requires no re-attach', () => {
   FakeChromaKeyVideo.reset();
@@ -389,8 +389,9 @@ test('attachChromaKeyAvatar: reassigning videoEl.srcObject on the SAME element a
   const player = attachChromaKeyAvatar({ session, videoEl, ChromaKeyVideo: FakeChromaKeyVideo });
 
   assert.doesNotThrow(() => {
-    // What a real WHEP reconnect does: session.js's pc.ontrack reassigns srcObject on the
-    // SAME <video> element, then the element fires its usual playback events.
+    // Recoveries (re-subscribe / cold reconnect) swap tracks inside the bound stream and never
+    // touch srcObject. It is reassigned on the SAME element only when the app calls setVideoEl()
+    // or connects again after a disconnect; either way the compositor must survive it.
     videoEl.srcObject = { fakeStream: 'reconnected' };
     videoEl.dispatchEvent('loadedmetadata');
     videoEl.dispatchEvent('playing');

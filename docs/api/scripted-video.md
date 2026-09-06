@@ -50,7 +50,7 @@ Browser side, `KalturaScriptedVideoSession` renders the video/audio downlink fro
 ```js
 import { KalturaScriptedVideoSession } from '@kaltura/intelligent-agents/experience';
 
-const view = new KalturaScriptedVideoSession({ whepUrl, turn, videoEl });
+const view = new KalturaScriptedVideoSession({ whepUrl, turn, videoEl });  // optional audioEl plays the voice through its own element
 await view.connect();
 // ...call your own server endpoint, which calls mgmt.avatarSessions.say()...
 view.disconnect();

@@ -35,6 +35,7 @@ No build step, no npm registry publish — that's disabled by design (`"private"
 - [Architecture](#architecture)
 - [Management](#management)
 - [Experience](#experience)
+- [Avatar audio and video rendering](#avatar-audio-and-video-rendering)
 - [Text-only chat (`KalturaChatSession`)](#text-only-chat-kalturachatsession)
 - [One conversation, switchable transports (`KalturaAgentSession`)](#one-conversation-switchable-transports-kalturaagentsession)
 - [`{{var}}` personalization (`request_vars`)](#var-personalization-request_vars)
@@ -234,13 +235,52 @@ session.onToolCall('navigate_to_slide', ({ slide_num }) => deck.goTo(slide_num))
 
 **All transports are injected** — `socketFactory`, `rtcConstructor`, `fetch`, `getUserMedia`. Tests pass fakes; the SDK stays zero-dependency.
 
-The SDK assigns the stream to `videoEl.srcObject` and applies no CSS of its own — size the box yourself with `object-fit: cover` (aspect-agnostic, no letterbox/pillarbox bars) — see [docs/ARCHITECTURE.md § Displaying the Avatar Video](docs/ARCHITECTURE.md#displaying-the-avatar-video).
+The SDK merges the avatar's video and audio tracks into one stream, assigns it to `videoEl.srcObject` once, and applies no CSS of its own — size the box yourself with `object-fit: cover` (aspect-agnostic, no letterbox/pillarbox bars). Pass an `audioEl` too to play the voice through its own element, or omit `videoEl` and read `session.avatarStream` for headless rendering — see [Avatar audio and video rendering](#avatar-audio-and-video-rendering) below and [docs/ARCHITECTURE.md § Displaying the Avatar Video](docs/ARCHITECTURE.md#displaying-the-avatar-video).
 
 **Don't hide a loading spinner on `'streamReady'`** — it fires at the initial signaling handshake, before any video track exists. Listen for `'mediaReady'` instead: it fires once per connect, unconditionally, with `{mode:'video', videoWidth, videoHeight}` once the STV media is playable (dimensions are `0` if the decoder never resolved them, e.g. no `videoEl` — use `'videoMetadata'` if you need real dimensions), or `{mode:'audio'}` immediately if the session falls back to audio-only (capacity limited).
 
 ```js
 session.on('mediaReady', ({ mode }) => spinner.hidden = true);   // covers both video and audio-only sessions
 ```
+
+### Avatar audio and video rendering
+
+The STV downlink delivers the avatar's video and audio as two separate tracks. The SDK combines them into streams it owns and binds them to the elements you give it. Three shapes, all on the same `KalturaAvatarSession` (and `KalturaScriptedVideoSession`):
+
+```js
+// Default: one <video> plays picture and voice (merged stream).
+new KalturaAvatarSession({ ...cfg, videoEl: document.querySelector('video') });
+
+// Split: picture on <video>, voice on its own <audio>. One extra line.
+new KalturaAvatarSession({ ...cfg, videoEl, audioEl: document.querySelector('audio') });
+
+// Headless: bind nothing, render the tracks yourself.
+const session = new KalturaAvatarSession({ ...cfg, videoEl: null });
+session.on('track', () => canvasRenderer.use(session.avatarStream));
+```
+
+Split mode is what you want when the video element must stay muted or off-screen (chroma-key compositing), when several avatars share one page and each voice needs its own routing, or when you mix or record the voice independently of the picture. Every element gets one `srcObject` write and one `play()` per binding; the SDK creates no DOM and adds no CSS.
+
+| Member | Behavior |
+|---|---|
+| `videoEl`, `audioEl` (getters) | The bound elements, `null` when not bound. |
+| `avatarStream` | One `MediaStream` with every live downlink track. Stable across media recovery (tracks are swapped inside it), so attach a `MediaRecorder`, Web Audio graph or second element once. `null` before the first track and after `disconnect()`. |
+| `setVideoEl(el)`, `setAudioEl(el)` | Rebind at runtime, in any state, before or after `connect()`. `null` unbinds; `setAudioEl(null)` merges the voice back into `videoEl`. Old element's `srcObject` is cleared. |
+| `muteAudioOutput()`, `unmuteAudioOutput()`, `audioOutputMuted` | Mute the avatar's voice (not your microphone, that's `mute()`). Acts on whichever element carries the audio and follows it across rebinds. |
+| `setAudioOutputVolume(0..1)`, `audioOutputVolume` | Playback volume, clamped. |
+| `setAudioOutput(deviceId)` | Routes the audio-carrying element via `setSinkId`. Resolves `false`, never throws, when unsupported or nothing is bound yet; the id is stored and applied to the next bound element. |
+| `startPlayback()` | Retries `play()` on every bound element. Call from a click after a `playback_blocked` warning. Resolves `true` when everything is playing. |
+
+Media recovery (an STV re-subscribe after a stall) never touches your elements: the new tracks are swapped into the same streams, and only an element that the browser paused meanwhile (Firefox does this) gets one `play()` call. On Chromium a remote audio track is only decoded while some media element plays it, so a headless app that mixes `avatarStream` through Web Audio must keep a muted `<audio>` bound to the track; Firefox and WebKit do not need it. Calling `disconnect()` from inside a `'track'` listener is safe.
+
+Non-fatal problems on this path arrive as `warning` events, `{ code, message, ... }`:
+
+| Code | When | What to do |
+|---|---|---|
+| `playback_blocked` | The browser refused `play()` (autoplay policy). Payload has `kind: 'video' \| 'audio'`. | Show a "tap to start" control and call `startPlayback()` from it. |
+| `media_attach_failed` | A downlink track could not be routed (no `MediaStream` constructor, bad element). Payload has `detail`. | Fall back to the `'track'` event or fix the element. |
+| `whep_delete_failed` | The WHEP `DELETE` on disconnect failed; the server will time the session out on its own. | Nothing; informational. |
+| `empty_turn_with_request_vars` | The intellect rejected `request_vars` because `allow_client_variables` is off (see the `{{var}}` section). | Enable the intellect flag. |
 
 ### Text-only chat (`KalturaChatSession`)
 
@@ -356,7 +396,7 @@ session.on('localMicLevel', ({ level }) => micButton.style.setProperty('--level'
 
 const { mics, speakers } = await session.listDevices();
 await session.switchMic(mics[1].deviceId);       // replaceTrack, no renegotiation
-await session.setAudioOutput(speakers[1].deviceId); // HTMLMediaElement.setSinkId, retried 5x/500ms
+await session.setAudioOutput(speakers[1].deviceId); // setSinkId on the element carrying the audio track (audioEl if set, else videoEl)
 
 await session.setAsrBandwidth(24); // kbps, applied live via RTCRtpSender.setParameters
 ```
@@ -370,7 +410,7 @@ await session.setAsrBandwidth(24); // kbps, applied live via RTCRtpSender.setPar
 - **`listDevices()`** — `{mics, speakers}` from `navigator.mediaDevices.enumerateDevices()` (video input omitted; an avatar session has no local camera). Returns empty lists headlessly/without permission rather than throwing.
 - **`switchMic(deviceId)`** — swaps the ASR uplink's sender track via `replaceTrack`, no renegotiation. It rewires the hardware-mute watch and VAD onto the new stream and stops the old one.
 - **`micStartMode: 'deferred'`** (constructor option) + **`startMic()`** + **`micStarted`** (getter and event) — connect with no mic at all: `connect()` skips `getUserMedia` entirely and the ASR uplink negotiates a track-less sendonly audio slot (the wire handshake is identical to the default `'immediate'` path). Call `startMic()` later **from a real user click** — that's the point: the browser's permission prompt is anchored to the gesture instead of firing on page load — and it acquires the mic, attaches it via `replaceTrack` (no renegotiation), honors any `mute()` issued before the mic existed, re-applies `maxAsrBitrateKbps`, and emits `micStarted`. Until then `micStarted` is `false`, typed turns (`speak()`) work normally, and `startTapToTalk()`/`switchMic()` throw `mic_not_started`. A denied prompt rejects `startMic()` with the same typed mic errors as `connect()` (`mic_permission_denied`, …) and leaves the session connected, so the viewer can retry or stay typed-only. `startMic()` is idempotent.
-- **`setAudioOutput(deviceId)`** — routes `videoEl` playback via `setSinkId`, retrying up to 5 times at 500ms. Returns `false` (never throws) if the platform lacks `setSinkId` or every retry is exhausted.
+- **`setAudioOutput(deviceId)`** — calls `setSinkId` on the element carrying the audio track (`audioEl` if set, else `videoEl`). Works before `connect()`: the id is stored and applied to whichever element is bound next. Returns `false` (never throws) if the platform lacks `setSinkId`, nothing is bound yet, or the browser rejects the id. Pass `''` to return to the system default: it's the spec value and works in Chromium, Firefox and WebKit, while the Chromium-only `'default'` id is rejected by Firefox.
 - **`preferredVideoCodec`** (constructor option) — filters the STV downlink's video transceiver to a single codec via `setCodecPreferences`. Leave this unset. The backend only ever encodes H264 video, so setting it to anything else (`'VP8'`, `'VP9'`, `'AV1'`) still connects — audio keeps working — but the video negotiation comes back inactive and no frame is ever decoded, with no error thrown.
 - **`maxAsrBitrateKbps`** (constructor option) / **`setAsrBandwidth(kbps)`** (mid-session) — caps the ASR mic uplink's bitrate via `RTCRtpSender.setParameters()`, no renegotiation.
 
@@ -785,7 +825,8 @@ import { attachChromaKeyAvatar } from '@kaltura/intelligent-agents/experience/ch
 // GitHub-CDN mode, pinned to a released tag:
 import { ChromaKeyVideo } from 'https://cdn.jsdelivr.net/gh/kaltura/chroma-key-video@v1.2.0/src/chromakey.js';
 
-const session = new KalturaAvatarSession({ token, …appInit, videoEl, socketFactory });
+// The keyed source <video> is muted and off-screen, so give the voice its own element:
+const session = new KalturaAvatarSession({ token, …appInit, videoEl, audioEl, socketFactory });
 const player = attachChromaKeyAvatar({
   session,
   videoEl: session.videoEl,     // must be the SAME element the session itself renders into
@@ -809,7 +850,7 @@ await session.connect();
 - **Returned unwrapped, zero shadow API** — the returned `player` is the exact instance `ChromaKeyVideo` constructed, with no proxy or wrapping. It's a standard `EventTarget` — listen on `player` directly via `addEventListener` for its own events (e.g. `chroma-key-video`'s `'started'`/`'backend'`/`'error'`) — `attachChromaKeyAvatar()` never re-emits them onto `session`.
 - **Auto-cleanup** — `player.destroy()` is called exactly once, on the session's `'ended'` event, any FATAL `'error'` (`capacity_unavailable`/`tier_exceeded`/`bad_request`/`peer_removed`/ `unsupported_client`), or the session reaching its `'disconnected'` state — which is what `session.disconnect()`/`session.stop()` (the human-in-the-loop kill switch, e.g. a "leave call" button) triggers; that path never emits `'ended'` on its own. A transient/recoverable error (e.g. a socket hiccup the session itself reconnects from) does NOT destroy the player. Checks the player's own `isDestroyed` flag first, so an integrator who already called `player.destroy()` themselves never gets a second call, and all three teardown paths are safe to fire together or in any order.
 - **Idempotent, no double-wiring** — a second `attachChromaKeyAvatar()` call against a session that already has a live compositor logs `console.warn` and returns the EXISTING instance instead of constructing (and WebGL-context-leaking) a second one. Never throws for this.
-- **No reconnect ceremony** — a WHEP reconnect reassigns `srcObject` on the SAME `videoEl` the compositor was already constructed against; no re-`attachChromaKeyAvatar()` call is needed.
+- **No reconnect ceremony** — a WHEP reconnect swaps the new tracks into the same stream already bound to `videoEl`; `srcObject` is never reassigned, so the compositor keeps reading frames from the element it was constructed against and no re-`attachChromaKeyAvatar()` call is needed.
 
 **Non-goals:** this plugin does not reimplement chroma-keying, matting, backend fallback, or WebGL context-loss recovery — that's entirely `chroma-key-video`'s (or your chosen library's) job. If your app keys a URL-sourced clip with `chroma-key-video` directly, bypassing this plugin entirely, running that URL through `safeUrl()` first is still your obligation (this plugin never accepts or fetches a URL, only the session's own live video element).
 
@@ -1034,7 +1075,7 @@ await mgmt.avatarSessions.end(session);
 ```js
 import { KalturaScriptedVideoSession } from '@kaltura/intelligent-agents/experience';
 
-const view = new KalturaScriptedVideoSession({ whepUrl, turn, videoEl: document.querySelector('video') });
+const view = new KalturaScriptedVideoSession({ whepUrl, turn, videoEl: document.querySelector('video') });  // optional audioEl splits the voice out, same as KalturaAvatarSession
 await view.connect();   // negotiates WHEP, resolves once the stream is playable
 // ...later
 view.disconnect();
