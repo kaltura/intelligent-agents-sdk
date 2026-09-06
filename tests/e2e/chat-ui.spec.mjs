@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures.mjs';
 
 // Static contract for the chat-mode UI (connect.js wires these at runtime;
 // a live session can't run in CI, so this pins the markup and at-rest state

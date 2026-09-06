@@ -56,6 +56,18 @@ export const manifest = [
     generated: true,
   },
   {
+    source: 'docs/SITE-NAV.md',
+    target: 'guides/site-navigation.md',
+    url: '/guides/site-navigation/',
+    title: 'Site Navigation with go_to',
+    description: 'How to let a Kaltura avatar move the visitor to the right page and section of your website while it answers: one fire-and-forget go_to client tool, a build-time sections manifest, and the SiteNavigator browser plugin.',
+    eyebrow: 'How-to Guide',
+    h1: 'Site navigation — one fire-and-forget `go_to` tool for any website',
+    group: 'How-to Guides',
+    navTitle: 'Site Navigation (go_to)',
+    generated: true,
+  },
+  {
     source: 'docs/PAUSE-RESUME-RECIPE.md',
     target: 'guides/pause-resume.md',
     url: '/guides/pause-resume/',

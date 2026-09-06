@@ -4,10 +4,10 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "build": "eleventy",
-    "generate": "node scripts/generate-docs.mjs && npm run build && node scripts/check-anchors.mjs && node scripts/check-manifest-coverage.mjs && node scripts/check-sdk-pin-sync.mjs",
+    "build": "node -e \"require('node:fs').rmSync('_site',{recursive:true,force:true})\" && eleventy",
+    "generate": "node scripts/generate-docs.mjs && npm run build && node scripts/check-anchors.mjs && node scripts/check-sections-manifest.mjs && node scripts/check-manifest-coverage.mjs && node scripts/check-sdk-pin-sync.mjs",
     "pretest": "npm run build",
-    "test": "node scripts/check-anchors.mjs && playwright test"
+    "test": "node scripts/check-anchors.mjs && node scripts/check-sections-manifest.mjs && playwright test"
   },
   "keywords": [],
   "author": "",

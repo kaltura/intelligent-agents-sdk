@@ -23,14 +23,26 @@ jobs:
         with:
           node-version: 20
       - run: npm ci
-      - run: node scripts/check-sdk-pin-sync.mjs
+      # Also emits `SDK_TAG=vX.Y.Z` on stdout; the grep turns it into a step
+      # output so the SDK checkout below is pinned to the exact tag the site
+      # loads from jsDelivr (the build and the e2e tests import from that checkout).
+      - id: sdk
+        run: node scripts/check-sdk-pin-sync.mjs | tee /dev/stderr | grep '^SDK_TAG=' >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with:
+          repository: kaltura/intelligent-agents-sdk
+          ref: ${{ steps.sdk.outputs.SDK_TAG }}
+          path: .sdk-checkout
       - run: npx playwright install --with-deps chromium
       - run: npm test
+        env:
+          SDK_REPO_DIR: ${{ github.workspace }}/.sdk-checkout
       - id: pages
         uses: actions/configure-pages@v5
       - run: npm run build
         env:
           ELEVENTY_PATH_PREFIX: ${{ steps.pages.outputs.base_path }}
+          SDK_REPO_DIR: ${{ github.workspace }}/.sdk-checkout
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site

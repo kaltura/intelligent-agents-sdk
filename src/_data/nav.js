@@ -14,6 +14,7 @@ module.exports = [
     group: 'How-to Guides',
     pages: [
       { title: "Client-Side Commands", url: "/guides/client-commands/" },
+      { title: "Site Navigation (go_to)", url: "/guides/site-navigation/" },
       { title: "Pause/Resume for Video", url: "/guides/pause-resume/" },
       { title: "Dynamic Data Injection", url: "/guides/dynamic-data-injection/" },
       { title: "Voice Input Modes", url: "/guides/voice-input-modes/" },

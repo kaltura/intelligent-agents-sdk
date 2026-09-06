@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures.mjs';
 
 // transcript.js is the pure-DOM rendering layer connect.js drives at runtime:
 // speaker-labeled messages, streaming same-speaker glue, and the "Nova is

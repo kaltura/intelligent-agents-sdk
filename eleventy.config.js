@@ -23,6 +23,23 @@ module.exports = function (eleventyConfig) {
     });
   }
 
+  // Nova's go_to tool: every hand-placed data-nova-target gets a matching DOM id
+  // (so the SDK's SiteNavigator can reach it by id), and the built pages are
+  // distilled into _site/nova/sections.json, the manifest the tool navigates
+  // against. Both live in scripts/lib/sections-manifest.mjs; the check script
+  // scripts/check-sections-manifest.mjs rebuilds the manifest from _site and
+  // fails the build on any drift.
+  eleventyConfig.addTransform('novaTargetIds', async (content, outputPath) => {
+    if (!outputPath || !outputPath.endsWith('.html')) return content;
+    const { ensureTargetIds } = await import('./scripts/lib/sections-manifest.mjs');
+    return ensureTargetIds(content);
+  });
+  eleventyConfig.on('eleventy.after', async ({ dir, results }) => {
+    const { writeManifest } = await import('./scripts/lib/sections-manifest.mjs');
+    const { file, pages, sections } = await writeManifest(results, dir.output);
+    console.log(`[11ty] Wrote ${file} (${pages} pages, ${sections} sections)`);
+  });
+
   const md = markdownIt({ html: true, breaks: false, linkify: true }).use(
     markdownItAnchor,
     { slugify: githubSlugify }
