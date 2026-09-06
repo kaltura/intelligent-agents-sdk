@@ -129,6 +129,8 @@ Put a hard TOOL-CALL BUDGET in the system prompt — e.g. max one `create_slide`
 
 **Mitigation.** Fold an explicit stop-and-speak instruction directly into the tool's `description` field (e.g. `'... This tool has no reply to wait for — call it EXACTLY ONCE per turn, then immediately narrate it out loud in the SAME turn; never call it again to confirm or retry.'`) — the one LLM-facing channel a fire-and-forget `client` tool still has.
 
+**Ready-made pattern.** Site navigation ships this whole shape: `goToTool()` carries the stop-and-speak wording in its description, `SITE_NAV_RULES_PROMPT` repeats it as prompt rules, and the browser-side `SiteNavigator` enforces `oncePerTurn` so a second same-turn call is dropped even when the model ignores both. Use it as the template for any other fire-and-forget UI command. See [SITE-NAV.md](SITE-NAV.md).
+
 #### SDK side (headless): dedup, cap, and recover with one follow-up turn
 
 `collectConverse()` dedupes semantically (tool name + `canonicalJson` of args — the same key shape the live session's `onToolCall` dispatch uses, so a non-deterministic JSON key order on an LLM retry doesn't defeat it), caps per-tool, and stops reading once a spiral threshold is crossed, returning the good content gathered so far plus `spiralStopped: true` — so a headless turn yields the valid first widget instead of blocking to the request timeout.
@@ -175,3 +177,4 @@ A command not on the allow-list is denied before any handler runs (audited as `a
 | [WIRE-PROTOCOL.md](WIRE-PROTOCOL.md) | The exact `type:"tool"` segment wire shape and why it is outside the TTS gate. |
 | [GENUI-REFERENCE.md](GENUI-REFERENCE.md) | The nine GenUI widgets `show_widget` can render. |
 | [PAUSE-RESUME-RECIPE.md](PAUSE-RESUME-RECIPE.md) | The sibling mechanism for the other direction: *you* pausing the avatar (e.g. while a client command shows a video) instead of the avatar driving your UI. |
+| [SITE-NAV.md](SITE-NAV.md) | The fire-and-forget `go_to` navigation tool: the complete, tested instance of the pattern above, reusable on any site. |

@@ -23,6 +23,7 @@ Every endpoint is shown as a raw HTTP call plus its SDK wrapper. The SDK is what
 | [Management Operations](docs/api/management-operations.md) | CRUD tables for agents, avatars, intellects, tools, skills, knowledge records |
 | [Lifecycle](docs/lifecycle/README.md) | Event-driven rules — reference + [recipe](docs/lifecycle/recipes.md) |
 | [Use-Case Catalog](docs/USE-CASES.md) | All 13 use cases (UC-1 through UC-13) mapped to mechanisms and runnable scripts |
+| [Site navigation](docs/SITE-NAV.md) | Fire-and-forget `go_to` tool, compact SITE MAP prompt, `sections.json` manifest, browser `SiteNavigator` plugin |
 
 **Section shorthand.** Docs and source comments cite sections as `API-REFERENCE.md § <name>` — find the section in the table above. Common ones: § Tools, § Secrets, § Ground the Agent, § Configure an Intellect are all in [Phase 2 — Build](docs/api/build.md); § Converse and § Threads are in [Phase 4 — Operate](docs/api/operate.md); § Initialize the Runtime is in [Phase 3 — Deploy](docs/api/deploy.md).
 

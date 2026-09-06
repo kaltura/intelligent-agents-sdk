@@ -7,10 +7,11 @@
  * your server's appInit) — the admin secret never reaches it. socket.io is
  * INJECTED, never bundled, so the SDK has zero runtime dependencies.
  *
- * Presenter (deck walkthrough), GenUI (widget rendering), the AudioWorklet
- * noise-suppressor (Tier-2 BYO-DSP), and KAVA analytics (client-only
- * Application Events) are separate optional subpaths —
+ * Presenter (deck walkthrough), SiteNavigator (`go_to` site navigation), GenUI
+ * (widget rendering), the AudioWorklet noise-suppressor (Tier-2 BYO-DSP), and
+ * KAVA analytics (client-only Application Events) are separate optional subpaths —
  * `@kaltura/intelligent-agents/experience/presenter`,
+ * `@kaltura/intelligent-agents/experience/site-nav`,
  * `@kaltura/intelligent-agents/experience/genui`,
  * `@kaltura/intelligent-agents/experience/noise-suppressor`, and
  * `@kaltura/intelligent-agents/experience/analytics` — so importing this

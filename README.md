@@ -10,6 +10,7 @@ Two entry points, plus optional plugins under `./experience` that don't bloat th
 **Plugins** (each its own subpath — only pay for what you import):
 
 - `./experience/presenter` — the `Presenter` deck-walkthrough plugin
+- `./experience/site-nav` — the `SiteNavigator` plugin: one fire-and-forget `go_to` tool that moves the visitor to any page and section of your site
 - `./experience/chroma-key` — transparent-background avatar compositor (bring your own chroma-key video)
 - `./experience/genui` — `ExperienceRenderer`/`mountWidget` GenUI widget rendering
 - `./experience/analytics` — `KavaAnalytics`, client-only KAVA Application Events (`pageLoad`/`buttonClicked`)
@@ -55,6 +56,7 @@ No build step, no npm registry publish — that's disabled by design (`"private"
 - [AI-SDR / CRM lead capture](#ai-sdr--crm-lead-capture)
 - [GenUI](#genui)
 - [Presenter](#presenter)
+- [Site navigation (`SiteNavigator`)](#site-navigation-sitenavigator)
 - [Chroma-key Avatar Compositor](#chroma-key-avatar-compositor)
 - [Advanced / building-block exports](#advanced--building-block-exports)
 - [Testing](#testing)
@@ -102,11 +104,11 @@ Once the repo is public and has a tag pushed, jsDelivr serves any file straight 
 </script>
 ```
 
-`@latest` resolves to the newest tag, so this URL always matches the current README without an editing pass on every release. It's **not cached the same way** as a tagged path, though — jsDelivr re-checks it periodically, so what it serves can change without warning. For anything you ship, pin to a real tag instead (`@v1.15.0`, or whichever release you're on) — jsDelivr caches a tagged path forever, so a pin is both stable and fast:
+`@latest` resolves to the newest tag, so this URL always matches the current README without an editing pass on every release. It's **not cached the same way** as a tagged path, though — jsDelivr re-checks it periodically, so what it serves can change without warning. For anything you ship, pin to a real tag instead (`@v1.16.0`, or whichever release you're on) — jsDelivr caches a tagged path forever, so a pin is both stable and fast:
 
 ```html
 <script type="module">
-  import { KalturaAvatarSession } from 'https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.15.0/src/experience/index.js';
+  import { KalturaAvatarSession } from 'https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.16.0/src/experience/index.js';
 </script>
 ```
 
@@ -145,7 +147,7 @@ Paste the `integrity` object it prints into an import map, declared before the m
 </script>
 ```
 
-Regenerate this whenever you move your pin to a new tag — a hash is tied to that exact release's file content and won't match the next one. The other browser entry points (`src/experience/presenter.js`, `src/experience/genui/index.js`, `src/experience/analytics.js`, `src/experience/noise-suppressor.js`) each need their own run of the same command if you load them.
+Regenerate this whenever you move your pin to a new tag — a hash is tied to that exact release's file content and won't match the next one. The other browser entry points (`src/experience/presenter.js`, `src/experience/site-nav.js`, `src/experience/genui/index.js`, `src/experience/analytics.js`, `src/experience/noise-suppressor.js`) each need their own run of the same command if you load them.
 
 </details>
 
@@ -725,6 +727,52 @@ See `examples/deck-presenter.html` for a self-contained runnable demo: construct
 
 ---
 
+## Site navigation (`SiteNavigator`)
+
+`./experience/site-nav` lets the agent bring the visitor to the right page and section of any website while it answers. It is built on one fire-and-forget client tool, `go_to(path, section?)`, so there is nothing to ACK, nothing to time out on, and no way for the tool to spiral. The full contract, manifest format, adapters and repurposing steps are in [docs/SITE-NAV.md](docs/SITE-NAV.md).
+
+Provision (Node, `./management`):
+
+```js
+import { goToTool, siteMapPrompt, SITE_NAV_RULES_PROMPT, PAGE_CONTEXT_PROMPT, loadSectionsManifest } from '@kaltura/intelligent-agents/management';
+
+const manifest = await loadSectionsManifest('https://docs.example.com/nova/sections.json');
+const tool = await mgmt.tools.add(goToTool({ siteLabel: 'the Example docs' }), ks);
+await mgmt.intellects.create({
+  tool_ids: [tool.id],
+  allow_client_variables: true,
+  prompts: [identity, siteMapPrompt(manifest), SITE_NAV_RULES_PROMPT, PAGE_CONTEXT_PROMPT],
+  // ...
+}, ks);
+```
+
+Browser (`./experience/site-nav`), right after the session:
+
+```js
+import { SiteNavigator } from '@kaltura/intelligent-agents/experience/site-nav';
+
+const nav = new SiteNavigator({
+  session,
+  manifestUrl: '/nova/sections.json',
+  navigate: (url) => router.push(url),   // or location.assign(url)
+  point: (el) => el.classList.add('is-pointed'),
+});
+// ...
+nav.destroy();
+```
+
+The site build publishes `sections.json` with `buildSectionsManifest(pages)`: one entry per page, each heading reduced to a 2–3 word key (`edge-case-dont`, `quick-start`). The same file renders as the SITE MAP prompt the model reads and drives resolution in the browser, so the two can never disagree. Keys are derived from the heading text in any language, collisions are resolved deterministically, and a docs change re-keys only the page it touched.
+
+| Guarantee | How |
+|---|---|
+| Never spirals | `wait_for_response: false`; the plugin never sends a result. |
+| One navigation per turn | `oncePerTurn` (default on): the first call that resolves to a real page wins, the rest drop until `turnStart`. |
+| Never guesses a page | An unknown path is dropped. A sloppy but recognisable path (`Guides/Pause-Resume`) still resolves. |
+| Never fails on a section | key → id → text → subset → Jaccard → page top. |
+| Safe by construction | Only manifest paths are navigable, every URL passes `safeUrl`, the manifest is size-guarded and `sanitizeJson`-cleaned, elements are found by id only. |
+
+---
+
 ## Chroma-key Avatar Compositor
 
 `attachChromaKeyAvatar()` (`./experience/chroma-key`, its own subpath so apps that don't composite the avatar never load it) wires a **bring-your-own** transparent-background compositor (any `chroma-key-video`-shaped class) directly onto a `KalturaAvatarSession`'s own avatar `<video>` element, and keeps that compositor's lifecycle in lockstep with the session's. The SDK never bundles, imports, or depends on `chroma-key-video` (or any keying/matting library) itself. This is glue: the same constructor-injection pattern `./experience/noise-suppressor` uses for `audioWorkletNodeConstructor`:
@@ -797,6 +845,11 @@ These are importable from their entry points and useful when composing custom pi
 | `lintPersonaIdentity({name?, openingPhrase?, baseDirective?, prompts?})` | Warns when a persona rename didn't fully propagate. `persona_name_drift` fires whenever a declared `name` (or an `openingPhrase`-derived name that differs from it) is missing from `base_directive`/`prompts[]` — it doesn't need `openingPhrase` at all, so it also catches intellects that only declare `name` and skip `openingPhrase` entirely. `persona_name_mismatch` still needs an `openingPhrase` that parses to a name different from the declared `name`. Returns `{ok, summary, findings, detectedName, _meta}` — warning-only, never throws. `mgmt.provision()` runs this automatically and returns the result as `personaLint` (see below); call it directly to re-check an intellect you're editing outside of `provision()`. |
 | `resolveCapabilities(layers)` / `CAPABILITY_STATE` / `CAPABILITY_INFO` | `management/capabilities.js`'s typed capability resolver: merges the `env`/`partnerConfig`/`request` layers for each entry in `CAPABILITIES` down to one resolved `CAPABILITY_STATE` (`on`/`off`/`disabled`) plus a `resolvedFrom` provenance tag, so a caller can build an accurate "what can this agent do" view without re-deriving precedence from raw config fields. `CAPABILITY_INFO` carries the human-readable name/description per capability. |
 | `findIntellectsReferencingTool(mgmt, toolId, ks)` | Lists every intellect's configId that currently references `toolId` in its `tool_ids`. This is the reuse-safety check `mgmt.tools.delete` runs by default before deleting a partner-level Tool — call it yourself to preview what a delete would break, or to build the same shared-by-name guard around your own upsert-by-name logic (`mgmt.skills`'s `delete` runs the analogous `findIntellectsReferencingSkill` check internally). |
+| `goToTool(opts?)` / `SITE_NAV_TOOL_NAME` | The fire-and-forget `go_to(path, section?)` client tool config (`wait_for_response: false`). Pass to `tools.add()` or `tools.update(id, {config})`. See [Site navigation](#site-navigation-sitenavigator) and [docs/SITE-NAV.md](docs/SITE-NAV.md). |
+| `siteMapPrompt(manifest, opts?)` / `SITE_NAV_RULES_PROMPT` / `estimateTokens(text)` | The SITE MAP prompt block rendered from a `sections.json` manifest (warns above `maxTokens`, default 2000), the frozen four-rule navigation prompt that pairs with it, and the rough token estimator the warning uses. |
+| `loadSectionsManifest(url, opts?)` | Fetches, size-guards and validates a published `sections.json` at provisioning time. Throws `KalturaError` with `code` `bad_arg`, `http_error`, `network_error`, `timeout`, `too_large` or `bad_manifest`. |
+| `buildSectionsManifest(pages, opts?)` / `pageSectionKeys(headings, opts?)` / `renderSiteMap(manifest)` | The manifest builder for your site build: page paths plus headings in, `sections.json` out, with deterministic 2–3 word section keys in any language (`lang`, `stopWords`, `overrides`, `depth`, `maxWords`). `renderSiteMap` is the one-line-per-page text the prompt carries. |
+| `validateSectionsManifest(raw)` / `normalizePath(path)` / `resolvePath(manifest, path)` / `resolveSection(page, section)` / `normalizeWords(text)` / `STOP_WORDS` / `BOILERPLATE_IDS` / `MANIFEST_VERSION` | The shared resolution primitives `SiteNavigator` uses in the browser, exported here so build scripts, eval harnesses and tests resolve exactly like the plugin does. |
 
 ### `./experience`
 
@@ -821,6 +874,12 @@ These are importable from their entry points and useful when composing custom pi
 |--------|-------------|
 | `Presenter` | Deck-walkthrough plugin — see the [Presenter](#presenter) section above. Its own subpath so apps that don't present a deck never load it. |
 | `parseSlideNumber` | Parses a `slide_num` tool-call argument (number, numeric string, or ordinal word like `"next"`/`"third"`) against a known slide total. |
+
+### `./experience/site-nav`
+
+| Export | Description |
+|--------|-------------|
+| `SiteNavigator` | Listens for the fire-and-forget `go_to` tool call, resolves `path`/`section` against the site's `sections.json`, then navigates, scrolls, updates the hash and points. Once per turn, never ACKs, never guesses a page. See the [Site navigation](#site-navigation-sitenavigator) section above and [docs/SITE-NAV.md](docs/SITE-NAV.md). Its own subpath so apps without site navigation never load it. |
 
 ### `./experience/chroma-key`
 

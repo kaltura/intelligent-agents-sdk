@@ -48,6 +48,7 @@ const DOCS = [
   'docs/STRUCTURED-DATA-FORMS.md', 'docs/EXTERNAL-API-INTEGRATIONS.md',
   'docs/VOICE-INPUT-MODES.md', 'docs/USE-CASES.md',
   'docs/lifecycle/README.md', 'docs/lifecycle/recipes.md',
+  'docs/SITE-NAV.md',
   'SECURITY.md', 'SDK_CONSTITUTION.md',
 ];
 

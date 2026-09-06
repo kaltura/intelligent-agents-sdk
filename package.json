@@ -1,6 +1,6 @@
 {
   "name": "@kaltura/intelligent-agents",
-  "version": "1.15.0",
+  "version": "1.16.0",
   "private": true,
   "description": "Zero-dependency SDK for Kaltura conversational avatar agents — Management (provision/configure/measure) + Experience (live interactive runtime). Grounded only in what the public APIs deliver today.",
   "license": "MIT",
@@ -14,6 +14,7 @@
     "./management": "./src/management/index.js",
     "./experience": "./src/experience/index.js",
     "./experience/presenter": "./src/experience/presenter.js",
+    "./experience/site-nav": "./src/experience/site-nav.js",
     "./experience/chroma-key": "./src/experience/chroma-key.js",
     "./experience/genui": "./src/experience/genui/index.js",
     "./experience/noise-suppressor": "./src/experience/noise-suppressor.js",
@@ -47,6 +48,7 @@
     "live-verify:request-vars": "node scripts/live-verify-request-vars.mjs",
     "live-verify:capabilities": "node scripts/live-verify-capabilities.mjs",
     "live-verify:session-complete": "node scripts/live-verify-session-complete.mjs",
+    "live-verify:site-nav": "node scripts/live-verify-site-nav.mjs",
     "verify:noise-suppressor": "node scripts/verify-noise-suppressor.mjs"
   },
   "keywords": [

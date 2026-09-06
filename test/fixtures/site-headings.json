@@ -1,0 +1,1352 @@
+[
+  {
+    "path": "/",
+    "title": "Home — @kaltura/intelligent-agents",
+    "headings": [
+      {
+        "id": "nova-hero-heading",
+        "text": "Meet Nova",
+        "level": 2
+      },
+      {
+        "id": "one-avatar-three-flows",
+        "text": "One avatar, three flows",
+        "level": 2
+      },
+      {
+        "id": "why-this-sdk",
+        "text": "Why this SDK",
+        "level": 2
+      },
+      {
+        "id": "quick-start-in-the-browser",
+        "text": "Quick start in the browser",
+        "level": 2
+      },
+      {
+        "id": "where-to-go-next",
+        "text": "Where to go next",
+        "level": 2
+      },
+      {
+        "id": "security-and-compliance",
+        "text": "Security and compliance",
+        "level": 2
+      },
+      {
+        "id": "license",
+        "text": "License",
+        "level": 2
+      }
+    ]
+  },
+  {
+    "path": "/explanation/architecture/",
+    "title": "Platform Architecture — @kaltura/intelligent-agents",
+    "headings": [
+      {
+        "id": "the-three-planes",
+        "text": "The Three Planes",
+        "level": 2
+      },
+      {
+        "id": "backend-services-map",
+        "text": "Backend Services Map",
+        "level": 2
+      },
+      {
+        "id": "text-conversation-flow",
+        "text": "Text Conversation Flow",
+        "level": 2
+      },
+      {
+        "id": "video-runtime-protocol--the-big-picture",
+        "text": "Video Runtime Protocol — The Big Picture",
+        "level": 2
+      },
+      {
+        "id": "two-session-modes-choose-the-right-one",
+        "text": "Two Session Modes (choose the right one)",
+        "level": 2
+      },
+      {
+        "id": "displaying-the-avatar-video",
+        "text": "Displaying the Avatar Video",
+        "level": 2
+      },
+      {
+        "id": "sdk-module-map--overview",
+        "text": "SDK Module Map — Overview",
+        "level": 2
+      },
+      {
+        "id": "resilience--failure-handling--overview",
+        "text": "Resilience & Failure Handling — Overview",
+        "level": 2
+      }
+    ]
+  },
+  {
+    "path": "/explanation/case-study-nova/",
+    "title": "Case Study: Nova — @kaltura/intelligent-agents",
+    "headings": [
+      {
+        "id": "checking-whether-your-knowledge-base-finished-indexing",
+        "text": "Checking whether your knowledge base finished indexing",
+        "level": 2
+      },
+      {
+        "id": "running-evals-against-your-agent",
+        "text": "Running evals against your agent",
+        "level": 2
+      },
+      {
+        "id": "where-to-go-next",
+        "text": "Where to go next",
+        "level": 2
+      }
+    ]
+  },
+  {
+    "path": "/explanation/inside-a-live-conversation/",
+    "title": "Inside a Live Conversation — @kaltura/intelligent-agents",
+    "headings": [
+      {
+        "id": "the-three-flows",
+        "text": "The three flows",
+        "level": 2
+      },
+      {
+        "id": "bring-your-own-expertise",
+        "text": "Bring your own expertise",
+        "level": 2
+      },
+      {
+        "id": "what-youd-take-on-yourself",
+        "text": "What you'd take on yourself",
+        "level": 2
+      },
+      {
+        "id": "analytics-come-with-the-runtime",
+        "text": "Analytics come with the runtime",
+        "level": 2
+      },
+      {
+        "id": "where-scripted-sessions-do-fit",
+        "text": "Where scripted sessions do fit",
+        "level": 2
+      },
+      {
+        "id": "next-steps",
+        "text": "Next steps",
+        "level": 2
+      }
+    ]
+  },
+  {
+    "path": "/getting-started/",
+    "title": "Getting Started — @kaltura/intelligent-agents",
+    "headings": [
+      {
+        "id": "what-you-need-before-you-start",
+        "text": "What you need before you start",
+        "level": 2
+      },
+      {
+        "id": "step-1--get-your-credentials-1-minute",
+        "text": "Step 1 — Get your credentials (~1 minute)",
+        "level": 2
+      },
+      {
+        "id": "step-2--set-up-the-project-1-minute",
+        "text": "Step 2 — Set up the project (~1 minute)",
+        "level": 2
+      },
+      {
+        "id": "step-3--create-your-own-agent-from-scratch-13-minutes",
+        "text": "Step 3 — Create your own agent from scratch (1–3 minutes)",
+        "level": 2
+      },
+      {
+        "id": "step-4--talk-to-your-agent-again-30-seconds",
+        "text": "Step 4 — Talk to your agent again (~30 seconds)",
+        "level": 2
+      },
+      {
+        "id": "whats-next",
+        "text": "What's next?",
+        "level": 2
+      },
+      {
+        "id": "common-questions",
+        "text": "Common questions",
+        "level": 2
+      },
+      {
+        "id": "appendix--verify-your-checkout-offline-2-minutes",
+        "text": "Appendix — Verify your checkout offline (~2 minutes)",
+        "level": 2
+      }
+    ]
+  },
+  {
+    "path": "/guides/client-commands/",
+    "title": "Client-Side Commands — @kaltura/intelligent-agents",
+    "headings": [
+      {
+        "id": "why-it-exists",
+        "text": "Why it exists",
+        "level": 2
+      },
+      {
+        "id": "the-mechanism-end-to-end",
+        "text": "The mechanism, end to end",
+        "level": 2
+      },
+      {
+        "id": "limits-and-gotchas",
+        "text": "Limits and gotchas",
+        "level": 2
+      },
+      {
+        "id": "related-docs",
+        "text": "Related docs",
+        "level": 2
+      }
+    ]
+  },
+  {
+    "path": "/guides/dynamic-data-injection/",
+    "title": "Dynamic Data Injection — @kaltura/intelligent-agents",
+    "headings": [
+      {
+        "id": "three-ways-to-get-information-to-the-brain",
+        "text": "Three ways to get information to the brain",
+        "level": 2
+      },
+      {
+        "id": "the-context-channel-request-variables",
+        "text": "The context channel: request variables",
+        "level": 2
+      },
+      {
+        "id": "the-active-nudge-speak",
+        "text": "The active nudge: speak()",
+        "level": 2
+      },
+      {
+        "id": "answering-a-brain-initiated-request",
+        "text": "Answering a brain-initiated request",
+        "level": 2
+      },
+      {
+        "id": "how-they-work-together--a-worked-example",
+        "text": "How they work together — a worked example",
+        "level": 2
+      },
+      {
+        "id": "which-one-do-i-want",
+        "text": "Which one do I want?",
+        "level": 2
+      },
+      {
+        "id": "related-but-distinct-client-side-commands",
+        "text": "Related but distinct: client-side commands",
+        "level": 2
+      },
+      {
+        "id": "related-docs",
+        "text": "Related docs",
+        "level": 2
+      }
+    ]
+  },
+  {
+    "path": "/guides/external-api-integrations/",
+    "title": "External API Integrations — @kaltura/intelligent-agents",
+    "headings": [
+      {
+        "id": "the-building-blocks",
+        "text": "The building blocks",
+        "level": 2
+      },
+      {
+        "id": "authenticating-the-call",
+        "text": "Authenticating the call",
+        "level": 2
+      },
+      {
+        "id": "when-you-actually-need-oauth2--the-real-backend-managed-flow",
+        "text": "When you actually need OAuth2 — the real, backend-managed flow",
+        "level": 2
+      },
+      {
+        "id": "dont-skip-kaltura_genie_experiences-off",
+        "text": "Don't skip kaltura_genie_experiences: 'off'",
+        "level": 2
+      },
+      {
+        "id": "verifying-the-wiring-before-you-rely-on-it",
+        "text": "Verifying the wiring before you rely on it",
+        "level": 2
+      },
+      {
+        "id": "example-crm--marketing-automation-integration",
+        "text": "Example: CRM / marketing-automation integration",
+        "level": 2
+      },
+      {
+        "id": "related-docs",
+        "text": "Related docs",
+        "level": 2
+      }
+    ]
+  },
+  {
+    "path": "/guides/lifecycle-recipes/",
+    "title": "Lifecycle Recipes — @kaltura/intelligent-agents",
+    "headings": [
+      {
+        "id": "the-mental-model",
+        "text": "The mental model",
+        "level": 2
+      },
+      {
+        "id": "recipe-a--extract-a-summary-the-moment-a-session-ends",
+        "text": "Recipe A — Extract a summary the moment a session ends",
+        "level": 2
+      },
+      {
+        "id": "recipe-b--email-a-human-the-moment-that-analysis-lands",
+        "text": "Recipe B — Email a human the moment that analysis lands",
+        "level": 2
+      },
+      {
+        "id": "scoping-the-alert-to-one-agent",
+        "text": "Scoping the alert to one agent",
+        "level": 2
+      },
+      {
+        "id": "reading-the-results-back",
+        "text": "Reading the results back",
+        "level": 2
+      },
+      {
+        "id": "test-both-rules-in-seconds-without-waiting-for-a-real-event",
+        "text": "Test both rules in seconds, without waiting for a real event",
+        "level": 2
+      },
+      {
+        "id": "minimal-runnable-example",
+        "text": "Minimal runnable example",
+        "level": 2
+      },
+      {
+        "id": "common-pitfalls",
+        "text": "Common pitfalls",
+        "level": 2
+      },
+      {
+        "id": "related-docs",
+        "text": "Related docs",
+        "level": 2
+      }
+    ]
+  },
+  {
+    "path": "/guides/pause-resume/",
+    "title": "Pause for Video/Interactive Content, Then Resume — @kaltura/intelligent-agents",
+    "headings": [
+      {
+        "id": "the-mechanism",
+        "text": "The mechanism",
+        "level": 2
+      },
+      {
+        "id": "minimal-runnable-example",
+        "text": "Minimal runnable example",
+        "level": 2
+      },
+      {
+        "id": "the-edge-case-dont-leave-the-avatar-stuck-paused",
+        "text": "The edge case: don't leave the avatar stuck paused",
+        "level": 2
+      },
+      {
+        "id": "related-docs",
+        "text": "Related docs",
+        "level": 2
+      }
+    ]
+  },
+  {
+    "path": "/guides/structured-data-forms/",
+    "title": "Structured Data Forms — @kaltura/intelligent-agents",
+    "headings": [
+      {
+        "id": "what-it-is--and-isnt",
+        "text": "What it is — and isn't",
+        "level": 2
+      },
+      {
+        "id": "how-the-brain-is-made-aware-of-the-schema",
+        "text": "How the brain is made aware of the schema",
+        "level": 2
+      },
+      {
+        "id": "whats-possible--whats-not",
+        "text": "What's possible / what's not",
+        "level": 2
+      },
+      {
+        "id": "how-the-sdk-handles-it--two-observation-points-one-descriptor",
+        "text": "How the SDK handles it — two observation points, one descriptor",
+        "level": 2
+      },
+      {
+        "id": "how-the-form-is-rendered",
+        "text": "How the form is rendered",
+        "level": 2
+      },
+      {
+        "id": "how-to-customize-or-style-the-form",
+        "text": "How to customize or style the form",
+        "level": 2
+      },
+      {
+        "id": "where-the-submitted-data-actually-goes",
+        "text": "Where the submitted data actually goes",
+        "level": 2
+      },
+      {
+        "id": "related-kaltura_genie_experiences--a-different-unrelated-capability",
+        "text": "Related: kaltura_genie_experiences — a different, unrelated capability",
+        "level": 2
+      },
+      {
+        "id": "related-docs",
+        "text": "Related docs",
+        "level": 2
+      }
+    ]
+  },
+  {
+    "path": "/guides/voice-input-modes/",
+    "title": "Voice Input Modes — @kaltura/intelligent-agents",
+    "headings": [
+      {
+        "id": "the-one-rule-that-overrides-everything-else-here",
+        "text": "The one rule that overrides everything else here",
+        "level": 2
+      },
+      {
+        "id": "deciding-which-mode-fits-your-app",
+        "text": "Deciding which mode fits your app",
+        "level": 2
+      },
+      {
+        "id": "ux-pattern-click-to-toggle-not-press-and-hold",
+        "text": "UX pattern: click-to-toggle, not press-and-hold",
+        "level": 2
+      },
+      {
+        "id": "visual-and-non-visual-state-feedback",
+        "text": "Visual and non-visual state feedback",
+        "level": 2
+      },
+      {
+        "id": "safety-dont-let-a-capture-window-hang-open-forever",
+        "text": "Safety: don't let a capture window hang open forever",
+        "level": 2
+      },
+      {
+        "id": "implementation-checklist",
+        "text": "Implementation checklist",
+        "level": 2
+      },
+      {
+        "id": "switching-between-avatar-and-chat-mid-conversation",
+        "text": "Switching between avatar and chat mid-conversation",
+        "level": 2
+      },
+      {
+        "id": "related-docs",
+        "text": "Related docs",
+        "level": 2
+      }
+    ]
+  },
+  {
+    "path": "/reference/api-reference/",
+    "title": "API Reference — @kaltura/intelligent-agents",
+    "headings": [
+      {
+        "id": "contents",
+        "text": "Contents",
+        "level": 2
+      },
+      {
+        "id": "common-errors",
+        "text": "Common Errors",
+        "level": 2
+      },
+      {
+        "id": "quick-reference",
+        "text": "Quick Reference",
+        "level": 2
+      }
+    ]
+  },
+  {
+    "path": "/reference/api/authentication/",
+    "title": "API · Authentication & Services — @kaltura/intelligent-agents",
+    "headings": [
+      {
+        "id": "authentication-1",
+        "text": "Authentication",
+        "level": 2
+      },
+      {
+        "id": "the-five-services",
+        "text": "The Five Services",
+        "level": 2
+      }
+    ]
+  },
+  {
+    "path": "/reference/api/build/",
+    "title": "API · Phase 2 — Build — @kaltura/intelligent-agents",
+    "headings": []
+  },
+  {
+    "path": "/reference/api/build/avatar-and-agent/",
+    "title": "API · Build · Create an Avatar and an Agent — @kaltura/intelligent-agents",
+    "headings": [
+      {
+        "id": "create-an-avatar",
+        "text": "Create an Avatar",
+        "level": 2
+      },
+      {
+        "id": "create-an-agent",
+        "text": "Create an Agent",
+        "level": 2
+      },
+      {
+        "id": "brain-model--rate-limit-fields-not-in-the-public-api",
+        "text": "Brain-Model & Rate-Limit Fields (not in the public API)",
+        "level": 2
+      },
+      {
+        "id": "related-docs",
+        "text": "Related docs",
+        "level": 2
+      }
+    ]
+  },
+  {
+    "path": "/reference/api/build/intellect/",
+    "title": "API · Build · Create and Configure an Intellect — @kaltura/intelligent-agents",
+    "headings": [
+      {
+        "id": "create-an-intellect",
+        "text": "Create an Intellect",
+        "level": 2
+      },
+      {
+        "id": "configure-an-intellect",
+        "text": "Configure an Intellect",
+        "level": 2
+      },
+      {
+        "id": "related-docs",
+        "text": "Related docs",
+        "level": 2
+      }
+    ]
+  },
+  {
+    "path": "/reference/api/build/knowledge-rag/",
+    "title": "API · Build · Ground the Agent in Your Content (RAG) — @kaltura/intelligent-agents",
+    "headings": [
+      {
+        "id": "related-docs",
+        "text": "Related docs",
+        "level": 2
+      }
+    ]
+  },
+  {
+    "path": "/reference/api/build/preview-prompt/",
+    "title": "API · Build · Preview a Prompt — @kaltura/intelligent-agents",
+    "headings": [
+      {
+        "id": "related-docs",
+        "text": "Related docs",
+        "level": 2
+      }
+    ]
+  },
+  {
+    "path": "/reference/api/build/tools-and-secrets/",
+    "title": "API · Build · Tools and Secrets — @kaltura/intelligent-agents",
+    "headings": [
+      {
+        "id": "tools-api--csv--code",
+        "text": "Tools (api / csv / code)",
+        "level": 2
+      },
+      {
+        "id": "secrets-write-only",
+        "text": "Secrets (write-only)",
+        "level": 2
+      },
+      {
+        "id": "related-docs",
+        "text": "Related docs",
+        "level": 2
+      }
+    ]
+  },
+  {
+    "path": "/reference/api/deploy/",
+    "title": "API · Phase 3 — Deploy — @kaltura/intelligent-agents",
+    "headings": [
+      {
+        "id": "resolve-widget-id",
+        "text": "Resolve Widget ID",
+        "level": 2
+      },
+      {
+        "id": "initialize-the-runtime",
+        "text": "Initialize the Runtime",
+        "level": 2
+      }
+    ]
+  },
+  {
+    "path": "/reference/api/design/",
+    "title": "API · Phase 1 — Design — @kaltura/intelligent-agents",
+    "headings": [
+      {
+        "id": "browse-the-catalog",
+        "text": "Browse the Catalog",
+        "level": 2
+      },
+      {
+        "id": "generate-an-agent-profile",
+        "text": "Generate an Agent Profile",
+        "level": 2
+      },
+      {
+        "id": "upload-a-custom-voice-clone",
+        "text": "Upload a Custom Voice (clone)",
+        "level": 2
+      },
+      {
+        "id": "import-a-provider-voice-by-id-no-audio-upload",
+        "text": "Import a Provider Voice by id (no audio upload)",
+        "level": 2
+      },
+      {
+        "id": "upload-a-custom-visual-portrait--animated-avatar",
+        "text": "Upload a Custom Visual (portrait → animated avatar)",
+        "level": 2
+      },
+      {
+        "id": "end-to-end-custom-portrait-avatar-server-to-browser",
+        "text": "End-to-end: custom portrait avatar, server to browser",
+        "level": 2
+      }
+    ]
+  },
+  {
+    "path": "/reference/api/management-operations/",
+    "title": "API · Management Operations — @kaltura/intelligent-agents",
+    "headings": [
+      {
+        "id": "agents--httpsapiavataruskalturaai",
+        "text": "Agents — https://api.avatar.us.kaltura.ai",
+        "level": 2
+      },
+      {
+        "id": "avatars--httpsapiavataruskalturaai",
+        "text": "Avatars — https://api.avatar.us.kaltura.ai",
+        "level": 2
+      },
+      {
+        "id": "intellects--httpsgenienvp1ovpkalturacom",
+        "text": "Intellects — https://genie.nvp1.ovp.kaltura.com",
+        "level": 2
+      },
+      {
+        "id": "tools--httpsgenienvp1ovpkalturacom",
+        "text": "Tools — https://genie.nvp1.ovp.kaltura.com",
+        "level": 2
+      },
+      {
+        "id": "skills--httpsgenienvp1ovpkalturacom",
+        "text": "Skills — https://genie.nvp1.ovp.kaltura.com",
+        "level": 2
+      },
+      {
+        "id": "threads--httpsgenienvp1ovpkalturacom",
+        "text": "Threads — https://genie.nvp1.ovp.kaltura.com",
+        "level": 2
+      },
+      {
+        "id": "knowledge-records--httpsgenienvp1ovpkalturacom",
+        "text": "Knowledge records — https://genie.nvp1.ovp.kaltura.com",
+        "level": 2
+      },
+      {
+        "id": "lifecycle--httpsapiavataruskalturaai",
+        "text": "Lifecycle — https://api.avatar.us.kaltura.ai",
+        "level": 2
+      }
+    ]
+  },
+  {
+    "path": "/reference/api/operate/",
+    "title": "API · Phase 4 — Operate — @kaltura/intelligent-agents",
+    "headings": [
+      {
+        "id": "converse",
+        "text": "Converse",
+        "level": 2
+      },
+      {
+        "id": "reserved-template-variables-sys__",
+        "text": "Reserved Template Variables (sys__*)",
+        "level": 2
+      },
+      {
+        "id": "check-status",
+        "text": "Check Status",
+        "level": 2
+      },
+      {
+        "id": "threads",
+        "text": "Threads",
+        "level": 2
+      },
+      {
+        "id": "session-completion-signal",
+        "text": "Session-Completion Signal",
+        "level": 2
+      },
+      {
+        "id": "thread-history-and-per-turn-cost",
+        "text": "Thread History and Per-Turn Cost",
+        "level": 2
+      },
+      {
+        "id": "feedback-and-follow-ups-sdk",
+        "text": "Feedback and Follow-ups (SDK)",
+        "level": 2
+      },
+      {
+        "id": "usage-analytics",
+        "text": "Usage Analytics",
+        "level": 2
+      },
+      {
+        "id": "knowledge-search-mcp",
+        "text": "Knowledge Search (MCP)",
+        "level": 2
+      }
+    ]
+  },
+  {
+    "path": "/reference/api/scripted-video/",
+    "title": "API · Scripted Video (STV) — @kaltura/intelligent-agents",
+    "headings": []
+  },
+  {
+    "path": "/reference/architecture-recipe/",
+    "title": "Architecture Recipe — @kaltura/intelligent-agents",
+    "headings": [
+      {
+        "id": "implications-for-a-custom-no-kaltura-lib-client",
+        "text": "Implications for a Custom (No-Kaltura-Lib) Client",
+        "level": 2
+      }
+    ]
+  },
+  {
+    "path": "/reference/architecture-reference/",
+    "title": "Architecture Reference — @kaltura/intelligent-agents",
+    "headings": []
+  },
+  {
+    "path": "/reference/architecture-reference/channels/",
+    "title": "Architecture Reference · Channels — @kaltura/intelligent-agents",
+    "headings": [
+      {
+        "id": "asr-channel--microphone-uplink-step-9",
+        "text": "ASR Channel — Microphone Uplink (step 9)",
+        "level": 2
+      },
+      {
+        "id": "stv-channel--avatar-video-downlink-after-connected",
+        "text": "STV Channel — Avatar Video Downlink (after CONNECTED)",
+        "level": 2
+      },
+      {
+        "id": "related-docs",
+        "text": "Related docs",
+        "level": 2
+      }
+    ]
+  },
+  {
+    "path": "/reference/architecture-reference/connection-and-handshake/",
+    "title": "Architecture Reference · Connection and Handshake — @kaltura/intelligent-agents",
+    "headings": [
+      {
+        "id": "endpoints--credentials",
+        "text": "Endpoints & Credentials",
+        "level": 2
+      },
+      {
+        "id": "socketio-connection",
+        "text": "Socket.IO Connection",
+        "level": 2
+      },
+      {
+        "id": "full-connect-sequence-state-machine-order",
+        "text": "Full Connect Sequence (state-machine order)",
+        "level": 2
+      },
+      {
+        "id": "the-join-payload-step-2--this-carries-the-agentbrain-config",
+        "text": "The join payload (step 2) — this carries the agent/brain config",
+        "level": 2
+      },
+      {
+        "id": "related-docs",
+        "text": "Related docs",
+        "level": 2
+      }
+    ]
+  },
+  {
+    "path": "/reference/architecture-reference/conversation-flow/",
+    "title": "Architecture Reference · Conversation Flow — @kaltura/intelligent-agents",
+    "headings": [
+      {
+        "id": "conversation-phase--what-streams-while-connected",
+        "text": "Conversation Phase — What Streams While Connected",
+        "level": 2
+      },
+      {
+        "id": "sending-user-input",
+        "text": "Sending User Input",
+        "level": 2
+      },
+      {
+        "id": "complete-message-catalog",
+        "text": "Complete Message Catalog",
+        "level": 2
+      },
+      {
+        "id": "related-docs",
+        "text": "Related docs",
+        "level": 2
+      }
+    ]
+  },
+  {
+    "path": "/reference/architecture-reference/module-map-and-data-flow/",
+    "title": "Architecture Reference · Module Map and Data Flow — @kaltura/intelligent-agents",
+    "headings": [
+      {
+        "id": "related-docs",
+        "text": "Related docs",
+        "level": 2
+      }
+    ]
+  },
+  {
+    "path": "/reference/architecture-reference/resilience-and-failure-handling/",
+    "title": "Architecture Reference · Resilience and Failure Handling — @kaltura/intelligent-agents",
+    "headings": [
+      {
+        "id": "related-docs",
+        "text": "Related docs",
+        "level": 2
+      }
+    ]
+  },
+  {
+    "path": "/reference/architecture-reference/scale-and-sticky-sessions/",
+    "title": "Architecture Reference · Scale and Sticky Sessions — @kaltura/intelligent-agents",
+    "headings": [
+      {
+        "id": "related-docs",
+        "text": "Related docs",
+        "level": 2
+      }
+    ]
+  },
+  {
+    "path": "/reference/genui-reference/",
+    "title": "GenUI Reference — @kaltura/intelligent-agents",
+    "headings": [
+      {
+        "id": "pointers-source-of-truth",
+        "text": "Pointers (source of truth)",
+        "level": 2
+      }
+    ]
+  },
+  {
+    "path": "/reference/genui/analytics/",
+    "title": "GenUI · Widget Analytics — @kaltura/intelligent-agents",
+    "headings": [
+      {
+        "id": "what-not-to-report-read-this-first",
+        "text": "What not to report (read this first)",
+        "level": 2
+      },
+      {
+        "id": "the-recipe-two-widget-interaction-types-two-distinguishable-events",
+        "text": "The recipe: two widget interaction types, two distinguishable events",
+        "level": 2
+      },
+      {
+        "id": "why-the-two-events-stay-distinct",
+        "text": "Why the two events stay distinct",
+        "level": 2
+      },
+      {
+        "id": "related-docs",
+        "text": "Related docs",
+        "level": 2
+      }
+    ]
+  },
+  {
+    "path": "/reference/genui/authoring-and-consuming/",
+    "title": "GenUI · Authoring and Consuming Widgets — @kaltura/intelligent-agents",
+    "headings": [
+      {
+        "id": "authoring--which-capability-turns-each-widget-on",
+        "text": "Authoring — which capability turns each widget on",
+        "level": 2
+      },
+      {
+        "id": "consuming-widgets-in-your-app",
+        "text": "Consuming widgets in your app",
+        "level": 2
+      },
+      {
+        "id": "screen_share_analysis--sendscreenshotdata",
+        "text": "screen_share_analysis / sendScreenShot(data)",
+        "level": 2
+      },
+      {
+        "id": "related-docs",
+        "text": "Related docs",
+        "level": 2
+      }
+    ]
+  },
+  {
+    "path": "/reference/genui/model-and-runtimes/",
+    "title": "GenUI · Model and Runtimes — @kaltura/intelligent-agents",
+    "headings": [
+      {
+        "id": "the-model-in-one-paragraph",
+        "text": "The model in one paragraph",
+        "level": 2
+      },
+      {
+        "id": "the-first-class-runtimes",
+        "text": "The first-class runtimes",
+        "level": 2
+      },
+      {
+        "id": "how-a-widget-reaches-your-screen-the-data-flow",
+        "text": "How a widget reaches your screen (the data flow)",
+        "level": 2
+      },
+      {
+        "id": "two-delivery-paths-this-is-the-1-gotcha",
+        "text": "Two delivery paths (this is the #1 gotcha)",
+        "level": 2
+      },
+      {
+        "id": "force_experience--a-hint-not-a-contract",
+        "text": "force_experience — a hint, not a contract",
+        "level": 2
+      },
+      {
+        "id": "related-docs",
+        "text": "Related docs",
+        "level": 2
+      }
+    ]
+  },
+  {
+    "path": "/reference/genui/safety-and-restrictions/",
+    "title": "GenUI · Safety and Restrictions — @kaltura/intelligent-agents",
+    "headings": [
+      {
+        "id": "safety-model-owasp-llm05--every-widget-passes-through-this",
+        "text": "Safety model (OWASP LLM05 — every widget passes through this)",
+        "level": 2
+      },
+      {
+        "id": "restrictions--gotchas-read-before-you-build",
+        "text": "Restrictions & gotchas (read before you build)",
+        "level": 2
+      },
+      {
+        "id": "related-docs",
+        "text": "Related docs",
+        "level": 2
+      }
+    ]
+  },
+  {
+    "path": "/reference/genui/widgets/",
+    "title": "GenUI · Per-Runtime Widget Detail — @kaltura/intelligent-agents",
+    "headings": [
+      {
+        "id": "related-docs",
+        "text": "Related docs",
+        "level": 2
+      }
+    ]
+  },
+  {
+    "path": "/reference/lifecycle/",
+    "title": "Lifecycle — @kaltura/intelligent-agents",
+    "headings": [
+      {
+        "id": "rule-shape",
+        "text": "Rule shape",
+        "level": 2
+      },
+      {
+        "id": "the-four-action-types",
+        "text": "The four action types",
+        "level": 2
+      },
+      {
+        "id": "scoping-a-rule-to-one-agent",
+        "text": "Scoping a rule to one agent",
+        "level": 2
+      },
+      {
+        "id": "every-session-already-gets-a-summary-for-free",
+        "text": "Every session already gets a SUMMARY, for free",
+        "level": 2
+      },
+      {
+        "id": "discovery-and-dry-run-testing",
+        "text": "Discovery and dry-run testing",
+        "level": 2
+      },
+      {
+        "id": "full-crud--discovery-method-table",
+        "text": "Full CRUD + discovery method table",
+        "level": 2
+      },
+      {
+        "id": "related-docs",
+        "text": "Related docs",
+        "level": 2
+      }
+    ]
+  },
+  {
+    "path": "/reference/sdk-reference/",
+    "title": "SDK Reference — @kaltura/intelligent-agents",
+    "headings": [
+      {
+        "id": "contents",
+        "text": "Contents",
+        "level": 2
+      },
+      {
+        "id": "management",
+        "text": "Management",
+        "level": 2
+      },
+      {
+        "id": "experience",
+        "text": "Experience",
+        "level": 2
+      },
+      {
+        "id": "accessibility-wcag-22-aa--captions--ai-disclosure-gate",
+        "text": "Accessibility (WCAG 2.2 AA / captions) + AI-disclosure gate",
+        "level": 2
+      },
+      {
+        "id": "security-posture",
+        "text": "Security posture",
+        "level": 2
+      },
+      {
+        "id": "key-design-rules",
+        "text": "Key design rules",
+        "level": 2
+      },
+      {
+        "id": "client-side-commands",
+        "text": "Client-side commands",
+        "level": 2
+      },
+      {
+        "id": "ai-sdr--crm-lead-capture",
+        "text": "AI-SDR / CRM lead capture",
+        "level": 2
+      },
+      {
+        "id": "genui",
+        "text": "GenUI",
+        "level": 2
+      },
+      {
+        "id": "presenter",
+        "text": "Presenter",
+        "level": 2
+      },
+      {
+        "id": "chroma-key-avatar-compositor",
+        "text": "Chroma-key Avatar Compositor",
+        "level": 2
+      },
+      {
+        "id": "advanced--building-block-exports",
+        "text": "Advanced / building-block exports",
+        "level": 2
+      },
+      {
+        "id": "testing",
+        "text": "Testing",
+        "level": 2
+      },
+      {
+        "id": "intellect-configuration",
+        "text": "Intellect configuration",
+        "level": 2
+      },
+      {
+        "id": "skills-voice-import-and-the-embed-snippet",
+        "text": "Skills, voice import, and the embed snippet",
+        "level": 2
+      },
+      {
+        "id": "scripted-video-stv-only-sessions",
+        "text": "Scripted-Video (STV-only) Sessions",
+        "level": 2
+      },
+      {
+        "id": "rag-knowledge-base",
+        "text": "RAG (knowledge base)",
+        "level": 2
+      },
+      {
+        "id": "honest-limits",
+        "text": "Honest limits",
+        "level": 2
+      },
+      {
+        "id": "related-docs",
+        "text": "Related docs",
+        "level": 2
+      }
+    ]
+  },
+  {
+    "path": "/reference/security/",
+    "title": "Security — @kaltura/intelligent-agents",
+    "headings": [
+      {
+        "id": "reporting-a-vulnerability",
+        "text": "Reporting a vulnerability",
+        "level": 2
+      },
+      {
+        "id": "table-of-contents",
+        "text": "Table of contents",
+        "level": 2
+      },
+      {
+        "id": "ai-application-controls-owasp-llmagentic-hipaa-technical-safeguards",
+        "text": "AI-application controls (OWASP LLM/Agentic; HIPAA technical safeguards)",
+        "level": 2
+      },
+      {
+        "id": "ks-kaltura-session-guidance-for-agents-ac-3--ac-6--ia-2",
+        "text": "KS (Kaltura Session) guidance for agents (AC-3 / AC-6 / IA-2)",
+        "level": 2
+      },
+      {
+        "id": "token-lifecycle-rfc-9700-oauth-20-security-bcp-nist-ac-family",
+        "text": "Token lifecycle (RFC 9700 OAuth 2.0 Security BCP; NIST AC family)",
+        "level": 2
+      },
+      {
+        "id": "audit-logging-nist-au-2--au-3--au-12-owasp-logging-soc-2-cc7",
+        "text": "Audit logging (NIST AU-2 / AU-3 / AU-12; OWASP Logging; SOC 2 CC7)",
+        "level": 2
+      },
+      {
+        "id": "transport-security-nist-sc-8-owasp-wsstls",
+        "text": "Transport security (NIST SC-8; OWASP WSS/TLS)",
+        "level": 2
+      },
+      {
+        "id": "browser-hardening-owasp-asvs--websocket-cs",
+        "text": "Browser hardening (OWASP ASVS / WebSocket CS)",
+        "level": 2
+      },
+      {
+        "id": "isolation--multi-tenancy-nist-sc-4--ac-64",
+        "text": "Isolation & multi-tenancy (NIST SC-4 / AC-6(4))",
+        "level": 2
+      },
+      {
+        "id": "supply-chain-integrity-slsa--openssf--eo-14028",
+        "text": "Supply-chain integrity (SLSA / OpenSSF / EO 14028)",
+        "level": 2
+      },
+      {
+        "id": "shared-responsibility-control-matrix-nist-800-53",
+        "text": "Shared-responsibility control matrix (NIST 800-53)",
+        "level": 2
+      },
+      {
+        "id": "fips-mode-how-to",
+        "text": "FIPS mode (how-to)",
+        "level": 2
+      },
+      {
+        "id": "data-residency-sc-7",
+        "text": "Data residency (SC-7)",
+        "level": 2
+      },
+      {
+        "id": "framework-crosswalks",
+        "text": "Framework crosswalks",
+        "level": 2
+      }
+    ]
+  },
+  {
+    "path": "/reference/use-cases/",
+    "title": "Use-Case Catalog — @kaltura/intelligent-agents",
+    "headings": [
+      {
+        "id": "composition-patterns",
+        "text": "Composition patterns",
+        "level": 2
+      }
+    ]
+  },
+  {
+    "path": "/reference/wire-protocol/",
+    "title": "Wire Protocol — @kaltura/intelligent-agents",
+    "headings": []
+  },
+  {
+    "path": "/reference/wire-protocol/audio-channels/",
+    "title": "Wire Protocol · Audio Channels — @kaltura/intelligent-agents",
+    "headings": [
+      {
+        "id": "5-asr-uplink-pc1--microphone--server",
+        "text": "5. ASR uplink (pc1) — microphone → server",
+        "level": 2
+      },
+      {
+        "id": "6-stv-downlink-pc2--avatar-videoaudio--you",
+        "text": "6. STV downlink (pc2) — avatar video+audio → you",
+        "level": 2
+      },
+      {
+        "id": "related-docs",
+        "text": "Related docs",
+        "level": 2
+      }
+    ]
+  },
+  {
+    "path": "/reference/wire-protocol/client-configuration/",
+    "title": "Wire Protocol · Client Configuration — @kaltura/intelligent-agents",
+    "headings": [
+      {
+        "id": "structured-experiences-force_experience--unisphere-tool",
+        "text": "Structured experiences (force_experience + unisphere-tool)",
+        "level": 2
+      },
+      {
+        "id": "related-docs",
+        "text": "Related docs",
+        "level": 2
+      }
+    ]
+  },
+  {
+    "path": "/reference/wire-protocol/connection-basics/",
+    "title": "Wire Protocol · Connection Basics — @kaltura/intelligent-agents",
+    "headings": [
+      {
+        "id": "1-channels-at-a-glance",
+        "text": "1. Channels at a glance",
+        "level": 2
+      },
+      {
+        "id": "2-socketio-connection",
+        "text": "2. Socket.IO connection",
+        "level": 2
+      },
+      {
+        "id": "3-connect-sequence-state-machine-order",
+        "text": "3. Connect sequence (state-machine order)",
+        "level": 2
+      },
+      {
+        "id": "related-docs",
+        "text": "Related docs",
+        "level": 2
+      }
+    ]
+  },
+  {
+    "path": "/reference/wire-protocol/end-to-end-turn/",
+    "title": "Wire Protocol · End-to-End Turn — @kaltura/intelligent-agents",
+    "headings": [
+      {
+        "id": "8-end-to-end-turn-what-fires-in-order",
+        "text": "8. End-to-end turn (what fires, in order)",
+        "level": 2
+      },
+      {
+        "id": "9-reproduce--re-capture",
+        "text": "9. Reproduce / re-capture",
+        "level": 2
+      },
+      {
+        "id": "related-docs",
+        "text": "Related docs",
+        "level": 2
+      }
+    ]
+  },
+  {
+    "path": "/reference/wire-protocol/events-catalog/",
+    "title": "Wire Protocol · Events Catalog — @kaltura/intelligent-agents",
+    "headings": [
+      {
+        "id": "related-docs",
+        "text": "Related docs",
+        "level": 2
+      }
+    ]
+  }
+]

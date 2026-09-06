@@ -1,0 +1,49 @@
+/: meet-nova, one-avatar-three, why-sdk, quick-start-browser, security-compliance, license
+/explanation/architecture/: three-planes, backend-services-map, text-conversation-flow, video-runtime-protocol, two-session-modes, displaying-avatar-video, sdk-module-map, resilience-failure-handling
+/explanation/case-study-nova/: checking-whether-knowledge, running-evals-against
+/explanation/inside-a-live-conversation/: three-flows, bring-own-expertise, youd-take-yourself, analytics-come-runtime, where-scripted-sessions
+/getting-started/: need-before-start, step-get-credentials, step-set-up, step-create-own, step-talk-agent, common-questions, appendix-verify-checkout
+/guides/client-commands/: why-exists, mechanism-end-end, limits-gotchas
+/guides/dynamic-data-injection/: three-ways-get, context-channel-request, active-nudge-speak, answering-brain-initiated, they-work-together, which-one-i, related-but-distinct
+/guides/external-api-integrations/: building-blocks, authenticating-call, when-actually-need, dont-skip-kaltura, verifying-wiring-before, example-crm-marketing
+/guides/lifecycle-recipes/: mental-model, recipe-a-extract, recipe-b-email, scoping-alert-one, reading-results-back, test-both-rules, minimal-runnable-example, common-pitfalls
+/guides/pause-resume/: the-mechanism, minimal-runnable-example, edge-case-dont
+/guides/structured-data-forms/: what-it-is, brain-made-aware, whats-possible-whats, sdk-handles-two, form-rendered, customize-style-form, where-submitted-data, related-kaltura-genie
+/guides/voice-input-modes/: one-rule-overrides, deciding-which-mode, ux-pattern-click, visual-non-visual, safety-dont-let, implementation-checklist, switching-between-avatar
+/reference/api-reference/: common-errors, quick-reference
+/reference/api/authentication/: authentication, five-services
+/reference/api/build/
+/reference/api/build/avatar-and-agent/: create-avatar, create-agent, brain-model-rate
+/reference/api/build/intellect/: create-intellect, configure-intellect
+/reference/api/build/knowledge-rag/
+/reference/api/build/preview-prompt/
+/reference/api/build/tools-and-secrets/: tools-api-csv, secrets-write-only
+/reference/api/deploy/: resolve-widget-id, initialize-runtime
+/reference/api/design/: browse-catalog, generate-agent-profile, upload-custom-voice, import-provider-voice, upload-custom-visual, end-end-custom
+/reference/api/management-operations/: agents, avatars, intellects, tools, skills, threads, knowledge-records, lifecycle
+/reference/api/operate/: converse, reserved-template-variables, check-status, threads, session-completion-signal, thread-history-per, feedback-follow-ups, usage-analytics, knowledge-search-mcp
+/reference/api/scripted-video/
+/reference/architecture-recipe/: implications-custom-no
+/reference/architecture-reference/
+/reference/architecture-reference/channels/: asr-channel-microphone, stv-channel-avatar
+/reference/architecture-reference/connection-and-handshake/: endpoints-credentials, socketio-connection, full-connect-sequence, join-payload-step
+/reference/architecture-reference/conversation-flow/: conversation-phase-streams, sending-user-input, complete-message-catalog
+/reference/architecture-reference/module-map-and-data-flow/
+/reference/architecture-reference/resilience-and-failure-handling/
+/reference/architecture-reference/scale-and-sticky-sessions/
+/reference/genui-reference/: pointers-source-truth
+/reference/genui/analytics/: not-report-read, recipe-two-widget, why-two-events
+/reference/genui/authoring-and-consuming/: authoring-which-capability, consuming-widgets-app, screen-share-analysis
+/reference/genui/model-and-runtimes/: model-one-paragraph, first-class-runtimes, widget-reaches-screen, two-delivery-paths, force-experience-hint
+/reference/genui/safety-and-restrictions/: safety-model-owasp, restrictions-gotchas-read
+/reference/genui/widgets/
+/reference/lifecycle/: rule-shape, four-action-types, scoping-rule-one, every-session-already, discovery-dry-run, full-crud-discovery
+/reference/sdk-reference/: management, experience, accessibility-wcag-aa, security-posture, key-design-rules, client-side-commands, ai-sdr-crm, genui, presenter, chroma-key-avatar, advanced-building-block, testing, intellect-configuration, skills-voice-import, scripted-video-stv, rag-knowledge-base, honest-limits
+/reference/security/: reporting-vulnerability, ai-application-controls, ks-kaltura-session, token-lifecycle-rfc, audit-logging-nist, transport-security-nist, browser-hardening-owasp, isolation-multi-tenancy, supply-chain-integrity, shared-responsibility-control, fips-mode, data-residency-sc, framework-crosswalks
+/reference/use-cases/: composition-patterns
+/reference/wire-protocol/
+/reference/wire-protocol/audio-channels/: asr-uplink-pc1, stv-downlink-pc2
+/reference/wire-protocol/client-configuration/: structured-experiences-force
+/reference/wire-protocol/connection-basics/: channels-glance, socketio-connection, connect-sequence-state
+/reference/wire-protocol/end-to-end-turn/: end-end-turn, reproduce-re-capture
+/reference/wire-protocol/events-catalog/

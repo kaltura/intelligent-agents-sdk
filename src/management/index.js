@@ -67,3 +67,13 @@ export {
 export { GENUI_RUNTIMES, segmentKind, parseToolCall, parseToolResponseName } from '../core/stream.js';
 // CRM AI-SDR recipes: validated api-tool builders for HubSpot/Salesforce contact upsert.
 export { hubspotContactUpsert, salesforceContactUpsert } from './crm-recipes.js';
+// Site navigation: fire-and-forget `go_to` client tool + SITE MAP / rules prompt blocks
+// (provisioning side) and the compact section-key contract shared with
+// `@kaltura/intelligent-agents/experience/site-nav` and any site build.
+export {
+  goToTool, siteMapPrompt, SITE_NAV_RULES_PROMPT, SITE_NAV_TOOL_NAME, loadSectionsManifest, estimateTokens,
+} from './site-nav.js';
+export {
+  buildSectionsManifest, pageSectionKeys, renderSiteMap, validateSectionsManifest,
+  normalizePath, resolvePath, resolveSection, normalizeWords, STOP_WORDS, BOILERPLATE_IDS, MANIFEST_VERSION,
+} from '../core/site-keys.js';
