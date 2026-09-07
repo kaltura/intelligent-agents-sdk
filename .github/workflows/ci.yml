@@ -171,11 +171,15 @@ jobs:
 
       - name: 🔊 Start a virtual audio device (this runner has no sound card. Firefox's cubeb backend needs a sink to play media elements at all; WebKitGTK's GStreamer pipeline otherwise falls through to OpenAL and ALSA, which fail to open a device on every play())
         if: matrix.engine == 'firefox' || matrix.engine == 'webkit'
+        # WebRTC audio is 48 kHz. On the default 44.1 kHz sink WebKitGTK resamples every track and its
+        # WebProcess can crash inside GStreamer's resampler during teardown (core dump backtrace in a past run);
+        # a 48 kHz sink keeps that path passthrough.
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq pulseaudio
           pulseaudio -D --exit-idle-time=-1 --disallow-exit
-          pactl load-module module-null-sink
+          pactl load-module module-null-sink rate=48000 channels=2
+          pactl list short sinks
 
       - name: 🎬 Real headless ${{ matrix.engine }}, loopback WebRTC — merged/split streams, paints, audio, autoplay, recovery, teardown
         id: verify_avatar_media
@@ -205,7 +209,7 @@ jobs:
             echo "=== $c"
             exe=$(file "$c" | sed -n "s/.*execfn: '\([^']*\)'.*/\1/p")
             echo "executable: $exe"
-            gdb -batch -ex 'thread apply all bt 25' "$exe" "$c" 2>&1 | tail -n 200
+            gdb -batch -ex 'bt 30' -ex 'thread apply all bt 12' "$exe" "$c" 2>&1 | head -n 300
           done
 
       - name: 📤 Upload the per-engine run artifact (per-cell timings, skips, track→mediaReady latency)
