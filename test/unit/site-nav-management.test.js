@@ -51,9 +51,9 @@ test('siteMapPrompt: renders the map and warns above the token budget', () => {
   assert.deepEqual(p, {
     key: 'siteMap',
     label: 'Site map',
-    headerTemplate: 'SITE MAP. One line per page: path, then that page\'s section keys.',
+    headerTemplate: 'SITE MAP. Two lines per page: the page title, then its path followed by that page\'s section keys.',
     type: 'custom',
-    value: '/\n/guides/pause-resume/: what-it-is, edge-case-dont',
+    value: '/\n\n/guides/pause-resume/: what-it-is, edge-case-dont',
   });
   assert.deepEqual(warnings, []);
   const tight = siteMapPrompt(MANIFEST, { maxTokens: 5, warn: (m) => warnings.push(m), key: 'map', label: 'Map' });

@@ -1,49 +1,146 @@
+Home — @kaltura/intelligent-agents
 /: meet-nova, one-avatar-three, why-sdk, quick-start-browser, security-compliance, license
+
+Platform Architecture — @kaltura/intelligent-agents
 /explanation/architecture/: three-planes, backend-services-map, text-conversation-flow, video-runtime-protocol, two-session-modes, displaying-avatar-video, sdk-module-map, resilience-failure-handling
+
+Case Study: Nova — @kaltura/intelligent-agents
 /explanation/case-study-nova/: checking-whether-knowledge, running-evals-against
+
+Inside a Live Conversation — @kaltura/intelligent-agents
 /explanation/inside-a-live-conversation/: three-flows, bring-own-expertise, youd-take-yourself, analytics-come-runtime, where-scripted-sessions
+
+Getting Started — @kaltura/intelligent-agents
 /getting-started/: need-before-start, step-get-credentials, step-set-up, step-create-own, step-talk-agent, common-questions, appendix-verify-checkout
+
+Client-Side Commands — @kaltura/intelligent-agents
 /guides/client-commands/: why-exists, mechanism-end-end, limits-gotchas
+
+Dynamic Data Injection — @kaltura/intelligent-agents
 /guides/dynamic-data-injection/: three-ways-get, context-channel-request, active-nudge-speak, answering-brain-initiated, they-work-together, which-one-i, related-but-distinct
+
+External API Integrations — @kaltura/intelligent-agents
 /guides/external-api-integrations/: building-blocks, authenticating-call, when-actually-need, dont-skip-kaltura, verifying-wiring-before, example-crm-marketing
+
+Lifecycle Recipes — @kaltura/intelligent-agents
 /guides/lifecycle-recipes/: mental-model, recipe-a-extract, recipe-b-email, scoping-alert-one, reading-results-back, test-both-rules, minimal-runnable-example, common-pitfalls
+
+Pause for Video/Interactive Content, Then Resume — @kaltura/intelligent-agents
 /guides/pause-resume/: the-mechanism, minimal-runnable-example, edge-case-dont
+
+Structured Data Forms — @kaltura/intelligent-agents
 /guides/structured-data-forms/: what-it-is, brain-made-aware, whats-possible-whats, sdk-handles-two, form-rendered, customize-style-form, where-submitted-data, related-kaltura-genie
+
+Voice Input Modes — @kaltura/intelligent-agents
 /guides/voice-input-modes/: one-rule-overrides, deciding-which-mode, ux-pattern-click, visual-non-visual, safety-dont-let, implementation-checklist, switching-between-avatar
+
+API Reference — @kaltura/intelligent-agents
 /reference/api-reference/: common-errors, quick-reference
+
+API · Authentication & Services — @kaltura/intelligent-agents
 /reference/api/authentication/: authentication, five-services
+
+API · Phase 2 — Build — @kaltura/intelligent-agents
 /reference/api/build/
+
+API · Build · Create an Avatar and an Agent — @kaltura/intelligent-agents
 /reference/api/build/avatar-and-agent/: create-avatar, create-agent, brain-model-rate
+
+API · Build · Create and Configure an Intellect — @kaltura/intelligent-agents
 /reference/api/build/intellect/: create-intellect, configure-intellect
+
+API · Build · Ground the Agent in Your Content (RAG) — @kaltura/intelligent-agents
 /reference/api/build/knowledge-rag/
+
+API · Build · Preview a Prompt — @kaltura/intelligent-agents
 /reference/api/build/preview-prompt/
+
+API · Build · Tools and Secrets — @kaltura/intelligent-agents
 /reference/api/build/tools-and-secrets/: tools-api-csv, secrets-write-only
+
+API · Phase 3 — Deploy — @kaltura/intelligent-agents
 /reference/api/deploy/: resolve-widget-id, initialize-runtime
+
+API · Phase 1 — Design — @kaltura/intelligent-agents
 /reference/api/design/: browse-catalog, generate-agent-profile, upload-custom-voice, import-provider-voice, upload-custom-visual, end-end-custom
+
+API · Management Operations — @kaltura/intelligent-agents
 /reference/api/management-operations/: agents, avatars, intellects, tools, skills, threads, knowledge-records, lifecycle
+
+API · Phase 4 — Operate — @kaltura/intelligent-agents
 /reference/api/operate/: converse, reserved-template-variables, check-status, threads, session-completion-signal, thread-history-per, feedback-follow-ups, usage-analytics, knowledge-search-mcp
+
+API · Scripted Video (STV) — @kaltura/intelligent-agents
 /reference/api/scripted-video/
+
+Architecture Recipe — @kaltura/intelligent-agents
 /reference/architecture-recipe/: implications-custom-no
+
+Architecture Reference — @kaltura/intelligent-agents
 /reference/architecture-reference/
+
+Architecture Reference · Channels — @kaltura/intelligent-agents
 /reference/architecture-reference/channels/: asr-channel-microphone, stv-channel-avatar
+
+Architecture Reference · Connection and Handshake — @kaltura/intelligent-agents
 /reference/architecture-reference/connection-and-handshake/: endpoints-credentials, socketio-connection, full-connect-sequence, join-payload-step
+
+Architecture Reference · Conversation Flow — @kaltura/intelligent-agents
 /reference/architecture-reference/conversation-flow/: conversation-phase-streams, sending-user-input, complete-message-catalog
+
+Architecture Reference · Module Map and Data Flow — @kaltura/intelligent-agents
 /reference/architecture-reference/module-map-and-data-flow/
+
+Architecture Reference · Resilience and Failure Handling — @kaltura/intelligent-agents
 /reference/architecture-reference/resilience-and-failure-handling/
+
+Architecture Reference · Scale and Sticky Sessions — @kaltura/intelligent-agents
 /reference/architecture-reference/scale-and-sticky-sessions/
+
+GenUI Reference — @kaltura/intelligent-agents
 /reference/genui-reference/: pointers-source-truth
+
+GenUI · Widget Analytics — @kaltura/intelligent-agents
 /reference/genui/analytics/: not-report-read, recipe-two-widget, why-two-events
+
+GenUI · Authoring and Consuming Widgets — @kaltura/intelligent-agents
 /reference/genui/authoring-and-consuming/: authoring-which-capability, consuming-widgets-app, screen-share-analysis
+
+GenUI · Model and Runtimes — @kaltura/intelligent-agents
 /reference/genui/model-and-runtimes/: model-one-paragraph, first-class-runtimes, widget-reaches-screen, two-delivery-paths, force-experience-hint
+
+GenUI · Safety and Restrictions — @kaltura/intelligent-agents
 /reference/genui/safety-and-restrictions/: safety-model-owasp, restrictions-gotchas-read
+
+GenUI · Per-Runtime Widget Detail — @kaltura/intelligent-agents
 /reference/genui/widgets/
+
+Lifecycle — @kaltura/intelligent-agents
 /reference/lifecycle/: rule-shape, four-action-types, scoping-rule-one, every-session-already, discovery-dry-run, full-crud-discovery
+
+SDK Reference — @kaltura/intelligent-agents
 /reference/sdk-reference/: management, experience, accessibility-wcag-aa, security-posture, key-design-rules, client-side-commands, ai-sdr-crm, genui, presenter, chroma-key-avatar, advanced-building-block, testing, intellect-configuration, skills-voice-import, scripted-video-stv, rag-knowledge-base, honest-limits
+
+Security — @kaltura/intelligent-agents
 /reference/security/: reporting-vulnerability, ai-application-controls, ks-kaltura-session, token-lifecycle-rfc, audit-logging-nist, transport-security-nist, browser-hardening-owasp, isolation-multi-tenancy, supply-chain-integrity, shared-responsibility-control, fips-mode, data-residency-sc, framework-crosswalks
+
+Use-Case Catalog — @kaltura/intelligent-agents
 /reference/use-cases/: composition-patterns
+
+Wire Protocol — @kaltura/intelligent-agents
 /reference/wire-protocol/
+
+Wire Protocol · Audio Channels — @kaltura/intelligent-agents
 /reference/wire-protocol/audio-channels/: asr-uplink-pc1, stv-downlink-pc2
+
+Wire Protocol · Client Configuration — @kaltura/intelligent-agents
 /reference/wire-protocol/client-configuration/: structured-experiences-force
+
+Wire Protocol · Connection Basics — @kaltura/intelligent-agents
 /reference/wire-protocol/connection-basics/: channels-glance, socketio-connection, connect-sequence-state
+
+Wire Protocol · End-to-End Turn — @kaltura/intelligent-agents
 /reference/wire-protocol/end-to-end-turn/: end-end-turn, reproduce-re-capture
+
+Wire Protocol · Events Catalog — @kaltura/intelligent-agents
 /reference/wire-protocol/events-catalog/

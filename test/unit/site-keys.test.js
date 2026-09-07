@@ -67,7 +67,12 @@ test('site-keys: buildSectionsManifest depth filter, targets, titles, bad pages'
   ] }] });
   assert.equal(buildSectionsManifest([{ path: '/x/', headings: [{ id: 'b', text: 'B', level: 3 }] }], { depth: 3 }).pages[0].sections.length, 1);
   assert.deepEqual(buildSectionsManifest(undefined).pages, []);
-  assert.equal(renderSiteMap({ pages: [{ path: '/a/', sections: [] }, { path: '/b/', sections: [{ key: 'k1' }, { key: 'k2' }] }] }), '/a/\n/b/: k1, k2');
+  assert.equal(renderSiteMap({ pages: [{ path: '/a/', sections: [] }, { path: '/b/', sections: [{ key: 'k1' }, { key: 'k2' }] }] }), '/a/\n\n/b/: k1, k2');
+  assert.equal(
+    renderSiteMap({ pages: [{ path: '/a/', title: ' Alpha  Page ', sections: [] }, { path: '/b/', title: 'Beta', sections: [{ key: 'k1' }] }] }),
+    'Alpha Page\n/a/\n\nBeta\n/b/: k1',
+    'title on its own line above the path line; the path line carries only path and keys',
+  );
   assert.equal(renderSiteMap(null), '');
 });
 

@@ -172,7 +172,7 @@ export function pageSectionKeys(headings, opts = {}) {
  * One page as fed to {@link buildSectionsManifest}.
  * @typedef {object} PageInput
  * @property {string} path Site-relative path, prefix-free, with leading slash (`/guides/pause-resume/`).
- * @property {string} [title] Page title (kept in the manifest for humans and tooling; not sent to the model).
+ * @property {string} [title] Page title. Rendered as the title line of the SITE MAP so the model can match what a visitor calls a page to its path.
  * @property {Array<{id:string,text:string,level?:number}>} [headings] Headings in document order. `level` (2, 3, …) enables the `depth` filter.
  * @property {Array<{id:string,text?:string}>} [targets] Extra hand-placed anchors (e.g. `data-nova-target` elements). Their id doubles as key when it is not taken.
  */
@@ -241,16 +241,26 @@ export function buildSectionsManifest(pages, opts = {}) {
 }
 
 /**
- * Render a manifest as the prompt text the model reads: one line per page,
- * `path: key1, key2`. Pages without sections render as the bare path.
+ * Render a manifest as the prompt text the model reads. Each page is a block
+ * of two lines: the page title, then `path: key1, key2`. Pages without a
+ * title render the path line alone; pages without sections render the bare
+ * path. Blocks are separated by a blank line.
+ *
+ * The path line carries nothing but the path and the keys. Any label placed on
+ * that line next to the path gets copied into `go_to` as part of the path, so
+ * the title lives on its own line above it.
  * @param {SectionsManifest|{pages:ManifestPage[]}} manifest
  * @returns {string}
  */
 export function renderSiteMap(manifest) {
   const pages = manifest && Array.isArray(manifest.pages) ? manifest.pages : [];
   return pages
-    .map((p) => (p.sections && p.sections.length ? `${p.path}: ${p.sections.map((s) => s.key).join(', ')}` : String(p.path)))
-    .join('\n');
+    .map((p) => {
+      const line = p.sections && p.sections.length ? `${p.path}: ${p.sections.map((s) => s.key).join(', ')}` : String(p.path);
+      const title = p.title ? String(p.title).replace(/\s+/g, ' ').trim() : '';
+      return title ? `${title}\n${line}` : line;
+    })
+    .join('\n\n');
 }
 
 /**
