@@ -13,11 +13,12 @@
  *  - `V`: what `videoEl` plays — video, plus audio when there is no `audioEl`.
  *  - `A`: what `audioEl` plays — audio only (split mode).
  * Each element gets `srcObject` set once and `play()` called once per binding. A recovery
- * (STV re-subscribe) swaps the tracks inside the streams; the elements are never touched.
+ * (STV re-subscribe) swaps the tracks inside the streams; an element still holding its SDK
+ * stream is never touched, one whose `srcObject` the app replaced is bound again.
  *
  * Only writes `srcObject`, `play()`, and, through the SDK's own methods, `muted`, `volume`,
- * `setSinkId()`. No DOM lookups, no timers, no `console`; a bare `{ srcObject, play() }`
- * object is enough to bind. Never throws from `attach()` for a missing browser feature —
+ * `setSinkId()`. No DOM lookups, no timers, no `console`; a bare `{ play() }` object is
+ * enough to bind. Never throws from `attach()` for a missing browser feature —
  * only for a bad argument, which the session surfaces as a `media_attach_failed` warning.
  */
 import { KalturaError } from '../core/errors.js';
@@ -65,7 +66,8 @@ export class AvatarMedia {
   /**
    * Route one downlink track. Same track twice is a no-op; a second track of the same kind
    * replaces (and stops) the previous one inside the existing streams, so a live element
-   * keeps its `srcObject`. Binds any configured element on the first call.
+   * keeps its `srcObject`. Binds any configured element on the first call, and re-binds one
+   * whose `srcObject` the app has since replaced.
    * @param {any} track  MediaStreamTrack (`kind` 'video' | 'audio').
    * @param {any[]} [streams]  `e.streams` from `ontrack`; only used when no MediaStream constructor exists.
    * @throws {KalturaError} `bad_request` for a track without a valid `kind`.
@@ -80,8 +82,10 @@ export class AvatarMedia {
       old.stop?.();
     }
     if (!this._c.getTracks().includes(track)) this._c.addTrack(track);
-    if (this._videoEl && !this._v) this._bind('video');
-    if (this._audioEl && !this._a) this._bind('audio');
+    // Bind on the first track, or again when the app replaced `srcObject` itself (main re-assigned
+    // it on every track, so a self-nulled element got the picture back on recovery; keep that).
+    if (this._videoEl && (!this._v || this._videoEl.srcObject !== this._v)) this._bind('video');
+    if (this._audioEl && (!this._a || this._audioEl.srcObject !== this._a)) this._bind('audio');
     this._sync();
   }
 
@@ -178,8 +182,9 @@ export class AvatarMedia {
   /** @param {string} method @param {any} el */
   _checkEl(method, el) {
     if (el == null) return null;
-    if (typeof el === 'object' && 'srcObject' in el && typeof el.play === 'function') return el;
-    throw badRequest(method, `expected null or a media element (an object with a srcObject property and a play() method), got ${typeof el}.`);
+    // Duck-typed on `play()` only: jsdom media elements have `play()` but no `srcObject`.
+    if (typeof el === 'object' && typeof el.play === 'function') return el;
+    throw badRequest(method, `expected null or a media element (an object with a play() method), got ${typeof el}.`);
   }
   /** The element that carries the audio track right now (bound or not). */
   _sink() { return this._audioEl ?? this._videoEl; }
@@ -192,14 +197,15 @@ export class AvatarMedia {
     return s;
   }
   /**
-   * Bind `videoEl` (kind 'video') or `audioEl` (kind 'audio'): fresh stream, tracks, stored audio
+   * Bind `videoEl` (kind 'video') or `audioEl` (kind 'audio'): the kind's stream (fresh on the
+   * first bind, reused when re-binding an element the app unhooked), tracks, stored audio
    * settings, srcObject once, play() once. Settings go first so a muted app never trips autoplay.
    * A late `play()` rejection only counts while this binding is still the live one.
    * @param {'video'|'audio'} kind
    */
   _bind(kind) {
     const el = kind === 'video' ? this._videoEl : this._audioEl;
-    const s = this._newStream() ?? this._c;
+    const s = (kind === 'video' ? this._v : this._a) ?? this._newStream() ?? this._c;
     if (kind === 'video') this._v = s; else this._a = s;
     this._sync();
     this._applyAudioSettings();

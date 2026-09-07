@@ -720,7 +720,7 @@ export class KalturaAvatarSession extends Emitter {
           this._avatarMedia.attach(e.track, e.streams);
         } catch (err) {
           const kind = e.track?.kind ?? null;
-          this.emit('warning', { code: 'media_attach_failed', message: `The avatar's ${kind || 'media'} track could not be attached to the media element — listen for 'track' or read session.avatarStream to render it yourself.`, kind, detail: String(err?.message || err) });
+          this.emit('warning', { code: 'media_attach_failed', message: `The avatar's ${kind || 'media'} track could not be attached to the media element. Listen for 'track' or read session.avatarStream to render it yourself.`, kind, detail: String(err?.message || err) });
         }
         this.emit('track', { track: e.track, streams: e.streams });
         const v = this._avatarMedia.videoEl;

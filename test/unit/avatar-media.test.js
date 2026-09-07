@@ -49,9 +49,16 @@ test('constructor: falls back to globalThis.MediaStream when no constructor is i
   } finally { if (prev === undefined) delete globalThis.MediaStream; else globalThis.MediaStream = prev; }
 });
 
-for (const [label, bad] of [['string', 'video'], ['number', 3], ['object without play', { srcObject: null }], ['object without srcObject', { play() {} }], ['function', () => {}]]) {
+test('elements are duck-typed on play() only: a jsdom-shaped element (play, no srcObject) binds and gets srcObject as an expando', () => {
+  const el = { play() { return Promise.resolve(); } };   // jsdom's HTMLVideoElement has play() but no srcObject
+  const { m } = media({ videoEl: el });
+  arrive(m, 'video');
+  assert.equal(el.srcObject, m._v);
+});
+
+for (const [label, bad] of [['string', 'video'], ['number', 3], ['object without play', { srcObject: null }], ['function', () => {}]]) {
   test(`constructor / setVideoEl / setAudioEl reject a ${label} with bad_request naming the method`, () => {
-    assert.throws(() => new AvatarMedia({ videoEl: bad }), (e) => e.code === 'bad_request' && /new AvatarMedia\(\{ videoEl \}\)/.test(e.detail) && /srcObject/.test(e.detail));
+    assert.throws(() => new AvatarMedia({ videoEl: bad }), (e) => e.code === 'bad_request' && /new AvatarMedia\(\{ videoEl \}\)/.test(e.detail) && /play\(\)/.test(e.detail));
     assert.throws(() => new AvatarMedia({ audioEl: bad }), (e) => e.code === 'bad_request' && /new AvatarMedia\(\{ audioEl \}\)/.test(e.detail));
     const { m } = media();
     assert.throws(() => m.setVideoEl(bad), (e) => e.code === 'bad_request' && /setVideoEl\(el\)/.test(e.detail));
@@ -203,6 +210,26 @@ test('R-d: a same-kind replacement stops the old track and swaps it inside every
   assert.equal(vEl.srcObjectAssignments, 1); assert.equal(vEl.playCount, 1);
   assert.equal(aEl.srcObjectAssignments, 1); assert.equal(aEl.playCount, 1);
   assert.equal(FakeMediaStreamCtor.constructed, 3, 'zero new streams on recovery');
+});
+
+test('G9: recovery re-binds an element whose srcObject the app replaced itself, exactly once, and leaves the other element alone', async () => {
+  const vEl = new FakeVideoEl(), aEl = new FakeVideoEl();
+  const { m } = media({ videoEl: vEl, audioEl: aEl });
+  arrive(m, 'video'); arrive(m, 'audio');
+  await tick();
+  const vs = vEl.srcObject, as = aEl.srcObject;
+  vEl.srcObject = null;                       // app hides the avatar (pre-1.17.0 apps did this and relied on the next ontrack)
+  arrive(m, 'video'); arrive(m, 'audio');     // STV re-subscribe
+  await tick();
+  assert.equal(vEl.srcObject, vs, 'the same SDK video stream is put back');
+  assert.equal(vEl.srcObjectAssignments, 3, 'bind, app null, re-bind');
+  assert.equal(vEl.playCount, 2, 'one play() per binding');
+  assert.equal(aEl.srcObject, as); assert.equal(aEl.srcObjectAssignments, 1); assert.equal(aEl.playCount, 1);
+  assert.equal(m.stream.getTracks().length, 2);
+  assert.equal(FakeMediaStreamCtor.constructed, 3, 'no new streams');
+  arrive(m, 'video'); await tick();
+  assert.equal(vEl.srcObjectAssignments, 3, 'an element holding the SDK stream is never written again');
+  assert.equal(vEl.playCount, 2);
 });
 
 test('replacement of a track without stop() (minimal track) does not throw', () => {
