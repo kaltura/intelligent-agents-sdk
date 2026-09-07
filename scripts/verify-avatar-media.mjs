@@ -42,7 +42,7 @@ const EXPECTED_CELLS = [
   'shapes-simple', 'shapes-split', 'shapes-headless', 'shapes-audio-only-el',
   'shapes-twoAV', 'shapes-oneVA', 'shapes-oneAV', 'audible-path',
   'video-only', 'audio-only', 'late-audio', 'late-video', 'readiness-order',
-  'mutes', 'volume', 'devices', 'devices-race', 'swaps', 'swaps-edge',
+  'mutes', 'volume', 'devices', 'devices-race', 'swaps', 'framework-remount', 'swaps-edge',
   'mixing', 'mixing-three', 'recording', 'recording-ops', 'multi-avatar', 'multi-avatar-three',
   'races-recover', 'races-split-in-listener', 'races-disconnect-mid-play', 'races-start-playback', 'races-double-disconnect',
   'autoplay-simple', 'autoplay-split', 'autoplay-split-audio-blocked', 'autoplay-rebind-rearm',
