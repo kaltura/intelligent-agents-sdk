@@ -115,6 +115,8 @@ Once the repo is public and has a tag pushed, jsDelivr serves any file straight 
 
 `examples/browser-experience.html` and `examples/deck-presenter.html` demonstrate the same real-relative-path pattern locally (`../src/experience/index.js`).
 
+Every release is checked on the CDN after it is published (`.github/workflows/release.yml`, `distribution` job): each `src/` file served at `@vX.Y.Z`, `@latest`, `@X` and `@X.Y` must be byte-identical to the tag, every entry point must `import()` in a real headless Chromium, and the previous tag must still be served. Run the same check yourself with `npm run verify:distribution -- vX.Y.Z`.
+
 #### Subresource Integrity (SRI) for the jsDelivr import
 
 Pinning a tag stops the URL from silently pointing at different code later, but it doesn't verify what jsDelivr actually served you matches this repo — that needs Subresource Integrity.

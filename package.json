@@ -52,6 +52,7 @@
     "live-verify:site-nav": "node scripts/live-verify-site-nav.mjs",
     "verify:noise-suppressor": "node scripts/verify-noise-suppressor.mjs",
     "verify:avatar-media": "node scripts/verify-avatar-media.mjs",
+    "verify:distribution": "node scripts/verify-distribution.mjs",
     "test:ci:avatar-media": "node --experimental-test-coverage --test-coverage-include=src/experience/avatar-media.js --test-coverage-lines=100 --test-coverage-branches=100 --test-coverage-functions=100 --test test/unit/avatar-media.test.js"
   },
   "keywords": [

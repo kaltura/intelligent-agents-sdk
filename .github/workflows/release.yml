@@ -79,3 +79,66 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh workflow run generate-docs.yml --repo kaltura/intelligent-agents-sdk --ref gh-pages-src
+
+  distribution:
+    name: 🌐 Verify the CDN distribution (jsDelivr @tag, @latest, real browser)
+    needs: release
+    runs-on: ubuntu-latest
+    # The script polls jsDelivr's resolver for @latest with its own deadline
+    # (DIST_WAIT_SECONDS); this only caps a hung browser or install.
+    timeout-minutes: 30
+    steps:
+      - name: 📥 Check out the repo with full history (the script reads files from the tag with git show)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+
+      - name: 🟢 Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+
+      - name: 📦 Install dependencies
+        run: npm ci
+
+      - name: 🎭 Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: 🌐 Every src/ file byte-identical on @tag, @latest, @major, @major.minor; exports import in headless Chromium; previous tag still served
+        id: verify_distribution
+        env:
+          DIST_WAIT_SECONDS: '900'
+        run: |
+          set -o pipefail
+          npm run verify:distribution -- "${{ github.ref_name }}" 2>&1 | tee verify-distribution-output.log
+
+      - name: 📝 Write job summary
+        if: always()
+        run: |
+          {
+            echo "### 🌐 CDN distribution check for ${{ github.ref_name }} — ${{ steps.verify_distribution.outcome }}"
+            echo
+            echo '```'
+            grep -E '^(==|RESULT|  ✗)' verify-distribution-output.log || tail -n 40 verify-distribution-output.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: ⚠️ Flag the failure on the GitHub Release itself
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ github.ref_name }}"
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          gh release view "$TAG" --json body --jq .body > release-body.md
+          # One warning per release, even across re-runs of this job.
+          if grep -q '<!-- distribution-check-failed -->' release-body.md; then
+            echo "release notes already carry the warning; not appending again"
+            exit 0
+          fi
+          {
+            echo
+            echo "<!-- distribution-check-failed -->"
+            echo "> ⚠️ **Distribution check failed.** The jsDelivr CDN did not match this tag when checked after publishing. See the [workflow run]($RUN_URL) before pinning to \`@$TAG\` or \`@latest\`."
+          } >> release-body.md
+          gh release edit "$TAG" --notes-file release-body.md
