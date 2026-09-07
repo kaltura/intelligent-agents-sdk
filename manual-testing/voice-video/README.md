@@ -22,7 +22,9 @@ This covers the real avatar pipeline (mic capture → ASR uplink → STV/WHEP vi
    ```bash
    node manual-testing/voice-video/mint.mjs
    ```
-   This provisions a throwaway agent+avatar+intellect, serves the real unmodified `examples/chroma-key-avatar.html` (plus a real `/appInit` route) over your LAN, and prints a URL like `http://192.168.x.x:4789/examples/chroma-key-avatar.html`.
+   This provisions a throwaway agent+avatar+intellect, serves the real unmodified `examples/chroma-key-avatar.html` (plus a real `/appInit` route) over your LAN, and prints a URL like `http://192.168.x.x:4789/examples/chroma-key-avatar.html`.  
+   The server serves the whole repo root, so `examples/browser-experience.html` and `scripts/live-verify-avatar-media.html?mode=split` work on the same port.  
+   Set `MANUAL_VERIFY_VISUAL_ID` to a Visual catalog item id (from `catalog.list`) to use a specific portrait instead of the first preset. For the chroma-key page use a green-screen one: `examples/chroma-key-green-screen-portrait.jpeg` is ready to upload once with `catalog.createVisual` (attributes: `genderPresentation: 'Feminine'`, `hairStyle: ['Long']`), then reuse its id. `MANUAL_VERIFY_PORT` changes the port.
 3. Open that URL on each device you're testing — same Wi-Fi network as the machine running `mint.mjs`. For a device that can't reach your LAN, tunnel the port instead (e.g. `ngrok http 4789`).
 4. Grant microphone permission when prompted. The page shows the composited, chroma-keyed avatar and a disclosure banner once connected.
 5. When done, Ctrl+C in the `mint.mjs` terminal — it deletes the throwaway agent/avatar/intellect automatically.

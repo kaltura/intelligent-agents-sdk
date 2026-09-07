@@ -153,6 +153,7 @@
       }, 2500);
     });
 
+    window.session = session;   // for DevTools: session.videoEl, session.audioEl, session.setAudioEl(null), ...
     await session.connect();
     window.addEventListener('beforeunload', () => session.disconnect());
   </script>

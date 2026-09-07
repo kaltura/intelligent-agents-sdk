@@ -104,7 +104,9 @@ process.on('SIGINT', cleanup);
 process.on('SIGTERM', cleanup);
 
 const admin = await kaltura.sessions.createAdminToken({ ttlSeconds: FOUR_HOURS });
-provisioned = await kaltura.provision({ brief: 'A friendly manual-QA greeter avatar', ks: admin.ks });
+// MANUAL_VERIFY_VISUAL_ID: a Visual catalog item id (`catalog.list`) to use instead of the first preset,
+// e.g. a green-screen portrait so the chroma-key example has something to key.
+provisioned = await kaltura.provision({ brief: 'A friendly manual-QA greeter avatar', ks: admin.ks, visualId: process.env.MANUAL_VERIFY_VISUAL_ID || undefined });
 console.log(`Throwaway agent/avatar/intellect: ${provisioned.agentId} / ${provisioned.avatarId} / ${provisioned.configId}`);
 
 let widgetId = provisioned.widgetId;
