@@ -131,8 +131,14 @@ jobs:
           TAG="${{ github.ref_name }}"
           RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           gh release view "$TAG" --json body --jq .body > release-body.md
+          # One warning per release, even across re-runs of this job.
+          if grep -q '<!-- distribution-check-failed -->' release-body.md; then
+            echo "release notes already carry the warning; not appending again"
+            exit 0
+          fi
           {
             echo
+            echo "<!-- distribution-check-failed -->"
             echo "> ⚠️ **Distribution check failed.** The jsDelivr CDN did not match this tag when checked after publishing. See the [workflow run]($RUN_URL) before pinning to \`@$TAG\` or \`@latest\`."
           } >> release-body.md
           gh release edit "$TAG" --notes-file release-body.md

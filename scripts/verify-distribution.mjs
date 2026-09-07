@@ -36,7 +36,12 @@ import { createHash } from 'node:crypto';
 const REPO = process.env.DIST_REPO || 'kaltura/intelligent-agents-sdk';
 const CDN = `https://cdn.jsdelivr.net/gh/${REPO}`;
 const RESOLVER = `https://data.jsdelivr.com/v1/packages/gh/${REPO}/resolved`;
-const WAIT_MS = Number(process.env.DIST_WAIT_SECONDS || 600) * 1000;
+const waitSeconds = Number(process.env.DIST_WAIT_SECONDS || 600);
+if (!Number.isFinite(waitSeconds) || waitSeconds <= 0) {
+  console.error(`DIST_WAIT_SECONDS must be a positive number of seconds, got "${process.env.DIST_WAIT_SECONDS}"`);
+  process.exit(2);
+}
+const WAIT_MS = waitSeconds * 1000;
 const CONCURRENCY = 8;
 
 const args = process.argv.slice(2);
@@ -63,8 +68,11 @@ function git(...argv) {
 function gitText(...argv) {
   return git(...argv).toString('utf8');
 }
+const shaCache = new Map();
 function gitSha(ref, path) {
-  return createHash('sha256').update(git('show', `${ref}:${path}`)).digest('hex');
+  const key = `${ref}:${path}`;
+  if (!shaCache.has(key)) shaCache.set(key, createHash('sha256').update(git('show', key)).digest('hex'));
+  return shaCache.get(key);
 }
 try {
   gitText('rev-parse', '--verify', `${tag}^{commit}`);
@@ -101,8 +109,12 @@ console.log(`Distribution check for ${tag} (${srcFiles.length} src files, ${expo
 // ---------------------------------------------------------------------------
 // HTTP helpers
 // ---------------------------------------------------------------------------
+// The one raw network call in this script. It must see the CDN exactly as a
+// browser does: no retry, no backoff, no size budget, so a wrong byte or a
+// stale edge is reported, not smoothed over. Every URL is built here from the
+// fixed jsDelivr hosts and a git path; nothing comes from caller input.
 async function fetchBytes(url) {
-  const res = await fetch(url, { headers: { 'cache-control': 'no-cache' } });
+  const res = await fetch(url, { headers: { 'cache-control': 'no-cache' } }); // nosemgrep: scripts.harness.no-raw-fetch-bypass
   const body = Buffer.from(await res.arrayBuffer());
   return { status: res.status, contentType: res.headers.get('content-type') || '', body };
 }
@@ -123,10 +135,9 @@ async function pool(items, worker) {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function resolvedVersion(specifier) {
-  const res = await fetch(`${RESOLVER}?specifier=${encodeURIComponent(specifier)}`);
-  if (!res.ok) return null;
-  const json = await res.json();
-  return json.version || null;
+  const { status, body } = await fetchBytes(`${RESOLVER}?specifier=${encodeURIComponent(specifier)}`);
+  if (status !== 200) return null;
+  try { return JSON.parse(body.toString('utf8')).version || null; } catch { return null; }
 }
 
 async function cdnPackageVersion(ref) {
@@ -155,7 +166,7 @@ async function checkFilesAgainstGit(ref, paths) {
     for (const b of bad.slice(0, 20)) fail(`@${ref} ${b}`);
     if (bad.length > 20) fail(`@${ref} ... and ${bad.length - 20} more`);
   } else {
-    pass(`@${ref}: ${paths.length}/${paths.length} files are 200 + JavaScript + byte-identical to git ${tag}`);
+    pass(`@${ref}: ${paths.length}/${paths.length} files are HTTP 200 and byte-identical to git ${tag} (.js served as JavaScript)`);
   }
   return bad.length === 0;
 }
@@ -164,8 +175,8 @@ async function checkReachable(ref, paths, label) {
   const bad = [];
   await pool(paths, async (path) => {
     try {
-      const res = await fetch(`${CDN}@${ref}/${path}`, { method: 'GET' });
-      if (res.status !== 200) bad.push(`${path}: HTTP ${res.status}`);
+      const { status } = await fetchBytes(`${CDN}@${ref}/${path}`);
+      if (status !== 200) bad.push(`${path}: HTTP ${status}`);
     } catch (e) { bad.push(`${path}: ${e.message}`); }
   });
   if (bad.length) for (const b of bad) fail(`@${ref} ${b}`);
