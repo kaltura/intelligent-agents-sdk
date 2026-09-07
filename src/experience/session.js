@@ -130,7 +130,7 @@ export class KalturaAvatarSession extends Emitter {
    * @param {string} cfg.turnServerUrl      From appInit (TURN host).
    * @param {(url:string,opts:object)=>any} cfg.socketFactory  socket.io-compatible factory (INJECTED; never bundled).
    * @param {HTMLVideoElement|null} [cfg.videoEl]  Element that renders the avatar: video plus audio, unless `cfg.audioEl` is set. Omit for headless/custom rendering (listen for 'track' or read {@link KalturaAvatarSession#avatarStream}). The SDK sets `.srcObject` once and calls `play()` once per binding — size/frame it yourself with `object-fit: cover`. Swap it at runtime with {@link KalturaAvatarSession#setVideoEl}. See docs/ARCHITECTURE.md § Displaying the Avatar Video.
-   * @param {HTMLAudioElement|null} [cfg.audioEl]  Optional dedicated element for the avatar's audio track (split mode: video on `videoEl`, audio here). Lets you route, mix, or record the voice independently of the picture. Swap at runtime with {@link KalturaAvatarSession#setAudioEl}; pass `null` there to merge audio back into `videoEl`.
+   * @param {HTMLAudioElement|null} [cfg.audioEl]  Recommended: a dedicated element for the avatar's audio track (split shape: video on `videoEl`, audio here). Browsers pause a media element removed from the document, so keep this one on a stable DOM node; a UI re-render that replaces the `<video>` then costs the picture, not the voice. Also lets you route, mix, or record the voice independently. Swap at runtime with {@link KalturaAvatarSession#setAudioEl}; pass `null` there to merge audio back into `videoEl`.
    * @param {typeof RTCPeerConnection} [cfg.rtcConstructor]
    * @param {typeof fetch} [cfg.fetch]
    * @param {()=>Promise<any>} [cfg.getUserMedia]
