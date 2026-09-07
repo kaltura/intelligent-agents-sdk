@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Multi-avatar manual test</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { font: 14px system-ui, sans-serif; margin: 16px; background: #111; color: #eee; }
+    h1 { font-size: 18px; margin: 0 0 8px; }
+    .bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 12px; }
+    .card { background: #1c1c1c; border: 1px solid #333; border-radius: 8px; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+    .card.floor { border-color: #f6ad55; box-shadow: 0 0 0 1px #f6ad55 inset; }
+    .card h2 { font-size: 15px; margin: 0; display: flex; justify-content: space-between; }
+    .card small { color: #999; font-weight: normal; }
+    video { width: 100%; aspect-ratio: 16/9; background: #000; border-radius: 4px; }
+    .row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+    button { background: #2b6cb0; color: #fff; border: 0; border-radius: 4px; padding: 5px 9px; cursor: pointer; }
+    button.talking { background: #c53030; }
+    button:disabled { opacity: .4; cursor: default; }
+    input[type=text] { flex: 1; min-width: 120px; background: #000; color: #eee; border: 1px solid #444; border-radius: 4px; padding: 5px; }
+    input[type=number] { width: 48px; background: #000; color: #eee; border: 1px solid #444; border-radius: 4px; padding: 4px; }
+    select { background: #000; color: #eee; border: 1px solid #444; border-radius: 4px; padding: 4px; }
+    .badge { font-size: 12px; padding: 1px 6px; border-radius: 10px; background: #444; }
+    .badge.connected { background: #276749; }
+    .badge.error { background: #9b2c2c; }
+    .log { font: 11px ui-monospace, monospace; background: #000; border-radius: 4px; padding: 6px; height: 120px; overflow: auto; white-space: pre-wrap; color: #9ae6b4; }
+    .log .warn { color: #f6e05e; } .log .err { color: #fc8181; } .log .txt { color: #90cdf4; } .log .table { color: #f6ad55; }
+    #tableLog { height: 140px; margin-bottom: 12px; color: #eee; }
+  </style>
+</head>
+<body>
+  <h1>Round table: several avatars, one page, one floor</h1>
+  <div class="bar">
+    <button id="connectAll">Connect all</button>
+    <button id="disconnectAll" disabled>Disconnect all</button>
+    <label>Speaker: <select id="sink"><option value="">system default</option></select></label>
+    <span id="summary" class="badge">idle</span>
+  </div>
+  <div class="bar">
+    <label><input id="tableOn" type="checkbox" checked> Round table (avatars answer each other)</label>
+    <label>Max hops <input id="maxHops" type="number" min="1" max="50" value="8"></label>
+    <button id="kickoff" disabled>Kick off</button>
+    <button id="stopTable" disabled>Stop table</button>
+    <span id="tableState" class="badge">idle</span>
+  </div>
+  <p style="color:#999;margin:0 0 8px">
+    Avatars cannot hear each other (each has its own downlink), so this page passes the finished text of one turn to the next avatar as a typed turn.
+    One avatar holds the floor at a time. The next speaker is whoever was named last in the reply, else the next card in order. The ring stops after
+    <b>Max hops</b>; your mic (<b>Talk</b>) or a typed line re-seeds it. Mute / volume / speaker must land only on that card's element(s).
+  </p>
+  <div class="log" id="tableLog"></div>
+  <div class="cards" id="cards"></div>
+
+  <!-- socket.io is the app's dependency, injected, never bundled by the SDK. -->
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js" integrity="sha384-2huaZvOR9iDzHqslqwpR87isEmrfxqyWOF7hr7BY6KG0+hVKLoEXMPUJw3ynWuhO" crossorigin="anonymous"></script>
+  <script type="module">
+    import { KalturaAvatarSession } from '/src/experience/index.js';
+
+    // Add more entries for more avatars; the coordinator is N-way.
+    const LAYOUTS = [
+      { id: 'A', name: 'Alice', title: 'Simple', note: 'videoEl only: video + audio on one element' },
+      { id: 'B', name: 'Bob', title: 'Split', note: 'videoEl + audioEl: video here, audio on a separate <audio>' },
+      { id: 'C', name: 'Carol', title: 'Headless', note: 'no elements given: app renders session.avatarStream itself' },
+    ];
+    const init = await fetch('/appInit').then((r) => r.json());
+    const cards = {};
+    window.sessions = {};
+
+    const stamp = () => new Date().toISOString().slice(11, 19);
+    const tableLogEl = document.getElementById('tableLog');
+    const tlog = (msg, cls = '') => {
+      const line = document.createElement('div'); if (cls) line.className = cls;
+      line.textContent = `${stamp()} ${msg}`; tableLogEl.appendChild(line); tableLogEl.scrollTop = tableLogEl.scrollHeight;
+    };
+
+    // ───────────────────────── round-table coordinator (app code, public SDK API only) ─────────────────────────
+    // End of an avatar's turn = the brain finished generating (`turnEnd`) AND playback is idle
+    // (`avatarStopTalking` with `session.speaking === false`) AND nothing restarted for QUIET_MS.
+    // Then the turn's text is handed to the next avatar via `speak()` once the whole table is silent.
+    const QUIET_MS = 1200, GAP_MS = 700, REPLY_TIMEOUT_MS = 20000, GREETING_MS = 25000;
+    const FRAME_PREFIX = '[Round table]';
+    const table = { hopsLeft: 0, inflight: null, inflightTimer: null, routing: false, started: false };
+    const turns = {}; // id -> { chunks: [], ended: false, lastText: '', timer: null }
+    const setTableState = (s) => { document.getElementById('tableState').textContent = s; };
+    const on = () => document.getElementById('tableOn').checked;
+    const connectedIds = () => LAYOUTS.map((l) => l.id).filter((id) => window.sessions[id]?.state === 'connected');
+    const nameOf = (id) => LAYOUTS.find((l) => l.id === id).name;
+    const setFloor = (id) => { for (const [k, c] of Object.entries(cards)) c.card.classList.toggle('floor', k === id); };
+
+    const anyoneSpeaking = () => Object.values(window.sessions).some((s) => s.speaking);
+    const waitTableQuiet = async () => {
+      const t0 = performance.now();
+      while ((anyoneSpeaking() || table.inflight) && performance.now() - t0 < REPLY_TIMEOUT_MS) await new Promise((r) => setTimeout(r, 150));
+      await new Promise((r) => setTimeout(r, GAP_MS));
+    };
+
+    /** Next speaker: last other-avatar name mentioned in the text, else the next connected card in ring order. */
+    const pickNext = (fromId, text) => {
+      const ids = connectedIds().filter((id) => id !== fromId);
+      if (!ids.length) return null;
+      let best = null, bestPos = -1;
+      for (const id of ids) {
+        const m = [...text.matchAll(new RegExp(`\\b${nameOf(id)}\\b`, 'gi'))];
+        if (m.length && m[m.length - 1].index > bestPos) { best = id; bestPos = m[m.length - 1].index; }
+      }
+      if (best) return best;
+      const ring = connectedIds(); const i = ring.indexOf(fromId);
+      return ring[(i + 1) % ring.length] === fromId ? null : ring[(i + 1) % ring.length];
+    };
+
+    const frame = (fromId, toId, text) => {
+      const others = connectedIds().filter((id) => id !== toId).map(nameOf);
+      return `${FRAME_PREFIX} You are ${nameOf(toId)}, at a table with ${others.join(' and ')}. ${nameOf(fromId)} just said: "${text}" ` +
+        `Reply to ${nameOf(fromId)} in one or two short sentences, in your own voice. End by handing the floor to one person at the table by name.`;
+    };
+
+    const expectReply = (id) => {
+      table.inflight = id;
+      clearTimeout(table.inflightTimer);
+      table.inflightTimer = setTimeout(() => { if (table.inflight === id) { tlog(`${nameOf(id)} did not answer within ${REPLY_TIMEOUT_MS / 1000}s, floor released`, 'warn'); table.inflight = null; setFloor(null); setTableState(`waiting · ${table.hopsLeft} hops left`); } }, REPLY_TIMEOUT_MS);
+    };
+
+    const route = async (fromId, text) => {
+      if (!on() || table.hopsLeft <= 0 || table.routing) { if (on() && table.started && table.hopsLeft <= 0) { setTableState('hops exhausted · talk or type to re-seed'); setFloor(null); } return; }
+      const toId = pickNext(fromId, text);
+      if (!toId) { setTableState('nobody else connected'); return; }
+      table.routing = true;
+      try {
+        await waitTableQuiet();
+        if (window.sessions[toId].state !== 'connected') return;
+        table.hopsLeft -= 1;
+        tlog(`${nameOf(fromId)} → ${nameOf(toId)} (${table.hopsLeft} hops left)`, 'table');
+        setTableState(`${nameOf(toId)} has the floor · ${table.hopsLeft} hops left`);
+        setFloor(toId);
+        expectReply(toId);
+        await window.sessions[toId].speak(frame(fromId, toId, text));
+      } catch (e) {
+        tlog(`speak() to ${nameOf(toId)} failed: ${e.code || e.name}: ${e.message}`, 'err');
+        table.inflight = null; setFloor(null);
+      } finally { table.routing = false; }
+    };
+
+    const settle = (id) => {
+      const t = turns[id]; if (!t) return;
+      const text = (t.chunks.join(' ').replace(/\s+/g, ' ').trim()) || t.lastText || '';
+      delete turns[id];
+      if (table.inflight === id) { table.inflight = null; clearTimeout(table.inflightTimer); }
+      if (!text) return;
+      tlog(`${nameOf(id)}: ${text}`);
+      route(id, text);
+    };
+    const trySettle = (id) => {
+      const t = turns[id]; if (!t) return;
+      clearTimeout(t.timer);
+      if (t.ended && !window.sessions[id].speaking) t.timer = setTimeout(() => settle(id), QUIET_MS);
+    };
+    const wireTable = (id, session, log) => {
+      session.on('turnStart', () => {
+        if (!turns[id]) turns[id] = { chunks: [], ended: false, lastText: '', timer: null };
+        else clearTimeout(turns[id].timer);
+        if (table.inflight === id) { clearTimeout(table.inflightTimer); table.inflight = null; }
+        setFloor(id);
+      });
+      session.on('transcript', (p) => { if (p?.type === 'final' && turns[id] && p.text) turns[id].chunks.push(p.text); });
+      session.on('turnEnd', () => { if (turns[id]) { turns[id].ended = true; trySettle(id); } });
+      session.on('avatarStartTalking', () => { if (turns[id]) clearTimeout(turns[id].timer); });
+      session.on('avatarStopTalking', (p) => { if (turns[id]) { if (p?.text) turns[id].lastText = p.text; trySettle(id); } });
+      session.on('interrupted', () => { if (turns[id]) { clearTimeout(turns[id].timer); delete turns[id]; } if (table.inflight === id) table.inflight = null; });
+      // A human turn (mic or typed) on this card re-seeds the ring. The server echoes typed text back as a
+      // user transcript too, so framed hand-offs are recognised by their prefix and skipped here.
+      session.on('transcript', (p) => { if (p?.type === 'user' && !String(p.text || '').startsWith(FRAME_PREFIX)) reseed(id, `you → ${nameOf(id)}: ${p.text}`); });
+      log('', 'round-table wired');
+    };
+    const reseed = (id, line) => {
+      table.hopsLeft = Number(document.getElementById('maxHops').value) || 8;
+      table.started = true;
+      tlog(line, 'table');
+      setTableState(`${nameOf(id)} has the floor · ${table.hopsLeft} hops left`);
+      setFloor(id);
+    };
+
+    document.getElementById('kickoff').onclick = async () => {
+      const ids = connectedIds(); if (ids.length < 2) { tlog('need at least two connected avatars', 'warn'); return; }
+      const first = ids[0], next = ids[1];
+      reseed(first, `kick off → ${nameOf(first)}`);
+      expectReply(first);
+      const others = ids.slice(1).map(nameOf);
+      try { await window.sessions[first].speak(`${FRAME_PREFIX} You are ${nameOf(first)}, at a table with ${others.join(' and ')}. Greet the table in one sentence, then ask ${nameOf(next)} one short question by name.`); }
+      catch (e) { tlog(`kick off failed: ${e.code || e.name}: ${e.message}`, 'err'); table.inflight = null; }
+    };
+    document.getElementById('stopTable').onclick = () => { table.hopsLeft = 0; table.inflight = null; clearTimeout(table.inflightTimer); setFloor(null); setTableState('stopped · talk or type to re-seed'); tlog('table stopped', 'warn'); };
+    document.getElementById('tableOn').onchange = (e) => setTableState(e.target.checked ? `on · ${table.hopsLeft} hops left` : 'off');
+
+    // ───────────────────────── cards ─────────────────────────
+    for (const L of LAYOUTS) {
+      const card = document.createElement('section');
+      card.className = 'card';
+      card.innerHTML = `
+        <h2>${L.name} · ${L.title} <span class="badge" data-state>idle</span></h2>
+        <small>${L.note}</small>
+        <video data-video autoplay playsinline></video>
+        ${L.id === 'B' ? '<audio data-audio autoplay></audio>' : ''}
+        <div class="row">
+          <button data-talk disabled>Talk</button>
+          <button data-mute disabled>Mute out</button>
+          <label>Vol <input data-vol type="range" min="0" max="1" step="0.05" value="1" disabled></label>
+          <button data-play disabled>startPlayback()</button>
+          <button data-interrupt disabled>Interrupt</button>
+        </div>
+        <form class="row" data-say><input type="text" placeholder="type a turn and press Enter" disabled><button disabled>Send</button></form>
+        <div class="log" data-log></div>`;
+      document.getElementById('cards').appendChild(card);
+      const q = (s) => card.querySelector(s);
+      const videoEl = q('[data-video]');
+      const audioEl = q('[data-audio]');
+      const log = (cls, msg) => {
+        const el = q('[data-log]');
+        const line = document.createElement('div');
+        if (cls) line.className = cls;
+        line.textContent = `${stamp()} ${msg}`;
+        el.appendChild(line); el.scrollTop = el.scrollHeight;
+      };
+
+      const session = new KalturaAvatarSession({
+        token: init.ks, conversationManagerUrl: init.conversationManagerUrl,
+        srsBaseUrl: init.srsBaseUrl, turnServerUrl: init.turnServerUrl,
+        videoEl: L.id === 'C' ? null : videoEl,
+        audioEl: L.id === 'B' ? audioEl : null,
+        micStartMode: 'deferred',
+        socketFactory: (url, opts) => io(url, opts),
+      });
+      window.sessions[L.id] = session;
+
+      session.on('stateChange', (p) => {
+        const s = p?.state || session.state;
+        const b = q('[data-state]'); b.textContent = s; b.className = `badge ${s}`;
+        const isOn = s === 'connected';
+        for (const sel of ['[data-talk]', '[data-mute]', '[data-vol]', '[data-play]', '[data-interrupt]', '[data-say] input', '[data-say] button']) q(sel).disabled = !isOn;
+        if (!isOn) { q('[data-talk]').classList.remove('talking'); delete turns[L.id]; if (table.inflight === L.id) table.inflight = null; }
+        summary();
+      });
+      session.on('mediaReady', (p) => {
+        log('', `mediaReady ${JSON.stringify(p)}`);
+        // Headless: the app owns rendering. Same tracks, app-owned element.
+        if (L.id === 'C') { videoEl.srcObject = session.avatarStream; videoEl.play().catch((e) => log('warn', `app play() rejected: ${e.name}`)); }
+        const tracks = (el) => el?.srcObject ? el.srcObject.getTracks().map((t) => t.kind).join('+') : 'none';
+        log('txt', `videoEl: ${tracks(videoEl)}${audioEl ? ` | audioEl: ${tracks(audioEl)}` : ''} | avatarStream: ${session.avatarStream.getTracks().map((t) => t.kind).join('+')}`);
+      });
+      session.on('warning', (p) => log('warn', `warning ${p?.code || ''} ${p?.detail || p?.message || ''}`));
+      session.on('error', (p) => log('err', `error ${p?.code || ''} ${p?.message || ''}`));
+      session.on('ended', (p) => log('err', `ended ${JSON.stringify(p)}`));
+      session.on('transcript', (p) => { if (p?.type === 'user' || p?.type === 'final') log('txt', `${p.type === 'user' ? 'you' : L.name}: ${p.text}`); });
+      session.on('avatarStartTalking', () => log('', 'speaking'));
+      session.on('avatarStopTalking', () => log('', 'done speaking'));
+      session.on('turnEnd', () => log('', 'turnEnd (generation finished)'));
+      session.on('mediaRecovered', (p) => log('warn', `mediaRecovered ${JSON.stringify(p)}`));
+      session.on('micStarted', () => log('', 'mic started'));
+      wireTable(L.id, session, log);
+
+      q('[data-talk]').onclick = async () => {
+        try {
+          if (!session.micStarted) await session.startMic();
+          for (const [id, other] of Object.entries(window.sessions)) {
+            if (other.state !== 'connected') continue;
+            if (id === L.id) other.unmute(); else other.mute();
+            cards[id]?.talkBtn.classList.toggle('talking', id === L.id);
+          }
+          log('', 'mic routed to this avatar');
+        } catch (e) { log('err', `startMic failed: ${e.code || e.name}: ${e.message}`); }
+      };
+      q('[data-mute]').onclick = (e) => {
+        if (session.audioOutputMuted) { session.unmuteAudioOutput(); e.target.textContent = 'Mute out'; } else { session.muteAudioOutput(); e.target.textContent = 'Unmute out'; }
+        log('', `audioOutputMuted=${session.audioOutputMuted} videoEl.muted=${videoEl.muted}${audioEl ? ` audioEl.muted=${audioEl.muted}` : ''}`);
+      };
+      q('[data-vol]').oninput = (e) => { session.setAudioOutputVolume(Number(e.target.value)); log('', `volume=${session.audioOutputVolume}`); };
+      q('[data-play]').onclick = async () => log('', `startPlayback() -> ${await session.startPlayback()}`);
+      q('[data-interrupt]').onclick = () => { try { session.interrupt(); log('', 'interrupt()'); } catch (e) { log('err', e.message); } };
+      q('[data-say]').onsubmit = async (e) => {
+        e.preventDefault();
+        const input = q('[data-say] input'); const text = input.value.trim(); if (!text) return;
+        try {
+          reseed(L.id, `you (typed) → ${L.name}: ${text}`);
+          expectReply(L.id);
+          await session.speak(text); log('txt', `you (typed): ${text}`); input.value = '';
+        } catch (err) { log('err', `speak failed: ${err.code || err.name}: ${err.message}`); table.inflight = null; }
+      };
+      cards[L.id] = { session, videoEl, audioEl, log, card, talkBtn: q('[data-talk]') };
+    }
+
+    const summary = () => {
+      const states = Object.values(window.sessions).map((s) => s.state);
+      const el = document.getElementById('summary');
+      el.textContent = states.join(' / ');
+      const anyConnected = states.includes('connected');
+      document.getElementById('disconnectAll').disabled = !anyConnected;
+      document.getElementById('connectAll').disabled = states.every((s) => s !== 'idle' && s !== 'error');
+      document.getElementById('kickoff').disabled = connectedIds().length < 2;
+      document.getElementById('stopTable').disabled = !anyConnected;
+    };
+
+    // Each avatar greets as soon as it connects. With the table on, connect one at a time and let each
+    // greeting finish before the next avatar joins, so greetings never overlap. Off: connect in parallel.
+    const greetingDone = (session) => new Promise((resolve) => {
+      let spoke = false; const t0 = performance.now();
+      const tick = setInterval(() => {
+        if (session.speaking) spoke = true;
+        const quiet = spoke && !session.speaking;
+        if (quiet || performance.now() - t0 > GREETING_MS || session.state !== 'connected') { clearInterval(tick); setTimeout(resolve, GAP_MS); }
+      }, 100);
+    });
+    document.getElementById('connectAll').onclick = async () => {
+      document.getElementById('connectAll').disabled = true;
+      table.hopsLeft = 0;
+      const t0 = performance.now();
+      const connectOne = async ([, c]) => {
+        try { await c.session.connect(); c.log('', `connected in ${Math.round(performance.now() - t0)} ms`); summary(); }
+        catch (e) { c.log('err', `connect failed: ${e.code || e.name}: ${e.message}`); }
+      };
+      if (on()) {
+        for (const entry of Object.entries(cards)) {
+          setTableState(`${nameOf(entry[0])} joining, greetings one at a time`); setFloor(entry[0]);
+          await connectOne(entry);
+          if (entry[1].session.state === 'connected') await greetingDone(entry[1].session);
+        }
+        setFloor(null);
+      } else {
+        await Promise.all(Object.entries(cards).map(connectOne));
+      }
+      summary();
+      setTableState('connected · press Kick off, Talk, or type');
+    };
+    document.getElementById('disconnectAll').onclick = () => {
+      table.hopsLeft = 0; table.inflight = null; setFloor(null);
+      for (const c of Object.values(cards)) {
+        const tracks = c.session.avatarStream?.getTracks() || [];
+        c.session.disconnect();
+        setTimeout(() => c.log('', `disconnected: srcObject cleared=${c.videoEl.srcObject === null || c.session.videoEl === null}, tracks ended ${tracks.filter((t) => t.readyState === 'ended').length}/${tracks.length}`), 150);
+        if (c.session.videoEl === null) c.videoEl.srcObject = null; // headless: app owns the element
+      }
+      summary(); setTableState('idle');
+    };
+
+    // One speaker picker for the page; each session routes only its own sink element.
+    const sinkSel = document.getElementById('sink');
+    const fillSinks = async () => {
+      const devs = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'audiooutput' && d.deviceId && d.deviceId !== 'default');
+      for (const d of devs) { const o = document.createElement('option'); o.value = d.deviceId; o.textContent = d.label || d.deviceId.slice(0, 8); sinkSel.appendChild(o); }
+    };
+    if (typeof HTMLMediaElement.prototype.setSinkId === 'function') { fillSinks(); navigator.mediaDevices.addEventListener?.('devicechange', () => { sinkSel.length = 1; fillSinks(); }); }
+    else sinkSel.disabled = true;
+    sinkSel.onchange = async () => {
+      for (const c of Object.values(cards)) c.log('', `setAudioOutput(${JSON.stringify(sinkSel.value)}) -> ${await c.session.setAudioOutput(sinkSel.value)}`);
+    };
+    summary();
+    window.__table = table;
+  </script>
+</body>
+</html>
