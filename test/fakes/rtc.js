@@ -234,8 +234,26 @@ export class FakeVideoEl {
   }
   /** Test helper: make the next `n` play() calls reject with `err.name = name` (autoplay-policy tests). */
   failPlayTimes(n, name = 'NotAllowedError') { this._failPlay = { times: n, name }; }
+  /**
+   * Test helper: make the NEXT `play()` call return a promise this test controls instead of
+   * resolving/rejecting immediately. `playCount` still increments as soon as `play()` runs.
+   * One-shot: consumed by the next `play()` call, then `play()` goes back to its normal behavior.
+   * @returns {{ resolve(): void, reject(err: Error): void }}
+   */
+  holdPlay() {
+    let resolveFn, rejectFn;
+    const promise = new Promise((res, rej) => { resolveFn = res; rejectFn = rej; });
+    const handle = {
+      promise,
+      resolve: () => { this.played = true; this.paused = false; resolveFn(); },
+      reject: (err) => rejectFn(err),
+    };
+    this._heldPlay = handle;
+    return handle;
+  }
   play() {
     this.playCount += 1;
+    if (this._heldPlay) { const h = this._heldPlay; this._heldPlay = null; return h.promise; }
     if (this._failPlay.times > 0) {
       this._failPlay.times -= 1;
       const err = new Error(`play() rejected (${this._failPlay.name})`); err.name = this._failPlay.name;

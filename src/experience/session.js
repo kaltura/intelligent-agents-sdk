@@ -2213,7 +2213,8 @@ export class KalturaAvatarSession extends Emitter {
         await this._connectStv();
         // The new tracks are swapped into the SAME streams (no srcObject write). Firefox pauses a
         // media element whose tracks all ended before the replacements arrived; Chromium/WebKit do
-        // not. Resume only what is paused — a no-op everywhere else (a refusal is `playback_blocked`).
+        // not. Resume only what is paused, a no-op everywhere else (a refusal here only logs at
+        // debug level, it never raises the `playback_blocked` warning).
         await this._avatarMedia.resumePlayback();
         this._mediaRecovering[channel] = false;
         this.emit('mediaRecovered', { channel, method: 're-subscribe' });

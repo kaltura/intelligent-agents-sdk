@@ -16,6 +16,8 @@ const CONV_KS = 'djJ8' + Buffer.from('v2|123|geniegpcid:1222').toString('base64u
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 const whepOk = async () => ({ ok: true, status: 201, text: async () => 'v=0\r\nanswer\r\n', headers: { get: () => 'https://srs/whep/resource/1' } });
 const stvPeer = () => FakeRTCPeerConnection.instances.find((p) => p.transceivers.some((t) => t.kind === 'video' && t.direction === 'recvonly'));
+/** The current (most recently created) STV peer: needed after a recovery has replaced `_pcStv`, where `stvPeer()` would still find the old, closed one. */
+const latestStvPeer = () => FakeRTCPeerConnection.instances.filter((p) => p.transceivers.some((t) => t.kind === 'video' && t.direction === 'recvonly')).pop();
 /** WHEP fetch that suppresses the fake's automatic ontrack so the test fires tracks by hand. */
 const manualTracksFetch = async (...args) => { stvPeer().disableAutoTrack(); return whepOk(...args); };
 
@@ -362,4 +364,291 @@ test("disconnect() outside any 'track' listener still closes the STV peer synchr
   const pc = stvPeer();
   session.disconnect();
   assert.equal(pc.closed, true);
+});
+
+// ───────────────────────── P11: twoAV shape (audio before video, distinct receiver streams) ─────────────────────────
+
+/** Swap fireTrack's kind so audio arrives before video (twoAV): each call still builds its own fresh receiver stream. */
+function withReversedTrackOrder(fn) {
+  const orig = FakeRTCPeerConnection.prototype.fireTrack;
+  FakeRTCPeerConnection.prototype.fireTrack = function (kind = 'video') { orig.call(this, kind === 'video' ? 'audio' : 'video'); };
+  return fn().finally(() => { FakeRTCPeerConnection.prototype.fireTrack = orig; });
+}
+
+test('P11: mediaReady/videoMetadata carry real dims from videoEl.loadedmetadata when audio arrives before video (twoAV, distinct receiver streams)', async () => {
+  const videoEl = new FakeVideoEl({ autoCanPlay: false });
+  const { session, socket } = newSession({ videoEl });
+  scriptHappyPath(socket);
+  const mediaReady = [], videoMetadata = [];
+  session.on('mediaReady', (p) => mediaReady.push(p));
+  session.on('videoMetadata', (p) => videoMetadata.push(p));
+  await withReversedTrackOrder(async () => {
+    const connectP = session.connect();
+    await delay(20);
+    videoEl.fireLoadedMetadata(960, 540);
+    videoEl.fireCanPlay();
+    await connectP;
+  });
+  assert.deepEqual(videoMetadata, [{ videoWidth: 960, videoHeight: 540 }]);
+  assert.deepEqual(mediaReady, [{ mode: 'video', videoWidth: 960, videoHeight: 540 }]);
+  session.disconnect();
+});
+
+test('P11 split: mediaReady/videoMetadata still carry real dims from videoEl (never audioEl) in twoAV order with cfg.audioEl set', async () => {
+  const videoEl = new FakeVideoEl({ autoCanPlay: false });
+  const audioEl = new FakeVideoEl({ autoCanPlay: true });
+  const { session, socket } = newSession({ videoEl, cfg: { audioEl } });
+  scriptHappyPath(socket);
+  const mediaReady = [], videoMetadata = [];
+  session.on('mediaReady', (p) => mediaReady.push(p));
+  session.on('videoMetadata', (p) => videoMetadata.push(p));
+  await withReversedTrackOrder(async () => {
+    const connectP = session.connect();
+    await delay(20);
+    videoEl.fireLoadedMetadata(1280, 720);
+    videoEl.fireCanPlay();
+    await connectP;
+  });
+  assert.deepEqual(videoMetadata, [{ videoWidth: 1280, videoHeight: 720 }]);
+  assert.deepEqual(mediaReady, [{ mode: 'video', videoWidth: 1280, videoHeight: 720 }]);
+  assert.equal(audioEl.listenerCount('loadedmetadata'), 0, 'the readiness gate only ever watches videoEl, never audioEl');
+  assert.deepEqual(kinds(videoEl), ['video']); assert.deepEqual(kinds(audioEl), ['audio']);
+  session.disconnect();
+});
+
+// ───────────────────────── R-l: the 6000ms hard cap (as opposed to the 2000ms canplay fallback) ─────────────────────────
+
+test("R-l: the 6000ms hard cap fires 'mediaReady' exactly once when the STV track never arrives at all (WHEP succeeds, ontrack never fires, so the 2000ms canplay fallback never even arms)", { timeout: 15000 }, async () => {
+  const videoEl = new FakeVideoEl({ autoCanPlay: false });
+  const { session, socket } = newSession({ videoEl, fetch: manualTracksFetch });
+  scriptHappyPath(socket);
+  const mediaReady = [], videoMetadata = [];
+  session.on('mediaReady', (p) => mediaReady.push(p));
+  session.on('videoMetadata', (p) => videoMetadata.push(p));
+  const connectP = session.connect();   // manualTracksFetch disables auto ontrack; no fireTrack() is ever called
+  await delay(2200);
+  assert.equal(mediaReady.length, 0, 'still open past 2000ms: proves this is not the local canplay-fallback arm');
+  await connectP;   // resolves once the unconditional 6000ms hard cap + 300ms jitter settle it
+  assert.equal(mediaReady.length, 1);
+  assert.deepEqual(mediaReady[0], { mode: 'video', videoWidth: 0, videoHeight: 0 });
+  assert.equal(videoMetadata.length, 0, 'ontrack never ran, so videoMetadata never fires either');
+  session.disconnect();
+});
+
+// ───────────────────────── R-b: 0×0 loadedmetadata between the two ontracks (today's pinned behavior) ─────────────────────────
+
+test("R-b: a 0×0 loadedmetadata firing between the two ontracks pins videoMetadata/mediaReady at {0,0}: a later real loadedmetadata never overrides it (once-only gate; plan :470 pins this as today's behavior)", async () => {
+  const videoEl = new FakeVideoEl({ autoCanPlay: false });
+  const { session, socket } = newSession({ videoEl, fetch: manualTracksFetch });
+  scriptHappyPath(socket);
+  const mediaReady = [], videoMetadata = [];
+  session.on('mediaReady', (p) => mediaReady.push(p));
+  session.on('videoMetadata', (p) => videoMetadata.push(p));
+  const connectP = session.connect();
+  await delay(20);
+  stvPeer().fireTrack('video');
+  videoEl.fireLoadedMetadata(0, 0);   // decoder reports metadata before it knows the real dims
+  videoEl.fireCanPlay();
+  stvPeer().fireTrack('audio');
+  videoEl.fireLoadedMetadata(960, 540);   // arrives too late: the once-only gate already fired on the 0×0 event
+  await connectP;
+  assert.deepEqual(videoMetadata, [{ videoWidth: 0, videoHeight: 0 }]);
+  assert.deepEqual(mediaReady, [{ mode: 'video', videoWidth: 0, videoHeight: 0 }]);
+  session.disconnect();
+});
+
+// ───────────────────────── R-g: a held play() promise never gates mediaReady ─────────────────────────
+
+test("R-g: a held play() promise does not delay 'mediaReady', does not trigger a second play(), and resolving it later changes nothing", async () => {
+  const videoEl = new FakeVideoEl({ autoCanPlay: true });   // readyState 4 → settle() runs at ontrack regardless of play()
+  const handle = videoEl.holdPlay();
+  const { session, socket } = newSession({ videoEl });
+  scriptHappyPath(socket);
+  const ready = count(session, 'mediaReady');
+  await session.connect();
+  assert.equal(ready.v, 1, 'mediaReady fired without waiting on the pending play()');
+  assert.equal(videoEl.playCount, 1);
+  handle.resolve();
+  await delay(0);
+  assert.equal(videoEl.playCount, 1, 'resolving the held play() later does not trigger a second play()');
+  assert.equal(ready.v, 1);
+  session.disconnect();
+});
+
+// ───────────────────────── R-k / P9: mediaReady fires once per _connectStv() call, including across recoveries ─────────────────────────
+
+test('R-k/P9: mediaReady fires exactly once per _connectStv() call: once on connect, once after a re-subscribe recovers, once after a cold reconnect', { timeout: 15000 }, async () => {
+  let whepPosts = 0;
+  const fetch = async (url, init) => {
+    if (init?.method === 'DELETE') return whepOk();
+    whepPosts += 1;
+    if (whepPosts === 3) return { ok: false, status: 404, text: async () => 'gone', headers: { get: () => null } };
+    return whepOk();
+  };
+  const videoEl = new FakeVideoEl({ autoCanPlay: true });
+  const { session, socket } = newSession({ videoEl, fetch });
+  scriptHappyPath(socket);
+  const ready = count(session, 'mediaReady');
+  await session.connect();
+  assert.equal(ready.v, 1, 'initial connect');
+
+  const recovered = new Promise((resolve) => session.on('mediaRecovered', resolve));
+  stvPeer().setIce('failed');
+  await recovered;
+  assert.equal(ready.v, 2, 're-subscribe recovery re-emits mediaReady once (P9: same count as main baseline, not suppressed)');
+
+  const reconnected = new Promise((resolve) => session.on('reconnected', resolve));
+  latestStvPeer().setIce('failed');
+  await reconnected;
+  assert.equal(ready.v, 3, 'the cold reconnect that follows the failed re-subscribe re-emits mediaReady once more');
+
+  session.disconnect();
+});
+
+// ───────────────────────── U4: element swap while a re-subscribe's WHEP answer is still pending ─────────────────────────
+
+test('swap during re-subscribe: setVideoEl()/setAudioEl() while the recovery WHEP answer is held: old elements released synchronously, new elements end up with the right tracks, one play() each, mediaReady still exactly once for the recovery', { timeout: 15000 }, async () => {
+  const oldVideoEl = new FakeVideoEl({ autoCanPlay: true });
+  let whepPosts = 0;
+  let resolveRecoveryWhep;
+  const fetch = async (url, init) => {
+    if (init?.method === 'DELETE') return whepOk();
+    whepPosts += 1;
+    if (whepPosts === 1) return whepOk();
+    return new Promise((resolve) => {
+      resolveRecoveryWhep = () => resolve({ ok: true, status: 201, text: async () => 'v=0\r\nanswer\r\n', headers: { get: () => 'https://srs/whep/resource/2' } });
+    });
+  };
+  const { session, socket } = newSession({ videoEl: oldVideoEl, fetch });
+  scriptHappyPath(socket);
+  await session.connect();
+  const ready = count(session, 'mediaReady');
+
+  const recovering = new Promise((resolve) => session.on('mediaRecovering', resolve));
+  stvPeer().setIce('failed');
+  await recovering;
+  await delay(0);   // _recoverMedia closed the old STV pc and called _connectStv() again; its WHEP POST is now held
+
+  const newVideoEl = new FakeVideoEl({ autoCanPlay: true });
+  const newAudioEl = new FakeVideoEl({ autoCanPlay: true });
+  session.setVideoEl(newVideoEl);
+  session.setAudioEl(newAudioEl);
+  assert.equal(oldVideoEl.srcObject, null, 'the old element is released synchronously by the swap, before the recovery even resolves');
+
+  const recovered = new Promise((resolve) => session.on('mediaRecovered', resolve));
+  resolveRecoveryWhep();
+  await recovered;
+  await delay(20);   // let the new pc's ontrack land and attach() reconcile the swapped-in tracks
+
+  assert.deepEqual(kinds(newVideoEl), ['video']);
+  assert.deepEqual(kinds(newAudioEl), ['audio']);
+  assert.equal(oldVideoEl.srcObject, null);
+  assert.equal(newVideoEl.playCount, 1, 'one play(), not one per re-subscribed track');
+  assert.equal(newAudioEl.playCount, 1);
+  assert.equal(ready.v, 1, 'the recovery still emits mediaReady exactly once despite the mid-flight element swap');
+  assertInvariants(session._avatarMedia, 'swap-during-resubscribe');
+  session.disconnect();
+});
+
+// ───────────────────────── U5 / P3: WHEP negatives never touch the media layer ─────────────────────────
+
+/** Minimal handshake script that hands back a private-IP webrtc_url (join/checkAvailability/stvNewSession/showAgent/askPermissions). */
+function scriptPrivateIpWhep(socket) {
+  const soon = (fn) => setTimeout(fn, 0);
+  soon(() => { socket.server('connect'); socket.server('onServerConnected', { finalUrl: 'https://srs.example', agentName: 'Avatar', hostName: 'host-1' }); });
+  socket.onEmit((ev) => {
+    if (ev === 'join') soon(() => { socket.server('clientConfiguration', { clientConfiguration: { languageCode: 'en', interruptionsEnabled: true } }); socket.server('joinComplete', {}); });
+    else if (ev === 'checkAvailability') soon(() => socket.server('availabilityResult', { available: true, details: { activeCalls: 1, maxCalls: 10 } }));
+    else if (ev === 'stvNewSession') soon(() => {
+      socket.server('stvNewSession', { session_id: 'sess-priv', status: 'session started', webrtc_url: 'https://10.1.2.3/rtc/v1/whep/?app=app&stream=sess-priv' });
+      soon(() => { socket.server('showAgent', {}); soon(() => socket.server('askPermissions', { constraints: { audio: true, video: true } })); });
+    });
+    else if (ev === 'asr-webrtc-init') soon(() => socket.server('asr-webrtc-ready', {}));
+    else if (ev === 'asr-webrtc-offer') soon(() => socket.server('asr-webrtc-answer', { answer: { type: 'answer', sdp: 'fake-answer' } }));
+  });
+}
+
+test('P3: a private-IP WHEP url rejects connect() before any media element write: no mediaReady, no videoMetadata, no track, videoEl.srcObject stays null', async () => {
+  const { session, socket, videoEl } = newSession();
+  scriptPrivateIpWhep(socket);
+  const mediaReady = [], videoMetadata = [], tracks = [];
+  session.on('mediaReady', (p) => mediaReady.push(p));
+  session.on('videoMetadata', (p) => videoMetadata.push(p));
+  session.on('track', (p) => tracks.push(p));
+  await assert.rejects(() => session.connect(), (e) => e.code === 'whep_private_ip');
+  assert.equal(mediaReady.length, 0); assert.equal(videoMetadata.length, 0); assert.equal(tracks.length, 0);
+  assert.equal(videoEl.srcObject, null); assert.equal(videoEl.srcObjectAssignments, 0);
+});
+
+test('P3: setRemoteDescription() throwing rejects connect() before any media element write: no mediaReady, no videoMetadata, no track, videoEl.srcObject stays null', async () => {
+  const { session, socket, videoEl } = newSession();
+  scriptHappyPath(socket);
+  const mediaReady = [], videoMetadata = [], tracks = [];
+  session.on('mediaReady', (p) => mediaReady.push(p));
+  session.on('videoMetadata', (p) => videoMetadata.push(p));
+  session.on('track', (p) => tracks.push(p));
+  const orig = FakeRTCPeerConnection.prototype.setRemoteDescription;
+  FakeRTCPeerConnection.prototype.setRemoteDescription = async function (d) {
+    if (this.transceivers.some((t) => t.kind === 'video' && t.direction === 'recvonly')) throw new Error('setRemoteDescription failed (sdp munge)');
+    return orig.call(this, d);
+  };
+  try {
+    await assert.rejects(() => session.connect());
+  } finally {
+    FakeRTCPeerConnection.prototype.setRemoteDescription = orig;
+  }
+  assert.equal(mediaReady.length, 0); assert.equal(videoMetadata.length, 0); assert.equal(tracks.length, 0);
+  assert.equal(videoEl.srcObject, null); assert.equal(videoEl.srcObjectAssignments, 0);
+});
+
+// ───────────────────────── U7: a second playback_blocked after a rebind; selective startPlayback() ─────────────────────────
+
+test("U7: a second 'playback_blocked' warning fires after setVideoEl() rebinds to a new blocked element (once-per-binding); startPlayback() retries only the paused element", async () => {
+  const videoEl = new FakeVideoEl(), audioEl = new FakeVideoEl();
+  videoEl.failPlayTimes(1);
+  const { session, socket } = newSession({ videoEl, cfg: { audioEl } });
+  scriptHappyPath(socket);
+  const warnings = [];
+  session.on('warning', (w) => warnings.push(w));
+  await session.connect();
+  await delay(0);
+  assert.deepEqual(warnings.map((w) => [w.code, w.kind]), [['playback_blocked', 'video']], 'videoEl blocked once; audioEl played fine');
+  assert.equal(videoEl.paused, true); assert.equal(audioEl.paused, false);
+
+  const nextVideoEl = new FakeVideoEl();
+  nextVideoEl.failPlayTimes(1);
+  session.setVideoEl(nextVideoEl);
+  await delay(0);
+  assert.deepEqual(warnings.map((w) => [w.code, w.kind]), [['playback_blocked', 'video'], ['playback_blocked', 'video']], 'a rebind is a new binding, so the once-per-binding rule allows a second warning');
+  assert.equal(nextVideoEl.paused, true);
+
+  assert.equal(await session.startPlayback(), true);
+  assert.equal(nextVideoEl.playCount, 2, 'the paused element is retried');
+  assert.equal(audioEl.playCount, 1, 'the already-playing element is not replayed');
+  session.disconnect();
+});
+
+// ───────────────────────── Also: setAudioOutput() pending vs. setAudioEl() race ─────────────────────────
+
+test('setAudioOutput(id) pending while setAudioEl(newEl) swaps the sink: newEl ends up with sinkId===id, the old element received exactly one setSinkId call', async () => {
+  const { session, socket, videoEl } = newSession();
+  scriptHappyPath(socket);
+  await session.connect();
+  let resolveSink;
+  videoEl.setSinkId = (id) => {
+    videoEl.setSinkIdCalls.push(id);
+    return new Promise((resolve) => { resolveSink = () => { videoEl.sinkId = id; resolve(); }; });
+  };
+  const outputP = session.setAudioOutput('spk-race');
+  await delay(0);
+  assert.deepEqual(videoEl.setSinkIdCalls, ['spk-race'], 'exactly one call on the old element while the id is pending');
+
+  const newEl = new FakeVideoEl();
+  session.setAudioEl(newEl);
+  resolveSink();
+  assert.equal(await outputP, true);
+  await delay(0);   // the rebind re-apply is deferred a microtask (avatar-media.js _applyAudioSettings)
+  assert.equal(newEl.sinkId, 'spk-race', 'the new sink element ends up with the requested id');
+  assert.equal(videoEl.setSinkIdCalls.length, 1, 'the old element is never retried');
+  session.disconnect();
 });

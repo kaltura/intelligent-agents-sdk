@@ -1,9 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { attachChromaKeyAvatar } from '../../src/experience/chroma-key.js';
-import { FATAL_ERROR_CODES } from '../../src/experience/session.js';
+import { FATAL_ERROR_CODES, KalturaAvatarSession } from '../../src/experience/session.js';
 import { KalturaError } from '../../src/core/errors.js';
 import { Emitter } from '../../src/experience/emitter.js';
+import { FakeSocket, scriptHappyPath } from '../fakes/socket.js';
+import { FakeRTCPeerConnection, FakeVideoEl as RtcFakeVideoEl, FakeMediaStreamCtor, fakeGetUserMedia } from '../fakes/rtc.js';
 
 /**
  * Unit-tests the optional chroma-key compositor plugin in isolation (no browser/WebGL
@@ -398,4 +400,57 @@ test('attachChromaKeyAvatar: reassigning videoEl.srcObject on the SAME element a
   });
   assert.equal(FakeChromaKeyVideo.instances.length, 1, 'no second player constructed on a srcObject reassignment');
   assert.equal(player.isDestroyed, false, 'the compositor survives a live stream reconnect untouched');
+});
+
+// ─────────────────────────── U6: setAudioEl() mid-session never disturbs the compositor ───────────────────────────
+// attachChromaKeyAvatar() reads session.videoEl ONCE, at construction, and never again (confirmed
+// in chroma-key.js: no session.videoEl getter access outside the constructor's validation check).
+// AvatarMedia.setAudioEl() only ever touches the audioEl and reconciles the audio track out of the
+// existing V stream (src/experience/avatar-media.js `_sync`/`_reconcile`): it never reassigns
+// videoEl.srcObject. So a real session wired to a real compositor must keep rendering, with the
+// video track untouched, when the app switches to split audio mid-session.
+
+const CONV_KS = 'djJ8' + Buffer.from('v2|123|geniegpcid:1222').toString('base64url');
+const okWhep = async () => ({ ok: true, status: 201, text: async () => 'v=0\r\nanswer\r\n', headers: { get: () => 'https://srs/whep/resource/1' } });
+
+function newRealSession(overrides = {}) {
+  FakeRTCPeerConnection.reset();
+  const socket = new FakeSocket();
+  const videoEl = new RtcFakeVideoEl({ autoCanPlay: true });
+  const session = new KalturaAvatarSession({
+    token: CONV_KS, srsBaseUrl: 'https://srs.example', turnServerUrl: 'turn.avatar.us.kaltura.ai',
+    videoEl, socketFactory: () => socket, rtcConstructor: FakeRTCPeerConnection,
+    fetch: overrides.fetch ?? okWhep, getUserMedia: fakeGetUserMedia(), mediaStreamConstructor: FakeMediaStreamCtor,
+  });
+  return { session, socket, videoEl };
+}
+
+test('U6: session.setAudioEl() mid-session keeps the chroma-key compositor rendering: source unchanged, video track stays on videoEl, audio track moves to the new audioEl', async () => {
+  FakeChromaKeyVideo.reset();
+  const { session, socket, videoEl } = newRealSession();
+  scriptHappyPath(socket);
+  await session.connect();
+
+  const player = attachChromaKeyAvatar({ session, videoEl, ChromaKeyVideo: FakeChromaKeyVideo });
+  assert.equal(FakeChromaKeyVideo.instances.length, 1);
+  assert.equal(player.source, videoEl, "the compositor's source is the videoEl itself, captured once");
+  const srcObjectWritesBefore = videoEl.srcObjectAssignments;
+  const videoTrackBefore = videoEl.srcObject.getVideoTracks()[0];
+  assert.ok(videoTrackBefore, 'videoEl carries the video track before the split');
+
+  const audioEl = new RtcFakeVideoEl({ autoCanPlay: true });
+  session.setAudioEl(audioEl);
+
+  // The compositor is untouched: same instance, not destroyed, same source reference.
+  assert.equal(FakeChromaKeyVideo.instances.length, 1, 'setAudioEl() must not construct or replace the compositor');
+  assert.equal(player.isDestroyed, false);
+  assert.equal(player.source, videoEl);
+  // videoEl itself is not reassigned a new stream by the split: only its track list changed.
+  assert.equal(videoEl.srcObjectAssignments, srcObjectWritesBefore, 'setAudioEl() never reassigns videoEl.srcObject');
+  assert.deepEqual(videoEl.srcObject.getTracks().map((t) => t.kind), ['video'], 'video track stays on videoEl, audio track leaves it');
+  assert.equal(videoEl.srcObject.getVideoTracks()[0], videoTrackBefore, 'the same video track instance, never replaced');
+  assert.deepEqual(audioEl.srcObject.getTracks().map((t) => t.kind), ['audio'], 'audio track lands on the new audioEl');
+
+  session.disconnect();
+  assert.equal(player.isDestroyed, true, "session.disconnect()'s stateChange still tears the compositor down normally");
 });

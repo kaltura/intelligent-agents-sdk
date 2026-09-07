@@ -259,7 +259,13 @@ const session = new KalturaAvatarSession({ ...cfg, videoEl: null });
 session.on('track', () => canvasRenderer.use(session.avatarStream));
 ```
 
-Split mode is what you want when the video element must stay muted or off-screen (chroma-key compositing), when several avatars share one page and each voice needs its own routing, or when you mix or record the voice independently of the picture. Every element gets one `srcObject` write and one `play()` per binding; the SDK creates no DOM and adds no CSS.
+Use split when:
+
+- The video is a texture source (chroma-key, canvas, WebGL) and the voice must still be audible. A `muted` source element cannot play sound, by browser design.
+- The picture should start before the autoplay gesture. A muted `videoEl` plays at once while `audioEl` waits for `startPlayback()`.
+- You want the voice on its own element for mixing, visualizers or per-element control.
+
+Every element gets one `srcObject` write and one `play()` per binding. The SDK creates no DOM and adds no CSS.
 
 | Member | Behavior |
 |---|---|
@@ -268,19 +274,57 @@ Split mode is what you want when the video element must stay muted or off-screen
 | `setVideoEl(el)`, `setAudioEl(el)` | Rebind at runtime, in any state, before or after `connect()`. `null` unbinds; `setAudioEl(null)` merges the voice back into `videoEl`. Old element's `srcObject` is cleared. |
 | `muteAudioOutput()`, `unmuteAudioOutput()`, `audioOutputMuted` | Mute the avatar's voice (not your microphone, that's `mute()`). Acts on whichever element carries the audio and follows it across rebinds. |
 | `setAudioOutputVolume(0..1)`, `audioOutputVolume` | Playback volume, clamped. |
-| `setAudioOutput(deviceId)` | Routes the audio-carrying element via `setSinkId`. Resolves `false`, never throws, when unsupported or nothing is bound yet; the id is stored and applied to the next bound element. |
+| `setAudioOutput(deviceId)` | Routes the audio-carrying element via `setSinkId`. Resolves `false`, never throws, when the element has no `setSinkId` or rejects the id. An accepted id follows the audio across rebinds; a rejected id is dropped and the previous one stays. Set before `connect()`, the id is applied on the first bind. `''` selects the system default on every browser. |
 | `startPlayback()` | Retries `play()` on every bound element. Call from a click after a `playback_blocked` warning. Resolves `true` when everything is playing. |
 
 Media recovery (an STV re-subscribe after a stall) never touches your elements: the new tracks are swapped into the same streams, and only an element that the browser paused meanwhile (Firefox does this) gets one `play()` call. On Chromium a remote audio track is only decoded while some media element plays it, so a headless app that mixes `avatarStream` through Web Audio must keep a muted `<audio>` bound to the track; Firefox and WebKit do not need it. Calling `disconnect()` from inside a `'track'` listener is safe.
+
+**Multiple avatars on one page.** Each avatar is its own session with its own elements. Sessions share nothing: mute, volume and output device are per session.
+
+```js
+const sessions = configs.map((cfg) => new KalturaAvatarSession({
+  ...cfg,
+  videoEl: document.querySelector(`#avatar-${cfg.id} video`),
+  audioEl: document.querySelector(`#avatar-${cfg.id} audio`),
+}));
+await Promise.all(sessions.map((s) => s.connect()));
+
+// Or headless into one Web Audio mixer. Keep a muted <audio> bound per session so
+// Chromium decodes the remote audio (see the note above).
+const ctx = new AudioContext();
+const mixer = ctx.createGain();
+mixer.connect(ctx.destination);
+for (const s of sessions) {
+  s.on('mediaReady', () => ctx.createMediaStreamSource(s.avatarStream).connect(mixer));
+}
+```
+
+**Mixing or recording the avatar.** `avatarStream` (every track) or `videoEl.captureStream()` (default mode) feed `MediaRecorder` or a Web Audio graph. Chromium and Firefox report the mimeType as `video/webm;codecs=vp8,opus` for a stream with both tracks.
+
+```js
+const recorder = new MediaRecorder(session.avatarStream);
+recorder.ondataavailable = (e) => chunks.push(e.data);
+recorder.start(1000);
+```
+
+A recording covers one connection. When the SDK recovers the media connection it replaces the tracks inside `avatarStream`, so the running recorder stops (`onstop` fires). Start a new segment from the `mediaReady` event.
 
 Non-fatal problems on this path arrive as `warning` events, `{ code, message, ... }`:
 
 | Code | When | What to do |
 |---|---|---|
 | `playback_blocked` | The browser refused `play()` (autoplay policy). Payload has `kind: 'video' \| 'audio'`. | Show a "tap to start" control and call `startPlayback()` from it. |
-| `media_attach_failed` | A downlink track could not be routed (no `MediaStream` constructor, bad element). Payload has `detail`. | Fall back to the `'track'` event or fix the element. |
+| `media_attach_failed` | A downlink track could not be routed (no `MediaStream` constructor, bad element). Payload has `kind: 'video' \| 'audio'` and `detail`. | Fall back to the `'track'` event or fix the element. |
 | `whep_delete_failed` | The WHEP `DELETE` on disconnect failed; the server will time the session out on its own. | Nothing; informational. |
 | `empty_turn_with_request_vars` | The intellect rejected `request_vars` because `allow_client_variables` is off (see the `{{var}}` section). | Enable the intellect flag. |
+
+**Upgrading to 1.17.0.** No code changes are required. Three points to check if your app inspects element state or return values directly:
+
+| Area | Current contract |
+|---|---|
+| Element validation | `videoEl`, `audioEl`, `setVideoEl(el)`, `setAudioEl(el)` accept `null` or an object with a `srcObject` property and a `play()` function. Anything else throws `KalturaError` `bad_request`. |
+| `setAudioOutput(deviceId)` | Throws `bad_request` when `deviceId` isn't a string. A rejected id resolves `false`; the accepted id stays in effect and reapplies on the next element bind. |
+| `disconnect()` | Clears `srcObject` to `null` on every bound element. Reading `videoEl.srcObject` after `disconnect()` returns `null`. |
 
 ### Text-only chat (`KalturaChatSession`)
 

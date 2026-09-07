@@ -443,7 +443,7 @@ test('setSinkId: element without setSinkId → false + warn log; id still stored
   assert.equal(capable.sinkId, 'spk-2');
 });
 
-test('setSinkId: rejected → false + warn log with the message, no retry, previous id replaced by the requested one', async () => {
+test('setSinkId: rejected → false + warn log with the message, no retry; the previous good id is kept and re-applied on the next rebind', async () => {
   const el = new FakeVideoEl();
   const { m, logs } = media({ videoEl: el });
   assert.equal(await m.setSinkId('spk-ok'), true);
@@ -452,6 +452,98 @@ test('setSinkId: rejected → false + warn log with the message, no retry, previ
   assert.deepEqual(el.setSinkIdCalls, ['spk-ok', 'spk-bad']);
   const w = logs.find((l) => l.level === 'warn' && /setSinkId rejected/.test(l.msg));
   assert.equal(w.data.message, 'setSinkId failed');
+  assert.equal(el.sinkId, 'spk-ok', 'element still on the last accepted device');
+  const next = new FakeVideoEl();
+  m.setVideoEl(next);
+  await tick();
+  assert.deepEqual(next.setSinkIdCalls, ['spk-ok'], 'the rejected id is never retried');
+  assert.equal(next.sinkId, 'spk-ok');
+});
+
+test('setSinkId: rejected before any element accepted one → nothing stored, nothing applied on rebind', async () => {
+  const el = new FakeVideoEl(); el._sinkIdFailTimes = 1;
+  const { m } = media({ videoEl: el });
+  assert.equal(await m.setSinkId('spk-bad'), false);
+  const next = new FakeVideoEl();
+  m.setVideoEl(next);
+  await tick();
+  assert.deepEqual(next.setSinkIdCalls, []);
+});
+
+test('setSinkId: same id the element already has → true without calling the element', async () => {
+  const el = new FakeVideoEl(); el.sinkId = 'spk-1';
+  const { m } = media({ videoEl: el });
+  assert.equal(await m.setSinkId('spk-1'), true);
+  assert.deepEqual(el.setSinkIdCalls, []);
+  const next = new FakeVideoEl();
+  m.setVideoEl(next);
+  await tick();
+  assert.equal(next.sinkId, 'spk-1', 'still stored for the next element');
+});
+
+test('setAudioOutput pending when setAudioEl swaps the element: the accepted id follows to the new element, nothing is applied before acceptance', async () => {
+  const vEl = new FakeVideoEl();
+  let release;
+  vEl.setSinkId = (id) => { vEl.setSinkIdCalls.push(id); return new Promise((r) => { release = () => { vEl.sinkId = id; r(); }; }); };
+  const { m } = media({ videoEl: vEl });
+  arrive(m, 'video'); arrive(m, 'audio');
+  const p = m.setSinkId('spk-9');
+  const aEl = new FakeVideoEl();
+  m.setAudioEl(aEl);
+  await tick();
+  assert.deepEqual(aEl.setSinkIdCalls, [], 'not stored yet, so not applied to the new element');
+  release();
+  assert.equal(await p, true);
+  await tick();
+  assert.equal(aEl.sinkId, 'spk-9');
+  assert.deepEqual(aEl.setSinkIdCalls, ['spk-9']);
+});
+
+test('setAudioOutput pending when setAudioEl swaps the element and the engine aborts the parked call (Chromium): the id is applied to the new element, resolves true, no warning', async () => {
+  const vEl = new FakeVideoEl();
+  let abort;
+  vEl.setSinkId = (id) => { vEl.setSinkIdCalls.push(id); return new Promise((_, rej) => { abort = () => rej(Object.assign(new Error('The operation could not be performed and was aborted'), { name: 'AbortError' })); }); };
+  const { m, logs } = media({ videoEl: vEl });
+  arrive(m, 'video'); arrive(m, 'audio');
+  const p = m.setSinkId('spk-9');
+  const aEl = new FakeVideoEl();
+  m.setAudioEl(aEl);
+  abort();
+  assert.equal(await p, true);
+  assert.equal(aEl.sinkId, 'spk-9');
+  assert.deepEqual(aEl.setSinkIdCalls, ['spk-9']);
+  assert.equal(vEl.sinkId, '', 'the element that was swapped out never got the id');
+  assert.deepEqual(logs.filter((l) => l.level === 'warn'), [], 'an abort caused by our own swap is not a rejection worth warning about');
+});
+
+test('setAudioOutput pending when setAudioEl swaps to an element that then rejects the id: resolves false with one warning, nothing stored', async () => {
+  const vEl = new FakeVideoEl();
+  let abort;
+  vEl.setSinkId = () => new Promise((_, rej) => { abort = () => rej(new Error('aborted')); });
+  const { m, logs } = media({ videoEl: vEl });
+  arrive(m, 'video'); arrive(m, 'audio');
+  const p = m.setSinkId('spk-bad');
+  const aEl = new FakeVideoEl(); aEl._sinkIdFailTimes = 1;
+  m.setAudioEl(aEl);
+  abort();
+  assert.equal(await p, false);
+  assert.equal(logs.filter((l) => l.level === 'warn').length, 1);
+  const next = new FakeVideoEl();
+  m.setAudioEl(next);
+  await tick();
+  assert.deepEqual(next.setSinkIdCalls, [], 'a rejected id is never stored');
+});
+
+test('deferred setSinkId on rebind is skipped for an element swapped out again in the same tick', async () => {
+  const el = new FakeVideoEl();
+  const { m } = media({ videoEl: el });
+  assert.equal(await m.setSinkId('spk-1'), true);
+  const a = new FakeVideoEl(), b = new FakeVideoEl();
+  m.setVideoEl(a); m.setVideoEl(b);
+  await tick();
+  assert.deepEqual(a.setSinkIdCalls, [], 'a was never the audio element when the microtask ran');
+  assert.equal(b.sinkId, 'spk-1');
+  assert.deepEqual(b.setSinkIdCalls, ['spk-1']);
 });
 
 test('setSinkId rejected during a rebind → warn log, nothing thrown, no unhandled rejection', async () => {
@@ -471,13 +563,63 @@ test('setSinkId rejection with a non-Error reason is logged as a string', async 
   const { m, logs } = media({ videoEl: el });
   assert.equal(await m.setSinkId('x'), false);
   assert.equal(logs.at(-1).data.message, 'nope');
+  const good = new FakeVideoEl();
+  m.setVideoEl(good);
+  assert.equal(await m.setSinkId('y'), true);
   const next = new FakeVideoEl(); next.setSinkId = () => Promise.reject('nope2');
   m.setVideoEl(next);
   await tick();
   assert.equal(logs.at(-1).data.message, 'nope2');
 });
 
+test('rebind applies stored mute / volume before play(): a muted app never trips autoplay on its own swap', () => {
+  const order = [];
+  const watched = () => {
+    const el = new FakeVideoEl();
+    Object.defineProperty(el, 'muted', { get() { return this._muted; }, set(v) { order.push(`muted=${v}`); this._muted = v; } });
+    el.play = () => { order.push(`play(muted=${el.muted},volume=${el.volume})`); el.paused = false; return Promise.resolve(); };
+    return el;
+  };
+  const first = watched();
+  const { m } = media({ videoEl: first });
+  m.setMuted(true); m.setVolume(0.2);
+  order.length = 0;
+  arrive(m, 'video'); arrive(m, 'audio');
+  assert.deepEqual(order, ['play(muted=true,volume=0.2)'], 'settings applied before connect are already on the element at first bind');
+  const next = watched();
+  m.setVideoEl(next);
+  assert.deepEqual(order.slice(1), ['muted=true', 'play(muted=true,volume=0.2)']);
+});
+
 // ───────────────────────── autoplay ─────────────────────────
+
+test('a play() rejection that lands after the element was swapped out or torn down produces no warning', async () => {
+  const held = () => {
+    const el = new FakeVideoEl();
+    el.play = () => { el.playCount += 1; return new Promise((_, rj) => { el.rejectPlay = rj; }); };
+    return el;
+  };
+  const blocked = () => { const e = new Error('late'); e.name = 'NotAllowedError'; return e; };
+  const el = held();
+  const { m, warnings } = media({ videoEl: el });
+  arrive(m, 'video'); arrive(m, 'audio');
+  const next = held();
+  m.setVideoEl(next);
+  el.rejectPlay(blocked());
+  await tick();
+  assert.deepEqual(warnings, [], 'swapped-out element');
+  m.teardown();
+  next.rejectPlay(blocked());
+  await tick();
+  assert.deepEqual(warnings, [], 'torn-down binding');
+  const again = held();
+  m.setVideoEl(again);
+  arrive(m, 'video');
+  again.rejectPlay(blocked());
+  await tick();
+  assert.equal(warnings.length, 1, 'the live binding still warns');
+  assert.equal(warnings[0].kind, 'video');
+});
 
 test('play() rejects NotAllowedError → one playback_blocked warning per binding with kind, message names startPlayback()', async () => {
   const vEl = new FakeVideoEl(), aEl = new FakeVideoEl();

@@ -96,9 +96,7 @@ export class AvatarMedia {
     if (el === this._videoEl) return;
     if (this._v) { this._videoEl.srcObject = null; this._v = null; }
     this._videoEl = el;
-    if (this._c && el) this._bind('video');
-    this._sync();
-    this._applyAudioSettings();
+    if (this._c && el) this._bind('video'); else { this._sync(); this._applyAudioSettings(); }
   }
 
   /**
@@ -112,9 +110,7 @@ export class AvatarMedia {
     if (el === this._audioEl) return;
     if (this._a) { this._audioEl.srcObject = null; this._a = null; }
     this._audioEl = el;
-    if (this._c && el) this._bind('audio');
-    this._sync();
-    this._applyAudioSettings();
+    if (this._c && el) this._bind('audio'); else { this._sync(); this._applyAudioSettings(); }
   }
 
   /** Mute or unmute the element that carries the audio track. Works before connect and survives rebinds. @param {boolean} on */
@@ -132,7 +128,9 @@ export class AvatarMedia {
   }
 
   /**
-   * Route audio to an output device. Stored and re-applied when the audio element changes.
+   * Route audio to an output device. The id is stored once the element accepts it (or when no
+   * element can apply it yet) and re-applied when the audio element changes; a rejected id
+   * leaves the previous one in place.
    * @param {string} deviceId  From `enumerateDevices()`, or `''` for the system default (the spec
    *   value; Firefox rejects Chromium's `'default'` pseudo-id with NotFoundError).
    * @returns {Promise<boolean>}  `false` (never throws) when the element has no `setSinkId` or it rejects.
@@ -140,11 +138,15 @@ export class AvatarMedia {
    */
   async setSinkId(deviceId) {
     if (typeof deviceId !== 'string') throw badRequest('setSinkId(deviceId)', 'deviceId must be a string (from enumerateDevices()).');
-    this._sinkId = deviceId;
     const el = this._sink();
-    if (!el || typeof el.setSinkId !== 'function') { this._log('warn', 'avatar-media: setSinkId unavailable on the audio output element'); return false; }
-    if (el.sinkId === deviceId) return true;
-    try { await el.setSinkId(deviceId); return true; } catch (err) { this._log('warn', 'avatar-media: setSinkId rejected', { message: String(err?.message || err) }); return false; }
+    if (!el || typeof el.setSinkId !== 'function') { this._sinkId = deviceId; this._log('warn', 'avatar-media: setSinkId unavailable on the audio output element'); return false; }
+    try { if (el.sinkId !== deviceId) await el.setSinkId(deviceId); } catch (err) {
+      if (el !== this._sink()) return this.setSinkId(deviceId);   // the audio element changed while the device call was pending (Chromium aborts it): apply to the new one
+      this._log('warn', 'avatar-media: setSinkId rejected', { message: String(err?.message || err) }); return false;
+    }
+    this._sinkId = deviceId;
+    if (el !== this._sink()) this._applyAudioSettings();   // the audio element changed while the device call was pending: follow it
+    return true;
   }
 
   /**
@@ -189,16 +191,22 @@ export class AvatarMedia {
     this._log('debug', 'avatar-media: no MediaStream constructor, using the receiver stream directly (test-only fallback)');
     return s;
   }
-  /** Bind `videoEl` (kind 'video') or `audioEl` (kind 'audio'): fresh stream, tracks, srcObject once, play() once. @param {'video'|'audio'} kind */
+  /**
+   * Bind `videoEl` (kind 'video') or `audioEl` (kind 'audio'): fresh stream, tracks, stored audio
+   * settings, srcObject once, play() once. Settings go first so a muted app never trips autoplay.
+   * A late `play()` rejection only counts while this binding is still the live one.
+   * @param {'video'|'audio'} kind
+   */
   _bind(kind) {
     const el = kind === 'video' ? this._videoEl : this._audioEl;
     const s = this._newStream() ?? this._c;
     if (kind === 'video') this._v = s; else this._a = s;
     this._sync();
+    this._applyAudioSettings();
     el.srcObject = s;
     let p;
     try { p = el.play(); } catch (err) { this._onPlayError(err, kind); return; }
-    if (p && typeof p.catch === 'function') p.catch((err) => this._onPlayError(err, kind));
+    if (p && typeof p.catch === 'function') p.catch((err) => { if ((kind === 'video' ? this._v : this._a) === s) this._onPlayError(err, kind); });
   }
   /** @param {any} err @param {'video'|'audio'} kind */
   _onPlayError(err, kind) {
@@ -228,7 +236,8 @@ export class AvatarMedia {
     if (this._muted != null && 'muted' in el && el.muted !== this._muted) el.muted = this._muted;
     if (this._volume != null && 'volume' in el && el.volume !== this._volume) el.volume = this._volume;
     if (this._sinkId != null && typeof el.setSinkId === 'function' && el.sinkId !== this._sinkId) {
-      Promise.resolve().then(() => el.setSinkId(this._sinkId)).catch((err) => this._log('warn', 'avatar-media: setSinkId rejected on rebind', { message: String(err?.message || err) }));
+      const id = this._sinkId;   // deferred so a rebind stays synchronous; skipped if the element was swapped out meanwhile
+      Promise.resolve().then(() => (el === this._sink() ? el.setSinkId(id) : undefined)).catch((err) => this._log('warn', 'avatar-media: setSinkId rejected on rebind', { message: String(err?.message || err) }));
     }
   }
 }

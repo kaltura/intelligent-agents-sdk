@@ -148,6 +148,8 @@ jobs:
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
+    # The verify script enforces its own 90s budget per engine; this only caps a hung browser/install.
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -182,6 +184,15 @@ jobs:
         run: |
           set -o pipefail
           npm run verify:avatar-media 2>&1 | tee verify-avatar-media-output.log
+
+      - name: 📤 Upload the per-engine run artifact (per-cell timings, skips, track→mediaReady latency)
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: avatar-media-${{ matrix.engine }}
+          path: .harness-output/
+          if-no-files-found: ignore
+          retention-days: 30
 
       - name: 📝 Write job summary
         if: always()
