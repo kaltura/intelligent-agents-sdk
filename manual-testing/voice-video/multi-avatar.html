@@ -27,32 +27,34 @@
     .log { font: 11px ui-monospace, monospace; background: #000; border-radius: 4px; padding: 6px; height: 120px; overflow: auto; white-space: pre-wrap; color: #9ae6b4; }
     .log .warn { color: #f6e05e; } .log .err { color: #fc8181; } .log .txt { color: #90cdf4; } .log .table { color: #f6ad55; }
     #tableLog { height: 140px; margin-bottom: 12px; color: #eee; }
+    #curtain { position: fixed; inset: 0; background: rgba(0,0,0,.88); display: none; align-items: center; justify-content: center; font-size: 22px; cursor: pointer; z-index: 10; text-align: center; padding: 24px; }
+    #curtain.up { display: flex; }
   </style>
 </head>
 <body>
   <h1>Improv theater: one host, two actors, one stage</h1>
   <div class="bar">
-    <button id="connectAll">Connect all</button>
+    <button id="connectAll" disabled>Connect all</button>
     <button id="disconnectAll" disabled>Disconnect all</button>
     <label>Speaker: <select id="sink"><option value="">system default</option></select></label>
     <span id="summary" class="badge">idle</span>
   </div>
   <div class="bar">
-    <label><input id="tableOn" type="checkbox" checked> Improv routing (avatars answer each other)</label>
-    <label>Actor turns <input id="maxHops" type="number" min="1" max="50" value="8"></label>
-    <input id="topic" type="text" placeholder="optional topic for the host's scene suggestion">
-    <button id="kickoff" disabled>Start the show</button>
+    <label>Actor turns per scene <input id="maxHops" type="number" min="1" max="50" value="8"></label>
+    <input id="topic" type="text" placeholder="optional topic for the next scene">
+    <button id="nextScene" disabled>Next scene</button>
     <button id="stopTable" disabled>Stop</button>
     <span id="tableState" class="badge">idle</span>
   </div>
   <p style="color:#999;margin:0 0 8px">
-    Avatars cannot hear each other (each has its own downlink), so this page passes the finished text of one turn to the next avatar as a typed turn.
-    All three connect together and stay silent. <b>Start the show</b> cues the host, who introduces the actors, gives them a scene and names who starts.
-    The actors then alternate for <b>Actor turns</b> turns, and the host closes the scene. Your mic (<b>Talk</b>) or a typed line on any card re-seeds
-    the routing from that avatar. Mute / volume / speaker must land only on that card's element(s).
+    The show runs itself: the page connects all three, the host opens with a scene suggestion and names who starts, the actors alternate for
+    <b>Actor turns per scene</b> turns, then the host calls "Scene!" and opens the next one, and so on until <b>Stop</b>. Avatars cannot hear each other
+    (each has its own downlink), so the finished text of each turn is passed to the next avatar as a typed turn. Your mic (<b>Talk</b>) or a typed
+    line on any card joins the scene from that avatar. Mute / volume / speaker must land only on that card's element(s).
   </p>
   <div class="log" id="tableLog"></div>
   <div class="cards" id="cards"></div>
+  <div id="curtain">Click anywhere to raise the curtain<br><small>(the browser needs one click before it lets the avatars play sound)</small></div>
 
   <!-- socket.io is the app's dependency, injected, never bundled by the SDK. -->
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js" integrity="sha384-2huaZvOR9iDzHqslqwpR87isEmrfxqyWOF7hr7BY6KG0+hVKLoEXMPUJw3ynWuhO" crossorigin="anonymous"></script>
@@ -65,6 +67,9 @@
       const line = document.createElement('div'); if (cls) line.className = cls;
       line.textContent = `${stamp()} ${msg}`; tableLogEl.appendChild(line); tableLogEl.scrollTop = tableLogEl.scrollHeight;
     };
+    const params = new URLSearchParams(location.search); // ?turns=N sets actor turns per scene, ?topic=... the first scene's topic
+    if (params.get('turns')) document.getElementById('maxHops').value = params.get('turns');
+    if (params.get('topic')) document.getElementById('topic').value = params.get('topic');
 
     // Served by manual-testing/voice-video/improv.mjs: { show, cast: [{ id, role, name, layout, ...appInit }] }.
     const init = await fetch('/appInit').then((r) => r.json());
@@ -87,23 +92,34 @@
     // (`avatarStopTalking` with `session.speaking === false`) AND nothing restarted for QUIET_MS.
     // Then the turn's text is handed to the next avatar via `speak()` once the whole stage is silent.
     // Host → the actor the host named (else the first actor); actor → the next actor in the ring;
-    // when the actor-turn budget is spent, the last actor's line goes back to the host, who closes.
-    const QUIET_MS = 1200, GAP_MS = 700, REPLY_TIMEOUT_MS = 20000;
+    // when the scene's actor-turn budget is spent, the last actor's line goes to the host, who calls
+    // "Scene!" and opens the next scene in the same turn. The loop runs until Stop.
+    const QUIET_MS = 1200, GAP_MS = 700, REPLY_TIMEOUT_MS = 20000, READY_FALLBACK_MS = 15000, OPEN_QUIET_MS = 2500;
     const FRAME_PREFIX = '[Improv]';
-    const table = { hopsLeft: 0, inflight: null, inflightTimer: null, routing: false, started: false, closing: false, premise: '' };
+    const table = { running: false, scene: 0, hopsLeft: 0, inflight: null, inflightTimer: null, routing: false, premise: '', lastTopic: '', blocked: false, opened: false, opening: false, hostRescues: 0 };
     const turns = {}; // id -> { chunks: [], ended: false, lastText: '', timer: null }
+    const ready = new Set(); // ids whose media is bound (mediaReady fired)
     const setTableState = (s) => { document.getElementById('tableState').textContent = s; };
-    const on = () => document.getElementById('tableOn').checked;
+    const maxHops = () => Number(document.getElementById('maxHops').value) || 8;
     const connectedIds = () => CAST.map((c) => c.id).filter((id) => window.sessions[id]?.state === 'connected');
     const connectedActors = () => connectedIds().filter((id) => id !== hostId);
     const nameOf = (id) => CAST.find((c) => c.id === id).name;
+    const actorNames = () => connectedActors().map(nameOf).join(' and ');
     const setFloor = (id) => { for (const [k, c] of Object.entries(cards)) c.card.classList.toggle('floor', k === id); };
+    /** The topic field applies to the next scene the host opens, once per change. */
+    const nextTopic = () => { const t = document.getElementById('topic').value.trim(); if (!t || t === table.lastTopic) return ''; table.lastTopic = t; return t; };
 
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     const anyoneSpeaking = () => Object.values(window.sessions).some((s) => s.speaking);
     const waitTableQuiet = async () => {
       const t0 = performance.now();
-      while ((anyoneSpeaking() || table.inflight) && performance.now() - t0 < REPLY_TIMEOUT_MS) await new Promise((r) => setTimeout(r, 150));
-      await new Promise((r) => setTimeout(r, GAP_MS));
+      while ((anyoneSpeaking() || table.inflight) && performance.now() - t0 < REPLY_TIMEOUT_MS) await sleep(150);
+      await sleep(GAP_MS);
+    };
+    /** Resolves once nobody has spoken for `ms` in a row (bounded by REPLY_TIMEOUT_MS). */
+    const waitSilence = async (ms) => {
+      const t0 = performance.now(); let since = t0;
+      while (performance.now() - since < ms && performance.now() - t0 < REPLY_TIMEOUT_MS) { await sleep(150); if (anyoneSpeaking()) since = performance.now(); }
     };
 
     /** Host hands to the actor named last in the text (else the first actor). An actor hands to the next actor in the ring. */
@@ -128,21 +144,38 @@
       const premise = table.premise ? ` The host's scene suggestion was: "${table.premise}"` : '';
       return `${FRAME_PREFIX}${premise} Your scene partner ${nameOf(fromId)} just said: "${text}" Continue the scene as ${nameOf(toId)}.`;
     };
-    const closeFrame = (fromId, text) => `${FRAME_PREFIX} ${nameOf(fromId)} just said: "${text}" The scene is over. Close the show now.`;
+    const suggestion = (first) => {
+      const t = nextTopic();
+      const fresh = first ? ' of your choice' : ' (a different place and a different problem than before)';
+      return `give ${actorNames()} a ${first ? '' : 'brand-new '}scene suggestion${t ? ` based on: "${t}"` : fresh}, and tell one of them by name to start.`;
+    };
+    const hostCue = (kind, fromId, text) => {
+      if (kind === 'open') return `${FRAME_PREFIX} Open the show now. Welcome the audience, introduce ${actorNames()}, ${suggestion(true)}`;
+      if (kind === 'next') return `${FRAME_PREFIX} ${nameOf(fromId)} just said: "${text}" The scene is over. Call "Scene!", thank ${actorNames()} in one sentence, then ${suggestion(false)}`;
+      return `${FRAME_PREFIX} The stage went quiet. Jump in: call "Scene!", then ${suggestion(table.scene === 0)}`;
+    };
 
     const expectReply = (id) => {
       table.inflight = id;
       clearTimeout(table.inflightTimer);
-      table.inflightTimer = setTimeout(() => { if (table.inflight === id) { tlog(`${nameOf(id)} did not answer within ${REPLY_TIMEOUT_MS / 1000}s, floor released`, 'warn'); table.inflight = null; setFloor(null); setTableState(`waiting · ${table.hopsLeft} actor turns left`); } }, REPLY_TIMEOUT_MS);
+      table.inflightTimer = setTimeout(() => {
+        if (table.inflight !== id) return;
+        table.inflight = null; setFloor(null);
+        tlog(`${nameOf(id)} did not answer within ${REPLY_TIMEOUT_MS / 1000}s`, 'warn');
+        if (!table.running) return;
+        if (id === hostId && table.hostRescues >= 1) { table.running = false; setTableState('stalled · the host did not answer twice; Resume, talk or type to continue'); return; }
+        if (id === hostId) table.hostRescues += 1;
+        handOff(hostId, hostCue('recover'), `${nameOf(hostId)} rescues the scene`); // the host restarts the show once the stage is quiet
+      }, REPLY_TIMEOUT_MS);
     };
 
     const handOff = async (toId, text, label) => {
       table.routing = true;
       try {
         await waitTableQuiet();
-        if (window.sessions[toId].state !== 'connected') return;
+        if (!table.running || window.sessions[toId]?.state !== 'connected') return; // Stop may have landed while we waited
         tlog(label, 'table');
-        setTableState(`${nameOf(toId)} has the floor · ${table.hopsLeft} actor turns left`);
+        setTableState(`scene ${table.scene} · ${nameOf(toId)} has the floor · ${table.hopsLeft} actor turns left`);
         setFloor(toId);
         expectReply(toId);
         await window.sessions[toId].speak(text);
@@ -153,17 +186,22 @@
     };
 
     const route = async (fromId, text) => {
-      if (!on() || table.routing || !table.started) return;
-      if (fromId === hostId && table.closing) { table.started = false; setFloor(null); setTableState('scene over · Start the show, talk or type to run another'); tlog('scene over', 'table'); return; }
-      if (fromId !== hostId && table.hopsLeft <= 0) {
-        if (window.sessions[hostId]?.state !== 'connected') { setFloor(null); setTableState('actor turns exhausted · host not connected'); return; }
-        table.closing = true;
-        await handOff(hostId, closeFrame(fromId, text), `${nameOf(fromId)} → ${nameOf(hostId)} (closing)`);
+      if (!table.running || table.routing) return;
+      if (fromId === hostId) {
+        const toId = pickNext(fromId, text);
+        if (!toId) { setTableState('no actor connected'); setFloor(null); return; }
+        table.scene += 1; table.hopsLeft = maxHops(); table.premise = text;
+        await handOff(toId, frame(fromId, toId, text), `${nameOf(fromId)} → ${nameOf(toId)} (scene ${table.scene}, ${table.hopsLeft} actor turns left)`);
+        return;
+      }
+      if (table.hopsLeft <= 0) {
+        if (window.sessions[hostId]?.state !== 'connected') { setFloor(null); setTableState('scene over · host not connected'); return; }
+        await handOff(hostId, hostCue('next', fromId, text), `${nameOf(fromId)} → ${nameOf(hostId)} (next scene)`);
         return;
       }
       const toId = pickNext(fromId, text);
       if (!toId) { setTableState('nobody else connected'); setFloor(null); return; }
-      if (fromId !== hostId) table.hopsLeft -= 1; // the host's open and close are free
+      table.hopsLeft -= 1; // the host's turns are free
       await handOff(toId, frame(fromId, toId, text), `${nameOf(fromId)} → ${nameOf(toId)} (${table.hopsLeft} actor turns left)`);
     };
 
@@ -174,7 +212,6 @@
       if (table.inflight === id) { table.inflight = null; clearTimeout(table.inflightTimer); }
       if (!text) return;
       tlog(`${nameOf(id)}: ${text}`);
-      if (id === hostId && !table.closing) table.premise = text;
       route(id, text);
     };
     const trySettle = (id) => {
@@ -187,6 +224,7 @@
         if (!turns[id]) turns[id] = { chunks: [], ended: false, lastText: '', timer: null };
         else clearTimeout(turns[id].timer);
         if (table.inflight === id) { clearTimeout(table.inflightTimer); table.inflight = null; }
+        if (id === hostId) table.hostRescues = 0;
         setFloor(id);
       });
       session.on('transcript', (p) => { if (p?.type === 'final' && turns[id] && p.text) turns[id].chunks.push(p.text); });
@@ -194,35 +232,60 @@
       session.on('avatarStartTalking', () => { if (turns[id]) clearTimeout(turns[id].timer); });
       session.on('avatarStopTalking', (p) => { if (turns[id]) { if (p?.text) turns[id].lastText = p.text; trySettle(id); } });
       session.on('interrupted', () => { if (turns[id]) { clearTimeout(turns[id].timer); delete turns[id]; } if (table.inflight === id) table.inflight = null; });
-      // A human turn (mic or typed) on this card re-seeds the routing. The server echoes typed text back as a
+      // A human turn (mic or typed) on this card joins the show from that avatar. The server echoes typed text back as a
       // user transcript too, so framed hand-offs are recognised by their prefix and skipped here.
       session.on('transcript', (p) => { if (p?.type === 'user' && !String(p.text || '').startsWith(FRAME_PREFIX)) reseed(id, `you → ${nameOf(id)}: ${p.text}`); });
       log('', 'improv routing wired');
     };
     const reseed = (id, line) => {
-      table.hopsLeft = Number(document.getElementById('maxHops').value) || 8;
-      table.started = true;
-      table.closing = false;
+      table.running = true;
+      if (table.hopsLeft <= 0) table.hopsLeft = maxHops();
       tlog(line, 'table');
-      setTableState(`${nameOf(id)} has the floor · ${table.hopsLeft} actor turns left`);
+      setTableState(`scene ${table.scene} · ${nameOf(id)} has the floor · ${table.hopsLeft} actor turns left`);
       setFloor(id);
+      document.getElementById('stopTable').textContent = 'Stop';
     };
 
-    document.getElementById('kickoff').onclick = async () => {
+    /** Opens the show once: host + two actors connected, media bound (or the fallback timer fired) and playback not blocked. */
+    const openShow = async () => {
+      if (table.opened || table.opening || table.blocked) return;
       const actors = connectedActors();
-      if (window.sessions[hostId]?.state !== 'connected' || actors.length < 2) { tlog('need the host and two actors connected', 'warn'); return; }
-      const topic = document.getElementById('topic').value.trim();
-      reseed(hostId, `start the show → ${nameOf(hostId)}${topic ? ` (topic: ${topic})` : ''}`);
-      table.premise = '';
+      if (window.sessions[hostId]?.state !== 'connected' || actors.length < 2) return;
+      if (ready.size < connectedIds().length && !table.readyFallback) return;
+      table.opening = true;
+      await waitSilence(OPEN_QUIET_MS); // each avatar plays its silent "<blank>" opening turn right after connect; a cue sent during it is dropped
+      table.opening = false;
+      if (table.opened || table.blocked || window.sessions[hostId]?.state !== 'connected') return;
+      table.opened = true; table.running = true; table.scene = 0; table.premise = ''; table.hostRescues = 0;
+      tlog(`curtain up → ${nameOf(hostId)} opens the show`, 'table');
+      setTableState(`${nameOf(hostId)} opens the show`);
+      setFloor(hostId);
       expectReply(hostId);
-      const names = actors.map(nameOf);
-      const cue = `${FRAME_PREFIX} Open the show now. Welcome the audience, introduce ${names.join(' and ')}, give them a scene suggestion` +
-        `${topic ? ` based on: "${topic}"` : ' of your choice'}, and tell one of them by name to start.`;
-      try { await window.sessions[hostId].speak(cue); }
-      catch (e) { tlog(`start failed: ${e.code || e.name}: ${e.message}`, 'err'); table.inflight = null; }
+      try { await window.sessions[hostId].speak(hostCue('open')); }
+      catch (e) { tlog(`opening failed: ${e.code || e.name}: ${e.message}`, 'err'); table.inflight = null; table.opened = false; }
     };
-    document.getElementById('stopTable').onclick = () => { table.hopsLeft = 0; table.started = false; table.closing = false; table.inflight = null; clearTimeout(table.inflightTimer); setFloor(null); setTableState('stopped · Start the show, talk or type to re-seed'); tlog('stopped', 'warn'); };
-    document.getElementById('tableOn').onchange = (e) => setTableState(e.target.checked ? `on · ${table.hopsLeft} actor turns left` : 'off');
+    // Autoplay: the SDK warns `playback_blocked` when the browser wants a click first. One click anywhere resumes every session.
+    const curtain = document.getElementById('curtain');
+    const raiseCurtain = () => { if (table.blocked) return; table.blocked = true; curtain.classList.add('up'); setTableState('click anywhere to start'); };
+    curtain.onclick = async () => {
+      curtain.classList.remove('up'); table.blocked = false;
+      for (const c of Object.values(cards)) {
+        if (c.session.state === 'connected') c.log('', `startPlayback() -> ${await c.session.startPlayback()}`);
+        if (c.session.videoEl === null && c.videoEl.srcObject) c.videoEl.play().catch((e) => c.log('warn', `app play() rejected: ${e.name}`)); // headless: app-owned element
+      }
+      openShow();
+    };
+
+    document.getElementById('nextScene').onclick = () => { if (!table.running) return; table.hopsLeft = 0; tlog('next scene after this turn', 'table'); };
+    document.getElementById('stopTable').onclick = (e) => {
+      if (table.running) {
+        table.running = false; table.inflight = null; clearTimeout(table.inflightTimer); setFloor(null);
+        setTableState('stopped · Resume, Talk or type to continue'); tlog('stopped', 'warn'); e.target.textContent = 'Resume';
+      } else {
+        table.running = true; e.target.textContent = 'Stop';
+        handOff(hostId, hostCue('recover'), `resume → ${nameOf(hostId)}`);
+      }
+    };
 
     // ───────────────────────── cards ─────────────────────────
     for (const L of CAST) {
@@ -238,7 +301,6 @@
           <button data-talk disabled>Talk</button>
           <button data-mute disabled>Mute out</button>
           <label>Vol <input data-vol type="range" min="0" max="1" step="0.05" value="1" disabled></label>
-          <button data-play disabled>startPlayback()</button>
           <button data-interrupt disabled>Interrupt</button>
         </div>
         <form class="row" data-say><input type="text" placeholder="type a turn and press Enter" disabled><button disabled>Send</button></form>
@@ -269,18 +331,20 @@
         const s = p?.state || session.state;
         const b = q('[data-state]'); b.textContent = s; b.className = `badge ${s}`;
         const isOn = s === 'connected';
-        for (const sel of ['[data-talk]', '[data-mute]', '[data-vol]', '[data-play]', '[data-interrupt]', '[data-say] input', '[data-say] button']) q(sel).disabled = !isOn;
-        if (!isOn) { q('[data-talk]').classList.remove('talking'); delete turns[L.id]; if (table.inflight === L.id) table.inflight = null; }
+        for (const sel of ['[data-talk]', '[data-mute]', '[data-vol]', '[data-interrupt]', '[data-say] input', '[data-say] button']) q(sel).disabled = !isOn;
+        if (!isOn) { q('[data-talk]').classList.remove('talking'); delete turns[L.id]; if (table.inflight === L.id) table.inflight = null; ready.delete(L.id); }
         summary();
       });
       session.on('mediaReady', (p) => {
         log('', `mediaReady ${JSON.stringify(p)}`);
         // Headless: the app owns rendering. Same tracks, app-owned element.
-        if (L.layout === 'headless') { videoEl.srcObject = session.avatarStream; videoEl.play().catch((e) => log('warn', `app play() rejected: ${e.name}`)); }
+        if (L.layout === 'headless') { videoEl.srcObject = session.avatarStream; videoEl.play().catch((e) => { log('warn', `app play() rejected: ${e.name}`); if (e.name === 'NotAllowedError') raiseCurtain(); }); }
         const tracks = (el) => el?.srcObject ? el.srcObject.getTracks().map((t) => t.kind).join('+') : 'none';
         log('txt', `videoEl: ${tracks(videoEl)}${audioEl ? ` | audioEl: ${tracks(audioEl)}` : ''} | avatarStream: ${session.avatarStream.getTracks().map((t) => t.kind).join('+')}`);
+        ready.add(L.id);
+        setTimeout(openShow, 300); // let a playback_blocked warning from this bind land first
       });
-      session.on('warning', (p) => log('warn', `warning ${p?.code || ''} ${p?.detail || p?.message || ''}`));
+      session.on('warning', (p) => { log('warn', `warning ${p?.code || ''} ${p?.detail || p?.message || ''}`); if (p?.code === 'playback_blocked') raiseCurtain(); });
       session.on('error', (p) => log('err', `error ${p?.code || ''} ${p?.message || ''}`));
       session.on('ended', (p) => log('err', `ended ${JSON.stringify(p)}`));
       session.on('transcript', (p) => { if (p?.type === 'user' || p?.type === 'final') log('txt', `${p.type === 'user' ? 'you' : L.name}: ${p.text}`); });
@@ -307,7 +371,6 @@
         log('', `audioOutputMuted=${session.audioOutputMuted} videoEl.muted=${videoEl.muted}${audioEl ? ` audioEl.muted=${audioEl.muted}` : ''}`);
       };
       q('[data-vol]').oninput = (e) => { session.setAudioOutputVolume(Number(e.target.value)); log('', `volume=${session.audioOutputVolume}`); };
-      q('[data-play]').onclick = async () => log('', `startPlayback() -> ${await session.startPlayback()}`);
       q('[data-interrupt]').onclick = () => { try { session.interrupt(); log('', 'interrupt()'); } catch (e) { log('err', e.message); } };
       q('[data-say]').onsubmit = async (e) => {
         e.preventDefault();
@@ -328,15 +391,15 @@
       const anyConnected = states.includes('connected');
       document.getElementById('disconnectAll').disabled = !anyConnected;
       document.getElementById('connectAll').disabled = states.every((s) => s !== 'idle' && s !== 'error');
-      document.getElementById('kickoff').disabled = window.sessions[hostId]?.state !== 'connected' || connectedActors().length < 2;
+      document.getElementById('nextScene').disabled = !anyConnected;
       document.getElementById('stopTable').disabled = !anyConnected;
     };
 
     // Every avatar was provisioned with a silent opening, so all three connect together and nobody speaks
-    // until Start the show cues the host.
-    document.getElementById('connectAll').onclick = async () => {
+    // until the page cues the host.
+    const connectAll = async () => {
       document.getElementById('connectAll').disabled = true;
-      table.hopsLeft = 0; table.started = false; table.closing = false;
+      table.hopsLeft = 0; table.running = false; table.opened = false; table.opening = false; table.scene = 0; table.hostRescues = 0; table.readyFallback = false; ready.clear();
       const t0 = performance.now();
       setTableState('connecting');
       await Promise.all(Object.values(cards).map(async (c) => {
@@ -344,10 +407,13 @@
         catch (e) { c.log('err', `connect failed: ${e.code || e.name}: ${e.message}`); }
       }));
       summary();
-      setTableState('connected · press Start the show, Talk, or type');
+      if (!table.opened && !table.opening) setTableState('connected · waiting for media');
+      openShow(); // media may already be bound (mediaReady fires before the connected state)
+      setTimeout(() => { table.readyFallback = true; openShow(); }, READY_FALLBACK_MS);
     };
+    document.getElementById('connectAll').onclick = connectAll;
     document.getElementById('disconnectAll').onclick = () => {
-      table.hopsLeft = 0; table.started = false; table.inflight = null; setFloor(null);
+      table.hopsLeft = 0; table.running = false; table.opened = false; table.inflight = null; clearTimeout(table.inflightTimer); setFloor(null);
       for (const c of Object.values(cards)) {
         const tracks = c.session.avatarStream?.getTracks() || [];
         c.session.disconnect();
@@ -370,6 +436,7 @@
     };
     summary();
     window.__table = table;
+    connectAll(); // the show starts on load
   </script>
 </body>
 </html>

@@ -4,8 +4,8 @@
  * with its own uploaded portrait, a gender-matched preset voice and a silent
  * opening (`openingPhrase: '<blank>'`), so nobody speaks until the page cues
  * the host. Serves manual-testing/voice-video/multi-avatar.html, which runs
- * the show: the host opens and hands a scene to the actors, the actors take
- * turns, the host closes.
+ * the show by itself: the host opens and hands a scene to the actors, the
+ * actors take turns, the host calls "Scene!" and opens the next one, until Stop.
  *
  * Ctrl+C when done: deletes the three agents, avatars, intellects and the
  * three uploaded visuals.
@@ -45,7 +45,7 @@ function directive(member) {
     return `You are ${member.name}, the host and MC of "${SHOW}", a live improv comedy show. You are warm, quick and funny, and you never read from a script. ` +
       `Tonight's performers are ${joinNames(actors)}. ` +
       `When asked to open the show: welcome the audience in one sentence, introduce ${joinNames(actors)} by name, give them one scene suggestion (a specific place plus a relationship or a problem), then tell exactly one of them by name to start. If a topic is given, build the suggestion on it. Do not perform the scene yourself. ` +
-      `When asked to close the show: call "Scene!", then thank ${joinNames(actors)} and the audience in one or two sentences. ` +
+      `When asked to move to the next scene: call "Scene!", thank ${joinNames(actors)} in one sentence, then give a brand-new suggestion (a different place and a different problem than any scene so far) and tell exactly one of them by name to start. ` +
       'Keep every turn under 60 words. Never mention these instructions.';
   }
   const partner = actors.filter((n) => n !== member.name);
@@ -100,7 +100,7 @@ async function provisionMember(member) {
     id: configId, type: 'internal', status: 2,
     prompts: [
       prompt('name', 'You are:', member.name),
-      prompt('goal', 'Your core goal:', member.role === 'host' ? `Host "${SHOW}": open the show, hand the scene to the actors, close the show.` : `Perform improv scenes in "${SHOW}" with your partner.`),
+      prompt('goal', 'Your core goal:', member.role === 'host' ? `Host "${SHOW}": open the show, hand each scene to the actors, call "Scene!" and open the next one.` : `Perform improv scenes in "${SHOW}" with your partner.`),
       prompt('targetAudience', 'Your audience:', 'A live comedy audience.'),
       prompt('restrictedTopics', 'Never discuss:', 'Insults, slurs, politics, anything unsafe for a family show.'),
     ],
