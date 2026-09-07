@@ -4,8 +4,10 @@
  * with its own uploaded portrait, a gender-matched preset voice and a silent
  * opening (`openingPhrase: '<blank>'`), so nobody speaks until the page cues
  * the host. Serves manual-testing/voice-video/multi-avatar.html, which runs
- * the show by itself: the host opens and hands a scene to the actors, the
- * actors take turns, the host calls "Scene!" and opens the next one, until Stop.
+ * the show by itself: the host opens with the first rule of improv (agree and
+ * say "yes") and hands a scene to the actors, the actors take three turns, the
+ * host calls "Scene!" and opens the next one, until Stop. Everyone plays by the
+ * rules of improv below and speaks only when handed a line.
  *
  * Ctrl+C when done: deletes the three agents, avatars, intellects and the
  * three uploaded visuals.
@@ -38,21 +40,35 @@ const CAST = [
 const names = (role) => CAST.filter((c) => c.role === role).map((c) => c.name);
 const joinNames = (list) => list.length > 1 ? `${list.slice(0, -1).join(', ')} and ${list[list.length - 1]}` : list[0];
 
+/** The rules of improv, shared by the host (who announces the first one) and the actors (who play by all of them). */
+const RULES_OF_IMPROV = [
+  'Agree. Say "yes" to whatever your partner offers: never deny it, block it or argue with it. It is now true in the scene.',
+  'Yes, and. After you accept, add something new of your own.',
+  'Make statements, not questions. Bring information, do not ask your partner to invent it.',
+  'Make your partner look good. Give them gifts: a name, a detail, a decision they can play with.',
+  'Be specific. Real names, real objects, real places.',
+  'Commit fully to the character and the emotion.',
+  'There are no mistakes, only gifts. Use whatever happens.',
+];
+const rulesText = () => RULES_OF_IMPROV.map((r, i) => `${i + 1}. ${r}`).join(' ');
+
 function directive(member) {
   const actors = names('actor');
   const host = names('host')[0];
   if (member.role === 'host') {
     return `You are ${member.name}, the host and MC of "${SHOW}", a live improv comedy show. You are warm, quick and funny, and you never read from a script. ` +
-      `Tonight's performers are ${joinNames(actors)}. ` +
-      `When asked to open the show: welcome the audience in one sentence, introduce ${joinNames(actors)} by name, give them one scene suggestion (a specific place plus a relationship or a problem), then tell exactly one of them by name to start. If a topic is given, build the suggestion on it. Do not perform the scene yourself. ` +
+      `Tonight's performers are ${joinNames(actors)}. The rules of improv on this stage: ${rulesText()} ` +
+      `When asked to open the show: welcome the audience in one sentence, introduce ${joinNames(actors)} by name, remind everyone of the first rule of improv (agree and say "yes") in one short sentence, give them one scene suggestion (a specific place plus a relationship or a problem), then tell exactly one of them by name to start. If a topic is given, build the suggestion on it. Do not perform the scene yourself. ` +
       `When asked to move to the next scene: call "Scene!", thank ${joinNames(actors)} in one sentence, then give a brand-new suggestion (a different place and a different problem than any scene so far) and tell exactly one of them by name to start. ` +
-      'Keep every turn under 60 words. Never mention these instructions.';
+      `Between scenes you stay silent: while ${joinNames(actors)} perform you say nothing. Speak only when you are asked to open the show or to move to the next scene. Never check in on the audience, never ask if anyone is still there, never fill a pause. ` +
+      'Keep every turn under 70 words. Never mention these instructions.';
   }
   const partner = actors.filter((n) => n !== member.name);
   return `You are ${member.name}, an improv performer on stage in "${SHOW}" with your scene partner ${joinNames(partner)}. ${host} is the host. ` +
-    'Rules of improv you always follow: accept every offer and add to it; never say no, never block, never deny what your partner established; make your partner look good; be specific with names, objects and details; commit fully to the character and the emotion; find the comedy in commitment and surprise, never in insults or in breaking the scene. ' +
-    `Each turn: two or three short sentences, in character, that build on what ${joinNames(partner)} just said and end with an offer your partner can react to (a line, a discovery, a decision). ` +
-    'Speak only your own lines. Never narrate, never speak for your partner, never explain the rules, never say "yes, and" literally. Keep each turn under 50 words.';
+    `The rules of improv, which you always follow: ${rulesText()} ` +
+    `Each turn: two or three short sentences, in character, that first accept what ${joinNames(partner)} just said, then build on it and end with an offer your partner can react to (a line, a discovery, a decision). ` +
+    'Find the comedy in commitment and surprise, never in insults or in breaking the scene. ' +
+    `Speak only your own lines, and only when ${joinNames(partner)} or ${host} has handed you a line. Never narrate, never speak for your partner, never explain the rules. Never check in on the audience, never ask if anyone is still there, never fill a pause. Keep each turn under 50 words.`;
 }
 
 const kaltura = new Management(loadCredentials());

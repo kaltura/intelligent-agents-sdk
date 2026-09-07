@@ -40,7 +40,7 @@
     <span id="summary" class="badge">idle</span>
   </div>
   <div class="bar">
-    <label>Actor turns per scene <input id="maxHops" type="number" min="1" max="50" value="8"></label>
+    <label>Actor turns per scene <input id="maxHops" type="number" min="1" max="10" value="3"></label>
     <input id="topic" type="text" placeholder="optional topic for the next scene">
     <button id="nextScene" disabled>Next scene</button>
     <button id="stopTable" disabled>Stop</button>
@@ -48,9 +48,11 @@
   </div>
   <p style="color:#999;margin:0 0 8px">
     The show runs itself: the page connects all three, the host opens with a scene suggestion and names who starts, the actors alternate for
-    <b>Actor turns per scene</b> turns, then the host calls "Scene!" and opens the next one, and so on until <b>Stop</b>. Avatars cannot hear each other
-    (each has its own downlink), so the finished text of each turn is passed to the next avatar as a typed turn. Your mic (<b>Talk</b>) or a typed
-    line on any card joins the scene from that avatar. Mute / volume / speaker must land only on that card's element(s).
+    <b>Actor turns per scene</b> turns (3 by default), then the host calls "Scene!" and opens the next one, and so on until <b>Stop</b>. Avatars cannot
+    hear each other (each has its own downlink), so the finished text of each turn is passed to the next avatar as a typed turn. Only the avatar
+    holding the floor may speak: a line nobody asked for (the service checks in on its own after about two minutes of no input) is interrupted at
+    once and never routed. Your mic (<b>Talk</b>) or a typed line on any card joins the scene from that avatar. Mute / volume / speaker must land
+    only on that card's element(s).
   </p>
   <div class="log" id="tableLog"></div>
   <div class="cards" id="cards"></div>
@@ -92,15 +94,20 @@
     // (`avatarStopTalking` with `session.speaking === false`) AND nothing restarted for QUIET_MS.
     // Then the turn's text is handed to the next avatar via `speak()` once the whole stage is silent.
     // Host → the actor the host named (else the first actor); actor → the next actor in the ring;
-    // when the scene's actor-turn budget is spent, the last actor's line goes to the host, who calls
+    // after `maxHops` actor turns (3 by default) the last actor's line goes to the host, who calls
     // "Scene!" and opens the next scene in the same turn. The loop runs until Stop.
+    // Only invited turns are routed: a turn we asked for (speak()) or one the user started (mic or typed).
+    // Anything else, such as the service's own idle check-in after ~2 min of silence, is interrupted
+    // the moment it starts and dropped, so an idle host or actor never jumps into a scene.
     const QUIET_MS = 1200, GAP_MS = 700, REPLY_TIMEOUT_MS = 20000, READY_FALLBACK_MS = 15000, OPEN_QUIET_MS = 2500;
     const FRAME_PREFIX = '[Improv]';
-    const table = { running: false, scene: 0, hopsLeft: 0, inflight: null, inflightTimer: null, routing: false, premise: '', lastTopic: '', blocked: false, opened: false, opening: false, hostRescues: 0 };
-    const turns = {}; // id -> { chunks: [], ended: false, lastText: '', timer: null }
+    const table = { running: false, scene: 0, turn: 0, inflight: null, inflightTimer: null, routing: false, premise: '', lastTopic: '', blocked: false, opened: false, opening: false, hostRescues: 0, cut: 0 };
+    const turns = {}; // id -> { chunks: [], ended: false, lastText: '', timer: null, ignore: false }
+    const invited = new Set(); // ids allowed to take the floor next (we cued them, or the user spoke / typed to them)
     const ready = new Set(); // ids whose media is bound (mediaReady fired)
     const setTableState = (s) => { document.getElementById('tableState').textContent = s; };
-    const maxHops = () => Number(document.getElementById('maxHops').value) || 8;
+    const maxHops = () => Number(document.getElementById('maxHops').value) || 3;
+    const turnLabel = () => `turn ${table.turn} of ${maxHops()}`;
     const connectedIds = () => CAST.map((c) => c.id).filter((id) => window.sessions[id]?.state === 'connected');
     const connectedActors = () => connectedIds().filter((id) => id !== hostId);
     const nameOf = (id) => CAST.find((c) => c.id === id).name;
@@ -156,7 +163,7 @@
     };
 
     const expectReply = (id) => {
-      table.inflight = id;
+      table.inflight = id; invited.add(id);
       clearTimeout(table.inflightTimer);
       table.inflightTimer = setTimeout(() => {
         if (table.inflight !== id) return;
@@ -175,7 +182,7 @@
         await waitTableQuiet();
         if (!table.running || window.sessions[toId]?.state !== 'connected') return; // Stop may have landed while we waited
         tlog(label, 'table');
-        setTableState(`scene ${table.scene} · ${nameOf(toId)} has the floor · ${table.hopsLeft} actor turns left`);
+        setTableState(`scene ${table.scene} · ${nameOf(toId)} has the floor${toId === hostId ? '' : ` · ${turnLabel()}`}`);
         setFloor(toId);
         expectReply(toId);
         await window.sessions[toId].speak(text);
@@ -190,19 +197,19 @@
       if (fromId === hostId) {
         const toId = pickNext(fromId, text);
         if (!toId) { setTableState('no actor connected'); setFloor(null); return; }
-        table.scene += 1; table.hopsLeft = maxHops(); table.premise = text;
-        await handOff(toId, frame(fromId, toId, text), `${nameOf(fromId)} → ${nameOf(toId)} (scene ${table.scene}, ${table.hopsLeft} actor turns left)`);
+        table.scene += 1; table.turn = 1; table.premise = text; // the first actor turn of the scene
+        await handOff(toId, frame(fromId, toId, text), `${nameOf(fromId)} → ${nameOf(toId)} (scene ${table.scene}, ${turnLabel()})`);
         return;
       }
-      if (table.hopsLeft <= 0) {
+      if (table.turn >= maxHops()) { // the scene's last actor turn just ended
         if (window.sessions[hostId]?.state !== 'connected') { setFloor(null); setTableState('scene over · host not connected'); return; }
-        await handOff(hostId, hostCue('next', fromId, text), `${nameOf(fromId)} → ${nameOf(hostId)} (next scene)`);
+        await handOff(hostId, hostCue('next', fromId, text), `${nameOf(fromId)} → ${nameOf(hostId)} (scene over)`);
         return;
       }
       const toId = pickNext(fromId, text);
       if (!toId) { setTableState('nobody else connected'); setFloor(null); return; }
-      table.hopsLeft -= 1; // the host's turns are free
-      await handOff(toId, frame(fromId, toId, text), `${nameOf(fromId)} → ${nameOf(toId)} (${table.hopsLeft} actor turns left)`);
+      table.turn += 1; // the host's turns are free
+      await handOff(toId, frame(fromId, toId, text), `${nameOf(fromId)} → ${nameOf(toId)} (${turnLabel()})`);
     };
 
     const settle = (id) => {
@@ -210,6 +217,7 @@
       const text = (t.chunks.join(' ').replace(/\s+/g, ' ').trim()) || t.lastText || '';
       delete turns[id];
       if (table.inflight === id) { table.inflight = null; clearTimeout(table.inflightTimer); }
+      if (t.ignore) { setFloor(table.inflight); if (text) tlog(`${nameOf(id)} (cut, not routed): ${text}`, 'warn'); return; }
       if (!text) return;
       tlog(`${nameOf(id)}: ${text}`);
       route(id, text);
@@ -220,28 +228,56 @@
       if (t.ended && !window.sessions[id].speaking) t.timer = setTimeout(() => settle(id), QUIET_MS);
     };
     const wireTable = (id, session, log) => {
-      session.on('turnStart', () => {
-        if (!turns[id]) turns[id] = { chunks: [], ended: false, lastText: '', timer: null };
+      // The service's idle check-in ("still there?") arrives as a turn whose speechId ends in "-wake-up", with no user
+      // input before it. Any other turn nobody invited (not cued by us, no mic or typed input) is treated the same:
+      // cut it before it is heard and never route it. The silent "<blank>" opening turn before the show is fine.
+      const cutUninvited = (p) => {
+        if (turns[id]) return false;
+        const wakeUp = String(p?.speechId || '').endsWith('-wake-up');
+        if (!wakeUp && (!table.opened || invited.has(id))) return false;
+        turns[id] = { chunks: [], ended: false, lastText: '', timer: null, ignore: true };
+        table.cut += 1;
+        try { session.interrupt(); } catch (e) { log('err', `interrupt() failed: ${e.message}`); }
+        tlog(`${nameOf(id)} started a line nobody asked for (${wakeUp ? 'idle check-in' : 'uninvited'}): interrupted, not routed`, 'warn');
+        log('warn', `uninvited turn (${p?.speechId || 'no speechId'}): interrupt()`);
+        return true;
+      };
+      session.on('turnStart', (p) => {
+        if (cutUninvited(p)) return;
+        if (!turns[id]) turns[id] = { chunks: [], ended: false, lastText: '', timer: null, ignore: false };
         else clearTimeout(turns[id].timer);
+        if (turns[id].ignore) return;
+        invited.delete(id);
         if (table.inflight === id) { clearTimeout(table.inflightTimer); table.inflight = null; }
         if (id === hostId) table.hostRescues = 0;
         setFloor(id);
       });
       session.on('transcript', (p) => { if (p?.type === 'final' && turns[id] && p.text) turns[id].chunks.push(p.text); });
       session.on('turnEnd', () => { if (turns[id]) { turns[id].ended = true; trySettle(id); } });
-      session.on('avatarStartTalking', () => { if (turns[id]) clearTimeout(turns[id].timer); });
+      session.on('avatarStartTalking', () => { if (cutUninvited()) return; if (turns[id]) { clearTimeout(turns[id].timer); if (turns[id].ignore) { try { session.interrupt(); } catch { /* logged above */ } } } });
       session.on('avatarStopTalking', (p) => { if (turns[id]) { if (p?.text) turns[id].lastText = p.text; trySettle(id); } });
-      session.on('interrupted', () => { if (turns[id]) { clearTimeout(turns[id].timer); delete turns[id]; } if (table.inflight === id) table.inflight = null; });
+      session.on('interrupted', () => { if (turns[id]) { clearTimeout(turns[id].timer); if (turns[id].ignore) { turns[id].ended = true; trySettle(id); } else delete turns[id]; } if (table.inflight === id) table.inflight = null; });
       // A human turn (mic or typed) on this card joins the show from that avatar. The server echoes typed text back as a
       // user transcript too, so framed hand-offs are recognised by their prefix and skipped here.
-      session.on('transcript', (p) => { if (p?.type === 'user' && !String(p.text || '').startsWith(FRAME_PREFIX)) reseed(id, `you → ${nameOf(id)}: ${p.text}`); });
+      session.on('userStartedTalking', () => invited.add(id));
+      session.on('transcript', (p) => { if (p?.type === 'user' && !String(p.text || '').startsWith(FRAME_PREFIX)) { invited.add(id); reseed(id, `you → ${nameOf(id)}: ${p.text}`); } });
       log('', 'improv routing wired');
     };
+    // Keep the service's idle check-in from ever starting: a barge-in marker (interrupt()) on an idle avatar
+    // counts as user activity on the server and produces no speech. Avatars that are speaking, cued, mid-turn
+    // or listening to your mic are left alone; the cut above covers anything that slips through.
+    const HEARTBEAT_MS = 60000;
+    setInterval(() => {
+      for (const [id, s] of Object.entries(window.sessions)) {
+        if (s.state !== 'connected' || s.speaking || turns[id] || table.inflight === id || (s.micStarted && s.micEnabled)) continue;
+        try { s.interrupt(); } catch { /* tap-to-talk in progress or just disconnected: skip this beat */ }
+      }
+    }, HEARTBEAT_MS);
     const reseed = (id, line) => {
       table.running = true;
-      if (table.hopsLeft <= 0) table.hopsLeft = maxHops();
+      if (id !== hostId && (table.turn === 0 || table.turn >= maxHops())) table.turn = 1; // the answer to you is the scene's first actor turn
       tlog(line, 'table');
-      setTableState(`scene ${table.scene} · ${nameOf(id)} has the floor · ${table.hopsLeft} actor turns left`);
+      setTableState(`scene ${table.scene} · ${nameOf(id)} has the floor${id === hostId ? '' : ` · ${turnLabel()}`}`);
       setFloor(id);
       document.getElementById('stopTable').textContent = 'Stop';
     };
@@ -276,7 +312,7 @@
       openShow();
     };
 
-    document.getElementById('nextScene').onclick = () => { if (!table.running) return; table.hopsLeft = 0; tlog('next scene after this turn', 'table'); };
+    document.getElementById('nextScene').onclick = () => { if (!table.running) return; table.turn = maxHops(); tlog('next scene after this turn', 'table'); };
     document.getElementById('stopTable').onclick = (e) => {
       if (table.running) {
         table.running = false; table.inflight = null; clearTimeout(table.inflightTimer); setFloor(null);
@@ -399,7 +435,7 @@
     // until the page cues the host.
     const connectAll = async () => {
       document.getElementById('connectAll').disabled = true;
-      table.hopsLeft = 0; table.running = false; table.opened = false; table.opening = false; table.scene = 0; table.hostRescues = 0; table.readyFallback = false; ready.clear();
+      table.turn = 0; table.running = false; table.opened = false; table.opening = false; table.scene = 0; table.hostRescues = 0; table.cut = 0; table.readyFallback = false; ready.clear(); invited.clear();
       const t0 = performance.now();
       setTableState('connecting');
       await Promise.all(Object.values(cards).map(async (c) => {
@@ -413,7 +449,7 @@
     };
     document.getElementById('connectAll').onclick = connectAll;
     document.getElementById('disconnectAll').onclick = () => {
-      table.hopsLeft = 0; table.running = false; table.opened = false; table.inflight = null; clearTimeout(table.inflightTimer); setFloor(null);
+      table.turn = 0; table.running = false; table.opened = false; table.inflight = null; clearTimeout(table.inflightTimer); setFloor(null); invited.clear();
       for (const c of Object.values(cards)) {
         const tracks = c.session.avatarStream?.getTracks() || [];
         c.session.disconnect();
