@@ -100,7 +100,7 @@ Deterministic, so a docs change re-keys only the page it touched:
 
 ### Rendering the SITE MAP
 
-`renderSiteMap(manifest)` gives the prompt text: one line per page, `path: key1, key2`. About 25 tokens per page. `siteMapPrompt(manifest)` wraps it as a prompt block and warns (never throws) when the estimate passes `maxTokens` (default 2000). The docs site's 49 pages and 175 sections render to roughly 1250 tokens.
+`renderSiteMap(manifest)` gives the prompt text: two lines per page, the page title and then `path: key1, key2`, with a blank line between pages. About 45 tokens per page. The title lets the model match what a visitor calls a page ("the wire protocol page") to its path. The path line carries only the path and the keys: a label next to the path gets copied into `go_to` as part of the path. `siteMapPrompt(manifest)` wraps it as a prompt block and warns (never throws) when the estimate passes `maxTokens` (default 3000). The docs site's 49 pages and 202 sections render to roughly 2300 tokens.
 
 ## Provisioning
 

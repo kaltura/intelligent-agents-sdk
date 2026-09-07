@@ -105,11 +105,11 @@ Once the repo is public and has a tag pushed, jsDelivr serves any file straight 
 </script>
 ```
 
-`@latest` resolves to the newest tag, so this URL always matches the current README without an editing pass on every release. It's **not cached the same way** as a tagged path, though — jsDelivr re-checks it periodically, so what it serves can change without warning. For anything you ship, pin to a real tag instead (`@v1.17.0`, or whichever release you're on) — jsDelivr caches a tagged path forever, so a pin is both stable and fast:
+`@latest` resolves to the newest tag, so this URL always matches the current README without an editing pass on every release. It's **not cached the same way** as a tagged path, though — jsDelivr re-checks it periodically, so what it serves can change without warning. For anything you ship, pin to a real tag instead (`@v1.18.0`, or whichever release you're on) — jsDelivr caches a tagged path forever, so a pin is both stable and fast:
 
 ```html
 <script type="module">
-  import { KalturaAvatarSession } from 'https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.17.0/src/experience/index.js';
+  import { KalturaAvatarSession } from 'https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.18.0/src/experience/index.js';
 </script>
 ```
 
@@ -931,7 +931,7 @@ These are importable from their entry points and useful when composing custom pi
 | `resolveCapabilities(layers)` / `CAPABILITY_STATE` / `CAPABILITY_INFO` | `management/capabilities.js`'s typed capability resolver: merges the `env`/`partnerConfig`/`request` layers for each entry in `CAPABILITIES` down to one resolved `CAPABILITY_STATE` (`on`/`off`/`disabled`) plus a `resolvedFrom` provenance tag, so a caller can build an accurate "what can this agent do" view without re-deriving precedence from raw config fields. `CAPABILITY_INFO` carries the human-readable name/description per capability. |
 | `findIntellectsReferencingTool(mgmt, toolId, ks)` | Lists every intellect's configId that currently references `toolId` in its `tool_ids`. This is the reuse-safety check `mgmt.tools.delete` runs by default before deleting a partner-level Tool — call it yourself to preview what a delete would break, or to build the same shared-by-name guard around your own upsert-by-name logic (`mgmt.skills`'s `delete` runs the analogous `findIntellectsReferencingSkill` check internally). |
 | `goToTool(opts?)` / `SITE_NAV_TOOL_NAME` | The fire-and-forget `go_to(path, section?)` client tool config (`wait_for_response: false`). Pass to `tools.add()` or `tools.update(id, {config})`. See [Site navigation](#site-navigation-sitenavigator) and [docs/SITE-NAV.md](docs/SITE-NAV.md). |
-| `siteMapPrompt(manifest, opts?)` / `SITE_NAV_RULES_PROMPT` / `estimateTokens(text)` | The SITE MAP prompt block rendered from a `sections.json` manifest (warns above `maxTokens`, default 2000), the frozen four-rule navigation prompt that pairs with it, and the rough token estimator the warning uses. |
+| `siteMapPrompt(manifest, opts?)` / `SITE_NAV_RULES_PROMPT` / `estimateTokens(text)` | The SITE MAP prompt block rendered from a `sections.json` manifest (warns above `maxTokens`, default 3000), the frozen four-rule navigation prompt that pairs with it, and the rough token estimator the warning uses. |
 | `loadSectionsManifest(url, opts?)` | Fetches, size-guards and validates a published `sections.json` at provisioning time. Throws `KalturaError` with `code` `bad_arg`, `http_error`, `network_error`, `timeout`, `too_large` or `bad_manifest`. |
 | `buildSectionsManifest(pages, opts?)` / `pageSectionKeys(headings, opts?)` / `renderSiteMap(manifest)` | The manifest builder for your site build: page paths plus headings in, `sections.json` out, with deterministic 2–3 word section keys in any language (`lang`, `stopWords`, `overrides`, `depth`, `maxWords`). `renderSiteMap` is the one-line-per-page text the prompt carries. |
 | `validateSectionsManifest(raw)` / `normalizePath(path)` / `resolvePath(manifest, path)` / `resolveSection(page, section)` / `normalizeWords(text)` / `STOP_WORDS` / `BOILERPLATE_IDS` / `MANIFEST_VERSION` | The shared resolution primitives `SiteNavigator` uses in the browser, exported here so build scripts, eval harnesses and tests resolve exactly like the plugin does. |

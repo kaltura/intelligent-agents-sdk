@@ -81,24 +81,25 @@ export function estimateTokens(text) {
 }
 
 /**
- * Render a manifest as the SITE MAP prompt block the model reads: one line per
- * page, `path: key1, key2`. Warns (never throws) when the estimated token cost
- * exceeds `maxTokens`, so a growing site is visible in provisioning logs.
+ * Render a manifest as the SITE MAP prompt block the model reads: two lines per
+ * page, the title and then `path: key1, key2`. Warns (never throws) when the
+ * estimated token cost exceeds `maxTokens`, so a growing site is visible in
+ * provisioning logs.
  *
  * @param {import('../core/site-keys.js').SectionsManifest|{pages:Array}} manifest
  * @param {object} [opts]
  * @param {string} [opts.key='siteMap'] Prompt key.
  * @param {string} [opts.label='Site map'] Prompt label shown in tooling.
- * @param {number} [opts.maxTokens=2000] Warn threshold.
+ * @param {number} [opts.maxTokens=3000] Warn threshold.
  * @param {(msg:string)=>void} [opts.warn=console.warn] Warning sink (inject to silence or capture).
  * @returns {{key:string,label:string,headerTemplate:string,type:'custom',value:string}}
  */
 export function siteMapPrompt(manifest, opts = {}) {
-  const { key = 'siteMap', label = 'Site map', maxTokens = 2000, warn = (m) => console.warn(m) } = opts;
+  const { key = 'siteMap', label = 'Site map', maxTokens = 3000, warn = (m) => console.warn(m) } = opts;
   const value = renderSiteMap(manifest);
   const tokens = estimateTokens(value);
   if (tokens > maxTokens) warn(`[site-nav] SITE MAP is ~${tokens} tokens (limit ${maxTokens}). Consider depth: 2, more stop words, or splitting the site.`);
-  return { key, label, headerTemplate: 'SITE MAP. One line per page: path, then that page\'s section keys.', type: 'custom', value };
+  return { key, label, headerTemplate: 'SITE MAP. Two lines per page: the page title, then its path followed by that page\'s section keys.', type: 'custom', value };
 }
 
 /**
