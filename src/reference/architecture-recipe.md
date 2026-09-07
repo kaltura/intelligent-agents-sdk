@@ -24,7 +24,8 @@ A from-scratch reimplementation of the live avatar runtime, using nothing but `s
    → asr-webrtc handshake (publish mic pc via socket relay)
 
 5. STV: WHEP POST {srsBaseUrl}/rtc/v1/whep/?app=app&stream={session_id} with recvonly offer,
-   setRemoteDescription(answer), pc.ontrack → <video>.srcObject → await <video> canplay
+   setRemoteDescription(answer), pc.ontrack fires twice (video, audio; distinct msids) → both
+   tracks merged into one SDK-owned MediaStream → <video>.srcObject once → await <video> canplay
 
 6. ONLY NOW → approvedPermissions  (gating on playable video avoids clipping the greeting)
 
