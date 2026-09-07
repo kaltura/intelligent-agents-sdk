@@ -62,7 +62,10 @@ const H = {
 const sharedMsid = () => H.shape.startsWith('one');
 const audioFirst = () => H.shape.endsWith('AV');
 window.addEventListener('unhandledrejection', () => { H.unhandled += 1; });
-function audioCtx() { return (H.audioCtx ||= new AudioContext()); }
+// 48 kHz = WebRTC's audio rate. The sender tone and every analyser tap then run passthrough in the
+// engine's converters. At WebKitGTK's default 44.1 kHz the outgoing tone is resampled inside the engine
+// and its WebProcess can crash in GStreamer's resampler when a sender is torn down (CI core dumps).
+function audioCtx() { return (H.audioCtx ||= new AudioContext({ sampleRate: 48000 })); }
 
 // ───────────────────────── loopback RTCPeerConnection ─────────────────────────
 // The SDK builds its STV peer relay-only (iceConfig 'stv'); a loopback has no TURN, so the
