@@ -28,6 +28,8 @@ import { FakeSocket, scriptHappyPath } from '/test/fakes/socket.js';
 const CONV_KS = 'djJ8' + btoa('v2|123|geniegpcid:1222').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 const WHEP_BASE = 'https://srs.example/rtc/v1/whep/';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// Element volume read-back tolerance: with a real audio sink WebKitGTK quantizes `volume` (0.4 reads 0.3999916).
+const VOL_EPS = 1e-3;
 const has = {
   setSinkId: 'setSinkId' in HTMLMediaElement.prototype,
   mediaRecorder: typeof MediaRecorder === 'function',
@@ -594,7 +596,7 @@ S['volume'] = async (c) => {
   const v = makeEl();
   const { session } = await connected({ videoEl: v });
   session.setAudioOutputVolume(0.3);
-  c.check('volume 0.3 on sink', Math.abs(v.volume - 0.3) < 1e-6 && session.audioOutputVolume === 0.3, v.volume);
+  c.check('volume 0.3 on sink', Math.abs(v.volume - 0.3) < VOL_EPS && session.audioOutputVolume === 0.3, v.volume);
   session.setAudioOutputVolume(5);
   c.check('clamped to 1', v.volume === 1 && session.audioOutputVolume === 1, v.volume);
   session.setAudioOutputVolume(-1);
@@ -604,7 +606,7 @@ S['volume'] = async (c) => {
   session.setAudioOutputVolume(0.3);
   const a = makeEl('audio');
   session.setAudioEl(a);
-  c.check('volume follows to the audio element', Math.abs(a.volume - 0.3) < 1e-6, a.volume);
+  c.check('volume follows to the audio element', Math.abs(a.volume - 0.3) < VOL_EPS, a.volume);
   c.check('audio still flows at low volume', ...pair2(await advancing(a)));
   c.check('RTP flows', ...pair2(await flowing(stv(session), 'audio')));
 };
@@ -920,7 +922,7 @@ S['multi-avatar'] = async (c) => {
   A.session.muteAudioOutput();
   c.check('mute A only', v1.muted === true && a2.muted === false && v2.muted === false);
   B.session.setAudioOutputVolume(0.4);
-  c.check('volume B only', Math.abs(a2.volume - 0.4) < 1e-6 && v1.volume === 1);
+  c.check('volume B only', Math.abs(a2.volume - 0.4) < VOL_EPS && v1.volume === 1);
   A.session.disconnect();
   await sleep(20);   // WebKit flips readyState to 'ended' asynchronously after stop()
   c.check('A released + ended', v1.srcObject === null && ended([...tA]) && A.session.avatarStream === null, { src: v1.srcObject, states: [...tA].map((t) => t.readyState), stream: A.session.avatarStream });
@@ -969,7 +971,7 @@ S['multi-avatar-three'] = async (c) => {
   A.session.muteAudioOutput();
   c.check('B7: mute lands on A only', v1.muted === true && v2.muted === false && a2.muted === false, { v1: v1.muted, v2: v2.muted, a2: a2.muted });
   B.session.setAudioOutputVolume(0.4);
-  c.check('B7: volume lands on B only', Math.abs(a2.volume - 0.4) < 1e-6 && v1.volume === 1 && v2.volume === 1, { a2: a2.volume, v1: v1.volume, v2: v2.volume });
+  c.check('B7: volume lands on B only', Math.abs(a2.volume - 0.4) < VOL_EPS && v1.volume === 1 && v2.volume === 1, { a2: a2.volume, v1: v1.volume, v2: v2.volume });
   const id = has.setSinkId ? await pickOutput() : null;
   if (!has.setSinkId) c.skip('B7 per-session setAudioOutput', 'HTMLMediaElement.setSinkId is not implemented in this engine');
   else if (!id) c.skip('B7 per-session setAudioOutput', 'no audiooutput device is enumerable in this engine');
@@ -1267,7 +1269,7 @@ S['controls-before-connect'] = async (c) => {
   await s.session.connect();
   const preSink = sinkP ? await sinkP : null;
   c.check('B10: mute is applied to the bound element', v.muted === true, { muted: v.muted, w: v.__w });
-  c.check('B10: volume 0.3 is applied to the bound element', Math.abs(v.volume - 0.3) < 1e-6, v.volume);
+  c.check('B10: volume 0.3 is applied to the bound element', Math.abs(v.volume - 0.3) < VOL_EPS, v.volume);
   c.check('B10: one srcObject write and one play() (settings before the bind)', v.__w.srcObject === 1 && v.__w.play === 1, v.__w);
   c.check('B10: one mediaReady, no warnings', ev.count('mediaReady') === 1 && ev.count('warning') === 0, { mediaReady: ev.count('mediaReady'), warnings: ev.of('warning') });
   c.check('B10: audio RTP flows', ...pair2(await flowing(stv(s.session), 'audio')));
