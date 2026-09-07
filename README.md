@@ -105,11 +105,11 @@ Once the repo is public and has a tag pushed, jsDelivr serves any file straight 
 </script>
 ```
 
-`@latest` resolves to the newest tag, so this URL always matches the current README without an editing pass on every release. It's **not cached the same way** as a tagged path, though — jsDelivr re-checks it periodically, so what it serves can change without warning. For anything you ship, pin to a real tag instead (`@v1.16.1`, or whichever release you're on) — jsDelivr caches a tagged path forever, so a pin is both stable and fast:
+`@latest` resolves to the newest tag, so this URL always matches the current README without an editing pass on every release. It's **not cached the same way** as a tagged path, though — jsDelivr re-checks it periodically, so what it serves can change without warning. For anything you ship, pin to a real tag instead (`@v1.17.0`, or whichever release you're on) — jsDelivr caches a tagged path forever, so a pin is both stable and fast:
 
 ```html
 <script type="module">
-  import { KalturaAvatarSession } from 'https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.16.1/src/experience/index.js';
+  import { KalturaAvatarSession } from 'https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.17.0/src/experience/index.js';
 </script>
 ```
 
@@ -265,7 +265,7 @@ Use split when:
 - The picture should start before the autoplay gesture. A muted `videoEl` plays at once while `audioEl` waits for `startPlayback()`.
 - You want the voice on its own element for mixing, visualizers or per-element control.
 
-Every element gets one `srcObject` write and one `play()` per binding. The SDK creates no DOM and adds no CSS.
+Every element gets one `srcObject` write and one `play()` per binding. In the default layout `videoEl.srcObject` carries one video and one audio track; in the split layout the audio track lives on `audioEl` only. `disconnect()`, a terminal `ended` and a failed `connect()` set `srcObject` to `null` on every bound element. `videoEl`, `audioEl`, `setVideoEl(el)` and `setAudioEl(el)` accept `null` or an object with a `play()` function (a real media element, or a jsdom one in tests); anything else throws `KalturaError` `bad_request`. The SDK creates no DOM and adds no CSS.
 
 | Member | Behavior |
 |---|---|
@@ -274,10 +274,10 @@ Every element gets one `srcObject` write and one `play()` per binding. The SDK c
 | `setVideoEl(el)`, `setAudioEl(el)` | Rebind at runtime, in any state, before or after `connect()`. `null` unbinds; `setAudioEl(null)` merges the voice back into `videoEl`. Old element's `srcObject` is cleared. |
 | `muteAudioOutput()`, `unmuteAudioOutput()`, `audioOutputMuted` | Mute the avatar's voice (not your microphone, that's `mute()`). Acts on whichever element carries the audio and follows it across rebinds. |
 | `setAudioOutputVolume(0..1)`, `audioOutputVolume` | Playback volume, clamped. |
-| `setAudioOutput(deviceId)` | Routes the audio-carrying element via `setSinkId`. Resolves `false`, never throws, when the element has no `setSinkId` or rejects the id. An accepted id follows the audio across rebinds; a rejected id is dropped and the previous one stays. Set before `connect()`, the id is applied on the first bind. `''` selects the system default on every browser. |
+| `setAudioOutput(deviceId)` | Routes the audio-carrying element via `setSinkId`. Throws `bad_request` when `deviceId` is not a string. Resolves `false`, never throws, when the element has no `setSinkId` or rejects the id. An accepted id follows the audio across rebinds; a rejected id is dropped and the previous one stays. Set before `connect()`, the id is applied on the first bind. `''` selects the system default on every browser. |
 | `startPlayback()` | Retries `play()` on every bound element. Call from a click after a `playback_blocked` warning. Resolves `true` when everything is playing. |
 
-Media recovery (an STV re-subscribe after a stall) never touches your elements: the new tracks are swapped into the same streams, and only an element that the browser paused meanwhile (Firefox does this) gets one `play()` call. The one exception is an element whose `srcObject` your app replaced itself (for example set to `null` to hide the avatar): recovery binds it again, as every version before 1.17.0 did. On Chromium a remote audio track is only decoded while some media element plays it, so a headless app that mixes `avatarStream` through Web Audio must keep a muted `<audio>` bound to the track; Firefox and WebKit do not need it. Calling `disconnect()` from inside a `'track'` listener is safe.
+Media recovery (an STV re-subscribe after a stall) never touches your elements: the new tracks are swapped into the same streams, and only an element that the browser paused meanwhile (Firefox does this) gets one `play()` call. The one exception is an element whose `srcObject` your app replaced itself (for example set to `null` to hide the avatar): recovery binds it again. On Chromium a remote audio track is only decoded while some media element plays it, so a headless app that mixes `avatarStream` through Web Audio must keep a muted `<audio>` bound to the track; Firefox and WebKit do not need it. Calling `disconnect()` from inside a `'track'` listener is safe.
 
 **Multiple avatars on one page.** Each avatar is its own session with its own elements. Sessions share nothing: mute, volume and output device are per session.
 
@@ -317,14 +317,6 @@ Non-fatal problems on this path arrive as `warning` events, `{ code, message, ..
 | `media_attach_failed` | A downlink track could not be routed (no `MediaStream` constructor, bad element). Payload has `kind: 'video' \| 'audio'` and `detail`. | Fall back to the `'track'` event or fix the element. |
 | `whep_delete_failed` | The WHEP `DELETE` on disconnect failed; the server will time the session out on its own. | Nothing; informational. |
 | `empty_turn_with_request_vars` | The intellect rejected `request_vars` because `allow_client_variables` is off (see the `{{var}}` section). | Enable the intellect flag. |
-
-**Upgrading to 1.17.0.** No code changes are required. Three points to check if your app inspects element state or return values directly:
-
-| Area | Current contract |
-|---|---|
-| Element validation | `videoEl`, `audioEl`, `setVideoEl(el)`, `setAudioEl(el)` accept `null` or an object with a `play()` function (a real media element, or a jsdom one in tests). Anything else throws `KalturaError` `bad_request`. |
-| `setAudioOutput(deviceId)` | Throws `bad_request` when `deviceId` isn't a string. A rejected id resolves `false`; the accepted id stays in effect and reapplies on the next element bind. No retry loop: the id is re-applied on every rebind instead. |
-| End of session | `disconnect()`, a terminal `ended`, and a failed `connect()` clear `srcObject` to `null` on every bound element. Reading `videoEl.srcObject` afterwards returns `null`. |
 
 ### Text-only chat (`KalturaChatSession`)
 
