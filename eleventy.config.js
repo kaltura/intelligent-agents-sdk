@@ -14,7 +14,7 @@ module.exports = function (eleventyConfig) {
   // ELEVENTY_PATH_PREFIX (from actions/configure-pages' base_path output); local
   // builds leave it unset, so this is a no-op for local preview. Shared with
   // src/_data/pathPrefix.js so the build-time transform and the runtime value
-  // embedded in every page (for router.js/navigator.js) can never drift.
+  // embedded in every page (for router.js/site-nav.js) can never drift.
   const pathPrefix = require('./src/_data/pathPrefix.js');
   if (pathPrefix) {
     eleventyConfig.addTransform('pathPrefix', (content, outputPath) => {
@@ -57,7 +57,7 @@ module.exports = function (eleventyConfig) {
 
   // Embeds routes.js as a JSON literal in base.njk's <head> (window.__SITE_ROUTES__)
   // — bare, unprefixed URLs; the pathPrefix transform above only rewrites
-  // href=/src= attributes, so runtime code (router.js/navigator.js) applies
+  // href=/src= attributes, so runtime code (router.js/site-nav.js) applies
   // its own withPrefix() to these before fetch()/pushState().
   eleventyConfig.addFilter('dump', (value) => JSON.stringify(value));
 
