@@ -131,7 +131,23 @@ An agent with no avatar attached (create it with `avatarIds` omitted) is treated
 
 ## Displaying the Avatar Video
 
-The SDK assigns the WHEP stream to `cfg.videoEl.srcObject` and does nothing else — no CSS, no sizing. The backend's rendered aspect ratio is not a published contract (see [Upload a Custom Visual](/reference/api/design/#upload-a-custom-visual-portrait--animated-avatar) on `catalog.createVisual` preprocessing), so size the box with `object-fit: cover` rather than assuming a fixed aspect ratio — it fills the box and crops evenly no matter what the stream's actual aspect ratio turns out to be:
+The STV downlink carries two tracks — video and audio — each on its own `recvonly` transceiver, delivered in two separate `pc.ontrack` events. The server's SDP gives each track its own `msid`, so `e.streams[0]` is a *different* `MediaStream` per event: the classic `videoEl.srcObject = e.streams[0]` pattern silently drops whichever track landed first. The SDK never does that. `src/experience/avatar-media.js` (internal; both `KalturaAvatarSession` and `KalturaScriptedVideoSession` own one) builds its own streams from the raw tracks:
+
+| Stream | Holds | Exposed as |
+|---|---|---|
+| canonical | every live downlink track (video + audio) | `session.avatarStream` — hand it to a `MediaRecorder`, a Web Audio graph, or a second element once |
+| video | video, plus audio when there is no `audioEl` | `cfg.videoEl.srcObject` |
+| audio | audio only (split mode) | `cfg.audioEl.srcObject` |
+
+Default (one `videoEl`): the element plays the merged stream, exactly as before. Split (`videoEl` + `audioEl`): the picture goes to the video element and the voice to the audio element, so a muted/off-screen video source (chroma-key compositing) or a mixed multi-avatar layout still has sound. Headless (no `videoEl`): nothing is bound; consume `avatarStream` or the `'track'` event yourself. Each element gets exactly one `srcObject` write and one `play()` call per binding; the SDK applies no CSS. `setVideoEl(el)` / `setAudioEl(el)` rebind at runtime in any state (pass `null` to unbind, or `null` to `setAudioEl` to merge audio back into `videoEl`). `disconnect()` stops every track and nulls each bound element's `srcObject`; the elements themselves are the app's and are never created, moved or removed by the SDK.
+
+Media recovery (an STV re-subscribe after a stall) swaps the new tracks *inside* the same three streams. The elements are never touched: no second `srcObject` write, so a compositor, recorder or Web Audio graph attached to `avatarStream` or to the element keeps working across recovery. An element whose `srcObject` the app replaced itself is the one exception: `attach()` binds it again, so a self-hidden avatar comes back on recovery exactly as on earlier versions. Firefox pauses a media element whose tracks all ended before the replacements arrived, so after the swap the SDK calls `resumePlayback()`, which retries `play()` only on elements that report `paused === true` (a no-op on Chromium and WebKit); a refusal there only logs at debug level, it never raises the `playback_blocked` warning.
+
+Audio controls act on whichever element carries the audio track (`audioEl` if set, else `videoEl`) and follow it across rebinds: `muteAudioOutput()` / `unmuteAudioOutput()`, `setAudioOutputVolume(0..1)`, `setAudioOutput(deviceId)` (`setSinkId`; resolves `false`, never throws, when the platform lacks it or no element is bound yet — the id is stored and applied to the next element bound). `startPlayback()` retries `play()` on every bound element from a user gesture after a `playback_blocked` warning and resolves `true` when all of them are playing.
+
+Chromium only decodes a remote audio track while some media element plays it. A headless app that mixes `avatarStream` through Web Audio on Chromium must keep a muted `<audio>` bound to the track (`el.muted = true; el.srcObject = new MediaStream(session.avatarStream.getAudioTracks()); el.play()`); Firefox and WebKit decode without one.
+
+The backend's rendered aspect ratio is not a published contract (see [Upload a Custom Visual](/reference/api/design/#upload-a-custom-visual-portrait--animated-avatar) on `catalog.createVisual` preprocessing), so size the box with `object-fit: cover` rather than assuming a fixed aspect ratio — it fills the box and crops evenly no matter what the stream's actual aspect ratio turns out to be:
 
 ```css
 .avatar-box {
@@ -151,7 +167,7 @@ For a circular picture-in-picture mask, swap `border-radius` + `overflow: hidden
 
 `object-fit: cover` never shows bars regardless of the source's actual aspect ratio — that's why it's the right default even without a published backend resolution to size against.
 
-Omit `videoEl` entirely for a headless/custom-render integration (canvas, WebGL, a circular-mask renderer) — both `KalturaAvatarSession` and `KalturaScriptedVideoSession` fire a `'track'` event (`{track, streams}`) the moment their STV peer's `ontrack` fires, whether or not `videoEl` is configured.
+Omit `videoEl` entirely for a headless/custom-render integration (canvas, WebGL, a circular-mask renderer) — both `KalturaAvatarSession` and `KalturaScriptedVideoSession` fire a `'track'` event (`{track, streams}`) the moment their STV peer's `ontrack` fires, whether or not `videoEl` is configured, and `avatarStream` holds every live track in one stream that stays stable across recovery. Calling `disconnect()` from inside a `'track'` listener is safe: the SDK defers the peer's `close()` to the next macrotask, because Chromium hangs the renderer when a peer connection is closed from within its own `ontrack` dispatch.
 
 For a dynamic crop/`object-position` instead of generic `object-fit: cover`, both classes also fire `'videoMetadata'` (`{videoWidth, videoHeight}`) once per connect, as soon as the decoder resolves the stream's actual dimensions. There's no fixed/published output resolution to hardcode against — this event is the source of truth.
 
@@ -169,7 +185,8 @@ import { attachChromaKeyAvatar } from '@kaltura/intelligent-agents/experience/ch
 // GitHub-CDN mode, pinned to a released tag:
 import { ChromaKeyVideo } from 'https://cdn.jsdelivr.net/gh/kaltura/chroma-key-video@v1.2.0/src/chromakey.js';
 
-const session = new KalturaAvatarSession({ token, …appInit, videoEl, socketFactory });
+// The keyed source <video> is muted and off-screen, so give the voice its own element:
+const session = new KalturaAvatarSession({ token, …appInit, videoEl, audioEl, socketFactory });
 const player = attachChromaKeyAvatar({
   session, videoEl: session.videoEl, ChromaKeyVideo,
   options: { autoTune: true },
