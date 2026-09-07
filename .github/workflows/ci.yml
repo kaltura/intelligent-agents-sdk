@@ -169,8 +169,8 @@ jobs:
       - name: 🎭 Install ${{ matrix.engine }}
         run: npx playwright install --with-deps ${{ matrix.engine }}
 
-      - name: 🔊 Start a virtual audio device (Firefox's cubeb backend needs a sink to play media elements at all)
-        if: matrix.engine == 'firefox'
+      - name: 🔊 Start a virtual audio device (this runner has no sound card. Firefox's cubeb backend needs a sink to play media elements at all; WebKitGTK's GStreamer pipeline otherwise falls through to OpenAL and ALSA, which fail to open a device on every play())
+        if: matrix.engine == 'firefox' || matrix.engine == 'webkit'
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq pulseaudio
@@ -181,15 +181,32 @@ jobs:
         id: verify_avatar_media
         env:
           VERIFY_BROWSER: ${{ matrix.engine }}
-          # WebKitGTK's WebProcess dies on this GPU-less runner in heavy media cells (three decoders, connect
-          # cycles, teardown). Every crash log shows Mesa probing the zink/Vulkan driver and failing right at the
-          # crash. Pin Mesa to llvmpipe and skip WebKit's DMA-BUF renderer so the software GL path is used
-          # from the start. `pw:browser` keeps the browser's own stderr in this log.
+          # WebKitGTK only: keep the browser's own stderr in this log, run Mesa on llvmpipe (no GPU here), and
+          # let a WebProcess crash leave a core file for the backtrace step below.
           DEBUG: ${{ matrix.engine == 'webkit' && 'pw:browser' || '' }}
         run: |
           set -o pipefail
-          if [ "${{ matrix.engine }}" = webkit ]; then export LIBGL_ALWAYS_SOFTWARE=1 WEBKIT_DISABLE_DMABUF_RENDERER=1; fi
+          if [ "${{ matrix.engine }}" = webkit ]; then
+            export LIBGL_ALWAYS_SOFTWARE=1 WEBKIT_DISABLE_DMABUF_RENDERER=1
+            sudo mkdir -p /tmp/cores && sudo chmod 1777 /tmp/cores
+            sudo sysctl -q -w kernel.core_pattern=/tmp/cores/core.%e.%p
+            ulimit -c unlimited
+          fi
           npm run verify:avatar-media 2>&1 | tee verify-avatar-media-output.log
+
+      - name: 🧠 Backtrace any WebKit process core dump
+        if: always() && matrix.engine == 'webkit'
+        run: |
+          shopt -s nullglob
+          cores=(/tmp/cores/core.*)
+          if [ ${#cores[@]} -eq 0 ]; then echo "no core dumps"; exit 0; fi
+          sudo apt-get install -y -qq gdb > /dev/null
+          for c in "${cores[@]}"; do
+            echo "=== $c"
+            exe=$(file "$c" | sed -n "s/.*execfn: '\([^']*\)'.*/\1/p")
+            echo "executable: $exe"
+            gdb -batch -ex 'thread apply all bt 25' "$exe" "$c" 2>&1 | tail -n 200
+          done
 
       - name: 📤 Upload the per-engine run artifact (per-cell timings, skips, track→mediaReady latency)
         if: always()
