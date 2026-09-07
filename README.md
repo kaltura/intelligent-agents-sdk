@@ -224,6 +224,8 @@ const session = new KalturaAvatarSession({
   conversationManagerUrl,  // from appInit
   srsBaseUrl,          // from appInit
   turnServerUrl,       // from appInit
+  // Markup: <video autoplay playsinline></video> and <audio autoplay></audio>.
+  // A missing <audio> makes querySelector return null and the SDK falls back to merged mode.
   videoEl: document.querySelector('video'),
   audioEl: document.querySelector('audio'),     // recommended: voice on its own element, see below
   socketFactory: (url, opts) => io(url, opts),  // inject socket.io
@@ -266,7 +268,7 @@ session.on('track', () => canvasRenderer.use(session.avatarStream));
 
 - UI frameworks replace elements without asking. A React, Vue or Svelte re-render, a route change or a conditional block can unmount the `<video>` and mount a new one. In the merged shape that single element carries the voice too, so the avatar goes silent and blank at once. In the split shape, keep the `<audio>` on a stable node (the document body, an app-shell component that never re-renders) so the conversation keeps going, and call `session.setVideoEl(newVideo)` when the picture's element mounts again.
 - The video is a texture source (chroma-key, canvas, WebGL) and the voice must still be audible. A `muted` source element cannot play sound, by browser design.
-- The picture should start before the autoplay gesture. A muted `videoEl` plays at once while `audioEl` waits for `startPlayback()`.
+- The picture should start before the autoplay gesture. In the split shape `videoEl` carries no audio track, so browsers let it play at once with no `muted` needed, while `audioEl` waits for `startPlayback()` from a click.
 - You want the voice on its own element for mixing, visualizers or per-element control.
 
 The merged shape stays fully supported for apps that create the `<video>` once and keep it for the life of the session.
