@@ -30,12 +30,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out the docs site (gh-pages-src)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: gh-pages-src
 
       - name: Check out the SDK repo (main)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: kaltura/intelligent-agents-sdk
           ref: main
