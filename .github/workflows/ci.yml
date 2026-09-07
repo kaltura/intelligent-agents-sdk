@@ -181,12 +181,14 @@ jobs:
         id: verify_avatar_media
         env:
           VERIFY_BROWSER: ${{ matrix.engine }}
-          # WebKitGTK has crashed the harness page on this runner (autoplay-split once, multi-avatar-three once,
-          # neither reproduced). `pw:browser` echoes the browser process's own stdout/stderr into this log, so the
-          # next crash carries WebKit's signal or GStreamer message instead of only Playwright's "target closed".
+          # WebKitGTK's WebProcess dies on this GPU-less runner in heavy media cells (three decoders, connect
+          # cycles, teardown). Every crash log shows Mesa probing the zink/Vulkan driver and failing right at the
+          # crash. Pin Mesa to llvmpipe and skip WebKit's DMA-BUF renderer so the software GL path is used
+          # from the start. `pw:browser` keeps the browser's own stderr in this log.
           DEBUG: ${{ matrix.engine == 'webkit' && 'pw:browser' || '' }}
         run: |
           set -o pipefail
+          if [ "${{ matrix.engine }}" = webkit ]; then export LIBGL_ALWAYS_SOFTWARE=1 WEBKIT_DISABLE_DMABUF_RENDERER=1; fi
           npm run verify:avatar-media 2>&1 | tee verify-avatar-media-output.log
 
       - name: 📤 Upload the per-engine run artifact (per-cell timings, skips, track→mediaReady latency)
