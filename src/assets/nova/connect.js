@@ -20,7 +20,6 @@ import './router.js';
 import { withPrefix } from './router.js';
 import { initDock, enterDockMode, enterDrawerMode, exitDrawerMode } from './dock.js';
 import { initTranscript, appendTranscript, showThinking, hideThinking } from './transcript.js';
-import { initNavigator } from './navigator.js';
 import { initHighlighter } from './highlighter.js';
 import { initSiteNav } from './site-nav.js';
 import { SDK_BASE } from './sdk.js';
@@ -237,7 +236,6 @@ async function connect(pendingPrompt, mode = 'avatar') {
     });
 
     siteNav = initSiteNav(session);
-    initNavigator(session);
     initHighlighter(session, siteNav);
 
     await session.connect();

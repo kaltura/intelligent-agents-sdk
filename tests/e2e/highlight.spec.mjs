@@ -1,7 +1,7 @@
 import { test, expect } from './fixtures.mjs';
 
-// Regression coverage for the self-inflicted scroll-echo race: highlighter.js's tool-call
-// handler calls target.scrollIntoView() then pointAt(target) synchronously, but the browser
+// Regression coverage for the self-inflicted scroll-echo race: site-nav.js's SiteNavigator
+// calls target.scrollIntoView() then pointAt(target) synchronously, but the browser
 // always dispatches the resulting `scroll` event on a later tick — by then pointAt() has
 // already attached its own scroll-interrupt listener, which used to treat that echo as a real
 // user scroll and instantly kill the ring before it ever painted. Nothing in tests/eval can

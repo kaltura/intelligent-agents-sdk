@@ -15,7 +15,7 @@ const PREFIX = window.__SITE_PATH_PREFIX__ || '';
 const ROUTES = window.__SITE_ROUTES__ || [];
 
 /** Prepend the GitHub Pages project-site subpath to a bare route (e.g. one
- * the brain supplies via navigate_to_page) — click-driven navigation never
+ * the brain supplies via go_to) — click-driven navigation never
  * needs this since `a.pathname` is already the browser-resolved value. */
 export function withPrefix(bareRoute) {
   if (!PREFIX || bareRoute.startsWith(PREFIX)) return bareRoute;
@@ -27,7 +27,7 @@ export function knownRoutes() {
 }
 
 /** The bare route for wherever the visitor actually is right now — same
- * normalization as resolveRoute, so it compares equal to a navigate_to_page
+ * normalization as resolveRoute, so it compares equal to a go_to
  * target that resolves to the current page. */
 export function currentRoute() {
   return resolveRoute(location.pathname);
