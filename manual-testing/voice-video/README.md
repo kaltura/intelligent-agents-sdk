@@ -22,10 +22,19 @@ This covers the real avatar pipeline (mic capture → ASR uplink → STV/WHEP vi
    ```bash
    node manual-testing/voice-video/mint.mjs
    ```
-   This provisions a throwaway agent+avatar+intellect, serves the real unmodified `examples/chroma-key-avatar.html` (plus a real `/appInit` route) over your LAN, and prints a URL like `http://192.168.x.x:4789/examples/chroma-key-avatar.html`.
+   This provisions a throwaway agent+avatar+intellect, serves the real unmodified `examples/chroma-key-avatar.html` (plus a real `/appInit` route) over your LAN, and prints a URL like `http://192.168.x.x:4789/examples/chroma-key-avatar.html`.  
+   The server serves the whole repo root, so `examples/browser-experience.html` and `scripts/live-verify-avatar-media.html?mode=split` work on the same port.  
+   Set `MANUAL_VERIFY_VISUAL_ID` to a Visual catalog item id (from `catalog.list`) to use a specific portrait instead of the first preset. For the chroma-key page use a green-screen one: `examples/chroma-key-green-screen-portrait.jpeg` is ready to upload once with `catalog.createVisual` (attributes: `genderPresentation: 'Feminine'`, `hairStyle: ['Long']`), then reuse its id. `MANUAL_VERIFY_PORT` changes the port.
+
+   For several avatars on one page, run this instead (same credentials, same port, so stop `mint.mjs` first):
+
+   ```bash
+   node manual-testing/voice-video/improv.mjs
+   ```
+   This provisions three throwaway agents with their own uploaded portraits (`manual-testing/voice-video/improv/*.jpeg`), matched preset voices and a silent opening (`openingPhrase: '<blank>'`), and serves `manual-testing/voice-video/multi-avatar.html`: Max the host (simple layout), Zoe and Marcus the actors (split and headless). The show runs itself, no clicks needed: the page connects all three, the host welcomes the audience, gives a scene suggestion (`?topic=...` or the topic field) and names who starts; the actors alternate as a typed hand-off of each finished line (avatars cannot hear each other) for **Actor turns per scene** turns (3 by default, `?turns=N`), then the host calls "Scene!" and opens a new scene, until **Stop**. All three play by the rules of improv, the first one being "agree and say yes"; the host opens with it. Only the avatar holding the floor may speak: the service's own idle check-in ("still there?", after about two minutes of no input) is interrupted the moment it starts and never routed, so an idle host or actor never jumps into a scene. If the browser blocks autoplay, a curtain asks for one click and the show starts after it. Per-card mic routing, output mute / volume / speaker, typed turns and an event log let you confirm each control lands only on its own card. Your mic or a typed line on any card joins the show from that avatar. Ctrl+C deletes the three agents, avatars, intellects and uploaded visuals.
 3. Open that URL on each device you're testing — same Wi-Fi network as the machine running `mint.mjs`. For a device that can't reach your LAN, tunnel the port instead (e.g. `ngrok http 4789`).
 4. Grant microphone permission when prompted. The page shows the composited, chroma-keyed avatar and a disclosure banner once connected.
-5. When done, Ctrl+C in the `mint.mjs` terminal — it deletes the throwaway agent/avatar/intellect automatically.
+5. When done, Ctrl+C in the `mint.mjs` (or `improv.mjs`) terminal — it deletes everything it provisioned automatically.
 
 ## Manual flows
 

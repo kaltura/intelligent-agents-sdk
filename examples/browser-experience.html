@@ -49,6 +49,7 @@
     session.on('error', (e) => log('✗ ' + e.code + ': ' + e.detail));
     session.on('ended', () => log('— conversation ended'));
 
+    window.session = session;   // for DevTools: session.videoEl, session.avatarStream, session.muteAudioOutput(), ...
     await session.connect();
     log('connected — speak or type.');
 

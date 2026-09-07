@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { KalturaAvatarSession } from '../../src/experience/index.js';
 import { Management } from '../../src/management/index.js';
 import { FakeSocket, scriptHappyPath } from '../fakes/socket.js';
-import { FakeRTCPeerConnection, FakeVideoEl, fakeGetUserMedia } from '../fakes/rtc.js';
+import { FakeRTCPeerConnection, FakeVideoEl, fakeGetUserMedia, FakeMediaStreamCtor } from '../fakes/rtc.js';
 import { fakeFetch } from '../fakes/fetch.js';
 
 /**
@@ -28,7 +28,7 @@ async function connect(cfg = {}) {
     token: CONV_KS, srsBaseUrl: 'https://srs', turnServerUrl: 'turn.x', videoEl: new FakeVideoEl(),
     socketFactory: () => socket, rtcConstructor: FakeRTCPeerConnection,
     fetch: async () => ({ ok: true, status: 201, text: async () => 'a', headers: { get: () => 'loc' } }),
-    getUserMedia: fakeGetUserMedia(), ...cfg,
+    getUserMedia: fakeGetUserMedia(), mediaStreamConstructor: FakeMediaStreamCtor, ...cfg,
   });
   scriptHappyPath(socket);
   await session.connect();

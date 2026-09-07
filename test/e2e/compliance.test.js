@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { KalturaAvatarSession } from '../../src/experience/index.js';
 import { FakeSocket, scriptHappyPath } from '../fakes/socket.js';
-import { FakeRTCPeerConnection, FakeVideoEl, fakeGetUserMedia } from '../fakes/rtc.js';
+import { FakeRTCPeerConnection, FakeVideoEl, fakeGetUserMedia, FakeMediaStreamCtor } from '../fakes/rtc.js';
 
 /**
  * Compliance controls on the Experience front: OWASP LLM01 (onBeforeSend guardrail),
@@ -21,7 +21,7 @@ function mk(over = {}) {
     videoEl: new FakeVideoEl({ autoCanPlay: true }), socketFactory: () => socket,
     rtcConstructor: FakeRTCPeerConnection, networkAware: false,
     fetch: async () => ({ ok: true, status: 201, text: async () => 'v=0\r\na', headers: { get: () => 'https://srs/whep/1' } }),
-    getUserMedia: fakeGetUserMedia(), ...over,
+    getUserMedia: fakeGetUserMedia(), mediaStreamConstructor: FakeMediaStreamCtor, ...over,
   });
   return { s, socket };
 }

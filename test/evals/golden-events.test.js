@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { KalturaAvatarSession } from '../../src/experience/index.js';
 import { FakeSocket, scriptHappyPath } from '../fakes/socket.js';
-import { FakeRTCPeerConnection, FakeVideoEl, fakeGetUserMedia } from '../fakes/rtc.js';
+import { FakeRTCPeerConnection, FakeVideoEl, fakeGetUserMedia, FakeMediaStreamCtor } from '../fakes/rtc.js';
 
 const golden = JSON.parse(readFileSync(fileURLToPath(new URL('../fixtures/golden-session.json', import.meta.url)), 'utf8'));
 const CONV_KS = 'djJ8' + Buffer.from('v2|123|geniegpcid:1222').toString('base64url');
@@ -22,7 +22,7 @@ test('SDK handles every inbound event in the golden capture (superset)', async (
     token: CONV_KS, srsBaseUrl: 'https://srs', turnServerUrl: 'turn.x', videoEl: new FakeVideoEl(),
     socketFactory: () => socket, rtcConstructor: FakeRTCPeerConnection,
     fetch: async () => ({ ok: true, status: 201, text: async () => 'a', headers: { get: () => 'loc' } }),
-    getUserMedia: fakeGetUserMedia(),
+    getUserMedia: fakeGetUserMedia(), mediaStreamConstructor: FakeMediaStreamCtor,
   });
   scriptHappyPath(socket);
   await session.connect();
@@ -61,7 +61,7 @@ test('SDK produces the outbound emits seen in the golden capture', async () => {
     token: CONV_KS, srsBaseUrl: 'https://srs', turnServerUrl: 'turn.x', videoEl: new FakeVideoEl(),
     socketFactory: () => socket, rtcConstructor: FakeRTCPeerConnection,
     fetch: async () => ({ ok: true, status: 201, text: async () => 'a', headers: { get: () => 'loc' } }),
-    getUserMedia: fakeGetUserMedia(),
+    getUserMedia: fakeGetUserMedia(), mediaStreamConstructor: FakeMediaStreamCtor,
   });
   scriptHappyPath(socket);
   await session.connect();
@@ -79,7 +79,7 @@ test('SDK produces the outbound emits seen in the golden capture', async () => {
 test('preserves raw wire field names on emitted events', async () => {
   FakeRTCPeerConnection.reset();
   const socket = new FakeSocket();
-  const session = new KalturaAvatarSession({ token: CONV_KS, srsBaseUrl: 'https://srs', turnServerUrl: 'turn.x', videoEl: new FakeVideoEl(), socketFactory: () => socket, rtcConstructor: FakeRTCPeerConnection, fetch: async () => ({ ok: true, status: 201, text: async () => 'a', headers: { get: () => 'loc' } }), getUserMedia: fakeGetUserMedia() });
+  const session = new KalturaAvatarSession({ token: CONV_KS, srsBaseUrl: 'https://srs', turnServerUrl: 'turn.x', videoEl: new FakeVideoEl(), socketFactory: () => socket, rtcConstructor: FakeRTCPeerConnection, fetch: async () => ({ ok: true, status: 201, text: async () => 'a', headers: { get: () => 'loc' } }), getUserMedia: fakeGetUserMedia(), mediaStreamConstructor: FakeMediaStreamCtor });
   scriptHappyPath(socket);
   await session.connect();
   const turns = [];

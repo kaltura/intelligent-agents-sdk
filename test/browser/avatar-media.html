@@ -1,0 +1,1411 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>avatar-media real-browser harness</title>
+<style>
+  body { font: 12px/1.4 ui-monospace, monospace; margin: 12px; }
+  #stage video, #stage audio { width: 160px; height: 120px; background: #000; margin: 2px; vertical-align: top; }
+  #log { white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<p>
+  Real-browser harness for <code>src/experience/avatar-media.js</code> through the public session API.
+  Both WebRTC legs are loopback peers inside this page; no network, no credentials, near-silent audio.
+  Driven by <code>scripts/verify-avatar-media.mjs</code>.
+</p>
+<button id="go">start</button>
+<button id="resume">resume playback</button>
+<div id="stage"></div>
+<pre id="log"></pre>
+<script type="module">
+import { KalturaAvatarSession, KalturaScriptedVideoSession } from '/src/experience/index.js';
+import { attachChromaKeyAvatar } from '/src/experience/chroma-key.js';
+import { FakeSocket, scriptHappyPath } from '/test/fakes/socket.js';
+
+// ───────────────────────── constants / feature detection ─────────────────────────
+const CONV_KS = 'djJ8' + btoa('v2|123|geniegpcid:1222').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const WHEP_BASE = 'https://srs.example/rtc/v1/whep/';
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// Element volume read-back tolerance: with a real audio sink WebKitGTK quantizes `volume` (0.4 reads 0.3999916).
+const VOL_EPS = 1e-3;
+const has = {
+  setSinkId: 'setSinkId' in HTMLMediaElement.prototype,
+  mediaRecorder: typeof MediaRecorder === 'function',
+  canvasCapture: typeof HTMLCanvasElement.prototype.captureStream === 'function',
+  elementCapture: typeof HTMLMediaElement.prototype.captureStream === 'function' || typeof HTMLMediaElement.prototype.mozCaptureStream === 'function',
+  elementSource: typeof AudioContext.prototype.createMediaElementSource === 'function',
+};
+const logEl = document.getElementById('log');
+// Mirrored to console.debug so the runner can show the page's own trail when a cell fails or the page crashes.
+const log = (...a) => { const line = a.map((x) => (typeof x === 'string' ? x : JSON.stringify(x))).join(' '); logEl.textContent += line + '\n'; console.debug(line); };
+
+// ───────────────────────── harness state (reset per scenario) ─────────────────────────
+const H = {
+  pcs: [],            // every RTCPeerConnection the SDK built through LoopbackRTC
+  peers: [],          // { pc, media } loopback answerers built by the WHEP/ASR stubs
+  fetches: [],        // { url, method } every call the SDK made to the injected fetch
+  sendKinds: ['video', 'audio'],
+  shape: 'twoVA',     // twoVA/twoAV = one MediaStream per track (distinct msid); oneVA/oneAV = both tracks in one receiver stream; *AV = audio m-line first, so audio 'ontrack' fires first
+  delay: null,        // { kind, ms } → that kind starts sending late (replaceTrack(null) → replaceTrack(track))
+  blockPlay: false,   // autoplay cells: instrumented play() rejects NotAllowedError while true
+  blockEls: new Set(),// per-element autoplay block (B4): only these elements' play() is refused
+  holdSink: null,     // element whose setSinkId() parks until H.holdSinkRelease() (B11 race)
+  holdSinkRelease: null,
+  lat: [],            // { trackToReadyMs, connectMs } per connect in the current cell (B12)
+  gestureSession: null,
+  gestureResolve: null,
+  unhandled: 0,
+  audioCtx: null,
+};
+const sharedMsid = () => H.shape.startsWith('one');
+const audioFirst = () => H.shape.endsWith('AV');
+window.addEventListener('unhandledrejection', () => { H.unhandled += 1; });
+// 48 kHz = WebRTC's audio rate. The sender tone and every analyser tap then run passthrough in the
+// engine's converters. At WebKitGTK's default 44.1 kHz the outgoing tone is resampled inside the engine
+// and its WebProcess can crash in GStreamer's resampler when a sender is torn down (CI core dumps).
+function audioCtx() { return (H.audioCtx ||= new AudioContext({ sampleRate: 48000 })); }
+
+// ───────────────────────── loopback RTCPeerConnection ─────────────────────────
+// The SDK builds its STV peer relay-only (iceConfig 'stv'); a loopback has no TURN, so the
+// harness overrides the policy. Candidates are forwarded to the paired answerer through an
+// addEventListener (the SDK owns pc.onicecandidate for its ICE watchdog).
+function LoopbackRTC(cfg = {}) {
+  const pc = new RTCPeerConnection({ ...cfg, iceServers: [], iceTransportPolicy: 'all' });
+  pc.__peer = null; pc.__pending = [];
+  // B3 audio-first shapes: 'ontrack' order is the offer's m-line order, which the answerer cannot
+  // change. The SDK offers video then audio, so the harness pre-creates the audio transceiver on the
+  // SDK's first addTransceiver('video') and hands it back on its addTransceiver('audio'), so the
+  // m-lines come out [audio, video], a genuinely audio-first ontrack. Other peers (ASR: one sendonly audio) pass through.
+  const addTransceiver = pc.addTransceiver.bind(pc);
+  let parked = null, firstCall = true;
+  pc.addTransceiver = (kind, init) => {
+    if (firstCall && kind === 'video' && audioFirst()) parked = addTransceiver('audio', init);
+    firstCall = false;
+    if (kind === 'audio' && parked) { const t = parked; parked = null; return t; }
+    return addTransceiver(kind, init);
+  };
+  pc.addEventListener('icecandidate', (e) => {
+    if (!e.candidate) return;
+    if (pc.__peer) pc.__peer.addIceCandidate(e.candidate).catch(() => {}); else pc.__pending.push(e.candidate);
+  });
+  H.pcs.push(pc);
+  return pc;
+}
+function pair(pc, peer) {
+  pc.__peer = peer;
+  for (const c of pc.__pending.splice(0)) peer.addIceCandidate(c).catch(() => {});
+  peer.addEventListener('icecandidate', (e) => {
+    if (e.candidate && pc.signalingState !== 'closed') pc.addIceCandidate(e.candidate).catch(() => {});
+  });
+}
+const ufrag = (sdp) => /a=ice-ufrag:(\S+)/.exec(sdp || '')?.[1];
+const findOfferer = (sdp) => H.pcs.find((p) => p.signalingState !== 'closed' && ufrag(p.localDescription?.sdp) === ufrag(sdp));
+async function gathered(pc) {
+  if (pc.iceGatheringState === 'complete') return;
+  await new Promise((r) => {
+    pc.addEventListener('icegatheringstatechange', () => { if (pc.iceGatheringState === 'complete') r(); });
+    setTimeout(r, 2500);
+  });
+}
+
+// ───────────────────────── sender media: hue-cycling canvas + near-silent tone ─────────────────────────
+function senderMedia() {
+  const canvas = document.createElement('canvas'); canvas.width = 160; canvas.height = 120;
+  const g = canvas.getContext('2d'); let hue = 0;
+  const paint = () => {
+    hue = (hue + 23) % 360;
+    g.fillStyle = `hsl(${hue} 90% 50%)`; g.fillRect(0, 0, 160, 120);
+    g.fillStyle = '#fff'; g.fillRect(20, 20, 60, 60);
+  };
+  paint();
+  const timer = setInterval(paint, 66);
+  const vs = canvas.captureStream(15);
+  const ac = audioCtx();
+  const osc = ac.createOscillator(); osc.frequency.value = 330;
+  const gain = ac.createGain(); gain.gain.value = 0.005;   // measurable in stats/analyser, inaudible on a real sink
+  const dest = ac.createMediaStreamDestination();
+  osc.connect(gain).connect(dest); osc.start();
+  return {
+    videoTrack: vs.getVideoTracks()[0], audioTrack: dest.stream.getAudioTracks()[0],
+    stop() { clearInterval(timer); try { osc.stop(); } catch { /* */ } vs.getTracks().forEach((t) => t.stop()); dest.stream.getTracks().forEach((t) => t.stop()); },
+  };
+}
+
+// ───────────────────────── WHEP server stub (answers the SDK's offer with a live loopback peer) ─────────────────────────
+const httpRes = (status, body = '', location = null) => ({
+  ok: status < 300, status, text: async () => body,
+  headers: { get: (h) => (String(h).toLowerCase() === 'location' ? location : null) },
+});
+async function whepFetch(url, init = {}) {
+  const method = init.method || 'GET';
+  H.fetches.push({ url: String(url), method });
+  if (!String(url).includes('/rtc/v1/whep')) return httpRes(200);
+  if (method === 'DELETE') return httpRes(200);
+  const pc = findOfferer(init.body);
+  if (!pc) throw new Error('harness: WHEP offer matches no LoopbackRTC peer');
+  const media = senderMedia();
+  const peer = new RTCPeerConnection();
+  H.peers.push({ pc: peer, media });
+  await peer.setRemoteDescription({ type: 'offer', sdp: init.body });
+  const late = [];
+  const shared = sharedMsid() ? new MediaStream() : null;   // B3 oneVA/oneAV: both tracks share one receiver stream
+  for (const kind of audioFirst() ? ['audio', 'video'] : ['video', 'audio']) {
+    if (!H.sendKinds.includes(kind)) continue;               // omitted kind → its transceiver stays inactive, no ontrack
+    const track = kind === 'video' ? media.videoTrack : media.audioTrack;
+    const stream = shared || new MediaStream();              // default: one stream per track → distinct msid per track
+    stream.addTrack(track);
+    const sender = peer.addTrack(track, stream);             // reuses the offered recvonly transceiver
+    if (H.delay?.kind === kind) { await sender.replaceTrack(null); late.push({ sender, track, ms: H.delay.ms }); }
+  }
+  await peer.setLocalDescription(await peer.createAnswer());
+  await gathered(peer);                                          // non-trickle answer: the SDK posts once and reads the body
+  pair(pc, peer);
+  for (const l of late) setTimeout(() => { l.sender.replaceTrack(l.track).catch(() => {}); }, l.ms);
+  return httpRes(201, peer.localDescription.sdp, `${WHEP_BASE}resource/${H.peers.length}`);
+}
+
+// ───────────────────────── ASR answerer (the mic uplink also needs a real peer) ─────────────────────────
+async function asrAnswer(offer) {
+  const pc = findOfferer(offer?.sdp);
+  const peer = new RTCPeerConnection();
+  H.peers.push({ pc: peer, media: null });
+  await peer.setRemoteDescription(offer);
+  await peer.setLocalDescription(await peer.createAnswer());
+  await gathered(peer);
+  if (pc) pair(pc, peer);
+  return { type: 'answer', sdp: peer.localDescription.sdp };
+}
+async function fakeMic() { return audioCtx().createMediaStreamDestination().stream; }
+
+// ───────────────────────── instrumented media elements ─────────────────────────
+function instrument(el) {
+  const proto = HTMLMediaElement.prototype;
+  const w = { srcObject: 0, play: 0, muted: 0, volume: 0, setSinkId: [] };
+  el.__w = w;
+  for (const prop of ['srcObject', 'muted', 'volume']) {
+    const d = Object.getOwnPropertyDescriptor(proto, prop);
+    Object.defineProperty(el, prop, { configurable: true, get() { return d.get.call(el); }, set(v) { w[prop] += 1; d.set.call(el, v); } });
+  }
+  el.play = function play() {
+    w.play += 1;
+    if (H.blockPlay || H.blockEls.has(el)) return Promise.reject(new DOMException('autoplay blocked by harness', 'NotAllowedError'));
+    return proto.play.call(el);
+  };
+  if (has.setSinkId) el.setSinkId = function setSinkId(id) {
+    w.setSinkId.push(id);
+    // B11: park the device call on this element until the cell releases it, so a setAudioEl() swap
+    // can land while the SDK is still awaiting setSinkId().
+    if (H.holdSink === el) return new Promise((ok, fail) => { H.holdSinkRelease = () => { proto.setSinkId.call(el, id).then(ok, fail); }; });
+    return proto.setSinkId.call(el, id);
+  };
+  return el;
+}
+const stage = document.getElementById('stage');
+function makeEl(tag = 'video') {
+  const el = document.createElement(tag);
+  el.playsInline = true;
+  stage.appendChild(el);
+  return instrument(el);
+}
+const kinds = (streamOrEl) => {
+  const s = streamOrEl instanceof MediaStream ? streamOrEl : streamOrEl?.srcObject;
+  return s ? s.getTracks().map((t) => t.kind).sort().join(',') : String(s);
+};
+
+// ───────────────────────── probes ─────────────────────────
+/** Poll until the element shows a non-black frame (the sender paints saturated colour + a white square). */
+async function paints(el, ms = 4000) {
+  const c = document.createElement('canvas'); c.width = 16; c.height = 12;
+  const g = c.getContext('2d', { willReadFrequently: true });
+  const t0 = performance.now();
+  let sum = 0;
+  while (performance.now() - t0 < ms) {
+    if (el.videoWidth > 0 && el.readyState >= 2) {
+      try {
+        g.drawImage(el, 0, 0, 16, 12);
+        const d = g.getImageData(0, 0, 16, 12).data;
+        sum = 0; for (let i = 0; i < d.length; i += 4) sum += d[i] + d[i + 1] + d[i + 2];
+        if (sum > 0) return { ok: true, w: el.videoWidth, h: el.videoHeight, readyState: el.readyState, paused: el.paused, ms: Math.round(performance.now() - t0) };
+      } catch { /* not drawable yet */ }
+    }
+    await sleep(50);
+  }
+  return { ok: false, w: el.videoWidth, h: el.videoHeight, readyState: el.readyState, paused: el.paused, sum };
+}
+async function inboundStats(pc, kind) {
+  if (!pc) return null;
+  const rep = await pc.getStats();
+  let out = null;
+  rep.forEach((s) => {
+    if (s.type === 'inbound-rtp' && (s.kind || s.mediaType) === kind) {
+      out = { packets: s.packetsReceived || 0, bytes: s.bytesReceived || 0, energy: s.totalAudioEnergy, frames: s.framesDecoded };
+    }
+  });
+  return out;
+}
+/** Poll RTP stats on the SDK's own peer until `kind` has received packets. */
+async function flowing(pc, kind, ms = 4000, min = 5) {
+  const t0 = performance.now();
+  let s = null;
+  while (performance.now() - t0 < ms) {
+    s = await inboundStats(pc, kind);
+    if (s && s.packets >= min) return { ok: true, ...s, ms: Math.round(performance.now() - t0) };
+    await sleep(100);
+  }
+  return { ok: false, ...(s || { packets: 0 }) };
+}
+/** currentTime keeps advancing on the element (the only element-level "audio is really playing" signal). */
+async function advancing(el, ms = 800) {
+  const t0 = el.currentTime;
+  await sleep(ms);
+  return { ok: el.currentTime > t0, from: t0, to: el.currentTime, paused: el.paused, readyState: el.readyState };
+}
+async function rms(stream, ms = 1200) {
+  const ac = audioCtx();
+  const src = ac.createMediaStreamSource(stream);
+  const an = ac.createAnalyser(); an.fftSize = 2048;
+  src.connect(an);
+  const buf = new Float32Array(an.fftSize);
+  const t0 = performance.now(); let best = 0;
+  while (performance.now() - t0 < ms) {
+    an.getFloatTimeDomainData(buf);
+    let acc = 0; for (const x of buf) acc += x * x;
+    best = Math.max(best, Math.sqrt(acc / buf.length));
+    if (best > 1e-4) break;
+    await sleep(100);
+  }
+  src.disconnect();
+  return { ok: best > 1e-4, rms: best, source: src };
+}
+// B1: the audible path itself. createMediaElementSource() may only be called once per element, so the
+// node is cached; it is only ever connected to an AnalyserNode, never to audioCtx().destination, so the
+// element's audio is routed into Web Audio and away from the speakers.
+const elSources = new WeakMap();
+async function elementRms(el, ms = 1500) {
+  const ac = audioCtx();
+  let src = elSources.get(el);
+  if (!src) { src = ac.createMediaElementSource(el); elSources.set(el, src); }
+  const an = ac.createAnalyser(); an.fftSize = 2048;
+  src.connect(an);
+  const buf = new Float32Array(an.fftSize);
+  const t0 = performance.now(); let best = 0;
+  while (performance.now() - t0 < ms) {
+    an.getFloatTimeDomainData(buf);
+    let acc = 0; for (const x of buf) acc += x * x;
+    best = Math.max(best, Math.sqrt(acc / buf.length));
+    if (best > 1e-5) break;
+    await sleep(100);
+  }
+  src.disconnect(an);
+  return { ok: best > 1e-5, rms: best, muted: el.muted, volume: el.volume, paused: el.paused, sinkAt: 'analyser (never audioCtx.destination)' };
+}
+/**
+ * First enumerable audiooutput device id, or null. Firefox exposes output devices only after a
+ * microphone grant (a fake one under the runner's prefs), so ask once and release it right away.
+ * WebKit refuses the grant and lists no outputs; Chromium's fake devices need no grant.
+ */
+async function pickOutput() {
+  try {
+    try { (await navigator.mediaDevices.getUserMedia({ audio: true })).getTracks().forEach((t) => t.stop()); } catch { /* no grant: enumerate what is visible anyway */ }
+    const ds = await navigator.mediaDevices.enumerateDevices();
+    return ds.filter((d) => d.kind === 'audiooutput' && d.deviceId).map((d) => d.deviceId)[0] || null;
+  } catch { return null; }
+}
+
+// ───────────────────────── sessions ─────────────────────────
+const live = new Set();
+/**
+ * B12: time from the first downlink track of a subscribe to its mediaReady. Reset after each
+ * mediaReady, so an STV re-subscribe is measured against its own first track, not the original one.
+ * `__run` asserts every entry is ≤ 2500ms and the runner writes them to a per-engine artifact.
+ */
+function trackLatency(session) {
+  let firstTrackAt = null;
+  session.on('track', () => { firstTrackAt ??= performance.now(); });
+  session.on('mediaReady', () => {
+    H.lat.push({ trackToReadyMs: Math.round(performance.now() - (firstTrackAt ?? performance.now())) });
+    firstTrackAt = null;
+  });
+  return session;
+}
+function newSession(cfg = {}, script = {}) {
+  const socket = new FakeSocket();
+  const session = new KalturaAvatarSession({
+    token: CONV_KS, srsBaseUrl: 'https://srs.example', turnServerUrl: 'turn.example',
+    socketFactory: () => socket, rtcConstructor: LoopbackRTC, fetch: whepFetch, getUserMedia: fakeMic,
+    ...cfg,
+  });
+  scriptHappyPath(socket, { asrAnswer, ...script });
+  trackLatency(session);
+  live.add(session);
+  return { session, socket, rescript: () => scriptHappyPath(socket, { asrAnswer, ...script }) };
+}
+function record(session) {
+  const ev = {
+    list: [], t: {},
+    count: (n) => ev.list.filter((e) => e.name === n).length,
+    of: (n) => ev.list.filter((e) => e.name === n).map((e) => e.p),
+    idx: (n) => ev.list.findIndex((e) => e.name === n),
+  };
+  for (const n of ['track', 'videoMetadata', 'mediaReady', 'mediaRecovering', 'mediaRecovered', 'warning', 'ended', 'error', 'stateChange']) {
+    session.on(n, (p) => { ev.list.push({ name: n, p, at: performance.now() }); ev.t[n] ??= performance.now(); });
+  }
+  return ev;
+}
+async function connected(cfg = {}, script = {}) {
+  const s = newSession(cfg, script);
+  const ev = record(s.session);
+  const t0 = performance.now();
+  await s.session.connect();
+  return { ...s, ev, connectMs: Math.round(performance.now() - t0) };
+}
+const stv = (session) => session._pcStv;
+const ended = (tracks) => tracks.every((t) => t.readyState === 'ended');
+const liveTracks = (tracks) => tracks.length > 0 && tracks.every((t) => t.readyState === 'live');
+
+// ───────────────────────── scenario context ─────────────────────────
+function ctx(name) {
+  const checks = [], skipped = [];
+  return {
+    name, checks, skipped,
+    check(label, ok, detail) { checks.push({ name: label, ok: !!ok, detail: detail === undefined ? undefined : (typeof detail === 'string' ? detail : JSON.stringify(detail)) }); return !!ok; },
+    skip(label, reason) { skipped.push({ name: label, reason }); },
+  };
+}
+
+// ───────────────────────── scenarios (plan §5.7) ─────────────────────────
+const S = {};
+
+S['shapes-simple'] = async (c) => {
+  const v = makeEl();
+  const { session, ev } = await connected({ videoEl: v });
+  c.check('state connected', session.state === 'connected', session.state);
+  c.check('videoEl carries audio+video', kinds(v) === 'audio,video', kinds(v));
+  c.check('audioEl null', session.audioEl === null);
+  c.check('avatarStream carries both', kinds(session.avatarStream) === 'audio,video');
+  c.check('avatarStream is not the element stream', session.avatarStream !== v.srcObject);
+  c.check('srcObject written once', v.__w.srcObject === 1, v.__w);
+  c.check('play() once', v.__w.play === 1, v.__w);
+  c.check('no muted/volume writes', v.__w.muted === 0 && v.__w.volume === 0, v.__w);
+  c.check('video paints', ...pair2(await paints(v)));
+  c.check('audio RTP flows', ...pair2(await flowing(stv(session), 'audio')));
+  c.check('element playing', !v.paused && v.readyState >= 3, { paused: v.paused, readyState: v.readyState });
+  c.check('mediaReady once', ev.count('mediaReady') === 1, ev.of('mediaReady'));
+  c.check('no warnings', ev.count('warning') === 0, ev.of('warning'));
+};
+
+S['shapes-split'] = async (c) => {
+  const v = makeEl(), a = makeEl('audio');
+  const { session, ev } = await connected({ videoEl: v, audioEl: a });
+  c.check('videoEl video only', kinds(v) === 'video', kinds(v));
+  c.check('audioEl audio only', kinds(a) === 'audio', kinds(a));
+  c.check('avatarStream carries both', kinds(session.avatarStream) === 'audio,video');
+  c.check('one srcObject write per element', v.__w.srcObject === 1 && a.__w.srcObject === 1, { v: v.__w, a: a.__w });
+  c.check('one play() per element', v.__w.play === 1 && a.__w.play === 1, { v: v.__w.play, a: a.__w.play });
+  c.check('video paints', ...pair2(await paints(v)));
+  c.check('audio RTP flows', ...pair2(await flowing(stv(session), 'audio')));
+  c.check('audio element playing', ...pair2(await advancing(a)));
+  c.check('mediaReady once', ev.count('mediaReady') === 1, ev.count('mediaReady'));
+  c.check('no warnings', ev.count('warning') === 0, ev.of('warning'));
+};
+
+S['shapes-headless'] = async (c) => {
+  const { session, ev } = await connected({ videoEl: null });
+  c.check('no element bound', session.videoEl === null && session.audioEl === null);
+  c.check('avatarStream carries both', kinds(session.avatarStream) === 'audio,video', kinds(session.avatarStream));
+  c.check('mediaReady once (no element gate)', ev.count('mediaReady') === 1, ev.of('mediaReady'));
+  c.check('video RTP flows', ...pair2(await flowing(stv(session), 'video')));
+  c.check('audio RTP flows', ...pair2(await flowing(stv(session), 'audio')));
+  c.check('startPlayback() → false (nothing bound)', (await session.startPlayback()) === false);
+  const v = makeEl();
+  session.setVideoEl(v);
+  c.check('late setVideoEl binds both', kinds(v) === 'audio,video', kinds(v));
+  c.check('late element paints', ...pair2(await paints(v)));
+  c.check('srcObject once, play once', v.__w.srcObject === 1 && v.__w.play === 1, v.__w);
+  c.check('no extra mediaReady on late bind', ev.count('mediaReady') === 1);
+};
+
+S['shapes-audio-only-el'] = async (c) => {
+  const a = makeEl('audio');
+  const { session, ev, connectMs } = await connected({ videoEl: a });
+  c.check('connect settles well under the 6s hard cap', connectMs < 5000, connectMs);
+  c.check('<audio> as videoEl carries both tracks', kinds(a) === 'audio,video', kinds(a));
+  c.check('audio RTP flows', ...pair2(await flowing(stv(session), 'audio')));
+  c.check('audio element playing', ...pair2(await advancing(a)));
+  c.check('mediaReady once', ev.count('mediaReady') === 1, ev.of('mediaReady'));
+  c.check('no warnings', ev.count('warning') === 0, ev.of('warning'));
+};
+
+/**
+ * B3: the three receiver shapes the default cells do not produce: audio-first ontrack (twoAV) and
+ * both tracks in one receiver stream (oneVA / oneAV). Each runs simple and split mode with the same
+ * assertions as shapes-simple / shapes-split, so the merge cannot depend on arrival order or msid.
+ */
+async function shapeCell(c, shape) {
+  H.shape = shape;
+  const first = audioFirst() ? 'audio' : 'video';
+  const streamsPerTrack = sharedMsid() ? 1 : 2;
+  {
+    const v = makeEl();
+    const { session, ev } = await connected({ videoEl: v });
+    const order = ev.of('track').map((p) => p.track.kind);
+    c.check(`B3 ${shape}: ontrack order is ${first} first`, order[0] === first && order.length === 2, order);
+    c.check(`B3 ${shape}: receiver delivered ${streamsPerTrack} stream(s)`, new Set(ev.of('track').map((p) => p.streams?.[0])).size === streamsPerTrack, ev.of('track').map((p) => p.streams?.length));
+    c.check(`B3 ${shape} simple: videoEl carries audio+video`, kinds(v) === 'audio,video', kinds(v));
+    c.check(`B3 ${shape} simple: avatarStream carries both and is not the element stream`, kinds(session.avatarStream) === 'audio,video' && session.avatarStream !== v.srcObject, kinds(session.avatarStream));
+    c.check(`B3 ${shape} simple: one srcObject write, one play(), no muted/volume writes`, v.__w.srcObject === 1 && v.__w.play === 1 && v.__w.muted === 0 && v.__w.volume === 0, v.__w);
+    c.check(`B3 ${shape} simple: video paints`, ...pair2(await paints(v)));
+    c.check(`B3 ${shape} simple: audio RTP flows`, ...pair2(await flowing(stv(session), 'audio')));
+    const mr = ev.of('mediaReady');
+    c.check(`B3 ${shape} simple: exactly one mediaReady with real dimensions`, mr.length === 1 && mr[0].videoWidth === 160 && mr[0].videoHeight === 120, mr);
+    c.check(`B3 ${shape} simple: no warnings`, ev.count('warning') === 0, ev.of('warning'));
+    session.disconnect();
+  }
+  {
+    const v = makeEl(), a = makeEl('audio');
+    const { session, ev } = await connected({ videoEl: v, audioEl: a });
+    c.check(`B3 ${shape} split: video on videoEl, audio on audioEl`, kinds(v) === 'video' && kinds(a) === 'audio', { v: kinds(v), a: kinds(a) });
+    c.check(`B3 ${shape} split: one srcObject write and one play() per element`, v.__w.srcObject === 1 && a.__w.srcObject === 1 && v.__w.play === 1 && a.__w.play === 1, { v: v.__w, a: a.__w });
+    c.check(`B3 ${shape} split: video paints`, ...pair2(await paints(v)));
+    c.check(`B3 ${shape} split: audio element playing`, ...pair2(await advancing(a, 400)));
+    const mr = ev.of('mediaReady');
+    c.check(`B3 ${shape} split: exactly one mediaReady with real dimensions`, mr.length === 1 && mr[0].videoWidth === 160 && mr[0].videoHeight === 120, mr);
+    c.check(`B3 ${shape} split: no warnings`, ev.count('warning') === 0, ev.of('warning'));
+  }
+}
+S['shapes-twoAV'] = (c) => shapeCell(c, 'twoAV');
+S['shapes-oneVA'] = (c) => shapeCell(c, 'oneVA');
+S['shapes-oneAV'] = (c) => shapeCell(c, 'oneAV');
+
+/**
+ * B1 + B8: the audible path, measured on the element itself. createMediaElementSource(el) taps what
+ * the element would send to the speakers; the tap only ever reaches an AnalyserNode, so nothing is
+ * audible (the browsers are also launched muted). Energy > 0 in simple mode, on a split audioEl, and
+ * back on the videoEl after setAudioEl(null).
+ */
+S['audible-path'] = async (c) => {
+  if (!has.elementSource) { c.skip('B1 element-source energy', 'AudioContext.createMediaElementSource is not implemented in this engine'); return; }
+  const v = makeEl();
+  const { session, ev } = await connected({ videoEl: v });
+  c.check('B1: the SDK left the element audible (unmuted, volume 1, no writes)', v.muted === false && v.volume === 1 && v.__w.muted === 0 && v.__w.volume === 0, { muted: v.muted, volume: v.volume, w: v.__w });
+  c.check('B1: audio RTP flows', ...pair2(await flowing(stv(session), 'audio')));
+  let r;
+  try { r = await elementRms(v); } catch (e) { c.skip('B1 createMediaElementSource(videoEl) energy', `${e.name}: ${e.message}`); return; }
+  if (!r.ok) { c.skip('B1 createMediaElementSource(videoEl) energy', `this engine feeds no energy from a srcObject-backed element into Web Audio (rms ${r.rms})`); return; }
+  c.check('B1: simple mode: the videoEl output carries audio energy', r.ok, r);
+  const a = makeEl('audio');
+  session.setAudioEl(a);
+  const ra = await elementRms(a);
+  c.check('B1: split mode: the audioEl output carries audio energy', ra.ok, ra);
+  session.setAudioEl(null);
+  const rm = await elementRms(v);
+  c.check('B8: merge-back restores audio energy on the videoEl', rm.ok, rm);
+  c.check('B1: the split and the merge-back never re-bound the videoEl', v.__w.srcObject === 1 && v.__w.play === 1 && a.__w.srcObject === 2 && a.__w.play === 1, { v: v.__w, a: a.__w });
+  c.check('B1: no warnings', ev.count('warning') === 0, ev.of('warning'));
+};
+
+S['video-only'] = async (c) => {
+  H.sendKinds = ['video'];
+  const v = makeEl(), a = makeEl('audio');
+  const { session, ev, connectMs } = await connected({ videoEl: v, audioEl: a });
+  c.check('connect settles', connectMs < 5000, connectMs);
+  c.check('videoEl video only', kinds(v) === 'video', kinds(v));
+  c.check('audioEl bound but empty', a.srcObject instanceof MediaStream && kinds(a) === '', kinds(a));
+  c.check('avatarStream video only', kinds(session.avatarStream) === 'video', kinds(session.avatarStream));
+  c.check('video paints', ...pair2(await paints(v)));
+  c.check('mediaReady once', ev.count('mediaReady') === 1, ev.of('mediaReady'));
+  c.check('no warnings', ev.count('warning') === 0, ev.of('warning'));
+};
+
+S['audio-only'] = async (c) => {
+  H.sendKinds = ['audio'];
+  const v = makeEl();
+  const { session, ev, connectMs } = await connected({ videoEl: v });
+  c.check('connect settles (R6: canplay fires for an audio-only stream)', connectMs < 5000, connectMs);
+  c.check('videoEl audio only', kinds(v) === 'audio', kinds(v));
+  c.check('audio RTP flows', ...pair2(await flowing(stv(session), 'audio')));
+  c.check('element playing', ...pair2(await advancing(v)));
+  c.check('mediaReady once', ev.count('mediaReady') === 1, ev.of('mediaReady'));
+  c.check('no warnings', ev.count('warning') === 0, ev.of('warning'));
+};
+
+S['late-audio'] = async (c) => {
+  H.delay = { kind: 'audio', ms: 1500 };
+  const v = makeEl();
+  const { session, ev } = await connected({ videoEl: v });
+  const readyAt = ev.t.mediaReady;
+  c.check('both tracks attached at negotiation', kinds(v) === 'audio,video', kinds(v));
+  c.check('video paints before audio flows', ...pair2(await paints(v)));
+  const early = await inboundStats(stv(session), 'audio');
+  const a = await flowing(stv(session), 'audio', 5000);
+  c.check('audio starts flowing later', a.ok, { early, late: a });
+  c.check('mediaReady fired before audio arrived', readyAt < performance.now() - a.ms, { readyAt, audioAfterMs: a.ms });
+  c.check('mediaReady once', ev.count('mediaReady') === 1, ev.count('mediaReady'));
+  c.check('element still playing', !v.paused, v.paused);
+};
+
+S['late-video'] = async (c) => {
+  H.delay = { kind: 'video', ms: 1500 };
+  const v = makeEl();
+  const { session, ev, connectMs } = await connected({ videoEl: v });
+  c.check('connect settles without frames (2s canplay fallback, under the hard cap)', connectMs < 5500, connectMs);
+  c.check('both tracks attached', kinds(v) === 'audio,video', kinds(v));
+  c.check('audio flows meanwhile', ...pair2(await flowing(stv(session), 'audio')));
+  c.check('video paints once frames arrive', ...pair2(await paints(v, 5000)));
+  c.check('mediaReady once', ev.count('mediaReady') === 1, ev.of('mediaReady'));
+  c.check('no warnings', ev.count('warning') === 0, ev.of('warning'));
+};
+
+S['readiness-order'] = async (c) => {
+  const v = makeEl();
+  const { ev } = await connected({ videoEl: v });
+  const names = ev.list.map((e) => e.name).filter((n) => ['track', 'videoMetadata', 'mediaReady'].includes(n));
+  c.check('two track events first', names.slice(0, 2).join(',') === 'track,track', names);
+  c.check('videoMetadata once', ev.count('videoMetadata') === 1, ev.of('videoMetadata'));
+  c.check('videoMetadata 160x120', ev.of('videoMetadata')[0]?.videoWidth === 160 && ev.of('videoMetadata')[0]?.videoHeight === 120, ev.of('videoMetadata'));
+  c.check('mediaReady once', ev.count('mediaReady') === 1, ev.of('mediaReady'));
+  c.check('mediaReady after both tracks', ev.idx('mediaReady') > ev.list.map((e) => e.name).lastIndexOf('track'), names);
+  const mr = ev.of('mediaReady')[0];
+  c.check('mediaReady carries mode video + real dimensions', mr?.mode === 'video' && mr.videoWidth === 160 && mr.videoHeight === 120, mr);
+  const connectedIdx = ev.list.findIndex((e) => e.name === 'stateChange' && e.p?.state === 'connected');
+  c.check("mediaReady before stateChange 'connected'", ev.idx('mediaReady') < connectedIdx, { mediaReady: ev.idx('mediaReady'), connected: connectedIdx });
+  c.check('element playable at mediaReady', v.readyState >= 3, v.readyState);
+  c.check('video paints', ...pair2(await paints(v)));
+};
+
+S['mutes'] = async (c) => {
+  const v = makeEl();
+  const { session } = await connected({ videoEl: v });
+  c.check('unmuted by default', v.muted === false && session.audioOutputMuted === false);
+  session.muteAudioOutput();
+  c.check('muteAudioOutput → sink muted', v.muted === true && session.audioOutputMuted === true, v.__w);
+  c.check('RTP keeps flowing while muted', ...pair2(await flowing(stv(session), 'audio')));
+  session.muteAudioOutput();
+  c.check('idempotent: one muted write', v.__w.muted === 1, v.__w);
+  session.unmuteAudioOutput();
+  c.check('unmute', v.muted === false && session.audioOutputMuted === false);
+  session.muteAudioOutput();
+  const a = makeEl('audio');
+  session.setAudioEl(a);
+  c.check('stored mute follows to the new sink', a.muted === true, { a: a.muted, v: v.muted });
+  session.unmuteAudioOutput();
+  c.check('unmute lands on the audio element', a.muted === false);
+  c.check('video element never had volume writes', v.__w.volume === 0 && a.__w.volume === 0);
+};
+
+S['volume'] = async (c) => {
+  const v = makeEl();
+  const { session } = await connected({ videoEl: v });
+  session.setAudioOutputVolume(0.3);
+  c.check('volume 0.3 on sink', Math.abs(v.volume - 0.3) < VOL_EPS && session.audioOutputVolume === 0.3, v.volume);
+  session.setAudioOutputVolume(5);
+  c.check('clamped to 1', v.volume === 1 && session.audioOutputVolume === 1, v.volume);
+  session.setAudioOutputVolume(-1);
+  c.check('clamped to 0', v.volume === 0 && session.audioOutputVolume === 0, v.volume);
+  let threw = null; try { session.setAudioOutputVolume('0.5'); } catch (e) { threw = e.code; }
+  c.check('non-number → bad_request', threw === 'bad_request', threw);
+  session.setAudioOutputVolume(0.3);
+  const a = makeEl('audio');
+  session.setAudioEl(a);
+  c.check('volume follows to the audio element', Math.abs(a.volume - 0.3) < VOL_EPS, a.volume);
+  c.check('audio still flows at low volume', ...pair2(await advancing(a)));
+  c.check('RTP flows', ...pair2(await flowing(stv(session), 'audio')));
+};
+
+S['devices'] = async (c) => {
+  const v = makeEl();
+  const { session } = await connected({ videoEl: v });
+  let rejected = null; try { await session.setAudioOutput(42); } catch (e) { rejected = e.code; }
+  c.check('setAudioOutput(42) rejects bad_request', rejected === 'bad_request', rejected);
+  const id = await pickOutput();
+  if (!has.setSinkId) {
+    const r = await session.setAudioOutput(id || '');
+    c.check('engine without setSinkId → false, never throws', r === false, r);
+    c.skip('B2 sink id on the audio-carrying element', 'HTMLMediaElement.setSinkId is not implemented in this engine');
+    return;
+  }
+  if (!id) { c.skip('B2 sink id on the audio-carrying element', 'no audiooutput device is enumerable in this engine'); return; }
+  const r = await session.setAudioOutput(id);
+  c.check('B2: setAudioOutput on an enumerated device → true', r === true, { id, r });
+  c.check('B2: videoEl.sinkId is the requested id (simple mode)', v.sinkId === id && v.__w.setSinkId.includes(id), { sinkId: v.sinkId, id, calls: v.__w.setSinkId });
+  const bad = await session.setAudioOutput('no-such-device-' + Math.random().toString(36).slice(2));
+  c.check('B2: bogus id → false, no throw, previous sinkId unchanged', bad === false && v.sinkId === id, { bad, sinkId: v.sinkId });
+  const a = makeEl('audio');
+  session.setAudioEl(a);
+  await sleep(80);
+  c.check('B2: the id follows to the new audio element', a.sinkId === id && a.__w.setSinkId.includes(id), { sinkId: a.sinkId, calls: a.__w.setSinkId });
+  c.check('B2: audio flows out of the new device element', ...pair2(await advancing(a, 400)));
+  const vCalls = v.__w.setSinkId.length;
+  session.setAudioEl(null);
+  await sleep(80);
+  c.check('B2: merge-back keeps the id on the video element, without a redundant setSinkId call', v.sinkId === id && v.__w.setSinkId.length === vCalls, { sinkId: v.sinkId, calls: v.__w.setSinkId, before: vCalls });
+  c.check('B2: RTP still flowing after the device moved twice', ...pair2(await flowing(stv(session), 'audio')));
+};
+
+// B11: the audio element is swapped while the SDK is still awaiting setSinkId() on the old one.
+S['devices-race'] = async (c) => {
+  const v = makeEl();
+  const logs = [];
+  const { session } = await connected({ videoEl: v, logger: (lvl, msg, data) => logs.push(`${lvl}: ${msg}${data?.message ? `: ${data.message}` : ''}`) });
+  if (!has.setSinkId) { c.skip('B11 pending setAudioOutput follows a setAudioEl swap', 'HTMLMediaElement.setSinkId is not implemented in this engine'); return; }
+  const id = await pickOutput();
+  if (!id) { c.skip('B11 pending setAudioOutput follows a setAudioEl swap', 'no audiooutput device is enumerable in this engine'); return; }
+  H.holdSink = v;
+  const pending = session.setAudioOutput(id);
+  await sleep(50);
+  c.check('B11: the device call is parked on the element it was made on', v.__w.setSinkId.length === 1 && typeof H.holdSinkRelease === 'function', v.__w.setSinkId);
+  const a = makeEl('audio');
+  session.setAudioEl(a);
+  await sleep(20);
+  c.check('B11: the swap landed while the call was still pending', session.audioEl === a && a.__w.setSinkId.length === 0, { audioEl: session.audioEl === a, calls: a.__w.setSinkId });
+  H.holdSink = null;
+  H.holdSinkRelease();
+  let r = null, threw = null;
+  try { r = await pending; } catch (e) { threw = `${e?.name}: ${e?.message}`; }
+  await sleep(120);
+  c.check('B11: setAudioOutput never throws through the swap and answers with a boolean', threw === null && typeof r === 'boolean', { threw, r });
+  c.check('B11: the old element got exactly one setSinkId call', v.__w.setSinkId.length === 1, v.__w.setSinkId);
+  // Chromium aborts the parked setSinkId() when the element leaves the audio path; the SDK re-applies
+  // the id to the element that carries audio now, so the app's device choice survives the swap.
+  c.check('B11: setAudioOutput resolved true and the id followed to the new audio element', r === true && a.sinkId === id && a.__w.setSinkId.includes(id), { r, sinkId: a.sinkId, calls: a.__w.setSinkId });
+  c.check('B11: no setSinkId warning was logged', !logs.some((l) => /^warn: .*setSinkId/.test(l)), logs.filter((l) => /setSinkId/.test(l)));
+  c.check('B11: audio still playing on the new element', ...pair2(await advancing(a, 400)));
+};
+
+S['swaps'] = async (c) => {
+  const v1 = makeEl(), v2 = makeEl(), a = makeEl('audio');
+  const { session, ev } = await connected({ videoEl: v1 });
+  const stream0 = session.avatarStream;
+  c.check('paints on v1', ...pair2(await paints(v1)));
+  session.setVideoEl(v2);
+  c.check('v1 released', v1.srcObject === null, v1.__w);
+  c.check('v2 carries both', kinds(v2) === 'audio,video', kinds(v2));
+  c.check('paints on v2', ...pair2(await paints(v2)));
+  c.check('v2: srcObject once, play once', v2.__w.srcObject === 1 && v2.__w.play === 1, v2.__w);
+  session.setAudioEl(a);
+  c.check('split at runtime: v2 video only, a audio only', kinds(v2) === 'video' && kinds(a) === 'audio', { v2: kinds(v2), a: kinds(a) });
+  c.check('audio element playing', ...pair2(await advancing(a)));
+  c.check('v2 still paints after split', ...pair2(await paints(v2)));
+  session.setAudioEl(null);
+  c.check('merge back: v2 carries both, a released', kinds(v2) === 'audio,video' && a.srcObject === null, { v2: kinds(v2), a: String(a.srcObject) });
+  session.setVideoEl(null);
+  c.check('headless at runtime: v2 released, avatarStream live', v2.srcObject === null && liveTracks(session.avatarStream.getTracks()), kinds(session.avatarStream));
+  session.setVideoEl(v1);
+  c.check('rebind v1 paints again', ...pair2(await paints(v1)));
+  c.check('v1 writes: bind, null, bind', v1.__w.srcObject === 3 && v1.__w.play === 2, v1.__w);
+  c.check('same-element setVideoEl is a no-op', (session.setVideoEl(v1), v1.__w.srcObject === 3), v1.__w);
+  c.check('avatarStream identity stable across swaps', session.avatarStream === stream0 && liveTracks(stream0.getTracks()));
+  c.check('mediaReady once through all swaps', ev.count('mediaReady') === 1, ev.count('mediaReady'));
+  c.check('no warnings', ev.count('warning') === 0, ev.of('warning'));
+};
+
+/**
+ * B8: the swap edges the `swaps` cell does not reach: a detached element, a swap between connect()
+ * and mediaReady, a→b→null inside one tick, a swap after disconnect, and setVideoEl() leaving a bound
+ * audioEl alone.
+ */
+S['swaps-edge'] = async (c) => {
+  const v = makeEl(), a = makeEl('audio');
+  const detached = instrument(document.createElement('video'));   // never appended to the DOM
+  detached.playsInline = true;
+  const s = newSession({ videoEl: v });
+  const ev = record(s.session);
+  const p = s.session.connect();
+  s.session.setVideoEl(detached);
+  s.session.setAudioEl(a);
+  await p;
+  c.check('B8: a mid-connect swap lands on the new elements', kinds(detached) === 'video' && kinds(a) === 'audio', { d: kinds(detached), a: kinds(a) });
+  c.check('B8: the element swapped out before any track never bound and never played', v.srcObject === null && v.__w.srcObject === 0 && v.__w.play === 0, v.__w);
+  c.check('B8: one srcObject write + one play() per new element', detached.__w.srcObject === 1 && detached.__w.play === 1 && a.__w.srcObject === 1 && a.__w.play === 1, { d: detached.__w, a: a.__w });
+  c.check('B8: one mediaReady through the mid-connect swap', ev.count('mediaReady') === 1, ev.of('mediaReady'));
+  c.check('B8: the detached (never appended) element paints', ...pair2(await paints(detached)));
+  c.check('B8: the split audio element is playing', ...pair2(await advancing(a, 400)));
+  const aState = { src: a.srcObject, play: a.__w.play, writes: a.__w.srcObject };
+  const v2 = makeEl();
+  s.session.setVideoEl(v2);
+  c.check('B8: setVideoEl while an audioEl is bound leaves the audio element untouched', a.srcObject === aState.src && a.__w.play === aState.play && a.__w.srcObject === aState.writes, { before: aState.writes, after: a.__w });
+  const b = makeEl('audio');
+  const warnBefore = ev.count('warning');
+  s.session.setAudioEl(b);
+  s.session.setAudioEl(null);
+  c.check('B8: a→b→null in one tick ends merged, both audio elements released', a.srcObject === null && b.srcObject === null && kinds(v2) === 'audio,video', { a: String(a.srcObject), b: String(b.srcObject), v2: kinds(v2) });
+  c.check('B8: at most one play() on the intermediate element, no warnings', b.__w.play <= 1 && ev.count('warning') === warnBefore, { b: b.__w, warnings: ev.of('warning') });
+  c.check('B8: the merged element still paints', ...pair2(await paints(v2)));
+  s.session.disconnect();
+  await sleep(20);
+  const v3 = makeEl();
+  let threw = null; try { s.session.setVideoEl(v3); } catch (e) { threw = e?.code || String(e); }
+  c.check('B8: setVideoEl after disconnect binds nothing and does not throw', threw === null && v3.srcObject === null && v3.__w.srcObject === 0 && v3.__w.play === 0, { threw, w: v3.__w });
+  s.rescript();
+  await s.session.connect();
+  c.check('B8: the post-disconnect binding takes effect on the next connect', kinds(v3) === 'audio,video' && v3.__w.srcObject === 1 && v3.__w.play === 1, { kinds: kinds(v3), w: v3.__w });
+  c.check('B8: the re-bound element paints', ...pair2(await paints(v3)));
+  c.check('B8: one mediaReady per connect across every swap', ev.count('mediaReady') === 2, ev.count('mediaReady'));
+};
+
+S['mixing'] = async (c) => {
+  const { session } = await connected({ videoEl: null });
+  c.check('audio RTP flows', ...pair2(await flowing(stv(session), 'audio')));
+  // Chromium only decodes a remote audio track (and so feeds Web Audio) while some media element
+  // plays it. Headless apps that mix must keep a muted <audio> bound to the track — documented in
+  // README "Avatar audio and video rendering". Firefox and WebKit do not need the element.
+  const sink = makeEl('audio'); sink.muted = true;
+  sink.srcObject = new MediaStream(session.avatarStream.getAudioTracks());
+  await sink.play().catch(() => {});
+  let r;
+  try { r = await rms(session.avatarStream); } catch (e) { c.skip('Web Audio energy from avatarStream', `${e.name}: ${e.message}`); return; }
+  c.check('avatarStream feeds Web Audio (energy > 1e-4) with a muted element keeping the track decoded', r.ok, { rms: r.rms });
+  c.check('headless stays headless: the SDK bound nothing', session.videoEl === null && session.audioEl === null);
+  const ac = audioCtx(); const dest = ac.createMediaStreamDestination();
+  const src = ac.createMediaStreamSource(session.avatarStream); src.connect(dest);
+  c.check('re-mixed into a new MediaStream', dest.stream.getAudioTracks().length === 1 && dest.stream.getAudioTracks()[0].readyState === 'live');
+  src.disconnect();
+};
+
+/**
+ * B6: a real Web Audio mix, two oscillators plus the avatar downlink into one
+ * MediaStreamDestination, measured with an AnalyserNode. Nothing is ever connected to
+ * audioCtx.destination, so the mix is silent on this machine; it survives the session's teardown and
+ * a reconnect + re-mix.
+ */
+S['mixing-three'] = async (c) => {
+  const ac = audioCtx();
+  const dest = ac.createMediaStreamDestination();      // the mix bus: an output stream, not the speakers
+  const o1 = ac.createOscillator(), o2 = ac.createOscillator();
+  const g1 = ac.createGain(), g2 = ac.createGain();
+  o1.frequency.value = 220; o2.frequency.value = 440; g1.gain.value = 0.01; g2.gain.value = 0.01;
+  o1.connect(g1).connect(dest); o2.connect(g2).connect(dest);
+  o1.start(); o2.start();
+  try {
+    const { session, rescript } = await connected({ videoEl: null });
+    // Chromium only decodes a remote audio track while some element plays it (see S['mixing']).
+    const sink = makeEl('audio'); sink.muted = true;
+    sink.srcObject = new MediaStream(session.avatarStream.getAudioTracks());
+    await sink.play().catch(() => {});
+    const src = ac.createMediaStreamSource(session.avatarStream);
+    src.connect(dest);
+    c.check('B6: three sources mixed into one live MediaStreamDestination track', dest.stream.getAudioTracks().length === 1 && dest.stream.getAudioTracks()[0].readyState === 'live', dest.stream.getAudioTracks().map((t) => t.readyState));
+    const mixed = await rms(dest.stream);
+    c.check('B6: the mix carries energy, tapped by an AnalyserNode only (never audioCtx.destination)', mixed.ok, { rms: mixed.rms });
+    c.check('B6: mixing bound nothing on the session', session.videoEl === null && session.audioEl === null);
+    const tracks = session.avatarStream.getTracks();
+    src.disconnect();
+    session.disconnect();
+    await sleep(30);
+    c.check('B6: the mix bus outlives the session: dest track live, downlink tracks ended', dest.stream.getAudioTracks()[0].readyState === 'live' && ended(tracks), { dest: dest.stream.getAudioTracks()[0].readyState, downlink: tracks.map((t) => t.readyState) });
+    rescript();
+    await session.connect();
+    const sink2 = makeEl('audio'); sink2.muted = true;
+    sink2.srcObject = new MediaStream(session.avatarStream.getAudioTracks());
+    await sink2.play().catch(() => {});
+    const src2 = ac.createMediaStreamSource(session.avatarStream);
+    src2.connect(dest);
+    const again = await rms(dest.stream);
+    c.check('B6: energy again after disconnect → reconnect → re-mix into the same bus', again.ok, { rms: again.rms });
+    src2.disconnect();
+  } finally {
+    try { o1.stop(); o2.stop(); } catch { /* already stopped */ }
+    g1.disconnect(); g2.disconnect();
+  }
+};
+
+S['recording'] = async (c) => {
+  if (!has.mediaRecorder) { c.skip('MediaRecorder(avatarStream)', 'MediaRecorder is not implemented in this engine'); return; }
+  const v = makeEl();
+  const { session } = await connected({ videoEl: v });
+  c.check('video paints', ...pair2(await paints(v)));
+  let rec;
+  try { rec = new MediaRecorder(session.avatarStream); } catch (e) {
+    if (e.name === 'NotSupportedError') { c.skip('MediaRecorder(avatarStream)', `${e.name}: ${e.message}`); return; }
+    throw e;
+  }
+  const sizes = [];
+  const stopped = new Promise((r) => { rec.onstop = r; rec.onerror = r; });
+  rec.ondataavailable = (e) => sizes.push(e.data.size);
+  rec.start(250);
+  await sleep(1500);
+  rec.stop();
+  await stopped;
+  c.check('recorded bytes from avatarStream', sizes.reduce((a, b) => a + b, 0) > 0, { chunks: sizes.length, bytes: sizes.reduce((a, b) => a + b, 0), mimeType: rec.mimeType });
+  c.check('recording never touched the element', v.__w.srcObject === 1 && kinds(v) === 'audio,video', v.__w);
+};
+
+/**
+ * B6: a recording of `avatarStream` keeps growing while the app drives the whole media-control
+ * surface (split, merge, mute, volume 0); an STV re-subscribe ends it (the tracks are replaced) and a
+ * new recorder on the same `avatarStream` grows again. The same holds for a recording of the
+ * element's own captureStream() where the engine has one.
+ */
+S['recording-ops'] = async (c) => {
+  if (!has.mediaRecorder) { c.skip('B6 MediaRecorder across the media-control surface', 'MediaRecorder is not implemented in this engine'); return; }
+  const v = makeEl(), a = makeEl('audio');
+  const { session } = await connected({ videoEl: v });
+  let rec;
+  try { rec = new MediaRecorder(session.avatarStream); } catch (e) {
+    if (e.name === 'NotSupportedError') { c.skip('B6 MediaRecorder across the media-control surface', `${e.name}: ${e.message}`); return; }
+    throw e;
+  }
+  let bytes = 0;
+  rec.ondataavailable = (e) => { bytes += e.data.size; };
+  rec.start(150);
+  const grew = [];
+  // Firefox emits nothing for the first slices (it waits for a keyframe), so a step waits for the byte
+  // count to move, bounded, instead of assuming one fixed slice lands inside one fixed window.
+  const grow = async (from, ms) => {
+    const end = performance.now() + ms;
+    while (bytes <= from && performance.now() < end) await sleep(60);
+    return bytes > from;
+  };
+  const step = async (label, fn) => {
+    const before = bytes;
+    await fn();
+    const ok = await grow(before, 2500);
+    grew.push({ label, before, after: bytes, ok });
+  };
+  await step('baseline', () => {});
+  await step('setAudioEl(el)', () => session.setAudioEl(a));
+  await step('setAudioEl(null)', () => session.setAudioEl(null));
+  await step('muteAudioOutput()', () => session.muteAudioOutput());
+  await step('setAudioOutputVolume(0)', () => session.setAudioOutputVolume(0));
+  c.check('B6: the recording kept growing through split, merge, mute and volume 0', grew.every((s) => s.ok), grew);
+  c.check('B6: mimeType is a video container', /^video\//.test(rec.mimeType), rec.mimeType);
+  c.check('B6: the recorded stream carries both track kinds', kinds(session.avatarStream) === 'audio,video', kinds(session.avatarStream));
+  // The recorder holds the old downlink tracks. A re-subscribe replaces them inside avatarStream, so
+  // they end and the recorder stops on its own: one recording per connection, a new segment on mediaReady.
+  const ended = new Promise((r) => { rec.onstop = r; rec.onerror = r; });
+  await session._recoverMedia('stv', stv(session));
+  await Promise.race([ended, sleep(2500)]);
+  c.check('B6: an STV re-subscribe ends the running recording (its tracks were replaced)', rec.state === 'inactive', { state: rec.state, bytes });
+  if (rec.state !== 'inactive') { const stopped = new Promise((r) => { rec.onstop = r; rec.onerror = r; }); rec.stop(); await Promise.race([stopped, sleep(1000)]); }
+  const next = new MediaRecorder(session.avatarStream);
+  let nextBytes = 0;
+  next.ondataavailable = (e) => { nextBytes += e.data.size; };
+  next.start(150);
+  const until = performance.now() + 2500;
+  while (nextBytes === 0 && performance.now() < until) await sleep(60);
+  c.check('B6: a new recorder on avatarStream grows after the re-subscribe, with both track kinds', nextBytes > 0 && kinds(session.avatarStream) === 'audio,video', { nextBytes, kinds: kinds(session.avatarStream) });
+  const nextStopped = new Promise((r) => { next.onstop = r; next.onerror = r; });
+  next.stop();
+  await Promise.race([nextStopped, sleep(1000)]);
+  c.check('B6: recording and the controls never re-bound the element', v.__w.srcObject === 1 && v.__w.play <= 2, v.__w);
+  session.unmuteAudioOutput(); session.setAudioOutputVolume(1);
+  const cap = v.captureStream?.bind(v) || v.mozCaptureStream?.bind(v);
+  if (!cap) { c.skip('B6 MediaRecorder(videoEl.captureStream())', 'neither captureStream() nor mozCaptureStream() exists on HTMLMediaElement in this engine'); return; }
+  let cs, rec2;
+  try { cs = cap(); rec2 = new MediaRecorder(cs); } catch (e) { c.skip('B6 MediaRecorder(videoEl.captureStream())', `${e.name}: ${e.message}`); return; }
+  let bytes2 = 0, blobType = '';
+  rec2.ondataavailable = (e) => { bytes2 += e.data.size; blobType = blobType || e.data.type || ''; };
+  const stopped2 = new Promise((r) => { rec2.onstop = r; rec2.onerror = r; });
+  rec2.start(150);
+  await sleep(900);
+  try { rec2.stop(); } catch { /* already inactive */ }
+  await Promise.race([stopped2, sleep(1000)]);
+  c.check('B6: MediaRecorder(videoEl.captureStream()) produced bytes', bytes2 > 0, { bytes: bytes2, mimeType: rec2.mimeType, blobType });
+  // Firefox leaves `mimeType` empty when the app requested no type; the blob it hands back still declares one.
+  const container = rec2.mimeType || blobType;
+  if (!container) c.skip('B6 the element capture recorded into a video container', 'the engine reports no mimeType on the recorder or on its blobs when the app requests none');
+  else c.check('B6: the element capture recorded into a video container', /^video\//.test(container), { mimeType: rec2.mimeType, blobType });
+  c.check('B6: the element capture carried the video track (kinds reported)', /video/.test(kinds(cs)), kinds(cs));
+};
+
+S['multi-avatar'] = async (c) => {
+  const v1 = makeEl(), v2 = makeEl(), a2 = makeEl('audio');
+  const [A, B] = await Promise.all([connected({ videoEl: v1 }), connected({ videoEl: v2, audioEl: a2 })]);
+  c.check('both connected', A.session.state === 'connected' && B.session.state === 'connected');
+  const tA = new Set(A.session.avatarStream.getTracks()), tB = new Set(B.session.avatarStream.getTracks());
+  c.check('disjoint tracks', [...tA].every((t) => !tB.has(t)) && tA.size === 2 && tB.size === 2);
+  c.check('distinct peers', stv(A.session) !== stv(B.session));
+  c.check('A paints', ...pair2(await paints(v1)));
+  c.check('B paints', ...pair2(await paints(v2)));
+  c.check('A audio flows', ...pair2(await flowing(stv(A.session), 'audio')));
+  c.check('B audio flows', ...pair2(await flowing(stv(B.session), 'audio')));
+  c.check('B audio element playing', ...pair2(await advancing(a2)));
+  A.session.muteAudioOutput();
+  c.check('mute A only', v1.muted === true && a2.muted === false && v2.muted === false);
+  B.session.setAudioOutputVolume(0.4);
+  c.check('volume B only', Math.abs(a2.volume - 0.4) < VOL_EPS && v1.volume === 1);
+  A.session.disconnect();
+  await sleep(20);   // WebKit flips readyState to 'ended' asynchronously after stop()
+  c.check('A released + ended', v1.srcObject === null && ended([...tA]) && A.session.avatarStream === null, { src: v1.srcObject, states: [...tA].map((t) => t.readyState), stream: A.session.avatarStream });
+  c.check('B untouched', B.session.state === 'connected' && liveTracks([...tB]) && kinds(v2) === 'video' && kinds(a2) === 'audio');
+  c.check('B still paints', ...pair2(await paints(v2)));
+  c.check('B mediaReady still once', B.ev.count('mediaReady') === 1);
+  B.session.disconnect();
+  await sleep(20);
+  c.check('B released', v2.srcObject === null && a2.srcObject === null && ended([...tB]), { v2: v2.srcObject, a2: a2.srcObject, states: [...tB].map((t) => t.readyState) });
+};
+
+/**
+ * B7: three avatars in one page at once: simple, split, and headless mixed into a Web Audio bus.
+ * Each renders and flows on its own, each control touches only its own elements, and the SDK adds no
+ * global (the harness's own `__*` globals are allowed).
+ */
+S['multi-avatar-three'] = async (c) => {
+  const globalsBefore = Object.keys(globalThis);
+  const v1 = makeEl(), v2 = makeEl(), a2 = makeEl('audio');
+  const [A, B, D] = await Promise.all([
+    connected({ videoEl: v1 }),
+    connected({ videoEl: v2, audioEl: a2 }),
+    connected({ videoEl: null }),
+  ]);
+  c.check('B7: three sessions connected', [A, B, D].every((s) => s.session.state === 'connected'), [A, B, D].map((s) => s.session.state));
+  const sets = [A, B, D].map((s) => new Set(s.session.avatarStream.getTracks()));
+  const all = sets.flatMap((s) => [...s]);
+  c.check('B7: six disjoint tracks, two per session', all.length === 6 && new Set(all).size === 6, sets.map((s) => s.size));
+  c.check('B7: three distinct STV peers', new Set([A, B, D].map((s) => stv(s.session))).size === 3);
+  c.check('B7: A (simple) carries both kinds and paints', kinds(v1) === 'audio,video' && (await paints(v1)).ok, kinds(v1));
+  c.check('B7: B (split) video on the videoEl, audio on the audioEl', kinds(v2) === 'video' && kinds(a2) === 'audio', { v2: kinds(v2), a2: kinds(a2) });
+  c.check('B7: B paints and its audio element is playing', (await paints(v2)).ok && (await advancing(a2, 400)).ok);
+  c.check('B7: D (headless) bound nothing and still carries both kinds', D.session.videoEl === null && D.session.audioEl === null && kinds(D.session.avatarStream) === 'audio,video', kinds(D.session.avatarStream));
+  c.check('B7: A audio RTP flows', ...pair2(await flowing(stv(A.session), 'audio')));
+  c.check('B7: B audio RTP flows', ...pair2(await flowing(stv(B.session), 'audio')));
+  c.check('B7: D audio RTP flows', ...pair2(await flowing(stv(D.session), 'audio')));
+  // D's downlink is mixed into a Web Audio bus (never audioCtx.destination); Chromium needs a muted
+  // element to keep the remote track decoded.
+  const ac = audioCtx(), dest = ac.createMediaStreamDestination();
+  const sink = makeEl('audio'); sink.muted = true;
+  sink.srcObject = new MediaStream(D.session.avatarStream.getAudioTracks());
+  await sink.play().catch(() => {});
+  const src = ac.createMediaStreamSource(D.session.avatarStream); src.connect(dest);
+  c.check('B7: D mixed into its own MediaStreamDestination with energy', ...pair2(await rms(dest.stream)));
+  src.disconnect();
+  A.session.muteAudioOutput();
+  c.check('B7: mute lands on A only', v1.muted === true && v2.muted === false && a2.muted === false, { v1: v1.muted, v2: v2.muted, a2: a2.muted });
+  B.session.setAudioOutputVolume(0.4);
+  c.check('B7: volume lands on B only', Math.abs(a2.volume - 0.4) < VOL_EPS && v1.volume === 1 && v2.volume === 1, { a2: a2.volume, v1: v1.volume, v2: v2.volume });
+  const id = has.setSinkId ? await pickOutput() : null;
+  if (!has.setSinkId) c.skip('B7 per-session setAudioOutput', 'HTMLMediaElement.setSinkId is not implemented in this engine');
+  else if (!id) c.skip('B7 per-session setAudioOutput', 'no audiooutput device is enumerable in this engine');
+  else {
+    const r = await A.session.setAudioOutput(id);
+    c.check('B7: setAudioOutput on A moves only A’s element', r === true && v1.sinkId === id && v2.__w.setSinkId.length === 0 && a2.__w.setSinkId.length === 0, { r, v1: v1.sinkId, v2: v2.__w.setSinkId, a2: a2.__w.setSinkId });
+  }
+  const plays = { v1: v1.__w.play, v2: v2.__w.play, a2: a2.__w.play };
+  const resumed = await Promise.all([A.session.startPlayback(), B.session.startPlayback(), D.session.startPlayback()]);
+  c.check('B7: startPlayback() per session: true, true, false (headless)', resumed.join(',') === 'true,true,false', resumed);
+  c.check('B7: nothing was replayed (already playing)', v1.__w.play === plays.v1 && v2.__w.play === plays.v2 && a2.__w.play === plays.a2, { before: plays, after: { v1: v1.__w.play, v2: v2.__w.play, a2: a2.__w.play } });
+  c.check('B7: one mediaReady per session', [A, B, D].every((s) => s.ev.count('mediaReady') === 1), [A, B, D].map((s) => s.ev.count('mediaReady')));
+  c.check('B7: no warnings on any session', [A, B, D].every((s) => s.ev.count('warning') === 0), [A, B, D].flatMap((s) => s.ev.of('warning')));
+  const added = Object.keys(globalThis).filter((k) => !globalsBefore.includes(k) && !/^__/.test(k));
+  c.check('B7: three concurrent sessions added no global (harness __* allowed)', added.length === 0, added);
+};
+
+// R-d: re-subscribe while the old tracks are live → same element stream, no rebind, no replay.
+S['races-recover'] = async (c) => {
+  {
+    const v = makeEl();
+    const { session, ev } = await connected({ videoEl: v });
+    c.check('R-d: paints before recovery', ...pair2(await paints(v)));
+    const stream0 = session.avatarStream, so0 = v.srcObject, old = stream0.getTracks(), pc0 = stv(session);
+    const writes = v.__w.srcObject, plays = v.__w.play, readyBefore = ev.count('mediaReady');
+    let emptied = 0, pauses = 0; v.addEventListener('emptied', () => { emptied += 1; }); v.addEventListener('pause', () => { pauses += 1; });
+    const ct0 = v.currentTime;
+    await session._recoverMedia('stv', pc0);
+    c.check('R-d: mediaRecovered re-subscribe', ev.of('mediaRecovered').some((p) => p.channel === 'stv' && p.method === 're-subscribe'), ev.of('mediaRecovered'));
+    c.check('R-d: new peer', stv(session) !== pc0 && pc0.signalingState === 'closed');
+    c.check('R-d: avatarStream identity kept', session.avatarStream === stream0);
+    c.check('R-d: element srcObject identity kept', v.srcObject === so0);
+    // Firefox (with a 'pause' event) and WebKit (silently) report the element paused once all its tracks ended, before the
+    // replacements arrive; the SDK resumes it with one play(). Chromium never pauses: zero play() calls.
+    c.check('R-d: no srcObject write; at most one play() to resume, and the element is playing', v.__w.srcObject === writes && v.__w.play - plays <= 1 && v.paused === false, { ...v.__w, plays, pauses, paused: v.paused });
+    c.check('R-d: old tracks ended', ended(old));
+    c.check('R-d: new tracks live', liveTracks(session.avatarStream.getTracks()) && !session.avatarStream.getTracks().some((t) => old.includes(t)));
+    c.check('R-d: paints after recovery', ...pair2(await paints(v)));
+    c.check('R-d: audio flows on the new peer', ...pair2(await flowing(stv(session), 'audio')));
+    // Chromium resets currentTime when the tracks inside the same srcObject are swapped; what matters is no 'emptied' and playback advancing again.
+    c.check('R-d: no emptied event', emptied === 0, { emptied, ct0, now: v.currentTime });
+    c.check('R-d: playback advancing after recovery', ...pair2(await advancing(v)));
+    c.check('R-d: mediaReady once more (once per STV subscribe)', ev.count('mediaReady') === readyBefore + 1, ev.count('mediaReady'));
+    c.check('R-d: no warnings', ev.count('warning') === 0, ev.of('warning'));
+    session.disconnect();
+  }
+};
+// R-f: setAudioEl() from inside the first 'track' listener.
+S['races-split-in-listener'] = async (c) => {
+  {
+    const v = makeEl(), a = makeEl('audio');
+    const s = newSession({ videoEl: v });
+    const ev = record(s.session);
+    let calls = 0;
+    s.session.on('track', () => { if (calls++ === 0) s.session.setAudioEl(a); });
+    await s.session.connect();
+    c.check('R-f: split shape from inside track listener', kinds(v) === 'video' && kinds(a) === 'audio', { v: kinds(v), a: kinds(a), calls });
+    c.check('R-f: one srcObject + one play per element', v.__w.srcObject === 1 && a.__w.srcObject === 1 && v.__w.play === 1 && a.__w.play === 1, { v: v.__w, a: a.__w });
+    c.check('R-f: paints', ...pair2(await paints(v)));
+    c.check('R-f: audio element playing', ...pair2(await advancing(a)));
+    c.check('R-f: mediaReady once', ev.count('mediaReady') === 1);
+    s.session.disconnect();
+  }
+};
+// R-g: disconnect() while play() is still pending (first ontrack, before any frame).
+S['races-disconnect-mid-play'] = async (c) => {
+  {
+    const v = makeEl();
+    const s = newSession({ videoEl: v });
+    const ev = record(s.session);
+    const before = H.unhandled;
+    s.session.on('track', () => { if (v.__w.play === 1) s.session.disconnect(); });
+    let connectErr = null;
+    try { await s.session.connect(); } catch (e) { connectErr = e?.code || e?.message; }
+    await sleep(300);
+    c.check('R-g: play() was pending at disconnect', v.__w.play === 1, v.__w);
+    c.check('R-g: srcObject null', v.srcObject === null);
+    c.check('R-g: AbortError swallowed: no warning, no unhandled rejection', ev.count('warning') === 0 && H.unhandled === before, { warnings: ev.of('warning'), unhandled: H.unhandled - before, connectErr });
+    c.check('R-g: no mediaReady after cancel', ev.count('mediaReady') === 0, ev.count('mediaReady'));
+  }
+};
+// R-j: startPlayback() before connect / headless / after teardown.
+S['races-start-playback'] = async (c) => {
+  {
+    const v = makeEl();
+    const s = newSession({ videoEl: v });
+    const r0 = await Promise.race([s.session.startPlayback(), sleep(1500).then(() => 'pending')]);
+    c.check('R-j: startPlayback before connect → false', r0 === false, r0);
+    await s.session.connect();
+    c.check('R-j: startPlayback while playing → true, no replay', (await s.session.startPlayback()) === true && v.__w.play === 1, v.__w);
+    s.session.disconnect();
+    const r2 = await Promise.race([s.session.startPlayback(), sleep(1500).then(() => 'pending')]);
+    c.check('R-j: startPlayback after teardown → false', r2 === false, r2);
+  }
+};
+// R-r: disconnect() twice.
+S['races-double-disconnect'] = async (c) => {
+  {
+    const v = makeEl();
+    const { session, ev } = await connected({ videoEl: v });
+    session.disconnect();
+    const writes = v.__w.srcObject;
+    let threw = false; try { session.disconnect(); } catch { threw = true; }
+    c.check('R-r: second disconnect no throw, no second srcObject write', !threw && v.__w.srcObject === writes, v.__w);
+    c.check('R-r: at most one ended', ev.count('ended') <= 1, ev.count('ended'));
+    await sleep(50);   // the WHEP DELETE is dispatched on a microtask
+    c.check('R-r: one DELETE', H.fetches.filter((f) => f.method === 'DELETE').length === 1, H.fetches.filter((f) => f.method === 'DELETE'));
+  }
+};
+
+async function autoplay(c, split) {
+  H.blockPlay = true;
+  const v = makeEl(), a = split ? makeEl('audio') : null;
+  const { session, ev } = await connected(split ? { videoEl: v, audioEl: a } : { videoEl: v });
+  await sleep(50);
+  const warns = ev.of('warning').filter((w) => w.code === 'playback_blocked').map((w) => w.kind).sort().join(',');
+  c.check('playback_blocked warning per element', warns === (split ? 'audio,video' : 'video'), ev.of('warning'));
+  c.check('warning names startPlayback()', ev.of('warning').every((w) => /startPlayback\(\)/.test(w.message)));
+  c.check('connect still resolved, mediaReady once', session.state === 'connected' && ev.count('mediaReady') === 1, ev.count('mediaReady'));
+  // A rejected play() leaves the element paused (HTML spec). WebKitGTK starts MediaStream
+  // playback on its own anyway; then there is nothing to retry, and startPlayback() must
+  // still resolve true. Retries are asserted against what was actually paused.
+  const paused = { v: v.paused, a: a ? a.paused : null };
+  if (paused.v && (!a || paused.a)) c.check('elements paused', true);
+  else c.skip('elements paused', `engine started playback without a successful play(): ${JSON.stringify(paused)}`);
+  H.gestureSession = session;
+  const gesture = new Promise((r) => { H.gestureResolve = r; });
+  window.__gestureWanted = true;
+  const r = await Promise.race([gesture, sleep(15000).then(() => 'no-gesture')]);
+  c.check('startPlayback() from the click → true', r === true, r);
+  const retries = (el, wasPaused) => el.__w.play === (wasPaused ? 2 : 1);
+  c.check('one retry per blocked element', retries(v, paused.v) && (!a || retries(a, paused.a)), { v: v.__w.play, a: a?.__w.play, paused });
+  c.check('video paints after gesture', ...pair2(await paints(v)));
+  if (a) c.check('audio element playing after gesture', ...pair2(await advancing(a)));
+  else c.check('element playing after gesture', !v.paused, v.paused);
+  c.check('audio RTP flowed all along', ...pair2(await flowing(stv(session), 'audio')));
+}
+S['autoplay-simple'] = (c) => autoplay(c, false);
+S['autoplay-split'] = (c) => autoplay(c, true);
+
+/**
+ * B4: split mode where only the audio element's play() is refused. The video must paint before any
+ * gesture, exactly one warning must fire (kind 'audio'), and startPlayback() must retry only the
+ * element that was actually paused.
+ */
+S['autoplay-split-audio-blocked'] = async (c) => {
+  const v = makeEl(), a = makeEl('audio');
+  H.blockEls.add(a);
+  const { session, ev } = await connected({ videoEl: v, audioEl: a });
+  await sleep(50);
+  const warns = ev.of('warning');
+  c.check("B4: exactly one playback_blocked warning, kind 'audio'", warns.length === 1 && warns[0].code === 'playback_blocked' && warns[0].kind === 'audio', warns);
+  c.check('B4: the warning names startPlayback()', warns.every((w) => /startPlayback\(\)/.test(w.message)), warns);
+  c.check('B4: the video element paints before any user gesture', ...pair2(await paints(v)));
+  c.check('B4: the video element is playing, one play() per element', v.paused === false && v.__w.play === 1 && a.__w.play === 1, { vPaused: v.paused, v: v.__w.play, a: a.__w.play });
+  c.check('B4: connect resolved, exactly one mediaReady', session.state === 'connected' && ev.count('mediaReady') === 1, ev.count('mediaReady'));
+  const aPaused = a.paused;
+  const plays = { v: v.__w.play, a: a.__w.play };
+  H.gestureSession = session;
+  const gesture = new Promise((r) => { H.gestureResolve = r; });
+  window.__gestureWanted = true;
+  const r = await Promise.race([gesture, sleep(15000).then(() => 'no-gesture')]);
+  c.check('B4: startPlayback() from the real click → true', r === true, r);
+  if (aPaused) c.check('B4: only the blocked audio element was retried', v.__w.play === plays.v && a.__w.play === plays.a + 1, { before: plays, after: { v: v.__w.play, a: a.__w.play } });
+  else c.skip('B4 retry only on the blocked element', 'engine started playback without a successful play(), so there was nothing to retry');
+  c.check('B4: the audio element is playing after the gesture', ...pair2(await advancing(a, 400)));
+  c.check('B4: audio RTP flowed all along', ...pair2(await flowing(stv(session), 'audio')));
+  c.check('B4: still exactly one warning after the successful retry', ev.count('warning') === 1, ev.of('warning'));
+};
+
+/**
+ * B5 / U7: the blocked-playback warning re-arms per binding. A blocked bind warns once; a
+ * setVideoEl() to another blocked element warns again (exactly two), and a refused startPlayback()
+ * adds none.
+ */
+S['autoplay-rebind-rearm'] = async (c) => {
+  const v1 = makeEl(), v2 = makeEl();
+  H.blockEls.add(v1); H.blockEls.add(v2);
+  const { session, ev } = await connected({ videoEl: v1 });
+  await sleep(50);
+  c.check('B5: one playback_blocked warning for the first binding', ev.count('warning') === 1 && ev.of('warning')[0].kind === 'video', ev.of('warning'));
+  session.setVideoEl(v2);
+  await sleep(80);
+  const warns = ev.of('warning');
+  c.check('U7: the rebind re-arms the warning: exactly two, both video', warns.length === 2 && warns.every((w) => w.code === 'playback_blocked' && w.kind === 'video'), warns);
+  c.check('B5: one play() per blocked binding', v1.__w.play === 1 && v2.__w.play === 1, { v1: v1.__w, v2: v2.__w });
+  if (v2.paused) {
+    const refused = await session.startPlayback();
+    c.check('B5: startPlayback() while still blocked → false', refused === false, refused);
+    c.check('B5: the refused retry called play() once more and added no warning', v2.__w.play === 2 && ev.count('warning') === 2, { w: v2.__w, warnings: ev.of('warning') });
+  } else c.skip('B5 startPlayback while still blocked', 'engine started playback without a successful play(), so nothing was paused to retry');
+  H.blockEls.clear();
+  const ok = await session.startPlayback();
+  c.check('B5: startPlayback() once the block clears → true', ok === true, ok);
+  c.check('B5: the re-bound element paints', ...pair2(await paints(v2)));
+  c.check('B5: the successful retry added no warning', ev.count('warning') === 2, ev.of('warning'));
+  c.check('B5: one mediaReady through the blocked rebind', ev.count('mediaReady') === 1, ev.count('mediaReady'));
+};
+
+S['teardown'] = async (c) => {
+  const v = makeEl();
+  const { session, ev, rescript } = await connected({ videoEl: v });
+  c.check('paints', ...pair2(await paints(v)));
+  const tracks = session.avatarStream.getTracks();
+  session.disconnect();
+  await sleep(20);
+  c.check('srcObject null', v.srcObject === null);
+  c.check('tracks ended', ended(tracks));
+  c.check('avatarStream null, bindings kept', session.avatarStream === null && session.videoEl === v);
+  c.check('WHEP DELETE observed', H.fetches.some((f) => f.method === 'DELETE' && f.url.includes('/resource/')), H.fetches);
+  c.check('peers closed', H.pcs.every((p) => p.signalingState === 'closed'), H.pcs.map((p) => p.signalingState));
+  c.check('state disconnected', session.state === 'disconnected', session.state);
+  rescript();
+  await session.connect();
+  c.check('reconnect: paints again', ...pair2(await paints(v)));
+  c.check('reconnect: fresh tracks', !session.avatarStream.getTracks().some((t) => tracks.includes(t)) && liveTracks(session.avatarStream.getTracks()));
+  c.check('reconnect: writes bind, null, bind; two play()', v.__w.srcObject === 3 && v.__w.play === 2, v.__w);
+  c.check('mediaReady once per connect', ev.count('mediaReady') === 2, ev.count('mediaReady'));
+};
+
+/**
+ * B9: 20 connect/disconnect cycles on one session and one element. Every cycle must produce exactly
+ * one mediaReady, one srcObject write + one play() on bind, one null on teardown, ended tracks and a
+ * closed peer: no accumulation. Connect times are reported so a slow drift is visible.
+ */
+S['leaks-connect-cycles'] = async (c) => {
+  const N = 20;
+  const v = makeEl();
+  const s = newSession({ videoEl: v });
+  const ev = record(s.session);
+  const times = [], fails = [];
+  for (let i = 1; i <= N; i += 1) {
+    if (i > 1) s.rescript();
+    const t0 = performance.now();
+    await s.session.connect();
+    times.push(Math.round(performance.now() - t0));
+    const bad = (why, got) => fails.push({ i, why, got });
+    if (ev.count('mediaReady') !== i) bad('mediaReady count', ev.count('mediaReady'));
+    if (v.__w.play !== i) bad('play() count', v.__w.play);
+    if (v.__w.srcObject !== 2 * i - 1) bad('srcObject writes after bind', v.__w.srcObject);
+    if (kinds(v) !== 'audio,video') bad('merged kinds', kinds(v));
+    const tracks = s.session.avatarStream.getTracks();
+    s.session.disconnect();
+    await sleep(15);
+    if (!ended(tracks)) bad('tracks not ended', tracks.map((t) => t.readyState));
+    if (s.session.avatarStream !== null) bad('avatarStream not null', String(s.session.avatarStream));
+    if (v.srcObject !== null) bad('srcObject not nulled', String(v.srcObject));
+    if (v.__w.srcObject !== 2 * i) bad('srcObject writes after teardown', v.__w.srcObject);
+    // Free the harness's own answerer + sender media each cycle so 20 cycles stay cheap.
+    for (const p of H.peers.splice(0)) { try { p.pc.close(); } catch { /* */ } p.media?.stop(); }
+  }
+  c.check(`B9: ${N} connect/disconnect cycles: one mediaReady, one bind, one play(), one release each`, fails.length === 0, fails.slice(0, 8));
+  c.check(`B9: every peer the SDK built is closed (${H.pcs.length} peers)`, H.pcs.every((p) => p.signalingState === 'closed'), H.pcs.filter((p) => p.signalingState !== 'closed').length);
+  c.check('B9: no warnings across the cycles', ev.count('warning') === 0, ev.of('warning'));
+  c.check(`B9: no connect-time drift (ms: ${times.join(',')})`, Math.max(...times) < 5000, { first: times[0], last: times.at(-1), max: Math.max(...times), mean: Math.round(times.reduce((a, b) => a + b, 0) / times.length) });
+};
+
+/** B9: 20 split/merge toggles on a live session: one bind + one play() per toggle, video never re-bound. */
+S['leaks-audio-el-toggles'] = async (c) => {
+  const N = 20;
+  const v = makeEl(), a = makeEl('audio');
+  const { session, ev } = await connected({ videoEl: v });
+  const fails = [];
+  for (let i = 1; i <= N; i += 1) {
+    const bad = (why, got) => fails.push({ i, why, got });
+    session.setAudioEl(a);
+    if (a.__w.play !== i) bad('play() per binding', a.__w.play);
+    if (a.__w.srcObject !== 2 * i - 1) bad('srcObject writes while split', a.__w.srcObject);
+    if (kinds(v) !== 'video' || kinds(a) !== 'audio') bad('split kinds', { v: kinds(v), a: kinds(a) });
+    session.setAudioEl(null);
+    if (a.srcObject !== null) bad('old srcObject not nulled', String(a.srcObject));
+    if (a.__w.srcObject !== 2 * i) bad('srcObject writes after merge-back', a.__w.srcObject);
+    if (kinds(v) !== 'audio,video') bad('merged kinds', kinds(v));
+  }
+  c.check(`B9: ${N} setAudioEl toggles: one play() and one bind/release per toggle`, fails.length === 0, fails.slice(0, 8));
+  c.check('B9: the video element was never re-bound by the toggles', v.__w.srcObject === 1 && v.__w.play === 1, v.__w);
+  c.check('B9: no warnings', ev.count('warning') === 0, ev.of('warning'));
+  c.check('B9: RTP still flowing after the toggles', ...pair2(await flowing(stv(session), 'audio')));
+  c.check('B9: avatarStream still carries audio energy', ...pair2(await rms(session.avatarStream)));
+  c.check('B9: the merged element is still playing', ...pair2(await advancing(v, 400)));
+};
+
+/** B10: mute + volume + output device set before connect() must all land on the element at bind time. */
+S['controls-before-connect'] = async (c) => {
+  // Device enumeration happens before newSession(): the scripted handshake starts on a timer inside
+  // newSession(), so any awaited task between it and connect() would drop the first server events.
+  const id = has.setSinkId ? await pickOutput() : null;
+  const v = makeEl();
+  const s = newSession({ videoEl: v });
+  const ev = record(s.session);
+  s.session.muteAudioOutput();
+  s.session.setAudioOutputVolume(0.3);
+  const sinkP = id ? s.session.setAudioOutput(id) : null;   // started, not awaited, for the same reason
+  c.check('B10: the getters reflect the pre-connect values', s.session.audioOutputMuted === true && s.session.audioOutputVolume === 0.3, { muted: s.session.audioOutputMuted, volume: s.session.audioOutputVolume });
+  await s.session.connect();
+  const preSink = sinkP ? await sinkP : null;
+  c.check('B10: mute is applied to the bound element', v.muted === true, { muted: v.muted, w: v.__w });
+  c.check('B10: volume 0.3 is applied to the bound element', Math.abs(v.volume - 0.3) < VOL_EPS, v.volume);
+  c.check('B10: one srcObject write and one play() (settings before the bind)', v.__w.srcObject === 1 && v.__w.play === 1, v.__w);
+  c.check('B10: one mediaReady, no warnings', ev.count('mediaReady') === 1 && ev.count('warning') === 0, { mediaReady: ev.count('mediaReady'), warnings: ev.of('warning') });
+  c.check('B10: audio RTP flows', ...pair2(await flowing(stv(s.session), 'audio')));
+  c.check('B10: video paints (muted playback is still playback)', ...pair2(await paints(v)));
+  if (!has.setSinkId) c.skip('B10 pre-connect setAudioOutput lands on the element', 'HTMLMediaElement.setSinkId is not implemented in this engine');
+  else if (!id) c.skip('B10 pre-connect setAudioOutput lands on the element', 'no audiooutput device is enumerable in this engine');
+  else {
+    await sleep(80);
+    c.check('B10: the pre-connect device id is on the element after connect', preSink === true && v.sinkId === id, { preSink, sinkId: v.sinkId, id, calls: v.__w.setSinkId });
+  }
+};
+
+S['chroma-key'] = async (c) => {
+  class FakeCK {
+    constructor(videoEl, options) { this.videoEl = videoEl; this.options = options; this.isDestroyed = false; this.mounted = null; FakeCK.instances.push(this); }
+    mount(container) { this.mounted = container; }
+    destroy() { this.isDestroyed = true; }
+  }
+  FakeCK.instances = [];
+  const v = makeEl(), a = makeEl('audio');
+  const container = document.createElement('div'); stage.appendChild(container);
+  const { session, ev } = await connected({ videoEl: v, audioEl: a });
+  let mismatch = null; try { attachChromaKeyAvatar({ session, videoEl: makeEl(), ChromaKeyVideo: FakeCK }); } catch (e) { mismatch = e.code; }
+  c.check('foreign videoEl rejected', mismatch === 'bad_request', mismatch);
+  const player = attachChromaKeyAvatar({ session, videoEl: session.videoEl, ChromaKeyVideo: FakeCK, container });
+  c.check('player built on the session element, mounted', player.videoEl === v && player.mounted === container);
+  c.check('source video keeps painting under the compositor', ...pair2(await paints(v)));
+  c.check('voice on the split audio element', kinds(a) === 'audio' && kinds(v) === 'video', { a: kinds(a), v: kinds(v) });
+  c.check('audio element playing', ...pair2(await advancing(a)));
+  c.check('second attach returns the same player', attachChromaKeyAvatar({ session, videoEl: v, ChromaKeyVideo: FakeCK }) === player && FakeCK.instances.length === 1);
+  session.disconnect();
+  c.check('player destroyed on disconnect', player.isDestroyed === true);
+  c.check('elements released', v.srcObject === null && a.srcObject === null);
+  c.check('no warnings', ev.count('warning') === 0, ev.of('warning'));
+};
+
+S['compat-patterns'] = async (c) => {
+  // README quickstart shape: token + srsBaseUrl + turnServerUrl + videoEl, then mediaReady.
+  const v = makeEl();
+  const s = newSession({ videoEl: v });
+  const ready = new Promise((r) => s.session.on('mediaReady', r));
+  await s.session.connect();
+  const mr = await Promise.race([ready, sleep(2000).then(() => null)]);
+  c.check('mediaReady payload shape', mr && mr.mode === 'video' && typeof mr.videoWidth === 'number', mr);
+  c.check('quickstart: srcObject once, play once', v.__w.srcObject === 1 && v.__w.play === 1, v.__w);
+  c.check('quickstart: getters', s.session.videoEl === v && s.session.audioEl === null && s.session.mode === 'video');
+  c.check('mic controls are mic-only', typeof s.session.mute === 'function' && typeof s.session.micEnabled === 'boolean' && v.muted === false);
+  c.check('paints', ...pair2(await paints(v)));
+  const removed = ['setOutputEl', 'setOutputVolume', 'muteOutput', 'unmuteOutput', 'outputMuted', 'outputVolume', 'audioOutputEl'];
+  c.check('pre-1.17 names absent', removed.every((n) => !(n in s.session)), removed.filter((n) => n in s.session));
+  const members = ['setVideoEl', 'setAudioEl', 'muteAudioOutput', 'unmuteAudioOutput', 'setAudioOutputVolume', 'setAudioOutput', 'startPlayback'];
+  c.check('1.17 members present', members.every((n) => typeof s.session[n] === 'function'), members.filter((n) => typeof s.session[n] !== 'function'));
+  c.check("no 'doc' config accepted silently", !('_doc' in s.session));
+  s.session.disconnect();
+  c.check('release on disconnect', v.srcObject === null);
+};
+
+S['scripted'] = async (c) => {
+  const v = makeEl();
+  const session = new KalturaScriptedVideoSession({
+    whepUrl: `${WHEP_BASE}?app=app&stream=scripted`, turn: { url: 'turn.example' }, videoEl: v,
+    rtcConstructor: LoopbackRTC, fetch: whepFetch,
+  });
+  live.add(session);
+  trackLatency(session);   // B12: the scripted session builds its own session, so wire the probe here too
+  const warnings = []; session.on('warning', (w) => warnings.push(w));
+  const t0 = performance.now();
+  await session.connect();
+  c.check('connected', session.state === 'connected', { state: session.state, ms: Math.round(performance.now() - t0) });
+  c.check('videoEl carries both', kinds(v) === 'audio,video', kinds(v));
+  c.check('srcObject once, play once', v.__w.srcObject === 1 && v.__w.play === 1, v.__w);
+  c.check('paints', ...pair2(await paints(v)));
+  c.check('audio flows', ...pair2(await flowing(session._pc, 'audio')));
+  const a = makeEl('audio');
+  session.setAudioEl(a);
+  c.check('runtime split on the scripted session', kinds(v) === 'video' && kinds(a) === 'audio');
+  c.check('audio element playing', ...pair2(await advancing(a)));
+  session.muteAudioOutput();
+  c.check('mute on the sink', a.muted === true && session.audioOutputMuted === true);
+  const tracks = session.avatarStream.getTracks();
+  session.disconnect();
+  await sleep(20);
+  c.check('released + DELETE', v.srcObject === null && a.srcObject === null && ended(tracks) && H.fetches.some((f) => f.method === 'DELETE'));
+  c.check('no warnings', warnings.length === 0, warnings);
+};
+
+const pair2 = (r) => [r.ok, r];
+
+// ───────────────────────── runner API ─────────────────────────
+async function cleanup() {
+  for (const s of live) { try { s.disconnect(); } catch { /* */ } }
+  live.clear();
+  for (const p of H.peers) { try { p.pc.close(); } catch { /* */ } p.media?.stop(); }
+  for (const p of H.pcs) { try { p.close(); } catch { /* */ } }
+  H.pcs = []; H.peers = []; H.fetches = [];
+  H.sendKinds = ['video', 'audio']; H.delay = null; H.blockPlay = false; H.gestureSession = null; H.gestureResolve = null;
+  H.shape = 'twoVA'; H.blockEls.clear(); H.holdSink = null; H.holdSinkRelease = null; H.lat = [];
+  stage.replaceChildren();
+}
+
+window.__scenarios = Object.keys(S);
+window.__run = async (name) => {
+  const c = ctx(name);
+  const t0 = performance.now();
+  const unhandled0 = H.unhandled;
+  log(`▶ ${name}`);
+  try {
+    if (!S[name]) throw new Error(`unknown scenario ${name}`);
+    await S[name](c);
+    c.check('no unhandled rejections', H.unhandled === unhandled0, H.unhandled - unhandled0);
+  } catch (e) {
+    c.check('scenario threw', false, `${e?.name || 'Error'}: ${e?.message || e}\n${e?.stack || ''}`);
+  }
+  const lat = H.lat.slice();   // snapshot before cleanup(), which resets the probe
+  if (lat.length) c.check(`B12: every subscribe reached mediaReady within 2500ms of its first track (${lat.map((l) => l.trackToReadyMs).join(',')}ms)`, lat.every((l) => l.trackToReadyMs <= 2500), lat);
+  await cleanup();
+  const result = { name, pass: c.checks.every((k) => k.ok), checks: c.checks, skipped: c.skipped, lat, ms: Math.round(performance.now() - t0) };
+  log(`${result.pass ? 'OK  ' : 'FAIL'} ${name} (${result.ms}ms)`);
+  for (const k of c.checks.filter((k) => !k.ok)) log(`     ✖ ${k.name}: ${k.detail ?? ''}`);
+  for (const k of c.skipped) log(`     ~ skipped ${k.name}: ${k.reason}`);
+  window.__result = result;
+  return result;
+};
+
+document.getElementById('go').addEventListener('click', () => { audioCtx().resume().catch(() => {}); window.__ready = true; log('harness ready', has); });
+document.getElementById('resume').addEventListener('click', async () => {
+  H.blockPlay = false;
+  H.blockEls.clear();   // B4/B5: a real gesture also lifts any per-element block
+  window.__gestureWanted = false;
+  let r; try { r = await H.gestureSession?.startPlayback(); } catch (e) { r = `threw ${e?.message}`; }
+  H.gestureResolve?.(r);
+});
+window.__has = has;
+</script>
+</body>
+</html>

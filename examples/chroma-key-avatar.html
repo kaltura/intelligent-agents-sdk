@@ -22,6 +22,8 @@
        because it's a pure relay with no informational value of its own — the accessible
        description of the avatar lives on #composited, the element AT users actually reach. -->
   <video id="source" autoplay playsinline muted aria-hidden="true"></video>
+  <!-- The source <video> is muted, so the avatar's voice plays through its own element. -->
+  <audio id="voice" autoplay aria-hidden="true"></audio>
 
   <!-- socket.io is YOUR dependency — injected, never bundled by the SDK. -->
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js" integrity="sha384-2huaZvOR9iDzHqslqwpR87isEmrfxqyWOF7hr7BY6KG0+hVKLoEXMPUJw3ynWuhO" crossorigin="anonymous"></script>
@@ -41,12 +43,14 @@
     const init = await fetch('/appInit').then((r) => r.json());
 
     // 2) The session renders into its OWN <video> element, same as every other example —
-    //    chroma-key-avatar changes nothing about how the session itself works.
+    //    chroma-key-avatar changes nothing about how the session itself works. The keyed
+    //    source is muted, so audioEl gives the voice its own element.
     const video = document.getElementById('source');
     const session = new KalturaAvatarSession({
       token: init.ks, conversationManagerUrl: init.conversationManagerUrl,
       srsBaseUrl: init.srsBaseUrl, turnServerUrl: init.turnServerUrl,
-      videoEl: video, socketFactory: (url, opts) => io(url, opts),
+      videoEl: video, audioEl: document.getElementById('voice'),
+      socketFactory: (url, opts) => io(url, opts),
     });
     session.on('disclosure', ({ disclosureText }) => { cc.textContent = '⚠️ ' + disclosureText; });
     session.on('reconnecting', () => { cc.textContent = '… reconnecting'; });
@@ -149,6 +153,7 @@
       }, 2500);
     });
 
+    window.session = session;   // for DevTools: session.videoEl, session.audioEl, session.setAudioEl(null), ...
     await session.connect();
     window.addEventListener('beforeunload', () => session.disconnect());
   </script>

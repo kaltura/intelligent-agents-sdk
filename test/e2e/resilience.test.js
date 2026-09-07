@@ -5,6 +5,7 @@ import { FakeSocket, scriptHappyPath } from '../fakes/socket.js';
 import { FakeRTCPeerConnection, FakeVideoEl, fakeGetUserMedia, FakeAudioContext, FakeMediaStreamCtor, FakeRTCRtpReceiver, FakeMediaStream, FakeAudioWorkletNode } from '../fakes/rtc.js';
 import { createNoiseSuppressor } from '../../src/experience/noise-suppressor.js';
 import { SPIRAL_RECOVERY_PREFIX } from '../../src/core/stream.js';
+import { assertInvariants } from '../unit/helpers/avatar-media-invariants.js';
 
 /**
  * Resilience stress suite — exercises EVERY failure path of the live runtime with
@@ -40,6 +41,7 @@ function newSession(overrides = {}) {
     videoEl, socketFactory: () => socket, rtcConstructor: FakeRTCPeerConnection,
     fetch: whepFetch, getUserMedia: overrides.getUserMedia ?? fakeGetUserMedia(),
     networkAware: false,   // tests opt-in explicitly; avoid Node global listener leakage
+    mediaStreamConstructor: FakeMediaStreamCtor,
     ...overrides.cfg,
   });
   return { session, socket, videoEl };
@@ -178,17 +180,158 @@ test('STV: ICE failed → WHEP re-subscribe (recovered)', async () => {
     whepPosts++;
     return { ok: true, status: 201, text: async () => 'v=0\r\nanswer\r\n', headers: { get: () => 'https://srs/whep/r/' + whepPosts } };
   };
-  const { session, socket } = newSession({ fetch });
+  const { session, socket, videoEl } = newSession({ fetch });
   scriptHappyPath(socket);
   await session.connect();
   const postsAfterConnect = whepPosts;
   const ev = [];
   ['mediaRecovering', 'mediaRecovered', 'ended'].forEach((e) => session.on(e, (p) => ev.push([e, p])));
+  // R-d (plan §5.5.9): a re-subscribe swaps the tracks INSIDE the streams; the element is never touched.
+  const streamBefore = session.avatarStream;
+  const oldTracks = streamBefore.getTracks();
+  const writes = videoEl.srcObjectAssignments, plays = videoEl.playCount;
   stvPeer().setIce('failed');
   await delay(700);   // WHEP re-POST + playable-gate settle
   assert.ok(ev.some((e) => e[0] === 'mediaRecovered' && e[1].method === 're-subscribe'), 'STV recovers by re-subscribing');
   assert.ok(whepPosts > postsAfterConnect, 'a fresh WHEP POST was made');
   assert.equal(session.state, 'connected');
+  assert.equal(session.avatarStream, streamBefore, 'avatarStream identity survives a re-subscribe');
+  assert.equal(videoEl.srcObjectAssignments, writes, 'srcObject not reassigned on recovery');
+  assert.equal(videoEl.playCount, plays, 'play() not called again on recovery');
+  assert.ok(oldTracks.every((t) => t.readyState === 'ended'), 'old downlink tracks are stopped');
+  const newTracks = session.avatarStream.getTracks();
+  assert.deepEqual(newTracks.map((t) => t.kind).sort(), ['audio', 'video']);
+  assert.ok(!newTracks.some((t) => oldTracks.includes(t)), 'no stale track survives the swap');
+  assert.deepEqual(videoEl.srcObject.getTracks().map((t) => t.kind).sort(), ['audio', 'video'], 'the element plays the new tracks');
+  assertInvariants(session._avatarMedia, 'R-d');
+  session.disconnect();
+});
+
+// ─────────────────────────── avatar media across recovery (plan §5.5.9) ───────────────────────────
+
+/** WHEP fetch whose Nth POST (1-based) fails with `status`; every other POST succeeds; DELETE always ok. */
+function whepFailingAt(n, status = 404) {
+  let posts = 0;
+  return async (url, init) => {
+    if (init?.method === 'DELETE') return { ok: true, status: 200, text: async () => '', headers: { get: () => null } };
+    posts++;
+    if (posts === n) return { ok: false, status, text: async () => 'gone', headers: { get: () => null } };
+    return { ok: true, status: 201, text: async () => 'v=0\r\nanswer\r\n', headers: { get: () => 'https://srs/whep/r/' + posts } };
+  };
+}
+
+test('R-d (split): re-subscribe keeps both elements untouched and lands the new tracks in the right element', async () => {
+  const videoEl = new FakeVideoEl({ autoCanPlay: true }), audioEl = new FakeVideoEl();
+  const { session, socket } = newSession({ videoEl, cfg: { audioEl } });
+  scriptHappyPath(socket);
+  await session.connect();
+  const oldAudio = session.avatarStream.getAudioTracks()[0];
+  let recovered = null; session.on('mediaRecovered', (p) => { recovered = p; });
+  stvPeer().setIce('failed');
+  await delay(700);
+  assert.equal(recovered?.method, 're-subscribe');
+  assert.equal(videoEl.srcObjectAssignments, 1); assert.equal(audioEl.srcObjectAssignments, 1);
+  assert.equal(videoEl.playCount, 1); assert.equal(audioEl.playCount, 1);
+  assert.deepEqual(videoEl.srcObject.getTracks().map((t) => t.kind), ['video']);
+  assert.deepEqual(audioEl.srcObject.getTracks().map((t) => t.kind), ['audio']);
+  assert.notEqual(audioEl.srcObject.getAudioTracks()[0], oldAudio, 'the audio element carries the new audio track');
+  assert.equal(oldAudio.readyState, 'ended');
+  assertInvariants(session._avatarMedia, 'R-d split');
+  session.disconnect();
+});
+
+test('R-q: re-subscribe fails (WHEP 404) → cold reconnect; the element is never touched, old tracks stop, mute/volume/sink id survive', async () => {
+  // A cold reconnect closes the peers and rebuilds the session; it does NOT tear the media
+  // down (that is disconnect()/_endWith()). The rebuilt STV's tracks swap in through attach(),
+  // so the app's element keeps its srcObject and never re-plays.
+  const videoEl = new FakeVideoEl({ autoCanPlay: true });
+  const { session, socket } = newSession({ videoEl, fetch: whepFailingAt(2) });
+  scriptHappyPath(socket);
+  await session.connect();
+  session.muteAudioOutput(); session.setAudioOutputVolume(0.4);
+  assert.equal(await session.setAudioOutput('spk-7'), true);
+  const streamBefore = session.avatarStream, oldTracks = streamBefore.getTracks();
+  const ready = []; session.on('mediaReady', (p) => ready.push(p));
+  let reconnected = null; session.on('reconnected', (p) => { reconnected = p; });
+  stvPeer().setIce('failed');
+  await delay(700);
+  assert.ok(reconnected, 'cold reconnect completed');
+  assert.equal(session.state, 'connected');
+  assert.equal(session.avatarStream, streamBefore, 'avatarStream identity survives a cold reconnect');
+  assert.ok(oldTracks.every((t) => t.readyState === 'ended'), 'old downlink tracks are stopped');
+  assert.ok(!session.avatarStream.getTracks().some((t) => oldTracks.includes(t)), 'no stale track survives');
+  assert.equal(session.videoEl, videoEl, 'binding kept');
+  assert.deepEqual(videoEl.srcObject.getTracks().map((t) => t.kind).sort(), ['audio', 'video']);
+  assert.equal(videoEl.srcObjectAssignments, 1, 'srcObject never reassigned');
+  assert.equal(videoEl.playCount, 1, 'play() never called again');
+  assert.equal(videoEl.muted, true); assert.equal(videoEl.volume, 0.4); assert.equal(videoEl.sinkId, 'spk-7');
+  assert.equal(videoEl.mutedWrites, 1); assert.equal(videoEl.volumeWrites, 1); assert.equal(videoEl.setSinkIdCalls.length, 1);
+  assert.equal(session.audioOutputMuted, true); assert.equal(session.audioOutputVolume, 0.4);
+  assert.equal(ready.length, 1, 'the rebuilt STV fires mediaReady once (same as main)');
+  assertInvariants(session._avatarMedia, 'R-q');
+  session.disconnect();
+});
+
+test('R-n: setAudioEl() while a cold reconnect is in flight ends with the NEW audio track on the audio element, bound once', async () => {
+  const videoEl = new FakeVideoEl({ autoCanPlay: true });
+  const { session, socket } = newSession({ videoEl, cfg: { reconnectWindowMs: 5000 } });
+  scriptHappyPath(socket);
+  await session.connect();
+  const oldAudio = session.avatarStream.getAudioTracks()[0];
+  const audioEl = new FakeVideoEl();
+  const p = session._coldReconnect('media stv failed');
+  await delay(0);   // peers closed, rebuild in flight, current tracks still in the streams
+  session.setAudioEl(audioEl);
+  assert.equal(audioEl.srcObject.getAudioTracks()[0], oldAudio, 'binds the current audio right away');
+  await p;
+  assert.equal(session.state, 'connected');
+  assert.deepEqual(videoEl.srcObject.getTracks().map((t) => t.kind), ['video']);
+  assert.deepEqual(audioEl.srcObject.getTracks().map((t) => t.kind), ['audio']);
+  assert.notEqual(audioEl.srcObject.getAudioTracks()[0], oldAudio, 'the rebuilt STV audio swapped in');
+  assert.equal(oldAudio.readyState, 'ended');
+  assert.equal(audioEl.srcObjectAssignments, 1); assert.equal(audioEl.playCount, 1);
+  assert.equal(videoEl.srcObjectAssignments, 1); assert.equal(videoEl.playCount, 1);
+  assert.equal(session.audioEl, audioEl);
+  assertInvariants(session._avatarMedia, 'R-n');
+  session.disconnect();
+});
+
+test('cold reconnect in split mode keeps both bindings and the audio settings on the audio element', async () => {
+  const videoEl = new FakeVideoEl({ autoCanPlay: true }), audioEl = new FakeVideoEl();
+  const { session, socket } = newSession({ videoEl, cfg: { audioEl, reconnectWindowMs: 5000 } });
+  scriptHappyPath(socket);
+  await session.connect();
+  session.setAudioOutputVolume(0.2);
+  assert.equal(await session.setAudioOutput('spk-3'), true);
+  assert.equal(audioEl.volume, 0.2); assert.deepEqual(audioEl.setSinkIdCalls, ['spk-3']);
+  await session._coldReconnect('media stv failed');
+  assert.equal(session.state, 'connected');
+  assert.equal(session.videoEl, videoEl); assert.equal(session.audioEl, audioEl);
+  assert.deepEqual(videoEl.srcObject.getTracks().map((t) => t.kind), ['video']);
+  assert.deepEqual(audioEl.srcObject.getTracks().map((t) => t.kind), ['audio']);
+  assert.equal(audioEl.volume, 0.2); assert.equal(audioEl.sinkId, 'spk-3');
+  assert.equal(audioEl.volumeWrites, 1); assert.equal(audioEl.setSinkIdCalls.length, 1);
+  assert.equal(videoEl.volumeWrites, 0, 'the video element never carried the audio settings');
+  assertInvariants(session._avatarMedia, 'cold split');
+  session.disconnect();
+});
+
+test('pause → server release → resume(): the element keeps its binding and plays the rebuilt downlink', async () => {
+  const videoEl = new FakeVideoEl({ autoCanPlay: true });
+  const { session, socket } = newSession({ videoEl });
+  scriptHappyPath(socket);
+  await session.connect();
+  session.pause();
+  socket.server('sessionReadyForResume', {});
+  assert.equal(session._sessionReleased, true);
+  scriptHappyPath(socket);   // the rebuild asks for a fresh stvNewSession
+  await session.resume();
+  assert.equal(session.paused, false);
+  assert.equal(session.videoEl, videoEl);
+  assert.ok(videoEl.srcObject, 'still bound after resume');
+  assert.deepEqual(videoEl.srcObject.getTracks().map((t) => t.kind).sort(), ['audio', 'video']);
+  assert.ok(videoEl.srcObject.getTracks().every((t) => t.readyState !== 'ended'));
+  assertInvariants(session._avatarMedia, 'resume');
   session.disconnect();
 });
 
@@ -1036,43 +1179,66 @@ test('switchMic: rewires hardware-mute watch + VAD onto the new stream', async (
   session.disconnect();
 });
 
-test('setAudioOutput: calls setSinkId and resolves true on success', async () => {
-  const videoEl = new FakeVideoEl({ autoCanPlay: true });
-  const { session, socket } = newSession({ videoEl });
+test('setAudioOutput: calls setSinkId on the element carrying the audio (videoEl in simple mode) and resolves true', async () => {
+  const { session, socket, videoEl } = newSession();
   scriptHappyPath(socket);
   await session.connect();
   const ok = await session.setAudioOutput('spk-2');
   assert.equal(ok, true);
   assert.equal(videoEl.sinkId, 'spk-2');
+  assert.deepEqual(videoEl.setSinkIdCalls, ['spk-2']);
   session.disconnect();
 });
 
-test('setAudioOutput: retries up to 5x at 500ms on failure, then gives up returning false', async () => {
-  const videoEl = new FakeVideoEl({ autoCanPlay: true });
-  videoEl._sinkIdFailTimes = 6;   // fails every attempt: the initial call + all 5 retries
-  const { session, socket } = newSession({ videoEl });
+test('setAudioOutput: targets audioEl in split mode, and follows the audio when audioEl changes', async () => {
+  const audioEl = new FakeVideoEl();
+  const { session, socket, videoEl } = newSession({ cfg: { audioEl } });
   scriptHappyPath(socket);
   await session.connect();
-  const origSetTimeout = globalThis.setTimeout;
-  let waits = 0;
-  globalThis.setTimeout = (fn, ms) => (ms === 500 ? (waits++, origSetTimeout(fn, 0)) : origSetTimeout(fn, ms));
-  try {
-    const ok = await session.setAudioOutput('spk-bad');
-    assert.equal(ok, false, 'must give up (not throw) after exhausting retries');
-    assert.equal(waits, 5, 'must retry exactly 5 times at 500ms');
-  } finally { globalThis.setTimeout = origSetTimeout; }
+  assert.equal(await session.setAudioOutput('spk-2'), true);
+  assert.equal(audioEl.sinkId, 'spk-2');
+  assert.deepEqual(videoEl.setSinkIdCalls, [], 'videoEl carries no audio in split mode, so it is never routed');
+  const audioEl2 = new FakeVideoEl();
+  session.setAudioEl(audioEl2);
+  await delay(0);
+  assert.equal(audioEl2.sinkId, 'spk-2', 'the stored device id is re-applied to the new audio element');
+  session.disconnect();
+});
+
+test('setAudioOutput: works before connect() — stored and applied once the element is bound', async () => {
+  const { session, socket, videoEl } = newSession();
+  assert.equal(await session.setAudioOutput('spk-2'), true, 'the element exists before connect, so it is routed right away');
+  assert.equal(videoEl.sinkId, 'spk-2');
+  scriptHappyPath(socket);
+  await session.connect();
+  assert.deepEqual(videoEl.setSinkIdCalls, ['spk-2'], 'connect() does not re-route an element already on the right device');
+  session.disconnect();
+});
+
+test('setAudioOutput: returns false (no retry, no throw) when setSinkId rejects', async () => {
+  const { session, socket, videoEl } = newSession();
+  scriptHappyPath(socket);
+  await session.connect();
+  videoEl._sinkIdFailTimes = 1;
+  const ok = await session.setAudioOutput('spk-bad');
+  assert.equal(ok, false);
+  assert.deepEqual(videoEl.setSinkIdCalls, ['spk-bad'], 'exactly one attempt — the caller decides whether to retry');
   session.disconnect();
 });
 
 test('setAudioOutput: returns false without throwing when the platform has no setSinkId', async () => {
-  const videoEl = new FakeVideoEl({ autoCanPlay: true });
-  videoEl.setSinkId = undefined;   // setSinkId lives on the prototype; deleting the instance wouldn't shadow it
-  const { session, socket } = newSession({ videoEl });
+  const { session, socket, videoEl } = newSession();
   scriptHappyPath(socket);
   await session.connect();
+  videoEl.setSinkId = undefined;   // setSinkId lives on the prototype; deleting the instance wouldn't shadow it
   const ok = await session.setAudioOutput('spk-2');
   assert.equal(ok, false);
   session.disconnect();
+});
+
+test('setAudioOutput: rejects a non-string deviceId with bad_request', async () => {
+  const { session } = newSession();
+  await assert.rejects(() => session.setAudioOutput(42), (e) => e.code === 'bad_request');
 });
 
 // ─────────────────────────── codec preference + bandwidth (R9) ────────────

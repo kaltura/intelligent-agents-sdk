@@ -137,7 +137,18 @@ Every session class (`KalturaAvatarSession`, `KalturaChatSession`, `KalturaAgent
 
 This is deliberately NOT blanket idempotency: constructive lifecycle calls (`connect()`, `switchMode(<other mode>)`) stay once-only and throw typed `invalid_state` on misuse, so callers discover sequencing bugs immediately instead of silently double-connecting.
 
-*Verify:* `agent_verify.mjs` asserts every session class constructs `code: 'invalid_state'` errors, and that the lifecycle tests (`test/unit/chat-session.test.js` "connect is once-only; disconnect idempotent", `test/unit/agent-session.test.js` same-target no-op + idempotent disconnect) exist; the suite run proves them green.
+Media binding and audio-output setters (`setVideoEl`, `setAudioEl`, `muteAudioOutput`, `unmuteAudioOutput`, `setAudioOutputVolume`, `setAudioOutput`, `startPlayback`) are configuration, not lifecycle: they work before `connect()`, while connected, and after `disconnect()`, and never throw `invalid_state`. Frameworks call cleanup in arbitrary order (React unmount, Vue `onUnmounted`), so these must stay safe to call at any time.
+
+*Verify:* `agent_verify.mjs` asserts every session class constructs `code: 'invalid_state'` errors, and that the lifecycle tests (`test/unit/chat-session.test.js` "connect is once-only; disconnect idempotent", `test/unit/agent-session.test.js` same-target no-op + idempotent disconnect) exist; the suite run proves them green. `test/unit/avatar-media.test.js` and `test/unit/session-media.test.js` prove the media setters are state-independent.
+
+---
+
+## Part 6 — Media path
+
+**Rule M-1: The avatar media path is pure track routing.**  
+`src/experience/avatar-media.js` owns how downlink tracks reach the app's elements (one merged stream on `videoEl`, or video/audio split across `videoEl` + `audioEl`, or headless via `avatarStream`). It must not create DOM, read `document`, install timers, or write to `console`. Elements come from the app; readiness timing stays in `session.js`; diagnostics go through the injected logger. This keeps the media path deterministic, testable over fakes, and free of hidden global side effects when several avatars share one page.
+
+*Verify:* `agent_verify.mjs` greps `src/experience/avatar-media.js` for `document\.`, `createElement`, `setTimeout`, `setInterval`, `requestAnimationFrame`, `console\.`. Zero matches required.
 
 ---
 
@@ -168,6 +179,7 @@ This table summarizes what each rule checks, not whether it currently passes —
 | D-1 | DX | All public exports carry JSDoc | scan |
 | D-2 | DX | See Rule D-2 above — candidate dead exports (warning, not error) | `node scripts/agent_verify.mjs` |
 | D-3 | DX | No TODO/FIXME/HACK/XXX/STUB found | grep |
-| D-4 | DX | Typed `invalid_state` on lifecycle misuse; idempotent teardown/same-target no-ops | grep + lifecycle tests |
+| D-4 | DX | Typed `invalid_state` on lifecycle misuse; idempotent teardown/same-target no-ops; media setters state-independent | grep + lifecycle tests |
+| M-1 | Media | `avatar-media.js` has no `document`, DOM creation, timers or `console` | grep |
 
 Rule D-2 warns rather than errors by design — see Rule D-2 above for why.

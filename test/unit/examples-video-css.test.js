@@ -31,15 +31,15 @@ describe('examples: <video> is framed with object-fit', () => {
 describe('videoEl JSDoc cross-links docs/ARCHITECTURE.md', () => {
   test('KalturaAvatarSession (session.js)', () => {
     const src = read('src/experience/session.js');
-    const line = src.split('\n').find((l) => l.includes('@param {any} [cfg.videoEl]'));
-    assert.ok(line, 'expected a @param {any} [cfg.videoEl] JSDoc line');
+    const line = src.split('\n').find((l) => l.includes('@param {HTMLVideoElement|null} [cfg.videoEl]'));
+    assert.ok(line, 'expected a @param {HTMLVideoElement|null} [cfg.videoEl] JSDoc line');
     assert.match(line, /ARCHITECTURE\.md.*Displaying the Avatar Video/);
   });
 
   test('KalturaScriptedVideoSession (scripted-video-session.js)', () => {
     const src = read('src/experience/scripted-video-session.js');
-    const line = src.split('\n').find((l) => l.includes('@param {any} [cfg.videoEl]'));
-    assert.ok(line, 'expected a @param {any} [cfg.videoEl] JSDoc line');
+    const line = src.split('\n').find((l) => l.includes('@param {HTMLVideoElement|null} [cfg.videoEl]'));
+    assert.ok(line, 'expected a @param {HTMLVideoElement|null} [cfg.videoEl] JSDoc line');
     assert.match(line, /ARCHITECTURE\.md.*Displaying the Avatar Video/);
   });
 });

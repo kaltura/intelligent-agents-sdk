@@ -45,15 +45,19 @@
 import { Emitter } from './emitter.js';
 import { KalturaError } from '../core/errors.js';
 import { turnServers, iceConfig, whepUrlHasPrivateIp } from './wire.js';
+import { AvatarMedia } from './avatar-media.js';
 
 export class KalturaScriptedVideoSession extends Emitter {
   /**
    * @param {object} cfg
    * @param {string} cfg.whepUrl  From `avatarSessions.initClient()`.
    * @param {{url:string, username?:string, credential?:string}} cfg.turn  The `turn` object from `initClient()` (bare TURN host + creds — passed through {@link turnServers}).
-   * @param {any} [cfg.videoEl]  An `HTMLVideoElement`. Omit for audio-only/headless use — `ontrack` still fires and you can read `e.streams[0]` off `stateChanged`/your own `pc`. The SDK only sets `.srcObject` — size/frame it yourself with `object-fit: cover` (see docs/ARCHITECTURE.md § Displaying the Avatar Video).
+   * @param {HTMLVideoElement|null} [cfg.videoEl]  Element that renders the avatar: video plus audio, unless `cfg.audioEl` is set. Omit for headless/custom rendering (listen for 'track' or read {@link KalturaScriptedVideoSession#avatarStream}). The SDK sets `.srcObject` once and calls `play()` once per binding — size/frame it yourself with `object-fit: cover`. See docs/ARCHITECTURE.md § Displaying the Avatar Video.
+   * @param {HTMLAudioElement|null} [cfg.audioEl]  Optional dedicated element for the avatar's audio track (split mode). Swap at runtime with {@link KalturaScriptedVideoSession#setAudioEl}.
    * @param {typeof RTCPeerConnection} [cfg.rtcConstructor]
    * @param {typeof fetch} [cfg.fetch]
+   * @param {typeof MediaStream} [cfg.mediaStreamConstructor]
+   * @param {(level: string, msg: string, data?: any) => void} [cfg.logger]  Receives non-fatal media diagnostics (e.g. a rejected `setSinkId`). Default: silent.
    * @param {boolean} [cfg.isFirefox]  Firefox needs `iceTransportPolicy:'all'` (see {@link iceConfig}).
    * @throws {KalturaError} `bad_request` if `whepUrl`/`turn` is missing; `whep_private_ip` if `whepUrl` resolves to a private/loopback address (SSRF guard — no escape hatch, matches `KalturaAvatarSession`'s own WHEP check).
    */
@@ -70,12 +74,17 @@ export class KalturaScriptedVideoSession extends Emitter {
     }
     this._whepUrl = cfg.whepUrl;
     this._turn = turnServers(cfg.turn.url, cfg.turn);
-    this._videoEl = cfg.videoEl || null;
     this._RTC = cfg.rtcConstructor || globalThis.RTCPeerConnection;
     const f = cfg.fetch || globalThis.fetch;
     this._fetch = typeof f === 'function' ? f.bind(globalThis) : f;
     this._isFirefox = !!cfg.isFirefox;
+    this._log = cfg.logger || (() => {});
+    // Routes the downlink's video + audio tracks to the app's element(s); the two tracks
+    // arrive in separate ontrack events with separate streams (see avatar-media.js).
+    this._avatarMedia = new AvatarMedia({ videoEl: cfg.videoEl, audioEl: cfg.audioEl, mediaStreamConstructor: cfg.mediaStreamConstructor, onWarning: (w) => this.emit('warning', w), log: this._log });
     this._pc = null;
+    this._inOntrack = false;   // true only while the peer's ontrack handler runs (see _teardown)
+    /** @type {(() => void)|null} */ this._cancelPlayable = null;
     this._whepLocation = null;
     /** @type {'idle'|'connecting'|'connected'|'disconnecting'|'disconnected'|'error'} */
     this.state = 'idle';
@@ -103,25 +112,37 @@ export class KalturaScriptedVideoSession extends Emitter {
       const playable = new Promise((resolve) => {
         let done = false;
         let videoMetadataSent = false;
-        const finish = () => { if (!done) { done = true; resolve(); } };
-        pc.ontrack = (e) => {
+        /** @type {Array<{ el: any, ev: string, fn: () => void }>} */ const listeners = [];
+        const listen = (el, ev, fn) => { if (listeners.some((l) => l.el === el && l.ev === ev)) return; listeners.push({ el, ev, fn }); el.addEventListener(ev, fn, { once: true }); };
+        const unlisten = () => { for (const l of listeners) l.el.removeEventListener?.(l.ev, l.fn); listeners.length = 0; };
+        const hardCap = setTimeout(() => finish(), 6000); // hard cap — mirrors KalturaAvatarSession's STV playable gate
+        const finish = () => { if (done) return; done = true; clearTimeout(hardCap); unlisten(); resolve(); };
+        this._cancelPlayable = finish;
+        const onTrack = (e) => {
+          try {
+            this._avatarMedia.attach(e.track, e.streams);
+          } catch (err) {
+            const kind = e.track?.kind ?? null;
+            this.emit('warning', { code: 'media_attach_failed', message: `The avatar's ${kind || 'media'} track could not be attached to the media element. Listen for 'track' or read session.avatarStream to render it yourself.`, kind, detail: String(err?.message || err) });
+          }
           this.emit('track', { track: e.track, streams: e.streams });
-          const v = this._videoEl;
-          if (!v) return finish();
-          v.srcObject = e.streams && e.streams[0];
-          // ontrack fires once per track (video + audio) — gate so 'videoMetadata' fires
-          // at most once per connect, not once per track.
+          const v = this._avatarMedia.videoEl;
+          if (!v) { finish(); return; }   // headless: nothing to gate on
+          // ontrack fires once per track (video + audio) — gate so 'videoMetadata' fires at most once.
           if (!videoMetadataSent && typeof v.addEventListener === 'function') {
             const emitVideoMetadata = () => { if (videoMetadataSent) return; videoMetadataSent = true; this.emit('videoMetadata', { videoWidth: v.videoWidth, videoHeight: v.videoHeight }); };
             if (v.videoWidth || v.videoHeight) emitVideoMetadata();
-            else v.addEventListener('loadedmetadata', emitVideoMetadata, { once: true });
+            else listen(v, 'loadedmetadata', emitVideoMetadata);
           }
-          if (typeof v.play === 'function') { try { const pr = v.play(); if (pr?.catch) pr.catch(() => {}); } catch { /* autoplay policies vary; ontrack/canplay already fired */ } }
           if (v.readyState >= 3) finish();
-          else if (typeof v.addEventListener === 'function') v.addEventListener('canplay', finish, { once: true });
+          else if (typeof v.addEventListener === 'function') listen(v, 'canplay', finish);
           else finish();
         };
-        setTimeout(finish, 6000); // hard cap — mirrors KalturaAvatarSession's STV playable gate
+        pc.ontrack = (e) => {
+          if (pc !== this._pc) return;   // a closed peer must not touch the live media
+          this._inOntrack = true;        // a 'track' listener may call disconnect(): see _teardown()
+          try { onTrack(e); } finally { this._inOntrack = false; }
+        };
       });
 
       const offer = await pc.createOffer();
@@ -168,9 +189,62 @@ export class KalturaScriptedVideoSession extends Emitter {
   }
 
   _teardown() {
-    if (this._pc) { try { this._pc.close(); } catch { /* already closed */ } this._pc = null; }
-    if (this._videoEl) this._videoEl.srcObject = null;
+    // Chromium hangs the renderer if `RTCPeerConnection.close()` runs inside the peer's own `ontrack`
+    // dispatch (sync or microtask), which is what disconnect() from a 'track' listener does — so
+    // defer the close to a macrotask in that case. The reference is dropped right away regardless.
+    const pc = this._pc; this._pc = null;
+    if (pc) { const close = () => { try { pc.close(); } catch { /* already closed */ } }; if (this._inOntrack) setTimeout(close, 0); else close(); }
+    this._cancelPlayable?.(); this._cancelPlayable = null;
+    this._avatarMedia.teardown();
   }
+
+  /** The element currently rendering the avatar, or `null` (headless). @returns {HTMLVideoElement|null} */
+  get videoEl() { return this._avatarMedia.videoEl; }
+  /** The dedicated audio element, or `null` when audio plays through `videoEl` (the default). @returns {HTMLAudioElement|null} */
+  get audioEl() { return this._avatarMedia.audioEl; }
+  /** One MediaStream with every live downlink track, or `null` before the first track / after disconnect. @returns {MediaStream|null} */
+  get avatarStream() { return this._avatarMedia.stream; }
+  /**
+   * Render the avatar on a different element (or `null` to stop rendering). Safe in any state.
+   * @param {HTMLVideoElement|null} el
+   * @returns {void}
+   * @throws {KalturaError} `bad_request` when `el` is not `null` or a media element.
+   */
+  setVideoEl(el) { this._avatarMedia.setVideoEl(el); }
+  /**
+   * Play the audio track through a dedicated element (split mode), or `null` to merge it back into `videoEl`. Safe in any state.
+   * @param {HTMLAudioElement|null} el
+   * @returns {void}
+   * @throws {KalturaError} `bad_request` when `el` is not `null` or a media element.
+   */
+  setAudioEl(el) { this._avatarMedia.setAudioEl(el); }
+  /** Mute the avatar's audio output. @returns {void} */
+  muteAudioOutput() { this._avatarMedia.setMuted(true); }
+  /** Unmute the avatar's audio output. @returns {void} */
+  unmuteAudioOutput() { this._avatarMedia.setMuted(false); }
+  /**
+   * Set playback volume, `0`..`1` (clamped), on the element carrying the audio track.
+   * @param {number} volume
+   * @returns {void}
+   * @throws {KalturaError} `bad_request` when `volume` is not a finite number.
+   */
+  setAudioOutputVolume(volume) { this._avatarMedia.setVolume(volume); }
+  /** @returns {boolean} Whether the avatar's audio output is muted. */
+  get audioOutputMuted() { return this._avatarMedia.muted; }
+  /** @returns {number} The avatar's playback volume, `0`..`1`. */
+  get audioOutputVolume() { return this._avatarMedia.volume; }
+  /**
+   * Route the avatar's audio to a speaker device (`HTMLMediaElement.setSinkId`).
+   * @param {string} deviceId
+   * @returns {Promise<boolean>}  `false` (never throws) when unsupported or rejected.
+   * @throws {KalturaError} `bad_request` when `deviceId` is not a string.
+   */
+  setAudioOutput(deviceId) { return this._avatarMedia.setSinkId(deviceId); }
+  /**
+   * Retry playback after a `playback_blocked` warning. Call from a click or keypress handler.
+   * @returns {Promise<boolean>}  `true` when every bound element is playing afterwards.
+   */
+  startPlayback() { return this._avatarMedia.resumePlayback(); }
 
   _setState(s) {
     this.state = s;

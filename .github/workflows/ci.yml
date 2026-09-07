@@ -67,6 +67,9 @@ jobs:
       - name: 🧪🩺 node --test + coverage + JUnit report (all suites, offline — fakes inject fetch/socket/RTC)
         run: npm run test:ci
 
+      - name: 🎬 avatar-media.js at 100% line/branch/function coverage (constitution M-1 companion gate)
+        run: npm run test:ci:avatar-media
+
       - name: 📤 Upload JUnit test report
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -137,6 +140,94 @@ jobs:
             echo
             echo '```'
             tail -n 30 verify-noise-suppressor-output.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  avatar-media:
+    name: 🎬 Avatar media path, real browser (${{ matrix.engine }})
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    # The verify script enforces its own 90s budget per engine; this only caps a hung browser/install.
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [chromium, firefox, webkit]
+    steps:
+      - name: 📥 Check out the repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: 🟢 Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+
+      - name: 📦 Install dependencies
+        run: npm ci
+
+      - name: 🎭 Install ${{ matrix.engine }}
+        run: npx playwright install --with-deps ${{ matrix.engine }}
+
+      - name: 🔊 Start a virtual audio device (this runner has no sound card. Firefox's cubeb backend needs a sink to play media elements at all; WebKitGTK's GStreamer pipeline otherwise falls through to OpenAL and ALSA, which fail to open a device on every play())
+        if: matrix.engine == 'firefox' || matrix.engine == 'webkit'
+        # 48 kHz stereo matches WebRTC audio, so the sink never forces a resample. (The harness page also runs
+        # its AudioContext at 48 kHz; that is what stopped the WebKitGTK resampler crash seen in core dumps.)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq pulseaudio
+          pulseaudio -D --exit-idle-time=-1 --disallow-exit
+          pactl load-module module-null-sink rate=48000 channels=2
+          pactl list short sinks
+
+      - name: 🎬 Real headless ${{ matrix.engine }}, loopback WebRTC — merged/split streams, paints, audio, autoplay, recovery, teardown
+        id: verify_avatar_media
+        env:
+          VERIFY_BROWSER: ${{ matrix.engine }}
+          # WebKitGTK only: keep the browser's own stderr in this log, run Mesa on llvmpipe (no GPU here), and
+          # let a WebProcess crash leave a core file for the backtrace step below.
+          DEBUG: ${{ matrix.engine == 'webkit' && 'pw:browser' || '' }}
+        run: |
+          set -o pipefail
+          if [ "${{ matrix.engine }}" = webkit ]; then
+            export LIBGL_ALWAYS_SOFTWARE=1 WEBKIT_DISABLE_DMABUF_RENDERER=1
+            sudo mkdir -p /tmp/cores && sudo chmod 1777 /tmp/cores
+            sudo sysctl -q -w kernel.core_pattern=/tmp/cores/core.%e.%p
+            ulimit -c unlimited
+          fi
+          npm run verify:avatar-media 2>&1 | tee verify-avatar-media-output.log
+
+      - name: 🧠 Backtrace any WebKit process core dump
+        if: always() && matrix.engine == 'webkit'
+        run: |
+          shopt -s nullglob
+          cores=(/tmp/cores/core.*)
+          if [ ${#cores[@]} -eq 0 ]; then echo "no core dumps"; exit 0; fi
+          sudo apt-get install -y -qq gdb > /dev/null
+          for c in "${cores[@]}"; do
+            echo "=== $c"
+            exe=$(file "$c" | sed -n "s/.*execfn: '\([^']*\)'.*/\1/p")
+            echo "executable: $exe"
+            gdb -batch -ex 'bt 30' -ex 'thread apply all bt 12' "$exe" "$c" 2>&1 | head -n 300
+          done
+
+      - name: 📤 Upload the per-engine run artifact (per-cell timings, skips, track→mediaReady latency)
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: avatar-media-${{ matrix.engine }}
+          path: .harness-output/
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: 📝 Write job summary
+        if: always()
+        run: |
+          {
+            echo "### 🎬 Avatar media path (${{ matrix.engine }}) — ${{ steps.verify_avatar_media.outcome }}"
+            echo
+            echo '```'
+            tail -n 40 verify-avatar-media-output.log
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
