@@ -224,7 +224,10 @@ const session = new KalturaAvatarSession({
   conversationManagerUrl,  // from appInit
   srsBaseUrl,          // from appInit
   turnServerUrl,       // from appInit
+  // Markup: <video autoplay playsinline></video> and <audio autoplay></audio>.
+  // A missing <audio> makes querySelector return null and the SDK falls back to merged mode.
   videoEl: document.querySelector('video'),
+  audioEl: document.querySelector('audio'),     // recommended: voice on its own element, see below
   socketFactory: (url, opts) => io(url, opts),  // inject socket.io
 });
 
@@ -237,7 +240,7 @@ session.onToolCall('navigate_to_slide', ({ slide_num }) => deck.goTo(slide_num))
 
 **All transports are injected** — `socketFactory`, `rtcConstructor`, `fetch`, `getUserMedia`. Tests pass fakes; the SDK stays zero-dependency.
 
-The SDK merges the avatar's video and audio tracks into one stream, assigns it to `videoEl.srcObject` once, and applies no CSS of its own — size the box yourself with `object-fit: cover` (aspect-agnostic, no letterbox/pillarbox bars). Pass an `audioEl` too to play the voice through its own element, or omit `videoEl` and read `session.avatarStream` for headless rendering — see [Avatar audio and video rendering](#avatar-audio-and-video-rendering) below and [docs/ARCHITECTURE.md § Displaying the Avatar Video](docs/ARCHITECTURE.md#displaying-the-avatar-video).
+The SDK binds the avatar's tracks to the elements you pass and applies no CSS of its own — size the box yourself with `object-fit: cover` (aspect-agnostic, no letterbox/pillarbox bars). **Pass both `videoEl` and `audioEl`** so the picture and the voice live on separate elements: a UI re-render that replaces the `<video>` then costs you the picture for a moment, not the whole avatar. With `videoEl` alone the SDK merges both tracks onto that one element, and omitting `videoEl` gives you `session.avatarStream` for headless rendering — see [Avatar audio and video rendering](#avatar-audio-and-video-rendering) below and [docs/ARCHITECTURE.md § Displaying the Avatar Video](docs/ARCHITECTURE.md#displaying-the-avatar-video).
 
 **Don't hide a loading spinner on `'streamReady'`** — it fires at the initial signaling handshake, before any video track exists. Listen for `'mediaReady'` instead: it fires once per connect, unconditionally, with `{mode:'video', videoWidth, videoHeight}` once the STV media is playable (dimensions are `0` if the decoder never resolved them, e.g. no `videoEl` — use `'videoMetadata'` if you need real dimensions), or `{mode:'audio'}` immediately if the session falls back to audio-only (capacity limited).
 
@@ -250,24 +253,27 @@ session.on('mediaReady', ({ mode }) => spinner.hidden = true);   // covers both 
 The STV downlink delivers the avatar's video and audio as two separate tracks. The SDK combines them into streams it owns and binds them to the elements you give it. Three shapes, all on the same `KalturaAvatarSession` (and `KalturaScriptedVideoSession`):
 
 ```js
-// Default: one <video> plays picture and voice (merged stream).
-new KalturaAvatarSession({ ...cfg, videoEl: document.querySelector('video') });
+// Recommended: picture on <video>, voice on its own <audio>.
+new KalturaAvatarSession({ ...cfg, videoEl: document.querySelector('video'), audioEl: document.querySelector('audio') });
 
-// Split: picture on <video>, voice on its own <audio>. One extra line.
-new KalturaAvatarSession({ ...cfg, videoEl, audioEl: document.querySelector('audio') });
+// Merged: one <video> plays picture and voice. Fine when you own the element's whole lifetime.
+new KalturaAvatarSession({ ...cfg, videoEl: document.querySelector('video') });
 
 // Headless: bind nothing, render the tracks yourself.
 const session = new KalturaAvatarSession({ ...cfg, videoEl: null });
 session.on('track', () => canvasRenderer.use(session.avatarStream));
 ```
 
-Use split when:
+**Split is the recommended shape.** The two elements fail independently, and the voice is the part users notice first:
 
+- UI frameworks replace elements without asking. A React, Vue or Svelte re-render, a route change or a conditional block can unmount the `<video>` and mount a new one. In the merged shape that single element carries the voice too, so the avatar goes silent and blank at once. In the split shape, keep the `<audio>` on a stable node (the document body, an app-shell component that never re-renders) so the conversation keeps going, and call `session.setVideoEl(newVideo)` when the picture's element mounts again. If the framework moves the same `<video>` node instead of replacing it, the browser leaves it paused: call `session.startPlayback()` to resume it. The real-browser suite proves this flow on Chromium, Firefox and WebKit (`framework-remount` cell in `test/browser/avatar-media.html`).
 - The video is a texture source (chroma-key, canvas, WebGL) and the voice must still be audible. A `muted` source element cannot play sound, by browser design.
-- The picture should start before the autoplay gesture. A muted `videoEl` plays at once while `audioEl` waits for `startPlayback()`.
+- The picture should start before the autoplay gesture. In the split shape `videoEl` carries no audio track, so browsers let it play at once with no `muted` needed, while `audioEl` waits for `startPlayback()` from a click.
 - You want the voice on its own element for mixing, visualizers or per-element control.
 
-Every element gets one `srcObject` write and one `play()` per binding. In the default layout `videoEl.srcObject` carries one video and one audio track; in the split layout the audio track lives on `audioEl` only. `disconnect()`, a terminal `ended` and a failed `connect()` set `srcObject` to `null` on every bound element. `videoEl`, `audioEl`, `setVideoEl(el)` and `setAudioEl(el)` accept `null` or an object with a `play()` function (a real media element, or a jsdom one in tests); anything else throws `KalturaError` `bad_request`. The SDK creates no DOM and adds no CSS.
+The merged shape stays fully supported for apps that create the `<video>` once and keep it for the life of the session.
+
+Every element gets one `srcObject` write and one `play()` per binding. In the merged layout `videoEl.srcObject` carries one video and one audio track; in the split layout the audio track lives on `audioEl` only. `disconnect()`, a terminal `ended` and a failed `connect()` set `srcObject` to `null` on every bound element. `videoEl`, `audioEl`, `setVideoEl(el)` and `setAudioEl(el)` accept `null` or an object with a `play()` function (a real media element, or a jsdom one in tests); anything else throws `KalturaError` `bad_request`. The SDK creates no DOM and adds no CSS.
 
 | Member | Behavior |
 |---|---|

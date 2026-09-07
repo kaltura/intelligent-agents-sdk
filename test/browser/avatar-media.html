@@ -702,6 +702,65 @@ S['swaps'] = async (c) => {
 };
 
 /**
+ * The README's split-shape recommendation on real elements. A UI framework re-render removes the
+ * bound <video> from the document (React/Vue/Svelte unmount): the browser pauses that element, the
+ * <audio> on its stable node keeps the voice going, and setVideoEl(newEl) restores the picture with
+ * one bind, no new mediaReady and no warning. Re-inserting the same node does not resume it (HTML
+ * spec); startPlayback() does. The merged shape is the control: removing its one element takes the
+ * voice down with the picture until setVideoEl(newEl).
+ */
+S['framework-remount'] = async (c) => {
+  const v1 = makeEl(), a = makeEl('audio');
+  const { session, ev } = await connected({ videoEl: v1, audioEl: a });
+  const stream0 = session.avatarStream;
+  c.check('split: v1 paints', ...pair2(await paints(v1)));
+  c.check('split: audio element playing', ...pair2(await advancing(a, 400)));
+  const aBefore = { src: a.srcObject, srcObject: a.__w.srcObject, play: a.__w.play };
+  // A re-render unmounts the <video>. The <audio> stays where it is.
+  v1.remove();
+  await sleep(150);
+  c.check('split: the removed <video> is out of the document and paused', !v1.isConnected && v1.paused === true, { isConnected: v1.isConnected, paused: v1.paused });
+  c.check('split: the voice keeps playing while the picture is gone', ...pair2(await advancing(a, 400)));
+  c.check('split: the audio element was not touched', a.srcObject === aBefore.src && a.__w.srcObject === aBefore.srcObject && a.__w.play === aBefore.play, { before: aBefore, after: a.__w });
+  c.check('split: downlink tracks stay live', session.avatarStream === stream0 && liveTracks(stream0.getTracks()), kinds(stream0));
+  // The same node comes back (a framework moving a subtree): still paused until startPlayback().
+  stage.appendChild(v1);
+  await sleep(150);
+  c.check('split: re-inserting the same <video> does not resume it', v1.paused === true, { paused: v1.paused, isConnected: v1.isConnected });
+  const resumed = await session.startPlayback();
+  c.check('split: startPlayback() resumes the re-inserted <video>', resumed === true && v1.paused === false && v1.__w.play === 2, { resumed, paused: v1.paused, w: v1.__w });
+  c.check('split: v1 paints again', ...pair2(await paints(v1)));
+  // A fresh node replaces it (a framework remount): setVideoEl(newEl) is the whole fix.
+  v1.remove();
+  await sleep(150);
+  const v2 = makeEl();
+  session.setVideoEl(v2);
+  c.check('split: v2 paints after setVideoEl()', ...pair2(await paints(v2)));
+  c.check('split: v2 bound once, played once; v1 released', v2.__w.srcObject === 1 && v2.__w.play === 1 && v1.srcObject === null, { v2: v2.__w, v1: String(v1.srcObject) });
+  c.check('split: v2 video only, a audio only', kinds(v2) === 'video' && kinds(a) === 'audio', { v2: kinds(v2), a: kinds(a) });
+  c.check('split: the voice never stopped', ...pair2(await advancing(a, 400)));
+  c.check('split: the audio element was still not touched', a.__w.srcObject === aBefore.srcObject && a.__w.play === aBefore.play, { before: aBefore, after: a.__w });
+  c.check('split: one mediaReady, no warnings through the remount', ev.count('mediaReady') === 1 && ev.count('warning') === 0, { mediaReady: ev.count('mediaReady'), warnings: ev.of('warning') });
+  // Control: the merged shape loses the voice with the picture.
+  session.setAudioEl(null);
+  c.check('merged: v2 carries both, a released', kinds(v2) === 'audio,video' && a.srcObject === null, { v2: kinds(v2), a: String(a.srcObject) });
+  c.check('merged: v2 playing', ...pair2(await advancing(v2, 400)));
+  v2.remove();
+  await sleep(150);
+  c.check('merged: the removed element is paused', v2.paused === true, { paused: v2.paused });
+  const silent = await advancing(v2, 400);
+  c.check('merged: the voice stops with the picture', silent.ok === false, silent);
+  const v3 = makeEl();
+  session.setVideoEl(v3);
+  c.check('merged: setVideoEl() restores both tracks on the new element', kinds(v3) === 'audio,video' && v2.srcObject === null, { v3: kinds(v3), v2: String(v2.srcObject) });
+  c.check('merged: v3 paints', ...pair2(await paints(v3)));
+  c.check('merged: v3 playing', ...pair2(await advancing(v3, 400)));
+  c.check('merged: v3 bound once, played once', v3.__w.srcObject === 1 && v3.__w.play === 1, v3.__w);
+  c.check('avatarStream identity stable through every remount', session.avatarStream === stream0 && liveTracks(stream0.getTracks()));
+  c.check('one mediaReady, no warnings overall', ev.count('mediaReady') === 1 && ev.count('warning') === 0, { mediaReady: ev.count('mediaReady'), warnings: ev.of('warning') });
+};
+
+/**
  * B8: the swap edges the `swaps` cell does not reach: a detached element, a swap between connect()
  * and mediaReady, a→b→null inside one tick, a swap after disconnect, and setVideoEl() leaving a bound
  * audioEl alone.

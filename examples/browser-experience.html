@@ -25,10 +25,15 @@
     //    Your server calls Management.application.appInit(widgetKs) and returns its result.
     const init = await fetch('/appInit').then((r) => r.json());   // { ks, conversationManagerUrl, srsBaseUrl, turnServerUrl, avatars[] }
 
-    // 2) Render the avatar.
+    // 2) Render the avatar: picture on <video>, voice on its own <audio> (recommended).
+    //    The <audio> lives on <body>, outside any UI that re-renders, so replacing the
+    //    <video> never silences the avatar. Call session.setVideoEl(newVideo) after a remount.
     const video = document.createElement('video');
     video.autoplay = true; video.playsInline = true;
     document.getElementById('avatar').appendChild(video);
+    const voice = document.createElement('audio');
+    voice.autoplay = true;
+    document.body.appendChild(voice);
 
     const session = new KalturaAvatarSession({
       token: init.ks,
@@ -36,6 +41,7 @@
       srsBaseUrl: init.srsBaseUrl,
       turnServerUrl: init.turnServerUrl,
       videoEl: video,
+      audioEl: voice,
       socketFactory: (url, opts) => io(url, opts),               // ← inject socket.io
       isFirefox: /firefox/i.test(navigator.userAgent),
     });
@@ -49,7 +55,7 @@
     session.on('error', (e) => log('✗ ' + e.code + ': ' + e.detail));
     session.on('ended', () => log('— conversation ended'));
 
-    window.session = session;   // for DevTools: session.videoEl, session.avatarStream, session.muteAudioOutput(), ...
+    window.session = session;   // for DevTools: session.videoEl, session.audioEl, session.avatarStream, session.muteAudioOutput(), ...
     await session.connect();
     log('connected — speak or type.');
 

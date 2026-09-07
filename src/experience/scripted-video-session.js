@@ -53,7 +53,7 @@ export class KalturaScriptedVideoSession extends Emitter {
    * @param {string} cfg.whepUrl  From `avatarSessions.initClient()`.
    * @param {{url:string, username?:string, credential?:string}} cfg.turn  The `turn` object from `initClient()` (bare TURN host + creds — passed through {@link turnServers}).
    * @param {HTMLVideoElement|null} [cfg.videoEl]  Element that renders the avatar: video plus audio, unless `cfg.audioEl` is set. Omit for headless/custom rendering (listen for 'track' or read {@link KalturaScriptedVideoSession#avatarStream}). The SDK sets `.srcObject` once and calls `play()` once per binding — size/frame it yourself with `object-fit: cover`. See docs/ARCHITECTURE.md § Displaying the Avatar Video.
-   * @param {HTMLAudioElement|null} [cfg.audioEl]  Optional dedicated element for the avatar's audio track (split mode). Swap at runtime with {@link KalturaScriptedVideoSession#setAudioEl}.
+   * @param {HTMLAudioElement|null} [cfg.audioEl]  Recommended: a dedicated element for the avatar's audio track (split shape). Keep it on a stable DOM node so a UI re-render that replaces the `<video>` does not silence the avatar. Swap at runtime with {@link KalturaScriptedVideoSession#setAudioEl}.
    * @param {typeof RTCPeerConnection} [cfg.rtcConstructor]
    * @param {typeof fetch} [cfg.fetch]
    * @param {typeof MediaStream} [cfg.mediaStreamConstructor]
