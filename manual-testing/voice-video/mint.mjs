@@ -16,71 +16,10 @@
  * Credentials: AGENTIC_PARTNER_ID / AGENTIC_ADMIN_SECRET, from the environment
  * or a .env file in the repo root (same convention as scripts/live-verify.mjs).
  */
-import { readFileSync, createReadStream, existsSync, statSync } from 'node:fs';
-import { resolve, dirname, extname, normalize } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { createServer } from 'node:http';
-import { networkInterfaces } from 'node:os';
 import { Management } from '../../src/management/index.js';
+import { loadCredentials, startServer, reportListenError, lanAddress, PORT, FOUR_HOURS } from './serve.mjs';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const repoRoot = resolve(__dirname, '..', '..');
-
-try {
-  const env = readFileSync(resolve(repoRoot, '.env'), 'utf8');
-  for (const line of env.split('\n')) {
-    const m = line.match(/^([A-Z_]+)=(.*)$/);
-    if (m && !process.env[m[1]]) process.env[m[1]] = m[2].trim();
-  }
-} catch {
-  // No .env file — credentials must already be in the environment.
-}
-
-const partnerId = process.env.AGENTIC_PARTNER_ID;
-const adminSecret = process.env.AGENTIC_ADMIN_SECRET;
-
-if (!partnerId || !adminSecret) {
-  console.error('AGENTIC_PARTNER_ID and AGENTIC_ADMIN_SECRET are required (env or repo-root .env).');
-  process.exit(1);
-}
-
-const PORT = Number(process.env.MANUAL_VERIFY_PORT) || 4789;
-const FOUR_HOURS = 4 * 60 * 60;
-const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json' };
-
-function lanAddress() {
-  for (const ifaces of Object.values(networkInterfaces())) {
-    for (const iface of ifaces || []) {
-      if (iface.family === 'IPv4' && !iface.internal) return iface.address;
-    }
-  }
-  return '127.0.0.1';
-}
-
-function startServer(appInitData) {
-  const server = createServer((req, res) => {
-    if (req.url === '/appInit') {
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify(appInitData));
-      return;
-    }
-    const urlPath = normalize(decodeURIComponent(req.url.split('?')[0]));
-    const filePath = resolve(repoRoot, `.${urlPath}`);
-    if (!filePath.startsWith(repoRoot) || !existsSync(filePath) || !statSync(filePath).isFile()) {
-      res.writeHead(404);
-      res.end('not found');
-      return;
-    }
-    res.writeHead(200, { 'Content-Type': MIME[extname(filePath)] || 'application/octet-stream' });
-    createReadStream(filePath).pipe(res);
-  });
-  return new Promise((resolvePromise, rejectPromise) => {
-    server.once('error', rejectPromise);
-    server.listen(PORT, '0.0.0.0', () => resolvePromise(server));
-  });
-}
-
-const kaltura = new Management({ partnerId, adminSecret });
+const kaltura = new Management(loadCredentials());
 let server;
 /** @type {any} */
 let provisioned = null;
@@ -117,17 +56,12 @@ const init = await kaltura.application.appInit(widget.ks);
 try {
   server = await startServer(init);
 } catch (err) {
-  if (err.code === 'EADDRINUSE') {
-    console.error(`Port ${PORT} is already in use. Set MANUAL_VERIFY_PORT to another port and retry.`);
-  } else {
-    console.error(err);
-  }
+  reportListenError(err);
   await cleanup();
   process.exit(1);
 }
 
-const host = lanAddress();
-const url = `http://${host}:${PORT}/examples/chroma-key-avatar.html`;
+const url = `http://${lanAddress()}:${PORT}/examples/chroma-key-avatar.html`;
 
 console.log('');
 console.log('Open this URL on each test device (same Wi-Fi network):');
