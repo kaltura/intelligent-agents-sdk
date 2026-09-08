@@ -15,7 +15,7 @@ import { resolveSdkDir } from '../generate-docs.mjs';
 /** Where the manifest lands inside the Eleventy output dir. Same path the browser fetches. */
 export const MANIFEST_REL_PATH = 'nova/sections.json';
 
-/** Only h2 headings (and hand-placed targets, which carry no level) become sections: about 25 tokens per page in the SITE MAP. Raise `depth` to 3 to include h3. */
+/** Only h2 headings (and hand-placed targets, which carry no level) become sections: about 25 tokens per page in the SITE MAP. Raise `depth` to 3 to include h3 everywhere; see `promoteSubheadings` for the per-page fallback. */
 export const MANIFEST_OPTIONS = Object.freeze({ lang: 'en', depth: 2 });
 
 const MAIN_RE = /<main class="content-wrapper">([\s\S]*?)<\/main>/;
@@ -103,6 +103,22 @@ export async function loadSiteKeys() {
 }
 
 /**
+ * A page whose only h2 headings are boilerplate ("Related docs") would end up
+ * with no sections at all, and the brain then builds a section from an h3 it
+ * saw in the knowledge base, which never resolves. Such a page uses its h3
+ * headings as sections instead (returned at level 2 so `depth: 2` keeps them).
+ * Pages with at least one content h2 are returned unchanged.
+ * @param {Array<{id:string,text:string,level:number}>} headings
+ * @param {Set<string>} boilerplateIds The SDK's `BOILERPLATE_IDS`.
+ * @returns {Array<{id:string,text:string,level:number}>}
+ */
+export function promoteSubheadings(headings, boilerplateIds) {
+  const hasContentH2 = headings.some((h) => h.level === 2 && !boilerplateIds.has(h.id));
+  if (hasContentH2) return headings;
+  return headings.filter((h) => h.level === 3).map((h) => ({ ...h, level: 2 }));
+}
+
+/**
  * Build the manifest from Eleventy's `eleventy.after` results
  * (`{ url, outputPath, content }` per written file) or any equivalent list.
  * @param {Array<{url:string, outputPath?:string, content:string}>} results
@@ -110,13 +126,13 @@ export async function loadSiteKeys() {
  * @returns {Promise<object>} The validated manifest.
  */
 export async function buildManifest(results, opts = {}) {
-  const { buildSectionsManifest } = await loadSiteKeys();
+  const { buildSectionsManifest, BOILERPLATE_IDS } = await loadSiteKeys();
   const pages = [];
   for (const r of results) {
     if (r.outputPath && !r.outputPath.endsWith('.html')) continue;
     const page = extractPage(r.content);
     if (!page) continue;
-    pages.push({ path: r.url, ...page });
+    pages.push({ path: r.url, ...page, headings: promoteSubheadings(page.headings, BOILERPLATE_IDS) });
   }
   return buildSectionsManifest(pages, { ...MANIFEST_OPTIONS, generatedAt: opts.generatedAt });
 }
