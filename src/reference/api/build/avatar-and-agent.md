@@ -9,7 +9,7 @@ eyebrow: Reference
 
 [← Back to Phase 2 — Build](/reference/api/build/)
 
-**On this page:** [Create an Avatar](#create-an-avatar) · [Create an Agent](#create-an-agent) · [Brain-Model & Rate-Limit Fields (not in the public API)](#brain-model--rate-limit-fields-not-in-the-public-api) · [Related docs](#related-docs)
+**On this page:** [Create an Avatar](#create-an-avatar) · [Create an Agent](#create-an-agent) · [Related docs](#related-docs)
 
 
 ## Create an Avatar
@@ -75,19 +75,6 @@ POST https://api.avatar.us.kaltura.ai/v1/agent/create
 | `widgetConfig.initialPage.title` | Max 30 chars |
 
 Returns `agentId` (UUID). **Save this.**
-
----
-
-## Brain-Model & Rate-Limit Fields (not in the public API)
-
-`agent_llm`, `agent_fast_llm`, `agent_avatar_llm`, `run_quota_check`, `web_search_config`, and the four rate-limit fields (`rate_limit_per_minute`, `rate_limit_per_hour`, `anonymous_rate_limit_per_minute`, `anonymous_rate_limit_per_hour`) exist on the backend intellect record, but no public route reads or writes them — `intellect/get`/`intellect/update` never expose or accept them, and there is no separate endpoint that does. They're set by internal tooling only.
-
-**SDK:** `mgmt.intellectConfig.describe(configId, ks)` lists every one of these under its `readOnly` map, each with a short note, so a UI can render them as informational without hardcoding the list:
-
-```js
-const { readOnly } = await mgmt.intellectConfig.describe(configId, ks);
-readOnly.agent_llm; // { value: <whatever intellect/get returns for this key, if anything>, note: 'set by internal tooling only, not writable via the public API' }
-```
 
 ---
 

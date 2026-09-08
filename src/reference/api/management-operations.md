@@ -48,7 +48,19 @@ All use the **admin KS**.
 
 Deleting an agent does **not** delete its avatar or intellect.
 
-`mgmt.setForcedLanguage({ configId, agentId, language }, ks)` forces the reply language. It writes a marker-wrapped instruction into `base_directive`, sets `force_language`, and sets the agent's `asr.language` in one call. `force_language` alone does not change the reply language. Idempotent; `language: null` clears all three. See [README § Forcing the reply language](https://github.com/kaltura/intelligent-agents-sdk/blob/main/README.md#forcing-the-reply-language-setforcedlanguage).
+`mgmt.setForcedLanguage({ configId, agentId, language }, ks)` forces the reply language. It sets `force_language` on the intellect (the backend enforces it at runtime) and the agent's `asr.language` in one call. Idempotent; `language: null` clears both. See [README § Forcing the reply language](https://github.com/kaltura/intelligent-agents-sdk/blob/main/README.md#forcing-the-reply-language-setforcedlanguage).
+
+Typed setters on `mgmt.intellectConfig` for the other single-purpose fields, all `(configId, value, ks)` and idempotent:
+
+| Setter | Field | Clear with |
+|---|---|---|
+| `setModelConfiguration` | `model_configuration` (`model_id` in `MODEL_IDS`, `max_output_tokens`, `thinking_level` in `THINKING_LEVELS`, `temperature`) | `null` |
+| `setOpeningPhrase` | `opening_phrase` (Jinja2 over `request_vars`, avatar sessions) | `null` |
+| `setThreadStartTools` | `thread_start_tools` (tool ids run once at thread start) | `[]` |
+| `setAvatarSummaryConfig` | `avatar_summary_config` (`prompt`, `analysis`, `template`, `content_type` in `SUMMARY_CONTENT_TYPES`) | `null` |
+| `setSkillIds` | `skill_ids` (`{ id, mode, condition? }`, `mode` in `SKILL_MODES`) | `[]` |
+
+Each validates client-side and throws `bad_request` before any network call. See [API · Build · Create and Configure an Intellect](/reference/api/build/intellect/) for field semantics.
 
 ## Tools — `https://genie.nvp1.ovp.kaltura.com`
 
