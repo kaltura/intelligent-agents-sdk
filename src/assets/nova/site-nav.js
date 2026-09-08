@@ -20,7 +20,7 @@ export const MANIFEST_URL = withPrefix('/nova/sections.json');
 /**
  * @param {object} session A connected-or-connecting KalturaAgentSession.
  * @param {{ onNavigate?: (info: object) => void }} [opts] `onNavigate` receives the SDK's SiteNavInfo per call (tests, analytics).
- * @returns {import('https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.18.0/src/experience/site-nav.js').SiteNavigator}
+ * @returns {import('https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.19.0/src/experience/site-nav.js').SiteNavigator}
  */
 export function initSiteNav(session, { onNavigate } = {}) {
   return new SiteNavigator({
