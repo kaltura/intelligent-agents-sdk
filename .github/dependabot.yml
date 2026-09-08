@@ -15,3 +15,10 @@ updates:
     target-branch: "gh-pages-src"
     schedule:
       interval: "weekly"
+  # The site's own workflows (pages.yml, the real generate-docs.yml) live on
+  # gh-pages-src too, pinned to commit SHA like the ones on main.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    target-branch: "gh-pages-src"
+    schedule:
+      interval: "weekly"
