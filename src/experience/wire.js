@@ -22,9 +22,8 @@ export const EXPERIENCES = ['markdown', 'summarization', 'flashcards', 'avatar_o
  * PRIMARY model is selected by OMITTING the field entirely. So the only explicit
  * value the SDK ever sends is `'fast'`; `primary` is a sentinel meaning "omit".
  *
- * HONESTY: the SDK can SEND `model_type:'fast'` but
- * cannot prove which model replied (`agent_fast_llm` is studio-only) — callers
- * assert acceptance, not model identity.
+ * HONESTY: the SDK can SEND `model_type:'fast'` but cannot prove which model
+ * replied. Callers assert acceptance, not model identity.
  * @type {{readonly fast:'fast', readonly primary:null}}
  */
 export const MODEL_TYPES = Object.freeze({ fast: 'fast', primary: null });

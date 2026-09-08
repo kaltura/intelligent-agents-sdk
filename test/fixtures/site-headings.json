@@ -533,11 +533,6 @@
         "level": 2
       },
       {
-        "id": "brain-model--rate-limit-fields-not-in-the-public-api",
-        "text": "Brain-Model & Rate-Limit Fields (not in the public API)",
-        "level": 2
-      },
-      {
         "id": "related-docs",
         "text": "Related docs",
         "level": 2

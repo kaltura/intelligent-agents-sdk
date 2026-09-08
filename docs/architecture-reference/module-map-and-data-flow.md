@@ -17,8 +17,8 @@ This section is the **source-of-truth map** of the SDK's internals: how a call f
 | Module (`src/management/`) | Exposes | Backend the writes hit |
 |---|---|---|
 | `intellects.js` | `Intellects` — DTO CRUD (`add`/`get`/`update`/`delete`), prompt authoring (`setPrompts`/`previewPrompt`/`snapshot`/`restore`/`diffSnapshots`), capabilities (`getCapabilities`/`setCapability`/`setCapabilities`/`resolveCapabilities`), `setClientVariablesEnabled`. Mounts `secrets` (tools are a separate top-level resource — see `tools.js`). | the brain `v1/intellect/*` |
-| `intellect-config.js` | `IntellectConfig` (`mgmt.intellectConfig`) — the ONE shared `patch(configId, patch\|fn, ks)` primitive + typed field setters incl. `setToolIds` (the intellect-side `tool_ids` reference list) + `describe()` (an `editable`/`readOnly` map). `buildUserPropertiesForms`. | the brain `v1/intellect/update` (read-modify-write, full-replace dicts; `tool_ids` is a plain array write) |
-| `set-forced-language.js` | `setForcedLanguage` (`mgmt.setForcedLanguage`) — forces the reply language by writing a marker-wrapped instruction into `base_directive` + `force_language` (via `intellectConfig.patch`) and the agent's `asr.language` (via `agents.update`) in one idempotent call. `LANGUAGE_NAMES` (ISO 639-1 code → display name). | the brain `v1/intellect/update` + Agentic API `agent/update` |
+| `intellect-config.js` | `IntellectConfig` (`mgmt.intellectConfig`): the ONE shared `patch(configId, patch\|fn, ks)` primitive + typed field setters incl. `setToolIds` (the intellect-side `tool_ids` reference list), `setSkillIds`, `setThreadStartTools`, `setModelConfiguration`, `setOpeningPhrase`, `setAvatarSummaryConfig` + `describe()` (every `EDITABLE_FIELDS` value). Exports the closed enums `SKILL_MODES`, `MODEL_IDS`, `THINKING_LEVELS`, `SUMMARY_CONTENT_TYPES`. `buildUserPropertiesForms`. | the brain `v1/intellect/update` (read-modify-write, full-replace dicts; `tool_ids` is a plain array write) |
+| `set-forced-language.js` | `setForcedLanguage` (`mgmt.setForcedLanguage`): forces the reply language by writing `force_language` on the intellect (via `intellectConfig.patch`; the backend enforces it at runtime) and the agent's `asr.language` (via `agents.update`) in one idempotent call. Strips the marker block older SDK versions appended to `base_directive`. `LANGUAGE_NAMES` (ISO 639-1 code → display name). | the brain `v1/intellect/update` + Agentic API `agent/update` |
 | `capabilities.js` | `CAPABILITIES`/`CAPABILITY_STATE`/`CAPABILITY_DEFAULTS`/`CAPABILITY_INFO`, `assertCapability`/`assertCapabilityState`/`validateCapabilities`, `resolveCapabilities` (pure layered resolver), `mergeCapabilityWrite`. Re-exported from BOTH entry points. | pure — no network |
 | `tools.js` | `tools.api`/`csv`/`code` builders + `tools.client` (authors a native, silent client-side command tool with NO server-side call — requires `kaltura_genie_experiences:'off'`; see [CLIENT-COMMANDS.md](../CLIENT-COMMANDS.md)) + `tools.clientToolReadiness` + `tools.validate`, `class Tools` (`mgmt.tools`: `add`/`get`/`list`/`update`/`remove` over the standalone Tool entity), `applyResponseMapping`. | the brain `v1/tool/*` (partner-level entity CRUD — NOT `intellect/update`; link via `intellectConfig.setToolIds`'s `tool_ids`) |
 | `secrets.js` | `IntellectSecrets` (`mgmt.intellects.secrets`: `listNames`/`has`/`set`/`remove`/`replaceAll`/`validate`), `validateSecretRefs`. Write-only values; name-only read contract (no `redact()` reliance). | the brain `v1/intellect/update` `config.secrets` (mask-and-keep merge) |
@@ -30,9 +30,9 @@ The top-level headless converse surface lives on the `Management` class itself: 
 
 > **Scope-guard timing on the streaming path.** `conversations.stream(...)` is an **async generator**, so its `assertConversation(ks)` scope check fires on the **first** `.next()`/iteration — NOT at call time. `const g = k.conversations.stream(opts, adminKs)` without iterating gets no guard yet (despite the client's "before any network call" framing, which holds for the non-generator methods). For **eager** scope validation, use `conversations.send(...)`/`converseOnce(...)` — they assert the token kind synchronously before returning. The non-generator reads (`conversations.status`, all `agents`/`avatars`/`catalog` calls) guard at call time as documented.
 
-### `resolveCapabilities` return shape (the 15 names are nested, not top-level)
+### `resolveCapabilities` return shape (the 16 names are nested, not top-level)
 
-`resolveCapabilities(layers)` (`src/management/capabilities.js`) returns a **two-key** object — `{ capabilities, _meta }` — so `Object.keys(result).length === 2`. The 15 `AssistantCapability` states live **under `.capabilities`**, keyed by name, NOT at the top level:
+`resolveCapabilities(layers)` (`src/management/capabilities.js`) returns a **two-key** object, `{ capabilities, _meta }`, so `Object.keys(result).length === 2`. The 16 `AssistantCapability` states live **under `.capabilities`**, keyed by name, NOT at the top level:
 
 ```js
 const { capabilities, _meta } = k.intellects.resolveCapabilities({
@@ -41,14 +41,12 @@ const { capabilities, _meta } = k.intellects.resolveCapabilities({
 });
 capabilities.avatar.state;          // 'on' | 'off' | 'disabled'
 capabilities.avatar.resolvedFrom;   // which layer won
-capabilities.use_web_search.inferred; // true — see best-effort note below
 ```
 
-Each per-name entry is `{ state, resolvedFrom, vetoed, inferred?, layers }`:
+Each per-name entry is `{ state, resolvedFrom, vetoed, layers }`:
 
-- `resolvedFrom` is one of `request | partner_config | env | default | disabled_veto | web_search_config`. **`default` only appears when you pass an explicit empty `env: {}`** — when `env` is **omitted**, the resolver supplies `CAPABILITY_DEFAULTS` *as the env layer*, so an unset capability resolves `resolvedFrom:'env'` (e.g. `resolveCapabilities({}).capabilities.avatar.resolvedFrom === 'env'`).
+- `resolvedFrom` is one of `request | partner_config | env | default | disabled_veto`. **`default` only appears when you pass an explicit empty `env: {}`**. When `env` is **omitted**, the resolver supplies `CAPABILITY_DEFAULTS` *as the env layer*, so an unset capability resolves `resolvedFrom:'env'` (e.g. `resolveCapabilities({}).capabilities.avatar.resolvedFrom === 'env'`).
 - `vetoed:true` (with `resolvedFrom:'disabled_veto'`, `state:'off'`) when `env` OR `partnerConfig` marks the capability `disabled` — a hard override no per-request `on` can lift.
-- `use_web_search` always carries **`inferred:true`**: the resolver does not read `web_search_config`, and a present config force-sets it ON server-side — so treat its resolved state as best-effort.
 
 A **freshly created** intellect returns an **empty `capabilities {}`** from `getCapabilities` (nothing stored yet), so every name then resolves from the env/default layer until you `setCapability`/`setCapabilities`.
 
@@ -63,17 +61,15 @@ A **freshly created** intellect returns an **empty `capabilities {}`** from `get
 
 `session.js` wires the **guardrail gate**: each `agent_raw_text` delta is classified by `classifyAgentAction` (`wire.js` — reads `seg.metadata.runtimeName`/`widgetName` + the adapter-normalized `seg.type` with `-tool` stripped) and, when a capability policy or `onAgentAction` hook is present, run through `_gateAgentAction` BEFORE `emit('brainSegment', d)` (default-allow so existing nav/GenUI flows are untouched; a veto emits `agentActionDenied` + an `agent.action.deny` audit event). `Presenter` exposes `covered`/`questions`/`lastNav` (`{target, reason, at}`); `session.micEnabled` is a read getter.
 
-### Routing rule: what the intellect DTO writes vs what's internal-only
+### Routing rule: the intellect DTO is the whole writable surface
 
-The intellect DTO (`v1/intellect/*`) is the one real door for every publicly writable field: `prompts`, `base_directive`, `glossary`, `capabilities`, `tool_ids`, `skill_ids`, `secrets`, `user_properties_forms`, `mcp_servers`, `allow_client_variables`, `knowledge_ids`, `name`/`description`/`tags`/`status`. Writable with a **partner admin KS**, ungated. **Knowledge linkage rides this same door**: first call `POST /v1/knowledge/add` on the brain host (returns an `{id,...}` record), then pass the returned id as `knowledge_ids` in the intellect create/update DTO — linkage + `use_knowledge_base:'on'` persist with no separate linking call. It is a `model_fields_set` PATCH (omitted TOP-LEVEL fields are preserved) — but `capabilities`/`secrets` are **full-replace sub-dicts**, so the SDK read-merge-writes them (via `mergeCapabilityWrite` / the secrets mask-and-keep guard); `IntellectConfig.patch` is the one place that logic lives.
+The intellect DTO (`v1/intellect/*`) is the one real door for every writable field: `prompts`, `base_directive`, `glossary`, `capabilities`, `tool_ids`, `skill_ids`, `thread_start_tools`, `secrets`, `user_properties_forms`, `mcp_servers`, `allow_client_variables`, `knowledge_ids`, `avatar_summary_config`, `force_language`, `opening_phrase`, `model_configuration`, `name`/`description`/`tags`/`status`. Writable with a **partner admin KS**, ungated. **Knowledge linkage rides this same door**: first call `POST /v1/knowledge/add` on the brain host (returns an `{id,...}` record), then pass the returned id as `knowledge_ids` in the intellect create/update DTO. Linkage + `use_knowledge_base:'on'` persist with no separate linking call. It is a `model_fields_set` PATCH (omitted TOP-LEVEL fields are preserved), but `capabilities`/`secrets` are **full-replace sub-dicts**, so the SDK read-merge-writes them (via `mergeCapabilityWrite` / the secrets mask-and-keep guard); `IntellectConfig.patch` is the one place that logic lives.
 
-A handful of fields — `agent_llm`, `agent_fast_llm`, `agent_avatar_llm`, `run_quota_check`, `web_search_config`, the four rate-limit fields, `avatar_config` — exist on the stored backend record but aren't in the intellect DTO's allow-list and have no other public route either. They're set by internal tooling only. `intellectConfig.describe()`'s `readOnly` map surfaces them with a note; there's no setter.
-
-When designing a new field setter, decide whether the intellect DTO's create/update allow-list genuinely accepts it (the `IntellectConfig` `EDITABLE_FIELDS` vs `READ_ONLY_FIELDS` constants encode this) before adding one.
+`EDITABLE_FIELDS` in `intellect-config.js` is the exact list of keys `v1/intellect/get` echoes and `v1/intellect/update` accepts for a partner admin KS. `patch()` rejects any other key before the network call, and `describe()` returns exactly these keys. When adding a field setter, first confirm the key round-trips through `intellect/update` and `intellect/get` with a partner admin KS, then add it to `EDITABLE_FIELDS`.
 
 ### Honest limits surfaced by the SDK
 
-[README.md's "Honest limits"](../../README.md#honest-limits) covers the brain-model/rate-limit fields not being in the public API, no-verbatim-speech, and the `force_experience`/`model_type` hint caveats — read that first. The rest are architecture-level limits not covered there:
+[README.md's "Honest limits"](../../README.md#honest-limits) covers the writable-surface rule, no-verbatim-speech, and the `force_experience`/`model_type` hint caveats. Read that first. The rest are architecture-level limits not covered there:
 
 - **External (BYO-LLM) intellects are not supported.** `intellects.create` rejects a body containing `url`/`protocol` with a typed `bad_request`.
 - **Secrets are write-only** — values never read back; the no-leak guarantee is the name-only response contract, not `redact()`. Client-side encryption / BYOK is server-managed (not buildable).

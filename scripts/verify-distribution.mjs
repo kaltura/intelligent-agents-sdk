@@ -20,8 +20,8 @@
  * resolver / edge-cache catch-up for range refs is polled, with a hard deadline.
  *
  * Usage:
- *   npm run verify:distribution -- v1.19.0
- *   npm run verify:distribution -- v1.19.0 --no-browser
+ *   npm run verify:distribution -- v1.20.0
+ *   npm run verify:distribution -- v1.20.0 --no-browser
  *
  * Env:
  *   DIST_WAIT_SECONDS   max wait for @latest to reach the tag (default 600)

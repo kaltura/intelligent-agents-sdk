@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Management } from '../../src/management/index.js';
-import { IntellectConfig } from '../../src/management/intellect-config.js';
+import { IntellectConfig, EDITABLE_FIELDS, MODEL_IDS } from '../../src/management/intellect-config.js';
 import { fakeFetch } from '../fakes/fetch.js';
 
 /**
@@ -67,10 +67,10 @@ test('intellects.setCapability rejects an unknown capability with NO network cal
   assert.equal(f.calls.length, 0, 'aborted before any fetch');
 });
 
-test('intellects.resolveCapabilities resolves all 15 with partner_config layer', async () => {
+test('intellects.resolveCapabilities resolves all 16 with partner_config layer', async () => {
   const { m } = mkMgmt([getDto({ capabilities: { use_web_search: 'on' } })]);
   const r = await m.intellects.resolveCapabilities(1481, ADMIN);
-  assert.equal(Object.keys(r.capabilities).length, 15);
+  assert.equal(Object.keys(r.capabilities).length, 16);
   assert.equal(r.capabilities.use_web_search.state, 'on');
   assert.equal(r.capabilities.use_web_search.resolvedFrom, 'partner_config');
 });
@@ -183,10 +183,22 @@ test('intellects.create applies defaults + echoes resolved type; rejects url/pro
 
 // ─────────────────────────── intellect-config facade ───────────────────────────
 
-test('intellectConfig.patch rejects a phantom-write field BEFORE any update', async () => {
+test('intellectConfig.patch rejects an unknown (non-editable) key BEFORE any update', async () => {
   const { cfg, f } = mkMgmt([getDto(), updateEcho]);
-  await assert.rejects(() => cfg.patch(1481, { web_search_config: { search_depth: 'basic' } }, ADMIN), (e) => e.code === 'bad_request' && /read-only/.test(e.detail));
-  assert.ok(!f.calls.some((c) => c.url.includes('/v1/intellect/update')), 'no write for a phantom field');
+  await assert.rejects(() => cfg.patch(1481, { not_a_field: { x: 1 } }, ADMIN), (e) => e.code === 'bad_request' && /not an editable/.test(e.detail) && /model_configuration/.test(e.detail));
+  assert.ok(!f.calls.some((c) => c.url.includes('/v1/intellect/update')), 'no write for an unknown key');
+});
+
+test('intellectConfig.patch accepts every EDITABLE_FIELDS key and still rejects a type change', async () => {
+  const { cfg, f } = mkMgmt([getDto(), updateEcho]);
+  const patch = {};
+  for (const k of EDITABLE_FIELDS) patch[k] = k === 'capabilities' || k === 'secrets' ? {} : null;
+  patch.status = 2; patch.name = 'n'; patch.prompts = []; patch.capabilities = { avatar: 'on' };
+  await cfg.patch(1481, patch, ADMIN);
+  assert.ok(f.calls.some((c) => c.url.includes('/v1/intellect/update')));
+  f.calls.length = 0;
+  await assert.rejects(() => cfg.patch(1481, { type: 'external' }, ADMIN), (e) => e.code === 'bad_request' && /immutable/i.test(e.detail));
+  assert.ok(!f.calls.some((c) => c.url.includes('/v1/intellect/update')));
 });
 
 test('intellectConfig.setCapabilities delegates the full-replace merge (no duplicated logic)', async () => {
@@ -290,17 +302,181 @@ test('intellectConfig.setKnowledgeIds rejects >1 id BEFORE any network', async (
   assert.equal(f.calls.length, 0);
 });
 
-test('intellectConfig.describe partitions editable vs readOnly (phantom-write discipline)', async () => {
-  const { cfg } = mkMgmt([getDto({ web_search_config: { search_depth: 'basic' } })]);
+test('intellectConfig.describe returns every EDITABLE_FIELDS key (null when the server did not echo it) and no readOnly', async () => {
+  const { cfg } = mkMgmt([getDto({ opening_phrase: 'Hi {{ user_name }}' })]);
   const d = await cfg.describe(1481, ADMIN);
   assert.equal(d.type, 'internal');
-  assert.ok('prompts' in d.editable && 'capabilities' in d.editable);
+  assert.deepEqual(Object.keys(d), ['type', 'editable', 'capabilityNames', '_meta']);
+  assert.equal('readOnly' in d, false);
+  assert.deepEqual(Object.keys(d.editable).sort(), [...EDITABLE_FIELDS].sort());
+  assert.equal(Object.keys(d.editable).length, 20);
   assert.deepEqual(d.editable.secrets, { names: ['EXISTING'] }, 'secrets editable shows NAMES only');
-  for (const k of ['web_search_config', 'run_quota_check', 'agent_avatar_llm', 'avatar_config']) {
-    assert.ok(k in d.readOnly, `${k} is read-only`);
-    assert.match(d.readOnly[k].note, /internal tooling|server-managed/);
-  }
-  assert.equal(d.capabilityNames.length, 15);
+  assert.equal(d.editable.opening_phrase, 'Hi {{ user_name }}');
+  assert.equal(d.editable.model_configuration, null, 'absent on the DTO → null');
+  assert.equal(d.capabilityNames.length, 16);
+  assert.ok(d.capabilityNames.includes('think_process'));
+});
+
+// ─────────────────────────── new customer-writable fields ───────────────────────────
+
+test('intellectConfig.setThreadStartTools writes the ordered id list; [] clears; patch({thread_start_tools:null}) also clears', async () => {
+  const { cfg, f } = mkMgmt([getDto(), updateEcho]);
+  const r = await cfg.setThreadStartTools(1481, ['tool-a', 'tool-b'], ADMIN);
+  assert.equal(r.applied, true);
+  assert.equal(r._meta.source, 'genie/intellect.thread_start_tools');
+  let sent = f.calls.find((c) => c.url.includes('/v1/intellect/update')).body;
+  assert.deepEqual(sent.thread_start_tools, ['tool-a', 'tool-b']);
+  assert.equal(sent.base_directive, 'You are Ron…', 'siblings preserved');
+  f.calls.length = 0;
+  await cfg.setThreadStartTools(1481, [], ADMIN);
+  sent = f.calls.find((c) => c.url.includes('/v1/intellect/update')).body;
+  assert.deepEqual(sent.thread_start_tools, []);
+  f.calls.length = 0;
+  await cfg.patch(1481, { thread_start_tools: null }, ADMIN);
+  sent = f.calls.find((c) => c.url.includes('/v1/intellect/update')).body;
+  assert.equal(sent.thread_start_tools, null);
+});
+
+test('intellectConfig.setThreadStartTools rejects non-array (incl. null), empty ids, non-strings, duplicates BEFORE any network', async () => {
+  const { cfg, f } = mkMgmt([getDto()]);
+  await assert.rejects(() => cfg.setThreadStartTools(1481, /** @type {any} */ ('tool-a'), ADMIN), (e) => e.code === 'bad_request');
+  await assert.rejects(() => cfg.setThreadStartTools(1481, /** @type {any} */ (null), ADMIN), (e) => e.code === 'bad_request');
+  await assert.rejects(() => cfg.setThreadStartTools(1481, ['tool-a', ''], ADMIN), (e) => e.code === 'bad_request');
+  await assert.rejects(() => cfg.setThreadStartTools(1481, /** @type {any} */ ([1]), ADMIN), (e) => e.code === 'bad_request');
+  await assert.rejects(() => cfg.setThreadStartTools(1481, ['tool-a', 'tool-a'], ADMIN), (e) => e.code === 'bad_request' && /unique/i.test(e.detail));
+  assert.equal(f.calls.length, 0);
+});
+
+test('intellectConfig.setModelConfiguration writes a validated object; null resets to backend defaults', async () => {
+  const { cfg, f } = mkMgmt([getDto(), updateEcho]);
+  const config = { model_id: 'gemini-2.5-flash', max_output_tokens: 512, thinking_level: 'low', temperature: 0.3 };
+  const r = await cfg.setModelConfiguration(1481, config, ADMIN);
+  assert.equal(r.applied, true);
+  assert.equal(r._meta.source, 'genie/intellect.model_configuration');
+  let sent = f.calls.find((c) => c.url.includes('/v1/intellect/update')).body;
+  assert.deepEqual(sent.model_configuration, config);
+  f.calls.length = 0;
+  await cfg.setModelConfiguration(1481, { model_id: MODEL_IDS[0] }, ADMIN);
+  sent = f.calls.find((c) => c.url.includes('/v1/intellect/update')).body;
+  assert.deepEqual(sent.model_configuration, { model_id: MODEL_IDS[0] }, 'partial object allowed');
+  f.calls.length = 0;
+  await cfg.setModelConfiguration(1481, null, ADMIN);
+  sent = f.calls.find((c) => c.url.includes('/v1/intellect/update')).body;
+  assert.equal(sent.model_configuration, null);
+});
+
+test('intellectConfig.setModelConfiguration rejects bad values BEFORE any network', async () => {
+  const { cfg, f } = mkMgmt([getDto()]);
+  const bad = (config, re) => assert.rejects(() => cfg.setModelConfiguration(1481, /** @type {any} */ (config), ADMIN), (e) => e.code === 'bad_request' && (!re || re.test(e.detail)));
+  await bad('gemini-2.5-flash');
+  await bad([]);
+  await bad({ model_id: 'gpt-4o' }, /model_id/);
+  await bad({ model_id: 42 }, /model_id/);
+  await bad({ max_output_tokens: 0 }, /max_output_tokens/);
+  await bad({ max_output_tokens: 1.5 }, /max_output_tokens/);
+  await bad({ thinking_level: 'medium' }, /thinking_level/);
+  await bad({ temperature: 1.5 }, /temperature/);
+  await bad({ temperature: -0.1 }, /temperature/);
+  await bad({ temperature: NaN }, /temperature/);
+  await bad({ temperature: '0.5' }, /temperature/);
+  await bad({ top_p: 0.9 }, /unknown key/i);
+  assert.equal(f.calls.length, 0);
+});
+
+test('intellectConfig.setOpeningPhrase writes the Jinja2 phrase; null clears; "" is rejected with a hint', async () => {
+  const { cfg, f } = mkMgmt([getDto(), updateEcho]);
+  const r = await cfg.setOpeningPhrase(1481, 'Hello {{ user_name }}, how can I help you today?', ADMIN);
+  assert.equal(r.applied, true);
+  assert.equal(r._meta.source, 'genie/intellect.opening_phrase');
+  let sent = f.calls.find((c) => c.url.includes('/v1/intellect/update')).body;
+  assert.equal(sent.opening_phrase, 'Hello {{ user_name }}, how can I help you today?');
+  f.calls.length = 0;
+  await cfg.setOpeningPhrase(1481, null, ADMIN);
+  sent = f.calls.find((c) => c.url.includes('/v1/intellect/update')).body;
+  assert.equal(sent.opening_phrase, null);
+  f.calls.length = 0;
+  await assert.rejects(() => cfg.setOpeningPhrase(1481, '', ADMIN), (e) => e.code === 'bad_request' && /Pass null/.test(e.detail));
+  await assert.rejects(() => cfg.setOpeningPhrase(1481, '   ', ADMIN), (e) => e.code === 'bad_request');
+  await assert.rejects(() => cfg.setOpeningPhrase(1481, /** @type {any} */ (42), ADMIN), (e) => e.code === 'bad_request');
+  assert.equal(f.calls.length, 0);
+});
+
+test('intellectConfig.setAvatarSummaryConfig writes a validated object; null clears', async () => {
+  const { cfg, f } = mkMgmt([getDto(), updateEcho]);
+  const config = {
+    prompt: 'Summarize the call for a sales rep.',
+    analysis: { overview: 'One paragraph overview', sentiment: 'One word sentiment' },
+    template: '{{ overview }} / {{ sentiment }}',
+    content_type: 'text',
+  };
+  const r = await cfg.setAvatarSummaryConfig(1481, config, ADMIN);
+  assert.equal(r.applied, true);
+  assert.equal(r._meta.source, 'genie/intellect.avatar_summary_config');
+  let sent = f.calls.find((c) => c.url.includes('/v1/intellect/update')).body;
+  assert.deepEqual(sent.avatar_summary_config, config);
+  f.calls.length = 0;
+  // template over the default `summary` key when analysis is unset
+  await cfg.setAvatarSummaryConfig(1481, { template: '<p>{{ summary }}</p>', content_type: 'html' }, ADMIN);
+  sent = f.calls.find((c) => c.url.includes('/v1/intellect/update')).body;
+  assert.deepEqual(sent.avatar_summary_config, { template: '<p>{{ summary }}</p>', content_type: 'html' });
+  f.calls.length = 0;
+  await cfg.setAvatarSummaryConfig(1481, null, ADMIN);
+  sent = f.calls.find((c) => c.url.includes('/v1/intellect/update')).body;
+  assert.equal(sent.avatar_summary_config, null);
+});
+
+test('intellectConfig.setAvatarSummaryConfig rejects bad shapes and unknown template keys BEFORE any network', async () => {
+  const { cfg, f } = mkMgmt([getDto()]);
+  const bad = (config, re) => assert.rejects(() => cfg.setAvatarSummaryConfig(1481, /** @type {any} */ (config), ADMIN), (e) => e.code === 'bad_request' && (!re || re.test(e.detail)));
+  await bad('text');
+  await bad({ prompt: '' }, /prompt/);
+  await bad({ content_type: 'markdown' }, /content_type/);
+  await bad({ analysis: {} }, /analysis/);
+  await bad({ analysis: { overview: '' } }, /analysis/);
+  await bad({ analysis: ['overview'] }, /analysis/);
+  await bad({ template: '' }, /template/);
+  await bad({ template: '{{ overview }}' }, /overview/);
+  await bad({ analysis: { overview: 'x' }, template: '{{ overview }} {{ mood }}' }, /mood/);
+  await bad({ analysis: { overview: 'x' }, template: '{{ summary }}' }, /summary/);
+  await bad({ extra: 1 }, /unknown key/i);
+  assert.equal(f.calls.length, 0);
+});
+
+test('intellectConfig.setAvatarSummaryConfig template check reads the identifier before any Jinja2 filter and stays linear on adversarial input', async () => {
+  const { cfg, f } = mkMgmt([getDto(), updateEcho]);
+  const analysis = { overview: 'x', items: 'y' };
+  const template = '{{ overview | upper }} {{items|join(", ")}}';
+  await cfg.setAvatarSummaryConfig(1481, { analysis, template }, ADMIN);
+  assert.equal(f.calls.filter((c) => c.url.includes('/v1/intellect/update')).length, 1);
+  await assert.rejects(() => cfg.setAvatarSummaryConfig(1481, { analysis, template: '{{ mood | upper }}' }, ADMIN), (e) => e.code === 'bad_request' && /mood/.test(e.detail));
+  const evil = `{{{{A${'0'.repeat(100_000)}`;
+  const t0 = Date.now();
+  await cfg.setAvatarSummaryConfig(1481, { analysis, template: evil }, ADMIN);
+  assert.ok(Date.now() - t0 < 1000, 'template scan must not be polynomial in the template length');
+});
+
+test('intellectConfig.setSkillIds passes adhoc-save + condition through and rejects a bad condition or unknown entry key', async () => {
+  const { cfg, f } = mkMgmt([getDto(), updateEcho]);
+  const skills = [{ id: 'skill-1', mode: 'adhoc-save', condition: 'sys__avatar_enabled' }];
+  await cfg.setSkillIds(1481, skills, ADMIN);
+  const sent = f.calls.find((c) => c.url.includes('/v1/intellect/update')).body;
+  assert.deepEqual(sent.skill_ids, skills);
+  f.calls.length = 0;
+  await assert.rejects(() => cfg.setSkillIds(1481, [{ id: 'skill-1', mode: 'adhoc', condition: '' }], ADMIN), (e) => e.code === 'bad_request' && /condition/.test(e.detail));
+  await assert.rejects(() => cfg.setSkillIds(1481, [{ id: 'skill-1', mode: 'adhoc', condition: 5 }], ADMIN), (e) => e.code === 'bad_request');
+  await assert.rejects(() => cfg.setSkillIds(1481, [{ id: 'skill-1', mode: 'adhoc', when: 'x' }], ADMIN), (e) => e.code === 'bad_request' && /when/.test(e.detail));
+  assert.equal(f.calls.length, 0);
+});
+
+test('intellectConfig.patch accepts force_language directly (display name or "" to clear)', async () => {
+  const { cfg, f } = mkMgmt([getDto(), updateEcho]);
+  await cfg.patch(1481, { force_language: 'Spanish' }, ADMIN);
+  let sent = f.calls.find((c) => c.url.includes('/v1/intellect/update')).body;
+  assert.equal(sent.force_language, 'Spanish');
+  f.calls.length = 0;
+  await cfg.patch(1481, { force_language: '' }, ADMIN);
+  sent = f.calls.find((c) => c.url.includes('/v1/intellect/update')).body;
+  assert.equal(sent.force_language, '');
 });
 
 test('patch + setters require an admin KS (scope guard)', async () => {
