@@ -105,11 +105,11 @@ Once the repo is public and has a tag pushed, jsDelivr serves any file straight 
 </script>
 ```
 
-`@latest` resolves to the newest tag, so this URL always matches the current README without an editing pass on every release. It's **not cached the same way** as a tagged path, though — jsDelivr re-checks it periodically, so what it serves can change without warning. For anything you ship, pin to a real tag instead (`@v1.19.0`, or whichever release you're on) — jsDelivr caches a tagged path forever, so a pin is both stable and fast:
+`@latest` resolves to the newest tag, so this URL always matches the current README without an editing pass on every release. It's **not cached the same way** as a tagged path, though — jsDelivr re-checks it periodically, so what it serves can change without warning. For anything you ship, pin to a real tag instead (`@v1.20.0`, or whichever release you're on) — jsDelivr caches a tagged path forever, so a pin is both stable and fast:
 
 ```html
 <script type="module">
-  import { KalturaAvatarSession } from 'https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.19.0/src/experience/index.js';
+  import { KalturaAvatarSession } from 'https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.20.0/src/experience/index.js';
 </script>
 ```
 
@@ -1040,25 +1040,40 @@ await mgmt.intellectConfig.setToolIds(configId, [toolId], ks); // then link it
 await mgmt.intellects.secrets.set(configId, { API_KEY: value }, ks);  // write-only
 await mgmt.intellectConfig.setKnowledgeIds(configId, [knowledgeId], ks);  // ungated
 await mgmt.intellectConfig.setMcpServers(configId, { docs: { url: 'https://mcp.example.com/sse' } }, ks);  // ungated
+await mgmt.intellectConfig.setModelConfiguration(configId, { model_id: 'gemini-3.5-flash', temperature: 0.3 }, ks);
+await mgmt.intellectConfig.setOpeningPhrase(configId, 'Hi {{ user_name }}, what can I help with?', ks);
+await mgmt.intellectConfig.setThreadStartTools(configId, [toolId], ks);
+await mgmt.intellectConfig.setAvatarSummaryConfig(configId, {
+  analysis: { summary: 'Two-sentence recap', next_step: 'The one action the user agreed to' },
+  template: '{{ summary }}\n\nNext: {{ next_step }}',
+  content_type: 'text',
+}, ks);
 ```
 
 `setMcpServers` writes the intellect's `mcp_servers` map (`{"<name>": {url}}` — pass `{}` to clear). The backend normalizes on read (each entry comes back expanded with `type:'mcp'`, `transport:'streamable_http'`, and `null` header/allow-list fields), so never diff your input against a subsequent `get` byte-for-byte.
 
-`intellectConfig.describe(configId, ks)` returns every editable field partitioned into `editable` + `readOnly` — wire directly to a settings UI.
+`setModelConfiguration` picks the chat model and its sampling limits. `model_id` must be one of `MODEL_IDS`, `thinking_level` one of `THINKING_LEVELS` (`'low'`/`'high'`, Gemini only), `max_output_tokens` a positive integer, `temperature` 0..1. Pass `null` to return to the backend defaults. Which models answer depends on your partner's region, so run `converseOnce` once after switching. With `avatar_show_content` on, the backend fills an unset `thinking_level` with `'low'` and `max_output_tokens` with 4096.
+
+`setOpeningPhrase` sets the phrase the avatar speaks when a session starts. It is a Jinja2 template over `request_vars`, rendered server-side, and it overrides whatever opening phrase the client sends at init. The rendered text is stored on the thread as an `opening` message. Pass `null` to clear.
+
+`setThreadStartTools` lists tool ids the backend runs once at the start of every thread, before the first turn. Only `api` and `code` tools run. The result feeds the model and never appears as a `tool` segment. Pass `[]` to clear.
+
+`setAvatarSummaryConfig` shapes the summary the backend writes when an avatar session ends. `analysis` maps output keys to what the model should extract, `template` renders them (every `{{ key }}` must be an `analysis` key), `content_type` is one of `SUMMARY_CONTENT_TYPES`. The result is stored on the thread as a `summary` message. Pass `null` to return to the default one-paragraph summary.
+
+`intellectConfig.describe(configId, ks)` returns every writable field under `editable` (`null` when the server did not echo it) plus `capabilityNames`. Wire it directly to a settings UI.
 
 ### Forcing the reply language (`setForcedLanguage`)
 
-Setting `force_language` on the intellect config does not by itself change the reply language. The reply language follows an explicit instruction in `base_directive`. `mgmt.setForcedLanguage()` writes the three related fields together in one call:
+`force_language` on the intellect is enforced by the backend at runtime: replies come back in that language whatever the user writes or speaks. `mgmt.setForcedLanguage()` sets it together with the agent's `asr.language`, so speech recognition matches:
 
 ```js
 await mgmt.setForcedLanguage({ configId, agentId, language: 'he' }, admin.ks);
-// writes: a marker-wrapped instruction in base_directive, force_language,
-// and agent.asr.language, so speech recognition matches too.
+// writes: intellect.force_language = 'Hebrew', agent.asr.language = 'he'
 
 await mgmt.setForcedLanguage({ configId, agentId, language: null }, admin.ks); // clear
 ```
 
-Idempotent: calling it again with a different language replaces the earlier instruction instead of stacking another one. `language` is an ISO 639-1 code. Pass `languageName` for a code that is not in `LANGUAGE_NAMES` (exported from `./management`).
+Idempotent. `language` is an ISO 639-1 code. Pass `languageName` for a code that is not in `LANGUAGE_NAMES` (exported from `./management`). `base_directive` is left alone.
 
 ---
 
@@ -1078,12 +1093,17 @@ await mgmt.skills.delete(skill.id, ks, { confirmPermanent: true });
 
 Before deleting, `mgmt.skills.delete` lists every intellect and refuses with a typed `skill_in_use` error naming each one still referencing the id in `skill_ids`, unless called with `{confirmPermanent:true, force:true}` — Tools' `mgmt.tools.delete` carries the identical `tool_in_use` guard.
 
-Attach a Skill to an intellect via `intellectConfig.setSkillIds` — the intellect only holds a reference list (`{id, mode}` pairs), the skill body itself lives in `mgmt.skills`. `mode` is `'preloaded'` (instructions go in the system prompt every turn) or `'adhoc'` (the brain pulls it in only when relevant) — see the exported `SKILL_MODES`:
+Attach a Skill to an intellect via `intellectConfig.setSkillIds`. The intellect only holds a reference list (`{id, mode, condition?}` entries), the skill body itself lives in `mgmt.skills`. `mode` is one of the exported `SKILL_MODES`: `'preloaded'` (instructions go in the system prompt every turn), `'adhoc'` (the brain loads it on demand and does not remember it), or `'adhoc-save'` (`adhoc`, plus auto-load on later turns once used). `condition` is an optional Jinja2 expression over thread variables that must be truthy for the skill to apply:
 
 ```js
-await mgmt.intellectConfig.setSkillIds(configId, [{ id: skill.id, mode: 'adhoc' }], ks);
+await mgmt.intellectConfig.setSkillIds(configId, [
+  { id: skill.id, mode: 'adhoc' },
+  { id: avatarOnlySkill.id, mode: 'preloaded', condition: '{{ sys__avatar_enabled }}' },
+], ks);
 // pass [] to detach every skill
 ```
+
+A skill id owned by another partner is rejected with a 403 `forbidden`.
 
 **Provider voice import** (`mgmt.catalog`) creates a catalog Voice item directly from an ElevenLabs or Cartesia voice id — no audio upload:
 
@@ -1158,7 +1178,7 @@ await mgmt.knowledge.deleteRecord(rec.id, ks, { confirmPermanent: true });
 
 ## Honest limits
 
-- **Brain-model and rate-limit fields aren't in the public API.** `agent_llm`/`agent_fast_llm`/rate limits and a few others are set by internal tooling only — see `intellectConfig.describe()`'s `readOnly` map. Knowledge grounding via `knowledge_ids` is fully public and ungated. (Event-driven session/thread rules ARE supported — see [docs/lifecycle/README.md](docs/lifecycle/README.md).)
+- **Only the fields in `EDITABLE_FIELDS` are writable.** `intellectConfig.patch()` rejects anything else before the network call, and `describe()` returns exactly that set. Knowledge grounding via `knowledge_ids` is fully public and ungated. (Event-driven session/thread rules ARE supported, see [docs/lifecycle/README.md](docs/lifecycle/README.md).)
 - **No verbatim speech** — `speak()` goes through the brain; the avatar may rephrase.
 - **Custom face works self-serve** — upload a portrait image via `catalog.createVisual`, pass `itemId` as `visualId` in `provision`/`avatars.create`. The model animates the portrait at runtime. Video-clip ingest is not available through this API.
 - **`force_experience` and `model_type:'fast'`** are hints; the SDK can't prove which model replied or which experience rendered.

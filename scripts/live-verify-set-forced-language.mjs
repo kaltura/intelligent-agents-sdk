@@ -99,12 +99,12 @@ try {
   record('setForcedLanguage-call', true, { languageName: setResult.languageName });
 
   const afterSet = await kaltura.intellects.get(provisioned.configId, admin.ks);
-  const directiveInjected = typeof afterSet?.base_directive === 'string' && afterSet.base_directive.includes('<!-- sdk:forced-language -->') && afterSet.base_directive.includes('Hebrew');
+  const directiveUntouched = typeof afterSet?.base_directive === 'string' && !afterSet.base_directive.includes('<!-- sdk:forced-language -->');
   const forceLanguagePersisted = afterSet?.force_language === 'Hebrew';
-  record('intellect-config-persisted', directiveInjected && forceLanguagePersisted, {
+  record('intellect-config-persisted', directiveUntouched && forceLanguagePersisted, {
     force_language: afterSet?.force_language, base_directive: afterSet?.base_directive,
   });
-  if (!directiveInjected || !forceLanguagePersisted) throw new Error('setForcedLanguage did not persist as expected on the intellect config.');
+  if (!directiveUntouched || !forceLanguagePersisted) throw new Error('setForcedLanguage did not persist as expected on the intellect config.');
 
   const afterAgent = await kaltura.agents.get(provisioned.agentId, admin.ks);
   const asrPersisted = afterAgent?.asr?.language === 'he';

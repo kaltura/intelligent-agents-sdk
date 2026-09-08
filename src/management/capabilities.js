@@ -28,13 +28,9 @@ import { KalturaError } from '../core/errors.js';
 import { meta } from '../core/ids.js';
 
 /**
- * The 15 `AssistantCapability` names, frozen, in the backend's declaration order.
- * Hand-transcribed snapshot — see the HONEST LIMIT note above.
- *
- * `think_process` is deliberately ABSENT: it appears in some GenUI experience
- * configs but is NOT an AssistantCapability — sending it in a capabilities map
- * 500s intellect creation. {@link assertCapability} therefore
- * rejects it BEFORE any network call, same as any other unknown name.
+ * Every `AssistantCapability` name, frozen, in the backend's declaration order.
+ * Hand-transcribed snapshot; see the HONEST LIMIT note above. Use
+ * `CAPABILITIES.length` rather than a literal count.
  * @type {readonly string[]}
  */
 export const CAPABILITIES = Object.freeze([
@@ -53,6 +49,7 @@ export const CAPABILITIES = Object.freeze([
   'kaltura_genie_experiences',
   'use_web_search',
   'screen_share_analysis',
+  'think_process',
 ]);
 
 /**
@@ -72,12 +69,14 @@ const CAPABILITY_SET = new Set(CAPABILITIES);
 /**
  * The OFF-by-default capabilities (the API's capability defaults):
  * `avatar`, `avatar_filler`, `avatar_show_content`, `video_gallery`,
- * `external_video`, `show_link`, `use_web_search`, `screen_share_analysis`.
+ * `external_video`, `show_link`, `use_web_search`, `screen_share_analysis`,
+ * `think_process`.
  * @type {readonly string[]}
  */
 const OFF_BY_DEFAULT = Object.freeze([
   'avatar', 'avatar_filler', 'avatar_show_content', 'video_gallery',
   'external_video', 'show_link', 'use_web_search', 'screen_share_analysis',
+  'think_process',
 ]);
 
 /**
@@ -86,8 +85,8 @@ const OFF_BY_DEFAULT = Object.freeze([
  * DOCUMENTED SNAPSHOT: a hand-transcribed copy of the API's capability
  * defaults. There is NO public
  * endpoint that returns per-partner env/settings overrides, so this is a
- * best-effort prediction of the env layer — NOT a live read. Eight capabilities
- * default OFF (see {@link OFF_BY_DEFAULT}); the other seven default ON
+ * best-effort prediction of the env layer, NOT a live read. The names in
+ * {@link OFF_BY_DEFAULT} default OFF; every other capability defaults ON
  * (`kaltura_genie_experiences` explicitly ON). Frozen so callers can't mutate
  * the snapshot.
  * @type {Readonly<Record<string,'on'|'off'>>}
@@ -116,16 +115,17 @@ export const CAPABILITY_INFO = Object.freeze({
   video_gallery: { kind: 'segment', runtime: 'video-gallery', defaultState: CAPABILITY_DEFAULTS.video_gallery, summary: 'Permits a video-gallery-tool / content-gallery-tool segment (a deck/gallery of clips).' },
   external_video: { kind: 'segment', runtime: 'external-video', defaultState: CAPABILITY_DEFAULTS.external_video, summary: 'Permits an external-video-tool segment (embed a non-Kaltura video).' },
   show_link: { kind: 'segment', runtime: 'show-link', defaultState: CAPABILITY_DEFAULTS.show_link, summary: 'Permits a show-link-tool segment (render a link card).' },
-  avatar: { kind: 'mode', defaultState: CAPABILITY_DEFAULTS.avatar, summary: 'Enables the live avatar face/voice channel; switches the model to agent_avatar_llm.' },
+  avatar: { kind: 'mode', defaultState: CAPABILITY_DEFAULTS.avatar, summary: 'Enables the live avatar face and voice channel.' },
   avatar_filler: { kind: 'prompt', defaultState: CAPABILITY_DEFAULTS.avatar_filler, summary: 'Avatar speaks short filler phrases while thinking. Phrasing is server-generated per turn and NOT reliably steerable via base_directive or other persona instructions, despite streaming as a "spoken" segment type alongside avatar/text — disable this capability if the default phrasing does not fit your persona.' },
   avatar_show_content: { kind: 'prompt', defaultState: CAPABILITY_DEFAULTS.avatar_show_content, summary: 'Lets the avatar push visual content (slides/cards) alongside speech.' },
   kaltura_genie_experiences: { kind: 'mode', defaultState: CAPABILITY_DEFAULTS.kaltura_genie_experiences, summary: 'Master switch for structured GenUI (flashcards/summary/markdown experiences).' },
-  use_web_search: { kind: 'tool', defaultState: CAPABILITY_DEFAULTS.use_web_search, summary: 'search_web (live external search), parameterized by web_search_config. Auto-on if web_search_config is set.' },
+  use_web_search: { kind: 'tool', defaultState: CAPABILITY_DEFAULTS.use_web_search, summary: 'search_web, live external web search. Off by default.' },
   screen_share_analysis: { kind: 'prompt', defaultState: CAPABILITY_DEFAULTS.screen_share_analysis, summary: 'Enables analysis of a user-shared screen.' },
+  think_process: { kind: 'segment', runtime: 'think', defaultState: CAPABILITY_DEFAULTS.think_process, summary: 'Streams the model\'s reasoning as think segments before the answer. Off by default; when off, the stream still emits one short status placeholder think segment.' },
 });
 
 /**
- * Assert a capability name is one of the 15 known {@link CAPABILITIES}. Throws
+ * Assert a capability name is one of the known {@link CAPABILITIES}. Throws
  * `KalturaError` ({code:'unknown_capability'}) BEFORE any network call.
  * @param {unknown} name
  * @param {string} [where] caller label for the error detail
@@ -223,7 +223,7 @@ export function mergeCapabilityWrite(current, patch) {
 
 /**
  * The PURE 3-level resolver — mirrors the server's capability-resolution
- * behavior. For EVERY one of the 15
+ * behavior. For EVERY name in
  * {@link CAPABILITIES} it resolves a final state with EXACT precedence:
  *
  *   1. DISABLED VETO — if `env` OR `partnerConfig` marks the capability
@@ -236,15 +236,6 @@ export function mergeCapabilityWrite(current, patch) {
  * stored layer can) — it is treated as a normal request value that loses to the
  * veto and otherwise resolves like any state. Each result records the layer it
  * `resolvedFrom`, whether it was `vetoed`, and the raw `layers` it saw.
- *
- * `use_web_search` BEST-EFFORT: HONEST LIMIT: use_web_search may be forced ON server-side by web_search_config — this resolver cannot see that and marks the result inferred:true. A present
- * `web_search_config` server-side force-sets `use_web_search` ON. This resolver
- * does NOT have the brain config, so it CANNOT see that flip. The doc does not
- * confirm `intellect/get` exposes `web_search_config`, so we degrade gracefully:
- * `use_web_search` resolves from its explicit layers only and its result carries
- * `inferred:true` to mark it as a lower-confidence prediction (it may be ON at
- * runtime via `web_search_config` even when this predicts OFF). All other
- * capabilities resolve exactly.
  *
  * `resolvedFrom:'env'` vs `'default'` — a precedence subtlety: when `env` is
  * OMITTED, {@link CAPABILITY_DEFAULTS} is supplied AS the env layer. So an
@@ -260,8 +251,7 @@ export function mergeCapabilityWrite(current, patch) {
  * @param {Record<string,'on'|'off'|'disabled'>} [layers.partnerConfig] stored partner_config.capabilities
  * @param {Record<string,'on'|'off'|'disabled'>} [layers.request] per-request override
  * @param {string|number} [layers.partnerId] for the `_meta` receipt
- * @param {boolean} [layers.webSearchConfigPresent] if true, `use_web_search` is force-resolved ON (mirrors the server flip)
- * @returns {{ capabilities: Record<string,{state:'on'|'off'|'disabled', resolvedFrom:'request'|'partner_config'|'env'|'default'|'disabled_veto'|'web_search_config', vetoed:boolean, inferred?:boolean, layers:{env?:string, partnerConfig?:string, request?:string, default:'on'|'off'}}>, _meta: object }}
+ * @returns {{ capabilities: Record<string,{state:'on'|'off'|'disabled', resolvedFrom:'request'|'partner_config'|'env'|'default'|'disabled_veto', vetoed:boolean, layers:{env?:string, partnerConfig?:string, request?:string, default:'on'|'off'}}>, _meta: object }}
  */
 export function resolveCapabilities(layers = {}) {
   const env = layers.env === undefined ? CAPABILITY_DEFAULTS : layers.env;
@@ -303,18 +293,7 @@ export function resolveCapabilities(layers = {}) {
     else if (envState !== undefined) { state = envState; resolvedFrom = 'env'; }
     else { state = defState; resolvedFrom = 'default'; }
 
-    const entry = { state, resolvedFrom, vetoed: false, layers: seen };
-
-    // use_web_search: a present web_search_config force-sets it ON server-side.
-    // Best-effort/inferred — the resolver can't read web_search_config itself.
-    if (name === 'use_web_search') {
-      if (layers.webSearchConfigPresent && state !== CAPABILITY_STATE.DISABLED) {
-        entry.state = CAPABILITY_STATE.ON;
-        entry.resolvedFrom = 'web_search_config';
-      }
-      entry.inferred = true;
-    }
-    out[name] = entry;
+    out[name] = { state, resolvedFrom, vetoed: false, layers: seen };
   }
 
   return {

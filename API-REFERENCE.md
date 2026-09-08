@@ -16,7 +16,7 @@ Every endpoint is shown as a raw HTTP call plus its SDK wrapper. The SDK is what
 |------|--------|
 | [Authentication & Services](docs/api/authentication.md) | KS types and minting, `userId` binding, the five services and their base URLs |
 | [Phase 1 — Design](docs/api/design.md) | Browse the catalog, generate an agent profile, custom voice (clone), provider voice import, custom visual (portrait), end-to-end portrait recipe |
-| [Phase 2 — Build](docs/api/build.md) | Create/configure an intellect, preview a prompt, tools (`api`/`csv`/`code`), secrets, ground in your content (RAG), create an avatar, create an agent, brain-model/rate-limit fields |
+| [Phase 2 — Build](docs/api/build.md) | Create/configure an intellect, preview a prompt, tools (`api`/`csv`/`code`), secrets, ground in your content (RAG), create an avatar, create an agent |
 | [Phase 3 — Deploy](docs/api/deploy.md) | Resolve widget ID, initialize the browser runtime |
 | [Phase 4 — Operate](docs/api/operate.md) | Converse (headless HTTP), reserved `sys__*` template variables, status, threads, feedback and follow-ups, usage analytics, knowledge search (MCP) |
 | [Scripted-Video (STV-only) Sessions](docs/api/scripted-video.md) | Pre-authored speech sessions — auth, lifecycle, `say-audio` |

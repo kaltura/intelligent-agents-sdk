@@ -14,9 +14,9 @@
  *               INTELLECT-side reference list — create/edit the tool bodies
  *               themselves via `mgmt.tools`.
  *   - skill_ids → `mgmt.skills` is the SEPARATE, partner-level Skill entity
- *               CRUD (`add`/`get`/`list`/`remove` — no `update`, see
+ *               CRUD (`add`/`get`/`list`/`update`/`remove`, see
  *               API-REFERENCE.md § Skills). This facade's `setSkillIds` only writes the INTELLECT-side
- *               reference list (`{id, mode}` pairs, `mode` one of
+ *               reference list (`{id, mode, condition?}` entries, `mode` one of
  *               {@link SKILL_MODES}) — create/edit the skill bodies themselves
  *               via `mgmt.skills`.
  *   - secrets → `mgmt.intellects.secrets` (`set`/`remove`/`listNames`/`has`/`validate`).
@@ -40,11 +40,9 @@
  * are plain arrays (not dicts), so `setToolIds`/`setSkillIds` write them
  * directly with no merge step, same as `setKnowledgeIds`.
  *
- * PHANTOM-WRITE DISCIPLINE: `web_search_config`, `run_quota_check`,
- * `agent_avatar_llm`, `avatar_config`, `agent_llm`, `agent_fast_llm`, and rate
- * limits are NOT writable via the public API at all — they appear in
- * `describe().readOnly` with a "server-managed; not writable via the public
- * API" note and have NO setters here.
+ * The writable surface is exactly {@link EDITABLE_FIELDS}. `patch()` rejects any
+ * other key with a typed `bad_request` before the network call, and `type` is
+ * immutable.
  */
 import { KalturaError } from '../core/errors.js';
 import { meta } from '../core/ids.js';
@@ -62,49 +60,66 @@ import { MASK, maskExisting } from './secrets.js';
 export const CALL_STAGES = Object.freeze(['start', 'middle', 'end']);
 
 /**
- * Fields that exist on the stored `PartnerConfigSchema` and are READ by the
- * runtime but are NOT in EITHER public create/update DTO allow-list — so they
- * are read-only via the public surfaces. The facade exposes them under
- * `describe().readOnly` and provides NO setter (phantom-write discipline).
- * @type {Readonly<Record<string,string>>}
- */
-const READ_ONLY_FIELDS = Object.freeze({
-  web_search_config: 'web-search parameters — server-managed; not writable via the public API',
-  run_quota_check: 'pre-turn quota enforcement — server-managed; not writable via the public API',
-  agent_avatar_llm: 'avatar-mode model — server-managed; not writable via the public API',
-  agent_llm: 'primary brain model — server-managed; not writable via the public API',
-  agent_fast_llm: 'fast/cheap fallback model — server-managed; not writable via the public API',
-  rate_limit_per_minute: 'authed rate limit — server-managed; not writable via the public API',
-  rate_limit_per_hour: 'authed rate limit — server-managed; not writable via the public API',
-  anonymous_rate_limit_per_minute: 'anonymous rate limit — server-managed; not writable via the public API',
-  anonymous_rate_limit_per_hour: 'anonymous rate limit — server-managed; not writable via the public API',
-  avatar_config: 'live-avatar WebRTC/SRS endpoints — server-managed (overlaid with server defaults at converse time); never your input',
-});
-
-/**
- * Top-level fields the public Genie `intellect/*` DTO genuinely WRITES
- * (`CreateIntellect.update_partner_config`): the editable surface this facade's
- * setters target. `knowledge_ids` IS in this allow-list and writes ungated via
- * `create`/`update`/`setKnowledgeIds`. `tool_ids` is likewise a direct, ungated
- * reference-list write (the tool BODIES live on the separate `mgmt.tools`
- * entity, not here).
+ * Every top-level intellect field a partner admin KS can write through
+ * `v1/intellect/update`. This is the whole writable surface: `patch()` rejects
+ * any other key before the network call. `knowledge_ids`, `tool_ids`,
+ * `skill_ids` and `thread_start_tools` are plain reference lists (the tool,
+ * skill and knowledge BODIES live on their own resources).
  * @type {readonly string[]}
  */
-const EDITABLE_FIELDS = Object.freeze([
+export const EDITABLE_FIELDS = Object.freeze([
   'prompts', 'base_directive', 'glossary', 'capabilities', 'tool_ids',
   'secrets', 'user_properties_forms', 'mcp_servers', 'allow_client_variables',
-  'knowledge_ids', 'skill_ids', 'name', 'description', 'tags', 'status',
+  'knowledge_ids', 'skill_ids', 'thread_start_tools', 'avatar_summary_config',
+  'force_language', 'opening_phrase', 'model_configuration',
+  'name', 'description', 'tags', 'status',
+]);
+const EDITABLE_SET = new Set(EDITABLE_FIELDS);
+
+/**
+ * The closed set of native `Skill` attach modes (`skill_ids[].mode`).
+ * `preloaded` puts the skill's instructions in the system prompt on every turn.
+ * `adhoc` exposes the skill as a tool the brain loads on demand and does not
+ * remember. `adhoc-save` is `adhoc` plus auto-load on later turns once used.
+ * @type {ReadonlyArray<'adhoc'|'adhoc-save'|'preloaded'>}
+ */
+export const SKILL_MODES = Object.freeze(['adhoc', 'adhoc-save', 'preloaded']);
+
+/**
+ * The closed set of `model_configuration.model_id` values. `us.`/`eu.` prefixes
+ * pick the Claude region; Gemini ids are global.
+ * @type {readonly string[]}
+ */
+export const MODEL_IDS = Object.freeze([
+  'us.anthropic.claude-sonnet-4-20250514-v1:0',
+  'eu.anthropic.claude-sonnet-4-20250514-v1:0',
+  'us.anthropic.claude-haiku-4-5-20251001-v1:0',
+  'eu.anthropic.claude-haiku-4-5-20251001-v1:0',
+  'gemini-3-flash-preview',
+  'gemini-2.5-flash',
+  'gemini-3.1-flash-lite',
+  'gemini-3.5-flash-lite',
+  'gemini-3.5-flash',
 ]);
 
 /**
- * The closed set of native `Skill` attach modes (`skill_ids[].mode` —
- * any other string 422s "Input should be 'adhoc' or
- * 'preloaded'"). `preloaded` puts the skill's instructions in the system
- * prompt on every turn; `adhoc` makes it available for the brain to pull in
- * only when relevant.
- * @type {ReadonlyArray<'adhoc'|'preloaded'>}
+ * The closed set of `model_configuration.thinking_level` values. Gemini only;
+ * Claude models ignore it. Unset means thinking off (except when
+ * `avatar_show_content` is on, where the backend defaults it to `low`).
+ * @type {ReadonlyArray<'low'|'high'>}
  */
-export const SKILL_MODES = Object.freeze(['adhoc', 'preloaded']);
+export const THINKING_LEVELS = Object.freeze(['low', 'high']);
+
+/**
+ * The closed set of `avatar_summary_config.content_type` values: how the client
+ * should render the end-of-session summary. `text` is Markdown.
+ * @type {ReadonlyArray<'text'|'html'|'html_with_js'>}
+ */
+export const SUMMARY_CONTENT_TYPES = Object.freeze(['text', 'html', 'html_with_js']);
+
+const MODEL_CONFIGURATION_KEYS = Object.freeze(['model_id', 'max_output_tokens', 'thinking_level', 'temperature']);
+const AVATAR_SUMMARY_CONFIG_KEYS = Object.freeze(['prompt', 'analysis', 'template', 'content_type']);
+const TEMPLATE_VAR_RE = /\{\{\s*([A-Za-z_][A-Za-z0-9_]*)[^}]*\}\}/g;
 
 /** @param {string} detail @param {string} [code] */
 function bad(detail, code = 'bad_request') {
@@ -128,11 +143,9 @@ export class IntellectConfig {
    * `(current) => partial` function), re-asserts `{id, type, status}`, and
    * writes the whole body via `v1/intellect/update`. WRITE — idempotent.
    *
-   * `patchOrFn` may set any {@link EDITABLE_FIELDS} top-level key. Read-only
-   * phantom-write fields ({@link READ_ONLY_FIELDS}) in the patch are REJECTED
-   * with a typed `bad_request` BEFORE any write (so a caller can't silently
-   * no-op against an internal-tooling-only field). `external` intellects are
-   * rejected (they have no editable brain config).
+   * `patchOrFn` may set any {@link EDITABLE_FIELDS} top-level key. Any other
+   * key in the patch is REJECTED with a typed `bad_request` BEFORE any write.
+   * `external` intellects are rejected (they have no editable brain config).
    *
    * @param {number} configId
    * @param {Record<string,unknown>|((cur:Record<string,unknown>)=>Record<string,unknown>)} patchOrFn
@@ -154,10 +167,10 @@ export class IntellectConfig {
     if (!resolved || typeof resolved !== 'object' || Array.isArray(resolved)) {
       throw bad('intellectConfig.patch: the patch function must return a partial config object.');
     }
-    // Reject phantom-write fields up-front (never silently no-op).
+    // Allowlist: only EDITABLE_FIELDS (plus the immutable `type`, checked below) may be sent.
     for (const k of Object.keys(resolved)) {
-      if (Object.prototype.hasOwnProperty.call(READ_ONLY_FIELDS, k)) {
-        throw bad(`intellectConfig.patch: "${k}" is read-only via the public DTO — ${READ_ONLY_FIELDS[k]}. There is no setter for it.`);
+      if (k !== 'type' && !EDITABLE_SET.has(k)) {
+        throw bad(`intellectConfig.patch: "${k}" is not an editable intellect field. Editable: ${EDITABLE_FIELDS.join(', ')}.`);
       }
     }
     // `type` is immutable (not in EDITABLE_FIELDS) — reject a differing value up-front
@@ -232,14 +245,16 @@ export class IntellectConfig {
    * reference-list write like `tool_ids`/`knowledge_ids` — confirmed via
    * `intellect/add` + `intellect/get` round-trip). This only edits the
    * reference list — create/edit a Skill body via `mgmt.skills.add` first,
-   * then pass its `id` here. Pass `[]` to detach every skill.
-   * @param {number} configId @param {Array<{id:string, mode:'adhoc'|'preloaded'}>} skillIds @param {string} ks (admin)
+   * then pass its `id` here. Pass `[]` to detach every skill. An optional
+   * `condition` is a Jinja2 expression over thread variables (for example
+   * `sys__avatar_enabled`); the skill is active only when it is truthy.
+   * @param {number} configId @param {Array<{id:string, mode:'adhoc'|'adhoc-save'|'preloaded', condition?:string}>} skillIds @param {string} ks (admin)
    * @returns {Promise<{applied:boolean, result?:any, sent?:object, _meta:object}>}
    */
   async setSkillIds(configId, skillIds, ks) {
     this._.assertAdmin(ks, 'intellectConfig.setSkillIds');
     requireInt(configId, 'intellectConfig.setSkillIds configId');
-    if (!Array.isArray(skillIds)) throw bad('intellectConfig.setSkillIds needs an array of {id, mode} entries.');
+    if (!Array.isArray(skillIds)) throw bad('intellectConfig.setSkillIds needs an array of {id, mode, condition?} entries.');
     for (const entry of skillIds) {
       if (!entry || typeof entry !== 'object' || typeof entry.id !== 'string' || !entry.id) {
         throw bad('intellectConfig.setSkillIds: each entry needs a non-empty string id (the Skill entity\'s uuid).');
@@ -247,9 +262,175 @@ export class IntellectConfig {
       if (!SKILL_MODES.includes(entry.mode)) {
         throw bad(`intellectConfig.setSkillIds: entry.mode must be one of ${SKILL_MODES.join('/')}, got ${JSON.stringify(entry.mode)}.`);
       }
+      if (entry.condition !== undefined && (typeof entry.condition !== 'string' || !entry.condition.trim())) {
+        throw bad(`intellectConfig.setSkillIds: entry.condition must be a non-empty Jinja2 expression string when present, got ${JSON.stringify(entry.condition)}.`);
+      }
+      for (const k of Object.keys(entry)) {
+        if (k !== 'id' && k !== 'mode' && k !== 'condition') {
+          throw bad(`intellectConfig.setSkillIds: unknown entry key "${k}". Allowed: id, mode, condition.`);
+        }
+      }
     }
     const { result, sent } = await this.patch(configId, { skill_ids: skillIds }, ks);
     return { applied: true, result, sent, _meta: meta({ partnerId: this._.partnerId, source: 'genie/intellect.skill_ids', scope: `configId:${configId}` }) };
+  }
+
+  // ─────────────────────────── Start-up tools (thread_start_tools) ───────────────────────────
+
+  /**
+   * Set `thread_start_tools`: tool ids the backend runs in order when a new
+   * thread starts, before the first user turn (chat and avatar paths alike).
+   * Only `api` and `code` tools run (other types are skipped server-side); an
+   * `api` tool with `wait_for_response` is awaited, everything else is
+   * fire-and-forget, and a failing tool does not fail the conversation. The call
+   * is server-side only: it does not appear as a `tool` segment in the stream.
+   * The backend stores unknown ids without complaint, so check them against
+   * `mgmt.tools.list` yourself. WRITE, idempotent. Pass `[]` to clear.
+   * @param {number} configId @param {string[]} toolIds @param {string} ks (admin)
+   * @returns {Promise<{applied:boolean, result?:any, sent?:object, _meta:object}>}
+   */
+  async setThreadStartTools(configId, toolIds, ks) {
+    this._.assertAdmin(ks, 'intellectConfig.setThreadStartTools');
+    requireInt(configId, 'intellectConfig.setThreadStartTools configId');
+    if (!Array.isArray(toolIds) || toolIds.some((id) => typeof id !== 'string' || !id)) {
+      throw bad('intellectConfig.setThreadStartTools needs an array of non-empty string Tool ids.');
+    }
+    if (new Set(toolIds).size !== toolIds.length) {
+      throw bad('intellectConfig.setThreadStartTools: tool ids must be unique.');
+    }
+    const { result, sent } = await this.patch(configId, { thread_start_tools: toolIds }, ks);
+    return { applied: true, result, sent, _meta: meta({ partnerId: this._.partnerId, source: 'genie/intellect.thread_start_tools', scope: `configId:${configId}` }) };
+  }
+
+  // ─────────────────────────── Model configuration ───────────────────────────
+
+  /**
+   * Set `model_configuration` (the chat model and its sampling limits). Every
+   * key is optional; `null` restores the backend defaults. Validated
+   * client-side: `model_id` must be in {@link MODEL_IDS}, `thinking_level` in
+   * {@link THINKING_LEVELS} (Gemini only; Claude ignores it), `max_output_tokens`
+   * a positive integer, `temperature` a number in [0, 1] (Claude sampling
+   * temperature; Gemini applies it as top_p). Unknown keys are rejected.
+   * With the `avatar_show_content` capability on, the backend fills unset
+   * `thinking_level` with `low` and `max_output_tokens` with 4096.
+   * WRITE, idempotent.
+   * @param {number} configId
+   * @param {{model_id?:string, max_output_tokens?:number, thinking_level?:'low'|'high', temperature?:number}|null} config
+   * @param {string} ks (admin)
+   * @returns {Promise<{applied:boolean, result?:any, sent?:object, _meta:object}>}
+   */
+  async setModelConfiguration(configId, config, ks) {
+    this._.assertAdmin(ks, 'intellectConfig.setModelConfiguration');
+    requireInt(configId, 'intellectConfig.setModelConfiguration configId');
+    if (config !== null) {
+      if (!config || typeof config !== 'object' || Array.isArray(config)) {
+        throw bad('intellectConfig.setModelConfiguration needs a { model_id?, max_output_tokens?, thinking_level?, temperature? } object or null.');
+      }
+      for (const k of Object.keys(config)) {
+        if (!MODEL_CONFIGURATION_KEYS.includes(k)) {
+          throw bad(`intellectConfig.setModelConfiguration: unknown key "${k}". Allowed: ${MODEL_CONFIGURATION_KEYS.join(', ')}.`);
+        }
+      }
+      if (config.model_id !== undefined && !MODEL_IDS.includes(config.model_id)) {
+        throw bad(`intellectConfig.setModelConfiguration: model_id must be one of ${MODEL_IDS.join(', ')}, got ${JSON.stringify(config.model_id)}.`);
+      }
+      if (config.max_output_tokens !== undefined && (!Number.isInteger(config.max_output_tokens) || config.max_output_tokens <= 0)) {
+        throw bad(`intellectConfig.setModelConfiguration: max_output_tokens must be a positive integer, got ${JSON.stringify(config.max_output_tokens)}.`);
+      }
+      if (config.thinking_level !== undefined && !THINKING_LEVELS.includes(config.thinking_level)) {
+        throw bad(`intellectConfig.setModelConfiguration: thinking_level must be one of ${THINKING_LEVELS.join('/')}, got ${JSON.stringify(config.thinking_level)}.`);
+      }
+      if (config.temperature !== undefined && (typeof config.temperature !== 'number' || Number.isNaN(config.temperature) || config.temperature < 0 || config.temperature > 1)) {
+        throw bad(`intellectConfig.setModelConfiguration: temperature must be a number between 0 and 1, got ${JSON.stringify(config.temperature)}.`);
+      }
+    }
+    const { result, sent } = await this.patch(configId, { model_configuration: config }, ks);
+    return { applied: true, result, sent, _meta: meta({ partnerId: this._.partnerId, source: 'genie/intellect.model_configuration', scope: `configId:${configId}` }) };
+  }
+
+  // ─────────────────────────── Opening phrase ───────────────────────────
+
+  /**
+   * Set `opening_phrase`: a Jinja2 template over `request_vars` (for example
+   * `Hello {{ user_name }}, how can I help you today?`) that the backend renders
+   * and speaks when an avatar WebSocket session starts. It overrides the opening
+   * phrase the client sends at init; the rendered value comes back in the init
+   * response and is stored on the thread as an `opening` message. `null` clears
+   * it (the client-sent phrase applies again). WRITE, idempotent.
+   * @param {number} configId @param {string|null} phrase @param {string} ks (admin)
+   * @returns {Promise<{applied:boolean, result?:any, sent?:object, _meta:object}>}
+   */
+  async setOpeningPhrase(configId, phrase, ks) {
+    this._.assertAdmin(ks, 'intellectConfig.setOpeningPhrase');
+    requireInt(configId, 'intellectConfig.setOpeningPhrase configId');
+    if (phrase !== null && (typeof phrase !== 'string' || !phrase.trim())) {
+      throw bad('intellectConfig.setOpeningPhrase needs a non-empty string (Jinja2 over request_vars) or null to clear it. Pass null, not "".');
+    }
+    const { result, sent } = await this.patch(configId, { opening_phrase: phrase }, ks);
+    return { applied: true, result, sent, _meta: meta({ partnerId: this._.partnerId, source: 'genie/intellect.opening_phrase', scope: `configId:${configId}` }) };
+  }
+
+  // ─────────────────────────── Avatar session summary ───────────────────────────
+
+  /**
+   * Set `avatar_summary_config`: how the backend builds the end-of-session
+   * summary for avatar sessions. Every key is optional; `null` restores the
+   * defaults (`analysis: { summary }`, `template: '{{ summary }}'`,
+   * `content_type: 'text'`). `prompt` adds rules for the summary model;
+   * `analysis` maps output keys to descriptions; `template` is Jinja2 over the
+   * `analysis` keys; `content_type` is one of {@link SUMMARY_CONTENT_TYPES}.
+   * Every `{{ key }}` in `template` must be an `analysis` key (or `summary` when
+   * `analysis` is unset). The summary reaches the client as a `summary` message
+   * and is skipped when the thread has no human messages. WRITE, idempotent.
+   * @param {number} configId
+   * @param {{prompt?:string, analysis?:Record<string,string>, template?:string, content_type?:'text'|'html'|'html_with_js'}|null} config
+   * @param {string} ks (admin)
+   * @returns {Promise<{applied:boolean, result?:any, sent?:object, _meta:object}>}
+   */
+  async setAvatarSummaryConfig(configId, config, ks) {
+    this._.assertAdmin(ks, 'intellectConfig.setAvatarSummaryConfig');
+    requireInt(configId, 'intellectConfig.setAvatarSummaryConfig configId');
+    if (config !== null) {
+      if (!config || typeof config !== 'object' || Array.isArray(config)) {
+        throw bad('intellectConfig.setAvatarSummaryConfig needs a { prompt?, analysis?, template?, content_type? } object or null.');
+      }
+      for (const k of Object.keys(config)) {
+        if (!AVATAR_SUMMARY_CONFIG_KEYS.includes(k)) {
+          throw bad(`intellectConfig.setAvatarSummaryConfig: unknown key "${k}". Allowed: ${AVATAR_SUMMARY_CONFIG_KEYS.join(', ')}.`);
+        }
+      }
+      if (config.prompt !== undefined && (typeof config.prompt !== 'string' || !config.prompt.trim())) {
+        throw bad('intellectConfig.setAvatarSummaryConfig: prompt must be a non-empty string when present.');
+      }
+      if (config.content_type !== undefined && !SUMMARY_CONTENT_TYPES.includes(config.content_type)) {
+        throw bad(`intellectConfig.setAvatarSummaryConfig: content_type must be one of ${SUMMARY_CONTENT_TYPES.join('/')}, got ${JSON.stringify(config.content_type)}.`);
+      }
+      let analysisKeys = ['summary'];
+      if (config.analysis !== undefined) {
+        const a = config.analysis;
+        if (!a || typeof a !== 'object' || Array.isArray(a) || Object.keys(a).length === 0) {
+          throw bad('intellectConfig.setAvatarSummaryConfig: analysis must be a non-empty { key: description } object.');
+        }
+        for (const [k, v] of Object.entries(a)) {
+          if (!k.trim() || typeof v !== 'string' || !v.trim()) {
+            throw bad(`intellectConfig.setAvatarSummaryConfig: analysis["${k}"] must be a non-empty string description.`);
+          }
+        }
+        analysisKeys = Object.keys(a);
+      }
+      if (config.template !== undefined) {
+        if (typeof config.template !== 'string' || !config.template.trim()) {
+          throw bad('intellectConfig.setAvatarSummaryConfig: template must be a non-empty Jinja2 string when present.');
+        }
+        for (const m of config.template.matchAll(TEMPLATE_VAR_RE)) {
+          if (!analysisKeys.includes(m[1])) {
+            throw bad(`intellectConfig.setAvatarSummaryConfig: template references "${m[1]}" which is not an analysis key (${analysisKeys.join(', ')}).`);
+          }
+        }
+      }
+    }
+    const { result, sent } = await this.patch(configId, { avatar_summary_config: config }, ks);
+    return { applied: true, result, sent, _meta: meta({ partnerId: this._.partnerId, source: 'genie/intellect.avatar_summary_config', scope: `configId:${configId}` }) };
   }
 
   // ─────────────────────────── Secrets (full-replace dict, mask-and-keep) ───────────────────────────
@@ -404,13 +585,12 @@ export class IntellectConfig {
   // ─────────────────────────── Describe (the full editable surface) ───────────────────────────
 
   /**
-   * One-shot read of the ENTIRE editable surface, partitioned into `editable`
-   * (the public-DTO-writable fields, with current values) and `readOnly` (the
-   * phantom-write fields + row-managed fields, each with a `note` so a UI can
-   * disable the input and explain why). READ — no state change. The capabilities
-   * block additionally lists the 15 known names so a UI can render a full grid.
+   * One-shot read of the whole editable surface: every key in
+   * {@link EDITABLE_FIELDS} with its current value (`null` when the server did
+   * not echo it), plus `capabilityNames` (every known capability) so a UI can
+   * render a full grid. Secrets are names-only. READ, no state change.
    * @param {number} configId @param {string} ks (admin)
-   * @returns {Promise<{type:string, editable:Record<string,unknown>, readOnly:Record<string,{value:unknown, note:string}>, capabilityNames:readonly string[], _meta:object}>}
+   * @returns {Promise<{type:string, editable:Record<string,unknown>, capabilityNames:readonly string[], _meta:object}>}
    */
   async describe(configId, ks) {
     this._.assertAdmin(ks, 'intellectConfig.describe');
@@ -424,19 +604,13 @@ export class IntellectConfig {
         // Never echo values — names only (write-only contract).
         const map = (cur.secrets && typeof cur.secrets === 'object' && !Array.isArray(cur.secrets)) ? cur.secrets : {};
         editable.secrets = { names: Object.keys(map).sort() };
-      } else if (Object.prototype.hasOwnProperty.call(cur, k)) {
-        editable[k] = cur[k];
+      } else {
+        editable[k] = Object.prototype.hasOwnProperty.call(cur, k) ? cur[k] : null;
       }
-    }
-    /** @type {Record<string,{value:unknown, note:string}>} */
-    const readOnly = {};
-    for (const [k, note] of Object.entries(READ_ONLY_FIELDS)) {
-      readOnly[k] = { value: Object.prototype.hasOwnProperty.call(cur, k) ? cur[k] : undefined, note };
     }
     return {
       type,
       editable,
-      readOnly,
       capabilityNames: CAPABILITIES,
       _meta: meta({ partnerId: this._.partnerId, source: 'genie/intellect.get', scope: `configId:${configId}` }),
     };

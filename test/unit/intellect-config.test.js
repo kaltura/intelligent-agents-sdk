@@ -1,10 +1,59 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildUserPropertiesForms } from '../../src/management/intellect-config.js';
+import {
+  buildUserPropertiesForms, EDITABLE_FIELDS, SKILL_MODES, MODEL_IDS, THINKING_LEVELS, SUMMARY_CONTENT_TYPES, CALL_STAGES,
+} from '../../src/management/intellect-config.js';
+import * as mgmt from '../../src/management/index.js';
 
 /**
- * PURE unit tests for {@link buildUserPropertiesForms}. No network.
+ * PURE unit tests for {@link buildUserPropertiesForms} and the exported enums. No network.
  */
+
+// ───────────────────────── exported enums ─────────────────────────
+
+test('EDITABLE_FIELDS is the frozen 20-key customer-writable surface', () => {
+  assert.ok(Object.isFrozen(EDITABLE_FIELDS));
+  assert.equal(EDITABLE_FIELDS.length, 20);
+  assert.deepEqual([...EDITABLE_FIELDS].sort(), [
+    'allow_client_variables', 'avatar_summary_config', 'base_directive', 'capabilities', 'description',
+    'force_language', 'glossary', 'knowledge_ids', 'mcp_servers', 'model_configuration', 'name',
+    'opening_phrase', 'prompts', 'secrets', 'skill_ids', 'status', 'tags', 'thread_start_tools',
+    'tool_ids', 'user_properties_forms',
+  ]);
+  assert.ok(!EDITABLE_FIELDS.includes('type'), 'type is immutable, not editable');
+});
+
+test('SKILL_MODES / THINKING_LEVELS / SUMMARY_CONTENT_TYPES / CALL_STAGES are frozen with exact values', () => {
+  for (const e of [SKILL_MODES, THINKING_LEVELS, SUMMARY_CONTENT_TYPES, CALL_STAGES, MODEL_IDS]) assert.ok(Object.isFrozen(e));
+  assert.deepEqual([...SKILL_MODES], ['adhoc', 'adhoc-save', 'preloaded']);
+  assert.deepEqual([...THINKING_LEVELS], ['low', 'high']);
+  assert.deepEqual([...SUMMARY_CONTENT_TYPES], ['text', 'html', 'html_with_js']);
+  assert.deepEqual([...CALL_STAGES], ['start', 'middle', 'end']);
+});
+
+test('MODEL_IDS lists the nine selectable model ids (Claude Sonnet/Haiku us+eu, Gemini)', () => {
+  assert.deepEqual([...MODEL_IDS], [
+    'us.anthropic.claude-sonnet-4-20250514-v1:0',
+    'eu.anthropic.claude-sonnet-4-20250514-v1:0',
+    'us.anthropic.claude-haiku-4-5-20251001-v1:0',
+    'eu.anthropic.claude-haiku-4-5-20251001-v1:0',
+    'gemini-3-flash-preview',
+    'gemini-2.5-flash',
+    'gemini-3.1-flash-lite',
+    'gemini-3.5-flash-lite',
+    'gemini-3.5-flash',
+  ]);
+  assert.equal(new Set(MODEL_IDS).size, MODEL_IDS.length, 'no duplicates');
+});
+
+test('the management entry point re-exports every enum', () => {
+  assert.equal(mgmt.EDITABLE_FIELDS, EDITABLE_FIELDS);
+  assert.equal(mgmt.SKILL_MODES, SKILL_MODES);
+  assert.equal(mgmt.MODEL_IDS, MODEL_IDS);
+  assert.equal(mgmt.THINKING_LEVELS, THINKING_LEVELS);
+  assert.equal(mgmt.SUMMARY_CONTENT_TYPES, SUMMARY_CONTENT_TYPES);
+  assert.equal(mgmt.CALL_STAGES, CALL_STAGES);
+});
 
 // ───────────────────────── buildUserPropertiesForms ─────────────────────────
 

@@ -169,7 +169,7 @@ export class Management {
     this.application = new Application(ctx);
     this.intellects = new Intellects(ctx);
     // Facade over the raw Intellects surface: one merge-safe patch() primitive + typed
-    // field setters + describe() (editable/readOnly map). Shares the intellects instance
+    // field setters + describe() (every EDITABLE_FIELDS value). Shares the intellects instance
     // so capability/secret writes use a single read-merge-write path (no divergence).
     this.intellectConfig = new IntellectConfig(ctx, this.intellects);
     // Standalone, PARTNER-LEVEL Tool entity CRUD (`/v1/tool/*`) — NOT intellect-scoped.
@@ -237,13 +237,11 @@ export class Management {
   }
 
   /**
-   * Force an agent's reply language by writing three related fields together:
-   * `force_language` on the intellect, `asr.language` on the agent, and a
-   * marker-wrapped instruction in `base_directive`. `force_language` alone
-   * does not change the reply language; the `base_directive` instruction does.
-   * WRITE, idempotent. Pass `language: null` to remove the instruction and
-   * reset `asr.language`/`force_language` to their defaults. Requires an admin
-   * token.
+   * Force an agent's reply language by writing two related fields together:
+   * `force_language` on the intellect (the backend enforces it at runtime) and
+   * `asr.language` on the agent (so speech recognition matches). WRITE,
+   * idempotent. Pass `language: null` to clear `force_language` and reset
+   * `asr.language` to `'en'`. Requires an admin token.
    * @param {object} opts {configId, agentId, language, languageName?, asrProvider?}
    * @param {string} ks (admin)
    * @see {@link setForcedLanguage}

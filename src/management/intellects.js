@@ -212,13 +212,12 @@ export class Intellects {
   }
 
   /**
-   * Resolve the auditable 15-name capability policy with the exact server
-   * precedence (DISABLED veto > request > partner_config > env > default). READ.
+   * Resolve the auditable capability policy (every name in `CAPABILITIES`) with
+   * the exact server precedence (DISABLED veto > request > partner_config > env > default). READ.
    * Reads the stored dict as the `partner_config` layer; `env` defaults to the
-   * documented snapshot ({@link CAPABILITY_DEFAULTS}). `use_web_search` is
-   * marked `inferred` (the resolver cannot see `web_search_config`).
+   * documented snapshot ({@link CAPABILITY_DEFAULTS}).
    *
-   * ⚠️ SHAPE: the 15 names are NESTED under `.capabilities`, NOT top-level —
+   * ⚠️ SHAPE: the names are NESTED under `.capabilities`, NOT top-level:
    * `Object.keys(result).length === 2` (`capabilities` + `_meta`). Read a single
    * capability via `result.capabilities.<name>.state`.
    *
@@ -227,11 +226,10 @@ export class Intellects {
    *   request: { use_web_search: 'off' },  // per-request override layer
    * });
    * r.capabilities.avatar.state;        // 'on' | 'off' | 'disabled'
-   * r.capabilities.avatar.resolvedFrom; // 'request'|'partner_config'|'env'|'default'|'disabled_veto'|'web_search_config'
-   * r.capabilities.use_web_search.inferred; // true — best-effort (resolver can't read web_search_config)
+   * r.capabilities.avatar.resolvedFrom; // 'request'|'partner_config'|'env'|'default'|'disabled_veto'
    *
    * @param {number} configId @param {string} ks (admin) @param {{request?:Record<string,'on'|'off'|'disabled'>}} [opts]
-   * @returns {Promise<{capabilities:Record<string,{state:'on'|'off'|'disabled', resolvedFrom:'request'|'partner_config'|'env'|'default'|'disabled_veto'|'web_search_config', vetoed:boolean, inferred?:boolean, layers:object}>, _meta:object}>}
+   * @returns {Promise<{capabilities:Record<string,{state:'on'|'off'|'disabled', resolvedFrom:'request'|'partner_config'|'env'|'default'|'disabled_veto', vetoed:boolean, layers:object}>, _meta:object}>}
    */
   async resolveCapabilities(configId, ks, opts = {}) {
     const { capabilities } = await this.getCapabilities(configId, ks);

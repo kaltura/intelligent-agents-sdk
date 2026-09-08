@@ -108,7 +108,11 @@ For the full endpoint/DTO reference behind every one of these calls (exact paylo
 | `setCapabilities(configId, dict, ks)` | Full-replace-dict write, ALL-OR-NOTHING on the `disabled` veto (see Capabilities below). |
 | `setCapability(configId, name, state, ks)` | One capability by name. |
 | `setToolIds(configId, toolIds, ks)` | Attach standalone Tools (see Tools below) — `[]` detaches all. |
-| `setSkillIds(configId, skillIds, ks)` | Attach standalone Skills, each `{id, mode}` with `mode` in `SKILL_MODES` (`'adhoc'`/`'preloaded'`). |
+| `setSkillIds(configId, skillIds, ks)` | Attach standalone Skills, each `{id, mode, condition?}` with `mode` in `SKILL_MODES` (`'adhoc'`, `'adhoc-save'`, `'preloaded'`). `condition` is a Jinja2 expression over thread vars, e.g. `'{{ sys__avatar_enabled }}'`. `[]` detaches all. |
+| `setThreadStartTools(configId, toolIds, ks)` | Tool ids (`api`/`code` tools) the backend runs once when a thread starts. `[]` clears. |
+| `setModelConfiguration(configId, config, ks)` | `{model_id?, max_output_tokens?, thinking_level?, temperature?}`; `model_id` in `MODEL_IDS`, `thinking_level` in `THINKING_LEVELS`. `null` restores backend defaults. |
+| `setOpeningPhrase(configId, phrase, ks)` | Server-side opening line for avatar sessions (Jinja2 over `request_vars`). `null` clears; `''` is rejected. |
+| `setAvatarSummaryConfig(configId, config, ks)` | `{prompt, analysis, template, content_type}` for the end-of-session summary message; `content_type` in `SUMMARY_CONTENT_TYPES`. `null` clears. |
 | `setSecrets(configId, entries, ks)` | Write-only; prior secrets round-trip as the mask sentinel so they're kept. |
 | `listSecretNames(configId, ks)` | Names only — values are never returned. |
 | `setUserPropertiesForms(configId, forms, ks)` / `clearUserPropertiesForms(configId, ks)` | Structured-data forms the agent emits (lead capture etc). |
@@ -116,13 +120,49 @@ For the full endpoint/DTO reference behind every one of these calls (exact paylo
 | `setMetadata(configId, {name?, description?, tags?}, ks)` | Row metadata. |
 | `setKnowledgeIds(configId, knowledgeIds, ks)` | Ungated knowledge linkage — capped at one id. |
 | `setMcpServers(configId, servers, ks)` | Map of `{name: {url}}` — ungated. |
-| `describe(configId, ks)` | One-shot read of the whole editable surface, partitioned `editable`/`readOnly` with a note on every read-only field. |
+| `describe(configId, ks)` | One-shot read of the whole writable surface: `editable` holds every `EDITABLE_FIELDS` value (`null` when the server did not echo it) plus `capabilityNames`. |
 
-`EDITABLE_FIELDS`: `prompts`, `base_directive`, `glossary`, `capabilities`, `tool_ids`, `secrets`, `user_properties_forms`, `mcp_servers`, `allow_client_variables`, `knowledge_ids`, `skill_ids`, `name`, `description`, `tags`, `status`. `type` is immutable — `patch()` throws if you try to change it. Everything else (`web_search_config`, `run_quota_check`, `agent_avatar_llm`, `agent_llm`, `agent_fast_llm`, rate limits, `avatar_config`) is set by internal tooling only and not writable via the public API at all; `describe()` surfaces why.
+`EDITABLE_FIELDS` is the exact set a partner admin KS can read and write on `v1/intellect/*`: `prompts`, `base_directive`, `glossary`, `capabilities`, `tool_ids`, `secrets`, `user_properties_forms`, `mcp_servers`, `allow_client_variables`, `knowledge_ids`, `skill_ids`, `thread_start_tools`, `avatar_summary_config`, `force_language`, `opening_phrase`, `model_configuration`, `name`, `description`, `tags`, `status`. `type` is immutable and `patch()` throws on any key outside this list, before the network call.
+
+## Model, opening phrase, start-up tools, session summary
+
+Each of these is one intellect field with one typed setter. All validate client-side and throw `bad_request` before any network call.
+
+```js
+import { MODEL_IDS, THINKING_LEVELS, SUMMARY_CONTENT_TYPES, SKILL_MODES } from '@kaltura/intelligent-agents/management';
+
+// Model: every key optional; null on a key means "backend default". Pass null to reset everything.
+await kaltura.intellectConfig.setModelConfiguration(configId, {
+  model_id: 'gemini-3.5-flash',        // one of MODEL_IDS
+  temperature: 0.3,                    // 0..1
+  max_output_tokens: 2048,             // positive integer
+  thinking_level: 'low',               // one of THINKING_LEVELS; Gemini models only
+}, admin.ks);
+
+// Opening phrase: rendered server-side with request_vars, spoken as the first avatar turn,
+// stored on the thread as an `opening` message. Overrides any client-sent opening line.
+await kaltura.intellectConfig.setOpeningPhrase(configId, 'Hi {{ user_name }}, what can I help with?', admin.ks);
+
+// Thread-start tools: run once per new thread, server-side only. Only api/code tools run.
+await kaltura.intellectConfig.setThreadStartTools(configId, [toolId], admin.ks);
+
+// Session summary: generated when an avatar session ends, stored as a `summary` message.
+// Every {{ key }} in template must be a key in analysis.
+await kaltura.intellectConfig.setAvatarSummaryConfig(configId, {
+  prompt: 'Summarise the visit for the studio owner.',
+  analysis: { intent: 'What did the visitor want?', next_step: 'Agreed follow-up, if any' },
+  template: '<p><b>Intent:</b> {{ intent }}</p><p><b>Next:</b> {{ next_step }}</p>',
+  content_type: 'html',                // one of SUMMARY_CONTENT_TYPES
+}, admin.ks);
+```
+
+Which `MODEL_IDS` entries answer depends on the partner's region. Set one, then run `converseOnce` once to confirm it replies before shipping.
+
+Forced reply language is `force_language` on the intellect. Set it through `kaltura.setForcedLanguage({ configId, agentId, language: 'he' }, admin.ks)`, which also sets the agent's `asr.language` so speech recognition matches. The backend enforces the language at runtime. `language: null` clears both.
 
 ## Capabilities
 
-15 named `AssistantCapability` flags, each `'on'`/`'off'`/`'disabled'`. `disabled` is a hard veto — a partner/env-level disable overrides any per-request `'on'`. `capabilities` is a **full-replace sub-dict** on `v1/intellect/update` (a partial write drops siblings you omit), which is why every SDK setter reads-merges-writes instead of sending a bare partial.
+16 named `AssistantCapability` flags, each `'on'`/`'off'`/`'disabled'`. `disabled` is a hard veto: a partner/env-level disable overrides any per-request `'on'`. `capabilities` is a **full-replace sub-dict** on `v1/intellect/update` (a partial write drops siblings you omit), which is why every SDK setter reads-merges-writes instead of sending a bare partial.
 
 ```js
 await kaltura.intellects.setCapability(configId, 'use_web_search', 'on', admin.ks);
@@ -161,10 +201,6 @@ Write-only, per-intellect, via `src/management/secrets.js` (also mirrored on `in
 ## Versioning a brain
 
 `intellects.snapshot(configId, ks)` / `restore(snapshot, ks, opts)` / `diffSnapshots(a, b)` — all client-side. `restore` takes the **full snapshot object first** (it reads `configId` from `snapshot.configId` internally), ks second.
-
-## Brain-model and rate-limit fields — not in the public API
-
-`agent_llm`, `agent_fast_llm`, `agent_avatar_llm`, `run_quota_check`, `web_search_config`, and the four rate-limit fields exist on the backend intellect record, but no public route reads or writes them — they're set by internal tooling only. `intellectConfig.describe(configId, ks)` lists them under `readOnly` with a note; there is no setter for any of them.
 
 ## Knowledge — ground the agent on documents (ungated)
 
@@ -342,10 +378,10 @@ Navigation runs through exactly one deterministic mechanism — `session.onToolC
 3. **Restricted topics** — `prompts.restrictedTopics` is enforced content, not a suggestion; use it for anything the agent must never discuss.
 4. **Voice selection** — pick from `catalog.list(ks, {type:'voice'})` or clone one (`catalog.createVoice`/`importVoiceFrom*`); match voice to persona.
 5. **Visual selection** — same for `type:'visual'`; `catalog.createVisual` for a custom image.
-6. **Opening phrase** — pass a real scripted line, or `'<blank>'` (the SSML silence sentinel) if you want no opening line at all — never `''`: an empty opening phrase makes the first turn fail.
+6. **Opening phrase.** Two places set it. Server-side, `intellectConfig.setOpeningPhrase` on the intellect (Jinja2 over `request_vars`, always wins when set). Client-side, the avatar's `openingPhrase`: pass a real scripted line, or `'<blank>'` (the SSML silence sentinel) if you want no opening line at all, never `''` (an empty client opening phrase makes the first turn fail). Pick one; if both are set, the intellect's phrase is spoken.
 7. **Glossary** — `intellectConfig.patch(configId, {glossary}, ks)` for domain terms/pronunciations the brain should know verbatim.
 8. **Motion control** — capabilities like `avatar_show_content` / `avatar_filler` shape how animated the avatar is between turns.
-9. **Max conversation length** — `provision()`'s `maxConversationLength` option, or set it directly via the intellect's editable fields.
+9. **Max conversation length.** An agent field, not an intellect field: `provision({ maxConversationLength })` at create time, or `agents.update({ agentId, maxConversationLength }, ks)` later.
 10. **Widget layouts** — plan `tool_ids` and GenUI widget usage together; a tool that renders a widget needs a matching `onToolCall`/`show_widget` handler on the Experience side (see GenUI above).
 
 ## Where to look for more depth

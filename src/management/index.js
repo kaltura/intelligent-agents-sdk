@@ -56,7 +56,10 @@ export {
   PAGE_CONTEXT_PROMPT,
 } from './prompt-lint.js';
 // Intellect-config helpers.
-export { IntellectConfig, buildUserPropertiesForms, CALL_STAGES, SKILL_MODES } from './intellect-config.js';
+export {
+  IntellectConfig, buildUserPropertiesForms, EDITABLE_FIELDS, CALL_STAGES, SKILL_MODES,
+  MODEL_IDS, THINKING_LEVELS, SUMMARY_CONTENT_TYPES,
+} from './intellect-config.js';
 export { LANGUAGE_NAMES } from './set-forced-language.js';
 // Knowledge / RAG indexer enums — ChapterType/Strategy + the objects[] builder.
 export {

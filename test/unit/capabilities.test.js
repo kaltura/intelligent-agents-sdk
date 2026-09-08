@@ -17,19 +17,20 @@ import {
 const OFF_DEFAULTS = [
   'avatar', 'avatar_filler', 'avatar_show_content', 'video_gallery',
   'external_video', 'show_link', 'use_web_search', 'screen_share_analysis',
+  'think_process',
 ];
 
 // ── const tables ────────────────────────────────────────────────────────────
 
-test('CAPABILITIES is the frozen 15-name set in canonical order', () => {
-  assert.equal(CAPABILITIES.length, 15);
+test('CAPABILITIES is the frozen 16-name set in canonical order', () => {
+  assert.equal(CAPABILITIES.length, 16);
   assert.ok(Object.isFrozen(CAPABILITIES));
   assert.deepEqual([...CAPABILITIES], [
     'use_knowledge_base', 'use_content_search', 'use_get_entry_content',
     'generate_followup_questions', 'include_sources', 'use_related_files',
     'video_gallery', 'external_video', 'show_link', 'avatar', 'avatar_filler',
     'avatar_show_content', 'kaltura_genie_experiences', 'use_web_search',
-    'screen_share_analysis',
+    'screen_share_analysis', 'think_process',
   ]);
 });
 
@@ -38,18 +39,19 @@ test('CAPABILITY_STATE is the frozen on/off/disabled enum', () => {
   assert.deepEqual(CAPABILITY_STATE, { ON: 'on', OFF: 'off', DISABLED: 'disabled' });
 });
 
-test('CAPABILITY_DEFAULTS: 8 OFF, 7 ON (kaltura_genie_experiences ON); frozen snapshot', () => {
+test('CAPABILITY_DEFAULTS: 9 OFF, 7 ON (kaltura_genie_experiences ON); frozen snapshot', () => {
   assert.ok(Object.isFrozen(CAPABILITY_DEFAULTS));
   const off = CAPABILITIES.filter((c) => CAPABILITY_DEFAULTS[c] === 'off');
   const on = CAPABILITIES.filter((c) => CAPABILITY_DEFAULTS[c] === 'on');
   assert.deepEqual(off.sort(), [...OFF_DEFAULTS].sort());
   assert.equal(on.length, 7);
   assert.equal(CAPABILITY_DEFAULTS.kaltura_genie_experiences, 'on');
+  assert.equal(CAPABILITY_DEFAULTS.think_process, 'off');
   // every capability has a default
   for (const c of CAPABILITIES) assert.ok(CAPABILITY_DEFAULTS[c] === 'on' || CAPABILITY_DEFAULTS[c] === 'off');
 });
 
-test('CAPABILITY_INFO covers all 15 with valid kind + defaultState matching CAPABILITY_DEFAULTS', () => {
+test('CAPABILITY_INFO covers all 16 with valid kind + defaultState matching CAPABILITY_DEFAULTS', () => {
   const kinds = new Set(['tool', 'segment', 'mode', 'prompt']);
   assert.deepEqual(Object.keys(CAPABILITY_INFO).sort(), [...CAPABILITIES].sort());
   for (const c of CAPABILITIES) {
@@ -62,6 +64,15 @@ test('CAPABILITY_INFO covers all 15 with valid kind + defaultState matching CAPA
   // segment caps carry a runtime name
   assert.equal(CAPABILITY_INFO.show_link.runtime, 'show-link');
   assert.equal(CAPABILITY_INFO.generate_followup_questions.runtime, 'followups');
+  assert.equal(CAPABILITY_INFO.think_process.kind, 'segment');
+  assert.equal(CAPABILITY_INFO.think_process.runtime, 'think');
+});
+
+test('CAPABILITY_INFO summaries name no internal-only backend fields', () => {
+  const all = Object.values(CAPABILITY_INFO).map((i) => i.summary).join('\n');
+  for (const s of ['web_search_config', 'agent_avatar_llm', 'agent_llm', 'agent_fast_llm', 'rate_limit', 'run_quota_check', 'avatar_config']) {
+    assert.ok(!all.includes(s), `summary mentions ${s}`);
+  }
 });
 
 // ── assertCapability / assertCapabilityState ─────────────────────────────────
@@ -73,8 +84,9 @@ test('assertCapability accepts known, throws unknown_capability on typo', () => 
   assert.throws(() => assertCapability(undefined), (e) => e.code === 'unknown_capability');
 });
 
-test('think_process is NOT a capability — rejected pre-network (sending it live 500s intellect creation)', () => {
-  assert.throws(() => assertCapability('think_process'), (e) => e.code === 'unknown_capability');
+test('think_process is a known capability (accepted pre-network)', () => {
+  assert.equal(assertCapability('think_process'), 'think_process');
+  assert.deepEqual(validateCapabilities({ think_process: 'on' }), { think_process: 'on' });
 });
 
 test('assertCapabilityState accepts on/off/disabled, rejects others', () => {
@@ -131,9 +143,10 @@ test('mergeCapabilityWrite validates patch strictly; unknown current keys pass t
 
 // ── resolveCapabilities: precedence truth table ──────────────────────────────
 
-test('resolve with no layers => all 15 fall to default, resolvedFrom env (default snapshot)', () => {
+test('resolve with no layers => every capability falls to default, resolvedFrom env (default snapshot)', () => {
   const { capabilities, _meta } = resolveCapabilities();
-  assert.equal(Object.keys(capabilities).length, 15);
+  assert.equal(Object.keys(capabilities).length, CAPABILITIES.length);
+  assert.equal(Object.keys(capabilities).length, 16);
   for (const c of CAPABILITIES) {
     assert.equal(capabilities[c].state, CAPABILITY_DEFAULTS[c], `${c}`);
     assert.equal(capabilities[c].vetoed, false);
@@ -214,31 +227,23 @@ test('veto holds even when request says on AND partner_config says on, env disab
   assert.equal(capabilities.show_link.vetoed, true);
 });
 
-// ── use_web_search best-effort / web_search_config force-on ──────────────────
+// ── use_web_search resolves like every other capability ──────────────────────
 
-test('use_web_search result is always marked inferred', () => {
+test('use_web_search carries no inferred flag and resolves from its explicit layers only', () => {
   const { capabilities } = resolveCapabilities();
-  assert.equal(capabilities.use_web_search.inferred, true);
-  // other caps are not inferred
-  assert.equal(capabilities.avatar.inferred, undefined);
-});
-
-test('webSearchConfigPresent force-resolves use_web_search ON (resolvedFrom web_search_config)', () => {
-  const { capabilities } = resolveCapabilities({ webSearchConfigPresent: true });
-  // default is off, but the present config flips it on (server behavior)
-  assert.equal(capabilities.use_web_search.state, 'on');
-  assert.equal(capabilities.use_web_search.resolvedFrom, 'web_search_config');
-  assert.equal(capabilities.use_web_search.inferred, true);
-});
-
-test('webSearchConfigPresent does NOT override a DISABLED veto', () => {
-  const { capabilities } = resolveCapabilities({
-    partnerConfig: { use_web_search: 'disabled' },
-    webSearchConfigPresent: true,
-  });
+  assert.equal('inferred' in capabilities.use_web_search, false);
   assert.equal(capabilities.use_web_search.state, 'off');
-  assert.equal(capabilities.use_web_search.vetoed, true);
-  assert.equal(capabilities.use_web_search.resolvedFrom, 'disabled_veto');
+  assert.equal(capabilities.use_web_search.resolvedFrom, 'env');
+  const on = resolveCapabilities({ partnerConfig: { use_web_search: 'on' } }).capabilities.use_web_search;
+  assert.equal(on.state, 'on');
+  assert.equal(on.resolvedFrom, 'partner_config');
+});
+
+test('every resolved entry has exactly {state, resolvedFrom, vetoed, layers}', () => {
+  const { capabilities } = resolveCapabilities();
+  for (const c of CAPABILITIES) {
+    assert.deepEqual(Object.keys(capabilities[c]).sort(), ['layers', 'resolvedFrom', 'state', 'vetoed'], c);
+  }
 });
 
 // ── resolver validation + receipt ────────────────────────────────────────────

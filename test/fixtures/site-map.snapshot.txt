@@ -44,7 +44,7 @@ API · Phase 2 — Build — @kaltura/intelligent-agents
 /reference/api/build/
 
 API · Build · Create an Avatar and an Agent — @kaltura/intelligent-agents
-/reference/api/build/avatar-and-agent/: create-avatar, create-agent, brain-model-rate
+/reference/api/build/avatar-and-agent/: create-avatar, create-agent
 
 API · Build · Create and Configure an Intellect — @kaltura/intelligent-agents
 /reference/api/build/intellect/: create-intellect, configure-intellect
