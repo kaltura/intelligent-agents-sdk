@@ -442,6 +442,19 @@ test('intellectConfig.setAvatarSummaryConfig rejects bad shapes and unknown temp
   assert.equal(f.calls.length, 0);
 });
 
+test('intellectConfig.setAvatarSummaryConfig template check reads the identifier before any Jinja2 filter and stays linear on adversarial input', async () => {
+  const { cfg, f } = mkMgmt([getDto(), updateEcho]);
+  const analysis = { overview: 'x', items: 'y' };
+  const template = '{{ overview | upper }} {{items|join(", ")}}';
+  await cfg.setAvatarSummaryConfig(1481, { analysis, template }, ADMIN);
+  assert.equal(f.calls.filter((c) => c.url.includes('/v1/intellect/update')).length, 1);
+  await assert.rejects(() => cfg.setAvatarSummaryConfig(1481, { analysis, template: '{{ mood | upper }}' }, ADMIN), (e) => e.code === 'bad_request' && /mood/.test(e.detail));
+  const evil = `{{{{A${'0'.repeat(100_000)}`;
+  const t0 = Date.now();
+  await cfg.setAvatarSummaryConfig(1481, { analysis, template: evil }, ADMIN);
+  assert.ok(Date.now() - t0 < 1000, 'template scan must not be polynomial in the template length');
+});
+
 test('intellectConfig.setSkillIds passes adhoc-save + condition through and rejects a bad condition or unknown entry key', async () => {
   const { cfg, f } = mkMgmt([getDto(), updateEcho]);
   const skills = [{ id: 'skill-1', mode: 'adhoc-save', condition: 'sys__avatar_enabled' }];

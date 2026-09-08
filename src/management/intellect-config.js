@@ -119,7 +119,9 @@ export const SUMMARY_CONTENT_TYPES = Object.freeze(['text', 'html', 'html_with_j
 
 const MODEL_CONFIGURATION_KEYS = Object.freeze(['model_id', 'max_output_tokens', 'thinking_level', 'temperature']);
 const AVATAR_SUMMARY_CONFIG_KEYS = Object.freeze(['prompt', 'analysis', 'template', 'content_type']);
-const TEMPLATE_VAR_RE = /\{\{\s*([A-Za-z_][A-Za-z0-9_]*)[^}]*\}\}/g;
+// The identifier and the optional tail cannot overlap (the tail must start with a
+// non-identifier char), so the match is linear in the template length.
+const TEMPLATE_VAR_RE = /\{\{\s*([A-Za-z_][A-Za-z0-9_]*)(?:[^A-Za-z0-9_}][^}]*)?\}\}/g;
 
 /** @param {string} detail @param {string} [code] */
 function bad(detail, code = 'bad_request') {
