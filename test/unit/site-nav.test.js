@@ -89,6 +89,7 @@ test('go_to to another page with a section: navigate first, then scroll, hash, p
   assert.equal(info.sectionId, 'the-edge-case-dont-leave-the-avatar-stuck-paused');
   assert.equal(info.resolvedBy, 'key');
   assert.equal(info.fellBackToTop, false);
+  assert.equal(info.splitPath, false);
   assert.equal(info.samePage, false);
   assert.equal(info.sectionFound, true);
   assert.deepEqual(info.args, { path: '/guides/pause-resume/', section: 'edge-case-dont' });
@@ -113,6 +114,29 @@ test('unknown path is dropped: no navigate, no turn slot used', async () => {
   assert.deepEqual(events, [{ dropped: true, reason: 'unknown_path', args: { path: '/docs/faq/', section: 'x' } }]);
   await session.fireToolCall('go_to', { path: '/reference/api/' });
   assert.deepEqual(navigated, ['/reference/api/'], 'the invalid call did not use up the once-per-turn slot');
+});
+
+test('section glued onto the path navigates to the parent page and that section', async () => {
+  const { session, events, navigated, pointed } = setup({ pathname: '/reference/api/' });
+  await session.fireToolCall('go_to', { path: '/quick-start' });
+  assert.deepEqual(navigated, ['/#quick-start']);
+  assert.deepEqual(pointed, [['quick-start', 'quick-start']]);
+  const info = events[0];
+  assert.equal(info.path, '/');
+  assert.equal(info.section, 'quick-start');
+  assert.equal(info.resolvedBy, 'key');
+  assert.equal(info.splitPath, true);
+  assert.equal(info.fellBackToTop, false);
+  assert.equal(info.sectionFound, true);
+  assert.deepEqual(info.args, { path: '/quick-start' });
+});
+
+test('section glued onto a nested page path resolves too', async () => {
+  const { session, events, navigated } = setup();
+  await session.fireToolCall('go_to', { path: '/guides/pause-resume/salesforce-example/' });
+  assert.deepEqual(navigated, ['/guides/pause-resume/#salesforce-example']);
+  assert.equal(events[0].splitPath, true);
+  assert.equal(events[0].section, 'salesforce-example');
 });
 
 test('sloppy path and section still resolve', async () => {

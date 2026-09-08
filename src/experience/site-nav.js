@@ -19,7 +19,8 @@
  * the page.
  *
  * Safety (constitution S-3, S-4, P-1): only manifest paths are ever navigated
- * to (an invented path is dropped, never guessed), every URL passes `safeUrl`,
+ * to (an invented path is dropped, never guessed; a section glued onto a page
+ * path is split back apart by `resolveTarget`), every URL passes `safeUrl`,
  * a fetched manifest is size-guarded and validated, elements are looked up by
  * id (no selector building, no `innerHTML`).
  *
@@ -38,7 +39,7 @@
 
 import { Teardown } from './teardown.js';
 import { safeUrl } from '../core/safety.js';
-import { normalizePath, resolvePath, resolveSection, validateSectionsManifest } from '../core/site-keys.js';
+import { normalizePath, resolveTarget, validateSectionsManifest } from '../core/site-keys.js';
 
 /** Live SiteNavigator count per session, for the forgotten-destroy warning. Dev-time only, never affects behavior. @type {WeakMap<object, number>} */
 const liveNavigators = new WeakMap();
@@ -62,6 +63,7 @@ function trimTrailingSlashes(s) {
  * @property {string|null} sectionId DOM id of the resolved section, or `null`.
  * @property {import('../core/site-keys.js').SectionMatch|null} resolvedBy How the section matched, or `null`.
  * @property {boolean} fellBackToTop `true` when the brain sent a section that matched nothing (page top used instead).
+ * @property {boolean} splitPath `true` when the path was not a page and its last segment resolved as a section of the parent page (`resolveTarget`).
  * @property {boolean} samePage `true` when the visitor was already on that page (`navigate` skipped).
  * @property {boolean} [sectionFound] Set after the scroll step: whether the section element was in the DOM.
  * @property {{path?:unknown, section?:unknown}} args Raw tool args as the brain sent them.
@@ -185,15 +187,15 @@ export class SiteNavigator {
     const manifest = this._manifest;
     if (!manifest) { this._onNavigate({ dropped: true, reason: 'no_manifest', args }); return; }
 
-    const page = resolvePath(manifest, args.path);
-    if (!page) { this._onNavigate({ dropped: true, reason: 'unknown_path', args }); return; }
+    const target = resolveTarget(manifest, args.path, args.section);
+    if (!target) { this._onNavigate({ dropped: true, reason: 'unknown_path', args }); return; }
+    const { page, match, split } = target;
     if (this._oncePerTurn && this._turnUsed) { this._onNavigate({ dropped: true, reason: 'once_per_turn', args }); return; }
 
     const base = safeUrl(this._prefix + page.path);
     if (!base || !base.startsWith('/') || base.startsWith('//')) { this._onNavigate({ dropped: true, reason: 'unsafe_url', args }); return; }
     this._turnUsed = true;
 
-    const match = resolveSection(page, args.section);
     const sectionId = match ? match.section.id : null;
     const samePage = this._isCurrent(page.path);
     /** @type {SiteNavInfo} */
@@ -204,6 +206,7 @@ export class SiteNavigator {
       sectionId,
       resolvedBy: match ? match.by : null,
       fellBackToTop: args.section != null && String(args.section).trim() !== '' && !match,
+      splitPath: !!split,
       samePage,
       args,
     };

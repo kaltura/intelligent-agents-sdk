@@ -298,12 +298,10 @@ export function normalizePath(path) {
 export function resolvePath(manifest, path) {
   const pages = manifest && Array.isArray(manifest.pages) ? manifest.pages : [];
   if (!pages.length || typeof path !== 'string') return null;
-  const exact = pages.find((p) => p.path === path);
-  if (exact) return exact;
+  const literal = pageByPath(pages, path);
+  if (literal) return literal;
   const norm = normalizePath(path).toLowerCase();
   if (!norm) return null;
-  const byNorm = pages.find((p) => normalizePath(p.path).toLowerCase() === norm);
-  if (byNorm) return byNorm;
   const want = new Set(lowerWords(lastSegment(norm)));
   if (!want.size) return null;
   let best = null; let bestScore = 0; let ties = 0;
@@ -314,6 +312,54 @@ export function resolvePath(manifest, path) {
     if (score > bestScore) { best = p; bestScore = score; ties = 0; } else if (score === bestScore && score > 0) ties += 1;
   }
   return bestScore >= 0.5 && ties === 0 ? best : null;
+}
+
+/**
+ * Page whose path equals `path` exactly or after normalization (slashes, case). No fuzzy matching.
+ * @param {ManifestPage[]} pages @param {string} path @returns {ManifestPage|null}
+ */
+function pageByPath(pages, path) {
+  const exact = pages.find((p) => p.path === path);
+  if (exact) return exact;
+  const norm = normalizePath(path).toLowerCase();
+  if (!norm) return null;
+  return pages.find((p) => normalizePath(p.path).toLowerCase() === norm) || null;
+}
+
+/**
+ * Resolve a whole `go_to` call (path + optional section) to a page and a section match.
+ *
+ * `resolvePath` answers first. When it has no page, the last path segment is
+ * tried as a section of the page named by the rest of the path. Brains fuse the
+ * two arguments into one URL-like string: `{ path: '/', section: 'license' }`
+ * arrives as `{ path: '/license' }`. The parent must be a manifest page by exact
+ * or normalized path (never fuzzy) and the segment must resolve as one of its
+ * sections, so every accepted piece is still a manifest literal and an invented
+ * path still resolves to nothing.
+ *
+ * `match` is the `section` argument resolved on the page when it resolves there,
+ * else the split-off segment's match, else `null` (page top). `split` is `null`
+ * when the path resolved as a page on its own.
+ *
+ * @param {SectionsManifest|{pages:ManifestPage[]}} manifest
+ * @param {unknown} path Path as the model sent it.
+ * @param {unknown} [section] Section as the model sent it.
+ * @returns {{page:ManifestPage, match:{section:ManifestSection, by:SectionMatch}|null, split:{segment:string, by:SectionMatch}|null}|null}
+ */
+export function resolveTarget(manifest, path, section) {
+  const page = resolvePath(manifest, path);
+  if (page) return { page, match: resolveSection(page, section), split: null };
+  const pages = manifest && Array.isArray(manifest.pages) ? manifest.pages : [];
+  if (!pages.length || typeof path !== 'string') return null;
+  const parts = normalizePath(path).split('/').filter(Boolean);
+  if (!parts.length) return null;
+  const segment = parts.pop();
+  const parent = pageByPath(pages, parts.length ? `/${parts.join('/')}/` : '/');
+  if (!parent) return null;
+  const fromSegment = resolveSection(parent, segment);
+  if (!fromSegment) return null;
+  const fromArg = resolveSection(parent, section);
+  return { page: parent, match: fromArg || fromSegment, split: { segment, by: fromSegment.by } };
 }
 
 /** Last non-empty path segment, or `home` for the root. @param {string} path @returns {string} */
