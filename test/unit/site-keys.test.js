@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import {
   STOP_WORDS, BOILERPLATE_IDS, MANIFEST_VERSION, normalizeWords, pageSectionKeys, buildSectionsManifest,
-  renderSiteMap, normalizePath, resolvePath, resolveSection, validateSectionsManifest,
+  renderSiteMap, normalizePath, resolvePath, resolveSection, resolveTarget, validateSectionsManifest,
 } from '../../src/core/site-keys.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -105,6 +105,50 @@ test('site-keys: resolvePath exact, normalized, fuzzy, invented, ambiguous', () 
   const tie = { pages: [{ path: '/a/reference/', sections: [] }, { path: '/b/reference/', sections: [] }] };
   assert.equal(resolvePath(tie, '/reference/'), null, 'two equally good pages: refuse to guess');
   assert.equal(resolvePath({ pages: [{ path: '/', sections: [] }, { path: '/x/', sections: [] }] }, '/home/').path, '/', 'root page answers to "home"');
+});
+
+test('site-keys: resolveTarget splits a section glued onto a page path', () => {
+  const m = buildSectionsManifest(fixture, { generatedAt: 't' });
+  const home = m.pages.find((p) => p.path === '/');
+  const security = m.pages.find((p) => p.path === '/reference/security/');
+
+  // A real page path is resolvePath's answer, split is null.
+  assert.deepEqual(resolveTarget(m, '/reference/security/', 'fips-mode'), { page: security, match: resolveSection(security, 'fips-mode'), split: null });
+  assert.deepEqual(resolveTarget(m, '/reference/security/'), { page: security, match: null, split: null });
+  assert.deepEqual(resolveTarget(m, '/docs/security/', 'nope'), { page: security, match: null, split: null }, 'fuzzy page still wins over a split');
+
+  // Home key fused into the path.
+  let t = resolveTarget(m, '/license');
+  assert.equal(t.page, home);
+  assert.equal(t.match.section.key, 'license');
+  assert.deepEqual(t.split, { segment: 'license', by: 'key' });
+  assert.equal(resolveTarget(m, '/license/').split.segment, 'license');
+  assert.equal(resolveTarget(m, '/License/').match.section.key, 'license', 'key match after id/text fallback');
+
+  // Nested page key fused into the path.
+  t = resolveTarget(m, '/reference/security/fips-mode/');
+  assert.equal(t.page, security);
+  assert.equal(t.match.section.key, 'fips-mode');
+  assert.equal(t.split.by, 'key');
+
+  // Section argument wins when it resolves on the parent page.
+  t = resolveTarget(m, '/license', 'quick-start-browser');
+  assert.equal(t.match.section.key, 'quick-start-browser');
+  assert.deepEqual(t.split, { segment: 'license', by: 'key' });
+  t = resolveTarget(m, '/license', 'not-a-section');
+  assert.equal(t.match.section.key, 'license', 'unresolvable section argument falls back to the split segment');
+
+  // Still nothing for an invented path.
+  assert.equal(resolveTarget(m, '/docs/faq/'), null, 'parent is not a page');
+  assert.equal(resolveTarget(m, '/pricing/'), null, 'segment is not a home section');
+  assert.equal(resolveTarget(m, '/reference/security/pricing/'), null);
+  assert.equal(resolveTarget(m, '/guides/security/fips-mode/'), null, 'parent must match exactly, never fuzzily');
+  assert.deepEqual(resolveTarget(m, '/'), { page: home, match: null, split: null }, 'root resolves as a page');
+  assert.equal(resolveTarget(m, ''), null);
+  assert.equal(resolveTarget(m, 42), null);
+  assert.equal(resolveTarget(m, 'javascript:alert(1)'), null);
+  assert.equal(resolveTarget({ pages: [] }, '/license'), null);
+  assert.equal(resolveTarget(null, '/license'), null);
 });
 
 test('site-keys: resolveSection key, id, text, subset, jaccard, tie, none', () => {

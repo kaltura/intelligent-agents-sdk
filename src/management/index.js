@@ -75,5 +75,5 @@ export {
 } from './site-nav.js';
 export {
   buildSectionsManifest, pageSectionKeys, renderSiteMap, validateSectionsManifest,
-  normalizePath, resolvePath, resolveSection, normalizeWords, STOP_WORDS, BOILERPLATE_IDS, MANIFEST_VERSION,
+  normalizePath, resolvePath, resolveSection, resolveTarget, normalizeWords, STOP_WORDS, BOILERPLATE_IDS, MANIFEST_VERSION,
 } from '../core/site-keys.js';

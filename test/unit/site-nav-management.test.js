@@ -24,7 +24,7 @@ test('goToTool: emits the verified wire config, idempotently', () => {
     name: 'go_to',
     description: t.description,
     args: {
-      path: { prompt: 'Page path from the SITE MAP, with leading and trailing slash.', type: 'str', required: true },
+      path: { prompt: 'Page path copied from the SITE MAP path line, with leading and trailing slash. The section key goes in the section argument.', type: 'str', required: true },
       section: { prompt: 'Section key from the SITE MAP for that page. Omit for the page top.', type: 'str', required: false },
     },
     type: 'client',

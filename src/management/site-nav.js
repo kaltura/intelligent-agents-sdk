@@ -59,7 +59,7 @@ export function goToTool(opts = {}) {
       'Call at most once per turn, then answer. There is no result to wait for.',
     ].join(' '),
     args: /** @type {Record<string, import('./tools.js').GenieToolArg>} */ ({
-      path: { prompt: 'Page path from the SITE MAP, with leading and trailing slash.', type: 'str', required: true },
+      path: { prompt: 'Page path copied from the SITE MAP path line, with leading and trailing slash. The section key goes in the section argument.', type: 'str', required: true },
       section: { prompt: 'Section key from the SITE MAP for that page. Omit for the page top.', type: 'str', required: false },
     }),
     waitForResponse: false,

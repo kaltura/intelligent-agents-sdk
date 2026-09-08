@@ -105,11 +105,11 @@ Once the repo is public and has a tag pushed, jsDelivr serves any file straight 
 </script>
 ```
 
-`@latest` resolves to the newest tag, so this URL always matches the current README without an editing pass on every release. It's **not cached the same way** as a tagged path, though — jsDelivr re-checks it periodically, so what it serves can change without warning. For anything you ship, pin to a real tag instead (`@v1.18.0`, or whichever release you're on) — jsDelivr caches a tagged path forever, so a pin is both stable and fast:
+`@latest` resolves to the newest tag, so this URL always matches the current README without an editing pass on every release. It's **not cached the same way** as a tagged path, though — jsDelivr re-checks it periodically, so what it serves can change without warning. For anything you ship, pin to a real tag instead (`@v1.19.0`, or whichever release you're on) — jsDelivr caches a tagged path forever, so a pin is both stable and fast:
 
 ```html
 <script type="module">
-  import { KalturaAvatarSession } from 'https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.18.0/src/experience/index.js';
+  import { KalturaAvatarSession } from 'https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.19.0/src/experience/index.js';
 </script>
 ```
 
@@ -934,7 +934,7 @@ These are importable from their entry points and useful when composing custom pi
 | `siteMapPrompt(manifest, opts?)` / `SITE_NAV_RULES_PROMPT` / `estimateTokens(text)` | The SITE MAP prompt block rendered from a `sections.json` manifest (warns above `maxTokens`, default 3000), the frozen four-rule navigation prompt that pairs with it, and the rough token estimator the warning uses. |
 | `loadSectionsManifest(url, opts?)` | Fetches, size-guards and validates a published `sections.json` at provisioning time. Throws `KalturaError` with `code` `bad_arg`, `http_error`, `network_error`, `timeout`, `too_large` or `bad_manifest`. |
 | `buildSectionsManifest(pages, opts?)` / `pageSectionKeys(headings, opts?)` / `renderSiteMap(manifest)` | The manifest builder for your site build: page paths plus headings in, `sections.json` out, with deterministic 2–3 word section keys in any language (`lang`, `stopWords`, `overrides`, `depth`, `maxWords`). `renderSiteMap` is the one-line-per-page text the prompt carries. |
-| `validateSectionsManifest(raw)` / `normalizePath(path)` / `resolvePath(manifest, path)` / `resolveSection(page, section)` / `normalizeWords(text)` / `STOP_WORDS` / `BOILERPLATE_IDS` / `MANIFEST_VERSION` | The shared resolution primitives `SiteNavigator` uses in the browser, exported here so build scripts, eval harnesses and tests resolve exactly like the plugin does. |
+| `validateSectionsManifest(raw)` / `normalizePath(path)` / `resolvePath(manifest, path)` / `resolveSection(page, section)` / `resolveTarget(manifest, path, section?)` / `normalizeWords(text)` / `STOP_WORDS` / `BOILERPLATE_IDS` / `MANIFEST_VERSION` | The shared resolution primitives `SiteNavigator` uses in the browser, exported here so build scripts, eval harnesses and tests resolve exactly like the plugin does. |
 
 ### `./experience`
 

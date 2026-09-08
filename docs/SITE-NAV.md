@@ -182,8 +182,8 @@ Construct it once per session, right after the session. `destroy()` unsubscribes
 |---|---|
 | No ACK ever | The plugin never answers the tool call. There is nothing to respond to. |
 | Act immediately | The handler runs on the tool segment, whatever the speech state. |
-| Path safety | `resolvePath` must return a manifest page (exact → normalized → last-segment word overlap ≥ 0.5 with a single winner). The final URL passes `safeUrl`. An unknown path is dropped with `reason: 'unknown_path'`. |
-| Section fallback | key → id → normalized text equality → request words are a subset of one section → Jaccard ≥ 0.5 with a single winner → page top (`fellBackToTop: true`). A wrong section never fails the navigation. |
+| Path safety | `resolveTarget` must return a manifest page. `resolvePath` first (exact → normalized → last-segment word overlap ≥ 0.5 with a single winner). When no page matches, the last path segment is tried as a section of the page named by the rest of the path; that parent must be an exact or normalized manifest path and the segment must resolve as one of its sections (`splitPath: true`). This catches a brain that fuses `{ path: '/', section: 'license' }` into `{ path: '/license' }`. The final URL passes `safeUrl`. Anything else is dropped with `reason: 'unknown_path'`. |
+| Section fallback | key → id → normalized text equality → request words are a subset of one section → Jaccard ≥ 0.5 with a single winner → page top (`fellBackToTop: true`). On a split path the `section` argument wins when it resolves on the parent page, else the split-off segment is the section. A wrong section never fails the navigation. |
 | Cross-page | `await navigate(url, info)`, then find the section in the new DOM (now, next frame, after `settleMs`), then scroll, hash, point. |
 | Same page | `navigate` is skipped. Scroll, hash, point. |
 | One per turn | See `oncePerTurn`. Identical name+args repeats are already dropped by the session itself. |
@@ -196,7 +196,7 @@ Construct it once per session, right after the session. `destroy()` unsubscribes
 
 ```js
 // resolved
-{ path, url, section, sectionId, resolvedBy, fellBackToTop, samePage, sectionFound, args }
+{ path, url, section, sectionId, resolvedBy, fellBackToTop, splitPath, samePage, sectionFound, args }
 // dropped
 { dropped: true, reason: 'unknown_path' | 'once_per_turn' | 'no_manifest' | 'unsafe_url', args }
 ```
