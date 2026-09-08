@@ -243,7 +243,7 @@ Non-goals: multi-argument actions (`action: 'open' | 'highlight'`), server-side 
 ## Testing
 
 - `npm test` covers the key algorithm, manifest build/validate/resolve, the prompt builders and the browser plugin offline (`test/unit/site-keys.test.js`, `test/unit/site-nav-management.test.js`, `test/unit/site-nav.test.js`). `test/fixtures/site-map.snapshot.txt` pins the rendered SITE MAP for the docs site so a key change is a visible diff.
-- `npm run live-verify:site-nav` (`scripts/live-verify-site-nav.mjs`) runs against the real Kaltura API: tool echo shape, idempotent update, prompt echo, one mapped ask producing exactly one resolvable `go_to`, one unmapped ask producing none, then deletes everything it created. CI runs it on every merge and on PRs labelled `run-live-verify`.
+- `npm run live-verify:site-nav` (`scripts/live-verify-site-nav.mjs`) runs against the real Kaltura API: tool echo shape, idempotent update, prompt echo, one mapped ask producing exactly one resolvable `go_to`, one unmapped ask producing none, then deletes everything it created. CI runs it on every merge and on PRs labelled `run-live-verify`. Tool names are unique per partner, so on a partner that already runs a live `go_to` tool the script records a skip, exits 0, and leaves that tool untouched. Point `AGENTIC_PARTNER_ID` at a partner without a live `go_to` deployment to run it for real.
 
 ## Security
 

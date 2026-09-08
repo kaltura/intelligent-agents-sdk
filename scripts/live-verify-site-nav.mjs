@@ -86,6 +86,9 @@ function check(step, ok, detail) {
   record(step, ok, detail);
 }
 
+/** Thrown to end the run early without failing it; see the `go_to` clash check. */
+class SkipRun extends Error {}
+
 const snippet = (text) => JSON.stringify(text ?? '').slice(0, 160);
 const TURN_TIMEOUT_MS = 90_000;
 const ATTEMPTS = 2;
@@ -182,10 +185,14 @@ try {
     estimatedTokens: estimateTokens(mapPrompt.value),
   });
 
+  // Tool names are unique per partner (`tool/add` returns 409 on a duplicate), so
+  // a partner that already runs a real `go_to` tool (a live docs assistant, for
+  // example) cannot host this run's throwaway one. Leave the real tool alone and
+  // skip: the run is only meaningful on a partner without a live go_to deployment.
   const existing = await kaltura.tools.list(admin).all();
   const clash = existing.find((t) => t.name === SITE_NAV_TOOL_NAME);
   if (clash) {
-    throw new Error(`a tool named ${SITE_NAV_TOOL_NAME} (id ${clash.id}) already exists on this partner; refusing to run against it`);
+    throw new SkipRun(`a live ${SITE_NAV_TOOL_NAME} tool (id ${clash.id}) already exists on this partner; tool names are unique per partner, so this run is skipped and the existing tool is left untouched. Point AGENTIC_PARTNER_ID at a partner without a live ${SITE_NAV_TOOL_NAME} deployment to run it.`);
   }
 
   // 1. wire-shape round trip
@@ -264,8 +271,13 @@ try {
     attempts: nf.attempts.map((a) => ({ ok: a.ok, error: a.error, calls: a.calls, text: a.text })),
   });
 } catch (err) {
-  failed = true;
-  record('live-verify-site-nav', false, { message: err?.detail || err?.message || String(err), code: err?.code });
+  if (err instanceof SkipRun) {
+    artifact.skipped = true;
+    record('live-verify-site-nav', true, { skipped: true, message: err.message });
+  } else {
+    failed = true;
+    record('live-verify-site-nav', false, { message: err?.detail || err?.message || String(err), code: err?.code });
+  }
 } finally {
   if (intellectId) {
     try {

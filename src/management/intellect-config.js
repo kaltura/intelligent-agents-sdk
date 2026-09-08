@@ -119,9 +119,29 @@ export const SUMMARY_CONTENT_TYPES = Object.freeze(['text', 'html', 'html_with_j
 
 const MODEL_CONFIGURATION_KEYS = Object.freeze(['model_id', 'max_output_tokens', 'thinking_level', 'temperature']);
 const AVATAR_SUMMARY_CONFIG_KEYS = Object.freeze(['prompt', 'analysis', 'template', 'content_type']);
-// The identifier and the optional tail cannot overlap (the tail must start with a
-// non-identifier char), so the match is linear in the template length.
-const TEMPLATE_VAR_RE = /\{\{\s*([A-Za-z_][A-Za-z0-9_]*)(?:[^A-Za-z0-9_}][^}]*)?\}\}/g;
+const IDENTIFIER_RE = /^[A-Za-z_][A-Za-z0-9_]*/;
+
+/**
+ * The leading identifier of every `{{ ... }}` expression in a Jinja2 template,
+ * in order (`{{ items | join(", ") }}` yields `items`). Plain index scan, so the
+ * cost is linear in the template length whatever the input looks like.
+ * @param {string} template @returns {string[]}
+ */
+function templateVars(template) {
+  const out = [];
+  let pos = 0;
+  for (;;) {
+    const open = template.indexOf('{{', pos);
+    if (open === -1) break;
+    if (template[open + 2] === '{') { pos = open + 1; continue; }
+    const close = template.indexOf('}}', open + 2);
+    if (close === -1) break;
+    const m = IDENTIFIER_RE.exec(template.slice(open + 2, close).trimStart());
+    if (m) out.push(m[0]);
+    pos = close + 2;
+  }
+  return out;
+}
 
 /** @param {string} detail @param {string} [code] */
 function bad(detail, code = 'bad_request') {
@@ -424,9 +444,9 @@ export class IntellectConfig {
         if (typeof config.template !== 'string' || !config.template.trim()) {
           throw bad('intellectConfig.setAvatarSummaryConfig: template must be a non-empty Jinja2 string when present.');
         }
-        for (const m of config.template.matchAll(TEMPLATE_VAR_RE)) {
-          if (!analysisKeys.includes(m[1])) {
-            throw bad(`intellectConfig.setAvatarSummaryConfig: template references "${m[1]}" which is not an analysis key (${analysisKeys.join(', ')}).`);
+        for (const name of templateVars(config.template)) {
+          if (!analysisKeys.includes(name)) {
+            throw bad(`intellectConfig.setAvatarSummaryConfig: template references "${name}" which is not an analysis key (${analysisKeys.join(', ')}).`);
           }
         }
       }
