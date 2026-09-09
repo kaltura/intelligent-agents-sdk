@@ -43,7 +43,10 @@ const startedAt = new Date().toISOString();
 const runId = `ci-live-verify-capabilities-${Date.now()}`;
 const artifact = { runId, startedAt, partnerId, steps: [] };
 
+let anyStepFailed = false;
+
 function record(step, ok, detail) {
+  if (!ok) anyStepFailed = true;
   artifact.steps.push({ step, ok, detail, at: new Date().toISOString() });
   console.log(`[${ok ? 'ok' : 'FAIL'}] ${step}${detail ? ` — ${JSON.stringify(detail)}` : ''}`);
 }
@@ -182,6 +185,8 @@ try {
     }
   }
 }
+
+failed = failed || anyStepFailed;
 
 artifact.finishedAt = new Date().toISOString();
 artifact.ok = !failed;
