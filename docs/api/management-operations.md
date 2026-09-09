@@ -116,3 +116,17 @@ Before deleting a record, `mgmt.knowledge.deleteRecord` lists every intellect an
 ## Lifecycle — `https://api.avatar.us.kaltura.ai`
 
 An event-driven rule engine, not embedded in an intellect. SDK: `mgmt.lifecycle`. Full reference (rule shape, all 4 action types, CRUD + discovery methods) and a worked recipe: **[docs/lifecycle/README.md](../lifecycle/README.md)**.
+
+## Insight Settings — `https://api.avatar.us.kaltura.ai`
+
+Reusable custom-insight definitions (`key`/`title`/`prompt`/`valueType`), referenced by id from a lifecycle rule's `triggerInsightSettingsKai` action — not embedded in an intellect. SDK: `mgmt.insightSettings`. Requires agentic-api `#364` (live on NVQ2 as of 2026-09-08, not yet on PROD — see the gate note in [docs/lifecycle/README.md](../lifecycle/README.md)).
+
+| Operation | Endpoint | Body |
+|-----------|----------|------|
+| Create | `POST /v1/insight-settings/create` | `{"key":"NEXT_STEP","title":"Next step","prompt":"...","valueType":"string"}` — all 4 fields required |
+| Get | `POST /v1/insight-settings/get` | `{"id":"<mongo-id>"}` |
+| List | `POST /v1/insight-settings/list` | `{"filter":{"statusEqual":"active"},"pager":{"offset":0,"limit":30}}` |
+| Update | `POST /v1/insight-settings/update` | `{"id":"<mongo-id>", ...fields}` — any of `key`/`title`/`prompt`/`valueType`/`status` |
+| Delete | `POST /v1/insight-settings/delete` | `{"id":"<mongo-id>"}` — no in-use scan; a rule still referencing a deleted id fails at match/trigger time instead |
+
+Full reference and a worked recipe: **[docs/lifecycle/README.md § InsightSettings](../lifecycle/README.md#insightsettings--reusable-custom-insight-definitions)**.
