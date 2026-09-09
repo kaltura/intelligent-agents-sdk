@@ -223,16 +223,26 @@ await kaltura.intellects.setCapability(configId, 'use_knowledge_base', 'on', adm
 
 ## Lifecycle — react to session/thread events without polling
 
-A **rule** = `eventType` + `objectType` (currently only `'thread'`) + optional `eventConditions[]` + one **action**. Four `actionType` values exist, but only two are for partner use: `triggerInsight` (extract structured insights with an LLM) and `sendInsightEmail` (email a human once an insight lands). The other two (`triggerOverridableSummaryInsight`, `triggerDataToCollectInsight`) only power system preset rules — creating them yourself is accepted but has no effect. The backend evaluates every active rule (yours plus its own system-seeded presets) whenever a matching event fires — no polling required.
+> **Gate: requires agentic-api `#364`** (2026-09-08) — live on NVQ2, not yet on PROD. `lifecycle.create`/`.update` reject the pre-`#364` action names (`triggerInsight`, `triggerDataToCollectInsight`, `triggerOverridableSummaryInsight`) client-side, naming the replacement — see `docs/lifecycle/README.md`'s gate note if you hit that.
+
+A **rule** = `eventType` + `objectType` (currently only `'thread'`) + optional `eventConditions[]` + one **action**. Two `actionType` values are for partner use: `triggerInsightSettingsKai` (extract structured insights with an LLM, via `InsightSettings` entities — see below) and `sendInsightEmail` (email a human once an insight lands, only fires on `eventType:'analysis_updated'`). The other two (`_triggerKaiBase`, `triggerDtcKai`) only power system preset rules — creating them yourself is rejected client-side. The backend evaluates every active rule (yours plus its own system-seeded presets) whenever a matching event fires — no polling required.
+
+`kaltura.insightSettings` (`create`/`get`/`list`/`update`/`delete`) manages reusable custom-insight definitions — each `{id, key, title, prompt, valueType}`, created once and referenced by id from as many rules as you like:
 
 ```js
+const topic = await kaltura.insightSettings.create(
+  { key: 'TOPIC', title: 'Topic', prompt: 'The main topic discussed, in 3 words or fewer.', valueType: 'string' },
+  admin.ks,
+);
+
 const rule = await kaltura.lifecycle.create({
   name: 'Extract a topic for every ended session',
+  systemName: 'auto_topic_v1',
   eventType: 'session_ended',
   objectType: 'thread',
   // Don't request SUMMARY yourself — every partner already gets one for free
   // from an always-on preset rule; your own SUMMARY entry would be a no-op.
-  action: { actionType: 'triggerInsight', insights: [{ insightKey: 'TOPIC', valueType: 'string' }] },
+  action: { actionType: 'triggerInsightSettingsKai', insightSettingsIds: [topic.id] },
 }, admin.ks);
 
 const rules = await kaltura.lifecycle.list(admin.ks, { pageSize: 30 });
@@ -247,7 +257,9 @@ const result = await kaltura.lifecycle.match(
 // not just what you configured.
 ```
 
-`eventConditions[]` entries are `{field, operator, value}` (a dot-path into the event payload, e.g. `{field:'object.agent_id', operator:'eq', value:'<uuid>'}`) — a `{path, op}` shape 400s. `create` is a WRITE — NOT idempotent (a repeat call creates a second rule); `update`/`delete` are the usual idempotent/destructive-with-`confirm` pair. `listObjects(ks)`/`listEvents(objectType, ks)`/`describeFields(objectType, eventType, ks)` are read-only discovery calls for building a no-code rule editor instead of hardcoding enums. Full 9-method reference: `src/management/lifecycle.js`; worked examples and the `sendInsightEmail` data-egress note: `docs/lifecycle/README.md`.
+An `insightSettingsIds` entry that never existed for this partner is rejected immediately by `create`/`update` (`INVALID_INSIGHT_SETTINGS`); one that existed and was later deleted isn't caught until the rule actually fires, since `insightSettings.delete` runs no in-use scan — check `insightSettings.get(id, ks)` before deleting one a rule still references.
+
+`eventConditions[]` entries are `{field, operator, value}` (a dot-path into the event payload, e.g. `{field:'object.agent_id', operator:'eq', value:'<uuid>'}`) — a `{path, op}` shape 400s. `create` is a WRITE — NOT idempotent (a repeat call creates a second rule); `update`/`delete` are the usual idempotent/destructive-with-`confirm` pair. `listObjects(ks)`/`listEvents(objectType, ks)`/`describeFields(objectType, eventType, ks)` are read-only discovery calls for building a no-code rule editor instead of hardcoding enums. Full reference: `src/management/lifecycle.js` + `src/management/insight-settings.js`; worked examples, the full action-type table, and the `sendInsightEmail` data-egress note: `docs/lifecycle/README.md` + `docs/lifecycle/recipes.md`.
 
 ## Talking to an agent — conversations, threads, messages
 
