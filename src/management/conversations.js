@@ -426,10 +426,12 @@ export class Feedback {
   }
 
   /**
-   * List feedback rows. READ. Async-iterable + awaitable (first page).
-   * `objectType` is mandatory and always sent; `opts.filter` is merged under
-   * it. `filter: {}` alone (no `objectType`) 400s `invalid_filter`, which is
-   * why the SDK always adds it.
+   * List feedback rows. READ. ⚠️ SENSITIVE — contains end-user ids/names +
+   * verbatim question/feedback text. Treat as PII; scope and redact before
+   * sharing. Async-iterable + awaitable (first page). `objectType` is
+   * mandatory and always sent; `opts.filter` is merged under it. `filter: {}`
+   * alone (no `objectType`) 400s `invalid_filter`, which is why the SDK
+   * always adds it.
    * @param {string} ks @param {{filter?:object,pageSize?:number}} [opts]
    */
   list(ks, opts = {}) {
@@ -442,10 +444,20 @@ export class Feedback {
   }
 
   /**
-   * Raw feedback report as CSV. READ. Returns `null` when the partner has no
-   * feedback rows — the backend replies an empty `text/csv` body in that case
+   * Raw feedback report as CSV. READ. ⚠️ SENSITIVE — contains end-user
+   * ids/names + verbatim question/feedback text. Treat as PII; scope and
+   * redact before sharing. Returns `null` when the partner has no feedback
+   * rows — the backend replies an empty `text/csv` body in that case
    * (the header line is only written together with the first row); the
    * transport turns that empty body into `null` rather than throwing.
+   *
+   * INTENTIONALLY RAW-ONLY: unlike {@link Messages#report}, there is no
+   * `Feedback#reportSummary`. {@link summarizeReport} (the helper behind
+   * `Messages#reportSummary`) parses columns specific to the message-report
+   * CSV (`Feedback reaction`, `Thread Id`, `Question`) — the feedback-report
+   * CSV's own column shape isn't verified against that layout, so reusing it
+   * here would risk silently misparsing rather than failing loudly. Parse
+   * this CSV yourself, or open an issue if a feedback-specific summary is needed.
    * @param {string} ks @param {{pageSize?:number}} [opts]
    */
   async report(ks, opts = {}) {
