@@ -48,6 +48,7 @@
     "live-verify:avatar-media": "node scripts/live-verify-avatar-media.mjs",
     "live-verify:request-vars": "node scripts/live-verify-request-vars.mjs",
     "live-verify:capabilities": "node scripts/live-verify-capabilities.mjs",
+    "live-verify:conversation-surface": "node scripts/live-verify-conversation-avatar-surface.mjs",
     "live-verify:session-complete": "node scripts/live-verify-session-complete.mjs",
     "live-verify:site-nav": "node scripts/live-verify-site-nav.mjs",
     "verify:noise-suppressor": "node scripts/verify-noise-suppressor.mjs",
