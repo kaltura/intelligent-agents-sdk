@@ -22,6 +22,7 @@ import { IntellectConfig } from './intellect-config.js';
 import { Tools } from './tools.js';
 import { Skills } from './skills.js';
 import { Lifecycle } from './lifecycle.js';
+import { InsightSettings } from './insight-settings.js';
 import { Conversations, Threads, Messages, Feedback, Followups, Knowledge } from './conversations.js';
 import { provision } from './provision.js';
 import { setForcedLanguage } from './set-forced-language.js';
@@ -187,6 +188,10 @@ export class Management {
     // Event-driven rule engine (`/lifecycle/*`) — react to session/thread
     // events (e.g. session_ended) with server-owned actions, no polling.
     this.lifecycle = new Lifecycle(ctx);
+    // Reusable custom-insight definitions (`/insight-settings/*`), referenced
+    // by id from a `triggerInsightSettingsKai` lifecycle action. Live on NVQ2
+    // only until PROD takes agentic-api `#364` — see lifecycle.js's class doc.
+    this.insightSettings = new InsightSettings(ctx);
   }
 
   /**
