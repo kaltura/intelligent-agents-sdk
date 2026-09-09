@@ -24,6 +24,8 @@ It is **not byte-exact** with the live prompt — server-injected capability-con
 | `sys__user_id` | Bound end-user id — see `Sessions.createConversationToken({userId})` |
 | `sys__user_message` | The user's current turn text |
 | `sys__is_new_thread` | `true` on the first turn of a thread |
+| `sys__context_id` | The category/entry id the current context is scoped to |
+| `sys__context_type` | The type of that context (e.g. an `entry` vs. a `category`) |
 | `sys__ks` | The raw session token. **Never reference this in a prompt that could be echoed back to a user or logged.** It is a live credential. |
 | `sys__user_obj.first_name` / `.last_name` / `.title` / `.company` / `.gender` / `.email` | Attributes of the bound-user object. The rendered preview from `previewPrompt()` carries a `reserved_user_attr_unresolved` warning when a prompt references these — treat it as a hard stop before shipping. |
 | `secrets.NAME` | A named secret configured on the intellect (write-only — `previewPrompt()` never has access to the raw value, so it cannot confirm one is set) |
