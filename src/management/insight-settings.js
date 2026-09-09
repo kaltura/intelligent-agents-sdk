@@ -4,10 +4,6 @@
  * `triggerInsightSettingsKai` action (see {@link Lifecycle}). Agentic host,
  * admin token, `{status, data}` unwrap — same shape as {@link Avatars}.
  * Mounted at `mgmt.insightSettings`.
- *
- * Shipped in agentic-api `#364` (2026-09-08). Live on NVQ2 only as of this
- * writing; disabled on PROD (`insight-settings/list` → 404 `Cannot POST`)
- * until PROD takes that release — see the gate note on {@link Lifecycle}.
  */
 import { paginate } from './paginate.js';
 import { uuidv4 } from '../core/ids.js';

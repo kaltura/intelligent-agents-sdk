@@ -189,8 +189,7 @@ export class Management {
     // events (e.g. session_ended) with server-owned actions, no polling.
     this.lifecycle = new Lifecycle(ctx);
     // Reusable custom-insight definitions (`/insight-settings/*`), referenced
-    // by id from a `triggerInsightSettingsKai` lifecycle action. Live on NVQ2
-    // only until PROD takes agentic-api `#364` — see lifecycle.js's class doc.
+    // by id from a `triggerInsightSettingsKai` lifecycle action.
     this.insightSettings = new InsightSettings(ctx);
   }
 

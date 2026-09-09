@@ -4,8 +4,6 @@
 
 How to turn "someone has to read every transcript and decide what matters" into "the backend tells you, automatically, the moment a conversation ends." Two lifecycle rules, zero polling, zero app-side glue: one rule extracts a summary and topic the instant a session ends, a second rule emails a human the instant that extraction finishes. This recipe is the hands-on walkthrough; [`README.md`](README.md) is the terse field-by-field reference this recipe links back to instead of repeating.
 
-> **Gate: requires agentic-api `#364`.** See the gate note at the top of [`README.md`](README.md).
-
 ---
 
 ## The mental model
@@ -140,7 +138,7 @@ node examples/lifecycle-insights-and-email.mjs
 | Symptom | Cause | Fix |
 |---|---|---|
 | `insightSettings.create` 400s: `valueType must be one of...` | `valueType` missing or misspelled | Pass one of `string`/`number`/`boolean`/`arrayString`/`arrayNumber`/`arrayBoolean` |
-| `lifecycle.create`/`.update` 400s: `actionType "triggerInsight" was renamed to "triggerInsightSettingsKai"...` | Code written against PROD's pre-`#364` action model | Create `InsightSettings` entities first, then use `triggerInsightSettingsKai`/`insightSettingsIds` — see [Recipe A](#recipe-a--extract-a-summary-the-moment-a-session-ends) |
+| `lifecycle.create`/`.update` 400s: `actionType "triggerInsight" was renamed to "triggerInsightSettingsKai"...` | Code written against a renamed action-type name | Create `InsightSettings` entities first, then use `triggerInsightSettingsKai`/`insightSettingsIds` — see [Recipe A](#recipe-a--extract-a-summary-the-moment-a-session-ends) |
 | `lifecycle.create`/`.update` throws `INVALID_INSIGHT_SETTINGS` | An `insightSettingsIds` entry never existed for this partner (typo) | Fixed at create time — the error names the missing id |
 | A rule fires but the email/insight never lands, `INVALID_INSIGHT_SETTINGS` in server logs, `lifecycle.create` never complained | An `insightSettingsIds` entry existed when the rule was created, but the entity was deleted afterward (`delete` runs no in-use scan) | Confirm the id with `mgmt.insightSettings.get(id, ks)` before deleting, or update the rule to drop it |
 | `sendInsightEmail` rule never sends anything, no error anywhere | The paired `triggerInsightSettingsKai` rule doesn't produce every token the preset needs | Match Recipe A's insight keys to the preset's requirements exactly (see the gotcha above) |
@@ -149,7 +147,7 @@ node examples/lifecycle-insights-and-email.mjs
 | `lifecycle.match` 400s: `eventData.object.user_id: Invalid input...` | A required field missing from the dry-run `object` | Always pass `agent_id`, `thread_id`, and `user_id` together |
 | A custom insight key 400s or silently produces nothing | No `prompt` supplied on the `InsightSettings` entity | `insightSettings.create` requires `prompt` for every key, with no built-in default |
 | A custom `SUMMARY` insight-settings entity's prompt is silently ignored | Every partner has an always-on `SUMMARY` preset that merges into the same batch and overwrites your entry | Don't create an `InsightSettings` entity keyed `SUMMARY` — use a different key (see [`README.md`](README.md#every-session-already-gets-a-summary-for-free)) |
-| `lifecycle.create` 400s: `actionType "triggerOverridableSummaryInsight" is a system preset only...` | `_triggerKaiBase`/`triggerDtcKai` (and their pre-`#364` names) are system-internal — never creatable, rejected client-side before any network call | Use `triggerInsightSettingsKai` instead; it's the only action type where you control what gets extracted |
+| `lifecycle.create` 400s: `actionType "_triggerKaiBase" powers a system-seeded preset rule...` | `_triggerKaiBase` (and its renamed predecessor, `triggerOverridableSummaryInsight`) is system-internal — never creatable, rejected client-side before any network call | Use `triggerInsightSettingsKai` instead; it's the action type where you control what gets extracted |
 
 ---
 

@@ -119,7 +119,7 @@ An event-driven rule engine, not embedded in an intellect. SDK: `mgmt.lifecycle`
 
 ## Insight Settings — `https://api.avatar.us.kaltura.ai`
 
-Reusable custom-insight definitions (`key`/`title`/`prompt`/`valueType`), referenced by id from a lifecycle rule's `triggerInsightSettingsKai` action — not embedded in an intellect. SDK: `mgmt.insightSettings`. Requires agentic-api `#364` (live on NVQ2 as of 2026-09-08, not yet on PROD — see the gate note in [docs/lifecycle/README.md](../lifecycle/README.md)).
+Reusable custom-insight definitions (`key`/`title`/`prompt`/`valueType`), referenced by id from a lifecycle rule's `triggerInsightSettingsKai` action — not embedded in an intellect. SDK: `mgmt.insightSettings`. See [docs/lifecycle/README.md](../lifecycle/README.md).
 
 | Operation | Endpoint | Body |
 |-----------|----------|------|

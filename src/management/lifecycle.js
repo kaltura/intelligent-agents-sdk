@@ -5,9 +5,7 @@
  * thread's `session_ended`), every active rule (including partner-invisible,
  * system-seeded presets — see {@link Lifecycle#match}) is evaluated and its
  * `action` runs server-side. Four action shapes exist, passed through as
- * plain objects (not built by the SDK), but only the first two are meant to
- * be created here — the other two only exist to power system preset rules
- * and are rejected pre-network if you try to create them:
+ * plain objects (not built by the SDK). Three are creatable by a caller:
  * `{actionType:'triggerInsightSettingsKai', insightSettingsIds:string[]}`
  * (1 to 20 ids of {@link InsightSettings} entities belonging to the partner —
  * an id that never existed is rejected immediately (`create`/`update` throw
@@ -19,25 +17,20 @@
  * already has an always-on preset producing one for free),
  * `{actionType:'sendInsightEmail', recipients:string[], templateId?:string,
  * presetType?:string}` (only fires on `eventType:'analysis_updated'` — a
- * `session_ended` rule with this action type is a no-op server-side),
- * `{actionType:'_triggerKaiBase', ...}` (system preset only — powers
- * `preset__summary_on_session_ended`, the always-on free `SUMMARY`; not
- * creatable — rejected client-side here (see {@link SYSTEM_ONLY_ACTION_TYPES}),
- * and additionally excluded server-side by type, Swagger discriminator, and a
- * runtime assert, as defense in depth), and `{actionType:'triggerDtcKai'}`
- * (system preset only, currently disabled account-wide — would extract one
- * insight per configured lead-capture field,
- * `intellectConfig.user_properties_forms`, if enabled).
+ * `session_ended` rule with this action type is a no-op server-side), and
+ * `{actionType:'triggerDtcKai'}` (extracts one insight per configured
+ * lead-capture form field, `intellectConfig.user_properties_forms` — a no-op
+ * server-side if the intellect has none configured; a system-seeded preset,
+ * `preset__data_to_collect_on_session_ended`, already applies this to every
+ * `session_ended` event account-wide, so create a rule with this action type
+ * yourself only to scope it further, e.g. to one specific agent). The fourth,
+ * `{actionType:'_triggerKaiBase', ...}`, is genuinely system-internal — it
+ * powers `preset__summary_on_session_ended`, the always-on free `SUMMARY`,
+ * and is never creatable by a caller: rejected client-side here (see
+ * {@link SYSTEM_ONLY_ACTION_TYPES}) and additionally rejected server-side by
+ * a hard runtime assert.
  * See `docs/lifecycle/README.md` for the full explanation. Mounted at
  * `mgmt.lifecycle`.
- *
- * **Gate: requires agentic-api `#364`.** This module describes the action
- * model that shipped in `#364` (2026-09-08) — live on NVQ2, not yet on PROD.
- * Against PROD's older model, `create`/`update`/`match` with any of these
- * action types 500s. Probe readiness with
- * `lifecycle.list(ks, {filter:{actionTypeIn:['sendInsightEmail']}})`: 400
- * `should not exist` on the old model, 200 on `#364` (`describeFields` is
- * identical on both models, so it can't tell them apart).
  */
 import { paginate } from './paginate.js';
 import { uuidv4, meta } from '../core/ids.js';
@@ -58,19 +51,20 @@ function requireNonEmptyString(v, where, field) {
   }
 }
 
-// Renamed in agentic-api #364 (2026-09-08). The old names 500 there instead of
-// 400ing — a caller silently carrying over PROD-era code gets an unhelpful
-// "Internal server error" with no hint of what changed. Catch it here instead.
+// These action-type names have been renamed. Using an old one throws a clear
+// error naming the current replacement instead of a raw server error.
 const RENAMED_ACTION_TYPES = {
   triggerInsight: 'triggerInsightSettingsKai',
   triggerDataToCollectInsight: 'triggerDtcKai',
-  triggerOverridableSummaryInsight: null, // system preset only in both models; never creatable
+  triggerOverridableSummaryInsight: null, // system-internal; never creatable
 };
 
-// The #364 action-type names that exist only to power system-seeded preset
-// rules (see the class doc) — never creatable/updatable by a caller, even
-// though they're the current, non-renamed names.
-const SYSTEM_ONLY_ACTION_TYPES = new Set(['_triggerKaiBase', 'triggerDtcKai']);
+// The one action-type name that exists only to power a system-seeded preset
+// rule (see the class doc) — never creatable/updatable by a caller.
+// `triggerDtcKai` is NOT in this set: unlike `_triggerKaiBase`, it's a normal,
+// caller-creatable action type — it just no-ops server-side until the
+// intellect has `user_properties_forms` configured.
+const SYSTEM_ONLY_ACTION_TYPES = new Set(['_triggerKaiBase']);
 
 /** @param {unknown} action @param {string} where */
 function assertCurrentActionType(action, where) {
@@ -81,14 +75,14 @@ function assertCurrentActionType(action, where) {
     throw new KalturaError({
       type: 'about:blank', title: 'renamed action type', code: 'bad_request',
       detail: replacement
-        ? `${where}: actionType "${actionType}" was renamed to "${replacement}" in agentic-api #364. ${actionType === 'triggerInsight' ? 'Create the InsightSettings entities first (mgmt.insightSettings.create), then pass their ids as insightSettingsIds.' : ''}`.trim()
-        : `${where}: actionType "${actionType}" is a system preset only (never creatable) in both the old and #364 action models.`,
+        ? `${where}: actionType "${actionType}" was renamed to "${replacement}". ${actionType === 'triggerInsight' ? 'Create the InsightSettings entities first (mgmt.insightSettings.create), then pass their ids as insightSettingsIds.' : ''}`.trim()
+        : `${where}: actionType "${actionType}" is system-internal and never creatable.`,
     });
   }
   if (SYSTEM_ONLY_ACTION_TYPES.has(actionType)) {
     throw new KalturaError({
       type: 'about:blank', title: 'system preset only action type', code: 'bad_request',
-      detail: `${where}: actionType "${actionType}" is a system preset only action type in agentic-api #364 (it powers system-seeded preset rules) — never creatable/updatable directly.`,
+      detail: `${where}: actionType "${actionType}" powers a system-seeded preset rule — never creatable/updatable directly.`,
     });
   }
 }
@@ -102,7 +96,7 @@ export class Lifecycle {
    * second rule, same as {@link Tools#add}).
    * @param {{name:string, systemName:string, eventType:string, objectType:string, eventConditions?:Array<{field:string,operator:string,value:unknown}>, action:{actionType:'triggerInsightSettingsKai',insightSettingsIds:string[]}|{actionType:'triggerDtcKai'}|{actionType:'sendInsightEmail',recipients:string[],templateId?:string,presetType?:string}}} body
    * @param {string} ks (admin)
-   * @throws {import('../core/errors.js').KalturaError} `code:'bad_request'` if `action.actionType` is one of the pre-#364 names (`triggerInsight`, `triggerDataToCollectInsight`, `triggerOverridableSummaryInsight`) — see {@link RENAMED_ACTION_TYPES} — or one of the #364 system-preset-only names (`_triggerKaiBase`, `triggerDtcKai`) — see {@link SYSTEM_ONLY_ACTION_TYPES}.
+   * @throws {import('../core/errors.js').KalturaError} `code:'bad_request'` if `action.actionType` is one of the renamed names (`triggerInsight`, `triggerDataToCollectInsight`, `triggerOverridableSummaryInsight`) — see {@link RENAMED_ACTION_TYPES} — or the system-preset-only name (`_triggerKaiBase`) — see {@link SYSTEM_ONLY_ACTION_TYPES}.
    */
   async create(body, ks) {
     this._.assertAdmin(ks, 'lifecycle.create');

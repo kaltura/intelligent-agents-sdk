@@ -4,9 +4,7 @@
 
 Today, "summarize every ended session and email the account owner" means polling for finished threads yourself. Lifecycle removes the polling: create a **rule** once, and the backend fires its **action** automatically every time a matching event happens, server-side. Mounted at `mgmt.lifecycle`.
 
-This page is the field-by-field reference. New to Lifecycle? [`recipes.md`](recipes.md) is a hands-on walkthrough of the two action types you actually create, with a runnable example — it links back here instead of repeating this reference.
-
-> **Gate: requires agentic-api `#364`.** This page describes the action model that shipped 2026-09-08 — live today on NVQ2, not yet on PROD. Probe readiness with `lifecycle.list(ks, {filter:{actionTypeIn:['sendInsightEmail']}})`: 400 `should not exist` on the old model, 200 once your account has `#364`.
+This page is the field-by-field reference. New to Lifecycle? [`recipes.md`](recipes.md) is a hands-on walkthrough chaining `triggerInsightSettingsKai` and `sendInsightEmail` together, with a runnable example — it links back here instead of repeating this reference.
 
 ---
 
@@ -23,14 +21,14 @@ A rule is `{eventType, objectType, eventConditions, action}`:
 
 ## The four action types
 
-The backend recognizes four `actionType` values, not two. Two are meant for you to create; the other two only exist to power system preset rules — creating them yourself is rejected client-side by the SDK (see below) and, if you bypass that, has no effect server-side either, because their behavior is hardcoded and ignores anything you pass.
+The backend recognizes four `actionType` values. Three are meant for you to create; the fourth, `_triggerKaiBase`, only exists to power a system preset rule — creating it yourself is rejected client-side by the SDK (see below) and, if you bypass that, by a hard runtime assert server-side.
 
 | `actionType` | Who creates it | What it does | Why / when you'd use it |
 |---|---|---|---|
 | `triggerInsightSettingsKai` | You | Runs an LLM over the conversation and writes back exactly the fields defined by the [`InsightSettings`](#insightsettings--reusable-custom-insight-definitions) entities named in `insightSettingsIds` | Whenever you need a specific piece of structured data pulled out of a conversation: a topic tag for a dashboard, a lead-quality score, a recommended next step. |
 | `sendInsightEmail` | You | Sends an email to a Kaltura user, filling an email template from the thread's already-extracted insight values | Whenever a human needs to know the moment a specific insight is ready — e.g. alert a support lead as soon as a conversation's analysis lands. |
+| `triggerDtcKai` | You (optional) | Extracts one insight per configured lead-capture form field (`intellectConfig.user_properties_forms` — the fields you'd ask a lead for, e.g. name/company/email); no-ops server-side if the intellect has none configured | A system preset already runs this on every `session_ended` event, account-wide (see [below](#every-session-already-gets-a-summary-for-free)) — create your own rule with this action type only to scope it further, e.g. to one agent via `eventConditions`. |
 | `_triggerKaiBase` | Nobody — system preset only | Always produces one fixed insight, key `SUMMARY`, using a built-in prompt | Never create this yourself — every agent already gets it automatically, with no rule needed. Covered [below](#every-session-already-gets-a-summary-for-free). |
-| `triggerDtcKai` | Nobody — powers a preset that's disabled for every account today | If ever enabled, would turn each of the intellect's configured lead-capture form fields (`intellectConfig.user_properties_forms` — the fields you'd ask a lead for, e.g. name/company/email) into its own insight | Not usable today under any account. Ignore it. |
 
 **`triggerInsightSettingsKai`** references 1 to 20 [`InsightSettings`](#insightsettings--reusable-custom-insight-definitions) entities by id: `{ insightSettingsIds: [id, id, ...] }`. Each `InsightSettings` entity — created once, reused across as many rules as you like — carries its own `key`, `title`, `prompt`, and `valueType` (`'string'`/`'number'`/`'boolean'`/`'arrayString'`/`'arrayNumber'`/`'arrayBoolean'`). An id that never existed for this partner is rejected immediately: `lifecycle.create`/`.update` throw `INVALID_INSIGHT_SETTINGS` naming the missing id (the agentic API replies HTTP 200 with a `KalturaAPIException` body, which the SDK surfaces as a thrown error, same as any other typed API error). A **dangling** reference — an id that existed when the rule was created but was deleted afterward — isn't caught the same way: `insightSettings.delete` runs no in-use scan, so the rule keeps pointing at a gone entity until it actually fires, and only then does that extraction fail. Every rule extracting insights on the same event merges into one LLM batch — don't create an insight-settings entity keyed `SUMMARY`, see [below](#every-session-already-gets-a-summary-for-free).
 
@@ -51,7 +49,22 @@ await mgmt.lifecycle.create({
 
 Every conversation gets a structured recap the moment it ends, with zero app-side code. `SUMMARY` is deliberately not requested — every partner already has an always-on preset rule producing one for free, merged into the same batch as this rule's own insights.
 
-> **Old model, still on PROD:** `triggerInsight`/`insights:[{insightKey,valueType,prompt?}]`, `triggerDataToCollectInsight`, and `triggerOverridableSummaryInsight` were renamed in agentic-api `#364`. `mgmt.lifecycle.create`/`.update` reject the old names before any network call, naming the replacement — you'll see this if your account hasn't taken `#364` yet and you paste code from a newer example. See the gate note at the top of this page.
+**`triggerDtcKai`** turns each of the intellect's configured lead-capture form fields (`intellectConfig.user_properties_forms`) into its own insight. A system preset already runs this on every `session_ended` event, account-wide — create your own rule with this action type only to scope it further, e.g. to one agent:
+
+```js
+await mgmt.lifecycle.create({
+  name: 'Scope lead-capture extraction to one agent',
+  systemName: 'scope_dtc_to_agent',
+  eventType: 'session_ended',
+  objectType: 'thread',
+  eventConditions: [{ field: 'object.agent_id', operator: 'eq', value: '<agent-uuid>' }],
+  action: { actionType: 'triggerDtcKai' },
+}, ks);
+```
+
+No-ops server-side if the intellect has no `user_properties_forms` configured.
+
+> **Renamed action types.** `triggerInsight`/`insights:[{insightKey,valueType,prompt?}]`, `triggerDataToCollectInsight`, and `triggerOverridableSummaryInsight` are no longer valid action-type names. `mgmt.lifecycle.create`/`.update` reject them before any network call, naming the current replacement in the thrown error.
 
 ---
 

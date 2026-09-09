@@ -83,7 +83,7 @@ test('lifecycle.list uses the {offset,limit} pager (NOT Genie pageIndex/pageSize
   assert.ok('offset' in ff.calls[0].body.pager && 'limit' in ff.calls[0].body.pager, 'offset/limit pager, not pageIndex/pageSize');
 });
 
-test('lifecycle.create rejects a pre-#364 action name BEFORE any network call, naming the replacement', async () => {
+test('lifecycle.create rejects a renamed action name BEFORE any network call, naming the replacement', async () => {
   const { mgmt, ff } = harness([]);
   await assert.rejects(
     () => mgmt.lifecycle.create({ name: 'x', systemName: 's', eventType: 'session_ended', objectType: 'thread', action: { actionType: 'triggerInsight', insights: [] } }, ADMIN_KS),
@@ -100,33 +100,38 @@ test('lifecycle.create rejects a pre-#364 action name BEFORE any network call, n
   assert.equal(ff.calls.length, 0, 'no transport for any renamed action type');
 });
 
-test('lifecycle.create rejects a #364 system-preset-only action name BEFORE any network call', async () => {
+test('lifecycle.create rejects the system-preset-only action name BEFORE any network call', async () => {
   const { mgmt, ff } = harness([]);
   await assert.rejects(
     () => mgmt.lifecycle.create({ name: 'x', systemName: 's', eventType: 'session_ended', objectType: 'thread', action: { actionType: '_triggerKaiBase' } }, ADMIN_KS),
-    (e) => e.code === 'bad_request' && /_triggerKaiBase/.test(e.detail) && /system preset only/.test(e.detail),
+    (e) => e.code === 'bad_request' && /_triggerKaiBase/.test(e.detail) && /system-seeded preset rule/.test(e.detail),
   );
-  await assert.rejects(
-    () => mgmt.lifecycle.create({ name: 'x', systemName: 's', eventType: 'session_ended', objectType: 'thread', action: { actionType: 'triggerDtcKai' } }, ADMIN_KS),
-    (e) => e.code === 'bad_request' && /triggerDtcKai/.test(e.detail) && /system preset only/.test(e.detail),
-  );
-  assert.equal(ff.calls.length, 0, 'no transport for either system-preset-only action type');
+  assert.equal(ff.calls.length, 0, 'no transport for the system-preset-only action type');
 });
 
-test('lifecycle.update rejects a #364 system-preset-only action name in patch.action BEFORE any network call', async () => {
+test('lifecycle.create accepts triggerDtcKai — it is a normal, caller-creatable action type', async () => {
+  const dtcAction = { actionType: 'triggerDtcKai' };
+  const { mgmt, ff } = harness([
+    { match: 'lifecycle/create', respond: (req) => ({ status: 200, body: { ...RULE, ...req.body } }) },
+  ]);
+  const res = await mgmt.lifecycle.create(
+    { name: 'Scope DTC to one agent', systemName: 'scope_dtc_to_agent', eventType: 'session_ended', objectType: 'thread', eventConditions: [{ field: 'object.agent_id', operator: 'eq', value: 'uuid-1' }], action: dtcAction },
+    ADMIN_KS,
+  );
+  assert.equal(res.systemName, 'scope_dtc_to_agent');
+  assert.deepEqual(ff.calls[0].body.action, dtcAction);
+});
+
+test('lifecycle.update rejects the system-preset-only action name in patch.action BEFORE any network call', async () => {
   const { mgmt, ff } = harness([]);
   await assert.rejects(
     () => mgmt.lifecycle.update(RULE.id, { action: { actionType: '_triggerKaiBase' } }, ADMIN_KS),
     (e) => e.code === 'bad_request' && /_triggerKaiBase/.test(e.detail),
   );
-  await assert.rejects(
-    () => mgmt.lifecycle.update(RULE.id, { action: { actionType: 'triggerDtcKai' } }, ADMIN_KS),
-    (e) => e.code === 'bad_request' && /triggerDtcKai/.test(e.detail),
-  );
   assert.equal(ff.calls.length, 0);
 });
 
-test('lifecycle.update rejects a pre-#364 action name in patch.action BEFORE any network call', async () => {
+test('lifecycle.update rejects a renamed action name in patch.action BEFORE any network call', async () => {
   const { mgmt, ff } = harness([]);
   await assert.rejects(
     () => mgmt.lifecycle.update(RULE.id, { action: { actionType: 'triggerInsight', insights: [] } }, ADMIN_KS),

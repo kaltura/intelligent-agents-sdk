@@ -25,8 +25,6 @@
  * proves the rules are wired correctly with match() rather than waiting
  * for one. See docs/lifecycle/recipes.md for the full walkthrough.
  *
- * Gate: requires agentic-api #364 (see docs/lifecycle/README.md's gate note).
- *
  * Run: AGENTIC_PARTNER_ID=… AGENTIC_ADMIN_SECRET=… node examples/lifecycle-insights-and-email.mjs
  *
  * NOTE (dev-local path): the import below resolves against the repo's src/ tree.

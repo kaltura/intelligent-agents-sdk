@@ -6,7 +6,6 @@ import { Management } from '../../src/management/client.js';
 /**
  * InsightSettings resource (wire, `/insight-settings/*`, agentic-hosted,
  * `{offset,limit}` pager) — same `{status,data}` unwrap shape as Avatars.
- * Live on NVQ2 only as of agentic-api #364; disabled on PROD.
  */
 
 const ADMIN_KS = 'djJ8' + 'A'.repeat(40);

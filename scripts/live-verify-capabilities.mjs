@@ -96,72 +96,51 @@ try {
     fieldCount: fields.fields?.length,
   });
 
-  // ── Lifecycle: agentic-api #364 readiness gate ──────────────────────────
-  // The account this script targets may or may not have taken #364 yet — see
-  // the gate note on Lifecycle/InsightSettings. Probe with the documented
-  // check (200 on #364, 400 `should not exist` on the pre-#364 model) so this
-  // script keeps passing either way instead of hard-failing once the SDK
-  // started rejecting the old action-type names client-side.
-  let hasNewActionModel = true;
-  try {
-    await kaltura.lifecycle.list(admin, { filter: { actionTypeIn: ['sendInsightEmail'] } });
-  } catch (err) {
-    if (err?.code !== 'bad_request') throw err;
-    hasNewActionModel = false;
-  }
-  record('lifecycle.action-model-readiness', true, { hasNewActionModel });
+  // ── Lifecycle: full CRUD + match cycle ────────────────────────────────
+  const insightSetting = await kaltura.insightSettings.create(
+    { key: `${runId}-KEY`, title: 'live-verify-capabilities probe', prompt: 'Reply with the single word "ok".', valueType: 'string' },
+    admin,
+  );
+  insightSettingsId = insightSetting.id;
+  record('insightSettings.create', true, { id: insightSettingsId });
 
-  if (!hasNewActionModel) {
-    record('lifecycle.create-get-list-match-update-delete', true, {
-      skipped: 'this account has not taken agentic-api #364 yet; the SDK only supports the #364 action model, so this cycle needs an account that has it.',
-    });
-  } else {
-    // ── Lifecycle: full CRUD + match cycle ────────────────────────────────
-    const insightSetting = await kaltura.insightSettings.create(
-      { key: `${runId}-KEY`, title: 'live-verify-capabilities probe', prompt: 'Reply with the single word "ok".', valueType: 'string' },
-      admin,
-    );
-    insightSettingsId = insightSetting.id;
-    record('insightSettings.create', true, { id: insightSettingsId });
+  const created = await kaltura.lifecycle.create(
+    {
+      name: `${runId}-rule`,
+      systemName: runId,
+      eventType: 'session_ended',
+      objectType: 'thread',
+      action: { actionType: 'triggerInsightSettingsKai', insightSettingsIds: [insightSettingsId] },
+    },
+    admin,
+  );
+  ruleId = created.id;
+  record('lifecycle.create', true, { id: ruleId, status: created.status });
 
-    const created = await kaltura.lifecycle.create(
-      {
-        name: `${runId}-rule`,
-        systemName: runId,
-        eventType: 'session_ended',
-        objectType: 'thread',
-        action: { actionType: 'triggerInsightSettingsKai', insightSettingsIds: [insightSettingsId] },
-      },
-      admin,
-    );
-    ruleId = created.id;
-    record('lifecycle.create', true, { id: ruleId, status: created.status });
+  const got = await kaltura.lifecycle.get(ruleId, admin);
+  record('lifecycle.get', true, { id: got.id, status: got.status });
 
-    const got = await kaltura.lifecycle.get(ruleId, admin);
-    record('lifecycle.get', true, { id: got.id, status: got.status });
+  const list = await kaltura.lifecycle.list(admin, { pageSize: 30 });
+  const foundInList = list.some((r) => r.id === ruleId);
+  record('lifecycle.list', foundInList, { count: list.length, foundInList });
 
-    const list = await kaltura.lifecycle.list(admin, { pageSize: 30 });
-    const foundInList = list.some((r) => r.id === ruleId);
-    record('lifecycle.list', foundInList, { count: list.length, foundInList });
+  const matched = await kaltura.lifecycle.match(
+    'thread', 'session_ended',
+    { object: { agent_id: `${runId}-agent`, thread_id: `${runId}-thread`, user_id: `${runId}-user` } },
+    admin,
+  );
+  const allRuleIds = (matched.matchedRules || []).flatMap((g) => g.rules.map((r) => r.id));
+  const foundInMatch = allRuleIds.includes(ruleId);
+  const presetFound = allRuleIds.includes('preset__summary_on_session_ended');
+  record('lifecycle.match', foundInMatch, {
+    groupCount: matched.matchedRules?.length,
+    allRuleIds,
+    foundInMatch,
+    presetFound,
+  });
 
-    const matched = await kaltura.lifecycle.match(
-      'thread', 'session_ended',
-      { object: { agent_id: `${runId}-agent`, thread_id: `${runId}-thread`, user_id: `${runId}-user` } },
-      admin,
-    );
-    const allRuleIds = (matched.matchedRules || []).flatMap((g) => g.rules.map((r) => r.id));
-    const foundInMatch = allRuleIds.includes(ruleId);
-    const presetFound = allRuleIds.includes('preset__summary_on_session_ended');
-    record('lifecycle.match', foundInMatch, {
-      groupCount: matched.matchedRules?.length,
-      allRuleIds,
-      foundInMatch,
-      presetFound,
-    });
-
-    const updated = await kaltura.lifecycle.update(ruleId, { name: `${runId}-rule-renamed` }, admin);
-    record('lifecycle.update', updated.name === `${runId}-rule-renamed`, { id: updated.id, name: updated.name });
-  }
+  const updated = await kaltura.lifecycle.update(ruleId, { name: `${runId}-rule-renamed` }, admin);
+  record('lifecycle.update', updated.name === `${runId}-rule-renamed`, { id: updated.id, name: updated.name });
 } catch (err) {
   failed = true;
   record('live-verify-capabilities', false, { message: err?.detail || err?.message || String(err), code: err?.code });
