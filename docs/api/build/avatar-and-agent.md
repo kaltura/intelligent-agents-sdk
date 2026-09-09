@@ -52,7 +52,7 @@ await mgmt.avatars.create(
 
 ### Upload a custom Face or Background (for the compose-a-visual path)
 
-`catalog.createFace`/`catalog.createBackground` upload an image as an explicit `Face`-/`Background`-typed catalog item — the two composable halves the `face`/`background` avatar fields expect. Same multipart shape and attribute fields as `catalog.createVisual` (§ Upload a Custom Visual, above); the only difference is the wire `type` field, which the SDK sets for you:
+`catalog.createFace`/`catalog.createBackground` upload an image as an explicit `Face`-/`Background`-typed catalog item — the two composable halves the `face`/`background` avatar fields expect. Same multipart shape and attribute fields as `catalog.createVisual` (§ Upload a Custom Visual, above); the only difference is the wire `type` field, which the SDK sets for you. Note the name collision below: the catalog upload's `attrs.background` (a photo attribute string like `'Image'`) is unrelated to the avatar-level `background` composition field used in `avatars.create`.
 
 ```js
 const face = await mgmt.catalog.createFace(portraitBlob, { name: 'Support rep', genderPresentation: 'Feminine' }, ks);

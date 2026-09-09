@@ -94,7 +94,7 @@ The backend does preprocess the uploaded image before rendering: it crop-fits th
 
 ## Upload a custom Face or Background (compose-a-visual path)
 
-`createVisual` above uploads a photo directly as a ready-to-use Visual. `catalog-item/create` also accepts an explicit `Face`/`Background` `type` for the two composable HALVES the `avatar/create` `face`/`background` fields expect instead — same multipart shape and attribute fields as a Visual upload, just with `type` set:
+`createVisual` above uploads a photo directly as a ready-to-use Visual. `catalog-item/create` also accepts an explicit `Face`/`Background` `type` for the two composable HALVES the `avatar/create` `face`/`background` fields expect instead — same multipart shape and attribute fields as a Visual upload, just with `type` set. Name collision to watch for: the `attributes.visual.background` field below is a photo ATTRIBUTE string (e.g. `"Image"`) describing the upload's own backdrop — unrelated to `avatar/create`'s `background` field, the `{type:'color'|'visual', value}` composition selector used a few steps later.
 
 ```
 file=@face-portrait.jpg
