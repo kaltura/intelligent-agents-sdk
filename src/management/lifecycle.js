@@ -22,10 +22,12 @@
  * `session_ended` rule with this action type is a no-op server-side),
  * `{actionType:'_triggerKaiBase', ...}` (system preset only — powers
  * `preset__summary_on_session_ended`, the always-on free `SUMMARY`; not
- * creatable, excluded server-side by type, Swagger discriminator, and a
- * runtime assert), and `{actionType:'triggerDtcKai'}` (system preset only,
- * currently disabled account-wide — would extract one insight per configured
- * lead-capture field, `intellectConfig.user_properties_forms`, if enabled).
+ * creatable — rejected client-side here (see {@link SYSTEM_ONLY_ACTION_TYPES}),
+ * and additionally excluded server-side by type, Swagger discriminator, and a
+ * runtime assert, as defense in depth), and `{actionType:'triggerDtcKai'}`
+ * (system preset only, currently disabled account-wide — would extract one
+ * insight per configured lead-capture field,
+ * `intellectConfig.user_properties_forms`, if enabled).
  * See `docs/lifecycle/README.md` for the full explanation. Mounted at
  * `mgmt.lifecycle`.
  *
@@ -65,16 +67,28 @@ const RENAMED_ACTION_TYPES = {
   triggerOverridableSummaryInsight: null, // system preset only in both models; never creatable
 };
 
+// The #364 action-type names that exist only to power system-seeded preset
+// rules (see the class doc) — never creatable/updatable by a caller, even
+// though they're the current, non-renamed names.
+const SYSTEM_ONLY_ACTION_TYPES = new Set(['_triggerKaiBase', 'triggerDtcKai']);
+
 /** @param {unknown} action @param {string} where */
 function assertCurrentActionType(action, where) {
   const actionType = action && typeof action === 'object' ? /** @type {any} */ (action).actionType : undefined;
-  if (typeof actionType === 'string' && Object.prototype.hasOwnProperty.call(RENAMED_ACTION_TYPES, actionType)) {
+  if (typeof actionType !== 'string') return;
+  if (Object.prototype.hasOwnProperty.call(RENAMED_ACTION_TYPES, actionType)) {
     const replacement = RENAMED_ACTION_TYPES[actionType];
     throw new KalturaError({
       type: 'about:blank', title: 'renamed action type', code: 'bad_request',
       detail: replacement
         ? `${where}: actionType "${actionType}" was renamed to "${replacement}" in agentic-api #364. ${actionType === 'triggerInsight' ? 'Create the InsightSettings entities first (mgmt.insightSettings.create), then pass their ids as insightSettingsIds.' : ''}`.trim()
         : `${where}: actionType "${actionType}" is a system preset only (never creatable) in both the old and #364 action models.`,
+    });
+  }
+  if (SYSTEM_ONLY_ACTION_TYPES.has(actionType)) {
+    throw new KalturaError({
+      type: 'about:blank', title: 'system preset only action type', code: 'bad_request',
+      detail: `${where}: actionType "${actionType}" is a system preset only action type in agentic-api #364 (it powers system-seeded preset rules) — never creatable/updatable directly.`,
     });
   }
 }
@@ -88,7 +102,7 @@ export class Lifecycle {
    * second rule, same as {@link Tools#add}).
    * @param {{name:string, systemName:string, eventType:string, objectType:string, eventConditions?:Array<{field:string,operator:string,value:unknown}>, action:{actionType:'triggerInsightSettingsKai',insightSettingsIds:string[]}|{actionType:'triggerDtcKai'}|{actionType:'sendInsightEmail',recipients:string[],templateId?:string,presetType?:string}}} body
    * @param {string} ks (admin)
-   * @throws {import('../core/errors.js').KalturaError} `code:'bad_request'` if `action.actionType` is one of the pre-#364 names (`triggerInsight`, `triggerDataToCollectInsight`, `triggerOverridableSummaryInsight`) — see {@link RENAMED_ACTION_TYPES}.
+   * @throws {import('../core/errors.js').KalturaError} `code:'bad_request'` if `action.actionType` is one of the pre-#364 names (`triggerInsight`, `triggerDataToCollectInsight`, `triggerOverridableSummaryInsight`) — see {@link RENAMED_ACTION_TYPES} — or one of the #364 system-preset-only names (`_triggerKaiBase`, `triggerDtcKai`) — see {@link SYSTEM_ONLY_ACTION_TYPES}.
    */
   async create(body, ks) {
     this._.assertAdmin(ks, 'lifecycle.create');
