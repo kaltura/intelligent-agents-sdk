@@ -92,6 +92,21 @@ The backend does preprocess the uploaded image before rendering: it crop-fits th
 
 **SDK shortcut:** `catalog.createVisual(imageBlob, { name, genderPresentation, background, skinTone, ageGroup, hairColor }, adminKs)` — returns `{ itemId, loadingVideo }` (raw API response — field names come from the CatalogItemDto and are not SDK-normalized; treat as best-effort until the API contract is pinned).
 
+## Upload a custom Face or Background (compose-a-visual path)
+
+`createVisual` above uploads a photo directly as a ready-to-use Visual. `catalog-item/create` also accepts an explicit `Face`/`Background` `type` for the two composable HALVES the `avatar/create` `face`/`background` fields expect instead — same multipart shape and attribute fields as a Visual upload, just with `type` set:
+
+```
+file=@face-portrait.jpg
+attributes={"visual":{"name":"Support rep","genderPresentation":"Feminine","background":"Image","skinTone":"Light","ageGroup":"YoungAdult","hairColor":"Brown"}}
+type=Face
+adminTags=custom
+```
+
+Send `type=Background` for a backdrop image instead. Only 36 preset Face items and 4 preset Background items exist today (live count) — this is the only way to add a custom one.
+
+**SDK shortcut:** `catalog.createFace(imageBlob, attrs, adminKs)` / `catalog.createBackground(imageBlob, attrs, adminKs)` — same `attrs` shape as `createVisual`. See [build/avatar-and-agent.md § Three ways to get a visual](build/avatar-and-agent.md#three-ways-to-get-a-visual) for how to compose the result into an avatar.
+
 ---
 
 ## End-to-end: custom portrait avatar, server to browser
