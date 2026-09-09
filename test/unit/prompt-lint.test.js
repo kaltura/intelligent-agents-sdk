@@ -18,7 +18,7 @@ import {
 const hasFinding = (findings, code) => findings.some((f) => f.code === code);
 
 test('SYS_VARS / SYS_NAMESPACES are the documented frozen reserved sets', () => {
-  assert.deepEqual([...SYS_VARS], ['sys__thread_id', 'sys__message_id', 'sys__user_id', 'sys__user_message']);
+  assert.deepEqual([...SYS_VARS], ['sys__thread_id', 'sys__message_id', 'sys__user_id', 'sys__user_message', 'sys__ks', 'sys__is_new_thread', 'sys__context_id', 'sys__context_type']);
   assert.deepEqual([...SYS_NAMESPACES], ['secrets']);
   assert.throws(() => { SYS_VARS.push('x'); });
 });

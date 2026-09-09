@@ -47,17 +47,8 @@ const SYS_VAR_SET = new Set(SYS_VARS);
 const SYS_NS_SET = new Set(SYS_NAMESPACES);
 const SOURCE = 'prompt-lint';
 
-/**
- * The two additional server-set scalar `sys__*` variables not yet part of {@link RESERVED_VARS} — `sys__ks` (the raw
- * session token) and `sys__is_new_thread`. Combined with {@link SYS_VARS} this
- * is the full known-reserved-scalar surface {@link assembleSystemPrompt} uses
- * to flag an unresolvable reference; it does NOT feed
- * `assertRequestVars`'s collision guard — that list is tracked separately in
- * `conversations.js` and extending it is out of scope here.
- * @type {readonly string[]}
- */
-const RESERVED_EXTRA_SCALARS = Object.freeze(['sys__ks', 'sys__is_new_thread']);
-const RESERVED_SCALAR_SET = new Set([...SYS_VARS, ...RESERVED_EXTRA_SCALARS]);
+/** All known reserved-scalar `sys__*` names — now fully covered by {@link SYS_VARS}. */
+const RESERVED_SCALAR_SET = SYS_VAR_SET;
 
 /** Dotted prefix for the reserved bound-user object. */
 const RESERVED_USER_OBJ_PREFIX = 'sys__user_obj';
