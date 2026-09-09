@@ -43,13 +43,11 @@ export class Agents {
    * `filter` is passed through to `agent/list` as-is (default `{}`). Keys:
    * `agentId`, `adminTagsIn`, `adminTagsNotIn`, `searchValue` (case-insensitive
    * substring on `displayName`/`agentId`); an unrecognized key returns
-   * `bad_request`. `adminTagsIn`/`adminTagsNotIn`/`searchValue` 400 on PROD
-   * until it takes the backend deploy that adds them (NVQ2 has them today) —
-   * filter CLIENT-SIDE on `adminTags` as a fallback until then. The wire
-   * request also takes a top-level `orderBy` (`+createdAt`, `-createdAt`,
-   * `+updatedAt`, `-updatedAt`), which this method does not yet expose.
+   * `bad_request`. The wire request also takes a top-level `orderBy`
+   * (`+createdAt`, `-createdAt`, `+updatedAt`, `-updatedAt`), which this
+   * method does not yet expose.
    *
-   * @example <caption>Filter by an admin tag once adminTagsIn is available; client-side fallback otherwise</caption>
+   * @example <caption>Filter by an admin tag</caption>
    * const tagged = await k.agents.list(adminKs, { filter: { adminTagsIn: ['lobby'] } }).all();
    *
    * @param {string} ks @param {{filter?:object,pageSize?:number}} [opts]

@@ -113,11 +113,10 @@ try {
     if (!foundFeedback && Date.now() < feedbackDeadline) await new Promise((r) => setTimeout(r, 1000));
   } while (!foundFeedback && Date.now() < feedbackDeadline);
   if (!foundFeedback && feedbackRows.length === 0) {
-    // Some accounts don't expose feedback rows via list/report at all (same
-    // class of account-readiness gate as the Lifecycle #364 check above) —
-    // an empty list, not just a missing row, means there's nothing this
-    // account can ever show us here, so skip rather than hard-fail on an
-    // account limitation unrelated to the SDK code under test.
+    // Some accounts don't expose feedback rows via list/report at all — an
+    // empty list, not just a missing row, means there's nothing this account
+    // can ever show us here, so skip rather than hard-fail on an account
+    // limitation unrelated to the SDK code under test.
     record('feedback.list', true, { skipped: 'this account exposes zero feedback rows via list; cannot confirm list-visibility here.' });
   } else {
     record('feedback.list', foundFeedback, { count: feedbackRows.length, foundFeedback });
