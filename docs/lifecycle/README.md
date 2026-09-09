@@ -73,7 +73,7 @@ Every conversation gets a structured recap the moment it ends, with zero app-sid
 
 ## Scoping a rule to one agent
 
-`eventConditions` can only filter on fields [`describeFields`](#discovery-and-dry-run-testing) actually reports. For `thread`/`analysis_updated` today that's `object.agent_id`, `object.thread_id`, `object.user_id`, and `changed_keys` (which insight keys were updated), **not** an insight's computed value — there is no `object.sentiment` field to filter on, since a sentiment score only exists as the *output* of a `triggerInsight` action, not an input `eventConditions` can inspect.
+`eventConditions` can only filter on fields [`describeFields`](#discovery-and-dry-run-testing) actually reports. For `thread`/`analysis_updated` today that's `object.agent_id`, `object.thread_id`, `object.user_id`, and `changed_keys` (which insight keys were updated), **not** an insight's computed value — there is no `object.sentiment` field to filter on, since a sentiment score only exists as the *output* of a `triggerInsightSettingsKai` action, not an input `eventConditions` can inspect.
 
 ```js
 await mgmt.lifecycle.create({
