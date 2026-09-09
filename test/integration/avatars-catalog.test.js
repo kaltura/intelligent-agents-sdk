@@ -62,15 +62,31 @@ test('catalog.createFace/createBackground send an explicit type field ("Face"/"B
   const k = new Management({ partnerId: 6516742, adminSecret: 'a'.repeat(32), fetch: f });
   const file = new Blob([new Uint8Array([1, 2, 3])], { type: 'image/png' });
 
-  const face = await k.catalog.createFace(file, { name: 'QA face', genderPresentation: 'Feminine' }, ADMIN);
+  const face = await k.catalog.createFace(
+    file,
+    { name: 'QA face', genderPresentation: 'Feminine', background: 'Solid', skinTone: 'Dark', hairColor: 'Black' },
+    ADMIN,
+  );
   assert.equal(face.itemId, 'item-2');
   let call = f.calls.find((c) => c.url.includes('/catalog-item/create'));
   assert.equal(call.body.get('type'), 'Face');
+  let attributes = JSON.parse(call.body.get('attributes'));
+  assert.equal(attributes.visual.background, 'Solid', 'non-default background attr must land in the multipart attributes payload');
+  assert.equal(attributes.visual.skinTone, 'Dark');
+  assert.equal(attributes.visual.hairColor, 'Black');
 
   f.calls.length = 0;
-  await k.catalog.createBackground(file, { name: 'QA bg', genderPresentation: 'Masculine' }, ADMIN);
+  await k.catalog.createBackground(
+    file,
+    { name: 'QA bg', genderPresentation: 'Masculine', background: 'Outdoor', ageGroup: 'Senior', hairStyle: ['Long'] },
+    ADMIN,
+  );
   call = f.calls.find((c) => c.url.includes('/catalog-item/create'));
   assert.equal(call.body.get('type'), 'Background');
+  attributes = JSON.parse(call.body.get('attributes'));
+  assert.equal(attributes.visual.background, 'Outdoor', 'non-default background attr must land in the multipart attributes payload');
+  assert.equal(attributes.visual.ageGroup, 'Senior');
+  assert.deepEqual(attributes.visual.hairStyle, ['Long']);
 });
 
 test('catalog.createVisual sends NO type field (unchanged default behavior)', async () => {
