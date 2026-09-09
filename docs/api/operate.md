@@ -133,7 +133,9 @@ There is no documented cap on how long a thread's history can grow. The full tra
 Feedback and follow-up suggestions route through internal Genie paths — use the SDK rather than calling them directly.
 
 - `mgmt.feedback.add({message_id, is_positive, comment?}, convKs)` — thumbs up/down on a message. `message_id` comes from the converse stream.
+- `mgmt.feedback.list(ks, opts)` / `mgmt.feedback.report(ks, opts)` — admin-scoped feedback listing / CSV export. ⚠️ SENSITIVE: contains end-user ids/names + verbatim question/feedback text. Treat as PII; scope and redact before sharing.
 - `mgmt.followups.getSuggested(ks)` — pre-configured starter questions. Per-answer follow-ups stream inline as `unisphere-tool` segments when `capabilities.generate_followup_questions:"on"`.
+- `mgmt.followups.list(ks, opts)` — raw partner-wide follow-up/starter question record listing (distinct from `getSuggested`'s per-agent shortlist).
 
 ---
 
