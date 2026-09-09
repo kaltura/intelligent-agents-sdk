@@ -23,7 +23,7 @@ function harness(routes) {
 const RULE = {
   id: '507f1f77bcf86cd799439011', partnerId: 123, name: 'Summarize after call', systemName: 'summarize_after_call',
   status: 'active', eventType: 'session_ended', objectType: 'thread', eventConditions: [],
-  action: { actionType: 'triggerInsight', insights: [{ insightKey: 'SESSIONSUMMARY', valueType: 'string' }] },
+  action: { actionType: 'triggerInsightSettingsKai', insightSettingsIds: ['68b0000000000000000000a1'] },
   createdAt: '2026-08-30T00:00:00.000Z', updatedAt: '2026-08-30T00:00:00.000Z', createdBy: 'user-1',
 };
 
@@ -75,12 +75,38 @@ test('lifecycle.list uses the {offset,limit} pager (NOT Genie pageIndex/pageSize
   const { mgmt, ff } = harness([
     { match: 'lifecycle/list', respond: () => ({ status: 200, body: { totalCount: 1, objects: [RULE] } }) },
   ]);
-  const page = await mgmt.lifecycle.list(ADMIN_KS, { filter: { eventTypeEqual: 'session_ended' }, orderBy: '-createdAt' });
+  const page = await mgmt.lifecycle.list(ADMIN_KS, { filter: { actionTypeIn: ['sendInsightEmail'] }, orderBy: '-createdAt' });
   assert.equal(page.length, 1);
   assert.equal(page[0].id, RULE.id);
-  assert.deepEqual(ff.calls[0].body.filter, { eventTypeEqual: 'session_ended' });
+  assert.deepEqual(ff.calls[0].body.filter, { actionTypeIn: ['sendInsightEmail'] });
   assert.equal(ff.calls[0].body.orderBy, '-createdAt');
   assert.ok('offset' in ff.calls[0].body.pager && 'limit' in ff.calls[0].body.pager, 'offset/limit pager, not pageIndex/pageSize');
+});
+
+test('lifecycle.create rejects a pre-#364 action name BEFORE any network call, naming the replacement', async () => {
+  const { mgmt, ff } = harness([]);
+  await assert.rejects(
+    () => mgmt.lifecycle.create({ name: 'x', systemName: 's', eventType: 'session_ended', objectType: 'thread', action: { actionType: 'triggerInsight', insights: [] } }, ADMIN_KS),
+    (e) => e.code === 'bad_request' && /triggerInsightSettingsKai/.test(e.detail),
+  );
+  await assert.rejects(
+    () => mgmt.lifecycle.create({ name: 'x', systemName: 's', eventType: 'session_ended', objectType: 'thread', action: { actionType: 'triggerDataToCollectInsight' } }, ADMIN_KS),
+    (e) => e.code === 'bad_request' && /triggerDtcKai/.test(e.detail),
+  );
+  await assert.rejects(
+    () => mgmt.lifecycle.create({ name: 'x', systemName: 's', eventType: 'session_ended', objectType: 'thread', action: { actionType: 'triggerOverridableSummaryInsight' } }, ADMIN_KS),
+    (e) => e.code === 'bad_request',
+  );
+  assert.equal(ff.calls.length, 0, 'no transport for any renamed action type');
+});
+
+test('lifecycle.update rejects a pre-#364 action name in patch.action BEFORE any network call', async () => {
+  const { mgmt, ff } = harness([]);
+  await assert.rejects(
+    () => mgmt.lifecycle.update(RULE.id, { action: { actionType: 'triggerInsight', insights: [] } }, ADMIN_KS),
+    (e) => e.code === 'bad_request' && /triggerInsightSettingsKai/.test(e.detail),
+  );
+  assert.equal(ff.calls.length, 0);
 });
 
 test('lifecycle.update validates BEFORE any network call, then posts a patch to lifecycle/update', async () => {
@@ -130,7 +156,7 @@ test('lifecycle.match posts {objectType, eventType, eventData} and returns match
             {
               isGrouped: true, groupKey: '_system_grouped_kai_insights',
               rules: [
-                { id: 'preset__overridable_summary_on_session_ended', systemName: 'overridable_summary_on_session_ended', action: { actionType: 'triggerOverridableSummaryInsight' } },
+                { id: 'preset__summary_on_session_ended', systemName: 'summary_on_session_ended', action: { actionType: '_triggerKaiBase' } },
                 RULE,
               ],
             },

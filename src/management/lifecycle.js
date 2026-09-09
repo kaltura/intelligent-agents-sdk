@@ -7,25 +7,35 @@
  * `action` runs server-side. Four action shapes exist, passed through as
  * plain objects (not built by the SDK), but only the first two are meant to
  * be created here — the other two only exist to power system preset rules
- * and ignore anything a caller passes:
- * `{actionType:'triggerInsight', insights:[{insightKey, valueType, prompt?}, ...]}`
- * (`valueType` is REQUIRED on every insight, even built-in keys like
- * `SUMMARY` — omitting it 400s live: "action.insights.0.valueType must be
- * one of the following values: string, number, boolean, arrayString,
- * arrayNumber, arrayBoolean"; every rule extracting insights on the same
- * event merges into one LLM batch, so don't request `SUMMARY` — every
- * partner already has an always-on preset producing one for free),
+ * and are rejected pre-network if you try to create them:
+ * `{actionType:'triggerInsightSettingsKai', insightSettingsIds:string[]}`
+ * (1 to 20 ids of {@link InsightSettings} entities belonging to the partner —
+ * an id that never existed is rejected immediately (`create`/`update` throw
+ * `INVALID_INSIGHT_SETTINGS`), but a *dangling* one — valid when the rule was
+ * created, deleted afterward — isn't caught until the rule actually fires,
+ * since {@link InsightSettings#delete} runs no in-use scan; every
+ * rule extracting insights on the same event merges into one LLM batch, so
+ * don't reference an insight-settings entity keyed `SUMMARY` — every partner
+ * already has an always-on preset producing one for free),
  * `{actionType:'sendInsightEmail', recipients:string[], templateId?:string,
  * presetType?:string}` (only fires on `eventType:'analysis_updated'` — a
  * `session_ended` rule with this action type is a no-op server-side),
- * `{actionType:'triggerOverridableSummaryInsight'}` (system preset only —
- * customize its prompt via `agents.update({agentId, summaryOverridePrompt})`,
- * not a rule), and `{actionType:'triggerDataToCollectInsight'}` (system
- * preset only, currently disabled account-wide — would extract one insight
- * per configured lead-capture field, `intellectConfig.user_properties_forms`,
- * if enabled). See
- * `docs/lifecycle/README.md` for the full explanation. Mounted at
+ * `{actionType:'_triggerKaiBase', ...}` (system preset only — powers
+ * `preset__summary_on_session_ended`, the always-on free `SUMMARY`; not
+ * creatable, excluded server-side by type, Swagger discriminator, and a
+ * runtime assert), and `{actionType:'triggerDtcKai'}` (system preset only,
+ * currently disabled account-wide — would extract one insight per configured
+ * lead-capture field, `intellectConfig.user_properties_forms`, if enabled).
+ * See `docs/lifecycle/README.md` for the full explanation. Mounted at
  * `mgmt.lifecycle`.
+ *
+ * **Gate: requires agentic-api `#364`.** This module describes the action
+ * model that shipped in `#364` (2026-09-08) — live on NVQ2, not yet on PROD.
+ * Against PROD's older model, `create`/`update`/`match` with any of these
+ * action types 500s. Probe readiness with
+ * `lifecycle.list(ks, {filter:{actionTypeIn:['sendInsightEmail']}})`: 400
+ * `should not exist` on the old model, 200 on `#364` (`describeFields` is
+ * identical on both models, so it can't tell them apart).
  */
 import { paginate } from './paginate.js';
 import { uuidv4, meta } from '../core/ids.js';
@@ -46,6 +56,29 @@ function requireNonEmptyString(v, where, field) {
   }
 }
 
+// Renamed in agentic-api #364 (2026-09-08). The old names 500 there instead of
+// 400ing — a caller silently carrying over PROD-era code gets an unhelpful
+// "Internal server error" with no hint of what changed. Catch it here instead.
+const RENAMED_ACTION_TYPES = {
+  triggerInsight: 'triggerInsightSettingsKai',
+  triggerDataToCollectInsight: 'triggerDtcKai',
+  triggerOverridableSummaryInsight: null, // system preset only in both models; never creatable
+};
+
+/** @param {unknown} action @param {string} where */
+function assertCurrentActionType(action, where) {
+  const actionType = action && typeof action === 'object' ? action.actionType : undefined;
+  if (typeof actionType === 'string' && Object.prototype.hasOwnProperty.call(RENAMED_ACTION_TYPES, actionType)) {
+    const replacement = RENAMED_ACTION_TYPES[actionType];
+    throw new KalturaError({
+      type: 'about:blank', title: 'renamed action type', code: 'bad_request',
+      detail: replacement
+        ? `${where}: actionType "${actionType}" was renamed to "${replacement}" in agentic-api #364. ${actionType === 'triggerInsight' ? 'Create the InsightSettings entities first (mgmt.insightSettings.create), then pass their ids as insightSettingsIds.' : ''}`.trim()
+        : `${where}: actionType "${actionType}" is a system preset only (never creatable) in both the old and #364 action models.`,
+    });
+  }
+}
+
 export class Lifecycle {
   /** @param {import('./client.js').Ctx} ctx */
   constructor(ctx) { this._ = ctx; }
@@ -53,8 +86,9 @@ export class Lifecycle {
   /**
    * Create a lifecycle rule. WRITE — NOT idempotent (a repeat call creates a
    * second rule, same as {@link Tools#add}).
-   * @param {{name:string, systemName:string, eventType:string, objectType:string, eventConditions?:Array<{field:string,operator:string,value:unknown}>, action:object}} body
+   * @param {{name:string, systemName:string, eventType:string, objectType:string, eventConditions?:Array<{field:string,operator:string,value:unknown}>, action:{actionType:'triggerInsightSettingsKai',insightSettingsIds:string[]}|{actionType:'triggerDtcKai'}|{actionType:'sendInsightEmail',recipients:string[],templateId?:string,presetType?:string}}} body
    * @param {string} ks (admin)
+   * @throws {import('../core/errors.js').KalturaError} `code:'bad_request'` if `action.actionType` is one of the pre-#364 names (`triggerInsight`, `triggerDataToCollectInsight`, `triggerOverridableSummaryInsight`) — see {@link RENAMED_ACTION_TYPES}.
    */
   async create(body, ks) {
     this._.assertAdmin(ks, 'lifecycle.create');
@@ -66,8 +100,9 @@ export class Lifecycle {
     requireNonEmptyString(body.eventType, 'lifecycle.create', 'eventType');
     requireNonEmptyString(body.objectType, 'lifecycle.create', 'objectType');
     if (!body.action || typeof body.action !== 'object') {
-      throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: 'lifecycle.create action must be an object (e.g. {actionType:"triggerInsight", insights:[...]}).' });
+      throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: 'lifecycle.create action must be an object (e.g. {actionType:"triggerInsightSettingsKai", insightSettingsIds:[...]}).' });
     }
+    assertCurrentActionType(body.action, 'lifecycle.create');
     /** @type {Record<string,unknown>} */
     const wire = { name: body.name, systemName: body.systemName, eventType: body.eventType, objectType: body.objectType, action: body.action };
     if (body.eventConditions !== undefined) wire.eventConditions = body.eventConditions;
@@ -89,7 +124,7 @@ export class Lifecycle {
    * + awaitable (first page) — mirrors {@link Avatars#list}'s `{offset,limit}`
    * pager (agentic-hosted, NOT the Genie `{pageIndex,pageSize}` convention).
    * @param {string} ks (admin)
-   * @param {{filter?:{eventTypeEqual?:string, statusEqual?:string, systemNameEqual?:string}, orderBy?:'+createdAt'|'-createdAt', pageSize?:number}} [opts]
+   * @param {{filter?:{statusEqual?:string, systemNameEqual?:string, actionTypeIn?:string[], eventCondition?:{fieldEqual:string,operatorIn?:string[],operatorEqual?:string,value:unknown}}, orderBy?:'+createdAt'|'-createdAt', pageSize?:number}} [opts]
    */
   list(ks, opts = {}) {
     this._.assertAdmin(ks, 'lifecycle.list');
@@ -116,6 +151,7 @@ export class Lifecycle {
     if (!fields.some((f) => patch[f] !== undefined)) {
       throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: `lifecycle.update needs at least one of ${fields.join('/')}.` });
     }
+    if (patch.action !== undefined) assertCurrentActionType(patch.action, 'lifecycle.update');
     /** @type {Record<string,unknown>} */
     const wire = { id };
     for (const f of fields) if (patch[f] !== undefined) wire[f] = patch[f];
@@ -149,7 +185,7 @@ export class Lifecycle {
    *
    * The response can include rules the caller never created: production
    * ships system-seeded preset rules (e.g.
-   * `preset__overridable_summary_on_session_ended`, which matches every
+   * `preset__summary_on_session_ended`, which matches every
    * `session_ended`/`thread` event for every partner by default) that show
    * up in `matchedRules[]` alongside the caller's own. Related rules are
    * grouped: `matchedRules[].isGrouped` is `true` when two or more rules
@@ -162,8 +198,8 @@ export class Lifecycle {
    *       "isGrouped": true,
    *       "groupKey": "_system_grouped_kai_insights",
    *       "rules": [
-   *         { "id": "preset__overridable_summary_on_session_ended", "systemName": "overridable_summary_on_session_ended", "action": { "actionType": "triggerOverridableSummaryInsight" } },
-   *         { "id": "68a...", "systemName": "my_custom_rule", "action": { "actionType": "triggerInsight", "insights": [{ "insightKey": "SESSIONSUMMARY", "valueType": "string" }] } }
+   *         { "id": "preset__summary_on_session_ended", "systemName": "summary_on_session_ended", "action": { "actionType": "_triggerKaiBase" } },
+   *         { "id": "68a...", "systemName": "my_custom_rule", "action": { "actionType": "triggerInsightSettingsKai", "insightSettingsIds": ["68b..."] } }
    *       ]
    *     }
    *   ]
