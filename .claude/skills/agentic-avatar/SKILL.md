@@ -30,7 +30,7 @@ const kaltura = new Management({
 });
 ```
 
-One `Management` instance mounts every resource namespace: `sessions`, `agents`, `avatars`, `catalog`, `application`, `intellects`, `intellectConfig`, `tools`, `skills`, `conversations`, `threads`, `messages`, `feedback`, `followups`, `knowledge`, `lifecycle` — plus top-level `converse`/`converseOnce`/`provision` convenience methods. Full constructor options and every method's JSDoc: `src/management/client.js`.
+One `Management` instance mounts every resource namespace: `sessions`, `agents`, `avatars`, `avatarSessions`, `catalog`, `application`, `intellects`, `intellectConfig`, `tools`, `skills`, `conversations`, `threads`, `messages`, `feedback`, `followups`, `knowledge`, `lifecycle`, `insightSettings` — plus top-level `converse`/`converseOnce`/`provision` convenience methods. Full constructor options and every method's JSDoc: `src/management/client.js`.
 
 ## KS (session token) types
 
@@ -53,13 +53,13 @@ const agent = await kaltura.provision({
   brief: 'A friendly yoga-studio receptionist',
   ks: admin.ks,
 });
-// agent: { configId, agentId, widgetId, voiceId, visualId, profile, warnings? }
+// agent: { name, configId, avatarId, agentId, widgetId, profile, personaLint, blocks?, _meta }
 
 const reply = await kaltura.converseOnce(agent.configId, 'Hello, what can you help me with?');
 console.log(reply.text);
 ```
 
-`provision()` runs the full pipeline in one call: generate a persona profile → create the intellect → write its prompts → pick a preset voice + visual → create the avatar → create the agent → resolve its widgetId. It also accepts optional `voiceId`, `visualId`, `adminTags`, `maxConversationLength`, `idempotencyKey`, `capabilities`, `tools`, `knowledge` — each applied in a non-fatal, feature-detected post-configure step if present. Full option list and internal sequence: `src/management/provision.js`.
+`provision()` runs the full pipeline in one call: generate a persona profile → create the intellect → write its prompts → pick a preset voice + visual → create the avatar → create the agent → resolve its widgetId. It also accepts optional `voiceId`, `visualId`, `adminTags`, `maxConversationLength`, `idempotencyKey` — these are consumed directly by the core pipeline (an invalid `voiceId`/`visualId` fails the whole call with `provision_failed`, it is not skipped) — plus `capabilities`, `tools`, `knowledge`, which alone are applied in a non-fatal, feature-detected post-configure step (`{applied:false, reason}` on failure, never thrown) after the agent already exists. Full option list and internal sequence: `src/management/provision.js`.
 
 `converse`/`converseOnce` mint their own conversation token from `configId` if you don't pass one — pass an existing `ks` (object-form, from `createConversationToken`) to reuse one across turns instead of re-minting.
 
@@ -79,8 +79,8 @@ console.log(reply.text);
 4. **Pick a voice + visual from the catalog** — or skip straight to a curated preset with `kaltura.avatars.listTemplates(ks, {pageSize})`, which returns ready-made `{voice, face}` bundles (feed `template.voice.id`/`template.face.id` straight into `avatars.create` below) instead of pairing a voice and visual by hand.
 
    ```js
-   const voices = await kaltura.catalog.list(admin.ks, { type: 'voice', pageSize: 1 });
-   const visuals = await kaltura.catalog.list(admin.ks, { type: 'visual', pageSize: 1 });
+   const voices = await kaltura.catalog.list(admin.ks, { type: 'Voice', pageSize: 1 });
+   const visuals = await kaltura.catalog.list(admin.ks, { type: 'Visual', pageSize: 1 });
    ```
 Note the argument order: **`ks` first, `opts` second** — this is the convention across nearly every `.list()` method in the SDK (`agents.list`, `avatars.list`, `avatars.listTemplates`, `intellects.list`, `tools.list`, `skills.list`, `threads.list`, `messages.list`, `knowledge.list`, `lifecycle.list`). `knowledge.listCategoryEntries(categoryId, ks)` is the one exception, since it acts on a specific category rather than browsing a partner-wide list.
 5. **Create the avatar (face + voice binding).** `const avatar = await kaltura.avatars.create({ voiceId, visualId, name }, admin.ks);`
@@ -173,11 +173,15 @@ Full list and per-capability notes: `CAPABILITIES`/`CAPABILITY_INFO` in `src/man
 
 ## Tools and Skills (partner-level, referenced by id)
 
-Tools and Skills are standalone entities at the partner level — an intellect only *references* them via `tool_ids`/`skill_ids` (see `intellectConfig` above). Build a tool body with the typed helpers in `src/management/tools.js` (`tools.api`/`tools.csv`/`tools.code`) rather than a raw object.
+Tools and Skills are standalone entities at the partner level — an intellect only *references* them via `tool_ids`/`skill_ids` (see `intellectConfig` above). Build a tool body with the typed helpers in `src/management/tools.js` (`tools.api`/`tools.csv`/`tools.code`/`tools.client`) rather than a raw object.
 
 ```js
 const tool = await kaltura.tools.add(
-  tools.client('navigate_to_slide', { slide_num: { type: 'int', required: true } }),
+  tools.client({
+    name: 'navigate_to_slide',
+    description: 'Navigate the deck to a specific slide.',
+    args: { slide_num: { type: 'int', required: true, prompt: 'The slide number to jump to.' } },
+  }),
   admin.ks,
 );
 await kaltura.intellectConfig.setToolIds(configId, [tool.id], admin.ks);
@@ -210,10 +214,13 @@ Write-only, per-intellect, via `src/management/secrets.js` (also mirrored on `in
 const category = await kaltura.knowledge.findOrCreateCategory({ name: 'Yoga Studio Docs' }, admin.ks);
 const doc = await kaltura.knowledge.uploadMarkdown({
   categoryId: category.id,
-  title: 'Class schedule',
+  name: 'Class schedule',
   markdown: '# Schedule\n...',
 }, admin.ks);
-const record = await kaltura.knowledge.addRecord({ categoryId: category.id }, admin.ks);
+const record = await kaltura.knowledge.addRecord({ name: 'Yoga Studio Docs' }, admin.ks);
+// addSource is the step that actually makes the uploaded content retrievable — skipping it
+// leaves a linked, enabled, but silently empty knowledge base.
+await kaltura.knowledge.addSource(record.id, { type: 'internal', categoryIds: [String(category.id)] }, admin.ks);
 await kaltura.intellectConfig.setKnowledgeIds(configId, [record.id], admin.ks);
 // or pass knowledge_ids straight into intellects.create() for a brand-new agent
 await kaltura.intellects.setCapability(configId, 'use_knowledge_base', 'on', admin.ks);
@@ -293,7 +300,12 @@ const intellects = await kaltura.intellects.list(admin.ks);
 ## Cloning a custom voice
 
 ```js
-const voice = await kaltura.catalog.createVoice(fileBufferOrPath, { name: 'Studio Voice' }, admin.ks);
+// `file` must be a Blob/File (not a Node Buffer or a filesystem path) — `description` is required,
+// the clone backend rejects an empty one.
+const voice = await kaltura.catalog.createVoice(voiceSampleBlob, {
+  name: 'Studio Voice',
+  description: 'Warm, friendly studio receptionist voice',
+}, admin.ks);
 // or import from a provider instead of uploading a sample:
 const imported = await kaltura.catalog.importVoiceFromElevenLabs(providerVoiceId, admin.ks);
 ```
@@ -388,8 +400,8 @@ Navigation runs through exactly one deterministic mechanism — `session.onToolC
 1. **Goal** — one clear objective in `prompts.goal`; vague goals produce rambling agents.
 2. **Target audience** — `prompts.targetAudience` shifts tone/vocabulary; set it explicitly rather than relying on the model to infer it.
 3. **Restricted topics** — `prompts.restrictedTopics` is enforced content, not a suggestion; use it for anything the agent must never discuss.
-4. **Voice selection** — pick from `catalog.list(ks, {type:'voice'})` or clone one (`catalog.createVoice`/`importVoiceFrom*`); match voice to persona.
-5. **Visual selection** — same for `type:'visual'`; `catalog.createVisual` for a custom image.
+4. **Voice selection** — pick from `catalog.list(ks, {type:'Voice'})` or clone one (`catalog.createVoice`/`importVoiceFrom*`); match voice to persona.
+5. **Visual selection** — same for `type:'Visual'`; `catalog.createVisual` for a custom image.
 6. **Opening phrase.** Two places set it. Server-side, `intellectConfig.setOpeningPhrase` on the intellect (Jinja2 over `request_vars`, always wins when set). Client-side, the avatar's `openingPhrase`: pass a real scripted line, or `'<blank>'` (the SSML silence sentinel) if you want no opening line at all, never `''` (an empty client opening phrase makes the first turn fail). Pick one; if both are set, the intellect's phrase is spoken.
 7. **Glossary** — `intellectConfig.patch(configId, {glossary}, ks)` for domain terms/pronunciations the brain should know verbatim.
 8. **Motion control** — capabilities like `avatar_show_content` / `avatar_filler` shape how animated the avatar is between turns.
