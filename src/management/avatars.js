@@ -41,6 +41,10 @@ function assertNoAvatarTags(body, where) {
  */
 function assertComposition(body, where) {
   if (!body || typeof body !== 'object') return;
+  // `visual` WINS if sent alongside `face`/`background` (see Avatars#create's
+  // "THREE WAYS TO GET A VISUAL" doc) — so an incomplete face/background pair
+  // sent alongside `visual` is not an error; the server resolves from `visual`.
+  if (body.visual !== undefined) return;
   const hasFace = body.face !== undefined;
   const hasBackground = body.background !== undefined;
   if (hasFace !== hasBackground && !(hasBackground && body.templateId !== undefined)) {

@@ -80,6 +80,20 @@ test('avatars.create accepts a valid face+background pairing, or visual alone, o
   assert.equal(ff.calls[2].body.templateId, 't1');
 });
 
+test('avatars.create/update accept an incomplete face/background pairing when visual is also sent (visual wins)', async () => {
+  const { mgmt, ff } = harness([
+    { match: 'avatar/create', respond: (req) => ({ status: 200, body: { id: 'a1', ...req.body } }) },
+    { match: 'avatar/update', respond: (req) => ({ status: 200, body: { id: req.body.id, ...req.body } }) },
+  ]);
+  // face without background would normally be rejected pre-network — but visual wins, so it's not an error.
+  await mgmt.avatars.create({ voice: { id: 'v1' }, visual: { id: 'vis1' }, face: { id: 'f1' } }, ADMIN_KS);
+  assert.equal(ff.calls[0].body.visual.id, 'vis1');
+  assert.equal(ff.calls[0].body.face.id, 'f1');
+
+  await mgmt.avatars.update({ id: 'a1', visual: { id: 'vis1' }, face: { id: 'f1' } }, ADMIN_KS);
+  assert.equal(ff.calls[1].body.visual.id, 'vis1');
+});
+
 test('avatars.update accepts a valid face+background recomposition and name alone', async () => {
   const { mgmt, ff } = harness([
     { match: 'avatar/update', respond: (req) => ({ status: 200, body: { id: req.body.id, ...req.body } }) },
