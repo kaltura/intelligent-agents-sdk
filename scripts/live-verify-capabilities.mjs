@@ -43,7 +43,10 @@ const startedAt = new Date().toISOString();
 const runId = `ci-live-verify-capabilities-${Date.now()}`;
 const artifact = { runId, startedAt, partnerId, steps: [] };
 
+let anyStepFailed = false;
+
 function record(step, ok, detail) {
+  if (!ok) anyStepFailed = true;
   artifact.steps.push({ step, ok, detail, at: new Date().toISOString() });
   console.log(`[${ok ? 'ok' : 'FAIL'}] ${step}${detail ? ` — ${JSON.stringify(detail)}` : ''}`);
 }
@@ -51,6 +54,7 @@ function record(step, ok, detail) {
 const kaltura = new Management({ partnerId, adminSecret });
 let admin;
 let ruleId;
+let insightSettingsId;
 let failed = false;
 
 try {
@@ -92,14 +96,21 @@ try {
     fieldCount: fields.fields?.length,
   });
 
-  // ── Lifecycle: full CRUD + match cycle ──────────────────────────────────
+  // ── Lifecycle: full CRUD + match cycle ────────────────────────────────
+  const insightSetting = await kaltura.insightSettings.create(
+    { key: `${runId}-KEY`, title: 'live-verify-capabilities probe', prompt: 'Reply with the single word "ok".', valueType: 'string' },
+    admin,
+  );
+  insightSettingsId = insightSetting.id;
+  record('insightSettings.create', true, { id: insightSettingsId });
+
   const created = await kaltura.lifecycle.create(
     {
       name: `${runId}-rule`,
       systemName: runId,
       eventType: 'session_ended',
       objectType: 'thread',
-      action: { actionType: 'triggerInsight', insights: [{ insightKey: 'SUMMARY', valueType: 'string' }] },
+      action: { actionType: 'triggerInsightSettingsKai', insightSettingsIds: [insightSettingsId] },
     },
     admin,
   );
@@ -120,7 +131,7 @@ try {
   );
   const allRuleIds = (matched.matchedRules || []).flatMap((g) => g.rules.map((r) => r.id));
   const foundInMatch = allRuleIds.includes(ruleId);
-  const presetFound = allRuleIds.includes('preset__overridable_summary_on_session_ended');
+  const presetFound = allRuleIds.includes('preset__summary_on_session_ended');
   record('lifecycle.match', foundInMatch, {
     groupCount: matched.matchedRules?.length,
     allRuleIds,
@@ -143,7 +154,18 @@ try {
       record('lifecycle.delete', false, { id: ruleId, message: err?.detail || err?.message || String(err) });
     }
   }
+  if (insightSettingsId) {
+    try {
+      const del = await kaltura.insightSettings.delete(insightSettingsId, admin, { confirmPermanent: true });
+      record('insightSettings.delete', del.success === true, del);
+    } catch (err) {
+      failed = true;
+      record('insightSettings.delete', false, { id: insightSettingsId, message: err?.detail || err?.message || String(err) });
+    }
+  }
 }
+
+failed = failed || anyStepFailed;
 
 artifact.finishedAt = new Date().toISOString();
 artifact.ok = !failed;

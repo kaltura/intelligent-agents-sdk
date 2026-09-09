@@ -5,17 +5,20 @@
  * What this shows, against the real API:
  *   1. Discover what's available: listObjects/listEvents/describeFields —
  *      the same calls a no-code rule-editor UI would make.
- *   2. Create rule A: on session_ended, extract TOPIC + CUSTOM. SUMMARY
- *      (the third key the built-in email preset needs) isn't requested here
- *      — every session already gets one for free from the always-on system
- *      preset, and asking for your own would be silently overridden — see
- *      the guide's "four action types" section.
- *   3. Create rule B: on analysis_updated, email a human using the
+ *   2. Create two InsightSettings entities (TOPIC, CUSTOM) — reusable
+ *      custom-insight definitions referenced by id from a lifecycle action.
+ *   3. Create rule A: on session_ended, extract TOPIC + CUSTOM via
+ *      triggerInsightSettingsKai. SUMMARY (the third key the built-in email
+ *      preset needs) isn't requested here — every session already gets one
+ *      for free from the always-on system preset, and asking for your own
+ *      would be silently overridden — see the guide's "four action types"
+ *      section.
+ *   4. Create rule B: on analysis_updated, email a human using the
  *      zero-setup 'conversationInsightExample' preset.
- *   4. Dry-run both rules with match() — instant, synthetic, no real
+ *   5. Dry-run both rules with match() — instant, synthetic, no real
  *      thread needed. This is how you verify wiring before a real
  *      conversation ever happens.
- *   5. Clean up both rules.
+ *   6. Clean up both rules and both InsightSettings entities.
  *
  * Real session_ended/analysis_updated events only fire via the backend's
  * own idle-session scan (there's no on-demand trigger), so this example
@@ -48,32 +51,41 @@ console.log('Events for "thread":', events);
 const fields = await kaltura.lifecycle.describeFields('thread', 'session_ended', admin);
 console.log('Filterable fields for session_ended:', fields);
 
+let topicSetting;
+let nextStepSetting;
 let summaryRule;
 let emailRule;
 const cleanupErrors = [];
 try {
-  // 2. Rule A: extract TOPIC + CUSTOM the instant a session ends. CUSTOM
-  // isn't a built-in key (only SUMMARY/SENTIMENT/TOPIC are), so it needs its
-  // own prompt. valueType is required on every insight. SUMMARY is
-  // deliberately not requested here — every session already gets one for
-  // free from the always-on system preset, and it merges into this same
-  // batch automatically.
+  // 2. Two InsightSettings entities, created once and referenced by id from
+  // rule A below. CUSTOM's key is what conversationInsightExample's
+  // template looks for — the prompt text is ours to choose.
+  topicSetting = await kaltura.insightSettings.create({
+    key: 'TOPIC', title: 'Topic', valueType: 'string',
+    prompt: 'The main topic discussed, in 3 words or fewer.',
+  }, admin);
+  console.log('Created insight-settings entity:', topicSetting.id);
+
+  nextStepSetting = await kaltura.insightSettings.create({
+    key: 'CUSTOM', title: 'Next step', valueType: 'string',
+    prompt: 'One actionable next step for the support team, or "none".',
+  }, admin);
+  console.log('Created insight-settings entity:', nextStepSetting.id);
+
+  // 3. Rule A: extract TOPIC + CUSTOM the instant a session ends, via the
+  // two entities above. SUMMARY is deliberately not referenced here — every
+  // session already gets one for free from the always-on system preset, and
+  // it merges into this same batch automatically.
   summaryRule = await kaltura.lifecycle.create({
     name: 'Demo — summarize on session end',
     systemName: `demo_recipe_summary_${Date.now()}`,
     eventType: 'session_ended',
     objectType: 'thread',
-    action: {
-      actionType: 'triggerInsight',
-      insights: [
-        { insightKey: 'TOPIC', valueType: 'string' },
-        { insightKey: 'CUSTOM', valueType: 'string', prompt: 'One actionable next step for the support team, or "none".' },
-      ],
-    },
+    action: { actionType: 'triggerInsightSettingsKai', insightSettingsIds: [topicSetting.id, nextStepSetting.id] },
   }, admin);
   console.log('Created summary rule:', summaryRule.id);
 
-  // 3. Rule B: email a human once that analysis lands. The preset's
+  // 4. Rule B: email a human once that analysis lands. The preset's
   // template needs exactly SUMMARY/TOPIC/CUSTOM from rule A above —
   // AGENTNAME/CTAURL/USER are filled in automatically. eventConditions
   // constrains the send to the update that actually completes that set —
@@ -93,7 +105,7 @@ try {
   }, admin);
   console.log('Created email rule:', emailRule.id);
 
-  // 4. Dry-run both — proves the rules are wired correctly without waiting
+  // 5. Dry-run both — proves the rules are wired correctly without waiting
   // for a real conversation to end. matchedRules[] can be a flat list of
   // rules OR a grouped entry ({isGrouped:true, rules:[...]}) — the system
   // preset and a partner rule on the same event/objectType merge into one
@@ -116,12 +128,12 @@ try {
   console.log('analysis_updated would match rule ids:', analysisUpdatedIds);
   if (!analysisUpdatedIds.includes(emailRule.id)) throw new Error(`Dry run did not match the email rule (${emailRule.id}) — check eventConditions/changed_keys.`);
 } finally {
-  // 5. Clean up — lifecycle rules have no in-use scan, so delete is immediate.
-  // Both deletions are attempted independently: if emailRule fails to delete,
-  // summaryRule (a second live partner-wide rule) must still be cleaned up —
-  // not skipped because an earlier delete in the same block threw. Errors are
-  // collected rather than thrown here (no-unsafe-finally): throwing inside a
-  // finally block would silently replace any error from the try block above.
+  // 6. Clean up — lifecycle rules have no in-use scan, so delete is immediate;
+  // delete the insight-settings entities only after both rules referencing
+  // them are gone. Every deletion is attempted independently: one failing
+  // must not skip the rest. Errors are collected rather than thrown here
+  // (no-unsafe-finally): throwing inside a finally block would silently
+  // replace any error from the try block above.
   if (emailRule) {
     try { await kaltura.lifecycle.delete(emailRule.id, admin, { confirmPermanent: true }); console.log('Cleaned up email rule:', emailRule.id); }
     catch (err) { cleanupErrors.push(err); }
@@ -130,5 +142,13 @@ try {
     try { await kaltura.lifecycle.delete(summaryRule.id, admin, { confirmPermanent: true }); console.log('Cleaned up summary rule:', summaryRule.id); }
     catch (err) { cleanupErrors.push(err); }
   }
+  if (nextStepSetting) {
+    try { await kaltura.insightSettings.delete(nextStepSetting.id, admin, { confirmPermanent: true }); console.log('Cleaned up insight-settings entity:', nextStepSetting.id); }
+    catch (err) { cleanupErrors.push(err); }
+  }
+  if (topicSetting) {
+    try { await kaltura.insightSettings.delete(topicSetting.id, admin, { confirmPermanent: true }); console.log('Cleaned up insight-settings entity:', topicSetting.id); }
+    catch (err) { cleanupErrors.push(err); }
+  }
 }
-if (cleanupErrors.length) throw new AggregateError(cleanupErrors, `${cleanupErrors.length} lifecycle rule(s) failed to clean up — delete manually via kaltura.lifecycle.delete().`);
+if (cleanupErrors.length) throw new AggregateError(cleanupErrors, `${cleanupErrors.length} resource(s) failed to clean up — delete manually via kaltura.lifecycle.delete()/kaltura.insightSettings.delete().`);
