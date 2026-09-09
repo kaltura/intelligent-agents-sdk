@@ -33,7 +33,7 @@ function requireNonEmptyString(v, where, field) {
 
 /** @param {unknown} v @param {string} where */
 function requireValueType(v, where) {
-  if (!VALUE_TYPES.includes(v)) {
+  if (!VALUE_TYPES.includes(/** @type {any} */ (v))) {
     throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: `${where} valueType must be one of ${VALUE_TYPES.join(', ')}.` });
   }
 }

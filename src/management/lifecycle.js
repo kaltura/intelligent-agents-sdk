@@ -13,7 +13,7 @@
  * an id that never existed is rejected immediately (`create`/`update` throw
  * `INVALID_INSIGHT_SETTINGS`), but a *dangling* one — valid when the rule was
  * created, deleted afterward — isn't caught until the rule actually fires,
- * since {@link InsightSettings#delete} runs no in-use scan; every
+ * since `InsightSettings#delete` runs no in-use scan; every
  * rule extracting insights on the same event merges into one LLM batch, so
  * don't reference an insight-settings entity keyed `SUMMARY` — every partner
  * already has an always-on preset producing one for free),
@@ -67,7 +67,7 @@ const RENAMED_ACTION_TYPES = {
 
 /** @param {unknown} action @param {string} where */
 function assertCurrentActionType(action, where) {
-  const actionType = action && typeof action === 'object' ? action.actionType : undefined;
+  const actionType = action && typeof action === 'object' ? /** @type {any} */ (action).actionType : undefined;
   if (typeof actionType === 'string' && Object.prototype.hasOwnProperty.call(RENAMED_ACTION_TYPES, actionType)) {
     const replacement = RENAMED_ACTION_TYPES[actionType];
     throw new KalturaError({
