@@ -57,6 +57,31 @@ test('catalog.createVisual sends adminTags as a single-parse comma string, NOT J
   assert.ok(!String(tagField).includes('['), 'adminTags must NOT be JSON-encoded (no brackets)');
 });
 
+test('catalog.createFace/createBackground send an explicit type field ("Face"/"Background") alongside the visual attributes', async () => {
+  const f = fakeFetch([{ match: '/catalog-item/create', respond: () => ({ body: { itemId: 'item-2' } }) }]);
+  const k = new Management({ partnerId: 6516742, adminSecret: 'a'.repeat(32), fetch: f });
+  const file = new Blob([new Uint8Array([1, 2, 3])], { type: 'image/png' });
+
+  const face = await k.catalog.createFace(file, { name: 'QA face', genderPresentation: 'Feminine' }, ADMIN);
+  assert.equal(face.itemId, 'item-2');
+  let call = f.calls.find((c) => c.url.includes('/catalog-item/create'));
+  assert.equal(call.body.get('type'), 'Face');
+
+  f.calls.length = 0;
+  await k.catalog.createBackground(file, { name: 'QA bg', genderPresentation: 'Masculine' }, ADMIN);
+  call = f.calls.find((c) => c.url.includes('/catalog-item/create'));
+  assert.equal(call.body.get('type'), 'Background');
+});
+
+test('catalog.createVisual sends NO type field (unchanged default behavior)', async () => {
+  const f = fakeFetch([{ match: '/catalog-item/create', respond: () => ({ body: { itemId: 'item-3' } }) }]);
+  const k = new Management({ partnerId: 6516742, adminSecret: 'a'.repeat(32), fetch: f });
+  const file = new Blob([new Uint8Array([1, 2, 3])], { type: 'image/png' });
+  await k.catalog.createVisual(file, { name: 'QA visual' }, ADMIN);
+  const call = f.calls.find((c) => c.url.includes('/catalog-item/create'));
+  assert.equal(call.body.get('type'), null, 'createVisual must not regress to sending an explicit type');
+});
+
 test('catalog.importVoiceFromElevenLabs/Cartesia post {voiceId}; empty voiceId rejected pre-network', async () => {
   const f = fakeFetch([
     { match: '/catalog-item/createVoiceFromElevenLabs', respond: (req) => ({ body: { itemId: 'v-el', type: 'Voice', voiceId: req.body.voiceId } }) },
