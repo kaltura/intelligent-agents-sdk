@@ -20,7 +20,7 @@ Every endpoint is shown as a raw HTTP call plus its SDK wrapper. The SDK is what
 | [Phase 3 — Deploy](docs/api/deploy.md) | Resolve widget ID, initialize the browser runtime |
 | [Phase 4 — Operate](docs/api/operate.md) | Converse (headless HTTP), reserved `sys__*` template variables, status, threads, feedback and follow-ups, usage analytics, knowledge search (MCP) |
 | [Scripted-Video (STV-only) Sessions](docs/api/scripted-video.md) | Pre-authored speech sessions — auth, lifecycle, `say-audio` |
-| [Management Operations](docs/api/management-operations.md) | CRUD tables for agents, avatars, intellects, tools, skills, knowledge records |
+| [Management Operations](docs/api/management-operations.md) | CRUD tables for agents, avatars, intellects, tools, skills, threads, messages/feedback/followups, knowledge records, lifecycle |
 | [Lifecycle](docs/lifecycle/README.md) | Event-driven rules — reference + [recipe](docs/lifecycle/recipes.md) |
 | [Use-Case Catalog](docs/USE-CASES.md) | All 13 use cases (UC-1 through UC-13) mapped to mechanisms and runnable scripts |
 | [Site navigation](docs/SITE-NAV.md) | Fire-and-forget `go_to` tool, compact SITE MAP prompt, `sections.json` manifest, browser `SiteNavigator` plugin |
