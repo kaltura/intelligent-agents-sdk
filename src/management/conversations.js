@@ -47,8 +47,9 @@ export { SPIRAL_RECOVERY_PREFIX };
  * overwritten or collide with a server-managed variable, so the SDK rejects
  * them BEFORE the network call. `load_request` overwrites all eight
  * `sys__*` names below after accepting them; `load_user_variables` sets the
- * whole `sys__user_obj` object when a user id exists, so any `sys__user_obj.`
- * prefix is rejected too (see {@link assertRequestVars}).
+ * whole `sys__user_obj` object when a user id exists, so the bare
+ * `sys__user_obj` name and any `sys__user_obj.` prefix are rejected too
+ * (see {@link assertRequestVars}).
  * @type {readonly string[]}
  */
 export const RESERVED_VARS = Object.freeze([
@@ -56,7 +57,8 @@ export const RESERVED_VARS = Object.freeze([
   'sys__ks', 'sys__is_new_thread', 'sys__context_id', 'sys__context_type', 'secrets',
 ]);
 
-const RESERVED_PREFIX = 'sys__user_obj.';
+const RESERVED_USER_OBJ = 'sys__user_obj';
+const RESERVED_PREFIX = `${RESERVED_USER_OBJ}.`;
 
 /**
  * Validate a per-turn `request_vars` map (the `{{ X }}` template interpolation
@@ -64,8 +66,9 @@ const RESERVED_PREFIX = 'sys__user_obj.';
  * (`code:'validation_error'`), BEFORE any wire call:
  *
  *  - a non-object / array payload;
- *  - any {@link RESERVED_VARS} collision (`sys__*` or `secrets`), or a key
- *    starting with the reserved `sys__user_obj.` prefix;
+ *  - any {@link RESERVED_VARS} collision (`sys__*` or `secrets`), the bare
+ *    `sys__user_obj` name, or a key starting with the reserved
+ *    `sys__user_obj.` prefix;
  *  - any non-scalar value (only string/number/boolean/null interpolate cleanly;
  *    an object/array would be stringified or dropped server-side).
  *
@@ -84,10 +87,10 @@ export function assertRequestVars(vars, where = 'request_vars') {
     });
   }
   for (const [name, value] of Object.entries(vars)) {
-    if (RESERVED_VARS.includes(name) || name.startsWith(RESERVED_PREFIX)) {
+    if (RESERVED_VARS.includes(name) || name === RESERVED_USER_OBJ || name.startsWith(RESERVED_PREFIX)) {
       throw new KalturaError({
         type: 'https://docs.kaltura.com/agentic/errors/validation_error', title: 'reserved request_vars key',
-        code: 'validation_error', detail: `${where}: "${name}" is reserved (server-managed). Reserved keys: ${RESERVED_VARS.join(', ')}, and any "${RESERVED_PREFIX}*" key.`,
+        code: 'validation_error', detail: `${where}: "${name}" is reserved (server-managed). Reserved keys: ${RESERVED_VARS.join(', ')}, "${RESERVED_USER_OBJ}", and any "${RESERVED_PREFIX}*" key.`,
       });
     }
     if (value !== null && typeof value === 'object') {

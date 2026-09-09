@@ -480,6 +480,13 @@ test('assembleSystemPrompt: unresolved scalar reserved var (sys__ks) is flagged,
   assert.equal(r.text, 'Token: {{sys__ks}}', 'literal placeholder unchanged (backward compatible)');
 });
 
+test('assembleSystemPrompt: unresolved BARE sys__user_obj (no trailing dot) is flagged as a reserved scalar, not silently ignored', () => {
+  const r = assembleSystemPrompt({ baseDirective: 'Obj: {{sys__user_obj}}', requestVars: {} });
+  assert.equal(r.warnings.length, 1);
+  assert.equal(r.warnings[0].code, 'reserved_var_unresolved');
+  assert.match(r.warnings[0].message, /sys__user_obj/);
+});
+
 test('assembleSystemPrompt: unresolved sys__user_obj.* attribute is flagged distinctly', () => {
   assert.ok(RESERVED_USER_OBJ_ATTRS.includes('first_name'));
   const r = assembleSystemPrompt({ baseDirective: 'Hi {{sys__user_obj.first_name}}', requestVars: {} });
@@ -525,4 +532,11 @@ test('assembleSystemPrompt: multiple distinct reserved-var references each warn 
   });
   assert.equal(r.warnings.length, 2);
   assert.deepEqual(r.warnings.map((w) => w.code).sort(), ['reserved_var_unresolved', 'reserved_var_unresolved']);
+});
+
+test('assembleSystemPrompt: unresolved sys__context_id is flagged (reserved_var_unresolved)', () => {
+  const r = assembleSystemPrompt({ baseDirective: 'Context: {{sys__context_id}}', requestVars: {} });
+  assert.equal(r.warnings.length, 1);
+  assert.equal(r.warnings[0].code, 'reserved_var_unresolved');
+  assert.match(r.warnings[0].message, /sys__context_id/);
 });
