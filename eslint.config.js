@@ -86,7 +86,7 @@ export default [
     // Node script, but its page.evaluate() callback bodies are genuinely
     // browser-context code (Playwright serializes them to run inside the
     // page) — give this file both worlds rather than scripts/**'s Node-only set.
-    files: ['scripts/live-verify-session-complete.mjs', 'scripts/verify-noise-suppressor.mjs', 'scripts/verify-avatar-media.mjs', 'scripts/live-verify-browser.mjs', 'scripts/live-verify-avatar-media.mjs', 'scripts/verify-distribution.mjs'],
+    files: ['scripts/live-verify-session-complete.mjs', 'scripts/verify-noise-suppressor.mjs', 'scripts/verify-avatar-media.mjs', 'scripts/live-verify-browser.mjs', 'scripts/live-verify-avatar-media.mjs', 'scripts/verify-distribution.mjs', 'scripts/live-verify-context-fields.mjs'],
     languageOptions: {
       ecmaVersion: 2024,
       sourceType: 'module',

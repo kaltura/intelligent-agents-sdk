@@ -61,7 +61,7 @@ POST https://genie.nvp1.ovp.kaltura.com/assistant/abort
 
 ## Reserved Template Variables (`sys__*`)
 
-The server sets these on every turn. They're available to `{{ ... }}` interpolation in `base_directive` / `prompts[].value` / `glossary` (see [Configure an Intellect](build/intellect.md#configure-an-intellect)) regardless of `allow_client_variables`. The SDK's own `request_vars` pre-flight guard rejects a client-supplied value for 5 of these 8 names before any network call — `sys__thread_id`, `sys__message_id`, `sys__user_id`, `sys__user_message`, `secrets` (see `request_vars` above) — since those collide with a server-managed variable; it does not yet name-check `sys__ks`, `sys__is_new_thread`, or `sys__user_obj.*` the same way:
+The server sets these on every turn. They're available to `{{ ... }}` interpolation in `base_directive` / `prompts[].value` / `glossary` (see [Configure an Intellect](build/intellect.md#configure-an-intellect)) regardless of `allow_client_variables`. The SDK's own `request_vars` pre-flight guard rejects a client-supplied value for every one of these (`sys__thread_id`, `sys__message_id`, `sys__user_id`, `sys__user_message`, `sys__ks`, `sys__is_new_thread`, `sys__context_id`, `sys__context_type`, any `sys__user_obj.*` key, and `secrets`; see `request_vars` above) before any network call, since a client-supplied value would just be silently overwritten server-side:
 
 | Variable | Resolves to | Notes |
 |----------|-------------|-------|
@@ -70,6 +70,8 @@ The server sets these on every turn. They're available to `{{ ... }}` interpolat
 | `sys__user_id` | The bound end-user id | Empty by default (an anonymous KS). Bind a real identity with `Sessions.createConversationToken({ userId })` (or `createAdminToken({ userId })`) so this resolves server-side instead of always being empty — see § Bind a session to a real end-user identity above. |
 | `sys__user_message` | The current turn's user text | |
 | `sys__is_new_thread` | `true` on the first turn of a new thread, `false` otherwise | |
+| `sys__context_id` | The category/entry id the current context (and its knowledge base, if any) is scoped to | Set via `KalturaAvatarSession`'s `contextId` constructor option, sent on the live socket `join` payload — see [connection-and-handshake.md § The `join` payload](../architecture-reference/connection-and-handshake.md#the-join-payload-step-2--this-carries-the-agentbrain-config). Empty when no context was set at join. |
+| `sys__context_type` | The type of that context (e.g. an `entry` vs. a `category`) | Set via `KalturaAvatarSession`'s `contextType` constructor option, alongside `contextId`; empty when no context was set at join. |
 | `sys__ks` | The raw Kaltura Session token for the current request | ⚠️ **Security warning: never reference `sys__ks` in a prompt whose output could be echoed back to a user or logged.** It is a live credential — rendering it as plain text in a model response, chat transcript, or log turns that surface into a credential leak. See [SECURITY.md](../../SECURITY.md#ks-kaltura-session-guidance-for-agents-ac-3--ac-6--ia-2). |
 | `sys__user_obj.first_name` / `.last_name` / `.title` / `.company` / `.gender` / `.email` | Attributes of the bound-user object | Verify these resolve with `intellects.previewPrompt()` before shipping a prompt — the rendered preview flags unresolved references with a `reserved_user_attr_unresolved` warning. |
 | `secrets.<NAME>` | A named secret configured on the intellect | Write-only — see [§ Secrets](build/tools-and-secrets.md#secrets-write-only). |
