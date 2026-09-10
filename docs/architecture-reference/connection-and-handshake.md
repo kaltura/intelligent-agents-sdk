@@ -82,7 +82,8 @@ socket.emit('join', {
   channel: roomId,
   kaltura: {
     entryId: <entryId>,            // only if context is a media entry
-    context_id: <contextId>,       // category/entry the KB is scoped to
+    contextId: <contextId>,        // category/entry the KB is scoped to
+    contextType: <contextType>,    // the type of contextId (e.g. 'entry' vs 'category')
     threadId: <existingThreadId>,  // to resume a conversation thread
     force_experience: 'avatar_only',
     capabilities: {                // brain capabilities — same enum as intellect config

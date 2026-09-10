@@ -138,6 +138,9 @@ export class KalturaAvatarSession extends Emitter {
    * @param {(stream:any)=>Promise<any>} [cfg.noiseProcessor]  Pluggable, externally-supplied DSP hook (BYO — a third-party lib's processor or a bespoke one; the SDK core bundles none). Called with the raw `MediaStream` from `getUserMedia` at `connect()` and every `switchMic()`; must return a `MediaStream` (or the same one, unmodified) whose audio track is what actually reaches the ASR uplink. Errors propagate as a `noise_processor_failed` KalturaError (mic acquisition fails closed, same as a `getUserMedia` rejection) — a processor must not silently swallow its own setup failure. See `./experience/noise-suppressor` for a ready-made `AudioWorklet`-based implementation of this interface.
    * @param {'immediate'|'deferred'} [cfg.micStartMode]  When to acquire the mic. `'immediate'` (default) calls `getUserMedia` inside `connect()`. `'deferred'` connects with NO mic — the ASR uplink negotiates a sendonly audio slot with no track (the session-server handshake is byte-identical to the immediate path) — and the app calls {@link KalturaAvatarSession#startMic} later, from a real user gesture, so the browser's permission prompt is click-anchored. Until `startMic()` resolves, `startTapToTalk()`/`switchMic()` throw `mic_not_started`; typed turns (`speak()`) and `mute()`/`unmute()` work normally.
    * @param {string} [cfg.threadId]         Resume a prior conversation's memory.
+   * @param {string} [cfg.entryId]          The media entry this session's context is scoped to, if any — forces `use_knowledge_base: 'off'` server-side. Sent on every `join`/reconnect `buildJoin()` call; immutable for the session's lifetime.
+   * @param {string} [cfg.contextId]        The category/entry id this session's context (and its knowledge base, if any) is scoped to — renders as the `sys__context_id` reserved template variable. Sent on every `join`/reconnect `buildJoin()` call; immutable for the session's lifetime.
+   * @param {string} [cfg.contextType]      The type of `cfg.contextId` (e.g. `'entry'` vs `'category'`) — renders as the `sys__context_type` reserved template variable. Sent alongside `cfg.contextId`; immutable for the session's lifetime.
    * @param {string} [cfg.partnerId]
    * @param {boolean} [cfg.isFirefox]       Forces ICE policy 'all' on both channels.
    * @param {string} [cfg.disclosureText]   AI-disclosure text emitted before any avatar speech (EU AI Act Art. 50).
@@ -259,6 +262,9 @@ export class KalturaAvatarSession extends Emitter {
     this._vadCtx = null; this._vadAnalyser = null; this._vadSource = null; this._vadData = null;
     this._vadTimer = null; this._vadTrack = null; this._vadSpeaking = false;
     this._threadId = cfg.threadId;
+    this._entryId = cfg.entryId;
+    this._contextId = cfg.contextId;
+    this._contextType = cfg.contextType;
     this._partnerId = cfg.partnerId !== undefined ? String(cfg.partnerId) : (info.partnerId || '');
     this._isFirefox = !!cfg.isFirefox;
     this._disclosureText = cfg.disclosureText || 'You are speaking with an AI-generated avatar.';
@@ -516,7 +522,7 @@ export class KalturaAvatarSession extends Emitter {
       this.emit('streamReady', { finalUrl: onConn?.finalUrl, agentName: onConn?.agentName, hostName: onConn?.hostName });
 
       // Step 2 — join.
-      socket.emit('join', buildJoin({ room: this._roomId, ks: this._token, threadId: this._threadId, userAgent: ua(), isMobile: false, requestVars: this._requestVars, capabilities: this._capabilities }));
+      socket.emit('join', buildJoin({ room: this._roomId, ks: this._token, threadId: this._threadId, entryId: this._entryId, contextId: this._contextId, contextType: this._contextType, userAgent: ua(), isMobile: false, requestVars: this._requestVars, capabilities: this._capabilities }));
 
       // Step 3 — clientConfiguration AND joinComplete (both required).
       const [cc] = await Promise.all([
@@ -2474,7 +2480,7 @@ export class KalturaAvatarSession extends Emitter {
       }
       // Re-join the room (threadId carries brain memory forward), then re-run the session create.
       this._roomId = randId(12);
-      socket.emit('join', buildJoin({ room: this._roomId, ks: this._token, threadId: this._threadId, userAgent: ua(), isMobile: false, requestVars: this._requestVars, capabilities: this._capabilities }));
+      socket.emit('join', buildJoin({ room: this._roomId, ks: this._token, threadId: this._threadId, entryId: this._entryId, contextId: this._contextId, contextType: this._contextType, userAgent: ua(), isMobile: false, requestVars: this._requestVars, capabilities: this._capabilities }));
       await Promise.all([
         this._await(socket, 'clientConfiguration', TIMEOUTS.joinRoom, 'JoinRoomTimeout', overall),
         this._await(socket, 'joinComplete', TIMEOUTS.joinComplete, 'JoinRoomTimeout', overall),

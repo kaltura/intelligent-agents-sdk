@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>context-fields live verify</title></head>
+<body>
+<div id="log"></div>
+<!-- socket.io is the app's dependency — injected, never bundled by the SDK. -->
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js" integrity="sha384-2huaZvOR9iDzHqslqwpR87isEmrfxqyWOF7hr7BY6KG0+hVKLoEXMPUJw3ynWuhO" crossorigin="anonymous"></script>
+<script type="module">
+  import { KalturaAvatarSession } from '/src/experience/index.js';
+
+  const log = (m) => { document.getElementById('log').textContent += m + '\n'; };
+  window.__events = [];
+
+  const params = new URLSearchParams(location.search);
+  const token = params.get('token');
+  const conversationManagerUrl = params.get('conversationManagerUrl');
+  const srsBaseUrl = params.get('srsBaseUrl');
+  const turnServerUrl = params.get('turnServerUrl');
+  const contextId = params.get('contextId') || undefined;
+  const contextType = params.get('contextType') || undefined;
+
+  window.session = new KalturaAvatarSession({
+    token, conversationManagerUrl, srsBaseUrl, turnServerUrl,
+    contextId, contextType,
+    // Captures the exact wire payload so the script can assert on
+    // `kaltura.contextId`/`kaltura.contextType` — a regression guard against
+    // the field-casing mismatch this script exists to catch.
+    socketFactory: (url, opts) => {
+      const s = io(url, opts);
+      const rawEmit = s.emit.bind(s);
+      s.emit = (ev, ...args) => { if (ev === 'join') log('OUT join payload=' + JSON.stringify(args[0])); return rawEmit(ev, ...args); };
+      s.on('connect_error', (e) => log('RAW connect_error ' + (e && e.message)));
+      return s;
+    },
+  });
+
+  window.session.on('transcript', ({ text, type }) => { window.__events.push({ type: 'transcript', text, ttype: type }); log(`[${type}] ${text}`); });
+  window.session.on('error', (e) => { window.__events.push({ type: 'error', code: e.code, detail: e.detail }); log('ERROR ' + e.code + ': ' + e.detail); });
+  window.session.on('avatarStopTalking', () => { window.__events.push({ type: 'avatarStopTalking' }); log('AVATAR_STOP_TALKING'); });
+
+  window.testConnect = () => window.session.connect();
+  window.testSpeak = (text) => window.session.speak(text);
+  window.testDisconnect = () => window.session.disconnect();
+
+  window.__ready = true;
+</script>
+</body>
+</html>

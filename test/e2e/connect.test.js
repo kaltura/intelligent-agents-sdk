@@ -41,6 +41,28 @@ test('happy path: connects, emits disclosure, approves after video playable', as
   session.disconnect();
 });
 
+test('join payload carries entryId/contextId/contextType when configured', async () => {
+  const { session, socket } = newSession({ cfg: { entryId: '0_entry123', contextId: 'cat_456', contextType: 'category' } });
+  scriptHappyPath(socket);
+  await session.connect();
+  const join = socket.emitsOf('join')[0];
+  assert.equal(join.kaltura.entryId, '0_entry123');
+  assert.equal(join.kaltura.contextId, 'cat_456');
+  assert.equal(join.kaltura.contextType, 'category');
+  session.disconnect();
+});
+
+test('join payload omits entryId/contextType when not configured (contextId stays a defined key)', async () => {
+  const { session, socket } = newSession();
+  scriptHappyPath(socket);
+  await session.connect();
+  const join = socket.emitsOf('join')[0];
+  assert.ok(!('entryId' in join.kaltura));
+  assert.ok(!('contextType' in join.kaltura));
+  assert.equal(join.kaltura.contextId, undefined);
+  session.disconnect();
+});
+
 test('greeting-clip fix: approvedPermissions waits for video canplay', async () => {
   const videoEl = new FakeVideoEl({ autoCanPlay: false }); // not playable yet
   const { session, socket } = newSession({ videoEl });
