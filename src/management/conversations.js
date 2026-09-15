@@ -45,7 +45,7 @@ export { SPIRAL_RECOVERY_PREFIX };
  * Reserved `request_vars` keys the brain injects itself (`sys__*`) plus the
  * `secrets` namespace — a caller-supplied value here would either be
  * overwritten or collide with a server-managed variable, so the SDK rejects
- * them BEFORE the network call. The server overwrites all eight `sys__*`
+ * them BEFORE the network call. The server overwrites all nine `sys__*`
  * names below after accepting them, and sets the whole `sys__user_obj`
  * object when a user id exists, so the bare `sys__user_obj` name and any
  * `sys__user_obj.` prefix are rejected too (see {@link assertRequestVars}).
@@ -53,7 +53,8 @@ export { SPIRAL_RECOVERY_PREFIX };
  */
 export const RESERVED_VARS = Object.freeze([
   'sys__thread_id', 'sys__message_id', 'sys__user_id', 'sys__user_message',
-  'sys__ks', 'sys__is_new_thread', 'sys__context_id', 'sys__context_type', 'secrets',
+  'sys__ks', 'sys__is_new_thread', 'sys__context_id', 'sys__context_type',
+  'sys__avatar_enabled', 'secrets',
 ]);
 
 const RESERVED_USER_OBJ = 'sys__user_obj';
