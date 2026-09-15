@@ -236,7 +236,8 @@ export class Threads {
    *    is ignored and returns the default page of 30.
    *  - `orderBy` goes INSIDE `filter`, not top-level (422 if sent there); one of
    *    `+createdAt`, `-createdAt`, `+updatedAt`, `-updatedAt`.
-   *  - `statusEquals`/`statusIn` take `0` or `1` (a string 422s).
+   *  - `statusEquals`/`statusIn` take `0`/`1`; a numeric string (`"0"`) is
+   *    silently coerced and accepted, but a non-numeric string 422s.
    *  - an unknown filter key 422s; `partnerIdIn` always 422s (rejected on the
    *    public thread API); `partnerIdEquals` is accepted but the query is
    *    always scoped to the KS's own partner.

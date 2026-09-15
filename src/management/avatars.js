@@ -29,17 +29,25 @@ function assertNoAvatarTags(body, where) {
 }
 
 /**
- * Reject an incomplete `face`/`background` composition BEFORE the network
- * call. Live: `face` alone 200s with `AVATAR_MISSING_VISUAL_RESOLUTION`
- * ("face requires a background"), and `background` alone WITHOUT a
- * `templateId` 200s with the same code ("background requires a face") — both
- * HTTP 200 domain failures the SDK can catch for free by checking client-side
- * first. `templateId` supplies its own face, so `templateId + background`
- * (no `face` key) is a valid pairing and must NOT be rejected here. Pure: no
- * network.
- * @param {object} body @param {string} where
+ * Validate a `face`/`background` composition BEFORE the network call.
+ * `strict` (create only) rejects an incomplete pairing: `face` alone 200s
+ * with `AVATAR_MISSING_VISUAL_RESOLUTION` ("face requires a background"),
+ * and `background` alone WITHOUT a `templateId` 200s with the same code
+ * ("background requires a face") — both HTTP 200 domain failures the SDK
+ * can catch for free by checking client-side first. `templateId` supplies
+ * its own face, so `templateId + background` (no `face` key) is a valid
+ * pairing and must NOT be rejected.
+ *
+ * On update (`strict:false`) the backend is asymmetric and depends on the
+ * avatar's EXISTING state, which this pure guard can't see, so neither half
+ * alone is rejected: `background` alone recomposes against the avatar's
+ * current face (a valid "just change the background" pattern), while `face`
+ * alone is accepted and silently ignored (no existing `background` to pair
+ * it with). Only a `background` that IS present is still checked for shape.
+ * Pure: no network.
+ * @param {object} body @param {string} where @param {boolean} strict require face+background pairing (create only)
  */
-function assertComposition(body, where) {
+function assertComposition(body, where, strict) {
   if (!body || typeof body !== 'object') return;
   // `visual` WINS if sent alongside `face`/`background` (see Avatars#create's
   // "THREE WAYS TO GET A VISUAL" doc) — so an incomplete face/background pair
@@ -47,7 +55,7 @@ function assertComposition(body, where) {
   if (body.visual !== undefined) return;
   const hasFace = body.face !== undefined;
   const hasBackground = body.background !== undefined;
-  if (hasFace !== hasBackground && !(hasBackground && body.templateId !== undefined)) {
+  if (strict && hasFace !== hasBackground && !(hasBackground && body.templateId !== undefined)) {
     throw new KalturaError({
       type: 'about:blank', title: 'incomplete avatar composition', code: 'bad_request',
       detail: `${where}: face and background must be sent together (composing a visual needs both) — got ${hasFace ? 'face only' : 'background only'}.`,
@@ -152,7 +160,7 @@ export class Avatars {
   async create(body, ks, opts = {}) {
     this._.assertAdmin(ks, 'avatars.create');
     assertNoAvatarTags(body, 'avatars.create');
-    assertComposition(body, 'avatars.create');
+    assertComposition(body, 'avatars.create', true);
     return (await this._.agentic('avatar/create', body, ks, { idempotencyKey: opts.idempotencyKey || uuidv4() })).data;
   }
 
@@ -171,19 +179,26 @@ export class Avatars {
    * @example <caption>Change just the opening phrase; voice/visual untouched</caption>
    * await k.avatars.update({ id: avatarId, openingPhrase: 'Welcome back!' }, adminKs);
    *
-   * Also accepts `face`+`background` (recomposes the visual — same pairing
-   * rule as {@link create}, and `visual.composition` reflects the new
-   * result) and `name`. `templateId` is REJECTED on update (400 `property
-   * templateId should not exist`) — it's a create-only convenience.
+   * Also accepts `face`+`background` to recompose the visual, but — UNLIKE
+   * {@link create} — the pairing rule here is asymmetric and depends on the
+   * avatar's EXISTING state, so this SDK does NOT reject either half alone:
+   * `background` alone recomposes against the avatar's CURRENT face (a
+   * valid "just change the background, keep the face" update);  `face`
+   * alone is accepted but silently a no-op (nothing to pair it with — the
+   * existing visual is left untouched, so a response with unchanged
+   * `visual.composition` means the new face was NOT applied; send
+   * `background` too to actually recompose). `name` is also accepted.
+   * `templateId` is REJECTED on update (400 `property templateId should not
+   * exist`) — it's a create-only convenience.
    *
    * @param {object} body {id:string, face?:{id}, background?:{type:'color'|'visual',value:string}, name?:string, ...}
    * @param {string} ks
-   * @throws {import('../core/errors.js').KalturaError} `code:'bad_request'` if `adminTags` is passed, or if `face`/`background` are incomplete/malformed.
+   * @throws {import('../core/errors.js').KalturaError} `code:'bad_request'` if `adminTags` is passed, or if a present `background` is malformed.
    */
   async update(body, ks) {
     this._.assertAdmin(ks, 'avatars.update');
     assertNoAvatarTags(body, 'avatars.update');
-    assertComposition(body, 'avatars.update');
+    assertComposition(body, 'avatars.update', false);
     return (await this._.agentic('avatar/update', body, ks)).data;
   }
 

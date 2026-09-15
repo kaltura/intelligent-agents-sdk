@@ -210,6 +210,19 @@ try {
   );
   record('avatars.update (face+background recompose)', avatarAUpdated?.id === avatarAId, { id: avatarAUpdated?.id, composition: avatarAUpdated?.visual?.composition });
 
+  // ── Avatars#update — asymmetric single-half composition (UNLIKE create,
+  // neither half alone is rejected pre-network — the backend's real rule
+  // depends on the avatar's existing state) ───────────────────────────────
+  const avatarABgOnly = await kaltura.avatars.update(
+    { id: avatarAId, background: { type: 'color', value: '#000000' } },
+    admin,
+  );
+  record('avatars.update (background alone recomposes against existing face)', avatarABgOnly?.id === avatarAId, { id: avatarABgOnly?.id, composition: avatarABgOnly?.visual?.composition });
+
+  const avatarAFaceOnly = await kaltura.avatars.update({ id: avatarAId, face: { id: faceItemId } }, admin);
+  const faceOnlyIsNoop = avatarAFaceOnly?.visual?.composition === avatarABgOnly?.visual?.composition;
+  record('avatars.update (face alone accepted as a silent no-op)', avatarAFaceOnly?.id === avatarAId && faceOnlyIsNoop, { id: avatarAFaceOnly?.id, composition: avatarAFaceOnly?.visual?.composition, unchangedFromPriorStep: faceOnlyIsNoop });
+
   // ── Avatars#create/update — templateId + background composition ────────
   const templates = await kaltura.avatars.listTemplates(admin, { pageSize: 1 }).all();
   const template = templates[0];

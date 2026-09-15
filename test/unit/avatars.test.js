@@ -50,19 +50,30 @@ test('avatars.listTemplates asserts admin scope (rejects a conversation token)',
 
 // ─────────────────────────── face/background composition guard ───────────────────────────
 
-test('avatars.create/update reject face without background, and background without face, BEFORE any network call', async () => {
+test('avatars.create rejects face without background, and background without face, BEFORE any network call', async () => {
   const { mgmt, ff } = harness([]);
   await assert.rejects(() => mgmt.avatars.create({ voice: { id: 'v1' }, face: { id: 'f1' } }, ADMIN_KS), (e) => e.code === 'bad_request');
   await assert.rejects(() => mgmt.avatars.create({ voice: { id: 'v1' }, background: { type: 'color', value: '#fff' } }, ADMIN_KS), (e) => e.code === 'bad_request');
-  await assert.rejects(() => mgmt.avatars.update({ id: 'a1', face: { id: 'f1' } }, ADMIN_KS), (e) => e.code === 'bad_request');
-  await assert.rejects(() => mgmt.avatars.update({ id: 'a1', background: { type: 'color', value: '#fff' } }, ADMIN_KS), (e) => e.code === 'bad_request');
   assert.equal(ff.calls.length, 0, 'no transport before the composition guard passes');
+});
+
+test('avatars.update accepts face alone or background alone, UNLIKE create — the backend rule is asymmetric and state-dependent', async () => {
+  const { mgmt, ff } = harness([
+    { match: 'avatar/update', respond: (req) => ({ status: 200, body: { id: req.body.id, ...req.body } }) },
+  ]);
+  await mgmt.avatars.update({ id: 'a1', face: { id: 'f1' } }, ADMIN_KS);
+  assert.equal(ff.calls[0].body.face.id, 'f1');
+
+  await mgmt.avatars.update({ id: 'a1', background: { type: 'color', value: '#fff' } }, ADMIN_KS);
+  assert.deepEqual(ff.calls[1].body.background, { type: 'color', value: '#fff' });
 });
 
 test('avatars.create/update reject a malformed background (missing type or value)', async () => {
   const { mgmt, ff } = harness([]);
   await assert.rejects(() => mgmt.avatars.create({ voice: { id: 'v1' }, face: { id: 'f1' }, background: { value: '#fff' } }, ADMIN_KS), (e) => e.code === 'bad_request');
   await assert.rejects(() => mgmt.avatars.create({ voice: { id: 'v1' }, face: { id: 'f1' }, background: { type: 'color' } }, ADMIN_KS), (e) => e.code === 'bad_request');
+  await assert.rejects(() => mgmt.avatars.update({ id: 'a1', background: { value: '#fff' } }, ADMIN_KS), (e) => e.code === 'bad_request');
+  await assert.rejects(() => mgmt.avatars.update({ id: 'a1', background: { type: 'color' } }, ADMIN_KS), (e) => e.code === 'bad_request');
   assert.equal(ff.calls.length, 0);
 });
 
