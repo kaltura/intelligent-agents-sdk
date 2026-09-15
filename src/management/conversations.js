@@ -489,14 +489,14 @@ export class Feedback {
     const hasFeedback = (m) => m.is_positive === true || m.is_positive === false;
     const matchesRating = (m) => filter.isPositiveEquals === undefined || m.is_positive === filter.isPositiveEquals;
 
-    const baseMessageFilter = { objectType: GENIE_MESSAGE_FILTER };
-    if (filter.messageIdEquals) baseMessageFilter.idEquals = filter.messageIdEquals;
-    if (filter.messageIdsIn) baseMessageFilter.idsIn = filter.messageIdsIn;
-    if (filter.isPositiveEquals !== undefined) baseMessageFilter.isPositiveEquals = filter.isPositiveEquals;
-
     const messagesForThread = (threadId) => {
-      const messageFilter = { ...baseMessageFilter };
-      if (threadId) messageFilter.threadIdEquals = threadId;
+      const messageFilter = {
+        objectType: GENIE_MESSAGE_FILTER,
+        ...(filter.messageIdEquals ? { idEquals: filter.messageIdEquals } : {}),
+        ...(filter.messageIdsIn ? { idsIn: filter.messageIdsIn } : {}),
+        ...(filter.isPositiveEquals !== undefined ? { isPositiveEquals: filter.isPositiveEquals } : {}),
+        ...(threadId ? { threadIdEquals: threadId } : {}),
+      };
       return paginate({
         style: 'index', pageSize,
         fetchPage: (pager) => genie('message/list', { filter: messageFilter, pager }, ks).then((r) => r.data),
