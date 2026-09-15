@@ -23,6 +23,8 @@ import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Management } from '../src/management/index.js';
+import { Http } from '../src/core/http.js';
+import { KalturaError } from '../src/core/errors.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, '..');
@@ -132,18 +134,22 @@ try {
   const followupRows = await kaltura.followups.list(admin, { pageSize: 5 });
   record('followups.list', Array.isArray(followupRows), { count: followupRows.length });
 
-  // ── Filter-validation edge cases — raw fetch, bypassing the SDK's own ──
-  // request-building wrappers (list() always merges a fixed objectType and
-  // never exposes a top-level orderBy), so these hit the backend's actual
-  // validation directly, the way docs/api/management-operations.md documents it.
+  // ── Filter-validation edge cases — bypasses the SDK's own request-building
+  // wrappers (list() always merges a fixed objectType and never exposes a
+  // top-level orderBy), so these hit the backend's actual validation directly,
+  // the way docs/api/management-operations.md documents it. Still goes through
+  // the SDK's own Http transport (retry/backoff, response-size capping) rather
+  // than a bare fetch(), since Http.request() throws on any non-2xx status,
+  // the thrown KalturaError carries the same {status, body} a raw response would.
+  const rawHttp = new Http();
   async function rawPost(url, body) {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', authorization: `KS ${admin.ks}` },
-      body: JSON.stringify(body),
-    });
-    const json = await res.json().catch(() => null);
-    return { status: res.status, body: json };
+    try {
+      const res = await rawHttp.request({ method: 'POST', url, ks: admin.ks, body, json: true });
+      return { status: res.status, body: res.data };
+    } catch (err) {
+      if (err instanceof KalturaError) return { status: err.status, body: err.body };
+      throw err;
+    }
   }
   const genieRawUrl = 'https://genie.nvp1.ovp.kaltura.com';
   const agenticRawUrl = 'https://api.avatar.us.kaltura.ai/v1';
