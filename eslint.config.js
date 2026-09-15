@@ -94,9 +94,11 @@ export default [
     },
   },
   {
-    // Node script that also proxies HTTP requests, hence the one addition
-    // (`fetch`) beyond nodeGlobals — everything else here is plain server-side Node.
-    files: ['manual-testing/**/*.mjs'],
+    // Node scripts that also make raw HTTP requests (bypassing the SDK's own
+    // fetch wrapper to hit backend validation directly), hence the one
+    // addition (`fetch`) beyond nodeGlobals — everything else here is plain
+    // server-side Node.
+    files: ['manual-testing/**/*.mjs', 'scripts/live-verify-conversation-avatar-surface.mjs'],
     languageOptions: {
       ecmaVersion: 2024,
       sourceType: 'module',
