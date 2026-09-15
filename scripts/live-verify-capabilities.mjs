@@ -99,7 +99,7 @@ try {
       systemName: runId,
       eventType: 'session_ended',
       objectType: 'thread',
-      action: { actionType: 'triggerInsight', insights: [{ insightKey: 'SUMMARY', valueType: 'string' }] },
+      action: { actionType: 'sendInsightEmail', recipients: ['ci-live-verify@example.com'] },
     },
     admin,
   );
