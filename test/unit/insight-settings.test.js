@@ -29,6 +29,8 @@ test('insightSettings.create validates {key, title, prompt, valueType} BEFORE an
   ]);
   await assert.rejects(() => mgmt.insightSettings.create(/** @type {any} */ (null), ADMIN_KS), (e) => e.code === 'bad_request');
   await assert.rejects(() => mgmt.insightSettings.create({ key: '' }, ADMIN_KS), (e) => e.code === 'bad_request');
+  await assert.rejects(() => mgmt.insightSettings.create({ key: 'has a space', title: 'Next step', prompt: 'do it', valueType: 'string' }, ADMIN_KS), (e) => e.code === 'bad_request');
+  await assert.rejects(() => mgmt.insightSettings.create({ key: 'x'.repeat(65), title: 'Next step', prompt: 'do it', valueType: 'string' }, ADMIN_KS), (e) => e.code === 'bad_request');
   await assert.rejects(() => mgmt.insightSettings.create({ key: 'NEXT_STEP', title: 'Next step', prompt: 'do it' }, ADMIN_KS), (e) => e.code === 'bad_request');
   await assert.rejects(() => mgmt.insightSettings.create({ key: 'NEXT_STEP', title: 'Next step', prompt: 'do it', valueType: 'bogus' }, ADMIN_KS), (e) => e.code === 'bad_request');
   assert.equal(ff.calls.length, 0, 'no transport before validation passes');
@@ -75,6 +77,7 @@ test('insightSettings.update validates BEFORE any network call, then posts a pat
   await assert.rejects(() => mgmt.insightSettings.update(SETTING.id, {}, ADMIN_KS), (e) => e.code === 'bad_request');
   await assert.rejects(() => mgmt.insightSettings.update(SETTING.id, { valueType: 'bogus' }, ADMIN_KS), (e) => e.code === 'bad_request');
   await assert.rejects(() => mgmt.insightSettings.update(SETTING.id, { status: 'bogus' }, ADMIN_KS), (e) => e.code === 'bad_request');
+  await assert.rejects(() => mgmt.insightSettings.update(SETTING.id, { key: 'has a space' }, ADMIN_KS), (e) => e.code === 'bad_request');
   assert.equal(ff.calls.length, 0, 'no transport before validation passes');
 
   const res = await mgmt.insightSettings.update(SETTING.id, { status: 'disabled' }, ADMIN_KS);

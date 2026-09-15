@@ -74,10 +74,10 @@ No-ops server-side if the intellect has no `user_properties_forms` configured.
 
 | Method | Endpoint | Kind | Notes |
 |---|---|---|---|
-| `insightSettings.create({key, title, prompt, valueType}, ks)` | `POST /v1/insight-settings/create` | WRITE, not idempotent | all 4 fields required |
+| `insightSettings.create({key, title, prompt, valueType}, ks)` | `POST /v1/insight-settings/create` | WRITE, not idempotent | all 4 fields required; `key` must match `/^[a-zA-Z0-9_.-]{1,64}$/` (checked client-side) |
 | `insightSettings.get(id, ks)` | `POST /v1/insight-settings/get` | READ | |
 | `insightSettings.list(ks, opts)` | `POST /v1/insight-settings/list` | READ | `{offset,limit}` pager; `opts.filter` (`statusEqual`, `idsIn`) and `opts.orderBy` (`+createdAt`/`-createdAt`) pass through 1:1 |
-| `insightSettings.update(id, patch, ks)` | `POST /v1/insight-settings/update` | WRITE, idempotent | patch any of `key`/`title`/`prompt`/`valueType`/`status` (`'active'`\|`'disabled'`) |
+| `insightSettings.update(id, patch, ks)` | `POST /v1/insight-settings/update` | WRITE, idempotent | patch any of `key`/`title`/`prompt`/`valueType`/`status` (`'active'`\|`'disabled'`); a provided `key` is checked against the same pattern as `create` |
 | `insightSettings.delete(id, ks, confirm)` | `POST /v1/insight-settings/delete` | WRITE, destructive | `requireConfirm` gate. No in-use scan: a rule still referencing a deleted id keeps a silent dangling reference — the extraction for that id is dropped with no error at match/trigger time. `INVALID_INSIGHT_SETTINGS` only fires pre-emptively, on a `lifecycle.create`/`.update` naming a missing or already-deleted id. |
 
 `id` is a Mongo ObjectId string; a malformed id 400s live (`id must be a mongodb id`) rather than being pre-validated client-side.

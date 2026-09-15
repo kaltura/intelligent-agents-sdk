@@ -12,11 +12,19 @@ import { KalturaError } from '../core/errors.js';
 
 const VALUE_TYPES = ['string', 'number', 'boolean', 'arrayString', 'arrayNumber', 'arrayBoolean'];
 const STATUSES = ['active', 'disabled'];
+const KEY_PATTERN = /^[a-zA-Z0-9_.-]{1,64}$/;
 
 /** @param {unknown} v @param {string} where */
 function requireId(v, where) {
   if (typeof v !== 'string' || !v.trim()) {
     throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: `${where} id must be a non-empty string (the insight-settings entity's Mongo ObjectId).` });
+  }
+}
+
+/** @param {unknown} v @param {string} where */
+function requireValidKey(v, where) {
+  if (typeof v !== 'string' || !KEY_PATTERN.test(v)) {
+    throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: `${where} key must match ${KEY_PATTERN} (letters, digits, "_", ".", "-", 1-64 chars).` });
   }
 }
 
@@ -41,7 +49,9 @@ export class InsightSettings {
   /**
    * Create an insight-settings definition. WRITE — NOT idempotent (a repeat
    * call creates a second entity, same as {@link Skills#add}). All four
-   * fields are required — the live 400 lists whichever is missing.
+   * fields are required — the live 400 lists whichever is missing. `key`
+   * must match `/^[a-zA-Z0-9_.-]{1,64}$/` (checked here, before any network
+   * call).
    * @param {{key:string, title:string, prompt:string, valueType:'string'|'number'|'boolean'|'arrayString'|'arrayNumber'|'arrayBoolean'}} body
    * @param {string} ks (admin) @param {{idempotencyKey?:string}} [opts]
    */
@@ -50,7 +60,7 @@ export class InsightSettings {
     if (!body || typeof body !== 'object' || Array.isArray(body)) {
       throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: 'insightSettings.create needs a {key, title, prompt, valueType} object.' });
     }
-    requireNonEmptyString(body.key, 'insightSettings.create', 'key');
+    requireValidKey(body.key, 'insightSettings.create');
     requireNonEmptyString(body.title, 'insightSettings.create', 'title');
     requireNonEmptyString(body.prompt, 'insightSettings.create', 'prompt');
     requireValueType(body.valueType, 'insightSettings.create');
@@ -85,7 +95,8 @@ export class InsightSettings {
 
   /**
    * Update an insight-settings definition's key/title/prompt/valueType/status.
-   * WRITE — idempotent.
+   * WRITE — idempotent. `key`, when provided, must match the same
+   * `/^[a-zA-Z0-9_.-]{1,64}$/` pattern {@link InsightSettings#create} enforces.
    * @param {string} id (Mongo ObjectId)
    * @param {{key?:string, title?:string, prompt?:string, valueType?:string, status?:'active'|'disabled'}} patch
    * @param {string} ks (admin)
@@ -100,6 +111,7 @@ export class InsightSettings {
     if (!fields.some((f) => patch[f] !== undefined)) {
       throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: `insightSettings.update needs at least one of ${fields.join('/')}.` });
     }
+    if (patch.key !== undefined) requireValidKey(patch.key, 'insightSettings.update');
     if (patch.valueType !== undefined) requireValueType(patch.valueType, 'insightSettings.update');
     if (patch.status !== undefined && !STATUSES.includes(patch.status)) {
       throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: `insightSettings.update status must be one of ${STATUSES.join(', ')}.` });
