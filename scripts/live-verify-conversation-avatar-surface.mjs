@@ -220,7 +220,7 @@ try {
   record('avatars.update (background alone recomposes against existing face)', avatarABgOnly?.id === avatarAId, { id: avatarABgOnly?.id, composition: avatarABgOnly?.visual?.composition });
 
   const avatarAFaceOnly = await kaltura.avatars.update({ id: avatarAId, face: { id: faceItemId } }, admin);
-  const faceOnlyIsNoop = avatarAFaceOnly?.visual?.composition === avatarABgOnly?.visual?.composition;
+  const faceOnlyIsNoop = JSON.stringify(avatarAFaceOnly?.visual?.composition) === JSON.stringify(avatarABgOnly?.visual?.composition);
   record('avatars.update (face alone accepted as a silent no-op)', avatarAFaceOnly?.id === avatarAId && faceOnlyIsNoop, { id: avatarAFaceOnly?.id, composition: avatarAFaceOnly?.visual?.composition, unchangedFromPriorStep: faceOnlyIsNoop });
 
   // ── Avatars#create/update — templateId + background composition ────────
