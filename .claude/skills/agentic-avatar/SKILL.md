@@ -223,16 +223,14 @@ await kaltura.intellects.setCapability(configId, 'use_knowledge_base', 'on', adm
 
 ## Lifecycle — react to session/thread events without polling
 
-A **rule** = `eventType` + `objectType` (currently only `'thread'`) + optional `eventConditions[]` + one **action**. Four `actionType` values exist, but only two are for partner use: `triggerInsight` (extract structured insights with an LLM) and `sendInsightEmail` (email a human once an insight lands). The other two (`triggerOverridableSummaryInsight`, `triggerDataToCollectInsight`) only power system preset rules — creating them yourself is accepted but has no effect. The backend evaluates every active rule (yours plus its own system-seeded presets) whenever a matching event fires — no polling required.
+A **rule** = `eventType` + `objectType` (currently only `'thread'`) + optional `eventConditions[]` + one **action**. Only one `actionType` is for partner use: `sendInsightEmail` (email a human once an insight lands, only fires on `eventType:'analysis_updated'`). The other three only power system preset rules — creating them yourself is either rejected client-side (`triggerInsight`) or accepted by the API but has no effect (`triggerOverridableSummaryInsight`, `triggerDataToCollectInsight`). The backend evaluates every active rule (yours plus its own system-seeded presets) whenever a matching event fires — no polling required.
 
 ```js
 const rule = await kaltura.lifecycle.create({
-  name: 'Extract a topic for every ended session',
-  eventType: 'session_ended',
+  name: 'Email support lead on analysis update',
+  eventType: 'analysis_updated',
   objectType: 'thread',
-  // Don't request SUMMARY yourself — every partner already gets one for free
-  // from an always-on preset rule; your own SUMMARY entry would be a no-op.
-  action: { actionType: 'triggerInsight', insights: [{ insightKey: 'TOPIC', valueType: 'string' }] },
+  action: { actionType: 'sendInsightEmail', recipients: ['<kaltura-user-id>'] },
 }, admin.ks);
 
 const rules = await kaltura.lifecycle.list(admin.ks, { pageSize: 30 });

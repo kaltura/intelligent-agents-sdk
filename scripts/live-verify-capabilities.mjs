@@ -99,7 +99,7 @@ try {
       systemName: runId,
       eventType: 'session_ended',
       objectType: 'thread',
-      action: { actionType: 'triggerInsight', insights: [{ insightKey: 'SUMMARY', valueType: 'string' }] },
+      action: { actionType: 'sendInsightEmail', recipients: ['live-verify@example.com'] },
     },
     admin,
   );
@@ -120,7 +120,7 @@ try {
   );
   const allRuleIds = (matched.matchedRules || []).flatMap((g) => g.rules.map((r) => r.id));
   const foundInMatch = allRuleIds.includes(ruleId);
-  const presetFound = allRuleIds.includes('preset__overridable_summary_on_session_ended');
+  const presetFound = allRuleIds.includes('preset__summary_on_session_ended');
   record('lifecycle.match', foundInMatch, {
     groupCount: matched.matchedRules?.length,
     allRuleIds,

@@ -4,26 +4,20 @@
  * eventConditions[], action}` — when a matching backend event fires (e.g. a
  * thread's `session_ended`), every active rule (including partner-invisible,
  * system-seeded presets — see {@link Lifecycle#match}) is evaluated and its
- * `action` runs server-side. Four action shapes exist, passed through as
- * plain objects (not built by the SDK), but only the first two are meant to
- * be created here — the other two only exist to power system preset rules
- * and ignore anything a caller passes:
- * `{actionType:'triggerInsight', insights:[{insightKey, valueType, prompt?}, ...]}`
- * (`valueType` is REQUIRED on every insight, even built-in keys like
- * `SUMMARY` — omitting it 400s live: "action.insights.0.valueType must be
- * one of the following values: string, number, boolean, arrayString,
- * arrayNumber, arrayBoolean"; every rule extracting insights on the same
- * event merges into one LLM batch, so don't request `SUMMARY` — every
- * partner already has an always-on preset producing one for free),
+ * `action` runs server-side.
+ *
+ * Only one `actionType` is currently safe to create yourself:
  * `{actionType:'sendInsightEmail', recipients:string[], templateId?:string,
- * presetType?:string}` (only fires on `eventType:'analysis_updated'` — a
- * `session_ended` rule with this action type is a no-op server-side),
- * `{actionType:'triggerOverridableSummaryInsight'}` (system preset only —
- * customize its prompt via `agents.update({agentId, summaryOverridePrompt})`,
- * not a rule), and `{actionType:'triggerDataToCollectInsight'}` (system
- * preset only, currently disabled account-wide — would extract one insight
- * per configured lead-capture field, `intellectConfig.user_properties_forms`,
- * if enabled). See
+ * presetType?:string}` — mails a rendered insight summary to `recipients`
+ * once an insight lands. Only fires on `eventType:'analysis_updated'` — a
+ * `session_ended` rule with this action type is a no-op server-side.
+ *
+ * `triggerInsight` is no longer supported and is rejected client-side with a
+ * `bad_request` before any network call — see `create`/`update`. Two more
+ * action shapes exist only to power system-seeded preset rules
+ * (`triggerOverridableSummaryInsight`, `triggerDataToCollectInsight`);
+ * creating them yourself is accepted by the API but has no effect, since
+ * their behavior is hardcoded and ignores anything you pass. See
  * `docs/lifecycle/README.md` for the full explanation. Mounted at
  * `mgmt.lifecycle`.
  */
@@ -32,10 +26,20 @@ import { uuidv4, meta } from '../core/ids.js';
 import { requireConfirm } from './agents.js';
 import { KalturaError } from '../core/errors.js';
 
+/** `actionType` values that are no longer supported server-side. */
+const RETIRED_ACTION_TYPES = new Set(['triggerInsight']);
+
 /** @param {unknown} v @param {string} where */
 function requireRuleId(v, where) {
   if (typeof v !== 'string' || !v.trim()) {
     throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: `${where} id must be a non-empty string (the lifecycle rule's id).` });
+  }
+}
+
+/** @param {unknown} action @param {string} where */
+function assertActionTypeSupported(action, where) {
+  if (action && typeof action === 'object' && RETIRED_ACTION_TYPES.has(action.actionType)) {
+    throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: `${where} action.actionType "${action.actionType}" is no longer supported. Use {actionType:'sendInsightEmail', recipients:[...]} instead.` });
   }
 }
 
@@ -66,8 +70,9 @@ export class Lifecycle {
     requireNonEmptyString(body.eventType, 'lifecycle.create', 'eventType');
     requireNonEmptyString(body.objectType, 'lifecycle.create', 'objectType');
     if (!body.action || typeof body.action !== 'object') {
-      throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: 'lifecycle.create action must be an object (e.g. {actionType:"triggerInsight", insights:[...]}).' });
+      throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: 'lifecycle.create action must be an object (e.g. {actionType:"sendInsightEmail", recipients:[...]}).' });
     }
+    assertActionTypeSupported(body.action, 'lifecycle.create');
     /** @type {Record<string,unknown>} */
     const wire = { name: body.name, systemName: body.systemName, eventType: body.eventType, objectType: body.objectType, action: body.action };
     if (body.eventConditions !== undefined) wire.eventConditions = body.eventConditions;
@@ -116,6 +121,7 @@ export class Lifecycle {
     if (!fields.some((f) => patch[f] !== undefined)) {
       throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: `lifecycle.update needs at least one of ${fields.join('/')}.` });
     }
+    if (patch.action !== undefined) assertActionTypeSupported(patch.action, 'lifecycle.update');
     /** @type {Record<string,unknown>} */
     const wire = { id };
     for (const f of fields) if (patch[f] !== undefined) wire[f] = patch[f];
@@ -149,7 +155,7 @@ export class Lifecycle {
    *
    * The response can include rules the caller never created: production
    * ships system-seeded preset rules (e.g.
-   * `preset__overridable_summary_on_session_ended`, which matches every
+   * `preset__summary_on_session_ended`, which matches every
    * `session_ended`/`thread` event for every partner by default) that show
    * up in `matchedRules[]` alongside the caller's own. Related rules are
    * grouped: `matchedRules[].isGrouped` is `true` when two or more rules
@@ -162,8 +168,8 @@ export class Lifecycle {
    *       "isGrouped": true,
    *       "groupKey": "_system_grouped_kai_insights",
    *       "rules": [
-   *         { "id": "preset__overridable_summary_on_session_ended", "systemName": "overridable_summary_on_session_ended", "action": { "actionType": "triggerOverridableSummaryInsight" } },
-   *         { "id": "68a...", "systemName": "my_custom_rule", "action": { "actionType": "triggerInsight", "insights": [{ "insightKey": "SESSIONSUMMARY", "valueType": "string" }] } }
+   *         { "id": "preset__summary_on_session_ended", "systemName": "summary_on_session_ended", "action": { "actionType": "_triggerKaiBase" } },
+   *         { "id": "68a...", "systemName": "my_custom_rule", "action": { "actionType": "sendInsightEmail", "recipients": ["<kaltura-user-id>"] } }
    *       ]
    *     }
    *   ]

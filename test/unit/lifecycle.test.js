@@ -23,7 +23,7 @@ function harness(routes) {
 const RULE = {
   id: '507f1f77bcf86cd799439011', partnerId: 123, name: 'Summarize after call', systemName: 'summarize_after_call',
   status: 'active', eventType: 'session_ended', objectType: 'thread', eventConditions: [],
-  action: { actionType: 'triggerInsight', insights: [{ insightKey: 'SESSIONSUMMARY', valueType: 'string' }] },
+  action: { actionType: 'sendInsightEmail', recipients: ['user-1'] },
   createdAt: '2026-08-30T00:00:00.000Z', updatedAt: '2026-08-30T00:00:00.000Z', createdBy: 'user-1',
 };
 
@@ -130,7 +130,7 @@ test('lifecycle.match posts {objectType, eventType, eventData} and returns match
             {
               isGrouped: true, groupKey: '_system_grouped_kai_insights',
               rules: [
-                { id: 'preset__overridable_summary_on_session_ended', systemName: 'overridable_summary_on_session_ended', action: { actionType: 'triggerOverridableSummaryInsight' } },
+                { id: 'preset__summary_on_session_ended', systemName: 'summary_on_session_ended', action: { actionType: '_triggerKaiBase' } },
                 RULE,
               ],
             },
@@ -139,13 +139,32 @@ test('lifecycle.match posts {objectType, eventType, eventData} and returns match
       }),
     },
   ]);
-  const res = await mgmt.lifecycle.match('thread', 'session_ended', { object: { thread_id: 't1' }, changed_keys: ['SESSIONSUMMARY'] }, ADMIN_KS);
+  const res = await mgmt.lifecycle.match('thread', 'session_ended', { object: { thread_id: 't1' }, changed_keys: ['SUMMARY'] }, ADMIN_KS);
   assert.equal(res.matchedRules.length, 1);
   assert.equal(res.matchedRules[0].isGrouped, true);
   assert.equal(res.matchedRules[0].rules.some((r) => r.id.startsWith('preset__')), true);
   assert.deepEqual(ff.calls[0].body, {
-    objectType: 'thread', eventType: 'session_ended', eventData: { object: { thread_id: 't1' }, changed_keys: ['SESSIONSUMMARY'] },
+    objectType: 'thread', eventType: 'session_ended', eventData: { object: { thread_id: 't1' }, changed_keys: ['SUMMARY'] },
   });
+});
+
+test('lifecycle.create/update reject the retired triggerInsight actionType BEFORE any network call', async () => {
+  const { mgmt, ff } = harness([
+    { match: 'lifecycle/create', respond: (req) => ({ status: 200, body: { ...RULE, ...req.body } }) },
+    { match: 'lifecycle/update', respond: (req) => ({ status: 200, body: { ...RULE, ...req.body } }) },
+  ]);
+  await assert.rejects(
+    () => mgmt.lifecycle.create(
+      { name: 'x', systemName: 's', eventType: 'session_ended', objectType: 'thread', action: { actionType: 'triggerInsight', insights: [] } },
+      ADMIN_KS,
+    ),
+    (e) => e.code === 'bad_request',
+  );
+  await assert.rejects(
+    () => mgmt.lifecycle.update(RULE.id, { action: { actionType: 'triggerInsight', insights: [] } }, ADMIN_KS),
+    (e) => e.code === 'bad_request',
+  );
+  assert.equal(ff.calls.length, 0, 'no transport for a retired actionType');
 });
 
 test('lifecycle.listObjects/listEvents/describeFields are one-call READ passthroughs', async () => {
