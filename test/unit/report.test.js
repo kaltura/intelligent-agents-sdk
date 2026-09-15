@@ -104,6 +104,19 @@ test('messages.reportSummary applies parseCsv and returns _meta.generatedAt + _m
   assert.ok(typeof summary._meta.scope === 'string' && summary._meta.scope.length > 0);
 });
 
+test('messages.reportSummary defaults pageSize to 500 (the server-side pager max), not 1000', async () => {
+  let captured;
+  const ff = fakeFetch([
+    {
+      match: 'message/report',
+      respond: (req) => { captured = req.body; return { status: 200, body: CSV, headers: { 'content-type': 'text/csv' } }; },
+    },
+  ]);
+  const mgmt = new Management({ partnerId: '9999', fetch: ff });
+  await mgmt.messages.reportSummary(ADMIN_KS);
+  assert.equal(captured.pager.pageSize, 500);
+});
+
 test('messages.report rejects a non-admin (conversation) token', async () => {
   const mgmt = new Management({ partnerId: '9999', fetch: fakeFetch([]) });
   await assert.rejects(

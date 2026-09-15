@@ -241,6 +241,8 @@ export class Threads {
    *  - an unknown filter key 422s; `partnerIdIn` always 422s (rejected on the
    *    public thread API); `partnerIdEquals` is accepted but the query is
    *    always scoped to the KS's own partner.
+   *  - `pageSize` is capped server-side at 500 — a higher value 422s. Same
+   *    cap applies to Messages/Feedback/Followups pagers below.
    *  - threads opened via `sessions.createConversationToken` carry
    *    `agent_id: "default"` — an `agentIdEquals` filter for a real agent id
    *    will never match them; use `sessions.createAgentToken` instead.
@@ -389,7 +391,8 @@ export class Messages {
   /**
    * Raw partner conversation report as CSV. READ. ⚠️ SENSITIVE — contains
    * end-user ids/names + verbatim question/feedback text. Treat as PII; scope
-   * and redact before sharing.
+   * and redact before sharing. `pageSize` is capped server-side at 500 — a
+   * higher value 422s (this is a single-page fetch, not a full-export loop).
    * @param {string} ks @param {{pageSize?:number}} [opts]
    */
   async report(ks, opts = {}) {
@@ -406,7 +409,7 @@ export class Messages {
    * @param {string} ks @param {{pageSize?:number}} [opts]
    */
   async reportSummary(ks, opts = {}) {
-    const csv = await this.report(ks, { pageSize: opts.pageSize ?? 1000 });
+    const csv = await this.report(ks, { pageSize: opts.pageSize ?? 500 });
     if (typeof csv !== 'string') {
       throw new KalturaError({ type: 'about:blank', title: 'report not CSV', code: 'server_error', detail: 'message/report did not return CSV (likely an error body).', body: csv });
     }
