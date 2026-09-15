@@ -25,7 +25,17 @@ test('threads.list merges opts.filter UNDER the fixed objectType (caller cannot 
   ]);
   await mgmt.threads.list(ADMIN_KS, { filter: { agentIdEquals: 'a1', objectType: 'HACKED' } }).all();
   assert.equal(ff.calls[0].body.filter.objectType, 'ListThreadFilter', 'objectType always wins over a caller-supplied value');
-  assert.equal(ff.calls[0].body.filter.agentIdEquals, 'a1');
+  assert.equal(ff.calls[0].body.filter.genieIdEquals, 'a1', 'agentIdEquals is translated to the server-side filter key on the wire');
+  assert.equal(ff.calls[0].body.filter.agentIdEquals, undefined, 'the SDK-only key name never reaches the wire');
+});
+
+test('threads.list rejects filter.agentIdIn BEFORE any network call (no server-side "in" equivalent exists)', async () => {
+  const { mgmt, ff } = harness([]);
+  assert.throws(
+    () => mgmt.threads.list(ADMIN_KS, { filter: { agentIdIn: ['a1', 'a2'] } }),
+    (e) => e.code === 'validation_error',
+  );
+  assert.equal(ff.calls.length, 0);
 });
 
 test('threads.setAnalysis sends {id, thread_metadata:{analysis:patch}}; rejects a non-object patch before the network call', async () => {
@@ -110,12 +120,12 @@ test('feedback.list agentIdEquals resolves matching threads first, then walks ea
   ]);
   const rows = await mgmt.feedback.list(ADMIN_KS, { filter: { agentIdEquals: 'agent-1' } });
   assert.match(ff.calls[0].url, /v1\/thread\/list$/);
-  assert.equal(ff.calls[0].body.filter.agentIdEquals, 'agent-1');
+  assert.equal(ff.calls[0].body.filter.genieIdEquals, 'agent-1', 'agentIdEquals is translated to the server-side filter key on the wire');
   assert.equal(rows.length, 1);
   assert.equal(rows[0].message_id, 'm1');
 });
 
-test('feedback.report posts {filter:{objectType}} and an optional pager, returns the raw CSV (or null) — reserved for a future release, currently always empty', async () => {
+test('feedback.report posts {filter:{objectType}} and an optional pager, returns the raw CSV (or null) — currently always empty, for every partner and filter', async () => {
   const { mgmt, ff } = harness([
     { match: 'feedback/report', respond: () => ({ status: 200, body: null }) },
   ]);

@@ -245,8 +245,12 @@ export class Threads {
    *  - threads opened via `sessions.createConversationToken` carry
    *    `agent_id: "default"` — an `agentIdEquals` filter for a real agent id
    *    will never match them; use `sessions.createAgentToken` instead.
+   *  - `agentIdEquals` is translated to the server's own agent-scoping filter
+   *    key on the wire; there is no server-side "in" equivalent, so
+   *    `agentIdIn` throws a pre-flight `validation_error` instead of being
+   *    silently ignored — call `list` once per agent id instead.
    *
-   * Filter fields: `agentIdEquals`, `agentIdIn`, `contextIdEqual`,
+   * Filter fields: `agentIdEquals`, `contextIdEqual`,
    * `createdAtGreaterThanOrEqual`, `createdAtLessThanOrEqual`, `idEquals`,
    * `idsIn`, `isEverywhere`, `orderBy`, `partnerIdEquals`, `statusEquals`,
    * `statusIn`, `updatedAtGreaterThanOrEqual`, `updatedAtLessThanOrEqual`,
@@ -255,7 +259,15 @@ export class Threads {
    */
   list(ks, opts = {}) {
     this._.assertAdmin(ks, 'threads.list');
-    const filter = { ...opts.filter, objectType: GENIE_THREAD_FILTER };
+    if (opts.filter && opts.filter.agentIdIn !== undefined) {
+      throw new KalturaError({
+        type: 'https://docs.kaltura.com/agentic/errors/validation_error', title: 'unsupported filter key',
+        code: 'validation_error', detail: 'threads.list filter.agentIdIn has no server-side equivalent — call threads.list once per agent id with filter.agentIdEquals instead.',
+      });
+    }
+    const { agentIdEquals, ...restFilter } = opts.filter || {};
+    const filter = { ...restFilter, objectType: GENIE_THREAD_FILTER };
+    if (agentIdEquals !== undefined) filter.genieIdEquals = agentIdEquals;
     return paginate({
       style: 'index', pageSize: opts.pageSize,
       fetchPage: (pager) => this._.genie('v1/thread/list', { filter, pager }, ks).then((r) => r.data),
@@ -438,9 +450,9 @@ export class Feedback {
    * sharing.
    *
    * NOT a proxy of `feedback/list` — that endpoint (and `feedback/report`)
-   * is reserved on the backend for a future release: as of this SDK
-   * version it always returns an empty result, for every partner and every
-   * filter. This method sources feedback from the messages it's attached
+   * always returns an empty result, for every partner and every filter, as
+   * of this SDK version, with no indication of when that might change.
+   * This method sources feedback from the messages it's attached
    * to instead: {@link Feedback#add} writes `is_positive`/`comment` onto
    * the rated message itself, so `list()` queries `message/list` (and,
    * for `agentIdEquals`, `v1/thread/list` first) and keeps only the
@@ -511,7 +523,7 @@ export class Feedback {
 
     async function* rows() {
       if (filter.agentIdEquals) {
-        const threadFilter = { objectType: GENIE_THREAD_FILTER, agentIdEquals: filter.agentIdEquals };
+        const threadFilter = { objectType: GENIE_THREAD_FILTER, genieIdEquals: filter.agentIdEquals };
         const threads = paginate({
           style: 'index', pageSize: 100,
           fetchPage: (pager) => genie('v1/thread/list', { filter: threadFilter, pager }, ks).then((r) => r.data),
@@ -530,14 +542,11 @@ export class Feedback {
   }
 
   /**
-   * Raw feedback report as CSV. READ. RESERVED FOR A FUTURE RELEASE: the
-   * backend endpoint behind this method currently always replies an empty
-   * body, for every partner and every filter — there's no feedback data
-   * for it to report yet, so this always resolves to `null`. Kept as a
-   * direct proxy (no client-side CSV synthesis) rather than a workaround
-   * like {@link Feedback#list}, since a report is exactly the kind of
-   * bulk/aggregate view that should come from the backend once it ships,
-   * not be reconstructed by walking messages page by page. Use
+   * Raw feedback report as CSV. READ. The backend endpoint behind this
+   * method currently always replies an empty body, for every partner and
+   * every filter, so this always resolves to `null`, with no indication of
+   * when that might change. Kept as a direct proxy (no client-side CSV
+   * synthesis) rather than a workaround like {@link Feedback#list}. Use
    * {@link Feedback#list} or {@link Messages#report} for feedback data
    * today.
    * @param {string} ks @param {{pageSize?:number}} [opts]
@@ -556,10 +565,11 @@ export class Followups {
   constructor(ctx) { this._ = ctx; }
 
   /**
-   * Pre-configured STARTER questions for the partner/agent. READ. Empty body,
-   * NOT thread-scoped; returns `[]` when none configured. (Per-answer followups
-   * are a different feature — set capabilities.generate_followup_questions:on on
-   * converse.)
+   * STARTER questions for the partner/agent. READ. Empty body, NOT
+   * thread-scoped; returns `[]` when none configured. The returned set can
+   * vary between calls — don't assume a stable, fixed list. (Per-answer
+   * followups are a different feature — set
+   * capabilities.generate_followup_questions:on on converse.)
    * @param {string} ks
    */
   async getSuggested(ks) {
