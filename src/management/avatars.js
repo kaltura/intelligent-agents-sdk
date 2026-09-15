@@ -14,7 +14,7 @@ import { KalturaError } from '../core/errors.js';
  * adminTagsIn` finds it), but no read path ever returns it back — a tag you
  * can set but never read or change is a trap, so the SDK throws pre-network
  * rather than let one through silently. `avatar/update` genuinely rejects it
- * (`UpdateAvatarDto` has no tag field) with only a bare 'Bad Request'. Either
+ * (no tag field on that request body) with only a bare 'Bad Request'. Either
  * way, the actionable fix is to tag the parent AGENT instead. Pure: no
  * network.
  * @param {object} body @param {string} where
@@ -176,8 +176,8 @@ export class Avatars {
    * fields you want to change.
    *
    * NO TAGS, AND HERE IT'S A REAL SERVER REJECT: unlike {@link create},
-   * `UpdateAvatarDto` genuinely has no tag field — `avatar/update` 400s on
-   * `adminTags` with only a bare `'Bad Request'` (no helpful `detail`). The
+   * the update request body genuinely has no tag field — `avatar/update`
+   * 400s on `adminTags` with only a bare `'Bad Request'` (no helpful `detail`). The
    * SDK throws pre-network with an actionable message instead — tag the
    * parent AGENT (`agents.update({adminTags})`) instead.
    *

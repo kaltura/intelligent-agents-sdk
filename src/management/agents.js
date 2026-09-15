@@ -69,8 +69,8 @@ export class Agents {
   /**
    * Create an agent. WRITE — NOT idempotent (auto-sends an Idempotency-Key for
    * hygiene; the server ignores it today). `intellect.id` is the intellect's
-   * configId — no separate genieId is needed (`CreateAgentIntellectDto` has
-   * only `intellectType`+`id`).
+   * configId — no separate genieId is needed (the request body's `intellect`
+   * only takes `intellectType`+`id`).
    * @param {object} body {displayName,intellect:{intellectType:'genie',id},avatarIds?,adminTags?,maxConversationLength?,widgetConfig?,embedConfig?}
    * @param {string} ks
    * @param {{idempotencyKey?:string}} [opts]

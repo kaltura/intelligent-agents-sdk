@@ -35,7 +35,7 @@ An incomplete/invalid `face`/`background` pairing on **create** is a HTTP-200 `K
 
 **Recomposing on update is asymmetric, unlike create** — the rule depends on the avatar's existing state: `background` alone recomposes against the avatar's current face (a valid "just change the background" update); `face` alone is accepted but silently a no-op (nothing to pair it with, so the existing visual is left untouched). `avatars.update` does NOT reject either half alone.
 
-`avatar/create` accepts and stores `adminTags`, and `avatar/list adminTagsIn` finds it, but no read path ever returns it and `avatar/update` genuinely rejects it (no tag field on `UpdateAvatarDto`). The SDK throws pre-network on either path rather than let you rely on a write-only field — tag the parent **agent** instead.
+`avatar/create` accepts and stores `adminTags`, and `avatar/list adminTagsIn` finds it, but no read path ever returns it and `avatar/update` genuinely rejects it (no tag field on that request body). The SDK throws pre-network on either path rather than let you rely on a write-only field — tag the parent **agent** instead.
 
 ## Intellects — `https://genie.nvp1.ovp.kaltura.com`
 
@@ -101,7 +101,7 @@ All thread endpoints require an **admin KS** (`disableentitlement`). SDK: `mgmt.
 | Rename | `POST /v1/thread/update` | `{"id":"UUID","title":"New name"}` |
 | Set analysis | `POST /v1/thread/update` | `{"id":"UUID","thread_metadata":{"analysis":{...}}}` — shallow merge one level under `analysis`; a changed key fires the lifecycle `analysis_updated` event. SDK: `mgmt.threads.setAnalysis(id, patch, ks)`. |
 | Clear analysis | `POST /v1/thread/update` | `{"id":"UUID","thread_metadata":{}}` — wipes `analysis` (the only field `ThreadMetadata` has). SDK: `mgmt.threads.clearAnalysis(id, ks)`. |
-| Push | `POST /thread/push` (legacy Genie route, no `v1/` prefix — `v1/thread/push` does not exist) | `{"id":"UUID","content":"...","request_vars"?:{...},"system_message"?:"..."}` — `delivered:false` in the reply means no live socket is attached; the message still persists (shows up in Messages list as `type:4`, `MessageType.EXTERNAL_PUSH`). SDK: `mgmt.threads.push({id,content,request_vars?,system_message?}, ks)`. |
+| Push | `POST /thread/push` (legacy Genie route, no `v1/` prefix — `v1/thread/push` does not exist) | `{"id":"UUID","content":"...","request_vars"?:{...},"system_message"?:"..."}` — `delivered:false` in the reply means no live socket is attached; the message still persists (shows up in Messages list as `type:4`, `MessageType.EXTERNAL_PUSH`). `content` over a server-side (partner-configurable) length cap is `413 content exceeds max_message_length` — not checked client-side. SDK: `mgmt.threads.push({id,content,request_vars?,system_message?}, ks)`. |
 | Delete | `POST /v1/thread/delete` | `{"thread_ids":["UUID"]}` — soft delete, followed by a scheduled infra-level purge |
 | Transcript | `POST /v1/thread/get_transcripts` | `{"id":"UUID"}` |
 

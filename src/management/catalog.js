@@ -213,7 +213,7 @@ export class Catalog {
    * ['custom']`. Use {@link appendAdminTags} for the correct single-parse shape.
    * (Also documented in API-REFERENCE §1.1, keep both in sync.)
    * @param {Blob|File} file @param {object} attributes @param {import('./client.js').KsLike} ks @param {string} [mime]
-   * @param {string} [consentRef] @param {string} [kind] @param {string} [type] Explicit `CreateCatalogItemDto.type` (`'Face'`/`'Background'`); omitted for voice/visual, which infer their type from `attributes`.
+   * @param {string} [consentRef] @param {string} [kind] @param {string} [type] Explicit catalog item type (`'Face'`/`'Background'`) — required for those two, since an image MIME alone defaults to `Visual`. Omitted for voice/visual: the API infers the type from the uploaded file's own content (image → Visual, audio → Voice), not from `attributes`.
    */
   async _upload(file, attributes, ks, mime, consentRef, kind, type) {
     const fd = newFormData();

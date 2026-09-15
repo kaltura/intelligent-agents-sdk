@@ -315,6 +315,10 @@ export class Threads {
    * route. `delivered:false` in the reply means no live socket is currently
    * attached to the thread; the message is still persisted (it shows up in
    * {@link Messages#list} as `type: 4`, `MessageType.EXTERNAL_PUSH`).
+   *
+   * `content` has a server-side length cap — too long is `413 content
+   * exceeds max_message_length`. The SDK does not check this client-side
+   * (the cap is a partner-configurable setting, not a fixed constant).
    * @param {{id:string, content:string, request_vars?:object, system_message?:string}} opts
    * @param {string} ks
    * @returns {Promise<{status:string, data:unknown, messageId:string, delivered:boolean}>}
