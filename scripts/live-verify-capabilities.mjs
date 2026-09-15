@@ -141,6 +141,64 @@ try {
 
   const updated = await kaltura.lifecycle.update(ruleId, { name: `${runId}-rule-renamed` }, admin);
   record('lifecycle.update', updated.name === `${runId}-rule-renamed`, { id: updated.id, name: updated.name });
+
+  // ── InsightSettings: get/update/list on the entity created above ───────
+  const gotSetting = await kaltura.insightSettings.get(insightSettingsId, admin);
+  record('insightSettings.get', gotSetting.id === insightSettingsId, { id: gotSetting.id, key: gotSetting.key, valueType: gotSetting.valueType });
+
+  const updatedSetting = await kaltura.insightSettings.update(insightSettingsId, { title: `${runId}-title-renamed` }, admin);
+  record('insightSettings.update', updatedSetting.title === `${runId}-title-renamed`, { id: updatedSetting.id, title: updatedSetting.title });
+
+  const settingsList = await kaltura.insightSettings.list(admin, { filter: { idsIn: [insightSettingsId] } });
+  const foundInSettingsList = settingsList.some((s) => s.id === insightSettingsId);
+  record('insightSettings.list', foundInSettingsList && settingsList.length === 1, { count: settingsList.length, foundInSettingsList });
+
+  // ── Error paths — HTTP 200 with an embedded exception body, not a 4xx ──
+  const neverExistedId = '000000000000000000000000';
+
+  try {
+    await kaltura.insightSettings.get(neverExistedId, admin);
+    record('insightSettings.get (nonexistent id)', false, { message: 'expected an error, got a 200 success body' });
+  } catch (err) {
+    record('insightSettings.get (nonexistent id)', err?.code === 'api_exception', { code: err?.code, message: err?.detail || err?.message });
+  }
+
+  try {
+    await kaltura.insightSettings.update(neverExistedId, { title: 'should not apply' }, admin);
+    record('insightSettings.update (nonexistent id)', false, { message: 'expected an error, got a 200 success body' });
+  } catch (err) {
+    record('insightSettings.update (nonexistent id)', err?.code === 'api_exception', { code: err?.code, message: err?.detail || err?.message });
+  }
+
+  try {
+    await kaltura.lifecycle.get(neverExistedId, admin);
+    record('lifecycle.get (nonexistent id)', false, { message: 'expected an error, got a 200 success body' });
+  } catch (err) {
+    record('lifecycle.get (nonexistent id)', err?.code === 'api_exception', { code: err?.code, message: err?.detail || err?.message });
+  }
+
+  try {
+    await kaltura.lifecycle.update(neverExistedId, { name: 'should not apply' }, admin);
+    record('lifecycle.update (nonexistent id)', false, { message: 'expected an error, got a 200 success body' });
+  } catch (err) {
+    record('lifecycle.update (nonexistent id)', err?.code === 'api_exception', { code: err?.code, message: err?.detail || err?.message });
+  }
+
+  try {
+    await kaltura.lifecycle.create(
+      {
+        name: `${runId}-dangling-rule`,
+        systemName: `${runId}-dangling`,
+        eventType: 'session_ended',
+        objectType: 'thread',
+        action: { actionType: 'triggerInsightSettingsKai', insightSettingsIds: [neverExistedId] },
+      },
+      admin,
+    );
+    record('lifecycle.create (dangling insightSettingsIds)', false, { message: 'expected an error, got a 200 success body' });
+  } catch (err) {
+    record('lifecycle.create (dangling insightSettingsIds)', err?.code === 'invalid_insight_settings', { code: err?.code, message: err?.detail || err?.message });
+  }
 } catch (err) {
   failed = true;
   record('live-verify-capabilities', false, { message: err?.detail || err?.message || String(err), code: err?.code });
