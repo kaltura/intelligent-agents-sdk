@@ -95,6 +95,8 @@ jobs:
               - 'scripts/live-verify-browser.mjs'
               - 'scripts/live-verify-avatar-media.mjs'
               - 'scripts/live-verify-avatar-media.html'
+              - 'scripts/live-verify-context-fields.mjs'
+              - 'scripts/live-verify-context-fields.html'
               - 'package.json'
               - 'package-lock.json'
               - '.github/workflows/live-verify.yml'
@@ -104,7 +106,7 @@ jobs:
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' ||
-      ((github.event_name == 'merge_group' || github.event.label.name == 'run-live-verify') && needs.changes.outputs.code == 'true')
+      ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs.code == 'true')
     runs-on: ubuntu-latest
     environment: live-verify
     steps:
@@ -151,7 +153,7 @@ jobs:
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' ||
-      ((github.event_name == 'merge_group' || github.event.label.name == 'run-live-verify') && needs.changes.outputs.code == 'true')
+      ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs.code == 'true')
     runs-on: ubuntu-latest
     environment: live-verify
     steps:
@@ -193,12 +195,112 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
+  live-verify-request-vars:
+    name: 🔴 Live verification (request_vars persistence/merge/tool interpolation/sys__*)
+    needs: changes
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs.code == 'true')
+    runs-on: ubuntu-latest
+    environment: live-verify
+    steps:
+      - name: 📥 Check out the repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: 🟢 Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+
+      - name: 🔴 Per-thread request_vars persistence/merge, tool-template interpolation, sys__* injection, large page_context, fresh-thread scope reset, against the real Kaltura API
+        id: live_verify_request_vars
+        env:
+          AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
+          AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
+        run: |
+          set -o pipefail
+          npm run live-verify:request-vars 2>&1 | tee live-verify-request-vars-output.log
+
+      - name: 📤 Upload live-verify-request-vars artifact
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: live-verify-request-vars-artifacts
+          path: |
+            live-verify-artifacts/
+            live-verify-request-vars-output.log
+          retention-days: 30
+
+      - name: 📝 Write job summary
+        if: always()
+        run: |
+          {
+            echo "### 🔴 Live verification (request_vars persistence/merge/tool interpolation/sys__*) — ${{ steps.live_verify_request_vars.outcome }}"
+            echo
+            echo '```'
+            tail -n 40 live-verify-request-vars-output.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  live-verify-context-fields:
+    name: 🔴🌐 Live verification (sys__context_id/sys__context_type wire fields)
+    needs: changes
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs.browser == 'true')
+    runs-on: ubuntu-latest
+    environment: live-verify
+    steps:
+      - name: 📥 Check out the repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: 🟢 Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+
+      - name: 📦 Install dependencies
+        run: npm ci
+
+      - name: 🎭 Install chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: 🔴🌐 Real conversation, contextId/contextType wire-payload keys + sys__context_id/sys__context_type prompt rendering, with and without context, against the real Kaltura API
+        id: live_verify_context_fields
+        env:
+          AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
+          AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
+        run: |
+          set -o pipefail
+          npm run live-verify:context-fields 2>&1 | tee live-verify-context-fields-output.log
+
+      - name: 📤 Upload live-verify-context-fields artifact
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: live-verify-context-fields-artifacts
+          path: |
+            live-verify-artifacts/
+            live-verify-context-fields-output.log
+          retention-days: 30
+
+      - name: 📝 Write job summary
+        if: always()
+        run: |
+          {
+            echo "### 🔴🌐 Live verification (sys__context_id/sys__context_type wire fields) — ${{ steps.live_verify_context_fields.outcome }}"
+            echo
+            echo '```'
+            tail -n 40 live-verify-context-fields-output.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
   live-verify-site-nav:
     name: 🔴 Live verification (go_to site navigation)
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' ||
-      ((github.event_name == 'merge_group' || github.event.label.name == 'run-live-verify') && needs.changes.outputs.code == 'true')
+      ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs.code == 'true')
     runs-on: ubuntu-latest
     environment: live-verify
     steps:
@@ -245,7 +347,7 @@ jobs:
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' ||
-      ((github.event_name == 'merge_group' || github.event.label.name == 'run-live-verify') && needs.changes.outputs.browser == 'true')
+      ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs.browser == 'true')
     runs-on: ubuntu-latest
     environment: live-verify
     strategy:
@@ -332,7 +434,7 @@ jobs:
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' ||
-      ((github.event_name == 'merge_group' || github.event.label.name == 'run-live-verify') && needs.changes.outputs.browser == 'true')
+      ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs.browser == 'true')
     runs-on: ubuntu-latest
     environment: live-verify
     strategy:
@@ -392,7 +494,7 @@ jobs:
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' ||
-      ((github.event_name == 'merge_group' || github.event.label.name == 'run-live-verify') && needs.changes.outputs.code == 'true')
+      ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs.code == 'true')
     runs-on: ubuntu-latest
     environment: live-verify
     strategy:
