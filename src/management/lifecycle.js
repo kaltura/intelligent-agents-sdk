@@ -10,8 +10,10 @@
  * (1 to 20 ids of {@link InsightSettings} entities belonging to the partner —
  * an id that never existed is rejected immediately (`create`/`update` throw
  * `INVALID_INSIGHT_SETTINGS`), but a *dangling* one — valid when the rule was
- * created, deleted afterward — isn't caught until the rule actually fires,
- * since `InsightSettings#delete` runs no in-use scan; every
+ * created, deleted afterward — is never caught automatically: `InsightSettings#delete`
+ * runs no in-use scan, and the rule just silently drops that id from its
+ * extraction every time it fires (no error, nothing to catch) rather than
+ * re-throwing `INVALID_INSIGHT_SETTINGS` on its own; every
  * rule extracting insights on the same event merges into one LLM batch, so
  * don't reference an insight-settings entity keyed `SUMMARY` — every partner
  * already has an always-on preset producing one for free),

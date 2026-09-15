@@ -112,10 +112,14 @@ export class InsightSettings {
 
   /**
    * Delete an insight-settings definition by id. WRITE — destructive (requires
-   * confirmation). No in-use scan runs first: a lifecycle rule that still
-   * references a deleted id fails loudly at match/trigger time (HTTP 200
-   * `KalturaAPIException` `INVALID_INSIGHT_SETTINGS`), it doesn't silently
-   * keep a dangling reference.
+   * confirmation). No in-use scan runs first, and a dangling reference does NOT
+   * fail loudly: a lifecycle rule that still lists a deleted id keeps working —
+   * at match/trigger time the deleted id is silently dropped from that rule's
+   * extraction (no error, nothing returned to any caller), and if every id it
+   * references is gone, the rule's extraction step is skipped entirely, just
+   * as quietly. `INVALID_INSIGHT_SETTINGS` only ever fires pre-emptively, when
+   * you try to `lifecycle.create`/`.update` a rule naming an id that's missing
+   * or already deleted — never automatically after the fact.
    * @param {string} id (Mongo ObjectId) @param {string} ks (admin) @param {{confirmPermanent:boolean}} confirm
    */
   async delete(id, ks, confirm) {
