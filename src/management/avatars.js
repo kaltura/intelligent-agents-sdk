@@ -30,13 +30,14 @@ function assertNoAvatarTags(body, where) {
 
 /**
  * Validate a `face`/`background` composition BEFORE the network call.
- * `strict` (create only) rejects an incomplete pairing: `face` alone 200s
- * with `AVATAR_MISSING_VISUAL_RESOLUTION` ("face requires a background"),
- * and `background` alone WITHOUT a `templateId` 200s with the same code
- * ("background requires a face") — both HTTP 200 domain failures the SDK
- * can catch for free by checking client-side first. `templateId` supplies
- * its own face, so `templateId + background` (no `face` key) is a valid
- * pairing and must NOT be rejected.
+ * `strict` (create only) rejects an incomplete pairing — `face` alone or
+ * `background` alone both 200 with `AVATAR_MISSING_VISUAL_RESOLUTION`, an
+ * HTTP 200 domain failure the SDK can catch for free by checking client-side
+ * first. That check is skipped whenever `templateId` is also given: a
+ * template can carry its own `face` and/or `background`, so either key sent
+ * alone might complete a valid pairing against the template — this pure
+ * guard has no way to know without fetching the template, so it defers to
+ * the server rather than risk rejecting a valid call.
  *
  * On update (`strict:false`) the backend is asymmetric and depends on the
  * avatar's EXISTING state, which this pure guard can't see, so neither half
@@ -55,7 +56,7 @@ function assertComposition(body, where, strict) {
   if (body.visual !== undefined) return;
   const hasFace = body.face !== undefined;
   const hasBackground = body.background !== undefined;
-  if (strict && hasFace !== hasBackground && !(hasBackground && body.templateId !== undefined)) {
+  if (strict && hasFace !== hasBackground && body.templateId === undefined) {
     throw new KalturaError({
       type: 'about:blank', title: 'incomplete avatar composition', code: 'bad_request',
       detail: `${where}: face and background must be sent together (composing a visual needs both) — got ${hasFace ? 'face only' : 'background only'}.`,
@@ -134,15 +135,19 @@ export class Avatars {
    *    `type:'visual', value:<Background catalog itemId>`) — composes a NEW
    *    Visual from a Face catalog item over a color or a Background catalog
    *    item. `face`/`background` MUST travel together — either alone is a
-   *    domain failure (UNLESS `templateId` is also given, which supplies its
-   *    own face — see below). The composed result is reflected in
+   *    domain failure, UNLESS `templateId` is also given: a template can
+   *    carry its own `face` and/or `background` from {@link listTemplates},
+   *    which fills in whichever half you didn't send. The SDK can't tell
+   *    client-side whether a given template supplies the missing half, so it
+   *    skips this check entirely whenever `templateId` is present and lets
+   *    the server decide. The composed result is reflected in
    *    `visual.composition` and a fresh raw `previewImageUrl`/`loadingVideoUrl` —
    *    inspect those to see what was built.
-   *  - `templateId` — a curated `{voice, face}` bundle from
-   *    {@link listTemplates} (36 live today, voice + face only) PLUS a
-   *    `background` or `visual` to resolve the template's face into an actual
-   *    Visual (`templateId` alone is a domain failure — nothing to compose
-   *    onto). A future template may ship self-sufficient and need neither.
+   *  - `templateId` — a curated bundle from {@link listTemplates} (`voice` +
+   *    either `visual`, or `face`/`background`) PLUS whichever of
+   *    `face`/`background`/`visual` the template doesn't already supply, to
+   *    resolve it into an actual Visual (`templateId` alone is a domain
+   *    failure unless the template already has its own `visual`).
    *
    * `name` (≤255 chars) labels the avatar; over 255 is a 400.
    *

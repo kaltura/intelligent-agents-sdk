@@ -77,7 +77,7 @@ test('avatars.create/update reject a malformed background (missing type or value
   assert.equal(ff.calls.length, 0);
 });
 
-test('avatars.create accepts a valid face+background pairing, or visual alone, or templateId+background', async () => {
+test('avatars.create accepts a valid face+background pairing, or visual alone, or templateId+either half', async () => {
   const { mgmt, ff } = harness([
     { match: 'avatar/create', respond: (req) => ({ status: 200, body: { id: 'a1', ...req.body } }) },
   ]);
@@ -89,6 +89,11 @@ test('avatars.create accepts a valid face+background pairing, or visual alone, o
 
   await mgmt.avatars.create({ voice: { id: 'v1' }, templateId: 't1', background: { type: 'visual', value: 'bg1' } }, ADMIN_KS);
   assert.equal(ff.calls[2].body.templateId, 't1');
+
+  // face alone + templateId: not rejected pre-network — a template can supply its own background.
+  await mgmt.avatars.create({ voice: { id: 'v1' }, templateId: 't1', face: { id: 'f1' } }, ADMIN_KS);
+  assert.equal(ff.calls[3].body.templateId, 't1');
+  assert.equal(ff.calls[3].body.face.id, 'f1');
 });
 
 test('avatars.create/update accept an incomplete face/background pairing when visual is also sent (visual wins)', async () => {
