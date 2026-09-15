@@ -22,7 +22,6 @@ import { newFormData as sharedNewFormData } from './catalog.js';
 // 'GenieListThreadFilter' 422s with "Input should be 'ListThreadFilter'".
 const GENIE_THREAD_FILTER = 'ListThreadFilter';
 const GENIE_MESSAGE_FILTER = 'GenieListMessageFilter';
-const GENIE_FEEDBACK_FILTER = 'GenieListFeedbackFilter';
 const GENIE_QUESTION_FILTER = 'GenieListQuestionFilter';
 
 // Status/type scope for a knowledge-category media listing — shared by
@@ -434,43 +433,119 @@ export class Feedback {
   }
 
   /**
-   * List feedback rows. READ. ⚠️ SENSITIVE — contains end-user ids/names +
+   * List feedback. READ. ⚠️ SENSITIVE — contains end-user ids/names +
    * verbatim question/feedback text. Treat as PII; scope and redact before
-   * sharing. Async-iterable + awaitable (first page). `objectType` is
-   * mandatory and always sent; `opts.filter` is merged under it. `filter: {}`
-   * alone (no `objectType`) 400s `invalid_filter`, which is why the SDK
-   * always adds it.
-   * @param {string} ks @param {{filter?:object,pageSize?:number}} [opts]
+   * sharing.
+   *
+   * NOT a proxy of `feedback/list` — that endpoint (and `feedback/report`)
+   * is reserved on the backend for a future release: as of this SDK
+   * version it always returns an empty result, for every partner and every
+   * filter. This method sources feedback from the messages it's attached
+   * to instead: {@link Feedback#add} writes `is_positive`/`comment` onto
+   * the rated message itself, so `list()` queries `message/list` (and,
+   * for `agentIdEquals`, `v1/thread/list` first) and keeps only the
+   * messages that carry a rating.
+   *
+   * Filter (distinct shape from the old `GenieListFeedbackFilter` — these
+   * map onto {@link Messages#list}'s own filter, plus one Messages doesn't
+   * have):
+   *  - `messageIdEquals` / `messageIdsIn` — one message, or a batch by id.
+   *  - `threadIdEquals` — every rated message in one thread.
+   *  - `agentIdEquals` — every rated message across threads opened for one
+   *    agent. Requires threads opened via `sessions.createAgentToken` —
+   *    `sessions.createConversationToken` threads carry `agent_id:
+   *    "default"` and never match. Cost note: resolves matching thread ids
+   *    first, then queries messages per thread — O(threads), not one call.
+   *  - `isPositiveEquals` — restrict to thumbs-up (`true`) or thumbs-down
+   *    (`false`); omit to get every rated message regardless of rating.
+   *
+   * With no `messageIdEquals`/`messageIdsIn`/`threadIdEquals`/
+   * `agentIdEquals`, this walks every message for the partner — expensive
+   * on a high-volume partner. Scope with one of those filters wherever
+   * possible.
+   *
+   * Row shape: `{message_id, thread_id, genie_id, user_id, is_positive,
+   * comment, created_at, updated_at}` — the subset of the message row that
+   * carries feedback.
+   *
+   * Because rows are filtered client-side across a variable number of
+   * underlying pages, `await`ing the result collects every matching row
+   * (not just a first page, unlike every other `list()` in this SDK) — use
+   * a narrow filter to bound the cost.
+   * @param {string} ks
+   * @param {{filter?:{messageIdEquals?:string,messageIdsIn?:string[],threadIdEquals?:string,agentIdEquals?:string,isPositiveEquals?:boolean},pageSize?:number}} [opts]
    */
   list(ks, opts = {}) {
     this._.assertAdmin(ks, 'feedback.list');
-    const filter = { ...opts.filter, objectType: GENIE_FEEDBACK_FILTER };
-    return paginate({
-      style: 'index', pageSize: opts.pageSize,
-      fetchPage: (pager) => this._.genie('feedback/list', { filter, pager }, ks).then((r) => r.data),
+    const genie = this._.genie;
+    const filter = opts.filter || {};
+    const pageSize = opts.pageSize ?? 50;
+
+    const toRow = (m) => ({
+      message_id: m.id, thread_id: m.thread_id, genie_id: m.genie_id,
+      user_id: m.user_id, is_positive: m.is_positive, comment: m.comment ?? null,
+      created_at: m.created_at, updated_at: m.updated_at,
     });
+    const hasFeedback = (m) => m.is_positive === true || m.is_positive === false;
+    const matchesRating = (m) => filter.isPositiveEquals === undefined || m.is_positive === filter.isPositiveEquals;
+
+    const baseMessageFilter = { objectType: GENIE_MESSAGE_FILTER };
+    if (filter.messageIdEquals) baseMessageFilter.idEquals = filter.messageIdEquals;
+    if (filter.messageIdsIn) baseMessageFilter.idsIn = filter.messageIdsIn;
+    if (filter.isPositiveEquals !== undefined) baseMessageFilter.isPositiveEquals = filter.isPositiveEquals;
+
+    const messagesForThread = (threadId) => {
+      const messageFilter = { ...baseMessageFilter };
+      if (threadId) messageFilter.threadIdEquals = threadId;
+      return paginate({
+        style: 'index', pageSize,
+        fetchPage: (pager) => genie('message/list', { filter: messageFilter, pager }, ks).then((r) => r.data),
+      });
+    };
+
+    async function* ratedMessagesInThread(threadId) {
+      for await (const m of messagesForThread(threadId)) {
+        if (hasFeedback(m) && matchesRating(m)) yield toRow(m);
+      }
+    }
+
+    async function* rows() {
+      if (filter.agentIdEquals) {
+        const threadFilter = { objectType: GENIE_THREAD_FILTER, agentIdEquals: filter.agentIdEquals };
+        const threads = paginate({
+          style: 'index', pageSize: 100,
+          fetchPage: (pager) => genie('v1/thread/list', { filter: threadFilter, pager }, ks).then((r) => r.data),
+        });
+        for await (const thread of threads) yield* ratedMessagesInThread(thread.id);
+        return;
+      }
+      yield* ratedMessagesInThread(filter.threadIdEquals);
+    }
+
+    return {
+      [Symbol.asyncIterator]: rows,
+      then(resolve, reject) { return this.all().then(resolve, reject); },
+      async all() { const out = []; for await (const r of rows()) out.push(r); return out; },
+    };
   }
 
   /**
-   * Raw feedback report as CSV. READ. ⚠️ SENSITIVE — contains end-user
-   * ids/names + verbatim question/feedback text. Treat as PII; scope and
-   * redact before sharing. Returns `null` when the partner has no feedback
-   * rows — the backend replies an empty `text/csv` body in that case
-   * (the header line is only written together with the first row); the
-   * transport turns that empty body into `null` rather than throwing.
-   *
-   * INTENTIONALLY RAW-ONLY: unlike {@link Messages#report}, there is no
-   * `Feedback#reportSummary`. {@link summarizeReport} (the helper behind
-   * `Messages#reportSummary`) parses columns specific to the message-report
-   * CSV (`Feedback reaction`, `Thread Id`, `Question`) — the feedback-report
-   * CSV's own column shape isn't verified against that layout, so reusing it
-   * here would risk silently misparsing rather than failing loudly. Parse
-   * this CSV yourself, or open an issue if a feedback-specific summary is needed.
+   * Raw feedback report as CSV. READ. RESERVED FOR A FUTURE RELEASE: the
+   * backend endpoint behind this method currently always replies an empty
+   * body, for every partner and every filter — there's no feedback data
+   * for it to report yet, so this always resolves to `null`. Kept as a
+   * direct proxy (no client-side CSV synthesis) rather than a workaround
+   * like {@link Feedback#list}, since a report is exactly the kind of
+   * bulk/aggregate view that should come from the backend once it ships,
+   * not be reconstructed by walking messages page by page. Use
+   * {@link Feedback#list} or {@link Messages#report} for feedback data
+   * today.
    * @param {string} ks @param {{pageSize?:number}} [opts]
+   * @returns {Promise<string|null>}
    */
   async report(ks, opts = {}) {
     this._.assertAdmin(ks, 'feedback.report');
-    const body = { filter: { objectType: GENIE_FEEDBACK_FILTER } };
+    const body = { filter: { objectType: 'GenieListFeedbackFilter' } };
     if (opts.pageSize) body.pager = { pageIndex: 1, pageSize: opts.pageSize };
     return (await this._.genie('feedback/report', body, ks)).data;
   }

@@ -81,16 +81,41 @@ test('messages.list merges opts.filter under objectType; opts.threadId is sugar 
   assert.equal(ff.calls[0].body.filter.threadIdEquals, 't1');
 });
 
-test('feedback.list merges opts.filter under GenieListFeedbackFilter objectType', async () => {
+test('feedback.list is a client-side workaround over message/list, not a proxy of feedback/list', async () => {
   const { mgmt, ff } = harness([
-    { match: 'feedback/list', respond: () => ({ status: 200, body: { objects: [], totalCount: 0 } }) },
+    { match: 'message/list', respond: () => ({
+      status: 200,
+      body: {
+        objects: [
+          { id: 'm1', thread_id: 't1', genie_id: 'g1', user_id: 'u1', is_positive: true, comment: 'nice', created_at: '2026-01-01', updated_at: '2026-01-01' },
+          { id: 'm2', thread_id: 't1', is_positive: null },
+        ],
+        totalCount: 2,
+      },
+    }) },
   ]);
-  await mgmt.feedback.list(ADMIN_KS, { filter: { isPositiveEquals: false } }).all();
-  assert.equal(ff.calls[0].body.filter.objectType, 'GenieListFeedbackFilter');
-  assert.equal(ff.calls[0].body.filter.isPositiveEquals, false);
+  const rows = await mgmt.feedback.list(ADMIN_KS, { filter: { isPositiveEquals: true } });
+  assert.equal(ff.calls[0].body.filter.objectType, 'GenieListMessageFilter');
+  assert.equal(ff.calls[0].body.filter.isPositiveEquals, true);
+  assert.equal(rows.length, 1, 'only the rated message survives the client-side filter');
+  assert.deepEqual(rows[0], { message_id: 'm1', thread_id: 't1', genie_id: 'g1', user_id: 'u1', is_positive: true, comment: 'nice', created_at: '2026-01-01', updated_at: '2026-01-01' });
 });
 
-test('feedback.report posts {filter:{objectType}} and an optional pager, returns the raw CSV (or null)', async () => {
+test('feedback.list agentIdEquals resolves matching threads first, then walks each thread\'s messages', async () => {
+  const { mgmt, ff } = harness([
+    { match: 'v1/thread/list', respond: () => ({ status: 200, body: { objects: [{ id: 't1' }, { id: 't2' }], totalCount: 2 } }) },
+    { match: 'message/list', respond: (req) => (req.body.filter.threadIdEquals === 't1'
+      ? { status: 200, body: { objects: [{ id: 'm1', thread_id: 't1', is_positive: true, comment: 'a' }], totalCount: 1 } }
+      : { status: 200, body: { objects: [], totalCount: 0 } }) },
+  ]);
+  const rows = await mgmt.feedback.list(ADMIN_KS, { filter: { agentIdEquals: 'agent-1' } });
+  assert.match(ff.calls[0].url, /v1\/thread\/list$/);
+  assert.equal(ff.calls[0].body.filter.agentIdEquals, 'agent-1');
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].message_id, 'm1');
+});
+
+test('feedback.report posts {filter:{objectType}} and an optional pager, returns the raw CSV (or null) — reserved for a future release, currently always empty', async () => {
   const { mgmt, ff } = harness([
     { match: 'feedback/report', respond: () => ({ status: 200, body: null }) },
   ]);
