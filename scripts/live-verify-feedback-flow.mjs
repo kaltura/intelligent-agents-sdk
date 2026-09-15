@@ -27,6 +27,7 @@ import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Management } from '../src/management/index.js';
 import { ksString } from '../src/management/client.js';
+import { Http } from '../src/core/http.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -148,14 +149,21 @@ async function runForEnv(env) {
     const addResult = await kaltura.feedback.add({ message_id: m2.messageId, is_positive: true, comment: feedbackComment }, conv);
     record('feedback-add', true, { messageId: m2.messageId, addResult });
 
-    const closeRes = await fetch(`${env.genieUrl.replace(/\/$/, '')}/thread/session_completed`, {
-      method: 'POST',
-      headers: { Authorization: `KS ${ksString(conv)}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: threadId }),
-    });
-    const closeOk = closeRes.ok;
-    const closeBodyText = await closeRes.text().catch(() => '');
-    check('thread-session-completed', closeOk, { status: closeRes.status, body: closeBodyText.slice(0, 300) });
+    const http = new Http();
+    let closeOk = true;
+    let closeDetail;
+    try {
+      const closeRes = await http.postJson({
+        url: `${env.genieUrl.replace(/\/$/, '')}/thread/session_completed`,
+        ks: ksString(conv),
+        body: { id: threadId },
+      });
+      closeDetail = { data: closeRes.data };
+    } catch (err) {
+      closeOk = false;
+      closeDetail = { message: err?.detail || err?.message || String(err), code: err?.code };
+    }
+    check('thread-session-completed', closeOk, closeDetail);
 
     record('wait-300s-start', true, {});
     await new Promise((r) => setTimeout(r, 300_000));
