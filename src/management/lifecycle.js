@@ -36,9 +36,9 @@ function requireRuleId(v, where) {
   }
 }
 
-/** @param {unknown} action @param {string} where */
+/** @param {{actionType?:string}|null|undefined} action @param {string} where */
 function assertActionTypeSupported(action, where) {
-  if (action && typeof action === 'object' && RETIRED_ACTION_TYPES.has(action.actionType)) {
+  if (action && typeof action === 'object' && typeof action.actionType === 'string' && RETIRED_ACTION_TYPES.has(action.actionType)) {
     throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: `${where} action.actionType "${action.actionType}" is no longer supported. Use {actionType:'sendInsightEmail', recipients:[...]} instead.` });
   }
 }
