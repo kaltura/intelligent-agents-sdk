@@ -240,9 +240,10 @@ export class Avatars {
   }
 
   /**
-   * List curated preset `{voice, face}` template bundles — the fast
+   * List curated preset template bundles: each pairs a `voice` with either
+   * a ready `visual`, or a `face`/`background` pair. Use this as the fast
    * path to a ready-made avatar instead of hand-picking a visual + voice via
-   * {@link Catalog#list}. Each entry's `face.imageUrl` is batch-resolved
+   * {@link Catalog#list}. A `face` entry's `imageUrl` is batch-resolved
    * server-side. READ. `opts.idsIn` filters to specific template ids.
    * @param {string} ks @param {{idsIn?:string[], pageSize?:number}} [opts]
    */

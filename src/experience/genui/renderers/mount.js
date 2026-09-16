@@ -17,13 +17,13 @@
  *
  * INTERACTIVITY: pass `opts.onAction(action, payload)` to receive user intent the
  * widget can't fulfil itself — the host wires these to the session:
- *   - 'followup'  {question}            → e.g. session.speak(question)
- *   - 'play'      {entryId?, url?, id?} → host plays the clip / opens the slide
- *   - 'open'      {url}                  → a link/source/content card was activated
- *   - 'submit'    {values}              → a structured-data form was submitted (→ session.submitStructuredDataForm)
+ *   - 'followup'  {question}                  → e.g. session.speak(question)
+ *   - 'play'      {entryId?, url?, embedUrl?} → a video-gallery clip's thumbnail was clicked
+ *   - 'open'      {url}                       → a link/source/content card was activated
+ *   - 'submit'    {values}                    → a structured-data form was submitted (→ session.submitStructuredDataForm)
  *   - 'answer'    {questionId, variant, correct, value, explanation, optionId?}
- *                                        → a `graded-question` was answered; `correct` is
- *                                          `boolean|null` (`null` = no answer key authored, ungraded)
+ *                                              → a `graded-question` was answered; `correct` is
+ *                                                `boolean|null` (`null` = no answer key authored, ungraded)
  *
  * @module
  */

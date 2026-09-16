@@ -7,8 +7,8 @@ import { fakeFetch } from '../fakes/fetch.js';
  * Integration (fetch-fake): assert the exact `v1/intellect/update` +
  * `agent/update` bodies `setForcedLanguage` sends.
  */
-const ADMIN = 'djJ8' + Buffer.from('v2|6516742|x').toString('base64url');
-const PID = 6516742;
+const ADMIN = 'djJ8' + Buffer.from('v2|1234567|x').toString('base64url');
+const PID = 1234567;
 const LEGACY_BLOCK = '<!-- sdk:forced-language --> Always respond in Hebrew, regardless of what language the user writes or speaks in. <!-- /sdk:forced-language -->';
 
 function fullDto(over = {}) {

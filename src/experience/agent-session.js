@@ -122,7 +122,7 @@ export class KalturaAgentSession extends Emitter {
    * a call while another switch is in flight throws typed `invalid_state`.
    * Sequence: capture the current `threadId` → tear down the old transport →
    * construct the target transport seeded with that thread and the canonical
-   * request_vars → connect it → emit `transportChanged` then
+   * request_vars → attach it (emits `transportChanged`) → connect it → emit
    * `modeChanged {mode, threadContinuity}`. `threadContinuity` is `false` only
    * when no turn had happened yet (no thread existed to carry over).
    *

@@ -73,7 +73,7 @@ function trimTrailingSlashes(s) {
  * Passed to `onNavigate` for a call that did nothing.
  * @typedef {object} SiteNavDropped
  * @property {true} dropped
- * @property {'unknown_path'|'once_per_turn'|'no_manifest'|'unsafe_url'|'destroyed'} reason
+ * @property {'unknown_path'|'once_per_turn'|'no_manifest'|'unsafe_url'} reason
  * @property {{path?:unknown, section?:unknown}} args Raw tool args as the brain sent them.
  */
 

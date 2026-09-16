@@ -181,7 +181,7 @@ export class IntellectSecrets {
    * WARNS, never throws (an OAuth bootstrap may add the secret in a later call).
    * @param {number} configId
    * @param {string} ks (admin)
-   * @returns {Promise<{ok:boolean, unresolved:{ref:string,where:string}[], unused:string[], references:{name:string,where:string}[], _meta:object}>}
+   * @returns {Promise<{ok:boolean, unresolved:{ref:string,where:string}[], badPrefix:{ref:string,where:string,note:string}[], unused:string[], references:{name:string,where:string,prefixed:boolean}[], _meta:object}>}
    */
   async validate(configId, ks) {
     this._.assertAdmin(ks, 'secrets.validate');

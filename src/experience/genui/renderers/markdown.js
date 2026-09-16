@@ -9,8 +9,7 @@
  * (so a raw `<script>` tag in LLM output is inert text, not markup) and every
  * extracted URL goes through `safeUrl` (blocks `javascript:`/`data:`/etc, the
  * same allow-list the rest of GenUI's renderers use). A markdown table reuses
- * `tableEl` (`dom-helpers.js`) rather than duplicating table-building logic —
- * the same safe `<table>` builder `showVisualTable`/the chart fallback use.
+ * `tableEl` (`dom-helpers.js`) rather than duplicating table-building logic.
  * @module
  */
 import { safeText, safeUrl, safeSource } from '../../../core/safety.js';

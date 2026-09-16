@@ -21,9 +21,9 @@ function provisionFetch() {
 
 test('provision runs the full documented sequence and returns every id', async () => {
   const f = provisionFetch();
-  const m = new Management({ partnerId: 6496302, adminSecret: 'a'.repeat(32), fetch: f });
+  const m = new Management({ partnerId: 7654321, adminSecret: 'a'.repeat(32), fetch: f });
   // a real admin KS-shaped token so the scope guard passes
-  const ks = 'djJ8' + Buffer.from('v2|6496302|disableentitlement').toString('base64url');
+  const ks = 'djJ8' + Buffer.from('v2|7654321|disableentitlement').toString('base64url');
   const r = await m.provision({ brief: 'A friendly yoga-studio receptionist', ks });
 
   assert.equal(r.name, 'YogaBot');
@@ -67,7 +67,7 @@ test('provision surfaces a personaLint warning when the generated openingPhrase 
     { match: '/application/resolveWidgetId', respond: () => ({ body: { widgetId: '1_v1mj1kxb' } }) },
     { match: '/v1/intellect/list', respond: () => ({ body: { totalCount: 0, objects: [] } }) },
   ]);
-  const m = new Management({ partnerId: 6496302, adminSecret: 'a'.repeat(32), fetch: f });
+  const m = new Management({ partnerId: 7654321, adminSecret: 'a'.repeat(32), fetch: f });
   const r = await m.provision({ brief: 'x', ks: ADMIN_KS });
   assert.equal(r.personaLint.detectedName, 'Luna');
   assert.ok(r.personaLint.findings.some((fnd) => fnd.code === 'persona_name_mismatch'));
@@ -89,11 +89,11 @@ test('provision surfaces the failing step on partial failure', async () => {
 });
 
 // ─── OPTIONAL post-configure blocks (capabilities / tools / knowledge) ──────────
-const ADMIN_KS = 'djJ8' + Buffer.from('v2|6496302|disableentitlement').toString('base64url');
+const ADMIN_KS = 'djJ8' + Buffer.from('v2|7654321|disableentitlement').toString('base64url');
 
 function baseProvision() {
   const f = provisionFetch();
-  const m = new Management({ partnerId: 6496302, adminSecret: 'a'.repeat(32), fetch: f });
+  const m = new Management({ partnerId: 7654321, adminSecret: 'a'.repeat(32), fetch: f });
   return { f, m };
 }
 
@@ -187,7 +187,7 @@ test('opts.tools reuses (updates) an existing Tool entity sharing the definition
 test('opts.tools SKIPS overwriting a name-matched existing Tool that is already referenced by another intellect (shared-by-name hazard guard)', async () => {
   // A DIFFERENT intellect (999) still carries "id-existing" in its tool_ids —
   // the fake transport reports that instead of the usual empty /v1/intellect/list.
-  const m = new Management({ partnerId: 6496302, adminSecret: 'a'.repeat(32), fetch: fakeFetchWithReferencingIntellect() });
+  const m = new Management({ partnerId: 7654321, adminSecret: 'a'.repeat(32), fetch: fakeFetchWithReferencingIntellect() });
   const updated = [];
   m.tools = {
     list: () => ({ all: async () => [{ id: 'id-existing', name: 'good', config: {} }] }),

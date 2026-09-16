@@ -710,7 +710,7 @@ Headless `collectConverse()` gets the corrected named-tool args for free but doe
 
 ## AI-SDR / CRM lead capture
 
-`./management` ships validated `api` tool builders for the common CRM contact-upsert integrations, so an AI-SDR or concierge agent doesn't need to hand-write the HTTP tool config:
+`./management` ships validated `api` tool builders for common CRM contact-capture integrations, so an AI-SDR or concierge agent doesn't need to hand-write the HTTP tool config. `salesforceContactUpsert` is a true upsert by external ID (create-or-update). `hubspotContactUpsert` is create-only: HubSpot rejects the call with a conflict if a contact with that email already exists, so use it for new-lead capture, not for updating an existing contact.
 
 ```js
 import { hubspotContactUpsert, salesforceContactUpsert } from '@kaltura/intelligent-agents/management';
@@ -728,6 +728,8 @@ await mgmt.intellectConfig.setToolIds(configId, [id], ks);
 ```
 
 Both recipes validate their config (via `tools.api()`) and throw a typed error for a missing `secretName`/`instanceUrl` before any write. See `src/management/crm-recipes.js` for the full arg list (`propertiesToCapture`/`fieldsToCapture`, `externalIdField`).
+
+The Salesforce update path can return a `204` with an empty body, so `salesforceContactUpsert`'s `responseMapping` maps `result` from the response's `id` field only when the response has one (an insert). Treat the write itself, not the mapped output, as the success signal.
 
 For Marketo, Airtable, Google Sheets/Forms, or any other REST target, plus the real backend-managed OAuth2 authorization-code flow (consent + auto-refresh) for providers that require it, see [docs/EXTERNAL-API-INTEGRATIONS.md](docs/EXTERNAL-API-INTEGRATIONS.md).
 
@@ -803,7 +805,7 @@ The `Presenter` helper (`./experience/presenter`, its own subpath so apps that d
 
 </details>
 
-The constructor option `oneNavPerTurn: true` guards against a brain "restart" firing two different nav targets within the same spoken turn — the second is silently suppressed until the next turn.
+The constructor option `oneNavPerTurn: true` guards against a brain "restart" firing a second `navigate_to_slide` call within the same spoken turn (same or different target) — the second call is silently suppressed until the next turn.
 
 The constructor option `deckOutline: true` adds a full-deck `{slide_num, title}[]` outline to every context payload as a top-level `outline` key — the SDK-native alternative to hand-rolling a topic→slide mapping into `BASE_DIRECTIVE` (which also goes stale after a runtime `appendSlide()`, since `BASE_DIRECTIVE` is static). Duplicate titles are disambiguated automatically (the colliding slide's first talking point, or its slide number if it has none). Default `false` — no `outline` key at all unless requested.
 

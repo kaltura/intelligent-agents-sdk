@@ -28,7 +28,7 @@ test('agents.delete REFUSES a protected agent with only confirmPermanent (no age
     { match: '/agent/get', respond: () => ({ body: { agentId: 'a1', adminTags: ['do-not-delete'] } }) },
     { match: '/agent/delete', respond: () => ({ body: { ok: true } }) },
   ]);
-  const k = new Management({ partnerId: 6516742, adminSecret: 'a'.repeat(32), fetch: f });
+  const k = new Management({ partnerId: 1234567, adminSecret: 'a'.repeat(32), fetch: f });
   await assert.rejects(
     () => k.agents.delete('a1', ADMIN, { confirmPermanent: true }),
     (e) => e.code === 'protected_resource' && /do-not-delete/.test(e.detail) && /allowProtected/.test(e.detail),
@@ -42,7 +42,7 @@ test('agents.delete ALLOWS a protected agent when allowProtected:true is passed'
     { match: '/agent/get', respond: () => ({ body: { agentId: 'a1', adminTags: ['do-not-delete'] } }) },
     { match: '/agent/delete', respond: () => ({ body: { ok: true } }) },
   ]);
-  const k = new Management({ partnerId: 6516742, adminSecret: 'a'.repeat(32), fetch: f });
+  const k = new Management({ partnerId: 1234567, adminSecret: 'a'.repeat(32), fetch: f });
   await k.agents.delete('a1', ADMIN, { confirmPermanent: true, allowProtected: true });
   assert.equal(f.calls.filter((c) => c.url.includes('/agent/delete')).length, 1);
 });
@@ -52,7 +52,7 @@ test('agents.delete proceeds normally for a throwaway-tagged agent', async () =>
     { match: '/agent/get', respond: () => ({ body: { agentId: 'a2', adminTags: ['qa-e2e-tools'] } }) },
     { match: '/agent/delete', respond: () => ({ body: { ok: true } }) },
   ]);
-  const k = new Management({ partnerId: 6516742, adminSecret: 'a'.repeat(32), fetch: f });
+  const k = new Management({ partnerId: 1234567, adminSecret: 'a'.repeat(32), fetch: f });
   await k.agents.delete('a2', ADMIN, { confirmPermanent: true });
   assert.equal(f.calls.filter((c) => c.url.includes('/agent/delete')).length, 1);
 });

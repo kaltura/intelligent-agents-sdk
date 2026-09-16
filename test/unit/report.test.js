@@ -19,7 +19,7 @@ test('parseCsv handles quoted fields with embedded commas', () => {
 });
 
 test('summarizeReport aggregates totals, feedback ratio, top questions + provenance', () => {
-  const s = summarizeReport(CSV, '6496302');
+  const s = summarizeReport(CSV, '7654321');
   assert.equal(s.totals.messages, 3);
   assert.equal(s.totals.threads, 2);
   assert.equal(s.feedback.positive, 1);
@@ -30,7 +30,7 @@ test('summarizeReport aggregates totals, feedback ratio, top questions + provena
   assert.equal(s.topQuestions[0].count, 2);
   // provenance receipt is mandatory
   assert.match(s._meta.generatedAt, /Z$/);
-  assert.equal(s._meta.partnerId, '6496302');
+  assert.equal(s._meta.partnerId, '7654321');
   assert.equal(s._meta.source, 'genie/message/report');
   assert.ok(s._meta.scope.includes('disableentitlement'));
 });

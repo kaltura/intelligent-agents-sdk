@@ -61,7 +61,7 @@ POST https://genie.nvp1.ovp.kaltura.com/assistant/abort
 
 ## Reserved Template Variables (`sys__*`)
 
-The server sets these on every turn. They're available to `{{ ... }}` interpolation in `base_directive` / `prompts[].value` / `glossary` (see [Configure an Intellect](build/intellect.md#configure-an-intellect)) and in a Skill's `instructions` text (see [§ Skills](management-operations.md#skills--httpsgenienvp1ovpkalturacom)), regardless of `allow_client_variables`. The SDK's own `request_vars` pre-flight guard rejects a client-supplied value for every one of these (`sys__thread_id`, `sys__message_id`, `sys__user_id`, `sys__user_message`, `sys__ks`, `sys__is_new_thread`, `sys__context_id`, `sys__context_type`, `sys__avatar_enabled`, `sys__avatar_share_screen_enabled`, any `sys__user_obj.*` key, and `secrets`; see `request_vars` above) before any network call, since a client-supplied value would just be silently overwritten server-side:
+The server sets these on every turn. They're available to `{{ ... }}` interpolation in `base_directive` / `prompts[].value` / `glossary` (see [Configure an Intellect](build/intellect.md#configure-an-intellect)) and in a Skill's `instructions` text (see [§ Skills](management-operations.md#skills--httpsgenienvp1ovpkalturacom)), regardless of `allow_client_variables`. The SDK's own `request_vars` pre-flight guard rejects a client-supplied value for every one of these (`sys__thread_id`, `sys__message_id`, `sys__user_id`, `sys__user_message`, `sys__ks`, `sys__is_new_thread`, `sys__context_id`, `sys__context_type`, `sys__avatar_enabled`, `sys__avatar_share_screen_enabled`, any `sys__user_obj.*` key, and `secrets`; see `request_vars` above) before any network call:
 
 | Variable | Resolves to | Notes |
 |----------|-------------|-------|
@@ -162,4 +162,4 @@ POST https://genie.nvp1.ovp.kaltura.com/mcp/search
 
 Returns `{status, data}`. A partner with no indexed content returns a `"couldn't find relevant information"` error response. SDK: `mgmt.knowledge.search(query, ks, opts)`.
 
-`opts` passes through five optional tuning params, all accepted as-is by the backend: `top_n` (default 5), `with_line_numbers`, `margins_in_seconds` (default 15), `include_sources`, `entry_description`. `include_sources:true` changes the success shape's `chapters` from `null` to an array (and `data`/`text` to `null`).
+`opts` passes through five optional tuning params, all accepted as-is by the backend: `top_n` (default 5), `with_line_numbers`, `margins_in_seconds` (default 15), `include_sources`, `entry_description`. `include_sources:true` changes the success shape's `chapters` from `null` to an array, and `data` to `null`.

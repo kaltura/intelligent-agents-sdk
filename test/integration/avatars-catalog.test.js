@@ -17,7 +17,7 @@ const ADMIN = 'djJ8MXxb=ADMIN-token-placeholder';
 
 test('avatars.create rejects a stray adminTags pre-network with an actionable error (no avatar/create call fires)', async () => {
   const f = fakeFetch([{ match: '/avatar/create', respond: () => ({ body: { id: 'av1' } }) }]);
-  const k = new Management({ partnerId: 6516742, adminSecret: 'a'.repeat(32), fetch: f });
+  const k = new Management({ partnerId: 1234567, adminSecret: 'a'.repeat(32), fetch: f });
   await assert.rejects(
     () => k.avatars.create({ voice: { id: 'v' }, visual: { id: 'vis' }, adminTags: ['lobby'] }, ADMIN),
     (e) => e.code === 'bad_request' && /parent AGENT/i.test(e.detail) && /agents\.create/i.test(e.detail),
@@ -28,7 +28,7 @@ test('avatars.create rejects a stray adminTags pre-network with an actionable er
 
 test('avatars.update rejects a stray adminTags pre-network (the live reply is only a bare Bad Request — the SDK makes it actionable)', async () => {
   const f = fakeFetch([{ match: '/avatar/update', respond: () => ({ body: { id: 'av1' } }) }]);
-  const k = new Management({ partnerId: 6516742, adminSecret: 'a'.repeat(32), fetch: f });
+  const k = new Management({ partnerId: 1234567, adminSecret: 'a'.repeat(32), fetch: f });
   await assert.rejects(
     () => k.avatars.update({ id: 'av1', adminTags: ['x'] }, ADMIN),
     (e) => e.code === 'bad_request' && /adminTags/.test(e.detail),
@@ -38,7 +38,7 @@ test('avatars.update rejects a stray adminTags pre-network (the live reply is on
 
 test('avatars.create WITHOUT adminTags posts normally to avatar/create', async () => {
   const f = fakeFetch([{ match: '/avatar/create', respond: () => ({ body: { id: 'av1' } }) }]);
-  const k = new Management({ partnerId: 6516742, adminSecret: 'a'.repeat(32), fetch: f });
+  const k = new Management({ partnerId: 1234567, adminSecret: 'a'.repeat(32), fetch: f });
   const r = await k.avatars.create({ voice: { id: 'v' }, visual: { id: 'vis' }, openingPhrase: 'Hi' }, ADMIN);
   assert.equal(r.id, 'av1');
   assert.equal(f.calls.filter((c) => c.url.includes('/avatar/create')).length, 1);
@@ -46,7 +46,7 @@ test('avatars.create WITHOUT adminTags posts normally to avatar/create', async (
 
 test('catalog.createVisual sends adminTags as a bare single field, NOT JSON.stringify (double-encode regression)', async () => {
   const f = fakeFetch([{ match: '/catalog-item/create', respond: () => ({ body: { itemId: 'item-1' } }) }]);
-  const k = new Management({ partnerId: 6516742, adminSecret: 'a'.repeat(32), fetch: f });
+  const k = new Management({ partnerId: 1234567, adminSecret: 'a'.repeat(32), fetch: f });
   const file = new Blob([new Uint8Array([1, 2, 3])], { type: 'image/png' });
   const r = await k.catalog.createVisual(file, { name: 'QA face', genderPresentation: 'Feminine' }, ADMIN);
   assert.equal(r.itemId, 'item-1');
@@ -60,7 +60,7 @@ test('catalog.createVisual sends adminTags as a bare single field, NOT JSON.stri
 
 test('catalog.createFace/createBackground send an explicit type field ("Face"/"Background") alongside the visual attributes', async () => {
   const f = fakeFetch([{ match: '/catalog-item/create', respond: () => ({ body: { itemId: 'item-2' } }) }]);
-  const k = new Management({ partnerId: 6516742, adminSecret: 'a'.repeat(32), fetch: f });
+  const k = new Management({ partnerId: 1234567, adminSecret: 'a'.repeat(32), fetch: f });
   const file = new Blob([new Uint8Array([1, 2, 3])], { type: 'image/png' });
 
   const face = await k.catalog.createFace(
@@ -92,7 +92,7 @@ test('catalog.createFace/createBackground send an explicit type field ("Face"/"B
 
 test('catalog.createVisual sends NO type field (unchanged default behavior)', async () => {
   const f = fakeFetch([{ match: '/catalog-item/create', respond: () => ({ body: { itemId: 'item-3' } }) }]);
-  const k = new Management({ partnerId: 6516742, adminSecret: 'a'.repeat(32), fetch: f });
+  const k = new Management({ partnerId: 1234567, adminSecret: 'a'.repeat(32), fetch: f });
   const file = new Blob([new Uint8Array([1, 2, 3])], { type: 'image/png' });
   await k.catalog.createVisual(file, { name: 'QA visual', genderPresentation: 'Feminine' }, ADMIN);
   const call = f.calls.find((c) => c.url.includes('/catalog-item/create'));
@@ -101,7 +101,7 @@ test('catalog.createVisual sends NO type field (unchanged default behavior)', as
 
 test('catalog.createVisual rejects missing name/genderPresentation pre-network (the API itself accepts either being absent)', async () => {
   const f = fakeFetch([{ match: '/catalog-item/create', respond: () => ({ body: { itemId: 'item-1' } }) }]);
-  const k = new Management({ partnerId: 6516742, adminSecret: 'a'.repeat(32), fetch: f });
+  const k = new Management({ partnerId: 1234567, adminSecret: 'a'.repeat(32), fetch: f });
   const file = new Blob([new Uint8Array([1, 2, 3])], { type: 'image/png' });
   await assert.rejects(
     () => k.catalog.createVisual(file, { genderPresentation: 'Feminine' }, ADMIN),
@@ -120,7 +120,7 @@ test('catalog.createVisual rejects missing name/genderPresentation pre-network (
 
 test('catalog.update with a file sends MULTIPLE adminTags as repeated fields, NOT one comma-joined field (live-confirmed: the API stores a comma-joined value as one literal tag)', async () => {
   const f = fakeFetch([{ match: '/catalog-item/update', respond: () => ({ body: { itemId: 'item-1' } }) }]);
-  const k = new Management({ partnerId: 6516742, adminSecret: 'a'.repeat(32), fetch: f });
+  const k = new Management({ partnerId: 1234567, adminSecret: 'a'.repeat(32), fetch: f });
   const file = new Blob([new Uint8Array([1, 2, 3])], { type: 'image/png' });
   await k.catalog.update({ itemId: 'item-1', file, adminTags: ['probeA', 'probeB'] }, ADMIN);
   const call = f.calls.find((c) => c.url.includes('/catalog-item/update'));
@@ -134,7 +134,7 @@ test('catalog.importVoiceFromElevenLabs/Cartesia post {voiceId}; empty voiceId r
     { match: '/catalog-item/createVoiceFromElevenLabs', respond: (req) => ({ body: { itemId: 'v-el', type: 'Voice', voiceId: req.body.voiceId } }) },
     { match: '/catalog-item/createVoiceFromCartesia', respond: (req) => ({ body: { itemId: 'v-ca', type: 'Voice', voiceId: req.body.voiceId } }) },
   ]);
-  const k = new Management({ partnerId: 6516742, adminSecret: 'a'.repeat(32), fetch: f });
+  const k = new Management({ partnerId: 1234567, adminSecret: 'a'.repeat(32), fetch: f });
   await assert.rejects(() => k.catalog.importVoiceFromElevenLabs('', ADMIN), (e) => e.code === 'bad_request');
   await assert.rejects(() => k.catalog.importVoiceFromCartesia('  ', ADMIN), (e) => e.code === 'bad_request');
   assert.equal(f.calls.length, 0, 'no transport before voiceId validation passes');
@@ -151,7 +151,7 @@ test('an unknown provider voiceId raises the typed voice_not_found error from th
   const f = fakeFetch([
     { match: '/catalog-item/createVoiceFromElevenLabs', respond: () => ({ status: 200, body: { objectType: 'KalturaAPIException', code: 'VOICE_DOES_NOT_EXIST_ON_ELEVEN_LABS', message: 'Voice does not exist on ElevenLabs' } }) },
   ]);
-  const k = new Management({ partnerId: 6516742, adminSecret: 'a'.repeat(32), fetch: f });
+  const k = new Management({ partnerId: 1234567, adminSecret: 'a'.repeat(32), fetch: f });
   await assert.rejects(
     () => k.catalog.importVoiceFromElevenLabs('bogus', ADMIN),
     (e) => e.code === 'voice_not_found_elevenlabs' && e.status === 200,

@@ -7,10 +7,6 @@
  *   ChapterType  : CAPTION=1 / OCR=2 / DOCUMENT=3   (+ a Genie-internal SUMMARY)
  *   StrategyEnum : EmbedCaptionV1 / EmbedOcrV1 / EmbedDocumentV1
  *
- * SCOPE — what the indexer actually reads: it reads ONLY
- * `indexer.categoryInfo[].{categoryId, language}` + indexer-level
- * `indexer.chunkSize` for a `categoryEntry` link. It does NOT read a
- * per-category `objects[]`/`indexPosition`/`strategy` array.
  * {@link buildIndexerObjects} VALIDATES a caller's `modalities` (rejects an
  * unknown/duplicate modality with a typed `bad_request` before any wire call)
  * and returns the documented `{indexPosition,type,strategy}` per-modality

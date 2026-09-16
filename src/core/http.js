@@ -9,8 +9,10 @@
  * - A `requestId` is attached to every call (echoed from the server when it
  *   sends one, else a client-generated correlation id) and rides on errors.
  * - Diagnostic logging routes through {@link redact}; a token can't leak.
- * - Transient failures (429/502/503/504, network error) are retried with
- *   truncated exponential backoff + full jitter.
+ * - Retries use truncated exponential backoff + jitter. A network-layer error
+ *   (no response received) retries on every method. A 429/502/503/504
+ *   response retries only for GET/HEAD or a request carrying an idempotency
+ *   key — retrying an already-sent write without one could double it.
  * - Response bodies are size-capped at `maxResponseBytes` (default 10 MiB),
  *   enforced incrementally while streaming the body (not after buffering it
  *   in full) so a chunked response without an honest Content-Length can't
@@ -80,7 +82,9 @@ export class Http {
 
   /**
    * Generic request with full control. Returns parsed JSON (or text) + requestId.
-   * Retries on transient failures (429/502/503/504/network) with exponential backoff.
+   * Retries with exponential backoff: a network-layer error retries on every
+   * method; a 429/502/503/504 response retries only for GET/HEAD or a
+   * request carrying `idempotencyKey`.
    * @param {object} req
    * @param {string} req.method
    * @param {string} req.url
@@ -96,8 +100,11 @@ export class Http {
     const { method, url, ks, body, json, headers = {}, idempotencyKey, signal } = req;
     const path = pathOf(url);
     const isGet = method === 'GET' || method === 'HEAD';
-    // A POST is retry-safe on network error (status 0 — bytes may not have been sent)
-    // only when it carries an idempotency key OR it's a GET.
+    // Gates retry of a received transient HTTP status (429/502/503/504) below:
+    // only GET/HEAD or a request carrying an idempotency key may retry one,
+    // since the server may already have processed a plain POST/PUT/PATCH/DELETE.
+    // A network-layer error (no response received) retries on every method
+    // regardless of this flag — see the catch block below.
     const isSafeToRetryHttpError = isGet || !!idempotencyKey;
 
     const h = { ...headers };
@@ -145,7 +152,7 @@ export class Http {
           });
         }
         // Read the body incrementally so a chunked response without an honest
-        // Content-Length is never fully buffered before the size guard fires (S-1).
+        // Content-Length is never fully buffered before the size guard fires (P-1).
         text = await readBodyWithLimit(res, this._maxResponseBytes, path, ctrl);
       } catch (err) {
         clearTimeout(t);
@@ -190,7 +197,7 @@ export class Http {
 
 /**
  * Read a Response body up to `maxBytes`, aborting the moment the running byte
- * count exceeds the limit instead of buffering the whole thing first (S-1).
+ * count exceeds the limit instead of buffering the whole thing first (P-1).
  * Falls back to `res.text()` when no streaming body is available (e.g. a
  * test fake, or a runtime without a spec-compliant `ReadableStream` body) —
  * the same post-hoc length check the previous implementation always used.

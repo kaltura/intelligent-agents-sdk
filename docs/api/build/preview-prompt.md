@@ -46,10 +46,11 @@ p.warnings;
 //   severity: 'warning',
 //   code: 'reserved_user_attr_unresolved',
 //   message: '`{{sys__user_obj.first_name}}` has no bound value in this preview\'s
-//              requestVars. previewPrompt flags this as reserved_user_attr_unresolved —
-//              bind a user (Sessions.createConversationToken({userId}))
-//              or supply "sys__user_obj.first_name" in requestVars to simulate
-//              the bound case before shipping this prompt.'
+//              requestVars. Referencing an unbound sys__user_obj.* attribute in a
+//              LIVE turn currently causes a silent turn failure, not an empty render —
+//              bind a user (Sessions.createConversationToken({userId})) or supply
+//              "sys__user_obj.first_name" in requestVars to simulate the bound case
+//              before shipping this prompt.'
 // }]
 ```
 

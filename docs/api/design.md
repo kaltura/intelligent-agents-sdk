@@ -111,7 +111,7 @@ Send `type=Background` for a backdrop image instead. Only 36 preset Face items a
 
 ## End-to-end: custom portrait avatar, server to browser
 
-The full path is exercised end-to-end by the SDK's own integration test (`test/integration/avatars-catalog.test.js`) plus this recipe:
+`catalog.createVisual` and `avatars.create` (steps 1 and the first call of step 2) are covered by the SDK's own integration tests (`test/integration/avatars-catalog.test.js`). Full recipe:
 
 1. Server: `catalog.createVisual(portraitBlob, { name, genderPresentation, background, skinTone, ageGroup, hairColor }, adminKs)` → `{ itemId }`.
 2. Server: `avatars.create({ voice: { id: voiceItemId }, visual: { id: itemId }, openingPhrase: '<blank>' }, adminKs)` → `agents.create` → `application.resolveWidgetId`.
