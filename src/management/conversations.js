@@ -248,7 +248,11 @@ export class Threads {
   /**
    * Flattened `human:/ai:` transcript of one thread. READ.
    * @param {string} id @param {string} ks
-   * @returns {Promise<string>} a single flattened `human: .../ai: ...` transcript string, one turn per line.
+   * @returns {Promise<{status:string, data:string}>} `data` is the flattened
+   *   `human: .../ai: ...` transcript, one turn per line. Live-confirmed: unlike
+   *   every other `Threads`/`Messages` method here, this one endpoint's response
+   *   is one envelope deeper, so the SDK's usual single `.data` unwrap leaves the
+   *   `{status,data}` wrapper still in place — read `.data.data` for the string.
    */
   async transcript(id, ks) {
     this._.assertAdmin(ks, 'threads.transcript');
