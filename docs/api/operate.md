@@ -154,4 +154,6 @@ POST https://genie.nvp1.ovp.kaltura.com/mcp/search
 { "query": "adaptive bitrate streaming" }
 ```
 
-Returns `{status, data}`. A partner with no indexed content returns a `"couldn't find relevant information"` error response. SDK: `mgmt.knowledge.search(query, ks)`.
+Returns `{status, data}`. A partner with no indexed content returns a `"couldn't find relevant information"` error response. SDK: `mgmt.knowledge.search(query, ks, opts)`.
+
+`opts` passes through five optional tuning params, all accepted as-is by the backend: `top_n` (default 5), `with_line_numbers`, `margins_in_seconds` (default 15), `include_sources`, `entry_description`. `include_sources:true` changes the success shape's `chapters` from `null` to an array (and `data`/`text` to `null`).

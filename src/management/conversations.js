@@ -479,11 +479,24 @@ export class Knowledge {
    * the backend replies the same `{status:'error', data:"…couldn't find
    * relevant information…"}` (returned as-is, not thrown) — so this can't
    * tell those cases apart. Use {@link isIndexed} for indexing status instead.
+   *
+   * All five tuning params are live-confirmed accepted by the backend
+   * (defaults shown). `include_sources:true` changes the success-shape's
+   * `chapters` from `null` to an array (and `text` to `null`) — a match
+   * result to see the difference wasn't available at verification time; the
+   * request itself is confirmed valid either way.
    * @param {string} query @param {string} ks
+   * @param {{top_n?:number, with_line_numbers?:boolean, margins_in_seconds?:number, include_sources?:boolean, entry_description?:boolean}} [opts]
    */
-  async search(query, ks) {
+  async search(query, ks, opts = {}) {
     this._.assertAny(ks, 'knowledge.search');
-    return (await this._.genie('mcp/search', { query }, ks)).data;
+    const body = { query };
+    if (opts.top_n !== undefined) body.top_n = opts.top_n;
+    if (opts.with_line_numbers !== undefined) body.with_line_numbers = opts.with_line_numbers;
+    if (opts.margins_in_seconds !== undefined) body.margins_in_seconds = opts.margins_in_seconds;
+    if (opts.include_sources !== undefined) body.include_sources = opts.include_sources;
+    if (opts.entry_description !== undefined) body.entry_description = opts.entry_description;
+    return (await this._.genie('mcp/search', body, ks)).data;
   }
 
   /**
