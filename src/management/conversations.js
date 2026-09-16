@@ -397,13 +397,40 @@ function requireRecordId(v, where) {
   }
 }
 
-/** @param {unknown} a @param {unknown} b Exact deep-equality for plain JSON values (no Date/Map/etc). */
+/**
+ * Strip fields that don't identify a source before comparing: the backend
+ * echoes `null` for absent optional fields (e.g. `customOperator: null` on an
+ * internal source) that were never sent, and `index_position` inside
+ * `indexers[]` is a server-managed cursor that drifts after every indexing
+ * run — neither should ever make an otherwise-identical source compare
+ * unequal.
+ * @param {unknown} v
+ */
+function stripSourceNoise(v) {
+  if (Array.isArray(v)) return v.map(stripSourceNoise);
+  if (v && typeof v === 'object') {
+    const out = {};
+    for (const [k, val] of Object.entries(v)) {
+      if (val === null || k === 'index_position') continue;
+      out[k] = stripSourceNoise(val);
+    }
+    return out;
+  }
+  return v;
+}
+
+/** @param {unknown} a @param {unknown} b Deep-equality for plain JSON values (no Date/Map/etc), after stripping backend-echoed noise. */
 function sourcesEqual(a, b) {
+  return deepEqualStripped(stripSourceNoise(a), stripSourceNoise(b));
+}
+
+/** @param {unknown} a @param {unknown} b */
+function deepEqualStripped(a, b) {
   if (a === b) return true;
   if (typeof a !== 'object' || typeof b !== 'object' || !a || !b) return false;
   const ak = Object.keys(a), bk = Object.keys(b);
   if (ak.length !== bk.length) return false;
-  return ak.every((k) => sourcesEqual(a[k], b[k]));
+  return ak.every((k) => deepEqualStripped(a[k], b[k]));
 }
 
 /**
@@ -888,8 +915,12 @@ export class Knowledge {
 
   /**
    * Add one source to a Knowledge record's config WITHOUT disturbing existing
-   * sources. WRITE — idempotent: if an identical source (exact deep match)
-   * already exists, this is a no-op (`applied:false`) — no wire write.
+   * sources. WRITE — idempotent: if an identical source already exists, this
+   * is a no-op (`applied:false`) — no wire write. The identity match ignores
+   * fields the backend echoes back that were never sent (e.g. `customOperator:
+   * null` on an internal source) and `indexers[].index_position` (a
+   * server-managed cursor that drifts after every indexing run) — comparing
+   * those verbatim would otherwise treat a re-added source as new every time.
    * READ-MERGE-WRITE: reads the current record, appends `source` to
    * `config.sources`, and writes the union back via {@link updateRecord}'s
    * `config` support — because the backend's `v1/knowledge/update` REPLACES

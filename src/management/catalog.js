@@ -140,7 +140,10 @@ export class Catalog {
       return (await this._.agenticMultipart('catalog-item/update', fd, ks)).data;
     }
     const body = { itemId: opts.itemId };
-    if (opts.attributes) body.attributes = opts.attributes;
+    // The JSON-body endpoint expects `attributes` JSON-encoded as a STRING
+    // (same requirement as the multipart path) — a raw nested object 400s
+    // with "attributes must be a valid JSON string".
+    if (opts.attributes) body.attributes = JSON.stringify(opts.attributes);
     if (opts.adminTags) body.adminTags = opts.adminTags;
     return (await this._.agentic('catalog-item/update', body, ks)).data;
   }
