@@ -8,6 +8,9 @@
  *   2  catalog.get          — visible, right shape
  *   3  catalog.list         — filtered to Visual, the new item appears
  *   4  catalog.update       — rename persists on a follow-up get
+ *   4b catalog.importVoiceFromElevenLabs — an unknown provider voiceId creates
+ *      nothing server-side, so the rejection path is free to exercise live
+ *   4c catalog.importVoiceFromCartesia   — same contract, same free coverage
  *   5  catalog.delete       — scratch item removed, re-`get` real-404s
  *
  * `catalog.createVoice` (a real ElevenLabs clone) is NOT exercised here: it
@@ -15,7 +18,11 @@
  * quota on every CI run for a throwaway resource — not a cheap or safe thing
  * to do on every push. Visual upload is the write path this script proves;
  * `createVoice`'s request-shaping logic (attrs validation, multipart
- * encoding) is covered by unit tests instead.
+ * encoding) is covered by unit tests instead. Importing a real EXISTING
+ * provider voice (the success path of 4b/4c) would need a real ElevenLabs/
+ * Cartesia voiceId this repo doesn't have — same cost/safety tradeoff as
+ * `createVoice`, so only the free, deterministic rejection path is covered
+ * live; the success path's request-shaping is unit-tested.
  *
  * Throwaway resource only (one Visual catalog item), full cleanup in
  * `finally`, with independent re-verification that it is truly gone.
@@ -103,6 +110,21 @@ try {
   check('4-catalog-update-returns-new-name', updated?.itemId === itemId, { itemId: updated?.itemId });
   const gotAfterUpdate = await kaltura.catalog.get(itemId, admin);
   check('4-catalog-update-persists', gotAfterUpdate?.name === newAttrs.name || gotAfterUpdate?.attributes?.visual?.name === newAttrs.name, { got: gotAfterUpdate?.name ?? gotAfterUpdate?.attributes?.visual?.name });
+
+  // 4b/4c: importVoiceFromElevenLabs/importVoiceFromCartesia — an unknown provider
+  // voiceId creates nothing server-side, so the error path is free to exercise live.
+  try {
+    await kaltura.catalog.importVoiceFromElevenLabs(`live-verify-nonexistent-${RUN_TAG}`, admin);
+    check('4b-import-voice-elevenlabs-rejects-unknown-id', false, { message: 'expected a rejection, got a created item' });
+  } catch (err) {
+    check('4b-import-voice-elevenlabs-rejects-unknown-id', err?.code === 'voice_not_found_elevenlabs', { code: err?.code, message: err?.detail || err?.message });
+  }
+  try {
+    await kaltura.catalog.importVoiceFromCartesia(`live-verify-nonexistent-${RUN_TAG}`, admin);
+    check('4c-import-voice-cartesia-rejects-unknown-id', false, { message: 'expected a rejection, got a created item' });
+  } catch (err) {
+    check('4c-import-voice-cartesia-rejects-unknown-id', err?.code === 'voice_not_found_cartesia', { code: err?.code, message: err?.detail || err?.message });
+  }
 } catch (err) {
   failed = true;
   record('live-verify-catalog', false, { message: err?.detail || err?.message || String(err), code: err?.code });

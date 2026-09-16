@@ -9,6 +9,7 @@
  *   1  catalog.createVisual — scratch Visual (1x1 PNG), reused as this avatar's face
  *   2  avatars.create       — {voice:{id: <existing catalog voice>}, visual:{id: <scratch visual>}, openingPhrase}
  *   3  avatars.get          — visible, right shape
+ *   3b avatars.list         — the new avatar appears
  *   4  avatars.update       — PATCH openingPhrase only; visual/voice untouched, persists on a follow-up get
  *   5  avatars.delete       — scratch avatar removed, re-`get` throws (avatars.get 404s as `api_exception`, not a stable code — see avatars.js)
  *   6  catalog.delete       — scratch Visual removed, re-`get` real-404s
@@ -112,6 +113,10 @@ try {
   // 3: avatars.get — visible, right shape.
   const got = await kaltura.avatars.get(avatarId, admin);
   check('3-avatars-get', got.id === avatarId && got.openingPhrase === openingPhrase, { id: got.id, openingPhrase: got.openingPhrase });
+
+  // 3b: avatars.list — the new avatar appears.
+  const listed = await kaltura.avatars.list(admin, { pageSize: 100 }).all();
+  check('3b-avatars-list', listed.some((a) => a.id === avatarId), { count: listed.length, avatarId });
 
   // 4: avatars.update — PATCH openingPhrase only; visual/voice untouched, persists.
   const newPhrase = `Welcome back, live-verify probe ${RUN_TAG}.`;
