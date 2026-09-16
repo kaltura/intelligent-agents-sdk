@@ -50,12 +50,15 @@ const result = await mgmt.converseOnce(configId, 'Hello!');
 console.log(result.text, result.threadId);
 
 // 4. react to session events automatically, server-side — no polling
+const topic = await mgmt.insightSettings.create({
+  key: 'TOPIC', title: 'Topic', prompt: 'What was the main topic of this conversation, in 1-3 words?', valueType: 'string',
+}, admin.ks);
 await mgmt.lifecycle.create({
   name: 'Summarize on session end',
   systemName: 'auto_summary_v1',
   eventType: 'session_ended',
   objectType: 'thread',
-  action: { actionType: 'triggerInsight', insights: [{ insightKey: 'SUMMARY', valueType: 'string' }] },
+  action: { actionType: 'triggerInsightSettingsKai', insightSettingsIds: [topic.id] },
 }, admin.ks);
 ```
 
