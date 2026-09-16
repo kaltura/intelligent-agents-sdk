@@ -70,14 +70,23 @@ export class Catalog {
   /**
    * Upload a CUSTOM VISUAL image. WRITE — NOT idempotent. The uploaded image
    * becomes the catalog item's visual content, usable in {@link Avatars.create}
-   * and in live animated sessions via `avatar-session/create`. All visual
-   * attribute fields are required or the API 400s.
+   * and in live animated sessions via `avatar-session/create`. The API itself
+   * accepts any subset of the attribute fields below, including none — the SDK
+   * requires `name` and `genderPresentation` client-side (a catalog item without
+   * either is confusing to browse and manage) and defaults the rest to a
+   * consistent baseline look.
    * @param {Blob|File} file
    * @param {{name:string,genderPresentation:'Masculine'|'Feminine',background?:string,skinTone?:string,ageGroup?:string,hairColor?:string,hairStyle?:string[],clothing?:string[],glasses?:boolean,consentRef?:string}} attrs  `consentRef`: an opaque URI/attestation id for likeness consent — echoed on the result `_consent` receipt + audit (same contract as {@link createVoice}). The SDK records it; it does not verify it.
    * @param {string} ks
    */
   async createVisual(file, attrs, ks) {
     this._.assertAdmin(ks, 'catalog.createVisual');
+    if (!attrs?.name) {
+      throw new KalturaError({ type: 'about:blank', title: 'name required', code: 'bad_request', detail: 'catalog.createVisual requires attrs.name (a catalog item without a name is confusing to browse and manage).' });
+    }
+    if (attrs?.genderPresentation !== 'Masculine' && attrs?.genderPresentation !== 'Feminine') {
+      throw new KalturaError({ type: 'about:blank', title: 'genderPresentation required', code: 'bad_request', detail: `catalog.createVisual requires attrs.genderPresentation to be 'Masculine' or 'Feminine', got ${JSON.stringify(attrs?.genderPresentation)}.` });
+    }
     const attributes = { visual: {
       name: attrs.name, background: attrs.background || 'Image', genderPresentation: attrs.genderPresentation,
       skinTone: attrs.skinTone || 'Light', ageGroup: attrs.ageGroup || 'YoungAdult', hairColor: attrs.hairColor || 'Brown',
@@ -134,13 +143,16 @@ export class Catalog {
       fd.append('itemId', opts.itemId);
       fd.append('file', opts.file);
       if (opts.attributes) fd.append('attributes', JSON.stringify(opts.attributes));
-      // Multipart adminTags is parsed as a comma-separated bare string — send the
-      // single-parse shape, NOT JSON.stringify (see _upload's adminTags note).
+      // Multipart adminTags needs one repeated field per tag, NOT a comma-joined
+      // string or JSON.stringify (see _upload's adminTags note).
       if (opts.adminTags) appendAdminTags(fd, opts.adminTags);
       return (await this._.agenticMultipart('catalog-item/update', fd, ks)).data;
     }
     const body = { itemId: opts.itemId };
-    if (opts.attributes) body.attributes = opts.attributes;
+    // The JSON-body endpoint expects `attributes` JSON-encoded as a STRING
+    // (same requirement as the multipart path) — a raw nested object 400s
+    // with "attributes must be a valid JSON string".
+    if (opts.attributes) body.attributes = JSON.stringify(opts.attributes);
     if (opts.adminTags) body.adminTags = opts.adminTags;
     return (await this._.agentic('catalog-item/update', body, ks)).data;
   }
@@ -155,14 +167,15 @@ export class Catalog {
   /**
    * Multipart upload primitive for createVoice/createVisual.
    *
-   * adminTags ENCODING: the multipart
-   * `adminTags` field is parsed by the API as a COMMA-SEPARATED bare string into
-   * an array — so the value must be the bare `custom` (parsed once → stored
-   * `["custom"]`), NOT `JSON.stringify(['custom'])`. Sending the JSON string
-   * `["custom"]` makes the API re-wrap it, storing `["[\"custom\"]"]`, so the
-   * item is then NOT findable by `catalog.list` filtered on `adminTagsIn:
-   * ['custom']`. Use {@link appendAdminTags} for the correct single-parse shape.
-   * (Also documented in API-REFERENCE §1.1, keep both in sync.)
+   * adminTags ENCODING: the multipart `adminTags` field wraps a single bare
+   * scalar into a one-element array, so ONE tag can be sent as the bare
+   * `custom` (stored `["custom"]`) — but it does NOT split a comma-joined
+   * value. Multiple tags need one repeated `adminTags` field per tag (see
+   * {@link appendAdminTags}), never `custom,other` (stored as one literal tag)
+   * and never `JSON.stringify(['custom'])` (double-encoded, stored as
+   * `["[\"custom\"]"]`) — both leave the item unfindable by `catalog.list`
+   * filtered on `adminTagsIn: ['custom']`.
+   * (Also documented in docs/api/design.md § Upload a Custom Voice/Visual, keep both in sync.)
    * @param {Blob|File} file @param {object} attributes @param {import('./client.js').KsLike} ks @param {string} [mime]
    * @param {string} [consentRef] @param {string} [kind]
    */
@@ -206,16 +219,19 @@ export function newFormData(detail = 'Uploads need global FormData (Node ≥18 /
 }
 
 /**
- * Append `adminTags` to a multipart FormData in the single-parse shape the API
- * expects: a COMMA-SEPARATED bare string (e.g. `custom` or `a,b`). The multipart
- * endpoint parses this field into an array itself — passing `JSON.stringify(tags)`
- * double-encodes it (stored as `["[\"custom\"]"]`, then unfindable by
- * `adminTagsIn`). JSON BODY requests carry a real array and must NOT use this.
+ * Append `adminTags` to a multipart FormData the way the API expects for
+ * MULTIPLE values: one `adminTags` field per tag (a repeated multipart field
+ * name), never a single comma-joined string. The API parses a bare scalar
+ * field into a one-element array, but does NOT split a comma-joined value —
+ * `fd.append('adminTags', 'a,b')` stores ONE literal tag `"a,b"`, not two.
+ * `JSON.stringify(tags)` is wrong too: it double-encodes (stored as
+ * `["[\"custom\"]"]`, then unfindable by `adminTagsIn`). JSON BODY requests
+ * carry a real array and must NOT use this.
  * @param {FormData} fd @param {string[]} tags
  */
 function appendAdminTags(fd, tags) {
   const list = Array.isArray(tags) ? tags : [tags];
-  fd.append('adminTags', list.map((t) => String(t)).join(','));
+  for (const t of list) fd.append('adminTags', String(t));
 }
 /** @param {Blob|File} file @param {string} [mime] */
 function fileName(file, mime) {

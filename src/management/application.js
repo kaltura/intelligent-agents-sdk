@@ -36,13 +36,19 @@ export class Application {
    * Initialize a runtime session. Takes NO body — derives the agent from the
    * WIDGET KS (mint one via sessions.createWidgetToken). Returns the live
    * runtime endpoints + an enriched conversation KS:
-   *   {ks, conversationManagerUrl, srsBaseUrl, turnServerUrl, avatars[], widgetConfig?, embedConfig?}
+   *   {partnerId, ks, conversationManagerUrl, srsBaseUrl, turnServerUrl, avatars[], widgetConfig?, embedConfig?}
    * The returned `ks` carries `geniegpcid` (entitlement ON) — hand it to
    * {@link KalturaAvatarSession}. Returned verbatim, no SDK-side transform:
    * `avatars[].previewImageUrl`/`loadingVideoUrl` are raw backend asset URLs
    * (an upload echo for a custom visual, a preset asset URL for a catalog
-   * item), not the rendered composite the live WHEP stream shows. READ (no
-   * resource mutation).
+   * item), not the rendered composite the live WHEP stream shows. Each entry
+   * also carries an unmodeled wire field `objectType:"Object"` (harmless
+   * serialization metadata, not a real field to model). READ (no resource
+   * mutation).
+   *
+   * PERMISSION GATE: the KS must carry the `agentid:<uuid>` privilege that
+   * {@link resolveWidgetId}'s widget bakes in — an admin or plain
+   * conversation KS without it fails with `api_exception`.
    * @param {string} widgetKs A widget KS (NOT an admin KS).
    */
   async appInit(widgetKs) {
@@ -59,9 +65,10 @@ export class Application {
    * adds shows up with no SDK/app changes. READ — no state, no partner
    * lookup (any valid KS works). Each entry also carries an unmodeled wire
    * field `objectType:"Object"` (harmless serialization metadata, not a real
-   * field to model).
+   * field to model) and `type:"custom"` (constant across every entry today —
+   * a discriminator on the server's side, not a per-field distinction).
    * @param {string} ks
-   * @returns {Promise<Array<{key:string, label:string, headerTemplate:string}>>}
+   * @returns {Promise<Array<{key:string, label:string, headerTemplate:string, type:string}>>}
    */
   async getCustomPrompts(ks) {
     this._.assertAny(ks, 'application.getCustomPrompts');

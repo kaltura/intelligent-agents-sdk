@@ -235,19 +235,35 @@ export class Threads {
     });
   }
 
-  /** Get a thread. READ. @param {string} id @param {string} ks */
+  /**
+   * Get a thread. READ.
+   * @param {string} id @param {string} ks
+   * @returns {Promise<{id:string, title:string, status:number, created_at:string, updated_at:string, thread_metadata:{analysis?:object}, [key:string]:*}>}
+   */
   async get(id, ks) {
     this._.assertAdmin(ks, 'threads.get');
     return (await this._.genie('v1/thread/get', { id }, ks)).data;
   }
 
-  /** Flattened `human:/ai:` transcript of one thread. READ. @param {string} id @param {string} ks */
+  /**
+   * Flattened `human:/ai:` transcript of one thread. READ.
+   * @param {string} id @param {string} ks
+   * @returns {Promise<{status:string, data:string}>} `data` is the flattened
+   *   `human: .../ai: ...` transcript, one turn per line. Live-confirmed: unlike
+   *   every other `Threads`/`Messages` method here, this one endpoint's response
+   *   is one envelope deeper, so the SDK's usual single `.data` unwrap leaves the
+   *   `{status,data}` wrapper still in place — read `.data.data` for the string.
+   */
   async transcript(id, ks) {
     this._.assertAdmin(ks, 'threads.transcript');
     return (await this._.genie('v1/thread/get_transcripts', { id }, ks)).data;
   }
 
-  /** Rename a thread. WRITE — idempotent for a given title. @param {string} id @param {string} title @param {string} ks */
+  /**
+   * Rename a thread. WRITE — idempotent for a given title.
+   * @param {string} id @param {string} title @param {string} ks
+   * @returns {Promise<{id:string, title:string, status:number, created_at:string, updated_at:string, thread_metadata:{analysis?:object}, [key:string]:*}>} the updated thread.
+   */
   async rename(id, title, ks) {
     this._.assertAdmin(ks, 'threads.rename');
     return (await this._.genie('v1/thread/update', { id, title }, ks)).data;
@@ -257,6 +273,8 @@ export class Threads {
    * Delete threads. WRITE — DESTRUCTIVE. This is the GDPR/CCPA deletion path for
    * conversation PII (it removes the thread; the SDK does not claim it satisfies
    * full Art. 17 anonymization — see API-REFERENCE.md, "Delete returns" note under Threads). Takes a plural array.
+   * Unlike every other `.delete()` in this SDK (singular `id`), this one takes
+   * an array — batch deletion by id is the common case for PII/GDPR cleanup.
    * @param {string[]} threadIds @param {string} ks @param {{confirmPermanent:boolean}} confirm
    */
   async delete(threadIds, ks, confirm) {
@@ -284,7 +302,23 @@ export class Messages {
     });
   }
 
-  /** Clone a message under a new title for sharing. WRITE — NOT idempotent. Returns `{newMessageId}`. @param {string} id @param {string} newTitle @param {string} ks */
+  /**
+   * Get one message by id (`POST /message/get`). READ. Returns the full
+   * message record — live-confirmed against production. An unknown id
+   * throws a typed `not_found`; one belonging to another partner throws
+   * `forbidden` ("Not authorized for this message") instead of `not_found`.
+   * @param {string} id @param {string} ks (admin)
+   */
+  async get(id, ks) {
+    this._.assertAdmin(ks, 'messages.get');
+    return (await this._.genie('message/get', { id }, ks)).data;
+  }
+
+  /**
+   * Clone a message under a new title for sharing. WRITE — NOT idempotent. Returns `{newMessageId}`.
+   * @param {string} id @param {string} newTitle @param {string} ks
+   * @throws {import('../core/errors.js').KalturaError} `code:'forbidden'` ("Not authorized for this message") for both an unknown `id` and one that belongs to another partner — the backend doesn't distinguish the two cases, live-confirmed against production.
+   */
   async share(id, newTitle, ks) {
     this._.assertAdmin(ks, 'messages.share');
     return (await this._.genie('message/share', { id, newTitle }, ks)).data;
@@ -375,13 +409,40 @@ function requireRecordId(v, where) {
   }
 }
 
-/** @param {unknown} a @param {unknown} b Exact deep-equality for plain JSON values (no Date/Map/etc). */
+/**
+ * Strip fields that don't identify a source before comparing: the backend
+ * echoes `null` for absent optional fields (e.g. `customOperator: null` on an
+ * internal source) that were never sent, and `index_position` inside
+ * `indexers[]` is a server-managed cursor that drifts after every indexing
+ * run — neither should ever make an otherwise-identical source compare
+ * unequal.
+ * @param {unknown} v
+ */
+function stripSourceNoise(v) {
+  if (Array.isArray(v)) return v.map(stripSourceNoise);
+  if (v && typeof v === 'object') {
+    const out = {};
+    for (const [k, val] of Object.entries(v)) {
+      if (val === null || k === 'index_position') continue;
+      out[k] = stripSourceNoise(val);
+    }
+    return out;
+  }
+  return v;
+}
+
+/** @param {unknown} a @param {unknown} b Deep-equality for plain JSON values (no Date/Map/etc), after stripping backend-echoed noise. */
 function sourcesEqual(a, b) {
+  return deepEqualStripped(stripSourceNoise(a), stripSourceNoise(b));
+}
+
+/** @param {unknown} a @param {unknown} b */
+function deepEqualStripped(a, b) {
   if (a === b) return true;
   if (typeof a !== 'object' || typeof b !== 'object' || !a || !b) return false;
   const ak = Object.keys(a), bk = Object.keys(b);
   if (ak.length !== bk.length) return false;
-  return ak.every((k) => sourcesEqual(a[k], b[k]));
+  return ak.every((k) => deepEqualStripped(a[k], b[k]));
 }
 
 /**
@@ -418,11 +479,24 @@ export class Knowledge {
    * the backend replies the same `{status:'error', data:"…couldn't find
    * relevant information…"}` (returned as-is, not thrown) — so this can't
    * tell those cases apart. Use {@link isIndexed} for indexing status instead.
+   *
+   * All five tuning params are live-confirmed accepted by the backend
+   * (defaults shown). `include_sources:true` changes the success-shape's
+   * `chapters` from `null` to an array (and `text` to `null`) — a match
+   * result to see the difference wasn't available at verification time; the
+   * request itself is confirmed valid either way.
    * @param {string} query @param {string} ks
+   * @param {{top_n?:number, with_line_numbers?:boolean, margins_in_seconds?:number, include_sources?:boolean, entry_description?:boolean}} [opts]
    */
-  async search(query, ks) {
+  async search(query, ks, opts = {}) {
     this._.assertAny(ks, 'knowledge.search');
-    return (await this._.genie('mcp/search', { query }, ks)).data;
+    const body = { query };
+    if (opts.top_n !== undefined) body.top_n = opts.top_n;
+    if (opts.with_line_numbers !== undefined) body.with_line_numbers = opts.with_line_numbers;
+    if (opts.margins_in_seconds !== undefined) body.margins_in_seconds = opts.margins_in_seconds;
+    if (opts.include_sources !== undefined) body.include_sources = opts.include_sources;
+    if (opts.entry_description !== undefined) body.entry_description = opts.entry_description;
+    return (await this._.genie('mcp/search', body, ks)).data;
   }
 
   /**
@@ -476,6 +550,7 @@ export class Knowledge {
    * listing; this method lists KMS *entries* inside one category container,
    * not Knowledge record containers.
    * @param {number} categoryId @param {string} ks (admin) @param {{pageSize?:number}} [opts]
+   * @see Knowledge#list for the Knowledge-record listing this is often confused with.
    */
   listCategoryEntries(categoryId, ks, opts = {}) {
     this._.assertAdmin(ks, 'knowledge.listCategoryEntries');
@@ -766,11 +841,22 @@ export class Knowledge {
    * returned `id` as `knowledge_ids:[id]` to {@link Intellects.create}/`add`
    * (or `update`, or {@link IntellectConfig#setKnowledgeIds} for an existing
    * intellect) to LINK it — no separate linking call, no gate.
+   *
+   * Also callable as {@link Knowledge#createRecord} — same method, either name works.
    * @param {object} body {name,description?,config?} @param {string} ks (admin)
    */
   async addRecord(body, ks) {
     this._.assertAdmin(ks, 'knowledge.addRecord');
     return (await this._.genie('v1/knowledge/add', body, ks)).data;
+  }
+
+  /**
+   * Alias for {@link Knowledge#addRecord} — same call, same result. Some
+   * callers reach for `createRecord` by habit; both spellings are permanent.
+   * @param {object} body {name,description?,config?} @param {string} ks (admin)
+   */
+  createRecord(body, ks) {
+    return this.addRecord(body, ks);
   }
 
   /**
@@ -803,6 +889,7 @@ export class Knowledge {
    * existing knowledge base to a new agent by name, without hardcoding ids.
    * @param {string} ks (admin)
    * @param {{filter?:{nameEquals?:string, nameLike?:string, statusEquals?:string, statusIn?:string[]}, pageSize?:number}} [opts]
+   * @see Knowledge#listCategoryEntries for the unrelated "media entries inside one category" listing.
    */
   list(ks, opts = {}) {
     this._.assertAdmin(ks, 'knowledge.list');
@@ -853,8 +940,12 @@ export class Knowledge {
 
   /**
    * Add one source to a Knowledge record's config WITHOUT disturbing existing
-   * sources. WRITE — idempotent: if an identical source (exact deep match)
-   * already exists, this is a no-op (`applied:false`) — no wire write.
+   * sources. WRITE — idempotent: if an identical source already exists, this
+   * is a no-op (`applied:false`) — no wire write. The identity match ignores
+   * fields the backend echoes back that were never sent (e.g. `customOperator:
+   * null` on an internal source) and `indexers[].index_position` (a
+   * server-managed cursor that drifts after every indexing run) — comparing
+   * those verbatim would otherwise treat a re-added source as new every time.
    * READ-MERGE-WRITE: reads the current record, appends `source` to
    * `config.sources`, and writes the union back via {@link updateRecord}'s
    * `config` support — because the backend's `v1/knowledge/update` REPLACES

@@ -49,6 +49,17 @@ test('skills.add passes instructions through when given', async () => {
   assert.equal(ff.calls[0].body.instructions, 'Always say hi.');
 });
 
+test('skills.create is an alias for skills.add — same validation, same wire call', async () => {
+  const { mgmt, ff } = harness([
+    { match: 'v1/skill/add', respond: (req) => ({ status: 200, body: { ...SKILL, ...req.body } }) },
+  ]);
+  await assert.rejects(() => mgmt.skills.create(/** @type {any} */ (null), ADMIN_KS), (e) => e.code === 'bad_request');
+  const res = await mgmt.skills.create({ name: 'greeter', description: 'Greets warmly.' }, ADMIN_KS);
+  assert.equal(res.name, 'greeter');
+  assert.match(ff.calls[0].url, /v1\/skill\/add$/);
+  assert.deepEqual(ff.calls[0].body, { name: 'greeter', description: 'Greets warmly.' });
+});
+
 test('skills.get fetches by uuid id; requires a non-empty string id', async () => {
   const { mgmt, ff } = harness([
     { match: 'v1/skill/get', respond: (req) => ({ status: 200, body: { ...SKILL, id: req.body.id } }) },
