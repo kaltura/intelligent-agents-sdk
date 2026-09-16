@@ -70,6 +70,8 @@ export class Skills {
    * Create a Skill. WRITE — NOT idempotent (a repeat call creates a second
    * entity). `name` and `description` are required and validated BEFORE any
    * network call; `instructions` is optional (stored `null` when omitted).
+   *
+   * Also callable as {@link Skills#create} — same method, either name works.
    * @param {{name:string, description:string, instructions?:string}} body
    * @param {string} ks (admin)
    * @returns {Promise<{id:string, name:string, description:string, instructions:string|null, partner_id:number, created_at:string, updated_at:string}>}
@@ -94,6 +96,17 @@ export class Skills {
       wire.instructions = body.instructions;
     }
     return (await this._.genie('v1/skill/add', wire, ks, { idempotencyKey: uuidv4() })).data;
+  }
+
+  /**
+   * Alias for {@link Skills#add} — same validation, same call, same result.
+   * Some callers reach for `create` by habit; both spellings are permanent.
+   * @param {{name:string, description:string, instructions?:string}} body
+   * @param {string} ks (admin)
+   * @returns {Promise<{id:string, name:string, description:string, instructions:string|null, partner_id:number, created_at:string, updated_at:string}>}
+   */
+  create(body, ks) {
+    return this.add(body, ks);
   }
 
   /**

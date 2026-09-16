@@ -117,6 +117,42 @@ test('messages.reportSummary defaults pageSize to 500 (the server-side pager max
   assert.equal(captured.pager.pageSize, 500);
 });
 
+// ── messages.get (wire tests) ──
+
+test('messages.get sends {id} to message/get and returns the full record', async () => {
+  let captured;
+  const record = { id: 'm1', genie_id: 'default', partner_id: 9999 };
+  const ff = fakeFetch([
+    {
+      match: 'message/get',
+      respond: (req) => { captured = req.body; return { status: 200, body: record }; },
+    },
+  ]);
+  const mgmt = new Management({ partnerId: '9999', fetch: ff });
+  const result = await mgmt.messages.get('m1', ADMIN_KS);
+  assert.deepEqual(captured, { id: 'm1' });
+  assert.deepEqual(result, record);
+});
+
+test('messages.get maps an unknown id to a typed not_found', async () => {
+  const ff = fakeFetch([
+    { match: 'message/get', respond: () => ({ status: 404, body: { message: 'Message not found' } }) },
+  ]);
+  const mgmt = new Management({ partnerId: '9999', fetch: ff });
+  await assert.rejects(
+    () => mgmt.messages.get('unknown', ADMIN_KS),
+    (e) => e.code === 'not_found',
+  );
+});
+
+test('messages.get rejects a non-admin (conversation) token', async () => {
+  const mgmt = new Management({ partnerId: '9999', fetch: fakeFetch([]) });
+  await assert.rejects(
+    () => mgmt.messages.get('m1', CONV_KS),
+    (e) => e.code === 'wrong_token_scope',
+  );
+});
+
 test('messages.report rejects a non-admin (conversation) token', async () => {
   const mgmt = new Management({ partnerId: '9999', fetch: fakeFetch([]) });
   await assert.rejects(

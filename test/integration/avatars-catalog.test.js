@@ -3,9 +3,10 @@
  *  - the avatar DTO has NO tag field → `avatars.create`/`update` must reject a
  *    stray `adminTags` BEFORE any network call, with an actionable message
  *    pointing at the parent agent (the live API only returns a bare "Bad Request").
- *  - catalog multipart uploads must send `adminTags` in the SINGLE-PARSE shape (a
- *    comma-separated bare string), NOT `JSON.stringify` (which the API re-wraps,
- *    storing `["[\"custom\"]"]` and making the item unfindable by `adminTagsIn`).
+ *  - catalog multipart uploads must send `adminTags` as one repeated field per
+ *    tag, NOT a comma-joined string (stored as one literal tag, e.g. `"a,b"`)
+ *    and NOT `JSON.stringify` (which the API re-wraps, storing
+ *    `["[\"custom\"]"]`) — both make the item unfindable by `adminTagsIn`.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -43,11 +44,11 @@ test('avatars.create WITHOUT adminTags posts normally to avatar/create', async (
   assert.equal(f.calls.filter((c) => c.url.includes('/avatar/create')).length, 1);
 });
 
-test('catalog.createVisual sends adminTags as a single-parse comma string, NOT JSON.stringify (double-encode regression)', async () => {
+test('catalog.createVisual sends adminTags as a bare single field, NOT JSON.stringify (double-encode regression)', async () => {
   const f = fakeFetch([{ match: '/catalog-item/create', respond: () => ({ body: { itemId: 'item-1' } }) }]);
   const k = new Management({ partnerId: 6516742, adminSecret: 'a'.repeat(32), fetch: f });
   const file = new Blob([new Uint8Array([1, 2, 3])], { type: 'image/png' });
-  const r = await k.catalog.createVisual(file, { name: 'QA face' }, ADMIN);
+  const r = await k.catalog.createVisual(file, { name: 'QA face', genderPresentation: 'Feminine' }, ADMIN);
   assert.equal(r.itemId, 'item-1');
   const call = f.calls.find((c) => c.url.includes('/catalog-item/create'));
   assert.ok(call, 'catalog-item/create was called');
@@ -93,9 +94,39 @@ test('catalog.createVisual sends NO type field (unchanged default behavior)', as
   const f = fakeFetch([{ match: '/catalog-item/create', respond: () => ({ body: { itemId: 'item-3' } }) }]);
   const k = new Management({ partnerId: 6516742, adminSecret: 'a'.repeat(32), fetch: f });
   const file = new Blob([new Uint8Array([1, 2, 3])], { type: 'image/png' });
-  await k.catalog.createVisual(file, { name: 'QA visual' }, ADMIN);
+  await k.catalog.createVisual(file, { name: 'QA visual', genderPresentation: 'Feminine' }, ADMIN);
   const call = f.calls.find((c) => c.url.includes('/catalog-item/create'));
   assert.equal(call.body.get('type'), null, 'createVisual must not regress to sending an explicit type');
+});
+
+test('catalog.createVisual rejects missing name/genderPresentation pre-network (the API itself accepts either being absent)', async () => {
+  const f = fakeFetch([{ match: '/catalog-item/create', respond: () => ({ body: { itemId: 'item-1' } }) }]);
+  const k = new Management({ partnerId: 6516742, adminSecret: 'a'.repeat(32), fetch: f });
+  const file = new Blob([new Uint8Array([1, 2, 3])], { type: 'image/png' });
+  await assert.rejects(
+    () => k.catalog.createVisual(file, { genderPresentation: 'Feminine' }, ADMIN),
+    (e) => e.code === 'bad_request' && /name/.test(e.detail),
+  );
+  await assert.rejects(
+    () => k.catalog.createVisual(file, { name: 'QA face' }, ADMIN),
+    (e) => e.code === 'bad_request' && /genderPresentation/.test(e.detail),
+  );
+  await assert.rejects(
+    () => k.catalog.createVisual(file, { name: 'QA face', genderPresentation: 'Nonbinary' }, ADMIN),
+    (e) => e.code === 'bad_request' && /genderPresentation/.test(e.detail),
+  );
+  assert.equal(f.calls.length, 0, 'no transport before validation passes');
+});
+
+test('catalog.update with a file sends MULTIPLE adminTags as repeated fields, NOT one comma-joined field (live-confirmed: the API stores a comma-joined value as one literal tag)', async () => {
+  const f = fakeFetch([{ match: '/catalog-item/update', respond: () => ({ body: { itemId: 'item-1' } }) }]);
+  const k = new Management({ partnerId: 6516742, adminSecret: 'a'.repeat(32), fetch: f });
+  const file = new Blob([new Uint8Array([1, 2, 3])], { type: 'image/png' });
+  await k.catalog.update({ itemId: 'item-1', file, adminTags: ['probeA', 'probeB'] }, ADMIN);
+  const call = f.calls.find((c) => c.url.includes('/catalog-item/update'));
+  assert.ok(call, 'catalog-item/update was called');
+  const tagFields = call.body && typeof call.body.getAll === 'function' ? call.body.getAll('adminTags') : undefined;
+  assert.deepEqual(tagFields, ['probeA', 'probeB'], `adminTags must be two repeated fields, got ${JSON.stringify(tagFields)}`);
 });
 
 test('catalog.importVoiceFromElevenLabs/Cartesia post {voiceId}; empty voiceId rejected pre-network', async () => {

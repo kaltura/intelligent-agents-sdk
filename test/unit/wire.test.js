@@ -93,6 +93,21 @@ test('buildJoin passes requestVars through as kaltura.request_vars, omitted when
   assert.ok(!('request_vars' in buildJoin({ room: 'r1' }).kaltura), 'no requestVars given → field omitted, not sent empty');
 });
 
+test('buildJoin sends kaltura.contextId (always present) and kaltura.contextType (omitted when absent)', () => {
+  const j = buildJoin({ room: 'r1', contextId: 'cat_456', contextType: 'category' });
+  assert.equal(j.kaltura.contextId, 'cat_456');
+  assert.equal(j.kaltura.contextType, 'category');
+  const bare = buildJoin({ room: 'r1' });
+  assert.equal(bare.kaltura.contextId, undefined);
+  assert.ok(!('contextType' in bare.kaltura), 'no contextType given → field omitted, not sent empty');
+});
+
+test('buildJoin includes kaltura.entryId when given, omitted when absent', () => {
+  const j = buildJoin({ room: 'r1', entryId: '0_entry123' });
+  assert.equal(j.kaltura.entryId, '0_entry123');
+  assert.ok(!('entryId' in buildJoin({ room: 'r1' }).kaltura));
+});
+
 test('buildStvNewSession omits cast_mode by default (never webrtc)', () => {
   assert.deepEqual(buildStvNewSession('r1'), { room_id: 'r1' });
   assert.deepEqual(buildStvNewSession('r1', 'rtmp'), { room_id: 'r1', cast_mode: 'rtmp' });

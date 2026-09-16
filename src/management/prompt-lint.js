@@ -47,17 +47,8 @@ const SYS_VAR_SET = new Set(SYS_VARS);
 const SYS_NS_SET = new Set(SYS_NAMESPACES);
 const SOURCE = 'prompt-lint';
 
-/**
- * The two additional server-set scalar `sys__*` variables not yet part of {@link RESERVED_VARS} — `sys__ks` (the raw
- * session token) and `sys__is_new_thread`. Combined with {@link SYS_VARS} this
- * is the full known-reserved-scalar surface {@link assembleSystemPrompt} uses
- * to flag an unresolvable reference; it does NOT feed
- * `assertRequestVars`'s collision guard — that list is tracked separately in
- * `conversations.js` and extending it is out of scope here.
- * @type {readonly string[]}
- */
-const RESERVED_EXTRA_SCALARS = Object.freeze(['sys__ks', 'sys__is_new_thread']);
-const RESERVED_SCALAR_SET = new Set([...SYS_VARS, ...RESERVED_EXTRA_SCALARS]);
+/** All known reserved-scalar `sys__*` names — now fully covered by {@link SYS_VARS}. */
+const RESERVED_SCALAR_SET = SYS_VAR_SET;
 
 /** Dotted prefix for the reserved bound-user object. */
 const RESERVED_USER_OBJ_PREFIX = 'sys__user_obj';
@@ -79,7 +70,7 @@ export const RESERVED_USER_OBJ_ATTRS = Object.freeze(['first_name', 'last_name',
  * @returns {{kind:'scalar'}|{kind:'userObjAttr', attr:string}|{kind:'secret', secretName:string}|null}
  */
 function classifyReservedVar(name) {
-  if (RESERVED_SCALAR_SET.has(name)) return { kind: 'scalar' };
+  if (RESERVED_SCALAR_SET.has(name) || name === RESERVED_USER_OBJ_PREFIX) return { kind: 'scalar' };
   if (name.startsWith(`${RESERVED_USER_OBJ_PREFIX}.`)) {
     const attr = name.slice(RESERVED_USER_OBJ_PREFIX.length + 1);
     if (RESERVED_USER_OBJ_ATTRS.includes(attr)) return { kind: 'userObjAttr', attr };
@@ -684,13 +675,12 @@ export const SERVER_DEFAULT_DIRECTIVE_MARKER = '<<server default directive>>';
  *   - `{{var}}` placeholders are interpolated ONLY when you pass `requestVars`
  *     (system vars too); otherwise they are left literal. `sys__*` values you
  *     pass are a SIMULATION of what the server sets per turn.
- *   - HARDENING: a reference to a known reserved variable
- *     (`sys__thread_id`/`sys__message_id`/`sys__user_id`/`sys__user_message`/
- *     `sys__ks`/`sys__is_new_thread`, a `sys__user_obj.*` attribute, or a
- *     `secrets.*` name) with no value in `requestVars` is flagged in the
- *     returned `warnings[]` — distinct from an ordinary unresolved client
- *     variable, since the same reference would misbehave live (for
- *     `sys__user_obj.*`, a silent whole-turn failure).
+ *   - HARDENING: a reference to a known reserved variable (any {@link SYS_VARS}
+ *     scalar name — including the bare `sys__user_obj` name — a
+ *     `sys__user_obj.*` attribute, or a `secrets.*` name) with no value in
+ *     `requestVars` is flagged in the returned `warnings[]` — distinct from an
+ *     ordinary unresolved client variable, since the same reference would
+ *     misbehave live (for `sys__user_obj.*`, a silent whole-turn failure).
  *     `warnings` is present ONLY when non-empty, so a fully-resolved preview's
  *     return shape is unchanged from before this hardening.
  *

@@ -108,6 +108,14 @@ test('assertRequestVars rejects a RESERVED_VARS collision (sys__/secrets)', () =
   }
 });
 
+test('assertRequestVars rejects a sys__user_obj. prefixed key', () => {
+  assert.throws(() => assertRequestVars({ 'sys__user_obj.first_name': 'Sam' }), (e) => e.code === 'validation_error' && /sys__user_obj\./.test(e.detail));
+});
+
+test('assertRequestVars rejects the bare sys__user_obj key (no trailing dot)', () => {
+  assert.throws(() => assertRequestVars({ sys__user_obj: 'anything' }), (e) => e.code === 'validation_error' && /sys__user_obj/.test(e.detail));
+});
+
 test('assertRequestVars rejects a non-scalar (nested object/array) value', () => {
   assert.throws(() => assertRequestVars({ profile: { tier: 'gold' } }), (e) => e.code === 'validation_error' && /scalar/.test(e.detail));
   assert.throws(() => assertRequestVars({ ids: [1, 2] }), (e) => e.code === 'validation_error' && /scalar/.test(e.detail));

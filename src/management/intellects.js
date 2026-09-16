@@ -47,7 +47,14 @@ export class Intellects {
    * so it may briefly still include a just-DELETED id (or omit a just-created
    * one). Do not treat list membership as authoritative immediately after a
    * mutation; confirm a specific id with {@link get} before acting on it.
-   * @param {string} ks @param {{filter?:object,pageSize?:number}} [opts]
+   *
+   * `opts.filter` is passed through to the server as-is. Supported keys:
+   * `typeEquals` (`'internal'|'external'`), `statusEquals`/`statusIn` (numeric
+   * lifecycle status — 0 pending deletion, 1 pending, 2 active), `nameEquals`,
+   * `nameLike` (partial, case-insensitive), `tagsContains`, `idEquals`, and
+   * `orderBy` (e.g. `'-createdAt'`). An unrecognized key is silently ignored,
+   * not rejected.
+   * @param {string} ks @param {{filter?:{typeEquals?:'internal'|'external',statusEquals?:number,statusIn?:number[],nameEquals?:string,nameLike?:string,tagsContains?:string,idEquals?:number,orderBy?:string},pageSize?:number}} [opts]
    */
   list(ks, opts = {}) {
     this._.assertAdmin(ks, 'intellects.list');
@@ -309,11 +316,11 @@ export class Intellects {
    * `'client-side-replica'` and `_meta.rendererBasis` names the server function
    * this mirrors (the author layer only — NOT byte-exact with the live prompt).
    *
-   * HARDENING: a reference to a known reserved variable
-   * (`sys__thread_id`/`sys__message_id`/`sys__user_id`/`sys__user_message`/
-   * `sys__ks`/`sys__is_new_thread`, a `sys__user_obj.*` attribute, or a
-   * `secrets.*` name) with no value in `requestVars` is
-   * flagged in `warnings[]` instead of silently rendering as empty/literal.
+   * HARDENING: a reference to a known reserved variable (any prompt-lint
+   * `SYS_VARS` scalar name — including the bare `sys__user_obj` name — a
+   * `sys__user_obj.*` attribute, or a `secrets.*` name) with no value in
+   * `requestVars` is flagged in `warnings[]` instead of silently rendering as
+   * empty/literal.
    * `warnings` is present ONLY when non-empty — a fully-resolved preview's
    * return shape is unchanged from before this hardening.
    * @param {number} configId @param {string} ks (admin)
@@ -367,7 +374,13 @@ export class Intellects {
    * Restore a {@link snapshot} (WRITE — idempotent, read-merge-write). Writes
    * back ONLY the safe author-layer fields (prompts/base_directive/glossary/
    * capabilities/status) — SKIPS secrets + server-managed fields. Lints by
-   * default like {@link setPrompts}. @param {object} snapshot @param {string} ks (admin) @param {{fields?:string[], lint?:boolean|'strict'}} [opts]
+   * default like {@link setPrompts}. When both `'prompts'` and `'capabilities'`
+   * are restored (the default), this is TWO writes, not one — capabilities go
+   * through {@link setCapabilities} with `{force:true}` (bypassing its
+   * DISABLED-re-enable guard, since this reproduces a known past state) because
+   * {@link setPrompts}'s own write has no capabilities option. `written` always
+   * reflects what was actually sent, never a field that silently no-op'd.
+   * @param {object} snapshot @param {string} ks (admin) @param {{fields?:string[], lint?:boolean|'strict'}} [opts]
    */
   async restore(snapshot, ks, opts = {}) {
     this._.assertAdmin(ks, 'intellects.restore');
@@ -378,12 +391,22 @@ export class Intellects {
     const want = Array.isArray(opts.fields) ? opts.fields.filter((f) => allowed.includes(f)) : allowed;
     const skipped = allowed.filter((f) => !want.includes(f));
     if (want.includes('prompts')) {
-      return this.setPrompts(snapshot.configId, snapshot.fields.prompts, ks, {
+      const r = await this.setPrompts(snapshot.configId, snapshot.fields.prompts, ks, {
         baseDirective: want.includes('base_directive') ? snapshot.fields.base_directive : undefined,
         glossary: want.includes('glossary') ? snapshot.fields.glossary : undefined,
         status: want.includes('status') ? snapshot.fields.status : undefined,
         lint: opts.lint,
-      }).then((r) => ({ ...r, written: want, skipped, _meta: meta({ partnerId: this._.partnerId, source: 'genie/intellect.update', scope: `configId:${snapshot.configId}`, restoredFrom: 'client-side snapshot', skipped }) }));
+      });
+      // setPrompts's own RMW write never touches capabilities (it's a distinct
+      // field it has no opts for) — restoring it needs a SECOND write, via
+      // setCapabilities with {force:true} so restoring a snapshot that had a
+      // capability stored 'disabled' never trips the re-enable convenience guard
+      // (this is reproducing a known PAST state, not a fresh arbitrary request).
+      let capabilities;
+      if (want.includes('capabilities')) {
+        ({ capabilities } = await this.setCapabilities(snapshot.configId, snapshot.fields.capabilities, ks, { force: true }));
+      }
+      return { ...r, ...(capabilities !== undefined ? { capabilities } : {}), written: want, skipped, _meta: meta({ partnerId: this._.partnerId, source: 'genie/intellect.update', scope: `configId:${snapshot.configId}`, restoredFrom: 'client-side snapshot', skipped }) };
     }
     const { body } = await this._rmwBody(snapshot.configId, ks, 'intellects.restore');
     for (const f of want) body[f] = snapshot.fields[f];
