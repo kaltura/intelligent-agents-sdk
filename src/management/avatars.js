@@ -116,9 +116,10 @@ export class Avatars {
   }
 
   /**
-   * Create an avatar. WRITE — NOT idempotent. `voice.speed` is stored verbatim;
-   * the runtime TTS clamps to a sane band (~0.7–1.2). `motionControl` values are
-   * 0–1; keep `nonSpeaking` below `speaking`.
+   * Create an avatar. WRITE — NOT idempotent. `voice.speed` must be 0.5–1.5
+   * (server-enforced, 400 outside that band). `motionControl.speaking`/
+   * `nonSpeaking` must each be 0.1–1.0 (also server-enforced); keep
+   * `nonSpeaking` below `speaking`.
    *
    * NO TAGS (BY SDK POLICY, NOT A SERVER REJECT): `avatar/create` actually
    * ACCEPTS `adminTags` and stores it (`avatar/list adminTagsIn` finds it),
