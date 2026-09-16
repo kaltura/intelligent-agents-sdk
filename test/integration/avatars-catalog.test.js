@@ -47,7 +47,7 @@ test('catalog.createVisual sends adminTags as a single-parse comma string, NOT J
   const f = fakeFetch([{ match: '/catalog-item/create', respond: () => ({ body: { itemId: 'item-1' } }) }]);
   const k = new Management({ partnerId: 6516742, adminSecret: 'a'.repeat(32), fetch: f });
   const file = new Blob([new Uint8Array([1, 2, 3])], { type: 'image/png' });
-  const r = await k.catalog.createVisual(file, { name: 'QA face' }, ADMIN);
+  const r = await k.catalog.createVisual(file, { name: 'QA face', genderPresentation: 'Feminine' }, ADMIN);
   assert.equal(r.itemId, 'item-1');
   const call = f.calls.find((c) => c.url.includes('/catalog-item/create'));
   assert.ok(call, 'catalog-item/create was called');
@@ -55,6 +55,25 @@ test('catalog.createVisual sends adminTags as a single-parse comma string, NOT J
   const tagField = call.body && typeof call.body.get === 'function' ? call.body.get('adminTags') : undefined;
   assert.equal(tagField, 'custom', `adminTags must be the single-parse bare string "custom", got ${JSON.stringify(tagField)}`);
   assert.ok(!String(tagField).includes('['), 'adminTags must NOT be JSON-encoded (no brackets)');
+});
+
+test('catalog.createVisual rejects missing name/genderPresentation pre-network (the API itself accepts either being absent)', async () => {
+  const f = fakeFetch([{ match: '/catalog-item/create', respond: () => ({ body: { itemId: 'item-1' } }) }]);
+  const k = new Management({ partnerId: 6516742, adminSecret: 'a'.repeat(32), fetch: f });
+  const file = new Blob([new Uint8Array([1, 2, 3])], { type: 'image/png' });
+  await assert.rejects(
+    () => k.catalog.createVisual(file, { genderPresentation: 'Feminine' }, ADMIN),
+    (e) => e.code === 'bad_request' && /name/.test(e.detail),
+  );
+  await assert.rejects(
+    () => k.catalog.createVisual(file, { name: 'QA face' }, ADMIN),
+    (e) => e.code === 'bad_request' && /genderPresentation/.test(e.detail),
+  );
+  await assert.rejects(
+    () => k.catalog.createVisual(file, { name: 'QA face', genderPresentation: 'Nonbinary' }, ADMIN),
+    (e) => e.code === 'bad_request' && /genderPresentation/.test(e.detail),
+  );
+  assert.equal(f.calls.length, 0, 'no transport before validation passes');
 });
 
 test('catalog.importVoiceFromElevenLabs/Cartesia post {voiceId}; empty voiceId rejected pre-network', async () => {

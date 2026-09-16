@@ -70,14 +70,23 @@ export class Catalog {
   /**
    * Upload a CUSTOM VISUAL image. WRITE — NOT idempotent. The uploaded image
    * becomes the catalog item's visual content, usable in {@link Avatars.create}
-   * and in live animated sessions via `avatar-session/create`. All visual
-   * attribute fields are required or the API 400s.
+   * and in live animated sessions via `avatar-session/create`. The API itself
+   * accepts any subset of the attribute fields below, including none — the SDK
+   * requires `name` and `genderPresentation` client-side (a catalog item without
+   * either is confusing to browse and manage) and defaults the rest to a
+   * consistent baseline look.
    * @param {Blob|File} file
    * @param {{name:string,genderPresentation:'Masculine'|'Feminine',background?:string,skinTone?:string,ageGroup?:string,hairColor?:string,hairStyle?:string[],clothing?:string[],glasses?:boolean,consentRef?:string}} attrs  `consentRef`: an opaque URI/attestation id for likeness consent — echoed on the result `_consent` receipt + audit (same contract as {@link createVoice}). The SDK records it; it does not verify it.
    * @param {string} ks
    */
   async createVisual(file, attrs, ks) {
     this._.assertAdmin(ks, 'catalog.createVisual');
+    if (!attrs?.name) {
+      throw new KalturaError({ type: 'about:blank', title: 'name required', code: 'bad_request', detail: 'catalog.createVisual requires attrs.name (a catalog item without a name is confusing to browse and manage).' });
+    }
+    if (attrs?.genderPresentation !== 'Masculine' && attrs?.genderPresentation !== 'Feminine') {
+      throw new KalturaError({ type: 'about:blank', title: 'genderPresentation required', code: 'bad_request', detail: `catalog.createVisual requires attrs.genderPresentation to be 'Masculine' or 'Feminine', got ${JSON.stringify(attrs?.genderPresentation)}.` });
+    }
     const attributes = { visual: {
       name: attrs.name, background: attrs.background || 'Image', genderPresentation: attrs.genderPresentation,
       skinTone: attrs.skinTone || 'Light', ageGroup: attrs.ageGroup || 'YoungAdult', hairColor: attrs.hairColor || 'Brown',

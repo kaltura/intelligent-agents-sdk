@@ -88,9 +88,9 @@ The backend does preprocess the uploaded image before rendering: it crop-fits th
 
 ![Tight headshot crops shrink onto the render canvas with black borders; a generously padded portrait scales to fill it edge-to-edge](img/avatar-photo-framing.svg)
 
-**Required fields** (API 400s if any are missing): `name`, `genderPresentation`, `background`, `skinTone`, `ageGroup`, `hairColor`. Video-clip ingest is not available through this API.
+The API itself accepts any subset of the attribute fields, including none. Video-clip ingest is not available through this API.
 
-**SDK shortcut:** `catalog.createVisual(imageBlob, { name, genderPresentation, background, skinTone, ageGroup, hairColor }, adminKs)` — returns `{ itemId, loadingVideo }` (raw API response — field names come from the CatalogItemDto and are not SDK-normalized; treat as best-effort until the API contract is pinned).
+**SDK shortcut:** `catalog.createVisual(imageBlob, { name, genderPresentation, background, skinTone, ageGroup, hairColor }, adminKs)` — requires `name` and `genderPresentation` client-side (`bad_request` before any network call if either is missing) and defaults the rest to a consistent baseline look. Returns `{ itemId, loadingVideo }` (raw API response — field names come from the CatalogItemDto and are not SDK-normalized; treat as best-effort until the API contract is pinned).
 
 ---
 
