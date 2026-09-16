@@ -75,6 +75,10 @@ export class Catalog {
    * requires `name` and `genderPresentation` client-side (a catalog item without
    * either is confusing to browse and manage) and defaults the rest to a
    * consistent baseline look.
+   * NAME COLLISION: `attrs.background` here is a photo ATTRIBUTE string (e.g.
+   * `'Image'`) describing the uploaded photo's backdrop — unrelated to
+   * {@link Avatars#create}'s `body.background`, the `{type:'color'|'visual',
+   * value}` composition selector used to compose a Visual from a Face.
    * @param {Blob|File} file
    * @param {{name:string,genderPresentation:'Masculine'|'Feminine',background?:string,skinTone?:string,ageGroup?:string,hairColor?:string,hairStyle?:string[],clothing?:string[],glasses?:boolean,consentRef?:string}} attrs  `consentRef`: an opaque URI/attestation id for likeness consent — echoed on the result `_consent` receipt + audit (same contract as {@link createVoice}). The SDK records it; it does not verify it.
    * @param {string} ks
@@ -87,12 +91,57 @@ export class Catalog {
     if (attrs?.genderPresentation !== 'Masculine' && attrs?.genderPresentation !== 'Feminine') {
       throw new KalturaError({ type: 'about:blank', title: 'genderPresentation required', code: 'bad_request', detail: `catalog.createVisual requires attrs.genderPresentation to be 'Masculine' or 'Feminine', got ${JSON.stringify(attrs?.genderPresentation)}.` });
     }
-    const attributes = { visual: {
-      name: attrs.name, background: attrs.background || 'Image', genderPresentation: attrs.genderPresentation,
-      skinTone: attrs.skinTone || 'Light', ageGroup: attrs.ageGroup || 'YoungAdult', hairColor: attrs.hairColor || 'Brown',
-      hairStyle: attrs.hairStyle || ['Short'], clothing: attrs.clothing || ['Casual'], glasses: attrs.glasses ?? false,
-    } };
+    const attributes = { visual: visualAttrs(attrs) };
     return this._upload(file, attributes, ks, undefined, attrs.consentRef, 'visual');
+  }
+
+  /**
+   * Upload a CUSTOM face image as an explicit `Face`-typed catalog item, for
+   * the two-step `face` + `background` avatar composition ({@link
+   * Avatars#create}). WRITE — NOT idempotent. Distinct from
+   * {@link createVisual}: `createVisual` uploads a photo directly as a
+   * ready-to-use Visual — already a full custom digital twin. `createFace` /
+   * {@link createBackground} instead produce the two composable HALVES the
+   * `face`/`background` avatar fields expect. Live, only 36 preset Face
+   * items exist today; this is the only way to add a custom one. Same
+   * attribute shape as `createVisual` — the backend's Face type reuses the
+   * `visual` attribute schema.
+   *
+   * NAME COLLISION: `attrs.background` here is a photo ATTRIBUTE string (e.g.
+   * `'Image'`) describing this upload's own backdrop — unrelated to
+   * {@link Avatars#create}'s `body.background`, the composition selector you
+   * pass separately (alongside this method's `itemId`) to compose the Face
+   * over a Background.
+   * @param {Blob|File} file
+   * @param {{name:string,genderPresentation:'Masculine'|'Feminine',background?:string,skinTone?:string,ageGroup?:string,hairColor?:string,hairStyle?:string[],clothing?:string[],glasses?:boolean,consentRef?:string}} attrs
+   * @param {string} ks
+   */
+  async createFace(file, attrs, ks) {
+    this._.assertAdmin(ks, 'catalog.createFace');
+    const attributes = { visual: visualAttrs(attrs) };
+    return this._upload(file, attributes, ks, undefined, attrs.consentRef, 'face', 'Face');
+  }
+
+  /**
+   * Upload a CUSTOM background image as an explicit `Background`-typed
+   * catalog item, for the two-step `face` + `background` avatar composition
+   * ({@link Avatars#create}). WRITE — NOT idempotent. Live, only 4 preset
+   * Background items exist today. Same attribute shape as {@link
+   * createVisual}/{@link createFace} — the backend's Background type reuses
+   * the `visual` attribute schema too.
+   *
+   * NAME COLLISION: `attrs.background` here is a photo ATTRIBUTE string (e.g.
+   * `'Image'`) describing this upload's own backdrop — unrelated to
+   * {@link Avatars#create}'s `body.background`, the composition selector this
+   * item's `itemId` is passed as `value` for.
+   * @param {Blob|File} file
+   * @param {{name:string,genderPresentation:'Masculine'|'Feminine',background?:string,skinTone?:string,ageGroup?:string,hairColor?:string,hairStyle?:string[],clothing?:string[],glasses?:boolean,consentRef?:string}} attrs
+   * @param {string} ks
+   */
+  async createBackground(file, attrs, ks) {
+    this._.assertAdmin(ks, 'catalog.createBackground');
+    const attributes = { visual: visualAttrs(attrs) };
+    return this._upload(file, attributes, ks, undefined, attrs.consentRef, 'background', 'Background');
   }
 
   /**
@@ -177,12 +226,13 @@ export class Catalog {
    * filtered on `adminTagsIn: ['custom']`.
    * (Also documented in docs/api/design.md § Upload a Custom Voice/Visual, keep both in sync.)
    * @param {Blob|File} file @param {object} attributes @param {import('./client.js').KsLike} ks @param {string} [mime]
-   * @param {string} [consentRef] @param {string} [kind]
+   * @param {string} [consentRef] @param {string} [kind] @param {string} [type] Explicit catalog item type (`'Face'`/`'Background'`) — required for those two, since an image MIME alone defaults to `Visual`. Omitted for voice/visual: the API infers the type from the uploaded file's own content (image → Visual, audio → Voice), not from `attributes`.
    */
-  async _upload(file, attributes, ks, mime, consentRef, kind) {
+  async _upload(file, attributes, ks, mime, consentRef, kind, type) {
     const fd = newFormData();
     fd.append('file', file, fileName(file, mime));
     fd.append('attributes', JSON.stringify(attributes));
+    if (type) fd.append('type', type);
     appendAdminTags(fd, ['custom']);
     const data = (await this._.agenticMultipart('catalog-item/create', fd, ks, { idempotencyKey: uuidv4() })).data;
     // Carry the (operator-supplied) cloning-consent reference as an auditable receipt
@@ -193,6 +243,18 @@ export class Catalog {
     }
     return data;
   }
+}
+
+/**
+ * Shared 9-field `visual` attributes object for createVisual/createFace/createBackground.
+ * @param {{name:string,genderPresentation:'Masculine'|'Feminine',background?:string,skinTone?:string,ageGroup?:string,hairColor?:string,hairStyle?:string[],clothing?:string[],glasses?:boolean}} attrs
+ */
+function visualAttrs(attrs) {
+  return {
+    name: attrs.name, background: attrs.background || 'Image', genderPresentation: attrs.genderPresentation,
+    skinTone: attrs.skinTone || 'Light', ageGroup: attrs.ageGroup || 'YoungAdult', hairColor: attrs.hairColor || 'Brown',
+    hairStyle: attrs.hairStyle || ['Short'], clothing: attrs.clothing || ['Casual'], glasses: attrs.glasses ?? false,
+  };
 }
 
 /** @param {unknown} v @param {string} where */

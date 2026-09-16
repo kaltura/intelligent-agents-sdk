@@ -74,7 +74,7 @@ The intellect DTO (`v1/intellect/*`) is the one real door for every writable fie
 - **External (BYO-LLM) intellects are not supported.** `intellects.create` rejects a body containing `url`/`protocol` with a typed `bad_request`.
 - **Secrets are write-only** — values never read back; the no-leak guarantee is the name-only response contract, not `redact()`. Client-side encryption / BYOK is server-managed (not buildable).
 - **`previewPrompt`/`snapshot`/`restore` are client-side** — a replica of the author layer only (server-injected capability-conditional prompt blocks are not reproducible) and a browser-local history (the server has no versioning).
-- **`agent/list` accepts only an empty filter.** `filter` is forwarded as-is and the server rejects any non-empty filter with `bad_request`, so `agents.list(ks)` sends `filter:{}` and you filter client-side: `await k.agents.list(ks).all().then(l => l.filter(a => a.adminTags?.includes('my-tag')))`. Tag the **agent** with `adminTags` at create time to group; avatars carry no tag field (`avatar/create`/`update` reject `adminTags`).
+- **`agent/list` filter keys are narrow.** `filter` is forwarded as-is; the server accepts only `agentId`, `adminTagsIn`, `adminTagsNotIn`, `searchValue` and 400s on anything else. Tag the **agent** with `adminTags` at create time to group; avatars carry no tag field, but `avatar/create` accepts+stores it silently (never echoed back) while `avatar/update` 400s on it — see `Avatars.create`'s JSDoc.
 
 The SDK's own `node:test` suite (`test/`) exercises every one of these surfaces against the real backend and against injected fakes — see `README.md` for the full command list.
 

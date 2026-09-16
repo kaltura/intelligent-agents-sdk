@@ -265,7 +265,7 @@ const reply = await kaltura.conversations.send({ userMessage: 'What are your hou
 | `conversations` | `send(opts, ks)`, `status(ks)` |
 | `threads` | `list(ks, opts?)`, `get(id, ks)`, `transcript(id, ks)`, `rename(id, title, ks)`, `delete(threadIds, ks, confirm)` |
 | `messages` | `list(ks, opts?)`, `share(id, newTitle, ks)`, `report(ks, opts?)`, `reportSummary(ks, opts?)` |
-| `feedback` | `add(opts, ks)` |
+| `feedback` | `add(opts, ks)`, `list(ks, opts?)` |
 | `followups` | `getSuggested(ks)` |
 
 `report`/`reportSummary` return parsed/aggregated results, not raw passthroughs — both carry a `_meta.generatedAt` provenance receipt.

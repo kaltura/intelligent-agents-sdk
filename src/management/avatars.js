@@ -9,11 +9,14 @@ import { requireConfirm } from './agents.js';
 import { KalturaError } from '../core/errors.js';
 
 /**
- * Reject a stray `adminTags` on an avatar body BEFORE the network call. The
- * avatar DTO is strict-rejecting: `avatar/create` 400s with
- * `body.detail: ["property adminTags should not exist"]`; `avatar/update` 400s
- * with only a bare 'Bad Request'). Avatars carry no tag field — the actionable
- * fix is to tag the parent AGENT. Pure: no network.
+ * Reject a stray `adminTags` on an avatar body BEFORE the network call.
+ * `avatar/create` actually ACCEPTS and stores `adminTags` (`avatar/list
+ * adminTagsIn` finds it), but no read path ever returns it back — a tag you
+ * can set but never read or change is a trap, so the SDK throws pre-network
+ * rather than let one through silently. `avatar/update` genuinely rejects it
+ * (no tag field on that request body) with only a bare 'Bad Request'. Either
+ * way, the actionable fix is to tag the parent AGENT instead. Pure: no
+ * network.
  * @param {object} body @param {string} where
  */
 function assertNoAvatarTags(body, where) {
@@ -22,6 +25,65 @@ function assertNoAvatarTags(body, where) {
       type: 'about:blank', title: 'avatars carry no tags', code: 'bad_request',
       detail: `${where}: the avatar DTO rejects "adminTags" (avatars carry no tag field). Tag the parent AGENT instead — agents.create/agents.update({ adminTags: [...] }).`,
     });
+  }
+}
+
+/**
+ * Validate a `face`/`background` composition BEFORE the network call.
+ * `strict` (create only) rejects an incomplete pairing — `face` alone or
+ * `background` alone both 200 with `AVATAR_MISSING_VISUAL_RESOLUTION`, an
+ * HTTP 200 domain failure the SDK can catch for free by checking client-side
+ * first. **On create, that check still applies even when `visual` is ALSO
+ * sent** — an incomplete `face`/`background` pair fails server-side
+ * regardless of `visual`, so `visual` alone does not exempt it. It's
+ * skipped only when `templateId` is also given: a template can carry its
+ * own `face` and/or `background`, so either key sent alone might complete a
+ * valid pairing against the template — this pure guard has no way to know
+ * without fetching the template, so it defers to the server rather than
+ * risk rejecting a valid call.
+ *
+ * On update (`strict:false`) the backend is asymmetric and depends on the
+ * avatar's EXISTING state, which this pure guard can't see, so neither half
+ * alone is rejected: `background` alone recomposes against the avatar's
+ * current face (a valid "just change the background" pattern), while `face`
+ * alone is accepted and silently ignored (no existing `background` to pair
+ * it with). On update ONLY, a real `visual` genuinely wins outright — the
+ * server never even looks at `face`/`background` once `visual` is present —
+ * so this guard skips composition validation entirely in that case. Pure:
+ * no network.
+ * @param {object} body @param {string} where @param {boolean} strict require face+background pairing (create only)
+ */
+function assertComposition(body, where, strict) {
+  if (!body || typeof body !== 'object') return;
+  if (!strict && body.visual !== undefined) return;
+  const hasFace = body.face !== undefined;
+  const hasBackground = body.background !== undefined;
+  if (strict && hasFace !== hasBackground && body.templateId === undefined) {
+    throw new KalturaError({
+      type: 'about:blank', title: 'incomplete avatar composition', code: 'bad_request',
+      detail: `${where}: face and background must be sent together (composing a visual needs both), even alongside "visual" — got ${hasFace ? 'face only' : 'background only'}.`,
+    });
+  }
+  if (hasBackground) {
+    const bg = body.background;
+    if (!bg || typeof bg !== 'object' || !bg.type) {
+      throw new KalturaError({
+        type: 'about:blank', title: 'invalid background', code: 'bad_request',
+        detail: `${where}: background must be {type:'color'|'visual', value?} — got ${JSON.stringify(bg)}.`,
+      });
+    }
+    if (bg.type === 'visual' && bg.value === undefined) {
+      throw new KalturaError({
+        type: 'about:blank', title: 'invalid background', code: 'bad_request',
+        detail: `${where}: background.value (a catalog item id) is required when type is "visual" — it's optional (defaults to white) only for type:'color'.`,
+      });
+    }
+    if (bg.type === 'color' && bg.value !== undefined && !/^#[0-9a-fA-F]{6}$/.test(bg.value)) {
+      throw new KalturaError({
+        type: 'about:blank', title: 'invalid background', code: 'bad_request',
+        detail: `${where}: background.value for type:'color' must be a 6-digit hex string ("#RRGGBB") — got ${JSON.stringify(bg.value)}. The backend has no alpha channel support: an 8-digit hex, rgba(), or CSS4 rgb(.../...%) all fail server-side with AVATAR_INVALID_BACKGROUND_ID.`,
+      });
+    }
   }
 }
 
@@ -39,11 +101,13 @@ export class Avatars {
   }
 
   /**
-   * Get one avatar. READ. ⚠️ A missing/unknown avatar id throws with
-   * `code:'api_exception'` (a generic agentic error), NOT a stable
-   * `avatar_not_found` — so branch on the not-found case defensively (e.g. wrap
-   * in try/catch and treat `api_exception` as "absent") rather than matching a
-   * dedicated code.
+   * Get one avatar. READ. ⚠️ A missing/unknown (but well-formed) avatar id
+   * throws with `code:'api_exception'` (a generic agentic error), NOT a
+   * stable `avatar_not_found` code — but `title` DOES carry a specific
+   * `'AVATAR_NOT_FOUND'` marker, so branch on `err.title === 'AVATAR_NOT_FOUND'`
+   * rather than treating any `api_exception` as "absent" (a malformed id gets
+   * a distinct `code:'bad_request'` instead, so `title` alone reliably tells
+   * the two apart).
    * @param {string} id 24-char hex @param {string} ks
    */
   async get(id, ks) {
@@ -52,17 +116,17 @@ export class Avatars {
   }
 
   /**
-   * Create an avatar. WRITE — NOT idempotent. `voice.speed` is stored verbatim;
-   * the runtime TTS clamps to a sane band (~0.7–1.2). `motionControl` values are
-   * 0–1; keep `nonSpeaking` below `speaking`.
+   * Create an avatar. WRITE — NOT idempotent. `voice.speed` must be 0.5–1.5
+   * (server-enforced, 400 outside that band). `motionControl.speaking`/
+   * `nonSpeaking` must each be 0.1–1.0 (also server-enforced); keep
+   * `nonSpeaking` below `speaking`.
    *
-   * STRICT DTO — NO TAGS: `avatar/create` rejects any unknown property with a
-   * `bad_request` (`body.detail: ["property adminTags should not
-   * exist"]`). An avatar carries NO tag field. To group/identify avatars, tag
-   * the PARENT AGENT instead — `agents.create({adminTags:[...]})` (the agent DTO
-   * accepts adminTags; the avatar DTO does not). This SDK strips a stray
-   * `adminTags` key pre-network and throws an actionable error pointing you at
-   * the agent, so you never hit the opaque server reject.
+   * NO TAGS (BY SDK POLICY, NOT A SERVER REJECT): `avatar/create` actually
+   * ACCEPTS `adminTags` and stores it (`avatar/list adminTagsIn` finds it),
+   * but no read path ever returns it — you can set it once and never see or
+   * change it again. To group/identify avatars, tag the PARENT AGENT instead —
+   * `agents.create({adminTags:[...]})`. This SDK throws pre-network on a
+   * stray `adminTags` key rather than let you fall into that write-only trap.
    *
    * @example <caption>Tag the AGENT, not the avatar</caption>
    * const avatar = await k.avatars.create(
@@ -81,13 +145,52 @@ export class Avatars {
    * greeting, pass the SSML silence tag `'<blank>'`: non-empty, so it stays
    * on the safe path, and silent, so the TTS speaks nothing for it.
    *
-   * @param {object} body {voice:{id,speed?},visual:{id,motionControl?:{speaking,nonSpeaking}},openingPhrase?}
+   * THREE WAYS TO GET A VISUAL — pick exactly one:
+   *  - `visual:{id}` — an existing catalog Visual (preset, or your own upload
+   *    via {@link Catalog#createVisual}). Only truly stands alone when
+   *    `face`/`background` are BOTH omitted (or BOTH sent as a complete
+   *    pair, in which case `visual` wins and the pair is ignored) — sending
+   *    just one of `face`/`background` alongside `visual` is STILL a
+   *    domain failure (see below), `visual` does not exempt it.
+   *  - `face:{id} + background:{type:'color', value?:'#RRGGBB'} | {type:'visual', value:<Background catalog itemId>}` —
+   *    composes a NEW Visual from a Face catalog item over a color (`value`
+   *    optional, defaults to white — a 6-digit hex string; no alpha channel:
+   *    `#RRGGBBAA`, `rgba(...)`, and `rgb(... / ...)` all fail server-side
+   *    with `AVATAR_INVALID_BACKGROUND_ID`, "must be a 6-digit hex value")
+   *    or a Background catalog item (`value`
+   *    required). `face`/`background` MUST travel together — either alone is
+   *    a domain failure, UNLESS `templateId` is also given: a template can
+   *    carry its own `face` and/or `background` from {@link listTemplates},
+   *    which fills in whichever half you didn't send. The SDK can't tell
+   *    client-side whether a given template supplies the missing half, so it
+   *    skips this check entirely whenever `templateId` is present and lets
+   *    the server decide. The composed result is reflected in
+   *    `visual.composition` and a fresh raw `previewImageUrl`/`loadingVideoUrl` —
+   *    inspect those to see what was built.
+   *  - `templateId` — a curated bundle from {@link listTemplates} (`voice` +
+   *    either `visual`, or `face`/`background`) PLUS whichever of
+   *    `face`/`background`/`visual` the template doesn't already supply, to
+   *    resolve it into an actual Visual (`templateId` alone is a domain
+   *    failure unless the template already resolves to a complete `visual`).
+   *
+   * `name` (≤255 chars) labels the avatar; over 255 is a 400.
+   *
+   * DOMAIN FAILURES ARRIVE AS HTTP 200: an incomplete/invalid composition is a
+   * `KalturaAPIException` body, not an HTTP error — check `objectType`, not
+   * status. Codes: `AVATAR_MISSING_VISUAL_RESOLUTION` (face/background/template
+   * incomplete), `AVATAR_FAILED_TO_COMPOSE_VISUAL` (e.g. a bogus face id),
+   * `AVATAR_MISSING_VOICE`, `AVATAR_NOT_FOUND`. The SDK pre-network guard below
+   * catches the incomplete-pairing case for free, before the wire call — on
+   * create, that includes an incomplete pair sent alongside `visual`.
+   *
+   * @param {object} body {voice:{id,speed?},visual?:{id,motionControl?:{speaking,nonSpeaking}},face?:{id},background?:{type:'color'|'visual',value?:string},name?:string,templateId?:string,openingPhrase?:string}
    * @param {string} ks @param {{idempotencyKey?:string}} [opts]
-   * @throws {import('../core/errors.js').KalturaError} `code:'bad_request'` if `adminTags` (or any avatar-unknown key) is passed.
+   * @throws {import('../core/errors.js').KalturaError} `code:'bad_request'` if `adminTags` is passed, if `face`/`background` are incomplete/malformed, or if `background.value` for `type:'color'` isn't a 6-digit hex string (no alpha channel).
    */
   async create(body, ks, opts = {}) {
     this._.assertAdmin(ks, 'avatars.create');
     assertNoAvatarTags(body, 'avatars.create');
+    assertComposition(body, 'avatars.create', true);
     return (await this._.agentic('avatar/create', body, ks, { idempotencyKey: opts.idempotencyKey || uuidv4() })).data;
   }
 
@@ -97,22 +200,35 @@ export class Avatars {
    * alone keeps the existing `voice`/`visual`/`motionControl`). Send only the
    * fields you want to change.
    *
-   * STRICT DTO — NO TAGS (same as {@link create}): `avatar/update` rejects
-   * `adminTags` with a `bad_request`, but the raw server reply is only a
-   * bare `'Bad Request'` (no helpful `detail`). The SDK therefore strips/throws
-   * pre-network with an actionable message on BOTH paths so update isn't a silent
-   * footgun — tag the parent AGENT (`agents.update({adminTags})`) instead.
+   * NO TAGS, AND HERE IT'S A REAL SERVER REJECT: unlike {@link create},
+   * the update request body genuinely has no tag field — `avatar/update`
+   * 400s on `adminTags` with only a bare `'Bad Request'` (no helpful `detail`). The
+   * SDK throws pre-network with an actionable message instead — tag the
+   * parent AGENT (`agents.update({adminTags})`) instead.
    *
    * @example <caption>Change just the opening phrase; voice/visual untouched</caption>
    * await k.avatars.update({ id: avatarId, openingPhrase: 'Welcome back!' }, adminKs);
    *
-   * @param {object} body {id,...} (only the fields to change)
+   * Also accepts `face`+`background` to recompose the visual, but — UNLIKE
+   * {@link create} — the pairing rule here is asymmetric and depends on the
+   * avatar's EXISTING state, so this SDK does NOT reject either half alone:
+   * `background` alone recomposes against the avatar's CURRENT face (a
+   * valid "just change the background, keep the face" update);  `face`
+   * alone is accepted but silently a no-op (nothing to pair it with — the
+   * existing visual is left untouched, so a response with unchanged
+   * `visual.composition` means the new face was NOT applied; send
+   * `background` too to actually recompose). `name` is also accepted.
+   * `templateId` is REJECTED on update (400 `property templateId should not
+   * exist`) — it's a create-only convenience.
+   *
+   * @param {object} body {id:string, face?:{id}, background?:{type:'color'|'visual',value?:string}, name?:string, ...}
    * @param {string} ks
-   * @throws {import('../core/errors.js').KalturaError} `code:'bad_request'` if `adminTags` (or any avatar-unknown key) is passed.
+   * @throws {import('../core/errors.js').KalturaError} `code:'bad_request'` if `adminTags` is passed, or if a present `background` is malformed.
    */
   async update(body, ks) {
     this._.assertAdmin(ks, 'avatars.update');
     assertNoAvatarTags(body, 'avatars.update');
+    assertComposition(body, 'avatars.update', false);
     return (await this._.agentic('avatar/update', body, ks)).data;
   }
 

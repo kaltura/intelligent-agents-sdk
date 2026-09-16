@@ -51,7 +51,7 @@ attributes={"voice":{"name":"My Voice","description":"non-empty description","la
 adminTags=custom
 ```
 
-Returns a `CatalogItemDto` whose `itemId` is the ElevenLabs clone. Pair with any avatar's `voice.id`.
+Returns a catalog item whose `itemId` is the ElevenLabs clone. Pair with any avatar's `voice.id`.
 
 **Gotchas:** `description` must be non-empty; audio under ~6 s returns `500`; send `adminTags=custom` bare (not a JSON array string).
 
@@ -82,7 +82,7 @@ attributes={"visual":{"name":"My Portrait","genderPresentation":"Feminine","back
 adminTags=custom
 ```
 
-Returns a `CatalogItemDto` whose `itemId` is the catalog visual. Pass it as `visual.id` in `avatar/create` (or `visualId` in `provision`). The model **animates the portrait live at runtime** — no ops involvement, self-serve. Verified: a real 2.4 MB portrait JPEG (`avatar-session/create` → `{success:true, sessionId}`).
+Returns a catalog item whose `itemId` is the catalog visual. Pass it as `visual.id` in `avatar/create` (or `visualId` in `provision`). The model **animates the portrait live at runtime** — no ops involvement, self-serve. Verified: a real 2.4 MB portrait JPEG (`avatar-session/create` → `{success:true, sessionId}`).
 
 The backend does preprocess the uploaded image before rendering: it crop-fits the source to a fixed face-height-to-frame ratio and centers it on the render canvas. A tight "headshot"-style crop (the intuitive upload) is the worst case. The bigger the face already fills the source frame, the more the backend downscales it to hit that ratio, and the bigger the resulting black borders around the rendered avatar. One confirmed case: padding the source out to roughly 2600×2600 (face occupying a small fraction of the frame) produced an edge-to-edge render with no borders. This is an observed data point from one real upload, not a documented API contract. The exact ratio isn't published, so pad generously and check the result in a live session rather than assuming this number is precise.
 
@@ -91,6 +91,21 @@ The backend does preprocess the uploaded image before rendering: it crop-fits th
 The API itself accepts any subset of the attribute fields, including none. Video-clip ingest is not available through this API.
 
 **SDK shortcut:** `catalog.createVisual(imageBlob, { name, genderPresentation, background, skinTone, ageGroup, hairColor }, adminKs)` — requires `name` and `genderPresentation` client-side (`bad_request` before any network call if either is missing) and defaults the rest to a consistent baseline look. Returns `{ itemId, loadingVideo }` (raw API response — field names come from the CatalogItemDto and are not SDK-normalized; treat as best-effort until the API contract is pinned).
+
+## Upload a custom Face or Background (compose-a-visual path)
+
+`createVisual` above uploads a photo directly as a ready-to-use Visual. `catalog-item/create` also accepts an explicit `Face`/`Background` `type` for the two composable HALVES the `avatar/create` `face`/`background` fields expect instead — same multipart shape and attribute fields as a Visual upload, just with `type` set. Name collision to watch for: the `attributes.visual.background` field below is a photo ATTRIBUTE string (e.g. `"Image"`) describing the upload's own backdrop — unrelated to `avatar/create`'s `background` field, the `{type:'color'|'visual', value}` composition selector used a few steps later.
+
+```
+file=@face-portrait.jpg
+attributes={"visual":{"name":"Support rep","genderPresentation":"Feminine","background":"Image","skinTone":"Light","ageGroup":"YoungAdult","hairColor":"Brown"}}
+type=Face
+adminTags=custom
+```
+
+Send `type=Background` for a backdrop image instead. Only 36 preset Face items and 4 preset Background items exist today (live count) — this is the only way to add a custom one.
+
+**SDK shortcut:** `catalog.createFace(imageBlob, attrs, adminKs)` / `catalog.createBackground(imageBlob, attrs, adminKs)` — same `attrs` shape as `createVisual`. See [build/avatar-and-agent.md § Three ways to get a visual](build/avatar-and-agent.md#three-ways-to-get-a-visual) for how to compose the result into an avatar.
 
 ---
 

@@ -40,14 +40,15 @@ export class Agents {
   /**
    * List agents. READ. Async-iterable + awaitable (first page).
    *
-   * `filter` is passed through to `agent/list` as-is (default `{}`). The API
-   * documents no filter keys; an unrecognized key returns `bad_request`. Filter
-   * CLIENT-SIDE on the listed objects instead (agents carry `adminTags`, set via
-   * {@link create}/{@link update}).
+   * `filter` is passed through to `agent/list` as-is (default `{}`). Keys:
+   * `agentId`, `adminTagsIn`, `adminTagsNotIn`, `searchValue` (case-insensitive
+   * substring on `displayName`/`agentId`); an unrecognized key returns
+   * `bad_request`. The wire request also takes a top-level `orderBy`
+   * (`+createdAt`, `-createdAt`, `+updatedAt`, `-updatedAt`), which this
+   * method does not yet expose.
    *
-   * @example <caption>List all, then filter by tag client-side</caption>
-   * const tagged = await k.agents.list(adminKs).all()
-   *   .then((all) => all.filter((a) => a.adminTags?.includes('lobby')));
+   * @example <caption>Filter by an admin tag</caption>
+   * const tagged = await k.agents.list(adminKs, { filter: { adminTagsIn: ['lobby'] } }).all();
    *
    * @param {string} ks @param {{filter?:object,pageSize?:number}} [opts]
    */
@@ -68,8 +69,8 @@ export class Agents {
   /**
    * Create an agent. WRITE — NOT idempotent (auto-sends an Idempotency-Key for
    * hygiene; the server ignores it today). `intellect.id` is the intellect's
-   * configId — no separate genieId is needed (`CreateAgentIntellectDto` has
-   * only `intellectType`+`id`).
+   * configId — no separate genieId is needed (the request body's `intellect`
+   * only takes `intellectType`+`id`).
    * @param {object} body {displayName,intellect:{intellectType:'genie',id},avatarIds?,adminTags?,maxConversationLength?,widgetConfig?,embedConfig?}
    * @param {string} ks
    * @param {{idempotencyKey?:string}} [opts]

@@ -22,6 +22,7 @@ import { newFormData as sharedNewFormData } from './catalog.js';
 // 'GenieListThreadFilter' 422s with "Input should be 'ListThreadFilter'".
 const GENIE_THREAD_FILTER = 'ListThreadFilter';
 const GENIE_MESSAGE_FILTER = 'GenieListMessageFilter';
+const GENIE_QUESTION_FILTER = 'GenieListQuestionFilter';
 
 // Status/type scope for a knowledge-category media listing — shared by
 // Knowledge#listCategoryEntries and Knowledge#corpusStatus so the two entry-count
@@ -236,12 +237,50 @@ export class Threads {
   /** @param {import('./client.js').Ctx} ctx */
   constructor(ctx) { this._ = ctx; }
 
-  /** List threads. READ. objectType is mandatory (sent automatically). @param {string} ks @param {{pageSize?:number}} [opts] */
+  /**
+   * List threads. READ. `objectType` is mandatory and always sent; `opts.filter`
+   * is merged under it (so `objectType` can't be overridden). Wire rules:
+   *
+   *  - pager is `{pageIndex, pageSize}` — `pageIndex` starts at 1; `{offset, limit}`
+   *    is ignored and returns the default page of 30.
+   *  - `orderBy` goes INSIDE `filter`, not top-level (422 if sent there); one of
+   *    `+createdAt`, `-createdAt`, `+updatedAt`, `-updatedAt`.
+   *  - `statusEquals`/`statusIn` take `0`/`1`; a numeric string (`"0"`) is
+   *    silently coerced and accepted, but a non-numeric string 422s.
+   *  - an unknown filter key 422s; `partnerIdIn` always 422s (rejected on the
+   *    public thread API); `partnerIdEquals` is accepted but the query is
+   *    always scoped to the KS's own partner.
+   *  - `pageSize` is capped server-side at 500 — a higher value 422s. Same
+   *    cap applies to Messages/Feedback/Followups pagers below.
+   *  - threads opened via `sessions.createConversationToken` carry
+   *    `agent_id: "default"` — an `agentIdEquals` filter for a real agent id
+   *    will never match them; use `sessions.createAgentToken` instead.
+   *  - `agentIdEquals` is translated to the server's own agent-scoping filter
+   *    key on the wire; there is no server-side "in" equivalent, so
+   *    `agentIdIn` throws a pre-flight `validation_error` instead of being
+   *    silently ignored — call `list` once per agent id instead.
+   *
+   * Filter fields: `agentIdEquals`, `contextIdEqual`,
+   * `createdAtGreaterThanOrEqual`, `createdAtLessThanOrEqual`, `idEquals`,
+   * `idsIn`, `isEverywhere`, `orderBy`, `partnerIdEquals`, `statusEquals`,
+   * `statusIn`, `updatedAtGreaterThanOrEqual`, `updatedAtLessThanOrEqual`,
+   * `userIdEquals`.
+   * @param {string} ks @param {{filter?:object,pageSize?:number}} [opts]
+   */
   list(ks, opts = {}) {
     this._.assertAdmin(ks, 'threads.list');
+    if (opts.filter && opts.filter.agentIdIn !== undefined) {
+      throw new KalturaError({
+        type: 'https://docs.kaltura.com/agentic/errors/validation_error', title: 'unsupported filter key',
+        code: 'validation_error', detail: 'threads.list filter.agentIdIn has no server-side equivalent — call threads.list once per agent id with filter.agentIdEquals instead.',
+      });
+    }
+    const { agentIdEquals, ...restFilter } = opts.filter || {};
+    const filter = { ...restFilter, objectType: GENIE_THREAD_FILTER };
+    if (agentIdEquals !== undefined) filter.genieIdEquals = agentIdEquals;
     return paginate({
       style: 'index', pageSize: opts.pageSize,
-      fetchPage: (pager) => this._.genie('v1/thread/list', { filter: { objectType: GENIE_THREAD_FILTER }, pager }, ks).then((r) => r.data),
+      fetchPage: (pager) => this._.genie('v1/thread/list', { filter, pager }, ks).then((r) => r.data),
     });
   }
 
@@ -280,6 +319,59 @@ export class Threads {
   }
 
   /**
+   * Patch a thread's `thread_metadata.analysis`. WRITE — idempotent for a
+   * given patch. Server semantics: a SHALLOW merge one level under
+   * `analysis` — a key present in `patch` overwrites the stored value for
+   * that key, a key omitted is left untouched, and a nested object under a
+   * key is REPLACED whole (not deep-merged). A key that actually changes
+   * fires the lifecycle `analysis_updated` event on this thread. Returns the
+   * updated thread (same shape as {@link rename}).
+   * @param {string} id @param {Record<string, unknown>} patch
+   * @param {string} ks
+   */
+  async setAnalysis(id, patch, ks) {
+    this._.assertAdmin(ks, 'threads.setAnalysis');
+    if (!patch || typeof patch !== 'object' || Array.isArray(patch)) {
+      throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: 'threads.setAnalysis needs a plain object of analysis keys to shallow-merge.' });
+    }
+    return (await this._.genie('v1/thread/update', { id, thread_metadata: { analysis: patch } }, ks)).data;
+  }
+
+  /**
+   * Wipe a thread's `thread_metadata` entirely (drops `analysis` — the
+   * `ThreadMetadata` DTO has no other field, so there is nothing else to
+   * lose). WRITE — idempotent.
+   * @param {string} id @param {string} ks
+   */
+  async clearAnalysis(id, ks) {
+    this._.assertAdmin(ks, 'threads.clearAnalysis');
+    return (await this._.genie('v1/thread/update', { id, thread_metadata: {} }, ks)).data;
+  }
+
+  /**
+   * Push a message onto a thread over the legacy Genie route. WRITE — NOT
+   * idempotent. `v1/thread/push` does not exist — this is the only push
+   * route. `delivered:false` in the reply means no live socket is currently
+   * attached to the thread; the message is still persisted (it shows up in
+   * {@link Messages#list} as `type: 4`, `MessageType.EXTERNAL_PUSH`).
+   *
+   * `content` has a server-side length cap — too long is `413 content
+   * exceeds max_message_length`. The SDK does not check this client-side
+   * (the cap is a partner-configurable setting, not a fixed constant).
+   * @param {{id:string, content:string, request_vars?:object, system_message?:string}} opts
+   * @param {string} ks
+   * @returns {Promise<{status:string, data:unknown, messageId:string, delivered:boolean}>}
+   */
+  async push(opts, ks) {
+    this._.assertAdmin(ks, 'threads.push');
+    assertRequestVars(opts.request_vars, 'threads.push.request_vars');
+    const body = { id: opts.id, content: opts.content };
+    if (opts.request_vars !== undefined) body.request_vars = opts.request_vars;
+    if (opts.system_message !== undefined) body.system_message = opts.system_message;
+    return (await this._.genie('thread/push', body, ks)).data;
+  }
+
+  /**
    * Delete threads. WRITE — DESTRUCTIVE. This is the GDPR/CCPA deletion path for
    * conversation PII (it removes the thread; the SDK does not claim it satisfies
    * full Art. 17 anonymization — see API-REFERENCE.md, "Delete returns" note under Threads). Takes a plural array.
@@ -301,10 +393,27 @@ export class Messages {
   /** @param {import('./client.js').Ctx} ctx */
   constructor(ctx) { this._ = ctx; }
 
-  /** List messages (optionally for one thread). READ. objectType mandatory (auto). @param {string} ks @param {{threadId?:string,pageSize?:number}} [opts] */
+  /**
+   * List messages (optionally for one thread). READ. `objectType` is
+   * mandatory and always sent; `opts.filter` is merged under it. Unlike
+   * `v1/thread/list`, an unknown filter key here is IGNORED (200), not
+   * rejected — the request DTO carries no `extra="forbid"`. Only
+   * `filter.orderBy` sorts; a top-level `orderBy` is accepted but silently
+   * ignored (the request model has no such field), so always send it inside
+   * `filter`. `opts.threadId` is sugar for `filter.threadIdEquals` and wins
+   * if both are given.
+   *
+   * Filter fields: `createdAtGreaterThanOrEqual`, `createdAtLessThanOrEqual`,
+   * `genieIdEquals`, `idEquals`, `idsIn`, `isPositiveEquals`, `isPositiveIn`,
+   * `orderBy`, `threadIdEquals`, `updatedAtGreaterThanOrEqual`,
+   * `updatedAtLessThanOrEqual`, `userIdEquals`. (`partnerIdEquals`/
+   * `partnerIdIn` are also accepted but have no effect — the query is always
+   * scoped to the KS's own partner — so they're omitted above.)
+   * @param {string} ks @param {{filter?:object,threadId?:string,pageSize?:number}} [opts]
+   */
   list(ks, opts = {}) {
     this._.assertAdmin(ks, 'messages.list');
-    const filter = { objectType: GENIE_MESSAGE_FILTER };
+    const filter = { ...opts.filter, objectType: GENIE_MESSAGE_FILTER };
     if (opts.threadId) filter.threadIdEquals = opts.threadId;
     return paginate({
       style: 'index', pageSize: opts.pageSize ?? 50,
@@ -337,7 +446,8 @@ export class Messages {
   /**
    * Raw partner conversation report as CSV. READ. ⚠️ SENSITIVE — contains
    * end-user ids/names + verbatim question/feedback text. Treat as PII; scope
-   * and redact before sharing.
+   * and redact before sharing. `pageSize` is capped server-side at 500 — a
+   * higher value 422s (this is a single-page fetch, not a full-export loop).
    * @param {string} ks @param {{pageSize?:number}} [opts]
    */
   async report(ks, opts = {}) {
@@ -354,7 +464,7 @@ export class Messages {
    * @param {string} ks @param {{pageSize?:number}} [opts]
    */
   async reportSummary(ks, opts = {}) {
-    const csv = await this.report(ks, { pageSize: opts.pageSize ?? 1000 });
+    const csv = await this.report(ks, { pageSize: opts.pageSize ?? 500 });
     if (typeof csv !== 'string') {
       throw new KalturaError({ type: 'about:blank', title: 'report not CSV', code: 'server_error', detail: 'message/report did not return CSV (likely an error body).', body: csv });
     }
@@ -377,6 +487,102 @@ export class Feedback {
     if (opts.comment) data.comment = opts.comment;
     return (await this._.genie('feedback/add', { schemaVersion: 1, data }, ks)).data;
   }
+
+  /**
+   * List feedback. READ. ⚠️ SENSITIVE — contains end-user ids/names +
+   * verbatim question/feedback text. Treat as PII; scope and redact before
+   * sharing.
+   *
+   * This is the correct, permanent way to read feedback — not a stopgap.
+   * The backend's `feedback/list` endpoint queries a `Feedback` table
+   * nothing writes to (`feedback/add` writes `is_positive`/`comment`
+   * directly onto the rated message itself instead), so this method
+   * sources from there: it queries `message/list` (and, for
+   * `agentIdEquals`, `v1/thread/list` first) and keeps only the messages
+   * that carry a rating.
+   *
+   * Filter (distinct shape from the old `GenieListFeedbackFilter` — these
+   * map onto {@link Messages#list}'s own filter, plus one Messages doesn't
+   * have):
+   *  - `messageIdEquals` / `messageIdsIn` — one message, or a batch by id.
+   *  - `threadIdEquals` — every rated message in one thread.
+   *  - `agentIdEquals` — every rated message across threads opened for one
+   *    agent. Requires threads opened via `sessions.createAgentToken` —
+   *    `sessions.createConversationToken` threads carry `agent_id:
+   *    "default"` and never match. Cost note: resolves matching thread ids
+   *    first, then queries messages per thread — O(threads), not one call.
+   *  - `isPositiveEquals` — restrict to thumbs-up (`true`) or thumbs-down
+   *    (`false`); omit to get every rated message regardless of rating.
+   *
+   * With no `messageIdEquals`/`messageIdsIn`/`threadIdEquals`/
+   * `agentIdEquals`, this walks every message for the partner — expensive
+   * on a high-volume partner. Scope with one of those filters wherever
+   * possible.
+   *
+   * Row shape: `{message_id, thread_id, genie_id, user_id, is_positive,
+   * comment, created_at, updated_at}` — the subset of the message row that
+   * carries feedback.
+   *
+   * Because rows are filtered client-side across a variable number of
+   * underlying pages, `await`ing the result collects every matching row
+   * (not just a first page, unlike every other `list()` in this SDK) — use
+   * a narrow filter to bound the cost.
+   * @param {string} ks
+   * @param {{filter?:{messageIdEquals?:string,messageIdsIn?:string[],threadIdEquals?:string,agentIdEquals?:string,isPositiveEquals?:boolean},pageSize?:number}} [opts]
+   */
+  list(ks, opts = {}) {
+    this._.assertAdmin(ks, 'feedback.list');
+    const genie = this._.genie;
+    const filter = opts.filter || {};
+    const pageSize = opts.pageSize ?? 50;
+
+    const toRow = (m) => ({
+      message_id: m.id, thread_id: m.thread_id, genie_id: m.genie_id,
+      user_id: m.user_id, is_positive: m.is_positive, comment: m.comment ?? null,
+      created_at: m.created_at, updated_at: m.updated_at,
+    });
+    const hasFeedback = (m) => m.is_positive === true || m.is_positive === false;
+    const matchesRating = (m) => filter.isPositiveEquals === undefined || m.is_positive === filter.isPositiveEquals;
+
+    const messagesForThread = (threadId) => {
+      const messageFilter = {
+        objectType: GENIE_MESSAGE_FILTER,
+        ...(filter.messageIdEquals ? { idEquals: filter.messageIdEquals } : {}),
+        ...(filter.messageIdsIn ? { idsIn: filter.messageIdsIn } : {}),
+        ...(filter.isPositiveEquals !== undefined ? { isPositiveEquals: filter.isPositiveEquals } : {}),
+        ...(threadId ? { threadIdEquals: threadId } : {}),
+      };
+      return paginate({
+        style: 'index', pageSize,
+        fetchPage: (pager) => genie('message/list', { filter: messageFilter, pager }, ks).then((r) => r.data),
+      });
+    };
+
+    async function* ratedMessagesInThread(threadId) {
+      for await (const m of messagesForThread(threadId)) {
+        if (hasFeedback(m) && matchesRating(m)) yield toRow(m);
+      }
+    }
+
+    async function* rows() {
+      if (filter.agentIdEquals) {
+        const threadFilter = { objectType: GENIE_THREAD_FILTER, genieIdEquals: filter.agentIdEquals };
+        const threads = paginate({
+          style: 'index', pageSize: 100,
+          fetchPage: (pager) => genie('v1/thread/list', { filter: threadFilter, pager }, ks).then((r) => r.data),
+        });
+        for await (const thread of threads) yield* ratedMessagesInThread(thread.id);
+        return;
+      }
+      yield* ratedMessagesInThread(filter.threadIdEquals);
+    }
+
+    return {
+      [Symbol.asyncIterator]: rows,
+      then(resolve, reject) { return this.all().then(resolve, reject); },
+      async all() { const out = []; for await (const r of rows()) out.push(r); return out; },
+    };
+  }
 }
 
 export class Followups {
@@ -384,16 +590,36 @@ export class Followups {
   constructor(ctx) { this._ = ctx; }
 
   /**
-   * Pre-configured STARTER questions for the partner/agent. READ. Empty body,
-   * NOT thread-scoped; returns `[]` when none configured. (Per-answer followups
-   * are a different feature — set capabilities.generate_followup_questions:on on
-   * converse.)
+   * STARTER questions for the partner/agent. READ. Empty body, NOT
+   * thread-scoped; returns `[]` when none configured. The returned set can
+   * vary between calls — don't assume a stable, fixed list. (Per-answer
+   * followups are a different feature — set
+   * capabilities.generate_followup_questions:on on converse.)
    * @param {string} ks
    */
   async getSuggested(ks) {
     this._.assertAny(ks, 'followups.getSuggested');
     const r = (await this._.genie('followup/get-suggested-questions?new_response=true', {}, ks)).data;
     return Array.isArray(r?.data) ? r.data : (r?.data?.questions || r?.questions || []);
+  }
+
+  /**
+   * List follow-up/starter question records for the partner. READ.
+   * Async-iterable + awaitable (first page). `objectType` is mandatory and
+   * always sent; `opts.filter` is merged under it — a bare `{}` filter
+   * (no `objectType`) 400s `invalid_filter`. Distinct from
+   * {@link getSuggested}: this is the raw record listing (partner-wide,
+   * potentially thousands of rows), not the per-agent "suggested questions"
+   * shortlist.
+   * @param {string} ks @param {{filter?:object,pageSize?:number}} [opts]
+   */
+  list(ks, opts = {}) {
+    this._.assertAdmin(ks, 'followups.list');
+    const filter = { ...opts.filter, objectType: GENIE_QUESTION_FILTER };
+    return paginate({
+      style: 'index', pageSize: opts.pageSize,
+      fetchPage: (pager) => this._.genie('followup/list', { filter, pager }, ks).then((r) => r.data),
+    });
   }
 }
 
