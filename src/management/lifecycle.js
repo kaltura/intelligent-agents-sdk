@@ -1,31 +1,34 @@
 /**
  * Lifecycle — event-driven rule engine on the Agentic host's `lifecycle/*`
- * routes (agentic-hosted, `{offset,limit}` pager). A rule is `{eventType, objectType,
- * eventConditions[], action}` — when a matching backend event fires (e.g. a
- * thread's `session_ended`), every active rule (including partner-invisible,
- * system-seeded presets — see {@link Lifecycle#match}) is evaluated and its
- * `action` runs server-side. Four action shapes exist, passed through as
- * plain objects (not built by the SDK), but only the first two are meant to
- * be created here — the other two only exist to power system preset rules
- * and ignore anything a caller passes:
- * `{actionType:'triggerInsight', insights:[{insightKey, valueType, prompt?}, ...]}`
- * (`valueType` is REQUIRED on every insight, even built-in keys like
- * `SUMMARY` — omitting it 400s live: "action.insights.0.valueType must be
- * one of the following values: string, number, boolean, arrayString,
- * arrayNumber, arrayBoolean"; every rule extracting insights on the same
- * event merges into one LLM batch, so don't request `SUMMARY` — every
- * partner already has an always-on preset producing one for free),
- * `{actionType:'sendInsightEmail', recipients:string[], templateId?:string,
- * presetType?:string}` (only fires on `eventType:'analysis_updated'` — a
- * `session_ended` rule with this action type is a no-op server-side),
- * `{actionType:'triggerOverridableSummaryInsight'}` (system preset only —
- * customize its prompt via `agents.update({agentId, summaryOverridePrompt})`,
- * not a rule), and `{actionType:'triggerDataToCollectInsight'}` (system
- * preset only, currently disabled account-wide — would extract one insight
- * per configured lead-capture field, `intellectConfig.user_properties_forms`,
- * if enabled). See
- * `docs/lifecycle/README.md` for the full explanation. Mounted at
- * `mgmt.lifecycle`.
+ * routes (agentic-hosted, `{offset,limit}` pager). A rule is `{eventType,
+ * objectType, eventConditions[], action}` — when a matching backend event
+ * fires (e.g. a thread's `session_ended`), every active rule (including
+ * partner-invisible, system-seeded preset rules — see {@link
+ * Lifecycle#match}) is evaluated and its `action` runs server-side. Three
+ * action shapes are available to callers, passed through as plain objects
+ * (not built by the SDK):
+ *
+ * - `{actionType:'triggerInsightSettingsKai', insightSettingsIds:string[]}`
+ *   — extract one or more previously-defined insights (see
+ *   {@link InsightSettings}, mounted at `mgmt.insightSettings`). Each id in
+ *   `insightSettingsIds` (max 20) is validated at rule create/update time —
+ *   an id that doesn't exist or isn't owned by the calling partner 400s. At
+ *   dispatch time, only ids whose insight setting has `status:'active'`
+ *   actually resolve into an extraction; a `disabled` one is silently
+ *   skipped (the rest of the action still fires).
+ * - `{actionType:'sendInsightEmail', recipients:string[], templateId?:string,
+ *   presetType?:string}` — only fires on `eventType:'analysis_updated'`; a
+ *   `session_ended` rule with this action type is a no-op server-side.
+ * - `{actionType:'triggerDtcKai'}` — takes no caller-supplied fields.
+ *   Extracts one insight per lead-capture field configured on the target
+ *   intellect (`intellectConfig.user_properties_forms`) and is
+ *   automatically skipped when none are configured.
+ *
+ * Every session also gets one fixed, built-in summary insight for free —
+ * it comes from a system-seeded preset rule visible via {@link
+ * Lifecycle#match} but never creatable, updatable, or customizable by a
+ * caller. See `docs/lifecycle/README.md` for the full explanation. Mounted
+ * at `mgmt.lifecycle`.
  */
 import { paginate } from './paginate.js';
 import { uuidv4, meta } from '../core/ids.js';
@@ -66,7 +69,7 @@ export class Lifecycle {
     requireNonEmptyString(body.eventType, 'lifecycle.create', 'eventType');
     requireNonEmptyString(body.objectType, 'lifecycle.create', 'objectType');
     if (!body.action || typeof body.action !== 'object') {
-      throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: 'lifecycle.create action must be an object (e.g. {actionType:"triggerInsight", insights:[...]}).' });
+      throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: 'lifecycle.create action must be an object (e.g. {actionType:"triggerInsightSettingsKai", insightSettingsIds:[...]}).' });
     }
     /** @type {Record<string,unknown>} */
     const wire = { name: body.name, systemName: body.systemName, eventType: body.eventType, objectType: body.objectType, action: body.action };
@@ -148,22 +151,21 @@ export class Lifecycle {
    * string, received undefined"`).
    *
    * The response can include rules the caller never created: production
-   * ships system-seeded preset rules (e.g.
-   * `preset__overridable_summary_on_session_ended`, which matches every
-   * `session_ended`/`thread` event for every partner by default) that show
-   * up in `matchedRules[]` alongside the caller's own. Related rules are
-   * grouped: `matchedRules[].isGrouped` is `true` when two or more rules
-   * share a `groupKey` and dispatch as one composite action. Example mixed
-   * response:
+   * ships a system-seeded preset rule (`preset__summary_on_session_ended`)
+   * that matches every `session_ended`/`thread` event for every partner by
+   * default, and it shows up in `matchedRules[]` alongside the caller's own.
+   * Related rules are grouped: `matchedRules[].isGrouped` is `true` when two
+   * or more rules share a `groupKey` and dispatch as one composite action.
+   * Example mixed response:
    * ```json
    * {
    *   "matchedRules": [
    *     {
    *       "isGrouped": true,
-   *       "groupKey": "_system_grouped_kai_insights",
+   *       "groupKey": "_default_all_kai_triggers",
    *       "rules": [
-   *         { "id": "preset__overridable_summary_on_session_ended", "systemName": "overridable_summary_on_session_ended", "action": { "actionType": "triggerOverridableSummaryInsight" } },
-   *         { "id": "68a...", "systemName": "my_custom_rule", "action": { "actionType": "triggerInsight", "insights": [{ "insightKey": "SESSIONSUMMARY", "valueType": "string" }] } }
+   *         { "id": "preset__summary_on_session_ended", "systemName": "summary_on_session_ended", "action": { "actionType": "<system-internal — never sent or constructed by a caller>" } },
+   *         { "id": "68a...", "systemName": "my_custom_rule", "action": { "actionType": "triggerInsightSettingsKai", "insightSettingsIds": ["507f1f77bcf86cd799439011"] } }
    *       ]
    *     }
    *   ]

@@ -204,7 +204,7 @@ const result = await mgmt.converseOnce(configId, 'Hello!');
 console.log(result.text, result.threadId);
 ```
 
-`provision()` returns `{name, configId, avatarId, agentId, widgetId, profile, personaLint, blocks?, _meta}`. `personaLint` (see `lintPersonaIdentity` below) is a warning-only check for persona-name drift — it never fails `provision()`; inspect `personaLint.findings` yourself if you want to surface or act on it.
+`provision()` returns `{name, configId, avatarId, agentId, widgetId, profile, personaLint, blocks?, _meta}`. `personaLint` (see `lintPersonaIdentity` below) is a warning-only check for persona-name drift — it never fails `provision()`; inspect `personaLint.findings` yourself if you want to surface or act on it. On a partial failure it throws a `KalturaError` with `code:'provision_failed'` — `err.body.failedStep` names which step failed, and `err.body.createdSoFar` lists the ids already created (`{configId?, avatarId?, agentId?}`), so you can clean up an orphaned intellect/avatar/agent rather than leave it dangling.
 
 `converseOnce` returns `{ text, threadId, messageId, segments, toolCalls, experiences, experiencesList, kindCounts, spiralStopped, truncated, _meta }`. `spiralStopped:true` means a tool spiral was detected and cut short — check `toolCalls[0]` and re-prompt. `truncated:true` means the stream hit `maxSegments` (a runaway-non-tool-segment guard, default 2000) before finishing — gathered content is returned but the turn is incomplete.
 

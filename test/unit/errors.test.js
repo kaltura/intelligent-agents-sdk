@@ -48,6 +48,14 @@ test('RFC 9457 shape + redaction on toJSON', () => {
   assert.ok(!JSON.stringify(j).includes('djJ8' + 'z'.repeat(20)), 'detail must be redacted');
 });
 
+test('errorFromOkBody maps INVALID_INSIGHT_SETTINGS to a machine-readable code', () => {
+  const e = errorFromOkBody(
+    { objectType: 'KalturaAPIException', code: 'INVALID_INSIGHT_SETTINGS', message: 'insightSettingsIds references an id that does not exist: 68b...' },
+    '/lifecycle/create',
+  );
+  assert.equal(e.code, 'invalid_insight_settings');
+});
+
 test('missing discriminator (intellect update) maps', () => {
   const e = errorFromResponse({ status: 422, path: '/v1/intellect/update', body: { message: 'union_tag_not_found' } });
   assert.equal(e.code, 'missing_discriminator');

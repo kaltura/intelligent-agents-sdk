@@ -23,7 +23,7 @@ function harness(routes) {
 const RULE = {
   id: '507f1f77bcf86cd799439011', partnerId: 123, name: 'Summarize after call', systemName: 'summarize_after_call',
   status: 'active', eventType: 'session_ended', objectType: 'thread', eventConditions: [],
-  action: { actionType: 'triggerInsight', insights: [{ insightKey: 'SESSIONSUMMARY', valueType: 'string' }] },
+  action: { actionType: 'triggerInsightSettingsKai', insightSettingsIds: ['507f1f77bcf86cd799439099'] },
   createdAt: '2026-08-30T00:00:00.000Z', updatedAt: '2026-08-30T00:00:00.000Z', createdBy: 'user-1',
 };
 
@@ -128,9 +128,9 @@ test('lifecycle.match posts {objectType, eventType, eventData} and returns match
         body: {
           matchedRules: [
             {
-              isGrouped: true, groupKey: '_system_grouped_kai_insights',
+              isGrouped: true, groupKey: '_default_all_kai_triggers',
               rules: [
-                { id: 'preset__overridable_summary_on_session_ended', systemName: 'overridable_summary_on_session_ended', action: { actionType: 'triggerOverridableSummaryInsight' } },
+                { id: 'preset__summary_on_session_ended', systemName: 'summary_on_session_ended', action: { actionType: 'systemInternalSummary' } },
                 RULE,
               ],
             },
