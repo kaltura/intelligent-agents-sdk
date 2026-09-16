@@ -43,13 +43,11 @@ const isDuplicateCategoryEntry = (e) => e?.code === 'CATEGORY_ENTRY_ALREADY_EXIS
 export { SPIRAL_RECOVERY_PREFIX };
 
 /**
- * Reserved `request_vars` keys the brain injects itself (`sys__*`) plus the
- * `secrets` namespace — a caller-supplied value here would either be
- * overwritten or collide with a server-managed variable, so the SDK rejects
- * them BEFORE the network call. The server overwrites all ten `sys__*`
- * names below after accepting them, and sets the whole `sys__user_obj`
- * object when a user id exists, so the bare `sys__user_obj` name and any
- * `sys__user_obj.` prefix are rejected too (see {@link assertRequestVars}).
+ * Reserved `request_vars` keys: the `sys__*` names the brain sets on every
+ * turn, and the `secrets` namespace. The SDK rejects a caller-supplied value
+ * for any of these — plus the bare `sys__user_obj` name and any
+ * `sys__user_obj.` prefix — before any network call (see
+ * {@link assertRequestVars}).
  * @type {readonly string[]}
  */
 export const RESERVED_VARS = Object.freeze([
