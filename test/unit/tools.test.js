@@ -301,6 +301,20 @@ test('add validates BEFORE any network call, then posts {name, config} to v1/too
   assert.deepEqual(ff.calls[0].body, { name: 'lookup', config: tool });
 });
 
+test('create is an alias for add — same validation, same wire call', async () => {
+  const { mgmt, ff } = harness([
+    { match: 'v1/tool/add', respond: (req) => ({ status: 200, body: { id: 'tool-1', name: req.body.name, config: req.body.config, partner_id: 123 } }) },
+  ]);
+  const badTool = { name: 'lookup', type: 'api', description: 'd', request: { url: 'ftp://x' }, response_mapping: { v: 'x' } };
+  await assert.rejects(() => mgmt.tools.create(badTool, ADMIN_KS), (e) => e.code === 'invalid_url');
+
+  const tool = api(apiCfg({ name: 'lookup' }));
+  const res = await mgmt.tools.create(tool, ADMIN_KS);
+  assert.equal(res.id, 'tool-1');
+  assert.match(ff.calls[0].url, /v1\/tool\/add$/);
+  assert.deepEqual(ff.calls[0].body, { name: 'lookup', config: tool });
+});
+
 test('get fetches a Tool by id', async () => {
   const t = api(apiCfg({ name: 'lookup' }));
   const { mgmt, ff } = harness([

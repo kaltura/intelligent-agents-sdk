@@ -235,19 +235,31 @@ export class Threads {
     });
   }
 
-  /** Get a thread. READ. @param {string} id @param {string} ks */
+  /**
+   * Get a thread. READ.
+   * @param {string} id @param {string} ks
+   * @returns {Promise<{id:string, title:string, status:number, created_at:string, updated_at:string, thread_metadata:{analysis?:object}, [key:string]:*}>}
+   */
   async get(id, ks) {
     this._.assertAdmin(ks, 'threads.get');
     return (await this._.genie('v1/thread/get', { id }, ks)).data;
   }
 
-  /** Flattened `human:/ai:` transcript of one thread. READ. @param {string} id @param {string} ks */
+  /**
+   * Flattened `human:/ai:` transcript of one thread. READ.
+   * @param {string} id @param {string} ks
+   * @returns {Promise<string>} a single flattened `human: .../ai: ...` transcript string, one turn per line.
+   */
   async transcript(id, ks) {
     this._.assertAdmin(ks, 'threads.transcript');
     return (await this._.genie('v1/thread/get_transcripts', { id }, ks)).data;
   }
 
-  /** Rename a thread. WRITE — idempotent for a given title. @param {string} id @param {string} title @param {string} ks */
+  /**
+   * Rename a thread. WRITE — idempotent for a given title.
+   * @param {string} id @param {string} title @param {string} ks
+   * @returns {Promise<{id:string, title:string, status:number, created_at:string, updated_at:string, thread_metadata:{analysis?:object}, [key:string]:*}>} the updated thread.
+   */
   async rename(id, title, ks) {
     this._.assertAdmin(ks, 'threads.rename');
     return (await this._.genie('v1/thread/update', { id, title }, ks)).data;
@@ -257,6 +269,8 @@ export class Threads {
    * Delete threads. WRITE — DESTRUCTIVE. This is the GDPR/CCPA deletion path for
    * conversation PII (it removes the thread; the SDK does not claim it satisfies
    * full Art. 17 anonymization — see API-REFERENCE.md, "Delete returns" note under Threads). Takes a plural array.
+   * Unlike every other `.delete()` in this SDK (singular `id`), this one takes
+   * an array — batch deletion by id is the common case for PII/GDPR cleanup.
    * @param {string[]} threadIds @param {string} ks @param {{confirmPermanent:boolean}} confirm
    */
   async delete(threadIds, ks, confirm) {
@@ -284,7 +298,11 @@ export class Messages {
     });
   }
 
-  /** Clone a message under a new title for sharing. WRITE — NOT idempotent. Returns `{newMessageId}`. @param {string} id @param {string} newTitle @param {string} ks */
+  /**
+   * Clone a message under a new title for sharing. WRITE — NOT idempotent. Returns `{newMessageId}`.
+   * @param {string} id @param {string} newTitle @param {string} ks
+   * @throws {import('../core/errors.js').KalturaError} `code:'forbidden'` ("Not authorized for this message") for both an unknown `id` and one that belongs to another partner — the backend doesn't distinguish the two cases, live-confirmed against production.
+   */
   async share(id, newTitle, ks) {
     this._.assertAdmin(ks, 'messages.share');
     return (await this._.genie('message/share', { id, newTitle }, ks)).data;
@@ -476,6 +494,7 @@ export class Knowledge {
    * listing; this method lists KMS *entries* inside one category container,
    * not Knowledge record containers.
    * @param {number} categoryId @param {string} ks (admin) @param {{pageSize?:number}} [opts]
+   * @see Knowledge#list for the Knowledge-record listing this is often confused with.
    */
   listCategoryEntries(categoryId, ks, opts = {}) {
     this._.assertAdmin(ks, 'knowledge.listCategoryEntries');
@@ -766,11 +785,22 @@ export class Knowledge {
    * returned `id` as `knowledge_ids:[id]` to {@link Intellects.create}/`add`
    * (or `update`, or {@link IntellectConfig#setKnowledgeIds} for an existing
    * intellect) to LINK it — no separate linking call, no gate.
+   *
+   * Also callable as {@link Knowledge#createRecord} — same method, either name works.
    * @param {object} body {name,description?,config?} @param {string} ks (admin)
    */
   async addRecord(body, ks) {
     this._.assertAdmin(ks, 'knowledge.addRecord');
     return (await this._.genie('v1/knowledge/add', body, ks)).data;
+  }
+
+  /**
+   * Alias for {@link Knowledge#addRecord} — same call, same result. Some
+   * callers reach for `createRecord` by habit; both spellings are permanent.
+   * @param {object} body {name,description?,config?} @param {string} ks (admin)
+   */
+  createRecord(body, ks) {
+    return this.addRecord(body, ks);
   }
 
   /**
@@ -803,6 +833,7 @@ export class Knowledge {
    * existing knowledge base to a new agent by name, without hardcoding ids.
    * @param {string} ks (admin)
    * @param {{filter?:{nameEquals?:string, nameLike?:string, statusEquals?:string, statusIn?:string[]}, pageSize?:number}} [opts]
+   * @see Knowledge#listCategoryEntries for the unrelated "media entries inside one category" listing.
    */
   list(ks, opts = {}) {
     this._.assertAdmin(ks, 'knowledge.list');

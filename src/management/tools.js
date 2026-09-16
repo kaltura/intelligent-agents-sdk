@@ -580,6 +580,8 @@ export class Tools {
    * second entity; a duplicate `name` may be rejected server-side). Validates
    * the tool BEFORE any network call. `tool` may be a raw builder output
    * (already a {@link GenieToolConfig}) — it is re-validated either way.
+   *
+   * Also callable as {@link Tools#create} — same method, either name works.
    * @param {GenieToolConfig} tool @param {string} ks (admin)
    * @returns {Promise<{id:string, name:string, config:GenieToolConfig, partner_id?:number, created_at?:string, updated_at?:string}>}
    */
@@ -587,6 +589,16 @@ export class Tools {
     this._.assertAdmin(ks, 'tools.add');
     const valid = validate(tool); // throws KalturaError before any network call
     return (await this._.genie('v1/tool/add', { name: valid.name, config: valid }, ks, { idempotencyKey: uuidv4() })).data;
+  }
+
+  /**
+   * Alias for {@link Tools#add} — same validation, same call, same result.
+   * Some callers reach for `create` by habit; both spellings are permanent.
+   * @param {GenieToolConfig} tool @param {string} ks (admin)
+   * @returns {Promise<{id:string, name:string, config:GenieToolConfig, partner_id?:number, created_at?:string, updated_at?:string}>}
+   */
+  create(tool, ks) {
+    return this.add(tool, ks);
   }
 
   /**
