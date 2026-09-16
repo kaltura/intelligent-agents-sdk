@@ -57,7 +57,7 @@ import { ARG_TYPE_NAMES } from '../core/stream.js';
  * @property {number} [timeout]
  */
 
-const NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const NAME_RE = /^[A-Za-z0-9_-]+$/;
 
 /**
  * Tool `type` discriminator — the closed set the backend understands. `api`
@@ -111,7 +111,7 @@ export function validateArgs(args) {
   /** @type {Record<string,GenieToolArg>} */
   const out = {};
   for (const [key, spec] of Object.entries(args)) {
-    if (!NAME_RE.test(key)) bad('bad_request', `tool arg name "${key}" must match ${NAME_RE} (a valid identifier).`);
+    if (!NAME_RE.test(key)) bad('bad_request', `tool arg name "${key}" must match ${NAME_RE} (letters, digits, underscore, or hyphen).`);
     if (!spec || typeof spec !== 'object' || Array.isArray(spec)) bad('bad_request', `tool arg "${key}" must be an object {prompt, type, required?, default?}.`);
     if (typeof spec.prompt !== 'string' || !spec.prompt.trim()) bad('bad_request', `tool arg "${key}" needs a non-empty string \`prompt\` (the LLM-facing description).`);
     if (!ARG_TYPES.includes(spec.type)) bad('bad_request', `tool arg "${key}" has type "${String(spec.type)}"; must be one of ${ARG_TYPES.join(', ')}.`);
@@ -229,7 +229,7 @@ function buildAuth(auth) {
 /** Shared base validation (name/description/args/display/history). Mutates into `target`. @param {object} cfg @param {GenieToolConfig} target */
 function buildShared(cfg, target) {
   if (!cfg || typeof cfg !== 'object') bad('bad_request', 'tool config must be an object.');
-  if (typeof cfg.name !== 'string' || !NAME_RE.test(cfg.name)) bad('bad_request', `tool \`name\` must match ${NAME_RE} (a valid identifier), got ${JSON.stringify(cfg.name)}.`);
+  if (typeof cfg.name !== 'string' || !NAME_RE.test(cfg.name)) bad('bad_request', `tool \`name\` must match ${NAME_RE} (letters, digits, underscore, or hyphen), got ${JSON.stringify(cfg.name)}.`);
   if (typeof cfg.description !== 'string' || !cfg.description.trim()) bad('bad_request', 'tool `description` is required (the LLM-facing description the model uses to decide when to call it).');
   target.name = cfg.name;
   target.description = cfg.description;
@@ -410,7 +410,7 @@ export function clientToolReadiness(body) {
  * PURE — returns a wire-ready {@link GenieToolConfig}; throws {@link KalturaError}
  * on bad input, before any network call.
  * @param {object} cfg
- * @param {string} cfg.name        Tool name the LLM calls + you dispatch on (a valid identifier).
+ * @param {string} cfg.name        Tool name the LLM calls + you dispatch on. Letters, digits, underscore, or hyphen.
  * @param {string} cfg.description LLM-facing: WHEN to call it.
  * @param {Record<string,GenieToolArg>} [cfg.args] Argument schema ({argName:{prompt,type,required?,default?}}).
  * @param {boolean} [cfg.waitForResponse] Block the turn on a real client ACK. Omitting this

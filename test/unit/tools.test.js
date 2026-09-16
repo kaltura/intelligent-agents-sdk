@@ -84,7 +84,7 @@ test('client is a PURE builder — two calls in the same process never leak stat
 });
 
 test('client reuses buildShared/NAME_RE — same name/description/args rules as api/csv/code', () => {
-  assert.throws(() => client({ name: '9bad', description: 'd' }), /name/);
+  assert.throws(() => client({ name: 'has space', description: 'd' }), /name/);
   assert.throws(() => client({ name: 'x', description: '' }), /description/);
   const t = client({ name: 'x', description: 'd', args: { q: { prompt: 'p', type: 'str' } } });
   assert.deepEqual(t.args.q, { prompt: 'p', type: 'str' });
@@ -213,9 +213,10 @@ test('code builder requires non-empty code', () => {
   assert.throws(() => code({ name: 'c', description: 'd', code: '   ' }), /non-empty/);
 });
 
-test('name must be a valid identifier; description required', () => {
-  assert.throws(() => api(apiCfg({ name: '9bad' })), /name/);
+test('name must be letters/digits/underscore/hyphen; digit-start and hyphens are allowed (live-confirmed against the real API); description required', () => {
+  assert.doesNotThrow(() => api(apiCfg({ name: '9leading-digit_and-hyphen' })));
   assert.throws(() => api(apiCfg({ name: 'has space' })), /name/);
+  assert.throws(() => api(apiCfg({ name: '' })), /name/);
   let err;
   try { api(apiCfg({ description: '' })); } catch (e) { err = e; }
   assert.equal(err.code, 'bad_request');
@@ -232,9 +233,10 @@ test('validateArgs enumerates the 6 types and rejects unknown', () => {
   assert.match(err.detail, /str, int, float, bool, list, dict/);
 });
 
-test('validateArgs rejects missing prompt and bad arg name', () => {
+test('validateArgs rejects missing prompt and bad arg name; digit-start and hyphens are allowed (live-confirmed against the real API)', () => {
   assert.throws(() => validateArgs({ a: { type: 'str' } }), /prompt/);
-  assert.throws(() => validateArgs({ '1x': { prompt: 'p', type: 'str' } }), /identifier/);
+  assert.doesNotThrow(() => validateArgs({ '1x-arg': { prompt: 'p', type: 'str' } }));
+  assert.throws(() => validateArgs({ 'has space': { prompt: 'p', type: 'str' } }), /hyphen/);
 });
 
 test('validate() re-checks an assembled wire tool and routes by type', () => {
