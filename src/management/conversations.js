@@ -449,14 +449,13 @@ export class Feedback {
    * verbatim question/feedback text. Treat as PII; scope and redact before
    * sharing.
    *
-   * NOT a proxy of `feedback/list` — that endpoint (and `feedback/report`)
-   * always returns an empty result, for every partner and every filter, as
-   * of this SDK version, with no indication of when that might change.
-   * This method sources feedback from the messages it's attached
-   * to instead: {@link Feedback#add} writes `is_positive`/`comment` onto
-   * the rated message itself, so `list()` queries `message/list` (and,
-   * for `agentIdEquals`, `v1/thread/list` first) and keeps only the
-   * messages that carry a rating.
+   * This is the correct, permanent way to read feedback — not a stopgap.
+   * The backend's `feedback/list` endpoint queries a `Feedback` table
+   * nothing writes to (`feedback/add` writes `is_positive`/`comment`
+   * directly onto the rated message itself instead), so this method
+   * sources from there: it queries `message/list` (and, for
+   * `agentIdEquals`, `v1/thread/list` first) and keeps only the messages
+   * that carry a rating.
    *
    * Filter (distinct shape from the old `GenieListFeedbackFilter` — these
    * map onto {@link Messages#list}'s own filter, plus one Messages doesn't
@@ -539,24 +538,6 @@ export class Feedback {
       then(resolve, reject) { return this.all().then(resolve, reject); },
       async all() { const out = []; for await (const r of rows()) out.push(r); return out; },
     };
-  }
-
-  /**
-   * Raw feedback report as CSV. READ. The backend endpoint behind this
-   * method currently always replies an empty body, for every partner and
-   * every filter, so this always resolves to `null`, with no indication of
-   * when that might change. Kept as a direct proxy (no client-side CSV
-   * synthesis) rather than a workaround like {@link Feedback#list}. Use
-   * {@link Feedback#list} or {@link Messages#report} for feedback data
-   * today.
-   * @param {string} ks @param {{pageSize?:number}} [opts]
-   * @returns {Promise<string|null>}
-   */
-  async report(ks, opts = {}) {
-    this._.assertAdmin(ks, 'feedback.report');
-    const body = { filter: { objectType: 'GenieListFeedbackFilter' } };
-    if (opts.pageSize) body.pager = { pageIndex: 1, pageSize: opts.pageSize };
-    return (await this._.genie('feedback/report', body, ks)).data;
   }
 }
 

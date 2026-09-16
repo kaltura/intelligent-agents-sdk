@@ -91,7 +91,7 @@ test('messages.list merges opts.filter under objectType; opts.threadId is sugar 
   assert.equal(ff.calls[0].body.filter.threadIdEquals, 't1');
 });
 
-test('feedback.list is a client-side workaround over message/list, not a proxy of feedback/list', async () => {
+test('feedback.list sources from message/list, not a proxy of feedback/list', async () => {
   const { mgmt, ff } = harness([
     { match: 'message/list', respond: () => ({
       status: 200,
@@ -125,15 +125,6 @@ test('feedback.list agentIdEquals resolves matching threads first, then walks ea
   assert.equal(rows[0].message_id, 'm1');
 });
 
-test('feedback.report posts {filter:{objectType}} and an optional pager, returns the raw CSV (or null) — currently always empty, for every partner and filter', async () => {
-  const { mgmt, ff } = harness([
-    { match: 'feedback/report', respond: () => ({ status: 200, body: null }) },
-  ]);
-  const res = await mgmt.feedback.report(ADMIN_KS, { pageSize: 10 });
-  assert.deepEqual(ff.calls[0].body, { filter: { objectType: 'GenieListFeedbackFilter' }, pager: { pageIndex: 1, pageSize: 10 } });
-  assert.equal(res, null, 'an empty CSV body surfaces as null, not a thrown error');
-});
-
 test('followups.list merges opts.filter under GenieListQuestionFilter objectType', async () => {
   const { mgmt, ff } = harness([
     { match: 'followup/list', respond: () => ({ status: 200, body: { objects: [], totalCount: 0 } }) },
@@ -151,6 +142,5 @@ test('every admin-scoped conversation method rejects a conversation token with w
   await assert.rejects(async () => mgmt.threads.push({ id: 't1', content: 'x' }, CONV_TOKEN), (e) => e.code === 'wrong_token_scope');
   await assert.rejects(async () => mgmt.messages.list(CONV_TOKEN).all(), (e) => e.code === 'wrong_token_scope');
   await assert.rejects(async () => mgmt.feedback.list(CONV_TOKEN).all(), (e) => e.code === 'wrong_token_scope');
-  await assert.rejects(async () => mgmt.feedback.report(CONV_TOKEN), (e) => e.code === 'wrong_token_scope');
   await assert.rejects(async () => mgmt.followups.list(CONV_TOKEN).all(), (e) => e.code === 'wrong_token_scope');
 });

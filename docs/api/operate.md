@@ -133,8 +133,7 @@ There is no documented cap on how long a thread's history can grow. The full tra
 Feedback and follow-up suggestions route through internal Genie paths — use the SDK rather than calling them directly.
 
 - `mgmt.feedback.add({message_id, is_positive, comment?}, convKs)` — thumbs up/down on a message. `message_id` comes from the converse stream.
-- `mgmt.feedback.list(ks, opts)` — admin-scoped feedback listing, filterable by `messageIdEquals`/`messageIdsIn`/`threadIdEquals`/`agentIdEquals`/`isPositiveEquals`. ⚠️ SENSITIVE: contains end-user ids/names + verbatim question/feedback text. Treat as PII; scope and redact before sharing.
-- `mgmt.feedback.report(ks, opts)` — currently always resolves to `null` (empty CSV body), for every partner and filter, with no indication of when that might change. Use `feedback.list()` or `messages.report()` for feedback data today.
+- `mgmt.feedback.list(ks, opts)` — admin-scoped feedback listing, filterable by `messageIdEquals`/`messageIdsIn`/`threadIdEquals`/`agentIdEquals`/`isPositiveEquals`. Sources from the rated message itself, not a separate feedback store — see the method's own doc for why. ⚠️ SENSITIVE: contains end-user ids/names + verbatim question/feedback text. Treat as PII; scope and redact before sharing.
 - `mgmt.followups.getSuggested(ks)` — starter questions for the partner/agent. The returned set can vary between calls — don't assume a stable, fixed list. Per-answer follow-ups stream inline as `unisphere-tool` segments when `capabilities.generate_followup_questions:"on"`.
 - `mgmt.followups.list(ks, opts)` — raw partner-wide follow-up/starter question record listing (distinct from `getSuggested`'s per-agent shortlist).
 
