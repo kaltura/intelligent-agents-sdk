@@ -55,6 +55,8 @@ sent to `POST /v1/intellect/update`.
 { "name": "fx_rate", "config": { "type": "code", "description": "Convert currency", "code": "def main(request_config):\n    return 'ok'" } }
 ```
 
+**`csv` and `code` are unavailable by default.** `POST /v1/tool/add` and `/update` reply HTTP 403 (`Tool type 'csv'/'code' is unavailable by default, call support`) for a real partner until Kaltura support enables the type on your account. `api` and `client` need no such enablement. SDK: `tools.csv(...)`/`tools.code(...)` still validate and build the config locally; the 403 comes back from `mgmt.tools.add`/`update`'s network call.
+
 **`client` tool** — a native function-calling tool that makes NO server-side call at all. The model calls it, the backend emits a silent `type:"tool"` segment (see [WIRE-PROTOCOL.md](../../WIRE-PROTOCOL.md)), and that's the entire contract — no `request` block, no echo endpoint, no response shaper:
 
 ```json

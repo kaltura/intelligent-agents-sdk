@@ -884,3 +884,50 @@ jobs:
             tail -n 40 live-verify-intellects-conversations-output.log
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+  live-verify-tools:
+    name: 🔴 Live verification (tools add/get/delete + unavailable-by-default gate)
+    needs: changes
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      ((github.event_name == 'merge_group' || github.event.label.name == 'run-live-verify') && needs.changes.outputs.code == 'true')
+    runs-on: ubuntu-latest
+    environment: live-verify
+    steps:
+      - name: 📥 Check out the repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: 🟢 Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+
+      - name: 🔴 Scratch tool add/get/delete + code/csv unavailable-by-default 403 gate, against the real Kaltura API
+        id: live_verify_tools
+        env:
+          AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
+          AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
+        run: |
+          set -o pipefail
+          npm run live-verify:tools 2>&1 | tee live-verify-tools-output.log
+
+      - name: 📤 Upload live-verify-tools artifact
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: live-verify-tools-artifacts
+          path: |
+            live-verify-artifacts/
+            live-verify-tools-output.log
+          retention-days: 30
+
+      - name: 📝 Write job summary
+        if: always()
+        run: |
+          {
+            echo "### 🔴 Live verification (tools) — ${{ steps.live_verify_tools.outcome }}"
+            echo
+            echo '```'
+            tail -n 40 live-verify-tools-output.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
