@@ -114,7 +114,7 @@ session.updateRequestVars({ user_name: 'Ada', account_tier: 'enterprise' });
 
 For the full picture of when to use `request_vars` vs. `setDynamicPrompt()` vs. actively nudging the brain with `speak()` vs. answering a brain-initiated request with `submitStructuredDataForm()` — and a worked example showing how they compose — see [Dynamic Data Injection](/guides/dynamic-data-injection/).
 
-`request_vars` rejects a reserved key before any network call: the `sys__*` names the brain sets on every turn (`sys__thread_id`, `sys__message_id`, `sys__user_id`, `sys__user_message`, `sys__ks`, `sys__is_new_thread`, `sys__context_id`, `sys__context_type`, `sys__avatar_enabled`, `sys__avatar_share_screen_enabled`), plus the bare `sys__user_obj` name, any `sys__user_obj.`-prefixed key, and `secrets`. Values must be scalar (string/number/boolean/null) — an object or array throws too.
+`request_vars` rejects a reserved key before any network call: the `sys__*` names the brain sets on every turn (`sys__thread_id`, `sys__message_id`, `sys__user_id`, `sys__user_message`, `sys__ks`, `sys__is_new_thread`, `sys__context_id`, `sys__context_type`, `sys__avatar_enabled`, `sys__avatar_share_screen_enabled`), plus the bare `sys__user_obj` name, any `sys__user_obj.`-prefixed key, and `secrets`. Values must be scalar (string/number/boolean/null), an object or array throws too.
 
 ### Tap-to-talk (push-to-talk voice)
 
@@ -367,7 +367,7 @@ const navigate = tools.client({
 });
 
 // tools are a SEPARATE, partner-level entity — create it, then reference the id.
-// (mgmt.tools.create(...) is an alias for .add() — same call, same result)
+// (mgmt.tools.create(...) is an alias for .add(), same call, same result)
 const { id } = await mgmt.tools.add(navigate, ks);
 
 const { configId } = await mgmt.intellects.create({
@@ -845,9 +845,9 @@ const suggestions = await mgmt.followups.getSuggested(ks);
 | `threads.list(ks, opts)` | List threads. `opts.filter`: `agentIdEquals`, `statusEquals`/`statusIn`, `createdAtGreaterThanOrEqual`/`LessThanOrEqual`, `idEquals`/`idsIn`, `userIdEquals`, `orderBy` (`+`/`-` `createdAt`/`updatedAt`, goes inside `filter`) |
 | `threads.get(id, ks)` / `threads.transcript(id, ks)` | Fetch a thread, or its flattened `human:`/`ai:` transcript |
 | `threads.rename(id, title, ks)` | Rename a thread |
-| `threads.setAnalysis(id, patch, ks)` / `threads.clearAnalysis(id, ks)` | Shallow-merge into (or wipe) `thread_metadata.analysis` — a key that actually changes fires the `analysis_updated` event [Lifecycle](/reference/lifecycle/) rules react to |
+| `threads.setAnalysis(id, patch, ks)` / `threads.clearAnalysis(id, ks)` | Shallow-merge into (or wipe) `thread_metadata.analysis`. A key that actually changes fires the `analysis_updated` event [Lifecycle](/reference/lifecycle/) rules react to |
 | `threads.push({id, content, request_vars?, system_message?}, ks)` | Inject an external message into a thread. `delivered:false` in the reply means no live socket was attached; the message still persists |
-| `threads.delete(threadIds, ks, confirm)` | Batch-delete threads by id — the GDPR/CCPA deletion path for conversation PII |
+| `threads.delete(threadIds, ks, confirm)` | Batch-delete threads by id. The GDPR/CCPA deletion path for conversation PII |
 | `messages.list(ks, opts)` | List messages, optionally scoped with `opts.threadId` (sugar for `filter.threadIdEquals`) |
 | `messages.get(id, ks)` / `messages.share(id, newTitle, ks)` | Fetch one message, or clone it under a new title for sharing |
 | `messages.report(ks, opts)` / `messages.reportSummary(ks, opts)` | Raw partner conversation CSV, or a parsed `{totals, byAgent, byThread}` summary |
@@ -856,7 +856,7 @@ const suggestions = await mgmt.followups.getSuggested(ks);
 | `followups.getSuggested(ks)` | Starter questions for the current partner/agent. Any KS |
 | `followups.list(ks, opts)` | Raw partner-wide follow-up question records |
 
-`agentIdEquals` (on `threads.list` and `feedback.list`) only matches threads opened with `sessions.createAgentToken({agentId})` — a plain `sessions.createConversationToken({configId})` thread's `agent_id` is `"default"` and never matches. `messages.report`/`messages.reportSummary`/`feedback.list` return end-user ids, names, and verbatim question/feedback text — treat as PII, scope with a filter, and redact before sharing outside your team.
+`agentIdEquals` (on `threads.list` and `feedback.list`) only matches threads opened with `sessions.createAgentToken({agentId})`. A plain `sessions.createConversationToken({configId})` thread's `agent_id` is `"default"` and never matches. `messages.report`/`messages.reportSummary`/`feedback.list` return end-user ids, names, and verbatim question/feedback text. Treat as PII, scope with a filter, and redact before sharing outside your team.
 
 ---
 
@@ -864,7 +864,7 @@ const suggestions = await mgmt.followups.getSuggested(ks);
 
 - **Brain-model and rate-limit fields have no public write door.** `agent_llm`/`agent_fast_llm`/`agent_avatar_llm`/rate limits/`run_quota_check`/`web_search_config` are set by internal tooling only — no public route reads or writes them (`intellectConfig.describe()` surfaces their current values read-only, informationally). Grounding a new agent via `knowledge_ids` is fully ungated. (Event-driven session/thread rules ARE supported — see [API Reference § Lifecycle](/reference/lifecycle/#lifecycle--event-driven-rules).)
 - **No verbatim speech** — `speak()` goes through the brain; the avatar may rephrase.
-- **Custom face works self-serve, three ways** — (1) a ready-made Visual: upload a full portrait via `catalog.createVisual`, pass the returned id as `visual:{id}` (or `itemId` as `visualId` in `provision`); (2) compose one from parts: `catalog.createFace`/`catalog.createBackground` each return a half, then `avatars.create({face:{id}, background:{type:'color'|'visual', value?}, voice, ...}, ks)` — both required together at create time; or (3) start from a curated `templateId` (`catalog.listTemplates()`) and override just the parts you want. `avatars.update()` also accepts `background` alone, to swap only the background against the avatar's current face. The model animates the composed result at runtime. Video-clip ingest is not available through this API.
+- **Custom face works self-serve, three ways.** (1) A ready-made Visual: upload a full portrait via `catalog.createVisual`, pass the returned id as `visual:{id}` (or `itemId` as `visualId` in `provision`). (2) Compose one from parts: `catalog.createFace`/`catalog.createBackground` each return a half, then `avatars.create({face:{id}, background:{type:'color'|'visual', value?}, voice, ...}, ks)`, both required together at create time. (3) Start from a curated `templateId` (`catalog.listTemplates()`) and override just the parts you want. `avatars.update()` also accepts `background` alone, to swap only the background against the avatar's current face. The model animates the composed result at runtime. Video-clip ingest is not available through this API.
 - **`force_experience` and `model_type:'fast'`** are hints; the SDK can't prove which model replied or which experience rendered.
 
 ---
