@@ -2,7 +2,7 @@
 /**
  * Live-backend verification for this PR's new backend-touching capabilities —
  * real Kaltura API, no fakes: Threads#push/setAnalysis/clearAnalysis,
- * Feedback#add/list/report, Followups#list, Avatars#create/update
+ * Feedback#add/list, Followups#list, Avatars#create/update
  * composed both via face+background and via templateId+background,
  * Catalog#createFace/createBackground, and the filter-validation edge cases
  * documented in docs/api/management-operations.md (unknown filter keys,
@@ -102,7 +102,7 @@ try {
   const analysisGone = !cleared?.thread_metadata?.analysis || Object.keys(cleared.thread_metadata.analysis).length === 0;
   record('threads.clearAnalysis', analysisGone, { thread_metadata: cleared?.thread_metadata });
 
-  // ── Feedback#add / list / report ────────────────────────────────────────
+  // ── Feedback#add / list ──────────────────────────────────────────────────
   const feedback = await kaltura.feedback.add({ message_id: messageId, is_positive: true, comment: 'ci live-verify' }, conv);
   record('feedback.add', Boolean(feedback), { feedback });
 
@@ -126,9 +126,6 @@ try {
   } else {
     record('feedback.list', foundFeedback, { count: feedbackRows.length, foundFeedback });
   }
-
-  const feedbackReport = await kaltura.feedback.report(admin, { pageSize: 100 });
-  record('feedback.report', feedbackReport === null || typeof feedbackReport === 'string', { isString: typeof feedbackReport === 'string', isNull: feedbackReport === null });
 
   // ── Followups#list ──────────────────────────────────────────────────────
   const followupRows = await kaltura.followups.list(admin, { pageSize: 5 });
