@@ -5,20 +5,19 @@
  * What this shows, against the real API:
  *   1. Discover what's available: listObjects/listEvents/describeFields —
  *      the same calls a no-code rule-editor UI would make.
- *   2. Create two InsightSettings entities (TOPIC, CUSTOM) — reusable
- *      custom-insight definitions referenced by id from a lifecycle action.
- *   3. Create rule A: on session_ended, extract TOPIC + CUSTOM via
- *      triggerInsightSettingsKai. SUMMARY (the third key the built-in email
- *      preset needs) isn't requested here — every session already gets one
- *      for free from the always-on system preset, and asking for your own
- *      would be silently overridden — see the guide's "four action types"
- *      section.
+ *   2. Create two InsightSettings — TOPIC and CUSTOM — the reusable insight
+ *      definitions a lifecycle rule references by id.
+ *   3. Create rule A: on session_ended, extract those two insights. SUMMARY
+ *      (the third key the built-in email preset needs) isn't requested here
+ *      — every session already gets one for free from the always-on system
+ *      preset, and it merges into the same batch — see the guide's "action
+ *      types" section.
  *   4. Create rule B: on analysis_updated, email a human using the
  *      zero-setup 'conversationInsightExample' preset.
  *   5. Dry-run both rules with match() — instant, synthetic, no real
  *      thread needed. This is how you verify wiring before a real
  *      conversation ever happens.
- *   6. Clean up both rules and both InsightSettings entities.
+ *   6. Clean up both rules and both insight settings.
  *
  * Real session_ended/analysis_updated events only fire via the backend's
  * own idle-session scan (there's no on-demand trigger), so this example
@@ -52,36 +51,35 @@ const fields = await kaltura.lifecycle.describeFields('thread', 'session_ended',
 console.log('Filterable fields for session_ended:', fields);
 
 let topicSetting;
-let nextStepSetting;
+let customSetting;
 let summaryRule;
 let emailRule;
 const cleanupErrors = [];
 try {
-  // 2. Two InsightSettings entities, created once and referenced by id from
-  // rule A below. CUSTOM's key is what conversationInsightExample's
-  // template looks for — the prompt text is ours to choose.
+  // 2. Define the two insights this demo extracts. Every InsightSettings
+  // entity needs its own prompt — there's no built-in fallback prompt for
+  // any key name, including "TOPIC" or "CUSTOM".
   topicSetting = await kaltura.insightSettings.create({
-    key: 'TOPIC', title: 'Topic', valueType: 'string',
-    prompt: 'The main topic discussed, in 3 words or fewer.',
+    key: 'TOPIC', title: 'Topic', prompt: 'What was the main topic of this conversation, in 1-3 words?', valueType: 'string',
   }, admin);
-  console.log('Created insight-settings entity:', topicSetting.id);
-
-  nextStepSetting = await kaltura.insightSettings.create({
-    key: 'CUSTOM', title: 'Next step', valueType: 'string',
-    prompt: 'One actionable next step for the support team, or "none".',
+  customSetting = await kaltura.insightSettings.create({
+    key: 'CUSTOM', title: 'Next step', prompt: 'One actionable next step for the support team, or "none".', valueType: 'string',
   }, admin);
-  console.log('Created insight-settings entity:', nextStepSetting.id);
+  console.log('Created insight settings:', topicSetting.id, customSetting.id);
 
-  // 3. Rule A: extract TOPIC + CUSTOM the instant a session ends, via the
-  // two entities above. SUMMARY is deliberately not referenced here — every
-  // session already gets one for free from the always-on system preset, and
-  // it merges into this same batch automatically.
+  // 3. Rule A: extract both the instant a session ends. SUMMARY is
+  // deliberately not requested here — every session already gets one for
+  // free from the always-on system preset, and it merges into this same
+  // batch automatically.
   summaryRule = await kaltura.lifecycle.create({
     name: 'Demo — summarize on session end',
     systemName: `demo_recipe_summary_${Date.now()}`,
     eventType: 'session_ended',
     objectType: 'thread',
-    action: { actionType: 'triggerInsightSettingsKai', insightSettingsIds: [topicSetting.id, nextStepSetting.id] },
+    action: {
+      actionType: 'triggerInsightSettingsKai',
+      insightSettingsIds: [topicSetting.id, customSetting.id],
+    },
   }, admin);
   console.log('Created summary rule:', summaryRule.id);
 
@@ -128,12 +126,13 @@ try {
   console.log('analysis_updated would match rule ids:', analysisUpdatedIds);
   if (!analysisUpdatedIds.includes(emailRule.id)) throw new Error(`Dry run did not match the email rule (${emailRule.id}) — check eventConditions/changed_keys.`);
 } finally {
-  // 6. Clean up — lifecycle rules have no in-use scan, so delete is immediate;
-  // delete the insight-settings entities only after both rules referencing
-  // them are gone. Every deletion is attempted independently: one failing
-  // must not skip the rest. Errors are collected rather than thrown here
-  // (no-unsafe-finally): throwing inside a finally block would silently
-  // replace any error from the try block above.
+  // 6. Clean up — lifecycle rules and insight settings have no in-use scan,
+  // so delete is immediate. Every deletion is attempted independently: if
+  // one fails, the rest (still-live, partner-wide) must still be cleaned up
+  // — not skipped because an earlier delete in the same block threw. Errors
+  // are collected rather than thrown here (no-unsafe-finally): throwing
+  // inside a finally block would silently replace any error from the try
+  // block above.
   if (emailRule) {
     try { await kaltura.lifecycle.delete(emailRule.id, admin, { confirmPermanent: true }); console.log('Cleaned up email rule:', emailRule.id); }
     catch (err) { cleanupErrors.push(err); }
@@ -142,12 +141,12 @@ try {
     try { await kaltura.lifecycle.delete(summaryRule.id, admin, { confirmPermanent: true }); console.log('Cleaned up summary rule:', summaryRule.id); }
     catch (err) { cleanupErrors.push(err); }
   }
-  if (nextStepSetting) {
-    try { await kaltura.insightSettings.delete(nextStepSetting.id, admin, { confirmPermanent: true }); console.log('Cleaned up insight-settings entity:', nextStepSetting.id); }
+  if (customSetting) {
+    try { await kaltura.insightSettings.delete(customSetting.id, admin, { confirmPermanent: true }); console.log('Cleaned up CUSTOM insight setting:', customSetting.id); }
     catch (err) { cleanupErrors.push(err); }
   }
   if (topicSetting) {
-    try { await kaltura.insightSettings.delete(topicSetting.id, admin, { confirmPermanent: true }); console.log('Cleaned up insight-settings entity:', topicSetting.id); }
+    try { await kaltura.insightSettings.delete(topicSetting.id, admin, { confirmPermanent: true }); console.log('Cleaned up TOPIC insight setting:', topicSetting.id); }
     catch (err) { cleanupErrors.push(err); }
   }
 }

@@ -1,38 +1,34 @@
 /**
  * Lifecycle — event-driven rule engine on the Agentic host's `lifecycle/*`
- * routes (agentic-hosted, `{offset,limit}` pager). A rule is `{eventType, objectType,
- * eventConditions[], action}` — when a matching backend event fires (e.g. a
- * thread's `session_ended`), every active rule (including partner-invisible,
- * system-seeded presets — see {@link Lifecycle#match}) is evaluated and its
- * `action` runs server-side. Four action shapes exist, passed through as
- * plain objects (not built by the SDK). Three are creatable by a caller:
- * `{actionType:'triggerInsightSettingsKai', insightSettingsIds:string[]}`
- * (1 to 20 ids of {@link InsightSettings} entities belonging to the partner —
- * an id that never existed is rejected immediately (`create`/`update` throw
- * `INVALID_INSIGHT_SETTINGS`), but a *dangling* one — valid when the rule was
- * created, deleted afterward — is never caught automatically: `InsightSettings#delete`
- * runs no in-use scan, and the rule just silently drops that id from its
- * extraction every time it fires (no error, nothing to catch) rather than
- * re-throwing `INVALID_INSIGHT_SETTINGS` on its own; every
- * rule extracting insights on the same event merges into one LLM batch, so
- * don't reference an insight-settings entity keyed `SUMMARY` — every partner
- * already has an always-on preset producing one for free),
- * `{actionType:'sendInsightEmail', recipients:string[], templateId?:string,
- * presetType?:string}` (only fires on `eventType:'analysis_updated'` — a
- * `session_ended` rule with this action type is a no-op server-side), and
- * `{actionType:'triggerDtcKai'}` (extracts one insight per configured
- * lead-capture form field, `intellectConfig.user_properties_forms` — a no-op
- * server-side if the intellect has none configured; a system-seeded preset,
- * `preset__data_to_collect_on_session_ended`, already applies this to every
- * `session_ended` event account-wide, so create a rule with this action type
- * yourself only to scope it further, e.g. to one specific agent). The fourth,
- * `{actionType:'_triggerKaiBase', ...}`, is genuinely system-internal — it
- * powers `preset__summary_on_session_ended`, the always-on free `SUMMARY`,
- * and is never creatable by a caller: rejected client-side here (see
- * {@link SYSTEM_ONLY_ACTION_TYPES}) and additionally rejected server-side by
- * a hard runtime assert.
- * See `docs/lifecycle/README.md` for the full explanation. Mounted at
- * `mgmt.lifecycle`.
+ * routes (agentic-hosted, `{offset,limit}` pager). A rule is `{eventType,
+ * objectType, eventConditions[], action}` — when a matching backend event
+ * fires (e.g. a thread's `session_ended`), every active rule (including
+ * partner-invisible, system-seeded preset rules — see {@link
+ * Lifecycle#match}) is evaluated and its `action` runs server-side. Three
+ * action shapes are available to callers, passed through as plain objects
+ * (not built by the SDK):
+ *
+ * - `{actionType:'triggerInsightSettingsKai', insightSettingsIds:string[]}`
+ *   — extract one or more previously-defined insights (see
+ *   {@link InsightSettings}, mounted at `mgmt.insightSettings`). Each id in
+ *   `insightSettingsIds` (max 20) is validated at rule create/update time —
+ *   an id that doesn't exist or isn't owned by the calling partner 400s. At
+ *   dispatch time, only ids whose insight setting has `status:'active'`
+ *   actually resolve into an extraction; a `disabled` one is silently
+ *   skipped (the rest of the action still fires).
+ * - `{actionType:'sendInsightEmail', recipients:string[], templateId?:string,
+ *   presetType?:string}` — only fires on `eventType:'analysis_updated'`; a
+ *   `session_ended` rule with this action type is a no-op server-side.
+ * - `{actionType:'triggerDtcKai'}` — takes no caller-supplied fields.
+ *   Extracts one insight per lead-capture field configured on the target
+ *   intellect (`intellectConfig.user_properties_forms`) and is
+ *   automatically skipped when none are configured.
+ *
+ * Every session also gets one fixed, built-in summary insight for free —
+ * it comes from a system-seeded preset rule visible via {@link
+ * Lifecycle#match} but never creatable, updatable, or customizable by a
+ * caller. See `docs/lifecycle/README.md` for the full explanation. Mounted
+ * at `mgmt.lifecycle`.
  */
 import { paginate } from './paginate.js';
 import { uuidv4, meta } from '../core/ids.js';
@@ -53,42 +49,6 @@ function requireNonEmptyString(v, where, field) {
   }
 }
 
-// These action-type names have been renamed. Using an old one throws a clear
-// error naming the current replacement instead of a raw server error.
-const RENAMED_ACTION_TYPES = {
-  triggerInsight: 'triggerInsightSettingsKai',
-  triggerDataToCollectInsight: 'triggerDtcKai',
-  triggerOverridableSummaryInsight: null, // system-internal; never creatable
-};
-
-// The one action-type name that exists only to power a system-seeded preset
-// rule (see the class doc) — never creatable/updatable by a caller.
-// `triggerDtcKai` is NOT in this set: unlike `_triggerKaiBase`, it's a normal,
-// caller-creatable action type — it just no-ops server-side until the
-// intellect has `user_properties_forms` configured.
-const SYSTEM_ONLY_ACTION_TYPES = new Set(['_triggerKaiBase']);
-
-/** @param {unknown} action @param {string} where */
-function assertCurrentActionType(action, where) {
-  const actionType = action && typeof action === 'object' ? /** @type {any} */ (action).actionType : undefined;
-  if (typeof actionType !== 'string') return;
-  if (Object.prototype.hasOwnProperty.call(RENAMED_ACTION_TYPES, actionType)) {
-    const replacement = RENAMED_ACTION_TYPES[actionType];
-    throw new KalturaError({
-      type: 'about:blank', title: 'renamed action type', code: 'bad_request',
-      detail: replacement
-        ? `${where}: actionType "${actionType}" was renamed to "${replacement}". ${actionType === 'triggerInsight' ? 'Create the InsightSettings entities first (mgmt.insightSettings.create), then pass their ids as insightSettingsIds.' : ''}`.trim()
-        : `${where}: actionType "${actionType}" is system-internal and never creatable.`,
-    });
-  }
-  if (SYSTEM_ONLY_ACTION_TYPES.has(actionType)) {
-    throw new KalturaError({
-      type: 'about:blank', title: 'system preset only action type', code: 'bad_request',
-      detail: `${where}: actionType "${actionType}" powers a system-seeded preset rule — never creatable/updatable directly.`,
-    });
-  }
-}
-
 export class Lifecycle {
   /** @param {import('./client.js').Ctx} ctx */
   constructor(ctx) { this._ = ctx; }
@@ -96,9 +56,8 @@ export class Lifecycle {
   /**
    * Create a lifecycle rule. WRITE — NOT idempotent (a repeat call creates a
    * second rule, same as {@link Tools#add}).
-   * @param {{name:string, systemName:string, eventType:string, objectType:string, eventConditions?:Array<{field:string,operator:string,value:unknown}>, action:{actionType:'triggerInsightSettingsKai',insightSettingsIds:string[]}|{actionType:'triggerDtcKai'}|{actionType:'sendInsightEmail',recipients:string[],templateId?:string,presetType?:string}}} body
+   * @param {{name:string, systemName:string, eventType:string, objectType:string, eventConditions?:Array<{field:string,operator:string,value:unknown}>, action:object}} body
    * @param {string} ks (admin)
-   * @throws {import('../core/errors.js').KalturaError} `code:'bad_request'` if `action.actionType` is one of the renamed names (`triggerInsight`, `triggerDataToCollectInsight`, `triggerOverridableSummaryInsight`) — see {@link RENAMED_ACTION_TYPES} — or the system-preset-only name (`_triggerKaiBase`) — see {@link SYSTEM_ONLY_ACTION_TYPES}.
    */
   async create(body, ks) {
     this._.assertAdmin(ks, 'lifecycle.create');
@@ -112,7 +71,6 @@ export class Lifecycle {
     if (!body.action || typeof body.action !== 'object') {
       throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: 'lifecycle.create action must be an object (e.g. {actionType:"triggerInsightSettingsKai", insightSettingsIds:[...]}).' });
     }
-    assertCurrentActionType(body.action, 'lifecycle.create');
     /** @type {Record<string,unknown>} */
     const wire = { name: body.name, systemName: body.systemName, eventType: body.eventType, objectType: body.objectType, action: body.action };
     if (body.eventConditions !== undefined) wire.eventConditions = body.eventConditions;
@@ -134,7 +92,7 @@ export class Lifecycle {
    * + awaitable (first page) — mirrors {@link Avatars#list}'s `{offset,limit}`
    * pager (agentic-hosted, NOT the Genie `{pageIndex,pageSize}` convention).
    * @param {string} ks (admin)
-   * @param {{filter?:{statusEqual?:string, systemNameEqual?:string, actionTypeIn?:string[], eventCondition?:{fieldEqual:string,operatorIn?:string[],operatorEqual?:string,value:unknown}}, orderBy?:'+createdAt'|'-createdAt', pageSize?:number}} [opts]
+   * @param {{filter?:{eventTypeEqual?:string, statusEqual?:string, systemNameEqual?:string}, orderBy?:'+createdAt'|'-createdAt', pageSize?:number}} [opts]
    */
   list(ks, opts = {}) {
     this._.assertAdmin(ks, 'lifecycle.list');
@@ -161,7 +119,6 @@ export class Lifecycle {
     if (!fields.some((f) => patch[f] !== undefined)) {
       throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: `lifecycle.update needs at least one of ${fields.join('/')}.` });
     }
-    if (patch.action !== undefined) assertCurrentActionType(patch.action, 'lifecycle.update');
     /** @type {Record<string,unknown>} */
     const wire = { id };
     for (const f of fields) if (patch[f] !== undefined) wire[f] = patch[f];
@@ -194,22 +151,21 @@ export class Lifecycle {
    * string, received undefined"`).
    *
    * The response can include rules the caller never created: production
-   * ships system-seeded preset rules (e.g.
-   * `preset__summary_on_session_ended`, which matches every
-   * `session_ended`/`thread` event for every partner by default) that show
-   * up in `matchedRules[]` alongside the caller's own. Related rules are
-   * grouped: `matchedRules[].isGrouped` is `true` when two or more rules
-   * share a `groupKey` and dispatch as one composite action. Example mixed
-   * response:
+   * ships a system-seeded preset rule (`preset__summary_on_session_ended`)
+   * that matches every `session_ended`/`thread` event for every partner by
+   * default, and it shows up in `matchedRules[]` alongside the caller's own.
+   * Related rules are grouped: `matchedRules[].isGrouped` is `true` when two
+   * or more rules share a `groupKey` and dispatch as one composite action.
+   * Example mixed response:
    * ```json
    * {
    *   "matchedRules": [
    *     {
    *       "isGrouped": true,
-   *       "groupKey": "_system_grouped_kai_insights",
+   *       "groupKey": "_default_all_kai_triggers",
    *       "rules": [
-   *         { "id": "preset__summary_on_session_ended", "systemName": "summary_on_session_ended", "action": { "actionType": "_triggerKaiBase" } },
-   *         { "id": "68a...", "systemName": "my_custom_rule", "action": { "actionType": "triggerInsightSettingsKai", "insightSettingsIds": ["68b..."] } }
+   *         { "id": "preset__summary_on_session_ended", "systemName": "summary_on_session_ended", "action": { "actionType": "<system-internal — never sent or constructed by a caller>" } },
+   *         { "id": "68a...", "systemName": "my_custom_rule", "action": { "actionType": "triggerInsightSettingsKai", "insightSettingsIds": ["507f1f77bcf86cd799439011"] } }
    *       ]
    *     }
    *   ]

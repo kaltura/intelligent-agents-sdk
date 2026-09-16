@@ -188,8 +188,8 @@ export class Management {
     // Event-driven rule engine (`/lifecycle/*`) — react to session/thread
     // events (e.g. session_ended) with server-owned actions, no polling.
     this.lifecycle = new Lifecycle(ctx);
-    // Reusable custom-insight definitions (`/insight-settings/*`), referenced
-    // by id from a `triggerInsightSettingsKai` lifecycle action.
+    // Reusable insight definitions (`/insight-settings/*`) a lifecycle rule's
+    // `triggerInsightSettingsKai` action references by id.
     this.insightSettings = new InsightSettings(ctx);
   }
 

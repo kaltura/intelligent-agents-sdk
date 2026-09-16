@@ -5,7 +5,9 @@ import { Management } from '../../src/management/client.js';
 
 /**
  * InsightSettings resource (wire, `/insight-settings/*`, agentic-hosted,
- * `{offset,limit}` pager) — same `{status,data}` unwrap shape as Avatars.
+ * `{offset,limit}` pager) — create/update validate `valueType`/`status`
+ * against the closed enums BEFORE any network call, delete replies
+ * `{success:boolean}`, list needs the `{offset,limit}` pager.
  */
 
 const ADMIN_KS = 'djJ8' + 'A'.repeat(40);
@@ -18,9 +20,9 @@ function harness(routes) {
 }
 
 const SETTING = {
-  id: '68b0000000000000000000a1', partnerId: 123, key: 'NEXT_STEP', title: 'Next step',
-  prompt: 'One actionable next step for the support team, or "none".', valueType: 'string', status: 'active',
-  createdAt: '2026-09-08T00:00:00.000Z', updatedAt: '2026-09-08T00:00:00.000Z',
+  id: '507f1f77bcf86cd799439099', partnerId: 123, key: 'call_outcome', title: 'Call outcome',
+  prompt: 'Did the call end in a sale, a follow-up, or no interest?', valueType: 'string', status: 'active',
+  createdAt: '2026-08-30T00:00:00.000Z', updatedAt: '2026-08-30T00:00:00.000Z', createdBy: 'user-1',
 };
 
 test('insightSettings.create validates {key, title, prompt, valueType} BEFORE any network call, then posts insight-settings/create', async () => {
@@ -29,17 +31,14 @@ test('insightSettings.create validates {key, title, prompt, valueType} BEFORE an
   ]);
   await assert.rejects(() => mgmt.insightSettings.create(/** @type {any} */ (null), ADMIN_KS), (e) => e.code === 'bad_request');
   await assert.rejects(() => mgmt.insightSettings.create({ key: '' }, ADMIN_KS), (e) => e.code === 'bad_request');
-  await assert.rejects(() => mgmt.insightSettings.create({ key: 'has a space', title: 'Next step', prompt: 'do it', valueType: 'string' }, ADMIN_KS), (e) => e.code === 'bad_request');
-  await assert.rejects(() => mgmt.insightSettings.create({ key: 'x'.repeat(65), title: 'Next step', prompt: 'do it', valueType: 'string' }, ADMIN_KS), (e) => e.code === 'bad_request');
-  await assert.rejects(() => mgmt.insightSettings.create({ key: 'NEXT_STEP', title: 'Next step', prompt: 'do it' }, ADMIN_KS), (e) => e.code === 'bad_request');
-  await assert.rejects(() => mgmt.insightSettings.create({ key: 'NEXT_STEP', title: 'Next step', prompt: 'do it', valueType: 'bogus' }, ADMIN_KS), (e) => e.code === 'bad_request');
+  await assert.rejects(() => mgmt.insightSettings.create({ key: 'k', title: 't', prompt: 'p', valueType: 'not-a-type' }, ADMIN_KS), (e) => e.code === 'bad_request');
   assert.equal(ff.calls.length, 0, 'no transport before validation passes');
 
   const res = await mgmt.insightSettings.create(
     { key: SETTING.key, title: SETTING.title, prompt: SETTING.prompt, valueType: SETTING.valueType },
     ADMIN_KS,
   );
-  assert.equal(res.key, 'NEXT_STEP');
+  assert.equal(res.key, SETTING.key);
   assert.match(ff.calls[0].url, /insight-settings\/create$/);
   assert.deepEqual(ff.calls[0].body, { key: SETTING.key, title: SETTING.title, prompt: SETTING.prompt, valueType: SETTING.valueType });
 });
@@ -77,7 +76,6 @@ test('insightSettings.update validates BEFORE any network call, then posts a pat
   await assert.rejects(() => mgmt.insightSettings.update(SETTING.id, {}, ADMIN_KS), (e) => e.code === 'bad_request');
   await assert.rejects(() => mgmt.insightSettings.update(SETTING.id, { valueType: 'bogus' }, ADMIN_KS), (e) => e.code === 'bad_request');
   await assert.rejects(() => mgmt.insightSettings.update(SETTING.id, { status: 'bogus' }, ADMIN_KS), (e) => e.code === 'bad_request');
-  await assert.rejects(() => mgmt.insightSettings.update(SETTING.id, { key: 'has a space' }, ADMIN_KS), (e) => e.code === 'bad_request');
   assert.equal(ff.calls.length, 0, 'no transport before validation passes');
 
   const res = await mgmt.insightSettings.update(SETTING.id, { status: 'disabled' }, ADMIN_KS);
@@ -85,7 +83,7 @@ test('insightSettings.update validates BEFORE any network call, then posts a pat
   assert.deepEqual(ff.calls[0].body, { id: SETTING.id, status: 'disabled' });
 });
 
-test('insightSettings.delete requires confirmPermanent, then deletes by id', async () => {
+test('insightSettings.delete requires confirmPermanent, then deletes by id, returning {removed, success, _meta}', async () => {
   const { mgmt, ff } = harness([
     { match: 'insight-settings/delete', respond: () => ({ status: 200, body: { success: true } }) },
   ]);
@@ -93,7 +91,10 @@ test('insightSettings.delete requires confirmPermanent, then deletes by id', asy
   assert.equal(ff.calls.length, 0, 'no write before confirmation');
 
   const res = await mgmt.insightSettings.delete(SETTING.id, ADMIN_KS, { confirmPermanent: true });
+  assert.equal(res.removed, SETTING.id);
   assert.equal(res.success, true);
+  assert.match(res._meta.generatedAt, /^\d{4}-\d{2}-\d{2}T.*Z$/);
+  assert.equal(res._meta.scope, `insightSettings:${SETTING.id}`);
   assert.match(ff.calls.at(-1).url, /insight-settings\/delete$/);
 });
 

@@ -129,4 +129,4 @@ Reusable custom-insight definitions (`key`/`title`/`prompt`/`valueType`), refere
 | Update | `POST /v1/insight-settings/update` | `{"id":"<mongo-id>", ...fields}` — any of `key`/`title`/`prompt`/`valueType`/`status` |
 | Delete | `POST /v1/insight-settings/delete` | `{"id":"<mongo-id>"}` — no in-use scan; a rule still referencing a deleted id silently drops that id from its extraction at match/trigger time instead (no error) |
 
-Full reference and a worked recipe: **[docs/lifecycle/README.md § InsightSettings](../lifecycle/README.md#insightsettings--reusable-custom-insight-definitions)**.
+Full reference and a worked recipe: **[docs/lifecycle/README.md § InsightSettings](../lifecycle/README.md#insightsettings-reusable-insight-definitions)**.
