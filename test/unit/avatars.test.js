@@ -68,13 +68,25 @@ test('avatars.update accepts face alone or background alone, UNLIKE create — t
   assert.deepEqual(ff.calls[1].body.background, { type: 'color', value: '#fff' });
 });
 
-test('avatars.create/update reject a malformed background (missing type or value)', async () => {
+test('avatars.create/update reject a background missing "type", or missing "value" for type:"visual"', async () => {
   const { mgmt, ff } = harness([]);
   await assert.rejects(() => mgmt.avatars.create({ voice: { id: 'v1' }, face: { id: 'f1' }, background: { value: '#fff' } }, ADMIN_KS), (e) => e.code === 'bad_request');
-  await assert.rejects(() => mgmt.avatars.create({ voice: { id: 'v1' }, face: { id: 'f1' }, background: { type: 'color' } }, ADMIN_KS), (e) => e.code === 'bad_request');
+  await assert.rejects(() => mgmt.avatars.create({ voice: { id: 'v1' }, face: { id: 'f1' }, background: { type: 'visual' } }, ADMIN_KS), (e) => e.code === 'bad_request');
   await assert.rejects(() => mgmt.avatars.update({ id: 'a1', background: { value: '#fff' } }, ADMIN_KS), (e) => e.code === 'bad_request');
-  await assert.rejects(() => mgmt.avatars.update({ id: 'a1', background: { type: 'color' } }, ADMIN_KS), (e) => e.code === 'bad_request');
+  await assert.rejects(() => mgmt.avatars.update({ id: 'a1', background: { type: 'visual' } }, ADMIN_KS), (e) => e.code === 'bad_request');
   assert.equal(ff.calls.length, 0);
+});
+
+test('avatars.create/update accept background:{type:"color"} with no value — defaults to white server-side', async () => {
+  const { mgmt, ff } = harness([
+    { match: 'avatar/create', respond: (req) => ({ status: 200, body: { id: 'a1', ...req.body } }) },
+    { match: 'avatar/update', respond: (req) => ({ status: 200, body: { id: req.body.id, ...req.body } }) },
+  ]);
+  await mgmt.avatars.create({ voice: { id: 'v1' }, face: { id: 'f1' }, background: { type: 'color' } }, ADMIN_KS);
+  assert.deepEqual(ff.calls[0].body.background, { type: 'color' });
+
+  await mgmt.avatars.update({ id: 'a1', background: { type: 'color' } }, ADMIN_KS);
+  assert.deepEqual(ff.calls[1].body.background, { type: 'color' });
 });
 
 test('avatars.create accepts a valid face+background pairing, or visual alone, or templateId+either half', async () => {
@@ -96,18 +108,27 @@ test('avatars.create accepts a valid face+background pairing, or visual alone, o
   assert.equal(ff.calls[3].body.face.id, 'f1');
 });
 
-test('avatars.create/update accept an incomplete face/background pairing when visual is also sent (visual wins)', async () => {
+test('avatars.create rejects an incomplete face/background pairing EVEN when visual is also sent — visual does not exempt it', async () => {
+  const { mgmt, ff } = harness([]);
+  await assert.rejects(() => mgmt.avatars.create({ voice: { id: 'v1' }, visual: { id: 'vis1' }, face: { id: 'f1' } }, ADMIN_KS), (e) => e.code === 'bad_request');
+  await assert.rejects(() => mgmt.avatars.create({ voice: { id: 'v1' }, visual: { id: 'vis1' }, background: { type: 'color', value: '#fff' } }, ADMIN_KS), (e) => e.code === 'bad_request');
+  assert.equal(ff.calls.length, 0, 'no transport before the composition guard passes');
+});
+
+test('avatars.create accepts visual sent alongside a COMPLETE face+background pair (visual wins, pair is ignored server-side)', async () => {
   const { mgmt, ff } = harness([
     { match: 'avatar/create', respond: (req) => ({ status: 200, body: { id: 'a1', ...req.body } }) },
+  ]);
+  await mgmt.avatars.create({ voice: { id: 'v1' }, visual: { id: 'vis1' }, face: { id: 'f1' }, background: { type: 'color', value: '#fff' } }, ADMIN_KS);
+  assert.equal(ff.calls[0].body.visual.id, 'vis1');
+});
+
+test('avatars.update accepts an incomplete face/background pairing when visual is also sent (visual genuinely wins, face/background ignored)', async () => {
+  const { mgmt, ff } = harness([
     { match: 'avatar/update', respond: (req) => ({ status: 200, body: { id: req.body.id, ...req.body } }) },
   ]);
-  // face without background would normally be rejected pre-network — but visual wins, so it's not an error.
-  await mgmt.avatars.create({ voice: { id: 'v1' }, visual: { id: 'vis1' }, face: { id: 'f1' } }, ADMIN_KS);
-  assert.equal(ff.calls[0].body.visual.id, 'vis1');
-  assert.equal(ff.calls[0].body.face.id, 'f1');
-
   await mgmt.avatars.update({ id: 'a1', visual: { id: 'vis1' }, face: { id: 'f1' } }, ADMIN_KS);
-  assert.equal(ff.calls[1].body.visual.id, 'vis1');
+  assert.equal(ff.calls[0].body.visual.id, 'vis1');
 });
 
 test('avatars.update accepts a valid face+background recomposition and name alone', async () => {
