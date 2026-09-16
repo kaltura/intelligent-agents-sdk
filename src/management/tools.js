@@ -63,7 +63,13 @@ const NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
  * Tool `type` discriminator — the closed set the backend understands. `api`
  * calls an HTTP endpoint, `csv` looks up rows in an inline table, `code` runs
  * sandboxed Python, `client` makes NO server-side call at all — see
- * {@link client}. @type {ReadonlyArray<'api'|'csv'|'code'|'client'>}
+ * {@link client}.
+ *
+ * `code` and `csv` are UNAVAILABLE BY DEFAULT for a real partner: `add`/
+ * `update` reply HTTP 403 (`Tool type '<type>' is unavailable by default,
+ * call support`) until Kaltura support enables them for your account. `api`
+ * and `client` need no such enablement.
+ * @type {ReadonlyArray<'api'|'csv'|'code'|'client'>}
  */
 export const TOOL_TYPES = Object.freeze(['api', 'csv', 'code', 'client']);
 
@@ -289,6 +295,12 @@ export function api(cfg) {
  * OPTIONAL (the server's `csv_preload` derives them from the columns). The CSV
  * must be a non-empty string with a parseable
  * header row (≥1 column). PURE.
+ *
+ * UNAVAILABLE BY DEFAULT: `tools.add`/`tools.update` reply HTTP 403 (`Tool
+ * type 'csv' is unavailable by default, call support`) for a real partner
+ * until Kaltura support enables this type on your account — this builder
+ * still validates and returns a wire-ready config either way; the 403 comes
+ * back from the network call, not from here.
  * @param {object} cfg {name, description, csv, args?, displayName?, addToHistory?}
  * @returns {GenieToolConfig}
  */
@@ -307,6 +319,12 @@ export function csv(cfg) {
 /**
  * Build a validated `code` tool — Python run in a server sandbox that computes
  * a result string the LLM consumes. `code` must be a non-empty string. PURE.
+ *
+ * UNAVAILABLE BY DEFAULT: `tools.add`/`tools.update` reply HTTP 403 (`Tool
+ * type 'code' is unavailable by default, call support`) for a real partner
+ * until Kaltura support enables this type on your account — this builder
+ * still validates and returns a wire-ready config either way; the 403 comes
+ * back from the network call, not from here.
  * @param {object} cfg {name, description, code, args?, displayName?, addToHistory?}
  * @returns {GenieToolConfig}
  */
@@ -570,6 +588,10 @@ export async function findIntellectsReferencingTool(ctx, toolId, ks) {
  * the SAME name silently converge on the SAME Tool entity — deleting it
  * affects every intellect that references it, not just the one the caller
  * has in mind. `delete()` below checks for exactly this before acting.
+ *
+ * `code`/`csv` tools are UNAVAILABLE BY DEFAULT — see {@link TOOL_TYPES}.
+ * `add`/`update` on either replies HTTP 403 (`code:'forbidden'`) for a real
+ * partner until Kaltura support enables the type on your account.
  */
 export class Tools {
   /** @param {import('./client.js').Ctx} ctx */
