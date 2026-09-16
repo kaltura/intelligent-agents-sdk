@@ -53,8 +53,8 @@ Query params:
 | `partnerId` | your PID | identifies the Kaltura account (the embed client sends `client`/`flowId` instead — agent identity) |
 | `stickyId` | 16 random chars, fresh per connect | **session affinity** — load balancer pins all of this session's requests (incl. the initial HTTP-polling handshake) to one server instance. Critical: without it the handshake can break across instances. |
 | `level` | `published` | content level (`published` = production agent, `draft` = staging) |
-| `debugMode` | `true` | enables the server's streaming text events (`debug_stvTaskGenerated`, `debug_vad_speech_detected`); despite the `debug_` prefix these are required for interim transcription + `timing:'before'` features |
-| `billed_client` | `""` | reserved for future partner billing delegation (unused) |
+| `debugMode` | `true` | this SDK always sends `true`, with no config option to turn it off. The SDK's own caption/transcript features (`session.on('speechChunk'/'transcript', …)`) read the non-`debug_`-prefixed `stvSpeechChunk`/`generatingSpeech` events, not the `debug_*` ones — see [Wire Protocol · Events Catalog §4d](/reference/wire-protocol/events-catalog/#4d-server--client-on--conversation-phase) |
+| `billed_client` | `""` | always sent empty by this SDK; no effect on this SDK's behavior |
 | `auth.token` | enriched KS | the conversation KS from `application/appInit`; carries `partnerId` + agent scope. (The embed client uses anonymous `ks:''`.) |
 
 Auth/tenant scope: the KS in `auth.token` is what scopes the session to a partner + agent; entitlement stays ON for end-user sessions.
@@ -78,7 +78,7 @@ Order from the built-in client's connecting-state machine (steps 0–9, 11) plus
 | 8 | (optional) wait player-ready, then 1000ms delay | — | — | — |
 | 9 | connect ASR mic uplink | `asr-webrtc-*` handshake ([§5](/reference/wire-protocol/audio-channels/#5-asr-uplink-pc1--microphone--server)) | — | 30s (`ASRConnectionFailed`) |
 | 10 | subscribe STV video (WHEP) **and wait until playable, or give up waiting** | `→` WHEP POST (no timeout of its own) → wait `<video>` `canplay` + ~300ms settle, or a 6s hard cap if `canplay` never fires | first decoded frame, or the 6s cap elapsing | 6s (hard cap; settles either way) |
-| 11 | **approve** (starts the spoken greeting) | `→ approvedPermissions {client, room}` | — | — |
+| 11 | **approve** (starts the spoken greeting) | `→ approvedPermissions {room}` | — | — |
 | → | **CONNECTED** | listen for `agent_raw_text`, `generatingSpeech`, `stv*Talking`, VAD ([events catalog](/reference/wire-protocol/events-catalog/)) | — | — |
 
 Top-level machine states (the built-in client's connection state machine): `preparing → connecting → connected → (disconnecting / disconnected / error)`. Overall connecting timeout 30s. Step timeouts are from the built-in client's connecting state (`30e3` overall, `10000` server-connect, `5e3` join-room, `10000` agent, ASR 30s).

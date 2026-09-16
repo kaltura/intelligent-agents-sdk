@@ -71,7 +71,7 @@ POST https://genie.nvp1.ovp.kaltura.com/assistant/abort
 
 ## Reserved Template Variables (`sys__*`)
 
-The server sets these on every turn. They're available to `{{ ... }}` interpolation in `base_directive` / `prompts[].value` / `glossary` (see [Configure an Intellect](/reference/api/build/intellect/#configure-an-intellect)) regardless of `allow_client_variables`. The SDK's own `request_vars` pre-flight guard rejects a client-supplied value for 5 of these 8 names before any network call — `sys__thread_id`, `sys__message_id`, `sys__user_id`, `sys__user_message`, `secrets` (see `request_vars` above) — since those collide with a server-managed variable; it does not yet name-check `sys__ks`, `sys__is_new_thread`, or `sys__user_obj.*` the same way:
+The server sets these on every turn. They're available to `{{ ... }}` interpolation in `base_directive` / `prompts[].value` / `glossary` (see [Configure an Intellect](/reference/api/build/intellect/#configure-an-intellect)) and in a Skill's `instructions` text (see [§ Skills](/reference/api/management-operations/#skills--httpsgenienvp1ovpkalturacom)), regardless of `allow_client_variables`. The SDK's own `request_vars` pre-flight guard rejects a client-supplied value for every one of these (`sys__thread_id`, `sys__message_id`, `sys__user_id`, `sys__user_message`, `sys__ks`, `sys__is_new_thread`, `sys__context_id`, `sys__context_type`, `sys__avatar_enabled`, `sys__avatar_share_screen_enabled`, any `sys__user_obj.*` key, and `secrets`; see `request_vars` above) before any network call:
 
 | Variable | Resolves to | Notes |
 |----------|-------------|-------|
@@ -80,6 +80,10 @@ The server sets these on every turn. They're available to `{{ ... }}` interpolat
 | `sys__user_id` | The bound end-user id | Empty by default (an anonymous KS). Bind a real identity with `Sessions.createConversationToken({ userId })` (or `createAdminToken({ userId })`) so this resolves server-side instead of always being empty — see § Bind a session to a real end-user identity above. |
 | `sys__user_message` | The current turn's user text | |
 | `sys__is_new_thread` | `true` on the first turn of a new thread, `false` otherwise | |
+| `sys__avatar_enabled` | Whether the current thread has a live avatar attached | Used in a Skill's `condition` to gate it to avatar-only sessions, e.g. `{{ sys__avatar_enabled }}` — see [Configure an Intellect § skill_ids](/reference/api/build/intellect/#configure-an-intellect). |
+| `sys__avatar_share_screen_enabled` | Whether the current avatar session has screen-share analysis enabled | Also usable in a Skill's `condition`, e.g. `{{ sys__avatar_enabled and not sys__avatar_share_screen_enabled }}` to gate a skill to avatar sessions that are NOT sharing a screen. |
+| `sys__context_id` | The category/entry id the current context (and its knowledge base, if any) is scoped to | Set via `KalturaAvatarSession`'s `contextId` constructor option, sent on the live socket `join` payload — see [Architecture Reference · Connection and Handshake § The `join` payload](/reference/architecture-reference/connection-and-handshake/#the-join-payload-step-2--this-carries-the-agentbrain-config). Empty when no context was set at join. |
+| `sys__context_type` | The type of that context (e.g. an `entry` vs. a `category`) | Set via `KalturaAvatarSession`'s `contextType` constructor option, alongside `contextId`; empty when no context was set at join. |
 | `sys__ks` | The raw Kaltura Session token for the current request | ⚠️ **Security warning: never reference `sys__ks` in a prompt whose output could be echoed back to a user or logged.** It is a live credential — rendering it as plain text in a model response, chat transcript, or log turns that surface into a credential leak. See [Security](/reference/security/#ks-kaltura-session-guidance-for-agents-ac-3--ac-6--ia-2). |
 | `sys__user_obj.first_name` / `.last_name` / `.title` / `.company` / `.gender` / `.email` | Attributes of the bound-user object | Verify these resolve with `intellects.previewPrompt()` before shipping a prompt — the rendered preview flags unresolved references with a `reserved_user_attr_unresolved` warning. |
 | `secrets.<NAME>` | A named secret configured on the intellect | Write-only — see [§ Secrets](/reference/api/build/tools-and-secrets/#secrets-write-only). |
@@ -143,7 +147,9 @@ There is no documented cap on how long a thread's history can grow. The full tra
 Feedback and follow-up suggestions route through internal Genie paths — use the SDK rather than calling them directly.
 
 - `mgmt.feedback.add({message_id, is_positive, comment?}, convKs)` — thumbs up/down on a message. `message_id` comes from the converse stream.
-- `mgmt.followups.getSuggested(ks)` — pre-configured starter questions. Per-answer follow-ups stream inline as `unisphere-tool` segments when `capabilities.generate_followup_questions:"on"`.
+- `mgmt.feedback.list(ks, opts)` — admin-scoped feedback listing, filterable by `messageIdEquals`/`messageIdsIn`/`threadIdEquals`/`agentIdEquals`/`isPositiveEquals`. Sources from the rated message itself, not a separate feedback store — see the method's own doc for why. ⚠️ SENSITIVE: contains end-user ids/names + verbatim question/feedback text. Treat as PII; scope and redact before sharing.
+- `mgmt.followups.getSuggested(ks)` — starter questions for the partner/agent. The returned set can vary between calls — don't assume a stable, fixed list. Per-answer follow-ups stream inline as `unisphere-tool` segments when `capabilities.generate_followup_questions:"on"`.
+- `mgmt.followups.list(ks, opts)` — raw partner-wide follow-up/starter question record listing (distinct from `getSuggested`'s per-agent shortlist).
 
 ---
 
@@ -152,6 +158,8 @@ Feedback and follow-up suggestions route through internal Genie paths — use th
 Partner-scoped read-only CSV — contains end-user IDs and verbatim questions (treat as PII).
 
 SDK: `mgmt.messages.report(ks)` (raw CSV) / `mgmt.messages.reportSummary(ks)` (volume + feedback ratio + top questions, with a `_meta` provenance receipt).
+
+`mgmt.messages.get(id, ks)` (`POST {genieUrl}/message/get`) fetches one message record directly, without paging through `messages.list()`. An unknown id throws a typed `not_found`; one belonging to another partner throws `forbidden` instead.
 
 ---
 
@@ -162,5 +170,7 @@ POST https://genie.nvp1.ovp.kaltura.com/mcp/search
 { "query": "adaptive bitrate streaming" }
 ```
 
-Returns `{status, data}`. A partner with no indexed content returns a `"couldn't find relevant information"` error response. SDK: `mgmt.knowledge.search(query, ks)`.
+Returns `{status, data}`. A partner with no indexed content returns a `"couldn't find relevant information"` error response. SDK: `mgmt.knowledge.search(query, ks, opts)`.
+
+`opts` passes through five optional tuning params, all accepted as-is by the backend: `top_n` (default 5), `with_line_numbers`, `margins_in_seconds` (default 15), `include_sources`, `entry_description`. `include_sources:true` changes the success shape's `chapters` from `null` to an array, and `data` to `null`.
 

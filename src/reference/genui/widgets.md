@@ -109,7 +109,7 @@ Fields come from `model.fields`, `model.properties`, or `model.items`. A field w
 
 Descriptor: `{kind:'user-properties-form', data:{title, fields:[{key, type, label, knownValue, required, description}]}}`.
 - **Report back:** the default (`user_properties_forms`-configured) path has the host call **`session.submitStructuredDataForm(info)`** (`session.js`), which `sanitizeJson`s the object and emits the socket event **`setFormLeadInfo`** — a fire-and-forget emit with no durable server-side read-back. An app can instead take a different, durable path: never configure `user_properties_forms` at all, and reach this same `user-properties-form` widget purely as one enum value of its own `show_widget` **client** tool (`kaltura_genie_experiences` OFF), rendering the widget into its own dedicated host UI and, on submit, bridging the collected values into `request_vars` so the brain itself can call a server-side **api** tool that persists them wherever you point it — see [Structured Data Forms](/guides/structured-data-forms/).
-- For the full picture — configuration, the exact mandatory prompt injection, where `setFormLeadInfo` actually persists server-side, and how to deliver the collected data somewhere durable — see [Structured Data Forms](/guides/structured-data-forms/) and [External API Integrations](/guides/external-api-integrations/).
+- For the full picture — configuration, why the agent treats a configured stage as mandatory, where `setFormLeadInfo` actually persists server-side, and how to deliver the collected data somewhere durable — see [Structured Data Forms](/guides/structured-data-forms/) and [External API Integrations](/guides/external-api-integrations/).
 
 ### 9. content-gallery (`renderContentGallery`) — image/content cards
 
@@ -122,7 +122,7 @@ Items come from `model.items`, `model.slides`, or `model.cards`. Each item:
 | `description` | `description`, `text`, `body` | ≤2000 chars |
 | `imageUrl` | `imageUrl`, `image`, `thumbnail` | via `safeUrl` |
 | `url` | `url`, `link`, `href` | via `safeUrl` |
-| `alt` | `alt`, `title` | ≤300 chars — the image's accessible name |
+| `alt` | `alt`, `title`, `description` | ≤300 chars — the image's accessible name |
 
 Descriptor: `{kind:'content-gallery', data:{title, items:[{id, title, description, imageUrl, url, alt}]}}`. This is the **image-bearing** widget (a deck/gallery of cards with thumbnails). Note the backend key is `gallery_slides`, and the `video_gallery` capability summary says it permits both `video-gallery-tool` **and** `content-gallery-tool`.
 - **Multi-item only.** The renderer always wraps `items` in a CSS grid sized for several thumbnails (`.kgenui__gallery`, `repeat(auto-fill, minmax(120px,1fr))`). It does not branch on item count. So a single, image-less item stretches to the grid's full row width inside the widget's full-slot frame and reads as an oversized, awkward card. A `:has(> .kgenui__gallery > li:only-child)` CSS rule can give that case a flex/centered treatment instead, and a `show_widget` tool description can steer the brain toward `summary` for a single text-only point. Prefer `content-gallery` for 2+ image-bearing items, and `summary` for one.

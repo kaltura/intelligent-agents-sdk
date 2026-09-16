@@ -37,11 +37,10 @@ A user turn, as captured:
 
 Barge-in: a new `debug_vad_speech_detected` (voice) or `→ onTextEntered {text:'', isFinal:false, isSpeechStart:true}` (typed, via `speak()`/`interrupt()`) mid-turn produces `← agentInterrupted {}` and an early `stvFinishedTalking` with the truncated `agentContent`.
 
-**Live-runtime brain-bridge internals, for integrators reasoning about turns:**
+**Runtime behavior for integrators reasoning about turns:**
 
-- **Turn segmentation** (server-side) — `agent_start_speech.isNewTurn` is `false` while incoming ASR text stays *similar* to the prior input: similar = the normalized new text is a prefix of the prior, OR Levenshtein similarity `(maxLen − distance)/maxLen ≥ 0.6`; normalization lowercases, strips `?.!,`, and collapses whitespace. Divergence below that threshold starts a new turn.
-- **Abort on interruption** (server-side) — the bridge sends a WebSocket `abort` frame to the brain `{ threadId, messageId, deleteFromHistory: !isUserInterruption }`: a **user** interruption keeps the partial answer in thread history; a **system** invalidation deletes it. The in-flight request and any late segments are then rejected.
-- **Audio/phone mode allocates no STV** — the server short-circuits to `{status:"audio/phone mode - no STV session"}` (no `webrtc_url`, no WHEP downlink). TTS `output_format` is `pcm_16000` (audio mode) / `ulaw_8000` (phone) / MP3 (video mode, the only mode that POSTs audio to STV).
+- **Turn segmentation** — `agent_start_speech.isNewTurn` is `false` when the server treats new ASR/typed text as a continuation of the turn already in flight (e.g. a correction or extension of what the user just said), and `true` when it starts a fresh turn. The SDK only reads this field; it doesn't compute continuation itself.
+- **Audio/phone mode allocates no STV** — the server short-circuits `stvNewSession` to `{status:"audio/phone mode - no STV session"}` (no `webrtc_url`, no WHEP downlink); see [Wire Protocol · Events Catalog](/reference/wire-protocol/events-catalog/#4b-server--client-on--handshakesession-phase).
 
 ## 9. Reproduce / re-capture
 

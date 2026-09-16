@@ -9,7 +9,7 @@ eyebrow: Reference
 
 [← Back to the API Reference index](/reference/api-reference/)
 
-**On this page:** [Agents — `https://api.avatar.us.kaltura.ai`](#agents--httpsapiavataruskalturaai) · [Avatars — `https://api.avatar.us.kaltura.ai`](#avatars--httpsapiavataruskalturaai) · [Intellects — `https://genie.nvp1.ovp.kaltura.com`](#intellects--httpsgenienvp1ovpkalturacom) · [Tools — `https://genie.nvp1.ovp.kaltura.com`](#tools--httpsgenienvp1ovpkalturacom) · [Skills — `https://genie.nvp1.ovp.kaltura.com`](#skills--httpsgenienvp1ovpkalturacom) · [Threads — `https://genie.nvp1.ovp.kaltura.com`](#threads--httpsgenienvp1ovpkalturacom) · [Knowledge records — `https://genie.nvp1.ovp.kaltura.com`](#knowledge-records--httpsgenienvp1ovpkalturacom) · [Lifecycle — `https://api.avatar.us.kaltura.ai`](#lifecycle--httpsapiavataruskalturaai)
+**On this page:** [Agents — `https://api.avatar.us.kaltura.ai`](#agents--httpsapiavataruskalturaai) · [Avatars — `https://api.avatar.us.kaltura.ai`](#avatars--httpsapiavataruskalturaai) · [Intellects — `https://genie.nvp1.ovp.kaltura.com`](#intellects--httpsgenienvp1ovpkalturacom) · [Tools — `https://genie.nvp1.ovp.kaltura.com`](#tools--httpsgenienvp1ovpkalturacom) · [Skills — `https://genie.nvp1.ovp.kaltura.com`](#skills--httpsgenienvp1ovpkalturacom) · [Threads — `https://genie.nvp1.ovp.kaltura.com`](#threads--httpsgenienvp1ovpkalturacom) · [Messages, Feedback & Followups — `https://genie.nvp1.ovp.kaltura.com`](#messages-feedback--followups--httpsgenienvp1ovpkalturacom) · [Knowledge records — `https://genie.nvp1.ovp.kaltura.com`](#knowledge-records--httpsgenienvp1ovpkalturacom) · [Lifecycle — `https://api.avatar.us.kaltura.ai`](#lifecycle--httpsapiavataruskalturaai) · [Insight Settings — `https://api.avatar.us.kaltura.ai`](#insight-settings--httpsapiavataruskalturaai)
 
 
 All use the **admin KS**.
@@ -18,12 +18,13 @@ All use the **admin KS**.
 
 | Operation | Endpoint | Body |
 |-----------|----------|------|
+| Create | `POST /v1/agent/create` | `{"displayName":"...", "intellect":{...}, "avatarIds":["24-char-hex"], "adminTags"?:["..."]}` |
 | List | `POST /v1/agent/list` | `{"filter":{},"pager":{"offset":0,"limit":30}}` |
 | Get | `POST /v1/agent/get` | `{"agentId":"UUID"}` |
 | Update | `POST /v1/agent/update` | `{"agentId":"UUID", ...fields}` |
 | Delete | `POST /v1/agent/delete` | `{"agentId":"UUID"}` |
 
-`filter` is passed through to the server as-is; the API documents no filter keys, and an unrecognized key returns `bad_request`. SDK: `mgmt.agents.list(ks)` sends `filter:{}` and lists everything; filter client-side on `adminTags`.
+Filter keys: `agentId`, `adminTagsIn`, `adminTagsNotIn`, `searchValue` (case-insensitive substring match on `displayName`/`agentId`); an unrecognized key 400s. The request also takes a top-level `orderBy` (`+createdAt`, `-createdAt`, `+updatedAt`, `-updatedAt`; anything else 400s) — a separate field from `filter`, unlike Threads/Messages below where `orderBy` nests inside `filter`. SDK: `mgmt.agents.list(ks, opts)` passes `opts.filter` through as-is; it does not yet expose `orderBy`.
 
 `mgmt.agents.delete` refuses to delete an agent whose `adminTags` match a production marker (`prod`, `production`, `keep`, `do-not-delete`, `live` — see `PROTECTED_TAGS` in `src/management/agents.js`), unless called with `{confirmPermanent:true, allowProtected:true}`. This guards against an automated cleanup-by-tag sweep deleting a real, in-use agent.
 
@@ -31,11 +32,20 @@ All use the **admin KS**.
 
 | Operation | Endpoint | Body |
 |-----------|----------|------|
+| Create | `POST /v1/avatar/create` | `{"voice":{"id":"...","speed"?:1.0}, "visual"?:{"id":"...","motionControl"?:{...}}, "face"?:{"id":"..."}, "background"?:{"type":"color"\|"visual","value"?:"..."}, "templateId"?:"...", "name"?:"...", "openingPhrase"?:"..."}` — see § Compose a visual, below. |
 | List | `POST /v1/avatar/list` | `{"pager":{"offset":0,"limit":30}}` |
 | Get | `POST /v1/avatar/get` | `{"id":"24-char-hex"}` |
-| Update | `POST /v1/avatar/update` | `{"id":"24-char-hex", ...fields}` |
+| Update | `POST /v1/avatar/update` | `{"id":"24-char-hex", ...fields}` — PATCH semantics (omitted fields are preserved); `templateId` is create-only (400 on update) |
 | Delete | `POST /v1/avatar/delete` | `{"id":"24-char-hex"}` |
-| List templates | `POST /v1/avatar-template/list` | `{"pager":{"offset":0,"limit":30}}` — curated `{voice,face}` presets (§ Create an Avatar). SDK: `mgmt.avatars.listTemplates(ks, opts)`. |
+| List templates | `POST /v1/avatar-template/list` | `{"pager":{"offset":0,"limit":30}}` — curated presets, each pairing a `voice` with either a ready `visual` or a `face`/`background` pair (§ Create an Avatar). SDK: `mgmt.avatars.listTemplates(ks, opts)`. |
+
+**Compose a visual on create** — needs exactly one of: (1) `visual:{id}` (wins only when `face`/`background` are BOTH omitted or BOTH sent as a complete pair — sending just one of `face`/`background` alongside `visual` is still a domain failure, `visual` does not exempt it); (2) `face:{id}` + `background:{type,value}` composing a NEW visual (both required together — even alongside `visual` — UNLESS `templateId` is also given — a template can carry its own `face`/`background`, filling in whichever half is missing); (3) `templateId` + whichever of `face`/`background`/`visual` the template doesn't already supply (`templateId` alone is a domain failure unless the template already resolves to a complete visual on its own). `background.value` is required for `type:'visual'`, optional (defaults to white) for `type:'color'`. For `type:'color'`, `value` must be a plain 6-digit hex string (`#RRGGBB`) — **no alpha channel**: an 8-digit hex (`#RRGGBBAA`), `rgba(...)`, or CSS4 `rgb(... / ...%)` all fail with `AVATAR_INVALID_BACKGROUND_ID` ("must be a 6-digit hex value"), live-confirmed against production. Full walkthrough, including `catalog.createFace`/`createBackground`: [API · Build · Create an Avatar and an Agent § Three ways to get a visual](/reference/api/build/avatar-and-agent/#three-ways-to-get-a-visual).
+
+An incomplete/invalid `face`/`background` pairing on **create** is a HTTP-200 `KalturaAPIException` (`AVATAR_MISSING_VISUAL_RESOLUTION`, `AVATAR_FAILED_TO_COMPOSE_VISUAL`, `AVATAR_MISSING_VOICE`, `AVATAR_NOT_FOUND`) — `avatars.create` catches the incomplete-pairing case pre-network. The composed result is reflected in `visual.composition` and a fresh raw `previewImageUrl`/`loadingVideoUrl` — inspect those to see what was actually built.
+
+**Recomposing on update is asymmetric, unlike create** — the rule depends on the avatar's existing state: `background` alone recomposes against the avatar's current face (a valid "just change the background" update); `face` alone is accepted but silently a no-op (nothing to pair it with, so the existing visual is left untouched). `avatars.update` does NOT reject either half alone.
+
+`avatar/create` accepts and stores `adminTags`, and `avatar/list adminTagsIn` finds it, but no read path ever returns it and `avatar/update` genuinely rejects it (no tag field on that request body). The SDK throws pre-network on either path rather than let you rely on a write-only field — tag the parent **agent** instead.
 
 ## Intellects — `https://genie.nvp1.ovp.kaltura.com`
 
@@ -92,17 +102,42 @@ Before deleting a Skill, `mgmt.skills.delete` lists every intellect and refuses 
 
 ## Threads — `https://genie.nvp1.ovp.kaltura.com`
 
-All thread endpoints require an **admin KS** (`disableentitlement`). SDK: `mgmt.threads.{list, get, rename, delete, transcript}`.
+All thread endpoints require an **admin KS** (`disableentitlement`). SDK: `mgmt.threads.{list, get, rename, setAnalysis, clearAnalysis, push, delete, transcript}`.
 
 | Operation | Endpoint | Body |
 |-----------|----------|------|
 | List | `POST /v1/thread/list` | `{"filter":{"objectType":"ListThreadFilter"},"pager":{"pageIndex":1,"pageSize":30}}` |
 | Get | `POST /v1/thread/get` | `{"id":"UUID"}` |
 | Rename | `POST /v1/thread/update` | `{"id":"UUID","title":"New name"}` |
+| Set analysis | `POST /v1/thread/update` | `{"id":"UUID","thread_metadata":{"analysis":{...}}}` — shallow merge one level under `analysis`; a changed key fires the lifecycle `analysis_updated` event. SDK: `mgmt.threads.setAnalysis(id, patch, ks)`. |
+| Clear analysis | `POST /v1/thread/update` | `{"id":"UUID","thread_metadata":{}}` — wipes `analysis` (the only field `ThreadMetadata` has). SDK: `mgmt.threads.clearAnalysis(id, ks)`. |
+| Push | `POST /thread/push` (legacy Genie route, no `v1/` prefix — `v1/thread/push` does not exist) | `{"id":"UUID","content":"...","request_vars"?:{...},"system_message"?:"..."}` — `delivered:false` in the reply means no live socket is attached; the message still persists (shows up in Messages list as `type:4`, `MessageType.EXTERNAL_PUSH`). `content` over a server-side (partner-configurable) length cap is `413 content exceeds max_message_length` — not checked client-side. SDK: `mgmt.threads.push({id,content,request_vars?,system_message?}, ks)`. |
 | Delete | `POST /v1/thread/delete` | `{"thread_ids":["UUID"]}` — soft delete, followed by a scheduled infra-level purge |
 | Transcript | `POST /v1/thread/get_transcripts` | `{"id":"UUID"}` |
 
+Filter fields (list): `agentIdEquals`, `contextIdEqual`, `createdAtGreaterThanOrEqual`, `createdAtLessThanOrEqual`, `idEquals`, `idsIn`, `isEverywhere`, `orderBy`, `partnerIdEquals`, `statusEquals`, `statusIn`, `updatedAtGreaterThanOrEqual`, `updatedAtLessThanOrEqual`, `userIdEquals`. `orderBy` goes INSIDE `filter` (one of `+createdAt`, `-createdAt`, `+updatedAt`, `-updatedAt`); a top-level `orderBy` 422s. `statusEquals`/`statusIn` take `0`/`1`; a numeric string (`"0"`) is silently coerced and accepted, but a non-numeric string 422s. An unknown filter key 422s; `partnerIdIn` always 422s. Pager is `{pageIndex, pageSize}` (1-based) — `{offset, limit}` is ignored and returns the default page of 30. `pageSize` is capped server-side at 500 (a higher value 422s) — this applies to every Genie-backed list/report pager in this section (Threads, Messages, Feedback, Followups). SDK: `mgmt.threads.list(ks, opts)` merges `opts.filter` under the fixed `objectType` (so it can't be overridden); it translates `agentIdEquals` to the server's own agent-scoping filter key on the wire. There's no server-side "in" equivalent for it — `agentIdIn` throws a `validation_error` before any network call rather than being silently dropped.
+
+`request_vars` on `push` is validated by the SDK's own reserved-name guard before any network call, identically to `converse` — see [API · Phase 4 — Operate § Reserved Template Variables](/reference/api/operate/#reserved-template-variables-sys__).
+
 See [API · Phase 4 — Operate § Threads](/reference/api/operate/#threads) for response shapes and the compliance note on delete's soft-delete/purge timing.
+
+## Messages, Feedback & Followups — `https://genie.nvp1.ovp.kaltura.com`
+
+SDK: `mgmt.messages`, `mgmt.feedback`, `mgmt.followups`.
+
+| Operation | Endpoint | Body |
+|-----------|----------|------|
+| List messages | `POST /message/list` | `{"filter":{"objectType":"GenieListMessageFilter"},"pager":{"pageIndex":1,"pageSize":50}}` — `opts.threadId` is sugar for `filter.threadIdEquals` and wins if both are given. |
+| Share a message | `POST /message/share` | `{"id":"MSG_ID","newTitle":"..."}` → `{newMessageId}` |
+| Message report (CSV) | `POST /message/report` | `{"filter":{"objectType":"GenieListMessageFilter"}}` — ⚠️ SENSITIVE: contains end-user ids/names + verbatim question/feedback text. SDK: `mgmt.messages.report(ks, opts)` (raw CSV) / `reportSummary(ks, opts)` (parsed, with a `_meta` provenance receipt) — `reportSummary` defaults `pageSize` to 500 (the server-side max) when omitted. |
+| Add feedback | `POST /feedback/add` | `{"schemaVersion":1,"data":{"message_id":"...","is_positive":true,"comment"?:"..."}}` — idempotent for a given `(message_id, is_positive)` pair. Any KS (conversation or admin). Writes `is_positive`/`comment` onto the rated message itself, which is why `mgmt.feedback.list` (below) can read feedback back from `mgmt.messages`. |
+| List feedback | *(sourced from `/message/list`, not a dedicated endpoint)* | `mgmt.feedback.list(ks, opts)` is the correct, permanent way to read feedback — not a stopgap. It queries `POST /message/list` (and, for `filter.agentIdEquals`, `POST /v1/thread/list` first) and returns only the messages carrying a rating. Filter: `messageIdEquals`, `messageIdsIn`, `threadIdEquals`, `agentIdEquals`, `isPositiveEquals`. `agentIdEquals` only matches threads opened via `sessions.createAgentToken` and costs one thread query per matching thread. With none of `messageIdEquals`/`messageIdsIn`/`threadIdEquals`/`agentIdEquals` set, it walks every message for the partner — scope it. Row shape: `{message_id, thread_id, genie_id, user_id, is_positive, comment, created_at, updated_at}`. ⚠️ SENSITIVE: comments are end-user-entered text. |
+| Suggested followups | `POST /followup/get-suggested-questions?new_response=true` | `{}` — starter questions for the partner/agent, NOT thread-scoped. The returned set can vary between calls — don't assume a stable, fixed list; `[]` when none configured. Distinct from per-answer followups (`capabilities.generate_followup_questions:on` on converse). SDK: `mgmt.followups.getSuggested(ks)`. |
+| List followup records | `POST /followup/list` | `{"filter":{"objectType":"GenieListQuestionFilter"},"pager":{"pageIndex":1,"pageSize":30}}` — the raw partner-wide record listing, not the shortlist above. |
+
+Messages filter fields: `createdAtGreaterThanOrEqual`, `createdAtLessThanOrEqual`, `genieIdEquals`, `idEquals`, `idsIn`, `isPositiveEquals`, `isPositiveIn`, `orderBy`, `threadIdEquals`, `updatedAtGreaterThanOrEqual`, `updatedAtLessThanOrEqual`, `userIdEquals`. Unlike Threads, an unknown key here is silently ignored (200), not rejected. Only `filter.orderBy` sorts — a top-level `orderBy` is accepted but has no effect.
+
+`threads.list`/`messages.list`/`followups.list` merge `opts.filter` under a fixed, mandatory `objectType` the caller can't override. `feedback.list` has its own filter shape (above), not that pattern.
 
 ## Knowledge records — `https://genie.nvp1.ovp.kaltura.com`
 
@@ -126,4 +161,18 @@ Before deleting a record, `mgmt.knowledge.deleteRecord` lists every intellect an
 ## Lifecycle — `https://api.avatar.us.kaltura.ai`
 
 An event-driven rule engine, not embedded in an intellect. SDK: `mgmt.lifecycle`. Full reference (rule shape, all 4 action types, CRUD + discovery methods) and a worked recipe: **[Lifecycle](/reference/lifecycle/)**.
+
+## Insight Settings — `https://api.avatar.us.kaltura.ai`
+
+Reusable custom-insight definitions (`key`/`title`/`prompt`/`valueType`), referenced by id from a lifecycle rule's `triggerInsightSettingsKai` action — not embedded in an intellect. SDK: `mgmt.insightSettings`. See [Lifecycle](/reference/lifecycle/).
+
+| Operation | Endpoint | Body |
+|-----------|----------|------|
+| Create | `POST /v1/insight-settings/create` | `{"key":"NEXT_STEP","title":"Next step","prompt":"...","valueType":"string"}` — all 4 fields required |
+| Get | `POST /v1/insight-settings/get` | `{"id":"<id>"}` |
+| List | `POST /v1/insight-settings/list` | `{"filter":{"statusEqual":"active"},"pager":{"offset":0,"limit":30}}` |
+| Update | `POST /v1/insight-settings/update` | `{"id":"<id>", ...fields}` — any of `key`/`title`/`prompt`/`valueType`/`status` |
+| Delete | `POST /v1/insight-settings/delete` | `{"id":"<id>"}` — succeeds even while a lifecycle rule still references the id; that rule keeps firing and just skips the deleted id, with no error anywhere |
+
+Full reference and a worked recipe: **[Lifecycle § InsightSettings](/reference/lifecycle/#insightsettings-reusable-insight-definitions)**.
 

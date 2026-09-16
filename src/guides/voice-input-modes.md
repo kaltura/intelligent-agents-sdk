@@ -29,9 +29,7 @@ Text input is not voice-mode-exclusive: an avatar session accepts typed turns to
 
 This is not a UI-polish preference. It is a correctness requirement.
 
-**The server will not stop you from getting this wrong.** The SDK's own client-side gate (`startTapToTalk()` throws `capability_disabled` unless `session.capabilities.tapToTalk`) is the only thing standing between you and the failure below — the server itself never rejects the mismatch.
-
-The server's own VAD turn-cutting branches on the agent's *configured* `isTapToTalk` flag, not on whether a tap window is currently open. An open-mic agent (`isTapToTalk:false`) keeps auto-cutting turns from its VAD unconditionally, even while a tap-to-talk bracket is open. The two mechanisms race the same `conversationStatus`/`latestSpeech` state with no mutual exclusion server-side (see WIRE-PROTOCOL.md's `tapToTalkStart`/`tapToTalkEnd` row).
+**Don't rely on anything else to catch a mismatch for you.** The SDK's own client-side gate (`startTapToTalk()` throws `capability_disabled` unless `session.capabilities.tapToTalk`) is what stops your UI from opening a tap-to-talk window on an agent configured for open-mic. Build your UI to match the agent's single configured mode — never render a tap-to-talk control against an open-mic agent, or vice versa. Mixing them produces double-cut or missed turns (see [Wire Protocol](/reference/wire-protocol/)'s `tapToTalkStart`/`tapToTalkEnd` row for the event pair involved).
 
 Every push-to-talk/open-mic product draws the same line — one active capture mechanism, chosen once, not a live per-session toggle exposing both:
 
