@@ -27,6 +27,7 @@ import { Tools } from './tools.js';
 import { Skills } from './skills.js';
 import { Lifecycle } from './lifecycle.js';
 import { InsightSettings } from './insight-settings.js';
+import { EmailTemplates } from './email-templates.js';
 import { Conversations, Threads, Messages, Feedback, Followups, Knowledge } from './conversations.js';
 import { provision } from './provision.js';
 import { setForcedLanguage } from './set-forced-language.js';
@@ -46,6 +47,7 @@ import { inspectKs } from './ks-inspect.js';
  * @property {(service:string, action:string, params:object, ks:KsLike)=>Promise<any>} ovp Kaltura OVP single call (www.kaltura.com/api_v3).
  * @property {(calls:object[], ks:KsLike)=>Promise<any>} ovpMulti Kaltura OVP multirequest (chained calls).
  * @property {(uploadTokenId:string, fd:FormData, ks:KsLike)=>Promise<any>} ovpUpload Upload file bytes to an upload token.
+ * @property {(path:string, body:unknown, ks:KsLike, opts?:{idempotencyKey?:string})=>Promise<{data:any,requestId:string}>} messaging Bearer-authed (not `Authorization: KS …`) call on the Kaltura Messaging API — see email-templates.js.
  * @property {(ks:KsLike, where:string)=>void} assertAdmin
  * @property {(ks:KsLike, where:string)=>void} assertConversation
  * @property {(ks:KsLike, where:string)=>void} assertAny
@@ -60,6 +62,7 @@ export class Management {
    * @param {string} [cfg.agenticUrl]    Default https://api.avatar.us.kaltura.ai/v1
    * @param {string} [cfg.genieUrl]      Default https://genie.nvp1.ovp.kaltura.com
    * @param {string} [cfg.ovpUrl]        Default https://www.kaltura.com/api_v3
+   * @param {string} [cfg.messagingUrl]  Default https://messaging.nvp1.ovp.kaltura.com/api/v1
    * @param {typeof fetch} [cfg.fetch]
    * @param {(level:string,msg:string,data?:unknown)=>void} [cfg.logger]   Verbose, redacted DEBUG sink (chatty).
    * @param {(event:object)=>void} [cfg.onAuditEvent]   Discrete, redacted SECURITY events for your SIEM (token.mint/token.revoke/guard.reject/auth.fail/privileged.call). No-op if omitted (zero cost). NIST AU-2/AU-3, SOC 2 CC7.
@@ -72,6 +75,7 @@ export class Management {
     const agenticUrl = (cfg.agenticUrl || 'https://api.avatar.us.kaltura.ai/v1').replace(/\/$/, '');
     const genieUrl = (cfg.genieUrl || 'https://genie.nvp1.ovp.kaltura.com').replace(/\/$/, '');
     const ovpUrl = (cfg.ovpUrl || 'https://www.kaltura.com/api_v3').replace(/\/$/, '');
+    const messagingUrl = (cfg.messagingUrl || 'https://messaging.nvp1.ovp.kaltura.com/api/v1').replace(/\/$/, '');
     // Crash-safe, redaction-clean structured audit emitter (no-op if no hook).
     const audit = makeAuditEmitter(cfg.onAuditEvent, partnerId, 'management');
     this._audit = audit;
@@ -152,6 +156,11 @@ export class Management {
         const { data } = await http.request({ method: 'POST', url, body: fd, json: false });
         return data;
       },
+      // Kaltura Messaging API (email templates) — a separate host from Agentic/Genie, and the
+      // one surface here that authenticates with a bare `Authorization: Bearer <KS>` header
+      // rather than the `KS <ks>` scheme http.request assigns by default. Omitting `ks` on the
+      // request skips that assignment, leaving our own header in place (mirrors avatarSessionCall).
+      messaging: (path, body, ks, opts) => http.request({ method: 'POST', url: `${messagingUrl}/${path}`, headers: { Authorization: `Bearer ${ksString(ks)}` }, body, json: true, idempotencyKey: opts?.idempotencyKey }),
       assertAdmin: (ks, where) => assertKind(ks, 'admin', where, audit),
       assertConversation: (ks, where) => assertKind(ks, 'conversation', where, audit),
       assertAny: (ks, where) => {
@@ -195,6 +204,9 @@ export class Management {
     // Reusable insight definitions (`/insight-settings/*`) a lifecycle rule's
     // `triggerInsightSettingsKai` action references by id.
     this.insightSettings = new InsightSettings(ctx);
+    // Kaltura Messaging API email templates (`email-template/*`) — the `templateId` a
+    // lifecycle rule's `sendInsightEmail` action can pin instead of a `presetType`.
+    this.emailTemplates = new EmailTemplates(ctx);
   }
 
   /**

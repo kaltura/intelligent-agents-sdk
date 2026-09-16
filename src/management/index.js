@@ -48,6 +48,10 @@ export {
 export { tools, clientToolReadiness, client, applyResponseMapping, findIntellectsReferencingTool, TOOL_TYPES, HTTP_METHODS, ARG_TYPES } from './tools.js';
 // Secrets ref-checker: the CRUD class lives on `mgmt.intellects.secrets`; this is the pure helper.
 export { validateSecretRefs } from './secrets.js';
+// Email templates on the Kaltura Messaging API — the `templateId` a lifecycle rule's
+// `sendInsightEmail` action can pin. The resource instance lives on `mgmt.emailTemplates`;
+// the class export is for typing/extension.
+export { EmailTemplates } from './email-templates.js';
 // Prompt authoring depth: linters + client-side system-prompt preview +
 // the ONE canonical page-context block (spread into setPrompts wherever an
 // intellect receives page context via setDynamicPrompt / request_vars).
