@@ -101,11 +101,13 @@ export class Avatars {
   }
 
   /**
-   * Get one avatar. READ. ⚠️ A missing/unknown avatar id throws with
-   * `code:'api_exception'` (a generic agentic error), NOT a stable
-   * `avatar_not_found` — so branch on the not-found case defensively (e.g. wrap
-   * in try/catch and treat `api_exception` as "absent") rather than matching a
-   * dedicated code.
+   * Get one avatar. READ. ⚠️ A missing/unknown (but well-formed) avatar id
+   * throws with `code:'api_exception'` (a generic agentic error), NOT a
+   * stable `avatar_not_found` code — but `title` DOES carry a specific
+   * `'AVATAR_NOT_FOUND'` marker, so branch on `err.title === 'AVATAR_NOT_FOUND'`
+   * rather than treating any `api_exception` as "absent" (a malformed id gets
+   * a distinct `code:'bad_request'` instead, so `title` alone reliably tells
+   * the two apart).
    * @param {string} id 24-char hex @param {string} ks
    */
   async get(id, ks) {
