@@ -18,10 +18,12 @@
 import { api } from './tools.js';
 
 /**
- * Build a validated HubSpot Contacts v3 upsert tool.
- * Upserts a contact by email using the HubSpot CRM Contacts API (create-or-update
- * semantics via `POST /crm/v3/objects/contacts`). The agent collects the fields
- * listed in `propertiesToCapture` and writes them to the HubSpot contact.
+ * Build a validated HubSpot Contacts v3 create tool.
+ * Creates a contact via `POST /crm/v3/objects/contacts`. HubSpot rejects the
+ * call with a conflict if a contact with the same email already exists, so
+ * this is a create, not a true upsert. Use it for new-lead capture, not for
+ * updating an existing contact. The agent collects the fields listed in
+ * `propertiesToCapture` and writes them to the new HubSpot contact.
  *
  * @param {object} [cfg]
  * @param {string} [cfg.secretName]      Name of the HubSpot private-app token secret (set via `setSecrets`) — REQUIRED (checked at runtime; declared optional in the JSDoc only so an omitted `cfg` degrades to the same TypeError below instead of crashing on `undefined.secretName`).
@@ -116,10 +118,11 @@ export function salesforceContactUpsert(cfg = {}) {
       body: Object.fromEntries(fields.filter((f) => f !== externalIdField).map((f) => [f, `{{args.${f}}}`])),
     },
     // Salesforce's upsert-by-external-id PATCH returns 201+{id} on insert but
-    // 204 with an EMPTY body on update — there's no field guaranteed present on
-    // both, and the backend's dot-path mapping has no "whole response" root
-    // token, so map the one field that matters when it exists; the real product
-    // of this tool is the side effect (the contact write), not the mapped output.
+    // 204 with an EMPTY body on update, so no field is guaranteed present on
+    // both. `responseMapping` dot-paths point at a field inside the response,
+    // not at the whole response itself, so map the one field that matters
+    // when it exists; the real product of this tool is the side effect (the
+    // contact write), not the mapped output.
     responseMapping: { result: 'id' },
   });
 }

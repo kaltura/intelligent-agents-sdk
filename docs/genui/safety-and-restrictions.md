@@ -5,7 +5,7 @@
 `src/core/safety.js`:
 
 - `safeText(s, max=2000)` — coerces to string, strips ASCII control chars (the C0 range `U+0000`-`U+001F` plus `U+007F` DEL), length-clamps.
-- `safeUrl(url, {allow})` — returns the URL only if its scheme is allow-listed (default `https|http|mailto|tel`); blocks `javascript:`/`data:`/`vbscript:`/unknown. A scheme-relative path (`/foo`, `foo/bar`) is allowed, but an **authority-relative URL (`//host`, `\\host`) is rejected** (open-redirect / embed-hijack vector). `external-video` additionally requires an absolute http(s) URL.
+- `safeUrl(url, {allow})` — returns the URL only if its scheme is allow-listed (default `https|http|mailto|tel`); blocks `javascript:`/`data:`/`vbscript:`/unknown. A scheme-relative path (`/foo`, `foo/bar`) is allowed, but an **authority-relative URL (`//host`, `\\host`) is rejected** (open-redirect / embed-hijack vector). An absolute URL with embedded userinfo (`https://user:pass@host/...`) is also rejected (phishing / link-spoofing vector). `external-video` additionally requires an absolute http(s) URL.
 - `renderSafeLink(info, opts)` — builds a real `<a>` via `createElement` + `textContent` + scheme-checked `href` (never `innerHTML`); `target=_blank` + `rel=noopener noreferrer`; returns `null` outside a browser or for an unsafe URL.
 - `sanitizeJson(v)` — drops `__proto__`/`constructor`/`prototype` (used by `submitStructuredDataForm` + `setDynamicPrompt`). `clampInbound(s)` — inbound text clamp.
 - No renderer emits HTML; the host renders the `{kind, data}` descriptor with `textContent` / DOM APIs. A `summary`'s markdown is the host's responsibility to sanitize.

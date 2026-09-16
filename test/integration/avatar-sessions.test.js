@@ -29,7 +29,7 @@ function fakeSessionToken(expEpochSeconds) {
 test('create() posts to avatar-session/create with the admin KS, and returns an expiry-aware receipt', async () => {
   const token = fakeSessionToken(Math.floor(Date.now() / 1000) + 3600);
   const f = fakeFetch([{ match: '/avatar-session/create', respond: () => ({ body: { sessionId: 'sess-1', token } }) }]);
-  const kaltura = new Management({ partnerId: 6516742, adminSecret: 'a'.repeat(32), fetch: f });
+  const kaltura = new Management({ partnerId: 1234567, adminSecret: 'a'.repeat(32), fetch: f });
   const admin = { ks: 'djJ8MXxb=ADMIN-token-placeholder', kind: 'admin' };
 
   const session = await kaltura.avatarSessions.create({ visualConfig: { id: 'avatar-1' } }, admin);
@@ -44,7 +44,7 @@ test('create() posts to avatar-session/create with the admin KS, and returns an 
 
 test('create() rejects a conversation KS before any network call', async () => {
   const f = fakeFetch([{ match: '/avatar-session/create', respond: () => ({ body: { sessionId: 'x', token: 'y' } }) }]);
-  const k = new Management({ partnerId: 6516742, adminSecret: 'a'.repeat(32), fetch: f });
+  const k = new Management({ partnerId: 1234567, adminSecret: 'a'.repeat(32), fetch: f });
   await assert.rejects(
     () => k.avatarSessions.create({ visualConfig: { id: 'avatar-1' } }, { ks: CONVERSATION_KS, kind: 'conversation' }),
     (e) => e.code === 'wrong_token_scope',
@@ -54,7 +54,7 @@ test('create() rejects a conversation KS before any network call', async () => {
 
 test('create() rejects a missing visualConfig.id before any network call', async () => {
   const f = fakeFetch([{ match: '/avatar-session/create', respond: () => ({ body: {} }) }]);
-  const k = new Management({ partnerId: 6516742, adminSecret: 'a'.repeat(32), fetch: f });
+  const k = new Management({ partnerId: 1234567, adminSecret: 'a'.repeat(32), fetch: f });
   await assert.rejects(
     () => k.avatarSessions.create({}, { ks: 'djJ8MXxb=ADMIN-token-placeholder', kind: 'admin' }),
     (e) => e.code === 'bad_request' && /visualConfig/.test(e.detail),
@@ -71,7 +71,7 @@ test('initClient() authenticates with the session Bearer token, not a KS', async
       return { body: { whepUrl: 'https://media.example.com/whep/sess-1', turn: { url: 'turn.example.com', username: 'kaltura', credential: 'avatar' } } };
     },
   }]);
-  const k = new Management({ partnerId: 6516742, adminSecret: 'a'.repeat(32), fetch: f });
+  const k = new Management({ partnerId: 1234567, adminSecret: 'a'.repeat(32), fetch: f });
 
   const { whepUrl, turn } = await k.avatarSessions.initClient(session);
 
@@ -81,7 +81,7 @@ test('initClient() authenticates with the session Bearer token, not a KS', async
 
 test('initClient() rejects a raw string in place of the {sessionId, token} receipt', async () => {
   const f = fakeFetch([{ match: '/init-client', respond: () => ({ body: {} }) }]);
-  const k = new Management({ partnerId: 6516742, adminSecret: 'a'.repeat(32), fetch: f });
+  const k = new Management({ partnerId: 1234567, adminSecret: 'a'.repeat(32), fetch: f });
   await assert.rejects(() => k.avatarSessions.initClient('sess-1'), (e) => e.code === 'bad_request');
   assert.equal(f.calls.length, 0);
 });
@@ -97,7 +97,7 @@ test('say() sends turnId/duration/audio as multipart with the session Bearer tok
       return { body: { success: true } };
     },
   }]);
-  const k = new Management({ partnerId: 6516742, adminSecret: 'a'.repeat(32), fetch: f });
+  const k = new Management({ partnerId: 1234567, adminSecret: 'a'.repeat(32), fetch: f });
 
   const result = await k.avatarSessions.say(session, new Uint8Array([1, 2, 3]), { duration: 1.5 });
   assert.equal(result.success, true);
@@ -118,7 +118,7 @@ test('interrupt()/keepAlive()/end() all authenticate with the session Bearer tok
     { match: '/keep-alive', respond: (req) => { seen.push(['keep-alive', req.headers.authorization]); return { body: {} }; } },
     { match: '/end', respond: (req) => { seen.push(['end', req.headers.authorization]); return { body: {} }; } },
   ]);
-  const k = new Management({ partnerId: 6516742, adminSecret: 'a'.repeat(32), fetch: f });
+  const k = new Management({ partnerId: 1234567, adminSecret: 'a'.repeat(32), fetch: f });
 
   await k.avatarSessions.interrupt(session);
   await k.avatarSessions.keepAlive(session);

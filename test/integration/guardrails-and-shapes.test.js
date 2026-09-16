@@ -125,7 +125,7 @@ test('#11 conversation resource methods send the EXACT documented request bodies
     { match: 'followup/get-suggested-questions', respond: cap('followups') },
     { match: 'mcp/search', respond: (req) => { seen.mcp = { body: req.body }; return { body: { results: [] } }; } },
   ]);
-  const m = new Management({ partnerId: 6516742, adminSecret: 'a'.repeat(32), fetch: f });
+  const m = new Management({ partnerId: 1234567, adminSecret: 'a'.repeat(32), fetch: f });
   const TID = 't-1', MID = 'm-1';
 
   await m.threads.list(ADMIN).all();                                 // paginated → .all() drains one page
@@ -620,7 +620,7 @@ test('#14 intellectConfig.setToolIds writes the tool_ids reference list via patc
     { match: 'v1/intellect/get', respond: () => ({ body: { id: 7, type: 'internal', status: 2, tool_ids: [] } }) },
     { match: 'v1/intellect/update', respond: (req) => { seen.push(req.body); return { body: { id: 7 } }; } },
   ]);
-  const m = new Management({ partnerId: 6516742, adminSecret: 'a'.repeat(32), fetch: f });
+  const m = new Management({ partnerId: 1234567, adminSecret: 'a'.repeat(32), fetch: f });
   const ic = m.intellectConfig;
 
   // setToolIds writes the plain reference array — tool bodies live on the separate mgmt.tools entity.

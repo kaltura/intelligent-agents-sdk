@@ -2,7 +2,7 @@
  * @kaltura/intelligent-agents/experience/genui — the GenUI segment→widget layer.
  *
  * Optional subpath: pull this in only if you render agent-driven widgets
- * (boards, flashcards, galleries, forms, …). Apps that only need the live
+ * (flashcards, galleries, links, forms, …). Apps that only need the live
  * runtime (`KalturaAvatarSession`) never pay for this module graph.
  *
  * @example

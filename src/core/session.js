@@ -1,7 +1,7 @@
 /**
  * Kaltura Session (KS) minting + lifecycle + the two-KS-type security invariant.
  *
- * THE INVARIANT (CLAUDE.md "Two KS types, never mix"):
+ * THE INVARIANT — two KS types, never mix:
  *   - `disableentitlement` bypasses access control → ADMIN/MANAGEMENT ONLY.
  *     Reachable solely via {@link Sessions.createAdminToken} (server-side).
  *   - `geniegpcid:<configId>` keeps entitlement ON → the conversation/end-user
@@ -115,7 +115,7 @@ export class Sessions {
    *   (passed straight through to `session/start`'s `userId` field) — omit it for
    *   the pre-existing anonymous behavior (zero behavior change for callers that
    *   don't pass it). Per-call only: never cached on the `Sessions` instance or
-   *   any module-level state (SDK_CONSTITUTION.md "no shared mutable state").
+   *   any module-level state (SDK Constitution Rule I-3: no cross-instance state leakage).
    *   This is what makes the `sys__user_id` reserved template variable resolve
    *   to something other than `''` in prompts/converse.
    * @returns {Promise<Token>}  expiresAt is authoritative (= now + ttlSeconds), so
@@ -147,7 +147,7 @@ export class Sessions {
    *   straight through to `session/start`'s `userId` field) — omit it for the
    *   pre-existing anonymous behavior (zero behavior change for callers that
    *   don't pass it). Per-call only: never cached on the `Sessions` instance or
-   *   any module-level state (SDK_CONSTITUTION.md "no shared mutable state").
+   *   any module-level state (SDK Constitution Rule I-3: no cross-instance state leakage).
    *   This is what makes the `sys__user_id` reserved template variable resolve
    *   to something other than `''` in prompts/converse.
    * @returns {Promise<Token>}
@@ -434,7 +434,9 @@ function assertEntitlementOn(privileges, where) {
 
 /**
  * @typedef {object} AuditEventInput
- * @property {string} type          Required. Event category: `token.mint` | `token.revoke` | `auth.fail` | `guard.reject` | `privileged.call` | `session.connect` | `session.disconnect`.
+ * @property {string} type          Required. Event category, free-form (not a closed enum — other
+ * SDK subsystems emit their own categories). Examples from this module: `token.mint` | `token.revoke`
+ * | `auth.fail`. Examples from elsewhere in the SDK: `guard.reject` | `session.connect` | `session.disconnect`.
  * @property {string} outcome       Required. `'success'` or `'fail'`.
  * @property {string|number} [partnerId]         Tenant scope.
  * @property {string} [source]      Originating subsystem (e.g. `'ovp/session'`).
@@ -462,7 +464,7 @@ export function buildAuditEvent(e) {
   const sev = e.outcome === 'fail' ? (e.type && /auth|guard|denied/.test(e.type) ? 'warning' : 'error') : 'info';
   const event = {
     ts: new Date().toISOString(),
-    type: e.type,                         // token.mint | token.revoke | auth.fail | guard.reject | privileged.call | session.connect | session.disconnect
+    type: e.type,                         // free-form category, e.g. token.mint | token.revoke | auth.fail (see the AuditEventInput typedef above)
     severity: e.severity || sev,
     outcome: e.outcome || 'success',      // success | fail
     requestId: e.requestId || null,       // correlation id (reuses the per-call requestId)

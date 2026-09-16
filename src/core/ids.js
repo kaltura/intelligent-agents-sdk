@@ -1,8 +1,7 @@
 /**
- * Client-side identifier + provenance helpers. These are things the SDK can do
- * TODAY without any server change (the directive's "achievable client-side"
- * bar): generate idempotency keys, stamp provenance receipts, mint the random
- * room/sticky ids the live runtime needs.
+ * Client-side identifier + provenance helpers: generate idempotency keys,
+ * stamp provenance receipts, mint the random room/sticky ids the live runtime
+ * needs.
  *
  * Uses Web Crypto (`globalThis.crypto`), present in Node ≥18 and every browser
  * — no `node:crypto` import, so the same file runs in both. Falls back to a
@@ -55,9 +54,9 @@ export function randId(n = 16) {
 }
 
 /**
- * A provenance/freshness receipt for any parsed or aggregated result (CLAUDE.md
- * → "Output schemas carry provenance/freshness"). `generatedAt` is stamped from
- * the caller's clock so the result is self-describing for audit.
+ * A provenance/freshness receipt for any parsed or aggregated result.
+ * `generatedAt` is stamped from the caller's clock so the result is
+ * self-describing for audit.
  * @param {{partnerId?:string|number, source:string, scope:string, [k:string]:unknown}} fields
  */
 export function meta(fields) {

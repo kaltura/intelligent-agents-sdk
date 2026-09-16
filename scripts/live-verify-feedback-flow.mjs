@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * Live feedback-flow verification — real Kaltura API, no fakes, both
- * environments in one run (NVQ2 then Production).
+ * Live feedback-flow verification — real Kaltura API, no fakes. Runs against
+ * one target deployment, or two in a single run (primary, then secondary).
  *
  * Starts a real conversation, sends two messages, submits feedback on the
  * second message's reply, closes the thread via the documented
@@ -15,12 +15,14 @@
  *
  * Throwaway intellect only, deleted in `finally` regardless of outcome.
  *
- * Credentials: trio-root `.env`, `NVQ2_PARTNER_ID_1`/`NVQ2_ADMIN_SECRET_1`/
- * `NVQ2_AGENTIC_API_URL`/`NVQ2_GENIE_URL`/`NVQ2_KALTURA_API_ENDPOINT` for QA,
- * `NVP1_AGENTIC_PARTNER_ID`/`NVP1_AGENTIC_ADMIN_SECRET`/`NVP1_AGENTIC_API_URL`/
- * `NVP1_GENIE_URL`/`NVP1_KALTURA_API_ENDPOINT` for Production. Every
- * `Management` instance below gets explicit URL overrides — never relies on
- * the constructor's own (production) defaults.
+ * Credentials, from the environment or a `.env` in the repo root:
+ * `AGENTIC_PARTNER_ID`/`AGENTIC_ADMIN_SECRET`/`AGENTIC_API_URL`/`GENIE_URL`/
+ * `KALTURA_API_ENDPOINT` for the primary target, and the same five names with
+ * an `ALT_` prefix for an optional second target. Every `Management` instance
+ * below gets explicit URL overrides, so a run never silently falls back to the
+ * constructor's built-in defaults.
+ *
+ * Run one target only: `node scripts/live-verify-feedback-flow.mjs primary`.
  */
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
@@ -31,51 +33,50 @@ import { Http } from '../src/core/http.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-// The NVQ2_*/NVP1_* credentials live in the trio-root .env (two levels up from
-// this worktree's scripts/ dir), not this repo's own .env (which only has the
-// old unprefixed AGENTIC_* pair — see CLAUDE.md "Environment").
-for (const envPath of [resolve(__dirname, '../../.env'), resolve(__dirname, '../.env')]) {
-  try {
-    const env = readFileSync(envPath, 'utf8');
-    for (const line of env.split('\n')) {
-      const m = line.match(/^([A-Z0-9_]+)=(.*)$/);
-      if (m && !process.env[m[1]]) process.env[m[1]] = m[2].trim().replace(/^"(.*)"$/, '$1').replace(/^'(.*)'$/, '$1');
-    }
-  } catch {
-    // Missing is fine — credentials may already be in the environment.
+try {
+  const env = readFileSync(resolve(__dirname, '../.env'), 'utf8');
+  for (const line of env.split('\n')) {
+    const m = line.match(/^([A-Z0-9_]+)=(.*)$/);
+    if (m && !process.env[m[1]]) process.env[m[1]] = m[2].trim().replace(/^"(.*)"$/, '$1').replace(/^'(.*)'$/, '$1');
   }
+} catch {
+  // No .env file — credentials must already be in the environment.
 }
 
-const ENVIRONMENTS = [
-  {
-    name: 'nvq2',
-    partnerId: process.env.NVQ2_PARTNER_ID_1,
-    adminSecret: process.env.NVQ2_ADMIN_SECRET_1,
-    agenticUrl: process.env.NVQ2_AGENTIC_API_URL,
-    genieUrl: process.env.NVQ2_GENIE_URL,
-    ovpUrl: process.env.NVQ2_KALTURA_API_ENDPOINT,
-  },
-  {
-    name: 'nvp1',
-    partnerId: process.env.NVP1_AGENTIC_PARTNER_ID,
-    adminSecret: process.env.NVP1_AGENTIC_ADMIN_SECRET,
-    agenticUrl: process.env.NVP1_AGENTIC_API_URL,
-    genieUrl: process.env.NVP1_GENIE_URL,
-    ovpUrl: process.env.NVP1_KALTURA_API_ENDPOINT,
-  },
-];
+/** One target = one set of credentials plus its own explicit URL overrides. */
+const target = (name, prefix) => {
+  const vars = {
+    partnerId: `${prefix}AGENTIC_PARTNER_ID`,
+    adminSecret: `${prefix}AGENTIC_ADMIN_SECRET`,
+    agenticUrl: `${prefix}AGENTIC_API_URL`,
+    genieUrl: `${prefix}GENIE_URL`,
+    ovpUrl: `${prefix}KALTURA_API_ENDPOINT`,
+  };
+  const t = { name, vars };
+  for (const [key, envName] of Object.entries(vars)) t[key] = process.env[envName];
+  return t;
+};
+
+const ENVIRONMENTS = [target('primary', ''), target('secondary', 'ALT_')];
 
 const onlyEnv = process.argv[2];
-const environmentsToRun = onlyEnv ? ENVIRONMENTS.filter((e) => e.name === onlyEnv) : ENVIRONMENTS;
+let environmentsToRun = onlyEnv ? ENVIRONMENTS.filter((e) => e.name === onlyEnv) : ENVIRONMENTS;
 if (onlyEnv && environmentsToRun.length === 0) {
-  console.error(`Unknown environment "${onlyEnv}" — expected one of: ${ENVIRONMENTS.map((e) => e.name).join(', ')}`);
+  console.error(`Unknown target "${onlyEnv}" — expected one of: ${ENVIRONMENTS.map((e) => e.name).join(', ')}`);
+  process.exit(1);
+}
+
+// An unconfigured secondary target is skipped, not an error — one target is a valid run.
+if (!onlyEnv) environmentsToRun = environmentsToRun.filter((e) => e.name === 'primary' || e.partnerId);
+if (environmentsToRun.length === 0) {
+  console.error('No target configured. Set AGENTIC_PARTNER_ID and friends (env or repo-root .env).');
   process.exit(1);
 }
 
 for (const e of environmentsToRun) {
-  const missing = ['partnerId', 'adminSecret', 'agenticUrl', 'genieUrl', 'ovpUrl'].filter((k) => !e[k]);
+  const missing = Object.keys(e.vars).filter((k) => !e[k]).map((k) => e.vars[k]);
   if (missing.length) {
-    console.error(`Environment "${e.name}" is missing: ${missing.join(', ')} (env or repo-root .env).`);
+    console.error(`Target "${e.name}" is missing: ${missing.join(', ')} (env or repo-root .env).`);
     process.exit(1);
   }
 }

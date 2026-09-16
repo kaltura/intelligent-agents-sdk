@@ -40,9 +40,12 @@ export class AvatarSessions {
    * Start a scripted-video session for one avatar. Returns a session
    * receipt — pass it, not a KS, to every other method on this class.
    *
-   * ADMIN TOKEN ONLY (a conversation KS is rejected with
-   * `403 wrong_token_scope`-shaped detail). Mint one server-side with
-   * `sessions.createAdminToken()` — never in a browser.
+   * ADMIN TOKEN ONLY. A conversation KS is rejected with
+   * `code:'wrong_token_scope'`, client-side, before any network call, when
+   * the KS's kind is knowable (a `Token` object from `sessions.*`, or a
+   * plaintext/test KS); a raw encrypted KS string defers to the server, which
+   * enforces the same rule. Mint an admin token server-side with
+   * `sessions.createAdminToken()`, never in a browser.
    *
    * The receipt's `.token` is a session-scoped BEARER JWT (NOT a KS), valid
    * roughly 24h (decoded from the JWT's own `exp` claim — see

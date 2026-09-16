@@ -5,7 +5,8 @@
  * with a `{message}` body). The SDK normalizes all of them into one stable
  * contract, so callers branch on a machine-readable `code`, never on prose.
  *
- * All error fields are passed through {@link redact} so a token embedded in an
+ * Every field that can carry upstream free text (`title`, `detail`, `body`) is
+ * passed through {@link redact}/{@link redactString} so a token embedded in an
  * upstream error message can never surface in a thrown error.
  */
 import { redact, redactString } from './redact.js';

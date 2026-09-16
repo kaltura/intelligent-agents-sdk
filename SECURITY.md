@@ -99,6 +99,9 @@ new Management({ partnerId, adminSecret, onAuditEvent: (e) => siem.write(e) });
 | `turn.user_captured` | The user's speech or text turn is captured |
 | `turn.avatar_spoke` | The avatar starts speaking a turn |
 | `tool.invoke` | A client-side tool call is invoked (from user text or an agent action) |
+| `tool.ack` | The app ACKs a client-side tool call via `respondToTool()` |
+| `tool.spiral_detected` | The soft tool-call-spiral threshold trips for the current turn |
+| `tool.spiral_hard_recovery` | The hard tool-call-spiral limit trips and the session force-reconnects |
 | `agent.action.allow` | `onAgentAction` allows an agent-initiated action |
 | `agent.action.deny` | `onAgentAction` denies an agent-initiated action |
 | `clone.consent` | A `consentRef` is recorded on a voice/visual clone upload |

@@ -1,8 +1,8 @@
 /**
  * Secret redaction — the single chokepoint every log line, error, and emitted
  * record passes through. Kaltura KS tokens (`djJ8…`), bare hex secrets, and
- * RFC1918 private IPs must NEVER leave the process in cleartext (CLAUDE.md →
- * "No secrets, ever."; check-docs.sh scans for exactly these patterns).
+ * RFC1918 private IPs must NEVER leave the process in cleartext.
+ * `tools/check-docs.mjs` scans tracked files for exactly these patterns.
  *
  * This is mechanical, not best-effort: the SDK routes 100% of its diagnostic
  * output through {@link redact}, so a token can't leak through a stray

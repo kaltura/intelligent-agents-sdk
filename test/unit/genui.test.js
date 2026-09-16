@@ -289,11 +289,11 @@ test('renderer shape: video-gallery (entryId preserved, urls checked)', () => {
 
 test('video-gallery derives a real Kaltura thumbnail + player-embed from entryId + partnerId', () => {
   // No explicit thumbnail/url → derive both from the entry id + partnerId (the common case).
-  const d = new ExperienceRenderer({ partnerId: '6516742', uiConfId: '58022082' })
+  const d = new ExperienceRenderer({ partnerId: '1234567', uiConfId: '58022082' })
     .render('video-gallery', { videos: [{ entryId: '1_abc', title: 'V' }] });
   const v = d.data.videos[0];
-  assert.match(v.thumbnailUrl, /^https:\/\/cfvod\.kaltura\.com\/p\/6516742\/sp\/651674200\/thumbnail\/entry_id\/1_abc\//);
-  assert.match(v.embedUrl, /extwidget\/preview\/partner_id\/6516742\/uiconf_id\/58022082\/entry_id\/1_abc\/embed\/iframe$/);
+  assert.match(v.thumbnailUrl, /^https:\/\/cfvod\.kaltura\.com\/p\/1234567\/sp\/123456700\/thumbnail\/entry_id\/1_abc\//);
+  assert.match(v.embedUrl, /extwidget\/preview\/partner_id\/1234567\/uiconf_id\/58022082\/entry_id\/1_abc\/embed\/iframe$/);
 });
 
 test('video-gallery without a partnerId leaves derived URLs empty (no guessing)', () => {

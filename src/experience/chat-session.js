@@ -22,10 +22,10 @@
  *
  * Emits the transport-agnostic event subset (`transcript`, `turnStart`,
  * `turnEnd`, `toolCall`, `toolCallResult`, `toolCallInvalid`, `stateChange`,
- * `responsePending`, `responseSettled`, `brainStalled`, `warning`, `error`,
- * `ended`) with the same payload shapes as `KalturaAvatarSession`, so app code
- * written against the events works unchanged when `KalturaAgentSession` swaps
- * transports.
+ * `responsePending`, `responseSettled`, `brainStalled`, `toolSpiralDetected`,
+ * `sessionCompleted`, `warning`, `error`, `ended`) with the same payload
+ * shapes as `KalturaAvatarSession`, so app code written against the events
+ * works unchanged when `KalturaAgentSession` swaps transports.
  *
  * ZERO runtime deps; `fetch` is injectable for tests (default global fetch).
  */

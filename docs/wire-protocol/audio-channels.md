@@ -6,9 +6,9 @@
 
 A WebRTC peer connection that publishes the mic. SDP/ICE are relayed **over the Socket.IO socket** (the `asr-webrtc-*` events in [§4a](events-catalog.md#4a-client--server-emit)/[§4c](events-catalog.md#4c-server--client-on--asr-signaling-relayed-over-the-socket)), not over HTTP.
 
-> **ASR signaling is a three-hop relay.** (1) The browser emits `asr-webrtc-*` over the browser↔session-server Socket.IO socket. (2) The session server's WebRTC signaling proxy re-emits these as JSON `{type:'webrtc_offer'|'ice_candidate', …}` over a **separate `ws://` WebSocket** to the ASR service. (3) The ASR service terminates the WebRTC peer and runs speech-to-text. Note the ASR service's WebRTC endpoint is configured with **no STUN/TURN** — the browser-side relay (TURN, below) is what carries the media; the browser↔ASR ICE works because the server offers a reachable candidate via the proxy.
+> **All SDP/ICE for this peer connection travels over the Socket.IO socket** — there's no separate signaling channel to manage client-side. See below for why the server's remote candidate still forces TURN.
 
-**ICE config (implemented in `SDK:wire.js iceConfig()`; TURN URL list from the built-in client's media layer `buildIceConfiguration`). `username`/`credential` default to the values in `wire.js`'s `turnServers()` and can be overridden via `creds`:**
+**ICE config (implemented in `SDK:wire.js iceConfig()`; TURN URL list from the built-in client's media layer `buildIceConfiguration`). `username`/`credential` default to `"kaltura"`/`"avatar"` (`SDK:wire.js turnServers()`) and can be overridden via its `creds` param:**
 
 ```js
 new RTCPeerConnection({
@@ -17,7 +17,7 @@ new RTCPeerConnection({
             "turn:turn.avatar.us.kaltura.ai:443?transport=udp",
             "turn:turn.avatar.us.kaltura.ai:80?transport=tcp",
             "turns:turn.avatar.us.kaltura.ai:443?transport=tcp" ],
-    username: "<default-username>", credential: "<default-credential>" }],
+    username: "kaltura", credential: "avatar" }],
   iceTransportPolicy: <see matrix below>,
   bundlePolicy: "max-bundle"
 })
@@ -59,7 +59,7 @@ This is distinct from [§5](#5-asr-uplink-pc1--microphone--server) (where the *c
 
 A receive-only WebRTC peer connection fed via **WHEP** (WebRTC-HTTP Egress Protocol). Signaling is **plain SDP over HTTP**, independent of the socket. (Server-side, the STV controller renders the face and streams it into a media relay that provides the WHEP egress; see [ARCHITECTURE.md](../ARCHITECTURE.md).)
 
-**`cast_mode` selects the STV egress** (`StvCastMode` enum `"webrtc"\|"rtmp"`, optional in the `stvNewSession` body). This SDK never sends it — `buildStvNewSession()` (`SDK:wire.js`) always omits the field, so this SDK only ever takes the server's fully-omitted-default path, not either named value:
+**`cast_mode` selects the STV egress** (`StvCastMode` enum `"webrtc"\|"rtmp"`, optional in the `stvNewSession` body). This SDK never sends it — `buildStvNewSession()` (`SDK:wire.js`) accepts an optional `castMode` argument, but `session.js`'s one call site never passes one, so this SDK only ever takes the server's fully-omitted-default path, not either named value:
 
 - **Default (cast_mode omitted)** — the only path this SDK uses. The server returns a `webrtc_url`; in the current deployment that's shaped `{basePublicProxyUrl}/rtc/v1/stv/{room_id}/whep/session/{session_id}` (the session-server's STV proxy). This path returns a working `webrtc_url` on Chromium, Firefox, and WebKit. If the server ever omits `webrtc_url` too, the client falls back to building `{srsBaseUrl}/rtc/v1/whep/?app=app&stream={session_id}` itself (`SDK:wire.js whepUrl()`).
 - **Explicit `cast_mode:'webrtc'`** (sent only by the runtime client, never by this SDK) — can resolve to an unreachable private IP, so the browser's `fetch` never connects. This is why the SDK never sends it. `whepUrlHasPrivateIp()` (`SDK:wire.js`) guards this regardless of which cast_mode produced the URL.

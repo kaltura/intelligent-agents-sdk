@@ -8,11 +8,12 @@
  *
  * This umbrella is a convenience for environments that want both at once. It
  * deliberately does NOT re-export any of the optional plugins (`Presenter`,
- * GenUI, the noise-suppressor, analytics) — each is its own subpath
- * (`./experience/presenter`, `./experience/genui`, `./experience/noise-suppressor`,
- * `./experience/analytics`) so a raw-ESM/CDN load of this umbrella (no bundler
- * tree-shaking) never fetches a plugin's module graph for an app that doesn't
- * construct it.
+ * GenUI, site navigation, chroma-key, the noise-suppressor, analytics) — each
+ * is its own subpath (`./experience/presenter`, `./experience/genui`,
+ * `./experience/site-nav`, `./experience/chroma-key`,
+ * `./experience/noise-suppressor`, `./experience/analytics`) so a raw-ESM/CDN
+ * load of this umbrella (no bundler tree-shaking) never fetches a plugin's
+ * module graph for an app that doesn't construct it.
  */
 export { Management, Sessions, inspectKs, summarizeReport, parseCsv } from './management/index.js';
 export { KalturaAvatarSession, TranscriptTracker } from './experience/index.js';

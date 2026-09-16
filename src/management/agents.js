@@ -13,7 +13,10 @@ import { KalturaError } from '../core/errors.js';
  * refuses to delete an agent carrying any of these unless `allowProtected:true`
  * is passed — the guardrail against an automated cleanup-by-tag sweep nuking a
  * real, in-use agent. Matches case-insensitively, as a substring (so `prod`
- * catches `prod`/`production`/`prod-eu`). Extend via the exported set.
+ * catches `prod`/`production`/`prod-eu`). Frozen: `agents.delete` always
+ * matches against this exact list, so there is no way to add your own
+ * patterns to it. Write your own tag check before calling `delete` if you
+ * need extra protected markers.
  * @type {readonly (string|RegExp)[]}
  */
 export const PROTECTED_TAGS = Object.freeze([
@@ -96,8 +99,9 @@ export class Agents {
    * `live`), the delete is REFUSED unless you ALSO pass `{ allowProtected: true }`.
    * This is the guardrail against a blind cleanup-by-tag sweep nuking a real,
    * in-use agent. Pass `confirm.skipProtectedCheck:true` only when you already
-   * hold the tags and don't want the extra `agent/get` round-trip. Extend
-   * {@link PROTECTED_TAGS} with your own project-specific tags as needed.
+   * hold the tags and don't want the extra `agent/get` round-trip.
+   * {@link PROTECTED_TAGS} is frozen and not caller-extendable. Run your own
+   * tag check first if you need extra protected markers.
    * @param {string} agentId @param {string} ks
    * @param {{confirmPermanent:boolean, allowProtected?:boolean, skipProtectedCheck?:boolean}} confirm
    */

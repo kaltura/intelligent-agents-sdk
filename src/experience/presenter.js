@@ -19,10 +19,11 @@
  *   - duplicate-nav suppression + a sequential "resume" point
  *   - `extendContext` — a hook for per-turn, app-specific context fields (e.g.
  *     an engagement/session block) without the app reimplementing payload assembly
- *   - `onTurnText` — the SAME accumulated-per-turn text Presenter uses for its
- *     own nav parsing, exposed so an app's OTHER text-driven detectors (e.g.
- *     "the user asked for contact info", "the avatar is ending the session")
- *     can piggyback on one accumulator instead of duplicating it
+ *   - `onTurnText` — the per-turn accumulated avatar text (Presenter builds it for
+ *     this hook only; navigation never depends on wording), exposed so an app's
+ *     OTHER text-driven detectors (e.g. "the user asked for contact info", "the
+ *     avatar is ending the session") can piggyback on one accumulator instead of
+ *     duplicating it
  *   - reconnect resilience: a warm reconnect needs nothing from Presenter — the
  *     session re-sends its canonical request_vars map (page context included) on
  *     every rejoin. A cold reconnect (`recovered:false`) means the brain lost its
@@ -40,8 +41,8 @@
  *     category, content, narrator_guidance}` vocabulary
  *   - `appendSlide(slide)` — grow the deck at runtime (e.g. a `create_slide`
  *     client command), without the app reimplementing array/total bookkeeping
- *   - `oneNavPerTurn` — a brain-restart guard: suppresses a second, DIFFERENT
- *     avatar-driven nav target within the same turn (complements, and is
+ *   - `oneNavPerTurn` — a brain-restart guard: suppresses ANY second avatar-driven
+ *     nav call within the same turn, same or different target (complements, and is
  *     distinct from, the same-target `dupSuppressMs` window) — exposed via the
  *     `navSuppressedThisTurn` getter so a sibling client command (e.g.
  *     `show_widget`) can tell its content was grounded in a nav that never landed
@@ -204,12 +205,14 @@ export class Presenter {
    * app-driven source). `reason` is passed straight through to the context payload's
    * `nav.why` field, so an app can pass its own taxonomy (e.g. `'user_btn'`/`'user_key'`/
    * `'autoplay'`) instead of being limited to Presenter's own `'user'`/`'avatar'`/
-   * `'resume'`. `'avatar'` and `'resume'` both skip updating the sequential "resume"
-   * point — every other reason anchors it. Excluding `'resume'` (as well as
-   * `'avatar'`) is what makes `resume` idempotent: `_nav` RESOLVES a `'resume'`
-   * target by READING `_lastSequential`, so if `goTo` let a `'resume'` nav WRITE
-   * that same field, N resume calls in a row would each resolve to the previous
-   * call's own landing spot instead of all landing on the same anchor.
+   * `'resume'`. `'avatar'` and `'resume'` skip updating the sequential "resume" point,
+   * UNLESS the nav advances exactly one slide (`n === current + 1`) — that case still
+   * anchors it, same as every other reason. Skipping the anchor update for a
+   * `'resume'` nav that lands elsewhere is what makes `resume` idempotent: `_nav`
+   * RESOLVES a `'resume'` target by READING `_lastSequential`, so if `goTo` let that
+   * kind of `'resume'` nav WRITE the same field, N resume calls in a row would each
+   * resolve to the previous call's own landing spot instead of all landing on the
+   * same anchor.
    * @param {number} n @param {string} [reason]
    */
   goTo(n, reason = 'user') {
@@ -252,8 +255,8 @@ export class Presenter {
   get lastDppSlide() { return this._lastContextSlide; }
 
   /**
-   * True once `oneNavPerTurn` has blocked a same-turn SECOND, different `navigate_to_slide`
-   * target this turn (reset on the next `isNewTurn` turnStart). A sibling client command
+   * True once `oneNavPerTurn` has blocked a same-turn SECOND `navigate_to_slide` call
+   * (same or different target this turn; reset on the next `isNewTurn` turnStart). A sibling client command
    * (e.g. `show_widget`) fired later in the SAME turn has no way of knowing the deck never
    * actually reached the slide its content describes unless it checks this property first.
    * Always `false` when `oneNavPerTurn` is off. @returns {boolean}
@@ -374,9 +377,9 @@ export class Presenter {
    * distinct cases that look identical from that comparison alone: (a) a prior resume call
    * already landed here — repeating it must resolve to the SAME target (idempotent, a no-op),
    * or (b) there is genuinely nothing to resume from (the anchor was never displaced by an
-   * avatar jump): if `nav.resume` is null, the next slide in order plays. Disambiguate
-   * via `_lastNav`: only take the advance-by-one fallback when the immediately preceding nav
-   * was NOT itself a resume landing on this same slide.
+   * avatar jump) — the next slide in order plays instead. Disambiguate via `_lastNav`: only
+   * take the advance-by-one fallback when the immediately preceding nav was NOT itself a
+   * resume landing on this same slide.
    * @param {number} target @param {'avatar'|'resume'} reason
    */
   _nav(target, reason) {

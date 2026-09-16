@@ -10,8 +10,8 @@ import { isPrivateOrLoopbackHost } from './net-guard.js';
 
 /**
  * Enforce TLS on a transport URL (OWASP WSS/TLS; NIST SC-8). https/wss pass.
- * http/ws fail UNLESS allowInsecure (localhost/dev) — then warn loudly, once.
- * An empty URL is left to the caller's connect-time default.
+ * http/ws fail UNLESS allowInsecure is true or the host is local — then warn
+ * instead of throwing. An empty URL is left to the caller's connect-time default.
  * @param {string} url @param {string} field @param {boolean} allowInsecure @param {(m:string)=>void} warn
  */
 export function assertSecureTransport(url, field, allowInsecure, warn) {

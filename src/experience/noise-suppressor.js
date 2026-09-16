@@ -104,7 +104,7 @@ const registeredContexts = new WeakSet();
  * @param {AudioContext} [opts.audioContext]  Reuse an existing context (e.g. share the one
  *   already driving `cfg.getAudioContext`'s VAD tap) instead of creating a dedicated one.
  * @param {()=>AudioContext} [opts.getAudioContext]  Factory for the context, called once per
- *   `noiseProcessor(stream)` invocation if `audioContext` isn't supplied. Default `() => new AudioContext()`.
+ *   `noiseProcessor(stream)` invocation. Default: reuse `opts.audioContext` if set, else `new AudioContext()`.
  * @param {typeof AudioWorkletNode} [opts.audioWorkletNodeConstructor]  Default `globalThis.AudioWorkletNode`.
  * @param {number} [opts.thresholdDb]   Gate closes below this level (dBFS). Default -50.
  * @param {number} [opts.attackMs]      Gate-open ramp, avoids a click on speech onset. Default 5ms.

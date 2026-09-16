@@ -1,9 +1,8 @@
 /**
  * Tiny zero-dep DOM builders shared by `mountWidget` and the markdown renderer
  * — kept in their own leaf module so `markdown.js` can reuse
- * `tableEl` (a markdown table renders through the SAME safe `<table>` builder
- * the structured `showVisualTable`/chart-fallback widgets use) without a
- * circular import back into `mount.js`. NEVER `innerHTML`.
+ * `tableEl` (the same safe `<table>` builder it uses to render a GFM table)
+ * without a circular import back into `mount.js`. NEVER `innerHTML`.
  * @module
  */
 import { safeText } from '../../../core/safety.js';
@@ -32,7 +31,7 @@ export function cssToken(s) {
   return t.slice(start, end) || 'x';
 }
 
-/** A safe `<table>` from `{title?, headers, rows}` — also the `showChart`/chart-fallback data table. @param {Element} root @param {{title?:string, headers?:unknown[], rows?:unknown[][]}} data @param {boolean} [noHead] */
+/** A safe `<table>` from `{title?, headers, rows}` — used by the markdown renderer for a GFM table. @param {Element} root @param {{title?:string, headers?:unknown[], rows?:unknown[][]}} data @param {boolean} [noHead] */
 export function tableEl(root, data, noHead) {
   const title = safeText(data && data.title, 300);
   if (title) root.appendChild(el('h3', 'kgenui__title', title));

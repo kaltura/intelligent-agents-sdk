@@ -28,13 +28,13 @@ test('the module never sends an 80000-range Immersive Agents event — no such e
 
 test('buildPageLoadParams: builds the exact wire params for a pageLoad (10003) event', () => {
   const params = buildPageLoadParams(
-    { partnerId: '6516742', sessionId: 's1' },
+    { partnerId: '1234567', sessionId: 's1' },
     { pageType: 'View', pageName: 'earnings-deck', pageValue: 'slide-3', pageInfo: 'q2-2026' },
   );
   assert.equal(params.service, 'analytics');
   assert.equal(params.action, 'trackEvent');
   assert.equal(params.eventType, '10003');
-  assert.equal(params.partnerId, '6516742');
+  assert.equal(params.partnerId, '1234567');
   assert.equal(params.sessionId, 's1');
   assert.equal(params.pageType, 'View');
   assert.equal(params.pageName, 'earnings-deck');
@@ -43,7 +43,7 @@ test('buildPageLoadParams: builds the exact wire params for a pageLoad (10003) e
 });
 
 test('buildPageLoadParams: omits undefined optional fields entirely (no "undefined" strings)', () => {
-  const params = buildPageLoadParams({ partnerId: '6516742' }, {});
+  const params = buildPageLoadParams({ partnerId: '1234567' }, {});
   assert.equal('pageType' in params, false);
   assert.equal('pageName' in params, false);
   assert.equal('ks' in params, false);
@@ -63,7 +63,7 @@ test('buildPageLoadParams: accepts every documented pageType', () => {
 
 test('buildButtonClickedParams: builds the exact wire params for a buttonClicked (10002) event', () => {
   const params = buildButtonClickedParams(
-    { partnerId: '6516742', entryId: '1_abc' },
+    { partnerId: '1234567', entryId: '1_abc' },
     { buttonType: 'Open', buttonName: 'contact-form-submit', buttonValue: 'email', buttonInfo: 'feedback-bubble' },
   );
   assert.equal(params.eventType, '10002');
@@ -85,7 +85,7 @@ function mkReporter(overrides = {}) {
   const beaconCalls = [];
   const fetchCalls = [];
   const reporter = new KavaAnalytics({
-    partnerId: '6516742', sessionId: 's1',
+    partnerId: '1234567', sessionId: 's1',
     sendBeacon: (url, data) => { beaconCalls.push({ url, data }); return true; },
     fetch: async (url, init) => { fetchCalls.push({ url, init }); return { ok: true }; },
     ...overrides,
@@ -104,7 +104,7 @@ test('KavaAnalytics.pageLoad: prefers sendBeacon and posts to DEFAULT_ANALYTICS_
   const parsed = new URLSearchParams(beaconCalls[0].data);
   assert.equal(parsed.get('eventType'), '10003');
   assert.equal(parsed.get('pageType'), 'View');
-  assert.equal(parsed.get('partnerId'), '6516742');
+  assert.equal(parsed.get('partnerId'), '1234567');
 });
 
 test('KavaAnalytics.buttonClicked: falls back to fetch with keepalive when sendBeacon is unavailable', async () => {
@@ -154,7 +154,7 @@ test('KavaAnalytics: common params (partnerId/sessionId/hostingKalturaApplicatio
   const { reporter, beaconCalls } = mkReporter({ hostingKalturaApplication: 28, hostingKalturaApplicationVer: '0.4.1' });
   await reporter.buttonClicked({ buttonName: 'x' });
   const parsed = new URLSearchParams(beaconCalls[0].data);
-  assert.equal(parsed.get('partnerId'), '6516742');
+  assert.equal(parsed.get('partnerId'), '1234567');
   assert.equal(parsed.get('sessionId'), 's1');
   assert.equal(parsed.get('hostingKalturaApplication'), '28');
   assert.equal(parsed.get('hostingKalturaApplicationVer'), '0.4.1');

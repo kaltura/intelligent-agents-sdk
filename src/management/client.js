@@ -5,9 +5,13 @@
  *
  * The scope guards are the mechanical half of the two-KS-type invariant: a
  * management method that needs an admin token calls `assertAdmin(ks)`, which
- * inspects the KS and THROWS before any network call if it isn't an admin
- * (`disableentitlement`) token. Conversation methods call `assertConversation`.
- * This makes "never mix KS types" impossible to violate by accident.
+ * inspects the KS and throws before any network call whenever the kind is
+ * knowable client-side (a minted {@link Token}'s recorded `kind`, or a
+ * plaintext/test KS). Conversation methods call `assertConversation`. A real
+ * encrypted production KS can't be inspected this way, so the guard defers
+ * to the server for that case (see `assertKind`'s own doc below). This makes
+ * "never mix KS types" impossible to violate by accident for every KS shape
+ * the SDK itself mints.
  */
 import { Http } from '../core/http.js';
 import { Sessions, makeAuditEmitter } from '../core/session.js';

@@ -111,9 +111,9 @@ RAG and client commands coexist fine with this off. The teaching avatar proves i
 
 Partner config is cached server-side for ~24h. Flipping a capability on an *existing* intellect will **not** take effect at converse time until that cache expires. A freshly created intellect has no cache entry, so it loads clean immediately. Always pass `capabilities` to `intellects.create()` — do not create-then-update.
 
-### Native tools work where the GenUI escape-hatch fails
+### Native tools work where prompt-only instructions fail
 
-Do not try to ride the `unisphere-tool:<custom-name>` experiences path for custom commands. That path is real in the backend but lives in the lower-priority partner `prompts[]`, which the locked base system identity overrides — so the agent refuses to emit it. A partner-configured `tool` is *bound to the LLM*, so calling it is normal agent behavior and does **not** trip the "I'm a knowledge assistant, I can't run JavaScript" refusal reflex. This is the whole reason `tools.client` works: a native tool call is normal agent behavior, not a text-generation request the model can decline.
+Do not try to get a custom command to fire by asking for it in a prompt block alone, with no real tool behind it. That approach is unreliable: the model can simply decline to emit free-form output an instruction asks for. A `tools.client` tool is different because it is *bound to the LLM* as a real function-calling tool — calling it is normal agent behavior, not a text-generation request the model can decline. This is the whole reason `tools.client` works where a prompt-only instruction doesn't.
 
 ### Tool spirals starve the voice — budget tools per turn
 
@@ -165,7 +165,7 @@ const session = new KalturaAvatarSession({ /* … */, agentActions: { toolCall: 
 const session = new KalturaAvatarSession({ /* … */, agentActions: { toolCall: ['navigate_to_slide', 'show_widget'] } });
 ```
 
-A command not on the allow-list is denied before any handler runs (audited as `agent.action.deny`). Tool-call args are also scrubbed for prototype-pollution keys (`__proto__`/`constructor`) before they reach your handler. Note that is **object-injection** defense, not **prompt-injection** defense — do not put unsanitized end-user free text, secrets, or authorization data into command args. See [SECURITY.md](../SECURITY.md).
+A command not on the allow-list is denied before any handler runs (audited as `agent.action.deny`). The SDK does **not** scrub tool-call args before they reach your handler — treat `args` as untrusted LLM output. Don't feed them into a naive deep-merge or `Object.assign` onto a shared object (a `__proto__`/`constructor` key could pollute a prototype), and don't put unsanitized end-user free text, secrets, or authorization data into command args. See [SECURITY.md](../SECURITY.md).
 
 ---
 

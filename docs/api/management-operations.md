@@ -159,9 +159,9 @@ Reusable custom-insight definitions (`key`/`title`/`prompt`/`valueType`), refere
 | Operation | Endpoint | Body |
 |-----------|----------|------|
 | Create | `POST /v1/insight-settings/create` | `{"key":"NEXT_STEP","title":"Next step","prompt":"...","valueType":"string"}` — all 4 fields required |
-| Get | `POST /v1/insight-settings/get` | `{"id":"<mongo-id>"}` |
+| Get | `POST /v1/insight-settings/get` | `{"id":"<id>"}` |
 | List | `POST /v1/insight-settings/list` | `{"filter":{"statusEqual":"active"},"pager":{"offset":0,"limit":30}}` |
-| Update | `POST /v1/insight-settings/update` | `{"id":"<mongo-id>", ...fields}` — any of `key`/`title`/`prompt`/`valueType`/`status` |
-| Delete | `POST /v1/insight-settings/delete` | `{"id":"<mongo-id>"}` — no in-use scan; a rule still referencing a deleted id silently drops that id from its extraction at match/trigger time instead (no error) |
+| Update | `POST /v1/insight-settings/update` | `{"id":"<id>", ...fields}` — any of `key`/`title`/`prompt`/`valueType`/`status` |
+| Delete | `POST /v1/insight-settings/delete` | `{"id":"<id>"}` — succeeds even while a lifecycle rule still references the id; that rule keeps firing and just skips the deleted id, with no error anywhere |
 
 Full reference and a worked recipe: **[docs/lifecycle/README.md § InsightSettings](../lifecycle/README.md#insightsettings-reusable-insight-definitions)**.

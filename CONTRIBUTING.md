@@ -41,7 +41,7 @@ No `npm install` step — the SDK is zero-dependency and the test runner is `nod
 
 ## Commit and branch conventions
 
-Commit messages in this repo's history (`git log --oneline`) are a short, capitalized, imperative summary line — e.g. "Add release automation and CI test reporting", "Redact internal service/repo names from public docs", "Fix CI: revert Node 18/20/24 test matrix". Follow that style: lead with a verb, describe the *what* in one line, and use a `Prefix: detail` form (like the `Fix CI:` example) when a commit is scoped to one area. There is no branch-naming convention enforced today — this repo has had only one active branch (`main`) throughout its history so far.
+This repo's history (`git log --oneline`) mixes two styles: a short, capitalized, imperative summary line (e.g. "Add release automation and CI test reporting", "Document the lifecycle rule engine") and Conventional Commits prefixes (e.g. `feat(management): describe the customer-admin intellect surface exactly`, `build(deps): bump github/codeql-action/init`). Either is fine — lead with a verb, describe the *what* in one line, and add a `type(scope):` or `Prefix:` tag when a commit is scoped to one area. There is no branch-naming convention enforced today — this repo has had only one active branch (`main`) throughout its history so far.
 
 ## Licensing (external contributors)
 

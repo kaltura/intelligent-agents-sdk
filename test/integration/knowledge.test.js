@@ -9,11 +9,11 @@ import { fakeFetch } from '../fakes/fetch.js';
  * Kaltura entry and categoryEntry.add it to that category. These tests assert
  * the SDK produces that exact call sequence against a fake OVP.
  */
-const ADMIN = { ks: 'djJ8' + Buffer.from('v2|6516742|x').toString('base64url'), kind: 'admin', entitlementEnforced: false };
+const ADMIN = { ks: 'djJ8' + Buffer.from('v2|1234567|x').toString('base64url'), kind: 'admin', entitlementEnforced: false };
 
 test('getLinkage reads knowledge_ids + enabled flag from v1/intellect/get', async () => {
   const f = fakeFetch([{ match: '/v1/intellect/get', respond: () => ({ body: { id: 1481, knowledge_ids: [7, 42], capabilities: { use_knowledge_base: 'on' } } }) }]);
-  const m = new Management({ partnerId: 6516742, adminSecret: 'a'.repeat(32), fetch: f });
+  const m = new Management({ partnerId: 1234567, adminSecret: 'a'.repeat(32), fetch: f });
   const link = await m.knowledge.getLinkage(1481, ADMIN);
   assert.deepEqual(link.knowledgeIds, [7, 42]);
   assert.equal(link.enabled, true);
@@ -24,7 +24,7 @@ test('setEnabled toggles use_knowledge_base via Genie v1/intellect/update', asyn
     { match: '/v1/intellect/get', respond: () => ({ body: { id: 1481, type: 'internal', status: 2, capabilities: { avatar: 'on' } } }) },
     { match: '/v1/intellect/update', respond: (req) => ({ body: { id: 1481, capabilities: req.body.capabilities } }) },
   ]);
-  const m = new Management({ partnerId: 6516742, adminSecret: 'a'.repeat(32), fetch: f });
+  const m = new Management({ partnerId: 1234567, adminSecret: 'a'.repeat(32), fetch: f });
   await m.knowledge.setEnabled(1481, true, ADMIN);
   const call = f.calls.find((c) => c.url.includes('/v1/intellect/update'));
   assert.equal(call.body.capabilities.use_knowledge_base, 'on');
@@ -36,7 +36,7 @@ test('setEnabled merges the capabilities full-replace sub-dict (reuses mergeCapa
     { match: '/v1/intellect/get', respond: () => ({ body: { id: 1481, type: 'internal', status: 2, capabilities: { avatar: 'on', use_web_search: 'off' } } }) },
     { match: '/v1/intellect/update', respond: (req) => ({ body: { id: 1481, capabilities: req.body.capabilities } }) },
   ]);
-  const m = new Management({ partnerId: 6516742, adminSecret: 'a'.repeat(32), fetch: f });
+  const m = new Management({ partnerId: 1234567, adminSecret: 'a'.repeat(32), fetch: f });
   await m.knowledge.setEnabled(1481, true, ADMIN);
   const caps = f.calls.find((c) => c.url.includes('/v1/intellect/update')).body.capabilities;
   // full-replace dict overlaid: siblings survive, target flipped — exactly mergeCapabilityWrite's contract
@@ -47,12 +47,12 @@ test('REGRESSION: setEnabled preserves status + existing config (capabilities is
   // A naive partial capabilities dict DROPS sibling capabilities; the read-merge-write
   // (mergeCapabilityWrite) preserves them. status/prompts/base_directive are preserved
   // because update is a model_fields_set PATCH (we re-send them defensively).
-  const full = { id: 1481, type: 'internal', status: 2, base_directive: 'You are Ron…', prompts: [{ key: 'name', value: 'Ron' }], glossary: 'KLTR…', capabilities: { avatar: 'on', avatar_filler: 'on' }, partner_id: 6516742, created_at: 'x', updated_at: 'y' };
+  const full = { id: 1481, type: 'internal', status: 2, base_directive: 'You are Ron…', prompts: [{ key: 'name', value: 'Ron' }], glossary: 'KLTR…', capabilities: { avatar: 'on', avatar_filler: 'on' }, partner_id: 1234567, created_at: 'x', updated_at: 'y' };
   const f = fakeFetch([
     { match: '/v1/intellect/get', respond: () => ({ body: full }) },
     { match: '/v1/intellect/update', respond: (req) => ({ body: req.body }) },
   ]);
-  const m = new Management({ partnerId: 6516742, adminSecret: 'a'.repeat(32), fetch: f });
+  const m = new Management({ partnerId: 1234567, adminSecret: 'a'.repeat(32), fetch: f });
   await m.knowledge.setEnabled(1481, true, ADMIN);
   const sent = f.calls.find((c) => c.url.includes('/v1/intellect/update')).body;
   assert.equal(sent.status, 2, 'status must stay ACTIVE');
@@ -77,7 +77,7 @@ test('uploadDocument runs the 4-step flow: entry+token → upload → addContent
       } },
     { match: '/uploadtoken/action/upload', respond: () => ({ body: { id: '1_tok', fileName: 'deck.pdf' } }) },
   ]);
-  const m = new Management({ partnerId: 6516742, adminSecret: 'a'.repeat(32), fetch: f });
+  const m = new Management({ partnerId: 1234567, adminSecret: 'a'.repeat(32), fetch: f });
   const file = new Blob([new Uint8Array([1, 2, 3])], { type: 'application/pdf' });
   const r = await m.knowledge.uploadDocument({ file, name: 'deck.pdf', categoryId: 408750172 }, ADMIN);
   assert.equal(r.entryId, '1_newdoc');
@@ -108,7 +108,7 @@ test('uploadMarkdown creates the entry, links it, then attaches a KalturaMarkdow
     { match: '/service/attachment_attachmentasset/action/add', respond: () => ({ body: { id: '1_asset', objectType: 'KalturaMarkdownAsset' } }) },
     { match: '/service/attachment_attachmentasset/action/setContent', respond: () => ({ body: { id: '1_asset' } }) },
   ]);
-  const m = new Management({ partnerId: 6516742, adminSecret: 'a'.repeat(32), fetch: f });
+  const m = new Management({ partnerId: 1234567, adminSecret: 'a'.repeat(32), fetch: f });
   const r = await m.knowledge.uploadMarkdown({ markdown: '# Facts\n\nRevenue was $1.\n', name: 'facts.md', categoryId: 413804062 }, ADMIN);
   assert.equal(r.entryId, '1_md');
   assert.equal(r.categoryId, 413804062);
@@ -139,7 +139,7 @@ test('uploadMarkdown tolerates a duplicate categoryentry.add (transport retry re
     { match: '/service/attachment_attachmentasset/action/add', respond: () => ({ body: { id: '1_asset', objectType: 'KalturaMarkdownAsset' } }) },
     { match: '/service/attachment_attachmentasset/action/setContent', respond: () => ({ body: { id: '1_asset' } }) },
   ]);
-  const m = new Management({ partnerId: 6516742, adminSecret: 'a'.repeat(32), fetch: f });
+  const m = new Management({ partnerId: 1234567, adminSecret: 'a'.repeat(32), fetch: f });
   const r = await m.knowledge.uploadMarkdown({ markdown: '# Facts\n', name: 'facts.md', categoryId: 413804062 }, ADMIN);
   // the flow continued past the duplicate and still attached the indexable markdown asset
   assert.equal(r.entryId, '1_md');
@@ -154,7 +154,7 @@ test('uploadMarkdown still throws on a REAL link-step exception (not a duplicate
       } },
     { match: '/uploadtoken/action/upload', respond: () => ({ body: { id: '1_tok' } }) },
   ]);
-  const m = new Management({ partnerId: 6516742, adminSecret: 'a'.repeat(32), fetch: f });
+  const m = new Management({ partnerId: 1234567, adminSecret: 'a'.repeat(32), fetch: f });
   await assert.rejects(
     () => m.knowledge.uploadMarkdown({ markdown: '# Facts\n', name: 'facts.md', categoryId: 413804062 }, ADMIN),
     (e) => e.code === 'ovp_error' && e.title === 'UPLOAD_TOKEN_NOT_FOUND',
@@ -171,11 +171,11 @@ test('uploadDocument surfaces a per-slot link-step exception (was silently passe
   ]);
   const file = new Blob([new Uint8Array([1])], { type: 'application/pdf' });
   // duplicate link → success
-  const ok = new Management({ partnerId: 6516742, adminSecret: 'a'.repeat(32), fetch: multi({ objectType: 'KalturaAPIException', code: 'CATEGORY_ENTRY_ALREADY_EXISTS', message: 'Entry already assigned to this category' }) });
+  const ok = new Management({ partnerId: 1234567, adminSecret: 'a'.repeat(32), fetch: multi({ objectType: 'KalturaAPIException', code: 'CATEGORY_ENTRY_ALREADY_EXISTS', message: 'Entry already assigned to this category' }) });
   const r = await ok.knowledge.uploadDocument({ file, name: 'deck.pdf', categoryId: 408750172 }, ADMIN);
   assert.equal(r.entryId, '1_doc');
   // real per-slot exception → throws (regression: the old check only caught a whole-request exception)
-  const bad = new Management({ partnerId: 6516742, adminSecret: 'a'.repeat(32), fetch: multi({ objectType: 'KalturaAPIException', code: 'CATEGORY_NOT_FOUND', message: 'Category not found' }) });
+  const bad = new Management({ partnerId: 1234567, adminSecret: 'a'.repeat(32), fetch: multi({ objectType: 'KalturaAPIException', code: 'CATEGORY_NOT_FOUND', message: 'Category not found' }) });
   await assert.rejects(
     () => bad.knowledge.uploadDocument({ file, name: 'deck.pdf', categoryId: 408750172 }, ADMIN),
     (e) => e.code === 'ovp_error' && e.title === 'CATEGORY_NOT_FOUND',
@@ -184,7 +184,7 @@ test('uploadDocument surfaces a per-slot link-step exception (was silently passe
 
 test('attachEntry resolves (not throws) when the pair is already linked — idempotent as documented', async () => {
   const f = fakeFetch([{ match: '/categoryentry/action/add', respond: () => ({ body: { objectType: 'KalturaAPIException', code: 'CATEGORY_ENTRY_ALREADY_EXISTS', message: 'Entry already assigned to this category' } }) }]);
-  const m = new Management({ partnerId: 6516742, adminSecret: 'a'.repeat(32), fetch: f });
+  const m = new Management({ partnerId: 1234567, adminSecret: 'a'.repeat(32), fetch: f });
   const r = await m.knowledge.attachEntry('1_x', 5, ADMIN);
   assert.equal(r.categoryId, 5);
   assert.equal(r.entryId, '1_x');
@@ -192,20 +192,20 @@ test('attachEntry resolves (not throws) when the pair is already linked — idem
 
 test('attachEntry assigns an existing entry; detachEntry needs confirmation', async () => {
   const f = fakeFetch([{ match: '/categoryentry/action/add', respond: () => ({ body: { categoryId: 5, entryId: '1_x' } }) }]);
-  const m = new Management({ partnerId: 6516742, adminSecret: 'a'.repeat(32), fetch: f });
+  const m = new Management({ partnerId: 1234567, adminSecret: 'a'.repeat(32), fetch: f });
   await m.knowledge.attachEntry('1_x', 5, ADMIN);
   assert.ok(f.calls.some((c) => c.url.includes('/categoryentry/action/add')));
   await assert.rejects(() => m.knowledge.detachEntry('1_x', 5, ADMIN), (e) => e.code === 'confirmation_required');
 });
 
 test('uploadDocument requires a categoryId (no silent no-op)', async () => {
-  const m = new Management({ partnerId: 6516742, adminSecret: 'a'.repeat(32), fetch: fakeFetch([]) });
+  const m = new Management({ partnerId: 1234567, adminSecret: 'a'.repeat(32), fetch: fakeFetch([]) });
   const file = new Blob([new Uint8Array([1])], { type: 'application/pdf' });
   await assert.rejects(() => m.knowledge.uploadDocument({ file, name: 'x.pdf' }, ADMIN), (e) => e.code === 'bad_request');
 });
 test('createCategory hits OVP category/add at admin scope', async () => {
   const f = fakeFetch([{ match: '/service/category/action/add', respond: (req) => ({ body: { objectType: 'KalturaCategory', id: 99, name: req.body.category.name } }) }]);
-  const m = new Management({ partnerId: 6516742, adminSecret: 'a'.repeat(32), fetch: f });
+  const m = new Management({ partnerId: 1234567, adminSecret: 'a'.repeat(32), fetch: f });
   const cat = await m.knowledge.createCategory({ name: 'Agent KB', parentId: 5, description: 'corpus' }, ADMIN);
   assert.equal(cat.id, 99);
   const sent = f.calls.find((c) => c.url.includes('/service/category/action/add')).body;
@@ -216,14 +216,14 @@ test('createCategory hits OVP category/add at admin scope', async () => {
 
 test('createCategory rejects an empty name BEFORE the network call', async () => {
   const f = fakeFetch([]);
-  const m = new Management({ partnerId: 6516742, adminSecret: 'a'.repeat(32), fetch: f });
+  const m = new Management({ partnerId: 1234567, adminSecret: 'a'.repeat(32), fetch: f });
   await assert.rejects(() => m.knowledge.createCategory({ name: '' }, ADMIN), (e) => e.code === 'bad_request');
   assert.equal(f.calls.length, 0);
 });
 
 test('corpusStatus counts an explicit container categoryId via baseentry totalCount', async () => {
   const f = fakeFetch([{ match: '/service/baseentry/action/list', respond: () => ({ body: { objects: [], totalCount: 3 } }) }]);
-  const m = new Management({ partnerId: 6516742, adminSecret: 'a'.repeat(32), fetch: f });
+  const m = new Management({ partnerId: 1234567, adminSecret: 'a'.repeat(32), fetch: f });
   const st = await m.knowledge.corpusStatus({ categoryId: 408750172 }, ADMIN);
   assert.equal(st.entryCount, 3);
   assert.equal(st.populated, true);
@@ -239,7 +239,7 @@ test('corpusStatus counts via an explicit categoryId even when configId linkage 
     { match: '/v1/intellect/get', respond: () => ({ body: { id: 1505, knowledge_ids: [], capabilities: {} } }) },
     { match: '/service/baseentry/action/list', respond: () => ({ body: { objects: [], totalCount: 4 } }) },
   ]);
-  const m = new Management({ partnerId: 6516742, adminSecret: 'a'.repeat(32), fetch: f });
+  const m = new Management({ partnerId: 1234567, adminSecret: 'a'.repeat(32), fetch: f });
   const st = await m.knowledge.corpusStatus({ configId: 1505, categoryId: 99 }, ADMIN);
   assert.equal(st.entryCount, 4);
   assert.equal(st.populated, true);
@@ -248,7 +248,7 @@ test('corpusStatus counts via an explicit categoryId even when configId linkage 
 
 test('corpusStatus requires at least one of categoryId/categoryIds/configId', async () => {
   const f = fakeFetch([]);
-  const m = new Management({ partnerId: 6516742, adminSecret: 'a'.repeat(32), fetch: f });
+  const m = new Management({ partnerId: 1234567, adminSecret: 'a'.repeat(32), fetch: f });
   await assert.rejects(() => m.knowledge.corpusStatus({}, ADMIN), (e) => e.code === 'bad_request');
   assert.equal(f.calls.length, 0);
 });
@@ -260,7 +260,7 @@ test('corpusStatus with ONLY a configId whose knowledge_ids is empty reports unl
   const f = fakeFetch([
     { match: '/v1/intellect/get', respond: () => ({ body: { id: 1507, knowledge_ids: [], capabilities: {} } }) },
   ]);
-  const m = new Management({ partnerId: 6516742, adminSecret: 'a'.repeat(32), fetch: f });
+  const m = new Management({ partnerId: 1234567, adminSecret: 'a'.repeat(32), fetch: f });
   const st = await m.knowledge.corpusStatus({ configId: 1507 }, ADMIN);
   assert.equal(st.populated, false);
   assert.equal(st.entryCount, 0);
@@ -284,7 +284,7 @@ test('REGRESSION: corpusStatus with a configId resolves linked knowledge_ids (RE
         return { body: { objects: [], totalCount: 6 } };
       } },
   ]);
-  const m = new Management({ partnerId: 6516742, adminSecret: 'a'.repeat(32), fetch: f });
+  const m = new Management({ partnerId: 1234567, adminSecret: 'a'.repeat(32), fetch: f });
   const st = await m.knowledge.corpusStatus({ configId: 1509 }, ADMIN);
   assert.deepEqual(st.categoryIds, [99], 'the resolved category id, not the knowledge record id (55)');
   assert.equal(st.entryCount, 6);

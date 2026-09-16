@@ -8,8 +8,8 @@ import { fakeFetch } from '../fakes/fetch.js';
  * G1 integration (fetch-fake): assert the EXACT `v1/intellect/update` bodies
  * for the intellects + intellect-config surface.
  */
-const ADMIN = { ks: 'djJ8' + Buffer.from('v2|6516742|x').toString('base64url'), kind: 'admin', entitlementEnforced: false };
-const PID = 6516742;
+const ADMIN = { ks: 'djJ8' + Buffer.from('v2|1234567|x').toString('base64url'), kind: 'admin', entitlementEnforced: false };
+const PID = 1234567;
 
 /** A representative stored intellect (server read façade). */
 function fullDto(over = {}) {

@@ -566,11 +566,12 @@ export class KalturaAvatarSession extends Emitter {
   // ─────────────────────────── capacity (step 4/5) ───────────────────────────
 
   /**
-   * Steps 4–5 with capacity awareness: poll `checkAvailability` and emit
-   * `stvNewSession` only when `available===true`; never reconnect (stickiness).
-   * Falls back to an optimistic create if no `availabilityResult` arrives in 3s
-   * (matches app.js). On `throwToNoAgent`/`throwToExceededTier` the server drops
-   * the socket — surfaced as a retryable/fatal error.
+   * Steps 4–5 with capacity awareness: emits `stvNewSession` right away (many
+   * agents never send `availabilityResult`, so waiting on it first just adds dead
+   * time), while polling `checkAvailability` in parallel so a capacity-aware
+   * server can still emit `capacityChanged` and gate retries. Never reconnects
+   * (stickiness). On `throwToNoAgent`/`throwToExceededTier` the server drops the
+   * socket — surfaced as a retryable/fatal error.
    * @param {any} socket @param {{expired:()=>boolean}} overall
    */
   async _createSessionWithCapacity(socket, overall) {
@@ -846,13 +847,10 @@ export class KalturaAvatarSession extends Emitter {
    * Call `endTapToTalk()` to close the window and let the server mint the turn from
    * whatever it captured.
    *
-   * Gated on `clientConfiguration.isTapToTalk`. This is NOT optional: an
-   * agent configured for open-mic (`isTapToTalk:false`) keeps its own VAD turn-cutting
-   * running unconditionally, with no suppression while in tap-mode — the two
-   * mechanisms race the same internal conversation state with no mutual
-   * exclusion. The server accepts `tapToTalkStart`/`tapToTalkEnd` regardless of the
-   * flag, so this client-side gate is the only thing preventing that race — see
-   * `capabilities.tapToTalk` to check before offering tap-to-talk UI at all.
+   * Gated on `clientConfiguration.isTapToTalk`. This is NOT optional: only call it
+   * for an agent configured for tap-to-talk, never one configured for open-mic
+   * (`isTapToTalk:false`) — see `capabilities.tapToTalk` to check before offering
+   * tap-to-talk UI at all.
    */
   startTapToTalk() {
     this._requireConnected('startTapToTalk');
@@ -860,7 +858,7 @@ export class KalturaAvatarSession extends Emitter {
       throw new KalturaError({ type: 'about:blank', title: 'mic not started', code: 'mic_not_started', detail: 'startTapToTalk() requires a live mic — this session connected with micStartMode:"deferred"; call startMic() from a user gesture first.' });
     }
     if (!this._clientConfig?.isTapToTalk) {
-      throw new KalturaError({ type: 'about:blank', title: 'tap-to-talk disabled', code: 'capability_disabled', detail: 'startTapToTalk() requires clientConfiguration.isTapToTalk=true on this agent — mixing it with an open-mic agent races the session server\'s VAD turn-cutting (unverified/unsafe server-side).' });
+      throw new KalturaError({ type: 'about:blank', title: 'tap-to-talk disabled', code: 'capability_disabled', detail: 'startTapToTalk() requires clientConfiguration.isTapToTalk=true on this agent.' });
     }
     if (this._tapToTalkActive) {
       throw new KalturaError({ type: 'about:blank', title: 'already tapped', code: 'invalid_state', detail: 'startTapToTalk() called while already active — call endTapToTalk() first.' });

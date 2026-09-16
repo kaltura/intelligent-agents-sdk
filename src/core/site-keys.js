@@ -149,7 +149,7 @@ function stopSetFor(lang, stopWords) {
  * @returns {Array<{key:string}|null>}
  * @example
  * pageSectionKeys(['What it is', 'The edge case: don\'t leave the avatar stuck paused', 'Related docs'])
- * // → [{ key: 'what-it' }, { key: 'edge-case-dont' }, null]
+ * // → [{ key: 'what-it-is' }, { key: 'edge-case-dont' }, null]
  */
 export function pageSectionKeys(headings, opts = {}) {
   const { lang = 'en', stopWords, overrides, maxWords = DEFAULT_KEY_WORDS } = opts;

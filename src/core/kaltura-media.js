@@ -6,9 +6,12 @@
  * descriptor can carry a REAL, embeddable player — not just a link.
  *
  * Security: `externalEmbedUrl` only ever returns an embed URL for an explicit
- * allow-list of embed hosts (YouTube/Vimeo/Kaltura). Anything else returns ''
+ * allow-list of third-party hosts (YouTube/Vimeo). Anything else returns ''
  * so the host falls back to a plain link rather than iframing an arbitrary
- * origin. All ids/partnerIds are character-filtered before interpolation.
+ * origin. {@link EMBED_HOSTS} is a broader allow-list (adds Kaltura's own
+ * domains) for a caller that wants one sanity check covering both
+ * `externalEmbedUrl`'s output and `playerEmbedUrl`'s. All ids/partnerIds are
+ * character-filtered before interpolation.
  * @module
  */
 

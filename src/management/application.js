@@ -57,10 +57,10 @@ export class Application {
   }
 
   /**
-   * The fixed field schema `agents.create`/`agents.update`'s `customPrompt`
+   * The fixed field schema `intellects.add`/`intellects.update`'s `prompts[]`
    * input accepts — a static, partner-agnostic descriptor array (`goal`,
    * `targetAudience`, `restrictedTopics`, `name`, `knowledge`), not a
-   * partner's saved prompts. Render an "describe your agent" form straight
+   * partner's saved prompts. Render a "describe your agent" form straight
    * from this instead of hardcoding the 5 fields, so a new field the backend
    * adds shows up with no SDK/app changes. READ — no state, no partner
    * lookup (any valid KS works). Each entry also carries an unmodeled wire

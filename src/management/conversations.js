@@ -297,9 +297,10 @@ export class Threads {
    * @param {string} id @param {string} ks
    * @returns {Promise<{status:string, data:string}>} `data` is the flattened
    *   `human: .../ai: ...` transcript, one turn per line. Live-confirmed: unlike
-   *   every other `Threads`/`Messages` method here, this one endpoint's response
-   *   is one envelope deeper, so the SDK's usual single `.data` unwrap leaves the
-   *   `{status,data}` wrapper still in place — read `.data.data` for the string.
+   *   every other `Threads`/`Messages` method here, this endpoint's response body
+   *   is one envelope deeper. The SDK's usual single unwrap only reaches the
+   *   `{status,data}` wrapper, not the string inside it. Read the transcript off
+   *   the RESULT's `data` field (e.g. `(await threads.transcript(id, ks)).data`).
    */
   async transcript(id, ks) {
     this._.assertAdmin(ks, 'threads.transcript');
@@ -336,9 +337,9 @@ export class Threads {
   }
 
   /**
-   * Wipe a thread's `thread_metadata` entirely (drops `analysis` — the
-   * `ThreadMetadata` DTO has no other field, so there is nothing else to
-   * lose). WRITE — idempotent.
+   * Wipe a thread's `thread_metadata` entirely (drops `analysis`; today
+   * `analysis` is the only field this object holds, so there is nothing else
+   * to lose). WRITE, idempotent.
    * @param {string} id @param {string} ks
    */
   async clearAnalysis(id, ks) {
@@ -351,7 +352,8 @@ export class Threads {
    * idempotent. `v1/thread/push` does not exist — this is the only push
    * route. `delivered:false` in the reply means no live socket is currently
    * attached to the thread; the message is still persisted (it shows up in
-   * {@link Messages#list} as `type: 4`, `MessageType.EXTERNAL_PUSH`).
+   * {@link Messages#list} with `type: 4`, marking it as an externally pushed
+   * message rather than a normal turn).
    *
    * `content` has a server-side length cap — too long is `413 content
    * exceeds max_message_length`. The SDK does not check this client-side
@@ -492,16 +494,13 @@ export class Feedback {
    * sharing.
    *
    * This is the correct, permanent way to read feedback — not a stopgap.
-   * The backend's `feedback/list` endpoint queries a `Feedback` table
-   * nothing writes to (`feedback/add` writes `is_positive`/`comment`
-   * directly onto the rated message itself instead), so this method
-   * sources from there: it queries `message/list` (and, for
-   * `agentIdEquals`, `v1/thread/list` first) and keeps only the messages
-   * that carry a rating.
+   * {@link Feedback#add} writes `is_positive`/`comment` directly onto the
+   * rated message, so this method reads feedback off messages: it queries
+   * `message/list` (and, for `agentIdEquals`, `v1/thread/list` first) and
+   * keeps only the messages that carry a rating.
    *
-   * Filter (distinct shape from the old `GenieListFeedbackFilter` — these
-   * map onto {@link Messages#list}'s own filter, plus one Messages doesn't
-   * have):
+   * Filter (each key maps onto {@link Messages#list}'s own filter, plus one
+   * Messages doesn't have):
    *  - `messageIdEquals` / `messageIdsIn` — one message, or a batch by id.
    *  - `threadIdEquals` — every rated message in one thread.
    *  - `agentIdEquals` — every rated message across threads opened for one
@@ -842,15 +841,14 @@ export class Knowledge {
 
   /**
    * Upload markdown text into a knowledge category by attaching a
-   * KalturaMarkdownAsset directly. WRITE — NOT idempotent. The indexer only
-   * scans an entry's ATTACHMENT assets for a `markdown.markdown` asset, never
-   * an entry's own primary content — a raw `.md` set as an entry's content
-   * (via {@link uploadDocument}'s path) is invisible to it, and automatic
-   * PDF-to-markdown conversion only fires for PDF entries. This
-   * method skips both: it creates the backing entry (kept in sync for
-   * browsability), then attaches the SAME markdown as its own
-   * `KalturaMarkdownAsset` via a second, independent upload token — the thing
-   * the indexer actually indexes. Returns `{entryId, categoryId, markdownAssetId}`.
+   * KalturaMarkdownAsset directly. WRITE, NOT idempotent. Use this instead
+   * of {@link uploadDocument} to make markdown RAG-searchable: a raw `.md`
+   * file set as an entry's own content (the `uploadDocument` path) does not
+   * get indexed for search. This method creates the backing entry (kept in
+   * sync for browsability), then attaches the SAME markdown as its own
+   * `KalturaMarkdownAsset` via a second, independent upload token. That
+   * asset is what makes the content searchable. Returns
+   * `{entryId, categoryId, markdownAssetId}`.
    * @param {object} opts
    * @param {string} opts.markdown
    * @param {string} opts.name
@@ -880,9 +878,8 @@ export class Knowledge {
     ], ks);
     const linkErr = (linked || []).find((r) => r?.objectType === 'KalturaAPIException' && !isDuplicateCategoryEntry(r));
     if (linkErr) throw new KalturaError({ type: 'about:blank', title: linkErr.code, code: 'ovp_error', detail: linkErr.message, body: linkErr });
-    // 3) the thing the indexer actually scans for: a SEPARATE KalturaMarkdownAsset
-    // attachment, uploaded via its own token — bypasses the backend's PDF
-    // conversion pipeline entirely.
+    // 3) what actually makes the content searchable: a SEPARATE
+    // KalturaMarkdownAsset attachment, uploaded via its own token.
     const assetToken = await this._.ovp('uploadtoken', 'add', { uploadToken: { objectType: 'KalturaUploadToken', fileName: name } }, ks);
     const assetFd = newFormData();
     assetFd.append('fileData', new Blob([opts.markdown], { type: 'text/markdown' }), name);

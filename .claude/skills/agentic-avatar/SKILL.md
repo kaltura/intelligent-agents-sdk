@@ -30,7 +30,7 @@ const kaltura = new Management({
 });
 ```
 
-One `Management` instance mounts every resource namespace: `sessions`, `agents`, `avatars`, `catalog`, `application`, `intellects`, `intellectConfig`, `tools`, `skills`, `conversations`, `threads`, `messages`, `feedback`, `followups`, `knowledge`, `lifecycle` — plus top-level `converse`/`converseOnce`/`provision` convenience methods. Full constructor options and every method's JSDoc: `src/management/client.js`.
+One `Management` instance mounts every resource namespace: `sessions`, `agents`, `avatars`, `avatarSessions`, `catalog`, `application`, `intellects`, `intellectConfig`, `tools`, `skills`, `conversations`, `threads`, `messages`, `feedback`, `followups`, `knowledge`, `lifecycle`, `insightSettings` — plus top-level `converse`/`converseOnce`/`provision` convenience methods. Full constructor options and every method's JSDoc: `src/management/client.js`.
 
 ## KS (session token) types
 
@@ -75,7 +75,16 @@ console.log(reply.text);
    }, admin.ks);
    const configId = intellect.configId;
    ```
-3. **Write its prompts.** `kaltura.intellects.setPrompts(configId, { goal, targetAudience, restrictedTopics }, admin.ks)` — lints by default (see Prompt authoring below). `kaltura.application.getCustomPrompts(ks)` returns the backend's own field schema for this input (`goal`/`targetAudience`/`restrictedTopics`/`name`/`knowledge`, each with a `label` and `headerTemplate`) — render a "describe your agent" form from it directly instead of hardcoding the 5 fields.
+3. **Write its prompts.** `prompts` is an array, not a plain object:
+
+   ```js
+   await kaltura.intellects.setPrompts(configId, [
+     { key: 'goal', label: 'goal', headerTemplate: 'Your core goal:', type: 'custom', value: goal },
+     { key: 'targetAudience', label: 'targetAudience', headerTemplate: 'Your audience:', type: 'custom', value: targetAudience },
+     { key: 'restrictedTopics', label: 'restrictedTopics', headerTemplate: 'Never discuss:', type: 'custom', value: restrictedTopics },
+   ], admin.ks);
+   ```
+   Lints by default (see Prompt authoring below). `kaltura.application.getCustomPrompts(ks)` returns the backend's own field schema for this input (`goal`/`targetAudience`/`restrictedTopics`/`name`/`knowledge`, each with a `label` and `headerTemplate`) — render a "describe your agent" form from it directly instead of hardcoding the 5 fields.
 4. **Pick a voice + visual from the catalog** — or skip straight to a curated preset with `kaltura.avatars.listTemplates(ks, {pageSize})`, which returns ready-made `{voice, face}` bundles (feed `template.voice.id`/`template.face.id` straight into `avatars.create` below) instead of pairing a voice and visual by hand.
 
    ```js
@@ -83,17 +92,17 @@ console.log(reply.text);
    const visuals = await kaltura.catalog.list(admin.ks, { type: 'visual', pageSize: 1 });
    ```
 Note the argument order: **`ks` first, `opts` second** — this is the convention across nearly every `.list()` method in the SDK (`agents.list`, `avatars.list`, `avatars.listTemplates`, `intellects.list`, `tools.list`, `skills.list`, `threads.list`, `messages.list`, `knowledge.list`, `lifecycle.list`). `knowledge.listCategoryEntries(categoryId, ks)` is the one exception, since it acts on a specific category rather than browsing a partner-wide list.
-5. **Create the avatar (face + voice binding).** `const avatar = await kaltura.avatars.create({ voiceId, visualId, name }, admin.ks);`
+5. **Create the avatar (face + voice binding).** `const avatar = await kaltura.avatars.create({ voice: { id: voiceId }, visual: { id: visualId }, name }, admin.ks);`
 6. **Create the agent — needs only the intellect's configId.**
 
    ```js
    const agent = await kaltura.agents.create({
      intellect: { intellectType: 'genie', id: configId },
-     avatarId: avatar.id,
+     avatarIds: [avatar.id],
    }, admin.ks);
    ```
 No discovery step required beforehand.
-7. **Resolve its public widgetId.** `const { widgetId } = await kaltura.application.resolveWidgetId(agent.id, admin.ks);` Idempotent — call it again any time and you get the same id back.
+7. **Resolve its public widgetId.** `const { widgetId } = await kaltura.application.resolveWidgetId(agent.agentId, admin.ks);` Idempotent — call it again any time and you get the same id back.
 8. **Talk to it.** `await kaltura.converseOnce(configId, 'Hello!');`
 
 For the full endpoint/DTO reference behind every one of these calls (exact payload shapes, defaults, validation rules), see `API-REFERENCE.md` — this skill documents *how to call the SDK*, not the wire format underneath it.
@@ -173,11 +182,15 @@ Full list and per-capability notes: `CAPABILITIES`/`CAPABILITY_INFO` in `src/man
 
 ## Tools and Skills (partner-level, referenced by id)
 
-Tools and Skills are standalone entities at the partner level — an intellect only *references* them via `tool_ids`/`skill_ids` (see `intellectConfig` above). Build a tool body with the typed helpers in `src/management/tools.js` (`tools.api`/`tools.csv`/`tools.code`) rather than a raw object.
+Tools and Skills are standalone entities at the partner level — an intellect only *references* them via `tool_ids`/`skill_ids` (see `intellectConfig` above). Build a tool body with the typed helpers in `src/management/tools.js` (`tools.api`/`tools.csv`/`tools.code`/`tools.client`) rather than a raw object.
 
 ```js
 const tool = await kaltura.tools.add(
-  tools.client('navigate_to_slide', { slide_num: { type: 'int', required: true } }),
+  tools.client({
+    name: 'navigate_to_slide',
+    description: 'Navigate the presentation to a specific slide number.',
+    args: { slide_num: { prompt: 'The slide number to go to', type: 'int', required: true } },
+  }),
   admin.ks,
 );
 await kaltura.intellectConfig.setToolIds(configId, [tool.id], admin.ks);
@@ -208,15 +221,16 @@ Write-only, per-intellect, via `src/management/secrets.js` (also mirrored on `in
 
 ```js
 const category = await kaltura.knowledge.findOrCreateCategory({ name: 'Yoga Studio Docs' }, admin.ks);
-const doc = await kaltura.knowledge.uploadMarkdown({
+await kaltura.knowledge.uploadMarkdown({
   categoryId: category.id,
-  title: 'Class schedule',
+  name: 'Class schedule',
   markdown: '# Schedule\n...',
 }, admin.ks);
-const record = await kaltura.knowledge.addRecord({ categoryId: category.id }, admin.ks);
+const record = await kaltura.knowledge.addRecord({ name: 'Yoga Studio Docs' }, admin.ks);
+await kaltura.knowledge.addSource(record.id, { type: 'internal', categoryIds: [category.id] }, admin.ks);
 await kaltura.intellectConfig.setKnowledgeIds(configId, [record.id], admin.ks);
 // or pass knowledge_ids straight into intellects.create() for a brand-new agent
-await kaltura.intellects.setCapability(configId, 'use_knowledge_base', 'on', admin.ks);
+await kaltura.knowledge.setEnabled(configId, true, admin.ks);   // flips capabilities.use_knowledge_base 'on'
 ```
 
 `knowledge_ids` is capped at one record per intellect (`setKnowledgeIds` throws before any network call if you pass more than one). RAG retrieval works only after async indexing completes, and `kaltura.knowledge.isIndexed(record.id, admin.ks)` does NOT tell you that. See API-REFERENCE.md § Ground the Agent for why (its `ready` flag is a container-lifecycle status, not an indexing-completion signal), which other signal to reach for, and why to budget a fixed wait instead of polling for now.
@@ -232,6 +246,7 @@ const topic = await kaltura.insightSettings.create({
 
 const rule = await kaltura.lifecycle.create({
   name: 'Extract a topic for every ended session',
+  systemName: 'extract_topic_on_session_ended',
   eventType: 'session_ended',
   objectType: 'thread',
   // Don't request SUMMARY yourself — every partner already gets one for free
@@ -338,7 +353,7 @@ Full method/event source: `src/experience/session.js` (2000+ lines — the canon
 
 ### Event model
 
-`session.on(event, handler)` / `off(event, handler)`. Every event the runtime emits: `agentActionDenied`, `avatarStartTalking`, `avatarStopTalking`, `brainSegment`, `brainStalled`, `capacityChanged`, `connectionQuality`, `connectivityChanged`, `disclosure`, `ended`, `error`, `hardwareMuteChanged`, `idleWarning`, `interrupted`, `localMicLevel`, `localSpeakingChanged`, `mediaRecovered`, `mediaRecovering`, `reconnected`, `reconnecting`, `responsePending`, `responseSettled`, `resumed`, `resumeReady`, `smartTurnStatus`, `speechChunk`, `spiralRecovered`, `stateChange`, `streamReady`, `tapToTalkEnded`, `tapToTalkStarted`, `timeExpired`, `timeWarning`, `toolCall`, `toolCallInvalid`, `toolCallResult`, `toolSpiralDetected`, `toolSpiralRecovering`, `transcript`, `turnEnd`, `turnStart`, `userStartedTalking`. Exact payload shapes: `docs/WIRE-PROTOCOL.md`.
+`session.on(event, handler)` / `off(event, handler)`. Every event the runtime emits: `agentActionDenied`, `avatarStartTalking`, `avatarStopTalking`, `brainSegment`, `brainStalled`, `capacityChanged`, `connectionQuality`, `connectivityChanged`, `disclosure`, `ended`, `error`, `hardwareMuteChanged`, `idleWarning`, `interrupted`, `localMicLevel`, `localSpeakingChanged`, `mediaReady`, `mediaRecovered`, `mediaRecovering`, `micStarted`, `reconnected`, `reconnecting`, `responsePending`, `responseSettled`, `resumed`, `resumeReady`, `smartTurnStatus`, `speechChunk`, `spiralRecovered`, `stateChange`, `streamReady`, `tapToTalkEnded`, `tapToTalkStarted`, `timeExpired`, `timeWarning`, `toolCall`, `toolCallInvalid`, `toolCallResult`, `toolSpiralDetected`, `toolSpiralRecovering`, `track`, `transcript`, `turnEnd`, `turnStart`, `userStartedTalking`, `videoMetadata`, `warning`. Exact payload shapes: `docs/WIRE-PROTOCOL.md`.
 
 ### Guardrails (constructor options, gate BEFORE effect)
 

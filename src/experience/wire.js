@@ -17,10 +17,10 @@ export const DEFAULT_CM_URL = 'https://conversation.avatar.us.kaltura.ai';
 export const EXPERIENCES = ['markdown', 'summarization', 'flashcards', 'avatar_only'];
 
 /**
- * The `model_type` wire values (LOWERCASE — API-REFERENCE §4.1; the Genie bridge
- * hardcodes `model_type:'fast'`). There is NO verified `'DEFAULT'` literal: the
- * PRIMARY model is selected by OMITTING the field entirely. So the only explicit
- * value the SDK ever sends is `'fast'`; `primary` is a sentinel meaning "omit".
+ * The `model_type` wire values (LOWERCASE — see docs/api/operate.md's Converse
+ * section). There is NO verified `'DEFAULT'` literal: the PRIMARY model is
+ * selected by OMITTING the field entirely. So the only explicit value the SDK
+ * ever sends is `'fast'`; `primary` is a sentinel meaning "omit".
  *
  * HONESTY: the SDK can SEND `model_type:'fast'` but cannot prove which model
  * replied. Callers assert acceptance, not model identity.
@@ -251,5 +251,5 @@ export function isAudioMode(payload) {
   return !!(payload && payload.status && /no STV session/i.test(payload.status));
 }
 
-/** Capacity re-poll backoff schedule (seconds), wrap modulo (WIRE-PROTOCOL §4b). */
+/** Capacity re-poll backoff schedule (seconds); clamps at the last entry once exhausted (WIRE-PROTOCOL §4b). */
 export const CAPACITY_BACKOFF = [30, 45, 60, 90, 120, 180, 240, 300, 360];
