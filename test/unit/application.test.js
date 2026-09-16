@@ -88,8 +88,17 @@ test('appInit: avatars[] preview/loading fields pass through unmodified, includi
 // tools/check-docs.mjs (markdown-only scope).
 test('appInit: JSDoc documents that previewImageUrl/loadingVideoUrl are raw backend asset URLs', async () => {
   const src = await readFile(new URL('../../src/management/application.js', import.meta.url), 'utf8');
-  const jsdoc = src.slice(src.indexOf('/**', src.indexOf('async appInit') - 800), src.indexOf('async appInit'));
+  const jsdoc = src.slice(src.indexOf('/**', src.indexOf('async appInit') - 1500), src.indexOf('async appInit'));
   assert.match(jsdoc, /raw backend asset URLs/i);
+});
+
+// Live-confirmed: a KS without the agentid privilege that resolveWidgetId's
+// widget bakes in fails with api_exception, not a silent empty result.
+test('appInit: JSDoc documents the agentid-privilege permission gate', async () => {
+  const src = await readFile(new URL('../../src/management/application.js', import.meta.url), 'utf8');
+  const jsdoc = src.slice(src.indexOf('/**', src.indexOf('async appInit') - 1500), src.indexOf('async appInit'));
+  assert.match(jsdoc, /PERMISSION GATE/);
+  assert.match(jsdoc, /agentid/);
 });
 
 // ── generateProfile ───────────────────────────────────────────────────────────
@@ -139,11 +148,11 @@ test('resolveWidgetId: happy path returns .data payload with admin KS', async ()
 
 test('getCustomPrompts: happy path returns the static field descriptor array, no body sent', async () => {
   const prompts = [
-    { key: 'goal', label: 'Goal', headerTemplate: 'The agent\'s goal is: {{value}}', objectType: 'Object' },
-    { key: 'targetAudience', label: 'Target Audience', headerTemplate: 'The target audience is: {{value}}', objectType: 'Object' },
-    { key: 'restrictedTopics', label: 'Restricted Topics', headerTemplate: 'Avoid discussing: {{value}}', objectType: 'Object' },
-    { key: 'name', label: 'Name', headerTemplate: 'The agent is named: {{value}}', objectType: 'Object' },
-    { key: 'knowledge', label: 'Knowledge', headerTemplate: 'Use this knowledge: {{value}}', objectType: 'Object' },
+    { key: 'goal', label: 'Goal', headerTemplate: 'The agent\'s goal is: {{value}}', objectType: 'Object', type: 'custom' },
+    { key: 'targetAudience', label: 'Target Audience', headerTemplate: 'The target audience is: {{value}}', objectType: 'Object', type: 'custom' },
+    { key: 'restrictedTopics', label: 'Restricted Topics', headerTemplate: 'Avoid discussing: {{value}}', objectType: 'Object', type: 'custom' },
+    { key: 'name', label: 'Name', headerTemplate: 'The agent is named: {{value}}', objectType: 'Object', type: 'custom' },
+    { key: 'knowledge', label: 'Knowledge', headerTemplate: 'Use this knowledge: {{value}}', objectType: 'Object', type: 'custom' },
   ];
   const ctx = fakeCtx({
     agenticRoutes: { 'application/getCustomPrompts': () => ({ data: prompts, requestId: 'r5' }) },
@@ -151,8 +160,17 @@ test('getCustomPrompts: happy path returns the static field descriptor array, no
   const result = await new Application(ctx).getCustomPrompts(ADMIN);
   assert.deepEqual(result, prompts);
   assert.equal(result.length, 5);
+  assert.ok(result.every((p) => p.type === 'custom'), 'every entry carries type:"custom"');
   assert.equal(ctx.calls[0].path, 'application/getCustomPrompts');
   assert.deepEqual(ctx.calls[0].body, {});
+});
+
+// Live-confirmed field the prior JSDoc omitted — see application.js's
+// getCustomPrompts docstring.
+test('getCustomPrompts: JSDoc documents the type:"custom" field', async () => {
+  const src = await readFile(new URL('../../src/management/application.js', import.meta.url), 'utf8');
+  const jsdoc = src.slice(src.indexOf('/**', src.indexOf('async getCustomPrompts') - 1000), src.indexOf('async getCustomPrompts'));
+  assert.match(jsdoc, /type:"custom"/);
 });
 
 test('getCustomPrompts: works with a conversation-scoped KS too (assertAny, not assertAdmin)', async () => {

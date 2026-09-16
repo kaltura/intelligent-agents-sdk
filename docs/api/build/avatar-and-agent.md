@@ -58,11 +58,11 @@ POST https://api.avatar.us.kaltura.ai/v1/agent/create
 
 | Field | Notes |
 |-------|-------|
-| `intellect.intellectType` | Always `"genie"` |
+| `intellect.intellectType` | `"genie"` — the only value `mgmt.intellects.create()` can produce today. The field also accepts `"external"`, for an intellect created and managed outside this SDK. |
 | `intellect.id` | The intellect's configId, from intellect create — passed straight in, no discovery step |
 | `avatarIds` | Optional — omit for a headless text-only agent |
 | `maxConversationLength` | Seconds. Default 540, range 1–3600 |
-| `widgetConfig.initialPage.title` | Max 30 chars |
+| `widgetConfig.initialPage.title` | Max 100 chars |
 
 Returns `agentId` (UUID). **Save this.**
 

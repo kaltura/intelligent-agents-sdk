@@ -240,6 +240,335 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
+  live-verify-request-vars:
+    name: 🔴 Live verification (request_vars)
+    needs: changes
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      ((github.event_name == 'merge_group' || github.event.label.name == 'run-live-verify') && needs.changes.outputs.code == 'true')
+    runs-on: ubuntu-latest
+    environment: live-verify
+    steps:
+      - name: 📥 Check out the repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: 🟢 Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+
+      - name: 🔴 Per-thread request_vars persistence/merge, tool + sys__* interpolation, large page_context, fresh-thread scope, against the real Kaltura API
+        id: live_verify_request_vars
+        env:
+          AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
+          AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
+        run: |
+          set -o pipefail
+          npm run live-verify:request-vars 2>&1 | tee live-verify-request-vars-output.log
+
+      - name: 📤 Upload live-verify-request-vars artifact
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: live-verify-request-vars-artifacts
+          path: |
+            live-verify-artifacts/
+            live-verify-request-vars-output.log
+          retention-days: 30
+
+      - name: 📝 Write job summary
+        if: always()
+        run: |
+          {
+            echo "### 🔴 Live verification (request_vars) — ${{ steps.live_verify_request_vars.outcome }}"
+            echo
+            echo '```'
+            tail -n 40 live-verify-request-vars-output.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  live-verify-threads-messages-feedback:
+    name: 🔴 Live verification (threads/messages/feedback/followups)
+    needs: changes
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      ((github.event_name == 'merge_group' || github.event.label.name == 'run-live-verify') && needs.changes.outputs.code == 'true')
+    runs-on: ubuntu-latest
+    environment: live-verify
+    steps:
+      - name: 📥 Check out the repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: 🟢 Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+
+      - name: 🔴 Scratch thread via converse → get/rename/transcript, messages.list/share, feedback.add, followups.getSuggested → delete → cleanup, against the real Kaltura API
+        id: live_verify_threads_messages_feedback
+        env:
+          AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
+          AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
+        run: |
+          set -o pipefail
+          npm run live-verify:threads-messages-feedback 2>&1 | tee live-verify-threads-messages-feedback-output.log
+
+      - name: 📤 Upload live-verify-threads-messages-feedback artifact
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: live-verify-threads-messages-feedback-artifacts
+          path: |
+            live-verify-artifacts/
+            live-verify-threads-messages-feedback-output.log
+          retention-days: 30
+
+      - name: 📝 Write job summary
+        if: always()
+        run: |
+          {
+            echo "### 🔴 Live verification (threads/messages/feedback/followups) — ${{ steps.live_verify_threads_messages_feedback.outcome }}"
+            echo
+            echo '```'
+            tail -n 40 live-verify-threads-messages-feedback-output.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  live-verify-skills:
+    name: 🔴 Live verification (skills)
+    needs: changes
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      ((github.event_name == 'merge_group' || github.event.label.name == 'run-live-verify') && needs.changes.outputs.code == 'true')
+    runs-on: ubuntu-latest
+    environment: live-verify
+    steps:
+      - name: 📥 Check out the repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: 🟢 Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+
+      - name: 🔴 Skills add/get/list/update(rename)/delete → cleanup, against the real Kaltura API
+        id: live_verify_skills
+        env:
+          AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
+          AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
+        run: |
+          set -o pipefail
+          npm run live-verify:skills 2>&1 | tee live-verify-skills-output.log
+
+      - name: 📤 Upload live-verify-skills artifact
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: live-verify-skills-artifacts
+          path: |
+            live-verify-artifacts/
+            live-verify-skills-output.log
+          retention-days: 30
+
+      - name: 📝 Write job summary
+        if: always()
+        run: |
+          {
+            echo "### 🔴 Live verification (skills) — ${{ steps.live_verify_skills.outcome }}"
+            echo
+            echo '```'
+            tail -n 40 live-verify-skills-output.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  live-verify-catalog:
+    name: 🔴 Live verification (catalog)
+    needs: changes
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      ((github.event_name == 'merge_group' || github.event.label.name == 'run-live-verify') && needs.changes.outputs.code == 'true')
+    runs-on: ubuntu-latest
+    environment: live-verify
+    steps:
+      - name: 📥 Check out the repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: 🟢 Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+
+      - name: 🔴 Catalog createVisual/get/list/update(rename)/delete → cleanup, against the real Kaltura API
+        id: live_verify_catalog
+        env:
+          AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
+          AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
+        run: |
+          set -o pipefail
+          npm run live-verify:catalog 2>&1 | tee live-verify-catalog-output.log
+
+      - name: 📤 Upload live-verify-catalog artifact
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: live-verify-catalog-artifacts
+          path: |
+            live-verify-artifacts/
+            live-verify-catalog-output.log
+          retention-days: 30
+
+      - name: 📝 Write job summary
+        if: always()
+        run: |
+          {
+            echo "### 🔴 Live verification (catalog) — ${{ steps.live_verify_catalog.outcome }}"
+            echo
+            echo '```'
+            tail -n 40 live-verify-catalog-output.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  live-verify-knowledge:
+    name: 🔴 Live verification (knowledge write path)
+    needs: changes
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      ((github.event_name == 'merge_group' || github.event.label.name == 'run-live-verify') && needs.changes.outputs.code == 'true')
+    runs-on: ubuntu-latest
+    environment: live-verify
+    steps:
+      - name: 📥 Check out the repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: 🟢 Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+
+      - name: 🔴 Knowledge addRecord/getRecord/list/updateRecord/addSource/removeSource/entryStatus/deleteRecord → cleanup, against the real Kaltura API
+        id: live_verify_knowledge
+        env:
+          AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
+          AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
+        run: |
+          set -o pipefail
+          npm run live-verify:knowledge 2>&1 | tee live-verify-knowledge-output.log
+
+      - name: 📤 Upload live-verify-knowledge artifact
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: live-verify-knowledge-artifacts
+          path: |
+            live-verify-artifacts/
+            live-verify-knowledge-output.log
+          retention-days: 30
+
+      - name: 📝 Write job summary
+        if: always()
+        run: |
+          {
+            echo "### 🔴 Live verification (knowledge write path) — ${{ steps.live_verify_knowledge.outcome }}"
+            echo
+            echo '```'
+            tail -n 40 live-verify-knowledge-output.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  live-verify-avatars:
+    name: 🔴 Live verification (avatars write path)
+    needs: changes
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      ((github.event_name == 'merge_group' || github.event.label.name == 'run-live-verify') && needs.changes.outputs.code == 'true')
+    runs-on: ubuntu-latest
+    environment: live-verify
+    steps:
+      - name: 📥 Check out the repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: 🟢 Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+
+      - name: 🔴 Scratch Visual → avatars create/get/update(openingPhrase)/delete → cleanup, against the real Kaltura API
+        id: live_verify_avatars
+        env:
+          AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
+          AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
+        run: |
+          set -o pipefail
+          npm run live-verify:avatars 2>&1 | tee live-verify-avatars-output.log
+
+      - name: 📤 Upload live-verify-avatars artifact
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: live-verify-avatars-artifacts
+          path: |
+            live-verify-artifacts/
+            live-verify-avatars-output.log
+          retention-days: 30
+
+      - name: 📝 Write job summary
+        if: always()
+        run: |
+          {
+            echo "### 🔴 Live verification (avatars write path) — ${{ steps.live_verify_avatars.outcome }}"
+            echo
+            echo '```'
+            tail -n 40 live-verify-avatars-output.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  live-verify-agents:
+    name: 🔴 Live verification (agents)
+    needs: changes
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      ((github.event_name == 'merge_group' || github.event.label.name == 'run-live-verify') && needs.changes.outputs.code == 'true')
+    runs-on: ubuntu-latest
+    environment: live-verify
+    steps:
+      - name: 📥 Check out the repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: 🟢 Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+
+      - name: 🔴 Scratch intellect + avatar → agents create/get/list/update(rename)/delete → cleanup, against the real Kaltura API
+        id: live_verify_agents
+        env:
+          AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
+          AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
+        run: |
+          set -o pipefail
+          npm run live-verify:agents 2>&1 | tee live-verify-agents-output.log
+
+      - name: 📤 Upload live-verify-agents artifact
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: live-verify-agents-artifacts
+          path: |
+            live-verify-artifacts/
+            live-verify-agents-output.log
+          retention-days: 30
+
+      - name: 📝 Write job summary
+        if: always()
+        run: |
+          {
+            echo "### 🔴 Live verification (agents) — ${{ steps.live_verify_agents.outcome }}"
+            echo
+            echo '```'
+            tail -n 40 live-verify-agents-output.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
   live-verify-browser:
     name: 🔴🌐 Live browser verification (${{ matrix.engine }})
     needs: changes
@@ -387,6 +716,67 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
+  live-verify-set-forced-language:
+    name: 🔴🌐 Live verification (setForcedLanguage)
+    needs: changes
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      ((github.event_name == 'merge_group' || github.event.label.name == 'run-live-verify') && needs.changes.outputs.browser == 'true')
+    runs-on: ubuntu-latest
+    environment: live-verify
+    steps:
+      - name: 📥 Check out the repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: 🟢 Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+
+      - name: 📦 Install dependencies
+        run: npm ci
+
+      - name: 🎭 Install chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: 🔴🌐 setForcedLanguage persists force_language + agent asr.language, no base_directive marker → real headless Chromium conversation replies in the forced language → cleanup
+        id: live_verify_set_forced_language
+        env:
+          AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
+          AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
+        run: |
+          set -o pipefail
+          npm run live-verify:set-forced-language 2>&1 | tee live-verify-set-forced-language-output.log
+
+      - name: 📤 Upload live-verify-set-forced-language artifact
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: live-verify-set-forced-language-artifacts
+          path: |
+            live-verify-artifacts/
+            live-verify-set-forced-language-output.log
+          retention-days: 30
+
+      - name: 📝 Write job summary (with embedded screenshot)
+        if: always()
+        run: |
+          {
+            echo "### 🔴🌐 Live verification (setForcedLanguage) — ${{ steps.live_verify_set_forced_language.outcome }}"
+            echo
+            echo '```'
+            tail -n 40 live-verify-set-forced-language-output.log
+            echo '```'
+            shot=$(ls -t live-verify-artifacts/*.png 2>/dev/null | head -n 1 || true)
+            if [ -n "$shot" ]; then
+              echo
+              echo "Forced-language conversation ($shot):"
+              echo
+              b64=$(base64 -w 0 "$shot" 2>/dev/null || base64 "$shot")
+              echo "![forced-language conversation](data:image/png;base64,$b64)"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
   live-verify-session-complete:
     name: 🔴🌐 Live verification (session_completed signal, ${{ matrix.engine }})
     needs: changes
@@ -445,5 +835,99 @@ jobs:
             echo
             echo '```'
             tail -n 60 live-verify-session-complete-output.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  live-verify-intellects-conversations:
+    name: 🔴 Live verification (intellects snapshot/restore/capabilities + conversations)
+    needs: changes
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      ((github.event_name == 'merge_group' || github.event.label.name == 'run-live-verify') && needs.changes.outputs.code == 'true')
+    runs-on: ubuntu-latest
+    environment: live-verify
+    steps:
+      - name: 📥 Check out the repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: 🟢 Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+
+      - name: 🔴 Scratch intellect → capabilities/prompts/snapshot-restore → conversations send/status → cleanup, against the real Kaltura API
+        id: live_verify_intellects_conversations
+        env:
+          AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
+          AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
+        run: |
+          set -o pipefail
+          npm run live-verify:intellects-conversations 2>&1 | tee live-verify-intellects-conversations-output.log
+
+      - name: 📤 Upload live-verify-intellects-conversations artifact
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: live-verify-intellects-conversations-artifacts
+          path: |
+            live-verify-artifacts/
+            live-verify-intellects-conversations-output.log
+          retention-days: 30
+
+      - name: 📝 Write job summary
+        if: always()
+        run: |
+          {
+            echo "### 🔴 Live verification (intellects/conversations) — ${{ steps.live_verify_intellects_conversations.outcome }}"
+            echo
+            echo '```'
+            tail -n 40 live-verify-intellects-conversations-output.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  live-verify-tools:
+    name: 🔴 Live verification (tools add/get/delete + unavailable-by-default gate)
+    needs: changes
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      ((github.event_name == 'merge_group' || github.event.label.name == 'run-live-verify') && needs.changes.outputs.code == 'true')
+    runs-on: ubuntu-latest
+    environment: live-verify
+    steps:
+      - name: 📥 Check out the repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: 🟢 Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+
+      - name: 🔴 Scratch tool add/get/delete + code/csv unavailable-by-default 403 gate, against the real Kaltura API
+        id: live_verify_tools
+        env:
+          AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
+          AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
+        run: |
+          set -o pipefail
+          npm run live-verify:tools 2>&1 | tee live-verify-tools-output.log
+
+      - name: 📤 Upload live-verify-tools artifact
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: live-verify-tools-artifacts
+          path: |
+            live-verify-artifacts/
+            live-verify-tools-output.log
+          retention-days: 30
+
+      - name: 📝 Write job summary
+        if: always()
+        run: |
+          {
+            echo "### 🔴 Live verification (tools) — ${{ steps.live_verify_tools.outcome }}"
+            echo
+            echo '```'
+            tail -n 40 live-verify-tools-output.log
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
