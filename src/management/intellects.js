@@ -47,7 +47,14 @@ export class Intellects {
    * so it may briefly still include a just-DELETED id (or omit a just-created
    * one). Do not treat list membership as authoritative immediately after a
    * mutation; confirm a specific id with {@link get} before acting on it.
-   * @param {string} ks @param {{filter?:object,pageSize?:number}} [opts]
+   *
+   * `opts.filter` is passed through to the server as-is. Supported keys:
+   * `typeEquals` (`'internal'|'external'`), `statusEquals`/`statusIn` (numeric
+   * lifecycle status — 0 pending deletion, 1 pending, 2 active), `nameEquals`,
+   * `nameLike` (partial, case-insensitive), `tagsContains`, `idEquals`, and
+   * `orderBy` (e.g. `'-createdAt'`). An unrecognized key is silently ignored,
+   * not rejected.
+   * @param {string} ks @param {{filter?:{typeEquals?:'internal'|'external',statusEquals?:number,statusIn?:number[],nameEquals?:string,nameLike?:string,tagsContains?:string,idEquals?:number,orderBy?:string},pageSize?:number}} [opts]
    */
   list(ks, opts = {}) {
     this._.assertAdmin(ks, 'intellects.list');
