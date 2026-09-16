@@ -78,6 +78,12 @@ function assertComposition(body, where, strict) {
         detail: `${where}: background.value (a catalog item id) is required when type is "visual" — it's optional (defaults to white) only for type:'color'.`,
       });
     }
+    if (bg.type === 'color' && bg.value !== undefined && !/^#[0-9a-fA-F]{6}$/.test(bg.value)) {
+      throw new KalturaError({
+        type: 'about:blank', title: 'invalid background', code: 'bad_request',
+        detail: `${where}: background.value for type:'color' must be a 6-digit hex string ("#RRGGBB") — got ${JSON.stringify(bg.value)}. The backend has no alpha channel support: an 8-digit hex, rgba(), or CSS4 rgb(.../...%) all fail server-side with AVATAR_INVALID_BACKGROUND_ID.`,
+      });
+    }
   }
 }
 
@@ -143,9 +149,12 @@ export class Avatars {
    *    pair, in which case `visual` wins and the pair is ignored) — sending
    *    just one of `face`/`background` alongside `visual` is STILL a
    *    domain failure (see below), `visual` does not exempt it.
-   *  - `face:{id} + background:{type:'color', value?:'#hex'} | {type:'visual', value:<Background catalog itemId>}` —
+   *  - `face:{id} + background:{type:'color', value?:'#RRGGBB'} | {type:'visual', value:<Background catalog itemId>}` —
    *    composes a NEW Visual from a Face catalog item over a color (`value`
-   *    optional, defaults to white) or a Background catalog item (`value`
+   *    optional, defaults to white — a 6-digit hex string; no alpha channel:
+   *    `#RRGGBBAA`, `rgba(...)`, and `rgb(... / ...)` all fail server-side
+   *    with `AVATAR_INVALID_BACKGROUND_ID`, "must be a 6-digit hex value")
+   *    or a Background catalog item (`value`
    *    required). `face`/`background` MUST travel together — either alone is
    *    a domain failure, UNLESS `templateId` is also given: a template can
    *    carry its own `face` and/or `background` from {@link listTemplates},
@@ -173,7 +182,7 @@ export class Avatars {
    *
    * @param {object} body {voice:{id,speed?},visual?:{id,motionControl?:{speaking,nonSpeaking}},face?:{id},background?:{type:'color'|'visual',value?:string},name?:string,templateId?:string,openingPhrase?:string}
    * @param {string} ks @param {{idempotencyKey?:string}} [opts]
-   * @throws {import('../core/errors.js').KalturaError} `code:'bad_request'` if `adminTags` is passed, or if `face`/`background` are incomplete/malformed.
+   * @throws {import('../core/errors.js').KalturaError} `code:'bad_request'` if `adminTags` is passed, if `face`/`background` are incomplete/malformed, or if `background.value` for `type:'color'` isn't a 6-digit hex string (no alpha channel).
    */
   async create(body, ks, opts = {}) {
     this._.assertAdmin(ks, 'avatars.create');
