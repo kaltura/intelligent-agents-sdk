@@ -71,7 +71,7 @@ Three things about this action that aren't obvious from the field names:
 
 1. **It only fires on `analysis_updated`.** Attach it to a `session_ended` rule and it's a silent server-side no-op. Nothing errors, nothing sends.
 2. **`recipients` are Kaltura user IDs, not raw email addresses.** The messaging service resolves the actual email from that user's Kaltura profile (`{USER.email}`). If your account's convention is to use the email address itself as the Kaltura user ID (common on many accounts), a recipient string that looks like an email works, but only because it's also a valid user ID there, not because this field accepts arbitrary email strings.
-3. **`presetType: 'conversationInsightExample'` is the zero-setup path.** The backend auto-creates its email template on first use. There is no SDK surface for authoring your own template from scratch; an explicit `templateId` (instead of `presetType`) means a template that already exists in Kaltura's messaging service, managed outside this SDK.
+3. **`presetType: 'conversationInsightExample'` is the zero-setup path.** The backend auto-creates its email template on first use. An explicit `templateId` (instead of `presetType`) points at a template you author yourself via [`mgmt.emailTemplates`](README.md#emailtemplates-managing-the-templates-sendinsightemail-references) — your own subject, body, and branding, instead of the preset's fixed layout.
 
 ### The gotcha that will bite you first: token mismatch
 
