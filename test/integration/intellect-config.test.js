@@ -154,15 +154,34 @@ test('intellects.snapshot → diffSnapshots detects modified + reorder', async (
   assert.equal(d._meta.storage, 'client-side');
 });
 
-test('intellects.restore writes back the snapshot author layer (skips secrets)', async () => {
+test('intellects.restore writes back the snapshot author layer (skips secrets), including capabilities via a second write', async () => {
   const { m, f } = mkMgmt([getDto(), updateEcho]);
   const snap = await m.intellects.snapshot(1481, ADMIN);
   f.calls.length = 0;
   const r = await m.intellects.restore(snap, ADMIN);
   assert.ok(r.written.includes('prompts'));
-  const sent = f.calls.find((c) => c.url.includes('/v1/intellect/update')).body;
+  assert.ok(r.written.includes('capabilities'));
   assert.ok(!('secrets' in r.written), 'secrets never in the written list');
-  assert.equal(sent.base_directive, 'You are Ron…');
+  // setPrompts's own write has no capabilities option, so restoring both fields
+  // (the default) is TWO /v1/intellect/update calls, not one — regression guard
+  // for the bug where `written` claimed capabilities were restored but nothing
+  // was ever actually sent.
+  const updates = f.calls.filter((c) => c.url.includes('/v1/intellect/update'));
+  assert.equal(updates.length, 2, 'prompts and capabilities are separate writes');
+  assert.equal(updates[0].body.base_directive, 'You are Ron…');
+  assert.deepEqual(updates[1].body.capabilities, { avatar: 'on', use_web_search: 'off' }, 'capabilities actually sent, not silently dropped');
+  assert.deepEqual(r.capabilities, { avatar: 'on', use_web_search: 'off' });
+});
+
+test('intellects.restore({fields:["capabilities"]}) skips setPrompts entirely and still restores capabilities', async () => {
+  const { m, f } = mkMgmt([getDto(), updateEcho]);
+  const snap = await m.intellects.snapshot(1481, ADMIN);
+  f.calls.length = 0;
+  const r = await m.intellects.restore(snap, ADMIN, { fields: ['capabilities'] });
+  assert.deepEqual(r.written, ['capabilities']);
+  const updates = f.calls.filter((c) => c.url.includes('/v1/intellect/update'));
+  assert.equal(updates.length, 1);
+  assert.deepEqual(updates[0].body.capabilities, { avatar: 'on', use_web_search: 'off' });
 });
 
 // ─────────────────────────── create defaults ───────────────────────────

@@ -58,6 +58,7 @@
     "live-verify:knowledge": "node scripts/live-verify-knowledge.mjs",
     "live-verify:avatars": "node scripts/live-verify-avatars.mjs",
     "live-verify:agents": "node scripts/live-verify-agents.mjs",
+    "live-verify:intellects-conversations": "node scripts/live-verify-intellects-conversations.mjs",
     "verify:noise-suppressor": "node scripts/verify-noise-suppressor.mjs",
     "verify:avatar-media": "node scripts/verify-avatar-media.mjs",
     "verify:distribution": "node scripts/verify-distribution.mjs",

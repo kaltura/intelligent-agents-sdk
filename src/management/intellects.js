@@ -367,7 +367,13 @@ export class Intellects {
    * Restore a {@link snapshot} (WRITE — idempotent, read-merge-write). Writes
    * back ONLY the safe author-layer fields (prompts/base_directive/glossary/
    * capabilities/status) — SKIPS secrets + server-managed fields. Lints by
-   * default like {@link setPrompts}. @param {object} snapshot @param {string} ks (admin) @param {{fields?:string[], lint?:boolean|'strict'}} [opts]
+   * default like {@link setPrompts}. When both `'prompts'` and `'capabilities'`
+   * are restored (the default), this is TWO writes, not one — capabilities go
+   * through {@link setCapabilities} with `{force:true}` (bypassing its
+   * DISABLED-re-enable guard, since this reproduces a known past state) because
+   * {@link setPrompts}'s own write has no capabilities option. `written` always
+   * reflects what was actually sent, never a field that silently no-op'd.
+   * @param {object} snapshot @param {string} ks (admin) @param {{fields?:string[], lint?:boolean|'strict'}} [opts]
    */
   async restore(snapshot, ks, opts = {}) {
     this._.assertAdmin(ks, 'intellects.restore');
@@ -378,12 +384,22 @@ export class Intellects {
     const want = Array.isArray(opts.fields) ? opts.fields.filter((f) => allowed.includes(f)) : allowed;
     const skipped = allowed.filter((f) => !want.includes(f));
     if (want.includes('prompts')) {
-      return this.setPrompts(snapshot.configId, snapshot.fields.prompts, ks, {
+      const r = await this.setPrompts(snapshot.configId, snapshot.fields.prompts, ks, {
         baseDirective: want.includes('base_directive') ? snapshot.fields.base_directive : undefined,
         glossary: want.includes('glossary') ? snapshot.fields.glossary : undefined,
         status: want.includes('status') ? snapshot.fields.status : undefined,
         lint: opts.lint,
-      }).then((r) => ({ ...r, written: want, skipped, _meta: meta({ partnerId: this._.partnerId, source: 'genie/intellect.update', scope: `configId:${snapshot.configId}`, restoredFrom: 'client-side snapshot', skipped }) }));
+      });
+      // setPrompts's own RMW write never touches capabilities (it's a distinct
+      // field it has no opts for) — restoring it needs a SECOND write, via
+      // setCapabilities with {force:true} so restoring a snapshot that had a
+      // capability stored 'disabled' never trips the re-enable convenience guard
+      // (this is reproducing a known PAST state, not a fresh arbitrary request).
+      let capabilities;
+      if (want.includes('capabilities')) {
+        ({ capabilities } = await this.setCapabilities(snapshot.configId, snapshot.fields.capabilities, ks, { force: true }));
+      }
+      return { ...r, ...(capabilities !== undefined ? { capabilities } : {}), written: want, skipped, _meta: meta({ partnerId: this._.partnerId, source: 'genie/intellect.update', scope: `configId:${snapshot.configId}`, restoredFrom: 'client-side snapshot', skipped }) };
     }
     const { body } = await this._rmwBody(snapshot.configId, ks, 'intellects.restore');
     for (const f of want) body[f] = snapshot.fields[f];
