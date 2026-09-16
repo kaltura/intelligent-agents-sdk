@@ -32,6 +32,10 @@ It is **not byte-exact** with the live prompt — server-injected capability-con
 | `sys__user_id` | Bound end-user id — see `Sessions.createConversationToken({userId})` |
 | `sys__user_message` | The user's current turn text |
 | `sys__is_new_thread` | `true` on the first turn of a thread |
+| `sys__context_id` | The category/entry id the current context is scoped to |
+| `sys__context_type` | The type of that context (e.g. an `entry` vs. a `category`) |
+| `sys__avatar_enabled` | Whether the current thread has a live avatar attached |
+| `sys__avatar_share_screen_enabled` | Whether the current avatar session has screen-share analysis enabled |
 | `sys__ks` | The raw session token. **Never reference this in a prompt that could be echoed back to a user or logged.** It is a live credential. |
 | `sys__user_obj.first_name` / `.last_name` / `.title` / `.company` / `.gender` / `.email` | Attributes of the bound-user object. The rendered preview from `previewPrompt()` carries a `reserved_user_attr_unresolved` warning when a prompt references these — treat it as a hard stop before shipping. |
 | `secrets.NAME` | A named secret configured on the intellect (write-only — `previewPrompt()` never has access to the raw value, so it cannot confirm one is set) |
@@ -50,10 +54,11 @@ p.warnings;
 //   severity: 'warning',
 //   code: 'reserved_user_attr_unresolved',
 //   message: '`{{sys__user_obj.first_name}}` has no bound value in this preview\'s
-//              requestVars. previewPrompt flags this as reserved_user_attr_unresolved —
-//              bind a user (Sessions.createConversationToken({userId}))
-//              or supply "sys__user_obj.first_name" in requestVars to simulate
-//              the bound case before shipping this prompt.'
+//              requestVars. Referencing an unbound sys__user_obj.* attribute in a
+//              LIVE turn currently causes a silent turn failure, not an empty render —
+//              bind a user (Sessions.createConversationToken({userId})) or supply
+//              "sys__user_obj.first_name" in requestVars to simulate the bound case
+//              before shipping this prompt.'
 // }]
 ```
 

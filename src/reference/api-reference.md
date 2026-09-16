@@ -29,8 +29,8 @@ Every endpoint is shown as a raw HTTP call plus its SDK wrapper. The SDK is what
 | [Phase 3 — Deploy](/reference/api/deploy/) | Resolve widget ID, initialize the browser runtime |
 | [Phase 4 — Operate](/reference/api/operate/) | Converse (headless HTTP), reserved `sys__*` template variables, status, threads, feedback and follow-ups, usage analytics, knowledge search (MCP) |
 | [Scripted-Video (STV-only) Sessions](https://github.com/kaltura/intelligent-agents-sdk/blob/main/docs/api/scripted-video.md) | Pre-authored speech sessions — auth, lifecycle, `say-audio` |
-| [Management Operations](/reference/api/management-operations/) | CRUD tables for agents, avatars, intellects, tools, skills, knowledge records |
-| [Lifecycle](/reference/lifecycle/) | Event-driven rules — reference + [recipe](/guides/lifecycle-recipes/) |
+| [Management Operations](/reference/api/management-operations/) | CRUD tables for agents, avatars, intellects, tools, skills, threads, messages/feedback/followups, knowledge records, lifecycle |
+| [Lifecycle](/reference/lifecycle/) | Event-driven rules + InsightSettings (reusable custom-insight definitions) — reference + [recipe](/guides/lifecycle-recipes/) |
 | [Use-Case Catalog](/reference/use-cases/) | All 13 use cases (UC-1 through UC-13) mapped to mechanisms and runnable scripts |
 | [Site navigation](/guides/site-navigation/) | Fire-and-forget `go_to` tool, compact SITE MAP prompt, `sections.json` manifest, browser `SiteNavigator` plugin |
 

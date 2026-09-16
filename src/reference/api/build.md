@@ -14,7 +14,7 @@ Create and configure the pieces that make up an agent: its intellect (brain conf
 
 | Doc | Covers |
 |---|---|
-| [API · Build · Create and Configure an Intellect](/reference/api/build/intellect/) | Create an Intellect, Configure an Intellect (prompts, `base_directive`, model, opening phrase, thread-start tools, session summary, capabilities table, `force_experience`) |
+| [API · Build · Create and Configure an Intellect](/reference/api/build/intellect/) | Create an Intellect, Configure an Intellect (prompts, `base_directive`, model, opening phrase, thread-start tools, session summary, capabilities table) |
 | [API · Build · Preview a Prompt](/reference/api/build/preview-prompt/) | Preview a Prompt — render the assembled system prompt client-side before shipping an edit |
 | [API · Build · Tools and Secrets](/reference/api/build/tools-and-secrets/) | Tools (`api`/`csv`/`code`/`client`), Secrets |
 | [API · Build · Ground the Agent in Your Content (RAG)](/reference/api/build/knowledge-rag/) | Ground the Agent in Your Content (RAG) — knowledge records, sources, indexing status |

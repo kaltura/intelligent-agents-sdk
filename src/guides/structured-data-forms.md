@@ -9,11 +9,11 @@ eyebrow: How-to Guide
 
 How to make an agent ask the viewer for structured, typed data mid-conversation — a support ticket's category and urgency, a booking's preferred date, a survey rating, a sales lead's email and phone, or any other shape of data your use case needs — how the SDK renders that request, and where the submitted values actually go.
 
-**On this page:** [What it is — and isn't](#what-it-is--and-isnt) · [How the brain is made aware of the schema](#how-the-brain-is-made-aware-of-the-schema) · [What's possible / what's not](#whats-possible--whats-not) · [How the SDK handles it — two observation points, one descriptor](#how-the-sdk-handles-it--two-observation-points-one-descriptor) · [How the form is rendered](#how-the-form-is-rendered) · [How to customize or style the form](#how-to-customize-or-style-the-form) · [Where the submitted data actually goes](#where-the-submitted-data-actually-goes) · [Related: `kaltura_genie_experiences` — a different, unrelated capability](#related-kaltura_genie_experiences--a-different-unrelated-capability) · [Related docs](#related-docs)
+**On this page:** [What it is — and isn't](#what-it-is--and-isnt) · [What configuring a stage actually does](#what-configuring-a-stage-actually-does) · [What's possible / what's not](#whats-possible--whats-not) · [How the SDK handles it — two observation points, one descriptor](#how-the-sdk-handles-it--two-observation-points-one-descriptor) · [How the form is rendered](#how-the-form-is-rendered) · [How to customize or style the form](#how-to-customize-or-style-the-form) · [Where the submitted data actually goes](#where-the-submitted-data-actually-goes) · [Related: `kaltura_genie_experiences` — a different, unrelated capability](#related-kaltura_genie_experiences--a-different-unrelated-capability) · [Related docs](#related-docs)
 
-`user_properties_forms` is a general-purpose "collect typed fields from the viewer" primitive: the fields, prompt injection, rendering, and reporting all work identically no matter what the fields represent. The one place this shows up in the SDK's own surface is naming: the method you call to report values back is `session.submitStructuredDataForm()`, over a wire event named `setFormLeadInfo` — both named after the feature's most common use case, not its only one.
+`user_properties_forms` is a general-purpose "collect typed fields from the viewer" primitive: the fields, the instruction the agent acts on, rendering, and reporting all work identically no matter what the fields represent. The one place this shows up in the SDK's own surface is naming: the method you call to report values back is `session.submitStructuredDataForm()`, over a wire event named `setFormLeadInfo` — both named after the feature's most common use case, not its only one.
 
-All claims below are anchored to source: the brain (the conversational AI backend service) and this repo's SDK (`src/`).
+Every claim below is anchored to this repo's SDK (`src/`) and to what a caller observes on the wire.
 
 ## What it is — and isn't
 
@@ -36,23 +36,14 @@ await mgmt.intellectConfig.setUserPropertiesForms(configId, [
 
 You can pass one form object or an array of several — each stage gets its own field set, so you could ask for a booking date early in the conversation and a payment preference later, or an email early and a phone number later, in the same conversation.
 
-## How the brain is made aware of the schema
+## What configuring a stage actually does
 
-This isn't a passive schema the model infers — it's an explicit, mandatory prompt injection. The brain's system-prompt builder walks every configured stage and renders a mandatory `user_properties_form` instruction block with that stage's exact field list:
+This isn't a passive schema the model may or may not notice. Each configured stage becomes a hard instruction for that conversation: when the stage arrives, the agent emits a fenced `user_properties_form` block listing exactly that stage's fields, in addition to its normal spoken reply. Two consequences:
 
-```text
-MANDATORY: At the {call_stage} stage of the conversation, you MUST output a
-user_properties_form code block enclosed in triple backtick fences exactly as shown below.
-This block is REQUIRED in addition to your main response and must NEVER be omitted.
-For each field, if you can extract its value from the conversation, add a known_value property.
-```
+- **It's a hard instruction, not a soft hint.** Once a stage's moment arrives, the agent isn't free to skip the block. In practice it reads `call_stage` loosely though (a `start` stage can fire on the very first turn), so treat the stage as "roughly when", not "exactly when".
+- **Pre-fill is real.** If the agent has already heard a value for a configured field earlier in the conversation (e.g. the viewer mentioned their preferred date in passing), it attaches a `known_value` to that field. Your form should pre-fill it rather than ask again.
 
-Two things follow directly from this wording:
-
-- **It's a hard instruction, not a soft hint.** The prompt says "MUST" and "MANDATORY," not "consider asking." In practice the model interprets `call_stage` loosely (a `start` stage can fire on the very first turn), but it is not free to skip the block once its stage arrives.
-- **Pre-fill is real.** If the model has already seen a value for a configured field elsewhere in the conversation (e.g. the viewer mentioned their preferred date in passing), it can attach a `known_value` to that field, and your form should pre-fill it rather than ask again.
-
-The backend's schema for this feature also carries a `title` and `secondary_title` with sensible defaults ("A few details about you" / "Tell me a bit about yourself so I can guide you with content that fits your needs"). **The SDK's `buildUserPropertiesForms()` does not currently expose either field.** It only accepts `callStage`/`properties`. If you need a custom title (e.g. "Tell us about your issue" for a support form), you'd have to bypass the builder and patch `user_properties_forms` directly with the extra keys. Today's SDK surface always falls back to the backend defaults.
+The form's heading copy is server-supplied: read-back of `user_properties_forms` carries `id`/`title`/`secondary_title` defaults you didn't send. **`buildUserPropertiesForms()` doesn't expose either heading field** — it accepts `callStage`/`properties` only. To show your own copy (e.g. "Tell us about your issue" on a support form), render the widget yourself and replace the descriptor's `data.title`; see "How to customize or style the form" below.
 
 ## What's possible / what's not
 
@@ -90,7 +81,7 @@ Both are routed to `ExperienceRenderer` (`src/experience/genui/renderer.js`), wh
 
 If you hand `mountWidget` (`src/experience/genui/renderers/mount.js`) a real DOM element as the mount target, it builds the whole thing for you: one `<form class="kgenui__form">`, one `<div class="kgenui__field">` per field with a `<label>` and an `<input>` — the input `type` is inferred from the field type (`email`/`phone`→`tel`/checkbox/etc. via `htmlInputType()`) — wired `aria-required`/`aria-describedby`, pre-filled from `knownValue`, and a submit button. It never uses `innerHTML`, so brain-supplied text can't inject markup. On submit, it calls your `opts.onAction('submit', {values})` callback.
 
-Nothing about the general `user_properties_forms` mechanism described above is the only option. An app can instead reach the same `user-properties-form` widget through a different path: keep `kaltura_genie_experiences` off, and expose the widget as one enum value of your own native `show_widget` **client** tool, with the brain deciding when to call it from your own prompt-level timing rules — no `call_stage`-driven mandatory injection required.
+Nothing about the general `user_properties_forms` mechanism described above is the only option. An app can instead reach the same `user-properties-form` widget through a different path: keep `kaltura_genie_experiences` off, and expose the widget as one enum value of your own native `show_widget` **client** tool, with the brain deciding when to call it from your own prompt-level timing rules — no `call_stage`-driven form needed at all.
 
 ## How to customize or style the form
 
@@ -120,7 +111,7 @@ A worked pattern: keep the submitted values in browser memory for the current se
 
 If your intellect also uses custom `tool_ids` (e.g. a closed set of client commands like `navigate_to_slide`/`show_widget`), you'll likely set `capabilities: { kaltura_genie_experiences: 'off' }` or `'disabled'` — see [External API Integrations § Don't skip `kaltura_genie_experiences: 'off'`](/guides/external-api-integrations/#dont-skip-kaltura_genie_experiences-off) for what that capability does and why.
 
-**This does not touch `user_properties_forms` at all.** The two mechanisms are independent code paths. `kaltura_genie_experiences` governs backend tool-key families like `flashcards`/`summarization`/`followups`/`sources`/`gallery_slides`. `user_properties_forms` has its own dedicated DTO field and its own dedicated prompt injection, unrelated to the experiences capability. With `kaltura_genie_experiences: 'disabled'`, an agent still fires a genuine `show_widget` call with `kind: "user_properties_form"` and a genuine `user-properties-form-tool` segment. Disabling experiences only removes the brain's own competing navigation/formatting instinct. It has no effect on structured-data-form logic.
+**This does not touch `user_properties_forms` at all.** The two mechanisms are independent code paths. `kaltura_genie_experiences` governs backend tool-key families like `flashcards`/`summarization`/`followups`/`sources`/`gallery_slides`. `user_properties_forms` is its own config field, and the instruction it produces is unrelated to the experiences capability. With `kaltura_genie_experiences: 'disabled'`, an agent still fires a genuine `show_widget` call with `kind: "user_properties_form"` and a genuine `user-properties-form-tool` segment. Disabling experiences only removes the brain's own competing navigation/formatting instinct. It has no effect on structured-data-form logic.
 
 ## Related docs
 

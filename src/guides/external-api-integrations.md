@@ -77,9 +77,9 @@ const tool = api({
 
 This is a genuine authorization-code exchange, not a pre-minted static token wearing an OAuth label. Here's what to build for and expect:
 
-- **First call, no cached token: handle the consent redirect.** The backend raises an `OAuthRequiredException`, which the conversation layer turns into an `interruption` stream segment carrying a real `auth_url` — built with `response_type=code&client_id=...&redirect_uri=...&state=...`, where `state` is a sha256-derived value the backend verifies on callback. Your app must surface that URL to the viewer (open it in a new tab/window) so they can complete the provider's consent screen.
-- **After consent: tokens are cached for you.** Once the provider redirects back with a `code`, the backend exchanges it for an access + refresh token pair and caches them in a server-side token cache keyed to the tool/intellect for **30 days** (`30 * 24 * 60 * 60` seconds).
-- **Refresh is automatic.** On every subsequent call, if the cached access token is expired, the backend uses the `refresh_token` grant to get a new one — no viewer interaction, no redirect. Only if the refresh itself fails does it raise `OAuthRequiredException` again, sending the viewer back through consent.
+- **First call, no cached token: handle the consent redirect.** The call comes back as an `interruption` stream segment carrying a real `auth_url` (built with `response_type=code&client_id=...&redirect_uri=...&state=...`). Your app must surface that URL to the viewer (open it in a new tab/window) so they can complete the provider's consent screen.
+- **After consent, later calls just work.** Once the provider redirects back with a `code` and the viewer's consent completes, subsequent calls to the same tool succeed without asking the viewer to consent again.
+- **Refresh is automatic.** A later call can reuse and refresh an expired token with no viewer interaction and no redirect. Only when that refresh itself fails do you see another `interruption`/`auth_url`, sending the viewer back through consent. Don't hardcode an assumed validity window for cached consent — treat every call as one that might come back with a fresh `auth_url` and handle that path.
 
 Unlike a static-bearer-token tool (where *you* own token rotation), a tool wired through `authentication: {type: 'oauth2', ...}` gets consent and refresh handled for you by the platform. The tradeoff is the interruption/consent UX — your app has to handle the `interruption` segment and show the viewer a link, which a static bearer token never requires.
 
