@@ -303,6 +303,18 @@ export class Messages {
   }
 
   /**
+   * Get one message by id (`POST /message/get`). READ. Returns the full
+   * message record — live-confirmed against production. An unknown id
+   * throws a typed `not_found`; one belonging to another partner throws
+   * `forbidden` ("Not authorized for this message") instead of `not_found`.
+   * @param {string} id @param {string} ks (admin)
+   */
+  async get(id, ks) {
+    this._.assertAdmin(ks, 'messages.get');
+    return (await this._.genie('message/get', { id }, ks)).data;
+  }
+
+  /**
    * Clone a message under a new title for sharing. WRITE — NOT idempotent. Returns `{newMessageId}`.
    * @param {string} id @param {string} newTitle @param {string} ks
    * @throws {import('../core/errors.js').KalturaError} `code:'forbidden'` ("Not authorized for this message") for both an unknown `id` and one that belongs to another partner — the backend doesn't distinguish the two cases, live-confirmed against production.

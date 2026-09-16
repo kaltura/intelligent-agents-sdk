@@ -143,6 +143,8 @@ Partner-scoped read-only CSV — contains end-user IDs and verbatim questions (t
 
 SDK: `mgmt.messages.report(ks)` (raw CSV) / `mgmt.messages.reportSummary(ks)` (volume + feedback ratio + top questions, with a `_meta` provenance receipt).
 
+`mgmt.messages.get(id, ks)` (`POST {genieUrl}/message/get`) fetches one message record directly, without paging through `messages.list()`. An unknown id throws a typed `not_found`; one belonging to another partner throws `forbidden` instead.
+
 ---
 
 ## Knowledge Search (MCP)
