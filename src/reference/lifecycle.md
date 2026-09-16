@@ -43,6 +43,8 @@ The backend recognizes three `actionType` values you can create. A fourth, inter
 
 **`sendInsightEmail`** mails a rendered insight summary to `recipients` (Kaltura user ids, not raw email addresses; the messaging service resolves the actual email from that user's Kaltura profile), using either an explicit `templateId` or an auto-created `presetType` template (supports `{{template}}` placeholders like `{{object.user_id}}`). Only fires on `eventType:'analysis_updated'`. Attaching it to a `session_ended` rule is a server-side no-op.
 
+A `templateId` is more durable than a `presetType`: it points at a template you created yourself via [`mgmt.emailTemplates`](#emailtemplates-managing-the-templates-sendinsightemail-references) (see below), instead of depending on the backend finding-or-creating a preset template on first dispatch.
+
 ```js
 const sentiment = await mgmt.insightSettings.create({
   key: 'sentiment', title: 'Sentiment', prompt: 'Was the caller’s overall sentiment positive, neutral, or negative?', valueType: 'string',
@@ -75,6 +77,34 @@ await mgmt.insightSettings.delete(setting.id, ks, { confirmPermanent: true });  
 ```
 
 `valueType` is one of `'string'`/`'number'`/`'boolean'`/`'arrayString'`/`'arrayNumber'`/`'arrayBoolean'`. `prompt` is required. There's no built-in fallback prompt for any key name. `status` (`'active'`/`'disabled'`) controls whether a lifecycle rule referencing this id actually extracts it the next time it fires; deleting the entity instead just leaves any referencing rule's `insightSettingsIds` dangling (that id is simply skipped going forward).
+
+### `EmailTemplates`: managing the templates `sendInsightEmail` references
+
+An email template is `{id, appGuid, name, subject, body, toAttributePath, msgParamsMap, status, ...}` on the Kaltura Messaging API, a separate host from the rest of this SDK. Mounted at `mgmt.emailTemplates`:
+
+```js
+const template = await mgmt.emailTemplates.create({
+  appGuid: '<your-app-guid>',
+  name: 'Conversation insight alert',
+  subject: 'New insight on {recipient.firstName}\'s conversation',
+  body: '<p>{SUMMARY}</p>',
+  toAttributePath: '{recipient.email}',
+  msgParamsMap: { recipient: { type: 'User' }, SUMMARY: { type: 'String' } },
+}, ks); // WRITE, not idempotent
+
+await mgmt.lifecycle.create({
+  name: 'Email support lead when this agent\'s analysis updates',
+  systemName: 'analysis_alert_v1',
+  eventType: 'analysis_updated',
+  objectType: 'thread',
+  eventConditions: [{ field: 'object.agent_id', operator: 'eq', value: '<agent-uuid>' }],
+  action: { actionType: 'sendInsightEmail', recipients: ['<support-lead-kaltura-user-id>'], templateId: template.id },
+}, ks);
+```
+
+`appGuid`, `name`, `subject`, `body`, `toAttributePath`, and `msgParamsMap` are required. `body`/`subject`/`fromName` can reference the tokens declared in `msgParamsMap` (e.g. `{recipient.firstName}`). The rest of the CRUD surface — `get`/`list`/`update`/`delete` — is in the [method table](#full-crud--discovery-method-table) below.
+
+This is the one resource in this SDK that authenticates with a plain `Authorization: Bearer <KS>` header instead of the `Authorization: KS <ks>` scheme every other resource uses — same admin KS, different header, because it's a different backend.
 
 ---
 
@@ -173,6 +203,16 @@ All against `https://api.avatar.us.kaltura.ai`. SDK: `mgmt.lifecycle`.
 | `insightSettings.list(ks, opts)` | `POST /v1/insight-settings/list` | READ | `{offset,limit}` pager; `opts.filter` (`statusEqual`, `idsIn`) and `opts.orderBy` pass through 1:1 |
 | `insightSettings.update(id, patch, ks)` | `POST /v1/insight-settings/update` | WRITE, idempotent | |
 | `insightSettings.delete(id, ks, confirm)` | `POST /v1/insight-settings/delete` | WRITE, destructive | `requireConfirm` gate; response is `{success}`, not `{id}`; does not cascade, see [`InsightSettings`](#insightsettings-reusable-insight-definitions) |
+
+`EmailTemplates`, SDK: `mgmt.emailTemplates`. Kaltura Messaging API, not Agentic — `Authorization: Bearer <KS>`, not `Authorization: KS <ks>`:
+
+| Method | Endpoint | Kind | Notes |
+|---|---|---|---|
+| `emailTemplates.create(template, ks)` | `POST email-template/add` | WRITE, not idempotent | returns the full created template, including its generated `id` |
+| `emailTemplates.get(id, ks)` | `POST email-template/get` | READ | |
+| `emailTemplates.list(ks, opts)` | `POST email-template/list` | READ | `{offset,limit}` pager; `opts.filter` (`idIn`, `appGuidIn`, `nameEq`, `status`, ...) passes through 1:1 |
+| `emailTemplates.update(id, patch, ks)` | `POST email-template/update` | WRITE, idempotent | server increments `version` on every call |
+| `emailTemplates.delete(id, ks, confirm)` | `POST email-template/delete` | WRITE, destructive | `requireConfirm` gate; soft-delete (`status:'deleted'`); a rule still pinning this id as `templateId` silently stops sending, see [`EmailTemplates`](#emailtemplates-managing-the-templates-sendinsightemail-references) |
 
 ---
 
