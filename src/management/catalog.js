@@ -143,8 +143,8 @@ export class Catalog {
       fd.append('itemId', opts.itemId);
       fd.append('file', opts.file);
       if (opts.attributes) fd.append('attributes', JSON.stringify(opts.attributes));
-      // Multipart adminTags is parsed as a comma-separated bare string — send the
-      // single-parse shape, NOT JSON.stringify (see _upload's adminTags note).
+      // Multipart adminTags needs one repeated field per tag, NOT a comma-joined
+      // string or JSON.stringify (see _upload's adminTags note).
       if (opts.adminTags) appendAdminTags(fd, opts.adminTags);
       return (await this._.agenticMultipart('catalog-item/update', fd, ks)).data;
     }
@@ -167,14 +167,15 @@ export class Catalog {
   /**
    * Multipart upload primitive for createVoice/createVisual.
    *
-   * adminTags ENCODING: the multipart
-   * `adminTags` field is parsed by the API as a COMMA-SEPARATED bare string into
-   * an array — so the value must be the bare `custom` (parsed once → stored
-   * `["custom"]`), NOT `JSON.stringify(['custom'])`. Sending the JSON string
-   * `["custom"]` makes the API re-wrap it, storing `["[\"custom\"]"]`, so the
-   * item is then NOT findable by `catalog.list` filtered on `adminTagsIn:
-   * ['custom']`. Use {@link appendAdminTags} for the correct single-parse shape.
-   * (Also documented in API-REFERENCE §1.1, keep both in sync.)
+   * adminTags ENCODING: the multipart `adminTags` field wraps a single bare
+   * scalar into a one-element array, so ONE tag can be sent as the bare
+   * `custom` (stored `["custom"]`) — but it does NOT split a comma-joined
+   * value. Multiple tags need one repeated `adminTags` field per tag (see
+   * {@link appendAdminTags}), never `custom,other` (stored as one literal tag)
+   * and never `JSON.stringify(['custom'])` (double-encoded, stored as
+   * `["[\"custom\"]"]`) — both leave the item unfindable by `catalog.list`
+   * filtered on `adminTagsIn: ['custom']`.
+   * (Also documented in docs/api/design.md § Upload a Custom Voice/Visual, keep both in sync.)
    * @param {Blob|File} file @param {object} attributes @param {import('./client.js').KsLike} ks @param {string} [mime]
    * @param {string} [consentRef] @param {string} [kind]
    */
@@ -218,16 +219,19 @@ export function newFormData(detail = 'Uploads need global FormData (Node ≥18 /
 }
 
 /**
- * Append `adminTags` to a multipart FormData in the single-parse shape the API
- * expects: a COMMA-SEPARATED bare string (e.g. `custom` or `a,b`). The multipart
- * endpoint parses this field into an array itself — passing `JSON.stringify(tags)`
- * double-encodes it (stored as `["[\"custom\"]"]`, then unfindable by
- * `adminTagsIn`). JSON BODY requests carry a real array and must NOT use this.
+ * Append `adminTags` to a multipart FormData the way the API expects for
+ * MULTIPLE values: one `adminTags` field per tag (a repeated multipart field
+ * name), never a single comma-joined string. The API parses a bare scalar
+ * field into a one-element array, but does NOT split a comma-joined value —
+ * `fd.append('adminTags', 'a,b')` stores ONE literal tag `"a,b"`, not two.
+ * `JSON.stringify(tags)` is wrong too: it double-encodes (stored as
+ * `["[\"custom\"]"]`, then unfindable by `adminTagsIn`). JSON BODY requests
+ * carry a real array and must NOT use this.
  * @param {FormData} fd @param {string[]} tags
  */
 function appendAdminTags(fd, tags) {
   const list = Array.isArray(tags) ? tags : [tags];
-  fd.append('adminTags', list.map((t) => String(t)).join(','));
+  for (const t of list) fd.append('adminTags', String(t));
 }
 /** @param {Blob|File} file @param {string} [mime] */
 function fileName(file, mime) {
