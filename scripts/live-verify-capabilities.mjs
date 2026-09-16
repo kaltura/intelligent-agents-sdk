@@ -54,6 +54,7 @@ function record(step, ok, detail) {
 const kaltura = new Management({ partnerId, adminSecret });
 let admin;
 let ruleId;
+let ruleId2;
 let insightSettingId;
 let failed = false;
 
@@ -111,12 +112,26 @@ try {
       systemName: runId,
       eventType: 'session_ended',
       objectType: 'thread',
-      action: { actionType: 'triggerInsightSettingsKai', insightSettingsIds: [insightSettingId] },
+      action: { actionType: 'sendInsightEmail', recipients: ['live-verify@example.com'] },
     },
     admin,
   );
   ruleId = created.id;
   record('lifecycle.create', true, { id: ruleId, status: created.status });
+
+  // ── Lifecycle: second action type, triggerInsightSettingsKai ────────────
+  const created2 = await kaltura.lifecycle.create(
+    {
+      name: `${runId}-rule-2`,
+      systemName: `${runId}_2`,
+      eventType: 'session_ended',
+      objectType: 'thread',
+      action: { actionType: 'triggerInsightSettingsKai', insightSettingsIds: [insightSettingId] },
+    },
+    admin,
+  );
+  ruleId2 = created2.id;
+  record('lifecycle.create (triggerInsightSettingsKai)', true, { id: ruleId2, status: created2.status });
 
   const got = await kaltura.lifecycle.get(ruleId, admin);
   record('lifecycle.get', true, { id: got.id, status: got.status });
@@ -153,6 +168,15 @@ try {
     } catch (err) {
       failed = true;
       record('lifecycle.delete', false, { id: ruleId, message: err?.detail || err?.message || String(err) });
+    }
+  }
+  if (ruleId2) {
+    try {
+      const del = await kaltura.lifecycle.delete(ruleId2, admin, { confirmPermanent: true });
+      record('lifecycle.delete (triggerInsightSettingsKai)', del.success === true, del);
+    } catch (err) {
+      failed = true;
+      record('lifecycle.delete (triggerInsightSettingsKai)', false, { id: ruleId2, message: err?.detail || err?.message || String(err) });
     }
   }
   if (insightSettingId) {

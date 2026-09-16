@@ -184,17 +184,18 @@ export function createPeerConnection(RTCCtor, config) {
  * appInit) MUST be included — without it the session server accepts the
  * socket and emits `onServerConnected` but then never responds to `join`
  * (no `clientConfiguration`/`joinComplete`), and the connect stalls/drops.
- * @param {object} opts {room, ks, threadId?, entryId?, contextId?, capabilities?, userAgent?, isMobile?, client?, requestVars?}
+ * @param {object} opts {room, ks, threadId?, entryId?, contextId?, contextType?, capabilities?, userAgent?, isMobile?, client?, requestVars?}
  */
 export function buildJoin(opts) {
   const kaltura = {
-    context_id: opts.contextId,
+    contextId: opts.contextId,
     threadId: opts.threadId,
     force_experience: 'avatar_only',
     capabilities: opts.capabilities || { avatar: 'on', generate_followup_questions: 'on' },
   };
   if (opts.ks) kaltura.ks = opts.ks;          // required by the live runtime to advance past join
   if (opts.entryId) kaltura.entryId = opts.entryId;
+  if (opts.contextType) kaltura.contextType = opts.contextType;
   // Join-time `{{var}}` values — already validated by the caller
   // (`assertRequestVars`) before this is built; passed through as-is on the wire.
   if (opts.requestVars) kaltura.request_vars = opts.requestVars;
