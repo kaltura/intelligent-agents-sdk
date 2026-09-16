@@ -223,16 +223,20 @@ await kaltura.intellects.setCapability(configId, 'use_knowledge_base', 'on', adm
 
 ## Lifecycle — react to session/thread events without polling
 
-A **rule** = `eventType` + `objectType` (currently only `'thread'`) + optional `eventConditions[]` + one **action**. Four `actionType` values exist, but only two are for partner use: `triggerInsight` (extract structured insights with an LLM) and `sendInsightEmail` (email a human once an insight lands). The other two (`triggerOverridableSummaryInsight`, `triggerDataToCollectInsight`) only power system preset rules — creating them yourself is accepted but has no effect. The backend evaluates every active rule (yours plus its own system-seeded presets) whenever a matching event fires — no polling required.
+A **rule** = `eventType` + `objectType` (currently only `'thread'`) + optional `eventConditions[]` + one **action**. Three `actionType` values are partner-creatable: `triggerInsightSettingsKai` (extract structured insights with an LLM, referencing one or more `InsightSettings` entities by id via `insightSettingsIds`), `sendInsightEmail` (email a human once an insight lands), and `triggerDtcKai` (turns the target intellect's configured lead-capture form fields into insights, no fields of your own). A fourth, internal-only value powers the fixed system summary preset and is never constructed by a caller. The backend evaluates every active rule (yours plus its own system-seeded presets) whenever a matching event fires — no polling required.
 
 ```js
+const topic = await kaltura.insightSettings.create({
+  key: 'TOPIC', title: 'Topic', prompt: 'What was the main topic of this conversation, in 1-3 words?', valueType: 'string',
+}, admin.ks);
+
 const rule = await kaltura.lifecycle.create({
   name: 'Extract a topic for every ended session',
   eventType: 'session_ended',
   objectType: 'thread',
   // Don't request SUMMARY yourself — every partner already gets one for free
-  // from an always-on preset rule; your own SUMMARY entry would be a no-op.
-  action: { actionType: 'triggerInsight', insights: [{ insightKey: 'TOPIC', valueType: 'string' }] },
+  // from an always-on preset rule; there's no field anywhere to customize it.
+  action: { actionType: 'triggerInsightSettingsKai', insightSettingsIds: [topic.id] },
 }, admin.ks);
 
 const rules = await kaltura.lifecycle.list(admin.ks, { pageSize: 30 });

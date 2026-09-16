@@ -2,13 +2,16 @@
 /**
  * Live-backend verification for 4 newly-added capabilities — real Kaltura
  * API, no fakes: Knowledge#list, Application#getCustomPrompts,
- * Avatars#listTemplates, and the full Lifecycle domain (9 methods).
+ * Avatars#listTemplates, and the full Lifecycle domain (9 methods) plus the
+ * InsightSettings domain a `triggerInsightSettingsKai` lifecycle action
+ * references.
  *
  * Mints an admin token, exercises each method against production, and for
- * Lifecycle runs a full create -> get/list -> match -> update -> delete
- * cycle with try/finally teardown. Writes a timestamped JSON artifact with
- * real request ids and trimmed response excerpts as proof this hit the
- * live backend, not a mock.
+ * Lifecycle runs a full create (referencing a scratch InsightSettings
+ * entity) -> get/list -> match -> update -> delete cycle with try/finally
+ * teardown of both the rule and the insight setting. Writes a timestamped
+ * JSON artifact with real request ids and trimmed response excerpts as
+ * proof this hit the live backend, not a mock.
  *
  * Credentials: AGENTIC_PARTNER_ID / AGENTIC_ADMIN_SECRET, from the
  * environment or a .env file in the repo root (same convention as
@@ -51,6 +54,7 @@ function record(step, ok, detail) {
 const kaltura = new Management({ partnerId, adminSecret });
 let admin;
 let ruleId;
+let insightSettingId;
 let failed = false;
 
 try {
@@ -92,6 +96,14 @@ try {
     fieldCount: fields.fields?.length,
   });
 
+  // ── InsightSettings: create the insight a lifecycle rule will reference ──
+  const insightSetting = await kaltura.insightSettings.create(
+    { key: `${runId}_outcome`, title: `${runId} outcome`, prompt: 'Did the call end in a sale, a follow-up, or no interest?', valueType: 'string' },
+    admin,
+  );
+  insightSettingId = insightSetting.id;
+  record('insightSettings.create', !!insightSettingId, { id: insightSettingId, status: insightSetting.status });
+
   // ── Lifecycle: full CRUD + match cycle ──────────────────────────────────
   const created = await kaltura.lifecycle.create(
     {
@@ -99,7 +111,7 @@ try {
       systemName: runId,
       eventType: 'session_ended',
       objectType: 'thread',
-      action: { actionType: 'triggerInsight', insights: [{ insightKey: 'SUMMARY', valueType: 'string' }] },
+      action: { actionType: 'triggerInsightSettingsKai', insightSettingsIds: [insightSettingId] },
     },
     admin,
   );
@@ -120,7 +132,7 @@ try {
   );
   const allRuleIds = (matched.matchedRules || []).flatMap((g) => g.rules.map((r) => r.id));
   const foundInMatch = allRuleIds.includes(ruleId);
-  const presetFound = allRuleIds.includes('preset__overridable_summary_on_session_ended');
+  const presetFound = allRuleIds.includes('preset__summary_on_session_ended');
   record('lifecycle.match', foundInMatch, {
     groupCount: matched.matchedRules?.length,
     allRuleIds,
@@ -141,6 +153,15 @@ try {
     } catch (err) {
       failed = true;
       record('lifecycle.delete', false, { id: ruleId, message: err?.detail || err?.message || String(err) });
+    }
+  }
+  if (insightSettingId) {
+    try {
+      const del = await kaltura.insightSettings.delete(insightSettingId, admin, { confirmPermanent: true });
+      record('insightSettings.delete', del.success === true, del);
+    } catch (err) {
+      failed = true;
+      record('insightSettings.delete', false, { id: insightSettingId, message: err?.detail || err?.message || String(err) });
     }
   }
 }
