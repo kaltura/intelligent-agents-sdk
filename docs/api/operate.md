@@ -134,9 +134,9 @@ Call this the moment a conversation is genuinely over, instead of waiting for th
 
 `KalturaAvatarSession`/`KalturaChatSession`/`KalturaAgentSession` call this automatically on `disconnect()` (`sessionCompleteOnEnd`, default `true`) and on tab-close/backgrounding/bfcache. See [README.md § Ending a conversation cleanly](../../README.md#ending-a-conversation-cleanly-session_completed-signal) for the full config surface, and [wire-protocol/events-catalog.md § Session-completion signal](../wire-protocol/events-catalog.md#session-completion-signal--tell-the-backend-a-conversation-is-truly-over) for the exact request shape.
 
-## Thread History and Per-Turn Cost
+## Thread History and Context Size
 
-There is no documented cap on how long a thread's history can grow. The full transcript is sent as model context on every turn, so per-turn cost grows with thread length. Plan long-running threads accordingly: start a fresh thread per task, and delete threads you no longer need.
+There is no documented cap on how long a thread's history can grow. The full transcript is sent as model context on every turn, so the context each turn carries grows with thread length. Plan long-running threads accordingly: start a fresh thread per task, and delete threads you no longer need.
 
 ---
 
