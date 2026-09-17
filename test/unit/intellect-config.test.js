@@ -31,7 +31,7 @@ test('SKILL_MODES / THINKING_LEVELS / SUMMARY_CONTENT_TYPES / CALL_STAGES are fr
   assert.deepEqual([...CALL_STAGES], ['start', 'middle', 'end']);
 });
 
-test('MODEL_IDS lists the nine selectable model ids (Claude Sonnet/Haiku us+eu, Gemini)', () => {
+test('MODEL_IDS lists the twelve selectable model ids (Claude Sonnet/Haiku us+eu, Gemini)', () => {
   assert.deepEqual([...MODEL_IDS], [
     'us.anthropic.claude-sonnet-4-20250514-v1:0',
     'eu.anthropic.claude-sonnet-4-20250514-v1:0',
@@ -42,6 +42,9 @@ test('MODEL_IDS lists the nine selectable model ids (Claude Sonnet/Haiku us+eu, 
     'gemini-3.1-flash-lite',
     'gemini-3.5-flash-lite',
     'gemini-3.5-flash',
+    'gemini-3.6-flash',
+    'gemini-3.7-flash',
+    'gemini-3.8-flash',
   ]);
   assert.equal(new Set(MODEL_IDS).size, MODEL_IDS.length, 'no duplicates');
 });
