@@ -8,9 +8,13 @@ Design guidance for app builders deciding **how a viewer's input reaches the age
 | **Push-to-talk** | `KalturaAvatarSession` (`isTapToTalk`) | Prompted at connect* | Viewer opens/closes a capture window (`startTapToTalk()`/`endTapToTalk()`) |
 | **Chat (text-only)** | `KalturaChatSession` | **Never requested** — the class never touches `getUserMedia` or WebRTC | `sendText('…')` over plain HTTPS |
 
-\* Or deferred: `micStartMode: 'deferred'` connects the avatar session with no mic at all, and the app calls `startMic()` later from a real user click, so the permission prompt is gesture-anchored instead of firing on page load. Until then, typed turns work; `startTapToTalk()` throws `mic_not_started`. See [README.md](../README.md#devices-and-media-quality).
+\* Or deferred: `micStartMode: 'deferred'` connects the avatar session with no mic at all. The app calls `startMic()` later from a real user click, so the permission prompt is gesture-anchored instead of firing on page load. Until then, typed turns work, but `startTapToTalk()` throws `mic_not_started`. See [README.md](../README.md#devices-and-media-quality).
 
-The first two are **voice-capture** modes on the live avatar transport; most of this doc is about choosing between them and building their UI. Chat mode is a full text-only transport — same brain, same tools, same thread — covered in [README.md](../README.md#text-only-chat-kalturachatsession), with mid-conversation switching between avatar and chat via `KalturaAgentSession` ([switching section below](#switching-between-avatar-and-chat-mid-conversation)). For the wire mechanics of `startTapToTalk()`/`endTapToTalk()` see [README.md](../README.md#tap-to-talk-push-to-talk-voice), and for the exact socket events see [WIRE-PROTOCOL.md](WIRE-PROTOCOL.md) (`tapToTalkStart`/`tapToTalkEnd`, `isTapToTalk`).
+The first two are **voice-capture** modes on the live avatar transport. Most of this doc is about choosing between them and building their UI.
+
+Chat mode is a full text-only transport, with the same [brain](../README.md#architecture), same tools, and same thread as the voice modes. It's covered in [README.md](../README.md#text-only-chat-kalturachatsession), including mid-conversation switching between avatar and chat via `KalturaAgentSession` ([switching section below](#switching-between-avatar-and-chat-mid-conversation)).
+
+For the wire mechanics of `startTapToTalk()`/`endTapToTalk()`, see [README.md](../README.md#tap-to-talk-push-to-talk-voice). For the exact socket events, see [WIRE-PROTOCOL.md](WIRE-PROTOCOL.md) (`tapToTalkStart`/`tapToTalkEnd`, `isTapToTalk`).
 
 Text input is not voice-mode-exclusive: an avatar session accepts typed turns too (`session.speak(text)` — see [CLIENT-COMMANDS.md](CLIENT-COMMANDS.md) and README). Offering a text box *alongside* either voice mode is how the SDK satisfies EN 301 549 §6.2.1.2 (concurrent voice and text) — see [README.md](../README.md#accessibility-wcag-22-aa--captions--ai-disclosure-gate).
 
@@ -20,7 +24,7 @@ Text input is not voice-mode-exclusive: an avatar session accepts typed turns to
 
 This is not a UI-polish preference. It is a correctness requirement.
 
-**Don't rely on anything else to catch a mismatch for you.** The SDK's own client-side gate (`startTapToTalk()` throws `capability_disabled` unless `session.capabilities.tapToTalk`) is what stops your UI from opening a tap-to-talk window on an agent configured for open-mic. Build your UI to match the agent's single configured mode — never render a tap-to-talk control against an open-mic agent, or vice versa. Mixing them produces double-cut or missed turns (see [WIRE-PROTOCOL.md](WIRE-PROTOCOL.md)'s `tapToTalkStart`/`tapToTalkEnd` row for the event pair involved).
+**Don't rely on anything else to catch a mismatch for you.** The SDK's own client-side gate (`startTapToTalk()` throws `capability_disabled` unless `session.capabilities.tapToTalk`) stops your UI from opening a tap-to-talk window on an agent configured for open-mic. Build your UI to match the agent's single configured mode. Never render a tap-to-talk control against an open-mic agent, or vice versa. Mixing them produces double-cut or missed turns (see [WIRE-PROTOCOL.md](WIRE-PROTOCOL.md)'s `tapToTalkStart`/`tapToTalkEnd` row for the event pair involved).
 
 Every push-to-talk/open-mic product draws the same line — one active capture mechanism, chosen once, not a live per-session toggle exposing both:
 
@@ -41,7 +45,7 @@ Every push-to-talk/open-mic product draws the same line — one active capture m
 | The environment is relatively quiet / single-speaker (a kiosk, a 1:1 demo) | The environment is noisy or multi-speaker, and VAD would false-trigger on background talk | Bandwidth is constrained — no video, no WebRTC, just HTTPS request/response |
 | You want zero-friction "just speak naturally" — no button to find or learn | Viewers need an explicit, deliberate boundary on when the mic is live (privacy-sensitive settings, shared/public devices) | You need a zero-permission-prompt entry point; the viewer can switch up to the full avatar later without losing the thread |
 
-If your viewers will regularly speak in full sentences or ask multi-part questions, open-mic is the better default. Neither mode is inherently better — press-and-hold can strain a viewer's hand on a long dictation, and VAD-based toggle can cut a speaker off mid-thought on long unstructured reasoning. Which complaint you'll hear from your own viewers tracks utterance length, not a fixed advantage of one mode over the other.
+If your viewers will regularly speak in full sentences or ask multi-part questions, open-mic is the better default. Neither mode is inherently better. Press-and-hold can strain a viewer's hand on a long dictation, and VAD-based toggle can cut a speaker off mid-thought on long unstructured reasoning. Which complaint you'll hear from your own viewers tracks utterance length, not a fixed advantage of one mode over the other.
 
 ## UX pattern: click-to-toggle, not press-and-hold
 
@@ -51,14 +55,14 @@ Prefer a single click/tap to open the capture window and a second click/tap to c
 - **Screen readers.** Sustained-hold gestures are poorly supported by mobile screen readers (Android TalkBack has no native single-tap "hold" gesture — it requires double-tap-then-hold). Toggle needs only a single activation gesture, which every screen reader supports natively.
 - **Usability at length.** Holding a button for the duration of a multi-sentence question is physically awkward and blocks other interaction (scrolling, reading) with the holding hand/thumb.
 
-If your product genuinely needs walkie-talkie-style short bursts (not this SDK's typical investor-deck or knowledge-avatar use case), a press-and-hold-with-slide-to-lock hybrid (WhatsApp's pattern) is the documented middle ground — but start from toggle and only move to hold-based capture if you have evidence your utterances are consistently short.
+If your product genuinely needs walkie-talkie-style short bursts (not this SDK's typical investor-deck or knowledge-avatar use case), a press-and-hold-with-slide-to-lock hybrid (WhatsApp's pattern) is the documented middle ground. Start from toggle, and only move to hold-based capture if you have evidence your utterances are consistently short.
 
 ## Visual and non-visual state feedback
 
 Give the viewer three redundant signals that the mic is live, not one:
 
 1. **Icon/color change** on the button itself (e.g. this SDK's existing `#btn-mute` icon-swap pattern, mirror that structure for a tap-to-talk button: swap an idle-mic icon for a recording icon, not just an `aria-pressed` attribute change).
-2. **An animated level indicator** — a waveform, pulsing glow, or (simplest, and already available) this SDK's `localMicLevel` event (`{level}`, 0–1, ~50ms tick) driving a CSS custom property, exactly as this SDK's own mute button already does for open-mic. A single static icon alone is not enough (NN/g's critique of Amazon Echo's single light ring as "a far cry from rich textual feedback").
+2. **An animated level indicator** — a waveform, pulsing glow, or (simplest, and already available) this SDK's `localMicLevel` event (`{level}`, 0–1, ~50ms tick) driving a CSS custom property. This SDK's own mute button already does this for open-mic. A single static icon alone is not enough (NN/g's critique of Amazon Echo's single light ring as "a far cry from rich textual feedback").
 3. **A live-region text or caption update** (`aria-live`) confirming state changes ("Listening…" / "Sent") — necessary for screen-reader users who can't see the icon/waveform at all. Pair with an audio cue (a short start/stop tone) as an additional non-visual channel if your app's audio design allows it.
 
 ## Safety: don't let a capture window hang open forever
@@ -67,12 +71,12 @@ A tap window that never closes (tab closed mid-recording, app crash, network dro
 
 - **Silence-based auto-stop** — close the window automatically after a period of continuous silence, so a forgotten "open" mic doesn't stay live indefinitely.
 - **A hard max-duration cap** — an absolute ceiling regardless of speech/silence, as a backstop.
-- **Treat disconnect/`pagehide`/`visibilitychange` as an implicit close** — the browser's own `getUserMedia`/socket teardown on tab close is the only mechanism that reliably fires when the viewer abandons the tab mid-recording; call `endTapToTalk()` (or just let `disconnect` naturally end the session) from those events rather than assuming a clean call will always arrive.
+- **Treat disconnect/`pagehide`/`visibilitychange` as an implicit close** — the browser's own `getUserMedia`/socket teardown on tab close is the only mechanism that reliably fires when the viewer abandons the tab mid-recording. Call `endTapToTalk()` (or just let `disconnect` naturally end the session) from those events, rather than assuming a clean call will always arrive.
 
 ## Implementation checklist
 
 1. Decide the agent's mode **at provisioning time** — `isTapToTalk` is a fixed per-agent deployment choice (set wherever your app builds its intellect/session config), not something your UI code branches on live.
-2. Build the UI conditionally on `session.capabilities.tapToTalk` (derived from `clientConfiguration.isTapToTalk`) — render a tap-to-talk control only when true, and never render both a tap-to-talk control and an open-mic affordance for the same session.
+2. Build the UI conditionally on `session.capabilities.tapToTalk` (derived from `clientConfiguration.isTapToTalk`). Render a tap-to-talk control only when true. Never render both a tap-to-talk control and an open-mic affordance for the same session.
 3. Wire click-to-toggle calling `session.startTapToTalk()`/`session.endTapToTalk()`, updating `aria-pressed` and an icon/level indicator on `tapToTalkStarted`/`tapToTalkEnded` — see the conditional-UI example in [README.md](../README.md#tap-to-talk-push-to-talk-voice).
 4. Add the silence/max-duration/abandonment safeguards above; the SDK does not impose them for you.
 5. Update any UI copy that currently assumes continuous listening (e.g. a text-input placeholder like "...or just speak naturally") — that copy is wrong for a tap-to-talk agent and should describe the button instead.
@@ -90,11 +94,11 @@ A tap window that never closes (tab closed mid-recording, app crash, network dro
 | `connected` | transport dies | `failed` + `ended` forwarded | Socket drop, server end |
 | any | `disconnect()` | `closed` | Idempotent; exactly one `ended {reason:'disconnected'}` |
 
-`modeChanged.threadContinuity` tells you which happened: `true` means the new transport was seeded with the live thread (show "conversation restored"); `false` means no turn had happened yet, so there was no thread to carry.
+`modeChanged.threadContinuity` tells you which happened. `true` means the new transport was seeded with the live thread (show "conversation restored"). `false` means no turn had happened yet, so there was no thread to carry.
 
 Two UX rules for the switch:
 
-- **Switching INTO a voice mode prompts for the mic.** Browsers require a live user gesture for `getUserMedia`, and a prior grant in chat mode doesn't exist to reuse. Route `switchMode('avatar')` through a real click target (a "Continue with video" button), never a state-change callback — a programmatic call outside a gesture gets auto-denied, landing the session in `failed` (`reason: 'permission_denied'` on the initial connect path).
+- **Switching INTO a voice mode prompts for the mic.** Browsers require a live user gesture for `getUserMedia`, and a prior grant in chat mode doesn't exist to reuse. Route `switchMode('avatar')` through a real click target (a "Continue with video" button), never a state-change callback. A programmatic call outside a gesture gets auto-denied, landing the session in `failed` (`reason: 'permission_denied'` on the initial connect path).
 - **Expect a brief reconnect blip.** Switching is tear-down-and-reconstruct by design — show a transient "switching…" state on the facade's `stateChange {state:'switching'}` event rather than hiding it. `sendText()` calls during the blip are buffered (up to 8) and delivered in order on the new transport.
 
 ## Related docs

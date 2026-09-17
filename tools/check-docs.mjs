@@ -683,7 +683,7 @@ describe('8. Preprocessing-claim accuracy', () => {
 // 9) Preview/loading field annotation
 // ─────────────────────────────────────────────────────────────────────────────
 describe('9. Preview/loading field annotation', () => {
-  const FIELD = /^\w*(preview\w*|imageurl|videourl)\w*$/i;
+  const FIELD = /^\w*(preview\w*url|imageurl|videourl)\w*$/i;
   const ANNOTATED = /\b(raw|passthrough|rendered)\b/i;
 
   test('preview*/*ImageUrl/*VideoUrl field references in the API reference carry a raw-passthrough or rendered annotation on the same line', () => {

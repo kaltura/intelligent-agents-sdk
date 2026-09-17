@@ -1,6 +1,6 @@
-# Recipe — Pause the Avatar for Video/Interactive Content, Then Resume
+# Recipe: Pause the Avatar for Video/Interactive Content, Then Resume
 
-How to pause a live avatar conversation while you show a video, quiz, or any other on-screen content, then hand the turn back to the avatar cleanly — covering both the happy path (content plays to completion) and the case where it's skipped or never finishes (don't leave the avatar stuck paused). Built entirely from two existing `KalturaAvatarSession` methods — no new SDK surface, no server-side glue.
+How to pause a live avatar conversation while you show a video, quiz, or any other on-screen content, then hand the turn back to the avatar cleanly. This covers both the happy path (content plays to completion) and the case where it's skipped or never finishes (don't leave the avatar stuck paused). Built entirely from two existing `KalturaAvatarSession` methods, with no new SDK surface and no server-side glue.
 
 ---
 
@@ -9,35 +9,41 @@ How to pause a live avatar conversation while you show a video, quiz, or any oth
 Two methods on a connected `KalturaAvatarSession` (see [WIRE-PROTOCOL.md](WIRE-PROTOCOL.md)'s `pauseConversation`/`resumeConversation` for the wire shape):
 
 ```js
-session.pause();          // sync — stops the turn loop
-await session.resume();   // async — hands the turn loop back
+session.pause();          // sync: stops the turn loop
+await session.resume();   // async: hands the turn loop back
 ```
 
-**`pause()`** sets `session.paused = true` and tells the server to stop the turn loop (`pauseConversation`). It's synchronous — there's nothing to await. A `speak()` call made while paused is accepted client-side (no throw) but the server produces no reply — the brain simply doesn't respond until you resume. Don't drive the avatar with `speak()`/ASR while your content is on screen; that's on your app, the SDK doesn't block it for you.
+**`pause()`** sets `session.paused = true` and tells the server to stop the turn loop (`pauseConversation`). It's synchronous, so there's nothing to await. A `speak()` call made while paused is accepted client-side (no throw), but the server produces no reply. The avatar simply doesn't respond until you resume. Don't drive the avatar with `speak()`/ASR while your content is on screen; that's on your app, the SDK doesn't block it for you.
 
-**`resume()`** always sets `session.paused = false` immediately, then takes the right path for how the pause played out — two common ones depending on how long you were paused (a third, rarer one is covered below):
+**`resume()`** always sets `session.paused = false` immediately, then takes the right path for how the pause played out. There are two common paths, depending on how long you were paused (a third, rarer one is covered below):
 
-- **Short pause (the common case):** the server still has your session held open. `resume()` just emits `resumeConversation` and returns — cheap, near-instant (resolved in ~1ms in a real session).
-- **Long pause (the server released the session):** if the pause window expired before you called `resume()`, the server already tore down your STV/ASR transports and told the SDK so (`pauseSessionExpired` / `sessionReadyForResume` — see below). `resume()` detects this internally and rebuilds the ASR (and, in video mode, STV) transports against a fresh session before handing the turn loop back — the same connect machinery `connect()` itself uses. This path takes as long as a fresh media (re)negotiation, not the ~1ms of the short path.
+- **Short pause (the common case):** the server still has your session held open. `resume()` just emits `resumeConversation` and returns. It's cheap and near-instant (resolved in ~1ms in a real session).
+- **Long pause (the server released the session):** if the pause window expired before you called `resume()`, the server already tore down your STV/ASR transports and told the SDK so (`pauseSessionExpired` / `sessionReadyForResume`, see below). `resume()` detects this internally and rebuilds the ASR (and, in video mode, STV) transports against a fresh session before handing the turn loop back. This uses the same connect machinery `connect()` itself uses. This path takes as long as a fresh media (re)negotiation, not the ~1ms of the short path.
 
-**You never need to branch on which path it takes.** Always just `await session.resume()` — it picks the right one for you. The exact length of the pause window before the server releases the session isn't a published constant; don't rely on an exact number, and always resume via one of the triggers below rather than assuming a pause lasts as long as you need it to.
+**You never need to branch on which path it takes.** Always just `await session.resume()`. It picks the right one for you. The exact length of the pause window before the server releases the session isn't a published constant. Don't rely on an exact number. Always resume via one of the triggers below, rather than assuming a pause lasts as long as you need it to.
 
-**Calling `resume()` is safe in every case that matters for this recipe.** This is confirmed immediately after `pause()` (zero delay), when the session was never paused, and when it was already resumed. It's also safe when the SDK's own connectivity recovery rebuilt the session *while* you were paused: a stalled/expired media channel can trigger an internal `_coldReconnect()` that rebuilds the transports on its own, without your app calling `resume()` (see [WIRE-PROTOCOL.md](WIRE-PROTOCOL.md) for the recovery events). Your pause survives that rebuild. The SDK keeps `session.paused` true and *holds* the rebuilt session's start signal instead of letting the avatar speak over your content. The moment you call `resume()`, the SDK releases that held signal: the rebuilt session starts and the avatar speaks its opening line. (No `resumeConversation` is sent on this path, since the fresh session was never paused server-side — there's nothing to "resume," only a start to release.) In every one of these cases `resume()` returns cleanly with `session.paused === false` and never hangs. That's why the edge-case handling below is just "call `resume()` from every exit path, unconditionally."
+**Calling `resume()` is safe in every case that matters for this recipe.** This is confirmed immediately after `pause()` (zero delay), when the session was never paused, and when it was already resumed.
 
-`resume()` can still reject for reasons unrelated to pause duration (a genuinely dead session, a real network failure mid-rebuild) — treat any rejection defensively regardless: catch it, and if `session.state` is still `'connected'`, the session is fine and there's nothing further to do.
+It's also safe when the SDK's own connectivity recovery rebuilt the session *while* you were paused. A stalled/expired media channel can trigger an internal `_coldReconnect()` that rebuilds the transports on its own, without your app calling `resume()` (see [WIRE-PROTOCOL.md](WIRE-PROTOCOL.md) for the recovery events). Your pause survives that rebuild. The SDK keeps `session.paused` true and *holds* the rebuilt session's start signal instead of letting the avatar speak over your content.
 
-You don't need to listen for any event to know resume worked — `await session.resume()` resolving is the only signal your app needs. Two events exist for optional UX polish, but neither is required:
+The moment you call `resume()`, the SDK releases that held signal: the rebuilt session starts and the avatar speaks its opening line. (No `resumeConversation` is sent on this path, since the fresh session was never paused server-side. There's nothing to "resume," only a start to release.)
+
+In every one of these cases, `resume()` returns cleanly with `session.paused === false` and never hangs. That's why the edge-case handling below is just "call `resume()` from every exit path, unconditionally."
+
+`resume()` can still reject for reasons unrelated to pause duration (a genuinely dead session, a real network failure mid-rebuild). Treat any rejection defensively regardless: catch it, and if `session.state` is still `'connected'`, the session is fine and there's nothing further to do.
+
+You don't need to listen for any event to know resume worked. `await session.resume()` resolving is the only signal your app needs. Two events exist for optional UX polish, but neither is required:
 
 | Event | When it fires | Use it for |
 |---|---|---|
-| `'resumed'` | The server's own `conversationResumed` ack arrives, after a `resumeConversation` you sent from your own `resume()` call. (One path sends no `resumeConversation` — releasing a session the SDK rebuilt mid-pause — so no `'resumed'` fires there; the promise resolving is still your signal) | Optional confirmation toast/log — `resume()`'s promise already told you it's done |
-| `'resumeReady'` / `'timeExpired'` (`{type:'pause_expiry'}`) | The pause window expired *while you were still paused, before you called `resume()`* | Optional "still there?" UI while paused long — not required; `resume()` handles this transparently whenever you do call it |
+| `'resumed'` | The server's own `conversationResumed` ack arrives, after a `resumeConversation` you sent from your own `resume()` call. (One path sends no `resumeConversation`, since it releases a session the SDK rebuilt mid-pause, so no `'resumed'` fires there. The promise resolving is still your signal.) | Optional confirmation toast/log. `resume()`'s promise already told you it's done. |
+| `'resumeReady'` / `'timeExpired'` (`{type:'pause_expiry'}`) | The pause window expired *while you were still paused, before you called `resume()`* | Optional "still there?" UI while paused long. Not required: `resume()` handles this transparently whenever you do call it. |
 
 ---
 
 ## Minimal runnable example
 
-Plain HTML/JS, no build step — matches the pattern in `examples/browser-experience.html`. Assumes a server endpoint `/appInit` that calls `Management.application.appInit()` for you (see [GETTING-STARTED.md](../GETTING-STARTED.md) and [API-REFERENCE.md § Initialize the Runtime](api/deploy.md#initialize-the-runtime)).
+Plain HTML/JS, no build step. This matches the pattern in `examples/browser-experience.html`. Assumes a server endpoint `/appInit` that calls `Management.application.appInit()` for you (see [GETTING-STARTED.md](../GETTING-STARTED.md) and [API-REFERENCE.md § Initialize the Runtime](api/deploy.md#initialize-the-runtime)).
 
 ```html
 <!doctype html>
@@ -55,12 +61,12 @@ Plain HTML/JS, no build step — matches the pattern in `examples/browser-experi
     <button id="skip">Skip</button>
   </div>
 
-  <!-- socket.io is YOUR dependency — injected, never bundled by the SDK. -->
+  <!-- socket.io is YOUR dependency, injected, never bundled by the SDK. -->
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js" integrity="sha384-2huaZvOR9iDzHqslqwpR87isEmrfxqyWOF7hr7BY6KG0+hVKLoEXMPUJw3ynWuhO" crossorigin="anonymous"></script>
   <script type="module">
     // Local dev: relative path into the repo. npm consumers import
     // '@kaltura/intelligent-agents/experience'; browser-only deploys pin a
-    // jsDelivr tag — see README.md § Browser via jsDelivr.
+    // jsDelivr tag, see README.md § Browser via jsDelivr.
     import { KalturaAvatarSession } from '../src/experience/index.js';
 
     const init = await fetch('/appInit').then((r) => r.json());
@@ -83,14 +89,14 @@ Plain HTML/JS, no build step — matches the pattern in `examples/browser-experi
     const clip = document.getElementById('clip');
 
     document.getElementById('play').onclick = () => {
-      // 1) Pause BEFORE the content starts — the avatar goes quiet immediately.
+      // 1) Pause BEFORE the content starts. The avatar goes quiet immediately.
       session.pause();
       overlay.hidden = false;
       clip.currentTime = 0;
       clip.play();
 
       // 2) Resume from EVERY exit path, exactly once. resume() is safe to call
-      //    more than once (or when not paused at all) — this guard just avoids
+      //    more than once (or when not paused at all). This guard just avoids
       //    a redundant resumeConversation emit, not a correctness requirement.
       let resumed = false;
       const resumeOnce = () => {
@@ -99,7 +105,7 @@ Plain HTML/JS, no build step — matches the pattern in `examples/browser-experi
         overlay.hidden = true;
         session.resume().catch((e) => {
           // Defensive: resume() can still reject for reasons unrelated to this recipe (a
-          // genuinely dead session, a network failure mid-rebuild) — check session.state
+          // genuinely dead session, a network failure mid-rebuild). Check session.state
           // before treating it as fatal.
           if (session.state !== 'connected') console.error('resume failed', e);
         });
@@ -115,13 +121,13 @@ Plain HTML/JS, no build step — matches the pattern in `examples/browser-experi
 </html>
 ```
 
-That's the whole recipe — one `pause()` call before the content shows, one `resume()` call wired to every way the content can end (finished, failed, skipped, or simply taking too long). No custom protocol handling, no state machine of your own to build.
+That's the whole recipe: one `pause()` call before the content shows, one `resume()` call wired to every way the content can end (finished, failed, skipped, or simply taking too long). No custom protocol handling, no state machine of your own to build.
 
 ---
 
 ## The edge case: don't leave the avatar stuck paused
 
-The issue this recipe answers isn't "how do I pause" — `pause()` alone is trivial. It's "what if the content never cleanly finishes." Four ways that happens, and why each is already covered above:
+The issue this recipe answers isn't "how do I pause." `pause()` alone is trivial. It's "what if the content never cleanly finishes." Four ways that happens, and why each is already covered above:
 
 | What happens | Why `resumeOnce()` still fires |
 |---|---|
@@ -130,7 +136,7 @@ The issue this recipe answers isn't "how do I pause" — `pause()` alone is triv
 | User clicks away / hits a "skip" control | your own `skip` handler |
 | Content hangs, or you simply forget to wire an end event | the `setTimeout` safety net |
 
-Whichever path fires, it calls the same `resume()`, and `resume()` handles the cheap path, the rebuild-transports path, and a session the SDK's own connectivity recovery already rebuilt during the pause — all transparently. A short safety-net `setTimeout` (the example above uses 60 seconds) is still good practice: it hands the turn loop back promptly instead of leaving the avatar paused indefinitely if nothing else fires.
+Whichever path fires, it calls the same `resume()`. `resume()` handles the cheap path, the rebuild-transports path, and a session the SDK's own connectivity recovery already rebuilt during the pause, all transparently. A short safety-net `setTimeout` (the example above uses 60 seconds) is still good practice: it hands the turn loop back promptly instead of leaving the avatar paused indefinitely if nothing else fires.
 
 ---
 

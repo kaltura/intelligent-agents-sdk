@@ -8,7 +8,7 @@
 POST https://genie.nvp1.ovp.kaltura.com/assistant/converse
 ```
 
-Requires a conversation KS:
+Requires a conversation KS (see [Authentication § KS types](authentication.md#authentication)):
 
 ```bash
 CONV_KS=$(curl -s -X POST "https://www.kaltura.com/api_v3/service/session/action/start" \
@@ -32,10 +32,14 @@ CONV_KS=$(curl -s -X POST "https://www.kaltura.com/api_v3/service/session/action
 | `sse` | `false` = NDJSON (default); `true` = SSE |
 | `model_type` | `"fast"` for cheaper/faster model |
 | `force_experience` | Hint only — not a guarantee |
-| `request_vars` | `{{var}}` interpolation values; needs `allow_client_variables:true` on the intellect. Values **persist on the thread** (the server merges each message's map into what's stored — send only deltas; a new thread starts clean) and interpolate into both prompt blocks and server-side `api`-tool templates. Reserved `sys__*` keys (including `sys__user_id`) are server-injected and rejected if you try to set them yourself — see § Bind a session to a real end-user identity above for how `sys__user_id` gets populated. Semantics in depth: [docs/DYNAMIC-DATA-INJECTION.md](../DYNAMIC-DATA-INJECTION.md). |
+| `request_vars` | `{{var}}` interpolation values. Needs `allow_client_variables:true` on the intellect (see [Authentication § The Five Services](authentication.md#the-five-services) for what an intellect is). Values **persist on the thread**: the server merges each message's map into what's stored, so send only deltas — a new thread starts clean. They interpolate into both prompt blocks and server-side `api`-tool templates. Reserved `sys__*` keys (including `sys__user_id`) are server-injected and rejected if you try to set them yourself — see § Bind a session to a real end-user identity above for how `sys__user_id` gets populated. Semantics in depth: [docs/DYNAMIC-DATA-INJECTION.md](../DYNAMIC-DATA-INJECTION.md). |
 | `capabilities` | Per-message capability override |
 
-**Enabling `allow_client_variables`:** `mgmt.intellects.setClientVariablesEnabled(configId, true, adminKs)` (WRITE, admin KS; also exposed as `mgmt.intellectConfig.setClientVariablesEnabled`). With it off, the rejection is **silent on every path**. The turn streams back empty: no HTTP error on `converse`, no socket error. The server's 403 fires inside its streaming pipeline after the response has already opened, so it never reaches the wire. Both session classes (`KalturaAvatarSession`, `KalturaChatSession`) detect the pattern and emit a once-per-session `warning` event (`code: 'empty_turn_with_request_vars'`, variable names only, never values). The management converse helpers keep a defensive remap to a typed `client_variables_disabled` error for the pre-stream case, should the server ever start rejecting before the stream opens.
+**Enabling `allow_client_variables`:** `mgmt.intellects.setClientVariablesEnabled(configId, true, adminKs)` (WRITE, admin KS; also exposed as `mgmt.intellectConfig.setClientVariablesEnabled`).
+
+With it off, the rejection is **silent on every path**. The turn streams back empty: no HTTP error on `converse`, no socket error. The server's 403 fires inside its streaming pipeline after the response has already opened, so it never reaches the wire.
+
+Both session classes (`KalturaAvatarSession`, `KalturaChatSession`) detect the pattern and emit a once-per-session `warning` event (`code: 'empty_turn_with_request_vars'`, variable names only, never values). The management converse helpers keep a defensive remap to a typed `client_variables_disabled` error for the pre-stream case, should the server ever start rejecting before the stream opens.
 
 **Stream segments** (each line is a JSON object):
 
@@ -61,7 +65,9 @@ POST https://genie.nvp1.ovp.kaltura.com/assistant/abort
 
 ## Reserved Template Variables (`sys__*`)
 
-The server sets these on every turn. They're available to `{{ ... }}` interpolation in `base_directive` / `prompts[].value` / `glossary` (see [Configure an Intellect](build/intellect.md#configure-an-intellect)) and in a Skill's `instructions` text (see [§ Skills](management-operations.md#skills--httpsgenienvp1ovpkalturacom)), regardless of `allow_client_variables`. The SDK's own `request_vars` pre-flight guard rejects a client-supplied value for every one of these (`sys__thread_id`, `sys__message_id`, `sys__user_id`, `sys__user_message`, `sys__ks`, `sys__is_new_thread`, `sys__context_id`, `sys__context_type`, `sys__avatar_enabled`, `sys__avatar_share_screen_enabled`, any `sys__user_obj.*` key, and `secrets`; see `request_vars` above) before any network call:
+The server sets these on every turn. They're available to `{{ ... }}` interpolation in `base_directive` / `prompts[].value` / `glossary` (see [Configure an Intellect](build/intellect.md#configure-an-intellect)) and in a Skill's `instructions` text (see [§ Skills](management-operations.md#skills--httpsgenienvp1ovpkalturacom)), regardless of `allow_client_variables`.
+
+Before any network call, the SDK's own `request_vars` pre-flight guard rejects a client-supplied value for any key in the table below, plus `secrets` (see `request_vars` above):
 
 | Variable | Resolves to | Notes |
 |----------|-------------|-------|
@@ -72,9 +78,9 @@ The server sets these on every turn. They're available to `{{ ... }}` interpolat
 | `sys__is_new_thread` | `true` on the first turn of a new thread, `false` otherwise | |
 | `sys__avatar_enabled` | Whether the current thread has a live avatar attached | Used in a Skill's `condition` to gate it to avatar-only sessions, e.g. `{{ sys__avatar_enabled }}` — see [Configure an Intellect § skill_ids](build/intellect.md#configure-an-intellect). |
 | `sys__avatar_share_screen_enabled` | Whether the current avatar session has screen-share analysis enabled | Also usable in a Skill's `condition`, e.g. `{{ sys__avatar_enabled and not sys__avatar_share_screen_enabled }}` to gate a skill to avatar sessions that are NOT sharing a screen. |
-| `sys__context_id` | The category/entry id the current context (and its knowledge base, if any) is scoped to | Set via `KalturaAvatarSession`'s `contextId` constructor option, sent on the live socket `join` payload — see [connection-and-handshake.md § The `join` payload](../architecture-reference/connection-and-handshake.md#the-join-payload-step-2--this-carries-the-agentbrain-config). Empty when no context was set at join. |
+| `sys__context_id` | The category/entry id the current context (and its knowledge base, if any) is scoped to | Set via `KalturaAvatarSession`'s `contextId` constructor option, sent on the live socket `join` payload — see [connection-and-handshake.md § The `join` payload](../architecture-reference/connection-and-handshake.md#the-join-payload-step-2-carries-the-agentbrain-config). Empty when no context was set at join. |
 | `sys__context_type` | The type of that context (e.g. an `entry` vs. a `category`) | Set via `KalturaAvatarSession`'s `contextType` constructor option, alongside `contextId`; empty when no context was set at join. |
-| `sys__ks` | The raw Kaltura Session token for the current request | ⚠️ **Security warning: never reference `sys__ks` in a prompt whose output could be echoed back to a user or logged.** It is a live credential — rendering it as plain text in a model response, chat transcript, or log turns that surface into a credential leak. See [SECURITY.md](../../SECURITY.md#ks-kaltura-session-guidance-for-agents-ac-3--ac-6--ia-2). |
+| `sys__ks` | The raw Kaltura Session token for the current request | ⚠️ **Security warning: never reference `sys__ks` in a prompt whose output could be echoed back to a user or logged.** It is a live credential. Rendering it as plain text in a model response, chat transcript, or log can leak that credential. See [SECURITY.md](../../SECURITY.md#ks-kaltura-session-guidance-for-agents-ac-3--ac-6--ia-2). |
 | `sys__user_obj.first_name` / `.last_name` / `.title` / `.company` / `.gender` / `.email` | Attributes of the bound-user object | Verify these resolve with `intellects.previewPrompt()` before shipping a prompt — the rendered preview flags unresolved references with a `reserved_user_attr_unresolved` warning. |
 | `secrets.<NAME>` | A named secret configured on the intellect | Write-only — see [§ Secrets](build/tools-and-secrets.md#secrets-write-only). |
 
@@ -116,19 +122,21 @@ SDK: `mgmt.threads.{list, get, rename, delete, transcript}`.
 
 ## Session-Completion Signal
 
-Unlike the admin-KS thread endpoints above, this one is called from the browser client itself, with the same **conversation KS** (`geniegpcid`) used for every other client-facing call — it mints nothing new and needs no elevated privilege.
+Unlike the admin-KS thread endpoints above, this one is called from the browser client itself, with the same **conversation KS** (`geniegpcid`) used for every other client-facing call. It mints nothing new and needs no elevated privilege.
 
 | Operation | Endpoint | Body | Auth |
 |-----------|----------|------|------|
 | Session completed | `POST {genieUrl}/thread/session_completed` | `{"id":"<threadId>"}` | `Authorization: KS <conversation ks>` |
 
-`{genieUrl}` defaults to `https://genie.nvp1.ovp.kaltura.com` (no `/v1` prefix — a different route family from the thread CRUD above). Idempotent (a repeat call for the same thread is a no-op server-side); no rate limit; can block up to ~10s on a backend publish-ack, so a client must never await it on a page-unload path.
+`{genieUrl}` defaults to `https://genie.nvp1.ovp.kaltura.com` (no `/v1` prefix — a different route family from the thread CRUD above). It's idempotent: a repeat call for the same thread is a no-op server-side. There's no rate limit. It can block up to ~10s on a backend publish-ack, so a client must never await it on a page-unload path.
 
-Tell the backend a conversation is genuinely over the moment it happens, instead of waiting for the ~10-minute idle scanner — so end-of-conversation lifecycle rules (summaries, insights, CRM pushes) fire in seconds. SDK: `KalturaAvatarSession`/`KalturaChatSession`/`KalturaAgentSession` call this automatically on `disconnect()` (`sessionCompleteOnEnd`, default `true`) and on tab-close/backgrounding/bfcache — see [README.md § Ending a conversation cleanly](../../README.md#ending-a-conversation-cleanly-session_completed-signal) for the full config surface, and [wire-protocol/events-catalog.md § Session-completion signal](../wire-protocol/events-catalog.md#session-completion-signal--tell-the-backend-a-conversation-is-truly-over) for the exact request shape.
+Call this the moment a conversation is genuinely over, instead of waiting for the ~10-minute idle scanner, so end-of-conversation lifecycle rules (summaries, insights, CRM pushes) fire in seconds.
+
+`KalturaAvatarSession`/`KalturaChatSession`/`KalturaAgentSession` call this automatically on `disconnect()` (`sessionCompleteOnEnd`, default `true`) and on tab-close/backgrounding/bfcache. See [README.md § Ending a conversation cleanly](../../README.md#ending-a-conversation-cleanly-session_completed-signal) for the full config surface, and [wire-protocol/events-catalog.md § Session-completion signal](../wire-protocol/events-catalog.md#session-completion-signal--tell-the-backend-a-conversation-is-truly-over) for the exact request shape.
 
 ## Thread History and Per-Turn Cost
 
-There is no documented cap on how long a thread's history can grow. The full transcript is sent as model context on every turn, so per-turn cost grows with thread length — plan long-running threads accordingly: start a fresh thread per task, and delete threads you no longer need.
+There is no documented cap on how long a thread's history can grow. The full transcript is sent as model context on every turn, so per-turn cost grows with thread length. Plan long-running threads accordingly: start a fresh thread per task, and delete threads you no longer need.
 
 ---
 
@@ -162,4 +170,14 @@ POST https://genie.nvp1.ovp.kaltura.com/mcp/search
 
 Returns `{status, data}`. A partner with no indexed content returns a `"couldn't find relevant information"` error response. SDK: `mgmt.knowledge.search(query, ks, opts)`.
 
-`opts` passes through five optional tuning params, all accepted as-is by the backend: `top_n` (default 5), `with_line_numbers`, `margins_in_seconds` (default 15), `include_sources`, `entry_description`. `include_sources:true` changes the success shape's `chapters` from `null` to an array, and `data` to `null`.
+`opts` passes through five optional tuning params, all accepted as-is by the backend:
+
+| Param | Default |
+|---|---|
+| `top_n` | 5 |
+| `with_line_numbers` | — |
+| `margins_in_seconds` | 15 |
+| `include_sources` | — |
+| `entry_description` | — |
+
+`include_sources:true` changes the success shape's `chapters` from `null` to an array, and `data` to `null`.

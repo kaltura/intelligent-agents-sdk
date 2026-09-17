@@ -1,8 +1,8 @@
 # Wire Protocol — Socket.IO + WebRTC Reference
 
-The complete, verified map of **every event, payload, config, and flow** on the two channels that power the interactive live avatar: the **Socket.IO control plane** and the **two WebRTC peer connections** (ASR mic-uplink + STV video-downlink).
+This is the complete, verified map of **every event, payload, config, and flow** on the two channels that power the interactive live avatar. Those two channels are the **Socket.IO control plane** and the **two WebRTC peer connections** (ASR mic-uplink + STV video-downlink).
 
-This is the deep reference behind [ARCHITECTURE.md](ARCHITECTURE.md) → "Video Runtime Protocol". Read ARCHITECTURE.md first for the big picture; read the pages below when you need the exact field of an exact event, the exact ICE config, or the exact order things fire.
+This is the deep reference behind [ARCHITECTURE.md](ARCHITECTURE.md) → "Video Runtime Protocol". Read ARCHITECTURE.md first for the big picture. Come back to the pages below when you need an exact event field, the exact ICE config, or the exact order events fire.
 
 | Doc | Covers |
 |---|---|

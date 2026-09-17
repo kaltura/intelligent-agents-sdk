@@ -2,7 +2,7 @@
 
 # Recipe: Summarize Every Conversation and Email the Results, Automatically
 
-How to turn "someone has to read every transcript and decide what matters" into "the backend tells you, automatically, the moment a conversation ends." Two lifecycle rules, zero polling, zero app-side glue: one rule extracts a summary and topic the instant a session ends, a second rule emails a human the instant that extraction finishes. This recipe is the hands-on walkthrough; [`README.md`](README.md) is the terse field-by-field reference this recipe links back to instead of repeating.
+How to turn "someone has to read every transcript and decide what matters" into "the backend tells you, automatically, the moment a conversation ends." Two lifecycle rules do the whole job, with zero polling and zero app-side glue. One rule extracts a summary and topic the instant a session ends. A second rule emails a human the instant that extraction finishes. This recipe is the hands-on walkthrough; [`README.md`](README.md) is the terse field-by-field reference this recipe links back to instead of repeating.
 
 ---
 
@@ -16,7 +16,7 @@ Three pieces, always in this order:
 | **Rule** | `{eventType, objectType, eventConditions?, action}` you create once via `mgmt.lifecycle.create()` | "when a `session_ended` fires, run this action" |
 | **Action** | What runs automatically, server-side, when the rule matches | `triggerInsightSettingsKai` (extract structured data with an LLM, per a reusable `InsightSettings` definition) or `sendInsightEmail` (email a human) |
 
-The two actions chain naturally: `triggerInsightSettingsKai` writes its results into the thread's `thread_metadata.analysis`, and that write is itself an `analysis_updated` event, which a second rule can react to. That's the whole recipe below: rule 1 reacts to `session_ended` and produces analysis, rule 2 reacts to `analysis_updated` and emails it.
+The two actions chain naturally. `triggerInsightSettingsKai` writes its results into the thread's `thread_metadata.analysis`. That write is itself an `analysis_updated` event, which a second rule can react to. That's the whole recipe below: rule 1 reacts to `session_ended` and produces analysis, rule 2 reacts to `analysis_updated` and emails it.
 
 ---
 
@@ -70,12 +70,14 @@ await mgmt.lifecycle.create({
 Three things about this action that aren't obvious from the field names:
 
 1. **It only fires on `analysis_updated`.** Attach it to a `session_ended` rule and it's a silent server-side no-op. Nothing errors, nothing sends.
-2. **`recipients` are Kaltura user IDs, not raw email addresses.** The messaging service resolves the actual email from that user's Kaltura profile (`{USER.email}`). If your account's convention is to use the email address itself as the Kaltura user ID (common on many accounts), a recipient string that looks like an email works, but only because it's also a valid user ID there, not because this field accepts arbitrary email strings.
-3. **`presetType: 'conversationInsightExample'` is the zero-setup path.** The backend auto-creates its email template on first use. An explicit `templateId` (instead of `presetType`) points at a template you author yourself via [`mgmt.emailTemplates`](README.md#emailtemplates-managing-the-templates-sendinsightemail-references) — your own subject, body, and branding, instead of the preset's fixed layout.
+2. **`recipients` are Kaltura user IDs, not raw email addresses.** The messaging service resolves the actual email from that user's Kaltura profile (`{USER.email}`). If your account's convention is to use the email address itself as the Kaltura user ID (common on many accounts), a recipient string that looks like an email still works. That's only because it's also a valid user ID there, not because this field accepts arbitrary email strings.
+3. **`presetType: 'conversationInsightExample'` is the zero-setup path.** The backend auto-creates its email template on first use. An explicit `templateId` (instead of `presetType`) points at a template you author yourself via [`mgmt.emailTemplates`](README.md#emailtemplates-managing-the-templates-sendinsightemail-references), with your own subject, body, and branding, instead of the preset's fixed layout.
 
 ### The gotcha that will bite you first: token mismatch
 
-`conversationInsightExample`'s template needs three insight values by key: **`SUMMARY`, `TOPIC`, and `CUSTOM`** (exactly those keys, case-sensitive). `AGENTNAME`, `CTAURL`, and `USER` are filled in automatically. You never provide those. If the thread's analysis doesn't have all three of `SUMMARY`/`TOPIC`/`CUSTOM`, the email send is skipped. That's logged as an error server-side, but nothing surfaces back to your app or the SDK. `SUMMARY` comes free from the always-on system preset (see [`README.md`](README.md#every-session-already-gets-a-summary-for-free)); Recipe A's own `InsightSettings` above supply the other two, with `key:'TOPIC'` and `key:'CUSTOM'` matching exactly what the template looks for.
+`conversationInsightExample`'s template needs three insight values by key: **`SUMMARY`, `TOPIC`, and `CUSTOM`** (exactly those keys, case-sensitive). `AGENTNAME`, `CTAURL`, and `USER` are filled in automatically, so you never provide those. If the thread's analysis doesn't have all three of `SUMMARY`/`TOPIC`/`CUSTOM`, the email send is skipped.
+
+That's logged as an error server-side, but nothing surfaces back to your app or the SDK. `SUMMARY` comes free from the always-on system preset (see [`README.md`](README.md#every-session-already-gets-a-summary-for-free)). Recipe A's own `InsightSettings` above supply the other two, with `key:'TOPIC'` and `key:'CUSTOM'` matching exactly what the template looks for.
 
 Pick whatever `prompt` fits your use case for `CUSTOM`. The template only cares about the `key`, never the prompt text.
 
@@ -118,7 +120,9 @@ const { matchedRules } = await mgmt.lifecycle.match(
 );
 ```
 
-`object.agent_id`, `object.thread_id`, and `object.user_id` are all required strings for `objectType:'thread'`. Omit one and it 400s naming the missing path. Expect to see your own rule nested inside a grouped `matchedRules[]` entry's `rules[]` array, together with `preset__summary_on_session_ended`. Every partner has that preset rule by default; it's not something you configured (see [`README.md`'s note on grouped matches](README.md#discovery-and-dry-run-testing)). Run this after creating each rule to confirm it matches before you ever touch a real conversation.
+`object.agent_id`, `object.thread_id`, and `object.user_id` are all required strings for `objectType:'thread'`. Omit one and it 400s naming the missing path. Expect to see your own rule nested inside a grouped `matchedRules[]` entry's `rules[]` array, together with `preset__summary_on_session_ended`.
+
+Every partner has that preset rule by default. It's not something you configured (see [`README.md`'s note on grouped matches](README.md#discovery-and-dry-run-testing)). Run this after creating each rule to confirm it matches before you ever touch a real conversation.
 
 ---
 

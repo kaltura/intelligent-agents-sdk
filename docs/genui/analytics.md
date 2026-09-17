@@ -6,7 +6,9 @@ A recipe for reporting GenUI widget interactions — which widget the learner ac
 
 ## What not to report (read this first)
 
-The backend (the session server + the brain) already reports its own server-side KAVA events for every session a `KalturaAvatarSession` connects to — the 80000-range "Immersive Agents" events: `callStarted`, `callEnded`, `messageResponse` (message delivery), and `messageFeedbackSent` (feedback). `KavaAnalytics` has no code path that can send any of these (see the module docblock in `src/experience/analytics.js`) — that is deliberate, not a gap to fill. Do **not** build client-side reporting for:
+The backend (the session server and the brain) already reports its own server-side KAVA events for every session a `KalturaAvatarSession` connects to. These are the 80000-range "Immersive Agents" events: `callStarted`, `callEnded`, `messageResponse` (message delivery), and `messageFeedbackSent` (feedback).
+
+`KavaAnalytics` has no code path that can send any of these (see the module docblock in `src/experience/analytics.js`). That is deliberate, not a gap to fill. Do **not** build client-side reporting for:
 
 | Already server-tracked (80000-range) | Don't re-report client-side as... |
 |---|---|
@@ -14,7 +16,7 @@ The backend (the session server + the brain) already reports its own server-side
 | The user thumbs-up/down'd a reply (`mgmt.feedback.add`) | A `buttonClicked` for "feedback given" |
 | A call/session started or ended | A `buttonClicked`/`pageLoad` for "session start/end" |
 
-A GenUI widget rendering on screen isn't itself one of those signals — the widget's *arrival* rides the same message-delivery event the server already counted. What's safe to report (because it has no server-side equivalent) is the **client-only choice the learner makes on that widget** — which chip they clicked, which link they opened, which answer they picked. That choice is the only thing this recipe reports.
+A GenUI widget rendering on screen isn't itself one of those signals — the widget's *arrival* rides the same message-delivery event the server already counted. What's safe to report (because it has no server-side equivalent) is the **client-only choice the learner makes on that widget**. That could be which chip they clicked, which link they opened, or which answer they picked. That choice is the only thing this recipe reports.
 
 ## The recipe: two widget interaction types, two distinguishable events
 
@@ -24,6 +26,8 @@ Wire each widget's `onAction` intent (see [authoring-and-consuming.md § `onActi
 import { ExperienceRenderer } from '@kaltura/intelligent-agents/experience/genui';
 import { KavaAnalytics } from '@kaltura/intelligent-agents/experience/analytics';
 
+// AGENTIC_PARTNER_ID: your partner id (see the README's KAVA analytics section linked above)
+// session: an active KalturaAvatarSession from your app
 const analytics = new KavaAnalytics({
   partnerId: AGENTIC_PARTNER_ID,
   sessionId: session.threadId,   // ties the event to this conversation without re-reporting the conversation itself
@@ -61,11 +65,14 @@ Two rules keep the two events distinguishable and non-duplicated:
 - **A different `buttonName` per widget/interaction type** (`genui-followup-chip` vs. `genui-show-link-card`) — this is what a KAVA dashboard groups and filters on. Don't reuse one generic name across widget kinds.
 - **`buttonValue` carries the specific choice** (the exact question text, the exact URL) rather than a boolean or the widget kind — the kind already lives in `buttonName`. Two clicks on two different chips inside the SAME `followups` widget still produce two distinct, non-duplicate rows, because each carries a different `buttonValue`.
 
-Apply the same two-line pattern to any other `onAction` intent with no server-side equivalent: `'play'` (`{entryId, url, embedUrl}` — a video-gallery clip opened) and `'submit'` (`{values}` — a `user-properties-form` was submitted; report only that it happened and which fields were filled, not the raw values if they're personal data — see [../STRUCTURED-DATA-FORMS.md](../STRUCTURED-DATA-FORMS.md) for where that data durably belongs instead).
+Apply the same two-line pattern to any other `onAction` intent with no server-side equivalent:
+
+- `'play'` (`{entryId, url, embedUrl}`) — a video-gallery clip was opened.
+- `'submit'` (`{values}`) — a `user-properties-form` was submitted. Report only that it happened and which fields were filled, not the raw values if they're personal data. See [../STRUCTURED-DATA-FORMS.md](../STRUCTURED-DATA-FORMS.md) for where that data durably belongs instead.
 
 ## Why the two events stay distinct
 
-`followups-tool` and `show-link-tool` (the second requires enabling the `show_link` capability — OFF by default, see [authoring-and-consuming.md](authoring-and-consuming.md#authoring--which-capability-turns-each-widget-on)) can arrive in the same turn. Run through the two `buttonClicked()` calls above, the resulting payloads share the same `partnerId`/`sessionId` (same conversation) but differ in `buttonName`/`buttonType`/`buttonValue` — two distinguishable, non-duplicated events tied to one conversation, not two copies of the same one. To test this without landing rows on your live KAVA data, pass an injected transport to `KavaAnalytics`.
+`followups-tool` and `show-link-tool` (the second requires enabling the `show_link` capability — OFF by default, see [authoring-and-consuming.md](authoring-and-consuming.md#authoring--which-capability-turns-each-widget-on)) can arrive in the same turn. Run through the two `buttonClicked()` calls above, the resulting payloads share the same `partnerId`/`sessionId` (same conversation), but differ in `buttonName`/`buttonType`/`buttonValue`. That makes them two distinguishable, non-duplicated events tied to one conversation, not two copies of the same one. To test this without landing rows on your live KAVA data, pass an injected transport to `KavaAnalytics`.
 
 ## Related docs
 
