@@ -15,6 +15,6 @@ assignees: ''
 
 <!-- The method/option/event you'd add, and which entry point it lives under (./management, ./experience, ./experience/presenter, ./experience/genui). If it maps to a real backend endpoint, link it. -->
 
-## Honest limits
+## Known limits
 
 <!-- Per SDK_CONSTITUTION.md, the SDK never claims success it can't verify. If this needs a gated/undocumented backend behavior, say so — it may ship as a typed {applied:false, reason} receipt rather than a silent success. -->

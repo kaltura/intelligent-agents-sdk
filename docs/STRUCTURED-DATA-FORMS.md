@@ -97,7 +97,7 @@ Or skip the SDK's default DOM builder entirely by passing a mount **function** i
 
 A worked pattern: keep the submitted values in browser memory for the current session, but do the durable write via your own brain-called, server-side `api` tool that posts to whatever external system you point it at — rather than `setFormLeadInfo`. See [EXTERNAL-API-INTEGRATIONS.md](EXTERNAL-API-INTEGRATIONS.md) for the general pattern this specializes.
 
-## Related: `kaltura_genie_experiences` — a different, unrelated capability
+## Not to be confused with `kaltura_genie_experiences`
 
 If your intellect also uses custom `tool_ids` (e.g. a closed set of client commands like `navigate_to_slide`/`show_widget`), you'll likely set `capabilities: { kaltura_genie_experiences: 'off' }` or `'disabled'` — see [EXTERNAL-API-INTEGRATIONS.md § Don't skip `kaltura_genie_experiences: 'off'`](EXTERNAL-API-INTEGRATIONS.md#dont-skip-kaltura_genie_experiences-off) for what that capability does and why.
 
