@@ -7,11 +7,11 @@ eyebrow: How-to Guide
 
 # Dynamic Data Injection — keeping the brain in sync with your app
 
-Design guidance for app builders on **getting your app's state into the conversation** — who the viewer is, what's currently on screen, and what just happened in your UI — so the brain reasons with fresh, correct context instead of a stale snapshot from when the session first connected.
+Design guidance for app builders on **getting your app's state into the conversation**: who the viewer is, what's currently on screen, and what just happened in your UI. The goal is to keep the [brain](https://github.com/kaltura/intelligent-agents-sdk/blob/main/README.md#architecture)'s context fresh and correct, instead of a stale snapshot from when the session first connected.
 
 **On this page:** [Three ways to get information to the brain](#three-ways-to-get-information-to-the-brain) · [The context channel: request variables](#the-context-channel-request-variables) · [The active nudge: `speak()`](#the-active-nudge-speak) · [Answering a brain-initiated request](#answering-a-brain-initiated-request) · [How they work together — a worked example](#how-they-work-together--a-worked-example) · [Which one do I want?](#which-one-do-i-want) · [Related but distinct: client-side commands](#related-but-distinct-client-side-commands) · [Related docs](#related-docs)
 
-The SDK gives you three mechanisms, each solving a different problem. Reaching for the wrong one is the most common integration mistake: using a passive mechanism when you needed the brain to react *right now*, or using the active one for something that should just be quiet background context. This doc explains why each exists, when to reach for it, and how they compose into one coherent update flow.
+The SDK gives you three mechanisms, each solving a different problem. The most common integration mistake is reaching for the wrong one: using a passive mechanism when you needed the brain to react *right now*, or using the active one for something that should just be quiet background context. This doc explains why each mechanism exists, when to reach for it, and how they compose into one coherent update flow.
 
 ## Three ways to get information to the brain
 
@@ -21,15 +21,17 @@ The SDK gives you three mechanisms, each solving a different problem. Reaching f
 | [`session.speak()`](#the-active-nudge-speak) | Actively provoke a new turn — the brain reacts immediately, in this turn | Yes — the only one that does |
 | [`session.submitStructuredDataForm()`](#answering-a-brain-initiated-request) | Answer a request the brain itself made for structured fields | No — feeds the answer back into the conversation |
 
-Request variables are **passive**: they update what the brain will see, whenever its next turn happens to occur. `speak()` is the only **active** one — it's the trigger that makes a turn happen right now. Getting this distinction right is the key to reliable behavior: if you need the brain to react to something the instant it happens (a modal just closed, a background action just finished), a passive update alone will sit there unread until some *other* turn happens to occur — sometimes much later, sometimes never in a short session.
+Request variables are **passive**: they update what the brain will see, whenever its next turn happens to occur. `speak()` is the only **active** one: it's the trigger that makes a turn happen right now.
+
+Getting this distinction right is the key to reliable behavior. If you need the brain to react to something the instant it happens (a modal just closed, a background action just finished), a passive update alone will sit there unread until some *other* turn happens to occur. Sometimes that's much later. Sometimes it never happens in a short session.
 
 ## The context channel: request variables
 
-Request variables (`request_vars`) are the SDK's one channel for app-supplied context. Each variable is a string value the brain's prompt reads via `{{var}}` templating — a viewer's name, an account tier, or a whole JSON document the prompt reasons over. Seed them at connect time, update them any time after:
+Request variables (`request_vars`) are the SDK's one channel for app-supplied context. Each variable is a string value the brain's prompt reads via `{{var}}` templating: a viewer's name, an account tier, or a whole JSON document the prompt reasons over. Seed them at connect time, update them any time after:
 
 ```js
 const session = new KalturaAvatarSession({
-  token, /* … */,
+  token, /* …other config… */
   requestVars: { user_name: 'Ada' },
 });
 
@@ -39,7 +41,7 @@ session.updateRequestVars({ account_tier: 'enterprise' });
 
 Three properties make this channel do the heavy lifting:
 
-- **Updates merge.** `updateRequestVars(vars)` merges what you pass into the session's canonical map — send only the keys that changed; keys you omit keep their values. (The full merged map goes to the server each time, and the server also merges per-thread, so a headless `converse` call sending a delta behaves the same way.)
+- **Updates merge.** `updateRequestVars(vars)` merges what you pass into the session's canonical map. Send only the keys that changed; keys you omit keep their values. (The full merged map goes to the server each time, and the server also merges per-thread, so a headless `converse` call sending a delta behaves the same way.)
 - **Values persist for the whole thread.** Send a variable once and every later turn on that thread still sees it — you don't resend per turn. A new thread starts clean. On a warm reconnect the SDK re-sends the full map automatically.
 - **Values are strings, and can be big.** Tens of kilobytes of JSON in one variable works — the SDK's live verification pushes a ~31 KB blob through and reads it back (see [Runnable examples](#runnable-examples) below).
 
@@ -98,9 +100,9 @@ Reserved `sys__*` keys (like `sys__user_id` and `sys__thread_id`) are server-inj
 
 ### Server-side tools read them too
 
-Request variables aren't limited to prompt text. A server-side `api` tool's request template can interpolate them (`{{account_id}}` in a URL, header, or body), so a value your app set turns into a parameter of a backend call the brain makes — including variables from earlier turns that were never mentioned in conversation. See [Backend API Reference § Tools](/reference/api/build/tools-and-secrets/#tools-api--csv--code).
+Request variables aren't limited to prompt text. A server-side `api` tool's request template can interpolate them (`{{account_id}}` in a URL, header, or body), so a value your app set turns into a parameter of a backend call the brain makes. This includes variables from earlier turns that were never mentioned in conversation. See [Backend API Reference § Tools](/reference/api/build/tools-and-secrets/#tools-api--csv--code).
 
-**Security stance:** request variables are client-suppliable *and* thread-persistent. Never treat one as an authorization claim — your endpoints must independently authorize every call — and remember a poisoned value outlives its turn: it keeps interpolating into prompts and tool calls for the rest of the thread. Don't pass unsanitized end-user text into `setDynamicPrompt`, and never put secrets in any request variable.
+**Security stance:** request variables are client-suppliable *and* thread-persistent. Never treat one as an authorization claim; your endpoints must independently authorize every call. A poisoned value also outlives its turn: it keeps interpolating into prompts and tool calls for the rest of the thread. Don't pass unsanitized end-user text into `setDynamicPrompt`, and never put secrets in any request variable.
 
 ### Runnable examples
 
@@ -123,13 +125,13 @@ You're not limited to putting the viewer's own words here. A common and effectiv
 session.speak('[SECTION CHANGE] The viewer just opened the pricing section — discuss THIS section only.');
 ```
 
-A bracketed tag like `[SECTION CHANGE]` is not a wire-level feature — it's a convention. If your system prompt is written to recognize a tag like this as an app-generated cue (as opposed to something the viewer said out loud), you get a clean, unambiguous signal to react to, without ever putting synthetic text in the viewer's own mouth. Design your own tag vocabulary to match whatever events your app needs the brain to react to instantly.
+A bracketed tag like `[SECTION CHANGE]` is not a wire-level feature. It's a convention. Write your system prompt to recognize a tag like this as an app-generated cue, as opposed to something the viewer said out loud. That gives you a clean, unambiguous signal to react to, without ever putting synthetic text in the viewer's own mouth. Design your own tag vocabulary to match whatever events your app needs the brain to react to instantly.
 
 **Pair it with a context update, in this order:** call `setDynamicPrompt()` (or `Presenter.refreshContext()`) first, then `speak()` immediately after. That way the nudge that provokes the turn arrives *after* the context it needs to reason correctly about is already in place, not racing it.
 
 ## Answering a brain-initiated request
 
-The mechanisms above all push data from your app *to* the brain. There's also a path in the other direction: your agent's configuration can require the brain to ask the viewer for specific structured fields at some point in the conversation (an email, a booking date, a support ticket's category) — see [Structured Data Forms](/guides/structured-data-forms/) for how to configure what it asks for. Once your UI collects the viewer's answer, hand it back with:
+The mechanisms above all push data from your app *to* the brain. There's also a path in the other direction: your agent's configuration can require the brain to ask the viewer for specific structured fields at some point in the conversation (an email, a booking date, a support ticket's category). See [Structured Data Forms](/guides/structured-data-forms/) for how to configure what it asks for. Once your UI collects the viewer's answer, hand it back with:
 
 ```js
 session.submitStructuredDataForm({ email: 'ada@example.com' });
@@ -145,7 +147,7 @@ Consider an interactive product walkthrough: viewer identity is known at connect
 
 ```js
 // 1. Connect — personalization the prompt substitutes via {{user_name}}.
-const session = new KalturaAvatarSession({ token, /* … */, requestVars: { user_name: 'Ada' } });
+const session = new KalturaAvatarSession({ token, /* …other config… */ requestVars: { user_name: 'Ada' } });
 await session.connect();
 
 // 2. The viewer navigates to a new section — refresh context, then actively nudge.

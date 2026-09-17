@@ -81,7 +81,7 @@ Descriptor: `{kind:'video-gallery', data:{title, videos:[{entryId, title, thumbn
 | `label` | `label`, `linkText`, `title`, `text` | ≤300 chars; falls back to the URL |
 | `description` | `description` | ≤2000 chars |
 
-Descriptor: `{kind:'show-link', data:{url, label, description, safe}}` where **`safe:!!url`** — an unsafe scheme yields `url:''` + `safe:false` so the host drops it.
+Descriptor: `{kind:'show-link', data:{url, label, description, safe}}` where **`safe:!!url`** — an unsafe scheme yields `url:''` and `safe:false`, so the host drops it.
 
 ### 7. external-video (`renderExternalVideo`) — non-Kaltura video embeds
 
@@ -111,8 +111,8 @@ Fields come from `model.fields`, `model.properties`, or `model.items`. A field w
 `required`/`description` let a host wire `aria-required`/`aria-describedby`/`inputmode`.
 
 Descriptor: `{kind:'user-properties-form', data:{title, fields:[{key, type, label, knownValue, required, description}]}}`.
-- **Report back:** the default (`user_properties_forms`-configured) path has the host call **`session.submitStructuredDataForm(info)`** (`session.js`), which `sanitizeJson`s the object and emits the socket event **`setFormLeadInfo`** — a fire-and-forget emit with no durable server-side read-back. An app can instead take a different, durable path: never configure `user_properties_forms` at all, and reach this same `user-properties-form` widget purely as one enum value of its own `show_widget` **client** tool (`kaltura_genie_experiences` OFF), rendering the widget into its own dedicated host UI and, on submit, bridging the collected values into `request_vars` so the brain itself can call a server-side **api** tool that persists them wherever you point it — see [Structured Data Forms](/guides/structured-data-forms/).
-- For the full picture — configuration, why the agent treats a configured stage as mandatory, where `setFormLeadInfo` actually persists server-side, and how to deliver the collected data somewhere durable — see [Structured Data Forms](/guides/structured-data-forms/) and [External API Integrations](/guides/external-api-integrations/).
+- **Report back:** the default path (when `user_properties_forms` is configured) has the host call **`session.submitStructuredDataForm(info)`** (`session.js`). This `sanitizeJson`s the object and emits the socket event **`setFormLeadInfo`** — a fire-and-forget emit with no durable server-side read-back. An app can take a different, durable path instead. Skip configuring `user_properties_forms` entirely, and reach this same `user-properties-form` widget as one enum value of its own `show_widget` **client** tool (with `kaltura_genie_experiences` OFF). Render it into your own dedicated host UI. On submit, bridge the collected values into `request_vars`, so the brain itself can call a server-side **api** tool that persists them wherever you point it — see [Structured Data Forms](/guides/structured-data-forms/).
+- For the full picture, see [Structured Data Forms](/guides/structured-data-forms/) and [External API Integrations](/guides/external-api-integrations/). They cover configuration, why the agent treats a configured stage as mandatory, where `setFormLeadInfo` actually persists server-side, and how to deliver the collected data somewhere durable.
 
 ### 9. content-gallery (`renderContentGallery`) — image/content cards
 
@@ -128,7 +128,7 @@ Items come from `model.items`, `model.slides`, or `model.cards`. Each item:
 | `alt` | `alt`, `title`, `description` | ≤300 chars — the image's accessible name |
 
 Descriptor: `{kind:'content-gallery', data:{title, items:[{id, title, description, imageUrl, url, alt}]}}`. This is the **image-bearing** widget (a deck/gallery of cards with thumbnails). Note the backend key is `gallery_slides`, and the `video_gallery` capability summary says it permits both `video-gallery-tool` **and** `content-gallery-tool`.
-- **Multi-item only.** The renderer always wraps `items` in a CSS grid sized for several thumbnails (`.kgenui__gallery`, `repeat(auto-fill, minmax(120px,1fr))`). It does not branch on item count. So a single, image-less item stretches to the grid's full row width inside the widget's full-slot frame and reads as an oversized, awkward card. A `:has(> .kgenui__gallery > li:only-child)` CSS rule can give that case a flex/centered treatment instead, and a `show_widget` tool description can steer the brain toward `summary` for a single text-only point. Prefer `content-gallery` for 2+ image-bearing items, and `summary` for one.
+- **Multi-item only.** The renderer always wraps `items` in a CSS grid sized for several thumbnails (`.kgenui__gallery`, `repeat(auto-fill, minmax(120px,1fr))`). It does not branch on item count. So a single, image-less item stretches to the grid's full row width inside the widget's full-slot frame and reads as an oversized, awkward card. A `:has(> .kgenui__gallery > li:only-child)` CSS rule can give that case a flex/centered treatment instead. A `show_widget` tool description can also steer the brain toward `summary` for a single text-only point. Prefer `content-gallery` for 2+ image-bearing items, and `summary` for one.
 
 ### 10. graded-question (`renderGradedQuestion`) — a host-registered "10th runtime"
 
@@ -156,7 +156,7 @@ renderer.render('graded-question', {
 });
 ```
 
-Because it isn't backend-emitted, the LLM itself never authors this widget's model over the wire — your app supplies `data` directly (e.g. from your own quiz content). `renderGradedQuestion` still accepts a handful of common source-key aliases for convenience/forward-compat, and every field is run through `safeText` twice — once in the renderer, once again in `mountWidget`'s DOM builder — so a hand-built descriptor that skips the renderer entirely is exactly as safe.
+Because it isn't backend-emitted, the LLM itself never authors this widget's model over the wire — your app supplies `data` directly (e.g. from your own quiz content). `renderGradedQuestion` still accepts a handful of common source-key aliases for convenience and forward compatibility. Every field is run through `safeText` twice: once in the renderer, and once again in `mountWidget`'s DOM builder. So a hand-built descriptor that skips the renderer entirely is exactly as safe.
 
 | Field | Source keys (model) | Constraint |
 |---|---|---|
@@ -194,6 +194,6 @@ A listening integration branches conversation flow off `correct`/`questionId` �
 | Doc | Covers |
 |---|---|
 | [GenUI · Model and Runtimes](/reference/genui/model-and-runtimes/) | Runtime catalog, data flow, delivery paths, `force_experience` |
-| [GenUI · Authoring and Consuming Widgets](/reference/genui/authoring-and-consuming/) | Capability gating + `ExperienceRenderer`/`mountWidget` consumption |
+| [GenUI · Authoring and Consuming Widgets](/reference/genui/authoring-and-consuming/) | Capability gating and `ExperienceRenderer`/`mountWidget` consumption |
 | [GenUI Reference](/reference/genui-reference/) | Back to the index |
 

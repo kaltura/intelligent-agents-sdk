@@ -27,7 +27,9 @@ Three pieces, one shared contract:
 
 ## Why fire-and-forget
 
-A navigation tool needs no answer from the page. The tool is provisioned with `wait_for_response: false`, so the backend produces the tool result itself right after the model emits the call and the browser never sends anything back. There is nothing to ACK, time out on, or retry. The model writes its spoken answer in the same turn. Compare [Client-Side Commands § Tool spirals](/guides/client-commands/#tool-spirals-starve-the-voice--budget-tools-per-turn) for what happens to tools that do wait.
+A navigation tool needs no answer from the page. The tool is provisioned with `wait_for_response: false`, so the backend produces the tool result itself right after the model emits the call, and the browser never sends anything back. There is nothing to ACK, time out on, or retry.
+
+The model writes its spoken answer in the same turn. Compare [Client-Side Commands § Tool spirals](/guides/client-commands/#tool-spirals-starve-the-voice--budget-tools-per-turn) for what happens to tools that do wait.
 
 Two consequences shape the browser side:
 
@@ -109,7 +111,9 @@ Deterministic, so a docs change re-keys only the page it touched:
 
 ### Rendering the SITE MAP
 
-`renderSiteMap(manifest)` gives the prompt text: two lines per page, the page title and then `path: key1, key2`, with a blank line between pages. About 45 tokens per page. The title lets the model match what a visitor calls a page ("the wire protocol page") to its path. The path line carries only the path and the keys: a label next to the path gets copied into `go_to` as part of the path. `siteMapPrompt(manifest)` wraps it as a prompt block and warns (never throws) when the estimate passes `maxTokens` (default 3000). The docs site's 49 pages and 202 sections render to roughly 2300 tokens.
+`renderSiteMap(manifest)` gives the prompt text: two lines per page, the page title and then `path: key1, key2`, with a blank line between pages. About 45 tokens per page. The title lets the model match what a visitor calls a page ("the wire protocol page") to its path. The path line carries only the path and the keys: a label next to the path gets copied into `go_to` as part of the path.
+
+`siteMapPrompt(manifest)` wraps it as a prompt block and warns (never throws) when the estimate passes `maxTokens` (default 3000). The docs site's 49 pages and 202 sections render to roughly 2300 tokens.
 
 ## Provisioning
 
@@ -129,8 +133,8 @@ await m.intellects.create({
   tool_ids: [tool.id],
   allow_client_variables: true,
   base_directive: '...',
-  prompts: [identityPrompt, siteMapPrompt(manifest), SITE_NAV_RULES_PROMPT, PAGE_CONTEXT_PROMPT],
-  capabilities: { ... },
+  prompts: [identityPrompt, siteMapPrompt(manifest), SITE_NAV_RULES_PROMPT, PAGE_CONTEXT_PROMPT], // identityPrompt is your own prompt block, not part of this SDK
+  capabilities: { /* your own capabilities config */ },
 }, ks);
 ```
 
@@ -191,7 +195,7 @@ Construct it once per session, right after the session. `destroy()` unsubscribes
 |---|---|
 | No ACK ever | The plugin never answers the tool call. There is nothing to respond to. |
 | Act immediately | The handler runs on the tool segment, whatever the speech state. |
-| Path safety | `resolveTarget` must return a manifest page. `resolvePath` first (exact → normalized → last-segment word overlap ≥ 0.5 with a single winner). When no page matches, the last path segment is tried as a section of the page named by the rest of the path; that parent must be an exact or normalized manifest path and the segment must resolve as one of its sections (`splitPath: true`). This catches a brain that fuses `{ path: '/', section: 'license' }` into `{ path: '/license' }`. The final URL passes `safeUrl`. Anything else is dropped with `reason: 'unknown_path'`. |
+| Path safety | `resolveTarget` must return a manifest page. `resolvePath` first (exact → normalized → last-segment word overlap ≥ 0.5 with a single winner). When no page matches, the last path segment is tried as a section of the page named by the rest of the path; that parent must be an exact or normalized manifest path and the segment must resolve as one of its sections (`splitPath: true`). This catches a model that fuses `{ path: '/', section: 'license' }` into `{ path: '/license' }`. The final URL passes `safeUrl`. Anything else is dropped with `reason: 'unknown_path'`. |
 | Section fallback | key → id → normalized text equality → request words are a subset of one section → Jaccard ≥ 0.5 with a single winner → page top (`fellBackToTop: true`). On a split path the `section` argument wins when it resolves on the parent page, else the split-off segment is the section. A wrong section never fails the navigation. |
 | Cross-page | `await navigate(url, info)`, then find the section in the new DOM (now, next frame, after `settleMs`), then scroll, hash, point. |
 | Same page | `navigate` is skipped. Scroll, hash, point. |

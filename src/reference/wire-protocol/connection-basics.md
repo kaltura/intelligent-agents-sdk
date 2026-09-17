@@ -28,13 +28,13 @@ The SDK's committed fixture at [`test/fixtures/golden-session.json`](https://git
 
 </div>
 
-Two separate peer connections by design: WHEP is receive-only, ASR is send-only, and they use **different ICE policies** ([§5](/reference/wire-protocol/audio-channels/#5-asr-uplink-pc1--microphone--server)/[§6](/reference/wire-protocol/audio-channels/#6-stv-downlink-pc2--avatar-videoaudio--you)) — separating them gives independent negotiation and failure isolation.
+These are two separate peer connections by design. WHEP is receive-only and ASR is send-only, and they use **different ICE policies** ([§5](/reference/wire-protocol/audio-channels/#5-asr-uplink-pc1--microphone--server)/[§6](/reference/wire-protocol/audio-channels/#6-stv-downlink-pc2--avatar-videoaudio--you)). Separating them gives independent negotiation and failure isolation.
 
 ---
 
 ## 2. Socket.IO connection
 
-`SDK` opens the socket exactly as the other clients do. **Captured connection args:**
+This package (referred to as `SDK` throughout this reference) opens the socket the same way Kaltura's other clients do — its built-in player client and its embed widget client, both used here for comparison. **Captured connection args:**
 
 ```js
 io("https://conversation.avatar.us.kaltura.ai", {
@@ -57,7 +57,7 @@ Query params:
 | `billed_client` | `""` | always sent empty by this SDK; no effect on this SDK's behavior |
 | `auth.token` | enriched KS | the conversation KS from `application/appInit`; carries `partnerId` + agent scope. (The embed client uses anonymous `ks:''`.) |
 
-Auth/tenant scope: the KS in `auth.token` is what scopes the session to a partner + agent; entitlement stays ON for end-user sessions.
+Auth/tenant scope: the KS in `auth.token` scopes the session to a partner and agent. Entitlement stays on for end-user sessions.
 
 ---
 
@@ -85,7 +85,13 @@ Top-level machine states (the built-in client's connection state machine): `prep
 
 > **Why `joinComplete` gets 20s, not 5s (deliberate deviation from the built-in client's single 5s join-room budget):** the server emits `clientConfiguration` immediately on join, but emits `joinComplete` only after an awaited context-update call that can exceed 5s under load. This SDK therefore budgets the two waits separately — `clientConfiguration` 5s, `joinComplete` 20s (`SDK:session.js` `TIMEOUTS.joinRoom` / `TIMEOUTS.joinComplete`). A client that reuses the built-in client's single 5s budget for both will see spurious `JoinRoomTimeout` failures on loaded rooms.
 
-> **Steps 10–11 are a client-side refinement, not part of the built-in client's machine.** The bare built-in client connecting-state machine approves on `connectToASR` **onDone** (`sendApprovedPermissions` → `done` → `#connected`) — its STV video is subscribed later, in the player layer. The **SDK and embed client** instead gate `approvedPermissions` on STV video being playable first (`SDK:session.js _approve` gated on the same canplay/`HAVE_FUTURE_DATA` settle logic; the embed client's own permission-approval check requires `_micReady && _videoReady`). **Why it matters:** `approvedPermissions` is what makes the server speak the opening line, and ICE `connected` fires ~2s before the first frame decodes — so approving before `<video>` `canplay` (readyState ≥ `HAVE_FUTURE_DATA`, + ~300ms jitter settle) clips the greeting. This wait is not unconditional: a 6s hard cap settles the gate anyway if `canplay` never fires (stalled/dropped video track), so approval isn't blocked forever on a video that never decodes. This SDK does the gate, with the same 6s fallback; do the same in your client.
+> **Steps 10–11 are a client-side refinement, not part of the built-in client's machine.** The bare built-in client connecting-state machine approves on `connectToASR` **onDone** (`sendApprovedPermissions` → `done` → `#connected`). Its STV video is subscribed later, in the player layer.  
+>  
+> The **SDK and embed client** instead gate `approvedPermissions` on STV video being playable first. (`SDK:session.js _approve` gates on the same canplay/`HAVE_FUTURE_DATA` settle logic; the embed client's own permission-approval check requires `_micReady && _videoReady`.)  
+>  
+> **Why it matters:** `approvedPermissions` is what makes the server speak the opening line. ICE `connected` fires ~2s before the first frame decodes, so approving before `<video>` `canplay` (readyState ≥ `HAVE_FUTURE_DATA`, plus a ~300ms jitter settle) clips the greeting.  
+>  
+> This wait is not unconditional. A 6s hard cap settles the gate anyway if `canplay` never fires (a stalled or dropped video track), so approval isn't blocked forever on a video that never decodes. This SDK applies the same 6s fallback; do the same in your client.
 
 ## Related docs
 

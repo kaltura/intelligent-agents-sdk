@@ -35,16 +35,16 @@ A user turn, as captured:
 ← debug_conversationStateChange {state:"Idle"}
 ```
 
-Barge-in: a new `debug_vad_speech_detected` (voice) or `→ onTextEntered {text:'', isFinal:false, isSpeechStart:true}` (typed, via `speak()`/`interrupt()`) mid-turn produces `← agentInterrupted {}` and an early `stvFinishedTalking` with the truncated `agentContent`.
+**Barge-in** is when the user interrupts the avatar mid-turn. It's triggered by a new `debug_vad_speech_detected` (voice) or by `→ onTextEntered {text:'', isFinal:false, isSpeechStart:true}` (typed, via `speak()`/`interrupt()`). Either one produces `← agentInterrupted {}` and an early `stvFinishedTalking` with the truncated `agentContent`.
 
 **Runtime behavior for integrators reasoning about turns:**
 
-- **Turn segmentation** — `agent_start_speech.isNewTurn` is `false` when the server treats new ASR/typed text as a continuation of the turn already in flight (e.g. a correction or extension of what the user just said), and `true` when it starts a fresh turn. The SDK only reads this field; it doesn't compute continuation itself.
+- **Turn segmentation** — `agent_start_speech.isNewTurn` is `false` when the server treats new ASR/typed text as a continuation of the turn already in flight (e.g. a correction or extension of what the user just said). It's `true` when the server starts a fresh turn. The SDK only reads this field. It doesn't compute continuation itself.
 - **Audio/phone mode allocates no STV** — the server short-circuits `stvNewSession` to `{status:"audio/phone mode - no STV session"}` (no `webrtc_url`, no WHEP downlink); see [Wire Protocol · Events Catalog](/reference/wire-protocol/events-catalog/#4b-server--client-on--handshakesession-phase).
 
 ## 9. Reproduce / re-capture
 
-See the SDK's committed fixture at [`test/fixtures/golden-session.json`](https://github.com/kaltura/intelligent-agents-sdk/blob/main/test/fixtures/golden-session.json). To observe live traffic against a real session, wire a `debugMode`-gated log panel to print every socket event via `session.on(...)` handlers, or attach a scratch `socket.onAny` listener in a browser console — there is no dedicated capture tool in this repo today.
+See the SDK's committed fixture at [`test/fixtures/golden-session.json`](https://github.com/kaltura/intelligent-agents-sdk/blob/main/test/fixtures/golden-session.json). To observe live traffic against a real session, wire a `debugMode`-gated log panel to print every socket event via `session.on(...)` handlers, or attach a scratch `socket.onAny` listener in a browser console. There is no dedicated capture tool in this repo.
 
 ## Related docs
 

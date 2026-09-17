@@ -14,9 +14,16 @@ eyebrow: Reference
 
 ## Tools (api / csv / code)
 
-Tools are a standalone, PARTNER-LEVEL entity with their own CRUD (`/v1/tool/add|get|list|update|delete`, Genie host) — **not** embedded in an intellect. An intellect only carries the `tool_ids` (an array of tool uuid strings) it may call. **SDK:** `import { tools } from '@kaltura/intelligent-agents/management'` builds and validates a tool's `config` before any network call; `mgmt.tools` is the CRUD surface; `mgmt.intellectConfig.setToolIds` (or `tool_ids` passed straight to `intellects.create`/`update`) links a tool to an intellect.
+Tools are a standalone entity scoped to your whole partner account, with their own CRUD API (`/v1/tool/add|get|list|update|delete`, Genie host). They are **not** embedded in an intellect — an intellect only carries the `tool_ids` (an array of tool uuid strings) it may call.
 
-**`api` tool** — calls an external HTTP endpoint. `POST /v1/tool/add`:
+**SDK:**
+- `import { tools } from '@kaltura/intelligent-agents/management'` builds and validates a tool's `config` before any network call.
+- `mgmt.tools` is the CRUD surface.
+- `mgmt.intellectConfig.setToolIds` (or `tool_ids` passed straight to `intellects.create`/`update`) links a tool to an intellect.
+
+### `api` tool
+
+Calls an external HTTP endpoint. `POST /v1/tool/add`:
 
 ```json
 {
@@ -51,15 +58,19 @@ sent to `POST /v1/intellect/update`.
 
 `response_mapping`, `response_template`, and `response_chapters` are mutually exclusive. Reference secrets as `"secrets.NAME"` — never plaintext.
 
-**Security note:** an `api` tool's `request` fires server-to-server, outside the SDK's reach. The model/system-prompt scoping that led to the call is not a security boundary — your endpoint must independently authenticate and authorize each request (validate the caller's Kaltura Session and permissions), the same way you would for any other server-to-server API call. Treat interpolated `request_vars` (client-suppliable when `allow_client_variables:true` — see [Converse](/reference/api/operate/#converse)) as untrusted input, never as an authorization claim.
+**Security note:** an `api` tool's `request` fires server-to-server, outside the SDK's reach. The model or system prompt that led to the call is not a security boundary. Your endpoint must independently authenticate and authorize each request (validate the caller's Kaltura Session and permissions), the same way you would for any other server-to-server API call. Treat interpolated `request_vars` (client-suppliable when `allow_client_variables:true` — see [Converse](/reference/api/operate/#converse)) as untrusted input, never as an authorization claim.
 
-**`csv` tool** — inline lookup table:
+### `csv` tool
+
+Inline lookup table:
 
 ```json
 { "name": "tier_lookup", "config": { "type": "csv", "description": "Map account to tier", "csv": "account,tier\n42,gold" } }
 ```
 
-**`code` tool** — Python in a server sandbox:
+### `code` tool
+
+Python in a server sandbox:
 
 ```json
 { "name": "fx_rate", "config": { "type": "code", "description": "Convert currency", "code": "def main(request_config):\n    return 'ok'" } }
@@ -67,7 +78,9 @@ sent to `POST /v1/intellect/update`.
 
 **`csv` and `code` are unavailable by default.** `POST /v1/tool/add` and `/update` reply HTTP 403 (`Tool type 'csv'/'code' is unavailable by default, call support`) for a real partner until Kaltura support enables the type on your account. `api` and `client` need no such enablement. SDK: `tools.csv(...)`/`tools.code(...)` still validate and build the config locally; the 403 comes back from `mgmt.tools.add`/`update`'s network call.
 
-**`client` tool** — a native function-calling tool that makes NO server-side call at all. The model calls it, the backend emits a silent `type:"tool"` segment (see [Wire Protocol](/reference/wire-protocol/)), and that's the entire contract — no `request` block, no echo endpoint, no response shaper:
+### `client` tool
+
+A native function-calling tool that makes no server-side call at all. The model calls it, the backend emits a silent `type:"tool"` segment (see [Wire Protocol](/reference/wire-protocol/)), and that's the entire contract — no `request` block, no echo endpoint, no response shaper:
 
 ```json
 {
@@ -81,9 +94,11 @@ sent to `POST /v1/intellect/update`.
 }
 ```
 
-`wait_for_response` (SDK: `waitForResponse`) controls whether the model's turn blocks on a real client ACK. **Omitting it is not the same as `false`** — the backend's own wire default for an absent field is `true` (blocking); pass `false` explicitly for fire-and-forget dispatch. When `true`, the backend polls up to `timeout` seconds (default 30) for an ACK via `POST /assistant/tool_response` (SDK: `session.respondToTool(id, response)`).
+`wait_for_response` (SDK: `waitForResponse`) controls whether the model's turn blocks on a real acknowledgment (ACK) from the client. **Omitting it is not the same as `false`** — the backend's own wire default for an absent field is `true` (blocking); pass `false` explicitly for fire-and-forget dispatch. When `true`, the backend polls up to `timeout` seconds (default 30) for an ACK via `POST /assistant/tool_response` (SDK: `session.respondToTool(id, response)`).
 
-**Client-tool gotcha** — a requirement that must be met at authoring time for ANY tool-referencing intellect (client, api, csv, or code): **`kaltura_genie_experiences` must be `'off'` at creation.** The experiences capability injects a system rule that out-competes custom tool calls. Set it to `'off'` when you call `intellect/add` — partner config is cached ~24 h server-side, so updating it later has no immediate effect.
+### Client-tool gotcha
+
+This requirement applies at authoring time to any tool-referencing intellect (client, api, csv, or code): **`kaltura_genie_experiences` must be `'off'` at creation.** The experiences capability injects a system rule that overrides custom tool calls. Set it to `'off'` when you call `intellect/add` — partner config is cached ~24 h server-side, so updating it later has no immediate effect.
 
 Use `tools.client(...)` in the SDK, which validates the tool before any network call; `clientToolReadiness(body)` lints an intellect body's `tool_ids` + `capabilities` for this gotcha.
 

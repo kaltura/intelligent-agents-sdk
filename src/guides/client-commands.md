@@ -7,17 +7,26 @@ eyebrow: How-to Guide
 
 # Client-Side Commands — how the avatar drives your UI
 
-How a Kaltura avatar silently triggers actions in *your* app — navigate a deck, render a widget, draw a chart — by calling a tool you defined. The brain decides *when*; the page decides *what happens*. This is the mechanism that lets an app drive client commands (`navigate_to_slide`/`show_widget`/`highlight_chart`/`open_filing`) off a single live avatar; see [`../examples/deck-presenter.html`](https://github.com/kaltura/intelligent-agents-sdk/blob/main/examples/deck-presenter.html) for a self-contained slide-navigation demo.
+How a Kaltura avatar silently triggers actions in *your* app: navigate a deck, render a widget, draw a chart, by calling a tool you defined. The [brain](https://github.com/kaltura/intelligent-agents-sdk/blob/main/README.md#architecture) decides *when* to act. The page decides *what happens*.
 
 **On this page:** [Why it exists](#why-it-exists) · [The mechanism, end to end](#the-mechanism-end-to-end) · [Limits and gotchas](#limits-and-gotchas) · [Related docs](#related-docs)
 
-If you only read one thing: a "client command" is **not a special protocol feature**. It is a native `type:"client"` tool that makes **no server-side call at all** — the *product* is the silent `type:"tool"` segment the brain streams when the LLM calls it. Your page captures that segment and runs whatever JS it wants.
+This is the mechanism that lets an app drive client commands (`navigate_to_slide`/`show_widget`/`highlight_chart`/`open_filing`) off a single live avatar. See [`../examples/deck-presenter.html`](https://github.com/kaltura/intelligent-agents-sdk/blob/main/examples/deck-presenter.html) for a self-contained slide-navigation demo.
+
+If you only read one thing: a "client command" is **not a special protocol feature**. It is a native `type:"client"` tool that makes **no server-side call at all**. The *product* is the silent `type:"tool"` segment the brain streams when the LLM calls it. Your page captures that segment and runs whatever JS it wants.
 
 ---
 
 ## Why it exists
 
-Without this channel, an avatar can only *talk*. With it, the avatar drives a live experience the way a human presenter would: it jumps to the relevant slide when you ask a question, generates a new slide for an off-curriculum topic, shows a chart, switches tracks. Prompt-only experience runtimes — the brain's built-in structured-widget system (flashcards, sources, forms, and the other GenUI widgets; see [GenUI Reference](/reference/genui-reference/)) — have no client-command surface, and the togglable-capabilities enum (e.g. `use_knowledge_base`, `avatar`, `kaltura_genie_experiences`) has no mechanism for the brain to invoke a page-defined function. This SDK ships that mechanism, documented and tested, in `tools.client` + `session.onToolCall`.
+Without this channel, an avatar can only *talk*. With it, the avatar drives a live experience the way a human presenter would:
+
+- It jumps to the relevant slide when you ask a question.
+- It generates a new slide for an off-curriculum topic.
+- It shows a chart.
+- It switches tracks.
+
+Two other SDK mechanisms can't do this. The brain's built-in structured-widget system (flashcards, sources, forms, and the other GenUI widgets; see [GenUI Reference](/reference/genui-reference/)) has no client-command surface. The togglable-capabilities enum (e.g. `use_knowledge_base`, `avatar`, `kaltura_genie_experiences`) has no way for the brain to invoke a page-defined function. This SDK ships that mechanism, documented and tested, in `tools.client` + `session.onToolCall`.
 
 ---
 
@@ -55,9 +64,18 @@ await mgmt.intellects.create({
 
 `tool_ids` is one of the intellect's allow-listed fields, so linking a tool persists through **`v1/intellect/update`** (the brain's host, admin token). The tool BODY itself lives on the separate `/v1/tool/*` entity (`mgmt.tools`), not inside the intellect config.
 
-`navigate_to_slide`'s description asks the brain to pass "the most relevant slide number" — but the brain can only resolve a topic to a slide number from something in its context. If you're using the [`Presenter`](https://github.com/kaltura/intelligent-agents-sdk/blob/main/README.md#presenter) helper, pass `deckOutline: true` to its constructor instead of hand-rolling a topic→slide mapping into `BASE_DIRECTIVE`: it adds a full-deck `{slide_num, title}[]` outline to every per-slide context payload (the `page_context` request variable), stays correct after a runtime `appendSlide()` (a static `BASE_DIRECTIVE` outline does not), and disambiguates duplicate slide titles automatically.
+`navigate_to_slide`'s description asks the brain to pass "the most relevant slide number" — but the brain can only resolve a topic to a slide number from something in its context. If you're using the [`Presenter`](https://github.com/kaltura/intelligent-agents-sdk/blob/main/README.md#presenter) helper, pass `deckOutline: true` to its constructor instead of hand-rolling a topic→slide mapping into `BASE_DIRECTIVE`. This flag:
 
-`waitForResponse` controls whether the model's turn blocks on a real client-supplied result. **Omitting it is not the same as passing `false`** — the backend's own wire default for an absent `wait_for_response` field is `true` (blocking), so pass it explicitly. `false` gives fire-and-forget dispatch (a full turn takes ~2.9s); `true` makes the backend poll up to `timeout` seconds (default 30) for an ACK via `POST /assistant/tool_response` — the host app supplies that ACK with `session.respondToTool(call.toolMetadata.id, response)`.
+- Adds a full-deck `{slide_num, title}[]` outline to every per-slide context payload (the `page_context` request variable).
+- Stays correct after a runtime `appendSlide()` — a static `BASE_DIRECTIVE` outline does not.
+- Disambiguates duplicate slide titles automatically.
+
+`waitForResponse` controls whether the model's turn blocks on a real client-supplied result. **Omitting it is not the same as passing `false`.** The backend's own wire default for an absent `wait_for_response` field is `true` (blocking), so pass it explicitly.
+
+| Value | Behavior |
+|---|---|
+| `false` | Fire-and-forget dispatch. A full turn takes ~2.9s. |
+| `true` | The backend polls up to `timeout` seconds (default 30) for an ACK via `POST /assistant/tool_response`. The host app supplies that ACK with `session.respondToTool(call.toolMetadata.id, response)`. |
 
 ### 2. The brain calls it → it streams a silent segment
 
@@ -78,7 +96,7 @@ session.onToolCall('navigate_to_slide', ({ slide_num }) => deck.goTo(slide_num))
 session.onToolCall('create_slide',       (slide)      => deck.append(slide));
 ```
 
-**Chat (text-only) transport:** `KalturaChatSession` (and the mode-switching `KalturaAgentSession`) carries the identical `onToolCall(name, handler, argsSchema?)` contract — same parsing, same semantic dedup, same guardrail order — dispatching mid-stream while a `sendText()` turn is being read. `respondToTool(call.toolMetadata.id, response)` ACKs a `waitForResponse:true` tool over HTTPS with the session's own conversation KS; the model receives the result and speaks it in the *same* turn. One tool definition works unmodified on both transports (the wire ACK is one shared contract — see [Wire Protocol](/reference/wire-protocol/)). On `KalturaAgentSession`, register handlers once on the facade — they re-attach automatically across mode switches.
+**Chat (text-only) transport:** `KalturaChatSession` (and the mode-switching `KalturaAgentSession`) carries the identical `onToolCall(name, handler, argsSchema?)` contract: same parsing, same semantic dedup, same guardrail order. It dispatches mid-stream while a `sendText()` turn is being read. `respondToTool(call.toolMetadata.id, response)` ACKs a `waitForResponse:true` tool over HTTPS with the session's own conversation KS; the model receives the result and speaks it in the *same* turn. One tool definition works unmodified on both transports (the wire ACK is one shared contract — see [Wire Protocol](/reference/wire-protocol/)). On `KalturaAgentSession`, register handlers once on the facade — they re-attach automatically across mode switches.
 
 **Headless / SSE:** read `collectConverse(...).toolCalls` — a flat array of `{name,args,raw}` for every tool segment in the turn — or call `parseToolCall(seg)` yourself while iterating a stream.
 
@@ -101,9 +119,11 @@ const check = validateToolArgs(call.args, { slide_num: { type: 'int', required: 
 if (!check.ok) { /* check.errors */ }
 ```
 
-`onToolCall` fires **after** the `onAgentAction` guardrail (a vetoed or allow-listed-out command never dispatches) and **at most once per turn** per identical call — the same segment can re-arrive on the live socket, so the SDK dedups semantically (tool name + sorted-key JSON of args, via `canonicalJson` — an LLM retry of the identical logical call can arrive with non-deterministic JSON key order, which raw-string dedup would miss) and resets each turn. Multiple handlers for one name all run in registration order; a throwing handler is isolated (logged, others still run). `onToolCall` returns an unsubscribe function.
+`onToolCall` fires **after** the `onAgentAction` guardrail, so a vetoed or allow-listed-out command never dispatches. It also fires **at most once per turn** per identical call. The same segment can re-arrive on the live socket, so the SDK dedups semantically: it matches on tool name plus sorted-key JSON of the args, via `canonicalJson`. That catches an LLM retry of the identical logical call even when the JSON key order isn't deterministic, which raw-string dedup would miss. This dedup resets each turn.
 
-A handler's return value (or thrown/rejected error) is captured and re-emitted as `'toolCallResult'` (`{call, ok, value|error}`), but this is **local/app-observable only** unless the tool was built with `waitForResponse:true` — only then does `session.respondToTool(call.toolMetadata.id, response)` actually carry a result back to the model.
+Multiple handlers for one name all run in registration order. A throwing handler is isolated (logged, others still run). `onToolCall` returns an unsubscribe function.
+
+A handler's return value (or thrown/rejected error) is captured and re-emitted as `'toolCallResult'` (`{call, ok, value|error}`). This is **local/app-observable only** unless the tool was built with `waitForResponse:true`. Only then does `session.respondToTool(call.toolMetadata.id, response)` actually carry a result back to the model.
 
 ---
 
@@ -123,19 +143,27 @@ Partner config is cached server-side for ~24h. Flipping a capability on an *exis
 
 ### Native tools work where prompt-only instructions fail
 
-Do not try to get a custom command to fire by asking for it in a prompt block alone, with no real tool behind it. That approach is unreliable: the model can simply decline to emit free-form output an instruction asks for. A `tools.client` tool is different because it is *bound to the LLM* as a real function-calling tool — calling it is normal agent behavior, not a text-generation request the model can decline. This is the whole reason `tools.client` works where a prompt-only instruction doesn't.
+Do not try to get a custom command to fire by asking for it in a prompt block alone, with no real tool behind it. That approach is unreliable: the model can simply decline to emit free-form output an instruction asks for.
+
+A `tools.client` tool is different because it is *bound to the LLM* as a real function-calling tool. Calling it is normal agent behavior, not a text-generation request the model can decline. That's why `tools.client` works where a prompt-only instruction doesn't.
 
 ### Tool spirals starve the voice — budget tools per turn
 
-A tool-eager brain can loop the *same* command many times in one turn. When a turn spirals to 5-8+ calls with duplicates, the spoken `avatar` segments get starved and the turn returns **empty text** — a silent avatar, often on the most important question. Defend on both sides.
+A tool-eager brain can loop the *same* command many times in one turn. When a turn spirals to 5-8+ calls with duplicates, the spoken `avatar` segments get starved and the turn returns **empty text**: a silent avatar, often on the most important question. Defend on both sides.
 
 #### Author side: put a budget in the system prompt
 
-Put a hard TOOL-CALL BUDGET in the system prompt — e.g. max one `create_slide` and one `show_widget` per turn; on a build/show request pick ONE tool then speak — plus an explicit "ALWAYS SPEAK: every turn ends with 1-3 spoken sentences; a silent turn is a failure" rule. This took empty-text from 23% to 0% on the worst prompts. Also add a "never narrate a tool failure that isn't happening" rule (the brain otherwise apologizes for "trouble pulling up that widget" when nothing failed).
+Put three rules in the system prompt:
+
+- A hard TOOL-CALL BUDGET, e.g. max one `create_slide` and one `show_widget` per turn; on a build/show request, pick ONE tool then speak.
+- An explicit "ALWAYS SPEAK" rule: every turn ends with 1-3 spoken sentences; a silent turn is a failure.
+- A "never narrate a tool failure that isn't happening" rule. Without it, the brain apologizes for "trouble pulling up that widget" when nothing failed.
+
+The budget and ALWAYS SPEAK rules together took empty-text from 23% to 0% on the worst prompts.
 
 #### Tool side: fire-and-forget has zero result signal
 
-**Root cause.** A `tools.client` tool built with `waitForResponse:false` carries no response channel back to the model at all — there is no fixed success literal, no field, nothing — so a same-turn duplicate call looks, from the model's side, identical to the first: nothing in the tool's own (non-existent) result tells it to stop and speak.
+**Root cause.** A `tools.client` tool built with `waitForResponse:false` carries no response channel back to the model at all: no fixed success literal, no field, nothing. So a same-turn duplicate call looks, from the model's side, identical to the first. Nothing in the tool's own (non-existent) result tells it to stop and speak.
 
 **Mitigation.** Fold an explicit stop-and-speak instruction directly into the tool's `description` field (e.g. `'... This tool has no reply to wait for — call it EXACTLY ONCE per turn, then immediately narrate it out loud in the SAME turn; never call it again to confirm or retry.'`) — the one LLM-facing channel a fire-and-forget `client` tool still has.
 
@@ -143,22 +171,28 @@ Put a hard TOOL-CALL BUDGET in the system prompt — e.g. max one `create_slide`
 
 #### SDK side (headless): dedup, cap, and recover with one follow-up turn
 
-`collectConverse()` dedupes semantically (tool name + `canonicalJson` of args — the same key shape the live session's `onToolCall` dispatch uses, so a non-deterministic JSON key order on an LLM retry doesn't defeat it), caps per-tool, and stops reading once a spiral threshold is crossed, returning the good content gathered so far plus `spiralStopped: true` — so a headless turn yields the valid first widget instead of blocking to the request timeout.
+`collectConverse()` dedupes semantically: it matches on tool name plus `canonicalJson` of args, the same key shape the live session's `onToolCall` dispatch uses, so a non-deterministic JSON key order on an LLM retry doesn't defeat it. It also caps per-tool, and stops reading once a spiral threshold is crossed, returning the good content gathered so far plus `spiralStopped: true`. So a headless turn yields the valid first widget instead of blocking to the request timeout.
 
 | Option | Default | What it does |
 |---|---|---|
 | `maxPerTool` | 3 | Caps repeats of any single tool name before treating it as spiraling |
 | `maxToolCalls` | 8 (pass `Infinity` to disable) | Total tool-call budget for the turn before `collectConverse()` stops reading and returns `spiralStopped: true` |
 
-But a spiral can exhaust the segment budget before the brain ever reaches a spoken sentence, leaving `text: ''` with nothing to fall back to in that same turn. A two-metric guidance question made the brain re-emit an already-successful `show_widget` call repeatedly with zero spoken segments ever, and a 90-second/150+-segment uncapped read confirmed the loop does not self-resolve given more time. Headless HTTP has no live-socket `interrupt()`/`_coldReconnect()` to fall back on (that's the live-session mechanism in [System Internals Reference](/reference/architecture-reference/resilience-and-failure-handling/#tool-call-spiral-what-happened-and-how-its-mitigated)). The only proven lever is a new turn. `conversations.send({..., recoverFromSpiral: true})` (or `converseOnce(cfg, msg, {recoverFromSpiral: true})`) opts into exactly that: when the first attempt comes back `spiralStopped:true` with empty text, it sends ONE follow-up turn on the same thread, prefixing the original message with `SPIRAL_RECOVERY_PREFIX` ("Please answer in words only this turn, without calling any tool. "). This reliably breaks the loop and produces a correct, properly-caveated spoken answer. The result carries `spiralRecovered` (boolean) and `firstAttempt: {toolCalls, spiralStopped}` for diagnostics. It never retries more than once, and is off by default (back-compat).
+But a spiral can exhaust the segment budget before the brain ever reaches a spoken sentence, leaving `text: ''` with nothing to fall back to in that same turn. This isn't theoretical: a two-metric guidance question made the brain re-emit an already-successful `show_widget` call repeatedly with zero spoken segments, ever. A 90-second, 150+-segment uncapped read confirmed the loop does not self-resolve given more time.
+
+Headless HTTP has no live-socket `interrupt()`/`_coldReconnect()` to fall back on (that's the live-session mechanism in [System Internals Reference](/reference/architecture-reference/resilience-and-failure-handling/#tool-call-spiral-what-happened-and-how-its-mitigated)). The only proven lever is a new turn.
+
+`conversations.send({..., recoverFromSpiral: true})` (or `converseOnce(cfg, msg, {recoverFromSpiral: true})`) opts into exactly that. When the first attempt comes back `spiralStopped:true` with empty text, it sends ONE follow-up turn on the same thread, prefixing the original message with `SPIRAL_RECOVERY_PREFIX` ("Please answer in words only this turn, without calling any tool. "). This reliably breaks the loop and produces a correct, properly-caveated spoken answer.
+
+The result carries `spiralRecovered` (boolean) and `firstAttempt: {toolCalls, spiralStopped}` for diagnostics. It never retries more than once, and is off by default (back-compat).
 
 #### SDK side (live session): see ARCHITECTURE-REFERENCE.md
 
-`collectConverse()`'s guard does not run on the live socket path — `KalturaAvatarSession` streams `agent_raw_text` directly, so a spiral there doesn't block a request (there is none to time out). `KalturaAvatarSession` instead runs a brain-stall watchdog plus a two-tier tool-call-spiral circuit breaker (soft signal, then a hard cold-reconnect recovery). The full incident history, threshold table, and reconnect semantics are documented once, in [System Internals Reference's "Tool-call spiral: what happened and how it's mitigated"](/reference/architecture-reference/resilience-and-failure-handling/#tool-call-spiral-what-happened-and-how-its-mitigated) — read that for the mechanism; this doc covers only what an app author needs to configure (the budget above) and the headless equivalent (previous section).
+`collectConverse()`'s guard does not run on the live socket path — `KalturaAvatarSession` streams `agent_raw_text` directly, so a spiral there doesn't block a request (there is none to time out). `KalturaAvatarSession` instead runs a brain-stall watchdog plus a two-tier tool-call-spiral circuit breaker (soft signal, then a hard cold-reconnect recovery). The full incident history, threshold table, and reconnect semantics are documented once, in [System Internals Reference's "Tool-call spiral: what happened and how it's mitigated"](/reference/architecture-reference/resilience-and-failure-handling/#tool-call-spiral-what-happened-and-how-its-mitigated). Read that for the mechanism. This doc covers only what an app author needs to configure (the budget above) and the headless equivalent (previous section).
 
 #### Root cause of one class of spiral
 
-A duplicate-turn edge case (`isNewTurn:false`) used to let an already-successful tool call replay as if new, directly feeding a spiral rather than merely tripping its detectors — see [System Internals Reference's "Tool-call spiral: what happened and how it's mitigated"](/reference/architecture-reference/resilience-and-failure-handling/#tool-call-spiral-what-happened-and-how-its-mitigated) for the full mechanism. The `agent_start_speech` handler now clears/promotes tool-call dedup state only when `isNewTurn` is true.
+A duplicate-turn edge case (`isNewTurn:false`) used to let an already-successful tool call replay as if new, directly feeding a spiral rather than merely tripping its detectors. See [System Internals Reference's "Tool-call spiral: what happened and how it's mitigated"](/reference/architecture-reference/resilience-and-failure-handling/#tool-call-spiral-what-happened-and-how-its-mitigated) for the full mechanism. The `agent_start_speech` handler now clears/promotes tool-call dedup state only when `isNewTurn` is true.
 
 ### The LLM has no real-time clock
 
@@ -170,12 +204,17 @@ The system prompt injects the date but not the time-of-day, so any `sentAt`-styl
 
 ```js
 // Block ALL client commands:
-const session = new KalturaAvatarSession({ /* … */, agentActions: { toolCall: false } });
+const session = new KalturaAvatarSession({ /* …other config… */ agentActions: { toolCall: false } });
 // Or allow-list specific names:
-const session = new KalturaAvatarSession({ /* … */, agentActions: { toolCall: ['navigate_to_slide', 'show_widget'] } });
+const session = new KalturaAvatarSession({ /* …other config… */ agentActions: { toolCall: ['navigate_to_slide', 'show_widget'] } });
 ```
 
-A command not on the allow-list is denied before any handler runs (audited as `agent.action.deny`). The SDK does **not** scrub tool-call args before they reach your handler — treat `args` as untrusted LLM output. Don't feed them into a naive deep-merge or `Object.assign` onto a shared object (a `__proto__`/`constructor` key could pollute a prototype), and don't put unsanitized end-user free text, secrets, or authorization data into command args. See [Security & Compliance](/reference/security/).
+A command not on the allow-list is denied before any handler runs (audited as `agent.action.deny`). The SDK does **not** scrub tool-call args before they reach your handler. Treat `args` as untrusted LLM output:
+
+- Don't feed them into a naive deep-merge or `Object.assign` onto a shared object. A `__proto__`/`constructor` key could pollute a prototype.
+- Don't put unsanitized end-user free text, secrets, or authorization data into command args.
+
+See [Security & Compliance](/reference/security/).
 
 ---
 

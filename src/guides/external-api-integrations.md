@@ -11,15 +11,15 @@ How to wire a Kaltura agent to call out to an external REST API — write a supp
 
 **On this page:** [The building blocks](#the-building-blocks) · [Authenticating the call](#authenticating-the-call) · [When you actually need OAuth2 — the real, backend-managed flow](#when-you-actually-need-oauth2--the-real-backend-managed-flow) · [Don't skip `kaltura_genie_experiences: 'off'`](#dont-skip-kaltura_genie_experiences-off) · [Verifying the wiring before you rely on it](#verifying-the-wiring-before-you-rely-on-it) · [Example: CRM / marketing-automation integration](#example-crm--marketing-automation-integration) · [Related docs](#related-docs)
 
-This is a general integration mechanism: any `api` tool (`src/management/tools.js`'s `tools.api()`) the model can call, wired to whatever HTTP endpoint you point it at. CRM/marketing writes (HubSpot, Salesforce, Marketo) are one common use case and get their own example section below, but the same three-step pattern applies equally to a support desk, a booking system, a MAM (media asset management) API, an inventory lookup, or any other REST integration.
+This is a general integration mechanism: any `api` tool (`src/management/tools.js`'s `tools.api()`) the model can call, wired to whatever HTTP endpoint you point it at. CRM/marketing writes (HubSpot, Salesforce, Marketo) are one common use case, and get their own example section below. But the same three-step pattern applies equally to a support desk, a booking system, a MAM (media asset management) API, an inventory lookup, or any other REST integration.
 
-If your use case is specifically getting the *viewer's own submitted data* (from a `user_properties_forms` prompt) onto external infrastructure, read [Structured Data Forms](/guides/structured-data-forms/) first — it explains why `session.submitStructuredDataForm()` alone does **not** get you durable, retrievable data with this toolkit's credentials, and everything here is the alternative: a **tool call** the model makes directly, landing on infrastructure you control.
+If your use case is specifically getting the *viewer's own submitted data* (from a `user_properties_forms` prompt) onto external infrastructure, read [Structured Data Forms](/guides/structured-data-forms/) first. It explains why `session.submitStructuredDataForm()` alone does **not** get you durable, retrievable data with this toolkit's credentials. Everything here is the alternative: a **tool call** the model makes directly, landing on infrastructure you control.
 
 ## The building blocks
 
 An external API integration is a custom `api` tool, linked to your intellect via `tool_ids`. Three pieces, always in this order:
 
-1. **Store the credential as a secret** — `mgmt.intellects.secrets.set(configId, {NAME: value}, adminKs)` (`src/management/secrets.js`). Secrets are write-only: every read masks values as `"***"`, and there is no endpoint to read a plaintext value back — this is a genuine backend guarantee (server-encrypted at rest), not something the SDK layers on top.
+1. **Store the credential as a secret** — `mgmt.intellects.secrets.set(configId, {NAME: value}, adminKs)` (`src/management/secrets.js`). Secrets are write-only: every read masks values as `"***"`, and there is no endpoint to read a plaintext value back. This is a genuine backend guarantee (server-encrypted at rest), not something the SDK layers on top.
 2. **Build and register the tool** — `tools.api({..., request: {..., headers: {Authorization: 'Bearer {{secrets.NAME}}'}}})`, then `mgmt.tools.add(tool, adminKs)`. A tool is its own partner-level entity (`/v1/tool/*`), not embedded in the intellect.
 3. **Link it** — `mgmt.intellectConfig.setToolIds(configId, [toolId], adminKs)`.
 
@@ -73,7 +73,7 @@ const tool = api({
 
 </div>
 
-`buildAuth()` (`src/management/tools.js`) validates this block before any network call: `type` must be `'oauth2'` (the only scheme the backend supports today), and — the one hard rule — `client_secret` **must** be a `secrets.<name>` reference matching `/^secrets\.[A-Za-z_][A-Za-z0-9_]*$/`. A plaintext secret is rejected by construction, so there's no path for it to leak into a tool config at rest.
+`buildAuth()` (`src/management/tools.js`) validates this block before any network call. `type` must be `'oauth2'` (the only scheme the backend supports today). The one hard rule: `client_secret` **must** be a `secrets.<name>` reference matching `/^secrets\.[A-Za-z_][A-Za-z0-9_]*$/`. A plaintext secret is rejected by construction, so there's no path for it to leak into a tool config at rest.
 
 This is a genuine authorization-code exchange, not a pre-minted static token wearing an OAuth label. Here's what to build for and expect:
 
@@ -81,11 +81,15 @@ This is a genuine authorization-code exchange, not a pre-minted static token wea
 - **After consent, later calls just work.** Once the provider redirects back with a `code` and the viewer's consent completes, subsequent calls to the same tool succeed without asking the viewer to consent again.
 - **Refresh is automatic.** A later call can reuse and refresh an expired token with no viewer interaction and no redirect. Only when that refresh itself fails do you see another `interruption`/`auth_url`, sending the viewer back through consent. Don't hardcode an assumed validity window for cached consent — treat every call as one that might come back with a fresh `auth_url` and handle that path.
 
-Unlike a static-bearer-token tool (where *you* own token rotation), a tool wired through `authentication: {type: 'oauth2', ...}` gets consent and refresh handled for you by the platform. The tradeoff is the interruption/consent UX — your app has to handle the `interruption` segment and show the viewer a link, which a static bearer token never requires.
+Unlike a static-bearer-token tool (where *you* own token rotation), a tool wired through `authentication: {type: 'oauth2', ...}` gets consent and refresh handled for you by the platform. The tradeoff is the interruption/consent UX: your app has to handle the `interruption` segment and show the viewer a link. A static bearer token never requires that.
 
 ## Don't skip `kaltura_genie_experiences: 'off'`
 
-Any intellect that references `tool_ids` (an external-API tool is no exception) should set `capabilities: {kaltura_genie_experiences: 'off'}` **at creation time**. `mgmt.tools.clientToolReadiness(body)` (`src/management/tools.js`) is a pure lint you can run over your create/update body before sending it: it warns when tools are referenced but this capability isn't explicitly off, because the default-on capability injects a "you MUST call `get_experience_instructions`" instruction that out-competes your tool for the same "what do I do with this turn" decision. `intellects.create()` and `intellects.update()` already run this lint automatically and log its warnings. But the fix (setting the capability) only takes effect immediately at **creation**. Flipping it on an existing intellect is defeated by the ~24h partner-config cache.
+Any intellect that references `tool_ids` (an external-API tool is no exception) should set `capabilities: {kaltura_genie_experiences: 'off'}` **at creation time**.
+
+Here's why. The default-on capability injects a "you MUST call `get_experience_instructions`" instruction. That instruction out-competes your tool for the same "what do I do with this turn" decision. `mgmt.tools.clientToolReadiness(body)` (`src/management/tools.js`) is a pure lint you can run over your create/update body before sending it: it warns when tools are referenced but this capability isn't explicitly off. `intellects.create()` and `intellects.update()` already run this lint automatically and log its warnings.
+
+But the fix (setting the capability) only takes effect immediately at **creation**. Flipping it on an existing intellect is defeated by the ~24h partner-config cache.
 
 ## Verifying the wiring before you rely on it
 
@@ -96,7 +100,7 @@ Two read-only checks, both worth running after setup and before believing an int
 
 ## Example: CRM / marketing-automation integration
 
-A CRM or marketing-automation (MAM) write is a routine instance of the pattern above: the same secret → tool → link steps, pointed at a CRM's contact-upsert endpoint. The SDK ships two ready-made builders for the most common cases.
+A CRM or marketing-automation write is a routine instance of the pattern above: the same secret → tool → link steps, pointed at a CRM's contact-upsert endpoint. The SDK ships two ready-made builders for the most common cases.
 
 ### HubSpot
 
@@ -115,7 +119,7 @@ const { id } = await mgmt.tools.add(tool, adminKs);
 await mgmt.intellectConfig.setToolIds(configId, [id], adminKs);
 ```
 
-This is a pure config builder — no network call happens inside `hubspotContactUpsert()` itself; it just assembles and validates the `GenieToolConfig` that `mgmt.tools.add()` then registers. Every `propertiesToCapture` entry becomes both a tool argument (`{prompt: "Contact <prop>", type: 'str', required: prop === 'email'}`) and a field in the outgoing `properties` body — the model fills them from the conversation and calls the tool; the server executes the actual HTTP request.
+This is a pure config builder. No network call happens inside `hubspotContactUpsert()` itself; it just assembles and validates the `GenieToolConfig` that `mgmt.tools.add()` then registers. Every `propertiesToCapture` entry becomes both a tool argument (`{prompt: "Contact <prop>", type: 'str', required: prop === 'email'}`) and a field in the outgoing `properties` body. The model fills them from the conversation and calls the tool. The server executes the actual HTTP request.
 
 ### Salesforce
 
@@ -130,7 +134,7 @@ const tool = salesforceContactUpsert({
 });
 ```
 
-One real Salesforce quirk this builder accounts for: an upsert-by-external-ID `PATCH` returns `201 {id: ...}` on insert but `204` with an **empty body** on update — there's no field guaranteed present on both, so its `responseMapping` only maps `result: 'id'` (present when it exists) rather than assuming a shape that breaks on the update path. The point of this tool is the side effect (the contact write), not what it echoes back.
+One real Salesforce quirk this builder accounts for: an upsert-by-external-ID `PATCH` returns `201 {id: ...}` on insert but `204` with an **empty body** on update. There's no field guaranteed present on both, so its `responseMapping` only maps `result: 'id'` (present when it exists) rather than assuming a shape that breaks on the update path. The point of this tool is the side effect (the contact write), not what it echoes back.
 
 **This builder authenticates with a static secret**, exactly like the HubSpot one — it does *not* use the OAuth2 `authentication` block described above. That's fine for a Salesforce Connected App access token you mint and rotate yourself, but it does mean *you* are responsible for refreshing that token before it expires; the platform won't refresh it for you unless you route through the real OAuth2 flow instead.
 
@@ -138,8 +142,8 @@ One real Salesforce quirk this builder accounts for: an upsert-by-external-ID `P
 
 Marketo supports both connection models, and which one fits depends on how much you're allowed to ask of the visitor's session:
 
-- **No-token forms submission (Munchkin).** Marketo's own embeddable JS forms submit leads through a public, unauthenticated POST endpoint tied to a Munchkin account ID — no admin REST API token required. If you only need to capture a lead (not read/update arbitrary Marketo objects), you can build a `client` tool (`tools.client()`) that the model calls, with your page-side handler (`session.onToolCall`) doing the actual `fetch()` to Marketo's forms endpoint using the account's public Munchkin ID — the same mechanism Marketo's own `<script>`-embedded forms use. This needs no secret at all.
-- **Full REST API access (leads.json, campaigns, etc.).** Anything beyond a simple form submission — updating an existing lead by email, triggering a campaign — goes through Marketo's REST API, which does require a client-credentials OAuth2 token. Use the `api` tool + OAuth2 `authentication` block pattern shown above; Marketo's `identity/oauth/token` endpoint is a standard OAuth2 token endpoint that fits `buildAuth()`'s shape directly.
+- **No-token forms submission (Munchkin).** Marketo's own embeddable JS forms submit leads through a public, unauthenticated POST endpoint tied to a Munchkin account ID. No admin REST API token is required. If you only need to capture a lead, not read or update arbitrary Marketo objects, build a `client` tool (`tools.client()`) that the model calls. Your page-side handler (`session.onToolCall`) does the actual `fetch()` to Marketo's forms endpoint, using the account's public Munchkin ID, the same mechanism Marketo's own `<script>`-embedded forms use. This needs no secret at all.
+- **Full REST API access (leads.json, campaigns, etc.).** Anything beyond a simple form submission — updating an existing lead by email, triggering a campaign — goes through Marketo's REST API, which does require a client-credentials OAuth2 token. Use the `api` tool + OAuth2 `authentication` block pattern shown above. Marketo's `identity/oauth/token` endpoint is a standard OAuth2 token endpoint that fits `buildAuth()`'s shape directly.
 
 Pick the first path when you just need "get this lead into Marketo" and want zero secret management; reach for the second only when the model needs to do more than a one-shot form submission.
 
@@ -149,7 +153,7 @@ None of these need a dedicated recipe — they're a plain `api` tool with a stat
 
 - **Airtable** — a personal access token as a `Bearer` header, `POST` to `https://api.airtable.com/v0/{baseId}/{tableName}` with `body: {fields: {...}}`.
 - **Google Sheets** — Google's Sheets API requires OAuth2 (a service account or viewer consent), so use the `authentication: {type: 'oauth2', ...}` pattern above rather than a static token.
-- **Google Forms (prefill-and-submit link)** — Forms has no lead-write REST endpoint at all; the common workaround is a `client` tool that opens a pre-filled Forms URL (`viewform?usp=pp_url&entry.<id>=<value>`) for the viewer, which is a UX handoff, not a server-side write — decide whether that fits your flow before reaching for it.
+- **Google Forms (prefill-and-submit link)** — Forms has no lead-write REST endpoint at all. The common workaround is a `client` tool that opens a pre-filled Forms URL (`viewform?usp=pp_url&entry.<id>=<value>`) for the viewer. That's a UX handoff, not a server-side write. Decide whether that fits your flow before reaching for it.
 - **Any other REST API** — same shape: static secret → `Authorization` header, or OAuth2 block if the provider requires it. This is exactly how you'd wire a MAM (media asset management) lookup, a support-ticketing system, a booking API, or anything else with an HTTP interface.
 
 ## Related docs

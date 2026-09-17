@@ -43,11 +43,11 @@ See [Catalog & Assets § Upload a Custom Visual](/reference/api/design/#upload-a
 
 | Way | Body | When |
 |---|---|---|
-| An existing Visual | `visual: { id }` | Fastest — a catalog preset, or your own upload via `catalog.createVisual` (§ Upload a Custom Visual, above). Wins only if `face`/`background` are BOTH omitted or BOTH sent as a complete pair — sending just one of `face`/`background` alongside `visual` is still a domain error (see the row below), `visual` does not exempt it. |
-| Compose a NEW Visual from a Face + Background | `face: { id }` + `background: { type: 'color', value?: '#hex' }` (`value` optional, defaults to white) or `{ type: 'visual', value: <Background catalog itemId> }` (`value` required) | You want a specific face (a `catalog.createFace` upload, or one of the 36 preset Face items) over a specific backdrop. `face`/`background` must travel together — either alone 200s with a domain error (`AVATAR_MISSING_VISUAL_RESOLUTION`), even if `visual` is also sent, unless `templateId` is also given: a template can carry its own `face` and/or `background`, filling in whichever half you didn't send. |
+| An existing Visual | `visual: { id }` | Fastest — a catalog preset, or your own upload via `catalog.createVisual` (§ Upload a Custom Visual, above). Wins only if `face`/`background` are both omitted, or both sent together as a complete pair. Sending just one of `face`/`background` alongside `visual` is still a domain error (see the row below) — `visual` does not exempt it. |
+| Compose a new Visual from a Face + Background | `face: { id }` + `background: { type: 'color', value?: '#hex' }` (`value` optional, defaults to white) or `{ type: 'visual', value: <Background catalog itemId> }` (`value` required) | You want a specific face (a `catalog.createFace` upload, or one of the 36 preset Face items) over a specific backdrop. `face`/`background` must travel together. Sending just one of them still returns an HTTP 200 with a domain error in the body (`AVATAR_MISSING_VISUAL_RESOLUTION`), even if `visual` is also sent — unless `templateId` is also given: a template can carry its own `face` and/or `background`, filling in whichever half you didn't send. |
 | A curated template + whatever it's missing | `templateId` + whichever of `face`/`background`/`visual` the template doesn't already supply | Fastest good-looking result — see below. `templateId` alone is a domain failure unless the template already resolves to a complete `visual` on its own. |
 
-Whichever way you pick, the composed result is reflected in the created avatar's `visual.composition` and a fresh raw `previewImageUrl`/`loadingVideoUrl` (backend asset URLs, not the rendered live-session composite) — inspect those to see what was actually built, rather than assuming the inputs alone describe the output.
+Whichever way you pick, the composed result is reflected in the created avatar's `visual.composition` and a fresh raw `previewImageUrl`/`loadingVideoUrl` (backend asset URLs, not the rendered live-session composite). Inspect those to see what was actually built, rather than assuming the inputs alone describe the output.
 
 **Faster path — pick a curated preset instead of assembling voice+visual by hand:** `mgmt.avatars.listTemplates(ks, opts)` lists curated bundles (36 live today — "Adam", "Amir", "Ben", ...), each pairing a `voice` with either a ready `visual` or a `face`/`background` pair. Pass the template's own `id` as `templateId`; if the template's `face`/`background` isn't already a complete pair, add whichever half it's missing:
 
@@ -73,7 +73,7 @@ await mgmt.avatars.create(
 );
 ```
 
-Unlike `createVisual` (a photo used directly, already a full custom digital twin), a Face/Background is only usable through the `face`+`background` composition — it can't be passed as `visual.id` on its own.
+Unlike `createVisual` (a photo used directly, already a full custom digital twin), a Face/Background is only usable through the `face`+`background` composition. It can't be passed as `visual.id` on its own.
 
 ---
 

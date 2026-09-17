@@ -13,7 +13,7 @@ Every endpoint, the full agent lifecycle, and a verified use-case catalog — co
 
 **New here?** Start with [Getting Started](/getting-started/). Runtime details live in [Platform Overview](/explanation/architecture/). The zero-dependency SDK is in [`README.md`](https://github.com/kaltura/intelligent-agents-sdk/blob/main/README.md).
 
-**Credentials** — all examples need `AGENTIC_PARTNER_ID` and `AGENTIC_ADMIN_SECRET` ([Rich Media CMS → Settings → Integration Settings](https://kmc.kaltura.com/index.php/kmcng/settings/integrationSettings)). Set them in a local `.env` file (create it in the repo root with `AGENTIC_PARTNER_ID=...` and `AGENTIC_ADMIN_SECRET=...` on their own lines, already covered by `.gitignore`) or pass inline. Never hardcode the secret.
+**Credentials** — all examples need `AGENTIC_PARTNER_ID` and `AGENTIC_ADMIN_SECRET` ([Rich Media CMS → Settings → Integration Settings](https://kmc.kaltura.com/index.php/kmcng/settings/integrationSettings)). Set them in a local `.env` file, or pass them inline. To use a `.env` file, create it in the repo root with `AGENTIC_PARTNER_ID=...` and `AGENTIC_ADMIN_SECRET=...` on their own lines — `.gitignore` already excludes it. Never hardcode the secret.
 
 Every endpoint is shown as a raw HTTP call plus its SDK wrapper. The SDK is what ships in this repo — see [`README.md`](https://github.com/kaltura/intelligent-agents-sdk/blob/main/README.md) for the full `Management` method list.
 
@@ -34,11 +34,24 @@ Every endpoint is shown as a raw HTTP call plus its SDK wrapper. The SDK is what
 | [Use-Case Catalog](/reference/use-cases/) | All 13 use cases (UC-1 through UC-13) mapped to mechanisms and runnable scripts |
 | [Site navigation](/guides/site-navigation/) | Fire-and-forget `go_to` tool, compact SITE MAP prompt, `sections.json` manifest, browser `SiteNavigator` plugin |
 
-**Section shorthand.** Docs and source comments cite sections as `API-REFERENCE.md § <name>` — find the section in the table above. Common ones: § Tools, § Secrets, § Ground the Agent, § Configure an Intellect are all in [Agent Components](/reference/api/build/); § Converse and § Threads are in [Conversation & Analytics](/reference/api/operate/); § Initialize the Runtime is in [Widget & Runtime Init](/reference/api/deploy/).
+**Section shorthand.** Docs and source comments cite sections as `API-REFERENCE.md § <name>` — find the section in the table above. Common ones:
+
+- § Tools, § Secrets, § Ground the Agent, § Configure an Intellect — [Agent Components](/reference/api/build/)
+- § Converse, § Threads — [Conversation & Analytics](/reference/api/operate/)
+- § Initialize the Runtime — [Widget & Runtime Init](/reference/api/deploy/)
 
 ---
 
-**What can you build?** A concierge with memory (UC-2/UC-3), a GenUI-driven product demo (UC-4), a slide-deck walkthrough avatar (UC-10), a self-serve custom-voice/custom-portrait agent (UC-9/UC-13), an anonymous embeddable widget (UC-12), or a fleet of A/B-tested personas (UC-5) — see the full [Use-Case Catalog](/reference/use-cases/) for all 13, each mapped to its key mechanism and a runnable script/tool.
+**What can you build?** A few examples:
+
+- A concierge with memory (UC-2/UC-3)
+- A GenUI-driven product demo (UC-4)
+- A slide-deck walkthrough avatar (UC-10)
+- A self-serve custom-voice/custom-portrait agent (UC-9/UC-13)
+- An anonymous embeddable widget (UC-12)
+- A fleet of A/B-tested personas (UC-5)
+
+See the full [Use-Case Catalog](/reference/use-cases/) for all 13, each mapped to its key mechanism and a runnable script/tool.
 
 ---
 

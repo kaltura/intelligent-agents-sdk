@@ -27,7 +27,7 @@ POST https://api.avatar.us.kaltura.ai/v1/catalog-item/list
 
 Change `typeEqual` to `"Voice"` for voices. Each item has an `itemId` — pass it to avatar creation.
 
-**Visual preset fields:** `itemId`, `attributes.visual.{name, genderPresentation, skinTone, ageGroup, hairColor, clothing, background}`, `imageUrl`, `loadingVideo` — raw backend asset URLs (an upload echo for a custom visual, a preset asset URL for a catalog item), not the rendered composite the live WHEP stream shows.
+**Visual preset fields:** `itemId`, `attributes.visual.{name, genderPresentation, skinTone, ageGroup, hairColor, clothing, background}`, `imageUrl`, `loadingVideo`. These are raw backend asset URLs, not the rendered composite the live video stream shows: an upload echo for a custom visual, or a preset asset URL for a catalog item.
 
 **Voice preset fields:** `itemId`, `attributes.voice.{name, description, language}`, `voiceSampleUrl`.
 
@@ -45,7 +45,7 @@ POST https://api.avatar.us.kaltura.ai/v1/application/generateAgentProfile
 { "userDescription": "A friendly technical support agent for a video platform" }
 ```
 
-Returns `{goal, targetAudience, restrictedTopics, name, openingPhrase}` — pass directly to intellect configuration. Takes 2–3 s; result is not saved automatically.
+Returns `{goal, targetAudience, restrictedTopics, name, openingPhrase}` — pass directly to the intellect's configuration (see [Authentication & Services § The Five Services](/reference/api/authentication/#the-five-services) for what an intellect is). Takes 2–3 s. The result is not saved automatically.
 
 ---
 
@@ -63,9 +63,13 @@ adminTags=custom
 
 Returns a catalog item whose `itemId` is the ElevenLabs clone. Pair with any avatar's `voice.id`.
 
-**Gotchas:** `description` must be non-empty; audio under ~6 s returns `500`; send `adminTags=custom` bare (not a JSON array string).
+**Gotchas:**
 
-**SDK shortcut:** `catalog.createVoice(mp3Blob, { name, description, language?, consentRef? }, adminKs)` — enforces the non-empty `description` client-side and tags the item `adminTags:['custom']` so `catalog.list` filtered on that tag finds it. `language` is an ISO 639-1 code and defaults to `'en'`.
+- `description` must be non-empty.
+- Audio under ~6 s returns `500`.
+- Send `adminTags=custom` bare, not as a JSON array string.
+
+**SDK shortcut:** `catalog.createVoice(mp3Blob, { name, description, language?, consentRef? }, adminKs)`. It enforces the non-empty `description` client-side and tags the item `adminTags:['custom']`, so `catalog.list` filtered on that tag finds it. `language` is an ISO 639-1 code and defaults to `'en'`.
 
 ## Import a Provider Voice by id (no audio upload)
 
@@ -76,7 +80,7 @@ POST https://api.avatar.us.kaltura.ai/v1/catalog-item/createVoiceFromElevenLabs 
 POST https://api.avatar.us.kaltura.ai/v1/catalog-item/createVoiceFromCartesia     {"voiceId":"<provider-voice-id>"}
 ```
 
-An unknown provider id creates **nothing** and replies an HTTP-200 `KalturaAPIException` envelope (`VOICE_DOES_NOT_EXIST_ON_ELEVEN_LABS` / `VOICE_DOES_NOT_EXIST_ON_CARTESIA`) — the SDK maps these to typed `voice_not_found_elevenlabs` / `voice_not_found_cartesia` errors. SDK: `mgmt.catalog.importVoiceFromElevenLabs(voiceId, ks)` / `importVoiceFromCartesia(voiceId, ks)`.
+An unknown provider id creates **nothing**. It replies with an HTTP-200 `KalturaAPIException` envelope (`VOICE_DOES_NOT_EXIST_ON_ELEVEN_LABS` / `VOICE_DOES_NOT_EXIST_ON_CARTESIA`), and the SDK maps these to typed `voice_not_found_elevenlabs` / `voice_not_found_cartesia` errors. SDK: `mgmt.catalog.importVoiceFromElevenLabs(voiceId, ks)` / `importVoiceFromCartesia(voiceId, ks)`.
 
 ---
 
@@ -94,17 +98,21 @@ adminTags=custom
 
 Returns a catalog item whose `itemId` is the catalog visual. Pass it as `visual.id` in `avatar/create` (or `visualId` in `provision`). The model **animates the portrait live at runtime** — no ops involvement, self-serve. Verified: a real 2.4 MB portrait JPEG (`avatar-session/create` → `{success:true, sessionId}`).
 
-The backend does preprocess the uploaded image before rendering: it crop-fits the source to a fixed face-height-to-frame ratio and centers it on the render canvas. A tight "headshot"-style crop (the intuitive upload) is the worst case. The bigger the face already fills the source frame, the more the backend downscales it to hit that ratio, and the bigger the resulting black borders around the rendered avatar. One confirmed case: padding the source out to roughly 2600×2600 (face occupying a small fraction of the frame) produced an edge-to-edge render with no borders. This is an observed data point from one real upload, not a documented API contract. The exact ratio isn't published, so pad generously and check the result in a live session rather than assuming this number is precise.
+The backend preprocesses the uploaded image before rendering. It crop-fits the source to a fixed face-height-to-frame ratio and centers it on the render canvas. A tight "headshot"-style crop, the intuitive upload, is the worst case: the more the face already fills the source frame, the more the backend downscales it to hit that ratio, and the bigger the resulting black borders around the rendered avatar.
+
+One confirmed case padded the source out to roughly 2600×2600, with the face occupying a small fraction of the frame, and produced an edge-to-edge render with no borders. This is an observed data point from one real upload, not a documented API contract. The exact ratio isn't published, so pad generously and check the result in a live session rather than assuming this number is precise.
 
 ![Tight headshot crops shrink onto the render canvas with black borders; a generously padded portrait scales to fill it edge-to-edge](/assets/img/avatar-photo-framing.svg)
 
 The API itself accepts any subset of the attribute fields, including none. Video-clip ingest is not available through this API.
 
-**SDK shortcut:** `catalog.createVisual(imageBlob, { name, genderPresentation, background, skinTone, ageGroup, hairColor }, adminKs)` — requires `name` and `genderPresentation` client-side (`bad_request` before any network call if either is missing) and defaults the rest to a consistent baseline look. Returns `{ itemId, loadingVideo }` (raw API response — field names come from the CatalogItemDto and are not SDK-normalized; treat as best-effort until the API contract is pinned).
+**SDK shortcut:** `catalog.createVisual(imageBlob, { name, genderPresentation, background, skinTone, ageGroup, hairColor }, adminKs)` — requires `name` and `genderPresentation` client-side (`bad_request` before any network call if either is missing) and defaults the rest to a consistent baseline look. Returns `{ itemId, loadingVideo }` (the backend's raw response shape — the SDK doesn't normalize these field names; treat as best-effort until the API contract is pinned).
 
 ## Upload a custom Face or Background (compose-a-visual path)
 
-`createVisual` above uploads a photo directly as a ready-to-use Visual. `catalog-item/create` also accepts an explicit `Face`/`Background` `type` for the two composable HALVES the `avatar/create` `face`/`background` fields expect instead — same multipart shape and attribute fields as a Visual upload, just with `type` set. Name collision to watch for: the `attributes.visual.background` field below is a photo ATTRIBUTE string (e.g. `"Image"`) describing the upload's own backdrop — unrelated to `avatar/create`'s `background` field, the `{type:'color'|'visual', value}` composition selector used a few steps later.
+`createVisual` above uploads a photo directly as a ready-to-use Visual. `catalog-item/create` also accepts an explicit `Face`/`Background` `type`, producing the two composable HALVES that the `avatar/create` `face`/`background` fields expect instead. This uses the same multipart shape and attribute fields as a Visual upload, just with `type` set.
+
+**Watch for this name collision:** the `attributes.visual.background` field below is a photo ATTRIBUTE string (e.g. `"Image"`) describing the upload's own backdrop. It's unrelated to `avatar/create`'s own `background` field, the `{type:'color'|'visual', value}` composition selector used a few steps later.
 
 ```
 file=@face-portrait.jpg

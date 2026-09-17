@@ -7,8 +7,8 @@ eyebrow: Explanation
 
 # Inside a Live Conversation
 
-> **TL;DR** — Your AI stack is one of three flows in a live conversation.
-> Kaltura runs the other two. Plug yours in — here's the call.
+> **TL;DR:** Your AI stack is one of three flows in a live conversation.
+> Kaltura runs the other two. Plug yours in. The code below shows how.
 
 ```js
 import { Management, tools } from '@kaltura/intelligent-agents/management';
@@ -18,7 +18,7 @@ const kaltura = new Management({
   adminSecret: process.env.AGENTIC_ADMIN_SECRET,
 });
 const { ks: adminKs } = await kaltura.sessions.createAdminToken();
-const configId = 'YOUR_CONFIG_ID'; // from Getting Started — create-agent.mjs prints it
+const configId = 'YOUR_CONFIG_ID'; // from Getting Started: create-agent.mjs prints it
 
 // Plug one of your APIs into the orchestration flow (swap in your own endpoint):
 const { id: toolId } = await kaltura.tools.add(tools.api({
@@ -30,7 +30,7 @@ const { id: toolId } = await kaltura.tools.add(tools.api({
 }), adminKs);
 await kaltura.intellectConfig.setToolIds(configId, [toolId], adminKs);
 
-// Ask — the agent calls your API mid-conversation:
+// Ask: the agent calls your API mid-conversation
 const reply = await kaltura.converseOnce(configId, 'How many euros is one US dollar right now?');
 console.log(reply.text);
 ```
@@ -56,14 +56,14 @@ in real time, and your expertise feeds the answers.
 Your existing AI stack isn't a replacement for flows 1 and 2. It's flow 3.
 The SDK ships the plug points today:
 
-- **Knowledge base grounding** — index your content and the agent cites it
+- **Knowledge base grounding**: index your content and the agent cites it
   live (`use_knowledge_base`). See [Ground the Agent](/reference/api/build/knowledge-rag/#ground-the-agent-in-your-content-rag).
-- **External API and tool integrations** — the agent calls your endpoints
+- **External API and tool integrations**: the agent calls your endpoints
   mid-conversation, with server-held secrets. See
   [External API Integrations](/guides/external-api-integrations/).
-- **Per-message variables** (`request_vars`) — inject your own context, per
+- **Per-message variables** (`request_vars`): inject your own context, per
   turn, from your backend. See the [Backend API Reference](/reference/api-reference/).
-- **Client-side commands** — the agent drives your page UI through functions
+- **Client-side commands**: the agent drives your page UI through functions
   you define. See [Client-Side Commands](/guides/client-commands/).
 
 ## What you'd take on yourself
@@ -88,19 +88,20 @@ operate:
 
 ## Analytics come with the runtime
 
-Full agentic sessions feed engagement analytics out of the box
-(`./experience/analytics` — see [KAVA analytics](/reference/sdk-reference/#kava-analytics-opt-in-client-only-application-events)).
-A self-built pipeline has to recreate that measurement loop too.
+Full agentic sessions feed engagement analytics out of the box, through
+`./experience/analytics`. See [KAVA analytics](/reference/sdk-reference/#kava-analytics-opt-in-client-only-application-events)
+for Kaltura's built-in analytics events. A self-built pipeline has to
+recreate that measurement loop too.
 
 ## Where scripted sessions do fit
 
 Pre-authored narration, puppet-style playback, and demo reels are real use
-cases — you author every word, and the avatar performs it. That's what
+cases. You author every word, and the avatar performs it. That's what
 [scripted avatar sessions](https://github.com/kaltura/intelligent-agents-sdk/blob/main/docs/api/scripted-video.md)
 are for. For anything a visitor talks back to, you want all three flows.
 
 ## Next steps
 
-- [Getting Started](/getting-started/) — a working agent in about five minutes
-- [External API Integrations](/guides/external-api-integrations/) — the full plug-in guide
-- [Platform Overview](/explanation/architecture/) — how the pieces fit together
+- [Getting Started](/getting-started/): a working agent in about five minutes
+- [External API Integrations](/guides/external-api-integrations/): the full plug-in guide
+- [Platform Overview](/explanation/architecture/): how the pieces fit together

@@ -10,7 +10,11 @@ eyebrow: Reference
 [← Back to Agent Components](/reference/api/build/)
 
 
-**SDK:** `mgmt.intellects.previewPrompt(configId, ks, opts)`. READ — no write. The returned `text` is rendered client-side, a replica of the author layer (`prompts[]` + `base_directive` + `glossary`) assembled the same way the server's `get_partner_prompts()`/`get_system_prompt()` do, so you can check a prompt template before shipping it. By default it fetches and renders the intellect's *current stored* config; pass `draftPrompts`/`draftBaseDirective`/`draftGlossary` to preview an unsaved edit instead.
+**SDK:** `mgmt.intellects.previewPrompt(configId, ks, opts)`. This call only reads data — it never writes.
+
+The returned `text` is rendered client-side. It's a replica of the author layer (`prompts[]` + `base_directive` + `glossary`), assembled the same way the server's `get_partner_prompts()`/`get_system_prompt()` do. Use it to check a prompt template before shipping it.
+
+By default, it fetches and renders the intellect's *current stored* config. Pass `draftPrompts`/`draftBaseDirective`/`draftGlossary` to preview an unsaved edit instead.
 
 ```js
 const p = await mgmt.intellects.previewPrompt(configId, adminKs, {
@@ -21,7 +25,7 @@ p.unresolvedVariables; // names left literal because no value was supplied
 p.warnings;             // present ONLY when a reserved variable is unresolved (see below)
 ```
 
-It is **not byte-exact** with the live prompt — server-injected capability-conditional blocks (`video_gallery`/`avatar_show_content`/`web_search_enabled`/`user_properties`) are not reproduced, and `sys__*` values you pass via `requestVars` are a *simulation* of what the server sets per turn, not a live read.
+It is **not byte-exact** with the live prompt. Server-injected capability-conditional blocks (`video_gallery`/`avatar_show_content`/`web_search_enabled`/`user_properties`) are not reproduced. And the `sys__*` values you pass via `requestVars` only *simulate* what the server sets per turn — they are not a live read.
 
 **Reserved variables** the server sets per turn (always available to `{{...}}` regardless of `allow_client_variables`):
 
@@ -40,7 +44,9 @@ It is **not byte-exact** with the live prompt — server-injected capability-con
 | `sys__user_obj.first_name` / `.last_name` / `.title` / `.company` / `.gender` / `.email` | Attributes of the bound-user object. The rendered preview from `previewPrompt()` carries a `reserved_user_attr_unresolved` warning when a prompt references these — treat it as a hard stop before shipping. |
 | `secrets.NAME` | A named secret configured on the intellect (write-only — `previewPrompt()` never has access to the raw value, so it cannot confirm one is set) |
 
-**Unresolvable-reserved-variable warnings (hardening):** if a prompt references one of the variables above and no value is available in the simulated context (no `requestVars` entry, or an explicit `null`/`undefined`), `previewPrompt()` returns a `warnings[]` entry naming the variable and why — instead of the placeholder being silently rendered as literal/empty text as if the prompt were safe to ship. `warnings` is an **additive** field: it is present only when non-empty, so a fully-resolved preview's return shape is unchanged from before this hardening.
+**Unresolvable reserved-variable warnings:** say a prompt references one of the variables above, and no value is available in the simulated context (no `requestVars` entry, or an explicit `null`/`undefined`). In that case `previewPrompt()` returns a `warnings[]` entry naming the variable and explaining why, instead of silently rendering the placeholder as empty text.
+
+`warnings` is an **additive** field. It appears only when there's something to report, so a fully-resolved preview's return shape stays the same.
 
 ```js
 const p = await mgmt.intellects.previewPrompt(configId, adminKs, {
@@ -62,7 +68,13 @@ p.warnings;
 // }]
 ```
 
-Supplying the value in `requestVars` (e.g. `{ 'sys__user_obj.first_name': 'Jane' }`, or `{ sys__user_id: 'learner-123' }`) simulates the bound case and clears the warning. Warning `code`s: `reserved_var_unresolved` (a scalar `sys__*` variable), `reserved_user_attr_unresolved` (a `sys__user_obj.*` attribute — the class of reference that can crash a live turn), `reserved_secret_unresolved` (a `secrets.*` reference `previewPrompt()` cannot verify, since only the rendered text is ever available to it, never a raw secret value).
+Supplying the value in `requestVars` (e.g. `{ 'sys__user_obj.first_name': 'Jane' }`, or `{ sys__user_id: 'learner-123' }`) simulates the bound case and clears the warning.
+
+| Warning `code` | Fires for |
+|---|---|
+| `reserved_var_unresolved` | A scalar `sys__*` variable |
+| `reserved_user_attr_unresolved` | A `sys__user_obj.*` attribute — this is the class of reference that can crash a live turn |
+| `reserved_secret_unresolved` | A `secrets.*` reference. `previewPrompt()` can't verify these: it only ever sees the rendered text, never the raw secret value |
 
 ---
 

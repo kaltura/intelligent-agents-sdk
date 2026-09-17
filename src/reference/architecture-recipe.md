@@ -7,7 +7,7 @@ eyebrow: Reference
 
 # Minimal Reimplementation Recipe (No Kaltura Libs)
 
-A from-scratch reimplementation of the live avatar runtime, using nothing but `socket.io-client` and the browser's native `RTCPeerConnection`. Read [Platform Overview](/explanation/architecture/) for the big picture and [System Internals Reference](/reference/architecture-reference/) for the exact wire shapes each step below relies on.
+A from-scratch reimplementation of the live avatar runtime, using nothing but `socket.io-client` and the browser's native `RTCPeerConnection`. The steps below carry two channels: **ASR** (the microphone uplink) and **STV** (the avatar video downlink). Read [Platform Overview](/explanation/architecture/) for the big picture and [System Internals Reference](/reference/architecture-reference/) for the exact wire shapes each step below relies on.
 
 <div data-nova-target="architecture-recipe-steps" data-nova-label="Minimal reimplementation recipe steps">
 
@@ -32,7 +32,7 @@ A from-scratch reimplementation of the live avatar runtime, using nothing but `s
 7. Listen: agent_raw_text (brain text), generatingSpeech, stvStartedTalking/stvFinishedTalking (turn state)
 
 8. User speaks → ASR pc carries audio → server transcribes → brain → avatar speaks (STV) + agent_raw_text
-   (or inject text: emit onTextEntered {text, isFinal:true} — the same event speak() always emits;
+   (or inject text: emit onTextEntered {text, isFinal:true}, the same event speak() always emits.
    debug_text_entered is a secondary mirror the server sends only when the session was created with debug:true)
 ```
 
@@ -44,11 +44,15 @@ Dependencies: `socket.io-client` + the browser's native `RTCPeerConnection`. Not
 
 If you reimplement the protocol per the recipe above, you MUST:
 
-1. **Send a stable `stickyId` query param** on the socket (random 16-char, once per connect) — without it, polling requests scatter across server instances and the handshake fails intermittently under load.
-2. **Emit `stvNewSession` right away — don't gate it on `checkAvailability` first.** Poll `checkAvailability` → `availabilityResult` *in parallel* instead: many agents never send `availabilityResult` at all, so waiting for it before `stvNewSession` just adds dead time. If a poll comes back `available:false`, back off and re-poll (see the delay schedule below) without touching `stvNewSession`. `throwToNoAgent` is terminal, not something to recover from on the same socket: the server disconnects the socket right after emitting it. If it arrives, treat the socket as dead — open a fresh socket (new `stickyId`, so you're not pinned back to the same full instance) and retry `join`/`stvNewSession` from there.
-3. **Treat `throwToExceededTier` as fatal** (don't retry — it's a plan limit, not capacity).
-4. **Keep the socket alive during queue waits**; only do a fresh `connect()` (new `stickyId`) on a permanent transport loss.
-5. Let the **STV/WHEP** video channel reconnect independently — it carries no sticky state.
+1. **Send a stable `stickyId` query param** on the socket (random 16-char, once per connect). Without it, polling requests scatter across server instances and the handshake fails intermittently under load.
+2. **Emit `stvNewSession` right away. Don't gate it on `checkAvailability` first.** Poll `checkAvailability` → `availabilityResult` *in parallel* instead:
+   - Many agents never send `availabilityResult` at all, so waiting for it before `stvNewSession` just adds dead time.
+   - If a poll comes back `available:false`, back off and re-poll (see the delay schedule below) without touching `stvNewSession`.
+   - `throwToNoAgent` is terminal, not something to recover from on the same socket. The server disconnects the socket right after emitting it.
+   - If it arrives, treat the socket as dead. Open a fresh socket (new `stickyId`, so you're not pinned back to the same full instance) and retry `join`/`stvNewSession` from there.
+3. **Treat `throwToExceededTier` as fatal.** Don't retry: it's a plan limit, not a capacity limit.
+4. **Keep the socket alive during queue waits.** Only do a fresh `connect()` (new `stickyId`) on a permanent transport loss.
+5. Let the **STV/WHEP** video channel reconnect independently. It carries no sticky state.
 
 See [System Internals Reference's "Scale & Sticky Sessions"](/reference/architecture-reference/scale-and-sticky-sessions/#scale--sticky-sessions) for why each of these matters.
 
