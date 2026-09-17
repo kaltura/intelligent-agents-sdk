@@ -1,3 +1,5 @@
+[← Back to GenUI Reference](../GENUI-REFERENCE.md)
+
 # Widget-interaction analytics (avoiding double-counting)
 
 A recipe for reporting GenUI widget interactions — which widget the learner acted on, what they picked — to KAVA via `KavaAnalytics.buttonClicked()` (`./experience/analytics`), without duplicating anything the platform already tracks server-side.

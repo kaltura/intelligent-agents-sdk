@@ -1,3 +1,5 @@
+[← Back to GenUI Reference](../GENUI-REFERENCE.md)
+
 # Authoring & Consuming Widgets
 
 ## Authoring — which capability turns each widget on
