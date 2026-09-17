@@ -65,7 +65,7 @@ No build step, no npm registry publish — that's disabled by design (`"private"
 - [Skills and voice import](#skills-and-voice-import)
 - [Scripted-Video (STV-only) Sessions](#scripted-video-stv-only-sessions)
 - [RAG (knowledge base)](#rag-knowledge-base)
-- [Honest limits](#honest-limits)
+- [Known limits](#known-limits)
 - [Reference](#reference)
 - [License](#license)
 
@@ -1116,6 +1116,8 @@ const v = await mgmt.catalog.importVoiceFromElevenLabs('EXAVITQu4vr4xnSDxMaL', k
 
 An unknown provider id creates **nothing** and raises a typed `voice_not_found_elevenlabs` / `voice_not_found_cartesia` error (the backend replies an HTTP-200 exception envelope; the SDK maps it).
 
+**Custom face works self-serve** (`mgmt.catalog`, `mgmt.avatars`) — upload a portrait image via `catalog.createVisual`, pass `itemId` as `visualId` in `provision`/`avatars.create`. The model animates the portrait at runtime. Video-clip ingest is not available through this API.
+
 ---
 
 ## Scripted-Video (STV-only) Sessions
@@ -1178,11 +1180,10 @@ await mgmt.knowledge.deleteRecord(rec.id, ks, { confirmPermanent: true });
 
 ---
 
-## Honest limits
+## Known limits
 
 - **Only the fields in `EDITABLE_FIELDS` are writable.** `intellectConfig.patch()` rejects anything else before the network call, and `describe()` returns exactly that set. Knowledge grounding via `knowledge_ids` is fully public and ungated. (Event-driven session/thread rules ARE supported, see [docs/lifecycle/README.md](docs/lifecycle/README.md).)
-- **No verbatim speech** — `speak()` goes through the brain; the avatar may rephrase.
-- **Custom face works self-serve** — upload a portrait image via `catalog.createVisual`, pass `itemId` as `visualId` in `provision`/`avatars.create`. The model animates the portrait at runtime. Video-clip ingest is not available through this API.
+- **`speak(text)` can't make the avatar say exact words.** It injects `text` into the conversation on the same path as the viewer's own voice transcript — the brain treats it as a new turn and replies on its own terms, not an echo of `text`. For verbatim, scripted playback instead, see [docs/api/scripted-video.md](docs/api/scripted-video.md).
 - **`force_experience` and `model_type:'fast'`** are hints; the SDK can't prove which model replied or which experience rendered.
 
 ---

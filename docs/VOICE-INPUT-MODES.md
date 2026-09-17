@@ -90,7 +90,7 @@ A tap window that never closes (tab closed mid-recording, app crash, network dro
 | `connected` | transport dies | `failed` + `ended` forwarded | Socket drop, server end |
 | any | `disconnect()` | `closed` | Idempotent; exactly one `ended {reason:'disconnected'}` |
 
-`modeChanged.threadContinuity` is the honest signal: `true` means the new transport was seeded with the live thread (show "conversation restored"); `false` means no turn had happened yet, so there was no thread to carry.
+`modeChanged.threadContinuity` tells you which happened: `true` means the new transport was seeded with the live thread (show "conversation restored"); `false` means no turn had happened yet, so there was no thread to carry.
 
 Two UX rules for the switch:
 
