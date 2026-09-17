@@ -1,13 +1,13 @@
 ---
 layout: base.njk
-title: "Architecture Reference · Connection and Handshake"
+title: "System Internals Reference · Connection and Handshake"
 description: "Endpoints & credentials, the Socket.IO connection, the full connect sequence, and the join payload."
 eyebrow: Reference
 ---
 
 # Connection and Handshake
 
-[← Back to Architecture Reference](/reference/architecture-reference/)
+[← Back to System Internals Reference](/reference/architecture-reference/)
 
 **On this page:** [Endpoints & Credentials](#endpoints--credentials) · [Socket.IO Connection](#socketio-connection) · [Full Connect Sequence (state-machine order)](#full-connect-sequence-state-machine-order) · [The `join` payload (step 2) — this carries the agent/brain config](#the-join-payload-step-2--this-carries-the-agentbrain-config) · [Related docs](#related-docs)
 
@@ -23,7 +23,7 @@ eyebrow: Reference
 | TURN | `turn.avatar.us.kaltura.ai` (default username/credential in `wire.js`'s `turnServers()`, overridable via `creds`). **Address it with explicit ports + transports.** A bare `turn:host` yields no relay candidate (→ `packetsSent=0`, the avatar can't hear you). Use all four: `turn:HOST:80?transport=udp`, `turn:HOST:443?transport=udp`, `turn:HOST:80?transport=tcp`, `turns:HOST:443?transport=tcp`. **`iceTransportPolicy` resolves as `forceRelay && !isFirefox ? 'relay' : 'all'`** per leg (in the built-in client's media layer). STV uses `'relay'` in every client except Firefox, where it's `'all'`. ASR is `'relay'` in the production runtime (`forceAsrRelay:true`) but `'all'` in the embed SDK / debug-app, and also `'all'` in Firefox regardless of runtime. The two legs are **functionally identical** either way, because the ASR server advertises only a private host candidate, so the pair relays through TURN regardless of policy. So the TURN URLs are what must be correct, not the policy. Full per-client matrix: [Wire Protocol · Audio Channels §5](/reference/wire-protocol/audio-channels/#5-asr-uplink-pc1--microphone--server). |
 | Auth | Socket.IO `auth: { token: <enrichedKS> }` + `query.partnerId` |
 
-All of `conversationManagerUrl`, `srsBaseUrl`, `turnServerUrl`, and the enriched `ks` come from **`POST https://api.avatar.us.kaltura.ai/v1/application/appInit`** (see [API Reference](/reference/api-reference/)). The agent is identified by `partnerId` (from the KS) + the KS itself — NOT `clientId`/`flowId` (both optional and unused by Kaltura agents).
+All of `conversationManagerUrl`, `srsBaseUrl`, `turnServerUrl`, and the enriched `ks` come from **`POST https://api.avatar.us.kaltura.ai/v1/application/appInit`** (see [Backend API Reference](/reference/api-reference/)). The agent is identified by `partnerId` (from the KS) + the KS itself — NOT `clientId`/`flowId` (both optional and unused by Kaltura agents).
 
 ---
 
@@ -114,13 +114,13 @@ socket.emit('join', {
 - **Which `join` fields the server actually reads.** Of the `kaltura` sub-fields the client sends in `join`, the session server consumes `ks`, `entryId`, `threadId`, `contextId`, `contextType`, `capabilities`, and `request_vars` when present.
 - **`force_experience` is hardcoded server-side, not read from the client.** `force_experience` alone is **not** read by the server; it is fixed server-side to `force_experience: 'avatar_only'` and `model_type: 'fast'` on every converse call — so the avatar runtime never requests `flashcards`/`summarization` experiences regardless of what the client sends.
 - **`capabilities` and `request_vars` are genuinely client-controlled.** By contrast, these two are read at `join` time and can also be updated mid-session via the `updateGenieContext` socket event, then merged over defaults with no server-side allowlist before being forwarded to the brain.
-- **The live socket carries the same brain protocol as the HTTP API.** The socket exchanges JSON frames `{event:'init'|'converse'|'abort', data:{…}}` and streams `agent_raw_text` back — the same envelope as HTTP `/assistant/converse`, documented in [API Reference](/reference/api-reference/), which is the path for headless/text integrations; the live avatar runtime uses the socket instead.
+- **The live socket carries the same brain protocol as the HTTP API.** The socket exchanges JSON frames `{event:'init'|'converse'|'abort', data:{…}}` and streams `agent_raw_text` back — the same envelope as HTTP `/assistant/converse`, documented in [Backend API Reference](/reference/api-reference/), which is the path for headless/text integrations; the live avatar runtime uses the socket instead.
 
 ## Related docs
 
 | Doc | Covers |
 |---|---|
-| [Architecture Reference · Channels](/reference/architecture-reference/channels/) | ASR uplink + STV downlink |
-| [Architecture Reference · Conversation Flow](/reference/architecture-reference/conversation-flow/) | What streams while connected, sending user input, the message catalog |
-| [Architecture Reference](/reference/architecture-reference/) | Back to the index |
+| [System Internals Reference · Channels](/reference/architecture-reference/channels/) | ASR uplink + STV downlink |
+| [System Internals Reference · Conversation Flow](/reference/architecture-reference/conversation-flow/) | What streams while connected, sending user input, the message catalog |
+| [System Internals Reference](/reference/architecture-reference/) | Back to the index |
 

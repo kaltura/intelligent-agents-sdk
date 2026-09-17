@@ -1,13 +1,13 @@
 ---
 layout: base.njk
-title: "API · Build · Tools and Secrets"
+title: "Agent Components · Tools and Secrets"
 description: "The api/csv/code/client tool types and their CRUD, plus how intellect secrets work."
 eyebrow: Reference
 ---
 
 # Tools and Secrets
 
-[← Back to Phase 2 — Build](/reference/api/build/)
+[← Back to Agent Components](/reference/api/build/)
 
 **On this page:** [Tools (api / csv / code)](#tools-api--csv--code) · [Secrets (write-only)](#secrets-write-only) · [Related docs](#related-docs)
 
@@ -101,6 +101,6 @@ Use `tools.client(...)` in the SDK, which validates the tool before any network 
 
 | Doc | What it adds |
 |---|---|
-| [API · Build · Create and Configure an Intellect](/reference/api/build/intellect/) | Where `tool_ids`/`secrets` are linked onto an intellect |
-| [API · Phase 2 — Build](/reference/api/build/) | The Phase 2 — Build index |
+| [Agent Components · Create and Configure an Intellect](/reference/api/build/intellect/) | Where `tool_ids`/`secrets` are linked onto an intellect |
+| [Agent Components](/reference/api/build/) | The Agent Components index |
 

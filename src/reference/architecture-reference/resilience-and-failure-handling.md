@@ -1,13 +1,13 @@
 ---
 layout: base.njk
-title: "Architecture Reference · Resilience and Failure Handling"
+title: "System Internals Reference · Resilience and Failure Handling"
 description: "The three reconnection tiers, device permissions, the failure-mode matrix, the tool-call-spiral breaker, and the session-completion signal."
 eyebrow: Reference
 ---
 
 # Resilience & Failure Handling
 
-[← Back to Architecture Reference](/reference/architecture-reference/)
+[← Back to System Internals Reference](/reference/architecture-reference/)
 
 
 How the system behaves under network failures, disconnects, and device problems. There are **three reconnection tiers**, only loosely coordinated:
@@ -106,7 +106,7 @@ The signal is idempotent (a repeat POST for the same thread is a server-side no-
 
 | Doc | Covers |
 |---|---|
-| [Architecture Reference · Scale and Sticky Sessions](/reference/architecture-reference/scale-and-sticky-sessions/) | `throwToNoAgent`/`throwToExceededTier` and the availability queue |
-| [Architecture Reference · Connection and Handshake](/reference/architecture-reference/connection-and-handshake/) | Endpoints & Credentials, TURN/relay policy |
-| [Architecture Reference](/reference/architecture-reference/) | Back to the index |
+| [System Internals Reference · Scale and Sticky Sessions](/reference/architecture-reference/scale-and-sticky-sessions/) | `throwToNoAgent`/`throwToExceededTier` and the availability queue |
+| [System Internals Reference · Connection and Handshake](/reference/architecture-reference/connection-and-handshake/) | Endpoints & Credentials, TURN/relay policy |
+| [System Internals Reference](/reference/architecture-reference/) | Back to the index |
 

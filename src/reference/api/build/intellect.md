@@ -1,13 +1,13 @@
 ---
 layout: base.njk
-title: "API · Build · Create and Configure an Intellect"
+title: "Agent Components · Create and Configure an Intellect"
 description: "Create an Intellect, then configure prompts, base_directive, the capabilities table, and force_experience."
 eyebrow: Reference
 ---
 
 # Create and Configure an Intellect
 
-[← Back to Phase 2 — Build](/reference/api/build/)
+[← Back to Agent Components](/reference/api/build/)
 
 **On this page:** [Create an Intellect](#create-an-intellect) · [Configure an Intellect](#configure-an-intellect) · [Related docs](#related-docs)
 
@@ -129,6 +129,6 @@ const fields = await mgmt.application.getCustomPrompts(ks);
 
 | Doc | What it adds |
 |---|---|
-| [API · Build · Preview a Prompt](/reference/api/build/preview-prompt/) | Preview the assembled system prompt before shipping an edit |
-| [API · Phase 2 — Build](/reference/api/build/) | The Phase 2 — Build index |
+| [Agent Components · Preview a Prompt](/reference/api/build/preview-prompt/) | Preview the assembled system prompt before shipping an edit |
+| [Agent Components](/reference/api/build/) | The Agent Components index |
 

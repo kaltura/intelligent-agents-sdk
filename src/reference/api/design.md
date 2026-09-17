@@ -1,11 +1,11 @@
 ---
 layout: base.njk
-title: "API · Phase 1 — Design"
+title: "Catalog & Assets"
 description: "Catalog browsing, agent profile generation, custom voice cloning, provider voice import, and custom portrait avatars."
 eyebrow: Reference
 ---
 
-# Phase 1 — design
+# Catalog & Assets
 
 [← Back to the API Reference index](/reference/api-reference/)
 
@@ -115,7 +115,7 @@ adminTags=custom
 
 Send `type=Background` for a backdrop image instead. Only 36 preset Face items and 4 preset Background items exist today (live count) — this is the only way to add a custom one.
 
-**SDK shortcut:** `catalog.createFace(imageBlob, attrs, adminKs)` / `catalog.createBackground(imageBlob, attrs, adminKs)` — same `attrs` shape as `createVisual`. See [API · Build · Create an Avatar and an Agent § Three ways to get a visual](/reference/api/build/avatar-and-agent/#three-ways-to-get-a-visual) for how to compose the result into an avatar.
+**SDK shortcut:** `catalog.createFace(imageBlob, attrs, adminKs)` / `catalog.createBackground(imageBlob, attrs, adminKs)` — same `attrs` shape as `createVisual`. See [Agent Components · Create an Avatar and an Agent § Three ways to get a visual](/reference/api/build/avatar-and-agent/#three-ways-to-get-a-visual) for how to compose the result into an avatar.
 
 ---
 

@@ -62,7 +62,7 @@ The SDK ships the plug points today:
   mid-conversation, with server-held secrets. See
   [External API Integrations](/guides/external-api-integrations/).
 - **Per-message variables** (`request_vars`) — inject your own context, per
-  turn, from your backend. See the [API Reference](/reference/api-reference/).
+  turn, from your backend. See the [Backend API Reference](/reference/api-reference/).
 - **Client-side commands** — the agent drives your page UI through functions
   you define. See [Client-Side Commands](/guides/client-commands/).
 
@@ -103,4 +103,4 @@ are for. For anything a visitor talks back to, you want all three flows.
 
 - [Getting Started](/getting-started/) — a working agent in about five minutes
 - [External API Integrations](/guides/external-api-integrations/) — the full plug-in guide
-- [Platform Architecture](/explanation/architecture/) — how the pieces fit together
+- [Platform Overview](/explanation/architecture/) — how the pieces fit together

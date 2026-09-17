@@ -1,13 +1,13 @@
 ---
 layout: base.njk
-title: "Architecture Reference · Channels"
+title: "System Internals Reference · Channels"
 description: "The ASR channel (microphone uplink) and the STV channel (avatar video downlink), field by field."
 eyebrow: Reference
 ---
 
 # Channels
 
-[← Back to Architecture Reference](/reference/architecture-reference/)
+[← Back to System Internals Reference](/reference/architecture-reference/)
 
 **On this page:** [ASR Channel — Microphone Uplink (step 9)](#asr-channel--microphone-uplink-step-9) · [STV Channel — Avatar Video Downlink (after CONNECTED)](#stv-channel--avatar-video-downlink-after-connected) · [Related docs](#related-docs)
 
@@ -65,7 +65,7 @@ That's it — a vanilla WHEP subscribe. The avatar's face+voice stream into your
 
 | Doc | Covers |
 |---|---|
-| [Architecture Reference · Connection and Handshake](/reference/architecture-reference/connection-and-handshake/) | Endpoints, the connect sequence, the `join` payload |
-| [Architecture Reference · Conversation Flow](/reference/architecture-reference/conversation-flow/) | What streams while connected |
-| [Architecture Reference](/reference/architecture-reference/) | Back to the index |
+| [System Internals Reference · Connection and Handshake](/reference/architecture-reference/connection-and-handshake/) | Endpoints, the connect sequence, the `join` payload |
+| [System Internals Reference · Conversation Flow](/reference/architecture-reference/conversation-flow/) | What streams while connected |
+| [System Internals Reference](/reference/architecture-reference/) | Back to the index |
 

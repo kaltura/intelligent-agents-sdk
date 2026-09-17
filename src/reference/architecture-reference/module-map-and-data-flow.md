@@ -1,13 +1,13 @@
 ---
 layout: base.njk
-title: "Architecture Reference · Module Map and Data Flow"
+title: "System Internals Reference · Module Map and Data Flow"
 description: "The SDK module map, the resolveCapabilities shape, the GenUI layer, DTO routing rules, and honest limits."
 eyebrow: Reference
 ---
 
 # SDK Module Map & Data Flow
 
-[← Back to Architecture Reference](/reference/architecture-reference/)
+[← Back to System Internals Reference](/reference/architecture-reference/)
 
 
 This section is the **source-of-truth map** of the SDK's internals: how a call flows from a typed method to the right backend, and the routing/data-flow rules README doesn't cover.
@@ -15,7 +15,7 @@ This section is the **source-of-truth map** of the SDK's internals: how a call f
 ### Two entry points, one shared core
 
 - **`./management`** (`Management`, `src/management/client.js`) — the REST control plane. Holds the admin secret, mints tokens, routes to the two REST hosts (Agentic API + brain API) and OVP, and enforces the two-KS guard via `assertAdmin`/`assertConversation` (`assertKind` in `client.js`) **before any network call**. Resource namespaces hang off it: `sessions`, `agents`, `avatars`, `avatarSessions`, `catalog`, `application`, `intellects`, `intellectConfig`, `tools`, `skills`, `conversations`, `threads`, `messages`, `feedback`, `followups`, `knowledge`, `lifecycle`, `insightSettings`. `tools` and `skills` are standalone, partner-level entities — an intellect only references them via `tool_ids`/`skill_ids`. One sub-resource mounts on `intellects`: `intellects.secrets`.
-- **`./experience`** (`KalturaAvatarSession`, `src/experience/session.js`) — the live socket+WHEP runtime from [Platform Architecture's "Video Runtime Protocol"](/explanation/architecture/#video-runtime-protocol--the-big-picture). Takes only a short-lived conversation token; socket.io is INJECTED (`socketFactory`), never bundled. Two optional plugin subpaths hang off this same live runtime without loading into apps that don't need them: `./experience/presenter` (the `Presenter` deck helper) and `./experience/genui` (the `ExperienceRenderer` GenUI layer).
+- **`./experience`** (`KalturaAvatarSession`, `src/experience/session.js`) — the live socket+WHEP runtime from [Platform Overview's "Video Runtime Protocol"](/explanation/architecture/#video-runtime-protocol--the-big-picture). Takes only a short-lived conversation token; socket.io is INJECTED (`socketFactory`), never bundled. Two optional plugin subpaths hang off this same live runtime without loading into apps that don't need them: `./experience/presenter` (the `Presenter` deck helper) and `./experience/genui` (the `ExperienceRenderer` GenUI layer).
 - **`src/core/*`** — the shared leaf layer both fronts depend on: `http.js` (transport), `errors.js` (`KalturaError`, RFC 9457), `session.js` (`Sessions` token-minter + `makeAuditEmitter`), `stream.js` (converse NDJSON/SSE parser + `collectConverse`/`segmentKind`/`GENUI_RUNTIMES` — the closed enum of GenUI runtime names the brain's `unisphere-tool` segments can carry), `redact.js`, `safety.js`, `ids.js` (`meta()` receipts), `knowledge-enums.js` (`CHAPTER_TYPE`/`STRATEGY`/`EMBED`/`MODALITIES`/`normalizeModality`/`buildIndexerObjects`). Core never imports from `management/` or `experience/` (stays a leaf).
 
 > **Branch security on the minted `Token`, never on `inspectKs(realKs).kind`.** The public `inspectKs` export (`@kaltura/intelligent-agents/management`, `src/management/ks-inspect.js`) decodes only a KSv2 token's **plaintext header**: it reliably returns `{partnerId}`, but a real encrypted KS's privileges are AES-encrypted, so it returns `kind:'opaque'`, `disableEntitlement:null`, `encrypted:true`. `kind`/`disableEntitlement` are populated **only** for unencrypted test tokens. To decide what a token may do, read the `.kind` of the minted `Token` object (it records what it was minted with: `admin`/`conversation`/`agent`/`widget`), not `inspectKs` of an opaque production KS.
@@ -93,6 +93,6 @@ The SDK's own `node:test` suite (`test/`) exercises every one of these surfaces 
 
 | Doc | Covers |
 |---|---|
-| [Architecture Reference · Resilience and Failure Handling](/reference/architecture-reference/resilience-and-failure-handling/) | Failure modes, TURN/relay, and the tool-call-spiral breaker touched on above |
-| [Architecture Reference](/reference/architecture-reference/) | Back to the index |
+| [System Internals Reference · Resilience and Failure Handling](/reference/architecture-reference/resilience-and-failure-handling/) | Failure modes, TURN/relay, and the tool-call-spiral breaker touched on above |
+| [System Internals Reference](/reference/architecture-reference/) | Back to the index |
 

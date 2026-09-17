@@ -1,11 +1,11 @@
 ---
 layout: base.njk
-title: "API · Authentication & Services"
+title: "Authentication & Services"
 description: "KS types and minting, userId identity binding, and the five backend services with their base URLs."
 eyebrow: Reference
 ---
 
-# Authentication
+# Authentication & Services
 
 [← Back to the API Reference index](/reference/api-reference/)
 
@@ -54,7 +54,7 @@ AGENT_KS=$(curl -s -X POST "https://www.kaltura.com/api_v3/service/session/actio
   -d "privileges=agentid:1_abc123" | tr -d '"')
 ```
 
-**Keep `disableentitlement` server-side, for management/admin operations only.** The SDK can't detect or stop a `disableentitlement` KS from being handed to a conversation/end-user session — a real KS's privileges are encrypted and unreadable client-side — so nothing will warn you if you do this by mistake. See [Security](/reference/security/#ks-kaltura-session-guidance-for-agents-ac-3--ac-6--ia-2) and Kaltura's own [KS/privilege reference](https://kaltura.md/KALTURA_SESSION_GUIDE/).
+**Keep `disableentitlement` server-side, for management/admin operations only.** The SDK can't detect or stop a `disableentitlement` KS from being handed to a conversation/end-user session — a real KS's privileges are encrypted and unreadable client-side — so nothing will warn you if you do this by mistake. See [Security & Compliance](/reference/security/#ks-kaltura-session-guidance-for-agents-ac-3--ac-6--ia-2) and Kaltura's own [KS/privilege reference](https://kaltura.md/KALTURA_SESSION_GUIDE/).
 
 **Bind a session to a real end-user identity (`userId`).** By default every minted KS is anonymous — the reserved `{{ sys__user_id }}` template variable (see § Converse) resolves to an empty string in every prompt/converse call. Pass `userId` to bind the KS to a real end-user id instead — the value flows straight through to `session/start`'s own `userId` field, per-call only (never cached), so it makes `sys__user_id` resolve server-side and lets converse-side memory/analytics attribute the turn to a real user:
 
@@ -95,5 +95,5 @@ An agent is built from five services that layer on top of each other. All calls 
 
 Once deployed, the **conversation surface** (`/assistant/converse`, `/v1/thread/`, `/mcp/`) lives on `genie.nvp1.ovp.kaltura.com`. Utility endpoints (`/application/`) for widget resolution and runtime init are on `api.avatar.us.kaltura.ai`.
 
-To embed a live avatar in a browser, go to [Phase 3 — Deploy](/reference/api/deploy/#phase-3--deploy) or jump straight to [UC-12 Anonymous End-User Embed](/reference/use-cases/).
+To embed a live avatar in a browser, go to [Widget & Runtime Init](/reference/api/deploy/#widget--runtime-init) or jump straight to [UC-12 Anonymous End-User Embed](/reference/use-cases/).
 

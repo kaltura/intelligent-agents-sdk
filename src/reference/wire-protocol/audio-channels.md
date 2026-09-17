@@ -67,7 +67,7 @@ This is distinct from [§5](#5-asr-uplink-pc1--microphone--server) (where the *c
 
 ## 6. STV downlink (pc2) — avatar video+audio → you
 
-A receive-only WebRTC peer connection fed via **WHEP** (WebRTC-HTTP Egress Protocol). Signaling is **plain SDP over HTTP**, independent of the socket. (Server-side, the STV controller renders the face and streams it into a media relay that provides the WHEP egress; see [Platform Architecture](/explanation/architecture/).)
+A receive-only WebRTC peer connection fed via **WHEP** (WebRTC-HTTP Egress Protocol). Signaling is **plain SDP over HTTP**, independent of the socket. (Server-side, the STV controller renders the face and streams it into a media relay that provides the WHEP egress; see [Platform Overview](/explanation/architecture/).)
 
 **`cast_mode` selects the STV egress** (`StvCastMode` enum `"webrtc"\|"rtmp"`, optional in the `stvNewSession` body). This SDK never sends it — `buildStvNewSession()` (`SDK:wire.js`) accepts an optional `castMode` argument, but `session.js`'s one call site never passes one, so this SDK only ever takes the server's fully-omitted-default path, not either named value:
 

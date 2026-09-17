@@ -101,7 +101,7 @@ austere dictionary of every endpoint, socket event, GenUI widget, and
 architectural internal — API-Reference, Wire Protocol, GenUI Reference, and
 the full use-case catalog.
 
-**Want the bigger picture?** Platform Architecture, under Explanation,
+**Want the bigger picture?** Platform Overview, under Explanation,
 covers the two backends, the live-video runtime, and how the pieces fit
 together — read it when you want to understand *why*, not just *how*.
 

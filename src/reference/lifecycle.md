@@ -1,11 +1,11 @@
 ---
 layout: base.njk
-title: "Lifecycle"
+title: "Lifecycle Rules"
 description: "Field-by-field reference for event-driven rules: create a rule once, and the backend fires its action automatically every time a matching event happens, server-side."
 eyebrow: Reference
 ---
 
-# Lifecycle — Event-Driven Rules
+# Lifecycle Rules — Event-Driven Rules
 
 [← Back to the API Reference index](/reference/api-reference/)
 
@@ -221,5 +221,5 @@ All against `https://api.avatar.us.kaltura.ai`. SDK: `mgmt.lifecycle`.
 | Doc | What it adds |
 |---|---|
 | [Lifecycle Recipes](/guides/lifecycle-recipes/) | Hands-on walkthrough of `triggerInsightSettingsKai` + `sendInsightEmail` chained together, common pitfalls, and a runnable example |
-| [API · Management Operations](/reference/api/management-operations/) | Where Lifecycle sits alongside the other CRUD entities (agents, avatars, intellects, tools, skills, knowledge) |
+| [Management Operations](/reference/api/management-operations/) | Where Lifecycle sits alongside the other CRUD entities (agents, avatars, intellects, tools, skills, knowledge) |
 

@@ -1,13 +1,13 @@
 ---
 layout: base.njk
-title: "API · Build · Ground the Agent in Your Content (RAG)"
+title: "Agent Components · Ground the Agent in Your Content (RAG)"
 description: "Create a knowledge record, add sources, and check indexing status."
 eyebrow: Reference
 ---
 
 # Ground the Agent in Your Content (RAG)
 
-[← Back to Phase 2 — Build](/reference/api/build/)
+[← Back to Agent Components](/reference/api/build/)
 
 
 **Step 1 — Create a knowledge record:**
@@ -85,6 +85,6 @@ Resolve that poll **before** you create or update the intellect, and send `use_k
 
 | Doc | What it adds |
 |---|---|
-| [API · Build · Create and Configure an Intellect](/reference/api/build/intellect/) | The `knowledge_ids`/`use_knowledge_base` fields this section links into |
-| [API · Phase 2 — Build](/reference/api/build/) | The Phase 2 — Build index |
+| [Agent Components · Create and Configure an Intellect](/reference/api/build/intellect/) | The `knowledge_ids`/`use_knowledge_base` fields this section links into |
+| [Agent Components](/reference/api/build/) | The Agent Components index |
 

@@ -1,13 +1,13 @@
 ---
 layout: base.njk
-title: "Architecture Reference · Conversation Flow"
+title: "System Internals Reference · Conversation Flow"
 description: "What streams while connected: brain output, talking state, lifecycle events, sending user input, and the complete message catalog."
 eyebrow: Reference
 ---
 
 # Conversation Flow
 
-[← Back to Architecture Reference](/reference/architecture-reference/)
+[← Back to System Internals Reference](/reference/architecture-reference/)
 
 **On this page:** [Conversation Phase — What Streams While Connected](#conversation-phase--what-streams-while-connected) · [Sending User Input](#sending-user-input) · [Complete Message Catalog](#complete-message-catalog) · [Related docs](#related-docs)
 
@@ -72,13 +72,13 @@ The server handler is `onTextEntered` (the session server's text-injection handl
 
 ## Complete Message Catalog
 
-The exhaustive, field-by-field event catalog — every client emit and server event with its payload shape and subscriber — lives in **[Wire Protocol · Events Catalog §4](/reference/wire-protocol/events-catalog/#socketio-events--developer-facing-catalog)** (§4a client→server, §4b–§4d server→client, §4e the parsed `agent_raw_text.delta` types). The connect-sequence steps in [Architecture Reference · Connection and Handshake](/reference/architecture-reference/connection-and-handshake/) name the key events in order; that doc is the reference for each one's exact shape.
+The exhaustive, field-by-field event catalog — every client emit and server event with its payload shape and subscriber — lives in **[Wire Protocol · Events Catalog §4](/reference/wire-protocol/events-catalog/#socketio-events--developer-facing-catalog)** (§4a client→server, §4b–§4d server→client, §4e the parsed `agent_raw_text.delta` types). The connect-sequence steps in [System Internals Reference · Connection and Handshake](/reference/architecture-reference/connection-and-handshake/) name the key events in order; that doc is the reference for each one's exact shape.
 
 ## Related docs
 
 | Doc | Covers |
 |---|---|
-| [Architecture Reference · Connection and Handshake](/reference/architecture-reference/connection-and-handshake/) | The connect sequence that precedes this phase |
-| [Architecture Reference · Channels](/reference/architecture-reference/channels/) | The ASR/STV media channels running alongside this |
-| [Architecture Reference](/reference/architecture-reference/) | Back to the index |
+| [System Internals Reference · Connection and Handshake](/reference/architecture-reference/connection-and-handshake/) | The connect sequence that precedes this phase |
+| [System Internals Reference · Channels](/reference/architecture-reference/channels/) | The ASR/STV media channels running alongside this |
+| [System Internals Reference](/reference/architecture-reference/) | Back to the index |
 

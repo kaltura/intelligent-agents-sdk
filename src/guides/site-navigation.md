@@ -269,5 +269,5 @@ Non-goals: multi-argument actions (`action: 'open' | 'highlight'`), server-side 
 | [README.md § Site navigation](https://github.com/kaltura/intelligent-agents-sdk/blob/main/README.md#site-navigation-sitenavigator) | Quick start and export tables. |
 | [Client-Side Commands](/guides/client-commands/) | The general client-command contract this tool is built on, and why waiting tools spiral. |
 | [Dynamic Data Injection](/guides/dynamic-data-injection/) | `page_context` and the other ways to keep the brain in sync with the page. |
-| [Security](/reference/security/) | The output-handling rules the plugin follows. |
+| [Security & Compliance](/reference/security/) | The output-handling rules the plugin follows. |
 

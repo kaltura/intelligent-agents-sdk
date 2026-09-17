@@ -1,11 +1,11 @@
 ---
 layout: base.njk
-title: "API · Management Operations"
+title: "Management Operations"
 description: "CRUD endpoints for agents, avatars, intellects, tools, skills, knowledge records, and Lifecycle rules."
 eyebrow: Reference
 ---
 
-# Management operations
+# Management Operations
 
 [← Back to the API Reference index](/reference/api-reference/)
 
@@ -39,7 +39,7 @@ Filter keys: `agentId`, `adminTagsIn`, `adminTagsNotIn`, `searchValue` (case-ins
 | Delete | `POST /v1/avatar/delete` | `{"id":"24-char-hex"}` |
 | List templates | `POST /v1/avatar-template/list` | `{"pager":{"offset":0,"limit":30}}` — curated presets, each pairing a `voice` with either a ready `visual` or a `face`/`background` pair (§ Create an Avatar). SDK: `mgmt.avatars.listTemplates(ks, opts)`. |
 
-**Compose a visual on create** — needs exactly one of: (1) `visual:{id}` (wins only when `face`/`background` are BOTH omitted or BOTH sent as a complete pair — sending just one of `face`/`background` alongside `visual` is still a domain failure, `visual` does not exempt it); (2) `face:{id}` + `background:{type,value}` composing a NEW visual (both required together — even alongside `visual` — UNLESS `templateId` is also given — a template can carry its own `face`/`background`, filling in whichever half is missing); (3) `templateId` + whichever of `face`/`background`/`visual` the template doesn't already supply (`templateId` alone is a domain failure unless the template already resolves to a complete visual on its own). `background.value` is required for `type:'visual'`, optional (defaults to white) for `type:'color'`. For `type:'color'`, `value` must be a plain 6-digit hex string (`#RRGGBB`) — **no alpha channel**: an 8-digit hex (`#RRGGBBAA`), `rgba(...)`, or CSS4 `rgb(... / ...%)` all fail with `AVATAR_INVALID_BACKGROUND_ID` ("must be a 6-digit hex value"), live-confirmed against production. Full walkthrough, including `catalog.createFace`/`createBackground`: [API · Build · Create an Avatar and an Agent § Three ways to get a visual](/reference/api/build/avatar-and-agent/#three-ways-to-get-a-visual).
+**Compose a visual on create** — needs exactly one of: (1) `visual:{id}` (wins only when `face`/`background` are BOTH omitted or BOTH sent as a complete pair — sending just one of `face`/`background` alongside `visual` is still a domain failure, `visual` does not exempt it); (2) `face:{id}` + `background:{type,value}` composing a NEW visual (both required together — even alongside `visual` — UNLESS `templateId` is also given — a template can carry its own `face`/`background`, filling in whichever half is missing); (3) `templateId` + whichever of `face`/`background`/`visual` the template doesn't already supply (`templateId` alone is a domain failure unless the template already resolves to a complete visual on its own). `background.value` is required for `type:'visual'`, optional (defaults to white) for `type:'color'`. For `type:'color'`, `value` must be a plain 6-digit hex string (`#RRGGBB`) — **no alpha channel**: an 8-digit hex (`#RRGGBBAA`), `rgba(...)`, or CSS4 `rgb(... / ...%)` all fail with `AVATAR_INVALID_BACKGROUND_ID` ("must be a 6-digit hex value"), live-confirmed against production. Full walkthrough, including `catalog.createFace`/`createBackground`: [Agent Components · Create an Avatar and an Agent § Three ways to get a visual](/reference/api/build/avatar-and-agent/#three-ways-to-get-a-visual).
 
 An incomplete/invalid `face`/`background` pairing on **create** is a HTTP-200 `KalturaAPIException` (`AVATAR_MISSING_VISUAL_RESOLUTION`, `AVATAR_FAILED_TO_COMPOSE_VISUAL`, `AVATAR_MISSING_VOICE`, `AVATAR_NOT_FOUND`) — `avatars.create` catches the incomplete-pairing case pre-network. The composed result is reflected in `visual.composition` and a fresh raw `previewImageUrl`/`loadingVideoUrl` — inspect those to see what was actually built.
 
@@ -70,7 +70,7 @@ Typed setters on `mgmt.intellectConfig` for the other single-purpose fields, all
 | `setAvatarSummaryConfig` | `avatar_summary_config` (`prompt`, `analysis`, `template`, `content_type` in `SUMMARY_CONTENT_TYPES`) | `null` |
 | `setSkillIds` | `skill_ids` (`{ id, mode, condition? }`, `mode` in `SKILL_MODES`) | `[]` |
 
-Each validates client-side and throws `bad_request` before any network call. See [API · Build · Create and Configure an Intellect](/reference/api/build/intellect/) for field semantics.
+Each validates client-side and throws `bad_request` before any network call. See [Agent Components · Create and Configure an Intellect](/reference/api/build/intellect/) for field semantics.
 
 ## Tools — `https://genie.nvp1.ovp.kaltura.com`
 
@@ -117,9 +117,9 @@ All thread endpoints require an **admin KS** (`disableentitlement`). SDK: `mgmt.
 
 Filter fields (list): `agentIdEquals`, `contextIdEqual`, `createdAtGreaterThanOrEqual`, `createdAtLessThanOrEqual`, `idEquals`, `idsIn`, `isEverywhere`, `orderBy`, `partnerIdEquals`, `statusEquals`, `statusIn`, `updatedAtGreaterThanOrEqual`, `updatedAtLessThanOrEqual`, `userIdEquals`. `orderBy` goes INSIDE `filter` (one of `+createdAt`, `-createdAt`, `+updatedAt`, `-updatedAt`); a top-level `orderBy` 422s. `statusEquals`/`statusIn` take `0`/`1`; a numeric string (`"0"`) is silently coerced and accepted, but a non-numeric string 422s. An unknown filter key 422s; `partnerIdIn` always 422s. Pager is `{pageIndex, pageSize}` (1-based) — `{offset, limit}` is ignored and returns the default page of 30. `pageSize` is capped server-side at 500 (a higher value 422s) — this applies to every Genie-backed list/report pager in this section (Threads, Messages, Feedback, Followups). SDK: `mgmt.threads.list(ks, opts)` merges `opts.filter` under the fixed `objectType` (so it can't be overridden); it translates `agentIdEquals` to the server's own agent-scoping filter key on the wire. There's no server-side "in" equivalent for it — `agentIdIn` throws a `validation_error` before any network call rather than being silently dropped.
 
-`request_vars` on `push` is validated by the SDK's own reserved-name guard before any network call, identically to `converse` — see [API · Phase 4 — Operate § Reserved Template Variables](/reference/api/operate/#reserved-template-variables-sys__).
+`request_vars` on `push` is validated by the SDK's own reserved-name guard before any network call, identically to `converse` — see [Conversation & Analytics § Reserved Template Variables](/reference/api/operate/#reserved-template-variables-sys__).
 
-See [API · Phase 4 — Operate § Threads](/reference/api/operate/#threads) for response shapes and the compliance note on delete's soft-delete/purge timing.
+See [Conversation & Analytics § Threads](/reference/api/operate/#threads) for response shapes and the compliance note on delete's soft-delete/purge timing.
 
 ## Messages, Feedback & Followups — `https://genie.nvp1.ovp.kaltura.com`
 
@@ -152,7 +152,7 @@ Full record lifecycle. SDK: `mgmt.knowledge`. Linkage to an intellect is via `kn
 | Delete | `POST /v1/knowledge/delete` | `{"id":2049}` — HTTP 200, body `null`; a follow-up get 404s |
 | Per-entry status | `POST /v1/knowledge/entry_status` | `{"knowledge_id":2049, "entry_ids":["0_abc123"]}`. SDK: `mgmt.knowledge.entryStatus(id, entryIds, ks)`. |
 
-`mgmt.knowledge.isIndexed(id, ks)` wraps Get and reads `status`/`config.sources[].indexers[].index_position`. `status` is the record's own container-lifecycle flag, not an indexing-completion signal: see [API · Build · Ground the Agent in Your Content (RAG) § Ground the Agent](/reference/api/build/knowledge-rag/#ground-the-agent-in-your-content-rag) for why, and for the real indexing-completion check.
+`mgmt.knowledge.isIndexed(id, ks)` wraps Get and reads `status`/`config.sources[].indexers[].index_position`. `status` is the record's own container-lifecycle flag, not an indexing-completion signal: see [Agent Components · Ground the Agent in Your Content (RAG) § Ground the Agent](/reference/api/build/knowledge-rag/#ground-the-agent-in-your-content-rag) for why, and for the real indexing-completion check.
 
 `mgmt.knowledge.addSource(id, source, ks)` / `removeSource(id, source, ks)` read-merge-write one source into/out of `config.sources` without disturbing the others. Both skip the write (`applied:false`) when an identical source object is already present / already absent.
 
@@ -160,11 +160,11 @@ Before deleting a record, `mgmt.knowledge.deleteRecord` lists every intellect an
 
 ## Lifecycle — `https://api.avatar.us.kaltura.ai`
 
-An event-driven rule engine, not embedded in an intellect. SDK: `mgmt.lifecycle`. Full reference (rule shape, all 4 action types, CRUD + discovery methods) and a worked recipe: **[Lifecycle](/reference/lifecycle/)**.
+An event-driven rule engine, not embedded in an intellect. SDK: `mgmt.lifecycle`. Full reference (rule shape, all 4 action types, CRUD + discovery methods) and a worked recipe: **[Lifecycle Rules](/reference/lifecycle/)**.
 
 ## Insight Settings — `https://api.avatar.us.kaltura.ai`
 
-Reusable custom-insight definitions (`key`/`title`/`prompt`/`valueType`), referenced by id from a lifecycle rule's `triggerInsightSettingsKai` action — not embedded in an intellect. SDK: `mgmt.insightSettings`. See [Lifecycle](/reference/lifecycle/).
+Reusable custom-insight definitions (`key`/`title`/`prompt`/`valueType`), referenced by id from a lifecycle rule's `triggerInsightSettingsKai` action — not embedded in an intellect. SDK: `mgmt.insightSettings`. See [Lifecycle Rules](/reference/lifecycle/).
 
 | Operation | Endpoint | Body |
 |-----------|----------|------|
@@ -174,5 +174,5 @@ Reusable custom-insight definitions (`key`/`title`/`prompt`/`valueType`), refere
 | Update | `POST /v1/insight-settings/update` | `{"id":"<id>", ...fields}` — any of `key`/`title`/`prompt`/`valueType`/`status` |
 | Delete | `POST /v1/insight-settings/delete` | `{"id":"<id>"}` — succeeds even while a lifecycle rule still references the id; that rule keeps firing and just skips the deleted id, with no error anywhere |
 
-Full reference and a worked recipe: **[Lifecycle § InsightSettings](/reference/lifecycle/#insightsettings-reusable-insight-definitions)**.
+Full reference and a worked recipe: **[Lifecycle Rules § InsightSettings](/reference/lifecycle/#insightsettings-reusable-insight-definitions)**.
 

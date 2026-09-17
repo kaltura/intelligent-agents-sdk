@@ -1,13 +1,13 @@
 ---
 layout: base.njk
-title: "Architecture Recipe"
+title: "Minimal Reimplementation Recipe"
 description: "A from-scratch reimplementation of the live avatar runtime using nothing but socket.io-client and the browser's native RTCPeerConnection."
 eyebrow: Reference
 ---
 
-# Architecture Recipe — Minimal Reimplementation (No Kaltura Libs)
+# Minimal Reimplementation Recipe (No Kaltura Libs)
 
-A from-scratch reimplementation of the live avatar runtime, using nothing but `socket.io-client` and the browser's native `RTCPeerConnection`. Read [Platform Architecture](/explanation/architecture/) for the big picture and [Architecture Reference](/reference/architecture-reference/) for the exact wire shapes each step below relies on.
+A from-scratch reimplementation of the live avatar runtime, using nothing but `socket.io-client` and the browser's native `RTCPeerConnection`. Read [Platform Overview](/explanation/architecture/) for the big picture and [System Internals Reference](/reference/architecture-reference/) for the exact wire shapes each step below relies on.
 
 <div data-nova-target="architecture-recipe-steps" data-nova-label="Minimal reimplementation recipe steps">
 
@@ -50,5 +50,5 @@ If you reimplement the protocol per the recipe above, you MUST:
 4. **Keep the socket alive during queue waits**; only do a fresh `connect()` (new `stickyId`) on a permanent transport loss.
 5. Let the **STV/WHEP** video channel reconnect independently — it carries no sticky state.
 
-See [Architecture Reference's "Scale & Sticky Sessions"](/reference/architecture-reference/scale-and-sticky-sessions/#scale--sticky-sessions) for why each of these matters.
+See [System Internals Reference's "Scale & Sticky Sessions"](/reference/architecture-reference/scale-and-sticky-sessions/#scale--sticky-sessions) for why each of these matters.
 

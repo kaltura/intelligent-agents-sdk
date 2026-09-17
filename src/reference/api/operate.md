@@ -1,11 +1,11 @@
 ---
 layout: base.njk
-title: "API · Phase 4 — Operate"
+title: "Conversation & Analytics"
 description: "Converse, reserved template variables, threads and history cost, feedback, usage analytics, and knowledge search."
 eyebrow: Reference
 ---
 
-# Phase 4 — operate
+# Conversation & Analytics
 
 [← Back to the API Reference index](/reference/api-reference/)
 
@@ -82,9 +82,9 @@ The server sets these on every turn. They're available to `{{ ... }}` interpolat
 | `sys__is_new_thread` | `true` on the first turn of a new thread, `false` otherwise | |
 | `sys__avatar_enabled` | Whether the current thread has a live avatar attached | Used in a Skill's `condition` to gate it to avatar-only sessions, e.g. `{{ sys__avatar_enabled }}` — see [Configure an Intellect § skill_ids](/reference/api/build/intellect/#configure-an-intellect). |
 | `sys__avatar_share_screen_enabled` | Whether the current avatar session has screen-share analysis enabled | Also usable in a Skill's `condition`, e.g. `{{ sys__avatar_enabled and not sys__avatar_share_screen_enabled }}` to gate a skill to avatar sessions that are NOT sharing a screen. |
-| `sys__context_id` | The category/entry id the current context (and its knowledge base, if any) is scoped to | Set via `KalturaAvatarSession`'s `contextId` constructor option, sent on the live socket `join` payload — see [Architecture Reference · Connection and Handshake § The `join` payload](/reference/architecture-reference/connection-and-handshake/#the-join-payload-step-2--this-carries-the-agentbrain-config). Empty when no context was set at join. |
+| `sys__context_id` | The category/entry id the current context (and its knowledge base, if any) is scoped to | Set via `KalturaAvatarSession`'s `contextId` constructor option, sent on the live socket `join` payload — see [System Internals Reference · Connection and Handshake § The `join` payload](/reference/architecture-reference/connection-and-handshake/#the-join-payload-step-2--this-carries-the-agentbrain-config). Empty when no context was set at join. |
 | `sys__context_type` | The type of that context (e.g. an `entry` vs. a `category`) | Set via `KalturaAvatarSession`'s `contextType` constructor option, alongside `contextId`; empty when no context was set at join. |
-| `sys__ks` | The raw Kaltura Session token for the current request | ⚠️ **Security warning: never reference `sys__ks` in a prompt whose output could be echoed back to a user or logged.** It is a live credential — rendering it as plain text in a model response, chat transcript, or log turns that surface into a credential leak. See [Security](/reference/security/#ks-kaltura-session-guidance-for-agents-ac-3--ac-6--ia-2). |
+| `sys__ks` | The raw Kaltura Session token for the current request | ⚠️ **Security warning: never reference `sys__ks` in a prompt whose output could be echoed back to a user or logged.** It is a live credential — rendering it as plain text in a model response, chat transcript, or log turns that surface into a credential leak. See [Security & Compliance](/reference/security/#ks-kaltura-session-guidance-for-agents-ac-3--ac-6--ia-2). |
 | `sys__user_obj.first_name` / `.last_name` / `.title` / `.company` / `.gender` / `.email` | Attributes of the bound-user object | Verify these resolve with `intellects.previewPrompt()` before shipping a prompt — the rendered preview flags unresolved references with a `reserved_user_attr_unresolved` warning. |
 | `secrets.<NAME>` | A named secret configured on the intellect | Write-only — see [§ Secrets](/reference/api/build/tools-and-secrets/#secrets-write-only). |
 
@@ -122,7 +122,7 @@ All thread endpoints require an **admin KS** (`disableentitlement`). Pager: `{"p
 
 SDK: `mgmt.threads.{list, get, rename, delete, transcript}`.
 
-> **Compliance note.** `threads.delete()` soft-deletes immediately; a scheduled infra-level purge erases the underlying data later. See [Security](/reference/security/#shared-responsibility-control-matrix-nist-800-53) for what the SDK provides versus what the operator must configure.
+> **Compliance note.** `threads.delete()` soft-deletes immediately; a scheduled infra-level purge erases the underlying data later. See [Security & Compliance](/reference/security/#shared-responsibility-control-matrix-nist-800-53) for what the SDK provides versus what the operator must configure.
 
 ## Session-Completion Signal
 

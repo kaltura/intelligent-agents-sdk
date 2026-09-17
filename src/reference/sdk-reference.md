@@ -7,7 +7,7 @@ eyebrow: Reference
 
 # SDK Reference
 
-This page documents the `@kaltura/intelligent-agents` JavaScript SDK's own object-level API — its classes, functions, and constructor options across the `Management` and `Experience` entry points. For the raw backend HTTP endpoints the SDK wraps, see the [API Reference](/reference/api-reference/).
+This page documents the `@kaltura/intelligent-agents` JavaScript SDK's own object-level API — its classes, functions, and constructor options across the `Management` and `Experience` entry points. For the raw backend HTTP endpoints the SDK wraps, see the [Backend API Reference](/reference/api-reference/).
 
 ## Contents
 
@@ -17,8 +17,9 @@ This page documents the `@kaltura/intelligent-agents` JavaScript SDK's own objec
 | [Experience](#experience) | [Skills, voice import, and the embed snippet](#skills-voice-import-and-the-embed-snippet) |
 | [Client-side commands](#client-side-commands) | [Scripted-Video (STV-only) Sessions](#scripted-video-stv-only-sessions) |
 | [GenUI](#genui) | [RAG (knowledge base)](#rag-knowledge-base) |
-| | [Threads, messages, feedback, and follow-ups](#threads-messages-feedback-and-follow-ups) |
-| [Presenter](#presenter) | [AI-SDR / CRM lead capture](#ai-sdr--crm-lead-capture) |
+| | [Threads](#threads) |
+| [Presenter](#presenter) | [Messages](#messages) · [Feedback](#feedback) · [Follow-ups](#follow-ups) |
+| | [AI-SDR / CRM lead capture](#ai-sdr--crm-lead-capture) |
 | [Chroma-key Avatar Compositor](#chroma-key-avatar-compositor) | [Testing](#testing) |
 | [Advanced / building-block exports](#advanced--building-block-exports) | [Accessibility (WCAG 2.2 AA / captions) + AI-disclosure gate](#accessibility-wcag-22-aa--captions--ai-disclosure-gate) |
 | | [Security posture](#security-posture) |
@@ -154,11 +155,11 @@ Build the control as click-to-toggle, not press-and-hold: it's more usable for l
 
 ### Resilience: brain stalls and tool-call spirals
 
-`KalturaAvatarSession` watches for a brain that goes quiet or loops instead of answering — see [Architecture Reference](/reference/architecture-reference/resilience-and-failure-handling/#resilience--failure-handling) for the full failure-mode matrix.
+`KalturaAvatarSession` watches for a brain that goes quiet or loops instead of answering — see [System Internals Reference](/reference/architecture-reference/resilience-and-failure-handling/#resilience--failure-handling) for the full failure-mode matrix.
 
 - **Brain-stall watchdog** (`brainStallMs`, default on) — emits `brainStalled` (`{count}`), repeating for as long as nothing perceivable (spoken/avatar content or a GenUI widget) follows a turn.
 - **Dead-air masking** (`responsePending`/`responseSettled`) — `responsePending` (`{}`) fires the moment a turn starts awaiting the brain's first perceivable output (spoken/avatar/GenUI content); `responseSettled` (`{}`) fires once that output arrives, the turn ends, an interruption occurs, or the session tears down. Use this pair to show/hide a "thinking…" affordance instead of leaving the avatar's face frozen during the gap — see `examples/browser-experience.html` for a working example.
-- **Tool-call spiral circuit breaker** — constructor options `toolSpiralLimit` (default 10, per turn) and `hardToolSpiralLimit` (default `toolSpiralLimit * 3`, session-scoped); events `toolSpiralDetected` (soft) and `toolSpiralRecovering` (`{count, limit, lastTurnText}`, hard — triggers a cold reconnect). `recoverFromSpiral` (default `true`) auto-resends the abandoned turn's text once on reconnect and emits `spiralRecovered {text}`; set `false` to handle it yourself via `lastTurnText`. See [Architecture Reference § Tool-call spiral](/reference/architecture-reference/resilience-and-failure-handling/#tool-call-spiral-what-happened-and-how-its-mitigated) for why the two tiers exist and how recovery works.
+- **Tool-call spiral circuit breaker** — constructor options `toolSpiralLimit` (default 10, per turn) and `hardToolSpiralLimit` (default `toolSpiralLimit * 3`, session-scoped); events `toolSpiralDetected` (soft) and `toolSpiralRecovering` (`{count, limit, lastTurnText}`, hard — triggers a cold reconnect). `recoverFromSpiral` (default `true`) auto-resends the abandoned turn's text once on reconnect and emits `spiralRecovered {text}`; set `false` to handle it yourself via `lastTurnText`. See [System Internals Reference § Tool-call spiral](/reference/architecture-reference/resilience-and-failure-handling/#tool-call-spiral-what-happened-and-how-its-mitigated) for why the two tiers exist and how recovery works.
 
 ```js
 const session = new KalturaAvatarSession({ token, /* … */, recoverFromSpiral: false });
@@ -816,9 +817,9 @@ await mgmt.knowledge.deleteRecord(rec.id, ks, { confirmPermanent: true });
 
 ---
 
-## Threads, messages, feedback, and follow-ups
+## Threads
 
-Mounted at `mgmt.threads`, `mgmt.messages`, `mgmt.feedback`, `mgmt.followups`. `feedback.add` and `followups.getSuggested` accept any KS (they're meant to be callable with the end user's own conversation token); every other method needs an admin KS.
+Mounted at `mgmt.threads`. Every method needs an admin KS.
 
 ```js
 // list an agent's threads, newest first
@@ -832,12 +833,6 @@ await mgmt.threads.clearAnalysis(threadId, admin.ks);
 
 // inject a message into a thread from your own backend
 await mgmt.threads.push({ id: threadId, content: 'Order #4821 just shipped.' }, admin.ks);
-
-// rate a message (any KS)
-await mgmt.feedback.add({ message_id: messageId, is_positive: true }, ks);
-
-// starter questions for the current agent
-const suggestions = await mgmt.followups.getSuggested(ks);
 ```
 
 | Method | What it does |
@@ -845,24 +840,59 @@ const suggestions = await mgmt.followups.getSuggested(ks);
 | `threads.list(ks, opts)` | List threads. `opts.filter`: `agentIdEquals`, `statusEquals`/`statusIn`, `createdAtGreaterThanOrEqual`/`LessThanOrEqual`, `idEquals`/`idsIn`, `userIdEquals`, `orderBy` (`+`/`-` `createdAt`/`updatedAt`, goes inside `filter`) |
 | `threads.get(id, ks)` / `threads.transcript(id, ks)` | Fetch a thread, or its flattened `human:`/`ai:` transcript |
 | `threads.rename(id, title, ks)` | Rename a thread |
-| `threads.setAnalysis(id, patch, ks)` / `threads.clearAnalysis(id, ks)` | Shallow-merge into (or wipe) `thread_metadata.analysis`. A key that actually changes fires the `analysis_updated` event [Lifecycle](/reference/lifecycle/) rules react to |
-| `threads.push({id, content, request_vars?, system_message?}, ks)` | Inject an external message into a thread. `delivered:false` in the reply means no live socket was attached; the message still persists |
+| `threads.setAnalysis(id, patch, ks)` / `threads.clearAnalysis(id, ks)` | Shallow-merge into (or wipe) `thread_metadata.analysis`. A key that actually changes fires the `analysis_updated` event [Lifecycle Rules](/reference/lifecycle/) react to |
+| `threads.push({id, content, request_vars?, system_message?}, ks)` | Inject an external message into a thread from your own backend. **`threads.push` exists and does not fail for a missing live socket** — `delivered:false` in the reply just means no live socket was attached right now; the message still persists on the thread either way |
 | `threads.delete(threadIds, ks, confirm)` | Batch-delete threads by id. The GDPR/CCPA deletion path for conversation PII |
+
+`agentIdEquals` (on `threads.list` and `feedback.list`) only matches threads opened with `sessions.createAgentToken({agentId})`. A plain `sessions.createConversationToken({configId})` thread's `agent_id` is `"default"`, so an `agentIdEquals` filter set to a real agent id **excludes** that thread — it never matches it by default.
+
+## Messages
+
+Mounted at `mgmt.messages`. Every method needs an admin KS.
+
+| Method | What it does |
+|---|---|
 | `messages.list(ks, opts)` | List messages, optionally scoped with `opts.threadId` (sugar for `filter.threadIdEquals`) |
 | `messages.get(id, ks)` / `messages.share(id, newTitle, ks)` | Fetch one message, or clone it under a new title for sharing |
 | `messages.report(ks, opts)` / `messages.reportSummary(ks, opts)` | Raw partner conversation CSV, or a parsed `{totals, byAgent, byThread}` summary |
+
+`messages.report`/`messages.reportSummary` return end-user ids, names, and verbatim question/feedback text. Treat as PII, scope with a filter, and redact before sharing outside your team.
+
+## Feedback
+
+Mounted at `mgmt.feedback`. `feedback.add` accepts any KS (meant to be callable with the end user's own conversation token); `feedback.list` needs an admin KS.
+
+```js
+// rate a message (any KS)
+await mgmt.feedback.add({ message_id: messageId, is_positive: true }, ks);
+```
+
+| Method | What it does |
+|---|---|
 | `feedback.add({message_id, is_positive, comment?}, ks)` | Rate a message. Any KS, idempotent per `(message_id, is_positive)` |
 | `feedback.list(ks, opts)` | Read ratings back. `opts.filter`: `messageIdEquals`/`messageIdsIn`, `threadIdEquals`, `agentIdEquals`, `isPositiveEquals` |
+
+`feedback.list`'s ratings include the message text and end-user id — treat as PII, same as `messages.report`.
+
+## Follow-ups
+
+Mounted at `mgmt.followups`. `followups.getSuggested` accepts any KS (meant to be callable with the end user's own conversation token); `followups.list` needs an admin KS.
+
+```js
+// starter questions for the current agent
+const suggestions = await mgmt.followups.getSuggested(ks);
+```
+
+| Method | What it does |
+|---|---|
 | `followups.getSuggested(ks)` | Starter questions for the current partner/agent. Any KS |
 | `followups.list(ks, opts)` | Raw partner-wide follow-up question records |
-
-`agentIdEquals` (on `threads.list` and `feedback.list`) only matches threads opened with `sessions.createAgentToken({agentId})`. A plain `sessions.createConversationToken({configId})` thread's `agent_id` is `"default"` and never matches. `messages.report`/`messages.reportSummary`/`feedback.list` return end-user ids, names, and verbatim question/feedback text. Treat as PII, scope with a filter, and redact before sharing outside your team.
 
 ---
 
 ## Honest limits
 
-- **Brain-model and rate-limit fields have no public write door.** `agent_llm`/`agent_fast_llm`/`agent_avatar_llm`/rate limits/`run_quota_check`/`web_search_config` are set by internal tooling only — no public route reads or writes them (`intellectConfig.describe()` surfaces their current values read-only, informationally). Grounding a new agent via `knowledge_ids` is fully ungated. (Event-driven session/thread rules ARE supported — see [API Reference § Lifecycle](/reference/lifecycle/#lifecycle--event-driven-rules).)
+- **Brain-model and rate-limit fields have no public write door.** `agent_llm`/`agent_fast_llm`/`agent_avatar_llm`/rate limits/`run_quota_check`/`web_search_config` are set by internal tooling only — no public route reads or writes them (`intellectConfig.describe()` surfaces their current values read-only, informationally). Grounding a new agent via `knowledge_ids` is fully ungated. (Event-driven session/thread rules ARE supported — see [Lifecycle Rules](/reference/lifecycle/#lifecycle-rules--event-driven-rules).)
 - **No verbatim speech** — `speak()` goes through the brain; the avatar may rephrase.
 - **Custom face works self-serve, three ways.** (1) A ready-made Visual: upload a full portrait via `catalog.createVisual`, pass the returned id as `visual:{id}` (or `itemId` as `visualId` in `provision`). (2) Compose one from parts: `catalog.createFace`/`catalog.createBackground` each return a half, then `avatars.create({face:{id}, background:{type:'color'|'visual', value?}, voice, ...}, ks)`, both required together at create time. (3) Start from a curated `templateId` (`catalog.listTemplates()`) and override just the parts you want. `avatars.update()` also accepts `background` alone, to swap only the background against the avatar's current face. The model animates the composed result at runtime. Video-clip ingest is not available through this API.
 - **`force_experience` and `model_type:'fast'`** are hints; the SDK can't prove which model replied or which experience rendered.
@@ -874,8 +904,8 @@ const suggestions = await mgmt.followups.getSuggested(ks);
 | Doc | What it adds |
 |-----|---------------|
 | [Getting Started](/getting-started/) | First working agent in about five minutes |
-| [API Reference](/reference/api-reference/) | The raw HTTP endpoints behind every SDK method here |
-| [Platform Architecture](/explanation/architecture/) | How `./management` and `./experience` fit into the backend services and runtime protocol as a whole |
-| [Architecture Reference](/reference/architecture-reference/) | The module-by-module data-flow map and failure-mode tables behind this page's SDK surface |
+| [Backend API Reference](/reference/api-reference/) | The raw HTTP endpoints behind every SDK method here |
+| [Platform Overview](/explanation/architecture/) | How `./management` and `./experience` fit into the backend services and runtime protocol as a whole |
+| [System Internals Reference](/reference/architecture-reference/) | The module-by-module data-flow map and failure-mode tables behind this page's SDK surface |
 | [Wire Protocol](/reference/wire-protocol/) | The exact socket/WebRTC wire shapes `KalturaAvatarSession` speaks |
 | [Security](/reference/security/) | The control matrix and KS-handling guidance behind this SDK's auth model |

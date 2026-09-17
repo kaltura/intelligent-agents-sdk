@@ -76,7 +76,7 @@ node create-agent.mjs "A friendly yoga studio receptionist who helps people book
 
 You'll see progress messages as it builds the brain, face, and voice. At the end it sends a smoke-test message and prints the reply, plus the new IDs (`configId`, `agentId`, `avatarId`, `widgetId`) you need to embed or extend the agent.
 
-> Building an agent by hand instead of via the one-line brief? See [API Reference](/reference/api/build/).
+> Building an agent by hand instead of via the one-line brief? See [Backend API Reference](/reference/api/build/).
 
 ---
 
@@ -96,7 +96,7 @@ const reply = await kaltura.converseOnce('<configId from Step 3>', 'Hello! What 
 console.log(reply.text);
 ```
 
-`converseOnce()` mints its own conversation token from the `configId` — the admin secret never leaves your process. See [API Reference](/reference/api/operate/) for threaded conversations, streaming, and the full Management API surface.
+`converseOnce()` mints its own conversation token from the `configId` — the admin secret never leaves your process. See [Backend API Reference](/reference/api/operate/) for threaded conversations, streaming, and the full Management API surface.
 
 **Talking on behalf of a real, known user?** Mint the conversation token yourself with `userId` instead of letting `converseOnce()` auto-mint an anonymous one. This binds the [KS](/reference/api/authentication/#authentication) (Kaltura Session token) to that user so per-user memory and analytics attribute the conversation correctly:
 
@@ -108,7 +108,7 @@ const conv = await kaltura.sessions.createConversationToken({
 const reply = await kaltura.converseOnce('<configId from Step 3>', 'Hello again!', {}, conv);
 ```
 
-`userId` is optional everywhere it's accepted — omit it and you get the same anonymous behavior shown above. See [API Reference](/reference/api/authentication/#authentication) → "Bind a session to a real end-user identity" for the full picture.
+`userId` is optional everywhere it's accepted — omit it and you get the same anonymous behavior shown above. See [Backend API Reference](/reference/api/authentication/#authentication) → "Bind a session to a real end-user identity" for the full picture.
 
 **Using [lifecycle rules](/reference/lifecycle/#scoping-a-rule-to-one-agent) scoped to a specific agent (`object.agent_id`)?** A thread created with a plain conversation token (as above) always gets `agent_id:"default"` and can never match those rules. Mint with `mgmt.sessions.createAgentToken({ agentId })` instead — see `docs/lifecycle/README.md`'s scoping section for why. Note `createAgentToken` does **not** accept `userId`: you currently can't combine agent-scoped lifecycle matching with end-user identity binding on the same token.
 
@@ -121,16 +121,16 @@ You now know how to create an agent and talk to it. Here's where to go for more:
 | If you want to… | Read this |
 |-----------------|-----------|
 | See every kind of app you can build (personalized greeters, memory agents, quizzes, video avatars, voice cloning…) | [Use-Case Catalog](/reference/use-cases/) |
-| Look up the exact API call for something | [API Reference](/reference/api-reference/#contents) |
+| Look up the exact API call for something | [Backend API Reference](/reference/api-reference/#contents) |
 | Put a talking video avatar on a web page | [Use-Case Catalog](/reference/use-cases/) → UC-12 |
-| Use your **own voice** for the avatar | [API Reference](/reference/api/design/#upload-a-custom-voice-clone) |
-| Use your **own face/portrait** for the avatar | [API Reference](/reference/api/design/#upload-a-custom-visual-portrait--animated-avatar) |
+| Use your **own voice** for the avatar | [Backend API Reference](/reference/api/design/#upload-a-custom-voice-clone) |
+| Use your **own face/portrait** for the avatar | [Backend API Reference](/reference/api/design/#upload-a-custom-visual-portrait--animated-avatar) |
 | Build a real app with the JavaScript SDK | [README.md](https://github.com/kaltura/intelligent-agents-sdk/blob/main/README.md#quick-start) |
 | Make the avatar drive your UI (slides, widgets, navigation) | [Client-Side Commands](/guides/client-commands/) |
 | Pause the avatar for a video/interactive element, then resume | [Pause for Video/Interactive Content, Then Resume](/guides/pause-resume/) |
 | Auto-summarize every conversation and email a human when it's ready | [Lifecycle Recipes](/guides/lifecycle-recipes/) |
 | Put structured widgets on screen (quizzes, carousels, code blocks) | [GenUI Reference](/reference/genui-reference/) |
-| Understand how the whole system works under the hood | [Platform Architecture](/explanation/architecture/) |
+| Understand how the whole system works under the hood | [Platform Overview](/explanation/architecture/) |
 | See a complete browser example with a live avatar | [examples/browser-experience.html](https://github.com/kaltura/intelligent-agents-sdk/blob/main/examples/browser-experience.html) |
 | See a complete avatar-guided slide deck | [examples/deck-presenter.html](https://github.com/kaltura/intelligent-agents-sdk/blob/main/examples/deck-presenter.html) |
 
@@ -140,13 +140,13 @@ You now know how to create an agent and talk to it. Here's where to go for more:
 
 **Do I need to keep the terminal open?** No — `create-agent.mjs` runs once and exits.
 
-**Will this cost money / use my quota?** Conversations and avatar sessions use your Kaltura plan's quota. Creating agents/avatars is cheap, but clean up test ones you don't need — see `agents.delete()` / `avatars.delete()` in [API Reference](/reference/api/management-operations/).
+**Will this cost money / use my quota?** Conversations and avatar sessions use your Kaltura plan's quota. Creating agents/avatars is cheap, but clean up test ones you don't need — see `agents.delete()` / `avatars.delete()` in [Backend API Reference](/reference/api/management-operations/).
 
-**How do I see everything I created?** Use the Management API's list calls — `kaltura.agents.list(admin.ks)` and `kaltura.avatars.list(admin.ks)`. See [API Reference](/reference/api/management-operations/).
+**How do I see everything I created?** Use the Management API's list calls — `kaltura.agents.list(admin.ks)` and `kaltura.avatars.list(admin.ks)`. See [Backend API Reference](/reference/api/management-operations/).
 
-**How do I label the agents I create so I can find mine later?** Tag the **agent** (not the avatar) via `adminTags` on `agents.create()`, then filter `agents.list(admin.ks)` client-side. Details in [API Reference](/reference/api/build/avatar-and-agent/#create-an-agent).
+**How do I label the agents I create so I can find mine later?** Tag the **agent** (not the avatar) via `adminTags` on `agents.create()`, then filter `agents.list(admin.ks)` client-side. Details in [Backend API Reference](/reference/api/build/avatar-and-agent/#create-an-agent).
 
-**Can I use my own face or voice?** Yes, both — see [API Reference](/reference/api/design/#upload-a-custom-visual-portrait--animated-avatar) and [→ Custom Voice](/reference/api/design/#upload-a-custom-voice-clone).
+**Can I use my own face or voice?** Yes, both — see [Backend API Reference](/reference/api/design/#upload-a-custom-visual-portrait--animated-avatar) and [→ Custom Voice](/reference/api/design/#upload-a-custom-voice-clone).
 
 ---
 

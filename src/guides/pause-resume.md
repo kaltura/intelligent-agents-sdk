@@ -46,7 +46,7 @@ You don't need to listen for any event to know resume worked — `await session.
 
 ## Minimal runnable example
 
-Plain HTML/JS, no build step — matches the pattern in `examples/browser-experience.html`. Assumes a server endpoint `/appInit` that calls `Management.application.appInit()` for you (see [Getting Started](/getting-started/) and [API Reference § Initialize the Runtime](/reference/api/deploy/#initialize-the-runtime)).
+Plain HTML/JS, no build step — matches the pattern in `examples/browser-experience.html`. Assumes a server endpoint `/appInit` that calls `Management.application.appInit()` for you (see [Getting Started](/getting-started/) and [Backend API Reference § Initialize the Runtime](/reference/api/deploy/#initialize-the-runtime)).
 
 ```html
 <!doctype html>

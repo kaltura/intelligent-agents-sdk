@@ -1,11 +1,11 @@
 ---
 layout: base.njk
-title: "API · Phase 3 — Deploy"
+title: "Widget & Runtime Init"
 description: "Resolve a widget ID and initialize the browser runtime."
 eyebrow: Reference
 ---
 
-# Phase 3 — deploy
+# Widget & Runtime Init
 
 [← Back to the API Reference index](/reference/api-reference/)
 

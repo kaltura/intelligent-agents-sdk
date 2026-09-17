@@ -1,6 +1,6 @@
 ---
 layout: base.njk
-title: "Platform Architecture"
+title: "Platform Overview"
 description: "Explains how the Agentic Avatar System's backend services, text-conversation flow, and live-video runtime protocol fit together end to end, and how the system scales and handles failure."
 eyebrow: Explanation
 ---
@@ -13,7 +13,7 @@ For **platform developers**: how the whole system works end to end — the backe
 
 **Source of truth.** This describes the protocol as the live system implements it: the management API (agents/avatars/catalog/intellects/application), the brain API (conversations, threads, messages, feedback, followups), the live-avatar control plane (the Socket.IO session plus the ASR/STV WebRTC media), and the scripted-video control API (`/v1/avatar-session/*`). Symbol names below are the stable contracts to navigate by; exact details live in [Wire Protocol](/reference/wire-protocol/).
 
-**Companion docs.** New here? [Getting Started](/getting-started/). Building an app? [API Reference](/reference/api-reference/). Driving your UI from the avatar? [Client-Side Commands](/guides/client-commands/). This page is the map — the exact field-by-field mechanics (connect sequence, ASR/STV wire shapes, scaling internals, SDK module routing, failure-mode tables) live in **[Architecture Reference](/reference/architecture-reference/)**; a from-scratch reimplementation recipe lives in **[Architecture Recipe](/reference/architecture-recipe/)**.
+**Companion docs.** New here? [Getting Started](/getting-started/). Building an app? [Backend API Reference](/reference/api-reference/). Driving your UI from the avatar? [Client-Side Commands](/guides/client-commands/). This page is the map — the exact field-by-field mechanics (connect sequence, ASR/STV wire shapes, scaling internals, SDK module routing, failure-mode tables) live in **[System Internals Reference](/reference/architecture-reference/)**; a from-scratch reimplementation recipe lives in **[Minimal Reimplementation Recipe](/reference/architecture-recipe/)**.
 
 **Contents**
 
@@ -33,7 +33,7 @@ The system is three planes. An app uses only the planes it needs.
 
 | Plane | What it does | Backend host | Where documented |
 |-------|-------------|-------------|------------------|
-| **Management** | Create/configure agents, avatars, intellects, catalog, sessions | `api.avatar.us.kaltura.ai` | [API Reference](/reference/api-reference/) |
+| **Management** | Create/configure agents, avatars, intellects, catalog, sessions | `api.avatar.us.kaltura.ai` | [Backend API Reference](/reference/api-reference/) |
 | **Conversation (text)** | The AI brain — chat, memory, structured output | `genie.nvp1.ovp.kaltura.com` | "Text Conversation Flow" below |
 | **Runtime (video)** | Live photorealistic talking avatar over WebRTC | the session server + media relay + brain | "Video Runtime Protocol" below |
 
@@ -58,14 +58,14 @@ Full explanation and plug points: [Inside a Live Conversation](https://kaltura.g
 | brain API | `genie.nvp1.ovp.kaltura.com` | The brain: `assistant/converse`, intellect CRUD, threads, messages, feedback, followups |
 | session server | `conversation.avatar.us.kaltura.ai` | Live-avatar control plane (Socket.IO): session orchestration, ASR signaling relay, brain output stream |
 | STV + media relay | `srs.avatar.us.kaltura.ai` (egress host) | Video origin. Renders the talking face and egresses it to clients via **WHEP** (never RTMP, regardless of internal transport). The `cast_mode` field selects the egress; the SDK never sends it, so it always takes the server's fully-omitted-default path, verified working with real video (see [Wire Protocol · Audio Channels §6](/reference/wire-protocol/audio-channels/#6-stv-downlink-pc2--avatar-videoaudio--you)). Explicit `cast_mode:'webrtc'` (the runtime client only, never this SDK) has resolved to a private IP in this deployment — the SDK's `whepUrlHasPrivateIp()` guard exists for that case. |
-| TURN | `turn.avatar.us.kaltura.ai` | WebRTC relay for both media legs (default username/credential in `wire.js`'s `turnServers()`, overridable via `creds`). Addressed with explicit ports+transports (see [Architecture Reference](/reference/architecture-reference/connection-and-handshake/#endpoints--credentials)). STV uses `iceTransportPolicy:'relay'` (Firefox is the one exception: `'all'`); ASR's policy is client-dependent but **relays via TURN either way** (the ASR server only advertises a private candidate). See [Wire Protocol · Audio Channels §5](/reference/wire-protocol/audio-channels/#5-asr-uplink-pc1--microphone--server) for the per-client matrix. |
+| TURN | `turn.avatar.us.kaltura.ai` | WebRTC relay for both media legs (default username/credential in `wire.js`'s `turnServers()`, overridable via `creds`). Addressed with explicit ports+transports (see [System Internals Reference](/reference/architecture-reference/connection-and-handshake/#endpoints--credentials)). STV uses `iceTransportPolicy:'relay'` (Firefox is the one exception: `'all'`); ASR's policy is client-dependent but **relays via TURN either way** (the ASR server only advertises a private candidate). See [Wire Protocol · Audio Channels §5](/reference/wire-protocol/audio-channels/#5-asr-uplink-pc1--microphone--server) for the per-client matrix. |
 | ML services | internal | Machine-learning services behind `application/generateAgentProfile` |
 
 ---
 
 ## Text Conversation Flow
 
-The simplest intelligent path — no video, fully headless. Client → `POST https://genie.nvp1.ovp.kaltura.com/assistant/converse` with a `geniegpcid:<configId>` KS. The response is an NDJSON (or SSE) stream of segments; the brain runs server-side. Segment `type` values and parsing rules are identical to the avatar's `agent_raw_text` stream (see [Architecture Reference's "Conversation Phase"](/reference/architecture-reference/conversation-flow/#conversation-phase--what-streams-while-connected)). Full endpoint details: [API Reference](/reference/api-reference/).
+The simplest intelligent path — no video, fully headless. Client → `POST https://genie.nvp1.ovp.kaltura.com/assistant/converse` with a `geniegpcid:<configId>` KS. The response is an NDJSON (or SSE) stream of segments; the brain runs server-side. Segment `type` values and parsing rules are identical to the avatar's `agent_raw_text` stream (see [System Internals Reference's "Conversation Phase"](/reference/architecture-reference/conversation-flow/#conversation-phase--what-streams-while-connected)). Full endpoint details: [Backend API Reference](/reference/api-reference/).
 
 ---
 
@@ -99,7 +99,7 @@ A full interactive agentic avatar is **three concurrent channels** over one Sock
 
 The brain runs entirely server-side. The client never calls an LLM — it publishes audio, receives video, and receives the brain's text as `agent_raw_text` deltas (identical format to the `/assistant/converse` NDJSON).
 
-> For the exact connect sequence, wire shapes, endpoints, and scaling model, see **[Architecture Reference](/reference/architecture-reference/)**. For the **exhaustive** map — every socket event with its payload shape, the exact ICE/SDP/WHEP config, the parsed `agent_raw_text` delta types, and a turn-by-turn event trace — see **[Wire Protocol](/reference/wire-protocol/)**. This section is the orientation; those docs are the reference.
+> For the exact connect sequence, wire shapes, endpoints, and scaling model, see **[System Internals Reference](/reference/architecture-reference/)**. For the **exhaustive** map — every socket event with its payload shape, the exact ICE/SDP/WHEP config, the parsed `agent_raw_text` delta types, and a turn-by-turn event trace — see **[Wire Protocol](/reference/wire-protocol/)**. This section is the orientation; those docs are the reference.
 
 ---
 
@@ -205,7 +205,7 @@ For the public surface, entry points, and how-tos, read [README.md](https://gith
 
 Both SDK entry points share one core: `src/core/*` is the shared leaf layer both `./management` and `./experience` depend on (`http.js` transport, `errors.js`, `session.js`, `stream.js`, `redact.js`, `safety.js`, `ids.js`, `knowledge-enums.js`). Core never imports from `management/` or `experience/`. `./management` (`Management`, `src/management/client.js`) enforces the two-KS guard via `assertAdmin`/`assertConversation` before any network call; `./experience` (`KalturaAvatarSession`, `src/experience/session.js`) is the live socket+WHEP runtime from "Video Runtime Protocol" above, taking only a short-lived conversation token, with socket.io INJECTED, never bundled.
 
-For the full module-by-module map (each management module's exposed surface and which backend door it writes to), the capabilities-resolution return shape, and the GenUI rendering layer, see **[Architecture Reference's "SDK Module Map & Data Flow"](/reference/architecture-reference/module-map-and-data-flow/#sdk-module-map--data-flow)**.
+For the full module-by-module map (each management module's exposed surface and which backend door it writes to), the capabilities-resolution return shape, and the GenUI rendering layer, see **[System Internals Reference's "SDK Module Map & Data Flow"](/reference/architecture-reference/module-map-and-data-flow/#sdk-module-map--data-flow)**.
 
 ---
 
@@ -213,7 +213,7 @@ For the full module-by-module map (each management module's exposed surface and 
 
 How the system behaves under network failures, disconnects, and device problems: **three reconnection tiers** — Socket.IO transport, the WebRTC media peers (ASR + STV), and this SDK's own avatar-session recovery — only loosely coordinated with each other. The SDK wires the WebRTC-peer tier to its own session-recovery tier (`_recoverMedia` → `_coldReconnect`); a custom client that skips `KalturaAvatarSession` must wire that itself.
 
-For the full three-tier table, the headline risk in detail, the failure-mode matrix, device-permission handling, and the tool-call-spiral circuit breaker mechanism, see **[Architecture Reference's "Resilience & Failure Handling"](/reference/architecture-reference/resilience-and-failure-handling/#resilience--failure-handling)**.
+For the full three-tier table, the headline risk in detail, the failure-mode matrix, device-permission handling, and the tool-call-spiral circuit breaker mechanism, see **[System Internals Reference's "Resilience & Failure Handling"](/reference/architecture-reference/resilience-and-failure-handling/#resilience--failure-handling)**.
 
-A conversation ending cleanly is a separate concern from recovering from failure: on tab-close, backgrounding, bfcache freeze, or an explicit `disconnect()`, the SDK tells the backend the thread is genuinely over (`POST /thread/session_completed`) instead of waiting for the ~10-minute idle scanner, so end-of-conversation lifecycle rules fire in seconds. See [Architecture Reference's "Session-completion signal"](/reference/architecture-reference/resilience-and-failure-handling/#session-completion-signal-session_completed--telling-the-backend-a-conversation-is-truly-over) for the condensed decision table, and [README.md § Ending a conversation cleanly](https://github.com/kaltura/intelligent-agents-sdk/blob/main/README.md#ending-a-conversation-cleanly-session_completed-signal) for the app-facing config surface.
+A conversation ending cleanly is a separate concern from recovering from failure: on tab-close, backgrounding, bfcache freeze, or an explicit `disconnect()`, the SDK tells the backend the thread is genuinely over (`POST /thread/session_completed`) instead of waiting for the ~10-minute idle scanner, so end-of-conversation lifecycle rules fire in seconds. See [System Internals Reference's "Session-completion signal"](/reference/architecture-reference/resilience-and-failure-handling/#session-completion-signal-session_completed--telling-the-backend-a-conversation-is-truly-over) for the condensed decision table, and [README.md § Ending a conversation cleanly](https://github.com/kaltura/intelligent-agents-sdk/blob/main/README.md#ending-a-conversation-cleanly-session_completed-signal) for the app-facing config surface.
 

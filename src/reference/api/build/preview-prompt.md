@@ -1,13 +1,13 @@
 ---
 layout: base.njk
-title: "API · Build · Preview a Prompt"
+title: "Agent Components · Preview a Prompt"
 description: "Render the assembled system prompt client-side before shipping an edit, using mgmt.intellects.previewPrompt."
 eyebrow: Reference
 ---
 
 # Preview a Prompt (client-side)
 
-[← Back to Phase 2 — Build](/reference/api/build/)
+[← Back to Agent Components](/reference/api/build/)
 
 
 **SDK:** `mgmt.intellects.previewPrompt(configId, ks, opts)`. READ — no write. The returned `text` is rendered client-side, a replica of the author layer (`prompts[]` + `base_directive` + `glossary`) assembled the same way the server's `get_partner_prompts()`/`get_system_prompt()` do, so you can check a prompt template before shipping it. By default it fetches and renders the intellect's *current stored* config; pass `draftPrompts`/`draftBaseDirective`/`draftGlossary` to preview an unsaved edit instead.
@@ -70,6 +70,6 @@ Supplying the value in `requestVars` (e.g. `{ 'sys__user_obj.first_name': 'Jane'
 
 | Doc | What it adds |
 |---|---|
-| [API · Build · Create and Configure an Intellect](/reference/api/build/intellect/) | The `prompts[]`/`base_directive`/`glossary` fields this preview renders |
-| [API · Phase 2 — Build](/reference/api/build/) | The Phase 2 — Build index |
+| [Agent Components · Create and Configure an Intellect](/reference/api/build/intellect/) | The `prompts[]`/`base_directive`/`glossary` fields this preview renders |
+| [Agent Components](/reference/api/build/) | The Agent Components index |
 

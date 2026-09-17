@@ -9,7 +9,7 @@ eyebrow: Reference
 
 The complete, verified map of **every event, payload, config, and flow** on the two channels that power the interactive live avatar: the **Socket.IO control plane** and the **two WebRTC peer connections** (ASR mic-uplink + STV video-downlink).
 
-This is the deep reference behind [Platform Architecture](/explanation/architecture/) → "Video Runtime Protocol". Read ARCHITECTURE.md first for the big picture; read the pages below when you need the exact field of an exact event, the exact ICE config, or the exact order things fire.
+This is the deep reference behind [Platform Overview](/explanation/architecture/) → "Video Runtime Protocol". Read ARCHITECTURE.md first for the big picture; read the pages below when you need the exact field of an exact event, the exact ICE config, or the exact order things fire.
 
 | Doc | Covers |
 |---|---|

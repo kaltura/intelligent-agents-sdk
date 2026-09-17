@@ -1,13 +1,13 @@
 ---
 layout: base.njk
-title: "API · Build · Create an Avatar and an Agent"
+title: "Agent Components · Create an Avatar and an Agent"
 description: "Create an avatar, then the agent record that ties the intellect, avatar, and tools together."
 eyebrow: Reference
 ---
 
 # Create an Avatar and an Agent
 
-[← Back to Phase 2 — Build](/reference/api/build/)
+[← Back to Agent Components](/reference/api/build/)
 
 **On this page:** [Create an Avatar](#create-an-avatar) · [Create an Agent](#create-an-agent) · [Related docs](#related-docs)
 
@@ -29,13 +29,13 @@ POST https://api.avatar.us.kaltura.ai/v1/avatar/create
 }
 ```
 
-`voice.id` and `visual.id` come from the catalog (see [Phase 1 — Design](/reference/api/design/) § Browse the Catalog). Returns `id` (24-char hex). **No `adminTags`** — `avatar/create` accepts and stores it, but no read path ever returns it, and `avatar/update` genuinely rejects it (no tag field). Tag the parent agent instead.
+`voice.id` and `visual.id` come from the catalog (see [Catalog & Assets](/reference/api/design/) § Browse the Catalog). Returns `id` (24-char hex). **No `adminTags`** — `avatar/create` accepts and stores it, but no read path ever returns it, and `avatar/update` genuinely rejects it (no tag field). Tag the parent agent instead.
 
 If `visual.id` points at a custom uploaded portrait rather than a catalog preset, how you crop that source photo directly affects how the persona renders on this avatar — pad it generously rather than a tight headshot crop:
 
 ![Tight headshot crops shrink onto the render canvas with black borders; a generously padded portrait scales to fill it edge-to-edge](/assets/img/avatar-photo-framing.svg)
 
-See [Phase 1 — Design § Upload a Custom Visual](/reference/api/design/#upload-a-custom-visual-portrait--animated-avatar) for the full crop-fit explanation.
+See [Catalog & Assets § Upload a Custom Visual](/reference/api/design/#upload-a-custom-visual-portrait--animated-avatar) for the full crop-fit explanation.
 
 ### Three ways to get a visual
 
@@ -112,6 +112,6 @@ Returns `agentId` (UUID). **Save this.**
 
 | Doc | What it adds |
 |---|---|
-| [API · Build · Create and Configure an Intellect](/reference/api/build/intellect/) | The intellect an agent's `intellect.id` points at |
-| [API · Phase 2 — Build](/reference/api/build/) | The Phase 2 — Build index |
+| [Agent Components · Create and Configure an Intellect](/reference/api/build/intellect/) | The intellect an agent's `intellect.id` points at |
+| [Agent Components](/reference/api/build/) | The Agent Components index |
 

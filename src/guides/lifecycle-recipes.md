@@ -12,7 +12,7 @@ eyebrow: How-to Guide
 **On this page:** [The mental model](#the-mental-model) · [Recipe A: Extract a summary the moment a session ends](#recipe-a-extract-a-summary-the-moment-a-session-ends) · [Recipe B: Email a human the moment that analysis lands](#recipe-b-email-a-human-the-moment-that-analysis-lands) · [Scoping the alert to one agent](#scoping-the-alert-to-one-agent) · [Reading the results back](#reading-the-results-back) · [Test both rules in seconds, without waiting for a real event](#test-both-rules-in-seconds-without-waiting-for-a-real-event) · [Minimal runnable example](#minimal-runnable-example) · [Common pitfalls](#common-pitfalls) · [Related docs](#related-docs)
 
 
-How to turn "someone has to read every transcript and decide what matters" into "the backend tells you, automatically, the moment a conversation ends." Two lifecycle rules, zero polling, zero app-side glue: one rule extracts a summary and topic the instant a session ends, a second rule emails a human the instant that extraction finishes. This recipe is the hands-on walkthrough; [Lifecycle](/reference/lifecycle/) is the terse field-by-field reference this recipe links back to instead of repeating.
+How to turn "someone has to read every transcript and decide what matters" into "the backend tells you, automatically, the moment a conversation ends." Two lifecycle rules, zero polling, zero app-side glue: one rule extracts a summary and topic the instant a session ends, a second rule emails a human the instant that extraction finishes. This recipe is the hands-on walkthrough; [Lifecycle Rules](/reference/lifecycle/) is the terse field-by-field reference this recipe links back to instead of repeating.
 
 ---
 
@@ -55,7 +55,7 @@ await mgmt.lifecycle.create({
 }, adminKs);
 ```
 
-Notice there's no `SUMMARY` insight setting here. Every partner already gets one for free, see [`Lifecycle`'s action-type table](/reference/lifecycle/#the-action-types) for why. `TOPIC` and `CUSTOM` are both included here because Recipe B's email preset needs all three of `SUMMARY`/`TOPIC`/`CUSTOM` present, see the gotcha below.
+Notice there's no `SUMMARY` insight setting here. Every partner already gets one for free, see [`Lifecycle Rules`'s action-type table](/reference/lifecycle/#the-action-types) for why. `TOPIC` and `CUSTOM` are both included here because Recipe B's email preset needs all three of `SUMMARY`/`TOPIC`/`CUSTOM` present, see the gotcha below.
 
 `prompt` is required on **every** `InsightSettings` entity. There's no built-in fallback prompt for any key name, including `TOPIC` or `CUSTOM`. `valueType` is required too. Omit either and `insightSettings.create` 400s. Every conversation now gets a structured recap with zero app-side code: no cron job polling for "threads that just ended," no app server involved at all.
 
@@ -85,7 +85,7 @@ Three things about this action that aren't obvious from the field names:
 
 ### The gotcha that will bite you first: token mismatch
 
-`conversationInsightExample`'s template needs three insight values by key: **`SUMMARY`, `TOPIC`, and `CUSTOM`** (exactly those keys, case-sensitive). `AGENTNAME`, `CTAURL`, and `USER` are filled in automatically. You never provide those. If the thread's analysis doesn't have all three of `SUMMARY`/`TOPIC`/`CUSTOM`, the email send is skipped. That's logged as an error server-side, but nothing surfaces back to your app or the SDK. `SUMMARY` comes free from the always-on system preset (see [Lifecycle](/reference/lifecycle/#every-session-already-gets-a-summary-for-free)); Recipe A's own `InsightSettings` above supply the other two, with `key:'TOPIC'` and `key:'CUSTOM'` matching exactly what the template looks for.
+`conversationInsightExample`'s template needs three insight values by key: **`SUMMARY`, `TOPIC`, and `CUSTOM`** (exactly those keys, case-sensitive). `AGENTNAME`, `CTAURL`, and `USER` are filled in automatically. You never provide those. If the thread's analysis doesn't have all three of `SUMMARY`/`TOPIC`/`CUSTOM`, the email send is skipped. That's logged as an error server-side, but nothing surfaces back to your app or the SDK. `SUMMARY` comes free from the always-on system preset (see [Lifecycle Rules](/reference/lifecycle/#every-session-already-gets-a-summary-for-free)); Recipe A's own `InsightSettings` above supply the other two, with `key:'TOPIC'` and `key:'CUSTOM'` matching exactly what the template looks for.
 
 Pick whatever `prompt` fits your use case for `CUSTOM`. The template only cares about the `key`, never the prompt text.
 
@@ -99,7 +99,7 @@ Pick whatever `prompt` fits your use case for `CUSTOM`. The template only cares 
 eventConditions: [{ field: 'object.agent_id', operator: 'eq', value: '<agent-uuid>' }]
 ```
 
-This only works if the conversation itself was started with an **agent-scoped** KS. A plain conversation token (`mgmt.sessions.createConversationToken({configId})`) leaves every thread's `agent_id` as `"default"`, so it can never match. Mint with `mgmt.sessions.createAgentToken({agentId})` instead, see [`Lifecycle`'s scoping section](/reference/lifecycle/#scoping-a-rule-to-one-agent) for the full explanation.
+This only works if the conversation itself was started with an **agent-scoped** KS. A plain conversation token (`mgmt.sessions.createConversationToken({configId})`) leaves every thread's `agent_id` as `"default"`, so it can never match. Mint with `mgmt.sessions.createAgentToken({agentId})` instead, see [`Lifecycle Rules`'s scoping section](/reference/lifecycle/#scoping-a-rule-to-one-agent) for the full explanation.
 
 ---
 
@@ -128,7 +128,7 @@ const { matchedRules } = await mgmt.lifecycle.match(
 );
 ```
 
-`object.agent_id`, `object.thread_id`, and `object.user_id` are all required strings for `objectType:'thread'`. Omit one and it 400s naming the missing path. Expect to see your own rule nested inside a grouped `matchedRules[]` entry's `rules[]` array, together with `preset__summary_on_session_ended`. Every partner has that preset rule by default; it's not something you configured (see [`Lifecycle`'s note on grouped matches](/reference/lifecycle/#discovery-and-dry-run-testing)). Run this after creating each rule to confirm it matches before you ever touch a real conversation.
+`object.agent_id`, `object.thread_id`, and `object.user_id` are all required strings for `objectType:'thread'`. Omit one and it 400s naming the missing path. Expect to see your own rule nested inside a grouped `matchedRules[]` entry's `rules[]` array, together with `preset__summary_on_session_ended`. Every partner has that preset rule by default; it's not something you configured (see [`Lifecycle Rules`'s note on grouped matches](/reference/lifecycle/#discovery-and-dry-run-testing)). Run this after creating each rule to confirm it matches before you ever touch a real conversation.
 
 ---
 
@@ -156,7 +156,7 @@ node examples/lifecycle-insights-and-email.mjs
 | `eventConditions` on `object.agent_id` never matches | The thread was created with a plain conversation token, not an agent-scoped one | Mint with `mgmt.sessions.createAgentToken({agentId})` |
 | `lifecycle.match` 400s: `eventData.object.user_id: Invalid input...` | A required field missing from the dry-run `object` | Always pass `agent_id`, `thread_id`, and `user_id` together |
 | An `InsightSettings` entity 400s or its rule silently produces nothing | No `prompt` supplied | `prompt` is required on every `InsightSettings` entity, there's no built-in fallback for any key |
-| You want to change the built-in `SUMMARY` insight's prompt | It has no customization lever, no field on any entity changes it | Give your own insight settings distinct `key`s and use those instead (see [Lifecycle](/reference/lifecycle/#every-session-already-gets-a-summary-for-free)) |
+| You want to change the built-in `SUMMARY` insight's prompt | It has no customization lever, no field on any entity changes it | Give your own insight settings distinct `key`s and use those instead (see [Lifecycle Rules](/reference/lifecycle/#every-session-already-gets-a-summary-for-free)) |
 | You create a `triggerDtcKai` rule and expect to pass fields on the action | It takes no caller-supplied fields, it derives insights from the target intellect's configured lead-capture form fields | Configure `intellectConfig.user_properties_forms` on the intellect instead; leave the action `{actionType:'triggerDtcKai'}` |
 
 ---
@@ -165,7 +165,7 @@ node examples/lifecycle-insights-and-email.mjs
 
 | Doc | What it adds |
 |---|---|
-| [Lifecycle](/reference/lifecycle/) | The full field-by-field reference: every rule shape, all three action types, `InsightSettings`, the full CRUD + discovery method table |
+| [Lifecycle Rules](/reference/lifecycle/) | The full field-by-field reference: every rule shape, all three action types, `InsightSettings`, the full CRUD + discovery method table |
 | [`examples/lifecycle-insights-and-email.mjs`](https://github.com/kaltura/intelligent-agents-sdk/blob/main/examples/lifecycle-insights-and-email.mjs) | The runnable example this recipe walks through |
 | [Getting Started](/getting-started/) | Where `configId`/`agentId` and the admin token in the examples above come from |
 
