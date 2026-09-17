@@ -1,6 +1,8 @@
 [← Back to System Internals Reference](../ARCHITECTURE-REFERENCE.md)
 
-# Channels
+# Audio & Video Wiring
+
+Client-side code for the two peer connections below. For the wire-level SDP/ICE spec instead, see [Audio Channels](../wire-protocol/audio-channels.md) in the Wire Protocol reference.
 
 ## ASR Channel — Microphone Uplink (step 9)
 
