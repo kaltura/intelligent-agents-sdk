@@ -1,3 +1,5 @@
+[← Back to GenUI Reference](../GENUI-REFERENCE.md)
+
 # GenUI Safety & Restrictions
 
 ## Safety model (OWASP LLM05 — every widget passes through this)
