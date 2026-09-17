@@ -9,7 +9,7 @@ eyebrow: How-to Guide
 
 How to make an agent ask the viewer for structured, typed data mid-conversation — a support ticket's category and urgency, a booking's preferred date, a survey rating, a sales lead's email and phone, or any other shape of data your use case needs — how the SDK renders that request, and where the submitted values actually go.
 
-**On this page:** [What it is — and isn't](#what-it-is--and-isnt) · [What configuring a stage actually does](#what-configuring-a-stage-actually-does) · [What's possible / what's not](#whats-possible--whats-not) · [How the SDK handles it — two observation points, one descriptor](#how-the-sdk-handles-it--two-observation-points-one-descriptor) · [How the form is rendered](#how-the-form-is-rendered) · [How to customize or style the form](#how-to-customize-or-style-the-form) · [Where the submitted data actually goes](#where-the-submitted-data-actually-goes) · [Related: `kaltura_genie_experiences` — a different, unrelated capability](#related-kaltura_genie_experiences--a-different-unrelated-capability) · [Related docs](#related-docs)
+**On this page:** [What it is — and isn't](#what-it-is--and-isnt) · [What configuring a stage actually does](#what-configuring-a-stage-actually-does) · [What's possible / what's not](#whats-possible--whats-not) · [How the SDK handles it — two observation points, one descriptor](#how-the-sdk-handles-it--two-observation-points-one-descriptor) · [How the form is rendered](#how-the-form-is-rendered) · [How to customize or style the form](#how-to-customize-or-style-the-form) · [Where the submitted data actually goes](#where-the-submitted-data-actually-goes) · [Not to be confused with `kaltura_genie_experiences`](#not-to-be-confused-with-kaltura_genie_experiences) · [Related docs](#related-docs)
 
 `user_properties_forms` is a general-purpose "collect typed fields from the viewer" primitive: the fields, the instruction the agent acts on, rendering, and reporting all work identically no matter what the fields represent. The one place this shows up in the SDK's own surface is naming: the method you call to report values back is `session.submitStructuredDataForm()`, over a wire event named `setFormLeadInfo` — both named after the feature's most common use case, not its only one.
 
@@ -107,7 +107,7 @@ Or skip the SDK's default DOM builder entirely by passing a mount **function** i
 
 A worked pattern: keep the submitted values in browser memory for the current session, but do the durable write via your own brain-called, server-side `api` tool that posts to whatever external system you point it at — rather than `setFormLeadInfo`. See [External API Integrations](/guides/external-api-integrations/) for the general pattern this specializes.
 
-## Related: `kaltura_genie_experiences` — a different, unrelated capability
+## Not to be confused with `kaltura_genie_experiences`
 
 If your intellect also uses custom `tool_ids` (e.g. a closed set of client commands like `navigate_to_slide`/`show_widget`), you'll likely set `capabilities: { kaltura_genie_experiences: 'off' }` or `'disabled'` — see [External API Integrations § Don't skip `kaltura_genie_experiences: 'off'`](/guides/external-api-integrations/#dont-skip-kaltura_genie_experiences-off) for what that capability does and why.
 

@@ -245,7 +245,7 @@ Extensibility hooks that cost nothing today:
 | `depth` | Include h3 keys on a small site. |
 | `stopWords[lang]` | Localized sites. |
 | `toolCallName` | Several navigators on one session. |
-| `maxTokens` | Keeps very large sites honest. Split the site or lower `depth` when it fires. |
+| `maxTokens` | Caps the site map's size on very large sites. Split the site or lower `depth` when it fires. |
 
 Non-goals: multi-argument actions (`action: 'open' | 'highlight'`), server-side routing, search over page bodies, replacing the knowledge base. One tool, two args.
 

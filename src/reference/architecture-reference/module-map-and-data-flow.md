@@ -1,7 +1,7 @@
 ---
 layout: base.njk
 title: "System Internals Reference · Module Map and Data Flow"
-description: "The SDK module map, the resolveCapabilities shape, the GenUI layer, DTO routing rules, and honest limits."
+description: "The SDK module map, the resolveCapabilities shape, the GenUI layer, DTO routing rules, and known limits."
 eyebrow: Reference
 ---
 
@@ -78,9 +78,9 @@ The intellect DTO (`v1/intellect/*`) is the one real door for every writable fie
 
 `EDITABLE_FIELDS` in `intellect-config.js` is the exact list of keys `v1/intellect/get` echoes and `v1/intellect/update` accepts for a partner admin KS. `patch()` rejects any other key before the network call, and `describe()` returns exactly these keys. When adding a field setter, first confirm the key round-trips through `intellect/update` and `intellect/get` with a partner admin KS, then add it to `EDITABLE_FIELDS`.
 
-### Honest limits surfaced by the SDK
+### More known limits, at the architecture level
 
-[README.md's "Honest limits"](https://github.com/kaltura/intelligent-agents-sdk/blob/main/README.md#honest-limits) covers the writable-surface rule, no-verbatim-speech, and the `force_experience`/`model_type` hint caveats. Read that first. The rest are architecture-level limits not covered there:
+[README.md's "Known limits"](https://github.com/kaltura/intelligent-agents-sdk/blob/main/README.md#known-limits) covers the writable-surface rule, `speak()`'s turn-injection semantics, and the `force_experience`/`model_type` hint caveats. Read that first. The rest are architecture-level limits not covered there:
 
 - **External (BYO-LLM) intellects are not supported.** `intellects.create` rejects a body containing `url`/`protocol` with a typed `bad_request`.
 - **Secrets are write-only** — values never read back; the no-leak guarantee is the name-only response contract, not `redact()`. Client-side encryption / BYOK is server-managed (not buildable).

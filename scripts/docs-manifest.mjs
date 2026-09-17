@@ -346,7 +346,7 @@ export const manifest = [
     target: 'reference/architecture-reference/module-map-and-data-flow.md',
     url: '/reference/architecture-reference/module-map-and-data-flow/',
     title: 'System Internals Reference · Module Map and Data Flow',
-    description: 'The SDK module map, the resolveCapabilities shape, the GenUI layer, DTO routing rules, and honest limits.',
+    description: 'The SDK module map, the resolveCapabilities shape, the GenUI layer, DTO routing rules, and known limits.',
     eyebrow: 'Reference',
     h1: 'SDK Module Map & Data Flow',
     generated: true,
