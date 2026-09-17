@@ -1,4 +1,4 @@
-[← Back to Architecture Reference](../ARCHITECTURE-REFERENCE.md)
+[← Back to System Internals Reference](../ARCHITECTURE-REFERENCE.md)
 
 # SDK Module Map & Data Flow
 

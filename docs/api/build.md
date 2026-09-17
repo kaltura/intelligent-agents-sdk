@@ -1,6 +1,6 @@
 [← Back to the API Reference index](../../API-REFERENCE.md)
 
-# Phase 2 — Build
+# Agent Components
 
 Create and configure the pieces that make up an agent: its intellect (brain config), tools, knowledge base, avatar, and the agent record that ties them together.
 

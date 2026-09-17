@@ -1,4 +1,4 @@
-# Architecture Recipe — Minimal Reimplementation (No Kaltura Libs)
+# Minimal Reimplementation Recipe (No Kaltura Libs)
 
 A from-scratch reimplementation of the live avatar runtime, using nothing but `socket.io-client` and the browser's native `RTCPeerConnection`. Read [ARCHITECTURE.md](ARCHITECTURE.md) for the big picture and [ARCHITECTURE-REFERENCE.md](ARCHITECTURE-REFERENCE.md) for the exact wire shapes each step below relies on.
 

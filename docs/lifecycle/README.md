@@ -1,6 +1,6 @@
 [← Back to the API Reference index](../../API-REFERENCE.md)
 
-# Lifecycle: Event-Driven Rules
+# Lifecycle Rules — Event-Driven Rules
 
 Today, "summarize every ended session and email the account owner" means polling for finished threads yourself. Lifecycle removes the polling: create a **rule** once, and the backend fires its **action** automatically every time a matching event happens, server-side. Mounted at `mgmt.lifecycle`.
 

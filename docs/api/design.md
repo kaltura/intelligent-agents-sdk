@@ -1,6 +1,6 @@
 [← Back to the API Reference index](../../API-REFERENCE.md)
 
-# Phase 1 — Design
+# Catalog & Assets
 
 ## Browse the Catalog
 

@@ -86,4 +86,4 @@ An agent is built from five services that layer on top of each other. All calls 
 
 Once deployed, the **conversation surface** (`/assistant/converse`, `/v1/thread/`, `/mcp/`) lives on `genie.nvp1.ovp.kaltura.com`. Utility endpoints (`/application/`) for widget resolution and runtime init are on `api.avatar.us.kaltura.ai`.
 
-To embed a live avatar in a browser, go to [Phase 3 — Deploy](deploy.md#phase-3--deploy) or jump straight to [UC-12 Anonymous End-User Embed](../USE-CASES.md).
+To embed a live avatar in a browser, go to [Widget & Runtime Init](deploy.md#widget--runtime-init) or jump straight to [UC-12 Anonymous End-User Embed](../USE-CASES.md).

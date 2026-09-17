@@ -1,4 +1,4 @@
-[← Back to Phase 2 — Build](../build.md)
+[← Back to Agent Components](../build.md)
 
 # Create and Configure an Intellect
 
@@ -120,4 +120,4 @@ const fields = await mgmt.application.getCustomPrompts(ks);
 | Doc | What it adds |
 |---|---|
 | [`preview-prompt.md`](preview-prompt.md) | Preview the assembled system prompt before shipping an edit |
-| [`../build.md`](../build.md) | The Phase 2 — Build index |
+| [`../build.md`](../build.md) | The Agent Components index |
