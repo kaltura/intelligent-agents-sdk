@@ -9,8 +9,6 @@ eyebrow: Reference
 
 [← Back to Agent Components](/reference/api/build/)
 
-**On this page:** [Create an Intellect](#create-an-intellect) · [Configure an Intellect](#configure-an-intellect) · [Related docs](#related-docs)
-
 
 An intellect is the config object behind your agent's brain. It holds the prompts, model settings, tools, knowledge base links, and feature capabilities that shape how the agent behaves. This page shows how to create one and configure its main fields.
 

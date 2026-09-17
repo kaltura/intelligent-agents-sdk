@@ -9,8 +9,6 @@ eyebrow: Reference
 
 [← Back to Agent Components](/reference/api/build/)
 
-**On this page:** [Step 1 — Create a knowledge record](#step-1--create-a-knowledge-record) · [Step 2 — Link it to the intellect (at create or update)](#step-2--link-it-to-the-intellect-at-create-or-update) · [Step 3 — Upload content into a category](#step-3--upload-content-into-a-category) · [Step 4 — Point the record at that category](#step-4--point-the-record-at-that-category) · [Full SDK sequence](#full-sdk-sequence) · [Checking whether indexing has finished](#checking-whether-indexing-has-finished) · [Related docs](#related-docs)
-
 
 ## Step 1 — Create a knowledge record
 

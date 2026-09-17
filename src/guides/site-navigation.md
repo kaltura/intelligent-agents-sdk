@@ -9,8 +9,6 @@ eyebrow: How-to Guide
 
 Let the agent move the visitor to the right page and section of your site while it answers. One client tool, two string arguments, no result to wait for, so it can never spiral or leave the avatar silent.
 
-**On this page:** [Why fire-and-forget](#why-fire-and-forget) · [The manifest (`sections.json`)](#the-manifest-sectionsjson) · [Provisioning](#provisioning) · [Browser plugin](#browser-plugin) · [Adapters](#adapters) · [Taking it to another app](#taking-it-to-another-app) · [Testing](#testing) · [Security](#security) · [Related docs](#related-docs)
-
 ```text
 brain:    go_to({ path: "/guides/pause-resume/", section: "edge-case-dont" })
 browser:  navigate("/guides/pause-resume/#the-edge-case-dont-leave-the-avatar-stuck-paused") → scroll → point

@@ -51,20 +51,36 @@
     </div>
   </header>
 
+  {% set activeAncestors = hubTrails[page.url] | trailUrls %}
+  {% macro navChildren(items) %}
+  <ul class="nav-children">
+    {% for item in items %}
+    <li>
+      {% if item.children.length %}
+      <details class="nav-node"{% if item.url == page.url or activeAncestors.indexOf(item.url) !== -1 %} open{% endif %}>
+        <summary>
+          <a href="{{ item.url }}" {% if page.url == item.url %}aria-current="page"{% endif %}>{{ item.title }}</a>
+        </summary>
+        {{ navChildren(item.children) }}
+      </details>
+      {% else %}
+      <a href="{{ item.url }}" {% if page.url == item.url %}aria-current="page"{% endif %}>{{ item.title }}</a>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% endmacro %}
+
   <nav class="sidebar" id="sidebar" aria-label="Documentation">
     <div class="nav-group">
-      <ul>
+      <ul class="nav-children">
         <li><a href="/" {% if page.url == '/' %}aria-current="page"{% endif %}>Home</a></li>
       </ul>
     </div>
     {% for section in nav %}
     <div class="nav-group">
       <div class="nav-group-label">{{ section.group }}</div>
-      <ul>
-        {% for item in section.pages %}
-        <li><a href="{{ item.url }}" {% if page.url == item.url %}aria-current="page"{% endif %}>{{ item.title }}</a></li>
-        {% endfor %}
-      </ul>
+      {{ navChildren(section.pages) }}
     </div>
     {% endfor %}
   </nav>
@@ -76,18 +92,22 @@
       <a href="/">Home</a>
       {% for step in crumb.trail %}<span class="breadcrumb-sep" aria-hidden="true">/</span><a href="{{ step.url }}">{{ step.title }}</a>{% endfor %}
     </nav>
-    {% if crumb.siblings.length %}
-    <details class="hub-siblings">
-      <summary>Other pages in {{ (crumb.trail | last).title }}</summary>
-      <ul>
-        {% for sibling in crumb.siblings %}<li><a href="{{ sibling.url }}">{{ sibling.title }}</a></li>{% endfor %}
-      </ul>
-    </details>
-    {% endif %}
     {% endif %}
     {% if eyebrow %}<div class="eyebrow">{{ eyebrow }}</div>{% endif %}
     {{ content | safe }}
   </main>
+
+  {% set toc = content | tocHeadings %}
+  {% if toc.length > 1 %}
+  <aside class="page-toc" aria-label="On this page">
+    <details class="page-toc-inner" open>
+      <summary>On this page</summary>
+      <ul>
+        {% for h in toc %}<li><a href="#{{ h.id }}">{{ h.text }}</a></li>{% endfor %}
+      </ul>
+    </details>
+  </aside>
+  {% endif %}
 
   <!-- Nova — one persistent widget, present on every page (see
        src/assets/nova/*.js). Lives outside <main> so client-side navigation

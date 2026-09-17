@@ -9,8 +9,6 @@ eyebrow: Reference
 
 [← Back to System Internals Reference](/reference/architecture-reference/)
 
-**On this page:** [ASR Channel: Microphone Uplink (step 9)](#asr-channel-microphone-uplink-step-9) · [STV Channel: Avatar Video Downlink (after CONNECTED)](#stv-channel-avatar-video-downlink-after-connected) · [Related docs](#related-docs)
-
 
 Client-side code for the two peer connections below. For the wire-level SDP/ICE spec instead, see [Audio Channels](/reference/wire-protocol/audio-channels/) in the Wire Protocol reference.
 

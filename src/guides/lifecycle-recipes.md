@@ -9,8 +9,6 @@ eyebrow: How-to Guide
 
 [← Back to Lifecycle](/reference/lifecycle/)
 
-**On this page:** [The mental model](#the-mental-model) · [Recipe A: Extract a summary the moment a session ends](#recipe-a-extract-a-summary-the-moment-a-session-ends) · [Recipe B: Email a human the moment that analysis lands](#recipe-b-email-a-human-the-moment-that-analysis-lands) · [Scoping the alert to one agent](#scoping-the-alert-to-one-agent) · [Reading the results back](#reading-the-results-back) · [Test both rules in seconds, without waiting for a real event](#test-both-rules-in-seconds-without-waiting-for-a-real-event) · [Minimal runnable example](#minimal-runnable-example) · [Common pitfalls](#common-pitfalls) · [Related docs](#related-docs)
-
 
 How to turn "someone has to read every transcript and decide what matters" into "the backend tells you, automatically, the moment a conversation ends." Two lifecycle rules do the whole job, with zero polling and zero app-side glue. One rule extracts a summary and topic the instant a session ends. A second rule emails a human the instant that extraction finishes. This recipe is the hands-on walkthrough; [Lifecycle Rules](/reference/lifecycle/) is the terse field-by-field reference this recipe links back to instead of repeating.
 

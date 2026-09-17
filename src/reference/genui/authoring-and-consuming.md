@@ -9,8 +9,6 @@ eyebrow: Reference
 
 [← Back to GenUI Reference](/reference/genui-reference/)
 
-**On this page:** [Authoring — which capability turns each widget on](#authoring--which-capability-turns-each-widget-on) · [Consuming widgets in your app](#consuming-widgets-in-your-app) · [`screen_share_analysis` / `sendScreenShot(data)`](#screen_share_analysis--sendscreenshotdata) · [Related docs](#related-docs)
-
 
 ## Authoring — which capability turns each widget on
 

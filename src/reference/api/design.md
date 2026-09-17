@@ -9,8 +9,6 @@ eyebrow: Reference
 
 [← Back to the API Reference index](/reference/api-reference/)
 
-**On this page:** [Browse the Catalog](#browse-the-catalog) · [Generate an Agent Profile](#generate-an-agent-profile) · [Upload a Custom Voice (clone)](#upload-a-custom-voice-clone) · [Import a Provider Voice by id (no audio upload)](#import-a-provider-voice-by-id-no-audio-upload) · [Upload a Custom Visual (portrait → animated avatar)](#upload-a-custom-visual-portrait--animated-avatar) · [Upload a custom Face or Background (compose-a-visual path)](#upload-a-custom-face-or-background-compose-a-visual-path) · [End-to-end: custom portrait avatar, server to browser](#end-to-end-custom-portrait-avatar-server-to-browser)
-
 
 ## Browse the Catalog
 

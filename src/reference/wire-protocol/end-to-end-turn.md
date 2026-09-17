@@ -9,8 +9,6 @@ eyebrow: Reference
 
 [← Back to Wire Protocol](/reference/wire-protocol/)
 
-**On this page:** [8. End-to-end turn (what fires, in order)](#8-end-to-end-turn-what-fires-in-order) · [9. Reproduce / re-capture](#9-reproduce--re-capture) · [Related docs](#related-docs)
-
 
 ## 8. End-to-end turn (what fires, in order)
 

@@ -9,8 +9,6 @@ eyebrow: Reference
 
 [← Back to the API Reference index](/reference/api-reference/)
 
-**On this page:** [Agents — `https://api.avatar.us.kaltura.ai`](#agents--httpsapiavataruskalturaai) · [Avatars — `https://api.avatar.us.kaltura.ai`](#avatars--httpsapiavataruskalturaai) · [Intellects — `https://genie.nvp1.ovp.kaltura.com`](#intellects--httpsgenienvp1ovpkalturacom) · [Tools — `https://genie.nvp1.ovp.kaltura.com`](#tools--httpsgenienvp1ovpkalturacom) · [Skills — `https://genie.nvp1.ovp.kaltura.com`](#skills--httpsgenienvp1ovpkalturacom) · [Threads — `https://genie.nvp1.ovp.kaltura.com`](#threads--httpsgenienvp1ovpkalturacom) · [Messages, Feedback & Followups — `https://genie.nvp1.ovp.kaltura.com`](#messages-feedback--followups--httpsgenienvp1ovpkalturacom) · [Knowledge records — `https://genie.nvp1.ovp.kaltura.com`](#knowledge-records--httpsgenienvp1ovpkalturacom) · [Lifecycle — `https://api.avatar.us.kaltura.ai`](#lifecycle--httpsapiavataruskalturaai) · [Insight Settings — `https://api.avatar.us.kaltura.ai`](#insight-settings--httpsapiavataruskalturaai)
-
 
 All use the **admin KS**.
 

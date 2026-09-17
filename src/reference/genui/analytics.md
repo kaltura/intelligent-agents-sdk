@@ -9,8 +9,6 @@ eyebrow: Reference
 
 [← Back to GenUI Reference](/reference/genui-reference/)
 
-**On this page:** [What not to report (read this first)](#what-not-to-report-read-this-first) · [The recipe: two widget interaction types, two distinguishable events](#the-recipe-two-widget-interaction-types-two-distinguishable-events) · [Why the two events stay distinct](#why-the-two-events-stay-distinct) · [Related docs](#related-docs)
-
 
 A recipe for reporting GenUI widget interactions — which widget the learner acted on, what they picked — to KAVA via `KavaAnalytics.buttonClicked()` (`./experience/analytics`), without duplicating anything the platform already tracks server-side.
 

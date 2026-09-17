@@ -63,6 +63,25 @@ module.exports = function (eleventyConfig) {
   // its own withPrefix() to these before fetch()/pushState().
   eleventyConfig.addFilter('dump', (value) => JSON.stringify(value));
 
+  // "On this page" rail: pulls real <h2 id> headings straight out of the
+  // already-rendered content, so it can never drift from what markdown-it-anchor
+  // (and check-anchors.mjs) actually assigned.
+  eleventyConfig.addFilter('tocHeadings', (html) => {
+    if (typeof html !== 'string') return [];
+    const out = [];
+    const re = /<h2[^>]*\sid="([^"]+)"[^>]*>([\s\S]*?)<\/h2>/g;
+    let m;
+    while ((m = re.exec(html))) {
+      out.push({ id: m[1], text: m[2].replace(/<[^>]+>/g, '').trim() });
+    }
+    return out;
+  });
+
+  // Sidebar tree: which nav-node urls are an ancestor of the current page, so
+  // base.njk's recursive macro can auto-expand only the path down to the page
+  // you're actually on instead of every <details> or none of them.
+  eleventyConfig.addFilter('trailUrls', (crumb) => (crumb ? crumb.trail.map((t) => t.url) : []));
+
   return {
     dir: {
       input: 'src',

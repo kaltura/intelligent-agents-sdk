@@ -9,8 +9,6 @@ eyebrow: Reference
 
 [← Back to the API Reference index](/reference/api-reference/)
 
-**On this page:** [Rule shape](#rule-shape) · [The action types](#the-action-types) · [Scoping a rule to one agent](#scoping-a-rule-to-one-agent) · [Every session already gets a SUMMARY, for free](#every-session-already-gets-a-summary-for-free) · [Discovery and dry-run testing](#discovery-and-dry-run-testing) · [Full CRUD + discovery method table](#full-crud--discovery-method-table) · [Related docs](#related-docs)
-
 
 Today, "summarize every ended session and email the account owner" means polling for finished threads yourself. Lifecycle removes the polling: create a **rule** once, and the backend fires its **action** automatically every time a matching event happens, server-side. Mounted at `mgmt.lifecycle`.
 

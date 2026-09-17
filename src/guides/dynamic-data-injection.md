@@ -9,8 +9,6 @@ eyebrow: How-to Guide
 
 Design guidance for app builders on **getting your app's state into the conversation**: who the viewer is, what's currently on screen, and what just happened in your UI. The goal is to keep the [brain](https://github.com/kaltura/intelligent-agents-sdk/blob/main/README.md#architecture)'s context fresh and correct, instead of a stale snapshot from when the session first connected.
 
-**On this page:** [Three ways to get information to the brain](#three-ways-to-get-information-to-the-brain) · [The context channel: request variables](#the-context-channel-request-variables) · [The active nudge: `speak()`](#the-active-nudge-speak) · [Answering a brain-initiated request](#answering-a-brain-initiated-request) · [How they work together — a worked example](#how-they-work-together--a-worked-example) · [Which one do I want?](#which-one-do-i-want) · [Related but distinct: client-side commands](#related-but-distinct-client-side-commands) · [Related docs](#related-docs)
-
 The SDK gives you three mechanisms, each solving a different problem. The most common integration mistake is reaching for the wrong one: using a passive mechanism when you needed the brain to react *right now*, or using the active one for something that should just be quiet background context. This doc explains why each mechanism exists, when to reach for it, and how they compose into one coherent update flow.
 
 ## Three ways to get information to the brain

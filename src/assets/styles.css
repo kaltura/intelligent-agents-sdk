@@ -313,10 +313,14 @@ blockquote {
   margin-bottom: 0.5rem;
 }
 
-.nav-group ul {
+.nav-children {
   list-style: none;
   margin: 0;
   padding: 0;
+}
+
+.nav-children .nav-children {
+  padding-left: 0.85rem;
 }
 
 .nav-group a {
@@ -326,6 +330,40 @@ blockquote {
   font-size: 0.9rem;
   font-weight: 500;
   border-right: 3px solid transparent;
+}
+
+.nav-node > summary {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  list-style: none;
+}
+
+.nav-node > summary::-webkit-details-marker {
+  display: none;
+}
+
+.nav-node > summary::marker {
+  content: '';
+}
+
+.nav-node > summary::before {
+  content: '▸';
+  flex: 0 0 auto;
+  width: 1.1rem;
+  margin-left: 0.75rem;
+  color: var(--secondary-text);
+  font-size: 0.7rem;
+  transition: transform 150ms ease;
+}
+
+.nav-node[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.nav-node > summary > a {
+  flex: 1;
+  padding-left: 0.3rem;
 }
 
 .nav-group a:hover {
@@ -377,31 +415,74 @@ blockquote {
   color: var(--border-color);
 }
 
-.hub-siblings {
+/* "On this page" rail — sits after </main> in the DOM (not inside it, so
+   MAIN_RE and Nova's section extraction stay untouched). A wide viewport
+   pins it as a sticky-feeling right rail (position:fixed, independent of
+   .content-wrapper's own box); anything narrower falls back to a plain
+   collapsed <details> card inline at the end of the content flow. */
+.page-toc {
+  margin: 0 3rem 2rem;
   background: var(--card-bg);
   border: 1px solid var(--border-color);
   border-radius: var(--ds-roundness-2);
   padding: 0.75rem 1rem;
-  margin-bottom: 1.5rem;
 }
 
-.hub-siblings summary {
+.page-toc-inner summary {
   cursor: pointer;
   font-weight: 700;
-  color: var(--page-text);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--secondary-text);
 }
 
-.hub-siblings ul {
+.page-toc ul {
+  list-style: none;
   margin: 0.75rem 0 0;
-  padding-left: 1.25rem;
+  padding: 0;
 }
 
-.hub-siblings li {
-  margin: 0.25rem 0;
+.page-toc li {
+  margin: 0.35rem 0;
 }
 
-.hub-siblings a {
+.page-toc a {
+  color: var(--secondary-text);
+  font-size: 0.85rem;
+}
+
+.page-toc a:hover {
   color: var(--ds-primary);
+}
+
+@media (min-width: 1500px) {
+  .page-toc {
+    position: fixed;
+    top: calc(var(--header-height) + 2rem);
+    right: 1.5rem;
+    width: 200px;
+    max-height: calc(100vh - var(--header-height) - 4rem);
+    overflow-y: auto;
+    margin: 0;
+    background: none;
+    border: none;
+    border-left: 1px solid var(--border-color);
+    border-radius: 0;
+    padding: 0 0 0 1rem;
+  }
+
+  .page-toc-inner summary {
+    pointer-events: none;
+  }
+
+  .page-toc-inner summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .page-toc-inner summary::marker {
+    content: '';
+  }
 }
 
 .material-symbols-outlined {

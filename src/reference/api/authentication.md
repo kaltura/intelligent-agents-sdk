@@ -9,8 +9,6 @@ eyebrow: Reference
 
 [← Back to the API Reference index](/reference/api-reference/)
 
-**On this page:** [Authentication](#authentication) · [The Five Services](#the-five-services)
-
 ## Authentication
 
 Every call requires a Kaltura Session (KS) token in the `Authorization` header.

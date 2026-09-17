@@ -9,8 +9,6 @@ eyebrow: Reference
 
 [← Back to System Internals Reference](/reference/architecture-reference/)
 
-**On this page:** [Endpoints & Credentials](#endpoints--credentials) · [Socket.IO Connection](#socketio-connection) · [Full Connect Sequence (state-machine order)](#full-connect-sequence-state-machine-order) · [The `join` payload (step 2): carries the agent/brain config](#the-join-payload-step-2-carries-the-agentbrain-config) · [Related docs](#related-docs)
-
 
 ## Endpoints & Credentials
 

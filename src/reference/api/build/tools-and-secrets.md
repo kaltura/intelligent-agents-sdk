@@ -9,8 +9,6 @@ eyebrow: Reference
 
 [← Back to Agent Components](/reference/api/build/)
 
-**On this page:** [Tools (api / csv / code)](#tools-api--csv--code) · [Secrets (write-only)](#secrets-write-only) · [Related docs](#related-docs)
-
 
 ## Tools (api / csv / code)
 

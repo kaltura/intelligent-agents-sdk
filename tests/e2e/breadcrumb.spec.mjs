@@ -5,8 +5,8 @@ test('a page hidden from the sidebar shows a breadcrumb back to its hub and a si
   const breadcrumb = page.locator('.breadcrumb');
   await expect(breadcrumb).toBeVisible();
   await expect(breadcrumb.getByRole('link', { name: 'GenUI Reference' })).toHaveAttribute('href', '/reference/genui-reference/');
-  const siblings = page.locator('.hub-siblings a');
-  expect(await siblings.count()).toBeGreaterThan(0);
+  const siblingLink = page.locator('.sidebar a[href="/reference/genui/widgets/"]');
+  await expect(siblingLink).toBeVisible();
 });
 
 test('a normal sidebar page shows no breadcrumb', async ({ page }) => {

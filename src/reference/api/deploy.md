@@ -9,8 +9,6 @@ eyebrow: Reference
 
 [← Back to the API Reference index](/reference/api-reference/)
 
-**On this page:** [Resolve Widget ID](#resolve-widget-id) · [Initialize the Runtime](#initialize-the-runtime)
-
 
 ## Resolve Widget ID
 

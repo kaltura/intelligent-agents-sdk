@@ -9,8 +9,6 @@ eyebrow: Reference
 
 [← Back to the API Reference index](/reference/api-reference/)
 
-**On this page:** [Converse](#converse) · [Reserved Template Variables (`sys__*`)](#reserved-template-variables-sys__) · [Check Status](#check-status) · [Threads](#threads) · [Session-Completion Signal](#session-completion-signal) · [Thread History and Per-Turn Cost](#thread-history-and-per-turn-cost) · [Feedback and Follow-ups (SDK)](#feedback-and-follow-ups-sdk) · [Usage Analytics](#usage-analytics) · [Knowledge Search (MCP)](#knowledge-search-mcp)
-
 
 ## Converse
 

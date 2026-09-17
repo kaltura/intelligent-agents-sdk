@@ -9,8 +9,6 @@ eyebrow: Reference
 
 [← Back to GenUI Reference](/reference/genui-reference/)
 
-**On this page:** [Safety model (OWASP LLM05 — every widget passes through this)](#safety-model-owasp-llm05--every-widget-passes-through-this) · [Restrictions & gotchas (read before you build)](#restrictions--gotchas-read-before-you-build) · [Related docs](#related-docs)
-
 
 ## Safety model (OWASP LLM05 — every widget passes through this)
 

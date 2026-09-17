@@ -9,8 +9,6 @@ eyebrow: Explanation
 
 This page is for **platform developers**. It explains how the whole system works end to end:
 
-**On this page:** [The Three Planes](#the-three-planes) · [Backend Services Map](#backend-services-map) · [Text Conversation Flow](#text-conversation-flow) · [Video Runtime Protocol — The Big Picture](#video-runtime-protocol--the-big-picture) · [Two Session Modes (choose the right one)](#two-session-modes-choose-the-right-one) · [Displaying the Avatar Video](#displaying-the-avatar-video) · [SDK Module Map — Overview](#sdk-module-map--overview) · [Resilience & Failure Handling — Overview](#resilience--failure-handling--overview)
-
 - the backend services
 - the text-conversation flow
 - the live-video wire protocol

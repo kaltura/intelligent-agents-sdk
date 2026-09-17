@@ -9,8 +9,6 @@ eyebrow: How-to Guide
 
 Design guidance for app builders deciding **how a viewer's input reaches the agent**. Three modes:
 
-**On this page:** [The one rule that overrides everything else here](#the-one-rule-that-overrides-everything-else-here) · [Deciding which mode fits your app](#deciding-which-mode-fits-your-app) · [UX pattern: click-to-toggle, not press-and-hold](#ux-pattern-click-to-toggle-not-press-and-hold) · [Visual and non-visual state feedback](#visual-and-non-visual-state-feedback) · [Safety: don't let a capture window hang open forever](#safety-dont-let-a-capture-window-hang-open-forever) · [Implementation checklist](#implementation-checklist) · [Switching between avatar and chat mid-conversation](#switching-between-avatar-and-chat-mid-conversation) · [Related docs](#related-docs)
-
 | Mode | Session class | Mic permission | How a turn starts |
 |---|---|---|---|
 | **Open-mic** (VAD) | `KalturaAvatarSession` | Prompted at connect* | Viewer just speaks; server VAD cuts the turn |

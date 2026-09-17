@@ -9,8 +9,6 @@ eyebrow: How-to Guide
 
 This page shows how to make an agent ask the viewer for structured, typed data mid-conversation. Examples: a support ticket's category and urgency, a booking's preferred date, a survey rating, or a sales lead's email and phone. It also covers how the SDK renders that request, and where the submitted values actually go.
 
-**On this page:** [What it is — and isn't](#what-it-is--and-isnt) · [What configuring a stage actually does](#what-configuring-a-stage-actually-does) · [What's possible / what's not](#whats-possible--whats-not) · [How the SDK handles it — two observation points, one descriptor](#how-the-sdk-handles-it--two-observation-points-one-descriptor) · [How the form is rendered](#how-the-form-is-rendered) · [How to customize or style the form](#how-to-customize-or-style-the-form) · [Where the submitted data actually goes](#where-the-submitted-data-actually-goes) · [Not to be confused with `kaltura_genie_experiences`](#not-to-be-confused-with-kaltura_genie_experiences) · [Related docs](#related-docs)
-
 `user_properties_forms` is a general-purpose "collect typed fields from the viewer" primitive. The fields, the instruction the agent acts on, rendering, and reporting all work identically no matter what the fields represent. The one place this shows up in the SDK's own surface is naming: the method you call to report values back is `session.submitStructuredDataForm()`, over a wire event named `setFormLeadInfo`. Both are named after the feature's most common use case, not its only one.
 
 Every claim below is anchored to this repo's SDK (`src/`) and to what a caller observes on the wire.

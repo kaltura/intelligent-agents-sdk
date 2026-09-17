@@ -9,8 +9,6 @@ eyebrow: How-to Guide
 
 How to pause a live avatar conversation while you show a video, quiz, or any other on-screen content, then hand the turn back to the avatar cleanly. This covers both the happy path (content plays to completion) and the case where it's skipped or never finishes (don't leave the avatar stuck paused). Built entirely from two existing `KalturaAvatarSession` methods, with no new SDK surface and no server-side glue.
 
-**On this page:** [The mechanism](#the-mechanism) · [Minimal runnable example](#minimal-runnable-example) · [The edge case: don't leave the avatar stuck paused](#the-edge-case-dont-leave-the-avatar-stuck-paused) · [Related docs](#related-docs)
-
 ---
 
 ## The mechanism

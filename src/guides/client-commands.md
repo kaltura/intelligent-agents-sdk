@@ -9,8 +9,6 @@ eyebrow: How-to Guide
 
 How a Kaltura avatar silently triggers actions in *your* app: navigate a deck, render a widget, draw a chart, by calling a tool you defined. The [brain](https://github.com/kaltura/intelligent-agents-sdk/blob/main/README.md#architecture) decides *when* to act. The page decides *what happens*.
 
-**On this page:** [Why it exists](#why-it-exists) · [The mechanism, end to end](#the-mechanism-end-to-end) · [Limits and gotchas](#limits-and-gotchas) · [Related docs](#related-docs)
-
 This is the mechanism that lets an app drive client commands (`navigate_to_slide`/`show_widget`/`highlight_chart`/`open_filing`) off a single live avatar. See [`../examples/deck-presenter.html`](https://github.com/kaltura/intelligent-agents-sdk/blob/main/examples/deck-presenter.html) for a self-contained slide-navigation demo.
 
 If you only read one thing: a "client command" is **not a special protocol feature**. It is a native `type:"client"` tool that makes **no server-side call at all**. The *product* is the silent `type:"tool"` segment the brain streams when the LLM calls it. Your page captures that segment and runs whatever JS it wants.

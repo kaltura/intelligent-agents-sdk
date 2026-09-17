@@ -9,8 +9,6 @@ eyebrow: Reference
 
 [← Back to Wire Protocol](/reference/wire-protocol/)
 
-**On this page:** [5. ASR uplink (pc1) — microphone → server](#5-asr-uplink-pc1--microphone--server) · [6. STV downlink (pc2) — avatar video+audio → you](#6-stv-downlink-pc2--avatar-videoaudio--you) · [Related docs](#related-docs)
-
 
 Wire-level SDP/ICE spec for the two peer connections below. For a client-side code walkthrough instead, see [Audio & Video Wiring](/reference/architecture-reference/channels/) in the System Internals Reference.
 

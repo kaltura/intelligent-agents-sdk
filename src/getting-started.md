@@ -9,8 +9,6 @@ eyebrow: Tutorial
 
 This guide takes you from zero to a working, talking AI avatar in about 5 minutes, once you have a Kaltura account. Copy and paste the commands.
 
-**On this page:** [What you need before you start](#what-you-need-before-you-start) · [Step 1 — Get your credentials (~1 minute)](#step-1--get-your-credentials-1-minute) · [Step 2 — Set up the project (~1 minute)](#step-2--set-up-the-project-1-minute) · [Step 3 — Create your own agent from scratch (1–3 minutes)](#step-3--create-your-own-agent-from-scratch-13-minutes) · [Step 4 — Talk to your agent again (~30 seconds)](#step-4--talk-to-your-agent-again-30-seconds) · [What's next?](#whats-next) · [Common questions](#common-questions) · [Appendix — Verify your checkout offline (~2 minutes)](#appendix--verify-your-checkout-offline-2-minutes)
-
 > **Windows?** Run these commands in WSL2, Git Bash, or PowerShell (the commands below are plain `node`/`npm` calls with no Bash-only syntax, so they work as-is in PowerShell too).
 
 ---

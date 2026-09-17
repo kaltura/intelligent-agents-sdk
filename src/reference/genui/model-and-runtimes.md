@@ -9,8 +9,6 @@ eyebrow: Reference
 
 [← Back to GenUI Reference](/reference/genui-reference/)
 
-**On this page:** [The model in one paragraph](#the-model-in-one-paragraph) · [The first-class runtimes](#the-first-class-runtimes) · [How a widget reaches your screen (the data flow)](#how-a-widget-reaches-your-screen-the-data-flow) · [Two delivery paths (this is the #1 gotcha)](#two-delivery-paths-this-is-the-1-gotcha) · [`force_experience` — a hint, not a contract](#force_experience--a-hint-not-a-contract) · [Related docs](#related-docs)
-
 
 ## The model in one paragraph
 

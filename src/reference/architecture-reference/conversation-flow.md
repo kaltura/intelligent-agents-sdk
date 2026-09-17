@@ -9,8 +9,6 @@ eyebrow: Reference
 
 [← Back to System Internals Reference](/reference/architecture-reference/)
 
-**On this page:** [Conversation Phase: What Streams While Connected](#conversation-phase-what-streams-while-connected) · [Sending User Input](#sending-user-input) · [Complete Message Catalog](#complete-message-catalog) · [Related docs](#related-docs)
-
 
 ## Conversation Phase: What Streams While Connected
 

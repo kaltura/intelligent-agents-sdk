@@ -9,8 +9,6 @@ eyebrow: Reference
 
 [← Back to Wire Protocol](/reference/wire-protocol/)
 
-**On this page:** [Structured experiences (`force_experience` + `unisphere-tool`)](#structured-experiences-force_experience--unisphere-tool) · [Related docs](#related-docs)
-
 
 These flags shape runtime behavior:
 

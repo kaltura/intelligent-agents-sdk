@@ -9,8 +9,6 @@ eyebrow: Reference
 
 Every endpoint, the full agent lifecycle, and a verified use-case catalog — copy-paste ready. This page is the index; the reference itself lives in focused files under [`docs/api/`](https://github.com/kaltura/intelligent-agents-sdk/blob/main/docs/api/).
 
-**On this page:** [Contents](#contents) · [Common Errors](#common-errors) · [Quick Reference](#quick-reference)
-
 **New here?** Start with [Getting Started](/getting-started/). Runtime details live in [Platform Overview](/explanation/architecture/). The zero-dependency SDK is in [`README.md`](https://github.com/kaltura/intelligent-agents-sdk/blob/main/README.md).
 
 **Credentials** — all examples need `AGENTIC_PARTNER_ID` and `AGENTIC_ADMIN_SECRET` ([Rich Media CMS → Settings → Integration Settings](https://kmc.kaltura.com/index.php/kmcng/settings/integrationSettings)). Set them in a local `.env` file, or pass them inline. To use a `.env` file, create it in the repo root with `AGENTIC_PARTNER_ID=...` and `AGENTIC_ADMIN_SECRET=...` on their own lines — `.gitignore` already excludes it. Never hardcode the secret.

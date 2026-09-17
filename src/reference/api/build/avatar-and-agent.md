@@ -9,8 +9,6 @@ eyebrow: Reference
 
 [← Back to Agent Components](/reference/api/build/)
 
-**On this page:** [Create an Avatar](#create-an-avatar) · [Create an Agent](#create-an-agent) · [Related docs](#related-docs)
-
 
 ## Create an Avatar
 
