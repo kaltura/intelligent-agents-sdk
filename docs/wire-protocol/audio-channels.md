@@ -2,6 +2,8 @@
 
 # Audio Channels
 
+Wire-level SDP/ICE spec for the two peer connections below. For a client-side code walkthrough instead, see [Audio & Video Wiring](../architecture-reference/channels.md) in the System Internals Reference.
+
 ## 5. ASR uplink (pc1) — microphone → server
 
 A WebRTC peer connection that publishes the mic. SDP/ICE are relayed **over the Socket.IO socket** (the `asr-webrtc-*` events in [§4a](events-catalog.md#4a-client--server-emit)/[§4c](events-catalog.md#4c-server--client-on--asr-signaling-relayed-over-the-socket)), not over HTTP.
