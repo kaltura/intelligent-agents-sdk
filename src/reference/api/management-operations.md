@@ -42,7 +42,7 @@ The request also takes a top-level `orderBy` (`+createdAt`, `-createdAt`, `+upda
 **Compose a visual on create.** Needs exactly one of these three:
 
 1. `visual:{id}` — wins only when `face`/`background` are BOTH omitted, or BOTH sent as a complete pair. Sending just one of `face`/`background` alongside `visual` is still a domain failure; `visual` does not exempt it.
-2. `face:{id}` + `background:{type,value}`, composing a NEW visual. Both are required together, even alongside `visual`, UNLESS `templateId` is also given — a template can carry its own `face`/`background`, filling in whichever half is missing.
+2. `face:{id}` + `background:{type,value}`, composing a NEW visual. Both are required together, even alongside `visual`, UNLESS `templateId` is also given — a template can carry its own `face`/`background`, filling in whichever half is missing. You can't send `face` now and add `background` later at create time. Once the avatar exists, `background` alone on update swaps the background (see the update rule below).
 3. `templateId` + whichever of `face`/`background`/`visual` the template doesn't already supply. `templateId` alone is a domain failure unless the template already resolves to a complete visual on its own.
 
 `background.value` is required for `type:'visual'`, and optional (defaults to white) for `type:'color'`. For `type:'color'`, `value` must be a plain 6-digit hex string (`#RRGGBB`) with **no alpha channel**: an 8-digit hex (`#RRGGBBAA`), `rgba(...)`, or CSS4 `rgb(... / ...%)` all fail with `AVATAR_INVALID_BACKGROUND_ID` ("must be a 6-digit hex value"), live-confirmed against production.
