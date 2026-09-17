@@ -70,6 +70,21 @@
   </nav>
 
   <main class="content-wrapper">
+    {% set crumb = hubTrails[page.url] %}
+    {% if crumb %}
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+      <a href="/">Home</a>
+      {% for step in crumb.trail %}<span class="breadcrumb-sep" aria-hidden="true">/</span><a href="{{ step.url }}">{{ step.title }}</a>{% endfor %}
+    </nav>
+    {% if crumb.siblings.length %}
+    <details class="hub-siblings">
+      <summary>Other pages in {{ (crumb.trail | last).title }}</summary>
+      <ul>
+        {% for sibling in crumb.siblings %}<li><a href="{{ sibling.url }}">{{ sibling.title }}</a></li>{% endfor %}
+      </ul>
+    </details>
+    {% endif %}
+    {% endif %}
     {% if eyebrow %}<div class="eyebrow">{{ eyebrow }}</div>{% endif %}
     {{ content | safe }}
   </main>

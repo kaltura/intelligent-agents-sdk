@@ -355,6 +355,55 @@ blockquote {
   color: var(--ds-primary);
 }
 
+/* Breadcrumb + sibling-nav for pages hidden from the sidebar (nav.js) — the
+   hub lineage is real data (src/_data/hubTrails.js) but was previously
+   unsurfaced, leaving these pages feeling orphaned once reached. */
+.breadcrumb {
+  font-size: 0.85rem;
+  color: var(--secondary-text);
+  margin-bottom: 1rem;
+}
+
+.breadcrumb a {
+  color: var(--secondary-text);
+}
+
+.breadcrumb a:hover {
+  color: var(--ds-primary);
+}
+
+.breadcrumb-sep {
+  margin: 0 0.4em;
+  color: var(--border-color);
+}
+
+.hub-siblings {
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: var(--ds-roundness-2);
+  padding: 0.75rem 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.hub-siblings summary {
+  cursor: pointer;
+  font-weight: 700;
+  color: var(--page-text);
+}
+
+.hub-siblings ul {
+  margin: 0.75rem 0 0;
+  padding-left: 1.25rem;
+}
+
+.hub-siblings li {
+  margin: 0.25rem 0;
+}
+
+.hub-siblings a {
+  color: var(--ds-primary);
+}
+
 .material-symbols-outlined {
   font-family: 'Material Symbols Outlined';
   font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
