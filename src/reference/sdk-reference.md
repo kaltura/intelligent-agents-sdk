@@ -24,7 +24,6 @@ This page documents the `@kaltura/intelligent-agents` JavaScript SDK's own objec
 | [Advanced / building-block exports](#advanced--building-block-exports) | [Accessibility (WCAG 2.2 AA / captions) + AI-disclosure gate](#accessibility-wcag-22-aa--captions--ai-disclosure-gate) |
 | | [Security posture](#security-posture) |
 | | [Key design rules](#key-design-rules) |
-| | [Known limits](#known-limits) |
 
 ---
 
@@ -94,6 +93,8 @@ session.speak('Tell me about onboarding.');
 session.on('transcript', ({ text }) => console.log(text));
 session.onToolCall('navigate_to_slide', ({ slide_num }) => deck.goTo(slide_num));
 ```
+
+**How `speak(text)` works:** it injects `text` into the conversation on the same path as the viewer's own voice transcript — the brain treats it as a new turn and replies on its own terms. It's not an echo and there's nothing to "rephrase": the avatar's next line is the brain's *reply* to `text`, not a repeat of it. For scripted, word-for-word playback instead, see [scripted avatar sessions](https://github.com/kaltura/intelligent-agents-sdk/blob/main/docs/api/scripted-video.md).
 
 **All transports are injected** — `socketFactory`, `rtcConstructor`, `fetch`, `getUserMedia`. Tests pass fakes; the SDK stays zero-dependency.
 
@@ -347,7 +348,7 @@ Designed for enterprise, HIPAA, HITRUST, and regulated frameworks. Full control 
 - **Destructive ops require `{ confirmPermanent: true }`.** Never a flag on a read operation.
 - **Capabilities are a full-replace dict.** A partial update drops keys you omit. Use `intellects.setCapability(configId, name, state, ks)` — it reads, merges, and writes.
 - **`kaltura_genie_experiences` competes with client tools.** Set it `'off'` at creation for tool-driven intellects (the capability injects a system rule that out-competes custom tools). Set at creation — partner config is cached ~24 h server-side. `tools.clientToolReadiness(body)` lints for this.
-- **`force_experience` is a hint, not a contract.** The live runtime hardcodes `avatar_only`; structured widgets arrive reliably only on the HTTP converse path.
+- **`force_experience` and `model_type:'fast'` are hints, not contracts.** The live runtime hardcodes `avatar_only`; structured widgets arrive reliably only on the HTTP converse path. Neither field gives you a way to confirm after the fact which model actually replied or which experience actually rendered.
 - **Group turn events by `speechId`, never timestamp.** A new utterance invalidates the prior one's in-flight captions (barge-in guard).
 
 ---
@@ -713,6 +714,8 @@ await mgmt.intellectConfig.setMcpServers(configId, { docs: { url: 'https://mcp.e
 
 `intellectConfig.describe(configId, ks)` returns every editable field partitioned into `editable` + `readOnly` — wire directly to a settings UI.
 
+Brain-model and rate-limit fields have no public write door: `agent_llm`/`agent_fast_llm`/`agent_avatar_llm`/rate limits/`run_quota_check`/`web_search_config` are set by internal tooling only — no public route reads or writes them (`describe()` surfaces their current values read-only, informationally). Grounding a new agent via `knowledge_ids` is fully ungated. (Event-driven session/thread rules ARE supported — see [Lifecycle Rules](/reference/lifecycle/#lifecycle-rules--event-driven-rules).)
+
 ---
 
 ## Skills, voice import, and the embed snippet
@@ -889,14 +892,6 @@ const suggestions = await mgmt.followups.getSuggested(ks);
 |---|---|
 | `followups.getSuggested(ks)` | Starter questions for the current partner/agent. Any KS |
 | `followups.list(ks, opts)` | Raw partner-wide follow-up question records |
-
----
-
-## Known limits
-
-- **Brain-model and rate-limit fields have no public write door.** `agent_llm`/`agent_fast_llm`/`agent_avatar_llm`/rate limits/`run_quota_check`/`web_search_config` are set by internal tooling only — no public route reads or writes them (`intellectConfig.describe()` surfaces their current values read-only, informationally). Grounding a new agent via `knowledge_ids` is fully ungated. (Event-driven session/thread rules ARE supported — see [Lifecycle Rules](/reference/lifecycle/#lifecycle-rules--event-driven-rules).)
-- **`speak(text)` isn't a "make the avatar say this" command.** It injects `text` into the conversation on the same path as the viewer's own voice transcript — the brain treats it as a new turn and replies on its own terms. It's not an echo and there's nothing to "rephrase": the avatar's next line is the brain's *reply* to `text`, not a repeat of it. For scripted, word-for-word playback instead, see [scripted avatar sessions](https://github.com/kaltura/intelligent-agents-sdk/blob/main/docs/api/scripted-video.md).
-- **`force_experience` and `model_type:'fast'`** are hints; the SDK can't prove which model replied or which experience rendered.
 
 ---
 
