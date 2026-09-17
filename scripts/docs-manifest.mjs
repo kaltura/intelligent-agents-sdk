@@ -211,6 +211,7 @@ export const manifest = [
     description: 'KS types and minting, userId identity binding, and the five backend services with their base URLs.',
     eyebrow: 'Reference',
     h1: 'Authentication & Services',
+    hub: 'reference/api-reference.md',
     generated: true,
   },
   {
@@ -221,6 +222,7 @@ export const manifest = [
     description: 'Catalog browsing, agent profile generation, custom voice cloning, provider voice import, and custom portrait avatars.',
     eyebrow: 'Reference',
     h1: 'Catalog & Assets',
+    hub: 'reference/api-reference.md',
     generated: true,
   },
   {
@@ -231,6 +233,7 @@ export const manifest = [
     description: 'Index of the pieces that make up an agent: its intellect, prompts, tools, secrets, RAG grounding, avatar, and the agent record that ties them together.',
     eyebrow: 'Reference',
     h1: 'Agent Components',
+    hub: 'reference/api-reference.md',
     generated: true,
   },
   {
@@ -241,6 +244,7 @@ export const manifest = [
     description: 'Resolve a widget ID and initialize the browser runtime.',
     eyebrow: 'Reference',
     h1: 'Widget & Runtime Init',
+    hub: 'reference/api-reference.md',
     generated: true,
   },
   {
@@ -251,6 +255,7 @@ export const manifest = [
     description: 'Converse, reserved template variables, threads and history cost, feedback, usage analytics, and knowledge search.',
     eyebrow: 'Reference',
     h1: 'Conversation & Analytics',
+    hub: 'reference/api-reference.md',
     generated: true,
   },
   // Note: docs/api/scripted-video.md is intentionally NOT ported to the site — see
@@ -263,6 +268,7 @@ export const manifest = [
     description: 'CRUD endpoints for agents, avatars, intellects, tools, skills, knowledge records, and Lifecycle rules.',
     eyebrow: 'Reference',
     h1: 'Management Operations',
+    hub: 'reference/api-reference.md',
     generated: true,
   },
   {
@@ -309,6 +315,7 @@ export const manifest = [
     description: 'Endpoints & credentials, the Socket.IO connection, the full connect sequence, and the join payload.',
     eyebrow: 'Reference',
     h1: 'Connection and Handshake',
+    hub: 'reference/architecture-reference.md',
     generated: true,
   },
   {
@@ -319,6 +326,7 @@ export const manifest = [
     description: 'Client-side code for the ASR uplink (microphone) and the STV downlink (avatar video) — the wire-level spec lives on Audio Channels instead.',
     eyebrow: 'Reference',
     h1: 'Audio & Video Wiring',
+    hub: 'reference/architecture-reference.md',
     generated: true,
   },
   {
@@ -329,6 +337,7 @@ export const manifest = [
     description: 'What streams while connected: brain output, talking state, lifecycle events, sending user input, and the complete message catalog.',
     eyebrow: 'Reference',
     h1: 'Conversation Flow',
+    hub: 'reference/architecture-reference.md',
     generated: true,
   },
   {
@@ -339,6 +348,7 @@ export const manifest = [
     description: 'Sticky routing, the capacity queue, connection vs. session recovery, and externalized session state.',
     eyebrow: 'Reference',
     h1: 'Scale & Sticky Sessions',
+    hub: 'reference/architecture-reference.md',
     generated: true,
   },
   {
@@ -349,6 +359,7 @@ export const manifest = [
     description: 'The SDK module map, the resolveCapabilities shape, the GenUI layer, DTO routing rules, and known limits.',
     eyebrow: 'Reference',
     h1: 'SDK Module Map & Data Flow',
+    hub: 'reference/architecture-reference.md',
     generated: true,
   },
   {
@@ -359,6 +370,7 @@ export const manifest = [
     description: 'The three reconnection tiers, device permissions, the failure-mode matrix, the tool-call-spiral breaker, and the session-completion signal.',
     eyebrow: 'Reference',
     h1: 'Resilience & Failure Handling',
+    hub: 'reference/architecture-reference.md',
     generated: true,
   },
   {
@@ -381,6 +393,7 @@ export const manifest = [
     description: 'Provenance and components, channels at a glance, the Socket.IO connection, and the connect sequence state machine.',
     eyebrow: 'Reference',
     h1: 'Connection Basics',
+    hub: 'reference/wire-protocol.md',
     generated: true,
   },
   {
@@ -391,6 +404,7 @@ export const manifest = [
     description: 'The full Socket.IO events catalog: client→server emits, server→client events, the agent_raw_text.delta brain stream, and speechId/barge-in.',
     eyebrow: 'Reference',
     h1: 'Socket.IO events — developer-facing catalog',
+    hub: 'reference/wire-protocol.md',
     generated: true,
   },
   {
@@ -401,6 +415,7 @@ export const manifest = [
     description: 'The ASR uplink and STV downlink WebRTC peer connections, ICE config, and WHEP signaling.',
     eyebrow: 'Reference',
     h1: 'Audio Channels',
+    hub: 'reference/wire-protocol.md',
     generated: true,
   },
   {
@@ -411,6 +426,7 @@ export const manifest = [
     description: 'The clientConfiguration fields and structured experiences (force_experience + unisphere-tool).',
     eyebrow: 'Reference',
     h1: 'clientConfiguration fields (per-session agent config)',
+    hub: 'reference/wire-protocol.md',
     generated: true,
   },
   {
@@ -421,6 +437,7 @@ export const manifest = [
     description: 'What fires, in order, across one full user turn.',
     eyebrow: 'Reference',
     h1: 'End-to-End Turn',
+    hub: 'reference/wire-protocol.md',
     generated: true,
   },
   {
@@ -443,6 +460,7 @@ export const manifest = [
     description: 'How the brain emits a GenUI widget as a unisphere-tool stream segment, and the first-class runtime keys the SDK dispatches on.',
     eyebrow: 'Reference',
     h1: 'GenUI Model & Runtimes',
+    hub: 'reference/genui-reference.md',
     generated: true,
   },
   {
@@ -453,6 +471,7 @@ export const manifest = [
     description: "Every renderer's model keys, constraints, and returned descriptor shape, runtime by runtime.",
     eyebrow: 'Reference',
     h1: 'Per-runtime detail (model keys → descriptor)',
+    hub: 'reference/genui-reference.md',
     generated: true,
   },
   {
@@ -463,6 +482,7 @@ export const manifest = [
     description: 'Which capability turns each widget on, and how an app mounts and reacts to a widget once it arrives.',
     eyebrow: 'Reference',
     h1: 'Authoring & Consuming Widgets',
+    hub: 'reference/genui-reference.md',
     generated: true,
   },
   {
@@ -473,6 +493,7 @@ export const manifest = [
     description: 'How to report GenUI widget interactions to KAVA via KavaAnalytics.buttonClicked() without duplicating what the platform already tracks server-side.',
     eyebrow: 'Reference',
     h1: 'Widget-interaction analytics (avoiding double-counting)',
+    hub: 'reference/genui-reference.md',
     generated: true,
   },
   {
@@ -483,6 +504,7 @@ export const manifest = [
     description: 'The OWASP LLM05 safety model every widget passes through before it reaches the DOM.',
     eyebrow: 'Reference',
     h1: 'GenUI Safety & Restrictions',
+    hub: 'reference/genui-reference.md',
     generated: true,
   },
   {
@@ -519,6 +541,7 @@ export const manifest = [
     description: 'Create an Intellect, then configure prompts, base_directive, the capabilities table, and force_experience.',
     eyebrow: 'Reference',
     h1: 'Create and Configure an Intellect',
+    hub: 'reference/api/build.md',
     generated: true,
   },
   {
@@ -529,6 +552,7 @@ export const manifest = [
     description: 'Render the assembled system prompt client-side before shipping an edit, using mgmt.intellects.previewPrompt.',
     eyebrow: 'Reference',
     h1: 'Preview a Prompt (client-side)',
+    hub: 'reference/api/build.md',
     generated: true,
   },
   {
@@ -539,6 +563,7 @@ export const manifest = [
     description: 'The api/csv/code/client tool types and their CRUD, plus how intellect secrets work.',
     eyebrow: 'Reference',
     h1: 'Tools and Secrets',
+    hub: 'reference/api/build.md',
     generated: true,
   },
   {
@@ -549,6 +574,7 @@ export const manifest = [
     description: 'Create a knowledge record, add sources, and check indexing status.',
     eyebrow: 'Reference',
     h1: 'Ground the Agent in Your Content (RAG)',
+    hub: 'reference/api/build.md',
     generated: true,
   },
   {
@@ -559,6 +585,7 @@ export const manifest = [
     description: 'Create an avatar, then the agent record that ties the intellect, avatar, and tools together.',
     eyebrow: 'Reference',
     h1: 'Create an Avatar and an Agent',
+    hub: 'reference/api/build.md',
     generated: true,
   },
 ];

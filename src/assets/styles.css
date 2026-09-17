@@ -132,6 +132,65 @@ pre code {
   padding: 0;
 }
 
+/* Prism (via @11ty/eleventy-plugin-syntaxhighlight) emits plain .token.*
+   spans with no bundled theme — map them onto the DS tokens above so
+   highlighting flips with the light/dark toggle for free. */
+.token.comment,
+.token.prolog,
+.token.doctype,
+.token.cdata,
+.token.punctuation {
+  color: var(--secondary-text);
+}
+
+.token.property,
+.token.tag,
+.token.boolean,
+.token.number,
+.token.constant,
+.token.symbol,
+.token.deleted {
+  color: var(--ds-danger);
+}
+
+.token.selector,
+.token.attr-name,
+.token.string,
+.token.char,
+.token.builtin,
+.token.inserted {
+  color: var(--ds-screen-green);
+}
+
+.token.operator,
+.token.entity,
+.token.url,
+.token.atrule,
+.token.attr-value,
+.token.keyword {
+  color: var(--ds-primary);
+}
+
+.token.function,
+.token.class-name {
+  color: var(--ds-warning);
+}
+
+.token.regex,
+.token.important,
+.token.variable {
+  color: var(--ds-danger);
+}
+
+.token.important,
+.token.bold {
+  font-weight: 700;
+}
+
+.token.italic {
+  font-style: italic;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;

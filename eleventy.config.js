@@ -1,5 +1,6 @@
 const markdownIt = require('markdown-it');
 const markdownItAnchor = require('markdown-it-anchor');
+const syntaxHighlight = require('@11ty/eleventy-plugin-syntaxhighlight');
 // scripts/check-anchors.mjs verifies every in-site fragment against the built
 // ids on each build. scripts/generate-docs.mjs imports this same function so
 // its "On this page" quick-nav anchors can never drift from these.
@@ -45,6 +46,7 @@ module.exports = function (eleventyConfig) {
     { slugify: githubSlugify }
   );
   eleventyConfig.setLibrary('md', md);
+  eleventyConfig.addPlugin(syntaxHighlight);
 
   // Site-authored cross-refs point at the sibling .md file, same as the
   // GitHub-rendered docs; rewrite to the site's clean output URLs.

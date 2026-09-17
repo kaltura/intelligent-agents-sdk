@@ -7,6 +7,9 @@ eyebrow: Reference
 
 # Per-runtime detail (model keys → descriptor)
 
+[← Back to GenUI Reference](/reference/genui-reference/)
+
+
 Each renderer lives in `src/experience/genui/renderers/<name>.js`, takes `(model, ctx)`, and returns `{kind, data}`. `ctx.urlPolicy` (`{allow:[schemes]}`) is threaded from the `ExperienceRenderer`. Every renderer accepts **multiple input key aliases** (the model is untrusted LLM output) and clamps text via `safeText(str, max)` and URLs via `safeUrl(url, policy)`.
 
 ### 1. flashcards (`renderFlashcards`)

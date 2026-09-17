@@ -7,7 +7,11 @@ eyebrow: Reference
 
 # Authoring & Consuming Widgets
 
+[← Back to GenUI Reference](/reference/genui-reference/)
+
 **On this page:** [Authoring — which capability turns each widget on](#authoring--which-capability-turns-each-widget-on) · [Consuming widgets in your app](#consuming-widgets-in-your-app) · [`screen_share_analysis` / `sendScreenShot(data)`](#screen_share_analysis--sendscreenshotdata) · [Related docs](#related-docs)
+
+
 ## Authoring — which capability turns each widget on
 
 Capabilities are set **at intellect creation** (partner config caches ~24h; set them up front). Source of truth: `src/management/capabilities.js` (`CAPABILITY_INFO`, `CAPABILITY_DEFAULTS`, `OFF_BY_DEFAULT`). `kind` is `tool` | `segment` | `mode` | `prompt`. This only names the mechanism that gates the capability on/off, not whether its *content* is persona-steerable. `avatar_filler` (`kind: 'prompt'`) is the exception to watch for. Its filler phrasing is server-generated per turn and NOT reliably steerable via `base_directive`, even though it streams as a "spoken" segment alongside `avatar`/`text` (see [Wire Protocol · Events Catalog § 4e](/reference/wire-protocol/events-catalog/#4e-agent_raw_textdelta--the-brain-stream-parsed)). Disable the capability if the default phrasing doesn't fit your persona.
