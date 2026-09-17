@@ -65,7 +65,6 @@ No build step, no npm registry publish — that's disabled by design (`"private"
 - [Skills and voice import](#skills-and-voice-import)
 - [Scripted-Video (STV-only) Sessions](#scripted-video-stv-only-sessions)
 - [RAG (knowledge base)](#rag-knowledge-base)
-- [Known limits](#known-limits)
 - [Reference](#reference)
 - [License](#license)
 
@@ -237,6 +236,8 @@ session.speak('Tell me about onboarding.');
 session.on('transcript', ({ text }) => console.log(text));
 session.onToolCall('navigate_to_slide', ({ slide_num }) => deck.goTo(slide_num));
 ```
+
+**How `speak(text)` works:** it injects `text` into the conversation on the same path as the viewer's own voice transcript — the brain treats it as a new turn and replies in its own words, not a verbatim echo of `text`. Need exact scripted playback instead? See [docs/api/scripted-video.md](docs/api/scripted-video.md).
 
 **All transports are injected** — `socketFactory`, `rtcConstructor`, `fetch`, `getUserMedia`. Tests pass fakes; the SDK stays zero-dependency.
 
@@ -617,7 +618,7 @@ Designed for enterprise, HIPAA, HITRUST, and regulated frameworks. Full control 
 - **Destructive ops require `{ confirmPermanent: true }`.** Never a flag on a read operation.
 - **Capabilities are a full-replace dict.** A partial update drops keys you omit. Use `intellects.setCapability(configId, name, state, ks)` — it reads, merges, and writes.
 - **`kaltura_genie_experiences` competes with client tools.** Set it `'off'` at creation for tool-driven intellects (the capability injects a system rule that out-competes custom tools). Set at creation — partner config is cached ~24 h server-side. `tools.clientToolReadiness(body)` lints for this.
-- **`force_experience` is a hint, not a contract.** The live runtime hardcodes `avatar_only`; structured widgets arrive reliably only on the HTTP converse path.
+- **`force_experience` and `model_type:'fast'` are hints, not contracts.** The live runtime hardcodes `avatar_only`; structured widgets arrive reliably only on the HTTP converse path. Neither field gives you a way to confirm after the fact which model actually replied or which experience actually rendered.
 - **Group turn events by `speechId`, never timestamp.** A new utterance invalidates the prior one's in-flight captions (barge-in guard).
 
 ---
@@ -1064,6 +1065,8 @@ await mgmt.intellectConfig.setAvatarSummaryConfig(configId, {
 
 `intellectConfig.describe(configId, ks)` returns every writable field under `editable` (`null` when the server did not echo it) plus `capabilityNames`. Wire it directly to a settings UI.
 
+`patch()` only accepts keys in `EDITABLE_FIELDS`, rejecting anything else before the network call — `describe()`'s `editable` map is exactly that set. Knowledge grounding via `knowledge_ids` is fully public and ungated. (Event-driven session/thread rules ARE supported, see [docs/lifecycle/README.md](docs/lifecycle/README.md).)
+
 ### Forcing the reply language (`setForcedLanguage`)
 
 `force_language` on the intellect is enforced by the backend at runtime: replies come back in that language whatever the user writes or speaks. `mgmt.setForcedLanguage()` sets it together with the agent's `asr.language`, so speech recognition matches:
@@ -1177,14 +1180,6 @@ await mgmt.knowledge.deleteRecord(rec.id, ks, { confirmPermanent: true });
 ```
 
 `deleteRecord` lists every intellect and refuses with a typed `knowledge_in_use` error naming each one still carrying the id in `knowledge_ids`, unless called with `{confirmPermanent:true, force:true}` — the same guard `tools.delete`/`skills.delete` run for their own entities. A deleted or unknown record id → typed `not_found`; another partner's → `forbidden`.
-
----
-
-## Known limits
-
-- **Only the fields in `EDITABLE_FIELDS` are writable.** `intellectConfig.patch()` rejects anything else before the network call, and `describe()` returns exactly that set. Knowledge grounding via `knowledge_ids` is fully public and ungated. (Event-driven session/thread rules ARE supported, see [docs/lifecycle/README.md](docs/lifecycle/README.md).)
-- **`speak(text)` can't make the avatar say exact words.** It injects `text` into the conversation on the same path as the viewer's own voice transcript — the brain treats it as a new turn and replies on its own terms, not an echo of `text`. For verbatim, scripted playback instead, see [docs/api/scripted-video.md](docs/api/scripted-video.md).
-- **`force_experience` and `model_type:'fast'`** are hints; the SDK can't prove which model replied or which experience rendered.
 
 ---
 
