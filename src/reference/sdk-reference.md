@@ -748,6 +748,8 @@ const v = await mgmt.catalog.importVoiceFromElevenLabs('EXAVITQu4vr4xnSDxMaL', k
 
 An unknown provider id creates **nothing** and raises a typed `voice_not_found_elevenlabs` / `voice_not_found_cartesia` error (the backend replies an HTTP-200 exception envelope; the SDK maps it).
 
+**Custom avatar face** (`mgmt.catalog`, `mgmt.avatars`) — self-serve, three ways. (1) A ready-made Visual: upload a full portrait via `catalog.createVisual`, pass the returned id as `visual:{id}` (or `itemId` as `visualId` in `provision`). (2) Compose one from parts: `catalog.createFace`/`catalog.createBackground` each return a half, then `avatars.create({face:{id}, background:{type:'color'|'visual', value?}, voice, ...}, ks)`, both required together at create time. (3) Start from a curated `templateId` (`catalog.listTemplates()`) and override just the parts you want. `avatars.update()` also accepts `background` alone, to swap only the background against the avatar's current face. The model animates the composed result at runtime. Video-clip ingest is not available through this API.
+
 **Embed snippet** (`mgmt.agents.getEmbedScript(agentId, embedType, ks)`) returns the ready-to-paste HTML `<script type='module'>` that renders the agent's chat widget on any page. `embedType` is one of `contained` (inline box), `page` (full page), or `floater` (floating launcher) — validated against the exported `EMBED_TYPES` before any network call.
 
 ---
@@ -893,8 +895,7 @@ const suggestions = await mgmt.followups.getSuggested(ks);
 ## Honest limits
 
 - **Brain-model and rate-limit fields have no public write door.** `agent_llm`/`agent_fast_llm`/`agent_avatar_llm`/rate limits/`run_quota_check`/`web_search_config` are set by internal tooling only — no public route reads or writes them (`intellectConfig.describe()` surfaces their current values read-only, informationally). Grounding a new agent via `knowledge_ids` is fully ungated. (Event-driven session/thread rules ARE supported — see [Lifecycle Rules](/reference/lifecycle/#lifecycle-rules--event-driven-rules).)
-- **No verbatim speech** — `speak()` goes through the brain; the avatar may rephrase.
-- **Custom face works self-serve, three ways.** (1) A ready-made Visual: upload a full portrait via `catalog.createVisual`, pass the returned id as `visual:{id}` (or `itemId` as `visualId` in `provision`). (2) Compose one from parts: `catalog.createFace`/`catalog.createBackground` each return a half, then `avatars.create({face:{id}, background:{type:'color'|'visual', value?}, voice, ...}, ks)`, both required together at create time. (3) Start from a curated `templateId` (`catalog.listTemplates()`) and override just the parts you want. `avatars.update()` also accepts `background` alone, to swap only the background against the avatar's current face. The model animates the composed result at runtime. Video-clip ingest is not available through this API.
+- **`speak(text)` isn't a "make the avatar say this" command.** It injects `text` into the conversation on the same path as the viewer's own voice transcript — the brain treats it as a new turn and replies on its own terms. It's not an echo and there's nothing to "rephrase": the avatar's next line is the brain's *reply* to `text`, not a repeat of it. For scripted, word-for-word playback instead, see [scripted avatar sessions](https://github.com/kaltura/intelligent-agents-sdk/blob/main/docs/api/scripted-video.md).
 - **`force_experience` and `model_type:'fast'`** are hints; the SDK can't prove which model replied or which experience rendered.
 
 ---

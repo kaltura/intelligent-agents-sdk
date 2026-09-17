@@ -12,7 +12,7 @@ The exact field-by-field mechanics behind [Platform Overview](/explanation/archi
 | Doc | Covers |
 |---|---|
 | [System Internals Reference · Connection and Handshake](/reference/architecture-reference/connection-and-handshake/) | Endpoints & Credentials, Socket.IO Connection, Full Connect Sequence, the `join` payload |
-| [System Internals Reference · Channels](/reference/architecture-reference/channels/) | ASR Channel — Microphone Uplink, STV Channel — Avatar Video Downlink |
+| [System Internals Reference · Audio & Video Wiring](/reference/architecture-reference/channels/) | ASR Channel — Microphone Uplink, STV Channel — Avatar Video Downlink |
 | [System Internals Reference · Conversation Flow](/reference/architecture-reference/conversation-flow/) | Conversation Phase (brain output, talking state, lifecycle events), Sending User Input, Complete Message Catalog |
 | [System Internals Reference · Scale and Sticky Sessions](/reference/architecture-reference/scale-and-sticky-sessions/) | Sticky routing, the capacity queue, connection vs. session recovery, externalized session state |
 | [System Internals Reference · Module Map and Data Flow](/reference/architecture-reference/module-map-and-data-flow/) | SDK module map, `resolveCapabilities` shape, the GenUI layer, DTO routing rules, honest limits |

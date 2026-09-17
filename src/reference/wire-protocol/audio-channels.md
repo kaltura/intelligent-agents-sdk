@@ -12,6 +12,8 @@ eyebrow: Reference
 **On this page:** [5. ASR uplink (pc1) — microphone → server](#5-asr-uplink-pc1--microphone--server) · [6. STV downlink (pc2) — avatar video+audio → you](#6-stv-downlink-pc2--avatar-videoaudio--you) · [Related docs](#related-docs)
 
 
+Wire-level SDP/ICE spec for the two peer connections below. For a client-side code walkthrough instead, see [Audio & Video Wiring](/reference/architecture-reference/channels/) in the System Internals Reference.
+
 ## 5. ASR uplink (pc1) — microphone → server
 
 A WebRTC peer connection that publishes the mic. SDP/ICE are relayed **over the Socket.IO socket** (the `asr-webrtc-*` events in [§4a](/reference/wire-protocol/events-catalog/#4a-client--server-emit)/[§4c](/reference/wire-protocol/events-catalog/#4c-server--client-on--asr-signaling-relayed-over-the-socket)), not over HTTP.

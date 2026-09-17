@@ -120,7 +120,7 @@ socket.emit('join', {
 
 | Doc | Covers |
 |---|---|
-| [System Internals Reference · Channels](/reference/architecture-reference/channels/) | ASR uplink + STV downlink |
+| [System Internals Reference · Audio & Video Wiring](/reference/architecture-reference/channels/) | ASR uplink + STV downlink |
 | [System Internals Reference · Conversation Flow](/reference/architecture-reference/conversation-flow/) | What streams while connected, sending user input, the message catalog |
 | [System Internals Reference](/reference/architecture-reference/) | Back to the index |
 

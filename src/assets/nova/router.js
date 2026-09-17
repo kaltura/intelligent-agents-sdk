@@ -14,6 +14,11 @@
 const PREFIX = window.__SITE_PATH_PREFIX__ || '';
 const ROUTES = window.__SITE_ROUTES__ || [];
 
+// The bare route currently rendered in <main> — tracked so a same-page hash
+// change (which still fires `popstate`, see onClick/popstate below) can be
+// told apart from a real back/forward to a different page.
+let renderedRoute = stripPrefix(location.pathname);
+
 /** Prepend the GitHub Pages project-site subpath to a bare route (e.g. one
  * the brain supplies via go_to) — click-driven navigation never
  * needs this since `a.pathname` is already the browser-resolved value. */
@@ -78,14 +83,19 @@ async function swapContent(pathname) {
   return true;
 }
 
-export async function navigateTo(pathname, { push = true } = {}) {
+export async function navigateTo(target, { push = true } = {}) {
+  const hashAt = target.indexOf('#');
+  const pathname = hashAt >= 0 ? target.slice(0, hashAt) : target;
+  const hash = hashAt >= 0 ? target.slice(hashAt) : '';
   const ok = await swapContent(pathname).catch(() => false);
   if (!ok) {
-    window.location.href = pathname;
+    window.location.href = target;
     return true;
   }
-  if (push) history.pushState({ novaRouted: true }, document.title, pathname);
-  window.scrollTo(0, 0);
+  renderedRoute = stripPrefix(pathname);
+  if (push) history.pushState({ novaRouted: true }, document.title, pathname + hash);
+  if (hash) document.getElementById(hash.slice(1))?.scrollIntoView();
+  else window.scrollTo(0, 0);
   document.dispatchEvent(new CustomEvent('nova:pagechange', { detail: { path: pathname } }));
   return true;
 }
@@ -98,8 +108,19 @@ function onClick(e) {
   if (a.origin !== location.origin) return;
   if (a.pathname === location.pathname) return; // same-page hash link — let the browser handle it
   e.preventDefault();
-  navigateTo(a.pathname + a.search);
+  navigateTo(a.pathname + a.search + a.hash);
 }
 
 document.body.addEventListener('click', onClick);
-window.addEventListener('popstate', () => navigateTo(location.pathname, { push: false }));
+// A same-page hash-only navigation (clicking a Contents-table `#slug` link)
+// still fires `popstate` — if we always re-ran navigateTo() here, it would
+// re-swap <main> with an identical copy (a visible flash) and reset the
+// scroll to the top, undoing the browser's own scroll to the fragment. Only
+// re-swap when the route actually changed (a real back/forward navigation).
+window.addEventListener('popstate', () => {
+  if (stripPrefix(location.pathname) === renderedRoute) {
+    if (location.hash) document.getElementById(location.hash.slice(1))?.scrollIntoView();
+    return;
+  }
+  navigateTo(location.pathname + location.hash, { push: false });
+});

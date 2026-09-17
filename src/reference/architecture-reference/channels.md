@@ -1,16 +1,18 @@
 ---
 layout: base.njk
-title: "System Internals Reference · Channels"
-description: "The ASR channel (microphone uplink) and the STV channel (avatar video downlink), field by field."
+title: "System Internals Reference · Audio & Video Wiring"
+description: "Client-side code for the ASR uplink (microphone) and the STV downlink (avatar video) — the wire-level spec lives on Audio Channels instead."
 eyebrow: Reference
 ---
 
-# Channels
+# Audio & Video Wiring
 
 [← Back to System Internals Reference](/reference/architecture-reference/)
 
 **On this page:** [ASR Channel — Microphone Uplink (step 9)](#asr-channel--microphone-uplink-step-9) · [STV Channel — Avatar Video Downlink (after CONNECTED)](#stv-channel--avatar-video-downlink-after-connected) · [Related docs](#related-docs)
 
+
+Client-side code for the two peer connections below. For the wire-level SDP/ICE spec instead, see [Audio Channels](/reference/wire-protocol/audio-channels/) in the Wire Protocol reference.
 
 ## ASR Channel — Microphone Uplink (step 9)
 

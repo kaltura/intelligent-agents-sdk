@@ -79,6 +79,6 @@ The exhaustive, field-by-field event catalog — every client emit and server ev
 | Doc | Covers |
 |---|---|
 | [System Internals Reference · Connection and Handshake](/reference/architecture-reference/connection-and-handshake/) | The connect sequence that precedes this phase |
-| [System Internals Reference · Channels](/reference/architecture-reference/channels/) | The ASR/STV media channels running alongside this |
+| [System Internals Reference · Audio & Video Wiring](/reference/architecture-reference/channels/) | The ASR/STV media channels running alongside this |
 | [System Internals Reference](/reference/architecture-reference/) | Back to the index |
 

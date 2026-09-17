@@ -315,10 +315,10 @@ export const manifest = [
     source: 'docs/architecture-reference/channels.md',
     target: 'reference/architecture-reference/channels.md',
     url: '/reference/architecture-reference/channels/',
-    title: 'System Internals Reference · Channels',
-    description: 'The ASR channel (microphone uplink) and the STV channel (avatar video downlink), field by field.',
+    title: 'System Internals Reference · Audio & Video Wiring',
+    description: 'Client-side code for the ASR uplink (microphone) and the STV downlink (avatar video) — the wire-level spec lives on Audio Channels instead.',
     eyebrow: 'Reference',
-    h1: 'Channels',
+    h1: 'Audio & Video Wiring',
     generated: true,
   },
   {
