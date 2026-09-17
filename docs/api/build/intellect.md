@@ -2,6 +2,8 @@
 
 # Create and Configure an Intellect
 
+An intellect is the config object behind your agent's brain. It holds the prompts, model settings, tools, knowledge base links, and feature capabilities that shape how the agent behaves. This page shows how to create one and configure its main fields.
+
 ## Create an Intellect
 
 ```
@@ -12,7 +14,7 @@ POST https://genie.nvp1.ovp.kaltura.com/v1/intellect/add
 { "type": "internal", "status": 2 }
 ```
 
-Returns the full intellect DTO. **Save `id`** — this is your `configId`.
+Returns the full intellect object. **Save `id`** — this is your `configId`.
 
 | `status` | Meaning |
 |----------|---------|
@@ -60,7 +62,11 @@ POST https://genie.nvp1.ovp.kaltura.com/v1/intellect/update
 | `type` | Always `"custom"` |
 | `value` | Your content |
 
-**Don't guess at `key`/`headerTemplate` values** — `mgmt.application.getCustomPrompts(ks)` returns the backend's own live schema for this block: a 5-entry array (`goal`, `targetAudience`, `restrictedTopics`, `name`, `knowledge`), each `{key, label, headerTemplate, objectType}`. Render a "describe your agent" form straight from this call and the labels/instruction text you show always match what the backend actually splices into the system prompt — no hardcoded copy to keep in sync by hand. READ, no ids, no side effects, works with any KS kind (partner-agnostic, not partner data).
+**Don't guess at `key`/`headerTemplate` values.** Call `mgmt.application.getCustomPrompts(ks)` instead. It returns the backend's own live schema for this block: a 5-entry array (`goal`, `targetAudience`, `restrictedTopics`, `name`, `knowledge`), each shaped as `{key, label, headerTemplate, objectType}`.
+
+Use this call to render a "describe your agent" form. The labels and instructions you show always match what the backend splices into the system prompt, so you don't have to keep hardcoded copy in sync by hand.
+
+This call only reads data — it has no side effects. It works with any kind of session token, since the schema itself isn't specific to any one partner.
 
 ```js
 const fields = await mgmt.application.getCustomPrompts(ks);

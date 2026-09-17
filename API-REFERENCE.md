@@ -4,7 +4,7 @@ Every endpoint, the full agent lifecycle, and a verified use-case catalog — co
 
 **New here?** Start with [GETTING-STARTED.md](GETTING-STARTED.md). Runtime details live in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). The zero-dependency SDK is in [`README.md`](README.md).
 
-**Credentials** — all examples need `AGENTIC_PARTNER_ID` and `AGENTIC_ADMIN_SECRET` ([Rich Media CMS → Settings → Integration Settings](https://kmc.kaltura.com/index.php/kmcng/settings/integrationSettings)). Set them in a local `.env` file (create it in the repo root with `AGENTIC_PARTNER_ID=...` and `AGENTIC_ADMIN_SECRET=...` on their own lines, already covered by `.gitignore`) or pass inline. Never hardcode the secret.
+**Credentials** — all examples need `AGENTIC_PARTNER_ID` and `AGENTIC_ADMIN_SECRET` ([Rich Media CMS → Settings → Integration Settings](https://kmc.kaltura.com/index.php/kmcng/settings/integrationSettings)). Set them in a local `.env` file, or pass them inline. To use a `.env` file, create it in the repo root with `AGENTIC_PARTNER_ID=...` and `AGENTIC_ADMIN_SECRET=...` on their own lines — `.gitignore` already excludes it. Never hardcode the secret.
 
 Every endpoint is shown as a raw HTTP call plus its SDK wrapper. The SDK is what ships in this repo — see [`README.md`](README.md) for the full `Management` method list.
 
@@ -25,11 +25,24 @@ Every endpoint is shown as a raw HTTP call plus its SDK wrapper. The SDK is what
 | [Use-Case Catalog](docs/USE-CASES.md) | All 13 use cases (UC-1 through UC-13) mapped to mechanisms and runnable scripts |
 | [Site navigation](docs/SITE-NAV.md) | Fire-and-forget `go_to` tool, compact SITE MAP prompt, `sections.json` manifest, browser `SiteNavigator` plugin |
 
-**Section shorthand.** Docs and source comments cite sections as `API-REFERENCE.md § <name>` — find the section in the table above. Common ones: § Tools, § Secrets, § Ground the Agent, § Configure an Intellect are all in [Agent Components](docs/api/build.md); § Converse and § Threads are in [Conversation & Analytics](docs/api/operate.md); § Initialize the Runtime is in [Widget & Runtime Init](docs/api/deploy.md).
+**Section shorthand.** Docs and source comments cite sections as `API-REFERENCE.md § <name>` — find the section in the table above. Common ones:
+
+- § Tools, § Secrets, § Ground the Agent, § Configure an Intellect — [Agent Components](docs/api/build.md)
+- § Converse, § Threads — [Conversation & Analytics](docs/api/operate.md)
+- § Initialize the Runtime — [Widget & Runtime Init](docs/api/deploy.md)
 
 ---
 
-**What can you build?** A concierge with memory (UC-2/UC-3), a GenUI-driven product demo (UC-4), a slide-deck walkthrough avatar (UC-10), a self-serve custom-voice/custom-portrait agent (UC-9/UC-13), an anonymous embeddable widget (UC-12), or a fleet of A/B-tested personas (UC-5) — see the full [Use-Case Catalog](docs/USE-CASES.md) for all 13, each mapped to its key mechanism and a runnable script/tool.
+**What can you build?** A few examples:
+
+- A concierge with memory (UC-2/UC-3)
+- A GenUI-driven product demo (UC-4)
+- A slide-deck walkthrough avatar (UC-10)
+- A self-serve custom-voice/custom-portrait agent (UC-9/UC-13)
+- An anonymous embeddable widget (UC-12)
+- A fleet of A/B-tested personas (UC-5)
+
+See the full [Use-Case Catalog](docs/USE-CASES.md) for all 13, each mapped to its key mechanism and a runnable script/tool.
 
 ---
 

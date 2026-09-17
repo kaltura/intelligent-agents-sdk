@@ -4,7 +4,7 @@
 
 Client-side code for the two peer connections below. For the wire-level SDP/ICE spec instead, see [Audio Channels](../wire-protocol/audio-channels.md) in the Wire Protocol reference.
 
-## ASR Channel — Microphone Uplink (step 9)
+## ASR Channel: Microphone Uplink (step 9)
 
 A WebRTC peer connection whose SDP/ICE are relayed **through the socket** (NOT WHEP). From the platform's built-in client's ASR connection handler:
 
@@ -21,13 +21,20 @@ socket.emit('asr-webrtc-ice-candidate', { candidate });
 // (server may push its own candidates on the same event name)
 ```
 
-PeerConnection config: TURN `turn.avatar.us.kaltura.ai` (default username/credential from `wire.js`'s `turnServers()`, four explicit port/transport URLs — see [Endpoints & Credentials table](connection-and-handshake.md#endpoints--credentials)), `iceTransportPolicy` per the leg's `forceRelay` flag (production runtime forces `'relay'` for ASR; the no-SDK debug-app uses `'all'` — both relay in practice since the server only offers a private candidate), audio constraints `{echoCancellation, autoGainControl, noiseReduction}`, no video. Once connected, the server transcribes your speech and routes it to the brain automatically — there is no separate "send transcript" call.
+PeerConnection configuration:
+
+- **TURN**: `turn.avatar.us.kaltura.ai` (default username/credential from `wire.js`'s `turnServers()`, four explicit port/transport URLs). See the [Endpoints & Credentials table](connection-and-handshake.md#endpoints--credentials).
+- **`iceTransportPolicy`**: set per the leg's `forceRelay` flag. The production runtime forces `'relay'` for ASR. The no-SDK debug app uses `'all'`. Both relay in practice, because the server only offers a private candidate.
+- **Audio constraints**: `{echoCancellation, autoGainControl, noiseReduction}`.
+- **Video**: none.
+
+Once connected, the server transcribes your speech and routes it to the brain automatically. There is no separate "send transcript" call.
 
 ---
 
-## STV Channel — Avatar Video Downlink (after CONNECTED)
+## STV Channel: Avatar Video Downlink (after CONNECTED)
 
-Standard **SRS WHEP** — completely independent of the socket. From the platform's built-in client's SRS signaling adapter:
+Standard **SRS WHEP**, completely independent of the socket. From the platform's built-in client's SRS signaling adapter:
 
 ```js
 const playUrl = stvNewSession.webrtc_url
@@ -45,13 +52,13 @@ const answerSdp = await fetch(`${srsBaseUrl}/rtc/v1/whep/?app=app&stream=${sessi
 
 await pc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
 // ontrack fires twice (video, then audio). The server puts each track in its own
-// msid, so e.streams[0] differs per event — assigning it directly would drop the
+// msid, so e.streams[0] differs per event. Assigning it directly would drop the
 // first track. Collect both into one stream and bind that once.
 const avatar = new MediaStream();
 pc.ontrack = (e) => { avatar.addTrack(e.track); if (!videoEl.srcObject) videoEl.srcObject = avatar; };
 ```
 
-That's it — a vanilla WHEP subscribe. The avatar's face+voice stream into your `<video>`.
+That's it: a vanilla WHEP subscribe. The avatar's face+voice stream into your `<video>`.
 
 ## Related docs
 
