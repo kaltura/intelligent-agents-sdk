@@ -1,4 +1,4 @@
-[← Back to Phase 2 — Build](../build.md)
+[← Back to Agent Components](../build.md)
 
 # Ground the Agent in Your Content (RAG)
 
@@ -78,4 +78,4 @@ Resolve that poll **before** you create or update the intellect, and send `use_k
 | Doc | What it adds |
 |---|---|
 | [`intellect.md`](intellect.md) | The `knowledge_ids`/`use_knowledge_base` fields this section links into |
-| [`../build.md`](../build.md) | The Phase 2 — Build index |
+| [`../build.md`](../build.md) | The Agent Components index |

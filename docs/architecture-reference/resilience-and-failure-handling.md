@@ -1,4 +1,4 @@
-[← Back to Architecture Reference](../ARCHITECTURE-REFERENCE.md)
+[← Back to System Internals Reference](../ARCHITECTURE-REFERENCE.md)
 
 # Resilience & Failure Handling
 

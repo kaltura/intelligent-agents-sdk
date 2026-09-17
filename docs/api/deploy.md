@@ -1,6 +1,6 @@
 [← Back to the API Reference index](../../API-REFERENCE.md)
 
-# Phase 3 — Deploy
+# Widget & Runtime Init
 
 ## Resolve Widget ID
 

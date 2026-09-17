@@ -1,4 +1,4 @@
-# Architecture Reference
+# System Internals Reference
 
 The exact field-by-field mechanics behind [ARCHITECTURE.md](ARCHITECTURE.md) — the connect sequence, wire shapes, scaling internals, SDK module routing, and failure-mode tables. Read ARCHITECTURE.md first for the big picture; consult these docs for an exact field, timeout, or module boundary. For a from-scratch reimplementation walkthrough, see [ARCHITECTURE-RECIPE.md](ARCHITECTURE-RECIPE.md). For the exhaustive socket-event-by-event capture, see [WIRE-PROTOCOL.md](WIRE-PROTOCOL.md).
 

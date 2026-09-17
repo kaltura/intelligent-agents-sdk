@@ -1,4 +1,4 @@
-[← Back to Phase 2 — Build](../build.md)
+[← Back to Agent Components](../build.md)
 
 # Preview a Prompt (client-side)
 
@@ -63,4 +63,4 @@ Supplying the value in `requestVars` (e.g. `{ 'sys__user_obj.first_name': 'Jane'
 | Doc | What it adds |
 |---|---|
 | [`intellect.md`](intellect.md) | The `prompts[]`/`base_directive`/`glossary` fields this preview renders |
-| [`../build.md`](../build.md) | The Phase 2 — Build index |
+| [`../build.md`](../build.md) | The Agent Components index |

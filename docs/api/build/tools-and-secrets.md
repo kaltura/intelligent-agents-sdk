@@ -1,4 +1,4 @@
-[← Back to Phase 2 — Build](../build.md)
+[← Back to Agent Components](../build.md)
 
 # Tools and Secrets
 
@@ -92,4 +92,4 @@ Use `tools.client(...)` in the SDK, which validates the tool before any network 
 | Doc | What it adds |
 |---|---|
 | [`intellect.md`](intellect.md) | Where `tool_ids`/`secrets` are linked onto an intellect |
-| [`../build.md`](../build.md) | The Phase 2 — Build index |
+| [`../build.md`](../build.md) | The Agent Components index |

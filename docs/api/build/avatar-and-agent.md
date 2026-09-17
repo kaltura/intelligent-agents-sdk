@@ -1,4 +1,4 @@
-[← Back to Phase 2 — Build](../build.md)
+[← Back to Agent Components](../build.md)
 
 # Create an Avatar and an Agent
 
@@ -19,13 +19,13 @@ POST https://api.avatar.us.kaltura.ai/v1/avatar/create
 }
 ```
 
-`voice.id` and `visual.id` come from the catalog (see [Phase 1 — Design](../design.md) § Browse the Catalog). Returns `id` (24-char hex). **No `adminTags`** — `avatar/create` accepts and stores it, but no read path ever returns it, and `avatar/update` genuinely rejects it (no tag field). Tag the parent agent instead.
+`voice.id` and `visual.id` come from the catalog (see [Catalog & Assets](../design.md) § Browse the Catalog). Returns `id` (24-char hex). **No `adminTags`** — `avatar/create` accepts and stores it, but no read path ever returns it, and `avatar/update` genuinely rejects it (no tag field). Tag the parent agent instead.
 
 If `visual.id` points at a custom uploaded portrait rather than a catalog preset, how you crop that source photo directly affects how the persona renders on this avatar — pad it generously rather than a tight headshot crop:
 
 ![Tight headshot crops shrink onto the render canvas with black borders; a generously padded portrait scales to fill it edge-to-edge](../img/avatar-photo-framing.svg)
 
-See [Phase 1 — Design § Upload a Custom Visual](../design.md#upload-a-custom-visual-portrait--animated-avatar) for the full crop-fit explanation.
+See [Catalog & Assets § Upload a Custom Visual](../design.md#upload-a-custom-visual-portrait--animated-avatar) for the full crop-fit explanation.
 
 ### Three ways to get a visual
 
@@ -103,4 +103,4 @@ Returns `agentId` (UUID). **Save this.**
 | Doc | What it adds |
 |---|---|
 | [`intellect.md`](intellect.md) | The intellect an agent's `intellect.id` points at |
-| [`../build.md`](../build.md) | The Phase 2 — Build index |
+| [`../build.md`](../build.md) | The Agent Components index |
