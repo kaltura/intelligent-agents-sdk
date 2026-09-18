@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Kaltura Intelligent Agents — event timing harness</title>
+  <style>body{font-family:system-ui;margin:2rem;max-width:820px} #avatar{width:320px;height:320px;background:#111;border-radius:12px;overflow:hidden} #avatar video{width:100%;height:100%;object-fit:cover} #log{white-space:pre-wrap;font-family:monospace;font-size:.8rem;background:#f6f6f6;padding:1rem;border-radius:8px;max-height:480px;overflow:auto}</style>
+</head>
+<body>
+  <h1>Event timing harness</h1>
+  <p>
+    Every SDK event with a timestamp relative to <code>connect()</code>. Useful for answering
+    "what fired, in what order, how long did it take" for any avatar-session hypothesis —
+    not tied to one app or bug.
+  </p>
+  <div id="avatar"></div>
+  <div id="log"></div>
+
+  <!-- socket.io is YOUR dependency — injected, never bundled by the SDK. -->
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js" integrity="sha384-2huaZvOR9iDzHqslqwpR87isEmrfxqyWOF7hr7BY6KG0+hVKLoEXMPUJw3ynWuhO" crossorigin="anonymous"></script>
+  <script type="module">
+    import { KalturaAvatarSession } from '../src/experience/index.js';
+
+    // window.__events holds every entry below — read it from a script/automation
+    // tool (e.g. `window.__events`) instead of scraping the on-page log.
+    window.__events = [];
+    const t0 = performance.now();
+    const record = (type, detail) => {
+      const tRel = Math.round(performance.now() - t0);
+      window.__events.push({ tRel, type, detail });
+      const el = document.getElementById('log');
+      el.textContent += `[${tRel}ms] ${type}${detail ? ' ' + JSON.stringify(detail) : ''}\n`;
+      el.scrollTop = el.scrollHeight;
+    };
+
+    // 1) Get the runtime endpoints + conversation token from YOUR server.
+    //    Your server calls Management.application.appInit(widgetKs) and returns its result.
+    const init = await fetch('/appInit').then((r) => r.json());   // { ks, conversationManagerUrl, srsBaseUrl, turnServerUrl, avatars[] }
+
+    const video = document.createElement('video');
+    video.autoplay = true; video.playsInline = true;
+    document.getElementById('avatar').appendChild(video);
+    const voice = document.createElement('audio');
+    voice.autoplay = true;
+    document.body.appendChild(voice);
+
+    const session = new KalturaAvatarSession({
+      token: init.ks,
+      conversationManagerUrl: init.conversationManagerUrl,
+      srsBaseUrl: init.srsBaseUrl,
+      turnServerUrl: init.turnServerUrl,
+      videoEl: video,
+      audioEl: voice,
+      socketFactory: (url, opts) => io(url, opts),
+      isFirefox: /firefox/i.test(navigator.userAgent),
+    });
+
+    // Every event the SDK's session emits — see docs/architecture-reference/conversation-flow.md.
+    for (const evt of ['disclosure', 'responsePending', 'responseSettled', 'transcript', 'avatarStartTalking', 'avatarStopTalking', 'turnEnd', 'interrupted', 'error', 'ended']) {
+      session.on(evt, (payload) => record(evt, payload));
+    }
+
+    window.session = session;   // for DevTools: session.speaking, session.videoEl, ...
+    record('connect:start');
+    await session.connect();
+    record('connect:resolved');
+
+    window.addEventListener('beforeunload', () => session.disconnect());
+
+    // For raw socket/WebRTC wire frames underneath these SDK-level events
+    // (e.g. distinguishing stvSpeechChunk boundaries, or exact ICE/WS timing),
+    // pair this page with webrtc-inspector — an open-source Chrome extension
+    // (https://github.com/zoharbabin/webrtc-inspector,
+    // https://chromewebstore.google.com/detail/webrtc-inspector/mkfhlnakkjdmoofccmabhmnplmlglngb).
+    // Once installed, `window.__webrtcInspector.captureEvents()` on this page
+    // returns the full wire-level event log alongside window.__events above.
+  </script>
+</body>
+</html>
