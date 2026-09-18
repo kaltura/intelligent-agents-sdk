@@ -65,16 +65,15 @@
     await session.connect();
     record('connect:resolved', { speaking: session.speaking });
 
-    // Optional: ?nudge=<text>&nudgeMode=speak|speakNow — fires that call the instant
-    // connect() resolves, to reproduce/verify the session-start commitment-window race
-    // (a scripted opening line the server already committed to via approve(), before
-    // session.speaking has flipped true). nudgeMode defaults to speakNow.
+    // Optional: ?nudge=<text> — calls session.speak() the instant connect() resolves.
+    // At that moment the opening line is committed but session.speaking is still false;
+    // speak() holds the text until that line finishes, so 'nudge:sent' should land
+    // right after the opening turn's 'avatarStopTalking'.
     const params = new URLSearchParams(location.search);
     const nudge = params.get('nudge');
     if (nudge) {
-      const mode = params.get('nudgeMode') || 'speakNow';
-      record('nudge:call', { mode, text: nudge, speaking: session.speaking });
-      session[mode](nudge).then(() => record('nudge:sent', { mode }));
+      record('nudge:call', { text: nudge, speaking: session.speaking });
+      session.speak(nudge).then((sent) => record('nudge:sent', { sent }));
     }
 
     window.addEventListener('beforeunload', () => session.disconnect());

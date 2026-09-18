@@ -394,6 +394,15 @@ export class KalturaAvatarSession extends Emitter {
     this.state = 'idle';
     this.mode = 'video';          // 'video' | 'audio' (set from stvNewSession)
     this.speaking = false;
+    // True while the server runs a turn that typed text cannot interrupt, and during which
+    // it drops any text it receives: the opening line right after connect(), the replayed
+    // line after resume(), and its own "are you still there?" / goodbye turns. `speaking`
+    // alone can't see this window — the opening turn is committed the moment _approve()
+    // fires, well before its own stvStartedTalking lands. speak() holds text while this is
+    // true and sends it (all held texts as one turn) the moment the turn ends. See speak().
+    this._uninterruptibleTurn = false;
+    /** @type {{text:string, raw:string, resolve:(sent:boolean)=>void}[]} */
+    this._heldTurns = [];
     this.responsePending = false; // true from prompting the brain until its first meaningful output (dead-air gap)
     this.paused = false;
     this._sessionReleased = false;   // true after a pause expires server-side (resume needs a fresh STV)
@@ -659,7 +668,11 @@ export class KalturaAvatarSession extends Emitter {
     pc.oniceconnectionstatechange = () => { this.emit('connectivityChanged', { channel: 'asr', state: pc.iceConnectionState }); this._onIceStateChange('asr', pc); };
     pc.onicecandidate = (e) => { if (e.candidate) socket.emit('asr-webrtc-ice-candidate', { candidate: e.candidate }); };
     this._armIceNewWatchdog('asr', pc);
-    socket.on('asr-ice-candidate', (c) => { try { pc.addIceCandidate(c); } catch { /* non-fatal */ } });
+    // One listener per live peer: a resume() that reuses the socket re-runs this step, and a
+    // listener left bound to the previous (closed) peer would reject every later candidate.
+    if (this._onAsrIceCandidate) socket.off?.('asr-ice-candidate', this._onAsrIceCandidate);
+    this._onAsrIceCandidate = (c) => { try { pc.addIceCandidate(c)?.catch?.(() => { /* non-fatal */ }); } catch { /* non-fatal */ } };
+    socket.on('asr-ice-candidate', this._onAsrIceCandidate);
     if (this._micStream) {
       for (const track of this._micStream.getAudioTracks()) this._asrAudioSender = pc.addTrack(track, this._micStream);
     } else {
@@ -788,25 +801,38 @@ export class KalturaAvatarSession extends Emitter {
   }
 
   /** @param {any} socket */
-  _approve(socket) { socket.emit('approvedPermissions', { room: this._roomId }); }
+  _approve(socket) { this._uninterruptibleTurn = true; socket.emit('approvedPermissions', { room: this._roomId }); }
 
   // ─────────────────────────── runtime methods ───────────────────────────
 
   /**
-   * Drive the avatar by text — BRAIN-REASONED (routed to the same pipeline as
-   * ASR). Sends the server's `isSpeechStart` marker first, which interrupts a
-   * mid-sentence avatar (no-op if idle); `tapToTalkStart`/
-   * `tapToTalkEnd` are reserved for tap-to-talk button-hold mode and must NOT
-   * bracket typed text (they flip the server's internal tap-mode state and mint a duplicate turn).
-   * Never HTTP converse.
+   * Send `text` to the agent as the user's next turn. Typed text takes the same path as the
+   * viewer's own voice transcript, so the brain reasons over it and replies in its own words
+   * (never HTTP converse, which never reaches the avatar).
    *
-   * Passes through the optional `onBeforeSend` guardrail (OWASP LLM01 input
-   * filtering): the hook may transform the text, leave it unchanged, or BLOCK the
-   * turn (throw / return false) — a blocked turn emits a `guardrailBlocked` audit
-   * event and does not reach the brain. Honors the `maxTurnsPerMinute` valve
-   * (LLM10). Returns a Promise (resolves once sent; rejects if blocked/limited).
+   * When it goes out, in caller terms:
+   * - Agent idle, or still thinking about the last turn: sent now. Text sent while the
+   *   agent is thinking merges into that pending turn server-side.
+   * - Agent talking a normal reply: sent now, and the avatar stops mid-sentence (barge-in),
+   *   like a real conversation. The `isSpeechStart` marker sent first is what stops it.
+   * - Agent in a turn typed text cannot interrupt — its opening line right after
+   *   `connect()`, its replayed line after `resume()`, or its own "are you still there?"
+   *   check-in: HELD, then sent the instant that turn ends. Every text held during the same
+   *   turn goes out together as ONE turn, one text per line, in call order, so the agent
+   *   reads everything the user said while it was busy and answers once. (Sent into that
+   *   window unheld, the server would drop the text without any error.)
+   *
+   * Guardrails run at call time, never later: the `onBeforeSend` hook (transform / block —
+   * a blocked turn rejects, emits a `guardrailBlocked` audit event, and never reaches the
+   * brain), the `maxTurnsPerMinute` valve (`rate_limited`), the tap-to-talk gate
+   * (`invalid_state`) and the disclosure gate (`disclosure_required`).
+   *
+   * `tapToTalkStart`/`tapToTalkEnd` are reserved for tap-to-talk button-hold mode and must
+   * NOT bracket typed text (they flip the server's tap-mode state and mint a duplicate turn).
    * @param {string} text
-   * @returns {Promise<void>}
+   * @returns {Promise<boolean>} `true` once the text reached the server. `false` if the
+   *   session ended while the text was still held (it was never sent). Rejects if a
+   *   guardrail or gate blocked it.
    */
   async speak(text) {
     this._requireConnected('speak');
@@ -821,13 +847,48 @@ export class KalturaAvatarSession extends Emitter {
     }
     this._enforceTurnRate('speak');
     const finalText = await this._applyBeforeSend(text, { kind: 'speak', threadId: this._threadId });
+    if (!this._socket) return false;   // disconnect() ran while the guardrail was still deciding
+    if (this._uninterruptibleTurn) {
+      return new Promise((resolve) => { this._heldTurns.push({ text: finalText, raw: text, resolve }); });
+    }
+    this._sendTurn(finalText, text);
+    return true;
+  }
+
+  /**
+   * Put one typed turn on the wire: barge-in marker first, then the text.
+   * @param {string} finalText what the server receives (after `onBeforeSend`)
+   * @param {string} rawText what the caller passed (kept for a spiral-recovery resend)
+   */
+  _sendTurn(finalText, rawText) {
     this._touchActivity();
     this._socket.emit('onTextEntered', buildTextEntered('', false, true));
     this._socket.emit('onTextEntered', buildTextEntered(finalText, true));
     if (this._debug) this._socket.emit('debug_text_entered', buildTextEntered(finalText, true)); // debug only
     this._armBrainWatchdog();      // R5: expect a brain response; warn if it stalls
     this._armResponsePending();    // positive "awaiting the brain" signal so the app can mask the gap
-    this._lastTurnText = text;     // for a possible spiral-recovery resend — see `recoverFromSpiral`
+    this._lastTurnText = rawText;  // for a possible spiral-recovery resend — see `recoverFromSpiral`
+  }
+
+  /**
+   * The server's uninterruptible turn just ended (stvFinishedTalking / agentInterrupted):
+   * the agent is listening again. Send everything speak() held during it as ONE turn,
+   * one text per line, and resolve every held call with `true`.
+   */
+  _endUninterruptibleTurn() {
+    this._uninterruptibleTurn = false;
+    if (!this._heldTurns.length || !this._socket) return;
+    const held = this._heldTurns;
+    this._heldTurns = [];
+    this._sendTurn(held.map((h) => h.text).join('\n'), held.map((h) => h.raw).join('\n'));
+    for (const h of held) h.resolve(true);
+  }
+
+  /** The session is ending: nothing held can be sent any more. Resolve every held speak() with `false`. */
+  _dropHeldTurns() {
+    const held = this._heldTurns;
+    this._heldTurns = [];
+    for (const h of held) h.resolve(false);
   }
 
   /** Barge in on the avatar (yield the turn). */
@@ -2038,7 +2099,13 @@ export class KalturaAvatarSession extends Emitter {
     });
     socket.on('agent_end_turn', (p) => { this._settleResponsePending(); this._checkEmptyTurn(); this.emit('turnEnd', { speechId: p?.speechId, turnId: p?.turnId }); });
     socket.on('stvFinishedGenerating', (p) => { this._settleResponsePending(); this._checkEmptyTurn(); this.emit('turnEnd', { speechId: p?.speechId }); });
-    socket.on('generatingSpeech', (p) => { if (p?.speechId) this._tracker.beginUtterance(p.speechId); this.emit('transcript', { text: clampInbound(p?.text || ''), type: 'final', speechId: p?.speechId, words: [] }); });
+    socket.on('generatingSpeech', (p) => {
+      if (p?.speechId) this._tracker.beginUtterance(p.speechId);
+      // The server's own check-in ("are you still there?") and goodbye turns cannot be
+      // interrupted and drop any text sent during them — hold speak() until they end.
+      if (isUninterruptibleSpeechId(p?.speechId)) this._uninterruptibleTurn = true;
+      this.emit('transcript', { text: clampInbound(p?.text || ''), type: 'final', speechId: p?.speechId, words: [] });
+    });
 
     // Captions (authoritative).
     socket.on('stvSpeechChunk', (p) => {
@@ -2051,8 +2118,10 @@ export class KalturaAvatarSession extends Emitter {
     // Talking state. Content-free turn audit events (HIPAA 164.312(b) — record that a
     // PHI-bearing exchange occurred, NEVER its content) + activity touch (auto-logoff reset).
     socket.on('stvStartedTalking', () => { this._clearBrainWatchdog(); this._settleResponsePending(); this._touchActivity(); this._completer.touch(); this.speaking = true; this._turnSawOutput = true; this._audit('turn.avatar_spoke', 'success', {}); this.emit('avatarStartTalking', {}); });
-    socket.on('stvFinishedTalking', (p) => { this.speaking = false; this._tracker.finishUtterance(); this._completer.touch(); this.emit('avatarStopTalking', { text: clampInbound(p?.agentContent) }); });
-    socket.on('agentInterrupted', () => { this.speaking = false; this._settleResponsePending(); this._turnSawOutput = true; this.emit('interrupted', {}); });
+    // _endUninterruptibleTurn() runs before the app-facing event so text held by speak() is on
+    // the wire first, and a speak() called from inside the listener is sent, not held again.
+    socket.on('stvFinishedTalking', (p) => { this.speaking = false; this._endUninterruptibleTurn(); this._tracker.finishUtterance(); this._completer.touch(); this.emit('avatarStopTalking', { text: clampInbound(p?.agentContent) }); });
+    socket.on('agentInterrupted', () => { this.speaking = false; this._endUninterruptibleTurn(); this._settleResponsePending(); this._turnSawOutput = true; this.emit('interrupted', {}); });
     socket.on('userStartedTalking', () => { this._clearBrainWatchdog(); this._touchActivity(); this.emit('userStartedTalking', {}); });
     // The user's turn produced a transcription → the brain should now respond; watch for a stall (R5)
     // and flip the response-pending signal so the app can mask the dead-air gap until output lands.
@@ -2486,8 +2555,9 @@ export class KalturaAvatarSession extends Emitter {
       await this._createSessionWithCapacity(socket, overall);
       await this._runConnectSequence(socket, overall);
       // `approvedPermissions` is what makes the avatar speak —
-      // a rebuilt session replays its opening line the moment approve lands (speechId
-      // `*-approved-permissions`). If the app deliberately paused, approving here would
+      // a rebuilt (brand-new) session says its opening line the moment approve lands (speechId
+      // `*-approved-permissions`); a released-then-resumed session instead replays the agent's
+      // last line. If the app deliberately paused, approving here would
       // audibly break the pause, so hold the approve and let resume() release it. The
       // fresh server-side session was never approved, so nothing arms until then.
       if (this.paused) this._pausedPendingApprove = socket;
@@ -2525,10 +2595,16 @@ export class KalturaAvatarSession extends Emitter {
         this._applyBeforeSend(`${SPIRAL_RECOVERY_PREFIX}${resendText}`, { kind: 'spiralRecovery', threadId: this._threadId })
           .then((finalText) => {
             if (this.state !== 'connected') return;
-            socket.emit('onTextEntered', buildTextEntered(finalText, true));
-            this._armBrainWatchdog();
-            this._armResponsePending();
-            this.emit('spiralRecovered', { text: resendText });
+            // The rebuilt session is saying its opening line right now, and typed text sent
+            // during it is dropped (see speak()). Queue the resend behind that turn exactly like
+            // a speak() call would be; it goes out the moment the opening line ends.
+            const done = (sent) => {
+              if (!sent) return;
+              this._lastTurnText = null;   // consumed — a spiral on the resend itself must not replay it again
+              this.emit('spiralRecovered', { text: resendText });
+            };
+            if (this._uninterruptibleTurn) this._heldTurns.push({ text: finalText, raw: resendText, resolve: done });
+            else { this._sendTurn(finalText, resendText); done(true); }
           })
           .catch((e) => this._log('error', 'spiral recovery resend blocked/failed', e));
       }
@@ -2545,6 +2621,9 @@ export class KalturaAvatarSession extends Emitter {
     // can never be delivered (rule 4.2: cleared on disconnect, not left to grow unbounded).
     this._pendingToolAcks.clear();
     this._pausedPendingApprove = null;   // a held approve dies with the session
+    this._dropHeldTurns();               // held speak() calls resolve false: the session ended first
+    this._uninterruptibleTurn = false;
+    this.speaking = false;
     this._clearBrainWatchdog();
     this._settleResponsePending();   // never leave the pending signal stuck across teardown
     this._clearIdleTimers();
@@ -2572,7 +2651,7 @@ export class KalturaAvatarSession extends Emitter {
     try { this._micStream?.getTracks?.().forEach((t) => { t.onmute = t.onunmute = null; t.stop?.(); }); } catch { /* */ }
     try { this._socket?.removeAllListeners?.(); this._socket?.disconnect?.(); } catch { /* */ }
     if (this._capacityTimer) { clearTimeout(this._capacityTimer); this._capacityTimer = null; }
-    this._pcAsr = this._pcStv = this._micStream = this._socket = this._asrAudioSender = null;
+    this._pcAsr = this._pcStv = this._micStream = this._socket = this._asrAudioSender = this._onAsrIceCandidate = null;
   }
 
   /**
@@ -2593,6 +2672,16 @@ export class KalturaAvatarSession extends Emitter {
 }
 
 // ─────────────────────────── helpers ───────────────────────────
+
+/**
+ * Server-initiated turns that typed text cannot interrupt (and is dropped during): the
+ * "are you still there?" check-in and the goodbye line. Identified by the speechId suffix
+ * the server puts on them (see docs/WIRE-PROTOCOL.md).
+ * @param {unknown} speechId
+ */
+function isUninterruptibleSpeechId(speechId) {
+  return typeof speechId === 'string' && (speechId.endsWith('-wake-up') || speechId.endsWith('-hangup-message'));
+}
 
 function fatal(event) {
   const info = FATAL_CODE[event] || { code: 'connect_failed', num: 0 };

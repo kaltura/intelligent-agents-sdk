@@ -117,7 +117,7 @@ test('mic denied → mic_permission_denied', async () => {
 
 test('post-connect: speak injects onTextEntered (brain), never HTTP converse', async () => {
   const { session, socket } = newSession();
-  scriptHappyPath(socket);
+  scriptHappyPath(socket, { openingLine: true });
   await session.connect();
   await session.speak('hello there');
   const te = socket.emitsOf('onTextEntered');
@@ -203,6 +203,9 @@ test('barge-in: speak() while the avatar is already talking uses the isSpeechSta
   const { session, socket } = newSession();
   scriptHappyPath(socket);
   await session.connect();
+  // opening line plays and ends; then the agent starts a normal reply the user can barge into
+  socket.server('stvStartedTalking', {});
+  socket.server('stvFinishedTalking', { agentContent: 'Hi there.' });
   socket.server('agent_start_speech', { speechId: 'A-transcript-hi', turnId: 't1', isNewTurn: true });
   socket.server('stvStartedTalking', {});
   assert.equal(session.speaking, true);
@@ -432,7 +435,7 @@ test('getStickyId is stable and reused across the session (same-instance resume)
 
 test('disclosure: speak() blocks until acknowledgeDisclosure() when requireDisclosureAck:true', async () => {
   const { session, socket } = newSession({ cfg: { requireDisclosureAck: true } });
-  scriptHappyPath(socket);
+  scriptHappyPath(socket, { openingLine: true });
   await session.connect();
   // disclosure fires but we have NOT called acknowledgeDisclosure() yet
   const err = await session.speak('hello').catch((e) => e);
@@ -446,7 +449,7 @@ test('disclosure: speak() blocks until acknowledgeDisclosure() when requireDiscl
 
 test('disclosure: speak() proceeds without acknowledge when requireDisclosureAck:false', async () => {
   const { session, socket } = newSession({ cfg: { requireDisclosureAck: false } });
-  scriptHappyPath(socket);
+  scriptHappyPath(socket, { openingLine: true });
   await session.connect();
   await session.speak('hi');
   assert.ok(socket.didEmit('onTextEntered'));

@@ -775,7 +775,7 @@ test('tool spiral HARD recovery: opens a genuinely NEW socket rather than re-joi
   // returns one singleton — build our own multi-instance factory to catch a regression.
   let factoryCalls = 0;
   let liveSocket = null;
-  const multiFactory = () => { const s = new FakeSocket(); liveSocket = s; scriptHappyPath(s); factoryCalls++; return s; };
+  const multiFactory = () => { const s = new FakeSocket(); liveSocket = s; scriptHappyPath(s, { openingLine: true }); factoryCalls++; return s; };
   const { session } = newSession({ cfg: { toolSpiralLimit: 3, hardToolSpiralLimit: 6, socketFactory: multiFactory } });
   await session.connect();
   const firstSocket = liveSocket;
@@ -805,7 +805,7 @@ test('tool spiral HARD recovery: re-arms after a successful cold reconnect, so a
   // `_sessionToolSegCount = 0`) so a later spiral is caught exactly like the first one was.
   let factoryCalls = 0;
   let liveSocket = null;
-  const multiFactory = () => { const s = new FakeSocket(); liveSocket = s; scriptHappyPath(s); factoryCalls++; return s; };
+  const multiFactory = () => { const s = new FakeSocket(); liveSocket = s; scriptHappyPath(s, { openingLine: true }); factoryCalls++; return s; };
   const { session } = newSession({ cfg: { toolSpiralLimit: 3, hardToolSpiralLimit: 6, socketFactory: multiFactory } });
   await session.connect();
   const firstSocket = liveSocket;
@@ -842,7 +842,7 @@ test('tool spiral HARD recovery: auto-resends the stuck ASR turn (default recove
   // simply dropped, reproducing the "hang" symptom the whole breaker exists to fix. Mirrors the
   // proven headless fix (`Conversations#send({recoverFromSpiral:true})`, conversations.js).
   let liveSocket = null;
-  const multiFactory = () => { const s = new FakeSocket(); liveSocket = s; scriptHappyPath(s); return s; };
+  const multiFactory = () => { const s = new FakeSocket(); liveSocket = s; scriptHappyPath(s, { openingLine: true }); return s; };
   const { session } = newSession({ cfg: { toolSpiralLimit: 3, hardToolSpiralLimit: 6, socketFactory: multiFactory } });
   await session.connect();
   const firstSocket = liveSocket;
@@ -858,7 +858,7 @@ test('tool spiral HARD recovery: auto-resends the stuck ASR turn (default recove
   assert.equal(session.state, 'connected');
   assert.ok(recovered, 'spiralRecovered must fire once the resend is sent');
   assert.equal(recovered.text, 'walk me through the two-metric guidance range', 'the ORIGINAL text is reported, not the wrapped one');
-  const entered = secondSocket.emitsOf('onTextEntered');
+  const entered = secondSocket.emitsOf('onTextEntered').filter((p) => p.text);   // typed text only, not the isSpeechStart marker
   assert.equal(entered.length, 1, 'exactly one resend must be emitted on the rebuilt socket');
   assert.equal(entered[0].text, `${SPIRAL_RECOVERY_PREFIX}walk me through the two-metric guidance range`);
   session.disconnect();
@@ -866,7 +866,7 @@ test('tool spiral HARD recovery: auto-resends the stuck ASR turn (default recove
 
 test('tool spiral HARD recovery: auto-resends the stuck speak() turn too, not just ASR', async () => {
   let liveSocket = null;
-  const multiFactory = () => { const s = new FakeSocket(); liveSocket = s; scriptHappyPath(s); return s; };
+  const multiFactory = () => { const s = new FakeSocket(); liveSocket = s; scriptHappyPath(s, { openingLine: true }); return s; };
   const { session } = newSession({ cfg: { toolSpiralLimit: 3, hardToolSpiralLimit: 6, socketFactory: multiFactory } });
   await session.connect();
   const firstSocket = liveSocket;
@@ -878,7 +878,7 @@ test('tool spiral HARD recovery: auto-resends the stuck speak() turn too, not ju
 
   const secondSocket = liveSocket;
   assert.notEqual(secondSocket, firstSocket);
-  const entered = secondSocket.emitsOf('onTextEntered');
+  const entered = secondSocket.emitsOf('onTextEntered').filter((p) => p.text);   // typed text only, not the isSpeechStart marker
   assert.equal(entered.length, 1);
   assert.equal(entered[0].text, `${SPIRAL_RECOVERY_PREFIX}what should I expect for Q3 guidance`);
   session.disconnect();
@@ -886,7 +886,7 @@ test('tool spiral HARD recovery: auto-resends the stuck speak() turn too, not ju
 
 test('tool spiral HARD recovery: recoverFromSpiral:false suppresses the resend but still reports lastTurnText', async () => {
   let liveSocket = null;
-  const multiFactory = () => { const s = new FakeSocket(); liveSocket = s; scriptHappyPath(s); return s; };
+  const multiFactory = () => { const s = new FakeSocket(); liveSocket = s; scriptHappyPath(s, { openingLine: true }); return s; };
   const { session } = newSession({ cfg: { toolSpiralLimit: 3, hardToolSpiralLimit: 6, socketFactory: multiFactory, recoverFromSpiral: false } });
   await session.connect();
   const firstSocket = liveSocket;
@@ -907,7 +907,7 @@ test('tool spiral HARD recovery: recoverFromSpiral:false suppresses the resend b
 
 test('tool spiral HARD recovery: a second spiral in the same session resends its OWN stuck turn, not the first one', async () => {
   let liveSocket = null;
-  const multiFactory = () => { const s = new FakeSocket(); liveSocket = s; scriptHappyPath(s); return s; };
+  const multiFactory = () => { const s = new FakeSocket(); liveSocket = s; scriptHappyPath(s, { openingLine: true }); return s; };
   const { session } = newSession({ cfg: { toolSpiralLimit: 3, hardToolSpiralLimit: 6, socketFactory: multiFactory } });
   await session.connect();
   const firstSocket = liveSocket;
@@ -927,7 +927,7 @@ test('tool spiral HARD recovery: a second spiral in the same session resends its
   const thirdSocket = liveSocket;
   assert.equal(recoveries.length, 2);
   assert.equal(recoveries[1].text, 'second stuck question');
-  const entered = thirdSocket.emitsOf('onTextEntered');
+  const entered = thirdSocket.emitsOf('onTextEntered').filter((p) => p.text);
   assert.equal(entered.length, 1, 'the third socket only ever gets the SECOND spiral\'s resend');
   assert.equal(entered[0].text, `${SPIRAL_RECOVERY_PREFIX}second stuck question`);
   session.disconnect();

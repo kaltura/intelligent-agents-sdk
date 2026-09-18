@@ -25,7 +25,8 @@ function mk(over = {}) {
   });
   return { s, socket };
 }
-const connected = async (over) => { const { s, socket } = mk(over); scriptHappyPath(socket); await s.connect(); return { s, socket }; };
+// openingLine: these tests speak() right after connect, so the agent must be idle (opening line done).
+const connected = async (over) => { const { s, socket } = mk(over); scriptHappyPath(socket, { openingLine: true }); await s.connect(); return { s, socket }; };
 
 // ── LLM01: onBeforeSend guardrail ──
 test('onBeforeSend can transform outbound text', async () => {

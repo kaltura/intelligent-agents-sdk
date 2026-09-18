@@ -322,6 +322,153 @@ test("'responseSettled' also fires on interruption, so the affordance never gets
   session.disconnect();
 });
 
+// ─── speak() timing: held only while the server runs a turn typed text cannot interrupt
+// (opening line after connect()/resume(), server check-in/goodbye); sent now otherwise ───
+
+/** Typed texts that reached the wire (the empty isSpeechStart marker rows are filtered out). */
+const sentTexts = (socket) => socket.emitsOf('onTextEntered').filter((p) => p.text !== '').map((p) => p.text);
+const markerCount = (socket) => socket.emitsOf('onTextEntered').filter((p) => p.text === '').length;
+/** speak() awaits its guardrail before it decides to hold or send; one macrotask lets that settle. */
+const settle = () => new Promise((r) => setTimeout(r, 0));
+
+async function connectAndFinishOpening(socket, session) {
+  scriptHappyPath(socket);
+  await session.connect();
+  socket.server('stvStartedTalking', {});
+  socket.server('stvFinishedTalking', { agentContent: '' });
+}
+
+test('speak() right after connect() is held until the opening line finishes, then sent (resolves true)', async () => {
+  const { session, socket } = newSession();
+  scriptHappyPath(socket);
+  await session.connect();
+  // connect() resolved, but the opening turn's stvStartedTalking hasn't arrived yet: `speaking`
+  // is still false, yet text sent now would be dropped by the server. speak() must hold it.
+  assert.equal(session.speaking, false);
+  let result;
+  const p = session.speak('[SESSION START] begin now').then((sent) => { result = sent; });
+  await settle();
+  assert.equal(socket.didEmit('onTextEntered'), false, 'must not send while the opening line is committed');
+  socket.server('stvStartedTalking', {});
+  socket.server('stvFinishedTalking', { agentContent: '' });
+  await p;
+  assert.equal(result, true);
+  assert.deepEqual(sentTexts(socket), ['[SESSION START] begin now']);
+  session.disconnect();
+});
+
+test('speak() sends immediately once the opening line has finished', async () => {
+  const { session, socket } = newSession();
+  await connectAndFinishOpening(socket, session);
+  assert.equal(await session.speak('are you still there?'), true);
+  assert.deepEqual(sentTexts(socket), ['are you still there?']);
+  session.disconnect();
+});
+
+test('several speak() calls during the hold go out as ONE turn, one text per line, in call order', async () => {
+  const { session, socket } = newSession();
+  scriptHappyPath(socket);
+  await session.connect();
+  const all = Promise.all([session.speak('a'), session.speak('b'), session.speak('c')]);
+  await settle();
+  assert.equal(socket.didEmit('onTextEntered'), false);
+  socket.server('stvStartedTalking', {});
+  socket.server('stvFinishedTalking', { agentContent: '' });
+  assert.deepEqual(await all, [true, true, true]);
+  assert.deepEqual(sentTexts(socket), ['a\nb\nc'], 'one coalesced turn, not three');
+  assert.equal(markerCount(socket), 1, 'one isSpeechStart marker for the one turn');
+  session.disconnect();
+});
+
+test('held text goes out before avatarStopTalking fires, and a speak() from inside that listener is sent, not held', async () => {
+  const { session, socket } = newSession();
+  scriptHappyPath(socket);
+  await session.connect();
+  const p = session.speak('held');
+  await settle();
+  let seenAtStop;
+  session.on('avatarStopTalking', () => { seenAtStop = sentTexts(socket).slice(); session.speak('from listener'); });
+  socket.server('stvStartedTalking', {});
+  socket.server('stvFinishedTalking', { agentContent: '' });
+  await p;
+  await settle();   // let the listener's own speak() finish its guardrail await
+  assert.deepEqual(seenAtStop, ['held']);
+  assert.deepEqual(sentTexts(socket), ['held', 'from listener']);
+  session.disconnect();
+});
+
+test('agentInterrupted also ends the hold', async () => {
+  const { session, socket } = newSession();
+  scriptHappyPath(socket);
+  await session.connect();
+  const p = session.speak('[NAV] moved to slide 3');
+  await settle();
+  socket.server('agentInterrupted', {});
+  assert.equal(await p, true);
+  assert.deepEqual(sentTexts(socket), ['[NAV] moved to slide 3']);
+  session.disconnect();
+});
+
+test('speak() while the agent talks a normal reply is sent now (barge-in), never held', async () => {
+  const { session, socket } = newSession();
+  await connectAndFinishOpening(socket, session);
+  socket.server('agentTurnToTalk', { userTranscription: 'tell me more' });
+  socket.server('stvStartedTalking', {});
+  assert.equal(session.speaking, true);
+  assert.equal(await session.speak('[NAV] moved to slide 2'), true);
+  assert.deepEqual(sentTexts(socket), ['[NAV] moved to slide 2']);
+  assert.equal(markerCount(socket), 1, 'the marker is what stops the avatar mid-sentence');
+  session.disconnect();
+});
+
+test("speak() during the server's own check-in turn is held until that turn ends", async () => {
+  const { session, socket } = newSession();
+  await connectAndFinishOpening(socket, session);
+  socket.server('generatingSpeech', { text: 'Are you still there?', speechId: 'abcd-wake-up' });
+  socket.server('stvStartedTalking', {});
+  const p = session.speak('yes, still here');
+  await settle();
+  assert.deepEqual(sentTexts(socket), [], 'held: the check-in turn drops typed text');
+  socket.server('stvFinishedTalking', { agentContent: 'Are you still there?' });
+  assert.equal(await p, true);
+  assert.deepEqual(sentTexts(socket), ['yes, still here']);
+  session.disconnect();
+});
+
+test('disconnect() while text is held resolves it false and never sends it', async () => {
+  const { session, socket } = newSession();
+  scriptHappyPath(socket);
+  await session.connect();
+  const p = session.speak('never sent');
+  await new Promise((r) => setTimeout(r, 0));   // the text is now held (past the guardrail await)
+  session.disconnect();
+  assert.equal(await p, false);
+  assert.deepEqual(sentTexts(socket), []);
+  assert.equal(session.speaking, false);
+});
+
+test('disconnect() in the same tick as speak() resolves false instead of throwing on a dead socket', async () => {
+  const { session, socket } = newSession();
+  await connectAndFinishOpening(socket, session);
+  const p = session.speak('never sent');
+  session.disconnect();
+  assert.equal(await p, false);
+  assert.deepEqual(sentTexts(socket), []);
+});
+
+test('guardrails still run at call time for a held speak()', async () => {
+  const { session, socket } = newSession({ cfg: { onBeforeSend: (t) => (t.includes('secret') ? false : t.toUpperCase()) } });
+  scriptHappyPath(socket);
+  await session.connect();
+  await assert.rejects(session.speak('my secret'), (e) => e.code === 'guardrail_blocked');
+  const p = session.speak('hello');
+  socket.server('stvStartedTalking', {});
+  socket.server('stvFinishedTalking', { agentContent: '' });
+  assert.equal(await p, true);
+  assert.deepEqual(sentTexts(socket), ['HELLO']);
+  session.disconnect();
+});
+
 // ─── §4a.3: silent-empty-turn diagnostic (allow_client_variables gate OFF produces
 // an empty turn with NO error; this warning is the only surface) ───
 

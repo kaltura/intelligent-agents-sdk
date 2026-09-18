@@ -63,10 +63,10 @@ test('SDK produces the outbound emits seen in the golden capture', async () => {
     fetch: async () => ({ ok: true, status: 201, text: async () => 'a', headers: { get: () => 'loc' } }),
     getUserMedia: fakeGetUserMedia(), mediaStreamConstructor: FakeMediaStreamCtor,
   });
-  scriptHappyPath(socket);
+  scriptHappyPath(socket, { openingLine: true });
   await session.connect();
   session.mute(); session.unmute(); session.pause(); session.resume();
-  await session.speak('hi');     // emits onTextEntered (async: passes the optional guardrail)
+  await session.speak('hi');     // emits onTextEntered once the opening line has finished
   const produced = new Set(socket.emitted.map((e) => e.event));
 
   // The core documented client→server emits the SDK is responsible for:

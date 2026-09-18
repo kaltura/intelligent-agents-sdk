@@ -202,16 +202,16 @@ On other paths (`disconnect()`, idle auto-logoff) the SDK aborts the request aft
   | Trigger | Meaning |
   |---|---|
   | `transcript` | A user speech/text turn — the same path `onTextEntered` feeds |
-  | `approved-permissions` | The opening greeting |
+  | `approved-permissions` | The opening greeting. Typed text cannot interrupt it; `speak()` holds text until it ends |
   | `tap-to-talk` | — |
-  | `resume-replay` | — |
-  | `wake-up` | — |
+  | `resume-replay` | The replayed last line after a `resume()`. Same hold as the greeting |
+  | `wake-up` | The server's own "are you still there?" check-in after a silence. Typed text cannot interrupt it; `speak()` holds text until it ends |
   | `begin-agent-conversation` | — |
   | `contact-info-received` / `contact-info-rejected` | — |
   | `html-element-click` | — |
   | `iframe-completed` | — |
   | `code-block-completed` | — |
-  | `hangup-message` | — |
+  | `hangup-message` | The server's goodbye line before it ends the session. Typed text cannot interrupt it; `speak()` holds, then resolves `false` when the session ends |
 
 - **Minted per utterance**, and it maps 1:1 to the brain's request `uuid`. `stvStartedTalking`/`stvFinishedTalking` carry **no** `speechId` in their payload. Attribute them to the `speechId` of the surrounding `stvSpeechChunk`s.
 - **The staleness guard is what makes barge-in work.** The server tracks a single active `speechId` per session. Any TTS/STV event whose `speechId` doesn't match the current one is **dropped** server-side. When a new user turn arrives, the server mints a new `transcript` `speechId` and makes it the active one, instantly invalidating the prior utterance's in-flight audio. That is exactly what `agentInterrupted` reflects. The `stvSpeechChunk` `speechId` switches at each `agentInterrupted` (e.g. `4nkM-transcript-…` → `agentInterrupted` → `d1qD-transcript-…`).

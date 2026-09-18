@@ -46,9 +46,14 @@ export class FakeSocket {
  * (steps 1–11) by auto-responding to each client emit. `opts.gateWhep` lets a
  * test hold the STV-playable gate (the greeting-clip test) — when true, the STV
  * ontrack/canplay is NOT auto-fired; the test fires it manually.
+ *
+ * `opts.openingLine` also plays the agent's opening line after `approvedPermissions`
+ * (stvStartedTalking → stvFinishedTalking on later ticks), like the real server does.
+ * Tests that call speak() right after connect() need it: speak() holds text until that
+ * opening turn ends. Leave it off to test the hold window itself.
  * @param {FakeSocket} socket
  * @param {{audioMode?:boolean, capacityBusyTimes?:number, clientConfig?:object, noCapacity?:boolean, tierExceeded?:boolean,
- *   asrAnswer?: (offer: {type:string, sdp:string}) => Promise<{type:string, sdp:string}>}} [opts]
+ *   openingLine?:boolean, asrAnswer?: (offer: {type:string, sdp:string}) => Promise<{type:string, sdp:string}>}} [opts]
  */
 export function scriptHappyPath(socket, opts = {}) {
   let busyLeft = opts.capacityBusyTimes || 0;
@@ -86,6 +91,10 @@ export function scriptHappyPath(socket, opts = {}) {
       else socket.server('stvNewSession', { session_id: 'sess-123', status: 'session started', webrtc_url: 'https://srs.example/rtc/v1/whep/?app=app&stream=sess-123' });
       // Agent + permissions arrive on a later tick (after the session reply is processed).
       soon(() => { socket.server('showAgent', {}); soon(() => socket.server('askPermissions', { constraints: { audio: true, video: !opts.audioMode } })); });
+    });
+    else if (ev === 'approvedPermissions' && opts.openingLine) soon(() => {
+      socket.server('stvStartedTalking', {});
+      soon(() => socket.server('stvFinishedTalking', { agentContent: 'Hi, how can I help?' }));
     });
     else if (ev === 'asr-webrtc-init') soon(() => socket.server('asr-webrtc-ready', {}));
     // `opts.asrAnswer(offer)` lets a real-browser harness answer the ASR offer with a live
