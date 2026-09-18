@@ -61,7 +61,8 @@ const server = http.createServer(async (req, res) => {
     }
     return;
   }
-  const filePath = path.join(REPO_ROOT, req.url === '/' ? '/examples/event-timing.html' : req.url);
+  const urlPath = req.url.split('?')[0];
+  const filePath = path.join(REPO_ROOT, urlPath === '/' ? '/examples/event-timing.html' : urlPath);
   fs.readFile(filePath, (err, data) => {
     if (err) { res.writeHead(404); res.end('404: ' + req.url); return; }
     res.writeHead(200, { 'Content-Type': MIME[path.extname(filePath)] || 'application/octet-stream' });

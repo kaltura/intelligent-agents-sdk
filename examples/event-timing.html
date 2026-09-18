@@ -63,7 +63,19 @@
     window.session = session;   // for DevTools: session.speaking, session.videoEl, ...
     record('connect:start');
     await session.connect();
-    record('connect:resolved');
+    record('connect:resolved', { speaking: session.speaking });
+
+    // Optional: ?nudge=<text>&nudgeMode=speak|speakNow — fires that call the instant
+    // connect() resolves, to reproduce/verify the session-start commitment-window race
+    // (a scripted opening line the server already committed to via approve(), before
+    // session.speaking has flipped true). nudgeMode defaults to speakNow.
+    const params = new URLSearchParams(location.search);
+    const nudge = params.get('nudge');
+    if (nudge) {
+      const mode = params.get('nudgeMode') || 'speakNow';
+      record('nudge:call', { mode, text: nudge, speaking: session.speaking });
+      session[mode](nudge).then(() => record('nudge:sent', { mode }));
+    }
 
     window.addEventListener('beforeunload', () => session.disconnect());
 
