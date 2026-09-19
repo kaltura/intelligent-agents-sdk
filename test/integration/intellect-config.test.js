@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Management } from '../../src/management/index.js';
+import { Management, SILENT_OPENING } from '../../src/management/index.js';
 import { IntellectConfig, EDITABLE_FIELDS, MODEL_IDS } from '../../src/management/intellect-config.js';
 import { fakeFetch } from '../fakes/fetch.js';
 
@@ -418,6 +418,14 @@ test('intellectConfig.setOpeningPhrase writes the Jinja2 phrase; null clears; ""
   await assert.rejects(() => cfg.setOpeningPhrase(1481, '   ', ADMIN), (e) => e.code === 'bad_request');
   await assert.rejects(() => cfg.setOpeningPhrase(1481, /** @type {any} */ (42), ADMIN), (e) => e.code === 'bad_request');
   assert.equal(f.calls.length, 0);
+});
+
+test('intellectConfig.setOpeningPhrase accepts SILENT_OPENING and writes the silence tag verbatim', async () => {
+  const { cfg, f } = mkMgmt([getDto(), updateEcho]);
+  const r = await cfg.setOpeningPhrase(1481, SILENT_OPENING, ADMIN);
+  assert.equal(r.applied, true);
+  const sent = f.calls.find((c) => c.url.includes('/v1/intellect/update')).body;
+  assert.equal(sent.opening_phrase, '<blank>');
 });
 
 test('intellectConfig.setAvatarSummaryConfig writes a validated object; null clears', async () => {

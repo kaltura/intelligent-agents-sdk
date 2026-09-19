@@ -25,6 +25,7 @@ import { lintPersonaIdentity } from './prompt-lint.js';
  * @param {string} opts.ks                   Admin token.
  * @param {string} [opts.voiceId]            Override the auto-picked preset voice.
  * @param {string} [opts.visualId]           Override the auto-picked preset visual.
+ * @param {string} [opts.openingPhrase]      The avatar's scripted opening line. Wins over the generated profile's phrase. Defaults to the profile's phrase, then `'Hello!'`. Pass `SILENT_OPENING` for a silent opening turn and start the conversation from the client with `kickoff` instead. Must be a non-empty string when given.
  * @param {string[]} [opts.adminTags]
  * @param {number} [opts.maxConversationLength]
  * @param {string} [opts.idempotencyKey]
@@ -32,16 +33,25 @@ import { lintPersonaIdentity } from './prompt-lint.js';
  * @param {object[]} [opts.tools]            OPTIONAL — typed tool definitions (see `tools.api/csv/code`), each created as a standalone Tool entity via `mgmt.tools.add` and linked via `mgmt.intellectConfig.setToolIds`. Off by default.
  * @param {object} [opts.knowledge]          OPTIONAL — RAG corpus + linkage. `{name?, parentId?, description?, categoryId?, autoLink?}`. createCategory (OVP), and when `autoLink:true` the full `knowledge.addRecord` -> `knowledge.addSource` -> `intellectConfig.setKnowledgeIds` -> `knowledge.setEnabled` sequence, are all ungated — a failure records `{linked:false, reason}` and NEVER fails the provision. Off by default.
  * @returns {Promise<{name:string,configId:number,avatarId:string,agentId:string,widgetId:string,profile:object,personaLint:object,blocks?:object,_meta:object}>}
+ * @throws {import('../core/errors.js').KalturaError} `code:'bad_request'` (before any network call) if `openingPhrase` is given but is not a non-empty string.
  * @throws {import('../core/errors.js').KalturaError} `code:'provision_failed'` on any step failure — `body.failedStep` names the step (e.g. `'avatar.create'`), `body.createdSoFar` lists the ids already created (`{configId?, avatarId?, agentId?}`) so you can clean them up.
  */
 export async function provision(mgmt, opts) {
+  if (opts.openingPhrase !== undefined && (typeof opts.openingPhrase !== 'string' || !opts.openingPhrase.trim())) {
+    throw new KalturaError({
+      type: 'about:blank', title: 'bad request', code: 'bad_request',
+      detail: 'provision: openingPhrase must be a non-empty string. Omit it to use the generated profile\'s phrase, or pass SILENT_OPENING for a silent opening turn.',
+    });
+  }
   const created = /** @type {{configId?:number, avatarId?:string, agentId?:string}} */ ({});
   const idem = opts.idempotencyKey || uuidv4();
   let step = 'generateProfile';
   try {
     const profile = await mgmt.application.generateProfile(opts.brief, opts.ks);
     const name = profile?.name || 'Demo agent';
-    const opening = profile?.openingPhrase || 'Hello!';
+    // Caller's explicit phrase wins, then the generated profile's, then a safe default:
+    // the avatar rejects an empty opening, so this is never falsy.
+    const opening = opts.openingPhrase ?? (profile?.openingPhrase || 'Hello!');
 
     step = 'intellect.add';
     const intel = await mgmt.intellects.add({ type: 'internal', status: 2 }, opts.ks);

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Management } from '../../src/management/index.js';
+import { Management, SILENT_OPENING } from '../../src/management/index.js';
 import { fakeFetch } from '../fakes/fetch.js';
 
 /** A fake-fetch that mimics the documented Agentic+Genie responses for the full provision sequence. */
@@ -96,6 +96,50 @@ function baseProvision() {
   const m = new Management({ partnerId: 7654321, adminSecret: 'a'.repeat(32), fetch: f });
   return { f, m };
 }
+
+// ─── openingPhrase option ──────────────────────────────────────────────────────
+const avatarBody = (f) => f.calls.find((c) => c.url.includes('/avatar/create')).body;
+
+test('provision uses the generated profile opening phrase when openingPhrase is omitted', async () => {
+  const { f, m } = baseProvision();
+  await m.provision({ brief: 'x', ks: ADMIN_KS });
+  assert.equal(avatarBody(f).openingPhrase, 'Namaste!');
+});
+
+test('provision({ openingPhrase }) wins over the generated profile phrase (SILENT_OPENING reaches avatar.create)', async () => {
+  const { f, m } = baseProvision();
+  await m.provision({ brief: 'x', ks: ADMIN_KS, openingPhrase: SILENT_OPENING });
+  assert.equal(avatarBody(f).openingPhrase, '<blank>');
+  f.calls.length = 0;
+  await m.provision({ brief: 'x', ks: ADMIN_KS, openingPhrase: 'Welcome to the studio!' });
+  assert.equal(avatarBody(f).openingPhrase, 'Welcome to the studio!');
+});
+
+test('provision falls back to "Hello!" when the profile has no opening phrase and none is given', async () => {
+  const f = fakeFetch([
+    { match: '/application/generateAgentProfile', respond: () => ({ body: { name: 'Quiet', goal: 'help' } }) },
+    { match: '/v1/intellect/add', respond: () => ({ body: { id: 1389, status: 2, prompts: [] } }) },
+    { match: '/v1/intellect/update', respond: () => ({ body: { id: 1389, status: 2 } }) },
+    { match: '/agent/create', respond: () => ({ body: { agentId: 'agent-xyz' } }) },
+    { match: '/catalog-item/list', respond: () => ({ body: { objects: [{ itemId: 'item-1' }], totalCount: 1 } }) },
+    { match: '/avatar/create', respond: () => ({ body: { id: '6a07d63d8ccd85cbfafc5416' } }) },
+    { match: '/application/resolveWidgetId', respond: () => ({ body: { widgetId: '1_v1mj1kxb' } }) },
+  ]);
+  const m = new Management({ partnerId: 7654321, adminSecret: 'a'.repeat(32), fetch: f });
+  await m.provision({ brief: 'x', ks: ADMIN_KS });
+  assert.equal(avatarBody(f).openingPhrase, 'Hello!');
+});
+
+test('provision rejects an empty or non-string openingPhrase as bad_request before any network call', async () => {
+  const { f, m } = baseProvision();
+  for (const openingPhrase of ['', '   ', null, 42, { text: 'hi' }]) {
+    await assert.rejects(
+      () => m.provision({ brief: 'x', ks: ADMIN_KS, openingPhrase: /** @type {any} */ (openingPhrase) }),
+      (e) => e.code === 'bad_request' && /openingPhrase/.test(e.detail) && /SILENT_OPENING/.test(e.detail),
+    );
+  }
+  assert.equal(f.calls.length, 0, 'validation happens pre-network');
+});
 
 test('optional blocks are ABSENT from the result when not requested (back-compat)', async () => {
   const { m } = baseProvision();

@@ -140,10 +140,12 @@ export class Avatars {
    *
    * `openingPhrase` MUST be non-empty. A falsy value (empty string, `null`, or
    * omitted) makes the first turn fail right after `showAgent`; always pass a
-   * non-empty phrase. If your intellect drives its own dynamic opening (e.g.
-   * based on the viewer's prior interactions) and you want no scripted
-   * greeting, pass the SSML silence tag `'<blank>'`: non-empty, so it stays
-   * on the safe path, and silent, so the TTS speaks nothing for it.
+   * non-empty phrase. If you want no scripted greeting (the recommended
+   * fastest-start pattern: start the conversation from the client with the
+   * session's `kickoff` option instead), pass `SILENT_OPENING` (the SSML
+   * silence tag, exported from `@kaltura/intelligent-agents/management`):
+   * non-empty, so it stays on the safe path, and silent, so the TTS speaks
+   * nothing for it and the uninterruptible opening turn ends in under a second.
    *
    * THREE WAYS TO GET A VISUAL — pick exactly one:
    *  - `visual:{id}` — an existing catalog Visual (preset, or your own upload
