@@ -25,20 +25,6 @@ SDK: `mgmt.catalog.list(ks, { type: 'Visual' })` or `{ type: 'Voice' }`.
 
 ---
 
-## Generate an Agent Profile
-
-```
-POST https://api.avatar.us.kaltura.ai/v1/application/generateAgentProfile
-```
-
-```json
-{ "userDescription": "A friendly technical support agent for a video platform" }
-```
-
-Returns `{goal, targetAudience, restrictedTopics, name, openingPhrase}` — pass directly to the intellect's configuration (see [Authentication & Services § The Five Services](authentication.md#the-five-services) for what an intellect is). Takes 2–3 s. The result is not saved automatically.
-
----
-
 ## Upload a Custom Voice (clone)
 
 ```
@@ -164,15 +150,17 @@ adminTags=custom
 
 Send `type=Background` for a backdrop image instead. Only 36 preset Face items and 4 preset Background items exist today (live count) — this is the only way to add a custom one.
 
-**SDK shortcut:** `catalog.createFace(imageBlob, attrs, adminKs)` / `catalog.createBackground(imageBlob, attrs, adminKs)` — same `attrs` shape as `createVisual`. See [build/avatar-and-agent.md § Three ways to get a visual](build/avatar-and-agent.md#three-ways-to-get-a-visual) for how to compose the result into an avatar.
+**SDK shortcut:** `catalog.createFace(imageBlob, attrs, adminKs)` / `catalog.createBackground(imageBlob, attrs, adminKs)` — same `attrs` shape as `createVisual`. Composing the two halves into an avatar: [build/avatar-and-agent.md § Compose from a custom Face and Background](build/avatar-and-agent.md#compose-from-a-custom-face-and-background).
 
 ---
 
 ## End-to-end: custom portrait avatar, server to browser
 
-`catalog.createVisual` and `avatars.create` (steps 1 and the first call of step 2) are covered by the SDK's own integration tests (`test/integration/avatars-catalog.test.js`). Full recipe:
+Each step lives on its own page. Follow them in order:
 
-1. Server: `catalog.createVisual(portraitBlob, { name, genderPresentation, background, skinTone, ageGroup, hairColor }, adminKs)` → `{ itemId }`.
-2. Server: `avatars.create({ voice: { id: voiceItemId }, visual: { id: itemId }, openingPhrase: SILENT_OPENING }, adminKs)` → `agents.create` → `application.resolveWidgetId`. The silent opening (`SILENT_OPENING`, exported from `./management`) lets the browser start the conversation with an interruptible first turn, see step 3.
-3. Browser: `sessions.createWidgetToken({ widgetId })` → `application.appInit(widgetKs)` → `new KalturaAvatarSession({ token: init.ks, conversationManagerUrl: init.conversationManagerUrl, srsBaseUrl: init.srsBaseUrl, turnServerUrl: init.turnServerUrl, videoEl, kickoff: 'Greet the user and briefly say how you can help.' })`. The SDK sends `kickoff` once, as soon as the server accepts input ([START-THE-CONVERSATION.md](../START-THE-CONVERSATION.md)). No admin secret ever reaches the browser.
-4. The portrait avatar animates live in `videoEl`; type or speak to it and it replies in the portrait's face with the chosen voice.
+1. Upload the portrait: [§ Upload a Custom Visual](#upload-a-custom-visual-portrait--animated-avatar), above. Returns `itemId`.
+2. Create the avatar with `visual: { id: itemId }`, then the agent: [Agent Components · Create an Avatar and an Agent](build/avatar-and-agent.md).
+3. Resolve the widget id and initialize the browser runtime: [Widget & Runtime Init](deploy.md).
+4. Start the conversation from the browser with a silent opening and `kickoff`: [START-THE-CONVERSATION.md](../START-THE-CONVERSATION.md).
+
+Steps 1 and 2 are covered by the SDK's integration tests (`test/integration/avatars-catalog.test.js`).

@@ -4,6 +4,22 @@
 
 An intellect is the config object behind your agent's brain. It holds the prompts, model settings, tools, knowledge base links, and feature capabilities that shape how the agent behaves. This page shows how to create one and configure its main fields.
 
+## Generate an Agent Profile
+
+Optional first step: turn a one-line description into the prompt values an intellect needs.
+
+```
+POST https://api.avatar.us.kaltura.ai/v1/application/generateAgentProfile
+```
+
+```json
+{ "userDescription": "A friendly technical support agent for a video platform" }
+```
+
+Returns `{goal, targetAudience, restrictedTopics, name, openingPhrase}`. Takes 2–3 s. Nothing is saved: pass `goal`, `targetAudience` and `restrictedTopics` into the intellect's prompts (§ Configure an Intellect, below) and `openingPhrase` into `avatar/create` ([avatar-and-agent.md](avatar-and-agent.md)).
+
+---
+
 ## Create an Intellect
 
 ```

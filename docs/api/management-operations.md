@@ -24,26 +24,14 @@ The request also takes a top-level `orderBy` (`+createdAt`, `-createdAt`, `+upda
 
 | Operation | Endpoint | Body |
 |-----------|----------|------|
-| Create | `POST /v1/avatar/create` | `{"voice":{"id":"...","speed"?:1.0}, "visual"?:{"id":"...","motionControl"?:{...}}, "face"?:{"id":"..."}, "background"?:{"type":"color"\|"visual","value"?:"..."}, "templateId"?:"...", "name"?:"...", "openingPhrase"?:"..."}` (`openingPhrase` non-empty; `SILENT_OPENING` for no spoken opening) — see § Compose a visual, below. |
+| Create | `POST /v1/avatar/create` | `{"voice":{"id":"...","speed"?:1.0}, "visual"?:{"id":"...","motionControl"?:{...}}, "face"?:{"id":"..."}, "background"?:{"type":"color"\|"visual","value"?:"..."}, "templateId"?:"...", "name"?:"...", "openingPhrase"?:"..."}` (`openingPhrase` non-empty; `SILENT_OPENING` for no spoken opening). Visual resolution rules: [build/avatar-and-agent.md § Three ways to get a visual](build/avatar-and-agent.md#three-ways-to-get-a-visual). |
 | List | `POST /v1/avatar/list` | `{"pager":{"offset":0,"limit":30}}` |
 | Get | `POST /v1/avatar/get` | `{"id":"24-char-hex"}` |
 | Update | `POST /v1/avatar/update` | `{"id":"24-char-hex", ...fields}` — PATCH semantics (omitted fields are preserved); `templateId` is create-only (400 on update) |
 | Delete | `POST /v1/avatar/delete` | `{"id":"24-char-hex"}` |
-| List templates | `POST /v1/avatar-template/list` | `{"pager":{"offset":0,"limit":30}}` — curated presets, each pairing a `voice` with either a ready `visual` or a `face`/`background` pair (§ Create an Avatar). SDK: `mgmt.avatars.listTemplates(ks, opts)`. |
+| List templates | `POST /v1/avatar-template/list` | `{"pager":{"offset":0,"limit":30}}` — curated presets, each pairing a `voice` with either a ready `visual` or a `face`/`background` pair ([build/avatar-and-agent.md § Three ways to get a visual](build/avatar-and-agent.md#three-ways-to-get-a-visual)). SDK: `mgmt.avatars.listTemplates(ks, opts)`. |
 
-**Compose a visual on create.** Needs exactly one of these three:
-
-1. `visual:{id}` — wins only when `face`/`background` are BOTH omitted, or BOTH sent as a complete pair. Sending just one of `face`/`background` alongside `visual` is still a domain failure; `visual` does not exempt it.
-2. `face:{id}` + `background:{type,value}`, composing a NEW visual. Both are required together, even alongside `visual`, UNLESS `templateId` is also given — a template can carry its own `face`/`background`, filling in whichever half is missing. You can't send `face` now and add `background` later at create time. Once the avatar exists, `background` alone on update swaps the background (see the update rule below).
-3. `templateId` + whichever of `face`/`background`/`visual` the template doesn't already supply. `templateId` alone is a domain failure unless the template already resolves to a complete visual on its own.
-
-`background.value` is required for `type:'visual'`, and optional (defaults to white) for `type:'color'`. For `type:'color'`, `value` must be a plain 6-digit hex string (`#RRGGBB`) with **no alpha channel**: an 8-digit hex (`#RRGGBBAA`), `rgba(...)`, or CSS4 `rgb(... / ...%)` all fail with `AVATAR_INVALID_BACKGROUND_ID` ("must be a 6-digit hex value"), live-confirmed against production.
-
-Full walkthrough, including `catalog.createFace`/`createBackground`: [build/avatar-and-agent.md § Three ways to get a visual](build/avatar-and-agent.md#three-ways-to-get-a-visual).
-
-An incomplete/invalid `face`/`background` pairing on **create** is a HTTP-200 `KalturaAPIException` (`AVATAR_MISSING_VISUAL_RESOLUTION`, `AVATAR_FAILED_TO_COMPOSE_VISUAL`, `AVATAR_MISSING_VOICE`, `AVATAR_NOT_FOUND`). `avatars.create` catches the incomplete-pairing case pre-network. The composed result is reflected in `visual.composition` and a fresh raw `previewImageUrl`/`loadingVideoUrl` — inspect those to see what was actually built.
-
-**Recomposing on update is asymmetric, unlike create.** The rule depends on the avatar's existing state:
+**Recomposing on update is asymmetric, unlike create** (where `face`/`background` must travel together). The rule depends on the avatar's existing state:
 
 - `background` alone recomposes against the avatar's current face — a valid "just change the background" update.
 - `face` alone is accepted but silently a no-op: there's nothing to pair it with, so the existing visual is left untouched.
