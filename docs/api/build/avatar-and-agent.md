@@ -23,11 +23,11 @@ POST https://api.avatar.us.kaltura.ai/v1/avatar/create
 
 `openingPhrase` is the line the avatar speaks as the first, uninterruptible turn of every session. It must be a non-empty string. For the fastest interruptible start pass `SILENT_OPENING` (exported from `./management`, the string `<blank>`): the opening turn then produces no speech, and the browser sends the first turn with the session's `kickoff` option. See [START-THE-CONVERSATION.md](../../START-THE-CONVERSATION.md).
 
-If `visual.id` points at a custom uploaded portrait rather than a catalog preset, how you crop that source photo directly affects how the persona renders on this avatar — pad it generously rather than a tight headshot crop:
+If `visual.id` points at a custom uploaded portrait rather than a catalog preset, the framing of that source photo decides how the persona renders on this avatar. The renderer scales the face to a fixed fraction of the canvas and centers it, so a padded portrait fills the canvas and a tight headshot renders with black borders:
 
 ![Tight headshot crops shrink onto the render canvas with black borders; a generously padded portrait scales to fill it edge-to-edge](../img/avatar-photo-framing.svg)
 
-See [Catalog & Assets § Upload a Custom Visual](../design.md#upload-a-custom-visual-portrait--animated-avatar) for the full crop-fit explanation.
+Prepare the photo to the spec in [Catalog & Assets § Upload a Custom Visual](../design.md#upload-a-custom-visual-portrait--animated-avatar): square 2600×2600 canvas, head 20 to 25% of the height, centered, background reaching every edge. That section also has a paste-ready prompt for AI image models.
 
 ### Three ways to get a visual
 

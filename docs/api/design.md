@@ -86,17 +86,68 @@ attributes={"visual":{"name":"My Portrait","genderPresentation":"Feminine","back
 adminTags=custom
 ```
 
-Returns a catalog item whose `itemId` is the catalog visual. Pass it as `visual.id` in `avatar/create` (or `visualId` in `provision`). The model **animates the portrait live at runtime** — no ops involvement, self-serve. Verified: a real 2.4 MB portrait JPEG (`avatar-session/create` → `{success:true, sessionId}`).
+Returns a catalog item whose `itemId` is the catalog visual. Pass it as `visual.id` in `avatar/create` (or `visualId` in `provision`). The renderer animates the portrait live at runtime. No manual step is involved: upload, create the avatar, start a session.
 
-The backend preprocesses the uploaded image before rendering. It crop-fits the source to a fixed face-height-to-frame ratio and centers it on the render canvas. A tight "headshot"-style crop, the intuitive upload, is the worst case: the more the face already fills the source frame, the more the backend downscales it to hit that ratio, and the bigger the resulting black borders around the rendered avatar.
+### How the renderer frames your photo
 
-One confirmed case padded the source out to roughly 2600×2600, with the face occupying a small fraction of the frame, and produced an edge-to-edge render with no borders. This is an observed data point from one real upload, not a documented API contract. The exact ratio isn't published, so pad generously and check the result in a live session rather than assuming this number is precise.
+The renderer applies one fixed rule to every source image: it scales the image so the face is a fixed fraction of the canvas height, then centers the face on the canvas. Everything else follows from that rule.
+
+| Your source photo | What renders |
+|---|---|
+| The face fills most of the frame (a tight headshot) | The whole image is scaled down until the face reaches the target size. The canvas around it stays black. |
+| The face is a small part of a large frame (a padded portrait) | The image is cropped in around the face and fills the canvas edge to edge. No borders. |
+
+A padded source can always be cropped in. A tight source can only be scaled down, and that scaling is what produces the borders. Pad more, never less.
 
 ![Tight headshot crops shrink onto the render canvas with black borders; a generously padded portrait scales to fill it edge-to-edge](img/avatar-photo-framing.svg)
 
-The API itself accepts any subset of the attribute fields, including none. Video-clip ingest is not available through this API.
+### Photo specification
 
-**SDK shortcut:** `catalog.createVisual(imageBlob, { name, genderPresentation, background, skinTone, ageGroup, hairColor }, adminKs)` — requires `name` and `genderPresentation` client-side (`bad_request` before any network call if either is missing) and defaults the rest to a consistent baseline look. Returns `{ itemId, loadingVideo }` (the backend's raw response shape — the SDK doesn't normalize these field names; treat as best-effort until the API contract is pinned).
+Prepare the source image to this spec before upload. A photo that meets it renders edge to edge.
+
+| Property | Requirement |
+|---|---|
+| Canvas | Square, 2600×2600 px. Minimum 2048×2048 px. |
+| Head height (chin to top of hair) | 20 to 25% of the canvas height. |
+| Head position | Centered on the canvas, horizontally and vertically. The renderer centers on the face, so equal room on every side gives it the most to work with. |
+| Body | Shoulders and upper chest visible. Arms relaxed, not raised. |
+| Background | One continuous background that reaches every edge. No borders, letterbox bars, or transparent areas. |
+| Subject | One person, facing the camera, eyes open, mouth closed, even lighting. No sunglasses, hats that hide the hairline, or hands near the face. |
+| File | JPEG or PNG, sRGB. |
+
+Most photos you receive are tight portraits or phone snapshots. Do not crop them tighter. Extend them: upscale, fill the background outward, then resize to the square canvas.
+
+### Prepare a photo with an AI image model
+
+Give an image model that supports outpainting (Gemini, GPT Image, Higgsfield, or similar) the source photo and this prompt. It performs the three steps in order: upscale, extend, resize.
+
+```text
+Prepare this photo as an avatar source image. Keep the person's identity, face, hair,
+skin tone, expression, and clothing exactly as they are. Do not restyle, beautify,
+or relight the person.
+
+1. Upscale the photo so the face stays sharp at the final size, with no visible noise
+   or compression artifacts.
+2. Extend the picture outward on all sides by continuing the existing background
+   naturally (outpaint), until the canvas is square and the head, from chin to top of
+   hair, is 20 to 25% of the canvas height. Keep the head centered on the canvas,
+   horizontally and vertically, with the shoulders and upper chest visible below it.
+   The background must reach every edge: no borders, frames, bars, or transparent areas.
+3. Output one 2600×2600 px JPEG or PNG.
+```
+
+If the photo already has a flat, single-color background, pad it with that color instead of an AI model. Measure the head height `h` in pixels, then pad to a square of about 4.5×`h` and resize:
+
+```bash
+side=$((h * 9 / 2))
+magick portrait.jpg -gravity center -background '#f2f2f2' -extent "${side}x${side}" -resize 2600x2600 avatar-source.jpg
+```
+
+Before upload, check the result against the spec table: square canvas, head height in range, head centered, background touching every edge, and the person unchanged next to the original.
+
+The API accepts any subset of the attribute fields, including none. Video-clip ingest is not available through this API.
+
+**SDK shortcut:** `catalog.createVisual(imageBlob, { name, genderPresentation, background, skinTone, ageGroup, hairColor }, adminKs)` requires `name` and `genderPresentation` client-side (`bad_request` before any network call if either is missing) and defaults the rest to a consistent baseline look. Returns the server response as is: `{ itemId, loadingVideo }`.
 
 ## Upload a custom Face or Background (compose-a-visual path)
 
