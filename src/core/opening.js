@@ -2,10 +2,15 @@
  * The silent opening phrase.
  *
  * An avatar's `openingPhrase` must be a non-empty string, and the server-scripted
- * opening turn it produces cannot be interrupted. `SILENT_OPENING` is the SSML
- * silence tag: non-empty, so the opening turn still runs and the session stays on
- * the normal path, but the TTS speaks nothing for it, so the turn ends in well
+ * opening turn it produces cannot be interrupted. `SILENT_OPENING` is a non-empty
+ * phrase the voice engine renders as silence: the opening turn still runs and the
+ * session stays on the normal path, but nothing is spoken, so the turn ends in well
  * under a second and the agent is ready for input almost immediately.
+ *
+ * The raw phrase is a control token, not something to show a person. The session
+ * classes surface the opening turn as `SILENT_OPENING_LABEL` (`[silence]`) on
+ * `transcript`, `speechChunk` and `avatarStopTalking`, the same marker captions use
+ * for a silent stretch, so a UI can render it as-is.
  *
  * Pair it with a client `kickoff` (see the session classes) to have the agent
  * start the conversation with an interruptible, prompt-driven greeting instead
@@ -14,6 +19,9 @@
 import { KalturaError } from './errors.js';
 
 export const SILENT_OPENING = '<blank>';
+
+/** What a UI shows for the silent opening turn. */
+export const SILENT_OPENING_LABEL = '[silence]';
 
 /**
  * True when `text` is the silent opening phrase (ignoring surrounding whitespace).

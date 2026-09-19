@@ -327,14 +327,15 @@
     };
     for (const ev of EVENTS) session.on(ev, handler(ev));
 
-    // KalturaAgentSession forwards only the transport-neutral events. The
-    // avatar-only ones (speechChunk, avatarStart/StopTalking, interrupted,
-    // disclosure, micStarted, reconnecting, ...) are read off each transport as
+    // KalturaAgentSession forwards the conversation-rendering events (including
+    // the avatar-only speechChunk/avatarStart/StopTalking/interrupted). The rest
+    // (disclosure, micStarted, reconnecting, ...) are read off each transport as
     // it is attached, which is the documented `transportChanged` pattern.
     // `transportChanged` fires before the transport connects, so opening-turn
     // events are recorded too.
     const FACADE_EVENTS = new Set([
       'transcript', 'turnStart', 'turnEnd', 'error', 'warning', 'responsePending', 'responseSettled',
+      'speechChunk', 'avatarStartTalking', 'avatarStopTalking', 'interrupted',
       'ended', 'stateChange', 'modeChanged', 'transportChanged',
     ]);
     const wired = new WeakSet();

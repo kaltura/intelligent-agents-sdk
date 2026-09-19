@@ -420,7 +420,7 @@ test('intellectConfig.setOpeningPhrase writes the Jinja2 phrase; null clears; ""
   assert.equal(f.calls.length, 0);
 });
 
-test('intellectConfig.setOpeningPhrase accepts SILENT_OPENING and writes the silence tag verbatim', async () => {
+test('intellectConfig.setOpeningPhrase accepts SILENT_OPENING and writes it verbatim', async () => {
   const { cfg, f } = mkMgmt([getDto(), updateEcho]);
   const r = await cfg.setOpeningPhrase(1481, SILENT_OPENING, ADMIN);
   assert.equal(r.applied, true);

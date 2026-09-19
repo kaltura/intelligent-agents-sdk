@@ -87,6 +87,29 @@ test('connect builds the starting transport with the merged shared cfg and forwa
   assert.deepEqual(got, [{ text: 'hi', type: 'final' }]);
 });
 
+test('forwards the reply-rendering avatar events; disclosure and micStarted stay on the transport', async () => {
+  const { session, made } = newSession();
+  await session.connect();
+  const t = made.avatar[0];
+  const got = {};
+  for (const ev of ['speechChunk', 'avatarStartTalking', 'avatarStopTalking', 'interrupted', 'disclosure', 'micStarted']) {
+    got[ev] = [];
+    session.on(ev, (p) => got[ev].push(p));
+  }
+  t.emit('avatarStartTalking', {});
+  t.emit('speechChunk', { text: 'hi', speechId: 's1', durationMs: 300 });
+  t.emit('interrupted', { at: 1 });
+  t.emit('avatarStopTalking', { text: 'hi' });
+  t.emit('disclosure', { text: 'AI' });
+  t.emit('micStarted', {});
+  assert.deepEqual(got.avatarStartTalking, [{}]);
+  assert.deepEqual(got.speechChunk, [{ text: 'hi', speechId: 's1', durationMs: 300 }]);
+  assert.deepEqual(got.interrupted, [{ at: 1 }]);
+  assert.deepEqual(got.avatarStopTalking, [{ text: 'hi' }]);
+  assert.deepEqual(got.disclosure, [], 'pairs with transport.acknowledgeDisclosure()');
+  assert.deepEqual(got.micStarted, [], 'pairs with transport.startMic()/micStream');
+});
+
 test('connect is once-only; failure lands in failed with reason transport_failed', async () => {
   const boom = Object.assign(new Error('socket down'), { code: 'connect_failed' });
   const { session, made } = newSession({ prep: (t) => { t.connectImpl = () => { throw boom; }; } });

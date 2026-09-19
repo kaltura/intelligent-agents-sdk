@@ -22,7 +22,7 @@ The user hears the agent's own greeting about two seconds after `connect()` reso
 
 Every avatar has an `openingPhrase`. The server speaks it as the first turn of a session, and that turn cannot be interrupted: anything the user says or types while it plays is ignored by the server. The SDK protects typed text (`speak()` holds it until the turn ends, see below), but the user still waits for the whole scripted line before the agent can react to them.
 
-A silent opening removes that wait. `SILENT_OPENING` (the string `<blank>`) is a valid, non-empty opening phrase that produces no speech. The opening turn still runs, so the session follows the normal path, but it ends in well under a second. The `kickoff` text then goes out as the first real turn. The agent's reply to it is an ordinary, interruptible turn driven by your prompt, not a fixed script.
+A silent opening removes that wait. `SILENT_OPENING` is a valid, non-empty opening phrase that produces no speech. The opening turn still runs, so the session follows the normal path, but it ends in well under a second. The `kickoff` text then goes out as the first real turn. The agent's reply to it is an ordinary, interruptible turn driven by your prompt, not a fixed script.
 
 | | Scripted `openingPhrase` | `SILENT_OPENING` + `kickoff` |
 |---|---|---|
@@ -44,7 +44,7 @@ Three places can set the opening phrase. The intellect's phrase, when set, overr
 | Avatar | `avatars.create({ ..., openingPhrase: SILENT_OPENING }, ks)` or `avatars.update({ id: avatarId, openingPhrase: SILENT_OPENING }, ks)` | The avatar-level default for every session on that avatar. |
 | Intellect | `intellectConfig.setOpeningPhrase(configId, SILENT_OPENING, ks)` | Overrides the avatar's phrase. Pass `null` to clear and fall back to the avatar's phrase. |
 
-`SILENT_OPENING` is exported from both `./management` and `./experience`.
+`SILENT_OPENING` is exported from both `./management` and `./experience`, together with `SILENT_OPENING_LABEL` (`[silence]`), the caption text the session classes emit for the silent turn.
 
 ## The `kickoff` option
 
@@ -88,12 +88,12 @@ Event order for an avatar session with `SILENT_OPENING` and a `kickoff`, with ty
 |---|---|---|
 | 1 | `connect()` starts. The mic prompt, the socket handshake and the media negotiation run alongside each other. | 0 |
 | 2 | `connect()` resolves, `state === 'connected'`. The silent opening turn is already committed. | 2.2–3.6 s |
-| 3 | `avatarStartTalking`, then `avatarStopTalking` with `text: ''` for the opening turn. No `transcript` and no `speechChunk` are emitted for it. | ends about 0.5 s after step 2 |
+| 3 | `avatarStartTalking`, then one `transcript`/`speechChunk` and `avatarStopTalking`, all with `text: '[silence]'` (`SILENT_OPENING_LABEL`) for the opening turn. | ends about 0.5 s after step 2 |
 | 4 | The SDK sends the kickoff. `session.kickoff.sent` becomes `true`. | same tick as step 3 |
 | 5 | `responsePending` fires when the server acknowledges the turn (its first think delta). Show a "thinking" indicator here. | tens of ms after step 4 |
 | 6 | `speechChunk` / `transcript {type:'agent'}` / `avatarStartTalking` for the agent's first real words. `responseSettled` fires. | about 1.8 s after step 2 |
 
-`avatarStartTalking` and `avatarStopTalking` still fire for the silent opening. They drive the hold described next, so an app that toggles a "speaking" indicator on them sees a brief flicker of under a second. The `avatarStopTalking.text` payload is `''` for the silent opening, never `<blank>`. Gate that indicator on `speechChunk` or `transcript` instead if you want it to track audible speech only.
+`avatarStartTalking` and `avatarStopTalking` still fire for the silent opening. They drive the hold described next, so an app that toggles a "speaking" indicator on them sees a brief flicker of under a second. The silent turn's `transcript`, `speechChunk` and `avatarStopTalking.text` all carry `SILENT_OPENING_LABEL` (`[silence]`), the same marker captions use for a silent stretch, so a transcript view can render it as-is or skip entries equal to the label. The raw phrase never reaches a listener.
 
 ## `speak()` during the opening turn
 

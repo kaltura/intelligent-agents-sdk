@@ -53,7 +53,7 @@ export {
 export { Emitter } from './emitter.js';
 export { KalturaError } from '../core/errors.js';
 // The silent opening phrase, so a client can recognise an agent provisioned with it.
-export { SILENT_OPENING, isSilentOpening } from '../core/opening.js';
+export { SILENT_OPENING, SILENT_OPENING_LABEL, isSilentOpening } from '../core/opening.js';
 export { redact } from '../core/redact.js';
 // Output-handling safety helpers (OWASP LLM05) — make the safe render path the easy one.
 export { safeText, safeUrl, renderSafeLink, sanitizeJson, clampInbound } from '../core/safety.js';

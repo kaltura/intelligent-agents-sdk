@@ -165,10 +165,10 @@ The `kickoff` option on `KalturaAvatarSession`, `KalturaChatSession` and `Kaltur
 
 *Verify:* `agent_verify.mjs` greps `src/experience/avatar-media.js` for `document\.`, `createElement`, `setTimeout`, `setInterval`, `requestAnimationFrame`, `console\.`. Zero matches required.
 
-**Rule M-2: A silent opening never surfaces as text.**  
-When the opening phrase is `SILENT_OPENING` (`<blank>`), the opening turn's `avatarStartTalking`/`avatarStopTalking` still fire (they drive the `speak()` hold), but no `transcript` or `speechChunk` carries the `<blank>` payload and `avatarStopTalking.text` is `''`. The filter applies only to the opening turn's speech id; a `<blank>` in a normal reply is left alone.
+**Rule M-2: The raw silent opening phrase never reaches a listener.**  
+When the opening phrase is `SILENT_OPENING` (`<blank>`), the opening turn surfaces as `SILENT_OPENING_LABEL` (`[silence]`) on `transcript`, `speechChunk` and `avatarStopTalking.text`, so a UI can render it as-is. `avatarStartTalking`/`avatarStopTalking` still fire (they drive the `speak()` hold). The relabel applies only to the opening turn's speech id; a `<blank>` in a normal reply is left alone.
 
-*Verify:* `test/unit/kickoff.test.js` "silent opening" tests: `<blank>` on the opening speech id emits no transcript/speechChunk while start/stop still fire; a spoken opening still surfaces; `<blank>` on a normal reply is not filtered.
+*Verify:* `test/unit/kickoff.test.js` "silent opening" tests: `<blank>` on the opening speech id surfaces as `[silence]` on transcript/speechChunk/stop and the raw phrase never reaches a listener; a spoken opening still surfaces; `<blank>` on a normal reply is not relabelled.
 
 ---
 
@@ -204,6 +204,6 @@ This table summarizes what each rule checks, not whether it currently passes —
 | D-4 | DX | Typed `invalid_state` on lifecycle misuse; idempotent teardown/same-target no-ops; media setters state-independent | grep + lifecycle tests |
 | D-5 | DX | `kickoff` sent at most once per session object; never on `resume()`/reconnect/`switchMode()` | kickoff.test.js + chat/agent-session tests |
 | M-1 | Media | `avatar-media.js` has no `document`, DOM creation, timers or `console` | grep |
-| M-2 | Media | Silent opening never surfaces as `transcript`/`speechChunk` text; `avatarStopTalking.text` is `''` | kickoff.test.js |
+| M-2 | Media | Silent opening surfaces as `SILENT_OPENING_LABEL` on `transcript`/`speechChunk`/`avatarStopTalking.text`, never as the raw phrase | kickoff.test.js |
 
 Rule D-2 warns rather than errors by design — see Rule D-2 above for why.

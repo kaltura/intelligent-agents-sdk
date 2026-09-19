@@ -56,7 +56,7 @@ import {
 import { inspectKs } from '../management/ks-inspect.js';
 import { assertRequestVars } from '../management/conversations.js';
 import { KalturaError } from '../core/errors.js';
-import { isSilentOpening, normalizeKickoff } from '../core/opening.js';
+import { isSilentOpening, normalizeKickoff, SILENT_OPENING_LABEL } from '../core/opening.js';
 import { redact } from '../core/redact.js';
 import { randId } from '../core/ids.js';
 import { makeAuditEmitter } from '../core/session.js';
@@ -2234,16 +2234,12 @@ export class KalturaAvatarSession extends Emitter {
       // The server's own check-in ("are you still there?") and goodbye turns cannot be
       // interrupted and drop any text sent during them — hold speak() until they end.
       if (isUninterruptibleSpeechId(p?.speechId)) this._uninterruptibleTurn = true;
-      // A SILENT_OPENING opening turn speaks nothing — its `<blank>` tag never reaches the app
-      // as text. The turn's start/stop events still fire (they drive the speak() hold).
-      if (isSilentOpeningTurn(p?.speechId, p?.text)) return;
-      this.emit('transcript', { text: clampInbound(p?.text || ''), type: 'final', speechId: p?.speechId, words: [] });
+      this.emit('transcript', { text: openingText(p?.speechId, p?.text) ?? clampInbound(p?.text || ''), type: 'final', speechId: p?.speechId, words: [] });
     });
 
     // Captions (authoritative).
     socket.on('stvSpeechChunk', (p) => {
-      if (isSilentOpeningTurn(p?.speechId, p?.text)) return;   // see generatingSpeech
-      const text = clampInbound(p?.text);
+      const text = openingText(p?.speechId, p?.text) ?? clampInbound(p?.text);
       this.emit('speechChunk', { text, durationMs: p?.durationMs, speechId: p?.speechId });
       const tr = this._tracker.ingestChunk({ ...p, text });
       if (tr) this.emit('transcript', tr);
@@ -2254,7 +2250,7 @@ export class KalturaAvatarSession extends Emitter {
     socket.on('stvStartedTalking', () => { this._clearBrainWatchdog(); this._settleResponsePending(); this._touchActivity(); this._completer.touch(); this.speaking = true; this._turnSawOutput = true; this._audit('turn.avatar_spoke', 'success', {}); this.emit('avatarStartTalking', {}); });
     // _endUninterruptibleTurn() runs before the app-facing event so text held by speak() is on
     // the wire first, and a speak() called from inside the listener is sent, not held again.
-    socket.on('stvFinishedTalking', (p) => { this.speaking = false; this._endUninterruptibleTurn(); this._tracker.finishUtterance(); this._completer.touch(); this.emit('avatarStopTalking', { text: isSilentOpening(p?.agentContent) ? '' : clampInbound(p?.agentContent) }); });
+    socket.on('stvFinishedTalking', (p) => { this.speaking = false; this._endUninterruptibleTurn(); this._tracker.finishUtterance(); this._completer.touch(); this.emit('avatarStopTalking', { text: isSilentOpening(p?.agentContent) ? SILENT_OPENING_LABEL : clampInbound(p?.agentContent) }); });
     socket.on('agentInterrupted', () => { this.speaking = false; this._endUninterruptibleTurn(); this._settleResponsePending(); this._turnSawOutput = true; this.emit('interrupted', {}); });
     socket.on('userStartedTalking', () => { this._clearBrainWatchdog(); this._touchActivity(); this.emit('userStartedTalking', {}); });
     // The user's turn produced a transcription → the brain should now respond; watch for a stall (R5)
@@ -2829,12 +2825,16 @@ function isUninterruptibleSpeechId(speechId) {
 }
 
 /**
- * The scripted opening turn (speechId `<nonce>-approved-permissions`) carrying the
- * `SILENT_OPENING` tag: the TTS speaks nothing for it, so neither should the app's captions.
+ * Caption text for the scripted opening turn (speechId `<nonce>-approved-permissions`)
+ * when it carries `SILENT_OPENING`: the app sees `SILENT_OPENING_LABEL`, never the raw
+ * phrase. `null` for every other turn, including a normal reply that happens to contain
+ * the phrase, so the caller falls through to the regular text.
  * @param {unknown} speechId @param {unknown} text
+ * @returns {string|null}
  */
-function isSilentOpeningTurn(speechId, text) {
-  return typeof speechId === 'string' && speechId.endsWith('-approved-permissions') && isSilentOpening(text);
+function openingText(speechId, text) {
+  const opening = typeof speechId === 'string' && speechId.endsWith('-approved-permissions');
+  return opening && isSilentOpening(text) ? SILENT_OPENING_LABEL : null;
 }
 
 

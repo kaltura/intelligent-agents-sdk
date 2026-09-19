@@ -580,23 +580,25 @@ section('Part 6 — Media path');
   }
 }
 
-// M-2: a silent opening (SILENT_OPENING) never surfaces as text. The filter
-// is keyed on the opening speech id; a spoken opening and a `<blank>` in a
-// normal reply are left alone.
+// M-2: the raw silent opening phrase (SILENT_OPENING) never reaches a listener;
+// the opening turn surfaces as SILENT_OPENING_LABEL instead. The relabel is
+// keyed on the opening speech id; a spoken opening and a `<blank>` in a normal
+// reply are left alone.
 {
   const sessionSrc = read(join(SDK_SRC, 'experience', 'session.js'));
   const openingSrc = read(join(SDK_SRC, 'core', 'opening.js'));
   const kickoffTest = read(join(ROOT, 'test', 'unit', 'kickoff.test.js'));
   const problems = [];
   if (!/export const SILENT_OPENING\s*=/.test(openingSrc)) problems.push('src/core/opening.js: SILENT_OPENING not exported');
-  if (!/isSilentOpeningTurn\(/.test(sessionSrc)) problems.push('src/experience/session.js: no isSilentOpeningTurn() filter');
+  if (!/export const SILENT_OPENING_LABEL\s*=/.test(openingSrc)) problems.push('src/core/opening.js: SILENT_OPENING_LABEL not exported');
+  if (!/function openingText\(/.test(sessionSrc)) problems.push('src/experience/session.js: no openingText() relabel helper');
   for (const needle of [
-    'on the opening speechId emits no transcript/speechChunk; start/stop still fire',
+    'on transcript/speechChunk/stop',
     'silent opening: a spoken opening phrase on the opening speechId still surfaces',
-    'on a normal reply speechId is not filtered',
+    'on a normal reply speechId is not relabelled',
   ]) if (!kickoffTest.includes(needle)) problems.push(`test/unit/kickoff.test.js missing "${needle}"`);
-  if (problems.length === 0) pass('M-2', 'Silent opening never surfaces as text — speech-id-scoped filter + tests present (run below)');
-  else fail('M-2', 'silent-opening filter not verifiable', problems.join('\n      '));
+  if (problems.length === 0) pass('M-2', 'Silent opening surfaces as SILENT_OPENING_LABEL, never as the raw phrase — speech-id-scoped relabel + tests present (run below)');
+  else fail('M-2', 'silent-opening relabel not verifiable', problems.join('\n      '));
 }
 
 // ══════════════════════════════════════════════════════════════════════════

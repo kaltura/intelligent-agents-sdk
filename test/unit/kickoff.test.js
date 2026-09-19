@@ -8,7 +8,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { KalturaAvatarSession, SILENT_OPENING } from '../../src/experience/index.js';
+import { KalturaAvatarSession, SILENT_OPENING, SILENT_OPENING_LABEL } from '../../src/experience/index.js';
 import { FakeSocket, scriptHappyPath } from '../fakes/socket.js';
 import { FakeRTCPeerConnection, FakeVideoEl, FakeMediaStreamCtor, fakeGetUserMedia } from '../fakes/rtc.js';
 
@@ -287,9 +287,9 @@ test('onBeforeSend rewrite still sends the rewritten kickoff (echo then no longe
   assert.deepEqual(transcripts.filter((t) => t.type === 'user').map((t) => t.text), [`${KICKOFF} [ctx]`]);
 });
 
-// ─────────────────────────── silent-opening filter ───────────────────────────
+// ─────────────────────────── silent-opening label ───────────────────────────
 
-test(`silent opening: '${SILENT_OPENING}' on the opening speechId emits no transcript/speechChunk; start/stop still fire`, async () => {
+test(`silent opening: '${SILENT_OPENING}' on the opening speechId surfaces as '${SILENT_OPENING_LABEL}' on transcript/speechChunk/stop`, async () => {
   const { session, socket } = newSession();
   scriptHappyPath(socket);
   await session.connect();
@@ -301,12 +301,15 @@ test(`silent opening: '${SILENT_OPENING}' on the opening speechId emits no trans
   socket.server('stvStartedTalking', {});
   socket.server('stvSpeechChunk', { speechId: OPENING_ID, text: SILENT_OPENING, durationMs: 10 });
   socket.server('stvFinishedTalking', { agentContent: SILENT_OPENING });
-  assert.deepEqual(transcripts, []);
-  assert.deepEqual(chunks, []);
+  assert.ok(transcripts.length >= 1);
+  assert.ok(transcripts.every((t) => t.text === SILENT_OPENING_LABEL));
+  assert.equal(chunks.length, 1);
+  assert.equal(chunks[0].text, SILENT_OPENING_LABEL);
   assert.equal(starts.length, 1);
-  assert.equal(stops.length, 1);
-  // stvFinishedTalking carries no speechId, so the stop payload is blanked by text alone.
-  assert.deepEqual(stops[0], { text: '' });
+  // stvFinishedTalking carries no speechId, so the stop payload is relabelled by text alone.
+  assert.deepEqual(stops, [{ text: SILENT_OPENING_LABEL }]);
+  const raw = [...transcripts, ...chunks, ...stops].filter((e) => e.text?.includes(SILENT_OPENING));
+  assert.deepEqual(raw, [], 'the raw phrase never reaches a listener');
 });
 
 test('silent opening: a spoken opening phrase on the opening speechId still surfaces', async () => {
@@ -327,7 +330,7 @@ test('silent opening: a spoken opening phrase on the opening speechId still surf
   assert.deepEqual(stops, [{ text: 'Hello!' }]);
 });
 
-test(`silent opening: '${SILENT_OPENING}' on a normal reply speechId is not filtered`, async () => {
+test(`silent opening: '${SILENT_OPENING}' on a normal reply speechId is not relabelled`, async () => {
   const { session, socket } = newSession();
   scriptHappyPath(socket);
   await session.connect();

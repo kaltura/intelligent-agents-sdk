@@ -18,14 +18,20 @@
  *     rebuilds the next transport with the full current context.
  *   - the `onToolCall` handler registry — handlers registered once on the
  *     facade are re-registered on every transport it attaches.
- *   - forwarding of the transport-agnostic event subset: `transcript`,
- *     `turnStart`, `turnEnd`, `toolCall`, `toolCallResult`, `toolCallInvalid`,
- *     `error`, `warning`, `responsePending`, `responseSettled`,
- *     `agentActionDenied`, `ended` — same payload shapes on both transports.
+ *   - forwarding of the events an app needs to render the conversation:
+ *       - on both transports: `transcript`, `turnStart`, `turnEnd`, `toolCall`,
+ *         `toolCallResult`, `toolCallInvalid`, `error`, `warning`,
+ *         `responsePending`, `responseSettled`, `agentActionDenied`, `ended`;
+ *       - avatar mode only: `speechChunk`, `avatarStartTalking`,
+ *         `avatarStopTalking`, `interrupted`.
+ *     Same payload shapes as the transport. Listeners registered on the facade
+ *     survive every `switchMode()`.
  *
- * Mode-specific APIs (mic control, `interrupt()`, tap-to-talk, disclosure,
- * `videoEl` …) are NOT mirrored here: use the `transport` getter, and rewire
- * such listeners on each `transportChanged {mode, transport}` event.
+ * Events that pair with a transport-only method stay on the transport:
+ * `disclosure` (`acknowledgeDisclosure()`), `micStarted` (`startMic()`,
+ * `micStream`), and the rest of the mic/video/reconnect surface. Read them off
+ * the `transport` getter and rewire on each `transportChanged {mode, transport}`
+ * event.
  *
  * Switching is tear-down-and-reconstruct by design (v1): no live mutation of
  * a running transport, so each transport keeps its own verified lifecycle.
@@ -40,12 +46,17 @@ import { KalturaError } from '../core/errors.js';
 import { assertRequestVars } from '../management/conversations.js';
 import { sanitizeJson } from '../core/safety.js';
 
-/** Events forwarded 1:1 from whichever transport is attached. */
+/**
+ * Events forwarded 1:1 from whichever transport is attached (`ended` is handled
+ * separately so the facade can add its own reason). The last row only fires in
+ * avatar mode; a chat transport never emits those names.
+ */
 const FORWARDED_EVENTS = [
   'transcript', 'turnStart', 'turnEnd',
   'toolCall', 'toolCallResult', 'toolCallInvalid',
   'error', 'warning', 'responsePending', 'responseSettled',
   'agentActionDenied',
+  'speechChunk', 'avatarStartTalking', 'avatarStopTalking', 'interrupted',
 ];
 
 /** Max sendText() calls buffered while a switchMode() is in flight. */
