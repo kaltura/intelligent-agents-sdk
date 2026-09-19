@@ -3,13 +3,14 @@
  * Live scenario verification for the silent-opening + kickoff pattern.
  *
  * Provisions a throwaway agent whose opening phrase is SILENT_OPENING, opens
- * `scripts/live-verify-kickoff.html` in headless Chromium (fake mic) once per
- * scenario, and asserts what a caller observes: session events, outgoing socket
- * frames, and inbound audio stats. Every scenario runs in a fresh browser context.
+ * `scripts/live-verify-kickoff.html` in the chosen browser once per scenario,
+ * and asserts what a caller observes: session events, outgoing socket frames,
+ * inbound WebRTC stats, audible sound on the remote track, and every WHEP
+ * request's outcome. Every scenario runs in a fresh browser context.
  *
  * | id  | scenario                                             | asserts |
  * |-----|------------------------------------------------------|---------|
- * | V2  | silent opening audibility                            | inbound audio energy during the opening is ~0 vs the reply |
+ * | V2  | silent opening audibility                            | no sound heard and ~0 inbound audio energy during the opening vs the reply |
  * | V4  | kickoff echo                                         | default: no user transcript with the kickoff; `echo: true`: exactly one |
  * | V6  | requireDisclosureAck                                 | kickoff waits for acknowledgeDisclosure() |
  * | V7  | pause() / resume()                                   | kickoff not re-sent; speak() after resume gets a reply |
@@ -26,7 +27,9 @@
  * Usage
  *   node scripts/live-verify-kickoff.mjs                        # --env prod, AGENTIC_* vars
  *   node scripts/live-verify-kickoff.mjs --env nvq2 --env-file ../.env --only V4,V6
- *   flags: --only IDS --out DIR --keep --agent-json PATH --kickoff TEXT --dump-events
+ *   node scripts/live-verify-kickoff.mjs --env nvp1 --env-file ../.env --browser chrome
+ *   flags: --only IDS --browser chromium|chrome|firefox|webkit --headed --out DIR --keep
+ *          --agent-json PATH --kickoff TEXT --dump-events
  *
  * Artifacts (`--out`, default live-verify-artifacts/): <runId>.json + <runId>.md,
  * plus <runId>-<id>-events.json (the page's full event log) for every failed
@@ -37,7 +40,7 @@ import { writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
   bootstrap, Report, mdTable, management, ensureAgent, mintPageInit, startServer,
-  launchBrowser, openHarness, redact, waitFor, find, all, isOpeningSpeechId, textsSent, sleep, SILENT_OPENING,
+  browserChoice, launchBrowser, contextOptions, openHarness, whepSummary, netProblems, redact, waitFor, find, all, isOpeningSpeechId, textsSent, sleep, SILENT_OPENING,
 } from './live-verify-kickoff-shared.mjs';
 
 const { args, target, runId, outDir } = bootstrap(process.argv.slice(2), 'kickoff');
@@ -45,8 +48,11 @@ const KICKOFF = typeof args.kickoff === 'string' ? args.kickoff : 'Greet the use
 const ONLY = typeof args.only === 'string' ? new Set(args.only.split(',').map((s) => s.trim().toUpperCase())) : null;
 const REPLY_TIMEOUT = 30_000;
 const REPLY_END_TIMEOUT = 60_000;
+const choice = browserChoice(args);
+const HEADED = choice.headed || choice.browser === 'chrome';
+const SETUP = `${choice.browser} ${HEADED ? 'headed' : 'headless'}`;
 
-const report = new Report({ runId, target: target.name });
+const report = new Report({ runId, target: target.name, browser: choice.browser, headed: HEADED });
 report.data.scenarios = [];
 const kaltura = management(target);
 const admin = await kaltura.sessions.createAdminToken();
@@ -54,7 +60,8 @@ const agent = await ensureAgent(kaltura, admin.ks, { agentJson: typeof args['age
 report.note('agent', agent.reused ? 'reused --agent-json ids' : 'provisioned throwaway agent with SILENT_OPENING');
 
 const { server, origin } = await startServer(() => mintPageInit(kaltura, agent, target.genieUrl));
-const browser = await launchBrowser();
+const browser = await launchBrowser(choice);
+report.note('setup', SETUP);
 
 // ---------------------------------------------------------------------------
 // helpers
@@ -133,7 +140,8 @@ async function dumpEvents(id, pages) {
 // scenarios
 // ---------------------------------------------------------------------------
 
-/** @type {Record<string, {name: string, run: (ctx: {context: import('playwright').BrowserContext, sink: {pageErrors: string[], pages: import('playwright').Page[]}, id: string}) => Promise<void>, context?: () => Promise<import('playwright').BrowserContext>}>} */
+/** @typedef {{pageErrors: string[], pages: import('playwright').Page[], network: import('./live-verify-kickoff-shared.mjs').NetRecord[]}} Sink */
+/** @type {Record<string, {name: string, run: (ctx: {context: import('playwright').BrowserContext, sink: Sink, id: string}) => Promise<void>, context?: () => Promise<import('playwright').BrowserContext>}>} */
 const SCENARIOS = {
   V2: {
     name: 'silent opening audibility',
@@ -157,10 +165,29 @@ const SCENARIOS = {
         report.check(`${id}: inbound audio stats available for opening and reply`, false, { atConnect: !!atConnect, openingStop: !!openingStop, replyStart: !!replyStart, replyStop: !!replyStop, inbound: hasInbound(replyStop) });
         return;
       }
-      const openingDelta = energy(openingStop) - energy(atConnect);
-      const replyDelta = energy(replyStop) - energy(replyStart);
-      const limit = Math.max(1e-3, 0.05 * replyDelta);
-      report.check(`${id}: opening audio energy ≈ 0 (≤ max(1e-3, 5% of reply))`, replyDelta > 0 && openingDelta <= limit, { openingDelta: +openingDelta.toFixed(5), replyDelta: +replyDelta.toFixed(5), limit: +limit.toFixed(5) });
+      // What the user hears: the AnalyserNode on the remote audio track.
+      const resolved = find(evs, 'connect:resolved');
+      const ctxRunning = !!find(evs, 'audioctx:state', { where: (d) => d.state === 'running' });
+      const openingSound = find(evs, 'audio:soundStart', { from: resolved.index });
+      const soundDuringOpening = openingSound && openingSound.tRel <= openingStop.tRel;
+      const replySound = find(evs, 'audio:soundStart', { from: replyStart.index });
+      if (ctxRunning) {
+        report.check(`${id}: no sound heard during the silent opening`, !soundDuringOpening, { soundAtMs: soundDuringOpening ? openingSound.tRel - resolved.tRel : null, openingEndMs: openingStop.tRel - resolved.tRel });
+        report.check(`${id}: sound heard during the reply`, !!replySound, { afterTalkMs: replySound ? replySound.tRel - replyStart.tRel : null });
+      } else {
+        report.note(`${id}: analyser not running, audibility measured from stats only`, { engine: find(evs, 'harness:ready')?.detail?.engine });
+      }
+      // What the wire carried: inbound-rtp totalAudioEnergy (Chromium/WebKit; Firefox does not report it).
+      const hasEnergy = (openingStop.detail.inbound || []).some((/** @type {any} */ r) => typeof r.totalAudioEnergy === 'number');
+      if (hasEnergy) {
+        const openingDelta = energy(openingStop) - energy(atConnect);
+        const replyDelta = energy(replyStop) - energy(replyStart);
+        const limit = Math.max(1e-3, 0.05 * replyDelta);
+        report.check(`${id}: opening audio energy ≈ 0 (≤ max(1e-3, 5% of reply))`, replyDelta > 0 && openingDelta <= limit, { openingDelta: +openingDelta.toFixed(5), replyDelta: +replyDelta.toFixed(5), limit: +limit.toFixed(5) });
+      } else {
+        report.note(`${id}: totalAudioEnergy not reported by this browser, energy check skipped`, { engine: find(evs, 'harness:ready')?.detail?.engine });
+        if (!ctxRunning) report.check(`${id}: audibility measurable (analyser or totalAudioEnergy)`, false, {});
+      }
       commonChecks(id, evs);
       await ev(page, 'testDisconnect').catch(() => {});
     },
@@ -357,10 +384,9 @@ const SCENARIOS = {
 
   V14: {
     name: 'audio-only mode (iPhone UA)',
-    context: () => browser.newContext({
-      permissions: ['microphone'],
+    context: () => browser.newContext(contextOptions({
       userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
-    }),
+    })),
     async run({ context, sink, id }) {
       const page = await openHarness(context, origin, { mode: 'avatar', kickoff: KICKOFF }, sink);
       let evs = await connectAndReply(page, id);
@@ -431,9 +457,9 @@ try {
     if (ONLY && !ONLY.has(id)) continue;
     console.log(`\n== ${id}: ${sc.name}`);
     const t0 = Date.now();
-    /** @type {{pageErrors: string[], pages: import('playwright').Page[]}} */
-    const sink = { pageErrors: [], pages: [] };
-    const context = sc.context ? await sc.context() : await browser.newContext({ permissions: ['microphone'] });
+    /** @type {Sink} */
+    const sink = { pageErrors: [], pages: [], network: [] };
+    const context = sc.context ? await sc.context() : await browser.newContext(contextOptions());
     const before = report.checks.length;
     let error = null;
     try {
@@ -442,11 +468,18 @@ try {
       error = String(/** @type {any} */ (err)?.message || err);
       report.check(`${id}: completed`, false, { error, pageErrors: sink.pageErrors.slice(0, 5) });
     } finally {
+      // Let the fire-and-forget WHEP DELETE from disconnect() land before we read the network log.
+      await sleep(300);
+      const whep = whepSummary(sink.network);
+      const whepBad = whep.filter((l) => /^POST .*(FAILED|→ [45]\d\d)/.test(l));
+      if (whep.length) report.check(`${id}: every WHEP POST succeeded`, whepBad.length === 0, { whep });
+      const problems = netProblems(sink.network);
+      if (problems.length) report.note(`${id}: HTTP requests that failed or returned 4xx/5xx`, problems.slice(0, 10));
       if (sink.pageErrors.length) report.note(`${id}: page errors`, sink.pageErrors.slice(0, 5));
       const own = report.checks.slice(before);
       const ok = own.every((c) => c.ok);
       if (!ok || args['dump-events']) await dumpEvents(id, sink.pages);
-      report.data.scenarios.push({ id, name: sc.name, ok, checks: own.length, ms: Date.now() - t0, error });
+      report.data.scenarios.push({ id, name: sc.name, ok, checks: own.length, ms: Date.now() - t0, error, whep });
       await context.close();
     }
   }
@@ -459,10 +492,10 @@ try {
 const md = [
   `# kickoff scenarios — ${target.name} — ${report.meta.startedAt}`,
   '',
-  'Headless Chromium with a fake mic, one fresh browser context per scenario, silent opening + kickoff.',
+  `${SETUP}, one fresh browser context per scenario, silent opening + kickoff.`,
   '',
-  mdTable(['id', 'scenario', 'result', 'checks', 'ms', 'error'],
-    report.data.scenarios.map((s) => [s.id, s.name, s.ok ? 'ok' : 'FAIL', s.checks, s.ms, s.error ?? ''])),
+  mdTable(['id', 'scenario', 'result', 'checks', 'ms', 'WHEP requests', 'error'],
+    report.data.scenarios.map((s) => [s.id, s.name, s.ok ? 'ok' : 'FAIL', s.checks, s.ms, (s.whep || []).join('; ').replace(/\|/g, '\\|'), s.error ?? ''])),
   '',
   '## Checks',
   '',

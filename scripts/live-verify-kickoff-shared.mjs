@@ -5,8 +5,9 @@
  *
  * Owns: CLI + .env parsing, environment targets, throwaway-agent provisioning
  * with a SILENT_OPENING opening phrase, the local static server that backs
- * `scripts/live-verify-kickoff.html`, headless Chromium with fake media, and
- * the event-polling helpers both scripts assert with.
+ * `scripts/live-verify-kickoff.html`, browser launch (Chromium, Google Chrome,
+ * Firefox, WebKit; headless or headed) with fake media, and the event-polling
+ * helpers both scripts assert with.
  *
  * Nothing here is imported by the SDK. Credentials come from the environment
  * or a .env file; none are written to the artifacts.
@@ -15,7 +16,7 @@ import { readFileSync, writeFileSync, mkdirSync, createReadStream, existsSync, s
 import { resolve, dirname, extname, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'node:http';
-import { chromium } from 'playwright';
+import { chromium, firefox, webkit } from 'playwright';
 import { Management, SILENT_OPENING } from '../src/management/index.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -68,9 +69,11 @@ export function loadEnvFile(path) {
  * |---|---|---|
  * | `prod` (default) | `AGENTIC_PARTNER_ID` / `AGENTIC_ADMIN_SECRET` | SDK defaults |
  * | `nvq2` | `NVQ2_PARTNER_ID_1` / `NVQ2_ADMIN_SECRET_1` | `NVQ2_AGENTIC_API_URL`, `NVQ2_GENIE_URL`, `NVQ2_KALTURA_API_ENDPOINT` |
+ * | `nvp1` | `NVP1_AGENTIC_PARTNER_ID` / `NVP1_AGENTIC_ADMIN_SECRET` | `NVP1_AGENTIC_API_URL`, `NVP1_GENIE_URL`, `NVP1_KALTURA_API_ENDPOINT` |
  *
  * Every URL override is passed explicitly to `Management`, so a target never
- * falls back to the production defaults by accident.
+ * falls back to the production defaults by accident. `nvp1` is production
+ * reached through explicit URLs (same backend as `prod`, different env names).
  * @param {string} name
  * @returns {{name:string, partnerId:string, adminSecret:string, agenticUrl?:string, genieUrl?:string, ovpUrl?:string}}
  */
@@ -97,8 +100,36 @@ export function resolveTarget(name) {
       ovpUrl: process.env.NVQ2_KALTURA_API_ENDPOINT,
     };
   }
-  console.error(`--env ${name}: unknown target (expected prod or nvq2).`);
+  if (name === 'nvp1') {
+    need(['NVP1_AGENTIC_PARTNER_ID', 'NVP1_AGENTIC_ADMIN_SECRET', 'NVP1_AGENTIC_API_URL', 'NVP1_GENIE_URL', 'NVP1_KALTURA_API_ENDPOINT']);
+    return {
+      name,
+      partnerId: process.env.NVP1_AGENTIC_PARTNER_ID,
+      adminSecret: process.env.NVP1_AGENTIC_ADMIN_SECRET,
+      agenticUrl: process.env.NVP1_AGENTIC_API_URL,
+      genieUrl: process.env.NVP1_GENIE_URL,
+      ovpUrl: process.env.NVP1_KALTURA_API_ENDPOINT,
+    };
+  }
+  console.error(`--env ${name}: unknown target (expected prod, nvq2 or nvp1).`);
   process.exit(1);
+}
+
+/** Browser engines the live scripts can drive. `chrome` is the installed Google Chrome via Playwright's `channel`. */
+export const BROWSERS = ['chromium', 'chrome', 'firefox', 'webkit'];
+
+/**
+ * Pick the browser from `--browser` / `--headed` flags.
+ * @param {Record<string, string|boolean>} args
+ * @returns {{browser: string, headed: boolean}}
+ */
+export function browserChoice(args) {
+  const browser = typeof args.browser === 'string' ? args.browser : 'chromium';
+  if (!BROWSERS.includes(browser)) {
+    console.error(`--browser ${browser}: unknown (expected ${BROWSERS.join(', ')}).`);
+    process.exit(1);
+  }
+  return { browser, headed: args.headed === true };
 }
 
 /**
@@ -280,6 +311,7 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/jav
 export function startServer(mintInit) {
   const server = createServer((req, res) => {
     const path = (req.url || '/').split('?')[0];
+    if (path === '/favicon.ico') { res.writeHead(204); res.end(); return; }   // keeps the console free of a 404 on first load
     if (path === '/init') {
       mintInit().then((data) => {
         res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -307,16 +339,60 @@ export function startServer(mintInit) {
 // Browser
 // ---------------------------------------------------------------------------
 
-/** Headless Chromium with a real (fake-device) media pipeline and auto-granted permissions. */
-export function launchBrowser() {
-  return chromium.launch({
-    args: [
-      '--use-fake-ui-for-media-stream',
-      '--use-fake-device-for-media-stream',
-      '--autoplay-policy=no-user-gesture-required',
-      '--mute-audio',
-    ],
-  });
+/** Set by `launchBrowser`; `openHarness` uses it to pick browser-specific harness params. */
+let activeBrowser = { name: 'chromium', headed: false };
+
+/**
+ * Launch a browser with a real media pipeline and auto-granted permissions.
+ *
+ * | browser | mic | notes |
+ * |---|---|---|
+ * | `chromium` (default) | Chromium's fake device | headless unless `headed` |
+ * | `chrome` | fake device | the installed Google Chrome, always headed, audio audible |
+ * | `firefox` | Firefox's fake stream (`media.navigator.streams.fake`) | `isFirefox` is set by the harness from the UA |
+ * | `webkit` | synthetic silent track from the harness (`mic=synthetic`) | WebKit has no fake-device flag |
+ *
+ * Headless Chromium mutes audio output; a headed run leaves it audible so a
+ * person can confirm what the analyser in the harness measures.
+ * @param {{browser?: string, headed?: boolean}} [opts]
+ */
+export function launchBrowser({ browser = 'chromium', headed = false } = {}) {
+  activeBrowser = { name: browser, headed: headed || browser === 'chrome' };
+  const chromiumArgs = [
+    '--use-fake-ui-for-media-stream',
+    '--use-fake-device-for-media-stream',
+    '--autoplay-policy=no-user-gesture-required',
+  ];
+  if (browser === 'chrome') return chromium.launch({ channel: 'chrome', headless: false, args: chromiumArgs });
+  if (browser === 'chromium') return chromium.launch({ headless: !headed, args: headed ? chromiumArgs : [...chromiumArgs, '--mute-audio'] });
+  if (browser === 'firefox') {
+    return firefox.launch({
+      headless: !headed,
+      firefoxUserPrefs: {
+        'media.navigator.streams.fake': true,
+        'media.navigator.permission.disabled': true,
+        'media.autoplay.default': 0,
+        'media.autoplay.blocking_policy': 0,
+        'media.autoplay.block-webaudio': false,
+      },
+    });
+  }
+  if (browser === 'webkit') return webkit.launch({ headless: !headed });
+  throw new Error(`unknown browser ${browser}`);
+}
+
+export function browserInfo() { return { ...activeBrowser }; }
+
+/**
+ * Options for `browser.newContext()` on the active engine. Chromium-based
+ * engines take `permissions: ['microphone']`; Firefox and WebKit reject that
+ * name (`Unknown permission: microphone`) and grant the mic through the launch
+ * prefs / the harness's synthetic track instead.
+ * @param {Record<string, any>} [extra]
+ */
+export function contextOptions(extra = {}) {
+  const chromiumLike = activeBrowser.name === 'chromium' || activeBrowser.name === 'chrome';
+  return { ...(chromiumLike ? { permissions: ['microphone'] } : {}), ...extra };
 }
 
 /**
@@ -330,24 +406,71 @@ export function redact(text) {
     .replace(/((?:https?|wss?):\/\/[^\s"'?]+)\?[^\s"']*/g, '$1?<query>');
 }
 
+/** @typedef {{t:number, kind:'request'|'response'|'failed', method:string, url:string, status?:number, error?:string, resourceType:string}} NetRecord */
+
 /**
  * Open the harness page with the given query params and wait for `window.__ready`.
  * Pages are pushed onto `sink.pages` so the caller can dump their event logs.
+ * Every cross-origin HTTP request (WHEP POST/DELETE, token calls) is recorded
+ * into `sink.network` with its outcome, so a "failed" console line can be tied
+ * to the exact request. URLs are redacted (no query strings, no tokens).
+ *
+ * Browser-specific defaults: WebKit gets `mic=synthetic` unless the caller
+ * chose a mic mode (no fake-device flag exists there); a headed run gets
+ * `headed=1` so the harness knows audio output is real.
  * @param {import('playwright').BrowserContext} context
  * @param {string} origin
  * @param {Record<string, string|number|boolean|undefined>} params
- * @param {{pageErrors?: string[], pages?: import('playwright').Page[]}} [sink]
+ * @param {{pageErrors?: string[], pages?: import('playwright').Page[], network?: NetRecord[]}} [sink]
  */
 export async function openHarness(context, origin, params, sink) {
   const page = await context.newPage();
   sink?.pages?.push(page);
   page.on('pageerror', (e) => sink?.pageErrors?.push(redact(String(e?.message || e))));
   page.on('console', (m) => { if (m.type() === 'error') sink?.pageErrors?.push(redact(`console.error: ${m.text()}`)); });
+  const isExternal = (/** @type {string} */ url) => !url.startsWith(origin) && !url.startsWith('data:') && !url.startsWith('blob:');
+  page.on('request', (r) => { if (isExternal(r.url())) sink?.network?.push({ t: Date.now(), kind: 'request', method: r.method(), url: redact(r.url()), resourceType: r.resourceType() }); });
+  page.on('response', (r) => { const q = r.request(); if (isExternal(q.url())) sink?.network?.push({ t: Date.now(), kind: 'response', method: q.method(), url: redact(q.url()), status: r.status(), resourceType: q.resourceType() }); });
+  page.on('requestfailed', (r) => { if (isExternal(r.url())) sink?.network?.push({ t: Date.now(), kind: 'failed', method: r.method(), url: redact(r.url()), error: r.failure()?.errorText, resourceType: r.resourceType() }); });
+  const merged = { ...params };
+  if (activeBrowser.name === 'webkit' && merged.mic === undefined) merged.mic = 'synthetic';
+  if (activeBrowser.headed) merged.headed = 1;
   const qs = new URLSearchParams();
-  for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== false) qs.set(k, String(v));
+  for (const [k, v] of Object.entries(merged)) if (v !== undefined && v !== false) qs.set(k, String(v));
   await page.goto(`${origin}/scripts/live-verify-kickoff.html?${qs}`);
   await page.waitForFunction(() => /** @type {any} */ (window).__ready === true, null, { timeout: 30_000 });
   return page;
+}
+
+/**
+ * Summarise WHEP traffic (`/rtc/` or `whep`/`whip` in the path) for a report:
+ * one line per request with its outcome.
+ * @param {NetRecord[]} net
+ */
+export function whepSummary(net) {
+  const isWhep = (/** @type {string} */ u) => /\/rtc\/|whep|whip/i.test(u);
+  const out = [];
+  for (const r of net) {
+    if (!isWhep(r.url) || r.kind === 'request') continue;
+    out.push(`${r.method} ${r.url.replace(/^https?:\/\/[^/]+/, '')} → ${r.kind === 'failed' ? `FAILED ${r.error}` : r.status}`);
+  }
+  return out;
+}
+
+/**
+ * Every cross-origin HTTP request that failed or got a 4xx/5xx, one line each
+ * (`METHOD host/path → status|FAILED err`), so a console "Failed to load
+ * resource" line can be tied to the request behind it.
+ * @param {NetRecord[]} net
+ */
+export function netProblems(net) {
+  const out = [];
+  for (const r of net) {
+    if (r.kind === 'request') continue;
+    if (r.kind === 'response' && (r.status ?? 0) < 400) continue;
+    out.push(`${r.method} ${r.url.replace(/^https?:\/\//, '')} → ${r.kind === 'failed' ? `FAILED ${r.error}` : r.status}`);
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------

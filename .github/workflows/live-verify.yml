@@ -48,12 +48,14 @@ name: Live verification
 # mobile OS backgrounding/tab-kill behavior isn't reachable from any
 # Playwright engine; see manual-testing/session-complete/ for that.
 # live-verify-kickoff covers the silent-opening + `kickoff` startup pattern
-# end to end against a real provisioned agent in headless Chromium: connect
-# timing over several runs (scripts/live-verify-connect-timing.mjs) and the
-# scenario matrix in scripts/live-verify-kickoff.mjs (echo, disclosure ack,
-# pause/resume, reconnect, agent-session mode switch, denied/deferred mic,
-# spoken opening, barge-in). Chromium only: it asserts on inbound-rtp
-# totalAudioEnergy, which Firefox doesn't expose.
+# end to end against a real provisioned agent: connect timing over several
+# runs (scripts/live-verify-connect-timing.mjs) and the scenario matrix in
+# scripts/live-verify-kickoff.mjs (echo, disclosure ack, pause/resume,
+# reconnect, agent-session mode switch, denied/deferred mic, spoken opening,
+# barge-in). Both scripts take --browser chromium|chrome|firefox|webkit; CI
+# runs headless Chromium. Audibility is measured on the remote audio track
+# with an AnalyserNode, so it works on every engine; the inbound-rtp
+# totalAudioEnergy check is added only where the engine exposes it.
 on:
   workflow_dispatch: {}
   pull_request:
