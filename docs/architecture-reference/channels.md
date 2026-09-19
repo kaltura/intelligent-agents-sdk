@@ -12,7 +12,7 @@ A WebRTC peer connection whose SDP/ICE are relayed **through the socket** (NOT W
 // 1. tell server to prepare
 socket.emit('asr-webrtc-init', { sessionId: peerId });
 // 2. wait
-socket.once('asr-webrtc-ready', ...);          // (or 'asr-webrtc-error')   timeout 30s
+socket.once('asr-webrtc-ready', ...);          // (or 'asr-webrtc-error')   timeout 30s, also bounded by the 30s connect deadline
 // 3. create RTCPeerConnection with the mic track, generate offer, then:
 socket.emit('asr-webrtc-offer', { offer, is_reconnect: false });
 socket.once('asr-webrtc-answer', ({ answer }) => pc.setRemoteDescription(answer));  // 30s

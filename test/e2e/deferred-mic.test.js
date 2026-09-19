@@ -28,7 +28,9 @@ function newSession(overrides = {}) {
   return { session, socket, videoEl, getUserMedia };
 }
 
-const asrPeer = () => FakeRTCPeerConnection.instances[0];
+// The STV (WHEP) peer is created first, in parallel with the agent wait, so pick the ASR
+// peer by shape (the one with no video transceiver) rather than by creation order.
+const asrPeer = () => FakeRTCPeerConnection.instances.find((pc) => !pc.transceivers.some((t) => t.kind === 'video'));
 
 test('deferred connect: no getUserMedia, handshake identical, sendonly audio slot negotiated', async () => {
   const { session, socket, getUserMedia } = newSession();

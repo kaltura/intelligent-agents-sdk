@@ -46,7 +46,9 @@ function heldGetUserMedia() {
   return fn;
 }
 
-const asrPeer = () => FakeRTCPeerConnection.instances[0];
+// The STV (WHEP) peer is created first, in parallel with the agent wait, so pick the ASR
+// peer by shape (the one with no video transceiver) rather than by creation order.
+const asrPeer = () => FakeRTCPeerConnection.instances.find((pc) => !pc.transceivers.some((t) => t.kind === 'video'));
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
 test('connect() resolves while the permission prompt is still open; the track attaches later via replaceTrack', async () => {

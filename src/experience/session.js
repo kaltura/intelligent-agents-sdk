@@ -641,24 +641,34 @@ export class KalturaAvatarSession extends Emitter {
   }
 
   /**
-   * Steps 6/7/9/10: agent + permissions → ASR uplink → STV WHEP (mode-aware).
-   * Shared by connect(), _coldReconnect(), and resume() to avoid tripling the
-   * connect ordering logic. @param {any} socket @param {{expired:()=>boolean}} overall @param {{skipAgentWait?:boolean}} [opts]
+   * Steps 6/7/9/10, two lanes in parallel (mode-aware):
+   *   lane A: agent + permissions → ASR uplink
+   *   lane B: STV WHEP subscribe → video playable   (video modes only)
+   * Lane B needs only the `stvNewSession` reply, which the caller already has, so it
+   * starts at once instead of waiting behind the agent and the ASR handshake. The
+   * caller approves only after BOTH lanes settle, which keeps the greeting-clip fix.
+   * The first lane to fail rejects this method at once; the other lane's eventual
+   * rejection is observed (never an unhandled rejection) and its peer is closed by the
+   * caller's teardown. Shared by connect(), _coldReconnect(), and resume().
+   * @param {any} socket @param {{expired:()=>boolean}} overall @param {{skipAgentWait?:boolean}} [opts]
    */
   async _runConnectSequence(socket, overall, opts = {}) {
-    if (!opts.skipAgentWait) {
-      await this._waitAgentAndPermissions(socket, overall);
-    }
-    await this._connectAsr(socket);
-    if (this.mode !== 'audio') await this._connectStv();
+    const stv = this.mode !== 'audio' ? this._connectStv(overall) : Promise.resolve();
+    const asr = (async () => {
+      if (!opts.skipAgentWait) await this._waitAgentAndPermissions(socket, overall);
+      await this._connectAsr(socket, overall);
+    })();
+    stv.catch(() => { /* loser of a failed connect: observed, surfaced via Promise.all */ });
+    asr.catch(() => { /* same */ });
+    await Promise.all([stv, asr]);
   }
 
   // ─────────────────────────── ASR uplink (step 9) ───────────────────────────
 
-  /** @param {any} socket */
-  async _connectAsr(socket) {
+  /** @param {any} socket @param {{expired:()=>boolean}} [overall] */
+  async _connectAsr(socket, overall) {
     socket.emit('asr-webrtc-init', { sessionId: socket.id });
-    await this._await(socket, 'asr-webrtc-ready', TIMEOUTS.asr, 'ASRConnectionFailed');
+    await this._await(socket, 'asr-webrtc-ready', TIMEOUTS.asr, 'ASRConnectionFailed', overall);
     const pc = createPeerConnection(this._RTC, iceConfig('asr', this._turn, this._isFirefox));
     this._pcAsr = pc;
     pc.oniceconnectionstatechange = () => { this.emit('connectivityChanged', { channel: 'asr', state: pc.iceConnectionState }); this._onIceStateChange('asr', pc); };
@@ -681,14 +691,19 @@ export class KalturaAvatarSession extends Emitter {
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
     socket.emit('asr-webrtc-offer', { offer, is_reconnect: false });
-    const ans = await this._await(socket, 'asr-webrtc-answer', TIMEOUTS.asr, 'ASRConnectionFailed');
+    const ans = await this._await(socket, 'asr-webrtc-answer', TIMEOUTS.asr, 'ASRConnectionFailed', overall);
     await pc.setRemoteDescription(ans.answer);
   }
 
   // ─────────────────────────── STV downlink (step 10) ───────────────────────────
 
-  /** WHEP subscribe, then resolve only when the video is playable (greeting-clip fix). */
-  async _connectStv() {
+  /**
+   * WHEP subscribe, then resolve only when the video is playable (greeting-clip fix).
+   * `overall` is the connect() deadline: a WHEP answer that lands after it has passed
+   * is rejected as `ConnectTimeout`, same rule as every socket wait in `_await`.
+   * @param {{expired:()=>boolean}} [overall]
+   */
+  async _connectStv(overall) {
     const pc = createPeerConnection(this._RTC, iceConfig('stv', this._turn, this._isFirefox));
     this._pcStv = pc;
     const videoTransceiver = pc.addTransceiver('video', { direction: 'recvonly' });
@@ -773,6 +788,7 @@ export class KalturaAvatarSession extends Emitter {
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
       const res = await this._fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/sdp' }, body: offer.sdp });
+      if (overall?.expired()) throw timeoutErr('ConnectTimeout');
       const answerSdp = await res.text();
       if (!res.ok) throw new KalturaError({ type: 'about:blank', title: 'WHEP failed', status: res.status, code: 'whep_failed', detail: whepStatusHint(res.status), body: redact(answerSdp).slice?.(0, 200) });
       // The WHEP server's Location is often RELATIVE (e.g. "/rtc/v1/whip/?action=delete&…").
