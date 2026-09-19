@@ -44,6 +44,15 @@
     voice.autoplay = true;
     document.body.appendChild(voice);
 
+    // Query params (all optional, nothing else is read from the URL):
+    //   ?kickoff=<text>  the SDK sends this as the first turn, once, the moment the server
+    //                    accepts input — see docs/START-THE-CONVERSATION.md.
+    //   ?echo=1          show the kickoff text as a user transcript (default: hidden).
+    //   ?nudge=<text>    call session.speak() by hand the instant connect() resolves.
+    const params = new URLSearchParams(location.search);
+    const kickoffText = params.get('kickoff');
+    const kickoff = kickoffText ? { text: kickoffText, echo: params.get('echo') === '1' } : undefined;
+
     const session = new KalturaAvatarSession({
       token: init.ks,
       conversationManagerUrl: init.conversationManagerUrl,
@@ -53,23 +62,23 @@
       audioEl: voice,
       socketFactory: (url, opts) => io(url, opts),
       isFirefox: /firefox/i.test(navigator.userAgent),
+      kickoff,
     });
 
     // Every event the SDK's session emits — see docs/architecture-reference/conversation-flow.md.
-    for (const evt of ['disclosure', 'responsePending', 'responseSettled', 'transcript', 'avatarStartTalking', 'avatarStopTalking', 'turnEnd', 'interrupted', 'error', 'ended']) {
+    for (const evt of ['disclosure', 'responsePending', 'responseSettled', 'transcript', 'speechChunk', 'avatarStartTalking', 'avatarStopTalking', 'turnEnd', 'interrupted', 'warning', 'error', 'ended']) {
       session.on(evt, (payload) => record(evt, payload));
     }
 
-    window.session = session;   // for DevTools: session.speaking, session.videoEl, ...
+    window.session = session;   // for DevTools: session.speaking, session.kickoff, ...
+    if (kickoff) record('kickoff:config', session.kickoff);
     record('connect:start');
     await session.connect();
-    record('connect:resolved', { speaking: session.speaking });
+    record('connect:resolved', { speaking: session.speaking, kickoff: session.kickoff });
 
-    // Optional: ?nudge=<text> — calls session.speak() the instant connect() resolves.
-    // At that moment the opening line is committed but session.speaking is still false;
-    // speak() holds the text until that line finishes, so 'nudge:sent' should land
-    // right after the opening turn's 'avatarStopTalking'.
-    const params = new URLSearchParams(location.search);
+    // ?nudge=<text>: at this moment the opening line is committed but session.speaking is
+    // still false; speak() holds the text until that line finishes, so 'nudge:sent' should
+    // land right after the opening turn's 'avatarStopTalking'. Same hold the kickoff uses.
     const nudge = params.get('nudge');
     if (nudge) {
       record('nudge:call', { text: nudge, speaking: session.speaking });
