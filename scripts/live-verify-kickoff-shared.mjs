@@ -374,6 +374,11 @@ export function launchBrowser({ browser = 'chromium', headed = false } = {}) {
         'media.autoplay.default': 0,
         'media.autoplay.blocking_policy': 0,
         'media.autoplay.block-webaudio': false,
+        // Playwright's Firefox ships without the OpenH264 plugin, so it offers only VP8/VP9/AV1
+        // and the media server (H264 only) answers the video section `inactive`. This pref lets
+        // Firefox use the platform hardware H264 decoder instead, the same way stock Firefox with
+        // OpenH264 would receive the stream.
+        'media.webrtc.hw.h264.enabled': true,
       },
     });
   }
