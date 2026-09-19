@@ -98,7 +98,7 @@ A tap window that never closes (tab closed mid-recording, app crash, network dro
 
 Two UX rules for the switch:
 
-- **Switching INTO a voice mode prompts for the mic.** Browsers require a live user gesture for `getUserMedia`, and a prior grant in chat mode doesn't exist to reuse. Route `switchMode('avatar')` through a real click target (a "Continue with video" button), never a state-change callback. A programmatic call outside a gesture gets auto-denied, landing the session in `failed` (`reason: 'permission_denied'` on the initial connect path).
+- **Switching INTO a voice mode prompts for the mic.** Browsers require a live user gesture for `getUserMedia`, and a prior grant in chat mode doesn't exist to reuse. Route `switchMode('avatar')` through a real click target (a "Continue with video" button), never a state-change callback. A programmatic call outside a gesture gets auto-denied. The session still connects (mic acquisition never blocks or fails `connect()`), but it arrives mic-less with a `warning` (`mic_permission_denied`), and the viewer has to call `startMic()` from a real click to get voice.
 - **Expect a brief reconnect blip.** Switching is tear-down-and-reconstruct by design — show a transient "switching…" state on the facade's `stateChange {state:'switching'}` event rather than hiding it. `sendText()` calls during the blip are buffered (up to 8) and delivered in order on the new transport.
 
 ## Related docs

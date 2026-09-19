@@ -95,9 +95,10 @@ export class KalturaAgentSession extends Emitter {
   /**
    * Connect the starting transport. Resolves when the transport is live.
    * On failure the facade lands in `failed` (`stateChange` reason
-   * `permission_denied` for a mic/camera rejection, else `transport_failed`)
-   * and the transport's typed error is re-thrown — construct a new
-   * KalturaAgentSession to retry.
+   * `transport_failed`) and the transport's typed error is re-thrown —
+   * construct a new KalturaAgentSession to retry. A denied or missing mic
+   * is not a failure: the avatar transport connects mic-less and emits a
+   * `warning` (`mic_permission_denied` / `mic_not_found` / `mic_in_use`).
    * @returns {Promise<void>}
    */
   async connect() {
@@ -110,7 +111,7 @@ export class KalturaAgentSession extends Emitter {
       this._setState('connected');
     } catch (e) {
       this._teardownTransport({ final: false });
-      this._setState('failed', e && e.code === 'permission_denied' ? 'permission_denied' : 'transport_failed');
+      this._setState('failed', 'transport_failed');
       throw e;
     }
   }

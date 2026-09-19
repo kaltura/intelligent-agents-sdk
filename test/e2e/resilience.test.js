@@ -1365,10 +1365,18 @@ for (const [errName, code] of [
   ['NotReadableError', 'mic_in_use'],
   ['OverconstrainedError', 'mic_not_found'],
 ]) {
-  test(`device: getUserMedia ${errName} → ${code}`, async () => {
+  test(`device: getUserMedia ${errName} → connected + warning ${code}`, async () => {
     const gum = async () => { const e = new Error(errName); e.name = errName; throw e; };
-    const { session } = newSession({ getUserMedia: gum });
-    await assert.rejects(() => session.connect(), (e) => e.code === code, `${errName} maps to ${code}`);
+    const { session, socket } = newSession({ getUserMedia: gum });
+    scriptHappyPath(socket);
+    const warnings = [];
+    session.on('warning', (w) => warnings.push(w.code));
+    await session.connect();
+    await new Promise((r) => setTimeout(r, 0));
+    assert.equal(session.state, 'connected', 'a failed mic never fails connect()');
+    assert.deepEqual(warnings, [code], `${errName} maps to ${code}`);
+    assert.equal(session.micStarted, false);
+    session.disconnect();
   });
 }
 
@@ -1473,11 +1481,21 @@ test('noiseProcessor: a processor returning {stream,stop} is released (old) and 
   assert.equal(stops, 2, 'disconnect must release the mic-2 processor instance');
 });
 
-test('noiseProcessor: a throwing processor fails mic acquisition closed with noise_processor_failed (raw stream stopped)', async () => {
+test('noiseProcessor: a throwing processor → connected mic-less with one noise_processor_failed warning; startMic() surfaces the typed error', async () => {
   const noiseProcessor = async () => { throw new Error('worklet init failed'); };
-  const { session } = newSession({ cfg: { noiseProcessor } });
-  await assert.rejects(() => session.connect(), (e) => e.code === 'noise_processor_failed', 'must surface a typed noise_processor_failed error');
-  assert.equal(session.state, 'error');
+  const { session, socket } = newSession({ cfg: { noiseProcessor } });
+  scriptHappyPath(socket);
+  const warnings = [];
+  session.on('warning', (w) => warnings.push(w.code));
+  await session.connect();
+  await new Promise((r) => setTimeout(r, 0));
+  assert.equal(session.state, 'connected', 'a failing processor never fails connect()');
+  assert.equal(session._micStream, null, 'no mic stream attached');
+  assert.equal(session.micStarted, false);
+  assert.deepEqual(warnings, ['noise_processor_failed']);
+  await assert.rejects(() => session.startMic(), (e) => e.code === 'noise_processor_failed', 'an explicit startMic() surfaces the typed error');
+  assert.equal(session.state, 'connected');
+  session.disconnect();
 });
 
 test('noiseProcessor: not supplied → the raw getUserMedia stream is used unmodified (back-compat default)', async () => {

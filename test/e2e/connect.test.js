@@ -109,10 +109,17 @@ test('audio/phone mode: skips WHEP/video, still connects via ASR', async () => {
   session.disconnect();
 });
 
-test('mic denied → mic_permission_denied', async () => {
+test('mic denied → connected mic-less with one mic_permission_denied warning', async () => {
   const { session, socket } = newSession({ getUserMedia: fakeGetUserMedia({ deny: true }) });
   scriptHappyPath(socket);
-  await assert.rejects(() => session.connect(), (e) => e.code === 'mic_permission_denied');
+  const warnings = [];
+  session.on('warning', (w) => warnings.push(w.code));
+  await session.connect();
+  await new Promise((r) => setTimeout(r, 0));
+  assert.equal(session.state, 'connected');
+  assert.equal(session.micStarted, false);
+  assert.deepEqual(warnings, ['mic_permission_denied']);
+  session.disconnect();
 });
 
 test('post-connect: speak injects onTextEntered (brain), never HTTP converse', async () => {

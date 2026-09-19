@@ -87,14 +87,14 @@ test('connect builds the starting transport with the merged shared cfg and forwa
   assert.deepEqual(got, [{ text: 'hi', type: 'final' }]);
 });
 
-test('connect is once-only; failure lands in failed with the right reason', async () => {
-  const boom = Object.assign(new Error('mic denied'), { code: 'permission_denied' });
+test('connect is once-only; failure lands in failed with reason transport_failed', async () => {
+  const boom = Object.assign(new Error('socket down'), { code: 'connect_failed' });
   const { session, made } = newSession({ prep: (t) => { t.connectImpl = () => { throw boom; }; } });
   const states = [];
   session.on('stateChange', (p) => states.push(p));
   await assert.rejects(() => session.connect(), boom);
   assert.equal(session.state, 'failed');
-  assert.deepEqual(states, [{ state: 'connecting' }, { state: 'failed', reason: 'permission_denied' }]);
+  assert.deepEqual(states, [{ state: 'connecting' }, { state: 'failed', reason: 'transport_failed' }]);
   assert.equal(made.avatar[0].calls.filter((c) => c[0] === 'disconnect').length, 1, 'failed transport is torn down');
   await assert.rejects(() => session.connect(), (e) => e.code === 'invalid_state');
 });
