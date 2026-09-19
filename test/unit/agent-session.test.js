@@ -288,3 +288,57 @@ test('token is non-enumerable — never serializes off the facade', () => {
   assert.ok(!JSON.stringify(session).includes(CONV_KS));
   assert.ok(!Object.keys(session).includes('_token'));
 });
+
+// ───────────────────────── kickoff ─────────────────────────
+
+test('kickoff: passed to the first transport only; a switchMode() transport never carries it', async () => {
+  const { session, made } = newSession({ cfg: { kickoff: 'Greet the user.' } });
+  await session.connect();
+  assert.equal(made.avatar[0].cfg.kickoff, 'Greet the user.');
+  await session.switchMode('chat');
+  assert.equal('kickoff' in made.chat[0].cfg, false);
+  await session.switchMode('avatar');
+  assert.equal('kickoff' in made.avatar[1].cfg, false);
+});
+
+test('kickoff: chat-first passes the object form through untouched', async () => {
+  const { session, made } = newSession({ cfg: { mode: 'chat', kickoff: { text: 'Greet the user.', echo: true } } });
+  await session.connect();
+  assert.deepEqual(made.chat[0].cfg.kickoff, { text: 'Greet the user.', echo: true });
+  await session.switchMode('avatar');
+  assert.equal('kickoff' in made.avatar[0].cfg, false);
+});
+
+test('kickoff: absent from every transport cfg when not configured', async () => {
+  const { session, made } = newSession();
+  await session.connect();
+  assert.equal('kickoff' in made.avatar[0].cfg, false);
+  await session.switchMode('chat');
+  assert.equal('kickoff' in made.chat[0].cfg, false);
+});
+
+test('kickoff: a sendText buffered during a switch is delivered as itself, never merged with the kickoff', async () => {
+  let release;
+  const { session, made } = newSession({
+    cfg: { kickoff: 'Greet the user.' },
+    prep: (t) => { if (t.kind === 'chat') t.connectImpl = () => new Promise((r) => { release = r; }); },
+  });
+  await session.connect();
+  const sw = session.switchMode('chat');
+  const queued = session.sendText('next');
+  release();
+  await sw;
+  await queued;
+  assert.deepEqual(made.chat[0].calls.filter((c) => c[0] === 'sendText').map((c) => c[1]), ['next']);
+  assert.equal('kickoff' in made.chat[0].cfg, false);
+});
+
+test('kickoff: a connect() that fails does not leave the kickoff pending for a later transport', async () => {
+  const { session, made } = newSession({
+    cfg: { kickoff: 'Greet the user.' },
+    prep: (t) => { t.connectImpl = () => { throw new Error('nope'); }; },
+  });
+  await assert.rejects(() => session.connect(), /nope/);
+  assert.equal(made.avatar[0].cfg.kickoff, 'Greet the user.');
+  assert.equal(session._kickoffPending, false);
+});

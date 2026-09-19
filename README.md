@@ -331,6 +331,7 @@ Non-fatal problems on this path arrive as `warning` events, `{ code, message, ..
 | `mic_permission_denied` / `mic_not_found` / `mic_in_use` / `devices_permission_denied` | The default `micStartMode: 'immediate'` mic acquire failed. `connect()` never waits on or fails for the mic, so the session is `connected` mic-less. Payload has `detail`. | Typed turns (`speak()`) work as-is. Offer a mic button and call `startMic()` from the click to retry; it rejects with the same code if the mic still fails. |
 | `noise_processor_failed` | `noiseProcessor` threw during the background mic acquire; the raw stream was stopped. | Fix the processor. `startMic()` retries and rejects with this code if it throws again. |
 | `mic_attach_failed` | The mic was acquired but could not be attached to the ASR uplink (`replaceTrack` rejected); the stream was stopped. Payload has `detail`. | Call `startMic()` to retry. |
+| `kickoff_failed` | The `kickoff` text could not be sent (a guardrail or gate rejected it, or the session ended first). Payload has `detail`. | Call `speak()` / `sendText()` yourself, or fix the guardrail. |
 
 ### Text-only chat (`KalturaChatSession`)
 

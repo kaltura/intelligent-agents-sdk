@@ -56,6 +56,7 @@ import {
 import { inspectKs } from '../management/ks-inspect.js';
 import { assertRequestVars } from '../management/conversations.js';
 import { KalturaError } from '../core/errors.js';
+import { isSilentOpening, normalizeKickoff } from '../core/opening.js';
 import { redact } from '../core/redact.js';
 import { randId } from '../core/ids.js';
 import { makeAuditEmitter } from '../core/session.js';
@@ -145,6 +146,12 @@ export class KalturaAvatarSession extends Emitter {
    * @param {boolean} [cfg.isFirefox]       Forces ICE policy 'all' on both channels.
    * @param {string} [cfg.disclosureText]   AI-disclosure text emitted before any avatar speech (EU AI Act Art. 50).
    * @param {boolean} [cfg.requireDisclosureAck]  Gate the first turn on acknowledgeDisclosure() (regulated deployments).
+   * @param {string|{text:string, echo?:boolean}} [cfg.kickoff]  A first typed turn the SDK sends for you, exactly once
+   *   per session object, as soon as the server accepts input (right after the opening turn ends, or after
+   *   `acknowledgeDisclosure()` when `requireDisclosureAck` is set). Pair it with a `SILENT_OPENING` opening phrase
+   *   for the fastest time to first words. Goes through the same path as `speak()`, so the reply is interruptible.
+   *   Never re-sent on `resume()` or a reconnect. Its server echo is dropped from `transcript {type:'user'}`
+   *   unless `echo: true`. Empty/whitespace text sends nothing. Any other type throws `bad_request`.
    * @param {{username:string,credential:string,expiry?:number}} [cfg.turnCredentials]  Server-minted EPHEMERAL TURN creds (RFC 7635). Preferred over the static fallback.
    * @param {boolean} [cfg.allowInsecureTransport]  Permit ws/http transport (localhost/dev ONLY — emits a loud warning; never in production).
    * @param {(event:object)=>void} [cfg.onAuditEvent]  Redacted structured security events (session.connect/disconnect/auth.fail/protocol.violation). NIST AU-2/AU-3.
@@ -277,6 +284,11 @@ export class KalturaAvatarSession extends Emitter {
     this._pausedPendingApprove = null;
     this._disclosure = null;   // populated at connect; queryable via getDisclosure()
     this._disclosurePending = false;   // set true at connect when requireDisclosureAck blocks speak()
+    // Client kickoff — see cfg.kickoff. `_kickoffSent` flips once, in `_maybeSendKickoff()`,
+    // so no later connect-shaped path (resume, cold reconnect) can ever send it again.
+    this._kickoff = normalizeKickoff(cfg.kickoff, 'KalturaAvatarSession');
+    this._kickoffSent = false;
+    this._kickoffEcho = null;   // the text whose server echo we drop once (null = nothing to drop)
     // Opaque, operator-assigned subject id (HIPAA 164.312(a)(2)(i) unique user id) — stamped
     // onto every audit event so a PHI-channel access ties to an authenticated identity. NEVER
     // the patient's name/PHI (document "opaque id only").
@@ -561,6 +573,7 @@ export class KalturaAvatarSession extends Emitter {
       this._touchActivity();   // HIPAA auto-logoff: start the idle clock
       this._startStatsBeacon();
       this._audit('session.connect', 'success', { kind: 'conversation', entitlementEnforced: this._entitlementEnforced, action: this.mode });
+      this._maybeSendKickoff();   // held by speak() until the opening turn ends; no-op when disclosure is pending
     } catch (err) {
       this._setState('error');
       this._teardownTransports();
@@ -984,6 +997,47 @@ export class KalturaAvatarSession extends Emitter {
     this._disclosureAcked = true;
     this._disclosurePending = false;
     if (this._pendingApprove) { const s = this._pendingApprove; this._pendingApprove = null; this._approve(s); }
+    this._maybeSendKickoff();
+  }
+
+  /**
+   * The configured kickoff, for debugging/observability: `{ text, echo, sent }`, or `null`
+   * when none was configured (read-only).
+   * @returns {{text:string, echo:boolean, sent:boolean}|null}
+   */
+  get kickoff() {
+    return this._kickoff ? { text: this._kickoff.text, echo: this._kickoff.echo, sent: this._kickoffSent } : null;
+  }
+
+  /**
+   * Send `cfg.kickoff` exactly once, the first time the session is `connected` with no
+   * disclosure gate in the way. Rides `speak()`, so it is held until the opening turn ends
+   * and released by the same named events (stvFinishedTalking / agentInterrupted). A failed
+   * send surfaces as a `warning` (`code: 'kickoff_failed'`), never as a rejected connect().
+   */
+  _maybeSendKickoff() {
+    if (!this._kickoff || this._kickoffSent || this._disclosurePending || this.state !== 'connected') return;
+    this._kickoffSent = true;
+    this._kickoffEcho = this._kickoff.echo ? null : this._kickoff.text;
+    this.speak(this._kickoff.text).catch((e) => {
+      this._kickoffEcho = null;
+      this.emit('warning', { code: 'kickoff_failed', message: 'The kickoff text could not be sent.', detail: String(e?.detail || e?.message || e) });
+    });
+  }
+
+  /**
+   * Decide what a `userTranscription` echo should surface as, given a pending kickoff echo.
+   * Returns the text to emit, or `null` to emit nothing. Clears `_kickoffEcho` on a match
+   * (exact, or as the first line of a coalesced held-turn payload), so it fires at most once.
+   * @param {string} text
+   * @returns {string|null}
+   */
+  _stripKickoffEcho(text) {
+    const echo = this._kickoffEcho;
+    if (echo === null) return text;
+    if (text === echo) { this._kickoffEcho = null; return null; }
+    if (text.startsWith(echo + '\n')) { this._kickoffEcho = null; return text.slice(echo.length + 1); }
+    return text;
   }
 
   /**
@@ -2130,10 +2184,12 @@ export class KalturaAvatarSession extends Emitter {
       // condition — it must NOT reset on agent_start_speech/turnStart (an idle wake-up
       // nudge fires that mid-spiral) but SHOULD reset once the brain genuinely recovers.
       if (d && (SPOKEN_TYPES.has(d.type) || (action && action.type === 'render-genui'))) { this._clearBrainWatchdog(); this._sessionToolSegCount = 0; this._hardSpiralRecovering = false; this._turnSawOutput = true; }
-      // First real OUTPUT segment settles the dead-air signal — an avatar/text/tool/genui
-      // segment is the brain actually producing something. A `think` segment is still the
-      // gap (it's the "preparing…" phase), so it does NOT settle.
-      if (d && d.type && d.type !== 'think') this._settleResponsePending();
+      // A `think` segment is the server acknowledging the turn — it is working, but has
+      // produced nothing perceivable yet, so it ARMS the dead-air signal (a UI can show
+      // "thinking" from here). The first real OUTPUT segment (avatar/text/tool/genui) settles it.
+      // Both helpers are idempotent, so repeated think deltas and repeated output are no-ops.
+      if (d?.type === 'think') this._armResponsePending();
+      else if (d?.type) this._settleResponsePending();
       this.emit('brainSegment', d);
     });
     // NOTE: agent_start_speech (with its "preparing…"/think control) marks the START of the
@@ -2178,11 +2234,15 @@ export class KalturaAvatarSession extends Emitter {
       // The server's own check-in ("are you still there?") and goodbye turns cannot be
       // interrupted and drop any text sent during them — hold speak() until they end.
       if (isUninterruptibleSpeechId(p?.speechId)) this._uninterruptibleTurn = true;
+      // A SILENT_OPENING opening turn speaks nothing — its `<blank>` tag never reaches the app
+      // as text. The turn's start/stop events still fire (they drive the speak() hold).
+      if (isSilentOpeningTurn(p?.speechId, p?.text)) return;
       this.emit('transcript', { text: clampInbound(p?.text || ''), type: 'final', speechId: p?.speechId, words: [] });
     });
 
     // Captions (authoritative).
     socket.on('stvSpeechChunk', (p) => {
+      if (isSilentOpeningTurn(p?.speechId, p?.text)) return;   // see generatingSpeech
       const text = clampInbound(p?.text);
       this.emit('speechChunk', { text, durationMs: p?.durationMs, speechId: p?.speechId });
       const tr = this._tracker.ingestChunk({ ...p, text });
@@ -2199,7 +2259,17 @@ export class KalturaAvatarSession extends Emitter {
     socket.on('userStartedTalking', () => { this._clearBrainWatchdog(); this._touchActivity(); this.emit('userStartedTalking', {}); });
     // The user's turn produced a transcription → the brain should now respond; watch for a stall (R5)
     // and flip the response-pending signal so the app can mask the dead-air gap until output lands.
-    socket.on('agentTurnToTalk', (p) => { this._armBrainWatchdog(); this._armResponsePending(); this._touchActivity(); this._completer.touch(); if (p && p.userTranscription) { this._audit('turn.user_captured', 'success', {}); this._lastTurnText = clampInbound(p.userTranscription); this.emit('transcript', { text: this._lastTurnText, type: 'user', speechId: null, words: [] }); } });
+    socket.on('agentTurnToTalk', (p) => {
+      this._armBrainWatchdog(); this._armResponsePending(); this._touchActivity(); this._completer.touch();
+      if (!(p && p.userTranscription)) return;
+      this._audit('turn.user_captured', 'success', {});
+      this._lastTurnText = /** @type {string} */ (clampInbound(p.userTranscription));
+      // The kickoff is the app's own text, not the user's: drop its server echo from the user
+      // transcript — exactly once, by exact text match, no timer. If speak() text was held and
+      // joined onto the kickoff during the opening turn, only the user's own lines are surfaced.
+      const shown = this._stripKickoffEcho(this._lastTurnText);
+      if (shown !== null) this.emit('transcript', { text: shown, type: 'user', speechId: null, words: [] });
+    });
     // Forwarded smart-turn VAD end-of-turn indicator (WIRE-PROTOCOL §4b) — passthrough, no SDK-side logic depends on it yet.
     socket.on('smartTurnStatus', (p) => this.emit('smartTurnStatus', { status: p?.status, timeoutMs: p?.timeout_ms, probability: p?.probability }));
 
@@ -2757,6 +2827,16 @@ export class KalturaAvatarSession extends Emitter {
 function isUninterruptibleSpeechId(speechId) {
   return typeof speechId === 'string' && (speechId.endsWith('-wake-up') || speechId.endsWith('-hangup-message'));
 }
+
+/**
+ * The scripted opening turn (speechId `<nonce>-approved-permissions`) carrying the
+ * `SILENT_OPENING` tag: the TTS speaks nothing for it, so neither should the app's captions.
+ * @param {unknown} speechId @param {unknown} text
+ */
+function isSilentOpeningTurn(speechId, text) {
+  return typeof speechId === 'string' && speechId.endsWith('-approved-permissions') && isSilentOpening(text);
+}
+
 
 function fatal(event) {
   const info = FATAL_CODE[event] || { code: 'connect_failed', num: 0 };

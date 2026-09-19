@@ -34,6 +34,7 @@ import { assertRequestVars, remapConverseError } from '../management/conversatio
 import { validateCapabilities } from '../management/capabilities.js';
 import { inspectKs } from '../management/ks-inspect.js';
 import { KalturaError, errorFromResponse } from '../core/errors.js';
+import { normalizeKickoff } from '../core/opening.js';
 import { makeAuditEmitter } from '../core/session.js';
 import { sanitizeJson } from '../core/safety.js';
 import { assertSecureTransport } from '../core/transport-guard.js';
@@ -96,6 +97,10 @@ export class KalturaChatSession extends Emitter {
    * @param {string} [cfg.presenceChannelPrefix] Default `'kaltura-agents:thread'`.
    * @param {number} [cfg.presenceHeartbeatMs] Default 4000.
    * @param {number} [cfg.presenceStaleMs] Default 12000.
+   * @param {string|{text:string, echo?:boolean}} [cfg.kickoff]  A first turn the SDK sends for you on `connect()`,
+   *   exactly once per session object, through the same serialized path as `sendText()`. Its user-side
+   *   `transcript` echo is skipped unless `echo: true`. Empty/whitespace text sends nothing. Any other
+   *   type throws `bad_request`. A failed send surfaces as a `warning` (`code: 'kickoff_failed'`).
    */
   constructor(cfg) {
     super();
@@ -169,6 +174,8 @@ export class KalturaChatSession extends Emitter {
       presenceStaleMs: cfg.presenceStaleMs ?? 12000,
     });
     if (this._threadId) this._completer.noteThreadId(this._threadId);
+    this._kickoff = normalizeKickoff(cfg.kickoff, 'KalturaChatSession');
+    this._kickoffSent = false;
     /** @type {'idle'|'connected'|'closed'} */
     this.state = 'idle';
   }
@@ -188,6 +195,30 @@ export class KalturaChatSession extends Emitter {
     }
     this._setState('connected');
     this._completer.wire();
+    this._maybeSendKickoff();
+  }
+
+  /**
+   * The configured kickoff, for debugging/observability: `{ text, echo, sent }`, or `null`
+   * when none was configured (read-only).
+   * @returns {{text:string, echo:boolean, sent:boolean}|null}
+   */
+  get kickoff() {
+    return this._kickoff ? { text: this._kickoff.text, echo: this._kickoff.echo, sent: this._kickoffSent } : null;
+  }
+
+  /**
+   * Queue `cfg.kickoff` as the first turn, exactly once. Rides `_turnChain` like `sendText()`,
+   * so a `sendText()` issued right after `connect()` runs after the kickoff reply. A rejected
+   * turn surfaces as a `warning` (`code: 'kickoff_failed'`); it never rejects `connect()`.
+   */
+  _maybeSendKickoff() {
+    if (!this._kickoff || this._kickoffSent || this.state !== 'connected') return;
+    this._kickoffSent = true;
+    const run = () => this._converseTurn(this._kickoff.text, { echo: this._kickoff.echo });
+    const turn = this._turnChain.then(run, run);
+    this._turnChain = turn.then(() => {}, () => {});
+    turn.catch((e) => this.emit('warning', { code: 'kickoff_failed', message: 'The kickoff text could not be sent.', detail: String(e?.detail || e?.message || e) }));
   }
 
   /**
@@ -222,7 +253,7 @@ export class KalturaChatSession extends Emitter {
     return turn;
   }
 
-  /** @param {string} text @param {{signal?: AbortSignal}} opts */
+  /** @param {string} text @param {{signal?: AbortSignal, echo?: boolean}} opts `echo:false` skips the user-side `transcript` emit (kickoff only). */
   async _converseTurn(text, opts) {
     this._requireConnected('sendText');   // re-check: state may have changed while queued
     const gen = this._sessionGen;
@@ -239,7 +270,7 @@ export class KalturaChatSession extends Emitter {
     this._pendingFusedBlobs = [];
     this._turnToolSegCount = 0;
     this._toolSpiralSignaled = false;
-    this.emit('transcript', { text, type: 'user', speechId: null, words: [] });
+    if (opts.echo !== false) this.emit('transcript', { text, type: 'user', speechId: null, words: [] });
     this.emit('turnStart', { speechId: null, turnId, isNewTurn: true });
     this.emit('responsePending', {});
     this._armBrainWatchdog();

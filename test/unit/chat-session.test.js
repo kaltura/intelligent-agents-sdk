@@ -458,3 +458,70 @@ test('tool spiral soft signal: resets its count each turn (a fresh sendText)', a
   await session.sendText('turn two');
   assert.equal(fireCount, 0, 'a fresh turn must not inherit the previous turn\'s tool-segment count');
 });
+
+// ───────────────────────── kickoff ─────────────────────────
+
+test('kickoff: sent as the first converse turn on connect(), exactly once, before any queued sendText', async () => {
+  const { session, fetch } = newSession({ cfg: { kickoff: 'Greet the user.' } });
+  const users = [];
+  session.on('transcript', (t) => { if (t.type === 'user') users.push(t.text); });
+  const starts = []; session.on('turnStart', (p) => starts.push(p));
+  assert.deepEqual(session.kickoff, { text: 'Greet the user.', echo: false, sent: false });
+  await session.connect();
+  assert.deepEqual(session.kickoff, { text: 'Greet the user.', echo: false, sent: true });
+  const reply = await session.sendText('next');   // rides the turn chain → lands after the kickoff turn
+  assert.equal(fetch.calls.length, 2);
+  assert.equal(fetch.calls[0].body.userMessage, 'Greet the user.');
+  assert.equal(fetch.calls[1].body.userMessage, 'next');
+  assert.equal(reply.text, 'Hello world');
+  assert.deepEqual(users, ['next'], 'kickoff text is not echoed as a user transcript by default');
+  assert.equal(starts.length, 2, 'the kickoff is a real turn: turnStart fires for it');
+});
+
+test('kickoff: echo:true shows the kickoff as a user transcript', async () => {
+  const { session } = newSession({ cfg: { kickoff: { text: 'Greet the user.', echo: true } } });
+  const users = [];
+  session.on('transcript', (t) => { if (t.type === 'user') users.push(t.text); });
+  await session.connect();
+  await session.sendText('next');
+  assert.deepEqual(users, ['Greet the user.', 'next']);
+});
+
+test('kickoff: carries request_vars and seeds the thread like any other turn', async () => {
+  const { session, fetch } = newSession({ cfg: { kickoff: 'Greet the user.', requestVars: { user_name: 'Dana' } } });
+  await session.connect();
+  await session.sendText('next');
+  assert.deepEqual(fetch.calls[0].body.request_vars, { user_name: 'Dana' });
+  assert.equal(fetch.calls[1].body.threadId, 't-1', 'the second turn continues the thread the kickoff opened');
+});
+
+test('kickoff: omitted / empty → null and no converse call on connect()', async () => {
+  for (const cfg of [{}, { kickoff: '' }, { kickoff: '  ' }, { kickoff: null }]) {
+    const { session, fetch } = newSession({ cfg });
+    assert.equal(session.kickoff, null);
+    await session.connect();
+    await new Promise((r) => setTimeout(r, 0));
+    assert.equal(fetch.calls.length, 0);
+  }
+});
+
+test('kickoff: wrong shapes throw bad_request at construction', () => {
+  for (const bad of [5, ['x'], { text: 1 }, { text: 'x', echo: 'y' }]) {
+    assert.throws(() => newSession({ cfg: { kickoff: bad } }), (e) => e.code === 'bad_request');
+  }
+});
+
+test('kickoff: a failed kickoff turn emits warning kickoff_failed and the next sendText still works', async () => {
+  let calls = 0;
+  const fetch = fakeFetch([{ match: '/assistant/converse', respond: () => (calls++ === 0 ? { status: 500, body: { message: 'boom' } } : { body: REPLY }) }]);
+  const { session } = newSession({ fetch, cfg: { kickoff: 'Greet the user.' } });
+  const warnings = []; session.on('warning', (w) => warnings.push(w));
+  const errors = []; session.on('error', (e) => errors.push(e));
+  await session.connect();
+  const reply = await session.sendText('next');
+  assert.equal(reply.text, 'Hello world');
+  assert.equal(warnings.filter((w) => w.code === 'kickoff_failed').length, 1);
+  assert.equal(typeof warnings[0].detail, 'string');
+  assert.equal(errors.length, 1, 'the turn error is still reported through error, like any turn');
+  assert.equal(session.state, 'connected');
+});

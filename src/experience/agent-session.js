@@ -65,6 +65,9 @@ export class KalturaAgentSession extends Emitter {
    * @param {boolean} [cfg.allowInsecureTransport] Localhost/dev only.
    * @param {object} [cfg.avatar] KalturaAvatarSession-specific cfg (`videoEl`, `conversationManagerUrl`, `srsBaseUrl`, `turnServerUrl`, `socketFactory`, mic options, `capabilities`, …) — required before the first avatar connect/switch.
    * @param {object} [cfg.chat] KalturaChatSession-specific cfg (`genieUrl`, `fetch`, `capabilities`).
+   * @param {string|{text:string, echo?:boolean}} [cfg.kickoff] A first turn the SDK sends for you, exactly once per
+   *   conversation, on the FIRST transport only (`connect()`); a `switchMode()` transport never re-sends it.
+   *   Set it here, not inside `cfg.avatar`/`cfg.chat`. Same shape and events as the transports' own `kickoff`.
    * @param {{avatar?:(cfg:object)=>object, chat?:(cfg:object)=>object}} [cfg.transportFactories] Test/advanced hook: override how a transport is constructed (receives the merged per-transport cfg, must return a transport-shaped object).
    */
   constructor(cfg) {
@@ -88,6 +91,9 @@ export class KalturaAgentSession extends Emitter {
     this._detachFns = [];
     this._switchBuffer = [];
     this._switching = null;
+    // Top-level `kickoff` rides only the first transport (see _buildTransport); cleared once
+    // connect() has handed it over, so a later switchMode() transport never re-sends it.
+    this._kickoffPending = cfg.kickoff !== undefined;
     /** @type {'idle'|'connecting'|'connected'|'switching'|'closed'|'failed'} */
     this.state = 'idle';
   }
@@ -106,10 +112,12 @@ export class KalturaAgentSession extends Emitter {
     this._setState('connecting');
     try {
       const t = this._buildTransport(this._mode);
+      this._kickoffPending = false;   // handed to the first transport (or rejected by its constructor)
       this._attach(t);
       await t.connect();
       this._setState('connected');
     } catch (e) {
+      this._kickoffPending = false;
       this._teardownTransport({ final: false });
       this._setState('failed', 'transport_failed');
       throw e;
@@ -306,6 +314,7 @@ export class KalturaAgentSession extends Emitter {
       partnerId: this._cfg.partnerId,
       allowInsecureTransport: this._cfg.allowInsecureTransport,
     };
+    if (this._kickoffPending) shared.kickoff = this._cfg.kickoff;
     const factory = this._cfg.transportFactories?.[mode];
     if (mode === 'avatar') {
       const merged = { ...shared, ...(this._cfg.avatar || {}) };
