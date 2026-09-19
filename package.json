@@ -62,6 +62,8 @@
     "live-verify:agents": "node scripts/live-verify-agents.mjs",
     "live-verify:intellects-conversations": "node scripts/live-verify-intellects-conversations.mjs",
     "live-verify:tools": "node scripts/live-verify-tools.mjs",
+    "live-verify:kickoff": "node scripts/live-verify-kickoff.mjs",
+    "live-verify:connect-timing": "node scripts/live-verify-connect-timing.mjs",
     "verify:noise-suppressor": "node scripts/verify-noise-suppressor.mjs",
     "verify:avatar-media": "node scripts/verify-avatar-media.mjs",
     "verify:distribution": "node scripts/verify-distribution.mjs",

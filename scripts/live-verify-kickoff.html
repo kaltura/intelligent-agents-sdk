@@ -1,0 +1,220 @@
+<!doctype html>
+<!--
+  Browser harness for scripts/live-verify-kickoff.mjs and scripts/live-verify-connect-timing.mjs.
+  Served by scripts/live-verify-kickoff-shared.mjs (which also serves /src and /init).
+  Not a demo: it records every session event, every socket frame, and exposes
+  window.test* hooks for the Node side. It never connects on its own.
+
+  Query params
+    mode        avatar | chat | agent-avatar | agent-chat        (default avatar)
+    kickoff     kickoff text (omitted → no kickoff)
+    echo        1 → kickoff: { text, echo: true }
+    disclosure  1 → requireDisclosureAck: true
+    mic         immediate | deferred | denied                    (default immediate)
+    reconnectWindowMs   forwarded to the avatar session
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>live-verify-kickoff harness</title>
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js" integrity="sha384-2huaZvOR9iDzHqslqwpR87isEmrfxqyWOF7hr7BY6KG0+hVKLoEXMPUJw3ynWuhO" crossorigin="anonymous"></script>
+  <style>video { width: 320px; height: 180px; object-fit: cover; background: #000 }</style>
+</head>
+<body>
+  <video id="v" autoplay playsinline></video>
+  <audio id="a" autoplay></audio>
+  <pre id="log"></pre>
+  <script type="module">
+    import { KalturaAvatarSession, KalturaChatSession, KalturaAgentSession } from '/src/experience/index.js';
+
+    const q = new URLSearchParams(location.search);
+    const mode = q.get('mode') || 'avatar';
+    const kickoffText = q.get('kickoff') || '';
+    const echo = q.get('echo') === '1';
+    const disclosure = q.get('disclosure') === '1';
+    const mic = q.get('mic') || 'immediate';
+    const reconnectWindowMs = q.get('reconnectWindowMs') ? Number(q.get('reconnectWindowMs')) : undefined;
+
+    // ---- recording -------------------------------------------------------
+    const t0 = performance.now();
+    const events = [];
+    window.__events = events;
+    const logEl = document.getElementById('log');
+    function rec(type, detail) {
+      const e = { t: Date.now(), tRel: Math.round(performance.now() - t0), type, detail };
+      events.push(e);
+      if (events.length <= 400) logEl.textContent += `${e.tRel} ${type} ${detail === undefined ? '' : JSON.stringify(detail).slice(0, 160)}\n`;
+    }
+    window.__rec = rec;
+
+    // ---- mic + RTC wrappers ---------------------------------------------
+    window.__gumCalls = 0;
+    window.__pcs = [];
+    const realGum = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+    async function getUserMedia(constraints) {
+      window.__gumCalls++;
+      rec('gum:call', { n: window.__gumCalls });
+      if (mic === 'denied') {
+        const err = new DOMException('Permission denied by harness', 'NotAllowedError');
+        rec('gum:deny', {});
+        throw err;
+      }
+      return realGum(constraints);
+    }
+    class RecordingPC extends RTCPeerConnection {
+      constructor(...args) {
+        super(...args);
+        window.__pcs.push(this);
+        rec('pc:created', { n: window.__pcs.length });
+      }
+    }
+
+    // ---- socket wrapper --------------------------------------------------
+    window.__sockets = [];
+    function socketFactory(url, opts) {
+      const s = io(url, opts);
+      window.__sockets.push(s);
+      rec('socket:created', { n: window.__sockets.length });
+      const rawEmit = s.emit.bind(s);
+      s.emit = (ev, payload, ...rest) => {
+        const d = { ev };
+        if (payload && typeof payload === 'object') {
+          if (typeof payload.text === 'string') d.text = payload.text;
+          if (payload.isSpeechStart !== undefined) d.isSpeechStart = payload.isSpeechStart;
+        }
+        rec('socket:out', d);
+        return rawEmit(ev, payload, ...rest);
+      };
+      s.onAny((ev, p) => {
+        const d = { ev };
+        if (p && typeof p === 'object') {
+          if (p.speechId !== undefined) d.speechId = p.speechId;
+          if (p.type !== undefined) d.type = p.type;
+          if (ev === 'stvFinishedTalking' && typeof p.agentContent === 'string') d.agentContent = p.agentContent.slice(0, 80);
+          if (ev === 'agentTurnToTalk' && typeof p.userTranscription === 'string') d.userTranscription = p.userTranscription.slice(0, 120);
+        }
+        rec('socket:in', d);
+      });
+      s.on('connect', () => rec('socket:connect', { id: s.id, recovered: s.recovered === true }));
+      s.on('disconnect', (reason) => rec('socket:disconnect', { reason }));
+      s.io.on('reconnect_attempt', (n) => rec('socket:reconnect_attempt', { n }));
+      return s;
+    }
+
+    // ---- inbound audio stats ------------------------------------------
+    async function sampleStats(label) {
+      const out = [];
+      for (const pc of window.__pcs) {
+        let stats;
+        try { stats = await pc.getStats(); } catch { continue; }
+        stats.forEach((r) => {
+          if (r.type === 'inbound-rtp' && r.kind === 'audio') {
+            out.push({ pc: window.__pcs.indexOf(pc) + 1, totalAudioEnergy: r.totalAudioEnergy ?? null, packetsReceived: r.packetsReceived ?? null, totalSamplesDuration: r.totalSamplesDuration ?? null });
+          }
+        });
+      }
+      rec('stats:sample', { label, inbound: out });
+      return out;
+    }
+    window.sampleStats = sampleStats;
+
+    // ---- build the session -----------------------------------------------
+    const init = await (await fetch('/init')).json();
+    if (init.error) { rec('init:error', { error: init.error }); throw new Error(init.error); }
+    const kickoff = kickoffText ? (echo ? { text: kickoffText, echo: true } : kickoffText) : undefined;
+
+    const avatarCfg = {
+      conversationManagerUrl: init.conversationManagerUrl,
+      srsBaseUrl: init.srsBaseUrl,
+      turnServerUrl: init.turnServerUrl,
+      videoEl: document.getElementById('v'),
+      audioEl: document.getElementById('a'),
+      socketFactory,
+      rtcConstructor: RecordingPC,
+      getUserMedia,
+      micStartMode: mic === 'deferred' ? 'deferred' : 'immediate',
+      requireDisclosureAck: disclosure,
+      ...(reconnectWindowMs ? { reconnectWindowMs } : {}),
+      logger: (level, msg, data) => rec('log', { level, msg, data }),
+    };
+    const chatCfg = { ...(init.genieUrl ? { genieUrl: init.genieUrl } : {}) };
+
+    let session;
+    if (mode === 'avatar') session = new KalturaAvatarSession({ token: init.ks, kickoff, ...avatarCfg });
+    else if (mode === 'chat') session = new KalturaChatSession({ token: init.conversationKs, kickoff, ...chatCfg });
+    else if (mode === 'agent-avatar' || mode === 'agent-chat') {
+      session = new KalturaAgentSession({
+        token: init.ks,
+        mode: mode === 'agent-avatar' ? 'avatar' : 'chat',
+        kickoff,
+        avatar: avatarCfg,
+        chat: chatCfg,
+      });
+    } else throw new Error(`unknown mode ${mode}`);
+    window.session = session;
+
+    const EVENTS = [
+      'stateChange', 'disclosure', 'mediaReady', 'micStarted', 'warning', 'error', 'ended',
+      'avatarStartTalking', 'avatarStopTalking', 'interrupted', 'speechChunk', 'transcript',
+      'turnStart', 'turnEnd', 'responsePending', 'responseSettled', 'userStartedTalking',
+      'reconnecting', 'reconnected', 'connectivityChanged', 'resumed', 'resumeReady', 'mediaRecovering', 'mediaRecovered',
+      'modeChanged', 'transportChanged', 'connectionQuality', 'idleWarning', 'timeWarning', 'timeExpired',
+    ];
+    const handler = (ev) => (d) => {
+      rec(ev, d);
+      if (ev === 'avatarStartTalking') sampleStats('avatarStartTalking');
+      if (ev === 'avatarStopTalking') sampleStats('avatarStopTalking');
+      if (ev === 'interrupted') sampleStats('interrupted');
+    };
+    for (const ev of EVENTS) session.on(ev, handler(ev));
+
+    // KalturaAgentSession forwards only the transport-neutral events. The
+    // avatar-only ones (speechChunk, avatarStart/StopTalking, interrupted,
+    // disclosure, micStarted, reconnecting, ...) are read off each transport as
+    // it is attached, which is the documented `transportChanged` pattern.
+    // `transportChanged` fires before the transport connects, so opening-turn
+    // events are recorded too.
+    const FACADE_EVENTS = new Set([
+      'transcript', 'turnStart', 'turnEnd', 'error', 'warning', 'responsePending', 'responseSettled',
+      'ended', 'stateChange', 'modeChanged', 'transportChanged',
+    ]);
+    const wired = new WeakSet();
+    if (mode.startsWith('agent')) {
+      session.on('transportChanged', ({ transport }) => {
+        if (!transport || wired.has(transport)) return;
+        wired.add(transport);
+        for (const ev of EVENTS) if (!FACADE_EVENTS.has(ev)) transport.on(ev, handler(ev));
+      });
+    }
+
+    // ---- test hooks --------------------------------------------------------
+    const avatarTransport = () => (mode.startsWith('agent') ? session.transport : session);
+    window.testConnect = async () => {
+      rec('connect:start', {});
+      try { await session.connect(); rec('connect:resolved', { state: session.state, mode: session.mode }); return { ok: true, state: session.state }; }
+      catch (e) { rec('connect:rejected', { code: e?.code, message: e?.message }); return { ok: false, code: e?.code, message: e?.message }; }
+    };
+    window.testSpeak = async (text) => {
+      rec('speak:call', { text });
+      const p = session.speak(text);
+      const settled = await Promise.race([p.then((v) => ({ sent: v })), new Promise((r) => setTimeout(() => r({ pending: true }), 0))]);
+      rec('speak:immediate', settled);
+      const sent = await p;
+      rec('speak:resolved', { text, sent });
+      return sent;
+    };
+    window.testSendText = async (text) => { rec('sendText:call', { text }); const r = await session.sendText(text); rec('sendText:resolved', { text }); return r; };
+    window.testPause = () => { rec('pause:call', {}); return avatarTransport().pause(); };
+    window.testResume = async () => { rec('resume:call', {}); await avatarTransport().resume(); rec('resume:resolved', { state: session.state }); };
+    window.testAck = () => { rec('ack:call', {}); return avatarTransport().acknowledgeDisclosure(); };
+    window.testStartMic = async () => { rec('startMic:call', {}); await avatarTransport().startMic(); rec('startMic:resolved', {}); };
+    window.testSwitch = async (target) => { rec('switch:call', { target }); await session.switchMode(target); rec('switch:resolved', { mode: session.mode }); };
+    window.testDisconnect = async () => { rec('disconnect:call', {}); await session.disconnect(); rec('disconnect:resolved', { state: session.state }); };
+    window.testKickoff = () => (mode.startsWith('agent') ? session.transport?.kickoff : session.kickoff) ?? null;
+    window.testState = () => ({ state: session.state, mode: session.mode, paused: avatarTransport()?.paused ?? null, threadId: session.threadId ?? null });
+
+    rec('harness:ready', { mode, kickoff: !!kickoff, echo, disclosure, mic });
+    window.__ready = true;
+  </script>
+</body>
+</html>

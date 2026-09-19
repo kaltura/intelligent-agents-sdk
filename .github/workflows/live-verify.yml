@@ -47,6 +47,13 @@ name: Live verification
 # Firefox and WebKit — see scripts/live-verify-session-complete.mjs. Real
 # mobile OS backgrounding/tab-kill behavior isn't reachable from any
 # Playwright engine; see manual-testing/session-complete/ for that.
+# live-verify-kickoff covers the silent-opening + `kickoff` startup pattern
+# end to end against a real provisioned agent in headless Chromium: connect
+# timing over several runs (scripts/live-verify-connect-timing.mjs) and the
+# scenario matrix in scripts/live-verify-kickoff.mjs (echo, disclosure ack,
+# pause/resume, reconnect, agent-session mode switch, denied/deferred mic,
+# spoken opening, barge-in). Chromium only: it asserts on inbound-rtp
+# totalAudioEnergy, which Firefox doesn't expose.
 on:
   workflow_dispatch: {}
   pull_request:
@@ -97,6 +104,10 @@ jobs:
               - 'scripts/live-verify-avatar-media.html'
               - 'scripts/live-verify-context-fields.mjs'
               - 'scripts/live-verify-context-fields.html'
+              - 'scripts/live-verify-kickoff.mjs'
+              - 'scripts/live-verify-kickoff.html'
+              - 'scripts/live-verify-kickoff-shared.mjs'
+              - 'scripts/live-verify-connect-timing.mjs'
               - 'package.json'
               - 'package-lock.json'
               - '.github/workflows/live-verify.yml'
@@ -757,6 +768,73 @@ jobs:
               b64=$(base64 -w 0 "$shot" 2>/dev/null || base64 "$shot")
               echo "![chroma-key composited output](data:image/png;base64,$b64)"
             fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  live-verify-kickoff:
+    name: 🔴🌐 Live verification (silent opening + kickoff, chromium)
+    needs: changes
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs.browser == 'true')
+    runs-on: ubuntu-latest
+    environment: live-verify
+    steps:
+      - name: 📥 Check out the repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: 🟢 Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+
+      - name: 📦 Install dependencies
+        run: npm ci
+
+      - name: 🎭 Install chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: 🔴🌐 Provision a silent-opening agent → measure connect timing (5 runs) → cleanup
+        id: live_verify_connect_timing
+        env:
+          AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
+          AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
+        run: |
+          set -o pipefail
+          node scripts/live-verify-connect-timing.mjs --env prod 2>&1 | tee live-verify-connect-timing-output.log
+
+      - name: 🔴🌐 Provision a silent-opening agent → run the kickoff scenario matrix → cleanup
+        id: live_verify_kickoff
+        if: always()
+        env:
+          AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
+          AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
+        run: |
+          set -o pipefail
+          node scripts/live-verify-kickoff.mjs --env prod 2>&1 | tee live-verify-kickoff-output.log
+
+      - name: 📤 Upload live-verify-kickoff artifacts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: live-verify-kickoff-artifacts
+          path: |
+            live-verify-artifacts/
+            live-verify-connect-timing-output.log
+            live-verify-kickoff-output.log
+          retention-days: 30
+
+      - name: 📝 Write job summary
+        if: always()
+        run: |
+          {
+            echo "### 🔴🌐 Silent opening + kickoff — timing ${{ steps.live_verify_connect_timing.outcome }}, scenarios ${{ steps.live_verify_kickoff.outcome }}"
+            echo
+            for md in live-verify-artifacts/connect-timing-*.md live-verify-artifacts/kickoff-*.md; do
+              [ -f "$md" ] && cat "$md" && echo
+            done
+            echo '```'
+            tail -n 40 live-verify-kickoff-output.log 2>/dev/null || true
+            echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
   live-verify-avatar-media:
