@@ -7,27 +7,9 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { KalturaAvatarSession } from '../../src/experience/index.js';
 import { FakeSocket, scriptHappyPath } from '../fakes/socket.js';
-import { FakeRTCPeerConnection, FakeVideoEl, FakeMediaStream, fakeGetUserMedia, FakeMediaStreamCtor } from '../fakes/rtc.js';
-
-const CONV_KS = 'djJ8' + Buffer.from('v2|123|geniegpcid:1222').toString('base64url');
-
-function newSession(overrides = {}) {
-  FakeRTCPeerConnection.reset();
-  const socket = new FakeSocket();
-  const videoEl = overrides.videoEl ?? new FakeVideoEl({ autoCanPlay: true });
-  const whepFetch = async () => ({ ok: true, status: 201, text: async () => 'v=0\r\nanswer\r\n', headers: { get: () => 'https://srs/whep/resource/1' } });
-  const getUserMedia = overrides.getUserMedia ?? fakeGetUserMedia();
-  const session = new KalturaAvatarSession({
-    token: CONV_KS, srsBaseUrl: 'https://srs.example', turnServerUrl: 'turn.avatar.us.kaltura.ai',
-    videoEl, socketFactory: () => socket, rtcConstructor: FakeRTCPeerConnection,
-    fetch: whepFetch, getUserMedia,
-    mediaStreamConstructor: FakeMediaStreamCtor,
-    ...overrides.cfg,
-  });
-  return { session, socket, videoEl, getUserMedia };
-}
+import { FakeMediaStream, fakeGetUserMedia } from '../fakes/rtc.js';
+import { newAvatarSession as newSession, asrPeer } from '../fakes/avatar-session.js';
 
 /** A getUserMedia whose prompt stays open until the test calls `release()` (or `deny(name)`). */
 function heldGetUserMedia() {
@@ -46,9 +28,6 @@ function heldGetUserMedia() {
   return fn;
 }
 
-// The STV (WHEP) peer is created first, in parallel with the agent wait, so pick the ASR
-// peer by shape (the one with no video transceiver) rather than by creation order.
-const asrPeer = () => FakeRTCPeerConnection.instances.find((pc) => !pc.transceivers.some((t) => t.kind === 'video'));
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
 test('connect() resolves while the permission prompt is still open; the track attaches later via replaceTrack', async () => {

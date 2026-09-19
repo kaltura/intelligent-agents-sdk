@@ -215,10 +215,21 @@ export class KalturaChatSession extends Emitter {
   _maybeSendKickoff() {
     if (!this._kickoff || this._kickoffSent || this.state !== 'connected') return;
     this._kickoffSent = true;
-    const run = () => this._converseTurn(this._kickoff.text, { echo: this._kickoff.echo });
+    this._queueTurn(this._kickoff.text, { echo: this._kickoff.echo })
+      .catch((e) => this.emit('warning', { code: 'kickoff_failed', message: 'The kickoff text could not be sent.', detail: String(e?.detail || e?.message || e) }));
+  }
+
+  /**
+   * Append one turn to `_turnChain` and return its promise. The chain itself
+   * never rejects (a failed turn still rejects the returned promise for its
+   * caller), so a failed turn never blocks the next one.
+   * @param {string} text @param {{signal?: AbortSignal, echo?: boolean}} opts
+   */
+  _queueTurn(text, opts) {
+    const run = () => this._converseTurn(text, opts);
     const turn = this._turnChain.then(run, run);
     this._turnChain = turn.then(() => {}, () => {});
-    turn.catch((e) => this.emit('warning', { code: 'kickoff_failed', message: 'The kickoff text could not be sent.', detail: String(e?.detail || e?.message || e) }));
+    return turn;
   }
 
   /**
@@ -246,11 +257,7 @@ export class KalturaChatSession extends Emitter {
   async sendText(text, opts = {}) {
     this._requireConnected('sendText');
     if (typeof text !== 'string' || !text.trim()) throw new KalturaError({ type: 'about:blank', title: 'bad sendText', code: 'bad_request', detail: 'sendText(text) needs a non-empty string.' });
-    const run = () => this._converseTurn(text, opts);
-    const turn = this._turnChain.then(run, run);
-    // Keep the chain alive after a failed turn (the failure still rejects `turn` for the caller).
-    this._turnChain = turn.then(() => {}, () => {});
-    return turn;
+    return this._queueTurn(text, opts);
   }
 
   /** @param {string} text @param {{signal?: AbortSignal, echo?: boolean}} opts `echo:false` skips the user-side `transcript` emit (kickoff only). */

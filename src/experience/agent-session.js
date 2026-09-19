@@ -115,7 +115,8 @@ export class KalturaAgentSession extends Emitter {
    * `transport_failed`) and the transport's typed error is re-thrown —
    * construct a new KalturaAgentSession to retry. A denied or missing mic
    * is not a failure: the avatar transport connects mic-less and emits a
-   * `warning` (`mic_permission_denied` / `mic_not_found` / `mic_in_use`).
+   * `warning` (`mic_permission_denied` / `mic_not_found` / `mic_in_use` /
+   * `mic_attach_failed`).
    * @returns {Promise<void>}
    */
   async connect() {

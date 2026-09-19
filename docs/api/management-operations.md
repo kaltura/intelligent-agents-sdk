@@ -16,7 +16,7 @@ All use the **admin KS**.
 
 Filter keys: `agentId`, `adminTagsIn`, `adminTagsNotIn`, `searchValue` (case-insensitive substring match on `displayName`/`agentId`). An unrecognized key 400s.
 
-The request also takes a top-level `orderBy` (`+createdAt`, `-createdAt`, `+updatedAt`, `-updatedAt`; anything else 400s) — a separate field from `filter`. This differs from Threads/Messages below, where `orderBy` nests inside `filter`. SDK: `mgmt.agents.list(ks, opts)` passes `opts.filter` through as-is; it does not yet expose `orderBy`.
+The request also takes a top-level `orderBy` (`+createdAt`, `-createdAt`, `+updatedAt`, `-updatedAt`; anything else 400s) — a separate field from `filter`. This differs from Threads/Messages below, where `orderBy` nests inside `filter`. SDK: `mgmt.agents.list(ks, opts)` passes `opts.filter` through as-is and does not take `orderBy`.
 
 `mgmt.agents.delete` refuses to delete an agent whose `adminTags` match a production marker (`prod`, `production`, `keep`, `do-not-delete`, `live` — see `PROTECTED_TAGS` in `src/management/agents.js`). It only proceeds when called with `{confirmPermanent:true, allowProtected:true}`. This guards against an automated cleanup-by-tag sweep deleting a real, in-use agent.
 
@@ -116,7 +116,7 @@ All thread endpoints require an **admin KS** (`disableentitlement`). SDK: `mgmt.
 | Rename | `POST /v1/thread/update` | `{"id":"UUID","title":"New name"}` |
 | Set analysis | `POST /v1/thread/update` | `{"id":"UUID","thread_metadata":{"analysis":{...}}}` — shallow merge one level under `analysis`; a changed key fires the lifecycle `analysis_updated` event. SDK: `mgmt.threads.setAnalysis(id, patch, ks)`. |
 | Clear analysis | `POST /v1/thread/update` | `{"id":"UUID","thread_metadata":{}}` — wipes `analysis` (the only field `ThreadMetadata` has). SDK: `mgmt.threads.clearAnalysis(id, ks)`. |
-| Push | `POST /thread/push` (legacy Genie route, no `v1/` prefix — `v1/thread/push` does not exist) | `{"id":"UUID","content":"...","request_vars"?:{...},"system_message"?:"..."}` — `delivered:false` in the reply means no live socket is attached. The message still persists: it shows up in Messages list as `type:4` (`MessageType.EXTERNAL_PUSH`). `content` over a server-side, partner-configurable length cap returns `413 content exceeds max_message_length` — not checked client-side. SDK: `mgmt.threads.push({id,content,request_vars?,system_message?}, ks)`. |
+| Push | `POST /thread/push` (no `v1/` prefix on this route) | `{"id":"UUID","content":"...","request_vars"?:{...},"system_message"?:"..."}` — `delivered:false` in the reply means no live socket is attached. The message still persists: it shows up in Messages list as `type:4` (`MessageType.EXTERNAL_PUSH`). `content` over a server-side, partner-configurable length cap returns `413 content exceeds max_message_length` — not checked client-side. SDK: `mgmt.threads.push({id,content,request_vars?,system_message?}, ks)`. |
 | Delete | `POST /v1/thread/delete` | `{"thread_ids":["UUID"]}` — soft delete, followed by a scheduled infra-level purge |
 | Transcript | `POST /v1/thread/get_transcripts` | `{"id":"UUID"}` |
 

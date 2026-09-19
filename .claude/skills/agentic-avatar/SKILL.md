@@ -233,7 +233,7 @@ await kaltura.intellectConfig.setKnowledgeIds(configId, [record.id], admin.ks);
 await kaltura.knowledge.setEnabled(configId, true, admin.ks);   // flips capabilities.use_knowledge_base 'on'
 ```
 
-`knowledge_ids` is capped at one record per intellect (`setKnowledgeIds` throws before any network call if you pass more than one). RAG retrieval works only after async indexing completes, and `kaltura.knowledge.isIndexed(record.id, admin.ks)` does NOT tell you that. See API-REFERENCE.md § Ground the Agent for why (its `ready` flag is a container-lifecycle status, not an indexing-completion signal), which other signal to reach for, and why to budget a fixed wait instead of polling for now.
+`knowledge_ids` is capped at one record per intellect (`setKnowledgeIds` throws before any network call if you pass more than one). RAG retrieval works only after async indexing completes, and `kaltura.knowledge.isIndexed(record.id, admin.ks)` does NOT tell you that. See API-REFERENCE.md § Ground the Agent for why (its `ready` flag is a container-lifecycle status, not an indexing-completion signal), which other signal to reach for, and why to budget a fixed wait instead of polling.
 
 ## Lifecycle — react to session/thread events without polling
 

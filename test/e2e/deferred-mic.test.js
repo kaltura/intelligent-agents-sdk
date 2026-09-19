@@ -6,31 +6,12 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { KalturaAvatarSession } from '../../src/experience/index.js';
-import { FakeSocket, scriptHappyPath } from '../fakes/socket.js';
-import { FakeRTCPeerConnection, FakeVideoEl, fakeGetUserMedia, FakeMediaStreamCtor } from '../fakes/rtc.js';
+import { scriptHappyPath } from '../fakes/socket.js';
+import { fakeGetUserMedia } from '../fakes/rtc.js';
+import { newAvatarSession, asrPeer } from '../fakes/avatar-session.js';
 
-const CONV_KS = 'djJ8' + Buffer.from('v2|123|geniegpcid:1222').toString('base64url');
-
-function newSession(overrides = {}) {
-  FakeRTCPeerConnection.reset();
-  const socket = new FakeSocket();
-  const videoEl = overrides.videoEl ?? new FakeVideoEl({ autoCanPlay: true });
-  const whepFetch = overrides.fetch ?? (async () => ({ ok: true, status: 201, text: async () => 'v=0\r\nanswer\r\n', headers: { get: () => 'https://srs/whep/resource/1' } }));
-  const getUserMedia = overrides.getUserMedia ?? fakeGetUserMedia();
-  const session = new KalturaAvatarSession({
-    token: CONV_KS, srsBaseUrl: 'https://srs.example', turnServerUrl: 'turn.avatar.us.kaltura.ai',
-    videoEl, socketFactory: () => socket, rtcConstructor: FakeRTCPeerConnection,
-    fetch: whepFetch, getUserMedia, micStartMode: 'deferred',
-    mediaStreamConstructor: FakeMediaStreamCtor,
-    ...overrides.cfg,
-  });
-  return { session, socket, videoEl, getUserMedia };
-}
-
-// The STV (WHEP) peer is created first, in parallel with the agent wait, so pick the ASR
-// peer by shape (the one with no video transceiver) rather than by creation order.
-const asrPeer = () => FakeRTCPeerConnection.instances.find((pc) => !pc.transceivers.some((t) => t.kind === 'video'));
+/** Same fixture, deferred mic by default; `overrides.cfg.micStartMode` still wins. */
+const newSession = (overrides = {}) => newAvatarSession({ ...overrides, cfg: { micStartMode: 'deferred', ...overrides.cfg } });
 
 test('deferred connect: no getUserMedia, handshake identical, sendonly audio slot negotiated', async () => {
   const { session, socket, getUserMedia } = newSession();

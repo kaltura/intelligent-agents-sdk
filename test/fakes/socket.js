@@ -42,6 +42,16 @@ export class FakeSocket {
 }
 
 /**
+ * The typed turns a session put on the wire, in order. Skips the empty-text
+ * `onTextEntered` marker the SDK sends first to stop the avatar mid-sentence.
+ * @param {FakeSocket} socket @returns {string[]}
+ */
+export const textsEntered = (socket) => socket.emitsOf('onTextEntered').filter((p) => p.text !== '').map((p) => p.text);
+
+/** How many `onTextEntered` interrupt markers (empty text) the session sent. @param {FakeSocket} socket */
+export const markerCount = (socket) => socket.emitsOf('onTextEntered').filter((p) => p.text === '').length;
+
+/**
  * Drive a FakeSocket through the documented happy-path connect handshake
  * (steps 1–11) by auto-responding to each client emit. `opts.gateWhep` lets a
  * test hold the STV-playable gate (the greeting-clip test) — when true, the STV

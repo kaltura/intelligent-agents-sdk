@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { KalturaAvatarSession } from '../../src/experience/index.js';
-import { FakeSocket, scriptHappyPath } from '../fakes/socket.js';
+import { FakeSocket, scriptHappyPath, textsEntered } from '../fakes/socket.js';
 import { FakeRTCPeerConnection, FakeVideoEl, fakeGetUserMedia, FakeAudioContext, FakeMediaStreamCtor, FakeRTCRtpReceiver, FakeMediaStream, FakeAudioWorkletNode } from '../fakes/rtc.js';
 import { createNoiseSuppressor } from '../../src/experience/noise-suppressor.js';
 import { SPIRAL_RECOVERY_PREFIX } from '../../src/core/stream.js';
@@ -858,9 +858,7 @@ test('tool spiral HARD recovery: auto-resends the stuck ASR turn (default recove
   assert.equal(session.state, 'connected');
   assert.ok(recovered, 'spiralRecovered must fire once the resend is sent');
   assert.equal(recovered.text, 'walk me through the two-metric guidance range', 'the ORIGINAL text is reported, not the wrapped one');
-  const entered = secondSocket.emitsOf('onTextEntered').filter((p) => p.text);   // typed text only, not the isSpeechStart marker
-  assert.equal(entered.length, 1, 'exactly one resend must be emitted on the rebuilt socket');
-  assert.equal(entered[0].text, `${SPIRAL_RECOVERY_PREFIX}walk me through the two-metric guidance range`);
+  assert.deepEqual(textsEntered(secondSocket), [`${SPIRAL_RECOVERY_PREFIX}walk me through the two-metric guidance range`], 'exactly one resend must be emitted on the rebuilt socket');
   session.disconnect();
 });
 
@@ -878,9 +876,7 @@ test('tool spiral HARD recovery: auto-resends the stuck speak() turn too, not ju
 
   const secondSocket = liveSocket;
   assert.notEqual(secondSocket, firstSocket);
-  const entered = secondSocket.emitsOf('onTextEntered').filter((p) => p.text);   // typed text only, not the isSpeechStart marker
-  assert.equal(entered.length, 1);
-  assert.equal(entered[0].text, `${SPIRAL_RECOVERY_PREFIX}what should I expect for Q3 guidance`);
+  assert.deepEqual(textsEntered(secondSocket), [`${SPIRAL_RECOVERY_PREFIX}what should I expect for Q3 guidance`]);
   session.disconnect();
 });
 
@@ -927,9 +923,7 @@ test('tool spiral HARD recovery: a second spiral in the same session resends its
   const thirdSocket = liveSocket;
   assert.equal(recoveries.length, 2);
   assert.equal(recoveries[1].text, 'second stuck question');
-  const entered = thirdSocket.emitsOf('onTextEntered').filter((p) => p.text);
-  assert.equal(entered.length, 1, 'the third socket only ever gets the SECOND spiral\'s resend');
-  assert.equal(entered[0].text, `${SPIRAL_RECOVERY_PREFIX}second stuck question`);
+  assert.deepEqual(textsEntered(thirdSocket), [`${SPIRAL_RECOVERY_PREFIX}second stuck question`], 'the third socket only ever gets the SECOND spiral\'s resend');
   session.disconnect();
 });
 

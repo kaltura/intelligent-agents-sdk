@@ -5,27 +5,11 @@
 // lane honours the 30s overall connect deadline (not just its own per-step cap).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { KalturaAvatarSession } from '../../src/experience/index.js';
-import { FakeSocket, scriptHappyPath } from '../fakes/socket.js';
-import { FakeRTCPeerConnection, FakeVideoEl, fakeGetUserMedia, FakeMediaStreamCtor } from '../fakes/rtc.js';
+import { scriptHappyPath } from '../fakes/socket.js';
+import { FakeRTCPeerConnection } from '../fakes/rtc.js';
+import { newAvatarSession as newSession, okWhep } from '../fakes/avatar-session.js';
 
-const CONV_KS = 'djJ8' + Buffer.from('v2|123|geniegpcid:1222').toString('base64url');
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
-const okWhep = async () => ({ ok: true, status: 201, text: async () => 'v=0\r\nanswer\r\n', headers: { get: () => 'https://srs/whep/resource/1' } });
-
-function newSession(overrides = {}) {
-  FakeRTCPeerConnection.reset();
-  const socket = new FakeSocket();
-  const videoEl = 'videoEl' in overrides ? overrides.videoEl : new FakeVideoEl({ autoCanPlay: true });
-  const session = new KalturaAvatarSession({
-    token: CONV_KS, srsBaseUrl: 'https://srs.example', turnServerUrl: 'turn.avatar.us.kaltura.ai',
-    videoEl, socketFactory: () => socket, rtcConstructor: overrides.rtcConstructor ?? FakeRTCPeerConnection,
-    fetch: overrides.fetch ?? okWhep, getUserMedia: fakeGetUserMedia(),
-    mediaStreamConstructor: FakeMediaStreamCtor,
-    ...overrides.cfg,
-  });
-  return { session, socket, videoEl };
-}
 
 /** Collect unhandled rejections for the duration of a test (node would otherwise crash the run). */
 function trapUnhandled() {

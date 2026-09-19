@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { KalturaAvatarSession } from '../../src/experience/index.js';
-import { FakeSocket, scriptHappyPath } from '../fakes/socket.js';
+import { FakeSocket, scriptHappyPath, textsEntered as sentTexts, markerCount } from '../fakes/socket.js';
 import { FakeRTCPeerConnection, FakeVideoEl, FakeMediaStreamCtor, fakeGetUserMedia } from '../fakes/rtc.js';
 
 const CONV_KS = 'djJ8' + Buffer.from('v2|123|geniegpcid:1222').toString('base64url');
@@ -326,8 +326,6 @@ test("'responseSettled' also fires on interruption, so the affordance never gets
 // (opening line after connect()/resume(), server check-in/goodbye); sent now otherwise ───
 
 /** Typed texts that reached the wire (the empty isSpeechStart marker rows are filtered out). */
-const sentTexts = (socket) => socket.emitsOf('onTextEntered').filter((p) => p.text !== '').map((p) => p.text);
-const markerCount = (socket) => socket.emitsOf('onTextEntered').filter((p) => p.text === '').length;
 /** speak() awaits its guardrail before it decides to hold or send; one macrotask lets that settle. */
 const settle = () => new Promise((r) => setTimeout(r, 0));
 

@@ -150,7 +150,7 @@ Headless `collectConverse()` gets the corrected named-tool args for free, but it
 
 #### The `wait_for_response` ACK — one wire contract, two transports
 
-A `tools.client` tool built with `waitForResponse:true` blocks the model's turn until the host app supplies a result. The brain backend polls up to `timeout` seconds (default 30) for an ACK. The ACK is **not a socket event**. On both transports it is the same plain HTTPS POST, authorized by the session's own conversation KS — the model speaks the acked value in the *same* turn:
+A `tools.client` tool built with `waitForResponse:true` blocks the model's turn until the host app supplies a result. The server polls up to `timeout` seconds (default 30) for an ACK. The ACK is **not a socket event**. On both transports it is the same plain HTTPS POST, authorized by the session's own conversation KS — the model speaks the acked value in the *same* turn:
 
 ```
 POST {genieUrl}/assistant/tool_response

@@ -9,7 +9,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { KalturaAvatarSession, SILENT_OPENING, SILENT_OPENING_LABEL } from '../../src/experience/index.js';
-import { FakeSocket, scriptHappyPath } from '../fakes/socket.js';
+import { FakeSocket, scriptHappyPath, textsEntered as sentTexts } from '../fakes/socket.js';
 import { FakeRTCPeerConnection, FakeVideoEl, FakeMediaStreamCtor, fakeGetUserMedia } from '../fakes/rtc.js';
 
 const CONV_KS = 'djJ8' + Buffer.from('v2|123|geniegpcid:1222').toString('base64url');
@@ -37,7 +37,6 @@ function newSession(overrides = {}) {
 }
 
 const settle = () => new Promise((r) => setTimeout(r, 0));
-const sentTexts = (socket) => socket.emitsOf('onTextEntered').filter((p) => p.text !== '').map((p) => p.text);
 const finishOpening = (socket, text = SILENT_OPENING) => {
   socket.server('stvStartedTalking', {});
   socket.server('stvFinishedTalking', { agentContent: text });
