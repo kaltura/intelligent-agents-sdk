@@ -305,6 +305,8 @@ test(`silent opening: '${SILENT_OPENING}' on the opening speechId emits no trans
   assert.deepEqual(chunks, []);
   assert.equal(starts.length, 1);
   assert.equal(stops.length, 1);
+  // stvFinishedTalking carries no speechId, so the stop payload is blanked by text alone.
+  assert.deepEqual(stops[0], { text: '' });
 });
 
 test('silent opening: a spoken opening phrase on the opening speechId still surfaces', async () => {
@@ -313,13 +315,16 @@ test('silent opening: a spoken opening phrase on the opening speechId still surf
   await session.connect();
   const transcripts = collect(session, 'transcript');
   const chunks = collect(session, 'speechChunk');
+  const stops = collect(session, 'avatarStopTalking');
   socket.server('generatingSpeech', { speechId: OPENING_ID, text: 'Hello!' });
   socket.server('stvSpeechChunk', { speechId: OPENING_ID, text: 'Hello!', durationMs: 400 });
+  socket.server('stvFinishedTalking', { agentContent: 'Hello!' });
   // generatingSpeech emits the final line; the chunk tracker emits its own transcript too.
   assert.ok(transcripts.length >= 1);
   assert.ok(transcripts.every((t) => t.text === 'Hello!'));
   assert.equal(chunks.length, 1);
   assert.equal(chunks[0].text, 'Hello!');
+  assert.deepEqual(stops, [{ text: 'Hello!' }]);
 });
 
 test(`silent opening: '${SILENT_OPENING}' on a normal reply speechId is not filtered`, async () => {

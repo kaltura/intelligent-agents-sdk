@@ -46,7 +46,7 @@ const DOCS = [
   'docs/genui/safety-and-restrictions.md',
   'docs/CLIENT-COMMANDS.md', 'docs/DYNAMIC-DATA-INJECTION.md',
   'docs/STRUCTURED-DATA-FORMS.md', 'docs/EXTERNAL-API-INTEGRATIONS.md',
-  'docs/VOICE-INPUT-MODES.md', 'docs/USE-CASES.md',
+  'docs/VOICE-INPUT-MODES.md', 'docs/USE-CASES.md', 'docs/START-THE-CONVERSATION.md',
   'docs/lifecycle/README.md', 'docs/lifecycle/recipes.md',
   'docs/SITE-NAV.md',
   'SECURITY.md', 'SDK_CONSTITUTION.md',
@@ -752,5 +752,51 @@ describe('12. avatar_filler steerability disclosure', () => {
     assert.ok(m, "could not find avatar_filler's summary field in capabilities.js");
     assert.match(m[1], /directive|persona|server-side|fixed/i,
       `avatar_filler summary must state it is not steerable via base_directive/persona: "${m[1]}"`);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 13) Silent opening + kickoff
+// ─────────────────────────────────────────────────────────────────────────────
+describe('13. Silent opening + kickoff', () => {
+  const GUIDE = 'docs/START-THE-CONVERSATION.md';
+
+  test('the guide exists and is in the README Reference table', () => {
+    assert.ok(existsSync(join(ROOT, GUIDE)), `${GUIDE} missing`);
+    assert.match(read('README.md'), /^\|\s*\[docs\/START-THE-CONVERSATION\.md\]\(docs\/START-THE-CONVERSATION\.md\)\s*\|/m,
+      'README Reference table has no row for docs/START-THE-CONVERSATION.md');
+  });
+
+  test('`kickoff` is documented in README, docs/api/deploy.md and the guide', () => {
+    const missing = ['README.md', 'docs/api/deploy.md', GUIDE].filter((f) => !/`kickoff/.test(read(f)));
+    assert.deepEqual(missing, [], `kickoff not documented in: ${missing.join(', ')}`);
+  });
+
+  test('SILENT_OPENING is exported from both entry points and documented in README + the guide', () => {
+    for (const entry of ['src/management/index.js', 'src/experience/index.js']) {
+      assert.match(read(entry), /export\s*\{[^}]*\bSILENT_OPENING\b[^}]*\}/, `${entry} does not export SILENT_OPENING`);
+    }
+    const missing = ['README.md', GUIDE].filter((f) => !read(f).includes('`SILENT_OPENING`'));
+    assert.deepEqual(missing, [], `SILENT_OPENING not documented in: ${missing.join(', ')}`);
+  });
+
+  test('no doc claims connect() rejects, fails or throws on a mic error', () => {
+    const offenders = [];
+    for (const f of DOCS) {
+      read(f).split('\n').forEach((line, i) => {
+        if (!/mic_permission_denied|mic_not_found|mic_in_use/.test(line)) return;
+        if (/connect\(\)`?\s+(rejects|fails|throws)/.test(line)) offenders.push(`${f}:${i + 1}`);
+      });
+    }
+    assert.deepEqual(offenders, [], `connect() never fails for the mic (R-6); fix: ${offenders.join(', ')}`);
+  });
+
+  test("no tracked file uses `speakNow` or the removed `micStartMode: 'required'`", () => {
+    // These three name 'required' only to state that it is rejected.
+    const allowed = new Set([SELF, 'SDK_CONSTITUTION.md', 'scripts/agent_verify.mjs', 'test/e2e/deferred-mic.test.js']);
+    const offenders = trackedFiles()
+      .filter((f) => /\.(md|js|mjs|html)$/.test(f) && !allowed.has(f))
+      .filter((f) => /speakNow|micStartMode:\s*'required'/.test(read(f)));
+    assert.deepEqual(offenders, [], `removed API still referenced in: ${offenders.join(', ')}`);
   });
 });

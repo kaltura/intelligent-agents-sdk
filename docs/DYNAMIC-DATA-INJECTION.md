@@ -133,10 +133,17 @@ A bracketed tag like `[SECTION CHANGE]` is not a wire-level feature. It's a conv
 Several `speak()` calls during one held turn go out together as one turn, one text per line, in call order. The agent reads everything the user said while it was busy and answers once, like a person catching up.
 
 ```js
+// The first nudge: let the SDK send it. `kickoff` rides the same hold and goes out once,
+// the moment the opening turn ends. Never re-sent on resume() or a reconnect.
+const session = new KalturaAvatarSession({
+  ...runtimeConfig,
+  kickoff: '[SESSION START] The session just loaded. Begin now per your OPENING instructions.',
+});
 await session.connect();
-const sent = await session.speak('[SESSION START] The session just loaded. Begin now per your OPENING instructions.');
-// resolves true once the text reached the server (right after the opening line finishes),
+
+// Later nudges: speak(). Resolves true once the text reached the server,
 // false if the session ended while the text was still held.
+const sent = await session.speak('[CONTEXT] The user just opened the pricing page.');
 ```
 
 Guardrails (`onBeforeSend`, `maxTurnsPerMinute`, tap-to-talk, disclosure) run when you call `speak()`, not when the held text is sent, so a blocked call rejects immediately.

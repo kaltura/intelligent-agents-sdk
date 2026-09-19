@@ -68,6 +68,7 @@ Order from the built-in client's connecting-state machine (steps 0–9, 11) plus
 | 9 | connect ASR mic uplink (lane A, after 6→7) | `asr-webrtc-*` handshake ([§5](audio-channels.md#5-asr-uplink-pc1--microphone--server)) | — | 30s per wait (`ASRConnectionFailed`) |
 | 10 | subscribe STV video (WHEP) **and wait until playable, or give up waiting** (lane B, starts right after step 5) | `→` WHEP POST (no timeout of its own) → wait `<video>` `canplay` + ~300ms settle, or a 6s hard cap if `canplay` never fires | first decoded frame, or the 6s cap elapsing | 6s (hard cap; settles either way) |
 | 11 | **approve** (starts the spoken greeting), once lanes A and B are both done | `→ approvedPermissions {room}` | — | — |
+| 12 | opening turn runs. With a silent opening phrase (`SILENT_OPENING`, `<blank>`) it produces no speech and ends in ~0.5 s. The SDK sends a configured `kickoff` on its `stvFinishedTalking` ([guide](../START-THE-CONVERSATION.md)) | `← stvStartedTalking` … `← stvFinishedTalking` then `→ onTextEntered {text}` | `stvFinishedTalking` | — |
 | → | **CONNECTED** | listen for `agent_raw_text`, `generatingSpeech`, `stv*Talking`, VAD ([events catalog](events-catalog.md)) | — | — |
 
 Top-level machine states (the built-in client's connection state machine): `preparing → connecting → connected → (disconnecting / disconnected / error)`. Overall connecting timeout 30s. Step timeouts are from the built-in client's connecting state (`30e3` overall, `10000` server-connect, `5e3` join-room, `10000` agent, ASR 30s). Every wait in the table, including the two ASR waits and the WHEP answer, is also bounded by the 30s overall deadline: an event or WHEP answer that lands after it rejects `connect()` with `ConnectTimeout`.
@@ -88,4 +89,5 @@ Top-level machine states (the built-in client's connection state machine): `prep
 |---|---|
 | [events-catalog.md](events-catalog.md) | The full socket-event-by-event catalog referenced above |
 | [audio-channels.md](audio-channels.md) | ASR uplink + STV downlink wire mechanics |
+| [../START-THE-CONVERSATION.md](../START-THE-CONVERSATION.md) | Silent opening + `kickoff`: the fastest interruptible first turn and what fires on the wire |
 | [../WIRE-PROTOCOL.md](../WIRE-PROTOCOL.md) | Back to the index |

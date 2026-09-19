@@ -8,7 +8,7 @@ Design guidance for app builders deciding **how a viewer's input reaches the age
 | **Push-to-talk** | `KalturaAvatarSession` (`isTapToTalk`) | Prompted at connect* | Viewer opens/closes a capture window (`startTapToTalk()`/`endTapToTalk()`) |
 | **Chat (text-only)** | `KalturaChatSession` | **Never requested** — the class never touches `getUserMedia` or WebRTC | `sendText('…')` over plain HTTPS |
 
-\* Or deferred: `micStartMode: 'deferred'` connects the avatar session with no mic at all. The app calls `startMic()` later from a real user click, so the permission prompt is gesture-anchored instead of firing on page load. Until then, typed turns work, but `startTapToTalk()` throws `mic_not_started`. See [README.md](../README.md#devices-and-media-quality).
+\* In the default `micStartMode: 'immediate'` the permission prompt runs alongside the connect handshake. `connect()` never waits for it and never fails because of it: a denied, missing or busy mic emits one `warning` (`mic_permission_denied`, `mic_not_found`, `mic_in_use`) and the session connects mic-less, with typed turns working. Or deferred: `micStartMode: 'deferred'` connects the avatar session with no mic at all. The app calls `startMic()` later from a real user click, so the permission prompt is gesture-anchored instead of firing on page load. Until then, typed turns work, but `startTapToTalk()` throws `mic_not_started`. See [README.md](../README.md#devices-and-media-quality).
 
 The first two are **voice-capture** modes on the live avatar transport. Most of this doc is about choosing between them and building their UI.
 

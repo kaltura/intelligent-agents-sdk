@@ -21,6 +21,8 @@ POST https://api.avatar.us.kaltura.ai/v1/avatar/create
 
 `voice.id` and `visual.id` come from the catalog (see [Catalog & Assets](../design.md) § Browse the Catalog). Returns `id` (24-char hex). **No `adminTags`** — `avatar/create` accepts and stores it, but no read path ever returns it, and `avatar/update` genuinely rejects it (no tag field). Tag the parent agent instead.
 
+`openingPhrase` is the line the avatar speaks as the first, uninterruptible turn of every session. It must be a non-empty string. For the fastest interruptible start pass `SILENT_OPENING` (exported from `./management`, the string `<blank>`): the opening turn then produces no speech, and the browser sends the first turn with the session's `kickoff` option. See [START-THE-CONVERSATION.md](../../START-THE-CONVERSATION.md).
+
 If `visual.id` points at a custom uploaded portrait rather than a catalog preset, how you crop that source photo directly affects how the persona renders on this avatar — pad it generously rather than a tight headshot crop:
 
 ![Tight headshot crops shrink onto the render canvas with black borders; a generously padded portrait scales to fill it edge-to-edge](../img/avatar-photo-framing.svg)
@@ -45,7 +47,7 @@ Whichever way you pick, the composed result is reflected in the created avatar's
 const templates = await mgmt.avatars.listTemplates(ks, { pageSize: 10 });
 const t = templates[0]; // { id, name: 'Adam', voice: { id }, face: { id, imageUrl } }
 await mgmt.avatars.create(
-  { voice: t.voice, templateId: t.id, background: { type: 'color', value: '#ffffff' }, openingPhrase: 'Hi!' },
+  { voice: t.voice, templateId: t.id, background: { type: 'color', value: '#ffffff' }, openingPhrase: SILENT_OPENING },
   ks,
 );
 ```
@@ -58,7 +60,7 @@ await mgmt.avatars.create(
 const face = await mgmt.catalog.createFace(portraitBlob, { name: 'Support rep', genderPresentation: 'Feminine' }, ks);
 const bg = await mgmt.catalog.createBackground(backdropBlob, { name: 'Office', genderPresentation: 'Feminine' }, ks);
 await mgmt.avatars.create(
-  { voice: { id: voiceItemId }, face: { id: face.itemId }, background: { type: 'visual', value: bg.itemId }, openingPhrase: 'Hi!' },
+  { voice: { id: voiceItemId }, face: { id: face.itemId }, background: { type: 'visual', value: bg.itemId }, openingPhrase: SILENT_OPENING },
   ks,
 );
 ```

@@ -42,6 +42,15 @@ The admin secret never touches the browser — `appInit` derives the agent from 
 
 Feed this response straight into `new KalturaAvatarSession({ token: ks, conversationManagerUrl, srsBaseUrl, turnServerUrl, videoEl, socketFactory })` (`./experience`) to bring the runtime up in the browser.
 
+Two options on all three session classes (`KalturaAvatarSession`, `KalturaChatSession`, `KalturaAgentSession`) shape how the conversation starts:
+
+| Option | Effect |
+|---|---|
+| `kickoff: 'text'` or `{ text, echo? }` | The SDK sends `text` as the first turn, once per session object, as soon as the server accepts input (after the opening turn, or after `acknowledgeDisclosure()`). Never re-sent on `resume()`, a reconnect or `switchMode()`. `echo: true` also emits it as a user `transcript`. A blocked send emits `warning {code:'kickoff_failed'}`. Pair with a silent opening phrase (`SILENT_OPENING`) for the fastest interruptible first reply: [START-THE-CONVERSATION.md](../START-THE-CONVERSATION.md) |
+| `micStartMode: 'immediate' \| 'deferred'` (avatar only) | `connect()` never waits for or fails on the mic. A denied or missing mic emits a `warning` and the session connects mic-less; typed turns still work |
+
+`responsePending` fires when a turn starts awaiting the brain's first perceivable output, and again when the server acknowledges a turn with its first think delta, so a `kickoff` reply shows "thinking" before the first word.
+
 Optional `./experience` plugins layer on top of that same session:
 
 - Deck walkthroughs (`./experience/presenter`)

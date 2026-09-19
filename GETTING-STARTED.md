@@ -64,7 +64,7 @@ This one command builds a brand-new agent (brain, face, voice, and all) from a p
 node create-agent.mjs "A friendly yoga studio receptionist who helps people book classes and answers questions about memberships"
 ```
 
-You'll see progress messages as it builds the brain, face, and voice. At the end it sends a smoke-test message and prints the reply, plus the new IDs (`configId`, `agentId`, `avatarId`, `widgetId`) you need to embed or extend the agent.
+You'll see progress messages as it builds the brain, face, and voice. At the end it sends a smoke-test message and prints the reply, plus the new IDs (`configId`, `agentId`, `avatarId`, `widgetId`) you need to embed or extend the agent. The agent is created with a silent opening (`openingPhrase: SILENT_OPENING`), so the browser decides how the conversation starts (see below).
 
 > Building an agent by hand instead of via the one-line brief? See [API-REFERENCE.md](docs/api/build.md).
 
@@ -87,6 +87,13 @@ console.log(reply.text);
 ```
 
 `converseOnce()` mints its own conversation token from the `configId`. The admin secret never leaves your process. See [API-REFERENCE.md](docs/api/operate.md) for threaded conversations, streaming, and the full Management API surface.
+
+**In the browser, let the agent speak first.** Pass `kickoff` to the session and the SDK sends that text as the first turn, once, as soon as the server accepts input. With the silent opening the quickstart set, the agent's own greeting starts about two seconds after `connect()` and the user can interrupt it. Guide: [docs/START-THE-CONVERSATION.md](docs/START-THE-CONVERSATION.md).
+
+```js
+const session = new KalturaAvatarSession({ ...runtimeConfig, kickoff: 'Greet the user and briefly say how you can help.' });
+await session.connect();
+```
 
 **Talking on behalf of a real, known user?** Mint the conversation token yourself with `userId` instead of letting `converseOnce()` auto-mint an anonymous one. This binds the [KS](docs/api/authentication.md#authentication) (Kaltura Session token) to that user so per-user memory and analytics attribute the conversation correctly:
 
@@ -113,6 +120,7 @@ You now know how to create an agent and talk to it. Here's where to go for more:
 | See every kind of app you can build (personalized greeters, memory agents, quizzes, video avatars, voice cloning…) | [docs/USE-CASES.md](docs/USE-CASES.md) |
 | Look up the exact API call for something | [API-REFERENCE.md](API-REFERENCE.md#contents) |
 | Put a talking video avatar on a web page | [docs/USE-CASES.md](docs/USE-CASES.md) → UC-12 |
+| Make the avatar greet the user first, interruptibly, as fast as possible | [docs/START-THE-CONVERSATION.md](docs/START-THE-CONVERSATION.md) |
 | Use your **own voice** for the avatar | [API-REFERENCE.md](docs/api/design.md#upload-a-custom-voice-clone) |
 | Use your **own face/portrait** for the avatar | [API-REFERENCE.md](docs/api/design.md#upload-a-custom-visual-portrait--animated-avatar) |
 | Build a real app with the JavaScript SDK | [README.md](README.md#quick-start) |

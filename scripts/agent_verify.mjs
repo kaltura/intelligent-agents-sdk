@@ -300,6 +300,52 @@ section('Part 3 — Resiliency');
   }
 }
 
+// R-6: connect() never waits on, and never fails for, the microphone.
+// Source: the only accepted micStartMode values are 'immediate' | 'deferred'
+// (no 'required'). Tests: a failed mic still yields state 'connected', and
+// 'required' is rejected with bad_request at construction.
+{
+  const sessionSrc = read(join(SDK_SRC, 'experience', 'session.js'));
+  const micTest = read(join(ROOT, 'test', 'e2e', 'mic-concurrency.test.js'));
+  const deferredTest = read(join(ROOT, 'test', 'e2e', 'deferred-mic.test.js'));
+  const problems = [];
+  if (!/must be 'immediate' or 'deferred'/.test(sessionSrc)) problems.push("session.js: micStartMode validation must accept only 'immediate' | 'deferred'");
+  if (/micStartMode\s*[!=]==?\s*'required'/.test(sessionSrc)) problems.push("session.js: still branches on micStartMode 'required'");
+  if (!micTest.includes('a failed mic never fails connect()')) problems.push('test/e2e/mic-concurrency.test.js missing "a failed mic never fails connect()"');
+  if (!/micStartMode:\s*'required'/.test(deferredTest)) problems.push("test/e2e/deferred-mic.test.js missing the micStartMode: 'required' → bad_request assertion");
+  if (problems.length === 0) pass('R-6', 'connect() never waits on or fails for the mic — verified by mic-concurrency + deferred-mic tests (run below)');
+  else fail('R-6', 'connect()/mic decoupling not verifiable', problems.join('\n      '));
+}
+
+// R-7: turn state changes only on named socket events, never on timers.
+// Grep the hold/release method bodies for setTimeout/setInterval and check
+// that kickoff.test.js still covers each row of the hold/release table.
+{
+  const sessionSrc = read(join(SDK_SRC, 'experience', 'session.js'));
+  const bodyOf = (name) => {
+    const start = sessionSrc.indexOf(`\n  ${name}(`);
+    if (start < 0) return null;
+    const end = sessionSrc.indexOf('\n  }', start);
+    return end < 0 ? null : sessionSrc.slice(start, end);
+  };
+  const problems = [];
+  for (const name of ['_endUninterruptibleTurn', '_dropHeldTurns', '_maybeSendKickoff']) {
+    const body = bodyOf(name);
+    if (body == null) problems.push(`session.js: ${name}() not found`);
+    else if (/setTimeout|setInterval/.test(body)) problems.push(`session.js: ${name}() uses a timer`);
+  }
+  const kickoffTest = read(join(ROOT, 'test', 'unit', 'kickoff.test.js'));
+  for (const needle of [
+    'sent on stvFinishedTalking, exactly once',
+    'kickoff is released by agentInterrupted too',
+    'disconnect() during the opening drops the held kickoff',
+    'kickoff is not re-sent after pause() → pauseSessionExpired → resume()',
+    'a held kickoff survives a cold reconnect',
+  ]) if (!kickoffTest.includes(needle)) problems.push(`test/unit/kickoff.test.js missing "${needle}"`);
+  if (problems.length === 0) pass('R-7', 'Held turns released/dropped only on named socket events — no timers in the hold path, hold/release table tested (run below)');
+  else fail('R-7', 'timer-free turn state not verifiable', problems.join('\n      '));
+}
+
 // ══════════════════════════════════════════════════════════════════════════
 // PART 4 — PERFORMANCE
 // ══════════════════════════════════════════════════════════════════════════
@@ -489,6 +535,28 @@ section('Part 5 — DX and Clean Code');
   }
 }
 
+// D-5: kickoff is sent at most once per session object — never on resume(),
+// a cold reconnect, or switchMode(). Each session class guards it with a
+// once-flag; the tests below pin each re-entry path.
+{
+  const tests = [
+    { file: join(ROOT, 'test', 'unit', 'kickoff.test.js'), needle: 'sent on stvFinishedTalking, exactly once' },
+    { file: join(ROOT, 'test', 'unit', 'kickoff.test.js'), needle: 'kickoff is not re-sent after pause() → pauseSessionExpired → resume()' },
+    { file: join(ROOT, 'test', 'unit', 'kickoff.test.js'), needle: 'kickoff is not re-sent after a cold reconnect' },
+    { file: join(ROOT, 'test', 'unit', 'kickoff.test.js'), needle: 'kickoff waits for acknowledgeDisclosure()' },
+    { file: join(ROOT, 'test', 'unit', 'kickoff.test.js'), needle: 'kickoff: wrong shapes throw bad_request at construction' },
+    { file: join(ROOT, 'test', 'unit', 'chat-session.test.js'), needle: 'sent as the first converse turn on connect(), exactly once' },
+    { file: join(ROOT, 'test', 'unit', 'chat-session.test.js'), needle: 'kickoff: wrong shapes throw bad_request at construction' },
+    { file: join(ROOT, 'test', 'unit', 'agent-session.test.js'), needle: 'passed to the first transport only; a switchMode() transport never carries it' },
+  ];
+  const problems = tests.filter((t) => !read(t.file).includes(t.needle))
+    .map((t) => `${relative(ROOT, t.file)}: test "${t.needle}" not found`);
+  const avatarSrc = read(join(SDK_SRC, 'experience', 'session.js'));
+  if (!/_kickoffSent\s*=\s*true/.test(avatarSrc)) problems.push('src/experience/session.js: no _kickoffSent once-flag');
+  if (problems.length === 0) pass('D-5', 'kickoff sent at most once per session object — once-flag + resume/reconnect/switchMode tests present (run below)');
+  else fail('D-5', 'kickoff once-only not verifiable', problems.join('\n      '));
+}
+
 // ══════════════════════════════════════════════════════════════════════════
 // PART 6 — MEDIA PATH
 // ══════════════════════════════════════════════════════════════════════════
@@ -510,6 +578,25 @@ section('Part 6 — Media path');
   } else {
     fail('M-1', `${hits.length} forbidden reference${hits.length > 1 ? 's' : ''} in avatar-media.js`, hits.join('\n      '));
   }
+}
+
+// M-2: a silent opening (SILENT_OPENING) never surfaces as text. The filter
+// is keyed on the opening speech id; a spoken opening and a `<blank>` in a
+// normal reply are left alone.
+{
+  const sessionSrc = read(join(SDK_SRC, 'experience', 'session.js'));
+  const openingSrc = read(join(SDK_SRC, 'core', 'opening.js'));
+  const kickoffTest = read(join(ROOT, 'test', 'unit', 'kickoff.test.js'));
+  const problems = [];
+  if (!/export const SILENT_OPENING\s*=/.test(openingSrc)) problems.push('src/core/opening.js: SILENT_OPENING not exported');
+  if (!/isSilentOpeningTurn\(/.test(sessionSrc)) problems.push('src/experience/session.js: no isSilentOpeningTurn() filter');
+  for (const needle of [
+    'on the opening speechId emits no transcript/speechChunk; start/stop still fire',
+    'silent opening: a spoken opening phrase on the opening speechId still surfaces',
+    'on a normal reply speechId is not filtered',
+  ]) if (!kickoffTest.includes(needle)) problems.push(`test/unit/kickoff.test.js missing "${needle}"`);
+  if (problems.length === 0) pass('M-2', 'Silent opening never surfaces as text — speech-id-scoped filter + tests present (run below)');
+  else fail('M-2', 'silent-opening filter not verifiable', problems.join('\n      '));
 }
 
 // ══════════════════════════════════════════════════════════════════════════

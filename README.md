@@ -228,6 +228,7 @@ const session = new KalturaAvatarSession({
   videoEl: document.querySelector('video'),
   audioEl: document.querySelector('audio'),     // recommended: voice on its own element, see below
   socketFactory: (url, opts) => io(url, opts),  // inject socket.io
+  kickoff: 'Greet the user and briefly say how you can help.',  // first turn, sent once by the SDK
 });
 
 await session.connect();
@@ -240,6 +241,8 @@ session.onToolCall('navigate_to_slide', ({ slide_num }) => deck.goTo(slide_num))
 **How `speak(text)` works:** it injects `text` into the conversation on the same path as the viewer's own voice transcript — the brain treats it as a new turn and replies in its own words, not a verbatim echo of `text`. Need exact scripted playback instead? See [docs/api/scripted-video.md](docs/api/scripted-video.md).
 
 **When it sends:** `speak(text)` is safe to call at any moment after `connect()` resolves. If the agent is idle, thinking, or talking a normal reply, the text goes out now (a talking avatar stops mid-sentence and answers it). If the agent is in a turn typed text can't interrupt (its opening line right after `connect()`/`resume()`, or its own "are you still there?" check-in), the text is held and sent the instant that turn ends. Several `speak()` calls during one held turn go out as one turn, one text per line. The promise resolves `true` once sent, `false` if the session ended first. Details: [docs/DYNAMIC-DATA-INJECTION.md](docs/DYNAMIC-DATA-INJECTION.md#when-speak-actually-sends).
+
+**Starting the conversation:** pass `kickoff: 'text'` (or `{ text, echo? }`) and the SDK sends that text as the first turn, exactly once per session object, the moment the server accepts input. Pair it with a silent opening phrase (`SILENT_OPENING`, exported from `./management` and `./experience`) and the agent's first words are its own interruptible reply about two seconds after `connect()` resolves. Never re-sent on `resume()` or a reconnect. Guide: [docs/START-THE-CONVERSATION.md](docs/START-THE-CONVERSATION.md).
 
 **All transports are injected** — `socketFactory`, `rtcConstructor`, `fetch`, `getUserMedia`. Tests pass fakes; the SDK stays zero-dependency.
 
@@ -425,7 +428,7 @@ Build the control as click-to-toggle, not press-and-hold: it's more usable for l
 Both session classes watch for a brain that goes quiet instead of answering; only `KalturaAvatarSession` also guards against one that loops instead of narrating (it has a socket to cold-reconnect through) — see [ARCHITECTURE-REFERENCE.md](docs/architecture-reference/resilience-and-failure-handling.md#resilience--failure-handling) for the full failure-mode matrix.
 
 - **Brain-stall watchdog** (`brainStallMs`, default on, `KalturaAvatarSession` + `KalturaChatSession`) — emits `brainStalled` (`{count}`), repeating for as long as nothing perceivable (spoken/avatar content or a GenUI widget) follows a turn. On the chat transport, a bare `keepalive` segment does not count as perceivable output either.
-- **Dead-air masking** (`responsePending`/`responseSettled`, both transports) — `responsePending` (`{}`) fires the moment a turn starts awaiting the brain's first perceivable output (spoken/avatar/GenUI content). `responseSettled` (`{}`) fires once that output arrives, the turn ends, an interruption occurs, or the session tears down. Use this pair to show/hide a "thinking…" affordance instead of leaving the avatar's face frozen during the gap. See `examples/browser-experience.html` for a working example.
+- **Dead-air masking** (`responsePending`/`responseSettled`, both transports) — `responsePending` (`{}`) fires the moment a turn starts awaiting the brain's first perceivable output (spoken/avatar/GenUI content), and again when the server acknowledges a turn it started itself (its first think delta), so a `kickoff` reply shows "thinking" before the first word. `responseSettled` (`{}`) fires once that output arrives, the turn ends, an interruption occurs, or the session tears down. Use this pair to show/hide a "thinking…" affordance instead of leaving the avatar's face frozen during the gap. See `examples/browser-experience.html` for a working example.
 - **Tool-call spiral circuit breaker** (`KalturaAvatarSession` only) — a two-tier guard against a brain that re-issues the same client command instead of narrating. Soft (`toolSpiralLimit`, default 10, per turn): emits `toolSpiralDetected`. This is signal only and does NOT call `interrupt()` (a mid-turn barge-in was found to truncate the turn's own narration with no recovery — see `docs/CLIENT-COMMANDS.md`'s "Tool spirals starve the voice"). Hard (`hardToolSpiralLimit`, default `toolSpiralLimit * 3`, session-scoped, immune to turn-boundary resets): emits `toolSpiralRecovering` (`{count, limit, lastTurnText}`) and forces a cold reconnect — a brand-new socket that replays `threadId` so brain memory continues.
 - **Spiral recovery auto-resend** (`recoverFromSpiral`, default `true`) — a hard-spiral cold reconnect restores connectivity but would otherwise abandon the turn that triggered it (the user's question just silently dropped). With the default on, once the reconnect succeeds the SDK automatically resends that turn's text once, prefixed with the same `SPIRAL_RECOVERY_PREFIX` instruction used on the headless path (`Conversations#send({recoverFromSpiral:true})` — see [Management](#management) above), still passed through your `onBeforeSend` guardrail, and emits `spiralRecovered` (`{text}`, the original un-prefixed text — e.g. show "Let me get that for you" UI). Set `recoverFromSpiral: false` to opt out of the auto-resend and handle it yourself — `toolSpiralRecovering`'s `lastTurnText` still tells you what was abandoned.
 
@@ -600,6 +603,8 @@ await session.connect();
 // session.speak(...) throws `disclosure_required` here until:
 session.acknowledgeDisclosure();
 ```
+
+A configured `kickoff` respects the gate: it is sent once, right after `acknowledgeDisclosure()`, never before it.
 
 ---
 
@@ -1063,7 +1068,7 @@ await mgmt.intellectConfig.setAvatarSummaryConfig(configId, {
 
 `setModelConfiguration` picks the chat model and its sampling limits. `model_id` must be one of `MODEL_IDS`, `thinking_level` one of `THINKING_LEVELS` (`'low'`/`'high'`, Gemini only), `max_output_tokens` a positive integer, `temperature` 0..1. Pass `null` to return to the backend defaults. Which models answer depends on your partner's region, so run `converseOnce` once after switching. With `avatar_show_content` on, the backend fills an unset `thinking_level` with `'low'` and `max_output_tokens` with 4096.
 
-`setOpeningPhrase` sets the phrase the avatar speaks when a session starts. It is a Jinja2 template over `request_vars`, rendered server-side, and it overrides whatever opening phrase the client sends at init. The rendered text is stored on the thread as an `opening` message. Pass `null` to clear.
+`setOpeningPhrase` sets the phrase the avatar speaks when a session starts. It is a Jinja2 template over `request_vars`, rendered server-side, and it overrides the avatar's own `openingPhrase`. The rendered text is stored on the thread as an `opening` message. Pass `null` to clear. The opening turn cannot be interrupted, so for the fastest start pass `SILENT_OPENING` here (or on the avatar, or as `provision({ openingPhrase })`) and let the browser send the first turn with `kickoff`. See [docs/START-THE-CONVERSATION.md](docs/START-THE-CONVERSATION.md).
 
 `setThreadStartTools` lists tool ids the backend runs once at the start of every thread, before the first turn. Only `api` and `code` tools run. The result feeds the model and never appears as a `tool` segment. Pass `[]` to clear.
 
@@ -1205,6 +1210,7 @@ await mgmt.knowledge.deleteRecord(rec.id, ks, { confirmPermanent: true });
 | [docs/EXTERNAL-API-INTEGRATIONS.md](docs/EXTERNAL-API-INTEGRATIONS.md) | Wiring a brain-called tool to a durable write against your own external API (CRM, spreadsheet, ticketing) |
 | [docs/STRUCTURED-DATA-FORMS.md](docs/STRUCTURED-DATA-FORMS.md) | Collecting typed fields from the user mid-conversation (`user_properties_forms`) — schema, rendering, where submitted values go |
 | [docs/VOICE-INPUT-MODES.md](docs/VOICE-INPUT-MODES.md) | Choosing open-mic vs. push-to-talk, and the UX/accessibility/safety details around each |
+| [docs/START-THE-CONVERSATION.md](docs/START-THE-CONVERSATION.md) | Fastest time to first speech: silent opening (`SILENT_OPENING`) + `kickoff`, what fires on the wire, the `speak()` hold, mic-less sessions |
 | [docs/lifecycle/README.md](docs/lifecycle/README.md) | Event-driven rules: reference + [recipe](docs/lifecycle/recipes.md) — auto-summarize conversations and email a human when analysis lands |
 | `examples/` | One runnable example per use-case |
 | [.claude/skills/agentic-avatar/SKILL.md](.claude/skills/agentic-avatar/SKILL.md) | Agent Skill — load this SDK's whole surface into Claude Code or any [agentskills.io](https://agentskills.io)-compatible agent |

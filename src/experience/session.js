@@ -2254,7 +2254,7 @@ export class KalturaAvatarSession extends Emitter {
     socket.on('stvStartedTalking', () => { this._clearBrainWatchdog(); this._settleResponsePending(); this._touchActivity(); this._completer.touch(); this.speaking = true; this._turnSawOutput = true; this._audit('turn.avatar_spoke', 'success', {}); this.emit('avatarStartTalking', {}); });
     // _endUninterruptibleTurn() runs before the app-facing event so text held by speak() is on
     // the wire first, and a speak() called from inside the listener is sent, not held again.
-    socket.on('stvFinishedTalking', (p) => { this.speaking = false; this._endUninterruptibleTurn(); this._tracker.finishUtterance(); this._completer.touch(); this.emit('avatarStopTalking', { text: clampInbound(p?.agentContent) }); });
+    socket.on('stvFinishedTalking', (p) => { this.speaking = false; this._endUninterruptibleTurn(); this._tracker.finishUtterance(); this._completer.touch(); this.emit('avatarStopTalking', { text: isSilentOpening(p?.agentContent) ? '' : clampInbound(p?.agentContent) }); });
     socket.on('agentInterrupted', () => { this.speaking = false; this._endUninterruptibleTurn(); this._settleResponsePending(); this._turnSawOutput = true; this.emit('interrupted', {}); });
     socket.on('userStartedTalking', () => { this._clearBrainWatchdog(); this._touchActivity(); this.emit('userStartedTalking', {}); });
     // The user's turn produced a transcription → the brain should now respond; watch for a stall (R5)

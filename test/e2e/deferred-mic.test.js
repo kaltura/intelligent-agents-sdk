@@ -142,4 +142,6 @@ test('startMic() before connect throws invalid_state; bad micStartMode throws ba
   const { session } = newSession();
   await assert.rejects(() => session.startMic(), (e) => e.code === 'invalid_state');
   assert.throws(() => newSession({ cfg: { micStartMode: 'lazy' } }), (e) => e.code === 'bad_request');
+  // 'required' was removed: connect() never waits on or fails for the mic (R-6), so the mode is rejected.
+  assert.throws(() => newSession({ cfg: { micStartMode: 'required' } }), (e) => e.code === 'bad_request');
 });

@@ -149,7 +149,7 @@ await kaltura.intellectConfig.setModelConfiguration(configId, {
 }, admin.ks);
 
 // Opening phrase: rendered server-side with request_vars, spoken as the first avatar turn,
-// stored on the thread as an `opening` message. Overrides any client-sent opening line.
+// stored on the thread as an `opening` message. Overrides the avatar's `openingPhrase`.
 await kaltura.intellectConfig.setOpeningPhrase(configId, 'Hi {{ user_name }}, what can I help with?', admin.ks);
 
 // Thread-start tools: run once per new thread, server-side only. Only api/code tools run.
@@ -397,7 +397,7 @@ Navigation runs through exactly one deterministic mechanism — `session.onToolC
 3. **Restricted topics** — `prompts.restrictedTopics` is enforced content, not a suggestion; use it for anything the agent must never discuss.
 4. **Voice selection** — pick from `catalog.list(ks, {type:'voice'})` or clone one (`catalog.createVoice`/`importVoiceFrom*`); match voice to persona.
 5. **Visual selection** — same for `type:'visual'`; `catalog.createVisual` for a custom image.
-6. **Opening phrase.** Two places set it. Server-side, `intellectConfig.setOpeningPhrase` on the intellect (Jinja2 over `request_vars`, always wins when set). Client-side, the avatar's `openingPhrase`: pass a real scripted line, or `'<blank>'` (the SSML silence sentinel) if you want no opening line at all, never `''` (an empty client opening phrase makes the first turn fail). Pick one; if both are set, the intellect's phrase is spoken.
+6. **Opening phrase.** Two server-side places set it. `intellectConfig.setOpeningPhrase` on the intellect (Jinja2 over `request_vars`, always wins when set), or the avatar's `openingPhrase` (`avatars.create`/`avatars.update`, or `provision({ openingPhrase })`). Never `''` (an empty phrase makes the first turn fail). The opening turn cannot be interrupted, so the standard pattern is `SILENT_OPENING` (exported from `./management`, the string `<blank>`) plus a browser-side `kickoff` on the session: the SDK sends that text once, the moment the opening ends, and the agent's reply is interruptible. Guide: `docs/START-THE-CONVERSATION.md`.
 7. **Glossary** — `intellectConfig.patch(configId, {glossary}, ks)` for domain terms/pronunciations the brain should know verbatim.
 8. **Motion control** — capabilities like `avatar_show_content` / `avatar_filler` shape how animated the avatar is between turns.
 9. **Max conversation length.** An agent field, not an intellect field: `provision({ maxConversationLength })` at create time, or `agents.update({ agentId, maxConversationLength }, ks)` later.
