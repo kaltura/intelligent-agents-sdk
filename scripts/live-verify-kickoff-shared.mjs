@@ -193,7 +193,9 @@ export class Report {
  * @param {(string|number)[][]} rows
  */
 export function mdTable(header, rows) {
-  const line = (/** @type {(string|number)[]} */ cells) => `| ${cells.join(' | ')} |`;
+  // Escape backslashes first, then pipes, so a cell can never break the table row.
+  const cell = (/** @type {string|number} */ v) => String(v).replace(/\\/g, '\\\\').replace(/\|/g, '\\|');
+  const line = (/** @type {(string|number)[]} */ cells) => `| ${cells.map(cell).join(' | ')} |`;
   return [line(header), line(header.map(() => '---')), ...rows.map(line)].join('\n');
 }
 

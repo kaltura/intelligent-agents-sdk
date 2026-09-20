@@ -439,7 +439,7 @@ const md = [
   '',
   '## Checks',
   '',
-  mdTable(['result', 'check', 'detail'], report.checks.map((c) => [c.ok ? 'ok' : 'FAIL', c.name, c.detail === undefined ? '' : JSON.stringify(c.detail).replace(/\|/g, '\\|')])),
+  mdTable(['result', 'check', 'detail'], report.checks.map((c) => [c.ok ? 'ok' : 'FAIL', c.name, c.detail === undefined ? '' : JSON.stringify(c.detail)])),
   '',
 ].join('\n');
 report.write(outDir, md);

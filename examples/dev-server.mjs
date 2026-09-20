@@ -56,15 +56,19 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(init));
     } catch (err) {
+      console.error('appInit failed:', err);
       res.writeHead(500, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: String((err && err.message) || err) }));
+      res.end(JSON.stringify({ error: 'appInit failed; see the dev-server log' }));
     }
     return;
   }
-  const urlPath = req.url.split('?')[0];
-  const filePath = path.join(REPO_ROOT, urlPath === '/' ? '/examples/event-timing.html' : urlPath);
+  // Static files: only from the repo root, never above it (the harness pages import ../src/...).
+  const urlPath = (req.url || '/').split('?')[0];
+  const rel = urlPath === '/' ? 'examples/event-timing.html' : decodeURIComponent(urlPath).replace(/^\/+/, '');
+  const filePath = path.resolve(REPO_ROOT, rel);
+  if (!filePath.startsWith(REPO_ROOT + path.sep)) { res.writeHead(404, { 'Content-Type': 'text/plain' }); res.end('not found'); return; }
   fs.readFile(filePath, (err, data) => {
-    if (err) { res.writeHead(404); res.end('404: ' + req.url); return; }
+    if (err) { res.writeHead(404, { 'Content-Type': 'text/plain' }); res.end('not found'); return; }
     res.writeHead(200, { 'Content-Type': MIME[path.extname(filePath)] || 'application/octet-stream' });
     res.end(data);
   });

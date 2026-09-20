@@ -499,11 +499,11 @@ const md = [
   `${SETUP}, one fresh browser context per scenario, silent opening + kickoff.`,
   '',
   mdTable(['id', 'scenario', 'result', 'checks', 'ms', 'WHEP requests', 'error'],
-    report.data.scenarios.map((s) => [s.id, s.name, s.ok ? 'ok' : 'FAIL', s.checks, s.ms, (s.whep || []).join('; ').replace(/\|/g, '\\|'), s.error ?? ''])),
+    report.data.scenarios.map((s) => [s.id, s.name, s.ok ? 'ok' : 'FAIL', s.checks, s.ms, (s.whep || []).join('; '), s.error ?? ''])),
   '',
   '## Checks',
   '',
-  mdTable(['result', 'check', 'detail'], report.checks.map((c) => [c.ok ? 'ok' : 'FAIL', c.name, c.detail === undefined ? '' : JSON.stringify(c.detail).replace(/\|/g, '\\|')])),
+  mdTable(['result', 'check', 'detail'], report.checks.map((c) => [c.ok ? 'ok' : 'FAIL', c.name, c.detail === undefined ? '' : JSON.stringify(c.detail)])),
   '',
 ].join('\n');
 report.write(outDir, md);
