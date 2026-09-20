@@ -70,7 +70,9 @@ function startServer(appInitData) {
   return new Promise((resolvePromise) => server.listen(0, '127.0.0.1', () => resolvePromise(server)));
 }
 
-const HEBREW_RE = /[֐-׿]/;
+const HEBREW_RANGE = '֐-׿';
+const HEBREW_RE = new RegExp(`[${HEBREW_RANGE}]`);
+const QUESTION = 'What is your best product?';
 
 const kaltura = new Management({ partnerId, adminSecret });
 let admin;
@@ -158,23 +160,29 @@ try {
   // to Hebrew regardless of the input language. Asking a fresh question (not
   // "introduce yourself") avoids any overlap with a self-introduction reply
   // that might echo the opening phrase's own wording.
-  await page.fill('#msg', 'What is your best product?');
+  await page.fill('#msg', QUESTION);
   await page.click('#say');
   record('message-sent', true, {});
 
+  // Anchor on the server's echo of the typed line, then wait for an agent
+  // transcript after it. A plain "the log grew" check is satisfied by anything
+  // the mic picks up while the question is in flight, so it can both time out
+  // on a slow reply and pass without one.
   await page.waitForFunction(
-    (prevLen) => {
+    ({ typed, hebrew }) => {
       const t = document.getElementById('log')?.textContent || '';
-      return t.length > prevLen && t.includes('[final]');
+      const at = t.lastIndexOf(`[user] ${typed}`);
+      return at !== -1 && new RegExp(`\\[final\\][^\\n]*[${hebrew}]`).test(t.slice(at));
     },
-    logBeforeQuestion.length,
-    { timeout: 45000, polling: 500 },
+    { typed: QUESTION, hebrew: HEBREW_RANGE },
+    { timeout: 90000, polling: 500 },
   );
   await page.waitForTimeout(3000);
   record('final-transcript-and-avatar-talking-observed', true, {});
 
   const fullLog = await page.locator('#log').textContent();
-  const newReply = fullLog.slice(logBeforeQuestion.length);
+  const echoAt = fullLog.lastIndexOf(`[user] ${QUESTION}`);
+  const newReply = fullLog.slice(echoAt === -1 ? logBeforeQuestion.length : echoAt);
   record('log-captured', true, { fullLog, newReply });
 
   const repliedInHebrew = HEBREW_RE.test(newReply);
