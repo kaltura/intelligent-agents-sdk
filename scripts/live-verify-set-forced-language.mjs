@@ -186,54 +186,65 @@ try {
   record('session-connected', true, {});
 
   // The avatar speaks a scripted openingPhrase on connect, before any typed
-  // input. Let it play out and settle, then snapshot the log -- otherwise the
-  // reply check below gets contaminated by the greeting instead of measuring
-  // an actual model-generated reply to the typed message.
+  // input, and that turn cannot be interrupted.
   await page.waitForFunction(() => document.getElementById('log')?.textContent?.includes('avatar talking'), null, { timeout: 15000, polling: 500 }).catch(() => {});
-  await page.waitForTimeout(25000);
-  const logBeforeQuestion = await page.locator('#log').textContent();
-  record('opening-phrase-settled', true, { logBeforeQuestion });
+  record('opening-phrase-started', true, {});
 
   // English typed input, on purpose -- the point is that the reply is forced
   // to Hebrew regardless of the input language. Asking a fresh question (not
   // "introduce yourself") avoids any overlap with a self-introduction reply
   // that might echo the opening phrase's own wording.
-  await page.fill('#msg', QUESTION);
-  await page.click('#say');
+  //
+  // Driven through `window.session.speak()` rather than the page's own button,
+  // because the promise it returns is the one exact signal for "the text
+  // reached the server": text typed during the opening is HELD until that turn
+  // ends. A fixed sleep before typing instead has to guess how long a
+  // generated multilingual greeting runs, and guesses short.
+  await page.evaluate((q) => {
+    window.__spoke = null;
+    window.session.speak(q).then(
+      (sent) => { window.__spoke = sent === true ? 'sent' : 'dropped-session-ended'; },
+      (err) => { window.__spoke = `rejected: ${err?.code || err?.message || err}`; },
+    );
+  }, QUESTION);
+  try {
+    await page.waitForFunction(() => window.__spoke !== null, null, { timeout: 90000, polling: 500 });
+  } catch (err) {
+    const t = await page.locator('#log').textContent();
+    const e = /** @type {any} */ (err);
+    e.detail = `${e.message} — speak() never settled, so the typed text was still held: the opening turn never ended. log: ${JSON.stringify(t)}`;
+    throw e;
+  }
+  const spoke = await page.evaluate(() => window.__spoke);
+  if (spoke !== 'sent') throw new Error(`speak() did not reach the server: ${spoke}`);
   record('message-sent', true, {});
 
-  // Anchor on the server's echo of the typed line, then wait for an agent
-  // transcript after it. A plain "the log grew" check is satisfied by anything
-  // the mic picks up while the question is in flight, so it can both time out
-  // on a slow reply and pass without one. The echo is matched on the question
-  // text alone, not a `[user] ` prefix: the server sometimes prepends or
-  // appends a recognized word to the typed line, and the question text appears
-  // nowhere else in the log.
+  // The held text only goes out once the opening turn is over, so every log
+  // line from this point on belongs to the reply -- no greeting to filter out.
+  const logAtSend = await page.locator('#log').textContent();
   try {
     await page.waitForFunction(
-      ({ typed, hebrew }) => {
+      ({ before, hebrew }) => {
         const t = document.getElementById('log')?.textContent || '';
-        const at = t.lastIndexOf(typed);
-        return at !== -1 && new RegExp(`\\[final\\][^\\n]*[${hebrew}]`).test(t.slice(at));
+        return new RegExp(`\\[final\\][^\\n]*[${hebrew}]`).test(t.slice(before));
       },
-      { typed: QUESTION, hebrew: HEBREW_RANGE },
+      { before: logAtSend.length, hebrew: HEBREW_RANGE },
       { timeout: 90000, polling: 500 },
     );
   } catch (err) {
-    // A bare timeout does not say which half is missing: the echo of the typed
-    // question, or a Hebrew reply after it. Attach the log so the artifact
-    // carries that evidence.
+    // A bare timeout does not say whether nothing came back at all or a reply
+    // came back in the wrong script. Attach the log so the artifact carries
+    // that evidence.
     const t = await page.locator('#log').textContent();
     const e = /** @type {any} */ (err);
-    e.detail = `${e.message} — echoOfTypedQuestion=${t.includes(QUESTION)}. log after send: ${JSON.stringify(t.slice(logBeforeQuestion.length))}`;
+    e.detail = `${e.message} — no Hebrew final transcript after the question. log after send: ${JSON.stringify(t.slice(logAtSend.length))}`;
     throw e;
   }
   await page.waitForTimeout(3000);
-  record('final-transcript-and-avatar-talking-observed', true, {});
+  record('hebrew-final-transcript-observed', true, {});
 
   const fullLog = await page.locator('#log').textContent();
-  const echoAt = fullLog.lastIndexOf(QUESTION);
-  const newReply = fullLog.slice(echoAt === -1 ? logBeforeQuestion.length : echoAt);
+  const newReply = fullLog.slice(logAtSend.length);
   record('log-captured', true, { fullLog, newReply });
 
   const repliedInHebrew = HEBREW_RE.test(newReply);
