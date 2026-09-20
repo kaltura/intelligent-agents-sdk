@@ -478,6 +478,10 @@ export class KalturaAvatarSession extends Emitter {
     // never grows unbounded across a long-lived session.
     /** @type {Map<string, {name:string, at:number}>} */
     this._pendingToolAcks = new Map();
+    // Cancel hooks for every in-flight `_await` (one per pending socket wait). Teardown runs
+    // them so a handshake torn down mid-flight settles at once instead of on its own timeout.
+    /** @type {Set<() => void>} */
+    this._pendingAwaits = new Set();
     // Tool-call spiral circuit breaker state (see `_toolSpiralLimit` above). Counts RAW
     // `type:"tool"` segments per turn (before dedup — a spiral's repeats are exactly
     // what this counts); `_toolSpiralSignaled` guards `toolSpiralDetected` to fire at
@@ -2311,14 +2315,25 @@ export class KalturaAvatarSession extends Emitter {
 
   /**
    * Await a single inbound socket event with a timeout (and optional overall
-   * deadline). Cleans up its listener. @returns {Promise<any>}
+   * deadline). Cleans up its listener.
+   *
+   * Cancelable: the wait registers itself in `_pendingAwaits`, and teardown rejects it with
+   * `connect_failed` right away. Without that, a `disconnect()` landing mid-handshake removes
+   * the socket's listeners while this wait is still armed, so the event it needs can never
+   * arrive and `connect()` would hang for the full timeout (up to `TIMEOUTS.asr`, 30 s) before
+   * failing. The two connect lanes run concurrently, so either lane can be the one left waiting.
+   * @returns {Promise<any>}
    * @param {any} socket @param {string} event @param {number} ms @param {string} label @param {{expired:()=>boolean}} [overall]
    */
   _await(socket, event, ms, label, overall) {
     return new Promise((resolve, reject) => {
-      const t = setTimeout(() => { socket.off?.(event, ok); reject(timeoutErr(label)); }, ms);
+      const ok = (payload) => { done(); if (overall && overall.expired()) return reject(timeoutErr('ConnectTimeout')); resolve(payload); };
+      const cancel = () => { done(); reject(connectAbortedErr()); };
+      const t = setTimeout(() => { done(); reject(timeoutErr(label)); }, ms);
+      // Declared last so it can close over all three above; every caller of it runs later.
+      const done = () => { clearTimeout(t); socket.off?.(event, ok); this._pendingAwaits.delete(cancel); };
       t.unref?.();
-      const ok = (payload) => { clearTimeout(t); socket.off?.(event, ok); if (overall && overall.expired()) return reject(timeoutErr('ConnectTimeout')); resolve(payload); };
+      this._pendingAwaits.add(cancel);
       socket.once ? socket.once(event, ok) : socket.on(event, ok);
     });
   }
@@ -2787,6 +2802,11 @@ export class KalturaAvatarSession extends Emitter {
     // Shared by disconnect() and _endWith() — any ACK still pending when the session ends
     // can never be delivered (rule 4.2: cleared on disconnect, not left to grow unbounded).
     this._pendingToolAcks.clear();
+    // Any socket wait still armed can never be answered: the socket's listeners go away below.
+    // Reject them now so a connect()/resume()/_coldReconnect() torn down mid-handshake settles
+    // immediately instead of on its own (up to 30 s) timeout.
+    for (const cancel of [...this._pendingAwaits]) cancel();
+    this._pendingAwaits.clear();
     this._pausedPendingApprove = null;   // a held approve dies with the session
     this._dropHeldTurns();               // held speak() calls resolve false: the session ended first
     this._uninterruptibleTurn = false;

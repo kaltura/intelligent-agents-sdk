@@ -242,6 +242,26 @@ test('connect() failure (WHEP 503) never binds: srcObject untouched, avatarStrea
   assert.equal(session.videoEl, videoEl);
 });
 
+test('regression: disconnect() from a track listener settles connect() at once while the ASR lane is still waiting (no 30 s hang)', { timeout: 10000 }, async () => {
+  // The two connect lanes run concurrently, so WHEP/ontrack can land while the ASR lane is still
+  // inside its `asr-webrtc-answer` wait. Teardown drops the socket's listeners, so that wait could
+  // only ever end on its own 30 s timeout — connect() has to reject on the teardown instead.
+  const { session, socket, videoEl } = newSession();
+  let release = () => {};
+  scriptHappyPath(socket, { asrAnswer: () => new Promise((r) => { release = () => r({ type: 'answer', sdp: 'fake-answer' }); }) });
+  session.on('track', () => { if (videoEl.playCount === 1) session.disconnect(); });
+  const started = Date.now();
+  const err = await session.connect().then(() => null, (e) => e);
+  const elapsed = Date.now() - started;
+  assert.ok(err, 'connect() must reject when the app disconnects mid-handshake');
+  assert.equal(err.code, 'connect_failed');
+  assert.ok(elapsed < 2000, `connect() must settle on the teardown, not on the ASR timeout (took ${elapsed}ms)`);
+  assert.equal(videoEl.srcObject, null, 'teardown still cleared the element');
+  release();   // the late answer must not resurrect anything or throw
+  await delay(20);
+  assert.equal(session.state, 'error');
+});
+
 test('stored mute / volume / sink id survive teardown and are already in place on the next connect (no extra writes)', async () => {
   const { session, socket, videoEl } = newSession();
   session.muteAudioOutput(); session.setAudioOutputVolume(0.3);
