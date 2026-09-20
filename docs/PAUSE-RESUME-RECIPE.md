@@ -30,7 +30,7 @@ The moment you call `resume()`, the SDK releases that held signal: the rebuilt s
 
 In every one of these cases, `resume()` returns cleanly with `session.paused === false` and never hangs. That's why the edge-case handling below is just "call `resume()` from every exit path, unconditionally."
 
-`resume()` can still reject for reasons unrelated to pause duration (a genuinely dead session, a real network failure mid-rebuild). Treat any rejection defensively regardless: catch it, and if `session.state` is still `'connected'`, the session is fine and there's nothing further to do.
+`resume()` can still reject for reasons unrelated to pause duration (a genuinely dead session, a real network failure mid-rebuild). Treat any rejection defensively regardless: catch it, and if `session.state` is still `'connected'`, the session is fine and there's nothing further to do. If the long-path rebuild itself fails, the session is never left half-connected: `resume()` rejects with the rebuild error, and the session emits `error` and then `ended {reason:'resume_failed'}` with `session.state === 'disconnected'`. Call `connect()` again to start over.
 
 You don't need to listen for any event to know resume worked. `await session.resume()` resolving is the only signal your app needs. Two events exist for optional UX polish, but neither is required:
 

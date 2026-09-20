@@ -433,6 +433,20 @@ test("speak() during the server's own check-in turn is held until that turn ends
   session.disconnect();
 });
 
+test("speak() during the server's hang-up message is held until that turn ends", async () => {
+  const { session, socket } = newSession();
+  await connectAndFinishOpening(socket, session);
+  socket.server('generatingSpeech', { text: 'Goodbye for now.', speechId: 'abcd-hangup-message' });
+  socket.server('stvStartedTalking', {});
+  const p = session.speak('wait, one more thing');
+  await settle();
+  assert.deepEqual(sentTexts(socket), [], 'held: the hang-up turn drops typed text');
+  socket.server('stvFinishedTalking', { agentContent: 'Goodbye for now.' });
+  assert.equal(await p, true);
+  assert.deepEqual(sentTexts(socket), ['wait, one more thing']);
+  session.disconnect();
+});
+
 test('disconnect() while text is held resolves it false and never sends it', async () => {
   const { session, socket } = newSession();
   scriptHappyPath(socket);

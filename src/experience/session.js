@@ -803,12 +803,20 @@ export class KalturaAvatarSession extends Emitter {
       const res = await this._fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/sdp' }, body: offer.sdp });
       if (overall?.expired()) throw timeoutErr('ConnectTimeout');
       const answerSdp = await res.text();
-      if (!res.ok) throw new KalturaError({ type: 'about:blank', title: 'WHEP failed', status: res.status, code: 'whep_failed', detail: whepStatusHint(res.status), body: redact(answerSdp).slice?.(0, 200) });
       // The WHEP server's Location is often RELATIVE (e.g. "/rtc/v1/whip/?action=delete&…").
       // Resolve it against the WHEP request URL NOW, so disconnect()'s DELETE hits SRS — not the
       // page origin (which 404s and silently leaks the server-side STV session).
       const loc = res.headers?.get?.('Location');
-      this._whepLocation = loc ? resolveUrl(loc, url) : null;
+      const resolvedLoc = loc ? resolveUrl(loc, url) : null;
+      if (pc !== this._pcStv) {
+        // The other connect lane failed (or the app disconnected) while this POST was in
+        // flight: teardown already closed `pc`. The server still allocated an STV session for
+        // the answer it just sent, so release it, then abort without touching session state.
+        if (res.ok && resolvedLoc) this._releaseWhep(resolvedLoc);
+        throw connectAbortedErr();
+      }
+      if (!res.ok) throw new KalturaError({ type: 'about:blank', title: 'WHEP failed', status: res.status, code: 'whep_failed', detail: whepStatusHint(res.status), body: redact(answerSdp).slice?.(0, 200) });
+      this._whepLocation = resolvedLoc;
       // The resolved Location can ALSO resolve to a private IP (the server rewrote the
       // egress host after the initial request-URL check above passed) — checked separately
       // since it's only known post-response (additive to the pre-request check).
@@ -823,6 +831,20 @@ export class KalturaAvatarSession extends Emitter {
     }
     await playable;
     this._cancelStvPlayable = null;
+  }
+
+  /**
+   * DELETE a WHEP resource (release the server-side STV session). Best-effort and
+   * observable: a non-2xx means a leaked egress resource, so it is audited. Used by
+   * disconnect() for the live session and by `_connectStv` for an answer that landed
+   * after the session was already torn down.
+   * @param {string} loc
+   */
+  _releaseWhep(loc) {
+    if (!this._fetch) return;
+    Promise.resolve().then(() => this._fetch(loc, { method: 'DELETE' }))
+      .then((r) => { if (r && r.ok === false) this._audit('whep.release', 'fail', { action: 'DELETE', reason: `HTTP ${r.status}` }); })
+      .catch((e) => this._audit('whep.release', 'fail', { action: 'DELETE', reason: String(e && e.message || e) }));
   }
 
   /** @param {any} socket */
@@ -1282,7 +1304,7 @@ export class KalturaAvatarSession extends Emitter {
    */
   _startMicInBackground() {
     if (this._micPromise) return this._micPromise;
-    this._micPromise = (async () => {
+    const p = (async () => {
       let stream;
       try {
         stream = await this._acquireMic();
@@ -1297,8 +1319,9 @@ export class KalturaAvatarSession extends Emitter {
         this._discardStream(stream);
         if (this._sessionLive()) this.emit('warning', { code: 'mic_attach_failed', message: 'The microphone was acquired but could not be attached to the speech uplink. Call startMic() to retry.', detail: String(err?.message || err) });
       }
-    })().finally(() => { this._micPromise = null; });
-    return this._micPromise;
+    })().finally(() => { if (this._micPromise === p) this._micPromise = null; });   // identity check: a teardown may already have cleared it and a later acquire replaced it
+    this._micPromise = p;
+    return p;
   }
 
   /**
@@ -1469,12 +1492,21 @@ export class KalturaAvatarSession extends Emitter {
     this._sessionReleased = false;
     const overall = deadline(TIMEOUTS.overall);
     this._socket.emit('resumeConversation', {});
-    await this._createSessionWithCapacity(this._socket, overall);
-    if (this.mode !== 'audio') { try { this._pcStv?.close?.(); } catch { /* */ } this._pcStv = null; }
-    try { this._pcAsr?.close?.(); } catch { /* */ } this._pcAsr = null;
-    await this._runConnectSequence(this._socket, overall, { skipAgentWait: true });
-    this._approve(this._socket);
-    this._setState('connected');
+    try {
+      await this._createSessionWithCapacity(this._socket, overall);
+      if (this.mode !== 'audio') { try { this._pcStv?.close?.(); } catch { /* */ } this._pcStv = null; }
+      try { this._pcAsr?.close?.(); } catch { /* */ } this._pcAsr = null;
+      await this._runConnectSequence(this._socket, overall, { skipAgentWait: true });
+      this._approve(this._socket);
+      this._setState('connected');
+    } catch (err) {
+      // The old transports are already gone and the rebuild failed, so the session cannot
+      // carry a conversation any more: end it (error + ended, transports torn down) instead
+      // of leaving it 'connected' with no peers. Rethrown because the caller awaits resume().
+      const e = err instanceof KalturaError ? err : new KalturaError({ type: 'about:blank', title: 'resume failed', code: 'resume_failed', detail: String(err && err.message || err) });
+      this._endWith(e, 'resume_failed');
+      throw e;
+    }
   }
 
   /** The sticky id pinning this session to its server instance — persist it to resume the SAME session across a tab reload. */
@@ -1909,12 +1941,7 @@ export class KalturaAvatarSession extends Emitter {
     this._setState('disconnecting');
     // DELETE the WHEP resource (release the server-side STV session) if we have a Location.
     // Best-effort + observable: a non-2xx means a leaked egress resource, so we audit it.
-    if (this._whepLocation && this._fetch) {
-      const loc = this._whepLocation;
-      Promise.resolve().then(() => this._fetch(loc, { method: 'DELETE' }))
-        .then((r) => { if (r && r.ok === false) this._audit('whep.release', 'fail', { action: 'DELETE', reason: `HTTP ${r.status}` }); })
-        .catch((e) => this._audit('whep.release', 'fail', { action: 'DELETE', reason: String(e && e.message || e) }));
-    }
+    if (this._whepLocation) this._releaseWhep(this._whepLocation);
     // Fire the completion signal before the token is dropped below — same posture as the
     // WHEP DELETE above, which already captures its resource into a local before its own
     // async hop, since `finalize()` reads the token synchronously before its first await.
@@ -2864,6 +2891,10 @@ function micError(err) {
 }
 function timeoutErr(label) {
   return new KalturaError({ type: 'https://docs.kaltura.com/agentic/errors/timeout', title: 'timeout', code: 'timeout', detail: `${label}: timed out waiting for the server.` });
+}
+/** One connect lane finishing after the session was torn down (the other lane failed first, or the app disconnected). */
+function connectAbortedErr() {
+  return new KalturaError({ type: 'about:blank', title: 'connect aborted', code: 'connect_failed', detail: 'The session was torn down while this handshake was in flight.' });
 }
 function deadline(ms) { const end = Date.now() + ms; return { expired: () => Date.now() > end }; }
 function whepStatusHint(status) {

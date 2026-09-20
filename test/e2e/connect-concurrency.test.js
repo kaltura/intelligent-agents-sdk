@@ -11,6 +11,14 @@ import { newAvatarSession as newSession, okWhep } from '../fakes/avatar-session.
 
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
+/** ASR peer whose remote-description step fails on a marked answer (the ASR lane loses). */
+class AsrRejectingPc extends FakeRTCPeerConnection {
+  async setRemoteDescription(d) {
+    if (d?.sdp === 'bad-asr-answer') throw Object.assign(new Error('bad asr answer'), { name: 'InvalidAccessError' });
+    return super.setRemoteDescription(d);
+  }
+}
+
 /** Collect unhandled rejections for the duration of a test (node would otherwise crash the run). */
 function trapUnhandled() {
   const seen = [];
@@ -57,12 +65,6 @@ test('audio mode: no STV lane at all, single ASR peer', async () => {
 test('ASR failure while WHEP is still pending → one rejection, no unhandled rejection', async () => {
   const trap = trapUnhandled();
   try {
-    class AsrRejectingPc extends FakeRTCPeerConnection {
-      async setRemoteDescription(d) {
-        if (d?.sdp === 'bad-asr-answer') throw Object.assign(new Error('bad asr answer'), { name: 'InvalidAccessError' });
-        return super.setRemoteDescription(d);
-      }
-    }
     const heldWhep = () => new Promise(() => { /* never resolves: WHEP is the losing lane */ });
     const { session, socket } = newSession({ fetch: heldWhep, rtcConstructor: AsrRejectingPc });
     scriptHappyPath(socket, { asrAnswer: async () => ({ type: 'answer', sdp: 'bad-asr-answer' }) });
@@ -88,6 +90,57 @@ test('WHEP failure while the ASR answer never arrives → rejects whep_failed at
     assert.equal(session.state, 'error');
     assert.ok(!socket.didEmit('approvedPermissions'));
     await delay(20);
+    assert.deepEqual(trap.seen, []);
+  } finally { trap.off(); }
+});
+
+// ───────────────────────── the losing lane leaves nothing behind ─────────────────────────
+
+/** A fetch whose WHEP POST stays open until the test resolves it; DELETEs are recorded and succeed. */
+function heldPostFetch() {
+  const calls = [];
+  let resolvePost = null;
+  const fetch = (url, init) => {
+    calls.push({ url, method: init?.method });
+    if (init?.method === 'DELETE') return Promise.resolve({ ok: true, status: 200 });
+    return new Promise((r) => { resolvePost = r; });
+  };
+  return { fetch, calls, deletes: () => calls.filter((c) => c.method === 'DELETE').map((c) => c.url), resolvePost: (res) => resolvePost(res) };
+}
+
+test('ASR fails while the WHEP POST is in flight → the late answer is released with a DELETE, never stored', async () => {
+  const trap = trapUnhandled();
+  try {
+    const whep = heldPostFetch();
+    const { session, socket } = newSession({ fetch: whep.fetch, rtcConstructor: AsrRejectingPc });
+    scriptHappyPath(socket, { asrAnswer: async () => ({ type: 'answer', sdp: 'bad-asr-answer' }) });
+    await assert.rejects(() => session.connect(), (e) => e.code === 'connect_failed');
+    assert.equal(session.state, 'error');
+    assert.equal(whep.calls.length, 1, 'the WHEP POST was still open when ASR failed');
+
+    // The server answers the abandoned POST: it has allocated a downlink session for a peer
+    // the teardown already closed. The SDK must release it and must not resurrect state.
+    whep.resolvePost({ ok: true, status: 201, text: async () => 'v=0\r\nlate\r\n', headers: { get: (h) => (h === 'Location' ? '/whep/resource/late' : null) } });
+    await delay(20);
+    assert.deepEqual(whep.deletes(), ['https://srs.example/whep/resource/late'], 'late Location is resolved against the request URL and DELETEd');
+    assert.equal(session._whepLocation, null, 'the abandoned answer never becomes the live WHEP resource');
+    assert.equal(session.state, 'error');
+    assert.deepEqual(trap.seen, []);
+  } finally { trap.off(); }
+});
+
+test('ASR fails while the WHEP POST is in flight → a late non-2xx answer is dropped without a DELETE', async () => {
+  const trap = trapUnhandled();
+  try {
+    const whep = heldPostFetch();
+    const { session, socket } = newSession({ fetch: whep.fetch, rtcConstructor: AsrRejectingPc });
+    scriptHappyPath(socket, { asrAnswer: async () => ({ type: 'answer', sdp: 'bad-asr-answer' }) });
+    await assert.rejects(() => session.connect(), (e) => e.code === 'connect_failed');
+    whep.resolvePost({ ok: false, status: 503, text: async () => 'busy', headers: { get: () => null } });
+    await delay(20);
+    assert.deepEqual(whep.deletes(), [], 'nothing was allocated, nothing to release');
+    assert.equal(session._whepLocation, null);
+    assert.equal(session.state, 'error');
     assert.deepEqual(trap.seen, []);
   } finally { trap.off(); }
 });

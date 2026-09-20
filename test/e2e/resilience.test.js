@@ -335,6 +335,38 @@ test('pause → server release → resume(): the element keeps its binding and p
   session.disconnect();
 });
 
+test('pause → server release → resume() whose rebuild fails: session ends with resume_failed, never half-connected', async () => {
+  // The released-session resume re-runs the full connect sequence on the live socket. If a
+  // lane fails there (WHEP 404 here), the SDK must end the session explicitly — the app gets
+  // the same error + ended pair it gets for any fatal failure — instead of leaving a session
+  // that reports `connected` with no downlink and a pending approve.
+  let whepPosts = 0;
+  const fetch = async (url, init) => {
+    if (init?.method === 'DELETE') return { ok: true, status: 200 };
+    whepPosts++;
+    if (whepPosts === 2) return { ok: false, status: 404, text: async () => 'gone', headers: { get: () => null } };
+    return { ok: true, status: 201, text: async () => 'v=0\r\nanswer\r\n', headers: { get: () => 'https://srs/whep/r/' + whepPosts } };
+  };
+  const { session, socket } = newSession({ fetch });
+  scriptHappyPath(socket);
+  await session.connect();
+  session.pause();
+  socket.server('sessionReadyForResume', {});
+  assert.equal(session._sessionReleased, true);
+  const approvesBefore = socket.emitsOf('approvedPermissions').length;
+  const events = [];
+  session.on('error', (e) => events.push(['error', e.code]));
+  session.on('ended', (p) => events.push(['ended', p.reason]));
+
+  scriptHappyPath(socket);   // the rebuild asks for a fresh stvNewSession; its WHEP POST then 404s
+  await assert.rejects(() => session.resume(), (e) => e.code === 'whep_failed');
+  assert.equal(session.state, 'disconnected');
+  assert.deepEqual(events, [['error', 'whep_failed'], ['ended', 'resume_failed']]);
+  assert.equal(socket.emitsOf('approvedPermissions').length, approvesBefore, 'a failed rebuild never approves');
+  assert.equal(session._pcStv, null);
+  assert.equal(session._pcAsr, null);
+});
+
 test('STV: WHEP 404 on re-subscribe (session truly gone) → cold reconnect with a distinct "session gone" reason', async () => {
   // A 404 on the
   // re-subscribe POST means the server has discarded the STV session — vs. a
@@ -859,6 +891,34 @@ test('tool spiral HARD recovery: auto-resends the stuck ASR turn (default recove
   assert.ok(recovered, 'spiralRecovered must fire once the resend is sent');
   assert.equal(recovered.text, 'walk me through the two-metric guidance range', 'the ORIGINAL text is reported, not the wrapped one');
   assert.deepEqual(textsEntered(secondSocket), [`${SPIRAL_RECOVERY_PREFIX}walk me through the two-metric guidance range`], 'exactly one resend must be emitted on the rebuilt socket');
+  session.disconnect();
+});
+
+test('tool spiral HARD recovery: a resend that is ready only after the rebuilt opening ended is sent at once, not held', async () => {
+  // Same recovery, but a slow onBeforeSend hook (a real guardrail call) makes the wrapped
+  // resend ready only after the rebuilt socket's opening turn has already finished. There is
+  // nothing to hold behind, so the resend goes out immediately — exactly once.
+  let liveSocket = null;
+  const multiFactory = () => { const s = new FakeSocket(); liveSocket = s; scriptHappyPath(s, { openingLine: true }); return s; };
+  const hookKinds = [];
+  const onBeforeSend = async (text, ctx) => { hookKinds.push(ctx.kind); if (ctx.kind === 'spiralRecovery') await delay(60); return text; };
+  const { session } = newSession({ cfg: { toolSpiralLimit: 3, hardToolSpiralLimit: 6, socketFactory: multiFactory, onBeforeSend } });
+  await session.connect();
+  const firstSocket = liveSocket;
+
+  let recovered = null; session.on('spiralRecovered', (p) => { recovered = p; });
+  firstSocket.server('agentTurnToTalk', { userTranscription: 'walk me through the two-metric guidance range' });
+  const retryDelta = JSON.stringify({ type: 'tool', content: 'show_widget {"kind":"summary","data":"{}"}' });
+  for (let i = 0; i < 6; i++) firstSocket.server('agent_raw_text', { delta: retryDelta });
+  await delay(400);
+
+  const secondSocket = liveSocket;
+  assert.notEqual(secondSocket, firstSocket);
+  assert.deepEqual(hookKinds, ['spiralRecovery'], 'the hook saw exactly the one resend');
+  assert.equal(session.speaking, false, 'the rebuilt opening had finished before the resend was ready');
+  assert.equal(session._heldTurns.length, 0, 'nothing left in the hold queue');
+  assert.ok(recovered, 'spiralRecovered must fire once the resend is sent');
+  assert.deepEqual(textsEntered(secondSocket), [`${SPIRAL_RECOVERY_PREFIX}walk me through the two-metric guidance range`], 'exactly one resend, sent directly');
   session.disconnect();
 });
 
