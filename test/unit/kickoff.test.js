@@ -197,6 +197,26 @@ test('an unrelated user transcript is never affected by echo suppression', async
   assert.deepEqual(transcripts.filter((t) => t.type === 'user').map((t) => t.text), ['what time is it?']);
 });
 
+test('the echo filter is spent on the first captured turn, whatever that turn says', async () => {
+  const { session, socket } = newSession({ cfg: { kickoff: KICKOFF } });
+  scriptHappyPath(socket);
+  await session.connect();
+  await settle();
+  finishOpening(socket);
+  const transcripts = collect(session, 'transcript');
+  // The kickoff's echo can only ride the first captured turn. If that turn is something the user
+  // actually said, the filter is done: it must not follow the rest of the session and reshape a
+  // later utterance that happens to use the same words.
+  socket.server('agentTurnToTalk', { userTranscription: 'hi, are you there?' });
+  socket.server('agentTurnToTalk', { userTranscription: KICKOFF });
+  socket.server('agentTurnToTalk', { userTranscription: `${KICKOFF} please` });
+  assert.deepEqual(
+    transcripts.filter((t) => t.type === 'user').map((t) => t.text),
+    ['hi, are you there?', KICKOFF, `${KICKOFF} please`],
+    'every later turn surfaces verbatim: nothing split, nothing swallowed',
+  );
+});
+
 // ─────────────────────────── never re-sent ───────────────────────────
 
 test('kickoff is not re-sent after pause() → pauseSessionExpired → resume()', async () => {

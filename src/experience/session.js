@@ -250,7 +250,7 @@ export class KalturaAvatarSession extends Emitter {
     }
     this._micStartMode = cfg.micStartMode || 'immediate';
     this._asrAudioSender = null;   // the ASR uplink's audio RTCRtpSender — set by _connectAsr on both the tracked and trackless paths, so startMic()/switchMic() replaceTrack on one uniform handle
-    this._micPromise = null;       // immediate-mode acquire in flight (connect() starts it, never awaits it); startMic() joins it instead of prompting twice
+    this._micPromise = null;       // a mic acquire/attach in flight: connect()'s immediate-mode acquire, or a switchMic() that already nulled _micStream. startMic() joins it instead of prompting twice
     // Tier-1 WebRTC constraints baseline (standard browser-native defaults — see cfg.micConstraints doc).
     // `false` opts all the way out (bare audio:true); an object merges over the default.
     this._micConstraints = cfg.micConstraints === false ? false : { ...DEFAULT_MIC_CONSTRAINTS, ...(cfg.micConstraints || {}) };
@@ -568,9 +568,9 @@ export class KalturaAvatarSession extends Emitter {
       };
       this.emit('disclosure', this._disclosure);
       // Step 11 — approve (starts the greeting). If an ack is required (regulated
-      // deployments / biometric-consent jurisdictions), hold it until acknowledgeDisclosure().
-      if (this._requireDisclosureAck && !this._disclosureAcked) { this._pendingApprove = socket; this._disclosurePending = true; }
-      else this._approve(socket);
+      // deployments / biometric-consent jurisdictions), `_approve()` holds it until
+      // acknowledgeDisclosure() instead of emitting.
+      this._approve(socket);
       this._setState('connected');
       this._wireNetwork();
       this._wireLifecycle();
@@ -805,13 +805,20 @@ export class KalturaAvatarSession extends Emitter {
       const offer = await this._cancelable(pc.createOffer());
       await this._cancelable(pc.setLocalDescription(offer));
       const res = await this._fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/sdp' }, body: offer.sdp });
-      if (overall?.expired()) throw timeoutErr('ConnectTimeout');
       const answerSdp = await res.text();
       // The WHEP server's Location is often RELATIVE (e.g. "/rtc/v1/whip/?action=delete&…").
-      // Resolve it against the WHEP request URL NOW, so disconnect()'s DELETE hits SRS — not the
-      // page origin (which 404s and silently leaks the server-side STV session).
+      // Resolve it against the WHEP request URL NOW, so the DELETE hits SRS — not the page
+      // origin (which 404s and silently leaks the server-side STV session).
       const loc = res.headers?.get?.('Location');
       const resolvedLoc = loc ? resolveUrl(loc, url) : null;
+      // Both aborts below have to release before they throw: the server allocated an STV
+      // session for the answer it just sent, and neither path ever reaches the
+      // `this._whepLocation = resolvedLoc` assignment that teardown releases from.
+      if (overall?.expired()) {
+        // The overall deadline ran out while this POST was in flight.
+        if (res.ok && resolvedLoc) this._releaseWhep(resolvedLoc);
+        throw timeoutErr('ConnectTimeout');
+      }
       if (pc !== this._pcStv) {
         // The other connect lane failed (or the app disconnected) while this POST was in
         // flight: teardown already closed `pc`. The server still allocated an STV session for
@@ -841,9 +848,10 @@ export class KalturaAvatarSession extends Emitter {
 
   /**
    * DELETE a WHEP resource (release the server-side STV session). Best-effort and
-   * observable: a non-2xx means a leaked egress resource, so it is audited. Used by
-   * disconnect() for the live session and by `_connectStv` for an answer that landed
-   * after the session was already torn down.
+   * observable: a non-2xx means a leaked egress resource, so it is audited. Called by
+   * `_releaseCurrentWhep()` for the session's live subscription, and directly by
+   * `_connectStv` for an answer that landed after the session was already torn down
+   * (that Location was never stored, so there is nothing to clear).
    * @param {string} loc
    */
   _releaseWhep(loc) {
@@ -853,8 +861,37 @@ export class KalturaAvatarSession extends Emitter {
       .catch((e) => this._audit('whep.release', 'fail', { action: 'DELETE', reason: String(e && e.message || e) }));
   }
 
-  /** @param {any} socket */
-  _approve(socket) { this._uninterruptibleTurn = true; socket.emit('approvedPermissions', { room: this._roomId }); }
+  /**
+   * Release the STV subscription this session currently holds, if any. Every place that
+   * closes or replaces `_pcStv` goes through here: teardown, media recovery, cold
+   * reconnect, resume. Clearing the field first makes it idempotent, so a second call (or
+   * a teardown right after a re-subscribe) never sends a second DELETE for the same
+   * Location.
+   */
+  _releaseCurrentWhep() {
+    const loc = this._whepLocation;
+    this._whepLocation = null;
+    if (loc) this._releaseWhep(loc);
+  }
+
+  /**
+   * Tell the server the user consented and the conversation may start. Gated on the
+   * disclosure ack so every caller (connect, resume, cold reconnect) honors it: when the
+   * ack is still outstanding the socket is parked on `_pendingApprove` and
+   * `acknowledgeDisclosure()` approves it instead.
+   * @param {any} socket
+   * @returns {boolean} true when the approval was sent
+   */
+  _approve(socket) {
+    if (this._requireDisclosureAck && !this._disclosureAcked) {
+      this._pendingApprove = socket;
+      this._disclosurePending = true;
+      return false;
+    }
+    this._uninterruptibleTurn = true;
+    socket.emit('approvedPermissions', { room: this._roomId });
+    return true;
+  }
 
   // ─────────────────────────── runtime methods ───────────────────────────
 
@@ -1068,8 +1105,12 @@ export class KalturaAvatarSession extends Emitter {
    */
   _stripKickoffEcho(text) {
     const echo = this._kickoffEcho;
-    if (echo === null || !text.includes(echo)) return text;
+    if (echo === null) return text;
+    // Disarm on the FIRST captured turn either way. The kickoff's echo can only ride that one
+    // payload, so leaving the filter armed for the rest of the session would mangle a later
+    // user utterance that happens to contain the same words.
     this._kickoffEcho = null;
+    if (!text.includes(echo)) return text;
     const rest = text.split(echo).map((part) => part.trim()).filter(Boolean).join('\n');
     return rest === '' ? null : rest;
   }
@@ -1271,8 +1312,23 @@ export class KalturaAvatarSession extends Emitter {
     try { oldStop?.(); } catch { /* */ }
     const oldStream = this._micStream;
     this._micStream = null;   // let _attachMic take the new stream (it refuses to overwrite a live one)
-    await this._attachMic(stream, { announce: false });   // false only if the session was torn down mid-switch (new stream already stopped)
-    this._discardStream(oldStream);
+    // With `_micStream` nulled and no acquire in flight, a concurrent startMic() would see both
+    // fields empty and prompt for the mic a second time. Park the attach on `_micPromise` so it
+    // joins this switch instead. The joinable swallows the rejection: startMic() waits for the
+    // switch to settle but must not inherit its error (it re-checks `_micStream` and acquires).
+    const attach = this._attachMic(stream, { announce: false });   // false only if the session was torn down mid-switch (new stream already stopped)
+    const joinable = attach.then(() => {}, () => {});
+    this._micPromise = joinable;
+    try { await attach; }
+    catch (err) {
+      // The old track is already detached, so a failed attach leaves the session mic-less: release
+      // the stream nothing is holding (the mic light would stay on) and let startMic() retry.
+      this._discardStream(stream);
+      throw err;
+    } finally {
+      if (this._micPromise === joinable) this._micPromise = null;
+      this._discardStream(oldStream);
+    }
   }
 
   /**
@@ -1506,7 +1562,8 @@ export class KalturaAvatarSession extends Emitter {
     this._socket.emit('resumeConversation', {});
     try {
       await this._createSessionWithCapacity(this._socket, overall);
-      if (this.mode !== 'audio') { try { this._pcStv?.close?.(); } catch { /* */ } this._pcStv = null; }
+      // Releasing before the re-subscribe: `_runConnectSequence` overwrites `_whepLocation`.
+      if (this.mode !== 'audio') { try { this._pcStv?.close?.(); } catch { /* */ } this._pcStv = null; this._releaseCurrentWhep(); }
       try { this._pcAsr?.close?.(); } catch { /* */ } this._pcAsr = null;
       await this._runConnectSequence(this._socket, overall, { skipAgentWait: true });
       this._approve(this._socket);
@@ -1951,12 +2008,9 @@ export class KalturaAvatarSession extends Emitter {
   disconnect(opts = {}) {
     if (this.state === 'disconnected') return;
     this._setState('disconnecting');
-    // DELETE the WHEP resource (release the server-side STV session) if we have a Location.
-    // Best-effort + observable: a non-2xx means a leaked egress resource, so we audit it.
-    if (this._whepLocation) this._releaseWhep(this._whepLocation);
-    // Fire the completion signal before the token is dropped below — same posture as the
-    // WHEP DELETE above, which already captures its resource into a local before its own
-    // async hop, since `finalize()` reads the token synchronously before its first await.
+    // The WHEP resource is released by `_teardownTransports()` below, alongside the peer it
+    // belongs to. Fire the completion signal before the token is dropped: `finalize()` reads
+    // the token synchronously before its first await.
     if (opts.final !== false) this._completer.finalize(opts.reason || 'disconnect').catch(() => {});
     this._teardownTransports();
     this._token = null;   // don't hold the secret past the session (NIST AC-6/SC-4; bounded blast radius)
@@ -2494,6 +2548,9 @@ export class KalturaAvatarSession extends Emitter {
       // STV is a WHEP subscription: re-subscribe to the same session (new offer → new answer).
       if (channel === 'stv' && this._webrtcUrl) {
         try { this._pcStv?.close?.(); } catch { /* */ } this._pcStv = null;
+        // `_connectStv()` overwrites `_whepLocation` with the new subscription, so release the
+        // old one here or the server keeps an egress session nothing will ever DELETE.
+        this._releaseCurrentWhep();
         await this._connectStv();
         // The new tracks are swapped into the SAME streams (no srcObject write). Firefox pauses a
         // media element whose tracks all ended before the replacements arrived; Chromium/WebKit do
@@ -2730,9 +2787,11 @@ export class KalturaAvatarSession extends Emitter {
     if (!reuseSocket) { this._setState('reconnecting'); this.emit('reconnecting', { reason: why, attempt: ++this._reconnectAttempt, maxAttempts: this._maxReconnect, cold: true }); }
     const overall = deadline(TIMEOUTS.overall);
     try {
-      // Drop the dead media peers before rebuilding.
+      // Drop the dead media peers before rebuilding, and release the STV subscription they
+      // held: the rebuild below allocates a new one over the same field.
       try { this._pcAsr?.close?.(); } catch { /* */ } this._pcAsr = null;
       try { this._pcStv?.close?.(); } catch { /* */ } this._pcStv = null;
+      this._releaseCurrentWhep();
       let socket = this._socket;
       if (!reuseSocket) {
         // The control socket never dropped — discard it and open a genuinely fresh
@@ -2856,6 +2915,10 @@ export class KalturaAvatarSession extends Emitter {
     this._cancelStvPlayable = null;
     this._closePeer(this._pcAsr);
     this._closePeer(this._pcStv);
+    // Closing the downlink peer locally does not free the server's egress session: DELETE the
+    // WHEP resource too. Every path that kills the transports reaches this (disconnect(),
+    // _endWith(), connect()'s catch), so no path can leak the subscription.
+    this._releaseCurrentWhep();
     // Stop the STV downlink's tracks and clear the elements' srcObject — otherwise the last
     // frame and any buffered audio linger after disconnect(). Element bindings survive, so
     // a later connect() re-binds the same elements.

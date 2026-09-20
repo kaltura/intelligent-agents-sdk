@@ -231,6 +231,67 @@ test('switchMic() keeps the mute state on the new track and stops the old one', 
   session.disconnect();
 });
 
+/** Hold the ASR sender's replaceTrack open, so an attach can be suspended mid-flight. */
+function holdAttach(session) {
+  const sender = session._asrAudioSender;
+  const real = sender.replaceTrack.bind(sender);
+  let pending = null;
+  sender.replaceTrack = (t) => new Promise((res, rej) => { pending = { t, res, rej }; });
+  return {
+    /** The track the suspended attach is holding. */
+    track: () => pending.t,
+    release: () => { const p = pending; sender.replaceTrack = real; p.res(real(p.t)); },
+    fail: () => { const p = pending; sender.replaceTrack = real; p.rej(Object.assign(new Error('InvalidStateError'), { name: 'InvalidStateError' })); },
+  };
+}
+
+test('startMic() while a switchMic() is attaching joins the switch: no third prompt', async () => {
+  const { session, socket, getUserMedia } = newSession();
+  scriptHappyPath(socket);
+  await session.connect();
+  assert.equal(getUserMedia.calls.length, 1);
+  const attach = holdAttach(session);
+  const switching = session.switchMic('mic-2');
+  await tick();
+  assert.equal(getUserMedia.calls.length, 2, 'the switch opened its own prompt');
+  // The window this pins: the old stream is already detached and the new one is not attached yet,
+  // so both `_micStream` and a naive "is an acquire running?" check read empty.
+  assert.equal(session._micStream, null);
+  const starting = session.startMic();
+  await tick();
+  assert.equal(getUserMedia.calls.length, 2, 'startMic() waited for the switch instead of prompting again');
+  attach.release();
+  await switching;
+  await starting;
+  assert.equal(getUserMedia.calls.length, 2);
+  assert.equal(session.micStarted, true);
+  assert.equal(session._micPromise, null);
+  session.disconnect();
+});
+
+test('a switchMic() that fails mid-attach rejects only its own caller; startMic() recovers the mic', async () => {
+  const { session, socket, getUserMedia } = newSession();
+  scriptHappyPath(socket);
+  await session.connect();
+  const oldTrack = session._micStream.getAudioTracks()[0];
+  const attach = holdAttach(session);
+  const switching = session.switchMic('mic-2');
+  await tick();
+  const failedTrack = attach.track();
+  const starting = session.startMic();
+  attach.fail();
+  await assert.rejects(switching, (e) => /InvalidStateError/.test(String(e.message)));
+  // startMic() joined the failed switch but must not inherit its error: it re-acquires and lands
+  // a working mic, which is the whole point of calling it.
+  await starting;
+  assert.equal(session.micStarted, true);
+  assert.equal(getUserMedia.calls.length, 3, 'one connect prompt, one switch prompt, one retry');
+  assert.equal(oldTrack.readyState, 'ended', 'the detached device is released, not left hot');
+  assert.equal(failedTrack.readyState, 'ended', 'the stream the failed attach acquired is released too');
+  assert.equal(session._micStream.getAudioTracks()[0].readyState, 'live');
+  session.disconnect();
+});
+
 test('connect() after a disconnect() with a still-pending acquire: the new session takes its own mic, the stale one is stopped', async () => {
   const gum = heldGetUserMedia();
   const { session, socket } = newSession({ getUserMedia: gum });

@@ -373,6 +373,45 @@ test('WHEP DELETE resolves a RELATIVE Location against the WHEP URL (no page-ori
   assert.equal(deleted, 'https://srs.example/rtc/v1/whip/?action=delete&token=abc');
 });
 
+test('the WHEP resource is released exactly once, however many times disconnect() is called', async () => {
+  const deletes = [];
+  const whepFetch = async (url, init) => {
+    if (init?.method === 'DELETE') { deletes.push(url); return { ok: true, status: 200, text: async () => '', headers: { get: () => null } }; }
+    return { ok: true, status: 201, text: async () => 'answer', headers: { get: () => 'https://srs/whep/resource/once' } };
+  };
+  const { session, socket } = newSession({ fetch: whepFetch });
+  scriptHappyPath(socket);
+  await session.connect();
+  session.disconnect();
+  session.disconnect();
+  await delay(10);
+  // A second DELETE for a Location the server already freed is a 404 the app can do nothing
+  // about, and it shows up as a whep.release audit failure. Releasing clears the field first,
+  // so the send site is idempotent.
+  assert.deepEqual(deletes, ['https://srs/whep/resource/once']);
+});
+
+test('a fatal socket drop releases the WHEP resource (no leak on the error path)', async () => {
+  const deletes = [];
+  const whepFetch = async (url, init) => {
+    if (init?.method === 'DELETE') { deletes.push(url); return { ok: true, status: 200, text: async () => '', headers: { get: () => null } }; }
+    return { ok: true, status: 201, text: async () => 'answer', headers: { get: () => 'https://srs/whep/resource/fatal' } };
+  };
+  const { session, socket } = newSession({ fetch: whepFetch, cfg: { networkAware: false } });
+  scriptHappyPath(socket);
+  await session.connect();
+  let ended = null;
+  session.on('ended', (p) => { ended = p; });
+  // The server closes the session for good: no reconnect is attempted, so this is the only
+  // chance to free the downlink the session still holds.
+  socket.server('disconnect', 'io server disconnect');
+  await delay(10);
+  assert.ok(ended, 'a non-recoverable drop ends the session');
+  assert.equal(session.state, 'disconnected');
+  assert.deepEqual(deletes, ['https://srs/whep/resource/fatal']);
+  assert.equal(session._whepLocation, null);
+});
+
 test('resilience: a RECOVERABLE drop → reconnecting → reconnected (no re-join)', async () => {
   const { session, socket } = newSession();
   scriptHappyPath(socket);

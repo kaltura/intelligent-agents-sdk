@@ -124,6 +124,8 @@ await session.connect();       // silent opening runs; kickoff is NOT sent yet
 session.acknowledgeDisclosure();   // kickoff is sent now, once
 ```
 
+The gate holds across recovery: a `resume()` or a cold reconnect while the ack is still outstanding keeps the conversation parked until `acknowledgeDisclosure()` lands. Once acknowledged, the ack lasts for the life of the session object, so a later reconnect never re-asks the user.
+
 See [README.md § Accessibility + AI-disclosure gate](../README.md#accessibility-wcag-22-aa--captions--ai-disclosure-gate).
 
 ## Sessions without a microphone

@@ -145,6 +145,31 @@ test('ASR fails while the WHEP POST is in flight → a late non-2xx answer is dr
   } finally { trap.off(); }
 });
 
+test('ASR fails after the WHEP lane already subscribed → connect()\'s own failure path releases the subscription', async () => {
+  const trap = trapUnhandled();
+  try {
+    // The mirror of the two tests above: here the STV lane WON the race and stored its
+    // Location, so the release has to come from the failed connect()'s teardown.
+    const calls = [];
+    const fetch = async (url, init) => {
+      calls.push({ url, method: init?.method || 'POST' });
+      if (init?.method === 'DELETE') return { ok: true, status: 200 };
+      return { ok: true, status: 201, text: async () => 'v=0\r\nanswer\r\n', headers: { get: (h) => (h === 'Location' ? '/whep/resource/asr-lost' : null) } };
+    };
+    const { session, socket } = newSession({ fetch, rtcConstructor: AsrRejectingPc });
+    scriptHappyPath(socket, { asrAnswer: async () => ({ type: 'answer', sdp: 'bad-asr-answer' }) });
+    await assert.rejects(() => session.connect(), (e) => e.code === 'connect_failed');
+    await delay(20);
+    assert.deepEqual(
+      calls.filter((c) => c.method === 'DELETE').map((c) => c.url),
+      ['https://srs.example/whep/resource/asr-lost'],
+      'a failed connect() must not leave the downlink subscription allocated',
+    );
+    assert.equal(session._whepLocation, null);
+    assert.deepEqual(trap.seen, []);
+  } finally { trap.off(); }
+});
+
 // ───────────────────────── teardown cancels a pending negotiation ─────────────────────────
 
 test('disconnect() from a track listener settles connect() even when the peer leaves its negotiation promise pending', async () => {
@@ -182,14 +207,30 @@ test('ASR answer landing after the 30s overall deadline → ConnectTimeout, not 
   } finally { restore(); }
 });
 
-test('WHEP answer landing after the 30s overall deadline → ConnectTimeout', async () => {
+test('WHEP answer landing after the 30s overall deadline → ConnectTimeout, and the answered subscription is released', async () => {
   let restore = () => {};
   try {
-    const lateWhep = async () => { restore = shiftClock(31_000); return okWhep(); };
+    // The POST already came back 201, so the server allocated a downlink session for this
+    // answer. Aborting on the deadline still has to DELETE it: nothing else can, because the
+    // abort happens before the Location is ever stored as the session's live subscription.
+    const calls = [];
+    const lateWhep = async (url, init) => {
+      calls.push({ url, method: init?.method || 'POST' });
+      if (init?.method === 'DELETE') return { ok: true, status: 200 };
+      restore = shiftClock(31_000);
+      return { ok: true, status: 201, text: async () => 'v=0\r\nanswer\r\n', headers: { get: (h) => (h === 'Location' ? '/whep/resource/deadline' : null) } };
+    };
     const { session, socket } = newSession({ fetch: lateWhep });
     scriptHappyPath(socket);
     await assert.rejects(() => session.connect(), (e) => e.code === 'timeout' && e.detail.startsWith('ConnectTimeout'));
     assert.equal(session.state, 'error');
     assert.ok(!socket.didEmit('approvedPermissions'));
+    await delay(20);   // the release is fire-and-forget, so it lands a microtask later
+    assert.deepEqual(
+      calls.filter((c) => c.method === 'DELETE').map((c) => c.url),
+      ['https://srs.example/whep/resource/deadline'],
+      'exactly one DELETE, at the resolved absolute Location',
+    );
+    assert.equal(session._whepLocation, null, 'the aborted answer never becomes the live subscription');
   } finally { restore(); }
 });

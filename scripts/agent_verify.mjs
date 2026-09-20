@@ -601,6 +601,50 @@ section('Part 6 — Media path');
   else fail('M-2', 'silent-opening relabel not verifiable', problems.join('\n      '));
 }
 
+// M-3: the STV downlink subscription is released wherever it is dropped or
+// replaced. Closing the peer locally does not free the server's egress session,
+// so every site that closes `_pcStv` (teardown, media recovery, cold reconnect,
+// resume) must go through `_releaseCurrentWhep()`, and the two `_connectStv`
+// abort lanes must release the answer they never stored.
+{
+  const file = join(SDK_SRC, 'experience', 'session.js');
+  const sessionSrc = read(file);
+  const lines = sessionSrc.split('\n');
+  const problems = [];
+
+  // The single release helper, clearing the field before the DELETE so a second call is a no-op.
+  const helper = /_releaseCurrentWhep\(\)\s*\{\s*\n\s*const loc = this\._whepLocation;\s*\n\s*this\._whepLocation = null;/.test(sessionSrc);
+  if (!helper) problems.push('src/experience/session.js: _releaseCurrentWhep() must read _whepLocation, clear it, then release (idempotent)');
+
+  // Exactly one site stores a Location. More than one means a path can overwrite without releasing.
+  const stores = lines.filter((t) => /^\s*this\._whepLocation = (?!null)/.test(t)).length;
+  if (stores !== 1) problems.push(`src/experience/session.js: expected exactly 1 non-null "this._whepLocation =" assignment, found ${stores}`);
+
+  // Every close of the STV peer releases within a few lines (same line counts).
+  lines.forEach((text, i) => {
+    if (!/this\._pcStv\?\.close|_closePeer\(this\._pcStv\)/.test(text)) return;
+    const window = lines.slice(i, i + 7).join('\n');
+    if (!/this\._releaseCurrentWhep\(\)/.test(window)) problems.push(`src/experience/session.js:${i + 1}: closes _pcStv without a nearby _releaseCurrentWhep() → ${text.trim()}`);
+  });
+
+  // The two abort lanes in _connectStv (deadline expired, other lane lost) release directly:
+  // their Location was never stored, so nothing else can ever DELETE it.
+  const aborts = (sessionSrc.match(/if \(res\.ok && resolvedLoc\) this\._releaseWhep\(resolvedLoc\);/g) || []).length;
+  if (aborts !== 2) problems.push(`src/experience/session.js: expected both _connectStv abort lanes to release the answered subscription, found ${aborts}`);
+
+  for (const [rel, needles] of [
+    ['test/e2e/connect.test.js', ['the WHEP resource is released exactly once', 'releases the WHEP resource (no leak on the error path)']],
+    ['test/e2e/connect-concurrency.test.js', ['the answered subscription is released']],
+    ['test/e2e/resilience.test.js', ['the re-subscribe releases the previous subscription exactly once', 'cold reconnect releases the subscription', 'frees the subscription the paused session held']],
+  ]) {
+    const src = read(join(ROOT, rel));
+    for (const needle of needles) if (!src.includes(needle)) problems.push(`${rel} missing "${needle}"`);
+  }
+
+  if (problems.length === 0) pass('M-3', 'Every path that drops or replaces the STV downlink releases its WHEP subscription exactly once — single store site, idempotent release, tests present (run below)');
+  else fail('M-3', 'WHEP subscription release not verifiable', problems.join('\n      '));
+}
+
 // ══════════════════════════════════════════════════════════════════════════
 // SDK TEST SUITE (node:test)
 // ══════════════════════════════════════════════════════════════════════════

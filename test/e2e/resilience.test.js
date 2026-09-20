@@ -207,6 +207,83 @@ test('STV: ICE failed → WHEP re-subscribe (recovered)', async () => {
   session.disconnect();
 });
 
+// ─────────────────────────── the downlink subscription across recovery ───────────────────────────
+// Closing the STV peer locally does not free the server's egress session: it stays allocated
+// until the WHEP resource is DELETEd. Every path that re-subscribes overwrites the session's
+// single Location, so each one has to release the old subscription first, exactly once.
+
+/** WHEP fetch that records every call in order and hands out a fresh Location per POST. */
+function whepLedger() {
+  const calls = [];
+  return {
+    calls,
+    posts: () => calls.filter((c) => c.method === 'POST').map((c) => c.url),
+    deletes: () => calls.filter((c) => c.method === 'DELETE').map((c) => c.url),
+    fetch: async (url, init) => {
+      const method = init?.method || 'POST';
+      calls.push({ method, url });
+      if (method === 'DELETE') return { ok: true, status: 200, text: async () => '', headers: { get: () => null } };
+      const n = calls.filter((c) => c.method === 'POST').length;
+      return { ok: true, status: 201, text: async () => 'v=0\r\nanswer\r\n', headers: { get: () => 'https://srs/whep/r/' + n } };
+    },
+  };
+}
+
+test('STV ICE failed → the re-subscribe releases the previous subscription exactly once', async () => {
+  const whep = whepLedger();
+  const { session, socket } = newSession({ fetch: whep.fetch });
+  scriptHappyPath(socket);
+  await session.connect();
+  assert.equal(session._whepLocation, 'https://srs/whep/r/1');
+  stvPeer().setIce('failed');
+  await delay(700);   // WHEP re-POST + playable-gate settle
+  assert.equal(session.state, 'connected');
+  assert.deepEqual(whep.deletes(), ['https://srs/whep/r/1'], 'the subscription the dead peer held is freed');
+  assert.equal(session._whepLocation, 'https://srs/whep/r/2', 'the session now holds the new one');
+  // An ICE drop can repeat for the whole session, so the release has to hold on every cycle.
+  stvPeer().setIce('failed');
+  await delay(700);
+  assert.deepEqual(whep.deletes(), ['https://srs/whep/r/1', 'https://srs/whep/r/2']);
+  assert.equal(session._whepLocation, 'https://srs/whep/r/3');
+  session.disconnect();
+  await delay(10);
+  assert.deepEqual(whep.deletes(), ['https://srs/whep/r/1', 'https://srs/whep/r/2', 'https://srs/whep/r/3']);
+});
+
+test('cold reconnect releases the subscription the dead peers held', async () => {
+  const whep = whepLedger();
+  const { session, socket } = newSession({ fetch: whep.fetch, cfg: { reconnectWindowMs: 5000 } });
+  scriptHappyPath(socket);
+  await session.connect();
+  socket.server('disconnect', 'transport close');
+  socket.recovered = false;             // server session gone: full rebuild
+  socket.server('connect');
+  await delay(400);
+  assert.equal(session.state, 'connected');
+  assert.deepEqual(whep.deletes(), ['https://srs/whep/r/1']);
+  assert.equal(session._whepLocation, 'https://srs/whep/r/2');
+  session.disconnect();
+  await delay(10);
+  assert.deepEqual(whep.deletes(), ['https://srs/whep/r/1', 'https://srs/whep/r/2']);
+});
+
+test('resume() after a server release frees the subscription the paused session held', async () => {
+  const whep = whepLedger();
+  const { session, socket } = newSession({ fetch: whep.fetch });
+  scriptHappyPath(socket);
+  await session.connect();
+  session.pause();
+  socket.server('sessionReadyForResume', {});
+  scriptHappyPath(socket);   // the rebuild asks for a fresh stvNewSession
+  await session.resume();
+  assert.equal(session.paused, false);
+  assert.deepEqual(whep.deletes(), ['https://srs/whep/r/1']);
+  assert.equal(session._whepLocation, 'https://srs/whep/r/2');
+  session.disconnect();
+  await delay(10);
+  assert.deepEqual(whep.deletes(), ['https://srs/whep/r/1', 'https://srs/whep/r/2']);
+});
+
 // ─────────────────────────── avatar media across recovery (plan §5.5.9) ───────────────────────────
 
 /** WHEP fetch whose Nth POST (1-based) fails with `status`; every other POST succeeds; DELETE always ok. */
@@ -495,6 +572,52 @@ test('acknowledgeDisclosure() cannot release a pause-held approve (separate hold
   assert.equal(socket.emitsOf('approvedPermissions').length, approvesBefore, 'acknowledgeDisclosure() must not release the pause-held approve');
   await session.resume();
   assert.equal(socket.emitsOf('approvedPermissions').length, approvesBefore + 1, 'only resume() releases it');
+  session.disconnect();
+});
+
+// ─────────────────────────── the disclosure gate across recovery ───────────────────────────
+// `approvedPermissions` is what starts the avatar speaking, so with requireDisclosureAck:true
+// it may only go out after acknowledgeDisclosure(). Every path that approves honours that,
+// not just connect(): a rebuild must never speak on behalf of a user who has not consented yet.
+
+test('a cold reconnect before the disclosure ack keeps the approval parked until acknowledgeDisclosure()', async () => {
+  const { session, socket } = newSession({ cfg: { requireDisclosureAck: true, reconnectWindowMs: 5000 } });
+  scriptHappyPath(socket);
+  await session.connect();
+  assert.equal(session.state, 'connected');
+  assert.equal(socket.emitsOf('approvedPermissions').length, 0, 'connect() waits for the ack');
+  await session._coldReconnect('media asr failed');
+  assert.equal(session.state, 'connected');
+  assert.equal(socket.emitsOf('approvedPermissions').length, 0, 'the rebuilt session inherits the gate');
+  session.acknowledgeDisclosure();
+  assert.equal(socket.emitsOf('approvedPermissions').length, 1, 'the ack releases the rebuild\'s approval');
+  session.disconnect();
+});
+
+test('resume() after a server release keeps the approval parked while the disclosure ack is outstanding', async () => {
+  const { session, socket } = newSession({ cfg: { requireDisclosureAck: true } });
+  scriptHappyPath(socket);
+  await session.connect();
+  session.pause();
+  socket.server('sessionReadyForResume', {});
+  scriptHappyPath(socket);   // the rebuild asks for a fresh stvNewSession
+  await session.resume();
+  assert.equal(session.state, 'connected');
+  assert.equal(session.paused, false);
+  assert.equal(socket.emitsOf('approvedPermissions').length, 0, 'a rebuilt session is still gated on the ack');
+  session.acknowledgeDisclosure();
+  assert.equal(socket.emitsOf('approvedPermissions').length, 1);
+  session.disconnect();
+});
+
+test('the disclosure ack is asked once per session: a later cold reconnect approves straight away', async () => {
+  const { session, socket } = newSession({ cfg: { requireDisclosureAck: true, reconnectWindowMs: 5000 } });
+  scriptHappyPath(socket);
+  await session.connect();
+  session.acknowledgeDisclosure();
+  assert.equal(socket.emitsOf('approvedPermissions').length, 1);
+  await session._coldReconnect('media asr failed');
+  assert.equal(socket.emitsOf('approvedPermissions').length, 2, 'the gate does not re-arm behind the user\'s back');
   session.disconnect();
 });
 

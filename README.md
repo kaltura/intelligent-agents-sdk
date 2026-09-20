@@ -607,6 +607,8 @@ session.acknowledgeDisclosure();
 
 A configured `kickoff` respects the gate: it is sent once, right after `acknowledgeDisclosure()`, never before it.
 
+The gate holds across recovery. If the session resumes from a pause or reconnects while the ack is still outstanding, the conversation stays parked until `acknowledgeDisclosure()` lands. Once acknowledged, it stays acknowledged for the life of the session object, so a later reconnect never re-asks the user.
+
 ---
 
 ## Security posture
