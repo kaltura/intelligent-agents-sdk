@@ -82,16 +82,18 @@ Keep it short. A long kickoff delays the first words, because the model reads it
 
 ## What happens on the wire
 
-Event order for an avatar session with `SILENT_OPENING` and a `kickoff`, with typical timings from live runs (`examples/event-timing.html?kickoff=...` against a fake mic):
+Event order for an avatar session with `SILENT_OPENING` and a `kickoff`, with typical timings from live headless-browser runs against a fake mic (`npm run live-verify:connect-timing`, medians over 5 runs):
 
 | Step | What you observe | Typical time |
 |---|---|---|
 | 1 | `connect()` starts. The mic prompt, the socket handshake and the media negotiation run alongside each other. | 0 |
-| 2 | `connect()` resolves, `state === 'connected'`. The silent opening turn is already committed. | 2.2–3.6 s |
+| 2 | `connect()` resolves, `state === 'connected'`. The silent opening turn is already committed. The first video frame and the first audio are usually presented a little before this. | 1.5–2.2 s |
 | 3 | `avatarStartTalking`, then one `transcript`/`speechChunk` and `avatarStopTalking`, all with `text: '[silence]'` (`SILENT_OPENING_LABEL`) for the opening turn. | ends about 0.5 s after step 2 |
 | 4 | The SDK sends the kickoff. `session.kickoff.sent` becomes `true`. | same tick as step 3 |
 | 5 | `responsePending` fires when the server acknowledges the turn (its first think delta). Show a "thinking" indicator here. | tens of ms after step 4 |
-| 6 | `speechChunk` / `transcript {type:'agent'}` / `avatarStartTalking` for the agent's first real words. `responseSettled` fires. | about 1.8 s after step 2 |
+| 6 | `speechChunk` / `transcript {type:'agent'}` / `avatarStartTalking` for the agent's first real words. `responseSettled` fires. | 1.0–1.7 s after step 2 |
+
+These are tracked startup KPIs. `scripts/live-verify-connect-timing.mjs` checks the medians for `connect()`, first video frame, first audio, first words and sound heard against fixed budgets and fails when one is missed. CI runs it on pull requests labeled `run-live-verify`, in the merge queue, on manual dispatch, and on a weekly schedule. The budgets and how they were calibrated are in the script header. Run it yourself with `npm run live-verify:connect-timing`; `--browser` picks the engine and `--headed` shows the run.
 
 `avatarStartTalking` and `avatarStopTalking` still fire for the silent opening. They drive the hold described next, so an app that toggles a "speaking" indicator on them sees a brief flicker of under a second. The silent turn's `transcript`, `speechChunk` and `avatarStopTalking.text` all carry `SILENT_OPENING_LABEL` (`[silence]`), the same marker captions use for a silent stretch, so a transcript view can render it as-is or skip entries equal to the label. The raw phrase never reaches a listener.
 

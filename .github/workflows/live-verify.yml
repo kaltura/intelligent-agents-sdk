@@ -56,12 +56,21 @@ name: Live verification
 # runs headless Chromium. Audibility is measured on the remote audio track
 # with an AnalyserNode, so it works on every engine; the inbound-rtp
 # totalAudioEnergy check is added only where the engine exposes it.
+# The timing script is also the startup-KPI gate: the median of connect(),
+# first video frame, first audio, first agent words and sound heard over the
+# 5 runs is checked against the budgets in the script header, and a miss fails
+# the timing step. The job summary leads with that KPI table; the full reports
+# sit below it in a collapsed section. A weekly `schedule` run keeps a trend
+# (90-day artifacts) even when nothing is merged; only live-verify-kickoff runs
+# on that trigger.
 on:
   workflow_dispatch: {}
   pull_request:
     types: [opened, synchronize, reopened, labeled]
   merge_group:
     branches: [main]
+  schedule:
+    - cron: '0 6 * * 1' # Monday 06:00 UTC: startup-KPI trend run (live-verify-kickoff only)
 
 permissions:
   contents: read
@@ -773,10 +782,10 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   live-verify-kickoff:
-    name: 🔴🌐 Live verification (silent opening + kickoff, chromium)
+    name: 🔴🌐 Live verification (silent opening + kickoff + startup KPIs, chromium)
     needs: changes
     if: |
-      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' ||
       ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs.browser == 'true')
     runs-on: ubuntu-latest
     environment: live-verify
@@ -795,7 +804,7 @@ jobs:
       - name: 🎭 Install chromium
         run: npx playwright install --with-deps chromium
 
-      - name: 🔴🌐 Provision a silent-opening agent → measure connect timing (5 runs) → cleanup
+      - name: 🔴🌐 Provision a silent-opening agent → measure connect timing (5 runs) → check startup KPIs → cleanup
         id: live_verify_connect_timing
         env:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
@@ -823,13 +832,31 @@ jobs:
             live-verify-artifacts/
             live-verify-connect-timing-output.log
             live-verify-kickoff-output.log
-          retention-days: 30
+          retention-days: 90
 
-      - name: 📝 Write job summary
+      - name: 📝 Write job summary (startup KPIs first)
         if: always()
         run: |
           {
             echo "### 🔴🌐 Silent opening + kickoff — timing ${{ steps.live_verify_connect_timing.outcome }}, scenarios ${{ steps.live_verify_kickoff.outcome }}"
+            echo
+            echo "#### Startup KPIs (prod, headless Chromium, median of 5 runs; a miss fails the timing step)"
+            echo
+            node -e '
+              const fs = require("node:fs");
+              const dir = "live-verify-artifacts";
+              const files = fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => /^connect-timing-.*\.json$/.test(f)).sort() : [];
+              if (!files.length) { console.log("No connect-timing report was written."); process.exit(0); }
+              const kpi = JSON.parse(fs.readFileSync(dir + "/" + files.at(-1), "utf8")).data?.kpi ?? [];
+              console.log("| KPI | median ms | budget ms | min / max | result |");
+              console.log("|---|---|---|---|---|");
+              for (const k of kpi) {
+                const range = k.medianMs === null ? "" : k.minMs + " / " + k.maxMs;
+                console.log("| " + [k.label, k.medianMs ?? "n/a", "≤ " + k.budgetMs, range, k.status].join(" | ") + " |");
+              }
+            ' 2>/dev/null || echo "Could not read the connect-timing report."
+            echo
+            echo "<details><summary>Full reports</summary>"
             echo
             for md in live-verify-artifacts/connect-timing-*.md live-verify-artifacts/kickoff-*.md; do
               [ -f "$md" ] && cat "$md" && echo
@@ -837,6 +864,7 @@ jobs:
             echo '```'
             tail -n 40 live-verify-kickoff-output.log 2>/dev/null || true
             echo '```'
+            echo "</details>"
           } >> "$GITHUB_STEP_SUMMARY"
 
   live-verify-avatar-media:

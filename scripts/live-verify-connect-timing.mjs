@@ -29,6 +29,26 @@
  * words 1.75–1.85 s. The markdown artifact prints this baseline next to the
  * measured numbers so a regression is visible without opening the JSON.
  *
+ * KPIs. After the runs, the median of each startup KPI over the successful runs
+ * is checked against a budget. A miss fails the script like any other check, so
+ * a startup regression fails the CI job instead of hiding in a table:
+ *
+ *   connect() resolved                         ≤ 2500 ms   (2200–3600 before the concurrent connect path)
+ *   first video frame presented (rVFC)         ≤ 2500 ms
+ *   first audio (remote audio track unmuted)   ≤ 2500 ms
+ *   first agent words after connect() resolved ≤ 1850 ms   (1750–1850 with a manual speak() nudge)
+ *   sound heard (AnalyserNode)                 ≤ 5000 ms
+ *
+ * Budgets are ms from connect() start (first words: from connect() resolved).
+ * Defaults were calibrated on prod with headless Chromium, Firefox and WebKit
+ * (medians: connect 1.5–1.8 s, first frame 1.3–1.6 s, first audio 1.2–1.5 s,
+ * first words after connect 1.0–1.6 s, sound heard 3.0–3.9 s) and leave headroom
+ * for a slower CI runner. A KPI with no sample in the run set is reported as n/a
+ * and skipped, not failed. The two speech KPIs are reported but not enforced
+ * with `--opening` or `--no-kickoff`, because the first words are then the opening
+ * line, not the agent's reply. The report carries the table under `## KPI`
+ * (markdown) and `data.kpi` (JSON).
+ *
  * Resource hints (`--hints`). An app can add `<link rel=preconnect|dns-prefetch|
  * preload|modulepreload>` tags to its `<head>` so the browser opens the socket
  * and WHEP connections, resolves the TURN host and fetches socket.io/the SDK
@@ -59,6 +79,8 @@
  *   --kickoff TEXT           kickoff text
  *   --mic M                  immediate (default) | deferred | denied
  *   --mode M                 avatar (default) | agent-avatar (KalturaAgentSession)
+ *   --budget-K MS            override one KPI budget; K = connect | first-frame | first-audio | first-words | sound
+ *   --no-budgets             report the KPIs without failing on them
  *   --out DIR --keep --agent-json PATH
  *
  * Artifacts (`--out`, default live-verify-artifacts/): <runId>.json + <runId>.md.
@@ -81,6 +103,28 @@ if (!['avatar', 'agent-avatar'].includes(MODE)) { console.error(`--mode ${MODE}:
 if (!['off', 'on', 'ab'].includes(HINTS)) { console.error(`--hints ${HINTS}: expected off, on or ab`); process.exit(1); }
 const choice = browserChoice(args);
 const BASELINE = { connectMs: '2200–3600', firstWordsMs: '1750–1850' };
+
+/**
+ * Startup KPIs: median over the successful runs must be ≤ budget (ms). See the header
+ * for how the defaults were calibrated. `enforce: false` KPIs are reported only.
+ * @typedef {{key:string, flag:string, label:string, budgetMs:number, enforce:boolean}} Kpi
+ */
+const SPEECH_KPI = !OPENING && !!KICKOFF;   // otherwise the first words are the opening line, not the reply
+const ENFORCE = args['no-budgets'] !== true;
+const KPIS = /** @type {Kpi[]} */ ([
+  { key: 'connectMs', flag: 'connect', label: 'connect() resolved', budgetMs: 2500, enforce: ENFORCE },
+  { key: 'videoFirstFrameMs', flag: 'first-frame', label: 'first video frame presented (rVFC)', budgetMs: 2500, enforce: ENFORCE },
+  { key: 'trackAudioMs', flag: 'first-audio', label: 'first audio (remote audio track unmuted)', budgetMs: 2500, enforce: ENFORCE },
+  { key: 'firstWordsAfterConnectMs', flag: 'first-words', label: 'first agent words after connect() resolved', budgetMs: 1850, enforce: ENFORCE && SPEECH_KPI },
+  { key: 'firstSoundMs', flag: 'sound', label: 'sound heard (AnalyserNode)', budgetMs: 5000, enforce: ENFORCE && SPEECH_KPI },
+]);
+for (const k of KPIS) {
+  const raw = args[`budget-${k.flag}`];
+  if (raw === undefined) continue;
+  const ms = Number(raw);
+  if (!Number.isInteger(ms) || ms <= 0) { console.error(`--budget-${k.flag} ${raw}: expected a positive integer (ms)`); process.exit(1); }
+  k.budgetMs = ms;
+}
 const MIC_LABEL = MIC ?? (choice.browser === 'webkit' ? 'synthetic' : 'immediate');
 const SETUP = `${choice.browser}${choice.headed || choice.browser === 'chrome' ? ' headed' : ' headless'}, mic ${MIC_LABEL}, opening ${OPENING ? `spoken (${JSON.stringify(OPENING)})` : 'silent'}, ${KICKOFF ? 'kickoff' : 'no kickoff'}, mode ${MODE}, resource hints ${HINTS === 'ab' ? 'A/B (odd runs off, even runs on)' : HINTS}`;
 /** Which arm a run belongs to: `off` = plain page, `on` = page with resource hints in <head>. */
@@ -327,6 +371,29 @@ report.data.baseline = BASELINE;
 
 const fmt = (/** @type {{min:any, median:any, max:any}} */ s) => (s.min === null ? 'n/a' : `${s.min} / ${s.median} / ${s.max}`);
 
+// KPI budgets: one check per enforced KPI on the median, so a regression fails the run.
+report.data.kpi = KPIS.map((k) => {
+  const s = report.data.summary[k.key];
+  const measured = typeof s.median === 'number';
+  const within = measured ? s.median <= k.budgetMs : null;
+  let status = 'n/a';
+  if (measured && k.enforce) status = within ? 'ok' : 'FAIL';
+  else if (measured) status = within ? 'ok (not enforced)' : 'over budget (not enforced)';
+  const detail = { medianMs: s.median, minMs: s.min, maxMs: s.max, n: s.n, budgetMs: k.budgetMs };
+  if (measured && k.enforce) report.check(`KPI: median ${k.label} ≤ ${k.budgetMs} ms`, within === true, detail);
+  else report.note(`KPI: ${k.label} ${measured ? 'reported only, budget not enforced' : 'not measured in this run set'}`, detail);
+  return { key: k.key, label: k.label, medianMs: s.median, minMs: s.min, maxMs: s.max, n: s.n, budgetMs: k.budgetMs, enforced: k.enforce && measured, ok: within, status };
+});
+const kpiMd = [
+  '## KPI',
+  '',
+  `Median over the ${ok.length} successful run${ok.length === 1 ? '' : 's'} vs budget, ms from connect() start (first words: from connect() resolved). ${ENFORCE ? 'An enforced KPI over budget fails the run.' : 'Budgets not enforced (--no-budgets).'}`,
+  '',
+  mdTable(['KPI', 'median', 'budget', 'min / max', 'result'], report.data.kpi.map((k) => [k.label, k.medianMs ?? 'n/a', `≤ ${k.budgetMs}`, k.medianMs === null ? '' : `${k.minMs} / ${k.maxMs}`, k.status])),
+  '',
+];
+const kpiLine = report.data.kpi.map((k) => `${k.label.replace(/ \(.*\)$/, '')} ${k.medianMs ?? 'n/a'}${k.medianMs === null ? '' : ` ≤ ${k.budgetMs}`} ${k.status}`).join('; ');
+
 // A/B: per-arm stats and the on − off median delta (negative = hints made it faster).
 /** @type {string[]} */
 let abMd = [];
@@ -353,6 +420,9 @@ const md = [
   '',
   `${RUNS} runs. ${SETUP}. Values are ms from connect() start as min / median / max unless stated.`,
   '',
+  ...kpiMd,
+  '## All timings',
+  '',
   mdTable(['metric', 'measured', 'baseline (before)'], METRICS.map(([k, label, base]) => [label, fmt(report.data.summary[k]), base])),
   '',
   ...abMd,
@@ -373,5 +443,5 @@ const md = [
   '',
 ].join('\n');
 report.write(outDir, md);
-console.log(`\n${SETUP}\nconnect() ${fmt(report.data.summary.connectMs)} ms (baseline ${BASELINE.connectMs}); first words after connect ${fmt(report.data.summary.firstWordsAfterConnectMs)} ms (baseline ${BASELINE.firstWordsMs}); sound heard ${fmt(report.data.summary.firstSoundMs)} ms; first frame ${fmt(report.data.summary.videoFirstFrameMs)} ms${abLine}`);
+console.log(`\n${SETUP}\nconnect() ${fmt(report.data.summary.connectMs)} ms (baseline ${BASELINE.connectMs}); first words after connect ${fmt(report.data.summary.firstWordsAfterConnectMs)} ms (baseline ${BASELINE.firstWordsMs}); sound heard ${fmt(report.data.summary.firstSoundMs)} ms; first frame ${fmt(report.data.summary.videoFirstFrameMs)} ms${abLine}\nKPI (median ≤ budget): ${kpiLine}`);
 process.exit(report.failed ? 1 : 0);
