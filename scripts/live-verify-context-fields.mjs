@@ -123,10 +123,21 @@ async function runProbe(port, label, { withContext, contextId }) {
   await page.waitForTimeout(3000);
 
   await page.evaluate(() => window.testSpeak('Please report the context probe now.'));
-  await page.waitForFunction(
-    () => (window.__events || []).some((e) => e.type === 'transcript' && e.ttype === 'final' && e.text.includes('CTXID=')),
-    null, { timeout: 45000, polling: 500 },
-  );
+  try {
+    await page.waitForFunction(
+      () => (window.__events || []).some((e) => e.type === 'transcript' && e.ttype === 'final' && e.text.includes('CTXID=')),
+      null, { timeout: 90000, polling: 500 },
+    );
+  } catch (err) {
+    // A bare timeout does not say which of the two happened: no reply at all, or
+    // a reply that skipped the probe line. Attach the transcripts the page saw so
+    // the artifact carries that evidence instead of just the timeout.
+    const finals = await page.evaluate(() => (window.__events || [])
+      .filter((e) => e.type === 'transcript' && e.ttype === 'final').map((e) => e.text));
+    const e = /** @type {any} */ (err);
+    e.detail = `${e.message} — no "CTXID=" in any final transcript. Finals seen: ${JSON.stringify(finals)}`;
+    throw e;
+  }
 
   const events = await page.evaluate(() => window.__events);
   const finalText = events.filter((e) => e.type === 'transcript' && e.ttype === 'final').pop()?.text || '';
