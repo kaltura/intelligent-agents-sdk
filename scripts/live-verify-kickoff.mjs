@@ -153,7 +153,11 @@ const SCENARIOS = {
       await page.evaluate(() => /** @type {any} */ (window).sampleStats('connect-resolved'));
       let { events: evs } = await waitFor(page, (e) => replyChunk(e), REPLY_TIMEOUT, 'first reply speechChunk');
       const firstChunk = replyChunk(evs);
-      evs = await replyEnd(page, firstChunk.index);
+      await replyEnd(page, firstChunk.index);
+      // The harness records a stats sample only after an async getStats(), so it lands a
+      // few ms after the avatarStopTalking event itself. Wait for the sample, not the event.
+      const replyStopSample = (/** @type {Ev[]} */ e) => find(e, 'stats:sample', { from: firstChunk.index, where: (d) => d.label === 'avatarStopTalking' || d.label === 'interrupted' });
+      ({ events: evs } = await waitFor(page, replyStopSample, 5_000, 'reply stop stats sample'));
 
       const start = find(evs, 'connect:start');
       const atConnect = find(evs, 'stats:sample', { from: start.index, where: (d) => d.label === 'connect-resolved' });
