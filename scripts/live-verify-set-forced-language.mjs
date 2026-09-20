@@ -13,9 +13,10 @@
  * provisions and tears down its own scratch agent.
  */
 import { readFileSync, writeFileSync, mkdirSync, createReadStream, existsSync, statSync } from 'node:fs';
-import { resolve, dirname, extname, normalize } from 'node:path';
+import { resolve, dirname, extname, normalize, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'node:http';
+import { tmpdir } from 'node:os';
 import { chromium } from 'playwright';
 import { Management } from '../src/management/index.js';
 
@@ -73,6 +74,37 @@ function startServer(appInitData) {
 const HEBREW_RANGE = '֐-׿';
 const HEBREW_RE = new RegExp(`[${HEBREW_RANGE}]`);
 const QUESTION = 'What is your best product?';
+
+/**
+ * Chromium's fake capture device plays a 440 Hz tone, which speech recognition
+ * transcribes as a stream of hallucinated user turns that barge in on the reply
+ * this script waits for. Feeding it a silent PCM file instead keeps the whole
+ * mic path real (getUserMedia, the ASR peer, VAD) with nothing for the
+ * recognizer to invent words out of.
+ *
+ * @param {string} path Destination for the generated file.
+ * @returns {string} The same path, for use in a Chromium launch flag.
+ */
+function writeSilentWav(path) {
+  const rate = 48000;
+  const dataLen = rate * 2; // 1 second, 16-bit mono. Chromium loops it.
+  const buf = Buffer.alloc(44 + dataLen);
+  buf.write('RIFF', 0);
+  buf.writeUInt32LE(36 + dataLen, 4);
+  buf.write('WAVE', 8);
+  buf.write('fmt ', 12);
+  buf.writeUInt32LE(16, 16);   // PCM header size
+  buf.writeUInt16LE(1, 20);    // format: PCM
+  buf.writeUInt16LE(1, 22);    // channels
+  buf.writeUInt32LE(rate, 24);
+  buf.writeUInt32LE(rate * 2, 28); // byte rate
+  buf.writeUInt16LE(2, 32);    // block align
+  buf.writeUInt16LE(16, 34);   // bits per sample
+  buf.write('data', 36);
+  buf.writeUInt32LE(dataLen, 40);
+  writeFileSync(path, buf);
+  return path;
+}
 
 const kaltura = new Management({ partnerId, adminSecret });
 let admin;
@@ -132,9 +164,15 @@ try {
   const port = server.address().port;
   record('local-server-start', true, { port });
 
+  const silentWav = writeSilentWav(join(tmpdir(), `${runId}-silence.wav`));
   browser = await chromium.launch({
-    args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', '--autoplay-policy=no-user-gesture-required'],
+    args: [
+      '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream',
+      `--use-file-for-fake-audio-capture=${silentWav}`,
+      '--autoplay-policy=no-user-gesture-required',
+    ],
   });
+  record('silent-capture-file', true, { path: silentWav });
   const page = await browser.newPage();
   page.on('console', (msg) => {
     consoleLog.push(`[${msg.type()}] ${msg.text()}`);
@@ -167,21 +205,34 @@ try {
   // Anchor on the server's echo of the typed line, then wait for an agent
   // transcript after it. A plain "the log grew" check is satisfied by anything
   // the mic picks up while the question is in flight, so it can both time out
-  // on a slow reply and pass without one.
-  await page.waitForFunction(
-    ({ typed, hebrew }) => {
-      const t = document.getElementById('log')?.textContent || '';
-      const at = t.lastIndexOf(`[user] ${typed}`);
-      return at !== -1 && new RegExp(`\\[final\\][^\\n]*[${hebrew}]`).test(t.slice(at));
-    },
-    { typed: QUESTION, hebrew: HEBREW_RANGE },
-    { timeout: 90000, polling: 500 },
-  );
+  // on a slow reply and pass without one. The echo is matched on the question
+  // text alone, not a `[user] ` prefix: the server sometimes prepends or
+  // appends a recognized word to the typed line, and the question text appears
+  // nowhere else in the log.
+  try {
+    await page.waitForFunction(
+      ({ typed, hebrew }) => {
+        const t = document.getElementById('log')?.textContent || '';
+        const at = t.lastIndexOf(typed);
+        return at !== -1 && new RegExp(`\\[final\\][^\\n]*[${hebrew}]`).test(t.slice(at));
+      },
+      { typed: QUESTION, hebrew: HEBREW_RANGE },
+      { timeout: 90000, polling: 500 },
+    );
+  } catch (err) {
+    // A bare timeout does not say which half is missing: the echo of the typed
+    // question, or a Hebrew reply after it. Attach the log so the artifact
+    // carries that evidence.
+    const t = await page.locator('#log').textContent();
+    const e = /** @type {any} */ (err);
+    e.detail = `${e.message} — echoOfTypedQuestion=${t.includes(QUESTION)}. log after send: ${JSON.stringify(t.slice(logBeforeQuestion.length))}`;
+    throw e;
+  }
   await page.waitForTimeout(3000);
   record('final-transcript-and-avatar-talking-observed', true, {});
 
   const fullLog = await page.locator('#log').textContent();
-  const echoAt = fullLog.lastIndexOf(`[user] ${QUESTION}`);
+  const echoAt = fullLog.lastIndexOf(QUESTION);
   const newReply = fullLog.slice(echoAt === -1 ? logBeforeQuestion.length : echoAt);
   record('log-captured', true, { fullLog, newReply });
 
