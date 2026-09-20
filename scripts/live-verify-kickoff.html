@@ -15,6 +15,9 @@
                 engines without a fake-device flag. On WebKit every mode except
                 denied returns the synthetic stream (no fake device exists there).
     headed      1 → audio output is real (informational; recorded in harness:ready)
+    hints       1 → the server injects <link> resource hints into <head> (see
+                resourceHints() in live-verify-kickoff-shared.mjs); recorded in
+                harness:ready as the number of <link rel> tags actually present
     reconnectWindowMs   forwarded to the avatar session
 
   What it records beyond session events and socket frames
@@ -25,6 +28,10 @@
                         AnalyserNode on the remote audio track (what the user hears)
     stats:sample        inbound-rtp audio + video, candidate-pair RTT, outbound mic
                         packets; sampled on talk events and every 500 ms
+    testResources()     Resource Timing for every cross-origin request and the SDK
+                        module graph (DNS / TCP / TLS / TTFB where the server sends
+                        Timing-Allow-Origin, duration always), plus the <link rel>
+                        hints present in <head>
 -->
 <html lang="en">
 <head>
@@ -47,6 +54,7 @@
     const disclosure = q.get('disclosure') === '1';
     const mic = q.get('mic') || 'immediate';
     const headed = q.get('headed') === '1';
+    const hints = q.get('hints') === '1';
     const reconnectWindowMs = q.get('reconnectWindowMs') ? Number(q.get('reconnectWindowMs')) : undefined;
     const ua = navigator.userAgent;
     const engine = /Firefox\//.test(ua) ? 'firefox' : (/AppleWebKit/.test(ua) && !/Chrome\//.test(ua)) ? 'webkit' : 'chromium';
@@ -373,8 +381,37 @@
     window.testDisconnect = async () => { rec('disconnect:call', {}); await session.disconnect(); rec('disconnect:resolved', { state: session.state }); };
     window.testKickoff = () => (mode.startsWith('agent') ? session.transport?.kickoff : session.kickoff) ?? null;
     window.testState = () => ({ state: session.state, mode: session.mode, paused: avatarTransport()?.paused ?? null, threadId: session.threadId ?? null });
+    // Resource Timing for every cross-origin request plus the SDK module graph. Servers that
+    // do not send Timing-Allow-Origin expose only start + duration (tao: false); the
+    // connection-level fields are then null rather than a misleading 0.
+    window.testResources = () => {
+      const here = location.origin;
+      const entries = [];
+      for (const e of performance.getEntriesByType('resource')) {
+        let u; try { u = new URL(e.name); } catch { continue; }
+        const sameOrigin = u.origin === here;
+        if (sameOrigin && !u.pathname.startsWith('/src/')) continue;
+        const tao = e.requestStart > 0;
+        entries.push({
+          url: sameOrigin ? u.pathname : `${u.origin}${u.pathname}`,
+          initiator: e.initiatorType,
+          startMs: Math.round(e.startTime),                 // since navigation start
+          startRel: Math.round(e.startTime - t0),           // same clock as tRel; negative = before this script ran
+          durationMs: Math.round(e.duration),
+          tao,
+          dnsMs: tao ? Math.round(e.domainLookupEnd - e.domainLookupStart) : null,
+          tcpMs: tao ? Math.round(e.connectEnd - e.connectStart) : null,
+          tlsMs: tao && e.secureConnectionStart > 0 ? Math.round(e.connectEnd - e.secureConnectionStart) : null,
+          ttfbMs: tao ? Math.round(e.responseStart - e.requestStart) : null,
+          reusedConnection: tao ? e.connectStart === e.connectEnd : null,
+          transferSize: e.transferSize,
+        });
+      }
+      const links = [...document.querySelectorAll('head link[rel]')].map((l) => ({ rel: l.rel, href: l.href.replace(/\?.*$/, ''), as: l.as || undefined, crossorigin: l.crossOrigin || undefined }));
+      return { hints: links, entries, nowMs: Math.round(performance.now()) };
+    };
 
-    rec('harness:ready', { mode, kickoff: !!kickoff, echo, disclosure, mic, engine, headed, rvfc: typeof videoEl.requestVideoFrameCallback === 'function' });
+    rec('harness:ready', { mode, kickoff: !!kickoff, echo, disclosure, mic, engine, headed, hints, hintTags: document.querySelectorAll('head link[rel]').length, sinceNavMs: Math.round(performance.now()), rvfc: typeof videoEl.requestVideoFrameCallback === 'function' });
     window.__ready = true;
   </script>
 </body>

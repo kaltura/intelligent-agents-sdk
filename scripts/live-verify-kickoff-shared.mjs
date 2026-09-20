@@ -302,16 +302,82 @@ export async function mintPageInit(kaltura, ids, genieUrl) {
 
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json' };
 
+const HARNESS_PATH = '/scripts/live-verify-kickoff.html';
+export const SOCKET_IO_CDN = 'https://cdn.socket.io/4.7.5/socket.io.min.js';
+
+/** @typedef {{rel: string, href: string, as?: string, crossorigin?: string}} ResourceHint */
+
+/**
+ * The `<link>` resource hints an app would add to its `<head>` for a faster
+ * first connect, derived from the same init payload the harness connects with:
+ *
+ * | hint | target | why |
+ * |---|---|---|
+ * | `preconnect` | socket origin | DNS + TCP + TLS before the socket.io handshake |
+ * | `preconnect crossorigin` | socket origin | same, on the CORS pool `fetch()` uses: the WHEP POST URL comes from the server's session reply and lives on this origin |
+ * | `preconnect crossorigin` | `srsBaseUrl` origin | only when it differs from the socket origin (the SDK's fallback WHEP host) |
+ * | `dns-prefetch` | TURN host | only DNS; TURN is UDP/TLS from the ICE agent, not an HTTP pool |
+ * | `preload as=script crossorigin` | socket.io CDN script | matches the `<script integrity crossorigin>` tag |
+ * | `modulepreload` | SDK entry module | fetch + parse the module graph before the inline module runs |
+ *
+ * Origins come from the init response at runtime, never from a fixed list.
+ * @param {{conversationManagerUrl?: string, srsBaseUrl?: string, turnServerUrl?: string}} init
+ * @returns {ResourceHint[]}
+ */
+export function resourceHints(init) {
+  const origin = (/** @type {string|undefined} */ u) => { try { return u ? new URL(u).origin : null; } catch { return null; } };
+  const turnHost = String(init.turnServerUrl || '').replace(/\/$/, '').replace(/^turns?:/, '').split(':')[0];
+  /** @type {ResourceHint[]} */
+  const hints = [];
+  const socket = origin(init.conversationManagerUrl);
+  const whep = origin(init.srsBaseUrl);
+  if (socket) {
+    hints.push({ rel: 'preconnect', href: socket });
+    hints.push({ rel: 'preconnect', href: socket, crossorigin: 'anonymous' });
+  }
+  if (whep && whep !== socket) hints.push({ rel: 'preconnect', href: whep, crossorigin: 'anonymous' });
+  if (turnHost) hints.push({ rel: 'dns-prefetch', href: `//${turnHost}` });
+  hints.push({ rel: 'preload', href: SOCKET_IO_CDN, as: 'script', crossorigin: 'anonymous' });
+  hints.push({ rel: 'modulepreload', href: '/src/experience/index.js' });
+  return hints;
+}
+
+/** @param {ResourceHint[]} hints */
+export function hintTags(hints) {
+  const esc = (/** @type {string} */ s) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+  return hints.map((h) => {
+    const attrs = [`rel="${esc(h.rel)}"`, `href="${esc(h.href)}"`];
+    if (h.as) attrs.push(`as="${esc(h.as)}"`);
+    if (h.crossorigin) attrs.push(`crossorigin="${esc(h.crossorigin)}"`);
+    return `  <link ${attrs.join(' ')}>`;
+  }).join('\n');
+}
+
 /**
  * Serve repo files (so the harness can import `/src/experience/index.js`) plus
  * `/init`, which mints fresh tokens on every request via `mintInit()`.
+ *
+ * With `hints`, a request for the harness page carrying `?hints=1` gets the
+ * `<link>` tags injected right after `<meta charset>`, before the socket.io
+ * `<script>`. The browser then sees them exactly as it would in a real app's
+ * static HTML, before any script runs. Without `hints=1` the file is served
+ * byte-for-byte, so the same server can run both arms of an A/B.
  * @param {() => Promise<any>} mintInit
+ * @param {{hints?: ResourceHint[]}} [opts]
  * @returns {Promise<{server: import('node:http').Server, origin: string}>}
  */
-export function startServer(mintInit) {
+export function startServer(mintInit, { hints } = {}) {
   const server = createServer((req, res) => {
-    const path = (req.url || '/').split('?')[0];
+    const [path, query = ''] = (req.url || '/').split('?');
     if (path === '/favicon.ico') { res.writeHead(204); res.end(); return; }   // keeps the console free of a 404 on first load
+    if (path === HARNESS_PATH && hints?.length && new URLSearchParams(query).get('hints') === '1') {
+      const html = readFileSync(resolve(repoRoot, `.${HARNESS_PATH}`), 'utf8');
+      const marker = '<meta charset="utf-8">';
+      if (!html.includes(marker)) { res.writeHead(500); res.end('harness head marker missing'); return; }
+      res.writeHead(200, { 'Content-Type': 'text/html' });
+      res.end(html.replace(marker, `${marker}\n${hintTags(hints)}`));
+      return;
+    }
     if (path === '/init') {
       mintInit().then((data) => {
         res.writeHead(200, { 'Content-Type': 'application/json' });
