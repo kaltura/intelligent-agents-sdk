@@ -170,6 +170,22 @@ test('kickoff echo:true shows the kickoff as a user transcript', async () => {
   assert.deepEqual(transcripts.filter((t) => t.type === 'user').map((t) => t.text), [KICKOFF]);
 });
 
+test('kickoff echo is suppressed when the turn also carries what the mic heard', async () => {
+  const { session, socket } = newSession({ cfg: { kickoff: KICKOFF } });
+  scriptHappyPath(socket);
+  await session.connect();
+  await settle();
+  finishOpening(socket);
+  const transcripts = collect(session, 'transcript');
+  // The server sends one userTranscription per turn, so a word the mic picked up while the
+  // kickoff went out arrives appended to it. Only the spoken word is the user's.
+  socket.server('agentTurnToTalk', { userTranscription: `${KICKOFF} you` });
+  assert.deepEqual(transcripts.filter((t) => t.type === 'user').map((t) => t.text), ['you']);
+  // Still once: a later turn repeating the kickoff text surfaces in full.
+  socket.server('agentTurnToTalk', { userTranscription: `${KICKOFF} you` });
+  assert.deepEqual(transcripts.filter((t) => t.type === 'user').map((t) => t.text), ['you', `${KICKOFF} you`]);
+});
+
 test('an unrelated user transcript is never affected by echo suppression', async () => {
   const { session, socket } = newSession({ cfg: { kickoff: KICKOFF } });
   scriptHappyPath(socket);
@@ -274,7 +290,7 @@ test('kickoff blocked by onBeforeSend → warning kickoff_failed, nothing sent, 
   assert.deepEqual(transcripts.filter((t) => t.type === 'user').map((t) => t.text), [KICKOFF]);
 });
 
-test('onBeforeSend rewrite still sends the rewritten kickoff (echo then no longer matches)', async () => {
+test('onBeforeSend rewrite sends the rewritten kickoff; the echo keeps only what onBeforeSend added', async () => {
   const { session, socket } = newSession({ cfg: { kickoff: KICKOFF, onBeforeSend: (t) => `${t} [ctx]` } });
   scriptHappyPath(socket);
   await session.connect();
@@ -283,7 +299,7 @@ test('onBeforeSend rewrite still sends the rewritten kickoff (echo then no longe
   assert.deepEqual(sentTexts(socket), [`${KICKOFF} [ctx]`]);
   const transcripts = collect(session, 'transcript');
   socket.server('agentTurnToTalk', { userTranscription: `${KICKOFF} [ctx]` });
-  assert.deepEqual(transcripts.filter((t) => t.type === 'user').map((t) => t.text), [`${KICKOFF} [ctx]`]);
+  assert.deepEqual(transcripts.filter((t) => t.type === 'user').map((t) => t.text), ['[ctx]']);
 });
 
 // ─────────────────────────── silent-opening label ───────────────────────────

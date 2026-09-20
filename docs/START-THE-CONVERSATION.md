@@ -65,6 +65,7 @@ Rules the SDK guarantees:
 - Sent exactly once per session object. Never re-sent on `resume()`, on a reconnect, or after `switchMode()` on `KalturaAgentSession`.
 - Sent only once the server accepts input: after the opening turn ends, or after `acknowledgeDisclosure()` when `requireDisclosureAck` is set.
 - Empty or whitespace-only text sends nothing. Any other type than a string or `{ text, echo? }` throws `bad_request` from the constructor.
+- With `echo: false`, only the kickoff text is dropped. If the same turn also carries what the user typed or said, that part still surfaces as `transcript {type:'user'}`.
 - The reply is interruptible, like any reply to `speak()`.
 - If the text cannot be sent (a guardrail or gate rejected it, or the session ended first) the session emits `warning` with code `kickoff_failed` and a `detail`. The session stays connected.
 
@@ -141,7 +142,7 @@ With `micStartMode: 'deferred'` the SDK does not touch the mic at all until you 
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| The kickoff text shows up as a user message | `echo: true`, or an `onBeforeSend` hook rewrote the text so it no longer matches the server's echo | Use `echo: false` (the default) and rewrite the kickoff text itself instead of rewriting it in `onBeforeSend`. |
+| The kickoff text shows up as a user message | `echo: true`, or an `onBeforeSend` hook added to the text, so the added part surfaces on its own | Use `echo: false` (the default) and put the wording in the kickoff text itself instead of adding it in `onBeforeSend`. |
 | `warning` with code `kickoff_failed` | A guardrail or the disclosure gate rejected the send, or the session ended first. `detail` says which. | Fix the guardrail, or call `speak()` yourself after the gate opens. |
 | The agent speaks a scripted line before the kickoff reply | The intellect's `opening_phrase` or the avatar's `openingPhrase` is not `SILENT_OPENING` | Check both. The intellect's phrase overrides the avatar's. |
 | `session.kickoff.sent` is `true` but nothing was said | The reply is still pending, or the model chose to say nothing | Watch `responsePending` / `responseSettled`. A second `speak()` starts a new turn. |

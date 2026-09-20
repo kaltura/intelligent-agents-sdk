@@ -1053,17 +1053,23 @@ export class KalturaAvatarSession extends Emitter {
 
   /**
    * Decide what a `userTranscription` echo should surface as, given a pending kickoff echo.
-   * Returns the text to emit, or `null` to emit nothing. Clears `_kickoffEcho` on a match
-   * (exact, or as the first line of a coalesced held-turn payload), so it fires at most once.
+   * Returns the text to emit, or `null` to emit nothing. Clears `_kickoffEcho` the first time
+   * the kickoff text appears, so it fires at most once.
+   *
+   * The kickoff text is matched as a substring, not as the whole payload: the server sends one
+   * `userTranscription` per turn, and that turn can carry more than the kickoff. A `speak()`
+   * held during the opening is joined on as another line, and anything the mic picked up while
+   * the kickoff went out is appended to it too. Whatever the user really said stays; only the
+   * app's own kickoff line is dropped.
    * @param {string} text
    * @returns {string|null}
    */
   _stripKickoffEcho(text) {
     const echo = this._kickoffEcho;
-    if (echo === null) return text;
-    if (text === echo) { this._kickoffEcho = null; return null; }
-    if (text.startsWith(echo + '\n')) { this._kickoffEcho = null; return text.slice(echo.length + 1); }
-    return text;
+    if (echo === null || !text.includes(echo)) return text;
+    this._kickoffEcho = null;
+    const rest = text.split(echo).map((part) => part.trim()).filter(Boolean).join('\n');
+    return rest === '' ? null : rest;
   }
 
   /**
@@ -2292,8 +2298,8 @@ export class KalturaAvatarSession extends Emitter {
       this._audit('turn.user_captured', 'success', {});
       this._lastTurnText = /** @type {string} */ (clampInbound(p.userTranscription));
       // The kickoff is the app's own text, not the user's: drop its server echo from the user
-      // transcript — exactly once, by exact text match, no timer. If speak() text was held and
-      // joined onto the kickoff during the opening turn, only the user's own lines are surfaced.
+      // transcript, exactly once, by text match, no timer. Anything else the same turn carries
+      // (a held speak(), or what the mic heard meanwhile) is still surfaced.
       const shown = this._stripKickoffEcho(this._lastTurnText);
       if (shown !== null) this.emit('transcript', { text: shown, type: 'user', speechId: null, words: [] });
     });
