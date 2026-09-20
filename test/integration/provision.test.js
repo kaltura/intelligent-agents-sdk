@@ -98,21 +98,29 @@ function baseProvision() {
 }
 
 // ─── openingPhrase option ──────────────────────────────────────────────────────
+// The phrase has two stores and the runtime picks one by path: the intellect's
+// `opening_phrase` for agent-backed sessions and chat, the avatar's
+// `openingPhrase` for avatar-only sessions. Every test here asserts both, so a
+// regression that drops either store fails.
 const avatarBody = (f) => f.calls.find((c) => c.url.includes('/avatar/create')).body;
+const intellectUpdateBody = (f) => f.calls.find((c) => c.url.includes('/v1/intellect/update')).body;
 
 test('provision uses the generated profile opening phrase when openingPhrase is omitted', async () => {
   const { f, m } = baseProvision();
   await m.provision({ brief: 'x', ks: ADMIN_KS });
   assert.equal(avatarBody(f).openingPhrase, 'Namaste!');
+  assert.equal(intellectUpdateBody(f).opening_phrase, 'Namaste!');
 });
 
-test('provision({ openingPhrase }) wins over the generated profile phrase (SILENT_OPENING reaches avatar.create)', async () => {
+test('provision({ openingPhrase }) wins over the generated profile phrase and reaches both the avatar and the intellect', async () => {
   const { f, m } = baseProvision();
   await m.provision({ brief: 'x', ks: ADMIN_KS, openingPhrase: SILENT_OPENING });
   assert.equal(avatarBody(f).openingPhrase, '<blank>');
+  assert.equal(intellectUpdateBody(f).opening_phrase, '<blank>');
   f.calls.length = 0;
   await m.provision({ brief: 'x', ks: ADMIN_KS, openingPhrase: 'Welcome to the studio!' });
   assert.equal(avatarBody(f).openingPhrase, 'Welcome to the studio!');
+  assert.equal(intellectUpdateBody(f).opening_phrase, 'Welcome to the studio!');
 });
 
 test('provision falls back to "Hello!" when the profile has no opening phrase and none is given', async () => {
@@ -128,6 +136,7 @@ test('provision falls back to "Hello!" when the profile has no opening phrase an
   const m = new Management({ partnerId: 7654321, adminSecret: 'a'.repeat(32), fetch: f });
   await m.provision({ brief: 'x', ks: ADMIN_KS });
   assert.equal(avatarBody(f).openingPhrase, 'Hello!');
+  assert.equal(intellectUpdateBody(f).opening_phrase, 'Hello!');
 });
 
 test('provision rejects an empty or non-string openingPhrase as bad_request before any network call', async () => {

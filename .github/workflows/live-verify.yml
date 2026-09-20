@@ -119,6 +119,8 @@ jobs:
               - 'scripts/live-verify-kickoff.html'
               - 'scripts/live-verify-kickoff-shared.mjs'
               - 'scripts/live-verify-connect-timing.mjs'
+              - 'scripts/live-verify-set-forced-language.mjs'
+              - 'scripts/live-verify-silent-mic-shared.mjs'
               - 'package.json'
               - 'package-lock.json'
               - '.github/workflows/live-verify.yml'

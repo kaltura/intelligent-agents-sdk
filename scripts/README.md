@@ -86,6 +86,8 @@ Every one of these has an `npm run live-verify:<name>` script except `live-verif
 
 Read the header comment of a script before running it. Each one states what it asserts and why that coverage exists.
 
+Two helper modules are not scripts and are never run directly: `live-verify-kickoff-shared.mjs` (CLI/env parsing, throwaway agent, server, browser, report) and `live-verify-silent-mic-shared.mjs` (a silent WAV for `--use-file-for-fake-audio-capture`, so the fake mic's tone is not transcribed as invented user speech).
+
 ### Flags
 
 Only `live-verify-kickoff.mjs` and `live-verify-connect-timing.mjs` take CLI flags (they share `live-verify-kickoff-shared.mjs`). Every other script is configured by env vars alone.
@@ -160,6 +162,6 @@ The four local-only scripts listed above have no CI job. Run them by hand when y
 
 **A new timing probe.** Record it in `live-verify-kickoff.html` (the page owns the measurement), read it in `live-verify-connect-timing.mjs`, and add it to the KPI budget list in that script's header. A probe with no budget is a number nobody reads.
 
-**A new live script.** Copy the closest existing one. Keep the header comment stating what it asserts, delete everything it creates, add an `npm run live-verify:<name>` script, and add a job to `live-verify.yml`. If it needs a browser, reuse `live-verify-kickoff-shared.mjs`: `bootstrap()` for CLI and env parsing, `ensureAgent()` for the throwaway agent, `startServer()`/`launchBrowser()`/`openHarness()` for the page, `Report` for the artifact.
+**A new live script.** Copy the closest existing one. Keep the header comment stating what it asserts, delete everything it creates, add an `npm run live-verify:<name>` script, and add a job to `live-verify.yml`. If it needs a browser, reuse `live-verify-kickoff-shared.mjs`: `bootstrap()` for CLI and env parsing, `ensureAgent()` for the throwaway agent, `startServer()`/`launchBrowser()`/`openHarness()` for the page, `Report` for the artifact. If it asserts on what the agent says back, also pass `writeSilentWav()` from `live-verify-silent-mic-shared.mjs` to `--use-file-for-fake-audio-capture`.
 
 Whatever you add, assert only what a caller can observe: session events, socket frames, HTTP status codes, documented error codes, response shapes, WebRTC stats. Never assert on server internals, and never write an id, a token, or a partner id into a tracked file.

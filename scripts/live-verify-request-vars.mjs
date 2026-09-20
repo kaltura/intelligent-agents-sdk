@@ -12,9 +12,13 @@
  *   D  api tool call with NO vars on the turn → request template interpolates
  *      visitor_tier=platinum (persisted from turn 1, never referenced by any
  *      prompt) AND counter=55, and `response_mapping` shapes what comes back
- *   E  sys__* injection: a tool template renders `sys__thread_id` (echoed back
- *      and matched against THIS conversation's threadId) and a `{{var}}`
+ *   E  sys__* injection: a tool template compares `sys__thread_id` against the
+ *      threadId this turn sends as a request variable, and renders a `{{var}}`
  *      presence probe over `sys__ks` — proof the server injects live system variables.
+ *      The comparison happens in the template, not in the reply: the agent is
+ *      voice-facing and writes a raw id out as spoken words ("a zero one two
+ *      e three f c dash fifty five..."), so an id echoed back verbatim can
+ *      never be matched reliably. A word marker survives that rewriting.
  *      The KS itself NEVER leaves the tool template: only the boolean
  *      "present"/"absent" is sent (kaltura.com is not reachable from the tool
  *      executor, so calling session/get with the KS is not an
@@ -111,7 +115,7 @@ const prompts = [
     'When asked what the counter section says, report EXACTLY what the "Live counter value" section above contains RIGHT NOW. If it is empty, reply with the single word EMPTY.',
     'The section is the ONLY source of truth for the counter. Values mentioned in earlier conversation turns are stale and must be ignored.',
     `When asked to check the server echo, call ${TOOL_ECHO}, then report the received_tier and received_counter values it returned, verbatim. If a value is empty, say NONE for it.`,
-    `When asked to check the system variables, call ${TOOL_SYSVARS}, then report the ks_state and echo_thread values it returned, verbatim.`,
+    `When asked to check the system variables, call ${TOOL_SYSVARS}, then report the ks_state and same_thread values it returned, verbatim.`,
     'When asked about an item in the live page context, reply with ONLY that item\'s status value, verbatim.',
   ].join('\n')),
 ];
@@ -150,11 +154,13 @@ try {
   toolIds.push(echoTool.id);
   record('tool-create-echo', true, { toolId: echoTool.id, name: TOOL_ECHO });
 
-  // sys__* injection tool: echoes sys__thread_id (harmless, matched against
-  // the live threadId below) and a `{{var}}` presence probe over sys__ks. The raw
-  // KS must never be interpolated toward any non-Kaltura endpoint, and the
-  // tool executor cannot reach kaltura.com, so presence/shape
-  // is the strongest safe assertion.
+  // sys__* injection tool: compares sys__thread_id against the expected_tid
+  // request variable the E turn sends, and renders a `{{var}}` presence probe
+  // over sys__ks. Both come back as words, not ids: the agent is voice-facing
+  // and reads a raw hex id aloud as English words, so a word marker is what
+  // survives into the reply text. The raw KS must never be interpolated toward
+  // any non-Kaltura endpoint, and the tool executor cannot reach kaltura.com,
+  // so presence/shape is the strongest safe assertion.
   const sysvarsTool = await kaltura.tools.add(tools.api({
     name: TOOL_SYSVARS,
     description: 'Check the system variables on the remote echo server. Call this whenever the visitor asks you to check the system variables. Takes no arguments.',
@@ -163,11 +169,11 @@ try {
       method: 'POST',
       body: {
         ks_state: "{{ 'present' if (sys__ks | default('') | length) > 20 else 'absent' }}",
-        tid: '{{ sys__thread_id }}',
+        same_thread: "{{ 'SAMETHREAD' if sys__thread_id == (expected_tid | default('')) else 'DIFFERENTTHREAD' }}",
       },
       timeout: 20,
     },
-    responseMapping: { ks_state: 'json.ks_state', echo_thread: 'json.tid' },
+    responseMapping: { ks_state: 'json.ks_state', same_thread: 'json.same_thread' },
   }), admin);
   toolIds.push(sysvarsTool.id);
   record('tool-create-sysvars', true, { toolId: sysvarsTool.id, name: TOOL_SYSVARS });
@@ -213,10 +219,14 @@ try {
     text: snippet(d.text), toolCalls: (d.toolCalls ?? []).map((t) => t?.name ?? t?.tool_name).filter(Boolean),
   });
 
-  // E: sys__* injection — ks present AND the echoed thread id is THIS thread's.
+  // E: sys__* injection — ks present AND sys__thread_id is THIS thread's. The
+  // id comparison runs in the tool template against expected_tid, so what the
+  // reply has to carry is a word, not a hex id a voice agent would spell out.
   const e = await kaltura.converseOnce(intellectId,
-    'Please check the system variables and tell me the ks_state and echo_thread values verbatim.', { threadId });
-  check('E-sys-vars-injected', /present/i.test(e.text) && e.text.includes(threadId), { text: snippet(e.text) });
+    'Please check the system variables and tell me the ks_state and same_thread values verbatim.',
+    { threadId, request_vars: { expected_tid: threadId } });
+  const sameThread = /same[\s-]*thread/i.test(e.text) && !/different[\s-]*thread/i.test(e.text);
+  check('E-sys-vars-injected', /present/i.test(e.text) && sameThread, { text: snippet(e.text) });
 
   // F: ~32 KB page_context through the PAGE_CONTEXT_PROMPT block — the exact
   // channel setDynamicPrompt(data) uses (page_context request variable).

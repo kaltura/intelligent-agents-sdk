@@ -18,7 +18,8 @@ import { fileURLToPath } from 'node:url';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { chromium } from 'playwright';
-import { Management } from '../src/management/index.js';
+import { Management, SILENT_OPENING } from '../src/management/index.js';
+import { writeSilentWav } from './live-verify-silent-mic-shared.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, '..');
@@ -75,37 +76,6 @@ const HEBREW_RANGE = '֐-׿';
 const HEBREW_RE = new RegExp(`[${HEBREW_RANGE}]`);
 const QUESTION = 'What is your best product?';
 
-/**
- * Chromium's fake capture device plays a 440 Hz tone, which speech recognition
- * transcribes as a stream of hallucinated user turns that barge in on the reply
- * this script waits for. Feeding it a silent PCM file instead keeps the whole
- * mic path real (getUserMedia, the ASR peer, VAD) with nothing for the
- * recognizer to invent words out of.
- *
- * @param {string} path Destination for the generated file.
- * @returns {string} The same path, for use in a Chromium launch flag.
- */
-function writeSilentWav(path) {
-  const rate = 48000;
-  const dataLen = rate * 2; // 1 second, 16-bit mono. Chromium loops it.
-  const buf = Buffer.alloc(44 + dataLen);
-  buf.write('RIFF', 0);
-  buf.writeUInt32LE(36 + dataLen, 4);
-  buf.write('WAVE', 8);
-  buf.write('fmt ', 12);
-  buf.writeUInt32LE(16, 16);   // PCM header size
-  buf.writeUInt16LE(1, 20);    // format: PCM
-  buf.writeUInt16LE(1, 22);    // channels
-  buf.writeUInt32LE(rate, 24);
-  buf.writeUInt32LE(rate * 2, 28); // byte rate
-  buf.writeUInt16LE(2, 32);    // block align
-  buf.writeUInt16LE(16, 34);   // bits per sample
-  buf.write('data', 36);
-  buf.writeUInt32LE(dataLen, 40);
-  writeFileSync(path, buf);
-  return path;
-}
-
 const kaltura = new Management({ partnerId, adminSecret });
 let admin;
 let provisioned;
@@ -120,7 +90,16 @@ try {
   admin = await kaltura.sessions.createAdminToken();
   record('admin-token-mint', true, { secondsRemaining: admin.secondsRemaining() });
 
-  provisioned = await kaltura.provision({ brief: 'A friendly multilingual test greeter', ks: admin.ks });
+  // SILENT_OPENING, not a generated greeting: the opening turn cannot be
+  // interrupted and the question has to wait it out either way, so the shortest
+  // possible opening is the fastest path to the reply. It also keeps the reply
+  // the only speech in the log, so the Hebrew check cannot pass on a
+  // multilingual greeting's own words.
+  provisioned = await kaltura.provision({
+    brief: 'A friendly multilingual test greeter',
+    openingPhrase: SILENT_OPENING,
+    ks: admin.ks,
+  });
   record('provision', true, {
     configId: provisioned.configId, agentId: provisioned.agentId,
     avatarId: provisioned.avatarId, widgetId: provisioned.widgetId,
@@ -185,8 +164,8 @@ try {
   await page.waitForFunction(() => document.getElementById('log')?.textContent?.includes('connected'), null, { timeout: 30000, polling: 500 });
   record('session-connected', true, {});
 
-  // The avatar speaks a scripted openingPhrase on connect, before any typed
-  // input, and that turn cannot be interrupted.
+  // The opening turn still runs and still cannot be interrupted, even though
+  // SILENT_OPENING means it carries no words.
   await page.waitForFunction(() => document.getElementById('log')?.textContent?.includes('avatar talking'), null, { timeout: 15000, polling: 500 }).catch(() => {});
   record('opening-phrase-started', true, {});
 
@@ -198,8 +177,8 @@ try {
   // Driven through `window.session.speak()` rather than the page's own button,
   // because the promise it returns is the one exact signal for "the text
   // reached the server": text typed during the opening is HELD until that turn
-  // ends. A fixed sleep before typing instead has to guess how long a
-  // generated multilingual greeting runs, and guesses short.
+  // ends. A fixed sleep before typing instead has to guess how long the opening
+  // runs, and guesses short.
   await page.evaluate((q) => {
     window.__spoke = null;
     window.session.speak(q).then(

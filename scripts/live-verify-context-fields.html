@@ -30,12 +30,37 @@
       const rawEmit = s.emit.bind(s);
       s.emit = (ev, ...args) => { if (ev === 'join') log('OUT join payload=' + JSON.stringify(args[0])); return rawEmit(ev, ...args); };
       s.on('connect_error', (e) => log('RAW connect_error ' + (e && e.message)));
+      // Inbound frame names only, never payload values: a turn the server
+      // acknowledges and answers with silence is indistinguishable from a turn
+      // it never answered, unless the wire says which frames actually arrived.
+      s.onAny((ev, ...args) => {
+        const a = args[0];
+        const shape = a && typeof a === 'object'
+          ? `${Object.keys(a).slice(0, 10).join(',')}${a.type ? ` type=${a.type}` : ''}${typeof a.text === 'string' ? ` textLen=${a.text.length}` : ''}`
+          : typeof a;
+        window.__events.push({ type: 'in', ev, shape });
+        log(`IN ${ev} {${shape}}`);
+      });
       return s;
     },
   });
 
   window.session.on('transcript', ({ text, type }) => { window.__events.push({ type: 'transcript', text, ttype: type }); log(`[${type}] ${text}`); });
   window.session.on('error', (e) => { window.__events.push({ type: 'error', code: e.code, detail: e.detail }); log('ERROR ' + e.code + ': ' + e.detail); });
+  window.session.on('warning', (e) => { window.__events.push({ type: 'warning', code: e.code, detail: e.detail }); log('WARNING ' + e.code + ': ' + e.detail); });
+  // The event list keeps brain segments by type only, never their content. The
+  // reply's own words are collected separately: the model may answer in text
+  // segments that are never voiced, and a text reply proves the probe just as
+  // well as a spoken one, so the probe check reads both.
+  window.__brainText = '';
+  window.session.on('brainSegment', (d) => {
+    const len = typeof d?.content === 'string' ? d.content.length : null;
+    window.__events.push({ type: 'brainSegment', stype: d?.type, len });
+    if ((d?.type === 'text' || d?.type === 'avatar') && len) window.__brainText += d.content;
+    log(`BRAIN ${d?.type} len=${len ?? '-'}`);
+  });
+  window.session.on('responsePending', () => { window.__events.push({ type: 'responsePending' }); log('RESPONSE_PENDING'); });
+  window.session.on('avatarStartTalking', () => { window.__events.push({ type: 'avatarStartTalking' }); log('AVATAR_START_TALKING'); });
   window.session.on('avatarStopTalking', () => { window.__events.push({ type: 'avatarStopTalking' }); log('AVATAR_STOP_TALKING'); });
 
   window.testConnect = () => window.session.connect();

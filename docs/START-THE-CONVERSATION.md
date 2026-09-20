@@ -40,7 +40,7 @@ Three places can set the opening phrase. The intellect's phrase, when set, overr
 
 | Where | How | Notes |
 |---|---|---|
-| `provision()` | `provision({ brief, ks, openingPhrase: SILENT_OPENING })` | Wins over the phrase in the generated profile. Default stays `'Hello!'` when omitted. |
+| `provision()` | `provision({ brief, ks, openingPhrase: SILENT_OPENING })` | Writes the phrase to both the avatar and the intellect, so it holds on every path. Wins over the phrase in the generated profile. Default stays `'Hello!'` when omitted. |
 | Avatar | `avatars.create({ ..., openingPhrase: SILENT_OPENING }, ks)` or `avatars.update({ id: avatarId, openingPhrase: SILENT_OPENING }, ks)` | The avatar-level default for every session on that avatar. |
 | Intellect | `intellectConfig.setOpeningPhrase(configId, SILENT_OPENING, ks)` | Overrides the avatar's phrase. Pass `null` to clear and fall back to the avatar's phrase. |
 

@@ -4,7 +4,7 @@
  * produce the same agent.
  *
  * Sequence (all on documented endpoints; no new API):
- *   generateProfile → intellect.add → intellect.update (prompts) →
+ *   generateProfile → intellect.add → intellect.update (prompts + opening_phrase) →
  *   pick preset voice+visual → avatar.create →
  *   agent.create → resolveWidgetId.
  *
@@ -25,7 +25,7 @@ import { lintPersonaIdentity } from './prompt-lint.js';
  * @param {string} opts.ks                   Admin token.
  * @param {string} [opts.voiceId]            Override the auto-picked preset voice.
  * @param {string} [opts.visualId]           Override the auto-picked preset visual.
- * @param {string} [opts.openingPhrase]      The avatar's scripted opening line. Wins over the generated profile's phrase. Defaults to the profile's phrase, then `'Hello!'`. Pass `SILENT_OPENING` for a silent opening turn and start the conversation from the client with `kickoff` instead. Must be a non-empty string when given.
+ * @param {string} [opts.openingPhrase]      The scripted opening line. Written to both the avatar (`openingPhrase`, governs avatar-only sessions) and the intellect (`opening_phrase`, governs agent-backed sessions and chat), so it takes effect on every path the provisioned agent can be reached through. Wins over the generated profile's phrase. Defaults to the profile's phrase, then `'Hello!'`. Pass `SILENT_OPENING` for a silent opening turn and start the conversation from the client with `kickoff` instead. Must be a non-empty string when given.
  * @param {string[]} [opts.adminTags]
  * @param {number} [opts.maxConversationLength]
  * @param {string} [opts.idempotencyKey]
@@ -60,7 +60,11 @@ export async function provision(mgmt, opts) {
     created.configId = configId;
 
     step = 'intellect.update';
-    const body = intellectBody(configId, profile);
+    // The opening phrase lives in two stores and the runtime picks one by path:
+    // the intellect's `opening_phrase` governs agent-backed sessions (and chat),
+    // the avatar's `openingPhrase` governs avatar-only sessions. Write both so
+    // the caller's choice holds however the agent is reached.
+    const body = intellectBody(configId, profile, opening);
     await mgmt.intellects.update(body, opts.ks);
 
     // Catches a persona rename (e.g. a caller editing profile.name
@@ -131,10 +135,11 @@ export async function provision(mgmt, opts) {
 }
 
 /** Build the full-format intellect prompt body from a generated profile (mirrors the server's profile-to-intellect defaults). */
-function intellectBody(configId, profile) {
+function intellectBody(configId, profile, opening) {
   const p = (key, headerTemplate) => ({ key, label: key, headerTemplate, type: 'custom', value: (profile && profile[key]) || '' });
   return {
     id: configId, type: 'internal', status: 2,
+    opening_phrase: opening,
     prompts: [
       p('goal', 'Your core goal:'),
       p('targetAudience', 'Your audience:'),
