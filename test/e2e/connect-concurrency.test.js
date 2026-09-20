@@ -145,6 +145,31 @@ test('ASR fails while the WHEP POST is in flight → a late non-2xx answer is dr
   } finally { trap.off(); }
 });
 
+// ───────────────────────── teardown cancels a pending negotiation ─────────────────────────
+
+test('disconnect() from a track listener settles connect() even when the peer leaves its negotiation promise pending', async () => {
+  const trap = trapUnhandled();
+  try {
+    // A slow WHEP answer, so the ASR lane is already done and the STV lane is the only thing
+    // Promise.all still waits on when the track arrives.
+    const slowWhep = async (...args) => { await delay(50); return okWhep(...args); };
+    const { session, socket } = newSession({ fetch: slowWhep });
+    // `close()` does not settle the operations already queued on a peer connection: Firefox
+    // leaves the `setRemoteDescription()` that fired `ontrack` pending forever. Nothing in that
+    // lane is a socket wait, so without a cancel hook connect() would hang with no timeout.
+    FakeRTCPeerConnection.hangUnsettledOnClose = true;
+    scriptHappyPath(socket);
+    session.on('track', () => session.disconnect());
+    const outcome = await Promise.race([
+      session.connect().then(() => 'resolved', (e) => e?.code || e?.message),
+      delay(1000).then(() => 'hung'),
+    ]);
+    assert.equal(outcome, 'connect_failed');
+    await delay(20);
+    assert.deepEqual(trap.seen, [], 'the abandoned lane must not surface as an unhandled rejection');
+  } finally { trap.off(); }
+});
+
 // ───────────────────────── overall deadline bounds every lane ─────────────────────────
 
 test('ASR answer landing after the 30s overall deadline → ConnectTimeout, not a 30s ASR wait', async () => {

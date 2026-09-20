@@ -1107,7 +1107,14 @@ S['races-disconnect-mid-play'] = async (c) => {
     const before = H.unhandled;
     s.session.on('track', () => { if (v.__w.play === 1) s.session.disconnect(); });
     let connectErr = null;
-    try { await s.session.connect(); } catch (e) { connectErr = e?.code || e?.message; }
+    // Bounded on purpose: a connect() that never settles is a real bug (a peer-connection
+    // negotiation promise the teardown could not cancel), and an unbounded await stalls the
+    // whole run instead of failing this one cell.
+    const settled = await Promise.race([
+      s.session.connect().then(() => 'resolved', (e) => { connectErr = e?.code || e?.message; return 'rejected'; }),
+      sleep(8000).then(() => 'hung'),
+    ]);
+    c.check('R-g: connect() settled, never hung', settled !== 'hung', { settled, connectErr });
     await sleep(300);
     c.check('R-g: play() was pending at disconnect', v.__w.play === 1, v.__w);
     c.check('R-g: srcObject null', v.srcObject === null);

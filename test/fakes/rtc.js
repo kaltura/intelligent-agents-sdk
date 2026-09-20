@@ -62,6 +62,20 @@ export class FakeRTCPeerConnection {
     // Model the STV WHEP answer delivering recvonly media: fire ontrack on the
     // next tick (the ASR peer has no recvonly video transceiver, so it won't).
     if (!this._autoTrackDisabled && this.transceivers.some((t) => t.kind === 'video' && t.direction === 'recvonly')) {
+      if (FakeRTCPeerConnection.hangUnsettledOnClose) {
+        // Firefox: `close()` leaves an operation already queued on the peer unsettled
+        // forever. `ontrack` fires from inside this call, so a `track` listener that
+        // disconnects is exactly that case.
+        await new Promise((resolve) => queueMicrotask(() => {
+          this.fireTrack('video');
+          this.fireTrack('audio');
+          // A real peer still has negotiation work queued after `ontrack`, and `_closePeer`
+          // defers `close()` to a macrotask when it runs inside `ontrack`. Give that turn a
+          // chance to land before deciding whether this promise ever settles.
+          setTimeout(() => { if (!this.closed) resolve(); }, 0);
+        }));
+        return;
+      }
       queueMicrotask(() => { this.fireTrack('video'); this.fireTrack('audio'); });
     }
   }
@@ -90,7 +104,12 @@ export class FakeRTCPeerConnection {
   setGathering(state) { this.iceGatheringState = state; this.onicegatheringstatechange?.(); }
 }
 FakeRTCPeerConnection.instances = [];
-FakeRTCPeerConnection.reset = () => { FakeRTCPeerConnection.instances = []; };
+/** Test switch: model Firefox leaving a queued negotiation promise unsettled after `close()`. */
+FakeRTCPeerConnection.hangUnsettledOnClose = false;
+FakeRTCPeerConnection.reset = () => {
+  FakeRTCPeerConnection.instances = [];
+  FakeRTCPeerConnection.hangUnsettledOnClose = false;
+};
 
 let trackSeq = 0;
 /** Build a fake MediaStreamTrack. Exported so tests can hand the same instance to two `attach()` calls. @param {string} kind */

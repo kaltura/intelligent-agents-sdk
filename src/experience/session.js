@@ -705,11 +705,11 @@ export class KalturaAvatarSession extends Emitter {
       this._asrAudioSender = pc.addTransceiver('audio', { direction: 'sendonly' })?.sender || null;
     }
     if (this._maxAsrBitrateKbps != null) await this._applyAsrBitrate(this._maxAsrBitrateKbps);
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
+    const offer = await this._cancelable(pc.createOffer());
+    await this._cancelable(pc.setLocalDescription(offer));
     socket.emit('asr-webrtc-offer', { offer, is_reconnect: false });
     const ans = await this._await(socket, 'asr-webrtc-answer', TIMEOUTS.asr, 'ASRConnectionFailed', overall);
-    await pc.setRemoteDescription(ans.answer);
+    await this._cancelable(pc.setRemoteDescription(ans.answer));
   }
 
   // ─────────────────────────── STV downlink (step 10) ───────────────────────────
@@ -802,8 +802,8 @@ export class KalturaAvatarSession extends Emitter {
       if (whepUrlHasPrivateIp(url)) {
         throw new KalturaError({ type: 'https://docs.kaltura.com/agentic/errors/whep_private_ip', title: 'WHEP private IP', code: 'whep_private_ip', detail: 'STV egress returned a private IP — unreachable from a browser.' });
       }
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
+      const offer = await this._cancelable(pc.createOffer());
+      await this._cancelable(pc.setLocalDescription(offer));
       const res = await this._fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/sdp' }, body: offer.sdp });
       if (overall?.expired()) throw timeoutErr('ConnectTimeout');
       const answerSdp = await res.text();
@@ -827,7 +827,9 @@ export class KalturaAvatarSession extends Emitter {
       if (this._whepLocation && whepUrlHasPrivateIp(this._whepLocation)) {
         throw new KalturaError({ type: 'https://docs.kaltura.com/agentic/errors/whep_private_ip', title: 'WHEP private IP', code: 'whep_private_ip', detail: 'STV WHEP Location resolved to a private IP — unreachable from a browser.' });
       }
-      await pc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
+      // Cancelable: this is the call that fires `ontrack`, so a `track` listener that calls
+      // disconnect() closes `pc` while this very promise is pending.
+      await this._cancelable(pc.setRemoteDescription({ type: 'answer', sdp: answerSdp }));
     } catch (err) {
       cancelPlayable();
       this._cancelStvPlayable = null;
@@ -2341,6 +2343,27 @@ export class KalturaAvatarSession extends Emitter {
       t.unref?.();
       this._pendingAwaits.add(cancel);
       socket.once ? socket.once(event, ok) : socket.on(event, ok);
+    });
+  }
+
+  /**
+   * Race a peer-connection negotiation promise against teardown, the same way `_await` races a
+   * socket wait. `close()` is not guaranteed to settle the operations already queued on a peer
+   * connection: Firefox leaves a pending `createOffer()`/`setLocalDescription()`/
+   * `setRemoteDescription()` unsettled forever once the connection is closed. A `disconnect()`
+   * landing mid-negotiation (a `track` listener that calls it, an `error` on the other lane)
+   * would then hang `connect()` with no timeout to fall back on, because these are not socket
+   * waits. Registered in `_pendingAwaits`, so teardown rejects it with `connect_failed` at once.
+   * @template T @param {Promise<T>} p @returns {Promise<T>}
+   */
+  _cancelable(p) {
+    return new Promise((resolve, reject) => {
+      const cancel = () => { this._pendingAwaits.delete(cancel); reject(connectAbortedErr()); };
+      this._pendingAwaits.add(cancel);
+      p.then(
+        (v) => { this._pendingAwaits.delete(cancel); resolve(v); },
+        (e) => { this._pendingAwaits.delete(cancel); reject(e); },
+      );
     });
   }
 
