@@ -604,8 +604,9 @@ section('Part 6 — Media path');
 // M-3: the STV downlink subscription is released wherever it is dropped or
 // replaced. Closing the peer locally does not free the server's egress session,
 // so every site that closes `_pcStv` (teardown, media recovery, cold reconnect,
-// resume) must go through `_releaseCurrentWhep()`, and the two `_connectStv`
-// abort lanes must release the answer they never stored.
+// resume) must go through `_releaseCurrentWhep()`, and the three `_connectStv`
+// abort lanes (the app disconnected while the answer was being read, the connect
+// deadline expired, the other lane lost) must release the answer they never stored.
 {
   const file = join(SDK_SRC, 'experience', 'session.js');
   const sessionSrc = read(file);
@@ -627,14 +628,16 @@ section('Part 6 — Media path');
     if (!/this\._releaseCurrentWhep\(\)/.test(window)) problems.push(`src/experience/session.js:${i + 1}: closes _pcStv without a nearby _releaseCurrentWhep() → ${text.trim()}`);
   });
 
-  // The two abort lanes in _connectStv (deadline expired, other lane lost) release directly:
-  // their Location was never stored, so nothing else can ever DELETE it.
+  // The three abort lanes in _connectStv (disconnect during the body read, deadline
+  // expired, other lane lost) release directly: their Location was never stored, so
+  // nothing else can ever DELETE it.
   const aborts = (sessionSrc.match(/if \(res\.ok && resolvedLoc\) this\._releaseWhep\(resolvedLoc\);/g) || []).length;
-  if (aborts !== 2) problems.push(`src/experience/session.js: expected both _connectStv abort lanes to release the answered subscription, found ${aborts}`);
+  if (aborts !== 3) problems.push(`src/experience/session.js: expected all three _connectStv abort lanes to release the answered subscription, found ${aborts}`);
 
   for (const [rel, needles] of [
     ['test/e2e/connect.test.js', ['the WHEP resource is released exactly once', 'releases the WHEP resource (no leak on the error path)']],
     ['test/e2e/connect-concurrency.test.js', ['the answered subscription is released']],
+    ['test/e2e/connect-cancel.test.js', ['a 201 that lands after the cancel is released with a DELETE', 'a late non-2xx answer is dropped without a DELETE']],
     ['test/e2e/resilience.test.js', ['the re-subscribe releases the previous subscription exactly once', 'cold reconnect releases the subscription', 'frees the subscription the paused session held']],
   ]) {
     const src = read(join(ROOT, rel));

@@ -171,9 +171,9 @@ When the opening phrase is `SILENT_OPENING` (`<blank>`), the opening turn surfac
 *Verify:* `test/unit/kickoff.test.js` "silent opening" tests: `<blank>` on the opening speech id surfaces as `[silence]` on transcript/speechChunk/stop and the raw phrase never reaches a listener; a spoken opening still surfaces; `<blank>` on a normal reply is not relabelled.
 
 **Rule M-3: The downlink subscription is released wherever it is dropped or replaced.**  
-Closing the downlink peer locally does not free the server's side of the subscription. Every path that closes or replaces that peer (teardown from `disconnect()`/`ended`/`error`, media recovery after an ICE drop, a cold reconnect, `resume()`) releases the subscription through one idempotent helper, which clears the stored location before sending the release, so no path leaks one and no path releases the same one twice. Exactly one site stores a location, so a re-subscribe can never overwrite an unreleased one. A subscription answered after the session already gave up (the connect deadline expired, or the other connect lane failed) is released on the spot, because it is never stored.
+Closing the downlink peer locally does not free the server's side of the subscription. Every path that closes or replaces that peer (teardown from `disconnect()`/`ended`/`error`, media recovery after an ICE drop, a cold reconnect, `resume()`) releases the subscription through one idempotent helper, which clears the stored location before sending the release, so no path leaks one and no path releases the same one twice. Exactly one site stores a location, so a re-subscribe can never overwrite an unreleased one. A subscription answered after the session already gave up (the app disconnected while the answer was being read, the connect deadline expired, or the other connect lane failed) is released on the spot, because it is never stored.
 
-*Verify:* `agent_verify.mjs` checks the single store site, the clear-then-release helper shape, a release near every peer close, and both abort lanes; `connect.test.js`, `connect-concurrency.test.js` and `resilience.test.js` count the releases over disconnect, the error path, the connect deadline, ICE recovery, cold reconnect and `resume()`.
+*Verify:* `agent_verify.mjs` checks the single store site, the clear-then-release helper shape, a release near every peer close, and all three abort lanes; `connect.test.js`, `connect-concurrency.test.js`, `connect-cancel.test.js` and `resilience.test.js` count the releases over disconnect, the error path, a disconnect mid-handshake, the connect deadline, ICE recovery, cold reconnect and `resume()`.
 
 ---
 
@@ -210,6 +210,6 @@ This table summarizes what each rule checks, not whether it currently passes —
 | D-5 | DX | `kickoff` sent at most once per session object; never on `resume()`/reconnect/`switchMode()` | kickoff.test.js + chat/agent-session tests |
 | M-1 | Media | `avatar-media.js` has no `document`, DOM creation, timers or `console` | grep |
 | M-2 | Media | Silent opening surfaces as `SILENT_OPENING_LABEL` on `transcript`/`speechChunk`/`avatarStopTalking.text`, never as the raw phrase | kickoff.test.js |
-| M-3 | Media | Every path that drops or replaces the downlink releases its subscription exactly once | grep + connect/connect-concurrency/resilience tests |
+| M-3 | Media | Every path that drops or replaces the downlink releases its subscription exactly once | grep + connect/connect-concurrency/connect-cancel/resilience tests |
 
 Rule D-2 warns rather than errors by design — see Rule D-2 above for why.

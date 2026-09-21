@@ -214,7 +214,7 @@ describe('2. Private IPs', () => {
     // semver like eslint's "^10.9.0", so anything short of a full IPv4 shape
     // is a guaranteed false positive, not a private address.
     const re = /\b(?:10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2[0-9]|3[01])\.\d{1,3}\.\d{1,3})\b/;
-    // net-guard.js IS the SSRF guard — its private-range regex/examples are the
+    // net-guard.js IS the private-range detector — its regex/examples are the
     // detection logic itself, not a leaked address.
     const NET_GUARD = 'src/core/net-guard.js';
     const files = scanFiles().filter((f) => f !== SELF && f !== NET_GUARD);

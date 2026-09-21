@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { isPrivateOrLoopbackHost, PRIVATE_IP_RE } from '../../src/core/net-guard.js';
 
-/** core/net-guard.js — the shared SSRF/private-network host predicate + log-scrub regex. */
+/** core/net-guard.js — the shared private-network host predicate + log-scrub regex. */
 
 test('isPrivateOrLoopbackHost flags RFC1918 ranges, loopback, and link-local (incl. cloud-metadata IP)', () => {
   assert.equal(isPrivateOrLoopbackHost('10.0.0.1'), true);
@@ -12,7 +12,7 @@ test('isPrivateOrLoopbackHost flags RFC1918 ranges, loopback, and link-local (in
   assert.equal(isPrivateOrLoopbackHost('192.168.1.1'), true);
   assert.equal(isPrivateOrLoopbackHost('127.0.0.1'), true);
   assert.equal(isPrivateOrLoopbackHost('127.5.5.5'), true); // whole 127/8 block, not just .0.0.1
-  assert.equal(isPrivateOrLoopbackHost('169.254.169.254'), true); // cloud-metadata SSRF target
+  assert.equal(isPrivateOrLoopbackHost('169.254.169.254'), true); // cloud-metadata address
 });
 
 test('isPrivateOrLoopbackHost flags localhost and IPv6 loopback in bare/bracketed form', () => {

@@ -59,7 +59,7 @@ export class KalturaScriptedVideoSession extends Emitter {
    * @param {typeof MediaStream} [cfg.mediaStreamConstructor]
    * @param {(level: string, msg: string, data?: any) => void} [cfg.logger]  Receives non-fatal media diagnostics (e.g. a rejected `setSinkId`). Default: silent.
    * @param {boolean} [cfg.isFirefox]  Firefox needs `iceTransportPolicy:'all'` (see {@link iceConfig}).
-   * @throws {KalturaError} `bad_request` if `whepUrl`/`turn` is missing; `whep_private_ip` if `whepUrl` resolves to a private/loopback address (SSRF guard — no escape hatch, matches `KalturaAvatarSession`'s own WHEP check).
+   * @throws {KalturaError} `bad_request` if `whepUrl`/`turn` is missing; `whep_private_ip` if `whepUrl` names a private/loopback address a browser cannot reach (fail-fast, no escape hatch, matches `KalturaAvatarSession`'s own WHEP check).
    */
   constructor(cfg) {
     super();
@@ -156,7 +156,7 @@ export class KalturaScriptedVideoSession extends Emitter {
       this._whepLocation = loc ? resolveUrl(loc, this._whepUrl) : null;
       // The server can rewrite the egress host in the response's Location header even
       // when whepUrl itself checked clean — re-check after resolving it (mirrors
-      // KalturaAvatarSession's _connectStv, WIRE-PROTOCOL's SSRF guidance).
+      // KalturaAvatarSession's _connectStv).
       if (this._whepLocation && whepUrlHasPrivateIp(this._whepLocation)) {
         throw new KalturaError({ type: 'https://docs.kaltura.com/agentic/errors/whep_private_ip', title: 'WHEP private IP', code: 'whep_private_ip', detail: 'The WHEP response Location header resolved to a private/loopback address.' });
       }
