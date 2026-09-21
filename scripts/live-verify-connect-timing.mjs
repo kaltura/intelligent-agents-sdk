@@ -318,6 +318,14 @@ try {
       report.note(`run ${i}: resources (hints ${arm})`, { pageReadyMs: run.pageReadyMs, scriptLoadMs: run.scriptLoadMs, sdkLoadedAtMs: run.sdkLoadedAtMs, sdkModules: resources.sdkModules, socketConnectMs: run.socketConnectMs, whepPostMs: run.whepPostMs, whepTao: resources.whepTao, whepReusedConnection: resources.whepReusedConnection });
 
       await page.evaluate(() => /** @type {any} */ (window).testDisconnect()).catch(() => {});
+      // The release DELETE is sent fire-and-forget, so wait for its record instead of
+      // sampling once: 300 ms is not always enough for the response to come back. The
+      // browser can also log a SECOND, aborted record for the same request when the page
+      // goes away right after the response, so one 2xx is the signal and the poll stops
+      // at the first one rather than requiring every record to be a success.
+      const released = () => whepSummary(sink.network).some((/** @type {string} */ l) => /^DELETE .* → 2\d\d$/.test(l));
+      const waitUntil = Date.now() + 5000;
+      while (!released() && Date.now() < waitUntil) await new Promise((r) => setTimeout(r, 100));
       await new Promise((r) => setTimeout(r, 300));
       const late = whepSummary(sink.network).filter((l) => !run.whep.includes(l));
       if (late.length) report.note(`run ${i}: WHEP after disconnect()`, late);
@@ -326,10 +334,7 @@ try {
       // own, and a re-subscribe to the same session can come back 409 in the meantime.
       // Only a POST-shaped check ran here before, so a failing DELETE was invisible.
       if (mediaMode !== 'audio') {
-        const deletes = late.filter((/** @type {string} */ l) => l.startsWith('DELETE '));
-        report.check(`run ${i}: the WHEP viewer was released on disconnect()`,
-          deletes.length > 0 && deletes.every((/** @type {string} */ l) => /→ 2\d\d$/.test(l)),
-          { deletes, whepAfterDisconnect: late });
+        report.check(`run ${i}: the WHEP viewer was released on disconnect()`, released(), { whepAfterDisconnect: late });
       }
       run.whep = whepSummary(sink.network);
     } catch (err) {
