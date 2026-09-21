@@ -26,11 +26,14 @@
  * accumulating orphans.
  */
 import { readFileSync, writeFileSync, mkdirSync, createReadStream, existsSync, statSync } from 'node:fs';
-import { resolve, dirname, extname, normalize } from 'node:path';
+import { resolve, dirname, extname, normalize, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'node:http';
+import { tmpdir } from 'node:os';
 import { chromium } from 'playwright';
-import { Management } from '../src/management/index.js';
+import { Management, SILENT_OPENING } from '../src/management/index.js';
+import { writeSilentWav } from './live-verify-silent-mic-shared.mjs';
+import { callHook } from './live-verify-hooks-shared.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, '..');
@@ -55,6 +58,7 @@ if (!partnerId || !adminSecret) {
 
 const runId = `context-fields-runtime-check-${Date.now()}`;
 const CONTEXT_TYPE = 'category';
+const PROBE_TEXT = 'Please report the context probe now.';
 const artifact = { runId, startedAt: new Date().toISOString(), partnerId, steps: [] };
 
 function record(step, ok, detail) {
@@ -111,36 +115,104 @@ async function runProbe(port, label, { withContext, contextId }) {
   page.on('pageerror', (err) => pageErrors.push(String(err)));
   await page.goto(`http://127.0.0.1:${port}/scripts/live-verify-context-fields.html?${qs}`, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => window.__ready === true, null, { timeout: 10000 });
-  await page.evaluate(() => window.testConnect());
+
+  await callHook(page, 'testConnect');
   record(`${label}-connected`, true, {});
 
-  // Let the greeting play out before speaking, so the probe reply isn't
-  // interleaved with it under AVATAR_ONLY turn-taking.
+  // Every event the page saw, for the artifact. A bare timeout cannot tell
+  // "no reply at all" from "a reply that skipped the probe line".
+  const dumpEvents = () => page.evaluate(() => window.__events || []);
+
+  // Let the opening turn finish before speaking. It cannot be interrupted, and
+  // a turn released into the instant it ends is acknowledged but answered with
+  // silence, so the probe waits for the end event and then settles.
   await page.waitForFunction(
     () => (window.__events || []).some((e) => e.type === 'avatarStopTalking'),
     null, { timeout: 30000, polling: 500 },
   ).catch(() => {});
   await page.waitForTimeout(3000);
+  record(`${label}-opening-turn-ended`, true, {});
 
-  await page.evaluate(() => window.testSpeak('Please report the context probe now.'));
-  await page.waitForFunction(
-    () => (window.__events || []).some((e) => e.type === 'transcript' && e.ttype === 'final' && e.text.includes('CTXID=')),
-    null, { timeout: 45000, polling: 500 },
+  // The promise speak() returns is the one exact signal for "the probe request
+  // reached the server". Waiting on it (rather than firing and hoping) separates
+  // "the agent never answered" from "the question never went out", which a bare
+  // transcript timeout cannot tell apart.
+  const sendProbe = async () => {
+    await page.evaluate((text) => {
+      window.__spoke = null;
+      window.testSpeak(text).then(
+        (sent) => { window.__spoke = sent === true ? 'sent' : 'dropped-session-ended'; },
+        (err) => { window.__spoke = `rejected: ${err?.code || err?.message || err}`; },
+      );
+    }, PROBE_TEXT);
+    try {
+      await page.waitForFunction(() => window.__spoke !== null, null, { timeout: 45000, polling: 500 });
+    } catch (err) {
+      const e = /** @type {any} */ (err);
+      e.detail = `${e.message} — speak() never settled, so the probe request never left the client. Events: ${JSON.stringify(await dumpEvents())}`;
+      throw e;
+    }
+    const spoke = await page.evaluate(() => window.__spoke);
+    if (spoke !== 'sent') throw new Error(`speak() did not reach the server: ${spoke}`);
+  };
+
+  // The reply can arrive voiced (a final transcript) or as text segments the
+  // avatar never speaks. Either carries the probe line, so both count.
+  const waitForProbeReply = (timeout) => page.waitForFunction(
+    () => (window.__events || []).some((e) => e.type === 'transcript' && e.ttype === 'final' && e.text.includes('CTXID='))
+      || (window.__brainText || '').includes('CTXID='),
+    null, { timeout, polling: 500 },
   );
 
+  await sendProbe();
+  record(`${label}-probe-request-sent`, true, {});
+
+  try {
+    await waitForProbeReply(45000);
+  } catch {
+    // The server can drop one turn without saying so, and speak() resolving true
+    // only proves the text left the client. One resend tells a dropped turn apart
+    // from a real failure to answer, and the whole probe stays inside the same
+    // 90 s the single wait used to take.
+    record(`${label}-probe-resent`, true, { reason: 'no reply in 45s — resending once' });
+    await sendProbe();
+    try {
+      await waitForProbeReply(45000);
+    } catch (err) {
+      // A bare timeout does not say which of these happened: no reply at all, a
+      // reply that skipped the probe line, or a reply cut short by something the
+      // recognizer heard. Attach every event the page saw, both directions, so
+      // the artifact carries that evidence instead of just the timeout.
+      const e = /** @type {any} */ (err);
+      e.detail = `${e.message} — no "CTXID=" in any final transcript or text segment, after two sends. Events seen: ${JSON.stringify(await dumpEvents())}`;
+      throw e;
+    }
+  }
+
   const events = await page.evaluate(() => window.__events);
-  const finalText = events.filter((e) => e.type === 'transcript' && e.ttype === 'final').pop()?.text || '';
+  const brainText = await page.evaluate(() => window.__brainText || '');
+  const finals = events.filter((e) => e.type === 'transcript' && e.ttype === 'final').map((e) => e.text);
+  const replyText = [...finals.reverse(), brainText].find((t) => t.includes('CTXID=')) || '';
   const logText = await page.locator('#log').textContent();
-  await page.evaluate(() => window.testDisconnect());
+  await callHook(page, 'testDisconnect');
   await page.close();
-  return { finalText, pageErrors, logText };
+  return { replyText, pageErrors, logText };
 }
 
 try {
   admin = await kaltura.sessions.createAdminToken();
   record('admin-token-mint', true, { secondsRemaining: admin.secondsRemaining() });
 
-  provisioned = await kaltura.provision({ brief: 'A CI live-verify probe bot for sys__context_id/sys__context_type', ks: admin.ks });
+  // SILENT_OPENING, not a generated greeting: the opening turn cannot be
+  // interrupted and the probe has to wait it out either way, so the shortest
+  // possible opening is the fastest path to the reply. It also keeps the reply
+  // the only real speech in the transcript, so the CTXID= assertion cannot pass
+  // on a greeting's own words.
+  provisioned = await kaltura.provision({
+    brief: 'A CI live-verify probe bot for sys__context_id/sys__context_type',
+    openingPhrase: SILENT_OPENING,
+    ks: admin.ks,
+  });
   record('provision', true, {
     configId: provisioned.configId, agentId: provisioned.agentId,
     avatarId: provisioned.avatarId, widgetId: provisioned.widgetId,
@@ -155,13 +227,30 @@ try {
   await kaltura.intellects.setPrompts(provisioned.configId, prompts, admin.ks, { knownVars: [] });
   record('set-prompts', true, {});
 
+  // Read the config back rather than trusting the write. A turn the server
+  // acknowledges and answers with silence looks the same whether the prompt
+  // never landed or the reply never came, so the artifact carries the shape of
+  // what is actually stored before any conversation starts.
+  const stored = await kaltura.intellects.get(provisioned.configId, admin.ks);
+  record('prompts-read-back', Array.isArray(stored?.prompts) && stored.prompts.length === prompts.length, {
+    promptKeys: (stored?.prompts || []).map((p) => p?.key),
+    allowClientVariables: stored?.allow_client_variables,
+    openingPhrase: stored?.opening_phrase,
+  });
+
   server = await startServer();
   const port = server.address().port;
   record('local-server-start', true, { port });
 
+  const silentWav = writeSilentWav(join(tmpdir(), `${runId}-silence.wav`));
   browser = await chromium.launch({
-    args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', '--autoplay-policy=no-user-gesture-required'],
+    args: [
+      '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream',
+      `--use-file-for-fake-audio-capture=${silentWav}`,
+      '--autoplay-policy=no-user-gesture-required',
+    ],
   });
+  record('silent-capture-file', true, { path: silentWav });
 
   const withCtx = await runProbe(port, 'with-context', { withContext: true, contextId });
   const joinLine = withCtx.logText.split('\n').find((l) => l.startsWith('OUT join payload='));
@@ -170,12 +259,12 @@ try {
   check('with-context-join-payload-uses-camelcase-keys',
     joinPayload?.kaltura?.contextId === contextId && joinPayload?.kaltura?.contextType === CONTEXT_TYPE,
     { kalturaKeys: joinPayload ? Object.keys(joinPayload.kaltura) : null });
-  check('with-context-echoes-contextId', withCtx.finalText.includes(`CTXID=${contextId}`), { text: withCtx.finalText });
-  check('with-context-echoes-contextType', withCtx.finalText.includes(`CTXTYPE=${CONTEXT_TYPE}`), { text: withCtx.finalText });
+  check('with-context-echoes-contextId', withCtx.replyText.includes(`CTXID=${contextId}`), { text: withCtx.replyText });
+  check('with-context-echoes-contextType', withCtx.replyText.includes(`CTXTYPE=${CONTEXT_TYPE}`), { text: withCtx.replyText });
   if (withCtx.pageErrors.length) record('with-context-page-errors', false, { pageErrors: withCtx.pageErrors });
 
   const withoutCtx = await runProbe(port, 'without-context', { withContext: false, contextId });
-  check('without-context-is-empty', withoutCtx.finalText.includes('CTXID= CTXTYPE='), { text: withoutCtx.finalText });
+  check('without-context-is-empty', withoutCtx.replyText.includes('CTXID= CTXTYPE='), { text: withoutCtx.replyText });
   if (withoutCtx.pageErrors.length) record('without-context-page-errors', false, { pageErrors: withoutCtx.pageErrors });
 } catch (err) {
   failed = true;

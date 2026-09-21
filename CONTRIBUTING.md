@@ -23,7 +23,8 @@ No `npm install` step — the SDK is zero-dependency and the test runner is `nod
 ## Making a change
 
 1. Add or update tests under `test/unit`, `test/integration`, `test/e2e`, or `test/evals` — whichever matches the surface you're touching. See [README.md → Testing](README.md#testing) for what each layer covers.
-2. Run the full local gate before opening a PR:
+2. Node tests can't reach every surface. Media, WebRTC and autoplay behavior needs the real-browser harness, and the management and runtime wire contracts need a live backend. [scripts/README.md](scripts/README.md) explains the three verification tiers, which one matches your change, and how to extend each; [test/browser/README.md](test/browser/README.md) is the guide to the media harness page itself.
+3. Run the full local gate before opening a PR:
 
    ```bash
    npm test          # all test layers
@@ -31,8 +32,8 @@ No `npm install` step — the SDK is zero-dependency and the test runner is `nod
    npm run docs:gate  # docs/code drift, secrets, GFM hygiene (tools/check-docs.mjs)
    ```
 
-3. If you touched a documented behavior (an endpoint, a payload shape, a wire event, a capability), update the doc in the **same change** — `docs:gate` fails the build on drift, and reviewers should not need to chase it down.
-4. Keep the change scoped. This SDK favors small, reviewable diffs over broad refactors; see [SDK_CONSTITUTION.md](SDK_CONSTITUTION.md) for the specific engineering rules (no module-level mutable state, no dynamic `eval`, zero runtime deps, JSDoc on every exported symbol, etc.).
+4. If you touched a documented behavior (an endpoint, a payload shape, a wire event, a capability), update the doc in the **same change** — `docs:gate` fails the build on drift, and reviewers should not need to chase it down.
+5. Keep the change scoped. This SDK favors small, reviewable diffs over broad refactors; see [SDK_CONSTITUTION.md](SDK_CONSTITUTION.md) for the specific engineering rules (no module-level mutable state, no dynamic `eval`, zero runtime deps, JSDoc on every exported symbol, etc.).
 
 ## Opening a PR
 

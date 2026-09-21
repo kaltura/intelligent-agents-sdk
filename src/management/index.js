@@ -65,6 +65,9 @@ export {
   MODEL_IDS, THINKING_LEVELS, SUMMARY_CONTENT_TYPES,
 } from './intellect-config.js';
 export { LANGUAGE_NAMES } from './set-forced-language.js';
+// The silent opening phrase — pass as `openingPhrase` to provision(), or to
+// intellectConfig.setOpeningPhrase, so the uninterruptible opening turn speaks nothing.
+export { SILENT_OPENING, SILENT_OPENING_LABEL, isSilentOpening } from '../core/opening.js';
 // Knowledge / RAG indexer enums — ChapterType/Strategy + the objects[] builder.
 export {
   CHAPTER_TYPE, STRATEGY, EMBED, MODALITIES, normalizeModality, buildIndexerObjects,

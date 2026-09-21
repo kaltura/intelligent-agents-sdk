@@ -46,7 +46,7 @@ const DOCS = [
   'docs/genui/safety-and-restrictions.md',
   'docs/CLIENT-COMMANDS.md', 'docs/DYNAMIC-DATA-INJECTION.md',
   'docs/STRUCTURED-DATA-FORMS.md', 'docs/EXTERNAL-API-INTEGRATIONS.md',
-  'docs/VOICE-INPUT-MODES.md', 'docs/USE-CASES.md',
+  'docs/VOICE-INPUT-MODES.md', 'docs/USE-CASES.md', 'docs/START-THE-CONVERSATION.md',
   'docs/lifecycle/README.md', 'docs/lifecycle/recipes.md',
   'docs/SITE-NAV.md',
   'SECURITY.md', 'SDK_CONSTITUTION.md',
@@ -214,7 +214,7 @@ describe('2. Private IPs', () => {
     // semver like eslint's "^10.9.0", so anything short of a full IPv4 shape
     // is a guaranteed false positive, not a private address.
     const re = /\b(?:10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2[0-9]|3[01])\.\d{1,3}\.\d{1,3})\b/;
-    // net-guard.js IS the SSRF guard — its private-range regex/examples are the
+    // net-guard.js IS the private-range detector — its regex/examples are the
     // detection logic itself, not a leaked address.
     const NET_GUARD = 'src/core/net-guard.js';
     const files = scanFiles().filter((f) => f !== SELF && f !== NET_GUARD);
@@ -752,5 +752,98 @@ describe('12. avatar_filler steerability disclosure', () => {
     assert.ok(m, "could not find avatar_filler's summary field in capabilities.js");
     assert.match(m[1], /directive|persona|server-side|fixed/i,
       `avatar_filler summary must state it is not steerable via base_directive/persona: "${m[1]}"`);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 13) Silent opening + kickoff
+// ─────────────────────────────────────────────────────────────────────────────
+describe('13. Silent opening + kickoff', () => {
+  const GUIDE = 'docs/START-THE-CONVERSATION.md';
+
+  test('the guide exists and is in the README Reference table', () => {
+    assert.ok(existsSync(join(ROOT, GUIDE)), `${GUIDE} missing`);
+    assert.match(read('README.md'), /^\|\s*\[docs\/START-THE-CONVERSATION\.md\]\(docs\/START-THE-CONVERSATION\.md\)\s*\|/m,
+      'README Reference table has no row for docs/START-THE-CONVERSATION.md');
+  });
+
+  test('`kickoff` is documented in README, docs/api/deploy.md and the guide', () => {
+    const missing = ['README.md', 'docs/api/deploy.md', GUIDE].filter((f) => !/`kickoff/.test(read(f)));
+    assert.deepEqual(missing, [], `kickoff not documented in: ${missing.join(', ')}`);
+  });
+
+  test('SILENT_OPENING is exported from both entry points and documented in README + the guide', () => {
+    for (const entry of ['src/management/index.js', 'src/experience/index.js']) {
+      assert.match(read(entry), /export\s*\{[^}]*\bSILENT_OPENING\b[^}]*\}/, `${entry} does not export SILENT_OPENING`);
+    }
+    const missing = ['README.md', GUIDE].filter((f) => !read(f).includes('`SILENT_OPENING`'));
+    assert.deepEqual(missing, [], `SILENT_OPENING not documented in: ${missing.join(', ')}`);
+  });
+
+  test('no doc claims connect() rejects, fails or throws on a mic error', () => {
+    const offenders = [];
+    for (const f of DOCS) {
+      read(f).split('\n').forEach((line, i) => {
+        if (!/mic_permission_denied|mic_not_found|mic_in_use/.test(line)) return;
+        if (/connect\(\)`?\s+(rejects|fails|throws)/.test(line)) offenders.push(`${f}:${i + 1}`);
+      });
+    }
+    assert.deepEqual(offenders, [], `connect() never fails for the mic (R-6); fix: ${offenders.join(', ')}`);
+  });
+
+  test("no tracked file uses `speakNow` or the removed `micStartMode: 'required'`", () => {
+    // These three name 'required' only to state that it is rejected.
+    const allowed = new Set([SELF, 'SDK_CONSTITUTION.md', 'scripts/agent_verify.mjs', 'test/e2e/deferred-mic.test.js']);
+    const offenders = trackedFiles()
+      .filter((f) => /\.(md|js|mjs|html)$/.test(f) && !allowed.has(f))
+      .filter((f) => /speakNow|micStartMode:\s*'required'/.test(read(f)));
+    assert.deepEqual(offenders, [], `removed API still referenced in: ${offenders.join(', ')}`);
+  });
+
+  test('the intellect owns the opening phrase: guide section exists and README + intellect doc link to it', () => {
+    assert.match(read(GUIDE), /^## Personalize the opening$/m, `${GUIDE} has no "## Personalize the opening" section`);
+    assert.match(read(GUIDE), /^## Where the opening phrase lives$/m, `${GUIDE} has no "## Where the opening phrase lives" section`);
+    const missing = ['README.md', 'docs/api/build/intellect.md'].filter((f) => !read(f).includes('START-THE-CONVERSATION.md#personalize-the-opening'));
+    assert.deepEqual(missing, [], `no link to the guide's § Personalize the opening in: ${missing.join(', ')}`);
+  });
+
+  test('no tracked file describes the opening phrase as living on both the avatar and the intellect', () => {
+    const patterns = [/both the avatar and the intellect/i, /overrides the avatar'?s `?openingPhrase/i, /\(or on the avatar/i, /openingPhrase.{0,40}on both/i];
+    const offenders = [];
+    for (const f of trackedFiles()) {
+      if (!/\.(md|js|mjs|html)$/.test(f) || f === SELF) continue;
+      read(f).split('\n').forEach((line, i) => {
+        if (patterns.some((p) => p.test(line))) offenders.push(`${f}:${i + 1}`);
+      });
+    }
+    assert.deepEqual(offenders, [], `the intellect's opening_phrase is the single owner; fix: ${offenders.join(', ')}`);
+  });
+
+  test('no avatars.create() call outside the avatar API-surface probe passes an openingPhrase', () => {
+    // live-verify-avatars.mjs exercises the avatar create/PATCH surface itself,
+    // openingPhrase included; every other create leaves the phrase to the intellect.
+    const allowed = new Set([SELF, 'scripts/live-verify-avatars.mjs']);
+    const offenders = [];
+    for (const f of trackedFiles()) {
+      if (!/\.(md|js|mjs|html)$/.test(f) || allowed.has(f)) continue;
+      const src = read(f);
+      const re = /avatars\.create\(/g;
+      let m;
+      while ((m = re.exec(src)) !== null) {
+        // Slice out the first argument by brace depth, so multi-line bodies are covered.
+        const start = src.indexOf('{', m.index);
+        if (start < 0) continue;
+        let depth = 0;
+        let end = start;
+        for (; end < src.length; end++) {
+          if (src[end] === '{') depth++;
+          else if (src[end] === '}' && --depth === 0) break;
+        }
+        if (/\bopeningPhrase\b/.test(src.slice(start, end + 1))) {
+          offenders.push(`${f}:${src.slice(0, m.index).split('\n').length}`);
+        }
+      }
+    }
+    assert.deepEqual(offenders, [], `avatars.create() must not set openingPhrase (the intellect owns it); fix: ${offenders.join(', ')}`);
   });
 });

@@ -1,0 +1,424 @@
+<!doctype html>
+<!--
+  Browser harness for scripts/live-verify-kickoff.mjs and scripts/live-verify-connect-timing.mjs.
+  Served by scripts/live-verify-kickoff-shared.mjs (which also serves /src and /init).
+  Not a demo: it records every session event, every socket frame, and exposes
+  window.test* hooks for the Node side. It never connects on its own.
+
+  Query params
+    mode        avatar | chat | agent-avatar | agent-chat        (default avatar)
+    kickoff     kickoff text (omitted → no kickoff)
+    echo        1 → kickoff: { text, echo: true }
+    disclosure  1 → requireDisclosureAck: true
+    mic         immediate | deferred | denied | synthetic        (default immediate)
+                synthetic = a silent MediaStream built from an AudioContext, for
+                engines without a fake-device flag. On WebKit every mode except
+                denied returns the synthetic stream (no fake device exists there).
+    headed      1 → audio output is real (informational; recorded in harness:ready)
+    hints       1 → the server injects <link> resource hints into <head> (see
+                resourceHints() in live-verify-kickoff-shared.mjs); recorded in
+                harness:ready as the number of <link rel> tags actually present
+    reconnectWindowMs   forwarded to the avatar session
+    requestVars JSON object → KalturaAvatarSession({ requestVars }), the client
+                variables a Jinja2 opening phrase can branch on (needs
+                intellects.setClientVariablesEnabled on the intellect); recorded
+                in harness:ready as a boolean
+
+  What it records beyond session events and socket frames
+    pc:state            every ICE / connection / signaling state change per peer
+    pc:track            remote track arrived; track:unmute = first media on it
+    video:*             loadedmetadata / loadeddata / playing / firstFrame
+    audio:*             element playing; audio:soundStart / soundStop from an
+                        AnalyserNode on the remote audio track (what the user hears)
+    stats:sample        inbound-rtp audio + video, candidate-pair RTT, outbound mic
+                        packets; sampled on talk events and every 500 ms
+    testResources()     Resource Timing for every cross-origin request and the SDK
+                        module graph (DNS / TCP / TLS / TTFB where the server sends
+                        Timing-Allow-Origin, duration always), plus the <link rel>
+                        hints present in <head>
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>live-verify-kickoff harness</title>
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js" integrity="sha384-2huaZvOR9iDzHqslqwpR87isEmrfxqyWOF7hr7BY6KG0+hVKLoEXMPUJw3ynWuhO" crossorigin="anonymous"></script>
+  <style>video { width: 320px; height: 180px; object-fit: cover; background: #000 }</style>
+</head>
+<body>
+  <video id="v" autoplay playsinline></video>
+  <audio id="a" autoplay></audio>
+  <pre id="log"></pre>
+  <script type="module">
+    import { KalturaAvatarSession, KalturaChatSession, KalturaAgentSession } from '/src/experience/index.js';
+
+    const q = new URLSearchParams(location.search);
+    const mode = q.get('mode') || 'avatar';
+    const kickoffText = q.get('kickoff') || '';
+    const echo = q.get('echo') === '1';
+    const disclosure = q.get('disclosure') === '1';
+    const mic = q.get('mic') || 'immediate';
+    const headed = q.get('headed') === '1';
+    const hints = q.get('hints') === '1';
+    const reconnectWindowMs = q.get('reconnectWindowMs') ? Number(q.get('reconnectWindowMs')) : undefined;
+    const requestVars = q.get('requestVars') ? JSON.parse(q.get('requestVars')) : undefined;
+    const ua = navigator.userAgent;
+    const engine = /Firefox\//.test(ua) ? 'firefox' : (/AppleWebKit/.test(ua) && !/Chrome\//.test(ua)) ? 'webkit' : 'chromium';
+
+    // ---- recording -------------------------------------------------------
+    const t0 = performance.now();
+    const events = [];
+    window.__events = events;
+    const logEl = document.getElementById('log');
+    function rec(type, detail) {
+      const e = { t: Date.now(), tRel: Math.round(performance.now() - t0), type, detail };
+      events.push(e);
+      if (events.length <= 400) logEl.textContent += `${e.tRel} ${type} ${detail === undefined ? '' : JSON.stringify(detail).slice(0, 160)}\n`;
+    }
+    window.__rec = rec;
+
+    // ---- mic + RTC wrappers ---------------------------------------------
+    window.__gumCalls = 0;
+    window.__pcs = [];
+    const realGum = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+    let synthCtx = null;
+    function syntheticMic() {
+      // A real MediaStreamTrack that carries silence: an oscillator at zero gain
+      // into a MediaStreamDestination. No device, no permission prompt.
+      synthCtx = synthCtx || new AudioContext();
+      const dest = synthCtx.createMediaStreamDestination();
+      const osc = synthCtx.createOscillator();
+      const gain = synthCtx.createGain();
+      gain.gain.value = 0;
+      osc.connect(gain).connect(dest);
+      osc.start();
+      return dest.stream;
+    }
+    async function getUserMedia(constraints) {
+      window.__gumCalls++;
+      rec('gum:call', { n: window.__gumCalls });
+      if (mic === 'denied') {
+        const err = new DOMException('Permission denied by harness', 'NotAllowedError');
+        rec('gum:deny', {});
+        throw err;
+      }
+      // WebKit has no fake-device flag, so every non-denied mode gets the synthetic stream there
+      // (immediate/deferred still control *when* the SDK asks, this only controls what it gets).
+      if (mic === 'synthetic' || engine === 'webkit') { rec('gum:synthetic', {}); return syntheticMic(); }
+      return realGum(constraints);
+    }
+    class RecordingPC extends RTCPeerConnection {
+      constructor(...args) {
+        super(...args);
+        window.__pcs.push(this);
+        const n = window.__pcs.length;
+        rec('pc:created', { n });
+        this.addEventListener('iceconnectionstatechange', () => rec('pc:state', { n, ice: this.iceConnectionState }));
+        this.addEventListener('connectionstatechange', () => rec('pc:state', { n, connection: this.connectionState }));
+        this.addEventListener('icegatheringstatechange', () => rec('pc:state', { n, gathering: this.iceGatheringState }));
+        this.addEventListener('signalingstatechange', () => rec('pc:state', { n, signaling: this.signalingState }));
+        this.addEventListener('track', (e) => {
+          const track = e.track;
+          rec('pc:track', { n, kind: track.kind, muted: track.muted });
+          track.addEventListener('unmute', () => rec('track:unmute', { n, kind: track.kind }), { once: true });
+          if (track.kind === 'audio') watchAudio(track);
+        });
+      }
+      // Per m-section summary of every description, so a missing video track can be
+      // traced to the negotiation (port 0 / no shared codec) instead of guessed at.
+      setLocalDescription(desc) { this._recSdp('local', desc); return super.setLocalDescription(desc); }
+      setRemoteDescription(desc) { this._recSdp('remote', desc); return super.setRemoteDescription(desc); }
+      _recSdp(role, desc) {
+        const sdp = desc?.sdp; if (typeof sdp !== 'string') return;
+        const media = sdp.split(/\r?\nm=/).slice(1).map((sec) => {
+          const [kind, port] = sec.split(/\s+/);
+          const codecs = [...new Set([...sec.matchAll(/a=rtpmap:\d+ ([^/\r\n]+)/g)].map((m) => m[1]))].filter((c) => !/^(rtx|red|ulpfec|flexfec-03|telephone-event|CN)$/.test(c));
+          const dir = (sec.match(/a=(sendrecv|sendonly|recvonly|inactive)/) || [])[1] || null;
+          return { kind, port: Number(port), dir, codecs };
+        });
+        rec('pc:sdp', { n: window.__pcs.indexOf(this) + 1, role, type: desc.type || null, media });
+      }
+    }
+
+    // ---- perceptual probes: what the user actually sees and hears ----------
+    const videoEl = document.getElementById('v');
+    const audioEl = document.getElementById('a');
+    for (const ev of ['loadedmetadata', 'loadeddata', 'canplay', 'playing', 'pause', 'stalled', 'waiting']) {
+      videoEl.addEventListener(ev, () => rec(`video:${ev}`, { w: videoEl.videoWidth, h: videoEl.videoHeight, paused: videoEl.paused }));
+      audioEl.addEventListener(ev, () => rec(`audio:${ev}`, { paused: audioEl.paused, muted: audioEl.muted, volume: audioEl.volume }));
+    }
+    let firstFrameSeen = false;
+    function armFirstFrame() {
+      if (firstFrameSeen) return;
+      if (typeof videoEl.requestVideoFrameCallback === 'function') {
+        videoEl.requestVideoFrameCallback((now, meta) => {
+          if (firstFrameSeen) return;
+          firstFrameSeen = true;
+          rec('video:firstFrame', { w: meta.width, h: meta.height, presentedFrames: meta.presentedFrames, via: 'rvfc' });
+        });
+      } else {
+        // Firefox < 132 has no requestVideoFrameCallback: poll decoded frame count.
+        const poll = setInterval(() => {
+          const qy = videoEl.getVideoPlaybackQuality?.();
+          const frames = qy ? qy.totalVideoFrames : (videoEl.mozDecodedFrames ?? 0);
+          if (frames > 0 && videoEl.videoWidth > 0) {
+            firstFrameSeen = true;
+            clearInterval(poll);
+            rec('video:firstFrame', { w: videoEl.videoWidth, h: videoEl.videoHeight, presentedFrames: frames, via: 'poll' });
+          }
+        }, 20);
+      }
+    }
+    videoEl.addEventListener('loadedmetadata', armFirstFrame);
+
+    // AnalyserNode on the remote audio track: RMS sampled every 25 ms. A run of
+    // samples above SOUND_ON starts a sound span; SOUND_OFF for 250 ms ends it.
+    // This is independent of the element (works even where getStats lacks
+    // audioLevel) and of the SDK's own events.
+    const SOUND_ON = 0.01, SOUND_OFF = 0.004, OFF_HOLD_MS = 250;
+    let analyserCtx = null;
+    window.__sound = { spans: [], open: null, ctxState: null, error: null };
+    function watchAudio(track) {
+      try {
+        analyserCtx = analyserCtx || new AudioContext();
+        analyserCtx.resume().catch(() => {});
+        rec('audioctx:state', { state: analyserCtx.state });
+        analyserCtx.addEventListener('statechange', () => rec('audioctx:state', { state: analyserCtx.state }));
+        const src = analyserCtx.createMediaStreamSource(new MediaStream([track]));
+        const an = analyserCtx.createAnalyser();
+        an.fftSize = 1024;
+        src.connect(an);
+        const buf = new Float32Array(an.fftSize);
+        let lastLoud = 0;
+        const timer = setInterval(() => {
+          if (track.readyState === 'ended') { clearInterval(timer); if (window.__sound.open) endSpan(); return; }
+          an.getFloatTimeDomainData(buf);
+          let sum = 0;
+          for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+          const rms = Math.sqrt(sum / buf.length);
+          const now = performance.now();
+          if (rms >= SOUND_ON) {
+            lastLoud = now;
+            if (!window.__sound.open) {
+              window.__sound.open = { start: Math.round(now - t0), peak: rms };
+              rec('audio:soundStart', { rms: +rms.toFixed(4), ctx: analyserCtx.state });
+            } else if (rms > window.__sound.open.peak) window.__sound.open.peak = rms;
+          } else if (window.__sound.open && rms < SOUND_OFF && now - lastLoud > OFF_HOLD_MS) endSpan();
+        }, 25);
+        function endSpan() {
+          const span = window.__sound.open;
+          window.__sound.open = null;
+          const end = Math.round(performance.now() - t0) - OFF_HOLD_MS;
+          window.__sound.spans.push({ start: span.start, end, peak: +span.peak.toFixed(4) });
+          rec('audio:soundStop', { durationMs: end - span.start, peak: +span.peak.toFixed(4) });
+        }
+      } catch (e) {
+        window.__sound.error = String(e?.message || e);
+        rec('audio:analyserFailed', { error: window.__sound.error });
+      }
+    }
+
+    // ---- socket wrapper --------------------------------------------------
+    window.__sockets = [];
+    function socketFactory(url, opts) {
+      const s = io(url, opts);
+      window.__sockets.push(s);
+      rec('socket:created', { n: window.__sockets.length });
+      const rawEmit = s.emit.bind(s);
+      s.emit = (ev, payload, ...rest) => {
+        const d = { ev };
+        if (payload && typeof payload === 'object') {
+          if (typeof payload.text === 'string') d.text = payload.text;
+          if (payload.isSpeechStart !== undefined) d.isSpeechStart = payload.isSpeechStart;
+        }
+        rec('socket:out', d);
+        return rawEmit(ev, payload, ...rest);
+      };
+      s.onAny((ev, p) => {
+        const d = { ev };
+        if (p && typeof p === 'object') {
+          if (p.speechId !== undefined) d.speechId = p.speechId;
+          if (p.type !== undefined) d.type = p.type;
+          if (ev === 'stvFinishedTalking' && typeof p.agentContent === 'string') d.agentContent = p.agentContent.slice(0, 80);
+          if (ev === 'agentTurnToTalk' && typeof p.userTranscription === 'string') d.userTranscription = p.userTranscription.slice(0, 120);
+        }
+        rec('socket:in', d);
+      });
+      s.on('connect', () => rec('socket:connect', { id: s.id, recovered: s.recovered === true }));
+      s.on('disconnect', (reason) => rec('socket:disconnect', { reason }));
+      s.io.on('reconnect_attempt', (n) => rec('socket:reconnect_attempt', { n }));
+      return s;
+    }
+
+    // ---- WebRTC stats ------------------------------------------------------
+    // `inbound` keeps the original audio shape (the scripts assert on it) and adds
+    // audioLevel / jitter / concealment; `video`, `pairs` and `outbound` are new.
+    async function sampleStats(label) {
+      const inbound = [], video = [], pairs = [], outbound = [];
+      for (const pc of window.__pcs) {
+        const n = window.__pcs.indexOf(pc) + 1;
+        let stats;
+        try { stats = await pc.getStats(); } catch { continue; }
+        const byId = new Map();
+        stats.forEach((r) => byId.set(r.id, r));
+        stats.forEach((r) => {
+          if (r.type === 'inbound-rtp' && r.kind === 'audio') {
+            inbound.push({ pc: n, totalAudioEnergy: r.totalAudioEnergy ?? null, packetsReceived: r.packetsReceived ?? null, totalSamplesDuration: r.totalSamplesDuration ?? null, audioLevel: r.audioLevel ?? null, jitter: r.jitter ?? null, packetsLost: r.packetsLost ?? null, concealedSamples: r.concealedSamples ?? null, jitterBufferDelay: r.jitterBufferDelay ?? null });
+          } else if (r.type === 'inbound-rtp' && r.kind === 'video') {
+            video.push({ pc: n, framesReceived: r.framesReceived ?? null, framesDecoded: r.framesDecoded ?? null, framesDropped: r.framesDropped ?? null, frameWidth: r.frameWidth ?? null, frameHeight: r.frameHeight ?? null, framesPerSecond: r.framesPerSecond ?? null, packetsReceived: r.packetsReceived ?? null, packetsLost: r.packetsLost ?? null, freezeCount: r.freezeCount ?? null, jitterBufferDelay: r.jitterBufferDelay ?? null });
+          } else if (r.type === 'outbound-rtp' && r.kind === 'audio') {
+            outbound.push({ pc: n, packetsSent: r.packetsSent ?? null, bytesSent: r.bytesSent ?? null });
+          } else if (r.type === 'transport' || (r.type === 'candidate-pair' && r.nominated && r.state === 'succeeded')) {
+            const pair = r.type === 'transport' ? byId.get(r.selectedCandidatePairId) : r;
+            if (!pair || pairs.some((p) => p.pc === n)) return;
+            const local = byId.get(pair.localCandidateId), remote = byId.get(pair.remoteCandidateId);
+            pairs.push({ pc: n, rtt: pair.currentRoundTripTime ?? null, bytesReceived: pair.bytesReceived ?? null, availableIncomingBitrate: pair.availableIncomingBitrate ?? null, local: local?.candidateType ?? null, remote: remote?.candidateType ?? null, protocol: local?.protocol ?? remote?.protocol ?? null, dtls: r.type === 'transport' ? r.dtlsState ?? null : null });
+          }
+        });
+      }
+      rec('stats:sample', { label, inbound, video, pairs, outbound });
+      return inbound;
+    }
+    window.sampleStats = sampleStats;
+    // Periodic ticks from the first peer until the page is torn down, so the
+    // scripts can find the first decoded frame / first audio packet in time.
+    let ticker = null;
+    function startTicker() { if (!ticker) ticker = setInterval(() => { if (window.__pcs.length) sampleStats('tick'); }, 500); }
+    window.stopTicker = () => { clearInterval(ticker); ticker = null; };
+
+    // ---- build the session -----------------------------------------------
+    const init = await (await fetch('/init')).json();
+    if (init.error) { rec('init:error', { error: init.error }); throw new Error(init.error); }
+    const kickoff = kickoffText ? (echo ? { text: kickoffText, echo: true } : kickoffText) : undefined;
+
+    const avatarCfg = {
+      conversationManagerUrl: init.conversationManagerUrl,
+      srsBaseUrl: init.srsBaseUrl,
+      turnServerUrl: init.turnServerUrl,
+      // The avatar session also talks to genie (session-completed signal, tool responses), so a
+      // non-default environment must be passed here too, not only on the chat config.
+      ...(init.genieUrl ? { genieUrl: init.genieUrl } : {}),
+      ...(requestVars ? { requestVars } : {}),
+      videoEl,
+      audioEl,
+      socketFactory,
+      rtcConstructor: RecordingPC,
+      getUserMedia,
+      // The SDK does not sniff the UA; the app tells it (Firefox needs 'all' ICE policy on STV).
+      isFirefox: engine === 'firefox',
+      micStartMode: mic === 'deferred' ? 'deferred' : 'immediate',
+      requireDisclosureAck: disclosure,
+      ...(reconnectWindowMs ? { reconnectWindowMs } : {}),
+      logger: (level, msg, data) => rec('log', { level, msg, data }),
+    };
+    const chatCfg = { ...(init.genieUrl ? { genieUrl: init.genieUrl } : {}) };
+
+    let session;
+    if (mode === 'avatar') session = new KalturaAvatarSession({ token: init.ks, kickoff, ...avatarCfg });
+    else if (mode === 'chat') session = new KalturaChatSession({ token: init.conversationKs, kickoff, ...chatCfg });
+    else if (mode === 'agent-avatar' || mode === 'agent-chat') {
+      session = new KalturaAgentSession({
+        token: init.ks,
+        mode: mode === 'agent-avatar' ? 'avatar' : 'chat',
+        kickoff,
+        avatar: avatarCfg,
+        chat: chatCfg,
+      });
+    } else throw new Error(`unknown mode ${mode}`);
+    window.session = session;
+
+    const EVENTS = [
+      'stateChange', 'disclosure', 'mediaReady', 'micStarted', 'warning', 'error', 'ended',
+      'avatarStartTalking', 'avatarStopTalking', 'interrupted', 'speechChunk', 'transcript',
+      'turnStart', 'turnEnd', 'responsePending', 'responseSettled', 'userStartedTalking',
+      'reconnecting', 'reconnected', 'connectivityChanged', 'resumed', 'resumeReady', 'mediaRecovering', 'mediaRecovered',
+      'modeChanged', 'transportChanged', 'connectionQuality', 'idleWarning', 'timeWarning', 'timeExpired',
+    ];
+    const handler = (ev) => (d) => {
+      rec(ev, d);
+      if (ev === 'avatarStartTalking') sampleStats('avatarStartTalking');
+      if (ev === 'avatarStopTalking') sampleStats('avatarStopTalking');
+      if (ev === 'interrupted') sampleStats('interrupted');
+    };
+    for (const ev of EVENTS) session.on(ev, handler(ev));
+
+    // KalturaAgentSession forwards the conversation-rendering events (including
+    // the avatar-only speechChunk/avatarStart/StopTalking/interrupted). The rest
+    // (disclosure, micStarted, reconnecting, ...) are read off each transport as
+    // it is attached, which is the documented `transportChanged` pattern.
+    // `transportChanged` fires before the transport connects, so opening-turn
+    // events are recorded too.
+    const FACADE_EVENTS = new Set([
+      'transcript', 'turnStart', 'turnEnd', 'error', 'warning', 'responsePending', 'responseSettled',
+      'speechChunk', 'avatarStartTalking', 'avatarStopTalking', 'interrupted',
+      'ended', 'stateChange', 'modeChanged', 'transportChanged',
+    ]);
+    const wired = new WeakSet();
+    if (mode.startsWith('agent')) {
+      session.on('transportChanged', ({ transport }) => {
+        if (!transport || wired.has(transport)) return;
+        wired.add(transport);
+        for (const ev of EVENTS) if (!FACADE_EVENTS.has(ev)) transport.on(ev, handler(ev));
+      });
+    }
+
+    // ---- test hooks --------------------------------------------------------
+    const avatarTransport = () => (mode.startsWith('agent') ? session.transport : session);
+    window.testConnect = async () => {
+      rec('connect:start', {});
+      startTicker();
+      try { await session.connect(); rec('connect:resolved', { state: session.state, mode: session.mode }); return { ok: true, state: session.state }; }
+      catch (e) { rec('connect:rejected', { code: e?.code, message: e?.message }); return { ok: false, code: e?.code, message: e?.message }; }
+    };
+    window.testSpeak = async (text) => {
+      rec('speak:call', { text });
+      const p = session.speak(text);
+      const settled = await Promise.race([p.then((v) => ({ sent: v })), new Promise((r) => setTimeout(() => r({ pending: true }), 0))]);
+      rec('speak:immediate', settled);
+      const sent = await p;
+      rec('speak:resolved', { text, sent });
+      return sent;
+    };
+    window.testSendText = async (text) => { rec('sendText:call', { text }); const r = await session.sendText(text); rec('sendText:resolved', { text }); return r; };
+    window.testPause = () => { rec('pause:call', {}); return avatarTransport().pause(); };
+    window.testResume = async () => { rec('resume:call', {}); await avatarTransport().resume(); rec('resume:resolved', { state: session.state }); };
+    window.testAck = () => { rec('ack:call', {}); return avatarTransport().acknowledgeDisclosure(); };
+    window.testStartMic = async () => { rec('startMic:call', {}); await avatarTransport().startMic(); rec('startMic:resolved', {}); };
+    window.testSwitch = async (target) => { rec('switch:call', { target }); await session.switchMode(target); rec('switch:resolved', { mode: session.mode }); };
+    window.testDisconnect = async () => { rec('disconnect:call', {}); await session.disconnect(); rec('disconnect:resolved', { state: session.state }); };
+    window.testKickoff = () => (mode.startsWith('agent') ? session.transport?.kickoff : session.kickoff) ?? null;
+    window.testState = () => ({ state: session.state, mode: session.mode, paused: avatarTransport()?.paused ?? null, threadId: session.threadId ?? null });
+    // Resource Timing for every cross-origin request plus the SDK module graph. Servers that
+    // do not send Timing-Allow-Origin expose only start + duration (tao: false); the
+    // connection-level fields are then null rather than a misleading 0.
+    window.testResources = () => {
+      const here = location.origin;
+      const entries = [];
+      for (const e of performance.getEntriesByType('resource')) {
+        let u; try { u = new URL(e.name); } catch { continue; }
+        const sameOrigin = u.origin === here;
+        if (sameOrigin && !u.pathname.startsWith('/src/')) continue;
+        const tao = e.requestStart > 0;
+        entries.push({
+          url: sameOrigin ? u.pathname : `${u.origin}${u.pathname}`,
+          initiator: e.initiatorType,
+          startMs: Math.round(e.startTime),                 // since navigation start
+          startRel: Math.round(e.startTime - t0),           // same clock as tRel; negative = before this script ran
+          durationMs: Math.round(e.duration),
+          tao,
+          dnsMs: tao ? Math.round(e.domainLookupEnd - e.domainLookupStart) : null,
+          tcpMs: tao ? Math.round(e.connectEnd - e.connectStart) : null,
+          tlsMs: tao && e.secureConnectionStart > 0 ? Math.round(e.connectEnd - e.secureConnectionStart) : null,
+          ttfbMs: tao ? Math.round(e.responseStart - e.requestStart) : null,
+          reusedConnection: tao ? e.connectStart === e.connectEnd : null,
+          transferSize: e.transferSize,
+        });
+      }
+      const links = [...document.querySelectorAll('head link[rel]')].map((l) => ({ rel: l.rel, href: l.href.replace(/\?.*$/, ''), as: l.as || undefined, crossorigin: l.crossOrigin || undefined }));
+      return { hints: links, entries, nowMs: Math.round(performance.now()) };
+    };
+
+    rec('harness:ready', { mode, kickoff: !!kickoff, echo, disclosure, mic, engine, headed, hints, requestVars: !!requestVars, hintTags: document.querySelectorAll('head link[rel]').length, sinceNavMs: Math.round(performance.now()), rvfc: typeof videoEl.requestVideoFrameCallback === 'function' });
+    window.__ready = true;
+  </script>
+</body>
+</html>

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Management } from '../../src/management/index.js';
+import { Management, SILENT_OPENING } from '../../src/management/index.js';
 import { IntellectConfig, EDITABLE_FIELDS, MODEL_IDS } from '../../src/management/intellect-config.js';
 import { fakeFetch } from '../fakes/fetch.js';
 
@@ -418,6 +418,30 @@ test('intellectConfig.setOpeningPhrase writes the Jinja2 phrase; null clears; ""
   await assert.rejects(() => cfg.setOpeningPhrase(1481, '   ', ADMIN), (e) => e.code === 'bad_request');
   await assert.rejects(() => cfg.setOpeningPhrase(1481, /** @type {any} */ (42), ADMIN), (e) => e.code === 'bad_request');
   assert.equal(f.calls.length, 0);
+});
+
+test('intellectConfig.setOpeningPhrase accepts SILENT_OPENING and writes it verbatim', async () => {
+  const { cfg, f } = mkMgmt([getDto(), updateEcho]);
+  const r = await cfg.setOpeningPhrase(1481, SILENT_OPENING, ADMIN);
+  assert.equal(r.applied, true);
+  const sent = f.calls.find((c) => c.url.includes('/v1/intellect/update')).body;
+  assert.equal(sent.opening_phrase, '<blank>');
+});
+
+// Developer example: a personalized opening. The phrase is a Jinja2 template the
+// server renders once per session over the client's `requestVars` (once
+// `intellects.setClientVariablesEnabled(configId, true, ks)` is on) and the
+// reserved `sys__*` variables. A missing variable renders as empty text, so the
+// optional one is guarded with `{% if %}`. The SDK stores the template verbatim;
+// nothing is rendered client-side. Guide: docs/START-THE-CONVERSATION.md § Personalize the opening.
+test('intellectConfig.setOpeningPhrase stores a guarded Jinja2 conditional verbatim (personalized opening example)', async () => {
+  const { cfg, f } = mkMgmt([getDto(), updateEcho]);
+  const template = '{% if user_name %}Welcome back, {{ user_name }}. Shall we pick up where we left off?{% else %}Hello there! What brings you here today?{% endif %}';
+  const r = await cfg.setOpeningPhrase(1481, template, ADMIN);
+  assert.equal(r.applied, true);
+  const sent = f.calls.find((c) => c.url.includes('/v1/intellect/update')).body;
+  assert.equal(sent.opening_phrase, template, 'the template goes to the server untouched; rendering happens there, per session');
+  assert.equal(Object.hasOwn(sent, 'openingPhrase'), false, 'the avatar field name never appears on the intellect write');
 });
 
 test('intellectConfig.setAvatarSummaryConfig writes a validated object; null clears', async () => {

@@ -47,16 +47,44 @@ name: Live verification
 # Firefox and WebKit — see scripts/live-verify-session-complete.mjs. Real
 # mobile OS backgrounding/tab-kill behavior isn't reachable from any
 # Playwright engine; see manual-testing/session-complete/ for that.
+# live-verify-kickoff covers the silent-opening + `kickoff` startup pattern
+# end to end against a real provisioned agent: connect timing over several
+# runs (scripts/live-verify-connect-timing.mjs) and the scenario matrix in
+# scripts/live-verify-kickoff.mjs (echo, disclosure ack, pause/resume,
+# reconnect, agent-session mode switch, denied/deferred mic, spoken opening,
+# barge-in). Both scripts take --browser chromium|chrome|firefox|webkit; CI
+# runs headless Chromium. Audibility is measured on the remote audio track
+# with an AnalyserNode, so it works on every engine; the inbound-rtp
+# totalAudioEnergy check is added only where the engine exposes it.
+# The timing script is also the startup-KPI gate: the median of connect(),
+# first video frame, first audio, first agent words and sound heard over the
+# 5 runs is checked against the budgets in the script header, and a miss fails
+# the timing step. The job summary leads with that KPI table; the full reports
+# sit below it in a collapsed section. A weekly `schedule` run keeps a trend
+# (90-day artifacts) even when nothing is merged; only live-verify-kickoff runs
+# on that trigger.
+# live-verify-opening-phrase covers the intellect-owned opening phrase:
+# provision() writes it to the intellect only and leaves the avatar's unset, a
+# Jinja2 `{% if %}` template renders per session from client variables
+# (`requestVars`), and SILENT_OPENING on the intellect alone gives a silent
+# opening turn — see scripts/live-verify-opening-phrase.mjs.
 on:
   workflow_dispatch: {}
   pull_request:
     types: [opened, synchronize, reopened, labeled]
   merge_group:
     branches: [main]
+  schedule:
+    - cron: '0 6 * * 1' # Monday 06:00 UTC: startup-KPI trend run (live-verify-kickoff only)
 
 permissions:
   contents: read
 
+# One global group on purpose: these jobs drive real conversations against a
+# shared partner, so two runs at once would fight over the same agents. The
+# cost is that a stuck run blocks every other one, which is why every job below
+# carries a `timeout-minutes` and every page-side session call in the scripts
+# has its own deadline (scripts/live-verify-hooks-shared.mjs).
 concurrency:
   group: live-verify
   cancel-in-progress: false
@@ -65,6 +93,7 @@ jobs:
   changes:
     name: 🔍 Detect changed paths
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       code: ${{ steps.filter.outputs.code }}
       browser: ${{ steps.filter.outputs.browser }}
@@ -97,6 +126,14 @@ jobs:
               - 'scripts/live-verify-avatar-media.html'
               - 'scripts/live-verify-context-fields.mjs'
               - 'scripts/live-verify-context-fields.html'
+              - 'scripts/live-verify-kickoff.mjs'
+              - 'scripts/live-verify-kickoff.html'
+              - 'scripts/live-verify-kickoff-shared.mjs'
+              - 'scripts/live-verify-opening-phrase.mjs'
+              - 'scripts/live-verify-connect-timing.mjs'
+              - 'scripts/live-verify-set-forced-language.mjs'
+              - 'scripts/live-verify-silent-mic-shared.mjs'
+              - 'scripts/live-verify-hooks-shared.mjs'
               - 'package.json'
               - 'package-lock.json'
               - '.github/workflows/live-verify.yml'
@@ -108,6 +145,7 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs.code == 'true')
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     environment: live-verify
     steps:
       - name: 📥 Check out the repo
@@ -155,6 +193,7 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs.code == 'true')
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     environment: live-verify
     steps:
       - name: 📥 Check out the repo
@@ -202,6 +241,7 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs.code == 'true')
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     environment: live-verify
     steps:
       - name: 📥 Check out the repo
@@ -249,6 +289,7 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs.code == 'true')
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     environment: live-verify
     steps:
       - name: 📥 Check out the repo
@@ -296,6 +337,7 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs.browser == 'true')
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     environment: live-verify
     steps:
       - name: 📥 Check out the repo
@@ -349,6 +391,7 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs.code == 'true')
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     environment: live-verify
     steps:
       - name: 📥 Check out the repo
@@ -397,6 +440,7 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       ((github.event_name == 'merge_group' || github.event.label.name == 'run-live-verify') && needs.changes.outputs.code == 'true')
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     environment: live-verify
     steps:
       - name: 📥 Check out the repo
@@ -444,6 +488,7 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       ((github.event_name == 'merge_group' || github.event.label.name == 'run-live-verify') && needs.changes.outputs.code == 'true')
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     environment: live-verify
     steps:
       - name: 📥 Check out the repo
@@ -491,6 +536,7 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       ((github.event_name == 'merge_group' || github.event.label.name == 'run-live-verify') && needs.changes.outputs.code == 'true')
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     environment: live-verify
     steps:
       - name: 📥 Check out the repo
@@ -538,6 +584,7 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       ((github.event_name == 'merge_group' || github.event.label.name == 'run-live-verify') && needs.changes.outputs.code == 'true')
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     environment: live-verify
     steps:
       - name: 📥 Check out the repo
@@ -585,6 +632,7 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       ((github.event_name == 'merge_group' || github.event.label.name == 'run-live-verify') && needs.changes.outputs.code == 'true')
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     environment: live-verify
     steps:
       - name: 📥 Check out the repo
@@ -632,6 +680,7 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       ((github.event_name == 'merge_group' || github.event.label.name == 'run-live-verify') && needs.changes.outputs.code == 'true')
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     environment: live-verify
     steps:
       - name: 📥 Check out the repo
@@ -679,6 +728,7 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs.browser == 'true')
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     environment: live-verify
     strategy:
       fail-fast: false
@@ -759,6 +809,150 @@ jobs:
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
+  live-verify-kickoff:
+    name: 🔴🌐 Live verification (silent opening + kickoff + startup KPIs, chromium)
+    needs: changes
+    if: |
+      github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' ||
+      ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs.browser == 'true')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: live-verify
+    steps:
+      - name: 📥 Check out the repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: 🟢 Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+
+      - name: 📦 Install dependencies
+        run: npm ci
+
+      - name: 🎭 Install chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: 🔴🌐 Provision a silent-opening agent → measure connect timing (5 runs) → check startup KPIs → cleanup
+        id: live_verify_connect_timing
+        env:
+          AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
+          AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
+        run: |
+          set -o pipefail
+          node scripts/live-verify-connect-timing.mjs --env prod 2>&1 | tee live-verify-connect-timing-output.log
+
+      - name: 🔴🌐 Provision a silent-opening agent → run the kickoff scenario matrix → cleanup
+        id: live_verify_kickoff
+        if: always()
+        env:
+          AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
+          AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
+        run: |
+          set -o pipefail
+          node scripts/live-verify-kickoff.mjs --env prod 2>&1 | tee live-verify-kickoff-output.log
+
+      - name: 📤 Upload live-verify-kickoff artifacts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: live-verify-kickoff-artifacts
+          path: |
+            live-verify-artifacts/
+            live-verify-connect-timing-output.log
+            live-verify-kickoff-output.log
+          retention-days: 90
+
+      - name: 📝 Write job summary (startup KPIs first)
+        if: always()
+        run: |
+          {
+            echo "### 🔴🌐 Silent opening + kickoff — timing ${{ steps.live_verify_connect_timing.outcome }}, scenarios ${{ steps.live_verify_kickoff.outcome }}"
+            echo
+            echo "#### Startup KPIs (prod, headless Chromium, median of 5 runs; a miss fails the timing step)"
+            echo
+            node -e '
+              const fs = require("node:fs");
+              const dir = "live-verify-artifacts";
+              const files = fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => /^connect-timing-.*\.json$/.test(f)).sort() : [];
+              if (!files.length) { console.log("No connect-timing report was written."); process.exit(0); }
+              const kpi = JSON.parse(fs.readFileSync(dir + "/" + files.at(-1), "utf8")).data?.kpi ?? [];
+              console.log("| KPI | median ms | budget ms | min / max | result |");
+              console.log("|---|---|---|---|---|");
+              for (const k of kpi) {
+                const range = k.medianMs === null ? "" : k.minMs + " / " + k.maxMs;
+                console.log("| " + [k.label, k.medianMs ?? "n/a", "≤ " + k.budgetMs, range, k.status].join(" | ") + " |");
+              }
+            ' 2>/dev/null || echo "Could not read the connect-timing report."
+            echo
+            echo "<details><summary>Full reports</summary>"
+            echo
+            for md in live-verify-artifacts/connect-timing-*.md live-verify-artifacts/kickoff-*.md; do
+              [ -f "$md" ] && cat "$md" && echo
+            done
+            echo '```'
+            tail -n 40 live-verify-kickoff-output.log 2>/dev/null || true
+            echo '```'
+            echo "</details>"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  live-verify-opening-phrase:
+    name: 🔴🌐 Live verification (intellect-owned opening phrase + Jinja2 client variables, chromium)
+    needs: changes
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs.browser == 'true')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: live-verify
+    steps:
+      - name: 📥 Check out the repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: 🟢 Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+
+      - name: 📦 Install dependencies
+        run: npm ci
+
+      - name: 🎭 Install chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: 🔴🌐 Provision an agent with a Jinja2 opening phrase → check what landed on the intellect and avatar → voice the opening with and without requestVars → silent opening → cleanup
+        id: live_verify_opening_phrase
+        env:
+          AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
+          AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
+        run: |
+          set -o pipefail
+          node scripts/live-verify-opening-phrase.mjs --env prod 2>&1 | tee live-verify-opening-phrase-output.log
+
+      - name: 📤 Upload live-verify-opening-phrase artifacts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: live-verify-opening-phrase-artifacts
+          path: |
+            live-verify-artifacts/
+            live-verify-opening-phrase-output.log
+          retention-days: 30
+
+      - name: 📝 Write job summary
+        if: always()
+        run: |
+          {
+            echo "### 🔴🌐 Intellect-owned opening phrase + Jinja2 client variables — ${{ steps.live_verify_opening_phrase.outcome }}"
+            echo
+            for md in live-verify-artifacts/opening-phrase-*.md; do
+              [ -f "$md" ] && cat "$md" && echo
+            done
+            echo '```'
+            tail -n 40 live-verify-opening-phrase-output.log 2>/dev/null || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
   live-verify-avatar-media:
     name: 🔴🌐 Live verification (avatar media simple+split, ${{ matrix.engine }})
     needs: changes
@@ -766,6 +960,7 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs.browser == 'true')
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     environment: live-verify
     strategy:
       fail-fast: false
@@ -826,6 +1021,7 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       ((github.event_name == 'merge_group' || github.event.label.name == 'run-live-verify') && needs.changes.outputs.browser == 'true')
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     environment: live-verify
     steps:
       - name: 📥 Check out the repo
@@ -887,6 +1083,7 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs.code == 'true')
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     environment: live-verify
     strategy:
       fail-fast: false
@@ -948,6 +1145,7 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       ((github.event_name == 'merge_group' || github.event.label.name == 'run-live-verify') && needs.changes.outputs.code == 'true')
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     environment: live-verify
     steps:
       - name: 📥 Check out the repo
@@ -995,6 +1193,7 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       ((github.event_name == 'merge_group' || github.event.label.name == 'run-live-verify') && needs.changes.outputs.code == 'true')
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     environment: live-verify
     steps:
       - name: 📥 Check out the repo

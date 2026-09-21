@@ -16,7 +16,7 @@ All use the **admin KS**.
 
 Filter keys: `agentId`, `adminTagsIn`, `adminTagsNotIn`, `searchValue` (case-insensitive substring match on `displayName`/`agentId`). An unrecognized key 400s.
 
-The request also takes a top-level `orderBy` (`+createdAt`, `-createdAt`, `+updatedAt`, `-updatedAt`; anything else 400s) — a separate field from `filter`. This differs from Threads/Messages below, where `orderBy` nests inside `filter`. SDK: `mgmt.agents.list(ks, opts)` passes `opts.filter` through as-is; it does not yet expose `orderBy`.
+The request also takes a top-level `orderBy` (`+createdAt`, `-createdAt`, `+updatedAt`, `-updatedAt`; anything else 400s) — a separate field from `filter`. This differs from Threads/Messages below, where `orderBy` nests inside `filter`. SDK: `mgmt.agents.list(ks, opts)` passes `opts.filter` through as-is and does not take `orderBy`.
 
 `mgmt.agents.delete` refuses to delete an agent whose `adminTags` match a production marker (`prod`, `production`, `keep`, `do-not-delete`, `live` — see `PROTECTED_TAGS` in `src/management/agents.js`). It only proceeds when called with `{confirmPermanent:true, allowProtected:true}`. This guards against an automated cleanup-by-tag sweep deleting a real, in-use agent.
 
@@ -24,26 +24,14 @@ The request also takes a top-level `orderBy` (`+createdAt`, `-createdAt`, `+upda
 
 | Operation | Endpoint | Body |
 |-----------|----------|------|
-| Create | `POST /v1/avatar/create` | `{"voice":{"id":"...","speed"?:1.0}, "visual"?:{"id":"...","motionControl"?:{...}}, "face"?:{"id":"..."}, "background"?:{"type":"color"\|"visual","value"?:"..."}, "templateId"?:"...", "name"?:"...", "openingPhrase"?:"..."}` — see § Compose a visual, below. |
+| Create | `POST /v1/avatar/create` | `{"voice":{"id":"...","speed"?:1.0}, "visual"?:{"id":"...","motionControl"?:{...}}, "face"?:{"id":"..."}, "background"?:{"type":"color"\|"visual","value"?:"..."}, "templateId"?:"...", "name"?:"...", "openingPhrase"?:"..."}` (leave `openingPhrase` unset: the intellect's `opening_phrase` owns the opening line, see [START-THE-CONVERSATION.md](../START-THE-CONVERSATION.md#where-the-opening-phrase-lives)). Visual resolution rules: [build/avatar-and-agent.md § Three ways to get a visual](build/avatar-and-agent.md#three-ways-to-get-a-visual). |
 | List | `POST /v1/avatar/list` | `{"pager":{"offset":0,"limit":30}}` |
 | Get | `POST /v1/avatar/get` | `{"id":"24-char-hex"}` |
 | Update | `POST /v1/avatar/update` | `{"id":"24-char-hex", ...fields}` — PATCH semantics (omitted fields are preserved); `templateId` is create-only (400 on update) |
 | Delete | `POST /v1/avatar/delete` | `{"id":"24-char-hex"}` |
-| List templates | `POST /v1/avatar-template/list` | `{"pager":{"offset":0,"limit":30}}` — curated presets, each pairing a `voice` with either a ready `visual` or a `face`/`background` pair (§ Create an Avatar). SDK: `mgmt.avatars.listTemplates(ks, opts)`. |
+| List templates | `POST /v1/avatar-template/list` | `{"pager":{"offset":0,"limit":30}}` — curated presets, each pairing a `voice` with either a ready `visual` or a `face`/`background` pair ([build/avatar-and-agent.md § Three ways to get a visual](build/avatar-and-agent.md#three-ways-to-get-a-visual)). SDK: `mgmt.avatars.listTemplates(ks, opts)`. |
 
-**Compose a visual on create.** Needs exactly one of these three:
-
-1. `visual:{id}` — wins only when `face`/`background` are BOTH omitted, or BOTH sent as a complete pair. Sending just one of `face`/`background` alongside `visual` is still a domain failure; `visual` does not exempt it.
-2. `face:{id}` + `background:{type,value}`, composing a NEW visual. Both are required together, even alongside `visual`, UNLESS `templateId` is also given — a template can carry its own `face`/`background`, filling in whichever half is missing. You can't send `face` now and add `background` later at create time. Once the avatar exists, `background` alone on update swaps the background (see the update rule below).
-3. `templateId` + whichever of `face`/`background`/`visual` the template doesn't already supply. `templateId` alone is a domain failure unless the template already resolves to a complete visual on its own.
-
-`background.value` is required for `type:'visual'`, and optional (defaults to white) for `type:'color'`. For `type:'color'`, `value` must be a plain 6-digit hex string (`#RRGGBB`) with **no alpha channel**: an 8-digit hex (`#RRGGBBAA`), `rgba(...)`, or CSS4 `rgb(... / ...%)` all fail with `AVATAR_INVALID_BACKGROUND_ID` ("must be a 6-digit hex value"), live-confirmed against production.
-
-Full walkthrough, including `catalog.createFace`/`createBackground`: [build/avatar-and-agent.md § Three ways to get a visual](build/avatar-and-agent.md#three-ways-to-get-a-visual).
-
-An incomplete/invalid `face`/`background` pairing on **create** is a HTTP-200 `KalturaAPIException` (`AVATAR_MISSING_VISUAL_RESOLUTION`, `AVATAR_FAILED_TO_COMPOSE_VISUAL`, `AVATAR_MISSING_VOICE`, `AVATAR_NOT_FOUND`). `avatars.create` catches the incomplete-pairing case pre-network. The composed result is reflected in `visual.composition` and a fresh raw `previewImageUrl`/`loadingVideoUrl` — inspect those to see what was actually built.
-
-**Recomposing on update is asymmetric, unlike create.** The rule depends on the avatar's existing state:
+**Recomposing on update is asymmetric, unlike create** (where `face`/`background` must travel together). The rule depends on the avatar's existing state:
 
 - `background` alone recomposes against the avatar's current face — a valid "just change the background" update.
 - `face` alone is accepted but silently a no-op: there's nothing to pair it with, so the existing visual is left untouched.
@@ -70,7 +58,7 @@ Typed setters on `mgmt.intellectConfig` for the other single-purpose fields, all
 | Setter | Field | Clear with |
 |---|---|---|
 | `setModelConfiguration` | `model_configuration` (`model_id` in `MODEL_IDS`, `max_output_tokens`, `thinking_level` in `THINKING_LEVELS`, `temperature`) | `null` |
-| `setOpeningPhrase` | `opening_phrase` (Jinja2 over `request_vars`, avatar sessions) | `null` |
+| `setOpeningPhrase` | `opening_phrase` (the opening line of every avatar session; Jinja2 over `requestVars` + `sys__*`; `SILENT_OPENING` for no spoken opening, see [START-THE-CONVERSATION.md](../START-THE-CONVERSATION.md#personalize-the-opening)) | `null` |
 | `setThreadStartTools` | `thread_start_tools` (tool ids run once at thread start) | `[]` |
 | `setAvatarSummaryConfig` | `avatar_summary_config` (`prompt`, `analysis`, `template`, `content_type` in `SUMMARY_CONTENT_TYPES`) | `null` |
 | `setSkillIds` | `skill_ids` (`{ id, mode, condition? }`, `mode` in `SKILL_MODES`) | `[]` |
@@ -116,7 +104,7 @@ All thread endpoints require an **admin KS** (`disableentitlement`). SDK: `mgmt.
 | Rename | `POST /v1/thread/update` | `{"id":"UUID","title":"New name"}` |
 | Set analysis | `POST /v1/thread/update` | `{"id":"UUID","thread_metadata":{"analysis":{...}}}` — shallow merge one level under `analysis`; a changed key fires the lifecycle `analysis_updated` event. SDK: `mgmt.threads.setAnalysis(id, patch, ks)`. |
 | Clear analysis | `POST /v1/thread/update` | `{"id":"UUID","thread_metadata":{}}` — wipes `analysis` (the only field `ThreadMetadata` has). SDK: `mgmt.threads.clearAnalysis(id, ks)`. |
-| Push | `POST /thread/push` (legacy Genie route, no `v1/` prefix — `v1/thread/push` does not exist) | `{"id":"UUID","content":"...","request_vars"?:{...},"system_message"?:"..."}` — `delivered:false` in the reply means no live socket is attached. The message still persists: it shows up in Messages list as `type:4` (`MessageType.EXTERNAL_PUSH`). `content` over a server-side, partner-configurable length cap returns `413 content exceeds max_message_length` — not checked client-side. SDK: `mgmt.threads.push({id,content,request_vars?,system_message?}, ks)`. |
+| Push | `POST /thread/push` (no `v1/` prefix on this route) | `{"id":"UUID","content":"...","request_vars"?:{...},"system_message"?:"..."}` — `delivered:false` in the reply means no live socket is attached. The message still persists: it shows up in Messages list as `type:4` (`MessageType.EXTERNAL_PUSH`). `content` over a server-side, partner-configurable length cap returns `413 content exceeds max_message_length` — not checked client-side. SDK: `mgmt.threads.push({id,content,request_vars?,system_message?}, ks)`. |
 | Delete | `POST /v1/thread/delete` | `{"thread_ids":["UUID"]}` — soft delete, followed by a scheduled infra-level purge |
 | Transcript | `POST /v1/thread/get_transcripts` | `{"id":"UUID"}` |
 

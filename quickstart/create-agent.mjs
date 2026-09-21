@@ -52,7 +52,7 @@ if (!partnerId || !adminSecret) {
 const brief = process.argv[2] || 'A friendly yoga-studio receptionist';
 
 // ── SDK import ─────────────────────────────────────────────────────────────
-import { Management } from '@kaltura/intelligent-agents/management';
+import { Management, SILENT_OPENING } from '@kaltura/intelligent-agents/management';
 
 // ── Main ───────────────────────────────────────────────────────────────────
 console.log('');
@@ -86,9 +86,12 @@ console.log('      This takes 1–3 minutes — generating profile, building int
 console.log('      selecting voice/visual, creating avatar, wiring the agent...');
 console.log('');
 
+// SILENT_OPENING: the avatar opens without a scripted, uninterruptible greeting.
+// The browser then sends the first turn itself (`kickoff`, see README) so the
+// agent starts talking sooner and the user can interrupt it from the first word.
 let agent;
 try {
-  agent = await kaltura.provision({ brief, ks: adminToken });
+  agent = await kaltura.provision({ brief, ks: adminToken, openingPhrase: SILENT_OPENING });
 } catch (err) {
   console.error('');
   console.error('Provision failed:', err?.detail || err?.message || err);

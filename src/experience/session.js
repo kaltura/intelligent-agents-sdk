@@ -50,12 +50,13 @@
 import { Emitter } from './emitter.js';
 import { TranscriptTracker } from './transcript.js';
 import {
-  turnServers, iceConfig, createPeerConnection, buildJoin, buildStvNewSession, whepUrl, whepUrlHasPrivateIp,
+  turnServers, iceConfig, createPeerConnection, buildJoin, buildStvNewSession, whepUrl, whepUrlHasPrivateIp, whepResourceUrl,
   buildTextEntered, isAudioMode, CAPACITY_BACKOFF, DEFAULT_CM_URL, classifyAgentAction,
 } from './wire.js';
 import { inspectKs } from '../management/ks-inspect.js';
 import { assertRequestVars } from '../management/conversations.js';
 import { KalturaError } from '../core/errors.js';
+import { isSilentOpening, normalizeKickoff, SILENT_OPENING_LABEL } from '../core/opening.js';
 import { redact } from '../core/redact.js';
 import { randId } from '../core/ids.js';
 import { makeAuditEmitter } from '../core/session.js';
@@ -135,8 +136,8 @@ export class KalturaAvatarSession extends Emitter {
    * @param {typeof fetch} [cfg.fetch]
    * @param {()=>Promise<any>} [cfg.getUserMedia]
    * @param {object|false} [cfg.micConstraints]  Browser-native `MediaTrackConstraints` merged into every `getUserMedia({audio})` call this session makes (`connect()`, `switchMic()`). Default `{echoCancellation:true, noiseSuppression:true, autoGainControl:true}` — the standard Tier-1 browser-native baseline. Pass `false` to send bare `audio:true` (e.g. when `cfg.noiseProcessor` expects RAW, unprocessed audio — stacking browser-native suppression under a second DSP stage double-processes the signal and can degrade quality). Pass a partial object to override individual fields.
-   * @param {(stream:any)=>Promise<any>} [cfg.noiseProcessor]  Pluggable, externally-supplied DSP hook (BYO — a third-party lib's processor or a bespoke one; the SDK core bundles none). Called with the raw `MediaStream` from `getUserMedia` at `connect()` and every `switchMic()`; must return a `MediaStream` (or the same one, unmodified) whose audio track is what actually reaches the ASR uplink. Errors propagate as a `noise_processor_failed` KalturaError (mic acquisition fails closed, same as a `getUserMedia` rejection) — a processor must not silently swallow its own setup failure. See `./experience/noise-suppressor` for a ready-made `AudioWorklet`-based implementation of this interface.
-   * @param {'immediate'|'deferred'} [cfg.micStartMode]  When to acquire the mic. `'immediate'` (default) calls `getUserMedia` inside `connect()`. `'deferred'` connects with NO mic — the ASR uplink negotiates a sendonly audio slot with no track (the session-server handshake is byte-identical to the immediate path) — and the app calls {@link KalturaAvatarSession#startMic} later, from a real user gesture, so the browser's permission prompt is click-anchored. Until `startMic()` resolves, `startTapToTalk()`/`switchMic()` throw `mic_not_started`; typed turns (`speak()`) and `mute()`/`unmute()` work normally.
+   * @param {(stream:any)=>Promise<any>} [cfg.noiseProcessor]  Pluggable, externally-supplied DSP hook (BYO — a third-party lib's processor or a bespoke one; the SDK core bundles none). Called with the raw `MediaStream` from `getUserMedia` at `connect()` and every `switchMic()`; must return a `MediaStream` (or the same one, unmodified) whose audio track is what actually reaches the ASR uplink. A throwing processor fails mic acquisition closed (raw stream stopped) with code `noise_processor_failed`: a `warning` during the background acquire in `connect()`, a thrown KalturaError from `startMic()`/`switchMic()` — a processor must not silently swallow its own setup failure. See `./experience/noise-suppressor` for a ready-made `AudioWorklet`-based implementation of this interface.
+   * @param {'immediate'|'deferred'} [cfg.micStartMode]  When to acquire the mic. `'immediate'` (default) starts `getUserMedia` inside `connect()` but never waits on it: the permission prompt runs alongside the socket handshake, the track is attached the moment it lands (`micStarted` fires), and a denied/missing/busy mic emits one `warning` (`mic_permission_denied` / `mic_not_found` / `mic_in_use`) while the session connects mic-less — `speak()` works, `startMic()` retries. `'deferred'` connects with NO mic — the ASR uplink negotiates a sendonly audio slot with no track (the session-server handshake is byte-identical to the immediate path) — and the app calls {@link KalturaAvatarSession#startMic} later, from a real user gesture, so the browser's permission prompt is click-anchored. Until `startMic()` resolves, `startTapToTalk()`/`switchMic()` throw `mic_not_started`; typed turns (`speak()`) and `mute()`/`unmute()` work normally.
    * @param {string} [cfg.threadId]         Resume a prior conversation's memory.
    * @param {string} [cfg.entryId]          The media entry this session's context is scoped to, if any — forces `use_knowledge_base: 'off'` server-side. Sent on every `join`/reconnect `buildJoin()` call; immutable for the session's lifetime.
    * @param {string} [cfg.contextId]        The category/entry id this session's context (and its knowledge base, if any) is scoped to — renders as the `sys__context_id` reserved template variable. Sent on every `join`/reconnect `buildJoin()` call; immutable for the session's lifetime.
@@ -145,6 +146,12 @@ export class KalturaAvatarSession extends Emitter {
    * @param {boolean} [cfg.isFirefox]       Forces ICE policy 'all' on both channels.
    * @param {string} [cfg.disclosureText]   AI-disclosure text emitted before any avatar speech (EU AI Act Art. 50).
    * @param {boolean} [cfg.requireDisclosureAck]  Gate the first turn on acknowledgeDisclosure() (regulated deployments).
+   * @param {string|{text:string, echo?:boolean}} [cfg.kickoff]  A first typed turn the SDK sends for you, exactly once
+   *   per session object, as soon as the server accepts input (right after the opening turn ends, or after
+   *   `acknowledgeDisclosure()` when `requireDisclosureAck` is set). Pair it with a `SILENT_OPENING` opening phrase
+   *   for the fastest time to first words. Goes through the same path as `speak()`, so the reply is interruptible.
+   *   Never re-sent on `resume()` or a reconnect. Its server echo is dropped from `transcript {type:'user'}`
+   *   unless `echo: true`. Empty/whitespace text sends nothing. Any other type throws `bad_request`.
    * @param {{username:string,credential:string,expiry?:number}} [cfg.turnCredentials]  Server-minted EPHEMERAL TURN creds (RFC 7635). Preferred over the static fallback.
    * @param {boolean} [cfg.allowInsecureTransport]  Permit ws/http transport (localhost/dev ONLY — emits a loud warning; never in production).
    * @param {(event:object)=>void} [cfg.onAuditEvent]  Redacted structured security events (session.connect/disconnect/auth.fail/protocol.violation). NIST AU-2/AU-3.
@@ -243,6 +250,7 @@ export class KalturaAvatarSession extends Emitter {
     }
     this._micStartMode = cfg.micStartMode || 'immediate';
     this._asrAudioSender = null;   // the ASR uplink's audio RTCRtpSender — set by _connectAsr on both the tracked and trackless paths, so startMic()/switchMic() replaceTrack on one uniform handle
+    this._micPromise = null;       // a mic acquire/attach in flight: connect()'s immediate-mode acquire, or a switchMic() that already nulled _micStream. startMic() joins it instead of prompting twice
     // Tier-1 WebRTC constraints baseline (standard browser-native defaults — see cfg.micConstraints doc).
     // `false` opts all the way out (bare audio:true); an object merges over the default.
     this._micConstraints = cfg.micConstraints === false ? false : { ...DEFAULT_MIC_CONSTRAINTS, ...(cfg.micConstraints || {}) };
@@ -276,6 +284,11 @@ export class KalturaAvatarSession extends Emitter {
     this._pausedPendingApprove = null;
     this._disclosure = null;   // populated at connect; queryable via getDisclosure()
     this._disclosurePending = false;   // set true at connect when requireDisclosureAck blocks speak()
+    // Client kickoff — see cfg.kickoff. `_kickoffSent` flips once, in `_maybeSendKickoff()`,
+    // so no later connect-shaped path (resume, cold reconnect) can ever send it again.
+    this._kickoff = normalizeKickoff(cfg.kickoff, 'KalturaAvatarSession');
+    this._kickoffSent = false;
+    this._kickoffEcho = null;   // the text whose server echo we drop once (null = nothing to drop)
     // Opaque, operator-assigned subject id (HIPAA 164.312(a)(2)(i) unique user id) — stamped
     // onto every audit event so a PHI-channel access ties to an authenticated identity. NEVER
     // the patient's name/PHI (document "opaque id only").
@@ -394,6 +407,19 @@ export class KalturaAvatarSession extends Emitter {
     this.state = 'idle';
     this.mode = 'video';          // 'video' | 'audio' (set from stvNewSession)
     this.speaking = false;
+    // True while the server runs a turn that typed text cannot interrupt, and during which
+    // it drops any text it receives: the opening line right after connect(), the replayed
+    // line after resume(), and its own "are you still there?" / goodbye turns. `speaking`
+    // alone can't see this window — the opening turn is committed the moment _approve()
+    // fires, well before its own stvStartedTalking lands. speak() holds text while this is
+    // true and sends it (all held texts as one turn) the moment the turn ends. See speak().
+    this._uninterruptibleTurn = false;
+    /** @type {{text:string, raw:string, resolve:(sent:boolean)=>void}[]} */
+    this._heldTurns = [];
+    // True while the scripted opening turn carrying SILENT_OPENING is playing. Its
+    // stvFinishedTalking has no speechId and an empty agentContent, so the stop event
+    // is labelled from what the turn's own generatingSpeech/stvSpeechChunk carried.
+    this._silentOpening = false;
     this.responsePending = false; // true from prompting the brain until its first meaningful output (dead-air gap)
     this.paused = false;
     this._sessionReleased = false;   // true after a pause expires server-side (resume needs a fresh STV)
@@ -456,6 +482,10 @@ export class KalturaAvatarSession extends Emitter {
     // never grows unbounded across a long-lived session.
     /** @type {Map<string, {name:string, at:number}>} */
     this._pendingToolAcks = new Map();
+    // Cancel hooks for every in-flight `_await` (one per pending socket wait). Teardown runs
+    // them so a handshake torn down mid-flight settles at once instead of on its own timeout.
+    /** @type {Set<() => void>} */
+    this._pendingAwaits = new Set();
     // Tool-call spiral circuit breaker state (see `_toolSpiralLimit` above). Counts RAW
     // `type:"tool"` segments per turn (before dedup — a spiral's repeats are exactly
     // what this counts); `_toolSpiralSignaled` guards `toolSpiralDetected` to fire at
@@ -481,7 +511,10 @@ export class KalturaAvatarSession extends Emitter {
   /**
    * Run the full connect machine (steps 0–11) and resolve when the session is
    * live (greeting will play). Rejects with a {@link KalturaError} on any step
-   * failure/timeout. Emits `disclosure` before any user turn.
+   * failure/timeout. Emits `disclosure` before any user turn. A `disconnect()`
+   * while connect() is still in flight settles it at once with `connect_failed`:
+   * every pending wait is canceled, including the media handshake request and a
+   * cold reconnect's capacity wait, and any answer that lands late is released.
    * @returns {Promise<void>}
    */
   async connect() {
@@ -489,18 +522,13 @@ export class KalturaAvatarSession extends Emitter {
       throw new KalturaError({ type: 'about:blank', title: 'already connecting', code: 'invalid_state', detail: `connect() called in state "${this.state}".` });
     }
     this._setState('preparing');
-    // Step 0 — mic (no camera). Skipped whole in deferred mode: _connectAsr negotiates a
-    // trackless sendonly slot instead, and startMic() attaches the track later.
-    if (this._micStartMode !== 'deferred') {
-      try {
-        this._micStream = await this._acquireMic();
-      } catch (err) {
-        this._setState('error');
-        throw err.code ? err : micError(err);   // R6: map NotAllowed/NotFound/NotReadable/Overconstrained to distinct codes + guidance
-      }
-      this._initHardwareMuteWatch(this._micStream);
-      this._syncVad();
-    }
+    // Step 0 — mic (no camera), started here and NOT awaited: the permission prompt and the
+    // device open run alongside the socket handshake. If the stream lands before _connectAsr
+    // it is added as a real track; otherwise _connectAsr negotiates the same trackless
+    // sendonly slot deferred mode uses and _attachMic() replaceTrack()s into it. A failed
+    // acquire is one `warning` (R6 code), never a connect() failure: typed turns work with
+    // no mic and startMic() retries. Skipped whole in deferred mode (startMic() acquires).
+    if (this._micStartMode !== 'deferred') this._startMicInBackground();
 
     this._roomId = randId(12);
     const overall = deadline(TIMEOUTS.overall);
@@ -547,15 +575,16 @@ export class KalturaAvatarSession extends Emitter {
       };
       this.emit('disclosure', this._disclosure);
       // Step 11 — approve (starts the greeting). If an ack is required (regulated
-      // deployments / biometric-consent jurisdictions), hold it until acknowledgeDisclosure().
-      if (this._requireDisclosureAck && !this._disclosureAcked) { this._pendingApprove = socket; this._disclosurePending = true; }
-      else this._approve(socket);
+      // deployments / biometric-consent jurisdictions), `_approve()` holds it until
+      // acknowledgeDisclosure() instead of emitting.
+      this._approve(socket);
       this._setState('connected');
       this._wireNetwork();
       this._wireLifecycle();
       this._touchActivity();   // HIPAA auto-logoff: start the idle clock
       this._startStatsBeacon();
       this._audit('session.connect', 'success', { kind: 'conversation', entitlementEnforced: this._entitlementEnforced, action: this.mode });
+      this._maybeSendKickoff();   // held by speak() until the opening turn ends; no-op when disclosure is pending
     } catch (err) {
       this._setState('error');
       this._teardownTransports();
@@ -579,12 +608,18 @@ export class KalturaAvatarSession extends Emitter {
       let requested = false, settled = false;
       const cleanup = () => {
         clearInterval(guard);
+        this._pendingAwaits.delete(cancel);
         if (this._optimistic) { clearTimeout(this._optimistic); this._optimistic = null; }
         socket.off?.('stvNewSession', onSession); socket.off?.('availabilityResult', onAvail);
         socket.off?.('throwToNoAgent', onNoAgent); socket.off?.('throwToExceededTier', onTier);
         if (this._capacityTimer) { clearTimeout(this._capacityTimer); this._capacityTimer = null; }
       };
       const finish = (fn, arg) => { if (!settled) { settled = true; cleanup(); fn(arg); } };
+      // Teardown (disconnect(), the other lane failing) rejects this wait at once, like `_await`
+      // does for a plain socket wait: the listeners below go with it, so no `stvNewSession`
+      // could ever answer, and nothing keeps polling `checkAvailability` on a dead session.
+      const cancel = () => finish(reject, connectAbortedErr());
+      this._pendingAwaits.add(cancel);
       const create = () => { if (requested) return; requested = true; socket.emit('stvNewSession', buildStvNewSession(this._roomId)); };
       const poll = () => { if (!settled) socket.emit('checkAvailability', {}); };   // capacity query, independent of create()
       const onSession = (p) => {
@@ -636,30 +671,44 @@ export class KalturaAvatarSession extends Emitter {
   }
 
   /**
-   * Steps 6/7/9/10: agent + permissions → ASR uplink → STV WHEP (mode-aware).
-   * Shared by connect(), _coldReconnect(), and resume() to avoid tripling the
-   * connect ordering logic. @param {any} socket @param {{expired:()=>boolean}} overall @param {{skipAgentWait?:boolean}} [opts]
+   * Steps 6/7/9/10, two lanes in parallel (mode-aware):
+   *   lane A: agent + permissions → ASR uplink
+   *   lane B: STV WHEP subscribe → video playable   (video modes only)
+   * Lane B needs only the `stvNewSession` reply, which the caller already has, so it
+   * starts at once instead of waiting behind the agent and the ASR handshake. The
+   * caller approves only after BOTH lanes settle, which keeps the greeting-clip fix.
+   * The first lane to fail rejects this method at once; the other lane's eventual
+   * rejection is observed (never an unhandled rejection) and its peer is closed by the
+   * caller's teardown. Shared by connect(), _coldReconnect(), and resume().
+   * @param {any} socket @param {{expired:()=>boolean}} overall @param {{skipAgentWait?:boolean}} [opts]
    */
   async _runConnectSequence(socket, overall, opts = {}) {
-    if (!opts.skipAgentWait) {
-      await this._waitAgentAndPermissions(socket, overall);
-    }
-    await this._connectAsr(socket);
-    if (this.mode !== 'audio') await this._connectStv();
+    const stv = this.mode !== 'audio' ? this._connectStv(overall) : Promise.resolve();
+    const asr = (async () => {
+      if (!opts.skipAgentWait) await this._waitAgentAndPermissions(socket, overall);
+      await this._connectAsr(socket, overall);
+    })();
+    stv.catch(() => { /* loser of a failed connect: observed, surfaced via Promise.all */ });
+    asr.catch(() => { /* same */ });
+    await Promise.all([stv, asr]);
   }
 
   // ─────────────────────────── ASR uplink (step 9) ───────────────────────────
 
-  /** @param {any} socket */
-  async _connectAsr(socket) {
+  /** @param {any} socket @param {{expired:()=>boolean}} [overall] */
+  async _connectAsr(socket, overall) {
     socket.emit('asr-webrtc-init', { sessionId: socket.id });
-    await this._await(socket, 'asr-webrtc-ready', TIMEOUTS.asr, 'ASRConnectionFailed');
+    await this._await(socket, 'asr-webrtc-ready', TIMEOUTS.asr, 'ASRConnectionFailed', overall);
     const pc = createPeerConnection(this._RTC, iceConfig('asr', this._turn, this._isFirefox));
     this._pcAsr = pc;
     pc.oniceconnectionstatechange = () => { this.emit('connectivityChanged', { channel: 'asr', state: pc.iceConnectionState }); this._onIceStateChange('asr', pc); };
     pc.onicecandidate = (e) => { if (e.candidate) socket.emit('asr-webrtc-ice-candidate', { candidate: e.candidate }); };
     this._armIceNewWatchdog('asr', pc);
-    socket.on('asr-ice-candidate', (c) => { try { pc.addIceCandidate(c); } catch { /* non-fatal */ } });
+    // One listener per live peer: a resume() that reuses the socket re-runs this step, and a
+    // listener left bound to the previous (closed) peer would reject every later candidate.
+    if (this._onAsrIceCandidate) socket.off?.('asr-ice-candidate', this._onAsrIceCandidate);
+    this._onAsrIceCandidate = (c) => { try { pc.addIceCandidate(c)?.catch?.(() => { /* non-fatal */ }); } catch { /* non-fatal */ } };
+    socket.on('asr-ice-candidate', this._onAsrIceCandidate);
     if (this._micStream) {
       for (const track of this._micStream.getAudioTracks()) this._asrAudioSender = pc.addTrack(track, this._micStream);
     } else {
@@ -669,17 +718,22 @@ export class KalturaAvatarSession extends Emitter {
       this._asrAudioSender = pc.addTransceiver('audio', { direction: 'sendonly' })?.sender || null;
     }
     if (this._maxAsrBitrateKbps != null) await this._applyAsrBitrate(this._maxAsrBitrateKbps);
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
+    const offer = await this._cancelable(pc.createOffer());
+    await this._cancelable(pc.setLocalDescription(offer));
     socket.emit('asr-webrtc-offer', { offer, is_reconnect: false });
-    const ans = await this._await(socket, 'asr-webrtc-answer', TIMEOUTS.asr, 'ASRConnectionFailed');
-    await pc.setRemoteDescription(ans.answer);
+    const ans = await this._await(socket, 'asr-webrtc-answer', TIMEOUTS.asr, 'ASRConnectionFailed', overall);
+    await this._cancelable(pc.setRemoteDescription(ans.answer));
   }
 
   // ─────────────────────────── STV downlink (step 10) ───────────────────────────
 
-  /** WHEP subscribe, then resolve only when the video is playable (greeting-clip fix). */
-  async _connectStv() {
+  /**
+   * WHEP subscribe, then resolve only when the video is playable (greeting-clip fix).
+   * `overall` is the connect() deadline: a WHEP answer that lands after it has passed
+   * is rejected as `ConnectTimeout`, same rule as every socket wait in `_await`.
+   * @param {{expired:()=>boolean}} [overall]
+   */
+  async _connectStv(overall) {
     const pc = createPeerConnection(this._RTC, iceConfig('stv', this._turn, this._isFirefox));
     this._pcStv = pc;
     const videoTransceiver = pc.addTransceiver('video', { direction: 'recvonly' });
@@ -761,23 +815,58 @@ export class KalturaAvatarSession extends Emitter {
       if (whepUrlHasPrivateIp(url)) {
         throw new KalturaError({ type: 'https://docs.kaltura.com/agentic/errors/whep_private_ip', title: 'WHEP private IP', code: 'whep_private_ip', detail: 'STV egress returned a private IP — unreachable from a browser.' });
       }
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-      const res = await this._fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/sdp' }, body: offer.sdp });
-      const answerSdp = await res.text();
-      if (!res.ok) throw new KalturaError({ type: 'about:blank', title: 'WHEP failed', status: res.status, code: 'whep_failed', detail: whepStatusHint(res.status), body: redact(answerSdp).slice?.(0, 200) });
-      // The WHEP server's Location is often RELATIVE (e.g. "/rtc/v1/whip/?action=delete&…").
-      // Resolve it against the WHEP request URL NOW, so disconnect()'s DELETE hits SRS — not the
-      // page origin (which 404s and silently leaks the server-side STV session).
+      const offer = await this._cancelable(pc.createOffer());
+      await this._cancelable(pc.setLocalDescription(offer));
+      // Cancelable like the negotiation steps above: a disconnect() (or the other lane failing)
+      // while the subscribe is in flight has to settle connect() now, not when the network
+      // does. The request is aborted too, so the server stops allocating an STV session nobody
+      // will watch. If the answer still lands after the cancel (it raced the abort), the late
+      // `.then` releases the session it names — that Location is never stored on `this`.
+      const ac = typeof AbortController === 'function' ? new AbortController() : null;
+      let canceled = false;
+      const req = Promise.resolve(this._fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/sdp' }, body: offer.sdp, signal: ac?.signal }));
+      req.then((r) => {
+        if (!canceled || !r?.ok) return;
+        const lateLoc = r.headers?.get?.('Location');
+        if (lateLoc) this._releaseWhep(whepResourceUrl(lateLoc, url));
+      }, () => { /* aborted or failed after the cancel — nothing was allocated that we can name */ });
+      const res = await this._cancelable(req, () => { canceled = true; ac?.abort(); });
+      // The WHEP server's Location is RELATIVE: path-absolute from the media server's own
+      // root ("/whep/session/{sid}/viewer/{vid}"), or "/rtc/v1/whip/?action=delete&…" in
+      // the srsBaseUrl fallback form. Build the release URL from the request URL NOW (see
+      // wire.js whepResourceUrl): plain URL resolution would drop the path prefix the
+      // request URL carries, and the DELETE would name no viewer the server has.
       const loc = res.headers?.get?.('Location');
-      this._whepLocation = loc ? resolveUrl(loc, url) : null;
+      const resolvedLoc = loc ? whepResourceUrl(loc, url) : null;
+      // Reading the body is a network wait too. A cancel here already has the answer's
+      // Location in hand, so release the session it names before rejecting.
+      const answerSdp = await this._cancelable(res.text(), () => { if (res.ok && resolvedLoc) this._releaseWhep(resolvedLoc); });
+      // Both aborts below have to release before they throw: the server allocated an STV
+      // session for the answer it just sent, and neither path ever reaches the
+      // `this._whepLocation = resolvedLoc` assignment that teardown releases from.
+      if (overall?.expired()) {
+        // The overall deadline ran out while this POST was in flight.
+        if (res.ok && resolvedLoc) this._releaseWhep(resolvedLoc);
+        throw timeoutErr('ConnectTimeout');
+      }
+      if (pc !== this._pcStv) {
+        // The other connect lane failed (or the app disconnected) while this POST was in
+        // flight: teardown already closed `pc`. The server still allocated an STV session for
+        // the answer it just sent, so release it, then abort without touching session state.
+        if (res.ok && resolvedLoc) this._releaseWhep(resolvedLoc);
+        throw connectAbortedErr();
+      }
+      if (!res.ok) throw new KalturaError({ type: 'about:blank', title: 'WHEP failed', status: res.status, code: 'whep_failed', detail: whepStatusHint(res.status), body: redact(answerSdp).slice?.(0, 200) });
+      this._whepLocation = resolvedLoc;
       // The resolved Location can ALSO resolve to a private IP (the server rewrote the
       // egress host after the initial request-URL check above passed) — checked separately
       // since it's only known post-response (additive to the pre-request check).
       if (this._whepLocation && whepUrlHasPrivateIp(this._whepLocation)) {
         throw new KalturaError({ type: 'https://docs.kaltura.com/agentic/errors/whep_private_ip', title: 'WHEP private IP', code: 'whep_private_ip', detail: 'STV WHEP Location resolved to a private IP — unreachable from a browser.' });
       }
-      await pc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
+      // Cancelable: this is the call that fires `ontrack`, so a `track` listener that calls
+      // disconnect() closes `pc` while this very promise is pending.
+      await this._cancelable(pc.setRemoteDescription({ type: 'answer', sdp: answerSdp }));
     } catch (err) {
       cancelPlayable();
       this._cancelStvPlayable = null;
@@ -787,26 +876,83 @@ export class KalturaAvatarSession extends Emitter {
     this._cancelStvPlayable = null;
   }
 
-  /** @param {any} socket */
-  _approve(socket) { socket.emit('approvedPermissions', { room: this._roomId }); }
+  /**
+   * DELETE a WHEP resource (release the server-side STV session). Best-effort and
+   * observable: a non-2xx means a leaked egress resource, so it is audited. Called by
+   * `_releaseCurrentWhep()` for the session's live subscription, and directly by
+   * `_connectStv` for an answer that landed after the session was already torn down
+   * (that Location was never stored, so there is nothing to clear).
+   * @param {string} loc
+   */
+  _releaseWhep(loc) {
+    if (!this._fetch) return;
+    Promise.resolve().then(() => this._fetch(loc, { method: 'DELETE' }))
+      .then((r) => { if (r && r.ok === false) this._audit('whep.release', 'fail', { action: 'DELETE', reason: `HTTP ${r.status}` }); })
+      .catch((e) => this._audit('whep.release', 'fail', { action: 'DELETE', reason: String(e && e.message || e) }));
+  }
+
+  /**
+   * Release the STV subscription this session currently holds, if any. Every place that
+   * closes or replaces `_pcStv` goes through here: teardown, media recovery, cold
+   * reconnect, resume. Clearing the field first makes it idempotent, so a second call (or
+   * a teardown right after a re-subscribe) never sends a second DELETE for the same
+   * Location.
+   */
+  _releaseCurrentWhep() {
+    const loc = this._whepLocation;
+    this._whepLocation = null;
+    if (loc) this._releaseWhep(loc);
+  }
+
+  /**
+   * Tell the server the user consented and the conversation may start. Gated on the
+   * disclosure ack so every caller (connect, resume, cold reconnect) honors it: when the
+   * ack is still outstanding the socket is parked on `_pendingApprove` and
+   * `acknowledgeDisclosure()` approves it instead.
+   * @param {any} socket
+   * @returns {boolean} true when the approval was sent
+   */
+  _approve(socket) {
+    if (this._requireDisclosureAck && !this._disclosureAcked) {
+      this._pendingApprove = socket;
+      this._disclosurePending = true;
+      return false;
+    }
+    this._uninterruptibleTurn = true;
+    socket.emit('approvedPermissions', { room: this._roomId });
+    return true;
+  }
 
   // ─────────────────────────── runtime methods ───────────────────────────
 
   /**
-   * Drive the avatar by text — BRAIN-REASONED (routed to the same pipeline as
-   * ASR). Sends the server's `isSpeechStart` marker first, which interrupts a
-   * mid-sentence avatar (no-op if idle); `tapToTalkStart`/
-   * `tapToTalkEnd` are reserved for tap-to-talk button-hold mode and must NOT
-   * bracket typed text (they flip the server's internal tap-mode state and mint a duplicate turn).
-   * Never HTTP converse.
+   * Send `text` to the agent as the user's next turn. Typed text takes the same path as the
+   * viewer's own voice transcript, so the brain reasons over it and replies in its own words
+   * (never HTTP converse, which never reaches the avatar).
    *
-   * Passes through the optional `onBeforeSend` guardrail (OWASP LLM01 input
-   * filtering): the hook may transform the text, leave it unchanged, or BLOCK the
-   * turn (throw / return false) — a blocked turn emits a `guardrailBlocked` audit
-   * event and does not reach the brain. Honors the `maxTurnsPerMinute` valve
-   * (LLM10). Returns a Promise (resolves once sent; rejects if blocked/limited).
+   * When it goes out, in caller terms:
+   * - Agent idle, or still thinking about the last turn: sent now. Text sent while the
+   *   agent is thinking merges into that pending turn server-side.
+   * - Agent talking a normal reply: sent now, and the avatar stops mid-sentence (barge-in),
+   *   like a real conversation. The `isSpeechStart` marker sent first is what stops it.
+   * - Agent in a turn typed text cannot interrupt — its opening line right after
+   *   `connect()`, its replayed line after `resume()`, or its own "are you still there?"
+   *   check-in: HELD, then sent the instant that turn ends. Every text held during the same
+   *   turn goes out together as ONE turn, one text per line, in call order, so the agent
+   *   reads everything the user said while it was busy and answers once. (Sent into that
+   *   window unheld, the server would drop the text without any error.)
+   *
+   * Guardrails run at call time, never later: the `onBeforeSend` hook (transform / block —
+   * a blocked turn rejects, emits a `guardrailBlocked` audit event, and never reaches the
+   * brain), the `maxTurnsPerMinute` valve (`rate_limited`), the tap-to-talk gate
+   * (`invalid_state`) and the disclosure gate (`disclosure_required`).
+   *
+   * `tapToTalkStart`/`tapToTalkEnd` are reserved for tap-to-talk button-hold mode and must
+   * NOT bracket typed text (they flip the server's tap-mode state and mint a duplicate turn).
    * @param {string} text
-   * @returns {Promise<void>}
+   * @returns {Promise<boolean>} `true` once the text reached the server. `false` if the
+   *   session ended while the text was still held (it was never sent). Rejects if a
+   *   guardrail or gate blocked it.
    */
   async speak(text) {
     this._requireConnected('speak');
@@ -821,13 +967,48 @@ export class KalturaAvatarSession extends Emitter {
     }
     this._enforceTurnRate('speak');
     const finalText = await this._applyBeforeSend(text, { kind: 'speak', threadId: this._threadId });
+    if (!this._socket) return false;   // disconnect() ran while the guardrail was still deciding
+    if (this._uninterruptibleTurn) {
+      return new Promise((resolve) => { this._heldTurns.push({ text: finalText, raw: text, resolve }); });
+    }
+    this._sendTurn(finalText, text);
+    return true;
+  }
+
+  /**
+   * Put one typed turn on the wire: barge-in marker first, then the text.
+   * @param {string} finalText what the server receives (after `onBeforeSend`)
+   * @param {string} rawText what the caller passed (kept for a spiral-recovery resend)
+   */
+  _sendTurn(finalText, rawText) {
     this._touchActivity();
     this._socket.emit('onTextEntered', buildTextEntered('', false, true));
     this._socket.emit('onTextEntered', buildTextEntered(finalText, true));
     if (this._debug) this._socket.emit('debug_text_entered', buildTextEntered(finalText, true)); // debug only
     this._armBrainWatchdog();      // R5: expect a brain response; warn if it stalls
     this._armResponsePending();    // positive "awaiting the brain" signal so the app can mask the gap
-    this._lastTurnText = text;     // for a possible spiral-recovery resend — see `recoverFromSpiral`
+    this._lastTurnText = rawText;  // for a possible spiral-recovery resend — see `recoverFromSpiral`
+  }
+
+  /**
+   * The server's uninterruptible turn just ended (stvFinishedTalking / agentInterrupted):
+   * the agent is listening again. Send everything speak() held during it as ONE turn,
+   * one text per line, and resolve every held call with `true`.
+   */
+  _endUninterruptibleTurn() {
+    this._uninterruptibleTurn = false;
+    if (!this._heldTurns.length || !this._socket) return;
+    const held = this._heldTurns;
+    this._heldTurns = [];
+    this._sendTurn(held.map((h) => h.text).join('\n'), held.map((h) => h.raw).join('\n'));
+    for (const h of held) h.resolve(true);
+  }
+
+  /** The session is ending: nothing held can be sent any more. Resolve every held speak() with `false`. */
+  _dropHeldTurns() {
+    const held = this._heldTurns;
+    this._heldTurns = [];
+    for (const h of held) h.resolve(false);
   }
 
   /** Barge in on the avatar (yield the turn). */
@@ -911,6 +1092,57 @@ export class KalturaAvatarSession extends Emitter {
     this._disclosureAcked = true;
     this._disclosurePending = false;
     if (this._pendingApprove) { const s = this._pendingApprove; this._pendingApprove = null; this._approve(s); }
+    this._maybeSendKickoff();
+  }
+
+  /**
+   * The configured kickoff, for debugging/observability: `{ text, echo, sent }`, or `null`
+   * when none was configured (read-only).
+   * @returns {{text:string, echo:boolean, sent:boolean}|null}
+   */
+  get kickoff() {
+    return this._kickoff ? { text: this._kickoff.text, echo: this._kickoff.echo, sent: this._kickoffSent } : null;
+  }
+
+  /**
+   * Send `cfg.kickoff` exactly once, the first time the session is `connected` with no
+   * disclosure gate in the way. Rides `speak()`, so it is held until the opening turn ends
+   * and released by the same named events (stvFinishedTalking / agentInterrupted). A failed
+   * send surfaces as a `warning` (`code: 'kickoff_failed'`), never as a rejected connect().
+   */
+  _maybeSendKickoff() {
+    if (!this._kickoff || this._kickoffSent || this._disclosurePending || this.state !== 'connected') return;
+    this._kickoffSent = true;
+    this._kickoffEcho = this._kickoff.echo ? null : this._kickoff.text;
+    this.speak(this._kickoff.text).catch((e) => {
+      this._kickoffEcho = null;
+      this.emit('warning', { code: 'kickoff_failed', message: 'The kickoff text could not be sent.', detail: String(e?.detail || e?.message || e) });
+    });
+  }
+
+  /**
+   * Decide what a `userTranscription` echo should surface as, given a pending kickoff echo.
+   * Returns the text to emit, or `null` to emit nothing. Clears `_kickoffEcho` the first time
+   * the kickoff text appears, so it fires at most once.
+   *
+   * The kickoff text is matched as a substring, not as the whole payload: the server sends one
+   * `userTranscription` per turn, and that turn can carry more than the kickoff. A `speak()`
+   * held during the opening is joined on as another line, and anything the mic picked up while
+   * the kickoff went out is appended to it too. Whatever the user really said stays; only the
+   * app's own kickoff line is dropped.
+   * @param {string} text
+   * @returns {string|null}
+   */
+  _stripKickoffEcho(text) {
+    const echo = this._kickoffEcho;
+    if (echo === null) return text;
+    // Disarm on the FIRST captured turn either way. The kickoff's echo can only ride that one
+    // payload, so leaving the filter armed for the rest of the session would mangle a later
+    // user utterance that happens to contain the same words.
+    this._kickoffEcho = null;
+    if (!text.includes(echo)) return text;
+    const rest = text.split(echo).map((part) => part.trim()).filter(Boolean).join('\n');
+    return rest === '' ? null : rest;
   }
 
   /**
@@ -1108,47 +1340,124 @@ export class KalturaAvatarSession extends Emitter {
     const oldStop = this._noiseProcessorStop;
     const stream = await this._acquireMic({ deviceId: { exact: deviceId } });
     try { oldStop?.(); } catch { /* */ }
-    const [newTrack] = stream.getAudioTracks();
-    const sender = this._pcAsr?.getSenders?.().find((s) => s.track?.kind === 'audio');
-    if (sender) await sender.replaceTrack(newTrack);
     const oldStream = this._micStream;
-    this._micStream = stream;
-    this._initHardwareMuteWatch(stream);
-    this._syncVad();
-    try { oldStream?.getAudioTracks().forEach((t) => { t.onmute = t.onunmute = null; t.stop(); }); } catch { /* */ }
+    this._micStream = null;   // let _attachMic take the new stream (it refuses to overwrite a live one)
+    // With `_micStream` nulled and no acquire in flight, a concurrent startMic() would see both
+    // fields empty and prompt for the mic a second time. Park the attach on `_micPromise` so it
+    // joins this switch instead. The joinable swallows the rejection: startMic() waits for the
+    // switch to settle but must not inherit its error (it re-checks `_micStream` and acquires).
+    const attach = this._attachMic(stream, { announce: false });   // false only if the session was torn down mid-switch (new stream already stopped)
+    const joinable = attach.then(() => {}, () => {});
+    this._micPromise = joinable;
+    try { await attach; }
+    catch (err) {
+      // The old track is already detached, so a failed attach leaves the session mic-less: release
+      // the stream nothing is holding (the mic light would stay on) and let startMic() retry.
+      this._discardStream(stream);
+      throw err;
+    } finally {
+      if (this._micPromise === joinable) this._micPromise = null;
+      this._discardStream(oldStream);
+    }
   }
 
   /**
    * Acquire the mic and attach it to the already-negotiated ASR uplink — the second half of
-   * `micStartMode:'deferred'`. Call it from a real user gesture (click/tap) so the browser's
-   * permission prompt is gesture-anchored. Runs the exact pipeline an immediate-mode
-   * `connect()` would have: Tier-1 `micConstraints` baseline, Tier-2 `noiseProcessor` hook,
-   * hardware-mute watch, VAD sync, and a re-apply of `maxAsrBitrateKbps` (the connect-time
-   * apply found no audio track to cap). Honors a `mute()` issued before the mic existed.
-   * Attaches via `RTCRtpSender.replaceTrack()` — no renegotiation, no reconnect. Emits
-   * `micStarted` on success. Idempotent: resolves as a no-op when a mic is already live
-   * (immediate mode, or a repeat call). Rejects with the same R6-mapped mic errors
-   * `connect()` throws (`mic_permission_denied`, `mic_not_found`, …), leaving the session
-   * connected so the app can retry.
+   * `micStartMode:'deferred'`, and the retry path after an immediate-mode `connect()` emitted
+   * a mic `warning`. Call it from a real user gesture (click/tap) so the browser's permission
+   * prompt is gesture-anchored. Runs the exact pipeline an immediate-mode `connect()` runs:
+   * Tier-1 `micConstraints` baseline, Tier-2 `noiseProcessor` hook, hardware-mute watch,
+   * VAD sync, and a re-apply of `maxAsrBitrateKbps` (the connect-time apply found no audio
+   * track to cap). Honors a `mute()` issued before the mic existed. Attaches via
+   * `RTCRtpSender.replaceTrack()` — no renegotiation, no reconnect. Emits `micStarted` on
+   * success. Idempotent: resolves as a no-op when a mic is already live, and joins an
+   * immediate-mode acquire still in flight instead of prompting a second time. Rejects with
+   * the R6-mapped mic errors (`mic_permission_denied`, `mic_not_found`, `mic_in_use`),
+   * leaving the session connected so the app can retry.
    * @returns {Promise<void>}
    */
   async startMic() {
     this._requireConnected('startMic');
     if (this._micStream) return;
+    if (this._micPromise) {
+      await this._micPromise;      // connect()'s acquire is still running: one prompt, not two
+      if (this._micStream) return;
+    }
     let stream;
     try {
       stream = await this._acquireMic();
     } catch (err) {
-      throw err.code ? err : micError(err);   // R6: same mapping as connect() step 0
+      throw err.code ? err : micError(err);   // R6 mapping: NotAllowed/NotFound/NotReadable/Overconstrained → distinct codes + guidance
     }
-    this._micStream = stream;
-    this._initHardwareMuteWatch(stream);
+    await this._attachMic(stream);
+  }
+
+  /**
+   * Immediate-mode acquire, run alongside the connect handshake and never awaited by
+   * `connect()`. Success → {@link _attachMic}. Failure → one `warning` carrying the R6 code
+   * and the session stays up mic-less. Never rejects (nothing awaits it except a concurrent
+   * `startMic()`, which re-checks `_micStream` afterwards). `_micPromise` is cleared when it
+   * settles, so a later `startMic()` prompts fresh.
+   * @returns {Promise<void>}
+   */
+  _startMicInBackground() {
+    if (this._micPromise) return this._micPromise;
+    const p = (async () => {
+      let stream;
+      try {
+        stream = await this._acquireMic();
+      } catch (err) {
+        const e = err.code ? err : micError(err);
+        if (this._sessionLive()) this.emit('warning', { code: e.code, message: e.detail, detail: e.body ?? null });
+        return;
+      }
+      try {
+        await this._attachMic(stream);
+      } catch (err) {
+        this._discardStream(stream);
+        if (this._sessionLive()) this.emit('warning', { code: 'mic_attach_failed', message: 'The microphone was acquired but could not be attached to the speech uplink. Call startMic() to retry.', detail: String(err?.message || err) });
+      }
+    })().finally(() => { if (this._micPromise === p) this._micPromise = null; });   // identity check: a teardown may already have cleared it and a later acquire replaced it
+    this._micPromise = p;
+    return p;
+  }
+
+  /**
+   * Attach an acquired mic stream to this session — the one place a mic becomes live, shared
+   * by `connect()`'s concurrent acquire, `startMic()` and `switchMic()`. Deterministic guard,
+   * no timers: if the session is no longer live when the stream arrives (the user hit
+   * `disconnect()` while the permission prompt was open, or `connect()` failed), or a mic is
+   * already attached, the stream's tracks are stopped and nothing else happens. Otherwise:
+   * honor `_micEnabled`, `replaceTrack()` into the ASR sender when one exists (else
+   * `_connectAsr` will `addTrack` it), hardware-mute watch, bitrate cap, VAD sync, then
+   * `micStarted`.
+   * @param {any} stream
+   * @param {{announce?: boolean}} [opts]  `announce:false` skips `micStarted` (a device switch, not a start).
+   * @returns {Promise<boolean>} true when the stream is now the session's mic.
+   */
+  async _attachMic(stream, { announce = true } = {}) {
+    if (!this._sessionLive() || this._micStream) { this._discardStream(stream); return false; }
     const [track] = stream.getAudioTracks();
     if (track) track.enabled = this._micEnabled;   // honor a mute() issued pre-mic
     if (this._asrAudioSender) await this._asrAudioSender.replaceTrack(track || null);
-    if (this._maxAsrBitrateKbps != null) await this._applyAsrBitrate(this._maxAsrBitrateKbps);
+    if (!this._sessionLive() || this._micStream) { this._discardStream(stream); return false; }   // torn down during the await
+    this._micStream = stream;
+    this._initHardwareMuteWatch(stream);
+    if (this._maxAsrBitrateKbps != null && this._asrAudioSender) await this._applyAsrBitrate(this._maxAsrBitrateKbps);
     this._syncVad();
-    this.emit('micStarted', {});
+    if (announce) this.emit('micStarted', {});
+    return true;
+  }
+
+  /** True while a mic may attach: from `connect()`'s first step until teardown. */
+  _sessionLive() {
+    const s = this.state;
+    return s !== 'idle' && s !== 'disconnected' && s !== 'disconnecting' && s !== 'error';
+  }
+
+  /** Stop every track of a stream this session decided not to keep. */
+  _discardStream(stream) {
+    try { stream?.getTracks?.().forEach((t) => { t.onmute = t.onunmute = null; t.stop?.(); }); } catch { /* */ }
   }
 
   /**
@@ -1281,12 +1590,22 @@ export class KalturaAvatarSession extends Emitter {
     this._sessionReleased = false;
     const overall = deadline(TIMEOUTS.overall);
     this._socket.emit('resumeConversation', {});
-    await this._createSessionWithCapacity(this._socket, overall);
-    if (this.mode !== 'audio') { try { this._pcStv?.close?.(); } catch { /* */ } this._pcStv = null; }
-    try { this._pcAsr?.close?.(); } catch { /* */ } this._pcAsr = null;
-    await this._runConnectSequence(this._socket, overall, { skipAgentWait: true });
-    this._approve(this._socket);
-    this._setState('connected');
+    try {
+      await this._createSessionWithCapacity(this._socket, overall);
+      // Releasing before the re-subscribe: `_runConnectSequence` overwrites `_whepLocation`.
+      if (this.mode !== 'audio') { try { this._pcStv?.close?.(); } catch { /* */ } this._pcStv = null; this._releaseCurrentWhep(); }
+      try { this._pcAsr?.close?.(); } catch { /* */ } this._pcAsr = null;
+      await this._runConnectSequence(this._socket, overall, { skipAgentWait: true });
+      this._approve(this._socket);
+      this._setState('connected');
+    } catch (err) {
+      // The old transports are already gone and the rebuild failed, so the session cannot
+      // carry a conversation any more: end it (error + ended, transports torn down) instead
+      // of leaving it 'connected' with no peers. Rethrown because the caller awaits resume().
+      const e = err instanceof KalturaError ? err : new KalturaError({ type: 'about:blank', title: 'resume failed', code: 'resume_failed', detail: String(err && err.message || err) });
+      this._endWith(e, 'resume_failed');
+      throw e;
+    }
   }
 
   /** The sticky id pinning this session to its server instance — persist it to resume the SAME session across a tab reload. */
@@ -1710,7 +2029,8 @@ export class KalturaAvatarSession extends Emitter {
 
   /**
    * Tear down the WHEP resource, peer connections, mic, socket, and drop the token. Always
-   * call when done. Idempotent — repeat calls no-op.
+   * call when done. Idempotent — repeat calls no-op. Safe mid-connect and mid-reconnect: an
+   * in-flight `connect()` rejects with `connect_failed` and no `error` event follows.
    * @param {{final?:boolean, reason?:string}} [opts]  `final` (default true) signals genie
    *   that the conversation is truly over (`POST {genieUrl}/thread/session_completed`); pass
    *   `{final:false}` for an internal teardown that isn't a real end (e.g. a mode switch
@@ -1719,17 +2039,9 @@ export class KalturaAvatarSession extends Emitter {
   disconnect(opts = {}) {
     if (this.state === 'disconnected') return;
     this._setState('disconnecting');
-    // DELETE the WHEP resource (release the server-side STV session) if we have a Location.
-    // Best-effort + observable: a non-2xx means a leaked egress resource, so we audit it.
-    if (this._whepLocation && this._fetch) {
-      const loc = this._whepLocation;
-      Promise.resolve().then(() => this._fetch(loc, { method: 'DELETE' }))
-        .then((r) => { if (r && r.ok === false) this._audit('whep.release', 'fail', { action: 'DELETE', reason: `HTTP ${r.status}` }); })
-        .catch((e) => this._audit('whep.release', 'fail', { action: 'DELETE', reason: String(e && e.message || e) }));
-    }
-    // Fire the completion signal before the token is dropped below — same posture as the
-    // WHEP DELETE above, which already captures its resource into a local before its own
-    // async hop, since `finalize()` reads the token synchronously before its first await.
+    // The WHEP resource is released by `_teardownTransports()` below, alongside the peer it
+    // belongs to. Fire the completion signal before the token is dropped: `finalize()` reads
+    // the token synchronously before its first await.
     if (opts.final !== false) this._completer.finalize(opts.reason || 'disconnect').catch(() => {});
     this._teardownTransports();
     this._token = null;   // don't hold the secret past the session (NIST AC-6/SC-4; bounded blast radius)
@@ -1791,10 +2103,11 @@ export class KalturaAvatarSession extends Emitter {
   get micEnabled() { return this._micEnabled; }
 
   /**
-   * Whether a mic stream is live on this session (read-only). Always true after an
-   * immediate-mode `connect()`; with `micStartMode:'deferred'` it stays false until
-   * {@link KalturaAvatarSession#startMic} resolves. Distinct from {@link micEnabled},
-   * which tracks mute()/unmute() intent.
+   * Whether a mic stream is live on this session (read-only). Becomes true when the mic
+   * attaches (the `micStarted` event): during or shortly after an immediate-mode `connect()`,
+   * or when {@link KalturaAvatarSession#startMic} resolves. Stays false after a mic `warning`
+   * until `startMic()` succeeds. Distinct from {@link micEnabled}, which tracks
+   * mute()/unmute() intent.
    * @returns {boolean}
    */
   get micStarted() { return !!this._micStream; }
@@ -1995,10 +2308,12 @@ export class KalturaAvatarSession extends Emitter {
       // condition — it must NOT reset on agent_start_speech/turnStart (an idle wake-up
       // nudge fires that mid-spiral) but SHOULD reset once the brain genuinely recovers.
       if (d && (SPOKEN_TYPES.has(d.type) || (action && action.type === 'render-genui'))) { this._clearBrainWatchdog(); this._sessionToolSegCount = 0; this._hardSpiralRecovering = false; this._turnSawOutput = true; }
-      // First real OUTPUT segment settles the dead-air signal — an avatar/text/tool/genui
-      // segment is the brain actually producing something. A `think` segment is still the
-      // gap (it's the "preparing…" phase), so it does NOT settle.
-      if (d && d.type && d.type !== 'think') this._settleResponsePending();
+      // A `think` segment is the server acknowledging the turn — it is working, but has
+      // produced nothing perceivable yet, so it ARMS the dead-air signal (a UI can show
+      // "thinking" from here). The first real OUTPUT segment (avatar/text/tool/genui) settles it.
+      // Both helpers are idempotent, so repeated think deltas and repeated output are no-ops.
+      if (d?.type === 'think') this._armResponsePending();
+      else if (d?.type) this._settleResponsePending();
       this.emit('brainSegment', d);
     });
     // NOTE: agent_start_speech (with its "preparing…"/think control) marks the START of the
@@ -2038,11 +2353,21 @@ export class KalturaAvatarSession extends Emitter {
     });
     socket.on('agent_end_turn', (p) => { this._settleResponsePending(); this._checkEmptyTurn(); this.emit('turnEnd', { speechId: p?.speechId, turnId: p?.turnId }); });
     socket.on('stvFinishedGenerating', (p) => { this._settleResponsePending(); this._checkEmptyTurn(); this.emit('turnEnd', { speechId: p?.speechId }); });
-    socket.on('generatingSpeech', (p) => { if (p?.speechId) this._tracker.beginUtterance(p.speechId); this.emit('transcript', { text: clampInbound(p?.text || ''), type: 'final', speechId: p?.speechId, words: [] }); });
+    socket.on('generatingSpeech', (p) => {
+      if (p?.speechId) this._tracker.beginUtterance(p.speechId);
+      // The server's own check-in ("are you still there?") and goodbye turns cannot be
+      // interrupted and drop any text sent during them — hold speak() until they end.
+      if (isUninterruptibleSpeechId(p?.speechId)) this._uninterruptibleTurn = true;
+      const label = openingText(p?.speechId, p?.text);
+      if (label) this._silentOpening = true;
+      this.emit('transcript', { text: label ?? clampInbound(p?.text || ''), type: 'final', speechId: p?.speechId, words: [] });
+    });
 
     // Captions (authoritative).
     socket.on('stvSpeechChunk', (p) => {
-      const text = clampInbound(p?.text);
+      const label = openingText(p?.speechId, p?.text);
+      if (label) this._silentOpening = true;
+      const text = label ?? clampInbound(p?.text);
       this.emit('speechChunk', { text, durationMs: p?.durationMs, speechId: p?.speechId });
       const tr = this._tracker.ingestChunk({ ...p, text });
       if (tr) this.emit('transcript', tr);
@@ -2051,12 +2376,28 @@ export class KalturaAvatarSession extends Emitter {
     // Talking state. Content-free turn audit events (HIPAA 164.312(b) — record that a
     // PHI-bearing exchange occurred, NEVER its content) + activity touch (auto-logoff reset).
     socket.on('stvStartedTalking', () => { this._clearBrainWatchdog(); this._settleResponsePending(); this._touchActivity(); this._completer.touch(); this.speaking = true; this._turnSawOutput = true; this._audit('turn.avatar_spoke', 'success', {}); this.emit('avatarStartTalking', {}); });
-    socket.on('stvFinishedTalking', (p) => { this.speaking = false; this._tracker.finishUtterance(); this._completer.touch(); this.emit('avatarStopTalking', { text: clampInbound(p?.agentContent) }); });
-    socket.on('agentInterrupted', () => { this.speaking = false; this._settleResponsePending(); this._turnSawOutput = true; this.emit('interrupted', {}); });
+    // _endUninterruptibleTurn() runs before the app-facing event so text held by speak() is on
+    // the wire first, and a speak() called from inside the listener is sent, not held again.
+    socket.on('stvFinishedTalking', (p) => {
+      this.speaking = false; this._endUninterruptibleTurn(); this._tracker.finishUtterance(); this._completer.touch();
+      const silent = this._silentOpening; this._silentOpening = false;
+      this.emit('avatarStopTalking', { text: silent ? SILENT_OPENING_LABEL : clampInbound(p?.agentContent) });
+    });
+    socket.on('agentInterrupted', () => { this.speaking = false; this._silentOpening = false; this._endUninterruptibleTurn(); this._settleResponsePending(); this._turnSawOutput = true; this.emit('interrupted', {}); });
     socket.on('userStartedTalking', () => { this._clearBrainWatchdog(); this._touchActivity(); this.emit('userStartedTalking', {}); });
     // The user's turn produced a transcription → the brain should now respond; watch for a stall (R5)
     // and flip the response-pending signal so the app can mask the dead-air gap until output lands.
-    socket.on('agentTurnToTalk', (p) => { this._armBrainWatchdog(); this._armResponsePending(); this._touchActivity(); this._completer.touch(); if (p && p.userTranscription) { this._audit('turn.user_captured', 'success', {}); this._lastTurnText = clampInbound(p.userTranscription); this.emit('transcript', { text: this._lastTurnText, type: 'user', speechId: null, words: [] }); } });
+    socket.on('agentTurnToTalk', (p) => {
+      this._armBrainWatchdog(); this._armResponsePending(); this._touchActivity(); this._completer.touch();
+      if (!(p && p.userTranscription)) return;
+      this._audit('turn.user_captured', 'success', {});
+      this._lastTurnText = /** @type {string} */ (clampInbound(p.userTranscription));
+      // The kickoff is the app's own text, not the user's: drop its server echo from the user
+      // transcript, exactly once, by text match, no timer. Anything else the same turn carries
+      // (a held speak(), or what the mic heard meanwhile) is still surfaced.
+      const shown = this._stripKickoffEcho(this._lastTurnText);
+      if (shown !== null) this.emit('transcript', { text: shown, type: 'user', speechId: null, words: [] });
+    });
     // Forwarded smart-turn VAD end-of-turn indicator (WIRE-PROTOCOL §4b) — passthrough, no SDK-side logic depends on it yet.
     socket.on('smartTurnStatus', (p) => this.emit('smartTurnStatus', { status: p?.status, timeoutMs: p?.timeout_ms, probability: p?.probability }));
 
@@ -2075,15 +2416,55 @@ export class KalturaAvatarSession extends Emitter {
 
   /**
    * Await a single inbound socket event with a timeout (and optional overall
-   * deadline). Cleans up its listener. @returns {Promise<any>}
+   * deadline). Cleans up its listener.
+   *
+   * Cancelable: the wait registers itself in `_pendingAwaits`, and teardown rejects it with
+   * `connect_failed` right away. Without that, a `disconnect()` landing mid-handshake removes
+   * the socket's listeners while this wait is still armed, so the event it needs can never
+   * arrive and `connect()` would hang for the full timeout (up to `TIMEOUTS.asr`, 30 s) before
+   * failing. The two connect lanes run concurrently, so either lane can be the one left waiting.
+   * @returns {Promise<any>}
    * @param {any} socket @param {string} event @param {number} ms @param {string} label @param {{expired:()=>boolean}} [overall]
    */
   _await(socket, event, ms, label, overall) {
     return new Promise((resolve, reject) => {
-      const t = setTimeout(() => { socket.off?.(event, ok); reject(timeoutErr(label)); }, ms);
+      const ok = (payload) => { done(); if (overall && overall.expired()) return reject(timeoutErr('ConnectTimeout')); resolve(payload); };
+      const cancel = () => { done(); reject(connectAbortedErr()); };
+      const t = setTimeout(() => { done(); reject(timeoutErr(label)); }, ms);
+      // Declared last so it can close over all three above; every caller of it runs later.
+      const done = () => { clearTimeout(t); socket.off?.(event, ok); this._pendingAwaits.delete(cancel); };
       t.unref?.();
-      const ok = (payload) => { clearTimeout(t); socket.off?.(event, ok); if (overall && overall.expired()) return reject(timeoutErr('ConnectTimeout')); resolve(payload); };
+      this._pendingAwaits.add(cancel);
       socket.once ? socket.once(event, ok) : socket.on(event, ok);
+    });
+  }
+
+  /**
+   * Race a peer-connection negotiation promise against teardown, the same way `_await` races a
+   * socket wait. `close()` is not guaranteed to settle the operations already queued on a peer
+   * connection: Firefox leaves a pending `createOffer()`/`setLocalDescription()`/
+   * `setRemoteDescription()` unsettled forever once the connection is closed. A `disconnect()`
+   * landing mid-negotiation (a `track` listener that calls it, an `error` on the other lane)
+   * would then hang `connect()` with no timeout to fall back on, because these are not socket
+   * waits. Registered in `_pendingAwaits`, so teardown rejects it with `connect_failed` at once.
+   * Also used for the WHEP subscribe request, which is not a socket wait either.
+   * @template T @param {Promise<T>} p
+   * @param {() => void} [onCancel]  Runs when teardown cancels the wait, before the rejection
+   *   (e.g. abort the fetch behind `p`, or release a resource the wait was about to claim).
+   * @returns {Promise<T>}
+   */
+  _cancelable(p, onCancel) {
+    return new Promise((resolve, reject) => {
+      const cancel = () => {
+        this._pendingAwaits.delete(cancel);
+        try { onCancel?.(); } catch { /* best effort — the rejection below is what matters */ }
+        reject(connectAbortedErr());
+      };
+      this._pendingAwaits.add(cancel);
+      p.then(
+        (v) => { this._pendingAwaits.delete(cancel); resolve(v); },
+        (e) => { this._pendingAwaits.delete(cancel); reject(e); },
+      );
     });
   }
 
@@ -2214,6 +2595,9 @@ export class KalturaAvatarSession extends Emitter {
       // STV is a WHEP subscription: re-subscribe to the same session (new offer → new answer).
       if (channel === 'stv' && this._webrtcUrl) {
         try { this._pcStv?.close?.(); } catch { /* */ } this._pcStv = null;
+        // `_connectStv()` overwrites `_whepLocation` with the new subscription, so release the
+        // old one here or the server keeps an egress session nothing will ever DELETE.
+        this._releaseCurrentWhep();
         await this._connectStv();
         // The new tracks are swapped into the SAME streams (no srcObject write). Firefox pauses a
         // media element whose tracks all ended before the replacements arrived; Chromium/WebKit do
@@ -2446,13 +2830,20 @@ export class KalturaAvatarSession extends Emitter {
     // of sending it against a session the server has already discarded.
     this._pendingToolAcks.clear();
     this._sessionGen++;
+    // Same for the kickoff echo filter: the echo rides the server session the kickoff was typed
+    // into, so it can never arrive on the rebuilt one. Left armed, it would strip the next user
+    // utterance that happens to repeat the kickoff text. The kickoff itself is not re-sent
+    // (`_kickoffSent` stays true — one kickoff per session object).
+    this._kickoffEcho = null;
     const reuseSocket = this.state === 'reconnecting';   // see doc comment above
     if (!reuseSocket) { this._setState('reconnecting'); this.emit('reconnecting', { reason: why, attempt: ++this._reconnectAttempt, maxAttempts: this._maxReconnect, cold: true }); }
     const overall = deadline(TIMEOUTS.overall);
     try {
-      // Drop the dead media peers before rebuilding.
+      // Drop the dead media peers before rebuilding, and release the STV subscription they
+      // held: the rebuild below allocates a new one over the same field.
       try { this._pcAsr?.close?.(); } catch { /* */ } this._pcAsr = null;
       try { this._pcStv?.close?.(); } catch { /* */ } this._pcStv = null;
+      this._releaseCurrentWhep();
       let socket = this._socket;
       if (!reuseSocket) {
         // The control socket never dropped — discard it and open a genuinely fresh
@@ -2486,8 +2877,9 @@ export class KalturaAvatarSession extends Emitter {
       await this._createSessionWithCapacity(socket, overall);
       await this._runConnectSequence(socket, overall);
       // `approvedPermissions` is what makes the avatar speak —
-      // a rebuilt session replays its opening line the moment approve lands (speechId
-      // `*-approved-permissions`). If the app deliberately paused, approving here would
+      // a rebuilt (brand-new) session says its opening line the moment approve lands (speechId
+      // `*-approved-permissions`); a released-then-resumed session instead replays the agent's
+      // last line. If the app deliberately paused, approving here would
       // audibly break the pause, so hold the approve and let resume() release it. The
       // fresh server-side session was never approved, so nothing arms until then.
       if (this.paused) this._pausedPendingApprove = socket;
@@ -2525,10 +2917,16 @@ export class KalturaAvatarSession extends Emitter {
         this._applyBeforeSend(`${SPIRAL_RECOVERY_PREFIX}${resendText}`, { kind: 'spiralRecovery', threadId: this._threadId })
           .then((finalText) => {
             if (this.state !== 'connected') return;
-            socket.emit('onTextEntered', buildTextEntered(finalText, true));
-            this._armBrainWatchdog();
-            this._armResponsePending();
-            this.emit('spiralRecovered', { text: resendText });
+            // The rebuilt session is saying its opening line right now, and typed text sent
+            // during it is dropped (see speak()). Queue the resend behind that turn exactly like
+            // a speak() call would be; it goes out the moment the opening line ends.
+            const done = (sent) => {
+              if (!sent) return;
+              this._lastTurnText = null;   // consumed — a spiral on the resend itself must not replay it again
+              this.emit('spiralRecovered', { text: resendText });
+            };
+            if (this._uninterruptibleTurn) this._heldTurns.push({ text: finalText, raw: resendText, resolve: done });
+            else { this._sendTurn(finalText, resendText); done(true); }
           })
           .catch((e) => this._log('error', 'spiral recovery resend blocked/failed', e));
       }
@@ -2544,7 +2942,16 @@ export class KalturaAvatarSession extends Emitter {
     // Shared by disconnect() and _endWith() — any ACK still pending when the session ends
     // can never be delivered (rule 4.2: cleared on disconnect, not left to grow unbounded).
     this._pendingToolAcks.clear();
+    // Any socket wait still armed can never be answered: the socket's listeners go away below.
+    // Reject them now so a connect()/resume()/_coldReconnect() torn down mid-handshake settles
+    // immediately instead of on its own (up to 30 s) timeout.
+    for (const cancel of [...this._pendingAwaits]) cancel();
+    this._pendingAwaits.clear();
     this._pausedPendingApprove = null;   // a held approve dies with the session
+    this._dropHeldTurns();               // held speak() calls resolve false: the session ended first
+    this._uninterruptibleTurn = false;
+    this._silentOpening = false;
+    this.speaking = false;
     this._clearBrainWatchdog();
     this._settleResponsePending();   // never leave the pending signal stuck across teardown
     this._clearIdleTimers();
@@ -2561,6 +2968,10 @@ export class KalturaAvatarSession extends Emitter {
     this._cancelStvPlayable = null;
     this._closePeer(this._pcAsr);
     this._closePeer(this._pcStv);
+    // Closing the downlink peer locally does not free the server's egress session: DELETE the
+    // WHEP resource too. Every path that kills the transports reaches this (disconnect(),
+    // _endWith(), connect()'s catch), so no path can leak the subscription.
+    this._releaseCurrentWhep();
     // Stop the STV downlink's tracks and clear the elements' srcObject — otherwise the last
     // frame and any buffered audio linger after disconnect(). Element bindings survive, so
     // a later connect() re-binds the same elements.
@@ -2572,7 +2983,8 @@ export class KalturaAvatarSession extends Emitter {
     try { this._micStream?.getTracks?.().forEach((t) => { t.onmute = t.onunmute = null; t.stop?.(); }); } catch { /* */ }
     try { this._socket?.removeAllListeners?.(); this._socket?.disconnect?.(); } catch { /* */ }
     if (this._capacityTimer) { clearTimeout(this._capacityTimer); this._capacityTimer = null; }
-    this._pcAsr = this._pcStv = this._micStream = this._socket = this._asrAudioSender = null;
+    this._pcAsr = this._pcStv = this._micStream = this._socket = this._asrAudioSender = this._onAsrIceCandidate = null;
+    this._micPromise = null;   // a still-pending acquire lands in _attachMic's not-live guard and is stopped there
   }
 
   /**
@@ -2594,17 +3006,35 @@ export class KalturaAvatarSession extends Emitter {
 
 // ─────────────────────────── helpers ───────────────────────────
 
+/**
+ * Server-initiated turns that typed text cannot interrupt (and is dropped during): the
+ * "are you still there?" check-in and the goodbye line. Identified by the speechId suffix
+ * the server puts on them (see docs/WIRE-PROTOCOL.md).
+ * @param {unknown} speechId
+ */
+function isUninterruptibleSpeechId(speechId) {
+  return typeof speechId === 'string' && (speechId.endsWith('-wake-up') || speechId.endsWith('-hangup-message'));
+}
+
+/**
+ * Caption text for the scripted opening turn (speechId `<nonce>-approved-permissions`)
+ * when it carries `SILENT_OPENING`: the app sees `SILENT_OPENING_LABEL`, never the raw
+ * phrase. `null` for every other turn, including a normal reply that happens to contain
+ * the phrase, so the caller falls through to the regular text.
+ * @param {unknown} speechId @param {unknown} text
+ * @returns {string|null}
+ */
+function openingText(speechId, text) {
+  const opening = typeof speechId === 'string' && speechId.endsWith('-approved-permissions');
+  return opening && isSilentOpening(text) ? SILENT_OPENING_LABEL : null;
+}
+
+
 function fatal(event) {
   const info = FATAL_CODE[event] || { code: 'connect_failed', num: 0 };
   return new KalturaError({ type: `https://docs.kaltura.com/agentic/errors/${info.code}`, title: info.code.replace(/_/g, ' '), code: info.code, status: info.num || undefined, detail: `${event}${info.num ? ` (${info.num})` : ''}` });
 }
 /** Map a getUserMedia rejection to a distinct SDK code + actionable guidance (R6). */
-
-/** Resolve a possibly-relative URL against a base (so a relative WHEP Location → absolute). @param {string} maybeRelative @param {string} base */
-function resolveUrl(maybeRelative, base) {
-  try { return new URL(maybeRelative, base).href; } catch { return maybeRelative; }
-}
-
 function micError(err) {
   const name = (err && (err.name || err.constructor?.name)) || '';
   const M = {
@@ -2620,6 +3050,10 @@ function micError(err) {
 }
 function timeoutErr(label) {
   return new KalturaError({ type: 'https://docs.kaltura.com/agentic/errors/timeout', title: 'timeout', code: 'timeout', detail: `${label}: timed out waiting for the server.` });
+}
+/** One connect lane finishing after the session was torn down (the other lane failed first, or the app disconnected). */
+function connectAbortedErr() {
+  return new KalturaError({ type: 'about:blank', title: 'connect aborted', code: 'connect_failed', detail: 'The session was torn down while this handshake was in flight.' });
 }
 function deadline(ms) { const end = Date.now() + ms; return { expired: () => Date.now() > end }; }
 function whepStatusHint(status) {

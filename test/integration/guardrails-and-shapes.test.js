@@ -30,7 +30,7 @@ async function connect(cfg = {}) {
     fetch: async () => ({ ok: true, status: 201, text: async () => 'a', headers: { get: () => 'loc' } }),
     getUserMedia: fakeGetUserMedia(), mediaStreamConstructor: FakeMediaStreamCtor, ...cfg,
   });
-  scriptHappyPath(socket);
+  scriptHappyPath(socket, { openingLine: true });   // #10 tests speak() against an idle agent
   await session.connect();
   return { session, socket };
 }

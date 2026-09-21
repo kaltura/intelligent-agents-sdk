@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  turnServers, iceConfig, createPeerConnection, buildJoin, buildStvNewSession, whepUrl, whepUrlHasPrivateIp,
+  turnServers, iceConfig, createPeerConnection, buildJoin, buildStvNewSession, whepUrl, whepUrlHasPrivateIp, whepResourceUrl,
   buildTextEntered, isAudioMode, CAPACITY_BACKOFF,
 } from '../../src/experience/wire.js';
 
@@ -118,9 +118,44 @@ test('whepUrl prefers server url, else builds SRS form', () => {
   assert.equal(whepUrl(undefined, 'https://srs/', 's1'), 'https://srs/rtc/v1/whep/?app=app&stream=s1');
 });
 
+test('whepResourceUrl appends a path-absolute /viewer/ Location to the subscribe URL (keeps its path prefix)', () => {
+  // The media server writes Location from its own root and knows nothing about the path prefix
+  // the subscribe URL carries, so plain URL resolution would drop that prefix and the DELETE
+  // would be refused — leaving the viewer slot held until the server times the session out.
+  assert.equal(
+    whepResourceUrl('/whep/session/sess-1/viewer/v9', 'https://media.example/rtc/v1/stv/tok/whep/session/sess-1'),
+    'https://media.example/rtc/v1/stv/tok/whep/session/sess-1/viewer/v9',
+  );
+});
+
+test('whepResourceUrl keeps an absolute Location as-is', () => {
+  assert.equal(
+    whepResourceUrl('https://other.example/whep/session/s/viewer/v9', 'https://media.example/whep/session/s'),
+    'https://other.example/whep/session/s/viewer/v9',
+  );
+});
+
+test('whepResourceUrl resolves a relative non-viewer Location the standard way (srsBaseUrl fallback form)', () => {
+  assert.equal(
+    whepResourceUrl('/rtc/v1/whip/?action=delete&token=abc', 'https://srs.example/rtc/v1/whep/?app=app&stream=s1'),
+    'https://srs.example/rtc/v1/whip/?action=delete&token=abc',
+  );
+});
+
+test('whepResourceUrl drops the subscribe URL query and trailing slashes before appending /viewer/', () => {
+  assert.equal(
+    whepResourceUrl('/whep/session/s1/viewer/v1', 'https://media.example/whep/session/s1/?x=1'),
+    'https://media.example/whep/session/s1/viewer/v1',
+  );
+});
+
+test('whepResourceUrl returns an unresolvable Location unchanged rather than throwing', () => {
+  assert.equal(whepResourceUrl('not a url', 'also not a url'), 'not a url');
+});
+
 test('whepUrlHasPrivateIp flags the broken STV-direct egress', () => {
   assert.equal(whepUrlHasPrivateIp('https://10.0.0.5/whep'), true);
-  assert.equal(whepUrlHasPrivateIp('https://srs.avatar.us.kaltura.ai/whep'), false);
+  assert.equal(whepUrlHasPrivateIp('https://srs.example.com/whep'), false);
 });
 
 test('buildTextEntered shape', () => {

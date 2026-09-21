@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { KalturaAvatarSession } from '../../src/experience/index.js';
-import { FakeSocket, scriptHappyPath } from '../fakes/socket.js';
+import { FakeSocket, scriptHappyPath, textsEntered } from '../fakes/socket.js';
 import { FakeRTCPeerConnection, FakeVideoEl, fakeGetUserMedia, FakeAudioContext, FakeMediaStreamCtor, FakeRTCRtpReceiver, FakeMediaStream, FakeAudioWorkletNode } from '../fakes/rtc.js';
 import { createNoiseSuppressor } from '../../src/experience/noise-suppressor.js';
 import { SPIRAL_RECOVERY_PREFIX } from '../../src/core/stream.js';
@@ -207,6 +207,83 @@ test('STV: ICE failed → WHEP re-subscribe (recovered)', async () => {
   session.disconnect();
 });
 
+// ─────────────────────────── the downlink subscription across recovery ───────────────────────────
+// Closing the STV peer locally does not free the server's egress session: it stays allocated
+// until the WHEP resource is DELETEd. Every path that re-subscribes overwrites the session's
+// single Location, so each one has to release the old subscription first, exactly once.
+
+/** WHEP fetch that records every call in order and hands out a fresh Location per POST. */
+function whepLedger() {
+  const calls = [];
+  return {
+    calls,
+    posts: () => calls.filter((c) => c.method === 'POST').map((c) => c.url),
+    deletes: () => calls.filter((c) => c.method === 'DELETE').map((c) => c.url),
+    fetch: async (url, init) => {
+      const method = init?.method || 'POST';
+      calls.push({ method, url });
+      if (method === 'DELETE') return { ok: true, status: 200, text: async () => '', headers: { get: () => null } };
+      const n = calls.filter((c) => c.method === 'POST').length;
+      return { ok: true, status: 201, text: async () => 'v=0\r\nanswer\r\n', headers: { get: () => 'https://srs/whep/r/' + n } };
+    },
+  };
+}
+
+test('STV ICE failed → the re-subscribe releases the previous subscription exactly once', async () => {
+  const whep = whepLedger();
+  const { session, socket } = newSession({ fetch: whep.fetch });
+  scriptHappyPath(socket);
+  await session.connect();
+  assert.equal(session._whepLocation, 'https://srs/whep/r/1');
+  stvPeer().setIce('failed');
+  await delay(700);   // WHEP re-POST + playable-gate settle
+  assert.equal(session.state, 'connected');
+  assert.deepEqual(whep.deletes(), ['https://srs/whep/r/1'], 'the subscription the dead peer held is freed');
+  assert.equal(session._whepLocation, 'https://srs/whep/r/2', 'the session now holds the new one');
+  // An ICE drop can repeat for the whole session, so the release has to hold on every cycle.
+  stvPeer().setIce('failed');
+  await delay(700);
+  assert.deepEqual(whep.deletes(), ['https://srs/whep/r/1', 'https://srs/whep/r/2']);
+  assert.equal(session._whepLocation, 'https://srs/whep/r/3');
+  session.disconnect();
+  await delay(10);
+  assert.deepEqual(whep.deletes(), ['https://srs/whep/r/1', 'https://srs/whep/r/2', 'https://srs/whep/r/3']);
+});
+
+test('cold reconnect releases the subscription the dead peers held', async () => {
+  const whep = whepLedger();
+  const { session, socket } = newSession({ fetch: whep.fetch, cfg: { reconnectWindowMs: 5000 } });
+  scriptHappyPath(socket);
+  await session.connect();
+  socket.server('disconnect', 'transport close');
+  socket.recovered = false;             // server session gone: full rebuild
+  socket.server('connect');
+  await delay(400);
+  assert.equal(session.state, 'connected');
+  assert.deepEqual(whep.deletes(), ['https://srs/whep/r/1']);
+  assert.equal(session._whepLocation, 'https://srs/whep/r/2');
+  session.disconnect();
+  await delay(10);
+  assert.deepEqual(whep.deletes(), ['https://srs/whep/r/1', 'https://srs/whep/r/2']);
+});
+
+test('resume() after a server release frees the subscription the paused session held', async () => {
+  const whep = whepLedger();
+  const { session, socket } = newSession({ fetch: whep.fetch });
+  scriptHappyPath(socket);
+  await session.connect();
+  session.pause();
+  socket.server('sessionReadyForResume', {});
+  scriptHappyPath(socket);   // the rebuild asks for a fresh stvNewSession
+  await session.resume();
+  assert.equal(session.paused, false);
+  assert.deepEqual(whep.deletes(), ['https://srs/whep/r/1']);
+  assert.equal(session._whepLocation, 'https://srs/whep/r/2');
+  session.disconnect();
+  await delay(10);
+  assert.deepEqual(whep.deletes(), ['https://srs/whep/r/1', 'https://srs/whep/r/2']);
+});
+
 // ─────────────────────────── avatar media across recovery (plan §5.5.9) ───────────────────────────
 
 /** WHEP fetch whose Nth POST (1-based) fails with `status`; every other POST succeeds; DELETE always ok. */
@@ -333,6 +410,38 @@ test('pause → server release → resume(): the element keeps its binding and p
   assert.ok(videoEl.srcObject.getTracks().every((t) => t.readyState !== 'ended'));
   assertInvariants(session._avatarMedia, 'resume');
   session.disconnect();
+});
+
+test('pause → server release → resume() whose rebuild fails: session ends with resume_failed, never half-connected', async () => {
+  // The released-session resume re-runs the full connect sequence on the live socket. If a
+  // lane fails there (WHEP 404 here), the SDK must end the session explicitly — the app gets
+  // the same error + ended pair it gets for any fatal failure — instead of leaving a session
+  // that reports `connected` with no downlink and a pending approve.
+  let whepPosts = 0;
+  const fetch = async (url, init) => {
+    if (init?.method === 'DELETE') return { ok: true, status: 200 };
+    whepPosts++;
+    if (whepPosts === 2) return { ok: false, status: 404, text: async () => 'gone', headers: { get: () => null } };
+    return { ok: true, status: 201, text: async () => 'v=0\r\nanswer\r\n', headers: { get: () => 'https://srs/whep/r/' + whepPosts } };
+  };
+  const { session, socket } = newSession({ fetch });
+  scriptHappyPath(socket);
+  await session.connect();
+  session.pause();
+  socket.server('sessionReadyForResume', {});
+  assert.equal(session._sessionReleased, true);
+  const approvesBefore = socket.emitsOf('approvedPermissions').length;
+  const events = [];
+  session.on('error', (e) => events.push(['error', e.code]));
+  session.on('ended', (p) => events.push(['ended', p.reason]));
+
+  scriptHappyPath(socket);   // the rebuild asks for a fresh stvNewSession; its WHEP POST then 404s
+  await assert.rejects(() => session.resume(), (e) => e.code === 'whep_failed');
+  assert.equal(session.state, 'disconnected');
+  assert.deepEqual(events, [['error', 'whep_failed'], ['ended', 'resume_failed']]);
+  assert.equal(socket.emitsOf('approvedPermissions').length, approvesBefore, 'a failed rebuild never approves');
+  assert.equal(session._pcStv, null);
+  assert.equal(session._pcAsr, null);
 });
 
 test('STV: WHEP 404 on re-subscribe (session truly gone) → cold reconnect with a distinct "session gone" reason', async () => {
@@ -463,6 +572,52 @@ test('acknowledgeDisclosure() cannot release a pause-held approve (separate hold
   assert.equal(socket.emitsOf('approvedPermissions').length, approvesBefore, 'acknowledgeDisclosure() must not release the pause-held approve');
   await session.resume();
   assert.equal(socket.emitsOf('approvedPermissions').length, approvesBefore + 1, 'only resume() releases it');
+  session.disconnect();
+});
+
+// ─────────────────────────── the disclosure gate across recovery ───────────────────────────
+// `approvedPermissions` is what starts the avatar speaking, so with requireDisclosureAck:true
+// it may only go out after acknowledgeDisclosure(). Every path that approves honours that,
+// not just connect(): a rebuild must never speak on behalf of a user who has not consented yet.
+
+test('a cold reconnect before the disclosure ack keeps the approval parked until acknowledgeDisclosure()', async () => {
+  const { session, socket } = newSession({ cfg: { requireDisclosureAck: true, reconnectWindowMs: 5000 } });
+  scriptHappyPath(socket);
+  await session.connect();
+  assert.equal(session.state, 'connected');
+  assert.equal(socket.emitsOf('approvedPermissions').length, 0, 'connect() waits for the ack');
+  await session._coldReconnect('media asr failed');
+  assert.equal(session.state, 'connected');
+  assert.equal(socket.emitsOf('approvedPermissions').length, 0, 'the rebuilt session inherits the gate');
+  session.acknowledgeDisclosure();
+  assert.equal(socket.emitsOf('approvedPermissions').length, 1, 'the ack releases the rebuild\'s approval');
+  session.disconnect();
+});
+
+test('resume() after a server release keeps the approval parked while the disclosure ack is outstanding', async () => {
+  const { session, socket } = newSession({ cfg: { requireDisclosureAck: true } });
+  scriptHappyPath(socket);
+  await session.connect();
+  session.pause();
+  socket.server('sessionReadyForResume', {});
+  scriptHappyPath(socket);   // the rebuild asks for a fresh stvNewSession
+  await session.resume();
+  assert.equal(session.state, 'connected');
+  assert.equal(session.paused, false);
+  assert.equal(socket.emitsOf('approvedPermissions').length, 0, 'a rebuilt session is still gated on the ack');
+  session.acknowledgeDisclosure();
+  assert.equal(socket.emitsOf('approvedPermissions').length, 1);
+  session.disconnect();
+});
+
+test('the disclosure ack is asked once per session: a later cold reconnect approves straight away', async () => {
+  const { session, socket } = newSession({ cfg: { requireDisclosureAck: true, reconnectWindowMs: 5000 } });
+  scriptHappyPath(socket);
+  await session.connect();
+  session.acknowledgeDisclosure();
+  assert.equal(socket.emitsOf('approvedPermissions').length, 1);
+  await session._coldReconnect('media asr failed');
+  assert.equal(socket.emitsOf('approvedPermissions').length, 2, 'the gate does not re-arm behind the user\'s back');
   session.disconnect();
 });
 
@@ -775,7 +930,7 @@ test('tool spiral HARD recovery: opens a genuinely NEW socket rather than re-joi
   // returns one singleton — build our own multi-instance factory to catch a regression.
   let factoryCalls = 0;
   let liveSocket = null;
-  const multiFactory = () => { const s = new FakeSocket(); liveSocket = s; scriptHappyPath(s); factoryCalls++; return s; };
+  const multiFactory = () => { const s = new FakeSocket(); liveSocket = s; scriptHappyPath(s, { openingLine: true }); factoryCalls++; return s; };
   const { session } = newSession({ cfg: { toolSpiralLimit: 3, hardToolSpiralLimit: 6, socketFactory: multiFactory } });
   await session.connect();
   const firstSocket = liveSocket;
@@ -805,7 +960,7 @@ test('tool spiral HARD recovery: re-arms after a successful cold reconnect, so a
   // `_sessionToolSegCount = 0`) so a later spiral is caught exactly like the first one was.
   let factoryCalls = 0;
   let liveSocket = null;
-  const multiFactory = () => { const s = new FakeSocket(); liveSocket = s; scriptHappyPath(s); factoryCalls++; return s; };
+  const multiFactory = () => { const s = new FakeSocket(); liveSocket = s; scriptHappyPath(s, { openingLine: true }); factoryCalls++; return s; };
   const { session } = newSession({ cfg: { toolSpiralLimit: 3, hardToolSpiralLimit: 6, socketFactory: multiFactory } });
   await session.connect();
   const firstSocket = liveSocket;
@@ -842,7 +997,7 @@ test('tool spiral HARD recovery: auto-resends the stuck ASR turn (default recove
   // simply dropped, reproducing the "hang" symptom the whole breaker exists to fix. Mirrors the
   // proven headless fix (`Conversations#send({recoverFromSpiral:true})`, conversations.js).
   let liveSocket = null;
-  const multiFactory = () => { const s = new FakeSocket(); liveSocket = s; scriptHappyPath(s); return s; };
+  const multiFactory = () => { const s = new FakeSocket(); liveSocket = s; scriptHappyPath(s, { openingLine: true }); return s; };
   const { session } = newSession({ cfg: { toolSpiralLimit: 3, hardToolSpiralLimit: 6, socketFactory: multiFactory } });
   await session.connect();
   const firstSocket = liveSocket;
@@ -858,15 +1013,41 @@ test('tool spiral HARD recovery: auto-resends the stuck ASR turn (default recove
   assert.equal(session.state, 'connected');
   assert.ok(recovered, 'spiralRecovered must fire once the resend is sent');
   assert.equal(recovered.text, 'walk me through the two-metric guidance range', 'the ORIGINAL text is reported, not the wrapped one');
-  const entered = secondSocket.emitsOf('onTextEntered');
-  assert.equal(entered.length, 1, 'exactly one resend must be emitted on the rebuilt socket');
-  assert.equal(entered[0].text, `${SPIRAL_RECOVERY_PREFIX}walk me through the two-metric guidance range`);
+  assert.deepEqual(textsEntered(secondSocket), [`${SPIRAL_RECOVERY_PREFIX}walk me through the two-metric guidance range`], 'exactly one resend must be emitted on the rebuilt socket');
+  session.disconnect();
+});
+
+test('tool spiral HARD recovery: a resend that is ready only after the rebuilt opening ended is sent at once, not held', async () => {
+  // Same recovery, but a slow onBeforeSend hook (a real guardrail call) makes the wrapped
+  // resend ready only after the rebuilt socket's opening turn has already finished. There is
+  // nothing to hold behind, so the resend goes out immediately — exactly once.
+  let liveSocket = null;
+  const multiFactory = () => { const s = new FakeSocket(); liveSocket = s; scriptHappyPath(s, { openingLine: true }); return s; };
+  const hookKinds = [];
+  const onBeforeSend = async (text, ctx) => { hookKinds.push(ctx.kind); if (ctx.kind === 'spiralRecovery') await delay(60); return text; };
+  const { session } = newSession({ cfg: { toolSpiralLimit: 3, hardToolSpiralLimit: 6, socketFactory: multiFactory, onBeforeSend } });
+  await session.connect();
+  const firstSocket = liveSocket;
+
+  let recovered = null; session.on('spiralRecovered', (p) => { recovered = p; });
+  firstSocket.server('agentTurnToTalk', { userTranscription: 'walk me through the two-metric guidance range' });
+  const retryDelta = JSON.stringify({ type: 'tool', content: 'show_widget {"kind":"summary","data":"{}"}' });
+  for (let i = 0; i < 6; i++) firstSocket.server('agent_raw_text', { delta: retryDelta });
+  await delay(400);
+
+  const secondSocket = liveSocket;
+  assert.notEqual(secondSocket, firstSocket);
+  assert.deepEqual(hookKinds, ['spiralRecovery'], 'the hook saw exactly the one resend');
+  assert.equal(session.speaking, false, 'the rebuilt opening had finished before the resend was ready');
+  assert.equal(session._heldTurns.length, 0, 'nothing left in the hold queue');
+  assert.ok(recovered, 'spiralRecovered must fire once the resend is sent');
+  assert.deepEqual(textsEntered(secondSocket), [`${SPIRAL_RECOVERY_PREFIX}walk me through the two-metric guidance range`], 'exactly one resend, sent directly');
   session.disconnect();
 });
 
 test('tool spiral HARD recovery: auto-resends the stuck speak() turn too, not just ASR', async () => {
   let liveSocket = null;
-  const multiFactory = () => { const s = new FakeSocket(); liveSocket = s; scriptHappyPath(s); return s; };
+  const multiFactory = () => { const s = new FakeSocket(); liveSocket = s; scriptHappyPath(s, { openingLine: true }); return s; };
   const { session } = newSession({ cfg: { toolSpiralLimit: 3, hardToolSpiralLimit: 6, socketFactory: multiFactory } });
   await session.connect();
   const firstSocket = liveSocket;
@@ -878,15 +1059,13 @@ test('tool spiral HARD recovery: auto-resends the stuck speak() turn too, not ju
 
   const secondSocket = liveSocket;
   assert.notEqual(secondSocket, firstSocket);
-  const entered = secondSocket.emitsOf('onTextEntered');
-  assert.equal(entered.length, 1);
-  assert.equal(entered[0].text, `${SPIRAL_RECOVERY_PREFIX}what should I expect for Q3 guidance`);
+  assert.deepEqual(textsEntered(secondSocket), [`${SPIRAL_RECOVERY_PREFIX}what should I expect for Q3 guidance`]);
   session.disconnect();
 });
 
 test('tool spiral HARD recovery: recoverFromSpiral:false suppresses the resend but still reports lastTurnText', async () => {
   let liveSocket = null;
-  const multiFactory = () => { const s = new FakeSocket(); liveSocket = s; scriptHappyPath(s); return s; };
+  const multiFactory = () => { const s = new FakeSocket(); liveSocket = s; scriptHappyPath(s, { openingLine: true }); return s; };
   const { session } = newSession({ cfg: { toolSpiralLimit: 3, hardToolSpiralLimit: 6, socketFactory: multiFactory, recoverFromSpiral: false } });
   await session.connect();
   const firstSocket = liveSocket;
@@ -907,7 +1086,7 @@ test('tool spiral HARD recovery: recoverFromSpiral:false suppresses the resend b
 
 test('tool spiral HARD recovery: a second spiral in the same session resends its OWN stuck turn, not the first one', async () => {
   let liveSocket = null;
-  const multiFactory = () => { const s = new FakeSocket(); liveSocket = s; scriptHappyPath(s); return s; };
+  const multiFactory = () => { const s = new FakeSocket(); liveSocket = s; scriptHappyPath(s, { openingLine: true }); return s; };
   const { session } = newSession({ cfg: { toolSpiralLimit: 3, hardToolSpiralLimit: 6, socketFactory: multiFactory } });
   await session.connect();
   const firstSocket = liveSocket;
@@ -927,9 +1106,7 @@ test('tool spiral HARD recovery: a second spiral in the same session resends its
   const thirdSocket = liveSocket;
   assert.equal(recoveries.length, 2);
   assert.equal(recoveries[1].text, 'second stuck question');
-  const entered = thirdSocket.emitsOf('onTextEntered');
-  assert.equal(entered.length, 1, 'the third socket only ever gets the SECOND spiral\'s resend');
-  assert.equal(entered[0].text, `${SPIRAL_RECOVERY_PREFIX}second stuck question`);
+  assert.deepEqual(textsEntered(thirdSocket), [`${SPIRAL_RECOVERY_PREFIX}second stuck question`], 'the third socket only ever gets the SECOND spiral\'s resend');
   session.disconnect();
 });
 
@@ -1365,10 +1542,18 @@ for (const [errName, code] of [
   ['NotReadableError', 'mic_in_use'],
   ['OverconstrainedError', 'mic_not_found'],
 ]) {
-  test(`device: getUserMedia ${errName} → ${code}`, async () => {
+  test(`device: getUserMedia ${errName} → connected + warning ${code}`, async () => {
     const gum = async () => { const e = new Error(errName); e.name = errName; throw e; };
-    const { session } = newSession({ getUserMedia: gum });
-    await assert.rejects(() => session.connect(), (e) => e.code === code, `${errName} maps to ${code}`);
+    const { session, socket } = newSession({ getUserMedia: gum });
+    scriptHappyPath(socket);
+    const warnings = [];
+    session.on('warning', (w) => warnings.push(w.code));
+    await session.connect();
+    await new Promise((r) => setTimeout(r, 0));
+    assert.equal(session.state, 'connected', 'a failed mic never fails connect()');
+    assert.deepEqual(warnings, [code], `${errName} maps to ${code}`);
+    assert.equal(session.micStarted, false);
+    session.disconnect();
   });
 }
 
@@ -1473,11 +1658,21 @@ test('noiseProcessor: a processor returning {stream,stop} is released (old) and 
   assert.equal(stops, 2, 'disconnect must release the mic-2 processor instance');
 });
 
-test('noiseProcessor: a throwing processor fails mic acquisition closed with noise_processor_failed (raw stream stopped)', async () => {
+test('noiseProcessor: a throwing processor → connected mic-less with one noise_processor_failed warning; startMic() surfaces the typed error', async () => {
   const noiseProcessor = async () => { throw new Error('worklet init failed'); };
-  const { session } = newSession({ cfg: { noiseProcessor } });
-  await assert.rejects(() => session.connect(), (e) => e.code === 'noise_processor_failed', 'must surface a typed noise_processor_failed error');
-  assert.equal(session.state, 'error');
+  const { session, socket } = newSession({ cfg: { noiseProcessor } });
+  scriptHappyPath(socket);
+  const warnings = [];
+  session.on('warning', (w) => warnings.push(w.code));
+  await session.connect();
+  await new Promise((r) => setTimeout(r, 0));
+  assert.equal(session.state, 'connected', 'a failing processor never fails connect()');
+  assert.equal(session._micStream, null, 'no mic stream attached');
+  assert.equal(session.micStarted, false);
+  assert.deepEqual(warnings, ['noise_processor_failed']);
+  await assert.rejects(() => session.startMic(), (e) => e.code === 'noise_processor_failed', 'an explicit startMic() surfaces the typed error');
+  assert.equal(session.state, 'connected');
+  session.disconnect();
 });
 
 test('noiseProcessor: not supplied → the raw getUserMedia stream is used unmodified (back-compat default)', async () => {

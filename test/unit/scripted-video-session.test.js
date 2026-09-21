@@ -143,6 +143,23 @@ test('disconnect() DELETEs the resolved WHEP Location, tears down the pc, stops 
   assert.equal(v.state, 'disconnected');
 });
 
+test('disconnect() DELETEs the prefixed URL when the Location names a viewer', async () => {
+  // The 201's Location is path-absolute from the media server's own root, so it
+  // carries none of the path prefix the subscribe URL has. Resolving it as a
+  // plain relative URL would drop that prefix and the DELETE would miss.
+  const f = fakeFetch([
+    { match: '/viewer/v7', respond: () => ({ status: 200 }) },
+    { match: '/whep/session/sess-123', respond: () => ({ status: 201, body: 'v=0\r\nfake-answer\r\n', headers: { Location: '/whep/session/sess-123/viewer/v7' } }) },
+  ]);
+  const v = view({ whepUrl: 'https://media.example.com/rtc/v1/stv/tok9/whep/session/sess-123', fetch: f });
+  await v.connect();
+  v.disconnect();
+  await Promise.resolve();
+
+  const del = f.calls.find((c) => c.method === 'DELETE');
+  assert.equal(del?.url, 'https://media.example.com/rtc/v1/stv/tok9/whep/session/sess-123/viewer/v7');
+});
+
 test('disconnect() before connect() is a safe no-op', () => {
   const v = view();
   v.disconnect();

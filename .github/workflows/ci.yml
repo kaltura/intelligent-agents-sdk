@@ -23,6 +23,7 @@ jobs:
   changes:
     name: 🔍 Detect changed paths
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       code: ${{ steps.filter.outputs.code }}
     steps:
@@ -52,6 +53,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: 📥 Check out the repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -97,6 +99,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -234,6 +237,7 @@ jobs:
   constitution:
     name: 📜 Verify the SDK Constitution (agent_verify.mjs)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: test
     steps:
       - name: 📥 Check out the repo
@@ -284,6 +288,7 @@ jobs:
   dx-gates:
     name: 🧹 Lint, typecheck, circular-import
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: test
     steps:
       - name: 📥 Check out the repo
@@ -351,6 +356,7 @@ jobs:
   docs-gate:
     name: 📚 Check docs/code drift, secrets, and GFM hygiene (check-docs.mjs)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     # Deliberately depends on `changes`, not `test` — this gate (secrets, GFM
     # hygiene, cross-doc links, doc-vs-code drift) is exactly as relevant to a
     # docs-only push as to a code push, so it must run either way. Its one
@@ -391,6 +397,7 @@ jobs:
   sast:
     name: 🛡️ SAST scan (semgrep)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: test
     steps:
       - name: 📥 Check out the repo

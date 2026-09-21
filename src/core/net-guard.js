@@ -1,17 +1,24 @@
 /**
- * Canonical private-network / SSRF host detector — the single source of truth
- * for "is this target a private, loopback, or link-local network address."
+ * Canonical private-network host detector — the single source of truth for
+ * "does this URL or hostname name a private, loopback, or link-local address."
  * Lives in core/ so both management/ and experience/ can import it without a
  * layering violation (core/ has no dependency on either).
  *
- * Consolidates four hand-rolled regexes that had each
- * drifted to cover a different subset of the same threat:
- * - {@link isPrivateOrLoopbackHost} — the general-purpose predicate, used by
- *   `experience/wire.js` (WHEP-URL private-IP rejection) and
- *   `core/transport-guard.js` (local-host detection for the insecure-transport
- *   warning).
- * - {@link PRIVATE_IP_RE} — the free-text scrubbing regex consumed by
+ * It is a check on the URL text, run before any request, and it never resolves
+ * DNS. It is not a network boundary. Three callers use it for three purposes,
+ * none of which is access control:
+ * - {@link isPrivateOrLoopbackHost} is used by `experience/wire.js` to fail
+ *   fast with `whep_private_ip` when the server hands the browser a media URL
+ *   it cannot reach, and by `core/transport-guard.js` to allow cleartext on a
+ *   local dev host with a warning instead of an error.
+ * - {@link PRIVATE_IP_RE} is the free-text scrubbing regex consumed by
  *   `core/redact.js` to keep these addresses out of logs/audit output.
+ *
+ * Where the network boundary really is: the experience layer runs in the
+ * browser, whose origin and private-network rules decide what a page may reach,
+ * and the URLs it checks come from the operator's own server config, never from
+ * the model or the end user. `Management` (server-side) only ever calls the base
+ * URLs the operator passed to its constructor and does not use this module.
  *
  * This module must stay dependency-free: `core/redact.js` (and through it
  * `core/errors.js`) imports from here, so importing errors.js here would
@@ -23,7 +30,7 @@
 //   10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16 (RFC 1918 private),
 //   127.0.0.0/8 (loopback — the WHOLE block, not just 127.0.0.1),
 //   169.254.0.0/16 (link-local, which includes the 169.254.169.254 cloud-metadata
-//   SSRF target on AWS/GCP/Azure).
+//   address on AWS/GCP/Azure).
 const IPV4_PRIVATE_SOURCE =
   '(?:10(?:\\.\\d{1,3}){3}' +
   '|172\\.(?:1[6-9]|2\\d|3[01])(?:\\.\\d{1,3}){2}' +
@@ -52,24 +59,16 @@ const IPV6_ULA_OR_LINK_LOCAL_RE = /^(?:(?:fc|fd)[0-9a-f]{2}:|fe[89ab][0-9a-f]:)/
  * True if `hostOrUrl` is a private RFC1918 address (10/8, 172.16/12, 192.168/16),
  * an IPv4 loopback address (127.0.0.0/8 — the whole block, not just 127.0.0.1), an
  * IPv4 link-local address (169.254.0.0/16 — includes the 169.254.169.254
- * cloud-metadata SSRF target), the literal hostname `localhost`, the IPv6
+ * cloud-metadata address), the literal hostname `localhost`, the IPv6
  * loopback `::1` (bracketed `[::1]` or bare `::1`), an IPv6 unique-local address
  * (fc00::/7), an IPv6 link-local address (fe80::/10), or an IPv4-mapped IPv6
  * address (`::ffff:a.b.c.d` / `::ffff:HHHH:HHHH`) whose embedded IPv4 falls in
- * any of the above IPv4 ranges. This is the syntactic SSRF/private-network
- * check every outbound URL built from caller/attacker input should pass
- * BEFORE the network call is made.
+ * any of the above IPv4 ranges.
  *
- * Accepts a bare hostname, a bare IP literal, or a full URL string.
- *
- * NOT covered (out of scope for this predicate, by design): DNS rebinding —
- * a public-looking hostname that can resolve to a private/metadata IP only at
- * connect time. This is a pre-resolution string check, so it cannot see what
- * a name resolves to; closing that gap requires a resolve-then-check at the
- * point of connection (e.g. a custom DNS lookup that validates the resolved
- * address before the socket is opened), not a string check. Tracked as a
- * known limitation; see the repository's private security advisories for
- * specifics rather than documenting bypass techniques in source comments.
+ * Accepts a bare hostname, a bare IP literal, or a full URL string. The answer
+ * is about the text only: a hostname that is not one of these literals returns
+ * false whatever it resolves to, so use it to classify a URL, not to decide
+ * whether a request is safe to send (see the module comment).
  * @param {string} hostOrUrl
  * @returns {boolean}
  */

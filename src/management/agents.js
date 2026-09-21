@@ -48,7 +48,7 @@ export class Agents {
    * substring on `displayName`/`agentId`); an unrecognized key returns
    * `bad_request`. The wire request also takes a top-level `orderBy`
    * (`+createdAt`, `-createdAt`, `+updatedAt`, `-updatedAt`), which this
-   * method does not yet expose.
+   * method does not take.
    *
    * @example <caption>Filter by an admin tag</caption>
    * const tagged = await k.agents.list(adminKs, { filter: { adminTagsIn: ['lobby'] } }).all();

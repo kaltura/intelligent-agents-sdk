@@ -104,11 +104,11 @@ Once the repo is public and has a tag pushed, jsDelivr serves any file straight 
 </script>
 ```
 
-`@latest` resolves to the newest tag, so this URL always matches the current README without an editing pass on every release. It's **not cached the same way** as a tagged path, though — jsDelivr re-checks it periodically, so what it serves can change without warning. For anything you ship, pin to a real tag instead (`@v1.21.0`, or whichever release you're on) — jsDelivr caches a tagged path forever, so a pin is both stable and fast:
+`@latest` resolves to the newest tag, so this URL always matches the current README without an editing pass on every release. It's **not cached the same way** as a tagged path, though — jsDelivr re-checks it periodically, so what it serves can change without warning. For anything you ship, pin to a real tag instead (`@v1.23.0`, or whichever release you're on) — jsDelivr caches a tagged path forever, so a pin is both stable and fast:
 
 ```html
 <script type="module">
-  import { KalturaAvatarSession } from 'https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.21.0/src/experience/index.js';
+  import { KalturaAvatarSession } from 'https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.23.0/src/experience/index.js';
 </script>
 ```
 
@@ -228,6 +228,8 @@ const session = new KalturaAvatarSession({
   videoEl: document.querySelector('video'),
   audioEl: document.querySelector('audio'),     // recommended: voice on its own element, see below
   socketFactory: (url, opts) => io(url, opts),  // inject socket.io
+  kickoff: 'Greet the user and briefly say how you can help.',  // first turn, sent once by the SDK
+  // genieUrl: same value you gave Management, if your partner is not on the US production default
 });
 
 await session.connect();
@@ -238,6 +240,10 @@ session.onToolCall('navigate_to_slide', ({ slide_num }) => deck.goTo(slide_num))
 ```
 
 **How `speak(text)` works:** it injects `text` into the conversation on the same path as the viewer's own voice transcript — the brain treats it as a new turn and replies in its own words, not a verbatim echo of `text`. Need exact scripted playback instead? See [docs/api/scripted-video.md](docs/api/scripted-video.md).
+
+**When it sends:** `speak(text)` is safe to call at any moment after `connect()` resolves. If the agent is idle, thinking, or talking a normal reply, the text goes out now (a talking avatar stops mid-sentence and answers it). If the agent is in a turn typed text can't interrupt (its opening line right after `connect()`/`resume()`, or its own "are you still there?" check-in), the text is held and sent the instant that turn ends. Several `speak()` calls during one held turn go out as one turn, one text per line. The promise resolves `true` once sent, `false` if the session ended first. Details: [docs/DYNAMIC-DATA-INJECTION.md](docs/DYNAMIC-DATA-INJECTION.md#when-speak-actually-sends).
+
+**Starting the conversation:** pass `kickoff: 'text'` (or `{ text, echo? }`) and the SDK sends that text as the first turn, exactly once per session object, the moment the server accepts input. Pair it with a silent opening phrase on the intellect (`SILENT_OPENING`, exported from `./management` and `./experience`) and the agent's first words are its own interruptible reply about two seconds after `connect()` resolves. Never re-sent on `resume()` or a reconnect. Guide: [docs/START-THE-CONVERSATION.md](docs/START-THE-CONVERSATION.md).
 
 **All transports are injected** — `socketFactory`, `rtcConstructor`, `fetch`, `getUserMedia`. Tests pass fakes; the SDK stays zero-dependency.
 
@@ -324,8 +330,12 @@ Non-fatal problems on this path arrive as `warning` events, `{ code, message, ..
 |---|---|---|
 | `playback_blocked` | The browser refused `play()` (autoplay policy). Payload has `kind: 'video' \| 'audio'`. | Show a "tap to start" control and call `startPlayback()` from it. |
 | `media_attach_failed` | A downlink track could not be routed (no `MediaStream` constructor, bad element). Payload has `kind: 'video' \| 'audio'` and `detail`. | Fall back to the `'track'` event or fix the element. |
-| `whep_delete_failed` | The WHEP `DELETE` on disconnect failed; the server will time the session out on its own. | Nothing; informational. |
+| `whep_delete_failed` | The WHEP `DELETE` that releases this viewer failed. Harmless on a hangup: the server releases the session itself once the socket closes. A later re-subscribe to the same session can come back `409` while the old viewer is still held. | Nothing; informational. |
 | `empty_turn_with_request_vars` | The intellect rejected `request_vars` because `allow_client_variables` is off (see the `{{var}}` section). | Enable the intellect flag. |
+| `mic_permission_denied` / `mic_not_found` / `mic_in_use` / `devices_permission_denied` | The default `micStartMode: 'immediate'` mic acquire failed. `connect()` never waits on or fails for the mic, so the session is `connected` mic-less. Payload has `detail`. | Typed turns (`speak()`) work as-is. Offer a mic button and call `startMic()` from the click to retry; it rejects with the same code if the mic still fails. |
+| `noise_processor_failed` | `noiseProcessor` threw during the background mic acquire; the raw stream was stopped. | Fix the processor. `startMic()` retries and rejects with this code if it throws again. |
+| `mic_attach_failed` | The mic was acquired but could not be attached to the ASR uplink (`replaceTrack` rejected); the stream was stopped. Payload has `detail`. | Call `startMic()` to retry. |
+| `kickoff_failed` | The `kickoff` text could not be sent: a guardrail or gate rejected it, or (`KalturaChatSession` only) the session closed before its turn ran. Payload has `detail`. | Call `speak()` / `sendText()` yourself, or fix the guardrail. |
 
 ### Text-only chat (`KalturaChatSession`)
 
@@ -371,7 +381,7 @@ await agent.switchMode('avatar');                // call from a real click — m
 agent.on('modeChanged', ({ mode, threadContinuity }) => showBanner(mode, threadContinuity));
 ```
 
-The facade owns the state machine (`idle → connecting → connected ⇄ switching → closed | failed`), the canonical `request_vars` map, and the `onToolCall` registry — all three carry over on every `switchMode()`. Switching is tear-down-and-reconstruct: the old transport disconnects, the new one is constructed seeded with the live `threadId` and full context, and `sendText()` calls during the blip are buffered (up to 8). Mode-specific APIs (mic control, `interrupt()`, `videoEl`…) are not mirrored — use the `transport` getter and rewire on each `transportChanged` event. For the full state-transition table and switch UX rules, see [docs/VOICE-INPUT-MODES.md](docs/VOICE-INPUT-MODES.md#switching-between-avatar-and-chat-mid-conversation).
+The facade owns the state machine (`idle → connecting → connected ⇄ switching → closed | failed`), the canonical `request_vars` map, and the `onToolCall` registry — all three carry over on every `switchMode()`. Switching is tear-down-and-reconstruct: the old transport disconnects, the new one is constructed seeded with the live `threadId` and full context, and `sendText()` calls during the blip are buffered (up to 8). The facade forwards the events an app needs to render the conversation: `transcript`, `turnStart`, `turnEnd`, `toolCall`, `toolCallResult`, `toolCallInvalid`, `error`, `warning`, `responsePending`, `responseSettled`, `agentActionDenied`, `ended` on both transports, plus `speechChunk`, `avatarStartTalking`, `avatarStopTalking`, `interrupted` in avatar mode. Listeners on the facade survive every switch. Events that pair with a transport-only method (`disclosure` with `acknowledgeDisclosure()`, `micStarted` with `startMic()`) and the mic/video controls stay on the transport: use the `transport` getter and rewire on each `transportChanged` event. For the full state-transition table and switch UX rules, see [docs/VOICE-INPUT-MODES.md](docs/VOICE-INPUT-MODES.md#switching-between-avatar-and-chat-mid-conversation).
 
 ### `{{var}}` personalization (`request_vars`)
 
@@ -419,7 +429,7 @@ Build the control as click-to-toggle, not press-and-hold: it's more usable for l
 Both session classes watch for a brain that goes quiet instead of answering; only `KalturaAvatarSession` also guards against one that loops instead of narrating (it has a socket to cold-reconnect through) — see [ARCHITECTURE-REFERENCE.md](docs/architecture-reference/resilience-and-failure-handling.md#resilience--failure-handling) for the full failure-mode matrix.
 
 - **Brain-stall watchdog** (`brainStallMs`, default on, `KalturaAvatarSession` + `KalturaChatSession`) — emits `brainStalled` (`{count}`), repeating for as long as nothing perceivable (spoken/avatar content or a GenUI widget) follows a turn. On the chat transport, a bare `keepalive` segment does not count as perceivable output either.
-- **Dead-air masking** (`responsePending`/`responseSettled`, both transports) — `responsePending` (`{}`) fires the moment a turn starts awaiting the brain's first perceivable output (spoken/avatar/GenUI content). `responseSettled` (`{}`) fires once that output arrives, the turn ends, an interruption occurs, or the session tears down. Use this pair to show/hide a "thinking…" affordance instead of leaving the avatar's face frozen during the gap. See `examples/browser-experience.html` for a working example.
+- **Dead-air masking** (`responsePending`/`responseSettled`, both transports) — `responsePending` (`{}`) fires the moment a turn starts awaiting the brain's first perceivable output (spoken/avatar/GenUI content), and again when the server acknowledges a turn it started itself (its first think delta), so a `kickoff` reply shows "thinking" before the first word. `responseSettled` (`{}`) fires once that output arrives, the turn ends, an interruption occurs, or the session tears down. Use this pair to show/hide a "thinking…" affordance instead of leaving the avatar's face frozen during the gap. See `examples/browser-experience.html` for a working example.
 - **Tool-call spiral circuit breaker** (`KalturaAvatarSession` only) — a two-tier guard against a brain that re-issues the same client command instead of narrating. Soft (`toolSpiralLimit`, default 10, per turn): emits `toolSpiralDetected`. This is signal only and does NOT call `interrupt()` (a mid-turn barge-in was found to truncate the turn's own narration with no recovery — see `docs/CLIENT-COMMANDS.md`'s "Tool spirals starve the voice"). Hard (`hardToolSpiralLimit`, default `toolSpiralLimit * 3`, session-scoped, immune to turn-boundary resets): emits `toolSpiralRecovering` (`{count, limit, lastTurnText}`) and forces a cold reconnect — a brand-new socket that replays `threadId` so brain memory continues.
 - **Spiral recovery auto-resend** (`recoverFromSpiral`, default `true`) — a hard-spiral cold reconnect restores connectivity but would otherwise abandon the turn that triggered it (the user's question just silently dropped). With the default on, once the reconnect succeeds the SDK automatically resends that turn's text once, prefixed with the same `SPIRAL_RECOVERY_PREFIX` instruction used on the headless path (`Conversations#send({recoverFromSpiral:true})` — see [Management](#management) above), still passed through your `onBeforeSend` guardrail, and emits `spiralRecovered` (`{text}`, the original un-prefixed text — e.g. show "Let me get that for you" UI). Set `recoverFromSpiral: false` to opt out of the auto-resend and handle it yourself — `toolSpiralRecovering`'s `lastTurnText` still tells you what was abandoned.
 
@@ -454,7 +464,7 @@ await session.setAsrBandwidth(24); // kbps, applied live via RTCRtpSender.setPar
 - **`localMicLevel`** (`{level}`, 0-1) — the same 50ms `AnalyserNode` sampler's continuous volume, normalized against the analyser's max possible byte-frequency sum, emitted on every tick rather than only on threshold transitions — drives a real-time UI meter (e.g. a mic button that visually fills with live input volume) without needing to bucket `localSpeakingChanged`. Shares the same lazy activate/deactivate lifecycle: registering a listener for either `localMicLevel` or `localSpeakingChanged` starts the sampler, and it stops only once every listener for both has unsubscribed.
 - **`listDevices()`** — `{mics, speakers}` from `navigator.mediaDevices.enumerateDevices()` (video input omitted; an avatar session has no local camera). Returns empty lists headlessly/without permission rather than throwing.
 - **`switchMic(deviceId)`** — swaps the ASR uplink's sender track via `replaceTrack`, no renegotiation. It rewires the hardware-mute watch and VAD onto the new stream and stops the old one.
-- **`micStartMode: 'deferred'`** (constructor option) + **`startMic()`** + **`micStarted`** (getter and event) — connect with no mic at all: `connect()` skips `getUserMedia` entirely and the ASR uplink negotiates a track-less sendonly audio slot (the wire handshake is identical to the default `'immediate'` path). Call `startMic()` later **from a real user click** — that's the point: the browser's permission prompt is anchored to the gesture instead of firing on page load — and it acquires the mic, attaches it via `replaceTrack` (no renegotiation), honors any `mute()` issued before the mic existed, re-applies `maxAsrBitrateKbps`, and emits `micStarted`. Until then `micStarted` is `false`, typed turns (`speak()`) work normally, and `startTapToTalk()`/`switchMic()` throw `mic_not_started`. A denied prompt rejects `startMic()` with the same typed mic errors as `connect()` (`mic_permission_denied`, …) and leaves the session connected, so the viewer can retry or stay typed-only. `startMic()` is idempotent.
+- **`micStartMode: 'deferred'`** (constructor option) + **`startMic()`** + **`micStarted`** (getter and event) — connect with no mic at all: `connect()` skips `getUserMedia` entirely and the ASR uplink negotiates a track-less sendonly audio slot (the wire handshake is identical to the default `'immediate'` path). Call `startMic()` later **from a real user click** — that's the point: the browser's permission prompt is anchored to the gesture instead of firing on page load — and it acquires the mic, attaches it via `replaceTrack` (no renegotiation), honors any `mute()` issued before the mic existed, re-applies `maxAsrBitrateKbps`, and emits `micStarted`. Until then `micStarted` is `false`, typed turns (`speak()`) work normally, and `startTapToTalk()`/`switchMic()` throw `mic_not_started`. A denied prompt rejects `startMic()` with a typed mic error (`mic_permission_denied`, `mic_not_found`, `mic_in_use`) and leaves the session connected, so the viewer can retry or stay typed-only. In the default `'immediate'` mode the same failure surfaces as a `warning` with that code instead (see the warning table above), because `connect()` never waits on or fails for the mic. `startMic()` is idempotent: it returns at once when a mic is attached and joins an acquire that is still in flight instead of prompting twice.
 - **`setAudioOutput(deviceId)`** — calls `setSinkId` on the element carrying the audio track (`audioEl` if set, else `videoEl`). Works before `connect()`: the id is stored and applied to whichever element is bound next. Returns `false` (never throws) if the platform lacks `setSinkId`, nothing is bound yet, or the browser rejects the id. Pass `''` to return to the system default: it's the spec value and works in Chromium, Firefox and WebKit, while the Chromium-only `'default'` id is rejected by Firefox.
 - **`preferredVideoCodec`** (constructor option) — filters the STV downlink's video transceiver to a single codec via `setCodecPreferences`. Leave this unset. The backend only ever encodes H264 video, so setting it to anything else (`'VP8'`, `'VP9'`, `'AV1'`) still connects — audio keeps working — but the video negotiation comes back inactive and no frame is ever decoded, with no error thrown.
 - **`maxAsrBitrateKbps`** (constructor option) / **`setAsrBandwidth(kbps)`** (mid-session) — caps the ASR mic uplink's bitrate via `RTCRtpSender.setParameters()`, no renegotiation.
@@ -488,7 +498,7 @@ const session = new KalturaAvatarSession({ token, /* … */,
 <summary><strong>Field reference</strong> — every option above</summary>
 
 - **`micConstraints`** (constructor option) — `MediaTrackConstraints` merged into every `getUserMedia({audio})` call this session makes (`connect()`, `switchMic()`). Default `{echoCancellation:true, noiseSuppression:true, autoGainControl:true}` — the standard browser-native Tier-1 baseline. Pass `false` to send bare `audio:true`. Pass a partial object to override individual fields.
-- **`noiseProcessor`** (constructor option) — pluggable Tier-2 DSP hook: `(stream) => Promise<MediaStream|{stream,stop}>`. Called with the raw `getUserMedia` stream at `connect()` and every `switchMic()`. Its returned stream (or `{stream,stop}`, if the processor owns a resource that needs explicit teardown — e.g. an `AudioWorkletNode` graph) is what actually reaches the ASR uplink. The SDK core bundles NO DSP library — bring a third-party processor (dynamically import it so apps that don't use it never load it) or a bespoke one. Anything matching the shape works. A processor that throws fails mic acquisition closed with a typed `noise_processor_failed` error (same fail-closed behavior as a `getUserMedia` rejection).
+- **`noiseProcessor`** (constructor option) — pluggable Tier-2 DSP hook: `(stream) => Promise<MediaStream|{stream,stop}>`. Called with the raw `getUserMedia` stream at `connect()` and every `switchMic()`. Its returned stream (or `{stream,stop}`, if the processor owns a resource that needs explicit teardown — e.g. an `AudioWorkletNode` graph) is what actually reaches the ASR uplink. The SDK core bundles NO DSP library — bring a third-party processor (dynamically import it so apps that don't use it never load it) or a bespoke one. Anything matching the shape works. A processor that throws fails mic acquisition closed (the raw stream is stopped) with the code `noise_processor_failed`: a `warning` during the background acquire in `connect()`, a thrown `KalturaError` from `startMic()`/`switchMic()`.
 - **`createNoiseSuppressor(opts)`** (`./experience/noise-suppressor`, separately importable — zero effect until constructed and passed as `noiseProcessor`) — the SDK's own real, lightweight, dependency-free Tier-2 implementation: an adaptive RMS noise gate running as a pure-browser-native `AudioWorkletProcessor` (attack/release-smoothed envelope, adaptive noise-floor tracking — NOT spectral/ML denoising, which is a heavier Tier-2 DSP approach). Options: `thresholdDb` (default `-50`), `attackMs` (default `5`), `releaseMs` (default `150`), `floorAdaptMs` (default `2000`); `audioContext`/`getAudioContext`/`audioWorkletNodeConstructor` are injectable for testing, mirroring the rest of the SDK's constructor-injection style.
 
 </details>
@@ -508,7 +518,7 @@ btnFeedbackDismiss.onclick = () => analytics.buttonClicked({ buttonType: 'Open',
 
 `KavaAnalytics` (`./experience/analytics`, its own subpath so apps that don't report analytics never load it) reports KAVA (Kaltura Video Analytics) events to `https://analytics.kaltura.com/api_v3/index.php` (`service=analytics&action=trackEvent`). It implements ONLY the 10000-range **Application Event** family: `pageLoad` (10003) and `buttonClicked` (10002), for interactions the server has zero visibility into — a page/view landing, a UI-only click, a contact-form submit/skip, a widget dismiss. It's WRITE, best-effort, and NOT idempotent (each call records a new row; there is no dedup contract). It's fire-and-forget by design, so callers don't need to await it for correctness.
 
-**Deliberately does NOT implement the 80000-range "Immersive Agents" events** (`callStarted`/`callEnded`/`messageResponse`/`messageFeedbackSent`) — there is no code path in this module that can send them. The session server and the brain backend already report all four server-side for every session `KalturaAvatarSession` connects to (same socket, matching event names); a client-side copy would double-count on the live analytics dashboards. If a real gap in that server-side reporting is ever found, file it as a GitHub issue rather than adding a client resend.
+**Deliberately does NOT implement the 80000-range "Immersive Agents" events** (`callStarted`/`callEnded`/`messageResponse`/`messageFeedbackSent`) — there is no code path in this module that can send them. The server already reports all four for every session `KalturaAvatarSession` connects to (same socket, matching event names); a client-side copy would double-count on the live analytics dashboards. If a real gap in that server-side reporting is ever found, file it as a GitHub issue rather than adding a client resend.
 
 Transport: prefers `navigator.sendBeacon` (survives page-unload); falls back to an injectable `fetch` with `keepalive:true` when unavailable or when the beacon queue is full. Never reads a response body. `enabled: false` no-ops every call without touching the network — use for offline/mock test runs.
 
@@ -560,7 +570,7 @@ await session.completeThread();
 | `presenceHeartbeatMs` | `4000` | Liveness beat interval between tabs. |
 | `presenceStaleMs` | `12000` | Drop a peer tab unseen this long (3 missed beats) before it can wrongly suppress the signal forever. |
 
-`disconnect(opts)` now takes `{final?: boolean, reason?: string}` — `final: false` skips the signal for an internal teardown that isn't a real end (e.g. `KalturaAgentSession.switchMode()` tearing down the old transport while keeping the same thread); zero-arg calls keep meaning "final", so this is fully backward compatible. `stop()` is unchanged, an alias for `disconnect({reason:'stop'})`.
+`disconnect(opts)` now takes `{final?: boolean, reason?: string}` — `final: false` skips the signal for an internal teardown that isn't a real end (e.g. `KalturaAgentSession.switchMode()` tearing down the old transport while keeping the same thread); zero-arg calls keep meaning "final", so this is fully backward compatible. `stop()` is unchanged, an alias for `disconnect({reason:'stop'})`. Both are safe at any point: called while `connect()` is still in flight, they cancel every pending wait (the media handshake, a reconnect's capacity wait) so `connect()` rejects with `connect_failed` at once, and no `error` event follows.
 
 A `visibilitychange` to `hidden` fires when the **whole page** leaves the screen — tab switch, minimize, app switch, lock, close — not on scroll, resize, partial occlusion, devtools, or fullscreen video. It is the right signal for "did the user leave the page", not for "is the avatar widget itself visible on screen" (that's `IntersectionObserver`).
 
@@ -594,6 +604,10 @@ await session.connect();
 // session.speak(...) throws `disclosure_required` here until:
 session.acknowledgeDisclosure();
 ```
+
+A configured `kickoff` respects the gate: it is sent once, right after `acknowledgeDisclosure()`, never before it.
+
+The gate holds across recovery. If the session resumes from a pause or reconnects while the ack is still outstanding, the conversation stays parked until `acknowledgeDisclosure()` lands. Once acknowledged, it stays acknowledged for the life of the session object, so a later reconnect never re-asks the user.
 
 ---
 
@@ -1044,7 +1058,7 @@ await mgmt.intellects.secrets.set(configId, { API_KEY: value }, ks);  // write-o
 await mgmt.intellectConfig.setKnowledgeIds(configId, [knowledgeId], ks);  // ungated
 await mgmt.intellectConfig.setMcpServers(configId, { docs: { url: 'https://mcp.example.com/sse' } }, ks);  // ungated
 await mgmt.intellectConfig.setModelConfiguration(configId, { model_id: 'gemini-3.5-flash', temperature: 0.3 }, ks);
-await mgmt.intellectConfig.setOpeningPhrase(configId, 'Hi {{ user_name }}, what can I help with?', ks);
+await mgmt.intellectConfig.setOpeningPhrase(configId, '{% if user_name %}Hi {{ user_name }}, what can I help with?{% else %}Hi, what can I help with?{% endif %}', ks);
 await mgmt.intellectConfig.setThreadStartTools(configId, [toolId], ks);
 await mgmt.intellectConfig.setAvatarSummaryConfig(configId, {
   analysis: { summary: 'Two-sentence recap', next_step: 'The one action the user agreed to' },
@@ -1057,7 +1071,7 @@ await mgmt.intellectConfig.setAvatarSummaryConfig(configId, {
 
 `setModelConfiguration` picks the chat model and its sampling limits. `model_id` must be one of `MODEL_IDS`, `thinking_level` one of `THINKING_LEVELS` (`'low'`/`'high'`, Gemini only), `max_output_tokens` a positive integer, `temperature` 0..1. Pass `null` to return to the backend defaults. Which models answer depends on your partner's region, so run `converseOnce` once after switching. With `avatar_show_content` on, the backend fills an unset `thinking_level` with `'low'` and `max_output_tokens` with 4096.
 
-`setOpeningPhrase` sets the phrase the avatar speaks when a session starts. It is a Jinja2 template over `request_vars`, rendered server-side, and it overrides whatever opening phrase the client sends at init. The rendered text is stored on the thread as an `opening` message. Pass `null` to clear.
+`setOpeningPhrase` sets the intellect's `opening_phrase`, the line spoken as the first turn of every avatar session. It is a Jinja2 template rendered server-side once per session. Pass `null` to clear it, or `SILENT_OPENING` for a silent opening so the browser can send the first turn with `kickoff`. Who owns the phrase, how to personalize it and the `kickoff` path: [docs/START-THE-CONVERSATION.md § Personalize the opening](docs/START-THE-CONVERSATION.md#personalize-the-opening).
 
 `setThreadStartTools` lists tool ids the backend runs once at the start of every thread, before the first turn. Only `api` and `code` tools run. The result feeds the model and never appears as a `tool` segment. Pass `[]` to clear.
 
@@ -1199,6 +1213,7 @@ await mgmt.knowledge.deleteRecord(rec.id, ks, { confirmPermanent: true });
 | [docs/EXTERNAL-API-INTEGRATIONS.md](docs/EXTERNAL-API-INTEGRATIONS.md) | Wiring a brain-called tool to a durable write against your own external API (CRM, spreadsheet, ticketing) |
 | [docs/STRUCTURED-DATA-FORMS.md](docs/STRUCTURED-DATA-FORMS.md) | Collecting typed fields from the user mid-conversation (`user_properties_forms`) — schema, rendering, where submitted values go |
 | [docs/VOICE-INPUT-MODES.md](docs/VOICE-INPUT-MODES.md) | Choosing open-mic vs. push-to-talk, and the UX/accessibility/safety details around each |
+| [docs/START-THE-CONVERSATION.md](docs/START-THE-CONVERSATION.md) | Fastest time to first speech: silent opening (`SILENT_OPENING`) + `kickoff`, what fires on the wire, the `speak()` hold, mic-less sessions |
 | [docs/lifecycle/README.md](docs/lifecycle/README.md) | Event-driven rules: reference + [recipe](docs/lifecycle/recipes.md) — auto-summarize conversations and email a human when analysis lands |
 | `examples/` | One runnable example per use-case |
 | [.claude/skills/agentic-avatar/SKILL.md](.claude/skills/agentic-avatar/SKILL.md) | Agent Skill — load this SDK's whole surface into Claude Code or any [agentskills.io](https://agentskills.io)-compatible agent |

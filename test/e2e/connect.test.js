@@ -109,15 +109,22 @@ test('audio/phone mode: skips WHEP/video, still connects via ASR', async () => {
   session.disconnect();
 });
 
-test('mic denied → mic_permission_denied', async () => {
+test('mic denied → connected mic-less with one mic_permission_denied warning', async () => {
   const { session, socket } = newSession({ getUserMedia: fakeGetUserMedia({ deny: true }) });
   scriptHappyPath(socket);
-  await assert.rejects(() => session.connect(), (e) => e.code === 'mic_permission_denied');
+  const warnings = [];
+  session.on('warning', (w) => warnings.push(w.code));
+  await session.connect();
+  await new Promise((r) => setTimeout(r, 0));
+  assert.equal(session.state, 'connected');
+  assert.equal(session.micStarted, false);
+  assert.deepEqual(warnings, ['mic_permission_denied']);
+  session.disconnect();
 });
 
 test('post-connect: speak injects onTextEntered (brain), never HTTP converse', async () => {
   const { session, socket } = newSession();
-  scriptHappyPath(socket);
+  scriptHappyPath(socket, { openingLine: true });
   await session.connect();
   await session.speak('hello there');
   const te = socket.emitsOf('onTextEntered');
@@ -203,6 +210,9 @@ test('barge-in: speak() while the avatar is already talking uses the isSpeechSta
   const { session, socket } = newSession();
   scriptHappyPath(socket);
   await session.connect();
+  // opening line plays and ends; then the agent starts a normal reply the user can barge into
+  socket.server('stvStartedTalking', {});
+  socket.server('stvFinishedTalking', { agentContent: 'Hi there.' });
   socket.server('agent_start_speech', { speechId: 'A-transcript-hi', turnId: 't1', isNewTurn: true });
   socket.server('stvStartedTalking', {});
   assert.equal(session.speaking, true);
@@ -363,6 +373,85 @@ test('WHEP DELETE resolves a RELATIVE Location against the WHEP URL (no page-ori
   assert.equal(deleted, 'https://srs.example/rtc/v1/whip/?action=delete&token=abc');
 });
 
+test('WHEP DELETE keeps the subscribe URL path prefix when Location names a viewer', async () => {
+  // The real STV shape: the subscribe URL is prefixed (`…/rtc/v1/stv/{token}/whep/session/{sid}`)
+  // and Location is path-absolute from the media server's own root. Resolving it against the
+  // request URL the standard way drops the prefix, and that URL is refused — so the viewer slot
+  // stayed held until the server timed the session out on its own.
+  let deleted = null;
+  const whepFetch = async (url, init) => {
+    if (init?.method === 'DELETE') { deleted = url; return { ok: true, status: 200, text: async () => '', headers: { get: () => null } }; }
+    return { ok: true, status: 201, text: async () => 'answer', headers: { get: () => '/whep/session/sess-123/viewer/v42' } };
+  };
+  const { session, socket } = newSession({ fetch: whepFetch });
+  scriptHappyPath(socket, { webrtcUrl: 'https://srs.example/rtc/v1/stv/tok9/whep/session/sess-123' });
+  await session.connect();
+  session.disconnect();
+  await delay(10);
+  assert.equal(deleted, 'https://srs.example/rtc/v1/stv/tok9/whep/session/sess-123/viewer/v42');
+});
+
+test('media recovery releases the old viewer at the prefixed URL before re-subscribing', async () => {
+  // Re-subscribe uses the SAME session id, and the session holds ONE viewer slot: a release that
+  // misses means the new subscribe can be refused with 409 and recovery fails.
+  const deletes = [];
+  const posts = [];
+  const whepFetch = async (url, init) => {
+    if (init?.method === 'DELETE') { deletes.push(url); return { ok: true, status: 200, text: async () => '', headers: { get: () => null } }; }
+    posts.push(url);
+    return { ok: true, status: 201, text: async () => 'answer', headers: { get: () => `/whep/session/sess-123/viewer/v${posts.length}` } };
+  };
+  const { session, socket } = newSession({ fetch: whepFetch });
+  scriptHappyPath(socket, { webrtcUrl: 'https://srs.example/rtc/v1/stv/tok9/whep/session/sess-123' });
+  await session.connect();
+  const before = deletes.length;
+  await session._recoverMedia('stv');
+  assert.ok(deletes.length > before, 'the old viewer is released');
+  assert.equal(deletes[before], 'https://srs.example/rtc/v1/stv/tok9/whep/session/sess-123/viewer/v1');
+  assert.equal(session._whepLocation, 'https://srs.example/rtc/v1/stv/tok9/whep/session/sess-123/viewer/v2', 'the new viewer is tracked at the prefixed URL too');
+  session.disconnect();
+  await delay(10);
+});
+
+test('the WHEP resource is released exactly once, however many times disconnect() is called', async () => {
+  const deletes = [];
+  const whepFetch = async (url, init) => {
+    if (init?.method === 'DELETE') { deletes.push(url); return { ok: true, status: 200, text: async () => '', headers: { get: () => null } }; }
+    return { ok: true, status: 201, text: async () => 'answer', headers: { get: () => 'https://srs/whep/resource/once' } };
+  };
+  const { session, socket } = newSession({ fetch: whepFetch });
+  scriptHappyPath(socket);
+  await session.connect();
+  session.disconnect();
+  session.disconnect();
+  await delay(10);
+  // A second DELETE for a Location the server already freed is a 404 the app can do nothing
+  // about, and it shows up as a whep.release audit failure. Releasing clears the field first,
+  // so the send site is idempotent.
+  assert.deepEqual(deletes, ['https://srs/whep/resource/once']);
+});
+
+test('a fatal socket drop releases the WHEP resource (no leak on the error path)', async () => {
+  const deletes = [];
+  const whepFetch = async (url, init) => {
+    if (init?.method === 'DELETE') { deletes.push(url); return { ok: true, status: 200, text: async () => '', headers: { get: () => null } }; }
+    return { ok: true, status: 201, text: async () => 'answer', headers: { get: () => 'https://srs/whep/resource/fatal' } };
+  };
+  const { session, socket } = newSession({ fetch: whepFetch, cfg: { networkAware: false } });
+  scriptHappyPath(socket);
+  await session.connect();
+  let ended = null;
+  session.on('ended', (p) => { ended = p; });
+  // The server closes the session for good: no reconnect is attempted, so this is the only
+  // chance to free the downlink the session still holds.
+  socket.server('disconnect', 'io server disconnect');
+  await delay(10);
+  assert.ok(ended, 'a non-recoverable drop ends the session');
+  assert.equal(session.state, 'disconnected');
+  assert.deepEqual(deletes, ['https://srs/whep/resource/fatal']);
+  assert.equal(session._whepLocation, null);
+});
+
 test('resilience: a RECOVERABLE drop → reconnecting → reconnected (no re-join)', async () => {
   const { session, socket } = newSession();
   scriptHappyPath(socket);
@@ -432,7 +521,7 @@ test('getStickyId is stable and reused across the session (same-instance resume)
 
 test('disclosure: speak() blocks until acknowledgeDisclosure() when requireDisclosureAck:true', async () => {
   const { session, socket } = newSession({ cfg: { requireDisclosureAck: true } });
-  scriptHappyPath(socket);
+  scriptHappyPath(socket, { openingLine: true });
   await session.connect();
   // disclosure fires but we have NOT called acknowledgeDisclosure() yet
   const err = await session.speak('hello').catch((e) => e);
@@ -446,7 +535,7 @@ test('disclosure: speak() blocks until acknowledgeDisclosure() when requireDiscl
 
 test('disclosure: speak() proceeds without acknowledge when requireDisclosureAck:false', async () => {
   const { session, socket } = newSession({ cfg: { requireDisclosureAck: false } });
-  scriptHappyPath(socket);
+  scriptHappyPath(socket, { openingLine: true });
   await session.connect();
   await session.speak('hi');
   assert.ok(socket.didEmit('onTextEntered'));

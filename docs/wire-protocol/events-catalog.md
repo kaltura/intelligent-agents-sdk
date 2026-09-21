@@ -150,7 +150,7 @@ Headless `collectConverse()` gets the corrected named-tool args for free, but it
 
 #### The `wait_for_response` ACK — one wire contract, two transports
 
-A `tools.client` tool built with `waitForResponse:true` blocks the model's turn until the host app supplies a result. The brain backend polls up to `timeout` seconds (default 30) for an ACK. The ACK is **not a socket event**. On both transports it is the same plain HTTPS POST, authorized by the session's own conversation KS — the model speaks the acked value in the *same* turn:
+A `tools.client` tool built with `waitForResponse:true` blocks the model's turn until the host app supplies a result. The server polls up to `timeout` seconds (default 30) for an ACK. The ACK is **not a socket event**. On both transports it is the same plain HTTPS POST, authorized by the session's own conversation KS — the model speaks the acked value in the *same* turn:
 
 ```
 POST {genieUrl}/assistant/tool_response
@@ -165,7 +165,7 @@ Authorization: KS <conversation ks>
 
 `tool_id` and `tool_invocation_id` are both the `toolMetadata.id` from the parsed `tool` segment. This is exactly what `KalturaAvatarSession#respondToTool` (`SDK:session.js`) and `KalturaChatSession#respondToTool` (`SDK:chat-session.js`) send. The `tool` segment may arrive over the socket (`agent_raw_text`, above) or over the HTTP `/assistant/converse` chat stream, but the ACK path is identical. So one `waitForResponse:true` tool definition works unmodified on both transports. See [CLIENT-COMMANDS.md](../CLIENT-COMMANDS.md) for the app-level contract (`onToolCall` → `respondToTool`).
 
-> `init_response` is **NOT** an HTTP-converse segment. It's a **WebSocket** event type defined in the brain backend's websocket layer. In the live runtime it arrives as the `delta` of the first `agent_raw_text` socket event (carrying `openingPhrase`/`threadId`/`messageId`). It never appears in an `/assistant/converse` HTTP stream. When the intellect has an `opening_phrase`, the backend renders it (Jinja2 over `request_vars`) and its `openingPhrase` value replaces the phrase the client sent.
+> `init_response` is **NOT** an HTTP-converse segment. It is a WebSocket-only event. In the live runtime it arrives as the `delta` of the first `agent_raw_text` socket event (carrying `openingPhrase`/`threadId`/`messageId`). It never appears in an `/assistant/converse` HTTP stream. `openingPhrase` is the intellect's `opening_phrase`, rendered server-side (Jinja2 over `request_vars` and `sys__*`) for this session. With a silent opening phrase (`SILENT_OPENING`) the opening turn still fires `stvStartedTalking`/`stvFinishedTalking` (about 0.5 s apart) but no audible speech, and the SDK surfaces that turn as `SILENT_OPENING_LABEL` (`[silence]`) on `transcript`/`speechChunk`/`avatarStopTalking`. A configured `kickoff` is sent on that `stvFinishedTalking`; its first `think` delta fires `responsePending`. See [START-THE-CONVERSATION.md](../START-THE-CONVERSATION.md).
 
 > **Stored-only message types.** Two message types never stream. They only appear when you read the thread back (`mgmt.messages`/`mgmt.threads`, and the thread `transcript` as `opening: ...`). `opening` is the rendered `opening_phrase`, stored as the thread's first assistant message: `{ type: 'opening', content: [{ type: 'avatar', content: '<rendered phrase>', metadata: {} }] }`. `summary` is written once when an avatar session ends and the intellect has an `avatar_summary_config` (or the default). Its stored shape is `{ type: 'summary', content: [{ type: 'text', content: '<rendered template>', metadata: {} }] }`, alongside `session_duration` on the stored row. It is skipped when the thread has no human messages.
 
@@ -202,16 +202,16 @@ On other paths (`disconnect()`, idle auto-logoff) the SDK aborts the request aft
   | Trigger | Meaning |
   |---|---|
   | `transcript` | A user speech/text turn — the same path `onTextEntered` feeds |
-  | `approved-permissions` | The opening greeting |
+  | `approved-permissions` | The opening greeting. Typed text cannot interrupt it; `speak()` holds text until it ends |
   | `tap-to-talk` | — |
-  | `resume-replay` | — |
-  | `wake-up` | — |
+  | `resume-replay` | The replayed last line after a `resume()`. Same hold as the greeting |
+  | `wake-up` | The server's own "are you still there?" check-in after a silence. Typed text cannot interrupt it; `speak()` holds text until it ends |
   | `begin-agent-conversation` | — |
   | `contact-info-received` / `contact-info-rejected` | — |
   | `html-element-click` | — |
   | `iframe-completed` | — |
   | `code-block-completed` | — |
-  | `hangup-message` | — |
+  | `hangup-message` | The server's goodbye line before it ends the session. Typed text cannot interrupt it; `speak()` holds, then resolves `false` when the session ends |
 
 - **Minted per utterance**, and it maps 1:1 to the brain's request `uuid`. `stvStartedTalking`/`stvFinishedTalking` carry **no** `speechId` in their payload. Attribute them to the `speechId` of the surrounding `stvSpeechChunk`s.
 - **The staleness guard is what makes barge-in work.** The server tracks a single active `speechId` per session. Any TTS/STV event whose `speechId` doesn't match the current one is **dropped** server-side. When a new user turn arrives, the server mints a new `transcript` `speechId` and makes it the active one, instantly invalidating the prior utterance's in-flight audio. That is exactly what `agentInterrupted` reflects. The `stvSpeechChunk` `speechId` switches at each `agentInterrupted` (e.g. `4nkM-transcript-…` → `agentInterrupted` → `d1qD-transcript-…`).

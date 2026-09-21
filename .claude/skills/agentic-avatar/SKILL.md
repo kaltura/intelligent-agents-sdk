@@ -120,7 +120,7 @@ For the full endpoint/DTO reference behind every one of these calls (exact paylo
 | `setSkillIds(configId, skillIds, ks)` | Attach standalone Skills, each `{id, mode, condition?}` with `mode` in `SKILL_MODES` (`'adhoc'`, `'adhoc-save'`, `'preloaded'`). `condition` is a Jinja2 expression over thread vars, e.g. `'{{ sys__avatar_enabled }}'`. `[]` detaches all. |
 | `setThreadStartTools(configId, toolIds, ks)` | Tool ids (`api`/`code` tools) the backend runs once when a thread starts. `[]` clears. |
 | `setModelConfiguration(configId, config, ks)` | `{model_id?, max_output_tokens?, thinking_level?, temperature?}`; `model_id` in `MODEL_IDS`, `thinking_level` in `THINKING_LEVELS`. `null` restores backend defaults. |
-| `setOpeningPhrase(configId, phrase, ks)` | Server-side opening line for avatar sessions (Jinja2 over `request_vars`). `null` clears; `''` is rejected. |
+| `setOpeningPhrase(configId, phrase, ks)` | The opening line of every avatar session, owned by the intellect (Jinja2 over `requestVars` + `sys__*`). `null` clears; `''` is rejected. |
 | `setAvatarSummaryConfig(configId, config, ks)` | `{prompt, analysis, template, content_type}` for the end-of-session summary message; `content_type` in `SUMMARY_CONTENT_TYPES`. `null` clears. |
 | `setSecrets(configId, entries, ks)` | Write-only; prior secrets round-trip as the mask sentinel so they're kept. |
 | `listSecretNames(configId, ks)` | Names only — values are never returned. |
@@ -148,9 +148,9 @@ await kaltura.intellectConfig.setModelConfiguration(configId, {
   thinking_level: 'low',               // one of THINKING_LEVELS; Gemini models only
 }, admin.ks);
 
-// Opening phrase: rendered server-side with request_vars, spoken as the first avatar turn,
-// stored on the thread as an `opening` message. Overrides any client-sent opening line.
-await kaltura.intellectConfig.setOpeningPhrase(configId, 'Hi {{ user_name }}, what can I help with?', admin.ks);
+// Opening phrase: the intellect owns it (provision() writes it here, avatar left unset). Jinja2,
+// rendered once per session over requestVars + sys__*, stored on the thread as an `opening` message.
+await kaltura.intellectConfig.setOpeningPhrase(configId, '{% if user_name %}Hi {{ user_name }}, what can I help with?{% else %}Hi, what can I help with?{% endif %}', admin.ks);
 
 // Thread-start tools: run once per new thread, server-side only. Only api/code tools run.
 await kaltura.intellectConfig.setThreadStartTools(configId, [toolId], admin.ks);
@@ -233,7 +233,7 @@ await kaltura.intellectConfig.setKnowledgeIds(configId, [record.id], admin.ks);
 await kaltura.knowledge.setEnabled(configId, true, admin.ks);   // flips capabilities.use_knowledge_base 'on'
 ```
 
-`knowledge_ids` is capped at one record per intellect (`setKnowledgeIds` throws before any network call if you pass more than one). RAG retrieval works only after async indexing completes, and `kaltura.knowledge.isIndexed(record.id, admin.ks)` does NOT tell you that. See API-REFERENCE.md § Ground the Agent for why (its `ready` flag is a container-lifecycle status, not an indexing-completion signal), which other signal to reach for, and why to budget a fixed wait instead of polling for now.
+`knowledge_ids` is capped at one record per intellect (`setKnowledgeIds` throws before any network call if you pass more than one). RAG retrieval works only after async indexing completes, and `kaltura.knowledge.isIndexed(record.id, admin.ks)` does NOT tell you that. See API-REFERENCE.md § Ground the Agent for why (its `ready` flag is a container-lifecycle status, not an indexing-completion signal), which other signal to reach for, and why to budget a fixed wait instead of polling.
 
 ## Lifecycle — react to session/thread events without polling
 
@@ -397,7 +397,7 @@ Navigation runs through exactly one deterministic mechanism — `session.onToolC
 3. **Restricted topics** — `prompts.restrictedTopics` is enforced content, not a suggestion; use it for anything the agent must never discuss.
 4. **Voice selection** — pick from `catalog.list(ks, {type:'voice'})` or clone one (`catalog.createVoice`/`importVoiceFrom*`); match voice to persona.
 5. **Visual selection** — same for `type:'visual'`; `catalog.createVisual` for a custom image.
-6. **Opening phrase.** Two places set it. Server-side, `intellectConfig.setOpeningPhrase` on the intellect (Jinja2 over `request_vars`, always wins when set). Client-side, the avatar's `openingPhrase`: pass a real scripted line, or `'<blank>'` (the SSML silence sentinel) if you want no opening line at all, never `''` (an empty client opening phrase makes the first turn fail). Pick one; if both are set, the intellect's phrase is spoken.
+6. **Opening phrase.** The intellect's `opening_phrase` owns it: `provision({ openingPhrase })` writes it there and creates the avatar with no `openingPhrase`; `intellectConfig.setOpeningPhrase` changes it later (Jinja2 over `requestVars` + `sys__*`, guard optional variables with `{% if %}`). Leave the avatar's `openingPhrase` unset; clear a legacy one with `avatars.update({ id, openingPhrase: null })`. Never `''`. The opening turn cannot be interrupted, so the standard pattern is `SILENT_OPENING` (exported from `./management`, the string `<blank>`) plus a browser-side `kickoff` on the session: the SDK sends that text once, the moment the opening ends, and the agent's reply is interruptible. Guide: `docs/START-THE-CONVERSATION.md`.
 7. **Glossary** — `intellectConfig.patch(configId, {glossary}, ks)` for domain terms/pronunciations the brain should know verbatim.
 8. **Motion control** — capabilities like `avatar_show_content` / `avatar_filler` shape how animated the avatar is between turns.
 9. **Max conversation length.** An agent field, not an intellect field: `provision({ maxConversationLength })` at create time, or `agents.update({ agentId, maxConversationLength }, ks)` later.

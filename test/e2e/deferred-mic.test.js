@@ -6,29 +6,12 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { KalturaAvatarSession } from '../../src/experience/index.js';
-import { FakeSocket, scriptHappyPath } from '../fakes/socket.js';
-import { FakeRTCPeerConnection, FakeVideoEl, fakeGetUserMedia, FakeMediaStreamCtor } from '../fakes/rtc.js';
+import { scriptHappyPath } from '../fakes/socket.js';
+import { fakeGetUserMedia } from '../fakes/rtc.js';
+import { newAvatarSession, asrPeer } from '../fakes/avatar-session.js';
 
-const CONV_KS = 'djJ8' + Buffer.from('v2|123|geniegpcid:1222').toString('base64url');
-
-function newSession(overrides = {}) {
-  FakeRTCPeerConnection.reset();
-  const socket = new FakeSocket();
-  const videoEl = overrides.videoEl ?? new FakeVideoEl({ autoCanPlay: true });
-  const whepFetch = overrides.fetch ?? (async () => ({ ok: true, status: 201, text: async () => 'v=0\r\nanswer\r\n', headers: { get: () => 'https://srs/whep/resource/1' } }));
-  const getUserMedia = overrides.getUserMedia ?? fakeGetUserMedia();
-  const session = new KalturaAvatarSession({
-    token: CONV_KS, srsBaseUrl: 'https://srs.example', turnServerUrl: 'turn.avatar.us.kaltura.ai',
-    videoEl, socketFactory: () => socket, rtcConstructor: FakeRTCPeerConnection,
-    fetch: whepFetch, getUserMedia, micStartMode: 'deferred',
-    mediaStreamConstructor: FakeMediaStreamCtor,
-    ...overrides.cfg,
-  });
-  return { session, socket, videoEl, getUserMedia };
-}
-
-const asrPeer = () => FakeRTCPeerConnection.instances[0];
+/** Same fixture, deferred mic by default; `overrides.cfg.micStartMode` still wins. */
+const newSession = (overrides = {}) => newAvatarSession({ ...overrides, cfg: { micStartMode: 'deferred', ...overrides.cfg } });
 
 test('deferred connect: no getUserMedia, handshake identical, sendonly audio slot negotiated', async () => {
   const { session, socket, getUserMedia } = newSession();
@@ -140,4 +123,6 @@ test('startMic() before connect throws invalid_state; bad micStartMode throws ba
   const { session } = newSession();
   await assert.rejects(() => session.startMic(), (e) => e.code === 'invalid_state');
   assert.throws(() => newSession({ cfg: { micStartMode: 'lazy' } }), (e) => e.code === 'bad_request');
+  // 'required' was removed: connect() never waits on or fails for the mic (R-6), so the mode is rejected.
+  assert.throws(() => newSession({ cfg: { micStartMode: 'required' } }), (e) => e.code === 'bad_request');
 });

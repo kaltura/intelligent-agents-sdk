@@ -18,14 +18,20 @@
  *     rebuilds the next transport with the full current context.
  *   - the `onToolCall` handler registry — handlers registered once on the
  *     facade are re-registered on every transport it attaches.
- *   - forwarding of the transport-agnostic event subset: `transcript`,
- *     `turnStart`, `turnEnd`, `toolCall`, `toolCallResult`, `toolCallInvalid`,
- *     `error`, `warning`, `responsePending`, `responseSettled`,
- *     `agentActionDenied`, `ended` — same payload shapes on both transports.
+ *   - forwarding of the events an app needs to render the conversation:
+ *       - on both transports: `transcript`, `turnStart`, `turnEnd`, `toolCall`,
+ *         `toolCallResult`, `toolCallInvalid`, `error`, `warning`,
+ *         `responsePending`, `responseSettled`, `agentActionDenied`, `ended`;
+ *       - avatar mode only: `speechChunk`, `avatarStartTalking`,
+ *         `avatarStopTalking`, `interrupted`.
+ *     Same payload shapes as the transport. Listeners registered on the facade
+ *     survive every `switchMode()`.
  *
- * Mode-specific APIs (mic control, `interrupt()`, tap-to-talk, disclosure,
- * `videoEl` …) are NOT mirrored here: use the `transport` getter, and rewire
- * such listeners on each `transportChanged {mode, transport}` event.
+ * Events that pair with a transport-only method stay on the transport:
+ * `disclosure` (`acknowledgeDisclosure()`), `micStarted` (`startMic()`,
+ * `micStream`), and the rest of the mic/video/reconnect surface. Read them off
+ * the `transport` getter and rewire on each `transportChanged {mode, transport}`
+ * event.
  *
  * Switching is tear-down-and-reconstruct by design (v1): no live mutation of
  * a running transport, so each transport keeps its own verified lifecycle.
@@ -40,16 +46,32 @@ import { KalturaError } from '../core/errors.js';
 import { assertRequestVars } from '../management/conversations.js';
 import { sanitizeJson } from '../core/safety.js';
 
-/** Events forwarded 1:1 from whichever transport is attached. */
+/**
+ * Events forwarded 1:1 from whichever transport is attached (`ended` is handled
+ * separately so the facade can add its own reason). The last row only fires in
+ * avatar mode; a chat transport never emits those names.
+ */
 const FORWARDED_EVENTS = [
   'transcript', 'turnStart', 'turnEnd',
   'toolCall', 'toolCallResult', 'toolCallInvalid',
   'error', 'warning', 'responsePending', 'responseSettled',
   'agentActionDenied',
+  'speechChunk', 'avatarStartTalking', 'avatarStopTalking', 'interrupted',
 ];
 
 /** Max sendText() calls buffered while a switchMode() is in flight. */
 const SWITCH_SEND_BUFFER_MAX = 8;
+
+/**
+ * The rejection a `connect()`/`switchMode()` promise gets when `disconnect()` lands while it is
+ * in flight. `disconnect()` already tore the transport down and emitted the single `ended`, so
+ * the in-flight call only has to tell its caller — it must not move the facade to `failed`.
+ * @param {'connect'|'switchMode'} where
+ */
+const closedMidFlight = (where) => new KalturaError({
+  type: 'about:blank', title: 'disconnected', code: 'invalid_state',
+  detail: `disconnect() was called while ${where}() was in flight — the session is closed.`,
+});
 
 export class KalturaAgentSession extends Emitter {
   /**
@@ -65,6 +87,9 @@ export class KalturaAgentSession extends Emitter {
    * @param {boolean} [cfg.allowInsecureTransport] Localhost/dev only.
    * @param {object} [cfg.avatar] KalturaAvatarSession-specific cfg (`videoEl`, `conversationManagerUrl`, `srsBaseUrl`, `turnServerUrl`, `socketFactory`, mic options, `capabilities`, …) — required before the first avatar connect/switch.
    * @param {object} [cfg.chat] KalturaChatSession-specific cfg (`genieUrl`, `fetch`, `capabilities`).
+   * @param {string|{text:string, echo?:boolean}} [cfg.kickoff] A first turn the SDK sends for you, exactly once per
+   *   conversation, on the FIRST transport only (`connect()`); a `switchMode()` transport never re-sends it.
+   *   Set it here, not inside `cfg.avatar`/`cfg.chat`. Same shape and events as the transports' own `kickoff`.
    * @param {{avatar?:(cfg:object)=>object, chat?:(cfg:object)=>object}} [cfg.transportFactories] Test/advanced hook: override how a transport is constructed (receives the merged per-transport cfg, must return a transport-shaped object).
    */
   constructor(cfg) {
@@ -88,6 +113,9 @@ export class KalturaAgentSession extends Emitter {
     this._detachFns = [];
     this._switchBuffer = [];
     this._switching = null;
+    // Top-level `kickoff` rides only the first transport (see _buildTransport); cleared once
+    // connect() has handed it over, so a later switchMode() transport never re-sends it.
+    this._kickoffPending = cfg.kickoff !== undefined;
     /** @type {'idle'|'connecting'|'connected'|'switching'|'closed'|'failed'} */
     this.state = 'idle';
   }
@@ -95,9 +123,11 @@ export class KalturaAgentSession extends Emitter {
   /**
    * Connect the starting transport. Resolves when the transport is live.
    * On failure the facade lands in `failed` (`stateChange` reason
-   * `permission_denied` for a mic/camera rejection, else `transport_failed`)
-   * and the transport's typed error is re-thrown — construct a new
-   * KalturaAgentSession to retry.
+   * `transport_failed`) and the transport's typed error is re-thrown —
+   * construct a new KalturaAgentSession to retry. A denied or missing mic
+   * is not a failure: the avatar transport connects mic-less and emits a
+   * `warning` (`mic_permission_denied` / `mic_not_found` / `mic_in_use` /
+   * `mic_attach_failed`).
    * @returns {Promise<void>}
    */
   async connect() {
@@ -105,12 +135,18 @@ export class KalturaAgentSession extends Emitter {
     this._setState('connecting');
     try {
       const t = this._buildTransport(this._mode);
+      this._kickoffPending = false;   // handed to the first transport (or rejected by its constructor)
       this._attach(t);
       await t.connect();
+      if (this._isClosed()) throw closedMidFlight('connect');
       this._setState('connected');
     } catch (e) {
+      this._kickoffPending = false;
+      // disconnect() landed while the transport was connecting: it already tore the transport
+      // down and emitted `ended`. The facade stays `closed`; only the caller's promise rejects.
+      if (this._isClosed()) throw closedMidFlight('connect');
       this._teardownTransport({ final: false });
-      this._setState('failed', e && e.code === 'permission_denied' ? 'permission_denied' : 'transport_failed');
+      this._setState('failed', 'transport_failed');
       throw e;
     }
   }
@@ -127,7 +163,10 @@ export class KalturaAgentSession extends Emitter {
    * when no turn had happened yet (no thread existed to carry over).
    *
    * On failure the facade lands in `failed` (no automatic rollback — the old
-   * transport is already gone) and the error is re-thrown.
+   * transport is already gone) and the error is re-thrown. A `disconnect()`
+   * while the switch is in flight wins instead: the facade lands in `closed`
+   * with its single `ended {reason:'disconnected'}`, and the switch promise
+   * rejects with typed `invalid_state`.
    * @param {'avatar'|'chat'} target
    * @returns {Promise<void>}
    */
@@ -145,6 +184,9 @@ export class KalturaAgentSession extends Emitter {
       this._mode = target;   // before _attach so transportChanged carries the new mode
       this._attach(t);
       await t.connect();
+      // disconnect() landed while the new transport was connecting (its connect() may still
+      // have resolved a beat later). The facade is `closed`; never flip it back to `connected`.
+      if (this._isClosed()) throw closedMidFlight('switchMode');
       this._setState('connected');
       this.emit('modeChanged', { mode: target, threadContinuity: hadThread });
     })();
@@ -154,6 +196,9 @@ export class KalturaAgentSession extends Emitter {
       const buffered = this._switchBuffer.splice(0);
       for (const b of buffered) b.resolve(this._deliver(b.text, b.opts));
     } catch (e) {
+      // disconnect() already tore the transport down, rejected the buffered sends and emitted
+      // `ended`. Leave `closed` alone — a `failed` here would be a second terminal state.
+      if (this._isClosed()) throw closedMidFlight('switchMode');
       this._teardownTransport({ final: false });
       this._setState('failed', 'transport_failed');
       const buffered = this._switchBuffer.splice(0);
@@ -305,6 +350,7 @@ export class KalturaAgentSession extends Emitter {
       partnerId: this._cfg.partnerId,
       allowInsecureTransport: this._cfg.allowInsecureTransport,
     };
+    if (this._kickoffPending) shared.kickoff = this._cfg.kickoff;
     const factory = this._cfg.transportFactories?.[mode];
     if (mode === 'avatar') {
       const merged = { ...shared, ...(this._cfg.avatar || {}) };
@@ -351,4 +397,6 @@ export class KalturaAgentSession extends Emitter {
 
   /** @param {'idle'|'connecting'|'connected'|'switching'|'closed'|'failed'} s @param {string} [reason] */
   _setState(s, reason) { this.state = s; this.emit('stateChange', reason ? { state: s, reason } : { state: s }); }
+  /** Read after an `await`: `disconnect()` may have closed the session while a transport was connecting. */
+  _isClosed() { return this.state === 'closed'; }
 }

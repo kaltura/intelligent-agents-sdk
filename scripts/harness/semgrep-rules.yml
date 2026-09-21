@@ -62,9 +62,9 @@ rules:
     message: >-
       Raw global fetch() call outside the injectable Http transport
       (core/http.js). This bypasses the shared retry/backoff and
-      response-size budgeting in http.js — and if the target URL comes
-      from caller input, it also skips the isPrivateOrLoopbackHost
-      SSRF check that wire.js/session.js apply before their fetch calls.
+      response-size budgeting in http.js, and for a media URL it also
+      skips the whepUrlHasPrivateIp fail-fast check that session.js
+      applies before its fetch calls.
     paths:
       exclude:
         - '**/src/core/http.js'

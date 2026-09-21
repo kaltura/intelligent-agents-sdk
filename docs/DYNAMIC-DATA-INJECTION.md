@@ -120,6 +120,34 @@ A bracketed tag like `[SECTION CHANGE]` is not a wire-level feature. It's a conv
 
 **Pair it with a context update, in this order:** call `setDynamicPrompt()` (or `Presenter.refreshContext()`) first, then `speak()` immediately after. That way the nudge that provokes the turn arrives *after* the context it needs to reason correctly about is already in place, not racing it.
 
+### When `speak()` actually sends
+
+`speak()` is safe to call at any moment after `connect()` resolves. It decides the timing for you:
+
+| Agent is... | `speak()` does |
+|---|---|
+| Idle, or still thinking about the last turn | Sends now. Text sent while it's thinking merges into that turn. |
+| Talking a normal reply | Sends now. The avatar stops mid-sentence and answers the new text (barge-in). |
+| In a turn typed text can't interrupt: its opening line right after `connect()`, its replayed line after `resume()`, or its own "are you still there?" check-in | Holds the text, then sends it the instant that turn ends. |
+
+Several `speak()` calls during one held turn go out together as one turn, one text per line, in call order. The agent reads everything the user said while it was busy and answers once, like a person catching up.
+
+```js
+// The first nudge: let the SDK send it. `kickoff` rides the same hold and goes out once,
+// the moment the opening turn ends. Never re-sent on resume() or a reconnect.
+const session = new KalturaAvatarSession({
+  ...runtimeConfig,
+  kickoff: '[SESSION START] The session just loaded. Begin now per your OPENING instructions.',
+});
+await session.connect();
+
+// Later nudges: speak(). Resolves true once the text reached the server,
+// false if the session ended while the text was still held.
+const sent = await session.speak('[CONTEXT] The user just opened the pricing page.');
+```
+
+Guardrails (`onBeforeSend`, `maxTurnsPerMinute`, tap-to-talk, disclosure) run when you call `speak()`, not when the held text is sent, so a blocked call rejects immediately.
+
 ## Answering a brain-initiated request
 
 The mechanisms above all push data from your app *to* the brain. There's also a path in the other direction: your agent's configuration can require the brain to ask the viewer for specific structured fields at some point in the conversation (an email, a booking date, a support ticket's category). See [STRUCTURED-DATA-FORMS.md](STRUCTURED-DATA-FORMS.md) for how to configure what it asks for. Once your UI collects the viewer's answer, hand it back with:

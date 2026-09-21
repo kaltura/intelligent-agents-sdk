@@ -49,11 +49,13 @@ socket.on('conversationTimeWarning', ({remainingTime}) => {/* seconds left */});
 
 ## Sending User Input
 
-Two ways the user drives the conversation:
+Three ways the conversation gets its turns:
 
 1. **Voice (primary)**: just speak. The ASR channel publishes mic audio; the server transcribes and feeds the brain. No client call needed.
 
-2. **Text injection**: drive the live avatar by text instead of voice. This is a *socket* event (the same channel ASR transcripts use), not an `/assistant/converse` HTTP call. HTTP converse is a separate stateless chat that never reaches the avatar's speech engine, so the avatar stays silent if you use it instead. Verified working via the SDK's own `session.speak()` (`src/experience/session.js`):
+2. **Kickoff (the SDK's first turn)**: the `kickoff` session option is typed text the SDK sends for the app, once per session object, through the same text-injection path as item 3. It goes out the moment the server accepts input: after the opening turn ends (`stvFinishedTalking`), or after `acknowledgeDisclosure()` when the disclosure gate is on. Pair it with a silent opening phrase (`SILENT_OPENING`) for the fastest interruptible first reply. See [START-THE-CONVERSATION.md](../START-THE-CONVERSATION.md).
+
+3. **Text injection**: drive the live avatar by text instead of voice. This is a *socket* event (the same channel ASR transcripts use), not an `/assistant/converse` HTTP call. HTTP converse is a separate stateless chat that never reaches the avatar's speech engine, so the avatar stays silent if you use it instead. Verified working via the SDK's own `session.speak()` (`src/experience/session.js`):
 
    ```js
    // the isSpeechStart marker interrupts a mid-sentence avatar (no-op if idle)

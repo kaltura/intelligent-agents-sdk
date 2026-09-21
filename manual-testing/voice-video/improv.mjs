@@ -2,7 +2,7 @@
 /**
  * Improv theater: one host and two actors, each a separate throwaway agent
  * with its own uploaded portrait, a gender-matched preset voice and a silent
- * opening (`openingPhrase: '<blank>'`), so nobody speaks until the page cues
+ * opening (`opening_phrase: SILENT_OPENING` on each intellect), so nobody speaks until the page cues
  * the host. Serves manual-testing/voice-video/multi-avatar.html, which runs
  * the show by itself: the host opens with the first rule of improv (agree and
  * say "yes") and hands a scene to the actors, the actors take three turns, the
@@ -14,7 +14,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { Management, resolveIntellectId } from '../../src/management/index.js';
+import { Management, SILENT_OPENING, resolveIntellectId } from '../../src/management/index.js';
 import { loadCredentials, startServer, reportListenError, lanAddress, repoRoot, PORT, FOUR_HOURS } from './serve.mjs';
 
 const SHOW = 'Yes, And!';
@@ -121,12 +121,12 @@ async function provisionMember(member) {
       prompt('restrictedTopics', 'Never discuss:', 'Insults, slurs, politics, anything unsafe for a family show.'),
     ],
     base_directive: directive(member),
+    opening_phrase: SILENT_OPENING, // silence: nobody speaks until the page cues the host
   }, admin.ks);
 
   const avatar = await kaltura.avatars.create({
     voice: { id: voice.itemId, speed: 1.0 },
     visual: { id: visual.itemId, motionControl: { speaking: 0.6, nonSpeaking: 0.2 } },
-    openingPhrase: '<blank>', // silence: nobody speaks until the page cues the host
   }, admin.ks);
   record.avatarId = avatar.id;
 

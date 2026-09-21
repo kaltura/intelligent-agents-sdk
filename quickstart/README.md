@@ -20,9 +20,23 @@ The script provisions a complete agent (brain + face + voice), sends it a test m
 
 ## What it does
 
-1. Provisions a full agent from your brief (creates intellect + avatar + agent)
+1. Provisions a full agent from your brief (creates intellect + avatar + agent) with a silent opening (`openingPhrase: SILENT_OPENING`)
 2. Sends a test message via the headless conversation path
 3. Prints the agent reply, plus the IDs you need to embed or extend the agent
+
+## Start the conversation in the browser
+
+The agent opens silently, so the browser sends the first turn. Pass `kickoff` and the SDK sends it once, the moment the server accepts input. The agent's reply is interruptible from the first word.
+
+```js
+const session = new KalturaAvatarSession({
+  ...runtimeConfig,
+  kickoff: 'Greet the user and briefly say how you can help.',
+});
+await session.connect();
+```
+
+Full pattern, event order and guarantees: [docs/START-THE-CONVERSATION.md](../docs/START-THE-CONVERSATION.md).
 
 ## Next steps
 

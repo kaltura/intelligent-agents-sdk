@@ -87,14 +87,37 @@ test('connect builds the starting transport with the merged shared cfg and forwa
   assert.deepEqual(got, [{ text: 'hi', type: 'final' }]);
 });
 
-test('connect is once-only; failure lands in failed with the right reason', async () => {
-  const boom = Object.assign(new Error('mic denied'), { code: 'permission_denied' });
+test('forwards the reply-rendering avatar events; disclosure and micStarted stay on the transport', async () => {
+  const { session, made } = newSession();
+  await session.connect();
+  const t = made.avatar[0];
+  const got = {};
+  for (const ev of ['speechChunk', 'avatarStartTalking', 'avatarStopTalking', 'interrupted', 'disclosure', 'micStarted']) {
+    got[ev] = [];
+    session.on(ev, (p) => got[ev].push(p));
+  }
+  t.emit('avatarStartTalking', {});
+  t.emit('speechChunk', { text: 'hi', speechId: 's1', durationMs: 300 });
+  t.emit('interrupted', { at: 1 });
+  t.emit('avatarStopTalking', { text: 'hi' });
+  t.emit('disclosure', { text: 'AI' });
+  t.emit('micStarted', {});
+  assert.deepEqual(got.avatarStartTalking, [{}]);
+  assert.deepEqual(got.speechChunk, [{ text: 'hi', speechId: 's1', durationMs: 300 }]);
+  assert.deepEqual(got.interrupted, [{ at: 1 }]);
+  assert.deepEqual(got.avatarStopTalking, [{ text: 'hi' }]);
+  assert.deepEqual(got.disclosure, [], 'pairs with transport.acknowledgeDisclosure()');
+  assert.deepEqual(got.micStarted, [], 'pairs with transport.startMic()/micStream');
+});
+
+test('connect is once-only; failure lands in failed with reason transport_failed', async () => {
+  const boom = Object.assign(new Error('socket down'), { code: 'connect_failed' });
   const { session, made } = newSession({ prep: (t) => { t.connectImpl = () => { throw boom; }; } });
   const states = [];
   session.on('stateChange', (p) => states.push(p));
   await assert.rejects(() => session.connect(), boom);
   assert.equal(session.state, 'failed');
-  assert.deepEqual(states, [{ state: 'connecting' }, { state: 'failed', reason: 'permission_denied' }]);
+  assert.deepEqual(states, [{ state: 'connecting' }, { state: 'failed', reason: 'transport_failed' }]);
   assert.equal(made.avatar[0].calls.filter((c) => c[0] === 'disconnect').length, 1, 'failed transport is torn down');
   await assert.rejects(() => session.connect(), (e) => e.code === 'invalid_state');
 });
@@ -197,6 +220,72 @@ test('switch failure: facade lands in failed, buffered sends reject with the swi
   assert.equal(made.chat[0].calls.filter((c) => c[0] === 'disconnect').length, 1, 'half-built transport torn down');
 });
 
+test('disconnect() during switchMode(): the switch rejects invalid_state, the facade closes, never failed', async () => {
+  const { session, made } = newSession();
+  await session.connect();
+  // A real transport rejects its pending connect() when disconnect() tears it down.
+  let rejectConnect;
+  session._cfg.transportFactories.chat = (cfg) => {
+    const t = new FakeTransport(cfg, 'chat');
+    t.connectImpl = () => new Promise((_, r) => { rejectConnect = r; });
+    const base = t.disconnect.bind(t);
+    t.disconnect = (...a) => { base(...a); rejectConnect?.(Object.assign(new Error('closed mid-connect'), { code: 'connect_failed' })); };
+    made.chat.push(t);
+    return t;
+  };
+  const states = [], ended = [];
+  session.on('stateChange', (s) => states.push(s));
+  session.on('ended', (e) => ended.push(e));
+  const sw = session.switchMode('chat');
+  await Promise.resolve();
+  session.disconnect();
+  await assert.rejects(() => sw, (e) => e.code === 'invalid_state' && e.title === 'disconnected');
+  assert.equal(session.state, 'closed');
+  assert.deepEqual(ended, [{ reason: 'disconnected' }]);
+  assert.ok(!states.some((s) => s.state === 'failed'), 'a user disconnect is not a transport failure');
+  assert.equal(made.chat[0].calls.filter((c) => c[0] === 'disconnect').length, 1, 'the pending target was torn down once');
+  await assert.rejects(() => session.sendText('after close'), (e) => e.code === 'invalid_state');
+});
+
+test('disconnect() during switchMode(): a target that connects after the disconnect still ends closed, no modeChanged', async () => {
+  const { session, made } = newSession();
+  await session.connect();
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  session._cfg.transportFactories.chat = (cfg) => { const t = new FakeTransport(cfg, 'chat'); t.connectImpl = () => gate; made.chat.push(t); return t; };
+  const modeChanged = [], states = [];
+  session.on('modeChanged', (m) => modeChanged.push(m));
+  session.on('stateChange', (s) => states.push(s));
+  const sw = session.switchMode('chat');
+  await Promise.resolve();
+  session.disconnect();
+  release();   // the late connect must not resurrect the session
+  await assert.rejects(() => sw, (e) => e.code === 'invalid_state' && e.title === 'disconnected');
+  assert.equal(session.state, 'closed');
+  assert.deepEqual(modeChanged, []);
+  assert.ok(!states.some((s) => s.state === 'connected' && states.indexOf(s) > 0), 'no connected after the disconnect');
+  assert.ok(!states.some((s) => s.state === 'failed'));
+});
+
+test('disconnect() during connect(): connect rejects invalid_state, the facade closes, never failed', async () => {
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  const { session, made } = newSession({ prep: (t) => { t.connectImpl = () => gate; } });
+  const states = [], ended = [];
+  session.on('stateChange', (s) => states.push(s));
+  session.on('ended', (e) => ended.push(e));
+  const c = session.connect();
+  await Promise.resolve();
+  assert.equal(session.state, 'connecting');
+  session.disconnect();
+  release();
+  await assert.rejects(() => c, (e) => e.code === 'invalid_state' && e.title === 'disconnected');
+  assert.equal(session.state, 'closed');
+  assert.deepEqual(ended, [{ reason: 'disconnected' }]);
+  assert.ok(!states.some((s) => s.state === 'failed'));
+  assert.equal(made.avatar[0].calls.filter((c) => c[0] === 'disconnect').length, 1);
+});
+
 test('sends buffered during a switch flush to the new transport; overflow past the cap throws', async () => {
   const { session, made } = newSession();
   await session.connect();
@@ -287,4 +376,58 @@ test('token is non-enumerable — never serializes off the facade', () => {
   const { session } = newSession();
   assert.ok(!JSON.stringify(session).includes(CONV_KS));
   assert.ok(!Object.keys(session).includes('_token'));
+});
+
+// ───────────────────────── kickoff ─────────────────────────
+
+test('kickoff: passed to the first transport only; a switchMode() transport never carries it', async () => {
+  const { session, made } = newSession({ cfg: { kickoff: 'Greet the user.' } });
+  await session.connect();
+  assert.equal(made.avatar[0].cfg.kickoff, 'Greet the user.');
+  await session.switchMode('chat');
+  assert.equal('kickoff' in made.chat[0].cfg, false);
+  await session.switchMode('avatar');
+  assert.equal('kickoff' in made.avatar[1].cfg, false);
+});
+
+test('kickoff: chat-first passes the object form through untouched', async () => {
+  const { session, made } = newSession({ cfg: { mode: 'chat', kickoff: { text: 'Greet the user.', echo: true } } });
+  await session.connect();
+  assert.deepEqual(made.chat[0].cfg.kickoff, { text: 'Greet the user.', echo: true });
+  await session.switchMode('avatar');
+  assert.equal('kickoff' in made.avatar[0].cfg, false);
+});
+
+test('kickoff: absent from every transport cfg when not configured', async () => {
+  const { session, made } = newSession();
+  await session.connect();
+  assert.equal('kickoff' in made.avatar[0].cfg, false);
+  await session.switchMode('chat');
+  assert.equal('kickoff' in made.chat[0].cfg, false);
+});
+
+test('kickoff: a sendText buffered during a switch is delivered as itself, never merged with the kickoff', async () => {
+  let release;
+  const { session, made } = newSession({
+    cfg: { kickoff: 'Greet the user.' },
+    prep: (t) => { if (t.kind === 'chat') t.connectImpl = () => new Promise((r) => { release = r; }); },
+  });
+  await session.connect();
+  const sw = session.switchMode('chat');
+  const queued = session.sendText('next');
+  release();
+  await sw;
+  await queued;
+  assert.deepEqual(made.chat[0].calls.filter((c) => c[0] === 'sendText').map((c) => c[1]), ['next']);
+  assert.equal('kickoff' in made.chat[0].cfg, false);
+});
+
+test('kickoff: a connect() that fails does not leave the kickoff pending for a later transport', async () => {
+  const { session, made } = newSession({
+    cfg: { kickoff: 'Greet the user.' },
+    prep: (t) => { t.connectImpl = () => { throw new Error('nope'); }; },
+  });
+  await assert.rejects(() => session.connect(), /nope/);
+  assert.equal(made.avatar[0].cfg.kickoff, 'Greet the user.');
+  assert.equal(session._kickoffPending, false);
 });

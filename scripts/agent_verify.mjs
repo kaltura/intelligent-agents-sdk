@@ -300,6 +300,52 @@ section('Part 3 — Resiliency');
   }
 }
 
+// R-6: connect() never waits on, and never fails for, the microphone.
+// Source: the only accepted micStartMode values are 'immediate' | 'deferred'
+// (no 'required'). Tests: a failed mic still yields state 'connected', and
+// 'required' is rejected with bad_request at construction.
+{
+  const sessionSrc = read(join(SDK_SRC, 'experience', 'session.js'));
+  const micTest = read(join(ROOT, 'test', 'e2e', 'mic-concurrency.test.js'));
+  const deferredTest = read(join(ROOT, 'test', 'e2e', 'deferred-mic.test.js'));
+  const problems = [];
+  if (!/must be 'immediate' or 'deferred'/.test(sessionSrc)) problems.push("session.js: micStartMode validation must accept only 'immediate' | 'deferred'");
+  if (/micStartMode\s*[!=]==?\s*'required'/.test(sessionSrc)) problems.push("session.js: still branches on micStartMode 'required'");
+  if (!micTest.includes('a failed mic never fails connect()')) problems.push('test/e2e/mic-concurrency.test.js missing "a failed mic never fails connect()"');
+  if (!/micStartMode:\s*'required'/.test(deferredTest)) problems.push("test/e2e/deferred-mic.test.js missing the micStartMode: 'required' → bad_request assertion");
+  if (problems.length === 0) pass('R-6', 'connect() never waits on or fails for the mic — verified by mic-concurrency + deferred-mic tests (run below)');
+  else fail('R-6', 'connect()/mic decoupling not verifiable', problems.join('\n      '));
+}
+
+// R-7: turn state changes only on named socket events, never on timers.
+// Grep the hold/release method bodies for setTimeout/setInterval and check
+// that kickoff.test.js still covers each row of the hold/release table.
+{
+  const sessionSrc = read(join(SDK_SRC, 'experience', 'session.js'));
+  const bodyOf = (name) => {
+    const start = sessionSrc.indexOf(`\n  ${name}(`);
+    if (start < 0) return null;
+    const end = sessionSrc.indexOf('\n  }', start);
+    return end < 0 ? null : sessionSrc.slice(start, end);
+  };
+  const problems = [];
+  for (const name of ['_endUninterruptibleTurn', '_dropHeldTurns', '_maybeSendKickoff']) {
+    const body = bodyOf(name);
+    if (body == null) problems.push(`session.js: ${name}() not found`);
+    else if (/setTimeout|setInterval/.test(body)) problems.push(`session.js: ${name}() uses a timer`);
+  }
+  const kickoffTest = read(join(ROOT, 'test', 'unit', 'kickoff.test.js'));
+  for (const needle of [
+    'sent on stvFinishedTalking, exactly once',
+    'kickoff is released by agentInterrupted too',
+    'disconnect() during the opening drops the held kickoff',
+    'kickoff is not re-sent after pause() → pauseSessionExpired → resume()',
+    'a held kickoff survives a cold reconnect',
+  ]) if (!kickoffTest.includes(needle)) problems.push(`test/unit/kickoff.test.js missing "${needle}"`);
+  if (problems.length === 0) pass('R-7', 'Held turns released/dropped only on named socket events — no timers in the hold path, hold/release table tested (run below)');
+  else fail('R-7', 'timer-free turn state not verifiable', problems.join('\n      '));
+}
+
 // ══════════════════════════════════════════════════════════════════════════
 // PART 4 — PERFORMANCE
 // ══════════════════════════════════════════════════════════════════════════
@@ -489,6 +535,28 @@ section('Part 5 — DX and Clean Code');
   }
 }
 
+// D-5: kickoff is sent at most once per session object — never on resume(),
+// a cold reconnect, or switchMode(). Each session class guards it with a
+// once-flag; the tests below pin each re-entry path.
+{
+  const tests = [
+    { file: join(ROOT, 'test', 'unit', 'kickoff.test.js'), needle: 'sent on stvFinishedTalking, exactly once' },
+    { file: join(ROOT, 'test', 'unit', 'kickoff.test.js'), needle: 'kickoff is not re-sent after pause() → pauseSessionExpired → resume()' },
+    { file: join(ROOT, 'test', 'unit', 'kickoff.test.js'), needle: 'kickoff is not re-sent after a cold reconnect' },
+    { file: join(ROOT, 'test', 'unit', 'kickoff.test.js'), needle: 'kickoff waits for acknowledgeDisclosure()' },
+    { file: join(ROOT, 'test', 'unit', 'kickoff.test.js'), needle: 'kickoff: wrong shapes throw bad_request at construction' },
+    { file: join(ROOT, 'test', 'unit', 'chat-session.test.js'), needle: 'sent as the first converse turn on connect(), exactly once' },
+    { file: join(ROOT, 'test', 'unit', 'chat-session.test.js'), needle: 'kickoff: wrong shapes throw bad_request at construction' },
+    { file: join(ROOT, 'test', 'unit', 'agent-session.test.js'), needle: 'passed to the first transport only; a switchMode() transport never carries it' },
+  ];
+  const problems = tests.filter((t) => !read(t.file).includes(t.needle))
+    .map((t) => `${relative(ROOT, t.file)}: test "${t.needle}" not found`);
+  const avatarSrc = read(join(SDK_SRC, 'experience', 'session.js'));
+  if (!/_kickoffSent\s*=\s*true/.test(avatarSrc)) problems.push('src/experience/session.js: no _kickoffSent once-flag');
+  if (problems.length === 0) pass('D-5', 'kickoff sent at most once per session object — once-flag + resume/reconnect/switchMode tests present (run below)');
+  else fail('D-5', 'kickoff once-only not verifiable', problems.join('\n      '));
+}
+
 // ══════════════════════════════════════════════════════════════════════════
 // PART 6 — MEDIA PATH
 // ══════════════════════════════════════════════════════════════════════════
@@ -510,6 +578,74 @@ section('Part 6 — Media path');
   } else {
     fail('M-1', `${hits.length} forbidden reference${hits.length > 1 ? 's' : ''} in avatar-media.js`, hits.join('\n      '));
   }
+}
+
+// M-2: the raw silent opening phrase (SILENT_OPENING) never reaches a listener;
+// the opening turn surfaces as SILENT_OPENING_LABEL instead. The relabel is
+// keyed on the opening speech id; a spoken opening and a `<blank>` in a normal
+// reply are left alone.
+{
+  const sessionSrc = read(join(SDK_SRC, 'experience', 'session.js'));
+  const openingSrc = read(join(SDK_SRC, 'core', 'opening.js'));
+  const kickoffTest = read(join(ROOT, 'test', 'unit', 'kickoff.test.js'));
+  const problems = [];
+  if (!/export const SILENT_OPENING\s*=/.test(openingSrc)) problems.push('src/core/opening.js: SILENT_OPENING not exported');
+  if (!/export const SILENT_OPENING_LABEL\s*=/.test(openingSrc)) problems.push('src/core/opening.js: SILENT_OPENING_LABEL not exported');
+  if (!/function openingText\(/.test(sessionSrc)) problems.push('src/experience/session.js: no openingText() relabel helper');
+  for (const needle of [
+    'on transcript/speechChunk/stop',
+    'silent opening: a spoken opening phrase on the opening speechId still surfaces',
+    'on a normal reply speechId is not relabelled',
+  ]) if (!kickoffTest.includes(needle)) problems.push(`test/unit/kickoff.test.js missing "${needle}"`);
+  if (problems.length === 0) pass('M-2', 'Silent opening surfaces as SILENT_OPENING_LABEL, never as the raw phrase — speech-id-scoped relabel + tests present (run below)');
+  else fail('M-2', 'silent-opening relabel not verifiable', problems.join('\n      '));
+}
+
+// M-3: the STV downlink subscription is released wherever it is dropped or
+// replaced. Closing the peer locally does not free the server's egress session,
+// so every site that closes `_pcStv` (teardown, media recovery, cold reconnect,
+// resume) must go through `_releaseCurrentWhep()`, and the three `_connectStv`
+// abort lanes (the app disconnected while the answer was being read, the connect
+// deadline expired, the other lane lost) must release the answer they never stored.
+{
+  const file = join(SDK_SRC, 'experience', 'session.js');
+  const sessionSrc = read(file);
+  const lines = sessionSrc.split('\n');
+  const problems = [];
+
+  // The single release helper, clearing the field before the DELETE so a second call is a no-op.
+  const helper = /_releaseCurrentWhep\(\)\s*\{\s*\n\s*const loc = this\._whepLocation;\s*\n\s*this\._whepLocation = null;/.test(sessionSrc);
+  if (!helper) problems.push('src/experience/session.js: _releaseCurrentWhep() must read _whepLocation, clear it, then release (idempotent)');
+
+  // Exactly one site stores a Location. More than one means a path can overwrite without releasing.
+  const stores = lines.filter((t) => /^\s*this\._whepLocation = (?!null)/.test(t)).length;
+  if (stores !== 1) problems.push(`src/experience/session.js: expected exactly 1 non-null "this._whepLocation =" assignment, found ${stores}`);
+
+  // Every close of the STV peer releases within a few lines (same line counts).
+  lines.forEach((text, i) => {
+    if (!/this\._pcStv\?\.close|_closePeer\(this\._pcStv\)/.test(text)) return;
+    const window = lines.slice(i, i + 7).join('\n');
+    if (!/this\._releaseCurrentWhep\(\)/.test(window)) problems.push(`src/experience/session.js:${i + 1}: closes _pcStv without a nearby _releaseCurrentWhep() → ${text.trim()}`);
+  });
+
+  // The three abort lanes in _connectStv (disconnect during the body read, deadline
+  // expired, other lane lost) release directly: their Location was never stored, so
+  // nothing else can ever DELETE it.
+  const aborts = (sessionSrc.match(/if \(res\.ok && resolvedLoc\) this\._releaseWhep\(resolvedLoc\);/g) || []).length;
+  if (aborts !== 3) problems.push(`src/experience/session.js: expected all three _connectStv abort lanes to release the answered subscription, found ${aborts}`);
+
+  for (const [rel, needles] of [
+    ['test/e2e/connect.test.js', ['the WHEP resource is released exactly once', 'releases the WHEP resource (no leak on the error path)']],
+    ['test/e2e/connect-concurrency.test.js', ['the answered subscription is released']],
+    ['test/e2e/connect-cancel.test.js', ['a 201 that lands after the cancel is released with a DELETE', 'a late non-2xx answer is dropped without a DELETE']],
+    ['test/e2e/resilience.test.js', ['the re-subscribe releases the previous subscription exactly once', 'cold reconnect releases the subscription', 'frees the subscription the paused session held']],
+  ]) {
+    const src = read(join(ROOT, rel));
+    for (const needle of needles) if (!src.includes(needle)) problems.push(`${rel} missing "${needle}"`);
+  }
+
+  if (problems.length === 0) pass('M-3', 'Every path that drops or replaces the STV downlink releases its WHEP subscription exactly once — single store site, idempotent release, tests present (run below)');
+  else fail('M-3', 'WHEP subscription release not verifiable', problems.join('\n      '));
 }
 
 // ══════════════════════════════════════════════════════════════════════════

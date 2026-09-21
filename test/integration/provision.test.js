@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Management } from '../../src/management/index.js';
+import { Management, SILENT_OPENING } from '../../src/management/index.js';
 import { fakeFetch } from '../fakes/fetch.js';
 
 /** A fake-fetch that mimics the documented Agentic+Genie responses for the full provision sequence. */
@@ -96,6 +96,83 @@ function baseProvision() {
   const m = new Management({ partnerId: 7654321, adminSecret: 'a'.repeat(32), fetch: f });
   return { f, m };
 }
+
+// ─── openingPhrase option ──────────────────────────────────────────────────────
+// The intellect's `opening_phrase` is the single owner of the opening line.
+// provision() creates the avatar WITHOUT an `openingPhrase`, then writes the
+// intellect, so the intellect write is the last opening-phrase write of the run.
+// Every test here asserts both halves: the phrase reaches the intellect, and the
+// avatar body carries no phrase at all.
+const avatarBody = (f) => f.calls.find((c) => c.url.includes('/avatar/create')).body;
+const intellectUpdateBody = (f) => f.calls.find((c) => c.url.includes('/v1/intellect/update')).body;
+const callOrder = (f) => f.calls.map((c) => c.url).filter((u) => u.includes('/avatar/create') || u.includes('/v1/intellect/update'));
+
+test('provision uses the generated profile opening phrase when openingPhrase is omitted', async () => {
+  const { f, m } = baseProvision();
+  await m.provision({ brief: 'x', ks: ADMIN_KS });
+  assert.equal(intellectUpdateBody(f).opening_phrase, 'Namaste!');
+  assert.ok(!('openingPhrase' in avatarBody(f)), 'the avatar is created without an opening phrase');
+});
+
+test('provision({ openingPhrase }) wins over the generated profile phrase and reaches the intellect only', async () => {
+  const { f, m } = baseProvision();
+  await m.provision({ brief: 'x', ks: ADMIN_KS, openingPhrase: SILENT_OPENING });
+  assert.equal(intellectUpdateBody(f).opening_phrase, '<blank>');
+  assert.ok(!('openingPhrase' in avatarBody(f)));
+  f.calls.length = 0;
+  await m.provision({ brief: 'x', ks: ADMIN_KS, openingPhrase: 'Welcome to the studio!' });
+  assert.equal(intellectUpdateBody(f).opening_phrase, 'Welcome to the studio!');
+  assert.ok(!('openingPhrase' in avatarBody(f)));
+});
+
+// Developer example: the intellect phrase is a Jinja2 template, so one phrase
+// can branch on a client variable. `user_name` arrives via
+// `KalturaAvatarSession({ requestVars: { user_name } })` once
+// `intellects.setClientVariablesEnabled(configId, true, ks)` is on; when the
+// variable is missing the `{% else %}` branch renders.
+test('provision({ openingPhrase }) accepts a Jinja2 template and stores it verbatim on the intellect', async () => {
+  const { f, m } = baseProvision();
+  const template = '{% if user_name %}Hello {{ user_name }}, welcome back.{% else %}Hello, welcome to the studio.{% endif %}';
+  await m.provision({ brief: 'x', ks: ADMIN_KS, openingPhrase: template });
+  assert.equal(intellectUpdateBody(f).opening_phrase, template, 'the template is stored as-is; the server renders it per session');
+  assert.ok(!('openingPhrase' in avatarBody(f)));
+});
+
+test('provision creates the avatar before it writes the intellect opening phrase', async () => {
+  const { f, m } = baseProvision();
+  await m.provision({ brief: 'x', ks: ADMIN_KS, openingPhrase: 'Welcome!' });
+  const order = callOrder(f);
+  assert.equal(order.length, 2);
+  assert.ok(order[0].includes('/avatar/create'), 'avatar.create runs first');
+  assert.ok(order[1].includes('/v1/intellect/update'), 'intellect.update (opening_phrase) is the last opening-phrase write');
+});
+
+test('provision falls back to "Hello!" when the profile has no opening phrase and none is given', async () => {
+  const f = fakeFetch([
+    { match: '/application/generateAgentProfile', respond: () => ({ body: { name: 'Quiet', goal: 'help' } }) },
+    { match: '/v1/intellect/add', respond: () => ({ body: { id: 1389, status: 2, prompts: [] } }) },
+    { match: '/v1/intellect/update', respond: () => ({ body: { id: 1389, status: 2 } }) },
+    { match: '/agent/create', respond: () => ({ body: { agentId: 'agent-xyz' } }) },
+    { match: '/catalog-item/list', respond: () => ({ body: { objects: [{ itemId: 'item-1' }], totalCount: 1 } }) },
+    { match: '/avatar/create', respond: () => ({ body: { id: '6a07d63d8ccd85cbfafc5416' } }) },
+    { match: '/application/resolveWidgetId', respond: () => ({ body: { widgetId: '1_v1mj1kxb' } }) },
+  ]);
+  const m = new Management({ partnerId: 7654321, adminSecret: 'a'.repeat(32), fetch: f });
+  await m.provision({ brief: 'x', ks: ADMIN_KS });
+  assert.equal(intellectUpdateBody(f).opening_phrase, 'Hello!');
+  assert.ok(!('openingPhrase' in avatarBody(f)));
+});
+
+test('provision rejects an empty or non-string openingPhrase as bad_request before any network call', async () => {
+  const { f, m } = baseProvision();
+  for (const openingPhrase of ['', '   ', null, 42, { text: 'hi' }]) {
+    await assert.rejects(
+      () => m.provision({ brief: 'x', ks: ADMIN_KS, openingPhrase: /** @type {any} */ (openingPhrase) }),
+      (e) => e.code === 'bad_request' && /openingPhrase/.test(e.detail) && /SILENT_OPENING/.test(e.detail),
+    );
+  }
+  assert.equal(f.calls.length, 0, 'validation happens pre-network');
+});
 
 test('optional blocks are ABSENT from the result when not requested (back-compat)', async () => {
   const { m } = baseProvision();

@@ -2,7 +2,10 @@
 /**
  * Live runtime-effect check for `Management.setForcedLanguage()`. Provisions a
  * scratch agent with a language-neutral brief, forces Hebrew, sends an English
- * typed message, and checks the final transcript for Hebrew script. Compare
+ * typed message, and checks the reply for Hebrew script -- in the final
+ * transcript when the avatar voices it, in the brain text when it doesn't. The
+ * server can drop the first turn of a session silently, so the question is sent
+ * once more before the check is called a failure. Compare
  * scripts/live-verify-force-language.mjs, which checks the bare
  * `force_language` field on its own.
  *
@@ -13,11 +16,13 @@
  * provisions and tears down its own scratch agent.
  */
 import { readFileSync, writeFileSync, mkdirSync, createReadStream, existsSync, statSync } from 'node:fs';
-import { resolve, dirname, extname, normalize } from 'node:path';
+import { resolve, dirname, extname, normalize, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'node:http';
+import { tmpdir } from 'node:os';
 import { chromium } from 'playwright';
-import { Management } from '../src/management/index.js';
+import { Management, SILENT_OPENING } from '../src/management/index.js';
+import { writeSilentWav } from './live-verify-silent-mic-shared.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, '..');
@@ -70,7 +75,9 @@ function startServer(appInitData) {
   return new Promise((resolvePromise) => server.listen(0, '127.0.0.1', () => resolvePromise(server)));
 }
 
-const HEBREW_RE = /[֐-׿]/;
+const HEBREW_RANGE = '֐-׿';
+const HEBREW_RE = new RegExp(`[${HEBREW_RANGE}]`);
+const QUESTION = 'What is your best product?';
 
 const kaltura = new Management({ partnerId, adminSecret });
 let admin;
@@ -86,7 +93,16 @@ try {
   admin = await kaltura.sessions.createAdminToken();
   record('admin-token-mint', true, { secondsRemaining: admin.secondsRemaining() });
 
-  provisioned = await kaltura.provision({ brief: 'A friendly multilingual test greeter', ks: admin.ks });
+  // SILENT_OPENING, not a generated greeting: the opening turn cannot be
+  // interrupted and the question has to wait it out either way, so the shortest
+  // possible opening is the fastest path to the reply. It also keeps the reply
+  // the only speech in the log, so the Hebrew check cannot pass on a
+  // multilingual greeting's own words.
+  provisioned = await kaltura.provision({
+    brief: 'A friendly multilingual test greeter',
+    openingPhrase: SILENT_OPENING,
+    ks: admin.ks,
+  });
   record('provision', true, {
     configId: provisioned.configId, agentId: provisioned.agentId,
     avatarId: provisioned.avatarId, widgetId: provisioned.widgetId,
@@ -130,9 +146,15 @@ try {
   const port = server.address().port;
   record('local-server-start', true, { port });
 
+  const silentWav = writeSilentWav(join(tmpdir(), `${runId}-silence.wav`));
   browser = await chromium.launch({
-    args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', '--autoplay-policy=no-user-gesture-required'],
+    args: [
+      '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream',
+      `--use-file-for-fake-audio-capture=${silentWav}`,
+      '--autoplay-policy=no-user-gesture-required',
+    ],
   });
+  record('silent-capture-file', true, { path: silentWav });
   const page = await browser.newPage();
   page.on('console', (msg) => {
     consoleLog.push(`[${msg.type()}] ${msg.text()}`);
@@ -145,37 +167,115 @@ try {
   await page.waitForFunction(() => document.getElementById('log')?.textContent?.includes('connected'), null, { timeout: 30000, polling: 500 });
   record('session-connected', true, {});
 
-  // The avatar speaks a scripted openingPhrase on connect, before any typed
-  // input. Let it play out and settle, then snapshot the log -- otherwise the
-  // reply check below gets contaminated by the greeting instead of measuring
-  // an actual model-generated reply to the typed message.
+  // The example page logs `transcript` events only, so a reply the avatar never
+  // speaks is invisible to it. The forced language applies to the reply text
+  // whether or not it reaches TTS, so capture the brain segments too, plus the
+  // turn-level events that say whether the server even took the turn.
+  await page.evaluate(() => {
+    window.__brainText = '';
+    window.__seen = [];
+    window.session.on('brainSegment', (d) => {
+      const len = (d?.content || '').length;
+      window.__seen.push({ t: 'brainSegment', stype: d?.type, len });
+      if ((d?.type === 'text' || d?.type === 'avatar') && len) window.__brainText += d.content;
+    });
+    window.session.on('responsePending', () => window.__seen.push({ t: 'responsePending' }));
+    window.session.on('responseSettled', () => window.__seen.push({ t: 'responseSettled' }));
+    window.session.on('avatarStartTalking', () => window.__seen.push({ t: 'avatarStartTalking' }));
+    window.session.on('avatarStopTalking', () => window.__seen.push({ t: 'avatarStopTalking' }));
+    window.session.on('error', (e) => window.__seen.push({ t: 'error', code: e?.code, detail: e?.detail }));
+    window.session.on('warning', (e) => window.__seen.push({ t: 'warning', code: e?.code, detail: e?.detail }));
+  });
+
+  // The opening turn still runs and still cannot be interrupted, even though
+  // SILENT_OPENING means it carries no words.
   await page.waitForFunction(() => document.getElementById('log')?.textContent?.includes('avatar talking'), null, { timeout: 15000, polling: 500 }).catch(() => {});
-  await page.waitForTimeout(25000);
-  const logBeforeQuestion = await page.locator('#log').textContent();
-  record('opening-phrase-settled', true, { logBeforeQuestion });
+  record('opening-phrase-started', true, {});
 
   // English typed input, on purpose -- the point is that the reply is forced
   // to Hebrew regardless of the input language. Asking a fresh question (not
   // "introduce yourself") avoids any overlap with a self-introduction reply
   // that might echo the opening phrase's own wording.
-  await page.fill('#msg', 'What is your best product?');
-  await page.click('#say');
+  //
+  // Driven through `window.session.speak()` rather than the page's own button,
+  // because the promise it returns is the one exact signal for "the text
+  // reached the server": text typed during the opening is HELD until that turn
+  // ends. A fixed sleep before typing instead has to guess how long the opening
+  // runs, and guesses short.
+  const sendQuestion = async (settleTimeout) => {
+    await page.evaluate((q) => {
+      window.__spoke = null;
+      window.session.speak(q).then(
+        (sent) => { window.__spoke = sent === true ? 'sent' : 'dropped-session-ended'; },
+        (err) => { window.__spoke = `rejected: ${err?.code || err?.message || err}`; },
+      );
+    }, QUESTION);
+    try {
+      await page.waitForFunction(() => window.__spoke !== null, null, { timeout: settleTimeout, polling: 500 });
+    } catch (err) {
+      const t = await page.locator('#log').textContent();
+      const e = /** @type {any} */ (err);
+      e.detail = `${e.message} — speak() never settled, so the typed text was still held: the opening turn never ended. log: ${JSON.stringify(t)}`;
+      throw e;
+    }
+    const spoke = await page.evaluate(() => window.__spoke);
+    if (spoke !== 'sent') throw new Error(`speak() did not reach the server: ${spoke}`);
+  };
+
+  // Either channel counts: a voiced reply shows up as a Hebrew `[final]`
+  // transcript, an unvoiced one only in the brain text.
+  const waitForHebrewReply = (before, brainBefore, timeout) => page.waitForFunction(
+    ({ from, brainFrom, hebrew }) => {
+      const t = document.getElementById('log')?.textContent || '';
+      const re = new RegExp(`[${hebrew}]`);
+      return new RegExp(`\\[final\\][^\\n]*[${hebrew}]`).test(t.slice(from))
+        || re.test((window.__brainText || '').slice(brainFrom));
+    },
+    { from: before, brainFrom: brainBefore, hebrew: HEBREW_RANGE },
+    { timeout, polling: 500 },
+  );
+
+  const logAtSend = await page.locator('#log').textContent();
+  const brainAtSend = (await page.evaluate(() => window.__brainText || '')).length;
+  // 90 s, not 45: the server HOLDS text typed during the opening turn and only
+  // releases it once that turn ends, so this settle is also the wait for the
+  // opening to finish. A resend later goes into an idle session and settles fast.
+  await sendQuestion(90000);
   record('message-sent', true, {});
 
-  await page.waitForFunction(
-    (prevLen) => {
-      const t = document.getElementById('log')?.textContent || '';
-      return t.length > prevLen && t.includes('[final]');
-    },
-    logBeforeQuestion.length,
-    { timeout: 45000, polling: 500 },
-  );
+  // The held text only goes out once the opening turn is over, so everything
+  // from this point on belongs to the reply -- no greeting to filter out.
+  try {
+    await waitForHebrewReply(logAtSend.length, brainAtSend, 45000);
+  } catch {
+    // The server can drop one turn without saying so, and speak() resolving
+    // 'sent' only proves the text left the client. One resend tells a dropped
+    // turn apart from a real failure to answer, and the whole wait stays inside
+    // the same 90 s the single wait used to take.
+    record('question-resent', true, { reason: 'no Hebrew reply in 45s — resending once' });
+    await sendQuestion(45000);
+    try {
+      await waitForHebrewReply(logAtSend.length, brainAtSend, 45000);
+    } catch (err) {
+      // A bare timeout does not say which of these happened: no reply at all, a
+      // reply in the wrong script, or a reply the avatar never voiced. Attach
+      // the log, the brain text and every turn-level event so the artifact
+      // carries that evidence instead of just the timeout.
+      const t = await page.locator('#log').textContent();
+      const brain = await page.evaluate(() => window.__brainText || '');
+      const seen = await page.evaluate(() => window.__seen || []);
+      const e = /** @type {any} */ (err);
+      e.detail = `${e.message} — no Hebrew reply in the transcript or the brain text after two sends. log after send: ${JSON.stringify(t.slice(logAtSend.length))}, brain after send: ${JSON.stringify(brain.slice(brainAtSend))}, events: ${JSON.stringify(seen)}`;
+      throw e;
+    }
+  }
   await page.waitForTimeout(3000);
-  record('final-transcript-and-avatar-talking-observed', true, {});
+  record('hebrew-reply-observed', true, {});
 
   const fullLog = await page.locator('#log').textContent();
-  const newReply = fullLog.slice(logBeforeQuestion.length);
-  record('log-captured', true, { fullLog, newReply });
+  const brainReply = (await page.evaluate(() => window.__brainText || '')).slice(brainAtSend);
+  const newReply = fullLog.slice(logAtSend.length) + brainReply;
+  record('log-captured', true, { fullLog, newReply, brainReply });
 
   const repliedInHebrew = HEBREW_RE.test(newReply);
   record('reply-is-hebrew-script', repliedInHebrew, { newReply });
