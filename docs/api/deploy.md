@@ -32,11 +32,13 @@ Response:
 
 | Field | What it is |
 |-------|-----------|
+| `partnerId` | The partner the widget resolves to |
 | `ks` | Enriched KS with `geniegpcid` — pass to Genie for conversation |
 | `conversationManagerUrl` | Socket.IO control-plane host |
 | `srsBaseUrl` | WHEP video-stream host |
 | `turnServerUrl` | TURN host |
 | `avatars[]` | `[{id, previewImageUrl, loadingVideoUrl}]` — raw backend asset URLs (an upload echo for a custom visual, a preset asset URL for a catalog item), not the rendered composite the live WHEP stream shows |
+| `widgetConfig` / `embedConfig` | Optional, present only when the widget was configured with them |
 
 The admin secret never touches the browser — `appInit` derives the agent from the widget KS.
 

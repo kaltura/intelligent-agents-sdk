@@ -26,10 +26,10 @@ The request also takes a top-level `orderBy` (`+createdAt`, `-createdAt`, `+upda
 |-----------|----------|------|
 | Create | `POST /v1/avatar/create` | `{"voice":{"id":"...","speed"?:1.0}, "visual"?:{"id":"...","motionControl"?:{...}}, "face"?:{"id":"..."}, "background"?:{"type":"color"\|"visual","value"?:"..."}, "templateId"?:"...", "name"?:"...", "openingPhrase"?:"..."}` (leave `openingPhrase` unset: the intellect's `opening_phrase` owns the opening line, see [START-THE-CONVERSATION.md](../START-THE-CONVERSATION.md#where-the-opening-phrase-lives)). Visual resolution rules: [build/avatar-and-agent.md § Three ways to get a visual](build/avatar-and-agent.md#three-ways-to-get-a-visual). |
 | List | `POST /v1/avatar/list` | `{"pager":{"offset":0,"limit":30}}` |
-| Get | `POST /v1/avatar/get` | `{"id":"24-char-hex"}` |
+| Get | `POST /v1/avatar/get` | `{"id":"24-char-hex"}`. A missing or unknown id throws `code:'api_exception'` (not a stable `avatar_not_found` code), but `title` carries a specific `'AVATAR_NOT_FOUND'` marker. Branch on `title`, not `code` (a malformed id gets a distinct `code:'bad_request'`) |
 | Update | `POST /v1/avatar/update` | `{"id":"24-char-hex", ...fields}` — PATCH semantics (omitted fields are preserved); `templateId` is create-only (400 on update) |
 | Delete | `POST /v1/avatar/delete` | `{"id":"24-char-hex"}` |
-| List templates | `POST /v1/avatar-template/list` | `{"pager":{"offset":0,"limit":30}}` — curated presets, each pairing a `voice` with either a ready `visual` or a `face`/`background` pair ([build/avatar-and-agent.md § Three ways to get a visual](build/avatar-and-agent.md#three-ways-to-get-a-visual)). SDK: `mgmt.avatars.listTemplates(ks, opts)`. |
+| List templates | `POST /v1/avatar-template/list` | `{"pager":{"offset":0,"limit":30}}` — curated presets, each pairing a `voice` with either a ready `visual` or a `face`/`background` pair ([build/avatar-and-agent.md § Three ways to get a visual](build/avatar-and-agent.md#three-ways-to-get-a-visual)). SDK: `mgmt.avatars.listTemplates(ks, opts)`; `opts.idsIn` filters to specific template ids. |
 
 **Recomposing on update is asymmetric, unlike create** (where `face`/`background` must travel together). The rule depends on the avatar's existing state:
 
@@ -49,9 +49,11 @@ The request also takes a top-level `orderBy` (`+createdAt`, `-createdAt`, `+upda
 | Update | `POST /v1/intellect/update` | See § Configure an Intellect |
 | Delete | `POST /v1/intellect/delete` | `{"id":1389}` |
 
+Create (`POST /v1/intellect/add`) isn't listed here. See [build/intellect.md](build/intellect.md) for creating an intellect with the SDK's default-applying `mgmt.intellects.create()`.
+
 Deleting an agent does **not** delete its avatar or intellect.
 
-`mgmt.setForcedLanguage({ configId, agentId, language }, ks)` forces the reply language. It sets `force_language` on the intellect (the backend enforces it at runtime) and the agent's `asr.language` in one call. Idempotent; `language: null` clears both. See [README § Forcing the reply language](../../README.md#forcing-the-reply-language-setforcedlanguage).
+`mgmt.setForcedLanguage({ configId, agentId, language, languageName?, asrProvider? }, ks)` forces the reply language. It sets `force_language` on the intellect (the backend enforces it at runtime) and the agent's `asr.language`/`asr.provider` in one call. `languageName` is required only for a `language` code not in the SDK's built-in `LANGUAGE_NAMES` map; `asrProvider` defaults to `'kaltura'`. Idempotent; `language: null` clears both (resets `asr.language` to `'en'`). See [README § Forcing the reply language](../../README.md#forcing-the-reply-language-setforcedlanguage).
 
 Typed setters on `mgmt.intellectConfig` for the other single-purpose fields, all `(configId, value, ks)` and idempotent:
 
@@ -59,15 +61,19 @@ Typed setters on `mgmt.intellectConfig` for the other single-purpose fields, all
 |---|---|---|
 | `setModelConfiguration` | `model_configuration` (`model_id` in `MODEL_IDS`, `max_output_tokens`, `thinking_level` in `THINKING_LEVELS`, `temperature`) | `null` |
 | `setOpeningPhrase` | `opening_phrase` (the opening line of every avatar session; Jinja2 over `requestVars` + `sys__*`; `SILENT_OPENING` for no spoken opening, see [START-THE-CONVERSATION.md](../START-THE-CONVERSATION.md#personalize-the-opening)) | `null` |
-| `setThreadStartTools` | `thread_start_tools` (tool ids run once at thread start) | `[]` |
-| `setAvatarSummaryConfig` | `avatar_summary_config` (`prompt`, `analysis`, `template`, `content_type` in `SUMMARY_CONTENT_TYPES`) | `null` |
+| `setThreadStartTools` | `thread_start_tools`: unique tool ids run in order when a thread starts, before the first user turn[^1] | `[]` |
+| `setAvatarSummaryConfig` | `avatar_summary_config` (`prompt`, `analysis`, `template`, `content_type` in `SUMMARY_CONTENT_TYPES`)[^2] | `null` |
 | `setSkillIds` | `skill_ids` (`{ id, mode, condition? }`, `mode` in `SKILL_MODES`) | `[]` |
 
 Each validates client-side and throws `bad_request` before any network call. See [build/intellect.md](build/intellect.md) for field semantics.
 
+[^1]: Only `api` and `code` tools run at thread start; other tool types have no effect there. An `api` tool with `wait_for_response` is awaited; every other tool is fire-and-forget, and a failing tool does not fail the conversation. It never appears as a `tool` segment in the stream.
+
+[^2]: `null` restores the defaults (`analysis: { summary }`, `template: '{{ summary }}'`, `content_type: 'text'`). Every `{{ key }}` in `template` must be an `analysis` key (or `summary` when `analysis` is unset). The SDK rejects a mismatch client-side. The summary is skipped entirely when the thread has no human messages.
+
 ## Tools — `https://genie.nvp1.ovp.kaltura.com`
 
-A standalone, partner-level entity (see § Tools above) — not embedded in an intellect.
+A standalone, partner-level entity, not embedded in an intellect. A `name` that doesn't appear in your own `list()` can still be rejected with a 409 conflict, because names are also checked against a shared pool. The same applies to Skills below.
 
 | Operation | Endpoint | Body |
 |-----------|----------|------|
@@ -77,11 +83,11 @@ A standalone, partner-level entity (see § Tools above) — not embedded in an i
 | Update | `POST /v1/tool/update` | `{"id":"TOOL_UUID", "name"?, "config"?}` |
 | Delete | `POST /v1/tool/delete` | `{"id":"TOOL_UUID"}` |
 
-Deleting a Tool does **not** cascade: an intellect that still lists the id in `tool_ids` keeps a dangling reference. Drop it first via `mgmt.intellectConfig.setToolIds`.
+`mgmt.tools.delete` refuses by default with a typed `tool_in_use` error naming every intellect still listing the id in `tool_ids`. Pass `{confirmPermanent:true, force:true}` to delete anyway. Drop the id from each intellect's `tool_ids` first via `mgmt.intellectConfig.setToolIds`.
 
 ## Skills — `https://genie.nvp1.ovp.kaltura.com`
 
-A standalone, partner-level reusable-instruction entity — `{id (uuid), name, description, instructions}`. SDK: `mgmt.skills`. A Skill's `name` is checked against your partner id OR partner `0` (a shared global pool), so a name can collide with a global-pool Skill in ways invisible from a partner-scoped `list()`. The same nuance applies to Tools below.
+A standalone, partner-level reusable-instruction entity — `{id (uuid), name, description, instructions}`. SDK: `mgmt.skills`. A `name` that doesn't appear in your own `list()` can still be rejected with a 409 conflict, because names are also checked against a shared pool. The same applies to Tools above.
 
 | Operation | Endpoint | Body |
 |-----------|----------|------|
@@ -142,6 +148,8 @@ SDK: `mgmt.messages`, `mgmt.feedback`, `mgmt.followups`.
 
 Filter: `messageIdEquals`, `messageIdsIn`, `threadIdEquals`, `agentIdEquals`, `isPositiveEquals`. `agentIdEquals` only matches threads opened via `sessions.createAgentToken`, and costs one thread query per matching thread. With none of `messageIdEquals`/`messageIdsIn`/`threadIdEquals`/`agentIdEquals` set, it walks every message for the partner — scope it.
 
+Unlike every other `list()` in this SDK, `await`ing `feedback.list(...)` collects **every** matching row across all underlying pages, not just the first page. The rows are filtered client-side, so there's no single-page shortcut. A narrow filter matters more here than elsewhere.
+
 Row shape: `{message_id, thread_id, genie_id, user_id, is_positive, comment, created_at, updated_at}`. ⚠️ SENSITIVE: comments are end-user-entered text.
 
 Messages filter fields: `createdAtGreaterThanOrEqual`, `createdAtLessThanOrEqual`, `genieIdEquals`, `idEquals`, `idsIn`, `isPositiveEquals`, `isPositiveIn`, `orderBy`, `threadIdEquals`, `updatedAtGreaterThanOrEqual`, `updatedAtLessThanOrEqual`, `userIdEquals`. Unlike Threads, an unknown key here is silently ignored (200), not rejected. Only `filter.orderBy` sorts — a top-level `orderBy` is accepted but has no effect.
@@ -163,7 +171,7 @@ Full record lifecycle. SDK: `mgmt.knowledge`. Linkage to an intellect is via `kn
 
 `mgmt.knowledge.isIndexed(id, ks)` wraps Get and reads `status`/`config.sources[].indexers[].index_position`. `status` is the record's own container-lifecycle flag, not an indexing-completion signal: see [build/knowledge-rag.md § Ground the Agent](build/knowledge-rag.md#ground-the-agent-in-your-content-rag) for why, and for the real indexing-completion check.
 
-`mgmt.knowledge.addSource(id, source, ks)` / `removeSource(id, source, ks)` read-merge-write one source into/out of `config.sources` without disturbing the others. Both skip the write (`applied:false`) when an identical source object is already present / already absent.
+`mgmt.knowledge.addSource(id, source, ks)` / `removeSource(id, source, ks)` read-merge-write one source into/out of `config.sources` without disturbing the others. Both skip the write (`applied:false`) when an identical source object is already present / already absent. Not safe to call concurrently for the same record id: two overlapping calls read the same pre-write `config.sources`, so the second write silently drops the first's change.
 
 Before deleting a record, `mgmt.knowledge.deleteRecord` lists every intellect and refuses with a typed `knowledge_in_use` error naming each one still carrying the id in `knowledge_ids`. It only proceeds when called with `{confirmPermanent:true, force:true}` — the same guard `mgmt.tools.delete`/`mgmt.skills.delete` run for their own entities.
 

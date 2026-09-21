@@ -6,10 +6,10 @@ import {
 } from '../../src/experience/wire.js';
 
 test('turnServers builds the 4 explicit URLs with default creds', () => {
-  const t = turnServers('turn.avatar.us.kaltura.ai');
+  const t = turnServers('turn.example.com');
   assert.equal(t.urls.length, 4);
-  assert.ok(t.urls.includes('turn:turn.avatar.us.kaltura.ai:80?transport=udp'));
-  assert.ok(t.urls.includes('turns:turn.avatar.us.kaltura.ai:443?transport=tcp'));
+  assert.ok(t.urls.includes('turn:turn.example.com:80?transport=udp'));
+  assert.ok(t.urls.includes('turns:turn.example.com:443?transport=tcp'));
   assert.equal(t.username, 'kaltura');
   assert.equal(t.credential, 'avatar');
 });

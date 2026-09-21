@@ -43,6 +43,6 @@ Full pattern, event order and guarantees: [docs/START-THE-CONVERSATION.md](../do
 | Goal | Where to go |
 |------|-------------|
 | Embed a live talking avatar in a web page | [docs/USE-CASES.md](../docs/USE-CASES.md) → UC-12 |
-| Use your own voice | [API-REFERENCE.md](../docs/api/design.md#upload-a-custom-voice-clone) |
-| Use your own portrait | [API-REFERENCE.md](../docs/api/design.md#upload-a-custom-visual-portrait--animated-avatar) |
+| Use your own voice | [Catalog & Assets](../docs/api/design.md#upload-a-custom-voice-clone) |
+| Use your own portrait | [Catalog & Assets](../docs/api/design.md#upload-a-custom-visual-portrait--animated-avatar) |
 | Drive your UI from the avatar (slide navigation etc.) | [docs/CLIENT-COMMANDS.md](../docs/CLIENT-COMMANDS.md) |

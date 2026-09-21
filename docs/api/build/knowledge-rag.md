@@ -33,7 +33,7 @@ page[0]; // { id: 42, name: 'Product Documentation', status: 'READY', config: { 
 }
 ```
 
-Writes through the intellect object — no `partner-config/update`, no 403. RAG retrieval works after async indexing (~1 minute).
+Writes through the intellect object: no `partner-config/update`, no 403. RAG retrieval works after async indexing.
 
 > **`knowledge_ids` is capped at one record**, despite the plural array shape — the server rejects more. The SDK's `intellectConfig.setKnowledgeIds()` enforces this client-side with a typed `bad_request` before any network call. To ground one agent in several content sources, upload them all into a single knowledge record.
 
@@ -43,9 +43,23 @@ Writes through the intellect object — no `partner-config/update`, no 403. RAG 
 
 ## Step 4 — Point the record at that category
 
-`knowledge.addSource(id, { type: 'internal', categoryIds: [String(categoryId)] }, ks)` is the step that actually makes the uploaded content retrievable. A knowledge record with no `config.sources[]` entry has nothing to search, even with `knowledge_ids` linked and `use_knowledge_base: "on"`.
+A source names which content modalities to embed via `indexers[]`. Build that array with `buildIndexerObjects()` instead of hand-assembling it:
 
-`knowledge.removeSource(id, source, ks)` is the inverse. Both calls read-merge-write one entry of `config.sources[]` without disturbing the others, and are idempotent. Don't hand-assemble `config.sources` via `updateRecord({config}, ks)` directly unless you intend a full replace: the backend overwrites the entire `config` on that field.
+```js
+import { buildIndexerObjects } from '@kaltura/intelligent-agents/management';
+
+await mgmt.knowledge.addSource(
+  id,
+  { type: 'internal', categoryIds: [String(categoryId)], indexers: buildIndexerObjects(['document', 'caption']) },
+  ks,
+);
+```
+
+`knowledge.addSource(id, source, ks)` is the step that actually makes the uploaded content retrievable. A knowledge record with no `config.sources[]` entry has nothing to search, even with `knowledge_ids` linked and `use_knowledge_base: "on"`.
+
+`knowledge.removeSource(id, source, ks)` is the inverse. Both calls read-merge-write one entry of `config.sources[]` without disturbing the others, and are idempotent, but not safe to call concurrently for the same record id: two overlapping calls read the same pre-write `config.sources`, so the second write silently drops the first's change. Don't hand-assemble `config.sources` via `updateRecord({config}, ks)` directly unless you intend a full replace: the backend overwrites the entire `config` on that field.
+
+`buildIndexerObjects()` defaults to all three modalities (in this order: `document`, `caption`, `ocr`) when called with no arguments or an empty array:
 
 | Modality | Source |
 |----------|--------|

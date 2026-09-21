@@ -16,7 +16,7 @@ POST https://api.avatar.us.kaltura.ai/v1/application/generateAgentProfile
 { "userDescription": "A friendly technical support agent for a video platform" }
 ```
 
-Returns `{goal, targetAudience, restrictedTopics, name, openingPhrase}`. Takes 2–3 s. Nothing is saved: pass `goal`, `targetAudience` and `restrictedTopics` into the intellect's prompts (§ Configure an Intellect, below) and `openingPhrase` into `avatar/create` ([avatar-and-agent.md](avatar-and-agent.md)).
+Returns `{goal, targetAudience, restrictedTopics, name, openingPhrase}`. Nothing is saved: pass `goal`, `targetAudience` and `restrictedTopics` into the intellect's prompts (§ Configure an Intellect, below) and `openingPhrase` into `avatar/create` ([avatar-and-agent.md](avatar-and-agent.md)).
 
 ---
 
@@ -78,7 +78,7 @@ POST https://genie.nvp1.ovp.kaltura.com/v1/intellect/update
 | `type` | Always `"custom"` |
 | `value` | Your content |
 
-**Don't guess at `key`/`headerTemplate` values.** Call `mgmt.application.getCustomPrompts(ks)` instead. It returns the backend's own live schema for this block: a 5-entry array (`goal`, `targetAudience`, `restrictedTopics`, `name`, `knowledge`), each shaped as `{key, label, headerTemplate, objectType}`.
+**Don't guess at `key`/`headerTemplate` values.** Call `mgmt.application.getCustomPrompts(ks)` instead. It returns the backend's own live schema for this block: a 5-entry array (`goal`, `targetAudience`, `restrictedTopics`, `name`, `knowledge`), each shaped as `{key, label, headerTemplate, type}` (`type` is always `"custom"`, matching the `prompts[]` block shape above).
 
 Use this call to render a "describe your agent" form. The labels and instructions you show always match what the backend splices into the system prompt, so you don't have to keep hardcoded copy in sync by hand.
 
@@ -86,7 +86,7 @@ This call only reads data — it has no side effects. It works with any kind of 
 
 ```js
 const fields = await mgmt.application.getCustomPrompts(ks);
-// [{ key: 'goal', label: 'Goal', headerTemplate: 'The agent\'s goal is: {{value}}', objectType: 'Object' }, ...]
+// [{ key: 'goal', label: 'Goal', headerTemplate: 'The agent\'s goal is: {{value}}', type: 'custom' }, ...]
 ```
 
 **Top-level fields:**

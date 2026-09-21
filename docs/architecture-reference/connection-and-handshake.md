@@ -8,9 +8,8 @@
 |---|---|
 | Control socket | `wss://conversation.avatar.us.kaltura.ai` path `/socket.io` |
 | STV WHEP base | `srsBaseUrl` from `appInit` |
-| STV play URL | `{srsBaseUrl}/rtc/v1/play/?app=app&stream={session_id}` (or `webrtc_url` from `stvNewSession`) |
-| STV WHEP signaling | `POST {srsBaseUrl}/rtc/v1/whep/?app=app&stream={session_id}` (body: plain SDP, `Content-Type: application/sdp`) |
-| TURN | `turn.avatar.us.kaltura.ai` (default username/credential in `wire.js`'s `turnServers()`, overridable via `creds`). See [TURN configuration](#turn-configuration) below. |
+| STV WHEP signaling | `POST {webrtc_url}` if `stvNewSession` returned one, else `POST {srsBaseUrl}/rtc/v1/whep/?app=app&stream={session_id}` (body: plain SDP, `Content-Type: application/sdp`). `SDK:wire.js whepUrl()` |
+| TURN | the `turnServerUrl` value returned by `appInit` (default username/credential in `wire.js`'s `turnServers()`, overridable via `creds`). See [TURN configuration](#turn-configuration) below. |
 | Auth | Socket.IO `auth: { token: <enrichedKS> }` + `query.partnerId` |
 
 All of `conversationManagerUrl`, `srsBaseUrl`, `turnServerUrl`, and the enriched `ks` come from **`POST https://api.avatar.us.kaltura.ai/v1/application/appInit`** (see [API-REFERENCE.md](../../API-REFERENCE.md)). The agent is identified by `partnerId` (from the KS) and the KS itself, not by `clientId` or `flowId`. Both of those are optional and unused by Kaltura agents.
@@ -24,12 +23,12 @@ Set explicit ports and transports on the TURN address. A bare `turn:host` gives 
 - `turn:HOST:80?transport=tcp`
 - `turns:HOST:443?transport=tcp`
 
-`iceTransportPolicy` resolves per leg, in the built-in client's media layer, as `forceRelay && !isFirefox ? 'relay' : 'all'`:
+`iceTransportPolicy` (`SDK:wire.js iceConfig()`) is per-channel:
 
-- STV uses `'relay'` in every client except Firefox, where it uses `'all'`.
-- ASR uses `'relay'` in the production runtime (`forceAsrRelay:true`), but `'all'` in the embed SDK and the debug app, and always `'all'` in Firefox.
+- STV: `'relay'`, except on Firefox (`isFirefox` constructor option) where it's `'all'`.
+- ASR: always `'all'`, on every browser.
 
-Both ASR policies behave the same in practice: the ASR server advertises only a private host candidate, so the pair relays through TURN either way. This means the TURN URLs must be correct. The policy setting matters less.
+The setting matters less than it looks: the ASR server advertises only a private host candidate, so the pair relays through TURN either way, regardless of policy. This means the TURN URLs must be correct.
 
 Full per-client matrix: [wire-protocol/audio-channels.md §5](../wire-protocol/audio-channels.md#5-asr-uplink-pc1--microphone--server).
 
@@ -87,7 +86,7 @@ Overall connecting timeout: 30s. It bounds every wait in the table, including th
 
 This 30s deadline is set once, at the start of `connect()`. It keeps running through every step below, including the capacity queue, and is **not** paused or extended when the queue activates. If the account is queued (`throwToNoAgent` / `availabilityResult{available:false}`) and no slot frees up before the 30s runs out, `connect()` rejects with `ConnectTimeout`. To wait longer than that for a slot, call `waitForCapacity({maxWaitMs, pollIntervalMs})` **before** `connect()`. This is a separate, opt-in poll with its own bound: `maxWaitMs` defaults to 300000ms. See [Capacity & the queue](../architecture-reference/scale-and-sticky-sessions.md#capacity--the-queue-throwtonoagent--throwtoexceededtier).
 
-> **Ordering matters: `approvedPermissions` triggers the opening line.** Subscribe to the STV video and wait until it is actually *decoding frames* before emitting `approvedPermissions`. That means `<video>` fires `canplay`, `readyState` reaches at least `HAVE_FUTURE_DATA`, and a short jitter-buffer settle finishes. ICE `connected` fires about 2s before the first frame decodes. Approving on ICE alone means the first 1-2s of the greeting is spoken before the user can see or hear it, so it gets clipped. This wait is not unconditional: if `canplay` never fires (for example, a stalled or dropped video track), a 6s hard cap settles anyway, and approval proceeds without a decoded frame instead of hanging forever. The platform's built-in client gates approval on **both** mic-ready and video-ready. The SDK reproduces this in `src/experience/session.js` (`_approve`), gated on the same canplay/`HAVE_FUTURE_DATA` settle logic, with the same 6s fallback. Running the WHEP subscribe in parallel with the ASR handshake does not change this gate: approval still waits for both lanes. The opening line itself cannot be interrupted, and typed text during it is held (`speak()`) until its `stvFinishedTalking`. For the fastest interruptible start, give the avatar a silent opening phrase (`SILENT_OPENING`) and let the session's `kickoff` option send the first turn on that same event. See [START-THE-CONVERSATION.md](../START-THE-CONVERSATION.md).
+**Why `approvedPermissions` waits for playable video.** Sending it too early clips the greeting: ICE `connected` fires about 2s before the first frame decodes, and `approvedPermissions` is what makes the server start speaking. `_approve` (`SDK:session.js`) gates on `<video>` reaching `canplay`/`HAVE_FUTURE_DATA`, with a 6s hard cap so a stalled video track can't block approval forever. See [wire-protocol/connection-basics.md §3](../wire-protocol/connection-basics.md#3-connect-sequence-state-machine-order) for the full rationale. The opening line itself can't be interrupted; typed text sent during it is held (`speak()`) until `stvFinishedTalking`. For the fastest interruptible start, give the avatar a silent opening phrase (`SILENT_OPENING`) and let the session's `kickoff` option send the first turn on that event. See [START-THE-CONVERSATION.md](../START-THE-CONVERSATION.md).
 
 ---
 
@@ -118,10 +117,10 @@ socket.emit('join', {
 ```
 
 - **Which intellect loads.** The `geniegpcid:<configId>` in the KS tells the server which intellect (brain) to load.
-- **Which `join` fields the server actually reads.** Of the `kaltura` sub-fields the client sends in `join`, the session server consumes `ks`, `entryId`, `threadId`, `contextId`, `contextType`, `capabilities`, and `request_vars` when present.
-- **`force_experience` is hardcoded server-side, not read from the client.** The server ignores the `force_experience` value the client sends. It always fixes `force_experience: 'avatar_only'` and `model_type: 'fast'` on every converse call. So the avatar runtime never requests `flashcards` or `summarization` experiences, no matter what the client sends.
-- **`capabilities` and `request_vars` are genuinely client-controlled.** By contrast, these two are read at `join` time. They can also be updated mid-session via the `updateGenieContext` socket event. The server merges them over defaults, with no allowlist, before forwarding them to the brain.
-- **The live socket carries the same brain protocol as the HTTP API.** The socket exchanges JSON frames `{event:'init'|'converse'|'abort', data:{…}}` and streams `agent_raw_text` back. This is the same envelope as HTTP `/assistant/converse`, documented in [API-REFERENCE.md](../../API-REFERENCE.md). Headless or text-only integrations use that HTTP path; the live avatar runtime uses the socket instead.
+- **`kaltura.ks` is required.** Omit it and the session server accepts the socket and emits `onServerConnected`, but never responds to `join`: no `clientConfiguration`/`joinComplete` arrives, and the connect stalls.
+- **`force_experience` in `join` is always `avatar_only`.** `buildJoin` hardcodes it on every call, so the live avatar runtime never requests `flashcards` or `summarization` experiences through this path.
+- **`capabilities` and `request_vars` are genuinely client-controlled.** By contrast, these two are read at `join` time. They can also be updated mid-session via the `updateGenieContext` socket event. The server merges them over defaults before forwarding them to the brain.
+- **The live socket carries the same brain protocol as the HTTP API.** It streams `agent_raw_text` back in the same envelope as HTTP `/assistant/converse`, documented in [API-REFERENCE.md](../../API-REFERENCE.md). Headless or text-only integrations use that HTTP path; the live avatar runtime uses the socket instead.
 
 ## Related docs
 

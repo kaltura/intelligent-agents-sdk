@@ -54,7 +54,7 @@ function setup({ videoEl, audioEl = null, fetch = okWhep, cfg = {} } = {}) {
   FakeRTCPeerConnection.reset();
   const socket = new FakeSocket();
   const session = new KalturaAvatarSession({
-    token: CONV_KS, srsBaseUrl: 'https://srs.example', turnServerUrl: 'turn.avatar.us.kaltura.ai',
+    token: CONV_KS, srsBaseUrl: 'https://srs.example', turnServerUrl: 'turn.example.com',
     videoEl, audioEl, socketFactory: () => socket, rtcConstructor: FakeRTCPeerConnection,
     fetch, getUserMedia: fakeGetUserMedia(), mediaStreamConstructor: FakeMediaStreamCtor,
     networkAware: false, ...cfg,

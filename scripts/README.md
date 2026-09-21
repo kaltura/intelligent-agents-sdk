@@ -55,15 +55,14 @@ export AGENTIC_PARTNER_ID=1234567
 export AGENTIC_ADMIN_SECRET=your-admin-secret
 ```
 
-The scripts built on `live-verify-kickoff-shared.mjs` (`live-verify-kickoff.mjs`, `live-verify-connect-timing.mjs`, `live-verify-opening-phrase.mjs`) also accept `--env` to pick a target:
+The scripts built on `live-verify-kickoff-shared.mjs` (`live-verify-kickoff.mjs`, `live-verify-connect-timing.mjs`, `live-verify-opening-phrase.mjs`) also accept `--env` to pick the environment or region they run against:
 
 | `--env` | Credentials | URLs |
 |---|---|---|
 | `prod` (default) | `AGENTIC_PARTNER_ID`, `AGENTIC_ADMIN_SECRET` | SDK defaults |
-| `nvq2` | `NVQ2_PARTNER_ID_1`, `NVQ2_ADMIN_SECRET_1` | `NVQ2_AGENTIC_API_URL`, `NVQ2_GENIE_URL`, `NVQ2_KALTURA_API_ENDPOINT` |
-| `nvp1` | `NVP1_AGENTIC_PARTNER_ID`, `NVP1_AGENTIC_ADMIN_SECRET` | `NVP1_AGENTIC_API_URL`, `NVP1_GENIE_URL`, `NVP1_KALTURA_API_ENDPOINT` |
+| `<name>` or `<name>:<account>` | `<NAME>_PARTNER_ID_<account>`, `<NAME>_ADMIN_SECRET_<account>` (account defaults to `1`), or `<NAME>_PARTNER_ID`, `<NAME>_ADMIN_SECRET`, or `<NAME>_AGENTIC_PARTNER_ID`, `<NAME>_AGENTIC_ADMIN_SECRET` | `<NAME>_AGENTIC_API_URL`, `<NAME>_GENIE_URL`, `<NAME>_KALTURA_API_ENDPOINT` |
 
-A missing var exits 1 before any network call. Get a partner id and admin secret from Kaltura Rich Media CMS → Settings → Integration Settings.
+`<name>` is lowercase letters and digits; `<NAME>` is the same text in upper case. Every URL is passed to `Management` explicitly, so a named environment never falls back to the production defaults. Example: `--env eu` reads `EU_PARTNER_ID_1`, `EU_ADMIN_SECRET_1`, `EU_AGENTIC_API_URL`, `EU_GENIE_URL`, `EU_KALTURA_API_ENDPOINT`; `--env eu:2` swaps in the `_2` credential pair. A missing var exits 1 before any network call. Get a partner id and admin secret from Kaltura Rich Media CMS → Settings → Integration Settings.
 
 ### Which script to run
 
@@ -83,11 +82,11 @@ A missing var exits 1 before any network call. Get a partner id and admin secret
 | `live-verify-capabilities.mjs` | Capability resolution plus the Lifecycle domain |
 | `live-verify-agents.mjs`, `live-verify-avatars.mjs`, `live-verify-catalog.mjs`, `live-verify-tools.mjs`, `live-verify-skills.mjs`, `live-verify-knowledge.mjs`, `live-verify-intellects-conversations.mjs`, `live-verify-threads-messages-feedback.mjs`, `live-verify-conversation-avatar-surface.mjs` | The write path of one management resource each |
 
-Every one of these has an `npm run live-verify:<name>` script except `live-verify.mjs`, plus four local-only scripts with no npm script and no CI job: `live-verify-intellect-config.mjs`, `live-verify-knowledge-kms.mjs`, `live-verify-feedback-flow.mjs`, `live-check-feedback-unfiltered.mjs`. Run those with `node scripts/<name>.mjs`.
+Every one of these has an `npm run live-verify:<name>` script except `live-verify.mjs`. Four have no npm script and no CI job. Run them with `node scripts/<name>.mjs`: `live-verify-intellect-config.mjs`, `live-verify-knowledge-kms.mjs`, `live-verify-feedback-flow.mjs`, `live-check-feedback-unfiltered.mjs`. One more has an npm script but no CI job either: `live-verify-force-language.mjs`, run by hand with `npm run live-verify:force-language`.
 
 Read the header comment of a script before running it. Each one states what it asserts and why that coverage exists.
 
-Two helper modules are not scripts and are never run directly: `live-verify-kickoff-shared.mjs` (CLI/env parsing, throwaway agent, server, browser, report) and `live-verify-silent-mic-shared.mjs` (a silent WAV for `--use-file-for-fake-audio-capture`, so the fake mic's tone is not transcribed as invented user speech).
+Three helper modules are not scripts and are never run directly: `live-verify-kickoff-shared.mjs` (CLI/env parsing, throwaway agent, server, browser, report), `live-verify-silent-mic-shared.mjs` (a silent WAV for `--use-file-for-fake-audio-capture`, so the fake mic's tone is not transcribed as invented user speech), and `live-verify-hooks-shared.mjs` (a bounded timeout around the page-side `window.test*` hooks, so a hook that never settles fails with a diagnostic instead of hanging the job).
 
 ### Flags
 
@@ -97,7 +96,7 @@ Shared by all three:
 
 | Flag | Effect |
 |---|---|
-| `--env prod\|nvq2\|nvp1` | Target deployment. Default `prod` |
+| `--env prod\|<name>[:<account>]` | Environment or region to run against. Default `prod`. See the table above |
 | `--env-file PATH` | Read env vars from `PATH` instead of `./.env` |
 | `--browser chromium\|chrome\|firefox\|webkit` | Engine. `chrome` is the installed Google Chrome, always headed, audio audible |
 | `--headed` | Show the browser window |
@@ -113,9 +112,9 @@ Shared by all three:
 ```bash
 node scripts/live-verify-connect-timing.mjs --runs 5
 node scripts/live-verify-connect-timing.mjs --runs 10 --hints ab
-node scripts/live-verify-kickoff.mjs --env nvq2 --env-file ../.env --only V4,V6
+node scripts/live-verify-kickoff.mjs --env eu --env-file ../.env --only V4,V6
 node scripts/live-verify-kickoff.mjs --browser chrome --headed --keep
-node scripts/live-verify-opening-phrase.mjs --env nvq2 --env-file ../.env --only P1,P2
+node scripts/live-verify-opening-phrase.mjs --env eu:2 --env-file ../.env --only P1,P2
 ```
 
 ### The throwaway agent
@@ -151,10 +150,10 @@ Three entry points are easy to confuse. They do different things.
 | Workflow | Jobs |
 |---|---|
 | `ci.yml` | Offline tests with coverage, the 3-engine `avatar-media` matrix, the 3-engine `noise-suppressor` matrix, the Constitution verifier, lint/typecheck/circular, the docs gate, semgrep |
-| `live-verify.yml` | One job per live script, on pull requests, merge queue, and a schedule. `--env prod` |
+| `live-verify.yml` | One job per live script. Runs on manual dispatch, on a PR labeled `run-live-verify`, and in the merge queue. Only `live-verify-kickoff` also runs on a weekly schedule |
 | `release.yml` | `npm run verify:distribution -- <tag>`, which checks the published jsDelivr tree matches the tag |
 
-The four local-only scripts listed above have no CI job. Run them by hand when you touch their surface.
+The four local-only scripts, plus `live-verify-force-language.mjs`, have no CI job. Run them by hand when you touch their surface.
 
 ## Extending
 

@@ -17,7 +17,7 @@
  *
  * Usage
  *   node scripts/live-verify-opening-phrase.mjs                        # --env prod, AGENTIC_* vars
- *   node scripts/live-verify-opening-phrase.mjs --env nvq2 --env-file ../.env --only P1,P2
+ *   node scripts/live-verify-opening-phrase.mjs --env eu:2 --env-file ../.env --only P1,P2
  *   flags: --only IDS --browser chromium|chrome|firefox|webkit --headed --out DIR --keep
  *          --agent-json PATH --dump-events
  *

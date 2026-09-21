@@ -26,8 +26,8 @@
  *
  * Usage
  *   node scripts/live-verify-kickoff.mjs                        # --env prod, AGENTIC_* vars
- *   node scripts/live-verify-kickoff.mjs --env nvq2 --env-file ../.env --only V4,V6
- *   node scripts/live-verify-kickoff.mjs --env nvp1 --env-file ../.env --browser chrome
+ *   node scripts/live-verify-kickoff.mjs --env eu --env-file ../.env --only V4,V6
+ *   node scripts/live-verify-kickoff.mjs --browser chrome
  *   flags: --only IDS --browser chromium|chrome|firefox|webkit --headed --out DIR --keep
  *          --agent-json PATH --kickoff TEXT --dump-events
  *

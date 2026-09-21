@@ -27,7 +27,7 @@ export function newAvatarSession(overrides = {}) {
   const videoEl = 'videoEl' in overrides ? overrides.videoEl : new FakeVideoEl({ autoCanPlay: true });
   const getUserMedia = overrides.getUserMedia ?? fakeGetUserMedia();
   const session = new KalturaAvatarSession({
-    token: CONV_KS, srsBaseUrl: 'https://srs.example', turnServerUrl: 'turn.avatar.us.kaltura.ai',
+    token: CONV_KS, srsBaseUrl: 'https://srs.example', turnServerUrl: 'turn.example.com',
     videoEl, socketFactory: () => socket, rtcConstructor: overrides.rtcConstructor ?? FakeRTCPeerConnection,
     fetch: overrides.fetch ?? okWhep, getUserMedia,
     mediaStreamConstructor: FakeMediaStreamCtor,

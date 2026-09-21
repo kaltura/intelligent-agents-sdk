@@ -180,7 +180,7 @@ export class KalturaAvatarSession extends Emitter {
    * @param {number} [cfg.toolSpiralLimit]  Soft tool-call-loop limit before nudging the agent to stop (Agentic ASI loop guard). Default 10.
    * @param {number} [cfg.hardToolSpiralLimit]  Hard tool-call-loop limit that forces a cold reconnect. Default `toolSpiralLimit * 3`.
    * @param {boolean} [cfg.networkAware]  React to `online`/`offline` browser events. Default true when `addEventListener` exists.
-   * @param {boolean} [cfg.sessionCompleteOnEnd]  Master switch for signalling genie (`POST {genieUrl}/thread/session_completed`) the moment this conversation truly ends — tab close, backgrounding, or an explicit disconnect() — instead of waiting for the backend's ~10-minute idle scanner. Default true. `false` disables the POST and its listeners entirely.
+   * @param {boolean} [cfg.sessionCompleteOnEnd]  Master switch for signalling genie (`POST {genieUrl}/thread/session_completed`) the moment this conversation truly ends — tab close, backgrounding, or an explicit disconnect() — instead of waiting for the server to notice the session went idle on its own. Default true. `false` disables the POST and its listeners entirely.
    * @param {string} [cfg.sessionCompletePath]  Escape hatch if the route moves. Default `'/thread/session_completed'`.
    * @param {number} [cfg.sessionCompleteTimeoutMs]  Abort budget for the signal when sent from `completeThread()` or the idle auto-logoff — never applied on a page-lifecycle (`pagehide`/hidden-grace) path, which must never await anything. Default 5000.
    * @param {boolean} [cfg.pageLifecycleAware]  Wire `pagehide`/`visibilitychange`/`pageshow` so the signal fires on tab-close/backgrounding. Default true when `document.addEventListener` exists (mirrors `cfg.networkAware`).
@@ -377,7 +377,7 @@ export class KalturaAvatarSession extends Emitter {
     // again would just waste a redundant lifecycle-rule evaluation. Off by default.
     this._completeOnServerEnd = !!cfg.completeOnServerEnd;
     // Signal genie the moment the conversation truly ends (tab close, backgrounding, an
-    // explicit disconnect) instead of waiting for the ~10-min idle scanner. See session-complete.js.
+    // explicit disconnect) instead of waiting for the server's idle timeout (about 10 minutes). See session-complete.js.
     this._completer = createSessionCompleter({
       fetch: this._fetch,
       genieUrl: this._genieUrl,

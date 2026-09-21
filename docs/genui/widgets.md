@@ -36,7 +36,7 @@ Items come from `model.sources`, `model.items`, or `model.citations`. Each item:
 | `snippet` | `snippet`, `text`, `content` | ≤2000 chars |
 | `score` | `score`, `relevance`, `similarity` | forward-compatible passthrough — omitted when absent/non-numeric, never `0` |
 
-Descriptor: `{kind:'sources', data:{sources:[{title, url, snippet, score?}]}}`. RAG-driven emission is unverified, so `score`'s presence is NOT a claimed backend guarantee.
+Descriptor: `{kind:'sources', data:{sources:[{title, url, snippet, score?}]}}`. `score`'s presence is not a claimed backend guarantee.
 
 ### 4. summary (`renderSummary`)
 
@@ -55,7 +55,7 @@ Items come from `model.videos`, `model.entries`, or `model.items`. Each item:
 | Field | Source keys (model) | Constraint |
 |---|---|---|
 | `entryId` | `entryId`, `entry_id`, `id` | ≤100 chars, preserved verbatim — host plays via the Kaltura player |
-| `title` | `title`, `name` | — |
+| `title` | `title`, `name` | ≤500 chars |
 | `thumbnailUrl` | `thumbnailUrl`, `thumbnail`, `thumb` | via `safeUrl` |
 | `url` | `url`, `playUrl`, `link` | via `safeUrl` |
 | `embedUrl` | *(output — derived, not read from the model)* | `playerEmbedUrl(entryId, partnerId, {uiConfId})` (`core/kaltura-media.js`) when the render ctx has `partnerId`; `''` otherwise |
@@ -81,6 +81,7 @@ Descriptor: `{kind:'show-link', data:{url, label, description, safe}}` where **`
 |---|---|---|
 | `url` | `url`, `videoUrl`, `mediaUrl`, `src`, `embedUrl` | **requires an ABSOLUTE http(s) URL** — a non-`https?://` value (relative path, `//host`, `mailto`) yields `url:''`; this is an iframe/`<video src>` surface |
 | `embedUrl` | *(output — derived from `url`)* | `externalEmbedUrl()` (`core/kaltura-media.js`) promotes a recognized YouTube/Vimeo URL to a real iframe-embed URL (`youtube-nocookie.com/embed/…`, `player.vimeo.com/video/…`); any other host → `''` so the host falls back to a plain link |
+| `title` | `title`, `name` | ≤500 chars |
 | `provider` | `provider`, `source` | ≤100 chars; when absent, auto-filled from the embed match (`'YouTube'` / `'Vimeo'`) |
 | `poster` | `poster`, `thumbnail`, `thumbnailUrl` | via `safeUrl` — a still to show before play |
 | `description` | `description` | ≤2000 chars |
@@ -93,10 +94,10 @@ Fields come from `model.fields`, `model.properties`, or `model.items`. A field w
 
 | Field | Source keys (model) | Constraint |
 |---|---|---|
-| `key` | `key`, `name` | — |
+| `key` | `key`, `name` | ≤200 chars |
 | `type` | `type` (lowercased) | validated against `{str,int,float,bool,list,dict,email,phone,text}`; unknown → `'str'` |
-| `label` | `label`, `prompt`, `key` | — |
-| `knownValue` | `knownValue`, `known_value` | a value the model already extracted, for pre-fill |
+| `label` | `label`, `prompt`, `key` | ≤300 chars |
+| `knownValue` | `knownValue`, `known_value` | ≤1000 chars. A value the model already extracted, for pre-fill |
 | `required` | `required` | `true` only when `required === true` |
 | `description` | `description`, `help` | ≤500 chars |
 
@@ -113,7 +114,7 @@ Items come from `model.items`, `model.slides`, or `model.cards`. Each item:
 | Field | Source keys (model) | Constraint |
 |---|---|---|
 | `id` | `id`, `slideId`, `key` | ≤100 chars, addressable — slides are ordered, mirrors `entryId` |
-| `title` | `title`, `name`, `heading` | — |
+| `title` | `title`, `name`, `heading` | ≤500 chars |
 | `description` | `description`, `text`, `body` | ≤2000 chars |
 | `imageUrl` | `imageUrl`, `image`, `thumbnail` | via `safeUrl` |
 | `url` | `url`, `link`, `href` | via `safeUrl` |

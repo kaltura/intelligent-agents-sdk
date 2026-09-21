@@ -4,7 +4,7 @@ This covers everything about the `session_completed` signal (`src/experience/ses
 
 ## What you're testing
 
-When a conversation ends, the SDK POSTs `{genieUrl}/thread/session_completed` so the backend's lifecycle rules (summaries, insights, CRM pushes) fire within seconds instead of waiting for the ~10-minute idle scanner. The full design rationale, config options, and decision table live in `README.md`'s "Ending a conversation cleanly (`session_completed` signal)" section at the repo root, read that first if you haven't. The short version: it fires on tab-close (`pagehide`), on a back-forward-cache freeze, after 30 seconds of being hidden (the mobile-tab-kill fallback), and on an explicit `disconnect()` or `completeThread()` call. It's idempotent and suppressed while another tab on the same device still has the thread open.
+When a conversation ends, the SDK POSTs `{genieUrl}/thread/session_completed` so the backend's lifecycle rules (summaries, insights, CRM pushes) fire within seconds instead of waiting for the ~10-minute idle timeout. The full design rationale, config options, and decision table live in `README.md`'s "Ending a conversation cleanly (`session_completed` signal)" section at the repo root, read that first if you haven't. The short version: it fires on tab-close (`pagehide`), on a back-forward-cache freeze, after 30 seconds of being hidden (the mobile-tab-kill fallback), and on an explicit `disconnect()` or `completeThread()` call. It's idempotent and suppressed while another tab on the same device still has the thread open.
 
 ## Setup
 
@@ -59,7 +59,7 @@ Connect → Send test turn → background the app → wait 10 seconds → return
 
 ### 5. Force-quit / OS-level kill
 
-Connect → Send test turn → force-quit the browser app entirely (iOS: swipe up in the app switcher; Android: swipe away from recents) immediately, well before the 30-second grace period would elapse on its own. This is the one flow with an accepted gap: if the OS kills the process before `hiddenGraceMs` elapses, no signal can fire from the client at all, and the backend's ~10-minute idle scanner is the real fallback. Record whether the terminal shows a line within the grace window regardless (sometimes the OS gives the backgrounded page enough time to still fire before actually suspending it). Either outcome is informative, but a missing line here is not a bug, it's the documented limit of client-side signaling.
+Connect → Send test turn → force-quit the browser app entirely (iOS: swipe up in the app switcher; Android: swipe away from recents) immediately, well before the 30-second grace period would elapse on its own. This is the one flow with an accepted gap: if the OS kills the process before `hiddenGraceMs` elapses, no signal can fire from the client at all, and the backend's ~10-minute idle timeout is the real fallback. Record whether the terminal shows a line within the grace window regardless (sometimes the OS gives the backgrounded page enough time to still fire before actually suspending it). Either outcome is informative, but a missing line here is not a bug, it's the documented limit of client-side signaling.
 
 ### 6. Real back-forward-cache round trip
 
@@ -75,7 +75,7 @@ Open the test URL inside an in-app browser that lacks `BroadcastChannel` support
 
 ### 9. Offline / airplane mode during disconnect
 
-Connect → Send test turn → enable airplane mode (or otherwise cut network) → immediately tap Disconnect (final). Expect the on-page log to show `disconnect() returned` (it's synchronous and always returns immediately) but **no** corresponding terminal line, since the POST itself can't reach the network. Then disable airplane mode and wait roughly 10 minutes if you want to confirm the backend's own idle-scanner fallback eventually closes the thread server-side. This is optional and slow, mark it as skipped if you don't have time.
+Connect → Send test turn → enable airplane mode (or otherwise cut network) → immediately tap Disconnect (final). Expect the on-page log to show `disconnect() returned` (it's synchronous and always returns immediately) but **no** corresponding terminal line, since the POST itself can't reach the network. Then disable airplane mode and wait about 10 minutes if you want to confirm the server's idle timeout eventually closes the thread server-side. This is optional and slow, mark it as skipped if you don't have time.
 
 ### 10. Low-power / battery-saver mode
 
@@ -83,7 +83,7 @@ Enable the device's battery-saver or low-power mode, then repeat flow 3 (backgro
 
 ### 11. Slow/flaky network
 
-Throttle the connection (browser devtools network throttling, or a real poor-signal environment) to something slow, then tap "Complete thread." `sessionCompleteTimeoutMs` (default 5000ms) governs how long this specific call waits before giving up. Confirm the button's on-page log resolves or errors within roughly 5 seconds even under throttling, rather than hanging indefinitely. Note that this timeout does **not** apply to the tab-close/backgrounding paths, only to `completeThread()`'s deliberate call.
+Throttle the connection (browser devtools network throttling, or a real poor-signal environment) to something slow, then tap "Complete thread." `sessionCompleteTimeoutMs` (default 5000ms) governs how long this specific call waits before giving up. Confirm the button's on-page log resolves or errors within about 5 seconds even under throttling, rather than hanging indefinitely. Note that this timeout does **not** apply to the tab-close/backgrounding paths, only to `completeThread()`'s deliberate call.
 
 ### 12. Manual `completeThread()` without teardown
 

@@ -12,7 +12,7 @@ Each use case maps to a runnable script or example in this repo, or the equivale
 
 | # | Use case | Key mechanism | Script / SDK entry point |
 |---|----------|--------------|--------|
-| UC-1 | **Agent Factory** | `generateAgentProfile` → `intellect/add` → configure → `avatar/create` → `agent/create` → `resolveWidgetId` | `node quickstart/create-agent.mjs "Your brief"` |
+| UC-1 | **Agent Factory** | `generateAgentProfile` → `v1/intellect/add` → configure → `avatar/create` → `agent/create` → `resolveWidgetId` | `node quickstart/create-agent.mjs "Your brief"` |
 | UC-2 | **Personalized Concierge** | Prompts with `{{firstName}}`/`{{plan}}` + `allow_client_variables:true`; pass `request_vars` per message | `mgmt.converse(configId, msg, { request_vars })` |
 | UC-3 | **Memory Chatbot** | First `converse` returns `threadId`; pass it back. `v1/thread/get_transcripts` for the full record | `mgmt.converse(...)` + `mgmt.threads.list`/`transcript` |
 | UC-4 | **GenUI Experiences** | `force_experience` hint + `capabilities`; render `unisphere-tool` segments by `metadata.runtimeName` | `mgmt.converse(...)` + `./experience/genui` |

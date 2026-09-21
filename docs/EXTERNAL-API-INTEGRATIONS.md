@@ -94,7 +94,7 @@ A CRM or marketing-automation write is a routine instance of the pattern above: 
 
 ### HubSpot
 
-`hubspotContactUpsert()` (`src/management/crm-recipes.js`) wraps HubSpot's Contacts v3 upsert endpoint (`POST /crm/v3/objects/contacts`) with a static bearer token (a HubSpot **private-app token**, not an OAuth2 flow — HubSpot's private-app tokens are long-lived and don't need refresh):
+`hubspotContactUpsert()` (`src/management/crm-recipes.js`) wraps HubSpot's Contacts v3 create endpoint (`POST /crm/v3/objects/contacts`) with a static bearer token (a HubSpot **private-app token**, not an OAuth2 flow — HubSpot's private-app tokens are long-lived and don't need refresh). Despite the name, this is a create, not a true upsert: HubSpot rejects the call with a conflict if a contact with the same email already exists. Use it for new-lead capture, not for updating an existing contact.
 
 ```js
 import { hubspotContactUpsert } from '@kaltura/intelligent-agents/management';

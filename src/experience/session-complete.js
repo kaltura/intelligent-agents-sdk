@@ -2,7 +2,7 @@
  * Session-completion signal — POST `{genieUrl}{path}` (`{id: threadId}`,
  * `Authorization: KS <token>`) the moment a conversation is genuinely over, so
  * backend lifecycle rules (summaries, insights, CRM pushes) fire in seconds
- * instead of waiting for the ~10-minute idle scanner.
+ * instead of waiting for the server's idle timeout (about 10 minutes).
  *
  * Zero deps, no `window`/`globalThis` writes (Constitution I-2) — every
  * listener this module adds is handed back through `unwire()` via the shared
@@ -86,7 +86,7 @@ export function createSessionCompleter(opts) {
     teardown.track(() => { try { channel?.close?.(); } catch { /* */ } channel = null; });
   }
 
-  /** The actual POST — never throws, never retries; the server's idle scanner is the fallback. @param {string} reason */
+  /** The actual POST — never throws, never retries; the server's idle timeout is the fallback. @param {string} reason */
   async function send(reason) {
     const token = getToken();
     const id = threadId;

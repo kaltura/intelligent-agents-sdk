@@ -23,7 +23,7 @@ function newSession(overrides = {}) {
   const session = new KalturaAvatarSession({
     token: CONV_KS,
     srsBaseUrl: 'https://srs.example',
-    turnServerUrl: 'turn.avatar.us.kaltura.ai',
+    turnServerUrl: 'turn.example.com',
     videoEl: new FakeVideoEl({ autoCanPlay: true }),
     socketFactory: () => socket,
     rtcConstructor: FakeRTCPeerConnection,

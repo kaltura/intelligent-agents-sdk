@@ -14,13 +14,16 @@ POST https://api.avatar.us.kaltura.ai/v1/avatar/create
   "visual": {
     "id": "f5a6b7c8-d9e0-4f1a-2b3c-4d5e6f7a8b9c",
     "motionControl": { "speaking": 0.7, "nonSpeaking": 0.2 }
-  }
+  },
+  "name": "Support rep"
 }
 ```
 
+Server-enforced ranges: `voice.speed` 0.5–1.5; `motionControl.speaking` and `motionControl.nonSpeaking` each 0.1–1.0 (keep `nonSpeaking` below `speaking`); `name` up to 255 characters. A value outside these ranges is a 400.
+
 `voice.id` and `visual.id` come from the catalog ([Catalog & Assets § Browse the Catalog](../design.md#browse-the-catalog)). For your own portrait, upload it first and use the returned `itemId` as `visual.id` ([§ Upload a Custom Visual](../design.md#upload-a-custom-visual-portrait--animated-avatar), which also covers how to prepare the photo). Returns `id` (24-char hex). **No `adminTags`** on avatars: tag the parent agent instead ([Management Operations § Avatars](../management-operations.md#avatars--httpsapiavataruskalturaai)).
 
-Leave `openingPhrase` unset. The intellect's `opening_phrase` owns the first, uninterruptible turn of every session ([Configure an Intellect](intellect.md#configure-an-intellect)); `provision()` writes it there and creates the avatar without a phrase. An avatar-level `openingPhrase` is spoken only for a session whose intellect has none. Clear a legacy one with `avatars.update({ id, openingPhrase: null }, ks)`. Where the phrase lives, how to personalize it with Jinja2, and the silent-opening + `kickoff` pattern: [START-THE-CONVERSATION.md](../../START-THE-CONVERSATION.md).
+Leave `openingPhrase` unset. The intellect's `opening_phrase` owns the first, uninterruptible turn of every session ([Configure an Intellect](intellect.md#configure-an-intellect)); `provision()` writes it there and creates the avatar without a phrase. An avatar-level `openingPhrase` is spoken only for a session whose intellect has none. Clear one with `avatars.update({ id, openingPhrase: null }, ks)`. Where the phrase lives, how to personalize it with Jinja2, and the silent-opening + `kickoff` pattern: [START-THE-CONVERSATION.md](../../START-THE-CONVERSATION.md).
 
 ### Three ways to get a visual
 
@@ -38,11 +41,11 @@ An incomplete or invalid pairing is an HTTP-200 `KalturaAPIException` (`AVATAR_M
 
 Whichever way you pick, the composed result is reflected in the created avatar's `visual.composition` and a fresh raw `previewImageUrl`/`loadingVideoUrl` (backend asset URLs, not the rendered live-session composite). Inspect those to see what was actually built, rather than assuming the inputs alone describe the output. Changing the composition after create follows different rules: [Management Operations § Avatars](../management-operations.md#avatars--httpsapiavataruskalturaai).
 
-**Faster path — pick a curated preset instead of assembling voice+visual by hand:** `mgmt.avatars.listTemplates(ks, opts)` lists curated bundles (36 live today — "Adam", "Amir", "Ben", ...), each pairing a `voice` with either a ready `visual` or a `face`/`background` pair. Pass the template's own `id` as `templateId`; if the template's `face`/`background` isn't already a complete pair, add whichever half it's missing:
+**Faster path — pick a curated preset instead of assembling voice+visual by hand:** `mgmt.avatars.listTemplates(ks, opts)` lists curated bundles, each pairing a `voice` with either a ready `visual` or a `face`/`background` pair. Pass the template's own `id` as `templateId`; if the template's `face`/`background` isn't already a complete pair, add whichever half it's missing:
 
 ```js
 const templates = await mgmt.avatars.listTemplates(ks, { pageSize: 10 });
-const t = templates[0]; // { id, name: 'Adam', voice: { id }, face: { id, imageUrl } }
+const t = templates[0]; // { id, name, voice: { id }, face: { id, imageUrl } }
 await mgmt.avatars.create(
   { voice: t.voice, templateId: t.id, background: { type: 'color', value: '#ffffff' } },
   ks,
@@ -90,8 +93,8 @@ POST https://api.avatar.us.kaltura.ai/v1/agent/create
 | `intellect.intellectType` | `"genie"` — the only value `mgmt.intellects.create()` can produce today. The field also accepts `"external"`, for an intellect created and managed outside this SDK. |
 | `intellect.id` | The intellect's configId, from intellect create — passed straight in, no discovery step |
 | `avatarIds` | Optional — omit for a headless text-only agent |
-| `maxConversationLength` | Seconds. Default 540, range 1–3600 |
-| `widgetConfig.initialPage.title` | Max 100 chars |
+| `maxConversationLength` | Seconds. Omit to use the backend's own default |
+| `widgetConfig` / `embedConfig` | Optional, opaque config objects for the hosted widget/embed. Omit unless you're customizing widget or embed behavior |
 
 Returns `agentId` (UUID). **Save this.**
 

@@ -55,7 +55,7 @@ The site build publishes one public JSON file. The same file feeds the prompt (r
 | `version` | Format version, always `1` today. `validateSectionsManifest` rejects anything else. |
 | `lang` | Language code used for the stop-word list. |
 | `pages[].path` | Site-relative path with leading slash, prefix-free (`/guides/x/`, not `/docs/guides/x/`). Sorted. |
-| `pages[].title` | Optional, for humans and tooling. Not sent to the model. |
+| `pages[].title` | Optional. When present, it's the first line of that page's block in the rendered SITE MAP, so it does reach the model. See [Rendering the SITE MAP](#rendering-the-site-map). |
 | `sections[].key` | Compact key the model uses (2–3 content words). Unique per page. |
 | `sections[].id` | Real DOM id of the element to scroll to. |
 | `sections[].text` | Heading text, used by the fuzzy resolver. |
@@ -104,7 +104,7 @@ Deterministic, so a docs change re-keys only the page it touched:
 
 `renderSiteMap(manifest)` gives the prompt text: two lines per page, the page title and then `path: key1, key2`, with a blank line between pages. About 45 tokens per page. The title lets the model match what a visitor calls a page ("the wire protocol page") to its path. The path line carries only the path and the keys: a label next to the path gets copied into `go_to` as part of the path.
 
-`siteMapPrompt(manifest)` wraps it as a prompt block and warns (never throws) when the estimate passes `maxTokens` (default 3000). The docs site's 49 pages and 202 sections render to roughly 2300 tokens.
+`siteMapPrompt(manifest)` wraps it as a prompt block and warns (never throws) when the estimate passes `maxTokens` (default 3000). The docs site's 49 pages and ~174 sections render to about 2500 tokens (`test/fixtures/site-map.snapshot.txt`).
 
 ## Provisioning
 
@@ -186,7 +186,7 @@ Construct it once per session, right after the session. `destroy()` unsubscribes
 |---|---|
 | No ACK ever | The plugin never answers the tool call. There is nothing to respond to. |
 | Act immediately | The handler runs on the tool segment, whatever the speech state. |
-| Path safety | `resolveTarget` must return a manifest page. `resolvePath` first (exact → normalized → last-segment word overlap ≥ 0.5 with a single winner). When no page matches, the last path segment is tried as a section of the page named by the rest of the path; that parent must be an exact or normalized manifest path and the segment must resolve as one of its sections (`splitPath: true`). This catches a model that fuses `{ path: '/', section: 'license' }` into `{ path: '/license' }`. The final URL passes `safeUrl`. Anything else is dropped with `reason: 'unknown_path'`. |
+| Path safety | `resolveTarget` must return a manifest page. `resolvePath` first (exact → normalized → last-segment word overlap ≥ 0.5 with a single winner). When no page matches, the last path segment is tried as a section of the page named by the rest of the path; that parent must be an exact or normalized manifest path and the segment must resolve as one of its sections (`splitPath: true`). This catches a model that fuses `{ path: '/', section: 'license' }` into `{ path: '/license' }`. No match at all drops with `reason: 'unknown_path'`. A match whose final URL fails `safeUrl` drops with `reason: 'unsafe_url'` instead. |
 | Section fallback | key → id → normalized text equality → request words are a subset of one section → Jaccard ≥ 0.5 with a single winner → page top (`fellBackToTop: true`). On a split path the `section` argument wins when it resolves on the parent page, else the split-off segment is the section. A wrong section never fails the navigation. |
 | Cross-page | `await navigate(url, info)`, then find the section in the new DOM (now, next frame, after `settleMs`), then scroll, hash, point. |
 | Same page | `navigate` is skipped. Scroll, hash, point. |
@@ -252,7 +252,7 @@ Non-goals: multi-argument actions (`action: 'open' | 'highlight'`), server-side 
 ## Security
 
 - Only manifest paths are navigable. The model cannot invent a destination.
-- Every URL handed to `navigate` and every manifest URL passes `safeUrl`.
+- Every URL handed to `navigate` passes `safeUrl`. The browser's own manifest fetch (`manifestUrl`) does too; the provisioning-side `loadSectionsManifest` only requires an `http(s)://` URL, since it runs server-side against a URL you supply yourself.
 - A fetched manifest is size-guarded, parsed, passed through `sanitizeJson` (prototype keys dropped) and validated before use, on both the server and the browser side.
 - No `innerHTML`, no selector strings built from model output, no `eval`.
 - The manifest is public data. Keep internal or unpublished pages out of the build input.

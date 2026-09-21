@@ -26,7 +26,7 @@ function newSession(overrides = {}) {
   const socket = new FakeSocket();
   const videoEl = 'videoEl' in overrides ? overrides.videoEl : new FakeVideoEl({ autoCanPlay: true });
   const session = new KalturaAvatarSession({
-    token: CONV_KS, srsBaseUrl: 'https://srs.example', turnServerUrl: 'turn.avatar.us.kaltura.ai',
+    token: CONV_KS, srsBaseUrl: 'https://srs.example', turnServerUrl: 'turn.example.com',
     videoEl, socketFactory: () => socket, rtcConstructor: FakeRTCPeerConnection,
     fetch: overrides.fetch ?? whepOk, getUserMedia: fakeGetUserMedia(), mediaStreamConstructor: FakeMediaStreamCtor,
     ...(overrides.cfg || {}),
