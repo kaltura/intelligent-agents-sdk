@@ -63,8 +63,8 @@
  * plus the on − off median delta.
  *
  * Usage
- *   node scripts/live-verify-connect-timing.mjs                 # AGENTIC_* vars
- *   node scripts/live-verify-connect-timing.mjs --env-file ../.env --runs 5
+ *   node scripts/live-verify-connect-timing.mjs                 # --env prod, AGENTIC_* vars
+ *   node scripts/live-verify-connect-timing.mjs --env eu --env-file ../.env --runs 5
  *   node scripts/live-verify-connect-timing.mjs --browser chrome
  *   node scripts/live-verify-connect-timing.mjs --browser firefox --opening 'Hello!' --no-kickoff
  *   node scripts/live-verify-connect-timing.mjs --browser chrome --runs 10 --hints ab

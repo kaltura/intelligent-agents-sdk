@@ -66,7 +66,7 @@ export function loadEnvFile(path) {
  * Resolve the backend target from the environment. `prod` (the default) reads
  * `AGENTIC_PARTNER_ID` / `AGENTIC_ADMIN_SECRET` and uses the SDK's default URLs.
  *
- * Any other name is an SDK-development target, `<name>` or `<name>:<account>`.
+ * Any other environment or region is `<name>` or `<name>:<account>`.
  * The upper-cased name prefixes `_AGENTIC_API_URL`, `_GENIE_URL` and
  * `_KALTURA_API_ENDPOINT`. Credentials come from the first pair that is set:
  * `<PREFIX>_PARTNER_ID_<account>` / `<PREFIX>_ADMIN_SECRET_<account>` (account
