@@ -55,15 +55,7 @@ export AGENTIC_PARTNER_ID=1234567
 export AGENTIC_ADMIN_SECRET=your-admin-secret
 ```
 
-The scripts built on `live-verify-kickoff-shared.mjs` (`live-verify-kickoff.mjs`, `live-verify-connect-timing.mjs`, `live-verify-opening-phrase.mjs`) also accept `--env` to pick a target:
-
-| `--env` | Credentials | URLs |
-|---|---|---|
-| `prod` (default) | `AGENTIC_PARTNER_ID`, `AGENTIC_ADMIN_SECRET` | SDK defaults |
-| `nvq2` | `NVQ2_PARTNER_ID_1`, `NVQ2_ADMIN_SECRET_1` | `NVQ2_AGENTIC_API_URL`, `NVQ2_GENIE_URL`, `NVQ2_KALTURA_API_ENDPOINT` |
-| `nvp1` | `NVP1_AGENTIC_PARTNER_ID`, `NVP1_AGENTIC_ADMIN_SECRET` | `NVP1_AGENTIC_API_URL`, `NVP1_GENIE_URL`, `NVP1_KALTURA_API_ENDPOINT` |
-
-A missing var exits 1 before any network call. Get a partner id and admin secret from Kaltura Rich Media CMS → Settings → Integration Settings.
+The scripts built on `live-verify-kickoff-shared.mjs` (`live-verify-kickoff.mjs`, `live-verify-connect-timing.mjs`, `live-verify-opening-phrase.mjs`) read `AGENTIC_PARTNER_ID` and `AGENTIC_ADMIN_SECRET` and use the SDK's default URLs. A missing var exits 1 before any network call. Get a partner id and admin secret from Kaltura Rich Media CMS → Settings → Integration Settings.
 
 ### Which script to run
 
@@ -97,7 +89,6 @@ Shared by all three:
 
 | Flag | Effect |
 |---|---|
-| `--env prod\|nvq2\|nvp1` | Target deployment. Default `prod` |
 | `--env-file PATH` | Read env vars from `PATH` instead of `./.env` |
 | `--browser chromium\|chrome\|firefox\|webkit` | Engine. `chrome` is the installed Google Chrome, always headed, audio audible |
 | `--headed` | Show the browser window |
@@ -113,9 +104,9 @@ Shared by all three:
 ```bash
 node scripts/live-verify-connect-timing.mjs --runs 5
 node scripts/live-verify-connect-timing.mjs --runs 10 --hints ab
-node scripts/live-verify-kickoff.mjs --env nvq2 --env-file ../.env --only V4,V6
+node scripts/live-verify-kickoff.mjs --only V4,V6
 node scripts/live-verify-kickoff.mjs --browser chrome --headed --keep
-node scripts/live-verify-opening-phrase.mjs --env nvq2 --env-file ../.env --only P1,P2
+node scripts/live-verify-opening-phrase.mjs --only P1,P2
 ```
 
 ### The throwaway agent

@@ -47,7 +47,7 @@ export function parseArgs(argv) {
 
 /**
  * Load `KEY=value` lines from a .env file into process.env without overriding
- * values that are already set. Keys may contain digits (`NVQ2_PARTNER_ID_1`).
+ * values that are already set. Keys may contain digits.
  * @param {string} path
  * @returns {boolean} true when the file was read
  */
@@ -63,17 +63,13 @@ export function loadEnvFile(path) {
 }
 
 /**
- * Resolve one backend target from the environment.
- *
- * | --env | partner / secret | URLs |
- * |---|---|---|
- * | `prod` (default) | `AGENTIC_PARTNER_ID` / `AGENTIC_ADMIN_SECRET` | SDK defaults |
- * | `nvq2` | `NVQ2_PARTNER_ID_1` / `NVQ2_ADMIN_SECRET_1` | `NVQ2_AGENTIC_API_URL`, `NVQ2_GENIE_URL`, `NVQ2_KALTURA_API_ENDPOINT` |
- * | `nvp1` | `NVP1_AGENTIC_PARTNER_ID` / `NVP1_AGENTIC_ADMIN_SECRET` | `NVP1_AGENTIC_API_URL`, `NVP1_GENIE_URL`, `NVP1_KALTURA_API_ENDPOINT` |
- *
- * Every URL override is passed explicitly to `Management`, so a target never
- * falls back to the production defaults by accident. `nvp1` is production
- * reached through explicit URLs (same backend as `prod`, different env names).
+ * Resolve the backend target from the environment. `prod` (the default) reads
+ * `AGENTIC_PARTNER_ID` / `AGENTIC_ADMIN_SECRET` and uses the SDK's default URLs.
+ * Any other name is an SDK-development target: its upper-cased form prefixes
+ * `_PARTNER_ID`, `_ADMIN_SECRET`, `_AGENTIC_API_URL`, `_GENIE_URL` and
+ * `_KALTURA_API_ENDPOINT`. Every URL override is passed explicitly to
+ * `Management`, so a target never falls back to the production defaults by
+ * accident.
  * @param {string} name
  * @returns {{name:string, partnerId:string, adminSecret:string, agenticUrl?:string, genieUrl?:string, ovpUrl?:string}}
  */
@@ -89,30 +85,20 @@ export function resolveTarget(name) {
     need(['AGENTIC_PARTNER_ID', 'AGENTIC_ADMIN_SECRET']);
     return { name, partnerId: process.env.AGENTIC_PARTNER_ID, adminSecret: process.env.AGENTIC_ADMIN_SECRET };
   }
-  if (name === 'nvq2') {
-    need(['NVQ2_PARTNER_ID_1', 'NVQ2_ADMIN_SECRET_1', 'NVQ2_AGENTIC_API_URL', 'NVQ2_GENIE_URL', 'NVQ2_KALTURA_API_ENDPOINT']);
-    return {
-      name,
-      partnerId: process.env.NVQ2_PARTNER_ID_1,
-      adminSecret: process.env.NVQ2_ADMIN_SECRET_1,
-      agenticUrl: process.env.NVQ2_AGENTIC_API_URL,
-      genieUrl: process.env.NVQ2_GENIE_URL,
-      ovpUrl: process.env.NVQ2_KALTURA_API_ENDPOINT,
-    };
+  if (!/^[a-z][a-z0-9]*$/.test(name)) {
+    console.error(`--env ${name}: use prod, or a lowercase name whose upper-cased form prefixes the target's env vars.`);
+    process.exit(1);
   }
-  if (name === 'nvp1') {
-    need(['NVP1_AGENTIC_PARTNER_ID', 'NVP1_AGENTIC_ADMIN_SECRET', 'NVP1_AGENTIC_API_URL', 'NVP1_GENIE_URL', 'NVP1_KALTURA_API_ENDPOINT']);
-    return {
-      name,
-      partnerId: process.env.NVP1_AGENTIC_PARTNER_ID,
-      adminSecret: process.env.NVP1_AGENTIC_ADMIN_SECRET,
-      agenticUrl: process.env.NVP1_AGENTIC_API_URL,
-      genieUrl: process.env.NVP1_GENIE_URL,
-      ovpUrl: process.env.NVP1_KALTURA_API_ENDPOINT,
-    };
-  }
-  console.error(`--env ${name}: unknown target (expected prod, nvq2 or nvp1).`);
-  process.exit(1);
+  const p = name.toUpperCase();
+  need([`${p}_PARTNER_ID`, `${p}_ADMIN_SECRET`, `${p}_AGENTIC_API_URL`, `${p}_GENIE_URL`, `${p}_KALTURA_API_ENDPOINT`]);
+  return {
+    name,
+    partnerId: process.env[`${p}_PARTNER_ID`],
+    adminSecret: process.env[`${p}_ADMIN_SECRET`],
+    agenticUrl: process.env[`${p}_AGENTIC_API_URL`],
+    genieUrl: process.env[`${p}_GENIE_URL`],
+    ovpUrl: process.env[`${p}_KALTURA_API_ENDPOINT`],
+  };
 }
 
 /** Browser engines the live scripts can drive. `chrome` is the installed Google Chrome via Playwright's `channel`. */
