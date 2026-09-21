@@ -91,6 +91,7 @@ A tap window that never closes (tab closed mid-recording, app crash, network dro
 | `connected` | `switchMode(other)` | `switching` → `connected` | Emits `transportChanged`, then `modeChanged {mode, threadContinuity}` |
 | `connected` | `switchMode(current)` | `connected` | Idempotent no-op — nothing tears down |
 | `switching` | switch fails | `failed` (`reason: 'transport_failed'`) | No rollback; buffered sends reject with the switch error |
+| `switching` | `disconnect()` | `closed` | The in-flight `switchMode()` rejects with `invalid_state`; one `ended {reason:'disconnected'}`, no `failed` |
 | `connected` | transport dies | `failed` + `ended` forwarded | Socket drop, server end |
 | any | `disconnect()` | `closed` | Idempotent; exactly one `ended {reason:'disconnected'}` |
 

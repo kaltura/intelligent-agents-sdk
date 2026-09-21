@@ -7,8 +7,12 @@
  * No AGENTIC_WIDGET_ID? Set AGENTIC_ADMIN_SECRET instead and it provisions a
  * throwaway agent on startup (admin secret stays server-side, never sent to the browser).
  *
- * Then open http://localhost:8091/examples/<example>.html — e.g. event-timing.html, browser-experience.html.
+ * Then open http://127.0.0.1:8091/examples/<example>.html — e.g. event-timing.html, browser-experience.html.
  * (repo-root-relative, so each example's `../src/...` import resolves correctly)
+ *
+ * Listens on 127.0.0.1 only, and serves files from examples/ and src/ only (no dotfiles):
+ * `/appInit` mints a real widget token with your admin secret, so nothing else on the
+ * network should be able to reach it, and a repo-root `.env` must never be fetchable.
  *
  * NOTE (dev-local path): imports below resolve against the repo's src/ tree.
  * npm consumers should instead import from '@kaltura/intelligent-agents/management'.
@@ -46,6 +50,7 @@ if (!widgetId) {
   console.log('Provisioned a throwaway agent:', { configId: agent.configId, agentId: agent.agentId, widgetId });
 }
 
+const SERVED_DIRS = ['examples', 'src'];
 const MIME = { '.html': 'text/html', '.js': 'application/javascript', '.mjs': 'application/javascript', '.json': 'application/json', '.jpeg': 'image/jpeg' };
 
 const server = http.createServer(async (req, res) => {
@@ -62,11 +67,15 @@ const server = http.createServer(async (req, res) => {
     }
     return;
   }
-  // Static files: only from the repo root, never above it (the harness pages import ../src/...).
+  // Static files: only examples/ and src/ (the harness pages import ../src/...), never a
+  // dotfile, never anything else under the repo root (a local `.env` lives there).
   const urlPath = (req.url || '/').split('?')[0];
   const rel = urlPath === '/' ? 'examples/event-timing.html' : decodeURIComponent(urlPath).replace(/^\/+/, '');
   const filePath = path.resolve(REPO_ROOT, rel);
-  if (!filePath.startsWith(REPO_ROOT + path.sep)) { res.writeHead(404, { 'Content-Type': 'text/plain' }); res.end('not found'); return; }
+  const relPath = path.relative(REPO_ROOT, filePath);
+  const inServedDir = SERVED_DIRS.some((d) => relPath === d || relPath.startsWith(d + path.sep));
+  const hasDotSegment = relPath.split(path.sep).some((seg) => seg.startsWith('.'));
+  if (!inServedDir || hasDotSegment) { res.writeHead(404, { 'Content-Type': 'text/plain' }); res.end('not found'); return; }
   fs.readFile(filePath, (err, data) => {
     if (err) { res.writeHead(404, { 'Content-Type': 'text/plain' }); res.end('not found'); return; }
     res.writeHead(200, { 'Content-Type': MIME[path.extname(filePath)] || 'application/octet-stream' });
@@ -74,4 +83,4 @@ const server = http.createServer(async (req, res) => {
   });
 });
 
-server.listen(PORT, () => console.log(`Serving examples/*.html + /appInit on http://localhost:${PORT}/`));
+server.listen(PORT, '127.0.0.1', () => console.log(`Serving examples/*.html + /appInit on http://127.0.0.1:${PORT}/ (loopback only)`));

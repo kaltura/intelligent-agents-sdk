@@ -507,7 +507,10 @@ export class KalturaAvatarSession extends Emitter {
   /**
    * Run the full connect machine (steps 0–11) and resolve when the session is
    * live (greeting will play). Rejects with a {@link KalturaError} on any step
-   * failure/timeout. Emits `disclosure` before any user turn.
+   * failure/timeout. Emits `disclosure` before any user turn. A `disconnect()`
+   * while connect() is still in flight settles it at once with `connect_failed`:
+   * every pending wait is canceled, including the media handshake request and a
+   * cold reconnect's capacity wait, and any answer that lands late is released.
    * @returns {Promise<void>}
    */
   async connect() {
@@ -601,12 +604,18 @@ export class KalturaAvatarSession extends Emitter {
       let requested = false, settled = false;
       const cleanup = () => {
         clearInterval(guard);
+        this._pendingAwaits.delete(cancel);
         if (this._optimistic) { clearTimeout(this._optimistic); this._optimistic = null; }
         socket.off?.('stvNewSession', onSession); socket.off?.('availabilityResult', onAvail);
         socket.off?.('throwToNoAgent', onNoAgent); socket.off?.('throwToExceededTier', onTier);
         if (this._capacityTimer) { clearTimeout(this._capacityTimer); this._capacityTimer = null; }
       };
       const finish = (fn, arg) => { if (!settled) { settled = true; cleanup(); fn(arg); } };
+      // Teardown (disconnect(), the other lane failing) rejects this wait at once, like `_await`
+      // does for a plain socket wait: the listeners below go with it, so no `stvNewSession`
+      // could ever answer, and nothing keeps polling `checkAvailability` on a dead session.
+      const cancel = () => finish(reject, connectAbortedErr());
+      this._pendingAwaits.add(cancel);
       const create = () => { if (requested) return; requested = true; socket.emit('stvNewSession', buildStvNewSession(this._roomId)); };
       const poll = () => { if (!settled) socket.emit('checkAvailability', {}); };   // capacity query, independent of create()
       const onSession = (p) => {
@@ -804,13 +813,28 @@ export class KalturaAvatarSession extends Emitter {
       }
       const offer = await this._cancelable(pc.createOffer());
       await this._cancelable(pc.setLocalDescription(offer));
-      const res = await this._fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/sdp' }, body: offer.sdp });
-      const answerSdp = await res.text();
+      // Cancelable like the negotiation steps above: a disconnect() (or the other lane failing)
+      // while the subscribe is in flight has to settle connect() now, not when the network
+      // does. The request is aborted too, so the server stops allocating an STV session nobody
+      // will watch. If the answer still lands after the cancel (it raced the abort), the late
+      // `.then` releases the session it names — that Location is never stored on `this`.
+      const ac = typeof AbortController === 'function' ? new AbortController() : null;
+      let canceled = false;
+      const req = Promise.resolve(this._fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/sdp' }, body: offer.sdp, signal: ac?.signal }));
+      req.then((r) => {
+        if (!canceled || !r?.ok) return;
+        const lateLoc = r.headers?.get?.('Location');
+        if (lateLoc) this._releaseWhep(resolveUrl(lateLoc, url));
+      }, () => { /* aborted or failed after the cancel — nothing was allocated that we can name */ });
+      const res = await this._cancelable(req, () => { canceled = true; ac?.abort(); });
       // The WHEP server's Location is often RELATIVE (e.g. "/rtc/v1/whip/?action=delete&…").
       // Resolve it against the WHEP request URL NOW, so the DELETE hits SRS — not the page
       // origin (which 404s and silently leaks the server-side STV session).
       const loc = res.headers?.get?.('Location');
       const resolvedLoc = loc ? resolveUrl(loc, url) : null;
+      // Reading the body is a network wait too. A cancel here already has the answer's
+      // Location in hand, so release the session it names before rejecting.
+      const answerSdp = await this._cancelable(res.text(), () => { if (res.ok && resolvedLoc) this._releaseWhep(resolvedLoc); });
       // Both aborts below have to release before they throw: the server allocated an STV
       // session for the answer it just sent, and neither path ever reaches the
       // `this._whepLocation = resolvedLoc` assignment that teardown releases from.
@@ -1999,7 +2023,8 @@ export class KalturaAvatarSession extends Emitter {
 
   /**
    * Tear down the WHEP resource, peer connections, mic, socket, and drop the token. Always
-   * call when done. Idempotent — repeat calls no-op.
+   * call when done. Idempotent — repeat calls no-op. Safe mid-connect and mid-reconnect: an
+   * in-flight `connect()` rejects with `connect_failed` and no `error` event follows.
    * @param {{final?:boolean, reason?:string}} [opts]  `final` (default true) signals genie
    *   that the conversation is truly over (`POST {genieUrl}/thread/session_completed`); pass
    *   `{final:false}` for an internal teardown that isn't a real end (e.g. a mode switch
@@ -2408,11 +2433,19 @@ export class KalturaAvatarSession extends Emitter {
    * landing mid-negotiation (a `track` listener that calls it, an `error` on the other lane)
    * would then hang `connect()` with no timeout to fall back on, because these are not socket
    * waits. Registered in `_pendingAwaits`, so teardown rejects it with `connect_failed` at once.
-   * @template T @param {Promise<T>} p @returns {Promise<T>}
+   * Also used for the WHEP subscribe request, which is not a socket wait either.
+   * @template T @param {Promise<T>} p
+   * @param {() => void} [onCancel]  Runs when teardown cancels the wait, before the rejection
+   *   (e.g. abort the fetch behind `p`, or release a resource the wait was about to claim).
+   * @returns {Promise<T>}
    */
-  _cancelable(p) {
+  _cancelable(p, onCancel) {
     return new Promise((resolve, reject) => {
-      const cancel = () => { this._pendingAwaits.delete(cancel); reject(connectAbortedErr()); };
+      const cancel = () => {
+        this._pendingAwaits.delete(cancel);
+        try { onCancel?.(); } catch { /* best effort — the rejection below is what matters */ }
+        reject(connectAbortedErr());
+      };
       this._pendingAwaits.add(cancel);
       p.then(
         (v) => { this._pendingAwaits.delete(cancel); resolve(v); },
@@ -2783,6 +2816,11 @@ export class KalturaAvatarSession extends Emitter {
     // of sending it against a session the server has already discarded.
     this._pendingToolAcks.clear();
     this._sessionGen++;
+    // Same for the kickoff echo filter: the echo rides the server session the kickoff was typed
+    // into, so it can never arrive on the rebuilt one. Left armed, it would strip the next user
+    // utterance that happens to repeat the kickoff text. The kickoff itself is not re-sent
+    // (`_kickoffSent` stays true — one kickoff per session object).
+    this._kickoffEcho = null;
     const reuseSocket = this.state === 'reconnecting';   // see doc comment above
     if (!reuseSocket) { this._setState('reconnecting'); this.emit('reconnecting', { reason: why, attempt: ++this._reconnectAttempt, maxAttempts: this._maxReconnect, cold: true }); }
     const overall = deadline(TIMEOUTS.overall);

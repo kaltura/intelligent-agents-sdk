@@ -252,6 +252,30 @@ test('kickoff is not re-sent after a cold reconnect', async () => {
   assert.deepEqual(sentTexts(socket), [KICKOFF]);
 });
 
+test('the kickoff echo filter is cleared by a cold reconnect, so a later identical turn is shown', async () => {
+  const { session, socket } = newSession({ cfg: { kickoff: KICKOFF } });
+  scriptHappyPath(socket);
+  await session.connect();
+  await settle();
+  finishOpening(socket);
+  await settle();
+  assert.deepEqual(sentTexts(socket), [KICKOFF]);
+  assert.equal(session.kickoff.sent, true);
+  // The echo of the kickoff never arrived on the old session: the filter is still armed.
+  await session._coldReconnect('media stv failed');
+  assert.equal(session.state, 'connected');
+  // The rebuilt session has no kickoff turn to echo, so a user turn with the same
+  // words is the user's own and must show. The kickoff itself is not re-sent.
+  const transcripts = collect(session, 'transcript');
+  socket.server('agentTurnToTalk', { userTranscription: KICKOFF });
+  assert.deepEqual(transcripts.filter((t) => t.type === 'user').map((t) => t.text), [KICKOFF]);
+  await settle();
+  finishOpening(socket);
+  await settle();
+  assert.deepEqual(sentTexts(socket), [KICKOFF]);
+  assert.equal(session.kickoff.sent, true);
+});
+
 test('a held kickoff survives a cold reconnect that lands before the opening finished', async () => {
   const { session, socket } = newSession({ cfg: { kickoff: KICKOFF } });
   scriptHappyPath(socket);

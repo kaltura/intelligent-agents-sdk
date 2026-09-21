@@ -220,6 +220,72 @@ test('switch failure: facade lands in failed, buffered sends reject with the swi
   assert.equal(made.chat[0].calls.filter((c) => c[0] === 'disconnect').length, 1, 'half-built transport torn down');
 });
 
+test('disconnect() during switchMode(): the switch rejects invalid_state, the facade closes, never failed', async () => {
+  const { session, made } = newSession();
+  await session.connect();
+  // A real transport rejects its pending connect() when disconnect() tears it down.
+  let rejectConnect;
+  session._cfg.transportFactories.chat = (cfg) => {
+    const t = new FakeTransport(cfg, 'chat');
+    t.connectImpl = () => new Promise((_, r) => { rejectConnect = r; });
+    const base = t.disconnect.bind(t);
+    t.disconnect = (...a) => { base(...a); rejectConnect?.(Object.assign(new Error('closed mid-connect'), { code: 'connect_failed' })); };
+    made.chat.push(t);
+    return t;
+  };
+  const states = [], ended = [];
+  session.on('stateChange', (s) => states.push(s));
+  session.on('ended', (e) => ended.push(e));
+  const sw = session.switchMode('chat');
+  await Promise.resolve();
+  session.disconnect();
+  await assert.rejects(() => sw, (e) => e.code === 'invalid_state' && e.title === 'disconnected');
+  assert.equal(session.state, 'closed');
+  assert.deepEqual(ended, [{ reason: 'disconnected' }]);
+  assert.ok(!states.some((s) => s.state === 'failed'), 'a user disconnect is not a transport failure');
+  assert.equal(made.chat[0].calls.filter((c) => c[0] === 'disconnect').length, 1, 'the pending target was torn down once');
+  await assert.rejects(() => session.sendText('after close'), (e) => e.code === 'invalid_state');
+});
+
+test('disconnect() during switchMode(): a target that connects after the disconnect still ends closed, no modeChanged', async () => {
+  const { session, made } = newSession();
+  await session.connect();
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  session._cfg.transportFactories.chat = (cfg) => { const t = new FakeTransport(cfg, 'chat'); t.connectImpl = () => gate; made.chat.push(t); return t; };
+  const modeChanged = [], states = [];
+  session.on('modeChanged', (m) => modeChanged.push(m));
+  session.on('stateChange', (s) => states.push(s));
+  const sw = session.switchMode('chat');
+  await Promise.resolve();
+  session.disconnect();
+  release();   // the late connect must not resurrect the session
+  await assert.rejects(() => sw, (e) => e.code === 'invalid_state' && e.title === 'disconnected');
+  assert.equal(session.state, 'closed');
+  assert.deepEqual(modeChanged, []);
+  assert.ok(!states.some((s) => s.state === 'connected' && states.indexOf(s) > 0), 'no connected after the disconnect');
+  assert.ok(!states.some((s) => s.state === 'failed'));
+});
+
+test('disconnect() during connect(): connect rejects invalid_state, the facade closes, never failed', async () => {
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  const { session, made } = newSession({ prep: (t) => { t.connectImpl = () => gate; } });
+  const states = [], ended = [];
+  session.on('stateChange', (s) => states.push(s));
+  session.on('ended', (e) => ended.push(e));
+  const c = session.connect();
+  await Promise.resolve();
+  assert.equal(session.state, 'connecting');
+  session.disconnect();
+  release();
+  await assert.rejects(() => c, (e) => e.code === 'invalid_state' && e.title === 'disconnected');
+  assert.equal(session.state, 'closed');
+  assert.deepEqual(ended, [{ reason: 'disconnected' }]);
+  assert.ok(!states.some((s) => s.state === 'failed'));
+  assert.equal(made.avatar[0].calls.filter((c) => c[0] === 'disconnect').length, 1);
+});
+
 test('sends buffered during a switch flush to the new transport; overflow past the cap throws', async () => {
   const { session, made } = newSession();
   await session.connect();

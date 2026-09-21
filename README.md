@@ -104,11 +104,11 @@ Once the repo is public and has a tag pushed, jsDelivr serves any file straight 
 </script>
 ```
 
-`@latest` resolves to the newest tag, so this URL always matches the current README without an editing pass on every release. It's **not cached the same way** as a tagged path, though — jsDelivr re-checks it periodically, so what it serves can change without warning. For anything you ship, pin to a real tag instead (`@v1.21.0`, or whichever release you're on) — jsDelivr caches a tagged path forever, so a pin is both stable and fast:
+`@latest` resolves to the newest tag, so this URL always matches the current README without an editing pass on every release. It's **not cached the same way** as a tagged path, though — jsDelivr re-checks it periodically, so what it serves can change without warning. For anything you ship, pin to a real tag instead (`@v1.23.0`, or whichever release you're on) — jsDelivr caches a tagged path forever, so a pin is both stable and fast:
 
 ```html
 <script type="module">
-  import { KalturaAvatarSession } from 'https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.21.0/src/experience/index.js';
+  import { KalturaAvatarSession } from 'https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.23.0/src/experience/index.js';
 </script>
 ```
 
@@ -570,7 +570,7 @@ await session.completeThread();
 | `presenceHeartbeatMs` | `4000` | Liveness beat interval between tabs. |
 | `presenceStaleMs` | `12000` | Drop a peer tab unseen this long (3 missed beats) before it can wrongly suppress the signal forever. |
 
-`disconnect(opts)` now takes `{final?: boolean, reason?: string}` — `final: false` skips the signal for an internal teardown that isn't a real end (e.g. `KalturaAgentSession.switchMode()` tearing down the old transport while keeping the same thread); zero-arg calls keep meaning "final", so this is fully backward compatible. `stop()` is unchanged, an alias for `disconnect({reason:'stop'})`.
+`disconnect(opts)` now takes `{final?: boolean, reason?: string}` — `final: false` skips the signal for an internal teardown that isn't a real end (e.g. `KalturaAgentSession.switchMode()` tearing down the old transport while keeping the same thread); zero-arg calls keep meaning "final", so this is fully backward compatible. `stop()` is unchanged, an alias for `disconnect({reason:'stop'})`. Both are safe at any point: called while `connect()` is still in flight, they cancel every pending wait (the media handshake, a reconnect's capacity wait) so `connect()` rejects with `connect_failed` at once, and no `error` event follows.
 
 A `visibilitychange` to `hidden` fires when the **whole page** leaves the screen — tab switch, minimize, app switch, lock, close — not on scroll, resize, partial occlusion, devtools, or fullscreen video. It is the right signal for "did the user leave the page", not for "is the avatar widget itself visible on screen" (that's `IntersectionObserver`).
 

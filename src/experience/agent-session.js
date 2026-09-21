@@ -62,6 +62,17 @@ const FORWARDED_EVENTS = [
 /** Max sendText() calls buffered while a switchMode() is in flight. */
 const SWITCH_SEND_BUFFER_MAX = 8;
 
+/**
+ * The rejection a `connect()`/`switchMode()` promise gets when `disconnect()` lands while it is
+ * in flight. `disconnect()` already tore the transport down and emitted the single `ended`, so
+ * the in-flight call only has to tell its caller — it must not move the facade to `failed`.
+ * @param {'connect'|'switchMode'} where
+ */
+const closedMidFlight = (where) => new KalturaError({
+  type: 'about:blank', title: 'disconnected', code: 'invalid_state',
+  detail: `disconnect() was called while ${where}() was in flight — the session is closed.`,
+});
+
 export class KalturaAgentSession extends Emitter {
   /**
    * @param {object} cfg
@@ -127,9 +138,13 @@ export class KalturaAgentSession extends Emitter {
       this._kickoffPending = false;   // handed to the first transport (or rejected by its constructor)
       this._attach(t);
       await t.connect();
+      if (this._isClosed()) throw closedMidFlight('connect');
       this._setState('connected');
     } catch (e) {
       this._kickoffPending = false;
+      // disconnect() landed while the transport was connecting: it already tore the transport
+      // down and emitted `ended`. The facade stays `closed`; only the caller's promise rejects.
+      if (this._isClosed()) throw closedMidFlight('connect');
       this._teardownTransport({ final: false });
       this._setState('failed', 'transport_failed');
       throw e;
@@ -148,7 +163,10 @@ export class KalturaAgentSession extends Emitter {
    * when no turn had happened yet (no thread existed to carry over).
    *
    * On failure the facade lands in `failed` (no automatic rollback — the old
-   * transport is already gone) and the error is re-thrown.
+   * transport is already gone) and the error is re-thrown. A `disconnect()`
+   * while the switch is in flight wins instead: the facade lands in `closed`
+   * with its single `ended {reason:'disconnected'}`, and the switch promise
+   * rejects with typed `invalid_state`.
    * @param {'avatar'|'chat'} target
    * @returns {Promise<void>}
    */
@@ -166,6 +184,9 @@ export class KalturaAgentSession extends Emitter {
       this._mode = target;   // before _attach so transportChanged carries the new mode
       this._attach(t);
       await t.connect();
+      // disconnect() landed while the new transport was connecting (its connect() may still
+      // have resolved a beat later). The facade is `closed`; never flip it back to `connected`.
+      if (this._isClosed()) throw closedMidFlight('switchMode');
       this._setState('connected');
       this.emit('modeChanged', { mode: target, threadContinuity: hadThread });
     })();
@@ -175,6 +196,9 @@ export class KalturaAgentSession extends Emitter {
       const buffered = this._switchBuffer.splice(0);
       for (const b of buffered) b.resolve(this._deliver(b.text, b.opts));
     } catch (e) {
+      // disconnect() already tore the transport down, rejected the buffered sends and emitted
+      // `ended`. Leave `closed` alone — a `failed` here would be a second terminal state.
+      if (this._isClosed()) throw closedMidFlight('switchMode');
       this._teardownTransport({ final: false });
       this._setState('failed', 'transport_failed');
       const buffered = this._switchBuffer.splice(0);
@@ -373,4 +397,6 @@ export class KalturaAgentSession extends Emitter {
 
   /** @param {'idle'|'connecting'|'connected'|'switching'|'closed'|'failed'} s @param {string} [reason] */
   _setState(s, reason) { this.state = s; this.emit('stateChange', reason ? { state: s, reason } : { state: s }); }
+  /** Read after an `await`: `disconnect()` may have closed the session while a transport was connecting. */
+  _isClosed() { return this.state === 'closed'; }
 }
