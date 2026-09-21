@@ -36,7 +36,7 @@ Items come from `model.sources`, `model.items`, or `model.citations`. Each item:
 | `snippet` | `snippet`, `text`, `content` | ≤2000 chars |
 | `score` | `score`, `relevance`, `similarity` | forward-compatible passthrough — omitted when absent/non-numeric, never `0` |
 
-Descriptor: `{kind:'sources', data:{sources:[{title, url, snippet, score?}]}}`. RAG-driven emission is unverified, so `score`'s presence is NOT a claimed backend guarantee.
+Descriptor: `{kind:'sources', data:{sources:[{title, url, snippet, score?}]}}`. `score`'s presence is not a claimed backend guarantee.
 
 ### 4. summary (`renderSummary`)
 

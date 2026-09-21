@@ -44,7 +44,7 @@ Distinct timeouts pinpoint where the connection broke: `HANDSHAKE_TIMEOUT` (tran
 
 ### Externalized state
 
-Slot accounting is centralized, not per-instance guesswork: `checkAvailability` consults a shared store. A slot is available when **STV has free capacity** (unless the call is speech-only) **AND the ASR service is available AND `activeCalls < maxCalls`**. `availabilityResult.details` surfaces exactly these: `{stvAvailable, whisperAvailable, activeCalls, maxCalls, capacityAvailable}`. The brain conversation/thread state is also externalized: the same thread is resumable via `threadId` regardless of which instance handles a later turn over the text API.
+Slot accounting isn't per-instance guesswork: `checkAvailability` returns the same capacity picture no matter which instance answers it. A slot is available when **STV has free capacity** (unless the call is speech-only) **AND the ASR service is available AND `activeCalls < maxCalls`**. `availabilityResult.details` surfaces exactly these: `{stvAvailable, whisperAvailable, activeCalls, maxCalls, capacityAvailable}`. The brain conversation/thread state is also externalized: the same thread is resumable via `threadId` regardless of which instance handles a later turn over the text API.
 
 For what a custom (no-Kaltura-lib) client must implement to work correctly with this scaling model, see [ARCHITECTURE-RECIPE.md's "Implications for a Custom Client"](../ARCHITECTURE-RECIPE.md#implications-for-a-custom-no-kaltura-lib-client).
 

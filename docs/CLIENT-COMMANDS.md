@@ -149,8 +149,6 @@ Put three rules in the system prompt:
 - An explicit "ALWAYS SPEAK" rule: every turn ends with 1-3 spoken sentences; a silent turn is a failure.
 - A "never narrate a tool failure that isn't happening" rule. Without it, the brain apologizes for "trouble pulling up that widget" when nothing failed.
 
-The budget and ALWAYS SPEAK rules together took empty-text from 23% to 0% on the worst prompts.
-
 #### Tool side: fire-and-forget has zero result signal
 
 **Root cause.** A `tools.client` tool built with `waitForResponse:false` carries no response channel back to the model at all: no fixed success literal, no field, nothing. So a same-turn duplicate call looks, from the model's side, identical to the first. Nothing in the tool's own (non-existent) result tells it to stop and speak.
@@ -168,7 +166,7 @@ The budget and ALWAYS SPEAK rules together took empty-text from 23% to 0% on the
 | `maxPerTool` | 3 | Caps repeats of any single tool name before treating it as spiraling |
 | `maxToolCalls` | 8 (pass `Infinity` to disable) | Total tool-call budget for the turn before `collectConverse()` stops reading and returns `spiralStopped: true` |
 
-But a spiral can exhaust the segment budget before the brain ever reaches a spoken sentence, leaving `text: ''` with nothing to fall back to in that same turn. This isn't theoretical: a two-metric guidance question made the brain re-emit an already-successful `show_widget` call repeatedly with zero spoken segments, ever. A 90-second, 150+-segment uncapped read confirmed the loop does not self-resolve given more time.
+But a spiral can exhaust the segment budget before the brain ever reaches a spoken sentence, leaving `text: ''` with nothing to fall back to in that same turn.
 
 Headless HTTP has no live-socket `interrupt()`/`_coldReconnect()` to fall back on (that's the live-session mechanism in [ARCHITECTURE-REFERENCE.md](architecture-reference/resilience-and-failure-handling.md#tool-call-spiral-what-happened-and-how-its-mitigated)). The only proven lever is a new turn.
 

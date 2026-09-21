@@ -13,7 +13,7 @@ A second, INDEPENDENT session type — `https://api.avatar.us.kaltura.ai/v1/avat
 | `create` | `Authorization: KS <admin-ks>` — your normal admin token |
 | every call after `create` | `Authorization: Bearer <session-token>` — the JWT `create` returns, NOT a KS |
 
-The Bearer token is valid roughly 24h (decoded from the JWT's own `exp` claim) and grants full control of the session — keep it server-side, exactly like an admin KS. The browser only ever needs the non-secret `{whepUrl, turn}` pair from `init-client`.
+The Bearer token is valid about 24h (decoded from the JWT's own `exp` claim) and grants full control of the session. Keep it server-side, exactly like an admin KS. The browser only ever needs the non-secret `{whepUrl, turn}` pair from `init-client`.
 
 | Operation | Endpoint | Auth | Body |
 |-----------|----------|------|------|
@@ -24,7 +24,7 @@ The Bearer token is valid roughly 24h (decoded from the JWT's own `exp` claim) a
 | Keep alive | `POST /v1/avatar-session/{sessionId}/keep-alive` | Bearer | `{}` |
 | End | `POST /v1/avatar-session/{sessionId}/end` | Bearer | `{}` |
 
-`say-audio` is the ONLY speech-injection mechanism this backend exposes. There is no text-in: a sibling `say-text` route accepts the request but the server answers `503 Service temporarily unavailable` on every call, and a bare `say` route 404s. Neither is wrapped by the SDK. Generate the audio yourself with any TTS provider (this backend has none of its own), measure its duration (e.g. `ffprobe`; the server has no duration probe of its own, and an inaccurate value just desyncs the mouth from the audio, it doesn't error), and pass both to `say-audio`. The call itself is async/queued: it resolves in roughly 100ms once the server accepts the turn, not once playback finishes. Call `interrupt` to cut off whatever's currently playing.
+`say-audio` is the ONLY speech-injection mechanism this backend exposes. There is no text-in: a sibling `say-text` route accepts the request but the server answers `503 Service temporarily unavailable` on every call, and a bare `say` route 404s. Neither is wrapped by the SDK. Generate the audio yourself with any TTS provider (this backend has none of its own), measure its duration (e.g. `ffprobe`; the server has no duration probe of its own, and an inaccurate value just desyncs the mouth from the audio, it doesn't error), and pass both to `say-audio`. The call itself is async/queued: it resolves in about 100ms once the server accepts the turn, not once playback finishes. Call `interrupt` to cut off whatever's currently playing.
 
 `set-emotion`, `queue-status`, `status`, and `session-status` all 404 on the current deployment and are not wrapped.
 

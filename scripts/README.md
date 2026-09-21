@@ -87,7 +87,7 @@ Every one of these has an `npm run live-verify:<name>` script except `live-verif
 
 Read the header comment of a script before running it. Each one states what it asserts and why that coverage exists.
 
-Two helper modules are not scripts and are never run directly: `live-verify-kickoff-shared.mjs` (CLI/env parsing, throwaway agent, server, browser, report) and `live-verify-silent-mic-shared.mjs` (a silent WAV for `--use-file-for-fake-audio-capture`, so the fake mic's tone is not transcribed as invented user speech).
+Three helper modules are not scripts and are never run directly: `live-verify-kickoff-shared.mjs` (CLI/env parsing, throwaway agent, server, browser, report), `live-verify-silent-mic-shared.mjs` (a silent WAV for `--use-file-for-fake-audio-capture`, so the fake mic's tone is not transcribed as invented user speech), and `live-verify-hooks-shared.mjs` (a bounded timeout around the page-side `window.test*` hooks, so a hook that never settles fails with a diagnostic instead of hanging the job).
 
 ### Flags
 

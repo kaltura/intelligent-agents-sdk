@@ -75,7 +75,7 @@ Open the test URL inside an in-app browser that lacks `BroadcastChannel` support
 
 ### 9. Offline / airplane mode during disconnect
 
-Connect → Send test turn → enable airplane mode (or otherwise cut network) → immediately tap Disconnect (final). Expect the on-page log to show `disconnect() returned` (it's synchronous and always returns immediately) but **no** corresponding terminal line, since the POST itself can't reach the network. Then disable airplane mode and wait roughly 10 minutes if you want to confirm the backend's own idle-scanner fallback eventually closes the thread server-side. This is optional and slow, mark it as skipped if you don't have time.
+Connect → Send test turn → enable airplane mode (or otherwise cut network) → immediately tap Disconnect (final). Expect the on-page log to show `disconnect() returned` (it's synchronous and always returns immediately) but **no** corresponding terminal line, since the POST itself can't reach the network. Then disable airplane mode and wait about 10 minutes if you want to confirm the server's idle timeout eventually closes the thread server-side. This is optional and slow, mark it as skipped if you don't have time.
 
 ### 10. Low-power / battery-saver mode
 
@@ -83,7 +83,7 @@ Enable the device's battery-saver or low-power mode, then repeat flow 3 (backgro
 
 ### 11. Slow/flaky network
 
-Throttle the connection (browser devtools network throttling, or a real poor-signal environment) to something slow, then tap "Complete thread." `sessionCompleteTimeoutMs` (default 5000ms) governs how long this specific call waits before giving up. Confirm the button's on-page log resolves or errors within roughly 5 seconds even under throttling, rather than hanging indefinitely. Note that this timeout does **not** apply to the tab-close/backgrounding paths, only to `completeThread()`'s deliberate call.
+Throttle the connection (browser devtools network throttling, or a real poor-signal environment) to something slow, then tap "Complete thread." `sessionCompleteTimeoutMs` (default 5000ms) governs how long this specific call waits before giving up. Confirm the button's on-page log resolves or errors within about 5 seconds even under throttling, rather than hanging indefinitely. Note that this timeout does **not** apply to the tab-close/backgrounding paths, only to `completeThread()`'s deliberate call.
 
 ### 12. Manual `completeThread()` without teardown
 

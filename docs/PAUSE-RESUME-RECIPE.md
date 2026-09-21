@@ -17,8 +17,8 @@ await session.resume();   // async: hands the turn loop back
 
 **`resume()`** always sets `session.paused = false` immediately, then takes the right path for how the pause played out. There are two common paths, depending on how long you were paused (a third, rarer one is covered below):
 
-- **Short pause (the common case):** the server still has your session held open. `resume()` just emits `resumeConversation` and returns. It's cheap and near-instant (resolved in ~1ms in a real session).
-- **Long pause (the server released the session):** if the pause window expired before you called `resume()`, the server already tore down your STV/ASR transports and told the SDK so (`pauseSessionExpired` / `sessionReadyForResume`, see below). `resume()` detects this internally and rebuilds the ASR (and, in video mode, STV) transports against a fresh session before handing the turn loop back. This uses the same connect machinery `connect()` itself uses. This path takes as long as a fresh media (re)negotiation, not the ~1ms of the short path.
+- **Short pause (the common case):** the server still has your session held open. `resume()` just emits `resumeConversation` and returns. It's cheap and near-instant.
+- **Long pause (the server released the session):** if the pause window expired before you called `resume()`, the server already tore down your STV/ASR transports and told the SDK so (`pauseSessionExpired` / `sessionReadyForResume`, see below). `resume()` detects this internally and rebuilds the ASR (and, in video mode, STV) transports against a fresh session before handing the turn loop back. This uses the same connect machinery `connect()` itself uses. This path takes as long as a fresh media (re)negotiation, not the near-instant short path.
 
 **You never need to branch on which path it takes.** Always just `await session.resume()`. It picks the right one for you. The exact length of the pause window before the server releases the session isn't a published constant. Don't rely on an exact number. Always resume via one of the triggers below, rather than assuming a pause lasts as long as you need it to.
 

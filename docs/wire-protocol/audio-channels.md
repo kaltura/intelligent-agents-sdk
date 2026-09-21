@@ -47,7 +47,7 @@ When an agent runs in **audio/phone mode** (no STV video — see [§6](#6-stv-do
 | Direction | Event | Payload | Meaning |
 |---|---|---|---|
 | `→` | `webrtc-create-offer` | `{}` | Ask the server to start audio-mode WebRTC (server replies with `webrtc-offer`). |
-| `←` | `webrtc-offer` | `{ offer }` | Server-generated SDP offer (`createWebRTCOffer`). |
+| `←` | `webrtc-offer` | `{ offer }` | Server-generated SDP offer. |
 | `→` | `webrtc-answer` | `{ answer }` | Client SDP answer. |
 | `→` / `←` | `webrtc-ice-candidate` | `{ candidate }` | ICE trickle, both directions. |
 | `←` | `webrtc-connected` / `webrtc-disconnected` | `{}` | Audio peer state. |
@@ -55,11 +55,11 @@ When an agent runs in **audio/phone mode** (no STV video — see [§6](#6-stv-do
 
 This is distinct from [§5](#5-asr-uplink-pc1--microphone--server) (where the *client* offers the mic uplink and STT runs server-side). `SDK` implements the §5 path (video agents). Audio-mode is documented here for completeness.
 
-**The session server is the far end of this peer connection itself, not a relay to another backend.** For every other socket-signaled path in this document (e.g. [§4a](events-catalog.md#4a-client--server-emit)/[§5](#5-asr-uplink-pc1--microphone--server)'s `asr-webrtc-*` proxy to the ASR service), the session server forwards SDP/ICE to some other backend. Audio mode is the one exception: the session server negotiates directly and streams synthesized speech to the browser over that same connection.
+**In audio mode, the server itself is the far end of this peer connection.** This differs from the `asr-webrtc-*` uplink in [§5](#5-asr-uplink-pc1--microphone--server), where the client creates the offer. Here the server creates the offer and sends synthesized speech to the browser over this same connection.
 
 ## 6. STV downlink (pc2) — avatar video+audio → you
 
-A receive-only WebRTC peer connection fed via **WHEP** (WebRTC-HTTP Egress Protocol). Signaling is **plain SDP over HTTP**, independent of the socket. (Server-side, the STV controller renders the face and streams it into a media relay that provides the WHEP egress. See [ARCHITECTURE.md](../ARCHITECTURE.md).)
+A receive-only WebRTC peer connection fed via **WHEP** (WebRTC-HTTP Egress Protocol). Signaling is **plain SDP over HTTP**, independent of the socket. (Server-side, STV renders the face and streams it into the media relay that provides the WHEP egress. See [ARCHITECTURE.md](../ARCHITECTURE.md).)
 
 **`cast_mode` selects the STV egress** (`StvCastMode` enum `"webrtc"\|"rtmp"`, optional in the `stvNewSession` body). This SDK never sends it. `buildStvNewSession()` (`SDK:wire.js`) accepts an optional `castMode` argument, but `session.js`'s one call site never passes one. So this SDK only ever takes the server's fully-omitted-default path, not either named value:
 

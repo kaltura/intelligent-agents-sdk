@@ -52,7 +52,7 @@ Open the URL in real Safari on macOS, and in real Safari on an iPhone/iPad. Conf
 
 None of these are reachable from a scripted browser:
 
-- **Bluetooth audio device switch mid-call**: connect on a device's built-in mic/speaker, then connect a Bluetooth headset mid-conversation. Confirm audio continues (possibly with a brief gap) rather than the session dying.
+- **Bluetooth audio device switch mid-call**: connect on a device's built-in mic/speaker, then connect a Bluetooth headset mid-conversation. Confirm audio continues (a brief gap is acceptable) and the session stays up.
 - **Mic permission revoked mid-session**: start a conversation, then revoke microphone permission from the OS/browser settings without reloading the page. Confirm the SDK surfaces a clear error/state change rather than hanging silently.
 - **Incoming phone call (mobile)**: start a conversation on a phone, then receive a real call. Confirm the mic/session recovers (or fails cleanly) once the call ends.
 - **Screen lock / unlock (mobile)**: lock the screen mid-conversation, then unlock. Confirm the video resumes or the session ends cleanly, don't accept a silently frozen frame.
@@ -69,7 +69,7 @@ Automation confirms the noise gate's *math* is correct (loud passes, quiet is at
 
 Devtools network throttling simulates bandwidth/latency, not the actual failure modes of real networks:
 
-- **Hotel/public Wi-Fi** with captive portals or aggressive UDP filtering: confirm the TURN fallbacks (TCP/TLS on 443) actually kick in when UDP is blocked, not just in theory.
+- **Hotel/public Wi-Fi** with captive portals or aggressive UDP filtering: confirm the TURN fallbacks (TCP/TLS on 443) actually kick in when UDP is blocked.
 - **Corporate proxy/VPN/NAT**: test from inside a corporate network with a VPN client active, and from behind a symmetric NAT if you have access to one, since these are exactly the conditions the 4-URL TURN fallback exists for.
 - **Real packet loss**: a real degraded connection (rural cellular, congested Wi-Fi), not a devtools-simulated one, to see how the avatar pipeline actually degrades (frozen frame vs. graceful drop vs. reconnect).
 

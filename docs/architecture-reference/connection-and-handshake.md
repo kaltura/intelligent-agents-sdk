@@ -117,10 +117,10 @@ socket.emit('join', {
 ```
 
 - **Which intellect loads.** The `geniegpcid:<configId>` in the KS tells the server which intellect (brain) to load.
-- **Which `join` fields the server actually reads.** Of the `kaltura` sub-fields the client sends in `join`, the session server consumes `ks`, `entryId`, `threadId`, `contextId`, `contextType`, `capabilities`, and `request_vars` when present.
-- **`force_experience` is hardcoded server-side, not read from the client.** The server ignores the `force_experience` value the client sends. It always fixes `force_experience: 'avatar_only'` and `model_type: 'fast'` on every converse call. So the avatar runtime never requests `flashcards` or `summarization` experiences, no matter what the client sends.
-- **`capabilities` and `request_vars` are genuinely client-controlled.** By contrast, these two are read at `join` time. They can also be updated mid-session via the `updateGenieContext` socket event. The server merges them over defaults, with no allowlist, before forwarding them to the brain.
-- **The live socket carries the same brain protocol as the HTTP API.** The socket exchanges JSON frames `{event:'init'|'converse'|'abort', data:{…}}` and streams `agent_raw_text` back. This is the same envelope as HTTP `/assistant/converse`, documented in [API-REFERENCE.md](../../API-REFERENCE.md). Headless or text-only integrations use that HTTP path; the live avatar runtime uses the socket instead.
+- **`kaltura.ks` is required.** Omit it and the session server accepts the socket and emits `onServerConnected`, but never responds to `join`: no `clientConfiguration`/`joinComplete` arrives, and the connect stalls.
+- **`force_experience` in `join` is always `avatar_only`.** `buildJoin` hardcodes it on every call, so the live avatar runtime never requests `flashcards` or `summarization` experiences through this path.
+- **`capabilities` and `request_vars` are genuinely client-controlled.** By contrast, these two are read at `join` time. They can also be updated mid-session via the `updateGenieContext` socket event. The server merges them over defaults before forwarding them to the brain.
+- **The live socket carries the same brain protocol as the HTTP API.** It streams `agent_raw_text` back in the same envelope as HTTP `/assistant/converse`, documented in [API-REFERENCE.md](../../API-REFERENCE.md). Headless or text-only integrations use that HTTP path; the live avatar runtime uses the socket instead.
 
 ## Related docs
 

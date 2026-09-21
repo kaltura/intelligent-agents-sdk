@@ -34,7 +34,7 @@ Three properties make this channel do the heavy lifting:
 
 - **Updates merge.** `updateRequestVars(vars)` merges what you pass into the session's canonical map. Send only the keys that changed; keys you omit keep their values. (The full merged map goes to the server each time, and the server also merges per-thread, so a headless `converse` call sending a delta behaves the same way.)
 - **Values persist for the whole thread.** Send a variable once and every later turn on that thread still sees it — you don't resend per turn. A new thread starts clean. On a warm reconnect the SDK re-sends the full map automatically.
-- **Values can be big.** Each value must be a scalar (string, number, boolean, or null). A JSON document goes in as a string. Tens of kilobytes of JSON in one variable works — the SDK's live verification pushes a ~31 KB blob through and reads it back (see [Runnable examples](#runnable-examples) below).
+- **Values can be big.** Each value must be a scalar (string, number, boolean, or null). A JSON document goes in as a string. Tens of kilobytes of JSON in one variable works. The SDK's live verification pushes a ~32 KB blob through and reads it back (see [Runnable examples](#runnable-examples) below).
 
 ### Page context: `setDynamicPrompt()`
 
@@ -66,7 +66,7 @@ The intellect must have `allow_client_variables: true`, or every request variabl
 await mgmt.intellects.setClientVariablesEnabled(configId, true, adminKs);
 ```
 
-The rejection is **silent on every path**. The turn comes back as an empty reply: no HTTP error, no socket error. The server's 403 fires inside its streaming pipeline *after* the response has already opened, so it never reaches the wire. Both session classes (`KalturaAvatarSession` and `KalturaChatSession`) detect the pattern and emit a once-per-session `warning` event, `{ code: 'empty_turn_with_request_vars', message, requestVarKeys }` (variable *names* only, never values), pointing at the gate:
+The rejection is **silent on every path**. The turn comes back as an empty reply: no HTTP error, no socket error. Both session classes (`KalturaAvatarSession` and `KalturaChatSession`) detect the pattern and emit a once-per-session `warning` event, `{ code: 'empty_turn_with_request_vars', message, requestVarKeys }` (variable *names* only, never values), pointing at the gate:
 
 ```js
 session.on('warning', (w) => {
@@ -100,7 +100,7 @@ Request variables aren't limited to prompt text. A server-side `api` tool's requ
 Two scripts in this repo exercise every behavior above against the real API:
 
 - `examples/request-vars-live-context.mjs` — a five-turn walkthrough of seed → persist → merge → large `page_context` → fresh-thread reset.
-- `npm run live-verify:request-vars` — persistence, merge, tool interpolation, server-side `sys__*` injection, ~31 KB payload, thread isolation.
+- `npm run live-verify:request-vars`: persistence, merge, tool interpolation, server-side `sys__*` injection, ~32 KB payload, thread isolation.
 
 ## The active nudge: `speak()`
 

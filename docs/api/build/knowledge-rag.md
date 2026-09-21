@@ -33,7 +33,7 @@ page[0]; // { id: 42, name: 'Product Documentation', status: 'READY', config: { 
 }
 ```
 
-Writes through the intellect object — no `partner-config/update`, no 403. RAG retrieval works after async indexing (~1 minute).
+Writes through the intellect object: no `partner-config/update`, no 403. RAG retrieval works after async indexing.
 
 > **`knowledge_ids` is capped at one record**, despite the plural array shape — the server rejects more. The SDK's `intellectConfig.setKnowledgeIds()` enforces this client-side with a typed `bad_request` before any network call. To ground one agent in several content sources, upload them all into a single knowledge record.
 
