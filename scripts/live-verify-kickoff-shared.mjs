@@ -65,36 +65,44 @@ export function loadEnvFile(path) {
 /**
  * Resolve the backend target from the environment. `prod` (the default) reads
  * `AGENTIC_PARTNER_ID` / `AGENTIC_ADMIN_SECRET` and uses the SDK's default URLs.
- * Any other name is an SDK-development target: its upper-cased form prefixes
- * `_PARTNER_ID`, `_ADMIN_SECRET`, `_AGENTIC_API_URL`, `_GENIE_URL` and
- * `_KALTURA_API_ENDPOINT`. Every URL override is passed explicitly to
- * `Management`, so a target never falls back to the production defaults by
- * accident.
- * @param {string} name
+ *
+ * Any other name is an SDK-development target, `<name>` or `<name>:<account>`.
+ * The upper-cased name prefixes `_AGENTIC_API_URL`, `_GENIE_URL` and
+ * `_KALTURA_API_ENDPOINT`. Credentials come from the first pair that is set:
+ * `<PREFIX>_PARTNER_ID_<account>` / `<PREFIX>_ADMIN_SECRET_<account>` (account
+ * defaults to 1), then `<PREFIX>_PARTNER_ID` / `<PREFIX>_ADMIN_SECRET`, then
+ * `<PREFIX>_AGENTIC_PARTNER_ID` / `<PREFIX>_AGENTIC_ADMIN_SECRET`. Every URL
+ * override is passed explicitly to `Management`, so a target never falls back
+ * to the production defaults by accident.
+ * @param {string} spec
  * @returns {{name:string, partnerId:string, adminSecret:string, agenticUrl?:string, genieUrl?:string, ovpUrl?:string}}
  */
-export function resolveTarget(name) {
+export function resolveTarget(spec) {
+  const fail = (/** @type {string} */ msg) => {
+    console.error(`--env ${spec}: ${msg}`);
+    process.exit(1);
+  };
   const need = (/** @type {string[]} */ keys) => {
     const missing = keys.filter((k) => !process.env[k]);
-    if (missing.length) {
-      console.error(`--env ${name}: missing ${missing.join(', ')} (set them in the environment or pass --env-file <path>).`);
-      process.exit(1);
-    }
+    if (missing.length) fail(`missing ${missing.join(', ')} (set them in the environment or pass --env-file <path>).`);
   };
-  if (name === 'prod') {
+  if (spec === 'prod') {
     need(['AGENTIC_PARTNER_ID', 'AGENTIC_ADMIN_SECRET']);
-    return { name, partnerId: process.env.AGENTIC_PARTNER_ID, adminSecret: process.env.AGENTIC_ADMIN_SECRET };
+    return { name: spec, partnerId: process.env.AGENTIC_PARTNER_ID, adminSecret: process.env.AGENTIC_ADMIN_SECRET };
   }
-  if (!/^[a-z][a-z0-9]*$/.test(name)) {
-    console.error(`--env ${name}: use prod, or a lowercase name whose upper-cased form prefixes the target's env vars.`);
-    process.exit(1);
-  }
+  const m = /^([a-z][a-z0-9]*)(?::([1-9][0-9]*))?$/.exec(spec);
+  if (!m) fail('use prod, or <name>[:<account>] where <name> is lowercase and its upper-cased form prefixes the target\'s env vars.');
+  const [, name, account = '1'] = m;
   const p = name.toUpperCase();
-  need([`${p}_PARTNER_ID`, `${p}_ADMIN_SECRET`, `${p}_AGENTIC_API_URL`, `${p}_GENIE_URL`, `${p}_KALTURA_API_ENDPOINT`]);
+  const candidates = [[`${p}_PARTNER_ID_${account}`, `${p}_ADMIN_SECRET_${account}`]];
+  if (account === '1') candidates.push([`${p}_PARTNER_ID`, `${p}_ADMIN_SECRET`], [`${p}_AGENTIC_PARTNER_ID`, `${p}_AGENTIC_ADMIN_SECRET`]);
+  const creds = candidates.find(([id, secret]) => process.env[id] && process.env[secret]);
+  if (!creds) fail(`missing credentials; set one pair of ${candidates.map(([id, secret]) => `${id} / ${secret}`).join(', or ')}.`);
+  need([`${p}_AGENTIC_API_URL`, `${p}_GENIE_URL`, `${p}_KALTURA_API_ENDPOINT`]);
   return {
-    name,
-    partnerId: process.env[`${p}_PARTNER_ID`],
-    adminSecret: process.env[`${p}_ADMIN_SECRET`],
+    name: account === '1' ? name : `${name}-${account}`,
+    partnerId: process.env[creds[0]],
+    adminSecret: process.env[creds[1]],
     agenticUrl: process.env[`${p}_AGENTIC_API_URL`],
     genieUrl: process.env[`${p}_GENIE_URL`],
     ovpUrl: process.env[`${p}_KALTURA_API_ENDPOINT`],
