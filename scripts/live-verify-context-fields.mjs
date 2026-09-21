@@ -33,6 +33,7 @@ import { tmpdir } from 'node:os';
 import { chromium } from 'playwright';
 import { Management, SILENT_OPENING } from '../src/management/index.js';
 import { writeSilentWav } from './live-verify-silent-mic-shared.mjs';
+import { callHook } from './live-verify-hooks-shared.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, '..');
@@ -115,7 +116,7 @@ async function runProbe(port, label, { withContext, contextId }) {
   await page.goto(`http://127.0.0.1:${port}/scripts/live-verify-context-fields.html?${qs}`, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => window.__ready === true, null, { timeout: 10000 });
 
-  await page.evaluate(() => window.testConnect());
+  await callHook(page, 'testConnect');
   record(`${label}-connected`, true, {});
 
   // Every event the page saw, for the artifact. A bare timeout cannot tell
@@ -193,7 +194,7 @@ async function runProbe(port, label, { withContext, contextId }) {
   const finals = events.filter((e) => e.type === 'transcript' && e.ttype === 'final').map((e) => e.text);
   const replyText = [...finals.reverse(), brainText].find((t) => t.includes('CTXID=')) || '';
   const logText = await page.locator('#log').textContent();
-  await page.evaluate(() => window.testDisconnect());
+  await callHook(page, 'testDisconnect');
   await page.close();
   return { replyText, pageErrors, logText };
 }

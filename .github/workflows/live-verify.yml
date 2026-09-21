@@ -80,6 +80,11 @@ on:
 permissions:
   contents: read
 
+# One global group on purpose: these jobs drive real conversations against a
+# shared partner, so two runs at once would fight over the same agents. The
+# cost is that a stuck run blocks every other one, which is why every job below
+# carries a `timeout-minutes` and every page-side session call in the scripts
+# has its own deadline (scripts/live-verify-hooks-shared.mjs).
 concurrency:
   group: live-verify
   cancel-in-progress: false
@@ -88,6 +93,7 @@ jobs:
   changes:
     name: 🔍 Detect changed paths
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       code: ${{ steps.filter.outputs.code }}
       browser: ${{ steps.filter.outputs.browser }}
@@ -127,6 +133,7 @@ jobs:
               - 'scripts/live-verify-connect-timing.mjs'
               - 'scripts/live-verify-set-forced-language.mjs'
               - 'scripts/live-verify-silent-mic-shared.mjs'
+              - 'scripts/live-verify-hooks-shared.mjs'
               - 'package.json'
               - 'package-lock.json'
               - '.github/workflows/live-verify.yml'
@@ -138,6 +145,7 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs.code == 'true')
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     environment: live-verify
     steps:
       - name: 📥 Check out the repo
@@ -185,6 +193,7 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs.code == 'true')
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     environment: live-verify
     steps:
       - name: 📥 Check out the repo
@@ -232,6 +241,7 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs.code == 'true')
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     environment: live-verify
     steps:
       - name: 📥 Check out the repo
@@ -279,6 +289,7 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs.code == 'true')
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     environment: live-verify
     steps:
       - name: 📥 Check out the repo
@@ -326,6 +337,7 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs.browser == 'true')
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     environment: live-verify
     steps:
       - name: 📥 Check out the repo
@@ -379,6 +391,7 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs.code == 'true')
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     environment: live-verify
     steps:
       - name: 📥 Check out the repo
@@ -427,6 +440,7 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       ((github.event_name == 'merge_group' || github.event.label.name == 'run-live-verify') && needs.changes.outputs.code == 'true')
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     environment: live-verify
     steps:
       - name: 📥 Check out the repo
@@ -474,6 +488,7 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       ((github.event_name == 'merge_group' || github.event.label.name == 'run-live-verify') && needs.changes.outputs.code == 'true')
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     environment: live-verify
     steps:
       - name: 📥 Check out the repo
@@ -521,6 +536,7 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       ((github.event_name == 'merge_group' || github.event.label.name == 'run-live-verify') && needs.changes.outputs.code == 'true')
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     environment: live-verify
     steps:
       - name: 📥 Check out the repo
@@ -568,6 +584,7 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       ((github.event_name == 'merge_group' || github.event.label.name == 'run-live-verify') && needs.changes.outputs.code == 'true')
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     environment: live-verify
     steps:
       - name: 📥 Check out the repo
@@ -615,6 +632,7 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       ((github.event_name == 'merge_group' || github.event.label.name == 'run-live-verify') && needs.changes.outputs.code == 'true')
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     environment: live-verify
     steps:
       - name: 📥 Check out the repo
@@ -662,6 +680,7 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       ((github.event_name == 'merge_group' || github.event.label.name == 'run-live-verify') && needs.changes.outputs.code == 'true')
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     environment: live-verify
     steps:
       - name: 📥 Check out the repo
@@ -709,6 +728,7 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs.browser == 'true')
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     environment: live-verify
     strategy:
       fail-fast: false
@@ -796,6 +816,7 @@ jobs:
       github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' ||
       ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs.browser == 'true')
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     environment: live-verify
     steps:
       - name: 📥 Check out the repo
@@ -882,6 +903,7 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs.browser == 'true')
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     environment: live-verify
     steps:
       - name: 📥 Check out the repo
@@ -938,6 +960,7 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs.browser == 'true')
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     environment: live-verify
     strategy:
       fail-fast: false
@@ -998,6 +1021,7 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       ((github.event_name == 'merge_group' || github.event.label.name == 'run-live-verify') && needs.changes.outputs.browser == 'true')
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     environment: live-verify
     steps:
       - name: 📥 Check out the repo
@@ -1059,6 +1083,7 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs.code == 'true')
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     environment: live-verify
     strategy:
       fail-fast: false
@@ -1120,6 +1145,7 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       ((github.event_name == 'merge_group' || github.event.label.name == 'run-live-verify') && needs.changes.outputs.code == 'true')
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     environment: live-verify
     steps:
       - name: 📥 Check out the repo
@@ -1167,6 +1193,7 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       ((github.event_name == 'merge_group' || github.event.label.name == 'run-live-verify') && needs.changes.outputs.code == 'true')
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     environment: live-verify
     steps:
       - name: 📥 Check out the repo

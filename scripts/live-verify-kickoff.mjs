@@ -42,6 +42,7 @@ import {
   bootstrap, Report, mdTable, management, ensureAgent, mintPageInit, startServer,
   browserChoice, launchBrowser, contextOptions, openHarness, whepSummary, netProblems, redact, waitFor, find, all, isOpeningSpeechId, textsSent, sleep, SILENT_OPENING,
 } from './live-verify-kickoff-shared.mjs';
+import { callHook } from './live-verify-hooks-shared.mjs';
 
 const { args, target, runId, outDir } = bootstrap(process.argv.slice(2), 'kickoff');
 const KICKOFF = typeof args.kickoff === 'string' ? args.kickoff : 'Greet the user in one short sentence and ask how you can help.';
@@ -70,7 +71,7 @@ report.note('setup', SETUP);
 /** @typedef {import('./live-verify-kickoff-shared.mjs').HarnessEvent} Ev */
 
 const ev = (/** @type {import('playwright').Page} */ page, /** @type {string} */ fn, /** @type {any} */ arg) =>
-  page.evaluate(([f, a]) => /** @type {any} */ (window)[f](a), [fn, arg]);
+  callHook(page, fn, arg);
 
 /** First reply chunk (any speechChunk on a non-opening speech id) at or after `from`. */
 const replyChunk = (/** @type {Ev[]} */ evs, from = 0) => find(evs, 'speechChunk', { from, where: (d) => !isOpeningSpeechId(d?.speechId) });

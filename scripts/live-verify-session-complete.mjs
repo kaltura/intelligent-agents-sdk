@@ -40,6 +40,7 @@ import { fileURLToPath } from 'node:url';
 import { createServer } from 'node:http';
 import { chromium, firefox, webkit } from 'playwright';
 import { Management } from '../src/management/index.js';
+import { callHook } from './live-verify-hooks-shared.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, '..');
@@ -194,10 +195,10 @@ try {
   //    is accepted by /thread/session_completed (a 401/403 here means 401/403 in production).
   {
     const { page, responses } = await openPage(context, port, { token });
-    await page.evaluate(() => window.testConnect());
-    const { threadId } = await page.evaluate((text) => window.testSend(text), 'Golden path live-verify turn.');
+    await callHook(page, 'testConnect');
+    const { threadId } = await callHook(page, 'testSend', 'Golden path live-verify turn.');
     assert(!!threadId, 'golden path: no threadId after first turn');
-    await page.evaluate((opts) => window.testDisconnect(opts), undefined);
+    await callHook(page, 'testDisconnect');
     await waitFor(() => sessionCompletedRequests(responses).length > 0);
     const reqs = sessionCompletedRequests(responses);
     assert(reqs.every((r) => r.status === 200), 'golden path: session_completed did not 200', reqs);
@@ -210,9 +211,9 @@ try {
   // 2. completeThread() after teardown rejects invalid_state.
   {
     const { page, responses } = await openPage(context, port, { token });
-    await page.evaluate(() => window.testConnect());
-    await page.evaluate((text) => window.testSend(text), 'Post-teardown completeThread live-verify turn.');
-    await page.evaluate(() => window.testDisconnect());
+    await callHook(page, 'testConnect');
+    await callHook(page, 'testSend', 'Post-teardown completeThread live-verify turn.');
+    await callHook(page, 'testDisconnect');
     await waitFor(() => sessionCompletedRequests(responses).length > 0);
     const outcome = await page.evaluate(async () => {
       try { await window.testCompleteThread(); return { threw: false }; }
@@ -226,8 +227,8 @@ try {
   // 3. No threadId yet -> disconnect() sends nothing.
   {
     const { page, responses } = await openPage(context, port, { token });
-    await page.evaluate(() => window.testConnect());
-    await page.evaluate(() => window.testDisconnect());
+    await callHook(page, 'testConnect');
+    await callHook(page, 'testDisconnect');
     await page.waitForTimeout(500);
     assert(sessionCompletedRequests(responses).length === 0, 'no-threadId disconnect() sent a signal it should not have', responses);
     record('no-threadid-disconnect-is-noop', true, {});
@@ -244,19 +245,19 @@ try {
 
     const tabA = await openPage(context, port, { token, threadId });
     const tabB = await openPage(context, port, { token, threadId });
-    await tabA.page.evaluate(() => window.testConnect());
-    await tabB.page.evaluate(() => window.testConnect());
+    await callHook(tabA.page, 'testConnect');
+    await callHook(tabB.page, 'testConnect');
     // Let both tabs' presence channels exchange hello/ack before either decides.
     await tabA.page.waitForTimeout(500);
 
-    await tabA.page.evaluate(() => window.testDisconnect());
+    await callHook(tabA.page, 'testDisconnect');
     await tabA.page.waitForTimeout(500);
     assert(sessionCompletedRequests(tabA.responses).length === 0, 'cross-tab: first tab should have been suppressed (peer still alive)', tabA.responses);
     const eventsA = await tabA.page.evaluate(() => window.__events);
     assert(eventsA.some((e) => e.payload?.suppressed === true), 'cross-tab: first tab did not report suppressed:true', eventsA);
     record('cross-tab-first-close-suppressed', true, { threadId });
 
-    await tabB.page.evaluate(() => window.testDisconnect());
+    await callHook(tabB.page, 'testDisconnect');
     await waitFor(() => sessionCompletedRequests(tabB.responses).length > 0);
     const reqsB = sessionCompletedRequests(tabB.responses);
     assert(reqsB.every((r) => r.status === 200), 'cross-tab: last tab standing did not get a real 200', reqsB);
@@ -270,8 +271,8 @@ try {
   {
     const graceMs = 2000;
     const { page, responses } = await openPage(context, port, { token, hiddenGraceMs: graceMs });
-    await page.evaluate(() => window.testConnect());
-    await page.evaluate((text) => window.testSend(text), 'Hidden-grace live-verify turn.');
+    await callHook(page, 'testConnect');
+    await callHook(page, 'testSend', 'Hidden-grace live-verify turn.');
     await page.evaluate(() => {
       Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
       document.dispatchEvent(new Event('visibilitychange'));
@@ -289,8 +290,8 @@ try {
   {
     const graceMs = 2000;
     const { page, responses } = await openPage(context, port, { token, hiddenGraceMs: graceMs });
-    await page.evaluate(() => window.testConnect());
-    await page.evaluate((text) => window.testSend(text), 'Hidden-grace-cancel live-verify turn.');
+    await callHook(page, 'testConnect');
+    await callHook(page, 'testSend', 'Hidden-grace-cancel live-verify turn.');
     await page.evaluate(() => {
       Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
       document.dispatchEvent(new Event('visibilitychange'));
@@ -303,7 +304,7 @@ try {
     await page.waitForTimeout(graceMs);
     assert(sessionCompletedRequests(responses).length === 0, 'hidden-grace-cancel: signal fired despite returning to visible', responses);
     record('hidden-grace-cancelled-on-return-to-visible', true, {});
-    await page.evaluate(() => window.testDisconnect());
+    await callHook(page, 'testDisconnect');
     await page.close();
   }
 
@@ -322,7 +323,7 @@ try {
     const threadId = reply.threadId;
     const localGenieUrl = `http://127.0.0.1:${port}`;
     const { page } = await openPage(context, port, { token, threadId, genieUrl: localGenieUrl });
-    await page.evaluate(() => window.testConnect());
+    await callHook(page, 'testConnect');
     const hitsBefore = sessionCompletedHits.length;
     await page.goto(`http://127.0.0.1:${port}/scripts/live-verify-session-complete.html?id=after-pagehide`, { waitUntil: 'domcontentloaded' });
     await waitFor(() => sessionCompletedHits.length > hitsBefore);
@@ -337,8 +338,8 @@ try {
   //    anyway, so it fires immediately by default.
   {
     const { page, responses } = await openPage(context, port, { token });
-    await page.evaluate(() => window.testConnect());
-    await page.evaluate((text) => window.testSend(text), 'bfcache pagehide live-verify turn.');
+    await callHook(page, 'testConnect');
+    await callHook(page, 'testSend', 'bfcache pagehide live-verify turn.');
     await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true })));
     await waitFor(() => sessionCompletedRequests(responses).length > 0);
     const reqs = sessionCompletedRequests(responses);

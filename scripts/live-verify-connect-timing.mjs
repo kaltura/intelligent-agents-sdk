@@ -90,6 +90,7 @@ import {
   bootstrap, Report, mdTable, stats, management, ensureAgent, mintPageInit, startServer, resourceHints, SOCKET_IO_CDN,
   browserChoice, launchBrowser, contextOptions, openHarness, whepSummary, netProblems, waitFor, find, all, isOpeningSpeechId, textsSent, SILENT_OPENING,
 } from './live-verify-kickoff-shared.mjs';
+import { callHook } from './live-verify-hooks-shared.mjs';
 
 const { args, target, runId, outDir } = bootstrap(process.argv.slice(2), 'connect-timing');
 const RUNS = Number(args.runs || 5);
@@ -199,7 +200,7 @@ try {
       run.hintTags = ready?.hintTags ?? null;
       run.pageReadyMs = ready?.sinceNavMs ?? null;
       report.check(`run ${i}: resource hints ${arm === 'on' ? 'present' : 'absent'} in <head> (${arm} arm)`, arm === 'on' ? run.hintTags === HINT_TAGS.length : run.hintTags === 0, { hintTags: run.hintTags, expected: arm === 'on' ? HINT_TAGS.length : 0 });
-      const connect = await page.evaluate(() => /** @type {any} */ (window).testConnect());
+      const connect = await callHook(page, 'testConnect');
       report.check(`run ${i}: connect() resolved`, connect.ok, connect.ok ? undefined : connect);
       if (!connect.ok) { run.error = connect; continue; }
 
@@ -228,7 +229,7 @@ try {
       await waitFor(page, (e) => find(e, 'stats:sample', { from: evs.length }), 2_000, 'stats tick').catch(() => {});
       evs = await page.evaluate(() => /** @type {any} */ (window).__events.slice());
       const sound = await page.evaluate(() => /** @type {any} */ (window).__sound);
-      const resources = resourceMetrics(await page.evaluate(() => /** @type {any} */ (window).testResources()));
+      const resources = resourceMetrics(await callHook(page, 'testResources'));
 
       const T = start.tRel;
       const stvN = find(evs, 'pc:track')?.detail?.n ?? null;               // the peer that receives media is STV
@@ -317,7 +318,7 @@ try {
       report.note(`run ${i}: timings from connect()`, { connectMs: run.connectMs, stvIceMs: run.stvIceMs, trackVideoMs: run.trackVideoMs, videoFirstFrameMs: run.videoFirstFrameMs, firstWordsMs: run.firstWordsMs, firstSoundMs: run.firstSoundMs, talkToSoundMs: run.talkToSoundMs, pair: run.candidatePair, video: run.videoStats });
       report.note(`run ${i}: resources (hints ${arm})`, { pageReadyMs: run.pageReadyMs, scriptLoadMs: run.scriptLoadMs, sdkLoadedAtMs: run.sdkLoadedAtMs, sdkModules: resources.sdkModules, socketConnectMs: run.socketConnectMs, whepPostMs: run.whepPostMs, whepTao: resources.whepTao, whepReusedConnection: resources.whepReusedConnection });
 
-      await page.evaluate(() => /** @type {any} */ (window).testDisconnect()).catch(() => {});
+      await callHook(page, 'testDisconnect').catch(() => {});
       // The release DELETE is sent fire-and-forget, so wait for its record instead of
       // sampling once: 300 ms is not always enough for the response to come back. The
       // browser can also log a SECOND, aborted record for the same request when the page

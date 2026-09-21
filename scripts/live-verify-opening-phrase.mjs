@@ -31,6 +31,7 @@ import {
   bootstrap, Report, mdTable, management, ensureAgent, mintPageInit, startServer,
   browserChoice, launchBrowser, contextOptions, openHarness, whepSummary, netProblems, redact, waitFor, find, all, isOpeningSpeechId, sleep, SILENT_OPENING,
 } from './live-verify-kickoff-shared.mjs';
+import { callHook } from './live-verify-hooks-shared.mjs';
 import { SILENT_OPENING_LABEL } from '../src/core/opening.js';
 
 const { args, target, runId, outDir } = bootstrap(process.argv.slice(2), 'opening-phrase');
@@ -75,7 +76,7 @@ report.note('setup', SETUP);
 /** @typedef {import('./live-verify-kickoff-shared.mjs').HarnessEvent} Ev */
 
 const ev = (/** @type {import('playwright').Page} */ page, /** @type {string} */ fn, /** @type {any} */ arg) =>
-  page.evaluate(([f, a]) => /** @type {any} */ (window)[f](a), [fn, arg]);
+  callHook(page, fn, arg);
 
 /**
  * The opening line as the session voiced it: every speechChunk on the opening

@@ -34,6 +34,7 @@ import { fileURLToPath } from 'node:url';
 import { createServer } from 'node:http';
 import { chromium, firefox, webkit } from 'playwright';
 import { Management } from '../src/management/index.js';
+import { callHook } from './live-verify-hooks-shared.mjs';
 
 const ENGINES = { chromium, firefox, webkit };
 const engineName = process.env.LIVE_VERIFY_BROWSER || 'chromium';
@@ -137,7 +138,7 @@ async function runMode(context, port, mode) {
     await page.goto(`http://127.0.0.1:${port}/scripts/live-verify-avatar-media.html?mode=${mode}${silent}`, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => window.__ready === true, null, { timeout: 30000 });
 
-    await page.evaluate(() => window.testConnect());
+    await callHook(page, 'testConnect');
     // Wait until the video element has real dimensions AND the audio track is unmuted,
     // i.e. both downlink tracks are carrying media, not just negotiated.
     await page.waitForFunction(() => {
@@ -166,7 +167,7 @@ async function runMode(context, port, mode) {
       && readiness.videoMetadataCount === 1 && readiness.trackKinds.length === 2 && readiness.errors.length === 0,
       readiness);
 
-    const probe = await page.evaluate(() => window.testProbe());
+    const probe = await callHook(page, 'testProbe');
     const placementOk = mode === 'split'
       ? JSON.stringify(probe.videoElTracks) === '["video"]' && JSON.stringify(probe.audioElTracks) === '["audio"]' && probe.audioPaused === false
       : JSON.stringify(probe.videoElTracks) === '["audio","video"]' && probe.audioElTracks === null;
@@ -182,10 +183,10 @@ async function runMode(context, port, mode) {
     record(`${tag}:video-painting`, probe.videoWidth > 0 && probe.currentTimeAdvancing && probe.frame.nonBlack && probe.videoPaused === false,
       { videoWidth: probe.videoWidth, videoHeight: probe.videoHeight, currentTimeAdvancing: probe.currentTimeAdvancing, frame: probe.frame, videoPaused: probe.videoPaused });
 
-    const inbound = await page.evaluate(() => window.testInbound());
+    const inbound = await callHook(page, 'testInbound');
     record(`${tag}:inbound-rtp-growing`, inbound.audioGrew && inbound.videoGrew, inbound);
 
-    const controls = await page.evaluate(() => window.testControls());
+    const controls = await callHook(page, 'testControls');
     const sinkOk = controls.setSinkIdSupported
       ? controls.setAudioOutputTarget === true && controls.sinkIdAfter === controls.sinkTarget
         && controls.setAudioOutputSystemDefault === true && controls.sinkIdReset === ''
@@ -193,7 +194,7 @@ async function runMode(context, port, mode) {
     record(`${tag}:controls`, controls.mutedApplied && controls.unmutedApplied && controls.volumeApplied && controls.otherUntouchedByMute
       && sinkOk && controls.startPlayback === true, controls);
 
-    const down = await page.evaluate(() => window.testDisconnect());
+    const down = await callHook(page, 'testDisconnect');
     record(`${tag}:disconnect-clean`, down.videoSrcObjectCleared && down.audioSrcObjectCleared && down.avatarStreamCleared
       && down.tracksSeen === 2 && down.tracksEnded === 2, down);
 
