@@ -40,7 +40,7 @@ import { writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
   bootstrap, Report, mdTable, management, ensureAgent, mintPageInit, startServer,
-  browserChoice, launchBrowser, contextOptions, openHarness, whepSummary, netProblems, redact, waitFor, find, all, isOpeningSpeechId, textsSent, sleep, SILENT_OPENING,
+  browserChoice, launchBrowser, contextOptions, openHarness, whepSummary, netProblems, redact, waitFor, find, all, isOpeningSpeechId, textsSent, sleep, SILENT_OPENING, SILENT_OPENING_LABEL,
 } from './live-verify-kickoff-shared.mjs';
 import { callHook } from './live-verify-hooks-shared.mjs';
 
@@ -81,6 +81,12 @@ const kickoffFrames = (/** @type {Ev[]} */ evs) => all(evs, 'socket:out', (d) =>
 const kickoffEchoes = (/** @type {Ev[]} */ evs) => all(evs, 'transcript', (d) => d?.type === 'user' && typeof d?.text === 'string' && d.text.includes(KICKOFF));
 /** transcript/speechChunk payloads containing the silent opening text. */
 const leaks = (/** @type {Ev[]} */ evs) => [...all(evs, 'transcript'), ...all(evs, 'speechChunk')].filter((e) => typeof e.detail?.text === 'string' && e.detail.text.includes(SILENT_OPENING));
+/** Texts the app saw for the silent opening turn: its transcript/speechChunk payloads and the first avatarStopTalking. All must be SILENT_OPENING_LABEL. */
+const openingTexts = (/** @type {Ev[]} */ evs) => {
+  const captions = [...all(evs, 'transcript'), ...all(evs, 'speechChunk')].filter((e) => isOpeningSpeechId(e.detail?.speechId)).map((e) => e.detail.text);
+  const stop = find(evs, 'avatarStopTalking');
+  return stop ? [...captions, stop.detail?.text] : captions;
+};
 
 /** connect and wait for the first reply chunk; returns events + indexes. */
 async function connectAndReply(/** @type {import('playwright').Page} */ page, /** @type {string} */ id) {
@@ -193,6 +199,8 @@ const SCENARIOS = {
         report.note(`${id}: totalAudioEnergy not reported by this browser, energy check skipped`, { engine: find(evs, 'harness:ready')?.detail?.engine });
         if (!ctxRunning) report.check(`${id}: audibility measurable (analyser or totalAudioEnergy)`, false, {});
       }
+      const seen = openingTexts(evs);
+      report.check(`${id}: silent opening surfaces as '${SILENT_OPENING_LABEL}' on transcript/speechChunk/avatarStopTalking`, seen.length >= 2 && seen.every((t) => t === SILENT_OPENING_LABEL), { seen });
       commonChecks(id, evs);
       await ev(page, 'testDisconnect').catch(() => {});
     },

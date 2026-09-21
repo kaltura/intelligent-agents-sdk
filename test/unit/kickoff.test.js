@@ -359,16 +359,34 @@ test(`silent opening: '${SILENT_OPENING}' on the opening speechId surfaces as '$
   socket.server('generatingSpeech', { speechId: OPENING_ID, text: SILENT_OPENING });
   socket.server('stvStartedTalking', {});
   socket.server('stvSpeechChunk', { speechId: OPENING_ID, text: SILENT_OPENING, durationMs: 10 });
-  socket.server('stvFinishedTalking', { agentContent: SILENT_OPENING });
+  // The live server ends the silent opening with an empty agentContent and no speechId.
+  socket.server('stvFinishedTalking', { agentContent: '' });
   assert.ok(transcripts.length >= 1);
   assert.ok(transcripts.every((t) => t.text === SILENT_OPENING_LABEL));
   assert.equal(chunks.length, 1);
   assert.equal(chunks[0].text, SILENT_OPENING_LABEL);
   assert.equal(starts.length, 1);
-  // stvFinishedTalking carries no speechId, so the stop payload is relabelled by text alone.
+  // The stop payload is labelled from the turn's own generatingSpeech/stvSpeechChunk, not from agentContent.
   assert.deepEqual(stops, [{ text: SILENT_OPENING_LABEL }]);
   const raw = [...transcripts, ...chunks, ...stops].filter((e) => e.text?.includes(SILENT_OPENING));
   assert.deepEqual(raw, [], 'the raw phrase never reaches a listener');
+  // The label is scoped to the opening turn: the next reply's stop carries its own text.
+  socket.server('generatingSpeech', { speechId: 'reply-1', text: 'Hi there.' });
+  socket.server('stvStartedTalking', {});
+  socket.server('stvFinishedTalking', { agentContent: 'Hi there.' });
+  assert.deepEqual(stops[1], { text: 'Hi there.' });
+});
+
+test(`silent opening: '${SILENT_OPENING}' as agentContent alone never relabels a stop`, async () => {
+  const { session, socket } = newSession();
+  scriptHappyPath(socket);
+  await session.connect();
+  finishOpening(socket);
+  const stops = collect(session, 'avatarStopTalking');
+  socket.server('generatingSpeech', { speechId: 'reply-1', text: SILENT_OPENING });
+  socket.server('stvStartedTalking', {});
+  socket.server('stvFinishedTalking', { agentContent: SILENT_OPENING });
+  assert.deepEqual(stops, [{ text: SILENT_OPENING }]);
 });
 
 test('silent opening: a spoken opening phrase on the opening speechId still surfaces', async () => {

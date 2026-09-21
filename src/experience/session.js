@@ -416,6 +416,10 @@ export class KalturaAvatarSession extends Emitter {
     this._uninterruptibleTurn = false;
     /** @type {{text:string, raw:string, resolve:(sent:boolean)=>void}[]} */
     this._heldTurns = [];
+    // True while the scripted opening turn carrying SILENT_OPENING is playing. Its
+    // stvFinishedTalking has no speechId and an empty agentContent, so the stop event
+    // is labelled from what the turn's own generatingSpeech/stvSpeechChunk carried.
+    this._silentOpening = false;
     this.responsePending = false; // true from prompting the brain until its first meaningful output (dead-air gap)
     this.paused = false;
     this._sessionReleased = false;   // true after a pause expires server-side (resume needs a fresh STV)
@@ -2354,12 +2358,16 @@ export class KalturaAvatarSession extends Emitter {
       // The server's own check-in ("are you still there?") and goodbye turns cannot be
       // interrupted and drop any text sent during them — hold speak() until they end.
       if (isUninterruptibleSpeechId(p?.speechId)) this._uninterruptibleTurn = true;
-      this.emit('transcript', { text: openingText(p?.speechId, p?.text) ?? clampInbound(p?.text || ''), type: 'final', speechId: p?.speechId, words: [] });
+      const label = openingText(p?.speechId, p?.text);
+      if (label) this._silentOpening = true;
+      this.emit('transcript', { text: label ?? clampInbound(p?.text || ''), type: 'final', speechId: p?.speechId, words: [] });
     });
 
     // Captions (authoritative).
     socket.on('stvSpeechChunk', (p) => {
-      const text = openingText(p?.speechId, p?.text) ?? clampInbound(p?.text);
+      const label = openingText(p?.speechId, p?.text);
+      if (label) this._silentOpening = true;
+      const text = label ?? clampInbound(p?.text);
       this.emit('speechChunk', { text, durationMs: p?.durationMs, speechId: p?.speechId });
       const tr = this._tracker.ingestChunk({ ...p, text });
       if (tr) this.emit('transcript', tr);
@@ -2370,8 +2378,12 @@ export class KalturaAvatarSession extends Emitter {
     socket.on('stvStartedTalking', () => { this._clearBrainWatchdog(); this._settleResponsePending(); this._touchActivity(); this._completer.touch(); this.speaking = true; this._turnSawOutput = true; this._audit('turn.avatar_spoke', 'success', {}); this.emit('avatarStartTalking', {}); });
     // _endUninterruptibleTurn() runs before the app-facing event so text held by speak() is on
     // the wire first, and a speak() called from inside the listener is sent, not held again.
-    socket.on('stvFinishedTalking', (p) => { this.speaking = false; this._endUninterruptibleTurn(); this._tracker.finishUtterance(); this._completer.touch(); this.emit('avatarStopTalking', { text: isSilentOpening(p?.agentContent) ? SILENT_OPENING_LABEL : clampInbound(p?.agentContent) }); });
-    socket.on('agentInterrupted', () => { this.speaking = false; this._endUninterruptibleTurn(); this._settleResponsePending(); this._turnSawOutput = true; this.emit('interrupted', {}); });
+    socket.on('stvFinishedTalking', (p) => {
+      this.speaking = false; this._endUninterruptibleTurn(); this._tracker.finishUtterance(); this._completer.touch();
+      const silent = this._silentOpening; this._silentOpening = false;
+      this.emit('avatarStopTalking', { text: silent ? SILENT_OPENING_LABEL : clampInbound(p?.agentContent) });
+    });
+    socket.on('agentInterrupted', () => { this.speaking = false; this._silentOpening = false; this._endUninterruptibleTurn(); this._settleResponsePending(); this._turnSawOutput = true; this.emit('interrupted', {}); });
     socket.on('userStartedTalking', () => { this._clearBrainWatchdog(); this._touchActivity(); this.emit('userStartedTalking', {}); });
     // The user's turn produced a transcription → the brain should now respond; watch for a stall (R5)
     // and flip the response-pending signal so the app can mask the dead-air gap until output lands.
@@ -2938,6 +2950,7 @@ export class KalturaAvatarSession extends Emitter {
     this._pausedPendingApprove = null;   // a held approve dies with the session
     this._dropHeldTurns();               // held speak() calls resolve false: the session ended first
     this._uninterruptibleTurn = false;
+    this._silentOpening = false;
     this.speaking = false;
     this._clearBrainWatchdog();
     this._settleResponsePending();   // never leave the pending signal stuck across teardown

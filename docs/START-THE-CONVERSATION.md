@@ -16,7 +16,7 @@ const session = new KalturaAvatarSession({
 await session.connect();   // the SDK sends the kickoff once, the moment the server accepts input
 ```
 
-The user hears the agent's own greeting about two seconds after `connect()` resolves, and can interrupt it from the first word. When you want a fixed, scripted first line instead, write it to the intellect as a Jinja2 template ([§ Personalize the opening](#personalize-the-opening)).
+The user hears the agent's own greeting one to two seconds after `connect()` resolves, and can interrupt it from the first word. When you want a fixed, scripted first line instead, write it to the intellect as a Jinja2 template ([§ Personalize the opening](#personalize-the-opening)).
 
 ## Where the opening phrase lives
 
@@ -76,7 +76,7 @@ A silent opening removes that wait. `SILENT_OPENING` is a valid, non-empty openi
 | First words come from | a fixed template, rendered server-side | the model, following your prompt and the kickoff text |
 | Interruptible | no | yes |
 | Personalized | via Jinja2 over `requestVars` and `sys__*` in the phrase | via the prompt, `requestVars`, and the kickoff text |
-| Time from `connect()` to first words | length of the scripted line plus server latency | about 1.8 s in live measurements |
+| Time from `connect()` resolving to first words | length of the scripted line plus server latency | 1–2 s in live runs ([§ What happens on the wire](#what-happens-on-the-wire)) |
 | Where the greeting text lives | the intellect's `opening_phrase` | your browser code (or `requestVars`) |
 
 ## The `kickoff` option

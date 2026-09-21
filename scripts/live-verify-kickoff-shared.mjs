@@ -17,11 +17,11 @@ import { resolve, dirname, extname, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'node:http';
 import { chromium, firefox, webkit } from 'playwright';
-import { Management, SILENT_OPENING } from '../src/management/index.js';
+import { Management, SILENT_OPENING, SILENT_OPENING_LABEL } from '../src/management/index.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 export const repoRoot = resolve(__dirname, '..');
-export { SILENT_OPENING };
+export { SILENT_OPENING, SILENT_OPENING_LABEL };
 
 // ---------------------------------------------------------------------------
 // CLI + env
@@ -524,11 +524,22 @@ export async function openHarness(context, origin, params, sink) {
 export function whepSummary(net) {
   const isWhep = (/** @type {string} */ u) => /\/rtc\/|whep|whip/i.test(u);
   const out = [];
-  for (const r of net) {
+  for (const r of dropAbortedAfterResponse(net)) {
     if (!isWhep(r.url) || r.kind === 'request') continue;
     out.push(`${r.method} ${r.url.replace(/^https?:\/\/[^/]+/, '')} → ${r.kind === 'failed' ? `FAILED ${r.error}` : r.status}`);
   }
   return out;
+}
+
+/**
+ * A `failed` record with net::ERR_ABORTED for a request that already has a `response`
+ * record is the page closing before the body was read (the fire-and-forget WHEP DELETE
+ * on disconnect), not a failed request. Drop it so the summaries show one line per request.
+ * @param {NetRecord[]} net
+ */
+function dropAbortedAfterResponse(net) {
+  const answered = new Set(net.filter((r) => r.kind === 'response').map((r) => `${r.method} ${r.url}`));
+  return net.filter((r) => !(r.kind === 'failed' && /ERR_ABORTED/.test(r.error || '') && answered.has(`${r.method} ${r.url}`)));
 }
 
 /**
@@ -539,7 +550,7 @@ export function whepSummary(net) {
  */
 export function netProblems(net) {
   const out = [];
-  for (const r of net) {
+  for (const r of dropAbortedAfterResponse(net)) {
     if (r.kind === 'request') continue;
     if (r.kind === 'response' && (r.status ?? 0) < 400) continue;
     out.push(`${r.method} ${r.url.replace(/^https?:\/\//, '')} → ${r.kind === 'failed' ? `FAILED ${r.error}` : r.status}`);
