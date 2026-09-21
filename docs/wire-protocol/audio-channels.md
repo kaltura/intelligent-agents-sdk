@@ -63,7 +63,7 @@ A receive-only WebRTC peer connection fed via **WHEP** (WebRTC-HTTP Egress Proto
 
 **`cast_mode` selects the STV egress** (`StvCastMode` enum `"webrtc"\|"rtmp"`, optional in the `stvNewSession` body). This SDK never sends it. `buildStvNewSession()` (`SDK:wire.js`) accepts an optional `castMode` argument, but `session.js`'s one call site never passes one. So this SDK only ever takes the server's fully-omitted-default path, not either named value:
 
-- **Default (cast_mode omitted)** — the only path this SDK uses. The server returns a `webrtc_url`. In the current deployment that's shaped `{basePublicProxyUrl}/rtc/v1/stv/{room_id}/whep/session/{session_id}` (the session-server's STV proxy). This path returns a working `webrtc_url` on Chromium, Firefox, and WebKit. If the server ever omits `webrtc_url` too, the client falls back to building `{srsBaseUrl}/rtc/v1/whep/?app=app&stream={session_id}` itself (`SDK:wire.js whepUrl()`).
+- **Default (cast_mode omitted)** — the only path this SDK uses. The server returns a `webrtc_url`. In the current deployment it's shaped `{origin}/rtc/v1/stv/{room_id}/whep/session/{session_id}`, where `{origin}` is whatever scheme+host the server put in that URL. This path returns a working `webrtc_url` on Chromium, Firefox, and WebKit. If the server ever omits `webrtc_url` too, the client falls back to building `{srsBaseUrl}/rtc/v1/whep/?app=app&stream={session_id}` itself (`SDK:wire.js whepUrl()`).
 - **Explicit `cast_mode:'webrtc'`** (sent only by the runtime client, never by this SDK) — can resolve to an unreachable private IP, so the browser's `fetch` never connects. This is why the SDK never sends it. `whepUrlHasPrivateIp()` (`SDK:wire.js`) guards this regardless of which cast_mode produced the URL.
 
 The URL *shape* alone doesn't tell you which path is safe — the guard above checks the resolved host, not the shape. The client POSTs whichever `webrtc_url` the server returns, verbatim. **The browser always plays via WebRTC/WHEP regardless of mode** — "rtmp" is only the server-side ingest the renderer uses, never a browser transport.
@@ -76,7 +76,7 @@ bundlePolicy: "max-bundle"
 ```
 
 - **Transceivers:** `addTransceiver('video',{direction:'recvonly'})` + `addTransceiver('audio',{direction:'recvonly'})`.
-- **WHEP request** — the URL is the server-provided `webrtc_url` from `stvNewSession`, POSTed verbatim (`SDK:wire.js whepUrl()`). It's shaped `{basePublicProxyUrl}/rtc/v1/stv/{room_id}/whep/session/{session_id}` (this section). If the server ever omits `webrtc_url`, the embed client / `SDK:wire.js whepUrl()` build this fallback shape from `srsBaseUrl` instead:
+- **WHEP request** — the URL is the server-provided `webrtc_url` from `stvNewSession`, POSTed verbatim (`SDK:wire.js whepUrl()`). It's shaped `{origin}/rtc/v1/stv/{room_id}/whep/session/{session_id}` (this section). If the server ever omits `webrtc_url`, the embed client / `SDK:wire.js whepUrl()` build this fallback shape from `srsBaseUrl` instead:
 
   ```
   POST {srsBaseUrl}/rtc/v1/whep/?app=app&stream={session_id}

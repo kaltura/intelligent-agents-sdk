@@ -155,7 +155,7 @@ test('whepResourceUrl returns an unresolvable Location unchanged rather than thr
 
 test('whepUrlHasPrivateIp flags the broken STV-direct egress', () => {
   assert.equal(whepUrlHasPrivateIp('https://10.0.0.5/whep'), true);
-  assert.equal(whepUrlHasPrivateIp('https://srs.avatar.us.kaltura.ai/whep'), false);
+  assert.equal(whepUrlHasPrivateIp('https://srs.example.com/whep'), false);
 });
 
 test('buildTextEntered shape', () => {

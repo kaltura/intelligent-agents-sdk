@@ -7,7 +7,7 @@
 | Thing | Value |
 |---|---|
 | Control socket | `wss://conversation.avatar.us.kaltura.ai` path `/socket.io` |
-| STV WHEP base | `https://srs.avatar.us.kaltura.ai` |
+| STV WHEP base | `srsBaseUrl` from `appInit` |
 | STV play URL | `{srsBaseUrl}/rtc/v1/play/?app=app&stream={session_id}` (or `webrtc_url` from `stvNewSession`) |
 | STV WHEP signaling | `POST {srsBaseUrl}/rtc/v1/whep/?app=app&stream={session_id}` (body: plain SDP, `Content-Type: application/sdp`) |
 | TURN | `turn.avatar.us.kaltura.ai` (default username/credential in `wire.js`'s `turnServers()`, overridable via `creds`). See [TURN configuration](#turn-configuration) below. |
