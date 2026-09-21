@@ -50,7 +50,9 @@ if (!widgetId) {
   console.log('Provisioned a throwaway agent:', { configId: agent.configId, agentId: agent.agentId, widgetId });
 }
 
-const SERVED_DIRS = ['examples', 'src'];
+// Resolved once, with a trailing separator, so a served path is a plain prefix
+// match on the resolved request path and nothing outside these two trees can match.
+const SERVED_ROOTS = ['examples', 'src'].map((d) => path.resolve(REPO_ROOT, d) + path.sep);
 const MIME = { '.html': 'text/html', '.js': 'application/javascript', '.mjs': 'application/javascript', '.json': 'application/json', '.jpeg': 'image/jpeg' };
 
 const server = http.createServer(async (req, res) => {
@@ -71,13 +73,19 @@ const server = http.createServer(async (req, res) => {
   // dotfile, never anything else under the repo root (a local `.env` lives there).
   const urlPath = (req.url || '/').split('?')[0];
   const rel = urlPath === '/' ? 'examples/event-timing.html' : decodeURIComponent(urlPath).replace(/^\/+/, '');
-  const filePath = path.resolve(REPO_ROOT, rel);
-  const relPath = path.relative(REPO_ROOT, filePath);
-  const inServedDir = SERVED_DIRS.some((d) => relPath === d || relPath.startsWith(d + path.sep));
-  const hasDotSegment = relPath.split(path.sep).some((seg) => seg.startsWith('.'));
-  if (!inServedDir || hasDotSegment) { res.writeHead(404, { 'Content-Type': 'text/plain' }); res.end('not found'); return; }
+  const resolved = path.resolve(REPO_ROOT, rel);
+  const notFound = () => { res.writeHead(404, { 'Content-Type': 'text/plain' }); res.end('not found'); };
+  // The resolved path is only used after it is confirmed to sit under one of the
+  // two served roots. `..` segments are already collapsed by resolve(), so a
+  // prefix match on the resolved path is the whole containment check.
+  let filePath;
+  if (resolved.startsWith(SERVED_ROOTS[0])) filePath = resolved;
+  else if (resolved.startsWith(SERVED_ROOTS[1])) filePath = resolved;
+  else { notFound(); return; }
+  const hasDotSegment = path.relative(REPO_ROOT, filePath).split(path.sep).some((seg) => seg.startsWith('.'));
+  if (hasDotSegment) { notFound(); return; }
   fs.readFile(filePath, (err, data) => {
-    if (err) { res.writeHead(404, { 'Content-Type': 'text/plain' }); res.end('not found'); return; }
+    if (err) { notFound(); return; }
     res.writeHead(200, { 'Content-Type': MIME[path.extname(filePath)] || 'application/octet-stream' });
     res.end(data);
   });
