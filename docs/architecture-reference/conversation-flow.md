@@ -59,10 +59,10 @@ Three ways the conversation gets its turns:
 
    ```js
    // the isSpeechStart marker interrupts a mid-sentence avatar (no-op if idle)
-   socket.emit('debug_text_entered', { text: '', isFinal: false, isSpeechStart: true });
-   socket.emit('debug_text_entered', { text, isFinal: true });   // captured client emit name
+   socket.emit('onTextEntered', { text: '', isFinal: false, isSpeechStart: true });
+   socket.emit('onTextEntered', { text, isFinal: true });
    ```
-The server handler is `onTextEntered`, the session server's text-injection handler. It reads only `{ text, isFinal, isSpeechStart? }` and routes the text to the same pipeline as ASR transcripts (`vadSpeechDetected`). Routing is keyed by the socket's own room (`room: socket.id`). It does **not** read `room_id` or `session_id`; the server ignores both. (The client-side text-entry emitter only sends `{text,isFinal}`, but the injected text is still spoken.) For purely **typed** chat (no avatar), the production chat UI instead calls `/assistant/converse` directly with the `geniegpcid` KS. See [wire-protocol/events-catalog.md §4a](../wire-protocol/events-catalog.md#4a-client--server-emit).
+`onTextEntered` is the text-input event. The payload is `{ text, isFinal, isSpeechStart? }`; `room_id` and `session_id` are not needed and are ignored. The text is treated exactly like a spoken transcript. If the session was built with `debug:true`, `speak()` also emits a `debug_text_entered` mirror with the final `{text, isFinal:true}` right after `onTextEntered`, for observability only. The reply follows from `onTextEntered` either way. For purely **typed** chat (no avatar), the production chat UI instead calls `/assistant/converse` directly with the `geniegpcid` KS. See [wire-protocol/events-catalog.md §4a](../wire-protocol/events-catalog.md#4a-client--server-emit).
 
 ---
 

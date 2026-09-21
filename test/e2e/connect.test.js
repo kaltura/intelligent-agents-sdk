@@ -12,7 +12,7 @@ function newSession(overrides = {}) {
   const videoEl = overrides.videoEl ?? new FakeVideoEl({ autoCanPlay: true });
   const whepFetch = overrides.fetch ?? (async () => ({ ok: true, status: 201, text: async () => 'v=0\r\nanswer\r\n', headers: { get: () => 'https://srs/whep/resource/1' } }));
   const session = new KalturaAvatarSession({
-    token: CONV_KS, srsBaseUrl: 'https://srs.example', turnServerUrl: 'turn.avatar.us.kaltura.ai',
+    token: CONV_KS, srsBaseUrl: 'https://srs.example', turnServerUrl: 'turn.example.com',
     videoEl, socketFactory: () => socket, rtcConstructor: FakeRTCPeerConnection,
     fetch: whepFetch, getUserMedia: overrides.getUserMedia ?? fakeGetUserMedia(),
     mediaStreamConstructor: FakeMediaStreamCtor,
@@ -593,7 +593,7 @@ test('capacity backoff: onAvail applies ±15% jitter at the consumption site (ex
   // while wire.test.js's exact-array assertion on CAPACITY_BACKOFF itself still holds.
   const socket = new FakeSocket();
   const session = new KalturaAvatarSession({
-    token: CONV_KS, srsBaseUrl: 'https://srs.example', turnServerUrl: 'turn.avatar.us.kaltura.ai',
+    token: CONV_KS, srsBaseUrl: 'https://srs.example', turnServerUrl: 'turn.example.com',
     videoEl: new FakeVideoEl({ autoCanPlay: true }), socketFactory: () => socket, rtcConstructor: FakeRTCPeerConnection,
     fetch: async () => ({ ok: true, status: 201, text: async () => 'v=0', headers: { get: () => 'https://srs/whep/resource/1' } }),
     getUserMedia: fakeGetUserMedia(),
@@ -725,7 +725,7 @@ test('KalturaAgentSession: switchMode() never fires session_completed; the facad
   const videoEl = new FakeVideoEl({ autoCanPlay: true });
   const agent = new KalturaAgentSession({
     token: CONV_KS,
-    avatar: { srsBaseUrl: 'https://srs.example', turnServerUrl: 'turn.avatar.us.kaltura.ai', videoEl, socketFactory: () => socket, rtcConstructor: FakeRTCPeerConnection, fetch, getUserMedia: fakeGetUserMedia(), mediaStreamConstructor: FakeMediaStreamCtor },
+    avatar: { srsBaseUrl: 'https://srs.example', turnServerUrl: 'turn.example.com', videoEl, socketFactory: () => socket, rtcConstructor: FakeRTCPeerConnection, fetch, getUserMedia: fakeGetUserMedia(), mediaStreamConstructor: FakeMediaStreamCtor },
     chat: { fetch },
   });
   scriptHappyPath(socket);

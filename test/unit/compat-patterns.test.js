@@ -179,10 +179,10 @@ test('§3: opting into split later is one line and does not disturb the video el
  * being accepted, an app copied from the docs breaks.
  */
 const SHAPES = {
-  'README.md quickstart': (videoEl) => ({ token: CONV_KS, conversationManagerUrl: 'https://cm.example', srsBaseUrl: 'https://srs.example', turnServerUrl: 'turn.avatar.us.kaltura.ai', videoEl }),
-  'examples/browser-experience.html': (videoEl) => ({ token: CONV_KS, conversationManagerUrl: 'https://cm.example', srsBaseUrl: 'https://srs.example', turnServerUrl: 'turn.avatar.us.kaltura.ai', videoEl, isFirefox: false }),
-  'examples/deck-presenter.html': (videoEl) => ({ token: CONV_KS, conversationManagerUrl: 'https://cm.example', srsBaseUrl: 'https://srs.example', turnServerUrl: 'turn.avatar.us.kaltura.ai', videoEl, isFirefox: false, requireDisclosureAck: true }),
-  'examples/chroma-key-avatar.html': (videoEl) => ({ token: CONV_KS, conversationManagerUrl: 'https://cm.example', srsBaseUrl: 'https://srs.example', turnServerUrl: 'turn.avatar.us.kaltura.ai', videoEl }),
+  'README.md quickstart': (videoEl) => ({ token: CONV_KS, conversationManagerUrl: 'https://cm.example', srsBaseUrl: 'https://srs.example', turnServerUrl: 'turn.example.com', videoEl }),
+  'examples/browser-experience.html': (videoEl) => ({ token: CONV_KS, conversationManagerUrl: 'https://cm.example', srsBaseUrl: 'https://srs.example', turnServerUrl: 'turn.example.com', videoEl, isFirefox: false }),
+  'examples/deck-presenter.html': (videoEl) => ({ token: CONV_KS, conversationManagerUrl: 'https://cm.example', srsBaseUrl: 'https://srs.example', turnServerUrl: 'turn.example.com', videoEl, isFirefox: false, requireDisclosureAck: true }),
+  'examples/chroma-key-avatar.html': (videoEl) => ({ token: CONV_KS, conversationManagerUrl: 'https://cm.example', srsBaseUrl: 'https://srs.example', turnServerUrl: 'turn.example.com', videoEl }),
 };
 
 for (const [label, shape] of Object.entries(SHAPES)) {
@@ -211,7 +211,7 @@ test('fixture Nova (intelligent-agents-sdk-site connect.js): KalturaAgentSession
     avatar: {
       conversationManagerUrl: 'https://cm.example',
       srsBaseUrl: 'https://srs.example',
-      turnServerUrl: 'turn.avatar.us.kaltura.ai',
+      turnServerUrl: 'turn.example.com',
       videoEl: video,
       socketFactory: () => socket,
       isFirefox: false,

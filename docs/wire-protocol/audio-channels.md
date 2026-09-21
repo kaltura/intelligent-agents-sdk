@@ -10,15 +10,15 @@ A WebRTC peer connection that publishes the mic. SDP/ICE are relayed **over the 
 
 > **All SDP/ICE for this peer connection travels over the Socket.IO socket** — there's no separate signaling channel to manage client-side. See below for why the server's remote candidate still forces TURN.
 
-**ICE config (implemented in `SDK:wire.js iceConfig()`; TURN URL list from the built-in client's media layer `buildIceConfiguration`). `username`/`credential` default to `"kaltura"`/`"avatar"` (`SDK:wire.js turnServers()`) and can be overridden via its `creds` param:**
+**ICE config (implemented in `SDK:wire.js iceConfig()`; TURN URL list from the built-in client's media layer `buildIceConfiguration`). `host` below is the `turnServerUrl` value returned by `appInit`; the example uses `turn.example.com`. `username`/`credential` default to `"kaltura"`/`"avatar"` (`SDK:wire.js turnServers()`) and can be overridden via its `creds` param:**
 
 ```js
 new RTCPeerConnection({
   iceServers: [{
-    urls: [ "turn:turn.avatar.us.kaltura.ai:80?transport=udp",
-            "turn:turn.avatar.us.kaltura.ai:443?transport=udp",
-            "turn:turn.avatar.us.kaltura.ai:80?transport=tcp",
-            "turns:turn.avatar.us.kaltura.ai:443?transport=tcp" ],
+    urls: [ "turn:turn.example.com:80?transport=udp",
+            "turn:turn.example.com:443?transport=udp",
+            "turn:turn.example.com:80?transport=tcp",
+            "turns:turn.example.com:443?transport=tcp" ],
     username: "kaltura", credential: "avatar" }],
   iceTransportPolicy: <see matrix below>,
   bundlePolicy: "max-bundle"
@@ -55,7 +55,7 @@ When an agent runs in **audio/phone mode** (no STV video — see [§6](#6-stv-do
 
 This is distinct from [§5](#5-asr-uplink-pc1--microphone--server) (where the *client* offers the mic uplink and STT runs server-side). `SDK` implements the §5 path (video agents). Audio-mode is documented here for completeness.
 
-**The session server terminates this peer connection itself — it is not a relay here.** For every other socket-signaled path in this document (e.g. [§4a](events-catalog.md#4a-client--server-emit)/[§5](#5-asr-uplink-pc1--microphone--server)'s `asr-webrtc-*` proxy to the ASR service), the session server forwards SDP/ICE to some other backend. Audio mode is the one exception. The server builds a real `RTCPeerConnection`/`RTCAudioSource` using native WebRTC, and streams synthesized TTS speech to the browser directly over that connection. The session server is the far end of the peer connection here, not a signaling pass-through.
+**The session server is the far end of this peer connection itself, not a relay to another backend.** For every other socket-signaled path in this document (e.g. [§4a](events-catalog.md#4a-client--server-emit)/[§5](#5-asr-uplink-pc1--microphone--server)'s `asr-webrtc-*` proxy to the ASR service), the session server forwards SDP/ICE to some other backend. Audio mode is the one exception: the session server negotiates directly and streams synthesized speech to the browser over that same connection.
 
 ## 6. STV downlink (pc2) — avatar video+audio → you
 

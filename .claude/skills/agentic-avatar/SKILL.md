@@ -30,7 +30,7 @@ const kaltura = new Management({
 });
 ```
 
-One `Management` instance mounts every resource namespace: `sessions`, `agents`, `avatars`, `avatarSessions`, `catalog`, `application`, `intellects`, `intellectConfig`, `tools`, `skills`, `conversations`, `threads`, `messages`, `feedback`, `followups`, `knowledge`, `lifecycle`, `insightSettings` — plus top-level `converse`/`converseOnce`/`provision` convenience methods. Full constructor options and every method's JSDoc: `src/management/client.js`.
+One `Management` instance mounts every resource namespace: `sessions`, `agents`, `avatars`, `avatarSessions`, `catalog`, `application`, `intellects`, `intellectConfig`, `tools`, `skills`, `conversations`, `threads`, `messages`, `feedback`, `followups`, `knowledge`, `lifecycle`, `insightSettings`, `emailTemplates`, plus top-level `converse`/`converseOnce`/`provision`/`setForcedLanguage` convenience methods. Full constructor options and every method's JSDoc: `src/management/client.js`.
 
 ## KS (session token) types
 
@@ -337,7 +337,7 @@ The constructor does not police which KS kind `token` carries — a real KS's pr
 | Method | Does |
 |---|---|
 | `connect()` / `disconnect()` | Open/close the socket + both WebRTC legs (ASR uplink, WHEP downlink). |
-| `speak(text)` | Inject text as if spoken — reaches the speech engine (unlike HTTP `converse`). |
+| `speak(text)` → `Promise<boolean>` | Inject text as if spoken. It reaches the speech engine (unlike HTTP `converse`). Resolves `true` once the text reached the server, `false` if the session ended first. |
 | `interrupt()` | Barge-in: stop the avatar mid-turn. |
 | `startTapToTalk()` / `endTapToTalk()` | Push-to-talk mic control — see `docs/VOICE-INPUT-MODES.md` for open-mic vs push-to-talk tradeoffs. |
 | `setDynamicPrompt(data)` | Serialize `data` into the `page_context` request variable — the "what's on screen" context the brain reads via `{{page_context}}` (pair with the `PAGE_CONTEXT_PROMPT` block from `./management`). |
@@ -397,7 +397,7 @@ Navigation runs through exactly one deterministic mechanism — `session.onToolC
 3. **Restricted topics** — `prompts.restrictedTopics` is enforced content, not a suggestion; use it for anything the agent must never discuss.
 4. **Voice selection** — pick from `catalog.list(ks, {type:'voice'})` or clone one (`catalog.createVoice`/`importVoiceFrom*`); match voice to persona.
 5. **Visual selection** — same for `type:'visual'`; `catalog.createVisual` for a custom image.
-6. **Opening phrase.** The intellect's `opening_phrase` owns it: `provision({ openingPhrase })` writes it there and creates the avatar with no `openingPhrase`; `intellectConfig.setOpeningPhrase` changes it later (Jinja2 over `requestVars` + `sys__*`, guard optional variables with `{% if %}`). Leave the avatar's `openingPhrase` unset; clear a legacy one with `avatars.update({ id, openingPhrase: null })`. Never `''`. The opening turn cannot be interrupted, so the standard pattern is `SILENT_OPENING` (exported from `./management`, the string `<blank>`) plus a browser-side `kickoff` on the session: the SDK sends that text once, the moment the opening ends, and the agent's reply is interruptible. Guide: `docs/START-THE-CONVERSATION.md`.
+6. **Opening phrase.** The intellect's `opening_phrase` owns it: `provision({ openingPhrase })` writes it there and creates the avatar with no `openingPhrase`; `intellectConfig.setOpeningPhrase` changes it later (Jinja2 over `requestVars` + `sys__*`, guard optional variables with `{% if %}`). Leave the avatar's `openingPhrase` unset; clear a stale one with `avatars.update({ id, openingPhrase: null })`. Never `''`. The opening turn cannot be interrupted, so the standard pattern is `SILENT_OPENING` (exported from `./management`, the string `<blank>`) plus a browser-side `kickoff` on the session: the SDK sends that text once, the moment the opening ends, and the agent's reply is interruptible. Guide: `docs/START-THE-CONVERSATION.md`.
 7. **Glossary** — `intellectConfig.patch(configId, {glossary}, ks)` for domain terms/pronunciations the brain should know verbatim.
 8. **Motion control** — capabilities like `avatar_show_content` / `avatar_filler` shape how animated the avatar is between turns.
 9. **Max conversation length.** An agent field, not an intellect field: `provision({ maxConversationLength })` at create time, or `agents.update({ agentId, maxConversationLength }, ks)` later.

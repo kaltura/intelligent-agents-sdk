@@ -4,7 +4,7 @@ This covers everything about the `session_completed` signal (`src/experience/ses
 
 ## What you're testing
 
-When a conversation ends, the SDK POSTs `{genieUrl}/thread/session_completed` so the backend's lifecycle rules (summaries, insights, CRM pushes) fire within seconds instead of waiting for the ~10-minute idle scanner. The full design rationale, config options, and decision table live in `README.md`'s "Ending a conversation cleanly (`session_completed` signal)" section at the repo root, read that first if you haven't. The short version: it fires on tab-close (`pagehide`), on a back-forward-cache freeze, after 30 seconds of being hidden (the mobile-tab-kill fallback), and on an explicit `disconnect()` or `completeThread()` call. It's idempotent and suppressed while another tab on the same device still has the thread open.
+When a conversation ends, the SDK POSTs `{genieUrl}/thread/session_completed` so the backend's lifecycle rules (summaries, insights, CRM pushes) fire within seconds instead of waiting for the ~10-minute idle timeout. The full design rationale, config options, and decision table live in `README.md`'s "Ending a conversation cleanly (`session_completed` signal)" section at the repo root, read that first if you haven't. The short version: it fires on tab-close (`pagehide`), on a back-forward-cache freeze, after 30 seconds of being hidden (the mobile-tab-kill fallback), and on an explicit `disconnect()` or `completeThread()` call. It's idempotent and suppressed while another tab on the same device still has the thread open.
 
 ## Setup
 
@@ -59,7 +59,7 @@ Connect → Send test turn → background the app → wait 10 seconds → return
 
 ### 5. Force-quit / OS-level kill
 
-Connect → Send test turn → force-quit the browser app entirely (iOS: swipe up in the app switcher; Android: swipe away from recents) immediately, well before the 30-second grace period would elapse on its own. This is the one flow with an accepted gap: if the OS kills the process before `hiddenGraceMs` elapses, no signal can fire from the client at all, and the backend's ~10-minute idle scanner is the real fallback. Record whether the terminal shows a line within the grace window regardless (sometimes the OS gives the backgrounded page enough time to still fire before actually suspending it). Either outcome is informative, but a missing line here is not a bug, it's the documented limit of client-side signaling.
+Connect → Send test turn → force-quit the browser app entirely (iOS: swipe up in the app switcher; Android: swipe away from recents) immediately, well before the 30-second grace period would elapse on its own. This is the one flow with an accepted gap: if the OS kills the process before `hiddenGraceMs` elapses, no signal can fire from the client at all, and the backend's ~10-minute idle timeout is the real fallback. Record whether the terminal shows a line within the grace window regardless (sometimes the OS gives the backgrounded page enough time to still fire before actually suspending it). Either outcome is informative, but a missing line here is not a bug, it's the documented limit of client-side signaling.
 
 ### 6. Real back-forward-cache round trip
 

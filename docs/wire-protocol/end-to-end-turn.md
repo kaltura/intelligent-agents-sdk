@@ -7,7 +7,7 @@
 A user turn, as captured:
 
 ```
-(user speaks / or → onTextEntered, captured client emit `debug_text_entered`)
+(user speaks / or → onTextEntered {text, isFinal})
 ← debug_vad_speech_detected {isFinal:false, segmentType:"new"|"correction"}   (interim, repeats)
 ← debug_vad_speech_detected {isFinal:true,  segmentType:"final"}              (commit)
 ← debug_conversationStateChange {state:"PreparingAudio", preparingAnswerState:"PreparingAnswer"}

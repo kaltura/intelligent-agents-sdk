@@ -64,7 +64,7 @@ await mgmt.intellects.create({
 
 | Value | Behavior |
 |---|---|
-| `false` | Fire-and-forget dispatch. A full turn takes ~2.9s. |
+| `false` | Fire-and-forget dispatch. The model's turn continues immediately; nothing waits on your handler. |
 | `true` | The backend polls up to `timeout` seconds (default 30) for an ACK via `POST /assistant/tool_response`. The host app supplies that ACK with `session.respondToTool(call.toolMetadata.id, response)`. |
 
 ### 2. The brain calls it → it streams a silent segment
@@ -182,7 +182,7 @@ The result carries `spiralRecovered` (boolean) and `firstAttempt: {toolCalls, sp
 
 #### Root cause of one class of spiral
 
-A duplicate-turn edge case (`isNewTurn:false`) used to let an already-successful tool call replay as if new, directly feeding a spiral rather than merely tripping its detectors. See [ARCHITECTURE-REFERENCE.md's "Tool-call spiral: what happened and how it's mitigated"](architecture-reference/resilience-and-failure-handling.md#tool-call-spiral-what-happened-and-how-its-mitigated) for the full mechanism. The `agent_start_speech` handler now clears/promotes tool-call dedup state only when `isNewTurn` is true.
+A duplicate-turn edge case (`isNewTurn:false`) can let an already-successful tool call replay as if new, directly feeding a spiral rather than merely tripping its detectors. The `agent_start_speech` handler guards against this: it clears/promotes tool-call dedup state only when `isNewTurn` is true. See [ARCHITECTURE-REFERENCE.md's "Tool-call spiral: what happened and how it's mitigated"](architecture-reference/resilience-and-failure-handling.md#tool-call-spiral-what-happened-and-how-its-mitigated) for the full mechanism.
 
 ### The LLM has no real-time clock
 

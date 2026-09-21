@@ -86,7 +86,7 @@ The output is a framework-agnostic descriptor:
 If you hand `mountWidget` (`src/experience/genui/renderers/mount.js`) a real DOM element as the mount target, it builds the whole thing for you:
 
 - One `<form class="kgenui__form">`.
-- One `<div class="kgenui__field">` per field, with a `<label>` and an `<input>`. The input `type` is inferred from the field type via `htmlInputType()`, for example `email`/`phone` map to `tel`, plus a `checkbox` mapping and others.
+- One `<div class="kgenui__field">` per field, with a `<label>` and an `<input>`. The input `type` is inferred from the field type via `htmlInputType()`: `email`→`email`, `phone`→`tel`, `int`/`float`→`number`, `bool`→`checkbox`, anything else→`text`.
 - `aria-required` and `aria-describedby` wired on each field.
 - Fields pre-filled from `knownValue`.
 - A submit button.

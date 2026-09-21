@@ -48,13 +48,20 @@ See the full [Use-Case Catalog](docs/USE-CASES.md) for all 13, each mapped to it
 
 ## Common Errors
 
-| Status | Code / Detail | Fix |
-|--------|--------------|-----|
-| 400 | `bad_request` | Malformed JSON or missing field |
-| 403 | Forbidden | Wrong KS type — admin KS for management, `geniegpcid` for conversations |
-| 400 | `AGENT_NOT_FOUND` | Check the `agentId` |
-| 400 | `AGENT_PARTNER_CONFIG_NOT_FOUND` | Create the intellect first |
-| 405 | Method Not Allowed | Use `GET` for `/assistant/status`; everything else is `POST` |
+The SDK wraps every error into a `KalturaError` with a stable `err.code`. Branch on that, not on prose or the raw upstream body.
+
+| Status | `err.code` | Fix |
+|--------|-----|-----|
+| 400 | `bad_request` | Fix the request body |
+| 403 | `forbidden` | Wrong KS type: admin KS for management, `geniegpcid` for conversations |
+| 405 | `method_not_allowed` | Use `GET` for `/assistant/status`; everything else is `POST` |
+
+Upstream error text is also normalized to a stable `err.code`, regardless of the HTTP status the backend returned it with:
+
+| Upstream detail contains | `err.code` | Fix |
+|---|-----|-----|
+| `AGENT_NOT_FOUND` | `agent_not_found` | Check the `agentId` |
+| `AGENT_PARTNER_CONFIG_NOT_FOUND` | `intellect_not_found` | Create the intellect first |
 
 ---
 

@@ -18,7 +18,7 @@ Getting this distinction right is the key to reliable behavior. If you need the 
 
 ## The context channel: request variables
 
-Request variables (`request_vars`) are the SDK's one channel for app-supplied context. Each variable is a string value the brain's prompt reads via `{{var}}` templating: a viewer's name, an account tier, or a whole JSON document the prompt reasons over. Seed them at connect time, update them any time after:
+Request variables (`request_vars`) are the SDK's one channel for app-supplied context. Each variable is a scalar value (string, number, boolean, or null) the brain's prompt reads via `{{var}}` templating: a viewer's name, an account tier, or a whole JSON document (as a string) the prompt reasons over. Seed them at connect time, update them any time after:
 
 ```js
 const session = new KalturaAvatarSession({
@@ -34,7 +34,7 @@ Three properties make this channel do the heavy lifting:
 
 - **Updates merge.** `updateRequestVars(vars)` merges what you pass into the session's canonical map. Send only the keys that changed; keys you omit keep their values. (The full merged map goes to the server each time, and the server also merges per-thread, so a headless `converse` call sending a delta behaves the same way.)
 - **Values persist for the whole thread.** Send a variable once and every later turn on that thread still sees it — you don't resend per turn. A new thread starts clean. On a warm reconnect the SDK re-sends the full map automatically.
-- **Values are strings, and can be big.** Tens of kilobytes of JSON in one variable works — the SDK's live verification pushes a ~31 KB blob through and reads it back (see [Runnable examples](#runnable-examples) below).
+- **Values can be big.** Each value must be a scalar (string, number, boolean, or null). A JSON document goes in as a string. Tens of kilobytes of JSON in one variable works — the SDK's live verification pushes a ~31 KB blob through and reads it back (see [Runnable examples](#runnable-examples) below).
 
 ### Page context: `setDynamicPrompt()`
 
@@ -87,7 +87,7 @@ const lint = lintPrompts(prompts, { allowClientVariables: true, knownVars: ['pag
 
 ### Reserved `sys__*` variables
 
-Reserved `sys__*` keys (like `sys__user_id` and `sys__thread_id`) are server-injected on every turn and rejected if you try to set them yourself, regardless of the gate — see [Reserved Template Variables](api/operate.md#reserved-template-variables-sys__). The SDK's own pre-flight rejects them (and non-string values) client-side before anything hits the wire.
+Reserved `sys__*` keys (like `sys__user_id` and `sys__thread_id`) are server-injected on every turn and rejected if you try to set them yourself, regardless of the gate — see [Reserved Template Variables](api/operate.md#reserved-template-variables-sys__). The SDK's own pre-flight rejects them (and non-scalar values such as objects and arrays) client-side before anything hits the wire.
 
 ### Server-side tools read them too
 

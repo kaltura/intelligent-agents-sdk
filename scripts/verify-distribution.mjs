@@ -347,7 +347,7 @@ if (!withBrowser) {
           const session = new ex.KalturaAvatarSession({
             token,
             srsBaseUrl: 'https://srs.example',
-            turnServerUrl: 'turn.avatar.us.kaltura.ai',
+            turnServerUrl: 'turn.example.com',
             videoEl,
             audioEl,
             socketFactory: () => ({ on() {}, emit() {}, disconnect() {} }),

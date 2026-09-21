@@ -83,7 +83,7 @@ A missing var exits 1 before any network call. Get a partner id and admin secret
 | `live-verify-capabilities.mjs` | Capability resolution plus the Lifecycle domain |
 | `live-verify-agents.mjs`, `live-verify-avatars.mjs`, `live-verify-catalog.mjs`, `live-verify-tools.mjs`, `live-verify-skills.mjs`, `live-verify-knowledge.mjs`, `live-verify-intellects-conversations.mjs`, `live-verify-threads-messages-feedback.mjs`, `live-verify-conversation-avatar-surface.mjs` | The write path of one management resource each |
 
-Every one of these has an `npm run live-verify:<name>` script except `live-verify.mjs`, plus four local-only scripts with no npm script and no CI job: `live-verify-intellect-config.mjs`, `live-verify-knowledge-kms.mjs`, `live-verify-feedback-flow.mjs`, `live-check-feedback-unfiltered.mjs`. Run those with `node scripts/<name>.mjs`.
+Every one of these has an `npm run live-verify:<name>` script except `live-verify.mjs`. Four have no npm script and no CI job. Run them with `node scripts/<name>.mjs`: `live-verify-intellect-config.mjs`, `live-verify-knowledge-kms.mjs`, `live-verify-feedback-flow.mjs`, `live-check-feedback-unfiltered.mjs`. One more has an npm script but no CI job either: `live-verify-force-language.mjs`, run by hand with `npm run live-verify:force-language`.
 
 Read the header comment of a script before running it. Each one states what it asserts and why that coverage exists.
 
@@ -151,10 +151,10 @@ Three entry points are easy to confuse. They do different things.
 | Workflow | Jobs |
 |---|---|
 | `ci.yml` | Offline tests with coverage, the 3-engine `avatar-media` matrix, the 3-engine `noise-suppressor` matrix, the Constitution verifier, lint/typecheck/circular, the docs gate, semgrep |
-| `live-verify.yml` | One job per live script, on pull requests, merge queue, and a schedule. `--env prod` |
+| `live-verify.yml` | One job per live script. Runs on manual dispatch, on a PR labeled `run-live-verify`, and in the merge queue. Only `live-verify-kickoff` also runs on a weekly schedule |
 | `release.yml` | `npm run verify:distribution -- <tag>`, which checks the published jsDelivr tree matches the tag |
 
-The four local-only scripts listed above have no CI job. Run them by hand when you touch their surface.
+The four local-only scripts, plus `live-verify-force-language.mjs`, have no CI job. Run them by hand when you touch their surface.
 
 ## Extending
 

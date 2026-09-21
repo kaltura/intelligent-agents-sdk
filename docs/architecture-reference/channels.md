@@ -23,9 +23,9 @@ socket.emit('asr-webrtc-ice-candidate', { candidate });
 
 PeerConnection configuration:
 
-- **TURN**: `turn.avatar.us.kaltura.ai` (default username/credential from `wire.js`'s `turnServers()`, four explicit port/transport URLs). See the [Endpoints & Credentials table](connection-and-handshake.md#endpoints--credentials).
-- **`iceTransportPolicy`**: set per the leg's `forceRelay` flag. The production runtime forces `'relay'` for ASR. The no-SDK debug app uses `'all'`. Both relay in practice, because the server only offers a private candidate.
-- **Audio constraints**: `{echoCancellation, autoGainControl, noiseReduction}`.
+- **TURN**: the `turnServerUrl` value returned by `appInit` (default username/credential from `wire.js`'s `turnServers()`, four explicit port/transport URLs). See the [Endpoints & Credentials table](connection-and-handshake.md#endpoints--credentials).
+- **`iceTransportPolicy`**: `'all'` for ASR, always (`SDK:wire.js iceConfig()`). Relays in practice anyway, because the server only offers a private candidate.
+- **Audio constraints**: `{echoCancellation, noiseSuppression, autoGainControl}`.
 - **Video**: none.
 
 Once connected, the server transcribes your speech and routes it to the brain automatically. There is no separate "send transcript" call.
@@ -37,14 +37,14 @@ Once connected, the server transcribes your speech and routes it to the brain au
 Standard **SRS WHEP**, completely independent of the socket. From the platform's built-in client's SRS signaling adapter:
 
 ```js
-const playUrl = stvNewSession.webrtc_url
-  ?? `${srsBaseUrl}/rtc/v1/play/?app=app&stream=${session_id}`;
+const whepUrl = stvNewSession.webrtc_url
+  ?? `${srsBaseUrl}/rtc/v1/whep/?app=app&stream=${session_id}`;
 
 // create a recv-only RTCPeerConnection, addTransceiver('video'|'audio', {direction:'recvonly'})
 const offer = await pc.createOffer();
 await pc.setLocalDescription(offer);
 
-const answerSdp = await fetch(`${srsBaseUrl}/rtc/v1/whep/?app=app&stream=${session_id}`, {
+const answerSdp = await fetch(whepUrl, {
   method: 'POST',
   headers: { 'Content-Type': 'application/sdp' },
   body: offer.sdp                       // plain SDP text, NOT JSON
