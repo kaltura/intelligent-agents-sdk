@@ -373,6 +373,46 @@ test('WHEP DELETE resolves a RELATIVE Location against the WHEP URL (no page-ori
   assert.equal(deleted, 'https://srs.example/rtc/v1/whip/?action=delete&token=abc');
 });
 
+test('WHEP DELETE keeps the subscribe URL path prefix when Location names a viewer', async () => {
+  // The real STV shape: the subscribe URL is prefixed (`…/rtc/v1/stv/{token}/whep/session/{sid}`)
+  // and Location is path-absolute from the media server's own root. Resolving it against the
+  // request URL the standard way drops the prefix, and that URL is refused — so the viewer slot
+  // stayed held until the server timed the session out on its own.
+  let deleted = null;
+  const whepFetch = async (url, init) => {
+    if (init?.method === 'DELETE') { deleted = url; return { ok: true, status: 200, text: async () => '', headers: { get: () => null } }; }
+    return { ok: true, status: 201, text: async () => 'answer', headers: { get: () => '/whep/session/sess-123/viewer/v42' } };
+  };
+  const { session, socket } = newSession({ fetch: whepFetch });
+  scriptHappyPath(socket, { webrtcUrl: 'https://srs.example/rtc/v1/stv/tok9/whep/session/sess-123' });
+  await session.connect();
+  session.disconnect();
+  await delay(10);
+  assert.equal(deleted, 'https://srs.example/rtc/v1/stv/tok9/whep/session/sess-123/viewer/v42');
+});
+
+test('media recovery releases the old viewer at the prefixed URL before re-subscribing', async () => {
+  // Re-subscribe uses the SAME session id, and the session holds ONE viewer slot: a release that
+  // misses means the new subscribe can be refused with 409 and recovery fails.
+  const deletes = [];
+  const posts = [];
+  const whepFetch = async (url, init) => {
+    if (init?.method === 'DELETE') { deletes.push(url); return { ok: true, status: 200, text: async () => '', headers: { get: () => null } }; }
+    posts.push(url);
+    return { ok: true, status: 201, text: async () => 'answer', headers: { get: () => `/whep/session/sess-123/viewer/v${posts.length}` } };
+  };
+  const { session, socket } = newSession({ fetch: whepFetch });
+  scriptHappyPath(socket, { webrtcUrl: 'https://srs.example/rtc/v1/stv/tok9/whep/session/sess-123' });
+  await session.connect();
+  const before = deletes.length;
+  await session._recoverMedia('stv');
+  assert.ok(deletes.length > before, 'the old viewer is released');
+  assert.equal(deletes[before], 'https://srs.example/rtc/v1/stv/tok9/whep/session/sess-123/viewer/v1');
+  assert.equal(session._whepLocation, 'https://srs.example/rtc/v1/stv/tok9/whep/session/sess-123/viewer/v2', 'the new viewer is tracked at the prefixed URL too');
+  session.disconnect();
+  await delay(10);
+});
+
 test('the WHEP resource is released exactly once, however many times disconnect() is called', async () => {
   const deletes = [];
   const whepFetch = async (url, init) => {

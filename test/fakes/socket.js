@@ -61,9 +61,12 @@ export const markerCount = (socket) => socket.emitsOf('onTextEntered').filter((p
  * (stvStartedTalking → stvFinishedTalking on later ticks), like the real server does.
  * Tests that call speak() right after connect() need it: speak() holds text until that
  * opening turn ends. Leave it off to test the hold window itself.
+ *
+ * `opts.webrtcUrl` overrides the `webrtc_url` the fake server sends in `stvNewSession`
+ * (for tests that need the real prefixed STV shape rather than the srsBaseUrl fallback form).
  * @param {FakeSocket} socket
  * @param {{audioMode?:boolean, capacityBusyTimes?:number, clientConfig?:object, noCapacity?:boolean, tierExceeded?:boolean,
- *   openingLine?:boolean, asrAnswer?: (offer: {type:string, sdp:string}) => Promise<{type:string, sdp:string}>}} [opts]
+ *   openingLine?:boolean, webrtcUrl?:string, asrAnswer?: (offer: {type:string, sdp:string}) => Promise<{type:string, sdp:string}>}} [opts]
  */
 export function scriptHappyPath(socket, opts = {}) {
   let busyLeft = opts.capacityBusyTimes || 0;
@@ -98,7 +101,7 @@ export function scriptHappyPath(socket, opts = {}) {
       stvNewSessionCount += 1;
       if (stvNewSessionCount > 1) socket.server('resumingSession', {});
       if (opts.audioMode) socket.server('stvNewSession', { status: 'audio/phone mode - no STV session' });
-      else socket.server('stvNewSession', { session_id: 'sess-123', status: 'session started', webrtc_url: 'https://srs.example/rtc/v1/whep/?app=app&stream=sess-123' });
+      else socket.server('stvNewSession', { session_id: 'sess-123', status: 'session started', webrtc_url: opts.webrtcUrl || 'https://srs.example/rtc/v1/whep/?app=app&stream=sess-123' });
       // Agent + permissions arrive on a later tick (after the session reply is processed).
       soon(() => { socket.server('showAgent', {}); soon(() => socket.server('askPermissions', { constraints: { audio: true, video: !opts.audioMode } })); });
     });

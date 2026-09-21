@@ -50,7 +50,7 @@
 import { Emitter } from './emitter.js';
 import { TranscriptTracker } from './transcript.js';
 import {
-  turnServers, iceConfig, createPeerConnection, buildJoin, buildStvNewSession, whepUrl, whepUrlHasPrivateIp,
+  turnServers, iceConfig, createPeerConnection, buildJoin, buildStvNewSession, whepUrl, whepUrlHasPrivateIp, whepResourceUrl,
   buildTextEntered, isAudioMode, CAPACITY_BACKOFF, DEFAULT_CM_URL, classifyAgentAction,
 } from './wire.js';
 import { inspectKs } from '../management/ks-inspect.js';
@@ -824,14 +824,16 @@ export class KalturaAvatarSession extends Emitter {
       req.then((r) => {
         if (!canceled || !r?.ok) return;
         const lateLoc = r.headers?.get?.('Location');
-        if (lateLoc) this._releaseWhep(resolveUrl(lateLoc, url));
+        if (lateLoc) this._releaseWhep(whepResourceUrl(lateLoc, url));
       }, () => { /* aborted or failed after the cancel — nothing was allocated that we can name */ });
       const res = await this._cancelable(req, () => { canceled = true; ac?.abort(); });
-      // The WHEP server's Location is often RELATIVE (e.g. "/rtc/v1/whip/?action=delete&…").
-      // Resolve it against the WHEP request URL NOW, so the DELETE hits SRS — not the page
-      // origin (which 404s and silently leaks the server-side STV session).
+      // The WHEP server's Location is RELATIVE: path-absolute from the media server's own
+      // root ("/whep/session/{sid}/viewer/{vid}"), or "/rtc/v1/whip/?action=delete&…" in
+      // the srsBaseUrl fallback form. Build the release URL from the request URL NOW (see
+      // wire.js whepResourceUrl): plain URL resolution would drop the path prefix the
+      // request URL carries, and the DELETE would name no viewer the server has.
       const loc = res.headers?.get?.('Location');
-      const resolvedLoc = loc ? resolveUrl(loc, url) : null;
+      const resolvedLoc = loc ? whepResourceUrl(loc, url) : null;
       // Reading the body is a network wait too. A cancel here already has the answer's
       // Location in hand, so release the session it names before rejecting.
       const answerSdp = await this._cancelable(res.text(), () => { if (res.ok && resolvedLoc) this._releaseWhep(resolvedLoc); });
@@ -3020,12 +3022,6 @@ function fatal(event) {
   return new KalturaError({ type: `https://docs.kaltura.com/agentic/errors/${info.code}`, title: info.code.replace(/_/g, ' '), code: info.code, status: info.num || undefined, detail: `${event}${info.num ? ` (${info.num})` : ''}` });
 }
 /** Map a getUserMedia rejection to a distinct SDK code + actionable guidance (R6). */
-
-/** Resolve a possibly-relative URL against a base (so a relative WHEP Location → absolute). @param {string} maybeRelative @param {string} base */
-function resolveUrl(maybeRelative, base) {
-  try { return new URL(maybeRelative, base).href; } catch { return maybeRelative; }
-}
-
 function micError(err) {
   const name = (err && (err.name || err.constructor?.name)) || '';
   const M = {

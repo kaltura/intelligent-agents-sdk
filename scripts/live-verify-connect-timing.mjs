@@ -321,6 +321,16 @@ try {
       await new Promise((r) => setTimeout(r, 300));
       const late = whepSummary(sink.network).filter((l) => !run.whep.includes(l));
       if (late.length) report.note(`run ${i}: WHEP after disconnect()`, late);
+      // The viewer release itself, as a check and not a note. A DELETE that is refused
+      // or blocked leaves this viewer held until the server releases the session on its
+      // own, and a re-subscribe to the same session can come back 409 in the meantime.
+      // Only a POST-shaped check ran here before, so a failing DELETE was invisible.
+      if (mediaMode !== 'audio') {
+        const deletes = late.filter((/** @type {string} */ l) => l.startsWith('DELETE '));
+        report.check(`run ${i}: the WHEP viewer was released on disconnect()`,
+          deletes.length > 0 && deletes.every((/** @type {string} */ l) => /→ 2\d\d$/.test(l)),
+          { deletes, whepAfterDisconnect: late });
+      }
       run.whep = whepSummary(sink.network);
     } catch (err) {
       run.error = String(/** @type {any} */ (err)?.message || err);

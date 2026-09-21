@@ -44,7 +44,7 @@
  */
 import { Emitter } from './emitter.js';
 import { KalturaError } from '../core/errors.js';
-import { turnServers, iceConfig, whepUrlHasPrivateIp } from './wire.js';
+import { turnServers, iceConfig, whepUrlHasPrivateIp, whepResourceUrl } from './wire.js';
 import { AvatarMedia } from './avatar-media.js';
 
 export class KalturaScriptedVideoSession extends Emitter {
@@ -153,7 +153,7 @@ export class KalturaScriptedVideoSession extends Emitter {
       }
       const answerSdp = await res.text();
       const loc = res.headers?.get?.('Location');
-      this._whepLocation = loc ? resolveUrl(loc, this._whepUrl) : null;
+      this._whepLocation = loc ? whepResourceUrl(loc, this._whepUrl) : null;
       // The server can rewrite the egress host in the response's Location header even
       // when whepUrl itself checked clean — re-check after resolving it (mirrors
       // KalturaAvatarSession's _connectStv).
@@ -260,7 +260,3 @@ function whepStatusHint(status) {
   return `WHEP HTTP ${status}.`;
 }
 
-/** @param {string} maybeRelative @param {string} base */
-function resolveUrl(maybeRelative, base) {
-  try { return new URL(maybeRelative, base).href; } catch { return maybeRelative; }
-}

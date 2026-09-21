@@ -83,7 +83,7 @@ bundlePolicy: "max-bundle"
   Content-Type: application/sdp
   body: <client offer SDP>          → response body: <answer SDP>  (HTTP 201)
   ```
-Teardown = `DELETE` to the `Location` header from the 201.
+Teardown = `DELETE` to the WHEP resource named by the 201's `Location` header. That header is path-absolute from the media server's own root (`/whep/session/{session_id}/viewer/{viewer_id}`), so it carries none of the path prefix the subscribe URL has: the release URL is the POSTed subscribe URL plus the header's `/viewer/…` suffix (`SDK:wire.js whepResourceUrl()`). An absolute `Location` is used as-is, and any other relative one (the `srsBaseUrl` fallback form's `?action=delete` shape) resolves against the subscribe URL the usual way. Resolving a `/viewer/…` header against the origin instead drops the prefix, and the `DELETE` misses: the viewer slot stays held until the server releases the session on its own.
 
 WHEP status codes:
 

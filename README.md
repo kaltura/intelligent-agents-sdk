@@ -330,7 +330,7 @@ Non-fatal problems on this path arrive as `warning` events, `{ code, message, ..
 |---|---|---|
 | `playback_blocked` | The browser refused `play()` (autoplay policy). Payload has `kind: 'video' \| 'audio'`. | Show a "tap to start" control and call `startPlayback()` from it. |
 | `media_attach_failed` | A downlink track could not be routed (no `MediaStream` constructor, bad element). Payload has `kind: 'video' \| 'audio'` and `detail`. | Fall back to the `'track'` event or fix the element. |
-| `whep_delete_failed` | The WHEP `DELETE` on disconnect failed; the server will time the session out on its own. | Nothing; informational. |
+| `whep_delete_failed` | The WHEP `DELETE` that releases this viewer failed. Harmless on a hangup: the server releases the session itself once the socket closes. A later re-subscribe to the same session can come back `409` while the old viewer is still held. | Nothing; informational. |
 | `empty_turn_with_request_vars` | The intellect rejected `request_vars` because `allow_client_variables` is off (see the `{{var}}` section). | Enable the intellect flag. |
 | `mic_permission_denied` / `mic_not_found` / `mic_in_use` / `devices_permission_denied` | The default `micStartMode: 'immediate'` mic acquire failed. `connect()` never waits on or fails for the mic, so the session is `connected` mic-less. Payload has `detail`. | Typed turns (`speak()`) work as-is. Offer a mic button and call `startMic()` from the click to retry; it rejects with the same code if the mic still fails. |
 | `noise_processor_failed` | `noiseProcessor` threw during the background mic acquire; the raw stream was stopped. | Fix the processor. `startMic()` retries and rejects with this code if it throws again. |

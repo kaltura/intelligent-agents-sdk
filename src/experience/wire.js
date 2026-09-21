@@ -239,6 +239,27 @@ export function whepUrlHasPrivateIp(url) {
   return isPrivateOrLoopbackHost(String(url));
 }
 
+/**
+ * The URL the WHEP resource (this viewer of this STV session) is released at with a `DELETE`.
+ *
+ * The subscribe 201 carries a `Location` header. Absolute → used as-is. Relative and naming a
+ * viewer (`…/viewer/{viewerId}`) → the `/viewer/…` suffix is appended to the subscribe URL: the
+ * header is path-absolute from the media server's own root, so plain URL resolution would drop the
+ * path prefix the subscribe URL carries and the DELETE would miss. Any other relative header
+ * resolves against the subscribe URL the standard way (the `srsBaseUrl` fallback form's
+ * `?action=delete` shape).
+ * @param {string} location   `Location` header from the 201.
+ * @param {string} requestUrl The URL the subscribe was POSTed to.
+ */
+export function whepResourceUrl(location, requestUrl) {
+  const loc = String(location);
+  const viewer = loc.indexOf('/viewer/');
+  if (viewer !== -1 && !/^[a-z][a-z0-9+.-]*:\/\//i.test(loc)) {
+    return `${String(requestUrl).replace(/[?#].*$/, '').replace(/\/+$/, '')}${loc.slice(viewer)}`;
+  }
+  try { return new URL(loc, requestUrl).href; } catch { return loc; }
+}
+
 /** The text-injection payload for {@link speak}. @param {string} text @param {boolean} [isFinal] @param {boolean} [isSpeechStart] */
 export function buildTextEntered(text, isFinal = true, isSpeechStart) {
   const p = { text, isFinal };
