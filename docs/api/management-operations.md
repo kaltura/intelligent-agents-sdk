@@ -24,7 +24,7 @@ The request also takes a top-level `orderBy` (`+createdAt`, `-createdAt`, `+upda
 
 | Operation | Endpoint | Body |
 |-----------|----------|------|
-| Create | `POST /v1/avatar/create` | `{"voice":{"id":"...","speed"?:1.0}, "visual"?:{"id":"...","motionControl"?:{...}}, "face"?:{"id":"..."}, "background"?:{"type":"color"\|"visual","value"?:"..."}, "templateId"?:"...", "name"?:"...", "openingPhrase"?:"..."}` (`openingPhrase` non-empty; `SILENT_OPENING` for no spoken opening). Visual resolution rules: [build/avatar-and-agent.md § Three ways to get a visual](build/avatar-and-agent.md#three-ways-to-get-a-visual). |
+| Create | `POST /v1/avatar/create` | `{"voice":{"id":"...","speed"?:1.0}, "visual"?:{"id":"...","motionControl"?:{...}}, "face"?:{"id":"..."}, "background"?:{"type":"color"\|"visual","value"?:"..."}, "templateId"?:"...", "name"?:"...", "openingPhrase"?:"..."}` (leave `openingPhrase` unset: the intellect's `opening_phrase` owns the opening line, see [START-THE-CONVERSATION.md](../START-THE-CONVERSATION.md#where-the-opening-phrase-lives)). Visual resolution rules: [build/avatar-and-agent.md § Three ways to get a visual](build/avatar-and-agent.md#three-ways-to-get-a-visual). |
 | List | `POST /v1/avatar/list` | `{"pager":{"offset":0,"limit":30}}` |
 | Get | `POST /v1/avatar/get` | `{"id":"24-char-hex"}` |
 | Update | `POST /v1/avatar/update` | `{"id":"24-char-hex", ...fields}` — PATCH semantics (omitted fields are preserved); `templateId` is create-only (400 on update) |
@@ -58,7 +58,7 @@ Typed setters on `mgmt.intellectConfig` for the other single-purpose fields, all
 | Setter | Field | Clear with |
 |---|---|---|
 | `setModelConfiguration` | `model_configuration` (`model_id` in `MODEL_IDS`, `max_output_tokens`, `thinking_level` in `THINKING_LEVELS`, `temperature`) | `null` |
-| `setOpeningPhrase` | `opening_phrase` (Jinja2 over `request_vars`, avatar sessions; overrides the avatar's `openingPhrase`; `SILENT_OPENING` for no spoken opening, see [START-THE-CONVERSATION.md](../START-THE-CONVERSATION.md)) | `null` |
+| `setOpeningPhrase` | `opening_phrase` (the opening line of every avatar session; Jinja2 over `requestVars` + `sys__*`; `SILENT_OPENING` for no spoken opening, see [START-THE-CONVERSATION.md](../START-THE-CONVERSATION.md#personalize-the-opening)) | `null` |
 | `setThreadStartTools` | `thread_start_tools` (tool ids run once at thread start) | `[]` |
 | `setAvatarSummaryConfig` | `avatar_summary_config` (`prompt`, `analysis`, `template`, `content_type` in `SUMMARY_CONTENT_TYPES`) | `null` |
 | `setSkillIds` | `skill_ids` (`{ id, mode, condition? }`, `mode` in `SKILL_MODES`) | `[]` |

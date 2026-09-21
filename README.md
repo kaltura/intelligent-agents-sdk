@@ -243,7 +243,7 @@ session.onToolCall('navigate_to_slide', ({ slide_num }) => deck.goTo(slide_num))
 
 **When it sends:** `speak(text)` is safe to call at any moment after `connect()` resolves. If the agent is idle, thinking, or talking a normal reply, the text goes out now (a talking avatar stops mid-sentence and answers it). If the agent is in a turn typed text can't interrupt (its opening line right after `connect()`/`resume()`, or its own "are you still there?" check-in), the text is held and sent the instant that turn ends. Several `speak()` calls during one held turn go out as one turn, one text per line. The promise resolves `true` once sent, `false` if the session ended first. Details: [docs/DYNAMIC-DATA-INJECTION.md](docs/DYNAMIC-DATA-INJECTION.md#when-speak-actually-sends).
 
-**Starting the conversation:** pass `kickoff: 'text'` (or `{ text, echo? }`) and the SDK sends that text as the first turn, exactly once per session object, the moment the server accepts input. Pair it with a silent opening phrase (`SILENT_OPENING`, exported from `./management` and `./experience`) and the agent's first words are its own interruptible reply about two seconds after `connect()` resolves. Never re-sent on `resume()` or a reconnect. Guide: [docs/START-THE-CONVERSATION.md](docs/START-THE-CONVERSATION.md).
+**Starting the conversation:** pass `kickoff: 'text'` (or `{ text, echo? }`) and the SDK sends that text as the first turn, exactly once per session object, the moment the server accepts input. Pair it with a silent opening phrase on the intellect (`SILENT_OPENING`, exported from `./management` and `./experience`) and the agent's first words are its own interruptible reply about two seconds after `connect()` resolves. Never re-sent on `resume()` or a reconnect. Guide: [docs/START-THE-CONVERSATION.md](docs/START-THE-CONVERSATION.md).
 
 **All transports are injected** — `socketFactory`, `rtcConstructor`, `fetch`, `getUserMedia`. Tests pass fakes; the SDK stays zero-dependency.
 
@@ -1058,7 +1058,7 @@ await mgmt.intellects.secrets.set(configId, { API_KEY: value }, ks);  // write-o
 await mgmt.intellectConfig.setKnowledgeIds(configId, [knowledgeId], ks);  // ungated
 await mgmt.intellectConfig.setMcpServers(configId, { docs: { url: 'https://mcp.example.com/sse' } }, ks);  // ungated
 await mgmt.intellectConfig.setModelConfiguration(configId, { model_id: 'gemini-3.5-flash', temperature: 0.3 }, ks);
-await mgmt.intellectConfig.setOpeningPhrase(configId, 'Hi {{ user_name }}, what can I help with?', ks);
+await mgmt.intellectConfig.setOpeningPhrase(configId, '{% if user_name %}Hi {{ user_name }}, what can I help with?{% else %}Hi, what can I help with?{% endif %}', ks);
 await mgmt.intellectConfig.setThreadStartTools(configId, [toolId], ks);
 await mgmt.intellectConfig.setAvatarSummaryConfig(configId, {
   analysis: { summary: 'Two-sentence recap', next_step: 'The one action the user agreed to' },
@@ -1071,7 +1071,7 @@ await mgmt.intellectConfig.setAvatarSummaryConfig(configId, {
 
 `setModelConfiguration` picks the chat model and its sampling limits. `model_id` must be one of `MODEL_IDS`, `thinking_level` one of `THINKING_LEVELS` (`'low'`/`'high'`, Gemini only), `max_output_tokens` a positive integer, `temperature` 0..1. Pass `null` to return to the backend defaults. Which models answer depends on your partner's region, so run `converseOnce` once after switching. With `avatar_show_content` on, the backend fills an unset `thinking_level` with `'low'` and `max_output_tokens` with 4096.
 
-`setOpeningPhrase` sets the phrase the avatar speaks when a session starts. It is a Jinja2 template over `request_vars`, rendered server-side, and it overrides the avatar's own `openingPhrase`. The rendered text is stored on the thread as an `opening` message. Pass `null` to clear. The opening turn cannot be interrupted, so for the fastest start pass `SILENT_OPENING` here (or on the avatar, or as `provision({ openingPhrase })`) and let the browser send the first turn with `kickoff`. See [docs/START-THE-CONVERSATION.md](docs/START-THE-CONVERSATION.md).
+`setOpeningPhrase` sets the line the avatar speaks as the first turn of a session. The intellect's `opening_phrase` owns that line (`provision({ openingPhrase })` writes it here and leaves the avatar's `openingPhrase` unset). It is a Jinja2 template, rendered server-side once per session, over the client variables in `requestVars` (once `intellects.setClientVariablesEnabled(configId, true, ks)` is on) and the reserved `sys__*` variables. A missing variable renders as empty text, so guard optional ones with `{% if user_name %}…{% else %}…{% endif %}`. The rendered text is stored on the thread as an `opening` message. Pass `null` to clear. The opening turn cannot be interrupted, so for the fastest start pass `SILENT_OPENING` here and let the browser send the first turn with `kickoff`. See [docs/START-THE-CONVERSATION.md § Personalize the opening](docs/START-THE-CONVERSATION.md#personalize-the-opening).
 
 `setThreadStartTools` lists tool ids the backend runs once at the start of every thread, before the first turn. Only `api` and `code` tools run. The result feeds the model and never appears as a `tool` segment. Pass `[]` to clear.
 

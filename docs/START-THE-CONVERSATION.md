@@ -1,6 +1,6 @@
-# Start the conversation: silent opening + `kickoff`
+# Start the conversation: opening phrase, `SILENT_OPENING` + `kickoff`
 
-The fastest, most predictable way to get an agent talking: give the avatar a silent opening phrase and let the SDK send the first turn for you.
+The intellect's `opening_phrase` owns the first turn of every avatar session. The fastest, most predictable way to get an agent talking is to make that turn silent and let the SDK send the first turn for you:
 
 ```js
 // server, once, at provisioning time
@@ -16,35 +16,68 @@ const session = new KalturaAvatarSession({
 await session.connect();   // the SDK sends the kickoff once, the moment the server accepts input
 ```
 
-The user hears the agent's own greeting about two seconds after `connect()` resolves, and can interrupt it from the first word.
+The user hears the agent's own greeting about two seconds after `connect()` resolves, and can interrupt it from the first word. When you want a fixed, scripted first line instead, write it to the intellect as a Jinja2 template ([§ Personalize the opening](#personalize-the-opening)).
 
-## Why not a scripted opening line
+## Where the opening phrase lives
 
-Every avatar has an `openingPhrase`. The server speaks it as the first turn of a session, and that turn cannot be interrupted: anything the user says or types while it plays is ignored by the server. The SDK protects typed text (`speak()` holds it until the turn ends, see below), but the user still waits for the whole scripted line before the agent can react to them.
+The intellect's `opening_phrase` is the one place to set the opening line. The browser never sends one.
+
+| How | What it does |
+|---|---|
+| `provision({ brief, ks, openingPhrase })` | Creates the avatar with no `openingPhrase`, then writes `openingPhrase` to the new intellect's `opening_phrase`. Wins over the phrase in the generated profile. Default is the profile's phrase, then `'Hello!'`. |
+| `intellectConfig.setOpeningPhrase(configId, phrase, ks)` | Sets or changes the phrase on an existing intellect. `null` clears it. |
+
+The phrase must be a non-empty string. An empty string is rejected. For a silent opening use `SILENT_OPENING`, never `''`.
+
+`provision()` creates the avatar before it writes the intellect, so the intellect write is always the last opening-phrase write of the run. An avatar can also carry an `openingPhrase` of its own (`avatars.create` / `avatars.update`); it is spoken only for a session whose intellect has no `opening_phrase`. Leave it unset. If an avatar you did not provision with the SDK has one, clear it:
+
+```js
+await kaltura.avatars.update({ id: avatarId, openingPhrase: null }, ks);   // voice and visual untouched
+```
+
+`SILENT_OPENING` is exported from both `./management` and `./experience`, together with `SILENT_OPENING_LABEL` (`[silence]`), the caption text the session classes emit for the silent turn.
+
+## Personalize the opening
+
+`opening_phrase` is a Jinja2 template. The server renders it once per session, before the first turn, so the same intellect can greet every visitor differently:
+
+```js
+await kaltura.intellectConfig.setOpeningPhrase(
+  configId,
+  '{% if user_name %}Welcome back, {{ user_name }}. Shall we pick up where we left off?{% else %}Hello there! What brings you here today?{% endif %}',
+  ks,
+);
+```
+
+The template can read two kinds of variables:
+
+| Variable | Comes from | Notes |
+|---|---|---|
+| Client variables such as `user_name` | `new KalturaAvatarSession({ ..., requestVars: { user_name: 'Ada' } })` | The intellect must allow them first: `intellects.setClientVariablesEnabled(configId, true, ks)`. See [DYNAMIC-DATA-INJECTION.md § The gate](DYNAMIC-DATA-INJECTION.md#the-gate-allow_client_variables). |
+| `sys__*` such as `sys__is_new_thread`, `sys__user_id` | Set by the server on every session | Full list: [api/operate.md § Reserved Template Variables](api/operate.md#reserved-template-variables-sys__). |
+
+Rules that matter in practice:
+
+- A variable that was not sent renders as empty text, so `Hello {{ user_name }}!` becomes `Hello !`. Guard every optional variable with `{% if var %}…{% else %}…{% endif %}`.
+- Client variables sent to an intellect that does not allow them, or a template that cannot be rendered, mean the session fails to start. Test a new template on a scratch intellect before you ship it.
+- The rendered text reaches the browser as the opening `speechChunk` / `transcript` events and is stored on the thread as an `opening` message.
+- The scripted turn cannot be interrupted. Keep it to one or two sentences, or use `SILENT_OPENING` plus `kickoff` and put the personalization in `requestVars` and the kickoff text instead.
+
+`scripts/live-verify-opening-phrase.mjs` is the CI-verified example of this path: it provisions a throwaway agent, sets a `{% if %}` template, connects with and without `requestVars`, and asserts the spoken opening for each. `test/integration/intellect-config.test.js` and `test/integration/avatars-catalog.test.js` cover the same calls without a live backend.
+
+## Scripted opening or silent opening + kickoff
+
+The server speaks `opening_phrase` as the first turn of a session, and that turn cannot be interrupted: anything the user says or types while it plays is ignored by the server. The SDK protects typed text (`speak()` holds it until the turn ends, see below), but the user still waits for the whole scripted line before the agent can react to them.
 
 A silent opening removes that wait. `SILENT_OPENING` is a valid, non-empty opening phrase that produces no speech. The opening turn still runs, so the session follows the normal path, but it ends in well under a second. The `kickoff` text then goes out as the first real turn. The agent's reply to it is an ordinary, interruptible turn driven by your prompt, not a fixed script.
 
-| | Scripted `openingPhrase` | `SILENT_OPENING` + `kickoff` |
+| | Scripted `opening_phrase` | `SILENT_OPENING` + `kickoff` |
 |---|---|---|
-| First words come from | a fixed string, rendered server-side | the model, following your prompt and the kickoff text |
+| First words come from | a fixed template, rendered server-side | the model, following your prompt and the kickoff text |
 | Interruptible | no | yes |
-| Personalized | via `{{request_vars}}` in the phrase | via the prompt, `request_vars`, and the kickoff text |
+| Personalized | via Jinja2 over `requestVars` and `sys__*` in the phrase | via the prompt, `requestVars`, and the kickoff text |
 | Time from `connect()` to first words | length of the scripted line plus server latency | about 1.8 s in live measurements |
-| Where the greeting text lives | avatar or intellect config | your browser code (or `request_vars`) |
-
-`openingPhrase` must be a non-empty string. An empty string makes the first turn fail. Use `SILENT_OPENING`, never `''`.
-
-## Setting the silent opening
-
-Three places can set the opening phrase. The intellect's phrase, when set, overrides the avatar's. The browser never sends one.
-
-| Where | How | Notes |
-|---|---|---|
-| `provision()` | `provision({ brief, ks, openingPhrase: SILENT_OPENING })` | Writes the phrase to both the avatar and the intellect, so it holds on every path. Wins over the phrase in the generated profile. Default stays `'Hello!'` when omitted. |
-| Avatar | `avatars.create({ ..., openingPhrase: SILENT_OPENING }, ks)` or `avatars.update({ id: avatarId, openingPhrase: SILENT_OPENING }, ks)` | The avatar-level default for every session on that avatar. |
-| Intellect | `intellectConfig.setOpeningPhrase(configId, SILENT_OPENING, ks)` | Overrides the avatar's phrase. Pass `null` to clear and fall back to the avatar's phrase. |
-
-`SILENT_OPENING` is exported from both `./management` and `./experience`, together with `SILENT_OPENING_LABEL` (`[silence]`), the caption text the session classes emit for the silent turn.
+| Where the greeting text lives | the intellect's `opening_phrase` | your browser code (or `requestVars`) |
 
 ## The `kickoff` option
 
@@ -146,7 +179,9 @@ With `micStartMode: 'deferred'` the SDK does not touch the mic at all until you 
 |---|---|---|
 | The kickoff text shows up as a user message | `echo: true`, or an `onBeforeSend` hook added to the text, so the added part surfaces on its own | Use `echo: false` (the default) and put the wording in the kickoff text itself instead of adding it in `onBeforeSend`. |
 | `warning` with code `kickoff_failed` | A guardrail or the disclosure gate rejected the send, or the session ended first. `detail` says which. | Fix the guardrail, or call `speak()` yourself after the gate opens. |
-| The agent speaks a scripted line before the kickoff reply | The intellect's `opening_phrase` or the avatar's `openingPhrase` is not `SILENT_OPENING` | Check both. The intellect's phrase overrides the avatar's. |
+| The agent speaks a scripted line before the kickoff reply | The intellect's `opening_phrase` is not `SILENT_OPENING`, or the intellect has none and the avatar carries a legacy `openingPhrase` | `intellectConfig.setOpeningPhrase(configId, SILENT_OPENING, ks)`; clear the avatar's copy with `avatars.update({ id, openingPhrase: null }, ks)`. |
+| The opening says `Hello !` or greets nobody | A template variable was not sent and rendered as empty text | Guard it: `{% if user_name %}…{% else %}…{% endif %}`. |
+| The session never starts after setting a template | The template cannot be rendered, or `requestVars` were sent without `setClientVariablesEnabled(configId, true, ks)` | Fix the template on a scratch intellect first; enable client variables before sending any. |
 | `session.kickoff.sent` is `true` but nothing was said | The reply is still pending, or the model chose to say nothing | Watch `responsePending` / `responseSettled`. A second `speak()` starts a new turn. |
 | Two sessions on one page both greet | Each session object sends its own kickoff once | Construct one session per conversation. |
 | Kickoff sent again after `resume()` or a reconnect | It is not. `session.kickoff.sent` stays `true`. | If you see a second greeting, it comes from your own `speak()` call. |
@@ -156,6 +191,7 @@ With `micStartMode: 'deferred'` the SDK does not touch the mic at all until you 
 | Doc | What it adds |
 |---|---|
 | [README.md § Experience](../README.md#experience) | The `kickoff` option in context with the other session options. |
+| [DYNAMIC-DATA-INJECTION.md § The context channel](DYNAMIC-DATA-INJECTION.md#the-context-channel-request-variables) | `requestVars`, the `allow_client_variables` gate, and the reserved `sys__*` names the opening template can read. |
 | [DYNAMIC-DATA-INJECTION.md § When speak() actually sends](DYNAMIC-DATA-INJECTION.md#when-speak-actually-sends) | The hold behavior for every `speak()` call, not just the first. |
 | [VOICE-INPUT-MODES.md](VOICE-INPUT-MODES.md) | Open-mic vs push-to-talk, and mic-less sessions. |
 | [wire-protocol/connection-basics.md](wire-protocol/connection-basics.md) | The connect sequence step by step, including where the opening turn starts. |

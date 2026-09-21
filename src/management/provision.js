@@ -4,9 +4,13 @@
  * produce the same agent.
  *
  * Sequence (all on documented endpoints; no new API):
- *   generateProfile → intellect.add → intellect.update (prompts + opening_phrase) →
- *   pick preset voice+visual → avatar.create →
+ *   generateProfile → intellect.add → pick preset voice+visual →
+ *   avatar.create (no openingPhrase) → intellect.update (prompts + opening_phrase) →
  *   agent.create → resolveWidgetId.
+ *
+ * The intellect's `opening_phrase` is the single owner of the opening line. The
+ * avatar is created first and without a phrase, then the intellect is written,
+ * so the intellect write is always the last opening-phrase write of the run.
  *
  * Returns every id plus a `_meta` provenance receipt. WRITE — NOT idempotent
  * (creates intellect+avatar+agent). On a partial failure the error names which
@@ -25,7 +29,7 @@ import { lintPersonaIdentity } from './prompt-lint.js';
  * @param {string} opts.ks                   Admin token.
  * @param {string} [opts.voiceId]            Override the auto-picked preset voice.
  * @param {string} [opts.visualId]           Override the auto-picked preset visual.
- * @param {string} [opts.openingPhrase]      The scripted opening line. Written to both the avatar (`openingPhrase`, governs avatar-only sessions) and the intellect (`opening_phrase`, governs agent-backed sessions and chat), so it takes effect on every path the provisioned agent can be reached through. Wins over the generated profile's phrase. Defaults to the profile's phrase, then `'Hello!'`. Pass `SILENT_OPENING` for a silent opening turn and start the conversation from the client with `kickoff` instead. Must be a non-empty string when given.
+ * @param {string} [opts.openingPhrase]      The opening line, written to the intellect's `opening_phrase` only. The avatar is created without a phrase, so the intellect decides what the first turn says. Wins over the generated profile's phrase. Defaults to the profile's phrase, then `'Hello!'`. May be a Jinja2 template (see docs/START-THE-CONVERSATION.md § Personalize the opening). Pass `SILENT_OPENING` for a silent opening turn and start the conversation from the client with `kickoff` instead. Must be a non-empty string when given.
  * @param {string[]} [opts.adminTags]
  * @param {number} [opts.maxConversationLength]
  * @param {string} [opts.idempotencyKey]
@@ -49,8 +53,8 @@ export async function provision(mgmt, opts) {
   try {
     const profile = await mgmt.application.generateProfile(opts.brief, opts.ks);
     const name = profile?.name || 'Demo agent';
-    // Caller's explicit phrase wins, then the generated profile's, then a safe default:
-    // the avatar rejects an empty opening, so this is never falsy.
+    // Caller's explicit phrase wins, then the generated profile's, then a safe
+    // default. Never falsy: the intellect rejects an empty opening_phrase.
     const opening = opts.openingPhrase ?? (profile?.openingPhrase || 'Hello!');
 
     step = 'intellect.add';
@@ -59,11 +63,26 @@ export async function provision(mgmt, opts) {
     if (!configId) throw new Error('intellect.add returned no id');
     created.configId = configId;
 
+    step = 'pick catalog';
+    const voiceId = opts.voiceId || (await firstPreset(mgmt, 'Voice', opts.ks));
+    const visualId = opts.visualId || (await firstPreset(mgmt, 'Visual', opts.ks));
+    if (!voiceId || !visualId) throw new Error('no preset catalog items available');
+
+    step = 'avatar.create';
+    // No `openingPhrase` on the avatar, on purpose. The intellect's
+    // `opening_phrase` is the single owner of the opening line, and an avatar
+    // phrase would only be a second copy for the runtime to fall back to. The
+    // avatar is created BEFORE the intellect phrase is written, so the
+    // intellect write below is the last opening-phrase write of this run.
+    const av = await mgmt.avatars.create({
+      voice: { id: voiceId, speed: 1.0 },
+      visual: { id: visualId, motionControl: { speaking: 0.6, nonSpeaking: 0.2 } },
+    }, opts.ks, { idempotencyKey: idem + '-avatar' });
+    const avatarId = av?.id;
+    if (!avatarId) throw new Error('avatar.create returned no id');
+    created.avatarId = avatarId;
+
     step = 'intellect.update';
-    // The opening phrase lives in two stores and the runtime picks one by path:
-    // the intellect's `opening_phrase` governs agent-backed sessions (and chat),
-    // the avatar's `openingPhrase` governs avatar-only sessions. Write both so
-    // the caller's choice holds however the agent is reached.
     const body = intellectBody(configId, profile, opening);
     await mgmt.intellects.update(body, opts.ks);
 
@@ -74,21 +93,6 @@ export async function provision(mgmt, opts) {
     const personaLint = lintPersonaIdentity({
       name: profile?.name, openingPhrase: opening, baseDirective: body.base_directive, prompts: body.prompts,
     });
-
-    step = 'pick catalog';
-    const voiceId = opts.voiceId || (await firstPreset(mgmt, 'Voice', opts.ks));
-    const visualId = opts.visualId || (await firstPreset(mgmt, 'Visual', opts.ks));
-    if (!voiceId || !visualId) throw new Error('no preset catalog items available');
-
-    step = 'avatar.create';
-    const av = await mgmt.avatars.create({
-      voice: { id: voiceId, speed: 1.0 },
-      visual: { id: visualId, motionControl: { speaking: 0.6, nonSpeaking: 0.2 } },
-      openingPhrase: opening,
-    }, opts.ks, { idempotencyKey: idem + '-avatar' });
-    const avatarId = av?.id;
-    if (!avatarId) throw new Error('avatar.create returned no id');
-    created.avatarId = avatarId;
 
     step = 'agent.create';
     const ag = await mgmt.agents.create({

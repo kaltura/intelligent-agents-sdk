@@ -130,7 +130,7 @@ export class Avatars {
    *
    * @example <caption>Tag the AGENT, not the avatar</caption>
    * const avatar = await k.avatars.create(
-   *   { voice: { id: voiceId }, visual: { id: visualId }, openingPhrase: 'Hi!' },
+   *   { voice: { id: voiceId }, visual: { id: visualId } },
    *   adminKs,
    * );
    * await k.agents.create(
@@ -138,15 +138,15 @@ export class Avatars {
    *   adminKs,
    * );
    *
-   * `openingPhrase` MUST be non-empty. A falsy value (empty string, `null`, or
-   * omitted) makes the first turn fail right after `showAgent`; always pass a
-   * non-empty phrase. If you want no scripted greeting (the recommended
-   * fastest-start pattern: start the conversation from the client with the
-   * session's `kickoff` option instead), pass `SILENT_OPENING` (exported from
-   * `@kaltura/intelligent-agents/management`): non-empty, so it stays on the
-   * safe path, and silent, so nothing is spoken for it and the uninterruptible
-   * opening turn ends in under a second. Session classes surface that turn as
-   * `SILENT_OPENING_LABEL` (`[silence]`), never as the raw phrase.
+   * LEAVE `openingPhrase` UNSET. The intellect's `opening_phrase` owns the
+   * opening line (`intellectConfig.setOpeningPhrase`, or `provision()`'s
+   * `openingPhrase`, which writes the intellect only). An avatar phrase is a
+   * second copy: when set it must be a non-empty string of at most 1000
+   * characters, and it is spoken only for a session whose intellect has no
+   * `opening_phrase`. Never pass `''`. For a silent opening turn set
+   * `SILENT_OPENING` on the intellect and start the conversation from the
+   * client with the session's `kickoff` option. See
+   * docs/START-THE-CONVERSATION.md.
    *
    * THREE WAYS TO GET A VISUAL — pick exactly one:
    *  - `visual:{id}` — an existing catalog Visual (preset, or your own upload
@@ -186,7 +186,7 @@ export class Avatars {
    * catches the incomplete-pairing case for free, before the wire call — on
    * create, that includes an incomplete pair sent alongside `visual`.
    *
-   * @param {object} body {voice:{id,speed?},visual?:{id,motionControl?:{speaking,nonSpeaking}},face?:{id},background?:{type:'color'|'visual',value?:string},name?:string,templateId?:string,openingPhrase?:string}
+   * @param {object} body {voice:{id,speed?},visual?:{id,motionControl?:{speaking,nonSpeaking}},face?:{id},background?:{type:'color'|'visual',value?:string},name?:string,templateId?:string,openingPhrase?:string} — leave `openingPhrase` unset (see above)
    * @param {string} ks @param {{idempotencyKey?:string}} [opts]
    * @throws {import('../core/errors.js').KalturaError} `code:'bad_request'` if `adminTags` is passed, if `face`/`background` are incomplete/malformed, or if `background.value` for `type:'color'` isn't a 6-digit hex string (no alpha channel).
    */
@@ -199,9 +199,9 @@ export class Avatars {
 
   /**
    * Update an avatar. WRITE — idempotent. This is a PATCH: fields OMITTED from
-   * the body are PRESERVED server-side (sending `{id, openingPhrase}`
-   * alone keeps the existing `voice`/`visual`/`motionControl`). Send only the
-   * fields you want to change.
+   * the body are PRESERVED server-side (sending `{id, name}` alone keeps the
+   * existing `voice`/`visual`/`motionControl`). Send only the fields you want
+   * to change.
    *
    * NO TAGS, AND HERE IT'S A REAL SERVER REJECT: unlike {@link create},
    * the update request body genuinely has no tag field — `avatar/update`
@@ -209,8 +209,8 @@ export class Avatars {
    * SDK throws pre-network with an actionable message instead — tag the
    * parent AGENT (`agents.update({adminTags})`) instead.
    *
-   * @example <caption>Change just the opening phrase; voice/visual untouched</caption>
-   * await k.avatars.update({ id: avatarId, openingPhrase: 'Welcome back!' }, adminKs);
+   * @example <caption>Clear a legacy avatar-level opening phrase so the intellect's `opening_phrase` owns the line; voice/visual untouched</caption>
+   * await k.avatars.update({ id: avatarId, openingPhrase: null }, adminKs);
    *
    * Also accepts `face`+`background` to recompose the visual, but — UNLIKE
    * {@link create} — the pairing rule here is asymmetric and depends on the
@@ -224,7 +224,7 @@ export class Avatars {
    * `templateId` is REJECTED on update (400 `property templateId should not
    * exist`) — it's a create-only convenience.
    *
-   * @param {object} body {id:string, face?:{id}, background?:{type:'color'|'visual',value?:string}, name?:string, ...}
+   * @param {object} body {id:string, face?:{id}, background?:{type:'color'|'visual',value?:string}, name?:string, openingPhrase?:string|null, ...} — `openingPhrase: null` clears it; omitted preserves it
    * @param {string} ks
    * @throws {import('../core/errors.js').KalturaError} `code:'bad_request'` if `adminTags` is passed, or if a present `background` is malformed.
    */

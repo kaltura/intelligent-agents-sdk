@@ -376,12 +376,22 @@ export class IntellectConfig {
   // ─────────────────────────── Opening phrase ───────────────────────────
 
   /**
-   * Set `opening_phrase`: a Jinja2 template over `request_vars` (for example
-   * `Hello {{ user_name }}, how can I help you today?`) that the backend renders
-   * and speaks when an avatar WebSocket session starts. It overrides the opening
-   * phrase the client sends at init; the rendered value comes back in the init
-   * response and is stored on the thread as an `opening` message. `null` clears
-   * it (the client-sent phrase applies again). WRITE, idempotent.
+   * Set `opening_phrase`: the line the avatar speaks as the first turn of every
+   * session on this intellect. The intellect owns the opening line; `provision()`
+   * writes it here and leaves the avatar's `openingPhrase` unset.
+   *
+   * The phrase is a Jinja2 template rendered per session. It can read client
+   * variables (`KalturaAvatarSession({ requestVars })`, once
+   * `intellects.setClientVariablesEnabled(configId, true, ks)` is on) and the
+   * `sys__*` variables (e.g. `sys__is_new_thread`). A missing variable renders
+   * empty, so guard with `{% if var %}…{% else %}…{% endif %}`. Example:
+   * `{% if user_name %}Hello {{ user_name }}, welcome back.{% else %}Hello there!{% endif %}`.
+   * A template that cannot be rendered means the session fails to start.
+   *
+   * The rendered text reaches the client as the opening turn's `speechChunk` /
+   * `transcript` and is stored on the thread as an `opening` message. Pass
+   * `SILENT_OPENING` for a silent opening turn. `null` clears the phrase.
+   * See docs/START-THE-CONVERSATION.md § Personalize the opening. WRITE, idempotent.
    * @param {number} configId @param {string|null} phrase @param {string} ks (admin)
    * @returns {Promise<{applied:boolean, result?:any, sent?:object, _meta:object}>}
    */
@@ -389,7 +399,7 @@ export class IntellectConfig {
     this._.assertAdmin(ks, 'intellectConfig.setOpeningPhrase');
     requireInt(configId, 'intellectConfig.setOpeningPhrase configId');
     if (phrase !== null && (typeof phrase !== 'string' || !phrase.trim())) {
-      throw bad('intellectConfig.setOpeningPhrase needs a non-empty string (Jinja2 over request_vars) or null to clear it. Pass null, not "".');
+      throw bad('intellectConfig.setOpeningPhrase needs a non-empty string (a Jinja2 template, see docs/START-THE-CONVERSATION.md § Personalize the opening) or null to clear it. Pass null, not "".');
     }
     const { result, sent } = await this.patch(configId, { opening_phrase: phrase }, ks);
     return { applied: true, result, sent, _meta: meta({ partnerId: this._.partnerId, source: 'genie/intellect.opening_phrase', scope: `configId:${configId}` }) };

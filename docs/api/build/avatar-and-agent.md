@@ -14,14 +14,13 @@ POST https://api.avatar.us.kaltura.ai/v1/avatar/create
   "visual": {
     "id": "f5a6b7c8-d9e0-4f1a-2b3c-4d5e6f7a8b9c",
     "motionControl": { "speaking": 0.7, "nonSpeaking": 0.2 }
-  },
-  "openingPhrase": "Hello! I'm StreamBot. How can I help you today?"
+  }
 }
 ```
 
 `voice.id` and `visual.id` come from the catalog ([Catalog & Assets § Browse the Catalog](../design.md#browse-the-catalog)). For your own portrait, upload it first and use the returned `itemId` as `visual.id` ([§ Upload a Custom Visual](../design.md#upload-a-custom-visual-portrait--animated-avatar), which also covers how to prepare the photo). Returns `id` (24-char hex). **No `adminTags`** on avatars: tag the parent agent instead ([Management Operations § Avatars](../management-operations.md#avatars--httpsapiavataruskalturaai)).
 
-`openingPhrase` is the line the avatar speaks as the first, uninterruptible turn of every session. It must be a non-empty string. For the fastest interruptible start pass `SILENT_OPENING` (exported from `./management`, the string `<blank>`): the opening turn then produces no speech, and the browser sends the first turn with the session's `kickoff` option. See [START-THE-CONVERSATION.md](../../START-THE-CONVERSATION.md).
+Leave `openingPhrase` unset. The intellect's `opening_phrase` owns the first, uninterruptible turn of every session ([Configure an Intellect](intellect.md#configure-an-intellect)); `provision()` writes it there and creates the avatar without a phrase. An avatar-level `openingPhrase` is spoken only for a session whose intellect has none. Clear a legacy one with `avatars.update({ id, openingPhrase: null }, ks)`. Where the phrase lives, how to personalize it with Jinja2, and the silent-opening + `kickoff` pattern: [START-THE-CONVERSATION.md](../../START-THE-CONVERSATION.md).
 
 ### Three ways to get a visual
 
@@ -45,7 +44,7 @@ Whichever way you pick, the composed result is reflected in the created avatar's
 const templates = await mgmt.avatars.listTemplates(ks, { pageSize: 10 });
 const t = templates[0]; // { id, name: 'Adam', voice: { id }, face: { id, imageUrl } }
 await mgmt.avatars.create(
-  { voice: t.voice, templateId: t.id, background: { type: 'color', value: '#ffffff' }, openingPhrase: SILENT_OPENING },
+  { voice: t.voice, templateId: t.id, background: { type: 'color', value: '#ffffff' } },
   ks,
 );
 ```
@@ -58,7 +57,7 @@ Upload the two halves first ([Catalog & Assets § Upload a custom Face or Backgr
 const face = await mgmt.catalog.createFace(portraitBlob, { name: 'Support rep', genderPresentation: 'Feminine' }, ks);
 const bg = await mgmt.catalog.createBackground(backdropBlob, { name: 'Office', genderPresentation: 'Feminine' }, ks);
 await mgmt.avatars.create(
-  { voice: { id: voiceItemId }, face: { id: face.itemId }, background: { type: 'visual', value: bg.itemId }, openingPhrase: SILENT_OPENING },
+  { voice: { id: voiceItemId }, face: { id: face.itemId }, background: { type: 'visual', value: bg.itemId } },
   ks,
 );
 ```

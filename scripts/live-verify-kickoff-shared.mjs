@@ -226,12 +226,13 @@ export function management(target) {
 }
 
 /**
- * Provision a throwaway agent whose opening phrase is SILENT_OPENING, or reuse
- * the ids in `--agent-json <path>` (`{configId, agentId, widgetId, avatarId?}`).
+ * Provision a throwaway agent whose intellect opening phrase is
+ * `opts.openingPhrase` (default SILENT_OPENING), or reuse the ids in
+ * `--agent-json <path>` (`{configId, agentId, widgetId, avatarId?}`).
  * Returns the ids plus a `cleanup()` that deletes only what this call created.
  * @param {Management} kaltura
  * @param {string} adminKs
- * @param {{agentJson?:string, keep?:boolean, brief?:string}} opts
+ * @param {{agentJson?:string, keep?:boolean, brief?:string, openingPhrase?:string}} opts
  */
 export async function ensureAgent(kaltura, adminKs, opts) {
   if (opts.agentJson) {
@@ -245,7 +246,7 @@ export async function ensureAgent(kaltura, adminKs, opts) {
     created = await kaltura.provision({
       brief: opts.brief || 'A concise, friendly product guide for a live SDK verification run. Keep every answer to one or two short sentences.',
       ks: adminKs,
-      openingPhrase: SILENT_OPENING,
+      openingPhrase: opts.openingPhrase ?? SILENT_OPENING,
     });
   } catch (err) {
     // provision() throws with the ids created so far; delete them before re-throwing.

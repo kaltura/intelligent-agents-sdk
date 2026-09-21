@@ -63,6 +63,11 @@ name: Live verification
 # sit below it in a collapsed section. A weekly `schedule` run keeps a trend
 # (90-day artifacts) even when nothing is merged; only live-verify-kickoff runs
 # on that trigger.
+# live-verify-opening-phrase covers the intellect-owned opening phrase:
+# provision() writes it to the intellect only and leaves the avatar's unset, a
+# Jinja2 `{% if %}` template renders per session from client variables
+# (`requestVars`), and SILENT_OPENING on the intellect alone gives a silent
+# opening turn — see scripts/live-verify-opening-phrase.mjs.
 on:
   workflow_dispatch: {}
   pull_request:
@@ -118,6 +123,7 @@ jobs:
               - 'scripts/live-verify-kickoff.mjs'
               - 'scripts/live-verify-kickoff.html'
               - 'scripts/live-verify-kickoff-shared.mjs'
+              - 'scripts/live-verify-opening-phrase.mjs'
               - 'scripts/live-verify-connect-timing.mjs'
               - 'scripts/live-verify-set-forced-language.mjs'
               - 'scripts/live-verify-silent-mic-shared.mjs'
@@ -867,6 +873,62 @@ jobs:
             tail -n 40 live-verify-kickoff-output.log 2>/dev/null || true
             echo '```'
             echo "</details>"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  live-verify-opening-phrase:
+    name: 🔴🌐 Live verification (intellect-owned opening phrase + Jinja2 client variables, chromium)
+    needs: changes
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs.browser == 'true')
+    runs-on: ubuntu-latest
+    environment: live-verify
+    steps:
+      - name: 📥 Check out the repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: 🟢 Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+
+      - name: 📦 Install dependencies
+        run: npm ci
+
+      - name: 🎭 Install chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: 🔴🌐 Provision an agent with a Jinja2 opening phrase → check what landed on the intellect and avatar → voice the opening with and without requestVars → silent opening → cleanup
+        id: live_verify_opening_phrase
+        env:
+          AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
+          AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
+        run: |
+          set -o pipefail
+          node scripts/live-verify-opening-phrase.mjs --env prod 2>&1 | tee live-verify-opening-phrase-output.log
+
+      - name: 📤 Upload live-verify-opening-phrase artifacts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: live-verify-opening-phrase-artifacts
+          path: |
+            live-verify-artifacts/
+            live-verify-opening-phrase-output.log
+          retention-days: 30
+
+      - name: 📝 Write job summary
+        if: always()
+        run: |
+          {
+            echo "### 🔴🌐 Intellect-owned opening phrase + Jinja2 client variables — ${{ steps.live_verify_opening_phrase.outcome }}"
+            echo
+            for md in live-verify-artifacts/opening-phrase-*.md; do
+              [ -f "$md" ] && cat "$md" && echo
+            done
+            echo '```'
+            tail -n 40 live-verify-opening-phrase-output.log 2>/dev/null || true
+            echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
   live-verify-avatar-media:

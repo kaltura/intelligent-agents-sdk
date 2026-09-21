@@ -55,7 +55,7 @@ export AGENTIC_PARTNER_ID=1234567
 export AGENTIC_ADMIN_SECRET=your-admin-secret
 ```
 
-The two kickoff scripts also accept `--env` to pick a target:
+The scripts built on `live-verify-kickoff-shared.mjs` (`live-verify-kickoff.mjs`, `live-verify-connect-timing.mjs`, `live-verify-opening-phrase.mjs`) also accept `--env` to pick a target:
 
 | `--env` | Credentials | URLs |
 |---|---|---|
@@ -72,6 +72,7 @@ A missing var exits 1 before any network call. Get a partner id and admin secret
 | `live-verify.mjs` | Smoke test: admin token → intellect → conversation token → one turn → delete |
 | `live-verify-kickoff.mjs` | Every silent-opening + `kickoff` scenario, one fresh browser context each |
 | `live-verify-connect-timing.mjs` | Startup KPIs: time to `connect()`, first video frame, first audio, first agent words |
+| `live-verify-opening-phrase.mjs` | `provision()` writes the opening phrase to the intellect only, a Jinja2 `{% if %}` phrase renders per session from `requestVars`, and `SILENT_OPENING` on the intellect alone gives a silent opening turn |
 | `live-verify-browser.mjs` | Browser smoke test: real WHEP downlink, real WebRTC, real media element |
 | `live-verify-avatar-media.mjs` | The merged-stream media path against a real downlink |
 | `live-verify-session-complete.mjs` | The `session_completed` signal and its presence mechanism |
@@ -90,9 +91,9 @@ Two helper modules are not scripts and are never run directly: `live-verify-kick
 
 ### Flags
 
-Only `live-verify-kickoff.mjs` and `live-verify-connect-timing.mjs` take CLI flags (they share `live-verify-kickoff-shared.mjs`). Every other script is configured by env vars alone.
+Only `live-verify-kickoff.mjs`, `live-verify-connect-timing.mjs` and `live-verify-opening-phrase.mjs` take CLI flags (they share `live-verify-kickoff-shared.mjs`). Every other script is configured by env vars alone.
 
-Shared by both:
+Shared by all three:
 
 | Flag | Effect |
 |---|---|
@@ -105,7 +106,7 @@ Shared by both:
 | `--keep` | Do not delete the throwaway agent at the end |
 | `--agent-json PATH` | Reuse the agent described in `PATH` instead of provisioning one. Deletes nothing |
 
-`live-verify-kickoff.mjs` adds `--only IDS` (run these scenario ids only) and `--dump-events` (write the page's full event log for every scenario, not just failures).
+`live-verify-kickoff.mjs` and `live-verify-opening-phrase.mjs` add `--only IDS` (run these scenario ids only) and `--dump-events` (write the page's full event log for every scenario, not just failures). `--kickoff TEXT` has no effect on `live-verify-opening-phrase.mjs`, which never sends a kickoff.
 
 `live-verify-connect-timing.mjs` adds `--runs N`, `--mic immediate|deferred|denied`, `--mode avatar|agent-avatar`, `--opening TEXT`, `--no-kickoff`, `--budget-<kpi> MS`, `--no-budgets`, and `--hints off|on|ab`. `--hints ab` alternates runs between the plain page and the same page with `<link rel=preconnect|dns-prefetch|preload|modulepreload>` tags injected, then prints the per-arm medians and the delta. The full flag list with every KPI budget is in that script's header.
 
@@ -114,6 +115,7 @@ node scripts/live-verify-connect-timing.mjs --runs 5
 node scripts/live-verify-connect-timing.mjs --runs 10 --hints ab
 node scripts/live-verify-kickoff.mjs --env nvq2 --env-file ../.env --only V4,V6
 node scripts/live-verify-kickoff.mjs --browser chrome --headed --keep
+node scripts/live-verify-opening-phrase.mjs --env nvq2 --env-file ../.env --only P1,P2
 ```
 
 ### The throwaway agent

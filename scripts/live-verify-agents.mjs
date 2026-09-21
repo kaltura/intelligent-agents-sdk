@@ -118,7 +118,6 @@ try {
   const avatar = await kaltura.avatars.create({
     voice: { id: voiceId },
     visual: { id: visualItemId },
-    openingPhrase: `Hi, this is a live-verify agents probe ${RUN_TAG}.`,
   }, admin);
   avatarId = avatar.id;
   check('3-avatars-create', !!avatarId, { avatarId });

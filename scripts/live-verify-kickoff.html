@@ -19,6 +19,10 @@
                 resourceHints() in live-verify-kickoff-shared.mjs); recorded in
                 harness:ready as the number of <link rel> tags actually present
     reconnectWindowMs   forwarded to the avatar session
+    requestVars JSON object → KalturaAvatarSession({ requestVars }), the client
+                variables a Jinja2 opening phrase can branch on (needs
+                intellects.setClientVariablesEnabled on the intellect); recorded
+                in harness:ready as a boolean
 
   What it records beyond session events and socket frames
     pc:state            every ICE / connection / signaling state change per peer
@@ -56,6 +60,7 @@
     const headed = q.get('headed') === '1';
     const hints = q.get('hints') === '1';
     const reconnectWindowMs = q.get('reconnectWindowMs') ? Number(q.get('reconnectWindowMs')) : undefined;
+    const requestVars = q.get('requestVars') ? JSON.parse(q.get('requestVars')) : undefined;
     const ua = navigator.userAgent;
     const engine = /Firefox\//.test(ua) ? 'firefox' : (/AppleWebKit/.test(ua) && !/Chrome\//.test(ua)) ? 'webkit' : 'chromium';
 
@@ -292,6 +297,7 @@
       // The avatar session also talks to genie (session-completed signal, tool responses), so a
       // non-default environment must be passed here too, not only on the chat config.
       ...(init.genieUrl ? { genieUrl: init.genieUrl } : {}),
+      ...(requestVars ? { requestVars } : {}),
       videoEl,
       audioEl,
       socketFactory,
@@ -411,7 +417,7 @@
       return { hints: links, entries, nowMs: Math.round(performance.now()) };
     };
 
-    rec('harness:ready', { mode, kickoff: !!kickoff, echo, disclosure, mic, engine, headed, hints, hintTags: document.querySelectorAll('head link[rel]').length, sinceNavMs: Math.round(performance.now()), rvfc: typeof videoEl.requestVideoFrameCallback === 'function' });
+    rec('harness:ready', { mode, kickoff: !!kickoff, echo, disclosure, mic, engine, headed, hints, requestVars: !!requestVars, hintTags: document.querySelectorAll('head link[rel]').length, sinceNavMs: Math.round(performance.now()), rvfc: typeof videoEl.requestVideoFrameCallback === 'function' });
     window.__ready = true;
   </script>
 </body>

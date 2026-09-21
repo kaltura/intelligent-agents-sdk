@@ -799,4 +799,51 @@ describe('13. Silent opening + kickoff', () => {
       .filter((f) => /speakNow|micStartMode:\s*'required'/.test(read(f)));
     assert.deepEqual(offenders, [], `removed API still referenced in: ${offenders.join(', ')}`);
   });
+
+  test('the intellect owns the opening phrase: guide section exists and README + intellect doc link to it', () => {
+    assert.match(read(GUIDE), /^## Personalize the opening$/m, `${GUIDE} has no "## Personalize the opening" section`);
+    assert.match(read(GUIDE), /^## Where the opening phrase lives$/m, `${GUIDE} has no "## Where the opening phrase lives" section`);
+    const missing = ['README.md', 'docs/api/build/intellect.md'].filter((f) => !read(f).includes('START-THE-CONVERSATION.md#personalize-the-opening'));
+    assert.deepEqual(missing, [], `no link to the guide's § Personalize the opening in: ${missing.join(', ')}`);
+  });
+
+  test('no tracked file describes the opening phrase as living on both the avatar and the intellect', () => {
+    const patterns = [/both the avatar and the intellect/i, /overrides the avatar'?s `?openingPhrase/i, /\(or on the avatar/i, /openingPhrase.{0,40}on both/i];
+    const offenders = [];
+    for (const f of trackedFiles()) {
+      if (!/\.(md|js|mjs|html)$/.test(f) || f === SELF) continue;
+      read(f).split('\n').forEach((line, i) => {
+        if (patterns.some((p) => p.test(line))) offenders.push(`${f}:${i + 1}`);
+      });
+    }
+    assert.deepEqual(offenders, [], `the intellect's opening_phrase is the single owner; fix: ${offenders.join(', ')}`);
+  });
+
+  test('no avatars.create() call outside the avatar API-surface probe passes an openingPhrase', () => {
+    // live-verify-avatars.mjs exercises the avatar create/PATCH surface itself,
+    // openingPhrase included; every other create leaves the phrase to the intellect.
+    const allowed = new Set([SELF, 'scripts/live-verify-avatars.mjs']);
+    const offenders = [];
+    for (const f of trackedFiles()) {
+      if (!/\.(md|js|mjs|html)$/.test(f) || allowed.has(f)) continue;
+      const src = read(f);
+      const re = /avatars\.create\(/g;
+      let m;
+      while ((m = re.exec(src)) !== null) {
+        // Slice out the first argument by brace depth, so multi-line bodies are covered.
+        const start = src.indexOf('{', m.index);
+        if (start < 0) continue;
+        let depth = 0;
+        let end = start;
+        for (; end < src.length; end++) {
+          if (src[end] === '{') depth++;
+          else if (src[end] === '}' && --depth === 0) break;
+        }
+        if (/\bopeningPhrase\b/.test(src.slice(start, end + 1))) {
+          offenders.push(`${f}:${src.slice(0, m.index).split('\n').length}`);
+        }
+      }
+    }
+    assert.deepEqual(offenders, [], `avatars.create() must not set openingPhrase (the intellect owns it); fix: ${offenders.join(', ')}`);
+  });
 });

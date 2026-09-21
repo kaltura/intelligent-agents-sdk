@@ -39,9 +39,25 @@ test('avatars.update rejects a stray adminTags pre-network (the live reply is on
 test('avatars.create WITHOUT adminTags posts normally to avatar/create', async () => {
   const f = fakeFetch([{ match: '/avatar/create', respond: () => ({ body: { id: 'av1' } }) }]);
   const k = new Management({ partnerId: 1234567, adminSecret: 'a'.repeat(32), fetch: f });
-  const r = await k.avatars.create({ voice: { id: 'v' }, visual: { id: 'vis' }, openingPhrase: 'Hi' }, ADMIN);
+  const r = await k.avatars.create({ voice: { id: 'v' }, visual: { id: 'vis' } }, ADMIN);
   assert.equal(r.id, 'av1');
   assert.equal(f.calls.filter((c) => c.url.includes('/avatar/create')).length, 1);
+});
+
+// Developer example: the intellect's `opening_phrase` owns the opening line, so
+// an avatar should carry none. A legacy avatar-level phrase is cleared with a
+// PATCH of `openingPhrase: null`; the other fields are left out and so untouched.
+// Guide: docs/START-THE-CONVERSATION.md § Where the opening phrase lives.
+test('avatars.update({ id, openingPhrase: null }) clears a legacy avatar phrase and touches nothing else', async () => {
+  const f = fakeFetch([{ match: '/avatar/update', respond: () => ({ body: { id: 'av1', openingPhrase: null } }) }]);
+  const k = new Management({ partnerId: 1234567, adminSecret: 'a'.repeat(32), fetch: f });
+  const r = await k.avatars.update({ id: 'av1', openingPhrase: null }, ADMIN);
+  assert.equal(r.openingPhrase, null);
+  const call = f.calls.find((c) => c.url.includes('/avatar/update'));
+  assert.ok(call, 'avatar/update was called');
+  assert.equal(call.body.id, 'av1');
+  assert.equal(call.body.openingPhrase, null, 'null must reach the wire (omitting the key would preserve the old phrase)');
+  assert.deepEqual(Object.keys(call.body).sort(), ['id', 'openingPhrase'], 'a PATCH: no voice/visual keys, so they stay as they are');
 });
 
 test('catalog.createVisual sends adminTags as a bare single field, NOT JSON.stringify (double-encode regression)', async () => {

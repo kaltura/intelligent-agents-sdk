@@ -195,7 +195,7 @@ try {
   record('catalog.list(Voice) preset lookup', Boolean(voiceItemId), { voiceItemId });
 
   const avatarA = await kaltura.avatars.create(
-    { voice: { id: voiceItemId }, face: { id: faceItemId }, background: { type: 'visual', value: backgroundItemId }, openingPhrase: '<blank>' },
+    { voice: { id: voiceItemId }, face: { id: faceItemId }, background: { type: 'visual', value: backgroundItemId } },
     admin,
   );
   avatarAId = avatarA.id;
@@ -226,7 +226,7 @@ try {
   record('avatars.listTemplates', Boolean(template), { id: template?.id, name: template?.name });
 
   const avatarB = await kaltura.avatars.create(
-    { voice: template.voice, templateId: template.id, background: { type: 'color', value: '#ffffff' }, openingPhrase: '<blank>' },
+    { voice: template.voice, templateId: template.id, background: { type: 'color', value: '#ffffff' } },
     admin,
   );
   avatarBId = avatarB.id;

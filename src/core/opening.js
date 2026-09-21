@@ -1,11 +1,12 @@
 /**
  * The silent opening phrase.
  *
- * An avatar's `openingPhrase` must be a non-empty string, and the server-scripted
- * opening turn it produces cannot be interrupted. `SILENT_OPENING` is a non-empty
- * phrase the voice engine renders as silence: the opening turn still runs and the
- * session stays on the normal path, but nothing is spoken, so the turn ends in well
- * under a second and the agent is ready for input almost immediately.
+ * The intellect's `opening_phrase` owns the scripted first turn of an avatar
+ * session (`provision()` writes it there and leaves the avatar's `openingPhrase`
+ * unset). That server-scripted opening turn cannot be interrupted. `SILENT_OPENING`
+ * is a non-empty phrase the voice engine renders as silence: the opening turn still
+ * runs and the session stays on the normal path, but nothing is spoken, so the turn
+ * ends in well under a second and the agent is ready for input almost immediately.
  *
  * The raw phrase is a control token, not something to show a person. The session
  * classes surface the opening turn as `SILENT_OPENING_LABEL` (`[silence]`) on
