@@ -100,7 +100,8 @@ Rules the SDK guarantees:
 - Empty or whitespace-only text sends nothing. Any other type than a string or `{ text, echo? }` throws `bad_request` from the constructor.
 - With `echo: false`, only the kickoff text is dropped. If the same turn also carries what the user typed or said, that part still surfaces as `transcript {type:'user'}`.
 - The reply is interruptible, like any reply to `speak()`.
-- If the text cannot be sent (a guardrail or gate rejected it, or the session ended first) the session emits `warning` with code `kickoff_failed` and a `detail`. The session stays connected.
+- If a guardrail or gate rejects the text, the session emits `warning` with code `kickoff_failed` and a `detail`. The session stays connected.
+- If the session ends while the text is still held, nothing is sent and no warning fires. `session.kickoff.sent` stays `true`.
 
 `session.kickoff` (avatar session) returns `{ text, echo, sent }` or `null`. `sent: true` means the SDK handed the text to the send path once. It does not mean the server replied, and the SDK never retries.
 
@@ -178,7 +179,7 @@ With `micStartMode: 'deferred'` the SDK does not touch the mic at all until you 
 | Symptom | Cause | Fix |
 |---|---|---|
 | The kickoff text shows up as a user message | `echo: true`, or an `onBeforeSend` hook added to the text, so the added part surfaces on its own | Use `echo: false` (the default) and put the wording in the kickoff text itself instead of adding it in `onBeforeSend`. |
-| `warning` with code `kickoff_failed` | A guardrail or the disclosure gate rejected the send, or the session ended first. `detail` says which. | Fix the guardrail, or call `speak()` yourself after the gate opens. |
+| `warning` with code `kickoff_failed` | A guardrail or the disclosure gate rejected the send. `detail` says which. | Fix the guardrail, or call `speak()` yourself after the gate opens. |
 | The agent speaks a scripted line before the kickoff reply | The intellect's `opening_phrase` is not `SILENT_OPENING`, or the intellect has none and the avatar carries a legacy `openingPhrase` | `intellectConfig.setOpeningPhrase(configId, SILENT_OPENING, ks)`; clear the avatar's copy with `avatars.update({ id, openingPhrase: null }, ks)`. |
 | The opening says `Hello !` or greets nobody | A template variable was not sent and rendered as empty text | Guard it: `{% if user_name %}…{% else %}…{% endif %}`. |
 | The session never starts after setting a template | The template cannot be rendered, or `requestVars` were sent without `setClientVariablesEnabled(configId, true, ks)` | Fix the template on a scratch intellect first; enable client variables before sending any. |
