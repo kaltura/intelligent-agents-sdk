@@ -25,7 +25,7 @@ Getting this distinction right is the key to reliable behavior. If you need the 
 
 ## The context channel: request variables
 
-Request variables (`request_vars`) are the SDK's one channel for app-supplied context. Each variable is a string value the brain's prompt reads via `{{var}}` templating: a viewer's name, an account tier, or a whole JSON document the prompt reasons over. Seed them at connect time, update them any time after:
+Request variables (`request_vars`) are the SDK's one channel for app-supplied context. Each variable is a scalar value (string, number, boolean, or null) the brain's prompt reads via `{{var}}` templating: a viewer's name, an account tier, or a whole JSON document (as a string) the prompt reasons over. Seed them at connect time, update them any time after:
 
 ```js
 const session = new KalturaAvatarSession({
@@ -41,7 +41,7 @@ Three properties make this channel do the heavy lifting:
 
 - **Updates merge.** `updateRequestVars(vars)` merges what you pass into the session's canonical map. Send only the keys that changed; keys you omit keep their values. (The full merged map goes to the server each time, and the server also merges per-thread, so a headless `converse` call sending a delta behaves the same way.)
 - **Values persist for the whole thread.** Send a variable once and every later turn on that thread still sees it — you don't resend per turn. A new thread starts clean. On a warm reconnect the SDK re-sends the full map automatically.
-- **Values are strings, and can be big.** Tens of kilobytes of JSON in one variable works — the SDK's live verification pushes a ~31 KB blob through and reads it back (see [Runnable examples](#runnable-examples) below).
+- **Values can be big.** Each value must be a scalar (string, number, boolean, or null). A JSON document goes in as a string. Tens of kilobytes of JSON in one variable works. The SDK's live verification pushes a ~32 KB blob through and reads it back (see [Runnable examples](#runnable-examples) below).
 
 ### Page context: `setDynamicPrompt()`
 
@@ -73,7 +73,7 @@ The intellect must have `allow_client_variables: true`, or every request variabl
 await mgmt.intellects.setClientVariablesEnabled(configId, true, adminKs);
 ```
 
-The rejection is **silent on every path**. The turn comes back as an empty reply: no HTTP error, no socket error. The server's 403 fires inside its streaming pipeline *after* the response has already opened, so it never reaches the wire. Both session classes (`KalturaAvatarSession` and `KalturaChatSession`) detect the pattern and emit a once-per-session `warning` event, `{ code: 'empty_turn_with_request_vars', message, requestVarKeys }` (variable *names* only, never values), pointing at the gate:
+The rejection is **silent on every path**. The turn comes back as an empty reply: no HTTP error, no socket error. Both session classes (`KalturaAvatarSession` and `KalturaChatSession`) detect the pattern and emit a once-per-session `warning` event, `{ code: 'empty_turn_with_request_vars', message, requestVarKeys }` (variable *names* only, never values), pointing at the gate:
 
 ```js
 session.on('warning', (w) => {
@@ -94,7 +94,7 @@ const lint = lintPrompts(prompts, { allowClientVariables: true, knownVars: ['pag
 
 ### Reserved `sys__*` variables
 
-Reserved `sys__*` keys (like `sys__user_id` and `sys__thread_id`) are server-injected on every turn and rejected if you try to set them yourself, regardless of the gate — see [Reserved Template Variables](/reference/api/operate/#reserved-template-variables-sys__). The SDK's own pre-flight rejects them (and non-string values) client-side before anything hits the wire.
+Reserved `sys__*` keys (like `sys__user_id` and `sys__thread_id`) are server-injected on every turn and rejected if you try to set them yourself, regardless of the gate — see [Reserved Template Variables](/reference/api/operate/#reserved-template-variables-sys__). The SDK's own pre-flight rejects them (and non-scalar values such as objects and arrays) client-side before anything hits the wire.
 
 ### Server-side tools read them too
 
@@ -107,7 +107,7 @@ Request variables aren't limited to prompt text. A server-side `api` tool's requ
 Two scripts in this repo exercise every behavior above against the real API:
 
 - `examples/request-vars-live-context.mjs` — a five-turn walkthrough of seed → persist → merge → large `page_context` → fresh-thread reset.
-- `npm run live-verify:request-vars` — persistence, merge, tool interpolation, server-side `sys__*` injection, ~31 KB payload, thread isolation.
+- `npm run live-verify:request-vars`: persistence, merge, tool interpolation, server-side `sys__*` injection, ~32 KB payload, thread isolation.
 
 ## The active nudge: `speak()`
 
@@ -126,6 +126,34 @@ session.speak('[SECTION CHANGE] The viewer just opened the pricing section — d
 A bracketed tag like `[SECTION CHANGE]` is not a wire-level feature. It's a convention. Write your system prompt to recognize a tag like this as an app-generated cue, as opposed to something the viewer said out loud. That gives you a clean, unambiguous signal to react to, without ever putting synthetic text in the viewer's own mouth. Design your own tag vocabulary to match whatever events your app needs the brain to react to instantly.
 
 **Pair it with a context update, in this order:** call `setDynamicPrompt()` (or `Presenter.refreshContext()`) first, then `speak()` immediately after. That way the nudge that provokes the turn arrives *after* the context it needs to reason correctly about is already in place, not racing it.
+
+### When `speak()` actually sends
+
+`speak()` is safe to call at any moment after `connect()` resolves. It decides the timing for you:
+
+| Agent is... | `speak()` does |
+|---|---|
+| Idle, or still thinking about the last turn | Sends now. Text sent while it's thinking merges into that turn. |
+| Talking a normal reply | Sends now. The avatar stops mid-sentence and answers the new text (barge-in). |
+| In a turn typed text can't interrupt: its opening line right after `connect()`, its replayed line after `resume()`, or its own "are you still there?" check-in | Holds the text, then sends it the instant that turn ends. |
+
+Several `speak()` calls during one held turn go out together as one turn, one text per line, in call order. The agent reads everything the user said while it was busy and answers once, like a person catching up.
+
+```js
+// The first nudge: let the SDK send it. `kickoff` rides the same hold and goes out once,
+// the moment the opening turn ends. Never re-sent on resume() or a reconnect.
+const session = new KalturaAvatarSession({
+  ...runtimeConfig,
+  kickoff: '[SESSION START] The session just loaded. Begin now per your OPENING instructions.',
+});
+await session.connect();
+
+// Later nudges: speak(). Resolves true once the text reached the server,
+// false if the session ended while the text was still held.
+const sent = await session.speak('[CONTEXT] The user just opened the pricing page.');
+```
+
+Guardrails (`onBeforeSend`, `maxTurnsPerMinute`, tap-to-talk, disclosure) run when you call `speak()`, not when the held text is sent, so a blocked call rejects immediately.
 
 ## Answering a brain-initiated request
 

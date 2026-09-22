@@ -45,7 +45,7 @@ You can pass one form object or an array of several. Each stage gets its own fie
 
 This isn't a passive schema the model may or may not notice. Each configured stage becomes a hard instruction for that conversation. When the stage arrives, the agent emits a fenced `user_properties_form` block listing exactly that stage's fields, in addition to its normal spoken reply. Two consequences:
 
-- **It's a hard instruction, not a soft hint.** Once a stage's moment arrives, the agent isn't free to skip the block. In practice it reads `call_stage` loosely though (a `start` stage can fire on the very first turn), so treat the stage as "roughly when", not "exactly when".
+- **It's a hard instruction, not a soft hint.** Once a stage's moment arrives, the agent isn't free to skip the block. The model interprets `call_stage` as a general instruction, not a deterministic trigger: a `start` stage can fire on the very first turn. Treat the stage as an approximate signal for when the form appears, not an exact turn number.
 - **Pre-fill is real.** If the agent has already heard a value for a configured field earlier in the conversation (e.g. the viewer mentioned their preferred date in passing), it attaches a `known_value` to that field. Your form should pre-fill it rather than ask again.
 
 The form's heading copy is server-supplied: read-back of `user_properties_forms` carries `id`/`title`/`secondary_title` defaults you didn't send. **`buildUserPropertiesForms()` doesn't expose either heading field.** It accepts `callStage`/`properties` only. To show your own copy (e.g. "Tell us about your issue" on a support form), render the widget yourself and replace the descriptor's `data.title`; see "How to customize or style the form" below.
@@ -94,7 +94,7 @@ The output is a framework-agnostic descriptor:
 If you hand `mountWidget` (`src/experience/genui/renderers/mount.js`) a real DOM element as the mount target, it builds the whole thing for you:
 
 - One `<form class="kgenui__form">`.
-- One `<div class="kgenui__field">` per field, with a `<label>` and an `<input>`. The input `type` is inferred from the field type via `htmlInputType()`, for example `email`/`phone` map to `tel`, plus a `checkbox` mapping and others.
+- One `<div class="kgenui__field">` per field, with a `<label>` and an `<input>`. The input `type` is inferred from the field type via `htmlInputType()`: `email`→`email`, `phone`→`tel`, `int`/`float`→`number`, `bool`→`checkbox`, anything else→`text`.
 - `aria-required` and `aria-describedby` wired on each field.
 - Fields pre-filled from `knownValue`.
 - A submit button.
@@ -131,7 +131,7 @@ A worked pattern: keep the submitted values in browser memory for the current se
 
 ## Not to be confused with `kaltura_genie_experiences`
 
-If your intellect also uses custom `tool_ids` (e.g. a closed set of client commands like `navigate_to_slide`/`show_widget`), you'll likely set `capabilities: { kaltura_genie_experiences: 'off' }` or `'disabled'`. See [External API Integrations § Don't skip `kaltura_genie_experiences: 'off'`](/guides/external-api-integrations/#dont-skip-kaltura_genie_experiences-off) for what that capability does and why.
+If your intellect also uses custom `tool_ids` (e.g. a closed set of client commands like `navigate_to_slide`/`show_widget`), set `capabilities: { kaltura_genie_experiences: 'off' }` or `'disabled'`. See [External API Integrations § Don't skip `kaltura_genie_experiences: 'off'`](/guides/external-api-integrations/#dont-skip-kaltura_genie_experiences-off) for what that capability does and why.
 
 **This does not touch `user_properties_forms` at all.** The two mechanisms are independent code paths. `kaltura_genie_experiences` governs backend tool-key families like `flashcards`/`summarization`/`followups`/`sources`/`gallery_slides`. `user_properties_forms` is its own config field, and the instruction it produces is unrelated to the experiences capability.
 

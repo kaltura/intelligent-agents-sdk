@@ -97,7 +97,7 @@ You can still read `seg.metadata.runtimeName` and build DOM yourself (use `rende
 - Headings (`#`-`######`)
 - **bold**/__bold__ and *italic*/_italic_
 - Inline `` `code` ``
-- `[link](https://github.com/kaltura/intelligent-agents-sdk/blob/main/docs/genui/url)`
+- Links: `[text](https://example.com)`
 - Unordered and ordered lists
 - Fenced code blocks (with a `language-<token>` class)
 - GFM tables

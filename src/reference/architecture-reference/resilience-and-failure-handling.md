@@ -64,7 +64,7 @@ A legitimate turn can double its raw tool-segment count when `speak()`'s barge-i
 
 **Hard tier: the actual fix.** A **session-scoped hard counter** (`hardToolSpiralLimit`, default `toolSpiralLimit * 3`) counts raw tool segments since the last perceivable output. It is immune to turn-boundary resets, so an idle wake-up nudge mid-spiral cannot hide it. Once it's crossed, the SDK emits `toolSpiralRecovering` (carrying `lastTurnText`, the abandoned turn) and forces `_coldReconnect()`. This is the same full media rebuild already used for a dead media channel, replaying `threadId` so brain memory continues. This turns the eventual uncontrolled `JoinRoomTimeout` into a deliberate, bounded, self-healing reconnect.
 
-Because the control socket is still live at this point (unlike a genuine transport drop), `_coldReconnect()` opens a brand-new socket rather than re-`join`-ing the still-connected one. The server's `join` handler is idempotent-guarded per-connection and silently no-ops a re-join on a live socket. `_coldReconnect()` detects this case (`this.state !== 'reconnecting'` at entry means the socket never actually dropped) and opens a genuinely new socket via the same factory `connect()` uses, before re-`join`-ing on it. The one path that safely reuses the existing socket is the genuine-transport-disconnect case, reached only after a real drop already set `state` to `'reconnecting'`. There, the server has already discarded that session, so re-`join`-ing it is not a no-op.
+Because the control socket is still live at this point (unlike a genuine transport drop), `_coldReconnect()` opens a brand-new socket rather than re-`join`-ing the still-connected one: re-sending `join` on an already-live socket is a silent no-op server-side. `_coldReconnect()` detects this case (`this.state !== 'reconnecting'` at entry means the socket never actually dropped) and opens a genuinely new socket via the same factory `connect()` uses, before re-`join`-ing on it. The one path that safely reuses the existing socket is the genuine-transport-disconnect case, reached only after a real drop already set `state` to `'reconnecting'`. There, the prior session is already gone, so re-`join`-ing it is not a no-op.
 
 The hard guard re-arms on a successful cold reconnect, not just on perceivable output. A spiral by definition never produces spoken or GenUI content, so that's the only reset path that can actually fire while one is running. Without this re-arm, a second spiral later in the same session would find the guard permanently latched from the first recovery, and would hang indefinitely instead of recovering.
 
@@ -74,7 +74,7 @@ A cold reconnect restores connectivity and brain memory (`threadId`) but otherwi
 
 ### Session-completion signal (`session_completed`): telling the backend a conversation is truly over
 
-Without this, the backend only learns a thread is done when its idle scanner sweeps (about 10 minutes by default). End-of-conversation lifecycle rules (summaries, insights, CRM pushes) then fire minutes late. A closed tab looks identical to a user who just walked away.
+Without this, the backend only learns a thread is done when its idle timeout fires (about 10 minutes by default). End-of-conversation lifecycle rules (summaries, insights, CRM pushes) then fire minutes late. A closed tab looks identical to a user who just walked away.
 
 `KalturaAvatarSession`, `KalturaChatSession`, and `KalturaAgentSession` all POST `{genieUrl}/thread/session_completed` (`{"id":"<threadId>"}`, the same conversation KS as every other client call) the moment a conversation genuinely ends. This includes tab-close, backgrounding, and bfcache freeze. It never fires on an internal transition like a mode switch, and never ends a thread another tab is still using. Full config surface: [README.md § Ending a conversation cleanly](https://github.com/kaltura/intelligent-agents-sdk/blob/main/README.md#ending-a-conversation-cleanly-session_completed-signal). Wire shape: [Wire Protocol · Events Catalog § Session-completion signal](/reference/wire-protocol/events-catalog/#session-completion-signal--tell-the-backend-a-conversation-is-truly-over).
 
@@ -82,7 +82,7 @@ Without this, the backend only learns a thread is done when its idle scanner swe
 |---|---|---|
 | App calls `disconnect()` / `stop()` | yes | Unambiguous hangup |
 | Idle auto-logoff | yes | Real end of session |
-| `pagehide` (tab/window closed, navigated away) | yes | The primary win over the idle-scanner fallback |
+| `pagehide` (tab/window closed, navigated away) | yes | The primary win over the idle-timeout fallback |
 | `pagehide` with `persisted:true` (bfcache freeze) | yes, by default | The SDK can't survive the freeze anyway: media/socket are already torn down |
 | Hidden longer than `hiddenGraceMs` (default 30s) | yes, by default | Catches iOS Safari / Chrome Android tab-kills where `pagehide` never fires |
 | Server ends the conversation (`conversationEnded`) | no, by default | The backend already knows; re-signaling wastes a redundant lifecycle-rule evaluation |

@@ -12,6 +12,22 @@ eyebrow: Reference
 
 An intellect is the config object behind your agent's brain. It holds the prompts, model settings, tools, knowledge base links, and feature capabilities that shape how the agent behaves. This page shows how to create one and configure its main fields.
 
+## Generate an Agent Profile
+
+Optional first step: turn a one-line description into the prompt values an intellect needs.
+
+```
+POST https://api.avatar.us.kaltura.ai/v1/application/generateAgentProfile
+```
+
+```json
+{ "userDescription": "A friendly technical support agent for a video platform" }
+```
+
+Returns `{goal, targetAudience, restrictedTopics, name, openingPhrase}`. Nothing is saved: pass `goal`, `targetAudience` and `restrictedTopics` into the intellect's prompts (§ Configure an Intellect, below) and `openingPhrase` into `avatar/create` ([Agent Components · Create an Avatar and an Agent](/reference/api/build/avatar-and-agent/)).
+
+---
+
 ## Create an Intellect
 
 ```
@@ -70,7 +86,7 @@ POST https://genie.nvp1.ovp.kaltura.com/v1/intellect/update
 | `type` | Always `"custom"` |
 | `value` | Your content |
 
-**Don't guess at `key`/`headerTemplate` values.** Call `mgmt.application.getCustomPrompts(ks)` instead. It returns the backend's own live schema for this block: a 5-entry array (`goal`, `targetAudience`, `restrictedTopics`, `name`, `knowledge`), each shaped as `{key, label, headerTemplate, objectType}`.
+**Don't guess at `key`/`headerTemplate` values.** Call `mgmt.application.getCustomPrompts(ks)` instead. It returns the backend's own live schema for this block: a 5-entry array (`goal`, `targetAudience`, `restrictedTopics`, `name`, `knowledge`), each shaped as `{key, label, headerTemplate, type}` (`type` is always `"custom"`, matching the `prompts[]` block shape above).
 
 Use this call to render a "describe your agent" form. The labels and instructions you show always match what the backend splices into the system prompt, so you don't have to keep hardcoded copy in sync by hand.
 
@@ -78,7 +94,7 @@ This call only reads data — it has no side effects. It works with any kind of 
 
 ```js
 const fields = await mgmt.application.getCustomPrompts(ks);
-// [{ key: 'goal', label: 'Goal', headerTemplate: 'The agent\'s goal is: {{value}}', objectType: 'Object' }, ...]
+// [{ key: 'goal', label: 'Goal', headerTemplate: 'The agent\'s goal is: {{value}}', type: 'custom' }, ...]
 ```
 
 **Top-level fields:**
@@ -87,7 +103,7 @@ const fields = await mgmt.application.getCustomPrompts(ks);
 |-------|---------|
 | `base_directive` | Global system instruction |
 | `force_language` | Display name of the forced reply language (e.g. `"Hebrew"`). The backend enforces it at runtime: replies come back in that language whatever the user writes or speaks. `null` or `""` clears it. Set it via `mgmt.setForcedLanguage`, which also sets the agent's `asr.language` so speech recognition matches |
-| `opening_phrase` | Jinja2 template over `request_vars` (e.g. `"Hello {{ user_name }}!"`) the backend renders and speaks when an avatar session starts. Overrides the opening phrase the client sends at init; the rendered text comes back in the init response and is stored on the thread as an `opening` message. `null` clears it. Set via `intellectConfig.setOpeningPhrase` |
+| `opening_phrase` | The line spoken as the first turn of every avatar session, a Jinja2 template rendered once per session. The intellect owns it. `null` clears it; `SILENT_OPENING` makes the opening silent so the browser sends the first turn with `kickoff`. Set via `intellectConfig.setOpeningPhrase`. Guide: [Start the Conversation § Personalize the opening](/guides/start-the-conversation/#personalize-the-opening) |
 | `model_configuration` | `{ model_id?, max_output_tokens?, thinking_level?, temperature? }`; every key optional, `null` means backend defaults. `model_id` is one of `MODEL_IDS`, `thinking_level` one of `THINKING_LEVELS` (`low`/`high`, Gemini only, Claude ignores it), `temperature` 0..1. With `avatar_show_content` on, the backend fills an unset `thinking_level` with `low` and `max_output_tokens` with `4096`. Set via `intellectConfig.setModelConfiguration`. Which models answer depends on your partner's region: verify with `converseOnce` after switching |
 | `thread_start_tools` | Tool ids the backend runs once when a thread starts, before the first turn (only `api`/`code` tools run). Server-side only: the result feeds the model and is not surfaced as a `tool` segment. Set via `intellectConfig.setThreadStartTools`; `[]` clears |
 | `avatar_summary_config` | `{ prompt?, analysis?, template?, content_type? }` for the end-of-session summary of avatar sessions. `analysis` maps output keys to descriptions, `template` is Jinja2 over those keys, `content_type` is one of `SUMMARY_CONTENT_TYPES` (`text`/`html`/`html_with_js`). The summary is stored on the thread as a `summary` message. `null` restores defaults. Set via `intellectConfig.setAvatarSummaryConfig` |

@@ -33,7 +33,8 @@ A from-scratch reimplementation of the live avatar runtime, using nothing but `s
 
 8. User speaks → ASR pc carries audio → server transcribes → brain → avatar speaks (STV) + agent_raw_text
    (or inject text: emit onTextEntered {text, isFinal:true}, the same event speak() always emits.
-   debug_text_entered is a secondary mirror the server sends only when the session was created with debug:true)
+   If the client was built with debug:true, it also emits debug_text_entered with the same payload,
+   right after onTextEntered)
 ```
 
 </div>

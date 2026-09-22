@@ -76,8 +76,8 @@ Full explanation and plug points: [Inside a Live Conversation](https://kaltura.g
 | scripted-video control API | `api.avatar.us.kaltura.ai/v1/avatar-session/*` | The **scripted-video** control API: `avatar-session/create` (KS) → `init-client` → `keep-alive` (10s) → `end`. A distinct service from the management API. Only the host/path prefix is shared. |
 | brain API | `genie.nvp1.ovp.kaltura.com` | The brain: `assistant/converse`, intellect CRUD, threads, messages, feedback, followups |
 | session server | `conversation.avatar.us.kaltura.ai` | Live-avatar control plane (Socket.IO): session orchestration, ASR signaling relay, brain output stream |
-| STV + media relay | `srs.avatar.us.kaltura.ai` (egress host) | Video origin. Renders the talking face and sends it to clients over **WHEP**, never RTMP, regardless of internal transport. The `cast_mode` field selects the egress method. The SDK never sends this field, so it always takes the server's default path, verified working with real video (see [Wire Protocol · Audio Channels §6](/reference/wire-protocol/audio-channels/#6-stv-downlink-pc2--avatar-videoaudio--you)). A different setting, explicit `cast_mode:'webrtc'` (used by the runtime client, never this SDK), has resolved to a private IP in this deployment. The SDK's `whepUrlHasPrivateIp()` guard exists to catch that case. |
-| TURN | `turn.avatar.us.kaltura.ai` | WebRTC relay for both media legs (default username/credential in `wire.js`'s `turnServers()`, overridable via `creds`). Addressed with explicit ports+transports (see [System Internals Reference](/reference/architecture-reference/connection-and-handshake/#endpoints--credentials)). STV uses `iceTransportPolicy:'relay'` (Firefox is the one exception: `'all'`). ASR's policy is client-dependent, but it **relays via TURN either way**, because the ASR server only advertises a private candidate. See [Wire Protocol · Audio Channels §5](/reference/wire-protocol/audio-channels/#5-asr-uplink-pc1--microphone--server) for the per-client matrix. |
+| STV + media relay | the egress host in `appInit`'s `srsBaseUrl` | Video origin. Sends clients the talking face over **WHEP**. The `cast_mode` field selects the egress method; the SDK never sends it, so it always takes the server's default path (see [Wire Protocol · Audio Channels §6](/reference/wire-protocol/audio-channels/#6-stv-downlink-pc2--avatar-videoaudio--you)). The SDK's `whepUrlHasPrivateIp()` guard checks every WHEP URL the server returns and throws a `whep_private_ip` error if it resolves to a private IP, since that address is unreachable from a browser. |
+| TURN | the `turnServerUrl` value returned by `appInit` | WebRTC relay for both media legs (default username/credential in `wire.js`'s `turnServers()`, overridable via `creds`). Addressed with explicit ports+transports (see [System Internals Reference](/reference/architecture-reference/connection-and-handshake/#endpoints--credentials)). STV uses `iceTransportPolicy:'relay'` (Firefox is the one exception: `'all'`). ASR's policy is client-dependent, but it **relays via TURN either way**, because the ASR server only advertises a private candidate. See [Wire Protocol · Audio Channels §5](/reference/wire-protocol/audio-channels/#5-asr-uplink-pc1--microphone--server) for the per-client matrix. |
 | ML services | internal | Machine-learning services behind `application/generateAgentProfile` |
 
 ---
@@ -108,7 +108,7 @@ A full interactive agentic avatar is **three concurrent channels** over one Sock
    │          │═════════════════════════════════════════►  speech-to-text + brain
    │          │
    │          │  WebRTC (STV, server→video) via WHEP (HTTP SDP)
-   │  <video> │◄═════════════════════════════════════════  srs.avatar.us.kaltura.ai
+   │  <video> │◄═════════════════════════════════════════  STV media relay (srsBaseUrl)
    └──────────┘
 ```
 
@@ -307,7 +307,7 @@ The SDK wires the WebRTC-peer tier to its own session-recovery tier (`_recoverMe
 
 See **[System Internals Reference's "Resilience & Failure Handling"](/reference/architecture-reference/resilience-and-failure-handling/#resilience--failure-handling)** for the full three-tier table and the failure-mode matrix. It also covers the headline risk in detail, device-permission handling, and the tool-call-spiral circuit breaker mechanism.
 
-A conversation ending cleanly is a separate concern from recovering from failure. On tab-close, backgrounding, bfcache freeze, or an explicit `disconnect()`, the SDK tells the backend the thread is genuinely over (`POST /thread/session_completed`). This happens instead of waiting for the ~10-minute idle scanner, so end-of-conversation lifecycle rules fire in seconds.
+A conversation ending cleanly is a separate concern from recovering from failure. On tab-close, backgrounding, bfcache freeze, or an explicit `disconnect()`, the SDK tells the backend the thread is genuinely over (`POST /thread/session_completed`). This happens instead of waiting for the server's idle timeout (about 10 minutes), so end-of-conversation lifecycle rules fire in seconds.
 
 See [System Internals Reference's "Session-completion signal"](/reference/architecture-reference/resilience-and-failure-handling/#session-completion-signal-session_completed-telling-the-backend-a-conversation-is-truly-over) for the condensed decision table. See [README.md § Ending a conversation cleanly](https://github.com/kaltura/intelligent-agents-sdk/blob/main/README.md#ending-a-conversation-cleanly-session_completed-signal) for the app-facing config surface.
 

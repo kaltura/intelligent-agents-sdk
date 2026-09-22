@@ -20,7 +20,7 @@ A WebRTC peer connection whose SDP/ICE are relayed **through the socket** (NOT W
 // 1. tell server to prepare
 socket.emit('asr-webrtc-init', { sessionId: peerId });
 // 2. wait
-socket.once('asr-webrtc-ready', ...);          // (or 'asr-webrtc-error')   timeout 30s
+socket.once('asr-webrtc-ready', ...);          // (or 'asr-webrtc-error')   timeout 30s, also bounded by the 30s connect deadline
 // 3. create RTCPeerConnection with the mic track, generate offer, then:
 socket.emit('asr-webrtc-offer', { offer, is_reconnect: false });
 socket.once('asr-webrtc-answer', ({ answer }) => pc.setRemoteDescription(answer));  // 30s
@@ -31,9 +31,9 @@ socket.emit('asr-webrtc-ice-candidate', { candidate });
 
 PeerConnection configuration:
 
-- **TURN**: `turn.avatar.us.kaltura.ai` (default username/credential from `wire.js`'s `turnServers()`, four explicit port/transport URLs). See the [Endpoints & Credentials table](/reference/architecture-reference/connection-and-handshake/#endpoints--credentials).
-- **`iceTransportPolicy`**: set per the leg's `forceRelay` flag. The production runtime forces `'relay'` for ASR. The no-SDK debug app uses `'all'`. Both relay in practice, because the server only offers a private candidate.
-- **Audio constraints**: `{echoCancellation, autoGainControl, noiseReduction}`.
+- **TURN**: the `turnServerUrl` value returned by `appInit` (default username/credential from `wire.js`'s `turnServers()`, four explicit port/transport URLs). See the [Endpoints & Credentials table](/reference/architecture-reference/connection-and-handshake/#endpoints--credentials).
+- **`iceTransportPolicy`**: `'all'` for ASR, always (`SDK:wire.js iceConfig()`). Relays in practice anyway, because the server only offers a private candidate.
+- **Audio constraints**: `{echoCancellation, noiseSuppression, autoGainControl}`.
 - **Video**: none.
 
 Once connected, the server transcribes your speech and routes it to the brain automatically. There is no separate "send transcript" call.
@@ -45,14 +45,14 @@ Once connected, the server transcribes your speech and routes it to the brain au
 Standard **SRS WHEP**, completely independent of the socket. From the platform's built-in client's SRS signaling adapter:
 
 ```js
-const playUrl = stvNewSession.webrtc_url
-  ?? `${srsBaseUrl}/rtc/v1/play/?app=app&stream=${session_id}`;
+const whepUrl = stvNewSession.webrtc_url
+  ?? `${srsBaseUrl}/rtc/v1/whep/?app=app&stream=${session_id}`;
 
 // create a recv-only RTCPeerConnection, addTransceiver('video'|'audio', {direction:'recvonly'})
 const offer = await pc.createOffer();
 await pc.setLocalDescription(offer);
 
-const answerSdp = await fetch(`${srsBaseUrl}/rtc/v1/whep/?app=app&stream=${session_id}`, {
+const answerSdp = await fetch(whepUrl, {
   method: 'POST',
   headers: { 'Content-Type': 'application/sdp' },
   body: offer.sdp                       // plain SDP text, NOT JSON
