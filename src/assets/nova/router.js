@@ -1,7 +1,7 @@
 /**
  * Minimal client-side content-swap router — keeps Nova's live WHEP/socket
  * session alive while the visitor moves between this static multi-page
- * site's 16 routes. A real `location.href` change would tear the session
+ * site's routes. A real `location.href` change would tear the session
  * down; this instead fetches the target page (rendered through the same
  * base.njk, so its <main> has the same shape as the current one), swaps
  * only <main>'s content, and updates history — Nova's widget markup lives

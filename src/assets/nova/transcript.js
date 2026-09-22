@@ -13,9 +13,9 @@ export function initTranscript(el) {
   transcriptEl = el;
 }
 
-// ASR/TTS control tokens (e.g. "<blank>", the SSML silence tag used as
-// Nova's avatar openingPhrase — see docs-site-avatar/server/provision.mjs)
-// arrive as real transcript segments but carry no content for a visitor to
+// ASR/TTS control tokens (e.g. "<blank>", the SDK's SILENT_OPENING marker
+// that Nova's intellect opening_phrase is set to; the SDK relabels it
+// "[silence]" in transcript events) arrive as real transcript segments but carry no content for a visitor to
 // read. Matches only a segment that IS one such tag start to finish, so a
 // reply that merely mentions "<foo>" as real text is never touched.
 const FILLER_TOKEN_RE = /^<[^<>]+>$/;
