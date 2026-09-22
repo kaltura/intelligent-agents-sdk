@@ -18,8 +18,10 @@ This page is the field-by-field reference. New to Lifecycle? [Lifecycle Recipes]
 
 ## Rule shape
 
-A rule is `{eventType, objectType, eventConditions, action}`:
+A rule is `{name, systemName, eventType, objectType, eventConditions?, action}`:
 
+- `name`: a required, human-readable label.
+- `systemName`: a required, caller-chosen identifier (e.g. `auto_summary_v1`), filterable via `list`'s `systemNameEqual`.
 - `eventType`: e.g. `session_ended`, `analysis_updated`.
 - `objectType`: currently only `thread`.
 - `eventConditions[]`: `{field, operator, value}` matchers, e.g. `{field:'object.agent_id', operator:'eq', value:'<uuid>'}`, `{field:'changed_keys', operator:'has_all', value:[...]}`. `field` is a dot-path into the event payload (see [Discovery and dry-run testing](#discovery-and-dry-run-testing) for which paths exist per event). A `{path, op}` shaped entry is rejected with a 400.
@@ -39,7 +41,7 @@ The backend recognizes three `actionType` values you can create. A fourth, inter
 
 **`triggerInsightSettingsKai`** takes `{ insightSettingsIds: string[] }`, up to 20 ids, each referencing an `InsightSettings` entity created via `mgmt.insightSettings.create()`. An id that doesn't exist, or isn't owned by your partner, is rejected at rule create/update time with a 400. At dispatch time, only ids whose insight setting currently has `status:'active'` actually resolve into an extraction. A `disabled` one is silently skipped.
 
-**`sendInsightEmail`** mails a rendered insight summary to `recipients`. These are Kaltura user ids, not raw email addresses. The messaging service resolves the actual email from that user's Kaltura profile. Use either an explicit `templateId` or an auto-created `presetType` template; the template supports `{{template}}` placeholders like `{{object.user_id}}`. This action only fires on `eventType:'analysis_updated'`. Attaching it to a `session_ended` rule is a server-side no-op.
+**`sendInsightEmail`** mails a rendered insight summary to `recipients`. These are Kaltura user ids, not raw email addresses. The messaging service resolves the actual email from that user's Kaltura profile. Use either an explicit `templateId` or an auto-created `presetType` template; the template's `subject`/`body` reference single-brace tokens declared in `msgParamsMap`, e.g. `{SUMMARY}` or `{recipient.firstName}`. This action only fires on `eventType:'analysis_updated'`. Attaching it to a `session_ended` rule is a server-side no-op.
 
 A `templateId` is more durable than a `presetType`. It points at a template you created yourself via [`mgmt.emailTemplates`](#emailtemplates-managing-the-templates-sendinsightemail-references) (see below). A `presetType`, instead, depends on the backend finding or creating a preset template on first dispatch.
 
@@ -188,7 +190,7 @@ All against `https://api.avatar.us.kaltura.ai`. SDK: `mgmt.lifecycle`.
 | `lifecycle.get(id, ks)` | `POST /v1/lifecycle/get` | READ | |
 | `lifecycle.list(ks, opts)` | `POST /v1/lifecycle/list` | READ | `{offset,limit}` pager; `opts.filter` (`eventTypeEqual`, `statusEqual`, `systemNameEqual`) and `opts.orderBy` (`+createdAt`/`-createdAt`) pass through 1:1 |
 | `lifecycle.update(id, patch, ks)` | `POST /v1/lifecycle/update` | WRITE, idempotent | mirrors `Tools#update` |
-| `lifecycle.delete(id, ks, confirm)` | `POST /v1/lifecycle/delete` | WRITE, destructive | `requireConfirm` gate; response is `{success}`, not `{id}` |
+| `lifecycle.delete(id, ks, confirm)` | `POST /v1/lifecycle/delete` | WRITE, destructive | `requireConfirm` gate; response is `{removed, success, _meta}`. The deleted id comes back as `removed`, not `id` |
 | `lifecycle.match(objectType, eventType, eventData, ks)` | `POST /v1/lifecycle/match` | READ (dry-run) | see [Discovery and dry-run testing](#discovery-and-dry-run-testing) |
 | `lifecycle.listObjects(ks)` | `POST /v1/lifecycle/listObjects` | READ | |
 | `lifecycle.listEvents(objectType, ks)` | `POST /v1/lifecycle/listEvents` | READ | |
@@ -202,7 +204,7 @@ All against `https://api.avatar.us.kaltura.ai`. SDK: `mgmt.lifecycle`.
 | `insightSettings.get(id, ks)` | `POST /v1/insight-settings/get` | READ | |
 | `insightSettings.list(ks, opts)` | `POST /v1/insight-settings/list` | READ | `{offset,limit}` pager; `opts.filter` (`statusEqual`, `idsIn`) and `opts.orderBy` pass through 1:1 |
 | `insightSettings.update(id, patch, ks)` | `POST /v1/insight-settings/update` | WRITE, idempotent | |
-| `insightSettings.delete(id, ks, confirm)` | `POST /v1/insight-settings/delete` | WRITE, destructive | `requireConfirm` gate; response is `{success}`, not `{id}`; does not cascade, see [`InsightSettings`](#insightsettings-reusable-insight-definitions) |
+| `insightSettings.delete(id, ks, confirm)` | `POST /v1/insight-settings/delete` | WRITE, destructive | `requireConfirm` gate; response is `{removed, success, _meta}`. The deleted id comes back as `removed`, not `id`; does not cascade, see [`InsightSettings`](#insightsettings-reusable-insight-definitions) |
 
 `EmailTemplates`, SDK: `mgmt.emailTemplates`. Kaltura Messaging API, not Agentic. Uses `Authorization: Bearer <KS>`, not `Authorization: KS <ks>`:
 

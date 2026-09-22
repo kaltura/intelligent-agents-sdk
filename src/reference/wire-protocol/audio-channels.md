@@ -18,15 +18,15 @@ A WebRTC peer connection that publishes the mic. SDP/ICE are relayed **over the 
 
 > **All SDP/ICE for this peer connection travels over the Socket.IO socket** — there's no separate signaling channel to manage client-side. See below for why the server's remote candidate still forces TURN.
 
-**ICE config (implemented in `SDK:wire.js iceConfig()`; TURN URL list from the built-in client's media layer `buildIceConfiguration`). `username`/`credential` default to `"kaltura"`/`"avatar"` (`SDK:wire.js turnServers()`) and can be overridden via its `creds` param:**
+**ICE config (implemented in `SDK:wire.js iceConfig()`; TURN URL list from the built-in client's media layer `buildIceConfiguration`). `host` below is the `turnServerUrl` value returned by `appInit`; the example uses `turn.example.com`. `username`/`credential` default to `"kaltura"`/`"avatar"` (`SDK:wire.js turnServers()`) and can be overridden via its `creds` param:**
 
 ```js
 new RTCPeerConnection({
   iceServers: [{
-    urls: [ "turn:turn.avatar.us.kaltura.ai:80?transport=udp",
-            "turn:turn.avatar.us.kaltura.ai:443?transport=udp",
-            "turn:turn.avatar.us.kaltura.ai:80?transport=tcp",
-            "turns:turn.avatar.us.kaltura.ai:443?transport=tcp" ],
+    urls: [ "turn:turn.example.com:80?transport=udp",
+            "turn:turn.example.com:443?transport=udp",
+            "turn:turn.example.com:80?transport=tcp",
+            "turns:turn.example.com:443?transport=tcp" ],
     username: "kaltura", credential: "avatar" }],
   iceTransportPolicy: <see matrix below>,
   bundlePolicy: "max-bundle"
@@ -45,7 +45,7 @@ Either resolves to the same media path. The server's only ICE candidate is a **p
 - **TURN URLs must carry explicit ports+transports** (the four-URL list above) — a bare `turn:host` yields no relay candidate and the uplink silently sends 0 packets. This is the field that actually matters, not the policy string.
 - **SDP:** offer `m=audio … OPUS/48000/2` (+ red, G722, PCMU/A, CN, telephone-event), `a=sendrecv`, `a=setup:actpass`; server answers `m=audio … 111` OPUS only, `a=setup:active`, `a=recvonly`.
 - **Healthy stats:** `outbound-rtp audio` `packetsSent` climbs steadily, selected `candidate-pair` `nominated:true state:succeeded`, local `relay`/udp ↔ remote `host`/udp.
-- **Handshake:** `→ asr-webrtc-init {sessionId}` → `← asr-webrtc-ready` → create offer → `→ asr-webrtc-offer {offer,is_reconnect}` → `← asr-webrtc-answer {answer}` → `setRemoteDescription`; ICE trickles both ways (`→ asr-webrtc-ice-candidate`, `← asr-ice-candidate`). 30s timeout each wait.
+- **Handshake:** `→ asr-webrtc-init {sessionId}` → `← asr-webrtc-ready` → create offer → `→ asr-webrtc-offer {offer,is_reconnect}` → `← asr-webrtc-answer {answer}` → `setRemoteDescription`; ICE trickles both ways (`→ asr-webrtc-ice-candidate`, `← asr-ice-candidate`). 30s timeout each wait, and during `connect()` both waits are also bounded by the 30s overall connect deadline.
 - After connect, the server runs STT on this audio → feeds the brain. There is no "send transcript" call.
 
 ### 5b. Audio-mode WebRTC (separate from the ASR uplink)
@@ -55,7 +55,7 @@ When an agent runs in **audio/phone mode** (no STV video — see [§6](#6-stv-do
 | Direction | Event | Payload | Meaning |
 |---|---|---|---|
 | `→` | `webrtc-create-offer` | `{}` | Ask the server to start audio-mode WebRTC (server replies with `webrtc-offer`). |
-| `←` | `webrtc-offer` | `{ offer }` | Server-generated SDP offer (`createWebRTCOffer`). |
+| `←` | `webrtc-offer` | `{ offer }` | Server-generated SDP offer. |
 | `→` | `webrtc-answer` | `{ answer }` | Client SDP answer. |
 | `→` / `←` | `webrtc-ice-candidate` | `{ candidate }` | ICE trickle, both directions. |
 | `←` | `webrtc-connected` / `webrtc-disconnected` | `{}` | Audio peer state. |
@@ -63,15 +63,15 @@ When an agent runs in **audio/phone mode** (no STV video — see [§6](#6-stv-do
 
 This is distinct from [§5](#5-asr-uplink-pc1--microphone--server) (where the *client* offers the mic uplink and STT runs server-side). `SDK` implements the §5 path (video agents). Audio-mode is documented here for completeness.
 
-**The session server terminates this peer connection itself — it is not a relay here.** For every other socket-signaled path in this document (e.g. [§4a](/reference/wire-protocol/events-catalog/#4a-client--server-emit)/[§5](#5-asr-uplink-pc1--microphone--server)'s `asr-webrtc-*` proxy to the ASR service), the session server forwards SDP/ICE to some other backend. Audio mode is the one exception. The server builds a real `RTCPeerConnection`/`RTCAudioSource` using native WebRTC, and streams synthesized TTS speech to the browser directly over that connection. The session server is the far end of the peer connection here, not a signaling pass-through.
+**In audio mode, the server itself is the far end of this peer connection.** This differs from the `asr-webrtc-*` uplink in [§5](#5-asr-uplink-pc1--microphone--server), where the client creates the offer. Here the server creates the offer and sends synthesized speech to the browser over this same connection.
 
 ## 6. STV downlink (pc2) — avatar video+audio → you
 
-A receive-only WebRTC peer connection fed via **WHEP** (WebRTC-HTTP Egress Protocol). Signaling is **plain SDP over HTTP**, independent of the socket. (Server-side, the STV controller renders the face and streams it into a media relay that provides the WHEP egress. See [Platform Overview](/explanation/architecture/).)
+A receive-only WebRTC peer connection fed via **WHEP** (WebRTC-HTTP Egress Protocol). Signaling is **plain SDP over HTTP**, independent of the socket. (Server-side, STV renders the face and streams it into the media relay that provides the WHEP egress. See [Platform Overview](/explanation/architecture/).)
 
 **`cast_mode` selects the STV egress** (`StvCastMode` enum `"webrtc"\|"rtmp"`, optional in the `stvNewSession` body). This SDK never sends it. `buildStvNewSession()` (`SDK:wire.js`) accepts an optional `castMode` argument, but `session.js`'s one call site never passes one. So this SDK only ever takes the server's fully-omitted-default path, not either named value:
 
-- **Default (cast_mode omitted)** — the only path this SDK uses. The server returns a `webrtc_url`. In the current deployment that's shaped `{basePublicProxyUrl}/rtc/v1/stv/{room_id}/whep/session/{session_id}` (the session-server's STV proxy). This path returns a working `webrtc_url` on Chromium, Firefox, and WebKit. If the server ever omits `webrtc_url` too, the client falls back to building `{srsBaseUrl}/rtc/v1/whep/?app=app&stream={session_id}` itself (`SDK:wire.js whepUrl()`).
+- **Default (cast_mode omitted)** — the only path this SDK uses. The server returns a `webrtc_url`. In the current deployment it's shaped `{origin}/rtc/v1/stv/{room_id}/whep/session/{session_id}`, where `{origin}` is whatever scheme+host the server put in that URL. This path returns a working `webrtc_url` on Chromium, Firefox, and WebKit. If the server ever omits `webrtc_url` too, the client falls back to building `{srsBaseUrl}/rtc/v1/whep/?app=app&stream={session_id}` itself (`SDK:wire.js whepUrl()`).
 - **Explicit `cast_mode:'webrtc'`** (sent only by the runtime client, never by this SDK) — can resolve to an unreachable private IP, so the browser's `fetch` never connects. This is why the SDK never sends it. `whepUrlHasPrivateIp()` (`SDK:wire.js`) guards this regardless of which cast_mode produced the URL.
 
 The URL *shape* alone doesn't tell you which path is safe — the guard above checks the resolved host, not the shape. The client POSTs whichever `webrtc_url` the server returns, verbatim. **The browser always plays via WebRTC/WHEP regardless of mode** — "rtmp" is only the server-side ingest the renderer uses, never a browser transport.
@@ -84,14 +84,14 @@ bundlePolicy: "max-bundle"
 ```
 
 - **Transceivers:** `addTransceiver('video',{direction:'recvonly'})` + `addTransceiver('audio',{direction:'recvonly'})`.
-- **WHEP request** — the URL is the server-provided `webrtc_url` from `stvNewSession`, POSTed verbatim (`SDK:wire.js whepUrl()`). It's shaped `{basePublicProxyUrl}/rtc/v1/stv/{room_id}/whep/session/{session_id}` (this section). If the server ever omits `webrtc_url`, the embed client / `SDK:wire.js whepUrl()` build this fallback shape from `srsBaseUrl` instead:
+- **WHEP request** — the URL is the server-provided `webrtc_url` from `stvNewSession`, POSTed verbatim (`SDK:wire.js whepUrl()`). It's shaped `{origin}/rtc/v1/stv/{room_id}/whep/session/{session_id}` (this section). If the server ever omits `webrtc_url`, the embed client / `SDK:wire.js whepUrl()` build this fallback shape from `srsBaseUrl` instead:
 
   ```
   POST {srsBaseUrl}/rtc/v1/whep/?app=app&stream={session_id}
   Content-Type: application/sdp
   body: <client offer SDP>          → response body: <answer SDP>  (HTTP 201)
   ```
-Teardown = `DELETE` to the `Location` header from the 201.
+Teardown = `DELETE` to the WHEP resource named by the 201's `Location` header. That header is path-absolute from the media server's own root (`/whep/session/{session_id}/viewer/{viewer_id}`), so it carries none of the path prefix the subscribe URL has: the release URL is the POSTed subscribe URL plus the header's `/viewer/…` suffix (`SDK:wire.js whepResourceUrl()`). An absolute `Location` is used as-is, and any other relative one (the `srsBaseUrl` fallback form's `?action=delete` shape) resolves against the subscribe URL the usual way. Resolving a `/viewer/…` header against the origin instead drops the prefix, and the `DELETE` misses: the viewer slot stays held until the server releases the session on its own.
 
 WHEP status codes:
 

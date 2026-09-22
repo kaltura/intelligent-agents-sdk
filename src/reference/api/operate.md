@@ -39,7 +39,7 @@ CONV_KS=$(curl -s -X POST "https://www.kaltura.com/api_v3/service/session/action
 | `threadId` | Omit for new conversation; pass previous value for memory |
 | `sse` | `false` = NDJSON (default); `true` = SSE |
 | `model_type` | `"fast"` for cheaper/faster model |
-| `force_experience` | Hint only — not a guarantee |
+| `force_experience` | Must be one of `markdown`, `summarization`, `flashcards`, `avatar_only`. Anything else 422s before any network call. A hint to the brain about which experience to render, not a guaranteed outcome. |
 | `request_vars` | `{{var}}` interpolation values. Needs `allow_client_variables:true` on the intellect (see [Authentication § The Five Services](/reference/api/authentication/#the-five-services) for what an intellect is). Values **persist on the thread**: the server merges each message's map into what's stored, so send only deltas — a new thread starts clean. They interpolate into both prompt blocks and server-side `api`-tool templates. Reserved `sys__*` keys (including `sys__user_id`) are server-injected and rejected if you try to set them yourself — see § Bind a session to a real end-user identity above for how `sys__user_id` gets populated. Semantics in depth: [Dynamic Data Injection](/guides/dynamic-data-injection/). |
 | `capabilities` | Per-message capability override |
 
@@ -54,7 +54,7 @@ Both session classes (`KalturaAvatarSession`, `KalturaChatSession`) detect the p
 | `type` | Meaning |
 |--------|---------|
 | `"think"` | Processing (show spinner) |
-| `"text"` | Response content — concatenate `content` fields |
+| `"text"` | Response content — concatenate `content` fields. On an avatar-enabled intellect, spoken content streams as `"avatar"` (and `"avatar-filler"`) instead, accumulated the same way. |
 | `"tool"` / `"tool_response"` | Server tool call + result; `content` carries client commands |
 | `"unisphere-tool"` | GenUI widget — `metadata.runtimeName` names the widget |
 | `"error"` | Brain error |
@@ -124,7 +124,7 @@ All thread endpoints require an **admin KS** (`disableentitlement`). Pager: `{"p
 
 **Delete** returns `{totalCount, objects[]}` — a soft delete, followed by a scheduled infra-level purge of the underlying data.
 
-SDK: `mgmt.threads.{list, get, rename, delete, transcript}`.
+SDK: `mgmt.threads.{list, get, rename, delete, transcript}`. Two more write operations live only on the SDK (`setAnalysis`, `clearAnalysis`, `push`); see [Management Operations § Threads](/reference/api/management-operations/#threads--httpsgenienvp1ovpkalturacom) for their request shapes.
 
 > **Compliance note.** `threads.delete()` soft-deletes immediately; a scheduled infra-level purge erases the underlying data later. See [Security & Compliance](/reference/security/#shared-responsibility-control-matrix-nist-800-53) for what the SDK provides versus what the operator must configure.
 
@@ -138,13 +138,13 @@ Unlike the admin-KS thread endpoints above, this one is called from the browser 
 
 `{genieUrl}` defaults to `https://genie.nvp1.ovp.kaltura.com` (no `/v1` prefix — a different route family from the thread CRUD above). It's idempotent: a repeat call for the same thread is a no-op server-side. There's no rate limit. It can block up to ~10s on a backend publish-ack, so a client must never await it on a page-unload path.
 
-Call this the moment a conversation is genuinely over, instead of waiting for the ~10-minute idle scanner, so end-of-conversation lifecycle rules (summaries, insights, CRM pushes) fire in seconds.
+Call this the moment a conversation is genuinely over, instead of waiting for the server's idle timeout (about 10 minutes), so end-of-conversation lifecycle rules (summaries, insights, CRM pushes) fire in seconds.
 
 `KalturaAvatarSession`/`KalturaChatSession`/`KalturaAgentSession` call this automatically on `disconnect()` (`sessionCompleteOnEnd`, default `true`) and on tab-close/backgrounding/bfcache. See [README.md § Ending a conversation cleanly](https://github.com/kaltura/intelligent-agents-sdk/blob/main/README.md#ending-a-conversation-cleanly-session_completed-signal) for the full config surface, and [Wire Protocol · Events Catalog § Session-completion signal](/reference/wire-protocol/events-catalog/#session-completion-signal--tell-the-backend-a-conversation-is-truly-over) for the exact request shape.
 
 ## Thread History and Context Size
 
-There is no documented cap on how long a thread's history can grow. The full transcript is sent as model context on every turn, so the context each turn carries grows with thread length. Plan long-running threads accordingly: start a fresh thread per task, and delete threads you no longer need.
+There is no documented cap on how long a thread's history can grow. The full transcript is sent as model context on every turn, so the context each turn carries grows with thread length. Plan long-running threads accordingly: start a fresh thread per task, and delete threads you don't need.
 
 ---
 
@@ -188,5 +188,5 @@ Returns `{status, data}`. A partner with no indexed content returns a `"couldn't
 | `include_sources` | — |
 | `entry_description` | — |
 
-`include_sources:true` changes the success shape's `chapters` from `null` to an array, and `data` to `null`.
+`include_sources:true` changes the success shape's `chapters` from `null` to an array, and `text` to `null`.
 

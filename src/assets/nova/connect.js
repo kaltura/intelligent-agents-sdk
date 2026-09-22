@@ -24,7 +24,7 @@ import { initHighlighter } from './highlighter.js';
 import { initSiteNav } from './site-nav.js';
 import { SDK_BASE } from './sdk.js';
 
-const { KalturaAgentSession } = await import(`${SDK_BASE}/src/experience/index.js`);
+const { KalturaAgentSession, SILENT_OPENING_LABEL } = await import(`${SDK_BASE}/src/experience/index.js`);
 const { Management } = await import(`${SDK_BASE}/src/management/index.js`);
 
 const PARTNER_ID = '6516742';
@@ -219,7 +219,9 @@ async function connect(pendingPrompt, mode = 'avatar') {
     // visitor's turn, 'final' carries each of Nova's reply segments.
     session.on('transcript', (tr) => {
       if (tr.type === 'user' && tr.text && tr.text !== KICKOFF_TRIGGER) appendTranscript('you', tr.text);
-      else if (tr.type === 'final' && tr.text) {
+      // The avatar's silent opening turn reaches the app as the SDK's
+      // SILENT_OPENING_LABEL caption; it is not something to show a visitor.
+      else if (tr.type === 'final' && tr.text && tr.text !== SILENT_OPENING_LABEL) {
         hideThinking();
         appendTranscript('nova', tr.text);
       }

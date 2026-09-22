@@ -19,6 +19,11 @@ module.exports = [
     "group": "How-to Guides",
     "pages": [
       {
+        "title": "Start the Conversation",
+        "url": "/guides/start-the-conversation/",
+        "children": []
+      },
+      {
         "title": "Client-Side Commands",
         "url": "/guides/client-commands/",
         "children": []

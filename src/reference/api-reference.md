@@ -22,8 +22,8 @@ Every endpoint is shown as a raw HTTP call plus its SDK wrapper. The SDK is what
 | File | Covers |
 |------|--------|
 | [Authentication & Services](/reference/api/authentication/) | KS types and minting, `userId` binding, the five services and their base URLs |
-| [Catalog & Assets](/reference/api/design/) | Browse the catalog, generate an agent profile, custom voice (clone), provider voice import, custom visual (portrait), end-to-end portrait recipe |
-| [Agent Components](/reference/api/build/) | Create/configure an intellect, preview a prompt, tools (`api`/`csv`/`code`), secrets, ground in your content (RAG), create an avatar, create an agent |
+| [Catalog & Assets](/reference/api/design/) | Browse the catalog, custom voice (clone), provider voice import, custom visual (portrait, photo spec), custom face/background, end-to-end portrait recipe |
+| [Agent Components](/reference/api/build/) | Generate an agent profile, create/configure an intellect, preview a prompt, tools (`api`/`csv`/`code`), secrets, ground in your content (RAG), create an avatar, create an agent |
 | [Widget & Runtime Init](/reference/api/deploy/) | Resolve widget ID, initialize the browser runtime |
 | [Conversation & Analytics](/reference/api/operate/) | Converse (headless HTTP), reserved `sys__*` template variables, status, threads, feedback and follow-ups, usage analytics, knowledge search (MCP) |
 | [Scripted-Video (STV-only) Sessions](https://github.com/kaltura/intelligent-agents-sdk/blob/main/docs/api/scripted-video.md) | Pre-authored speech sessions — auth, lifecycle, `say-audio` |
@@ -55,13 +55,20 @@ See the full [Use-Case Catalog](/reference/use-cases/) for all 13, each mapped t
 
 ## Common Errors
 
-| Status | Code / Detail | Fix |
-|--------|--------------|-----|
-| 400 | `bad_request` | Malformed JSON or missing field |
-| 403 | Forbidden | Wrong KS type — admin KS for management, `geniegpcid` for conversations |
-| 400 | `AGENT_NOT_FOUND` | Check the `agentId` |
-| 400 | `AGENT_PARTNER_CONFIG_NOT_FOUND` | Create the intellect first |
-| 405 | Method Not Allowed | Use `GET` for `/assistant/status`; everything else is `POST` |
+The SDK wraps every error into a `KalturaError` with a stable `err.code`. Branch on that, not on prose or the raw upstream body.
+
+| Status | `err.code` | Fix |
+|--------|-----|-----|
+| 400 | `bad_request` | Fix the request body |
+| 403 | `forbidden` | Wrong KS type: admin KS for management, `geniegpcid` for conversations |
+| 405 | `method_not_allowed` | Use `GET` for `/assistant/status`; everything else is `POST` |
+
+Upstream error text is also normalized to a stable `err.code`, regardless of the HTTP status the backend returned it with:
+
+| Upstream detail contains | `err.code` | Fix |
+|---|-----|-----|
+| `AGENT_NOT_FOUND` | `agent_not_found` | Check the `agentId` |
+| `AGENT_PARTNER_CONFIG_NOT_FOUND` | `intellect_not_found` | Create the intellect first |
 
 ---
 

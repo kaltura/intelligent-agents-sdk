@@ -24,8 +24,8 @@ await session.resume();   // async: hands the turn loop back
 
 **`resume()`** always sets `session.paused = false` immediately, then takes the right path for how the pause played out. There are two common paths, depending on how long you were paused (a third, rarer one is covered below):
 
-- **Short pause (the common case):** the server still has your session held open. `resume()` just emits `resumeConversation` and returns. It's cheap and near-instant (resolved in ~1ms in a real session).
-- **Long pause (the server released the session):** if the pause window expired before you called `resume()`, the server already tore down your STV/ASR transports and told the SDK so (`pauseSessionExpired` / `sessionReadyForResume`, see below). `resume()` detects this internally and rebuilds the ASR (and, in video mode, STV) transports against a fresh session before handing the turn loop back. This uses the same connect machinery `connect()` itself uses. This path takes as long as a fresh media (re)negotiation, not the ~1ms of the short path.
+- **Short pause (the common case):** the server still has your session held open. `resume()` just emits `resumeConversation` and returns. It's cheap and near-instant.
+- **Long pause (the server released the session):** if the pause window expired before you called `resume()`, the server already tore down your STV/ASR transports and told the SDK so (`pauseSessionExpired` / `sessionReadyForResume`, see below). `resume()` detects this internally and rebuilds the ASR (and, in video mode, STV) transports against a fresh session before handing the turn loop back. This uses the same connect machinery `connect()` itself uses. This path takes as long as a fresh media (re)negotiation, not the near-instant short path.
 
 **You never need to branch on which path it takes.** Always just `await session.resume()`. It picks the right one for you. The exact length of the pause window before the server releases the session isn't a published constant. Don't rely on an exact number. Always resume via one of the triggers below, rather than assuming a pause lasts as long as you need it to.
 
@@ -37,7 +37,7 @@ The moment you call `resume()`, the SDK releases that held signal: the rebuilt s
 
 In every one of these cases, `resume()` returns cleanly with `session.paused === false` and never hangs. That's why the edge-case handling below is just "call `resume()` from every exit path, unconditionally."
 
-`resume()` can still reject for reasons unrelated to pause duration (a genuinely dead session, a real network failure mid-rebuild). Treat any rejection defensively regardless: catch it, and if `session.state` is still `'connected'`, the session is fine and there's nothing further to do.
+`resume()` can still reject for reasons unrelated to pause duration (a genuinely dead session, a real network failure mid-rebuild). Treat any rejection defensively regardless: catch it, and if `session.state` is still `'connected'`, the session is fine and there's nothing further to do. If the long-path rebuild itself fails, the session is never left half-connected: `resume()` rejects with the rebuild error, and the session emits `error` and then `ended {reason:'resume_failed'}` with `session.state === 'disconnected'`. Call `connect()` again to start over.
 
 You don't need to listen for any event to know resume worked. `await session.resume()` resolving is the only signal your app needs. Two events exist for optional UX polish, but neither is required:
 

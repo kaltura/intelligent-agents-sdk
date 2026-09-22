@@ -61,11 +61,11 @@ Auth/tenant scope: the KS in `auth.token` scopes the session to a partner and ag
 
 ## 3. Connect sequence (state-machine order)
 
-Order from the built-in client's connecting-state machine (steps 0–9, 11) plus the SDK/embed client video-ready gate (step 10). `→` = client emits, `←` = client receives. **Each numbered step waits for its inbound event before advancing.**
+Order from the built-in client's connecting-state machine (steps 0–9, 11) plus the SDK/embed client video-ready gate (step 10). `→` = client emits, `←` = client receives. Steps 1–5 are serial: each waits for its inbound event before advancing. After step 5 the SDK runs two lanes in parallel: steps 6→7→9 (agent, ready, ASR uplink) and step 10 (WHEP), which needs only the step 5 result. Step 11 runs once both lanes are done. The first lane to fail rejects `connect()` at once. Step 0 is never awaited: the mic prompt runs alongside the whole sequence and a denied mic emits a `warning`, never a failure.
 
 | # | Client | Emits `→` / Waits `←` | Inbound (server) | Timeout |
 |---|---|---|---|---|
-| 0 | init RTC session + `getUserMedia({audio:true,video:false})` | — | (mic prompt) | — |
+| 0 | init RTC session + start `getUserMedia({audio:true,video:false})` in the background | — | (mic prompt) | — (not awaited) |
 | 1 | open socket | `←` | `onServerConnected` | 10s (`ConnectionTimeout`) |
 | 2 | join room | `→ join` | — | — |
 | 3 | wait config + ack (parallel) | `← clientConfiguration`, `← joinComplete` | both required | `clientConfiguration` 5s, `joinComplete` **20s** (both `JoinRoomTimeout`) |
@@ -74,14 +74,15 @@ Order from the built-in client's connecting-state machine (steps 0–9, 11) plus
 | 6 | wait agent | `← showAgent` | agent joined | 10s (`AgentResponseTimeout`) |
 | 7 | wait ready | `← askPermissions {constraints}` | server ready (machine event `ServerReadyReceived`) | — |
 | 8 | (optional) wait player-ready, then 1000ms delay | — | — | — |
-| 9 | connect ASR mic uplink | `asr-webrtc-*` handshake ([§5](/reference/wire-protocol/audio-channels/#5-asr-uplink-pc1--microphone--server)) | — | 30s (`ASRConnectionFailed`) |
-| 10 | subscribe STV video (WHEP) **and wait until playable, or give up waiting** | `→` WHEP POST (no timeout of its own) → wait `<video>` `canplay` + ~300ms settle, or a 6s hard cap if `canplay` never fires | first decoded frame, or the 6s cap elapsing | 6s (hard cap; settles either way) |
-| 11 | **approve** (starts the spoken greeting) | `→ approvedPermissions {room}` | — | — |
+| 9 | connect ASR mic uplink (lane A, after 6→7) | `asr-webrtc-*` handshake ([§5](/reference/wire-protocol/audio-channels/#5-asr-uplink-pc1--microphone--server)) | — | 30s per wait (`ASRConnectionFailed`) |
+| 10 | subscribe STV video (WHEP) **and wait until playable, or give up waiting** (lane B, starts right after step 5) | `→` WHEP POST (no timeout of its own) → wait `<video>` `canplay` + ~300ms settle, or a 6s hard cap if `canplay` never fires | first decoded frame, or the 6s cap elapsing | 6s (hard cap; settles either way) |
+| 11 | **approve** (starts the spoken greeting), once lanes A and B are both done | `→ approvedPermissions {room}` | — | — |
+| 12 | opening turn runs. With a silent opening phrase (`SILENT_OPENING`) it produces no speech and ends in ~0.5 s. The SDK sends a configured `kickoff` on its `stvFinishedTalking` ([guide](/guides/start-the-conversation/)) | `← stvStartedTalking` … `← stvFinishedTalking` then `→ onTextEntered {text}` | `stvFinishedTalking` | — |
 | → | **CONNECTED** | listen for `agent_raw_text`, `generatingSpeech`, `stv*Talking`, VAD ([events catalog](/reference/wire-protocol/events-catalog/)) | — | — |
 
-Top-level machine states (the built-in client's connection state machine): `preparing → connecting → connected → (disconnecting / disconnected / error)`. Overall connecting timeout 30s. Step timeouts are from the built-in client's connecting state (`30e3` overall, `10000` server-connect, `5e3` join-room, `10000` agent, ASR 30s).
+Top-level machine states (the built-in client's connection state machine): `preparing → connecting → connected → (disconnecting / disconnected / error)`. Overall connecting timeout 30s. Step timeouts are from the built-in client's connecting state (`30e3` overall, `10000` server-connect, `5e3` join-room, `10000` agent, ASR 30s). Every wait in the table, including the two ASR waits and the WHEP answer, is also bounded by the 30s overall deadline: an event or WHEP answer that lands after it rejects `connect()` with `ConnectTimeout`.
 
-> **Why `joinComplete` gets 20s, not 5s (deliberate deviation from the built-in client's single 5s join-room budget):** the server emits `clientConfiguration` immediately on join, but emits `joinComplete` only after an awaited context-update call that can exceed 5s under load. This SDK therefore budgets the two waits separately — `clientConfiguration` 5s, `joinComplete` 20s (`SDK:session.js` `TIMEOUTS.joinRoom` / `TIMEOUTS.joinComplete`). A client that reuses the built-in client's single 5s budget for both will see spurious `JoinRoomTimeout` failures on loaded rooms.
+> **Why `joinComplete` gets 20s, not 5s (deliberate deviation from the built-in client's single 5s join-room budget):** `clientConfiguration` typically arrives right after `join`, but `joinComplete` can take longer than 5s under load. This SDK therefore budgets the two waits separately: `clientConfiguration` 5s, `joinComplete` 20s (`SDK:session.js` `TIMEOUTS.joinRoom` / `TIMEOUTS.joinComplete`). A client that reuses the built-in client's single 5s budget for both will see spurious `JoinRoomTimeout` failures on loaded rooms.
 
 > **Steps 10–11 are a client-side refinement, not part of the built-in client's machine.** The bare built-in client connecting-state machine approves on `connectToASR` **onDone** (`sendApprovedPermissions` → `done` → `#connected`). Its STV video is subscribed later, in the player layer.  
 >  
@@ -97,5 +98,6 @@ Top-level machine states (the built-in client's connection state machine): `prep
 |---|---|
 | [Wire Protocol · Events Catalog](/reference/wire-protocol/events-catalog/) | The full socket-event-by-event catalog referenced above |
 | [Wire Protocol · Audio Channels](/reference/wire-protocol/audio-channels/) | ASR uplink + STV downlink wire mechanics |
+| [Start the Conversation](/guides/start-the-conversation/) | Silent opening + `kickoff`: the fastest interruptible first turn and what fires on the wire |
 | [Wire Protocol](/reference/wire-protocol/) | Back to the index |
 

@@ -57,18 +57,20 @@ socket.on('conversationTimeWarning', ({remainingTime}) => {/* seconds left */});
 
 ## Sending User Input
 
-Two ways the user drives the conversation:
+Three ways the conversation gets its turns:
 
 1. **Voice (primary)**: just speak. The ASR channel publishes mic audio; the server transcribes and feeds the brain. No client call needed.
 
-2. **Text injection**: drive the live avatar by text instead of voice. This is a *socket* event (the same channel ASR transcripts use), not an `/assistant/converse` HTTP call. HTTP converse is a separate stateless chat that never reaches the avatar's speech engine, so the avatar stays silent if you use it instead. Verified working via the SDK's own `session.speak()` (`src/experience/session.js`):
+2. **Kickoff (the SDK's first turn)**: the `kickoff` session option is typed text the SDK sends for the app, once per session object, through the same text-injection path as item 3. It goes out the moment the server accepts input: after the opening turn ends (`stvFinishedTalking`), or after `acknowledgeDisclosure()` when the disclosure gate is on. Pair it with a silent opening phrase (`SILENT_OPENING`) for the fastest interruptible first reply. See [Start the Conversation](/guides/start-the-conversation/).
+
+3. **Text injection**: drive the live avatar by text instead of voice. This is a *socket* event (the same channel ASR transcripts use), not an `/assistant/converse` HTTP call. HTTP converse is a separate stateless chat that never reaches the avatar's speech engine, so the avatar stays silent if you use it instead. Verified working via the SDK's own `session.speak()` (`src/experience/session.js`):
 
    ```js
    // the isSpeechStart marker interrupts a mid-sentence avatar (no-op if idle)
-   socket.emit('debug_text_entered', { text: '', isFinal: false, isSpeechStart: true });
-   socket.emit('debug_text_entered', { text, isFinal: true });   // captured client emit name
+   socket.emit('onTextEntered', { text: '', isFinal: false, isSpeechStart: true });
+   socket.emit('onTextEntered', { text, isFinal: true });
    ```
-The server handler is `onTextEntered`, the session server's text-injection handler. It reads only `{ text, isFinal, isSpeechStart? }` and routes the text to the same pipeline as ASR transcripts (`vadSpeechDetected`). Routing is keyed by the socket's own room (`room: socket.id`). It does **not** read `room_id` or `session_id`; the server ignores both. (The client-side text-entry emitter only sends `{text,isFinal}`, but the injected text is still spoken.) For purely **typed** chat (no avatar), the production chat UI instead calls `/assistant/converse` directly with the `geniegpcid` KS. See [Wire Protocol · Events Catalog §4a](/reference/wire-protocol/events-catalog/#4a-client--server-emit).
+`onTextEntered` is the text-input event. The payload is `{ text, isFinal, isSpeechStart? }`; `room_id` and `session_id` are not needed and are ignored. The text is treated exactly like a spoken transcript. If the session was built with `debug:true`, `speak()` also emits a `debug_text_entered` mirror with the final `{text, isFinal:true}` right after `onTextEntered`, for observability only. The reply follows from `onTextEntered` either way. For purely **typed** chat (no avatar), the production chat UI instead calls `/assistant/converse` directly with the `geniegpcid` KS. See [Wire Protocol · Events Catalog §4a](/reference/wire-protocol/events-catalog/#4a-client--server-emit).
 
 ---
 

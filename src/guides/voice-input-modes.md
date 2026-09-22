@@ -15,7 +15,7 @@ Design guidance for app builders deciding **how a viewer's input reaches the age
 | **Push-to-talk** | `KalturaAvatarSession` (`isTapToTalk`) | Prompted at connect* | Viewer opens/closes a capture window (`startTapToTalk()`/`endTapToTalk()`) |
 | **Chat (text-only)** | `KalturaChatSession` | **Never requested** — the class never touches `getUserMedia` or WebRTC | `sendText('…')` over plain HTTPS |
 
-\* Or deferred: `micStartMode: 'deferred'` connects the avatar session with no mic at all. The app calls `startMic()` later from a real user click, so the permission prompt is gesture-anchored instead of firing on page load. Until then, typed turns work, but `startTapToTalk()` throws `mic_not_started`. See [README.md](https://github.com/kaltura/intelligent-agents-sdk/blob/main/README.md#devices-and-media-quality).
+\* In the default `micStartMode: 'immediate'` the permission prompt runs alongside the connect handshake. `connect()` never waits for it and never fails because of it: a denied, missing or busy mic emits one `warning` (`mic_permission_denied`, `mic_not_found`, `mic_in_use`) and the session connects mic-less, with typed turns working. Or deferred: `micStartMode: 'deferred'` connects the avatar session with no mic at all. The app calls `startMic()` later from a real user click, so the permission prompt is gesture-anchored instead of firing on page load. Until then, typed turns work, but `startTapToTalk()` throws `mic_not_started`. See [README.md](https://github.com/kaltura/intelligent-agents-sdk/blob/main/README.md#devices-and-media-quality).
 
 The first two are **voice-capture** modes on the live avatar transport. Most of this doc is about choosing between them and building their UI.
 
@@ -69,8 +69,8 @@ If your product genuinely needs walkie-talkie-style short bursts (not this SDK's
 
 Give the viewer three redundant signals that the mic is live, not one:
 
-1. **Icon/color change** on the button itself (e.g. this SDK's existing `#btn-mute` icon-swap pattern, mirror that structure for a tap-to-talk button: swap an idle-mic icon for a recording icon, not just an `aria-pressed` attribute change).
-2. **An animated level indicator** — a waveform, pulsing glow, or (simplest, and already available) this SDK's `localMicLevel` event (`{level}`, 0–1, ~50ms tick) driving a CSS custom property. This SDK's own mute button already does this for open-mic. A single static icon alone is not enough (NN/g's critique of Amazon Echo's single light ring as "a far cry from rich textual feedback").
+1. **Icon/color change** on the button itself: swap an idle-mic icon for a recording icon on a tap-to-talk button, not just an `aria-pressed` attribute change.
+2. **An animated level indicator**: a waveform, pulsing glow, or (simplest, and already available) this SDK's `localMicLevel` event (`{level}`, 0–1, ~50ms tick) driving a CSS custom property. A single static icon alone is not enough (NN/g's critique of Amazon Echo's single light ring as "a far cry from rich textual feedback").
 3. **A live-region text or caption update** (`aria-live`) confirming state changes ("Listening…" / "Sent") — necessary for screen-reader users who can't see the icon/waveform at all. Pair with an audio cue (a short start/stop tone) as an additional non-visual channel if your app's audio design allows it.
 
 ## Safety: don't let a capture window hang open forever
@@ -99,6 +99,7 @@ A tap window that never closes (tab closed mid-recording, app crash, network dro
 | `connected` | `switchMode(other)` | `switching` → `connected` | Emits `transportChanged`, then `modeChanged {mode, threadContinuity}` |
 | `connected` | `switchMode(current)` | `connected` | Idempotent no-op — nothing tears down |
 | `switching` | switch fails | `failed` (`reason: 'transport_failed'`) | No rollback; buffered sends reject with the switch error |
+| `switching` | `disconnect()` | `closed` | The in-flight `switchMode()` rejects with `invalid_state`; one `ended {reason:'disconnected'}`, no `failed` |
 | `connected` | transport dies | `failed` + `ended` forwarded | Socket drop, server end |
 | any | `disconnect()` | `closed` | Idempotent; exactly one `ended {reason:'disconnected'}` |
 
@@ -106,7 +107,7 @@ A tap window that never closes (tab closed mid-recording, app crash, network dro
 
 Two UX rules for the switch:
 
-- **Switching INTO a voice mode prompts for the mic.** Browsers require a live user gesture for `getUserMedia`, and a prior grant in chat mode doesn't exist to reuse. Route `switchMode('avatar')` through a real click target (a "Continue with video" button), never a state-change callback. A programmatic call outside a gesture gets auto-denied, landing the session in `failed` (`reason: 'permission_denied'` on the initial connect path).
+- **Switching INTO a voice mode prompts for the mic.** Browsers require a live user gesture for `getUserMedia`, and a prior grant in chat mode doesn't exist to reuse. Route `switchMode('avatar')` through a real click target (a "Continue with video" button), never a state-change callback. A programmatic call outside a gesture gets auto-denied. The session still connects (mic acquisition never blocks or fails `connect()`), but it arrives mic-less with a `warning` (`mic_permission_denied`), and the viewer has to call `startMic()` from a real click to get voice.
 - **Expect a brief reconnect blip.** Switching is tear-down-and-reconstruct by design — show a transient "switching…" state on the facade's `stateChange {state:'switching'}` event rather than hiding it. `sendText()` calls during the blip are buffered (up to 8) and delivered in order on the new transport.
 
 ## Related docs

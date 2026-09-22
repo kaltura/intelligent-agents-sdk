@@ -10,9 +10,9 @@ eyebrow: Reference
 [← Back to Agent Components](/reference/api/build/)
 
 
-**SDK:** `mgmt.intellects.previewPrompt(configId, ks, opts)`. This call only reads data — it never writes.
+**SDK:** `mgmt.intellects.previewPrompt(configId, ks, opts)`. Requires an **admin KS**. This call only reads data — it never writes.
 
-The returned `text` is rendered client-side. It's a replica of the author layer (`prompts[]` + `base_directive` + `glossary`), assembled the same way the server's `get_partner_prompts()`/`get_system_prompt()` do. Use it to check a prompt template before shipping it.
+The returned `text` is rendered client-side. It's a replica of the author layer (`prompts[]` + `base_directive` + `glossary`), assembled by mirroring the server's own prompt-rendering rules. Use it to check a prompt template before shipping it.
 
 By default, it fetches and renders the intellect's *current stored* config. Pass `draftPrompts`/`draftBaseDirective`/`draftGlossary` to preview an unsaved edit instead.
 
