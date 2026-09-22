@@ -115,10 +115,10 @@ Pass slow-changing personalization values (viewer name, account tier) that the b
 ```js
 const session = new KalturaAvatarSession({ token, /* … */, requestVars: { user_name: 'Ada' } });
 // later, once you learn more about the viewer:
-session.updateRequestVars({ user_name: 'Ada', account_tier: 'enterprise' });
+session.updateRequestVars({ account_tier: 'enterprise' }); // user_name keeps 'Ada'
 ```
 
-`updateRequestVars(vars)` always sends the **full current map**. The server resets `request_vars` to exactly what you send — it does not merge with the join-time map or a previous call. For a full per-turn context blob the brain reads fresh every turn (not just `{{var}}` substitution), use `session.setDynamicPrompt()` instead. The two mechanisms are distinct.
+`updateRequestVars(vars)` merges `vars` into the session's map, so send only the keys that changed. For a full per-turn context blob the brain reads fresh every turn (not just `{{var}}` substitution), use `session.setDynamicPrompt()` instead. The two mechanisms are distinct.
 
 For the full picture of when to use `request_vars` vs. `setDynamicPrompt()` vs. actively nudging the brain with `speak()` vs. answering a brain-initiated request with `submitStructuredDataForm()` — and a worked example showing how they compose — see [Dynamic Data Injection](/guides/dynamic-data-injection/).
 
