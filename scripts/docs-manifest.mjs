@@ -50,6 +50,18 @@ export const manifest = [
 
   // ---- How-to Guides ----
   {
+    source: 'docs/START-THE-CONVERSATION.md',
+    target: 'guides/start-the-conversation.md',
+    url: '/guides/start-the-conversation/',
+    title: 'Start the Conversation',
+    description: 'How the first turn of an avatar session works: the intellect opening phrase, the silent opening, and the SDK kickoff option that lets the agent greet the user in its own words.',
+    eyebrow: 'How-to Guide',
+    h1: 'Start the Conversation — opening phrase, silent opening and kickoff',
+    group: 'How-to Guides',
+    navTitle: 'Start the Conversation',
+    generated: true,
+  },
+  {
     source: 'docs/CLIENT-COMMANDS.md',
     target: 'guides/client-commands.md',
     url: '/guides/client-commands/',
