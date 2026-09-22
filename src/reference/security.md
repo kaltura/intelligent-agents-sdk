@@ -44,7 +44,7 @@ Email `security@kaltura.com` with details and a PoC if available. Please do not 
 
 Beyond the platform controls below, the SDK exposes developer-friendly guardrails for the AI/agent layer, detailed in the [framework crosswalks](#framework-crosswalks) below. Most require you to opt in by passing a callback or option. Two controls run automatically, regardless of configuration. The idle-timeout auto-logoff defaults to 900000 ms (15 minutes); pass `0` to disable it. The AI-disclosure event fires before the avatar's first words on every connect.
 
-<div data-nova-target="ai-application-controls-list" data-nova-label="Guardrail list: output handling, input guardrail, agentic gate, consumption valve, HIPAA safeguards, deepfake disclosure">
+<div data-nova-target="guardrail-list" data-nova-label="Guardrail list: output handling, input guardrail, agentic gate, consumption valve, HIPAA safeguards, deepfake disclosure">
 
 - **Output handling (LLM05).** Opt-in: `safeUrl`, `safeText`, `renderSafeLink` (DOM-built, scheme-checked, never `innerHTML`). Call these yourself when rendering avatar text. On by default: inbound clamping of captions/segments.
 - **Input guardrail (LLM01).** Opt-in: `onBeforeSend(text, ctx)` may transform or block a turn. It's a no-op until you pass it.
