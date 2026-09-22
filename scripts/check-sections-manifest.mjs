@@ -3,7 +3,8 @@
 // navigates against. Fails the build when the file is missing, invalid, stale
 // (differs from a fresh rebuild out of _site/**/index.html), or points at a
 // section id that does not exist on its page. Also prints the SITE MAP token
-// estimate so a growing site is visible before it hits the prompt budget.
+// estimate, and relays the SDK's own over-budget warning, so a growing site is
+// visible here before Nova's provisioning sees it.
 //
 // Run after `npm run build`. Exit 0 = manifest is sound, 1 = any failure.
 import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
@@ -14,7 +15,6 @@ import { resolveSdkDir } from './generate-docs.mjs';
 
 const SITE_DIR = new URL('../_site', import.meta.url).pathname;
 const MANIFEST_FILE = join(SITE_DIR, MANIFEST_REL_PATH);
-const SITE_MAP_TOKEN_BUDGET = 2000;
 
 if (!existsSync(SITE_DIR)) {
   console.error('check-sections-manifest: _site/ not found — run `npm run build` first');
@@ -45,9 +45,9 @@ function urlOf(file) {
 const failures = [];
 const fail = (msg) => failures.push(msg);
 
-const { validateSectionsManifest, renderSiteMap } = await loadSiteKeys();
+const { validateSectionsManifest } = await loadSiteKeys();
 const sdkDir = resolveSdkDir();
-const { estimateTokens } = await import(pathToFileURL(join(sdkDir, 'src', 'management', 'site-nav.js')).href);
+const { estimateTokens, siteMapPrompt } = await import(pathToFileURL(join(sdkDir, 'src', 'management', 'site-nav.js')).href);
 
 let manifest;
 try {
@@ -85,13 +85,11 @@ for (const page of manifest.pages) {
   }
 }
 
-// 4. Prompt budget: warn only. The SDK's siteMapPrompt warns at the same threshold when Nova is provisioned.
-const siteMap = renderSiteMap(manifest);
+// 4. Prompt budget: warn only. The threshold lives in the SDK's siteMapPrompt (the
+// same call Nova's provisioning makes), so the site cannot drift from it.
+const siteMap = siteMapPrompt(manifest, { warn: (m) => console.warn(`check-sections-manifest: WARNING ${m}`) }).value;
 const tokens = estimateTokens(siteMap);
 const sections = manifest.pages.reduce((n, p) => n + p.sections.length, 0);
-if (tokens > SITE_MAP_TOKEN_BUDGET) {
-  console.warn(`check-sections-manifest: WARNING SITE MAP is ~${tokens} tokens (budget ${SITE_MAP_TOKEN_BUDGET}); trim headings or stop words`);
-}
 
 if (failures.length) {
   console.error(`check-sections-manifest: ${failures.length} problem(s):\n`);
