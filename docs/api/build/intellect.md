@@ -16,7 +16,7 @@ POST https://api.avatar.us.kaltura.ai/v1/application/generateAgentProfile
 { "userDescription": "A friendly technical support agent for a video platform" }
 ```
 
-Returns `{goal, targetAudience, restrictedTopics, name, openingPhrase}`. Nothing is saved: pass `goal`, `targetAudience` and `restrictedTopics` into the intellect's prompts (§ Configure an Intellect, below) and `openingPhrase` into `avatar/create` ([avatar-and-agent.md](avatar-and-agent.md)).
+Returns `{goal, targetAudience, restrictedTopics, name, openingPhrase}`. Nothing is saved: pass `goal`, `targetAudience` and `restrictedTopics` into the intellect's prompts and `openingPhrase` into the intellect's `opening_phrase` (§ Configure an Intellect, below). Leave the avatar's own `openingPhrase` unset ([avatar-and-agent.md](avatar-and-agent.md)).
 
 ---
 
