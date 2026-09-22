@@ -9,7 +9,7 @@
  *
  * {@link buildIndexerObjects} VALIDATES a caller's `modalities` (rejects an
  * unknown/duplicate modality with a typed `bad_request` before any wire call)
- * and returns the documented `{indexPosition,type,strategy}` per-modality
+ * and returns the documented `{index_position,type,strategy}` per-modality
  * mapping, for callers/tooling that build or inspect indexer objects directly.
  *
  * This is a PURE module — no network, no KS, no side effects. It throws a
@@ -39,7 +39,7 @@ export const STRATEGY = Object.freeze({
 
 /**
  * Convenience map pairing each modality (lowercase name) to its `{type,
- * strategy}` pair — the two fields that, plus an `indexPosition`, form one
+ * strategy}` pair — the two fields that, plus an `index_position`, form one
  * entry of `objects[]`. Keyed by the lowercase modality name callers pass in
  * `modalities`/`documentTypes` (`'caption'`/`'ocr'`/`'document'`).
  * @type {Readonly<{caption:{type:1, strategy:'EmbedCaptionV1'}, ocr:{type:2, strategy:'EmbedOcrV1'}, document:{type:3, strategy:'EmbedDocumentV1'}}>}
@@ -95,10 +95,11 @@ export function normalizeModality(token) {
 
 /**
  * Build the indexer `objects[]` array for one `categoryInfo` entry from a list
- * of modalities. Each entry is `{indexPosition, type, strategy}` with
- * `indexPosition` assigned by order (0-based). The request field is camelCase
- * `indexPosition`; the server reports it back as `index_position` on read
- * (see `knowledge.isIndexed`).
+ * of modalities. Each entry is `{index_position, type, strategy}` with
+ * `index_position` assigned by order (0-based). The wire field is snake_case
+ * `index_position` on both write and read: the backend rejects a request whose
+ * indexer lacks it (422 `validation_error`, "Field required") and reports it
+ * back on read as the server-managed cursor `knowledge.isIndexed` inspects.
  *
  * Pure: no network, no KS. Duplicate modalities are rejected (the indexer
  * would otherwise embed the same chapter type twice at different positions);
@@ -108,7 +109,7 @@ export function normalizeModality(token) {
  * @param {ReadonlyArray<string|number>} [types] modality tokens — names
  *   (`'caption'`/`'ocr'`/`'document'`), CHAPTER_TYPE keys, or numeric
  *   ChapterTypes. Defaults to all three.
- * @returns {Array<{indexPosition:number, type:number, strategy:string}>}
+ * @returns {Array<{index_position:number, type:number, strategy:string}>}
  */
 export function buildIndexerObjects(types) {
   let list;
@@ -129,6 +130,6 @@ export function buildIndexerObjects(types) {
     }
     seen.add(key);
     const embed = EMBED[key];
-    return { indexPosition: seen.size - 1, type: embed.type, strategy: embed.strategy };
+    return { index_position: seen.size - 1, type: embed.type, strategy: embed.strategy };
   });
 }
