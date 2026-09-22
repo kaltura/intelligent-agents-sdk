@@ -30,13 +30,20 @@ const { Management } = await import(`${SDK_BASE}/src/management/index.js`);
 const PARTNER_ID = '6516742';
 const WIDGET_ID = '1_g7ntgoq2';
 
-// The SDK sends this as the conversation's first turn (`kickoff`), once per
-// session, the moment the server accepts input. Nova's system prompt
-// (provision.mjs obeyRules) is keyed on this exact string: greet on a fresh
-// thread, greet back on a continued one, no tool calls. The eval harness
-// (tests/eval/personas.mjs KICKOFF_TRIGGER) sends the same string. Keep all
-// three in sync.
+// The chat-first greeting only: text chat has no opening turn, so a chat
+// session with no visitor question yet sends this as its first turn
+// (`kickoff`). Video greets through the intellect's opening phrase instead
+// (see NOVA_GREET). Nova's system prompt (provision.mjs obeyRules) is keyed
+// on this exact string: greet on a fresh thread, greet back on a continued
+// one, no tool calls. The eval harness (tests/eval/personas.mjs
+// KICKOFF_TRIGGER) sends the same string. Keep all three in sync.
 const KICKOFF_TRIGGER = 'Session started. Greet the visitor.';
+
+// Client variable read by Nova's intellect opening phrase (provision.mjs).
+// 'yes' on a brand-new thread speaks her scripted intro; '' renders the
+// silent opening. A sent value sticks to the thread for later joins, so it
+// is cleared with '' after the greeting, never by omitting the key.
+const NOVA_GREET = 'nova_greet';
 
 /**
  * `nova:uid` — a random UUID with no PII, minted only when the visitor
@@ -241,15 +248,27 @@ async function connect(pendingPrompt, mode = 'avatar') {
     const widget = await kaltura.sessions.createWidgetToken({ widgetId: WIDGET_ID });
     const init = await kaltura.application.appInit(widget.ks);
 
+    // Three ways in:
+    // - video, no question yet: the opening phrase speaks Nova's intro. It
+    //   makes sound sooner than a kickoff reply. No kickoff.
+    // - a chip click or a typed line, either mode: that is the visitor's real
+    //   first question. Silent opening, and the question is the kickoff,
+    //   echoed into the transcript.
+    // - chat, no question yet: chat has no opening turn, so the hidden
+    //   greeting trigger is the kickoff.
+    const greet = mode === 'avatar' && !pendingPrompt;
+    let kickoff;
+    if (pendingPrompt) kickoff = { text: pendingPrompt, echo: true };
+    else if (!greet) kickoff = KICKOFF_TRIGGER;
+
     session = new KalturaAgentSession({
       token: init.ks,
       mode,
       subjectId: visitorId(),
-      // First turn, sent by the SDK once the opening turn clears (avatar) or
-      // the transport is up (chat). A chip click or a typed line is the
-      // visitor's real first question, so it becomes the kickoff itself and
-      // is echoed into the transcript; otherwise the hidden greeting trigger.
-      kickoff: pendingPrompt ? { text: pendingPrompt, echo: true } : KICKOFF_TRIGGER,
+      requestVars: { [NOVA_GREET]: greet ? 'yes' : '' },
+      // Sent by the SDK once, on the first transport: after the opening turn
+      // ends (video) or once the transport is up (chat).
+      ...(kickoff ? { kickoff } : {}),
       // Avatar cfg is needed even for a chat-first session: switchMode()
       // builds the avatar transport from it later. Chat cfg is omitted —
       // the SDK's production genieUrl default is exactly where Nova lives.
@@ -266,7 +285,8 @@ async function connect(pendingPrompt, mode = 'avatar') {
     });
 
     // Both transports emit the same transcript shape: 'user' echoes the
-    // visitor's turn, 'final' carries each of Nova's reply segments.
+    // visitor's turn, 'final' carries each of Nova's reply segments. Her
+    // spoken intro is a normal 'final' line and shows as hers.
     session.on('transcript', (tr) => {
       if (tr.type === 'user' && tr.text) appendTranscript('you', tr.text);
       // The avatar's silent opening turn reaches the app as the SDK's
@@ -309,6 +329,14 @@ async function connect(pendingPrompt, mode = 'avatar') {
     highlighter = initHighlighter(session, siteNav);
 
     await session.connect();
+    // The intro has been rendered for this join. Clear the flag so a later
+    // join of the same thread (switch back to video, cold reconnect) opens
+    // silently instead of greeting again mid-conversation.
+    if (greet) {
+      try {
+        session.updateRequestVars({ [NOVA_GREET]: '' });
+      } catch { /* session already gone: nothing left to re-greet */ }
+    }
     connecting = false;
     els.videoWrap?.classList.remove('is-connecting');
     els.placeholder.classList.add('hidden');
@@ -320,7 +348,7 @@ async function connect(pendingPrompt, mode = 'avatar') {
     els.newConvo.disabled = false;
     els.close.disabled = false;
     setStatus('Connected — ask Nova anything about the SDK.');
-    if (mode === 'chat') showThinking();
+    if (kickoff && mode === 'chat') showThinking();
   } catch (e) {
     connecting = false;
     els.videoWrap?.classList.remove('is-connecting');

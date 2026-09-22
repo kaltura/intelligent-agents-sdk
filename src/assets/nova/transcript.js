@@ -14,9 +14,9 @@ export function initTranscript(el) {
 }
 
 // Defensive filter for a bare ASR/TTS control token ("<tag>") arriving as a
-// transcript segment: it carries no content for a visitor to read. The SDK's
-// SILENT_OPENING opening turn never reaches here; connect.js drops its
-// SILENT_OPENING_LABEL caption before calling appendTranscript. Matches only
+// transcript segment: it carries no content for a visitor to read. A silent
+// opening never reaches here; connect.js drops its SILENT_OPENING_LABEL
+// caption. A spoken opening (Nova's intro) arrives as normal text. Matches only
 // a segment that IS one such tag start to finish, so a reply that merely
 // mentions "<foo>" as real text is never touched.
 const FILLER_TOKEN_RE = /^<[^<>]+>$/;

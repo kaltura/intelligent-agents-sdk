@@ -98,6 +98,6 @@ Top-level machine states (the built-in client's connection state machine): `prep
 |---|---|
 | [Wire Protocol · Events Catalog](/reference/wire-protocol/events-catalog/) | The full socket-event-by-event catalog referenced above |
 | [Wire Protocol · Audio Channels](/reference/wire-protocol/audio-channels/) | ASR uplink + STV downlink wire mechanics |
-| [Start the Conversation](/guides/start-the-conversation/) | Silent opening + `kickoff`: the fastest interruptible first turn and what fires on the wire |
+| [Start the Conversation](/guides/start-the-conversation/) | Scripted Jinja2 opening or silent opening + `kickoff`: how to choose, and what fires on the wire |
 | [Wire Protocol](/reference/wire-protocol/) | Back to the index |
 
