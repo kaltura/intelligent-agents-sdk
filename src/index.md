@@ -79,7 +79,7 @@ Once a tag is pinned, jsDelivr serves the SDK straight from GitHub. No
      (SDK_TAG constant) and docs-site-avatar/scripts/fetch-sdk.mjs (DEFAULT_TAG). -->
 ```html
 <script type="module">
-  import { KalturaAvatarSession } from 'https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.23.0/src/experience/index.js';
+  import { KalturaAvatarSession } from 'https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.23.1/src/experience/index.js';
 
   const session = new KalturaAvatarSession({
     token,               // conversation KS, from your backend
