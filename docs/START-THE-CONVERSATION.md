@@ -1,6 +1,6 @@
 # Start the conversation: opening phrase, `SILENT_OPENING` + `kickoff`
 
-The intellect's `opening_phrase` owns the first turn of every avatar session. There are two good ways to use it:
+The intellect's `opening_phrase` owns the first turn of every avatar join. There are two good ways to use it:
 
 | You want | Use |
 |---|---|
@@ -9,7 +9,8 @@ The intellect's `opening_phrase` owns the first turn of every avatar session. Th
 
 ```js
 // server, once. Pick one.
-import { SILENT_OPENING } from '@kaltura/intelligent-agents/management';
+import { Management, SILENT_OPENING } from '@kaltura/intelligent-agents/management';
+const kaltura = new Management({ partnerId, adminSecret });
 await kaltura.intellectConfig.setOpeningPhrase(configId,
   '{% if sys__is_new_thread %}Hi, I am the Acme assistant. What can I help you with?{% else %}Welcome back.{% endif %}', ks);
 // or
@@ -47,7 +48,7 @@ Trade-offs:
 - `SILENT_OPENING` + `kickoff` starts later, but the first reply is an ordinary model turn: it follows your whole prompt, can use tools, and stops the moment the user talks.
 - Do not combine a spoken scripted line with a `kickoff`. The user hears the line, then waits for the kickoff reply. For a preset question, use [§ Open with a preset question](#open-with-a-preset-question).
 
-Measure both on your own partner with `npm run live-verify:connect-timing:compare`. `--prompt-kb N` pads each arm's prompt with N KB of neutral text.
+Measure both on your own partner with `npm run live-verify:connect-timing:compare`. To pad each arm's prompt with N KB of neutral text, add `-- --prompt-kb N`, for example `npm run live-verify:connect-timing:compare -- --prompt-kb 25`.
 
 ## Where the opening phrase lives
 
@@ -94,10 +95,10 @@ Rules:
 1. **Every branch must render non-empty text.** An empty render makes the agent speak its default greeting instead. For a silent branch, render `<blank>` (the value of `SILENT_OPENING`). A variable that was not sent renders as empty text, so `Hello {{ user_name }}!` becomes `Hello !`, and inside `{% if %}` it counts as false.
 2. **A broken template stops the session.** A template that fails to render, or `requestVars` sent to an intellect that does not allow client variables, means the session never starts. Guard every optional variable with `{% if var %}`, and test a new template on a scratch intellect first.
 3. **The opening plays on every avatar join**, not only the first: the first `connect()`, a cold reconnect, `switchMode('avatar')` on an existing thread, and a session that joins an existing `threadId`. Guard the first-visit greeting with `sys__is_new_thread`.
-4. **A request variable stays set on the thread.** A value sent once still applies on later joins of that thread until you send it again. To turn a flag off, send it again as `''`. Leaving it out keeps the old value.
+4. **A request variable stays set on the thread**, also on later joins. To turn a flag off, see [DYNAMIC-DATA-INJECTION.md § The context channel](DYNAMIC-DATA-INJECTION.md#the-context-channel-request-variables).
 5. **Text chat has no opening turn.** In chat, send the greeting or preset question as the `kickoff` or as the first message.
 
-The rendered text reaches the browser as the opening `speechChunk` / `transcript` events and is stored on the thread as an `opening` message. A `<blank>` branch surfaces as `SILENT_OPENING_LABEL` (`[silence]`), never as `<blank>`.
+The rendered text reaches the browser as the opening `speechChunk` / `transcript` events and is stored on the thread as an `opening` message. A `<blank>` branch never surfaces as `<blank>`. An opening event that carries text shows `SILENT_OPENING_LABEL` (`[silence]`) instead.
 
 `scripts/live-verify-opening-phrase.mjs` is the CI-verified example of this path: it provisions a throwaway agent, sets `{% if %}` templates, and asserts the spoken opening with and without `requestVars`, the preset-question branch, and a re-join of the same thread. `test/integration/intellect-config.test.js` and `test/integration/avatars-catalog.test.js` cover the same calls without a live backend.
 
@@ -123,7 +124,7 @@ const session = new KalturaAvatarSession({
 await session.connect();
 ```
 
-The opening is silent, so the kickoff goes out about 0.3 s after `connect()` resolves and the first reply answers the question. The flag stays set on the thread (rule 4). Clear it with `session.updateRequestVars({ preset_question: '' })` once the answer has started, and send `preset_question: ''` in `requestVars` from any later session that joins the same thread without a preset question. Otherwise that session's opening is silent too.
+The opening is silent, so the kickoff goes out about 0.3 s after `connect()` resolves and the first reply answers the question. The flag stays set on the thread (rule 4), so clear it once the answer has started with `session.updateRequestVars({ preset_question: '' })`. Otherwise a later join of that thread opens silently too.
 
 ## The `kickoff` option
 
@@ -231,7 +232,7 @@ With `micStartMode: 'deferred'` the SDK does not touch the mic at all until you 
 | The agent speaks a scripted line before the kickoff reply | The intellect's `opening_phrase` is not `SILENT_OPENING`, or the intellect has none and the avatar still carries its own `openingPhrase` | `intellectConfig.setOpeningPhrase(configId, SILENT_OPENING, ks)`; clear the avatar's copy with `avatars.update({ id, openingPhrase: null }, ks)`. |
 | The agent speaks a default greeting instead of your line | One template branch rendered empty text | Make every branch render text; use `SILENT_OPENING` for a silent branch. |
 | A returning user hears the first-visit greeting after a reconnect or `switchMode('avatar')` | The opening plays on every join | Guard the first-visit branch with `{% if sys__is_new_thread %}`. |
-| A flag branch still plays after you stopped sending the flag | Request variables stay set on the thread | Send the flag again as `''`. |
+| A flag branch still plays after you stopped sending the flag | Request variables stay set on the thread | Turn the flag off: [DYNAMIC-DATA-INJECTION.md § The context channel](DYNAMIC-DATA-INJECTION.md#the-context-channel-request-variables). |
 | The opening says `Hello !` or greets nobody | A template variable was not sent and rendered as empty text | Guard it: `{% if user_name %}…{% else %}…{% endif %}`. |
 | The session never starts after setting a template | The template cannot be rendered, or `requestVars` were sent without `setClientVariablesEnabled(configId, true, ks)` | Fix the template on a scratch intellect first; enable client variables before sending any. |
 | `session.kickoff.sent` is `true` but nothing was said | The reply is still pending, or the model chose to say nothing | Watch `responsePending` / `responseSettled`. A second `speak()` starts a new turn. |

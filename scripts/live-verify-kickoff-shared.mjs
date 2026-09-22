@@ -293,7 +293,8 @@ export async function verifyDeleted(kaltura, ks, ids) {
       out[what] = 'still present';
     } catch (err) {
       const e = /** @type {any} */ (err);
-      const notFound = e?.status === 404 || /not_found/.test(String(e?.code ?? '')) || /not found/i.test(String(e?.detail || e?.message || ''));
+      // Typed not-found only: 404, a `*not_found` code (agent, intellect), or the avatar's documented `AVATAR_NOT_FOUND` title.
+      const notFound = e?.status === 404 || /(^|_)not_found$/.test(String(e?.code ?? '')) || e?.title === 'AVATAR_NOT_FOUND';
       out[what] = notFound ? 'deleted' : `error: ${redact(String(e?.code || e?.status || e?.message || e)).slice(0, 120)}`;
     }
   }

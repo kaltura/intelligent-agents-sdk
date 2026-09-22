@@ -88,7 +88,7 @@ console.log(reply.text);
 
 `converseOnce()` mints its own conversation token from the `configId`. The admin secret never leaves your process. See [Conversation & Analytics](docs/api/operate.md) in API-REFERENCE.md for threaded conversations, streaming, and the full Management API surface.
 
-**In the browser, let the agent speak first.** Pass `kickoff` to the session and the SDK sends that text as the first turn, once, as soon as the server accepts input. With the silent opening the quickstart set, the greeting is the agent's own reply and the user can interrupt it. A scripted Jinja2 opening makes sound sooner but cannot be interrupted. Attach your `session.on(...)` listeners before `connect()`: some events fire before it resolves. Guide: [docs/START-THE-CONVERSATION.md](docs/START-THE-CONVERSATION.md).
+**In the browser, let the agent speak first.** Pass `kickoff` to the session and the SDK sends that text as the first turn, once, as soon as the server accepts input. With the silent opening the quickstart set, the greeting is the agent's own reply. Scripted or silent opening: [docs/START-THE-CONVERSATION.md § Choose an opening](docs/START-THE-CONVERSATION.md#choose-an-opening). Attach listeners first: [README.md § Experience](README.md#experience).
 
 ```js
 const session = new KalturaAvatarSession({ ...runtimeConfig, kickoff: 'Greet the user and briefly say how you can help.' });
