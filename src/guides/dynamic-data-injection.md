@@ -40,8 +40,10 @@ session.updateRequestVars({ account_tier: 'enterprise' });
 Three properties make this channel do the heavy lifting:
 
 - **Updates merge.** `updateRequestVars(vars)` merges what you pass into the session's canonical map. Send only the keys that changed; keys you omit keep their values. (The full merged map goes to the server each time, and the server also merges per-thread, so a headless `converse` call sending a delta behaves the same way.)
-- **Values persist for the whole thread.** Send a variable once and every later turn on that thread still sees it — you don't resend per turn. A new thread starts clean. On a warm reconnect the SDK re-sends the full map automatically.
+- **Values persist for the whole thread.** Send a variable once and every later turn on that thread still sees it. You don't resend per turn. A new thread starts clean. On a warm reconnect the SDK re-sends the full map automatically. To turn a flag off, send it again as `''`; omitting it keeps the old value.
 - **Values can be big.** Each value must be a scalar (string, number, boolean, or null). A JSON document goes in as a string. Tens of kilobytes of JSON in one variable works. The SDK's live verification pushes a ~32 KB blob through and reads it back (see [Runnable examples](#runnable-examples) below).
+
+`updateRequestVars()` and `setDynamicPrompt()` throw `invalid_state` until the session is connected. Attach your `session.on(...)` listeners before `connect()`, because some events fire before it resolves: [README.md § Experience](https://github.com/kaltura/intelligent-agents-sdk/blob/main/README.md#experience).
 
 ### Page context: `setDynamicPrompt()`
 
