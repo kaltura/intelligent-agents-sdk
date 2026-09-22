@@ -14,7 +14,8 @@ import { KalturaError } from '../../src/core/errors.js';
  * Knowledge/RAG indexer enums + pure objects[] builder. The load-bearing
  * facts: ChapterType CAPTION=1/OCR=2/DOCUMENT=3,
  * StrategyEnum Embed{Caption,Ocr,Document}V1, and the wire field is
- * `indexPosition` (camelCase) NOT `index_position`.
+ * `index_position` (snake_case, the same field the backend echoes on read) NOT
+ * camelCase `indexPosition`, which the backend rejects with 422 "Field required".
  */
 
 test('CHAPTER_TYPE has the exact documented numeric values', () => {
@@ -63,21 +64,21 @@ test('normalizeModality throws bad_request KalturaError on unknown input', () =>
   assert.throws(() => normalizeModality({}), (e) => e instanceof KalturaError && e.code === 'bad_request');
 });
 
-test('buildIndexerObjects uses indexPosition (camelCase), NOT index_position', () => {
+test('buildIndexerObjects uses index_position (snake_case), NOT indexPosition', () => {
   const objs = buildIndexerObjects(['ocr']);
   assert.equal(objs.length, 1);
   const o = objs[0];
-  assert.equal('indexPosition' in o, true);
-  assert.equal('index_position' in o, false);
-  assert.deepEqual(o, { indexPosition: 0, type: 2, strategy: 'EmbedOcrV1' });
+  assert.equal('index_position' in o, true);
+  assert.equal('indexPosition' in o, false);
+  assert.deepEqual(o, { index_position: 0, type: 2, strategy: 'EmbedOcrV1' });
 });
 
 test('buildIndexerObjects builds a full OCR-capable objects[] with ordered positions', () => {
   const objs = buildIndexerObjects(['document', 'caption', 'ocr']);
   assert.deepEqual(objs, [
-    { indexPosition: 0, type: 3, strategy: 'EmbedDocumentV1' },
-    { indexPosition: 1, type: 1, strategy: 'EmbedCaptionV1' },
-    { indexPosition: 2, type: 2, strategy: 'EmbedOcrV1' },
+    { index_position: 0, type: 3, strategy: 'EmbedDocumentV1' },
+    { index_position: 1, type: 1, strategy: 'EmbedCaptionV1' },
+    { index_position: 2, type: 2, strategy: 'EmbedOcrV1' },
   ]);
 });
 
@@ -91,8 +92,8 @@ test('buildIndexerObjects defaults to all three modalities when omitted or empty
 test('buildIndexerObjects accepts numeric ChapterType tokens and re-indexes by order', () => {
   const objs = buildIndexerObjects([2, 'DOCUMENT']);
   assert.deepEqual(objs, [
-    { indexPosition: 0, type: 2, strategy: 'EmbedOcrV1' },
-    { indexPosition: 1, type: 3, strategy: 'EmbedDocumentV1' },
+    { index_position: 0, type: 2, strategy: 'EmbedOcrV1' },
+    { index_position: 1, type: 3, strategy: 'EmbedDocumentV1' },
   ]);
 });
 
