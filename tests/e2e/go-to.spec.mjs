@@ -180,3 +180,32 @@ test('destroy() unsubscribes every session listener (what resetUi relies on)', a
   await page.evaluate(() => window.__nav.destroy());
   expect(await page.evaluate(() => location.pathname)).toBe('/');
 });
+
+test('highlighter destroy() stops the page-context feed (no stacked feeds after New conversation)', async ({ page }) => {
+  await page.goto('/');
+  const result = await page.evaluate(async () => {
+    const pushes = [];
+    const handlers = new Map();
+    const session = {
+      state: 'connected',
+      setDynamicPrompt(vars) { pushes.push(vars); },
+      on(event, handler) { handlers.set(event, handler); },
+      off(event, handler) { if (handlers.get(event) === handler) handlers.delete(event); },
+    };
+    const { initHighlighter } = await import('/assets/nova/highlighter.js');
+    const feed = initHighlighter(session);
+    handlers.get('stateChange')({ state: 'connected' });
+    document.dispatchEvent(new CustomEvent('nova:pagechange'));
+    await new Promise((r) => setTimeout(r, 50));
+    const before = pushes.length;
+    feed.destroy();
+    document.dispatchEvent(new CustomEvent('nova:pagechange'));
+    await new Promise((r) => setTimeout(r, 50));
+    return { before, after: pushes.length, stateListeners: handlers.size, firstPush: pushes[0] };
+  });
+  expect(result.before).toBe(2);
+  expect(result.after).toBe(2);
+  expect(result.stateListeners).toBe(0);
+  expect(result.firstPush.page.url).toBe('/');
+  expect(Array.isArray(result.firstPush.sections)).toBe(true);
+});

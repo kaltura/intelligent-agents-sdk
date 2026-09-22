@@ -20,6 +20,8 @@ import { currentRoute } from './router.js';
  * @param {object} [siteNav] The SiteNavigator from site-nav.js. When given, the
  *   page context also carries `sections`: the current page's go_to section keys
  *   from the same manifest the brain's SITE MAP was rendered from.
+ * @returns {{destroy: () => void}} Removes both listeners. Call it when the
+ *   session ends so a "New conversation" does not stack a second feed.
  */
 export function initHighlighter(session, siteNav) {
   async function pushTargets() {
@@ -36,8 +38,16 @@ export function initHighlighter(session, siteNav) {
     });
   }
 
-  session.on('stateChange', ({ state }) => {
+  const onState = ({ state }) => {
     if (state === 'connected') pushTargets();
-  });
+  };
+  session.on('stateChange', onState);
   document.addEventListener('nova:pagechange', pushTargets);
+
+  return {
+    destroy() {
+      session.off('stateChange', onState);
+      document.removeEventListener('nova:pagechange', pushTargets);
+    },
+  };
 }
