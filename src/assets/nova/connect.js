@@ -24,8 +24,20 @@ import { initHighlighter } from './highlighter.js';
 import { initSiteNav } from './site-nav.js';
 import { SDK_BASE } from './sdk.js';
 
-const { KalturaAgentSession, SILENT_OPENING_LABEL } = await import(`${SDK_BASE}/src/experience/index.js`);
-const { Management } = await import(`${SDK_BASE}/src/management/index.js`);
+// Every way to start Nova stays hidden until this module has the SDK and has
+// wired its handlers (it sets html.nova-ready at the end, see styles.css), so
+// a click can never land on a pill or form that does nothing yet.
+let KalturaAgentSession, SILENT_OPENING_LABEL, Management;
+try {
+  [{ KalturaAgentSession, SILENT_OPENING_LABEL }, { Management }] = await Promise.all([
+    import(`${SDK_BASE}/src/experience/index.js`),
+    import(`${SDK_BASE}/src/management/index.js`),
+  ]);
+} catch (e) {
+  const status = document.getElementById('nova-status');
+  if (status) status.textContent = 'Nova could not load. Reload the page to try again.';
+  throw e;
+}
 
 const PARTNER_ID = '6516742';
 const WIDGET_ID = '1_g7ntgoq2';
@@ -94,8 +106,6 @@ const els = {
   input: document.getElementById('nova-input'),
   send: document.getElementById('nova-send'),
   videoWrap: document.getElementById('nova-video-wrap'),
-  promptsRow: document.querySelector('.nova-hero-prompts'),
-  chips: Array.from(document.querySelectorAll('.nova-chip')),
 };
 
 // Nova's real catalog-visual likeness, shown via <video poster> so her face
@@ -132,6 +142,23 @@ let session = null;
 let siteNav = null;
 let highlighter = null;
 let connecting = false;
+
+// Typed lines shown locally in video mode, waiting for the server's copy.
+// That copy arrives after Nova's reply has started, so showing it would put
+// "you" below her answer. Chat sends its copy before the reply, so chat
+// uses the SDK's copy and never adds here.
+let localEchoes = [];
+
+/** `text` minus every waiting local line it contains; '' if nothing is left. */
+function dropLocalEchoes(text) {
+  let rest = text;
+  localEchoes = localEchoes.filter((line) => {
+    if (!rest.includes(line)) return true;
+    rest = rest.split(line).map((s) => s.trim()).filter(Boolean).join('\n');
+    return false;
+  });
+  return rest;
+}
 
 function setStatus(text) {
   els.status.textContent = text;
@@ -242,6 +269,7 @@ async function connect(pendingPrompt, mode = 'avatar') {
   // conversation will live while it connects, not a spinner in the corner.
   if (mode === 'chat') enterDrawerMode();
   setStatus(mode === 'chat' ? 'Starting chat…' : 'Connecting…');
+  if (pendingPrompt) appendTranscript('you', pendingPrompt);
   try {
     if (mode === 'avatar') await ensureSocketIo();
     const kaltura = new Management({ partnerId: PARTNER_ID });
@@ -252,13 +280,14 @@ async function connect(pendingPrompt, mode = 'avatar') {
     // - video, no question yet: the opening phrase speaks Nova's intro. It
     //   makes sound sooner than a kickoff reply. No kickoff.
     // - a chip click or a typed line, either mode: that is the visitor's real
-    //   first question. Silent opening, and the question is the kickoff,
-    //   echoed into the transcript.
+    //   first question. Silent opening, and the question is the kickoff. It
+    //   is already in the transcript (shown above, on click), so the server's
+    //   copy is not echoed: in video it would land below Nova's answer.
     // - chat, no question yet: chat has no opening turn, so the hidden
     //   greeting trigger is the kickoff.
     const greet = mode === 'avatar' && !pendingPrompt;
     let kickoff;
-    if (pendingPrompt) kickoff = { text: pendingPrompt, echo: true };
+    if (pendingPrompt) kickoff = { text: pendingPrompt, echo: false };
     else if (!greet) kickoff = KICKOFF_TRIGGER;
 
     session = new KalturaAgentSession({
@@ -284,11 +313,16 @@ async function connect(pendingPrompt, mode = 'avatar') {
       },
     });
 
-    // Both transports emit the same transcript shape: 'user' echoes the
-    // visitor's turn, 'final' carries each of Nova's reply segments. Her
-    // spoken intro is a normal 'final' line and shows as hers.
+    // Both transports emit the same transcript shape: 'user' is the server's
+    // copy of the visitor's turn, 'final' carries each of Nova's reply
+    // segments. Her spoken intro is a normal 'final' line and shows as hers.
+    // A 'user' line the site already showed (see localEchoes) is dropped;
+    // what is left, such as a spoken turn, shows as the visitor's.
     session.on('transcript', (tr) => {
-      if (tr.type === 'user' && tr.text) appendTranscript('you', tr.text);
+      if (tr.type === 'user' && tr.text) {
+        const unseen = dropLocalEchoes(tr.text);
+        if (unseen) appendTranscript('you', unseen);
+      }
       // The avatar's silent opening turn reaches the app as the SDK's
       // SILENT_OPENING_LABEL caption; it is not something to show a visitor.
       else if (tr.type === 'final' && tr.text && tr.text !== SILENT_OPENING_LABEL) {
@@ -321,6 +355,7 @@ async function connect(pendingPrompt, mode = 'avatar') {
     session.on('ended', ({ reason } = {}) => resetUi(reason));
     session.on('transportChanged', ({ mode: m, transport }) => wireTransport(transport, m));
     session.on('modeChanged', ({ mode: m }) => {
+      localEchoes = [];
       if (m === 'avatar') hideThinking();
       setStatus(m === 'chat' ? 'Text chat — same conversation, no video.' : 'Live video — same conversation.');
     });
@@ -342,7 +377,9 @@ async function connect(pendingPrompt, mode = 'avatar') {
     els.placeholder.classList.add('hidden');
     els.chatStart?.classList.add('hidden');
     if (els.dockChat) els.dockChat.disabled = true;
-    els.promptsRow?.classList.add('hidden');
+    // A root class, not the pills row itself: the router swaps page content,
+    // so a row found at load is gone after navigating back home.
+    document.documentElement.classList.add('nova-live');
     els.mode.disabled = false;
     els.end.disabled = false;
     els.newConvo.disabled = false;
@@ -352,6 +389,9 @@ async function connect(pendingPrompt, mode = 'avatar') {
   } catch (e) {
     connecting = false;
     els.videoWrap?.classList.remove('is-connecting');
+    // The question never went out: drop its bubble so a retry doesn't glue onto it.
+    const mine = els.transcript.lastElementChild;
+    if (pendingPrompt && mine?.className === 'nova-you' && mine.querySelector('.nova-msg')?.textContent === pendingPrompt) mine.remove();
     setStatus(`Could not connect: ${e.detail || e.message || 'unknown error'}`);
   }
 }
@@ -359,9 +399,15 @@ async function connect(pendingPrompt, mode = 'avatar') {
 async function sendUserText(text) {
   if (!session || session.state !== 'connected') return;
   if (session.mode === 'chat') showThinking();
+  else {
+    // Video: the server's copy lands after Nova starts replying, so show it now.
+    appendTranscript('you', text);
+    localEchoes.push(text);
+  }
   try {
     await session.sendText(text);
   } catch (e) {
+    localEchoes = localEchoes.filter((line) => line !== text);
     hideThinking();
     setStatus(`Could not send: ${e.detail || e.message || 'unknown error'}`);
   }
@@ -425,6 +471,7 @@ function resetUi(reason) {
   highlighter?.destroy();
   highlighter = null;
   connecting = false;
+  localEchoes = [];
   hideThinking();
   els.widget.classList.remove('chat-mode');
   exitDrawerMode();
@@ -432,7 +479,7 @@ function resetUi(reason) {
   els.placeholder.classList.remove('hidden');
   els.chatStart?.classList.remove('hidden');
   if (els.dockChat) els.dockChat.disabled = false;
-  els.promptsRow?.classList.remove('hidden');
+  document.documentElement.classList.remove('nova-live');
   els.disclosure.classList.add('hidden');
   els.disclosureChip.classList.add('hidden');
   els.mute.disabled = true;
@@ -494,10 +541,12 @@ els.inputRow.addEventListener('submit', (e) => {
 // NN/g-validated "use-case prompt suggestion" pattern (the same one ChatGPT/
 // Claude/Poe use pre-auth): each chip both starts the session AND asks its
 // exact question, instead of dropping a visitor into a blank "now what?" call.
-els.chips.forEach((chip) => {
-  chip.addEventListener('click', () => {
-    const prompt = chip.dataset.prompt;
-    if (session) sendUserText(prompt);
-    else connect(prompt);
-  });
+// Delegated, so chips in a home page the router swapped in work too.
+document.addEventListener('click', (e) => {
+  const prompt = e.target.closest?.('.nova-chip')?.dataset.prompt;
+  if (!prompt) return;
+  if (session) sendUserText(prompt);
+  else connect(prompt);
 });
+
+document.documentElement.classList.add('nova-ready');
