@@ -92,11 +92,12 @@ const session = new KalturaAvatarSession({
   socketFactory: (url, opts) => io(url, opts),  // inject socket.io
 });
 
-await session.connect();
-session.speak('Tell me about onboarding.');
-
+// Attach listeners before connect(): some events fire before it resolves.
 session.on('transcript', ({ text }) => console.log(text));
 session.onToolCall('navigate_to_slide', ({ slide_num }) => deck.goTo(slide_num));
+
+await session.connect();
+session.speak('Tell me about onboarding.');
 ```
 
 **How `speak(text)` works:** it injects `text` into the conversation on the same path as the viewer's own voice transcript. The brain treats it as a new turn and replies on its own terms. It's not an echo, and there's nothing to "rephrase": the avatar's next line is the brain's *reply* to `text`, not a repeat of it. For scripted, word-for-word playback instead, see [scripted avatar sessions](https://github.com/kaltura/intelligent-agents-sdk/blob/main/docs/api/scripted-video.md).
@@ -245,10 +246,10 @@ const session = new KalturaAvatarSession({ token, /* … */,
 import { KalturaChatSession } from '@kaltura/intelligent-agents/experience';
 
 const chat = new KalturaChatSession({ token /* conversation KS */ });
+chat.onToolCall('navigate_to_slide', ({ slide_num }) => deck.goTo(slide_num));
 await chat.connect();   // no network — marks the session live for API parity with the avatar transport
 
 const { text, threadId } = await chat.sendText('What have we covered so far?');
-chat.onToolCall('navigate_to_slide', ({ slide_num }) => deck.goTo(slide_num));
 ```
 
 `KalturaChatSession` has feature parity with the avatar transport wherever the wire allows it:
@@ -270,12 +271,14 @@ const agent = new KalturaAgentSession({
   avatar: { videoEl, conversationManagerUrl, srsBaseUrl, turnServerUrl, socketFactory },
   chat: { genieUrl },
 });
-await agent.connect();
+// Attach before connect(): transportChanged fires before connect() resolves,
+// and again before each switchMode() resolves.
+agent.on('transportChanged', ({ mode, transport }) => { /* rewire mode-specific listeners */ });
 agent.onToolCall('navigate_to_slide', ({ slide_num }) => deck.goTo(slide_num));
+await agent.connect();
 
 // later, drop to text-only without losing context:
 await agent.switchMode('chat');
-agent.on('transportChanged', ({ mode, transport }) => { /* rewire mode-specific listeners */ });
 ```
 
 The facade owns one state machine (`idle → connecting → connected ⇄ switching → closed | failed`) and forwards the transport-agnostic event subset 1:1. Mode-specific APIs (mic control, `interrupt()`, tap-to-talk, disclosure, `videoEl`, …) are **not** mirrored on the facade. Use the `transport` getter and rewire such listeners on each `transportChanged` event. Switching is tear-down-and-reconstruct by design: no live mutation of a running transport. A `sendText()` that arrives mid-switch is buffered (up to 8 calls) and dispatched on the new transport, or rejected with the switch error if the switch fails.
