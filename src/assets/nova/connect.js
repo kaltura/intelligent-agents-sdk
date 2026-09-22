@@ -30,9 +30,13 @@ const { Management } = await import(`${SDK_BASE}/src/management/index.js`);
 const PARTNER_ID = '6516742';
 const WIDGET_ID = '1_g7ntgoq2';
 
-// The synthetic first message Nova's system prompt (obeyRules) is keyed on —
-// the brain otherwise stays silent until a visitor speaks first.
-const KICKOFF_TRIGGER = 'hi, start session!';
+// The SDK sends this as the conversation's first turn (`kickoff`), once per
+// session, the moment the server accepts input. Nova's system prompt
+// (provision.mjs obeyRules) is keyed on this exact string: greet on a fresh
+// thread, greet back on a continued one, no tool calls. The eval harness
+// (tests/eval/personas.mjs KICKOFF_TRIGGER) sends the same string. Keep all
+// three in sync.
+const KICKOFF_TRIGGER = 'Session started. Greet the visitor.';
 
 /**
  * `nova:uid` — a random UUID with no PII, minted only when the visitor
@@ -201,6 +205,11 @@ async function connect(pendingPrompt, mode = 'avatar') {
       token: init.ks,
       mode,
       subjectId: visitorId(),
+      // First turn, sent by the SDK once the opening turn clears (avatar) or
+      // the transport is up (chat). A chip click or a typed line is the
+      // visitor's real first question, so it becomes the kickoff itself and
+      // is echoed into the transcript; otherwise the hidden greeting trigger.
+      kickoff: pendingPrompt ? { text: pendingPrompt, echo: true } : KICKOFF_TRIGGER,
       // Avatar cfg is needed even for a chat-first session: switchMode()
       // builds the avatar transport from it later. Chat cfg is omitted —
       // the SDK's production genieUrl default is exactly where Nova lives.
@@ -218,7 +227,7 @@ async function connect(pendingPrompt, mode = 'avatar') {
     // Both transports emit the same transcript shape: 'user' echoes the
     // visitor's turn, 'final' carries each of Nova's reply segments.
     session.on('transcript', (tr) => {
-      if (tr.type === 'user' && tr.text && tr.text !== KICKOFF_TRIGGER) appendTranscript('you', tr.text);
+      if (tr.type === 'user' && tr.text) appendTranscript('you', tr.text);
       // The avatar's silent opening turn reaches the app as the SDK's
       // SILENT_OPENING_LABEL caption; it is not something to show a visitor.
       else if (tr.type === 'final' && tr.text && tr.text !== SILENT_OPENING_LABEL) {
@@ -230,6 +239,19 @@ async function connect(pendingPrompt, mode = 'avatar') {
       hideThinking();
       setStatus(`Connection issue: ${e.detail || e.code}`);
     });
+    // connect() no longer fails on a mic problem: the session comes up
+    // mic-less and the reason arrives as a warning. Typing still works.
+    session.on('warning', (w) => {
+      if (w.code === 'mic_permission_denied') setStatus('Microphone blocked. Type your question instead, or allow the mic and reload.');
+      else if (w.code === 'mic_not_found') setStatus('No microphone found. Type your question instead.');
+      else if (w.code === 'mic_in_use' || w.code === 'mic_attach_failed') setStatus('Microphone unavailable. Type your question instead.');
+      else if (w.code === 'kickoff_failed') { hideThinking(); setStatus('Nova could not start. Type a question to begin.'); }
+    });
+    // Thinking dots for text chat: the server's first think delta means the
+    // turn (kickoff included) was accepted. In video mode the avatar's own
+    // presence covers the wait.
+    session.on('responsePending', () => { if (session?.mode === 'chat') showThinking(); });
+    session.on('responseSettled', () => hideThinking());
     session.on('ended', () => resetUi());
     session.on('transportChanged', ({ mode: m, transport }) => wireTransport(transport, m));
     session.on('modeChanged', ({ mode: m }) => {
@@ -252,19 +274,7 @@ async function connect(pendingPrompt, mode = 'avatar') {
     els.newConvo.disabled = false;
     els.close.disabled = false;
     setStatus('Connected — ask Nova anything about the SDK.');
-
-    if (mode === 'avatar') {
-      // Kick off the conversation — wait for the avatar's silent opening
-      // turn to clear (or time out) so this doesn't race the server's own
-      // automatic turn. Chat has no automatic opening turn to race.
-      const openingCleared = new Promise((resolve) => session.transport.once('avatarStopTalking', resolve));
-      await Promise.race([openingCleared, new Promise((r) => setTimeout(r, 3000))]);
-    }
-    // Chat-mode sends show the thinking dots (kickoff included) — in video
-    // mode the avatar's own presence covers the wait.
     if (mode === 'chat') showThinking();
-    await session.sendText(KICKOFF_TRIGGER);
-    if (pendingPrompt) await session.sendText(pendingPrompt);
   } catch (e) {
     connecting = false;
     els.videoWrap?.classList.remove('is-connecting');
