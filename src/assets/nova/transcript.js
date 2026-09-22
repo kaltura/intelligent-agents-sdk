@@ -13,11 +13,12 @@ export function initTranscript(el) {
   transcriptEl = el;
 }
 
-// ASR/TTS control tokens (e.g. "<blank>", the SDK's SILENT_OPENING marker
-// that Nova's intellect opening_phrase is set to; the SDK relabels it
-// "[silence]" in transcript events) arrive as real transcript segments but carry no content for a visitor to
-// read. Matches only a segment that IS one such tag start to finish, so a
-// reply that merely mentions "<foo>" as real text is never touched.
+// Defensive filter for a bare ASR/TTS control token ("<tag>") arriving as a
+// transcript segment: it carries no content for a visitor to read. The SDK's
+// SILENT_OPENING opening turn never reaches here; connect.js drops its
+// SILENT_OPENING_LABEL caption before calling appendTranscript. Matches only
+// a segment that IS one such tag start to finish, so a reply that merely
+// mentions "<foo>" as real text is never touched.
 const FILLER_TOKEN_RE = /^<[^<>]+>$/;
 
 export function appendTranscript(who, text) {

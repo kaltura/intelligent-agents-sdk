@@ -116,6 +116,7 @@
   <div class="nova-widget" id="nova-widget">
     <div class="nova-video-wrap" id="nova-video-wrap">
       <video id="nova-video" autoplay playsinline></video>
+      <audio id="nova-audio" autoplay></audio>
       <div class="nova-placeholder" id="nova-placeholder" role="button" tabindex="0" aria-label="Talk to Nova — she knows this whole SDK.">
         <span class="material-symbols-outlined nova-placeholder-icon" aria-hidden="true">graphic_eq</span>
         Click to talk with Nova — she knows this whole SDK.
@@ -151,6 +152,7 @@
         </button>
       </div>
       <div class="nova-status" id="nova-status" role="status" aria-live="polite"></div>
+      <button class="nova-status-action hidden" id="nova-status-action" type="button"></button>
       <div class="nova-transcript" id="nova-transcript" role="log" aria-live="polite" aria-label="Conversation transcript"></div>
       <form class="nova-input-row" id="nova-input-row" autocomplete="off">
         <input type="text" id="nova-input" placeholder="Message Nova…" aria-label="Message Nova" maxlength="2000">

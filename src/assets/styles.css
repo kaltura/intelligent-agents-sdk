@@ -908,6 +908,32 @@ blockquote {
   min-height: 1.2em;
 }
 
+/* One-click recovery offered under the status line (mic retry, autoplay unblock). */
+.nova-status-action {
+  margin-top: 0.4rem;
+  padding: 0.3rem 0.8rem;
+  font: inherit;
+  font-size: 0.85rem;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.nova-status-action:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.nova-status-action:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.nova-status-action.hidden {
+  display: none;
+}
+
 .nova-transcript {
   margin-top: 0.5rem;
   /* .nova-panel overlays the video's own bottom edge (see .nova-panel) — this

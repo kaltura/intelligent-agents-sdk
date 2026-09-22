@@ -67,12 +67,14 @@ function visitorId() {
 const els = {
   widget: document.getElementById('nova-widget'),
   video: document.getElementById('nova-video'),
+  audio: document.getElementById('nova-audio'),
   placeholder: document.getElementById('nova-placeholder'),
   chatStart: document.getElementById('nova-chat-start'),
   dockChat: document.getElementById('nova-dock-chat'),
   disclosure: document.getElementById('nova-disclosure'),
   disclosureChip: document.getElementById('nova-disclosure-chip'),
   status: document.getElementById('nova-status'),
+  statusAction: document.getElementById('nova-status-action'),
   transcript: document.getElementById('nova-transcript'),
   mute: document.getElementById('nova-mute'),
   muteIcon: document.getElementById('nova-mute-icon'),
@@ -121,10 +123,45 @@ els.widget.addEventListener('click', (e) => {
 
 let session = null;
 let siteNav = null;
+let highlighter = null;
 let connecting = false;
 
 function setStatus(text) {
   els.status.textContent = text;
+  hideStatusAction();
+}
+
+/**
+ * One-click recovery next to the status line, for the two warnings the SDK
+ * leaves to the app because they need a user gesture: a blocked or missing
+ * microphone (`startMic()` retries the capture) and autoplay-blocked audio
+ * (`startPlayback()` retries play() on the bound media elements). Both live
+ * on the avatar transport, not the facade. Any later setStatus() clears it.
+ */
+function offerStatusAction(label, action) {
+  const btn = els.statusAction;
+  if (!btn) return;
+  btn.textContent = label;
+  btn.disabled = false;
+  btn.onclick = async () => {
+    btn.disabled = true;
+    try {
+      await action();
+    } catch (e) {
+      setStatus(`Still unavailable: ${e.detail || e.message || e.code || 'unknown error'}. Type your question instead.`);
+    }
+  };
+  btn.classList.remove('hidden');
+}
+
+function hideStatusAction() {
+  if (!els.statusAction) return;
+  els.statusAction.classList.add('hidden');
+  els.statusAction.onclick = null;
+}
+
+function offerMicRetry() {
+  offerStatusAction('Enable microphone', () => session?.transport?.startMic());
 }
 
 initTranscript(els.transcript);
@@ -174,6 +211,9 @@ function wireTransport(transport, mode) {
     });
     transport.on('reconnecting', () => setStatus('Reconnecting…'));
     transport.on('reconnected', () => setStatus('Reconnected'));
+    // Fires after a successful startMic() retry as well as at first connect;
+    // the facade does not forward it, so it is wired here.
+    transport.on('micStarted', () => setStatus('Microphone on.'));
   } else {
     els.videoWrap?.classList.remove('is-talking');
     // Text chat is still an AI conversation — same disclosure, shown
@@ -218,6 +258,7 @@ async function connect(pendingPrompt, mode = 'avatar') {
         srsBaseUrl: init.srsBaseUrl,
         turnServerUrl: init.turnServerUrl,
         videoEl: els.video,
+        audioEl: els.audio,
         socketFactory: (url, opts) => window.io(url, opts),
         isFirefox: /firefox/i.test(navigator.userAgent),
         requireDisclosureAck: true,
@@ -242,9 +283,11 @@ async function connect(pendingPrompt, mode = 'avatar') {
     // connect() no longer fails on a mic problem: the session comes up
     // mic-less and the reason arrives as a warning. Typing still works.
     session.on('warning', (w) => {
-      if (w.code === 'mic_permission_denied') setStatus('Microphone blocked. Type your question instead, or allow the mic and reload.');
+      if (w.code === 'mic_permission_denied') { setStatus('Microphone blocked. Type your question instead, or allow the mic and retry.'); offerMicRetry(); }
       else if (w.code === 'mic_not_found') setStatus('No microphone found. Type your question instead.');
-      else if (w.code === 'mic_in_use' || w.code === 'mic_attach_failed') setStatus('Microphone unavailable. Type your question instead.');
+      else if (w.code === 'mic_in_use' || w.code === 'mic_attach_failed') { setStatus('Microphone unavailable. Type your question instead.'); offerMicRetry(); }
+      // Autoplay policy blocked Nova's audio/video; play() must come from a click.
+      else if (w.code === 'playback_blocked') { setStatus('Your browser paused Nova\'s audio.'); offerStatusAction('Tap to hear Nova', () => session?.transport?.startPlayback()); }
       else if (w.code === 'kickoff_failed') { hideThinking(); setStatus('Nova could not start. Type a question to begin.'); }
     });
     // Thinking dots for text chat: the server's first think delta means the
@@ -252,7 +295,10 @@ async function connect(pendingPrompt, mode = 'avatar') {
     // presence covers the wait.
     session.on('responsePending', () => { if (session?.mode === 'chat') showThinking(); });
     session.on('responseSettled', () => hideThinking());
-    session.on('ended', () => resetUi());
+    // `reason` is 'disconnected' for our own disconnect(), 'conversation_ended' when
+    // the server closed the thread, otherwise the error code the 'error' handler
+    // already put on the status line.
+    session.on('ended', ({ reason } = {}) => resetUi(reason));
     session.on('transportChanged', ({ mode: m, transport }) => wireTransport(transport, m));
     session.on('modeChanged', ({ mode: m }) => {
       if (m === 'avatar') hideThinking();
@@ -260,7 +306,7 @@ async function connect(pendingPrompt, mode = 'avatar') {
     });
 
     siteNav = initSiteNav(session);
-    initHighlighter(session, siteNav);
+    highlighter = initHighlighter(session, siteNav);
 
     await session.connect();
     connecting = false;
@@ -344,10 +390,12 @@ function newConversation() {
   connect(undefined, 'chat');
 }
 
-function resetUi() {
+function resetUi(reason) {
   session = null;
   siteNav?.destroy();
   siteNav = null;
+  highlighter?.destroy();
+  highlighter = null;
   connecting = false;
   hideThinking();
   els.widget.classList.remove('chat-mode');
@@ -370,7 +418,9 @@ function resetUi() {
     els.video.srcObject = null;
     els.video.load();
   }
-  setStatus('Session ended.');
+  if (!reason || reason === 'disconnected' || reason === 'ended') setStatus('Session ended.');
+  else if (reason === 'conversation_ended') setStatus('Nova ended the session. Start a new one any time.');
+  // Any other reason is an error code; the 'error' handler already explained it.
 }
 
 els.placeholder.addEventListener('click', () => {
