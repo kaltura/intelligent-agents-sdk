@@ -149,7 +149,7 @@ export class KalturaAvatarSession extends Emitter {
    * @param {string|{text:string, echo?:boolean}} [cfg.kickoff]  A first typed turn the SDK sends for you, exactly once
    *   per session object, as soon as the server accepts input (right after the opening turn ends, or after
    *   `acknowledgeDisclosure()` when `requireDisclosureAck` is set). Pair it with a `SILENT_OPENING` opening phrase
-   *   for the fastest time to first words. Goes through the same path as `speak()`, so the reply is interruptible.
+   *   so the first words are an interruptible model reply. Goes through the same path as `speak()`, so the reply is interruptible.
    *   Never re-sent on `resume()` or a reconnect. Its server echo is dropped from `transcript {type:'user'}`
    *   unless `echo: true`. Empty/whitespace text sends nothing. Any other type throws `bad_request`.
    * @param {{username:string,credential:string,expiry?:number}} [cfg.turnCredentials]  Server-minted EPHEMERAL TURN creds (RFC 7635). Preferred over the static fallback.

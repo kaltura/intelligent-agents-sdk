@@ -14,6 +14,8 @@
  * | P1 | requestVars: { user_name: 'Dana' }         | the `{% if %}` branch is spoken, with the name rendered |
  * | P2 | no requestVars                             | the `{% else %}` branch is spoken, no name |
  * | P3 | SILENT_OPENING on the intellect only       | the opening turn runs and ends, surfaced only as the `[silence]` label |
+ * | P4 | preset question: `{% if pending_question %}<blank>`, kickoff `{ text, echo: true }` | silent opening, the reply answers the question, the question shows once as a user transcript |
+ * | P5 | `KalturaAgentSession` re-joins via `switchMode` | new thread → new-thread branch; re-join → `promo` branch; `promo: ''` → the plain return branch |
  *
  * Usage
  *   node scripts/live-verify-opening-phrase.mjs                        # --env prod, AGENTIC_* vars
@@ -24,12 +26,14 @@
  * Artifacts (`--out`, default live-verify-artifacts/): <runId>.json + <runId>.md,
  * plus <runId>-<id>-events.json for every failed scenario (all with --dump-events).
  * Tokens and URL query strings are redacted; no ids or secrets are written.
+ * Unless --keep or --agent-json, the run checks that the throwaway agent, avatar
+ * and intellect are gone after cleanup.
  */
 import { writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
-  bootstrap, Report, mdTable, management, ensureAgent, mintPageInit, startServer,
-  browserChoice, launchBrowser, contextOptions, openHarness, whepSummary, netProblems, redact, waitFor, find, all, isOpeningSpeechId, sleep, SILENT_OPENING,
+  bootstrap, Report, mdTable, management, ensureAgent, verifyDeleted, mintPageInit, startServer,
+  browserChoice, launchBrowser, contextOptions, openHarness, whepSummary, netProblems, redact, waitFor, find, all, isOpeningSpeechId, sleep, SILENT_OPENING, textsSent,
 } from './live-verify-kickoff-shared.mjs';
 import { callHook } from './live-verify-hooks-shared.mjs';
 import { SILENT_OPENING_LABEL } from '../src/core/opening.js';
@@ -48,6 +52,17 @@ const NAME = 'Dana';
 const IF_TEXT = 'welcome back to the studio';
 const ELSE_TEXT = 'Hello there, welcome to the studio';
 const TEMPLATE = `{% if user_name %}Hello {{ user_name }}, ${IF_TEXT}.{% else %}${ELSE_TEXT}.{% endif %}`;
+
+// P4: a preset question. The opening stays silent and the kickoff asks the question.
+const PILL_QUESTION = 'What is two plus two? Answer with just the number.';
+const PILL_TEMPLATE = `{% if pending_question %}${SILENT_OPENING}{% else %}${ELSE_TEXT}.{% endif %}`;
+
+// P5: the opening plays on every avatar join. sys__is_new_thread is true only
+// on a thread with no earlier messages.
+const NEW_TEXT = 'Nice to meet you, this is your first visit';
+const PROMO_TEXT = 'Welcome back, a special offer is waiting';
+const RETURN_TEXT = 'Good to see you again';
+const REJOIN_TEMPLATE = `{% if sys__is_new_thread %}${NEW_TEXT}.{% elif promo %}${PROMO_TEXT}.{% else %}${RETURN_TEXT}.{% endif %}`;
 
 const report = new Report({ runId, target: target.name, browser: choice.browser, headed: HEADED });
 report.data.scenarios = [];
@@ -88,6 +103,13 @@ const openingText = (/** @type {Ev[]} */ evs) => all(evs, 'speechChunk', (d) => 
 const openingEnd = (/** @type {Ev[]} */ evs, from = 0) => find(evs, 'socket:in', { from, where: (d) => d.ev === 'stvFinishedTalking' });
 /** Any surfaced text carrying the silent marker. */
 const leaks = (/** @type {Ev[]} */ evs) => [...all(evs, 'transcript'), ...all(evs, 'speechChunk')].filter((e) => typeof e.detail?.text === 'string' && e.detail.text.includes(SILENT_OPENING));
+
+/** Every speechChunk text from event index `from` up to `to`, concatenated. */
+const chunkText = (/** @type {Ev[]} */ evs, from = 0, to = evs.length) => all(evs.slice(from, to), 'speechChunk', (d) => typeof d?.text === 'string')
+  .map((e) => e.detail.text).join('').replace(/\s+/g, ' ').trim();
+
+/** Chunk boundaries can drop the space between words, so compare with whitespace removed. */
+const has = (/** @type {string} */ text, /** @type {string} */ phrase) => text.replace(/\s+/g, '').includes(phrase.replace(/\s+/g, ''));
 
 /** connect() and wait for the opening turn to end. */
 async function connectAndOpening(/** @type {import('playwright').Page} */ page, /** @type {string} */ id) {
@@ -182,6 +204,84 @@ const SCENARIOS = {
       }
     },
   },
+
+  P4: {
+    name: 'preset question: requestVars { pending_question } renders <blank>, the kickoff asks the question once',
+    async run({ context, sink, id }) {
+      await kaltura.intellectConfig.setOpeningPhrase(agent.configId, PILL_TEMPLATE, admin.ks);
+      try {
+        const page = await openHarness(context, origin, {
+          mode: 'avatar', kickoff: PILL_QUESTION, echo: 1, requestVars: JSON.stringify({ pending_question: '1' }),
+        }, sink);
+        const evs0 = await connectAndOpening(page, id);
+        const opening = openingText(evs0);
+        report.check(`${id}: opening is silent (the <blank> branch)`, opening === '' || opening === SILENT_OPENING_LABEL, { text: opening });
+        const replyChunk = (/** @type {Ev[]} */ e) => find(e, 'speechChunk', { where: (d) => !isOpeningSpeechId(d?.speechId) && typeof d?.text === 'string' });
+        await waitFor(page, (e) => {
+          const c = replyChunk(e);
+          return c && find(e, 'avatarStopTalking', { from: c.index });
+        }, OPENING_TIMEOUT, 'end of the reply to the preset question');
+        await sleep(500);
+        const evs = await page.evaluate(() => /** @type {any} */ (window).__events.slice());
+        const reply = all(evs, 'speechChunk', (d) => !isOpeningSpeechId(d?.speechId) && typeof d?.text === 'string')
+          .map((e) => e.detail.text).join('').replace(/\s+/g, ' ').trim();
+        report.check(`${id}: the reply answers the preset question`, /\b4\b|four/i.test(reply), { reply });
+        const sent = textsSent(evs);
+        report.check(`${id}: the kickoff is sent once`, sent.length === 1 && sent[0].detail.text === PILL_QUESTION, { sent: sent.length });
+        const echoes = all(evs, 'transcript', (d) => d?.type === 'user' && typeof d?.text === 'string' && d.text.includes(PILL_QUESTION));
+        report.check(`${id}: the question shows once as a user transcript (echo)`, echoes.length === 1, { echoes: echoes.length });
+        report.check(`${id}: silent marker never surfaces as text`, leaks(evs).length === 0, { leaked: leaks(evs).length });
+        await ev(page, 'testDisconnect').catch(() => {});
+      } finally {
+        await kaltura.intellectConfig.setOpeningPhrase(agent.configId, TEMPLATE, admin.ks);
+      }
+    },
+  },
+
+  P5: {
+    name: 'agent-avatar re-joins: new thread → new-thread branch, re-join → promo branch, promo: \'\' → return branch',
+    async run({ context, sink, id }) {
+      await kaltura.intellectConfig.setOpeningPhrase(agent.configId, REJOIN_TEMPLATE, admin.ks);
+      try {
+        const page = await openHarness(context, origin, { mode: 'agent-avatar', requestVars: JSON.stringify({ promo: '1' }) }, sink);
+        const count = () => page.evaluate(() => /** @type {any} */ (window).__events.length);
+        const evs0 = await connectAndOpening(page, id);
+        const first = openingText(evs0);
+        report.check(`${id}: first join plays the new-thread branch`, has(first, NEW_TEXT) && !has(first, PROMO_TEXT), { text: first });
+        const thread0 = (await ev(page, 'testState'))?.threadId ?? null;
+
+        // One exchange, so the thread has earlier messages.
+        const from = await count();
+        await ev(page, 'testSendText', 'Hi');
+        await waitFor(page, (e) => {
+          const c = find(e, 'speechChunk', { from, where: (d) => typeof d?.text === 'string' });
+          return c && find(e, 'avatarStopTalking', { from: c.index });
+        }, OPENING_TIMEOUT, 'end of the reply to "Hi"');
+
+        /** Leave the avatar and join again; return the opening voiced on the new join. */
+        const rejoin = async (/** @type {string} */ label) => {
+          const at = await count();
+          await ev(page, 'testSwitch', 'chat');
+          await ev(page, 'testSwitch', 'avatar');
+          const { events } = await waitFor(page, (e) => openingEnd(e, at), OPENING_TIMEOUT, `${label}: end of the re-join opening (stvFinishedTalking)`);
+          const end = /** @type {Ev} */ (openingEnd(events, at));
+          return chunkText(events, at, end.index);
+        };
+
+        const second = await rejoin('re-join 1');
+        const thread1 = (await ev(page, 'testState'))?.threadId ?? null;
+        report.check(`${id}: re-join keeps the thread`, !!thread0 && thread0 === thread1, { same: !!thread0 && thread0 === thread1 });
+        report.check(`${id}: re-join plays the opening again, now the promo branch`, has(second, PROMO_TEXT) && !has(second, NEW_TEXT), { text: second });
+
+        await ev(page, 'testUpdateVars', { promo: '' });
+        const third = await rejoin('re-join 2');
+        report.check(`${id}: after promo: '' the re-join plays the return branch`, has(third, RETURN_TEXT) && !has(third, PROMO_TEXT), { text: third });
+        await ev(page, 'testDisconnect').catch(() => {});
+      } finally {
+        await kaltura.intellectConfig.setOpeningPhrase(agent.configId, TEMPLATE, admin.ks);
+      }
+    },
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -223,6 +323,10 @@ try {
   await browser.close();
   server.close();
   await agent.cleanup();
+  if (!agent.reused && !args.keep) {
+    const gone = await verifyDeleted(kaltura, admin.ks, agent);
+    report.check('cleanup: agent, avatar and intellect deleted', Object.values(gone).every((s) => s === 'deleted'), gone);
+  }
 }
 
 const md = [
