@@ -1429,8 +1429,17 @@ body.home .nova-hero {
   margin-top: 1.5rem;
 }
 
-.nova-hero-prompts.hidden {
+/* Hidden once a conversation is live (connect.js sets html.nova-live). */
+html.nova-live .nova-hero-prompts {
   display: none;
+}
+
+/* Every way to start Nova waits for connect.js to load the SDK and wire its
+   handlers (it then sets html.nova-ready). Before that a click would do
+   nothing, and a typed line would reload the page. visibility, not display,
+   so nothing shifts when they appear. */
+html:not(.nova-ready) :is(.nova-hero-prompts, .nova-placeholder, .nova-chat-start, .nova-dock-chat, .nova-input-row) {
+  visibility: hidden;
 }
 
 .nova-hero-prompts-label {

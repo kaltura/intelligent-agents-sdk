@@ -51,3 +51,53 @@ test('docked bubble (no hero slot) shows the chat-without-video badge pre-sessio
   // the dock flyout open underneath the chat drawer it's about to start.
   await expect(dockChat).toHaveClass(/nova-btn/);
 });
+
+// Every entry point waits for connect.js to load the SDK (html.nova-ready).
+// Before that a pill click did nothing and a typed line reloaded the page.
+test('entry points stay hidden until the SDK has loaded', async ({ page }) => {
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  await page.route(/^https:\/\/cdn\.jsdelivr\.net\/gh\/kaltura\/intelligent-agents-sdk@/, async (route) => {
+    await gate;
+    await route.fallback();
+  });
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+
+  const entryPoints = ['.nova-hero-prompts', '#nova-placeholder', '#nova-chat-start', '#nova-input-row'];
+  for (const sel of entryPoints) await expect(page.locator(sel)).toBeHidden();
+
+  release();
+  await expect(page.locator('html')).toHaveClass(/nova-ready/);
+  for (const sel of entryPoints) await expect(page.locator(sel)).toBeVisible();
+});
+
+// A pill shows its question in the transcript on click, not when the server
+// sends its copy back (that copy lands after Nova's answer in video mode).
+// The click handler is delegated, so pills in a home page the router swapped
+// in work too. socket.io is held, then failed, so no attempt reaches a backend.
+// A failed attempt drops its bubble, so a retry doesn't glue onto it.
+test('a pill on a router-swapped home page shows its question right away', async ({ page }) => {
+  const held = [];
+  await page.route(/^https:\/\/cdn\.socket\.io\//, (route) => { held.push(route); });
+  const failHeld = async () => {
+    await expect.poll(() => held.length).toBeGreaterThan(0);
+    await held.shift().abort();
+  };
+  await page.goto('/');
+  await expect(page.locator('html')).toHaveClass(/nova-ready/);
+  await page.locator('a[href$="/getting-started/"]').first().click();
+  await expect(page).toHaveURL(/\/getting-started\/$/);
+  await page.locator('a.logo').click();
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.locator('.nova-chip').first()).toBeVisible();
+
+  const you = page.locator('#nova-transcript .nova-you .nova-msg');
+  for (const chip of [page.locator('.nova-chip').nth(0), page.locator('.nova-chip').nth(1)]) {
+    const question = await chip.getAttribute('data-prompt');
+    await chip.click();
+    await expect(you).toHaveText([question]);
+    await failHeld();
+    await expect(page.locator('#nova-status')).toContainText('Could not connect');
+    await expect(you).toHaveCount(0);
+  }
+});
