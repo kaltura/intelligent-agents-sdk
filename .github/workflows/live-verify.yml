@@ -56,18 +56,22 @@ name: Live verification
 # runs headless Chromium. Audibility is measured on the remote audio track
 # with an AnalyserNode, so it works on every engine; the inbound-rtp
 # totalAudioEnergy check is added only where the engine exposes it.
-# The timing script is also the startup-KPI gate: the median of connect(),
-# first video frame, first audio, first agent words and sound heard over the
-# 5 runs is checked against the budgets in the script header, and a miss fails
-# the timing step. The job summary leads with that KPI table; the full reports
+# The timing script is also the startup-KPI gate. CI runs it with
+# `--compare jinja --runs 9`: three agents (silent+kickoff, a Jinja2 opening,
+# a Jinja2 `<blank>` opening + kickoff echo), 3 runs each. Each arm's median
+# connect(), first video frame, first audio, first agent words and sound heard
+# is checked against that arm's budgets in the script header, and a miss fails
+# the timing step. The job summary leads with one KPI row per arm; the full reports
 # sit below it in a collapsed section. A weekly `schedule` run keeps a trend
 # (90-day artifacts) even when nothing is merged; only live-verify-kickoff runs
 # on that trigger.
 # live-verify-opening-phrase covers the intellect-owned opening phrase:
 # provision() writes it to the intellect only and leaves the avatar's unset, a
 # Jinja2 `{% if %}` template renders per session from client variables
-# (`requestVars`), and SILENT_OPENING on the intellect alone gives a silent
-# opening turn — see scripts/live-verify-opening-phrase.mjs.
+# (`requestVars`), SILENT_OPENING on the intellect alone gives a silent
+# opening turn, a `<blank>` branch + kickoff asks a preset question, and each
+# re-join replays the opening (sys__is_new_thread, a var cleared with '').
+# See scripts/live-verify-opening-phrase.mjs.
 on:
   workflow_dispatch: {}
   pull_request:
@@ -833,14 +837,14 @@ jobs:
       - name: 🎭 Install chromium
         run: npx playwright install --with-deps chromium
 
-      - name: 🔴🌐 Provision a silent-opening agent → measure connect timing (5 runs) → check startup KPIs → cleanup
+      - name: 🔴🌐 Provision 3 agents (silent+kickoff, Jinja2, Jinja2 <blank> + kickoff) → measure connect timing (3 runs each) → check startup KPIs per arm → cleanup
         id: live_verify_connect_timing
         env:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
           AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
         run: |
           set -o pipefail
-          node scripts/live-verify-connect-timing.mjs --env prod 2>&1 | tee live-verify-connect-timing-output.log
+          node scripts/live-verify-connect-timing.mjs --env prod --compare jinja --runs 9 2>&1 | tee live-verify-connect-timing-output.log
 
       - name: 🔴🌐 Provision a silent-opening agent → run the kickoff scenario matrix → cleanup
         id: live_verify_kickoff
@@ -869,19 +873,22 @@ jobs:
           {
             echo "### 🔴🌐 Silent opening + kickoff — timing ${{ steps.live_verify_connect_timing.outcome }}, scenarios ${{ steps.live_verify_kickoff.outcome }}"
             echo
-            echo "#### Startup KPIs (prod, headless Chromium, median of 5 runs; a miss fails the timing step)"
+            echo "#### Startup KPIs (prod, headless Chromium, median ms per arm, cell = median ≤ budget result; a miss fails the timing step)"
             echo
             node -e '
               const fs = require("node:fs");
               const dir = "live-verify-artifacts";
               const files = fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => /^connect-timing-.*\.json$/.test(f)).sort() : [];
               if (!files.length) { console.log("No connect-timing report was written."); process.exit(0); }
-              const kpi = JSON.parse(fs.readFileSync(dir + "/" + files.at(-1), "utf8")).data?.kpi ?? [];
-              console.log("| KPI | median ms | budget ms | min / max | result |");
-              console.log("|---|---|---|---|---|");
-              for (const k of kpi) {
-                const range = k.medianMs === null ? "" : k.minMs + " / " + k.maxMs;
-                console.log("| " + [k.label, k.medianMs ?? "n/a", "≤ " + k.budgetMs, range, k.status].join(" | ") + " |");
+              const arms = JSON.parse(fs.readFileSync(dir + "/" + files.at(-1), "utf8")).data?.compare?.arms ?? {};
+              const names = Object.keys(arms);
+              if (!names.length) { console.log("The connect-timing report has no per-arm results."); process.exit(0); }
+              const labels = arms[names[0]].kpi.map((k) => k.label);
+              console.log("| arm | runs | " + labels.join(" | ") + " |");
+              console.log("|---|---|" + labels.map(() => "---|").join(""));
+              for (const name of names) {
+                const cells = arms[name].kpi.map((k) => (k.medianMs ?? "n/a") + " ≤ " + k.budgetMs + " " + k.status);
+                console.log("| " + [name, arms[name].runs, ...cells].join(" | ") + " |");
               }
             ' 2>/dev/null || echo "Could not read the connect-timing report."
             echo

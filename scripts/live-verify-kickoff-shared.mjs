@@ -272,6 +272,36 @@ export async function deleteAgent(kaltura, ks, ids) {
 }
 
 /**
+ * Read each id back after `deleteAgent()`. A get that fails with not-found counts as deleted.
+ * Never throws.
+ * @param {Management} kaltura @param {string} ks @param {{agentId?:string, avatarId?:string, configId?:string}} ids
+ * @returns {Promise<Record<string, string>>} per resource: `deleted`, `still present` or `error: <code>`
+ */
+export async function verifyDeleted(kaltura, ks, ids) {
+  /** @type {[string, string|undefined, () => Promise<any>][]} */
+  const gets = [
+    ['agent', ids.agentId, () => kaltura.agents.get(/** @type {string} */ (ids.agentId), ks)],
+    ['avatar', ids.avatarId, () => kaltura.avatars.get(/** @type {string} */ (ids.avatarId), ks)],
+    ['intellect', ids.configId, () => kaltura.intellects.get(/** @type {string} */ (ids.configId), ks)],
+  ];
+  /** @type {Record<string, string>} */
+  const out = {};
+  for (const [what, id, get] of gets) {
+    if (!id) continue;
+    try {
+      await get();
+      out[what] = 'still present';
+    } catch (err) {
+      const e = /** @type {any} */ (err);
+      // Typed not-found only: 404, a `*not_found` code (agent, intellect), or the avatar's documented `AVATAR_NOT_FOUND` title.
+      const notFound = e?.status === 404 || /(^|_)not_found$/.test(String(e?.code ?? '')) || e?.title === 'AVATAR_NOT_FOUND';
+      out[what] = notFound ? 'deleted' : `error: ${redact(String(e?.code || e?.status || e?.message || e)).slice(0, 120)}`;
+    }
+  }
+  return out;
+}
+
+/**
  * Mint everything one harness page needs. Called per page load so each scenario
  * gets fresh tokens; the widget token is secret-free, the conversation token
  * is what `KalturaChatSession`/`KalturaAgentSession` chat mode needs.

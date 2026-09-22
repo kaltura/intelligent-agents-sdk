@@ -19,10 +19,11 @@
                 resourceHints() in live-verify-kickoff-shared.mjs); recorded in
                 harness:ready as the number of <link rel> tags actually present
     reconnectWindowMs   forwarded to the avatar session
-    requestVars JSON object → KalturaAvatarSession({ requestVars }), the client
-                variables a Jinja2 opening phrase can branch on (needs
-                intellects.setClientVariablesEnabled on the intellect); recorded
-                in harness:ready as a boolean
+    requestVars JSON object → the session's requestVars (top level of
+                KalturaAgentSession, so the facade's canonical map seeds every
+                transport), the client variables a Jinja2 opening phrase can
+                branch on (needs intellects.setClientVariablesEnabled on the
+                intellect); recorded in harness:ready as a boolean
 
   What it records beyond session events and socket frames
     pc:state            every ICE / connection / signaling state change per peer
@@ -297,7 +298,6 @@
       // The avatar session also talks to genie (session-completed signal, tool responses), so a
       // non-default environment must be passed here too, not only on the chat config.
       ...(init.genieUrl ? { genieUrl: init.genieUrl } : {}),
-      ...(requestVars ? { requestVars } : {}),
       videoEl,
       audioEl,
       socketFactory,
@@ -313,13 +313,15 @@
     const chatCfg = { ...(init.genieUrl ? { genieUrl: init.genieUrl } : {}) };
 
     let session;
-    if (mode === 'avatar') session = new KalturaAvatarSession({ token: init.ks, kickoff, ...avatarCfg });
-    else if (mode === 'chat') session = new KalturaChatSession({ token: init.conversationKs, kickoff, ...chatCfg });
+    const rv = requestVars ? { requestVars } : {};
+    if (mode === 'avatar') session = new KalturaAvatarSession({ token: init.ks, kickoff, ...rv, ...avatarCfg });
+    else if (mode === 'chat') session = new KalturaChatSession({ token: init.conversationKs, kickoff, ...rv, ...chatCfg });
     else if (mode === 'agent-avatar' || mode === 'agent-chat') {
       session = new KalturaAgentSession({
         token: init.ks,
         mode: mode === 'agent-avatar' ? 'avatar' : 'chat',
         kickoff,
+        ...rv,
         avatar: avatarCfg,
         chat: chatCfg,
       });
@@ -383,6 +385,7 @@
     window.testResume = async () => { rec('resume:call', {}); await avatarTransport().resume(); rec('resume:resolved', { state: session.state }); };
     window.testAck = () => { rec('ack:call', {}); return avatarTransport().acknowledgeDisclosure(); };
     window.testStartMic = async () => { rec('startMic:call', {}); await avatarTransport().startMic(); rec('startMic:resolved', {}); };
+    window.testUpdateVars = (vars) => { rec('updateVars:call', { keys: Object.keys(vars) }); session.updateRequestVars(vars); };
     window.testSwitch = async (target) => { rec('switch:call', { target }); await session.switchMode(target); rec('switch:resolved', { mode: session.mode }); };
     window.testDisconnect = async () => { rec('disconnect:call', {}); await session.disconnect(); rec('disconnect:resolved', { state: session.state }); };
     window.testKickoff = () => (mode.startsWith('agent') ? session.transport?.kickoff : session.kickoff) ?? null;

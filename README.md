@@ -104,11 +104,11 @@ Once the repo is public and has a tag pushed, jsDelivr serves any file straight 
 </script>
 ```
 
-`@latest` resolves to the newest tag, so this URL always matches the current README without an editing pass on every release. It's **not cached the same way** as a tagged path, though — jsDelivr re-checks it periodically, so what it serves can change without warning. For anything you ship, pin to a real tag instead (`@v1.23.1`, or whichever release you're on) — jsDelivr caches a tagged path forever, so a pin is both stable and fast:
+`@latest` resolves to the newest tag, so this URL always matches the current README without an editing pass on every release. It's **not cached the same way** as a tagged path, though — jsDelivr re-checks it periodically, so what it serves can change without warning. For anything you ship, pin to a real tag instead (`@v1.23.2`, or whichever release you're on) — jsDelivr caches a tagged path forever, so a pin is both stable and fast:
 
 ```html
 <script type="module">
-  import { KalturaAvatarSession } from 'https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.23.1/src/experience/index.js';
+  import { KalturaAvatarSession } from 'https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.23.2/src/experience/index.js';
 </script>
 ```
 
@@ -232,18 +232,20 @@ const session = new KalturaAvatarSession({
   // genieUrl: same value you gave Management, if your partner is not on the US production default
 });
 
-await session.connect();
-session.speak('Tell me about onboarding.');
-
 session.on('transcript', ({ text }) => console.log(text));
 session.onToolCall('navigate_to_slide', ({ slide_num }) => deck.goTo(slide_num));
+
+await session.connect();
+session.speak('Tell me about onboarding.');
 ```
+
+**Attach every listener before `connect()`.** Some events fire before `connect()` resolves: `streamReady`, `capacityChanged`, `mediaReady`, `disclosure`, and an early mic `warning`. `KalturaAgentSession` also emits `transportChanged` before its `connect()` resolves and `modeChanged` before `switchMode()` resolves. A listener added after the `await` misses them, so call `.on(...)` first on every session class.
 
 **How `speak(text)` works:** it injects `text` into the conversation on the same path as the viewer's own voice transcript — the brain treats it as a new turn and replies in its own words, not a verbatim echo of `text`. Need exact scripted playback instead? See [docs/api/scripted-video.md](docs/api/scripted-video.md).
 
 **When it sends:** `speak(text)` is safe to call at any moment after `connect()` resolves. If the agent is idle, thinking, or talking a normal reply, the text goes out now (a talking avatar stops mid-sentence and answers it). If the agent is in a turn typed text can't interrupt (its opening line right after `connect()`/`resume()`, or its own "are you still there?" check-in), the text is held and sent the instant that turn ends. Several `speak()` calls during one held turn go out as one turn, one text per line. The promise resolves `true` once sent, `false` if the session ended first. Details: [docs/DYNAMIC-DATA-INJECTION.md](docs/DYNAMIC-DATA-INJECTION.md#when-speak-actually-sends).
 
-**Starting the conversation:** pass `kickoff: 'text'` (or `{ text, echo? }`) and the SDK sends that text as the first turn, exactly once per session object, the moment the server accepts input. Pair it with a silent opening phrase on the intellect (`SILENT_OPENING`, exported from `./management` and `./experience`) and the agent's first words are its own interruptible reply about two seconds after `connect()` resolves. Never re-sent on `resume()` or a reconnect. Guide: [docs/START-THE-CONVERSATION.md](docs/START-THE-CONVERSATION.md).
+**Starting the conversation:** pass `kickoff: 'text'` (or `{ text, echo? }`) and the SDK sends that text as the first turn, exactly once per session object, the moment the server accepts input. Pair it with a silent opening phrase on the intellect (`SILENT_OPENING`, exported from `./management` and `./experience`) and the agent's first words are its own interruptible reply, written by the model. Never re-sent on `resume()` or a reconnect. Scripted or silent opening: [docs/START-THE-CONVERSATION.md § Choose an opening](docs/START-THE-CONVERSATION.md#choose-an-opening).
 
 **All transports are injected** — `socketFactory`, `rtcConstructor`, `fetch`, `getUserMedia`. Tests pass fakes; the SDK stays zero-dependency.
 
@@ -302,16 +304,17 @@ const sessions = configs.map((cfg) => new KalturaAvatarSession({
   videoEl: document.querySelector(`#avatar-${cfg.id} video`),
   audioEl: document.querySelector(`#avatar-${cfg.id} audio`),
 }));
-await Promise.all(sessions.map((s) => s.connect()));
 
-// Or headless into one Web Audio mixer. Keep a muted <audio> bound per session so
-// Chromium decodes the remote audio (see the note above).
+// Optional: also mix every voice into one Web Audio graph. Keep a muted <audio> bound
+// per session so Chromium decodes the remote audio (see the note above).
 const ctx = new AudioContext();
 const mixer = ctx.createGain();
 mixer.connect(ctx.destination);
 for (const s of sessions) {
   s.on('mediaReady', () => ctx.createMediaStreamSource(s.avatarStream).connect(mixer));
 }
+
+await Promise.all(sessions.map((s) => s.connect()));   // after the listeners: mediaReady fires before connect() resolves
 ```
 
 **Mixing or recording the avatar.** `avatarStream` (every track) or `videoEl.captureStream()` (default mode) feed `MediaRecorder` or a Web Audio graph. Chromium and Firefox report the mimeType as `video/webm;codecs=vp8,opus` for a stream with both tracks.
@@ -345,10 +348,10 @@ The same brain, thread, and tool contract as the avatar, over plain HTTPS — no
 import { KalturaChatSession } from '@kaltura/intelligent-agents/experience';
 
 const chat = new KalturaChatSession({ token });   // same conversation KS as the avatar
-await chat.connect();                             // no network — marks the session live
-
 chat.on('transcript', ({ text, type }) => render(type, text));
 chat.onToolCall('navigate_to_page', ({ page }) => router.go(page));
+
+await chat.connect();                             // no network — marks the session live
 
 const turn = await chat.sendText('What does the Presenter plugin do?');
 console.log(turn.text, chat.threadId);
@@ -373,12 +376,12 @@ const agent = new KalturaAgentSession({
   avatar: { videoEl, conversationManagerUrl, srsBaseUrl, turnServerUrl, socketFactory },
   chat: {},                                      // per-transport cfg
 });
-await agent.connect();
 agent.onToolCall('navigate_to_page', go);        // registered once, survives every switch
+agent.on('modeChanged', ({ mode, threadContinuity }) => showBanner(mode, threadContinuity));
+await agent.connect();
 
 await agent.sendText('Hi!');
 await agent.switchMode('avatar');                // call from a real click — mic prompt needs a user gesture
-agent.on('modeChanged', ({ mode, threadContinuity }) => showBanner(mode, threadContinuity));
 ```
 
 The facade owns the state machine (`idle → connecting → connected ⇄ switching → closed | failed`), the canonical `request_vars` map, and the `onToolCall` registry — all three carry over on every `switchMode()`. Switching is tear-down-and-reconstruct: the old transport disconnects, the new one is constructed seeded with the live `threadId` and full context, and `sendText()` calls during the blip are buffered (up to 8). The facade forwards the events an app needs to render the conversation: `transcript`, `turnStart`, `turnEnd`, `toolCall`, `toolCallResult`, `toolCallInvalid`, `error`, `warning`, `responsePending`, `responseSettled`, `agentActionDenied`, `ended` on both transports, plus `speechChunk`, `avatarStartTalking`, `avatarStopTalking`, `interrupted` in avatar mode. Listeners on the facade survive every switch. Events that pair with a transport-only method (`disclosure` with `acknowledgeDisclosure()`, `micStarted` with `startMic()`) and the mic/video controls stay on the transport: use the `transport` getter and rewire on each `transportChanged` event. For the full state-transition table and switch UX rules, see [docs/VOICE-INPUT-MODES.md](docs/VOICE-INPUT-MODES.md#switching-between-avatar-and-chat-mid-conversation).
@@ -1071,7 +1074,7 @@ await mgmt.intellectConfig.setAvatarSummaryConfig(configId, {
 
 `setModelConfiguration` picks the chat model and its sampling limits. `model_id` must be one of `MODEL_IDS`, `thinking_level` one of `THINKING_LEVELS` (`'low'`/`'high'`, Gemini only), `max_output_tokens` a positive integer, `temperature` 0..1. Pass `null` to return to the backend defaults. Which models answer depends on your partner's region, so run `converseOnce` once after switching. With `avatar_show_content` on, the backend fills an unset `thinking_level` with `'low'` and `max_output_tokens` with 4096.
 
-`setOpeningPhrase` sets the intellect's `opening_phrase`, the line spoken as the first turn of every avatar session. It is a Jinja2 template rendered server-side once per session. Pass `null` to clear it, or `SILENT_OPENING` for a silent opening so the browser can send the first turn with `kickoff`. Who owns the phrase, how to personalize it and the `kickoff` path: [docs/START-THE-CONVERSATION.md § Personalize the opening](docs/START-THE-CONVERSATION.md#personalize-the-opening).
+`setOpeningPhrase` sets the intellect's `opening_phrase`, the line spoken as the first turn of every avatar join. It is a Jinja2 template rendered server-side. Pass `null` to clear it, or `SILENT_OPENING` for a silent opening so the browser can send the first turn with `kickoff`. How to choose, personalize the phrase and use `kickoff`: [docs/START-THE-CONVERSATION.md § Personalize the opening](docs/START-THE-CONVERSATION.md#personalize-the-opening).
 
 `setThreadStartTools` lists tool ids the backend runs once at the start of every thread, before the first turn. Only `api` and `code` tools run. The result feeds the model and never appears as a `tool` segment. Pass `[]` to clear.
 
@@ -1213,7 +1216,7 @@ await mgmt.knowledge.deleteRecord(rec.id, ks, { confirmPermanent: true });
 | [docs/EXTERNAL-API-INTEGRATIONS.md](docs/EXTERNAL-API-INTEGRATIONS.md) | Wiring a brain-called tool to a durable write against your own external API (CRM, spreadsheet, ticketing) |
 | [docs/STRUCTURED-DATA-FORMS.md](docs/STRUCTURED-DATA-FORMS.md) | Collecting typed fields from the user mid-conversation (`user_properties_forms`) — schema, rendering, where submitted values go |
 | [docs/VOICE-INPUT-MODES.md](docs/VOICE-INPUT-MODES.md) | Choosing open-mic vs. push-to-talk, and the UX/accessibility/safety details around each |
-| [docs/START-THE-CONVERSATION.md](docs/START-THE-CONVERSATION.md) | Fastest time to first speech: silent opening (`SILENT_OPENING`) + `kickoff`, what fires on the wire, the `speak()` hold, mic-less sessions |
+| [docs/START-THE-CONVERSATION.md](docs/START-THE-CONVERSATION.md) | Choosing the first turn: scripted Jinja2 opening or silent opening (`SILENT_OPENING`) + `kickoff`, the preset-question pattern, what fires on the wire, the `speak()` hold |
 | [docs/lifecycle/README.md](docs/lifecycle/README.md) | Event-driven rules: reference + [recipe](docs/lifecycle/recipes.md) — auto-summarize conversations and email a human when analysis lands |
 | `examples/` | One runnable example per use-case |
 | [.claude/skills/agentic-avatar/SKILL.md](.claude/skills/agentic-avatar/SKILL.md) | Agent Skill — load this SDK's whole surface into Claude Code or any [agentskills.io](https://agentskills.io)-compatible agent |
