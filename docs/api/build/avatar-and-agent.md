@@ -52,7 +52,7 @@ await mgmt.avatars.create(
 );
 ```
 
-### Compose from a custom Face and Background
+## Compose from a custom Face and Background
 
 Upload the two halves first ([Catalog & Assets § Upload a custom Face or Background](../design.md#upload-a-custom-face-or-background-compose-a-visual-path)), then pass their ids as `face.id` and `background.value`:
 
