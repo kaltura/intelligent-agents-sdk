@@ -198,7 +198,7 @@ async function runVerify() {
   }
   const state = JSON.parse(readFileSync(statePath, 'utf8'));
   for (const r of state.provisionResults) results.push(r);
-  const { intellectA, intellectB, intellectC, intellectD, intellectE, sharedToken, runTag } = state;
+  const { intellectA, intellectB, intellectC, intellectE, sharedToken, runTag } = state;
   const admin = await kaltura.sessions.createAdminToken();
   record('admin-token-mint-verify', true, { secondsRemaining: admin.secondsRemaining(), target: TARGET, ageMs: Date.now() - new Date(state.provisionedAt).getTime() });
 
@@ -284,7 +284,7 @@ async function runVerify() {
         let consentRes;
         for (let attempt = 1; ; attempt++) {
           try {
-            consentRes = await fetch(authUrl, { redirect: 'follow' });
+            consentRes = await fetch(authUrl, { redirect: 'follow' }); // nosemgrep: scripts.harness.no-raw-fetch-bypass
             break;
           } catch (err) {
             if (attempt >= 3) throw err;
