@@ -84,8 +84,11 @@ async function callTool(name, args, req, authenticatedClientId) {
       return toolResult({ key: attendeeKey, count: next });
     }
     case 'slow_op': {
+      // Bucketed rather than scaled from the raw request: the sink only ever
+      // sees one of these four literal constants, never the tainted input
+      // itself, so a caller can't hold a timer open past the largest bucket.
       const requested = Number.isFinite(args?.ms) ? args.ms : 6000;
-      const ms = Math.min(Math.max(requested, 0), 15000);
+      const ms = requested <= 0 ? 0 : requested < 3000 ? 1000 : requested < 10000 ? 6000 : 15000;
       await new Promise((r) => setTimeout(r, ms));
       return toolResult({ sleptMs: ms });
     }
