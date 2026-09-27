@@ -22,15 +22,23 @@ name: Live verification
 # on label/merge_group/dispatch, so a plain PR push reports `skipped` (which
 # satisfies a required check) instead of never reporting at all and leaving
 # the check stuck on "waiting for status to be reported" until someone labels
-# it or the merge queue picks it up. This also means the same `code`
-# path-filter below correctly resolves to skipped for a docs-only PR — it has
-# nothing to verify against the real backend either way.
+# it or the merge queue picks it up. This also means a docs-only PR resolves
+# to skipped on every job below — it has nothing to verify against the real
+# backend either way.
 #
-# live-verify-browser gates on its own narrower `browser` path-filter output,
-# not `code` — it only needs to run when something that actually affects the
-# browser/WebRTC path changed (src/experience/**, examples/**, its own
-# script, package.json/package-lock.json, or this workflow file), not on
-# every merge that touches src/**.
+# The `changes` job below computes one path-filter output per live-verify job
+# (not one blanket filter for all of them), scoped to that job's own script
+# plus the specific src/** files it actually exercises, plus a handful of
+# files every job depends on regardless (src/management/client.js, src/core/
+# http.js|errors.js|session.js|ids.js|redact.js, package.json,
+# package-lock.json, this workflow file). A change to one feature's source or
+# script only triggers that feature's job, not the whole fleet — except for
+# those shared dependency files, which correctly still trigger everything.
+#
+# A dedicated nightly `schedule` run (see the second cron below) bypasses the
+# path filters entirely and runs every job in the fleet regardless of what
+# changed, so drift between the live backend and this suite surfaces within a
+# day even on a week with no merges.
 #
 # The live-verify job covers the server-side management/conversation path
 # only. live-verify-browser (below) covers the actual browser/WebRTC path:
@@ -62,9 +70,9 @@ name: Live verification
 # connect(), first video frame, first audio, first agent words and sound heard
 # is checked against that arm's budgets in the script header, and a miss fails
 # the timing step. The job summary leads with one KPI row per arm; the full reports
-# sit below it in a collapsed section. A weekly `schedule` run keeps a trend
-# (90-day artifacts) even when nothing is merged; only live-verify-kickoff runs
-# on that trigger.
+# sit below it in a collapsed section. The weekly Monday `schedule` run keeps a
+# trend (90-day artifacts) even when nothing is merged; live-verify-kickoff runs
+# on any `schedule` trigger, so it also gets the nightly full-suite run below.
 # live-verify-opening-phrase covers the intellect-owned opening phrase:
 # provision() writes it to the intellect only and leaves the avatar's unset, a
 # Jinja2 `{% if %}` template renders per session from client variables
@@ -72,6 +80,17 @@ name: Live verification
 # opening turn, a `<blank>` branch + kickoff asks a preset question, and each
 # re-join replays the opening (sys__is_new_thread, a var cleared with '').
 # See scripts/live-verify-opening-phrase.mjs.
+# live-verify-mcp covers setMcpServers/describe end to end against a real,
+# CI-hosted reference MCP server (examples/mcp-live-showcase/server.mjs),
+# exposed over a cloudflared quick tunnel so the real backend can call back
+# into it: basic tool calls, shared and per-attendee auth headers,
+# allowedTools restriction, two servers with no tool-name collision, an
+# unreachable server not blocking the rest of the conversation, a client-side
+# tool timeout, a stateful tool's state persisting correctly across calls, a
+# tool-level failure (isError:true) not breaking the turn, the OAuth
+# DCR+PKCE consent flow (text and avatar), and one call against a
+# pre-existing, independently-run public MCP server. See
+# scripts/live-verify-mcp.mjs.
 on:
   workflow_dispatch: {}
   pull_request:
@@ -80,6 +99,7 @@ on:
     branches: [main]
   schedule:
     - cron: '0 6 * * 1' # Monday 06:00 UTC: startup-KPI trend run (live-verify-kickoff only)
+    - cron: '0 3 * * *' # Nightly 03:00 UTC: full live-verify suite, regardless of what changed
 
 permissions:
   contents: read
@@ -99,45 +119,326 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
-      code: ${{ steps.filter.outputs.code }}
+      smoke: ${{ steps.filter.outputs.smoke }}
+      capabilities: ${{ steps.filter.outputs.capabilities }}
+      conversation-surface: ${{ steps.filter.outputs.conversation-surface }}
+      request-vars: ${{ steps.filter.outputs.request-vars }}
+      context-fields: ${{ steps.filter.outputs.context-fields }}
+      site-nav: ${{ steps.filter.outputs.site-nav }}
+      threads-messages-feedback: ${{ steps.filter.outputs.threads-messages-feedback }}
+      skills: ${{ steps.filter.outputs.skills }}
+      catalog: ${{ steps.filter.outputs.catalog }}
+      knowledge: ${{ steps.filter.outputs.knowledge }}
+      avatars: ${{ steps.filter.outputs.avatars }}
+      agents: ${{ steps.filter.outputs.agents }}
       browser: ${{ steps.filter.outputs.browser }}
+      kickoff: ${{ steps.filter.outputs.kickoff }}
+      opening-phrase: ${{ steps.filter.outputs.opening-phrase }}
+      avatar-media: ${{ steps.filter.outputs.avatar-media }}
+      set-forced-language: ${{ steps.filter.outputs.set-forced-language }}
+      session-complete: ${{ steps.filter.outputs.session-complete }}
+      intellects-conversations: ${{ steps.filter.outputs.intellects-conversations }}
+      tools: ${{ steps.filter.outputs.tools }}
+      mcp: ${{ steps.filter.outputs.mcp }}
     steps:
       - name: 📥 Check out the repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - name: 🔍 Does this push/PR touch anything other than docs?
+      - name: 🔍 Which live-verify jobs does this change actually touch?
         id: filter
         uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         with:
           filters: |
-            code:
-              - 'src/**'
-              - 'test/**'
-              - 'scripts/**'
-              - 'tools/**'
-              - 'examples/**'
+            smoke:
+              - 'scripts/live-verify.mjs'
+              - 'src/management/agents.js'
+              - 'src/management/avatars.js'
+              - 'src/management/intellects.js'
+              - 'src/management/provision.js'
+              - 'src/management/client.js'
+              - 'src/core/http.js'
+              - 'src/core/errors.js'
+              - 'src/core/session.js'
+              - 'src/core/ids.js'
+              - 'src/core/redact.js'
               - 'package.json'
               - 'package-lock.json'
-              - 'jsconfig.json'
-              - '.eslintrc*'
-              - 'eslint.config.*'
-              - '.github/workflows/**'
-            browser:
-              - 'src/experience/**'
-              - 'examples/**'
-              - 'scripts/live-verify-browser.mjs'
-              - 'scripts/live-verify-avatar-media.mjs'
-              - 'scripts/live-verify-avatar-media.html'
+              - '.github/workflows/live-verify.yml'
+            capabilities:
+              - 'scripts/live-verify-capabilities.mjs'
+              - 'src/management/conversations.js'
+              - 'src/management/application.js'
+              - 'src/management/avatars.js'
+              - 'src/management/lifecycle.js'
+              - 'src/management/insight-settings.js'
+              - 'src/management/email-templates.js'
+              - 'src/management/capabilities.js'
+              - 'src/management/client.js'
+              - 'src/core/http.js'
+              - 'src/core/errors.js'
+              - 'src/core/session.js'
+              - 'src/core/ids.js'
+              - 'src/core/redact.js'
+              - 'package.json'
+              - 'package-lock.json'
+              - '.github/workflows/live-verify.yml'
+            conversation-surface:
+              - 'scripts/live-verify-conversation-avatar-surface.mjs'
+              - 'src/management/conversations.js'
+              - 'src/management/avatars.js'
+              - 'src/management/catalog.js'
+              - 'src/management/client.js'
+              - 'src/core/http.js'
+              - 'src/core/errors.js'
+              - 'src/core/session.js'
+              - 'src/core/ids.js'
+              - 'src/core/redact.js'
+              - 'package.json'
+              - 'package-lock.json'
+              - '.github/workflows/live-verify.yml'
+            request-vars:
+              - 'scripts/live-verify-request-vars.mjs'
+              - 'src/management/intellect-config.js'
+              - 'src/management/prompt-lint.js'
+              - 'src/core/stream.js'
+              - 'src/management/client.js'
+              - 'src/core/http.js'
+              - 'src/core/errors.js'
+              - 'src/core/session.js'
+              - 'src/core/ids.js'
+              - 'src/core/redact.js'
+              - 'package.json'
+              - 'package-lock.json'
+              - '.github/workflows/live-verify.yml'
+            context-fields:
               - 'scripts/live-verify-context-fields.mjs'
               - 'scripts/live-verify-context-fields.html'
+              - 'scripts/live-verify-silent-mic-shared.mjs'
+              - 'scripts/live-verify-hooks-shared.mjs'
+              - 'src/experience/agent-session.js'
+              - 'src/experience/session.js'
+              - 'src/experience/wire.js'
+              - 'src/management/intellect-config.js'
+              - 'src/management/client.js'
+              - 'src/core/http.js'
+              - 'src/core/errors.js'
+              - 'src/core/session.js'
+              - 'src/core/ids.js'
+              - 'src/core/redact.js'
+              - 'package.json'
+              - 'package-lock.json'
+              - '.github/workflows/live-verify.yml'
+            site-nav:
+              - 'scripts/live-verify-site-nav.mjs'
+              - 'src/management/site-nav.js'
+              - 'src/core/site-keys.js'
+              - 'src/experience/site-nav.js'
+              - 'src/management/client.js'
+              - 'src/core/http.js'
+              - 'src/core/errors.js'
+              - 'src/core/session.js'
+              - 'src/core/ids.js'
+              - 'src/core/redact.js'
+              - 'package.json'
+              - 'package-lock.json'
+              - '.github/workflows/live-verify.yml'
+            threads-messages-feedback:
+              - 'scripts/live-verify-threads-messages-feedback.mjs'
+              - 'src/management/conversations.js'
+              - 'src/management/client.js'
+              - 'src/core/http.js'
+              - 'src/core/errors.js'
+              - 'src/core/session.js'
+              - 'src/core/ids.js'
+              - 'src/core/redact.js'
+              - 'package.json'
+              - 'package-lock.json'
+              - '.github/workflows/live-verify.yml'
+            skills:
+              - 'scripts/live-verify-skills.mjs'
+              - 'src/management/skills.js'
+              - 'src/management/client.js'
+              - 'src/core/http.js'
+              - 'src/core/errors.js'
+              - 'src/core/session.js'
+              - 'src/core/ids.js'
+              - 'src/core/redact.js'
+              - 'package.json'
+              - 'package-lock.json'
+              - '.github/workflows/live-verify.yml'
+            catalog:
+              - 'scripts/live-verify-catalog.mjs'
+              - 'src/management/catalog.js'
+              - 'src/management/client.js'
+              - 'src/core/http.js'
+              - 'src/core/errors.js'
+              - 'src/core/session.js'
+              - 'src/core/ids.js'
+              - 'src/core/redact.js'
+              - 'package.json'
+              - 'package-lock.json'
+              - '.github/workflows/live-verify.yml'
+            knowledge:
+              - 'scripts/live-verify-knowledge.mjs'
+              - 'src/management/conversations.js'
+              - 'src/core/knowledge-enums.js'
+              - 'src/management/client.js'
+              - 'src/core/http.js'
+              - 'src/core/errors.js'
+              - 'src/core/session.js'
+              - 'src/core/ids.js'
+              - 'src/core/redact.js'
+              - 'package.json'
+              - 'package-lock.json'
+              - '.github/workflows/live-verify.yml'
+            avatars:
+              - 'scripts/live-verify-avatars.mjs'
+              - 'src/management/avatars.js'
+              - 'src/management/client.js'
+              - 'src/core/http.js'
+              - 'src/core/errors.js'
+              - 'src/core/session.js'
+              - 'src/core/ids.js'
+              - 'src/core/redact.js'
+              - 'package.json'
+              - 'package-lock.json'
+              - '.github/workflows/live-verify.yml'
+            agents:
+              - 'scripts/live-verify-agents.mjs'
+              - 'src/management/agents.js'
+              - 'src/management/client.js'
+              - 'src/core/http.js'
+              - 'src/core/errors.js'
+              - 'src/core/session.js'
+              - 'src/core/ids.js'
+              - 'src/core/redact.js'
+              - 'package.json'
+              - 'package-lock.json'
+              - '.github/workflows/live-verify.yml'
+            browser:
+              - 'scripts/live-verify-browser.mjs'
+              - 'src/experience/**'
+              - 'examples/**'
+              - 'src/management/client.js'
+              - 'src/core/http.js'
+              - 'src/core/errors.js'
+              - 'src/core/session.js'
+              - 'src/core/ids.js'
+              - 'src/core/redact.js'
+              - 'package.json'
+              - 'package-lock.json'
+              - '.github/workflows/live-verify.yml'
+            kickoff:
               - 'scripts/live-verify-kickoff.mjs'
               - 'scripts/live-verify-kickoff.html'
               - 'scripts/live-verify-kickoff-shared.mjs'
-              - 'scripts/live-verify-opening-phrase.mjs'
               - 'scripts/live-verify-connect-timing.mjs'
-              - 'scripts/live-verify-set-forced-language.mjs'
               - 'scripts/live-verify-silent-mic-shared.mjs'
               - 'scripts/live-verify-hooks-shared.mjs'
+              - 'src/experience/session.js'
+              - 'src/experience/agent-session.js'
+              - 'src/core/opening.js'
+              - 'src/management/client.js'
+              - 'src/core/http.js'
+              - 'src/core/errors.js'
+              - 'src/core/session.js'
+              - 'src/core/ids.js'
+              - 'src/core/redact.js'
+              - 'package.json'
+              - 'package-lock.json'
+              - '.github/workflows/live-verify.yml'
+            opening-phrase:
+              - 'scripts/live-verify-opening-phrase.mjs'
+              - 'scripts/live-verify-hooks-shared.mjs'
+              - 'src/core/opening.js'
+              - 'src/experience/agent-session.js'
+              - 'src/management/intellect-config.js'
+              - 'src/management/client.js'
+              - 'src/core/http.js'
+              - 'src/core/errors.js'
+              - 'src/core/session.js'
+              - 'src/core/ids.js'
+              - 'src/core/redact.js'
+              - 'package.json'
+              - 'package-lock.json'
+              - '.github/workflows/live-verify.yml'
+            avatar-media:
+              - 'scripts/live-verify-avatar-media.mjs'
+              - 'scripts/live-verify-avatar-media.html'
+              - 'scripts/live-verify-hooks-shared.mjs'
+              - 'src/experience/avatar-media.js'
+              - 'src/experience/chroma-key.js'
+              - 'src/management/client.js'
+              - 'src/core/http.js'
+              - 'src/core/errors.js'
+              - 'src/core/session.js'
+              - 'src/core/ids.js'
+              - 'src/core/redact.js'
+              - 'package.json'
+              - 'package-lock.json'
+              - '.github/workflows/live-verify.yml'
+            set-forced-language:
+              - 'scripts/live-verify-set-forced-language.mjs'
+              - 'scripts/live-verify-silent-mic-shared.mjs'
+              - 'src/management/set-forced-language.js'
+              - 'src/management/client.js'
+              - 'src/core/http.js'
+              - 'src/core/errors.js'
+              - 'src/core/session.js'
+              - 'src/core/ids.js'
+              - 'src/core/redact.js'
+              - 'package.json'
+              - 'package-lock.json'
+              - '.github/workflows/live-verify.yml'
+            session-complete:
+              - 'scripts/live-verify-session-complete.mjs'
+              - 'scripts/live-verify-hooks-shared.mjs'
+              - 'src/experience/session-complete.js'
+              - 'src/management/conversations.js'
+              - 'src/management/client.js'
+              - 'src/core/http.js'
+              - 'src/core/errors.js'
+              - 'src/core/session.js'
+              - 'src/core/ids.js'
+              - 'src/core/redact.js'
+              - 'package.json'
+              - 'package-lock.json'
+              - '.github/workflows/live-verify.yml'
+            intellects-conversations:
+              - 'scripts/live-verify-intellects-conversations.mjs'
+              - 'src/management/intellects.js'
+              - 'src/management/conversations.js'
+              - 'src/management/client.js'
+              - 'src/core/http.js'
+              - 'src/core/errors.js'
+              - 'src/core/session.js'
+              - 'src/core/ids.js'
+              - 'src/core/redact.js'
+              - 'package.json'
+              - 'package-lock.json'
+              - '.github/workflows/live-verify.yml'
+            tools:
+              - 'scripts/live-verify-tools.mjs'
+              - 'src/management/tools.js'
+              - 'src/management/client.js'
+              - 'src/core/http.js'
+              - 'src/core/errors.js'
+              - 'src/core/session.js'
+              - 'src/core/ids.js'
+              - 'src/core/redact.js'
+              - 'package.json'
+              - 'package-lock.json'
+              - '.github/workflows/live-verify.yml'
+            mcp:
+              - 'scripts/live-verify-mcp.mjs'
+              - 'examples/mcp-live-showcase/server.mjs'
+              - 'src/management/intellect-config.js'
+              - 'src/management/client.js'
+              - 'src/core/http.js'
+              - 'src/core/errors.js'
+              - 'src/core/session.js'
+              - 'src/core/ids.js'
+              - 'src/core/redact.js'
               - 'package.json'
               - 'package-lock.json'
               - '.github/workflows/live-verify.yml'
@@ -146,8 +447,8 @@ jobs:
     name: 🔴 Live verification
     needs: changes
     if: |
-      github.event_name == 'workflow_dispatch' ||
-      ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs.code == 'true')
+      github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
+      ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs['smoke'] == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: live-verify
@@ -194,8 +495,8 @@ jobs:
     name: 🔴 Live verification (Knowledge/Application/Avatars/Lifecycle)
     needs: changes
     if: |
-      github.event_name == 'workflow_dispatch' ||
-      ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs.code == 'true')
+      github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
+      ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs['capabilities'] == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: live-verify
@@ -242,8 +543,8 @@ jobs:
     name: 🔴 Live verification (Threads/Feedback/Followups/Avatars composition/Catalog Face+Background)
     needs: changes
     if: |
-      github.event_name == 'workflow_dispatch' ||
-      ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs.code == 'true')
+      github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
+      ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs['conversation-surface'] == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: live-verify
@@ -290,8 +591,8 @@ jobs:
     name: 🔴 Live verification (request_vars persistence/merge/tool interpolation/sys__*)
     needs: changes
     if: |
-      github.event_name == 'workflow_dispatch' ||
-      ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs.code == 'true')
+      github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
+      ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs['request-vars'] == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: live-verify
@@ -338,8 +639,8 @@ jobs:
     name: 🔴🌐 Live verification (sys__context_id/sys__context_type wire fields)
     needs: changes
     if: |
-      github.event_name == 'workflow_dispatch' ||
-      ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs.browser == 'true')
+      github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
+      ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs['context-fields'] == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: live-verify
@@ -392,8 +693,8 @@ jobs:
     name: 🔴 Live verification (go_to site navigation)
     needs: changes
     if: |
-      github.event_name == 'workflow_dispatch' ||
-      ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs.code == 'true')
+      github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
+      ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs['site-nav'] == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: live-verify
@@ -441,8 +742,8 @@ jobs:
     name: 🔴 Live verification (threads/messages/feedback/followups)
     needs: changes
     if: |
-      github.event_name == 'workflow_dispatch' ||
-      ((github.event_name == 'merge_group' || github.event.label.name == 'run-live-verify') && needs.changes.outputs.code == 'true')
+      github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
+      ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs['threads-messages-feedback'] == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: live-verify
@@ -489,8 +790,8 @@ jobs:
     name: 🔴 Live verification (skills)
     needs: changes
     if: |
-      github.event_name == 'workflow_dispatch' ||
-      ((github.event_name == 'merge_group' || github.event.label.name == 'run-live-verify') && needs.changes.outputs.code == 'true')
+      github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
+      ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs['skills'] == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: live-verify
@@ -537,8 +838,8 @@ jobs:
     name: 🔴 Live verification (catalog)
     needs: changes
     if: |
-      github.event_name == 'workflow_dispatch' ||
-      ((github.event_name == 'merge_group' || github.event.label.name == 'run-live-verify') && needs.changes.outputs.code == 'true')
+      github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
+      ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs['catalog'] == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: live-verify
@@ -585,8 +886,8 @@ jobs:
     name: 🔴 Live verification (knowledge write path)
     needs: changes
     if: |
-      github.event_name == 'workflow_dispatch' ||
-      ((github.event_name == 'merge_group' || github.event.label.name == 'run-live-verify') && needs.changes.outputs.code == 'true')
+      github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
+      ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs['knowledge'] == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: live-verify
@@ -633,8 +934,8 @@ jobs:
     name: 🔴 Live verification (avatars write path)
     needs: changes
     if: |
-      github.event_name == 'workflow_dispatch' ||
-      ((github.event_name == 'merge_group' || github.event.label.name == 'run-live-verify') && needs.changes.outputs.code == 'true')
+      github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
+      ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs['avatars'] == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: live-verify
@@ -681,8 +982,8 @@ jobs:
     name: 🔴 Live verification (agents)
     needs: changes
     if: |
-      github.event_name == 'workflow_dispatch' ||
-      ((github.event_name == 'merge_group' || github.event.label.name == 'run-live-verify') && needs.changes.outputs.code == 'true')
+      github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
+      ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs['agents'] == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: live-verify
@@ -729,8 +1030,8 @@ jobs:
     name: 🔴🌐 Live browser verification (${{ matrix.engine }})
     needs: changes
     if: |
-      github.event_name == 'workflow_dispatch' ||
-      ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs.browser == 'true')
+      github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
+      ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs['browser'] == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: live-verify
@@ -818,7 +1119,7 @@ jobs:
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' ||
-      ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs.browser == 'true')
+      ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs['kickoff'] == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: live-verify
@@ -907,8 +1208,8 @@ jobs:
     name: 🔴🌐 Live verification (intellect-owned opening phrase + Jinja2 client variables, chromium)
     needs: changes
     if: |
-      github.event_name == 'workflow_dispatch' ||
-      ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs.browser == 'true')
+      github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
+      ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs['opening-phrase'] == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: live-verify
@@ -964,8 +1265,8 @@ jobs:
     name: 🔴🌐 Live verification (avatar media simple+split, ${{ matrix.engine }})
     needs: changes
     if: |
-      github.event_name == 'workflow_dispatch' ||
-      ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs.browser == 'true')
+      github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
+      ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs['avatar-media'] == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: live-verify
@@ -1025,8 +1326,8 @@ jobs:
     name: 🔴🌐 Live verification (setForcedLanguage)
     needs: changes
     if: |
-      github.event_name == 'workflow_dispatch' ||
-      ((github.event_name == 'merge_group' || github.event.label.name == 'run-live-verify') && needs.changes.outputs.browser == 'true')
+      github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
+      ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs['set-forced-language'] == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: live-verify
@@ -1087,8 +1388,8 @@ jobs:
     name: 🔴🌐 Live verification (session_completed signal, ${{ matrix.engine }})
     needs: changes
     if: |
-      github.event_name == 'workflow_dispatch' ||
-      ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs.code == 'true')
+      github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
+      ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs['session-complete'] == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: live-verify
@@ -1149,8 +1450,8 @@ jobs:
     name: 🔴 Live verification (intellects snapshot/restore/capabilities + conversations)
     needs: changes
     if: |
-      github.event_name == 'workflow_dispatch' ||
-      ((github.event_name == 'merge_group' || github.event.label.name == 'run-live-verify') && needs.changes.outputs.code == 'true')
+      github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
+      ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs['intellects-conversations'] == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: live-verify
@@ -1197,8 +1498,8 @@ jobs:
     name: 🔴 Live verification (tools add/get/delete + unavailable-by-default gate)
     needs: changes
     if: |
-      github.event_name == 'workflow_dispatch' ||
-      ((github.event_name == 'merge_group' || github.event.label.name == 'run-live-verify') && needs.changes.outputs.code == 'true')
+      github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
+      ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs['tools'] == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: live-verify
@@ -1238,5 +1539,105 @@ jobs:
             echo
             echo '```'
             tail -n 40 live-verify-tools-output.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  live-verify-mcp:
+    name: 🔴 Live verification (MCP server integration)
+    needs: changes
+    if: |
+      github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
+      ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs['mcp'] == 'true')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: live-verify
+    steps:
+      - name: 📥 Check out the repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: 🟢 Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+
+      - name: 🚇 Install cloudflared
+        run: |
+          curl -sSL -o /usr/local/bin/cloudflared https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64
+          chmod +x /usr/local/bin/cloudflared
+
+      - name: 🟢 Start the reference MCP server
+        run: |
+          node examples/mcp-live-showcase/server.mjs > mcp-server.log 2>&1 &
+          for i in $(seq 1 20); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8877/mcp || true)
+            [ -n "$code" ] && [ "$code" != "000" ] && break
+            sleep 0.5
+          done
+
+      - name: 🚇 Open a cloudflared quick tunnel and capture its public URL
+        id: tunnel
+        run: |
+          cloudflared tunnel --url http://localhost:8877 > cloudflared.log 2>&1 &
+          url=""
+          for i in $(seq 1 30); do
+            url=$(grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' cloudflared.log | head -n1 || true)
+            [ -n "$url" ] && break
+            sleep 1
+          done
+          if [ -z "$url" ]; then echo "cloudflared did not report a tunnel URL"; cat cloudflared.log; exit 1; fi
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          for i in $(seq 1 20); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "$url/mcp" || true)
+            [ -n "$code" ] && [ "$code" != "000" ] && break
+            sleep 1
+          done
+
+      - name: 🔴 setMcpServers/describe, tool calls, auth headers, allowedTools, OAuth consent, against the real Kaltura API (production)
+        id: live_verify_mcp
+        env:
+          NVP1_AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
+          NVP1_AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
+          NVP1_AGENTIC_API_URL: https://api.avatar.us.kaltura.ai/v1
+          NVP1_GENIE_URL: https://genie.nvp1.ovp.kaltura.com
+          NVP1_KALTURA_API_ENDPOINT: https://www.kaltura.com/api_v3
+          MCP_PUBLIC_URL: ${{ steps.tunnel.outputs.url }}
+        run: |
+          set -e -o pipefail
+          node scripts/live-verify-mcp.mjs --target=nvp1 --phase=provision 2>&1 | tee live-verify-mcp-provision-output.log
+          node scripts/live-verify-mcp.mjs --target=nvp1 --phase=verify 2>&1 | tee live-verify-mcp-verify-output.log
+
+      - name: 🧹 Clean up provisioned intellects
+        if: always()
+        env:
+          NVP1_AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
+          NVP1_AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
+          NVP1_AGENTIC_API_URL: https://api.avatar.us.kaltura.ai/v1
+          NVP1_GENIE_URL: https://genie.nvp1.ovp.kaltura.com
+          NVP1_KALTURA_API_ENDPOINT: https://www.kaltura.com/api_v3
+          MCP_PUBLIC_URL: ${{ steps.tunnel.outputs.url }}
+        run: |
+          set -o pipefail
+          node scripts/live-verify-mcp.mjs --target=nvp1 --phase=cleanup 2>&1 | tee live-verify-mcp-cleanup-output.log
+
+      - name: 📤 Upload live-verify-mcp artifact
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: live-verify-mcp-artifacts
+          path: |
+            live-verify-artifacts/
+            live-verify-mcp-*-output.log
+            mcp-server.log
+            cloudflared.log
+          retention-days: 30
+
+      - name: 📝 Write job summary
+        if: always()
+        run: |
+          {
+            echo "### 🔴 Live verification (MCP server integration) — ${{ steps.live_verify_mcp.outcome }}"
+            echo
+            echo '```'
+            tail -n 60 live-verify-mcp-verify-output.log 2>/dev/null || tail -n 60 live-verify-mcp-provision-output.log 2>/dev/null || true
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
