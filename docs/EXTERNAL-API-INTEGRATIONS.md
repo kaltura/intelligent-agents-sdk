@@ -67,7 +67,7 @@ const tool = api({
 
 This is a genuine authorization-code exchange, not a pre-minted static token wearing an OAuth label. Here's what to build for and expect:
 
-- **First call, no cached token: handle the consent redirect.** The call comes back as an `interruption` stream segment carrying a real `auth_url` (built with `response_type=code&client_id=...&redirect_uri=...&state=...`). Your app must surface that URL to the viewer (open it in a new tab/window) so they can complete the provider's consent screen.
+- **First call, no cached token: handle the consent redirect.** The call comes back as an `interruption` stream segment (`metadata.subtype:"oauth_required"`) carrying a real `auth_url` (built with `response_type=code&client_id=...&redirect_uri=...&state=...`) — see [wire-protocol/events-catalog.md § OAuth consent redirect](wire-protocol/events-catalog.md#oauth-consent-redirect-interruption--subtypeoauth_required) for the exact shape and the SDK's `parseOAuthRequired`/`session.onOAuthRequired` convenience for parsing it. Your app must surface that URL to the viewer (open it in a new tab/window) so they can complete the provider's consent screen. An MCP server's own OAuth-gated tools use this identical mechanism — see [MCP-INTEGRATIONS.md § OAuth-gated servers](MCP-INTEGRATIONS.md#oauth-gated-servers).
 - **After consent, later calls just work.** Once the provider redirects back with a `code` and the viewer's consent completes, subsequent calls to the same tool succeed without asking the viewer to consent again.
 - **Refresh is automatic.** A later call can reuse and refresh an expired token with no viewer interaction and no redirect. Only when that refresh itself fails do you see another `interruption`/`auth_url`, sending the viewer back through consent. Don't hardcode an assumed validity window for cached consent — treat every call as one that might come back with a fresh `auth_url` and handle that path.
 
@@ -153,3 +153,4 @@ None of these need a dedicated recipe — they're a plain `api` tool with a stat
 | [STRUCTURED-DATA-FORMS.md](STRUCTURED-DATA-FORMS.md) | Collecting the values this doc shows you how to forward durably |
 | [DYNAMIC-DATA-INJECTION.md](DYNAMIC-DATA-INJECTION.md) | Feeding data *into* the conversation, the opposite direction from this doc |
 | [CLIENT-COMMANDS.md](CLIENT-COMMANDS.md) | The avatar-driving-your-UI channel — a client-side, not server-side, mechanism |
+| [MCP-INTEGRATIONS.md](MCP-INTEGRATIONS.md) | Wiring a whole MCP server's tool surface at once, instead of one REST endpoint at a time |

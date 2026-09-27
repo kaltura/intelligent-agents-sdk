@@ -1059,7 +1059,7 @@ const { id: toolId } = await mgmt.tools.add(myTool, ks);       // tools are a se
 await mgmt.intellectConfig.setToolIds(configId, [toolId], ks); // then link it
 await mgmt.intellects.secrets.set(configId, { API_KEY: value }, ks);  // write-only
 await mgmt.intellectConfig.setKnowledgeIds(configId, [knowledgeId], ks);  // ungated
-await mgmt.intellectConfig.setMcpServers(configId, { docs: { url: 'https://mcp.example.com/sse' } }, ks);  // ungated
+await mgmt.intellectConfig.setMcpServers(configId, { docs: { url: 'https://mcp.example.com/mcp' } }, ks);  // ungated
 await mgmt.intellectConfig.setModelConfiguration(configId, { model_id: 'gemini-3.5-flash', temperature: 0.3 }, ks);
 await mgmt.intellectConfig.setOpeningPhrase(configId, '{% if user_name %}Hi {{ user_name }}, what can I help with?{% else %}Hi, what can I help with?{% endif %}', ks);
 await mgmt.intellectConfig.setThreadStartTools(configId, [toolId], ks);
@@ -1070,7 +1070,23 @@ await mgmt.intellectConfig.setAvatarSummaryConfig(configId, {
 }, ks);
 ```
 
-`setMcpServers` writes the intellect's `mcp_servers` map (`{"<name>": {url}}` — pass `{}` to clear). The backend normalizes on read (each entry comes back expanded with `type:'mcp'`, `transport:'streamable_http'`, and `null` header/allow-list fields), so never diff your input against a subsequent `get` byte-for-byte.
+`setMcpServers` writes the intellect's `mcp_servers` map (`{"<name>": {url}}` — pass `{}` to clear). The backend normalizes on read (each entry comes back expanded with `type:'mcp'`, `transport` defaulted to `'streamable_http'` if you didn't set one, and `null` header/allow-list fields), so never diff your input against a subsequent `get` byte-for-byte. Full entry shape (`transport`, headers, `allowedTools`, per-attendee credentials, OAuth-gated servers): [docs/MCP-INTEGRATIONS.md](docs/MCP-INTEGRATIONS.md).
+
+A worked example — one MCP server, a per-attendee credential set at join time, then a live turn:
+
+```js
+await mgmt.intellects.secrets.set(configId, { CRM_MCP_TOKEN: process.env.CRM_MCP_TOKEN }, ks);
+await mgmt.intellectConfig.setMcpServers(configId, {
+  crm: { url: 'https://mcp.example.com/mcp', headers: { Authorization: 'Bearer {{secrets.CRM_MCP_TOKEN}}' } },
+}, ks);
+
+const session = new KalturaChatSession({ ovpUrl, partnerId, agenticUrl, genieUrl, agentId });
+await session.connect();
+session.updateRequestVars({ account_id: 'acct_42' });  // this attendee's own scoping value
+await session.sendText('Look up open tickets for this account.');
+```
+
+`{{secrets.CRM_MCP_TOKEN}}` is the shared credential for every attendee; `account_id` rides in as a per-attendee request var the server-side prompt/tool can reference. Give each attendee's own credential instead of a shared one by templating the header itself with a bare `{{VAR}}` and setting it per session via `updateRequestVars` — see [docs/MCP-INTEGRATIONS.md § A different credential per attendee](docs/MCP-INTEGRATIONS.md#a-different-credential-per-attendee).
 
 `setModelConfiguration` picks the chat model and its sampling limits. `model_id` must be one of `MODEL_IDS`, `thinking_level` one of `THINKING_LEVELS` (`'low'`/`'high'`, Gemini only), `max_output_tokens` a positive integer, `temperature` 0..1. Pass `null` to return to the backend defaults. Which models answer depends on your partner's region, so run `converseOnce` once after switching. With `avatar_show_content` on, the backend fills an unset `thinking_level` with `'low'` and `max_output_tokens` with 4096.
 
@@ -1214,6 +1230,7 @@ await mgmt.knowledge.deleteRecord(rec.id, ks, { confirmPermanent: true });
 | [docs/GENUI-REFERENCE.md](docs/GENUI-REFERENCE.md) | All first-class GenUI widgets — wire shapes, SDK functions, rendering anchors |
 | [docs/DYNAMIC-DATA-INJECTION.md](docs/DYNAMIC-DATA-INJECTION.md) | `request_vars` — the app-supplied context channel: merge/persistence semantics, `page_context`, and when to nudge with `speak()` |
 | [docs/EXTERNAL-API-INTEGRATIONS.md](docs/EXTERNAL-API-INTEGRATIONS.md) | Wiring a brain-called tool to a durable write against your own external API (CRM, spreadsheet, ticketing) |
+| [docs/MCP-INTEGRATIONS.md](docs/MCP-INTEGRATIONS.md) | Wiring a whole MCP server's tool surface at once |
 | [docs/STRUCTURED-DATA-FORMS.md](docs/STRUCTURED-DATA-FORMS.md) | Collecting typed fields from the user mid-conversation (`user_properties_forms`) — schema, rendering, where submitted values go |
 | [docs/VOICE-INPUT-MODES.md](docs/VOICE-INPUT-MODES.md) | Choosing open-mic vs. push-to-talk, and the UX/accessibility/safety details around each |
 | [docs/START-THE-CONVERSATION.md](docs/START-THE-CONVERSATION.md) | Choosing the first turn: scripted Jinja2 opening or silent opening (`SILENT_OPENING`) + `kickoff`, the preset-question pattern, what fires on the wire, the `speak()` hold |

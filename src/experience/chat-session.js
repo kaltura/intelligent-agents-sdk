@@ -40,7 +40,7 @@ import { sanitizeJson } from '../core/safety.js';
 import { assertSecureTransport } from '../core/transport-guard.js';
 import { randId } from '../core/ids.js';
 import {
-  parseConverseStream, parseToolCall, parseToolResponseName, canonicalJson,
+  parseConverseStream, parseToolCall, parseToolResponseName, parseOAuthRequired, canonicalJson,
   validateToolArgs, SPOKEN_TYPES,
 } from '../core/stream.js';
 import { createSessionCompleter } from './session-complete.js';
@@ -135,6 +135,9 @@ export class KalturaChatSession extends Emitter {
     this._turnDispatchedToolNames = new Set();
     this._pendingFusedBlobs = [];
     this._pendingToolAcks = new Map();
+    // OAuth consent-redirect dispatch — same shape as KalturaAvatarSession's.
+    this._oauthRequiredHandlers = [];
+    this._firedOAuthRequired = new Set();
     this._sessionGen = 0;
     this._turnChain = Promise.resolve();   // serializes sendText turns (one converse at a time)
     this._activeTurnAbort = null;
@@ -277,6 +280,7 @@ export class KalturaChatSession extends Emitter {
     this._pendingFusedBlobs = [];
     this._turnToolSegCount = 0;
     this._toolSpiralSignaled = false;
+    this._firedOAuthRequired.clear();
     if (opts.echo !== false) this.emit('transcript', { text, type: 'user', speechId: null, words: [] });
     this.emit('turnStart', { speechId: null, turnId, isNewTurn: true });
     this.emit('responsePending', {});
@@ -305,6 +309,8 @@ export class KalturaChatSession extends Emitter {
         const call = parseToolCall(seg);
         if (call) this._dispatchToolCall(call);
         else this._recoverFusedToolResponse(parseToolResponseName(seg));
+        const oauth = parseOAuthRequired(seg);
+        if (oauth) this._dispatchOAuthRequired(oauth);
         if (seg.type && SPOKEN_TYPES.has(seg.type) && typeof seg.content === 'string' && seg.content) {
           collectedText += seg.content;
           this.emit('transcript', { text: seg.content, type: 'final', speechId: null, words: [] });
@@ -384,6 +390,20 @@ export class KalturaChatSession extends Emitter {
     this._toolCallHandlers.set(key, list);
     if (argsSchema && typeof argsSchema === 'object') this._toolCallSchemas.set(key, argsSchema);
     return () => { const l = this._toolCallHandlers.get(key); if (!l) return; const i = l.indexOf(handler); if (i >= 0) l.splice(i, 1); if (!l.length) { this._toolCallHandlers.delete(key); this._toolCallSchemas.delete(key); } };
+  }
+
+  /**
+   * Register a handler for the OAuth2 consent-redirect event — the exact peer
+   * of `KalturaAvatarSession.onOAuthRequired` (same dedup-by-authUrl, same
+   * `oauthRequiredResult` re-emit; see that method's doc for the full
+   * contract). Returns unsubscribe.
+   * @param {(result:{authUrl:string,toolName:string|null,toolDisplayName:string|null})=>unknown} handler
+   * @returns {() => void}
+   */
+  onOAuthRequired(handler) {
+    if (typeof handler !== 'function') throw new KalturaError({ type: 'about:blank', title: 'bad onOAuthRequired', code: 'bad_request', detail: 'onOAuthRequired(handler) needs a handler function.' });
+    this._oauthRequiredHandlers.push(handler);
+    return () => { const i = this._oauthRequiredHandlers.indexOf(handler); if (i >= 0) this._oauthRequiredHandlers.splice(i, 1); };
   }
 
   /**
@@ -535,6 +555,28 @@ export class KalturaChatSession extends Emitter {
       }
     }
     return true;
+  }
+
+  /** Same dedup-by-authUrl dispatch as KalturaAvatarSession._dispatchOAuthRequired. @param {{authUrl:string,toolName:string|null,toolDisplayName:string|null}} result */
+  _dispatchOAuthRequired(result) {
+    if (!result || typeof result.authUrl !== 'string') return;
+    if (this._firedOAuthRequired.has(result.authUrl)) return;
+    this._firedOAuthRequired.add(result.authUrl);
+    this._audit('tool.invoke', 'success', { action: result.toolName || 'oauth', client: true, reason: 'oauth_required' });
+    this.emit('oauthRequired', result);
+    for (const h of this._oauthRequiredHandlers.slice()) {
+      let value;
+      try { value = h(result); }
+      catch (e) { this._log('error', 'onOAuthRequired handler threw', e); this.emit('oauthRequiredResult', { result, ok: false, error: e }); continue; }
+      if (value && typeof (/** @type {any} */ (value)).then === 'function') {
+        /** @type {Promise<unknown>} */ (value).then(
+          (v) => { if (v !== undefined) this.emit('oauthRequiredResult', { result, ok: true, value: v }); },
+          (error) => { this._log('error', 'onOAuthRequired handler rejected', error); this.emit('oauthRequiredResult', { result, ok: false, error }); },
+        );
+      } else if (value !== undefined) {
+        this.emit('oauthRequiredResult', { result, ok: true, value });
+      }
+    }
   }
 
   /** Fused-segment blob recovery — same order-based attribution as the avatar peer. @param {string|null} name */

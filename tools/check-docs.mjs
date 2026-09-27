@@ -45,7 +45,7 @@ const DOCS = [
   'docs/genui/authoring-and-consuming.md', 'docs/genui/analytics.md',
   'docs/genui/safety-and-restrictions.md',
   'docs/CLIENT-COMMANDS.md', 'docs/DYNAMIC-DATA-INJECTION.md',
-  'docs/STRUCTURED-DATA-FORMS.md', 'docs/EXTERNAL-API-INTEGRATIONS.md',
+  'docs/STRUCTURED-DATA-FORMS.md', 'docs/EXTERNAL-API-INTEGRATIONS.md', 'docs/MCP-INTEGRATIONS.md',
   'docs/VOICE-INPUT-MODES.md', 'docs/USE-CASES.md', 'docs/START-THE-CONVERSATION.md',
   'docs/lifecycle/README.md', 'docs/lifecycle/recipes.md',
   'docs/SITE-NAV.md',

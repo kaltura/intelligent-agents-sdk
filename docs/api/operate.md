@@ -163,6 +163,8 @@ SDK: `mgmt.messages.report(ks)` (raw CSV) / `mgmt.messages.reportSummary(ks)` (v
 
 ## Knowledge Search (MCP)
 
+The backend exposes your indexed content over the [MCP](https://modelcontextprotocol.io) protocol at this one endpoint. This is separate from [MCP-INTEGRATIONS.md](../MCP-INTEGRATIONS.md), which wires an intellect to *external* MCP servers via `intellectConfig.setMcpServers`.
+
 ```
 POST https://genie.nvp1.ovp.kaltura.com/mcp/search
 { "query": "adaptive bitrate streaming" }

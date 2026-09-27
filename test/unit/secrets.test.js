@@ -194,6 +194,17 @@ test('validate flags an unresolved {{secrets.X}} ref and lists dead secrets', as
   assert.ok(out._meta.generatedAt);
 });
 
+test('validate scans mcp_servers headers too, flagging an unresolved {{secrets.X}} ref there', async () => {
+  const mcpServers = { docs: { url: 'https://mcp.example.com/mcp', headers: { Authorization: 'Bearer {{secrets.MISSING}}' } } };
+  const fetch = fakeFetch([
+    { match: 'v1/intellect/get', respond: () => ({ body: { id: 7, type: 'internal', config: { secrets: {}, mcp_servers: mcpServers } } }) },
+  ]);
+  const m = new Management({ partnerId: 999, adminSecret: 'x'.repeat(32), fetch });
+  const out = await new IntellectSecrets(m._ctx).validate(7, ADMIN);
+  assert.equal(out.ok, false);
+  assert.deepEqual(out.unresolved, [{ ref: 'MISSING', where: 'mcpServers' }]);
+});
+
 test('validate flags the NON-RESOLVING {{variables.secrets.X}} prefix as a defect even for a KNOWN secret', async () => {
   // The prefixed form renders empty at the backend, so it is wrong regardless of whether
   // the bare name exists — it must NOT be normalized to ok:true (the masking bug this fixes).
@@ -243,4 +254,27 @@ test('validateSecretRefs never throws on odd input and warns rather than errors'
   const r = validateSecretRefs({ secretNames: ['ORPHAN'] });
   assert.equal(r.ok, true, 'no refs at all → ok, unresolved empty');
   assert.deepEqual(r.unused, ['ORPHAN']);
+});
+
+test('validateSecretRefs scans mcpServers headers for {{secrets.X}} refs, same as tools/prompts', () => {
+  const r = validateSecretRefs({
+    secretNames: ['MCP_TOKEN'],
+    mcpServers: { docs: { url: 'https://mcp.example.com/mcp', headers: { Authorization: 'Bearer {{secrets.MCP_TOKEN}}' } } },
+  });
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.unresolved, []);
+  assert.deepEqual(r.unused, []);
+  assert.deepEqual(r.references, [{ name: 'MCP_TOKEN', where: 'mcpServers', prefixed: false }]);
+});
+
+test('validateSecretRefs flags an unknown-name and the bad {{variables.secrets.X}} prefix inside mcpServers headers', () => {
+  const r = validateSecretRefs({
+    secretNames: ['REAL'],
+    mcpServers: {
+      docs: { url: 'https://mcp.example.com/mcp', headers: { A: '{{secrets.GHOST}}', B: '{{ variables.secrets.REAL }}' } },
+    },
+  });
+  assert.equal(r.ok, false);
+  assert.deepEqual(r.unresolved, [{ ref: 'GHOST', where: 'mcpServers' }]);
+  assert.deepEqual(r.badPrefix.map((x) => x.ref), ['REAL']);
 });

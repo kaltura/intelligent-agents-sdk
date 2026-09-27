@@ -16,11 +16,13 @@
  *   - the canonical `request_vars` map — `updateRequestVars` / `setDynamicPrompt`
  *     merge here first, then delegate, so a mid-conversation switch always
  *     rebuilds the next transport with the full current context.
- *   - the `onToolCall` handler registry — handlers registered once on the
- *     facade are re-registered on every transport it attaches.
+ *   - the `onToolCall`/`onOAuthRequired` handler registries — handlers
+ *     registered once on the facade are re-registered on every transport it
+ *     attaches.
  *   - forwarding of the events an app needs to render the conversation:
  *       - on both transports: `transcript`, `turnStart`, `turnEnd`, `toolCall`,
- *         `toolCallResult`, `toolCallInvalid`, `error`, `warning`,
+ *         `toolCallResult`, `toolCallInvalid`, `oauthRequired`,
+ *         `oauthRequiredResult`, `error`, `warning`,
  *         `responsePending`, `responseSettled`, `agentActionDenied`, `ended`;
  *       - avatar mode only: `speechChunk`, `avatarStartTalking`,
  *         `avatarStopTalking`, `interrupted`.
@@ -54,6 +56,7 @@ import { sanitizeJson } from '../core/safety.js';
 const FORWARDED_EVENTS = [
   'transcript', 'turnStart', 'turnEnd',
   'toolCall', 'toolCallResult', 'toolCallInvalid',
+  'oauthRequired', 'oauthRequiredResult',
   'error', 'warning', 'responsePending', 'responseSettled',
   'agentActionDenied',
   'speechChunk', 'avatarStartTalking', 'avatarStopTalking', 'interrupted',
@@ -109,6 +112,10 @@ export class KalturaAgentSession extends Emitter {
     this._threadId = cfg.threadId;
     /** @type {Map<string, Array<{handler: Function, schema?: object, rebind?: (t: object|null) => void}>>} */
     this._toolRegistry = new Map();
+    // onOAuthRequired handlers — same re-register-on-every-transport pattern as
+    // _toolRegistry, minus the name key (there's exactly one OAuth event shape).
+    /** @type {Array<{handler: Function, rebind?: (t: object|null) => void}>} */
+    this._oauthRegistry = [];
     this._transport = null;
     this._detachFns = [];
     this._switchBuffer = [];
@@ -263,6 +270,28 @@ export class KalturaAgentSession extends Emitter {
   }
 
   /**
+   * Register an OAuth2 consent-redirect handler for the whole conversation —
+   * the facade re-registers it on every transport it attaches (including
+   * after a switch), same as `onToolCall`. Same contract as
+   * `KalturaAvatarSession.onOAuthRequired`. Returns unsubscribe.
+   * @param {(result:{authUrl:string,toolName:string|null,toolDisplayName:string|null})=>unknown} handler
+   * @returns {() => void}
+   */
+  onOAuthRequired(handler) {
+    if (typeof handler !== 'function') throw new KalturaError({ type: 'about:blank', title: 'bad onOAuthRequired', code: 'bad_request', detail: 'onOAuthRequired(handler) needs a handler function.' });
+    const entry = { handler };
+    this._oauthRegistry.push(entry);
+    let liveUnsub = this._transport ? this._transport.onOAuthRequired(handler) : null;
+    entry.rebind = (t) => { liveUnsub = t ? t.onOAuthRequired(handler) : null; };
+    return () => {
+      const i = this._oauthRegistry.indexOf(entry);
+      if (i >= 0) this._oauthRegistry.splice(i, 1);
+      if (liveUnsub) { liveUnsub(); liveUnsub = null; }
+      entry.rebind = () => {};
+    };
+  }
+
+  /**
    * ACK a `wait_for_response:true` tool call on the current transport (same
    * contract on both — one wire ACK, two transports).
    * @param {string} id @param {object} response
@@ -378,6 +407,7 @@ export class KalturaAgentSession extends Emitter {
     t.on('ended', onEnded);
     this._detachFns.push(() => t.off('ended', onEnded));
     for (const list of this._toolRegistry.values()) for (const entry of list) entry.rebind(t);
+    for (const entry of this._oauthRegistry) entry.rebind(t);
     this.emit('transportChanged', { mode: this._mode, transport: t });
   }
 
@@ -385,6 +415,7 @@ export class KalturaAgentSession extends Emitter {
   _teardownTransport(opts) {
     for (const fn of this._detachFns.splice(0)) { try { fn(); } catch { /* listener already gone */ } }
     for (const list of this._toolRegistry.values()) for (const entry of list) entry.rebind(null);
+    for (const entry of this._oauthRegistry) entry.rebind(null);
     const t = this._transport;
     this._transport = null;
     if (t) { try { t.disconnect(opts); } catch (e) { this._cfg.logger?.('warn', 'transport disconnect threw', e); } }

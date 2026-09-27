@@ -551,3 +551,113 @@ test('intellectConfig.setMcpServers accepts {} to clear the server map', async (
   const sent = f.calls.find((c) => c.url.includes('/v1/intellect/update')).body;
   assert.deepEqual(sent.mcp_servers, {});
 });
+
+test('intellectConfig.setMcpServers translates headers/allowedTools/allowedPrompts/allowedResources camelCase→snake_case', async () => {
+  const { m, f } = mkMgmt([getDto(), updateEcho]);
+  const res = await m.intellectConfig.setMcpServers(1481, {
+    docs: {
+      url: 'https://mcp.example.com/mcp',
+      headers: { Authorization: 'Bearer {{secrets.MCP_TOKEN}}' },
+      allowedTools: ['search', 'fetch'],
+      allowedPrompts: ['summarize'],
+      allowedResources: ['file://readme'],
+    },
+  }, ADMIN);
+  assert.equal(res.applied, true);
+  const sent = f.calls.find((c) => c.url.includes('/v1/intellect/update')).body;
+  assert.deepEqual(sent.mcp_servers, {
+    docs: {
+      url: 'https://mcp.example.com/mcp',
+      headers: { Authorization: 'Bearer {{secrets.MCP_TOKEN}}' },
+      allowed_tools: ['search', 'fetch'],
+      allowed_prompts: ['summarize'],
+      allowed_resources: ['file://readme'],
+    },
+  });
+});
+
+test('intellectConfig.setMcpServers passes transport through untouched, and omits it when not set', async () => {
+  const { m, f } = mkMgmt([getDto(), updateEcho, getDto(), updateEcho]);
+  await m.intellectConfig.setMcpServers(1481, { docs: { url: 'https://mcp.example.com/mcp', transport: 'sse' } }, ADMIN);
+  let sent = f.calls.find((c) => c.url.includes('/v1/intellect/update')).body;
+  assert.deepEqual(sent.mcp_servers, { docs: { url: 'https://mcp.example.com/mcp', transport: 'sse' } });
+
+  await m.intellectConfig.setMcpServers(1481, { docs: { url: 'https://mcp.example.com/mcp' } }, ADMIN);
+  sent = f.calls.filter((c) => c.url.includes('/v1/intellect/update')).at(-1).body;
+  assert.ok(!('transport' in sent.mcp_servers.docs), 'transport omitted when not set — the backend defaults to streamable_http');
+});
+
+test('intellectConfig.setMcpServers rejects a bad headers/allowedTools/allowedPrompts/allowedResources/transport shape BEFORE any network', async () => {
+  const { m, f } = mkMgmt([getDto(), updateEcho]);
+  await assert.rejects(() => m.intellectConfig.setMcpServers(1481, { docs: { url: 'https://x', headers: 'nope' } }, ADMIN), (e) => e.code === 'bad_request');
+  await assert.rejects(() => m.intellectConfig.setMcpServers(1481, { docs: { url: 'https://x', headers: { A: 1 } } }, ADMIN), (e) => e.code === 'bad_request');
+  await assert.rejects(() => m.intellectConfig.setMcpServers(1481, { docs: { url: 'https://x', allowedTools: 'search' } }, ADMIN), (e) => e.code === 'bad_request');
+  await assert.rejects(() => m.intellectConfig.setMcpServers(1481, { docs: { url: 'https://x', allowedTools: [''] } }, ADMIN), (e) => e.code === 'bad_request');
+  await assert.rejects(() => m.intellectConfig.setMcpServers(1481, { docs: { url: 'https://x', allowedPrompts: [1] } }, ADMIN), (e) => e.code === 'bad_request');
+  await assert.rejects(() => m.intellectConfig.setMcpServers(1481, { docs: { url: 'https://x', allowedResources: [null] } }, ADMIN), (e) => e.code === 'bad_request');
+  await assert.rejects(() => m.intellectConfig.setMcpServers(1481, { docs: { url: 'https://x', transport: 'websocket' } }, ADMIN), (e) => e.code === 'bad_request');
+  assert.equal(f.calls.length, 0, 'no transport before validation passes');
+});
+
+test('intellectConfig.setMcpServers rejects a server name outside [a-zA-Z0-9_-] BEFORE any network', async () => {
+  const { m, f } = mkMgmt([getDto(), updateEcho]);
+  for (const name of ['my server', 'jira.prod', 'a/b', '']) {
+    await assert.rejects(() => m.intellectConfig.setMcpServers(1481, { [name]: { url: 'https://x' } }, ADMIN), (e) => e.code === 'bad_request');
+  }
+  assert.equal(f.calls.length, 0, 'no transport before validation passes');
+});
+
+test('intellectConfig.describe reports hasHeaders presence instead of a raw headers echo, when no server was configured', async () => {
+  const { cfg } = mkMgmt([getDto({
+    mcp_servers: {
+      docs: {
+        type: 'mcp', url: 'https://mcp.example.com/mcp', transport: 'streamable_http',
+        headers: null, allowed_tools: null, allowed_prompts: null, allowed_resources: null,
+      },
+    },
+  })]);
+  const d = await cfg.describe(1481, ADMIN);
+  assert.deepEqual(d.editable.mcp_servers, {
+    docs: {
+      url: 'https://mcp.example.com/mcp', transport: 'streamable_http', hasHeaders: false, allowedTools: null, allowedPrompts: null, allowedResources: null,
+    },
+  }, 'no headers/allowed_* were ever set on this server, so describe() reports empty presence for all four');
+});
+
+test('intellectConfig.describe passes allowedTools/allowedPrompts/allowedResources through as the backend\'s real stored arrays, while still collapsing headers to hasHeaders', async () => {
+  const { cfg } = mkMgmt([getDto({
+    mcp_servers: {
+      docs: {
+        type: 'mcp', url: 'https://mcp.example.com/mcp', transport: 'streamable_http',
+        headers: { Authorization: 'Bearer {{secrets.DOCS_TOKEN}}' },
+        allowed_tools: ['search', 'fetch'], allowed_prompts: ['summarize'], allowed_resources: ['file://readme'],
+      },
+    },
+  })]);
+  const d = await cfg.describe(1481, ADMIN);
+  assert.deepEqual(d.editable.mcp_servers, {
+    docs: {
+      url: 'https://mcp.example.com/mcp', transport: 'streamable_http', hasHeaders: true,
+      allowedTools: ['search', 'fetch'], allowedPrompts: ['summarize'], allowedResources: ['file://readme'],
+    },
+  }, 'allowedTools/allowedPrompts/allowedResources are not a secret and round-trip for real; only headers is redacted');
+});
+
+test('intellectConfig.describe reports transport:\'sse\' when the backend echoes it', async () => {
+  const { cfg } = mkMgmt([getDto({
+    mcp_servers: {
+      legacy: {
+        type: 'mcp', url: 'https://old-mcp.example.com/sse', transport: 'sse',
+        headers: null, allowed_tools: null, allowed_prompts: null, allowed_resources: null,
+      },
+    },
+  })]);
+  const d = await cfg.describe(1481, ADMIN);
+  assert.equal(d.editable.mcp_servers.legacy.transport, 'sse');
+});
+
+test('intellectConfig.describe defaults mcp_servers to {} when the intellect has none configured', async () => {
+  const { cfg } = mkMgmt([getDto()]);
+  const d = await cfg.describe(1481, ADMIN);
+  assert.deepEqual(d.editable.mcp_servers, {});
+});

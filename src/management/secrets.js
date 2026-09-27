@@ -176,8 +176,8 @@ export class IntellectSecrets {
 
   /**
    * Fetch the intellect and cross-check that every `{{secrets.X}}` reference in
-   * its tools / prompts resolves to a known secret name, and report
-   * dead (unused) secrets. READ — no state change.
+   * its tools / prompts / MCP server headers resolves to a known secret name,
+   * and report dead (unused) secrets. READ — no state change.
    * WARNS, never throws (an OAuth bootstrap may add the secret in a later call).
    * @param {number} configId
    * @param {string} ks (admin)
@@ -193,6 +193,7 @@ export class IntellectSecrets {
       secretNames,
       tools: config?.tools,
       prompts: config?.prompts,
+      mcpServers: config?.mcp_servers,
     });
     return {
       ...report,
@@ -259,7 +260,7 @@ const REF_RE = /\{\{\s*(variables\.)?secrets\.([A-Za-z0-9_\-.]+)\s*\}\}/g;
  * cross-check them against the set of known secret names. WARNS via the
  * returned report — never throws. Accepts either:
  *
- *   validateSecretRefs({ secretNames, tools?, prompts? })
+ *   validateSecretRefs({ secretNames, tools?, prompts?, mcpServers? })
  *   validateSecretRefs(toolConfig, secretNames)   // task convenience overload
  *
  * Canonical reference is `{{secrets.X}}` (rendered server-side into the prompt
@@ -269,7 +270,7 @@ const REF_RE = /\{\{\s*(variables\.)?secrets\.([A-Za-z0-9_\-.]+)\s*\}\}/g;
  * secret — because that form renders empty at runtime, so referencing even an
  * existing secret with the prefix is a real (silent-at-runtime) defect.
  *
- * @param {{secretNames?:string[], tools?:unknown, prompts?:unknown}|unknown} arg1
+ * @param {{secretNames?:string[], tools?:unknown, prompts?:unknown, mcpServers?:unknown}|unknown} arg1
  * @param {string[]} [secretNamesArg]  Used only with the (toolConfig, secretNames) overload.
  * @returns {{ok:boolean, unresolved:{ref:string,where:string}[], badPrefix:{ref:string,where:string,note:string}[], unused:string[], references:{name:string,where:string,prefixed:boolean}[]}}
  */
@@ -283,7 +284,7 @@ export function validateSecretRefs(arg1, secretNamesArg) {
   } else {
     const o = (arg1 && typeof arg1 === 'object') ? /** @type {Record<string,unknown>} */ (arg1) : {};
     secretNames = Array.isArray(o.secretNames) ? /** @type {string[]} */ (o.secretNames) : [];
-    sources = { tools: o.tools, prompts: o.prompts };
+    sources = { tools: o.tools, prompts: o.prompts, mcpServers: o.mcpServers };
   }
   const known = new Set(secretNames);
 

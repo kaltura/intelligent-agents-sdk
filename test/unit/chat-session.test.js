@@ -340,6 +340,63 @@ test('onToolCall unsubscribe removes the handler and its schema', async () => {
   assert.equal(fired.length, 0);
 });
 
+// ───────────────────────── OAuth consent-redirect (onOAuthRequired) ─────────────────────────
+
+const OAUTH_TURN = [
+  seg({ type: 'text', content: 'One moment' }),
+  seg({ type: 'interruption', content: { auth_url: 'https://idp.example.com/authorize?x=1' }, metadata: { subtype: 'oauth_required', tool_name: 'jira', tool_display_name: 'Jira' } }),
+].join('\n') + '\n';
+
+test('onOAuthRequired(handler) receives the parsed result + an oauthRequired event fires', async () => {
+  const { session } = newSession({ reply: OAUTH_TURN });
+  await session.connect();
+  const calls = []; const events = [];
+  session.onOAuthRequired((r) => calls.push(r));
+  session.on('oauthRequired', (r) => events.push(r));
+
+  const r = await session.sendText('connect my jira');
+  assert.equal(r.text, 'One moment');
+  assert.equal(calls.length, 1);
+  assert.deepEqual(calls[0], { authUrl: 'https://idp.example.com/authorize?x=1', toolName: 'jira', toolDisplayName: 'Jira' });
+  assert.equal(events.length, 1);
+});
+
+test('onOAuthRequired dedups the same authUrl within a turn but re-fires next turn', async () => {
+  const DUP_OAUTH_TURN = [
+    seg({ type: 'interruption', content: { auth_url: 'https://idp.example.com/authorize?x=1' }, metadata: { subtype: 'oauth_required', tool_name: 'jira' } }),
+    seg({ type: 'interruption', content: { auth_url: 'https://idp.example.com/authorize?x=1' }, metadata: { subtype: 'oauth_required', tool_name: 'jira' } }),
+  ].join('\n') + '\n';
+  const { session } = newSession({ reply: DUP_OAUTH_TURN });
+  await session.connect();
+  const seen = [];
+  session.onOAuthRequired(({ authUrl }) => seen.push(authUrl));
+  await session.sendText('go');
+  assert.equal(seen.length, 1, 'the identical redirect twice in one turn is deduped');
+  await session.sendText('go again');   // fresh turn resets dedup
+  assert.equal(seen.length, 2);
+});
+
+test('a throwing onOAuthRequired handler is isolated: oauthRequiredResult ok:false, turn still completes', async () => {
+  const { session } = newSession({ reply: OAUTH_TURN });
+  await session.connect();
+  const results = [];
+  session.on('oauthRequiredResult', (p) => results.push(p.ok));
+  session.onOAuthRequired(() => { throw new Error('boom'); });
+  const r = await session.sendText('probe');
+  assert.equal(r.text, 'One moment');
+  assert.deepEqual(results, [false]);
+});
+
+test('onOAuthRequired unsubscribe removes the handler', async () => {
+  const { session } = newSession({ reply: OAUTH_TURN });
+  await session.connect();
+  const fired = [];
+  const off = session.onOAuthRequired(() => fired.push(1));
+  off();
+  await session.sendText('probe');
+  assert.equal(fired.length, 0);
+});
+
 // ───────────────────────── brain-liveness watchdog (peer of session.js's R5) ─────────────────────────
 
 /** A ReadableStream that enqueues each chunk after its own delay, then closes — for exercising real-time gaps between segments. */
