@@ -277,7 +277,20 @@ async function runVerify() {
       let final = first;
       if (first.oauthRequired?.length) {
         const authUrl = first.oauthRequired[0].authUrl;
-        const consentRes = await fetch(authUrl, { redirect: 'follow' });
+        // The free trycloudflare.com quick tunnel intermittently drops a direct
+        // connection under bursty concurrent load (this call lands after ~10
+        // other requests already hit the same tunnel in the preceding seconds).
+        // Retry a couple of times before treating it as a real failure.
+        let consentRes;
+        for (let attempt = 1; ; attempt++) {
+          try {
+            consentRes = await fetch(authUrl, { redirect: 'follow' });
+            break;
+          } catch (err) {
+            if (attempt >= 3) throw err;
+            await new Promise((r) => setTimeout(r, 500 * attempt));
+          }
+        }
         record(`${step}-consent-fetched`, true, { authUrlHost: new URL(authUrl).host, status: consentRes.status });
         await new Promise((r) => setTimeout(r, 2000));
         const opts2 = { threadId, ...(forceExperience ? { force_experience: forceExperience } : {}) };

@@ -84,7 +84,8 @@ async function callTool(name, args, req, authenticatedClientId) {
       return toolResult({ key: attendeeKey, count: next });
     }
     case 'slow_op': {
-      const ms = Number.isFinite(args?.ms) ? args.ms : 6000;
+      const requested = Number.isFinite(args?.ms) ? args.ms : 6000;
+      const ms = Math.min(Math.max(requested, 0), 15000);
       await new Promise((r) => setTimeout(r, ms));
       return toolResult({ sleptMs: ms });
     }
@@ -126,9 +127,10 @@ function readBody(req) {
 
 function validAccessToken(req) {
   const header = req.headers['authorization'] || '';
-  const m = /^Bearer\s+(.+)$/.exec(header);
-  if (!m) return null;
-  const entry = accessTokens.get(m[1]);
+  if (!header.startsWith('Bearer ')) return null;
+  const token = header.slice(7).trim();
+  if (!token) return null;
+  const entry = accessTokens.get(token);
   if (!entry || entry.expiresAt < Date.now()) return null;
   return entry;
 }
