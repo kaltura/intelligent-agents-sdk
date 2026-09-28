@@ -45,6 +45,8 @@ export { thumbnailUrl, playerEmbedUrl, externalEmbedUrl, EMBED_HOSTS } from '../
 export { TranscriptTracker, apportion } from './transcript.js';
 // Client-side-command parser (the headless/standalone peer of session.onToolCall).
 export { parseToolCall, parseToolResponseName, segmentKind, validateToolArgs } from '../core/stream.js';
+// OAuth consent-redirect parser (the headless/standalone peer of session.onOAuthRequired).
+export { parseOAuthRequired } from '../core/stream.js';
 export {
   turnServers, iceConfig, buildJoin, buildStvNewSession, whepUrl, whepUrlHasPrivateIp,
   buildTextEntered, isAudioMode, CAPACITY_BACKOFF, DEFAULT_CM_URL,

@@ -6,6 +6,7 @@ import {
   segmentKind,
   parseToolCall,
   parseToolResponseName,
+  parseOAuthRequired,
   validateToolArgs,
   GENUI_RUNTIMES,
 } from '../../src/core/stream.js';
@@ -293,6 +294,49 @@ test('collectConverse: no toolArgSchemas → toolCallsInvalid is always empty (n
   const r = await collectConverse(parseConverseStream(streamFrom(ndjson)));
   assert.deepEqual(r.toolCallsInvalid, []);
   assert.equal(r.toolCalls.length, 1, 'unrecognized tool name in schema map still passes through unchanged');
+});
+
+test('parseOAuthRequired: reads {auth_url} from an object content on an oauth_required interruption', () => {
+  const seg = { type: 'interruption', content: { auth_url: 'https://idp.example.com/authorize?x=1' }, metadata: { subtype: 'oauth_required', tool_name: 'jira', tool_display_name: 'Jira' } };
+  assert.deepEqual(parseOAuthRequired(seg), { authUrl: 'https://idp.example.com/authorize?x=1', toolName: 'jira', toolDisplayName: 'Jira' });
+});
+
+test('parseOAuthRequired: also reads a plain string content (tolerant of either shape)', () => {
+  const seg = { type: 'interruption', content: 'https://idp.example.com/authorize?x=1', metadata: { subtype: 'oauth_required' } };
+  assert.deepEqual(parseOAuthRequired(seg), { authUrl: 'https://idp.example.com/authorize?x=1', toolName: null, toolDisplayName: null });
+});
+
+test('parseOAuthRequired: a plain interruption (no oauth_required subtype) → null', () => {
+  assert.equal(parseOAuthRequired({ type: 'interruption', content: { auth_url: 'https://x' }, metadata: {} }), null);
+  assert.equal(parseOAuthRequired({ type: 'interruption', content: { auth_url: 'https://x' } }), null);
+});
+
+test('parseOAuthRequired: user-interruption (barge-in) is unrelated → null', () => {
+  assert.equal(parseOAuthRequired({ type: 'user-interruption', content: {}, metadata: { subtype: 'oauth_required' } }), null);
+});
+
+test('parseOAuthRequired: missing/empty auth_url, non-object seg, or non-interruption type → null (never throws)', () => {
+  assert.equal(parseOAuthRequired({ type: 'interruption', content: {}, metadata: { subtype: 'oauth_required' } }), null);
+  assert.equal(parseOAuthRequired({ type: 'interruption', content: { auth_url: '' }, metadata: { subtype: 'oauth_required' } }), null);
+  assert.equal(parseOAuthRequired({ type: 'text', content: 'hi' }), null);
+  assert.equal(parseOAuthRequired(null), null);
+  assert.equal(parseOAuthRequired(undefined), null);
+});
+
+test('collectConverse surfaces oauthRequired[] in arrival order, alongside normal text segments', async () => {
+  const ndjson = [
+    '{"type":"text","content":"One moment"}',
+    '{"type":"interruption","content":{"auth_url":"https://idp.example.com/a"},"metadata":{"subtype":"oauth_required","tool_name":"jira","tool_display_name":"Jira"}}',
+  ].join('\n') + '\n';
+  const r = await collectConverse(parseConverseStream(streamFrom(ndjson)));
+  assert.equal(r.text, 'One moment');
+  assert.equal(r.oauthRequired.length, 1);
+  assert.deepEqual(r.oauthRequired[0], { authUrl: 'https://idp.example.com/a', toolName: 'jira', toolDisplayName: 'Jira' });
+});
+
+test('collectConverse: no oauth_required segment → oauthRequired is always empty (no behavior change)', async () => {
+  const r = await collectConverse(parseConverseStream(streamFrom(NDJSON)));
+  assert.deepEqual(r.oauthRequired, []);
 });
 
 test('GENUI_RUNTIMES is the 9 wire-form (-tool) runtime names, frozen', () => {

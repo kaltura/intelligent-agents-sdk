@@ -19,6 +19,7 @@ class FakeTransport extends Emitter {
     this.threadId = cfg.threadId;
     this.calls = [];
     this.toolHandlers = [];
+    this.oauthHandlers = [];
     this.connectImpl = null;   // override per test
   }
   async connect() {
@@ -33,6 +34,11 @@ class FakeTransport extends Emitter {
     const entry = { name, handler, schema };
     this.toolHandlers.push(entry);
     return () => { const i = this.toolHandlers.indexOf(entry); if (i >= 0) this.toolHandlers.splice(i, 1); };
+  }
+  onOAuthRequired(handler) {
+    const entry = { handler };
+    this.oauthHandlers.push(entry);
+    return () => { const i = this.oauthHandlers.indexOf(entry); if (i >= 0) this.oauthHandlers.splice(i, 1); };
   }
   async respondToTool(id, response) { this.calls.push(['respondToTool', id, response]); return { ok: true }; }
   setDynamicPrompt(data) { this.calls.push(['setDynamicPrompt', data]); }
@@ -324,6 +330,36 @@ test('onToolCall handlers re-register on the new transport after a switch; unsub
   assert.equal(made.avatar[1].toolHandlers.length, 0, 'and from the registry');
   assert.throws(() => session.onToolCall('', handler), (e) => e.code === 'bad_request');
   assert.throws(() => session.onToolCall('x', null), (e) => e.code === 'bad_request');
+});
+
+test('onOAuthRequired handlers re-register on the new transport after a switch; unsubscribe works', async () => {
+  const { session, made } = newSession();
+  const handler = () => {};
+  const off = session.onOAuthRequired(handler);   // registered before connect — attaches on connect
+  await session.connect();
+  assert.equal(made.avatar[0].oauthHandlers.length, 1);
+  assert.equal(made.avatar[0].oauthHandlers[0].handler, handler);
+  await session.switchMode('chat');
+  assert.equal(made.chat[0].oauthHandlers.length, 1, 'handler survives the switch');
+  off();
+  assert.equal(made.chat[0].oauthHandlers.length, 0, 'unsubscribe removes from the live transport');
+  await session.switchMode('avatar');
+  assert.equal(made.avatar[1].oauthHandlers.length, 0, 'and from the registry');
+  assert.throws(() => session.onOAuthRequired(null), (e) => e.code === 'bad_request');
+});
+
+test("oauthRequired/oauthRequiredResult forward from the live transport through the facade's own emitter", async () => {
+  const { session, made } = newSession();
+  await session.connect();
+  const events = [];
+  session.on('oauthRequired', (r) => events.push(['oauthRequired', r]));
+  session.on('oauthRequiredResult', (r) => events.push(['oauthRequiredResult', r]));
+  const result = { authUrl: 'https://idp.example.com/authorize?x=1', toolName: 'jira', toolDisplayName: 'Jira' };
+  made.avatar[0].emit('oauthRequired', result);
+  made.avatar[0].emit('oauthRequiredResult', { result, ok: true, value: { opened: true } });
+  assert.deepEqual(events[0], ['oauthRequired', result]);
+  assert.equal(events[1][0], 'oauthRequiredResult');
+  assert.equal(events[1][1].ok, true);
 });
 
 // ───────────────────────── delegation + canonical vars ─────────────────────────

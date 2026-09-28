@@ -15,14 +15,14 @@ import { meta } from './ids.js';
 
 /**
  * @typedef {object} ConverseSegment
- * @property {string} [type]        text|avatar|avatar-filler|think|tool|tool_response|unisphere-tool|share|thread|error|… (LLM-chosen fence tag + control types; text/avatar/avatar-filler are the spoken types — see {@link SPOKEN_TYPES})
- * @property {string} [content]
+ * @property {string} [type]        text|avatar|avatar-filler|think|tool|tool_response|unisphere-tool|share|thread|interruption|user-interruption|error|… (LLM-chosen fence tag + control types; text/avatar/avatar-filler are the spoken types — see {@link SPOKEN_TYPES})
+ * @property {string|{auth_url?:string}} [content]  A plain string for most types; `type:"interruption"` with `metadata.subtype:"oauth_required"` carries `{auth_url}` instead — see {@link parseOAuthRequired}.
  * @property {string} [threadId]
  * @property {string} [messageId]
  * @property {boolean} [isFinal]
  * @property {boolean} [segmentStart]
  * @property {boolean} [segmentEnd]
- * @property {{widgetName?:string, runtimeName?:string}} [metadata]
+ * @property {{widgetName?:string, runtimeName?:string, subtype?:string, tool_name?:string, tool_display_name?:string}} [metadata]
  * @property {{id:string, name?:string, args?:object, type?:string, wait_for_response?:boolean}} [tool_metadata]  Present on some `type:"tool"` segments (WIRE-PROTOCOL §4e); see {@link parseToolCall}.
  */
 
@@ -368,6 +368,42 @@ export function parseToolResponseName(seg) {
 }
 
 /**
+ * Parse a `type:"interruption"` segment carrying an OAuth2 consent redirect
+ * (`metadata.subtype === "oauth_required"`) — the ONE shared wire mechanism
+ * the backend raises for both `api`-tool OAuth2 ([EXTERNAL-API-INTEGRATIONS.md
+ * § When you actually need OAuth2](../../docs/EXTERNAL-API-INTEGRATIONS.md))
+ * and MCP server OAuth2. Real, live, and identical across text/chat and
+ * avatar/voice sessions — see [MCP-INTEGRATIONS.md](../../docs/MCP-INTEGRATIONS.md).
+ *
+ * Unlike most segments, `content` here is `{auth_url}` (an object), not a
+ * plain string — this reads it either way. PURE, never throws. Returns
+ * `null` for anything else, including a plain (non-OAuth) `interruption` or
+ * a `user-interruption` (the user barging in — an unrelated, non-OAuth use
+ * of the same general `interruption` control-segment family).
+ *
+ * @param {ConverseSegment|undefined} seg
+ * @returns {{authUrl:string, toolName:string|null, toolDisplayName:string|null}|null}
+ * @example
+ * for await (const seg of session) {
+ *   const oauth = parseOAuthRequired(seg);
+ *   if (oauth) window.open(oauth.authUrl, '_blank'); // same UX as a show-link card
+ * }
+ */
+export function parseOAuthRequired(seg) {
+  if (!seg || typeof seg !== 'object' || seg.type !== 'interruption') return null;
+  const metadata = seg.metadata;
+  if (!metadata || typeof metadata !== 'object' || metadata.subtype !== 'oauth_required') return null;
+  const content = seg.content;
+  const authUrl = typeof content === 'string' ? content : (content && typeof content === 'object' ? content.auth_url : undefined);
+  if (typeof authUrl !== 'string' || !authUrl) return null;
+  return {
+    authUrl,
+    toolName: typeof metadata.tool_name === 'string' ? metadata.tool_name : null,
+    toolDisplayName: typeof metadata.tool_display_name === 'string' ? metadata.tool_display_name : null,
+  };
+}
+
+/**
  * Collect a converse stream into a plain `{ text, threadId, messageId,
  * segments, experiences }` result — the headless-text convenience the CLI
  * tools' `converse-pretty` provides. `experiences` groups any `unisphere-tool`
@@ -395,6 +431,11 @@ export function parseToolResponseName(seg) {
  *   `toolCalls` never sees an invalid call) so the headless path gets the same
  *   dispatch-time guard the live session's `onToolCall(name, handler, argsSchema)`
  *   applies. Empty when no schema is supplied (opt-in, no behavior change).
+ * - `oauthRequired` — flat array of {@link parseOAuthRequired} results, one
+ *   per `type:"interruption"`/`subtype:"oauth_required"` segment, in arrival
+ *   order. This is the headless peer of `session.onOAuthRequired(handler)` —
+ *   read it to surface the consent `authUrl` when collecting a turn rather
+ *   than streaming it live.
  * - `_meta` — provenance receipt (`meta()`); source `sdk/core/stream`, scope
  *   `converse-stream (client-collected)`.
  * TOOL-SPIRAL GUARD: a tool-eager brain can loop the SAME client command dozens of
@@ -432,6 +473,7 @@ export async function collectConverse(segments, opts = {}) {
   /** @type {ConverseSegment[]} */ const experiencesList = [];
   /** @type {ToolCall[]} */ const toolCalls = [];
   /** @type {{call:ToolCall, errors:string[]}[]} */ const toolCallsInvalid = [];
+  /** @type {ReturnType<typeof parseOAuthRequired>[]} */ const oauthRequired = [];
   const kindCounts = { spoken: 0, control: 0, experience: 0, error: 0 };
   const seenKeys = new Set();
   const perTool = Object.create(null);
@@ -453,6 +495,8 @@ export async function collectConverse(segments, opts = {}) {
       (experiences[rt] ||= []).push(s);
       experiencesList.push(s);
     }
+    const oauth = parseOAuthRequired(s);
+    if (oauth) oauthRequired.push(oauth);
     const call = parseToolCall(s);
     if (call) {
       rawToolSegments++;
@@ -492,6 +536,7 @@ export async function collectConverse(segments, opts = {}) {
     experiencesList,
     toolCalls,
     toolCallsInvalid,
+    oauthRequired,
     kindCounts,
     spiralStopped,
     truncated,

@@ -21,4 +21,4 @@ export { parseSlideNumber } from './experience/slidenav.js';
 export { KalturaError } from './core/errors.js';
 export { redact } from './core/redact.js';
 export { uuidv4, randId, meta } from './core/ids.js';
-export { collectConverse, parseConverseStream, parseToolCall, parseToolResponseName, segmentKind } from './core/stream.js';
+export { collectConverse, parseConverseStream, parseToolCall, parseToolResponseName, parseOAuthRequired, segmentKind } from './core/stream.js';

@@ -61,7 +61,7 @@ import { redact } from '../core/redact.js';
 import { randId } from '../core/ids.js';
 import { makeAuditEmitter } from '../core/session.js';
 import { sanitizeJson, clampInbound } from '../core/safety.js';
-import { SPOKEN_TYPES, canonicalJson, SPIRAL_RECOVERY_PREFIX, validateToolArgs, parseToolResponseName } from '../core/stream.js';
+import { SPOKEN_TYPES, canonicalJson, SPIRAL_RECOVERY_PREFIX, validateToolArgs, parseToolResponseName, parseOAuthRequired } from '../core/stream.js';
 import { assertSecureTransport } from '../core/transport-guard.js';
 import { createSessionCompleter } from './session-complete.js';
 import { AvatarMedia } from './avatar-media.js';
@@ -460,6 +460,13 @@ export class KalturaAvatarSession extends Emitter {
     this._toolCallHandlers = new Map();
     this._firedToolCalls = new Set();
     this._toolCallSchemas = new Map();   // name -> argsSchema, set by onToolCall's optional 3rd param
+    // OAuth consent-redirect dispatch (see onOAuthRequired below) — a single handler list
+    // (no name-keying: unlike a client tool, there's exactly one OAuth event shape). Dedup
+    // by authUrl mirrors `_firedToolCalls`'s reasoning (the same interruption segment can
+    // re-arrive on the live socket) and clears on the same isNewTurn boundary.
+    /** @type {Array<(result:{authUrl:string,toolName:string|null,toolDisplayName:string|null})=>unknown>} */
+    this._oauthRequiredHandlers = [];
+    this._firedOAuthRequired = new Set();
     // Fused-tool-segment recovery (a real server behavior: a multi-tool turn can
     // arrive as ONE type:"tool" segment naming only its LAST tool, with earlier tools'
     // args concatenated into the same content string — see core/stream.js parseToolCall's
@@ -1900,6 +1907,77 @@ export class KalturaAvatarSession extends Emitter {
   }
 
   /**
+   * Register a handler for the OAuth2 consent-redirect event — the same
+   * `type:"interruption"`/`metadata.subtype:"oauth_required"` segment
+   * ({@link import('../core/stream.js').parseOAuthRequired}) raised for both
+   * `api`-tool OAuth2 and MCP server OAuth2 (the one shared backend mechanism —
+   * see [MCP-INTEGRATIONS.md](../../docs/MCP-INTEGRATIONS.md)). Real, live, and
+   * identical across text/chat and avatar/voice sessions: no mode-specific
+   * caveat needed.
+   *
+   * Fires at most once per distinct `authUrl` per turn (the same interruption
+   * segment can re-arrive on the live socket; dedup resets each turn, mirroring
+   * `onToolCall`). Multiple handlers all run, in registration order; a throwing
+   * handler is isolated (logged, others still run). Returns an unsubscribe
+   * function.
+   *
+   * A handler's return value (or thrown/rejected error) is captured and
+   * re-emitted as `'oauthRequiredResult'` — `{result, ok:true, value}` for a
+   * non-`undefined` return/resolve, `{result, ok:false, error}` for a
+   * throw/reject. A handler returning `undefined` (the common case — most
+   * handlers just open `result.authUrl` in a new tab/window) emits no result
+   * event.
+   *
+   * For the headless / SSE path use `collectConverse(...).oauthRequired` or
+   * {@link import('../core/stream.js').parseOAuthRequired} — this is the
+   * live-socket peer. Render the redirect the same way you'd render a link
+   * card — see the `show-link` GenUI widget
+   * (`@kaltura/intelligent-agents/experience/genui`) for that pattern.
+   *
+   * @param {(result:{authUrl:string,toolName:string|null,toolDisplayName:string|null})=>unknown} handler
+   * @returns {() => void} unsubscribe
+   * @example
+   * session.onOAuthRequired(({ authUrl, toolDisplayName }) => {
+   *   window.open(authUrl, '_blank');
+   *   showBanner(`Sign in to ${toolDisplayName || 'continue'}`);
+   * });
+   * session.on('oauthRequired', ({ authUrl }) => console.log('consent needed:', authUrl));
+   */
+  onOAuthRequired(handler) {
+    if (typeof handler !== 'function') throw new KalturaError({ type: 'about:blank', title: 'bad onOAuthRequired', code: 'bad_request', detail: 'onOAuthRequired(handler) needs a handler function.' });
+    this._oauthRequiredHandlers.push(handler);
+    return () => { const i = this._oauthRequiredHandlers.indexOf(handler); if (i >= 0) this._oauthRequiredHandlers.splice(i, 1); };
+  }
+
+  /**
+   * Dispatch a parsed OAuth consent-redirect to the `'oauthRequired'` event +
+   * any `onOAuthRequired` handlers, deduped within the turn by `authUrl` (see
+   * `onOAuthRequired`'s doc comment). Mirrors `_dispatchToolCall`'s shape.
+   * @param {{authUrl:string,toolName:string|null,toolDisplayName:string|null}} result
+   */
+  _dispatchOAuthRequired(result) {
+    if (!result || typeof result.authUrl !== 'string') return;
+    if (this._firedOAuthRequired.has(result.authUrl)) return;
+    this._firedOAuthRequired.add(result.authUrl);
+    this._touchActivity();
+    this._audit('tool.invoke', 'success', { action: result.toolName || 'oauth', client: true, reason: 'oauth_required' });
+    this.emit('oauthRequired', result);
+    for (const h of this._oauthRequiredHandlers.slice()) {
+      let value;
+      try { value = h(result); }
+      catch (e) { this._log('error', 'onOAuthRequired handler threw', e); this.emit('oauthRequiredResult', { result, ok: false, error: e }); continue; }
+      if (value && typeof (/** @type {any} */ (value)).then === 'function') {
+        /** @type {Promise<unknown>} */ (value).then(
+          (v) => { if (v !== undefined) this.emit('oauthRequiredResult', { result, ok: true, value: v }); },
+          (error) => { this._log('error', 'onOAuthRequired handler rejected', error); this.emit('oauthRequiredResult', { result, ok: false, error }); },
+        );
+      } else if (value !== undefined) {
+        this.emit('oauthRequiredResult', { result, ok: true, value });
+      }
+    }
+  }
+
+  /**
    * ACK a `wait_for_response:true` client tool call — POSTs
    * to the session server's `/assistant/tool_response` so the brain, which is
    * BLOCKED waiting for this, can resume the turn with a real result instead of
@@ -2301,6 +2379,12 @@ export class KalturaAvatarSession extends Emitter {
       // signal that lets us attribute a queued blob to its real tool. No-op when
       // `_pendingFusedBlobs` is empty (every non-fused turn).
       if (d && d.type === 'tool_response') this._recoverFusedToolResponse(parseToolResponseName(d));
+      // OAuth2 consent redirect (api-tool or MCP alike — the one shared backend mechanism,
+      // see onOAuthRequired's doc comment) rides this same segment stream as a
+      // type:"interruption" delta. Detected here so it reaches onOAuthRequired handlers
+      // identically in avatar/voice and text sessions.
+      const oauth = parseOAuthRequired(d);
+      if (oauth) this._dispatchOAuthRequired(oauth);
       // Watchdog clears ONLY on segments a viewer can actually perceive — spoken/avatar
       // content or a rendered GenUI widget. `tool`/`tool_response`/`think` never clear it,
       // so a tool-only spiral (first call included) still surfaces `brainStalled`. The
@@ -2345,6 +2429,7 @@ export class KalturaAvatarSession extends Emitter {
       this._pendingFusedBlobs = []; this._turnDispatchedToolNames.clear();
       if (p?.isNewTurn) {
         this._firedToolCalls.clear();
+        this._firedOAuthRequired.clear();
         this._turnToolSegCount = 0; this._toolSpiralSignaled = false;
         this._turnSawOutput = false;
         if (p?.speechId) this._tracker.beginUtterance(p.speechId);

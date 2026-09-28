@@ -115,7 +115,7 @@ Always-present fields are `role` (always `"assistant"`), `type`, `content`, `seg
 | `tool` / `tool_response` | control (server-emitted: tool call / tool result) | A tool call and its result. `content` is the wire form `"<toolName> <json-args>"` (e.g. `navigate_to_slide {"slide_num": 4}`). The `tool` segment fires before server execution; `tool_response` fires after. There are three kinds of `tool` segments — see [below](#three-kinds-of-tool-segments). |
 | `unisphere-tool` | control (server-emitted: structured experience) | structured-experience block. First segment carries `metadata:{widgetName, runtimeName}`; known runtimes `followups-tool`, `flashcards-tool`. See [§7](client-configuration.md#7-clientconfiguration-fields-per-session-agent-config). |
 | `error` | control (server-emitted: error) | brain/runtime error (`isFinal:true`) |
-| `interruption` / `user-interruption` | control (server-emitted: interruption / abort) | OAuth interruption / user-abort |
+| `interruption` / `user-interruption` | control (server-emitted: interruption / abort) | `interruption` carries an OAuth consent redirect (`metadata.subtype:"oauth_required"`, see [below](#oauth-consent-redirect-interruption--subtypeoauth_required)); `user-interruption` is an unrelated user barge-in abort — never an OAuth event, even if it happens to carry a matching `subtype`. |
 | `avatar`, `share`, `thread`, … | fence tag (LLM-chosen) | fenced blocks the model emits: `avatar` (spoken-runtime text), `share` (`{canShare:bool}`; `segmentStart&&segmentEnd` ⇒ message complete), `thread` (e.g. auto-title), and any other tag the prompt defines. `avatar` is in the parser's set of block types that stream chunk-by-chunk rather than all-at-once. |
 
 #### Three kinds of `tool` segments
@@ -147,6 +147,39 @@ The queue and its dispatched-names guard reset on **every** `agent_start_speech`
 ##### Headless caveat
 
 Headless `collectConverse()` gets the corrected named-tool args for free, but it does **not** run this pairing recovery. An earlier fused blob is only reachable via `fusedArgs` on that one `ToolCall`, not as its own `toolCalls` entry.
+
+#### OAuth consent redirect (`interruption` / `subtype:"oauth_required"`)
+
+When a tool call needs the end user to authorize access (an MCP server or an `api` tool wired to OAuth2), the turn doesn't fail — it pauses. The server emits a `type:"interruption"` segment carrying a consent-redirect URL instead of a normal `tool_response`:
+
+```js
+{ role: "assistant", type: "interruption", segmentNumber, et,
+  content: { auth_url: "https://…/authorize?…" },   // an object, not a plain string
+  metadata: { tool_name: "jira_search", tool_display_name: "Jira", subtype: "oauth_required" } }
+```
+
+`content` is `{auth_url}` here, unlike every other segment type where `content` is a plain string. This is the same segment stream as everything else in this section — it rides `agent_raw_text` deltas on the live socket and NDJSON/SSE lines on the HTTP `/assistant/converse` stream, with no dedicated event of its own. It reaches text and avatar sessions identically.
+
+Parse it with the SDK's `parseOAuthRequired(seg)` (`src/core/stream.js`) — returns `null` for anything else, including a `user-interruption` (never throws):
+
+```js
+import { parseOAuthRequired } from '@kaltura/intelligent-agents/experience';
+
+const oauth = parseOAuthRequired(seg);
+// { authUrl: "https://…/authorize?…", toolName: "jira_search", toolDisplayName: "Jira" } | null
+```
+
+Or register a handler directly on the session — `session.onOAuthRequired(handler)` is available on `KalturaAvatarSession`, `KalturaChatSession`, and the mode-switching `KalturaAgentSession` facade (same signature on all three, re-registered automatically on a facade mode switch):
+
+```js
+const unsubscribe = session.onOAuthRequired(({ authUrl, toolName, toolDisplayName }) => {
+  // send the end user to authUrl to complete the OAuth consent flow
+});
+```
+
+Unlike `onToolCall(name, handler)`, `onOAuthRequired` takes no `name` — there's exactly one OAuth event shape, not one per tool. Each handler runs isolated (a throw in one doesn't block the others) and fires once per distinct `authUrl` per turn; the session also re-emits a plain `oauthRequired` event (and an `oauthRequiredResult` event carrying each handler's return value) for callers that prefer `.on(...)` over the handler-registration form. Headless callers get the same data from `collectConverse().oauthRequired`, an array in arrival order.
+
+**Rendering guidance.** `authUrl` is exactly the kind of external link the [`show-link` GenUI widget](../genui/widgets.md#6-show-link-rendershowlink--links) already renders (`{kind:'show-link', data:{url, label, description, safe}}`). Feeding the parsed `authUrl`/`toolDisplayName` into that same widget shape is a reasonable default for a "sign in to `<toolDisplayName>`" prompt — it isn't a claim that the backend itself emits a `show-link-tool` segment for this case; you build the card client-side from the `onOAuthRequired` result.
 
 #### The `wait_for_response` ACK — one wire contract, two transports
 

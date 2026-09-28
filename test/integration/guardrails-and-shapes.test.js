@@ -505,6 +505,77 @@ test('enum mismatch is rejected the same way as a type mismatch', async () => {
   assert.deepEqual(calls, [{ track: 'developer' }]);
 });
 
+// ─────────────────────────── OAuth consent-redirect dispatch (onOAuthRequired) ───────────────────────────
+
+/** An oauth_required interruption segment as the server streams it (object content, not a string). */
+function oauthDelta(authUrl, toolName = 'jira', toolDisplayName = 'Jira') {
+  return { delta: JSON.stringify({ type: 'interruption', content: { auth_url: authUrl }, metadata: { subtype: 'oauth_required', tool_name: toolName, tool_display_name: toolDisplayName } }) };
+}
+
+test('onOAuthRequired(handler) receives the parsed {authUrl,toolName,toolDisplayName} + an oauthRequired event fires', async () => {
+  const { session, socket } = await connect();
+  const calls = []; const events = [];
+  const off = session.onOAuthRequired((r) => calls.push(r));
+  session.on('oauthRequired', (r) => events.push(r));
+
+  socket.server('agent_raw_text', oauthDelta('https://idp.example.com/authorize?x=1'));
+
+  assert.equal(calls.length, 1);
+  assert.deepEqual(calls[0], { authUrl: 'https://idp.example.com/authorize?x=1', toolName: 'jira', toolDisplayName: 'Jira' });
+  assert.equal(events.length, 1);
+
+  off();
+  socket.server('agent_start_speech', { speechId: 's2', isNewTurn: true });
+  socket.server('agent_raw_text', oauthDelta('https://idp.example.com/authorize?x=2'));
+  assert.equal(calls.length, 1, 'unsubscribed handler no longer fires');
+  assert.equal(events.length, 2, 'the broad oauthRequired event still fires');
+});
+
+test('onOAuthRequired dedups the same authUrl within a turn but re-fires after turnStart', async () => {
+  const { session, socket } = await connect();
+  const seen = [];
+  session.onOAuthRequired(({ authUrl }) => seen.push(authUrl));
+
+  socket.server('agent_raw_text', oauthDelta('https://idp.example.com/authorize?x=1'));
+  socket.server('agent_raw_text', oauthDelta('https://idp.example.com/authorize?x=1'));
+  assert.equal(seen.length, 1, 'the identical redirect re-arriving on the live socket is deduped');
+
+  socket.server('agent_start_speech', { speechId: 's2', isNewTurn: true });
+  socket.server('agent_raw_text', oauthDelta('https://idp.example.com/authorize?x=1'));
+  assert.equal(seen.length, 2, 'a new turn resets the dedup set');
+});
+
+test('a throwing onOAuthRequired handler is isolated — other handlers still run', async () => {
+  const { session, socket } = await connect();
+  const ran = [];
+  session.onOAuthRequired(() => { throw new Error('boom'); });
+  session.onOAuthRequired(() => ran.push('second'));
+
+  socket.server('agent_raw_text', oauthDelta('https://idp.example.com/authorize?x=1'));
+  assert.deepEqual(ran, ['second']);
+});
+
+test('onOAuthRequired handler return value is captured and re-emitted as oauthRequiredResult', async () => {
+  const { session, socket } = await connect();
+  const results = [];
+  session.onOAuthRequired(() => ({ opened: true }));
+  session.on('oauthRequiredResult', (r) => results.push(r));
+
+  socket.server('agent_raw_text', oauthDelta('https://idp.example.com/authorize?x=1'));
+  assert.equal(results.length, 1);
+  assert.equal(results[0].ok, true);
+  assert.deepEqual(results[0].value, { opened: true });
+});
+
+test('a plain interruption (no oauth_required subtype) never dispatches to onOAuthRequired', async () => {
+  const { session, socket } = await connect();
+  const seen = [];
+  session.onOAuthRequired((r) => seen.push(r));
+
+  socket.server('agent_raw_text', { delta: JSON.stringify({ type: 'interruption', content: 'unrelated', metadata: {} }) });
+  assert.equal(seen.length, 0);
+});
+
 // ─────────────────────────── respondToTool (wire ACK) ───────────────────────────
 
 /** A native tool-call segment carrying wire tool_metadata (a `waitForResponse:true` client tool). */

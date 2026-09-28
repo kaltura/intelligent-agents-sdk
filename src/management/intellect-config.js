@@ -585,15 +585,33 @@ export class IntellectConfig {
   }
 
   /**
-   * Set `mcp_servers` — the intellect's map of MCP servers the brain may call
-   * (`{"<name>": {url}}`). WRITE — idempotent, UNGATED (`mcp_servers` is in the
-   * `v1/intellect/update` DTO allow-list). The backend
-   * NORMALIZES on read: each entry comes back expanded as `{type:'mcp', url,
-   * transport:'streamable_http', headers:null, allowed_tools:null,
-   * allowed_prompts:null, allowed_resources:null}` — so don't diff your input
-   * against a subsequent `get` byte-for-byte. Pass `{}` to clear.
+   * Set `mcp_servers` — the intellect's map of MCP servers the brain may call.
+   * WRITE — idempotent, UNGATED (`mcp_servers` is in the `v1/intellect/update`
+   * DTO allow-list). Pass `{}` to clear.
+   *
+   * Each entry's `url` is required; `headers`, `allowedTools`,
+   * `allowedPrompts`, and `allowedResources` are optional. `headers` values
+   * may reference a secret (`{{secrets.NAME}}`) or a per-attendee request var
+   * (`{{VAR_NAME}}`) exactly like an `api` tool's `request.headers` — see
+   * `docs/MCP-INTEGRATIONS.md`. `allowedTools`/`allowedPrompts`/
+   * `allowedResources` restrict the server's surface to a named subset;
+   * `allowedTools` is pre-exposure (a blocked tool is never shown to the
+   * model), while prompts/resources filtering is accepted but not yet
+   * surfaced to the model by the backend.
+   *
+   * `transport` defaults to `'streamable_http'` (the current MCP spec's
+   * transport) when omitted; pass `'sse'` only for a server that still needs
+   * the legacy transport the spec itself has moved past.
+   *
+   * The backend NORMALIZES on read: every entry comes back expanded with
+   * `type:'mcp'` and a `transport` (defaulted to `'streamable_http'` when you
+   * didn't set one). `allowed_tools`/`allowed_prompts`/`allowed_resources`
+   * echo back the real stored value; `headers` is the one field `describe()`
+   * itself collapses to a boolean (`hasHeaders`) rather than round-tripping a
+   * template string like `{{secrets.X}}`. Don't diff your input against a
+   * subsequent `get`/`describe()` byte-for-byte regardless.
    * @param {number} configId
-   * @param {Record<string,{url:string}>} servers Map of server name → `{url}` (http/https).
+   * @param {Record<string,{url:string, transport?:'streamable_http'|'sse', headers?:Record<string,string>, allowedTools?:string[], allowedPrompts?:string[], allowedResources?:string[]}>} servers Map of server name → entry.
    * @param {string} ks (admin)
    * @returns {Promise<{applied:boolean, result?:any, sent?:object, _meta:object}>}
    */
@@ -603,7 +621,12 @@ export class IntellectConfig {
     if (!servers || typeof servers !== 'object' || Array.isArray(servers)) {
       throw bad('intellectConfig.setMcpServers needs a map of server name → {url} (pass {} to clear).');
     }
+    const ARRAY_FIELDS = [['allowedTools', 'allowed_tools'], ['allowedPrompts', 'allowed_prompts'], ['allowedResources', 'allowed_resources']];
+    const wire = {};
     for (const [name, s] of Object.entries(servers)) {
+      if (!/^[a-zA-Z0-9_-]+$/.test(name)) {
+        throw bad(`intellectConfig.setMcpServers server name "${name}" must match /^[a-zA-Z0-9_-]+$/ (letters, digits, "_", "-" only).`);
+      }
       if (!s || typeof s !== 'object' || Array.isArray(s) || typeof s.url !== 'string') {
         throw bad(`intellectConfig.setMcpServers["${name}"] must be an object with a string url.`);
       }
@@ -612,8 +635,30 @@ export class IntellectConfig {
       if (u.protocol !== 'http:' && u.protocol !== 'https:') {
         throw bad(`intellectConfig.setMcpServers["${name}"].url must be http(s), got ${u.protocol}//.`, 'invalid_url');
       }
+      const entry = { url: s.url };
+      if (s.transport !== undefined) {
+        if (s.transport !== 'streamable_http' && s.transport !== 'sse') {
+          throw bad(`intellectConfig.setMcpServers["${name}"].transport must be 'streamable_http' or 'sse', got ${JSON.stringify(s.transport)}.`);
+        }
+        entry.transport = s.transport;
+      }
+      if (s.headers !== undefined) {
+        if (!s.headers || typeof s.headers !== 'object' || Array.isArray(s.headers) || Object.values(s.headers).some((v) => typeof v !== 'string')) {
+          throw bad(`intellectConfig.setMcpServers["${name}"].headers must be an object of string → string.`);
+        }
+        entry.headers = s.headers;
+      }
+      for (const [camelKey, wireKey] of ARRAY_FIELDS) {
+        const v = s[camelKey];
+        if (v === undefined) continue;
+        if (!Array.isArray(v) || v.some((x) => typeof x !== 'string' || !x)) {
+          throw bad(`intellectConfig.setMcpServers["${name}"].${camelKey} must be an array of non-empty strings.`);
+        }
+        entry[wireKey] = v;
+      }
+      wire[name] = entry;
     }
-    const { result, sent } = await this.patch(configId, { mcp_servers: servers }, ks);
+    const { result, sent } = await this.patch(configId, { mcp_servers: wire }, ks);
     return { applied: true, result, sent, _meta: meta({ partnerId: this._.partnerId, source: 'genie/intellect.mcp_servers', scope: `configId:${configId}` }) };
   }
 
@@ -639,6 +684,26 @@ export class IntellectConfig {
         // Never echo values — names only (write-only contract).
         const map = (cur.secrets && typeof cur.secrets === 'object' && !Array.isArray(cur.secrets)) ? cur.secrets : {};
         editable.secrets = { names: Object.keys(map).sort() };
+      } else if (k === 'mcp_servers') {
+        // The backend echoes headers back verbatim (it's not a secret store for
+        // this field, just a template string) — we still collapse it to a
+        // boolean here so a header value never round-trips through describe().
+        // allowedTools/allowedPrompts/allowedResources have no such concern and
+        // are passed through as the backend's real stored value.
+        const raw = (cur.mcp_servers && typeof cur.mcp_servers === 'object' && !Array.isArray(cur.mcp_servers)) ? cur.mcp_servers : {};
+        const servers = {};
+        for (const [name, entry] of Object.entries(raw)) {
+          const e = (entry && typeof entry === 'object' && !Array.isArray(entry)) ? entry : {};
+          servers[name] = {
+            url: typeof e.url === 'string' ? e.url : null,
+            transport: e.transport === 'sse' ? 'sse' : 'streamable_http',
+            hasHeaders: Boolean(e.headers && typeof e.headers === 'object' && Object.keys(e.headers).length > 0),
+            allowedTools: Array.isArray(e.allowed_tools) ? e.allowed_tools : null,
+            allowedPrompts: Array.isArray(e.allowed_prompts) ? e.allowed_prompts : null,
+            allowedResources: Array.isArray(e.allowed_resources) ? e.allowed_resources : null,
+          };
+        }
+        editable.mcp_servers = servers;
       } else {
         editable[k] = Object.prototype.hasOwnProperty.call(cur, k) ? cur[k] : null;
       }
