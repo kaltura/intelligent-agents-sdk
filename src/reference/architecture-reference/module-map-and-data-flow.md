@@ -14,8 +14,8 @@ This section is the **source-of-truth map** of the SDK's internals: how a call f
 
 ### Two entry points, one shared core
 
-- **`./management`** (`Management`, `src/management/client.js`): the REST control plane. It holds the admin secret, mints tokens, and routes to the two REST hosts (Agentic API and brain API) and OVP. It enforces the two-KS guard via `assertAdmin`/`assertConversation` (`assertKind` in `client.js`) **before any network call**. Resource namespaces hang off it: `sessions`, `agents`, `avatars`, `avatarSessions`, `catalog`, `application`, `intellects`, `intellectConfig`, `tools`, `skills`, `conversations`, `threads`, `messages`, `feedback`, `followups`, `knowledge`, `lifecycle`, `insightSettings`. `tools` and `skills` are standalone, partner-level entities. An intellect only references them via `tool_ids`/`skill_ids`. One sub-resource mounts on `intellects`: `intellects.secrets`.
-- **`./experience`** (`KalturaAvatarSession`, `src/experience/session.js`): the live socket+WHEP runtime from [Platform Overview's "Video Runtime Protocol"](/explanation/architecture/#video-runtime-protocol--the-big-picture). It takes only a short-lived conversation token. socket.io is INJECTED (`socketFactory`), never bundled. Two optional plugin subpaths hang off this same live runtime without loading into apps that don't need them: `./experience/presenter` (the `Presenter` deck helper) and `./experience/genui` (the `ExperienceRenderer` GenUI layer).
+- **`./management`** (`Management`, `src/management/client.js`): the REST control plane. It holds the admin secret, mints tokens, and routes to the two REST hosts (Agentic API and brain API) and OVP. It enforces the token-kind guard via `assertAdmin`/`assertConversation` (`assertKind` in `client.js`) **before any network call**. Resource namespaces hang off it: `sessions`, `agents`, `avatars`, `avatarSessions`, `catalog`, `application`, `intellects`, `intellectConfig`, `tools`, `skills`, `conversations`, `threads`, `messages`, `feedback`, `followups`, `knowledge`, `lifecycle`, `insightSettings`. `tools` and `skills` are standalone, partner-level entities. An intellect only references them via `tool_ids`/`skill_ids`. One sub-resource mounts on `intellects`: `intellects.secrets`.
+- **`./experience`** (`KalturaAvatarSession`, `src/experience/session.js`): the live socket+WHEP runtime from [Platform Overview's "Video Runtime Protocol"](/explanation/architecture/#video-runtime-protocol--the-big-picture). It takes only an enriched conversation KS from `application.appInit` (short-lived, non-admin). socket.io is INJECTED (`socketFactory`), never bundled. Two optional plugin subpaths hang off this same live runtime without loading into apps that don't need them: `./experience/presenter` (the `Presenter` deck helper) and `./experience/genui` (the `ExperienceRenderer` GenUI layer).
 - **`src/core/*`**: the shared leaf layer both fronts depend on.
   - `http.js` (transport)
   - `errors.js` (`KalturaError`, RFC 9457)
@@ -51,7 +51,7 @@ The top-level headless converse surface lives on the `Management` class itself: 
 
 `opts` carries `{threadId, sse, model_type, force_experience, request_vars, capabilities, recoverFromSpiral}`. `assertRequestVars` rejects reserved keys and non-scalar values before the wire.
 
-`opts.capabilities` is a per-message `{name:state}` override, validated client-side. But the server-side **DISABLED veto still wins**: a stored or env-disabled capability cannot be turned on per message. For example, `converse(cfg, msg, {capabilities:{use_web_search:'on'}})` is honored only if `use_web_search` is not disabled by a stored layer.
+`opts.capabilities` is a per-message `{name:state}` override, validated client-side. A capability marked `disabled` in a stored layer can't be turned on per message. For example, `converse(cfg, msg, {capabilities:{use_web_search:'on'}})` has no effect if `use_web_search` is `disabled` there. See `resolveCapabilities` below for how the layers combine.
 
 `opts.recoverFromSpiral:true` on `conversations.send`/`converseOnce` sends one same-thread nudge retry (`SPIRAL_RECOVERY_PREFIX`) when the first attempt comes back `spiralStopped:true` with empty text. See `stream.js`'s `collectConverse` entry above for what it's recovering from.
 
@@ -94,7 +94,7 @@ The intellect DTO (`v1/intellect/*`) is the one real door for every writable fie
 
 **Knowledge linkage rides this same door.** First call `POST /v1/knowledge/add` on the brain host, which returns an `{id,...}` record. Then pass the returned id as `knowledge_ids` in the intellect create/update DTO. Linkage plus `use_knowledge_base:'on'` persist with no separate linking call.
 
-It is a `model_fields_set` PATCH, so omitted top-level fields are preserved. But `capabilities`/`secrets` are **full-replace sub-dicts**, so the SDK read-merge-writes them, via `mergeCapabilityWrite` or the secrets mask-and-keep guard. `IntellectConfig.patch` is the one place that logic lives.
+Omitted top-level fields are preserved on update. But `capabilities`/`secrets` are **full-replace sub-dicts**, so the SDK read-merge-writes them, via `mergeCapabilityWrite` or the secrets mask-and-keep guard. `IntellectConfig.patch` is the one place that logic lives.
 
 `EDITABLE_FIELDS` in `intellect-config.js` is the exact list of keys `v1/intellect/get` echoes and `v1/intellect/update` accepts for a partner admin KS. `patch()` rejects any other key before the network call, and `describe()` returns exactly these keys. When adding a field setter, first confirm the key round-trips through `intellect/update` and `intellect/get` with a partner admin KS. Then add it to `EDITABLE_FIELDS`.
 

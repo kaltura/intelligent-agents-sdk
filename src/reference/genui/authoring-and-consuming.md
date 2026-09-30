@@ -29,7 +29,7 @@ Capabilities are set **at intellect creation** (the agent's configuration). Part
 | `avatar_show_content` | **OFF** | prompt | (avatar visual push) | — |
 | `use_knowledge_base` | **ON** | tool | (feeds `sources`) | `async_search_knowledge_base` RAG |
 
-The structured data-collection form (`user-properties-form`) is configured via the intellect's `user_properties_forms` field, not a boolean capability. This field takes a LIST of `{call_stage, properties:[{key,type}]}` forms — the server rejects a bare object with a 422 error.
+The structured data-collection form (`user-properties-form`) is configured via the intellect's `user_properties_forms` field, not a boolean capability. On the wire this field is a LIST of `{call_stage, properties:[{key,type}]}` forms. `setUserPropertiesForms` accepts a single form object and wraps it into a one-element list.
 
 The nine `OFF_BY_DEFAULT` capabilities are: `avatar`, `avatar_filler`, `avatar_show_content`, `video_gallery`, `external_video`, `show_link`, `use_web_search`, `screen_share_analysis`, and `think_process`. Note that `think_process` gates a `think` segment, not a GenUI widget, so it's out of scope for the table above.
 
@@ -65,7 +65,7 @@ Call it directly — `mountWidget(descriptor, targetEl, { replace?, onAction? })
 
 ### Live vs. headless dispatch
 
-In the live socket runtime, `.start()` subscribes to `session.on('brainSegment')` and flushes on `turnEnd`/`avatarStopTalking`, resetting on `interrupted`. `clearOnTurnStart` (default `true`) also resets the assembler and `clear()`s `rendered`/`last` on the session's `turnStart` event (re-emitted from the raw `agent_start_speech` socket event). So a widget from turn N never lingers into turn N+1, matching the reset the platform's own client applies when a new turn starts speaking. Set `false` for intentional cross-turn persistence.
+In the live socket runtime, `.start()` subscribes to `session.on('brainSegment')` and flushes on `turnEnd`/`avatarStopTalking`, resetting on `interrupted`. `clearOnTurnStart` (default `true`) also resets the assembler and `clear()`s `rendered`/`last` on the session's `turnStart` event (re-emitted from the raw `agent_start_speech` socket event). So a widget from turn N never lingers into turn N+1. Set `false` for intentional cross-turn persistence.
 
 Headless, call `.render(runtimeName, widget)` (or `.render(segment)`) per segment from a `conversations.stream()` feed — the reliable path.
 
@@ -73,7 +73,7 @@ Headless, call `.render(runtimeName, widget)` (or `.render(segment)`) per segmen
 
 - `.register(runtimeName, fn)` adds/overrides a renderer (name normalized); `.has`, `.runtimes`, `.last`, `.rendered`, `.clear()`. `replace:true` keeps only the latest widget per turn.
 - An unknown runtime renders `{kind:'unknown', data:{runtime, model}}` and fires `onUnhandled` (never throws). A throwing custom renderer degrades to `{kind:'error', ...}`.
-- `_meta` receipt stamps `{partnerId, source:'experience/genui', scope:'conversation (geniegpcid, entitlement ON)', known, firstClass}`. `known` means this instance has a renderer for it (a registered 10th runtime is `known:true`). `firstClass` means it's one of the built-in set.
+- `_meta` receipt stamps `{partnerId, source:'experience/genui', scope:'conversation (entitlement ON)', known, firstClass}`. `known` means this instance has a renderer for it (a registered 10th runtime is `known:true`). `firstClass` means it's one of the built-in set.
 - `graded-question` ([GenUI · Per-Runtime Widget Detail § 10](/reference/genui/widgets/#10-graded-question-rendergradedquestion--a-host-registered-10th-runtime)) is a concrete, shipped example of a registered 10th runtime. It's exported (`renderGradedQuestion`) but deliberately excluded from `DEFAULT_RENDERERS`/`RUNTIMES`, so it stays `known:false` until a host explicitly registers it.
 
 ### `onAction`, `WIDGET_KINDS`, and the hand-rolled escape hatch
@@ -108,7 +108,7 @@ This is markdown-**in**-plain-text rendering, not a new wire segment type. The u
 
 It is `never innerHTML`. Every text run is built via `textContent`/`createTextNode`, so a raw `<script>` tag in the LLM output is inert text, not markup. Every extracted URL goes through `safeUrl` too — a `javascript:` or other unsafe-scheme link degrades to plain safe text, never a dead or unsafe `href`.
 
-Default behavior (no `opts.markdown`) is unchanged: flat escaped text. No existing app regresses by upgrading.
+Without `opts.markdown`, the summary renders as flat escaped text.
 
 ### Theming + a11y contract (`kgenui` classes)
 

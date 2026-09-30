@@ -94,7 +94,7 @@ The template can read two kinds of variables:
 
 | Variable | Comes from | Notes |
 |---|---|---|
-| Client variables such as `user_name` | `new KalturaAvatarSession({ ..., requestVars: { user_name: 'Ada' } })` | The intellect must allow them first: `intellects.setClientVariablesEnabled(configId, true, ks)`. See [Dynamic Data Injection § The gate](/guides/dynamic-data-injection/#the-gate-allow_client_variables). |
+| Client variables such as `user_name` | `new KalturaAvatarSession({ ..., requestVars: { user_name: 'Ada' } })` | The intellect must allow client variables. It does by default. Pin it with `intellects.setClientVariablesEnabled(configId, true, ks)`. See [Dynamic Data Injection § The gate](/guides/dynamic-data-injection/#the-gate-allow_client_variables). |
 | `sys__*` such as `sys__is_new_thread`, `sys__user_id` | Set by the server on every join | `sys__is_new_thread` is true on a brand-new thread and false on a thread with earlier messages. Full list: [Conversation & Analytics § Reserved Template Variables](/reference/api/operate/#reserved-template-variables-sys__). |
 
 Rules:
@@ -120,7 +120,7 @@ import { SILENT_OPENING } from '@kaltura/intelligent-agents/management';
 await kaltura.intellectConfig.setOpeningPhrase(configId,
   `{% if preset_question %}${SILENT_OPENING}{% elif sys__is_new_thread %}Hi, I am the Acme assistant. What can I help you with?{% else %}Welcome back.{% endif %}`,
   ks);
-await kaltura.intellects.setClientVariablesEnabled(configId, true, ks);
+await kaltura.intellects.setClientVariablesEnabled(configId, true, ks);   // on by default; pins it
 
 // browser, when the user picked a question
 const session = new KalturaAvatarSession({
@@ -241,7 +241,7 @@ With `micStartMode: 'deferred'` the SDK does not touch the mic at all until you 
 | A returning user hears the first-visit greeting after a reconnect or `switchMode('avatar')` | The opening plays on every join | Guard the first-visit branch with `{% if sys__is_new_thread %}`. |
 | A flag branch still plays after you stopped sending the flag | Request variables stay set on the thread | Turn the flag off: [Dynamic Data Injection § The context channel](/guides/dynamic-data-injection/#the-context-channel-request-variables). |
 | The opening says `Hello !` or greets nobody | A template variable was not sent and rendered as empty text | Guard it: `{% if user_name %}…{% else %}…{% endif %}`. |
-| The session never starts after setting a template | The template cannot be rendered, or `requestVars` were sent without `setClientVariablesEnabled(configId, true, ks)` | Fix the template on a scratch intellect first; enable client variables before sending any. |
+| The session never starts after setting a template | The template cannot be rendered, or `requestVars` were sent to an intellect with client variables turned off | Fix the template on a scratch intellect first. Pin client variables on with `setClientVariablesEnabled(configId, true, ks)`. |
 | `session.kickoff.sent` is `true` but nothing was said | The reply is still pending, or the model chose to say nothing | Watch `responsePending` / `responseSettled`. A second `speak()` starts a new turn. |
 | Two sessions on one page both greet | Each session object sends its own kickoff once | Construct one session per conversation. |
 | Kickoff sent again after `resume()` or a reconnect | It is not. `session.kickoff.sent` stays `true`. | If you see a second greeting, it comes from your own `speak()` call. |

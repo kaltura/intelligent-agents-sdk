@@ -59,6 +59,11 @@ module.exports = [
         "children": []
       },
       {
+        "title": "MCP Integrations",
+        "url": "/guides/mcp-integrations/",
+        "children": []
+      },
+      {
         "title": "Lifecycle Recipes",
         "url": "/guides/lifecycle-recipes/",
         "children": []

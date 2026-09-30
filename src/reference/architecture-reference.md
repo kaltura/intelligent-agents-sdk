@@ -14,7 +14,7 @@ This is the exact field-by-field mechanics behind [Platform Overview](/explanati
 | [System Internals Reference · Connection and Handshake](/reference/architecture-reference/connection-and-handshake/) | Endpoints & Credentials, Socket.IO Connection, Full Connect Sequence, the `join` payload |
 | [System Internals Reference · Audio & Video Wiring](/reference/architecture-reference/channels/) | ASR Channel: Microphone Uplink, STV Channel: Avatar Video Downlink |
 | [System Internals Reference · Conversation Flow](/reference/architecture-reference/conversation-flow/) | Conversation Phase (brain output, talking state, lifecycle events), Sending User Input, Complete Message Catalog |
-| [System Internals Reference · Scale and Sticky Sessions](/reference/architecture-reference/scale-and-sticky-sessions/) | Sticky routing, the capacity queue, connection vs. session recovery, externalized session state |
+| [System Internals Reference · Scale and Sticky Sessions](/reference/architecture-reference/scale-and-sticky-sessions/) | Sticky routing, the capacity queue and `waitForCapacity`, connection vs. session recovery |
 | [System Internals Reference · Module Map and Data Flow](/reference/architecture-reference/module-map-and-data-flow/) | SDK module map, `resolveCapabilities` shape, the GenUI layer, DTO routing rules, known limits |
-| [System Internals Reference · Resilience and Failure Handling](/reference/architecture-reference/resilience-and-failure-handling/) | Reconnection tiers, device permissions, the failure-mode matrix, the tool-call-spiral breaker, session-completion signal |
+| [System Internals Reference · Resilience and Failure Handling](/reference/architecture-reference/resilience-and-failure-handling/) | Recovery layers, device permissions, the failure-mode matrix, the tool-call-spiral breaker, session-completion signal |
 

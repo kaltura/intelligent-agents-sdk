@@ -21,16 +21,16 @@ Each use case maps to a runnable script or example in this repo, or the equivale
 |---|----------|--------------|--------|
 | UC-1 | **Agent Factory** | `generateAgentProfile` → `v1/intellect/add` → configure → `avatar/create` → `agent/create` → `resolveWidgetId` | `node quickstart/create-agent.mjs "Your brief"` |
 | UC-2 | **Personalized Concierge** | Prompts with `{{firstName}}`/`{{plan}}` + `allow_client_variables:true`; pass `request_vars` per message | `mgmt.converse(configId, msg, { request_vars })` |
-| UC-3 | **Memory Chatbot** | First `converse` returns `threadId`; pass it back. `v1/thread/get_transcripts` for the full record | `mgmt.converse(...)` + `mgmt.threads.list`/`transcript` |
+| UC-3 | **Memory Chatbot** | First `converse` returns `threadId`; pass it back (treat it as a secret). `v1/thread/get_transcripts` for the full record | `mgmt.converse(...)` + `mgmt.threads.list`/`transcript` |
 | UC-4 | **GenUI Experiences** | `force_experience` hint + `capabilities`; render `unisphere-tool` segments by `metadata.runtimeName` | `mgmt.converse(...)` + `./experience/genui` |
 | UC-5 | **Avatar Fleet / A-B Personas** | `avatar/create` variants sharing a voice/visual, `agent/update avatarIds` to swap | `mgmt.avatars.create(...)` + `mgmt.agents.update(...)` |
 | UC-6 | **Quality / Feedback Loop** | Capture `messageId` from converse → `mgmt.feedback.add()` → `reportSummary` | `mgmt.feedback.add(...)` + `mgmt.messages.reportSummary(ks)` |
 | UC-7 | **Interactive Video Avatar** | `resolveWidgetId` → widget KS → `appInit` → socket.io + WHEP runtime | `examples/browser-experience.html` |
-| UC-8 | **Headless Streaming Text** | `assistant/converse` (`sse:true` or NDJSON); stream `type:"text"` chunks; persist `threadId` server-side | `mgmt.converse(...)` (or `mgmt.conversations.stream(opts, ks)` directly) |
+| UC-8 | **Headless Streaming Text** | `assistant/converse` (`sse:true` or NDJSON); stream `type:"text"` chunks; store `threadId` per user server-side and treat it as a secret | `mgmt.converse(...)` (or `mgmt.conversations.stream(opts, ks)` directly) |
 | UC-9 | **Custom Voice Clone** | `catalog-item/create` (multipart, `~6 s+` audio) → `itemId` → `avatar/create voice.id` | `mgmt.catalog.createVoice(...)` |
 | UC-10 | **Slide-Deck Walkthrough** | Deck talking points in prompts; deterministic `navigate_to_slide` client-command tool call for nav; optional GenUI widget via `show_widget` | `examples/deck-presenter.html` |
 | UC-11 | **Usage Analytics** | Aggregated client-side; includes `_meta` provenance receipt | `mgmt.messages.reportSummary(ks)` |
-| UC-12 | **Anonymous End-User Embed** | `resolveWidgetId` once (server) → `sessions.createWidgetToken` (browser, no secret) → `appInit` → enriched KS | `examples/browser-experience.html` |
+| UC-12 | **Anonymous End-User Embed** | `resolveWidgetId` once (server) → `sessions.createWidgetToken` (browser, no secret) → `appInit` → enriched KS. To separate users: [per-visitor path](/reference/api/deploy/#per-visitor-browser-path) | `examples/browser-experience.html` |
 | UC-13 | **Custom Portrait Avatar** | `catalog-item/create` with portrait JPEG → `catalogItemId` → `avatar/create visual.id` → `appInit` → `KalturaAvatarSession` connects with the portrait animating live | [§ End-to-end recipe](/reference/api/design/#end-to-end-custom-portrait-avatar-server-to-browser) + `test/integration/avatars-catalog.test.js` |
 
 </div>
