@@ -47,7 +47,7 @@ await mgmt.lifecycle.create({
 
 Notice there's no `SUMMARY` insight setting here. Every partner already gets one for free, see [`README.md`'s action-type table](README.md#the-action-types) for why. `TOPIC` and `CUSTOM` are both included here because Recipe B's email preset needs all three of `SUMMARY`/`TOPIC`/`CUSTOM` present, see the gotcha below.
 
-`prompt` is required on **every** `InsightSettings` entity. There's no built-in fallback prompt for any key name, including `TOPIC` or `CUSTOM`. `valueType` is required too. Omit either and `insightSettings.create` 400s. Every conversation now gets a structured recap with zero app-side code: no cron job polling for "threads that just ended," no app server involved at all.
+`prompt` is required on **every** `InsightSettings` entity. There's no built-in fallback prompt for any key name, including `TOPIC` or `CUSTOM`. `valueType` is required too. Omit either and `insightSettings.create` 400s. Every conversation gets a structured recap with zero app-side code: no cron job polling for "threads that just ended," no app server involved at all.
 
 ---
 
@@ -69,15 +69,13 @@ await mgmt.lifecycle.create({
 
 Three things about this action that aren't obvious from the field names:
 
-1. **It only fires on `analysis_updated`.** Attach it to a `session_ended` rule and it's a silent server-side no-op. Nothing errors, nothing sends.
-2. **`recipients` are Kaltura user IDs, not raw email addresses.** The messaging service resolves the actual email from that user's Kaltura profile (`{USER.email}`). If your account's convention is to use the email address itself as the Kaltura user ID (common on many accounts), a recipient string that looks like an email still works. That's only because it's also a valid user ID there, not because this field accepts arbitrary email strings.
-3. **`presetType: 'conversationInsightExample'` is the zero-setup path.** The backend auto-creates its email template on first use. An explicit `templateId` (instead of `presetType`) points at a template you author yourself via [`mgmt.emailTemplates`](README.md#emailtemplates-managing-the-templates-sendinsightemail-references), with your own subject, body, and branding, instead of the preset's fixed layout.
+1. **It only fires on `analysis_updated`.** Attach it to a `session_ended` rule and it does nothing. Nothing errors, nothing sends.
+2. **`recipients` are Kaltura user IDs, not raw email addresses.** The email address comes from that user's Kaltura profile (`{USER.email}`). If your account's convention is to use the email address itself as the Kaltura user ID (common on many accounts), a recipient string that looks like an email still works. That's only because it's also a valid user ID there, not because this field accepts arbitrary email strings.
+3. **`presetType: 'conversationInsightExample'` is the zero-setup path.** It needs no template setup. An explicit `templateId` (instead of `presetType`) points at a template you author yourself via [`mgmt.emailTemplates`](README.md#emailtemplates-managing-the-templates-sendinsightemail-references), with your own subject, body, and branding, instead of the preset's fixed layout.
 
 ### The gotcha that will bite you first: token mismatch
 
-`conversationInsightExample`'s template needs three insight values by key: **`SUMMARY`, `TOPIC`, and `CUSTOM`** (exactly those keys, case-sensitive). `AGENTNAME`, `CTAURL`, and `USER` are filled in automatically, so you never provide those. If the thread's analysis doesn't have all three of `SUMMARY`/`TOPIC`/`CUSTOM`, the email send is skipped.
-
-That's logged as an error server-side, but nothing surfaces back to your app or the SDK. `SUMMARY` comes free from the always-on system preset (see [`README.md`](README.md#every-session-already-gets-a-summary-for-free)). Recipe A's own `InsightSettings` above supply the other two, with `key:'TOPIC'` and `key:'CUSTOM'` matching exactly what the template looks for.
+`conversationInsightExample`'s template needs three insight values by key: **`SUMMARY`, `TOPIC`, and `CUSTOM`** (exactly those keys, case-sensitive). `AGENTNAME`, `CTAURL`, and `USER` are filled in automatically, so you never provide those. If the thread's analysis doesn't have all three of `SUMMARY`/`TOPIC`/`CUSTOM`, the email send is skipped, and nothing surfaces to your app or the SDK. `SUMMARY` comes free from the always-on system preset (see [`README.md`](README.md#every-session-already-gets-a-summary-for-free)). Recipe A's own `InsightSettings` above supply the other two, with `key:'TOPIC'` and `key:'CUSTOM'` matching exactly what the template looks for.
 
 Pick whatever `prompt` fits your use case for `CUSTOM`. The template only cares about the `key`, never the prompt text.
 
@@ -91,7 +89,7 @@ Pick whatever `prompt` fits your use case for `CUSTOM`. The template only cares 
 eventConditions: [{ field: 'object.agent_id', operator: 'eq', value: '<agent-uuid>' }]
 ```
 
-This only works if the conversation itself was started with an **agent-scoped** KS. A plain conversation token (`mgmt.sessions.createConversationToken({configId})`) leaves every thread's `agent_id` as `"default"`, so it can never match. Mint with `mgmt.sessions.createAgentToken({agentId})` instead, see [`README.md`'s scoping section](README.md#scoping-a-rule-to-one-agent) for the full explanation.
+This only works if the conversation itself was started with a KS that carries the agent id. A token minted without an agent id leaves every thread's `agent_id` as `"default"`, so it can never match. Mint with `createAgentToken({ agentId })` (see [Conversation token or agent token?](../api/authentication.md#conversation-token-or-agent-token)), and see [`README.md`'s scoping section](README.md#scoping-a-rule-to-one-agent) for the full explanation.
 
 ---
 
@@ -147,7 +145,7 @@ node examples/lifecycle-insights-and-email.mjs
 | A rule references a real `insightSettingsIds` id but that insight never gets extracted | The referenced `InsightSettings` entity has `status:'disabled'` | `mgmt.insightSettings.update(id, {status:'active'}, ks)` |
 | `sendInsightEmail` rule never sends anything, no error anywhere | The paired `triggerInsightSettingsKai` rule doesn't produce every key the preset needs | Match Recipe A's `InsightSettings.key` values to the preset's requirements exactly (see the gotcha above) |
 | A `sendInsightEmail` rule attached to `session_ended` does nothing | That action only fires on `analysis_updated` | Change `eventType` to `analysis_updated` |
-| `eventConditions` on `object.agent_id` never matches | The thread was created with a plain conversation token, not an agent-scoped one | Mint with `mgmt.sessions.createAgentToken({agentId})` |
+| `eventConditions` on `object.agent_id` never matches | The thread was created with a token minted without an agent id | Mint with `mgmt.sessions.createAgentToken({agentId})` |
 | `lifecycle.match` 400s: `eventData.object.user_id: Invalid input...` | A required field missing from the dry-run `object` | Always pass `agent_id`, `thread_id`, and `user_id` together |
 | An `InsightSettings` entity 400s or its rule silently produces nothing | No `prompt` supplied | `prompt` is required on every `InsightSettings` entity, there's no built-in fallback for any key |
 | You want to change the built-in `SUMMARY` insight's prompt | It has no customization lever, no field on any entity changes it | Give your own insight settings distinct `key`s and use those instead (see [`README.md`](README.md#every-session-already-gets-a-summary-for-free)) |

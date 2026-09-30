@@ -30,7 +30,8 @@ Calls an external HTTP endpoint. `POST /v1/tool/add`:
         "type": "oauth2",
         "client_id": "id",
         "client_secret": "secrets.OAUTH_CLIENT_SECRET",
-        "token_url": "https://api.example.com/token"
+        "token_url": "https://api.example.com/token",
+        "auth_url": "https://api.example.com/authorize"
       }
     },
     "response_mapping": { "status": "order.status" }
@@ -45,6 +46,8 @@ Returns a `Tool` — `{id, name, config, partner_id, created_at, updated_at}`. L
 ```
 
 sent to `POST /v1/intellect/update`.
+
+The `authentication` block supports the OAuth2 authorization-code flow only (the viewer gives consent). It takes `client_id`, `client_secret` (a `secrets.<name>` reference), `token_url` and `auth_url`, all required. There is no `flow` or `scopes` option. Providers that use the client-credentials flow (for example the Marketo REST API) do not fit this block.
 
 `response_mapping`, `response_template`, and `response_chapters` are mutually exclusive. Reference secrets as `"secrets.NAME"` — never plaintext.
 

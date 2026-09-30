@@ -125,6 +125,19 @@ test('feedback.list agentIdEquals resolves matching threads first, then walks ea
   assert.equal(rows[0].message_id, 'm1');
 });
 
+test('messages.share unwraps the {status, data:{newMessageId}} envelope; throws server_error when no id comes back', async () => {
+  const { mgmt, ff } = harness([
+    { match: 'message/share', respond: () => ({ status: 200, body: { status: 'success', data: { newMessageId: 'm2' } } }) },
+  ]);
+  assert.deepEqual(await mgmt.messages.share('m1', 'copy', ADMIN_KS), { newMessageId: 'm2' });
+  assert.deepEqual(ff.calls[0].body, { id: 'm1', newTitle: 'copy' });
+
+  const failed = harness([
+    { match: 'message/share', respond: () => ({ status: 200, body: { status: 'failed', data: null } }) },
+  ]);
+  await assert.rejects(() => failed.mgmt.messages.share('m1', 'copy', ADMIN_KS), (e) => e.code === 'server_error');
+});
+
 test('followups.list merges opts.filter under GenieListQuestionFilter objectType', async () => {
   const { mgmt, ff } = harness([
     { match: 'followup/list', respond: () => ({ status: 200, body: { objects: [], totalCount: 0 } }) },
@@ -134,13 +147,45 @@ test('followups.list merges opts.filter under GenieListQuestionFilter objectType
   assert.deepEqual(ff.calls[0].body.filter.idsIn, ['q1']);
 });
 
-test('every admin-scoped conversation method rejects a conversation token with wrong_token_scope', async () => {
+test('admin-only conversation methods reject a conversation token with wrong_token_scope', async () => {
   const { mgmt } = harness([]);
-  await assert.rejects(async () => mgmt.threads.list(CONV_TOKEN).all(), (e) => e.code === 'wrong_token_scope');
-  await assert.rejects(async () => mgmt.threads.setAnalysis('t1', {}, CONV_TOKEN), (e) => e.code === 'wrong_token_scope');
-  await assert.rejects(async () => mgmt.threads.clearAnalysis('t1', CONV_TOKEN), (e) => e.code === 'wrong_token_scope');
   await assert.rejects(async () => mgmt.threads.push({ id: 't1', content: 'x' }, CONV_TOKEN), (e) => e.code === 'wrong_token_scope');
-  await assert.rejects(async () => mgmt.messages.list(CONV_TOKEN).all(), (e) => e.code === 'wrong_token_scope');
+  await assert.rejects(async () => mgmt.messages.report(CONV_TOKEN), (e) => e.code === 'wrong_token_scope');
+  await assert.rejects(async () => mgmt.messages.reportSummary(CONV_TOKEN), (e) => e.code === 'wrong_token_scope');
   await assert.rejects(async () => mgmt.feedback.list(CONV_TOKEN).all(), (e) => e.code === 'wrong_token_scope');
   await assert.rejects(async () => mgmt.followups.list(CONV_TOKEN).all(), (e) => e.code === 'wrong_token_scope');
+});
+
+test('own-thread methods accept admin, conversation and agent tokens; reject widget tokens', async () => {
+  const AGENT_TOKEN = { ks: 'djJ8agent', kind: 'agent' };
+  const WIDGET_TOKEN = { ks: 'djJ8widget', kind: 'widget' };
+  const ok = { status: 200, body: { objects: [], totalCount: 0, id: 't1', totalCountRemoved: 0 } };
+  const routes = [
+    { match: 'thread/list', respond: () => ok }, { match: 'thread/get_transcripts', respond: () => ok },
+    { match: 'thread/get', respond: () => ok }, { match: 'thread/update', respond: () => ok },
+    { match: 'thread/delete', respond: () => ok }, { match: 'message/list', respond: () => ok },
+    { match: 'message/get', respond: () => ok },
+    { match: 'message/share', respond: () => ({ status: 200, body: { status: 'success', data: { newMessageId: 'm2' } } }) },
+  ];
+  const calls = (m, k) => [
+    () => m.threads.list(k).all(),
+    () => m.threads.get('t1', k),
+    () => m.threads.transcript('t1', k),
+    () => m.threads.rename('t1', 'title', k),
+    () => m.threads.setAnalysis('t1', { a: 1 }, k),
+    () => m.threads.clearAnalysis('t1', k),
+    () => m.threads.delete(['t1'], k, { confirmPermanent: true }),
+    () => m.messages.list(k).all(),
+    () => m.messages.get('m1', k),
+    () => m.messages.share('m1', 'copy', k),
+  ];
+  for (const k of [ADMIN_KS, CONV_TOKEN, AGENT_TOKEN]) {
+    const { mgmt } = harness(routes);
+    for (const call of calls(mgmt, k)) await call();
+  }
+  const { mgmt, ff } = harness(routes);
+  for (const call of calls(mgmt, WIDGET_TOKEN)) {
+    await assert.rejects(async () => call(), (e) => e.code === 'wrong_token_scope');
+  }
+  assert.equal(ff.calls.length, 0, 'widget tokens are rejected before any network call');
 });

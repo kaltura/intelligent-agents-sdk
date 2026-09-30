@@ -38,7 +38,7 @@ test('clientToolReadiness warns when tool_ids are set without kaltura_genie_expe
   // experiences not off → warn
   const b = clientToolReadiness({ tool_ids: ['tool-1'], capabilities: { kaltura_genie_experiences: 'on' } });
   assert.equal(b.ok, false);
-  assert.match(b.warnings[0], /out-competes/i);
+  assert.match(b.warnings[0], /prefer its built-in experience tool/i);
   // experiences off → ok
   const c = clientToolReadiness({ tool_ids: ['tool-1'], capabilities: { kaltura_genie_experiences: 'off' } });
   assert.deepEqual(c, { ok: true, warnings: [] });
@@ -170,26 +170,39 @@ test('api builder accepts responseTemplate and responseChapters modes', () => {
   assert.deepEqual(ch.response_chapters, { iterate_on: 'items', content: '{title}', link: '{url}' });
 });
 
+const OAUTH = { type: 'oauth2', client_id: 'cid', client_secret: 'secrets.myOauth', token_url: 'https://auth/token', auth_url: 'https://auth/authorize' };
+const authOf = (auth) => api(apiCfg({ request: { url: URL, authentication: auth } })).request.authentication;
+
 test('oauth2 client_secret MUST be a secrets.<name> reference; plaintext rejected', () => {
-  // plaintext rejected by construction
   let err;
-  try {
-    api(apiCfg({ request: { url: URL, authentication: { type: 'oauth2', client_id: 'cid', client_secret: 'sk-plaintext-leak', token_url: 'https://auth/x' } } }));
-  } catch (e) { err = e; }
+  try { authOf({ ...OAUTH, client_secret: 'sk-plaintext-leak' }); } catch (e) { err = e; }
   assert.equal(err.code, 'bad_request');
   assert.match(err.detail, /secrets\.<name>/);
 
-  // reference accepted
-  const ok = api(apiCfg({ request: { url: URL, authentication: { type: 'oauth2', client_id: 'cid', client_secret: 'secrets.myOauth', token_url: 'https://auth/x' } } }));
-  assert.equal(ok.request.authentication.client_secret, 'secrets.myOauth');
-  assert.equal(ok.request.authentication.type, 'oauth2');
+  const ok = authOf(OAUTH);
+  assert.equal(ok.client_secret, 'secrets.myOauth');
+  assert.equal(ok.type, 'oauth2');
+  assert.deepEqual(Object.keys(ok).sort(), ['auth_url', 'client_id', 'client_secret', 'token_url', 'type']);
+});
+
+test('oauth2 requires client_id, token_url and auth_url', () => {
+  for (const missing of ['client_id', 'token_url', 'auth_url']) {
+    const a = { ...OAUTH }; delete a[missing];
+    assert.throws(() => authOf(a), (e) => e.code === 'bad_request' && e.detail.includes(missing), missing);
+  }
+});
+
+test('oauth2 rejects scopes and flow (authorization-code flow only)', () => {
+  for (const extra of [{ scopes: ['read'] }, { flow: 'client_credentials' }]) {
+    const key = Object.keys(extra)[0];
+    assert.throws(() => authOf({ ...OAUTH, ...extra }), (e) => e.code === 'bad_request' && e.detail.includes(key), key);
+  }
 });
 
 test('oauth2 token_url/auth_url are http(s)-validated', () => {
-  assert.throws(
-    () => api(apiCfg({ request: { url: URL, authentication: { client_secret: 'secrets.k', token_url: 'ftp://x' } } })),
-    (e) => e.code === 'invalid_url',
-  );
+  for (const key of ['token_url', 'auth_url']) {
+    assert.throws(() => authOf({ ...OAUTH, [key]: 'ftp://x' }), (e) => e.code === 'invalid_url', key);
+  }
 });
 
 test('csv builder: header parses, args optional', () => {
@@ -404,6 +417,37 @@ test('delete with {force:true} skips the reference check entirely', async () => 
   assert.equal(ff.calls.some((c) => /v1\/intellect\/list$/.test(c.url)), false, 'force bypasses the lookup entirely');
 });
 
+test('findReferencingIntellects and delete reject when an intellect lookup fails with a 500 (no silent "no references")', async () => {
+  const { mgmt, ff } = harness([
+    { match: 'v1/tool/delete', respond: () => ({ status: 200, body: {} }) },
+    { match: 'v1/intellect/list', respond: () => ({ status: 200, body: { totalCount: 2, objects: [{ id: 42 }, { id: 43 }] } }) },
+    { match: 'v1/intellect/get', respond: (req) => (req.body.id === 42 ? { status: 500, body: { message: 'boom' } } : { status: 200, body: { id: 43, tool_ids: ['tool-1'] } }) },
+  ]);
+  await assert.rejects(() => mgmt.tools.findReferencingIntellects('tool-1', ADMIN_KS), (e) => e.code === 'server_error');
+  await assert.rejects(() => mgmt.tools.delete('tool-1', ADMIN_KS, { confirmPermanent: true }), (e) => e.code === 'server_error');
+  assert.equal(ff.calls.some((c) => /v1\/tool\/delete$/.test(c.url)), false, 'delete does not proceed');
+});
+
+test('findReferencingIntellects skips an intellect whose get returns not_found (deleted between list and get)', async () => {
+  const { mgmt } = harness([
+    { match: 'v1/intellect/list', respond: () => ({ status: 200, body: { totalCount: 2, objects: [{ id: 42 }, { id: 43 }] } }) },
+    { match: 'v1/intellect/get', respond: (req) => (req.body.id === 42 ? { status: 404, body: { message: 'gone' } } : { status: 200, body: { id: 43, tool_ids: ['tool-1'] } }) },
+  ]);
+  assert.deepEqual(await mgmt.tools.findReferencingIntellects('tool-1', ADMIN_KS), [43]);
+});
+
+test('findReferencingIntellects returns the configIds that carry the tool id; rejects non-admin and bad ids', async () => {
+  const { mgmt, ff } = harness([
+    { match: 'v1/intellect/list', respond: () => ({ status: 200, body: { totalCount: 2, objects: [{ id: 42 }, { id: 43 }] } }) },
+    { match: 'v1/intellect/get', respond: (req) => ({ status: 200, body: req.body.id === 42 ? { id: 42, tool_ids: ['tool-1'] } : { id: 43, tool_ids: [] } }) },
+  ]);
+  assert.deepEqual(await mgmt.tools.findReferencingIntellects('tool-1', ADMIN_KS), [42]);
+  assert.deepEqual(await mgmt.tools.findReferencingIntellects('other', ADMIN_KS), []);
+  await assert.rejects(() => mgmt.tools.findReferencingIntellects('tool-1', { ks: 'djJ8conv', kind: 'conversation' }), (e) => e.code === 'wrong_token_scope');
+  await assert.rejects(() => mgmt.tools.findReferencingIntellects('', ADMIN_KS), (e) => e.code === 'bad_request');
+  assert.ok(ff.calls.length > 0);
+});
+
 test('every wire method asserts admin scope (rejects a conversation token)', async () => {
   const { mgmt } = harness([]);
   const convToken = { ks: 'djJ8conv', kind: 'conversation' };
@@ -412,4 +456,24 @@ test('every wire method asserts admin scope (rejects a conversation token)', asy
   await assert.rejects(async () => mgmt.tools.update('tool-1', { name: 'x' }, convToken), (e) => e.code === 'wrong_token_scope');
   await assert.rejects(async () => mgmt.tools.delete('tool-1', convToken, { confirmPermanent: true }), (e) => e.code === 'wrong_token_scope');
   await assert.rejects(async () => mgmt.tools.list(convToken), (e) => e.code === 'wrong_token_scope');
+});
+
+test('oauth2 rejects any unknown authentication key and names it', () => {
+  for (const extra of [{ audience: 'x' }, { clientId: 'cid' }, { client_credentials: true }]) {
+    const key = Object.keys(extra)[0];
+    assert.throws(() => authOf({ ...OAUTH, ...extra }), (e) => e.code === 'bad_request' && e.detail.includes(`\`${key}\``), key);
+  }
+});
+
+test('oauth2 needs a client_secret (missing, undefined and non-string values are rejected)', () => {
+  const noSecret = { ...OAUTH }; delete noSecret.client_secret;
+  assert.throws(() => authOf(noSecret), (e) => e.code === 'bad_request' && e.detail.includes('client_secret'));
+  assert.throws(() => authOf({ ...OAUTH, client_secret: undefined }), (e) => e.code === 'bad_request' && e.detail.includes('client_secret'));
+  assert.throws(() => authOf({ ...OAUTH, client_secret: 42 }), (e) => e.code === 'bad_request' && e.detail.includes('secrets.<name>'));
+});
+
+test('oauth2 counts an explicit undefined `scopes`/`flow` as present and rejects it', () => {
+  for (const key of ['scopes', 'flow']) {
+    assert.throws(() => authOf({ ...OAUTH, [key]: undefined }), (e) => e.code === 'bad_request' && e.detail.includes(key), key);
+  }
 });

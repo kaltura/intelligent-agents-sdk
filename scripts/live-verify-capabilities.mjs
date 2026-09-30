@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Live-backend verification for 4 newly-added capabilities — real Kaltura
+ * Live-backend verification for four capabilities on real Kaltura
  * API, no fakes: Knowledge#list, Application#getCustomPrompts,
  * Avatars#listTemplates, and the full Lifecycle domain (9 methods) plus the
  * InsightSettings domain a `triggerInsightSettingsKai` lifecycle action
@@ -59,7 +59,7 @@ let insightSettingId;
 let failed = false;
 
 try {
-  admin = await kaltura.sessions.createAdminToken();
+  admin = await kaltura.sessions.createAdminToken({ userId: 'sdk-live-verify' });
   record('admin-token-mint', true, { secondsRemaining: admin.secondsRemaining() });
 
   // ── Knowledge#list ──────────────────────────────────────────────────────

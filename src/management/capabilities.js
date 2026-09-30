@@ -8,9 +8,8 @@
  * `mergeCapabilityWrite` from here for the safe read-merge-write; that write is
  * needed because `capabilities` is a **full-replace sub-dict** — a partial dict
  * sent to `v1/intellect/update` DROPS the sibling capabilities it omits (NOT
- * because update "replaces the intellect": update is a `model_fields_set` PATCH
- * that PRESERVES omitted top-level fields; it is `capabilities` itself that is
- * replaced wholesale). See API-REFERENCE.md § Configure an Intellect.
+ * because update "replaces the intellect": only the top-level fields you send
+ * change; it is `capabilities` itself that is replaced wholesale). See docs/api/build/intellect.md § Configure an Intellect.
  *
  * Source of truth: the set of capability names the API accepts and their
  * default-value table, resolved with 3-level priority (env → partner_config →
@@ -19,7 +18,7 @@
  * No public endpoint enumerates AssistantCapability or per-partner settings.
  * {@link CAPABILITIES} and {@link CAPABILITY_DEFAULTS} are a hand-transcribed
  * snapshot of the backend's defaults, checked by `tools/check-docs.mjs` against
- * the API-REFERENCE.md capability catalogue. The DISABLED
+ * the capability catalogue in docs/api/build/intellect.md. The DISABLED
  * veto plus the request/partner_config layers are authoritative (resolved by the
  * server the same way); the `env` layer this module ships is a best-effort
  * documented prediction, not a live per-partner read.
@@ -28,8 +27,8 @@ import { KalturaError } from '../core/errors.js';
 import { meta } from '../core/ids.js';
 
 /**
- * Every `AssistantCapability` name, frozen, in the backend's declaration order.
- * Hand-transcribed snapshot; see the HONEST LIMIT note above. Use
+ * Every `AssistantCapability` name, frozen, in a fixed order.
+ * Hand-transcribed snapshot; see the note above. Use
  * `CAPABILITIES.length` rather than a literal count.
  * @type {readonly string[]}
  */
@@ -53,12 +52,12 @@ export const CAPABILITIES = Object.freeze([
 ]);
 
 /**
- * The `CapabilityState` enum. `disabled` is a HARD override — a stored or
- * env/partner_config `disabled` vetoes any per-request `on`. (The SDK-side
+ * The `CapabilityState` enum. `disabled` is a HARD override: a stored
+ * `disabled` always beats a per-request `on`. (The SDK-side
  * refusal in `setCapability` when re-enabling a stored `disabled` is a
  * CONVENIENCE GUARD, not an API constraint — the API would accept flipping a
- * stored `disabled` to `on`; the server-side veto applies only to per-REQUEST
- * overrides. Use `force:true` to bypass the SDK guard.)
+ * stored `disabled` to `on`. A stored `disabled` always beats a per-REQUEST
+ * `on`. Use `force:true` to bypass the SDK guard.)
  * @type {Readonly<{ON:'on', OFF:'off', DISABLED:'disabled'}>}
  */
 export const CAPABILITY_STATE = Object.freeze({ ON: 'on', OFF: 'off', DISABLED: 'disabled' });

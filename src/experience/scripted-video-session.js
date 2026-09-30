@@ -28,9 +28,13 @@
  * resolution isn't a published/fixed contract — see docs/ARCHITECTURE.md §
  * Displaying the Avatar Video).
  *
+ * Also fires 'stateChange' ({state}), 'connectivityChanged' ({state}: the
+ * peer's ICE connection state) and 'warning' ({code, message, ...}, e.g.
+ * `playback_blocked`, `media_attach_failed`, `whep_delete_failed`).
+ *
  * @example
  * // server:
- * //   const admin = await k.sessions.createAdminToken();
+ * //   const admin = await k.sessions.createAdminToken({ userId: 'admin@example.com' });
  * //   const session = await k.avatarSessions.create({ visualConfig: { id: avatarId } }, admin.ks);
  * //   const { whepUrl, turn } = await k.avatarSessions.initClient(session);
  * //   // send only { whepUrl, turn } to the browser — never `session`/`session.token`
@@ -91,19 +95,24 @@ export class KalturaScriptedVideoSession extends Emitter {
   }
 
   /**
-   * Negotiate WHEP and resolve once the stream is playable (or on connect
-   * failure/timeout — whichever comes first). Can only be called from
-   * `'idle'`/`'disconnected'`; construct a new instance to reconnect.
+   * Negotiate WHEP and resolve once the stream is playable, or after a 6 s
+   * cap, whichever comes first. Negotiation failure rejects, sets state
+   * `'error'` and tears the peer down. Can only be called from
+   * `'idle'` or `'disconnected'`. After `disconnect()` the same instance
+   * connects again with a fresh peer connection. From `'error'`, call
+   * `disconnect()` first, then `connect()`. A `disconnect()` during `connect()`
+   * rejects it with `connect_failed` and leaves the state at `'disconnected'`.
    * @returns {Promise<void>}
-   * @throws {KalturaError} `invalid_state` if already connecting/connected; `whep_failed`/`whep_private_ip` on negotiation failure.
+   * @throws {KalturaError} `invalid_state` from any other state (`'connecting'`, `'connected'`, `'disconnecting'`, `'error'`); `whep_failed` on a non-2xx WHEP response; `whep_private_ip` when the response Location resolves to a private/loopback address; `connect_failed` for any other error.
    */
   async connect() {
     if (this.state !== 'idle' && this.state !== 'disconnected') {
-      throw new KalturaError({ type: 'about:blank', title: 'invalid state', code: 'invalid_state', detail: `connect() called from state '${this.state}' — construct a new KalturaScriptedVideoSession to reconnect.` });
+      throw new KalturaError({ type: 'about:blank', title: 'invalid state', code: 'invalid_state', detail: `connect() called from state '${this.state}'. It only runs from 'idle' or 'disconnected'; call disconnect() first.` });
     }
     this._setState('connecting');
+    let pc = null;
     try {
-      const pc = new this._RTC(iceConfig('stv', this._turn, this._isFirefox));
+      pc = new this._RTC(iceConfig('stv', this._turn, this._isFirefox));
       this._pc = pc;
       pc.addTransceiver('video', { direction: 'recvonly' });
       pc.addTransceiver('audio', { direction: 'recvonly' });
@@ -145,28 +154,41 @@ export class KalturaScriptedVideoSession extends Emitter {
         };
       });
 
+      // A disconnect() that lands during an await below drops `this._pc`. That attempt must
+      // stop quietly: the state belongs to disconnect() (or to a newer connect()).
       const offer = await pc.createOffer();
+      if (pc !== this._pc) throw connectAbortedErr();
       await pc.setLocalDescription(offer);
+      if (pc !== this._pc) throw connectAbortedErr();
       const res = await this._fetch(this._whepUrl, { method: 'POST', headers: { 'Content-Type': 'application/sdp' }, body: offer.sdp });
       if (!res.ok) {
         throw new KalturaError({ type: 'about:blank', title: 'WHEP negotiation failed', status: res.status, code: 'whep_failed', detail: whepStatusHint(res.status) });
       }
       const answerSdp = await res.text();
       const loc = res.headers?.get?.('Location');
-      this._whepLocation = loc ? whepResourceUrl(loc, this._whepUrl) : null;
-      // The server can rewrite the egress host in the response's Location header even
-      // when whepUrl itself checked clean — re-check after resolving it (mirrors
-      // KalturaAvatarSession's _connectStv).
-      if (this._whepLocation && whepUrlHasPrivateIp(this._whepLocation)) {
+      const resolvedLoc = loc ? whepResourceUrl(loc, this._whepUrl) : null;
+      // Re-check the resolved Location for a private address (mirrors
+      // KalturaAvatarSession's _connectStv). Keep it out of `_whepLocation` until it passes,
+      // so disconnect() never sends a DELETE to a rejected URL.
+      if (resolvedLoc && whepUrlHasPrivateIp(resolvedLoc)) {
         throw new KalturaError({ type: 'https://docs.kaltura.com/agentic/errors/whep_private_ip', title: 'WHEP private IP', code: 'whep_private_ip', detail: 'The WHEP response Location header resolved to a private/loopback address.' });
       }
+      if (pc !== this._pc) {
+        // The server allocated a viewer for this answer, so release it before aborting.
+        if (resolvedLoc) this._releaseWhep(resolvedLoc);
+        throw connectAbortedErr();
+      }
+      this._whepLocation = resolvedLoc;
       await pc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
       await playable;
+      if (pc !== this._pc) throw connectAbortedErr();
       this._setState('connected');
     } catch (err) {
+      const failure = err instanceof KalturaError ? err : new KalturaError({ type: 'about:blank', title: 'connect failed', code: 'connect_failed', detail: String((err && err.message) || err) });
+      if (pc && pc !== this._pc) throw failure;   // cancelled by disconnect(): leave the state alone
       this._setState('error');
       this._teardown();
-      throw err instanceof KalturaError ? err : new KalturaError({ type: 'about:blank', title: 'connect failed', code: 'connect_failed', detail: String((err && err.message) || err) });
+      throw failure;
     }
   }
 
@@ -177,15 +199,19 @@ export class KalturaScriptedVideoSession extends Emitter {
   disconnect() {
     if (this.state === 'disconnected' || this.state === 'idle') { this.state = 'disconnected'; return; }
     this._setState('disconnecting');
-    if (this._whepLocation && this._fetch) {
-      const loc = this._whepLocation;
-      // Best-effort: a failed DELETE here doesn't matter to the caller (the peer
-      // connection is already being torn down below) but IS worth auditing —
-      // mirrors KalturaAvatarSession's own WHEP cleanup.
-      Promise.resolve().then(() => this._fetch(loc, { method: 'DELETE' })).catch((err) => this.emit('warning', { code: 'whep_delete_failed', message: String((err && err.message) || err) }));
-    }
+    const loc = this._whepLocation;
+    this._whepLocation = null;   // captured for the DELETE below; never sent twice
+    if (loc) this._releaseWhep(loc);
     this._teardown();
     this._setState('disconnected');
+  }
+
+  _releaseWhep(loc) {
+    if (!this._fetch) return;
+    // Best-effort: a failed DELETE here doesn't matter to the caller (the peer
+    // connection is already being torn down) but IS worth auditing:
+    // mirrors KalturaAvatarSession's own WHEP cleanup.
+    Promise.resolve().then(() => this._fetch(loc, { method: 'DELETE' })).catch((err) => this.emit('warning', { code: 'whep_delete_failed', message: String((err && err.message) || err) }));
   }
 
   _teardown() {
@@ -248,7 +274,7 @@ export class KalturaScriptedVideoSession extends Emitter {
 
   _setState(s) {
     this.state = s;
-    this.emit('stateChanged', { state: s });
+    this.emit('stateChange', { state: s });
   }
 }
 
@@ -260,3 +286,6 @@ function whepStatusHint(status) {
   return `WHEP HTTP ${status}.`;
 }
 
+function connectAbortedErr() {
+  return new KalturaError({ type: 'about:blank', title: 'connect aborted', code: 'connect_failed', detail: 'disconnect() was called while connect() was still negotiating.' });
+}

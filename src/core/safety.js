@@ -25,7 +25,7 @@ const SAFE_URL_SCHEMES = new Set(['https:', 'http:', 'mailto:', 'tel:']);
 /**
  * Return `url` only if its scheme is allow-listed (default https/http/mailto/tel);
  * otherwise '' (blocks `javascript:`, `data:`, `vbscript:`, unknown schemes — the
- * classic XSS link vector). A scheme-relative path (`/foo`, `foo/bar`) is allowed, but an
+ * classic XSS link vector). A relative path (`/foo`, `foo/bar`) is allowed, but an
  * authority-relative URL (`//host`, `\\host`) is REJECTED — the browser resolves it to the
  * current protocol + an arbitrary cross-origin host (open-redirect / embed-hijack vector).
  * Also rejects (returns '') any URL carrying embedded userinfo credentials
@@ -88,7 +88,7 @@ export function sanitizeJson(v, depth = 0) {
  * KEEP \t/\n/\r (LLM05 inbound) — every `agent_raw_text`/`brainSegment` string this feeds
  * (GenUI `unisphere-tool` bodies, spoken captions) can be genuinely multi-line, and a
  * downstream line-oriented parser (e.g. genui/parse.js's YAML-ish block parser) depends on
- * those newlines surviving. Stripping them silently collapsed a multi-line GenUI body into
+ * those newlines surviving. Stripping them would collapse a multi-line GenUI body into
  * one line before it ever reached the parser — see CONTROL_CHARS_SOURCE below, the same
  * carve-out `safeSource` already makes for verbatim content. @param {unknown} s @param {number} [max] */
 export function clampInbound(s, max = 8000) {

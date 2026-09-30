@@ -139,7 +139,7 @@ async function cleanup() {
 process.on('SIGINT', cleanup);
 process.on('SIGTERM', cleanup);
 
-const admin = await kaltura.sessions.createAdminToken({ ttlSeconds: FOUR_HOURS });
+const admin = await kaltura.sessions.createAdminToken({ userId: 'sdk-manual-testing', ttlSeconds: FOUR_HOURS });
 
 const runId = `manual-verify-session-complete-${Date.now()}`;
 const intellect = await kaltura.intellects.create(

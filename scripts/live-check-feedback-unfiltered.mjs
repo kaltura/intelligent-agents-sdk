@@ -45,13 +45,9 @@ if (ENVIRONMENTS.length === 0) {
 
 for (const env of ENVIRONMENTS) {
   const kaltura = new Management({ partnerId: env.partnerId, adminSecret: env.adminSecret, agenticUrl: env.agenticUrl, genieUrl: env.genieUrl, ovpUrl: env.ovpUrl });
-  const admin = await kaltura.sessions.createAdminToken();
+  const admin = await kaltura.sessions.createAdminToken({ userId: 'sdk-live-verify' });
 
   const listRows = await kaltura.feedback.list(admin, { pageSize: 500 });
   console.log(`[${env.name}] feedback.list (no filter): rowCount=${listRows.length}`);
   if (listRows.length) console.log(`[${env.name}] sample row:`, JSON.stringify(listRows[0]));
-
-  const report = await kaltura.feedback.report(admin);
-  console.log(`[${env.name}] feedback.report (no filter): ${report === null ? 'null (empty body)' : `${report.length} bytes of CSV`}`);
-  if (report) console.log(`[${env.name}] report head:`, report.split('\n').slice(0, 3).join(' | '));
 }

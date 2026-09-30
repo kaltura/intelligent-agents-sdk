@@ -160,7 +160,7 @@ function assertMappingPaths(mapping, where) {
  * must be `{type:'oauth2', ...}` with a `client_secret` that is a
  * `'secrets.<name>'` REFERENCE — a plaintext client secret is rejected by
  * construction (so the plaintext-leak class is impossible; the real value lives
- * in `config.secrets`, encrypted at rest).
+ * in `config.secrets`).
  * Returns the wire-ready request object. PURE.
  * @param {object} request
  * @returns {object}
@@ -206,24 +206,39 @@ function assertHttpUrl(url, where) {
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') bad('invalid_url', `${where} must use http(s), got ${parsed.protocol} in ${JSON.stringify(url)}.`);
 }
 
+const AUTH_KEYS = ['type', 'client_id', 'client_secret', 'token_url', 'auth_url'];
+
 /**
- * Validate an inline OAuth2 auth block. `client_secret` MUST be a
- * `secrets.<name>` reference — a plaintext secret is refused so no plaintext
- * path exists. `token_url`/`auth_url` (when present) are http(s)-validated.
- * @param {object} auth
+ * Validate an inline OAuth2 auth block. The block supports the OAuth2
+ * authorization-code flow only (viewer consent). `client_id`, `client_secret`,
+ * `token_url` and `auth_url` are all required. `client_secret` MUST be a
+ * `secrets.<name>` reference: a plaintext secret is refused so no plaintext
+ * path exists. `token_url` and `auth_url` are http(s)-validated. `scopes` and
+ * `flow` are not options and are rejected, as is any other unknown key (an
+ * explicit `undefined` value still counts as present). Client-credentials
+ * providers do not fit this block.
+ * @param {{type?:'oauth2', client_id:string, client_secret:string, token_url:string, auth_url:string}} auth
  */
 function buildAuth(auth) {
   if (!auth || typeof auth !== 'object' || Array.isArray(auth)) bad('bad_request', 'api tool `request.authentication` must be an object.');
   if (auth.type !== undefined && auth.type !== 'oauth2') bad('bad_request', `api tool authentication.type must be "oauth2" (the only supported scheme), got ${JSON.stringify(auth.type)}.`);
-  const { client_id, client_secret, token_url, auth_url, scopes, flow } = auth;
+  for (const key of ['scopes', 'flow']) {
+    if (key in auth) bad('bad_request', `api tool authentication does not support \`${key}\`. The block is the OAuth2 authorization-code flow only: client_id, client_secret, token_url, auth_url.`);
+  }
+  for (const key of Object.keys(auth)) {
+    if (!AUTH_KEYS.includes(key)) bad('bad_request', `api tool authentication has an unknown key \`${key}\`. Allowed keys: ${AUTH_KEYS.join(', ')}.`);
+  }
+  const { client_id, client_secret, token_url, auth_url } = auth;
+  if (typeof client_id !== 'string' || !client_id) bad('bad_request', 'oauth2 authentication needs a non-empty `client_id`.');
   if (client_secret === undefined) bad('bad_request', 'oauth2 authentication needs a `client_secret` that is a "secrets.<name>" reference.');
   if (typeof client_secret !== 'string' || !/^secrets\.[A-Za-z_][A-Za-z0-9_]*$/.test(client_secret)) {
     bad('bad_request', 'oauth2 `client_secret` MUST be a "secrets.<name>" reference (set the real value via intellects secrets first; plaintext is rejected by construction so it cannot leak).');
   }
-  if (token_url !== undefined) assertHttpUrl(String(token_url), 'authentication.token_url');
-  if (auth_url !== undefined) assertHttpUrl(String(auth_url), 'authentication.auth_url');
-  const out = { type: 'oauth2', client_id, client_secret, token_url, auth_url, scopes, flow };
-  return out;
+  if (token_url === undefined) bad('bad_request', 'oauth2 authentication needs a `token_url`.');
+  if (auth_url === undefined) bad('bad_request', 'oauth2 authentication needs an `auth_url`.');
+  assertHttpUrl(String(token_url), 'authentication.token_url');
+  assertHttpUrl(String(auth_url), 'authentication.auth_url');
+  return { type: 'oauth2', client_id, client_secret, token_url, auth_url };
 }
 
 /** Shared base validation (name/description/args/display/history). Mutates into `target`. @param {object} cfg @param {GenieToolConfig} target */
@@ -345,8 +360,8 @@ export function code(cfg) {
  * same guidance BEFORE shipping a tool-driven intellect.
  *
  * Warns when the body references tools (`tool_ids`) but:
- *  - `kaltura_genie_experiences` is not explicitly `'off'` (it out-competes
- *    custom tool calls), or
+ *  - `kaltura_genie_experiences` is not explicitly `'off'` (it can make the
+ *    model prefer its built-in experience tool), or
  *  - no `capabilities` are set at all on this CREATE (flipping them later is
  *    defeated by the ~24h partner-config cache; set them at creation).
  * @param {object} [body] An intellect create/update body.
@@ -358,9 +373,9 @@ export function clientToolReadiness(body) {
   if (hasTools) {
     const caps = (body && body.capabilities && typeof body.capabilities === 'object') ? body.capabilities : null;
     if (!caps) {
-      warnings.push('This intellect references tools (tool_ids) but sets no capabilities. The kaltura_genie_experiences capability (default-on) injects a "you MUST call get_experience_instructions" rule that OUT-COMPETES custom tool calls. Set capabilities:{kaltura_genie_experiences:"off"} at CREATION (the ~24h partner-config cache defeats flipping it later).');
+      warnings.push('This intellect references tools (tool_ids) but sets no capabilities. The kaltura_genie_experiences capability is on by default and can make the model prefer its built-in experience tool over your custom tools. Set capabilities:{kaltura_genie_experiences:"off"} at CREATION (the ~24h partner-config cache defeats flipping it later).');
     } else if (caps.kaltura_genie_experiences !== 'off') {
-      warnings.push('This intellect references tools (tool_ids) but kaltura_genie_experiences is not "off" — it out-competes custom tool calls, so the model may call get_experience_instructions instead of your command. Set kaltura_genie_experiences:"off" unless you also want GenUI experiences.');
+      warnings.push('This intellect references tools (tool_ids) but kaltura_genie_experiences is not "off". It can make the model prefer its built-in experience tool over your custom tools. Set kaltura_genie_experiences:"off" unless you also want GenUI experiences.');
     }
   }
   return { ok: warnings.length === 0, warnings };
@@ -385,13 +400,12 @@ export function clientToolReadiness(body) {
  * block does. The `type:"tool"` segment is also NOT in the TTS gate, so the
  * voice track stays clean. Confirmed with `navigate_to_slide` / `call_page_function`.
  *
- * TWO DEPLOYMENT GOTCHAS (enforced nowhere server-side — author-time
- * discipline; see {@link clientToolReadiness}):
- *  1. The `kaltura_genie_experiences` capability injects a forceful "you MUST
- *     call get_experience_instructions" rule that OUT-COMPETES custom tools.
- *     Turn it OFF on a tool-driven intellect
+ * TWO DEPLOYMENT GOTCHAS (author-time discipline; see {@link clientToolReadiness}):
+ *  1. The `kaltura_genie_experiences` capability is on by default and can
+ *     make the model prefer its built-in experience tool over your custom
+ *     tools. Turn it OFF on a tool-driven intellect
  *     (`capabilities:{kaltura_genie_experiences:'off'}`).
- *  2. Partner config is cached ~24h server-side, so a capability flipped on an
+ *  2. Capability changes can take ~24h to apply, so a capability flipped on an
  *     EXISTING intellect won't take effect until it expires. Set capabilities
  *     at CREATION (`intellects.create({capabilities:{...}})`) — a fresh
  *     intellect has no cache entry and loads clean immediately.
@@ -402,10 +416,10 @@ export function clientToolReadiness(body) {
  * wire default for an absent `wait_for_response` is `true`, so an omitted
  * `waitForResponse` blocks. Pass it explicitly:
  *  - `false` — the backend doesn't wait; the turn continues immediately.
- *  - `true` — the backend polls for up to `timeout` seconds for an ACK via
- *    `POST /assistant/tool_response` (see {@link import('../experience/session.js').KalturaAvatarSession#respondToTool}
- *    for the live-socket path) before the model gets a result. Both the 30s
- *    default and an explicit `timeout` are honored.
+ *  - `true`: the turn waits up to `timeout` seconds for your client to
+ *    answer with {@link import('../experience/session.js').KalturaAvatarSession#respondToTool}
+ *    before the model gets a result. Both the 30s default and an explicit
+ *    `timeout` are honored.
  *
  * PURE — returns a wire-ready {@link GenieToolConfig}; throws {@link KalturaError}
  * on bad input, before any network call.
@@ -539,7 +553,8 @@ function requireToolId(v, name) {
  * class to avoid a circular import (`intellects.js` already imports
  * {@link clientToolReadiness} from this file). `v1/intellect/list` returns a
  * lighter DTO that may omit `tool_ids`, so each candidate is confirmed via
- * `v1/intellect/get`.
+ * `v1/intellect/get`. An intellect that is gone by then (`not_found`) is
+ * skipped; any other error from that call is rethrown.
  * Exported (not just used by `Tools#delete`) so callers upserting a Tool
  * by name — e.g. `provision.js`'s `applyTools` — can run the identical check
  * before mutating a name-matched EXISTING Tool's `config` in place, since that
@@ -556,7 +571,12 @@ export async function findIntellectsReferencingTool(ctx, toolId, ks) {
     const objects = Array.isArray(page?.objects) ? page.objects : [];
     for (const item of objects) {
       if (item?.id === undefined) continue;
-      const full = await ctx.genie('v1/intellect/get', { id: item.id }, ks).then((r) => r.data).catch(() => null);
+      // Skip only an intellect deleted between list and get; any other failure must surface,
+      // or a guarded delete would wrongly report "no references".
+      const full = await ctx.genie('v1/intellect/get', { id: item.id }, ks).then((r) => r.data).catch((e) => {
+        if (e?.code === 'not_found' || e?.code === 'intellect_not_found') return null;
+        throw e;
+      });
       if (Array.isArray(full?.tool_ids) && full.tool_ids.includes(toolId)) refs.push(item.id);
     }
     const total = page?.totalCount;
@@ -577,13 +597,11 @@ export async function findIntellectsReferencingTool(ctx, toolId, ks) {
  * `tool_ids` (see `intellectConfig.setToolIds`, or pass `tool_ids` directly to
  * `intellects.create`/`update`).
  *
- * `name` is unique per partner OR against a shared GLOBAL pool: lookups match
- * your partner's entries plus the shared global pool (partner 0), so a name
- * you pick can collide with a global Tool in ways that aren't visible from a
- * partner-scoped `list()` alone. The same nuance applies to {@link Skills}.
+ * Names are unique in a shared namespace. A conflict returns 409. The same
+ * applies to {@link Skills}.
  *
  * SHARED-BY-NAME HAZARD: because `name` is the lookup key callers upsert
- * against (see `sdk/src/management/provision.js`'s `applyTools`, or an app's
+ * against (see `src/management/provision.js`'s `applyTools`, or an app's
  * own upsert-by-name helper), two independently-run provisioning flows for
  * the SAME name silently converge on the SAME Tool entity — deleting it
  * affects every intellect that references it, not just the one the caller
@@ -614,8 +632,7 @@ export class Tools {
   }
 
   /**
-   * Alias for {@link Tools#add} — same validation, same call, same result.
-   * Some callers reach for `create` by habit; both spellings are permanent.
+   * Alias for {@link Tools#add}. Same validation, same call, same result.
    * @param {GenieToolConfig} tool @param {string} ks (admin)
    * @returns {Promise<{id:string, name:string, config:GenieToolConfig, partner_id?:number, created_at?:string, updated_at?:string}>}
    */
@@ -669,15 +686,32 @@ export class Tools {
   }
 
   /**
+   * List the configId of every intellect whose `tool_ids` contains `toolId`. READ.
+   * This is the check `delete` runs by default. Call it to preview what a delete
+   * would break, or to guard your own upsert-by-name logic. Rejects if an
+   * intellect lookup fails (other than `not_found`), so an empty result always
+   * means "checked, none found".
+   * @param {string} toolId @param {string} ks (admin)
+   * @returns {Promise<number[]>} configIds (empty when nothing references the Tool).
+   */
+  async findReferencingIntellects(toolId, ks) {
+    this._.assertAdmin(ks, 'tools.findReferencingIntellects');
+    requireToolId(toolId, 'tools.findReferencingIntellects toolId');
+    return findIntellectsReferencingTool(this._, toolId, ks);
+  }
+
+  /**
    * Delete a Tool by id. WRITE — destructive (requires confirmation). Does NOT
    * cascade: any intellect still listing this id in `tool_ids` keeps a
    * dangling reference — drop it first via `intellectConfig.setToolIds`.
    *
    * SAFETY CHECK (default on): before deleting, lists every intellect and
    * refuses with a typed `tool_in_use` error naming each one still carrying
-   * this id in `tool_ids` — Tools are partner-level and shared by name (see
-   * the class doc), so a stale saved id can easily still be load-bearing for
-   * a DIFFERENT intellect than the caller has in mind. Pass
+   * this id in `tool_ids`. If an intellect lookup fails (other than `not_found`),
+   * the call rejects with that error and nothing is deleted. Tools are
+   * partner-level and shared by name (see the class doc), so a stale saved id
+   * can easily still be load-bearing for a DIFFERENT intellect than the caller
+   * has in mind. Pass
    * `{confirmPermanent:true, force:true}` to skip the check and delete
    * unconditionally (e.g. once you've confirmed via `intellectConfig.setToolIds`
    * that every referencing intellect has already been updated).

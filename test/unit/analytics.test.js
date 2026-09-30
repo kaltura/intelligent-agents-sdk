@@ -9,9 +9,7 @@ import {
  * Unit-tests the KAVA analytics plugin in isolation. This module implements ONLY the
  * 10000-range Application Events (pageLoad/buttonClicked) — the 80000-range Immersive
  * Agents events (callStarted/callEnded/messageResponse/messageFeedbackSent) are
- * intentionally absent, since the backend already reports those
- * server-side for every session KalturaAvatarSession connects to; a client-side copy
- * would double-count. These tests prove that absence structurally, not just by omission.
+ * intentionally absent. These tests prove that absence structurally, not just by omission.
  */
 
 test('EVENT_TYPES exposes exactly the two valid client-side codes', () => {

@@ -570,3 +570,70 @@ test('threadId getter: reflects cfg seed immediately, captures the wire value on
   assert.equal(session.threadId, 't-wire-1', 'first capture wins');
   session.disconnect();
 });
+
+test('respondToTool: 2xx returns {ok:true}; HTTP 4xx/5xx returns {ok:false, reason:"http_error", status} and keeps the call pending for a retry', async () => {
+  let ackStatus = 500;
+  const acks = [];
+  const fetch = async (url, init) => {
+    if (String(url).endsWith('/assistant/tool_response')) {
+      acks.push(JSON.parse(init.body));
+      return { ok: ackStatus >= 200 && ackStatus < 300, status: ackStatus, text: async () => '', headers: { get: () => null } };
+    }
+    return { ok: true, status: 201, text: async () => 'v=0\r\nanswer\r\n', headers: { get: () => 'https://srs/whep/resource/1' } };
+  };
+  const { session, socket } = newSession({ cfg: { fetch, genieUrl: 'https://genie.example' } });
+  scriptHappyPath(socket);
+  await session.connect();
+  socket.server('agent_raw_text', { speechId: 's1', delta: JSON.stringify({ type: 'tool', content: 'save_note {"a":1}', tool_metadata: { id: 'inv-1', wait_for_response: true, type: 'client' } }) });
+  await delay(0);   // agent_raw_text handler is async
+  assert.deepEqual(await session.respondToTool('inv-1', { a: 1 }), { ok: false, reason: 'http_error', status: 500 });
+  ackStatus = 200;
+  assert.deepEqual(await session.respondToTool('inv-1', { a: 1 }), { ok: true }, 'the call stayed pending after the rejected POST, so the retry goes through');
+  assert.deepEqual(await session.respondToTool('inv-1', { a: 1 }), { ok: false, reason: 'unknown_or_stale' }, 'the ACK is consumed after success');
+  assert.equal(acks.length, 2);
+  assert.equal(acks[0].tool_id, 'inv-1');
+  session.disconnect();
+});
+
+test('connect() rejects a private-IP WHEP Location and disconnect() never sends a DELETE to it', async () => {
+  const calls = [];
+  const fetch = async (url, init = {}) => {
+    calls.push({ url: String(url), method: init.method });
+    return { ok: true, status: 201, text: async () => 'v=0\r\nanswer\r\n', headers: { get: () => 'https://10.0.0.9/whep/resource/1' } };
+  };
+  const { session, socket } = newSession({ cfg: { fetch } });
+  scriptHappyPath(socket);
+  await assert.rejects(() => session.connect(), (e) => e.code === 'whep_private_ip');
+  session.disconnect();
+  await delay(0);
+  assert.deepEqual(calls.filter((c) => c.method === 'DELETE'), [], 'no DELETE to the rejected Location');
+});
+
+test('updateRequestVars / setDynamicPrompt keep cfg.contextId and cfg.contextType in the updateGenieContext emit', async () => {
+  const { session, socket } = newSession({ cfg: { contextId: '0_abc', contextType: 'entry' } });
+  scriptHappyPath(socket);
+  await session.connect();
+  session.updateRequestVars({ tier: 'gold' });
+  assert.deepEqual(socket.emitsOf('updateGenieContext').pop(), {
+    capabilities: { avatar: 'on', generate_followup_questions: 'on' },
+    request_vars: { tier: 'gold' },
+    contextId: '0_abc',
+    contextType: 'entry',
+  });
+  session.setDynamicPrompt({ slide: 2 });
+  const last = socket.emitsOf('updateGenieContext').pop();
+  assert.equal(last.contextId, '0_abc');
+  assert.equal(last.contextType, 'entry');
+  session.disconnect();
+});
+
+test('updateGenieContext omits contextId/contextType when the session has none', async () => {
+  const { session, socket } = newSession();
+  scriptHappyPath(socket);
+  await session.connect();
+  session.updateRequestVars({ tier: 'gold' });
+  const sent = socket.emitsOf('updateGenieContext').pop();
+  assert.equal('contextId' in sent, false);
+  assert.equal('contextType' in sent, false);
+  session.disconnect();
+});

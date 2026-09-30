@@ -16,22 +16,20 @@
  * visual QA, then tears down all three provisioned resources.
  *
  * Engine: LIVE_VERIFY_BROWSER=chromium|firefox|webkit (default chromium).
- * All three pass end-to-end against the real backend.
- * webkit needed a real fix to get there: its native RTCPeerConnection
- * rejects any `?transport=` query string on a turn:/turns: URL, which
- * src/experience/wire.js's createPeerConnection() now retries around (see
- * that function's comment). webkit here is desktop Safari's engine, not
- * iOS Safari — real mobile OS behavior isn't reachable from any Playwright
+ * CI runs chromium and firefox. webkit needs a host with H264 decode, which
+ * Linux CI lacks (see manual-testing/voice-video/README.md). webkit's native
+ * RTCPeerConnection rejects any `?transport=` query string on a turn:/turns:
+ * URL, so src/experience/wire.js's createPeerConnection() retries without it
+ * (see that function's comment). webkit here is desktop Safari's engine, not
+ * iOS Safari. Real mobile OS behavior is not reachable from any Playwright
  * engine (see manual-testing/session-complete/ for that coverage).
  *
- * firefox needed its OpenH264 GMP plugin fetch explicitly enabled via
- * firefoxUserPrefs (off by default in Playwright's launch profile) plus a
- * wait for the fetch to land before navigating (measured 20-40s against
- * Mozilla's real update service across repeated runs, 120s budget) — without it,
- * RTCRtpReceiver.getCapabilities('video') has no H264, and since the SRS
- * WHEP server only serves H264 video, the server answers Firefox's
- * VP8/VP9/AV1-only offer with `a=inactive` on the video m-line (ICE/DTLS
- * still connect fine; only video is silently dropped).
+ * firefox needs its OpenH264 GMP plugin fetch enabled via firefoxUserPrefs
+ * (off by default in Playwright's launch profile) and a wait for the fetch to
+ * land before navigating (20-40s in practice, 120s budget). Without it,
+ * RTCRtpReceiver.getCapabilities('video') has no H264. The WHEP server only
+ * serves H264 video, so it answers Firefox's VP8/VP9/AV1-only offer with
+ * `a=inactive` on the video m-line: ICE/DTLS connect, but video is dropped.
  *
  * Credentials: AGENTIC_PARTNER_ID / AGENTIC_ADMIN_SECRET, from the environment
  * or a .env file in the repo root (same convention as scripts/live-verify.mjs).
@@ -118,7 +116,7 @@ const pageErrors = [];
 const consoleLog = [];
 
 try {
-  admin = await kaltura.sessions.createAdminToken();
+  admin = await kaltura.sessions.createAdminToken({ userId: 'sdk-live-verify' });
   record('admin-token-mint', true, { secondsRemaining: admin.secondsRemaining() });
 
   provisioned = await kaltura.provision({ brief: 'A friendly CI smoke-test greeter avatar', ks: admin.ks });

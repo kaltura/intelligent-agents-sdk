@@ -2,7 +2,7 @@
 /**
  * Live Skills verification — real Kaltura API, no fakes, no mocks.
  *
- * Exercises the full Skills write path, which had zero live coverage:
+ * Exercises the full Skills write path:
  *
  *   1  skills.add        — create a scratch skill
  *   2  skills.get        — visible, right shape
@@ -61,7 +61,7 @@ let admin;
 let skillId;
 
 try {
-  admin = await kaltura.sessions.createAdminToken();
+  admin = await kaltura.sessions.createAdminToken({ userId: 'sdk-live-verify' });
   record('admin-token-mint', true, { secondsRemaining: admin.secondsRemaining() });
 
   // 1: skills.add — name must match ^[a-zA-Z0-9_-]+$ (no spaces).

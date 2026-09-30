@@ -71,7 +71,7 @@ function synthesizeTone(text) {
 }
 
 async function startSession() {
-  const admin = await kaltura.sessions.createAdminToken({ ttlSeconds: 3600 });
+  const admin = await kaltura.sessions.createAdminToken({ userId: 'admin@example.com', ttlSeconds: 3600 });
   const session = await kaltura.avatarSessions.create({ visualConfig: { id: avatarId } }, admin.ks);
   const { whepUrl, turn } = await kaltura.avatarSessions.initClient(session);
   current = session;

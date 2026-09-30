@@ -10,10 +10,9 @@
  * primitives a fake can't stand in for: a real `visibilitychange`/`pagehide`
  * dispatched by an actual browser event loop, a real cross-tab
  * `BroadcastChannel`, and a real fetch surviving a real page navigation via
- * `keepalive`. It settles the one assumption the design itself calls out as
- * unverified from static analysis alone: that the ordinary conversation KS is
- * accepted by `/thread/session_completed` (a 401/403 here would mean the
- * design needs to move server-side instead).
+ * `keepalive`. It also verifies that the ordinary conversation KS is accepted
+ * by `/thread/session_completed` (a 401/403 here would mean the signal has to
+ * move server-side).
  *
  * Provisions one throwaway intellect + one conversation KS, drives several
  * headless-Chromium pages against `scripts/live-verify-session-complete.html`
@@ -165,7 +164,7 @@ let browser;
 let failed = false;
 
 try {
-  admin = await kaltura.sessions.createAdminToken();
+  admin = await kaltura.sessions.createAdminToken({ userId: 'sdk-live-verify' });
   record('admin-token-mint', true, { secondsRemaining: admin.secondsRemaining() });
 
   const intellect = await kaltura.intellects.create(

@@ -8,8 +8,8 @@
  * Caption rule (WIRE-PROTOCOL §4d): `stvSpeechChunk{text,durationMs}`
  * is authoritative; reset buffers on `stvFinishedTalking`, NOT on
  * `stvStartedTalking`. The server emits no per-word timing, so `words[].startMs`
- * is derived client-side by apportioning `durationMs` across the chunk's words —
- * an honest approximation, documented as such.
+ * is derived client-side by apportioning `durationMs` across the chunk's words.
+ * It is an estimate.
  *
  * Pure state machine — no timers, no I/O. Fully unit-testable by replaying the
  * golden capture's chunk sequence.
@@ -67,8 +67,8 @@ export class TranscriptTracker {
 
 /**
  * Apportion a chunk's `durationMs` evenly across its words, offset by the
- * utterance-relative start. Honest approximation — the server emits no per-word
- * `startMs`, so captions follow audio onset rather than lead it.
+ * utterance-relative start. The server emits no per-word `startMs`, so this is
+ * an estimate and captions follow audio onset rather than lead it.
  * @param {string} text @param {number} durationMs @param {number} offsetMs
  */
 export function apportion(text, durationMs, offsetMs) {

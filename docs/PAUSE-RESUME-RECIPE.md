@@ -13,7 +13,7 @@ session.pause();          // sync: stops the turn loop
 await session.resume();   // async: hands the turn loop back
 ```
 
-**`pause()`** sets `session.paused = true` and tells the server to stop the turn loop (`pauseConversation`). It's synchronous, so there's nothing to await. A `speak()` call made while paused is accepted client-side (no throw), but the server produces no reply. The avatar simply doesn't respond until you resume. Don't drive the avatar with `speak()`/ASR while your content is on screen; that's on your app, the SDK doesn't block it for you.
+**`pause()`** sets `session.paused = true` and tells the server to stop the turn loop (`pauseConversation`). It's synchronous, so there's nothing to await. It throws `invalid_state` unless the session is connected. A `speak()` call made while paused is accepted client-side (no throw), but the server produces no reply. The avatar simply doesn't respond until you resume. Don't drive the avatar with `speak()`/ASR while your content is on screen; that's on your app, the SDK doesn't block it for you.
 
 **`resume()`** always sets `session.paused = false` immediately, then takes the right path for how the pause played out. There are two common paths, depending on how long you were paused (a third, rarer one is covered below):
 
@@ -22,7 +22,7 @@ await session.resume();   // async: hands the turn loop back
 
 **You never need to branch on which path it takes.** Always just `await session.resume()`. It picks the right one for you. The exact length of the pause window before the server releases the session isn't a published constant. Don't rely on an exact number. Always resume via one of the triggers below, rather than assuming a pause lasts as long as you need it to.
 
-**Calling `resume()` is safe in every case that matters for this recipe.** This is confirmed immediately after `pause()` (zero delay), when the session was never paused, and when it was already resumed.
+**On a connected session, `resume()` is safe in every case that matters for this recipe:** immediately after `pause()` (zero delay), when the session was never paused, and when it was already resumed. On a session that is not connected it rejects with `invalid_state`.
 
 It's also safe when the SDK's own connectivity recovery rebuilt the session *while* you were paused. A stalled/expired media channel can trigger an internal `_coldReconnect()` that rebuilds the transports on its own, without your app calling `resume()` (see [WIRE-PROTOCOL.md](WIRE-PROTOCOL.md) for the recovery events). Your pause survives that rebuild. The SDK keeps `session.paused` true and *holds* the rebuilt session's start signal instead of letting the avatar speak over your content.
 
@@ -43,7 +43,7 @@ You don't need to listen for any event to know resume worked. `await session.res
 
 ## Minimal runnable example
 
-Plain HTML/JS, no build step. This matches the pattern in `examples/browser-experience.html`. Assumes a server endpoint `/appInit` that calls `Management.application.appInit()` for you (see [GETTING-STARTED.md](../GETTING-STARTED.md) and [API-REFERENCE.md § Initialize the Runtime](api/deploy.md#initialize-the-runtime)).
+Plain HTML/JS, no build step. This matches the pattern in `examples/browser-experience.html`. Assumes a server endpoint `/appInit` that calls `Management.application.appInit()` for you (see [GETTING-STARTED.md](../GETTING-STARTED.md) and [api/deploy.md § Initialize the Runtime](api/deploy.md#initialize-the-runtime)).
 
 ```html
 <!doctype html>

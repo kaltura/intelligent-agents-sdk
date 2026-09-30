@@ -238,6 +238,10 @@ export class CaptionService {
    *   maxCharsPerLine?: number,
    *   maxLines?: number,
    * }} [opts]
+   *   `replacements`: exact-text fixes (see {@link CaptionService#setReplacements}).
+   *   `filter`: runs last on every chunk; a non-string return is ignored.
+   *   `holdAfterEndMs`: how long the last caption stays visible after speech ends (default 2000).
+   *   `maxCharsPerLine` (default 47) and `maxLines` (default 2): size of one visible caption.
    */
   constructor(session, opts = {}) {
     this._holdAfterEndMs = opts.holdAfterEndMs ?? 2000;
@@ -310,7 +314,12 @@ export class CaptionService {
     return () => this._callbacks.delete(cb);
   }
 
-  /** Update replacements map after construction. */
+  /**
+   * Replace the whole replacements map (`null` clears it). Matching is case-insensitive, longest
+   * key first, and on word boundaries when the key starts or ends with a letter. Every chunk is
+   * filtered in this order: strip HTML tags, replacements, punctuation spacing, custom `filter`.
+   * @param {Record<string,string>|Map<string,string>|null} map
+   */
   setReplacements(map) { this._filter.setReplacements(map); }
 
   /** Detach all session listeners and cancel any pending timers. */

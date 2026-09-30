@@ -23,7 +23,7 @@ const adminSecret = process.env.AGENTIC_ADMIN_SECRET;
 if (!partnerId || !adminSecret) { console.error('Set AGENTIC_PARTNER_ID + AGENTIC_ADMIN_SECRET'); process.exit(2); }
 
 const kaltura = new Management({ partnerId, adminSecret });
-const admin = await kaltura.sessions.createAdminToken();
+const admin = await kaltura.sessions.createAdminToken({ userId: 'admin@example.com' });
 
 // Two client-fed sections: the ready-made page-context block, plus a custom
 // {{counter}} slot. Lint before provisioning — it catches a referenced
@@ -41,7 +41,7 @@ if (!lint.ok) { console.error('Prompt lint failed:', lint.findings); process.exi
 const intellect = await kaltura.intellects.add({
   type: 'internal',
   status: 2,
-  allow_client_variables: true, // required — without it every request_vars turn returns empty
+  allow_client_variables: true, // on by default; pinned here. When off, every request_vars turn fails
   prompts,
   capabilities: { avatar: 'on', avatar_filler: 'off', use_knowledge_base: 'off' },
 }, admin);
@@ -50,7 +50,7 @@ console.log('Provisioned intellect:', intellect.id);
 try {
   const ask = 'What is the counter? Just the value, or EMPTY.';
 
-  // 1. Seed. request_vars values must be strings.
+  // 1. Seed. request_vars values must be scalars (string, number, boolean or null).
   const t1 = await kaltura.converseOnce(intellect.id, ask, { request_vars: { counter: '41', plan: 'gold' } });
   console.log('turn 1 (seed counter=41):', t1.text);
 

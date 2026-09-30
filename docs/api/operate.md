@@ -13,8 +13,8 @@ Requires a conversation KS (see [Authentication § KS types](authentication.md#a
 ```bash
 CONV_KS=$(curl -s -X POST "https://www.kaltura.com/api_v3/service/session/action/start" \
   -d "format=1" -d "secret=$AGENTIC_ADMIN_SECRET" \
-  -d "partnerId=$AGENTIC_PARTNER_ID" -d "type=2" -d "expiry=86400" \
-  -d "privileges=geniegpcid:1389" | tr -d '"')
+  -d "partnerId=$AGENTIC_PARTNER_ID" -d "userId=learner-123" -d "type=0" -d "expiry=86400" \
+  -d "privileges=geniegpcid:1389,setrole:PLAYBACK_BASE_ROLE" | tr -d '"')
 ```
 
 ```json
@@ -30,16 +30,16 @@ CONV_KS=$(curl -s -X POST "https://www.kaltura.com/api_v3/service/session/action
 | `userMessage` | Required |
 | `threadId` | Omit for new conversation; pass previous value for memory |
 | `sse` | `false` = NDJSON (default); `true` = SSE |
-| `model_type` | `"fast"` for cheaper/faster model |
-| `force_experience` | Must be one of `markdown`, `summarization`, `flashcards`, `avatar_only`. Anything else 422s before any network call. A hint to the brain about which experience to render, not a guaranteed outcome. |
-| `request_vars` | `{{var}}` interpolation values. Needs `allow_client_variables:true` on the intellect (see [Authentication § The Five Services](authentication.md#the-five-services) for what an intellect is). Values **persist on the thread**: the server merges each message's map into what's stored, so send only deltas — a new thread starts clean. They interpolate into both prompt blocks and server-side `api`-tool templates. Reserved `sys__*` keys (including `sys__user_id`) are server-injected and rejected if you try to set them yourself — see § Bind a session to a real end-user identity above for how `sys__user_id` gets populated. Semantics in depth: [docs/DYNAMIC-DATA-INJECTION.md](../DYNAMIC-DATA-INJECTION.md). |
+| `model_type` | Optional. The SDK does not set `model_type`; the default is `fast`. |
+| `force_experience` | Must be one of `markdown`, `summarization`, `flashcards`, `avatar_only`. Anything else throws a `validation_error` before any network call. A hint to the brain about which experience to render, not a guaranteed outcome. |
+| `request_vars` | `{{var}}` interpolation values. Needs `allow_client_variables:true` on the intellect. It is on by default (see [Authentication § The Five Services](authentication.md#the-five-services) for what an intellect is). Values **persist on the thread**: the server merges each message's map into what's stored, so send only deltas. A new thread starts clean. They interpolate into both prompt blocks and server-side `api`-tool templates. Reserved `sys__*` keys (including `sys__user_id`) are server-injected and rejected if you try to set them yourself. See § Bind a session to a real end-user identity above for how `sys__user_id` gets populated. Semantics in depth: [docs/DYNAMIC-DATA-INJECTION.md](../DYNAMIC-DATA-INJECTION.md). |
 | `capabilities` | Per-message capability override |
 
-**Enabling `allow_client_variables`:** `mgmt.intellects.setClientVariablesEnabled(configId, true, adminKs)` (WRITE, admin KS; also exposed as `mgmt.intellectConfig.setClientVariablesEnabled`).
+**`allow_client_variables`** must be on to send `request_vars`. It is on by default. Pin it with `mgmt.intellects.setClientVariablesEnabled(configId, true, adminKs)` (WRITE, admin KS; also exposed as `mgmt.intellectConfig.setClientVariablesEnabled`).
 
-With it off, the rejection is **silent on every path**. The turn streams back empty: no HTTP error on `converse`, no socket error. The server's 403 fires inside its streaming pipeline after the response has already opened, so it never reaches the wire.
+With it off, the rejection is **silent on the streaming paths**. The turn streams back empty: no HTTP error on `converse`, no socket error.
 
-Both session classes (`KalturaAvatarSession`, `KalturaChatSession`) detect the pattern and emit a once-per-session `warning` event (`code: 'empty_turn_with_request_vars'`, variable names only, never values). The management converse helpers keep a defensive remap to a typed `client_variables_disabled` error for the pre-stream case, should the server ever start rejecting before the stream opens.
+Both session classes (`KalturaAvatarSession`, `KalturaChatSession`) detect the pattern and emit a once-per-session `warning` event (`code: 'empty_turn_with_request_vars'`, variable names only, never values). The management converse helpers map a 403 that reports disabled client variables to a typed `client_variables_disabled` error. `KalturaChatSession.sendText()` can fail either way when it sends request variables: the empty turn with the warning, or a rejected promise with `client_variables_disabled`.
 
 **Stream segments** (each line is a JSON object):
 
@@ -54,12 +54,12 @@ Both session classes (`KalturaAvatarSession`, `KalturaChatSession`) detect the p
 
 Key envelope fields: `threadId` (save for follow-ups), `messageId` (save for feedback), `isFinal:true` (stream done).
 
-**Abort a running turn:**
+**Stop a running turn:**
 
-```
-POST https://genie.nvp1.ovp.kaltura.com/assistant/abort
-{ "threadId": "154a05c4-..." }
-```
+| Session | Call |
+|---|---|
+| `KalturaAvatarSession` | `session.interrupt()` sends a barge-in so the avatar yields the turn. It does not cancel a running brain turn, and the SDK has no call that does. It throws `invalid_state` when the session is not connected or a tap-to-talk capture is open. |
+| `KalturaChatSession` | Pass `signal` to `sendText(text, { signal })` and abort it. The request is cancelled and the turn rejects with code `aborted`. |
 
 ---
 
@@ -73,7 +73,7 @@ Before any network call, the SDK's own `request_vars` pre-flight guard rejects a
 |----------|-------------|-------|
 | `sys__thread_id` | Current conversation thread id | |
 | `sys__message_id` | Current message id | |
-| `sys__user_id` | The bound end-user id | Empty by default (an anonymous KS). Bind a real identity with `Sessions.createConversationToken({ userId })` (or `createAdminToken({ userId })`) so this resolves server-side instead of always being empty — see § Bind a session to a real end-user identity above. |
+| `sys__user_id` | The bound end-user id | Empty by default (a KS with no `userId`). Bind a real identity with `Sessions.createConversationToken({ userId })` or `createAgentToken({ userId })` (or `createAdminToken({ userId })`) so this resolves server-side instead of always being empty, see § Bind a session to a real end-user identity above. |
 | `sys__user_message` | The current turn's user text | |
 | `sys__is_new_thread` | `true` on the first turn of a new thread, `false` otherwise | |
 | `sys__avatar_enabled` | Whether the current thread has a live avatar attached | Used in a Skill's `condition` to gate it to avatar-only sessions, e.g. `{{ sys__avatar_enabled }}` — see [Configure an Intellect § skill_ids](build/intellect.md#configure-an-intellect). |
@@ -98,7 +98,7 @@ Returns `{aiConsent, avatar, identifiedUser}`. `avatar` is non-null when the age
 
 ## Threads
 
-All thread endpoints require an **admin KS** (`disableentitlement`). Pager: `{"pageIndex":1,"pageSize":30}`.
+In this SDK, `threads.list`, `get`, `rename`, `delete`, `transcript`, `setAnalysis`, `clearAnalysis` and `messages.list`, `get`, `share` accept an admin, conversation or agent token. A widget token is rejected with `wrong_token_scope` before any request. A raw KS string is sent as is, and the server answers 403 for a widget KS. What each token reaches: [SECURITY.md § Session type](../../SECURITY.md#session-type). `threads.push`, `messages.report`, `messages.reportSummary`, `feedback.list` and `followups.list` need an admin token. Pager: `{"pageIndex":1,"pageSize":30}`.
 
 | Operation | Endpoint | Body |
 |-----------|----------|------|
@@ -114,25 +114,25 @@ All thread endpoints require an **admin KS** (`disableentitlement`). Pager: `{"p
 
 **Transcript response:** `{"status":"success","data":"human: …\nai: …"}` — plain text, one turn per line.
 
-**Delete** returns `{totalCount, objects[]}` — a soft delete, followed by a scheduled infra-level purge of the underlying data.
+**Delete** returns `{totalCount, objects[]}`: the threads it actually deleted. Any id it did not delete (one that does not exist, or another user's thread under a user session) is left out, and the status is still 200. So check `objects`, not the status: `totalCount: 0` means nothing was deleted. Deletes are soft. The data is purged on a schedule.
 
-SDK: `mgmt.threads.{list, get, rename, delete, transcript}`. Two more write operations live only on the SDK (`setAnalysis`, `clearAnalysis`, `push`); see [management-operations.md § Threads](management-operations.md#threads--httpsgenienvp1ovpkalturacom) for their request shapes.
+SDK: `mgmt.threads.{list, get, rename, delete, transcript}`. Three more write operations live only on the SDK (`setAnalysis`, `clearAnalysis`, `push`); see [management-operations.md § Threads](management-operations.md#threads--httpsgenienvp1ovpkalturacom) for their request shapes.
 
-> **Compliance note.** `threads.delete()` soft-deletes immediately; a scheduled infra-level purge erases the underlying data later. See [SECURITY.md](../../SECURITY.md#shared-responsibility-control-matrix-nist-800-53) for what the SDK provides versus what the operator must configure.
+> **Compliance note.** See [SECURITY.md](../../SECURITY.md#shared-responsibility-control-matrix-nist-800-53) for what the SDK provides versus what the operator must configure.
 
 ## Session-Completion Signal
 
-Unlike the admin-KS thread endpoints above, this one is called from the browser client itself, with the same **conversation KS** (`geniegpcid`) used for every other client-facing call. It mints nothing new and needs no elevated privilege.
+Unlike the admin-token thread endpoints above, this one is called from the browser client itself, with the same **conversation KS** (`geniegpcid`) used for every other client-facing call. It mints nothing new and needs no elevated privilege.
 
 | Operation | Endpoint | Body | Auth |
 |-----------|----------|------|------|
 | Session completed | `POST {genieUrl}/thread/session_completed` | `{"id":"<threadId>"}` | `Authorization: KS <conversation ks>` |
 
-`{genieUrl}` defaults to `https://genie.nvp1.ovp.kaltura.com` (no `/v1` prefix — a different route family from the thread CRUD above). It's idempotent: a repeat call for the same thread is a no-op server-side. There's no rate limit. It can block up to ~10s on a backend publish-ack, so a client must never await it on a page-unload path.
+`{genieUrl}` defaults to `https://genie.nvp1.ovp.kaltura.com` (no `/v1` prefix, a different route family from the thread CRUD above). Send it once at the end. Never await it on a page-unload path.
 
-Call this the moment a conversation is genuinely over, instead of waiting for the server's idle timeout (about 10 minutes), so end-of-conversation lifecycle rules (summaries, insights, CRM pushes) fire in seconds.
+Call this the moment a conversation is genuinely over, so end-of-conversation lifecycle rules (summaries, insights, CRM pushes) fire right away.
 
-`KalturaAvatarSession`/`KalturaChatSession`/`KalturaAgentSession` call this automatically on `disconnect()` (`sessionCompleteOnEnd`, default `true`) and on tab-close/backgrounding/bfcache. See [README.md § Ending a conversation cleanly](../../README.md#ending-a-conversation-cleanly-session_completed-signal) for the full config surface, and [wire-protocol/events-catalog.md § Session-completion signal](../wire-protocol/events-catalog.md#session-completion-signal--tell-the-backend-a-conversation-is-truly-over) for the exact request shape.
+`KalturaAvatarSession`/`KalturaChatSession`/`KalturaAgentSession` call this automatically on `disconnect()` (`sessionCompleteOnEnd`, default `true`) and on tab-close/backgrounding/bfcache. See [README.md § Ending a conversation cleanly](../../README.md#ending-a-conversation-cleanly-session_completed-signal) for the full config surface.
 
 ## Thread History and Context Size
 
@@ -145,7 +145,7 @@ There is no documented cap on how long a thread's history can grow. The full tra
 Feedback and follow-up suggestions route through internal Genie paths — use the SDK rather than calling them directly.
 
 - `mgmt.feedback.add({message_id, is_positive, comment?}, convKs)` — thumbs up/down on a message. `message_id` comes from the converse stream.
-- `mgmt.feedback.list(ks, opts)` — admin-scoped feedback listing, filterable by `messageIdEquals`/`messageIdsIn`/`threadIdEquals`/`agentIdEquals`/`isPositiveEquals`. Sources from the rated message itself, not a separate feedback store — see the method's own doc for why. ⚠️ SENSITIVE: contains end-user ids/names + verbatim question/feedback text. Treat as PII; scope and redact before sharing.
+- `mgmt.feedback.list(ks, opts)`: admin-only feedback listing, filterable by `messageIdEquals`/`messageIdsIn`/`threadIdEquals`/`agentIdEquals`/`isPositiveEquals`. ⚠️ SENSITIVE: contains end-user ids/names + verbatim question/feedback text. Treat as PII; scope and redact before sharing.
 - `mgmt.followups.getSuggested(ks)` — starter questions for the partner/agent. The returned set can vary between calls — don't assume a stable, fixed list. Per-answer follow-ups stream inline as `unisphere-tool` segments when `capabilities.generate_followup_questions:"on"`.
 - `mgmt.followups.list(ks, opts)` — raw partner-wide follow-up/starter question record listing (distinct from `getSuggested`'s per-agent shortlist).
 

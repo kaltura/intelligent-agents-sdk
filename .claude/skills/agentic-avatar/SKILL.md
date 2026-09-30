@@ -38,34 +38,41 @@ Two backends, two KS shapes — never mix them. All minted via `kaltura.sessions
 
 | Kind | Method | Privilege string | Entitlement | Use for |
 |---|---|---|---|---|
-| Admin | `sessions.createAdminToken({ttlSeconds?})` | `disableentitlement` | OFF | Management-plane calls (everything in this skill except the runtime) |
-| Conversation | `sessions.createConversationToken({configId, ttlSeconds?, restrictions?})` | `geniegpcid:<configId>` | ON | Server-side chat with one intellect |
-| Agent | `sessions.createAgentToken({agentId, ttlSeconds?, restrictions?})` | `agentid:<agentId>` | ON | Chat scoped to one agent, not a raw configId |
-| Widget | `sessions.createWidgetToken({widgetId})` | (server-derived) | ON | Public, secret-free — safe to mint from a browser |
+| Admin | `sessions.createAdminToken({userId, ttlSeconds?})` | `disableentitlement` | OFF | Management-plane calls (everything in this skill except the runtime) |
+| Conversation | `sessions.createConversationToken({configId, agentId?, userId?, sessionType?, ttlSeconds?, restrictions?})` | `setrole:PLAYBACK_BASE_ROLE`, `geniegpcid:<configId>`, optional `agentid` | ON | Chat with one intellect. User session (KS type 0) |
+| Agent | `sessions.createAgentToken({agentId, configId?, userId?, sessionType?, ttlSeconds?, restrictions?})` | `setrole:PLAYBACK_BASE_ROLE`, `agentid:<agentId>`, `geniegpcid:<configId>` | ON | Chat that answers as the agent. User session (KS type 0) |
+| Widget | `sessions.createWidgetToken({widgetId})` | (server-derived) | ON | Public, secret-free, safe to mint from a browser |
 
-`sessions.revoke(tokenOrKs)` ends a token now. The SDK throws before any network call if you try to mint a conversation/agent/widget token with entitlement disabled — the two-KS-type invariant is enforced in code, not just documentation.
+- You have an `agentId`: use `createAgentToken`. You only have a `configId`: use `createConversationToken`. Pass both ids to either and you get the same privileges. Differences and the `configId` lookup: docs/api/authentication.md § Conversation token or agent token?
+- Pass a per-user `userId` on every conversation or agent token. It keeps each user's threads separate.
+- `sessionType: 'admin'` mints an admin-level session (KS type 2, no forced role), server-side only. `restrictions.role` goes with `sessionType: 'admin'` only.
+- Widget tokens can't separate users. For per-user separation in a browser: docs/api/deploy.md § Per-visitor browser path.
+- Which methods take which token: docs/api/operate.md § Threads. Account-wide thread lists use `createAdminToken({ userId })`.
+- Full access matrix: SECURITY.md § Session type.
+
+`sessions.revoke(tokenOrKs)` ends a token within seconds. Tokens minted with the same `restrictions.sessionGroupId` are revoked together. The SDK throws before any network call if you try to mint a conversation/agent/widget token with entitlement disabled. The two-KS-type invariant is enforced in code, not just documentation.
 
 ## Quickstart: one call to a talking agent
 
 ```js
-const admin = await kaltura.sessions.createAdminToken();
+const admin = await kaltura.sessions.createAdminToken({ userId: 'admin@example.com' });
 const agent = await kaltura.provision({
   brief: 'A friendly yoga-studio receptionist',
   ks: admin.ks,
 });
-// agent: { configId, agentId, widgetId, voiceId, visualId, profile, warnings? }
+// agent: { name, configId, avatarId, agentId, widgetId, profile, personaLint, blocks? }
 
 const reply = await kaltura.converseOnce(agent.configId, 'Hello, what can you help me with?');
 console.log(reply.text);
 ```
 
-`provision()` runs the full pipeline in one call: generate a persona profile → create the intellect → write its prompts → pick a preset voice + visual → create the avatar → create the agent → resolve its widgetId. It also accepts optional `voiceId`, `visualId`, `adminTags`, `maxConversationLength`, `idempotencyKey`, `capabilities`, `tools`, `knowledge` — each applied in a non-fatal, feature-detected post-configure step if present. Full option list and internal sequence: `src/management/provision.js`.
+`provision()` runs the full pipeline in one call: generate a persona profile → create the intellect → write its prompts → pick a preset voice + visual → create the avatar → create the agent → resolve its widgetId. It also accepts optional `voiceId`, `visualId`, `openingPhrase`, `adminTags`, `maxConversationLength`, `idempotencyKey`, `capabilities`, `tools`, `knowledge`. `capabilities`, `tools` and `knowledge` run in non-fatal, feature-detected post-configure steps and report under `blocks`. Full option list and internal sequence: `src/management/provision.js`.
 
-`converse`/`converseOnce` mint their own conversation token from `configId` if you don't pass one — pass an existing `ks` (object-form, from `createConversationToken`) to reuse one across turns instead of re-minting.
+`converse`/`converseOnce` mint their own conversation token from `configId` if you don't pass one. Pass `{ agentId, userId }` in `opts` to label the thread with the agent and give the end user their own threads. Pass an existing `ks` (object-form, from `createConversationToken`) to reuse one across turns instead of re-minting.
 
 ## Building an agent step by step (when you need control `provision()` doesn't give you)
 
-1. **Mint an admin token.** `const admin = await kaltura.sessions.createAdminToken();`
+1. **Mint an admin token.** `const admin = await kaltura.sessions.createAdminToken({ userId: 'admin@example.com' });`
 2. **Create the intellect (the brain).**
 
    ```js
@@ -201,7 +208,7 @@ await kaltura.intellectConfig.setToolIds(configId, [tool.id], admin.ks);
 | `tools` | `add(tool, ks)` | `get(id, ks)` | `list(ks, opts?)` | `update(id, patch, ks)` | `delete(id, ks, confirm)` |
 | `skills` | `add(body, ks)` | `get(id, ks)` | `list(ks, opts?)` | `update(id, patch, ks)` | `delete(id, ks, confirm)` |
 
-Both `update` methods are real — don't assume Skills lacks one. Every `delete` takes an explicit `confirm` argument (destructive ops are never a bare flag on a read call). Before creating a Tool, check for a same-named one you should reuse instead of duplicate-erroring — `provision.js`'s `applyTools` shows the upsert-by-name + reference-safety pattern (never mutate a Tool another intellect still references without checking first).
+Both resources have `update`. Every `delete` takes an explicit `confirm` argument (destructive ops are never a bare flag on a read call). Before creating a Tool, check for a same-named one you should reuse instead of duplicate-erroring. `provision.js`'s `applyTools` shows the upsert-by-name + reference-safety pattern (never mutate a Tool another intellect still references without checking first).
 
 ## Secrets
 
@@ -233,11 +240,11 @@ await kaltura.intellectConfig.setKnowledgeIds(configId, [record.id], admin.ks);
 await kaltura.knowledge.setEnabled(configId, true, admin.ks);   // flips capabilities.use_knowledge_base 'on'
 ```
 
-`knowledge_ids` is capped at one record per intellect (`setKnowledgeIds` throws before any network call if you pass more than one). RAG retrieval works only after async indexing completes, and `kaltura.knowledge.isIndexed(record.id, admin.ks)` does NOT tell you that. See API-REFERENCE.md § Ground the Agent for why (its `ready` flag is a container-lifecycle status, not an indexing-completion signal), which other signal to reach for, and why to budget a fixed wait instead of polling.
+`knowledge_ids` is capped at one record per intellect (`setKnowledgeIds` throws before any network call if you pass more than one). RAG retrieval works only after async indexing completes, and `kaltura.knowledge.isIndexed(record.id, admin.ks)` does NOT tell you that. See `docs/api/build/knowledge-rag.md` for why (its `ready` flag is a container-lifecycle status, not an indexing-completion signal), which other signal to reach for, and why to budget a fixed wait instead of polling.
 
 ## Lifecycle — react to session/thread events without polling
 
-A **rule** = `eventType` + `objectType` (currently only `'thread'`) + optional `eventConditions[]` + one **action**. Three `actionType` values are partner-creatable: `triggerInsightSettingsKai` (extract structured insights with an LLM, referencing one or more `InsightSettings` entities by id via `insightSettingsIds`), `sendInsightEmail` (email a human once an insight lands), and `triggerDtcKai` (turns the target intellect's configured lead-capture form fields into insights, no fields of your own). A fourth, internal-only value powers the fixed system summary preset and is never constructed by a caller. The backend evaluates every active rule (yours plus its own system-seeded presets) whenever a matching event fires — no polling required.
+A **rule** = `eventType` + `objectType` (currently only `'thread'`) + optional `eventConditions[]` + one **action**. Three `actionType` values are partner-creatable: `triggerInsightSettingsKai` (extract structured insights with an LLM, referencing one or more `InsightSettings` entities by id via `insightSettingsIds`), `sendInsightEmail` (email a human once an insight lands), and `triggerDtcKai` (turns the target intellect's configured lead-capture form fields into insights, no fields of your own). `match` also returns system rules you did not create, for example `preset__summary_on_session_ended`. You never construct their action type. Every active rule fires whenever a matching event occurs, no polling required.
 
 ```js
 const topic = await kaltura.insightSettings.create({
@@ -249,8 +256,8 @@ const rule = await kaltura.lifecycle.create({
   systemName: 'extract_topic_on_session_ended',
   eventType: 'session_ended',
   objectType: 'thread',
-  // Don't request SUMMARY yourself — every partner already gets one for free
-  // from an always-on preset rule; there's no field anywhere to customize it.
+  // Don't request SUMMARY yourself. The system rule
+  // `preset__summary_on_session_ended` already produces it.
   action: { actionType: 'triggerInsightSettingsKai', insightSettingsIds: [topic.id] },
 }, admin.ks);
 
@@ -261,9 +268,8 @@ const result = await kaltura.lifecycle.match(
   { object: { agent_id, thread_id, user_id } },
   admin.ks,
 );
-// result.matchedRules[] groups related rules under a groupKey — expect the
-// backend's own system-seeded presets to show up alongside rules you created,
-// not just what you configured.
+// result.matchedRules[] groups related rules under a groupKey. System rules
+// appear alongside the rules you created.
 ```
 
 `eventConditions[]` entries are `{field, operator, value}` (a dot-path into the event payload, e.g. `{field:'object.agent_id', operator:'eq', value:'<uuid>'}`) — a `{path, op}` shape 400s. `create` is a WRITE — NOT idempotent (a repeat call creates a second rule); `update`/`delete` are the usual idempotent/destructive-with-`confirm` pair. `listObjects(ks)`/`listEvents(objectType, ks)`/`describeFields(objectType, eventType, ks)` are read-only discovery calls for building a no-code rule editor instead of hardcoding enums. Full 9-method reference: `src/management/lifecycle.js`; worked examples and the `sendInsightEmail` data-egress note: `docs/lifecycle/README.md`.
@@ -271,7 +277,7 @@ const result = await kaltura.lifecycle.match(
 ## Talking to an agent — conversations, threads, messages
 
 ```js
-const conv = await kaltura.sessions.createConversationToken({ configId, ttlSeconds: 3600 });
+const conv = await kaltura.sessions.createConversationToken({ configId, userId: 'learner-123', ttlSeconds: 3600 });
 const reply = await kaltura.conversations.send({ userMessage: 'What are your hours?' }, conv.ks);
 ```
 
@@ -328,9 +334,9 @@ await session.connect();
 await session.speak('Hello! How can I help you today?');
 ```
 
-Mint the browser-side token client-side with no server or secret: `sessions.createWidgetToken({widgetId})` + `application.appInit(widgetKs)` (the widget KS itself needs no admin secret — see `docs-site-avatar`'s `public/avatar-session.js` for a real example, in the sibling repo).
+For a public embed with no server or secret, mint the browser-side token with `sessions.createWidgetToken({widgetId})` + `application.appInit(widgetKs)` (see `docs-site-avatar`'s `public/avatar-session.js` for a real example, in the sibling repo). Every visitor shares that identity. When users need separate threads, have your server mint `createAgentToken({agentId, userId})`, call `appInit` with it, and send the returned KS to the browser.
 
-The constructor does not police which KS kind `token` carries — a real KS's privileges are encrypted and unreadable client-side, so that check would be inert anyway. Mint a `geniegpcid`/`agentid`/widget token server-side for the live runtime; see SECURITY.md's KS guidance for agents.
+The constructor accepts any KS `token`, since a real KS's privileges are encrypted and unreadable client-side. Give the live runtime a conversation, agent or widget token (entitlement ON) and keep admin tokens on the server; see SECURITY.md's KS guidance for agents.
 
 ### Key session methods
 
@@ -349,7 +355,7 @@ The constructor does not police which KS kind `token` carries — a real KS's pr
 | `listDevices()` / `switchMic(deviceId)` / `setAudioOutput(deviceId)` | Device management. |
 | `waitForCapacity(opts)` | Await capacity if the pool is full rather than failing immediately. |
 
-Full method/event source: `src/experience/session.js` (2000+ lines — the canonical reference; read it directly for anything not covered here).
+Full method/event source: `src/experience/session.js` (the canonical reference; read it directly for anything not covered here).
 
 ### Event model
 
@@ -359,7 +365,7 @@ Full method/event source: `src/experience/session.js` (2000+ lines — the canon
 
 - `onBeforeSend(text, ctx)` — inspect/transform/block outbound user text before it reaches the brain. Return a string to send that instead, `undefined` to send unchanged, `false`/throw to block the turn.
 - `onAgentAction(action)` — gate agent-*initiated* actions (navigate, render-GenUI, lead capture, vision) before they take effect. Return `false`/throw to veto; sync or async.
-- A tool-call spiral circuit breaker (`toolSpiralDetected` → session-scoped hard limit → automatic cold reconnect) guards against a runaway repeated tool call — see the `_checkHardToolSpiral` doc comment in `session.js` for the live incident (438 calls in 9 minutes) that motivated it. `recoverFromSpiral` (default `true`) auto-resends the abandoned turn after recovery.
+- A tool-call spiral circuit breaker (`toolSpiralDetected` → session-scoped hard limit → automatic cold reconnect) guards against a runaway repeated tool call. See the `_checkHardToolSpiral` doc comment in `session.js`. `recoverFromSpiral` (default `true`) auto-resends the abandoned turn after recovery.
 
 ### GenUI (agent-rendered widgets)
 

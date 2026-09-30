@@ -24,15 +24,13 @@ The Bearer token is valid about 24h (decoded from the JWT's own `exp` claim) and
 | Keep alive | `POST /v1/avatar-session/{sessionId}/keep-alive` | Bearer | `{}` |
 | End | `POST /v1/avatar-session/{sessionId}/end` | Bearer | `{}` |
 
-`say-audio` is the ONLY speech-injection mechanism this backend exposes. There is no text-in: a sibling `say-text` route accepts the request but the server answers `503 Service temporarily unavailable` on every call, and a bare `say` route 404s. Neither is wrapped by the SDK. Generate the audio yourself with any TTS provider (this backend has none of its own), measure its duration (e.g. `ffprobe`; the server has no duration probe of its own, and an inaccurate value just desyncs the mouth from the audio, it doesn't error), and pass both to `say-audio`. The call itself is async/queued: it resolves in about 100ms once the server accepts the turn, not once playback finishes. Call `interrupt` to cut off whatever's currently playing.
-
-`set-emotion`, `queue-status`, `status`, and `session-status` all 404 on the current deployment and are not wrapped.
+`say-audio` is the only way to make the avatar speak. There is no text input. Generate the audio yourself with any TTS provider, measure its duration (e.g. `ffprobe`), and pass both to `say-audio`. An inaccurate duration desyncs the mouth from the audio but does not error. The call is async and queued: it resolves in about 100ms once the turn is accepted, not once playback finishes. Call `interrupt` to cut off whatever's currently playing.
 
 ```js
 import { Management } from '@kaltura/intelligent-agents/management';
 
 const mgmt = new Management({ partnerId, adminSecret });
-const admin = await mgmt.sessions.createAdminToken();
+const admin = await mgmt.sessions.createAdminToken({ userId: 'admin@example.com' });
 
 const session = await mgmt.avatarSessions.create({ visualConfig: { id: avatarId } }, admin.ks);
 const { whepUrl, turn } = await mgmt.avatarSessions.initClient(session);
@@ -55,5 +53,7 @@ await view.connect();
 // ...call your own server endpoint, which calls mgmt.avatarSessions.say()...
 view.disconnect();
 ```
+
+`connect()` only runs from `'idle'` or `'disconnected'`. After `disconnect()`, the same instance connects again with a fresh peer connection. From any other state it throws `invalid_state`. From `'error'`, call `disconnect()` first. The view emits `stateChange` (`{state}`) on every state change.
 
 See the runnable example: [`examples/scripted-video-session.mjs`](../../examples/scripted-video-session.mjs) + [`examples/scripted-video-session.html`](../../examples/scripted-video-session.html).

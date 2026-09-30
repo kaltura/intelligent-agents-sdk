@@ -64,7 +64,7 @@ This one command builds a brand-new agent (brain, face, voice, and all) from a p
 node create-agent.mjs "A friendly yoga studio receptionist who helps people book classes and answers questions about memberships"
 ```
 
-You'll see progress messages as it builds the brain, face, and voice. At the end it sends a smoke-test message and prints the reply, plus the new IDs (`configId`, `agentId`, `avatarId`, `widgetId`) you need to embed or extend the agent. The agent is created with a silent opening (`openingPhrase: SILENT_OPENING`), so the browser decides how the conversation starts (see below).
+It prints three status lines (`[1/3]` to `[3/3]`) and a heads-up before the slow provisioning step. At the end it sends a smoke-test message and prints the reply, plus the new IDs (`configId`, `agentId`, `avatarId`, `widgetId`) you need to embed or extend the agent. The agent is created with a silent opening (`openingPhrase: SILENT_OPENING`), so the browser decides how the conversation starts (see below).
 
 > Building an agent by hand instead of via the one-line brief? See [Agent Components](docs/api/build.md) in API-REFERENCE.md.
 
@@ -95,19 +95,20 @@ const session = new KalturaAvatarSession({ ...runtimeConfig, kickoff: 'Greet the
 await session.connect();
 ```
 
-**Talking on behalf of a real, known user?** Mint the conversation token yourself with `userId` instead of letting `converseOnce()` auto-mint an anonymous one. This binds the [KS](docs/api/authentication.md#authentication) (Kaltura Session token) to that user so per-user memory and analytics attribute the conversation correctly:
+**Talking on behalf of a real, known user?** Mint the conversation token yourself with `userId` instead of letting `converseOnce()` auto-mint an anonymous one. This binds the [KS](docs/api/authentication.md#authentication) (Kaltura Session token) to that user. The user gets their own threads, and `{{ sys__user_id }}` resolves in prompts:
 
 ```js
 const conv = await kaltura.sessions.createConversationToken({
   configId: '<configId from Step 3>',
+  agentId: '<agentId from Step 3>',
   userId: 'learner-123',   // any stable id you use to identify this person
 });
 const reply = await kaltura.converseOnce('<configId from Step 3>', 'Hello again!', {}, conv);
 ```
 
-`userId` is optional everywhere it's accepted. Omit it and you get the same anonymous behavior shown above. See "Bind a session to a real end-user identity" under [Authentication & Services](docs/api/authentication.md#authentication) in API-REFERENCE.md for the full picture.
+`userId` is required on admin tokens and optional on conversation and agent tokens, but pass one for real users. What each token can reach: [SECURITY.md § Session type](SECURITY.md#session-type).
 
-**Using [lifecycle rules](docs/lifecycle/README.md#scoping-a-rule-to-one-agent) scoped to a specific agent (`object.agent_id`)?** A thread created with a plain conversation token (as above) always gets `agent_id:"default"` and can never match those rules. Mint with `mgmt.sessions.createAgentToken({ agentId })` instead. See `docs/lifecycle/README.md`'s scoping section for why. Note that `createAgentToken` does **not** accept `userId`. You currently can't combine agent-scoped lifecycle matching with end-user identity binding on the same token.
+`agentId` labels the thread, so [lifecycle rules](docs/lifecycle/README.md#scoping-a-rule-to-one-agent) scoped to `object.agent_id` match it. Without it the thread gets `agent_id: "default"`. `createAgentToken` is the alternative when you start from an `agentId`: [Conversation token or agent token?](docs/api/authentication.md#conversation-token-or-agent-token).
 
 ---
 
@@ -142,7 +143,7 @@ You now know how to create an agent and talk to it. Here's where to go for more:
 
 **How do I see everything I created?** Use the Management API's list calls: `kaltura.agents.list(admin.ks)` and `kaltura.avatars.list(admin.ks)`. See [Management Operations](docs/api/management-operations.md) in API-REFERENCE.md.
 
-**How do I label the agents I create so I can find mine later?** Tag the **agent** (not the avatar) via `adminTags` on `agents.create()`, then filter `agents.list(admin.ks)` client-side. Details under [Create an Agent](docs/api/build/avatar-and-agent.md#create-an-agent).
+**How do I label the agents I create so I can find mine later?** Tag the **agent** (not the avatar) via `adminTags` on `agents.create()`, then filter with `agents.list(admin.ks, { filter: { adminTagsIn: ['<tag>'] } })`. Details under [Create an Agent](docs/api/build/avatar-and-agent.md#create-an-agent).
 
 **Can I use my own face or voice?** Yes, both. See [Catalog & Assets](docs/api/design.md#upload-a-custom-visual-portrait--animated-avatar) (visual) and [→ Custom Voice](docs/api/design.md#upload-a-custom-voice-clone).
 

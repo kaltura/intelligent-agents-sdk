@@ -1,7 +1,7 @@
 /**
  * Application — utility operations on the Agentic host: AI profile generation,
- * widget resolution, and runtime init. Source: API-REFERENCE §1.4 / §3.1 /
- * §3.2.
+ * widget resolution, and runtime init. Reference: docs/api/deploy.md and
+ * docs/api/authentication.md.
  */
 import { KalturaError } from '../core/errors.js';
 
@@ -23,8 +23,7 @@ export class Application {
   /**
    * Resolve (idempotently create) the embeddable widgetId for an agent. WRITE —
    * idempotent (creates the widget once, then returns the same one). The widget
-   * bakes in `setrole:PLAYBACK_BASE_ROLE,sview:*,agentid:<uuid>` and is the
-   * public artifact safe to ship in client code. Returns `{widgetId}`.
+   * is the public artifact safe to ship in client code. Returns `{widgetId}`.
    * @param {string} agentId @param {string} ks (admin)
    */
   async resolveWidgetId(agentId, ks) {
@@ -34,25 +33,27 @@ export class Application {
 
   /**
    * Initialize a runtime session. Takes NO body — derives the agent from the
-   * WIDGET KS (mint one via sessions.createWidgetToken). Returns the live
-   * runtime endpoints + an enriched conversation KS:
+   * KS. Pass either a WIDGET KS (sessions.createWidgetToken) or a per-user AGENT KS minted on your server
+   * (sessions.createAgentToken with `userId`, so each user gets their own
+   * threads). Returns the live runtime endpoints + a conversation KS:
    *   {partnerId, ks, conversationManagerUrl, srsBaseUrl, turnServerUrl, avatars[], widgetConfig?, embedConfig?}
-   * The returned `ks` carries `geniegpcid` (entitlement ON) — hand it to
-   * {@link KalturaAvatarSession}. Returned verbatim, no SDK-side transform:
+   * The returned `ks` answers as the agent, keeps entitlement ON and keeps the
+   * input KS's user identity. Hand it to {@link KalturaAvatarSession}. Returned verbatim, no SDK-side transform:
    * `avatars[].previewImageUrl`/`loadingVideoUrl` are raw backend asset URLs
    * (an upload echo for a custom visual, a preset asset URL for a catalog
    * item), not the rendered composite the live WHEP stream shows. Each entry
-   * also carries an unmodeled wire field `objectType:"Object"` (harmless
-   * serialization metadata, not a real field to model). READ (no resource
+   * also carries an unmodeled wire field `objectType:"Object"` (serialization
+   * metadata, not modeled). READ (no resource
    * mutation).
    *
-   * PERMISSION GATE: the KS must carry the `agentid:<uuid>` privilege that
-   * {@link resolveWidgetId}'s widget bakes in — an admin or plain
+   * PERMISSION GATE: the KS must carry the `agentid:<uuid>` privilege (a
+   * widget KS from {@link resolveWidgetId}'s widget, an agent token, or a
+   * conversation token minted with `agentId`). An admin or plain
    * conversation KS without it fails with `api_exception`.
-   * @param {string} widgetKs A widget KS (NOT an admin KS).
+   * @param {string|import('./client.js').KsLike} widgetKs A widget or agent KS (NOT an admin KS).
    */
   async appInit(widgetKs) {
-    if (!widgetKs) throw new KalturaError({ type: 'about:blank', title: 'widget KS required', code: 'bad_request', detail: 'appInit needs a widget KS (sessions.createWidgetToken).' });
+    if (!widgetKs) throw new KalturaError({ type: 'about:blank', title: 'widget KS required', code: 'bad_request', detail: 'appInit needs a widget KS (sessions.createWidgetToken) or an agent KS (sessions.createAgentToken).' });
     return (await this._.agentic('application/appInit', {}, widgetKs)).data;
   }
 
@@ -64,9 +65,8 @@ export class Application {
    * from this instead of hardcoding the 5 fields, so a new field the backend
    * adds shows up with no SDK/app changes. READ — no state, no partner
    * lookup (any valid KS works). Each entry also carries an unmodeled wire
-   * field `objectType:"Object"` (harmless serialization metadata, not a real
-   * field to model) and `type:"custom"` (constant across every entry today —
-   * a discriminator on the server's side, not a per-field distinction).
+   * field `objectType:"Object"` (serialization metadata, not modeled)
+   * and `type:"custom"` (the same on every entry, not a per-field distinction).
    * @param {string} ks
    * @returns {Promise<Array<{key:string, label:string, headerTemplate:string, type:string}>>}
    */

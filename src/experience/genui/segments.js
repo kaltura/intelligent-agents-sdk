@@ -42,9 +42,10 @@ export class SegmentAssembler {
 
   /**
    * Ingest one streamed segment fragment. Only `unisphere-tool`-shaped segments
-   * (those that carry a `runtimeName`) are assembled; spoken/control/empty
-   * segments are ignored (returns false). Flushes the previous widget when the
-   * boundary changes. NEVER throws.
+   * are assembled: those that carry a `runtimeName`, plus continuation fragments
+   * (type `unisphere-tool`, no `runtimeName`) while a widget is open. Spoken,
+   * control and empty segments are ignored (returns false). Flushes the previous
+   * widget when the boundary changes. NEVER throws.
    * @param {unknown} seg
    * @returns {boolean} true if the fragment was a widget fragment (buffered).
    */
@@ -60,7 +61,7 @@ export class SegmentAssembler {
     // a streamed unisphere-tool widget carries metadata:{runtimeName} — every later fragment
     // carries only `content`, still typed 'unisphere-tool'. Such a fragment has no runtime/
     // speechId of its own to boundary-check against; it unconditionally belongs to whatever
-    // widget is currently open. Dropping it (the old behavior) silently discarded every
+    // widget is currently open. Dropping it would silently discard every
     // fragment after the first, leaving an empty/truncated model at flush time.
     if (!runtime && this._open && s.type === 'unisphere-tool') {
       if (typeof content === 'string') this._open.strParts.push(content);
@@ -111,9 +112,9 @@ export class SegmentAssembler {
 
   /**
    * The brain turn ended → flush whatever is buffered for this turn. When
-   * `speechId` is provided and a widget is buffered for a *different* speechId,
-   * that widget has already been committed by the boundary logic in `ingest` —
-   * nothing extra to flush. Flushes unconditionally when `speechId` is omitted
+   * `speechId` is provided and the buffered widget has a *different* speechId,
+   * nothing is flushed: it stays buffered until the next boundary in `ingest`,
+   * `flush()` or `reset()`. Flushes unconditionally when `speechId` is omitted
    * or null (caller doesn't know the turn id). `speechId` symmetry with the
    * session `turnEnd` event payload.
    * @param {string|null} [speechId]
@@ -133,7 +134,7 @@ export class SegmentAssembler {
 
 /**
  * True if `s` looks like it was MEANT to be JSON (starts with `{`/`[` after
- * trimming a fence) but doesn't actually parse — the signature of a widget cut
+ * trimming whitespace) but doesn't actually parse, the signature of a widget cut
  * off mid-write. A non-JSON string (the loose `key: value` block `parseContent`
  * already tolerates) is never flagged — only a truncated JSON shape is.
  * @param {string} s

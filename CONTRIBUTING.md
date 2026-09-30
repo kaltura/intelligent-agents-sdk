@@ -8,17 +8,18 @@ New to the SDK itself? Read [GETTING-STARTED.md](GETTING-STARTED.md) first to se
 
 Read [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) — it applies to every interaction in this repo (issues, PRs, reviews).
 
-Read [SDK_CONSTITUTION.md](SDK_CONSTITUTION.md) next — it's the rulebook this SDK is held to, and every rule in it is machine-checked. A change that reads correctly but breaks a rule (e.g. adds a runtime dependency, adds a module-level `let`, or introduces dead code with no consumer) fails CI before a human ever reviews it.
+Read [SDK_CONSTITUTION.md](SDK_CONSTITUTION.md) next. It's the rulebook this SDK is held to, and every rule in it is machine-checked. A change that reads correctly but breaks a rule (e.g. adds a runtime dependency, adds a module-level `let`, or calls `eval()`) fails CI before a human ever reviews it.
 
 ## Setup
 
 ```bash
 git clone https://github.com/kaltura/intelligent-agents-sdk.git
 cd intelligent-agents-sdk
+npm ci
 npm test
 ```
 
-No `npm install` step — the SDK is zero-dependency and the test runner is `node:test` (Node.js ≥18 built-in). If `npm test` doesn't pass on a clean checkout before you change anything, stop and report it rather than building on top of a broken baseline.
+The SDK has zero runtime dependencies. `npm ci` installs the dev tools only (jsdom and axe-core for the a11y tests, eslint, madge, typescript, playwright). The test runner is `node:test` (Node.js ≥18 built-in). If `npm test` doesn't pass on a clean checkout before you change anything, stop and report it rather than building on top of a broken baseline.
 
 ## Making a change
 

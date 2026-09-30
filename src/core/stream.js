@@ -1,8 +1,8 @@
 /**
  * Converse stream parser. `assistant/converse` returns a newline-delimited
  * stream — NDJSON by default (`sse:false`) or SSE `data:`-prefixed lines
- * (`sse:true`). Both carry the same per-segment JSON objects (API-REFERENCE
- * §4.1; WIRE-PROTOCOL §4e for the segment `type` model).
+ * (`sse:true`). Both carry the same per-segment JSON objects (segment
+ * `type` model: docs/wire-protocol/events-catalog.md §4e).
  *
  * {@link parseConverseStream} adapts a `ReadableStream<Uint8Array>` (what
  * `fetch().body` yields, in Node ≥18 and browsers) into an async iterator of
@@ -23,7 +23,7 @@ import { meta } from './ids.js';
  * @property {boolean} [segmentStart]
  * @property {boolean} [segmentEnd]
  * @property {{widgetName?:string, runtimeName?:string, subtype?:string, tool_name?:string, tool_display_name?:string}} [metadata]
- * @property {{id:string, name?:string, args?:object, type?:string, wait_for_response?:boolean}} [tool_metadata]  Present on some `type:"tool"` segments (WIRE-PROTOCOL §4e); see {@link parseToolCall}.
+ * @property {{id:string, name?:string, args?:object, type?:string, wait_for_response?:boolean}} [tool_metadata]  Present on some `type:"tool"` segments (wire-protocol/events-catalog.md §4e); see {@link parseToolCall}.
  */
 
 /**
@@ -147,7 +147,7 @@ export function segmentKind(seg) {
 /**
  * @typedef {object} ToolCallMetadata
  * @property {string} id  The request id to echo back on `/assistant/tool_response`
- * (via `respondToTool`/`conversations.respondToTool`) — NOT a Tools-entity UUID,
+ * (via `session.respondToTool`), NOT a Tools-entity UUID,
  * despite the wire field being named `tool_id` on that endpoint.
  * @property {boolean} waitForResponse  `true` when the brain is blocked awaiting
  * an explicit ACK before it can continue the turn (wire `wait_for_response`).
@@ -160,7 +160,7 @@ export function segmentKind(seg) {
  * @property {object} args  The parsed argument object (`{}` if none/unparseable).
  * @property {string} raw   The verbatim segment content (`"<name> {<json>}"`).
  * @property {ToolCallMetadata} [toolMetadata]  Present when the segment carried a
- * wire `tool_metadata` object (WIRE-PROTOCOL §4e); absent for older/synthetic
+ * wire `tool_metadata` object (wire-protocol/events-catalog.md §4e); absent for older/synthetic
  * segments that don't. Required to satisfy a `waitForResponse:true` call.
  * @property {object[]} [fusedArgs]  Present only for a fused multi-tool segment —
  * earlier tool-call arg objects this segment doesn't name (see `parseToolCall`).
@@ -249,7 +249,7 @@ export function validateToolArgs(args, schema) {
  * When the LLM calls a native function-calling tool (an intellect `tools` entry,
  * incl. a {@link import('../management/tools.js').client} tool), Genie streams a
  * SILENT `type:"tool"` segment — not in the TTS gate, so it never reaches the
- * voice track (WIRE-PROTOCOL §4e). Its `content` is the wire form
+ * voice track (wire-protocol/events-catalog.md §4e). Its `content` is the wire form
  * `"<toolName> <json-args>"`, e.g. `navigate_to_slide {"slide_num": 4}`. This is
  * the canonical client-side-command channel: the host app reads the tool name +
  * args and runs whatever JS it wants (navigate a deck, call a page function,
@@ -261,23 +261,19 @@ export function validateToolArgs(args, schema) {
  * never throws. Returns `null` for anything that is not a tool segment.
  *
  * Also lifts the segment's wire `tool_metadata` (id/name/args/type/wait_for_response
- * — WIRE-PROTOCOL §4e, carried intact through the session server's relay hop)
+ * per wire-protocol/events-catalog.md §4e, carried intact through the session server's relay hop)
  * into a camelCase `toolMetadata` field when present, so a caller of
  * `respondToTool()`/`onToolCall()`/`collectConverse().toolCalls` can satisfy a
  * `waitForResponse:true` call without dropping to raw `brainSegment`.
  * Absent (not synthesized) when the segment carries no `tool_metadata`.
  *
- * FUSED MULTI-TOOL SEGMENTS: when the brain calls more than one
- * tool in a single turn, the server can stream ONE `type:"tool"` segment whose
- * `content` is N concatenated JSON objects under a single printed name — e.g.
+ * FUSED MULTI-TOOL SEGMENTS: a `type:"tool"` segment can carry N
+ * concatenated JSON objects in `content` under a single printed name, e.g.
  * `open_filing {"quarters":[...],"metric":"total_revenue"}{"quarter":"q1_2026","docType":"press_release"}`.
- * The printed name pairs with the LAST object (`args` above always takes it, so
- * the named tool always gets its own real args instead of `{}`); any EARLIER
- * object belongs to a DIFFERENT tool this segment doesn't name. Those are
- * returned in arrival order as `fusedArgs` — see `KalturaAvatarSession`'s
- * `tool_response`-name pairing (the only reliable attribution signal) for how a
- * live session recovers them; a headless caller reading `fusedArgs` directly
- * must supply its own attribution.
+ * `args` is the LAST object, so the named tool gets its own args instead of `{}`.
+ * Any EARLIER objects are returned in arrival order as `fusedArgs`, unattributed.
+ * `KalturaAvatarSession` pairs them with the `tool_response` names that follow;
+ * a headless caller reading `fusedArgs` directly must supply its own attribution.
  *
  * @param {ConverseSegment|undefined} seg
  * @returns {ToolCall|null}
@@ -352,7 +348,7 @@ function splitJsonObjects(s) {
 
 /**
  * Extract the tool name from a `type:"tool_response"` segment's content
- * (`"<toolName> responded with size <n>"`, WIRE-PROTOCOL §4e) — the reliable
+ * (`"<toolName> responded with size <n>"`, wire-protocol/events-catalog.md §4e), the reliable
  * signal for attributing an earlier blob in a fused `type:"tool"` segment (see
  * `parseToolCall`'s `fusedArgs`) to its real tool name: responses echo back in
  * the SAME order the tools were called server-side. PURE,
@@ -412,11 +408,10 @@ export function parseOAuthRequired(seg) {
  * `text` accumulates the brain's SPOKEN/visible prose. On a text-only intellect
  * that is the `text` type; on an avatar-enabled intellect (`avatar:'on'`) the
  * spoken content streams as `avatar` (and `avatar-filler`) segments instead
- * (WIRE-PROTOCOL §4e), so those are accumulated too. Control/structured types
+ * (wire-protocol/events-catalog.md §4e), so those are accumulated too. Control/structured types
  * (`think`/`tool`/`unisphere-tool`/`share`/`thread`) are never added to `text`.
  *
- * ADDITIVE fields (back-compat: the original `{text,threadId,messageId,
- * segments,experiences}` shape is unchanged for existing callers):
+ * Further result fields:
  * - `experiencesList` — flat array of the `unisphere-tool` segments in arrival
  *   order (the same objects grouped under `experiences`), for callers that want
  *   a stream rather than a by-runtime map.
@@ -430,7 +425,7 @@ export function parseOAuthRequired(seg) {
  *   validateToolArgs}) — held OUT of `toolCalls` (a caller acting on
  *   `toolCalls` never sees an invalid call) so the headless path gets the same
  *   dispatch-time guard the live session's `onToolCall(name, handler, argsSchema)`
- *   applies. Empty when no schema is supplied (opt-in, no behavior change).
+ *   applies. Empty when no schema is supplied (opt-in).
  * - `oauthRequired` — flat array of {@link parseOAuthRequired} results, one
  *   per `type:"interruption"`/`subtype:"oauth_required"` segment, in arrival
  *   order. This is the headless peer of `session.onOAuthRequired(handler)` —
@@ -507,8 +502,8 @@ export async function collectConverse(segments, opts = {}) {
         // reached the threshold → stop reading. Checked on raw count alone (NOT gated on
         // whether anything was actually dropped) — a run of N+1 unique, valid, under-cap
         // calls must still stop at N, since toolCalls.length tracking rawToolSegments 1:1
-        // would otherwise mean the guard never fires (issue: undocumented no-op for the
-        // all-unique-valid case).
+        // would otherwise mean the guard never fires for the
+        // all-unique-valid case.
         if (rawToolSegments >= maxToolCalls) { spiralStopped = true; break; }
         continue;
       }

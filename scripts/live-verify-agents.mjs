@@ -2,7 +2,7 @@
 /**
  * Live Agents verification — real Kaltura API, no fakes, no mocks.
  *
- * Exercises the full Agents write path, which had zero live coverage.
+ * Exercises the full Agents write path.
  * Agents bind an intellect (brain) to avatars (face+voice), so this script
  * builds the whole scratch stack an agent needs, then tears all of it down:
  *
@@ -76,7 +76,7 @@ let avatarId;
 let agentId;
 
 try {
-  admin = await kaltura.sessions.createAdminToken();
+  admin = await kaltura.sessions.createAdminToken({ userId: 'sdk-live-verify' });
   record('admin-token-mint', true, { secondsRemaining: admin.secondsRemaining() });
 
   // 1: intellects.add — scratch intellect.

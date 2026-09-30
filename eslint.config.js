@@ -98,7 +98,7 @@ export default [
     // fetch wrapper to hit backend validation directly), hence the one
     // addition (`fetch`) beyond nodeGlobals — everything else here is plain
     // server-side Node.
-    files: ['manual-testing/**/*.mjs', 'scripts/live-verify-conversation-avatar-surface.mjs', 'scripts/live-verify-mcp.mjs'],
+    files: ['manual-testing/**/*.mjs', 'scripts/live-verify-conversation-avatar-surface.mjs', 'scripts/live-verify-mcp.mjs', 'scripts/live-verify-session-types.mjs'],
     languageOptions: {
       ecmaVersion: 2024,
       sourceType: 'module',

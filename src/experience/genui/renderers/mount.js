@@ -42,6 +42,7 @@ import { renderMarkdown } from './markdown.js';
  * @param {Element} target              The host container to append (or replace) into.
  * @param {{replace?:boolean, onAction?:(action:string, payload:object)=>void, onMount?:(root:Element, descriptor:GenUIDescriptor)=>void, markdown?:boolean}} [opts]
  *   `replace` clears `target` first; `onAction` receives interaction intents (see module doc).
+ *   `markdown` renders a `summary` widget's text as markdown DOM instead of flat text (default off).
  *   `onMount(root, descriptor)` fires AFTER the safe subtree is built + appended — a
  *   host-enhancement seam for a registered custom `kind` (e.g. syntax-highlighting a
  *   code block a custom renderer produced). The safe default DOM is already present,
@@ -258,7 +259,7 @@ const BUILDERS = {
     root.appendChild(form);
   },
 
-  // NOT one of the nine backend runtimes; reached only when a host
+  // NOT one of the nine built-in runtimes; reached only when a host
   // registers this kind via `new ExperienceRenderer({ renderers: {...} })` or
   // `.register(...)`. Grading is client-side: the answer key travels in `data`
   // itself, same trust model as every other GenUI widget's model data — this is

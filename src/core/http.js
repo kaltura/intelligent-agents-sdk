@@ -200,7 +200,7 @@ export class Http {
  * count exceeds the limit instead of buffering the whole thing first (P-1).
  * Falls back to `res.text()` when no streaming body is available (e.g. a
  * test fake, or a runtime without a spec-compliant `ReadableStream` body) —
- * the same post-hoc length check the previous implementation always used.
+ * with a post-hoc length check.
  * @param {Response} res @param {number} maxBytes @param {string} path @param {AbortController} ctrl
  * @returns {Promise<string>}
  */

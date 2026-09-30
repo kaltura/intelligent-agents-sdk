@@ -306,13 +306,13 @@ export async function verifyDeleted(kaltura, ks, ids) {
  * gets fresh tokens; the widget token is secret-free, the conversation token
  * is what `KalturaChatSession`/`KalturaAgentSession` chat mode needs.
  * @param {Management} kaltura
- * @param {{widgetId:string, configId:string}} ids
+ * @param {{widgetId:string, configId:string, agentId?:string}} ids
  * @param {string|undefined} genieUrl
  */
 export async function mintPageInit(kaltura, ids, genieUrl) {
   const widget = await kaltura.sessions.createWidgetToken({ widgetId: ids.widgetId });
   const init = await kaltura.application.appInit(widget.ks);
-  const conversation = await kaltura.sessions.createConversationToken({ configId: ids.configId });
+  const conversation = await kaltura.sessions.createConversationToken({ configId: ids.configId, agentId: ids.agentId });
   return {
     ks: init.ks,
     conversationKs: conversation.ks,

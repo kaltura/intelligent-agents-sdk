@@ -85,7 +85,7 @@ const pageErrors = [];
 const consoleLog = [];
 
 try {
-  admin = await kaltura.sessions.createAdminToken();
+  admin = await kaltura.sessions.createAdminToken({ userId: 'sdk-live-verify' });
   record('admin-token-mint', true, { secondsRemaining: admin.secondsRemaining() });
 
   provisioned = await kaltura.provision({ brief: 'A friendly multilingual test greeter', ks: admin.ks });

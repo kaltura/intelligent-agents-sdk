@@ -8,7 +8,7 @@
  * `thread/session_completed` signal, waits 5 minutes, then reads feedback
  * back two ways: `mgmt.feedback.list({ filter: { messageIdEquals } })` and
  * `mgmt.messages.list({ filter: { idEquals } })` (the message row itself
- * carries `is_positive`/`comment`, independent of the feedback-table path).
+ * carries `is_positive`/`comment`).
  * Each step is a hard assertion; the run exits non-zero if any fails, but
  * never throws away partial results — every environment gets its own
  * artifact and its own pass/fail line in the summary printed at the end.
@@ -112,7 +112,7 @@ async function runForEnv(env) {
   let threadId;
 
   try {
-    admin = await kaltura.sessions.createAdminToken();
+    admin = await kaltura.sessions.createAdminToken({ userId: 'sdk-live-verify' });
     record('admin-token-mint', true, { secondsRemaining: admin.secondsRemaining() });
 
     const intel = await kaltura.intellects.add({

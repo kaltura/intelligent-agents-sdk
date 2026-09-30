@@ -31,11 +31,12 @@
  *
  * Events that pair with a transport-only method stay on the transport:
  * `disclosure` (`acknowledgeDisclosure()`), `micStarted` (`startMic()`,
- * `micStream`), and the rest of the mic/video/reconnect surface. Read them off
+ * `micStream`), `brainStalled`, `toolSpiralDetected`, `sessionCompleted`, and
+ * the rest of the mic/video/reconnect surface. Read them off
  * the `transport` getter and rewire on each `transportChanged {mode, transport}`
  * event.
  *
- * Switching is tear-down-and-reconstruct by design (v1): no live mutation of
+ * Switching is tear-down-and-reconstruct by design: no live mutation of
  * a running transport, so each transport keeps its own verified lifecycle.
  * A `sendText()` that arrives while a switch is in flight is buffered (up to
  * {@link SWITCH_SEND_BUFFER_MAX}) and dispatched on the new transport; if the
@@ -89,7 +90,7 @@ export class KalturaAgentSession extends Emitter {
    * @param {string|number} [cfg.partnerId] Audit partner-id override.
    * @param {boolean} [cfg.allowInsecureTransport] Localhost/dev only.
    * @param {object} [cfg.avatar] KalturaAvatarSession-specific cfg (`videoEl`, `conversationManagerUrl`, `srsBaseUrl`, `turnServerUrl`, `socketFactory`, mic options, `capabilities`, …) — required before the first avatar connect/switch.
-   * @param {object} [cfg.chat] KalturaChatSession-specific cfg (`genieUrl`, `fetch`, `capabilities`).
+   * @param {object} [cfg.chat] KalturaChatSession-specific cfg (`genieUrl`, `fetch`, `capabilities`, ...).
    * @param {string|{text:string, echo?:boolean}} [cfg.kickoff] A first turn the SDK sends for you, exactly once per
    *   conversation, on the FIRST transport only (`connect()`); a `switchMode()` transport never re-sends it.
    *   Set it here, not inside `cfg.avatar`/`cfg.chat`. Same shape and events as the transports' own `kickoff`.
@@ -295,7 +296,7 @@ export class KalturaAgentSession extends Emitter {
    * ACK a `wait_for_response:true` tool call on the current transport (same
    * contract on both — one wire ACK, two transports).
    * @param {string} id @param {object} response
-   * @returns {Promise<{ok:boolean, reason?:string}>}
+   * @returns {Promise<{ok:boolean, reason?:string, status?:number}>}
    */
   async respondToTool(id, response) {
     this._requireConnected('respondToTool');

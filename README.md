@@ -16,13 +16,13 @@ Two entry points, plus optional plugins under `./experience` that don't bloat th
 - `./experience/analytics` — `KavaAnalytics`, client-only KAVA Application Events (`pageLoad`/`buttonClicked`)
 - `./experience/noise-suppressor` — `createNoiseSuppressor`, a zero-dependency AudioWorklet noise gate
 
-No build step, no npm registry publish — that's disabled by design (`"private": true`, no `publishConfig`, no publish workflow). Ship `src/` raw ESM directly: import from `src/...` server-side, or load it in the browser via a jsDelivr CDN URL pinned to a git tag once the repo is public. `node:test` throughout.
+No build step and no npm registry publish (`"private": true`, no `publishConfig`, no publish workflow). Ship `src/` raw ESM directly: import from `src/...` server-side, or load it in the browser via a jsDelivr CDN URL pinned to a git tag. `node:test` throughout.
 
 **New here?** [GETTING-STARTED.md](GETTING-STARTED.md) walks through creating and talking to your first agent in about 5 minutes. Come back here once you're building a real app with the SDK. Also see [CONTRIBUTING.md](CONTRIBUTING.md) (how to contribute) and [SDK_CONSTITUTION.md](SDK_CONSTITUTION.md) (the invariants every change must hold). [What changed between versions](https://github.com/kaltura/intelligent-agents-sdk/releases) lives in GitHub Releases, generated from merged PRs at tag time — not a hand-maintained file.
 
 **Why this SDK:**
 
-- **You own the source, no black box.** Raw ESM in `src/` — read it line by line. No build step, no bundler-only `node_modules`, and (once a tag is public) no install step at all: import straight from a jsDelivr CDN URL pinned to a git tag.
+- **You own the source, no black box.** Raw ESM in `src/`. Read it line by line. No build step, no bundler-only `node_modules`, and no install step in the browser: import straight from a jsDelivr CDN URL pinned to a git tag.
 - **Zero runtime dependencies** — no transitive supply-chain surface to audit.
 - **Voice/visual cloning is self-serve**, not a support ticket — `catalog.importVoiceFromElevenLabs`/`importVoiceFromCartesia`, `catalog.createVisual`.
 - **Security designed in, not bolted on** — pre-redacted audit events, short-lived tokens, and a NIST 800-53 control matrix, built for enterprise, HIPAA, and HITRUST deployments from the start. Summary in [Security posture](#security-posture) below, full matrix in [SECURITY.md](SECURITY.md).
@@ -95,7 +95,7 @@ open http://localhost:8790
 
 ### Browser via jsDelivr (no bundler, no npm install)
 
-Once the repo is public and has a tag pushed, jsDelivr serves any file straight from that tag by its real repo path — it has no awareness of package.json's `exports` map, so import the real `src/...` path, not a bare `@kaltura/intelligent-agents/...` specifier (those bare specifiers, used elsewhere in these docs, only resolve for a Node/bundler consumer that reads `exports`):
+jsDelivr serves any file straight from a pushed tag by its real repo path. It has no awareness of package.json's `exports` map, so import the real `src/...` path, not a bare `@kaltura/intelligent-agents/...` specifier (those bare specifiers, used elsewhere in these docs, only resolve for a Node/bundler consumer that reads `exports`):
 
 ```html
 <script type="module">
@@ -104,11 +104,11 @@ Once the repo is public and has a tag pushed, jsDelivr serves any file straight 
 </script>
 ```
 
-`@latest` resolves to the newest tag, so this URL always matches the current README without an editing pass on every release. It's **not cached the same way** as a tagged path, though — jsDelivr re-checks it periodically, so what it serves can change without warning. For anything you ship, pin to a real tag instead (`@v1.24.0`, or whichever release you're on) — jsDelivr caches a tagged path forever, so a pin is both stable and fast:
+`@latest` resolves to the newest tag, so this URL always matches the current README without an editing pass on every release. It's **not cached the same way** as a tagged path, though. jsDelivr re-checks it periodically, so what it serves can change without warning. For anything you ship, pin to a real tag instead (`@v1.25.0`, or whichever release you're on). jsDelivr caches a tagged path forever, so a pin is both stable and fast:
 
 ```html
 <script type="module">
-  import { KalturaAvatarSession } from 'https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.24.0/src/experience/index.js';
+  import { KalturaAvatarSession } from 'https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.25.0/src/experience/index.js';
 </script>
 ```
 
@@ -187,7 +187,7 @@ import { Management } from '@kaltura/intelligent-agents/management';
 const mgmt = new Management({ partnerId, adminSecret });
 
 // 1. provision a complete agent from a one-line brief
-const admin = await mgmt.sessions.createAdminToken();   // admin KS — server-side only
+const admin = await mgmt.sessions.createAdminToken({ userId: 'admin@example.com' });   // admin KS, server-side only
 const { agentId, configId, widgetId } = await mgmt.provision({
   brief: 'A helpful support agent for a video platform',
   ks: admin.ks,
@@ -209,7 +209,20 @@ console.log(result.text, result.threadId);
 
 Pass `recoverFromSpiral: true` (to `converseOnce` or `conversations.send`) to auto-recover from the empty-spiral case: a tool-call loop so long the brain never reaches a spoken sentence in that turn (`spiralStopped:true` with `text:''`) leaves nothing to fall back to in the same turn, since headless HTTP has no live-socket `interrupt()`/reconnect to fall back on. The result then carries `spiralRecovered` (`true`/`false`) and `firstAttempt: {toolCalls, spiralStopped}` from the discarded empty attempt. Off by default — omit the option for the original untouched behavior. See [Spiral recovery auto-resend](#resilience-brain-stalls-and-tool-call-spirals) below for how the shared `SPIRAL_RECOVERY_PREFIX` resend mechanism works; the headless path triggers it from an empty first attempt rather than a hard-spiral cold reconnect.
 
-`mgmt.converse()`/`converseOnce()` auto-mint a plain conversation token (`geniegpcid:<configId>`) — fine for talking to the intellect, but the resulting thread's `agent_id` is `"default"`, so it can never match a [lifecycle rule](docs/lifecycle/README.md#scoping-a-rule-to-one-agent) scoped to `object.agent_id`. For that, mint with `mgmt.sessions.createAgentToken({ agentId })` and pass it as the `ks` argument instead.
+`mgmt.converse()`/`converseOnce()` auto-mint a plain conversation token (`geniegpcid:<configId>`). That is fine for talking to the intellect, but without an `agentId` the resulting thread's `agent_id` is `"default"`, so it can never match a [lifecycle rule](docs/lifecycle/README.md#scoping-a-rule-to-one-agent) scoped to `object.agent_id`. For that, pass `{ agentId, userId }` (`converseOnce(configId, msg, { agentId, userId })`), or mint a token yourself and pass it as the `ks` argument. Which method to use: [Conversation token or agent token?](docs/api/authentication.md#conversation-token-or-agent-token).
+
+### Session tokens
+
+Conversation or agent token: [which one to use](docs/api/authentication.md#conversation-token-or-agent-token).
+
+| Method | Mints | Answers as |
+|---|---|---|
+| `sessions.createConversationToken({ configId, agentId?, userId?, sessionType? })` | User session (KS type 0) | The config's persona. `agentId` labels the threads. Start from a `configId` |
+| `sessions.createAgentToken({ agentId, configId?, userId?, sessionType? })` | User session (KS type 0) | The agent. Start from an `agentId` |
+| `sessions.createWidgetToken({ widgetId })` | Widget session, no secret needed | The widget's agent. Reach: [SECURITY.md § Session type](SECURITY.md#session-type) |
+| `sessions.createAdminToken({ userId })` | Admin session (KS type 2) | Management calls. Server-side only. `userId` is required |
+
+Pass a per-user `userId` to every conversation or agent token. A token without one is a single identity shared by every holder. `sessionType: 'admin'` is the explicit opt-out to KS type 2. With a widget token, anyone who has a `threadId` can continue that thread, so store each `threadId` per user on your server. When users must stay separate, mint `createAgentToken({ agentId, userId })` on your server, call `appInit` with it and send the returned KS to the browser. What each token can reach: [SECURITY.md § Session type](SECURITY.md#session-type).
 
 ---
 
@@ -359,7 +372,7 @@ console.log(turn.text, chat.threadId);
 
 Each `sendText()` is one streamed `POST /assistant/converse` turn; turns are serialized, and segments are processed mid-stream, so an `onToolCall` handler that calls `respondToTool(call.toolMetadata.id, result)` unblocks a `waitForResponse:true` tool within the same turn — the identical wire ACK the avatar transport sends (see [docs/WIRE-PROTOCOL.md](docs/WIRE-PROTOCOL.md)). `updateRequestVars()` / `setDynamicPrompt()` carry the same merge semantics as the avatar session; the full map rides every turn.
 
-Thread continuity is symmetric in both directions: seed `cfg.threadId` with another session's `threadId` getter to continue that conversation here, or hand this session's `threadId` to a `KalturaAvatarSession`. The `allow_client_variables` gate-off failure mode is the same here as on the socket: a silent empty turn plus a once-per-session `empty_turn_with_request_vars` warning (see the `{{var}}` section below).
+Thread continuity is symmetric in both directions: seed `cfg.threadId` with another session's `threadId` getter to continue that conversation here, or hand this session's `threadId` to a `KalturaAvatarSession`. When `allow_client_variables` is off, `sendText()` either returns a silent empty turn with a once-per-session `empty_turn_with_request_vars` warning, or rejects with `client_variables_disabled` (see the `{{var}}` section below).
 
 `KalturaChatSession` carries the same brain-stall watchdog and dead-air masking as the avatar transport (`brainStallMs`/`brainStalled`, `responsePending`/`responseSettled`), plus the same soft tool-call-spiral signal (`toolSpiralLimit`/`toolSpiralDetected`; see [Resilience](#resilience-brain-stalls-and-tool-call-spirals) below). It has no hard-limit cold-reconnect escalation, since there's no socket to recover through.
 
@@ -398,7 +411,10 @@ session.updateRequestVars({ account_tier: 'enterprise' });
 
 `updateRequestVars(vars)` **merges** what you pass into the session's canonical map — send only the keys that changed; omitted keys keep their values. Values persist on the thread for every later turn (no per-turn resend; the SDK also re-sends the full map on reconnect). `session.setDynamicPrompt(data)` is sugar over the same channel: it serializes `data` into the single well-known variable `page_context` — pair it with the `PAGE_CONTEXT_PROMPT` block exported from `./management` so the prompt actually references `{{page_context}}`.
 
-The intellect must have `allow_client_variables: true` (`intellects.setClientVariablesEnabled(configId, true)`), or every variable you send is rejected — **silently**, on every path, both the socket and the HTTP converse stream: the turn just comes back empty, with no error on the wire. Both session classes detect that and emit a once-per-session `warning` event, `{ code: 'empty_turn_with_request_vars', message, requestVarKeys }` (variable names only, never values).
+The intellect's `allow_client_variables` flag must be on. It is on by default. Pin it with `intellects.setClientVariablesEnabled(configId, true, adminKs)`. If it is off, the turn fails in one of two ways:
+
+- **Silent empty turn.** The turn comes back empty with no error on the wire. Both session classes detect it and emit a once-per-session `warning` event, `{ code: 'empty_turn_with_request_vars', message, requestVarKeys }` (variable names only, never values).
+- **Loud error.** The request gets a 403 and the call rejects with a `KalturaError` with code `client_variables_disabled`. `KalturaChatSession.sendText()` also emits `error`, and the session stays connected.
 
 For merge/persistence semantics in depth, the ~31 KB size headroom, server-side tool interpolation, the `lintPrompts` pre-flight, and a worked example composing `request_vars` with `speak()` and `submitStructuredDataForm()` — see [docs/DYNAMIC-DATA-INJECTION.md](docs/DYNAMIC-DATA-INJECTION.md).
 
@@ -431,9 +447,9 @@ Build the control as click-to-toggle, not press-and-hold: it's more usable for l
 
 Both session classes watch for a brain that goes quiet instead of answering, and for one that loops instead of narrating. Only `KalturaAvatarSession` can recover from a hard loop, since it has a socket to cold-reconnect through. See [ARCHITECTURE-REFERENCE.md](docs/architecture-reference/resilience-and-failure-handling.md#resilience--failure-handling) for the full failure-mode matrix.
 
-- **Brain-stall watchdog** (`brainStallMs`, default on, `KalturaAvatarSession` + `KalturaChatSession`) — emits `brainStalled` (`{count}`), repeating for as long as nothing perceivable (spoken/avatar content or a GenUI widget) follows a turn. On the chat transport, a bare `keepalive` segment does not count as perceivable output either.
+- **Brain-stall watchdog** (`brainStallMs`, default on, `KalturaAvatarSession` + `KalturaChatSession`). It emits `brainStalled` (`{afterMs, count}`), repeating for as long as nothing perceivable (spoken/avatar content or a GenUI widget) follows a turn. On the chat transport, a bare `keepalive` segment does not count as perceivable output either.
 - **Dead-air masking** (`responsePending`/`responseSettled`, both transports) — `responsePending` (`{}`) fires the moment a turn starts awaiting the brain's first perceivable output (spoken/avatar/GenUI content), and again when the server acknowledges a turn it started itself (its first think delta), so a `kickoff` reply shows "thinking" before the first word. `responseSettled` (`{}`) fires once that output arrives, the turn ends, an interruption occurs, or the session tears down. Use this pair to show/hide a "thinking…" affordance instead of leaving the avatar's face frozen during the gap. See `examples/browser-experience.html` for a working example.
-- **Tool-call spiral circuit breaker**: a guard against a brain that re-issues the same client command instead of narrating. Soft (`toolSpiralLimit`, default 10, per turn, on both `KalturaAvatarSession` and `KalturaChatSession`): emits `toolSpiralDetected`. This is signal only and does NOT call `interrupt()` (a mid-turn barge-in was found to truncate the turn's own narration with no recovery — see `docs/CLIENT-COMMANDS.md`'s "Tool spirals starve the voice"). Hard (`hardToolSpiralLimit`, default `toolSpiralLimit * 3`, session-scoped, immune to turn-boundary resets, `KalturaAvatarSession` only; the chat transport has no socket to reconnect through): emits `toolSpiralRecovering` (`{count, limit, lastTurnText}`) and forces a cold reconnect — a brand-new socket that replays `threadId` so brain memory continues.
+- **Tool-call spiral circuit breaker**: a guard against a brain that re-issues the same client command instead of narrating. Soft (`toolSpiralLimit`, default 10, per turn, on both `KalturaAvatarSession` and `KalturaChatSession`): emits `toolSpiralDetected`. This is signal only and does NOT call `interrupt()` (a mid-turn barge-in truncates the turn's own narration with no recovery, see `docs/CLIENT-COMMANDS.md`'s "Tool spirals starve the voice"). Hard (`hardToolSpiralLimit`, default `toolSpiralLimit * 3`, session-scoped, immune to turn-boundary resets, `KalturaAvatarSession` only; the chat transport has no socket to reconnect through): emits `toolSpiralRecovering` (`{count, limit, lastTurnText}`) and forces a cold reconnect. It opens a brand-new socket that replays `threadId` so brain memory continues.
 - **Spiral recovery auto-resend** (`recoverFromSpiral`, default `true`) — a hard-spiral cold reconnect restores connectivity but would otherwise abandon the turn that triggered it (the user's question just silently dropped). With the default on, once the reconnect succeeds the SDK automatically resends that turn's text once, prefixed with the same `SPIRAL_RECOVERY_PREFIX` instruction used on the headless path (`Conversations#send({recoverFromSpiral:true})` — see [Management](#management) above), still passed through your `onBeforeSend` guardrail, and emits `spiralRecovered` (`{text}`, the original un-prefixed text — e.g. show "Let me get that for you" UI). Set `recoverFromSpiral: false` to opt out of the auto-resend and handle it yourself — `toolSpiralRecovering`'s `lastTurnText` still tells you what was abandoned.
 
 ```js
@@ -521,7 +537,7 @@ btnFeedbackDismiss.onclick = () => analytics.buttonClicked({ buttonType: 'Open',
 
 `KavaAnalytics` (`./experience/analytics`, its own subpath so apps that don't report analytics never load it) reports KAVA (Kaltura Video Analytics) events to `https://analytics.kaltura.com/api_v3/index.php` (`service=analytics&action=trackEvent`). It implements ONLY the 10000-range **Application Event** family: `pageLoad` (10003) and `buttonClicked` (10002), for interactions the server has zero visibility into — a page/view landing, a UI-only click, a contact-form submit/skip, a widget dismiss. It's WRITE, best-effort, and NOT idempotent (each call records a new row; there is no dedup contract). It's fire-and-forget by design, so callers don't need to await it for correctness.
 
-**Deliberately does NOT implement the 80000-range "Immersive Agents" events** (`callStarted`/`callEnded`/`messageResponse`/`messageFeedbackSent`) — there is no code path in this module that can send them. The server already reports all four for every session `KalturaAvatarSession` connects to (same socket, matching event names); a client-side copy would double-count on the live analytics dashboards. If a real gap in that server-side reporting is ever found, file it as a GitHub issue rather than adding a client resend.
+**Deliberately does NOT implement the 80000-range "Immersive Agents" events** (`callStarted`/`callEnded`/`messageResponse`/`messageFeedbackSent`). There is no code path in this module that can send them.
 
 Transport: prefers `navigator.sendBeacon` (survives page-unload); falls back to an injectable `fetch` with `keepalive:true` when unavailable or when the beacon queue is full. Never reads a response body. `enabled: false` no-ops every call without touching the network — use for offline/mock test runs.
 
@@ -567,13 +583,13 @@ await session.completeThread();
 | `hiddenGraceMs` | `30000` | After the page goes hidden (tab switch, minimize, lock), wait this long, then complete — catches iOS Safari / Chrome Android tab-kills where `pagehide` never fires. Any activity (a turn, avatar speech) re-arms this timer, so a hidden tab that's still talking is never completed mid-turn. Cancelled by returning to visible. |
 | `completeOnHiddenGrace` | `true` | Kill-switch for the heuristic above. |
 | `completeOnBfcache` | `true` | Fire on `pagehide` with `persisted:true` — the SDK can't survive a back-forward-cache round-trip anyway (socket/WHEP are already torn down, no auto-resume). |
-| `completeOnServerEnd` | `false` | Fire when the server itself ends the conversation (`conversationEnded`). Off by default — the backend already knows, so signalling again just wastes a redundant lifecycle-rule evaluation. |
-| `crossTabPresence` | `true` in a browser | Suppress the signal while another tab/window has the same thread open, via `BroadcastChannel`. Same-origin/same-device only by design — a duplicate session open on a different device relies on genie's own self-healing on the thread's next real message. |
+| `completeOnServerEnd` | `false` | Fire when the server itself ends the conversation (`conversationEnded`). Off by default. The server already ends the thread. |
+| `crossTabPresence` | `true` in a browser | Suppress the signal while another tab/window has the same thread open, via `BroadcastChannel`. Same-origin and same-device only. A duplicate session on a different device is not detected. |
 | `presenceChannelPrefix` | `'kaltura-agents:thread'` | Channel name is `` `${prefix}:${threadId}` ``. |
 | `presenceHeartbeatMs` | `4000` | Liveness beat interval between tabs. |
 | `presenceStaleMs` | `12000` | Drop a peer tab unseen this long (3 missed beats) before it can wrongly suppress the signal forever. |
 
-`disconnect(opts)` now takes `{final?: boolean, reason?: string}` — `final: false` skips the signal for an internal teardown that isn't a real end (e.g. `KalturaAgentSession.switchMode()` tearing down the old transport while keeping the same thread); zero-arg calls keep meaning "final", so this is fully backward compatible. `stop()` is unchanged, an alias for `disconnect({reason:'stop'})`. Both are safe at any point: called while `connect()` is still in flight, they cancel every pending wait (the media handshake, a reconnect's capacity wait) so `connect()` rejects with `connect_failed` at once, and no `error` event follows.
+`disconnect(opts)` takes `{final?: boolean, reason?: string}`. `final: false` skips the signal for an internal teardown that isn't a real end (e.g. `KalturaAgentSession.switchMode()` tearing down the old transport while keeping the same thread). A zero-arg call means "final". `stop()` is unchanged, an alias for `disconnect({reason:'stop'})`. Both are safe at any point: called while `connect()` is still in flight, they cancel every pending wait (the media handshake, a reconnect's capacity wait) so `connect()` rejects with `connect_failed` at once, and no `error` event follows.
 
 A `visibilitychange` to `hidden` fires when the **whole page** leaves the screen — tab switch, minimize, app switch, lock, close — not on scroll, resize, partial occlusion, devtools, or fullscreen video. It is the right signal for "did the user leave the page", not for "is the avatar widget itself visible on screen" (that's `IntersectionObserver`).
 
@@ -620,8 +636,8 @@ Designed for enterprise, HIPAA, HITRUST, and regulated frameworks. Full control 
 
 | Control | What the SDK does |
 |---------|------------------|
-| **Two-token invariant** | `disableentitlement` reachable only via `sessions.createAdminToken()` — no client surface can escalate. `createConversationToken()`/`createAgentToken()` actively refuse any `extraPrivileges` value that would disable entitlement: the SDK throws a typed `entitlement_violation` error before any network call |
-| **Short-lived tokens** | Admin: 1h default; conversation/agent: 30min default. `revoke()` for active revocation; `setToken()` for mid-session rotation; `restrictions` for least privilege |
+| **Two-token invariant** | `disableentitlement` reachable only via `sessions.createAdminToken()`. No client surface can escalate. `createConversationToken()`/`createAgentToken()` mint user sessions (KS type 0) and actively refuse any `extraPrivileges` value that would disable entitlement: the SDK throws a typed `entitlement_violation` error before any network call. Pass a per-user `userId` so each token reaches only that user's threads ([Session type](SECURITY.md#session-type)) |
+| **Short-lived tokens** | Admin: 1h default; conversation/agent: 30min default. `revoke()` ends a token within seconds, and tokens that share a `restrictions.sessionGroupId` are revoked together; `setToken()` for mid-session rotation; `restrictions` for least privilege |
 | **Audit stream** | `onAuditEvent` emits structured, pre-redacted events (`token.mint`, `guard.reject`, `tool.invoke`, …) to your SIEM |
 | **Transport** | `https`/`wss` enforced; cleartext rejected; ephemeral TURN credentials preferred |
 | **Browser hygiene** | Token is memory-only, non-enumerable, dropped on `disconnect()`; prototype-pollution scrub on `setDynamicPrompt`; AI disclosure gate before first speech (EU AI Act Art. 50) |
@@ -631,11 +647,11 @@ Designed for enterprise, HIPAA, HITRUST, and regulated frameworks. Full control 
 
 ## Key design rules
 
-- **Keep `disableentitlement` (management) server-side.** `KalturaAvatarSession` expects a `geniegpcid`/`agentid`/widget token (entitlement ON) — see [SECURITY.md](SECURITY.md#ks-kaltura-session-guidance-for-agents-ac-3--ac-6--ia-2) for the full guidance and the rare case where an app deliberately needs to hand a browser broader access.
+- **Keep `disableentitlement` (management) server-side.** `KalturaAvatarSession` expects a user-session (conversation or agent, with a per-user `userId`) or widget token (entitlement ON). See [SECURITY.md](SECURITY.md#ks-kaltura-session-guidance-for-agents-ac-3--ac-6--ia-2) for the full guidance and the rare case where an app deliberately needs to hand a browser broader access.
 - **Destructive ops require `{ confirmPermanent: true }`.** Never a flag on a read operation.
 - **Capabilities are a full-replace dict.** A partial update drops keys you omit. Use `intellects.setCapability(configId, name, state, ks)` — it reads, merges, and writes.
 - **`kaltura_genie_experiences` competes with client tools.** Set it `'off'` at creation for tool-driven intellects (the capability injects a system rule that out-competes custom tools). Set at creation — partner config is cached ~24 h server-side. `tools.clientToolReadiness(body)` lints for this.
-- **`force_experience` and `model_type:'fast'` are hints, not contracts.** The live runtime hardcodes `avatar_only`; structured widgets arrive reliably only on the HTTP converse path. Neither field gives you a way to confirm after the fact which model actually replied or which experience actually rendered.
+- **The live socket does not produce flashcards or summarization widgets.** Use the HTTP converse path for those. See [Two delivery paths](docs/genui/model-and-runtimes.md#two-delivery-paths-this-is-the-1-gotcha).
 - **Group turn events by `speechId`, never timestamp.** A new utterance invalidates the prior one's in-flight captions (barge-in guard).
 
 ---
@@ -670,7 +686,7 @@ session.onToolCall('navigate_to_slide', ({ slide_num }) => deck.goTo(slide_num))
 const { toolCalls } = await mgmt.converseOnce(configId, 'tell me about pricing');
 ```
 
-`waitForResponse` controls whether the model's turn blocks on a real client-supplied result — **omitting it is not the same as `false`**: the backend's own wire default for an absent field is `true` (blocking), so pass it explicitly. Fire-and-forget tools (`waitForResponse:false`) have no response channel back to the model at all, so fold any "call once, then narrate" guidance directly into the tool's `description` rather than relying on a fixed success message.
+`waitForResponse` controls whether the model's turn blocks on a real client-supplied result. **Omitting it is not the same as `false`**, so pass it explicitly. Fire-and-forget tools (`waitForResponse:false`) have no response channel back to the model at all, so fold any "call once, then narrate" guidance directly into the tool's `description` rather than relying on a fixed success message.
 
 ### Native client tools with a real wire ACK
 
@@ -692,7 +708,7 @@ session.onToolCall('ask_user_to_pick_a_slide', async (call) => {
 });
 ```
 
-`waitForResponse:false` never populates `call.toolMetadata` with an id to ACK against — only register `respondToTool`/`onToolCall` ACK logic for tools you built with `waitForResponse:true`. A `respondToTool` call for an unknown or already-resolved id degrades to `{ok:false, reason:'unknown_or_stale'}` rather than throwing or hanging. This ACK is a live-socket operation only — there is no headless (`Management`) equivalent.
+`waitForResponse:false` never populates `call.toolMetadata` with an id to ACK against. Only register `respondToTool`/`onToolCall` ACK logic for tools you built with `waitForResponse:true`. The `respondToTool` return values are in the [events catalog](docs/wire-protocol/events-catalog.md#the-wait_for_response-ack--one-wire-contract-two-transports). This ACK is a live-socket operation only. There is no headless (`Management`) equivalent.
 
 ### Handler results (local only, unless `waitForResponse:true`)
 
@@ -749,7 +765,7 @@ Both recipes validate their config (via `tools.api()`) and throw a typed error f
 
 The Salesforce update path can return a `204` with an empty body, so `salesforceContactUpsert`'s `responseMapping` maps `result` from the response's `id` field only when the response has one (an insert). Treat the write itself, not the mapped output, as the success signal.
 
-For Marketo, Airtable, Google Sheets/Forms, or any other REST target, plus the real backend-managed OAuth2 authorization-code flow (consent + auto-refresh) for providers that require it, see [docs/EXTERNAL-API-INTEGRATIONS.md](docs/EXTERNAL-API-INTEGRATIONS.md).
+The `authentication` block of an `api` tool supports the OAuth2 authorization-code flow only (viewer consent). It takes `client_id`, `client_secret` (a `secrets.<name>` reference), `token_url` and `auth_url`, all required. It has no `flow` or `scopes` option. Client-credentials providers such as the Marketo REST API do not fit it. For Airtable, Google Sheets/Forms, or any other REST target, and for the OAuth2 flow itself, see [docs/EXTERNAL-API-INTEGRATIONS.md](docs/EXTERNAL-API-INTEGRATIONS.md).
 
 ---
 
@@ -913,7 +929,7 @@ await session.connect();
 - **`videoEl` must be `session.videoEl`** — the session's own read-only getter for the element its WHEP downlink actually assigns `srcObject` to. Passing a second, different reference throws a `KalturaError`, catching a stale/duplicated element before it silently keys the wrong stream.
 - **Returned unwrapped, zero shadow API** — the returned `player` is the exact instance `ChromaKeyVideo` constructed, with no proxy or wrapping. It's a standard `EventTarget` — listen on `player` directly via `addEventListener` for its own events (e.g. `chroma-key-video`'s `'started'`/`'backend'`/`'error'`) — `attachChromaKeyAvatar()` never re-emits them onto `session`.
 - **Auto-cleanup** — `player.destroy()` is called exactly once, on the session's `'ended'` event, any FATAL `'error'` (`capacity_unavailable`/`tier_exceeded`/`bad_request`/`peer_removed`/ `unsupported_client`), or the session reaching its `'disconnected'` state — which is what `session.disconnect()`/`session.stop()` (the human-in-the-loop kill switch, e.g. a "leave call" button) triggers; that path never emits `'ended'` on its own. A transient/recoverable error (e.g. a socket hiccup the session itself reconnects from) does NOT destroy the player. Checks the player's own `isDestroyed` flag first, so an integrator who already called `player.destroy()` themselves never gets a second call, and all three teardown paths are safe to fire together or in any order.
-- **Idempotent, no double-wiring** — a second `attachChromaKeyAvatar()` call against a session that already has a live compositor logs `console.warn` and returns the EXISTING instance instead of constructing (and WebGL-context-leaking) a second one. Never throws for this.
+- **Idempotent, no double-wiring.** A second `attachChromaKeyAvatar()` call against a session that already has a live compositor logs `console.warn` and returns the EXISTING instance instead of constructing (and WebGL-context-leaking) a second one. Never throws for this. If you destroyed the player yourself with `player.destroy()`, the next `attachChromaKeyAvatar()` call for that session builds a new player without a warning.
 - **No reconnect ceremony** — a WHEP reconnect swaps the new tracks into the same stream already bound to `videoEl`; `srcObject` is never reassigned, so the compositor keeps reading frames from the element it was constructed against and no re-`attachChromaKeyAvatar()` call is needed.
 
 **Non-goals:** this plugin does not reimplement chroma-keying, matting, backend fallback, or WebGL context-loss recovery — that's entirely `chroma-key-video`'s (or your chosen library's) job. If your app keys a URL-sourced clip with `chroma-key-video` directly, bypassing this plugin entirely, running that URL through `safeUrl()` first is still your obligation (this plugin never accepts or fetches a URL, only the session's own live video element).
@@ -936,7 +952,7 @@ These are importable from their entry points and useful when composing custom pi
 | Export | Description |
 |--------|-------------|
 | `collectConverse(stream)` | Collects a `converse()` async-iterable into a single assembled result (`text`, `toolCalls`, `threadId`, `_meta`, etc.). Use when you need the full turn result without `converseOnce`. Dedupes tool calls semantically (by name + `canonicalJson(args)`, matching the live session's dispatch dedup, so a non-deterministic JSON key order on an LLM retry doesn't defeat it) and caps spiraling tool calls (`spiralStopped`) and total segments (`truncated`). Does NOT itself recover from an empty spiral. See `conversations.send({recoverFromSpiral:true})`/`converseOnce` above. |
-| `SPIRAL_RECOVERY_PREFIX` | The exact nudge text (`'Please answer in words only this turn, without calling any tool. '`) that `conversations.send({recoverFromSpiral:true})` prepends on its one headless recovery retry, and that `KalturaAvatarSession`'s `recoverFromSpiral` (default `true`) prepends on its one live-session auto-resend after a hard-spiral cold reconnect. Exported from `core/stream.js` (re-exported from `management/conversations.js` for back-compat) so callers can detect/strip it if they inspect raw thread history. |
+| `SPIRAL_RECOVERY_PREFIX` | The exact nudge text (`'Please answer in words only this turn, without calling any tool. '`) that `conversations.send({recoverFromSpiral:true})` prepends on its one headless recovery retry, and that `KalturaAvatarSession`'s `recoverFromSpiral` (default `true`) prepends on its one live-session auto-resend after a hard-spiral cold reconnect. Exported from `./management` so callers can detect or strip it when they inspect raw thread history. |
 | `canonicalJson(value)` | Deterministic JSON serialization with object keys sorted at every nesting level (arrays keep order). The key shape both `collectConverse` and the live session's `onToolCall` dispatch use to dedup semantically-identical tool calls whose JSON key order the LLM emitted non-deterministically. |
 | `parseConverseStream(readable)` | Low-level NDJSON/SSE line parser. Turns a raw fetch `ReadableStream` into typed `Segment` objects — the foundation `converse()` builds on. |
 | `redact(value)` | Scrubs KS tokens, secrets, and PII from any string or object before logging. Used internally by the audit stream. |
@@ -949,7 +965,7 @@ These are importable from their entry points and useful when composing custom pi
 | `PAGE_CONTEXT_PROMPT` | The canonical, frozen prompt block that renders `{{page_context}}` — spread it into the `prompts[]` you provision instead of hand-rolling one, so `session.setDynamicPrompt()` payloads actually reach the brain. See [docs/DYNAMIC-DATA-INJECTION.md](docs/DYNAMIC-DATA-INJECTION.md). |
 | `lintPersonaIdentity({name?, openingPhrase?, baseDirective?, prompts?})` | Warns when a persona rename didn't fully propagate. `persona_name_drift` fires whenever a declared `name` (or an `openingPhrase`-derived name that differs from it) is missing from `base_directive`/`prompts[]` — it doesn't need `openingPhrase` at all, so it also catches intellects that only declare `name` and skip `openingPhrase` entirely. `persona_name_mismatch` still needs an `openingPhrase` that parses to a name different from the declared `name`. Returns `{ok, summary, findings, detectedName, _meta}` — warning-only, never throws. `mgmt.provision()` runs this automatically and returns the result as `personaLint` (see below); call it directly to re-check an intellect you're editing outside of `provision()`. |
 | `resolveCapabilities(layers)` / `CAPABILITY_STATE` / `CAPABILITY_INFO` | `management/capabilities.js`'s typed capability resolver: merges the `env`/`partnerConfig`/`request` layers for each entry in `CAPABILITIES` down to one resolved `CAPABILITY_STATE` (`on`/`off`/`disabled`) plus a `resolvedFrom` provenance tag, so a caller can build an accurate "what can this agent do" view without re-deriving precedence from raw config fields. `CAPABILITY_INFO` carries the human-readable name/description per capability. |
-| `findIntellectsReferencingTool(mgmt, toolId, ks)` | Lists every intellect's configId that currently references `toolId` in its `tool_ids`. This is the reuse-safety check `mgmt.tools.delete` runs by default before deleting a partner-level Tool — call it yourself to preview what a delete would break, or to build the same shared-by-name guard around your own upsert-by-name logic (`mgmt.skills`'s `delete` runs the analogous `findIntellectsReferencingSkill` check internally). |
+| `mgmt.tools.findReferencingIntellects(toolId, ks)` | Returns the configId of every intellect whose `tool_ids` contains `toolId` (admin KS, read-only). This is the reuse-safety check `mgmt.tools.delete` runs by default. Call it to preview what a delete would break, or to guard your own upsert-by-name logic. `mgmt.skills.delete` runs the same kind of check for `skill_ids`. |
 | `goToTool(opts?)` / `SITE_NAV_TOOL_NAME` | The fire-and-forget `go_to(path, section?)` client tool config (`wait_for_response: false`). Pass to `tools.add()` or `tools.update(id, {config})`. See [Site navigation](#site-navigation-sitenavigator) and [docs/SITE-NAV.md](docs/SITE-NAV.md). |
 | `siteMapPrompt(manifest, opts?)` / `SITE_NAV_RULES_PROMPT` / `estimateTokens(text)` | The SITE MAP prompt block rendered from a `sections.json` manifest (warns above `maxTokens`, default 3000), the frozen four-rule navigation prompt that pairs with it, and the rough token estimator the warning uses. |
 | `loadSectionsManifest(url, opts?)` | Fetches, size-guards and validates a published `sections.json` at provisioning time. Throws `KalturaError` with `code` `bad_arg`, `http_error`, `network_error`, `timeout`, `too_large` or `bad_manifest`. |
@@ -960,18 +976,30 @@ These are importable from their entry points and useful when composing custom pi
 
 | Export | Description |
 |--------|-------------|
+| `KalturaAvatarSession` / `KalturaChatSession` / `KalturaAgentSession` / `KalturaScriptedVideoSession` | The four session classes. Each has its own section above. |
+| `KalturaError` | The error class every SDK failure throws. Carries a stable `code`. |
+| `thumbnailUrl(entryId, partnerId, opts?)` / `playerEmbedUrl(entryId, partnerId, opts?)` | Build a thumbnail URL (`opts.width`) or an iframe player URL (`opts.uiConfId`) for a Kaltura entry. Return `''` when an id is missing or invalid. |
+| `externalEmbedUrl(url)` / `EMBED_HOSTS` | Turn a YouTube or Vimeo URL into `{embedUrl, provider}`. `embedUrl` is `''` when the URL is not embeddable. `EMBED_HOSTS` lists the allowed iframe hosts. |
+| `validateToolArgs(args, schema?)` | Checks a tool call's `args` against a per-key `{type, required, enum}` schema. Returns `{ok:true}` or `{ok:false, errors}`. Never throws. |
+| `parseOAuthRequired(segment)` | Reads an `oauth_required` interruption segment. Returns `{authUrl, toolName, toolDisplayName}`, or `null` for any other segment. |
+| `turnServers` / `iceConfig` / `buildJoin` / `buildStvNewSession` / `whepUrl` / `whepUrlHasPrivateIp` / `buildTextEntered` / `isAudioMode` / `CAPACITY_BACKOFF` / `DEFAULT_CM_URL` | The wire helpers the session classes use. For custom transports and tests. |
+| `EXPERIENCES` / `MODEL_TYPES` / `modelTypeWire` | The `force_experience` values (`markdown`, `summarization`, `flashcards`, `avatar_only`), the `model_type` values, and the normalizer that maps a model selector to its wire value. |
+| `classifyAgentAction(segment)` | Maps a parsed segment to the action type the `onAgentAction` guardrail sees, or `null` for spoken and control segments. |
+| `SILENT_OPENING` / `SILENT_OPENING_LABEL` / `isSilentOpening(text)` | The silent opening phrase, the label a UI shows for it, and a check for it. |
+| `redact(value)` | Scrubs KS tokens and admin secrets from a string or a deep-cloned object. Use it before logging. |
+| `CAPABILITIES` / `CAPABILITY_STATE` / `CAPABILITY_DEFAULTS` / `CAPABILITY_INFO` / `assertCapability` / `assertCapabilityState` / `validateCapabilities` / `mergeCapabilityWrite` / `resolveCapabilities` | The capability tables and validators, the same as on `./management`. Use them to author per-message `toggleCapabilities` in the browser. |
 | `TranscriptTracker` | Assembles per-`speechId` caption segments into a running transcript, respecting barge-in invalidation. Useful when building a custom captions UI outside `KalturaAvatarSession`. |
 | `CaptionService` | Higher-level caption engine built on `TranscriptTracker` — call `onCaption(({text, clear}) => ...)` to register a render callback; fires with the next visible segment or `{text:'', clear:true}` to hide captions. |
 | `parseToolCall(segment)` | Extracts a `{ name, args, raw }` tool-call from a raw `type:'tool'` segment. Handles both JSON and stringified-JSON argument encodings; on a fused multi-tool segment (see above), `args` is the named tool's own (last) blob and any earlier blobs ride along as `fusedArgs`. |
 | `parseToolResponseName(segment)` | Extracts the tool name echoed by a `type:'tool_response'` segment (`"<name> responded with size <n>"`), or `null`. The attribution signal for pairing a fused `fusedArgs` blob with its real tool. |
 | `segmentKind(segment)` | Returns one of `'spoken'`, `'control'`, `'experience'`, `'error'` for any segment object — normalizes the wire variance between HTTP converse and socket paths. |
-| `apportion(text, maxLen)` | Splits a long text string into caption-display-safe chunks of at most `maxLen` characters, breaking on word boundaries. |
+| `apportion(text, durationMs, offsetMs)` | Spreads a caption chunk's `durationMs` evenly across its words. Returns `[{word, startMs}]`, with each `startMs` offset by `offsetMs` (the chunk's start within the utterance). |
 | `Emitter` | Minimal `on`/`off`/`emit` event emitter (zero deps). The base class for `KalturaAvatarSession` — extend it when building custom session wrappers. |
-| `safeText(s)` | Returns an HTML-escaped string safe for text node injection. |
-| `safeUrl(url)` | Validates and returns a URL string; returns `''` for `javascript:` and other unsafe schemes. |
-| `renderSafeLink(href, label)` | Returns a safe `<a>` tag string using `safeUrl` + `safeText` — use in custom widget renderers that need to emit links without `innerHTML` risk. |
-| `sanitizeJson(obj)` | Deep-clones a plain object, stripping non-serializable values and keys that start with `__`. Safe to pass to `JSON.stringify` for logging. |
-| `clampInbound(value, min, max)` | Numeric clamp — used to bound untrusted inbound numeric fields (e.g. widget dimensions) before rendering. |
+| `safeText(s, max = 2000)` | Returns plain text with ASCII control characters removed, cut to `max` characters. It does not HTML-escape: assign the result with `textContent`, never `innerHTML`. |
+| `safeUrl(url, opts?)` | Returns the URL if its scheme is allowed (`https`, `http`, `mailto`, `tel`, or `opts.allow`). Returns `''` for `javascript:` and other schemes, for `//host` URLs, and for URLs with embedded credentials. |
+| `renderSafeLink(info, opts?)` | Builds an `<a>` DOM element from `{url, label, target}` using `safeUrl` + `safeText`, with `rel="noopener noreferrer"`. Returns `null` outside a browser or when the URL is unsafe. Use it in custom widget renderers. |
+| `sanitizeJson(value)` | Deep-clones a JSON value. Drops the keys `__proto__`, `constructor` and `prototype`, and drops functions and symbols. |
+| `clampInbound(s, max = 8000)` | Cuts untrusted inbound text to `max` characters and removes control characters except `\t`, `\n` and `\r`. Non-strings pass through unchanged. |
 
 ### `./experience/presenter`
 
@@ -1034,7 +1062,7 @@ npm run test:e2e          # full connect machine (fake socket + fake RTCPeerConn
 npm run test:evals        # SDK event model vs. golden captured session
 ```
 
-Fakes live in `test/fakes/` — `socket.js`, `rtc.js`, `fetch.js`. Inject them in your own tests:
+Fakes live in `test/fakes/`: `socket.js`, `rtc.js`, `fetch.js`, `avatar-session.js`. Inject them in your own tests:
 
 ```js
 import { FakeSocket } from '@kaltura/intelligent-agents/test/fakes/socket.js';
@@ -1080,13 +1108,14 @@ await mgmt.intellectConfig.setMcpServers(configId, {
   crm: { url: 'https://mcp.example.com/mcp', headers: { Authorization: 'Bearer {{secrets.CRM_MCP_TOKEN}}' } },
 }, ks);
 
-const session = new KalturaChatSession({ ovpUrl, partnerId, agenticUrl, genieUrl, agentId });
+const token = await mgmt.sessions.createAgentToken({ agentId, userId: attendeeId });  // server side, one per attendee
+const session = new KalturaChatSession({ token });                                      // token (or token.ks) reaches the browser
 await session.connect();
 session.updateRequestVars({ account_id: 'acct_42' });  // this attendee's own scoping value
 await session.sendText('Look up open tickets for this account.');
 ```
 
-`{{secrets.CRM_MCP_TOKEN}}` is the shared credential for every attendee; `account_id` rides in as a per-attendee request var the server-side prompt/tool can reference. Give each attendee's own credential instead of a shared one by templating the header itself with a bare `{{VAR}}` and setting it per session via `updateRequestVars` — see [docs/MCP-INTEGRATIONS.md § A different credential per attendee](docs/MCP-INTEGRATIONS.md#a-different-credential-per-attendee).
+`{{secrets.CRM_MCP_TOKEN}}` is the shared credential for every attendee. `account_id` rides in as a per-attendee request var the server-side prompt/tool can reference. Give each attendee their own credential instead of a shared one by templating the header itself with a bare `{{VAR}}` and setting it per session via `updateRequestVars`. See [docs/MCP-INTEGRATIONS.md § A different credential per attendee](docs/MCP-INTEGRATIONS.md#a-different-credential-per-attendee). Per-attendee credentials need a per-attendee session. A widget-path session is one shared identity for every visitor, so give each attendee a token from `createAgentToken({ agentId, userId })` (see [Session tokens](#session-tokens)).
 
 `setModelConfiguration` picks the chat model and its sampling limits. `model_id` must be one of `MODEL_IDS`, `thinking_level` one of `THINKING_LEVELS` (`'low'`/`'high'`, Gemini only), `max_output_tokens` a positive integer, `temperature` 0..1. Pass `null` to return to the backend defaults. Which models answer depends on your partner's region, so run `converseOnce` once after switching. With `avatar_show_content` on, the backend fills an unset `thinking_level` with `'low'` and `max_output_tokens` with 4096.
 
@@ -1127,7 +1156,7 @@ await mgmt.skills.update(skill.id, { instructions: 'Always say hi, in one short 
 await mgmt.skills.delete(skill.id, ks, { confirmPermanent: true });
 ```
 
-`name` is checked against your partner id OR partner `0` (a shared global pool), so a name can collide with a global-pool Skill in ways invisible from a partner-scoped `list()` — the same nuance applies to Tools.
+Names are unique in a shared namespace. A conflict returns 409. The same applies to Tools.
 
 Before deleting, `mgmt.skills.delete` lists every intellect and refuses with a typed `skill_in_use` error naming each one still referencing the id in `skill_ids`, unless called with `{confirmPermanent:true, force:true}` — Tools' `mgmt.tools.delete` carries the identical `tool_in_use` guard.
 
@@ -1164,14 +1193,14 @@ A second, independent backend (`avatar-session/*`) for a brain-free avatar: no L
 import { Management } from '@kaltura/intelligent-agents/management';
 
 const mgmt = new Management({ partnerId, adminSecret });
-const admin = await mgmt.sessions.createAdminToken();
+const admin = await mgmt.sessions.createAdminToken({ userId: 'admin@example.com' });
 
 const session = await mgmt.avatarSessions.create({ visualConfig: { id: avatarId } }, admin.ks);
 const { whepUrl, turn } = await mgmt.avatarSessions.initClient(session);
 // hand { whepUrl, turn } to the browser — non-secret, safe to send over your own API
 
 await mgmt.avatarSessions.say(session, audioBytes, { duration: durationSeconds });
-// duration is required — the server has no duration probe of its own; measure your own audio
+// duration (seconds) is required; measure your own audio
 
 await mgmt.avatarSessions.end(session);
 ```
@@ -1185,7 +1214,9 @@ await view.connect();   // negotiates WHEP, resolves once the stream is playable
 view.disconnect();
 ```
 
-`create` authenticates with your own **admin KS** (`mgmt.sessions.createAdminToken()`); every call after it (`initClient`/`say`/`interrupt`/`keepAlive`/`end`) authenticates with the **session's own Bearer token** instead — `create()`'s return value is a receipt (`{sessionId, token, isExpired(), secondsRemaining()}`), pass it straight to the other methods rather than re-deriving a KS. `say-audio` (wrapped as `say()`) is the only speech-injection mechanism this backend exposes — there is no verbatim text-to-speech endpoint on it (`say-text` 503s on the live deployment; `set-emotion`/`queue-status`/`status` don't exist). See [API-REFERENCE.md § Scripted-Video (STV-only) Sessions](docs/api/scripted-video.md) for the full auth/lifecycle table, and `examples/scripted-video-session.mjs` + `.html` for a complete runnable server+browser pair (including a stand-in for your real TTS call).
+`connect()` runs from the `idle` or `disconnected` state, so the same instance can reconnect after `disconnect()`. The session emits `stateChange` (`{state}`) on every state change.
+
+`create` authenticates with your own **admin KS** (`mgmt.sessions.createAdminToken({ userId })`); every call after it (`initClient`/`say`/`interrupt`/`keepAlive`/`end`) authenticates with the **session's own Bearer token** instead. `create()`'s return value is a receipt (`{sessionId, token, isExpired(), secondsRemaining()}`), pass it straight to the other methods rather than re-deriving a KS. `say()` sends pre-rendered speech audio. It is the only way to make the avatar speak. The SDK has no text-to-speech call. See [API-REFERENCE.md § Scripted-Video (STV-only) Sessions](docs/api/scripted-video.md) for the full auth/lifecycle table, and `examples/scripted-video-session.mjs` + `.html` for a complete runnable server+browser pair (including a stand-in for your real TTS call).
 
 ---
 

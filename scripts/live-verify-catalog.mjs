@@ -2,7 +2,7 @@
 /**
  * Live Catalog verification — real Kaltura API, no fakes, no mocks.
  *
- * Exercises the Catalog write path, which had zero live coverage:
+ * Exercises the Catalog write path:
  *
  *   1  catalog.createVisual — upload a scratch custom Visual (1x1 PNG)
  *   2  catalog.get          — visible, right shape
@@ -54,7 +54,7 @@ if (!partnerId || !adminSecret) {
   process.exit(1);
 }
 
-// A minimal valid 1x1 transparent PNG, used across the trio's scratch-visual scripts.
+// A minimal valid 1x1 transparent PNG, used across the scratch-visual scripts.
 const PNG_1PX = Buffer.from(
   '89504e470d0a1a0a0000000d494844520000000100000001080600000' +
   '01f15c4890000000a49444154789c6300010000050001a5f645400000' +
@@ -83,7 +83,7 @@ let admin;
 let itemId;
 
 try {
-  admin = await kaltura.sessions.createAdminToken();
+  admin = await kaltura.sessions.createAdminToken({ userId: 'sdk-live-verify' });
   record('admin-token-mint', true, { secondsRemaining: admin.secondsRemaining() });
 
   // 1: catalog.createVisual

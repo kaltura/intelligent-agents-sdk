@@ -288,7 +288,7 @@ export function normalizePath(path) {
 /**
  * Find the manifest page a model-supplied path refers to.
  * Order: exact → normalized (slashes, case) → last-segment word overlap ≥ 0.5
- * when exactly one page qualifies → `null`. Only manifest pages are ever
+ * when one page has the single highest score → `null`. Only manifest pages are ever
  * returned, so an invented path can never navigate anywhere.
  *
  * @param {SectionsManifest|{pages:ManifestPage[]}} manifest
@@ -390,9 +390,9 @@ function jaccard(a, b) {
 
 /**
  * Find the section of a page a model-supplied `section` refers to.
- * Order: key → id → normalized text equality → the request's words are a
- * subset of one section's words → Jaccard ≥ 0.5 when exactly one section
- * qualifies → `null`. Callers fall back to the page top on `null`; a wrong
+ * Order: key → id → normalized key, id or text equality → the request's words
+ * are a subset of exactly one section's words → Jaccard ≥ 0.5 when one section
+ * has the single highest score → `null`. Callers fall back to the page top on `null`; a wrong
  * section never fails the navigation.
  *
  * @param {ManifestPage|null|undefined} page

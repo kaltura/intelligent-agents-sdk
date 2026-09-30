@@ -4,13 +4,11 @@
  * options — the `sys__context_id`/`sys__context_type` reserved template variables.
  *
  * Regression guard: the wire payload's `kaltura.contextId`/`kaltura.contextType`
- * keys are read by the agentic backend as camelCase. A prior snake_case
- * (`context_id`/`context_type`) key mismatch meant the backend's field checks
- * never matched, so the values were silently dropped and the reserved
- * variables always rendered empty — with no error anywhere in the stack. This
- * script asserts the wire-level key names directly, not just the end-to-end
- * outcome, so a casing regression fails fast instead of silently reproducing
- * that bug.
+ * keys must be camelCase. Any other casing (for example
+ * `context_id`/`context_type`) drops the values
+ * silently and the reserved variables render empty, with no error anywhere in
+ * the stack. This script asserts the wire-level key names directly, not just
+ * the end-to-end outcome, so a casing regression fails fast.
  *
  * Drives two real conversations against one throwaway intellect: one with
  * `contextId`/`contextType` set, one without. Both are visible in the
@@ -172,8 +170,8 @@ async function runProbe(port, label, { withContext, contextId }) {
   } catch {
     // The server can drop one turn without saying so, and speak() resolving true
     // only proves the text left the client. One resend tells a dropped turn apart
-    // from a real failure to answer, and the whole probe stays inside the same
-    // 90 s the single wait used to take.
+    // from a real failure to answer, and the whole probe stays inside
+    // a single 90 s wait.
     record(`${label}-probe-resent`, true, { reason: 'no reply in 45s — resending once' });
     await sendProbe();
     try {
@@ -200,7 +198,7 @@ async function runProbe(port, label, { withContext, contextId }) {
 }
 
 try {
-  admin = await kaltura.sessions.createAdminToken();
+  admin = await kaltura.sessions.createAdminToken({ userId: 'sdk-live-verify' });
   record('admin-token-mint', true, { secondsRemaining: admin.secondsRemaining() });
 
   // SILENT_OPENING, not a generated greeting: the opening turn cannot be

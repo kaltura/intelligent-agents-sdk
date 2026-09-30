@@ -90,7 +90,7 @@ const pageErrors = [];
 const consoleLog = [];
 
 try {
-  admin = await kaltura.sessions.createAdminToken();
+  admin = await kaltura.sessions.createAdminToken({ userId: 'sdk-live-verify' });
   record('admin-token-mint', true, { secondsRemaining: admin.secondsRemaining() });
 
   // SILENT_OPENING, not a generated greeting: the opening turn cannot be
@@ -251,7 +251,7 @@ try {
     // The server can drop one turn without saying so, and speak() resolving
     // 'sent' only proves the text left the client. One resend tells a dropped
     // turn apart from a real failure to answer, and the whole wait stays inside
-    // the same 90 s the single wait used to take.
+    // a single 90 s wait.
     record('question-resent', true, { reason: 'no Hebrew reply in 45s — resending once' });
     await sendQuestion(45000);
     try {

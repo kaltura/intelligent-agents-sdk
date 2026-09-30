@@ -22,7 +22,7 @@ These flags shape runtime behavior:
 
 ## Structured experiences (`force_experience` + `unisphere-tool`)
 
-> **Scope:** the structured-experience behavior below applies to the **HTTP `/assistant/converse`** path (headless/text integrations). The **avatar runtime does not use it**. A live avatar session always runs as `force_experience: 'avatar_only'` and `model_type: 'fast'` regardless of what's configured, so it never emits flashcards/summarization widgets. Use the HTTP converse path (or a custom client) to drive structured experiences.
+> **Scope:** the structured-experience behavior below is what you get on the **HTTP `/assistant/converse`** path (headless/text integrations). The live avatar socket does not produce flashcards or summarization. See [Two delivery paths](../genui/model-and-runtimes.md#two-delivery-paths-this-is-the-1-gotcha).
 
 `force_experience` on `converse` (e.g. `"flashcards"`) is a **hint, not a guarantee**. The brain decides which structured widget(s) to emit based on the prompt and the intellect (the agent's brain configuration — its prompts, tools, and capabilities). Each comes back as `unisphere-tool` segments. The first carries `metadata:{ widgetName, runtimeName }`, then the content streams as a YAML-ish block (e.g. `title:` / `questions:`). For example:
 

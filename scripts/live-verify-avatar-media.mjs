@@ -222,7 +222,7 @@ let server;
 let browser;
 
 try {
-  admin = await kaltura.sessions.createAdminToken();
+  admin = await kaltura.sessions.createAdminToken({ userId: 'sdk-live-verify' });
   record('admin-token-mint', true, { secondsRemaining: admin.secondsRemaining() });
 
   provisioned = await kaltura.provision({ brief: 'A friendly CI avatar-media verify greeter avatar', ks: admin.ks });

@@ -8,14 +8,11 @@
  * re-edit path (renames re-check the same
  * partner-unique-name constraint as `add`, 409 on conflict).
  *
- * `name` is unique per partner OR against a shared GLOBAL pool: lookups match
- * your partner's entries plus the shared global pool (partner 0), so a name
- * can collide with a global Skill in ways that aren't visible from a
- * partner-scoped `list()` alone. The same nuance applies to {@link Tools}
- * (see its class doc).
+ * Names are unique in a shared namespace. A conflict returns 409. The same
+ * applies to {@link Tools} (see its class doc).
  *
  * SHARED-BY-NAME HAZARD: because `name` is the lookup key callers upsert
- * against (see `sdk/src/management/provision.js`'s `applyTools` for the
+ * against (see `src/management/provision.js`'s `applyTools` for the
  * identical pattern applied to Tools, or an app's own upsert-by-name helper),
  * two independently-run provisioning flows for
  * the SAME name silently converge on the SAME Skill entity — deleting (or
@@ -53,7 +50,12 @@ async function findIntellectsReferencingSkill(ctx, skillId, ks) {
     const objects = Array.isArray(page?.objects) ? page.objects : [];
     for (const item of objects) {
       if (item?.id === undefined) continue;
-      const full = await ctx.genie('v1/intellect/get', { id: item.id }, ks).then((r) => r.data).catch(() => null);
+      // Skip only an intellect deleted between list and get; any other failure must surface,
+      // or a guarded delete would wrongly report "no references".
+      const full = await ctx.genie('v1/intellect/get', { id: item.id }, ks).then((r) => r.data).catch((e) => {
+        if (e?.code === 'not_found' || e?.code === 'intellect_not_found') return null;
+        throw e;
+      });
       if (Array.isArray(full?.skill_ids) && full.skill_ids.some((ref) => ref?.id === skillId)) refs.push(item.id);
     }
     const total = page?.totalCount;
@@ -99,8 +101,7 @@ export class Skills {
   }
 
   /**
-   * Alias for {@link Skills#add} — same validation, same call, same result.
-   * Some callers reach for `create` by habit; both spellings are permanent.
+   * Alias for {@link Skills#add}. Same validation, same call, same result.
    * @param {{name:string, description:string, instructions?:string}} body
    * @param {string} ks (admin)
    * @returns {Promise<{id:string, name:string, description:string, instructions:string|null, partner_id:number, created_at:string, updated_at:string}>}
@@ -168,8 +169,8 @@ export class Skills {
   }
 
   /**
-   * Delete a Skill by id. WRITE — destructive (requires confirmation). The
-   * wire reply is `{id}`; a follow-up `get` 404s.
+   * Delete a Skill by id. WRITE, destructive (requires confirmation). Resolves
+   * `{removed, _meta}`; a follow-up `get` 404s.
    *
    * SAFETY CHECK (default on): before deleting, lists every intellect and
    * refuses with a typed `skill_in_use` error naming each one still carrying

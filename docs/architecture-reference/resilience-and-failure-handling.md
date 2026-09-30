@@ -2,99 +2,126 @@
 
 # Resilience & Failure Handling
 
-How the system behaves under network failures, disconnects, and device problems. There are **three reconnection tiers**, only loosely coordinated:
+How `KalturaAvatarSession` behaves under network failures, disconnects, and device problems. Recovery has three layers. Each escalates to the next:
 
-| Tier | Layer | Auto-recovers? | Scope |
+| Layer | Scope | What the SDK does | Events |
 |---|---|---|---|
-| 1. Socket.IO transport | control socket | ✅ built-in (backoff + jitter + state recovery) | the websocket only |
-| 2. WebRTC peer (ASR + STV) | the built-in client's media layer | ✅ 5 attempts × 2s, independent per channel | the media peer connections |
-| 3. Avatar session | **this SDK** (`KalturaAvatarSession`) | ✅ socket-transport recovery: a recoverable drop → `reconnecting` → `reconnected` (same-instance, ≤~20s, no re-`join`); non-recoverable → clean `ended`. | the whole conversation |
+| 1. Control socket | the websocket only | Socket.IO reconnects with backoff. If the socket state was recovered, the session goes straight back to `connected`. If not, the SDK does a cold reconnect (layer 3). The `reconnecting` state is bounded by `reconnectWindowMs` (default 22000). | `connectivityChanged` (`channel:'socket'`), `reconnecting`, `reconnected` |
+| 2. Media peers (ASR + STV) | one peer connection at a time | Watches ICE state. Recovers in place first. If that fails, escalates to layer 3. | `connectivityChanged`, `mediaRecovering`, `mediaRecovered` |
+| 3. Cold reconnect | the whole conversation | Opens a new socket, re-`join`s, and rebuilds both media peers. Replays `threadId` so brain memory continues. | `reconnecting`, `reconnected` |
 
-The headline risk: **tiers 2 and 3 are not wired together for custom non-SDK clients**. The SDK wires them via `_recoverMedia` → `_coldReconnect`. When the WebRTC layer exhausts retries and emits `'failed'`, a custom client that does not use the SDK's `KalturaAvatarSession` must handle this itself.
+A non-recoverable failure ends the session cleanly (`ended`, or an error such as `reconnect_failed` or `reconnect_timeout`). It never hangs.
 
-### Device permissions (mic/camera)
+A custom client that does not use `KalturaAvatarSession` must implement these layers itself. The rest of this page describes what the SDK does.
 
-`connecting → gettingUserMedia` calls `getUserMedia(audio:true, video:false)` on the built-in client's media layer. This is **audio only** by default; the avatar doesn't need your camera. On denial, the runtime client's device-media handler routes to `error` with `reason: DevicesPermissionDenied`, `skipDisconnect:true`, `suppressNotification:true` (and `shouldPurge=false`). This is a clean, retryable abort with no scary toast. The SDK (`KalturaAvatarSession`) surfaces distinct `NotAllowed`/`NotFound`/`NotReadable` codes; the platform's built-in client's classification is coarse (no `NotAllowedError` vs `NotFoundError` vs `NotReadableError` distinction). No pre-flight `navigator.permissions.query`, no mid-call device-loss handling.
+## Control socket
 
-### WebRTC media peer (the built-in client's media layer)
+- `maxReconnectAttempts` (default 5) caps Socket.IO's own attempts. It also appears as `attempt`/`maxAttempts` on `reconnecting` and `connectivityChanged`.
+- Recoverable disconnect reasons: `transport error`, `transport close`, `forced close`, `ping timeout`. Any other reason ends the session.
+- `reconnectWindowMs` (default 22000) bounds the whole `reconnecting` state. If nothing recovers in that time, the session ends with `reconnect_timeout`. If Socket.IO runs out of attempts first, it ends with `reconnect_failed`.
+- After a reconnect where the socket state was **not** recovered, the old session is gone. The SDK runs a cold reconnect (layer 3).
+- After a reconnect where it **was** recovered, the SDK also checks both media peers. A peer stuck in a down ICE state goes through layer 2.
 
-- Config: `maxReconnectAttempts = 5`, `reconnectDelayMs = 2000` (fixed). ICE timers (`rtc-core` constants): connect-start 20s, no-SDP-answer 30s, disconnect-grace 60s.
-- **ASR reconnection** (`handleAsrReconnection`): closes the peer, fully re-joins (new offer/answer via socket relay), **preserves mute state**. After 5 tries → emits `onConnectionState({type:'asr', status:'failed'})`.
-- **STV reconnection** (`handleStvReconnection`): re-runs WHEP `joinSTV`. If WHEP returns **404 NO_ACTIVE_SESSION**, gives up immediately (server session gone; only the app can recreate it). After 5 tries → `'failed'`.
+## Media peers (ICE watch)
 
-### Control socket & session machine (the platform's built-in client)
+| ICE state | SDK action |
+|---|---|
+| `disconnected` | Waits 1.5 s. If it has not returned to `connected`, recovers. |
+| `failed` | Recovers at once. |
+| `new` or `checking` for 10 s, or gathering ends with no candidates | Recovers. |
+| `connected` / `completed` | Clears the recovery flag. |
 
-- Socket.IO built-in recovery: on `disconnect` with `socket.active`, auto-reconnects (may restore the same socket via `connectionStateRecovery`).
-- But the runtime client's error handler converts every `disconnect`/`connect_error`/`error`/`removePeer`/`throwTo*` into a machine `Disconnect` → teardown. The session machine has **no auto-reconnect**; recovery is user-initiated.
-- Connect-phase hang protection is strong: every sub-state has a timeout (5–30s). Teardown is reliable (routes through `disconnected` even on failure; resets the player-ready singleton). Disconnect reasons (the runtime client's notification layer) drive user-readable, severity-tagged messages.
+The SDK emits `mediaRecovering { channel, state }` when recovery starts and `mediaRecovered { channel, method }` when it works. Every ICE state change also emits `connectivityChanged { channel, state }`.
 
-### Failure-mode matrix
-
-| Failure | Detected by | Handling today |
+| Channel | In-place recovery (`method`) | Details |
 |---|---|---|
-| User denies mic permission | `getUserMedia` throws | Clean abort, no toast, retry possible |
-| No mic / mic busy | `getUserMedia` throws | Same generic path (not distinguished) |
-| ASR/STV peer drops | the built-in client's media layer ICE state | 5× re-join @ 2s; SDK handles via `_onIceStateChange`; the platform's built-in client's wrapper leaves `failed` event unhandled |
-| STV server session gone (404) | WHEP status | Give up; app must recreate session |
-| Control socket transient drop | Socket.IO `disconnect` | Socket.IO auto-recovers… but the runtime client's error handler may also tear down |
-| Control socket permanent drop | Socket.IO `disconnect` (`!active`) | Teardown + "reconnect" notification |
-| All agent slots busy | `throwToNoAgent` | Availability queue + poll (see [Scale & Sticky Sessions](scale-and-sticky-sessions.md#scale--sticky-sessions)) |
-| Plan/tier exceeded | `throwToExceededTier` | Fatal, clear message |
-| Connect hangs | SDK: `setTimeout` (`TIMEOUTS` constants); the platform's built-in client: internal state-machine timeouts | 5–30s timeouts → error (well covered) |
-| Player/video element error | `onPlayerError` chain | → `Disconnect` (`PlayerConnectionFailed`) |
-| Brain stalls mid-conversation | `KalturaAvatarSession` watchdog | `brainStalled` event, repeating every `brainStallMs` until output lands; the platform's built-in client has no liveness timeout |
-| Tool-call spiral (same command retried with no narration) | `KalturaAvatarSession` two-tier circuit breaker | Soft signal (`toolSpiralDetected`) plus hard cold-reconnect recovery, see [Tool-call spiral: what happened and how it's mitigated](#tool-call-spiral-what-happened-and-how-its-mitigated) below |
-| Tab backgrounded / network change | `KalturaAvatarSession` | `online`/`offline`/`visibilitychange` handling in SDK; the platform's built-in client does not handle these events |
+| ASR (mic uplink) | `ice-restart` | Restarts ICE on the same peer and re-offers over the socket with `is_reconnect: true`. Mute state is kept. Waits up to 30 s for the answer. |
+| STV (avatar video) | `re-subscribe` | Releases the old WHEP resource, then sends a new WHEP offer for the same session. Then it resumes playback if the browser paused the element. |
+
+If in-place recovery fails, the SDK emits `connectivityChanged` with `state:'recover_failed'` and does a cold reconnect.
+
+The same recovery runs when the browser fires `online` after an `offline` and a peer is still in a down ICE state. Both events also emit `connectivityChanged` with `channel:'network'`. Turn this off with `networkAware:false`.
+
+## Device permissions (mic)
+
+`connect()` starts `getUserMedia({audio})` in the background (`micStartMode: 'immediate'`, the default). It asks for audio only. The avatar does not need your camera.
+
+- A denied, missing or busy mic **does not fail `connect()`**. The SDK emits one `warning` and connects without a mic. `speak()` still works, and `startMic()` retries.
+- `startMic()` throws the same codes.
+- `micStartMode:'deferred'` skips the automatic prompt. Call `startMic()` from a user gesture.
+
+| Browser error | SDK code |
+|---|---|
+| `NotAllowedError`, `SecurityError` | `mic_permission_denied` |
+| `NotFoundError`, `OverconstrainedError` | `mic_not_found` |
+| `NotReadableError`, `AbortError` | `mic_in_use` |
+| anything else | `devices_permission_denied` |
+
+## Failure-mode matrix
+
+| Failure | Detected by | SDK handling |
+|---|---|---|
+| User denies mic permission | `getUserMedia` rejects | `warning` with `mic_permission_denied`. The session connects without a mic. |
+| No mic / mic busy | `getUserMedia` rejects | `warning` with `mic_not_found` or `mic_in_use`. |
+| ASR/STV peer drops | ICE state | In-place recovery, then cold reconnect. |
+| STV session gone (WHEP `404`) | WHEP status | Cold reconnect. |
+| Control socket transient drop | Socket.IO `disconnect` (recoverable reason) | `reconnecting`, then `reconnected` or cold reconnect, within `reconnectWindowMs`. |
+| Control socket permanent drop | Socket.IO `disconnect` (other reason), `reconnect_failed` | Session ends. |
+| All agent slots busy | `throwToNoAgent` | Availability poll. See [Scale & Sticky Sessions](scale-and-sticky-sessions.md#scale--sticky-sessions). |
+| Plan/tier exceeded | `throwToExceededTier` | Fails with `tier_exceeded`. |
+| Connect hangs | Per-step timeouts and the 30 s deadline | `connect()` rejects. See the [connect sequence](connection-and-handshake.md#full-connect-sequence-state-machine-order). |
+| Brain stalls mid-conversation | Watchdog | `brainStalled`, repeating every `brainStallMs` (default 12000) until output lands. |
+| Tool-call spiral (same command retried with no narration) | Two-tier circuit breaker | Soft signal (`toolSpiralDetected`), then a hard cold reconnect. See [below](#tool-call-spiral-what-happened-and-how-its-mitigated). |
+| Tab backgrounded / network change | `online`/`offline`/`visibilitychange` listeners | Media recovery as above. See the `session_completed` section for the page-lifecycle signal. |
 
 ### Tool-call spiral: what happened and how it's mitigated
 
 A tool-eager brain can retry the same client command dozens or hundreds of times in one turn instead of narrating. `KalturaAvatarSession` defends against this with a two-tier circuit breaker.
 
-**Soft tier: signal only.** Once a *turn* accumulates `toolSpiralLimit` (default 10) raw `type:"tool"` segments, counted before dedup since a spiral is the same call repeating, the SDK emits `toolSpiralDetected` once. The soft tier only signals. It never calls `interrupt()`: interrupting a spiral already running server-side has no effect on it, and can truncate the turn's own narration.
+**Soft tier: signal only.** Once a *turn* accumulates `toolSpiralLimit` (default 10) raw `type:"tool"` segments, counted before dedup since a spiral is the same call repeating, the SDK emits `toolSpiralDetected` once. The soft tier only signals. It never calls `interrupt()`, because interrupting does not stop a spiral that is already running, and it can truncate the turn's own narration.
 
-A legitimate turn can double its raw tool-segment count when `speak()`'s barge-in branch (still-playing TTS audio from a prior turn) spawns a parallel tap-to-talk stream for the same question. For example, a 3-tool turn duplicates into 6 raw segments this way. The default limit of 10 is high enough to absorb that duplication without tripping the breaker on an ordinary turn, not a real spiral.
+A legitimate turn can double its raw tool-segment count when `speak()`'s barge-in branch (still-playing TTS audio from a prior turn) spawns a parallel tap-to-talk stream for the same question. For example, a 3-tool turn duplicates into 6 raw segments this way. The default limit of 10 is high enough to absorb that duplication without tripping the breaker on an ordinary turn.
 
-**Hard tier: the actual fix.** A **session-scoped hard counter** (`hardToolSpiralLimit`, default `toolSpiralLimit * 3`) counts raw tool segments since the last perceivable output. It is immune to turn-boundary resets, so an idle wake-up nudge mid-spiral cannot hide it. Once it's crossed, the SDK emits `toolSpiralRecovering` (carrying `lastTurnText`, the abandoned turn) and forces `_coldReconnect()`. This is the same full media rebuild already used for a dead media channel, replaying `threadId` so brain memory continues. This turns the eventual uncontrolled `JoinRoomTimeout` into a deliberate, bounded, self-healing reconnect.
+**Hard tier: the actual fix.** A **session-scoped hard counter** (`hardToolSpiralLimit`, default `toolSpiralLimit * 3`) counts raw tool segments since the last perceivable output. Turn boundaries do not reset it. Once it's crossed, the SDK emits `toolSpiralRecovering` (carrying `lastTurnText`, the abandoned turn) and forces `_coldReconnect()`. This is the same full media rebuild used for a dead media channel, replaying `threadId` so brain memory continues. It turns an uncontrolled `JoinRoomTimeout` into a deliberate, bounded reconnect.
 
-Because the control socket is still live at this point (unlike a genuine transport drop), `_coldReconnect()` opens a brand-new socket rather than re-`join`-ing the still-connected one: re-sending `join` on an already-live socket is a silent no-op server-side. `_coldReconnect()` detects this case (`this.state !== 'reconnecting'` at entry means the socket never actually dropped) and opens a genuinely new socket via the same factory `connect()` uses, before re-`join`-ing on it. The one path that safely reuses the existing socket is the genuine-transport-disconnect case, reached only after a real drop already set `state` to `'reconnecting'`. There, the prior session is already gone, so re-`join`-ing it is not a no-op.
+The control socket is still live at this point, unlike a genuine transport drop. So `_coldReconnect()` opens a brand-new socket through the same factory `connect()` uses, then re-`join`s on it. It detects this case when `this.state !== 'reconnecting'` at entry. After a genuine transport drop, `state` is already `'reconnecting'`, and the SDK re-`join`s on the socket Socket.IO reopened.
 
-The hard guard re-arms on a successful cold reconnect, not just on perceivable output. A spiral by definition never produces spoken or GenUI content, so that's the only reset path that can actually fire while one is running. Without this re-arm, a second spiral later in the same session would find the guard permanently latched from the first recovery, and would hang indefinitely instead of recovering.
+The hard guard re-arms on a successful cold reconnect, not just on perceivable output. A spiral never produces spoken or GenUI content, so that is the only reset that can fire while one runs. Without the re-arm, a second spiral later in the same session would find the guard latched from the first recovery.
 
-A cold reconnect restores connectivity and brain memory (`threadId`) but otherwise abandons the turn that triggered it. With `recoverFromSpiral` (default `true`), the SDK auto-resends that turn's tracked text once, from `speak()` or ASR's `userTranscription`. It prefixes the resend with `SPIRAL_RECOVERY_PREFIX` (the same nudge used on the headless `Conversations#send({recoverFromSpiral:true})` path), and emits `spiralRecovered {text}`. `recoverFromSpiral:false` suppresses the resend and leaves it to the app via `lastTurnText`. All three thresholds (`brainStallMs`, `toolSpiralLimit`, `hardToolSpiralLimit`) are configurable at construction; `0` disables any of them. The platform's built-in client has no such breaker. Author-side mitigation (a tool-call budget in the system prompt) and the headless-path equivalent are covered in [CLIENT-COMMANDS.md](../CLIENT-COMMANDS.md)'s "Tool spirals starve the voice". This section documents only the SDK's own recovery mechanism.
+A cold reconnect restores connectivity and brain memory (`threadId`) but abandons the turn that triggered it. With `recoverFromSpiral` (default `true`), the SDK auto-resends that turn's tracked text once, from `speak()` or ASR's `userTranscription`. It prefixes the resend with `SPIRAL_RECOVERY_PREFIX` (the same nudge used on the headless `Conversations#send({recoverFromSpiral:true})` path), and emits `spiralRecovered {text}`. `recoverFromSpiral:false` suppresses the resend and leaves it to the app via `lastTurnText`. All three thresholds (`brainStallMs`, `toolSpiralLimit`, `hardToolSpiralLimit`) are configurable at construction; `0` disables any of them. Author-side mitigation (a tool-call budget in the system prompt) and the headless-path equivalent are covered in [CLIENT-COMMANDS.md](../CLIENT-COMMANDS.md)'s "Tool spirals starve the voice".
 
-`KalturaChatSession` (the HTTP text transport) ports the soft tier only: `cfg.toolSpiralLimit` (default 10, same counting rule) emits the same `toolSpiralDetected {count, limit}` once per turn. There's no hard tier here. A chat turn is one stateless HTTPS request with no socket to cold-reconnect, so a stuck turn is bounded by the caller's own `sendText({signal})` abort, not by a session-level recovery mechanism.
+`KalturaChatSession` (the HTTP text transport) ports the soft tier only: `cfg.toolSpiralLimit` (default 10, same counting rule) emits the same `toolSpiralDetected {count, limit}` once per turn. There's no hard tier here. A chat turn is one stateless HTTPS request with no socket to cold-reconnect, so a stuck turn is bounded by the caller's own `sendText({signal})` abort.
 
 ### Session-completion signal (`session_completed`): telling the backend a conversation is truly over
 
-Without this, the backend only learns a thread is done when its idle timeout fires (about 10 minutes by default). End-of-conversation lifecycle rules (summaries, insights, CRM pushes) then fire minutes late. A closed tab looks identical to a user who just walked away.
-
-`KalturaAvatarSession`, `KalturaChatSession`, and `KalturaAgentSession` all POST `{genieUrl}/thread/session_completed` (`{"id":"<threadId>"}`, the same conversation KS as every other client call) the moment a conversation genuinely ends. This includes tab-close, backgrounding, and bfcache freeze. It never fires on an internal transition like a mode switch, and never ends a thread another tab is still using. Full config surface: [README.md § Ending a conversation cleanly](../../README.md#ending-a-conversation-cleanly-session_completed-signal). Wire shape: [wire-protocol/events-catalog.md § Session-completion signal](../wire-protocol/events-catalog.md#session-completion-signal--tell-the-backend-a-conversation-is-truly-over).
+`KalturaAvatarSession`, `KalturaChatSession`, and `KalturaAgentSession` all POST `{genieUrl}/thread/session_completed` (`{"id":"<threadId>"}`, the same conversation KS as every other client call) the moment a conversation genuinely ends. This includes tab-close, backgrounding, and bfcache freeze. It never fires on an internal transition like a mode switch, and never ends a thread another tab is still using. Full config surface: [README.md § Ending a conversation cleanly](../../README.md#ending-a-conversation-cleanly-session_completed-signal). Request shape: [operate.md § Session-Completion Signal](../api/operate.md#session-completion-signal).
 
 | Trigger | Fires? | Why |
 |---|---|---|
 | App calls `disconnect()` / `stop()` | yes | Unambiguous hangup |
-| Idle auto-logoff | yes | Real end of session |
-| `pagehide` (tab/window closed, navigated away) | yes | The primary win over the idle-timeout fallback |
+| Idle auto-logoff (`idleTimeoutMs`, default 15 min) | yes | Real end of session |
+| `pagehide` (tab/window closed, navigated away) | yes | The main case this signal exists for |
 | `pagehide` with `persisted:true` (bfcache freeze) | yes, by default | The SDK can't survive the freeze anyway: media/socket are already torn down |
 | Hidden longer than `hiddenGraceMs` (default 30s) | yes, by default | Catches iOS Safari / Chrome Android tab-kills where `pagehide` never fires |
-| Server ends the conversation (`conversationEnded`) | no, by default | The backend already knows; re-signaling wastes a redundant lifecycle-rule evaluation |
+| Server ends the conversation (`conversationEnded`) | no, by default (`completeOnServerEnd`) | The server already ends the thread |
 | `KalturaAgentSession.switchMode()` tearing down the old transport | no | Thread continuity is the entire point of switching modes |
 | Fatal/unrecoverable error (`_endWith()`) | no | An error isn't a clean end; the app may reconnect and continue the same thread |
 | A second tab on the same thread is still alive (`crossTabPresence`, same-origin/same-device only via `BroadcastChannel`) | no, suppressed | Avoids ending a thread another tab is actively using; the last tab standing still fires |
 
-The signal is idempotent: a repeat POST for the same thread is a server-side no-op. It is never awaited on the unload path; the SDK uses `fetch(url, {keepalive:true})`, not `navigator.sendBeacon`, because `sendBeacon` can't carry the `Authorization` header. Cross-device duplicate tabs are out of scope by design (`BroadcastChannel` is same-origin/same-device only). The backend's own self-healing on the next real message covers that case.
+Sending the signal twice for the same thread is safe. The SDK never awaits it on the unload path. It uses `fetch(url, {keepalive:true})`, not `navigator.sendBeacon`, because `sendBeacon` can't carry the `Authorization` header. Duplicate tabs on different devices are out of scope by design (`BroadcastChannel` is same-origin/same-device only).
 
-### What's already solid (don't regress)
+### What the SDK implements (don't regress)
 
-- Connect-phase hang protection (per-substate timeouts).
-- Clean teardown (no stale connection state; player-ready reset).
-- Permission-denied UX (silent, retryable).
-- TURN relay for connectivity behind hostile NATs (STV forces relay; ASR relays in practice regardless of policy; see [Endpoints & Credentials](connection-and-handshake.md#endpoints--credentials)).
-- Mute-state preservation across ASR reconnects.
-- Capacity queue (graceful waiting vs hard failure).
-- Distinct, user-readable disconnect reasons.
-- WHEP 404 short-circuit.
-- **SDK (`KalturaAvatarSession`) implements**: ICE restart (`_recoverMedia`), socket-transport recovery, a repeating brain-stall watchdog plus `brainStalled` event, a two-tier tool-call-spiral circuit breaker (`toolSpiralDetected` soft, `toolSpiralRecovering` plus cold reconnect hard), granular device error codes (`NotAllowed`/`NotFound`/`NotReadable`), and `online`/`offline`/`visibilitychange` handling. These limitations apply only to custom clients that bypass the SDK.
+- Per-step connect timeouts and the 30 s connect deadline.
+- Clean teardown, including a WHEP `DELETE` for the viewer slot.
+- A mic problem never fails `connect()`. It emits a `warning`.
+- TURN relay for connectivity behind hostile NATs ([details](../wire-protocol/audio-channels.md#5-asr-uplink-pc1--microphone--server)).
+- Socket recovery within `reconnectWindowMs`, with a clean end otherwise.
+- ICE restart for ASR and re-subscribe for STV, then cold reconnect.
+- Mute-state preservation across ASR recovery.
+- Capacity queue (`waitForCapacity`) instead of a hard failure.
+- A repeating brain-stall watchdog and a two-tier tool-call-spiral breaker.
+- Distinct mic error codes and `online`/`offline`/`visibilitychange` handling.
 
 ## Related docs
 

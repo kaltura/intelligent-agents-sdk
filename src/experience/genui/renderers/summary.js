@@ -1,6 +1,5 @@
 /**
- * Default renderer for the `summary` runtime (backend tool key "summarization"
- * → `summary-tool`). A markdown/text summary block. Framework-agnostic
+ * Default renderer for the `summary` runtime (`summary-tool`). A markdown/text summary block. Framework-agnostic
  * `{kind:'summary', data}`. The summary text stays UNTRUSTED (LLM output) — by
  * default the SDK renders it as flat escaped text; `mountWidget(descriptor, el,
  * {markdown:true})` opts into rendering markdown-in-plain-text
