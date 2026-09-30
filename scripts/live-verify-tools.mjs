@@ -2,7 +2,7 @@
 /**
  * Live Tools verification — real Kaltura API, no fakes, no mocks.
  *
- * Exercises the Tools write path, which had zero live coverage:
+ * Exercises the Tools write path:
  *
  *   1  tools.add (client)  — a `client` tool creates fine (no gate)
  *   2  tools.get           — visible, right shape
@@ -59,7 +59,7 @@ const kaltura = new Management({ partnerId, adminSecret });
 let toolId;
 
 try {
-  const admin = await kaltura.sessions.createAdminToken();
+  const admin = await kaltura.sessions.createAdminToken({ userId: 'sdk-live-verify' });
   record('admin-token-mint', true, { secondsRemaining: admin.secondsRemaining() });
 
   // 1: tools.add (client) — no gate, creates fine.
@@ -96,7 +96,7 @@ try {
   // 5: tools.delete — scratch client tool removed, re-get real-404s.
   if (toolId) {
     try {
-      const admin = await kaltura.sessions.createAdminToken();
+      const admin = await kaltura.sessions.createAdminToken({ userId: 'sdk-live-verify' });
       await kaltura.tools.delete(toolId, admin, { confirmPermanent: true, force: true });
       record('5-tools-delete', true, { toolId });
       try {

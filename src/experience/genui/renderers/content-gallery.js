@@ -1,6 +1,6 @@
 /**
  * Default renderer for the `content-gallery` runtime
- * (backend tool key "gallery_slides" → `content-gallery-tool`). A deck/gallery
+ * (`content-gallery-tool`). A deck/gallery
  * of content slides/cards. Each item's image/link URL is scheme-checked.
  * Framework-agnostic `{kind:'content-gallery', data}`.
  */
@@ -22,7 +22,7 @@ export function renderContentGallery(model = {}, ctx = {}) {
     const title = safeText(o.title ?? o.name ?? o.heading ?? '', 500);
     const description = safeText(o.description ?? o.text ?? o.body ?? '', 2000);
     return {
-      // slides are ordered/addressable (backend key gallery_slides) — preserve an id so a
+      // slides are ordered/addressable, so preserve an id so a
       // host can deep-link/highlight one, mirroring video-gallery's entryId.
       id: safeText(o.id ?? o.slideId ?? o.key ?? '', 100),
       title,

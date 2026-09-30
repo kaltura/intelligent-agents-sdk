@@ -148,3 +148,23 @@ test('every skills wire method asserts admin scope (rejects a conversation token
   await assert.rejects(async () => mgmt.skills.delete(SKILL.id, convToken, { confirmPermanent: true }), (e) => e.code === 'wrong_token_scope');
   await assert.rejects(async () => mgmt.skills.list(convToken), (e) => e.code === 'wrong_token_scope');
 });
+
+test('skills.delete rejects when an intellect lookup fails with a 500, and does not delete', async () => {
+  const { mgmt, ff } = harness([
+    { match: 'v1/skill/delete', respond: () => ({ status: 200, body: {} }) },
+    { match: 'v1/intellect/list', respond: () => ({ status: 200, body: { totalCount: 1, objects: [{ id: 42 }] } }) },
+    { match: 'v1/intellect/get', respond: () => ({ status: 500, body: { message: 'boom' } }) },
+  ]);
+  await assert.rejects(() => mgmt.skills.delete(SKILL.id, ADMIN_KS, { confirmPermanent: true }), (e) => e.code === 'server_error');
+  assert.equal(ff.calls.some((c) => /v1\/skill\/delete$/.test(c.url)), false, 'delete does not proceed');
+});
+
+test('skills.delete skips an intellect whose get returns not_found (deleted between list and get)', async () => {
+  const { mgmt } = harness([
+    { match: 'v1/skill/delete', respond: (req) => ({ status: 200, body: { id: req.body.id } }) },
+    { match: 'v1/intellect/list', respond: () => ({ status: 200, body: { totalCount: 1, objects: [{ id: 42 }] } }) },
+    { match: 'v1/intellect/get', respond: () => ({ status: 404, body: { message: 'gone' } }) },
+  ]);
+  const res = await mgmt.skills.delete(SKILL.id, ADMIN_KS, { confirmPermanent: true });
+  assert.equal(res.removed, SKILL.id);
+});

@@ -19,10 +19,9 @@
  *      conversation ever happens.
  *   6. Clean up both rules and both insight settings.
  *
- * Real session_ended/analysis_updated events only fire via the backend's
- * own idle-session scan (there's no on-demand trigger), so this example
- * proves the rules are wired correctly with match() rather than waiting
- * for one. See docs/lifecycle/recipes.md for the full walkthrough.
+ * This example proves the rules are wired correctly with match() rather
+ * than waiting for a real event. See docs/lifecycle/recipes.md for the
+ * full walkthrough.
  *
  * Run: AGENTIC_PARTNER_ID=… AGENTIC_ADMIN_SECRET=… node examples/lifecycle-insights-and-email.mjs
  *
@@ -40,7 +39,7 @@ if (!partnerId || !adminSecret) { console.error('Set AGENTIC_PARTNER_ID + AGENTI
 const recipientUserId = process.env.DEMO_RECIPIENT_USER_ID || 'demo-support-lead';
 
 const kaltura = new Management({ partnerId, adminSecret });
-const admin = await kaltura.sessions.createAdminToken();
+const admin = await kaltura.sessions.createAdminToken({ userId: 'admin@example.com' });
 
 // 1. Discovery — what a no-code rule-editor UI would show in its dropdowns.
 const objectTypes = await kaltura.lifecycle.listObjects(admin);

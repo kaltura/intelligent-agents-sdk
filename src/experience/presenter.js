@@ -213,6 +213,9 @@ export class Presenter {
    * kind of `'resume'` nav WRITE the same field, N resume calls in a row would each
    * resolve to the previous call's own landing spot instead of all landing on the
    * same anchor.
+   *
+   * A call is ignored (no event, no hook) when `n` is outside `1..total`, when `n` is the
+   * current slide, or after {@link Presenter#destroy}.
    * @param {number} n @param {string} [reason]
    */
   goTo(n, reason = 'user') {

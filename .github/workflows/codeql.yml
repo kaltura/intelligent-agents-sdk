@@ -1,9 +1,8 @@
 name: CodeQL
 
-# Replaces GitHub's "default setup" CodeQL scanning with an advanced-setup
-# workflow so it can skip docs-only pushes/PRs, same as ci.yml's code jobs.
-# Not a required status check (see branch protection) — it's a security
-# scan, not a merge gate.
+# Advanced-setup CodeQL scan. It skips docs-only pushes/PRs, same as ci.yml's
+# code jobs. Not a required status check (see branch protection): it is a
+# security scan, not a merge gate.
 on:
   push:
     branches: [main]
@@ -12,8 +11,7 @@ on:
   merge_group:
     branches: [main]
   schedule:
-    # Weekly full scan regardless of what changed, matching the previous
-    # default-setup cadence.
+    # Weekly full scan regardless of what changed.
     - cron: '30 1 * * 0'
 
 permissions:

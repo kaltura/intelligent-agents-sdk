@@ -79,7 +79,7 @@ const created = [];
 async function cleanup() {
   console.log('\nShutting down…');
   if (server) await new Promise((r) => server.close(r));
-  const admin = created.length ? await kaltura.sessions.createAdminToken().catch(() => null) : null;
+  const admin = created.length ? await kaltura.sessions.createAdminToken({ userId: 'sdk-manual-testing' }).catch(() => null) : null;
   if (admin) {
     const del = (label, p) => p.catch((err) => console.error(`${label} delete failed:`, err?.message || err));
     for (const c of created) {
@@ -96,7 +96,7 @@ async function cleanup() {
 process.on('SIGINT', cleanup);
 process.on('SIGTERM', cleanup);
 
-const admin = await kaltura.sessions.createAdminToken({ ttlSeconds: FOUR_HOURS });
+const admin = await kaltura.sessions.createAdminToken({ userId: 'sdk-manual-testing', ttlSeconds: FOUR_HOURS });
 const voices = await kaltura.catalog.list(admin.ks, { type: 'Voice', pageSize: 100 }).all();
 
 async function provisionMember(member) {

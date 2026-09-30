@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { isPrivateOrLoopbackHost, PRIVATE_IP_RE } from '../../src/core/net-guard.js';
+import { assertSecureTransport } from '../../src/core/transport-guard.js';
 
 /** core/net-guard.js — the shared private-network host predicate + log-scrub regex. */
 
@@ -74,4 +75,20 @@ test('PRIVATE_IP_RE scrubs private IPv4 literals from free text, global + word-b
 test('PRIVATE_IP_RE does NOT match the word "localhost" or the IPv6 literal "::1" (hostnames, not octets)', () => {
   const text = 'reach it at localhost or ::1 for local dev';
   assert.equal(PRIVATE_IP_RE.test(text), false);
+});
+
+test('assertSecureTransport: localhost warns, other insecure hosts throw unless allowInsecure', () => {
+  const warns = [];
+  const warn = (m) => warns.push(m);
+  assertSecureTransport('http://localhost:3000', 'agenticUrl', false, warn);
+  assert.equal(warns.length, 1);
+  assert.match(warns[0], /on a local\/private host/);
+  assertSecureTransport('https://example.com', 'agenticUrl', false, warn);
+  assert.equal(warns.length, 1);
+  assert.throws(
+    () => assertSecureTransport('http://example.com', 'agenticUrl', false, warn),
+    (e) => e.code === 'insecure_transport' && /Localhost and private-network hosts only warn/.test(e.detail) && /allowInsecureTransport:true/.test(e.detail),
+  );
+  assertSecureTransport('http://example.com', 'agenticUrl', true, warn);
+  assert.equal(warns.length, 2);
 });

@@ -15,7 +15,7 @@
  *               themselves via `mgmt.tools`.
  *   - skill_ids → `mgmt.skills` is the SEPARATE, partner-level Skill entity
  *               CRUD (`add`/`get`/`list`/`update`/`remove`, see
- *               API-REFERENCE.md § Skills). This facade's `setSkillIds` only writes the INTELLECT-side
+ *               docs/api/management-operations.md § Skills). This facade's `setSkillIds` only writes the INTELLECT-side
  *               reference list (`{id, mode, condition?}` entries, `mode` one of
  *               {@link SKILL_MODES}) — create/edit the skill bodies themselves
  *               via `mgmt.skills`.
@@ -31,8 +31,8 @@
  * from intellects.js) that `Intellects#_rmwBody` and `Knowledge#setEnabled`
  * (conversations.js) use — the merge logic lives in exactly one place.
  *
- * WHY re-send the whole config? Genie's `v1/intellect/update` is a
- * `model_fields_set` PATCH that PRESERVES omitted TOP-LEVEL fields — but
+ * WHY re-send the whole config? Genie's `v1/intellect/update` changes only
+ * the TOP-LEVEL fields you send, but
  * DICT-valued fields (`capabilities`, `secrets`) are FULL-REPLACE sub-dicts: a
  * partial dict drops the siblings it omits. So those dicts are read-merge-written
  * (capabilities via {@link mergeCapabilityWrite}; secrets via the
@@ -244,8 +244,8 @@ export class IntellectConfig {
   /**
    * Set the intellect's `tool_ids` — the list of standalone Tool entities (see
    * `mgmt.tools`) this intellect may call. WRITE — idempotent. `tool_ids` is a
-   * direct, ungated reference-list write (like `knowledge_ids`), but
-   * UNCAPPED (no maxItems in the DTO). This only edits the reference list — to
+   * direct, ungated reference-list write (like `knowledge_ids`). The SDK applies
+   * no length cap. This only edits the reference list, to
    * create/edit a tool BODY, use `mgmt.tools.add`/`update`/`remove` first, then
    * pass its `id` here. Pass `[]` to detach every tool.
    * @param {number} configId @param {string[]} toolIds @param {string} ks (admin)
@@ -267,8 +267,7 @@ export class IntellectConfig {
    * Set the intellect's `skill_ids` — the list of standalone Skill entities
    * (see `mgmt.skills`) this intellect may draw on, each with an attach `mode`
    * (see {@link SKILL_MODES}). WRITE — idempotent, UNGATED (direct
-   * reference-list write like `tool_ids`/`knowledge_ids` — confirmed via
-   * `intellect/add` + `intellect/get` round-trip). This only edits the
+   * reference-list write like `tool_ids`/`knowledge_ids`). This only edits the
    * reference list — create/edit a Skill body via `mgmt.skills.add` first,
    * then pass its `id` here. Pass `[]` to detach every skill. An optional
    * `condition` is a Jinja2 expression over thread variables (for example
@@ -512,10 +511,9 @@ export class IntellectConfig {
   /**
    * Set `user_properties_forms` — the structured-data forms the agent emits, a
    * LIST of `{call_stage, properties:[{key,type}]}` (one form per stage;
-   * the server 422s a bare dict with "Input should be a valid
-   * list", and the list shape round-trips on read-back; the server enriches
-   * each stored form with default `id`/`title`/`secondary_title` fields on
-   * read).
+   * a bare dict is rejected, and the list shape round-trips on read-back;
+   * stored forms may come back with extra default `id`/`title`/`secondary_title`
+   * fields).
    * WRITE — idempotent. Validates every form (≥1 property, valid stage, valid
    * arg types) before any network call. Accepts a single form object as a
    * convenience — it is wrapped into a one-element list.
@@ -596,20 +594,19 @@ export class IntellectConfig {
    * `docs/MCP-INTEGRATIONS.md`. `allowedTools`/`allowedPrompts`/
    * `allowedResources` restrict the server's surface to a named subset;
    * `allowedTools` is pre-exposure (a blocked tool is never shown to the
-   * model), while prompts/resources filtering is accepted but not yet
-   * surfaced to the model by the backend.
+   * model), while prompts/resources filtering is accepted but is not
+   * surfaced to the model.
    *
-   * `transport` defaults to `'streamable_http'` (the current MCP spec's
-   * transport) when omitted; pass `'sse'` only for a server that still needs
-   * the legacy transport the spec itself has moved past.
+   * `transport` defaults to `'streamable_http'` when omitted. Pass `'sse'` for
+   * a server that only supports the older SSE transport.
    *
    * The backend NORMALIZES on read: every entry comes back expanded with
    * `type:'mcp'` and a `transport` (defaulted to `'streamable_http'` when you
    * didn't set one). `allowed_tools`/`allowed_prompts`/`allowed_resources`
    * echo back the real stored value; `headers` is the one field `describe()`
    * itself collapses to a boolean (`hasHeaders`) rather than round-tripping a
-   * template string like `{{secrets.X}}`. Don't diff your input against a
-   * subsequent `get`/`describe()` byte-for-byte regardless.
+   * template string like `{{secrets.X}}`. Don't compare your input to a later
+   * `get`/`describe()` byte for byte.
    * @param {number} configId
    * @param {Record<string,{url:string, transport?:'streamable_http'|'sse', headers?:Record<string,string>, allowedTools?:string[], allowedPrompts?:string[], allowedResources?:string[]}>} servers Map of server name → entry.
    * @param {string} ks (admin)
@@ -719,7 +716,7 @@ export class IntellectConfig {
 
 /**
  * Validate + build the `user_properties_forms` wire shape — a LIST of
- * `{call_stage, properties:[{key,type}]}` (the server 422s a bare dict).
+ * `{call_stage, properties:[{key,type}]}` (a bare dict is rejected).
  * PURE; throws `bad_request` before any network call. A single
  * form object is accepted and wrapped into a one-element list.
  * @param {object|object[]} forms One `{callStage|call_stage, properties:[{key,type}]}` or a list of them.

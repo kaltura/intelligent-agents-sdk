@@ -16,11 +16,6 @@
  * (values are never returned), NOT from `redact()` — secret values live under
  * arbitrary keys that do not match any redact pattern. So this surface simply
  * never echoes a value.
- *
- * HONEST LIMIT: client-side encryption / BYOK / CMK is NOT buildable.
- * Secrets are encrypted at rest server-side; there is no public
- * key-wrap endpoint. This is a real backend capability gap, not a DX gap,
- * and this module does not pretend to encrypt client-side.
  */
 import { KalturaError } from '../core/errors.js';
 import { meta } from '../core/ids.js';
@@ -71,7 +66,7 @@ export class IntellectSecrets {
    * FULL `config.secrets` dict: existing secrets are re-sent as `"***"` (so the
    * merge-keep guard preserves them) and the supplied `{name:value}` pairs
    * overwrite/insert. A literal `"***"` value is REJECTED (it is the keep
-   * sentinel, not a storable value); empty/blank values are rejected too.
+   * sentinel, not a storable value); empty values are rejected too.
    * @param {number} configId
    * @param {Record<string,string>} entries `{name: plaintextValue}`
    * @param {string} ks (admin)
@@ -176,9 +171,10 @@ export class IntellectSecrets {
 
   /**
    * Fetch the intellect and cross-check that every `{{secrets.X}}` reference in
-   * its tools / prompts / MCP server headers resolves to a known secret name,
+   * its tools / prompts / MCP server config resolves to a known secret name,
    * and report dead (unused) secrets. READ — no state change.
-   * WARNS, never throws (an OAuth bootstrap may add the secret in a later call).
+   * Reports unresolved refs in the result and does not throw for them (an OAuth
+   * bootstrap may add the secret in a later call).
    * @param {number} configId
    * @param {string} ks (admin)
    * @returns {Promise<{ok:boolean, unresolved:{ref:string,where:string}[], badPrefix:{ref:string,where:string,note:string}[], unused:string[], references:{name:string,where:string,prefixed:boolean}[], _meta:object}>}
@@ -261,7 +257,7 @@ const REF_RE = /\{\{\s*(variables\.)?secrets\.([A-Za-z0-9_\-.]+)\s*\}\}/g;
  * returned report — never throws. Accepts either:
  *
  *   validateSecretRefs({ secretNames, tools?, prompts?, mcpServers? })
- *   validateSecretRefs(toolConfig, secretNames)   // task convenience overload
+ *   validateSecretRefs(toolConfig, secretNames)   // convenience overload
  *
  * Canonical reference is `{{secrets.X}}` (rendered server-side into the prompt
  * template at converse time, under the `secrets` namespace). The

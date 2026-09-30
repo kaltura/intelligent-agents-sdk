@@ -28,7 +28,7 @@ async function cleanup() {
   console.log('\nShutting down…');
   if (server) await new Promise((r) => server.close(r));
   if (provisioned) {
-    const admin = await kaltura.sessions.createAdminToken().catch(() => null);
+    const admin = await kaltura.sessions.createAdminToken({ userId: 'sdk-manual-testing' }).catch(() => null);
     if (admin) {
       await kaltura.agents.delete(provisioned.agentId, admin.ks, { confirmPermanent: true }).catch((err) => console.error('agent delete failed:', err?.message || err));
       await kaltura.avatars.delete(provisioned.avatarId, admin.ks, { confirmPermanent: true }).catch((err) => console.error('avatar delete failed:', err?.message || err));
@@ -42,7 +42,7 @@ async function cleanup() {
 process.on('SIGINT', cleanup);
 process.on('SIGTERM', cleanup);
 
-const admin = await kaltura.sessions.createAdminToken({ ttlSeconds: FOUR_HOURS });
+const admin = await kaltura.sessions.createAdminToken({ userId: 'sdk-manual-testing', ttlSeconds: FOUR_HOURS });
 // MANUAL_VERIFY_VISUAL_ID: a Visual catalog item id (`catalog.list`) to use instead of the first preset,
 // e.g. a green-screen portrait so the chroma-key example has something to key.
 provisioned = await kaltura.provision({ brief: 'A friendly manual-QA greeter avatar', ks: admin.ks, visualId: process.env.MANUAL_VERIFY_VISUAL_ID || undefined });

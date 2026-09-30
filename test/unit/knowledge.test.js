@@ -51,3 +51,23 @@ test('knowledge.search passes through all five tuning params', async () => {
     query: 'q', top_n: 2, with_line_numbers: true, margins_in_seconds: 30, include_sources: true, entry_description: true,
   });
 });
+
+test('knowledge.deleteRecord rejects when an intellect lookup fails with a 500, and does not delete', async () => {
+  const { mgmt, ff } = harness([
+    { match: 'v1/knowledge/delete', respond: () => ({ status: 200, body: {} }) },
+    { match: 'v1/intellect/list', respond: () => ({ status: 200, body: { totalCount: 1, objects: [{ id: 42 }] } }) },
+    { match: 'v1/intellect/get', respond: () => ({ status: 500, body: { message: 'boom' } }) },
+  ]);
+  await assert.rejects(() => mgmt.knowledge.deleteRecord(7, ADMIN_KS, { confirmPermanent: true }), (e) => e.code === 'server_error');
+  assert.equal(ff.calls.some((c) => /knowledge\/delete/.test(c.url)), false, 'delete does not proceed');
+});
+
+test('knowledge.deleteRecord skips an intellect whose get returns not_found (deleted between list and get)', async () => {
+  const { mgmt, ff } = harness([
+    { match: 'v1/intellect/list', respond: () => ({ status: 200, body: { totalCount: 1, objects: [{ id: 42 }] } }) },
+    { match: 'v1/intellect/get', respond: () => ({ status: 404, body: { message: 'gone' } }) },
+    { match: 'delete', respond: () => ({ status: 200, body: {} }) },
+  ]);
+  await mgmt.knowledge.deleteRecord(7, ADMIN_KS, { confirmPermanent: true });
+  assert.equal(ff.calls.some((c) => /delete/.test(c.url)), true);
+});

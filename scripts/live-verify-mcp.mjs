@@ -5,7 +5,7 @@
  * Wires the reference server at `examples/mcp-live-showcase/server.mjs`
  * (exposed over a public HTTPS URL) into throwaway intellects and proves
  * every documented `mcp_servers` behavior end to end, against a live
- * environment (NVQ2 or NVP1, selected with --target):
+ * environment (QA or production, selected with --target):
  *
  *   1  basic tool call            — echo, no auth
  *   2  shared static auth         — {{secrets.X}} header, whoami echoes it back
@@ -42,8 +42,8 @@
  * (see docs/MCP-INTEGRATIONS.md, "Multiple servers, no collision risk") — the
  * rules prompts below use the namespaced form.
  *
- * Credentials: this trio's root .env (two levels up from this file, NOT the
- * repo-root .env) holds NVQ2_ and NVP1_ prefixed vars. --target selects the
+ * Credentials: your .env (two levels up from this file, not the repo-root
+ * .env) holds QA and production prefixed vars. --target selects the
  * prefix; Management is constructed with explicit agenticUrl/genieUrl/ovpUrl
  * overrides, since the defaults are production.
  */
@@ -62,7 +62,7 @@ try {
     if (m && !process.env[m[1]]) process.env[m[1]] = m[2].trim().replace(/^["']|["']$/g, '');
   }
 } catch {
-  // No trio-root .env — credentials must already be in the environment.
+  // No .env file: credentials must already be in the environment.
 }
 
 const argValue = (flag, fallback) => {
@@ -83,7 +83,7 @@ const genieUrl = process.env[`${PREFIX}_GENIE_URL`];
 const ovpUrl = process.env[`${PREFIX}_KALTURA_API_ENDPOINT`];
 
 if (!partnerId || !adminSecret || !agenticUrl || !genieUrl || !ovpUrl) {
-  console.error(`Missing ${PREFIX}_* credentials/URLs (env or trio-root .env two levels up).`);
+  console.error(`Missing ${PREFIX}_* credentials/URLs (env or your .env two levels up).`);
   process.exit(1);
 }
 if (PHASE !== 'verify' && !MCP_BASE) {
@@ -134,7 +134,7 @@ async function runProvision() {
   const OPEN_URL = `${MCP_BASE}/mcp`;
   const OAUTH_URL = `${MCP_BASE}/mcp/oauth`;
   const RUN_TAG = `mcp${Date.now().toString(36)}`;
-  const admin = await kaltura.sessions.createAdminToken();
+  const admin = await kaltura.sessions.createAdminToken({ userId: 'sdk-live-verify' });
   record('admin-token-mint-provision', true, { secondsRemaining: admin.secondsRemaining(), target: TARGET });
 
   const intel = async (prompts) => (await kaltura.intellects.add({ type: 'internal', status: 2, allow_client_variables: true, prompts, capabilities: CAPABILITIES }, admin)).id;
@@ -199,7 +199,7 @@ async function runVerify() {
   const state = JSON.parse(readFileSync(statePath, 'utf8'));
   for (const r of state.provisionResults) results.push(r);
   const { intellectA, intellectB, intellectC, intellectE, sharedToken, runTag } = state;
-  const admin = await kaltura.sessions.createAdminToken();
+  const admin = await kaltura.sessions.createAdminToken({ userId: 'sdk-live-verify' });
   record('admin-token-mint-verify', true, { secondsRemaining: admin.secondsRemaining(), target: TARGET, ageMs: Date.now() - new Date(state.provisionedAt).getTime() });
 
   try {
@@ -327,7 +327,7 @@ async function runCleanup() {
     return;
   }
   const state = JSON.parse(readFileSync(statePath, 'utf8'));
-  const admin = await kaltura.sessions.createAdminToken();
+  const admin = await kaltura.sessions.createAdminToken({ userId: 'sdk-live-verify' });
   for (const id of [state.intellectA, state.intellectB, state.intellectC, state.intellectD, state.intellectE]) {
     try {
       await kaltura.intellects.delete(id, admin, { confirmPermanent: true });

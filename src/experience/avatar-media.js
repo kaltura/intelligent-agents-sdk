@@ -82,8 +82,8 @@ export class AvatarMedia {
       old.stop?.();
     }
     if (!this._c.getTracks().includes(track)) this._c.addTrack(track);
-    // Bind on the first track, or again when the app replaced `srcObject` itself (main re-assigned
-    // it on every track, so a self-nulled element got the picture back on recovery; keep that).
+    // Bind on the first track, or again when the app replaced `srcObject` itself, so an element
+    // the app nulled gets the picture back on recovery.
     if (this._videoEl && (!this._v || this._videoEl.srcObject !== this._v)) this._bind('video');
     if (this._audioEl && (!this._a || this._audioEl.srcObject !== this._a)) this._bind('audio');
     this._sync();

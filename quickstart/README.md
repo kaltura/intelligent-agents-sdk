@@ -16,7 +16,7 @@ node create-agent.mjs "A friendly yoga studio receptionist who helps people book
 
 > **Windows?** Use PowerShell: replace `export VAR=value` with `$env:VAR="value"`. Or put both vars in a `.env` file in the repo root and they are picked up automatically.
 
-The script provisions a complete agent (brain + face + voice), sends it a test message, and prints the response. It takes 1–3 minutes — you will see progress as it builds.
+The script provisions a complete agent (brain + face + voice), sends it a test message, and prints the response. It takes 1–3 minutes and prints a status line for each of its three steps.
 
 ## What it does
 

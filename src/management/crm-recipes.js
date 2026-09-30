@@ -6,9 +6,7 @@
  * it with `mgmt.intellectConfig.setToolIds(configId, [toolId], ks)`.
  * No network calls; no secrets stored here (inject via `mgmt.intellects.secrets.set`).
  *
- * These builders are aimed at external SDK consumers building an AI-SDR or
- * concierge agent; see `sdk/README.md` ("AI-SDR / CRM lead capture") for a
- * fuller walkthrough.
+ * See README.md ("AI-SDR / CRM lead capture") for a walkthrough.
  *
  * Usage:
  *   const tool = hubspotContactUpsert({ secretName: 'HUBSPOT_TOKEN' });

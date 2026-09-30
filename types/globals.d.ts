@@ -1,4 +1,4 @@
-// Ambient decls for the couple of Node-only globals used in src/ (Buffer, atob).
+// Ambient decls for the globals used in src/ (Buffer, atob).
 // Deliberately NOT `@types/node`: that package's legacy `punycode`/`string_decoder`
 // ambient module shims collide with same-named real packages hoisted into
 // node_modules by other devDependencies, making tsc typecheck their bundled

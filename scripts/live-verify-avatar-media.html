@@ -30,7 +30,7 @@
     });
     window.session = session;
     if (silent) session.muteAudioOutput(); // stored now, applied to whichever element binds
-    for (const ev of ['streamReady', 'track', 'mediaReady', 'videoMetadata', 'warning', 'error', 'ended', 'stateChanged']) {
+    for (const ev of ['streamReady', 'track', 'mediaReady', 'videoMetadata', 'warning', 'error', 'ended', 'stateChange']) {
       session.on(ev, (p) => log(ev, ev === 'track' ? { kind: p?.track?.kind } : ev === 'error' ? { code: p?.code, message: p?.message } : p));
     }
 

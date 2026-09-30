@@ -22,8 +22,9 @@
  *
  * Emits the transport-agnostic event subset (`transcript`, `turnStart`,
  * `turnEnd`, `toolCall`, `toolCallResult`, `toolCallInvalid`, `stateChange`,
- * `responsePending`, `responseSettled`, `brainStalled`, `toolSpiralDetected`,
- * `sessionCompleted`, `warning`, `error`, `ended`) with the same payload
+ * `oauthRequired`, `oauthRequiredResult`, `responsePending`, `responseSettled`,
+ * `brainStalled`, `toolSpiralDetected`, `sessionCompleted`, `warning`, `error`,
+ * `ended`) with the same payload
  * shapes as `KalturaAvatarSession`, so app code written against the events
  * works unchanged when `KalturaAgentSession` swaps transports.
  *
@@ -56,8 +57,8 @@ const NON_PERCEIVABLE_TYPES = new Set(['think', 'keepalive']);
 const DEFAULT_GENIE_URL = 'https://genie.nvp1.ovp.kaltura.com';
 
 // Same backstop as KalturaAvatarSession (see its PENDING_TOOL_ACK_MAX_AGE_MS
-// doc): well above the largest client({timeout}) bound the server could still
-// be waiting on, so sweeping an entry never races a live server-side wait.
+// doc): well above the largest client({timeout}) bound, so sweeping an entry
+// never removes one that is still valid.
 const PENDING_TOOL_ACK_MAX_AGE_MS = 10 * 60_000;
 
 export class KalturaChatSession extends Emitter {
@@ -247,11 +248,19 @@ export class KalturaChatSession extends Emitter {
    * (`{text, type:'final'}`) per spoken segment, `toolCall`/`toolCallResult`/
    * `toolCallInvalid` per client command, then `responseSettled`/`turnEnd`.
    *
-   * The intellect's `allow_client_variables` gate being OFF is a SILENT
-   * failure on this path too: the turn resolves with empty
-   * `text` and zero segments — no error reaches the wire. Like the live
-   * socket, the session detects it and emits a once-per-session `warning`
-   * (`code: 'empty_turn_with_request_vars'`, var KEYS only, never values).
+   * Request variables need the intellect's `allow_client_variables` gate ON
+   * (it is on by default). When you send request variables and the gate is OFF,
+   * one of two things happens:
+   * - Silent empty turn: the turn resolves with empty `text` and zero
+   *   segments, no error. The session emits a once-per-session `warning`
+   *   (`code: 'empty_turn_with_request_vars'`, var KEYS only, never values).
+   * - Loud error: the request is rejected with a 403 that says client variables
+   *   are not allowed. `sendText()` rejects with `KalturaError`
+   *   `client_variables_disabled` and the session also emits `error`. The
+   *   session stays connected.
+   *
+   * Fix both by turning the gate on:
+   * `intellects.setClientVariablesEnabled(configId, true, adminKs)`.
    * @param {string} text
    * @param {{signal?: AbortSignal}} [opts] Abort cancels the in-flight turn.
    * @returns {Promise<{text:string, threadId:string|undefined, messageId:string|undefined, segments:object[]}>}
@@ -410,17 +419,18 @@ export class KalturaChatSession extends Emitter {
    * ACK a `wait_for_response:true` client tool call — the exact peer of
    * `KalturaAvatarSession.respondToTool` (same `/assistant/tool_response`
    * POST, same KS auth, same graceful `{ok:false, reason:'unknown_or_stale'}`
-   * degradation; see that method's doc for the full contract). Because chat
+   * degradation, and `{ok:false, reason:'http_error', status}` on an HTTP 4xx/5xx;
+   * see that method's doc for the full contract). Because chat
    * segments are parsed mid-stream, calling this from an `onToolCall` handler
    * unblocks the brain within the SAME turn.
    * @param {string} id `call.toolMetadata.id` from the tool call being acknowledged.
    * @param {object} response JSON-serializable result (plain object).
-   * @returns {Promise<{ok:boolean, reason?:string}>}
+   * @returns {Promise<{ok:boolean, reason?:string, status?:number}>}
    */
   async respondToTool(id, response) {
     this._requireConnected('respondToTool');
     if (typeof id !== 'string' || !id) throw new KalturaError({ type: 'about:blank', title: 'bad respondToTool', code: 'bad_request', detail: 'respondToTool(id, response) needs a non-empty id — pass call.toolMetadata.id from the tool call being acknowledged.' });
-    if (!response || typeof response !== 'object' || Array.isArray(response)) throw new KalturaError({ type: 'about:blank', title: 'bad respondToTool', code: 'bad_request', detail: 'respondToTool response must be a plain JSON object (the backend 422s on a non-dict body).' });
+    if (!response || typeof response !== 'object' || Array.isArray(response)) throw new KalturaError({ type: 'about:blank', title: 'bad respondToTool', code: 'bad_request', detail: 'respondToTool response must be a plain JSON object (not an array or scalar).' });
     const pending = this._pendingToolAcks.get(id);
     if (!pending || this._now() - pending.at > PENDING_TOOL_ACK_MAX_AGE_MS) {
       this._pendingToolAcks.delete(id);
@@ -428,14 +438,15 @@ export class KalturaChatSession extends Emitter {
       return { ok: false, reason: 'unknown_or_stale' };
     }
     const gen = this._sessionGen;
-    // tool_invocation_id: second required field, same id echoed under both keys (the backend 422s without it).
-    await this._fetch(`${this._genieUrl}/assistant/tool_response`, {
+    const res = await this._fetch(`${this._genieUrl}/assistant/tool_response`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `KS ${this._token}` },
       body: JSON.stringify({ tool_name: pending.name, tool_id: id, tool_invocation_id: id, response: sanitizeJson(response) }),
     });
+    if (gen !== this._sessionGen) { this._pendingToolAcks.delete(id); this._audit('tool.ack', 'fail', { reason: 'session_rebuilt' }); return { ok: false, reason: 'session_rebuilt' }; }
+    // A rejected POST keeps the pending entry, so the app can retry with the same id.
+    if (res && res.ok === false) { this._audit('tool.ack', 'fail', { reason: 'http_error', status: res.status }); return { ok: false, reason: 'http_error', status: res.status }; }
     this._pendingToolAcks.delete(id);
-    if (gen !== this._sessionGen) { this._audit('tool.ack', 'fail', { reason: 'session_rebuilt' }); return { ok: false, reason: 'session_rebuilt' }; }
     this._audit('tool.ack', 'success', { action: pending.name });
     return { ok: true };
   }
@@ -494,9 +505,13 @@ export class KalturaChatSession extends Emitter {
   /**
    * Send the "conversation is truly over" signal to genie without tearing anything down —
    * for apps with their own teardown flow (server-side, logout hooks, cross-device end-session
-   * buttons a same-device `BroadcastChannel` can't see). Idempotent: a second call (including
-   * one already triggered by `disconnect()`) resolves `{ok:true, reason:'already_sent'}`.
-   * @returns {Promise<{ok:boolean, reason?:string, peers?:number}>}
+   * buttons a same-device `BroadcastChannel` can't see). Idempotent: a repeat call after a
+   * successful send resolves `{ok:true, reason:'already_sent'}`. Failures resolve, they do not
+   * throw: `{ok:false, reason}` with `reason` one of `disabled`, `no_thread`, `no_token`,
+   * `http_error` (plus `status`), `network_error`. When another open tab of the same thread
+   * remains, it resolves `{ok:true, reason:'suppressed', peers}` and sends nothing.
+   * @returns {Promise<{ok:boolean, reason?:string, peers?:number, status?:number}>}
+   * @throws {KalturaError} `invalid_state` after `disconnect()`.
    */
   async completeThread() {
     if (this.state === 'closed') throw new KalturaError({ type: 'about:blank', title: 'not connected', code: 'invalid_state', detail: 'completeThread() requires a session that has not already disconnected.' });
@@ -603,12 +618,11 @@ export class KalturaChatSession extends Emitter {
   _warnOnce(key, msg) { if (!this._warned.has(key)) { this._warned.add(key); this._log('warn', '[security] ' + msg); } }
 
   /**
-   * Diagnose the silent-empty-turn failure mode — the exact peer of
-   * `KalturaAvatarSession._checkEmptyTurn` on THIS path too:
+   * Diagnose the silent-empty-turn failure mode, the peer of
+   * `KalturaAvatarSession._checkEmptyTurn`:
    * with the intellect's `allow_client_variables` gate OFF, a converse turn
-   * that sends request variables resolves with zero segments and NO error —
-   * the 403 is raised server-side after the response stream has already
-   * opened, so it never reaches the wire. Emits a typed `warning`
+   * that sends request variables can resolve with zero segments and NO error.
+   * Emits a typed `warning`
    * (`code: 'empty_turn_with_request_vars'`, var KEYS only — never values)
    * at most once per session. A single empty turn can be benign, so this is
    * a diagnostic, never an error.
@@ -617,7 +631,7 @@ export class KalturaChatSession extends Emitter {
     const keys = Object.keys(this._requestVars || {});
     if (!keys.length || this._warned.has('empty-turn-request-vars')) return;
     this._warned.add('empty-turn-request-vars');
-    this._log('warn', `turn ended with no output while request variables were sent (keys: ${keys.join(', ')}) — if this repeats, the intellect's allow_client_variables gate is likely OFF (this failure is silent; no error is returned). Enable it via intellects.setClientVariablesEnabled(id, true).`);
+    this._log('warn', `turn ended with no output while request variables were sent (keys: ${keys.join(', ')}). If this repeats, the intellect's allow_client_variables gate is likely OFF (this failure is silent; no error is returned). Turn it on with intellects.setClientVariablesEnabled(id, true, adminKs).`);
     this.emit('warning', {
       code: 'empty_turn_with_request_vars',
       message: 'Turn produced no output while request variables were sent — likely allow_client_variables is off on the intellect (a silent failure; the server returns no error).',

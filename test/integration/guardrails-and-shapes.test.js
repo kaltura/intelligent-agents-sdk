@@ -119,7 +119,7 @@ test('#11 conversation resource methods send the EXACT documented request bodies
     { match: 'v1/thread/update', respond: (req) => { seen.rename = { body: req.body }; return { body: { id: req.body.id } }; } },
     { match: 'v1/thread/delete', respond: cap('delete') },
     { match: 'v1/thread/get_transcripts', respond: cap('transcript') },
-    { match: 'message/share', respond: (req) => { seen.share = { body: req.body }; return { body: { newMessageId: 'm2' } }; } },
+    { match: 'message/share', respond: (req) => { seen.share = { body: req.body }; return { body: { status: 'success', data: { newMessageId: 'm2' } } }; } },
     { match: 'message/list', respond: (req) => { seen.messages = { body: req.body }; return { body: { objects: [], totalCount: 0 } }; } },
     { match: 'feedback/add', respond: (req) => { seen.feedback = { body: req.body }; return { body: { id: 'f1' } }; } },
     { match: 'followup/get-suggested-questions', respond: cap('followups') },

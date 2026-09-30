@@ -1,10 +1,10 @@
 /**
  * Lifecycle — event-driven rule engine on the Agentic host's `lifecycle/*`
  * routes (agentic-hosted, `{offset,limit}` pager). A rule is `{eventType,
- * objectType, eventConditions[], action}` — when a matching backend event
+ * objectType, eventConditions[], action}`, when a matching event
  * fires (e.g. a thread's `session_ended`), every active rule (including
- * partner-invisible, system-seeded preset rules — see {@link
- * Lifecycle#match}) is evaluated and its `action` runs server-side. Three
+ * preset rules you did not create, see {@link
+ * Lifecycle#match}) is evaluated and its `action` runs. Three
  * action shapes are available to callers, passed through as plain objects
  * (not built by the SDK):
  *
@@ -18,14 +18,14 @@
  *   skipped (the rest of the action still fires).
  * - `{actionType:'sendInsightEmail', recipients:string[], templateId?:string,
  *   presetType?:string}` — only fires on `eventType:'analysis_updated'`; a
- *   `session_ended` rule with this action type is a no-op server-side.
+ *   `session_ended` rule with this action type does nothing.
  * - `{actionType:'triggerDtcKai'}` — takes no caller-supplied fields.
  *   Extracts one insight per lead-capture field configured on the target
  *   intellect (`intellectConfig.user_properties_forms`) and is
  *   automatically skipped when none are configured.
  *
  * Every session also gets one fixed, built-in summary insight for free —
- * it comes from a system-seeded preset rule visible via {@link
+ * it comes from a preset rule visible via {@link
  * Lifecycle#match} but never creatable, updatable, or customizable by a
  * caller. See `docs/lifecycle/README.md` for the full explanation. Mounted
  * at `mgmt.lifecycle`.
@@ -144,16 +144,13 @@ export class Lifecycle {
    * Dry-run event matching: "if this event happened right now, which rules
    * would fire?" READ. `eventData` is `{object?:object, changed_keys?:string[]}`
    * — NOT a bare `object` field at the top level. For `objectType:'thread'`
-   * (both `session_ended` and `analysis_updated`), `object` is validated
-   * server-side against a strict schema — all 3 of `agent_id`, `thread_id`,
-   * `user_id` are REQUIRED strings; omitting any one 400s live naming the
-   * missing path (e.g. `"eventData.object.user_id: Invalid input: expected
-   * string, received undefined"`).
+   * (both `session_ended` and `analysis_updated`), `object` needs all 3 of
+   * `agent_id`, `thread_id`, `user_id` as strings. Omitting any one returns a
+   * 400 that names the missing field.
    *
-   * The response can include rules the caller never created: production
-   * ships a system-seeded preset rule (`preset__summary_on_session_ended`)
-   * that matches every `session_ended`/`thread` event for every partner by
-   * default, and it shows up in `matchedRules[]` alongside the caller's own.
+   * The response can include rules the caller never created. The preset rule
+   * `preset__summary_on_session_ended` matches every `session_ended`/`thread`
+   * event and shows up in `matchedRules[]` alongside the caller's own.
    * Related rules are grouped: `matchedRules[].isGrouped` is `true` when two
    * or more rules share a `groupKey` and dispatch as one composite action.
    * Example mixed response:
@@ -186,7 +183,7 @@ export class Lifecycle {
   }
 
   /**
-   * List the object types rules can target (currently just `thread`). READ,
+   * List the object types rules can target (e.g. `thread`). READ,
    * one-call passthrough — for a no-code rule-editor UI's dropdowns.
    * @param {string} ks (admin)
    */

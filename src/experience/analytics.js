@@ -1,21 +1,15 @@
 /**
  * KAVA (Kaltura Video Analytics) reporting — client-only Application Events.
  *
- * Deliberately implements ONLY the 10000-range "Application Event" family —
- * `pageLoad` (10003) and `buttonClicked` (10002) — for interactions the
- * server has zero visibility into (a page/view landing, a UI-only click the
- * backend never learns about). This is a STANDALONE reporter: it never reads
- * from or subscribes to a `KalturaAvatarSession`.
+ * Implements ONLY the 10000-range "Application Event" family:
+ * `pageLoad` (10003) and `buttonClicked` (10002), for interactions that
+ * happen outside the agent session (a page/view landing, a UI-only click).
+ * This is a STANDALONE reporter: it never reads from or subscribes to a
+ * `KalturaAvatarSession`.
  *
  * The 80000-range "Immersive Agents" events (`callStarted`/`callEnded`/
- * `messageResponse`/`messageFeedbackSent`) are intentionally NOT implemented
- * here, and there is no code path in this module that can send them.
- * The backend already reports all four server-side for
- * every session `KalturaAvatarSession` connects to (same socket, matching
- * event names) — a client-side copy would double-count
- * on the live analytics dashboards. If a real gap in that server-side
- * reporting is ever found, file it as a GitHub issue rather than adding a
- * client resend.
+ * `messageResponse`/`messageFeedbackSent`) are not implemented here, and no
+ * code path in this module can send them.
  *
  * Fire-and-forget by design (no retry contract, no batching — one HTTP call
  * per event): prefers `navigator.sendBeacon` (survives page-unload) and
@@ -24,22 +18,22 @@
  */
 import { KalturaError } from '../core/errors.js';
 
-/** The KAVA ingestion endpoint (query/body target for `service=analytics&action=trackEvent`). */
+/** The KAVA ingestion endpoint. Events are POSTed here as a form body that carries `service=analytics&action=trackEvent`. */
 export const DEFAULT_ANALYTICS_URL = 'https://analytics.kaltura.com/api_v3/index.php';
 
 /** The only two valid client-side event codes. Never add an 80000-range entry here. */
 export const EVENT_TYPES = Object.freeze({ pageLoad: 10003, buttonClicked: 10002 });
 
 /**
- * `hostingKalturaApplication` values (not strictly validated server-side —
- * closest match is acceptable). Exported so callers don't have to guess.
+ * `hostingKalturaApplication` values. The SDK does not validate the field. Exported so
+ * callers can pick the closest match.
  */
 export const HOSTING_APPLICATIONS = Object.freeze({
   genieChat: 23, agents: 25, modelsSdk: 26, conversationManager: 27,
   avatarVideos: 28, agenticAvatarsStudio: 29, kaiVendor: 31,
 });
 
-/** Closed enum for `pageType` (the field is validated; `buttonType` is not — the guide leaves it open-ended). */
+/** Closed enum for `pageType` (`pageType` is validated client-side; `buttonType` is not). */
 export const PAGE_TYPES = Object.freeze([
   'View', 'Create', 'Edit', 'Participate', 'List', 'Analytics', 'Admin', 'Error', 'Login', 'Registration', 'Custom',
 ]);
@@ -66,9 +60,11 @@ function commonParams(common = {}) {
 
 /**
  * Build the exact wire params for a `pageLoad` (10003) event. Pure, never throws on missing
- * optional fields — throws only if `pageType` is set to a value outside {@link PAGE_TYPES}.
+ * optional fields.
  * @param {object} common see {@link commonParams}
  * @param {{pageType?:string, pageName?:string, pageValue?:string, pageInfo?:string}} fields
+ * @returns {Record<string,string>}
+ * @throws {KalturaError} `bad_request` if `pageType` is set to a value outside {@link PAGE_TYPES}.
  */
 export function buildPageLoadParams(common, fields = {}) {
   if (fields.pageType !== undefined && !PAGE_TYPES.includes(fields.pageType)) {
@@ -83,9 +79,10 @@ export function buildPageLoadParams(common, fields = {}) {
 
 /**
  * Build the exact wire params for a `buttonClicked` (10002) event. Pure. `buttonType` is
- * intentionally NOT validated against a closed enum — the spec leaves it open-ended.
+ * not validated against a closed enum.
  * @param {object} common see {@link commonParams}
  * @param {{buttonType?:string, buttonName?:string, buttonValue?:string, buttonInfo?:string}} fields
+ * @returns {Record<string,string>}
  */
 export function buildButtonClickedParams(common, fields = {}) {
   return {
@@ -100,8 +97,8 @@ export function buildButtonClickedParams(common, fields = {}) {
  * page/app instance with the common params that don't change per event; pass event-specific
  * fields to {@link KavaAnalytics#pageLoad}/{@link KavaAnalytics#buttonClicked}.
  *
- * WRITE, best-effort, NOT idempotent (each call records a new analytics row; the backend has
- * no dedup contract) — never awaited for correctness, since KAVA has no retry/ack contract.
+ * WRITE, best-effort, NOT idempotent (each call sends a new event and the SDK does not dedupe).
+ * Never await it for correctness: there is no retry or ack.
  */
 export class KavaAnalytics {
   /**
@@ -138,17 +135,20 @@ export class KavaAnalytics {
   /**
    * Report a page/view landing (10003) — once per page the user lands on.
    * @param {{pageType?:string, pageName?:string, pageValue?:string, pageInfo?:string}} [fields]
-   * @returns {Promise<{ok:boolean, transport:'beacon'|'fetch'|'disabled'|'none'}>}
+   * @returns {Promise<{ok:boolean, transport:'beacon'|'fetch'|'disabled'|'none'}>} `ok:true` means
+   *   the beacon was queued, or the fetch settled (any HTTP status; the body is never read).
+   *   `transport` names the path used: `disabled` (`enabled:false`) and `none` (no beacon or fetch available) give `ok:false`.
+   * @throws {KalturaError} `bad_request`, synchronously, if `pageType` is outside {@link PAGE_TYPES}.
    */
   pageLoad(fields = {}) {
     return this._send(buildPageLoadParams(this._common, fields));
   }
 
   /**
-   * Report a UI-only interaction the server can't see (10002) — a click, a contact-form
+   * Report a UI-only interaction outside the agent session (10002), such as a click, a contact-form
    * submit/skip, a widget dismiss, etc.
    * @param {{buttonType?:string, buttonName?:string, buttonValue?:string, buttonInfo?:string}} [fields]
-   * @returns {Promise<{ok:boolean, transport:'beacon'|'fetch'|'disabled'|'none'}>}
+   * @returns {Promise<{ok:boolean, transport:'beacon'|'fetch'|'disabled'|'none'}>} Same shape as {@link KavaAnalytics#pageLoad}. A rejected fetch gives `ok:false`.
    */
   buttonClicked(fields = {}) {
     return this._send(buildButtonClickedParams(this._common, fields));

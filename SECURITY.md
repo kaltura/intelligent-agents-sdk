@@ -1,21 +1,22 @@
 # Security & Compliance: `@kaltura/intelligent-agents`
 
-This SDK is built for enterprise and government deployments. It is secure by default and low-friction by design: the safe path is the clear path. Where strict compliance would otherwise hurt usability, the SDK keeps the ergonomic default and gives you a config knob plus a compliance note to tighten it.
+Defaults are secure. Where a strict setting would hurt usability, the SDK keeps a usable default and gives you an option to tighten it, noted in this file.
 
 - No runtime dependencies, no install scripts. The SDK is sourced directly from git (`src/`), not a package registry, so there's zero transitive supply-chain surface. Enforced in CI.
-- All cryptography is delegated to the platform. The SDK never rolls its own crypto: TLS, DTLS-SRTP (the encryption protocol securing WebRTC audio and video), and base64 come from the host (Node `tls`/`crypto`, browser WebCrypto/TLS). Run Node/OpenSSL in FIPS mode and a FIPS-validated OS/browser to operate in a FIPS-validated configuration (NIST SC-13).
-- Secrets never reach the client. The Admin Secret lives only server-side, in `Management`. The browser `KalturaAvatarSession` takes only a short-lived, entitlement-ON conversation token.
+- All cryptography is delegated to the platform. The SDK never rolls its own crypto: TLS and DTLS-SRTP (the encryption protocol securing WebRTC audio and video) come from the host (Node `tls`/`crypto`, browser WebCrypto/TLS). Run Node/OpenSSL in FIPS mode and a FIPS-validated OS/browser to operate in a FIPS-validated configuration (NIST SC-13).
+- Secrets never reach the client. The Admin Secret lives only server-side, in `Management`. The browser `KalturaAvatarSession` takes only a short-lived, entitlement-ON user-session token.
 
 Framework crosswalks map the SDK control-by-control to HIPAA, HITRUST, the OWASP LLM/Agentic Top 10, and avatar/deepfake/voice-clone law (EU AI Act Art. 50, NO FAKES, CA SB 1001, BIPA, C2PA). See the [framework crosswalks](#framework-crosswalks) section below, which also includes a copy-paste secure production baseline config.
 
 ## Reporting a vulnerability
 
-Email `security@kaltura.com` with details and a PoC if available. Please do not open a public issue for an undisclosed vulnerability. We acknowledge within a few business days and coordinate disclosure (NIST IR-6 / SI-2 is the operator's reporting duty; this is the vendor contact).
+Email `security@kaltura.com` with details and a PoC if available. Please do not open a public issue for an undisclosed vulnerability. We acknowledge within a few business days and coordinate disclosure.
 
 ## Table of contents
 
 - [AI-application controls](#ai-application-controls-owasp-llmagentic-hipaa-technical-safeguards)
 - [KS guidance for agents](#ks-kaltura-session-guidance-for-agents-ac-3--ac-6--ia-2)
+- [Session type](#session-type)
 - [Token lifecycle](#token-lifecycle-rfc-9700-oauth-20-security-bcp-nist-ac-family)
 - [Audit logging](#audit-logging-nist-au-2--au-3--au-12-owasp-logging-soc-2-cc7)
 - [Transport security](#transport-security-nist-sc-8-owasp-wsstls)
@@ -35,7 +36,7 @@ Email `security@kaltura.com` with details and a PoC if available. Please do not 
 
 ## AI-application controls (OWASP LLM/Agentic; HIPAA technical safeguards)
 
-Beyond the platform controls below, the SDK exposes developer-friendly guardrails for the AI/agent layer, detailed in the [framework crosswalks](#framework-crosswalks) below. Most require you to opt in by passing a callback or option. Two controls run automatically, regardless of configuration. The idle-timeout auto-logoff defaults to 900000 ms (15 minutes); pass `0` to disable it. The AI-disclosure event fires before the avatar's first words on every connect.
+Guardrails for the AI/agent layer. Most are opt-in: pass the callback or option. Framework mapping: [framework crosswalks](#framework-crosswalks).
 
 <!-- nova-target: guardrail-list | Guardrail list: output handling, input guardrail, agentic gate, consumption valve, HIPAA safeguards, deepfake disclosure -->
 - **Output handling (LLM05).** Opt-in: `safeUrl`, `safeText`, `renderSafeLink` (DOM-built, scheme-checked, never `innerHTML`). Call these yourself when rendering avatar text. On by default: inbound clamping of captions/segments.
@@ -48,33 +49,43 @@ Beyond the platform controls below, the SDK exposes developer-friendly guardrail
 
 ## KS (Kaltura Session) guidance for agents (AC-3 / AC-6 / IA-2)
 
-A KS carries the privileges that decide what it can do. The full privilege reference is Kaltura's own docs, not this file. See [Kaltura API Authentication and Security](https://github.com/kaltura/developer-platform-docs/blob/master/documentation/VPaaS-API-Getting-Started/Kaltura_API_Authentication_and_Security.md) for that. What follows is only what matters for agent/avatar deployments.
+A KS carries the privileges that decide what it can do. Full privilege reference: [Kaltura API Authentication and Security](https://github.com/kaltura/developer-platform-docs/blob/master/documentation/VPaaS-API-Getting-Started/Kaltura_API_Authentication_and_Security.md).
 
 | Token | Mint with | Privilege | Entitlement | Typical use |
 |-------|-----------|-----------|-------------|--------------|
-| **admin** | `sessions.createAdminToken()` | `disableentitlement` | OFF | Management-plane calls (provisioning, config), server-side |
-| **conversation / agent** | `sessions.createConversationToken()` / `createAgentToken()` | `geniegpcid:<configId>` / `agentid:<id>` | ON | The token your server hands a live avatar/chat session |
-| **widget** | `sessions.createWidgetToken({widgetId})` | server-derived | ON | Public, secret-free anonymous embed, safe to mint straight from the browser |
+| **admin** | `sessions.createAdminToken({ userId })` | `disableentitlement` | OFF | Management-plane calls (provisioning, config), server-side |
+| **conversation / agent** | `sessions.createConversationToken({ configId, userId })` / `createAgentToken({ agentId, userId })` | `setrole:PLAYBACK_BASE_ROLE`, `geniegpcid:<configId>`, and `agentid:<id>` (agent tokens, or conversation tokens minted with `agentId`) | ON | The token your server hands a live avatar/chat session. A user session (KS type 0) by default. See [Session type](#session-type) |
+| **widget** | `sessions.createWidgetToken({widgetId})` | server-derived | ON | Public, secret-free anonymous embed, safe to mint straight from the browser. See [Session type](#session-type) |
 
-Default recommendation: mint `conversation`/`agent`/`widget` tokens for anything reaching a browser, and keep `admin` tokens server-side. `createConversationToken`/`createAgentToken` refuse `extraPrivileges` that disable entitlement. Neither method can be tricked into minting an entitlement-bypassing token. This is tested and gated (`test/unit/scope-guard.test.js`, `test/integration/sessions.test.js`).
+For anything that reaches a browser, mint `conversation`/`agent` tokens (with a per-user `userId`) or `widget` tokens. Keep `admin` tokens server-side. `createConversationToken`/`createAgentToken` reject `extraPrivileges` that disable entitlement (`entitlement_violation`). Which of the two to use: [Conversation token or agent token?](docs/api/authentication.md#conversation-token-or-agent-token).
 
-Whether a given browser session should instead carry broadened (entitlement-bypassing) access is an **application-level decision** you make when you mint that session's token server-side. This SDK doesn't enforce it on the client.
+Admin-type tokens (`createAdminToken()`, or `sessionType: 'admin'` on a conversation/agent token) are for your server. Your server decides at mint time what reaches a browser. The browser SDK can't check it: a real KS's privileges are encrypted, so `inspectKs()` reports `disableEntitlement: null`.
 
-A real KS's privileges are AES-encrypted with the partner secret and are not client-readable. `inspectKs()` reports `disableEntitlement: null` for a real token (see `src/management/ks-inspect.js`). So a client-side check would be inert for production tokens, and isn't attempted.
+## Session type
+
+`createConversationToken()` and `createAgentToken()` mint a **user session** (KS type 0) by default: `setrole:PLAYBACK_BASE_ROLE`, entitlement ON. `sessionType: 'admin'` mints an admin-level session (KS type 2, no forced role), limited only by the `role` and privileges you set. `createAdminToken()` is always type 2 with `disableentitlement`, server-side only. Every type 2 mint needs a `userId`, which becomes the owner of anything the token creates. Minting options: [Authentication](docs/api/authentication.md).
+
+What each token can reach:
+
+| Token | Threads | OVP admin APIs |
+|---|---|---|
+| **Admin type (type 2)**: `createAdminToken()`, or `sessionType: 'admin'` | Every user's threads | Yes, within the `role` and privileges you set |
+| **Conversation/agent with `userId`** (user session) | Own threads: read, continue, list, delete | No |
+| **Conversation/agent without `userId`** | One identity for all holders. Read, list and delete return 403 | No |
+| **Widget** | Same as without `userId` | No |
+
+- **Always pass a per-user `userId`** when you mint a conversation or agent token. Any stable opaque id works. The user needs no registration.
+- **Widget tokens can't separate users.** Keep each `threadId` on your server, stored per user. To separate users in a browser, use the [per-visitor path](docs/api/deploy.md#per-visitor-browser-path).
+- Which methods take which token: [Threads](docs/api/operate.md#threads).
+
+`subjectId` is for audit only. It is not an access boundary. Use `userId` on the token for that.
 
 ## Token lifecycle (RFC 9700 OAuth 2.0 Security BCP; NIST AC family)
 
-- Short-lived by default: browser-bound tokens (`conversation`/`agent`) default to 30 minutes, admin to 1 hour. Short TTL is the primary revocation lever for a stateless KS (RFC 9700 §6.1). Override per call with `ttlSeconds`. Absurd lifetimes on browser-bound kinds are rejected (`ttl_too_long`). UX note: "refresh" means your server re-mints a fresh short token, and the browser calls `session.setToken(freshKs)` to rotate mid-session without a reconnect.
-- Least privilege / binding (RFC 9700 §2.3, §4.10): tighten a token with the structured `restrictions` option instead of hand-crafting privilege strings. `{ role, actionsLimit, ipRestrict, uriRestrict, sessionGroupId }` compiles to the matching Kaltura privileges (`setrole`/`actionslimit`/`iprestrict`/`urirestrict`/`sessionid`). Defaults stay wide-open so nobody is surprise-locked out. Tightening is opt-in.
-- Active revocation (RFC 9700 §5.2.1.1; SOC 2 CC6.2/CC6.3): `sessions.revoke(tokenOrKs)` ends a leaked token now (Kaltura `session/end`). Mint a family with `restrictions.sessionGroupId` so revoking any member is intended by design to end the whole family. The SDK checks that the KS carries the matching privilege string, but the server-side cascade itself is outside its control. Returns a `_meta` revocation receipt.
+- Short-lived by default: browser-bound tokens (`conversation`/`agent`) default to 30 minutes, admin to 1 hour. Short TTL is the primary revocation lever for a stateless KS (RFC 9700 §6.1). Override per call with `ttlSeconds`, up to 86400 s (24 h) for browser-bound kinds and 7 days for admin; longer throws `ttl_too_long`. To refresh, your server mints a fresh token and the browser calls `session.setToken(freshKs)`, with no reconnect.
+- Least privilege / binding (RFC 9700 §2.3, §4.10): tighten a token with the structured `restrictions` option instead of hand-crafting privilege strings. `{ role, actionsLimit, ipRestrict, uriRestrict, sessionGroupId }` compiles to the matching Kaltura privileges (`setrole`/`actionslimit`/`iprestrict`/`urirestrict`/`sessionid`). `role` needs `sessionType: 'admin'`. All restrictions are optional; none is set by default. Values and limits: [Authentication](docs/api/authentication.md).
+- Active revocation (RFC 9700 §5.2.1.1; SOC 2 CC6.2/CC6.3): `sessions.revoke(tokenOrKs)` ends a leaked token within seconds (Kaltura `session/end`). Tokens that share a `restrictions.sessionGroupId` are revoked together: revoking any member ends the whole family. Returns a receipt: `{ revokedAt, partnerId, _meta }`.
 - Vault/KMS (NIST IA-5): pass `getAdminSecret: () => fetchFromVault()` to fetch the secret per-mint instead of holding it; it is never stored as an enumerable field.
-- Incident runbook for revoking a leaked conversation token:
-
-  ```js
-  await management.sessions.revoke(leakedKs);   // or revoke(token)
-  // if minted with restrictions.sessionGroupId: revoking any member is
-  // intended by design to end the whole family (server-side behavior).
-  ```
 
 ## Audit logging (NIST AU-2 / AU-3 / AU-12; OWASP Logging; SOC 2 CC7)
 
@@ -92,7 +103,7 @@ new Management({ partnerId, adminSecret, onAuditEvent: (e) => siem.write(e) });
 | `token.revoke` | `sessions.revoke()` ends a token |
 | `token.refresh` | `setToken()` rotates a live session's token |
 | `guard.reject` | A call is rejected for carrying the wrong token kind (e.g. an admin token where a conversation token was required) |
-| `auth.fail` | A request returns HTTP 401 or 403 |
+| `auth.fail` | A request returns HTTP 401 or 403. A failed `conversations.stream` request fires it for any error status |
 | `session.connect` | `KalturaAvatarSession` finishes connecting |
 | `session.disconnect` | `KalturaAvatarSession` disconnects |
 | `session.timeout` | The idle timeout fires and auto-disconnects the session |
@@ -100,6 +111,7 @@ new Management({ partnerId, adminSecret, onAuditEvent: (e) => siem.write(e) });
 | `rate.limit` | `maxTurnsPerMinute` rejects a turn |
 | `turn.user_captured` | The user's speech or text turn is captured |
 | `turn.avatar_spoke` | The avatar starts speaking a turn |
+| `turn.converse` | `KalturaChatSession.sendText()` completes or fails |
 | `tool.invoke` | A client-side tool call is invoked (from user text or an agent action) |
 | `tool.ack` | The app ACKs a client-side tool call via `respondToTool()` |
 | `tool.spiral_detected` | The soft tool-call-spiral threshold trips for the current turn |
@@ -122,13 +134,16 @@ Every event carries this AU-3 content shape:
 | `outcome` | string | `success` or `fail` |
 | `requestId` | string | Correlation id, reused from the triggering call |
 | `actor.partnerId` | string | Kaltura partner id |
-| `actor.subjectId` | string | Opaque operator-supplied user id, if set |
+| `actor.subjectId` | string | Opaque operator-supplied user id, if set. Audit only, not an access boundary |
 | `actor.kind` | string | Token kind (`admin` / `conversation` / `agent` / `widget`) |
+| `actor.sessionType` | string | `user` or `admin`. Not set for widget tokens |
 | `actor.entitlementEnforced` | boolean | Whether entitlement was ON for this actor |
 | `action` | string | The specific action taken |
 | `scope` | string | The privilege string in effect, one-lined |
+| `target` | string | Resource acted on, if any |
 | `reason` | string | Failure reason, if any |
 | `source` | string | Which SDK entry point emitted the event |
+| `expiresAt` | number | Unix epoch seconds. Set on `token.mint` only |
 | `_meta` | object | Provenance receipt |
 
 ### Guarantees
@@ -143,7 +158,7 @@ Every event carries this AU-3 content shape:
 - `KalturaAvatarSession` rejects non-TLS `conversationManagerUrl`/`srsBaseUrl` (`insecure_transport`).
 - Loopback and private hosts (`localhost`/`127.0.0.1`, RFC 1918 ranges, link-local, and their IPv6 equivalents; see `isPrivateOrLoopbackHost` in `src/core/net-guard.js`) are allowed for dev, with a loud one-time warning.
 - Cleartext to a public host requires an explicit `allowInsecureTransport:true` (dev/test only, never production).
-- Prefer server-minted ephemeral TURN credentials (`turnCredentials` from appInit, RFC 7635) over the static fallback. The SDK warns when it falls back.
+- Pass server-minted ephemeral TURN credentials (`turnCredentials` from appInit, RFC 7635). Without them the SDK uses its default TURN credentials and warns.
 
 ## Browser hardening (OWASP ASVS / WebSocket CS)
 
@@ -165,7 +180,7 @@ No SDK module holds credential or tenant state at module scope. The admin secret
 ## Supply-chain integrity (SLSA / OpenSSF / EO 14028)
 
 - Zero runtime dependencies, no install lifecycle scripts (CI-enforced).
-- No registry publish step. The SDK is consumed straight from its git tags (`src/`, imported by path or served via jsDelivr's GitHub CDN once the repo is public). There is no npm package, and so no registry-side supply-chain surface to audit.
+- No registry publish step. The SDK is consumed straight from its git tags (`src/`, imported by path or served via jsDelivr's GitHub CDN). There is no npm package.
 
 ## Shared-responsibility control matrix (NIST 800-53)
 
@@ -173,7 +188,7 @@ The SDK generates and protects the records and enforces the client-side controls
 
 | Control | Family | SDK provides | Operator responsible |
 |---------|--------|--------------|----------------------|
-| AC-3, AC-6, IA-2 | Access / least privilege | Two-token invariant; client can't mint admin tokens; structured `restrictions` | Role/entitlement config in Kaltura |
+| AC-3, AC-6, IA-2 | Access / least privilege | Two-token invariant; user-session tokens by default ([Session type](#session-type)); structured `restrictions` | Role/entitlement config in Kaltura |
 | AC-12 | Session termination | Short TTLs; `revoke()`; `disconnect()` drops token + transports | Session-timeout policy |
 | AU-2, AU-3, AU-12 | Audit generation/content | Structured, redacted, correlated `AuditEvent`s via `onAuditEvent` | Wire the hook to a SIEM |
 | AU-4, AU-9, AU-10, AU-11 | Audit storage/integrity/retention | None | Tamper-evident storage, non-repudiation, retention |
@@ -182,7 +197,7 @@ The SDK generates and protects the records and enforces the client-side controls
 | SC-4 | Info in shared resources | Per-instance isolation; non-enumerable secrets | Process/tenant separation |
 | SI-10 | Input validation | Inbound payload validation; prototype-pollution scrub | None |
 | IR-6, SI-2 | Incident/flaw response | Security contact; coordinated disclosure | US-CERT/agency reporting timelines |
-| GDPR Art. 17 | Right to erasure | `threads.delete()` and `knowledge.deleteRecord()` (management API) | `threads.delete()` soft-deletes immediately, with a scheduled infra-level purge erasing the data later. `knowledge.deleteRecord()` refuses while an intellect still references the record (`{force:true}` bypasses). A `lifecycle` rule's `sendInsightEmail` action delivers thread-derived content to an operator-supplied `recipients` list BEFORE any delete. That copy has already left the Kaltura boundary into a third-party mailbox and is outside `threads.delete()`'s erasure reach. Treat the recipient list as a data-processing decision under your own retention/consent obligations. |
+| GDPR Art. 17 | Right to erasure | `threads.delete()` (admin token, or a per-user token for its own threads; [deletes are soft](docs/api/operate.md#threads)) and `knowledge.deleteRecord()` | Emails already sent by a `lifecycle` rule's `sendInsightEmail` action are outside `threads.delete()`'s reach. Treat its `recipients` list as a data-processing decision. |
 
 ## FIPS mode (how-to)
 
@@ -196,7 +211,7 @@ In the browser, FIPS validation is a property of the OS/browser crypto module. D
 
 ## Data residency (SC-7)
 
-The SDK is a thin client. It contacts only the Kaltura endpoints you configure (`agenticUrl`/`genieUrl`/`ovpUrl`/`conversationManagerUrl`/`srsBaseUrl`/`turnServerUrl`). There is no telemetry, analytics, or hidden beacons. Point every URL at your in-boundary (e.g. US-Gov) hosts to keep all data within your authorization boundary.
+The SDK is a thin client. It contacts only the Kaltura endpoints you configure (`agenticUrl`/`genieUrl`/`ovpUrl`/`conversationManagerUrl`/`srsBaseUrl`/`turnServerUrl`). There is no telemetry or hidden beacon. The optional `./experience/analytics` module sends KAVA application events to `analytics.kaltura.com`, and only when your code calls it. Point every URL at your in-boundary (e.g. US-Gov) hosts to keep all data within your authorization boundary.
 
 This residency guarantee covers the SDK's own configured endpoints only. A `lifecycle` rule's `sendInsightEmail` action is a server-side, operator-configured email delivery of thread-derived content to an arbitrary `recipients` list. It has no residency control and isn't covered by the URL-pinning above.
 
@@ -204,9 +219,7 @@ A deployment that must protect PHI/PII boundaries and uses this action is respon
 
 ## Framework crosswalks
 
-This section maps the SDK to the specific frameworks an enterprise, government, or healthcare buyer audits against. It's the companion to the posture and NIST 800-53 matrix above.
-
-Shared responsibility: a client SDK can implement technical controls and generate the records, but it cannot sign a contract, retain logs, or authenticate the human user. Each table marks **SDK** (the library provides it) vs **Operator** (your duty, fed by the SDK's hooks/events).
+A client SDK can implement technical controls and generate the records, but it cannot sign a contract, retain logs, or authenticate the human user. Each table marks **SDK** (the library provides it) vs **Operator** (your duty, fed by the SDK's hooks/events).
 
 ### HIPAA (45 CFR Part 164)
 
@@ -217,9 +230,9 @@ Shared responsibility: a client SDK can implement technical controls and generat
 | **164.312(e)(1)/(e)(2) Transmission security** | https/wss enforced (`insecure_transport`); WebRTC media is DTLS-SRTP; crypto delegated to platform TLS | TLS termination, cert management |
 | **164.312(b) Audit controls** | `onAuditEvent` (token + auth + guard lifecycle) and content-free PHI-exchange turn events (`turn.user_captured`, `turn.avatar_spoke`, `session.timeout`), never content | Wire to SIEM; review (164.308(a)(1)(ii)(D)) |
 | **164.312(a)(2)(iii) Automatic logoff** | `idleTimeoutMs` (default ON, 900000 ms) → `disconnect()` + `idleWarning` + `session.timeout` audit | Choose the timeout per care setting |
-| **164.312(a)(2)(i) Unique user identification** | Optional opaque `subjectId` threaded onto every AuditEvent | Supply an opaque id (never the patient's name/PHI) |
-| **164.312(a)(1) Access control** | Two-token invariant; entitlement-ON conversation tokens; least-privilege `restrictions` | Role/entitlement config in Kaltura |
-| **164.312(d) Person/entity authentication** | Authenticates the session (KS), minted server-side under your control | Proof the patient before minting the conversation token; bind via `subjectId` |
+| **164.312(a)(2)(i) Unique user identification** | Optional opaque `subjectId` threaded onto every AuditEvent (audit only, not an access boundary) | Supply an opaque id (never the patient's name/PHI) |
+| **164.312(a)(1) Access control** | Two-token invariant; entitlement-ON user-session tokens that reach only the `userId`'s own threads; least-privilege `restrictions` | Role/entitlement config in Kaltura |
+| **164.312(d) Person/entity authentication** | Authenticates the session (KS), minted server-side under your control | Proof the patient before minting the conversation token; bind the token with a per-user opaque `userId` |
 | **164.502(b) Minimum necessary** | Redaction chokepoint; SDK persists no transcripts/captions/screenshots | Don't persist captions/screenshots beyond minimum necessary; apply retention |
 | **164.402 Breach / safe harbor** | PHI encrypted in transit + no token/PHI at rest → supports the encryption safe harbor for the SDK-controlled path | At-rest encryption; breach detection + 164.404/164.410 notification |
 | **164.316(b)(2) Retention** | Emits the records | Tamper-evident storage + 6-year retention |
@@ -233,7 +246,7 @@ The SDK is an AI Application Provider component you can largely inherit in a HIT
 | HITRUST AI requirement | SDK provides | Operator / inherited |
 |---|---|---|
 | Encrypt traffic to/from the model | https/wss enforced; DTLS-SRTP | Platform/TLS |
-| Restrict access to interact with the model | Two-token invariant; entitlement ON; `revoke()` | Identity proofing |
+| Restrict access to interact with the model | Two-token invariant; entitlement ON; per-user user sessions; `revoke()` | Identity proofing |
 | Log AI inputs/outputs (AI.PI.a) | Security + turn audit via `onAuditEvent` (content-free by default) | SIEM storage/retention |
 | Model rate limiting / DoS | Client-side `maxTurnsPerMinute` valve | Authoritative server-side quota (inherited) |
 | **Humans can intervene (AI.NI.a, non-inheritable)** | `stop()` / `disconnect()`, `revoke()`, barge-in (`interrupt()`), `requireDisclosureAck`, `onAgentAction` veto | Wire at least one to a visible UI control |
@@ -265,8 +278,8 @@ The avatar's brain is an agent (navigates, renders GenUI, captures leads, search
 
 | Threat | Control |
 |---|---|
-| **ASI 01 Goal Hijack** / **ASI 02 Tool Misuse** | `onAgentAction(action)` chokepoint. Every agent-initiated action (`navigate`/`render-genui`/`structured-data-form`/…) passes through it before taking effect. Veto via false/throw. **Operator (server-side `api`/`code`/`csv` tools):** these fire server-to-server, outside the SDK's reach. Independently authorize each call against the caller's real session/permissions. Never treat model/system-prompt tool scoping, or a client-suppliable `request_vars` value, as an authorization claim. See [API-REFERENCE.md § Tools](docs/api/build/tools-and-secrets.md#tools-api--csv--code). |
-| **ASI 03 Identity & Privilege Abuse** | Scoped, entitlement-ON, short-TTL, revocable token; least-privilege `restrictions`; `agentActions` policy (e.g. `navigate:'off'`). |
+| **ASI 01 Goal Hijack** / **ASI 02 Tool Misuse** | `onAgentAction(action)` chokepoint. Every agent-initiated action (`navigate`/`render-genui`/`structured-data-form`/…) passes through it before taking effect. Veto via false/throw. **Operator (server-side `api`/`code`/`csv` tools):** these fire server-to-server, outside the SDK's reach. Independently authorize each call against the caller's real session/permissions. Never treat model/system-prompt tool scoping, or a client-suppliable `request_vars` value, as an authorization claim. See [Tools and Secrets § Tools](docs/api/build/tools-and-secrets.md#tools-api--csv--code). |
+| **ASI 03 Identity & Privilege Abuse** | Scoped user-session token (per-user `userId`), entitlement ON, short TTL, revocable; least-privilege `restrictions`; `agentActions` policy (e.g. `navigate:'off'`). |
 | **ASI 06 Memory & Context Poisoning** | `Presenter` session memory is bounded and operator-cleared via `clearMemory()`. Persisted memory is replayed context. The operator owns the storage choice. |
 | **ASI 08 Cascading Failures** | Reconnect-window bound, media-recovery escalation, brain-liveness watchdog, client rate valve. |
 | **ASI 09 Human-Agent Trust** | Disclosure-before-speech + `getDisclosure()`; `requireDisclosureAck`. |
@@ -297,17 +310,18 @@ const mgmt = new Management({
 });
 const token = await mgmt.sessions.createConversationToken({
   configId, ttlSeconds: 1800,                 // short-lived (RFC 9700)
-  restrictions: { actionsLimit: 200, sessionGroupId: caseId },   // least privilege + revocable family
+  userId: opaqueUserId,                       // per-user identity: reaches only this user's threads
+  restrictions: { sessionGroupId: caseId },   // revocable family
 });
 
 // Browser: Experience
 new KalturaAvatarSession({
   token, conversationManagerUrl, srsBaseUrl, turnServerUrl,      // all https/wss
-  turnCredentials,                            // ephemeral (RFC 7635), not the static fallback
+  turnCredentials,                            // ephemeral (RFC 7635), not the SDK default
   allowInsecureTransport: false,              // never true in production
   requireDisclosureAck: true,                 // EU AI Act / biometric jurisdictions
   idleTimeoutMs: 900000,                      // HIPAA auto-logoff
-  subjectId: opaqueUserId,                    // HIPAA unique-user-id (never PHI)
+  subjectId: opaqueUserId,                    // audit only: HIPAA unique-user-id (never PHI)
   maxTurnsPerMinute: 30,                      // LLM10 valve
   onBeforeSend: (t) => myGuardrail(t),        // LLM01 input filter
   onAgentAction: (a) => myPolicy(a),          // LLM06 / Agentic action gate

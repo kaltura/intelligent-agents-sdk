@@ -10,27 +10,29 @@ import { isPrivateOrLoopbackHost } from '../core/net-guard.js';
 export const DEFAULT_CM_URL = 'https://conversation.avatar.us.kaltura.ai';
 
 /**
- * The valid `force_experience` values (single source of truth). The brain rejects
+ * The valid `force_experience` values (single source of truth). The server rejects
  * anything else with HTTP 422, so the SDK validates against this list BEFORE the
- * network call. Used by both buildJoin (live) and conversations.stream (headless).
+ * network call. Used by `conversations.stream` (headless). The live `buildJoin` always
+ * sends `avatar_only`.
  */
 export const EXPERIENCES = ['markdown', 'summarization', 'flashcards', 'avatar_only'];
 
 /**
- * The `model_type` wire values (LOWERCASE — see docs/api/operate.md's Converse
- * section). There is NO verified `'DEFAULT'` literal: the PRIMARY model is
- * selected by OMITTING the field entirely. So the only explicit value the SDK
- * ever sends is `'fast'`; `primary` is a sentinel meaning "omit".
+ * The `model_type` wire values (LOWERCASE, see the Converse section of
+ * docs/api/operate.md). There is no `'DEFAULT'` literal: the field is
+ * omitted to use the server default. The only explicit value the SDK ever
+ * sends is `'fast'`, and only when the caller asks for it; `primary` is a
+ * sentinel meaning "omit".
  *
- * HONESTY: the SDK can SEND `model_type:'fast'` but cannot prove which model
- * replied. Callers assert acceptance, not model identity.
+ * The SDK cannot prove which model replied. Callers can assert acceptance,
+ * not model identity.
  * @type {{readonly fast:'fast', readonly primary:null}}
  */
 export const MODEL_TYPES = Object.freeze({ fast: 'fast', primary: null });
 
 /**
  * Normalize a caller-supplied model selector to its wire value, or `undefined`
- * (= OMIT the field, selecting the primary model). Accepts `'fast'` (any case),
+ * (= OMIT the field). Accepts `'fast'` (any case),
  * `'primary'`/`'default'`/empty/null (→ omit). Anything else throws via the
  * caller's validator; here we only canonicalize the two documented choices.
  * Pure, never throws.
@@ -116,9 +118,10 @@ function pickStr(...cands) { for (const c of cands) if (typeof c === 'string' &&
 /**
  * Build the 4-URL TURN block. Explicit ports+transports are REQUIRED — a bare
  * `turn:host` yields no relay candidate and the uplink silently sends 0 packets
- * (WIRE-PROTOCOL §5). The shared static credential is `kaltura`/`avatar`.
+ * (WIRE-PROTOCOL §5). The SDK supplies default TURN credentials; pass `creds` to override them.
  * @param {string} turnServerUrl Hostname (with or without `turn:`/trailing slash).
  * @param {{username?:string, credential?:string}} [creds]
+ * @returns {{urls:string[], username:string, credential:string}|null} `null` when the host is empty.
  */
 export function turnServers(turnServerUrl, creds = {}) {
   const host = String(turnServerUrl || '').replace(/\/$/, '').replace(/^turns?:/, '');
@@ -136,9 +139,7 @@ export function turnServers(turnServerUrl, creds = {}) {
 }
 
 /**
- * RTCConfiguration per channel. ASR → `all`; STV → `relay` (both `all` on
- * Firefox). Either relays in practice (the ASR server offers only a private
- * candidate) — but the policy is set to match the production clients.
+ * RTCConfiguration per channel. ASR → `all`; STV → `relay` (`all` on Firefox).
  * @param {'asr'|'stv'} channel @param {ReturnType<typeof turnServers>} turn @param {boolean} [isFirefox]
  * @returns {RTCConfiguration}
  */
@@ -155,11 +156,12 @@ export function iceConfig(channel, turn, isFirefox = false) {
  * synchronously, "Invalid TURN URL query string", before any connection
  * attempt). Retried once with those query strings stripped — `turn:host:443`
  * still defaults to UDP and `turns:host:443` still defaults to TCP+TLS per
- * RFC 7065, so 3 of the 4 urls() built by turnServers() keep working
+ * RFC 7065, so 3 of the 4 URLs built by turnServers() keep working
  * unchanged; only the plain-TCP-on-port-80 fallback (which has no
  * query-less spelling) is lost, on this engine only.
  * @param {new (config: RTCConfiguration) => RTCPeerConnection} RTCCtor
  * @param {RTCConfiguration} config
+ * @returns {RTCPeerConnection}
  */
 export function createPeerConnection(RTCCtor, config) {
   try {
@@ -176,7 +178,7 @@ export function createPeerConnection(RTCCtor, config) {
 }
 
 /**
- * The `join` payload (WIRE-PROTOCOL §4a; evidence `out join`). The server reads
+ * The `join` payload (WIRE-PROTOCOL §4a; `out join` in test/fixtures/golden-session.json). The server reads
  * `kaltura.{ks,entryId,threadId}` and routes by socket.id; the rest is sent for
  * parity with the production clients.
  *

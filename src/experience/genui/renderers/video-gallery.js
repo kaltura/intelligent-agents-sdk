@@ -1,6 +1,6 @@
 /**
  * Default renderer for the `video-gallery` runtime
- * (backend tool key "video_gallery" → `video-gallery-tool`). A gallery of
+ * (`video-gallery-tool`). A gallery of
  * Kaltura clips. Each item's thumbnail/playback URL is scheme-checked via
  * `safeUrl`. When only an `entryId` is given (the common case — the brain knows
  * the id, not the CDN URL) AND a `partnerId` is in the render `ctx`, the

@@ -1,6 +1,6 @@
 /**
  * Catalog — the preset library of visuals (faces) and voices, plus custom
- * uploads. Agentic host, admin token. Source: API-REFERENCE §1.1–§1.3b.
+ * uploads. Agentic host, admin token. Reference: docs/api/design.md.
  *
  * IMPORTANT asymmetry: an uploaded VOICE clones for real (ElevenLabs)
  * and is immediately usable as a live voice. An uploaded VISUAL image becomes the
@@ -34,8 +34,8 @@ export class Catalog {
 
   /**
    * Clone a CUSTOM VOICE (real ElevenLabs clone). WRITE — NOT idempotent.
-   * Requirements: MP3 44.1 kHz, ≥~6 s of clear speech, ≤10 MB, NON-EMPTY
-   * description (a too-short clip 500s from the clone backend). The returned
+   * Requirements: MP3 44.1 kHz, at least about 6 s of clear speech, ≤10 MB, NON-EMPTY
+   * description (a clip under about 6 s fails with a server error). The returned
    * `itemId` is the clone — pair it with any avatar's `voice.id`. The item is
    * tagged `adminTags:['custom']` in the single-parse shape, so it is reliably
    * findable by `catalog.list` filtered on that tag (see {@link appendAdminTags}).
@@ -102,10 +102,9 @@ export class Catalog {
    * {@link createVisual}: `createVisual` uploads a photo directly as a
    * ready-to-use Visual — already a full custom digital twin. `createFace` /
    * {@link createBackground} instead produce the two composable HALVES the
-   * `face`/`background` avatar fields expect. Live, only 36 preset Face
-   * items exist today; this is the only way to add a custom one. Same
-   * attribute shape as `createVisual` — the backend's Face type reuses the
-   * `visual` attribute schema.
+   * `face`/`background` avatar fields expect. This is the only way to add a
+   * custom Face. Same attribute shape as `createVisual` (the `visual`
+   * attribute shape).
    *
    * NAME COLLISION: `attrs.background` here is a photo ATTRIBUTE string (e.g.
    * `'Image'`) describing this upload's own backdrop — unrelated to
@@ -125,10 +124,8 @@ export class Catalog {
   /**
    * Upload a CUSTOM background image as an explicit `Background`-typed
    * catalog item, for the two-step `face` + `background` avatar composition
-   * ({@link Avatars#create}). WRITE — NOT idempotent. Live, only 4 preset
-   * Background items exist today. Same attribute shape as {@link
-   * createVisual}/{@link createFace} — the backend's Background type reuses
-   * the `visual` attribute schema too.
+   * ({@link Avatars#create}). WRITE, NOT idempotent. Same attribute shape
+   * as {@link createVisual}/{@link createFace} (the `visual` attribute shape).
    *
    * NAME COLLISION: `attrs.background` here is a photo ATTRIBUTE string (e.g.
    * `'Image'`) describing this upload's own backdrop — unrelated to
@@ -214,17 +211,9 @@ export class Catalog {
   }
 
   /**
-   * Multipart upload primitive for createVoice/createVisual.
-   *
-   * adminTags ENCODING: the multipart `adminTags` field wraps a single bare
-   * scalar into a one-element array, so ONE tag can be sent as the bare
-   * `custom` (stored `["custom"]`) — but it does NOT split a comma-joined
-   * value. Multiple tags need one repeated `adminTags` field per tag (see
-   * {@link appendAdminTags}), never `custom,other` (stored as one literal tag)
-   * and never `JSON.stringify(['custom'])` (double-encoded, stored as
-   * `["[\"custom\"]"]`) — both leave the item unfindable by `catalog.list`
-   * filtered on `adminTagsIn: ['custom']`.
-   * (Also documented in docs/api/design.md § Upload a Custom Voice/Visual, keep both in sync.)
+   * Multipart upload primitive for createVoice, createVisual, createFace and
+   * createBackground. Tags go out through {@link appendAdminTags} (one
+   * `adminTags` field per tag).
    * @param {Blob|File} file @param {object} attributes @param {import('./client.js').KsLike} ks @param {string} [mime]
    * @param {string} [consentRef] @param {string} [kind] @param {string} [type] Explicit catalog item type (`'Face'`/`'Background'`) — required for those two, since an image MIME alone defaults to `Visual`. Omitted for voice/visual: the API infers the type from the uploaded file's own content (image → Visual, audio → Voice), not from `attributes`.
    */

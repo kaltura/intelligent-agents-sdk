@@ -3,16 +3,21 @@
  *
  * Provision, configure, and measure conversational avatar agents over the two
  * REST backends (Agentic + Genie). Server-side surface: needs the admin secret
- * to mint tokens. Every method states its required token scope in JSDoc and
- * enforces it before any network call.
+ * to mint tokens. Every method states its required token scope in JSDoc. A
+ * method that needs an admin token checks the token kind before any network
+ * call when the kind is known client-side.
+ *
+ * To mint an end-user token, use {@link Sessions.createConversationToken} when
+ * you start from a `configId` and {@link Sessions.createAgentToken} when you
+ * start from an `agentId`.
  *
  * @example
  * import { Management } from '@kaltura/intelligent-agents/management';
  * const kaltura = new Management({ partnerId: PID, adminSecret: SECRET });
- * const admin = await kaltura.sessions.createAdminToken();
+ * const admin = await kaltura.sessions.createAdminToken({ userId: 'admin@example.com' });
  * const result = await kaltura.provision({ brief: 'A friendly yoga receptionist', ks: admin.ks });
  * // hand the browser a scoped, entitlement-ON token — admin secret never leaves the server:
- * const conv = await kaltura.sessions.createConversationToken({ configId: result.configId });
+ * const conv = await kaltura.sessions.createConversationToken({ configId: result.configId, agentId: result.agentId, userId: 'learner-123' });
  */
 export { Management } from './client.js';
 export { Sessions } from '../core/session.js';
@@ -43,7 +48,7 @@ export {
 // `tools.client` builds a native type:"client" tool — the silent type:"tool" channel for
 // navigate_to_slide / show_widget / call_page_function, with tool_metadata ACK support
 // (`waitForResponse`/`session.respondToTool`). `clientToolReadiness` lints the two
-// deployment gotchas any tool-referencing intellect hits (experiences out-compete + the
+// deployment gotchas any tool-referencing intellect hits (experiences can override custom tools + the
 // 24h capability cache).
 export { tools, clientToolReadiness, client, applyResponseMapping, findIntellectsReferencingTool, TOOL_TYPES, HTTP_METHODS, ARG_TYPES } from './tools.js';
 // Secrets ref-checker: the CRUD class lives on `mgmt.intellects.secrets`; this is the pure helper.

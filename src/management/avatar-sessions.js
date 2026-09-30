@@ -15,17 +15,9 @@
  * {@link AvatarSessions#end}. Every method after `create` takes the
  * `{sessionId, token}` object `create` returns, not a KS.
  *
- * A live `avatar-session/*` deployment exposes more routes than this class
- * calls. Some are not supported server-side and are deliberately NOT
- * wrapped here (wrapping a broken route
- * would just hand you the same 500/404 with extra ceremony):
- *   - `say-text` — accepts the request but the server answers
- *     `503 Service temporarily unavailable` on every call. Use {@link say}
- *     with your own TTS audio instead.
- *   - a bare `say` route — 404s; never existed as documented.
- *   - `set-emotion` / `queue-status` / `status` / `session-status` — all 404.
- * If a future server release fixes or adds any of these, they belong here
- * as new methods, not as parameters bolted onto existing ones.
+ * Speech is audio only: generate the audio with your own TTS and pass it to
+ * {@link AvatarSessions#say}. The SDK has no text-to-speech method and no
+ * emotion or queue-status methods.
  */
 import { KalturaError } from '../core/errors.js';
 import { uuidv4 } from '../core/ids.js';
@@ -45,10 +37,10 @@ export class AvatarSessions {
    * the KS's kind is knowable (a `Token` object from `sessions.*`, or a
    * plaintext/test KS); a raw encrypted KS string defers to the server, which
    * enforces the same rule. Mint an admin token server-side with
-   * `sessions.createAdminToken()`, never in a browser.
+   * `sessions.createAdminToken({ userId })`, never in a browser.
    *
-   * The receipt's `.token` is a session-scoped BEARER JWT (NOT a KS), valid
-   * roughly 24h (decoded from the JWT's own `exp` claim — see
+   * The receipt's `.token` is a session-scoped BEARER JWT (NOT a KS). Its
+   * expiry is read from the JWT's own `exp` claim (see
    * `.isExpired()`/`.secondsRemaining()` below). It authenticates every
    * other call on THIS session and grants full control of it, so keep it
    * server-side next to your admin secret. The browser only ever needs the
@@ -69,7 +61,7 @@ export class AvatarSessions {
    * @returns {Promise<{sessionId:string, token:string, isExpired:()=>boolean, secondsRemaining:()=>number}>}
    * @throws {KalturaError} `bad_request` if `visualConfig.id` is missing; `wrong_token_scope` if `ks` isn't an admin token.
    * @example
-   * const admin = await k.sessions.createAdminToken();
+   * const admin = await k.sessions.createAdminToken({ userId: 'admin@example.com' });
    * const session = await k.avatarSessions.create({ visualConfig: { id: avatarId } }, admin.ks);
    * console.log(session.secondsRemaining(), 's left on this session token');
    */
@@ -98,9 +90,8 @@ export class AvatarSessions {
    * Neither value is a secret in the way `session.token` is; this is the
    * one payload from this whole class that's safe to send to a browser.
    *
-   * WRITE — not idempotent to retry blindly (calling it twice opens a
-   * second WHEP resource on some deployments); call it once per session,
-   * right after {@link create}.
+   * WRITE, not idempotent to retry blindly. Call it once per session, right
+   * after {@link create}.
    *
    * @param {{sessionId:string, token:string}} session  From {@link create}.
    * @returns {Promise<{whepUrl:string, turn:{url:string, username?:string, credential?:string}}>}
@@ -117,9 +108,8 @@ export class AvatarSessions {
 
   /**
    * Speak pre-synthesized AUDIO on the avatar — the only speech-injection
-   * mechanism this backend actually exposes (see the class
-   * doc for the confirmed-broken `say-text` sibling). Generate the audio
-   * with any TTS provider — this backend has none of its own — and pass
+   * mechanism the SDK supports. Generate the audio
+   * with any TTS provider (the SDK has none) and pass
    * the encoded bytes here.
    *
    * `opts.duration` (seconds) is CALLER-SUPPLIED and REQUIRED: the server
@@ -192,13 +182,10 @@ export class AvatarSessions {
   }
 
   /**
-   * Signal activity so the server doesn't reclaim an idle session. The
-   * upstream toolkit documents roughly a 10s cadence; a long gap with no
-   * keep-alive call can still leave the session alive, so treat ~10s as a
-   * safe, defensive interval to poll on rather than a hard cutoff. This
-   * method makes ONE call; it does not start a timer — drive it from your own
-   * `setInterval` while a session is open and you expect gaps between
-   * `say()` calls.
+   * Signal activity so the server doesn't reclaim an idle session. Call it
+   * about every 10 s while the session is idle. This method makes ONE call;
+   * it does not start a timer. Drive it from your own `setInterval` while a
+   * session is open and you expect gaps between `say()` calls.
    *
    * WRITE — safely repeatable (no state beyond "still alive" to corrupt).
    *

@@ -2,7 +2,7 @@ name: CI
 
 # Runs on every push to main, every PR targeting main, and every merge-queue
 # check run (merge_group) once a PR is enqueued to merge into main.
-# Zero-dependency SDK, zero-devDependency test runner (node:test) — no real
+# Zero runtime dependencies. The test runner is node:test. No real
 # Kaltura credentials are used or required anywhere in this workflow.
 on:
   push:

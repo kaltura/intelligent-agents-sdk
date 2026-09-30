@@ -1,6 +1,5 @@
 /**
- * Default renderer for the `sources` runtime (backend tool key "sources" →
- * `sources-tool`). Citation cards for RAG-retrieved sources. URLs are
+ * Default renderer for the `sources` runtime (`sources-tool`). Citation cards for RAG-retrieved sources. URLs are
  * scheme-checked via `safeUrl` (an unsafe `javascript:`/`data:` href becomes '',
  * never survives — OWASP LLM05). Framework-agnostic `{kind:'sources', data}`.
  */
@@ -20,8 +19,8 @@ export function renderSources(model = {}, ctx = {}) {
   const sources = src.map((s) => {
     const o = /** @type {Record<string,unknown>} */ ((s && typeof s === 'object') ? s : { title: s });
     // Forward-compatible passthrough: RAG retrieval may carry a relevance score so a host can
-    // rank/badge citations. Absent or non-numeric → field omitted (NOT 0). Not a claimed
-    // backend guarantee — emission is unverified (see docs/genui/safety-and-restrictions.md "Restrictions").
+    // rank/badge citations. Absent or non-numeric → field omitted (NOT 0). A host
+    // must not rely on a score being present (see docs/genui/widgets.md § sources).
     const score = Number(o.score ?? o.relevance ?? o.similarity);
     return {
       title: safeText(o.title ?? o.name ?? o.label ?? '', 500),

@@ -37,7 +37,7 @@
  * legitimately finds zero entries). `uploadDocument`/`uploadMarkdown` are
  * skipped for the same no-cleanup reason (no exposed way to delete the
  * KMS entry they create); their request-shaping is a documented gap, not
- * unit-tested — see the DX audit notes for this PR.
+ * unit-tested.
  *
  * Cleanup: record then intellect, each independently re-verified gone.
  * Credentials: AGENTIC_PARTNER_ID / AGENTIC_ADMIN_SECRET, from the
@@ -92,7 +92,7 @@ let configId;
 let recordId;
 
 try {
-  admin = await kaltura.sessions.createAdminToken();
+  admin = await kaltura.sessions.createAdminToken({ userId: 'sdk-live-verify' });
   record('admin-token-mint', true, { secondsRemaining: admin.secondsRemaining() });
 
   // 1: intellects.add — scratch intellect.

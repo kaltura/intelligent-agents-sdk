@@ -286,6 +286,21 @@ test('respondToTool degrades gracefully on unknown/stale ids and validates input
   assert.deepEqual(await session.respondToTool('inv-9', { a: 1 }), { ok: false, reason: 'unknown_or_stale' });
 });
 
+test('respondToTool: HTTP 4xx/5xx returns {ok:false, reason:"http_error", status} and keeps the call pending', async () => {
+  let ackStatus = 422;
+  const fetch = fakeFetch([
+    { match: '/assistant/tool_response', respond: () => ({ status: ackStatus, body: {} }) },
+    { match: '/assistant/converse', respond: () => ({ body: TOOL_TURN }) },
+  ]);
+  const { session } = newSession({ fetch });
+  await session.connect();
+  await session.sendText('probe');   // registers pending ack inv-9
+  assert.deepEqual(await session.respondToTool('inv-9', { a: 1 }), { ok: false, reason: 'http_error', status: 422 });
+  ackStatus = 200;
+  assert.deepEqual(await session.respondToTool('inv-9', { a: 1 }), { ok: true });
+  assert.deepEqual(await session.respondToTool('inv-9', { a: 1 }), { ok: false, reason: 'unknown_or_stale' }, 'ACK consumed after success');
+});
+
 test('semantic dedup within a turn, reset across turns; argsSchema gates dispatch', async () => {
   const DUP_TURN = [
     seg({ type: 'tool', content: 'go {"n":1}' }),

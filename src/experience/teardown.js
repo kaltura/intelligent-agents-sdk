@@ -1,10 +1,7 @@
 /**
  * Shared subscription tracker for the "subscribe to another Emitter, clean up on my own
  * destroy/stop" pattern — used by any class that listens on a `KalturaAvatarSession` (or
- * any other `Emitter`) and must remove those listeners on teardown. Replaces three
- * independently hand-rolled versions of the same idea (an `_unsubs` array in `presenter.js`
- * and `genui/renderer.js`, a parallel bound-handler-plus-`off()` pair in `captions.js`) with
- * one implementation, so the pattern can't drift out of sync between call sites again.
+ * any other `Emitter`) and must remove those listeners on teardown.
  */
 export class Teardown {
   constructor() { /** @type {Array<() => void>} */ this._unsubs = []; }

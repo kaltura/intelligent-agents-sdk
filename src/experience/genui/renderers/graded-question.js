@@ -1,7 +1,7 @@
 /**
  * Renderer for `graded-question` — a graded interactive question:
  * a prompt, either multiple-choice options or a free-text answer, and an
- * optional answer key + explanation. NOT one of the nine backend `unisphere-tool`
+ * optional answer key + explanation. NOT one of the nine built-in `unisphere-tool`
  * runtimes (there's no brain tool that emits it) — it's a host-registered
  * "10th runtime" widget, wired in via `new ExperienceRenderer({ renderers: {
  * 'graded-question': renderGradedQuestion } })` or `.register(...)`, the same

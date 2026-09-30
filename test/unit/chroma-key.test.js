@@ -220,6 +220,27 @@ test('attachChromaKeyAvatar: a second call against the same session warns and do
   });
 });
 
+test('attachChromaKeyAvatar: after the integrator calls player.destroy() directly, the next attach builds a new player and drops the old listeners', () => {
+  FakeChromaKeyVideo.reset();
+  const videoEl = new FakeVideoEl();
+  const session = new FakeSession(videoEl);
+  withWarnSpy((warnings) => {
+    const first = attachChromaKeyAvatar({ session, videoEl, ChromaKeyVideo: FakeChromaKeyVideo });
+    first.destroy();
+    assert.equal(first.destroyCalls, 1);
+    const second = attachChromaKeyAvatar({ session, videoEl, ChromaKeyVideo: FakeChromaKeyVideo });
+    assert.notEqual(second, first);
+    assert.equal(FakeChromaKeyVideo.instances.length, 2);
+    assert.equal(warnings.length, 0, 'no misuse warning: the old player was already destroyed');
+    assert.equal(first.destroyCalls, 1, 'the destroyed player is not destroyed a second time');
+    assert.equal(session.listenerCount('ended'), 1, 'only the new player is wired to the session');
+    session.emit('ended', {});
+    assert.equal(second.destroyCalls, 1);
+    assert.equal(first.destroyCalls, 1);
+    assert.equal(session.listenerCount('ended'), 0);
+  });
+});
+
 test('attachChromaKeyAvatar: never throws on the misuse-guard path', () => {
   FakeChromaKeyVideo.reset();
   const videoEl = new FakeVideoEl();

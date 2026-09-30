@@ -148,7 +148,7 @@ type=Face
 adminTags=custom
 ```
 
-Send `type=Background` for a backdrop image instead. Only 36 preset Face items and 4 preset Background items exist today (live count) — this is the only way to add a custom one.
+Send `type=Background` for a backdrop image instead.
 
 **SDK shortcut:** `catalog.createFace(imageBlob, attrs, adminKs)` / `catalog.createBackground(imageBlob, attrs, adminKs)` — same `attrs` shape as `createVisual`. Composing the two halves into an avatar: [build/avatar-and-agent.md § Compose from a custom Face and Background](build/avatar-and-agent.md#compose-from-a-custom-face-and-background).
 

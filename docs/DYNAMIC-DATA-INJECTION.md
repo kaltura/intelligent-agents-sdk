@@ -62,13 +62,13 @@ If you're using the SDK's `Presenter` plugin for a slide-deck-style walkthrough,
 
 ### The gate: `allow_client_variables`
 
-The intellect must have `allow_client_variables: true`, or every request variable you send — including `page_context` — is rejected. Enable it once, server-side, with an admin KS:
+The intellect must have `allow_client_variables: true`, or every request variable you send, including `page_context`, is rejected. It is on by default. Pin it once, server-side, with an admin KS:
 
 ```js
 await mgmt.intellects.setClientVariablesEnabled(configId, true, adminKs);
 ```
 
-The rejection is **silent on every path**. The turn comes back as an empty reply: no HTTP error, no socket error. Both session classes (`KalturaAvatarSession` and `KalturaChatSession`) detect the pattern and emit a once-per-session `warning` event, `{ code: 'empty_turn_with_request_vars', message, requestVarKeys }` (variable *names* only, never values), pointing at the gate:
+The rejection is **silent** on the live socket and in `KalturaChatSession`. The turn comes back as an empty reply: no HTTP error, no socket error. Both session classes (`KalturaAvatarSession` and `KalturaChatSession`) detect the pattern and emit a once-per-session `warning` event, `{ code: 'empty_turn_with_request_vars', message, requestVarKeys }` (variable *names* only, never values), pointing at the gate. A management converse call that receives the 403 throws `client_variables_disabled` instead. `KalturaChatSession.sendText()` can fail either way when it sends request variables: the silent empty turn with the warning, or a rejected promise with `client_variables_disabled`.
 
 ```js
 session.on('warning', (w) => {
@@ -93,7 +93,7 @@ Reserved `sys__*` keys (like `sys__user_id` and `sys__thread_id`) are server-inj
 
 ### Server-side tools read them too
 
-Request variables aren't limited to prompt text. A server-side `api` tool's request template can interpolate them (`{{account_id}}` in a URL, header, or body), so a value your app set turns into a parameter of a backend call the brain makes. This includes variables from earlier turns that were never mentioned in conversation. See [API-REFERENCE.md § Tools](api/build/tools-and-secrets.md#tools-api--csv--code).
+Request variables aren't limited to prompt text. A server-side `api` tool's request template can interpolate them (`{{account_id}}` in a URL, header, or body), so a value your app set turns into a parameter of a backend call the brain makes. This includes variables from earlier turns that were never mentioned in conversation. See [Tools and Secrets § Tools](api/build/tools-and-secrets.md#tools-api--csv--code).
 
 **Security stance:** request variables are client-suppliable *and* thread-persistent. Never treat one as an authorization claim; your endpoints must independently authorize every call. A poisoned value also outlives its turn: it keeps interpolating into prompts and tool calls for the rest of the thread. Don't pass unsanitized end-user text into `setDynamicPrompt`, and never put secrets in any request variable.
 
@@ -211,7 +211,7 @@ If instead you need the *avatar* to drive your UI — navigate, open a panel, hi
 |-----|---------------|
 | [README.md → `{{var}}` personalization](../README.md#var-personalization-request_vars) | The `request_vars` API reference |
 | [README.md → Experience](../README.md#experience) | `KalturaAvatarSession` and the `Presenter` deck plugin this doc's worked example builds on |
-| [API-REFERENCE.md → Converse](api/operate.md#converse) | Sending `request_vars` on the headless HTTP path, and the `sys__*` reserved set |
+| [api/operate.md § Converse](api/operate.md#converse) | Sending `request_vars` on the headless HTTP path, and the `sys__*` reserved set |
 | [STRUCTURED-DATA-FORMS.md](STRUCTURED-DATA-FORMS.md) | Configuring what the brain asks the viewer for, and how it's rendered |
 | [CLIENT-COMMANDS.md](CLIENT-COMMANDS.md) | The avatar-driving-your-UI channel — the opposite direction from this doc |
 | [WIRE-PROTOCOL.md](WIRE-PROTOCOL.md) | The exact socket events behind each mechanism, for anyone debugging at the wire level |

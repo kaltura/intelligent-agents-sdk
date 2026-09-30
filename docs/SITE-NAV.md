@@ -18,7 +18,7 @@ Three pieces, one shared contract:
 
 ## Why fire-and-forget
 
-A navigation tool needs no answer from the page. The tool is provisioned with `wait_for_response: false`, so the backend produces the tool result itself right after the model emits the call, and the browser never sends anything back. There is nothing to ACK, time out on, or retry.
+A navigation tool needs no answer from the page. The tool is provisioned with `wait_for_response: false`, so the turn continues without waiting for the browser, and the browser never sends anything back. There is nothing to ACK, time out on, or retry.
 
 The model writes its spoken answer in the same turn. Compare [CLIENT-COMMANDS.md § Tool spirals](CLIENT-COMMANDS.md#tool-spirals-starve-the-voice--budget-tools-per-turn) for what happens to tools that do wait.
 
@@ -52,14 +52,14 @@ The site build publishes one public JSON file. The same file feeds the prompt (r
 
 | Field | Meaning |
 |---|---|
-| `version` | Format version, always `1` today. `validateSectionsManifest` rejects anything else. |
+| `version` | Format version, always `1`. `validateSectionsManifest` rejects anything else. |
 | `lang` | Language code used for the stop-word list. |
 | `pages[].path` | Site-relative path with leading slash, prefix-free (`/guides/x/`, not `/docs/guides/x/`). Sorted. |
 | `pages[].title` | Optional. When present, it's the first line of that page's block in the rendered SITE MAP, so it does reach the model. See [Rendering the SITE MAP](#rendering-the-site-map). |
 | `sections[].key` | Compact key the model uses (2–3 content words). Unique per page. |
 | `sections[].id` | Real DOM id of the element to scroll to. |
 | `sections[].text` | Heading text, used by the fuzzy resolver. |
-| `sections[].kind` | `heading` (default) or `target` for hand-placed anchors. Future kinds resolve through the same chain. |
+| `sections[].kind` | `heading` (default) or `target` for hand-placed anchors. |
 
 Only public data belongs here: paths and headings that are already on the page. Never add internal notes, draft pages, or anything a visitor should not see.
 
@@ -104,7 +104,7 @@ Deterministic, so a docs change re-keys only the page it touched:
 
 `renderSiteMap(manifest)` gives the prompt text: two lines per page, the page title and then `path: key1, key2`, with a blank line between pages. About 45 tokens per page. The title lets the model match what a visitor calls a page ("the wire protocol page") to its path. The path line carries only the path and the keys: a label next to the path gets copied into `go_to` as part of the path.
 
-`siteMapPrompt(manifest)` wraps it as a prompt block and warns (never throws) when the estimate passes `maxTokens` (default 3000). The docs site's 49 pages and ~174 sections render to about 2500 tokens (`test/fixtures/site-map.snapshot.txt`).
+`siteMapPrompt(manifest)` wraps it as a prompt block and warns (never throws) when the estimate passes `maxTokens` (default 3000). `test/fixtures/site-map.snapshot.txt` holds the rendered SITE MAP of the docs site.
 
 ## Provisioning
 
@@ -114,7 +114,7 @@ import {
 } from '@kaltura/intelligent-agents/management';
 
 const m = new Management({ partnerId, adminSecret });
-const ks = await m.sessions.createAdminToken();
+const ks = await m.sessions.createAdminToken({ userId: 'admin@example.com' });
 const manifest = await loadSectionsManifest('https://docs.example.com/nova/sections.json');
 
 const tool = await m.tools.add(goToTool({ siteLabel: 'the Example docs' }), ks);
@@ -133,8 +133,8 @@ await m.intellects.create({
 |---|---|
 | `goToTool({ name?, siteLabel?, timeout?, displayName? })` | The client tool config. Wire shape: `{ name: 'go_to', type: 'client', wait_for_response: false, timeout: 5, args: { path, section } }`. Same options produce the same config, so an upsert by name is idempotent. Pass it to `tools.add()` or `tools.update(id, { config })`. |
 | `siteMapPrompt(manifest, { key?, label?, maxTokens?, warn? })` | The SITE MAP prompt block (`type: 'custom'`). |
-| `SITE_NAV_RULES_PROMPT` | Frozen prompt block with four rules: call once when a SITE MAP page covers the topic, never call when none does, never two calls per reply, never mention the screen. This wording measured best live across the supported brain models. |
-| `PAGE_CONTEXT_PROMPT` | Optional. Renders `{{page_context}}` so the browser can tell the brain which page the visitor is on. Needs `allow_client_variables: true`. See [DYNAMIC-DATA-INJECTION.md](DYNAMIC-DATA-INJECTION.md). |
+| `SITE_NAV_RULES_PROMPT` | Frozen prompt block with four rules: call once when a SITE MAP page covers the topic, never call when none does, never two calls per reply, never mention the screen. |
+| `PAGE_CONTEXT_PROMPT` | Optional. Renders `{{page_context}}` so the browser can tell the brain which page the visitor is on. Needs `allow_client_variables` on. It is on by default. Pin it with `intellects.setClientVariablesEnabled(configId, true, adminKs)`. See [DYNAMIC-DATA-INJECTION.md](DYNAMIC-DATA-INJECTION.md). |
 | `loadSectionsManifest(url, { fetch?, maxBytes?, timeoutMs? })` | Fetches and validates the manifest at provisioning time. Size-guarded (512 KiB), 15 s timeout, throws `KalturaError` with `code` `bad_arg`, `http_error`, `network_error`, `timeout`, `too_large` or `bad_manifest`. |
 | `SITE_NAV_TOOL_NAME` | `'go_to'`. Change the tool name only if you also rewrite the rules prompt. |
 | `estimateTokens(text)` | Rough estimate (characters / 3.2) used for the budget warning. |
@@ -211,7 +211,7 @@ Send the current page and its keys as `page_context` through `session.setDynamic
 
 ```js
 const page = resolvePath(nav.manifest, location.pathname);
-session.setDynamicPrompt({ page_context: { url: page.path, sections: page.sections.map((s) => s.key) } });
+session.setDynamicPrompt({ url: page.path, sections: page.sections.map((s) => s.key) });
 ```
 
 ## Adapters
@@ -230,12 +230,12 @@ session.setDynamicPrompt({ page_context: { url: page.path, sections: page.sectio
 3. Browser: `new SiteNavigator({ session, manifestUrl, navigate })`.
 4. Optional: `point` for a visual pointer, `onNavigate` for analytics, `lang` and `stopWords` for a non-English site, `overrides` for keys that read badly.
 
-Extensibility hooks that cost nothing today:
+Extension points:
 
 | Hook | Purpose |
 |---|---|
 | `manifest.version` | Format evolution. |
-| `section.kind` | `heading`, `target`; future kinds (`tab`, `step`) resolve through the same chain. |
+| `section.kind` | `heading` or `target`. |
 | `overrides` | Hand-fix a weak key. |
 | `depth` | Include h3 keys on a small site. |
 | `stopWords[lang]` | Localized sites. |
@@ -247,7 +247,7 @@ Non-goals: multi-argument actions (`action: 'open' | 'highlight'`), server-side 
 ## Testing
 
 - `npm test` covers the key algorithm, manifest build/validate/resolve, the prompt builders and the browser plugin offline (`test/unit/site-keys.test.js`, `test/unit/site-nav-management.test.js`, `test/unit/site-nav.test.js`). `test/fixtures/site-map.snapshot.txt` pins the rendered SITE MAP for the docs site so a key change is a visible diff.
-- `npm run live-verify:site-nav` (`scripts/live-verify-site-nav.mjs`) runs against the real Kaltura API: tool echo shape, idempotent update, prompt echo, one mapped ask producing exactly one resolvable `go_to`, one unmapped ask producing none, then deletes everything it created. CI runs it on every merge and on PRs labelled `run-live-verify`. Tool names are unique per partner, so on a partner that already runs a live `go_to` tool the script records a skip, exits 0, and leaves that tool untouched. Point `AGENTIC_PARTNER_ID` at a partner without a live `go_to` deployment to run it for real.
+- `npm run live-verify:site-nav` (`scripts/live-verify-site-nav.mjs`) runs against the real Kaltura API: tool echo shape, idempotent update, prompt echo, one mapped ask producing exactly one resolvable `go_to`, one unmapped ask producing none, then deletes everything it created. CI runs it on every merge and on PRs labelled `run-live-verify`. Tool names are unique in a shared namespace. A conflict returns 409. So on a partner that already runs a live `go_to` tool the script records a skip, exits 0, and leaves that tool untouched. Point `AGENTIC_PARTNER_ID` at a partner without a live `go_to` deployment to run it for real.
 
 ## Security
 

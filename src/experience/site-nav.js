@@ -8,9 +8,8 @@
  * plugin resolves that pair against the same manifest, moves the visitor
  * there through YOUR `navigate()` function, scrolls to the section once the
  * page is in the DOM, and optionally highlights it. It never answers the
- * tool call: `go_to` is provisioned with `wait_for_response: false`, so the
- * backend synthesizes the result itself and there is nothing to ACK, time out
- * on, or retry.
+ * tool call: `go_to` is provisioned with `wait_for_response: false`, so there
+ * is nothing to ACK, time out on, or retry.
  *
  * Framework-agnostic on purpose. `navigate(url)` is the only required hook; it
  * can be a SPA router push, `location.assign(url)`, or anything else. When it
@@ -101,6 +100,7 @@ export class SiteNavigator {
    * @param {number} [cfg.settleMs=250]  After `navigate` resolves, wait one frame, then this long before the single retry when the section element is not yet in the DOM.
    * @param {(msg:string)=>void} [cfg.warn]  Warning sink (default `console.warn`).
    * @param {object} [cfg.window]         Window-like object (`document`, `history`, `location`, `fetch`, `requestAnimationFrame`). Defaults to `globalThis`. Inject for tests.
+   * @throws {Error} When `session`, `navigate`, or both `manifest` and `manifestUrl` are missing. A `manifestUrl` fetch failure does not throw: it warns and `ready` resolves to the inline manifest or `null`.
    */
   constructor(cfg) {
     if (!cfg?.session) throw new Error('SiteNavigator needs { session }');
