@@ -2,7 +2,7 @@
 
 # Management Operations
 
-All use the **admin KS**.
+All use the **admin KS** (`createAdminToken`), except where a section says otherwise.
 
 ## Agents — `https://api.avatar.us.kaltura.ai`
 
@@ -38,7 +38,7 @@ The request also takes a top-level `orderBy` (`+createdAt`, `-createdAt`, `+upda
 
 `avatars.update` does NOT reject either half alone.
 
-`avatar/create` accepts and stores `adminTags`, and `avatar/list adminTagsIn` finds it. But no read path ever returns it, and `avatar/update` genuinely rejects it (no tag field on that request body). The SDK throws pre-network on either path rather than let you rely on a write-only field — tag the parent **agent** instead.
+Avatars carry no `adminTags`. `avatars.create` and `avatars.update` throw `bad_request` before any network call if you pass it. Tag the parent **agent** instead.
 
 ## Intellects — `https://genie.nvp1.ovp.kaltura.com`
 
@@ -73,7 +73,7 @@ Each validates client-side and throws `bad_request` before any network call. See
 
 ## Tools — `https://genie.nvp1.ovp.kaltura.com`
 
-A standalone, partner-level entity, not embedded in an intellect. A `name` that doesn't appear in your own `list()` can still be rejected with a 409 conflict, because names are also checked against a shared pool. The same applies to Skills below.
+A standalone, partner-level entity, not embedded in an intellect. Names are unique in a shared namespace. A conflict returns 409, even when the name does not appear in your own `list()`. The same applies to Skills below.
 
 | Operation | Endpoint | Body |
 |-----------|----------|------|
@@ -87,21 +87,21 @@ A standalone, partner-level entity, not embedded in an intellect. A `name` that 
 
 ## Skills — `https://genie.nvp1.ovp.kaltura.com`
 
-A standalone, partner-level reusable-instruction entity — `{id (uuid), name, description, instructions}`. SDK: `mgmt.skills`. A `name` that doesn't appear in your own `list()` can still be rejected with a 409 conflict, because names are also checked against a shared pool. The same applies to Tools above.
+A standalone, partner-level reusable-instruction entity — `{id (uuid), name, description, instructions}`. SDK: `mgmt.skills`. Names are unique in a shared namespace. A conflict returns 409, even when the name does not appear in your own `list()`. The same applies to Tools above.
 
 | Operation | Endpoint | Body |
 |-----------|----------|------|
 | List | `POST /v1/skill/list` | `{"filter":{"objectType":"SkillListFilter"},"pager":{"pageIndex":1,"pageSize":30}}` |
 | Get | `POST /v1/skill/get` | `{"id":"SKILL_UUID"}` |
 | Add | `POST /v1/skill/add` | `{"name":"...", "description":"...", "instructions"?}` |
-| Update | `POST /v1/skill/update` | `{"id":"SKILL_UUID", "name"?, "description"?, "instructions"?}` — idempotent; renames re-check the same partner-unique-name constraint as Add (409 on conflict) |
+| Update | `POST /v1/skill/update` | `{"id":"SKILL_UUID", "name"?, "description"?, "instructions"?}` — idempotent; renames follow the same name rule as Add (409 on conflict) |
 | Delete | `POST /v1/skill/delete` | `{"id":"SKILL_UUID"}` — replies `{id}`; a follow-up get 404s |
 
 Before deleting a Skill, `mgmt.skills.delete` lists every intellect and refuses with a typed `skill_in_use` error naming each one still referencing the id in `skill_ids`. It only proceeds when called with `{confirmPermanent:true, force:true}`. Tools' `mgmt.tools.delete` carries the identical `tool_in_use` guard.
 
 ## Threads — `https://genie.nvp1.ovp.kaltura.com`
 
-All thread endpoints require an **admin KS** (`disableentitlement`). SDK: `mgmt.threads.{list, get, rename, setAnalysis, clearAnalysis, push, delete, transcript}`.
+Token rules per method: [operate.md § Threads](operate.md#threads). `threads.push` needs an admin token. Which threads a token can reach: [SECURITY.md § Session type](../../SECURITY.md#session-type). SDK: `mgmt.threads.{list, get, rename, setAnalysis, clearAnalysis, push, delete, transcript}`.
 
 | Operation | Endpoint | Body |
 |-----------|----------|------|
@@ -111,7 +111,7 @@ All thread endpoints require an **admin KS** (`disableentitlement`). SDK: `mgmt.
 | Set analysis | `POST /v1/thread/update` | `{"id":"UUID","thread_metadata":{"analysis":{...}}}` — shallow merge one level under `analysis`; a changed key fires the lifecycle `analysis_updated` event. SDK: `mgmt.threads.setAnalysis(id, patch, ks)`. |
 | Clear analysis | `POST /v1/thread/update` | `{"id":"UUID","thread_metadata":{}}` — wipes `analysis` (the only field `ThreadMetadata` has). SDK: `mgmt.threads.clearAnalysis(id, ks)`. |
 | Push | `POST /thread/push` (no `v1/` prefix on this route) | `{"id":"UUID","content":"...","request_vars"?:{...},"system_message"?:"..."}` — `delivered:false` in the reply means no live socket is attached. The message still persists: it shows up in Messages list as `type:4` (`MessageType.EXTERNAL_PUSH`). `content` over a server-side, partner-configurable length cap returns `413 content exceeds max_message_length` — not checked client-side. SDK: `mgmt.threads.push({id,content,request_vars?,system_message?}, ks)`. |
-| Delete | `POST /v1/thread/delete` | `{"thread_ids":["UUID"]}` — soft delete, followed by a scheduled infra-level purge |
+| Delete | `POST /v1/thread/delete` | `{"thread_ids":["UUID"]}`. See [operate.md § Threads](operate.md#threads) for delete behavior |
 | Transcript | `POST /v1/thread/get_transcripts` | `{"id":"UUID"}` |
 
 **Filter fields (list):** `agentIdEquals`, `contextIdEqual`, `createdAtGreaterThanOrEqual`, `createdAtLessThanOrEqual`, `idEquals`, `idsIn`, `isEverywhere`, `orderBy`, `partnerIdEquals`, `statusEquals`, `statusIn`, `updatedAtGreaterThanOrEqual`, `updatedAtLessThanOrEqual`, `userIdEquals`.
@@ -128,16 +128,16 @@ SDK: `mgmt.threads.list(ks, opts)` merges `opts.filter` under the fixed `objectT
 
 `request_vars` on `push` is validated by the SDK's own reserved-name guard before any network call, identically to `converse` — see [operate.md § Reserved Template Variables](operate.md#reserved-template-variables-sys__).
 
-See [operate.md § Threads](operate.md#threads) for response shapes and the compliance note on delete's soft-delete/purge timing.
+See [operate.md § Threads](operate.md#threads) for response shapes and delete behavior.
 
 ## Messages, Feedback & Followups — `https://genie.nvp1.ovp.kaltura.com`
 
-SDK: `mgmt.messages`, `mgmt.feedback`, `mgmt.followups`.
+SDK: `mgmt.messages`, `mgmt.feedback`, `mgmt.followups`. `messages.list`, `get` and `share` accept an admin, conversation or agent token (see [operate.md § Threads](operate.md#threads)). `messages.report`, `messages.reportSummary`, `feedback.list` and `followups.list` need an admin token.
 
 | Operation | Endpoint | Body |
 |-----------|----------|------|
 | List messages | `POST /message/list` | `{"filter":{"objectType":"GenieListMessageFilter"},"pager":{"pageIndex":1,"pageSize":50}}` — `opts.threadId` is sugar for `filter.threadIdEquals` and wins if both are given. |
-| Share a message | `POST /message/share` | `{"id":"MSG_ID","newTitle":"..."}` → `{newMessageId}` |
+| Share a message | `POST /message/share` | `{"id":"MSG_ID","newTitle":"..."}` → `{"status":"success","data":{"newMessageId":"..."}}`. SDK: `mgmt.messages.share(id, newTitle, ks)` unwraps this and returns `{newMessageId}`. It throws `server_error` if no id comes back. The clone is readable with `messages.get` and cannot be deleted. |
 | Message report (CSV) | `POST /message/report` | `{"filter":{"objectType":"GenieListMessageFilter"}}` — ⚠️ SENSITIVE: contains end-user ids/names + verbatim question/feedback text. SDK: `mgmt.messages.report(ks, opts)` (raw CSV) / `reportSummary(ks, opts)` (parsed, with a `_meta` provenance receipt) — `reportSummary` defaults `pageSize` to 500 (the server-side max) when omitted. |
 | Add feedback | `POST /feedback/add` | `{"schemaVersion":1,"data":{"message_id":"...","is_positive":true,"comment"?:"..."}}` — idempotent for a given `(message_id, is_positive)` pair. Any KS (conversation or admin). Writes `is_positive`/`comment` onto the rated message itself, which is why `mgmt.feedback.list` (below) can read feedback back from `mgmt.messages`. |
 | List feedback | *(sourced from `/message/list`, not a dedicated endpoint)* | `mgmt.feedback.list(ks, opts)` — see below for details. |
@@ -146,7 +146,7 @@ SDK: `mgmt.messages`, `mgmt.feedback`, `mgmt.followups`.
 
 **List feedback in depth.** `mgmt.feedback.list(ks, opts)` is the correct, permanent way to read feedback, not a stopgap. It queries `POST /message/list` (and, for `filter.agentIdEquals`, `POST /v1/thread/list` first) and returns only the messages carrying a rating.
 
-Filter: `messageIdEquals`, `messageIdsIn`, `threadIdEquals`, `agentIdEquals`, `isPositiveEquals`. `agentIdEquals` only matches threads opened via `sessions.createAgentToken`, and costs one thread query per matching thread. With none of `messageIdEquals`/`messageIdsIn`/`threadIdEquals`/`agentIdEquals` set, it walks every message for the partner — scope it.
+Filter: `messageIdEquals`, `messageIdsIn`, `threadIdEquals`, `agentIdEquals`, `isPositiveEquals`. `agentIdEquals` only matches threads opened with a token minted with that `agentId` (`createAgentToken`, or `createConversationToken` with `agentId`). Threads opened without one carry `agent_id: "default"` and never match. It costs one thread query per matching thread. With none of `messageIdEquals`/`messageIdsIn`/`threadIdEquals`/`agentIdEquals` set, it walks every message for the partner, scope it.
 
 Unlike every other `list()` in this SDK, `await`ing `feedback.list(...)` collects **every** matching row across all underlying pages, not just the first page. The rows are filtered client-side, so there's no single-page shortcut. A narrow filter matters more here than elsewhere.
 

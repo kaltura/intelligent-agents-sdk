@@ -1,12 +1,11 @@
 /**
  * Default renderer for the `external-video` runtime
- * (backend tool key "external_video" → `external-video-tool`). Embeds a
+ * (`external-video-tool`). Embeds a
  * non-Kaltura video. When the URL is a recognized embed host (YouTube/Vimeo)
  * it emits an `embedUrl` the host renders as a real `<iframe>` PLAYER; otherwise
  * it falls back to a scheme-checked link (`url`). The media URL is scheme-checked
- * client-side as defense-in-depth — the SERVER-side media-URL validator is the
- * primary guard (see docs/genui/widgets.md §7 "external-video"); this client
- * allow-list is an additional layer. `safe:false` + empty url means the host must not embed.
+ * with `safeUrl` and must be absolute http(s) (see docs/genui/widgets.md §7
+ * "external-video"). `safe:false` + empty url means the host must not embed.
  * Framework-agnostic `{kind:'external-video', data}`.
  */
 import { safeText, safeUrl } from '../../../core/safety.js';

@@ -28,9 +28,13 @@
  * resolution isn't a published/fixed contract — see docs/ARCHITECTURE.md §
  * Displaying the Avatar Video).
  *
+ * Also fires 'stateChange' ({state}), 'connectivityChanged' ({state}: the
+ * peer's ICE connection state) and 'warning' ({code, message, ...}, e.g.
+ * `playback_blocked`, `media_attach_failed`, `whep_delete_failed`).
+ *
  * @example
  * // server:
- * //   const admin = await k.sessions.createAdminToken();
+ * //   const admin = await k.sessions.createAdminToken({ userId: 'admin@example.com' });
  * //   const session = await k.avatarSessions.create({ visualConfig: { id: avatarId } }, admin.ks);
  * //   const { whepUrl, turn } = await k.avatarSessions.initClient(session);
  * //   // send only { whepUrl, turn } to the browser — never `session`/`session.token`
@@ -91,15 +95,18 @@ export class KalturaScriptedVideoSession extends Emitter {
   }
 
   /**
-   * Negotiate WHEP and resolve once the stream is playable (or on connect
-   * failure/timeout — whichever comes first). Can only be called from
-   * `'idle'`/`'disconnected'`; construct a new instance to reconnect.
+   * Negotiate WHEP and resolve once the stream is playable, or after a 6 s
+   * cap, whichever comes first. Negotiation failure rejects, sets state
+   * `'error'` and tears the peer down. Can only be called from
+   * `'idle'` or `'disconnected'`. After `disconnect()` the same instance
+   * connects again with a fresh peer connection. From `'error'`, call
+   * `disconnect()` first, then `connect()`.
    * @returns {Promise<void>}
-   * @throws {KalturaError} `invalid_state` if already connecting/connected; `whep_failed`/`whep_private_ip` on negotiation failure.
+   * @throws {KalturaError} `invalid_state` from any other state (`'connecting'`, `'connected'`, `'disconnecting'`, `'error'`); `whep_failed` on a non-2xx WHEP response; `whep_private_ip` when the response Location resolves to a private/loopback address; `connect_failed` for any other error.
    */
   async connect() {
     if (this.state !== 'idle' && this.state !== 'disconnected') {
-      throw new KalturaError({ type: 'about:blank', title: 'invalid state', code: 'invalid_state', detail: `connect() called from state '${this.state}' — construct a new KalturaScriptedVideoSession to reconnect.` });
+      throw new KalturaError({ type: 'about:blank', title: 'invalid state', code: 'invalid_state', detail: `connect() called from state '${this.state}'. It only runs from 'idle' or 'disconnected'; call disconnect() first.` });
     }
     this._setState('connecting');
     try {
@@ -154,8 +161,7 @@ export class KalturaScriptedVideoSession extends Emitter {
       const answerSdp = await res.text();
       const loc = res.headers?.get?.('Location');
       this._whepLocation = loc ? whepResourceUrl(loc, this._whepUrl) : null;
-      // The server can rewrite the egress host in the response's Location header even
-      // when whepUrl itself checked clean — re-check after resolving it (mirrors
+      // Re-check the resolved Location for a private address (mirrors
       // KalturaAvatarSession's _connectStv).
       if (this._whepLocation && whepUrlHasPrivateIp(this._whepLocation)) {
         throw new KalturaError({ type: 'https://docs.kaltura.com/agentic/errors/whep_private_ip', title: 'WHEP private IP', code: 'whep_private_ip', detail: 'The WHEP response Location header resolved to a private/loopback address.' });
@@ -248,7 +254,7 @@ export class KalturaScriptedVideoSession extends Emitter {
 
   _setState(s) {
     this.state = s;
-    this.emit('stateChanged', { state: s });
+    this.emit('stateChange', { state: s });
   }
 }
 

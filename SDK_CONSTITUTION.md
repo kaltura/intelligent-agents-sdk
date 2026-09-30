@@ -67,13 +67,13 @@ JSON objects arriving from any external source (LLM, API response, user input) m
 ## Part 3 — Resiliency
 
 **Rule R-1: Exponential backoff on transient network failures.**  
-`Http.request()` must retry using truncated exponential backoff with full jitter. A network-layer error (status 0, no response received) is retried on every method. A received HTTP 429, 502, 503, or 504 is retried only for `GET`/`HEAD`, or for another method that carries an `Idempotency-Key` (see Rule R-3) — a plain `POST`/`PUT`/`PATCH`/`DELETE` without one is not retried on a received transient status, since the server may already have processed it. Non-retriable failure codes (400, 401, 403, 404, 405, 409, 422) must NOT be retried — retrying auth failures wastes quota and delays the caller.
+`Http.request()` must retry using truncated exponential backoff with jitter. A network-layer error (status 0, no response received) is retried on every method. A received HTTP 429, 502, 503, or 504 is retried only for `GET`/`HEAD`, or for another method that carries an `Idempotency-Key` (see Rule R-3) — a plain `POST`/`PUT`/`PATCH`/`DELETE` without one is not retried on a received transient status, since the server may already have processed it. Non-retriable failure codes (400, 401, 403, 404, 405, 409, 422) must NOT be retried — retrying auth failures wastes quota and delays the caller.
 
 Retry parameters (defaults, all configurable via `HttpOptions`):
 - `maxRetries`: 3 (total attempts = 4)
 - `baseDelayMs`: 200 ms
 - `maxDelayMs`: 10 000 ms (10 s)
-- Backoff formula: `min(maxDelayMs, baseDelayMs * 2^attempt) * random(0.5, 1.0)`
+- Backoff formula: `min(maxDelayMs, baseDelayMs * 2^(retry - 1)) * random(0.5, 1.0)`, where `retry` is 1 for the first retry
 
 **Rule R-2: Idempotent GETs are always safe to retry.**  
 `GET` requests carry no body and are safe to retry on any transient failure without an idempotency key.
@@ -81,10 +81,10 @@ Retry parameters (defaults, all configurable via `HttpOptions`):
 *Verify:* `test/unit/http.test.js` ("R-2: GET requires no idempotency key to be retry-safe") asserts a GET is retried on a transient failure with no `idempotencyKey` passed at all.
 
 **Rule R-3: POSTs that carry an `Idempotency-Key` header are retry-safe.**  
-`Http.postJson()` already accepts an `idempotencyKey` option and forwards it as the `Idempotency-Key` request header. A POST with this header set is safe to retry; a POST without it is retry-safe only on a network-layer failure (status 0) where the request may never have reached the server.
+`Http.postJson()` accepts an `idempotencyKey` option and forwards it as the `Idempotency-Key` request header. A POST with this header set is safe to retry; a POST without it is retry-safe only on a network-layer failure (status 0) where the request may never have reached the server.
 
 **Rule R-4: Retry budget does not consume the caller's `AbortSignal`.**  
-If the caller cancels via `signal`, the retry loop must stop immediately and throw without starting the next attempt. The existing `mergeSignals()` helper already handles per-attempt abort; Rule R-4 requires that a cancelled signal also breaks the retry loop.
+If the caller cancels via `signal`, the retry loop must stop immediately and throw without starting the next attempt. `mergeSignals()` handles per-attempt abort. Rule R-4 also requires that a cancelled signal breaks the retry loop.
 
 **Rule R-5: Retry behaviour must be fully exercisable offline.**  
 The backoff delay must be injectable (`delayFn` option, default `(ms) => new Promise(r => setTimeout(r, ms))`) so tests can pass `() => Promise.resolve()` and exercise all retry paths at zero wall-clock cost.
@@ -106,12 +106,12 @@ Held `speak()`/`kickoff` text is released by `stvFinishedTalking` or `agentInter
 ## Part 4 — Performance
 
 **Rule P-1: Response payload size budget.**  
-`Http.request()` must enforce a configurable maximum response body size. The default limit is 10 MB. If `Content-Length` exceeds the limit before reading, or if the accumulated body text exceeds the limit, throw a `KalturaError` with `code: 'response_too_large'`.
+`Http.request()` must enforce a configurable maximum response body size. The default limit is 10 MiB. If `Content-Length` exceeds the limit before reading, or if the accumulated body text exceeds the limit, throw a `KalturaError` with `code: 'response_too_large'`.
 
 *Verify:* `test/unit/http.test.js` asserts that a fake response whose `Content-Length` or body size exceeds `maxResponseBytes` throws `response_too_large`.
 
 **Rule P-2: No synchronous blocking operations in the SDK's hot paths.**  
-The SDK must not call `JSON.parse` on arbitrarily large strings without a size guard. All JSON parsing goes through `parseBody()` in `core/http.js`, which already runs after the response is received — Rule P-1's size guard is the enforcement point.
+The SDK must not call `JSON.parse` on arbitrarily large strings without a size guard. All JSON parsing goes through `parseBody()` in `core/http.js`, which runs after the response is received — Rule P-1's size guard is the enforcement point.
 
 **Rule P-3: The SDK has zero runtime dependencies.**  
 `package.json` must list no `dependencies` (only `devDependencies` for test tooling). Injectable transports (`fetch`, `socketFactory`, `rtcConstructor`, `getUserMedia`) are the deliberate points of external integration.
@@ -130,7 +130,7 @@ Private / internal helpers (unexported, or named with `_`) are exempt.
 *Verify:* `agent_verify.mjs` scans `src/**/*.js` for exported symbols without a preceding `/**` block.
 
 **Rule D-2: No dead code (exported symbols with zero consumers).**  
-Symbols that are exported from an internal module but neither re-exported from an entry point (`src/management/index.js`, `src/experience/index.js`) nor used by any other module in `src/` are dead. Flag them. Do not delete without confirming they are also absent from all `apps/` and `tools/` consumers.
+Symbols that are exported from an internal module but neither re-exported from an entry point (`src/management/index.js`, `src/experience/index.js`) nor used by any other module in `src/` are dead. Flag them. Do not delete without confirming they are also absent from `tools/`, `examples/`, `quickstart/` and `test/`.
 
 *Verify:* `agent_verify.mjs` cross-references exports vs. imports. Any symbol exported but never imported anywhere is flagged as dead code (warning, not error, on first pass — must be manually confirmed before deletion).
 
@@ -193,7 +193,7 @@ This table summarizes what each rule checks, not whether it currently passes —
 | S-4 | Security | Untrusted JSON passes through `sanitizeJson` | safety.test.js + security.test.js |
 | S-5 | Security | Admin secret is non-enumerable | isolation.test.js |
 | S-6 | Security | No hardcoded credentials or token literals | grep |
-| R-1 | Resiliency | Exponential backoff with full jitter in `Http.request()` | see R-5 |
+| R-1 | Resiliency | Exponential backoff with jitter in `Http.request()` | see R-5 |
 | R-2 | Resiliency | GETs retried on any transient failure | http.test.js |
 | R-3 | Resiliency | Idempotency-key POSTs retried; non-keyed POSTs retried only on status-0 | see R-5 |
 | R-4 | Resiliency | Abort signal stops the retry loop immediately | http.test.js |

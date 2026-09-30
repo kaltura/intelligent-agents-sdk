@@ -2,9 +2,8 @@
 /**
  * Live Avatars verification — real Kaltura API, no fakes, no mocks.
  *
- * `live-verify-capabilities.mjs` already covers `avatars.listTemplates`
- * (READ). This script covers the write path that still had zero live
- * coverage:
+ * `live-verify-capabilities.mjs` covers `avatars.listTemplates` (READ).
+ * This script covers the write path:
  *
  *   1  catalog.createVisual — scratch Visual (1x1 PNG), reused as this avatar's face
  *   2  avatars.create       — {voice:{id: <existing catalog voice>}, visual:{id: <scratch visual>}, openingPhrase}
@@ -80,7 +79,7 @@ let visualItemId;
 let avatarId;
 
 try {
-  admin = await kaltura.sessions.createAdminToken();
+  admin = await kaltura.sessions.createAdminToken({ userId: 'sdk-live-verify' });
   record('admin-token-mint', true, { secondsRemaining: admin.secondsRemaining() });
 
   // An existing Voice catalog item — reused, never created/deleted by this script.

@@ -41,6 +41,8 @@ test('token.mint audit fires with kind/scope/entitlement, no raw KS', async () =
   const mint = events.find((e) => e.type === 'token.mint');
   assert.equal(mint.outcome, 'success');
   assert.equal(mint.actor.kind, 'conversation');
+  assert.equal(mint.actor.sessionType, 'user');
+  assert.ok(mint.scope.includes('setrole:PLAYBACK_BASE_ROLE'));
   assert.ok(mint.scope.includes('actionslimit:10'));
   assert.ok(mint.scope.includes('iprestrict:203.0.113.7'));
   assert.ok(mint.scope.includes('sessionid:grp1'));
@@ -65,7 +67,7 @@ test('guard.reject audit fires on wrong token scope', async () => {
   const events = [];
   const f = fakeFetch([{ match: '/service/session/action/start', respond: () => ({ body: adminKs() }) }]);
   const m = new Management({ partnerId: 9, adminSecret: ADMIN, fetch: f, onAuditEvent: (e) => events.push(e) });
-  const admin = await m.sessions.createAdminToken();
+  const admin = await m.sessions.createAdminToken({ userId: 'ops-a' });
   await assert.rejects(() => m.conversations.send({ userMessage: 'hi' }, admin), (e) => e.code === 'wrong_token_scope');
   assert.ok(events.some((e) => e.type === 'guard.reject' && e.outcome === 'fail'));
 });
@@ -120,7 +122,7 @@ test('getAdminSecret vault callback is used and not retained as a field', async 
   let calls = 0;
   const f = fakeFetch([{ match: '/service/session/action/start', respond: () => ({ body: adminKs() }) }]);
   const m = new Management({ partnerId: 9, getAdminSecret: () => { calls++; return ADMIN; }, fetch: f });
-  await m.sessions.createAdminToken();
+  await m.sessions.createAdminToken({ userId: 'ops-a' });
   assert.equal(calls, 1, 'vault callback invoked per mint');
   assert.ok(!JSON.stringify(m.sessions).includes(ADMIN));
 });

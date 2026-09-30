@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Live-backend verification for this PR's new backend-touching capabilities —
+ * Live-backend verification for these backend-touching capabilities —
  * real Kaltura API, no fakes: Threads#push/setAnalysis/clearAnalysis,
  * Feedback#add/list, Followups#list, Avatars#create/update
  * composed both via face+background and via templateId+background,
@@ -74,7 +74,7 @@ let avatarBId;
 let failed = false;
 
 try {
-  admin = await kaltura.sessions.createAdminToken();
+  admin = await kaltura.sessions.createAdminToken({ userId: 'sdk-live-verify' });
   record('admin-token-mint', true, { secondsRemaining: admin.secondsRemaining() });
 
   // ── Set up a real thread to exercise Threads/Feedback/Followups against ──

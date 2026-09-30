@@ -1,7 +1,8 @@
 /**
  * Intellects — the AI "brain" config (prompts, base_directive, glossary,
  * capabilities, `tool_ids` linkage, knowledge linkage). OWNED BY GENIE (source
- * of truth). Genie host, admin token. Source: API-REFERENCE §2.1/§2.2.
+ * of truth). Genie host, admin token. See docs/api/build/intellect.md and
+ * docs/api/management-operations.md § Intellects.
  *
  * Tools themselves are a SEPARATE, partner-level entity (`mgmt.tools`,
  * `/v1/tool/*` — see `tools.js`) — an intellect only carries the `tool_ids` it
@@ -92,8 +93,9 @@ export class Intellects {
 
   /**
    * Update an intellect. WRITE — idempotent. The body MUST include
-   * `{id, type}` — `type` is a required discriminator (omitting it → HTTP 422
-   * `missing_discriminator`). See API-REFERENCE §2.2 for the full prompt shape.
+   * `{id, type}`. `type` is a required discriminator: omitting it throws
+   * `code:'missing_discriminator'` before any network call. See
+   * docs/api/build/intellect.md § Configure an Intellect for the full prompt shape.
    * @param {object} body {id,type,...}
    * @param {string} ks
    */
@@ -126,11 +128,12 @@ export class Intellects {
    * Create an intellect with the SDK defaults applied + the resolved `type`
    * echoed. WRITE — NOT idempotent (auto-sends an Idempotency-Key). Defaults
    * `type:'internal'` and `status:2` (ACTIVE — opt out with `status:1` for
-   * PENDING). REJECTS `url`/`protocol`: the `type:external` (BYO-LLM) config is
-   * not supported on the public API, so `create` rejects `url`/`protocol` and
-   * the SDK does not offer a path to create one. The echoed `type` is
-   * SDK-resolved, not server-confirmed. @param {object} body @param {string} ks (admin)
-   * @returns {Promise<{configId:number|undefined, type:string, status:number, raw:any, _meta:object}>}
+   * PENDING). REJECTS `url`/`protocol` with `bad_request`: the `type:external`
+   * (BYO-LLM) config is not supported on the public API, and the SDK offers no
+   * path to create one. The echoed `type` is SDK-resolved, not
+   * server-confirmed. `warnings` is present only when the client-tool
+   * readiness lint finds something. @param {object} body @param {string} ks (admin)
+   * @returns {Promise<{configId:number|undefined, type:string, status:number, raw:any, warnings?:any[], _meta:object}>}
    */
   async create(body, ks) {
     this._.assertAdmin(ks, 'intellects.create');
@@ -140,7 +143,7 @@ export class Intellects {
     }
     const type = body.type ?? 'internal';
     const status = body.status ?? 2;
-    // Client-tool readiness lint: tools without kaltura_genie_experiences:'off' are out-competed by GenUI.
+    // Client-tool readiness lint: tools without kaltura_genie_experiences:'off' can be overridden by the built-in experience tool.
     // Capabilities set post-create are defeated by the ~24h cache.
     // Surface as warnings on the receipt so authoring UIs / AI agents see them.
     const readiness = clientToolReadiness({ ...body, type, status });
@@ -170,8 +173,7 @@ export class Intellects {
   /**
    * Set ONE capability by name (read-merge-write the full-replace dict). WRITE —
    * idempotent. Re-enabling a STORED `'disabled'` to `'on'` is refused by an
-   * SDK-side CONVENIENCE guard (not an API constraint — the server only vetoes
-   * per-REQUEST overrides) unless `{force:true}`. @param {number} configId @param {string} name @param {'on'|'off'|'disabled'} state @param {string} ks (admin) @param {{force?:boolean}} [opts]
+   * SDK-side CONVENIENCE guard (not an API constraint) unless `{force:true}`. @param {number} configId @param {string} name @param {'on'|'off'|'disabled'} state @param {string} ks (admin) @param {{force?:boolean}} [opts]
    */
   async setCapability(configId, name, state, ks, opts = {}) {
     this._.assertAdmin(ks, 'intellects.setCapability');
@@ -181,7 +183,7 @@ export class Intellects {
     const { cur, body } = await this._rmwBody(configId, ks, 'intellects.setCapability');
     const current = (cur.capabilities && typeof cur.capabilities === 'object') ? cur.capabilities : {};
     if (!opts.force && current[name] === CAPABILITY_STATE.DISABLED && state === CAPABILITY_STATE.ON) {
-      throw new KalturaError({ type: 'about:blank', title: 'capability vetoed', code: 'capability_vetoed', detail: `intellects.setCapability: "${name}" is stored 'disabled'. Re-enabling it is refused by an SDK convenience guard — pass {force:true} to override (the API itself would allow it; only per-REQUEST overrides are server-vetoed).` });
+      throw new KalturaError({ type: 'about:blank', title: 'capability vetoed', code: 'capability_vetoed', detail: `intellects.setCapability: "${name}" is stored 'disabled'. Re-enabling it is refused by an SDK convenience guard — pass {force:true} to override (the API itself would allow it).` });
     }
     body.capabilities = mergeCapabilityWrite(current, { [name]: state });
     const result = (await this._.genie('v1/intellect/update', body, ks)).data;
@@ -247,10 +249,11 @@ export class Intellects {
   // ─────────────────────────── client variables gate ───────────────────────────
 
   /**
-   * Toggle `allow_client_variables` — the gate on per-request `request_vars`
-   * (when off, a converse call sending `request_vars` gets HTTP 403). WRITE —
-   * idempotent. NOTE: Genie `v1/intellect/update` is a `model_fields_set` PATCH
-   * that PRESERVES omitted top-level fields, but this defensively re-sends the
+   * Toggle `allow_client_variables` — the gate on per-request `request_vars`.
+   * It is on by default; call this with `true` to pin it. When off, a converse
+   * call sending `request_vars` returns an empty turn or throws
+   * `client_variables_disabled`. WRITE — idempotent. NOTE: Genie `v1/intellect/update` changes only the top-level
+   * fields you send, but this defensively re-sends the
    * WHOLE config (matching `Knowledge.setEnabled`) so a partial body can never
    * reset status / wipe siblings. @param {number} configId @param {boolean} enabled @param {string} ks (admin)
    */
@@ -271,7 +274,7 @@ export class Intellects {
    * unrelated fields are preserved). Lints by default (`lint !== false`): an
    * ERROR finding aborts the write with `code:'prompt_lint_failed'`; WARNINGS
    * (e.g. an unknown `{{var}}`) do NOT block unless you pass `{lint:'strict'}`.
-   * Writes ONLY the DTO-allowed prompt fields. @param {number} configId @param {Array<object>} prompts @param {string} ks (admin)
+   * Writes `prompts`, plus `base_directive`/`glossary`/`status` when given. @param {number} configId @param {Array<object>} prompts @param {string} ks (admin)
    * @param {{baseDirective?:string, glossary?:string, status?:number, knownVars?:string[], lint?:boolean|'strict'}} [opts]
    */
   async setPrompts(configId, prompts, ks, opts = {}) {
@@ -306,7 +309,7 @@ export class Intellects {
    * CLIENT-SIDE preview of the author layer of the system prompt (prompts[] +
    * base_directive + glossary), interpolated with `requestVars`. READ — fetches
    * the current intellect (unless full drafts are supplied) and assembles a
-   * `client-side-replica` via the prompt-lint module. HONEST: this reproduces
+   * `client-side-replica` via the prompt-lint module. This reproduces
    * ONLY the author layer — server-injected capability-conditional template
    * blocks and the built-in default directive are NOT reproduced (see prompt-lint
    * `assembleSystemPrompt`). `sys__*` values are a SIMULATION of what the server
@@ -321,8 +324,7 @@ export class Intellects {
    * `sys__user_obj.*` attribute, or a `secrets.*` name) with no value in
    * `requestVars` is flagged in `warnings[]` instead of silently rendering as
    * empty/literal.
-   * `warnings` is present ONLY when non-empty — a fully-resolved preview's
-   * return shape is unchanged from before this hardening.
+   * `warnings` is present ONLY when non-empty.
    * @param {number} configId @param {string} ks (admin)
    * @param {{requestVars?:Record<string,unknown>, draftPrompts?:Array<object>, draftBaseDirective?:string, draftGlossary?:string}} [opts]
    * @returns {Promise<{text:string, skippedKeys:string[], usedDefaultDirective:boolean, unresolvedVariables:string[], warnings?:Array<{severity:string,code:string,message:string}>, _meta:{renderer:string, rendererBasis:string}&object}>}
@@ -346,7 +348,7 @@ export class Intellects {
    * Capture a CLIENT-SIDE snapshot of the editable prompt layer of an intellect
    * (prompts + base_directive + glossary + capabilities + status). READ.
    *
-   * HONEST: the SERVER has NO versioning — this is a `storage:'client-side'`
+   * The server has NO versioning. This is a `storage:'client-side'`
    * value you persist yourself (return value). Secrets are already `'***'`-masked
    * by the read façade so a snapshot is safe to store; {@link restore} skips
    * secrets + server-managed fields. @param {number} configId @param {string} ks (admin) @param {{label?:string}} [opts]

@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Management } from '../../src/management/index.js';
 import { inspectKs } from '../../src/management/ks-inspect.js';
+import { fakeFetch } from '../fakes/fetch.js';
 
 /** Build a fake KSv2 carrying the given privilege string (matches inspectKs decoding). */
 function fakeKs(priv) {
@@ -57,4 +58,41 @@ test('destructive ops require confirmPermanent', async () => {
   const m = new Management({ partnerId: 999, adminSecret: 'x'.repeat(32) });
   await assert.rejects(() => m.agents.delete('a1', ADMIN), (e) => e.code === 'confirmation_required');
   await assert.rejects(() => m.threads.delete(['t1'], ADMIN), (e) => e.code === 'confirmation_required');
+});
+
+// assertUserOrAdmin: own-thread methods (threads.get and similar).
+function userOrAdminCall(ks) {
+  const ff = fakeFetch([{ match: 'thread/get', respond: () => ({ status: 200, body: { id: 't1' } }) }]);
+  const m = new Management({ partnerId: 999, adminSecret: 'x'.repeat(32), fetch: ff });
+  return { calls: ff.calls, run: () => m.threads.get('t1', ks) };
+}
+
+test('assertUserOrAdmin accepts plaintext admin and conversation KS and minted admin, conversation and agent tokens', async () => {
+  for (const ks of [
+    ADMIN, CONV,
+    { ks: ADMIN, kind: 'admin' },
+    { ks: CONV, kind: 'conversation' },
+    { ks: CONV, kind: 'agent' },
+  ]) {
+    const { calls, run } = userOrAdminCall(ks);
+    await run();
+    assert.equal(calls.length, 1);
+  }
+});
+
+test('assertUserOrAdmin rejects a widget token before any network call', async () => {
+  const { calls, run } = userOrAdminCall({ ks: CONV, kind: 'widget' });
+  await assert.rejects(run, (e) => e.code === 'wrong_token_scope');
+  assert.equal(calls.length, 0);
+});
+
+test('assertUserOrAdmin passes a raw encrypted KS through to the server', async () => {
+  const { calls, run } = userOrAdminCall(['djJ8', 'opaque-encrypted-ks'].join(''));
+  await run();
+  assert.equal(calls.length, 1);
+});
+
+test('admin-only methods still reject a conversation token (threads.push)', async () => {
+  const m = new Management({ partnerId: 999, adminSecret: 'x'.repeat(32) });
+  await assert.rejects(async () => m.threads.push({ id: 't1', content: 'x' }, CONV), (e) => e.code === 'wrong_token_scope');
 });

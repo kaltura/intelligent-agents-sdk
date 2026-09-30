@@ -10,8 +10,8 @@ import { isPrivateOrLoopbackHost } from './net-guard.js';
 
 /**
  * Enforce TLS on a transport URL (OWASP WSS/TLS; NIST SC-8). https/wss pass.
- * http/ws fail UNLESS allowInsecure is true or the host is local — then warn
- * instead of throwing. An empty URL is left to the caller's connect-time default.
+ * http/ws to a localhost or private-network host only warn. http/ws to any other
+ * host throw `insecure_transport` unless allowInsecure is true (then they warn). An empty URL is left to the caller's connect-time default.
  * @param {string} url @param {string} field @param {boolean} allowInsecure @param {(m:string)=>void} warn
  */
 export function assertSecureTransport(url, field, allowInsecure, warn) {
@@ -24,11 +24,11 @@ export function assertSecureTransport(url, field, allowInsecure, warn) {
   if (!insecure) return;                          // unknown scheme → don't block
   const isLocal = isPrivateOrLoopbackHost(u.hostname);
   if (allowInsecure || isLocal) {
-    warn(`${field} uses an insecure (${u.protocol}) transport${isLocal ? ' on localhost' : ''}. NEVER ship cleartext to production — use https/wss (NIST SC-8).`);
+    warn(`${field} uses an insecure (${u.protocol}) transport${isLocal ? ' on a local/private host' : ''}. NEVER ship cleartext to production — use https/wss (NIST SC-8).`);
     return;
   }
   throw new KalturaError({
     type: 'https://docs.kaltura.com/agentic/errors/insecure_transport', title: 'insecure transport', code: 'insecure_transport',
-    detail: `${field} must use https/wss (got ${u.protocol}//). Tokens and media must not travel in cleartext (OWASP/NIST SC-8). For localhost dev only, pass allowInsecureTransport:true.`,
+    detail: `${field} must use https/wss (got ${u.protocol}//). Tokens and media must not travel in cleartext (OWASP/NIST SC-8). Localhost and private-network hosts only warn. For any other host, allowInsecureTransport:true turns this error into a warning (dev only).`,
   });
 }

@@ -69,15 +69,15 @@ Full explanation and plug points: [Inside a Live Conversation](https://kaltura.g
 | scripted-video control API | `api.avatar.us.kaltura.ai/v1/avatar-session/*` | The **scripted-video** control API: `avatar-session/create` (KS) → `init-client` → `keep-alive` (10s) → `end`. A distinct service from the management API. Only the host/path prefix is shared. |
 | brain API | `genie.nvp1.ovp.kaltura.com` | The brain: `assistant/converse`, intellect CRUD, threads, messages, feedback, followups |
 | session server | `conversation.avatar.us.kaltura.ai` | Live-avatar control plane (Socket.IO): session orchestration, ASR signaling relay, brain output stream |
-| STV + media relay | the egress host in `appInit`'s `srsBaseUrl` | Video origin. Sends clients the talking face over **WHEP**. The `cast_mode` field selects the egress method; the SDK never sends it, so it always takes the server's default path (see [wire-protocol/audio-channels.md §6](wire-protocol/audio-channels.md#6-stv-downlink-pc2--avatar-videoaudio--you)). The SDK's `whepUrlHasPrivateIp()` guard checks every WHEP URL the server returns and throws a `whep_private_ip` error if it resolves to a private IP, since that address is unreachable from a browser. |
-| TURN | the `turnServerUrl` value returned by `appInit` | WebRTC relay for both media legs (default username/credential in `wire.js`'s `turnServers()`, overridable via `creds`). Addressed with explicit ports+transports (see [ARCHITECTURE-REFERENCE.md](architecture-reference/connection-and-handshake.md#endpoints--credentials)). STV uses `iceTransportPolicy:'relay'` (Firefox is the one exception: `'all'`). ASR's policy is client-dependent, but it **relays via TURN either way**, because the ASR server only advertises a private candidate. See [wire-protocol/audio-channels.md §5](wire-protocol/audio-channels.md#5-asr-uplink-pc1--microphone--server) for the per-client matrix. |
+| STV + media relay | the egress host in `appInit`'s `srsBaseUrl` | Video origin. Sends clients the talking face over **WHEP**. Details: [wire-protocol/audio-channels.md §6](wire-protocol/audio-channels.md#6-stv-downlink-pc2--avatar-videoaudio--you). The SDK's `whepUrlHasPrivateIp()` guard checks every WHEP URL and throws `whep_private_ip` if it points at a private address, since a browser can't reach it. |
+| TURN | the `turnServerUrl` value returned by `appInit` | WebRTC relay for both media legs. Pass `turnServerUrl` and `turnCredentials` (`{username, credential, expiry?}`, also from `appInit`) to the session. URLs and ICE policy: [wire-protocol/audio-channels.md](wire-protocol/audio-channels.md#5-asr-uplink-pc1--microphone--server). |
 | ML services | internal | Machine-learning services behind `application/generateAgentProfile` |
 
 ---
 
 ## Text Conversation Flow
 
-The simplest intelligent path: no video, fully headless. Client calls `POST https://genie.nvp1.ovp.kaltura.com/assistant/converse` with a `geniegpcid:<configId>` KS. The response is an NDJSON (or SSE) stream of segments. The brain runs server-side. Segment `type` values and parsing rules are identical to the avatar's `agent_raw_text` stream (see [ARCHITECTURE-REFERENCE.md's "Conversation Phase"](architecture-reference/conversation-flow.md#conversation-phase-what-streams-while-connected)). Full endpoint details: [API-REFERENCE.md](../API-REFERENCE.md).
+The simplest intelligent path: no video, fully headless. Client calls `POST https://genie.nvp1.ovp.kaltura.com/assistant/converse` with a conversation token (`geniegpcid:<configId>`) or an agent token (`agentid:<agentId>`). The response is an NDJSON (or SSE) stream of segments. The brain runs server-side. Segment `type` values and parsing rules are identical to the avatar's `agent_raw_text` stream (see [ARCHITECTURE-REFERENCE.md's "Conversation Phase"](architecture-reference/conversation-flow.md#conversation-phase-what-streams-while-connected)). Full endpoint details: [API-REFERENCE.md](../API-REFERENCE.md).
 
 ---
 
@@ -134,13 +134,13 @@ There are two session modes, and they are NOT interchangeable. Scripted sessions
 | Use for | **scripted / puppet** avatars (you drive the words) | **interactive agentic** avatars (autonomous conversation) |
 <!-- /nova-target -->
 
-The protocol above describes the **interactive** path. The scripted path has no text-in of its own: the service's `say-text` route 503s on every call, so the SDK wraps only `say-audio`. You provide pre-rendered speech audio (for example, from your own TTS call) and its duration. Full auth/lifecycle details: [API-REFERENCE.md § Scripted-Video (STV-only) Sessions](api/scripted-video.md). Runnable example: `examples/scripted-video-session.mjs` + `.html`.
+The protocol above describes the **interactive** path. The scripted path has no text-in of its own: the SDK wraps only `say-audio`. You provide pre-rendered speech audio (for example, from your own TTS call) and its duration. Full auth/lifecycle details: [API-REFERENCE.md § Scripted-Video (STV-only) Sessions](api/scripted-video.md). Runnable example: `examples/scripted-video-session.mjs` + `.html`.
 
 ### Audio-mode / phone-mode agents (partial support)
 
-An agent with no avatar attached (create it with `avatarIds` omitted) is treated server-side as audio/phone-mode. `stvNewSession` replies with a "no STV session" status instead of a video session. The `clientConfiguration` the server sends carries `audioMode`/`phoneMode` flags (see [wire-protocol/client-configuration.md §7](wire-protocol/client-configuration.md#7-clientconfiguration-fields-per-session-agent-config)). `KalturaAvatarSession` detects this and sets `session.mode = 'audio'`, which skips the STV video pipeline entirely.
+An agent with no avatar attached (create it with `avatarIds` omitted) is an audio/phone-mode agent. `stvNewSession` replies with a "no STV session" status instead of a video session. The `clientConfiguration` carries `audioMode`/`phoneMode` flags (see [wire-protocol/client-configuration.md §7](wire-protocol/client-configuration.md#7-clientconfiguration-fields-per-session-agent-config)). `KalturaAvatarSession` detects this and sets `session.mode = 'audio'`, which skips the STV video pipeline entirely.
 
-**This SDK does not implement the audio-mode WebRTC downlink** ([wire-protocol/audio-channels.md §5b](wire-protocol/audio-channels.md#5b-audio-mode-webrtc-separate-from-the-asr-uplink)) that carries the agent's spoken audio when there's no STV session. That peer connection is signaled over a separate event family (`webrtc-create-offer`/`webrtc-offer`/`webrtc-answer`) that the SDK never emits or listens for.
+**This SDK does not implement the audio-mode WebRTC downlink** ([wire-protocol/audio-channels.md §5b](wire-protocol/audio-channels.md#5b-audio-mode-webrtc-separate-from-the-asr-uplink)) that carries the agent's spoken audio when there's no STV session.
 
 So today, `mode:'audio'` is detected but not functional end to end. The mic uplink (ASR) still connects, but you won't receive the agent's spoken reply through this SDK. Audio/phone mode is not a supported feature of this SDK.
 
@@ -152,7 +152,7 @@ So today, `mode:'audio'` is detected but not functional end to end. The mic upli
 
 The STV downlink carries two tracks: video and audio. Each track has its own `recvonly` transceiver, and each arrives in a separate `pc.ontrack` event.
 
-The server's SDP gives each track its own `msid`, so `e.streams[0]` is a *different* `MediaStream` per event. The classic `videoEl.srcObject = e.streams[0]` pattern silently drops whichever track landed first. The SDK never does that.
+Each track arrives with its own `MediaStream`, so `e.streams[0]` is a *different* stream per event. The classic `videoEl.srcObject = e.streams[0]` pattern silently drops whichever track landed first. The SDK never does that.
 
 `src/experience/avatar-media.js` (internal; both `KalturaAvatarSession` and `KalturaScriptedVideoSession` own one) builds its own streams from the raw tracks:
 
@@ -281,9 +281,9 @@ The full behavior contract, the misuse guard, and the `videoEl` source element t
 
 For the public surface, entry points, and how-tos, read [README.md](../README.md). Its ["Architecture" section](../README.md#architecture) has the module-to-resource map.
 
-Both SDK entry points share one core. `src/core/*` is the shared leaf layer that both `./management` and `./experience` depend on (`http.js` transport, `errors.js`, `session.js`, `stream.js`, `redact.js`, `safety.js`, `ids.js`, `knowledge-enums.js`). Core never imports from `management/` or `experience/`.
+Both SDK entry points share one core. `src/core/*` is the shared leaf layer that both `./management` and `./experience` depend on (`http.js` transport, `errors.js`, `session.js`, `stream.js`, `redact.js`, `safety.js`, `ids.js`, `knowledge-enums.js`, `kaltura-media.js`, `net-guard.js`, `opening.js`, `site-keys.js`, `transport-guard.js`). Core never imports from `management/` or `experience/`.
 
-`./management` (`Management`, `src/management/client.js`) enforces the two-KS guard via `assertAdmin`/`assertConversation` before any network call.
+`./management` (`Management`, `src/management/client.js`) checks the token kind via `assertAdmin`/`assertConversation` before any network call. It reads the kind a minted `Token` records (`admin`, `conversation`, `agent`, `widget`). A raw encrypted KS string cannot be inspected client-side, so the server decides.
 
 `./experience` (`KalturaAvatarSession`, `src/experience/session.js`) is the live socket+WHEP runtime described in "Video Runtime Protocol" above. It takes only a short-lived conversation token, and socket.io is injected into it, never bundled.
 
@@ -293,12 +293,10 @@ For the full module-by-module map, see **[ARCHITECTURE-REFERENCE.md's "SDK Modul
 
 ## Resilience & Failure Handling — Overview
 
-How the system behaves under network failures, disconnects, and device problems. There are **three reconnection tiers**: Socket.IO transport, the WebRTC media peers (ASR + STV), and this SDK's own avatar-session recovery. These tiers are only loosely coordinated with each other.
+How the system behaves under network failures, disconnects, and device problems. `KalturaAvatarSession` recovers in three layers: the control socket (Socket.IO reconnect, then a cold reconnect if state was lost), the WebRTC media peers (ICE restart for ASR, WHEP re-subscribe for STV), and a cold reconnect of the whole session as the last step. A custom client that skips `KalturaAvatarSession` must implement these itself.
 
-The SDK wires the WebRTC-peer tier to its own session-recovery tier (`_recoverMedia` → `_coldReconnect`). A custom client that skips `KalturaAvatarSession` must wire that itself.
+See **[ARCHITECTURE-REFERENCE.md's "Resilience & Failure Handling"](architecture-reference/resilience-and-failure-handling.md#resilience--failure-handling)** for the recovery layers and the failure-mode matrix. It also covers device-permission handling, and the tool-call-spiral circuit breaker mechanism.
 
-See **[ARCHITECTURE-REFERENCE.md's "Resilience & Failure Handling"](architecture-reference/resilience-and-failure-handling.md#resilience--failure-handling)** for the full three-tier table and the failure-mode matrix. It also covers the headline risk in detail, device-permission handling, and the tool-call-spiral circuit breaker mechanism.
-
-A conversation ending cleanly is a separate concern from recovering from failure. On tab-close, backgrounding, bfcache freeze, or an explicit `disconnect()`, the SDK tells the backend the thread is genuinely over (`POST /thread/session_completed`). This happens instead of waiting for the server's idle timeout (about 10 minutes), so end-of-conversation lifecycle rules fire in seconds.
+A conversation ending cleanly is a separate concern from recovering from failure. On tab-close, backgrounding, bfcache freeze, or an explicit `disconnect()`, the SDK tells the backend the thread is genuinely over (`POST /thread/session_completed`). End-of-conversation lifecycle rules fire right away.
 
 See [ARCHITECTURE-REFERENCE.md's "Session-completion signal"](architecture-reference/resilience-and-failure-handling.md#session-completion-signal-session_completed-telling-the-backend-a-conversation-is-truly-over) for the condensed decision table. See [README.md § Ending a conversation cleanly](../README.md#ending-a-conversation-cleanly-session_completed-signal) for the app-facing config surface.

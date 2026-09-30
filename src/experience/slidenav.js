@@ -1,8 +1,7 @@
 /**
  * Slide-number word parser — turns a spoken slide reference ("24", "twenty-four",
  * "number 24") into a bounded integer. The avatar narrates "navigating to slide
- * twenty-four" and the app must resolve it to a page. Pure, dependency-free,
- * exhaustively unit-tested.
+ * twenty-four" and the app must resolve it to a page. Pure and dependency-free.
  */
 const WORD_TO_NUM = (() => {
   const ones = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen'];

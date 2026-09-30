@@ -20,17 +20,15 @@
  *      e three f c dash fifty five..."), so an id echoed back verbatim can
  *      never be matched reliably. A word marker survives that rewriting.
  *      The KS itself NEVER leaves the tool template: only the boolean
- *      "present"/"absent" is sent (kaltura.com is not reachable from the tool
- *      executor, so calling session/get with the KS is not an
- *      option, and interpolating a raw KS toward any third-party endpoint
- *      would leak a live token).
+ *      "present"/"absent" is sent (interpolating a raw KS toward any
+ *      third-party endpoint would leak a live token).
  *   F  large page_context: ~32 KB of JSON through the PAGE_CONTEXT_PROMPT
  *      block (the exact channel `setDynamicPrompt` uses) — the model finds
  *      one needle item among hundreds
  *   G  fresh thread → all vars gone (per-thread scope, not per-config)
  *
  * The prompts are linted with `lintPrompts` (gate + placeholder cross-check)
- * before provisioning, so the script also exercises the §4a.3 guardrails.
+ * before provisioning, so the script also exercises those guardrails.
  *
  * The socket transport's side of the same contract (setDynamicPrompt /
  * updateRequestVars emitting the full-context `updateGenieContext` payload
@@ -126,7 +124,7 @@ let intellectId;
 const toolIds = [];
 
 try {
-  admin = await kaltura.sessions.createAdminToken();
+  admin = await kaltura.sessions.createAdminToken({ userId: 'sdk-live-verify' });
   record('admin-token-mint', true, { secondsRemaining: admin.secondsRemaining() });
 
   // §4a.3 guardrails, exercised pre-flight: the gate will be ON and both
@@ -159,8 +157,7 @@ try {
   // over sys__ks. Both come back as words, not ids: the agent is voice-facing
   // and reads a raw hex id aloud as English words, so a word marker is what
   // survives into the reply text. The raw KS must never be interpolated toward
-  // any non-Kaltura endpoint, and the tool executor cannot reach kaltura.com,
-  // so presence/shape is the strongest safe assertion.
+  // any non-Kaltura endpoint, so presence/shape is the strongest safe assertion.
   const sysvarsTool = await kaltura.tools.add(tools.api({
     name: TOOL_SYSVARS,
     description: 'Check the system variables on the remote echo server. Call this whenever the visitor asks you to check the system variables. Takes no arguments.',

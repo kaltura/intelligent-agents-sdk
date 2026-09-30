@@ -8,9 +8,8 @@
  *   2. `asr.language` on the agent, so speech RECOGNITION matches the language.
  *
  * WRITE, idempotent. Pass `language: null` to clear `force_language` and reset
- * `asr.language` to `'en'`. Earlier SDK versions also appended a marker-wrapped
- * instruction to `base_directive`; every call strips that block if present, so
- * an intellect set up with an older SDK ends up with one clean directive.
+ * `asr.language` to `'en'`. Every call also strips any leftover
+ * `<!-- sdk:forced-language -->` block from `base_directive`.
  */
 import { meta } from '../core/ids.js';
 import { KalturaError } from '../core/errors.js';

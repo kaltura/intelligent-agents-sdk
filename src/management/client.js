@@ -7,16 +7,19 @@
  * management method that needs an admin token calls `assertAdmin(ks)`, which
  * inspects the KS and throws before any network call whenever the kind is
  * knowable client-side (a minted {@link Token}'s recorded `kind`, or a
- * plaintext/test KS). Conversation methods call `assertConversation`. A real
- * encrypted production KS can't be inspected this way, so the guard defers
- * to the server for that case (see `assertKind`'s own doc below). This makes
- * "never mix KS types" impossible to violate by accident for every KS shape
- * the SDK itself mints.
+ * plaintext/test KS). Conversation methods call `assertConversation`. Methods
+ * a per-user conversation or agent token may also call on its own threads
+ * (`threads.*` except `push`, `messages.list/get/share`) call
+ * `assertUserOrAdmin`, which accepts admin, conversation and agent tokens and
+ * rejects widget tokens. A raw encrypted KS string can't be inspected this
+ * way, so every guard passes it through and the server decides. Every `Token`
+ * the SDK mints is checked reliably, so mixing KS types by accident throws
+ * `wrong_token_scope` before any network call.
  */
 import { Http } from '../core/http.js';
 import { Sessions, makeAuditEmitter } from '../core/session.js';
 import { KalturaError, errorFromResponse } from '../core/errors.js';
-import { Agents } from './agents.js';
+import { Agents, resolveIntellectId } from './agents.js';
 import { Avatars } from './avatars.js';
 import { AvatarSessions } from './avatar-sessions.js';
 import { Catalog } from './catalog.js';
@@ -33,6 +36,9 @@ import { provision } from './provision.js';
 import { setForcedLanguage } from './set-forced-language.js';
 import { inspectKs } from './ks-inspect.js';
 
+/** `userId` on the read-only admin token that looks up an agent's configId (see `Sessions.createAgentToken`). */
+const CONFIG_LOOKUP_USER_ID = 'intelligent-agents-sdk';
+
 /**
  * @typedef {string|{ks:string,kind?:string,entitlementEnforced?:boolean}} KsLike A raw KS string or a minted {@link import('../core/session.js').Token}.
  * @typedef {object} Ctx Internal context shared with every resource namespace.
@@ -48,9 +54,10 @@ import { inspectKs } from './ks-inspect.js';
  * @property {(calls:object[], ks:KsLike)=>Promise<any>} ovpMulti Kaltura OVP multirequest (chained calls).
  * @property {(uploadTokenId:string, fd:FormData, ks:KsLike)=>Promise<any>} ovpUpload Upload file bytes to an upload token.
  * @property {(path:string, body:unknown, ks:KsLike, opts?:{idempotencyKey?:string})=>Promise<{data:any,requestId:string}>} messaging Bearer-authed (not `Authorization: KS …`) call on the Kaltura Messaging API — see email-templates.js.
- * @property {(ks:KsLike, where:string)=>void} assertAdmin
- * @property {(ks:KsLike, where:string)=>void} assertConversation
- * @property {(ks:KsLike, where:string)=>void} assertAny
+ * @property {(ks:KsLike, where:string)=>string} assertAdmin Throws `wrong_token_scope` for a non-admin token. Returns the raw KS string.
+ * @property {(ks:KsLike, where:string)=>string} assertUserOrAdmin Throws `wrong_token_scope` for a widget token. Accepts admin, conversation and agent tokens. Returns the raw KS string.
+ * @property {(ks:KsLike, where:string)=>string} assertConversation Throws `wrong_token_scope` for an admin token. Returns the raw KS string.
+ * @property {(ks:KsLike, where:string)=>string} assertAny Throws `bad_request` if `ks` is empty. Accepts any kind. Returns the raw KS string.
  * @property {(type:string, outcome:string, fields?:object)=>void} audit Redacted structured security/audit event emitter (no-op if the caller passed no `onAuditEvent` hook).
  */
 
@@ -82,7 +89,16 @@ export class Management {
     const http = new Http({ fetch: cfg.fetch, logger: cfg.logger, timeoutMs: cfg.timeoutMs, audit });
 
     /** @type {Sessions} */
-    this.sessions = new Sessions({ partnerId, adminSecret: cfg.adminSecret, getAdminSecret: cfg.getAdminSecret, ovpUrl: cfg.ovpUrl, http, onAuditEvent: cfg.onAuditEvent });
+    this.sessions = new Sessions({
+      partnerId, adminSecret: cfg.adminSecret, getAdminSecret: cfg.getAdminSecret, ovpUrl: cfg.ovpUrl, http, onAuditEvent: cfg.onAuditEvent,
+      // createAgentToken without configId: read the agent's intellect id. Not cached,
+      // so a repointed agent never mints the old persona. Runs after this.agents exists.
+      // The lookup admin token is short-lived since it is used once, and read-only.
+      resolveConfigId: async (agentId) => {
+        const admin = await this.sessions.createAdminToken({ userId: CONFIG_LOOKUP_USER_ID, ttlSeconds: 60 });
+        return resolveIntellectId((await this.agents.get(agentId, admin.ks)).intellect);
+      },
+    });
 
     /** @type {Ctx} */
     const ctx = {
@@ -163,6 +179,7 @@ export class Management {
       messaging: (path, body, ks, opts) => http.request({ method: 'POST', url: `${messagingUrl}/${path}`, headers: { Authorization: `Bearer ${ksString(ks)}` }, body, json: true, idempotencyKey: opts?.idempotencyKey }),
       assertAdmin: (ks, where) => assertKind(ks, 'admin', where, audit),
       assertConversation: (ks, where) => assertKind(ks, 'conversation', where, audit),
+      assertUserOrAdmin: (ks, where) => assertKind(ks, 'userOrAdmin', where, audit),
       assertAny: (ks, where) => {
         const raw = ksString(ks);
         if (!raw || typeof raw !== 'string') {
@@ -215,15 +232,21 @@ export class Management {
    * (the admin secret stays server-side). Delegates to {@link Conversations#stream};
    * `force_experience` is a HINT (the runtime may answer in plain text). WRITE —
    * appends to thread memory.
+   *
+   * `opts.agentId` and `opts.userId` go to the auto-mint only (ignored when `ks`
+   * is passed). `agentId` labels the thread with the real agent id. `userId`
+   * gives the end user their own threads; without it, auto-minted calls share
+   * one identity. See {@link Sessions#createConversationToken}.
    * @param {number} configId
    * @param {string} message
-   * @param {{threadId?:string,sse?:boolean,model_type?:string,force_experience?:string,request_vars?:object,capabilities?:object}} [opts]
+   * @param {{agentId?:string,userId?:string|number,threadId?:string,sse?:boolean,model_type?:string,force_experience?:string,request_vars?:object,capabilities?:object}} [opts]
    * @param {string|{ks:string}} [ks]  Conversation token; minted from configId if omitted.
    * @returns {AsyncGenerator<object>}
    */
   async *converse(configId, message, opts = {}, ks) {
-    const conv = ks || (await this.sessions.createConversationToken({ configId }));
-    yield* this.conversations.stream({ ...opts, userMessage: message }, conv);
+    const { agentId, userId, ...rest } = opts ?? {};
+    const conv = ks || (await this.sessions.createConversationToken({ configId, agentId, userId }));
+    yield* this.conversations.stream({ ...rest, userMessage: message }, conv);
   }
 
   /**
@@ -235,22 +258,23 @@ export class Management {
    * gets the same one-shot spiral-recovery nudge documented there.
    * @param {number} configId
    * @param {string} message
-   * @param {object} [opts]  Same shape as {@link Management#converse}, plus `recoverFromSpiral?`.
+   * @param {object} [opts]  Same shape as {@link Management#converse} (including `agentId?`/`userId?`), plus `recoverFromSpiral?`.
    * @param {KsLike} [ks]
    * @returns {Promise<{text:string, threadId:string, messageId:string, segments:object[], toolCalls:object[], experiences:Record<string,object[]>, experiencesList:object[], kindCounts:object, spiralStopped:boolean, truncated:boolean, spiralRecovered?:boolean, firstAttempt?:object, _meta:object}>}
    */
   async converseOnce(configId, message, opts = {}, ks) {
-    const conv = ks || (await this.sessions.createConversationToken({ configId }));
-    return this.conversations.send({ ...opts, userMessage: message }, conv);
+    const { agentId, userId, ...rest } = opts ?? {};
+    const conv = ks || (await this.sessions.createConversationToken({ configId, agentId, userId }));
+    return this.conversations.send({ ...rest, userMessage: message }, conv);
   }
 
   /**
    * Agent factory — provision a complete, deployable agent from a one-line
-   * brief: generateProfile → intellect.add → configure prompts →
-   * avatar.create → agent.create → resolveWidgetId. Returns every id
-   * + a `_meta` receipt. WRITE — creates multiple resources. Requires an admin
-   * token. See {@link provision}.
-   * @param {object} opts {brief, ks, voiceId?, visualId?, adminTags?, maxConversationLength?, idempotencyKey?}
+   * brief: generateProfile → intellect.add → pick preset voice and visual →
+   * avatar.create → intellect.update (prompts, opening phrase) → agent.create →
+   * resolveWidgetId. Returns every id + a `_meta` receipt. WRITE — creates
+   * multiple resources. Requires an admin token. See {@link provision}.
+   * @param {object} opts {brief, ks, voiceId?, visualId?, openingPhrase?, adminTags?, maxConversationLength?, idempotencyKey?, capabilities?, tools?, knowledge?}
    */
   provision(opts) {
     return provision(this, opts);
@@ -280,19 +304,13 @@ export function ksString(ks) {
 /**
  * Assert a KS is of the expected kind, then return the raw KS string for the call.
  * Throws a redacted error (the KS is never echoed). Resolution of "kind" is, in
- * order: (1) a minted {@link Token}'s recorded `kind` (reliable); (2) plaintext
- * privileges if present (test/unencrypted tokens); (3) for a real ENCRYPTED token
- * whose privileges aren't client-readable, DON'T block — the server enforces
- * scope, and the only load-bearing guarantee (refusing disableentitlement on a
- * conversation mint) is already enforced at mint time in session.js.
- *
- * **Advisory only in production.** This guard only catches plaintext/test tokens
- * and is advisory in production — all real KS tokens are AES-encrypted and cannot
- * be inspected client-side (inspectKs returns `encrypted:true` and the check
- * returns early). The server is the authoritative enforcement point; do not rely
- * on this check as a security barrier.
+ * order: (1) a minted {@link Token}'s recorded `kind`, always checked; (2) plaintext
+ * privileges if present (test/unencrypted tokens); (3) a raw encrypted KS string,
+ * whose privileges aren't client-readable, passes through and the server decides.
+ * Every token from `sessions.*` takes path (1), so it is always checked.
+ * `'userOrAdmin'` accepts `admin`, `conversation` and `agent` and rejects `widget`.
  * @param {string|{ks:string,kind?:string,entitlementEnforced?:boolean}} ks
- * @param {'admin'|'conversation'} expected @param {string} where @param {(t:string,o:string,f?:object)=>void} [audit]
+ * @param {'admin'|'conversation'|'userOrAdmin'} expected @param {string} where @param {(t:string,o:string,f?:object)=>void} [audit]
  * @returns {string} the raw KS
  */
 function assertKind(ks, expected, where, audit) {
@@ -315,14 +333,24 @@ function assertKind(ks, expected, where, audit) {
     audit?.('guard.reject', 'fail', { kind: tokenKind || 'non-admin', action: where, reason: 'admin token required' });
     throw new KalturaError({
       type: 'https://docs.kaltura.com/agentic/errors/wrong_token_scope', title: 'wrong token scope', code: 'wrong_token_scope',
-      detail: `${where} requires an ADMIN token (disableentitlement). Got a ${tokenKind || 'non-admin'} token. Use sessions.createAdminToken() (server-side only).`,
+      detail: `${where} requires an ADMIN token (disableentitlement). Got a ${tokenKind || 'non-admin'} token. Use sessions.createAdminToken({ userId }) (server-side only).`,
     });
+  }
+  if (expected === 'userOrAdmin') {
+    if (tokenKind === 'widget') {
+      audit?.('guard.reject', 'fail', { kind: 'widget', action: where, reason: 'user or admin token required' });
+      throw new KalturaError({
+        type: 'https://docs.kaltura.com/agentic/errors/wrong_token_scope', title: 'wrong token scope', code: 'wrong_token_scope',
+        detail: `${where} requires an admin, conversation or agent token. Got a widget token.`,
+      });
+    }
+    return raw;
   }
   if (expected === 'conversation' && isConversation === false) {
     audit?.('guard.reject', 'fail', { kind: 'admin', action: where, reason: 'conversation token required' });
     throw new KalturaError({
       type: 'https://docs.kaltura.com/agentic/errors/wrong_token_scope', title: 'wrong token scope', code: 'wrong_token_scope',
-      detail: `${where} requires a CONVERSATION token (geniegpcid, entitlement ON). Got an admin token — never converse with disableentitlement.`,
+      detail: `${where} requires a conversation or agent token (entitlement ON). Got an admin token. Never converse with disableentitlement.`,
     });
   }
   return raw;

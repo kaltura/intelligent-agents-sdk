@@ -1,12 +1,16 @@
 /**
  * Conversation plane (Genie): headless converse, threads, messages, feedback,
  * followups, knowledge search, and partner analytics. The conversation/converse
- * paths need a non-admin token — either a CONVERSATION token
- * (`geniegpcid:<configId>`, entitlement ON) or an AGENT token
- * (`sessions.createAgentToken({agentId})`, `agentid:<agentId>`); the latter
- * also scopes the resulting thread's `agent_id` for lifecycle-rule matching
- * (see docs/lifecycle/README.md). Thread/message/report management use an
- * admin token. Source: API-REFERENCE §4.
+ * paths need a non-admin token: a CONVERSATION token
+ * (`sessions.createConversationToken`) or an AGENT token
+ * (`sessions.createAgentToken`), both entitlement ON. A token that carries
+ * `agentid` (an agent token, or a conversation token minted with `agentId`)
+ * labels the thread with the real `agent_id` for lifecycle-rule matching
+ * (see docs/lifecycle/README.md). `threads.*` (except `push`) and
+ * `messages.list/get/share` accept an admin token or a per-user conversation or
+ * agent token (a per-user token manages only its own threads). `threads.push`,
+ * the reports, `feedback.list`, `followups.list` and `knowledge.*` (except
+ * `search`) need an admin token. See docs/api/operate.md.
  */
 import { parseConverseStream, collectConverse, SPIRAL_RECOVERY_PREFIX } from '../core/stream.js';
 import { paginate } from './paginate.js';
@@ -36,10 +40,10 @@ const KNOWLEDGE_ENTRY_STATUS_TYPE_FILTER = { statusIn: '-1,-2,0,1,2,7,4', typeIn
 // The link exists — that's the outcome the caller asked for, not a failure.
 const isDuplicateCategoryEntry = (e) => e?.code === 'CATEGORY_ENTRY_ALREADY_EXISTS' || /already assigned to this category/i.test(e?.message || '');
 
-// Re-exported for back-compat — existing callers import this from here. Canonical
-// definition now lives in core/stream.js so KalturaAvatarSession's live-socket spiral
-// recovery (session.js) can share the exact same literal without a management→experience
-// or experience→management cross-import.
+// Re-exported so callers can import it from here. The canonical definition lives in
+// core/stream.js so KalturaAvatarSession's live-socket spiral recovery (session.js)
+// shares the exact same literal without a management→experience or
+// experience→management cross-import.
 export { SPIRAL_RECOVERY_PREFIX };
 
 /**
@@ -111,9 +115,9 @@ export class Conversations {
   /**
    * Send a message and stream the response as an async iterator of segments.
    * WRITE — appends to thread memory. Needs a non-admin token: a
-   * CONVERSATION token (`geniegpcid:<configId>`) or an AGENT token
-   * (`agentid:<agentId>`, use this one to scope the thread's `agent_id` for
-   * lifecycle-rule matching). HTTP converse is HEADLESS TEXT ONLY — it never
+   * CONVERSATION or AGENT token. Mint it with an agent id (`agentId` on
+   * either) so the thread carries the real `agent_id` for lifecycle-rule
+   * matching. HTTP converse is HEADLESS TEXT ONLY: it never
    * reaches the live speech engine (use {@link KalturaAvatarSession.speak} for
    * the avatar).
    *
@@ -129,21 +133,20 @@ export class Conversations {
    * method, or simply begin iterating.
    *
    * `capabilities` is a validated PER-MESSAGE override (`{name:state}`), layered
-   * over the stored config for this turn only. The server-side DISABLED veto
-   * still WINS: a capability stored/env-`disabled` cannot be turned on per
-   * message (mirrors {@link resolveCapabilities}). Use it to turn an enabled-but-
+   * over the stored config for this turn only. A stored or env `disabled`
+   * capability always WINS: it cannot be turned on per message (mirrors {@link resolveCapabilities}). Use it to turn an enabled-but-
    * off capability on for one turn — not to bypass a veto.
    *
    * @example <caption>Turn web search on for ONE message (loses to a stored disabled veto)</caption>
    * const reply = await k.conversations.send(
    *   { userMessage: 'What shipped this week in the news?', capabilities: { use_web_search: 'on' } },
-   *   convKs,  // geniegpcid:<configId> — NOT an admin token
+   *   convKs,  // conversation token (geniegpcid:<configId>, plus agentid when minted with agentId) — NOT an admin token
    * );
    * console.log(reply.text);
    *
    * @param {object} opts {userMessage, threadId?, sse?, model_type?, force_experience?, request_vars?, capabilities?, signal?}
    *   `force_experience` must be one of EXPERIENCES (markdown|summarization|flashcards|avatar_only); anything else 422s.
-   *   `capabilities` is a per-message `{name:state}` override (validated pre-network); the stored DISABLED veto still wins.
+   *   `capabilities` is a per-message `{name:state}` override (validated pre-network); a stored `disabled` capability still wins.
    *   `signal` (optional `AbortSignal`) lets the caller cancel a stalled or unbounded-length
    *   stream — this call has no built-in timeout of its own (see `genieStream` in client.js), so
    *   a caller racing this against its own timeout MUST abort this signal when that timeout
@@ -163,12 +166,12 @@ export class Conversations {
     // network call — the brain silently drops/ignores these, so fail fast & typed.
     assertRequestVars(opts.request_vars, 'conversations.stream.request_vars');
     // Validate the per-message capabilities override (every key a known capability,
-    // every value on/off/disabled). The server-side DISABLED veto still wins at
+    // every value on/off/disabled). A stored `disabled` still wins at
     // runtime; this just rejects typos before the wire.
     if (opts.capabilities !== undefined) validateCapabilities(opts.capabilities, 'conversations.stream.capabilities');
     const body = { userMessage: opts.userMessage, sse: opts.sse ?? false };
-    // model_type stays lowercase ('fast'); OMIT for the primary model — there is no 'DEFAULT'
-    // literal (API-REFERENCE §4.1). Passed through verbatim, no normalization.
+    // model_type stays lowercase ('fast'); OMIT to use the server default. There is no 'DEFAULT'
+    // literal (docs/api/operate.md § Converse). Passed through verbatim, no normalization.
     for (const k of ['threadId', 'model_type', 'force_experience', 'request_vars', 'capabilities']) {
       if (opts[k] !== undefined) body[k] = opts[k];
     }
@@ -206,11 +209,11 @@ export class Conversations {
    * `spiralRecovered:true` added (`firstAttempt` carries the discarded empty
    * attempt's `toolCalls`/`spiralStopped` for diagnostics). Never retries more
    * than once — if the nudge turn also comes back empty, that result is returned
-   * as-is with `spiralRecovered:false`. Off by default (back-compat): a caller
-   * that wants raw `spiralStopped` visibility unchanged sees no new behavior.
+   * as-is with `spiralRecovered:false`. Off by default: without the flag,
+   * `spiralStopped` is returned as-is and no follow-up turn is sent.
    * @param {object} opts {userMessage, threadId?, sse?, model_type?, force_experience?, request_vars?, capabilities?, recoverFromSpiral?}
-   * @param {import('./client.js').KsLike} ks conversation token (`geniegpcid:<configId>`) or agent token (`agentid:<agentId>`)
-   * @returns {Promise<{text:string, threadId:string, messageId:string, segments:object[], toolCalls:object[], experiences:Record<string,object[]>, experiencesList:object[], kindCounts:object, spiralStopped:boolean, truncated:boolean, spiralRecovered?:boolean, firstAttempt?:object, _meta:object}>}
+   * @param {import('./client.js').KsLike} ks conversation or agent token
+   * @returns {Promise<{text:string, threadId:string, messageId:string, segments:object[], toolCalls:object[], experiences:Record<string,object[]>, experiencesList:object[], kindCounts:object, spiralStopped:boolean, truncated:boolean, toolCallsInvalid:object[], oauthRequired:object[], spiralRecovered?:boolean, firstAttempt?:object, _meta:object}>}
    */
   async send(opts, ks) {
     const first = await collectConverse(this.stream(opts, ks));
@@ -221,7 +224,7 @@ export class Conversations {
     return { ...retry, spiralRecovered: !(retry.spiralStopped && !retry.text), firstAttempt: { toolCalls: first.toolCalls, spiralStopped: first.spiralStopped } };
   }
 
-  /** Assistant status/consent/avatar config. READ (GET). @param {string} ks conversation token */
+  /** Assistant status/consent/avatar config. READ (GET). @param {import('./client.js').KsLike} ks conversation or agent token */
   async status(ks) {
     this._.assertConversation(ks, 'conversations.status');
     return (await this._.genieGet('assistant/status', ks)).data;
@@ -250,13 +253,12 @@ export class Threads {
    *    always scoped to the KS's own partner.
    *  - `pageSize` is capped server-side at 500 — a higher value 422s. Same
    *    cap applies to Messages/Feedback/Followups pagers below.
-   *  - threads opened via `sessions.createConversationToken` carry
-   *    `agent_id: "default"` — an `agentIdEquals` filter for a real agent id
-   *    will never match them; use `sessions.createAgentToken` instead.
-   *  - `agentIdEquals` is translated to the server's own agent-scoping filter
-   *    key on the wire; there is no server-side "in" equivalent, so
-   *    `agentIdIn` throws a pre-flight `validation_error` instead of being
-   *    silently ignored — call `list` once per agent id instead.
+   *  - threads opened with a token minted without an agent id carry
+   *    `agent_id: "default"`, so an `agentIdEquals` filter for a real agent
+   *    id never matches them. Mint with `agentId` (either token kind).
+   *  - There is no "in" filter for agent ids: `agentIdIn` throws a pre-flight
+   *    `validation_error` instead of being silently ignored. Call `list` once
+   *    per agent id.
    *
    * Filter fields: `agentIdEquals`, `contextIdEqual`,
    * `createdAtGreaterThanOrEqual`, `createdAtLessThanOrEqual`, `idEquals`,
@@ -266,7 +268,7 @@ export class Threads {
    * @param {string} ks @param {{filter?:object,pageSize?:number}} [opts]
    */
   list(ks, opts = {}) {
-    this._.assertAdmin(ks, 'threads.list');
+    this._.assertUserOrAdmin(ks, 'threads.list');
     if (opts.filter && opts.filter.agentIdIn !== undefined) {
       throw new KalturaError({
         type: 'https://docs.kaltura.com/agentic/errors/validation_error', title: 'unsupported filter key',
@@ -288,7 +290,7 @@ export class Threads {
    * @returns {Promise<{id:string, title:string, status:number, created_at:string, updated_at:string, thread_metadata:{analysis?:object}, [key:string]:*}>}
    */
   async get(id, ks) {
-    this._.assertAdmin(ks, 'threads.get');
+    this._.assertUserOrAdmin(ks, 'threads.get');
     return (await this._.genie('v1/thread/get', { id }, ks)).data;
   }
 
@@ -303,7 +305,7 @@ export class Threads {
    *   the RESULT's `data` field (e.g. `(await threads.transcript(id, ks)).data`).
    */
   async transcript(id, ks) {
-    this._.assertAdmin(ks, 'threads.transcript');
+    this._.assertUserOrAdmin(ks, 'threads.transcript');
     return (await this._.genie('v1/thread/get_transcripts', { id }, ks)).data;
   }
 
@@ -313,7 +315,7 @@ export class Threads {
    * @returns {Promise<{id:string, title:string, status:number, created_at:string, updated_at:string, thread_metadata:{analysis?:object}, [key:string]:*}>} the updated thread.
    */
   async rename(id, title, ks) {
-    this._.assertAdmin(ks, 'threads.rename');
+    this._.assertUserOrAdmin(ks, 'threads.rename');
     return (await this._.genie('v1/thread/update', { id, title }, ks)).data;
   }
 
@@ -329,7 +331,7 @@ export class Threads {
    * @param {string} ks
    */
   async setAnalysis(id, patch, ks) {
-    this._.assertAdmin(ks, 'threads.setAnalysis');
+    this._.assertUserOrAdmin(ks, 'threads.setAnalysis');
     if (!patch || typeof patch !== 'object' || Array.isArray(patch)) {
       throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: 'threads.setAnalysis needs a plain object of analysis keys to shallow-merge.' });
     }
@@ -343,7 +345,7 @@ export class Threads {
    * @param {string} id @param {string} ks
    */
   async clearAnalysis(id, ks) {
-    this._.assertAdmin(ks, 'threads.clearAnalysis');
+    this._.assertUserOrAdmin(ks, 'threads.clearAnalysis');
     return (await this._.genie('v1/thread/update', { id, thread_metadata: {} }, ks)).data;
   }
 
@@ -374,13 +376,15 @@ export class Threads {
   /**
    * Delete threads. WRITE — DESTRUCTIVE. This is the GDPR/CCPA deletion path for
    * conversation PII (it removes the thread; the SDK does not claim it satisfies
-   * full Art. 17 anonymization — see API-REFERENCE.md, "Delete returns" note under Threads). Takes a plural array.
+   * full Art. 17 anonymization; see docs/api/operate.md § Threads). Takes a plural array.
    * Unlike every other `.delete()` in this SDK (singular `id`), this one takes
    * an array — batch deletion by id is the common case for PII/GDPR cleanup.
+   * Resolves `{totalCount, objects}` listing only the threads actually deleted;
+   * an id that was not deleted is left out, so check it rather than assume success.
    * @param {string[]} threadIds @param {string} ks @param {{confirmPermanent:boolean}} confirm
    */
   async delete(threadIds, ks, confirm) {
-    this._.assertAdmin(ks, 'threads.delete');
+    this._.assertUserOrAdmin(ks, 'threads.delete');
     const ids = Array.isArray(threadIds) ? threadIds : [threadIds];
     requireConfirm(confirm, 'threads.delete', ids.join(','));
     return (await this._.genie('v1/thread/delete', { thread_ids: ids }, ks)).data;
@@ -412,7 +416,7 @@ export class Messages {
    * @param {string} ks @param {{filter?:object,threadId?:string,pageSize?:number}} [opts]
    */
   list(ks, opts = {}) {
-    this._.assertAdmin(ks, 'messages.list');
+    this._.assertUserOrAdmin(ks, 'messages.list');
     const filter = { ...opts.filter, objectType: GENIE_MESSAGE_FILTER };
     if (opts.threadId) filter.threadIdEquals = opts.threadId;
     return paginate({
@@ -426,21 +430,30 @@ export class Messages {
    * message record — live-confirmed against production. An unknown id
    * throws a typed `not_found`; one belonging to another partner throws
    * `forbidden` ("Not authorized for this message") instead of `not_found`.
-   * @param {string} id @param {string} ks (admin)
+   * @param {string} id @param {string} ks (admin, conversation or agent token)
    */
   async get(id, ks) {
-    this._.assertAdmin(ks, 'messages.get');
+    this._.assertUserOrAdmin(ks, 'messages.get');
     return (await this._.genie('message/get', { id }, ks)).data;
   }
 
   /**
    * Clone a message under a new title for sharing. WRITE — NOT idempotent. Returns `{newMessageId}`.
+   * The server wraps the result as `{status, data:{newMessageId}}`; this method unwraps it.
+   * Read the clone back with `messages.get(newMessageId, ks)`. There is no delete call for it.
    * @param {string} id @param {string} newTitle @param {string} ks
+   * @returns {Promise<{newMessageId:string}>}
    * @throws {import('../core/errors.js').KalturaError} `code:'forbidden'` ("Not authorized for this message") for both an unknown `id` and one that belongs to another partner — the backend doesn't distinguish the two cases, live-confirmed against production.
+   * @throws {import('../core/errors.js').KalturaError} `code:'server_error'` when the response has no `newMessageId` (for example `{status:'failed', data:null}`).
    */
   async share(id, newTitle, ks) {
-    this._.assertAdmin(ks, 'messages.share');
-    return (await this._.genie('message/share', { id, newTitle }, ks)).data;
+    this._.assertUserOrAdmin(ks, 'messages.share');
+    const body = (await this._.genie('message/share', { id, newTitle }, ks)).data;
+    const newMessageId = body?.data?.newMessageId;
+    if (!newMessageId) {
+      throw new KalturaError({ type: 'about:blank', title: 'share failed', code: 'server_error', detail: `message/share returned no newMessageId (status: ${body?.status ?? 'unknown'}).`, body });
+    }
+    return { newMessageId };
   }
 
   /**
@@ -504,9 +517,9 @@ export class Feedback {
    *  - `messageIdEquals` / `messageIdsIn` — one message, or a batch by id.
    *  - `threadIdEquals` — every rated message in one thread.
    *  - `agentIdEquals` — every rated message across threads opened for one
-   *    agent. Requires threads opened via `sessions.createAgentToken` —
-   *    `sessions.createConversationToken` threads carry `agent_id:
-   *    "default"` and never match. Cost note: resolves matching thread ids
+   *    agent. Only matches threads opened with a token minted with that
+   *    `agentId`; threads opened without one carry `agent_id: "default"`
+   *    and never match. Cost note: resolves matching thread ids
    *    first, then queries messages per thread — O(threads), not one call.
    *  - `isPositiveEquals` — restrict to thumbs-up (`true`) or thumbs-down
    *    (`false`); omit to get every rated message regardless of rating.
@@ -713,11 +726,9 @@ export class Knowledge {
    * relevant information…"}` (returned as-is, not thrown) — so this can't
    * tell those cases apart. Use {@link isIndexed} for indexing status instead.
    *
-   * All five tuning params are live-confirmed accepted by the backend
-   * (defaults shown). `include_sources:true` changes the success-shape's
-   * `chapters` from `null` to an array (and `text` to `null`) — a match
-   * result to see the difference wasn't available at verification time; the
-   * request itself is confirmed valid either way.
+   * The backend accepts all five tuning params. `include_sources:true`
+   * changes the success shape: `chapters` becomes an array and `text`
+   * becomes `null`.
    * @param {string} query @param {string} ks
    * @param {{top_n?:number, with_line_numbers?:boolean, margins_in_seconds?:number, include_sources?:boolean, entry_description?:boolean}} [opts]
    */
@@ -753,8 +764,8 @@ export class Knowledge {
   /**
    * Turn RAG over the knowledge base on/off for an intellect. WRITE — idempotent.
    *
-   * MECHANISM (corrected): `v1/intellect/update` is a `model_fields_set` PATCH —
-   * it PRESERVES omitted top-level fields (it does NOT "replace the intellect").
+   * MECHANISM: `v1/intellect/update` changes only the top-level fields you send
+   * (it does NOT "replace the intellect").
    * The genuine hazard is that `capabilities` is a **full-replace sub-dict**: a
    * partial `capabilities` dict DROPS the sibling capabilities it omits. So this
    * read-merge-writes the capabilities dict specifically (via
@@ -1082,8 +1093,7 @@ export class Knowledge {
   }
 
   /**
-   * Alias for {@link Knowledge#addRecord} — same call, same result. Some
-   * callers reach for `createRecord` by habit; both spellings are permanent.
+   * Alias for {@link Knowledge#addRecord}. Same call, same result.
    * @param {object} body {name,description?,config?} @param {string} ks (admin)
    */
   createRecord(body, ks) {

@@ -1,7 +1,6 @@
 /**
- * Agent factory — runs the provision sequence documented in
- * README.md § Management as one call, so the SDK and the reference tooling
- * produce the same agent.
+ * Agent factory — runs the provision sequence documented in README.md
+ * (`mgmt.provision()`).
  *
  * Sequence (all on documented endpoints; no new API):
  *   generateProfile → intellect.add → pick preset voice+visual →
@@ -138,7 +137,7 @@ export async function provision(mgmt, opts) {
   }
 }
 
-/** Build the full-format intellect prompt body from a generated profile (mirrors the server's profile-to-intellect defaults). */
+/** Build the full-format intellect prompt body from a generated profile. */
 function intellectBody(configId, profile, opening) {
   const p = (key, headerTemplate) => ({ key, label: key, headerTemplate, type: 'custom', value: (profile && profile[key]) || '' });
   return {
@@ -169,7 +168,7 @@ function reasonOf(e) {
 /**
  * OPTIONAL capabilities block. Applies the `{name:state}` patch via
  * `mgmt.intellects.setCapabilities` (read-merge-write full-replace
- * sub-dict). Feature-detected: if the method isn't mounted yet, records
+ * sub-dict). Feature-detected: if the method isn't mounted, records
  * `{applied:false, reason}` instead of throwing.
  * @param {import('./client.js').Management} mgmt @param {number} configId
  * @param {Record<string,'on'|'off'|'disabled'>} patch @param {string} ks
@@ -194,8 +193,7 @@ async function applyCapabilities(mgmt, configId, patch, ks) {
  * OPTIONAL tools block. Each typed tool is created as a standalone Tool entity
  * via `mgmt.tools.add` (partner-level, NOT intellect-scoped) — UPSERT BY NAME:
  * an existing Tool sharing the definition's `name` is reused rather than
- * re-added (`add()` alone is NOT idempotent and a duplicate name may be
- * rejected server-side), so the same tool can be shared safely across
+ * re-added (`add()` alone is NOT idempotent), so the same tool can be shared safely across
  * repeated/parallel `provision()` calls. The whole batch of ids is then linked
  * in ONE `mgmt.intellectConfig.setToolIds` write. Overwriting THIS intellect's
  * `tool_ids` list is safe because `configId` was just freshly created by THIS
@@ -232,7 +230,7 @@ async function applyTools(mgmt, configId, toolDefs, ks) {
   const ids = [];
   // Fetched at most once, lazily, and only if there's at least one named tool to look up.
   let existingByName;
-  // Serialize the creates for deterministic ordering (mirrors the old upsert discipline).
+  // Serialize the creates for deterministic ordering.
   for (const tool of list) {
     const name = tool && typeof tool === 'object' ? /** @type {any} */ (tool).name : undefined;
     try {

@@ -44,7 +44,7 @@ if (!widgetId) {
     console.error('Set AGENTIC_WIDGET_ID (an existing agent), or AGENTIC_ADMIN_SECRET to provision a throwaway one');
     process.exit(2);
   }
-  const admin = await kaltura.sessions.createAdminToken();
+  const admin = await kaltura.sessions.createAdminToken({ userId: 'admin@example.com' });
   const agent = await kaltura.provision({ brief: process.env.AGENTIC_BRIEF || 'A minimal test agent for example harnesses', ks: admin.ks });
   widgetId = agent.widgetId;
   console.log('Provisioned a throwaway agent:', { configId: agent.configId, agentId: agent.agentId, widgetId });

@@ -3,32 +3,30 @@
  * Live threads/messages/feedback/followups verification — real Kaltura API,
  * no fakes, no mocks.
  *
- * Exercises the write paths that had zero live coverage: a scratch thread is
- * created via a real conversation turn, then driven through every SDK-level
- * Threads/Messages/Feedback/Followups method the client currently exposes:
+ * Exercises the write paths: a scratch thread is created via a real
+ * conversation turn, then driven through these SDK-level
+ * Threads/Messages/Feedback/Followups methods:
  *
  *   1  converseOnce → scratch thread + message
  *   2  threads.get          — the new thread is visible, right title/status
  *   3  threads.rename       — title change persists on a follow-up get
  *   4  threads.transcript   — flattened human:/ai: transcript contains the turn
  *   5  messages.list        — filtered to this thread, contains the message
- *   6  messages.share       — clones the message under a new title (best-effort, see below)
+ *   6  messages.share       : clones the message under a new title, clone readable via messages.get
  *   7  feedback.add         — rates the message, is_positive persists
  *   8  followups.getSuggested — partner-level starter questions (may be [])
  *   9  threads.delete       — scratch thread removed, re-`get` real-404s
  *
- * Each step is a hard assertion (run exits non-zero if it fails) EXCEPT step 6
- * (messages.share), which is recorded but never fails the run — see the
- * comment at that step for why.
+ * Each step is a hard assertion (run exits non-zero if it fails).
  *
- * Threads/Messages/Feedback/Followups currently expose only the methods this
- * script calls; there is no `setAnalysis`/`clearAnalysis`/`push` on `threads`,
- * and no `list` on `feedback` or `followups` — this run covers the full
- * client-side surface of these four classes as it exists today.
+ * `threads.setAnalysis`/`clearAnalysis`/`push`, `feedback.list` and
+ * `followups.list` are covered by live-verify-conversation-avatar-surface.mjs.
  *
  * Throwaway resources only (intellect + scratch thread), full cleanup in
  * `finally`, with independent re-verification that the thread is truly gone
- * (a real not-found, not just a 200 from delete). Credentials:
+ * (a real not-found, not just a 200 from delete). The step 6 clone is left
+ * behind: it does not live in the scratch thread, and the SDK has no call to
+ * delete a single message. Credentials:
  * AGENTIC_PARTNER_ID / AGENTIC_ADMIN_SECRET, from the environment or a .env
  * file in the repo root.
  */
@@ -81,7 +79,7 @@ let intellectId;
 let threadId;
 
 try {
-  admin = await kaltura.sessions.createAdminToken();
+  admin = await kaltura.sessions.createAdminToken({ userId: 'sdk-live-verify' });
   record('admin-token-mint', true, { secondsRemaining: admin.secondsRemaining() });
 
   const intel = await kaltura.intellects.add({
@@ -127,20 +125,12 @@ try {
   const ourMessage = messages.find((m) => m.id === turn.messageId || m.thread_id === threadId);
   check('5-messages-list-contains-message', messages.length > 0 && !!ourMessage, { count: messages.length, foundOurs: !!ourMessage });
 
-  // 6: messages.share — clones the message under a new title. Best-effort,
-  // NOT a hard gate: this call is observably flaky on the live backend
-  // (occasionally comes back with no newMessageId on an otherwise-valid
-  // request), and the resulting clone isn't reachable through any read method
-  // this client exposes, so a failure here can't be distinguished from
-  // transient backend noise and there is nothing to independently verify or
-  // clean up either way. Retried twice since the call is cheap and read-only
-  // in effect if it silently no-ops.
-  let shared;
-  for (let attempt = 0; attempt < 3 && !shared?.newMessageId; attempt++) {
-    if (attempt > 0) await new Promise((r) => setTimeout(r, 500));
-    shared = await kaltura.messages.share(turn.messageId, `shared-${RUN_TAG}`, admin);
-  }
-  record('6-messages-share-returns-new-id', !!shared?.newMessageId && shared.newMessageId !== turn.messageId, { newMessageId: shared?.newMessageId });
+  // 6: messages.share clones the message under a new title. The clone is
+  // readable by id and carries the new title as its question.
+  const shared = await kaltura.messages.share(turn.messageId, `shared-${RUN_TAG}`, admin);
+  check('6-messages-share-returns-new-id', !!shared?.newMessageId && shared.newMessageId !== turn.messageId, { newMessageId: shared?.newMessageId });
+  const clone = await kaltura.messages.get(shared.newMessageId, admin);
+  check('6-messages-share-clone-readable', clone?.id === shared.newMessageId && clone?.human === `shared-${RUN_TAG}`, { id: clone?.id, human: clone?.human });
 
   // 7: feedback.add — rates the message; call is idempotent for the same pair.
   const fb = await kaltura.feedback.add({ message_id: turn.messageId, is_positive: true, comment: `live-verify ${RUN_TAG}` }, admin);

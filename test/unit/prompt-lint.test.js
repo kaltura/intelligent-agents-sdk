@@ -372,6 +372,21 @@ test('lintPersonaIdentity: self-intro on a stopword ("my name is Happy") is not 
   assert.deepEqual(r.findings, []);
 });
 
+test('lintPersonaIdentity: self-intro name match is case-sensitive ("I\'m going" yields no name)', () => {
+  const bad = lintPersonaIdentity({ name: 'Nova', openingPhrase: "Hello, I'm going to help you today.", baseDirective: 'You are Nova.', prompts: [] });
+  assert.equal(bad.detectedName, null);
+  assert.deepEqual(bad.findings, []);
+  const badLower = lintPersonaIdentity({ name: 'Nova', openingPhrase: 'hello, my name is going to be short.', baseDirective: 'You are Nova.', prompts: [] });
+  assert.equal(badLower.detectedName, null);
+});
+
+test('lintPersonaIdentity: self-intro with a capitalized name is still detected', () => {
+  for (const [phrase, name] of [["Hi, I'm Luna!", 'Luna'], ['I am Luna.', 'Luna'], ['My name is Luna.', 'Luna'], ['Hello, this is Luna.', 'Luna']]) {
+    const r = lintPersonaIdentity({ name: 'Nova', openingPhrase: phrase, baseDirective: 'You are Nova.', prompts: [] });
+    assert.equal(r.detectedName, name, phrase);
+  }
+});
+
 test('lintPersonaIdentity: empty baseDirective/prompts haystack skips the drift check (no false positive on minimal input)', () => {
   const r = lintPersonaIdentity({ name: 'Nova', openingPhrase: "I'm Nova." });
   assert.equal(r.detectedName, 'Nova');

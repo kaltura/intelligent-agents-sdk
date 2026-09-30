@@ -21,14 +21,12 @@
  *   12 conversations.status        — assistant status/consent/avatar config
  *   13 intellects.delete           — scratch intellect removed
  *
- * Step 9b is a regression guard for a real bug: `restore()`'s default path
- * used to write prompts/base_directive/glossary/status via `setPrompts` only
- * — which never sends `capabilities` — so a capability drifted after a
- * snapshot was NOT actually reverted, even though the return value's
- * `written` list claimed `'capabilities'` was restored. Fixed by adding a
- * second write (via `setCapabilities({force:true})`) whenever both
- * `'prompts'` and `'capabilities'` are being restored. A failure here now
- * means a real regression, not an expected gap.
+ * Step 9b guards `restore()`: `setPrompts` never sends `capabilities`, so
+ * `restore()` makes a second write (via `setCapabilities({force:true})`)
+ * whenever both `'prompts'` and `'capabilities'` are restored. Without it, a
+ * capability that drifted after a snapshot stays drifted while the return
+ * value's `written` list still claims `'capabilities'` was restored. A
+ * failure here is a real regression, not an expected gap.
  *
  * Throwaway resource only (one intellect), full cleanup in `finally`, with
  * independent re-verification that it is truly gone. Credentials:
@@ -82,7 +80,7 @@ let admin;
 let configId;
 
 try {
-  admin = await kaltura.sessions.createAdminToken();
+  admin = await kaltura.sessions.createAdminToken({ userId: 'sdk-live-verify' });
   record('admin-token-mint', true, { secondsRemaining: admin.secondsRemaining() });
 
   // 1: intellects.create — scratch intellect, SDK defaults applied.

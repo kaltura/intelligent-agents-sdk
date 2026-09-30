@@ -64,11 +64,11 @@ console.log('');
 
 const kaltura = new Management({ partnerId, adminSecret });
 
-// Step 1: Mint an admin token (never leave the server in production)
+// Step 1: Mint an admin token. In production, keep it server-side.
 console.log('[1/3] Minting admin token...');
 let adminToken;
 try {
-  adminToken = await kaltura.sessions.createAdminToken();
+  adminToken = await kaltura.sessions.createAdminToken({ userId: 'admin@example.com' });
 } catch (err) {
   console.error('');
   console.error('Failed to mint admin token:', err?.detail || err?.message || err);
@@ -79,7 +79,7 @@ try {
 console.log('      Admin token minted.');
 
 // Step 2: Provision the agent — this creates intellect + avatar + agent in sequence.
-// It takes 1–3 minutes and shows no intermediate progress, so we print a heads-up.
+// It takes 1–3 minutes and prints no per-step progress, so we print a heads-up.
 console.log('');
 console.log('[2/3] Provisioning agent (brain + face + voice)...');
 console.log('      This takes 1–3 minutes — generating profile, building intellect,');
@@ -134,7 +134,7 @@ console.log('');
 
 let reply;
 try {
-  reply = await kaltura.converseOnce(configId, 'Hello! What can you help me with?');
+  reply = await kaltura.converseOnce(configId, 'Hello! What can you help me with?', { agentId });
 } catch (err) {
   console.error('');
   console.error('converseOnce failed:', err?.detail || err?.message || err);
@@ -171,7 +171,7 @@ if (widgetId) {
 console.log('');
 
 console.log('To embed a live talking avatar in a web page, see:');
-console.log('  API-REFERENCE.md → Use Case 12 (Embed a live avatar)');
+console.log('  docs/USE-CASES.md → UC-12 (Anonymous End-User Embed)');
 console.log('');
 
 console.log('To delete this agent later (deletion is permanent, hence the confirm flag):');

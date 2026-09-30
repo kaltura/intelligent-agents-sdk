@@ -4,19 +4,16 @@
  * written via `intellects.update`/`setPrompts`. No network, no KS, no state:
  * every export is a deterministic function over plain data.
  *
- * These helpers mirror the prompt-rendering rules the API applies
- * server-side:
+ * These helpers model the prompt-rendering rules:
  *   - each prompt block renders as `## {headerTemplate}\n{value}`, joined;
  *   - blocks with an empty `value` OR empty `headerTemplate` are SKIPPED;
- *   - `base_directive` is prepended (server falls back to its built-in
- *     directive when empty — NOT reproducible client-side);
- *   - `glossary`, when set, is wrapped by the server and appended;
- *   - `{{var}}` placeholders are interpolated last (`apply_variables()`).
+ *   - `base_directive` is prepended (an empty one is not replaced by a default here);
+ *   - `glossary`, when set, is appended;
+ *   - `{{var}}` placeholders are interpolated last.
  *
  * LIMITATION: {@link assembleSystemPrompt} reproduces ONLY this author layer. It CANNOT
  * reproduce the capability-conditional template blocks (video_gallery /
- * avatar_show_content / web_search_enabled / user_properties) that Genie
- * injects server-side, nor the server's built-in default base_directive. The
+ * avatar_show_content / web_search_enabled / user_properties) or the default base_directive. The
  * result is a `client-side-replica`, never byte-exact — callers must treat it
  * as a preview, not a contract.
  */
@@ -26,9 +23,8 @@ import { RESERVED_VARS } from './conversations.js';
 
 /**
  * Server-provided variable namespaces addressed by a dotted prefix (e.g.
- * `{{secrets.MY_KEY}}`). `secrets` is injected server-side as
- * `variables["secrets"]`, so a dotted reference under it is NOT a client
- * variable and never needs `allow_client_variables`.
+ * `{{secrets.MY_KEY}}`). `secrets` is a reserved key, so a dotted reference
+ * under it is NOT a client variable and never needs `allow_client_variables`.
  * @type {readonly string[]}
  */
 export const SYS_NAMESPACES = Object.freeze(['secrets']);
@@ -47,7 +43,7 @@ const SYS_VAR_SET = new Set(SYS_VARS);
 const SYS_NS_SET = new Set(SYS_NAMESPACES);
 const SOURCE = 'prompt-lint';
 
-/** All known reserved-scalar `sys__*` names — now fully covered by {@link SYS_VARS}. */
+/** All known reserved-scalar `sys__*` names, as covered by {@link SYS_VARS}. */
 const RESERVED_SCALAR_SET = SYS_VAR_SET;
 
 /** Dotted prefix for the reserved bound-user object. */
@@ -55,9 +51,8 @@ const RESERVED_USER_OBJ_PREFIX = 'sys__user_obj';
 
 /**
  * Attributes of the reserved `sys__user_obj` variable.
- * Referencing an unbound attribute in a live turn today causes a
- * silent turn failure, not an empty render — {@link assembleSystemPrompt}
- * flags this case explicitly rather than letting the preview look harmless.
+ * Bind every attribute the prompt uses. {@link assembleSystemPrompt}
+ * flags an unbound attribute explicitly rather than letting the preview look harmless.
  * @type {readonly string[]}
  */
 export const RESERVED_USER_OBJ_ATTRS = Object.freeze(['first_name', 'last_name', 'title', 'company', 'gender', 'email']);
@@ -92,7 +87,7 @@ function reservedVarWarning(name, info) {
     return {
       severity: 'warning',
       code: 'reserved_user_attr_unresolved',
-      message: `\`{{${name}}}\` has no bound value in this preview's requestVars. Referencing an unbound sys__user_obj.* attribute in a LIVE turn currently causes a silent turn failure, not an empty render — bind a user (Sessions.createConversationToken({userId})) or supply "${name}" in requestVars to simulate the bound case before shipping this prompt.`,
+      message: `\`{{${name}}}\` has no bound value in this preview's requestVars. Bind every variable the prompt uses: bind a user (Sessions.createConversationToken({userId})) or supply "${name}" in requestVars to simulate the bound case before shipping this prompt.`,
     };
   }
   if (info.kind === 'secret') {
@@ -282,12 +277,11 @@ export function validatePromptVars(text, opts = {}) {
  *
  *   await mgmt.intellects.setPrompts(id, [PAGE_CONTEXT_PROMPT, ...rest]);
  *
- * Requires the intellect's `allow_client_variables` gate to be ON (the server
- * default — pin it anyway via `intellects.setClientVariablesEnabled(id, true)`).
- * With the gate off, a converse turn sending request variables fails SILENTLY
- * with an empty turn on BOTH paths — HTTP streaming and live socket alike
- * (the server's 403 fires after the response stream has opened,
- * so no error ever reaches the wire). Both session classes then emit the
+ * Requires the intellect's `allow_client_variables` gate to be ON. It is on
+ * by default. Pin it with `intellects.setClientVariablesEnabled(id, true, adminKs)`.
+ * With the gate off, a converse turn sending request variables ends with an
+ * empty turn on BOTH paths, HTTP streaming and live socket alike, and no
+ * error reaches the caller. Both session classes then emit the
  * once-per-session `empty_turn_with_request_vars` warning. Frozen — spread-copy
  * (`{...PAGE_CONTEXT_PROMPT}`) to customize the label or wording.
  * @type {Readonly<{key:string,label:string,headerTemplate:string,type:'custom',value:string}>}
@@ -303,9 +297,10 @@ export const PAGE_CONTEXT_PROMPT = Object.freeze({
 /**
  * Lint a `prompts[]` list (the `List[DynamicPrompt]` DTO). Each block must be
  * `{key, label, headerTemplate, type:"custom", value}`. Surfaces structural
- * errors (missing/empty key, wrong/missing `type`, duplicate keys) and
- * renderer-skip WARNINGS (empty `value` OR empty `headerTemplate` ⇒ the server
- * silently drops the block), plus every `{{var}}` finding per block.
+ * errors (invalid block, missing/empty key, wrong `type`, non-string fields),
+ * structural WARNINGS (missing `type`, duplicate keys) and
+ * renderer-skip WARNINGS (empty `value` OR empty `headerTemplate` ⇒ the block
+ * is skipped), plus every `{{var}}` finding per block.
  *
  * Gate/placeholder mismatch checks (both are silent failures live, so lint is
  * the only place they surface):
@@ -447,9 +442,10 @@ export function lintPrompts(prompts, opts = {}) {
 /**
  * Lint a glossary string. The glossary is a CLIENT HINT only — it is injected
  * verbatim (wrapped by the server) and is NOT a server contract, so
- * this only reports a detected `format` (`json` | `text`) and any `{{var}}`
- * findings. A glossary that PARSES as JSON but is not an object/array is
- * flagged as a `format` note (likely a stray value), never an error.
+ * this only reports a detected `format` (`json` | `text` | `empty`) and any
+ * `{{var}}` findings. A glossary that parses as a JSON object or array, or
+ * starts like JSON but does not parse, gets a `glossary_format` WARNING, never
+ * an error.
  *
  * @param {string} glossary
  * @param {{allowClientVariables?: boolean, knownVars?: string[]}} [opts]
@@ -544,7 +540,7 @@ function bareName(word) {
 function extractProperName(text) {
   if (typeof text !== 'string' || text.trim() === '') return null;
 
-  const selfIntro = text.match(/\b(?:I'm|I am|my name is|this is)\s+([A-Z][a-zA-Z]*(?:'s|’s)?)/i);
+  const selfIntro = text.match(/\b(?:[Ii]'m|[Ii] am|[Mm]y name is|[Tt]his is)\s+([A-Z][a-zA-Z]*(?:'s|’s)?)/);
   if (selfIntro && !GREETING_STOPWORDS.has(bareName(selfIntro[1]))) return bareName(selfIntro[1]);
 
   const possessive = text.match(/\b([A-Z][a-zA-Z]*(?:'s|’s))\b/);
@@ -680,9 +676,8 @@ export const SERVER_DEFAULT_DIRECTIVE_MARKER = '<<server default directive>>';
  *     `sys__user_obj.*` attribute, or a `secrets.*` name) with no value in
  *     `requestVars` is flagged in the returned `warnings[]` — distinct from an
  *     ordinary unresolved client variable, since the same reference would
- *     misbehave live (for `sys__user_obj.*`, a silent whole-turn failure).
- *     `warnings` is present ONLY when non-empty, so a fully-resolved preview's
- *     return shape is unchanged from before this hardening.
+ *     misbehave live. Bind every variable the prompt uses.
+ *     `warnings` is present ONLY when non-empty.
  *
  * @param {{
  *   prompts?: Array<object>,
@@ -761,7 +756,7 @@ export function assembleSystemPrompt(subset = {}) {
 
   let text = parts.join('\n\n');
 
-  // Interpolation (last step, mirroring apply_variables()).
+  // Interpolation (last step).
   const unresolved = [];
   const warnings = [];
   const warnedReserved = new Set();

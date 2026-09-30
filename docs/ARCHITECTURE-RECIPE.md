@@ -5,7 +5,7 @@ A from-scratch reimplementation of the live avatar runtime, using nothing but `s
 <!-- nova-target: architecture-recipe-steps | Minimal reimplementation recipe steps -->
 
 ```
-1. Backend: POST /v1/application/appInit (widget KS)
+1. Backend: POST /v1/application/appInit (widget KS or agent KS)
    → { ks, conversationManagerUrl, srsBaseUrl, turnServerUrl, avatars[] }
 
 2. Browser: getUserMedia({audio:true})
@@ -16,8 +16,8 @@ A from-scratch reimplementation of the live avatar runtime, using nothing but `s
 4. Run the connect sequence ([full state-machine order](architecture-reference/connection-and-handshake.md#full-connect-sequence-state-machine-order)): join → stvNewSession → showAgent → askPermissions
    → asr-webrtc handshake (publish mic pc via socket relay)
 
-5. STV: WHEP POST {srsBaseUrl}/rtc/v1/whep/?app=app&stream={session_id} with recvonly offer,
-   setRemoteDescription(answer), pc.ontrack fires twice (video, audio; distinct msids) → both
+5. STV: WHEP POST {webrtc_url} from stvNewSession (fallback: {srsBaseUrl}/rtc/v1/whep/?app=app&stream={session_id}) with recvonly offer,
+   setRemoteDescription(answer), pc.ontrack fires twice (video, audio; a different stream each time) → both
    tracks merged into one SDK-owned MediaStream → <video>.srcObject once → await <video> canplay
 
 6. ONLY NOW → approvedPermissions  (gating on playable video avoids clipping the greeting)
@@ -31,17 +31,17 @@ A from-scratch reimplementation of the live avatar runtime, using nothing but `s
 ```
 <!-- /nova-target -->
 
-Dependencies: `socket.io-client` + the browser's native `RTCPeerConnection`. Nothing else. The WebRTC avatar engine's client package is just a convenience wrapper around exactly these steps (`joinASR` = the socket-relayed offer/answer; `joinSTV` = the WHEP subscribe).
+Dependencies: `socket.io-client` + the browser's native `RTCPeerConnection`. Nothing else. `KalturaAvatarSession` is a wrapper around exactly these steps (ASR = the socket-relayed offer/answer; STV = the WHEP subscribe).
 
 ## Implications for a Custom (No-Kaltura-Lib) Client
 
 If you reimplement the protocol per the recipe above, you MUST:
 
-1. **Send a stable `stickyId` query param** on the socket (random 16-char, once per connect). Without it, polling requests scatter across server instances and the handshake fails intermittently under load.
+1. **Send a stable `stickyId` query param** on the socket (random 16-char, once per session). Without it, polling requests can reach different server instances and the handshake fails intermittently under load.
 2. **Emit `stvNewSession` right away. Don't gate it on `checkAvailability` first.** Poll `checkAvailability` → `availabilityResult` *in parallel* instead:
    - Many agents never send `availabilityResult` at all, so waiting for it before `stvNewSession` just adds dead time.
    - If a poll comes back `available:false`, back off and re-poll (see the delay schedule below) without touching `stvNewSession`.
-   - `throwToNoAgent` is terminal, not something to recover from on the same socket. The server disconnects the socket right after emitting it.
+   - `throwToNoAgent` is terminal, not something to recover from on the same socket. The socket is closed right after it.
    - If it arrives, treat the socket as dead. Open a fresh socket (new `stickyId`, so you're not pinned back to the same full instance) and retry `join`/`stvNewSession` from there.
 3. **Treat `throwToExceededTier` as fatal.** Don't retry: it's a plan limit, not a capacity limit.
 4. **Keep the socket alive during queue waits.** Only do a fresh `connect()` (new `stickyId`) on a permanent transport loss.

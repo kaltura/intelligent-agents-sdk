@@ -570,3 +570,56 @@ test('threadId getter: reflects cfg seed immediately, captures the wire value on
   assert.equal(session.threadId, 't-wire-1', 'first capture wins');
   session.disconnect();
 });
+
+test('respondToTool: 2xx returns {ok:true}; HTTP 4xx/5xx returns {ok:false, reason:"http_error", status} and keeps the call pending for a retry', async () => {
+  let ackStatus = 500;
+  const acks = [];
+  const fetch = async (url, init) => {
+    if (String(url).endsWith('/assistant/tool_response')) {
+      acks.push(JSON.parse(init.body));
+      return { ok: ackStatus >= 200 && ackStatus < 300, status: ackStatus, text: async () => '', headers: { get: () => null } };
+    }
+    return { ok: true, status: 201, text: async () => 'v=0\r\nanswer\r\n', headers: { get: () => 'https://srs/whep/resource/1' } };
+  };
+  const { session, socket } = newSession({ cfg: { fetch, genieUrl: 'https://genie.example' } });
+  scriptHappyPath(socket);
+  await session.connect();
+  session._pendingToolAcks.set('inv-1', { name: 'save_note', at: session._now() });
+  assert.deepEqual(await session.respondToTool('inv-1', { a: 1 }), { ok: false, reason: 'http_error', status: 500 });
+  assert.ok(session._pendingToolAcks.has('inv-1'), 'still pending after a rejected POST');
+  ackStatus = 200;
+  assert.deepEqual(await session.respondToTool('inv-1', { a: 1 }), { ok: true });
+  assert.equal(session._pendingToolAcks.has('inv-1'), false);
+  assert.equal(acks.length, 2);
+  assert.equal(acks[0].tool_id, 'inv-1');
+  session.disconnect();
+});
+
+test('updateRequestVars / setDynamicPrompt keep cfg.contextId and cfg.contextType in the updateGenieContext emit', async () => {
+  const { session, socket } = newSession({ cfg: { contextId: '0_abc', contextType: 'entry' } });
+  scriptHappyPath(socket);
+  await session.connect();
+  session.updateRequestVars({ tier: 'gold' });
+  assert.deepEqual(socket.emitsOf('updateGenieContext').pop(), {
+    capabilities: { avatar: 'on', generate_followup_questions: 'on' },
+    request_vars: { tier: 'gold' },
+    contextId: '0_abc',
+    contextType: 'entry',
+  });
+  session.setDynamicPrompt({ slide: 2 });
+  const last = socket.emitsOf('updateGenieContext').pop();
+  assert.equal(last.contextId, '0_abc');
+  assert.equal(last.contextType, 'entry');
+  session.disconnect();
+});
+
+test('updateGenieContext omits contextId/contextType when the session has none', async () => {
+  const { session, socket } = newSession();
+  scriptHappyPath(socket);
+  await session.connect();
+  session.updateRequestVars({ tier: 'gold' });
+  const sent = socket.emitsOf('updateGenieContext').pop();
+  assert.equal('contextId' in sent, false);
+  assert.equal('contextType' in sent, false);
+  session.disconnect();
+});

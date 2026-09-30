@@ -1,6 +1,6 @@
 # External API Integrations
 
-How to wire a Kaltura agent to call out to an external REST API — write a support ticket, update a booking system, look up inventory, upsert a CRM contact, or call anything else with an HTTP endpoint — including the real, backend-verified OAuth2 flow for endpoints that require it.
+How to wire a Kaltura agent to call out to an external REST API — write a support ticket, update a booking system, look up inventory, upsert a CRM contact, or call anything else with an HTTP endpoint — including the OAuth2 flow for endpoints that require it.
 
 This is a general integration mechanism: any `api` tool (`src/management/tools.js`'s `tools.api()`) the model can call, wired to whatever HTTP endpoint you point it at. CRM/marketing writes (HubSpot, Salesforce, Marketo) are one common use case, and get their own example section below. But the same three-step pattern applies equally to a support desk, a booking system, a MAM (media asset management) API, an inventory lookup, or any other REST integration.
 
@@ -10,11 +10,11 @@ If your use case is specifically getting the *viewer's own submitted data* (from
 
 An external API integration is a custom `api` tool, linked to your intellect via `tool_ids`. Three pieces, always in this order:
 
-1. **Store the credential as a secret** — `mgmt.intellects.secrets.set(configId, {NAME: value}, adminKs)` (`src/management/secrets.js`). Secrets are write-only: every read masks values as `"***"`, and there is no endpoint to read a plaintext value back. This is a genuine backend guarantee (server-encrypted at rest), not something the SDK layers on top.
+1. **Store the credential as a secret** — `mgmt.intellects.secrets.set(configId, {NAME: value}, adminKs)` (`src/management/secrets.js`). Secrets are write-only: every read masks values as `"***"`, and there is no endpoint to read a plaintext value back.
 2. **Build and register the tool** — `tools.api({..., request: {..., headers: {Authorization: 'Bearer {{secrets.NAME}}'}}})`, then `mgmt.tools.add(tool, adminKs)`. A tool is its own partner-level entity (`/v1/tool/*`), not embedded in the intellect.
 3. **Link it** — `mgmt.intellectConfig.setToolIds(configId, [toolId], adminKs)`.
 
-- **Secret references use one exact syntax.** Write `{{secrets.<name>}}` inside any string field of an `api` tool's `request` block — `buildAuth()` and every request field resolve this pattern server-side by templating over `request_config.variables`.
+- **Secret references use one exact syntax.** Write `{{secrets.<name>}}` inside any string field of an `api` tool's `request` block. The reference is resolved when the tool runs. The OAuth2 `client_secret` uses the bare form `secrets.<name>` (see below).
 - **A `{{variables.secrets.X}}` prefix is a silent no-op.** Only the bare `{{secrets.X}}` form resolves; the extra `variables.` prefix renders empty at runtime with no error.
 - **Validate before you trust it.** Run `mgmt.intellects.secrets.validate(configId, adminKs)` after wiring a tool — it scans every tool/prompt for secret references and flags both the `badPrefix` mistake above and any reference to a secret name that doesn't exist yet.
 
@@ -31,11 +31,11 @@ Most external APIs need one of two authentication shapes, both supported directl
   ```
 
   You own rotation for this credential — the platform doesn't refresh it.
-- **OAuth2 authorization-code flow** — for providers that require viewer consent and issue an expiring, refreshable token. Covered in its own section below since it's a real, distinct backend-managed mechanism, not just a header.
+- **OAuth2 authorization-code flow** — for providers that require viewer consent and issue an expiring, refreshable token. Covered in its own section below. It is more than a header.
 
-## When you actually need OAuth2 — the real, backend-managed flow
+## When you need OAuth2 (authorization-code flow)
 
-If your target API requires a proper three-legged OAuth2 authorization-code flow (a viewer must grant consent; the resulting token expires and needs refreshing), the platform has that — it's implemented, real, and lives entirely on the backend. Pass an `authentication` block instead of a static bearer header in an `api` tool's `request`:
+The `authentication` block supports the OAuth2 authorization-code flow only. The viewer grants consent through an `auth_url` your app opens. The agent handles the resulting token. Pass the block instead of a static bearer header in an `api` tool's `request`. All four fields are required: `client_id`, `client_secret` (a `secrets.<name>` reference), `token_url` and `auth_url`. There is no `flow` or `scopes` option.
 
 <!-- nova-target: external-api-oauth2-example | Real OAuth2 authorization-code flow example -->
 
@@ -43,43 +43,43 @@ If your target API requires a proper three-legged OAuth2 authorization-code flow
 import { api } from '@kaltura/intelligent-agents/management';
 
 const tool = api({
-  name: 'update_marketo_lead',
-  description: "Update the user's lead record in Marketo once you have their email.",
+  name: 'update_crm_contact',
+  description: "Update the user's contact record once you have their email.",
   args: { email: { type: 'str', prompt: "The user's email", required: true } },
   request: {
-    url: 'https://123-ABC-456.mktorest.com/rest/v1/leads.json',
+    url: 'https://api.example.com/v1/contacts',
     method: 'POST',
     authentication: {
       type: 'oauth2',
-      client_id: 'YOUR_MARKETO_CLIENT_ID',
-      client_secret: 'secrets.MARKETO_CLIENT_SECRET',
-      token_url: 'https://123-ABC-456.mktorest.com/identity/oauth/token',
-      auth_url: 'https://123-ABC-456.mktorest.com/identity/oauth/authorize',
+      client_id: 'YOUR_CLIENT_ID',
+      client_secret: 'secrets.EXAMPLE_CLIENT_SECRET',
+      token_url: 'https://auth.example.com/oauth/token',
+      auth_url: 'https://auth.example.com/oauth/authorize',
     },
-    body: { action: 'updateOnly', input: [{ email: '{{args.email}}' }] },
+    body: { email: '{{args.email}}' },
   },
   responseMapping: { result: 'result' },
 });
 ```
 <!-- /nova-target -->
 
-`buildAuth()` (`src/management/tools.js`) validates this block before any network call. `type` must be `'oauth2'` (the only scheme the backend supports today). The one hard rule: `client_secret` **must** be a `secrets.<name>` reference matching `/^secrets\.[A-Za-z_][A-Za-z0-9_]*$/`. A plaintext secret is rejected by construction, so there's no path for it to leak into a tool config at rest.
+`buildAuth()` (`src/management/tools.js`) validates this block before any network call. `type` must be `'oauth2'`. `token_url` and `auth_url` must be http(s) URLs. `client_secret` **must** be a `secrets.<name>` reference matching `/^secrets\.[A-Za-z_][A-Za-z0-9_]*$/`. A plaintext secret is rejected, so it can't end up in a tool config.
 
-This is a genuine authorization-code exchange, not a pre-minted static token wearing an OAuth label. Here's what to build for and expect:
+What to build for:
 
 - **First call, no cached token: handle the consent redirect.** The call comes back as an `interruption` stream segment (`metadata.subtype:"oauth_required"`) carrying a real `auth_url` (built with `response_type=code&client_id=...&redirect_uri=...&state=...`) — see [wire-protocol/events-catalog.md § OAuth consent redirect](wire-protocol/events-catalog.md#oauth-consent-redirect-interruption--subtypeoauth_required) for the exact shape and the SDK's `parseOAuthRequired`/`session.onOAuthRequired` convenience for parsing it. Your app must surface that URL to the viewer (open it in a new tab/window) so they can complete the provider's consent screen. An MCP server's own OAuth-gated tools use this identical mechanism — see [MCP-INTEGRATIONS.md § OAuth-gated servers](MCP-INTEGRATIONS.md#oauth-gated-servers).
 - **After consent, later calls just work.** Once the provider redirects back with a `code` and the viewer's consent completes, subsequent calls to the same tool succeed without asking the viewer to consent again.
 - **Refresh is automatic.** A later call can reuse and refresh an expired token with no viewer interaction and no redirect. Only when that refresh itself fails do you see another `interruption`/`auth_url`, sending the viewer back through consent. Don't hardcode an assumed validity window for cached consent — treat every call as one that might come back with a fresh `auth_url` and handle that path.
 
-Unlike a static-bearer-token tool (where *you* own token rotation), a tool wired through `authentication: {type: 'oauth2', ...}` gets consent and refresh handled for you by the platform. The tradeoff is the interruption/consent UX: your app has to handle the `interruption` segment and show the viewer a link. A static bearer token never requires that.
+Unlike a static-bearer-token tool (where *you* own token rotation), a tool wired through `authentication: {type: 'oauth2', ...}` gets consent and refresh handled by the platform. The tradeoff is the interruption/consent UX: your app has to handle the `interruption` segment and show the viewer a link. A static bearer token never requires that.
 
 ## Don't skip `kaltura_genie_experiences: 'off'`
 
 Any intellect that references `tool_ids` (an external-API tool is no exception) should set `capabilities: {kaltura_genie_experiences: 'off'}` **at creation time**.
 
-Here's why. The default-on capability injects a "you MUST call `get_experience_instructions`" instruction. That instruction out-competes your tool for the same "what do I do with this turn" decision. `mgmt.tools.clientToolReadiness(body)` (`src/management/tools.js`) is a pure lint you can run over your create/update body before sending it: it warns when tools are referenced but this capability isn't explicitly off. `intellects.create()` and `intellects.update()` already run this lint automatically and log its warnings.
+The default-on capability adds an experiences instruction that competes with your tool for the same "what do I do with this turn" decision. `mgmt.tools.clientToolReadiness(body)` (`src/management/tools.js`) is a pure lint you can run over your create/update body before sending it: it warns when tools are referenced but this capability isn't explicitly off. `intellects.create()` and `intellects.update()` already run this lint automatically and log its warnings.
 
-But the fix (setting the capability) only takes effect immediately at **creation**. Flipping it on an existing intellect is defeated by the ~24h partner-config cache.
+Set the capability at **creation**. Partner-config changes can take up to ~24 h to apply, so flipping it on an existing intellect is not immediate.
 
 ## Verifying the wiring before you rely on it
 
@@ -126,25 +126,27 @@ const tool = salesforceContactUpsert({
 
 One real Salesforce quirk this builder accounts for: an upsert-by-external-ID `PATCH` returns `201 {id: ...}` on insert but `204` with an **empty body** on update. There's no field guaranteed present on both, so its `responseMapping` only maps `result: 'id'` (present when it exists) rather than assuming a shape that breaks on the update path. The point of this tool is the side effect (the contact write), not what it echoes back.
 
-**This builder authenticates with a static secret**, exactly like the HubSpot one — it does *not* use the OAuth2 `authentication` block described above. That's fine for a Salesforce Connected App access token you mint and rotate yourself, but it does mean *you* are responsible for refreshing that token before it expires; the platform won't refresh it for you unless you route through the real OAuth2 flow instead.
+**This builder authenticates with a static secret**, exactly like the HubSpot one — it does *not* use the OAuth2 `authentication` block described above. That's fine for a Salesforce Connected App access token you mint and rotate yourself, but it does mean *you* are responsible for refreshing that token before it expires; the platform won't refresh it for you unless you use the OAuth2 `authentication` block (authorization-code flow only).
 
 ### Marketo — two valid integration paths
 
 Marketo supports both connection models, and which one fits depends on how much you're allowed to ask of the visitor's session:
 
 - **No-token forms submission (Munchkin).** Marketo's own embeddable JS forms submit leads through a public, unauthenticated POST endpoint tied to a Munchkin account ID. No admin REST API token is required. If you only need to capture a lead, not read or update arbitrary Marketo objects, build a `client` tool (`tools.client()`) that the model calls. Your page-side handler (`session.onToolCall`) does the actual `fetch()` to Marketo's forms endpoint, using the account's public Munchkin ID, the same mechanism Marketo's own `<script>`-embedded forms use. This needs no secret at all.
-- **Full REST API access (leads.json, campaigns, etc.).** Anything beyond a simple form submission — updating an existing lead by email, triggering a campaign — goes through Marketo's REST API, which does require a client-credentials OAuth2 token. Use the `api` tool + OAuth2 `authentication` block pattern shown above. Marketo's `identity/oauth/token` endpoint is a standard OAuth2 token endpoint that fits `buildAuth()`'s shape directly.
+- **Full REST API access (leads.json, campaigns, etc.).** Anything beyond a simple form submission (updating an existing lead by email, triggering a campaign) goes through Marketo's REST API. It uses a client-credentials token. The `authentication` block above does **not** fit it, because that block supports the authorization-code flow only. Handle it like HubSpot and Salesforce above, with a static secret:
+  - **Secret-backed bearer header.** Get a token from Marketo's `identity/oauth/token` endpoint yourself, store it with `mgmt.intellects.secrets.set()`, and reference it as `Authorization: 'Bearer {{secrets.MARKETO_TOKEN}}'` in an `api` tool. You refresh it and re-set the secret before it expires.
+  - **Client tool.** Use a `client` tool (`tools.client()`) and have your handler in `session.onToolCall` call your own server, which holds the Marketo credentials and calls the REST API.
 
-Pick the first path when you just need "get this lead into Marketo" and want zero secret management; reach for the second only when the model needs to do more than a one-shot form submission.
+Use the Munchkin path when you just need "get this lead into Marketo" and want zero secret management. Use the REST API only when the model needs to do more than a one-shot form submission.
 
 ### Other DIY CRM/MAM/spreadsheet targets
 
 None of these need a dedicated recipe — they're a plain `api` tool with a static bearer/API-key secret, following the exact same three-step pattern as HubSpot/Salesforce above:
 
 - **Airtable** — a personal access token as a `Bearer` header, `POST` to `https://api.airtable.com/v0/{baseId}/{tableName}` with `body: {fields: {...}}`.
-- **Google Sheets** — Google's Sheets API requires OAuth2 (a service account or viewer consent), so use the `authentication: {type: 'oauth2', ...}` pattern above rather than a static token.
-- **Google Forms (prefill-and-submit link)** — Forms has no lead-write REST endpoint at all. The common workaround is a `client` tool that opens a pre-filled Forms URL (`viewform?usp=pp_url&entry.<id>=<value>`) for the viewer. That's a UX handoff, not a server-side write. Decide whether that fits your flow before reaching for it.
-- **Any other REST API** — same shape: static secret → `Authorization` header, or OAuth2 block if the provider requires it. This is exactly how you'd wire a MAM (media asset management) lookup, a support-ticketing system, a booking API, or anything else with an HTTP interface.
+- **Google Sheets** — Google's Sheets API requires OAuth2. Viewer consent fits the `authentication: {type: 'oauth2', ...}` pattern above. A service account does not fit that block.
+- **Google Forms (prefill-and-submit link)** — Forms has no lead-write REST endpoint at all. The common workaround is a `client` tool that opens a pre-filled Forms URL (`viewform?usp=pp_url&entry.<id>=<value>`) for the viewer. That's a UX handoff, not a server-side write.
+- **Any other REST API** — same shape: static secret → `Authorization` header, or the OAuth2 block if the provider uses the authorization-code flow. This is exactly how you'd wire a MAM (media asset management) lookup, a support-ticketing system, a booking API, or anything else with an HTTP interface.
 
 ## Related docs
 

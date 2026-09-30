@@ -17,5 +17,5 @@ export {
 export { DEFAULT_RENDERERS, WIDGET_KINDS } from './renderers/index.js';
 export { mountWidget } from './renderers/mount.js';
 // A host-registered "10th runtime" widget — not one of the nine
-// backend DEFAULT_RENDERERS. Wire it in explicitly, see docs/GENUI-REFERENCE.md.
+// built-in DEFAULT_RENDERERS. Wire it in explicitly, see docs/GENUI-REFERENCE.md.
 export { renderGradedQuestion } from './renderers/graded-question.js';

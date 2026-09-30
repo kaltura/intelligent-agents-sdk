@@ -82,7 +82,7 @@ export function estimateTokens(text) {
 
 /**
  * Render a manifest as the SITE MAP prompt block the model reads: two lines per
- * page, the title and then `path: key1, key2`. Warns (never throws) when the
+ * page, the title (when the page has one) and then `path: key1, key2`. Warns (never throws) when the
  * estimated token cost exceeds `maxTokens`, so a growing site is visible in
  * provisioning logs.
  *
@@ -103,9 +103,8 @@ export function siteMapPrompt(manifest, opts = {}) {
 }
 
 /**
- * Navigation rules prompt block. Wording is the variant that measured best
- * live (zero calls on unmapped topics, one call per mapped ask, no screen
- * narration). Place it right after the SITE MAP and before `PAGE_CONTEXT_PROMPT`.
+ * Navigation rules prompt block: no call on unmapped topics, one call per
+ * mapped ask, no screen narration. Place it right after the SITE MAP and before `PAGE_CONTEXT_PROMPT`.
  * @type {Readonly<{key:string,label:string,headerTemplate:string,type:'custom',value:string}>}
  */
 export const SITE_NAV_RULES_PROMPT = Object.freeze({
@@ -132,6 +131,7 @@ export const SITE_NAV_RULES_PROMPT = Object.freeze({
  * @param {number} [opts.maxBytes=524288] Reject responses larger than this.
  * @param {number} [opts.timeoutMs=15000] Abort the request after this long.
  * @returns {Promise<import('../core/site-keys.js').SectionsManifest>}
+ * @throws {import('../core/errors.js').KalturaError} `code` is `bad_arg` (not an http(s) URL, or no fetch), `http_error`, `too_large`, `timeout`, `network_error`, or `bad_manifest` (not JSON); a manifest that fails {@link validateSectionsManifest} throws that function's error.
  */
 export async function loadSectionsManifest(url, opts = {}) {
   const { fetch: f = globalThis.fetch, maxBytes = DEFAULT_MANIFEST_MAX_BYTES, timeoutMs = 15000 } = opts;

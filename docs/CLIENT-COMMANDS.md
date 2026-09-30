@@ -115,17 +115,27 @@ Multiple handlers for one name all run in registration order. A throwing handler
 
 A handler's return value (or thrown/rejected error) is captured and re-emitted as `'toolCallResult'` (`{call, ok, value|error}`). This is **local/app-observable only** unless the tool was built with `waitForResponse:true`. Only then does `session.respondToTool(call.toolMetadata.id, response)` actually carry a result back to the model.
 
+`respondToTool` resolves `{ok:true}` when the ACK POST returns 2xx. Otherwise it resolves `{ok:false, reason, status?}`:
+
+| `reason` | Meaning |
+|---|---|
+| `unknown_or_stale` | No pending ACK for that id, or it is too old. |
+| `session_rebuilt` | A cold reconnect landed while the POST was in flight. |
+| `http_error` | The POST returned 4xx/5xx (`status` is set). The call stays pending, so you can retry with the same id. |
+
+A network failure throws. A disconnected session throws `invalid_state`.
+
 ---
 
 ## Limits and gotchas
 
-These are the lessons that cost real debugging time. None of them is enforced server-side — they are author-time discipline. The first is linted by `tools.clientToolReadiness()` and surfaced as `intellects.create().warnings`, but you should know *why*.
+These are author-time rules. The first is linted by `tools.clientToolReadiness()` and surfaced as `intellects.create().warnings`, but you should know *why*.
 
 ### Gotcha 1 — `kaltura_genie_experiences` out-competes your tool. Turn it OFF.
 
 On any command-driven intellect, set `capabilities: { kaltura_genie_experiences: 'off' }` at creation — see [EXTERNAL-API-INTEGRATIONS.md § Don't skip `kaltura_genie_experiences: 'off'`](EXTERNAL-API-INTEGRATIONS.md#dont-skip-kaltura_genie_experiences-off) for why it competes with your tool and why creation time matters.
 
-RAG and client commands coexist fine with this off. The teaching avatar proves it: knowledge retrieval ON, experiences OFF, commands win.
+RAG and client commands coexist with this off: knowledge retrieval ON, experiences OFF, commands win.
 
 ### Gotcha 2 — partner config is cached ~24h. Set capabilities at CREATION, not after.
 
@@ -168,15 +178,15 @@ Put three rules in the system prompt:
 
 But a spiral can exhaust the segment budget before the brain ever reaches a spoken sentence, leaving `text: ''` with nothing to fall back to in that same turn.
 
-Headless HTTP has no live-socket `interrupt()`/`_coldReconnect()` to fall back on (that's the live-session mechanism in [ARCHITECTURE-REFERENCE.md](architecture-reference/resilience-and-failure-handling.md#tool-call-spiral-what-happened-and-how-its-mitigated)). The only proven lever is a new turn.
+Headless HTTP has no live-socket `interrupt()`/`_coldReconnect()` to fall back on (that's the live-session mechanism in [ARCHITECTURE-REFERENCE.md](architecture-reference/resilience-and-failure-handling.md#tool-call-spiral-what-happened-and-how-its-mitigated)). The only lever is a new turn.
 
-`conversations.send({..., recoverFromSpiral: true})` (or `converseOnce(cfg, msg, {recoverFromSpiral: true})`) opts into exactly that. When the first attempt comes back `spiralStopped:true` with empty text, it sends ONE follow-up turn on the same thread, prefixing the original message with `SPIRAL_RECOVERY_PREFIX` ("Please answer in words only this turn, without calling any tool. "). This reliably breaks the loop and produces a correct, properly-caveated spoken answer.
+`conversations.send({..., recoverFromSpiral: true})` (or `converseOnce(cfg, msg, {recoverFromSpiral: true})`) opts into exactly that. When the first attempt comes back `spiralStopped:true` with empty text, it sends ONE follow-up turn on the same thread, prefixing the original message with `SPIRAL_RECOVERY_PREFIX` ("Please answer in words only this turn, without calling any tool. "). The follow-up asks for a spoken answer with no tool calls.
 
-The result carries `spiralRecovered` (boolean) and `firstAttempt: {toolCalls, spiralStopped}` for diagnostics. It never retries more than once, and is off by default (back-compat).
+The result carries `spiralRecovered` (boolean) and `firstAttempt: {toolCalls, spiralStopped}` for diagnostics. It never retries more than once, and is off by default.
 
 #### SDK side (live session): see ARCHITECTURE-REFERENCE.md
 
-`collectConverse()`'s guard does not run on the live socket path — `KalturaAvatarSession` streams `agent_raw_text` directly, so a spiral there doesn't block a request (there is none to time out). `KalturaAvatarSession` instead runs a brain-stall watchdog plus a two-tier tool-call-spiral circuit breaker (soft signal, then a hard cold-reconnect recovery). The full incident history, threshold table, and reconnect semantics are documented once, in [ARCHITECTURE-REFERENCE.md's "Tool-call spiral: what happened and how it's mitigated"](architecture-reference/resilience-and-failure-handling.md#tool-call-spiral-what-happened-and-how-its-mitigated). Read that for the mechanism. This doc covers only what an app author needs to configure (the budget above) and the headless equivalent (previous section).
+`collectConverse()`'s guard does not run on the live socket path — `KalturaAvatarSession` streams `agent_raw_text` directly, so a spiral there doesn't block a request (there is none to time out). `KalturaAvatarSession` instead runs a brain-stall watchdog plus a two-tier tool-call-spiral circuit breaker (soft signal, then a hard cold-reconnect recovery). The threshold table and reconnect semantics are documented once, in [ARCHITECTURE-REFERENCE.md's "Tool-call spiral: what happened and how it's mitigated"](architecture-reference/resilience-and-failure-handling.md#tool-call-spiral-what-happened-and-how-its-mitigated). Read that for the mechanism. This doc covers only what an app author needs to configure (the budget above) and the headless equivalent (previous section).
 
 #### Root cause of one class of spiral
 

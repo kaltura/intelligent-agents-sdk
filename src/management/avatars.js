@@ -1,7 +1,7 @@
 /**
  * Avatars — a deployable face+voice identity (a visual catalog id + a voice
- * catalog id + motion/opening config). Agentic host, admin token. Source:
- * API-REFERENCE §2.4 / Management Operations.
+ * catalog id + motion/opening config). Agentic host, admin token. Reference:
+ * docs/api/management-operations.md.
  */
 import { paginate } from './paginate.js';
 import { uuidv4 } from '../core/ids.js';
@@ -10,13 +10,8 @@ import { KalturaError } from '../core/errors.js';
 
 /**
  * Reject a stray `adminTags` on an avatar body BEFORE the network call.
- * `avatar/create` actually ACCEPTS and stores `adminTags` (`avatar/list
- * adminTagsIn` finds it), but no read path ever returns it back — a tag you
- * can set but never read or change is a trap, so the SDK throws pre-network
- * rather than let one through silently. `avatar/update` genuinely rejects it
- * (no tag field on that request body) with only a bare 'Bad Request'. Either
- * way, the actionable fix is to tag the parent AGENT instead. Pure: no
- * network.
+ * Avatars carry no tags: the SDK throws `bad_request` on `create` and `update`.
+ * Tag the parent AGENT instead. Pure: no network.
  * @param {object} body @param {string} where
  */
 function assertNoAvatarTags(body, where) {
@@ -101,7 +96,7 @@ export class Avatars {
   }
 
   /**
-   * Get one avatar. READ. ⚠️ A missing/unknown (but well-formed) avatar id
+   * Get one avatar. READ. A missing/unknown (but well-formed) avatar id
    * throws with `code:'api_exception'` (a generic agentic error), NOT a
    * stable `avatar_not_found` code — but `title` DOES carry a specific
    * `'AVATAR_NOT_FOUND'` marker, so branch on `err.title === 'AVATAR_NOT_FOUND'`
@@ -121,12 +116,9 @@ export class Avatars {
    * `nonSpeaking` must each be 0.1–1.0 (also server-enforced); keep
    * `nonSpeaking` below `speaking`.
    *
-   * NO TAGS (BY SDK POLICY, NOT A SERVER REJECT): `avatar/create` actually
-   * ACCEPTS `adminTags` and stores it (`avatar/list adminTagsIn` finds it),
-   * but no read path ever returns it — you can set it once and never see or
-   * change it again. To group/identify avatars, tag the PARENT AGENT instead —
-   * `agents.create({adminTags:[...]})`. This SDK throws pre-network on a
-   * stray `adminTags` key rather than let you fall into that write-only trap.
+   * NO TAGS: avatars carry no tags. The SDK throws `bad_request` before any
+   * network call when the body has an `adminTags` key. To group or identify
+   * avatars, tag the PARENT AGENT instead: `agents.create({adminTags:[...]})`.
    *
    * @example <caption>Tag the AGENT, not the avatar</caption>
    * const avatar = await k.avatars.create(
@@ -203,11 +195,9 @@ export class Avatars {
    * existing `voice`/`visual`/`motionControl`). Send only the fields you want
    * to change.
    *
-   * NO TAGS, AND HERE IT'S A REAL SERVER REJECT: unlike {@link create},
-   * the update request body genuinely has no tag field — `avatar/update`
-   * 400s on `adminTags` with only a bare `'Bad Request'` (no helpful `detail`). The
-   * SDK throws pre-network with an actionable message instead — tag the
-   * parent AGENT (`agents.update({adminTags})`) instead.
+   * NO TAGS: as with {@link create}, the SDK throws `bad_request` before any
+   * network call when the body has an `adminTags` key. Tag the parent AGENT
+   * (`agents.update({adminTags})`) instead.
    *
    * @example <caption>Clear a legacy avatar-level opening phrase so the intellect's `opening_phrase` owns the line; voice/visual untouched</caption>
    * await k.avatars.update({ id: avatarId, openingPhrase: null }, adminKs);

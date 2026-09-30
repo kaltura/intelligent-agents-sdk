@@ -2,7 +2,7 @@
 
 # Lifecycle Rules: Event-Driven Rules
 
-Today, "summarize every ended session and email the account owner" means polling for finished threads yourself. Lifecycle removes the polling: create a **rule** once, and the backend fires its **action** automatically every time a matching event happens, server-side. Mounted at `mgmt.lifecycle`.
+Lifecycle removes the need to poll for finished threads when you want to "summarize every ended session and email the account owner": create a **rule** once, and its **action** fires automatically every time a matching event happens. Mounted at `mgmt.lifecycle`.
 
 This page is the field-by-field reference. New to Lifecycle? [`recipes.md`](recipes.md) is a hands-on walkthrough of the action types you actually create, with a runnable example. It links back here instead of repeating this reference.
 
@@ -15,7 +15,7 @@ A rule is `{name, systemName, eventType, objectType, eventConditions?, action}`:
 - `name`: a required, human-readable label.
 - `systemName`: a required, caller-chosen identifier (e.g. `auto_summary_v1`), filterable via `list`'s `systemNameEqual`.
 - `eventType`: e.g. `session_ended`, `analysis_updated`.
-- `objectType`: currently only `thread`.
+- `objectType`: only `thread`.
 - `eventConditions[]`: `{field, operator, value}` matchers, e.g. `{field:'object.agent_id', operator:'eq', value:'<uuid>'}`, `{field:'changed_keys', operator:'has_all', value:[...]}`. `field` is a dot-path into the event payload (see [Discovery and dry-run testing](#discovery-and-dry-run-testing) for which paths exist per event). A `{path, op}` shaped entry is rejected with a 400.
 - `action`: a plain object, passed straight through, not built by the SDK. See [The action types](#the-action-types) below.
 
@@ -23,19 +23,19 @@ A rule is `{name, systemName, eventType, objectType, eventConditions?, action}`:
 
 ## The action types
 
-The backend recognizes three `actionType` values you can create. A fourth, internal-only value powers the built-in summary preset described [below](#every-session-already-gets-a-summary-for-free). You never construct it yourself.
+You can create three `actionType` values. `match` output can also list a preset rule whose action type you cannot create, described [below](#every-session-already-gets-a-summary-for-free).
 
 | `actionType` | What it does | Why / when you'd use it |
 |---|---|---|
 | `triggerInsightSettingsKai` | Runs an LLM over the conversation and writes back the insights named in `insightSettingsIds`. Each id points at a reusable [`InsightSettings`](#insightsettings-reusable-insight-definitions) entity you defined ahead of time | Whenever you need a specific piece of structured data pulled out of a conversation: a topic tag for a dashboard, a lead-quality score, a recommended next step. |
 | `sendInsightEmail` | Sends an email to a Kaltura user, filling an email template from the thread's already-extracted insight values | Whenever a human needs to know the moment a specific insight is ready, e.g. alert a support lead as soon as a conversation's analysis lands. |
-| `triggerDtcKai` | Takes no fields of your own. Turns each of the target intellect's configured lead-capture form fields (`intellectConfig.user_properties_forms`, e.g. name/company/email) into its own insight; automatically skipped if none are configured | Whenever you already collect lead-capture fields on an intellect and want each one to also land as a conversation insight, with no per-field setup. |
+| `triggerDtcKai` | Takes no fields of your own. Turns each of the target intellect's configured lead-capture form fields (`intellectConfig.user_properties_forms`, e.g. name/company/email) into its own insight. It does nothing when none are configured | Whenever you already collect lead-capture fields on an intellect and want each one to also land as a conversation insight, with no per-field setup. |
 
-**`triggerInsightSettingsKai`** takes `{ insightSettingsIds: string[] }`, up to 20 ids, each referencing an `InsightSettings` entity created via `mgmt.insightSettings.create()`. An id that doesn't exist, or isn't owned by your partner, is rejected at rule create/update time with a 400. At dispatch time, only ids whose insight setting currently has `status:'active'` actually resolve into an extraction. A `disabled` one is silently skipped.
+**`triggerInsightSettingsKai`** takes `{ insightSettingsIds: string[] }`, up to 20 ids, each referencing an `InsightSettings` entity created via `mgmt.insightSettings.create()`. An id that doesn't exist, or isn't owned by your partner, is rejected on create/update with a 400. Only ids whose insight setting has `status:'active'` produce an insight. A `disabled` one is skipped.
 
-**`sendInsightEmail`** mails a rendered insight summary to `recipients`. These are Kaltura user ids, not raw email addresses. The messaging service resolves the actual email from that user's Kaltura profile. Use either an explicit `templateId` or an auto-created `presetType` template; the template's `subject`/`body` reference single-brace tokens declared in `msgParamsMap`, e.g. `{SUMMARY}` or `{recipient.firstName}`. This action only fires on `eventType:'analysis_updated'`. Attaching it to a `session_ended` rule is a server-side no-op.
+**`sendInsightEmail`** mails a rendered insight summary to `recipients`. These are Kaltura user ids, not raw email addresses. Use either an explicit `templateId` or an auto-created `presetType` template; the template's `subject`/`body` reference single-brace tokens declared in `msgParamsMap`, e.g. `{SUMMARY}` or `{recipient.firstName}`. This action only fires on `eventType:'analysis_updated'`. On a `session_ended` rule it does nothing.
 
-A `templateId` is more durable than a `presetType`. It points at a template you created yourself via [`mgmt.emailTemplates`](#emailtemplates-managing-the-templates-sendinsightemail-references) (see below). A `presetType`, instead, depends on the backend finding or creating a preset template on first dispatch.
+A `templateId` is more durable than a `presetType`. It points at a template you created yourself via [`mgmt.emailTemplates`](#emailtemplates-managing-the-templates-sendinsightemail-references) (see below). A `presetType` uses a preset template instead.
 
 ```js
 const sentiment = await mgmt.insightSettings.create({
@@ -54,7 +54,7 @@ await mgmt.lifecycle.create({
 }, ks);
 ```
 
-Every conversation gets a structured recap the moment it ends, with zero app-side code. The built-in summary insight is deliberately not requested here. Every partner already has an always-on preset rule that produces one for free. It merges into the same batch as this rule's own insights.
+Every conversation gets a structured recap the moment it ends, with zero app-side code. The built-in summary insight is deliberately not requested here. Every partner already has an always-on preset rule that produces one for free. Its summary lands in the same analysis as this rule's own insights.
 
 ### `InsightSettings`: reusable insight definitions
 
@@ -72,7 +72,7 @@ await mgmt.insightSettings.delete(setting.id, ks, { confirmPermanent: true });  
 
 ### `EmailTemplates`: managing the templates `sendInsightEmail` references
 
-An email template is `{id, appGuid, name, subject, body, toAttributePath, msgParamsMap, status, ...}` on the Kaltura Messaging API, a separate host from the rest of this SDK. Mounted at `mgmt.emailTemplates`:
+An email template is `{id, appGuid, name, subject, body, toAttributePath, msgParamsMap, status, ...}` on its own host, separate from the rest of this SDK. Mounted at `mgmt.emailTemplates`:
 
 ```js
 const template = await mgmt.emailTemplates.create({
@@ -96,13 +96,13 @@ await mgmt.lifecycle.create({
 
 `appGuid`, `name`, `subject`, `body`, `toAttributePath`, and `msgParamsMap` are required. `body`/`subject`/`fromName` can reference the tokens declared in `msgParamsMap` (e.g. `{recipient.firstName}`). The rest of the CRUD surface (`get`/`list`/`update`/`delete`) is in the [method table](#full-crud--discovery-method-table) below.
 
-This is the one resource in this SDK that authenticates with a plain `Authorization: Bearer <KS>` header instead of the `Authorization: KS <ks>` scheme every other resource uses. It's the same admin KS, but a different header, because it's a different backend.
+This is the one resource in this SDK that authenticates with a plain `Authorization: Bearer <KS>` header instead of the `Authorization: KS <ks>` scheme every other resource uses. It's the same admin KS, sent in a different header because this resource lives on a different host.
 
 ---
 
 ## Scoping a rule to one agent
 
-`eventConditions` can only filter on fields [`describeFields`](#discovery-and-dry-run-testing) actually reports. For `thread`/`analysis_updated` today that's `object.agent_id`, `object.thread_id`, `object.user_id`, and `changed_keys` (which insight keys were updated). It does **not** include an insight's computed value. There is no `object.sentiment` field to filter on. A sentiment score only exists as the *output* of a `triggerInsightSettingsKai` action, not an input `eventConditions` can inspect.
+`eventConditions` can only filter on fields [`describeFields`](#discovery-and-dry-run-testing) actually reports. For `thread`/`analysis_updated` that's `object.agent_id`, `object.thread_id`, `object.user_id`, and `changed_keys` (which insight keys were updated). It does **not** include an insight's computed value. There is no `object.sentiment` field to filter on. A sentiment score only exists as the *output* of a `triggerInsightSettingsKai` action, not an input `eventConditions` can inspect.
 
 ```js
 await mgmt.lifecycle.create({
@@ -115,27 +115,25 @@ await mgmt.lifecycle.create({
 }, ks);
 ```
 
-**A rule filtering on `object.agent_id` only matches threads created with an agent-scoped KS.** Mint the conversation token with `mgmt.sessions.createAgentToken({ agentId })` (`agentid:<agentId>`), not `createConversationToken({ configId })` (`geniegpcid:<configId>`). The latter has no agent claim at all, so the resulting thread's `agent_id` is `"default"` and can never match a rule scoped to a real agent uuid.
+**A rule filtering on `object.agent_id` only matches threads created with an agent id on the token.** A token minted without one leaves the thread's `agent_id` as `"default"`, which never matches a rule scoped to a real agent uuid. Mint with `createAgentToken({ agentId, userId })`, or `createConversationToken` with `agentId`. See [Conversation token or agent token?](../api/authentication.md#conversation-token-or-agent-token).
 
-This applies whether the conversation happens over `mgmt.conversations.send()`/`.stream()` or a real avatar/socket session. The agent binding lives entirely in the KS's privilege claim, not in the call itself. See [`createAgentToken`](../../src/core/session.js) for details.
+This applies whether the conversation happens over `mgmt.conversations.send()`/`.stream()` or a real avatar/socket session. The agent binding lives in the KS, not in the call.
 
 ---
 
 ## Every session already gets a SUMMARY, for free
 
-A system-seeded rule, `preset__summary_on_session_ended`, produces one fixed summary insight on every `session_ended` event, for every agent, with no opt-out and no customization lever. There's no field on any entity you can set to change its prompt.
+A system-seeded rule, `preset__summary_on_session_ended`, produces one fixed summary insight on every `session_ended` event, for every agent. It has no opt-out, and no field lets you change its prompt. `match` returns it (see [Discovery and dry-run testing](#discovery-and-dry-run-testing)).
 
-Here's the mechanic that matters: **every rule whose action extracts insights on the same event gets merged into one batch, one LLM call, not one call per rule.** Create your own `triggerInsightSettingsKai` rule on `session_ended`, and it runs in the *same batch* as this preset. The result is one combined `thread_metadata.analysis` containing the preset's summary plus whatever your `insightSettingsIds` asked for.
+When you create your own `triggerInsightSettingsKai` rule on `session_ended`, the result is one combined `thread_metadata.analysis` containing the preset's summary plus whatever your `insightSettingsIds` asked for.
 
 Give your own insight settings distinct `key`s from the built-in summary to avoid any ambiguity about which one's result lands where.
-
-None of this pushes the conversation transcript through the rule itself. `triggerInsightSettingsKai` (and the other action types) send the backend's insight service a `threadId` and the schema of what to extract. That service fetches the transcript itself. You're only ever specifying *what to extract*, never *what to extract from*.
 
 ---
 
 ## Discovery and dry-run testing
 
-The 4 discovery methods let a UI populate its own dropdowns instead of hardcoding enums that will drift from the backend:
+The discovery methods let a UI populate its own dropdowns instead of hardcoding enums:
 
 ```js
 await mgmt.lifecycle.listObjects(ks);                              // [{ objectType: 'thread', description: '...' }]
@@ -143,7 +141,7 @@ await mgmt.lifecycle.listEvents('thread', ks);                     // { objectTy
 await mgmt.lifecycle.describeFields('thread', 'session_ended', ks); // { objectType, eventType, fields: [{ path, type, description }, ...] }
 ```
 
-**Dry-run a rule before a real event fires it**: `match(objectType, eventType, eventData, ks)`, where `eventData` is `{ object?, changed_keys? }` (not a bare `object` field). For `objectType:'thread'`, `object` is validated server-side: `agent_id`, `thread_id`, and `user_id` are all required strings. Omitting any one 400s live:
+**Dry-run a rule before a real event fires it**: `match(objectType, eventType, eventData, ks)`, where `eventData` is `{ object?, changed_keys? }` (not a bare `object` field). For `objectType:'thread'`, `object` needs `agent_id`, `thread_id`, and `user_id`, all strings. Omitting any one returns a 400:
 
 ```js
 const { matchedRules } = await mgmt.lifecycle.match(
@@ -153,7 +151,7 @@ const { matchedRules } = await mgmt.lifecycle.match(
 );
 ```
 
-**Production already ships a system-seeded preset rule**: `match` can return rules you never created. Every partner has a preset rule by default, with `id: "preset__summary_on_session_ended"`. Its `action.actionType` is internal-only, so you never send or construct it yourself. This preset matches every `session_ended`/`thread` event. `matchedRules[]` groups related rules under a shared `groupKey` with `isGrouped:true`. Don't mistake a grouped preset for something you configured:
+**`match` can return rules you never created.** Every partner has a system-seeded preset rule with `id: "preset__summary_on_session_ended"`. You cannot create its `action.actionType`. This preset matches every `session_ended`/`thread` event. `matchedRules[]` groups related rules under a shared `groupKey` with `isGrouped:true`. Don't mistake a grouped preset for something you configured:
 
 ```js
 {
@@ -198,14 +196,14 @@ All against `https://api.avatar.us.kaltura.ai`. SDK: `mgmt.lifecycle`.
 | `insightSettings.update(id, patch, ks)` | `POST /v1/insight-settings/update` | WRITE, idempotent | |
 | `insightSettings.delete(id, ks, confirm)` | `POST /v1/insight-settings/delete` | WRITE, destructive | `requireConfirm` gate; response is `{removed, success, _meta}`. The deleted id comes back as `removed`, not `id`; does not cascade, see [`InsightSettings`](#insightsettings-reusable-insight-definitions) |
 
-`EmailTemplates`, SDK: `mgmt.emailTemplates`. Kaltura Messaging API, not Agentic. Uses `Authorization: Bearer <KS>`, not `Authorization: KS <ks>`:
+`EmailTemplates`, SDK: `mgmt.emailTemplates`. Separate host from the rest of this SDK. Uses `Authorization: Bearer <KS>`, not `Authorization: KS <ks>`:
 
 | Method | Endpoint | Kind | Notes |
 |---|---|---|---|
 | `emailTemplates.create(template, ks)` | `POST email-template/add` | WRITE, not idempotent | returns the full created template, including its generated `id` |
 | `emailTemplates.get(id, ks)` | `POST email-template/get` | READ | |
 | `emailTemplates.list(ks, opts)` | `POST email-template/list` | READ | `{offset,limit}` pager; `opts.filter` (`idIn`, `appGuidIn`, `nameEq`, `status`, ...) passes through 1:1 |
-| `emailTemplates.update(id, patch, ks)` | `POST email-template/update` | WRITE, idempotent | server increments `version` on every call |
+| `emailTemplates.update(id, patch, ks)` | `POST email-template/update` | WRITE, idempotent | `version` increments on every call |
 | `emailTemplates.delete(id, ks, confirm)` | `POST email-template/delete` | WRITE, destructive | `requireConfirm` gate; soft-delete (`status:'deleted'`); a rule still pinning this id as `templateId` silently stops sending, see [`EmailTemplates`](#emailtemplates-managing-the-templates-sendinsightemail-references) |
 
 ---

@@ -14,7 +14,7 @@ Every endpoint is shown as a raw HTTP call plus its SDK wrapper. The SDK is what
 
 | File | Covers |
 |------|--------|
-| [Authentication & Services](docs/api/authentication.md) | KS types and minting, `userId` binding, the five services and their base URLs |
+| [Authentication & Services](docs/api/authentication.md) | KS types and minting (`agentId`, `userId`, `sessionType`), `userId` binding, the five services and their base URLs |
 | [Catalog & Assets](docs/api/design.md) | Browse the catalog, custom voice (clone), provider voice import, custom visual (portrait, photo spec), custom face/background, end-to-end portrait recipe |
 | [Agent Components](docs/api/build.md) | Generate an agent profile, create/configure an intellect, preview a prompt, tools (`api`/`csv`/`code`), secrets, ground in your content (RAG), create an avatar, create an agent |
 | [Widget & Runtime Init](docs/api/deploy.md) | Resolve widget ID, initialize the browser runtime |
@@ -55,7 +55,7 @@ The SDK wraps every error into a `KalturaError` with a stable `err.code`. Branch
 | Status | `err.code` | Fix |
 |--------|-----|-----|
 | 400 | `bad_request` | Fix the request body |
-| 403 | `forbidden` | Wrong KS type: admin KS for management, `geniegpcid` for conversations |
+| 403 | `forbidden` | Wrong KS type: admin KS for management, `geniegpcid` for conversations. Also: a user session without `userId` on thread get, list or delete. A user session asking for another user's thread gets 404 instead. See [SECURITY.md § Session type](SECURITY.md#session-type) |
 | 405 | `method_not_allowed` | Use `GET` for `/assistant/status`; everything else is `POST` |
 
 Upstream error text is also normalized to a stable `err.code`, regardless of the HTTP status the backend returned it with:
@@ -75,7 +75,7 @@ The full `Management` method surface (this doc's endpoints, wrapped) is listed i
 ```js
 import { Management } from '@kaltura/intelligent-agents/management';
 const mgmt = new Management({ partnerId, adminSecret });
-const ks = await mgmt.sessions.createAdminToken();
+const ks = await mgmt.sessions.createAdminToken({ userId: 'admin@example.com' });
 
 console.log(await mgmt.agents.list(ks).all());
 console.log(await mgmt.intellects.list(ks).all());

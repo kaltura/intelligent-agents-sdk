@@ -3,18 +3,17 @@
  * a Genie `unisphere-tool` segment into a normalized `{widgetName, runtimeName,
  * model}` the renderer can dispatch on.
  *
- * Wire truth (verified
- * against `agent_raw_text`/`brainSegment` in `experience/session.js`): the server
- * converts a fenced block carrying a `widgetName` into a `unisphere-tool`
- * segment shaped `{ type, content, metadata:{ widgetName, runtimeName },
- * speechId?, threadId? }`. All nine UI segments share
+ * Wire shape (see docs/wire-protocol/events-catalog.md §4e and the
+ * `brainSegment` event in `experience/session.js`): a widget arrives as a
+ * `unisphere-tool` segment shaped `{ type, content, metadata:{ widgetName,
+ * runtimeName }, speechId?, threadId? }`. All nine UI segments share
  * `widgetName:"unisphere.widget.genie"`; the host keys off `runtimeName`
  * (stripping the `-tool` suffix) to pick a renderer.
  *
- * HONESTY: `force_experience` is a HINT, not a
- * guarantee — the brain may emit a different (or no) widget. This layer never
- * assumes a requested experience arrived; it parses WHATEVER `runtimeName`
- * actually shows up and forgives malformed content (never throws).
+ * HONESTY: `force_experience` is a HINT, not a guarantee — the brain may emit
+ * a different (or no) widget. This layer never assumes a requested experience
+ * arrived; it parses WHATEVER `runtimeName` actually shows up and forgives
+ * malformed content (never throws).
  */
 
 import { GENUI_RUNTIMES } from '../../core/stream.js';
@@ -27,9 +26,9 @@ export const GENUI_WIDGET_NAME = 'unisphere.widget.genie';
  * renderer dispatches on). DERIVED from the wire list `core/stream.js`
  * `GENUI_RUNTIMES` (the single source of truth) so the two can never drift —
  * `experience → core` is the allowed dependency direction (core stays leaf).
- * Source: the nine backend GenUI runtime keys (see docs/genui/widgets.md). This is the SDK's first-class set; any other runtime the
- * backend may add (e.g. `gen-ui-composer`) falls through `onUnhandled`/a safe
- * fallback descriptor rather than being faked into a known kind.
+ * See docs/genui/widgets.md. This is the SDK's first-class set; any other
+ * runtime falls through `onUnhandled`/a safe fallback descriptor rather than
+ * being faked into a known kind.
  * @type {readonly string[]}
  */
 export const RUNTIMES = Object.freeze(GENUI_RUNTIMES.map((r) => r.replace(/-tool$/, '')));
@@ -198,8 +197,9 @@ function stripFence(s) {
 }
 
 /**
- * Coerce a bare scalar token from the line parser (true/false/number stay
- * strings otherwise). Also strips one matching pair of surrounding quotes
+ * Coerce a bare scalar token from the line parser: `true`/`false`/`null`,
+ * integers and decimals become typed values; anything else stays a string.
+ * Also strips one matching pair of surrounding quotes
  * (`"..."` or `'...'`) — the live backend emits quoted string values (e.g. a
  * `show-link` widget's `link: "https://example.com/widgetron"`, see issue
  * #56) whose literal quote characters must not leak into the scalar. Only a

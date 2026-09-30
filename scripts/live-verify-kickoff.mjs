@@ -56,7 +56,7 @@ const SETUP = `${choice.browser} ${HEADED ? 'headed' : 'headless'}`;
 const report = new Report({ runId, target: target.name, browser: choice.browser, headed: HEADED });
 report.data.scenarios = [];
 const kaltura = management(target);
-const admin = await kaltura.sessions.createAdminToken();
+const admin = await kaltura.sessions.createAdminToken({ userId: 'sdk-live-verify' });
 const agent = await ensureAgent(kaltura, admin.ks, { agentJson: typeof args['agent-json'] === 'string' ? args['agent-json'] : undefined, keep: !!args.keep });
 report.note('agent', agent.reused ? 'reused --agent-json ids' : 'provisioned throwaway agent with SILENT_OPENING');
 

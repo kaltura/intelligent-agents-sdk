@@ -67,7 +67,7 @@ const REJOIN_TEMPLATE = `{% if sys__is_new_thread %}${NEW_TEXT}.{% elif promo %}
 const report = new Report({ runId, target: target.name, browser: choice.browser, headed: HEADED });
 report.data.scenarios = [];
 const kaltura = management(target);
-const admin = await kaltura.sessions.createAdminToken();
+const admin = await kaltura.sessions.createAdminToken({ userId: 'sdk-live-verify' });
 const agent = await ensureAgent(kaltura, admin.ks, {
   agentJson: typeof args['agent-json'] === 'string' ? args['agent-json'] : undefined,
   keep: !!args.keep,

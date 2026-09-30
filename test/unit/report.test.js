@@ -145,10 +145,10 @@ test('messages.get maps an unknown id to a typed not_found', async () => {
   );
 });
 
-test('messages.get rejects a non-admin (conversation) token', async () => {
+test('messages.get rejects a widget token', async () => {
   const mgmt = new Management({ partnerId: '9999', fetch: fakeFetch([]) });
   await assert.rejects(
-    () => mgmt.messages.get('m1', CONV_KS),
+    () => mgmt.messages.get('m1', { ks: 'djJ8widget', kind: 'widget' }),
     (e) => e.code === 'wrong_token_scope',
   );
 });

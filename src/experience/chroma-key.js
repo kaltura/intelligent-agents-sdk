@@ -32,7 +32,9 @@
  * Idempotent: a second `attachChromaKeyAvatar()` call against a session that already has
  * a live compositor logs `console.warn` and returns the EXISTING instance instead of
  * constructing a second one — never throws for this, and never leaves two live players
- * (and two WebGL contexts) fighting over the same `<video>`.
+ * (and two WebGL contexts) fighting over the same `<video>`. A player whose
+ * `isDestroyed` flag is set (for example after you called `player.destroy()` yourself) is
+ * not live: the next call releases its listeners and constructs a new player.
  *
  * No shadow event system: this function never re-emits the player's own events (e.g. a
  * `chroma-key-video`-specific `'started'`/`'backend'`) onto `session` or anywhere else —
@@ -78,14 +80,16 @@ import { KalturaError } from '../core/errors.js';
 // compositor on those would strand it with no way to re-attach (see the misuse guard below).
 import { FATAL_ERROR_CODES } from './session.js';
 
-// Dev-time-only bookkeeping (not app state): the ONE currently-live player per session,
+// Bookkeeping (not app state): the ONE currently-live player per session,
 // keyed by the session object itself so it self-clears via GC — same externally-owned-key
 // pattern as presenter.js's sessionsWithLivePresenter / noise-suppressor.js's
 // registeredContexts. A WeakMap rather than a WeakSet: it lets a misuse hit below return
 // the SAME existing player instead of just warning and constructing a second one anyway,
-// matching this plugin's "at most one live compositor per session" contract. Cleared as
-// soon as that player is destroyed (session 'ended' / fatal 'error'), so a fresh attach
-// after cleanup is always possible.
+// matching this plugin's "at most one live compositor per session" contract. The value is
+// `{ player, release }`; `release()` runs the destroy-and-unsubscribe cleanup. The entry is
+// cleared as soon as this module destroys that player (session 'ended', fatal 'error', or
+// state 'disconnected'), or, when the integrator called `player.destroy()` directly, on the
+// next attach call (see the `isDestroyed` check there), so a fresh attach is possible.
 const playerBySession = new WeakMap();
 
 /** @param {string} title @param {string} detail @returns {KalturaError} */
@@ -95,12 +99,13 @@ function invalidArg(title, detail) {
 
 /**
  * @param {object} cfg
- * @param {import('./session.js').KalturaAvatarSession} cfg.session
- * @param {HTMLVideoElement} cfg.videoEl
- * @param {new (source: any, options?: object) => any} cfg.ChromaKeyVideo
- * @param {object} [cfg.options]
- * @param {Element} [cfg.container]
- * @returns {any}
+ * @param {import('./session.js').KalturaAvatarSession} cfg.session  The avatar session to composite.
+ * @param {HTMLVideoElement} cfg.videoEl  Must be the element the session renders into (`session.videoEl`).
+ * @param {new (source: any, options?: object) => any} cfg.ChromaKeyVideo  Your own compositor class, constructed as `new ChromaKeyVideo(videoEl, options)`. The SDK does not bundle one.
+ * @param {object} [cfg.options]  Passed through as the second constructor argument.
+ * @param {Element} [cfg.container]  When set, `player.mount(container)` is called after construction.
+ * @returns {any} The live player. A second call for the same session returns the existing player and logs a warning.
+ * @throws {KalturaError} `bad_request` when `session`, `videoEl` or `ChromaKeyVideo` is missing, when `videoEl` is not `session.videoEl`, or when constructing or mounting the player fails (the half-built player is destroyed first).
  */
 export function attachChromaKeyAvatar(cfg) {
   const session = cfg?.session;
@@ -123,6 +128,10 @@ export function attachChromaKeyAvatar(cfg) {
     );
   }
 
+  const existing = playerBySession.get(session);
+  // The integrator may have called player.destroy() directly, which this module cannot observe.
+  // A destroyed player is not live: release its listeners and registration, then attach anew.
+  if (existing && existing.player.isDestroyed) existing.release();
   if (playerBySession.has(session)) {
     if (typeof console !== 'undefined') {
       console.warn(
@@ -132,11 +141,13 @@ export function attachChromaKeyAvatar(cfg) {
         'destroyed, before attaching again.',
       );
     }
-    return playerBySession.get(session);
+    return playerBySession.get(session).player;
   }
 
   const unsubs = [];
   let player;
+  /** @type {() => void} */
+  let release;
   try {
     player = new cfg.ChromaKeyVideo(cfg.videoEl, cfg.options);
     if (cfg.container) player.mount(cfg.container);
@@ -153,6 +164,7 @@ export function attachChromaKeyAvatar(cfg) {
       for (const off of unsubs.splice(0)) { try { off(); } catch { /* */ } }
       playerBySession.delete(session);
     };
+    release = doDestroy;
     // The session's single unambiguous terminal signal — always destroy here.
     unsubs.push(session.on('ended', () => doDestroy()));
     // Only a FATAL error code ends the session unrecoverably (see FATAL_ERROR_CODES above);
@@ -188,6 +200,6 @@ export function attachChromaKeyAvatar(cfg) {
     });
   }
 
-  playerBySession.set(session, player);
+  playerBySession.set(session, { player, release });
   return player;
 }

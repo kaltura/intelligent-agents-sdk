@@ -10,12 +10,10 @@
  * use it never load it), or its own bespoke one, to `cfg.noiseProcessor` — anything shaped
  * `(stream) => Promise<MediaStream|{stream,stop}>` works.
  *
- * Runs as an adaptive RMS noise gate (attack/release-smoothed envelope, adaptive noise-floor
- * tracking) — NOT spectral subtraction or ML denoising (that's a heavier Tier-2 DSP approach,
- * and why this ships as an optional plugin rather than the default). It
- * attenuates steady-state background noise (fan hum, room tone) between speech — the
- * "more-advanced-than-nothing, still genuinely lightweight" niche the SDK can own without
- * bundling a model or a third-party dependency.
+ * Runs as an adaptive noise gate: a per-sample peak level check, an attack/release-smoothed
+ * gain envelope and an adaptive noise-floor estimate. It is NOT spectral subtraction or ML
+ * denoising. It attenuates steady-state background noise (fan hum, room tone) between speech
+ * without bundling a model or a third-party dependency.
  *
  * Optional plugin: a separately-importable function with no effect on `KalturaAvatarSession`
  * or any other SDK surface until constructed and passed as `cfg.noiseProcessor` — mirrors
@@ -51,7 +49,7 @@ class KalturaNoiseGateProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
     this._envelope = 0;      // smoothed gain envelope, 0..1
-    this._noiseFloor = 1e-6; // adaptive RMS noise-floor estimate (linear)
+    this._noiseFloor = 1e-6; // adaptive noise-floor estimate (linear, from the rectified signal)
   }
   process(inputs, outputs, parameters) {
     const input = inputs[0];
@@ -106,11 +104,15 @@ const registeredContexts = new WeakSet();
  * @param {()=>AudioContext} [opts.getAudioContext]  Factory for the context, called once per
  *   `noiseProcessor(stream)` invocation. Default: reuse `opts.audioContext` if set, else `new AudioContext()`.
  * @param {typeof AudioWorkletNode} [opts.audioWorkletNodeConstructor]  Default `globalThis.AudioWorkletNode`.
- * @param {number} [opts.thresholdDb]   Gate closes below this level (dBFS). Default -50.
+ * @param {number} [opts.thresholdDb]   Minimum level (dBFS) for the gate to open. The gate also stays
+ *   closed until the signal is about 4x above the tracked noise floor. Default -50.
  * @param {number} [opts.attackMs]      Gate-open ramp, avoids a click on speech onset. Default 5ms.
  * @param {number} [opts.releaseMs]     Gate-close ramp, avoids chopping word tails. Default 150ms.
  * @param {number} [opts.floorAdaptMs]  Noise-floor adaptation time constant. Default 2000ms.
- * @returns {(stream:any)=>Promise<{stream:any, stop:()=>void}>}
+ * @returns {(stream:any)=>Promise<{stream:any, stop:()=>void}>}  `stop()` disconnects the audio
+ *   nodes and stops both the processed and the raw mic tracks.
+ * @throws {KalturaError} `bad_request`, from the returned processor (not from this call), when
+ *   `AudioWorklet` or `AudioWorkletNode` is missing and none was injected.
  */
 export function createNoiseSuppressor(opts = {}) {
   const getAudioContext = opts.getAudioContext || (() => opts.audioContext || new AudioContext());

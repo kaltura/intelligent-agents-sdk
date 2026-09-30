@@ -1,7 +1,6 @@
 /**
- * Default renderer for the `followups` runtime (backend tool key "followups" →
- * `followups-tool`). Suggested next-question chips. `add_to_history:false`
- * server-side (not replayed). Framework-agnostic `{kind:'followups', data}`.
+ * Default renderer for the `followups` runtime (`followups-tool`).
+ * Suggested next-question chips. Framework-agnostic `{kind:'followups', data}`.
  */
 import { safeText } from '../../../core/safety.js';
 

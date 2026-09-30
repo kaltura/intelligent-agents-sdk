@@ -4,7 +4,7 @@
  * These are the per-modality embed primitives (chapter type + embedding
  * strategy) for the three linkable content modalities:
  *
- *   ChapterType  : CAPTION=1 / OCR=2 / DOCUMENT=3   (+ a Genie-internal SUMMARY)
+ *   ChapterType  : CAPTION=1 / OCR=2 / DOCUMENT=3   (SUMMARY is reserved, not settable)
  *   StrategyEnum : EmbedCaptionV1 / EmbedOcrV1 / EmbedDocumentV1
  *
  * {@link buildIndexerObjects} VALIDATES a caller's `modalities` (rejects an
@@ -20,9 +20,9 @@ import { KalturaError } from './errors.js';
 
 /**
  * Chapter types the indexer can embed.
- * Numeric on the wire. `SUMMARY` is Genie-internal (produced server-side, not
- * a self-serve embed modality) so it is intentionally NOT a linkable modality
- * in {@link EMBED} / {@link MODALITIES}.
+ * Numeric on the wire. `SUMMARY` is reserved and not settable: it is not a
+ * linkable modality in {@link EMBED} / {@link MODALITIES}, and a `'summary'`
+ * modality is rejected with `bad_request`.
  * @type {{CAPTION:1, OCR:2, DOCUMENT:3}}
  */
 export const CHAPTER_TYPE = Object.freeze({ CAPTION: 1, OCR: 2, DOCUMENT: 3 });

@@ -14,8 +14,8 @@
  *      `PAGE_CONTEXT_PROMPT` echoes every prompt block, SITE MAP byte-for-byte.
  *   4  A mapped ask ("take me to X") streams exactly one `go_to` segment whose
  *      `path` resolves through `resolvePath()` and whose `section`, when
- *      present, resolves through `resolveSection()`; the backend synthesizes
- *      the `tool_response` itself (no client ACK on a fire-and-forget tool).
+ *      present, resolves through `resolveSection()`. A fire-and-forget tool
+ *      needs no client ACK.
  *   5  An ask about a topic the SITE MAP does not cover streams zero `go_to`
  *      segments (rule 2 of `SITE_NAV_RULES_PROMPT`).
  *
@@ -26,6 +26,10 @@
  *
  * Steps 4 and 5 assert model behaviour. Each is given up to two fresh-thread
  * attempts and passes if one attempt passes; both attempts are recorded.
+ *
+ * The throwaway tool is named `go_to_<run tag>` and `SITE_NAV_RULES_PROMPT` is
+ * rewritten to that name, so the run never collides with a live `go_to` tool on
+ * the same partner. Tool names are unique per partner.
  *
  * Throwaway resources only (one intellect + one client tool), full cleanup in
  * `finally`. Credentials: AGENTIC_PARTNER_ID / AGENTIC_ADMIN_SECRET, from the
@@ -86,9 +90,6 @@ function check(step, ok, detail) {
   record(step, ok, detail);
 }
 
-/** Thrown to end the run early without failing it; see the `go_to` clash check. */
-class SkipRun extends Error {}
-
 const snippet = (text) => JSON.stringify(text ?? '').slice(0, 160);
 const TURN_TIMEOUT_MS = 90_000;
 const ATTEMPTS = 2;
@@ -102,7 +103,10 @@ const pageContext = JSON.stringify({ url: '/', sections: homePage ? homePage.sec
 
 const SITE_LABEL = 'the Kaltura Intelligent Agents SDK docs';
 const DISPLAY_NAME = `Go to (${RUN_TAG})`;
-const toolConfig = () => goToTool({ siteLabel: SITE_LABEL, displayName: DISPLAY_NAME });
+// Unique per run: a live `go_to` tool (a docs assistant, for example) can share the partner.
+const TOOL_NAME = `${SITE_NAV_TOOL_NAME}_${RUN_TAG}`;
+const toolConfig = () => goToTool({ name: TOOL_NAME, siteLabel: SITE_LABEL, displayName: DISPLAY_NAME });
+const rulesPrompt = { ...SITE_NAV_RULES_PROMPT, value: SITE_NAV_RULES_PROMPT.value.replaceAll(SITE_NAV_TOOL_NAME, TOOL_NAME) };
 
 const prompts = [
   {
@@ -110,7 +114,7 @@ const prompts = [
     value: `You are the assistant for the Kaltura Intelligent Agents SDK docs site. Temporary CI instance ${RUN_TAG}.`,
   },
   mapPrompt,
-  SITE_NAV_RULES_PROMPT,
+  rulesPrompt,
   PAGE_CONTEXT_PROMPT,
 ];
 
@@ -165,7 +169,7 @@ function resolveCall(call) {
   };
 }
 
-const isGoTo = (c) => c.name === SITE_NAV_TOOL_NAME;
+const isGoTo = (c) => c.name === TOOL_NAME;
 /** Exactly one go_to, path resolves, section (if any) resolves, backend synthesized the tool_response. */
 function navPasses(out) {
   const calls = out.calls.filter(isGoTo);
@@ -176,7 +180,7 @@ function navPasses(out) {
 const noNavPasses = (out) => !out.error && out.calls.filter(isGoTo).length === 0;
 
 try {
-  admin = await kaltura.sessions.createAdminToken();
+  admin = await kaltura.sessions.createAdminToken({ userId: 'sdk-live-verify' });
   record('admin-token-mint', true, { secondsRemaining: admin.secondsRemaining() });
 
   record('site-map-built', true, {
@@ -185,26 +189,16 @@ try {
     estimatedTokens: estimateTokens(mapPrompt.value),
   });
 
-  // Tool names are unique per partner (`tool/add` returns 409 on a duplicate), so
-  // a partner that already runs a real `go_to` tool (a live docs assistant, for
-  // example) cannot host this run's throwaway one. Leave the real tool alone and
-  // skip: the run is only meaningful on a partner without a live go_to deployment.
-  const existing = await kaltura.tools.list(admin).all();
-  const clash = existing.find((t) => t.name === SITE_NAV_TOOL_NAME);
-  if (clash) {
-    throw new SkipRun(`a live ${SITE_NAV_TOOL_NAME} tool (id ${clash.id}) already exists on this partner; tool names are unique per partner, so this run is skipped and the existing tool is left untouched. Point AGENTIC_PARTNER_ID at a partner without a live ${SITE_NAV_TOOL_NAME} deployment to run it.`);
-  }
-
   // 1. wire-shape round trip
   const cfg = toolConfig();
   const created = await kaltura.tools.add(cfg, admin);
   toolId = created.id;
-  record('tool-create', true, { toolId, name: SITE_NAV_TOOL_NAME });
+  record('tool-create', true, { toolId, name: TOOL_NAME });
 
   const echoed = await kaltura.tools.get(toolId, admin);
   const ec = echoed.config || {};
   check('1-tool-echo-shape',
-    echoed.name === SITE_NAV_TOOL_NAME && ec.type === 'client' && ec.wait_for_response === false
+    echoed.name === TOOL_NAME && ec.type === 'client' && ec.wait_for_response === false
       && ec.args?.path?.required === true && ec.args?.section?.required === false
       && ec.description === cfg.description && ec.display_name === DISPLAY_NAME,
     {
@@ -271,13 +265,8 @@ try {
     attempts: nf.attempts.map((a) => ({ ok: a.ok, error: a.error, calls: a.calls, text: a.text })),
   });
 } catch (err) {
-  if (err instanceof SkipRun) {
-    artifact.skipped = true;
-    record('live-verify-site-nav', true, { skipped: true, message: err.message });
-  } else {
-    failed = true;
-    record('live-verify-site-nav', false, { message: err?.detail || err?.message || String(err), code: err?.code });
-  }
+  failed = true;
+  record('live-verify-site-nav', false, { message: err?.detail || err?.message || String(err), code: err?.code });
 } finally {
   if (intellectId) {
     try {

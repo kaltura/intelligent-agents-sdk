@@ -23,7 +23,7 @@ Descriptor: `{kind:'flashcards', data:{title, cards:[{front, back, label}]}}`.
 |---|---|---|
 | `questions` | `questions`, `followups`, `items` — each item a string or `{text\|question}` | ≤500 chars per item; empty items filtered |
 
-Descriptor: `{kind:'followups', data:{questions:[string]}}`. Server-side `add_to_history:false` — chips are suggestions, not replayed into history.
+Descriptor: `{kind:'followups', data:{questions:[string]}}`. Chips are suggestions.
 
 ### 3. sources (`renderSources`)
 
@@ -86,7 +86,7 @@ Descriptor: `{kind:'show-link', data:{url, label, description, safe}}` where **`
 | `poster` | `poster`, `thumbnail`, `thumbnailUrl` | via `safeUrl` — a still to show before play |
 | `description` | `description` | ≤2000 chars |
 
-Descriptor: `{kind:'external-video', data:{url, embedUrl, title, provider, poster, description, safe}}`, `safe:!!url`. The client check is **defense-in-depth**; the server-side media-URL validator is the primary guard.
+Descriptor: `{kind:'external-video', data:{url, embedUrl, title, provider, poster, description, safe}}`, `safe:!!url`. The renderer accepts only absolute http(s) URLs, and the host decides what to embed.
 
 ### 8. user-properties-form (`renderUserPropertiesForm`) — structured data collection
 
@@ -104,8 +104,8 @@ Fields come from `model.fields`, `model.properties`, or `model.items`. A field w
 `required`/`description` let a host wire `aria-required`/`aria-describedby`/`inputmode`.
 
 Descriptor: `{kind:'user-properties-form', data:{title, fields:[{key, type, label, knownValue, required, description}]}}`.
-- **Report back:** the default path (when `user_properties_forms` is configured) has the host call **`session.submitStructuredDataForm(info)`** (`session.js`). This `sanitizeJson`s the object and emits the socket event **`setFormLeadInfo`** — a fire-and-forget emit with no durable server-side read-back. An app can take a different, durable path instead. Skip configuring `user_properties_forms` entirely, and reach this same `user-properties-form` widget as one enum value of its own `show_widget` **client** tool (with `kaltura_genie_experiences` OFF). Render it into your own dedicated host UI. On submit, bridge the collected values into `request_vars`, so the brain itself can call a server-side **api** tool that persists them wherever you point it — see [../STRUCTURED-DATA-FORMS.md](../STRUCTURED-DATA-FORMS.md).
-- For the full picture, see [../STRUCTURED-DATA-FORMS.md](../STRUCTURED-DATA-FORMS.md) and [../EXTERNAL-API-INTEGRATIONS.md](../EXTERNAL-API-INTEGRATIONS.md). They cover configuration, why the agent treats a configured stage as mandatory, where `setFormLeadInfo` actually persists server-side, and how to deliver the collected data somewhere durable.
+- **Report back:** the default path (when `user_properties_forms` is configured) has the host call **`session.submitStructuredDataForm(info)`** (`session.js`). This `sanitizeJson`s the object and emits the socket event **`setFormLeadInfo`**. It is a fire-and-forget emit with no read-back. An app can take a different, durable path instead. Skip configuring `user_properties_forms` entirely, and reach this same `user-properties-form` widget as one enum value of its own `show_widget` **client** tool (with `kaltura_genie_experiences` OFF). Render it into your own dedicated host UI. On submit, bridge the collected values into `request_vars`, so the brain itself can call a server-side **api** tool that persists them wherever you point it — see [../STRUCTURED-DATA-FORMS.md](../STRUCTURED-DATA-FORMS.md).
+- For the full picture, see [../STRUCTURED-DATA-FORMS.md](../STRUCTURED-DATA-FORMS.md) and [../EXTERNAL-API-INTEGRATIONS.md](../EXTERNAL-API-INTEGRATIONS.md). They cover configuration, reading back what the viewer submitted, and how to deliver the collected data somewhere durable.
 
 ### 9. content-gallery (`renderContentGallery`) — image/content cards
 
@@ -120,12 +120,12 @@ Items come from `model.items`, `model.slides`, or `model.cards`. Each item:
 | `url` | `url`, `link`, `href` | via `safeUrl` |
 | `alt` | `alt`, `title`, `description` | ≤300 chars — the image's accessible name |
 
-Descriptor: `{kind:'content-gallery', data:{title, items:[{id, title, description, imageUrl, url, alt}]}}`. This is the **image-bearing** widget (a deck/gallery of cards with thumbnails). Note the backend key is `gallery_slides`, and the `video_gallery` capability summary says it permits both `video-gallery-tool` **and** `content-gallery-tool`.
+Descriptor: `{kind:'content-gallery', data:{title, items:[{id, title, description, imageUrl, url, alt}]}}`. This is the **image-bearing** widget (a deck/gallery of cards with thumbnails). The `video_gallery` capability permits both `video-gallery-tool` **and** `content-gallery-tool`.
 - **Multi-item only.** The renderer always wraps `items` in a CSS grid sized for several thumbnails (`.kgenui__gallery`, `repeat(auto-fill, minmax(120px,1fr))`). It does not branch on item count. So a single, image-less item stretches to the grid's full row width inside the widget's full-slot frame and reads as an oversized, awkward card. A `:has(> .kgenui__gallery > li:only-child)` CSS rule can give that case a flex/centered treatment instead. A `show_widget` tool description can also steer the brain toward `summary` for a single text-only point. Prefer `content-gallery` for 2+ image-bearing items, and `summary` for one.
 
 ### 10. graded-question (`renderGradedQuestion`) — a host-registered "10th runtime"
 
-Unlike sections 1–9, this is **not** one of the nine backend `unisphere-tool` runtimes — there is no brain tool that emits `graded-question-tool`. It's a comprehension-check widget you register yourself, via the exact "10th runtime" extensibility seam described in [authoring-and-consuming.md § Registration, fallback, and provenance](authoring-and-consuming.md#registration-fallback-and-provenance) (`.register()` / `cfg.renderers`): a prompt with either multiple-choice options or a free-text answer, an optional answer key, and an optional explanation, graded client-side.
+Unlike sections 1–9, this is **not** one of the nine built-in `unisphere-tool` runtimes — there is no brain tool that emits `graded-question-tool`. It's a comprehension-check widget you register yourself, via the exact "10th runtime" extensibility seam described in [authoring-and-consuming.md § Registration, fallback, and provenance](authoring-and-consuming.md#registration-fallback-and-provenance) (`.register()` / `cfg.renderers`): a prompt with either multiple-choice options or a free-text answer, an optional answer key, and an optional explanation, graded client-side.
 
 ```js
 import { ExperienceRenderer, renderGradedQuestion } from '@kaltura/intelligent-agents/experience/genui';

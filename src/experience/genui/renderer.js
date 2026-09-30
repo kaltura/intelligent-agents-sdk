@@ -4,21 +4,24 @@
  * framework-agnostic descriptor `{kind, data, runtime, _meta}` the host turns
  * into DOM. Zero-dep, no UI framework, never touches the DOM itself.
  *
- * DUAL-MODE (GenUI and client-side commands are client-build surfaces):
+ * DUAL-MODE:
  *   - LIVE: `start()` subscribes to `session.on('brainSegment')` and feeds an
  *     internal {@link SegmentAssembler}; completed widgets are dispatched +
- *     pushed to `mount(descriptor)`. (The live avatar runtime hardcodes
- *     `force_experience:'avatar_only'`, so the socket emits structured widgets
- *     RARELY — WIRE-PROTOCOL §7; this path tolerates zero widgets.)
+ *     pushed to `mount(descriptor)`. (The SDK joins the live avatar socket with
+ *     `force_experience:'avatar_only'`. Flashcards and summarization widgets are
+ *     not produced there. Widgets that come from the agent's tools still arrive
+ *     as tool segments when the agent has those tools or capabilities enabled.
+ *     Use the HTTP converse path for flashcards or summarization. This path
+ *     tolerates zero widgets.)
  *   - HEADLESS: `render(runtime, widget)` is called directly from a
- *     `Management.conversations.stream()` segment feed (the PRIMARY, reliable
- *     widget path). Same dispatch, same descriptor.
+ *     `Management.conversations.stream()` segment feed (the path that supports
+ *     every runtime). Same dispatch, same descriptor.
  *
  * HONESTY: `force_experience` is a HINT, not a guarantee — the renderer renders
  * WHATEVER `runtimeName` actually arrives. An unknown runtime yields a safe
  * `{kind:'unknown'}` fallback descriptor and fires `onUnhandled` — it NEVER
- * throws (the backend may add runtimes outside the nine first-class RUNTIMES;
- * those fall through here rather than being faked into a known kind).
+ * throws (runtimes outside the nine first-class RUNTIMES fall through here
+ * rather than being faked into a known kind).
  *
  * SECURITY: every default renderer routes untrusted LLM output through
  * `core/safety.js` (`safeText`/`safeUrl`) — no `innerHTML`, no raw href. A custom
@@ -47,12 +50,12 @@ export class ExperienceRenderer {
    * @param {Element} [cfg.target]  Alias for an Element `mount` (container to render widgets into).
    * @param {(action:string, payload:object)=>void} [cfg.onAction]  Forwarded to `mountWidget` when rendering into an Element (followup/play/open/submit intents).
    * @param {Record<string,(model:Record<string,unknown>,ctx?:object)=>{kind:string,data:object}>} [cfg.renderers]  Extra/override renderers (by normalized runtime).
-   * @param {boolean} [cfg.replace]  Ephemeral widgets re-render each turn — record only `last` (default false: accumulate). Also passed to `mountWidget` for Element mounts.
-   * @param {boolean} [cfg.clearOnTurnStart]  LIVE mode: on the session's `turnStart` event, discard the in-flight buffer and `clear()` accumulated/`last` descriptors (default `true`). Set `false` for cross-turn persistence.
+   * @param {boolean} [cfg.replace]  Ephemeral widgets re-render each turn — `rendered` holds only the latest descriptor (default false: accumulate). Also passed to `mountWidget` for Element mounts.
+   * @param {boolean} [cfg.clearOnTurnStart]  LIVE mode: on the session's `turnStart` event for a new turn (`isNewTurn`), discard the in-flight buffer and `clear()` accumulated/`last` descriptors (default `true`). Set `false` for cross-turn persistence.
    * @param {number} [cfg.maxRendered]  Maximum number of descriptors to keep in `rendered` (default 100). The oldest entry is dropped when the cap is exceeded.
    * @param {(info:{runtime:string,runtimeName:string,widget:object})=>void} [cfg.onUnhandled]  Called for an unknown runtime (after the safe fallback descriptor is produced).
-   * @param {{allow?:string[]}} [cfg.urlPolicy]  URL scheme allow-list passed to renderers (defense-in-depth alongside the server-side validator).
-   * @param {string|number} [cfg.partnerId]  Stamped into the `_meta` receipt AND used by the media renderers to build real Kaltura thumbnail/player-embed URLs from an entryId.
+   * @param {{allow?:string[]}} [cfg.urlPolicy]  URL scheme allow-list passed to renderers (defense-in-depth).
+   * @param {string|number} [cfg.partnerId]  Stamped into the `_meta` receipt AND used by the media renderers to build real Kaltura thumbnail/player-embed URLs from an entryId. Defaults to `session.partnerId` when a session is given.
    * @param {string|number} [cfg.uiConfId]  Optional Kaltura player uiConf id — lets `video-gallery` build a player-embed iframe URL for an entry.
    */
   constructor(cfg = {}) {
@@ -103,6 +106,8 @@ export class ExperienceRenderer {
    * (`flashcards-tool` and `flashcards` are the same key). Returns `this` for
    * chaining. Throws `bad_request` (BEFORE any use) on a bad name/fn.
    * @param {string} runtimeName @param {(model:Record<string,unknown>, ctx?:object)=>{kind:string,data:object}} fn
+   * @returns {this}
+   * @throws {KalturaError} `bad_request` when the name is empty or `fn` is not a function.
    */
   register(runtimeName, fn) {
     const runtime = normalizeRuntime(runtimeName);
@@ -181,7 +186,7 @@ export class ExperienceRenderer {
   /** The most recently rendered descriptor (or null). */
   get last() { return this._last; }
 
-  /** All accumulated descriptors (empty when `replace:true`). */
+  /** All accumulated descriptors, capped at `maxRendered`. With `replace:true`, only the latest one. */
   get rendered() { return this._rendered; }
 
   // ─────────────────────────── internals ───────────────────────────
@@ -225,7 +230,7 @@ export class ExperienceRenderer {
       _meta: meta({
         partnerId: this._partnerId,
         source: 'experience/genui',
-        scope: 'conversation (geniegpcid, entitlement ON)',
+        scope: 'conversation (entitlement ON)',
         // `known`: this instance has a renderer for it (a registered 10th runtime is known too).
         // `firstClass`: one of the nine built-in GenUI runtimes.
         known: this._registry.has(runtime),
@@ -251,7 +256,7 @@ export class ExperienceRenderer {
       _meta: meta({
         partnerId: this._partnerId,
         source: 'experience/genui',
-        scope: 'conversation (geniegpcid, entitlement ON)',
+        scope: 'conversation (entitlement ON)',
         known: this._registry.has(info.runtime),
         firstClass: RUNTIMES.includes(info.runtime),
       }),

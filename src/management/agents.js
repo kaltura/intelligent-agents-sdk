@@ -1,8 +1,7 @@
 /**
  * Agents — the deployable unit binding an intellect (brain) to avatars
  * (face+voice). Lives on the Agentic host; needs an admin token
- * (`disableentitlement`). Source of truth: API-REFERENCE §2.5 / Management
- * Operations.
+ * (`disableentitlement`). Reference: docs/api/management-operations.md.
  */
 import { paginate } from './paginate.js';
 import { uuidv4 } from '../core/ids.js';
@@ -12,8 +11,9 @@ import { KalturaError } from '../core/errors.js';
  * Admin-tag patterns that mark a PRODUCTION / keep resource. `agents.delete`
  * refuses to delete an agent carrying any of these unless `allowProtected:true`
  * is passed — the guardrail against an automated cleanup-by-tag sweep nuking a
- * real, in-use agent. Matches case-insensitively, as a substring (so `prod`
- * catches `prod`/`production`/`prod-eu`). Frozen: `agents.delete` always
+ * real, in-use agent. Matches case-insensitively: `prod` as a whole tag word
+ * (delimited by `-` or `_`, so `prod` and `prod-eu` match), `production`,
+ * `keep`, `do-not-delete` and `live`. Frozen: `agents.delete` always
  * matches against this exact list, so there is no way to add your own
  * patterns to it. Write your own tag check before calling `delete` if you
  * need extra protected markers.
@@ -70,8 +70,8 @@ export class Agents {
   }
 
   /**
-   * Create an agent. WRITE — NOT idempotent (auto-sends an Idempotency-Key for
-   * hygiene; the server ignores it today). `intellect.id` is the intellect's
+   * Create an agent. WRITE — NOT idempotent (the SDK sends an Idempotency-Key
+   * automatically, but creation is not idempotent). `intellect.id` is the intellect's
    * configId — no separate genieId is needed (the request body's `intellect`
    * only takes `intellectType`+`id`).
    * @param {object} body {displayName,intellect:{intellectType:'genie',id},avatarIds?,adminTags?,maxConversationLength?,widgetConfig?,embedConfig?}
@@ -98,8 +98,9 @@ export class Agents {
    * ({@link PROTECTED_TAGS} — anything matching `prod`/`keep`/`do-not-delete`/
    * `live`), the delete is REFUSED unless you ALSO pass `{ allowProtected: true }`.
    * This is the guardrail against a blind cleanup-by-tag sweep nuking a real,
-   * in-use agent. Pass `confirm.skipProtectedCheck:true` only when you already
-   * hold the tags and don't want the extra `agent/get` round-trip.
+   * in-use agent. The check reads the agent with `agent/get`. If that lookup
+   * fails, the delete proceeds. `confirm.skipProtectedCheck:true` skips the
+   * guard and the lookup entirely.
    * {@link PROTECTED_TAGS} is frozen and not caller-extendable. Run your own
    * tag check first if you need extra protected markers.
    * @param {string} agentId @param {string} ks

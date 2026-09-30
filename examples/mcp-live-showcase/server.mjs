@@ -29,6 +29,9 @@
  * Run: node examples/mcp-live-showcase/server.mjs [--port 8877]
  * Expose publicly for a live backend to reach it, e.g.:
  *   cloudflared tunnel --url http://localhost:8877
+ * If `~/.cloudflared/config.yml` exists, cloudflared applies it to quick tunnels
+ * and every request returns 404. Pass an empty config file to ignore it:
+ *   : > /tmp/empty.yml && cloudflared tunnel --config /tmp/empty.yml --url http://127.0.0.1:8877
  */
 import http from 'node:http';
 import crypto from 'node:crypto';

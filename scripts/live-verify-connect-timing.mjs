@@ -24,19 +24,18 @@
  *   7. no transcript/speechChunk payload ever contains the silent-opening text
  * and records min/median/max of every timing relative to connect().
  *
- * Baseline before this pattern (same QA backend, fake mic, hand-timed with a
- * speak() nudge after connect): connect() 2.2–3.6 s, connect-resolved → first
- * words 1.75–1.85 s. The markdown artifact prints this baseline next to the
+ * Baseline without this pattern (fake mic, hand-timed with a speak() nudge
+ * after connect): connect() 2.2–3.6 s, connect-resolved → first words 1.75–1.85 s. The markdown artifact prints this baseline next to the
  * measured numbers so a regression is visible without opening the JSON.
  *
  * KPIs. After the runs, the median of each startup KPI over the successful runs
  * is checked against a budget. A miss fails the script like any other check, so
  * a startup regression fails the CI job instead of hiding in a table:
  *
- *   connect() resolved                         ≤ 2500 ms   (2200–3600 before the concurrent connect path)
+ *   connect() resolved                         ≤ 2500 ms
  *   first video frame presented (rVFC)         ≤ 2500 ms
  *   first audio (remote audio track unmuted)   ≤ 2500 ms
- *   first agent words after connect() resolved ≤ 1850 ms   (1750–1850 with a manual speak() nudge)
+ *   first agent words after connect() resolved ≤ 1850 ms
  *   sound heard (AnalyserNode)                 ≤ 5000 ms
  *
  * Budgets are ms from connect() start (first words: from connect() resolved).
@@ -204,7 +203,7 @@ const hintsOf = (/** @type {number} */ i) => (HINTS === 'ab' ? (i % 2 === 0 ? 'o
 const report = new Report({ runId, target: target.name, browser: choice.browser, headed: choice.headed || choice.browser === 'chrome', setup: SETUP });
 report.data.runs = [];
 const kaltura = management(target);
-const admin = await kaltura.sessions.createAdminToken();
+const admin = await kaltura.sessions.createAdminToken({ userId: 'sdk-live-verify' });
 report.note('setup', SETUP);
 
 /**

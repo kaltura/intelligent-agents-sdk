@@ -3,10 +3,10 @@
  * Real-browser correctness check for the noise-suppressor's actual DSP math
  * (`src/experience/noise-suppressor.js`'s `KalturaNoiseGateProcessor` AudioWorklet).
  *
- * Every existing test of this plugin (`test/unit/noise-suppressor.test.js`)
- * stubs `AudioWorkletNode` and only proves wiring — the gate math itself
- * (`AudioWorkletGlobalScope`, `registerProcessor`) has never executed outside
- * a real browser before this script. This drives it for real: builds a
+ * The unit test (`test/unit/noise-suppressor.test.js`) stubs `AudioWorkletNode`
+ * and only proves wiring. The gate math itself (`AudioWorkletGlobalScope`,
+ * `registerProcessor`) runs only in a real browser. This script drives it for
+ * real: builds a
  * synthetic input stream with known loud/quiet segments, runs it through the
  * real, unmocked `createNoiseSuppressor()`, and asserts the gate actually
  * passes loud audio and attenuates quiet audio.

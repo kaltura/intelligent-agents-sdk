@@ -78,11 +78,13 @@ The scripts built on `live-verify-kickoff-shared.mjs` (`live-verify-kickoff.mjs`
 | `live-verify-context-fields.mjs` | `contextId`/`contextType` actually reach the prompt at runtime |
 | `live-verify-request-vars.mjs` | Every documented `request_vars` behavior over `converseOnce` |
 | `live-verify-site-nav.mjs` | The `go_to` contract end to end |
+| `live-verify-mcp.mjs` | `setMcpServers`/`describe` end to end against a CI-hosted reference MCP server, exposed through a tunnel. Takes `--target` and `--phase=provision\|verify\|cleanup`. See the script header |
+| `live-verify-session-types.mjs` | What each token kind can reach: own vs other users' threads, OVP reach, no-userId and widget shared identity, agent persona, per-user `appInit`, `revoke()`. `--skip-revoke` skips the revoke check |
 | `live-verify-set-forced-language.mjs`, `live-verify-force-language.mjs` | A forced language changes the reply, not just storage |
 | `live-verify-capabilities.mjs` | Capability resolution plus the Lifecycle domain |
 | `live-verify-agents.mjs`, `live-verify-avatars.mjs`, `live-verify-catalog.mjs`, `live-verify-tools.mjs`, `live-verify-skills.mjs`, `live-verify-knowledge.mjs`, `live-verify-intellects-conversations.mjs`, `live-verify-threads-messages-feedback.mjs`, `live-verify-conversation-avatar-surface.mjs` | The write path of one management resource each |
 
-Every one of these has an `npm run live-verify:<name>` script except `live-verify.mjs`. Four have no npm script and no CI job. Run them with `node scripts/<name>.mjs`: `live-verify-intellect-config.mjs`, `live-verify-knowledge-kms.mjs`, `live-verify-feedback-flow.mjs`, `live-check-feedback-unfiltered.mjs`. One more has an npm script but no CI job either: `live-verify-force-language.mjs`, run by hand with `npm run live-verify:force-language`.
+Every one of these has an `npm run live-verify:<name>` script except `live-verify.mjs` and `live-verify-mcp.mjs` (CI runs both with `node`). Four have no npm script and no CI job. Run them with `node scripts/<name>.mjs`: `live-verify-intellect-config.mjs`, `live-verify-knowledge-kms.mjs`, `live-verify-feedback-flow.mjs`, `live-check-feedback-unfiltered.mjs`. One more has an npm script but no CI job either: `live-verify-force-language.mjs`, run by hand with `npm run live-verify:force-language`.
 
 Read the header comment of a script before running it. Each one states what it asserts and why that coverage exists.
 
@@ -90,9 +92,9 @@ Three helper modules are not scripts and are never run directly: `live-verify-ki
 
 ### Flags
 
-Only `live-verify-kickoff.mjs`, `live-verify-connect-timing.mjs` and `live-verify-opening-phrase.mjs` take CLI flags (they share `live-verify-kickoff-shared.mjs`). Every other script is configured by env vars alone.
+Four scripts take the CLI flags below: `live-verify-kickoff.mjs`, `live-verify-connect-timing.mjs`, `live-verify-opening-phrase.mjs` and `live-verify-session-types.mjs` (they share `live-verify-kickoff-shared.mjs`). `live-verify-mcp.mjs` takes its own flags, listed in its header. Every other script is configured by env vars alone.
 
-Shared by all three:
+Shared by all four (`live-verify-session-types.mjs` drives no browser, so it ignores `--browser`, `--headed` and `--kickoff`):
 
 | Flag | Effect |
 |---|---|
@@ -150,7 +152,7 @@ Three entry points are easy to confuse. They do different things.
 | Workflow | Jobs |
 |---|---|
 | `ci.yml` | Offline tests with coverage, the 3-engine `avatar-media` matrix, the 3-engine `noise-suppressor` matrix, the Constitution verifier, lint/typecheck/circular, the docs gate, semgrep |
-| `live-verify.yml` | One job per live script. Runs on manual dispatch, on a PR labeled `run-live-verify`, and in the merge queue. Only `live-verify-kickoff` also runs on a weekly schedule |
+| `live-verify.yml` | One job per CI-run live script. Runs on manual dispatch, on a PR labeled `run-live-verify` (only jobs whose paths changed), and in the merge queue (same path filter). A nightly schedule (03:00 UTC) runs every job. A weekly schedule (Monday 06:00 UTC) is the startup-KPI trend run and also triggers `live-verify-kickoff` |
 | `release.yml` | `npm run verify:distribution -- <tag>`, which checks the published jsDelivr tree matches the tag |
 
 The four local-only scripts, plus `live-verify-force-language.mjs`, have no CI job. Run them by hand when you touch their surface.

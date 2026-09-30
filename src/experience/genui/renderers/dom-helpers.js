@@ -31,7 +31,7 @@ export function cssToken(s) {
   return t.slice(start, end) || 'x';
 }
 
-/** A safe `<table>` from `{title?, headers, rows}` — used by the markdown renderer for a GFM table. @param {Element} root @param {{title?:string, headers?:unknown[], rows?:unknown[][]}} data @param {boolean} [noHead] */
+/** A safe `<table>` from `{title?, headers, rows}` — used by the markdown renderer for a GFM table. @param {Element} root @param {{title?:string, headers?:unknown[], rows?:unknown[][]}} data @param {boolean} [noHead] Skip the `<thead>`. */
 export function tableEl(root, data, noHead) {
   const title = safeText(data && data.title, 300);
   if (title) root.appendChild(el('h3', 'kgenui__title', title));

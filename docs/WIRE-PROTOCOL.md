@@ -6,8 +6,8 @@ This is the deep reference behind [ARCHITECTURE.md](ARCHITECTURE.md) → "Video 
 
 | Doc | Covers |
 |---|---|
-| [wire-protocol/connection-basics.md](wire-protocol/connection-basics.md) | Provenance/components, channels at a glance, the Socket.IO connection, the connect sequence (state-machine order) |
-| [wire-protocol/events-catalog.md](wire-protocol/events-catalog.md) | The full Socket.IO events catalog: client→server emits, server→client events, the `agent_raw_text.delta` brain stream, `speechId`/barge-in |
-| [wire-protocol/audio-channels.md](wire-protocol/audio-channels.md) | The ASR uplink (pc1) and STV downlink (pc2) WebRTC peer connections, ICE config, WHEP signaling |
+| [wire-protocol/connection-basics.md](wire-protocol/connection-basics.md) | Channels at a glance, the Socket.IO connection, and a pointer to the connect sequence |
+| [wire-protocol/events-catalog.md](wire-protocol/events-catalog.md) | The full Socket.IO events catalog: client→server emits, server→client events, the `agent_raw_text.delta` brain stream, and `speechId` grouping |
+| [wire-protocol/audio-channels.md](wire-protocol/audio-channels.md) | The ASR uplink (pc1) and STV downlink (pc2) WebRTC peer connections, TURN and ICE options, WHEP signaling |
 | [wire-protocol/client-configuration.md](wire-protocol/client-configuration.md) | `clientConfiguration` fields and structured experiences (`force_experience` + `unisphere-tool`) |
 | [wire-protocol/end-to-end-turn.md](wire-protocol/end-to-end-turn.md) | A full turn trace, event by event, plus how to reproduce/re-capture your own |

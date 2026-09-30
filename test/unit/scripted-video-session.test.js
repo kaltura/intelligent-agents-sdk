@@ -50,7 +50,7 @@ test('connect() negotiates WHEP, routes both tracks to videoEl (one srcObject, o
   const videoEl = new FakeVideoEl();
   const v = view({ videoEl, fetch: f });
   const states = [];
-  v.on('stateChanged', (e) => states.push(e.state));
+  v.on('stateChange', (e) => states.push(e.state));
 
   await v.connect();
 
@@ -115,6 +115,28 @@ test('connect() cannot be called twice from a non-idle state', async () => {
   const v = view({ fetch: f });
   await v.connect();
   await assert.rejects(() => v.connect(), (e) => e.code === 'invalid_state');
+});
+
+test('connect() runs again on the same instance after disconnect(), and from error after disconnect()', async () => {
+  const f = fakeFetch([{ match: '/whep/abc123', respond: () => ({ status: 201, body: 'v=0\r\nfake-answer\r\n' }) }]);
+  const v = view({ fetch: f });
+  await v.connect();
+  v.disconnect();
+  assert.equal(v.state, 'disconnected');
+  await v.connect();
+  assert.equal(v.state, 'connected');
+  assert.equal(f.calls.length, 2, 'a second WHEP negotiation happened');
+  await assert.rejects(() => v.connect(), (e) => e.code === 'invalid_state' && /disconnect\(\) first/.test(e.detail));
+});
+
+test('connect() from error needs disconnect() first', async () => {
+  const f = fakeFetch([{ match: '/whep/abc123', respond: () => ({ status: 404, body: '' }) }]);
+  const v = view({ fetch: f });
+  await assert.rejects(() => v.connect(), (e) => e.code === 'whep_failed');
+  assert.equal(v.state, 'error');
+  await assert.rejects(() => v.connect(), (e) => e.code === 'invalid_state');
+  v.disconnect();
+  assert.equal(v.state, 'disconnected');
 });
 
 test('disconnect() DELETEs the resolved WHEP Location, tears down the pc, stops both tracks and clears srcObject', async () => {

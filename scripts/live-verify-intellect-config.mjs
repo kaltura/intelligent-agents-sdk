@@ -2,8 +2,7 @@
 /**
  * Live IntellectConfig verification — real Kaltura API, no fakes, no mocks.
  *
- * Exercises every intellectConfig setter, which had zero live coverage
- * (only `patch` was exercised elsewhere). All of it runs against ONE scratch
+ * Exercises every intellectConfig setter. All of it runs against ONE scratch
  * intellect, created fresh and deleted at the end:
  *
  *   1  intellects.add                          — scratch intellect to configure
@@ -22,9 +21,9 @@
  *  11  setMetadata({name, description, tags})  — row metadata, no config.* write
  *  12  setKnowledgeIds([])                     — empty list, no real Knowledge record needed
  *  13  setMcpServers({...})                    — one obviously-fake, non-resolvable http(s)
- *      entry, schema-valid only. mcp_servers is validated for shape client-side
- *      and stored server-side as-is; nothing here makes the backend dial out to
- *      it (the intellect never runs a live conversation turn in this script).
+ *      entry, schema-valid only. mcp_servers is validated for shape client-side.
+ *      Nothing here makes the backend dial out to it (the intellect never runs
+ *      a live conversation turn in this script).
  *      Cleared back to {} at the end of the block.
  *  14  describe                                — read-only, asserts the editable
  *      surface reflects every write above
@@ -84,7 +83,7 @@ let admin;
 let configId;
 
 try {
-  admin = await kaltura.sessions.createAdminToken();
+  admin = await kaltura.sessions.createAdminToken({ userId: 'sdk-live-verify' });
   record('admin-token-mint', true, { secondsRemaining: admin.secondsRemaining() });
 
   // 1: intellects.add — scratch intellect.

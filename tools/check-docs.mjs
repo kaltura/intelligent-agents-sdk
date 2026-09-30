@@ -7,10 +7,8 @@
  *
  * Zero deps beyond node: builtins (fs, path, child_process, test).
  *
- * This copy keeps only the SDK-scoped checks (secrets/IP leakage, GFM
- * hygiene, cross-doc links, SDK invariants) — no CLI-tool-specific checks
- * (payload/tool-annotation/JSON-injection tests), since this repo ships an
- * SDK, not a CLI toolkit.
+ * Runs the SDK-scoped checks: secrets/IP leakage, GFM hygiene, cross-doc
+ * links, SDK invariants.
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';

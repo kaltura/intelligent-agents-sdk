@@ -2,9 +2,8 @@
 /**
  * Live Knowledge verification — real Kaltura API, no fakes, no mocks.
  *
- * `live-verify-capabilities.mjs` already covers `knowledge.list` (READ) and
- * lifecycle CRUD. This script covers the write path that still had zero live
- * coverage:
+ * `live-verify-capabilities.mjs` covers `knowledge.list` (READ) and
+ * lifecycle CRUD. This script covers the write path:
  *
  *   1  knowledge.addRecord    — create a scratch record (createRecord alias)
  *   2  knowledge.getRecord    — visible, right shape
@@ -66,7 +65,7 @@ let admin;
 let recordId;
 
 try {
-  admin = await kaltura.sessions.createAdminToken();
+  admin = await kaltura.sessions.createAdminToken({ userId: 'sdk-live-verify' });
   record('admin-token-mint', true, { secondsRemaining: admin.secondsRemaining() });
 
   // 1: knowledge.addRecord

@@ -5,8 +5,7 @@
 # branch) owns the real workflow; release.yml dispatches it with
 # `--ref gh-pages-src`, so GitHub always runs *that* branch's copy, checked
 # out explicitly in its own first step. This file just needs to exist here,
-# with matching triggers, so the dispatch resolves at all (issue: release.yml
-# was 404ing on this step because generate-docs.yml wasn't on main).
+# with matching triggers, so the dispatch resolves at all.
 #
 # Keep this in sync with intelligent-agents-sdk (gh-pages-src)'s
 # .github/workflows/generate-docs.yml if its triggers ever change.
