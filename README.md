@@ -22,7 +22,7 @@ No build step and no npm registry publish (`"private": true`, no `publishConfig`
 
 **Why this SDK:**
 
-- **You own the source, no black box.** Raw ESM in `src/` — read it line by line. No build step, no bundler-only `node_modules`, and no install step in the browser: import straight from a jsDelivr CDN URL pinned to a git tag.
+- **You own the source, no black box.** Raw ESM in `src/`. Read it line by line. No build step, no bundler-only `node_modules`, and no install step in the browser: import straight from a jsDelivr CDN URL pinned to a git tag.
 - **Zero runtime dependencies** — no transitive supply-chain surface to audit.
 - **Voice/visual cloning is self-serve**, not a support ticket — `catalog.importVoiceFromElevenLabs`/`importVoiceFromCartesia`, `catalog.createVisual`.
 - **Security designed in, not bolted on** — pre-redacted audit events, short-lived tokens, and a NIST 800-53 control matrix, built for enterprise, HIPAA, and HITRUST deployments from the start. Summary in [Security posture](#security-posture) below, full matrix in [SECURITY.md](SECURITY.md).
@@ -104,7 +104,7 @@ jsDelivr serves any file straight from a pushed tag by its real repo path. It ha
 </script>
 ```
 
-`@latest` resolves to the newest tag, so this URL always matches the current README without an editing pass on every release. It's **not cached the same way** as a tagged path, though — jsDelivr re-checks it periodically, so what it serves can change without warning. For anything you ship, pin to a real tag instead (`@v1.25.0`, or whichever release you're on) — jsDelivr caches a tagged path forever, so a pin is both stable and fast:
+`@latest` resolves to the newest tag, so this URL always matches the current README without an editing pass on every release. It's **not cached the same way** as a tagged path, though. jsDelivr re-checks it periodically, so what it serves can change without warning. For anything you ship, pin to a real tag instead (`@v1.25.0`, or whichever release you're on). jsDelivr caches a tagged path forever, so a pin is both stable and fast:
 
 ```html
 <script type="module">
@@ -187,7 +187,7 @@ import { Management } from '@kaltura/intelligent-agents/management';
 const mgmt = new Management({ partnerId, adminSecret });
 
 // 1. provision a complete agent from a one-line brief
-const admin = await mgmt.sessions.createAdminToken({ userId: 'admin@example.com' });   // admin KS — server-side only
+const admin = await mgmt.sessions.createAdminToken({ userId: 'admin@example.com' });   // admin KS, server-side only
 const { agentId, configId, widgetId } = await mgmt.provision({
   brief: 'A helpful support agent for a video platform',
   ks: admin.ks,
@@ -219,7 +219,7 @@ Conversation or agent token: [which one to use](docs/api/authentication.md#conve
 |---|---|---|
 | `sessions.createConversationToken({ configId, agentId?, userId?, sessionType? })` | User session (KS type 0) | The config's persona. `agentId` labels the threads. Start from a `configId` |
 | `sessions.createAgentToken({ agentId, configId?, userId?, sessionType? })` | User session (KS type 0) | The agent. Start from an `agentId` |
-| `sessions.createWidgetToken({ widgetId })` | Widget session, no secret needed | The widget's agent. **One shared identity for every visitor** |
+| `sessions.createWidgetToken({ widgetId })` | Widget session, no secret needed | The widget's agent. Reach: [SECURITY.md § Session type](SECURITY.md#session-type) |
 | `sessions.createAdminToken({ userId })` | Admin session (KS type 2) | Management calls. Server-side only. `userId` is required |
 
 Pass a per-user `userId` to every conversation or agent token. A token without one is a single identity shared by every holder. `sessionType: 'admin'` is the explicit opt-out to KS type 2. With a widget token, anyone who has a `threadId` can continue that thread, so store each `threadId` per user on your server. When users must stay separate, mint `createAgentToken({ agentId, userId })` on your server, call `appInit` with it and send the returned KS to the browser. What each token can reach: [SECURITY.md § Session type](SECURITY.md#session-type).
@@ -447,9 +447,9 @@ Build the control as click-to-toggle, not press-and-hold: it's more usable for l
 
 Both session classes watch for a brain that goes quiet instead of answering, and for one that loops instead of narrating. Only `KalturaAvatarSession` can recover from a hard loop, since it has a socket to cold-reconnect through. See [ARCHITECTURE-REFERENCE.md](docs/architecture-reference/resilience-and-failure-handling.md#resilience--failure-handling) for the full failure-mode matrix.
 
-- **Brain-stall watchdog** (`brainStallMs`, default on, `KalturaAvatarSession` + `KalturaChatSession`) — emits `brainStalled` (`{afterMs, count}`), repeating for as long as nothing perceivable (spoken/avatar content or a GenUI widget) follows a turn. On the chat transport, a bare `keepalive` segment does not count as perceivable output either.
+- **Brain-stall watchdog** (`brainStallMs`, default on, `KalturaAvatarSession` + `KalturaChatSession`). It emits `brainStalled` (`{afterMs, count}`), repeating for as long as nothing perceivable (spoken/avatar content or a GenUI widget) follows a turn. On the chat transport, a bare `keepalive` segment does not count as perceivable output either.
 - **Dead-air masking** (`responsePending`/`responseSettled`, both transports) — `responsePending` (`{}`) fires the moment a turn starts awaiting the brain's first perceivable output (spoken/avatar/GenUI content), and again when the server acknowledges a turn it started itself (its first think delta), so a `kickoff` reply shows "thinking" before the first word. `responseSettled` (`{}`) fires once that output arrives, the turn ends, an interruption occurs, or the session tears down. Use this pair to show/hide a "thinking…" affordance instead of leaving the avatar's face frozen during the gap. See `examples/browser-experience.html` for a working example.
-- **Tool-call spiral circuit breaker**: a guard against a brain that re-issues the same client command instead of narrating. Soft (`toolSpiralLimit`, default 10, per turn, on both `KalturaAvatarSession` and `KalturaChatSession`): emits `toolSpiralDetected`. This is signal only and does NOT call `interrupt()` (a mid-turn barge-in truncates the turn's own narration with no recovery, see `docs/CLIENT-COMMANDS.md`'s "Tool spirals starve the voice"). Hard (`hardToolSpiralLimit`, default `toolSpiralLimit * 3`, session-scoped, immune to turn-boundary resets, `KalturaAvatarSession` only; the chat transport has no socket to reconnect through): emits `toolSpiralRecovering` (`{count, limit, lastTurnText}`) and forces a cold reconnect — a brand-new socket that replays `threadId` so brain memory continues.
+- **Tool-call spiral circuit breaker**: a guard against a brain that re-issues the same client command instead of narrating. Soft (`toolSpiralLimit`, default 10, per turn, on both `KalturaAvatarSession` and `KalturaChatSession`): emits `toolSpiralDetected`. This is signal only and does NOT call `interrupt()` (a mid-turn barge-in truncates the turn's own narration with no recovery, see `docs/CLIENT-COMMANDS.md`'s "Tool spirals starve the voice"). Hard (`hardToolSpiralLimit`, default `toolSpiralLimit * 3`, session-scoped, immune to turn-boundary resets, `KalturaAvatarSession` only; the chat transport has no socket to reconnect through): emits `toolSpiralRecovering` (`{count, limit, lastTurnText}`) and forces a cold reconnect. It opens a brand-new socket that replays `threadId` so brain memory continues.
 - **Spiral recovery auto-resend** (`recoverFromSpiral`, default `true`) — a hard-spiral cold reconnect restores connectivity but would otherwise abandon the turn that triggered it (the user's question just silently dropped). With the default on, once the reconnect succeeds the SDK automatically resends that turn's text once, prefixed with the same `SPIRAL_RECOVERY_PREFIX` instruction used on the headless path (`Conversations#send({recoverFromSpiral:true})` — see [Management](#management) above), still passed through your `onBeforeSend` guardrail, and emits `spiralRecovered` (`{text}`, the original un-prefixed text — e.g. show "Let me get that for you" UI). Set `recoverFromSpiral: false` to opt out of the auto-resend and handle it yourself — `toolSpiralRecovering`'s `lastTurnText` still tells you what was abandoned.
 
 ```js
@@ -537,7 +537,7 @@ btnFeedbackDismiss.onclick = () => analytics.buttonClicked({ buttonType: 'Open',
 
 `KavaAnalytics` (`./experience/analytics`, its own subpath so apps that don't report analytics never load it) reports KAVA (Kaltura Video Analytics) events to `https://analytics.kaltura.com/api_v3/index.php` (`service=analytics&action=trackEvent`). It implements ONLY the 10000-range **Application Event** family: `pageLoad` (10003) and `buttonClicked` (10002), for interactions the server has zero visibility into — a page/view landing, a UI-only click, a contact-form submit/skip, a widget dismiss. It's WRITE, best-effort, and NOT idempotent (each call records a new row; there is no dedup contract). It's fire-and-forget by design, so callers don't need to await it for correctness.
 
-**Deliberately does NOT implement the 80000-range "Immersive Agents" events** (`callStarted`/`callEnded`/`messageResponse`/`messageFeedbackSent`) — there is no code path in this module that can send them.
+**Deliberately does NOT implement the 80000-range "Immersive Agents" events** (`callStarted`/`callEnded`/`messageResponse`/`messageFeedbackSent`). There is no code path in this module that can send them.
 
 Transport: prefers `navigator.sendBeacon` (survives page-unload); falls back to an injectable `fetch` with `keepalive:true` when unavailable or when the beacon queue is full. Never reads a response body. `enabled: false` no-ops every call without touching the network — use for offline/mock test runs.
 
@@ -686,7 +686,7 @@ session.onToolCall('navigate_to_slide', ({ slide_num }) => deck.goTo(slide_num))
 const { toolCalls } = await mgmt.converseOnce(configId, 'tell me about pricing');
 ```
 
-`waitForResponse` controls whether the model's turn blocks on a real client-supplied result — **omitting it is not the same as `false`**, so pass it explicitly. Fire-and-forget tools (`waitForResponse:false`) have no response channel back to the model at all, so fold any "call once, then narrate" guidance directly into the tool's `description` rather than relying on a fixed success message.
+`waitForResponse` controls whether the model's turn blocks on a real client-supplied result. **Omitting it is not the same as `false`**, so pass it explicitly. Fire-and-forget tools (`waitForResponse:false`) have no response channel back to the model at all, so fold any "call once, then narrate" guidance directly into the tool's `description` rather than relying on a fixed success message.
 
 ### Native client tools with a real wire ACK
 
@@ -708,7 +708,7 @@ session.onToolCall('ask_user_to_pick_a_slide', async (call) => {
 });
 ```
 
-`waitForResponse:false` never populates `call.toolMetadata` with an id to ACK against — only register `respondToTool`/`onToolCall` ACK logic for tools you built with `waitForResponse:true`. The `respondToTool` return values are in the [events catalog](docs/wire-protocol/events-catalog.md#the-wait_for_response-ack--one-wire-contract-two-transports). This ACK is a live-socket operation only — there is no headless (`Management`) equivalent.
+`waitForResponse:false` never populates `call.toolMetadata` with an id to ACK against. Only register `respondToTool`/`onToolCall` ACK logic for tools you built with `waitForResponse:true`. The `respondToTool` return values are in the [events catalog](docs/wire-protocol/events-catalog.md#the-wait_for_response-ack--one-wire-contract-two-transports). This ACK is a live-socket operation only. There is no headless (`Management`) equivalent.
 
 ### Handler results (local only, unless `waitForResponse:true`)
 
@@ -929,7 +929,7 @@ await session.connect();
 - **`videoEl` must be `session.videoEl`** — the session's own read-only getter for the element its WHEP downlink actually assigns `srcObject` to. Passing a second, different reference throws a `KalturaError`, catching a stale/duplicated element before it silently keys the wrong stream.
 - **Returned unwrapped, zero shadow API** — the returned `player` is the exact instance `ChromaKeyVideo` constructed, with no proxy or wrapping. It's a standard `EventTarget` — listen on `player` directly via `addEventListener` for its own events (e.g. `chroma-key-video`'s `'started'`/`'backend'`/`'error'`) — `attachChromaKeyAvatar()` never re-emits them onto `session`.
 - **Auto-cleanup** — `player.destroy()` is called exactly once, on the session's `'ended'` event, any FATAL `'error'` (`capacity_unavailable`/`tier_exceeded`/`bad_request`/`peer_removed`/ `unsupported_client`), or the session reaching its `'disconnected'` state — which is what `session.disconnect()`/`session.stop()` (the human-in-the-loop kill switch, e.g. a "leave call" button) triggers; that path never emits `'ended'` on its own. A transient/recoverable error (e.g. a socket hiccup the session itself reconnects from) does NOT destroy the player. Checks the player's own `isDestroyed` flag first, so an integrator who already called `player.destroy()` themselves never gets a second call, and all three teardown paths are safe to fire together or in any order.
-- **Idempotent, no double-wiring** — a second `attachChromaKeyAvatar()` call against a session that already has a live compositor logs `console.warn` and returns the EXISTING instance instead of constructing (and WebGL-context-leaking) a second one. Never throws for this. If you destroyed the player yourself with `player.destroy()`, the next `attachChromaKeyAvatar()` call for that session builds a new player without a warning.
+- **Idempotent, no double-wiring.** A second `attachChromaKeyAvatar()` call against a session that already has a live compositor logs `console.warn` and returns the EXISTING instance instead of constructing (and WebGL-context-leaking) a second one. Never throws for this. If you destroyed the player yourself with `player.destroy()`, the next `attachChromaKeyAvatar()` call for that session builds a new player without a warning.
 - **No reconnect ceremony** — a WHEP reconnect swaps the new tracks into the same stream already bound to `videoEl`; `srcObject` is never reassigned, so the compositor keeps reading frames from the element it was constructed against and no re-`attachChromaKeyAvatar()` call is needed.
 
 **Non-goals:** this plugin does not reimplement chroma-keying, matting, backend fallback, or WebGL context-loss recovery — that's entirely `chroma-key-video`'s (or your chosen library's) job. If your app keys a URL-sourced clip with `chroma-key-video` directly, bypassing this plugin entirely, running that URL through `safeUrl()` first is still your obligation (this plugin never accepts or fetches a URL, only the session's own live video element).
@@ -1062,7 +1062,7 @@ npm run test:e2e          # full connect machine (fake socket + fake RTCPeerConn
 npm run test:evals        # SDK event model vs. golden captured session
 ```
 
-Fakes live in `test/fakes/` — `socket.js`, `rtc.js`, `fetch.js`, `avatar-session.js`. Inject them in your own tests:
+Fakes live in `test/fakes/`: `socket.js`, `rtc.js`, `fetch.js`, `avatar-session.js`. Inject them in your own tests:
 
 ```js
 import { FakeSocket } from '@kaltura/intelligent-agents/test/fakes/socket.js';
@@ -1216,7 +1216,7 @@ view.disconnect();
 
 `connect()` runs from the `idle` or `disconnected` state, so the same instance can reconnect after `disconnect()`. The session emits `stateChange` (`{state}`) on every state change.
 
-`create` authenticates with your own **admin KS** (`mgmt.sessions.createAdminToken({ userId })`); every call after it (`initClient`/`say`/`interrupt`/`keepAlive`/`end`) authenticates with the **session's own Bearer token** instead — `create()`'s return value is a receipt (`{sessionId, token, isExpired(), secondsRemaining()}`), pass it straight to the other methods rather than re-deriving a KS. `say()` sends pre-rendered speech audio. It is the only way to make the avatar speak. The SDK has no text-to-speech call. See [API-REFERENCE.md § Scripted-Video (STV-only) Sessions](docs/api/scripted-video.md) for the full auth/lifecycle table, and `examples/scripted-video-session.mjs` + `.html` for a complete runnable server+browser pair (including a stand-in for your real TTS call).
+`create` authenticates with your own **admin KS** (`mgmt.sessions.createAdminToken({ userId })`); every call after it (`initClient`/`say`/`interrupt`/`keepAlive`/`end`) authenticates with the **session's own Bearer token** instead. `create()`'s return value is a receipt (`{sessionId, token, isExpired(), secondsRemaining()}`), pass it straight to the other methods rather than re-deriving a KS. `say()` sends pre-rendered speech audio. It is the only way to make the avatar speak. The SDK has no text-to-speech call. See [API-REFERENCE.md § Scripted-Video (STV-only) Sessions](docs/api/scripted-video.md) for the full auth/lifecycle table, and `examples/scripted-video-session.mjs` + `.html` for a complete runnable server+browser pair (including a stand-in for your real TTS call).
 
 ---
 

@@ -8,7 +8,7 @@ New to the SDK itself? Read [GETTING-STARTED.md](GETTING-STARTED.md) first to se
 
 Read [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) — it applies to every interaction in this repo (issues, PRs, reviews).
 
-Read [SDK_CONSTITUTION.md](SDK_CONSTITUTION.md) next — it's the rulebook this SDK is held to, and every rule in it is machine-checked. A change that reads correctly but breaks a rule (e.g. adds a runtime dependency, adds a module-level `let`, or calls `eval()`) fails CI before a human ever reviews it.
+Read [SDK_CONSTITUTION.md](SDK_CONSTITUTION.md) next. It's the rulebook this SDK is held to, and every rule in it is machine-checked. A change that reads correctly but breaks a rule (e.g. adds a runtime dependency, adds a module-level `let`, or calls `eval()`) fails CI before a human ever reviews it.
 
 ## Setup
 

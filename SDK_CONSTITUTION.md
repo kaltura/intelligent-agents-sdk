@@ -67,7 +67,7 @@ JSON objects arriving from any external source (LLM, API response, user input) m
 ## Part 3 — Resiliency
 
 **Rule R-1: Exponential backoff on transient network failures.**  
-`Http.request()` must retry using truncated exponential backoff with jitter. A network-layer error (status 0, no response received) is retried on every method. A received HTTP 429, 502, 503, or 504 is retried only for `GET`/`HEAD`, or for another method that carries an `Idempotency-Key` (see Rule R-3) — a plain `POST`/`PUT`/`PATCH`/`DELETE` without one is not retried on a received transient status, since the server may already have processed it. Non-retriable failure codes (400, 401, 403, 404, 405, 409, 422) must NOT be retried — retrying auth failures wastes quota and delays the caller.
+`Http.request()` must retry using truncated exponential backoff with jitter. A network-layer error (status 0, no response received) is retried on every method. A received HTTP 429, 502, 503, or 504 is retried only for `GET`/`HEAD`, or for another method that carries an `Idempotency-Key` (see Rule R-3). A plain `POST`/`PUT`/`PATCH`/`DELETE` without one is not retried on a received transient status, since the server may already have processed it. Non-retriable failure codes (400, 401, 403, 404, 405, 409, 422) must NOT be retried. Retrying auth failures wastes quota and delays the caller.
 
 Retry parameters (defaults, all configurable via `HttpOptions`):
 - `maxRetries`: 3 (total attempts = 4)
@@ -111,7 +111,7 @@ Held `speak()`/`kickoff` text is released by `stvFinishedTalking` or `agentInter
 *Verify:* `test/unit/http.test.js` asserts that a fake response whose `Content-Length` or body size exceeds `maxResponseBytes` throws `response_too_large`.
 
 **Rule P-2: No synchronous blocking operations in the SDK's hot paths.**  
-The SDK must not call `JSON.parse` on arbitrarily large strings without a size guard. All JSON parsing goes through `parseBody()` in `core/http.js`, which runs after the response is received — Rule P-1's size guard is the enforcement point.
+The SDK must not call `JSON.parse` on arbitrarily large strings without a size guard. All JSON parsing goes through `parseBody()` in `core/http.js`, which runs after the response is received. Rule P-1's size guard is the enforcement point.
 
 **Rule P-3: The SDK has zero runtime dependencies.**  
 `package.json` must list no `dependencies` (only `devDependencies` for test tooling). Injectable transports (`fetch`, `socketFactory`, `rtcConstructor`, `getUserMedia`) are the deliberate points of external integration.

@@ -1,9 +1,9 @@
 /**
  * Lifecycle — event-driven rule engine on the Agentic host's `lifecycle/*`
  * routes (agentic-hosted, `{offset,limit}` pager). A rule is `{eventType,
- * objectType, eventConditions[], action}` — when a matching event
+ * objectType, eventConditions[], action}`, when a matching event
  * fires (e.g. a thread's `session_ended`), every active rule (including
- * preset rules you did not create — see {@link
+ * preset rules you did not create, see {@link
  * Lifecycle#match}) is evaluated and its `action` runs. Three
  * action shapes are available to callers, passed through as plain objects
  * (not built by the SDK):

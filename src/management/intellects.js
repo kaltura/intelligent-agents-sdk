@@ -183,7 +183,7 @@ export class Intellects {
     const { cur, body } = await this._rmwBody(configId, ks, 'intellects.setCapability');
     const current = (cur.capabilities && typeof cur.capabilities === 'object') ? cur.capabilities : {};
     if (!opts.force && current[name] === CAPABILITY_STATE.DISABLED && state === CAPABILITY_STATE.ON) {
-      throw new KalturaError({ type: 'about:blank', title: 'capability vetoed', code: 'capability_vetoed', detail: `intellects.setCapability: "${name}" is stored 'disabled'. Re-enabling it is refused by an SDK convenience guard — pass {force:true} to override (the API itself would allow it).` });
+      throw new KalturaError({ type: 'about:blank', title: 'capability vetoed', code: 'capability_vetoed', detail: `intellects.setCapability: "${name}" is stored 'disabled'. Re-enabling it is refused by an SDK convenience guard. Pass {force:true} to override (the API itself would allow it).` });
     }
     body.capabilities = mergeCapabilityWrite(current, { [name]: state });
     const result = (await this._.genie('v1/intellect/update', body, ks)).data;
@@ -249,10 +249,10 @@ export class Intellects {
   // ─────────────────────────── client variables gate ───────────────────────────
 
   /**
-   * Toggle `allow_client_variables` — the gate on per-request `request_vars`.
+   * Toggle `allow_client_variables`, the gate on per-request `request_vars`.
    * It is on by default; call this with `true` to pin it. When off, a converse
    * call sending `request_vars` returns an empty turn or throws
-   * `client_variables_disabled`. WRITE — idempotent. NOTE: Genie `v1/intellect/update` changes only the top-level
+   * `client_variables_disabled`. WRITE, idempotent. NOTE: Genie `v1/intellect/update` changes only the top-level
    * fields you send, but this defensively re-sends the
    * WHOLE config (matching `Knowledge.setEnabled`) so a partial body can never
    * reset status / wipe siblings. @param {number} configId @param {boolean} enabled @param {string} ks (admin)

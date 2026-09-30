@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Live-backend verification for four capabilities — real Kaltura
+ * Live-backend verification for four capabilities on real Kaltura
  * API, no fakes: Knowledge#list, Application#getCustomPrompts,
  * Avatars#listTemplates, and the full Lifecycle domain (9 methods) plus the
  * InsightSettings domain a `triggerInsightSettingsKai` lifecycle action

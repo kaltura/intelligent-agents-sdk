@@ -6,10 +6,10 @@ Three things matter to a client: sticky routing, capacity handling, and what sur
 
 ### Sticky routing: `stickyId`
 
-Send the same `stickyId` on every polling request, and do not rotate it mid-session.
+Send the same `stickyId` on every socket connection, and do not rotate it mid-session.
 
 - The SDK generates a `stickyId` once per session (16 random characters, or your own value via the `stickyId` option). It does not change it on each `connect()`.
-- It goes out as a **socket query param** (`query.stickyId`), so it rides every polling request and the WebSocket upgrade.
+- It goes out as a **socket query param** (`query.stickyId`), so it goes out on every socket connection the SDK opens. The SDK uses the WebSocket transport only.
 - Read it with `getStickyId()`.
 - It is kept for the whole session, including a cold reconnect. A rebuilt socket carries the same `stickyId`.
 - A new `KalturaAvatarSession` gets a new `stickyId`.

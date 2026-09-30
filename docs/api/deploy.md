@@ -42,7 +42,7 @@ Response:
 
 The admin secret never touches the browser — `appInit` derives the agent from the widget KS.
 
-**A widget KS is one shared identity.** Every visitor gets the same string. Anyone who holds a `threadId` can continue that thread, so treat `threadId` as a secret and store it per user on your server. Reading, listing and deleting threads and messages with a widget token fails. Through `Management`, a minted widget `Token` makes those methods throw `wrong_token_scope` before any request. A raw HTTP call, or a raw KS string passed to `Management`, gets 403. Per-attendee credentials and per-user separation are not possible on this path.
+**Every visitor gets the same widget KS.** Reach and limits: [SECURITY.md § Session type](../../SECURITY.md#session-type). Per-attendee credentials and per-user separation are not possible on this path.
 
 ### Per-visitor browser path
 

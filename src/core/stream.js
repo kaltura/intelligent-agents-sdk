@@ -147,7 +147,7 @@ export function segmentKind(seg) {
 /**
  * @typedef {object} ToolCallMetadata
  * @property {string} id  The request id to echo back on `/assistant/tool_response`
- * (via `session.respondToTool`) — NOT a Tools-entity UUID,
+ * (via `session.respondToTool`), NOT a Tools-entity UUID,
  * despite the wire field being named `tool_id` on that endpoint.
  * @property {boolean} waitForResponse  `true` when the brain is blocked awaiting
  * an explicit ACK before it can continue the turn (wire `wait_for_response`).
@@ -261,7 +261,7 @@ export function validateToolArgs(args, schema) {
  * never throws. Returns `null` for anything that is not a tool segment.
  *
  * Also lifts the segment's wire `tool_metadata` (id/name/args/type/wait_for_response
- * — wire-protocol/events-catalog.md §4e, carried intact through the session server's relay hop)
+ * per wire-protocol/events-catalog.md §4e, carried intact through the session server's relay hop)
  * into a camelCase `toolMetadata` field when present, so a caller of
  * `respondToTool()`/`onToolCall()`/`collectConverse().toolCalls` can satisfy a
  * `waitForResponse:true` call without dropping to raw `brainSegment`.
@@ -348,7 +348,7 @@ function splitJsonObjects(s) {
 
 /**
  * Extract the tool name from a `type:"tool_response"` segment's content
- * (`"<toolName> responded with size <n>"`, wire-protocol/events-catalog.md §4e) — the reliable
+ * (`"<toolName> responded with size <n>"`, wire-protocol/events-catalog.md §4e), the reliable
  * signal for attributing an earlier blob in a fused `type:"tool"` segment (see
  * `parseToolCall`'s `fusedArgs`) to its real tool name: responses echo back in
  * the SAME order the tools were called server-side. PURE,

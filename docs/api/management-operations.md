@@ -87,14 +87,14 @@ A standalone, partner-level entity, not embedded in an intellect. Names are uniq
 
 ## Skills — `https://genie.nvp1.ovp.kaltura.com`
 
-A standalone, partner-level reusable-instruction entity — `{id (uuid), name, description, instructions}`. SDK: `mgmt.skills`. Names are unique in a shared namespace. A conflict returns 409, even when the name does not appear in your own `list()`. The same applies to Tools above.
+A standalone, partner-level reusable-instruction entity: `{id (uuid), name, description, instructions}`. SDK: `mgmt.skills`. Names are unique in a shared namespace. A conflict returns 409, even when the name does not appear in your own `list()`. The same applies to Tools above.
 
 | Operation | Endpoint | Body |
 |-----------|----------|------|
 | List | `POST /v1/skill/list` | `{"filter":{"objectType":"SkillListFilter"},"pager":{"pageIndex":1,"pageSize":30}}` |
 | Get | `POST /v1/skill/get` | `{"id":"SKILL_UUID"}` |
 | Add | `POST /v1/skill/add` | `{"name":"...", "description":"...", "instructions"?}` |
-| Update | `POST /v1/skill/update` | `{"id":"SKILL_UUID", "name"?, "description"?, "instructions"?}` — idempotent; renames follow the same name rule as Add (409 on conflict) |
+| Update | `POST /v1/skill/update` | `{"id":"SKILL_UUID", "name"?, "description"?, "instructions"?}`. Idempotent; renames follow the same name rule as Add (409 on conflict) |
 | Delete | `POST /v1/skill/delete` | `{"id":"SKILL_UUID"}` — replies `{id}`; a follow-up get 404s |
 
 Before deleting a Skill, `mgmt.skills.delete` lists every intellect and refuses with a typed `skill_in_use` error naming each one still referencing the id in `skill_ids`. It only proceeds when called with `{confirmPermanent:true, force:true}`. Tools' `mgmt.tools.delete` carries the identical `tool_in_use` guard.

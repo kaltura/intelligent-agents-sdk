@@ -41,13 +41,13 @@ Two backends, two KS shapes — never mix them. All minted via `kaltura.sessions
 | Admin | `sessions.createAdminToken({userId, ttlSeconds?})` | `disableentitlement` | OFF | Management-plane calls (everything in this skill except the runtime) |
 | Conversation | `sessions.createConversationToken({configId, agentId?, userId?, sessionType?, ttlSeconds?, restrictions?})` | `setrole:PLAYBACK_BASE_ROLE`, `geniegpcid:<configId>`, optional `agentid` | ON | Chat with one intellect. User session (KS type 0) |
 | Agent | `sessions.createAgentToken({agentId, configId?, userId?, sessionType?, ttlSeconds?, restrictions?})` | `setrole:PLAYBACK_BASE_ROLE`, `agentid:<agentId>`, `geniegpcid:<configId>` | ON | Chat that answers as the agent. User session (KS type 0) |
-| Widget | `sessions.createWidgetToken({widgetId})` | (server-derived) | ON | Public, secret-free, safe to mint from a browser. One shared identity for all visitors |
+| Widget | `sessions.createWidgetToken({widgetId})` | (server-derived) | ON | Public, secret-free, safe to mint from a browser |
 
 - You have an `agentId`: use `createAgentToken`. You only have a `configId`: use `createConversationToken`. Pass both ids to either and you get the same privileges. Differences and the `configId` lookup: docs/api/authentication.md § Conversation token or agent token?
-- Pass a per-user `userId` on every conversation or agent token. It keeps each user's threads separate. A token without `userId` is one identity shared by every holder.
-- `sessionType: 'admin'` mints KS type 2 with no forced role. `restrictions.role` goes with `sessionType: 'admin'` only.
-- Widget tokens share one identity. Treat each `threadId` as a secret and store it per user on your server. For per-user separation in a browser, mint `createAgentToken({agentId, userId})` on the server, call `appInit` with it, and send the returned KS to the browser.
-- `threads.list/get/delete/transcript/rename/setAnalysis/clearAnalysis` and `messages.list/get/share` take an admin, conversation or agent token, never a widget token. A per-user token sees only its own threads. `threads.push`, `messages.report`, `messages.reportSummary`, `feedback.list` and `followups.list` take an admin token. Account-wide thread lists use `createAdminToken()`.
+- Pass a per-user `userId` on every conversation or agent token. It keeps each user's threads separate.
+- `sessionType: 'admin'` mints an admin-level session (KS type 2, no forced role), server-side only. `restrictions.role` goes with `sessionType: 'admin'` only.
+- Widget tokens can't separate users. For per-user separation in a browser: docs/api/deploy.md § Per-visitor browser path.
+- Which methods take which token: docs/api/operate.md § Threads. Account-wide thread lists use `createAdminToken({ userId })`.
 - Full access matrix: SECURITY.md § Session type.
 
 `sessions.revoke(tokenOrKs)` ends a token within seconds. Tokens minted with the same `restrictions.sessionGroupId` are revoked together. The SDK throws before any network call if you try to mint a conversation/agent/widget token with entitlement disabled. The two-KS-type invariant is enforced in code, not just documentation.
@@ -208,7 +208,7 @@ await kaltura.intellectConfig.setToolIds(configId, [tool.id], admin.ks);
 | `tools` | `add(tool, ks)` | `get(id, ks)` | `list(ks, opts?)` | `update(id, patch, ks)` | `delete(id, ks, confirm)` |
 | `skills` | `add(body, ks)` | `get(id, ks)` | `list(ks, opts?)` | `update(id, patch, ks)` | `delete(id, ks, confirm)` |
 
-Both resources have `update`. Every `delete` takes an explicit `confirm` argument (destructive ops are never a bare flag on a read call). Before creating a Tool, check for a same-named one you should reuse instead of duplicate-erroring — `provision.js`'s `applyTools` shows the upsert-by-name + reference-safety pattern (never mutate a Tool another intellect still references without checking first).
+Both resources have `update`. Every `delete` takes an explicit `confirm` argument (destructive ops are never a bare flag on a read call). Before creating a Tool, check for a same-named one you should reuse instead of duplicate-erroring. `provision.js`'s `applyTools` shows the upsert-by-name + reference-safety pattern (never mutate a Tool another intellect still references without checking first).
 
 ## Secrets
 
@@ -365,7 +365,7 @@ Full method/event source: `src/experience/session.js` (the canonical reference; 
 
 - `onBeforeSend(text, ctx)` — inspect/transform/block outbound user text before it reaches the brain. Return a string to send that instead, `undefined` to send unchanged, `false`/throw to block the turn.
 - `onAgentAction(action)` — gate agent-*initiated* actions (navigate, render-GenUI, lead capture, vision) before they take effect. Return `false`/throw to veto; sync or async.
-- A tool-call spiral circuit breaker (`toolSpiralDetected` → session-scoped hard limit → automatic cold reconnect) guards against a runaway repeated tool call — see the `_checkHardToolSpiral` doc comment in `session.js`. `recoverFromSpiral` (default `true`) auto-resends the abandoned turn after recovery.
+- A tool-call spiral circuit breaker (`toolSpiralDetected` → session-scoped hard limit → automatic cold reconnect) guards against a runaway repeated tool call. See the `_checkHardToolSpiral` doc comment in `session.js`. `recoverFromSpiral` (default `true`) auto-resends the abandoned turn after recovery.
 
 ### GenUI (agent-rendered widgets)
 

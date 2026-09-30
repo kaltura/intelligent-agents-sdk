@@ -40,7 +40,7 @@ io(conversationManagerUrl, {          // from appInit
 |---|---|---|
 | `auth.token` | the conversation KS from `application/appInit` | Identifies the partner and the agent. |
 | `partnerId` | your partner id | Identifies the Kaltura account. |
-| `stickyId` | 16 random characters, fresh per session (override with the `stickyId` option, read with `getStickyId()`) | Send the same value on every polling request, including the initial handshake. Do not rotate it mid-session. |
+| `stickyId` | 16 random characters, fresh per session (override with the `stickyId` option, read with `getStickyId()`) | Sent as a socket query param on the WebSocket connection. The SDK keeps the same value for the whole session, including a cold reconnect. Do not rotate it mid-session. |
 | `level` | always `published` | The SDK does not expose an option for it. |
 | `debugMode` | always `true` | Turns on the `debug_*` events. The SDK's caption and transcript features read `stvSpeechChunk` and `generatingSpeech`, not the `debug_*` events ([§4d](events-catalog.md#4d-server--client-on--conversation-phase)). |
 | `billed_client` | always `""` | No effect. |

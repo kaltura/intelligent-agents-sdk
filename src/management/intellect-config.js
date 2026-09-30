@@ -32,7 +32,7 @@
  * (conversations.js) use — the merge logic lives in exactly one place.
  *
  * WHY re-send the whole config? Genie's `v1/intellect/update` changes only
- * the TOP-LEVEL fields you send — but
+ * the TOP-LEVEL fields you send, but
  * DICT-valued fields (`capabilities`, `secrets`) are FULL-REPLACE sub-dicts: a
  * partial dict drops the siblings it omits. So those dicts are read-merge-written
  * (capabilities via {@link mergeCapabilityWrite}; secrets via the
@@ -245,7 +245,7 @@ export class IntellectConfig {
    * Set the intellect's `tool_ids` — the list of standalone Tool entities (see
    * `mgmt.tools`) this intellect may call. WRITE — idempotent. `tool_ids` is a
    * direct, ungated reference-list write (like `knowledge_ids`). The SDK applies
-   * no length cap. This only edits the reference list — to
+   * no length cap. This only edits the reference list, to
    * create/edit a tool BODY, use `mgmt.tools.add`/`update`/`remove` first, then
    * pass its `id` here. Pass `[]` to detach every tool.
    * @param {number} configId @param {string[]} toolIds @param {string} ks (admin)

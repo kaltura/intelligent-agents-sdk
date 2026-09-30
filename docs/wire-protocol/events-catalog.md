@@ -186,12 +186,12 @@ POST {genieUrl}/assistant/tool_response
 Content-Type: application/json
 Authorization: KS <conversation ks>
 
-{ "tool_name": "<toolName>", "tool_id": "<toolMetadata.id>", "response": { …your JSON result… } }
+{ "tool_name": "<toolName>", "tool_id": "<toolMetadata.id>", "tool_invocation_id": "<toolMetadata.id>", "response": { …your JSON result… } }
 
 → 200 {}
 ```
 
-`tool_id` is the `toolMetadata.id` from the parsed `tool` segment. `KalturaAvatarSession#respondToTool` and `KalturaChatSession#respondToTool` send exactly this. The `tool` segment may arrive over the socket (`agent_raw_text`) or over the HTTP `/assistant/converse` stream, but the ACK path is identical. One `waitForResponse:true` tool definition works unchanged on both transports.
+`tool_id` and `tool_invocation_id` both carry the `toolMetadata.id` from the parsed `tool` segment. `KalturaAvatarSession#respondToTool` and `KalturaChatSession#respondToTool` send exactly this. The `tool` segment may arrive over the socket (`agent_raw_text`) or over the HTTP `/assistant/converse` stream, but the ACK path is identical. One `waitForResponse:true` tool definition works unchanged on both transports.
 
 `respondToTool(id, response)` returns a result object:
 

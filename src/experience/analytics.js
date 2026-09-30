@@ -1,8 +1,8 @@
 /**
  * KAVA (Kaltura Video Analytics) reporting — client-only Application Events.
  *
- * Implements ONLY the 10000-range "Application Event" family —
- * `pageLoad` (10003) and `buttonClicked` (10002) — for interactions that
+ * Implements ONLY the 10000-range "Application Event" family:
+ * `pageLoad` (10003) and `buttonClicked` (10002), for interactions that
  * happen outside the agent session (a page/view landing, a UI-only click).
  * This is a STANDALONE reporter: it never reads from or subscribes to a
  * `KalturaAvatarSession`.
@@ -145,7 +145,7 @@ export class KavaAnalytics {
   }
 
   /**
-   * Report a UI-only interaction outside the agent session (10002) — a click, a contact-form
+   * Report a UI-only interaction outside the agent session (10002), such as a click, a contact-form
    * submit/skip, a widget dismiss, etc.
    * @param {{buttonType?:string, buttonName?:string, buttonValue?:string, buttonInfo?:string}} [fields]
    * @returns {Promise<{ok:boolean, transport:'beacon'|'fetch'|'disabled'|'none'}>} Same shape as {@link KavaAnalytics#pageLoad}. A rejected fetch gives `ok:false`.

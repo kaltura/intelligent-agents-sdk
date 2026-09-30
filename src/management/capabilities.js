@@ -52,7 +52,7 @@ export const CAPABILITIES = Object.freeze([
 ]);
 
 /**
- * The `CapabilityState` enum. `disabled` is a HARD override — a stored
+ * The `CapabilityState` enum. `disabled` is a HARD override: a stored
  * `disabled` always beats a per-request `on`. (The SDK-side
  * refusal in `setCapability` when re-enabling a stored `disabled` is a
  * CONVENIENCE GUARD, not an API constraint — the API would accept flipping a

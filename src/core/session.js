@@ -12,8 +12,8 @@
  * SESSION TYPE: conversation and agent tokens are USER sessions (`type=0`) by
  * default and always run as `setrole:PLAYBACK_BASE_ROLE`. A user session sees
  * only its own `userId`'s threads. With no `userId`, every holder of such a
- * token shares one identity. `sessionType: 'admin'` (`type=2`) is the explicit
- * opt-out; an admin-type token reaches every thread on the account.
+ * token shares one identity. `sessionType: 'admin'` (`type=2`) mints an
+ * admin-level session, limited only by the `role` and privileges you set.
  * {@link Sessions.createAdminToken} is always `type=2`. Every admin-type mint
  * needs a `userId`: the server makes it the owner of anything the token
  * creates, so a missing one would leave that content with an empty owner.
@@ -65,10 +65,10 @@ import { redact } from './redact.js';
 /**
  * @typedef {object} Restrictions  Structured least-privilege options (compiled to KS privileges).
  * @property {string|number} [role]         setrole:<id>: run as a specific (narrower) Kaltura role. Only with `sessionType: 'admin'`; a user session always runs as `PLAYBACK_BASE_ROLE`.
- * @property {number} [actionsLimit]        actionslimit:<n>: for sessions that run a known, fixed number of API actions.
- * @property {string} [ipRestrict]          iprestrict:<ip> — bind the token to a single client IP.
- * @property {string} [uriRestrict]         urirestrict:<prefix> — bind the token to a URI prefix.
- * @property {string} [sessionGroupId]      sessionid:<id> — group tokens so one revoke() kills the whole family.
+ * @property {number} [actionsLimit]        actionslimit:<n>, a positive integer: for sessions that run a known, fixed number of API actions.
+ * @property {string} [ipRestrict]          iprestrict:<ip>: bind the token to a single client IP.
+ * @property {string} [uriRestrict]         urirestrict:<prefix>: bind the token to a URI prefix. Values pass through as is (no comma or whitespace).
+ * @property {string} [sessionGroupId]      sessionid:<id>: group tokens so one revoke() kills the whole family.
  */
 
 const DISABLE_ENTITLEMENT = 'disableentitlement';
@@ -161,9 +161,7 @@ export class Sessions {
    * A USER session (`type=0`, `setrole:PLAYBACK_BASE_ROLE`) unless you pass
    * `sessionType: 'admin'` (see the module docstring), which also requires a
    * `userId`. Pass `userId` to give
-   * each end user their own threads. With no `userId`, everyone holding a token
-   * like this shares one identity: any holder can continue a thread whose id it
-   * has, and reading, listing and deleting threads return 403.
+   * each end user their own threads.
    * @param {{configId:string|number, agentId?:string, userId?:string|number, sessionType?:SessionType, ttlSeconds?:number, restrictions?:Restrictions, extraPrivileges?:string}} opts
    *   `agentId` adds `agentid:<agentId>`, so threads carry the real agent id
    *   (not `"default"`) and lifecycle rules filtering on it match.
@@ -247,11 +245,9 @@ export class Sessions {
    * Anonymous widget token from a widgetId alone — no secret, no user identity.
    * This is the intended public end-user path; carries entitlement automatically.
    *
-   * SHARED IDENTITY: the KS is the same for every visitor of the widget. Anyone
-   * who knows a `threadId` can continue that thread, so treat thread ids as
-   * secrets. Reading, listing and deleting threads return 403. When users need
-   * separate threads, mint a per-user {@link createAgentToken} on your server
-   * and pass it to `application.appInit` instead.
+   * The KS is the same for every visitor of the widget. For per-user threads,
+   * mint a per-user {@link createAgentToken} on your server and pass it to
+   * `application.appInit` instead.
    *
    * EXPIRY IS NOT KNOWN CLIENT-SIDE: `startWidgetSession` returns only the KS,
    * not its lifetime — the server sets the widget TTL. So the returned Token has
@@ -381,16 +377,40 @@ export class Sessions {
 /**
  * Compile structured least-privilege options into a KS privilege suffix
  * (RFC 9700 §2.3 minimum scope / §4.10 binding, realized via Kaltura privileges).
- * Returns '' or ',priv1,priv2,…'. @param {Restrictions} [r]
+ * Returns '' or ',priv1,priv2,…'. Each value stays inside one `key:value` pair: a value
+ * with ',' or whitespace, or a non-integer `actionsLimit`, is rejected (bad_request).
+ * @param {Restrictions|undefined} r @param {string} where
  */
-function compileRestrictions(r) {
+function compileRestrictions(r, where) {
   if (!r) return '';
+  const bad = (/** @type {string} */ detail) => new KalturaError({
+    type: 'about:blank', title: 'invalid restrictions', code: 'bad_request', detail: `${where}: ${detail}`,
+  });
+  // A privilege is `key:value`. Pairs are joined by ',' with no spaces, so a value with ',' or
+  // whitespace would split into extra privileges. ':' (IPv6, URIs), '/' (several params in one
+  // value) and '*' (wildcard) are valid inside a value.
+  const value = (/** @type {'role'|'ipRestrict'|'uriRestrict'|'sessionGroupId'} */ key) => {
+    const v = r[key];
+    if (isBlank(v)) return undefined;
+    const str = String(v);
+    if (/[,\s]/.test(str)) throw bad(`restrictions.${key} must not contain a comma or whitespace.`);
+    return str;
+  };
   const parts = [];
-  if (r.role !== undefined && r.role !== null && r.role !== '') parts.push(`setrole:${r.role}`);
-  if (typeof r.actionsLimit === 'number' && r.actionsLimit > 0) parts.push(`actionslimit:${r.actionsLimit}`);
-  if (r.ipRestrict) parts.push(`iprestrict:${r.ipRestrict}`);
-  if (r.uriRestrict) parts.push(`urirestrict:${r.uriRestrict}`);
-  if (r.sessionGroupId) parts.push(`sessionid:${r.sessionGroupId}`);
+  const role = value('role');
+  if (role) parts.push(`setrole:${role}`);
+  if (!isBlank(r.actionsLimit)) {
+    if (!Number.isInteger(r.actionsLimit) || /** @type {number} */ (r.actionsLimit) < 1) {
+      throw bad('restrictions.actionsLimit must be a positive integer.');
+    }
+    parts.push(`actionslimit:${r.actionsLimit}`);
+  }
+  const ip = value('ipRestrict');
+  if (ip) parts.push(`iprestrict:${ip}`);
+  const uri = value('uriRestrict');
+  if (uri) parts.push(`urirestrict:${uri}`);
+  const group = value('sessionGroupId');
+  if (group) parts.push(`sessionid:${group}`);
   return parts.length ? `,${parts.join(',')}` : '';
 }
 
@@ -427,7 +447,7 @@ function endUserPrivileges(base, opts, where) {
   }
   let privileges = base.join(',');
   if (sessionType === 'user') privileges += `,setrole:${USER_ROLE}`;
-  privileges += compileRestrictions(opts.restrictions);
+  privileges += compileRestrictions(opts.restrictions, where);
   if (opts.extraPrivileges) privileges += `,${opts.extraPrivileges}`;
   assertEntitlementOn(privileges, where);
   assertSingleKeys(privileges, where);
@@ -449,8 +469,7 @@ function assertSingleKeys(privileges, where) {
 
 /**
  * Validate + normalize a caller-supplied `userId` to a string, or `undefined`
- * if none was given. With no userId, a user session is one identity shared by
- * every holder of any such token on the partner. Throws
+ * if none was given. Throws
  * BEFORE any network call if a non-scalar (object/array) was passed — the same
  * pre-flight-reject shape as the `configId` guard above.
  * Sanitized via `oneLine` (strips CR/LF/TAB, caps at 512 chars) — the returned
@@ -525,7 +544,7 @@ function assertEntitlementOn(privileges, where) {
       type: 'https://docs.kaltura.com/agentic/errors/entitlement_violation',
       title: 'entitlement violation',
       code: 'entitlement_violation',
-      detail: `${where} refuses 'disableentitlement' — end-user/conversation tokens must keep entitlement ON. Use createAdminToken({ userId }) for management (server-side only).`,
+      detail: `${where} refuses 'disableentitlement'. End-user/conversation tokens must keep entitlement ON. Use createAdminToken({ userId }) for management (server-side only).`,
     });
   }
 }

@@ -33,8 +33,7 @@ export class Application {
 
   /**
    * Initialize a runtime session. Takes NO body — derives the agent from the
-   * KS. Pass either a WIDGET KS (sessions.createWidgetToken, one identity
-   * shared by every visitor) or a per-user AGENT KS minted on your server
+   * KS. Pass either a WIDGET KS (sessions.createWidgetToken) or a per-user AGENT KS minted on your server
    * (sessions.createAgentToken with `userId`, so each user gets their own
    * threads). Returns the live runtime endpoints + a conversation KS:
    *   {partnerId, ks, conversationManagerUrl, srsBaseUrl, turnServerUrl, avatars[], widgetConfig?, embedConfig?}

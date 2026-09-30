@@ -18,8 +18,10 @@
  *      carries the agent id and the caller's userId
  *   8  appInit with a per-user agent token returns a KS that converses as that user
  *   9  a user session gets no OVP admin reach (user.list, partner.getInfo) and
- *      an account-wide entry list returns nothing
- *  10  sessionType: 'admin' opts back into type 2 reach
+ *      an account-wide entry list returns nothing (the entry part is skipped, and
+ *      noted, when the partner has no entries at all)
+ *  10  sessionType: 'admin' has admin-level reach (other users' threads, OVP user.list),
+ *      limited only by its role and privileges
  *  11  widget: every visitor shares one identity: any of them can continue
  *      a thread, none can read, list or delete it (403)
  *  11b through the SDK, every relaxed method (threads.transcript/rename/setAnalysis/
@@ -34,7 +36,9 @@
  * Raw HTTP is used for thread and OVP calls made with a user KS, so each
  * check sees the backend's own status code rather than an SDK pre-flight.
  *
- * Throwaway agent via provision(), full cleanup in `finally`. Targets prod by
+ * Throwaway agent via provision(), full cleanup in `finally`. The
+ * messages.share step clones a message once per token kind. Each run leaves
+ * those clones behind: there is no call to delete a single message. Targets prod by
  * default; `--env <name>[:<n>] --env-file <path>` picks another environment (for example QA).
  * Credentials: AGENTIC_PARTNER_ID / AGENTIC_ADMIN_SECRET (or the `--env`
  * prefixed vars), from the environment or a .env file. None are written to
@@ -118,7 +122,7 @@ async function step(name, fn) {
 
 try {
   admin = await kaltura.sessions.createAdminToken({ userId: 'sdk-live-verify' });
-  agent = await ensureAgent(kaltura, admin, { agentJson: args['agent-json'] ? String(args['agent-json']) : undefined, keep: args.keep === true });
+  agent = await ensureAgent(kaltura, admin, { agentJson: typeof args['agent-json'] === 'string' ? args['agent-json'] : undefined, keep: !!args.keep });
   const { configId, agentId, widgetId } = agent;
   report.note('agent', { reused: agent.reused });
 
@@ -275,11 +279,11 @@ try {
       report.check('SDK: a widget Token is refused client-side on every relaxed method', Object.values(codes).every((c) => c === 'wrong_token_scope'), codes);
     });
 
-    await step('sessionType admin reaches other users threads', async () => {
+    await step('sessionType admin has admin-level reach (other users threads, OVP user.list)', async () => {
       const tokAdm = await kaltura.sessions.createConversationToken({ configId, agentId, userId: user('c'), sessionType: 'admin' });
       const r = await genie('v1/thread/get', { id: threadA }, tokAdm.ks);
       const u = await ovp('user', 'list', { pager: { pageSize: 1 } }, tokAdm.ks);
-      report.check('sessionType admin reaches other users threads', tokAdm.sessionType === 'admin' && r.status === 200 && u.ok,
+      report.check('sessionType admin has admin-level reach (other users threads, OVP user.list)', tokAdm.sessionType === 'admin' && r.status === 200 && u.ok,
         { sessionType: tokAdm.sessionType, threadGet: r.status, userList: u.ok ? 'ok' : u.code });
     });
 
@@ -287,8 +291,12 @@ try {
       const u = await ovp('user', 'list', { pager: { pageSize: 1 } }, tokA.ks);
       const p = await ovp('partner', 'getInfo', {}, tokA.ks);
       const e = await ovp('baseEntry', 'list', { pager: { pageSize: 1 } }, tokA.ks);
-      report.check('user session has no OVP admin reach', !u.ok && !p.ok && e.ok && e.result?.totalCount === 0,
-        { userList: u.ok ? 'ok' : u.code, partnerGetInfo: p.ok ? 'ok' : p.code, entries: e.ok ? e.result?.totalCount : e.code });
+      // An empty user result proves nothing on a partner with no entries, so compare against the admin total.
+      const ea = await ovp('baseEntry', 'list', { pager: { pageSize: 1 } }, admin.ks);
+      const adminTotal = ea.ok ? Number(ea.result?.totalCount) : NaN;
+      if (ea.ok && adminTotal === 0) report.note('skipped: partner has no entries, entry reach not checked');
+      report.check('user session has no OVP admin reach', !u.ok && !p.ok && ea.ok && (adminTotal === 0 || (e.ok && e.result?.totalCount === 0)),
+        { userList: u.ok ? 'ok' : u.code, partnerGetInfo: p.ok ? 'ok' : p.code, adminEntries: ea.ok ? adminTotal : ea.code, userEntries: e.ok ? e.result?.totalCount : e.code });
     });
 
     await step('SDK: threads.delete removes the owner thread; another user Token deletes nothing', async () => {
@@ -345,13 +353,22 @@ try {
     const tokD = await kaltura.sessions.createAgentToken({ agentId, userId: user('d') });
     const intellect = await kaltura.intellects.get(configId, admin);
     const name = String(intellect?.prompts?.find((/** @type {any} */ p) => p.key === 'name')?.value ?? '').trim();
-    const r = await say(tokD, 'What is your name? Reply with your name only.');
+    // Match the longest word of the configured name, not a common word like "the".
+    // A model can answer without its name, so allow one retry.
+    const needle = name.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean).sort((x, y) => y.length - x.length)[0];
+    let r = await say(tokD, 'What is your name? Reply with your name only.');
     if (r.threadId) threads.add(r.threadId);
+    let attempts = 1;
+    if (needle && !r.text.toLowerCase().includes(needle)) {
+      r = await say(tokD, 'What is your name? Reply with your name only.');
+      if (r.threadId) threads.add(r.threadId);
+      attempts = 2;
+    }
     const t = r.threadId ? await adminThread(r.threadId) : null;
-    const firstWord = name.split(/\s+/)[0]?.toLowerCase();
+    const nameInReply = !!needle && r.text.toLowerCase().includes(needle);
     report.check('createAgentToken without configId answers as the agent',
-      tokD.privileges.includes(`geniegpcid:${configId}`) && !!firstWord && r.text.toLowerCase().includes(firstWord) && t?.agent_id === agentId && t?.user_id === user('d'),
-      { configResolved: tokD.privileges.includes(`geniegpcid:${configId}`), nameInReply: !!firstWord && r.text.toLowerCase().includes(firstWord), agentLabel: t?.agent_id === agentId, owner: t?.user_id === user('d') });
+      tokD.privileges.includes(`geniegpcid:${configId}`) && nameInReply && t?.agent_id === agentId && t?.user_id === user('d'),
+      { configResolved: tokD.privileges.includes(`geniegpcid:${configId}`), nameInReply, attempts, agentLabel: t?.agent_id === agentId, owner: t?.user_id === user('d') });
   });
 
   await step('appInit with a per-user agent token converses as that user', async () => {
@@ -383,7 +400,7 @@ try {
       { list: list.status, secondVisitorContinues: joined, secondVisitorGet: get.status, delete: del.status, deleteDetail: del.body?.detail, stillPresent: still });
   });
 
-  if (args['skip-revoke'] === true) {
+  if (args['skip-revoke']) {
     report.note('revoke skipped (--skip-revoke)');
   } else {
     await step('revoke ends the token and its sessionGroupId sibling', async () => {
@@ -416,7 +433,7 @@ try {
     report.check('scratch threads deleted', left.length === 0, { remaining: left.length });
     if (agent) {
       await agent.cleanup();
-      if (!agent.reused && args.keep !== true) {
+      if (!agent.reused && !args.keep) {
         const gone = await verifyDeleted(kaltura, admin, agent);
         report.check('agent resources deleted', Object.values(gone).every((v) => v === 'deleted'), gone);
       }

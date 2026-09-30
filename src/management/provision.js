@@ -1,5 +1,5 @@
 /**
- * Agent factory — runs the provision sequence documented in README.md
+ * Agent factory. Runs the provision sequence documented in README.md
  * (`mgmt.provision()`).
  *
  * Sequence (all on documented endpoints; no new API):

@@ -24,7 +24,7 @@ export function assertSecureTransport(url, field, allowInsecure, warn) {
   if (!insecure) return;                          // unknown scheme → don't block
   const isLocal = isPrivateOrLoopbackHost(u.hostname);
   if (allowInsecure || isLocal) {
-    warn(`${field} uses an insecure (${u.protocol}) transport${isLocal ? ' on a local/private host' : ''}. NEVER ship cleartext to production — use https/wss (NIST SC-8).`);
+    warn(`${field} uses an insecure (${u.protocol}) transport${isLocal ? ' on a local/private host' : ''}. NEVER ship cleartext to production. Use https/wss (NIST SC-8).`);
     return;
   }
   throw new KalturaError({

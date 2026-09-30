@@ -37,7 +37,7 @@ Dependencies: `socket.io-client` + the browser's native `RTCPeerConnection`. Not
 
 If you reimplement the protocol per the recipe above, you MUST:
 
-1. **Send a stable `stickyId` query param** on the socket (random 16-char, once per session). Without it, polling requests can reach different server instances and the handshake fails intermittently under load.
+1. **Send a stable `stickyId` query param** on the socket (random 16-char, once per session). Without it, connections can reach different server instances and the handshake fails intermittently under load.
 2. **Emit `stvNewSession` right away. Don't gate it on `checkAvailability` first.** Poll `checkAvailability` → `availabilityResult` *in parallel* instead:
    - Many agents never send `availabilityResult` at all, so waiting for it before `stvNewSession` just adds dead time.
    - If a poll comes back `available:false`, back off and re-poll (see the delay schedule below) without touching `stvNewSession`.

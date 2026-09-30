@@ -70,7 +70,7 @@ export class Agents {
   }
 
   /**
-   * Create an agent. WRITE — NOT idempotent (the SDK sends an Idempotency-Key
+   * Create an agent. WRITE, NOT idempotent (the SDK sends an Idempotency-Key
    * automatically, but creation is not idempotent). `intellect.id` is the intellect's
    * configId — no separate genieId is needed (the request body's `intellect`
    * only takes `intellectType`+`id`).

@@ -10,7 +10,7 @@
  * `widgetName:"unisphere.widget.genie"`; the host keys off `runtimeName`
  * (stripping the `-tool` suffix) to pick a renderer.
  *
- * HONESTY: `force_experience` is a HINT, not a guarantee — the brain may emit
+ * HONESTY: `force_experience` is a HINT, not a guarantee. The brain may emit
  * a different (or no) widget. This layer never assumes a requested experience
  * arrived; it parses WHATEVER `runtimeName` actually shows up and forgives
  * malformed content (never throws).

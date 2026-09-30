@@ -38,7 +38,7 @@ The SDK emits `mediaRecovering { channel, state }` when recovery starts and `med
 | ASR (mic uplink) | `ice-restart` | Restarts ICE on the same peer and re-offers over the socket with `is_reconnect: true`. Mute state is kept. Waits up to 30 s for the answer. |
 | STV (avatar video) | `re-subscribe` | Releases the old WHEP resource, then sends a new WHEP offer for the same session. Then it resumes playback if the browser paused the element. |
 
-If in-place recovery fails, the SDK emits `connectivityChanged` with `state:'recover_failed'` and does a cold reconnect. A WHEP `404` means the STV session no longer exists. It skips further tries and goes to the cold reconnect at once.
+If in-place recovery fails, the SDK emits `connectivityChanged` with `state:'recover_failed'` and does a cold reconnect.
 
 The same recovery runs when the browser fires `online` after an `offline` and a peer is still in a down ICE state. Both events also emit `connectivityChanged` with `channel:'network'`. Turn this off with `networkAware:false`.
 
@@ -120,7 +120,6 @@ Sending the signal twice for the same thread is safe. The SDK never awaits it on
 - ICE restart for ASR and re-subscribe for STV, then cold reconnect.
 - Mute-state preservation across ASR recovery.
 - Capacity queue (`waitForCapacity`) instead of a hard failure.
-- WHEP 404 short-circuit to a cold reconnect.
 - A repeating brain-stall watchdog and a two-tier tool-call-spiral breaker.
 - Distinct mic error codes and `online`/`offline`/`visibilitychange` handling.
 

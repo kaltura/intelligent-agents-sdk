@@ -1,6 +1,6 @@
 # External API Integrations
 
-How to wire a Kaltura agent to call out to an external REST API — write a support ticket, update a booking system, look up inventory, upsert a CRM contact, or call anything else with an HTTP endpoint — including the OAuth2 flow for endpoints that require it.
+How to wire a Kaltura agent to call out to an external REST API: write a support ticket, update a booking system, look up inventory, upsert a CRM contact, or call anything else with an HTTP endpoint, including the OAuth2 flow for endpoints that require it.
 
 This is a general integration mechanism: any `api` tool (`src/management/tools.js`'s `tools.api()`) the model can call, wired to whatever HTTP endpoint you point it at. CRM/marketing writes (HubSpot, Salesforce, Marketo) are one common use case, and get their own example section below. But the same three-step pattern applies equally to a support desk, a booking system, a MAM (media asset management) API, an inventory lookup, or any other REST integration.
 
@@ -10,7 +10,7 @@ If your use case is specifically getting the *viewer's own submitted data* (from
 
 An external API integration is a custom `api` tool, linked to your intellect via `tool_ids`. Three pieces, always in this order:
 
-1. **Store the credential as a secret** — `mgmt.intellects.secrets.set(configId, {NAME: value}, adminKs)` (`src/management/secrets.js`). Secrets are write-only: every read masks values as `"***"`, and there is no endpoint to read a plaintext value back.
+1. **Store the credential as a secret.** `mgmt.intellects.secrets.set(configId, {NAME: value}, adminKs)` (`src/management/secrets.js`). Secrets are write-only: every read masks values as `"***"`, and there is no endpoint to read a plaintext value back.
 2. **Build and register the tool** — `tools.api({..., request: {..., headers: {Authorization: 'Bearer {{secrets.NAME}}'}}})`, then `mgmt.tools.add(tool, adminKs)`. A tool is its own partner-level entity (`/v1/tool/*`), not embedded in the intellect.
 3. **Link it** — `mgmt.intellectConfig.setToolIds(configId, [toolId], adminKs)`.
 
@@ -31,7 +31,7 @@ Most external APIs need one of two authentication shapes, both supported directl
   ```
 
   You own rotation for this credential — the platform doesn't refresh it.
-- **OAuth2 authorization-code flow** — for providers that require viewer consent and issue an expiring, refreshable token. Covered in its own section below. It is more than a header.
+- **OAuth2 authorization-code flow.** For providers that require viewer consent and issue an expiring, refreshable token. Covered in its own section below. It is more than a header.
 
 ## When you need OAuth2 (authorization-code flow)
 
@@ -63,7 +63,7 @@ const tool = api({
 ```
 <!-- /nova-target -->
 
-`buildAuth()` (`src/management/tools.js`) validates this block before any network call. `type` must be `'oauth2'`. `token_url` and `auth_url` must be http(s) URLs. `client_secret` **must** be a `secrets.<name>` reference matching `/^secrets\.[A-Za-z_][A-Za-z0-9_]*$/`. A plaintext secret is rejected, so it can't end up in a tool config.
+`buildAuth()` (`src/management/tools.js`) validates this block before any network call. `type` is optional. If you set it, it must be `'oauth2'`. `client_id`, `client_secret`, `token_url` and `auth_url` are required. Unknown keys are rejected. `token_url` and `auth_url` must be http(s) URLs. `client_secret` **must** be a `secrets.<name>` reference matching `/^secrets\.[A-Za-z_][A-Za-z0-9_]*$/`. A plaintext secret is rejected, so it can't end up in a tool config.
 
 What to build for:
 
@@ -126,7 +126,7 @@ const tool = salesforceContactUpsert({
 
 One real Salesforce quirk this builder accounts for: an upsert-by-external-ID `PATCH` returns `201 {id: ...}` on insert but `204` with an **empty body** on update. There's no field guaranteed present on both, so its `responseMapping` only maps `result: 'id'` (present when it exists) rather than assuming a shape that breaks on the update path. The point of this tool is the side effect (the contact write), not what it echoes back.
 
-**This builder authenticates with a static secret**, exactly like the HubSpot one — it does *not* use the OAuth2 `authentication` block described above. That's fine for a Salesforce Connected App access token you mint and rotate yourself, but it does mean *you* are responsible for refreshing that token before it expires; the platform won't refresh it for you unless you use the OAuth2 `authentication` block (authorization-code flow only).
+**This builder authenticates with a static secret**, exactly like the HubSpot one. It does *not* use the OAuth2 `authentication` block described above. That's fine for a Salesforce Connected App access token you mint and rotate yourself, but it does mean *you* are responsible for refreshing that token before it expires; the platform won't refresh it for you unless you use the OAuth2 `authentication` block (authorization-code flow only).
 
 ### Marketo — two valid integration paths
 
@@ -144,9 +144,9 @@ Use the Munchkin path when you just need "get this lead into Marketo" and want z
 None of these need a dedicated recipe — they're a plain `api` tool with a static bearer/API-key secret, following the exact same three-step pattern as HubSpot/Salesforce above:
 
 - **Airtable** — a personal access token as a `Bearer` header, `POST` to `https://api.airtable.com/v0/{baseId}/{tableName}` with `body: {fields: {...}}`.
-- **Google Sheets** — Google's Sheets API requires OAuth2. Viewer consent fits the `authentication: {type: 'oauth2', ...}` pattern above. A service account does not fit that block.
-- **Google Forms (prefill-and-submit link)** — Forms has no lead-write REST endpoint at all. The common workaround is a `client` tool that opens a pre-filled Forms URL (`viewform?usp=pp_url&entry.<id>=<value>`) for the viewer. That's a UX handoff, not a server-side write.
-- **Any other REST API** — same shape: static secret → `Authorization` header, or the OAuth2 block if the provider uses the authorization-code flow. This is exactly how you'd wire a MAM (media asset management) lookup, a support-ticketing system, a booking API, or anything else with an HTTP interface.
+- **Google Sheets.** Google's Sheets API requires OAuth2. Viewer consent fits the `authentication: {type: 'oauth2', ...}` pattern above. A service account does not fit that block.
+- **Google Forms (prefill-and-submit link).** Forms has no lead-write REST endpoint at all. The common workaround is a `client` tool that opens a pre-filled Forms URL (`viewform?usp=pp_url&entry.<id>=<value>`) for the viewer. That's a UX handoff, not a server-side write.
+- **Any other REST API.** Same shape: static secret → `Authorization` header, or the OAuth2 block if the provider uses the authorization-code flow. This is exactly how you'd wire a MAM (media asset management) lookup, a support-ticketing system, a booking API, or anything else with an HTTP interface.
 
 ## Related docs
 

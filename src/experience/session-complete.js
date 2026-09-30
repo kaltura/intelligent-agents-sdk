@@ -85,7 +85,7 @@ export function createSessionCompleter(opts) {
     teardown.track(() => { try { channel?.close?.(); } catch { /* */ } channel = null; });
   }
 
-  /** The actual POST — never throws, never retries. @param {string} reason */
+  /** The actual POST. It never throws, never retries. @param {string} reason */
   async function send(reason) {
     const token = getToken();
     const id = threadId;

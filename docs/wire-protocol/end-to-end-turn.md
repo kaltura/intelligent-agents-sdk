@@ -29,7 +29,7 @@ A user turn, as captured:
 
 **Runtime behavior for integrators reasoning about turns:**
 
-- **Turn segmentation** — `agent_start_speech.isNewTurn` is `false` when new ASR/typed text continues the turn already in flight (e.g. a correction or extension of what the user just said). It's `true` for a fresh turn. The SDK reads this field and does not compute continuation itself.
+- **Turn segmentation.** `agent_start_speech.isNewTurn` is `false` when new ASR/typed text continues the turn already in flight (e.g. a correction or extension of what the user just said). It's `true` for a fresh turn. The SDK reads this field and does not compute continuation itself.
 - **Audio/phone mode allocates no STV**: the `stvNewSession` reply is `{status:"audio/phone mode - no STV session"}` (no `webrtc_url`, no WHEP downlink), and the SDK skips WHEP; see [events-catalog.md](events-catalog.md#4b-server--client-on--handshakesession-phase).
 
 ## 9. Reproduce / re-capture

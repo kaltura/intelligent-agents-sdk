@@ -32,9 +32,9 @@ const admin = await mgmt.sessions.createAdminToken({ userId: 'admin@example.com'
 | Admin | 2 (admin) | `disableentitlement` | Management: create/update/delete (server-only) |
 | Conversation | 0 (user) | `geniegpcid:<configId>,setrole:PLAYBACK_BASE_ROLE` | Talking to the AI. Entitlement ON |
 | Agent | 0 (user) | `agentid:<agentId>,geniegpcid:<configId>,setrole:PLAYBACK_BASE_ROLE` | Talking as one agent. Entitlement ON |
-| Widget | n/a | auto-derived from `widgetId` | End-user embed. No admin secret in the browser. One shared identity for all visitors |
+| Widget | n/a | auto-derived from `widgetId` | End-user embed. No admin secret in the browser |
 
-Conversation and agent tokens are **user sessions** by default. Pass `sessionType: 'admin'` to get an admin-type session (type 2, no forced role) instead. `restrictions.role` is only allowed with `sessionType: 'admin'`. A second `setrole`, `agentid` or `geniegpcid` in `extraPrivileges` throws `bad_request`. What each token kind can reach: [SECURITY.md § Session type](../../SECURITY.md#session-type).
+Conversation and agent tokens are **user sessions** by default. Pass `sessionType: 'admin'` to get an admin-level session (type 2, no forced role) instead. It reaches everything its `role` and privileges allow, so mint it on your server only. `restrictions.role` is only allowed with `sessionType: 'admin'`. A second `setrole`, `agentid` or `geniegpcid` in `extraPrivileges` throws `bad_request`. What each token kind can reach: [SECURITY.md § Session type](../../SECURITY.md#session-type).
 
 ### Conversation token or agent token?
 
@@ -96,15 +96,15 @@ CONV_KS=$(curl -s -X POST "https://www.kaltura.com/api_v3/service/session/action
   -d "privileges=geniegpcid:1389,setrole:PLAYBACK_BASE_ROLE" | tr -d '"')
 ```
 
-A user session with a `userId` reads, continues, lists and deletes only that user's own threads. A user session **without** a `userId` is one identity shared by every holder of such a token. Any holder can continue a thread whose `threadId` it has, and read, list and delete return 403. Always pass a per-user `userId`.
+Always pass a per-user `userId`.
 
 `mgmt.converse(configId, ...)` and `mgmt.converseOnce(configId, msg, { agentId, userId })` pass `agentId` and `userId` to the token they mint for you.
 
-**Widget tokens** (`createWidgetToken`) are the same string for every visitor, so all visitors share one identity. Anyone who holds a `threadId` can continue that thread, so treat `threadId` as a secret and store it per user on your server. Reading, listing and deleting threads and messages with a widget token fails. Through `Management`, a minted widget `Token` makes those methods throw `wrong_token_scope` before any request. A raw HTTP call, or a raw KS string passed to `Management`, gets 403. When users must be separated, use the per-visitor path in [Widget & Runtime Init](deploy.md#per-visitor-browser-path).
+**Widget tokens** (`createWidgetToken`) need no secret. Every visitor gets the same token. Reach and limits: [SECURITY.md § Session type](../../SECURITY.md#session-type). To separate users, use the [per-visitor path](deploy.md#per-visitor-browser-path).
 
 **Revoke a token.** `mgmt.sessions.revoke(tokenOrKs)` ends the session (`session/end`). Tokens minted with the same `restrictions.sessionGroupId` are revoked together.
 
-**Restrictions.** `restrictions` compiles to KS privileges: `ipRestrict`, `uriRestrict`, `sessionGroupId`, `role` (admin sessions only) and `actionsLimit`. Use `actionsLimit` only for sessions that run a known, fixed number of API actions.
+**Restrictions.** `restrictions` compiles to KS privileges: `ipRestrict`, `uriRestrict`, `sessionGroupId`, `role` (admin sessions only) and `actionsLimit`. `actionsLimit` is a positive integer. Use it only for sessions that run a known, fixed number of API actions. Each string value is one `key:value` privilege in a comma-separated list, so it must not contain a comma or whitespace (`bad_request`). `:` and `/` are fine inside a value, and so is a `*` wildcard where the privilege supports it.
 
 ---
 

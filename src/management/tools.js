@@ -206,14 +206,17 @@ function assertHttpUrl(url, where) {
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') bad('invalid_url', `${where} must use http(s), got ${parsed.protocol} in ${JSON.stringify(url)}.`);
 }
 
+const AUTH_KEYS = ['type', 'client_id', 'client_secret', 'token_url', 'auth_url'];
+
 /**
  * Validate an inline OAuth2 auth block. The block supports the OAuth2
  * authorization-code flow only (viewer consent). `client_id`, `client_secret`,
  * `token_url` and `auth_url` are all required. `client_secret` MUST be a
  * `secrets.<name>` reference: a plaintext secret is refused so no plaintext
  * path exists. `token_url` and `auth_url` are http(s)-validated. `scopes` and
- * `flow` are not options and are rejected. Client-credentials providers do not
- * fit this block.
+ * `flow` are not options and are rejected, as is any other unknown key (an
+ * explicit `undefined` value still counts as present). Client-credentials
+ * providers do not fit this block.
  * @param {{type?:'oauth2', client_id:string, client_secret:string, token_url:string, auth_url:string}} auth
  */
 function buildAuth(auth) {
@@ -221,6 +224,9 @@ function buildAuth(auth) {
   if (auth.type !== undefined && auth.type !== 'oauth2') bad('bad_request', `api tool authentication.type must be "oauth2" (the only supported scheme), got ${JSON.stringify(auth.type)}.`);
   for (const key of ['scopes', 'flow']) {
     if (key in auth) bad('bad_request', `api tool authentication does not support \`${key}\`. The block is the OAuth2 authorization-code flow only: client_id, client_secret, token_url, auth_url.`);
+  }
+  for (const key of Object.keys(auth)) {
+    if (!AUTH_KEYS.includes(key)) bad('bad_request', `api tool authentication has an unknown key \`${key}\`. Allowed keys: ${AUTH_KEYS.join(', ')}.`);
   }
   const { client_id, client_secret, token_url, auth_url } = auth;
   if (typeof client_id !== 'string' || !client_id) bad('bad_request', 'oauth2 authentication needs a non-empty `client_id`.');
@@ -369,7 +375,7 @@ export function clientToolReadiness(body) {
     if (!caps) {
       warnings.push('This intellect references tools (tool_ids) but sets no capabilities. The kaltura_genie_experiences capability is on by default and can make the model prefer its built-in experience tool over your custom tools. Set capabilities:{kaltura_genie_experiences:"off"} at CREATION (the ~24h partner-config cache defeats flipping it later).');
     } else if (caps.kaltura_genie_experiences !== 'off') {
-      warnings.push('This intellect references tools (tool_ids) but kaltura_genie_experiences is not "off" — it can make the model prefer its built-in experience tool over your custom tools. Set kaltura_genie_experiences:"off" unless you also want GenUI experiences.');
+      warnings.push('This intellect references tools (tool_ids) but kaltura_genie_experiences is not "off". It can make the model prefer its built-in experience tool over your custom tools. Set kaltura_genie_experiences:"off" unless you also want GenUI experiences.');
     }
   }
   return { ok: warnings.length === 0, warnings };
@@ -410,7 +416,7 @@ export function clientToolReadiness(body) {
  * wire default for an absent `wait_for_response` is `true`, so an omitted
  * `waitForResponse` blocks. Pass it explicitly:
  *  - `false` — the backend doesn't wait; the turn continues immediately.
- *  - `true` — the turn waits up to `timeout` seconds for your client to
+ *  - `true`: the turn waits up to `timeout` seconds for your client to
  *    answer with {@link import('../experience/session.js').KalturaAvatarSession#respondToTool}
  *    before the model gets a result. Both the 30s default and an explicit
  *    `timeout` are honored.
@@ -547,7 +553,8 @@ function requireToolId(v, name) {
  * class to avoid a circular import (`intellects.js` already imports
  * {@link clientToolReadiness} from this file). `v1/intellect/list` returns a
  * lighter DTO that may omit `tool_ids`, so each candidate is confirmed via
- * `v1/intellect/get`.
+ * `v1/intellect/get`. An intellect that is gone by then (`not_found`) is
+ * skipped; any other error from that call is rethrown.
  * Exported (not just used by `Tools#delete`) so callers upserting a Tool
  * by name — e.g. `provision.js`'s `applyTools` — can run the identical check
  * before mutating a name-matched EXISTING Tool's `config` in place, since that
@@ -564,7 +571,12 @@ export async function findIntellectsReferencingTool(ctx, toolId, ks) {
     const objects = Array.isArray(page?.objects) ? page.objects : [];
     for (const item of objects) {
       if (item?.id === undefined) continue;
-      const full = await ctx.genie('v1/intellect/get', { id: item.id }, ks).then((r) => r.data).catch(() => null);
+      // Skip only an intellect deleted between list and get; any other failure must surface,
+      // or a guarded delete would wrongly report "no references".
+      const full = await ctx.genie('v1/intellect/get', { id: item.id }, ks).then((r) => r.data).catch((e) => {
+        if (e?.code === 'not_found' || e?.code === 'intellect_not_found') return null;
+        throw e;
+      });
       if (Array.isArray(full?.tool_ids) && full.tool_ids.includes(toolId)) refs.push(item.id);
     }
     const total = page?.totalCount;
@@ -676,7 +688,9 @@ export class Tools {
   /**
    * List the configId of every intellect whose `tool_ids` contains `toolId`. READ.
    * This is the check `delete` runs by default. Call it to preview what a delete
-   * would break, or to guard your own upsert-by-name logic.
+   * would break, or to guard your own upsert-by-name logic. Rejects if an
+   * intellect lookup fails (other than `not_found`), so an empty result always
+   * means "checked, none found".
    * @param {string} toolId @param {string} ks (admin)
    * @returns {Promise<number[]>} configIds (empty when nothing references the Tool).
    */
@@ -693,9 +707,11 @@ export class Tools {
    *
    * SAFETY CHECK (default on): before deleting, lists every intellect and
    * refuses with a typed `tool_in_use` error naming each one still carrying
-   * this id in `tool_ids` — Tools are partner-level and shared by name (see
-   * the class doc), so a stale saved id can easily still be load-bearing for
-   * a DIFFERENT intellect than the caller has in mind. Pass
+   * this id in `tool_ids`. If an intellect lookup fails (other than `not_found`),
+   * the call rejects with that error and nothing is deleted. Tools are
+   * partner-level and shared by name (see the class doc), so a stale saved id
+   * can easily still be load-bearing for a DIFFERENT intellect than the caller
+   * has in mind. Pass
    * `{confirmPermanent:true, force:true}` to skip the check and delete
    * unconditionally (e.g. once you've confirmed via `intellectConfig.setToolIds`
    * that every referencing intellect has already been updated).

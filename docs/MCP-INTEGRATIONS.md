@@ -20,7 +20,7 @@ await mgmt.intellectConfig.setMcpServers(configId, {
 | `transport` | No | `'streamable_http'` (default) or `'sse'` — prefer `streamable_http`; `sse` is a legacy MCP transport the spec itself has moved past, kept only for servers that haven't upgraded |
 | `headers` | No | `Record<string,string>` — sent on every call to this server; see [authenticating a server](#authenticating-a-server) below |
 | `allowedTools` | No | `string[]` — restrict the model to only these tool names |
-| `allowedPrompts` | No | `string[]` — accepted and stored; the model cannot use them (see [current limits](#current-limits)) |
+| `allowedPrompts` | No | `string[]`. Accepted and stored; the model cannot use them (see [current limits](#current-limits)) |
 | `allowedResources` | No | `string[]` — same current limit as `allowedPrompts` |
 
 `allowedTools` is enforced **pre-exposure**: a tool outside the list is never shown to the model, not filtered after the fact. So a restrictive `allowedTools` list is a real security boundary, not just a hint.
@@ -62,7 +62,7 @@ session.updateRequestVars({ CRM_TOKEN: thisAttendeesToken });
 
 `{{CRM_TOKEN}}` is a bare request-var reference (no `secrets.` prefix), resolved from the session's own `request_vars` map — the same map `session.updateRequestVars()`/the `requestVars` join option feed everywhere else in the SDK. This works identically in a text (`KalturaChatSession`) and an avatar/voice (`KalturaAvatarSession`) session — the templating happens the same way regardless of transport.
 
-This needs the intellect's `allow_client_variables` gate ON, same as any other `request_vars` use. It is on by default. Pin it with `intellects.setClientVariablesEnabled(configId, true, adminKs)`. See [DYNAMIC-DATA-INJECTION.md § The gate](DYNAMIC-DATA-INJECTION.md#the-gate-allow_client_variables). With the gate off, `updateRequestVars()` is rejected wholesale and the turn comes back empty — no error, and no `CRM_TOKEN` value ever reaches the header.
+This needs the intellect's `allow_client_variables` gate ON, same as any other `request_vars` use. It is on by default. Pin it with `intellects.setClientVariablesEnabled(configId, true, adminKs)`. See [DYNAMIC-DATA-INJECTION.md § The gate](DYNAMIC-DATA-INJECTION.md#the-gate-allow_client_variables). With the gate off, `updateRequestVars()` is rejected wholesale and the turn comes back empty. There is no error, and no `CRM_TOKEN` value ever reaches the header.
 
 Give each attendee their own KS bound to a real identity: mint `createAgentToken({ agentId, userId })` on your server, call `appInit` with it, and send the returned KS to that attendee's browser (see [api/deploy.md § Per-visitor browser path](api/deploy.md#per-visitor-browser-path)). One real `userId` per attendee, not reused for anyone else, keeps each attendee's `{{CRM_TOKEN}}` isolated to them. A widget token is the same string for every visitor, so per-attendee credentials can't work on the widget path.
 
@@ -97,7 +97,7 @@ Only `search_issues` and `get_issue` are ever shown to the model — every other
 
 ## OAuth-gated servers
 
-An MCP server that requires end-user consent (DCR + PKCE) uses the exact same wire mechanism as an `api` tool's OAuth2 flow — see [EXTERNAL-API-INTEGRATIONS.md § When you need OAuth2 (authorization-code flow)](EXTERNAL-API-INTEGRATIONS.md#when-you-need-oauth2-authorization-code-flow) for the full authorization-code/refresh lifecycle. In both cases, the first call with no cached consent comes back as a `type:"interruption"` segment with `metadata.subtype:"oauth_required"` and a consent-redirect `content.auth_url` — documented in full in [wire-protocol/events-catalog.md § OAuth consent redirect](wire-protocol/events-catalog.md#oauth-consent-redirect-interruption--subtypeoauth_required).
+An MCP server that requires end-user consent (DCR + PKCE) uses the exact same wire mechanism as an `api` tool's OAuth2 flow. See [EXTERNAL-API-INTEGRATIONS.md § When you need OAuth2 (authorization-code flow)](EXTERNAL-API-INTEGRATIONS.md#when-you-need-oauth2-authorization-code-flow) for the full authorization-code/refresh lifecycle. In both cases, the first call with no cached consent comes back as a `type:"interruption"` segment with `metadata.subtype:"oauth_required"` and a consent-redirect `content.auth_url`. This is documented in full in [wire-protocol/events-catalog.md § OAuth consent redirect](wire-protocol/events-catalog.md#oauth-consent-redirect-interruption--subtypeoauth_required).
 
 Parse it with `parseOAuthRequired(seg)`, or register `session.onOAuthRequired(handler)` — available on `KalturaAvatarSession`, `KalturaChatSession`, and the `KalturaAgentSession` facade, one handler shape for either transport:
 

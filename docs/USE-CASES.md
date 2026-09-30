@@ -23,7 +23,7 @@ Each use case maps to a runnable script or example in this repo, or the equivale
 | UC-9 | **Custom Voice Clone** | `catalog-item/create` (multipart, `~6 s+` audio) → `itemId` → `avatar/create voice.id` | `mgmt.catalog.createVoice(...)` |
 | UC-10 | **Slide-Deck Walkthrough** | Deck talking points in prompts; deterministic `navigate_to_slide` client-command tool call for nav; optional GenUI widget via `show_widget` | `examples/deck-presenter.html` |
 | UC-11 | **Usage Analytics** | Aggregated client-side; includes `_meta` provenance receipt | `mgmt.messages.reportSummary(ks)` |
-| UC-12 | **Anonymous End-User Embed** | `resolveWidgetId` once (server) → `sessions.createWidgetToken` (browser, no secret) → `appInit` → enriched KS. All visitors share one identity. To separate users, mint `createAgentToken({ agentId, userId })` on the server and call `appInit` with it ([deploy.md](api/deploy.md#per-visitor-browser-path)) | `examples/browser-experience.html` |
+| UC-12 | **Anonymous End-User Embed** | `resolveWidgetId` once (server) → `sessions.createWidgetToken` (browser, no secret) → `appInit` → enriched KS. To separate users: [per-visitor path](api/deploy.md#per-visitor-browser-path) | `examples/browser-experience.html` |
 | UC-13 | **Custom Portrait Avatar** | `catalog-item/create` with portrait JPEG → `catalogItemId` → `avatar/create visual.id` → `appInit` → `KalturaAvatarSession` connects with the portrait animating live | [§ End-to-end recipe](api/design.md#end-to-end-custom-portrait-avatar-server-to-browser) + `test/integration/avatars-catalog.test.js` |
 <!-- /nova-target -->
 

@@ -134,7 +134,7 @@ export class SegmentAssembler {
 
 /**
  * True if `s` looks like it was MEANT to be JSON (starts with `{`/`[` after
- * trimming whitespace) but doesn't actually parse — the signature of a widget cut
+ * trimming whitespace) but doesn't actually parse, the signature of a widget cut
  * off mid-write. A non-JSON string (the loose `key: value` block `parseContent`
  * already tolerates) is never flagged — only a truncated JSON shape is.
  * @param {string} s

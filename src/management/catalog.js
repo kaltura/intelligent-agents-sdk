@@ -124,7 +124,7 @@ export class Catalog {
   /**
    * Upload a CUSTOM background image as an explicit `Background`-typed
    * catalog item, for the two-step `face` + `background` avatar composition
-   * ({@link Avatars#create}). WRITE — NOT idempotent. Same attribute shape
+   * ({@link Avatars#create}). WRITE, NOT idempotent. Same attribute shape
    * as {@link createVisual}/{@link createFace} (the `visual` attribute shape).
    *
    * NAME COLLISION: `attrs.background` here is a photo ATTRIBUTE string (e.g.

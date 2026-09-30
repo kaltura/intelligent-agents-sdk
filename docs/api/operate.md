@@ -28,11 +28,11 @@ CONV_KS=$(curl -s -X POST "https://www.kaltura.com/api_v3/service/session/action
 | Field | Notes |
 |-------|-------|
 | `userMessage` | Required |
-| `threadId` | Omit for new conversation; pass previous value for memory. Treat it as a secret: anyone who holds it and a widget token, or a token without `userId`, can continue the thread. Store it per user on your server |
+| `threadId` | Omit for new conversation; pass previous value for memory |
 | `sse` | `false` = NDJSON (default); `true` = SSE |
 | `model_type` | Optional. The SDK does not set `model_type`; the default is `fast`. |
 | `force_experience` | Must be one of `markdown`, `summarization`, `flashcards`, `avatar_only`. Anything else throws a `validation_error` before any network call. A hint to the brain about which experience to render, not a guaranteed outcome. |
-| `request_vars` | `{{var}}` interpolation values. Needs `allow_client_variables:true` on the intellect. It is on by default (see [Authentication § The Five Services](authentication.md#the-five-services) for what an intellect is). Values **persist on the thread**: the server merges each message's map into what's stored, so send only deltas — a new thread starts clean. They interpolate into both prompt blocks and server-side `api`-tool templates. Reserved `sys__*` keys (including `sys__user_id`) are server-injected and rejected if you try to set them yourself — see § Bind a session to a real end-user identity above for how `sys__user_id` gets populated. Semantics in depth: [docs/DYNAMIC-DATA-INJECTION.md](../DYNAMIC-DATA-INJECTION.md). |
+| `request_vars` | `{{var}}` interpolation values. Needs `allow_client_variables:true` on the intellect. It is on by default (see [Authentication § The Five Services](authentication.md#the-five-services) for what an intellect is). Values **persist on the thread**: the server merges each message's map into what's stored, so send only deltas. A new thread starts clean. They interpolate into both prompt blocks and server-side `api`-tool templates. Reserved `sys__*` keys (including `sys__user_id`) are server-injected and rejected if you try to set them yourself. See § Bind a session to a real end-user identity above for how `sys__user_id` gets populated. Semantics in depth: [docs/DYNAMIC-DATA-INJECTION.md](../DYNAMIC-DATA-INJECTION.md). |
 | `capabilities` | Per-message capability override |
 
 **`allow_client_variables`** must be on to send `request_vars`. It is on by default. Pin it with `mgmt.intellects.setClientVariablesEnabled(configId, true, adminKs)` (WRITE, admin KS; also exposed as `mgmt.intellectConfig.setClientVariablesEnabled`).
@@ -98,7 +98,7 @@ Returns `{aiConsent, avatar, identifiedUser}`. `avatar` is non-null when the age
 
 ## Threads
 
-In this SDK, `threads.list`, `get`, `rename`, `delete`, `transcript`, `setAnalysis`, `clearAnalysis` and `messages.list`, `get`, `share` accept an admin, conversation or agent token. A per-user token (with a `userId`) reaches only its own threads and messages. A widget token is rejected with `wrong_token_scope`. A token without a `userId` is still sent, and the server answers 403. `threads.push`, `messages.report`, `messages.reportSummary`, `feedback.list` and `followups.list` need an admin token. Which threads a token can reach: [SECURITY.md § Session type](../../SECURITY.md#session-type). Pager: `{"pageIndex":1,"pageSize":30}`.
+In this SDK, `threads.list`, `get`, `rename`, `delete`, `transcript`, `setAnalysis`, `clearAnalysis` and `messages.list`, `get`, `share` accept an admin, conversation or agent token. A widget token is rejected with `wrong_token_scope` before any request. A raw KS string is sent as is, and the server answers 403 for a widget KS. What each token reaches: [SECURITY.md § Session type](../../SECURITY.md#session-type). `threads.push`, `messages.report`, `messages.reportSummary`, `feedback.list` and `followups.list` need an admin token. Pager: `{"pageIndex":1,"pageSize":30}`.
 
 | Operation | Endpoint | Body |
 |-----------|----------|------|
@@ -128,7 +128,7 @@ Unlike the admin-token thread endpoints above, this one is called from the brows
 |-----------|----------|------|------|
 | Session completed | `POST {genieUrl}/thread/session_completed` | `{"id":"<threadId>"}` | `Authorization: KS <conversation ks>` |
 
-`{genieUrl}` defaults to `https://genie.nvp1.ovp.kaltura.com` (no `/v1` prefix — a different route family from the thread CRUD above). Send it once at the end. Never await it on a page-unload path.
+`{genieUrl}` defaults to `https://genie.nvp1.ovp.kaltura.com` (no `/v1` prefix, a different route family from the thread CRUD above). Send it once at the end. Never await it on a page-unload path.
 
 Call this the moment a conversation is genuinely over, so end-of-conversation lifecycle rules (summaries, insights, CRM pushes) fire right away.
 
@@ -145,7 +145,7 @@ There is no documented cap on how long a thread's history can grow. The full tra
 Feedback and follow-up suggestions route through internal Genie paths — use the SDK rather than calling them directly.
 
 - `mgmt.feedback.add({message_id, is_positive, comment?}, convKs)` — thumbs up/down on a message. `message_id` comes from the converse stream.
-- `mgmt.feedback.list(ks, opts)` — admin-only feedback listing, filterable by `messageIdEquals`/`messageIdsIn`/`threadIdEquals`/`agentIdEquals`/`isPositiveEquals`. ⚠️ SENSITIVE: contains end-user ids/names + verbatim question/feedback text. Treat as PII; scope and redact before sharing.
+- `mgmt.feedback.list(ks, opts)`: admin-only feedback listing, filterable by `messageIdEquals`/`messageIdsIn`/`threadIdEquals`/`agentIdEquals`/`isPositiveEquals`. ⚠️ SENSITIVE: contains end-user ids/names + verbatim question/feedback text. Treat as PII; scope and redact before sharing.
 - `mgmt.followups.getSuggested(ks)` — starter questions for the partner/agent. The returned set can vary between calls — don't assume a stable, fixed list. Per-answer follow-ups stream inline as `unisphere-tool` segments when `capabilities.generate_followup_questions:"on"`.
 - `mgmt.followups.list(ks, opts)` — raw partner-wide follow-up/starter question record listing (distinct from `getSuggested`'s per-agent shortlist).
 

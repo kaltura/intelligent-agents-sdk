@@ -387,6 +387,34 @@ test('lintPersonaIdentity: self-intro with a capitalized name is still detected'
   }
 });
 
+test('lintPersonaIdentity: a curly apostrophe is treated like a straight one in the self-intro', () => {
+  // The leading "Sam" would win the mid-sentence fallback if the curly opener were not recognized.
+  const r = lintPersonaIdentity({ name: 'Nova', openingPhrase: 'Hello Sam, I’m Luna!', baseDirective: 'You are Nova.', prompts: [] });
+  assert.equal(r.detectedName, 'Luna');
+  const bad = lintPersonaIdentity({ name: 'Nova', openingPhrase: 'Hello, I’m going to help you today.', baseDirective: 'You are Nova.', prompts: [] });
+  assert.equal(bad.detectedName, null);
+});
+
+test('lintPersonaIdentity: ALL-CAPS openers work, the name is returned as written; other casings of the opener are not matched', () => {
+  for (const [phrase, name] of [['Hello Sam, I AM LUNA.', 'LUNA'], ["Hello Sam, I'M Luna.", 'Luna'], ['Hello Sam, MY NAME IS LUNA.', 'LUNA'], ['Hello Sam, THIS IS Luna.', 'Luna']]) {
+    const r = lintPersonaIdentity({ name: 'Nova', openingPhrase: phrase, baseDirective: 'You are Nova.', prompts: [] });
+    assert.equal(r.detectedName, name, phrase);
+  }
+  // A lowercase word after an ALL-CAPS opener is still not a name.
+  for (const phrase of ['I AM going to help you today.', 'MY NAME IS going to be short.', 'THIS IS going well.']) {
+    assert.equal(lintPersonaIdentity({ name: 'Nova', openingPhrase: phrase, baseDirective: 'You are Nova.', prompts: [] }).detectedName, null, phrase);
+  }
+  // Mixed-case opener ("I Am") is not a recognized opener and falls back to the mid-sentence capital rule.
+  assert.equal(lintPersonaIdentity({ name: 'Nova', openingPhrase: 'Hello, I Am Luna.', baseDirective: 'You are Nova.', prompts: [] }).detectedName, 'Am');
+});
+
+test('lintPersonaIdentity: the declared name and the opening name compare case-insensitively', () => {
+  const codes = (name, openingPhrase) => lintPersonaIdentity({ name, openingPhrase, baseDirective: `You are ${name}.`, prompts: [] }).findings.map((f) => f.code);
+  assert.equal(codes('Luna', 'Hello Sam, I AM LUNA.').includes('persona_name_mismatch'), false);
+  assert.equal(codes('LUNA', "Hello Sam, I'm Luna.").includes('persona_name_mismatch'), false);
+  assert.equal(codes('Nova', 'Hello Sam, I AM LUNA.').includes('persona_name_mismatch'), true);
+});
+
 test('lintPersonaIdentity: empty baseDirective/prompts haystack skips the drift check (no false positive on minimal input)', () => {
   const r = lintPersonaIdentity({ name: 'Nova', openingPhrase: "I'm Nova." });
   assert.equal(r.detectedName, 'Nova');

@@ -94,6 +94,45 @@ test('restrictions.role on a user session is rejected before any network call', 
   assert.equal(f.calls.length, 0);
 });
 
+test('restriction values that would break the key:value,key:value structure are rejected before any network call', async () => {
+  const f = sessionFetch();
+  const m = new Management({ partnerId: 123, adminSecret: 'a'.repeat(32), fetch: f });
+  for (const [restrictions, re] of /** @type {const} */ ([
+    [{ ipRestrict: '1.2.3.4,sview:x' }, /comma or whitespace/],
+    [{ uriRestrict: '/api_v3/*,sview:x' }, /comma or whitespace/],
+    [{ sessionGroupId: 'grp,sview:x' }, /comma or whitespace/],
+    [{ sessionGroupId: 'grp sview:x' }, /comma or whitespace/],
+    [{ uriRestrict: '/a\n/b' }, /comma or whitespace/],
+    [{ actionsLimit: 1.5 }, /positive integer/],
+    [{ actionsLimit: 0 }, /positive integer/],
+    [{ actionsLimit: -3 }, /positive integer/],
+    [{ actionsLimit: '5' }, /positive integer/],
+  ])) {
+    await assert.rejects(
+      () => m.sessions.createConversationToken({ configId: 1222, restrictions }),
+      (e) => e.code === 'bad_request' && re.test(e.detail),
+      JSON.stringify(restrictions),
+    );
+  }
+  await assert.rejects(
+    () => m.sessions.createConversationToken({ configId: 1222, sessionType: 'admin', userId: 'ops', restrictions: { role: '7,sview:x' } }),
+    (e) => e.code === 'bad_request' && /comma or whitespace/.test(e.detail),
+  );
+  assert.equal(f.calls.length, 0);
+});
+
+test('restriction values keep colons, slashes and wildcards inside one privilege', async () => {
+  const f = sessionFetch();
+  const m = new Management({ partnerId: 123, adminSecret: 'a'.repeat(32), fetch: f });
+  const t = await m.sessions.createConversationToken({
+    configId: 1222,
+    restrictions: {
+      actionsLimit: 3, ipRestrict: '2001:db8::1', uriRestrict: '/api_v3/service/baseEntry/action/*/x/y', sessionGroupId: 'grp-1',
+    },
+  });
+  assert.match(t.privileges, /,actionslimit:3,iprestrict:2001:db8::1,urirestrict:\/api_v3\/service\/baseEntry\/action\/\*\/x\/y,sessionid:grp-1$/);
+});
+
 test('a second setrole/agentid/geniegpcid in extraPrivileges is rejected before any network call', async () => {
   const f = sessionFetch();
   const m = new Management({ partnerId: 123, adminSecret: 'a'.repeat(32), fetch: f });

@@ -631,7 +631,7 @@ export class KalturaChatSession extends Emitter {
     const keys = Object.keys(this._requestVars || {});
     if (!keys.length || this._warned.has('empty-turn-request-vars')) return;
     this._warned.add('empty-turn-request-vars');
-    this._log('warn', `turn ended with no output while request variables were sent (keys: ${keys.join(', ')}) — if this repeats, the intellect's allow_client_variables gate is likely OFF (this failure is silent; no error is returned). Turn it on with intellects.setClientVariablesEnabled(id, true, adminKs).`);
+    this._log('warn', `turn ended with no output while request variables were sent (keys: ${keys.join(', ')}). If this repeats, the intellect's allow_client_variables gate is likely OFF (this failure is silent; no error is returned). Turn it on with intellects.setClientVariablesEnabled(id, true, adminKs).`);
     this.emit('warning', {
       code: 'empty_turn_with_request_vars',
       message: 'Turn produced no output while request variables were sent — likely allow_client_variables is off on the intellect (a silent failure; the server returns no error).',

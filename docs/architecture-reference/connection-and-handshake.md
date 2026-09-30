@@ -56,18 +56,18 @@ Step 11 runs once both lanes are done. The first lane to fail rejects `connect()
 
 | # | Client does | Emits (→) / Waits (←) | Inbound event | Timeout |
 |---|-------------|----------------------|---------------|---------|
-| 0 | Start `getUserMedia(audio:true,video:false)` in the background | — | (browser mic prompt) | — (not awaited) |
+| 0 | Start `getUserMedia(audio:true,video:false)` in the background | - | (browser mic prompt) | - (not awaited) |
 | 1 | Open socket | ← | `onServerConnected` `{finalUrl, agentName, hostName}`; the SDK emits `streamReady` | 10s (`ConnectionTimeout`) |
-| 2 | Join room | → `join` (see payload below) | — | — |
+| 2 | Join room | → `join` (see payload below) | - | - |
 | 3 | Wait config + join ack | ← `clientConfiguration`, ← `joinComplete` | both required | `clientConfiguration` 5s, `joinComplete` **20s** (both `JoinRoomTimeout`) |
-| 4 | Create STV session | → `stvNewSession` `{room_id}`, and → `checkAvailability` in parallel | — | — |
-| 5 | Wait session | ← `stvNewSession` `{session_id, status, webrtc_url?}` (or ← `throwToNoAgent`) | sets `sessionId` + `webrtcUrl` | — |
+| 4 | Create STV session | → `stvNewSession` `{room_id}`, and → `checkAvailability` in parallel | - | - |
+| 5 | Wait session | ← `stvNewSession` `{session_id, status, webrtc_url?}` (or ← `throwToNoAgent`) | sets `sessionId` + `webrtcUrl` | - |
 | 6 | Wait agent | ← `showAgent` | agent joined | 10s (`AgentResponseTimeout`) |
 | 7 | Wait ready | ← `askPermissions` `{constraints:{audio,video}}` | ready for the mic | 10s (`AgentResponseTimeout`) |
-| 9 | Connect ASR (mic uplink), lane A, after 6→7 | `asr-webrtc-*` handshake ([§5](../wire-protocol/audio-channels.md#5-asr-uplink-pc1--microphone--server)) | — | 30s per wait (`ASRConnectionFailed`) |
+| 9 | Connect ASR (mic uplink), lane A, after 6→7 | `asr-webrtc-*` handshake ([§5](../wire-protocol/audio-channels.md#5-asr-uplink-pc1--microphone--server)) | - | 30s per wait (`ASRConnectionFailed`) |
 | 10 | Subscribe STV video (WHEP) **and wait until it is *playable*, or give up waiting**, lane B, starts right after step 5 | → WHEP `POST` (no timeout of its own) → wait for the video track, then `<video>` `canplay` + ~300ms settle. Without `canplay` within 2s of the track, or without any track within 6s of the subscribe start, the gate settles anyway | first decoded frame, or a fallback timer elapsing | 6s cap from subscribe start (2s after the track if `canplay` is missing); settles either way |
-| 11 | Emit `disclosure`, then approve (this starts the spoken greeting), once lanes A and B are both done | → `approvedPermissions` `{room}` | — | — |
-| 12 | Opening turn runs. With a silent opening phrase (`SILENT_OPENING`) it produces no speech and ends in about 0.5 s. A configured `kickoff` is sent on its `stvFinishedTalking` ([guide](../START-THE-CONVERSATION.md)) | ← `stvStartedTalking` … ← `stvFinishedTalking`, then → `onTextEntered {text}` | `stvFinishedTalking` | — |
+| 11 | Emit `disclosure`, then approve (this starts the spoken greeting), once lanes A and B are both done | → `approvedPermissions` `{room}` | - | - |
+| 12 | Opening turn runs. With a silent opening phrase (`SILENT_OPENING`) it produces no speech and ends in about 0.5 s. A configured `kickoff` is sent on its `stvFinishedTalking` ([guide](../START-THE-CONVERSATION.md)) | ← `stvStartedTalking` … ← `stvFinishedTalking`, then → `onTextEntered {text}` | `stvFinishedTalking` | - |
 | → | **CONNECTED** | listen for `agent_raw_text`, `generatingSpeech`, `stvStartedTalking` | — | — |
 <!-- /nova-target -->
 

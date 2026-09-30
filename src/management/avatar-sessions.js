@@ -90,7 +90,7 @@ export class AvatarSessions {
    * Neither value is a secret in the way `session.token` is; this is the
    * one payload from this whole class that's safe to send to a browser.
    *
-   * WRITE — not idempotent to retry blindly. Call it once per session, right
+   * WRITE, not idempotent to retry blindly. Call it once per session, right
    * after {@link create}.
    *
    * @param {{sessionId:string, token:string}} session  From {@link create}.

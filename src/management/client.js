@@ -235,8 +235,7 @@ export class Management {
    *
    * `opts.agentId` and `opts.userId` go to the auto-mint only (ignored when `ks`
    * is passed). `agentId` labels the thread with the real agent id. `userId`
-   * gives the end user their own threads; without it, auto-minted calls share
-   * one identity. See {@link Sessions#createConversationToken}.
+   * gives the end user their own threads. See {@link Sessions#createConversationToken}.
    * @param {number} configId
    * @param {string} message
    * @param {{agentId?:string,userId?:string|number,threadId?:string,sse?:boolean,model_type?:string,force_experience?:string,request_vars?:object,capabilities?:object}} [opts]
@@ -272,7 +271,7 @@ export class Management {
    * Agent factory — provision a complete, deployable agent from a one-line
    * brief: generateProfile → intellect.add → pick preset voice and visual →
    * avatar.create → intellect.update (prompts, opening phrase) → agent.create →
-   * resolveWidgetId. Returns every id + a `_meta` receipt. WRITE — creates
+   * resolveWidgetId. Returns every id + a `_meta` receipt. WRITE, creates
    * multiple resources. Requires an admin token. See {@link provision}.
    * @param {object} opts {brief, ks, voiceId?, visualId?, openingPhrase?, adminTags?, maxConversationLength?, idempotencyKey?, capabilities?, tools?, knowledge?}
    */
@@ -309,6 +308,7 @@ export function ksString(ks) {
  * whose privileges aren't client-readable, passes through and the server decides.
  * Every token from `sessions.*` takes path (1), so it is always checked.
  * `'userOrAdmin'` accepts `admin`, `conversation` and `agent` and rejects `widget`.
+ * Only a minted widget Token is refused client-side; a raw KS string is not checked and the server's answer is returned.
  * @param {string|{ks:string,kind?:string,entitlementEnforced?:boolean}} ks
  * @param {'admin'|'conversation'|'userOrAdmin'} expected @param {string} where @param {(t:string,o:string,f?:object)=>void} [audit]
  * @returns {string} the raw KS

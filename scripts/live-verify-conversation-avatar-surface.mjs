@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Live-backend verification for these backend-touching capabilities —
+ * Live-backend verification for these backend-touching capabilities:
  * real Kaltura API, no fakes: Threads#push/setAnalysis/clearAnalysis,
  * Feedback#add/list, Followups#list, Avatars#create/update
  * composed both via face+background and via templateId+background,

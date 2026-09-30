@@ -290,3 +290,62 @@ test("disconnect() inside a 'track' listener defers the peer's close() to the ne
   v2.disconnect();
   assert.equal(pc2.closed, true, 'outside ontrack the close is synchronous');
 });
+
+/** A fetch whose WHEP POST stays open until `release()` is called. */
+function gatedFetch(locationHeader) {
+  const calls = [];
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const fn = async (url, init = {}) => {
+    calls.push({ url: String(url), method: init.method || 'GET' });
+    if (init.method === 'DELETE') return { ok: true, status: 200, headers: { get: () => null }, text: async () => '' };
+    if (calls.filter((c) => c.method === 'POST').length === 1) await gate;
+    return { ok: true, status: 201, headers: { get: (k) => (k.toLowerCase() === 'location' ? locationHeader : null) }, text: async () => 'v=0\r\nfake-answer\r\n' };
+  };
+  fn.calls = calls;
+  fn.release = release;
+  return fn;
+}
+
+test('disconnect() while connect() awaits the WHEP POST: connect() rejects, state stays disconnected, the answer\'s Location is released, and the instance reconnects', async () => {
+  const f = gatedFetch('/whep/abc123/res1');
+  const v = view({ fetch: f });
+  const attempt = v.connect();
+  await new Promise((r) => setTimeout(r, 0));   // connect() is parked on the POST
+  v.disconnect();
+  f.release();
+
+  await assert.rejects(() => attempt, (e) => e.code === 'connect_failed');
+  assert.equal(v.state, 'disconnected');
+  await new Promise((r) => setTimeout(r, 0));
+  const dels = f.calls.filter((c) => c.method === 'DELETE');
+  assert.deepEqual(dels.map((c) => c.url), ['https://media.example.com/whep/abc123/res1'], 'the cancelled attempt\'s viewer is released once');
+
+  await v.connect();
+  assert.equal(v.state, 'connected');
+});
+
+test('disconnect() while connect() awaits playback: connect() rejects and the state is not flipped back to connected', async () => {
+  const videoEl = new FakeVideoEl({ autoCanPlay: false });
+  const f = fakeFetch([{ match: '/whep/abc123', respond: () => ({ status: 201, body: 'v=0\r\nfake-answer\r\n' }) }]);
+  const v = view({ videoEl, fetch: f });
+  const attempt = v.connect();
+  await new Promise((r) => setTimeout(r, 10));   // past the answer, waiting for canplay
+  v.disconnect();
+
+  await assert.rejects(() => attempt, (e) => e.code === 'connect_failed');
+  assert.equal(v.state, 'disconnected');
+  v.setVideoEl(new FakeVideoEl());
+  await v.connect();
+  assert.equal(v.state, 'connected', 'the same instance reconnects after a cancelled connect');
+  v.disconnect();
+});
+
+test('whep_private_ip: the rejected Location is never DELETEd by a later disconnect()', async () => {
+  const f = fakeFetch([{ match: '/whep/abc123', respond: () => ({ status: 201, body: 'v=0\r\nfake-answer\r\n', headers: { Location: 'https://10.0.0.9/whep/abc123/res1' } }) }]);
+  const v = view({ fetch: f });
+  await assert.rejects(() => v.connect(), (e) => e.code === 'whep_private_ip');
+  v.disconnect();
+  await new Promise((r) => setTimeout(r, 0));
+  assert.deepEqual(f.calls.filter((c) => c.method === 'DELETE'), []);
+});

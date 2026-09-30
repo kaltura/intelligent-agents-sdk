@@ -96,3 +96,46 @@ test('admin-only methods still reject a conversation token (threads.push)', asyn
   const m = new Management({ partnerId: 999, adminSecret: 'x'.repeat(32) });
   await assert.rejects(async () => m.threads.push({ id: 't1', content: 'x' }, CONV), (e) => e.code === 'wrong_token_scope');
 });
+
+test('relaxed own-thread methods send a raw KS string as-is (no client-side widget check, no wrong_token_scope)', async () => {
+  const RAW = 'raw-ks-string';
+  const ok = { status: 200, body: { objects: [], totalCount: 0, id: 't1', totalCountRemoved: 0 } };
+  const ff = fakeFetch([
+    { match: 'thread/list', respond: () => ok }, { match: 'thread/get_transcripts', respond: () => ok },
+    { match: 'thread/get', respond: () => ok }, { match: 'thread/update', respond: () => ok },
+    { match: 'thread/delete', respond: () => ok }, { match: 'message/list', respond: () => ok },
+    { match: 'message/get', respond: () => ok },
+    { match: 'message/share', respond: () => ({ status: 200, body: { status: 'success', data: { newMessageId: 'm2' } } }) },
+  ]);
+  const m = new Management({ partnerId: 999, adminSecret: 'x'.repeat(32), fetch: ff });
+  const calls = [
+    () => m.threads.list(RAW).all(),
+    () => m.threads.get('t1', RAW),
+    () => m.threads.transcript('t1', RAW),
+    () => m.threads.rename('t1', 'title', RAW),
+    () => m.threads.setAnalysis('t1', { a: 1 }, RAW),
+    () => m.threads.clearAnalysis('t1', RAW),
+    () => m.threads.delete(['t1'], RAW, { confirmPermanent: true }),
+    () => m.messages.list(RAW).all(),
+    () => m.messages.get('m1', RAW),
+    () => m.messages.share('m1', 'copy', RAW),
+  ];
+  for (const call of calls) await call();
+  assert.equal(ff.calls.length, calls.length);
+  for (const c of ff.calls) assert.match(JSON.stringify(c.headers), /raw-ks-string/, `${c.url} carries the raw KS`);
+});
+
+test('a minted widget Token gets wrong_token_scope on all ten relaxed methods, before any request', async () => {
+  const ff = fakeFetch([]);
+  const m = new Management({ partnerId: 999, adminSecret: 'x'.repeat(32), fetch: ff });
+  const W = { ks: CONV, kind: 'widget' };
+  const calls = [
+    () => m.threads.list(W).all(), () => m.threads.get('t1', W), () => m.threads.transcript('t1', W),
+    () => m.threads.rename('t1', 'title', W), () => m.threads.setAnalysis('t1', { a: 1 }, W),
+    () => m.threads.clearAnalysis('t1', W), () => m.threads.delete(['t1'], W, { confirmPermanent: true }),
+    () => m.messages.list(W).all(), () => m.messages.get('m1', W), () => m.messages.share('m1', 'copy', W),
+  ];
+  assert.equal(calls.length, 10);
+  for (const call of calls) await assert.rejects(async () => call(), (e) => e.code === 'wrong_token_scope');
+  assert.equal(ff.calls.length, 0);
+});

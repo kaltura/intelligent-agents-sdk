@@ -106,7 +106,7 @@ const conv = await kaltura.sessions.createConversationToken({
 const reply = await kaltura.converseOnce('<configId from Step 3>', 'Hello again!', {}, conv);
 ```
 
-`userId` is required on admin tokens and optional on conversation and agent tokens, but pass one for real users. A token without it is one identity shared by every holder: any of them can continue a thread whose `threadId` it has. See [SECURITY.md § Session type](SECURITY.md#session-type) and "Bind a session to a real end-user identity" under [Authentication & Services](docs/api/authentication.md#authentication) in API-REFERENCE.md for the full picture.
+`userId` is required on admin tokens and optional on conversation and agent tokens, but pass one for real users. What each token can reach: [SECURITY.md § Session type](SECURITY.md#session-type).
 
 `agentId` labels the thread, so [lifecycle rules](docs/lifecycle/README.md#scoping-a-rule-to-one-agent) scoped to `object.agent_id` match it. Without it the thread gets `agent_id: "default"`. `createAgentToken` is the alternative when you start from an `agentId`: [Conversation token or agent token?](docs/api/authentication.md#conversation-token-or-agent-token).
 

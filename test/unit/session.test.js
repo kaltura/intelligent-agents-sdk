@@ -584,15 +584,29 @@ test('respondToTool: 2xx returns {ok:true}; HTTP 4xx/5xx returns {ok:false, reas
   const { session, socket } = newSession({ cfg: { fetch, genieUrl: 'https://genie.example' } });
   scriptHappyPath(socket);
   await session.connect();
-  session._pendingToolAcks.set('inv-1', { name: 'save_note', at: session._now() });
+  socket.server('agent_raw_text', { speechId: 's1', delta: JSON.stringify({ type: 'tool', content: 'save_note {"a":1}', tool_metadata: { id: 'inv-1', wait_for_response: true, type: 'client' } }) });
+  await delay(0);   // agent_raw_text handler is async
   assert.deepEqual(await session.respondToTool('inv-1', { a: 1 }), { ok: false, reason: 'http_error', status: 500 });
-  assert.ok(session._pendingToolAcks.has('inv-1'), 'still pending after a rejected POST');
   ackStatus = 200;
-  assert.deepEqual(await session.respondToTool('inv-1', { a: 1 }), { ok: true });
-  assert.equal(session._pendingToolAcks.has('inv-1'), false);
+  assert.deepEqual(await session.respondToTool('inv-1', { a: 1 }), { ok: true }, 'the call stayed pending after the rejected POST, so the retry goes through');
+  assert.deepEqual(await session.respondToTool('inv-1', { a: 1 }), { ok: false, reason: 'unknown_or_stale' }, 'the ACK is consumed after success');
   assert.equal(acks.length, 2);
   assert.equal(acks[0].tool_id, 'inv-1');
   session.disconnect();
+});
+
+test('connect() rejects a private-IP WHEP Location and disconnect() never sends a DELETE to it', async () => {
+  const calls = [];
+  const fetch = async (url, init = {}) => {
+    calls.push({ url: String(url), method: init.method });
+    return { ok: true, status: 201, text: async () => 'v=0\r\nanswer\r\n', headers: { get: () => 'https://10.0.0.9/whep/resource/1' } };
+  };
+  const { session, socket } = newSession({ cfg: { fetch } });
+  scriptHappyPath(socket);
+  await assert.rejects(() => session.connect(), (e) => e.code === 'whep_private_ip');
+  session.disconnect();
+  await delay(0);
+  assert.deepEqual(calls.filter((c) => c.method === 'DELETE'), [], 'no DELETE to the rejected Location');
 });
 
 test('updateRequestVars / setDynamicPrompt keep cfg.contextId and cfg.contextType in the updateGenieContext emit', async () => {

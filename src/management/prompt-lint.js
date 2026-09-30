@@ -518,6 +518,8 @@ const GREETING_STOPWORDS = new Set([
   'You', 'Your', 'Yours', 'My', 'Please', 'Sure', 'Sorry', 'How', 'What', 'Why',
   'When', 'Where', 'Who', 'Can', 'Could', 'Would', 'Will', 'Let', 'Today', 'Here',
   'This', 'That', 'It', 'The', 'A', 'An', 'Ready', 'Happy', 'Excited', 'I',
+  // Words of an ALL-CAPS self-introduction opener ("I AM", "MY NAME IS", "THIS IS").
+  'AM', 'MY', 'NAME', 'IS', 'THIS',
 ]);
 
 /** @param {string} word */
@@ -530,7 +532,8 @@ function bareName(word) {
  * no plausible name is found — deliberately conservative, since a false
  * "detected name" would produce a false-positive warning downstream.
  * Recognizes, in priority order: (1) a self-introduction ("I'm X", "my name
- * is X"), (2) a possessive form ("X's"), (3) any other capitalized word not
+ * is X", straight or curly apostrophe; the opener may also be ALL CAPS, and
+ * the name is returned as written), (2) a possessive form ("X's"), (3) any other capitalized word not
  * in {@link GREETING_STOPWORDS} and not at the start of a sentence (sentence-
  * initial capitals — "How", "Thanks", or an exclamation like "Namaste!" — are
  * structurally common and not names; a name is only inferred mid-sentence).
@@ -540,7 +543,7 @@ function bareName(word) {
 function extractProperName(text) {
   if (typeof text !== 'string' || text.trim() === '') return null;
 
-  const selfIntro = text.match(/\b(?:[Ii]'m|[Ii] am|[Mm]y name is|[Tt]his is)\s+([A-Z][a-zA-Z]*(?:'s|’s)?)/);
+  const selfIntro = text.match(/\b(?:[Ii]['’]m|I['’]M|[Ii] am|I AM|[Mm]y name is|MY NAME IS|[Tt]his is|THIS IS)\s+([A-Z][a-zA-Z]*(?:'s|’s)?)/);
   if (selfIntro && !GREETING_STOPWORDS.has(bareName(selfIntro[1]))) return bareName(selfIntro[1]);
 
   const possessive = text.match(/\b([A-Z][a-zA-Z]*(?:'s|’s))\b/);
@@ -610,7 +613,7 @@ export function lintPersonaIdentity(input) {
   const detectedName = extractProperName(typeof openingPhrase === 'string' ? openingPhrase : '');
   const declaredName = typeof name === 'string' && name.trim() !== '' ? name.trim() : null;
 
-  if (detectedName && declaredName && declaredName !== detectedName) {
+  if (detectedName && declaredName && declaredName.toLowerCase() !== detectedName.toLowerCase()) {
     findings.push({
       severity: 'warning',
       code: 'persona_name_mismatch',

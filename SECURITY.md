@@ -55,36 +55,35 @@ A KS carries the privileges that decide what it can do. Full privilege reference
 |-------|-----------|-----------|-------------|--------------|
 | **admin** | `sessions.createAdminToken({ userId })` | `disableentitlement` | OFF | Management-plane calls (provisioning, config), server-side |
 | **conversation / agent** | `sessions.createConversationToken({ configId, userId })` / `createAgentToken({ agentId, userId })` | `setrole:PLAYBACK_BASE_ROLE`, `geniegpcid:<configId>`, and `agentid:<id>` (agent tokens, or conversation tokens minted with `agentId`) | ON | The token your server hands a live avatar/chat session. A user session (KS type 0) by default. See [Session type](#session-type) |
-| **widget** | `sessions.createWidgetToken({widgetId})` | server-derived | ON | Public, secret-free anonymous embed, safe to mint straight from the browser. One shared identity for all visitors. See [Session type](#session-type) |
+| **widget** | `sessions.createWidgetToken({widgetId})` | server-derived | ON | Public, secret-free anonymous embed, safe to mint straight from the browser. See [Session type](#session-type) |
 
 For anything that reaches a browser, mint `conversation`/`agent` tokens (with a per-user `userId`) or `widget` tokens. Keep `admin` tokens server-side. `createConversationToken`/`createAgentToken` reject `extraPrivileges` that disable entitlement (`entitlement_violation`). Which of the two to use: [Conversation token or agent token?](docs/api/authentication.md#conversation-token-or-agent-token).
 
-Sending broader access to a browser (an admin token, or `sessionType: 'admin'` on a conversation/agent token) is your server's decision at mint time. The browser SDK can't check it: a real KS's privileges are encrypted, so `inspectKs()` reports `disableEntitlement: null`.
+Admin-type tokens (`createAdminToken()`, or `sessionType: 'admin'` on a conversation/agent token) are for your server. Your server decides at mint time what reaches a browser. The browser SDK can't check it: a real KS's privileges are encrypted, so `inspectKs()` reports `disableEntitlement: null`.
 
 ## Session type
 
-`createConversationToken()` and `createAgentToken()` mint a **user session** (KS type 0) by default: `setrole:PLAYBACK_BASE_ROLE`, entitlement ON. `sessionType: 'admin'` opts out to KS type 2 with no forced role. `createAdminToken()` is always type 2 with `disableentitlement`, server-side only. Every type 2 mint needs a `userId`, which becomes the owner of anything the token creates. Minting options: [Authentication](docs/api/authentication.md).
+`createConversationToken()` and `createAgentToken()` mint a **user session** (KS type 0) by default: `setrole:PLAYBACK_BASE_ROLE`, entitlement ON. `sessionType: 'admin'` mints an admin-level session (KS type 2, no forced role), limited only by the `role` and privileges you set. `createAdminToken()` is always type 2 with `disableentitlement`, server-side only. Every type 2 mint needs a `userId`, which becomes the owner of anything the token creates. Minting options: [Authentication](docs/api/authentication.md).
 
 What each token can reach:
 
-| Token | Separates users | Threads | OVP admin reach |
-|---|---|---|---|
-| **Admin** (type 2) | No | Every user's threads | Yes |
-| **Conversation/agent with `userId`** | Yes | Own threads only: read, continue, list, delete | No |
-| **Conversation/agent without `userId`** | No. All holders share one identity | Continue any thread whose `threadId` it holds. Read, list and delete return 403 | No |
-| **Widget** | No. All visitors share one identity | Same as without `userId` | No |
+| Token | Threads | OVP admin APIs |
+|---|---|---|
+| **Admin type (type 2)**: `createAdminToken()`, or `sessionType: 'admin'` | Every user's threads | Yes, within the `role` and privileges you set |
+| **Conversation/agent with `userId`** (user session) | Own threads: read, continue, list, delete | No |
+| **Conversation/agent without `userId`** | One identity for all holders. Read, list and delete return 403 | No |
+| **Widget** | Same as without `userId` | No |
 
 - **Always pass a per-user `userId`** when you mint a conversation or agent token. Any stable opaque id works. The user needs no registration.
-- `threads.list/get/delete/transcript/rename/setAnalysis/clearAnalysis` and `messages.list/get/share` accept an admin, conversation or agent token, never a widget token. A per-user token reaches only its own data. `threads.push`, `messages.report`, `messages.reportSummary`, `feedback.list` and `followups.list` require an admin token.
-- **Widget tokens can't separate users.** Treat every `threadId` as a secret and store it per user on your server.
-- **When users must be separated in the browser**, your server mints `createAgentToken({ agentId, userId })`, calls `application.appInit` with it, and sends the returned KS to the browser. That KS answers as the agent, keeps entitlement ON and keeps the user's identity.
+- **Widget tokens can't separate users.** Keep each `threadId` on your server, stored per user. To separate users in a browser, use the [per-visitor path](docs/api/deploy.md#per-visitor-browser-path).
+- Which methods take which token: [Threads](docs/api/operate.md#threads).
 
 `subjectId` is for audit only. It is not an access boundary. Use `userId` on the token for that.
 
 ## Token lifecycle (RFC 9700 OAuth 2.0 Security BCP; NIST AC family)
 
 - Short-lived by default: browser-bound tokens (`conversation`/`agent`) default to 30 minutes, admin to 1 hour. Short TTL is the primary revocation lever for a stateless KS (RFC 9700 §6.1). Override per call with `ttlSeconds`, up to 86400 s (24 h) for browser-bound kinds and 7 days for admin; longer throws `ttl_too_long`. To refresh, your server mints a fresh token and the browser calls `session.setToken(freshKs)`, with no reconnect.
-- Least privilege / binding (RFC 9700 §2.3, §4.10): tighten a token with the structured `restrictions` option instead of hand-crafting privilege strings. `{ role, actionsLimit, ipRestrict, uriRestrict, sessionGroupId }` compiles to the matching Kaltura privileges (`setrole`/`actionslimit`/`iprestrict`/`urirestrict`/`sessionid`). `role` needs `sessionType: 'admin'`. `actionsLimit` fits sessions that run a known, fixed number of API actions. All restrictions are optional; none is set by default.
+- Least privilege / binding (RFC 9700 §2.3, §4.10): tighten a token with the structured `restrictions` option instead of hand-crafting privilege strings. `{ role, actionsLimit, ipRestrict, uriRestrict, sessionGroupId }` compiles to the matching Kaltura privileges (`setrole`/`actionslimit`/`iprestrict`/`urirestrict`/`sessionid`). `role` needs `sessionType: 'admin'`. All restrictions are optional; none is set by default. Values and limits: [Authentication](docs/api/authentication.md).
 - Active revocation (RFC 9700 §5.2.1.1; SOC 2 CC6.2/CC6.3): `sessions.revoke(tokenOrKs)` ends a leaked token within seconds (Kaltura `session/end`). Tokens that share a `restrictions.sessionGroupId` are revoked together: revoking any member ends the whole family. Returns a receipt: `{ revokedAt, partnerId, _meta }`.
 - Vault/KMS (NIST IA-5): pass `getAdminSecret: () => fetchFromVault()` to fetch the secret per-mint instead of holding it; it is never stored as an enumerable field.
 

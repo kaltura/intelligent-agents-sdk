@@ -22,8 +22,8 @@ import { validateCapabilities, mergeCapabilityWrite } from './capabilities.js';
 import { stripServerManaged } from './intellect-body.js';
 import { newFormData as sharedNewFormData } from './catalog.js';
 
-// NOTE: unlike GENIE_MESSAGE_FILTER, the thread filter's objectType has no "Genie" prefix —
-// 'GenieListThreadFilter' 422s with "Input should be 'ListThreadFilter'".
+// NOTE: unlike GENIE_MESSAGE_FILTER, the thread filter's objectType has no "Genie" prefix.
+// 'GenieListThreadFilter' answers 422.
 const GENIE_THREAD_FILTER = 'ListThreadFilter';
 const GENIE_MESSAGE_FILTER = 'GenieListMessageFilter';
 const GENIE_QUESTION_FILTER = 'GenieListQuestionFilter';
@@ -140,12 +140,12 @@ export class Conversations {
    * @example <caption>Turn web search on for ONE message (loses to a stored disabled veto)</caption>
    * const reply = await k.conversations.send(
    *   { userMessage: 'What shipped this week in the news?', capabilities: { use_web_search: 'on' } },
-   *   convKs,  // conversation token (geniegpcid:<configId>, plus agentid when minted with agentId) — NOT an admin token
+   *   convKs,  // conversation token (geniegpcid:<configId>, plus agentid when minted with agentId), NOT an admin token
    * );
    * console.log(reply.text);
    *
    * @param {object} opts {userMessage, threadId?, sse?, model_type?, force_experience?, request_vars?, capabilities?, signal?}
-   *   `force_experience` must be one of EXPERIENCES (markdown|summarization|flashcards|avatar_only); anything else 422s.
+   *   `force_experience` must be one of EXPERIENCES (markdown|summarization|flashcards|avatar_only); anything else throws `validation_error` before any request is sent.
    *   `capabilities` is a per-message `{name:state}` override (validated pre-network); a stored `disabled` capability still wins.
    *   `signal` (optional `AbortSignal`) lets the caller cancel a stalled or unbounded-length
    *   stream — this call has no built-in timeout of its own (see `genieStream` in client.js), so
@@ -157,8 +157,7 @@ export class Conversations {
    */
   async *stream(opts, ks) {
     this._.assertConversation(ks, 'conversations.stream');
-    // Validate force_experience BEFORE the network call — the brain 422s on a bad value and
-    // the SDK should fail fast with a clear, typed error (not a buried server_error).
+    // Validate force_experience BEFORE the network call: fail fast with a clear, typed error.
     if (opts.force_experience !== undefined && opts.force_experience !== null && !EXPERIENCES.includes(opts.force_experience)) {
       throw new KalturaError({ type: 'https://docs.kaltura.com/agentic/errors/validation_error', title: 'invalid force_experience', code: 'validation_error', detail: `force_experience must be one of: ${EXPERIENCES.join(', ')} (got "${opts.force_experience}").` });
     }
@@ -248,8 +247,8 @@ export class Threads {
    *    `+createdAt`, `-createdAt`, `+updatedAt`, `-updatedAt`.
    *  - `statusEquals`/`statusIn` take `0`/`1`; a numeric string (`"0"`) is
    *    silently coerced and accepted, but a non-numeric string 422s.
-   *  - an unknown filter key 422s; `partnerIdIn` always 422s (rejected on the
-   *    public thread API); `partnerIdEquals` is accepted but the query is
+   *  - an unknown filter key 422s; `partnerIdIn` always 422s;
+   *    `partnerIdEquals` is accepted but the query is
    *    always scoped to the KS's own partner.
    *  - `pageSize` is capped server-side at 500 — a higher value 422s. Same
    *    cap applies to Messages/Feedback/Followups pagers below.
@@ -400,12 +399,11 @@ export class Messages {
   /**
    * List messages (optionally for one thread). READ. `objectType` is
    * mandatory and always sent; `opts.filter` is merged under it. Unlike
-   * `v1/thread/list`, an unknown filter key here is IGNORED (200), not
-   * rejected — the request DTO carries no `extra="forbid"`. Only
-   * `filter.orderBy` sorts; a top-level `orderBy` is accepted but silently
-   * ignored (the request model has no such field), so always send it inside
-   * `filter`. `opts.threadId` is sugar for `filter.threadIdEquals` and wins
-   * if both are given.
+   * `v1/thread/list`, an unknown filter key here is IGNORED (the call still
+   * returns 200), not rejected. Only `filter.orderBy` sorts; a top-level
+   * `orderBy` has no effect, so always send it inside `filter`.
+   * `opts.threadId` is sugar for `filter.threadIdEquals` and wins if both are
+   * given.
    *
    * Filter fields: `createdAtGreaterThanOrEqual`, `createdAtLessThanOrEqual`,
    * `genieIdEquals`, `idEquals`, `idsIn`, `isPositiveEquals`, `isPositiveIn`,
@@ -706,7 +704,12 @@ export async function findIntellectsReferencingKnowledge(ctx, knowledgeId, ks) {
     const objects = Array.isArray(page?.objects) ? page.objects : [];
     for (const item of objects) {
       if (item?.id === undefined) continue;
-      const full = await ctx.genie('v1/intellect/get', { id: item.id }, ks).then((r) => r.data).catch(() => null);
+      // Skip only an intellect deleted between list and get; any other failure must surface,
+      // or a guarded delete would wrongly report "no references".
+      const full = await ctx.genie('v1/intellect/get', { id: item.id }, ks).then((r) => r.data).catch((e) => {
+        if (e?.code === 'not_found' || e?.code === 'intellect_not_found') return null;
+        throw e;
+      });
       if (Array.isArray(full?.knowledge_ids) && full.knowledge_ids.includes(knowledgeId)) refs.push(item.id);
     }
     const total = page?.totalCount;

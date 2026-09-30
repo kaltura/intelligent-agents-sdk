@@ -105,7 +105,8 @@ Shared by all four (`live-verify-session-types.mjs` drives no browser, so it ign
 | `--kickoff TEXT` | Override the kickoff text |
 | `--out DIR` | Artifact directory. Default `live-verify-artifacts/` |
 | `--keep` | Do not delete the throwaway agent at the end |
-| `--agent-json PATH` | Reuse the agent described in `PATH` instead of provisioning one. Deletes nothing |
+| `--agent-json PATH` | Reuse the agent described in `PATH` (`{configId, widgetId}`, plus `agentId` for `live-verify-session-types.mjs`) instead of provisioning one. Deletes nothing |
+| `--skip-revoke` | `live-verify-session-types.mjs` only: skip the `revoke()` check |
 
 `live-verify-kickoff.mjs` and `live-verify-opening-phrase.mjs` add `--only IDS` (run these scenario ids only) and `--dump-events` (write the page's full event log for every scenario, not just failures). `--kickoff TEXT` has no effect on `live-verify-opening-phrase.mjs`, which never sends a kickoff.
 

@@ -50,7 +50,7 @@ export class ExperienceRenderer {
    * @param {Element} [cfg.target]  Alias for an Element `mount` (container to render widgets into).
    * @param {(action:string, payload:object)=>void} [cfg.onAction]  Forwarded to `mountWidget` when rendering into an Element (followup/play/open/submit intents).
    * @param {Record<string,(model:Record<string,unknown>,ctx?:object)=>{kind:string,data:object}>} [cfg.renderers]  Extra/override renderers (by normalized runtime).
-   * @param {boolean} [cfg.replace]  Ephemeral widgets re-render each turn — `rendered` holds only the latest descriptor (default false: accumulate). Also passed to `mountWidget` for Element mounts.
+   * @param {boolean} [cfg.replace]  Ephemeral widgets re-render each turn. `rendered` holds only the latest descriptor (default false: accumulate). Also passed to `mountWidget` for Element mounts.
    * @param {boolean} [cfg.clearOnTurnStart]  LIVE mode: on the session's `turnStart` event for a new turn (`isNewTurn`), discard the in-flight buffer and `clear()` accumulated/`last` descriptors (default `true`). Set `false` for cross-turn persistence.
    * @param {number} [cfg.maxRendered]  Maximum number of descriptors to keep in `rendered` (default 100). The oldest entry is dropped when the cap is exceeded.
    * @param {(info:{runtime:string,runtimeName:string,widget:object})=>void} [cfg.onUnhandled]  Called for an unknown runtime (after the safe fallback descriptor is produced).

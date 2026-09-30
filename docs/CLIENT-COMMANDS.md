@@ -186,7 +186,7 @@ The result carries `spiralRecovered` (boolean) and `firstAttempt: {toolCalls, sp
 
 #### SDK side (live session): see ARCHITECTURE-REFERENCE.md
 
-`collectConverse()`'s guard does not run on the live socket path — `KalturaAvatarSession` streams `agent_raw_text` directly, so a spiral there doesn't block a request (there is none to time out). `KalturaAvatarSession` instead runs a brain-stall watchdog plus a two-tier tool-call-spiral circuit breaker (soft signal, then a hard cold-reconnect recovery). The threshold table and reconnect semantics are documented once, in [ARCHITECTURE-REFERENCE.md's "Tool-call spiral: what happened and how it's mitigated"](architecture-reference/resilience-and-failure-handling.md#tool-call-spiral-what-happened-and-how-its-mitigated). Read that for the mechanism. This doc covers only what an app author needs to configure (the budget above) and the headless equivalent (previous section).
+`collectConverse()`'s guard does not run on the live socket path. `KalturaAvatarSession` streams `agent_raw_text` directly, so a spiral there doesn't block a request (there is none to time out). `KalturaAvatarSession` instead runs a brain-stall watchdog plus a two-tier tool-call-spiral circuit breaker (soft signal, then a hard cold-reconnect recovery). The threshold table and reconnect semantics are documented once, in [ARCHITECTURE-REFERENCE.md's "Tool-call spiral: what happened and how it's mitigated"](architecture-reference/resilience-and-failure-handling.md#tool-call-spiral-what-happened-and-how-its-mitigated). Read that for the mechanism. This doc covers only what an app author needs to configure (the budget above) and the headless equivalent (previous section).
 
 #### Root cause of one class of spiral
 

@@ -15,12 +15,12 @@ if (!partnerId || !adminSecret) { console.error('Set AGENTIC_PARTNER_ID + AGENTI
 const brief = process.argv[2] || 'A friendly technical-support agent for a video platform';
 const kaltura = new Management({ partnerId, adminSecret });
 
-const admin = await kaltura.sessions.createAdminToken({ userId: 'admin@example.com' });          // disableentitlement — server-only
+const admin = await kaltura.sessions.createAdminToken({ userId: 'admin@example.com' });          // disableentitlement, server-only
 const agent = await kaltura.provision({ brief, ks: admin.ks });   // full UC-1 factory
 console.log('Provisioned:', { name: agent.name, configId: agent.configId, agentId: agent.agentId, widgetId: agent.widgetId });
 
 // What you send the browser: a scoped, entitlement-ON user session (NOT the admin KS).
-// userId gives each visitor their own threads. Without it, every holder shares one identity.
+// userId gives each visitor their own threads.
 const conv = await kaltura.sessions.createConversationToken({ configId: agent.configId, agentId: agent.agentId, userId: 'visitor-123', ttlSeconds: 3600 });
 console.log('Conversation token scope:', conv.scope);             // entitlementEnforced: true
 

@@ -50,7 +50,12 @@ async function findIntellectsReferencingSkill(ctx, skillId, ks) {
     const objects = Array.isArray(page?.objects) ? page.objects : [];
     for (const item of objects) {
       if (item?.id === undefined) continue;
-      const full = await ctx.genie('v1/intellect/get', { id: item.id }, ks).then((r) => r.data).catch(() => null);
+      // Skip only an intellect deleted between list and get; any other failure must surface,
+      // or a guarded delete would wrongly report "no references".
+      const full = await ctx.genie('v1/intellect/get', { id: item.id }, ks).then((r) => r.data).catch((e) => {
+        if (e?.code === 'not_found' || e?.code === 'intellect_not_found') return null;
+        throw e;
+      });
       if (Array.isArray(full?.skill_ids) && full.skill_ids.some((ref) => ref?.id === skillId)) refs.push(item.id);
     }
     const total = page?.totalCount;
@@ -164,7 +169,7 @@ export class Skills {
   }
 
   /**
-   * Delete a Skill by id. WRITE — destructive (requires confirmation). Resolves
+   * Delete a Skill by id. WRITE, destructive (requires confirmation). Resolves
    * `{removed, _meta}`; a follow-up `get` 404s.
    *
    * SAFETY CHECK (default on): before deleting, lists every intellect and

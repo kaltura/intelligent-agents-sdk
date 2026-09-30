@@ -285,7 +285,7 @@ Both SDK entry points share one core. `src/core/*` is the shared leaf layer that
 
 `./management` (`Management`, `src/management/client.js`) checks the token kind via `assertAdmin`/`assertConversation` before any network call. It reads the kind a minted `Token` records (`admin`, `conversation`, `agent`, `widget`). A raw encrypted KS string cannot be inspected client-side, so the server decides.
 
-`./experience` (`KalturaAvatarSession`, `src/experience/session.js`) is the live socket+WHEP runtime described in "Video Runtime Protocol" above. It takes only a short-lived conversation token, and socket.io is injected into it, never bundled.
+`./experience` (`KalturaAvatarSession`, `src/experience/session.js`) is the live socket+WHEP runtime described in "Video Runtime Protocol" above. It takes only an enriched conversation KS from `application.appInit` (short-lived, non-admin), and socket.io is injected into it, never bundled.
 
 For the full module-by-module map, see **[ARCHITECTURE-REFERENCE.md's "SDK Module Map & Data Flow"](architecture-reference/module-map-and-data-flow.md#sdk-module-map--data-flow)**. It covers each management module's exposed surface and which backend door it writes to, the capabilities-resolution return shape, and the GenUI rendering layer.
 
