@@ -18,7 +18,7 @@ A user turn, as captured:
 (user speaks / or → onTextEntered {text, isFinal})
 ← debug_vad_speech_detected {isFinal:false, segmentType:"new"|"correction"}   (interim, repeats)
 ← debug_vad_speech_detected {isFinal:true,  segmentType:"final"}              (commit)
-← debug_conversationStateChange {state:"PreparingAudio", preparingAnswerState:"PreparingAnswer"}
+← debug_conversationStateChange {…}                                          (diagnostic)
 ← debug_llm_input {userInput}
 ← agent_start_speech {speechId, turnId}
 ← agent_raw_text delta type=think → (then) type=avatar (streamed)             (brain output)
@@ -30,15 +30,15 @@ A user turn, as captured:
 ← agent_raw_text delta type=share {canShare} ; type=think isFinal:true
 ← agent_end_turn ; stvFinishedGenerating
 ← stvFinishedTalking {agentContent}                                           (turn done)
-← debug_conversationStateChange {state:"Idle"}
+← debug_conversationStateChange {…}                                          (diagnostic)
 ```
 
 **Barge-in** is when the user interrupts the avatar mid-turn. It's triggered by a new `debug_vad_speech_detected` (voice) or by `→ onTextEntered {text:'', isFinal:false, isSpeechStart:true}` (typed, via `speak()`/`interrupt()`). Either one produces `← agentInterrupted {}` and an early `stvFinishedTalking` with the truncated `agentContent`.
 
 **Runtime behavior for integrators reasoning about turns:**
 
-- **Turn segmentation** — `agent_start_speech.isNewTurn` is `false` when the server treats new ASR/typed text as a continuation of the turn already in flight (e.g. a correction or extension of what the user just said). It's `true` when the server starts a fresh turn. The SDK only reads this field. It doesn't compute continuation itself.
-- **Audio/phone mode allocates no STV** — the server short-circuits `stvNewSession` to `{status:"audio/phone mode - no STV session"}` (no `webrtc_url`, no WHEP downlink); see [Wire Protocol · Events Catalog](/reference/wire-protocol/events-catalog/#4b-server--client-on--handshakesession-phase).
+- **Turn segmentation.** `agent_start_speech.isNewTurn` is `false` when new ASR/typed text continues the turn already in flight (e.g. a correction or extension of what the user just said). It's `true` for a fresh turn. The SDK reads this field and does not compute continuation itself.
+- **Audio/phone mode allocates no STV**: the `stvNewSession` reply is `{status:"audio/phone mode - no STV session"}` (no `webrtc_url`, no WHEP downlink), and the SDK skips WHEP; see [Wire Protocol · Events Catalog](/reference/wire-protocol/events-catalog/#4b-server--client-on--handshakesession-phase).
 
 ## 9. Reproduce / re-capture
 

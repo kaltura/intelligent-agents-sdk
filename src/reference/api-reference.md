@@ -21,7 +21,7 @@ Every endpoint is shown as a raw HTTP call plus its SDK wrapper. The SDK is what
 
 | File | Covers |
 |------|--------|
-| [Authentication & Services](/reference/api/authentication/) | KS types and minting, `userId` binding, the five services and their base URLs |
+| [Authentication & Services](/reference/api/authentication/) | KS types and minting (`agentId`, `userId`, `sessionType`), `userId` binding, the five services and their base URLs |
 | [Catalog & Assets](/reference/api/design/) | Browse the catalog, custom voice (clone), provider voice import, custom visual (portrait, photo spec), custom face/background, end-to-end portrait recipe |
 | [Agent Components](/reference/api/build/) | Generate an agent profile, create/configure an intellect, preview a prompt, tools (`api`/`csv`/`code`), secrets, ground in your content (RAG), create an avatar, create an agent |
 | [Widget & Runtime Init](/reference/api/deploy/) | Resolve widget ID, initialize the browser runtime |
@@ -29,6 +29,8 @@ Every endpoint is shown as a raw HTTP call plus its SDK wrapper. The SDK is what
 | [Scripted-Video (STV-only) Sessions](https://github.com/kaltura/intelligent-agents-sdk/blob/main/docs/api/scripted-video.md) | Pre-authored speech sessions — auth, lifecycle, `say-audio` |
 | [Management Operations](/reference/api/management-operations/) | CRUD tables for agents, avatars, intellects, tools, skills, threads, messages/feedback/followups, knowledge records, lifecycle |
 | [Lifecycle Rules](/reference/lifecycle/) | Event-driven rules + InsightSettings (reusable custom-insight definitions) + EmailTemplates (`sendInsightEmail`'s `templateId`) — reference + [recipe](/guides/lifecycle-recipes/) |
+| [External API Integrations](/guides/external-api-integrations/) | Wiring a brain-called tool to a durable write against your own external API (CRM, spreadsheet, ticketing), including the backend-managed OAuth2 flow |
+| [MCP Integrations](/guides/mcp-integrations/) | Wiring a whole [MCP](https://modelcontextprotocol.io) server's tool surface at once — auth, multi-server namespacing, OAuth-gated servers |
 | [Use-Case Catalog](/reference/use-cases/) | All 13 use cases (UC-1 through UC-13) mapped to mechanisms and runnable scripts |
 | [Site navigation](/guides/site-navigation/) | Fire-and-forget `go_to` tool, compact SITE MAP prompt, `sections.json` manifest, browser `SiteNavigator` plugin |
 
@@ -60,7 +62,7 @@ The SDK wraps every error into a `KalturaError` with a stable `err.code`. Branch
 | Status | `err.code` | Fix |
 |--------|-----|-----|
 | 400 | `bad_request` | Fix the request body |
-| 403 | `forbidden` | Wrong KS type: admin KS for management, `geniegpcid` for conversations |
+| 403 | `forbidden` | Wrong KS type: admin KS for management, `geniegpcid` for conversations. Also: a user session without `userId` on thread get, list or delete. A user session asking for another user's thread gets 404 instead. See [Security & Compliance § Session type](/reference/security/#session-type) |
 | 405 | `method_not_allowed` | Use `GET` for `/assistant/status`; everything else is `POST` |
 
 Upstream error text is also normalized to a stable `err.code`, regardless of the HTTP status the backend returned it with:
@@ -81,7 +83,7 @@ The full `Management` method surface (this doc's endpoints, wrapped) is listed i
 ```js
 import { Management } from '@kaltura/intelligent-agents/management';
 const mgmt = new Management({ partnerId, adminSecret });
-const ks = await mgmt.sessions.createAdminToken();
+const ks = await mgmt.sessions.createAdminToken({ userId: 'admin@example.com' });
 
 console.log(await mgmt.agents.list(ks).all());
 console.log(await mgmt.intellects.list(ks).all());

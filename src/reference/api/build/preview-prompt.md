@@ -33,7 +33,7 @@ It is **not byte-exact** with the live prompt. Server-injected capability-condit
 |----------|-------|
 | `sys__thread_id` | Current conversation thread id |
 | `sys__message_id` | Current message id |
-| `sys__user_id` | Bound end-user id — see `Sessions.createConversationToken({userId})` |
+| `sys__user_id` | Bound end-user id. Mint the token with a `userId`: see [Authentication](/reference/api/authentication/) |
 | `sys__user_message` | The user's current turn text |
 | `sys__is_new_thread` | `true` on the first turn of a thread |
 | `sys__context_id` | The category/entry id the current context is scoped to |
@@ -41,7 +41,7 @@ It is **not byte-exact** with the live prompt. Server-injected capability-condit
 | `sys__avatar_enabled` | Whether the current thread has a live avatar attached |
 | `sys__avatar_share_screen_enabled` | Whether the current avatar session has screen-share analysis enabled |
 | `sys__ks` | The raw session token. **Never reference this in a prompt that could be echoed back to a user or logged.** It is a live credential. |
-| `sys__user_obj.first_name` / `.last_name` / `.title` / `.company` / `.gender` / `.email` | Attributes of the bound-user object. The rendered preview from `previewPrompt()` carries a `reserved_user_attr_unresolved` warning when a prompt references these — treat it as a hard stop before shipping. |
+| `sys__user_obj.first_name` / `.last_name` / `.title` / `.company` / `.gender` / `.email` | Attributes of the bound-user object. The rendered preview from `previewPrompt()` carries a `reserved_user_attr_unresolved` warning when a prompt references one that has no bound value. Bind every variable the prompt uses before shipping. |
 | `secrets.NAME` | A named secret configured on the intellect (write-only — `previewPrompt()` never has access to the raw value, so it cannot confirm one is set) |
 
 **Unresolvable reserved-variable warnings:** say a prompt references one of the variables above, and no value is available in the simulated context (no `requestVars` entry, or an explicit `null`/`undefined`). In that case `previewPrompt()` returns a `warnings[]` entry naming the variable and explaining why, instead of silently rendering the placeholder as empty text.
@@ -60,9 +60,8 @@ p.warnings;
 //   severity: 'warning',
 //   code: 'reserved_user_attr_unresolved',
 //   message: '`{{sys__user_obj.first_name}}` has no bound value in this preview\'s
-//              requestVars. Referencing an unbound sys__user_obj.* attribute in a
-//              LIVE turn currently causes a silent turn failure, not an empty render —
-//              bind a user (Sessions.createConversationToken({userId})) or supply
+//              requestVars. Bind every variable the prompt uses: bind a user
+//              (Sessions.createConversationToken({userId})) or supply
 //              "sys__user_obj.first_name" in requestVars to simulate the bound case
 //              before shipping this prompt.'
 // }]
@@ -73,7 +72,7 @@ Supplying the value in `requestVars` (e.g. `{ 'sys__user_obj.first_name': 'Jane'
 | Warning `code` | Fires for |
 |---|---|
 | `reserved_var_unresolved` | A scalar `sys__*` variable |
-| `reserved_user_attr_unresolved` | A `sys__user_obj.*` attribute — this is the class of reference that can crash a live turn |
+| `reserved_user_attr_unresolved` | A `sys__user_obj.*` attribute. `lintPrompts` flags unbound variables. Bind every variable the prompt uses |
 | `reserved_secret_unresolved` | A `secrets.*` reference. `previewPrompt()` can't verify these: it only ever sees the rendered text, never the raw secret value |
 
 ---

@@ -41,7 +41,7 @@ Response:
 | Field | What it is |
 |-------|-----------|
 | `partnerId` | The partner the widget resolves to |
-| `ks` | Enriched KS with `geniegpcid` — pass to Genie for conversation |
+| `ks` | Enriched KS with `geniegpcid`. Use it for conversation |
 | `conversationManagerUrl` | Socket.IO control-plane host |
 | `srsBaseUrl` | WHEP video-stream host |
 | `turnServerUrl` | TURN host |
@@ -49,6 +49,18 @@ Response:
 | `widgetConfig` / `embedConfig` | Optional, present only when the widget was configured with them |
 
 The admin secret never touches the browser — `appInit` derives the agent from the widget KS.
+
+**Every visitor gets the same widget KS.** Reach and limits: [Security & Compliance § Session type](/reference/security/#session-type). Per-attendee credentials and per-user separation are not possible on this path.
+
+### Per-visitor browser path
+
+Use this when users must be kept apart. The server mints the token and the browser only receives the result:
+
+1. Server: `createAgentToken({ agentId, userId })`, with a distinct `userId` per visitor.
+2. Server: `mgmt.application.appInit(token)`.
+3. Server: send the returned `ks` (and hosts) to the browser.
+
+That KS answers as the agent, keeps entitlement ON and keeps the user's identity. What it can reach: [Security & Compliance § Session type](/reference/security/#session-type).
 
 Feed this response straight into `new KalturaAvatarSession({ token: ks, conversationManagerUrl, srsBaseUrl, turnServerUrl, videoEl, socketFactory })` (`./experience`) to bring the runtime up in the browser.
 

@@ -146,6 +146,18 @@ export const manifest = [
     generated: true,
   },
   {
+    source: 'docs/MCP-INTEGRATIONS.md',
+    target: 'guides/mcp-integrations.md',
+    url: '/guides/mcp-integrations/',
+    title: 'MCP Integrations',
+    description: 'How to connect a Kaltura agent to an MCP server so it can use the server\'s whole tool set, with per-attendee credentials and request variables.',
+    eyebrow: 'How-to Guide',
+    h1: 'MCP Integrations',
+    group: 'How-to Guides',
+    navTitle: 'MCP Integrations',
+    generated: true,
+  },
+  {
     source: 'docs/lifecycle/recipes.md',
     target: 'guides/lifecycle-recipes.md',
     url: '/guides/lifecycle-recipes/',

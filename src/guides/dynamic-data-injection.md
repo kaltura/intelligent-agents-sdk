@@ -69,13 +69,13 @@ If you're using the SDK's `Presenter` plugin for a slide-deck-style walkthrough,
 
 ### The gate: `allow_client_variables`
 
-The intellect must have `allow_client_variables: true`, or every request variable you send — including `page_context` — is rejected. Enable it once, server-side, with an admin KS:
+The intellect must have `allow_client_variables: true`, or every request variable you send, including `page_context`, is rejected. It is on by default. Pin it once, server-side, with an admin KS:
 
 ```js
 await mgmt.intellects.setClientVariablesEnabled(configId, true, adminKs);
 ```
 
-The rejection is **silent on every path**. The turn comes back as an empty reply: no HTTP error, no socket error. Both session classes (`KalturaAvatarSession` and `KalturaChatSession`) detect the pattern and emit a once-per-session `warning` event, `{ code: 'empty_turn_with_request_vars', message, requestVarKeys }` (variable *names* only, never values), pointing at the gate:
+The rejection is **silent** on the live socket and in `KalturaChatSession`. The turn comes back as an empty reply: no HTTP error, no socket error. Both session classes (`KalturaAvatarSession` and `KalturaChatSession`) detect the pattern and emit a once-per-session `warning` event, `{ code: 'empty_turn_with_request_vars', message, requestVarKeys }` (variable *names* only, never values), pointing at the gate. A management converse call that receives the 403 throws `client_variables_disabled` instead. `KalturaChatSession.sendText()` can fail either way when it sends request variables: the silent empty turn with the warning, or a rejected promise with `client_variables_disabled`.
 
 ```js
 session.on('warning', (w) => {
@@ -100,7 +100,7 @@ Reserved `sys__*` keys (like `sys__user_id` and `sys__thread_id`) are server-inj
 
 ### Server-side tools read them too
 
-Request variables aren't limited to prompt text. A server-side `api` tool's request template can interpolate them (`{{account_id}}` in a URL, header, or body), so a value your app set turns into a parameter of a backend call the brain makes. This includes variables from earlier turns that were never mentioned in conversation. See [Backend API Reference § Tools](/reference/api/build/tools-and-secrets/#tools-api--csv--code).
+Request variables aren't limited to prompt text. A server-side `api` tool's request template can interpolate them (`{{account_id}}` in a URL, header, or body), so a value your app set turns into a parameter of a backend call the brain makes. This includes variables from earlier turns that were never mentioned in conversation. See [Tools and Secrets § Tools](/reference/api/build/tools-and-secrets/#tools-api--csv--code).
 
 **Security stance:** request variables are client-suppliable *and* thread-persistent. Never treat one as an authorization claim; your endpoints must independently authorize every call. A poisoned value also outlives its turn: it keeps interpolating into prompts and tool calls for the rest of the thread. Don't pass unsanitized end-user text into `setDynamicPrompt`, and never put secrets in any request variable.
 
@@ -219,7 +219,7 @@ If instead you need the *avatar* to drive your UI — navigate, open a panel, hi
 |-----|---------------|
 | [README.md → `{{var}}` personalization](https://github.com/kaltura/intelligent-agents-sdk/blob/main/README.md#var-personalization-request_vars) | The `request_vars` API reference |
 | [README.md → Experience](https://github.com/kaltura/intelligent-agents-sdk/blob/main/README.md#experience) | `KalturaAvatarSession` and the `Presenter` deck plugin this doc's worked example builds on |
-| [Backend API Reference → Converse](/reference/api/operate/#converse) | Sending `request_vars` on the headless HTTP path, and the `sys__*` reserved set |
+| [Conversation & Analytics § Converse](/reference/api/operate/#converse) | Sending `request_vars` on the headless HTTP path, and the `sys__*` reserved set |
 | [Structured Data Forms](/guides/structured-data-forms/) | Configuring what the brain asks the viewer for, and how it's rendered |
 | [Client-Side Commands](/guides/client-commands/) | The avatar-driving-your-UI channel — the opposite direction from this doc |
 | [Wire Protocol](/reference/wire-protocol/) | The exact socket events behind each mechanism, for anyone debugging at the wire level |

@@ -13,9 +13,9 @@ This is the deep reference behind [Platform Overview](/explanation/architecture/
 
 | Doc | Covers |
 |---|---|
-| [Wire Protocol · Connection Basics](/reference/wire-protocol/connection-basics/) | Provenance/components, channels at a glance, the Socket.IO connection, the connect sequence (state-machine order) |
-| [Wire Protocol · Events Catalog](/reference/wire-protocol/events-catalog/) | The full Socket.IO events catalog: client→server emits, server→client events, the `agent_raw_text.delta` brain stream, `speechId`/barge-in |
-| [Wire Protocol · Audio Channels](/reference/wire-protocol/audio-channels/) | The ASR uplink (pc1) and STV downlink (pc2) WebRTC peer connections, ICE config, WHEP signaling |
+| [Wire Protocol · Connection Basics](/reference/wire-protocol/connection-basics/) | Channels at a glance, the Socket.IO connection, and a pointer to the connect sequence |
+| [Wire Protocol · Events Catalog](/reference/wire-protocol/events-catalog/) | The full Socket.IO events catalog: client→server emits, server→client events, the `agent_raw_text.delta` brain stream, and `speechId` grouping |
+| [Wire Protocol · Audio Channels](/reference/wire-protocol/audio-channels/) | The ASR uplink (pc1) and STV downlink (pc2) WebRTC peer connections, TURN and ICE options, WHEP signaling |
 | [Wire Protocol · Client Configuration](/reference/wire-protocol/client-configuration/) | `clientConfiguration` fields and structured experiences (`force_experience` + `unisphere-tool`) |
 | [Wire Protocol · End-to-End Turn](/reference/wire-protocol/end-to-end-turn/) | A full turn trace, event by event, plus how to reproduce/re-capture your own |
 

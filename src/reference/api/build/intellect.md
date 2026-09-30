@@ -109,7 +109,7 @@ const fields = await mgmt.application.getCustomPrompts(ks);
 | `avatar_summary_config` | `{ prompt?, analysis?, template?, content_type? }` for the end-of-session summary of avatar sessions. `analysis` maps output keys to descriptions, `template` is Jinja2 over those keys, `content_type` is one of `SUMMARY_CONTENT_TYPES` (`text`/`html`/`html_with_js`). The summary is stored on the thread as a `summary` message. `null` restores defaults. Set via `intellectConfig.setAvatarSummaryConfig` |
 | `glossary` | Domain terms (e.g. `"HLS: HTTP Live Streaming"`) |
 | `capabilities` | Enable/disable features — see table below |
-| `allow_client_variables` | Allow `{{vars}}` injection per request |
+| `allow_client_variables` | Allow `{{vars}}` injection per request. On by default for a new intellect |
 | `knowledge_ids` | Knowledge record IDs for RAG — create with `POST /v1/knowledge/add` |
 | `name` / `description` / `tags` | Labels for organizing intellects |
 | `tool_ids` | Tool entity uuid references — create/list the entities themselves via [Tools](/reference/api/build/tools-and-secrets/#tools-api--csv--code) (`mgmt.tools`), then link the ids here via `intellectConfig.setToolIds` |

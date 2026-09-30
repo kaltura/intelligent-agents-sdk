@@ -14,31 +14,17 @@ eyebrow: Reference
 
 | Thing | Value |
 |---|---|
-| Control socket | `wss://conversation.avatar.us.kaltura.ai` path `/socket.io` |
+| Control socket | `wss://conversation.avatar.us.kaltura.ai` path `/socket.io` (session option `conversationManagerUrl`) |
 | STV WHEP base | `srsBaseUrl` from `appInit` |
-| STV WHEP signaling | `POST {webrtc_url}` if `stvNewSession` returned one, else `POST {srsBaseUrl}/rtc/v1/whep/?app=app&stream={session_id}` (body: plain SDP, `Content-Type: application/sdp`). `SDK:wire.js whepUrl()` |
-| TURN | the `turnServerUrl` value returned by `appInit` (default username/credential in `wire.js`'s `turnServers()`, overridable via `creds`). See [TURN configuration](#turn-configuration) below. |
-| Auth | Socket.IO `auth: { token: <enrichedKS> }` + `query.partnerId` |
+| STV WHEP signaling | `POST {webrtc_url}` if `stvNewSession` returned one, else `POST {srsBaseUrl}/rtc/v1/whep/?app=app&stream={session_id}` (body: plain SDP, `Content-Type: application/sdp`). `whepUrl()` in `src/experience/wire.js` |
+| TURN | `turnServerUrl` and `turnCredentials` from `appInit`. See [TURN configuration](#turn-configuration) below. |
+| Auth | Socket.IO `auth: { token: <conversation KS> }` and `query.partnerId` |
 
-All of `conversationManagerUrl`, `srsBaseUrl`, `turnServerUrl`, and the enriched `ks` come from **`POST https://api.avatar.us.kaltura.ai/v1/application/appInit`** (see [Backend API Reference](/reference/api-reference/)). The agent is identified by `partnerId` (from the KS) and the KS itself, not by `clientId` or `flowId`. Both of those are optional and unused by Kaltura agents.
+`conversationManagerUrl`, `srsBaseUrl`, `turnServerUrl`, `turnCredentials` and the conversation `ks` come from **`POST https://api.avatar.us.kaltura.ai/v1/application/appInit`** (see [Backend API Reference](/reference/api-reference/)). The agent is identified by `partnerId` (from the KS) and the KS itself.
 
 ### TURN configuration
 
-Set explicit ports and transports on the TURN address. A bare `turn:host` gives no relay candidate. When that happens, `packetsSent` stays at `0` and the avatar can't hear you. Use all four forms:
-
-- `turn:HOST:80?transport=udp`
-- `turn:HOST:443?transport=udp`
-- `turn:HOST:80?transport=tcp`
-- `turns:HOST:443?transport=tcp`
-
-`iceTransportPolicy` (`SDK:wire.js iceConfig()`) is per-channel:
-
-- STV: `'relay'`, except on Firefox (`isFirefox` constructor option) where it's `'all'`.
-- ASR: always `'all'`, on every browser.
-
-The setting matters less than it looks: the ASR server advertises only a private host candidate, so the pair relays through TURN either way, regardless of policy. This means the TURN URLs must be correct.
-
-Full per-client matrix: [Wire Protocol · Audio Channels §5](/reference/wire-protocol/audio-channels/#5-asr-uplink-pc1--microphone--server).
+Pass `turnServerUrl` and `turnCredentials` from `appInit` to the session. The TURN URLs, credentials and ICE policy are in [Wire Protocol · Audio Channels](/reference/wire-protocol/audio-channels/#5-asr-uplink-pc1--microphone--server).
 
 ---
 
@@ -50,11 +36,9 @@ import { io } from 'socket.io-client';
 const socket = io(conversationManagerUrl, {   // from appInit
   path: '/socket.io',
   transports: ['websocket'],
-  auth: { token: enrichedKs },                // from appInit
+  auth: { token: conversationKs },            // from appInit
   query: {
     partnerId: '<your_partner_id>',           // derived from the KS
-    clientId: undefined,                       // optional; unused for Kaltura agents
-    flowId: undefined,                         // optional; unused for Kaltura agents
     billed_client: '',
     stickyId: '<random-16>',
     level: 'published',
@@ -63,39 +47,50 @@ const socket = io(conversationManagerUrl, {   // from appInit
 });
 ```
 
+The `KalturaAvatarSession` sends exactly these query params ([param table](/reference/wire-protocol/connection-basics/#2-socketio-connection)).
+
 ---
 
 ## Full Connect Sequence (state-machine order)
 
-Exact order from the platform's built-in client's connection state machine. Steps 1–5 are serial: each waits for the named inbound event before advancing. After step 5 the SDK runs two lanes in parallel: lane A is steps 6→7→9 (agent, ready, ASR uplink), lane B is step 10 (WHEP), which needs only the step 5 result. Step 11 runs once both lanes are done. The first lane to fail rejects `connect()` at once. Step 0 is never awaited: the mic prompt runs alongside the whole sequence and a denied mic emits a `warning`, never a failure. Timeouts appear in the last column.
+`connect()` runs these steps in order (the step numbers match the comments in `src/experience/session.js`). Steps 1-5 are serial: each waits for the named inbound event. After step 5 the SDK runs two lanes in parallel:
+
+- Lane A: steps 6→7→9 (agent, ready, ASR uplink).
+- Lane B: step 10 (WHEP), which needs only the step 5 result.
+
+Step 11 runs once both lanes are done. The first lane to fail rejects `connect()` at once. Step 0 is never awaited: the mic prompt runs alongside the whole sequence, and a denied mic emits a `warning`, never a failure. Timeouts appear in the last column.
 
 <div data-nova-target="full-connect-sequence-table" data-nova-label="Full connect sequence (state-machine order)">
 
 | # | Client does | Emits (→) / Waits (←) | Inbound event | Timeout |
 |---|-------------|----------------------|---------------|---------|
-| 0 | Init WebRTC session (TURN config) + start `getUserMedia(audio:true,video:false)` in the background | — | (browser mic prompt) | — (not awaited) |
-| 1 | Open socket | ← | `onServerConnected` `{finalUrl, loadingVideoURL, agentName, hostName}` | 10s |
-| 2 | Join room | → `join` (see payload below) | — | — |
+| 0 | Start `getUserMedia(audio:true,video:false)` in the background | - | (browser mic prompt) | - (not awaited) |
+| 1 | Open socket | ← | `onServerConnected` `{finalUrl, agentName, hostName}`; the SDK emits `streamReady` | 10s (`ConnectionTimeout`) |
+| 2 | Join room | → `join` (see payload below) | - | - |
 | 3 | Wait config + join ack | ← `clientConfiguration`, ← `joinComplete` | both required | `clientConfiguration` 5s, `joinComplete` **20s** (both `JoinRoomTimeout`) |
-| 4 | Create STV session | → `stvNewSession` `{room_id, cast_mode}` | — | — |
-| 5 | Wait session | ← `stvNewSession` `{session_id, status, webrtc_url?}` (or ← `throwToNoAgent`) | sets `sessionId` + `webrtcUrl` | — |
-| 6 | Wait agent | ← `showAgent` `{}` | agent joined | 10s |
-| 7 | Wait ready | ← `askPermissions` `{constraints:{audio,video}}` | server ready | — |
-| 8 | (optional) wait player-ready, 1s delay | — | — | — |
-| 9 | Connect ASR (mic uplink), lane A, after 6→7 | `asr-webrtc-*` handshake (below) | — | 30s per wait |
-| 10 | Subscribe STV video (WHEP) **and wait until it is *playable*, or give up waiting**, lane B, starts right after step 5 | → WHEP `POST` (no timeout of its own) → wait `<video>` `canplay` + ~300ms settle, or a 6s hard cap if `canplay` never fires | first decoded frame, or the 6s cap elapsing | 6s (hard cap; settles either way) |
-| 11 | Approve (this starts the spoken greeting), once lanes A and B are both done | → `approvedPermissions` `{client, room}` | — | — |
+| 4 | Create STV session | → `stvNewSession` `{room_id}`, and → `checkAvailability` in parallel | - | - |
+| 5 | Wait session | ← `stvNewSession` `{session_id, status, webrtc_url?}` (or ← `throwToNoAgent`) | sets `sessionId` + `webrtcUrl` | - |
+| 6 | Wait agent | ← `showAgent` | agent joined | 10s (`AgentResponseTimeout`) |
+| 7 | Wait ready | ← `askPermissions` `{constraints:{audio,video}}` | ready for the mic | 10s (`AgentResponseTimeout`) |
+| 9 | Connect ASR (mic uplink), lane A, after 6→7 | `asr-webrtc-*` handshake ([§5](/reference/wire-protocol/audio-channels/#5-asr-uplink-pc1--microphone--server)) | - | 30s per wait (`ASRConnectionFailed`) |
+| 10 | Subscribe STV video (WHEP) **and wait until it is *playable*, or give up waiting**, lane B, starts right after step 5 | → WHEP `POST` (no timeout of its own) → wait for the video track, then `<video>` `canplay` + ~300ms settle. Without `canplay` within 2s of the track, or without any track within 6s of the subscribe start, the gate settles anyway | first decoded frame, or a fallback timer elapsing | 6s cap from subscribe start (2s after the track if `canplay` is missing); settles either way |
+| 11 | Emit `disclosure`, then approve (this starts the spoken greeting), once lanes A and B are both done | → `approvedPermissions` `{room}` | - | - |
+| 12 | Opening turn runs. With a silent opening phrase (`SILENT_OPENING`) it produces no speech and ends in about 0.5 s. A configured `kickoff` is sent on its `stvFinishedTalking` ([guide](/guides/start-the-conversation/)) | ← `stvStartedTalking` … ← `stvFinishedTalking`, then → `onTextEntered {text}` | `stvFinishedTalking` | - |
 | → | **CONNECTED** | listen for `agent_raw_text`, `generatingSpeech`, `stvStartedTalking` | — | — |
 
 </div>
 
-Overall connecting timeout: 30s. It bounds every wait in the table, including the two ASR waits and the WHEP answer: an event or WHEP answer that lands after the deadline rejects `connect()` with `ConnectTimeout`.
+Step 8 is unused. In audio/phone mode there is no STV session, so lane B is skipped ([Wire Protocol · Audio Channels §5b](/reference/wire-protocol/audio-channels/#5b-audio-mode-webrtc-separate-from-the-asr-uplink)).
 
-**Why step 3 has two timeouts, not one.** The server emits `clientConfiguration` immediately on join. It emits `joinComplete` only after an awaited context-update call, which can take more than 5s under load. The SDK budgets the two waits separately: `clientConfiguration` gets 5s, `joinComplete` gets 20s. See [Wire Protocol · Connection Basics §3](/reference/wire-protocol/connection-basics/#3-connect-sequence-state-machine-order) for the full rationale. Conflating them into one 5s budget causes spurious `JoinRoomTimeout` failures on loaded rooms.
+Overall connecting timeout: 30s. It bounds every wait in the table, including the two ASR waits and the WHEP answer. An event or WHEP answer that lands after the deadline rejects `connect()` with `ConnectTimeout`.
 
-This 30s deadline is set once, at the start of `connect()`. It keeps running through every step below, including the capacity queue, and is **not** paused or extended when the queue activates. If the account is queued (`throwToNoAgent` / `availabilityResult{available:false}`) and no slot frees up before the 30s runs out, `connect()` rejects with `ConnectTimeout`. To wait longer than that for a slot, call `waitForCapacity({maxWaitMs, pollIntervalMs})` **before** `connect()`. This is a separate, opt-in poll with its own bound: `maxWaitMs` defaults to 300000ms. See [Capacity & the queue](/reference/architecture-reference/scale-and-sticky-sessions/#capacity--the-queue-throwtonoagent--throwtoexceededtier).
+**Why step 3 has two timeouts.** `joinComplete` can arrive later than `clientConfiguration` under load. The SDK budgets the two waits separately: `clientConfiguration` gets 5s (`TIMEOUTS.joinRoom`), `joinComplete` gets 20s (`TIMEOUTS.joinComplete`). A single 5s budget for both causes spurious `JoinRoomTimeout` failures on loaded rooms.
 
-**Why `approvedPermissions` waits for playable video.** Sending it too early clips the greeting: ICE `connected` fires about 2s before the first frame decodes, and `approvedPermissions` is what makes the server start speaking. `_approve` (`SDK:session.js`) gates on `<video>` reaching `canplay`/`HAVE_FUTURE_DATA`, with a 6s hard cap so a stalled video track can't block approval forever. See [Wire Protocol · Connection Basics §3](/reference/wire-protocol/connection-basics/#3-connect-sequence-state-machine-order) for the full rationale. The opening line itself can't be interrupted; typed text sent during it is held (`speak()`) until `stvFinishedTalking`. For the fastest interruptible start, give the avatar a silent opening phrase (`SILENT_OPENING`) and let the session's `kickoff` option send the first turn on that event. See [Start the Conversation](/guides/start-the-conversation/).
+The 30s deadline is set once, at the start of `connect()`. It keeps running through every later step, including the capacity queue, and is **not** paused or extended when the queue activates. If no slot frees up before it runs out, `connect()` rejects with `ConnectTimeout`. To wait longer for a slot, call `waitForCapacity({maxWaitMs, pollIntervalMs})` **before** `connect()`. It is a separate, opt-in poll with its own bound: `maxWaitMs` defaults to 300000ms. See [Capacity & the queue](/reference/architecture-reference/scale-and-sticky-sessions/#capacity--the-queue-throwtonoagent--throwtoexceededtier).
+
+**Why `approvedPermissions` waits for playable video.** `approvedPermissions` is what makes the agent start speaking. ICE `connected` fires about 2s before the first frame decodes, so approving early clips the greeting. `_approve` (`src/experience/session.js`) waits for `<video>` to reach `canplay` (`HAVE_FUTURE_DATA`). The fallback timers (2s after the track, 6s after the subscribe starts) mean a stalled video track can't block approval forever. Do the same in a custom client.
+
+The opening line itself can't be interrupted. Typed text sent during it is held (`speak()`) until `stvFinishedTalking`. For the fastest interruptible start, give the avatar a silent opening phrase (`SILENT_OPENING`) and let the session's `kickoff` option send the first turn on that event. See [Start the Conversation](/guides/start-the-conversation/).
 
 ---
 
@@ -107,29 +102,30 @@ socket.emit('join', {
   room: roomId,                // a client-generated room id (also sent as 'channel')
   channel: roomId,
   kaltura: {
-    entryId: <entryId>,            // only if context is a media entry
-    contextId: <contextId>,        // category/entry the KB is scoped to
+    ks: <conversationKs>,
+    entryId: <entryId>,            // only if the session has an entry
+    contextId: <contextId>,        // category/entry the knowledge base is scoped to
     contextType: <contextType>,    // the type of contextId (e.g. 'entry' vs 'category')
     threadId: <existingThreadId>,  // to resume a conversation thread
+    request_vars: { … },           // join-time {{var}} values, if any
     force_experience: 'avatar_only',
-    capabilities: {                // brain capabilities, same enum as intellect config
+    capabilities: {                // same enum as intellect config
       avatar: 'on',
       generate_followup_questions: 'on',
-      use_knowledge_base: 'off',   // forced off when an entryId is set
       // use_content_search, include_sources, etc.
     }
   },
-  userAgent, userAgentHints, isMobile,
+  userAgent, userAgentHints: null, isMobile,
   channel_password: null, peer_name: 'unknown',
   peer_video: false, peer_audio: true
 });
 ```
 
-- **Which intellect loads.** The `geniegpcid:<configId>` in the KS tells the server which intellect (brain) to load.
-- **`kaltura.ks` is required.** Omit it and the session server accepts the socket and emits `onServerConnected`, but never responds to `join`: no `clientConfiguration`/`joinComplete` arrives, and the connect stalls.
-- **`force_experience` in `join` is always `avatar_only`.** `buildJoin` hardcodes it on every call, so the live avatar runtime never requests `flashcards` or `summarization` experiences through this path.
-- **`capabilities` and `request_vars` are genuinely client-controlled.** By contrast, these two are read at `join` time. They can also be updated mid-session via the `updateGenieContext` socket event. The server merges them over defaults before forwarding them to the brain.
-- **The live socket carries the same brain protocol as the HTTP API.** It streams `agent_raw_text` back in the same envelope as HTTP `/assistant/converse`, documented in [Backend API Reference](/reference/api-reference/). Headless or text-only integrations use that HTTP path; the live avatar runtime uses the socket instead.
+- **Which intellect loads.** The `geniegpcid:<configId>` in the KS selects the intellect (the agent's brain configuration). An agent token also carries `agentid:<agentId>`.
+- **Always send `kaltura.ks`.** A `join` without it never gets `clientConfiguration` or `joinComplete`, and the connect stalls until the timeout.
+- **`force_experience` is always `avatar_only`.** `buildJoin` sets it on every call. See [Wire Protocol · Client Configuration](/reference/wire-protocol/client-configuration/#structured-experiences-force_experience--unisphere-tool) for what that means for widgets.
+- **`capabilities` and `request_vars` are client-controlled.** They are sent at `join`. You can update them mid-session with the `updateGenieContext` event ([events catalog](/reference/wire-protocol/events-catalog/#4a-client--server-emit)).
+- **The socket carries the same agent protocol as the HTTP API.** It streams `agent_raw_text` in the same envelope as HTTP `/assistant/converse`, documented in [Backend API Reference](/reference/api-reference/). Headless or text-only integrations use that HTTP path. The live avatar runtime uses the socket.
 
 ## Related docs
 
