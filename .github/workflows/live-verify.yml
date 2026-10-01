@@ -21,9 +21,10 @@ name: Live verification
 # in this file (`live-verify-gate`): it waits for every live job and fails if
 # any of them failed, or if a job mapped to a changed path did not succeed. A
 # fork PR that touches live-tested paths fails it, because no live job can run
-# there: a maintainer pushes the branch into this repo to run them. A Dependabot
-# PR passes with a notice and relies on the nightly run. A docs-only PR touches
-# no live path, so every live job is skipped and the gate passes.
+# there: a maintainer opens a replacement PR from a branch in this repo to run
+# them. A Dependabot PR passes with a notice and relies on the nightly run. A
+# docs-only PR touches no live path, so every live job is skipped and the gate
+# passes.
 #
 # The `changes` job below computes one path-filter output per live-verify job
 # (not one blanket filter for all of them), scoped to that job's own script
@@ -1730,7 +1731,7 @@ jobs:
             exit 0
           fi
           if [ "$touched" = true ] && [ "$IS_FORK" = true ]; then
-            echo "::error::This fork PR changes paths covered by live verification, and GitHub gives fork PRs no secrets. A maintainer pushes the branch into this repo to run the live jobs."
+            echo "::error::This fork PR changes paths covered by live verification, and GitHub gives fork PRs no secrets. A maintainer opens a replacement PR from a branch in this repo to run the live jobs."
             exit 1
           fi
           not_run=$(jq -r '. as $n | $n.changes.outputs | to_entries[] | select(.value == "true") | (if .key == "smoke" then "live-verify" else "live-verify-" + .key end) as $j | select($n[$j].result != "success") | "\($j): \($n[$j].result)"' <<<"$NEEDS")
