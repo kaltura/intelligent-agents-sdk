@@ -604,7 +604,7 @@ describe('7. SDK invariants', () => {
     assert.ok(read('docs/wire-protocol/events-catalog.md').includes('client-side-command channel'), 'events-catalog.md missing type:tool channel note');
   });
 
-  test('all tests pass', { skip: process.env.CI_CODE_CHANGED === 'false' && 'no code/test files changed in this push — the dedicated test job already covers this' }, () => {
+  test('all tests pass', { skip: process.env.DOCS_GATE_SKIP_TESTS === '1' && 'CI runs the suite in its own job' }, () => {
     const testFiles = execSync('find test -name "*.test.js"', {
       cwd: ROOT, encoding: 'utf8',
     }).trim().split('\n').filter(Boolean);
