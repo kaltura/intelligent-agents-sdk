@@ -21,7 +21,7 @@ concurrency:
 jobs:
   changes:
     name: 🔍 Detect changed paths
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     outputs:
       code: ${{ steps.filter.outputs.code }}
@@ -70,7 +70,7 @@ jobs:
     name: 🧷 Lint workflow files (actionlint)
     needs: changes
     if: needs.changes.outputs.workflows == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
       - name: 📥 Check out the repo
@@ -89,7 +89,7 @@ jobs:
     name: 🧪 Test suite
     needs: changes
     if: needs.changes.outputs.code == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     steps:
       - name: 📥 Check out the repo
@@ -136,7 +136,7 @@ jobs:
     name: 🎙️ Noise-suppressor DSP check (${{ matrix.engine }})
     needs: changes
     if: needs.changes.outputs.browser == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -196,7 +196,7 @@ jobs:
     name: 🎬 Avatar media path, real browser (${{ matrix.engine }})
     needs: changes
     if: needs.changes.outputs.browser == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     # The verify script enforces its own 90s budget per engine; this only caps a hung browser/install.
     timeout-minutes: 15
     strategy:
@@ -290,7 +290,7 @@ jobs:
 
   constitution:
     name: 📜 Verify the SDK Constitution (agent_verify.mjs)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     needs: test
     steps:
@@ -345,7 +345,7 @@ jobs:
 
   dx-gates:
     name: 🧹 Lint, typecheck, circular-import
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     needs: test
     steps:
@@ -414,7 +414,7 @@ jobs:
 
   docs-gate:
     name: 📚 Check docs/code drift, secrets, and GFM hygiene (check-docs.mjs)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     # Deliberately depends on `changes`, not `test` — this gate (secrets, GFM
     # hygiene, cross-doc links, doc-vs-code drift) is exactly as relevant to a
@@ -457,7 +457,7 @@ jobs:
 
   sast:
     name: 🛡️ SAST scan (semgrep)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     needs: test
     steps:

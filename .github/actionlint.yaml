@@ -1,3 +1,7 @@
+self-hosted-runner:
+  # GitHub-hosted label newer than the bundled actionlint runner list.
+  labels:
+    - ubuntu-26.04
 paths:
   .github/workflows/live-verify.yml:
     ignore:

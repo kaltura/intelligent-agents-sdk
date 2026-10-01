@@ -115,7 +115,7 @@ concurrency:
 jobs:
   changes:
     name: 🔍 Detect changed paths
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     outputs:
       smoke: ${{ steps.filter.outputs.smoke }}
@@ -449,7 +449,7 @@ jobs:
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
       ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs['smoke'] == 'true')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     environment: live-verify
     steps:
@@ -497,7 +497,7 @@ jobs:
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
       ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs['capabilities'] == 'true')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     environment: live-verify
     steps:
@@ -545,7 +545,7 @@ jobs:
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
       ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs['conversation-surface'] == 'true')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     environment: live-verify
     steps:
@@ -593,7 +593,7 @@ jobs:
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
       ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs['request-vars'] == 'true')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     environment: live-verify
     steps:
@@ -641,7 +641,7 @@ jobs:
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
       ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs['context-fields'] == 'true')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     environment: live-verify
     steps:
@@ -695,7 +695,7 @@ jobs:
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
       ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs['site-nav'] == 'true')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     environment: live-verify
     steps:
@@ -744,7 +744,7 @@ jobs:
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
       ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs['threads-messages-feedback'] == 'true')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     environment: live-verify
     steps:
@@ -792,7 +792,7 @@ jobs:
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
       ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs['session-types'] == 'true')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     environment: live-verify
     steps:
@@ -843,7 +843,7 @@ jobs:
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
       ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs['skills'] == 'true')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     environment: live-verify
     steps:
@@ -891,7 +891,7 @@ jobs:
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
       ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs['catalog'] == 'true')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     environment: live-verify
     steps:
@@ -939,7 +939,7 @@ jobs:
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
       ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs['knowledge'] == 'true')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     environment: live-verify
     steps:
@@ -987,7 +987,7 @@ jobs:
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
       ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs['avatars'] == 'true')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     environment: live-verify
     steps:
@@ -1035,7 +1035,7 @@ jobs:
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
       ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs['agents'] == 'true')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     environment: live-verify
     steps:
@@ -1083,7 +1083,7 @@ jobs:
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
       ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs['browser'] == 'true')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     environment: live-verify
     strategy:
@@ -1100,7 +1100,7 @@ jobs:
         # webkit is deliberately NOT in this matrix. Linux WebKitGTK has no
         # built-in H264 decoder, and apt-installing GStreamer's H264 plugins
         # doesn't fix it either — Playwright's WebKit build on Linux doesn't
-        # decode through them, so this leg can never pass on ubuntu-latest.
+        # decode through them, so this leg can never pass on ubuntu-26.04.
         # A macos-14 runner (real AVFoundation decode) was tried instead and
         # hit a worse, unresolved blocker: the job hangs indefinitely
         # requesting camera/mic permissions, almost certainly macOS's TCC
@@ -1171,7 +1171,7 @@ jobs:
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
       ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs['kickoff'] == 'true')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     environment: live-verify
     steps:
@@ -1261,7 +1261,7 @@ jobs:
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
       ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs['opening-phrase'] == 'true')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     environment: live-verify
     steps:
@@ -1318,7 +1318,7 @@ jobs:
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
       ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs['avatar-media'] == 'true')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     environment: live-verify
     strategy:
@@ -1379,7 +1379,7 @@ jobs:
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
       ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs['set-forced-language'] == 'true')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     environment: live-verify
     steps:
@@ -1441,7 +1441,7 @@ jobs:
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
       ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs['session-complete'] == 'true')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     environment: live-verify
     strategy:
@@ -1503,7 +1503,7 @@ jobs:
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
       ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs['intellects-conversations'] == 'true')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     environment: live-verify
     steps:
@@ -1551,7 +1551,7 @@ jobs:
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
       ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs['tools'] == 'true')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     environment: live-verify
     steps:
@@ -1599,7 +1599,7 @@ jobs:
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
       ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs['mcp'] == 'true')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     environment: live-verify
     steps:
@@ -1707,7 +1707,7 @@ jobs:
     name: 🔴 Live verification
     needs: [changes, live-verify, live-verify-capabilities, live-verify-conversation-surface, live-verify-request-vars, live-verify-context-fields, live-verify-site-nav, live-verify-threads-messages-feedback, live-verify-session-types, live-verify-skills, live-verify-catalog, live-verify-knowledge, live-verify-avatars, live-verify-agents, live-verify-browser, live-verify-kickoff, live-verify-opening-phrase, live-verify-avatar-media, live-verify-set-forced-language, live-verify-session-complete, live-verify-intellects-conversations, live-verify-tools, live-verify-mcp]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
       - name: 🔴 Every live job that ran passed, and a PR touching live-tested paths carries the label
