@@ -52,3 +52,4 @@ This repo is [MIT licensed](LICENSE). By opening a PR, you agree your contributi
 ## Reporting a security issue
 
 Do not open a public issue for a security vulnerability. See [SECURITY.md](SECURITY.md) for the disclosure process.
+
