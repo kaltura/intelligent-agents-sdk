@@ -33,12 +33,13 @@
  * behavior isn't reachable from any Playwright engine; see
  * manual-testing/session-complete/ for that coverage.
  */
-import { readFileSync, writeFileSync, mkdirSync, createReadStream, existsSync, statSync } from 'node:fs';
+import { writeFileSync, mkdirSync, createReadStream, existsSync, statSync } from 'node:fs';
 import { resolve, dirname, extname, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'node:http';
 import { chromium, firefox, webkit } from 'playwright';
 import { Management } from '../src/management/index.js';
+import { resolveTarget } from './lib/target.mjs';
 import { callHook } from './live-verify-hooks-shared.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -52,23 +53,8 @@ if (!engine) {
   process.exit(1);
 }
 
-try {
-  const env = readFileSync(resolve(repoRoot, '.env'), 'utf8');
-  for (const line of env.split('\n')) {
-    const m = line.match(/^([A-Z_]+)=(.*)$/);
-    if (m && !process.env[m[1]]) process.env[m[1]] = m[2].trim();
-  }
-} catch {
-  // No .env file — credentials must already be in the environment.
-}
-
-const partnerId = process.env.AGENTIC_PARTNER_ID;
-const adminSecret = process.env.AGENTIC_ADMIN_SECRET;
-
-if (!partnerId || !adminSecret) {
-  console.error('AGENTIC_PARTNER_ID and AGENTIC_ADMIN_SECRET are required (env or repo-root .env).');
-  process.exit(1);
-}
+const target = resolveTarget(process.env.TARGET ?? 'prod');
+const { partnerId } = target;
 
 const startedAt = new Date().toISOString();
 const runId = `ci-live-verify-session-complete-${engineName}-${Date.now()}`;
@@ -155,7 +141,7 @@ async function waitFor(fn, { timeout = 10000, polling = 200 } = {}) {
   }
 }
 
-const kaltura = new Management({ partnerId, adminSecret });
+const kaltura = new Management(target);
 let admin;
 let configId;
 let server;

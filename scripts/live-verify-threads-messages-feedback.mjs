@@ -30,30 +30,16 @@
  * AGENTIC_PARTNER_ID / AGENTIC_ADMIN_SECRET, from the environment or a .env
  * file in the repo root.
  */
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { writeFileSync, mkdirSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Management } from '../src/management/index.js';
+import { resolveTarget } from './lib/target.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-try {
-  const env = readFileSync(resolve(__dirname, '../.env'), 'utf8');
-  for (const line of env.split('\n')) {
-    const m = line.match(/^([A-Z_]+)=(.*)$/);
-    if (m && !process.env[m[1]]) process.env[m[1]] = m[2].trim();
-  }
-} catch {
-  // No .env file — credentials must already be in the environment.
-}
-
-const partnerId = process.env.AGENTIC_PARTNER_ID;
-const adminSecret = process.env.AGENTIC_ADMIN_SECRET;
-
-if (!partnerId || !adminSecret) {
-  console.error('AGENTIC_PARTNER_ID and AGENTIC_ADMIN_SECRET are required (env or repo-root .env).');
-  process.exit(1);
-}
+const target = resolveTarget(process.env.TARGET ?? 'prod');
+const { partnerId } = target;
 
 const startedAt = new Date().toISOString();
 const runId = `ci-live-verify-threads-messages-feedback-${Date.now()}`;
@@ -73,7 +59,7 @@ function check(step, ok, detail) {
 
 const snippet = (text) => JSON.stringify(text ?? '').slice(0, 160);
 
-const kaltura = new Management({ partnerId, adminSecret });
+const kaltura = new Management(target);
 let admin;
 let intellectId;
 let threadId;

@@ -15,71 +15,38 @@
  *
  * Throwaway intellect only, deleted in `finally` regardless of outcome.
  *
- * Credentials, from the environment or a `.env` in the repo root:
- * `AGENTIC_PARTNER_ID`/`AGENTIC_ADMIN_SECRET`/`AGENTIC_API_URL`/`GENIE_URL`/
- * `KALTURA_API_ENDPOINT` for the primary target, and the same five names with
- * an `ALT_` prefix for an optional second target. Every `Management` instance
- * below gets explicit URL overrides, so a run never silently falls back to the
- * constructor's built-in defaults.
+ * Targets come from scripts/lib/target.mjs. The primary target is `TARGET`
+ * (default `prod`). The optional second target is `alt`: set
+ * `ALT_AGENTIC_PARTNER_ID`/`ALT_AGENTIC_ADMIN_SECRET`/`ALT_AGENTIC_API_URL`/
+ * `ALT_GENIE_URL`/`ALT_KALTURA_API_ENDPOINT` to run it too.
  *
  * Run one target only: `node scripts/live-verify-feedback-flow.mjs primary`.
  */
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { writeFileSync, mkdirSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Management } from '../src/management/index.js';
 import { ksString } from '../src/management/client.js';
 import { Http } from '../src/core/http.js';
+import { loadEnvFile, resolveTarget } from './lib/target.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-try {
-  const env = readFileSync(resolve(__dirname, '../.env'), 'utf8');
-  for (const line of env.split('\n')) {
-    const m = line.match(/^([A-Z0-9_]+)=(.*)$/);
-    if (m && !process.env[m[1]]) process.env[m[1]] = m[2].trim().replace(/^"(.*)"$/, '$1').replace(/^'(.*)'$/, '$1');
-  }
-} catch {
-  // No .env file — credentials must already be in the environment.
-}
-
-/** One target = one set of credentials plus its own explicit URL overrides. */
-const target = (name, prefix) => {
-  const vars = {
-    partnerId: `${prefix}AGENTIC_PARTNER_ID`,
-    adminSecret: `${prefix}AGENTIC_ADMIN_SECRET`,
-    agenticUrl: `${prefix}AGENTIC_API_URL`,
-    genieUrl: `${prefix}GENIE_URL`,
-    ovpUrl: `${prefix}KALTURA_API_ENDPOINT`,
-  };
-  const t = { name, vars };
-  for (const [key, envName] of Object.entries(vars)) t[key] = process.env[envName];
-  return t;
-};
-
-const ENVIRONMENTS = [target('primary', ''), target('secondary', 'ALT_')];
+// Primary is TARGET (default prod). Secondary is the optional `alt` target (ALT_* vars).
+loadEnvFile(resolve(__dirname, '../.env'));
+const hasAlt = Object.keys(process.env).some((k) => k.startsWith('ALT_'));
+const ENVIRONMENTS = ['primary', 'secondary'];
 
 const onlyEnv = process.argv[2];
-let environmentsToRun = onlyEnv ? ENVIRONMENTS.filter((e) => e.name === onlyEnv) : ENVIRONMENTS;
-if (onlyEnv && environmentsToRun.length === 0) {
-  console.error(`Unknown target "${onlyEnv}" — expected one of: ${ENVIRONMENTS.map((e) => e.name).join(', ')}`);
+if (onlyEnv && !ENVIRONMENTS.includes(onlyEnv)) {
+  console.error(`Unknown target "${onlyEnv}" — expected one of: ${ENVIRONMENTS.join(', ')}`);
   process.exit(1);
 }
 
 // An unconfigured secondary target is skipped, not an error — one target is a valid run.
-if (!onlyEnv) environmentsToRun = environmentsToRun.filter((e) => e.name === 'primary' || e.partnerId);
-if (environmentsToRun.length === 0) {
-  console.error('No target configured. Set AGENTIC_PARTNER_ID and friends (env or repo-root .env).');
-  process.exit(1);
-}
-
-for (const e of environmentsToRun) {
-  const missing = Object.keys(e.vars).filter((k) => !e[k]).map((k) => e.vars[k]);
-  if (missing.length) {
-    console.error(`Target "${e.name}" is missing: ${missing.join(', ')} (env or repo-root .env).`);
-    process.exit(1);
-  }
-}
+const environmentsToRun = [];
+if (onlyEnv !== 'secondary') environmentsToRun.push({ ...resolveTarget(process.env.TARGET ?? 'prod'), name: 'primary' });
+if (onlyEnv === 'secondary' || (!onlyEnv && hasAlt)) environmentsToRun.push({ ...resolveTarget('alt'), name: 'secondary' });
 
 const snippet = (text) => JSON.stringify(text ?? '').slice(0, 160);
 
@@ -99,13 +66,7 @@ async function runForEnv(env) {
     record(step, ok, detail);
   }
 
-  const kaltura = new Management({
-    partnerId: env.partnerId,
-    adminSecret: env.adminSecret,
-    agenticUrl: env.agenticUrl,
-    genieUrl: env.genieUrl,
-    ovpUrl: env.ovpUrl,
-  });
+  const kaltura = new Management(env);
 
   let admin;
   let intellectId;
@@ -150,7 +111,7 @@ async function runForEnv(env) {
     const addResult = await kaltura.feedback.add({ message_id: m2.messageId, is_positive: true, comment: feedbackComment }, conv);
     record('feedback-add', true, { messageId: m2.messageId, addResult });
 
-    const http = new Http();
+    const http = new Http({ fetch: env.fetch });
     let closeOk = true;
     let closeDetail;
     try {

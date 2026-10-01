@@ -48,21 +48,27 @@ Every `live-verify-*.mjs` script talks to a real deployment with real credential
 
 Drop a `.env` in the repo root (or export the vars). Nothing here reads a committed file, and no script ever writes a credential to an artifact.
 
-Most scripts read two vars and use the SDK's default URLs:
+Every script picks its backend the same way, through `lib/target.mjs`. By default it runs against production with two vars:
 
 ```bash
 export AGENTIC_PARTNER_ID=1234567
 export AGENTIC_ADMIN_SECRET=your-admin-secret
 ```
 
-The scripts built on `live-verify-kickoff-shared.mjs` (`live-verify-kickoff.mjs`, `live-verify-connect-timing.mjs`, `live-verify-opening-phrase.mjs`) also accept `--env` to pick the environment or region they run against:
+Set `TARGET` to run against another environment. The scripts built on `live-verify-kickoff-shared.mjs` take the same value as `--env`, and `live-verify-mcp.mjs` takes it as `--target` (default `nvq2`).
 
-| `--env` | Credentials | URLs |
+| `TARGET` | Credentials | URLs |
 |---|---|---|
-| `prod` (default) | `AGENTIC_PARTNER_ID`, `AGENTIC_ADMIN_SECRET` | SDK defaults |
-| `<name>` or `<name>:<account>` | `<NAME>_PARTNER_ID_<account>`, `<NAME>_ADMIN_SECRET_<account>` (account defaults to `1`), or `<NAME>_PARTNER_ID`, `<NAME>_ADMIN_SECRET`, or `<NAME>_AGENTIC_PARTNER_ID`, `<NAME>_AGENTIC_ADMIN_SECRET` | `<NAME>_AGENTIC_API_URL`, `<NAME>_GENIE_URL`, `<NAME>_KALTURA_API_ENDPOINT` |
+| `prod` (default) | `AGENTIC_PARTNER_ID`, `AGENTIC_ADMIN_SECRET` | `REGIONS.nvp1` |
+| `<name>` or `<name>:<account>` | `<NAME>_PARTNER_ID_<account>`, `<NAME>_ADMIN_SECRET_<account>` (account defaults to `1`), or `<NAME>_PARTNER_ID`, `<NAME>_ADMIN_SECRET`, or `<NAME>_AGENTIC_PARTNER_ID`, `<NAME>_AGENTIC_ADMIN_SECRET` | `<NAME>_AGENTIC_API_URL`, `<NAME>_GENIE_URL`, `<NAME>_KALTURA_API_ENDPOINT`, and `<NAME>_MESSAGING_URL` if set |
 
-`<name>` is lowercase letters and digits; `<NAME>` is the same text in upper case. Every URL is passed to `Management` explicitly, so a named environment never falls back to the production defaults. Example: `--env eu` reads `EU_PARTNER_ID_1`, `EU_ADMIN_SECRET_1`, `EU_AGENTIC_API_URL`, `EU_GENIE_URL`, `EU_KALTURA_API_ENDPOINT`; `--env eu:2` swaps in the `_2` credential pair. A missing var exits 1 before any network call. Get a partner id and admin secret from Kaltura Rich Media CMS → Settings → Integration Settings.
+`<name>` is lowercase letters and digits; `<NAME>` is the same text in upper case. A named target reads the repo-root `.env` and then the `.env` one level above the repo. Example: `TARGET=eu` reads `EU_PARTNER_ID_1`, `EU_ADMIN_SECRET_1`, `EU_AGENTIC_API_URL`, `EU_GENIE_URL`, `EU_KALTURA_API_ENDPOINT`; `TARGET=eu:2` swaps in the `_2` credential pair. A missing var exits 1 before any network call, and the message names the var, never a value.
+
+The resolved target's `fetch` refuses any host outside the target's own URLs. So a named target without `<NAME>_MESSAGING_URL` fails `emailTemplates.*` calls instead of reaching the production messaging host. Get a partner id and admin secret from Kaltura Rich Media CMS → Settings → Integration Settings.
+
+`live-verify-feedback-flow.mjs` and `live-check-feedback-unfiltered.mjs` can also run a second target, `alt`, read from `ALT_*` vars with the same names as above. They run it when any `ALT_` var is set.
+
+`live-verify-regions.mjs` needs no credentials. It sends one unauthenticated request to every non-null base URL in `REGIONS` and checks that each host answers over TLS with the same status and content type as nvp1. Run it after changing `REGIONS`.
 
 ### Which script to run
 
@@ -83,13 +89,14 @@ The scripts built on `live-verify-kickoff-shared.mjs` (`live-verify-kickoff.mjs`
 | `live-verify-set-forced-language.mjs`, `live-verify-force-language.mjs` | A forced language changes the reply, not just storage |
 | `live-verify-capabilities.mjs` | Capability resolution plus the Lifecycle domain |
 | `live-verify-agents.mjs`, `live-verify-avatars.mjs`, `live-verify-catalog.mjs`, `live-verify-tools.mjs`, `live-verify-skills.mjs`, `live-verify-knowledge.mjs`, `live-verify-intellects-conversations.mjs`, `live-verify-threads-messages-feedback.mjs`, `live-verify-conversation-avatar-surface.mjs` | The write path of one management resource each |
+| `live-verify-regions.mjs` | Every `REGIONS` host answers over TLS like nvp1. No credentials |
 | `live-verify-threads-messages-feedback.mjs --with-share` | Also runs the `messages.share` step (step 6), which leaves an undeletable clone per run. Off by default: use it only after a change to `messages.share` |
 
-Every one of these has an `npm run live-verify:<name>` script except `live-verify.mjs` and `live-verify-mcp.mjs` (CI runs both with `node`). Four have no npm script and no CI job. Run them with `node scripts/<name>.mjs`: `live-verify-intellect-config.mjs`, `live-verify-knowledge-kms.mjs`, `live-verify-feedback-flow.mjs`, `live-check-feedback-unfiltered.mjs`. One more has an npm script but no CI job either: `live-verify-force-language.mjs`, run by hand with `npm run live-verify:force-language`.
+Every one of these has an `npm run live-verify:<name>` script except `live-verify.mjs` and `live-verify-mcp.mjs` (CI runs both with `node`). Four have no npm script and no CI job. Run them with `node scripts/<name>.mjs`: `live-verify-intellect-config.mjs`, `live-verify-knowledge-kms.mjs`, `live-verify-feedback-flow.mjs`, `live-check-feedback-unfiltered.mjs`. Two more have an npm script but no CI job: `live-verify-force-language.mjs` and `live-verify-regions.mjs`, run by hand with `npm run live-verify:force-language` and `npm run live-verify:regions`.
 
 Read the header comment of a script before running it. Each one states what it asserts and why that coverage exists.
 
-Three helper modules are not scripts and are never run directly: `live-verify-kickoff-shared.mjs` (CLI/env parsing, throwaway agent, server, browser, report), `live-verify-silent-mic-shared.mjs` (a silent WAV for `--use-file-for-fake-audio-capture`, so the fake mic's tone is not transcribed as invented user speech), and `live-verify-hooks-shared.mjs` (a bounded timeout around the page-side `window.test*` hooks, so a hook that never settles fails with a diagnostic instead of hanging the job).
+Four helper modules are not scripts and are never run directly: `lib/target.mjs` (the backend target resolver above), `live-verify-kickoff-shared.mjs` (CLI/env parsing, throwaway agent, server, browser, report), `live-verify-silent-mic-shared.mjs` (a silent WAV for `--use-file-for-fake-audio-capture`, so the fake mic's tone is not transcribed as invented user speech), and `live-verify-hooks-shared.mjs` (a bounded timeout around the page-side `window.test*` hooks, so a hook that never settles fails with a diagnostic instead of hanging the job).
 
 ### Flags
 
@@ -99,7 +106,7 @@ Shared by all four (`live-verify-session-types.mjs` drives no browser, so it ign
 
 | Flag | Effect |
 |---|---|
-| `--env prod\|<name>[:<account>]` | Environment or region to run against. Default `prod`. See the table above |
+| `--env prod\|<name>[:<account>]` | Backend to run against, same values as `TARGET`. Default `prod`. See the table above |
 | `--env-file PATH` | Read env vars from `PATH` instead of `./.env` |
 | `--browser chromium\|chrome\|firefox\|webkit` | Engine. `chrome` is the installed Google Chrome, always headed, audio audible |
 | `--headed` | Show the browser window |
@@ -157,7 +164,7 @@ Three entry points are easy to confuse. They do different things.
 | `live-verify.yml` | One job per CI-run live script. Runs on manual dispatch, on every PR from a branch in this repo (only jobs whose paths changed), and in the merge queue (same path filter). Fork and Dependabot PRs get no secrets, so no live job runs there: a fork PR that touches live paths fails the `Live verification` check until a maintainer opens a replacement PR from a branch in this repo, and a Dependabot PR passes with a notice. A nightly schedule (03:00 UTC) runs every job and is the startup-KPI trend run |
 | `release.yml` | `npm run verify:distribution -- <tag>`, which checks the published jsDelivr tree matches the tag |
 
-The four local-only scripts, plus `live-verify-force-language.mjs`, have no CI job. Run them by hand when you touch their surface.
+The four local-only scripts, plus `live-verify-force-language.mjs` and `live-verify-regions.mjs`, have no CI job. Run them by hand when you touch their surface.
 
 ## Extending
 

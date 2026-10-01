@@ -18,10 +18,11 @@ import { fileURLToPath } from 'node:url';
 import { createServer } from 'node:http';
 import { chromium, firefox, webkit } from 'playwright';
 import { Management, SILENT_OPENING, SILENT_OPENING_LABEL } from '../src/management/index.js';
+import { loadEnvFile, resolveTarget } from './lib/target.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 export const repoRoot = resolve(__dirname, '..');
-export { SILENT_OPENING, SILENT_OPENING_LABEL };
+export { SILENT_OPENING, SILENT_OPENING_LABEL, loadEnvFile, resolveTarget };
 
 // ---------------------------------------------------------------------------
 // CLI + env
@@ -43,70 +44,6 @@ export function parseArgs(argv) {
     if (next !== undefined && !next.startsWith('--')) { out[key] = next; i++; } else out[key] = true;
   }
   return out;
-}
-
-/**
- * Load `KEY=value` lines from a .env file into process.env without overriding
- * values that are already set. Keys may contain digits.
- * @param {string} path
- * @returns {boolean} true when the file was read
- */
-export function loadEnvFile(path) {
-  let text;
-  try { text = readFileSync(path, 'utf8'); } catch { return false; }
-  for (const line of text.split('\n')) {
-    const m = line.match(/^([A-Z0-9_]+)=(.*)$/);
-    if (!m || process.env[m[1]]) continue;
-    process.env[m[1]] = m[2].trim().replace(/^"(.*)"$/, '$1').replace(/^'(.*)'$/, '$1');
-  }
-  return true;
-}
-
-/**
- * Resolve the backend target from the environment. `prod` (the default) reads
- * `AGENTIC_PARTNER_ID` / `AGENTIC_ADMIN_SECRET` and uses the SDK's default URLs.
- *
- * Any other environment or region is `<name>` or `<name>:<account>`.
- * The upper-cased name prefixes `_AGENTIC_API_URL`, `_GENIE_URL` and
- * `_KALTURA_API_ENDPOINT`. Credentials come from the first pair that is set:
- * `<PREFIX>_PARTNER_ID_<account>` / `<PREFIX>_ADMIN_SECRET_<account>` (account
- * defaults to 1), then `<PREFIX>_PARTNER_ID` / `<PREFIX>_ADMIN_SECRET`, then
- * `<PREFIX>_AGENTIC_PARTNER_ID` / `<PREFIX>_AGENTIC_ADMIN_SECRET`. Every URL
- * override is passed explicitly to `Management`, so a target never falls back
- * to the production defaults by accident.
- * @param {string} spec
- * @returns {{name:string, partnerId:string, adminSecret:string, agenticUrl?:string, genieUrl?:string, ovpUrl?:string}}
- */
-export function resolveTarget(spec) {
-  const fail = (/** @type {string} */ msg) => {
-    console.error(`--env ${spec}: ${msg}`);
-    process.exit(1);
-  };
-  const need = (/** @type {string[]} */ keys) => {
-    const missing = keys.filter((k) => !process.env[k]);
-    if (missing.length) fail(`missing ${missing.join(', ')} (set them in the environment or pass --env-file <path>).`);
-  };
-  if (spec === 'prod') {
-    need(['AGENTIC_PARTNER_ID', 'AGENTIC_ADMIN_SECRET']);
-    return { name: spec, partnerId: process.env.AGENTIC_PARTNER_ID, adminSecret: process.env.AGENTIC_ADMIN_SECRET };
-  }
-  const m = /^([a-z][a-z0-9]*)(?::([1-9][0-9]*))?$/.exec(spec);
-  if (!m) fail('use prod, or <name>[:<account>] where <name> is lowercase and its upper-cased form prefixes the target\'s env vars.');
-  const [, name, account = '1'] = m;
-  const p = name.toUpperCase();
-  const candidates = [[`${p}_PARTNER_ID_${account}`, `${p}_ADMIN_SECRET_${account}`]];
-  if (account === '1') candidates.push([`${p}_PARTNER_ID`, `${p}_ADMIN_SECRET`], [`${p}_AGENTIC_PARTNER_ID`, `${p}_AGENTIC_ADMIN_SECRET`]);
-  const creds = candidates.find(([id, secret]) => process.env[id] && process.env[secret]);
-  if (!creds) fail(`missing credentials; set one pair of ${candidates.map(([id, secret]) => `${id} / ${secret}`).join(', or ')}.`);
-  need([`${p}_AGENTIC_API_URL`, `${p}_GENIE_URL`, `${p}_KALTURA_API_ENDPOINT`]);
-  return {
-    name: account === '1' ? name : `${name}-${account}`,
-    partnerId: process.env[creds[0]],
-    adminSecret: process.env[creds[1]],
-    agenticUrl: process.env[`${p}_AGENTIC_API_URL`],
-    genieUrl: process.env[`${p}_GENIE_URL`],
-    ovpUrl: process.env[`${p}_KALTURA_API_ENDPOINT`],
-  };
 }
 
 /** Browser engines the live scripts can drive. `chrome` is the installed Google Chrome via Playwright's `channel`. */
@@ -135,7 +72,7 @@ export function bootstrap(argv, scriptName) {
   const args = parseArgs(argv);
   const envFile = typeof args['env-file'] === 'string' ? resolve(String(args['env-file'])) : resolve(repoRoot, '.env');
   loadEnvFile(envFile);
-  const target = resolveTarget(typeof args.env === 'string' ? args.env : 'prod');
+  const target = resolveTarget(typeof args.env === 'string' ? args.env : 'prod', '--env');
   const runId = `${scriptName}-${target.name}-${Date.now()}`;
   const outDir = typeof args.out === 'string' ? resolve(String(args.out)) : resolve(repoRoot, 'live-verify-artifacts');
   mkdirSync(outDir, { recursive: true });
@@ -210,13 +147,7 @@ export function stats(xs) {
  * @param {ReturnType<typeof resolveTarget>} target
  */
 export function management(target) {
-  return new Management({
-    partnerId: target.partnerId,
-    adminSecret: target.adminSecret,
-    ...(target.agenticUrl ? { agenticUrl: target.agenticUrl } : {}),
-    ...(target.genieUrl ? { genieUrl: target.genieUrl } : {}),
-    ...(target.ovpUrl ? { ovpUrl: target.ovpUrl } : {}),
-  });
+  return new Management(target);
 }
 
 /**

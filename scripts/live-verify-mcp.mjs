@@ -42,28 +42,18 @@
  * (see docs/MCP-INTEGRATIONS.md, "Multiple servers, no collision risk") — the
  * rules prompts below use the namespaced form.
  *
- * Credentials: your .env (two levels up from this file, not the repo-root
- * .env) holds QA and production prefixed vars. --target selects the
- * prefix; Management is constructed with explicit agenticUrl/genieUrl/ovpUrl
- * overrides, since the defaults are production.
+ * Credentials and URLs: --target (default nvq2) is resolved by
+ * scripts/lib/target.mjs, which reads the target's prefixed vars from the
+ * environment or the .env one level above the repo.
  */
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Management } from '../src/management/index.js';
+import { resolveTarget } from './lib/target.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const artifactsDir = resolve(__dirname, '../live-verify-artifacts');
-
-try {
-  const env = readFileSync(resolve(__dirname, '../../.env'), 'utf8');
-  for (const line of env.split('\n')) {
-    const m = line.match(/^([A-Z0-9_]+)=(.*)$/);
-    if (m && !process.env[m[1]]) process.env[m[1]] = m[2].trim().replace(/^["']|["']$/g, '');
-  }
-} catch {
-  // No .env file: credentials must already be in the environment.
-}
 
 const argValue = (flag, fallback) => {
   const hit = process.argv.find((a) => a.startsWith(`${flag}=`));
@@ -71,21 +61,11 @@ const argValue = (flag, fallback) => {
 };
 
 const TARGET = argValue('--target', process.env.LIVE_VERIFY_TARGET || 'nvq2').toLowerCase();
-const PREFIX = TARGET === 'nvp1' ? 'NVP1' : 'NVQ2';
 const PHASE = argValue('--phase', 'all');
 const MCP_BASE = argValue('--mcp-url', process.env.MCP_PUBLIC_URL || '').replace(/\/$/, '');
 const statePath = resolve(artifactsDir, `state-${TARGET}.json`);
 
-const partnerId = process.env[`${PREFIX}_AGENTIC_PARTNER_ID`] || process.env[`${PREFIX}_PARTNER_ID_1`];
-const adminSecret = process.env[`${PREFIX}_AGENTIC_ADMIN_SECRET`] || process.env[`${PREFIX}_ADMIN_SECRET_1`];
-const agenticUrl = process.env[`${PREFIX}_AGENTIC_API_URL`];
-const genieUrl = process.env[`${PREFIX}_GENIE_URL`];
-const ovpUrl = process.env[`${PREFIX}_KALTURA_API_ENDPOINT`];
-
-if (!partnerId || !adminSecret || !agenticUrl || !genieUrl || !ovpUrl) {
-  console.error(`Missing ${PREFIX}_* credentials/URLs (env or your .env two levels up).`);
-  process.exit(1);
-}
+const target = resolveTarget(TARGET, '--target');
 if (PHASE !== 'verify' && !MCP_BASE) {
   console.error('MCP_PUBLIC_URL (or --mcp-url=) is required — the public HTTPS URL for examples/mcp-live-showcase/server.mjs.');
   process.exit(1);
@@ -128,7 +108,7 @@ const FLAKY_RULE = (server) => `When asked to run the flaky operation, call the 
 const DEEPWIKI_RULE = (server) => `When asked about a GitHub repo's documentation structure, call the ${server}__read_wiki_structure tool with repoName="expressjs/express", then reply with EXACTLY: STRUCTURE_OK=<the tool's returned text, verbatim, up to 400 characters> and nothing else.`;
 const EXTERNAL_MCP_URL = 'https://mcp.deepwiki.com/mcp';
 
-const kaltura = new Management({ partnerId, adminSecret, agenticUrl, genieUrl, ovpUrl });
+const kaltura = new Management(target);
 
 async function runProvision() {
   const OPEN_URL = `${MCP_BASE}/mcp`;

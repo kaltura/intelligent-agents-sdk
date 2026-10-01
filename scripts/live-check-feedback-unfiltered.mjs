@@ -5,46 +5,23 @@
  * apart from "a specific message/thread filter matched nothing". Admin token
  * only, no provisioning.
  *
- * Credentials, from the environment or a `.env` in the repo root:
- * `AGENTIC_PARTNER_ID`/`AGENTIC_ADMIN_SECRET`/`AGENTIC_API_URL`/`GENIE_URL`/
- * `KALTURA_API_ENDPOINT`, plus the same five names with an `ALT_` prefix for an
- * optional second target. URL overrides are always explicit, so a run never
- * falls back to the constructor's built-in defaults.
+ * Targets come from scripts/lib/target.mjs. The primary target is `TARGET`
+ * (default `prod`). The optional second target is `alt` (`ALT_*` vars), run
+ * only when such vars are set.
  */
-import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Management } from '../src/management/index.js';
+import { loadEnvFile, resolveTarget } from './lib/target.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-try {
-  const env = readFileSync(resolve(__dirname, '../.env'), 'utf8');
-  for (const line of env.split('\n')) {
-    const m = line.match(/^([A-Z0-9_]+)=(.*)$/);
-    if (m && !process.env[m[1]]) process.env[m[1]] = m[2].trim().replace(/^"(.*)"$/, '$1').replace(/^'(.*)'$/, '$1');
-  }
-} catch { /* no .env — credentials must already be in the environment */ }
-
-const target = (name, prefix) => ({
-  name,
-  partnerId: process.env[`${prefix}AGENTIC_PARTNER_ID`],
-  adminSecret: process.env[`${prefix}AGENTIC_ADMIN_SECRET`],
-  agenticUrl: process.env[`${prefix}AGENTIC_API_URL`],
-  genieUrl: process.env[`${prefix}GENIE_URL`],
-  ovpUrl: process.env[`${prefix}KALTURA_API_ENDPOINT`],
-});
-
-// The secondary target is optional: skipped unless its credentials are set.
-const ENVIRONMENTS = [target('primary', ''), target('secondary', 'ALT_')].filter((e) => e.partnerId && e.adminSecret);
-
-if (ENVIRONMENTS.length === 0) {
-  console.error('AGENTIC_PARTNER_ID and AGENTIC_ADMIN_SECRET are required (env or repo-root .env).');
-  process.exit(1);
-}
+loadEnvFile(resolve(__dirname, '../.env'));
+const ENVIRONMENTS = [{ ...resolveTarget(process.env.TARGET ?? 'prod'), name: 'primary' }];
+if (Object.keys(process.env).some((k) => k.startsWith('ALT_'))) ENVIRONMENTS.push({ ...resolveTarget('alt'), name: 'secondary' });
 
 for (const env of ENVIRONMENTS) {
-  const kaltura = new Management({ partnerId: env.partnerId, adminSecret: env.adminSecret, agenticUrl: env.agenticUrl, genieUrl: env.genieUrl, ovpUrl: env.ovpUrl });
+  const kaltura = new Management(env);
   const admin = await kaltura.sessions.createAdminToken({ userId: 'sdk-live-verify' });
 
   const listRows = await kaltura.feedback.list(admin, { pageSize: 500 });
