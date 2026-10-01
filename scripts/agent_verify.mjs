@@ -654,7 +654,11 @@ section('Part 6 — Media path');
 
 section('SDK Test Suite (npm test)');
 
-{
+if (process.env.AGENT_VERIFY_SKIP_TESTS === '1') {
+  // CI sets this on the constitution job: the dedicated `test` job it depends on
+  // already ran the whole suite, so running it again here only adds minutes.
+  console.log('  - SDK-TESTS skipped (AGENT_VERIFY_SKIP_TESTS=1): the suite ran in its own CI job');
+} else {
   // The suite normally finishes well under 2 minutes, but a cold npm cache or a
   // loaded CI runner can push past it — a timeout kill must read as "timed out",
   // never as a test failure. Override with AGENT_VERIFY_TEST_TIMEOUT_MS.

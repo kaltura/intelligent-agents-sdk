@@ -15,16 +15,13 @@ name: Live verification
 # The job is also gated on the `live-verify` GitHub Environment, so the
 # AGENTIC_* secrets are scoped to it, not available repo-wide.
 #
-# "Live verification" is a required status check on main, so it needs a
-# reported status on every PR's head SHA — not just the label/merge_group
-# runs above. `pull_request: [opened, synchronize, reopened]` gives it that:
-# the workflow runs on every PR push, but its jobs' `if:` still only executes
-# on label/merge_group/dispatch, so a plain PR push reports `skipped` (which
-# satisfies a required check) instead of never reporting at all and leaving
-# the check stuck on "waiting for status to be reported" until someone labels
-# it or the merge queue picks it up. This also means a docs-only PR resolves
-# to skipped on every job below — it has nothing to verify against the real
-# backend either way.
+# "Live verification" is the required status check on main. It is the last job
+# in this file (`live-verify-gate`): it waits for every live job, fails if any
+# of them failed, and fails a PR that touches live-tested paths without the
+# `run-live-verify` label. The workflow runs on every PR push and on every
+# label change, so the check always reports and is re-evaluated when the label
+# is removed. A docs-only PR touches no live path, so every live job is skipped
+# and the gate passes.
 #
 # The `changes` job below computes one path-filter output per live-verify job
 # (not one blanket filter for all of them), scoped to that job's own script
@@ -35,7 +32,7 @@ name: Live verification
 # script only triggers that feature's job, not the whole fleet — except for
 # those shared dependency files, which correctly still trigger everything.
 #
-# A dedicated nightly `schedule` run (see the second cron below) bypasses the
+# A dedicated nightly `schedule` run (see the cron below) bypasses the
 # path filters entirely and runs every job in the fleet regardless of what
 # changed, so drift between the live backend and this suite surfaces within a
 # day even on a week with no merges.
@@ -70,9 +67,8 @@ name: Live verification
 # connect(), first video frame, first audio, first agent words and sound heard
 # is checked against that arm's budgets in the script header, and a miss fails
 # the timing step. The job summary leads with one KPI row per arm; the full reports
-# sit below it in a collapsed section. The weekly Monday `schedule` run keeps a
-# trend (90-day artifacts) even when nothing is merged; live-verify-kickoff runs
-# on any `schedule` trigger, so it also gets the nightly full-suite run below.
+# sit below it in a collapsed section. The nightly `schedule` run keeps a
+# trend (90-day artifacts) even when nothing is merged.
 # live-verify-opening-phrase covers the intellect-owned opening phrase:
 # provision() writes it to the intellect only and leaves the avatar's unset, a
 # Jinja2 `{% if %}` template renders per session from client variables
@@ -98,11 +94,10 @@ name: Live verification
 on:
   workflow_dispatch: {}
   pull_request:
-    types: [opened, synchronize, reopened, labeled]
+    types: [opened, synchronize, reopened, labeled, unlabeled]
   merge_group:
     branches: [main]
   schedule:
-    - cron: '0 6 * * 1' # Monday 06:00 UTC: startup-KPI trend run (live-verify-kickoff only)
     - cron: '0 3 * * *' # Nightly 03:00 UTC: full live-verify suite, regardless of what changed
 
 permissions:
@@ -166,8 +161,6 @@ jobs:
               - 'src/core/session.js'
               - 'src/core/ids.js'
               - 'src/core/redact.js'
-              - 'package.json'
-              - 'package-lock.json'
               - '.github/workflows/live-verify.yml'
             capabilities:
               - 'scripts/live-verify-capabilities.mjs'
@@ -184,8 +177,6 @@ jobs:
               - 'src/core/session.js'
               - 'src/core/ids.js'
               - 'src/core/redact.js'
-              - 'package.json'
-              - 'package-lock.json'
               - '.github/workflows/live-verify.yml'
             conversation-surface:
               - 'scripts/live-verify-conversation-avatar-surface.mjs'
@@ -198,8 +189,6 @@ jobs:
               - 'src/core/session.js'
               - 'src/core/ids.js'
               - 'src/core/redact.js'
-              - 'package.json'
-              - 'package-lock.json'
               - '.github/workflows/live-verify.yml'
             request-vars:
               - 'scripts/live-verify-request-vars.mjs'
@@ -212,8 +201,6 @@ jobs:
               - 'src/core/session.js'
               - 'src/core/ids.js'
               - 'src/core/redact.js'
-              - 'package.json'
-              - 'package-lock.json'
               - '.github/workflows/live-verify.yml'
             context-fields:
               - 'scripts/live-verify-context-fields.mjs'
@@ -244,8 +231,6 @@ jobs:
               - 'src/core/session.js'
               - 'src/core/ids.js'
               - 'src/core/redact.js'
-              - 'package.json'
-              - 'package-lock.json'
               - '.github/workflows/live-verify.yml'
             threads-messages-feedback:
               - 'scripts/live-verify-threads-messages-feedback.mjs'
@@ -256,8 +241,6 @@ jobs:
               - 'src/core/session.js'
               - 'src/core/ids.js'
               - 'src/core/redact.js'
-              - 'package.json'
-              - 'package-lock.json'
               - '.github/workflows/live-verify.yml'
             session-types:
               - 'scripts/live-verify-session-types.mjs'
@@ -296,8 +279,6 @@ jobs:
               - 'src/core/session.js'
               - 'src/core/ids.js'
               - 'src/core/redact.js'
-              - 'package.json'
-              - 'package-lock.json'
               - '.github/workflows/live-verify.yml'
             catalog:
               - 'scripts/live-verify-catalog.mjs'
@@ -308,8 +289,6 @@ jobs:
               - 'src/core/session.js'
               - 'src/core/ids.js'
               - 'src/core/redact.js'
-              - 'package.json'
-              - 'package-lock.json'
               - '.github/workflows/live-verify.yml'
             knowledge:
               - 'scripts/live-verify-knowledge.mjs'
@@ -321,8 +300,6 @@ jobs:
               - 'src/core/session.js'
               - 'src/core/ids.js'
               - 'src/core/redact.js'
-              - 'package.json'
-              - 'package-lock.json'
               - '.github/workflows/live-verify.yml'
             avatars:
               - 'scripts/live-verify-avatars.mjs'
@@ -333,8 +310,6 @@ jobs:
               - 'src/core/session.js'
               - 'src/core/ids.js'
               - 'src/core/redact.js'
-              - 'package.json'
-              - 'package-lock.json'
               - '.github/workflows/live-verify.yml'
             agents:
               - 'scripts/live-verify-agents.mjs'
@@ -345,8 +320,6 @@ jobs:
               - 'src/core/session.js'
               - 'src/core/ids.js'
               - 'src/core/redact.js'
-              - 'package.json'
-              - 'package-lock.json'
               - '.github/workflows/live-verify.yml'
             browser:
               - 'scripts/live-verify-browser.mjs'
@@ -447,8 +420,6 @@ jobs:
               - 'src/core/session.js'
               - 'src/core/ids.js'
               - 'src/core/redact.js'
-              - 'package.json'
-              - 'package-lock.json'
               - '.github/workflows/live-verify.yml'
             tools:
               - 'scripts/live-verify-tools.mjs'
@@ -459,8 +430,6 @@ jobs:
               - 'src/core/session.js'
               - 'src/core/ids.js'
               - 'src/core/redact.js'
-              - 'package.json'
-              - 'package-lock.json'
               - '.github/workflows/live-verify.yml'
             mcp:
               - 'scripts/live-verify-mcp.mjs'
@@ -472,12 +441,10 @@ jobs:
               - 'src/core/session.js'
               - 'src/core/ids.js'
               - 'src/core/redact.js'
-              - 'package.json'
-              - 'package-lock.json'
               - '.github/workflows/live-verify.yml'
 
   live-verify:
-    name: 🔴 Live verification
+    name: 🔴 Live verification (smoke)
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
@@ -1202,7 +1169,7 @@ jobs:
     name: 🔴🌐 Live verification (silent opening + kickoff + startup KPIs, chromium)
     needs: changes
     if: |
-      github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
       ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs['kickoff'] == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -1646,8 +1613,9 @@ jobs:
 
       - name: 🚇 Install cloudflared
         run: |
-          curl -sSL -o /usr/local/bin/cloudflared https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64
-          chmod +x /usr/local/bin/cloudflared
+          curl -sSfL -o cloudflared https://github.com/cloudflare/cloudflared/releases/download/2026.9.3/cloudflared-linux-amd64
+          echo "77e26d8d900e0b8469f416239d14b5f296525fdf79fee6f511ef55609e3fbac2  cloudflared" | sha256sum -c -
+          sudo install -m 0755 cloudflared /usr/local/bin/cloudflared
 
       - name: 🟢 Start the reference MCP server
         run: |
@@ -1725,3 +1693,44 @@ jobs:
             tail -n 60 live-verify-mcp-verify-output.log 2>/dev/null || tail -n 60 live-verify-mcp-provision-output.log 2>/dev/null || true
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+  # The one required status check for live verification (branch protection:
+  # "🔴 Live verification"). It waits for every live job, then:
+  #   - fails if any live job failed or was cancelled,
+  #   - fails if a job mapped to a changed path did not succeed (a `skipped`
+  #     job would otherwise pass the check and let live-tested code merge
+  #     unverified), and
+  #   - fails a PR that touches live-tested paths without the
+  #     `run-live-verify` label.
+  # Jobs whose paths did not change stay skipped and neutral.
+  live-verify-gate:
+    name: 🔴 Live verification
+    needs: [changes, live-verify, live-verify-capabilities, live-verify-conversation-surface, live-verify-request-vars, live-verify-context-fields, live-verify-site-nav, live-verify-threads-messages-feedback, live-verify-session-types, live-verify-skills, live-verify-catalog, live-verify-knowledge, live-verify-avatars, live-verify-agents, live-verify-browser, live-verify-kickoff, live-verify-opening-phrase, live-verify-avatar-media, live-verify-set-forced-language, live-verify-session-complete, live-verify-intellects-conversations, live-verify-tools, live-verify-mcp]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: 🔴 Every live job that ran passed, and a PR touching live-tested paths carries the label
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+          IS_PR: ${{ github.event_name == 'pull_request' }}
+          LABELED: ${{ contains(github.event.pull_request.labels.*.name, 'run-live-verify') }}
+        run: |
+          bad=$(jq -r 'to_entries[] | select(.value.result == "failure" or .value.result == "cancelled") | "\(.key): \(.value.result)"' <<<"$NEEDS")
+          if [ -n "$bad" ]; then
+            echo "::error::Live jobs did not pass:"
+            echo "$bad"
+            exit 1
+          fi
+          touched=$(jq -r '[.changes.outputs[]] | any(. == "true")' <<<"$NEEDS")
+          if [ "$IS_PR" = true ] && [ "$touched" = true ] && [ "$LABELED" != true ]; then
+            echo "::error::This PR changes paths covered by live verification. A maintainer must add the 'run-live-verify' label, then this check re-runs the matching live jobs."
+            exit 1
+          fi
+          not_run=$(jq -r '. as $n | $n.changes.outputs | to_entries[] | select(.value == "true") | (if .key == "smoke" then "live-verify" else "live-verify-" + .key end) as $j | select($n[$j].result != "success") | "\($j): \($n[$j].result)"' <<<"$NEEDS")
+          if [ -n "$not_run" ]; then
+            echo "::error::Live jobs mapped to changed paths did not succeed:"
+            echo "$not_run"
+            exit 1
+          fi
+          echo "Live verification OK (touched=$touched, labeled=$LABELED)."

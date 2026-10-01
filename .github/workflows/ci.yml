@@ -1,12 +1,11 @@
 name: CI
 
-# Runs on every push to main, every PR targeting main, and every merge-queue
-# check run (merge_group) once a PR is enqueued to merge into main.
+# Runs on every PR targeting main and every merge-queue check run (merge_group)
+# once a PR is enqueued to merge into main. There is no `push: main` trigger:
+# the merge queue already ran these exact checks on the commit that lands.
 # Zero runtime dependencies. The test runner is node:test. No real
 # Kaltura credentials are used or required anywhere in this workflow.
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main]
   merge_group:
@@ -26,15 +25,34 @@ jobs:
     timeout-minutes: 5
     outputs:
       code: ${{ steps.filter.outputs.code }}
+      browser: ${{ steps.filter.outputs.browser }}
+      workflows: ${{ steps.filter.outputs.workflows }}
     steps:
       - name: 📥 Check out the repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - name: 🔍 Does this push/PR touch anything other than docs?
+      - name: 🔍 Which checks does this PR touch?
         id: filter
         uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         with:
           filters: |
+            # Other workflows (live-verify, codeql, release, generate-docs) do not
+            # change what these jobs run, so only this file counts as code.
+            # Edits to any workflow file are linted by the `actionlint` job.
+            workflows:
+              - '.github/workflows/**'
+              - '.github/actionlint.yaml'
+            # The real-browser jobs only exercise the experience runtime.
+            browser:
+              - 'src/experience/**'
+              - 'src/core/**'
+              - 'scripts/verify-noise-suppressor.*'
+              - 'scripts/verify-avatar-media.*'
+              - 'test/browser/**'
+              - 'test/fakes/**'
+              - 'package.json'
+              - 'package-lock.json'
+              - '.github/workflows/ci.yml'
             code:
               - 'src/**'
               - 'test/**'
@@ -46,7 +64,26 @@ jobs:
               - 'jsconfig.json'
               - '.eslintrc*'
               - 'eslint.config.*'
-              - '.github/workflows/**'
+              - '.github/workflows/ci.yml'
+
+  actionlint:
+    name: 🧷 Lint workflow files (actionlint)
+    needs: changes
+    if: needs.changes.outputs.workflows == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: 📥 Check out the repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: 🧷 Install actionlint (pinned release, checksum verified)
+        run: |
+          curl -sSfL -o actionlint.tar.gz https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz
+          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  actionlint.tar.gz" | sha256sum -c -
+          tar -xzf actionlint.tar.gz actionlint
+
+      - name: 🧷 Lint every workflow (config in .github/actionlint.yaml)
+        run: ./actionlint -color
 
   test:
     name: 🧪 Test suite
@@ -64,6 +101,7 @@ jobs:
           node-version: 24
 
       - name: 📦 Install devDependencies (jsdom/axe-core for the a11y suite)
+        timeout-minutes: 5
         run: npm ci
 
       - name: 🧪🩺 node --test + coverage + JUnit report (all suites, offline — fakes inject fetch/socket/RTC)
@@ -97,7 +135,7 @@ jobs:
   noise-suppressor:
     name: 🎙️ Noise-suppressor DSP check (${{ matrix.engine }})
     needs: changes
-    if: needs.changes.outputs.code == 'true'
+    if: needs.changes.outputs.browser == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -114,9 +152,17 @@ jobs:
           node-version: 24
 
       - name: 📦 Install dependencies
+        timeout-minutes: 5
         run: npm ci
 
+      - name: 🎭 Cache the ${{ matrix.engine }} download
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ matrix.engine }}-${{ hashFiles('package-lock.json') }}
+
       - name: 🎭 Install ${{ matrix.engine }}
+        timeout-minutes: 10
         run: npx playwright install --with-deps ${{ matrix.engine }}
 
       - name: 🔊 Start a virtual audio device (this runner has no sound card; Firefox's cubeb backend needs one to render real-time AudioContext audio at all — Chromium/WebKit's audio stacks don't)
@@ -149,7 +195,7 @@ jobs:
   avatar-media:
     name: 🎬 Avatar media path, real browser (${{ matrix.engine }})
     needs: changes
-    if: needs.changes.outputs.code == 'true'
+    if: needs.changes.outputs.browser == 'true'
     runs-on: ubuntu-latest
     # The verify script enforces its own 90s budget per engine; this only caps a hung browser/install.
     timeout-minutes: 15
@@ -167,9 +213,17 @@ jobs:
           node-version: 24
 
       - name: 📦 Install dependencies
+        timeout-minutes: 5
         run: npm ci
 
+      - name: 🎭 Cache the ${{ matrix.engine }} download
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ matrix.engine }}-${{ hashFiles('package-lock.json') }}
+
       - name: 🎭 Install ${{ matrix.engine }}
+        timeout-minutes: 10
         run: npx playwright install --with-deps ${{ matrix.engine }}
 
       - name: 🔊 Start a virtual audio device (this runner has no sound card. Firefox's cubeb backend needs a sink to play media elements at all; WebKitGTK's GStreamer pipeline otherwise falls through to OpenAL and ALSA, which fail to open a device on every play())
@@ -249,10 +303,14 @@ jobs:
           node-version: 24
 
       - name: 📦 Install devDependencies (jsdom/axe-core for the a11y suite)
+        timeout-minutes: 5
         run: npm ci
 
       - name: 📜 Check every rule in SDK_CONSTITUTION.md (isolation, security, resiliency, performance, DX)
         id: verify
+        env:
+          # `needs: test` means the suite already passed; skip the duplicate run.
+          AGENT_VERIFY_SKIP_TESTS: '1'
         run: |
           set -o pipefail
           npm run verify 2>&1 | tee verify-output.log
@@ -300,6 +358,7 @@ jobs:
           node-version: 24
 
       - name: 📦 Install devDependencies (eslint, madge, typescript)
+        timeout-minutes: 5
         run: npm ci
 
       - name: 🧹 Lint
@@ -359,9 +418,9 @@ jobs:
     timeout-minutes: 20
     # Deliberately depends on `changes`, not `test` — this gate (secrets, GFM
     # hygiene, cross-doc links, doc-vs-code drift) is exactly as relevant to a
-    # docs-only push as to a code push, so it must run either way. Its one
-    # test-running sub-check is skipped below when code didn't change, since
-    # the `test` job already covers that case.
+    # docs-only PR as to a code PR, so it must run either way. Its one
+    # test-running sub-check is skipped below (DOCS_GATE_SKIP_TESTS): the
+    # `test` job already runs the suite whenever code changed.
     needs: changes
     steps:
       - name: 📥 Check out the repo
@@ -373,12 +432,14 @@ jobs:
           node-version: 24
 
       - name: 📦 Install devDependencies (jsdom/axe-core for the a11y suite)
+        timeout-minutes: 5
         run: npm ci
 
       - name: 🔍 Run the docs CI gate (secrets, GFM, cross-doc links, SDK invariants)
         id: docs_gate
         env:
-          CI_CODE_CHANGED: ${{ needs.changes.outputs.code }}
+          # The `test` job runs the suite on every code change, so skip the duplicate run here.
+          DOCS_GATE_SKIP_TESTS: '1'
         run: |
           set -o pipefail
           npm run docs:gate 2>&1 | tee docs-gate-output.log

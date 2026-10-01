@@ -1,0 +1,6 @@
+paths:
+  .github/workflows/live-verify.yml:
+    ignore:
+      # Style-only shellcheck notes in long-stable summary and polling snippets.
+      - 'shellcheck reported issue in this script: SC2012:.+'
+      - 'shellcheck reported issue in this script: SC2034:.+'

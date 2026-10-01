@@ -30,12 +30,12 @@
     "LICENSE"
   ],
   "scripts": {
-    "test": "node --test --test-concurrency=1 'test/**/*.test.js'",
+    "test": "node --test --test-concurrency=4 'test/**/*.test.js'",
     "test:unit": "node --test test/unit/*.test.js",
     "test:integration": "node --test test/integration/*.test.js",
     "test:e2e": "node --test test/e2e/*.test.js",
     "test:evals": "node --test test/evals/*.test.js",
-    "test:ci": "node --experimental-test-coverage --test-coverage-lines=95 --test-coverage-functions=88 --test-coverage-branches=80 --test --test-concurrency=1 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=test-results.junit.xml 'test/**/*.test.js'",
+    "test:ci": "node --experimental-test-coverage --test-coverage-lines=95 --test-coverage-functions=88 --test-coverage-branches=80 --test --test-concurrency=4 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=test-results.junit.xml 'test/**/*.test.js'",
     "verify": "node scripts/agent_verify.mjs",
     "docs:gate": "node tools/check-docs.mjs",
     "harness": "node scripts/harness/run.mjs",
