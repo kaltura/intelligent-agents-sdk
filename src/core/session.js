@@ -45,6 +45,7 @@ import { Http } from './http.js';
 import { meta } from './ids.js';
 import { KalturaError } from './errors.js';
 import { redact } from './redact.js';
+import { REGIONS } from './endpoints.js';
 
 /** @typedef {'admin'|'conversation'|'agent'|'widget'} TokenKind */
 /** @typedef {'user'|'admin'} SessionType  OVP session type: `'user'` = type 0, `'admin'` = type 2. */
@@ -101,7 +102,7 @@ export class Sessions {
    * @param {string|number} cfg.partnerId
    * @param {string} [cfg.adminSecret]      Required for admin/conversation/agent mints; omit on pure client use.
    * @param {() => (string|Promise<string>)} [cfg.getAdminSecret]  Vault/KMS callback — fetched per-mint, never retained. Takes precedence over adminSecret.
-   * @param {string} [cfg.ovpUrl]           OVP session host (default www.kaltura.com/api_v3).
+   * @param {string} [cfg.ovpUrl]           OVP session host (default `REGIONS.nvp1.ovpUrl`). `Management` passes its resolved value.
    * @param {Http} cfg.http
    * @param {(event:object)=>void} [cfg.onAuditEvent]  Redacted structured security events (token.mint/token.revoke/...).
    * @param {(agentId:string) => Promise<string|number|undefined>} [cfg.resolveConfigId]  Looks up an agent's
@@ -113,7 +114,7 @@ export class Sessions {
     // enumerated off the instance by accident (defense in depth atop the redaction layer).
     Object.defineProperty(this, '_adminSecret', { value: cfg.adminSecret, writable: false, enumerable: false, configurable: false });
     Object.defineProperty(this, '_getAdminSecret', { value: cfg.getAdminSecret, writable: false, enumerable: false, configurable: false });
-    this._ovp = (cfg.ovpUrl || 'https://www.kaltura.com/api_v3').replace(/\/$/, '');
+    this._ovp = (cfg.ovpUrl || REGIONS.nvp1.ovpUrl).replace(/\/$/, '');
     this._http = cfg.http;
     this._resolveConfigId = cfg.resolveConfigId;
     this._audit = makeAuditEmitter(cfg.onAuditEvent, this._partnerId, 'ovp/session');

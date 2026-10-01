@@ -39,6 +39,7 @@ import { normalizeKickoff } from '../core/opening.js';
 import { makeAuditEmitter } from '../core/session.js';
 import { sanitizeJson } from '../core/safety.js';
 import { assertSecureTransport } from '../core/transport-guard.js';
+import { resolveEndpoints } from '../core/endpoints.js';
 import { randId } from '../core/ids.js';
 import {
   parseConverseStream, parseToolCall, parseToolResponseName, parseOAuthRequired, canonicalJson,
@@ -54,8 +55,6 @@ import { createSessionCompleter } from './session-complete.js';
 // turns off "thinking" and never signals anything else — dead air with no warning.
 const NON_PERCEIVABLE_TYPES = new Set(['think', 'keepalive']);
 
-const DEFAULT_GENIE_URL = 'https://genie.nvp1.ovp.kaltura.com';
-
 // Same backstop as KalturaAvatarSession (see its PENDING_TOOL_ACK_MAX_AGE_MS
 // doc): well above the largest client({timeout}) bound, so sweeping an entry
 // never removes one that is still valid.
@@ -65,7 +64,8 @@ export class KalturaChatSession extends Emitter {
   /**
    * @param {object} cfg
    * @param {string|{ks:string}} cfg.token CONVERSATION KS (raw string or a minted Token object) — same token kind the avatar transport uses.
-   * @param {string} [cfg.genieUrl] Genie base URL (default production).
+   * @param {import('../core/endpoints.js').KalturaRegion} [cfg.region] Region your partner lives in. Default `'nvp1'` (US). Picks the default `genieUrl`. An unknown code throws `bad_request`.
+   * @param {string} [cfg.genieUrl] Genie base URL. Overrides the region value.
    * @param {string} [cfg.threadId] Seed thread id — pass another session's `threadId` to continue that conversation.
    * @param {Record<string, string|number|boolean|null>} [cfg.requestVars] Initial `{{var}}` request_vars map (validated now; rides every turn).
    * @param {Record<string, 'on'|'off'>} [cfg.capabilities] Per-request capability overrides (validated now; sent verbatim on every turn). Omit to use the intellect's configured defaults.
@@ -113,7 +113,7 @@ export class KalturaChatSession extends Emitter {
     // Token is a secret: store it non-enumerable so it can't be JSON.stringify'd /
     // console.logged off the instance by accident (same posture as KalturaAvatarSession).
     Object.defineProperty(this, '_token', { value: raw, writable: true, enumerable: false, configurable: true });
-    this._genieUrl = (cfg.genieUrl || DEFAULT_GENIE_URL).replace(/\/$/, '');
+    this._genieUrl = resolveEndpoints(cfg, ['genieUrl']).genieUrl;
     assertSecureTransport(this._genieUrl, 'genieUrl', !!cfg.allowInsecureTransport, (m) => this._warnOnce('insecure-genie', m));
     // Canonical request_vars map for the whole session — validated up front so a
     // bad value fails at construction, not silently at the first turn.

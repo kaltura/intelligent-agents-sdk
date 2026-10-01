@@ -35,6 +35,7 @@ import { Conversations, Threads, Messages, Feedback, Followups, Knowledge } from
 import { provision } from './provision.js';
 import { setForcedLanguage } from './set-forced-language.js';
 import { inspectKs } from './ks-inspect.js';
+import { resolveEndpoints } from '../core/endpoints.js';
 
 /** `userId` on the read-only admin token that looks up an agent's configId (see `Sessions.createAgentToken`). */
 const CONFIG_LOOKUP_USER_ID = 'intelligent-agents-sdk';
@@ -50,7 +51,7 @@ const CONFIG_LOOKUP_USER_ID = 'intelligent-agents-sdk';
  * @property {(path:string, body:unknown, ks:KsLike, opts?:{idempotencyKey?:string})=>Promise<{data:any,requestId:string}>} genie
  * @property {(path:string, ks:KsLike)=>Promise<{data:any,requestId:string}>} genieGet
  * @property {(path:string, body:unknown, ks:KsLike, opts?:{signal?:AbortSignal})=>Promise<ReadableStream<Uint8Array>>} genieStream
- * @property {(service:string, action:string, params:object, ks:KsLike)=>Promise<any>} ovp Kaltura OVP single call (www.kaltura.com/api_v3).
+ * @property {(service:string, action:string, params:object, ks:KsLike)=>Promise<any>} ovp Kaltura OVP single call (`ovpUrl`).
  * @property {(calls:object[], ks:KsLike)=>Promise<any>} ovpMulti Kaltura OVP multirequest (chained calls).
  * @property {(uploadTokenId:string, fd:FormData, ks:KsLike)=>Promise<any>} ovpUpload Upload file bytes to an upload token.
  * @property {(path:string, body:unknown, ks:KsLike, opts?:{idempotencyKey?:string})=>Promise<{data:any,requestId:string}>} messaging Bearer-authed (not `Authorization: KS …`) call on the Kaltura Messaging API — see email-templates.js.
@@ -66,10 +67,11 @@ export class Management {
    * @param {object} cfg
    * @param {string|number} cfg.partnerId
    * @param {string} [cfg.adminSecret]   Server-side only. Needed for sessions.createAdminToken / token mints.
-   * @param {string} [cfg.agenticUrl]    Default https://api.avatar.us.kaltura.ai/v1
-   * @param {string} [cfg.genieUrl]      Default https://genie.nvp1.ovp.kaltura.com
-   * @param {string} [cfg.ovpUrl]        Default https://www.kaltura.com/api_v3
-   * @param {string} [cfg.messagingUrl]  Default https://messaging.nvp1.ovp.kaltura.com/api/v1
+   * @param {import('../core/endpoints.js').KalturaRegion} [cfg.region]  Region your partner lives in. Default `'nvp1'` (US). Fills every base URL you don't pass, from `REGIONS`. An unknown code throws `bad_request`.
+   * @param {string} [cfg.agenticUrl]    Overrides the region value.
+   * @param {string} [cfg.genieUrl]      Overrides the region value.
+   * @param {string} [cfg.ovpUrl]        Overrides the region value. The admin secret is sent here.
+   * @param {string} [cfg.messagingUrl]  Overrides the region value. If the region has no messaging service and you pass none, `emailTemplates.*` throws `region_unavailable`.
    * @param {typeof fetch} [cfg.fetch]
    * @param {(level:string,msg:string,data?:unknown)=>void} [cfg.logger]   Verbose, redacted DEBUG sink (chatty).
    * @param {(event:object)=>void} [cfg.onAuditEvent]   Discrete, redacted SECURITY events for your SIEM (token.mint/token.revoke/guard.reject/auth.fail/privileged.call). No-op if omitted (zero cost). NIST AU-2/AU-3, SOC 2 CC7.
@@ -79,10 +81,10 @@ export class Management {
   constructor(cfg) {
     if (cfg?.partnerId === undefined) throw new KalturaError({ type: 'about:blank', title: 'partnerId required', code: 'bad_request', detail: 'new Management({ partnerId }) is required.' });
     const partnerId = String(cfg.partnerId);
-    const agenticUrl = (cfg.agenticUrl || 'https://api.avatar.us.kaltura.ai/v1').replace(/\/$/, '');
-    const genieUrl = (cfg.genieUrl || 'https://genie.nvp1.ovp.kaltura.com').replace(/\/$/, '');
-    const ovpUrl = (cfg.ovpUrl || 'https://www.kaltura.com/api_v3').replace(/\/$/, '');
-    const messagingUrl = (cfg.messagingUrl || 'https://messaging.nvp1.ovp.kaltura.com/api/v1').replace(/\/$/, '');
+    const endpoints = resolveEndpoints(cfg, ['agenticUrl', 'genieUrl', 'ovpUrl', 'messagingUrl']);
+    const { agenticUrl, genieUrl, ovpUrl, messagingUrl } = endpoints;
+    this._endpoints = endpoints;
+    const region = cfg.region ?? 'nvp1';
     // Crash-safe, redaction-clean structured audit emitter (no-op if no hook).
     const audit = makeAuditEmitter(cfg.onAuditEvent, partnerId, 'management');
     this._audit = audit;
@@ -90,7 +92,7 @@ export class Management {
 
     /** @type {Sessions} */
     this.sessions = new Sessions({
-      partnerId, adminSecret: cfg.adminSecret, getAdminSecret: cfg.getAdminSecret, ovpUrl: cfg.ovpUrl, http, onAuditEvent: cfg.onAuditEvent,
+      partnerId, adminSecret: cfg.adminSecret, getAdminSecret: cfg.getAdminSecret, ovpUrl, http, onAuditEvent: cfg.onAuditEvent,
       // createAgentToken without configId: read the agent's intellect id. Not cached,
       // so a repointed agent never mints the old persona. Runs after this.agents exists.
       // The lookup admin token is short-lived since it is used once, and read-only.
@@ -145,7 +147,7 @@ export class Management {
         if (!res.body) throw new KalturaError({ type: 'about:blank', title: 'no stream body', code: 'server_error', detail: 'converse response had no readable body.' });
         return res.body;
       },
-      // OVP (www.kaltura.com/api_v3) — the core Kaltura media plane (categories, entries,
+      // OVP (`ovpUrl`) — the core Kaltura media plane (categories, entries,
       // upload tokens). JSON-in/JSON-out (format=1); the KS rides in the body, not a header.
       ovp: async (service, action, params, ks) => {
         const url = `${ovpUrl}/service/${service}/action/${action}`;
@@ -176,7 +178,9 @@ export class Management {
       // one surface here that authenticates with a bare `Authorization: Bearer <KS>` header
       // rather than the `KS <ks>` scheme http.request assigns by default. Omitting `ks` on the
       // request skips that assignment, leaving our own header in place (mirrors avatarSessionCall).
-      messaging: (path, body, ks, opts) => http.request({ method: 'POST', url: `${messagingUrl}/${path}`, headers: { Authorization: `Bearer ${ksString(ks)}` }, body, json: true, idempotencyKey: opts?.idempotencyKey }),
+      // `null` when the region has no messaging service: fail before any network call
+      // rather than send this region's KS to another region's host.
+      messaging: (path, body, ks, opts) => !messagingUrl ? Promise.reject(regionUnavailable('messagingUrl', 'emailTemplates', region)) : http.request({ method: 'POST', url: `${messagingUrl}/${path}`, headers: { Authorization: `Bearer ${ksString(ks)}` }, body, json: true, idempotencyKey: opts?.idempotencyKey }),
       assertAdmin: (ks, where) => assertKind(ks, 'admin', where, audit),
       assertConversation: (ks, where) => assertKind(ks, 'conversation', where, audit),
       assertUserOrAdmin: (ks, where) => assertKind(ks, 'userOrAdmin', where, audit),
@@ -225,6 +229,14 @@ export class Management {
     // lifecycle rule's `sendInsightEmail` action can pin instead of a `presetType`.
     this.emailTemplates = new EmailTemplates(ctx);
   }
+
+  /**
+   * The resolved base URLs this instance talks to. Frozen. Safe to log (URLs
+   * only, no credentials). `messagingUrl` is `null` when the region has no
+   * messaging service and you passed none.
+   * @returns {Readonly<import('../core/endpoints.js').KalturaEndpoints>}
+   */
+  get endpoints() { return /** @type {Readonly<import('../core/endpoints.js').KalturaEndpoints>} */ (this._endpoints); }
 
   /**
    * Headless TEXT conversation as an async stream of segments — no WebRTC, no
@@ -292,6 +304,15 @@ export class Management {
   setForcedLanguage(opts, ks) {
     return setForcedLanguage(this, opts, ks);
   }
+}
+
+/**
+ * `region_unavailable`: the configured region has no `field` service and the
+ * caller passed no override. Thrown before any network call.
+ * @param {string} field @param {string} where @param {string} region
+ */
+function regionUnavailable(field, where, region) {
+  return new KalturaError({ type: 'about:blank', title: 'service not available in region', code: 'region_unavailable', detail: `${where} needs ${field}, which region '${region}' does not provide. Pass ${field} to new Management({ ... }) to use it.` });
 }
 
 /** Unwrap a KS that may be passed as a raw string OR a minted {@link Token} object. @param {string|{ks:string}} ks */

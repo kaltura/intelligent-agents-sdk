@@ -54,6 +54,8 @@ export {
 } from './wire.js';
 export { Emitter } from './emitter.js';
 export { KalturaError } from '../core/errors.js';
+// Verified base URLs per region. Pass `region` to a session rather than reading this directly.
+export { REGIONS } from '../core/endpoints.js';
 // The silent opening phrase, so a client can recognise an agent provisioned with it.
 export { SILENT_OPENING, SILENT_OPENING_LABEL, isSilentOpening } from '../core/opening.js';
 export { redact } from '../core/redact.js';

@@ -10,6 +10,6 @@
     "skipLibCheck": true,
     "lib": ["ES2022", "DOM"]
   },
-  "include": ["src/**/*.js", "types/globals.d.ts"],
+  "include": ["src/**/*.js", "types/globals.d.ts", "types/region.typecheck.js"],
   "exclude": ["node_modules", "test", "examples", "quickstart", "tools", "scripts"]
 }

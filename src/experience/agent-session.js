@@ -89,6 +89,7 @@ export class KalturaAgentSession extends Emitter {
    * @param {string} [cfg.subjectId] Opaque subject id for audit events.
    * @param {string|number} [cfg.partnerId] Audit partner-id override.
    * @param {boolean} [cfg.allowInsecureTransport] Localhost/dev only.
+   * @param {import('../core/endpoints.js').KalturaRegion} [cfg.region] Region your partner lives in, passed to both transports (picks their default `genieUrl`).
    * @param {object} [cfg.avatar] KalturaAvatarSession-specific cfg (`videoEl`, `conversationManagerUrl`, `srsBaseUrl`, `turnServerUrl`, `socketFactory`, mic options, `capabilities`, …) — required before the first avatar connect/switch.
    * @param {object} [cfg.chat] KalturaChatSession-specific cfg (`genieUrl`, `fetch`, `capabilities`, ...).
    * @param {string|{text:string, echo?:boolean}} [cfg.kickoff] A first turn the SDK sends for you, exactly once per
@@ -379,6 +380,7 @@ export class KalturaAgentSession extends Emitter {
       subjectId: this._cfg.subjectId,
       partnerId: this._cfg.partnerId,
       allowInsecureTransport: this._cfg.allowInsecureTransport,
+      region: this._cfg.region,
     };
     if (this._kickoffPending) shared.kickoff = this._cfg.kickoff;
     const factory = this._cfg.transportFactories?.[mode];
