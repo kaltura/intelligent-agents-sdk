@@ -18,12 +18,25 @@ permissions:
 jobs:
   release:
     name: 📦 Draft GitHub Release from merged PRs
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - name: 📥 Check out the repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
+
+      - name: 📚 Every SDK doc has an entry in the docs site manifest (gh-pages-src)
+        # Runs before the Release is created, so a doc missing from the site
+        # fails here and not in the generate-docs run that the last step fires.
+        # Fix: add the entry on gh-pages-src, then re-run this job.
+        run: |
+          git fetch --depth=1 origin gh-pages-src
+          git worktree add --detach ../site FETCH_HEAD
+          node --input-type=module -e "
+            const m = await import(process.env.GITHUB_WORKSPACE + '/../site/scripts/generate-docs.mjs');
+            m.checkSourceCoverage(process.cwd());
+            console.log('site manifest covers every SDK doc');
+          "
 
       - name: 🌐 Smoke-test jsDelivr GitHub-CDN URLs for this tag
         run: |
@@ -83,7 +96,7 @@ jobs:
   distribution:
     name: 🌐 Verify the CDN distribution (jsDelivr @tag, @latest, real browser)
     needs: release
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     # The script polls jsDelivr's resolver for @latest with its own deadline
     # (DIST_WAIT_SECONDS); this only caps a hung browser or install.
     timeout-minutes: 30
