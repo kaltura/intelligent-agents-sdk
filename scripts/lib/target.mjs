@@ -91,9 +91,9 @@ export function resolveTarget(spec, label = 'TARGET') {
   const hosts = new Set([t.agenticUrl, t.genieUrl, t.ovpUrl, t.messagingUrl].filter(Boolean).map((u) => new URL(u).host));
   /** @type {typeof fetch} */
   const guarded = (input, init) => {
-    const host = new URL(input instanceof Request ? input.url : String(input)).host;
+    const host = new URL(typeof input === 'object' && 'url' in input ? input.url : String(input)).host;
     if (!hosts.has(host)) return Promise.reject(new Error(`target ${t.name}: refusing a request to ${host}, which is not one of this target's hosts.`));
-    return fetch(input, init);
+    return fetch(input, init); // nosemgrep: scripts.harness.no-raw-fetch-bypass
   };
   return { ...t, fetch: guarded };
 }
