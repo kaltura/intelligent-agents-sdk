@@ -6,9 +6,11 @@ name: Live verification
 # the backend with AGENTIC_* secrets, so its jobs only ever EXECUTE when:
 #
 #   - workflow_dispatch: manual, on demand.
-#   - pull_request: only when the PR carries the `run-live-verify` label —
-#     an untrusted fork PR can't add that label to itself, so opening a PR
-#     alone can never exfiltrate secrets through this job.
+#   - pull_request: automatically, for PRs from a branch in this repo. The
+#     path filter picks the jobs, so the author does nothing. A fork PR gets no
+#     secrets from GitHub and a Dependabot PR gets only Dependabot secrets, so
+#     opening a PR alone can never exfiltrate secrets through this job. Both are
+#     treated as untrusted, see the gate below.
 #   - merge_group: every merge into main gets one real live-API round trip
 #     before it lands, not just PRs someone remembered to label.
 #
@@ -16,12 +18,12 @@ name: Live verification
 # AGENTIC_* secrets are scoped to it, not available repo-wide.
 #
 # "Live verification" is the required status check on main. It is the last job
-# in this file (`live-verify-gate`): it waits for every live job, fails if any
-# of them failed, and fails a PR that touches live-tested paths without the
-# `run-live-verify` label. The workflow runs on every PR push and on every
-# label change, so the check always reports and is re-evaluated when the label
-# is removed. A docs-only PR touches no live path, so every live job is skipped
-# and the gate passes.
+# in this file (`live-verify-gate`): it waits for every live job and fails if
+# any of them failed, or if a job mapped to a changed path did not succeed. A
+# fork PR that touches live-tested paths fails it, because no live job can run
+# there: a maintainer pushes the branch into this repo to run them. A Dependabot
+# PR passes with a notice and relies on the nightly run. A docs-only PR touches
+# no live path, so every live job is skipped and the gate passes.
 #
 # The `changes` job below computes one path-filter output per live-verify job
 # (not one blanket filter for all of them), scoped to that job's own script
@@ -94,7 +96,7 @@ name: Live verification
 on:
   workflow_dispatch: {}
   pull_request:
-    types: [opened, synchronize, reopened, labeled, unlabeled]
+    types: [opened, synchronize, reopened]
   merge_group:
     branches: [main]
   schedule:
@@ -448,7 +450,7 @@ jobs:
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
-      ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs['smoke'] == 'true')
+      ((github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && needs.changes.outputs['smoke'] == 'true')
     runs-on: ubuntu-26.04
     timeout-minutes: 20
     environment: live-verify
@@ -496,7 +498,7 @@ jobs:
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
-      ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs['capabilities'] == 'true')
+      ((github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && needs.changes.outputs['capabilities'] == 'true')
     runs-on: ubuntu-26.04
     timeout-minutes: 20
     environment: live-verify
@@ -544,7 +546,7 @@ jobs:
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
-      ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs['conversation-surface'] == 'true')
+      ((github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && needs.changes.outputs['conversation-surface'] == 'true')
     runs-on: ubuntu-26.04
     timeout-minutes: 20
     environment: live-verify
@@ -592,7 +594,7 @@ jobs:
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
-      ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs['request-vars'] == 'true')
+      ((github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && needs.changes.outputs['request-vars'] == 'true')
     runs-on: ubuntu-26.04
     timeout-minutes: 20
     environment: live-verify
@@ -640,7 +642,7 @@ jobs:
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
-      ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs['context-fields'] == 'true')
+      ((github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && needs.changes.outputs['context-fields'] == 'true')
     runs-on: ubuntu-26.04
     timeout-minutes: 20
     environment: live-verify
@@ -694,7 +696,7 @@ jobs:
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
-      ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs['site-nav'] == 'true')
+      ((github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && needs.changes.outputs['site-nav'] == 'true')
     runs-on: ubuntu-26.04
     timeout-minutes: 20
     environment: live-verify
@@ -743,7 +745,7 @@ jobs:
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
-      ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs['threads-messages-feedback'] == 'true')
+      ((github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && needs.changes.outputs['threads-messages-feedback'] == 'true')
     runs-on: ubuntu-26.04
     timeout-minutes: 20
     environment: live-verify
@@ -791,7 +793,7 @@ jobs:
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
-      ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs['session-types'] == 'true')
+      ((github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && needs.changes.outputs['session-types'] == 'true')
     runs-on: ubuntu-26.04
     timeout-minutes: 20
     environment: live-verify
@@ -842,7 +844,7 @@ jobs:
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
-      ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs['skills'] == 'true')
+      ((github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && needs.changes.outputs['skills'] == 'true')
     runs-on: ubuntu-26.04
     timeout-minutes: 20
     environment: live-verify
@@ -890,7 +892,7 @@ jobs:
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
-      ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs['catalog'] == 'true')
+      ((github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && needs.changes.outputs['catalog'] == 'true')
     runs-on: ubuntu-26.04
     timeout-minutes: 20
     environment: live-verify
@@ -938,7 +940,7 @@ jobs:
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
-      ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs['knowledge'] == 'true')
+      ((github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && needs.changes.outputs['knowledge'] == 'true')
     runs-on: ubuntu-26.04
     timeout-minutes: 20
     environment: live-verify
@@ -986,7 +988,7 @@ jobs:
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
-      ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs['avatars'] == 'true')
+      ((github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && needs.changes.outputs['avatars'] == 'true')
     runs-on: ubuntu-26.04
     timeout-minutes: 20
     environment: live-verify
@@ -1034,7 +1036,7 @@ jobs:
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
-      ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs['agents'] == 'true')
+      ((github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && needs.changes.outputs['agents'] == 'true')
     runs-on: ubuntu-26.04
     timeout-minutes: 20
     environment: live-verify
@@ -1082,7 +1084,7 @@ jobs:
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
-      ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs['browser'] == 'true')
+      ((github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && needs.changes.outputs['browser'] == 'true')
     runs-on: ubuntu-26.04
     timeout-minutes: 20
     environment: live-verify
@@ -1170,7 +1172,7 @@ jobs:
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
-      ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs['kickoff'] == 'true')
+      ((github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && needs.changes.outputs['kickoff'] == 'true')
     runs-on: ubuntu-26.04
     timeout-minutes: 20
     environment: live-verify
@@ -1260,7 +1262,7 @@ jobs:
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
-      ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs['opening-phrase'] == 'true')
+      ((github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && needs.changes.outputs['opening-phrase'] == 'true')
     runs-on: ubuntu-26.04
     timeout-minutes: 20
     environment: live-verify
@@ -1317,7 +1319,7 @@ jobs:
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
-      ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs['avatar-media'] == 'true')
+      ((github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && needs.changes.outputs['avatar-media'] == 'true')
     runs-on: ubuntu-26.04
     timeout-minutes: 20
     environment: live-verify
@@ -1378,7 +1380,7 @@ jobs:
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
-      ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs['set-forced-language'] == 'true')
+      ((github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && needs.changes.outputs['set-forced-language'] == 'true')
     runs-on: ubuntu-26.04
     timeout-minutes: 20
     environment: live-verify
@@ -1440,7 +1442,7 @@ jobs:
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
-      ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs['session-complete'] == 'true')
+      ((github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && needs.changes.outputs['session-complete'] == 'true')
     runs-on: ubuntu-26.04
     timeout-minutes: 20
     environment: live-verify
@@ -1502,7 +1504,7 @@ jobs:
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
-      ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs['intellects-conversations'] == 'true')
+      ((github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && needs.changes.outputs['intellects-conversations'] == 'true')
     runs-on: ubuntu-26.04
     timeout-minutes: 20
     environment: live-verify
@@ -1550,7 +1552,7 @@ jobs:
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
-      ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs['tools'] == 'true')
+      ((github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && needs.changes.outputs['tools'] == 'true')
     runs-on: ubuntu-26.04
     timeout-minutes: 20
     environment: live-verify
@@ -1598,7 +1600,7 @@ jobs:
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
-      ((github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'run-live-verify')) && needs.changes.outputs['mcp'] == 'true')
+      ((github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && needs.changes.outputs['mcp'] == 'true')
     runs-on: ubuntu-26.04
     timeout-minutes: 20
     environment: live-verify
@@ -1697,12 +1699,12 @@ jobs:
   # The one required status check for live verification (branch protection:
   # "🔴 Live verification"). It waits for every live job, then:
   #   - fails if any live job failed or was cancelled,
+  #   - fails a fork PR that touches live-tested paths (no secrets there), and
   #   - fails if a job mapped to a changed path did not succeed (a `skipped`
   #     job would otherwise pass the check and let live-tested code merge
-  #     unverified), and
-  #   - fails a PR that touches live-tested paths without the
-  #     `run-live-verify` label.
-  # Jobs whose paths did not change stay skipped and neutral.
+  #     unverified).
+  # A Dependabot PR passes with a notice. Jobs whose paths did not change stay
+  # skipped and neutral.
   live-verify-gate:
     name: 🔴 Live verification
     needs: [changes, live-verify, live-verify-capabilities, live-verify-conversation-surface, live-verify-request-vars, live-verify-context-fields, live-verify-site-nav, live-verify-threads-messages-feedback, live-verify-session-types, live-verify-skills, live-verify-catalog, live-verify-knowledge, live-verify-avatars, live-verify-agents, live-verify-browser, live-verify-kickoff, live-verify-opening-phrase, live-verify-avatar-media, live-verify-set-forced-language, live-verify-session-complete, live-verify-intellects-conversations, live-verify-tools, live-verify-mcp]
@@ -1710,11 +1712,11 @@ jobs:
     runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
-      - name: 🔴 Every live job that ran passed, and a PR touching live-tested paths carries the label
+      - name: 🔴 Every live job that ran passed, and every job mapped to a changed path ran
         env:
           NEEDS: ${{ toJSON(needs) }}
-          IS_PR: ${{ github.event_name == 'pull_request' }}
-          LABELED: ${{ contains(github.event.pull_request.labels.*.name, 'run-live-verify') }}
+          IS_FORK: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+          IS_DEPENDABOT: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'dependabot[bot]' }}
         run: |
           bad=$(jq -r 'to_entries[] | select(.value.result == "failure" or .value.result == "cancelled") | "\(.key): \(.value.result)"' <<<"$NEEDS")
           if [ -n "$bad" ]; then
@@ -1723,8 +1725,12 @@ jobs:
             exit 1
           fi
           touched=$(jq -r '[.changes.outputs[]] | any(. == "true")' <<<"$NEEDS")
-          if [ "$IS_PR" = true ] && [ "$touched" = true ] && [ "$LABELED" != true ]; then
-            echo "::error::This PR changes paths covered by live verification. A maintainer must add the 'run-live-verify' label, then this check re-runs the matching live jobs."
+          if [ "$touched" = true ] && [ "$IS_DEPENDABOT" = true ]; then
+            echo "::notice::Dependabot PRs get no live secrets. The nightly run verifies this change after merge."
+            exit 0
+          fi
+          if [ "$touched" = true ] && [ "$IS_FORK" = true ]; then
+            echo "::error::This fork PR changes paths covered by live verification, and GitHub gives fork PRs no secrets. A maintainer pushes the branch into this repo to run the live jobs."
             exit 1
           fi
           not_run=$(jq -r '. as $n | $n.changes.outputs | to_entries[] | select(.value == "true") | (if .key == "smoke" then "live-verify" else "live-verify-" + .key end) as $j | select($n[$j].result != "success") | "\($j): \($n[$j].result)"' <<<"$NEEDS")
@@ -1733,4 +1739,4 @@ jobs:
             echo "$not_run"
             exit 1
           fi
-          echo "Live verification OK (touched=$touched, labeled=$LABELED)."
+          echo "Live verification OK (touched=$touched)."
