@@ -103,6 +103,35 @@ test('region without messaging: emailTemplates throws region_unavailable before 
   assert.equal(ff.calls[0].url, 'https://messaging.example.com/api/v1/email-template/get');
 });
 
+// 8: HTTPS on every base URL, same rule and code as the Experience transports.
+test('http to a public host throws insecure_transport; localhost warns once; allowInsecureTransport passes', () => {
+  for (const key of KEYS) {
+    assert.throws(() => new Management({ partnerId: 1, [key]: 'http://example.com/x' }), (e) => e.code === 'insecure_transport' && e.detail.startsWith(`${key} `), key);
+  }
+  const warns = [];
+  const local = new Management({ partnerId: 1, agenticUrl: 'http://localhost:8080/v1', logger: (level, m) => warns.push([level, m]) });
+  assert.equal(local.endpoints.agenticUrl, 'http://localhost:8080/v1');
+  assert.equal(warns.length, 1);
+  assert.equal(warns[0][0], 'warn');
+  assert.match(warns[0][1], /agenticUrl uses an insecure/);
+
+  const allowed = [];
+  const dev = new Management({ partnerId: 1, ovpUrl: 'http://example.com/api_v3', allowInsecureTransport: true, logger: (level, m) => allowed.push(m) });
+  assert.equal(dev.endpoints.ovpUrl, 'http://example.com/api_v3');
+  assert.equal(allowed.length, 1);
+
+  assert.throws(() => new KalturaChatSession({ token: CONV_KS, genieUrl: 'http://example.com' }), (e) => e.code === 'insecure_transport');
+});
+
+// 9: credentials and unparseable strings fail at construction, not at fetch time.
+test('a URL with credentials or one that does not parse throws bad_request', () => {
+  for (const key of KEYS) {
+    assert.throws(() => new Management({ partnerId: 1, [key]: 'https://user:pass@example.com/x' }), (e) => e.code === 'bad_request' && /credentials/.test(e.detail) && !/pass@/.test(e.detail), key);
+    assert.throws(() => new Management({ partnerId: 1, [key]: 'not a url' }), (e) => e.code === 'bad_request' && /not a valid URL/.test(e.detail), key);
+  }
+  assert.throws(() => new KalturaChatSession({ token: CONV_KS, genieUrl: 'https://u@example.com' }), (e) => e.code === 'bad_request');
+});
+
 // 10: trailing slash.
 test('one trailing slash is stripped from every resolved URL', () => {
   const mgmt = new Management({ partnerId: 1, agenticUrl: 'https://a.example.com/v1/', genieUrl: 'https://g.example.com/', ovpUrl: 'https://o.example.com/api_v3/', messagingUrl: 'https://m.example.com/api/v1/' });

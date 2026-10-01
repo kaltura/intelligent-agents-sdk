@@ -72,8 +72,9 @@ export class Management {
    * @param {string} [cfg.genieUrl]      Overrides the region value.
    * @param {string} [cfg.ovpUrl]        Overrides the region value. The admin secret is sent here.
    * @param {string} [cfg.messagingUrl]  Overrides the region value. If the region has no messaging service and you pass none, `emailTemplates.*` throws `region_unavailable`.
+   * @param {boolean} [cfg.allowInsecureTransport]  Allow an http:// base URL to a public host (testing only, warns). http to localhost or a private host always just warns.
    * @param {typeof fetch} [cfg.fetch]
-   * @param {(level:string,msg:string,data?:unknown)=>void} [cfg.logger]   Verbose, redacted DEBUG sink (chatty).
+   * @param {(level:string,msg:string,data?:unknown)=>void} [cfg.logger]   Verbose, redacted DEBUG sink (chatty). Also receives insecure-transport warnings (else `console.warn`).
    * @param {(event:object)=>void} [cfg.onAuditEvent]   Discrete, redacted SECURITY events for your SIEM (token.mint/token.revoke/guard.reject/auth.fail/privileged.call). No-op if omitted (zero cost). NIST AU-2/AU-3, SOC 2 CC7.
    * @param {() => (string|Promise<string>)} [cfg.getAdminSecret]   Vault/KMS callback fetched per-mint (never retained); takes precedence over adminSecret.
    * @param {number} [cfg.timeoutMs]
@@ -81,7 +82,8 @@ export class Management {
   constructor(cfg) {
     if (cfg?.partnerId === undefined) throw new KalturaError({ type: 'about:blank', title: 'partnerId required', code: 'bad_request', detail: 'new Management({ partnerId }) is required.' });
     const partnerId = String(cfg.partnerId);
-    const endpoints = resolveEndpoints(cfg, ['agenticUrl', 'genieUrl', 'ovpUrl', 'messagingUrl']);
+    const warn = (m) => (cfg.logger ? cfg.logger('warn', '[security] ' + m) : console.warn('[security] ' + m));
+    const endpoints = resolveEndpoints(cfg, ['agenticUrl', 'genieUrl', 'ovpUrl', 'messagingUrl'], warn);
     const { agenticUrl, genieUrl, ovpUrl, messagingUrl } = endpoints;
     this._endpoints = endpoints;
     const region = cfg.region ?? 'nvp1';

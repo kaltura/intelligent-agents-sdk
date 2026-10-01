@@ -1,7 +1,7 @@
 /**
  * TLS enforcement for transport URLs, shared by every experience-layer session
- * class (avatar, chat) so the transport-security posture cannot drift between
- * transports. Lives apart from net-guard.js because this check throws a typed
+ * class (avatar, chat) and, through `core/endpoints.js`, by `Management`, so the
+ * transport-security posture cannot drift between transports. Lives apart from net-guard.js because this check throws a typed
  * KalturaError, and core/errors.js (via core/redact.js) already depends on
  * net-guard.js — importing errors.js there would close an import cycle.
  */

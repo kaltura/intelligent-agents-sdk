@@ -206,7 +206,8 @@ export class KalturaAvatarSession extends Emitter {
     Object.defineProperty(this, '_token', { value: cfg.token, writable: true, enumerable: false, configurable: true });
     this._cmUrl = (cfg.conversationManagerUrl || DEFAULT_CM_URL).replace(/\/$/, '');
     this._srsBaseUrl = (cfg.srsBaseUrl || '').replace(/\/$/, '');
-    this._genieUrl = resolveEndpoints(cfg, ['genieUrl']).genieUrl;
+    // HTTPS-checked inside resolveEndpoints (same rule as the two URLs below).
+    this._genieUrl = resolveEndpoints(cfg, ['genieUrl'], (m) => this._warnOnce('insecure-genie', m)).genieUrl;
     // Join-time request_vars — validated up front so a bad value
     // fails at construction, not silently at the first join/reconnect.
     // This map is CANONICAL for the whole session: updateRequestVars()/
@@ -224,7 +225,6 @@ export class KalturaAvatarSession extends Emitter {
     this._allowInsecure = !!cfg.allowInsecureTransport;
     assertSecureTransport(this._cmUrl, 'conversationManagerUrl', this._allowInsecure, (m) => this._warnOnce('insecure-cm', m));
     assertSecureTransport(this._srsBaseUrl, 'srsBaseUrl', this._allowInsecure, (m) => this._warnOnce('insecure-srs', m));
-    assertSecureTransport(this._genieUrl, 'genieUrl', this._allowInsecure, (m) => this._warnOnce('insecure-genie', m));
     // Prefer server-minted EPHEMERAL TURN creds (RFC 7635); the SDK's default TURN credentials are a flagged fallback.
     this._turn = turnServers(cfg.turnServerUrl, cfg.turnCredentials || {});
     if (cfg.turnServerUrl && !cfg.turnCredentials) this._warnOnce('static-turn', 'Using STATIC fallback TURN credentials — pass server-minted ephemeral turnCredentials (from appInit) for production (RFC 7635).');

@@ -9,8 +9,9 @@
  * none of which is access control:
  * - {@link isPrivateOrLoopbackHost} is used by `experience/wire.js` to fail
  *   fast with `whep_private_ip` when the server hands the browser a media URL
- *   it cannot reach, and by `core/transport-guard.js` to allow cleartext on a
- *   local dev host with a warning instead of an error.
+ *   it cannot reach, and by `core/transport-guard.js` (through
+ *   `core/endpoints.js` for every base URL, `Management`'s included) to allow
+ *   cleartext on a local dev host with a warning instead of an error.
  * - {@link PRIVATE_IP_RE} is the free-text scrubbing regex consumed by
  *   `core/redact.js` to keep these addresses out of logs/audit output.
  *
@@ -18,7 +19,8 @@
  * browser, whose origin and private-network rules decide what a page may reach,
  * and the URLs it checks come from the operator's own server config, never from
  * the model or the end user. `Management` (server-side) only ever calls the base
- * URLs the operator passed to its constructor and does not use this module.
+ * URLs resolved from its constructor config, and uses this module only for that
+ * TLS check.
  *
  * This module must stay dependency-free: `core/redact.js` (and through it
  * `core/errors.js`) imports from here, so importing errors.js here would

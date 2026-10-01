@@ -38,7 +38,6 @@ import { KalturaError, errorFromResponse } from '../core/errors.js';
 import { normalizeKickoff } from '../core/opening.js';
 import { makeAuditEmitter } from '../core/session.js';
 import { sanitizeJson } from '../core/safety.js';
-import { assertSecureTransport } from '../core/transport-guard.js';
 import { resolveEndpoints } from '../core/endpoints.js';
 import { randId } from '../core/ids.js';
 import {
@@ -113,8 +112,7 @@ export class KalturaChatSession extends Emitter {
     // Token is a secret: store it non-enumerable so it can't be JSON.stringify'd /
     // console.logged off the instance by accident (same posture as KalturaAvatarSession).
     Object.defineProperty(this, '_token', { value: raw, writable: true, enumerable: false, configurable: true });
-    this._genieUrl = resolveEndpoints(cfg, ['genieUrl']).genieUrl;
-    assertSecureTransport(this._genieUrl, 'genieUrl', !!cfg.allowInsecureTransport, (m) => this._warnOnce('insecure-genie', m));
+    this._genieUrl = resolveEndpoints(cfg, ['genieUrl'], (m) => this._warnOnce('insecure-genie', m)).genieUrl;
     // Canonical request_vars map for the whole session — validated up front so a
     // bad value fails at construction, not silently at the first turn.
     this._requestVars = assertRequestVars(cfg.requestVars, 'KalturaChatSession requestVars');
