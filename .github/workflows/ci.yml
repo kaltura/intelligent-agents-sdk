@@ -48,6 +48,8 @@ jobs:
               - 'src/core/**'
               - 'scripts/verify-noise-suppressor.*'
               - 'scripts/verify-avatar-media.*'
+              - 'test/browser/**'
+              - 'test/fakes/**'
               - 'package.json'
               - 'package-lock.json'
               - '.github/workflows/ci.yml'
