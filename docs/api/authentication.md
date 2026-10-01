@@ -149,7 +149,7 @@ console.log(mgmt.endpoints);   // frozen: the four URLs this instance uses
 | `null` service | The region does not offer it. Calls that need it throw `region_unavailable` before any request. On `frp2` that is `emailTemplates.*`, unless you pass `messagingUrl` |
 | Admin secret | Sent only to the resolved `ovpUrl` |
 | HTTPS | `http://` to a public host throws `insecure_transport`. `http://` to localhost or a private host only warns. `allowInsecureTransport: true` turns the error into a warning (testing only) |
-| Malformed URL | A URL that does not parse, or one with a username or password, throws `bad_request` at construction |
+| Malformed URL | An empty string, a URL that does not parse, a scheme other than `https`/`http`, or a URL with a username or password throws `bad_request` at construction. `undefined` and `null` mean "use the region value" |
 
 In the browser, `KalturaAvatarSession`, `KalturaChatSession` and `KalturaAgentSession` take the same `region` option, which picks their `genieUrl`. Pass the same value you gave `Management`. `REGIONS` is exported from both `./management` and `./experience`.
 

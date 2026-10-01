@@ -156,7 +156,7 @@ Every event carries this AU-3 content shape:
 ## Transport security (NIST SC-8; OWASP WSS/TLS)
 
 - `KalturaAvatarSession` rejects non-TLS `conversationManagerUrl`/`srsBaseUrl` (`insecure_transport`). The same rule covers every `Management` base URL and the sessions' `genieUrl`.
-- A base URL that does not parse, or that carries a username or password, throws `bad_request` at construction.
+- A base URL that is empty, does not parse, uses a scheme other than `https`/`http`, or carries a username or password throws `bad_request` at construction.
 - Loopback and private hosts (`localhost`/`127.0.0.1`, RFC 1918 ranges, link-local, and their IPv6 equivalents; see `isPrivateOrLoopbackHost` in `src/core/net-guard.js`) are allowed for dev, with a loud one-time warning.
 - Cleartext to a public host requires an explicit `allowInsecureTransport:true` (dev/test only, never production).
 - Pass server-minted ephemeral TURN credentials (`turnCredentials` from appInit, RFC 7635). Without them the SDK uses its default TURN credentials and warns.

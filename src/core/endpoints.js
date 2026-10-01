@@ -57,7 +57,7 @@ const badRequest = (detail) => new KalturaError({ type: 'about:blank', title: 'b
  * @param {ReadonlyArray<keyof KalturaEndpoints>} keys Services this caller needs.
  * @param {(msg: string) => void} [warn] Sink for insecure-transport warnings.
  * @returns {Readonly<Partial<KalturaEndpoints>>} Frozen. A key is `null` when the region does not run that service and no override was passed.
- * @throws {KalturaError} `bad_request` for an unknown region, a URL that does not parse, or a URL with credentials. `insecure_transport` for http to a public host.
+ * @throws {KalturaError} `bad_request` for an unknown region, an empty or non-string URL, a URL that does not parse, a scheme other than http(s), or a URL with credentials. `insecure_transport` for http to a public host.
  */
 export function resolveEndpoints(cfg, keys, warn = () => {}) {
   const region = cfg.region ?? 'nvp1';
@@ -68,10 +68,13 @@ export function resolveEndpoints(cfg, keys, warn = () => {}) {
   /** @type {Partial<KalturaEndpoints>} */
   const out = {};
   for (const key of keys) {
-    const url = cfg[key] || REGIONS[region][key];
+    const given = cfg[key];
+    if (given != null && (typeof given !== 'string' || given === '')) throw badRequest(`${key} must be a non-empty URL string. Omit it to use the region value.`);
+    const url = given ?? REGIONS[region][key];
     if (!url) { out[key] = null; continue; }
     let u;
     try { u = new URL(url); } catch { throw badRequest(`${key} is not a valid URL.`); }
+    if (u.protocol !== 'https:' && u.protocol !== 'http:') throw badRequest(`${key} must be an https URL.`);
     if (u.username || u.password) throw badRequest(`${key} must not contain credentials.`);
     assertSecureTransport(url, key, !!cfg.allowInsecureTransport, warn);
     out[key] = url.replace(/\/$/, '');

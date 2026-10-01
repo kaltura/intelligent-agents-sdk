@@ -92,7 +92,7 @@ export function resolveTarget(spec, label = 'TARGET') {
   /** @type {typeof fetch} */
   const guarded = (input, init) => {
     const host = new URL(typeof input === 'object' && 'url' in input ? input.url : String(input)).host;
-    if (!hosts.has(host)) return Promise.reject(new Error(`target ${t.name}: refusing a request to ${host}, which is not one of this target's hosts.`));
+    if (!hosts.has(host)) return Promise.reject(new Error(`target ${t.name}: refusing a request to a host outside this target.`));
     return fetch(input, init); // nosemgrep: scripts.harness.no-raw-fetch-bypass
   };
   return { ...t, fetch: guarded };

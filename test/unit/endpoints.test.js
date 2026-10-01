@@ -132,6 +132,18 @@ test('a URL with credentials or one that does not parse throws bad_request', () 
   assert.throws(() => new KalturaChatSession({ token: CONV_KS, genieUrl: 'https://u@example.com' }), (e) => e.code === 'bad_request');
 });
 
+test('an empty or non-string URL, or a scheme other than http(s), throws bad_request; null means omitted', () => {
+  for (const key of KEYS) {
+    assert.throws(() => new Management({ partnerId: 1, [key]: '' }), (e) => e.code === 'bad_request' && /non-empty URL string/.test(e.detail), key);
+    assert.throws(() => new Management({ partnerId: 1, [key]: /** @type {any} */ (42) }), (e) => e.code === 'bad_request', key);
+    for (const bad of ['ftp://example.com', 'file:///etc/hosts', 'wss://example.com']) {
+      assert.throws(() => new Management({ partnerId: 1, [key]: bad }), (e) => e.code === 'bad_request' && /https URL/.test(e.detail), `${key} ${bad}`);
+    }
+    assert.equal(new Management({ partnerId: 1, [key]: /** @type {any} */ (null) }).endpoints[key], REGIONS.nvp1[key], key);
+  }
+  assert.throws(() => new KalturaChatSession({ token: CONV_KS, genieUrl: '' }), (e) => e.code === 'bad_request');
+});
+
 // 10: trailing slash.
 test('one trailing slash is stripped from every resolved URL', () => {
   const mgmt = new Management({ partnerId: 1, agenticUrl: 'https://a.example.com/v1/', genieUrl: 'https://g.example.com/', ovpUrl: 'https://o.example.com/api_v3/', messagingUrl: 'https://m.example.com/api/v1/' });
