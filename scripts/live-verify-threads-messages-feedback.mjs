@@ -12,7 +12,7 @@
  *   3  threads.rename       — title change persists on a follow-up get
  *   4  threads.transcript   — flattened human:/ai: transcript contains the turn
  *   5  messages.list        — filtered to this thread, contains the message
- *   6  messages.share       : clones the message under a new title, clone readable via messages.get
+ *   6  messages.share       : clones the message under a new title, clone readable via messages.get (only with --with-share)
  *   7  feedback.add         — rates the message, is_positive persists
  *   8  followups.getSuggested — partner-level starter questions (may be [])
  *   9  threads.delete       — scratch thread removed, re-`get` real-404s
@@ -125,12 +125,15 @@ try {
   const ourMessage = messages.find((m) => m.id === turn.messageId || m.thread_id === threadId);
   check('5-messages-list-contains-message', messages.length > 0 && !!ourMessage, { count: messages.length, foundOurs: !!ourMessage });
 
-  // 6: messages.share clones the message under a new title. The clone is
-  // readable by id and carries the new title as its question.
-  const shared = await kaltura.messages.share(turn.messageId, `shared-${RUN_TAG}`, admin);
-  check('6-messages-share-returns-new-id', !!shared?.newMessageId && shared.newMessageId !== turn.messageId, { newMessageId: shared?.newMessageId });
-  const clone = await kaltura.messages.get(shared.newMessageId, admin);
-  check('6-messages-share-clone-readable', clone?.id === shared.newMessageId && clone?.human === `shared-${RUN_TAG}`, { id: clone?.id, human: clone?.human });
+  // 6: messages.share clones the message under a new title. Opt-in (--with-share):
+  // every run leaves an undeletable clone behind, so run it only after a change
+  // to the share code path.
+  if (process.argv.includes('--with-share')) {
+    const shared = await kaltura.messages.share(turn.messageId, `shared-${RUN_TAG}`, admin);
+    check('6-messages-share-returns-new-id', !!shared?.newMessageId && shared.newMessageId !== turn.messageId, { newMessageId: shared?.newMessageId });
+    const clone = await kaltura.messages.get(shared.newMessageId, admin);
+    check('6-messages-share-clone-readable', clone?.id === shared.newMessageId && clone?.human === `shared-${RUN_TAG}`, { id: clone?.id, human: clone?.human });
+  }
 
   // 7: feedback.add — rates the message; call is idempotent for the same pair.
   const fb = await kaltura.feedback.add({ message_id: turn.messageId, is_positive: true, comment: `live-verify ${RUN_TAG}` }, admin);

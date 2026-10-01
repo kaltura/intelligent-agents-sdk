@@ -37,8 +37,9 @@
  * check sees the backend's own status code rather than an SDK pre-flight.
  *
  * Throwaway agent via provision(), full cleanup in `finally`. The
- * messages.share step clones a message once per token kind. Each run leaves
- * those clones behind: there is no call to delete a single message. Targets prod by
+ * messages.share success path (one clone per token kind) runs only with
+ * `--with-share`. Each such run leaves clones behind: there is no call to delete
+ * a single message. The denial checks for share always run. Targets prod by
  * default; `--env <name>[:<n>] --env-file <path>` picks another environment (for example QA).
  * Credentials: AGENTIC_PARTNER_ID / AGENTIC_ADMIN_SECRET (or the `--env`
  * prefixed vars), from the environment or a .env file. None are written to
@@ -47,6 +48,7 @@
 import { bootstrap, management, ensureAgent, verifyDeleted, Report, mdTable, redact, sleep } from './live-verify-kickoff-shared.mjs';
 
 const { args, target, runId, outDir } = bootstrap(process.argv.slice(2), 'session-types');
+const withShare = !!args['with-share'];
 const kaltura = management(target);
 const report = new Report({ runId, target: target.name });
 
@@ -222,7 +224,7 @@ try {
         const set = await kaltura.threads.setAnalysis(threadA, { lv: label }, tok);
         const cleared = await kaltura.threads.clearAnalysis(threadA, tok);
         const msg = msgId ? await kaltura.messages.get(msgId, tok) : null;
-        const shared = msgId ? await kaltura.messages.share(msgId, `shared-${title}`, tok) : null;
+        const shared = withShare && msgId ? await kaltura.messages.share(msgId, `shared-${title}`, tok) : null;
         results[label] = {
           messages: msgs?.length ?? 0,
           transcript: typeof transcript?.data === 'string' && transcript.data.length > 0,
@@ -230,7 +232,7 @@ try {
           analysisSet: set?.thread_metadata?.analysis?.lv === label,
           analysisCleared: !cleared?.thread_metadata?.analysis,
           messageGet: msg?.id === msgId,
-          shareId: !!shared?.newMessageId,
+          ...(withShare ? { shareId: !!shared?.newMessageId } : {}),
         };
       }
       report.check('SDK: every relaxed thread and message method works for the owner (conversation and agent Token)',

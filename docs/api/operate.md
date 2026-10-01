@@ -73,7 +73,7 @@ Before any network call, the SDK's own `request_vars` pre-flight guard rejects a
 |----------|-------------|-------|
 | `sys__thread_id` | Current conversation thread id | |
 | `sys__message_id` | Current message id | |
-| `sys__user_id` | The bound end-user id | Empty by default (a KS with no `userId`). Bind a real identity with `Sessions.createConversationToken({ userId })` or `createAgentToken({ userId })` (or `createAdminToken({ userId })`) so this resolves server-side instead of always being empty, see § Bind a session to a real end-user identity above. |
+| `sys__user_id` | The bound end-user id | Empty by default (a KS with no `userId`). Bind a real identity with `Sessions.createConversationToken({ configId, userId })` or `createAgentToken({ agentId, userId })` (or `createAdminToken({ userId })`) so this resolves server-side instead of always being empty, see § Bind a session to a real end-user identity above. |
 | `sys__user_message` | The current turn's user text | |
 | `sys__is_new_thread` | `true` on the first turn of a new thread, `false` otherwise | |
 | `sys__avatar_enabled` | Whether the current thread has a live avatar attached | Used in a Skill's `condition` to gate it to avatar-only sessions, e.g. `{{ sys__avatar_enabled }}` — see [Configure an Intellect § skill_ids](build/intellect.md#configure-an-intellect). |

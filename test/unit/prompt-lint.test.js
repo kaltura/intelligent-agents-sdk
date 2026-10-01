@@ -538,6 +538,14 @@ test('assembleSystemPrompt: unresolved sys__user_obj.* attribute is flagged dist
   assert.match(r.warnings[0].message, /sys__user_obj\.first_name/);
 });
 
+test('assembleSystemPrompt: the unresolved-attr warning text matches the example in docs/api/build/preview-prompt.md', async () => {
+  const { readFileSync } = await import('node:fs');
+  const doc = readFileSync(new URL('../../docs/api/build/preview-prompt.md', import.meta.url), 'utf8');
+  const squash = (s) => s.replace(/^\/\/\s*/gm, '').replace(/\\'/g, "'").replace(/\s+/g, ' ');
+  const { message } = assembleSystemPrompt({ baseDirective: 'Hi {{sys__user_obj.first_name}}', requestVars: {} }).warnings[0];
+  assert.ok(squash(doc).includes(message.replace(/\s+/g, ' ')), 'docs example drifted from the real warning text');
+});
+
 test('assembleSystemPrompt: sys__user_obj.* resolves cleanly (no warning) once bound via requestVars', () => {
   const r = assembleSystemPrompt({
     baseDirective: 'Hi {{sys__user_obj.first_name}}',
