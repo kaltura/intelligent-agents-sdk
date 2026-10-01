@@ -79,10 +79,11 @@ The scripts built on `live-verify-kickoff-shared.mjs` (`live-verify-kickoff.mjs`
 | `live-verify-request-vars.mjs` | Every documented `request_vars` behavior over `converseOnce` |
 | `live-verify-site-nav.mjs` | The `go_to` contract end to end |
 | `live-verify-mcp.mjs` | `setMcpServers`/`describe` end to end against a CI-hosted reference MCP server, exposed through a tunnel. Takes `--target` and `--phase=provision\|verify\|cleanup`. See the script header |
-| `live-verify-session-types.mjs` | What each token kind can reach: own vs other users' threads, OVP reach, no-userId and widget shared identity, agent persona, per-user `appInit`, `revoke()`. `--skip-revoke` skips the revoke check |
+| `live-verify-session-types.mjs` | What each token kind can reach: own vs other users' threads, OVP reach, no-userId and widget shared identity, agent persona, per-user `appInit`, `revoke()`. `--skip-revoke` skips the revoke check. `--with-share` also runs the `messages.share` success path, which leaves an undeletable clone per run: use it only after a change to `messages.share` |
 | `live-verify-set-forced-language.mjs`, `live-verify-force-language.mjs` | A forced language changes the reply, not just storage |
 | `live-verify-capabilities.mjs` | Capability resolution plus the Lifecycle domain |
 | `live-verify-agents.mjs`, `live-verify-avatars.mjs`, `live-verify-catalog.mjs`, `live-verify-tools.mjs`, `live-verify-skills.mjs`, `live-verify-knowledge.mjs`, `live-verify-intellects-conversations.mjs`, `live-verify-threads-messages-feedback.mjs`, `live-verify-conversation-avatar-surface.mjs` | The write path of one management resource each |
+| `live-verify-threads-messages-feedback.mjs --with-share` | Also runs the `messages.share` step (step 6), which leaves an undeletable clone per run. Off by default: use it only after a change to `messages.share` |
 
 Every one of these has an `npm run live-verify:<name>` script except `live-verify.mjs` and `live-verify-mcp.mjs` (CI runs both with `node`). Four have no npm script and no CI job. Run them with `node scripts/<name>.mjs`: `live-verify-intellect-config.mjs`, `live-verify-knowledge-kms.mjs`, `live-verify-feedback-flow.mjs`, `live-check-feedback-unfiltered.mjs`. One more has an npm script but no CI job either: `live-verify-force-language.mjs`, run by hand with `npm run live-verify:force-language`.
 
