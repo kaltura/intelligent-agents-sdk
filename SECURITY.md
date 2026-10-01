@@ -155,7 +155,8 @@ Every event carries this AU-3 content shape:
 
 ## Transport security (NIST SC-8; OWASP WSS/TLS)
 
-- `KalturaAvatarSession` rejects non-TLS `conversationManagerUrl`/`srsBaseUrl` (`insecure_transport`).
+- `KalturaAvatarSession` rejects non-TLS `conversationManagerUrl`/`srsBaseUrl` (`insecure_transport`). The same rule covers every `Management` base URL and the sessions' `genieUrl`.
+- A base URL that does not parse, or that carries a username or password, throws `bad_request` at construction.
 - Loopback and private hosts (`localhost`/`127.0.0.1`, RFC 1918 ranges, link-local, and their IPv6 equivalents; see `isPrivateOrLoopbackHost` in `src/core/net-guard.js`) are allowed for dev, with a loud one-time warning.
 - Cleartext to a public host requires an explicit `allowInsecureTransport:true` (dev/test only, never production).
 - Pass server-minted ephemeral TURN credentials (`turnCredentials` from appInit, RFC 7635). Without them the SDK uses its default TURN credentials and warns.
@@ -211,7 +212,9 @@ In the browser, FIPS validation is a property of the OS/browser crypto module. D
 
 ## Data residency (SC-7)
 
-The SDK is a thin client. It contacts only the Kaltura endpoints you configure (`agenticUrl`/`genieUrl`/`ovpUrl`/`conversationManagerUrl`/`srsBaseUrl`/`turnServerUrl`). There is no telemetry or hidden beacon. The optional `./experience/analytics` module sends KAVA application events to `analytics.kaltura.com`, and only when your code calls it. Point every URL at your in-boundary (e.g. US-Gov) hosts to keep all data within your authorization boundary.
+The SDK is a thin client. It contacts only the Kaltura endpoints you configure (`agenticUrl`/`genieUrl`/`ovpUrl`/`messagingUrl`/`conversationManagerUrl`/`srsBaseUrl`/`turnServerUrl`). There is no telemetry or hidden beacon. The optional `./experience/analytics` module sends KAVA application events to `analytics.kaltura.com`, and only when your code calls it. Point every URL at your in-boundary (e.g. US-Gov) hosts to keep all data within your authorization boundary.
+
+`region` picks every `Management` base URL and the sessions' `genieUrl` from one [`REGIONS`](docs/api/authentication.md#regions-and-base-urls) entry. There is no fallback to another region: a service the region lacks throws `region_unavailable` instead of reaching a US host. `region` does not change the analytics host.
 
 This residency guarantee covers the SDK's own configured endpoints only. A `lifecycle` rule's `sendInsightEmail` action is a server-side, operator-configured email delivery of thread-derived content to an arbitrary `recipients` list. It has no residency control and isn't covered by the URL-pinning above.
 
