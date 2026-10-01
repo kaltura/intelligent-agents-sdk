@@ -154,7 +154,7 @@ Three entry points are easy to confuse. They do different things.
 | Workflow | Jobs |
 |---|---|
 | `ci.yml` | Offline tests with coverage, the 3-engine `avatar-media` matrix, the 3-engine `noise-suppressor` matrix, the Constitution verifier, lint/typecheck/circular, the docs gate, semgrep |
-| `live-verify.yml` | One job per CI-run live script. Runs on manual dispatch, on a PR labeled `run-live-verify` (only jobs whose paths changed), and in the merge queue (same path filter). A nightly schedule (03:00 UTC) runs every job. A weekly schedule (Monday 06:00 UTC) is the startup-KPI trend run and also triggers `live-verify-kickoff` |
+| `live-verify.yml` | One job per CI-run live script. Runs on manual dispatch, on every PR from a branch in this repo (only jobs whose paths changed), and in the merge queue (same path filter). Fork and Dependabot PRs get no secrets, so no live job runs there: a fork PR that touches live paths fails the `Live verification` check until a maintainer opens a replacement PR from a branch in this repo, and a Dependabot PR passes with a notice. A nightly schedule (03:00 UTC) runs every job and is the startup-KPI trend run |
 | `release.yml` | `npm run verify:distribution -- <tag>`, which checks the published jsDelivr tree matches the tag |
 
 The four local-only scripts, plus `live-verify-force-language.mjs`, have no CI job. Run them by hand when you touch their surface.
