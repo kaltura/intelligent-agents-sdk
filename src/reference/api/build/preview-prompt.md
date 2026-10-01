@@ -61,7 +61,7 @@ p.warnings;
 //   code: 'reserved_user_attr_unresolved',
 //   message: '`{{sys__user_obj.first_name}}` has no bound value in this preview\'s
 //              requestVars. Bind every variable the prompt uses: bind a user
-//              (Sessions.createConversationToken({userId})) or supply
+//              (Sessions.createConversationToken({ configId, userId })) or supply
 //              "sys__user_obj.first_name" in requestVars to simulate the bound case
 //              before shipping this prompt.'
 // }]
