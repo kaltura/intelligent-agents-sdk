@@ -127,7 +127,7 @@ initDock();
 // Docking is one-directional per session: the first in-site navigation
 // while connected shrinks Nova into the standing corner dock and she never
 // returns to hero size (see dock.js). Navigating away unconnected already
-// docks her too, via dock.js's own trackHero()->missing-slot check.
+// docks her too, via dock.js's own missing-slot check.
 document.addEventListener('nova:pagechange', () => {
   if (session) enterDockMode();
 });
@@ -426,7 +426,6 @@ async function connect(pendingPrompt, mode = 'avatar') {
     els.videoWrap?.classList.remove('is-connecting');
     els.placeholder.classList.add('hidden');
     els.chatStart?.classList.add('hidden');
-    if (els.dockChat) els.dockChat.disabled = true;
     // A root class, not the pills row itself: the router swaps page content,
     // so a row found at load is gone after navigating back home.
     document.documentElement.classList.add('nova-live');
@@ -561,9 +560,11 @@ els.chatStart?.addEventListener('click', () => {
   if (!session) connect(undefined, 'chat');
 });
 // Docked bubble's only other click target is the mic circle (avatar mode) —
-// this is chat's way in without expanding the flyout first.
+// this is chat's way in without expanding the flyout first. During a live
+// video call it stays put and moves the same thread into the chat drawer.
 els.dockChat?.addEventListener('click', () => {
   if (!session) connect(undefined, 'chat');
+  else if (session.mode === 'avatar') toggleMode();
 });
 els.mute.addEventListener('click', toggleMute);
 // Chat mode's camera button and video mode's hang-up are the same action

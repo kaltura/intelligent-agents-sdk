@@ -1289,9 +1289,9 @@ video {
   display: none;
 }
 
-/* Session-gated in JS via :disabled (inverted from the other controls —
-   visible before a session exists, hidden once one does), mode-gated here
-   via .dock-mode so it never shows over the hero video or the drawer. */
+/* Shown on the docked bubble only (never over the hero video or the drawer):
+   before a session it starts a text chat, and during a video call it moves
+   the conversation into the chat drawer. */
 .nova-dock-chat {
   display: none;
   position: absolute;
@@ -1305,10 +1305,6 @@ video {
 
 .nova-widget.dock-mode .nova-dock-chat {
   display: flex;
-}
-
-.nova-dock-chat:disabled {
-  display: none;
 }
 
 .nova-input-row {
@@ -2146,7 +2142,24 @@ html:not(.nova-ready) :is(.nova-hero-prompts, .nova-placeholder, .nova-chat-star
   }
 }
 
+/* A live call shows the controls, status and transcript over the video. The
+   idle portrait is too small for that on narrow screens and the overlay would
+   cover her face, so the card grows while a session is live. */
+@media (max-width: 1200px) and (min-width: 901px) {
+  html.nova-live .nova-hero-visual {
+    width: 260px;
+    aspect-ratio: auto;
+    height: min(66vh, 480px);
+  }
+}
+
 @media (max-width: 900px) {
+  html.nova-live .nova-hero-visual {
+    width: min(100%, 420px);
+    aspect-ratio: auto;
+    height: clamp(380px, calc(100svh - 25rem), 560px);
+  }
+
   .nova-hero-inner {
     flex-direction: column;
     justify-content: flex-start;

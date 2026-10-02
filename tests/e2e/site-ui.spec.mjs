@@ -120,6 +120,24 @@ test.describe('mobile nav', () => {
     await expect(sidebar).toBeHidden();
   });
 
+  test('on the home page she zooms into the corner dock when the page scrolls', async ({ page }) => {
+    await page.goto('/');
+    await expect(page.locator('html')).toHaveClass(/nova-ready/);
+    const wrap = page.locator('#nova-video-wrap');
+    const before = await wrap.boundingBox();
+    expect(before.width).toBeGreaterThan(200);
+    await page.mouse.wheel(0, 900);
+    await expect(page.locator('#nova-widget')).toHaveClass(/dock-mode/);
+    const after = await wrap.boundingBox();
+    expect(after.width).toBeLessThanOrEqual(130);
+    expect(after.y + after.height).toBeLessThanOrEqual(844);
+    expect(after.y).toBeGreaterThanOrEqual(0);
+    // Scrolling back up restores the hero card.
+    await page.mouse.wheel(0, -2000);
+    await expect(page.locator('#nova-widget')).not.toHaveClass(/dock-mode/);
+    expect((await wrap.boundingBox()).width).toBeGreaterThan(200);
+  });
+
   test('docked Nova is the small mobile size', async ({ page }) => {
     await page.goto(DOC);
     await expect(page.locator('html')).toHaveClass(/nova-ready/);
