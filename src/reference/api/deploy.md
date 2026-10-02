@@ -64,7 +64,7 @@ That KS answers as the agent, keeps entitlement ON and keeps the user's identity
 
 Feed this response straight into `new KalturaAvatarSession({ token: ks, conversationManagerUrl, srsBaseUrl, turnServerUrl, videoEl, socketFactory })` (`./experience`) to bring the runtime up in the browser.
 
-`appInit` does not return the brain host. The session still makes two direct POSTs of its own, the `respondToTool()` ACKs and the session-completed signal, and it sends them to the same built-in US production `genieUrl` that `Management` falls back to. If your partner is on any other environment, pass the session the same `genieUrl` you gave `Management`, or those two calls fail with a `401` after an otherwise healthy session. `KalturaAgentSession` takes it under `avatar` and `chat`.
+`appInit` does not return the brain host. The session still makes two direct POSTs of its own, the `respondToTool()` ACKs and the session-completed signal, and it sends them to the `genieUrl` of the session's `region` (default `nvp1`, US). If your partner is in another region, pass the session the same `region` you gave `Management`, or those two calls fail with a `401` after an otherwise healthy session. For a deployment not in [`REGIONS`](/reference/api/authentication/#regions-and-base-urls), pass the same `genieUrl` instead. `KalturaAgentSession` takes `region` at the top level and `genieUrl` under `avatar` and `chat`.
 
 Two options on all three session classes (`KalturaAvatarSession`, `KalturaChatSession`, `KalturaAgentSession`) shape how the conversation starts:
 

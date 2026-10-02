@@ -94,6 +94,8 @@ const reply = await kaltura.converseOnce('<configId from Step 3>', 'Hello! What 
 console.log(reply.text);
 ```
 
+Partner outside the US? Add `region: 'frp2'` (EU) to the `Management` config. See [Regions and base URLs](/reference/api/authentication/#regions-and-base-urls).
+
 `converseOnce()` mints its own conversation token from the `configId`. The admin secret never leaves your process. See [Conversation & Analytics](/reference/api/operate/) in API-REFERENCE.md for threaded conversations, streaming, and the full Management API surface.
 
 **In the browser, let the agent speak first.** Pass `kickoff` to the session and the SDK sends that text as the first turn, once, as soon as the server accepts input. With the silent opening the quickstart set, the greeting is the agent's own reply. Scripted or silent opening: [Start the Conversation § Choose an opening](/guides/start-the-conversation/#choose-an-opening). Attach listeners first: [README.md § Experience](https://github.com/kaltura/intelligent-agents-sdk/blob/main/README.md#experience).

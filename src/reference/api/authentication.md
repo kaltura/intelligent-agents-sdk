@@ -129,5 +129,36 @@ An agent is built from five services that layer on top of each other. All calls 
 
 Once deployed, the **conversation surface** (`/assistant/converse`, `/v1/thread/`, `/mcp/`) lives on `genie.nvp1.ovp.kaltura.com`. Utility endpoints (`/application/`) for widget resolution and runtime init are on `api.avatar.us.kaltura.ai`.
 
+These are the US hosts. For another region, see [Regions and base URLs](#regions-and-base-urls).
+
+---
+
+## Regions and base URLs
+
+`Management` uses four base URLs. Pass `region` and the SDK fills all four from the exported `REGIONS` table. The default is `'nvp1'`.
+
+| `region` | Where | `agenticUrl` | `genieUrl` | `ovpUrl` | `messagingUrl` |
+|---|---|---|---|---|---|
+| `nvp1` (default) | US | `https://api.avatar.us.kaltura.ai/v1` | `https://genie.nvp1.ovp.kaltura.com` | `https://www.kaltura.com/api_v3` | `https://messaging.nvp1.ovp.kaltura.com/api/v1` |
+| `frp2` | EU | `https://api.avatar.eu.kaltura.ai/v1` | `https://genie.frp2.ovp.kaltura.com` | `https://api.frp2.ovp.kaltura.com/api_v3` | `null` |
+
+```js
+import { Management, REGIONS } from '@kaltura/intelligent-agents/management';
+
+const mgmt = new Management({ partnerId, adminSecret, region: 'frp2' });
+console.log(mgmt.endpoints);   // frozen: the four URLs this instance uses
+```
+
+| Rule | Behavior |
+|---|---|
+| Precedence | An explicit `agenticUrl`, `genieUrl`, `ovpUrl` or `messagingUrl` wins, then the `region` entry, then `nvp1`. Pass all four for a deployment that is not in the table |
+| Unknown region | Throws `bad_request` listing the supported codes. Never falls back to US |
+| `null` service | The region does not offer it. Calls that need it throw `region_unavailable` before any request. On `frp2` that is `emailTemplates.*`, unless you pass `messagingUrl` |
+| Admin secret | Sent only to the resolved `ovpUrl` |
+| HTTPS | `http://` to a public host throws `insecure_transport`. `http://` to localhost or a private host only warns. `allowInsecureTransport: true` turns the error into a warning (testing only) |
+| Malformed URL | An empty string, a URL that does not parse, a scheme other than `https`/`http`, or a URL with a username or password throws `bad_request` at construction. `undefined` and `null` mean "use the region value" |
+
+In the browser, `KalturaAvatarSession`, `KalturaChatSession` and `KalturaAgentSession` take the same `region` option, which picks their `genieUrl` only. The conversation host comes from `appInit`, or the US default if you omit `conversationManagerUrl`. Pass the same value you gave `Management`. `REGIONS` is exported from both `./management` and `./experience`.
+
 To embed a live avatar in a browser, go to [Widget & Runtime Init](/reference/api/deploy/#widget--runtime-init) or jump straight to [UC-12 Anonymous End-User Embed](/reference/use-cases/).
 
