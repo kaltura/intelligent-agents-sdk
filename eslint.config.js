@@ -22,6 +22,7 @@ const nodeGlobals = {
   ReadableStream: 'readonly',
   AbortController: 'readonly',
   AbortSignal: 'readonly',
+  DOMException: 'readonly',
   atob: 'readonly',
   btoa: 'readonly',
   // core/safety.js is isomorphic — feature-detects `document` via `typeof

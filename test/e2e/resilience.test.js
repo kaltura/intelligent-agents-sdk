@@ -1541,9 +1541,12 @@ for (const [errName, code] of [
   ['NotFoundError', 'mic_not_found'],
   ['NotReadableError', 'mic_in_use'],
   ['OverconstrainedError', 'mic_not_found'],
+  ['SecurityError', 'mic_permission_denied'],
+  ['AbortError', 'mic_in_use'],
+  ['NotSupportedError', 'devices_permission_denied'],
 ]) {
   test(`device: getUserMedia ${errName} → connected + warning ${code}`, async () => {
-    const gum = async () => { const e = new Error(errName); e.name = errName; throw e; };
+    const gum = async () => { throw new DOMException(errName, errName); };
     const { session, socket } = newSession({ getUserMedia: gum });
     scriptHappyPath(socket);
     const warnings = [];

@@ -73,11 +73,14 @@ for (const [errName, code] of [
   ['NotFoundError', 'mic_not_found'],
   ['NotReadableError', 'mic_in_use'],
   ['OverconstrainedError', 'mic_not_found'],
+  ['SecurityError', 'mic_permission_denied'],
+  ['AbortError', 'mic_in_use'],
+  ['NotSupportedError', 'devices_permission_denied'],
 ]) {
   test(`mic ${errName} → connected + one warning ${code}, speak() works, startMic() retries`, async () => {
     let fail = true;
     const grant = fakeGetUserMedia();
-    const gum = async (c) => { if (fail) { const e = new Error(errName); e.name = errName; throw e; } return grant(c); };
+    const gum = async (c) => { if (fail) { throw new DOMException(errName, errName); } return grant(c); };
     const { session, socket } = newSession({ getUserMedia: gum });
     scriptHappyPath(socket, { openingLine: true });   // opening turn finishes → speak() hold releases
     const warnings = [];
