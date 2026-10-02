@@ -15,6 +15,9 @@ const MIME = {
   '.json': 'application/json',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
+  '.webp': 'image/webp',
+  '.woff2': 'font/woff2',
+  '.txt': 'text/plain',
 };
 
 // Resolves req.url's pathname against ROOT and rejects anything that escapes it (leading

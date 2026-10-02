@@ -1,0 +1,13 @@
+---
+permalink: /llms.txt
+eleventyExcludeFromCollections: true
+---
+# @kaltura/intelligent-agents
+
+> Zero-dependency JavaScript SDK for building and operating Kaltura Agentic Avatars: conversational agents with a visual, human-like avatar interface.
+{% for section in nav %}
+## {{ section.group }}
+{% for p in section.pages %}
+- [{{ p.title }}]({{ pathPrefix }}{{ p.url }})
+{%- endfor %}
+{% endfor %}

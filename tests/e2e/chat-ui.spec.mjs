@@ -101,3 +101,26 @@ test('a pill on a router-swapped home page shows its question right away', async
     await expect(you).toHaveCount(0);
   }
 });
+
+// On a phone the chat drawer is a full sheet: it must behave as a modal
+// dialog, with the page behind it inert, and hand focus back on close.
+test('mobile chat sheet is a modal dialog and inerts the page behind it', async ({ page }) => {
+  await page.route(/^https:\/\/cdn\.socket\.io\//, (route) => route.abort());
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/getting-started/');
+  await expect(page.locator('html')).toHaveClass(/nova-ready/);
+  await page.locator('#nova-dock-chat').click();
+
+  const widget = page.locator('#nova-widget');
+  await expect(widget).toHaveClass(/drawer-mode/);
+  await expect(widget).toHaveAttribute('role', 'dialog');
+  await expect(widget).toHaveAttribute('aria-modal', 'true');
+  for (const sel of ['.site-header', '#sidebar', 'main.content-wrapper']) {
+    await expect(page.locator(sel)).toHaveAttribute('inert', '');
+  }
+  await expect(page.locator('.nova-suggest')).toBeVisible();
+
+  await page.locator('#nova-close').click();
+  await expect(widget).not.toHaveClass(/drawer-mode/);
+  await expect(page.locator('main.content-wrapper')).not.toHaveAttribute('inert', '');
+});

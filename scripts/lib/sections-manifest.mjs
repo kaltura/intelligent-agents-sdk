@@ -18,7 +18,7 @@ export const MANIFEST_REL_PATH = 'nova/sections.json';
 /** Only h2 headings (and hand-placed targets, which carry no level) become sections: about 25 tokens per page in the SITE MAP. Raise `depth` to 3 to include h3 everywhere; see `promoteSubheadings` for the per-page fallback. */
 export const MANIFEST_OPTIONS = Object.freeze({ lang: 'en', depth: 2 });
 
-const MAIN_RE = /<main class="content-wrapper">([\s\S]*?)<\/main>/;
+const MAIN_RE = /<main class="content-wrapper"[^>]*>([\s\S]*?)<\/main>/;
 const HEADING_RE = /<h([1-6])\b([^>]*)>([\s\S]*?)<\/h\1>/g;
 const TARGET_RE = /<([a-z][a-z0-9-]*)\b([^>]*\bdata-nova-target="([^"]+)"[^>]*)>/g;
 const ID_ATTR_RE = /\bid="([^"]+)"/;
