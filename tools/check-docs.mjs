@@ -845,3 +845,34 @@ describe('13. Silent opening + kickoff', () => {
     assert.deepEqual(offenders, [], `avatars.create() must not set openingPhrase (the intellect owns it); fix: ${offenders.join(', ')}`);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════
+// 14. Regions — the documented region table matches REGIONS in code
+// ═══════════════════════════════════════════════════════════════════════
+describe('14. Regions', () => {
+  const AUTH = 'docs/api/authentication.md';
+
+  test('every REGIONS entry has a row with its exact URLs in the authentication region table', async () => {
+    const { REGIONS } = await import('../src/core/endpoints.js');
+    const rows = read(AUTH).split('\n').filter((l) => /^\| `[a-z0-9]+`/.test(l));
+    const problems = [];
+    for (const [code, urls] of Object.entries(REGIONS)) {
+      const row = rows.find((l) => l.startsWith(`| \`${code}\``));
+      if (!row) { problems.push(`${code}: no row`); continue; }
+      for (const [key, url] of Object.entries(urls)) {
+        if (!row.includes(`\`${url}\``)) problems.push(`${code}.${key}: expected \`${url}\``);
+      }
+    }
+    assert.deepEqual(problems, [], `${AUTH} region table drifted from src/core/endpoints.js: ${problems.join('; ')}`);
+  });
+
+  test('region_unavailable and insecure_transport are documented', () => {
+    const missing = [];
+    for (const f of ['API-REFERENCE.md', AUTH]) {
+      for (const code of ['region_unavailable', 'insecure_transport']) {
+        if (!read(f).includes(`\`${code}\``)) missing.push(`${f}: ${code}`);
+      }
+    }
+    assert.deepEqual(missing, [], `undocumented error codes: ${missing.join(', ')}`);
+  });
+});

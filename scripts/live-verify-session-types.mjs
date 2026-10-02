@@ -52,8 +52,8 @@ const withShare = !!args['with-share'];
 const kaltura = management(target);
 const report = new Report({ runId, target: target.name });
 
-const GENIE = (target.genieUrl || 'https://genie.nvp1.ovp.kaltura.com').replace(/\/$/, '');
-const OVP = (target.ovpUrl || 'https://www.kaltura.com/api_v3').replace(/\/$/, '');
+const GENIE = target.genieUrl.replace(/\/$/, '');
+const OVP = target.ovpUrl.replace(/\/$/, '');
 const tag = Date.now().toString(36);
 const user = (/** @type {string} */ s) => `lv-st-${tag}-${s}`;
 

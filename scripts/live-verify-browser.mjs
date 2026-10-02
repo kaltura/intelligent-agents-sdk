@@ -34,12 +34,13 @@
  * Credentials: AGENTIC_PARTNER_ID / AGENTIC_ADMIN_SECRET, from the environment
  * or a .env file in the repo root (same convention as scripts/live-verify.mjs).
  */
-import { readFileSync, writeFileSync, mkdirSync, createReadStream, existsSync, statSync } from 'node:fs';
+import { writeFileSync, mkdirSync, createReadStream, existsSync, statSync } from 'node:fs';
 import { resolve, dirname, extname, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'node:http';
 import { chromium, firefox, webkit } from 'playwright';
 import { Management } from '../src/management/index.js';
+import { resolveTarget } from './lib/target.mjs';
 
 const ENGINES = { chromium, firefox, webkit };
 const engineName = process.env.LIVE_VERIFY_BROWSER || 'chromium';
@@ -52,23 +53,8 @@ if (!engine) {
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, '..');
 
-try {
-  const env = readFileSync(resolve(repoRoot, '.env'), 'utf8');
-  for (const line of env.split('\n')) {
-    const m = line.match(/^([A-Z_]+)=(.*)$/);
-    if (m && !process.env[m[1]]) process.env[m[1]] = m[2].trim();
-  }
-} catch {
-  // No .env file — credentials must already be in the environment.
-}
-
-const partnerId = process.env.AGENTIC_PARTNER_ID;
-const adminSecret = process.env.AGENTIC_ADMIN_SECRET;
-
-if (!partnerId || !adminSecret) {
-  console.error('AGENTIC_PARTNER_ID and AGENTIC_ADMIN_SECRET are required (env or repo-root .env).');
-  process.exit(1);
-}
+const target = resolveTarget(process.env.TARGET ?? 'prod');
+const { partnerId } = target;
 
 const startedAt = new Date().toISOString();
 const runId = `ci-live-verify-browser-${engineName}-${Date.now()}`;
@@ -102,7 +88,7 @@ function startServer(appInitData) {
   return new Promise((resolvePromise) => server.listen(0, '127.0.0.1', () => resolvePromise(server)));
 }
 
-const kaltura = new Management({ partnerId, adminSecret });
+const kaltura = new Management(target);
 let admin;
 let provisioned;
 let server;

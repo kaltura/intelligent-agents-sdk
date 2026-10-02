@@ -242,7 +242,7 @@ const session = new KalturaAvatarSession({
   audioEl: document.querySelector('audio'),     // recommended: voice on its own element, see below
   socketFactory: (url, opts) => io(url, opts),  // inject socket.io
   kickoff: 'Greet the user and briefly say how you can help.',  // first turn, sent once by the SDK
-  // genieUrl: same value you gave Management, if your partner is not on the US production default
+  // region: 'frp2',  // same value you gave Management, if your partner is not in the US
 });
 
 session.on('transcript', ({ text }) => console.log(text));

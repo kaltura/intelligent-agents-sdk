@@ -23,29 +23,15 @@ import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Management } from '../src/management/index.js';
+import { resolveTarget } from './lib/target.mjs';
 import { Http } from '../src/core/http.js';
 import { KalturaError } from '../src/core/errors.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, '..');
 
-try {
-  const env = readFileSync(resolve(repoRoot, '.env'), 'utf8');
-  for (const line of env.split('\n')) {
-    const m = line.match(/^([A-Z_]+)=(.*)$/);
-    if (m && !process.env[m[1]]) process.env[m[1]] = m[2].trim();
-  }
-} catch {
-  // No .env file — credentials must already be in the environment.
-}
-
-const partnerId = process.env.AGENTIC_PARTNER_ID;
-const adminSecret = process.env.AGENTIC_ADMIN_SECRET;
-
-if (!partnerId || !adminSecret) {
-  console.error('AGENTIC_PARTNER_ID and AGENTIC_ADMIN_SECRET are required (env or repo-root .env).');
-  process.exit(1);
-}
+const target = resolveTarget(process.env.TARGET ?? 'prod');
+const { partnerId } = target;
 
 const startedAt = new Date().toISOString();
 const runId = `ci-live-verify-conversation-surface-${Date.now()}`;
@@ -63,7 +49,7 @@ function record(step, ok, detail) {
 const FACE_IMAGE = resolve(repoRoot, 'examples/chroma-key-green-screen-portrait.jpeg');
 const BACKGROUND_IMAGE = resolve(repoRoot, 'manual-testing/voice-video/improv/max.jpeg');
 
-const kaltura = new Management({ partnerId, adminSecret });
+const kaltura = new Management(target);
 let admin;
 let configId;
 let threadId;
@@ -138,7 +124,7 @@ try {
   // the SDK's own Http transport (retry/backoff, response-size capping) rather
   // than a bare fetch(), since Http.request() throws on any non-2xx status,
   // the thrown KalturaError carries the same {status, body} a raw response would.
-  const rawHttp = new Http();
+  const rawHttp = new Http({ fetch: target.fetch });
   async function rawPost(url, body) {
     try {
       const res = await rawHttp.request({ method: 'POST', url, ks: admin.ks, body, json: true });
@@ -148,8 +134,8 @@ try {
       throw err;
     }
   }
-  const genieRawUrl = 'https://genie.nvp1.ovp.kaltura.com';
-  const agenticRawUrl = 'https://api.avatar.us.kaltura.ai/v1';
+  const genieRawUrl = target.genieUrl;
+  const agenticRawUrl = target.agenticUrl;
 
   const unknownKeyThreads = await rawPost(`${genieRawUrl}/v1/thread/list`, { filter: { objectType: 'ListThreadFilter', notARealFilterKey: 'x' }, pager: { pageIndex: 1, pageSize: 5 } });
   record('thread.list unknown filter key -> 422', unknownKeyThreads.status === 422, { status: unknownKeyThreads.status });

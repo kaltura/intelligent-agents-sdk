@@ -28,12 +28,13 @@
  * repo-root .env — never from a tracked file. Artifact JSON lands in
  * live-verify-artifacts/ (gitignored) and contains only ids and measurements.
  */
-import { readFileSync, writeFileSync, mkdirSync, createReadStream, existsSync, statSync } from 'node:fs';
+import { writeFileSync, mkdirSync, createReadStream, existsSync, statSync } from 'node:fs';
 import { resolve, dirname, extname, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'node:http';
 import { chromium, firefox, webkit } from 'playwright';
 import { Management } from '../src/management/index.js';
+import { resolveTarget } from './lib/target.mjs';
 import { callHook } from './live-verify-hooks-shared.mjs';
 
 const ENGINES = { chromium, firefox, webkit };
@@ -47,22 +48,8 @@ if (!engine) {
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, '..');
 
-try {
-  const env = readFileSync(resolve(repoRoot, '.env'), 'utf8');
-  for (const line of env.split('\n')) {
-    const m = line.match(/^([A-Z_]+)=(.*)$/);
-    if (m && !process.env[m[1]]) process.env[m[1]] = m[2].trim();
-  }
-} catch {
-  // No .env file — credentials must already be in the environment.
-}
-
-const partnerId = process.env.AGENTIC_PARTNER_ID;
-const adminSecret = process.env.AGENTIC_ADMIN_SECRET;
-if (!partnerId || !adminSecret) {
-  console.error('AGENTIC_PARTNER_ID and AGENTIC_ADMIN_SECRET are required (env or repo-root .env).');
-  process.exit(1);
-}
+const target = resolveTarget(process.env.TARGET ?? 'prod');
+const { partnerId } = target;
 
 const runId = `live-verify-avatar-media-${engineName}-${Date.now()}`;
 const artifact = { runId, engine: engineName, startedAt: new Date().toISOString(), partnerId, steps: [] };
@@ -214,7 +201,7 @@ async function runMode(context, port, mode) {
   }
 }
 
-const kaltura = new Management({ partnerId, adminSecret });
+const kaltura = new Management(target);
 let admin;
 let provisioned;
 let createdSoFar = null;

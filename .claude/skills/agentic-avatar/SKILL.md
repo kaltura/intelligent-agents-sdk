@@ -26,7 +26,7 @@ import { Management } from '@kaltura/intelligent-agents/management';
 const kaltura = new Management({
   partnerId: process.env.AGENTIC_PARTNER_ID,
   adminSecret: process.env.AGENTIC_ADMIN_SECRET,
-  // agenticUrl/genieUrl/ovpUrl default to US production — override for another region
+  // region: 'frp2',  // EU. Default 'nvp1' (US). Explicit *Url options still win.
 });
 ```
 

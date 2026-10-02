@@ -21,6 +21,8 @@
  */
 export { Management } from './client.js';
 export { Sessions } from '../core/session.js';
+// Verified base URLs per region. Pass `region` to `Management` rather than reading this directly.
+export { REGIONS } from '../core/endpoints.js';
 export { KalturaError } from '../core/errors.js';
 export { inspectKs } from './ks-inspect.js';
 export { summarizeReport, parseCsv, SPIRAL_RECOVERY_PREFIX } from './conversations.js';

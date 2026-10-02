@@ -63,10 +63,9 @@ import { makeAuditEmitter } from '../core/session.js';
 import { sanitizeJson, clampInbound } from '../core/safety.js';
 import { SPOKEN_TYPES, canonicalJson, SPIRAL_RECOVERY_PREFIX, validateToolArgs, parseToolResponseName, parseOAuthRequired } from '../core/stream.js';
 import { assertSecureTransport } from '../core/transport-guard.js';
+import { resolveEndpoints } from '../core/endpoints.js';
 import { createSessionCompleter } from './session-complete.js';
 import { AvatarMedia } from './avatar-media.js';
-
-const DEFAULT_GENIE_URL = 'https://genie.nvp1.ovp.kaltura.com';
 
 // Backstop for a pending tool-ACK entry the app never acknowledges:
 // `_dispatchToolCall`/`respondToTool` clear entries on ACK/disconnect/cold-reconnect,
@@ -122,7 +121,8 @@ export class KalturaAvatarSession extends Emitter {
    * @param {object} cfg
    * @param {string} cfg.token              Enriched conversation KS from appInit (entitlement ON for the standard flow — see SECURITY.md's KS guidance for agents).
    * @param {string} [cfg.conversationManagerUrl] From appInit (default the US prod host).
-   * @param {string} [cfg.genieUrl]         The brain's host for `respondToTool()`'s direct ACK POST (default `https://genie.nvp1.ovp.kaltura.com`, matching `Management`'s own default).
+   * @param {import('../core/endpoints.js').KalturaRegion} [cfg.region] Region your partner lives in. Default `'nvp1'` (US). Picks the default `genieUrl`. An unknown code throws `bad_request`.
+   * @param {string} [cfg.genieUrl]         The brain's host for `respondToTool()`'s direct ACK POST. Overrides the region value (same resolution as `Management`).
    * @param {string} cfg.srsBaseUrl         From appInit (WHEP egress host).
    * @param {string} cfg.turnServerUrl      From appInit (TURN host).
    * @param {(url:string,opts:object)=>any} cfg.socketFactory  socket.io-compatible factory (INJECTED; never bundled).
@@ -206,7 +206,8 @@ export class KalturaAvatarSession extends Emitter {
     Object.defineProperty(this, '_token', { value: cfg.token, writable: true, enumerable: false, configurable: true });
     this._cmUrl = (cfg.conversationManagerUrl || DEFAULT_CM_URL).replace(/\/$/, '');
     this._srsBaseUrl = (cfg.srsBaseUrl || '').replace(/\/$/, '');
-    this._genieUrl = (cfg.genieUrl || DEFAULT_GENIE_URL).replace(/\/$/, '');
+    // HTTPS-checked inside resolveEndpoints (same rule as the two URLs below).
+    this._genieUrl = resolveEndpoints(cfg, ['genieUrl'], (m) => this._warnOnce('insecure-genie', m)).genieUrl;
     // Join-time request_vars — validated up front so a bad value
     // fails at construction, not silently at the first join/reconnect.
     // This map is CANONICAL for the whole session: updateRequestVars()/
@@ -224,7 +225,6 @@ export class KalturaAvatarSession extends Emitter {
     this._allowInsecure = !!cfg.allowInsecureTransport;
     assertSecureTransport(this._cmUrl, 'conversationManagerUrl', this._allowInsecure, (m) => this._warnOnce('insecure-cm', m));
     assertSecureTransport(this._srsBaseUrl, 'srsBaseUrl', this._allowInsecure, (m) => this._warnOnce('insecure-srs', m));
-    assertSecureTransport(this._genieUrl, 'genieUrl', this._allowInsecure, (m) => this._warnOnce('insecure-genie', m));
     // Prefer server-minted EPHEMERAL TURN creds (RFC 7635); the SDK's default TURN credentials are a flagged fallback.
     this._turn = turnServers(cfg.turnServerUrl, cfg.turnCredentials || {});
     if (cfg.turnServerUrl && !cfg.turnCredentials) this._warnOnce('static-turn', 'Using STATIC fallback TURN credentials — pass server-minted ephemeral turnCredentials (from appInit) for production (RFC 7635).');

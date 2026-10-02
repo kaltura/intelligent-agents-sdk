@@ -23,36 +23,22 @@
  * category-delete surface, so a fixed, clearly-named fixture category avoids
  * accumulating orphans.
  */
-import { readFileSync, writeFileSync, mkdirSync, createReadStream, existsSync, statSync } from 'node:fs';
+import { writeFileSync, mkdirSync, createReadStream, existsSync, statSync } from 'node:fs';
 import { resolve, dirname, extname, normalize, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { chromium } from 'playwright';
 import { Management, SILENT_OPENING } from '../src/management/index.js';
+import { resolveTarget } from './lib/target.mjs';
 import { writeSilentWav } from './live-verify-silent-mic-shared.mjs';
 import { callHook } from './live-verify-hooks-shared.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, '..');
 
-try {
-  const env = readFileSync(resolve(repoRoot, '.env'), 'utf8');
-  for (const line of env.split('\n')) {
-    const m = line.match(/^([A-Z_]+)=(.*)$/);
-    if (m && !process.env[m[1]]) process.env[m[1]] = m[2].trim();
-  }
-} catch {
-  // No .env file -- credentials must already be in the environment.
-}
-
-const partnerId = process.env.AGENTIC_PARTNER_ID;
-const adminSecret = process.env.AGENTIC_ADMIN_SECRET;
-
-if (!partnerId || !adminSecret) {
-  console.error('AGENTIC_PARTNER_ID and AGENTIC_ADMIN_SECRET are required (env or repo-root .env).');
-  process.exit(1);
-}
+const target = resolveTarget(process.env.TARGET ?? 'prod');
+const { partnerId } = target;
 
 const runId = `context-fields-runtime-check-${Date.now()}`;
 const CONTEXT_TYPE = 'category';
@@ -82,7 +68,7 @@ function startServer() {
   return new Promise((resolvePromise) => server.listen(0, '127.0.0.1', () => resolvePromise(server)));
 }
 
-const kaltura = new Management({ partnerId, adminSecret });
+const kaltura = new Management(target);
 let admin;
 let provisioned;
 let server;

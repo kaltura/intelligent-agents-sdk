@@ -51,27 +51,13 @@ import {
   siteMapPrompt,
   validateSectionsManifest,
 } from '../src/management/index.js';
+import { resolveTarget } from './lib/target.mjs';
 import { parseToolCall } from '../src/core/stream.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-try {
-  const env = readFileSync(resolve(__dirname, '../.env'), 'utf8');
-  for (const line of env.split('\n')) {
-    const m = line.match(/^([A-Z_]+)=(.*)$/);
-    if (m && !process.env[m[1]]) process.env[m[1]] = m[2].trim();
-  }
-} catch {
-  // No .env file — credentials must already be in the environment.
-}
-
-const partnerId = process.env.AGENTIC_PARTNER_ID;
-const adminSecret = process.env.AGENTIC_ADMIN_SECRET;
-
-if (!partnerId || !adminSecret) {
-  console.error('AGENTIC_PARTNER_ID and AGENTIC_ADMIN_SECRET are required (env or repo-root .env).');
-  process.exit(1);
-}
+const target = resolveTarget(process.env.TARGET ?? 'prod');
+const { partnerId } = target;
 
 const startedAt = new Date().toISOString();
 const runId = `ci-live-verify-site-nav-${Date.now()}`;
@@ -118,7 +104,7 @@ const prompts = [
   PAGE_CONTEXT_PROMPT,
 ];
 
-const kaltura = new Management({ partnerId, adminSecret });
+const kaltura = new Management(target);
 let admin;
 let toolId;
 let intellectId;
