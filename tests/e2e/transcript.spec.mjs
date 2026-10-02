@@ -136,6 +136,8 @@ test('reading older messages is not yanked to the bottom; a jump pill brings it 
   await page.setViewportSize({ width: 1440, height: 900 });
   await setup(page);
   await page.evaluate(() => {
+    // A transcript only shows in a live call, so give the stage its live state.
+    document.documentElement.classList.add('nova-live');
     const t = document.getElementById('nova-transcript');
     t.style.cssText = 'display:block;height:120px;overflow-y:auto';
     for (let i = 0; i < 30; i++) window.__transcript.appendTranscript(i % 2 ? 'you' : 'nova', `line ${i}`);

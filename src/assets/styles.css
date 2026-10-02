@@ -2252,6 +2252,8 @@ html:not(.nova-ready) :is(.nova-hero-prompts, .nova-placeholder, .nova-chat-star
     max-width: none;
     aspect-ratio: auto;
     transition: none;
+    /* It only measures the stage. Clicks go to the chips and card under it. */
+    pointer-events: none;
   }
 
   .nova-hero-visual:has(.nova-placeholder:not(.hidden)):hover {
@@ -2449,6 +2451,7 @@ html:not(.nova-ready) :is(.nova-hero-prompts, .nova-placeholder, .nova-chat-star
     font-size: 1.5rem;
     font-weight: 800;
     letter-spacing: -0.02em;
+    color: #fff;
   }
 
   .nova-widget:not(.dock-mode):not(.drawer-mode) .nova-drawer-sub {
