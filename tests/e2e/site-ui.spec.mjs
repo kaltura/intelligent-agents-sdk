@@ -183,7 +183,7 @@ test.describe('hero stage', () => {
     const video = await page.locator('#nova-video').boundingBox();
     const convo = await page.locator('.nova-convo').boundingBox();
     expect(convo.x + convo.width).toBeLessThanOrEqual(video.x);
-    for (const sel of ['.nova-controls', '#nova-transcript']) {
+    for (const sel of ['.nova-drawer-head', '#nova-transcript']) {
       await expect(page.locator(sel)).toBeVisible();
       const box = await page.locator(sel).boundingBox();
       expect(box.x + box.width, sel).toBeLessThanOrEqual(video.x);
