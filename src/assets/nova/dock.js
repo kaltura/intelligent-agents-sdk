@@ -62,31 +62,6 @@ function redockOnResize() {
   applyRect(dockRect);
 }
 
-/** Wide viewport = the two-column hero layout (copy left, visual right,
- * see styles.css's 900px breakpoint) — the slot sits within the initial
- * viewport there, so continuously zooming the widget toward the corner as
- * the visitor scrolls (see updateHeroScrollProgress) keeps her out of the
- * way of the copy without ever blocking it at full size. On a stacked
- * mobile layout the slot can start below the fold, so instead we keep the
- * simpler original behavior: track the slot live on scroll, same as its
- * position in the document flow (see trackHero). */
-function wideViewport() {
-  return window.matchMedia('(min-width: 901px)').matches;
-}
-
-/** Narrow/mobile-only path: the widget mirrors #nova-hero-slot's live rect
- * exactly, since the stacked layout leaves no room for a separate zoom
- * treatment — the slot already moves out of the way in the document flow. */
-function trackHero() {
-  if (mode !== 'hero') return;
-  const slot = heroSlot();
-  if (!slot) {
-    enterDockMode();
-    return;
-  }
-  applyRect(slot.getBoundingClientRect());
-}
-
 function onRafThrottled(fn) {
   if (rafPending) return;
   rafPending = true;
@@ -112,7 +87,7 @@ function easeOutCubic(t) {
   return 1 - Math.pow(1 - t, 3);
 }
 
-/** Continuous hero<->dock "zoom with scroll" for wide viewports. Instead of
+/** Continuous hero<->dock "zoom with scroll" at every viewport width. Instead of
  * staying pinned at full size until the hero has scrolled entirely past the
  * header and then snapping into the corner dock — which blocks the page's
  * own copy at full size for the whole scroll in between — the widget
@@ -159,19 +134,26 @@ function updateHeroScrollProgress() {
   dockedByScroll = raw >= 1;
 }
 
-/** Dispatches to the right per-viewport tracking behavior for whichever
- * state is currently "live" (in hero mode, or docked purely because of
- * scroll) — used by scroll, resize, and page-change handlers alike so they
- * never fall out of sync with each other. */
+/** Re-applies the zoom for whichever state is currently "live" (in hero mode,
+ * or docked purely because of scroll) — used by scroll, resize, slot-resize
+ * and page-change handlers alike so they never fall out of sync. */
 function refreshHero() {
   if (drawerActive) return;
-  if (!wideViewport()) {
-    if (mode === 'hero') trackHero();
-    return;
-  }
   if (mode === 'hero' || (mode === 'dock' && dockedByScroll)) {
     updateHeroScrollProgress();
   }
+}
+
+/** The slot grows when a session goes live (styles.css gives the live card
+ * more room for the controls and transcript), and that is not a scroll or
+ * window resize, so watch the slot itself. */
+let slotObserver = null;
+function watchSlot() {
+  slotObserver?.disconnect();
+  const slot = heroSlot();
+  if (!slot) return;
+  slotObserver ??= new ResizeObserver(() => onRafThrottled(refreshHero));
+  slotObserver.observe(slot);
 }
 
 function onScroll() {
@@ -190,13 +172,11 @@ function onScroll() {
 }
 
 /** Attaches the scroll listener whenever we're in hero mode, on every
- * viewport width — narrow viewports use it to live-track the slot (see
- * trackHero); wide viewports use it to drive the continuous zoom (see
- * updateHeroScrollProgress), and keep listening afterward only to detect
+ * viewport width to drive the continuous zoom (see
+ * updateHeroScrollProgress), and keeps listening afterward only to detect
  * scrolling back up. Self-detaches inside onScroll once docked for a
  * non-scroll reason, so no separate teardown call is needed. Called on init
- * and on every resize, so resizing across the 901px breakpoint keeps
- * exactly one listener attached. */
+ * and on every resize, so exactly one listener stays attached. */
 function syncScrollTracking() {
   if (mode !== 'hero' || scrollAttached) return;
   window.addEventListener('scroll', onScroll, { passive: true });
@@ -204,9 +184,8 @@ function syncScrollTracking() {
 }
 
 /** Called once on load. If a hero slot exists on this page, position the
- * widget over it — continuously zoomed toward the dock corner as the
- * visitor scrolls on wide viewports (see updateHeroScrollProgress),
- * live-tracked on narrow/stacked ones (see trackHero). Otherwise (any page
+ * widget over it, continuously zoomed toward the dock corner as the
+ * visitor scrolls (see updateHeroScrollProgress). Otherwise (any page
  * other than home, before a session/nav has happened) snap straight into a
  * static dock rect with no transition. */
 export function initDock() {
@@ -215,6 +194,7 @@ export function initDock() {
     mode = 'hero';
     refreshHero();
     syncScrollTracking();
+    watchSlot();
     window.addEventListener('resize', () => {
       onRafThrottled(refreshHero);
       syncScrollTracking();
@@ -275,6 +255,7 @@ export function exitDrawerMode() {
     widget.classList.remove('dock-mode');
     refreshHero();
     syncScrollTracking();
+    watchSlot();
   } else {
     mode = 'dock';
     dockedByScroll = false;
@@ -380,4 +361,5 @@ export function dockActive() {
 // session exists: with no slot to track, docking is the only sane state.
 document.addEventListener('nova:pagechange', () => {
   refreshHero();
+  watchSlot();
 });
