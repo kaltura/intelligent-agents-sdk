@@ -159,30 +159,33 @@
            see styles.css .drawer-mode). The video-wrap shrinks to the avatar
            circle beside this title; the sub-line doubles as the EU AI Act
            disclosure alongside the "AI" chip on the avatar itself. -->
-      <div class="nova-drawer-head" id="nova-drawer-head">
-        <span class="nova-drawer-title">Nova</span>
-        <span class="nova-drawer-sub">AI assistant — knows this whole site</span>
+      <!-- display:contents outside the wide-screen hero, where it is the conversation card. -->
+      <div class="nova-convo">
+        <div class="nova-drawer-head" id="nova-drawer-head">
+          <span class="nova-drawer-title">Nova</span>
+          <span class="nova-drawer-sub">AI assistant — knows this whole site</span>
+        </div>
+        <div class="nova-controls">
+          <button class="nova-btn" id="nova-mute" disabled aria-label="Mute">
+            <span class="material-symbols-outlined" aria-hidden="true" id="nova-mute-icon">mic</span>
+          </button>
+          <button class="nova-btn" id="nova-mode" disabled aria-label="Switch to live video" title="Switch to live video">
+            <span class="material-symbols-outlined" aria-hidden="true" id="nova-mode-icon">videocam</span>
+          </button>
+          <button class="nova-btn" id="nova-new" disabled aria-label="Start a new conversation" title="Start a new conversation">
+            <span class="material-symbols-outlined" aria-hidden="true">restart_alt</span>
+          </button>
+          <button class="nova-btn" id="nova-end" disabled aria-label="End video — continue in chat" title="End video — continue in chat">
+            <span class="material-symbols-outlined" aria-hidden="true">call_end</span>
+          </button>
+          <button class="nova-btn" id="nova-close" disabled aria-label="Close chat" title="Close chat">
+            <span class="material-symbols-outlined" aria-hidden="true">close</span>
+          </button>
+        </div>
+        <div class="nova-status" id="nova-status" role="status" aria-live="polite"></div>
+        <button class="nova-status-action hidden" id="nova-status-action" type="button"></button>
+        <div class="nova-transcript" id="nova-transcript" role="log" aria-live="polite" aria-label="Conversation transcript"></div>
       </div>
-      <div class="nova-controls">
-        <button class="nova-btn" id="nova-mute" disabled aria-label="Mute">
-          <span class="material-symbols-outlined" aria-hidden="true" id="nova-mute-icon">mic</span>
-        </button>
-        <button class="nova-btn" id="nova-mode" disabled aria-label="Switch to live video" title="Switch to live video">
-          <span class="material-symbols-outlined" aria-hidden="true" id="nova-mode-icon">videocam</span>
-        </button>
-        <button class="nova-btn" id="nova-new" disabled aria-label="Start a new conversation" title="Start a new conversation">
-          <span class="material-symbols-outlined" aria-hidden="true">restart_alt</span>
-        </button>
-        <button class="nova-btn" id="nova-end" disabled aria-label="End video — continue in chat" title="End video — continue in chat">
-          <span class="material-symbols-outlined" aria-hidden="true">call_end</span>
-        </button>
-        <button class="nova-btn" id="nova-close" disabled aria-label="Close chat" title="Close chat">
-          <span class="material-symbols-outlined" aria-hidden="true">close</span>
-        </button>
-      </div>
-      <div class="nova-status" id="nova-status" role="status" aria-live="polite"></div>
-      <button class="nova-status-action hidden" id="nova-status-action" type="button"></button>
-      <div class="nova-transcript" id="nova-transcript" role="log" aria-live="polite" aria-label="Conversation transcript"></div>
       <div class="nova-suggest" role="group" aria-label="Suggested questions">
         <button type="button" class="nova-chip" data-prompt="What can you help me do on this site?">What can you do?</button>
         <button type="button" class="nova-chip" data-prompt="Show me a quick code example to get started.">Show me a code example</button>

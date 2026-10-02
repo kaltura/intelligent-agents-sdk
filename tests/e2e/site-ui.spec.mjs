@@ -147,10 +147,27 @@ test.describe('mobile nav', () => {
   });
 });
 
-test.describe('live video stage', () => {
+test.describe('hero stage', () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
-  test('on wide screens the controls and transcript sit beside her, not over her face', async ({ page }) => {
+  test('idle: copy card, portrait, pills and message box share one stage', async ({ page }) => {
+    await page.goto('/');
+    await expect(page.locator('html')).toHaveClass(/nova-ready/);
+    const slot = await page.locator('#nova-hero-slot').boundingBox();
+    const hero = await page.locator('.nova-hero').boundingBox();
+    expect(Math.abs(slot.width - hero.width)).toBeLessThan(2);
+    await expect.poll(async () => Math.abs((await page.locator('#nova-widget').boundingBox()).width - slot.width)).toBeLessThan(2);
+
+    const card = await page.locator('.nova-hero-card').boundingBox();
+    const video = await page.locator('#nova-video').boundingBox();
+    const input = await page.locator('#nova-input-row').boundingBox();
+    expect(card.x + card.width).toBeLessThanOrEqual(video.x);
+    expect(video.y + video.height).toBeLessThanOrEqual(input.y);
+    await expect(page.locator('.nova-hero-prompts .nova-chip').first()).toBeVisible();
+    await expect(page.locator('#nova-placeholder')).toBeVisible();
+  });
+
+  test('live: the conversation card replaces the copy card, beside her', async ({ page }) => {
     await page.goto('/');
     await expect(page.locator('html')).toHaveClass(/nova-ready/);
     // Fake a connected call: the real one needs a live backend.
@@ -162,19 +179,16 @@ test.describe('live video stage', () => {
       t.initTranscript(document.getElementById('nova-transcript'));
       t.appendTranscript('nova', 'Hi! What are you looking to build today?');
     });
-    await page.evaluate(() => document.getElementById('nova-hero-slot').scrollIntoView({ block: 'center' }));
-    await expect(page.locator('#nova-widget')).not.toHaveClass(/dock-mode/);
-
-    const slot = await page.locator('#nova-hero-slot').boundingBox();
-    expect(slot.width).toBeGreaterThan(slot.height);
-    await expect.poll(async () => Math.abs((await page.locator('#nova-widget').boundingBox()).width - slot.width)).toBeLessThan(2);
-
+    await expect(page.locator('.nova-hero-card')).toHaveCSS('visibility', 'hidden');
     const video = await page.locator('#nova-video').boundingBox();
-    for (const sel of ['.nova-controls', '#nova-transcript', '#nova-input-row']) {
+    const convo = await page.locator('.nova-convo').boundingBox();
+    expect(convo.x + convo.width).toBeLessThanOrEqual(video.x);
+    for (const sel of ['.nova-controls', '#nova-transcript']) {
+      await expect(page.locator(sel)).toBeVisible();
       const box = await page.locator(sel).boundingBox();
-      // The panel may reach into the video's faded edge, never past its first quarter.
-      expect(box.x + box.width, sel).toBeLessThanOrEqual(video.x + video.width * 0.25);
+      expect(box.x + box.width, sel).toBeLessThanOrEqual(video.x);
     }
+    await expect(page.locator('#nova-input-row')).toBeVisible();
   });
 });
 
