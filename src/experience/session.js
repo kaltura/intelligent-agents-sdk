@@ -1398,7 +1398,7 @@ export class KalturaAvatarSession extends Emitter {
     try {
       stream = await this._acquireMic();
     } catch (err) {
-      throw err.code ? err : micError(err);   // NotAllowed/NotFound/NotReadable/Overconstrained → distinct codes + guidance
+      throw err instanceof KalturaError ? err : micError(err);   // NotAllowed/NotFound/NotReadable/Overconstrained → distinct codes + guidance
     }
     await this._attachMic(stream);
   }
@@ -1418,7 +1418,7 @@ export class KalturaAvatarSession extends Emitter {
       try {
         stream = await this._acquireMic();
       } catch (err) {
-        const e = err.code ? err : micError(err);
+        const e = err instanceof KalturaError ? err : micError(err);
         if (this._sessionLive()) this.emit('warning', { code: e.code, message: e.detail, detail: e.body ?? null });
         return;
       }
