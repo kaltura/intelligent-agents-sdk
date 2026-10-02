@@ -142,12 +142,20 @@
        src/assets/nova/*.js). Lives outside <main> so client-side navigation
        (router.js) never touches it, keeping her live session alive across
        "page" changes on this static multi-page site. -->
-  <!-- Softens the edge of the keyed avatar: shrinks the matte a pixel and feathers it. -->
+  <!-- Finishes the keyed avatar's hair edge: inside a thin band at the outline the
+       green is pulled out of the colour (G = mean of R and B), and the matte is
+       shrunk and feathered so the outline reads as hair, not a cutout. -->
   <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
     <filter id="nova-feather" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">
-      <feMorphology in="SourceAlpha" operator="erode" radius="1" result="core"/>
-      <feGaussianBlur in="core" stdDeviation="1.6" result="soft"/>
-      <feComposite in="SourceGraphic" in2="soft" operator="in"/>
+      <feMorphology in="SourceAlpha" operator="erode" radius="1.5" result="shrunk"/>
+      <feGaussianBlur in="shrunk" stdDeviation="2" result="soft"/>
+      <feMorphology in="SourceAlpha" operator="erode" radius="8" result="deep"/>
+      <feGaussianBlur in="deep" stdDeviation="3" result="inside"/>
+      <feColorMatrix in="SourceGraphic" type="matrix" result="clean"
+        values="1 0 0 0 0  0.35 0 0.45 0 0  0 0 1 0 0  0 0 0 1 0"/>
+      <feComposite in="SourceGraphic" in2="inside" operator="in" result="keep"/>
+      <feComposite in="keep" in2="clean" operator="over" result="mixed"/>
+      <feComposite in="mixed" in2="soft" operator="in"/>
     </filter>
   </svg>
   <div class="nova-widget" id="nova-widget">

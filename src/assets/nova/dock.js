@@ -279,10 +279,9 @@ export function initDock() {
   }
 }
 
-/** One-directional per session for a nav/tool trigger: once docked this way,
- * hero mode never returns (see dockedByScroll for the scroll-caused case,
- * which is reversible). */
-export function enterDockMode() {
+/** Docks her because the page has no hero slot. Scrolling back up does not
+ * undo it; coming back to a page with a hero slot does (see returnToHero). */
+function enterDockMode() {
   if (drawerActive || mode === 'dock') return;
   mode = 'dock';
   widget.classList.add('dock-mode');

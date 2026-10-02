@@ -18,7 +18,7 @@
  */
 import './router.js';
 import { withPrefix } from './router.js';
-import { initDock, enterDockMode, enterDrawerMode, exitDrawerMode } from './dock.js';
+import { initDock, enterDrawerMode, exitDrawerMode } from './dock.js';
 import { initTranscript, appendTranscript, clearTranscript, showThinking, hideThinking } from './transcript.js';
 import { initHighlighter } from './highlighter.js';
 import { initSiteNav } from './site-nav.js';
@@ -140,13 +140,8 @@ if (netType === 'slow-2g' || netType === '2g') els.chatStart?.classList.add('nov
 
 initDock();
 
-// Docking is one-directional per session: the first in-site navigation
-// while connected shrinks Nova into the standing corner dock and she never
-// returns to hero size (see dock.js). Navigating away unconnected already
-// docks her too, via dock.js's own missing-slot check.
-document.addEventListener('nova:pagechange', () => {
-  if (session) enterDockMode();
-});
+// Page changes dock her (no hero slot on the page) or put her back in the hero
+// (home page) in dock.js, with or without a session.
 
 els.widget.addEventListener('click', (e) => {
   if (!els.widget.classList.contains('dock-mode')) return;
