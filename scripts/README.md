@@ -60,7 +60,7 @@ Set `TARGET` to run against another environment. The scripts built on `live-veri
 | `TARGET` | Credentials | URLs |
 |---|---|---|
 | `prod` (default) | `AGENTIC_PARTNER_ID`, `AGENTIC_ADMIN_SECRET` | `REGIONS.nvp1` |
-| `<name>` or `<name>:<account>` | `<NAME>_PARTNER_ID_<account>`, `<NAME>_ADMIN_SECRET_<account>` (account defaults to `1`), or `<NAME>_PARTNER_ID`, `<NAME>_ADMIN_SECRET`, or `<NAME>_AGENTIC_PARTNER_ID`, `<NAME>_AGENTIC_ADMIN_SECRET` | `<NAME>_AGENTIC_API_URL`, `<NAME>_GENIE_URL`, `<NAME>_KALTURA_API_ENDPOINT`, and `<NAME>_MESSAGING_URL` if set |
+| `<name>` or `<name>:<account>` | `<NAME>_PARTNER_ID_<account>`, `<NAME>_ADMIN_SECRET_<account>` (account defaults to `1`), or (account `1` only) `<NAME>_PARTNER_ID`, `<NAME>_ADMIN_SECRET`, or `<NAME>_AGENTIC_PARTNER_ID`, `<NAME>_AGENTIC_ADMIN_SECRET` | `<NAME>_AGENTIC_API_URL`, `<NAME>_GENIE_URL`, `<NAME>_KALTURA_API_ENDPOINT`, and `<NAME>_MESSAGING_URL` if set |
 
 `<name>` is lowercase letters and digits; `<NAME>` is the same text in upper case. A named target reads the repo-root `.env` and then the `.env` one level above the repo. Example: `TARGET=eu` reads `EU_PARTNER_ID_1`, `EU_ADMIN_SECRET_1`, `EU_AGENTIC_API_URL`, `EU_GENIE_URL`, `EU_KALTURA_API_ENDPOINT`; `TARGET=eu:2` swaps in the `_2` credential pair. A missing var exits 1 before any network call, and the message names the var, never a value.
 
