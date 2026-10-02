@@ -2142,17 +2142,157 @@ html:not(.nova-ready) :is(.nova-hero-prompts, .nova-placeholder, .nova-chat-star
   }
 }
 
-/* A live call shows the controls, status and transcript over the video. The
-   idle portrait is too small for that on narrow screens and the overlay would
-   cover her face, so the card grows while a session is live. */
-@media (max-width: 1200px) and (min-width: 901px) {
-  html.nova-live .nova-hero-visual {
-    width: 260px;
+/* Live video on wide screens: the copy steps aside and the hero becomes a
+   stage. She fills the right side and her edges fade into the gray box (the
+   video wrap shares the hero's background), while the controls, status,
+   transcript and input sit beside her instead of over her face. Chat sessions
+   use the side drawer, so they keep the normal hero. */
+@media (min-width: 901px) {
+  html.nova-live:not(:has(.nova-widget.chat-mode)) {
+    --live-h: clamp(420px, 74svh, 640px);
+  }
+
+  html.nova-live:not(:has(.nova-widget.chat-mode)) .nova-hero-copy {
+    display: none;
+  }
+
+  html.nova-live:not(:has(.nova-widget.chat-mode)) .nova-hero-visual {
+    width: 100%;
     aspect-ratio: auto;
-    height: min(66vh, 480px);
+    height: var(--live-h);
+  }
+
+  html.nova-live .nova-widget:not(.dock-mode):not(.drawer-mode) .nova-video-wrap video {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: auto;
+    height: 100%;
+    aspect-ratio: 3 / 4;
+  }
+
+  /* The pulse would brighten the whole gray box, so it moves to the video. */
+  html.nova-live .nova-widget:not(.dock-mode):not(.drawer-mode) .nova-video-wrap.is-talking {
+    animation: none;
+  }
+
+  html.nova-live .nova-widget:not(.dock-mode):not(.drawer-mode) .nova-video-wrap.is-talking video {
+    animation: nova-talk-pulse 900ms ease-in-out infinite;
+  }
+
+  html.nova-live .nova-widget:not(.dock-mode):not(.drawer-mode) .nova-disclosure {
+    left: auto;
+    right: 0.75rem;
+    width: max-content;
+    max-width: calc(var(--live-h) * 0.75 - 1.5rem);
+  }
+
+  html.nova-live .nova-widget:not(.dock-mode):not(.drawer-mode) .nova-panel {
+    top: 0;
+    right: auto;
+    width: calc(100% - var(--live-h) * 0.75 + 3rem);
+    max-width: 36rem;
+    display: flex;
+    flex-direction: column;
+    padding: 0.5rem 0 0;
+    background: none;
+    border-radius: 0;
+    color: var(--page-text);
+  }
+
+  html.nova-live .nova-widget:not(.dock-mode):not(.drawer-mode) .nova-drawer-head {
+    display: block;
+    margin-bottom: 1rem;
+  }
+
+  html.nova-live .nova-widget:not(.dock-mode):not(.drawer-mode) .nova-drawer-title {
+    font-size: 1.75rem;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+  }
+
+  html.nova-live .nova-widget:not(.dock-mode):not(.drawer-mode) .nova-drawer-sub {
+    font-size: 0.9rem;
+    white-space: normal;
+  }
+
+  html.nova-live .nova-widget:not(.dock-mode):not(.drawer-mode) .nova-status {
+    margin-top: 0.75rem;
+    color: var(--secondary-text);
+  }
+
+  html.nova-live .nova-widget:not(.dock-mode):not(.drawer-mode) .nova-status-action {
+    color: var(--page-text);
+    background: var(--card-bg);
+    border-color: var(--border-color);
+  }
+
+  html.nova-live .nova-widget:not(.dock-mode):not(.drawer-mode) .nova-transcript {
+    flex: 1;
+    min-height: 0;
+    max-height: none;
+    font-size: 1rem;
+    line-height: 1.55;
+    border-top-color: var(--border-color);
+  }
+
+  html.nova-live .nova-widget:not(.dock-mode):not(.drawer-mode) .nova-transcript .nova-you {
+    color: var(--secondary-text);
+  }
+
+  html.nova-live .nova-widget:not(.dock-mode):not(.drawer-mode) .nova-transcript .nova-nova {
+    color: var(--page-text);
+  }
+
+  html.nova-live .nova-widget:not(.dock-mode):not(.drawer-mode) .nova-transcript .nova-you .nova-label {
+    color: var(--code-green);
+  }
+
+  html.nova-live .nova-widget:not(.dock-mode):not(.drawer-mode) .nova-transcript .nova-nova .nova-label {
+    color: var(--link);
+  }
+
+  /* Starter questions until the visitor's first line, as in the chat drawer. */
+  html.nova-live .nova-widget:not(.dock-mode):not(.drawer-mode) .nova-suggest {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-top: 0.6rem;
+  }
+
+  html.nova-live .nova-widget:not(.dock-mode):not(.drawer-mode) .nova-panel:has(.nova-you) .nova-suggest {
+    display: none;
+  }
+
+  html.nova-live .nova-widget:not(.dock-mode):not(.drawer-mode) .nova-suggest .nova-chip {
+    font-size: 0.85rem;
+    padding: 0.4rem 0.8rem;
+  }
+
+  html.nova-live .nova-widget:not(.dock-mode):not(.drawer-mode) .nova-input-row {
+    margin-top: 0.75rem;
+  }
+
+  html.nova-live .nova-widget:not(.dock-mode):not(.drawer-mode) #nova-input {
+    border-color: var(--border-color);
+    background: var(--page-bg);
+    color: var(--page-text);
+  }
+
+  html.nova-live .nova-widget:not(.dock-mode):not(.drawer-mode) #nova-input::placeholder {
+    color: var(--secondary-text);
   }
 }
 
+@media (max-width: 1200px) and (min-width: 901px) {
+  html.nova-live:not(:has(.nova-widget.chat-mode)) {
+    --live-h: clamp(420px, 66svh, 500px);
+  }
+}
+
+/* Narrow screens: the idle portrait is too small for the controls and
+   transcript over the video without covering her face, so the card grows
+   while a session is live. */
 @media (max-width: 900px) {
   html.nova-live .nova-hero-visual {
     width: min(100%, 420px);
