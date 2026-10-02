@@ -109,9 +109,10 @@ function updateHeroScrollProgress() {
   }
   const slotRect = slot.getBoundingClientRect();
   const distance = slotRect.height || 1;
-  // On wide screens the slot is the whole hero stage. It stays put while she
-  // is readable on screen and only zooms once a quarter of it has scrolled
-  // under the header.
+  // On wide screens the slot is the whole hero stage and it scrolls away like
+  // any page content. Only her box (.nova-avatar) flies to the dock; the rest
+  // of the stage fades out (--hero-p, see styles.css). The stage stays put
+  // until a quarter of it has scrolled under the header.
   const stage = window.matchMedia('(min-width: 901px)').matches;
   const travelled = stage ? STAGE_HEADER - slotRect.top - distance * 0.25 : window.scrollY;
   const raw = Math.min(1, Math.max(0, travelled / (stage ? distance * 0.6 : distance)));
@@ -119,6 +120,49 @@ function updateHeroScrollProgress() {
   dockRect = computeDockRect();
 
   widget.style.transition = 'none';
+  const root = document.documentElement;
+  const wrap = widget.querySelector('.nova-video-wrap');
+  const avatar = widget.querySelector('.nova-avatar');
+
+  if (stage) {
+    applyRect(slotRect);
+    // Her box leaves the widget rect on its way down, so the clip must stay
+    // open on three sides. It only trims the part under the header.
+    const hidden = Math.max(0, STAGE_HEADER - slotRect.top);
+    widget.style.clipPath = hidden ? `inset(${hidden}px -100vmax -100vmax -100vmax)` : '';
+    if (wrap) wrap.style.borderRadius = '';
+    root.style.setProperty('--hero-p', eased.toFixed(4));
+    root.classList.toggle('hero-leaving', raw > 0);
+    widget.classList.toggle('hero-leaving', raw > 0);
+    if (avatar) {
+      const base = wrap.getBoundingClientRect();
+      const w = avatar.offsetWidth || 1;
+      const dx = dockRect.left - (base.left + avatar.offsetLeft);
+      const dy = dockRect.top - (base.top + avatar.offsetTop);
+      const scale = lerp(1, dockRect.width / w, eased);
+      avatar.style.transform = raw > 0 ? `translate(${dx * eased}px, ${dy * eased}px) scale(${scale})` : '';
+      avatar.style.borderRadius = `${eased * 50}%`;
+    }
+    const docked = raw >= 1;
+    widget.classList.toggle('dock-mode', docked);
+    if (docked) {
+      // Hand over to the dock: same rect, same circle, no jump.
+      applyRect(dockRect);
+      widget.style.clipPath = '';
+      if (avatar) {
+        avatar.style.transform = '';
+        avatar.style.borderRadius = '';
+      }
+      widget.classList.remove('hero-leaving');
+    } else {
+      widget.classList.remove('expanded');
+    }
+    mode = docked ? 'dock' : 'hero';
+    dockedByScroll = docked;
+    return;
+  }
+
+  clearStage(root, avatar);
   const rect = {
     top: lerp(slotRect.top, dockRect.top, eased),
     left: lerp(slotRect.left, dockRect.left, eased),
@@ -126,13 +170,11 @@ function updateHeroScrollProgress() {
     height: lerp(slotRect.height, dockRect.height, eased),
   };
   applyRect(rect);
-  // Her stage can scroll up under the sticky header: keep the part above it hidden.
-  widget.style.clipPath = stage && rect.top < STAGE_HEADER ? `inset(${STAGE_HEADER - rect.top}px 0 0 0)` : '';
+  widget.style.clipPath = '';
 
   // Border-radius crossfades over the first half of the transition — by the
   // point the chrome swaps (mic icon, hard circle mask) below, the shape has
   // already finished rounding into a circle, so the swap doesn't pop.
-  const wrap = widget.querySelector('.nova-video-wrap');
   if (wrap) wrap.style.borderRadius = `${Math.min(raw / 0.5, 1) * 50}%`;
 
   const shouldDock = raw >= 0.5;
@@ -141,6 +183,17 @@ function updateHeroScrollProgress() {
 
   mode = raw >= 1 ? 'dock' : 'hero';
   dockedByScroll = raw >= 1;
+}
+
+/** Drops everything the wide-screen flight wrote, e.g. after a resize to a narrow window. */
+function clearStage(root, avatar) {
+  root.style.removeProperty('--hero-p');
+  root.classList.remove('hero-leaving');
+  widget.classList.remove('hero-leaving');
+  if (avatar) {
+    avatar.style.transform = '';
+    avatar.style.borderRadius = '';
+  }
 }
 
 /** Re-applies the zoom for whichever state is currently "live" (in hero mode,
@@ -225,6 +278,7 @@ export function enterDockMode() {
   mode = 'dock';
   widget.classList.add('dock-mode');
   widget.style.clipPath = '';
+  clearStage(document.documentElement, widget.querySelector('.nova-avatar'));
   widget.style.transition = 'top 420ms cubic-bezier(0.22, 1, 0.36, 1), left 420ms cubic-bezier(0.22, 1, 0.36, 1), width 420ms cubic-bezier(0.22, 1, 0.36, 1), height 420ms cubic-bezier(0.22, 1, 0.36, 1)';
   const wrap = widget.querySelector('.nova-video-wrap');
   if (wrap) wrap.style.borderRadius = '';
@@ -244,6 +298,7 @@ export function enterDrawerMode() {
   widget.classList.remove('dock-mode', 'expanded', 'pointing');
   widget.classList.add('drawer-mode');
   widget.style.clipPath = '';
+  clearStage(document.documentElement, widget.querySelector('.nova-avatar'));
   widget.style.transition = 'none';
   widget.style.top = '';
   widget.style.left = '';

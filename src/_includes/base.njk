@@ -144,7 +144,11 @@
        "page" changes on this static multi-page site. -->
   <div class="nova-widget" id="nova-widget">
     <div class="nova-video-wrap" id="nova-video-wrap">
-      <video id="nova-video" autoplay playsinline></video>
+      <!-- The avatar box: the video (and its keyed canvas) live here so that on
+           wide screens only the avatar flies to the dock on scroll. -->
+      <div class="nova-avatar" id="nova-avatar">
+        <video id="nova-video" autoplay playsinline></video>
+      </div>
       <audio id="nova-audio" autoplay></audio>
       <div class="nova-placeholder" id="nova-placeholder" role="button" tabindex="0" aria-label="Talk to Nova — she knows this whole SDK.">
         <span class="material-symbols-outlined nova-placeholder-icon" aria-hidden="true">graphic_eq</span>
