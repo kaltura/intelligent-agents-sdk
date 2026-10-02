@@ -1077,9 +1077,9 @@ video {
 /* The avatar box holds the video and, once the green backdrop is keyed out,
    its canvas. On wide screens it is the one part that flies to the dock. */
 :root {
-  /* Her stream is a square with her face in the middle. The dock and drawer
-     circles zoom in on it. */
-  --avatar-zoom: 2.35;
+  /* Her stream is a square, tight on her head. The dock and drawer circles
+     show it as is, on a CSS backdrop. */
+  --avatar-zoom: 1;
   --avatar-bg: radial-gradient(circle at 50% 40%, #3b4a7c 0%, #171a22 78%);
 }
 
@@ -1091,6 +1091,7 @@ video {
 .nova-avatar :is(video, canvas) {
   position: absolute;
   inset: 0;
+  object-fit: cover;
 }
 
 /* Keyed canvas (connect.js). The plain video stays in the layout, invisible,
@@ -2196,11 +2197,13 @@ html:not(.nova-ready) :is(.nova-hero-prompts, .nova-placeholder, .nova-chat-star
    the same dark stage on purpose. */
 @media (min-width: 901px) {
   :root {
-    --stage-h: clamp(520px, calc(100svh - 230px), 680px);
-    --copy-w: clamp(24rem, 36vw, 32rem);
-    --copy-h: 25rem;
+    --stage-h: clamp(500px, calc(100svh - 290px), 680px);
+    --copy-w: clamp(21rem, 34vw, 32rem);
+    --copy-h: min(27rem, calc(var(--stage-h) - 4rem));
     --input-h: 3.25rem;
-    --avatar-size: calc(var(--stage-h) * 1.3);
+    /* Most of the stage height, but never wider than the room right of the copy.
+       --stage-w is the hero width in px, written by dock.js. */
+    --avatar-size: min(calc(var(--stage-h) * 0.8), calc(var(--stage-w, 60rem) - var(--content-pad-x) - var(--copy-w) - 1.5rem));
     /* Horizontal centre of her column, measured in the hero/widget box. */
     --stage-cx: calc((var(--content-pad-x) + var(--copy-w) + 100%) / 2);
     --glass-fill: linear-gradient(145deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.04));
@@ -2243,15 +2246,15 @@ html:not(.nova-ready) :is(.nova-hero-prompts, .nova-placeholder, .nova-chat-star
 
   .nova-hero-card h2 {
     margin: 0 0 0.75rem;
-    font-size: 2.75rem;
+    font-size: clamp(2.25rem, 3.4vw, 2.75rem);
     line-height: 1.1;
     color: #fff;
   }
 
   .nova-hero-card p {
     margin: 0;
-    font-size: 1.05rem;
-    line-height: 1.55;
+    font-size: clamp(0.95rem, 1.2vw, 1.05rem);
+    line-height: 1.5;
     color: rgba(255, 255, 255, 0.72);
   }
 
@@ -2316,8 +2319,8 @@ html:not(.nova-ready) :is(.nova-hero-prompts, .nova-placeholder, .nova-chat-star
     filter: none;
   }
 
-  /* Her box stands on the bottom edge of the stage. The stream is a square with
-     her face in the middle, so the box is big and its top half is empty. */
+  /* Her box stands on the bottom edge of the stage. The stream is a tight
+     square on her head, so the box is a square of most of the stage height. */
   .nova-widget:not(.dock-mode):not(.drawer-mode) .nova-avatar {
     inset: auto;
     left: calc(var(--stage-cx) - var(--avatar-size) / 2);
@@ -2522,6 +2525,7 @@ html:not(.nova-ready) :is(.nova-hero-prompts, .nova-placeholder, .nova-chat-star
     max-height: none;
     font-size: 0.95rem;
     line-height: 1.5;
+    padding-top: 0.75rem;
     border-top-color: var(--glass-line);
   }
 
@@ -2570,10 +2574,11 @@ html:not(.nova-ready) :is(.nova-hero-prompts, .nova-placeholder, .nova-chat-star
     background: var(--avatar-bg);
   }
 
-  /* Her stream is a square with her face in the middle: crop in on the card. */
-  .nova-widget:not(.dock-mode):not(.drawer-mode) .nova-avatar :is(video, canvas) {
-    transform: translateY(-8%) scale(1.7);
-    transform-origin: 50% 50%;
+  /* While live the card is taller: she stays a square at the top, the chat sits below her. */
+  html.nova-live .nova-widget:not(.dock-mode):not(.drawer-mode) .nova-avatar {
+    bottom: auto;
+    height: auto;
+    aspect-ratio: 1;
   }
 }
 

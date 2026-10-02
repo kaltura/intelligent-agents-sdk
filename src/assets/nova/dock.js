@@ -131,6 +131,7 @@ function updateHeroScrollProgress() {
     const hidden = Math.max(0, STAGE_HEADER - slotRect.top);
     widget.style.clipPath = hidden ? `inset(${hidden}px -100vmax -100vmax -100vmax)` : '';
     if (wrap) wrap.style.borderRadius = '';
+    root.style.setProperty('--stage-w', `${slotRect.width}px`);
     root.style.setProperty('--hero-p', eased.toFixed(4));
     root.classList.toggle('hero-leaving', raw > 0);
     widget.classList.toggle('hero-leaving', raw > 0);
@@ -188,6 +189,7 @@ function updateHeroScrollProgress() {
 /** Drops everything the wide-screen flight wrote, e.g. after a resize to a narrow window. */
 function clearStage(root, avatar) {
   root.style.removeProperty('--hero-p');
+  root.style.removeProperty('--stage-w');
   root.classList.remove('hero-leaving');
   widget.classList.remove('hero-leaving');
   if (avatar) {
