@@ -247,6 +247,16 @@ function syncScrollTracking() {
   scrollAttached = true;
 }
 
+let heroResizeAttached = false;
+function attachHeroResize() {
+  if (heroResizeAttached) return;
+  heroResizeAttached = true;
+  window.addEventListener('resize', () => {
+    onRafThrottled(refreshHero);
+    syncScrollTracking();
+  });
+}
+
 /** Called once on load. If a hero slot exists on this page, position the
  * widget over it, continuously zoomed toward the dock corner as the
  * visitor scrolls (see updateHeroScrollProgress). Otherwise (any page
@@ -259,10 +269,7 @@ export function initDock() {
     refreshHero();
     syncScrollTracking();
     watchSlot();
-    window.addEventListener('resize', () => {
-      onRafThrottled(refreshHero);
-      syncScrollTracking();
-    });
+    attachHeroResize();
   } else {
     mode = 'dock';
     widget.classList.add('dock-mode');
@@ -428,6 +435,22 @@ export function dockActive() {
 // resize/scroll alone would never catch it. Runs even before any Nova
 // session exists: with no slot to track, docking is the only sane state.
 document.addEventListener('nova:pagechange', () => {
+  returnToHero();
   refreshHero();
   watchSlot();
 });
+
+/** Coming back to a page with a hero slot (e.g. the home page) after a nav-
+ * or tool-caused dock puts her back in the hero, so she is not stuck in the
+ * corner over an empty stage. refreshHero then places her for the scroll
+ * position, and the scroll listener is re-attached. */
+function returnToHero() {
+  if (drawerActive || mode !== 'dock' || !heroSlot()) return;
+  clearPointing(true);
+  mode = 'hero';
+  dockedByScroll = false;
+  widget.classList.remove('dock-mode', 'expanded', 'pointing');
+  widget.style.transition = 'none';
+  syncScrollTracking();
+  attachHeroResize();
+}

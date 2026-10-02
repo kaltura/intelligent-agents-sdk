@@ -94,7 +94,8 @@ test('a pill on a router-swapped home page shows its question right away', async
   const you = page.locator('#nova-transcript .nova-you .nova-msg');
   for (const chip of [page.locator('.nova-chip').nth(0), page.locator('.nova-chip').nth(1)]) {
     const question = await chip.getAttribute('data-prompt');
-    await chip.click();
+    // After a failed attempt the hero swaps the pills for the status card, so click in the DOM.
+    await chip.evaluate((el) => el.click());
     await expect(you).toHaveText([question]);
     await failHeld();
     await expect(page.locator('#nova-status')).toContainText('Could not connect');

@@ -198,6 +198,38 @@ test.describe('hero stage', () => {
     await expect(page.locator('#nova-input-row')).toBeVisible();
   });
 
+  test('idle: her full-length cutout shows; a call pushes in to the tight framing', async ({ page }) => {
+    await page.goto('/');
+    await expect(page.locator('html')).toHaveClass(/nova-ready/);
+    const figure = page.locator('.nova-figure');
+    await expect(figure).toBeVisible();
+    await expect(figure).toHaveCSS('opacity', '1');
+    // The stream is hidden until a call starts.
+    await expect(page.locator('#nova-video')).toHaveCSS('opacity', '0');
+    const idle = await figure.evaluate((el) => getComputedStyle(el).transform);
+    expect(idle).toBe('matrix(1, 0, 0, 1, 0, 0)');
+
+    await page.evaluate(() => document.documentElement.classList.add('nova-live'));
+    await expect.poll(() => figure.evaluate((el) => new DOMMatrixReadOnly(getComputedStyle(el).transform).a)).toBeGreaterThan(1.9);
+    await expect(figure).toHaveCSS('opacity', '0');
+    await expect(page.locator('#nova-video')).toHaveCSS('opacity', '1');
+  });
+
+  test('coming back to the home page after a nav puts her back in the hero', async ({ page }) => {
+    await page.goto('/');
+    await expect(page.locator('html')).toHaveClass(/nova-ready/);
+    const widget = page.locator('#nova-widget');
+    await page.locator('#sidebar a[href$="/getting-started/"]').first().click();
+    await expect(page).toHaveURL(/getting-started\/$/);
+    await expect(widget).toHaveClass(/dock-mode/);
+
+    await page.locator('#sidebar a.nav-home, #sidebar a[href$="/"]').first().click();
+    await expect(page.locator('#nova-hero-slot')).toBeVisible();
+    await expect(widget).not.toHaveClass(/dock-mode/);
+    const slot = await page.locator('#nova-hero-slot').boundingBox();
+    await expect.poll(async () => Math.abs((await widget.boundingBox()).width - slot.width)).toBeLessThan(2);
+  });
+
   test('scroll: only her box flies to the dock, the rest of the stage fades out', async ({ page }) => {
     await page.goto('/');
     await expect(page.locator('html')).toHaveClass(/nova-ready/);

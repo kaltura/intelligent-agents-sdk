@@ -317,7 +317,7 @@ function keyAvatar(transport) {
       session: transport,
       videoEl: transport.videoEl,
       ChromaKeyVideo,
-      options: { autoTune: true },
+      options: { autoTune: true, spill: 0.9 },
       container: box,
     });
     player.canvas.classList.add('nova-keyed-canvas');
