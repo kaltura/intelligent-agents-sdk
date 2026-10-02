@@ -80,6 +80,8 @@ Full explanation and plug points: [Inside a Live Conversation](https://kaltura.g
 | TURN | the `turnServerUrl` value returned by `appInit` | WebRTC relay for both media legs. Pass `turnServerUrl` and `turnCredentials` (`{username, credential, expiry?}`, also from `appInit`) to the session. URLs and ICE policy: [Wire Protocol · Audio Channels](/reference/wire-protocol/audio-channels/#5-asr-uplink-pc1--microphone--server). |
 | ML services | internal | Machine-learning services behind `application/generateAgentProfile` |
 
+The hosts above are the US (`nvp1`) defaults. The management, brain and OVP base URLs come from `REGIONS[region]` or an explicit `*Url` option ([Regions and base URLs](/reference/api/authentication/#regions-and-base-urls)). The session server, media relay and TURN hosts always come from `appInit`.
+
 ---
 
 ## Text Conversation Flow

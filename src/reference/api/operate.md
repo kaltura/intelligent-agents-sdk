@@ -136,7 +136,7 @@ Unlike the admin-token thread endpoints above, this one is called from the brows
 |-----------|----------|------|------|
 | Session completed | `POST {genieUrl}/thread/session_completed` | `{"id":"<threadId>"}` | `Authorization: KS <conversation ks>` |
 
-`{genieUrl}` defaults to `https://genie.nvp1.ovp.kaltura.com` (no `/v1` prefix, a different route family from the thread CRUD above). Send it once at the end. Never await it on a page-unload path.
+`{genieUrl}` is the session's `genieUrl` option, else the `region` entry (default `nvp1`: `https://genie.nvp1.ovp.kaltura.com`). It has no `/v1` prefix (a different route family from the thread CRUD above). Send it once at the end. Never await it on a page-unload path.
 
 Call this the moment a conversation is genuinely over, so end-of-conversation lifecycle rules (summaries, insights, CRM pushes) fire right away.
 

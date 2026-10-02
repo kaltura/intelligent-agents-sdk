@@ -21,7 +21,7 @@ Every endpoint is shown as a raw HTTP call plus its SDK wrapper. The SDK is what
 
 | File | Covers |
 |------|--------|
-| [Authentication & Services](/reference/api/authentication/) | KS types and minting (`agentId`, `userId`, `sessionType`), `userId` binding, the five services and their base URLs |
+| [Authentication & Services](/reference/api/authentication/) | KS types and minting (`agentId`, `userId`, `sessionType`), `userId` binding, the five services and their base URLs, regions (`region`, `REGIONS`) |
 | [Catalog & Assets](/reference/api/design/) | Browse the catalog, custom voice (clone), provider voice import, custom visual (portrait, photo spec), custom face/background, end-to-end portrait recipe |
 | [Agent Components](/reference/api/build/) | Generate an agent profile, create/configure an intellect, preview a prompt, tools (`api`/`csv`/`code`), secrets, ground in your content (RAG), create an avatar, create an agent |
 | [Widget & Runtime Init](/reference/api/deploy/) | Resolve widget ID, initialize the browser runtime |
@@ -71,6 +71,13 @@ Upstream error text is also normalized to a stable `err.code`, regardless of the
 |---|-----|-----|
 | `AGENT_NOT_FOUND` | `agent_not_found` | Check the `agentId` |
 | `AGENT_PARTNER_CONFIG_NOT_FOUND` | `intellect_not_found` | Create the intellect first |
+
+Base URL config errors are thrown before any request:
+
+| `err.code` | Fix |
+|---|-----|
+| `region_unavailable` | The `region` does not offer that service. Pass its URL explicitly. See [Regions and base URLs](/reference/api/authentication/#regions-and-base-urls) |
+| `insecure_transport` | Use an `https://` base URL |
 
 ---
 
