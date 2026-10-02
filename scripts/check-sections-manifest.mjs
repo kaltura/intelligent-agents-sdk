@@ -69,7 +69,7 @@ const built = new Map(results.map((r) => [r.url, r.content]));
 const listed = new Set(manifest.pages.map((p) => p.path));
 for (const path of listed) if (!built.has(path)) fail(`manifest page ${path} has no built HTML`);
 for (const [url, html] of built) {
-  if (!listed.has(url) && html.includes('<main class="content-wrapper">')) fail(`built page ${url} is missing from the manifest`);
+  if (!listed.has(url) && html.includes('<main class="content-wrapper"')) fail(`built page ${url} is missing from the manifest`);
 }
 
 // 3. Every section id is a real DOM id on its page (what getElementById will find at runtime).

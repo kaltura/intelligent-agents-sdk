@@ -1,19 +1,46 @@
-/* Kaltura Agents Design System — tokens per Kaltura_Agents_Design_System.md §2, §4, §8 */
+/* Kaltura Design System — documentation surface. Tokens follow the DS theme
+   file (dual theme via data-theme, flat surfaces, radii 4/8/12). Docs use the
+   marketing/documentation type pair: Centra No.1 for display, Source Sans Pro
+   for body. Faces are self-hosted from assets/fonts. */
+
+@font-face { font-family: 'Centra No1'; font-style: normal; font-weight: 400; font-display: swap; src: url('fonts/CentraNo1-Book.woff2') format('woff2'); }
+@font-face { font-family: 'Centra No1'; font-style: normal; font-weight: 500; font-display: swap; src: url('fonts/CentraNo1-Medium.woff2') format('woff2'); }
+@font-face { font-family: 'Centra No1'; font-style: normal; font-weight: 700; font-display: swap; src: url('fonts/CentraNo1-Bold.woff2') format('woff2'); }
+@font-face { font-family: 'Centra No1'; font-style: normal; font-weight: 800; font-display: swap; src: url('fonts/CentraNo1-Extrabold.woff2') format('woff2'); }
+@font-face { font-family: 'Source Sans Pro'; font-style: normal; font-weight: 400; font-display: swap; src: url('fonts/SourceSansPro-Regular.woff2') format('woff2'); }
+@font-face { font-family: 'Source Sans Pro'; font-style: italic; font-weight: 400; font-display: swap; src: url('fonts/SourceSansPro-Italic.woff2') format('woff2'); }
+@font-face { font-family: 'Source Sans Pro'; font-style: normal; font-weight: 600; font-display: swap; src: url('fonts/SourceSansPro-SemiBold.woff2') format('woff2'); }
+@font-face { font-family: 'Source Sans Pro'; font-style: normal; font-weight: 700; font-display: swap; src: url('fonts/SourceSansPro-Bold.woff2') format('woff2'); }
 
 :root {
   --ds-roundness-1: 4px;
   --ds-roundness-2: 8px;
   --ds-roundness-3: 12px;
-  --ds-font-family: 'Lato', sans-serif;
-  --sidebar-width: 17rem;
+  --font-display: 'Centra No1', 'Lato', 'Helvetica Neue', Arial, sans-serif;
+  --font-body: 'Source Sans Pro', 'Lato', 'Helvetica Neue', Arial, sans-serif;
+  --ds-font-family: var(--font-body);
+  --sidebar-width: 16rem;
   --header-height: 4rem;
+  --content-pad-x: 3rem;
+  --measure: 40rem;
+  --page-max: 46rem;
+  --toc-width: 14rem;
+  /* Pages start scrolling under the fixed header; anchors must clear it. */
+  --anchor-offset: calc(var(--header-height) + 1rem);
 }
 
 [data-theme='dark'] {
+  color-scheme: dark;
   --ds-primary: #006efa;
   --ds-danger: #ca1c2d;
   --ds-warning: #e86925;
   --ds-screen-green: #00a078;
+  /* --ds-primary is the brand fill (buttons, rings, chips). As text on dark
+     surfaces it reads 2.8 to 4.1:1, under WCAG AA, so text and links use this
+     lighter tint of the same hue (4.5:1 or better on every dark surface). */
+  --link: #6aaaff;
+  --code-danger: #ff6b78;
+  --code-green: #2ecf9e;
 
   --ds-tone-1: #ffffff;
   --ds-tone-2: #cccccc;
@@ -35,10 +62,14 @@
 }
 
 [data-theme='light'] {
+  color-scheme: light;
   --ds-primary: #3525cd;
   --ds-danger: #ba1a1a;
   --ds-warning: #95002b;
   --ds-screen-green: #006c49;
+  --link: #3525cd;
+  --code-danger: #ba1a1a;
+  --code-green: #006c49;
 
   --page-bg: #f8f9ff;
   --card-bg: #ffffff;
@@ -54,6 +85,12 @@
   box-sizing: border-box;
 }
 
+html {
+  scroll-padding-top: var(--anchor-offset);
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
 html,
 body {
   margin: 0;
@@ -63,14 +100,18 @@ body {
 body {
   background: var(--page-bg);
   color: var(--page-text);
-  font-family: var(--ds-font-family);
-  font-size: 16px;
-  line-height: 1.6;
+  font-family: var(--font-body);
+  font-size: 1.0625rem;
+  line-height: 1.65;
   transition: background-color 200ms ease, color 200ms ease;
 }
 
+body.nav-open {
+  overflow: hidden;
+}
+
 a {
-  color: var(--ds-primary);
+  color: var(--link);
   text-decoration: none;
 }
 
@@ -78,35 +119,94 @@ a:hover {
   text-decoration: underline;
 }
 
+:focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 2px;
+}
+
+[id] {
+  scroll-margin-top: var(--anchor-offset);
+}
+
+.skip-link {
+  position: fixed;
+  top: 0.5rem;
+  left: 0.5rem;
+  z-index: 100;
+  padding: 0.6rem 1rem;
+  background: var(--ds-primary);
+  color: #fff;
+  font-weight: 700;
+  border-radius: var(--ds-roundness-2);
+  transform: translateY(-200%);
+}
+
+.skip-link:focus {
+  transform: none;
+  text-decoration: none;
+}
+
 h1,
 h2,
 h3,
 h4 {
+  font-family: var(--font-display);
   font-weight: 700;
   line-height: 1.25;
 }
 
 h1 {
-  font-size: 2rem;
+  font-size: 2.25rem;
   font-weight: 800;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.025em;
+  margin: 0.5rem 0 1rem;
 }
 
 h2 {
-  font-size: 1.4rem;
-  margin-top: 2.5rem;
+  font-size: 1.5rem;
+  margin-top: 2.75rem;
   padding-bottom: 0.4rem;
   border-bottom: 1px solid var(--border-color);
 }
 
 h3 {
-  font-size: 1.15rem;
+  font-size: 1.2rem;
   margin-top: 2rem;
 }
 
-/* Code — monospace is a functional requirement for reading/copying real code
-   samples on a developer reference site, not decorative chrome; scoped only
-   to pre/code so prose stays on the DS type scale. */
+h4 {
+  font-size: 1.05rem;
+  margin-top: 1.5rem;
+}
+
+/* Reading column: prose holds a comfortable line length; code and tables use
+   the full page width. */
+.content-wrapper :is(p, ul, ol, dl, blockquote) {
+  max-width: var(--measure);
+}
+
+/* Deep links: a "#" appears beside a heading on hover or keyboard focus. */
+.heading-anchor {
+  margin-left: 0.4em;
+  font-weight: 400;
+  color: var(--secondary-text);
+  opacity: 0;
+  text-decoration: none;
+}
+
+:is(h2, h3, h4):hover .heading-anchor,
+.heading-anchor:focus-visible {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .heading-anchor {
+    opacity: 0.6;
+  }
+}
+
+/* Code: monospace is a functional requirement for reading and copying real
+   samples on a developer reference, so it is scoped to pre/code only. */
 code,
 pre {
   font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
@@ -117,6 +217,7 @@ code {
   background: var(--code-bg);
   padding: 0.15em 0.4em;
   border-radius: var(--ds-roundness-1);
+  overflow-wrap: anywhere;
 }
 
 pre {
@@ -125,16 +226,64 @@ pre {
   border-radius: var(--ds-roundness-2);
   overflow-x: auto;
   border: 1px solid var(--border-color);
+  line-height: 1.55;
+  tab-size: 2;
 }
 
 pre code {
   background: none;
   padding: 0;
+  overflow-wrap: normal;
+}
+
+.code-block {
+  position: relative;
+  margin: 1rem 0;
+}
+
+.code-block pre {
+  margin: 0;
+}
+
+.code-copy {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.3rem 0.6rem;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--page-text);
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: var(--ds-roundness-1);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.code-block:hover .code-copy,
+.code-copy:focus-visible,
+.code-copy[data-state] {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .code-copy {
+    opacity: 1;
+  }
+}
+
+.code-copy .material-symbols-outlined {
+  font-size: 1rem;
 }
 
 /* Prism (via @11ty/eleventy-plugin-syntaxhighlight) emits plain .token.*
-   spans with no bundled theme — map them onto the DS tokens above so
-   highlighting flips with the light/dark toggle for free. */
+   spans with no bundled theme. Map them onto the DS tokens so highlighting
+   flips with the theme. Every token colour is 4.5:1 or better on --code-bg. */
 .token.comment,
 .token.prolog,
 .token.doctype,
@@ -150,7 +299,7 @@ pre code {
 .token.constant,
 .token.symbol,
 .token.deleted {
-  color: var(--ds-danger);
+  color: var(--code-danger);
 }
 
 .token.selector,
@@ -159,7 +308,7 @@ pre code {
 .token.char,
 .token.builtin,
 .token.inserted {
-  color: var(--ds-screen-green);
+  color: var(--code-green);
 }
 
 .token.operator,
@@ -168,7 +317,7 @@ pre code {
 .token.atrule,
 .token.attr-value,
 .token.keyword {
-  color: var(--ds-primary);
+  color: var(--link);
 }
 
 .token.function,
@@ -179,7 +328,7 @@ pre code {
 .token.regex,
 .token.important,
 .token.variable {
-  color: var(--ds-danger);
+  color: var(--code-danger);
 }
 
 .token.important,
@@ -191,26 +340,45 @@ pre code {
   font-style: italic;
 }
 
+/* Wide tables scroll inside their own box instead of pushing the page sideways. */
+.table-wrap {
+  margin: 1rem 0;
+  overflow-x: auto;
+  border: 1px solid var(--border-color);
+  border-radius: var(--ds-roundness-2);
+}
+
+.table-wrap > table {
+  margin: 0;
+  min-width: 30rem;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
   margin: 1rem 0;
-  font-size: 0.9rem;
+  font-size: 0.95rem;
+  line-height: 1.5;
 }
 
 th,
 td {
   text-align: left;
-  padding: 0.5rem 0.75rem;
+  padding: 0.55rem 0.75rem;
   border-bottom: 1px solid var(--border-color);
   vertical-align: top;
+}
+
+tbody tr:last-child td {
+  border-bottom: none;
 }
 
 th {
   color: var(--secondary-text);
   font-size: 0.75rem;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
+  background: var(--elevated-bg);
 }
 
 blockquote {
@@ -220,7 +388,13 @@ blockquote {
   color: var(--secondary-text);
 }
 
-/* Layout shell — design doc §6 */
+img,
+video {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Layout shell */
 
 .site-header {
   position: fixed;
@@ -233,8 +407,15 @@ blockquote {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 1rem;
   padding: 0 1.5rem;
   z-index: 10;
+}
+
+.header-start {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
 }
 
 .site-header .logo img {
@@ -248,7 +429,7 @@ blockquote {
   gap: 0.75rem;
 }
 
-.theme-toggle {
+.icon-btn {
   background: none;
   border: 1px solid var(--border-color);
   color: var(--page-text);
@@ -261,22 +442,44 @@ blockquote {
   cursor: pointer;
 }
 
-.theme-toggle:hover {
+.icon-btn:hover {
   background: var(--hover-bg);
 }
 
-.theme-toggle:focus-visible,
-.menu-toggle:focus-visible,
-.nova-btn:focus-visible {
-  outline: 2px solid var(--ds-primary);
-  outline-offset: 2px;
+.search-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  height: 40px;
+  min-width: 15rem;
+  padding: 0 0.75rem;
+  font: inherit;
+  font-size: 0.95rem;
+  color: var(--secondary-text);
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: var(--ds-roundness-3);
+  cursor: pointer;
+}
+
+.search-trigger:hover {
+  border-color: var(--link);
+}
+
+.search-trigger kbd {
+  margin-left: auto;
+  font: inherit;
+  font-size: 0.75rem;
+  padding: 0.1rem 0.4rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--ds-roundness-1);
 }
 
 .gh-link {
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  font-size: 0.875rem;
+  font-size: 0.95rem;
   font-weight: 600;
   color: var(--page-text);
 }
@@ -290,13 +493,16 @@ blockquote {
   background: var(--elevated-bg);
   border-right: 1px solid var(--border-color);
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 1.5rem 0;
-  /* body.home .nova-hero is full-bleed (width:100vw, negative left offset) so
-     it spans underneath the fixed sidebar's screen area too; both are
-     positioned with z-index:auto, so without this the hero — later in DOM —
-     paints over the sidebar and blocks its nav links wherever they overlap
-     vertically. */
+  /* The home hero is full-bleed, so it spans underneath the fixed sidebar's
+     screen area too; both are z-index:auto without this and the later hero
+     would paint over the sidebar and swallow clicks on its links. */
   z-index: 5;
+}
+
+.nav-backdrop {
+  display: none;
 }
 
 .nav-group {
@@ -304,10 +510,11 @@ blockquote {
 }
 
 .nav-group-label {
-  font-size: 0.7rem;
-  font-weight: 800;
+  font-family: var(--font-display);
+  font-size: 0.75rem;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.1em;
   color: var(--secondary-text);
   padding: 0 1.5rem;
   margin-bottom: 0.5rem;
@@ -327,8 +534,8 @@ blockquote {
   display: block;
   padding: 0.5rem 1.5rem;
   color: var(--secondary-text);
-  font-size: 0.9rem;
-  font-weight: 500;
+  font-size: 0.95rem;
+  font-weight: 600;
   border-right: 3px solid transparent;
 }
 
@@ -368,36 +575,37 @@ blockquote {
 
 .nav-group a:hover {
   background: var(--hover-bg);
+  color: var(--page-text);
   text-decoration: none;
 }
 
 .nav-group a[aria-current='page'] {
-  color: var(--ds-primary);
+  color: var(--link);
   border-right-color: var(--ds-primary);
-  background: var(--hover-bg);
+  background: color-mix(in srgb, var(--ds-primary) 14%, transparent);
   font-weight: 700;
 }
 
 .content-wrapper {
   margin-left: var(--sidebar-width);
   margin-top: var(--header-height);
-  padding: 2.5rem 3rem;
-  max-width: 860px;
+  padding: 2.5rem var(--content-pad-x) 3rem;
+  max-width: calc(var(--page-max) + 2 * var(--content-pad-x));
+  min-height: calc(100vh - var(--header-height));
 }
 
 .eyebrow {
-  font-size: 0.7rem;
-  font-weight: 800;
+  font-family: var(--font-display);
+  font-size: 0.75rem;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--ds-primary);
+  letter-spacing: 0.1em;
+  color: var(--link);
 }
 
-/* Breadcrumb + sibling-nav for pages hidden from the sidebar (nav.js) — the
-   hub lineage is real data (src/_data/hubTrails.js) but was previously
-   unsurfaced, leaving these pages feeling orphaned once reached. */
+/* Breadcrumb for pages hidden from the sidebar (hub lineage, hubTrails.js). */
 .breadcrumb {
-  font-size: 0.85rem;
+  font-size: 0.9rem;
   color: var(--secondary-text);
   margin-bottom: 1rem;
 }
@@ -407,34 +615,103 @@ blockquote {
 }
 
 .breadcrumb a:hover {
-  color: var(--ds-primary);
+  color: var(--link);
 }
 
 .breadcrumb-sep {
   margin: 0 0.4em;
-  color: var(--border-color);
+  color: var(--secondary-text);
+  opacity: 0.6;
 }
 
-/* "On this page" rail — sits after </main> in the DOM (not inside it, so
-   MAIN_RE and Nova's section extraction stay untouched). A wide viewport
-   pins it as a sticky-feeling right rail (position:fixed, independent of
-   .content-wrapper's own box); anything narrower falls back to a plain
-   collapsed <details> card inline at the end of the content flow. */
-.page-toc {
-  margin: 0 3rem 2rem;
-  background: var(--card-bg);
+/* Previous / next and edit link, inside <main> so soft navigation swaps them. */
+.pager {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin: 3rem 0 1.5rem;
+  max-width: none;
+}
+
+.pager a {
+  display: block;
+  padding: 0.85rem 1rem;
   border: 1px solid var(--border-color);
-  border-radius: var(--ds-roundness-2);
-  padding: 0.75rem 1rem;
+  border-radius: var(--ds-roundness-3);
+  background: var(--card-bg);
+  color: var(--page-text);
+}
+
+.pager a:hover {
+  border-color: var(--link);
+  text-decoration: none;
+}
+
+.pager-label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--secondary-text);
+}
+
+.pager-title {
+  display: block;
+  font-family: var(--font-display);
+  font-weight: 700;
+  color: var(--link);
+}
+
+.pager-next {
+  grid-column: 2;
+  text-align: right;
+}
+
+.page-meta {
+  font-size: 0.9rem;
+  color: var(--secondary-text);
+}
+
+.page-meta a {
+  color: var(--secondary-text);
+  text-decoration: underline;
+}
+
+/* "On this page" rail. It sits after </main> (not inside it) so the sections
+   manifest and Nova's go_to extraction stay untouched; router.js swaps it on
+   soft navigation. Shown only where it fits beside the reading column. */
+.page-toc {
+  display: none;
+}
+
+@media (min-width: 1280px) {
+  .page-toc {
+    display: block;
+    position: fixed;
+    top: calc(var(--header-height) + 2.5rem);
+    left: calc(var(--sidebar-width) + var(--page-max) + 2 * var(--content-pad-x));
+    width: var(--toc-width);
+    max-height: calc(100vh - var(--header-height) - 4rem);
+    overflow-y: auto;
+    border-left: 1px solid var(--border-color);
+    padding: 0 0 0 1rem;
+  }
 }
 
 .page-toc-inner summary {
-  cursor: pointer;
+  font-family: var(--font-display);
   font-weight: 700;
-  font-size: 0.7rem;
+  font-size: 0.75rem;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.1em;
   color: var(--secondary-text);
+  pointer-events: none;
+  list-style: none;
+}
+
+.page-toc-inner summary::-webkit-details-marker {
+  display: none;
 }
 
 .page-toc ul {
@@ -444,45 +721,27 @@ blockquote {
 }
 
 .page-toc li {
-  margin: 0.35rem 0;
+  margin: 0.1rem 0;
 }
 
 .page-toc a {
+  display: block;
+  padding: 0.25rem 0.5rem;
+  margin-left: -0.5rem;
   color: var(--secondary-text);
-  font-size: 0.85rem;
+  font-size: 0.9rem;
+  line-height: 1.4;
+  border-radius: var(--ds-roundness-1);
 }
 
 .page-toc a:hover {
-  color: var(--ds-primary);
+  color: var(--page-text);
+  text-decoration: none;
 }
 
-@media (min-width: 1500px) {
-  .page-toc {
-    position: fixed;
-    top: calc(var(--header-height) + 2rem);
-    right: 1.5rem;
-    width: 200px;
-    max-height: calc(100vh - var(--header-height) - 4rem);
-    overflow-y: auto;
-    margin: 0;
-    background: none;
-    border: none;
-    border-left: 1px solid var(--border-color);
-    border-radius: 0;
-    padding: 0 0 0 1rem;
-  }
-
-  .page-toc-inner summary {
-    pointer-events: none;
-  }
-
-  .page-toc-inner summary::-webkit-details-marker {
-    display: none;
-  }
-
-  .page-toc-inner summary::marker {
-    content: '';
-  }
+.page-toc a[aria-current='true'] {
+  color: var(--link);
+  font-weight: 600;
 }
 
 .material-symbols-outlined {
@@ -492,6 +751,10 @@ blockquote {
   line-height: 1;
   display: inline-block;
   vertical-align: middle;
+  /* Stop the ligature name ("menu") showing as text before the font loads. */
+  overflow: hidden;
+  white-space: nowrap;
+  max-width: 1em;
 }
 
 .menu-toggle {
@@ -500,36 +763,223 @@ blockquote {
   border: none;
   color: var(--page-text);
   cursor: pointer;
+  padding: 0.4rem;
+}
+
+/* Search dialog (assets/site/search.js) */
+.search-dialog {
+  width: min(40rem, calc(100vw - 2rem));
+  max-height: min(34rem, calc(100dvh - 6rem));
+  margin: 4rem auto auto;
+  padding: 0;
+  color: var(--page-text);
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: var(--ds-roundness-3);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.3);
+  overflow: hidden;
+}
+
+.search-dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+.search-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.search-input {
+  appearance: none;
+  border-radius: 0;
+  width: 100%;
+  padding: 1rem 1.25rem;
+  font: inherit;
+  font-size: 1.1rem;
+  color: var(--page-text);
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.search-input:focus-visible {
+  outline: none;
+}
+
+.search-dialog:focus-within {
+  border-color: var(--link);
+}
+
+.search-results {
+  list-style: none;
+  margin: 0;
+  padding: 0.5rem;
+  overflow-y: auto;
+}
+
+.search-results a {
+  display: block;
+  padding: 0.6rem 0.75rem;
+  color: var(--page-text);
+  border-radius: var(--ds-roundness-2);
+}
+
+.search-results a:hover,
+.search-results a[aria-selected='true'] {
+  background: color-mix(in srgb, var(--ds-primary) 14%, transparent);
+  text-decoration: none;
+}
+
+.search-hit-title {
+  display: block;
+  font-weight: 700;
+}
+
+.search-hit-trail {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--secondary-text);
+}
+
+.search-hit-snippet {
+  display: block;
+  font-size: 0.9rem;
+  color: var(--secondary-text);
+}
+
+.search-results mark {
+  background: color-mix(in srgb, var(--ds-warning) 30%, transparent);
+  color: inherit;
+  border-radius: 2px;
+}
+
+.search-empty {
+  padding: 1.5rem;
+  text-align: center;
+  color: var(--secondary-text);
+}
+
+.search-ask {
+  display: block;
+  width: 100%;
+  padding: 0.8rem 1.25rem;
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  color: var(--link);
+  background: none;
+  border: none;
+  border-top: 1px solid var(--border-color);
+  cursor: pointer;
+}
+
+.search-ask[hidden] {
+  display: none;
+}
+
+.search-ask:hover,
+.search-ask:focus-visible {
+  background: color-mix(in srgb, var(--ds-primary) 14%, transparent);
 }
 
 @media (max-width: 900px) {
+  :root {
+    --content-pad-x: 1.5rem;
+  }
+
   .sidebar {
     transform: translateX(-100%);
     transition: transform 200ms ease-in-out;
     z-index: 9;
+    width: min(var(--sidebar-width), 85vw);
+    visibility: hidden;
+    transition: transform 200ms ease-in-out, visibility 0s linear 200ms;
   }
 
   .sidebar.open {
     transform: translateX(0);
+    visibility: visible;
+    transition: transform 200ms ease-in-out, visibility 0s;
+    box-shadow: 8px 0 24px rgba(0, 0, 0, 0.3);
+  }
+
+  .nav-backdrop.open {
+    display: block;
+    position: fixed;
+    inset: var(--header-height) 0 0 0;
+    z-index: 8;
+    background: rgba(0, 0, 0, 0.5);
   }
 
   .content-wrapper {
     margin-left: 0;
-    padding: 1.5rem;
+    padding-top: 1.5rem;
   }
 
   .menu-toggle {
     display: flex;
   }
+
+  .search-trigger {
+    min-width: 0;
+    width: 40px;
+    padding: 0;
+    justify-content: center;
+  }
+
+  .search-trigger-label,
+  .search-trigger kbd {
+    display: none;
+  }
+
+  .gh-link span:not(.material-symbols-outlined) {
+    display: none;
+  }
 }
 
 @media (max-width: 600px) {
-  .content-wrapper {
-    padding: 1rem;
+  :root {
+    --content-pad-x: 1rem;
+  }
+
+  .site-header {
+    padding: 0 0.75rem;
   }
 
   h1 {
-    font-size: 1.6rem;
+    font-size: 1.75rem;
+  }
+
+  h2 {
+    font-size: 1.35rem;
+  }
+
+  .pager {
+    grid-template-columns: 1fr;
+  }
+
+  .pager-next {
+    grid-column: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@media (forced-colors: active) {
+  .nav-group a[aria-current='page'] {
+    outline: 2px solid Highlight;
+  }
+
+  .nova-widget .nova-video-wrap {
+    forced-color-adjust: none;
   }
 }
 
@@ -552,10 +1002,8 @@ blockquote {
   width: 100%;
   height: 100%;
   /* Idle fallback only — the <video poster> (Nova's real portrait, set in
-     connect.js) covers this almost immediately, so this gradient is just
-     what's visible for an instant before the poster paints. */
-  background: radial-gradient(circle at 30% 25%, color-mix(in srgb, var(--ds-primary) 35%, transparent), transparent 55%),
-    radial-gradient(circle at 75% 75%, var(--hover-bg), transparent 60%), radial-gradient(circle at 50% 42%, var(--hover-bg), var(--elevated-bg) 70%);
+     connect.js) covers this almost immediately. Flat per the design system. */
+  background: var(--elevated-bg);
   overflow: hidden;
   animation: nova-idle-breathe 4s ease-in-out infinite;
 }
@@ -1068,6 +1516,12 @@ blockquote {
   color: #fff;
 }
 
+@media (max-width: 600px) {
+  .nova-widget.dock-mode .nova-placeholder::before {
+    font-size: 40px;
+  }
+}
+
 .nova-widget.dock-mode .nova-panel {
   display: none;
 }
@@ -1079,8 +1533,8 @@ blockquote {
   right: 0;
   top: auto;
   left: auto;
-  width: 280px;
-  max-width: calc(100vw - 48px);
+  width: 320px;
+  max-width: calc(100vw - 32px);
   background: var(--card-bg);
   border: 1px solid var(--border-color);
   border-radius: var(--ds-roundness-3);
@@ -1099,6 +1553,10 @@ blockquote {
 }
 
 .nova-widget.dock-mode.expanded .nova-transcript {
+  max-height: min(40vh, 16rem);
+}
+
+.nova-widget.dock-mode.expanded .nova-transcript {
   border-top-color: var(--border-color);
 }
 
@@ -1111,11 +1569,11 @@ blockquote {
 }
 
 .nova-widget.dock-mode.expanded .nova-transcript .nova-you .nova-label {
-  color: var(--ds-screen-green);
+  color: var(--code-green);
 }
 
 .nova-widget.dock-mode.expanded .nova-transcript .nova-nova .nova-label {
-  color: var(--ds-primary);
+  color: var(--link);
 }
 
 .nova-widget.dock-mode.expanded #nova-input {
@@ -1281,11 +1739,11 @@ blockquote {
 }
 
 .nova-widget.drawer-mode .nova-transcript .nova-you .nova-label {
-  color: var(--ds-screen-green);
+  color: var(--code-green);
 }
 
 .nova-widget.drawer-mode .nova-transcript .nova-nova .nova-label {
-  color: var(--ds-primary);
+  color: var(--link);
 }
 
 .nova-widget.drawer-mode #nova-input {
@@ -1325,6 +1783,14 @@ blockquote {
   .nova-widget.drawer-mode {
     width: 100vw;
     border-left: none;
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  .nova-widget.drawer-mode .nova-video-wrap,
+  .nova-widget.drawer-mode .nova-drawer-head,
+  .nova-widget.drawer-mode .nova-controls {
+    margin-top: env(safe-area-inset-top);
   }
 }
 
@@ -1373,29 +1839,178 @@ blockquote {
   transform: scale(0.98);
 }
 
-/* Hero section — homepage only. Full-bleed to the viewport's right edge
-   while its inner content stays aligned with the normal reading column
-   (the standard margin-inline: calc(50% - 50vw) trick, adapted for this
-   layout's fixed, non-centered sidebar offset). */
-body.home .nova-hero {
+
+/* Agent state rings. Dock and drawer shapes are circles with no video mask,
+   so a ring reads cleanly; the hero portrait keeps its brightness pulse.
+   Motion is paired with the status line, never the only signal. */
+.nova-widget {
+  --dock-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+.nova-widget.dock-mode .nova-video-wrap.is-connecting {
+  animation: nova-ring-wait 1.2s ease-in-out infinite;
+}
+
+.nova-widget.dock-mode .nova-video-wrap.is-talking {
+  animation: nova-ring-talk 1s ease-in-out infinite;
+}
+
+.nova-widget.drawer-mode .nova-video-wrap.is-connecting {
+  animation: nova-ring-wait 1.2s ease-in-out infinite;
+}
+
+@keyframes nova-ring-wait {
+  0%,
+  100% {
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--secondary-text) 35%, transparent), var(--dock-shadow);
+  }
+  50% {
+    box-shadow: 0 0 0 5px color-mix(in srgb, var(--secondary-text) 65%, transparent), var(--dock-shadow);
+  }
+}
+
+@keyframes nova-ring-talk {
+  0%,
+  100% {
+    box-shadow: 0 0 0 3px var(--link), var(--dock-shadow);
+  }
+  50% {
+    box-shadow: 0 0 0 7px color-mix(in srgb, var(--link) 45%, transparent), var(--dock-shadow);
+  }
+}
+
+/* Replies render a small, safe subset of markdown (see transcript.js). */
+.nova-msg a {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.nova-widget.drawer-mode .nova-msg a,
+.nova-widget.dock-mode.expanded .nova-msg a {
+  color: var(--link);
+}
+
+.nova-widget:not(.drawer-mode):not(.expanded) .nova-msg a {
+  color: #9cc5ff;
+}
+
+.nova-msg code {
+  font-size: 0.88em;
+  padding: 0.05em 0.35em;
+  background: color-mix(in srgb, currentColor 16%, transparent);
+}
+
+.nova-list-item {
+  display: block;
+  padding-left: 1.1em;
+  text-indent: -1.1em;
+}
+
+.nova-list-item::before {
+  content: attr(data-marker);
+  display: inline-block;
+  width: 1.1em;
+  text-indent: 0;
+}
+
+/* "Jump to latest" appears when a reply lands while the visitor has scrolled up. */
+.nova-jump {
+  display: block;
+  margin: -2rem auto 0;
   position: relative;
-  left: calc(-1 * (var(--sidebar-width) + 3rem));
-  width: 100vw;
-  margin: 2rem 0 3rem;
-  padding: 3.5rem 3rem 3.5rem calc(var(--sidebar-width) + 3rem);
-  background: linear-gradient(180deg, var(--elevated-bg), var(--page-bg));
+  z-index: 1;
+  padding: 0.25rem 0.8rem;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #fff;
+  background: var(--ds-primary);
+  border: none;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.nova-jump[hidden] {
+  display: none;
+}
+
+/* Starter questions in the chat drawer, until the visitor sends their first line. */
+.nova-suggest {
+  display: none;
+}
+
+.nova-widget.drawer-mode .nova-suggest {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.6rem;
+}
+
+.nova-widget.drawer-mode .nova-panel:has(.nova-you) .nova-suggest {
+  display: none;
+}
+
+.nova-widget.drawer-mode .nova-suggest .nova-chip {
+  font-size: 0.85rem;
+  padding: 0.4rem 0.8rem;
+}
+
+.nova-widget.drawer-mode .nova-drawer-note {
+  margin-top: 0.4rem;
+}
+
+/* Touch screens: bigger targets, and 16px inputs so iOS Safari does not zoom. */
+@media (pointer: coarse) {
+  #nova-input {
+    font-size: 16px;
+  }
+
+  .nova-widget.drawer-mode .nova-btn {
+    width: 44px;
+    height: 44px;
+  }
+
+  .nova-widget.drawer-mode .nova-drawer-head {
+    right: 200px;
+  }
+
+  .nova-chip {
+    min-height: 44px;
+  }
+}
+
+/* Hero section — homepage only. Full-bleed to the viewport's right edge while
+   its inner content stays aligned with the reading column. The rest of the
+   home page keeps the normal page width. */
+body.home .content-wrapper {
+  max-width: none;
+}
+
+body.home .content-wrapper > :not(.nova-hero) {
+  max-width: var(--page-max);
+}
+
+/* The rail would sit under the hero portrait, and the home page's headings
+   are already a short list in the sidebar's own order. */
+body.home .page-toc {
+  display: none;
+}
+
+body.home .nova-hero {
+  margin: 2rem calc(-1 * var(--content-pad-x)) 3rem;
+  padding: 2.5rem var(--content-pad-x);
+  background: var(--elevated-bg);
+  border-block: 1px solid var(--border-color);
 }
 
 .nova-hero-inner {
   display: flex;
   /* The visual column (video + floating panel) runs taller than the copy
-     column — centering them vertically strands the "Talk to Nova" button
-     far below the copy's own CTA. Sharing a top edge keeps both calls to
-     action in the same visual band. */
+     column; sharing a top edge keeps both calls to action in the same band. */
   align-items: flex-start;
   justify-content: space-between;
   gap: 3rem;
-  max-width: 1400px;
+  max-width: 1100px;
 }
 
 .nova-hero-copy {
@@ -1407,20 +2022,19 @@ body.home .nova-hero {
 .nova-hero-copy h2 {
   margin: 0 0 1rem;
   font-size: 2.25rem;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.02em;
   border-bottom: none;
   padding-bottom: 0;
 }
 
 .nova-hero-copy p {
   max-width: 32rem;
-  font-size: 1.05rem;
+  font-size: 1.1rem;
   color: var(--secondary-text);
 }
 
-/* NN/g's "use-case prompt suggestion" pattern (the pills ChatGPT/Claude/Poe
-   show pre-auth): real, focusable buttons — not decorative chrome — that
-   both start the session and ask their exact question in one click. */
+/* Use-case prompt suggestions: real, focusable buttons that both start the
+   session and ask their exact question in one click. */
 .nova-hero-prompts {
   display: flex;
   flex-wrap: wrap;
@@ -1438,12 +2052,12 @@ html.nova-live .nova-hero-prompts {
    handlers (it then sets html.nova-ready). Before that a click would do
    nothing, and a typed line would reload the page. visibility, not display,
    so nothing shifts when they appear. */
-html:not(.nova-ready) :is(.nova-hero-prompts, .nova-placeholder, .nova-chat-start, .nova-dock-chat, .nova-input-row) {
+html:not(.nova-ready) :is(.nova-hero-prompts, .nova-placeholder, .nova-chat-start, .nova-dock-chat, .nova-input-row, .nova-suggest, .search-ask) {
   visibility: hidden;
 }
 
 .nova-hero-prompts-label {
-  font-size: 0.8rem;
+  font-size: 0.85rem;
   font-weight: 700;
   color: var(--secondary-text);
   margin-right: 0.15rem;
@@ -1451,7 +2065,7 @@ html:not(.nova-ready) :is(.nova-hero-prompts, .nova-placeholder, .nova-chat-star
 
 .nova-chip {
   font-family: inherit;
-  font-size: 0.85rem;
+  font-size: 0.9rem;
   font-weight: 600;
   color: var(--page-text);
   background: var(--card-bg);
@@ -1459,37 +2073,30 @@ html:not(.nova-ready) :is(.nova-hero-prompts, .nova-placeholder, .nova-chat-star
   border-radius: 999px;
   padding: 0.5rem 1rem;
   cursor: pointer;
-  transition: transform 150ms ease, box-shadow 150ms ease, background-color 150ms ease, border-color 150ms ease;
+  transition: transform 150ms ease, background-color 150ms ease, border-color 150ms ease;
 }
 
 .nova-chip:hover {
   background: var(--hover-bg);
-  border-color: var(--ds-primary);
+  border-color: var(--link);
   transform: translateY(-2px);
-  box-shadow: 0 6px 16px -8px rgba(0, 0, 0, 0.35);
-}
-
-.nova-chip:focus-visible {
-  outline: 2px solid var(--ds-primary);
-  outline-offset: 2px;
 }
 
 .nova-hero-visual {
   position: relative;
-  flex: 0 1 440px;
-  width: 100%;
-  max-width: 440px;
-  /* A tall, human portrait ratio (matching Nova's actual catalog-visual
-     framing) instead of a square — reads as a person-sized presence, not
-     an icon-sized call card. */
+  flex: 0 0 auto;
+  /* A tall, human portrait ratio (matching Nova's catalog-visual framing)
+     reads as a person-sized presence, not an icon-sized call card. Height is
+     set from the viewport so the whole portrait sits above the fold; the
+     ratio then derives the width. */
+  height: min(58vh, 520px);
   aspect-ratio: 3 / 4;
-  max-height: min(65vh, 560px);
+  max-width: 100%;
   transition: transform 200ms ease;
 }
 
-/* Lift-on-hover affordance (Fitts's-law-style visual feedback that the
-   avatar is a real target) — scoped to before a session starts, so a live
-   call's controls/transcript don't jitter under the pointer. */
+/* Lift-on-hover: visual feedback that the avatar is a real target. Scoped to
+   before a session starts, so a live call's controls do not jitter. */
 .nova-hero-visual:has(.nova-placeholder:not(.hidden)):hover {
   transform: translateY(-3px);
   cursor: pointer;
@@ -1499,35 +2106,47 @@ html:not(.nova-ready) :is(.nova-hero-prompts, .nova-placeholder, .nova-chat-star
   filter: brightness(1.04);
 }
 
-/* Between this and the sidebar-collapse breakpoint (900px, see .sidebar's own
-   media query), the sidebar is still fixed and visible, so .nova-hero itself
-   keeps its normal offset/padding — only the copy/visual pair stacks. Without
-   this, default flex-shrink crushes .nova-hero-visual down to ~225px at
-   common "small laptop" widths like 1024x768 well before the 900px
-   breakpoint, wrapping the caption onto 3 cramped lines. */
+/* Small laptops (sidebar still visible): keep copy and portrait side by side
+   so the portrait stays above the fold at 1024x768. */
 @media (max-width: 1200px) and (min-width: 901px) {
+  :root {
+    --content-pad-x: 2rem;
+  }
+
+  body.home .nova-hero {
+    padding-block: 2rem;
+  }
+
   .nova-hero-inner {
-    flex-direction: column;
-    justify-content: flex-start;
     gap: 2rem;
   }
 
-  .nova-hero-copy {
-    max-width: none;
+  .nova-hero-copy h2 {
+    font-size: 2rem;
   }
 
   .nova-hero-visual {
-    max-width: 320px;
-    max-height: min(55vh, 420px);
+    height: 346px;
+  }
+
+}
+
+/* The portrait is narrow below 1200px: shrink the start-of-call labels so the
+   caption clears the "Prefer text?" pill. */
+@media (max-width: 1200px) {
+  .nova-widget:not(.dock-mode):not(.drawer-mode) .nova-placeholder {
+    font-size: 0.85rem;
+    padding-bottom: 7rem;
+  }
+
+  .nova-widget:not(.dock-mode):not(.drawer-mode) .nova-chat-start {
+    white-space: nowrap;
+    font-size: 0.72rem;
+    padding-inline: 0.6rem;
   }
 }
 
 @media (max-width: 900px) {
-  body.home .nova-hero {
-    left: -1.5rem;
-    padding: 2.5rem 1.5rem;
-  }
-
   .nova-hero-inner {
     flex-direction: column;
     justify-content: flex-start;
@@ -1538,16 +2157,21 @@ html:not(.nova-ready) :is(.nova-hero-prompts, .nova-placeholder, .nova-chat-star
     max-width: none;
   }
 
+  /* Stacked: the portrait leads, so Nova is on screen without scrolling. */
   .nova-hero-visual {
-    max-width: 320px;
-    max-height: min(55vh, 420px);
+    order: -1;
+    align-self: center;
+    height: min(42vh, 340px);
+  }
+
+  body.home .nova-hero {
+    padding-block: 2.5rem;
   }
 }
 
 @media (max-width: 600px) {
   body.home .nova-hero {
-    left: -1rem;
-    padding: 2rem 1rem;
+    padding-block: 2rem;
   }
 
   .nova-hero-copy h2 {
@@ -1555,7 +2179,6 @@ html:not(.nova-ready) :is(.nova-hero-prompts, .nova-placeholder, .nova-chat-star
   }
 
   .nova-hero-visual {
-    max-width: 260px;
-    max-height: min(48vh, 340px);
+    height: min(38vh, 300px);
   }
 }

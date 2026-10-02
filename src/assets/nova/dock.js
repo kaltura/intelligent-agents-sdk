@@ -8,7 +8,8 @@
 const widget = document.getElementById('nova-widget');
 
 const DOCK_MARGIN = 24;
-const DOCK_SIZE = window.matchMedia('(max-width: 600px)').matches ? 180 : 240;
+const DOCK_SIZE_MOBILE = 112;
+const DOCK_SIZE_DESKTOP = 240;
 const HIGHLIGHT_MS = 5000;
 const RING_FADE_MS = 300;
 
@@ -42,7 +43,7 @@ function lerp(a, b, t) {
 }
 
 function currentDockSize() {
-  return window.matchMedia('(max-width: 600px)').matches ? 180 : 240;
+  return window.matchMedia('(max-width: 600px)').matches ? DOCK_SIZE_MOBILE : DOCK_SIZE_DESKTOP;
 }
 
 function computeDockRect() {

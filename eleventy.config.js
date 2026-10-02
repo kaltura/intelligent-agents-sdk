@@ -41,6 +41,18 @@ module.exports = function (eleventyConfig) {
     console.log(`[11ty] Wrote ${file} (${pages} pages, ${sections} sections)`);
   });
 
+  // Cmd/Ctrl+K search: a flat JSON index of page intros and h2 sections,
+  // built from the same results the manifest uses (see scripts/lib/search-index.mjs).
+  eleventyConfig.on('eleventy.after', async ({ dir, results }) => {
+    const { writeSearchIndex } = await import('./scripts/lib/search-index.mjs');
+    const nav = require('./src/_data/nav.js');
+    const groupByUrl = new Map();
+    const walk = (group, pages) => pages.forEach((p) => { groupByUrl.set(p.url, group); walk(group, p.children); });
+    nav.forEach((s) => walk(s.group, s.pages));
+    const { file, records } = writeSearchIndex(results, groupByUrl, dir.output);
+    console.log(`[11ty] Wrote ${file} (${records} records)`);
+  });
+
   const md = markdownIt({ html: true, breaks: false, linkify: true }).use(
     markdownItAnchor,
     { slugify: githubSlugify }
@@ -81,6 +93,20 @@ module.exports = function (eleventyConfig) {
   // base.njk's recursive macro can auto-expand only the path down to the page
   // you're actually on instead of every <details> or none of them.
   eleventyConfig.addFilter('trailUrls', (crumb) => (crumb ? crumb.trail.map((t) => t.url) : []));
+
+  // Previous / next page in sidebar order (Home first, then each group's pages
+  // depth-first), for the pager at the foot of every page.
+  eleventyConfig.addFilter('pager', (nav, url) => {
+    const flat = [{ title: 'Home', url: '/' }];
+    const walk = (pages) => pages.forEach((p) => { flat.push({ title: p.title, url: p.url }); walk(p.children); });
+    (nav || []).forEach((s) => walk(s.pages));
+    const i = flat.findIndex((p) => p.url === url);
+    if (i < 0 || url === '/') return {};
+    return { prev: flat[i - 1], next: flat[i + 1] };
+  });
+
+  // "Edit this page" link target for a page URL (src/_data/pageSources.mjs).
+  eleventyConfig.addFilter('editUrl', (sources, url) => (sources && sources[url]) || '');
 
   return {
     dir: {

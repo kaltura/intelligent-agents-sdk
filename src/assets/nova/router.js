@@ -4,7 +4,7 @@
  * site's routes. A real `location.href` change would tear the session
  * down; this instead fetches the target page (rendered through the same
  * base.njk, so its <main> has the same shape as the current one), swaps
- * only <main>'s content, and updates history — Nova's widget markup lives
+ * only <main>'s content (and the "On this page" rail beside it), and updates history — Nova's widget markup lives
  * outside <main> (see base.njk) so it is never touched by a swap.
  *
  * Self-initializing on import: attaches its click/popstate listeners
@@ -64,6 +64,12 @@ async function swapContent(pathname) {
   if (!newMain || !curMain) return false;
 
   curMain.innerHTML = newMain.innerHTML;
+  // The "On this page" rail sits outside <main> (see base.njk), so swap it too.
+  const curToc = document.querySelector('aside.page-toc');
+  const newToc = doc.querySelector('aside.page-toc');
+  if (!newToc) curToc?.remove();
+  else if (curToc) curToc.replaceWith(newToc);
+  else curMain.after(newToc);
   document.title = doc.title;
   document.body.className = doc.body.className;
 

@@ -19,7 +19,7 @@
 import './router.js';
 import { withPrefix } from './router.js';
 import { initDock, enterDockMode, enterDrawerMode, exitDrawerMode } from './dock.js';
-import { initTranscript, appendTranscript, showThinking, hideThinking } from './transcript.js';
+import { initTranscript, appendTranscript, clearTranscript, showThinking, hideThinking } from './transcript.js';
 import { initHighlighter } from './highlighter.js';
 import { initSiteNav } from './site-nav.js';
 import { SDK_BASE } from './sdk.js';
@@ -138,6 +138,56 @@ els.widget.addEventListener('click', (e) => {
   els.widget.classList.toggle('expanded');
 });
 
+// The chat drawer is a dialog: on a phone it is a full-screen sheet, so the
+// page behind it is made inert there (focus and screen readers stay in the
+// sheet). On wider screens the page beside the drawer stays usable, as before.
+const sheetMq = window.matchMedia('(max-width: 640px)');
+const PAGE_BEHIND = '.site-header, .sidebar, .nav-backdrop, main.content-wrapper, aside.page-toc';
+let opener = null;
+
+function syncDrawerA11y() {
+  const open = els.widget.classList.contains('drawer-mode');
+  const sheet = open && sheetMq.matches;
+  if (open) {
+    els.widget.setAttribute('role', 'dialog');
+    els.widget.setAttribute('aria-label', 'Chat with Nova');
+  } else {
+    els.widget.removeAttribute('role');
+    els.widget.removeAttribute('aria-label');
+  }
+  if (sheet) els.widget.setAttribute('aria-modal', 'true');
+  else els.widget.removeAttribute('aria-modal');
+  document.querySelectorAll(PAGE_BEHIND).forEach((el) => { el.inert = sheet; });
+}
+sheetMq.addEventListener('change', syncDrawerA11y);
+
+/** Open the chat drawer; on first open remember the opener and, where there is
+ * no on-screen keyboard to cover the sheet, put the cursor in the message box. */
+function openDrawer() {
+  const wasOpen = els.widget.classList.contains('drawer-mode');
+  enterDrawerMode();
+  if (!wasOpen) {
+    const a = document.activeElement;
+    opener = a && a !== document.body && !els.widget.contains(a) ? a : null;
+    if (!sheetMq.matches) els.input.focus({ preventScroll: true });
+  }
+  syncDrawerA11y();
+}
+
+/** Close the drawer and hand focus back to whatever opened it. */
+function closeDrawer() {
+  const wasOpen = els.widget.classList.contains('drawer-mode');
+  exitDrawerMode();
+  syncDrawerA11y();
+  if (!wasOpen) return;
+  const back = opener;
+  opener = null;
+  requestAnimationFrame(() => {
+    const a = document.activeElement;
+    if (!els.widget.classList.contains('drawer-mode') && back?.isConnected && (a === document.body || els.widget.contains(a))) back.focus({ preventScroll: true });
+  });
+}
+
 let session = null;
 let siteNav = null;
 let highlighter = null;
@@ -230,8 +280,8 @@ function wireTransport(transport, mode) {
   // card / corner dock. Which buttons show in each mode is pure CSS keyed on
   // .chat-mode — video: mute + hang-up (drops to chat); chat: video toggle,
   // new conversation, close.
-  if (mode === 'chat') enterDrawerMode();
-  else exitDrawerMode();
+  if (mode === 'chat') openDrawer();
+  else closeDrawer();
 
   if (mode === 'avatar') {
     transport.on('avatarStartTalking', () => els.videoWrap?.classList.add('is-talking'));
@@ -267,7 +317,7 @@ async function connect(pendingPrompt, mode = 'avatar') {
   els.videoWrap?.classList.add('is-connecting');
   // Chat opens as the drawer immediately — the visitor sees where the
   // conversation will live while it connects, not a spinner in the corner.
-  if (mode === 'chat') enterDrawerMode();
+  if (mode === 'chat') openDrawer();
   setStatus(mode === 'chat' ? 'Starting chat…' : 'Connecting…');
   if (pendingPrompt) appendTranscript('you', pendingPrompt);
   try {
@@ -460,7 +510,7 @@ function endSession() {
 function newConversation() {
   session?.disconnect();
   resetUi();
-  els.transcript.innerHTML = '';
+  clearTranscript();
   connect(undefined, 'chat');
 }
 
@@ -474,7 +524,7 @@ function resetUi(reason) {
   localEchoes = [];
   hideThinking();
   els.widget.classList.remove('chat-mode');
-  exitDrawerMode();
+  closeDrawer();
   els.videoWrap?.classList.remove('is-connecting', 'is-talking');
   els.placeholder.classList.remove('hidden');
   els.chatStart?.classList.remove('hidden');
@@ -547,6 +597,14 @@ document.addEventListener('click', (e) => {
   if (!prompt) return;
   if (session) sendUserText(prompt);
   else connect(prompt);
+});
+
+// Site search hands a query over as a typed question (text chat, so no mic prompt).
+document.addEventListener('nova:ask', (e) => {
+  const prompt = e.detail?.prompt;
+  if (!prompt) return;
+  if (session) sendUserText(prompt);
+  else connect(prompt, 'chat');
 });
 
 document.documentElement.classList.add('nova-ready');
