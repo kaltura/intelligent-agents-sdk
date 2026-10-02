@@ -215,6 +215,17 @@ test.describe('hero stage', () => {
     await expect(page.locator('#nova-video')).toHaveCSS('opacity', '1');
   });
 
+  test('connecting and talking do not pulse her brightness', async ({ page }) => {
+    await page.goto('/');
+    await expect(page.locator('html')).toHaveClass(/nova-ready/);
+    for (const state of ['is-connecting', 'is-talking']) {
+      await page.evaluate((c) => document.getElementById('nova-video-wrap').classList.add(c), state);
+      await expect(page.locator('#nova-avatar')).toHaveCSS('animation-name', 'none');
+      await expect(page.locator('#nova-video-wrap')).toHaveCSS('animation-name', state === 'is-connecting' ? 'none' : /./);
+      await page.evaluate((c) => document.getElementById('nova-video-wrap').classList.remove(c), state);
+    }
+  });
+
   test('coming back to the home page after a nav puts her back in the hero', async ({ page }) => {
     await page.goto('/');
     await expect(page.locator('html')).toHaveClass(/nova-ready/);

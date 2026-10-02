@@ -1011,6 +1011,7 @@ video {
 /* .nova-placeholder gets .hidden the moment connect.js's session.connect()
    resolves — reuse that as the "video is actually live" signal rather than
    introducing a separate JS-set flag. */
+.nova-video-wrap.is-connecting,
 .nova-video-wrap:has(.nova-placeholder.hidden) {
   animation: none;
 }
@@ -1025,25 +1026,7 @@ video {
   }
 }
 
-/* Three explicit agent states, mirroring the idle/thinking/talking
-   vocabulary conversational-AI widgets use (e.g. ElevenLabs UI's Orb) —
-   adapted to this card's own radial-gradient/box-shadow system instead of a
-   WebGL orb, keeping the SDK's zero-runtime-dependency, no-bundler stance. */
-.nova-video-wrap.is-connecting {
-  animation: nova-connecting-pulse 1s ease-in-out infinite;
-}
-
-@keyframes nova-connecting-pulse {
-  0%,
-  100% {
-    filter: brightness(1);
-  }
-  50% {
-    filter: brightness(1.18);
-  }
-}
-
-.nova-video-wrap.is-talking {
+.nova-widget.dock-mode .nova-video-wrap.is-talking {
   animation: nova-talk-pulse 900ms ease-in-out infinite;
 }
 
@@ -1163,7 +1146,7 @@ html.nova-live .nova-widget:not(.dock-mode):not(.drawer-mode) .nova-avatar :is(v
 
 html.nova-live .nova-widget:not(.dock-mode):not(.drawer-mode) .nova-figure {
   opacity: 0;
-  transition: opacity 250ms linear 800ms;
+  transition: opacity 0s linear 1050ms;
 }
 
 /* Nova's real portrait (the <video poster>) is the focal point now — this
@@ -2400,15 +2383,7 @@ html:not(.nova-ready) :is(.nova-hero-prompts, .nova-placeholder, .nova-chat-star
     transform: scale(calc(1 + (var(--avatar-zoom) - 1) * var(--hero-p, 0)));
   }
 
-  .nova-widget:not(.dock-mode):not(.drawer-mode) .nova-video-wrap.is-connecting .nova-avatar {
-    animation: nova-connecting-pulse 1s ease-in-out infinite;
-  }
-
-  .nova-widget:not(.dock-mode):not(.drawer-mode) .nova-video-wrap.is-talking .nova-avatar {
-    animation: nova-talk-pulse 900ms ease-in-out infinite;
-  }
-
-  .nova-widget:not(.dock-mode):not(.drawer-mode) .nova-video-wrap:has(.nova-placeholder.hidden):not(.is-talking) .nova-avatar {
+  .nova-widget:not(.dock-mode):not(.drawer-mode) .nova-video-wrap:is(.is-connecting, .is-talking, :has(.nova-placeholder.hidden)) .nova-avatar {
     animation: none;
   }
 
