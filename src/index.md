@@ -15,11 +15,13 @@ interface.
 <section class="nova-hero" aria-labelledby="nova-hero-heading">
   <div class="nova-hero-inner">
     <div class="nova-hero-copy">
-      <h2 id="nova-hero-heading">Meet Nova</h2>
-      <p>Nova is a live Kaltura Agentic Avatar, provisioned with this SDK's own
-      Management API and grounded on this site's own documentation. She knows
-      every page here. Ask her what the SDK does, whether it fits your use
-      case, or which page to read next. She'll take you there herself.</p>
+      <div class="nova-hero-card">
+        <h2 id="nova-hero-heading">Meet Nova</h2>
+        <p>Nova is a live Kaltura Agentic Avatar, provisioned with this SDK's own
+        Management API and grounded on this site's own documentation. She knows
+        every page here. Ask her what the SDK does, whether it fits your use
+        case, or which page to read next. She'll take you there herself.</p>
+      </div>
       <div class="nova-hero-prompts" role="group" aria-label="Suggested questions for Nova">
         <span class="nova-hero-prompts-label">Try asking:</span>
         <button type="button" class="nova-chip" data-prompt="What can you help me do on this site?">What can you do?</button>

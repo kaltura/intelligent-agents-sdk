@@ -109,10 +109,10 @@ function updateHeroScrollProgress() {
   }
   const slotRect = slot.getBoundingClientRect();
   const distance = slotRect.height || 1;
-  // A landscape stage (live video on wide screens) stays put while she is
-  // readable on screen and only zooms once a quarter of it has scrolled under
-  // the header.
-  const stage = slotRect.width > slotRect.height;
+  // On wide screens the slot is the whole hero stage. It stays put while she
+  // is readable on screen and only zooms once a quarter of it has scrolled
+  // under the header.
+  const stage = window.matchMedia('(min-width: 901px)').matches;
   const travelled = stage ? STAGE_HEADER - slotRect.top - distance * 0.25 : window.scrollY;
   const raw = Math.min(1, Math.max(0, travelled / (stage ? distance * 0.6 : distance)));
   const eased = easeOutCubic(raw);
