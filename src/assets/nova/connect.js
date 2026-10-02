@@ -39,6 +39,22 @@ try {
   throw e;
 }
 
+// Nova's avatar is rendered over a green backdrop. This keys it out live, so
+// she stands on the page itself instead of inside a video rectangle. Optional:
+// if either import fails she simply plays as the plain video. The compositor
+// is the app's own dependency (the SDK plugin never bundles one), pinned to a
+// release tag like the SDK.
+let attachChromaKeyAvatar = null;
+let ChromaKeyVideo = null;
+try {
+  [{ attachChromaKeyAvatar }, { ChromaKeyVideo }] = await Promise.all([
+    import(`${SDK_BASE}/src/experience/chroma-key.js`),
+    import('https://cdn.jsdelivr.net/gh/kaltura/chroma-key-video@v1.2.0/src/chromakey.js'),
+  ]);
+} catch (e) {
+  console.warn('[nova] chroma key unavailable, playing the plain video', e);
+}
+
 const PARTNER_ID = '6516742';
 const WIDGET_ID = '1_g7ntgoq2';
 
@@ -268,6 +284,52 @@ function ensureSocketIo() {
   });
 }
 
+/** True if the frame's corners are the green backdrop (0x6FED48, give or take
+ * compression). Lets the keyed canvas stay off for an avatar that has no
+ * green backdrop, which would otherwise show as a plain rectangle. */
+function hasGreenBackdrop(video) {
+  try {
+    const w = video.videoWidth;
+    const h = video.videoHeight;
+    if (!w || !h) return false;
+    const c = document.createElement('canvas');
+    c.width = c.height = 1;
+    const ctx = c.getContext('2d', { willReadFrequently: true });
+    const margin = 4;
+    const spots = [[margin, margin], [w - margin, margin], [margin, h / 2], [w - margin, h / 2]];
+    return spots.every(([x, y]) => {
+      ctx.drawImage(video, x, y, 1, 1, 0, 0, 1, 1);
+      const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
+      return g > 150 && g > r + 40 && g > b + 60;
+    });
+  } catch {
+    return false;
+  }
+}
+
+/** Key the green backdrop out of the avatar stream (see the imports above).
+ * The plugin tears the player down with the session; the canvas goes with it. */
+function keyAvatar(transport) {
+  const box = document.getElementById('nova-avatar');
+  if (!attachChromaKeyAvatar || !ChromaKeyVideo || !box) return;
+  try {
+    const player = attachChromaKeyAvatar({
+      session: transport,
+      videoEl: transport.videoEl,
+      ChromaKeyVideo,
+      options: { autoTune: true },
+      container: box,
+    });
+    player.canvas.classList.add('nova-keyed-canvas');
+    player.addEventListener('started', () => {
+      if (hasGreenBackdrop(transport.videoEl)) box.classList.add('is-keyed');
+      else player.destroy();
+    }, { once: true });
+  } catch (e) {
+    console.warn('[nova] chroma key failed, playing the plain video', e);
+  }
+}
+
 /**
  * Mode-specific wiring, redone on every `transportChanged` (initial attach
  * and each switchMode). Listeners on the old transport die with it — the
@@ -283,7 +345,9 @@ function wireTransport(transport, mode) {
   if (mode === 'chat') openDrawer();
   else closeDrawer();
 
+  document.getElementById('nova-avatar')?.classList.remove('is-keyed');
   if (mode === 'avatar') {
+    keyAvatar(transport);
     transport.on('avatarStartTalking', () => els.videoWrap?.classList.add('is-talking'));
     transport.on('avatarStopTalking', () => els.videoWrap?.classList.remove('is-talking'));
     transport.on('interrupted', () => els.videoWrap?.classList.remove('is-talking'));
@@ -531,6 +595,7 @@ function resetUi(reason) {
   document.documentElement.classList.remove('nova-live');
   els.disclosure.classList.add('hidden');
   els.disclosureChip.classList.add('hidden');
+  document.getElementById('nova-avatar')?.classList.remove('is-keyed');
   els.mute.disabled = true;
   els.muteIcon.textContent = 'mic';
   els.mute.setAttribute('aria-label', 'Mute');

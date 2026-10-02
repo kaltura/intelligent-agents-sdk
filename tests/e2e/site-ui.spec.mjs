@@ -150,7 +150,7 @@ test.describe('mobile nav', () => {
 test.describe('hero stage', () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
-  test('idle: copy card, portrait, pills and message box share one stage', async ({ page }) => {
+  test('idle: copy, chips and message box sit left of her, inside one stage', async ({ page }) => {
     await page.goto('/');
     await expect(page.locator('html')).toHaveClass(/nova-ready/);
     const slot = await page.locator('#nova-hero-slot').boundingBox();
@@ -158,16 +158,21 @@ test.describe('hero stage', () => {
     expect(Math.abs(slot.width - hero.width)).toBeLessThan(2);
     await expect.poll(async () => Math.abs((await page.locator('#nova-widget').boundingBox()).width - slot.width)).toBeLessThan(2);
 
-    const card = await page.locator('.nova-hero-card').boundingBox();
-    const video = await page.locator('#nova-video').boundingBox();
+    const copy = await page.locator('.nova-hero-card').boundingBox();
+    const avatar = await page.locator('#nova-avatar').boundingBox();
     const input = await page.locator('#nova-input-row').boundingBox();
-    expect(card.x + card.width).toBeLessThanOrEqual(video.x);
-    expect(video.y + video.height).toBeLessThanOrEqual(input.y);
+    const chips = await page.locator('.nova-hero-prompts').boundingBox();
+    // The copy column ends before the middle of her box; the chips sit above the message box.
+    expect(copy.x + copy.width).toBeLessThanOrEqual(avatar.x + avatar.width / 2);
+    expect(chips.y + chips.height).toBeLessThanOrEqual(input.y);
+    expect(input.x + input.width).toBeLessThanOrEqual(avatar.x + avatar.width / 2);
+    // She stands on the bottom edge of the stage.
+    expect(Math.abs(avatar.y + avatar.height - (hero.y + hero.height))).toBeLessThan(2);
     await expect(page.locator('.nova-hero-prompts .nova-chip').first()).toBeVisible();
     await expect(page.locator('#nova-placeholder')).toBeVisible();
   });
 
-  test('live: the conversation card replaces the copy card, beside her', async ({ page }) => {
+  test('live: the conversation card replaces the copy, above the message box', async ({ page }) => {
     await page.goto('/');
     await expect(page.locator('html')).toHaveClass(/nova-ready/);
     // Fake a connected call: the real one needs a live backend.
@@ -179,16 +184,54 @@ test.describe('hero stage', () => {
       t.initTranscript(document.getElementById('nova-transcript'));
       t.appendTranscript('nova', 'Hi! What are you looking to build today?');
     });
-    await expect(page.locator('.nova-hero-card')).toHaveCSS('visibility', 'hidden');
-    const video = await page.locator('#nova-video').boundingBox();
+    await expect(page.locator('.nova-hero-copy')).toHaveCSS('visibility', 'hidden');
+    const avatar = await page.locator('#nova-avatar').boundingBox();
     const convo = await page.locator('.nova-convo').boundingBox();
-    expect(convo.x + convo.width).toBeLessThanOrEqual(video.x);
+    const input = await page.locator('#nova-input-row').boundingBox();
+    expect(convo.x + convo.width).toBeLessThanOrEqual(avatar.x + avatar.width / 2);
+    expect(convo.y + convo.height).toBeLessThanOrEqual(input.y);
     for (const sel of ['.nova-drawer-head', '#nova-transcript']) {
       await expect(page.locator(sel)).toBeVisible();
       const box = await page.locator(sel).boundingBox();
-      expect(box.x + box.width, sel).toBeLessThanOrEqual(video.x);
+      expect(box.x + box.width, sel).toBeLessThanOrEqual(avatar.x + avatar.width / 2);
     }
     await expect(page.locator('#nova-input-row')).toBeVisible();
+  });
+
+  test('scroll: only her box flies to the dock, the rest of the stage fades out', async ({ page }) => {
+    await page.goto('/');
+    await expect(page.locator('html')).toHaveClass(/nova-ready/);
+    const widget = page.locator('#nova-widget');
+    const avatar = page.locator('#nova-avatar');
+    const start = await avatar.boundingBox();
+
+    // Part way: she has moved and shrunk, the copy and message box are gone.
+    // Scroll so the flight is half done (the stage flight runs over 60% of the stage height).
+    await page.evaluate(() => {
+      const r = document.getElementById('nova-hero-slot').getBoundingClientRect();
+      window.scrollTo(0, window.scrollY + r.top - (64 - 0.55 * r.height));
+    });
+    await expect.poll(() => page.locator('html').evaluate((el) => Number(el.style.getPropertyValue('--hero-p')))).toBeGreaterThan(0.5);
+    const mid = await avatar.boundingBox();
+    expect(mid.width).toBeLessThan(start.width);
+    await expect(page.locator('.nova-hero-copy')).toHaveCSS('opacity', '0');
+    await expect(page.locator('#nova-input-row')).toHaveCSS('opacity', '0');
+    await expect(page.locator('#nova-input-row')).toHaveCSS('pointer-events', 'none');
+    await expect(widget).not.toHaveClass(/dock-mode/);
+
+    // All the way: the dock takes over with the same box.
+    await page.evaluate(() => window.scrollTo(0, 2000));
+    await expect(widget).toHaveClass(/dock-mode/);
+    const docked = await page.locator('#nova-video-wrap').boundingBox();
+    expect(docked.width).toBeLessThanOrEqual(260);
+    expect(docked.x + docked.width).toBeLessThanOrEqual(1440);
+    expect(docked.y + docked.height).toBeLessThanOrEqual(900);
+
+    // Back up: she returns to the stage.
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await expect(widget).not.toHaveClass(/dock-mode/);
+    await expect.poll(async () => Math.abs((await avatar.boundingBox()).width - start.width)).toBeLessThan(2);
+    await expect(page.locator('#nova-input-row')).toHaveCSS('opacity', '1');
   });
 });
 
