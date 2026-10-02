@@ -147,6 +147,37 @@ test.describe('mobile nav', () => {
   });
 });
 
+test.describe('live video stage', () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  test('on wide screens the controls and transcript sit beside her, not over her face', async ({ page }) => {
+    await page.goto('/');
+    await expect(page.locator('html')).toHaveClass(/nova-ready/);
+    // Fake a connected call: the real one needs a live backend.
+    await page.evaluate(async () => {
+      document.documentElement.classList.add('nova-live');
+      document.getElementById('nova-placeholder').classList.add('hidden');
+      document.getElementById('nova-chat-start').classList.add('hidden');
+      const t = await import('/assets/nova/transcript.js');
+      t.initTranscript(document.getElementById('nova-transcript'));
+      t.appendTranscript('nova', 'Hi! What are you looking to build today?');
+    });
+    await page.evaluate(() => document.getElementById('nova-hero-slot').scrollIntoView({ block: 'center' }));
+    await expect(page.locator('#nova-widget')).not.toHaveClass(/dock-mode/);
+
+    const slot = await page.locator('#nova-hero-slot').boundingBox();
+    expect(slot.width).toBeGreaterThan(slot.height);
+    await expect.poll(async () => Math.abs((await page.locator('#nova-widget').boundingBox()).width - slot.width)).toBeLessThan(2);
+
+    const video = await page.locator('#nova-video').boundingBox();
+    for (const sel of ['.nova-controls', '#nova-transcript', '#nova-input-row']) {
+      const box = await page.locator(sel).boundingBox();
+      // The panel may reach into the video's faded edge, never past its first quarter.
+      expect(box.x + box.width, sel).toBeLessThanOrEqual(video.x + video.width * 0.25);
+    }
+  });
+});
+
 test.describe('on this page rail', () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 

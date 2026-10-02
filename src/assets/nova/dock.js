@@ -8,6 +8,7 @@
 const widget = document.getElementById('nova-widget');
 
 const DOCK_MARGIN = 24;
+const STAGE_HEADER = 64;
 const DOCK_SIZE_MOBILE = 112;
 const DOCK_SIZE_DESKTOP = 240;
 const HIGHLIGHT_MS = 5000;
@@ -108,17 +109,25 @@ function updateHeroScrollProgress() {
   }
   const slotRect = slot.getBoundingClientRect();
   const distance = slotRect.height || 1;
-  const raw = Math.min(1, Math.max(0, window.scrollY / distance));
+  // A landscape stage (live video on wide screens) stays put while she is
+  // readable on screen and only zooms once a quarter of it has scrolled under
+  // the header.
+  const stage = slotRect.width > slotRect.height;
+  const travelled = stage ? STAGE_HEADER - slotRect.top - distance * 0.25 : window.scrollY;
+  const raw = Math.min(1, Math.max(0, travelled / (stage ? distance * 0.6 : distance)));
   const eased = easeOutCubic(raw);
   dockRect = computeDockRect();
 
   widget.style.transition = 'none';
-  applyRect({
+  const rect = {
     top: lerp(slotRect.top, dockRect.top, eased),
     left: lerp(slotRect.left, dockRect.left, eased),
     width: lerp(slotRect.width, dockRect.width, eased),
     height: lerp(slotRect.height, dockRect.height, eased),
-  });
+  };
+  applyRect(rect);
+  // Her stage can scroll up under the sticky header: keep the part above it hidden.
+  widget.style.clipPath = stage && rect.top < STAGE_HEADER ? `inset(${STAGE_HEADER - rect.top}px 0 0 0)` : '';
 
   // Border-radius crossfades over the first half of the transition — by the
   // point the chrome swaps (mic icon, hard circle mask) below, the shape has
@@ -215,6 +224,7 @@ export function enterDockMode() {
   if (drawerActive || mode === 'dock') return;
   mode = 'dock';
   widget.classList.add('dock-mode');
+  widget.style.clipPath = '';
   widget.style.transition = 'top 420ms cubic-bezier(0.22, 1, 0.36, 1), left 420ms cubic-bezier(0.22, 1, 0.36, 1), width 420ms cubic-bezier(0.22, 1, 0.36, 1), height 420ms cubic-bezier(0.22, 1, 0.36, 1)';
   const wrap = widget.querySelector('.nova-video-wrap');
   if (wrap) wrap.style.borderRadius = '';
@@ -233,6 +243,7 @@ export function enterDrawerMode() {
   clearPointing(true);
   widget.classList.remove('dock-mode', 'expanded', 'pointing');
   widget.classList.add('drawer-mode');
+  widget.style.clipPath = '';
   widget.style.transition = 'none';
   widget.style.top = '';
   widget.style.left = '';
