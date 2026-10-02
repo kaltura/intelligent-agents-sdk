@@ -5,7 +5,26 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
   <meta name="theme-color" content="#333333">
   <title>{{ title }} — @kaltura/intelligent-agents</title>
-  {% if description %}<meta name="description" content="{{ description }}">{% endif %}
+  {%- set metaTitle = ogTitle or (title + " — " + site.name) %}
+  {%- set metaDescription = description or site.description %}
+  <meta name="description" content="{{ metaDescription }}">
+  <link rel="canonical" href="{{ site.url }}{{ page.url }}">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="{{ site.name }}">
+  <meta property="og:title" content="{{ metaTitle }}">
+  <meta property="og:description" content="{{ metaDescription }}">
+  <meta property="og:url" content="{{ site.url }}{{ page.url }}">
+  <meta property="og:locale" content="en_US">
+  <meta property="og:image" content="{{ site.url }}{{ site.image }}">
+  <meta property="og:image:type" content="image/jpeg">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="{{ site.imageAlt }}">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="{{ metaTitle }}">
+  <meta name="twitter:description" content="{{ metaDescription }}">
+  <meta name="twitter:image" content="{{ site.url }}{{ site.image }}">
+  <meta name="twitter:image:alt" content="{{ site.imageAlt }}">
   <link rel="icon" href="/assets/logo/favicon.svg" type="image/svg+xml">
   <link rel="preload" href="/assets/fonts/SourceSansPro-Regular.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="/assets/fonts/CentraNo1-Bold.woff2" as="font" type="font/woff2" crossorigin>
