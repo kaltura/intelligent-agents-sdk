@@ -94,6 +94,14 @@ name: Live verification
 # admin session thread reach, OVP reach, the shared identity of a no-userId
 # or widget token, the agent persona, per-user appInit and revoke. See
 # scripts/live-verify-session-types.mjs.
+# Layout. The PR checks list is flat (one row per job), so the scripts are steps
+# inside three jobs: `live-verify-api` (server-side scripts, one step each),
+# `live-verify-browser` (browser scripts, one job per engine) and the gate. The
+# step groups below are still called by their old names (live-verify-kickoff,
+# live-verify-mcp, ...): each one is a script plus the path filter named after it
+# in the `changes` job. A step runs when its filter is true or on a manual or
+# nightly run; every step runs even if an earlier one failed, and the job
+# fails if any did. Open a run to see each step.
 on:
   workflow_dispatch: {}
   pull_request:
@@ -117,7 +125,7 @@ concurrency:
 
 jobs:
   changes:
-    name: 🔍 Detect changed paths
+    name: Setup · Detect changed paths
     runs-on: ubuntu-26.04
     timeout-minutes: 5
     outputs:
@@ -143,6 +151,10 @@ jobs:
       intellects-conversations: ${{ steps.filter.outputs.intellects-conversations }}
       tools: ${{ steps.filter.outputs.tools }}
       mcp: ${{ steps.filter.outputs.mcp }}
+      all: ${{ steps.groups.outputs.all }}
+      group-api: ${{ steps.groups.outputs.api }}
+      group-browser: ${{ steps.groups.outputs.browser }}
+      engines: ${{ steps.groups.outputs.engines }}
     steps:
       - name: 📥 Check out the repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -446,14 +458,41 @@ jobs:
               - 'src/core/redact.js'
               - '.github/workflows/live-verify.yml'
 
-  live-verify:
-    name: 🔴 Live verification (smoke)
+      # One flag per job, so the PR checks list shows API, Browser (one row per
+      # engine) and the gate instead of one row per script. Each script is a step
+      # inside those jobs and reads its own flag above. Manual and nightly runs
+      # (`all`) switch every step on.
+      - name: 🧮 Group the flags per job
+        id: groups
+        env:
+          FLAGS: ${{ toJSON(steps.filter.outputs) }}
+          RUN_ALL: ${{ github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' }}
+        run: |
+          has() { [ "$RUN_ALL" = true ] || [ "$(jq -r --arg k "$1" '.[$k]' <<<"$FLAGS")" = true ]; }
+          any() { local k; for k in "$@"; do has "$k" && return 0; done; return 1; }
+          api=false
+          any smoke conversation-surface threads-messages-feedback request-vars site-nav session-types capabilities agents avatars catalog intellects-conversations knowledge skills tools mcp && api=true
+          engines=()
+          any browser avatar-media session-complete opening-phrase kickoff set-forced-language context-fields && engines+=(chromium)
+          any browser avatar-media session-complete && engines+=(firefox)
+          any session-complete && engines+=(webkit)
+          browser=false
+          [ "${#engines[@]}" -gt 0 ] && browser=true
+          {
+            echo "all=$RUN_ALL"
+            echo "api=$api"
+            echo "browser=$browser"
+            echo "engines=$(jq -nc '$ARGS.positional' --args "${engines[@]}")"
+          } >> "$GITHUB_OUTPUT"
+
+  live-verify-api:
+    name: API
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
-      ((github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && needs.changes.outputs['smoke'] == 'true')
+      ((github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && needs.changes.outputs['group-api'] == 'true')
     runs-on: ubuntu-26.04
-    timeout-minutes: 20
+    timeout-minutes: 30
     environment: live-verify
     steps:
       - name: 📥 Check out the repo
@@ -464,8 +503,15 @@ jobs:
         with:
           node-version: 24
 
-      - name: 🔴 Session creation → one converse turn → cleanup, against the real Kaltura API
+      - name: 📦 Install dependencies
+        id: setup
+        run: npm ci
+
+      # Session creation → one converse turn → cleanup, against the real Kaltura API
+      - name: Smoke
         id: live_verify
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' && (needs.changes.outputs.all == 'true' || needs.changes.outputs['smoke'] == 'true') }}
+        timeout-minutes: 15
         env:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
           AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
@@ -473,95 +519,11 @@ jobs:
           set -o pipefail
           node scripts/live-verify.mjs 2>&1 | tee live-verify-output.log
 
-      - name: 📤 Upload live-verify artifact
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: live-verify-artifacts
-          path: |
-            live-verify-artifacts/
-            live-verify-output.log
-          retention-days: 30
-
-      - name: 📝 Write job summary
-        if: always()
-        run: |
-          {
-            echo "### 🔴 Live verification — ${{ steps.live_verify.outcome }}"
-            echo
-            echo '```'
-            tail -n 40 live-verify-output.log
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-
-  live-verify-capabilities:
-    name: 🔴 Live verification (Knowledge/Application/Avatars/Lifecycle)
-    needs: changes
-    if: |
-      github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
-      ((github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && needs.changes.outputs['capabilities'] == 'true')
-    runs-on: ubuntu-26.04
-    timeout-minutes: 20
-    environment: live-verify
-    steps:
-      - name: 📥 Check out the repo
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      - name: 🟢 Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
-        with:
-          node-version: 24
-
-      - name: 🔴 Knowledge#listRecords, Application#getCustomPrompts, Avatars#listTemplates, Lifecycle create→get/list→match→update→delete, against the real Kaltura API
-        id: live_verify_capabilities
-        env:
-          AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
-          AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
-        run: |
-          set -o pipefail
-          npm run live-verify:capabilities 2>&1 | tee live-verify-capabilities-output.log
-
-      - name: 📤 Upload live-verify-capabilities artifact
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: live-verify-capabilities-artifacts
-          path: |
-            live-verify-artifacts/
-            live-verify-capabilities-output.log
-          retention-days: 30
-
-      - name: 📝 Write job summary
-        if: always()
-        run: |
-          {
-            echo "### 🔴 Live verification (Knowledge/Application/Avatars/Lifecycle) — ${{ steps.live_verify_capabilities.outcome }}"
-            echo
-            echo '```'
-            tail -n 40 live-verify-capabilities-output.log
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-
-  live-verify-conversation-surface:
-    name: 🔴 Live verification (Threads/Feedback/Followups/Avatars composition/Catalog Face+Background)
-    needs: changes
-    if: |
-      github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
-      ((github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && needs.changes.outputs['conversation-surface'] == 'true')
-    runs-on: ubuntu-26.04
-    timeout-minutes: 20
-    environment: live-verify
-    steps:
-      - name: 📥 Check out the repo
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      - name: 🟢 Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
-        with:
-          node-version: 24
-
-      - name: 🔴 Threads#push/setAnalysis/clearAnalysis, Feedback#add/list/report, Followups#list, Avatars#create/update (face+background, templateId+background), Catalog#createFace/createBackground, against the real Kaltura API
+      # Threads#push/setAnalysis/clearAnalysis, Feedback#add/list/report, Followups#list, Avatars#create/update (face+background, templateId+background), Catalog#createFace/createBackground, against the real Kaltura API
+      - name: Conversation · Push, analysis, feedback, followups, composition
         id: live_verify_conversation_surface
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' && (needs.changes.outputs.all == 'true' || needs.changes.outputs['conversation-surface'] == 'true') }}
+        timeout-minutes: 15
         env:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
           AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
@@ -569,198 +531,11 @@ jobs:
           set -o pipefail
           npm run live-verify:conversation-surface 2>&1 | tee live-verify-conversation-surface-output.log
 
-      - name: 📤 Upload live-verify-conversation-surface artifact
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: live-verify-conversation-surface-artifacts
-          path: |
-            live-verify-artifacts/
-            live-verify-conversation-surface-output.log
-          retention-days: 30
-
-      - name: 📝 Write job summary
-        if: always()
-        run: |
-          {
-            echo "### 🔴 Live verification (Threads/Feedback/Followups/Avatars composition/Catalog Face+Background) — ${{ steps.live_verify_conversation_surface.outcome }}"
-            echo
-            echo '```'
-            tail -n 40 live-verify-conversation-surface-output.log
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-
-  live-verify-request-vars:
-    name: 🔴 Live verification (request_vars persistence/merge/tool interpolation/sys__*)
-    needs: changes
-    if: |
-      github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
-      ((github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && needs.changes.outputs['request-vars'] == 'true')
-    runs-on: ubuntu-26.04
-    timeout-minutes: 20
-    environment: live-verify
-    steps:
-      - name: 📥 Check out the repo
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      - name: 🟢 Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
-        with:
-          node-version: 24
-
-      - name: 🔴 Per-thread request_vars persistence/merge, tool-template interpolation, sys__* injection, large page_context, fresh-thread scope reset, against the real Kaltura API
-        id: live_verify_request_vars
-        env:
-          AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
-          AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
-        run: |
-          set -o pipefail
-          npm run live-verify:request-vars 2>&1 | tee live-verify-request-vars-output.log
-
-      - name: 📤 Upload live-verify-request-vars artifact
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: live-verify-request-vars-artifacts
-          path: |
-            live-verify-artifacts/
-            live-verify-request-vars-output.log
-          retention-days: 30
-
-      - name: 📝 Write job summary
-        if: always()
-        run: |
-          {
-            echo "### 🔴 Live verification (request_vars persistence/merge/tool interpolation/sys__*) — ${{ steps.live_verify_request_vars.outcome }}"
-            echo
-            echo '```'
-            tail -n 40 live-verify-request-vars-output.log
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-
-  live-verify-context-fields:
-    name: 🔴🌐 Live verification (sys__context_id/sys__context_type wire fields)
-    needs: changes
-    if: |
-      github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
-      ((github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && needs.changes.outputs['context-fields'] == 'true')
-    runs-on: ubuntu-26.04
-    timeout-minutes: 20
-    environment: live-verify
-    steps:
-      - name: 📥 Check out the repo
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      - name: 🟢 Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
-        with:
-          node-version: 24
-
-      - name: 📦 Install dependencies
-        run: npm ci
-
-      - name: 🎭 Install chromium
-        run: npx playwright install --with-deps chromium
-
-      - name: 🔴🌐 Real conversation, contextId/contextType wire-payload keys + sys__context_id/sys__context_type prompt rendering, with and without context, against the real Kaltura API
-        id: live_verify_context_fields
-        env:
-          AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
-          AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
-        run: |
-          set -o pipefail
-          npm run live-verify:context-fields 2>&1 | tee live-verify-context-fields-output.log
-
-      - name: 📤 Upload live-verify-context-fields artifact
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: live-verify-context-fields-artifacts
-          path: |
-            live-verify-artifacts/
-            live-verify-context-fields-output.log
-          retention-days: 30
-
-      - name: 📝 Write job summary
-        if: always()
-        run: |
-          {
-            echo "### 🔴🌐 Live verification (sys__context_id/sys__context_type wire fields) — ${{ steps.live_verify_context_fields.outcome }}"
-            echo
-            echo '```'
-            tail -n 40 live-verify-context-fields-output.log
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-
-  live-verify-site-nav:
-    name: 🔴 Live verification (go_to site navigation)
-    needs: changes
-    if: |
-      github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
-      ((github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && needs.changes.outputs['site-nav'] == 'true')
-    runs-on: ubuntu-26.04
-    timeout-minutes: 20
-    environment: live-verify
-    steps:
-      - name: 📥 Check out the repo
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      - name: 🟢 Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
-        with:
-          node-version: 24
-
-      - name: 🔴 goToTool echo → idempotent update → SITE MAP intellect → one mapped go_to → zero unmapped go_to → cleanup, against the real Kaltura API
-        id: live_verify_site_nav
-        env:
-          AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
-          AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
-        run: |
-          set -o pipefail
-          npm run live-verify:site-nav 2>&1 | tee live-verify-site-nav-output.log
-
-      - name: 📤 Upload live-verify-site-nav artifact
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: live-verify-site-nav-artifacts
-          path: |
-            live-verify-artifacts/
-            live-verify-site-nav-output.log
-          retention-days: 30
-
-      - name: 📝 Write job summary
-        if: always()
-        run: |
-          {
-            echo "### 🔴 Live verification (go_to site navigation) — ${{ steps.live_verify_site_nav.outcome }}"
-            echo
-            echo '```'
-            tail -n 40 live-verify-site-nav-output.log
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-
-
-  live-verify-threads-messages-feedback:
-    name: 🔴 Live verification (threads/messages/feedback/followups)
-    needs: changes
-    if: |
-      github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
-      ((github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && needs.changes.outputs['threads-messages-feedback'] == 'true')
-    runs-on: ubuntu-26.04
-    timeout-minutes: 20
-    environment: live-verify
-    steps:
-      - name: 📥 Check out the repo
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      - name: 🟢 Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
-        with:
-          node-version: 24
-
-      - name: 🔴 Scratch thread via converse → get/rename/transcript, messages.list/share, feedback.add, followups.getSuggested → delete → cleanup, against the real Kaltura API
+      # Scratch thread via converse → get/rename/transcript, messages.list/share, feedback.add, followups.getSuggested → delete → cleanup, against the real Kaltura API
+      - name: Conversation · Threads, messages, share, followups
         id: live_verify_threads_messages_feedback
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' && (needs.changes.outputs.all == 'true' || needs.changes.outputs['threads-messages-feedback'] == 'true') }}
+        timeout-minutes: 15
         env:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
           AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
@@ -768,50 +543,35 @@ jobs:
           set -o pipefail
           npm run live-verify:threads-messages-feedback 2>&1 | tee live-verify-threads-messages-feedback-output.log
 
-      - name: 📤 Upload live-verify-threads-messages-feedback artifact
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: live-verify-threads-messages-feedback-artifacts
-          path: |
-            live-verify-artifacts/
-            live-verify-threads-messages-feedback-output.log
-          retention-days: 30
-
-      - name: 📝 Write job summary
-        if: always()
+      # Per-thread request_vars persistence/merge, tool-template interpolation, sys__* injection, large page_context, fresh-thread scope reset, against the real Kaltura API
+      - name: Conversation · request_vars and sys__* variables
+        id: live_verify_request_vars
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' && (needs.changes.outputs.all == 'true' || needs.changes.outputs['request-vars'] == 'true') }}
+        timeout-minutes: 15
+        env:
+          AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
+          AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
         run: |
-          {
-            echo "### 🔴 Live verification (threads/messages/feedback/followups) — ${{ steps.live_verify_threads_messages_feedback.outcome }}"
-            echo
-            echo '```'
-            tail -n 40 live-verify-threads-messages-feedback-output.log
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+          set -o pipefail
+          npm run live-verify:request-vars 2>&1 | tee live-verify-request-vars-output.log
 
-  live-verify-session-types:
-    name: 🔴 Live verification (session types and token reach)
-    needs: changes
-    if: |
-      github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
-      ((github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && needs.changes.outputs['session-types'] == 'true')
-    runs-on: ubuntu-26.04
-    timeout-minutes: 20
-    environment: live-verify
-    steps:
-      - name: 📥 Check out the repo
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      # goToTool echo → idempotent update → SITE MAP intellect → one mapped go_to → zero unmapped go_to → cleanup, against the real Kaltura API
+      - name: Conversation · go_to site navigation
+        id: live_verify_site_nav
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' && (needs.changes.outputs.all == 'true' || needs.changes.outputs['site-nav'] == 'true') }}
+        timeout-minutes: 15
+        env:
+          AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
+          AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
+        run: |
+          set -o pipefail
+          npm run live-verify:site-nav 2>&1 | tee live-verify-site-nav-output.log
 
-      - name: 🟢 Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
-        with:
-          node-version: 24
-
-      - name: 📦 Install dependencies
-        run: npm ci
-
-      - name: 🔴 User vs admin session reach per token kind, no-userId and widget shared identity, persona, per-user appInit, revoke → cleanup, against the real Kaltura API
+      # User vs admin session reach per token kind, no-userId and widget shared identity, persona, per-user appInit, revoke → cleanup, against the real Kaltura API
+      - name: Conversation · Session types and token reach
         id: live_verify_session_types
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' && (needs.changes.outputs.all == 'true' || needs.changes.outputs['session-types'] == 'true') }}
+        timeout-minutes: 15
         env:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
           AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
@@ -819,239 +579,23 @@ jobs:
           set -o pipefail
           npm run live-verify:session-types 2>&1 | tee live-verify-session-types-output.log
 
-      - name: 📤 Upload live-verify-session-types artifact
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: live-verify-session-types-artifacts
-          path: |
-            live-verify-artifacts/
-            live-verify-session-types-output.log
-          retention-days: 30
-
-      - name: 📝 Write job summary
-        if: always()
-        run: |
-          {
-            echo "### 🔴 Live verification (session types and token reach): ${{ steps.live_verify_session_types.outcome }}"
-            echo
-            echo '```'
-            tail -n 40 live-verify-session-types-output.log
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-
-  live-verify-skills:
-    name: 🔴 Live verification (skills)
-    needs: changes
-    if: |
-      github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
-      ((github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && needs.changes.outputs['skills'] == 'true')
-    runs-on: ubuntu-26.04
-    timeout-minutes: 20
-    environment: live-verify
-    steps:
-      - name: 📥 Check out the repo
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      - name: 🟢 Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
-        with:
-          node-version: 24
-
-      - name: 🔴 Skills add/get/list/update(rename)/delete → cleanup, against the real Kaltura API
-        id: live_verify_skills
+      # Knowledge#listRecords, Application#getCustomPrompts, Avatars#listTemplates, Lifecycle create→get/list→match→update→delete, against the real Kaltura API
+      - name: Resources · Read paths and lifecycle
+        id: live_verify_capabilities
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' && (needs.changes.outputs.all == 'true' || needs.changes.outputs['capabilities'] == 'true') }}
+        timeout-minutes: 15
         env:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
           AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
         run: |
           set -o pipefail
-          npm run live-verify:skills 2>&1 | tee live-verify-skills-output.log
+          npm run live-verify:capabilities 2>&1 | tee live-verify-capabilities-output.log
 
-      - name: 📤 Upload live-verify-skills artifact
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: live-verify-skills-artifacts
-          path: |
-            live-verify-artifacts/
-            live-verify-skills-output.log
-          retention-days: 30
-
-      - name: 📝 Write job summary
-        if: always()
-        run: |
-          {
-            echo "### 🔴 Live verification (skills) — ${{ steps.live_verify_skills.outcome }}"
-            echo
-            echo '```'
-            tail -n 40 live-verify-skills-output.log
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-
-  live-verify-catalog:
-    name: 🔴 Live verification (catalog)
-    needs: changes
-    if: |
-      github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
-      ((github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && needs.changes.outputs['catalog'] == 'true')
-    runs-on: ubuntu-26.04
-    timeout-minutes: 20
-    environment: live-verify
-    steps:
-      - name: 📥 Check out the repo
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      - name: 🟢 Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
-        with:
-          node-version: 24
-
-      - name: 🔴 Catalog createVisual/get/list/update(rename)/delete → cleanup, against the real Kaltura API
-        id: live_verify_catalog
-        env:
-          AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
-          AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
-        run: |
-          set -o pipefail
-          npm run live-verify:catalog 2>&1 | tee live-verify-catalog-output.log
-
-      - name: 📤 Upload live-verify-catalog artifact
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: live-verify-catalog-artifacts
-          path: |
-            live-verify-artifacts/
-            live-verify-catalog-output.log
-          retention-days: 30
-
-      - name: 📝 Write job summary
-        if: always()
-        run: |
-          {
-            echo "### 🔴 Live verification (catalog) — ${{ steps.live_verify_catalog.outcome }}"
-            echo
-            echo '```'
-            tail -n 40 live-verify-catalog-output.log
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-
-  live-verify-knowledge:
-    name: 🔴 Live verification (knowledge write path)
-    needs: changes
-    if: |
-      github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
-      ((github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && needs.changes.outputs['knowledge'] == 'true')
-    runs-on: ubuntu-26.04
-    timeout-minutes: 20
-    environment: live-verify
-    steps:
-      - name: 📥 Check out the repo
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      - name: 🟢 Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
-        with:
-          node-version: 24
-
-      - name: 🔴 Knowledge addRecord/getRecord/list/updateRecord/addSource/removeSource/entryStatus/deleteRecord → cleanup, against the real Kaltura API
-        id: live_verify_knowledge
-        env:
-          AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
-          AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
-        run: |
-          set -o pipefail
-          npm run live-verify:knowledge 2>&1 | tee live-verify-knowledge-output.log
-
-      - name: 📤 Upload live-verify-knowledge artifact
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: live-verify-knowledge-artifacts
-          path: |
-            live-verify-artifacts/
-            live-verify-knowledge-output.log
-          retention-days: 30
-
-      - name: 📝 Write job summary
-        if: always()
-        run: |
-          {
-            echo "### 🔴 Live verification (knowledge write path) — ${{ steps.live_verify_knowledge.outcome }}"
-            echo
-            echo '```'
-            tail -n 40 live-verify-knowledge-output.log
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-
-  live-verify-avatars:
-    name: 🔴 Live verification (avatars write path)
-    needs: changes
-    if: |
-      github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
-      ((github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && needs.changes.outputs['avatars'] == 'true')
-    runs-on: ubuntu-26.04
-    timeout-minutes: 20
-    environment: live-verify
-    steps:
-      - name: 📥 Check out the repo
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      - name: 🟢 Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
-        with:
-          node-version: 24
-
-      - name: 🔴 Scratch Visual → avatars create/get/update(openingPhrase)/delete → cleanup, against the real Kaltura API
-        id: live_verify_avatars
-        env:
-          AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
-          AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
-        run: |
-          set -o pipefail
-          npm run live-verify:avatars 2>&1 | tee live-verify-avatars-output.log
-
-      - name: 📤 Upload live-verify-avatars artifact
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: live-verify-avatars-artifacts
-          path: |
-            live-verify-artifacts/
-            live-verify-avatars-output.log
-          retention-days: 30
-
-      - name: 📝 Write job summary
-        if: always()
-        run: |
-          {
-            echo "### 🔴 Live verification (avatars write path) — ${{ steps.live_verify_avatars.outcome }}"
-            echo
-            echo '```'
-            tail -n 40 live-verify-avatars-output.log
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-
-  live-verify-agents:
-    name: 🔴 Live verification (agents)
-    needs: changes
-    if: |
-      github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
-      ((github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && needs.changes.outputs['agents'] == 'true')
-    runs-on: ubuntu-26.04
-    timeout-minutes: 20
-    environment: live-verify
-    steps:
-      - name: 📥 Check out the repo
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      - name: 🟢 Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
-        with:
-          node-version: 24
-
-      - name: 🔴 Scratch intellect + avatar → agents create/get/list/update(rename)/delete → cleanup, against the real Kaltura API
+      # Scratch intellect + avatar → agents create/get/list/update(rename)/delete → cleanup, against the real Kaltura API
+      - name: Resources · Agents
         id: live_verify_agents
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' && (needs.changes.outputs.all == 'true' || needs.changes.outputs['agents'] == 'true') }}
+        timeout-minutes: 15
         env:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
           AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
@@ -1059,467 +603,35 @@ jobs:
           set -o pipefail
           npm run live-verify:agents 2>&1 | tee live-verify-agents-output.log
 
-      - name: 📤 Upload live-verify-agents artifact
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: live-verify-agents-artifacts
-          path: |
-            live-verify-artifacts/
-            live-verify-agents-output.log
-          retention-days: 30
-
-      - name: 📝 Write job summary
-        if: always()
-        run: |
-          {
-            echo "### 🔴 Live verification (agents) — ${{ steps.live_verify_agents.outcome }}"
-            echo
-            echo '```'
-            tail -n 40 live-verify-agents-output.log
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-
-  live-verify-browser:
-    name: 🔴🌐 Live browser verification (${{ matrix.engine }})
-    needs: changes
-    if: |
-      github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
-      ((github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && needs.changes.outputs['browser'] == 'true')
-    runs-on: ubuntu-26.04
-    timeout-minutes: 20
-    environment: live-verify
-    strategy:
-      fail-fast: false
-      matrix:
-        # firefox: Playwright's bundled headless Firefox has no H264 in
-        # RTCRtpReceiver.getCapabilities('video') until its OpenH264 GMP plugin is
-        # fetched (off by default in this launch profile — the SRS WHEP server only
-        # serves H264 video, so without it the server answers Firefox's VP8/VP9/AV1
-        # offer with `a=inactive` and no frame arrives). live-verify-browser.mjs
-        # enables the GMP fetch via firefoxUserPrefs and waits (measured 20-40s
-        # against Mozilla's real update service, 120s budget) before navigating.
-        #
-        # webkit is deliberately NOT in this matrix. Linux WebKitGTK has no
-        # built-in H264 decoder, and apt-installing GStreamer's H264 plugins
-        # doesn't fix it either — Playwright's WebKit build on Linux doesn't
-        # decode through them, so this leg can never pass on ubuntu-26.04.
-        # A macos-14 runner (real AVFoundation decode) was tried instead and
-        # hit a worse, unresolved blocker: the job hangs indefinitely
-        # requesting camera/mic permissions, almost certainly macOS's TCC
-        # privacy prompt with no UI to dismiss headlessly. Real-Safari
-        # coverage for this path is manual — see
-        # manual-testing/voice-video/README.md. webkit stays in the
-        # live-verify-session-complete matrix below and in ci.yml's
-        # noise-suppressor matrix (a different workflow file), since both
-        # pass on it.
-        engine: [chromium, firefox]
-    steps:
-      - name: 📥 Check out the repo
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      - name: 🟢 Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
-        with:
-          node-version: 24
-
-      - name: 📦 Install dependencies
-        run: npm ci
-
-      - name: 🎭 Install ${{ matrix.engine }}
-        run: npx playwright install --with-deps ${{ matrix.engine }}
-
-      - name: 🔴🌐 Provision a real avatar → render in headless ${{ matrix.engine }} → verify chroma-key + mic audio flow → cleanup
-        id: live_verify_browser
-        env:
-          AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
-          AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
-          LIVE_VERIFY_BROWSER: ${{ matrix.engine }}
-        run: |
-          set -o pipefail
-          node scripts/live-verify-browser.mjs 2>&1 | tee live-verify-browser-output.log
-
-      - name: 📤 Upload live-verify-browser artifact
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: live-verify-browser-artifacts-${{ matrix.engine }}
-          path: |
-            live-verify-artifacts/
-            live-verify-browser-output.log
-          retention-days: 30
-
-      - name: 📝 Write job summary (with embedded screenshot)
-        if: always()
-        run: |
-          {
-            echo "### 🔴🌐 Live browser verification (${{ matrix.engine }}) — ${{ steps.live_verify_browser.outcome }}"
-            echo
-            echo '```'
-            tail -n 40 live-verify-browser-output.log
-            echo '```'
-            shot=$(ls -t live-verify-artifacts/*.png 2>/dev/null | head -n 1 || true)
-            if [ -n "$shot" ]; then
-              echo
-              echo "Composited chroma-key output ($shot):"
-              echo
-              b64=$(base64 -w 0 "$shot" 2>/dev/null || base64 "$shot")
-              echo "![chroma-key composited output](data:image/png;base64,$b64)"
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
-
-  live-verify-kickoff:
-    name: 🔴🌐 Live verification (silent opening + kickoff + startup KPIs, chromium)
-    needs: changes
-    if: |
-      github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
-      ((github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && needs.changes.outputs['kickoff'] == 'true')
-    runs-on: ubuntu-26.04
-    timeout-minutes: 20
-    environment: live-verify
-    steps:
-      - name: 📥 Check out the repo
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      - name: 🟢 Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
-        with:
-          node-version: 24
-
-      - name: 📦 Install dependencies
-        run: npm ci
-
-      - name: 🎭 Install chromium
-        run: npx playwright install --with-deps chromium
-
-      - name: 🔴🌐 Provision 3 agents (silent+kickoff, Jinja2, Jinja2 <blank> + kickoff) → measure connect timing (3 runs each) → check startup KPIs per arm → cleanup
-        id: live_verify_connect_timing
+      # Scratch Visual → avatars create/get/update(openingPhrase)/delete → cleanup, against the real Kaltura API
+      - name: Resources · Avatars
+        id: live_verify_avatars
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' && (needs.changes.outputs.all == 'true' || needs.changes.outputs['avatars'] == 'true') }}
+        timeout-minutes: 15
         env:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
           AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
         run: |
           set -o pipefail
-          node scripts/live-verify-connect-timing.mjs --env prod --compare jinja --runs 9 2>&1 | tee live-verify-connect-timing-output.log
+          npm run live-verify:avatars 2>&1 | tee live-verify-avatars-output.log
 
-      - name: 🔴🌐 Provision a silent-opening agent → run the kickoff scenario matrix → cleanup
-        id: live_verify_kickoff
-        if: always()
+      # Catalog createVisual/get/list/update(rename)/delete → cleanup, against the real Kaltura API
+      - name: Resources · Catalog
+        id: live_verify_catalog
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' && (needs.changes.outputs.all == 'true' || needs.changes.outputs['catalog'] == 'true') }}
+        timeout-minutes: 15
         env:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
           AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
         run: |
           set -o pipefail
-          node scripts/live-verify-kickoff.mjs --env prod 2>&1 | tee live-verify-kickoff-output.log
+          npm run live-verify:catalog 2>&1 | tee live-verify-catalog-output.log
 
-      - name: 📤 Upload live-verify-kickoff artifacts
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: live-verify-kickoff-artifacts
-          path: |
-            live-verify-artifacts/
-            live-verify-connect-timing-output.log
-            live-verify-kickoff-output.log
-          retention-days: 90
-
-      - name: 📝 Write job summary (startup KPIs first)
-        if: always()
-        run: |
-          {
-            echo "### 🔴🌐 Silent opening + kickoff — timing ${{ steps.live_verify_connect_timing.outcome }}, scenarios ${{ steps.live_verify_kickoff.outcome }}"
-            echo
-            echo "#### Startup KPIs (prod, headless Chromium, median ms per arm, cell = median ≤ budget result; a miss fails the timing step)"
-            echo
-            node -e '
-              const fs = require("node:fs");
-              const dir = "live-verify-artifacts";
-              const files = fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => /^connect-timing-.*\.json$/.test(f)).sort() : [];
-              if (!files.length) { console.log("No connect-timing report was written."); process.exit(0); }
-              const arms = JSON.parse(fs.readFileSync(dir + "/" + files.at(-1), "utf8")).data?.compare?.arms ?? {};
-              const names = Object.keys(arms);
-              if (!names.length) { console.log("The connect-timing report has no per-arm results."); process.exit(0); }
-              const labels = arms[names[0]].kpi.map((k) => k.label);
-              console.log("| arm | runs | " + labels.join(" | ") + " |");
-              console.log("|---|---|" + labels.map(() => "---|").join(""));
-              for (const name of names) {
-                const cells = arms[name].kpi.map((k) => (k.medianMs ?? "n/a") + " ≤ " + k.budgetMs + " " + k.status);
-                console.log("| " + [name, arms[name].runs, ...cells].join(" | ") + " |");
-              }
-            ' 2>/dev/null || echo "Could not read the connect-timing report."
-            echo
-            echo "<details><summary>Full reports</summary>"
-            echo
-            for md in live-verify-artifacts/connect-timing-*.md live-verify-artifacts/kickoff-*.md; do
-              [ -f "$md" ] && cat "$md" && echo
-            done
-            echo '```'
-            tail -n 40 live-verify-kickoff-output.log 2>/dev/null || true
-            echo '```'
-            echo "</details>"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-  live-verify-opening-phrase:
-    name: 🔴🌐 Live verification (intellect-owned opening phrase + Jinja2 client variables, chromium)
-    needs: changes
-    if: |
-      github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
-      ((github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && needs.changes.outputs['opening-phrase'] == 'true')
-    runs-on: ubuntu-26.04
-    timeout-minutes: 20
-    environment: live-verify
-    steps:
-      - name: 📥 Check out the repo
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      - name: 🟢 Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
-        with:
-          node-version: 24
-
-      - name: 📦 Install dependencies
-        run: npm ci
-
-      - name: 🎭 Install chromium
-        run: npx playwright install --with-deps chromium
-
-      - name: 🔴🌐 Provision an agent with a Jinja2 opening phrase → check what landed on the intellect and avatar → voice the opening with and without requestVars → silent opening → cleanup
-        id: live_verify_opening_phrase
-        env:
-          AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
-          AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
-        run: |
-          set -o pipefail
-          node scripts/live-verify-opening-phrase.mjs --env prod 2>&1 | tee live-verify-opening-phrase-output.log
-
-      - name: 📤 Upload live-verify-opening-phrase artifacts
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: live-verify-opening-phrase-artifacts
-          path: |
-            live-verify-artifacts/
-            live-verify-opening-phrase-output.log
-          retention-days: 30
-
-      - name: 📝 Write job summary
-        if: always()
-        run: |
-          {
-            echo "### 🔴🌐 Intellect-owned opening phrase + Jinja2 client variables — ${{ steps.live_verify_opening_phrase.outcome }}"
-            echo
-            for md in live-verify-artifacts/opening-phrase-*.md; do
-              [ -f "$md" ] && cat "$md" && echo
-            done
-            echo '```'
-            tail -n 40 live-verify-opening-phrase-output.log 2>/dev/null || true
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-
-  live-verify-avatar-media:
-    name: 🔴🌐 Live verification (avatar media simple+split, ${{ matrix.engine }})
-    needs: changes
-    if: |
-      github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
-      ((github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && needs.changes.outputs['avatar-media'] == 'true')
-    runs-on: ubuntu-26.04
-    timeout-minutes: 20
-    environment: live-verify
-    strategy:
-      fail-fast: false
-      matrix:
-        # Same engine set and reasons as live-verify-browser above: firefox needs its
-        # OpenH264 GMP fetch (handled in the script), webkit can't decode H264 on Linux.
-        engine: [chromium, firefox]
-    steps:
-      - name: 📥 Check out the repo
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      - name: 🟢 Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
-        with:
-          node-version: 24
-
-      - name: 📦 Install dependencies
-        run: npm ci
-
-      - name: 🎭 Install ${{ matrix.engine }}
-        run: npx playwright install --with-deps ${{ matrix.engine }}
-
-      - name: 🔴🌐 Provision a real avatar → headless ${{ matrix.engine }} → simple (one videoEl) and split (videoEl + audioEl) layouts → readiness, placement, audio+video flow, controls, teardown → cleanup
-        id: live_verify_avatar_media
-        env:
-          AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
-          AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
-          LIVE_VERIFY_BROWSER: ${{ matrix.engine }}
-        run: |
-          set -o pipefail
-          npm run live-verify:avatar-media 2>&1 | tee live-verify-avatar-media-output.log
-
-      - name: 📤 Upload live-verify-avatar-media artifact
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: live-verify-avatar-media-artifacts-${{ matrix.engine }}
-          path: |
-            live-verify-artifacts/
-            live-verify-avatar-media-output.log
-          retention-days: 30
-
-      - name: 📝 Write job summary
-        if: always()
-        run: |
-          {
-            echo "### 🔴🌐 Live verification (avatar media simple+split, ${{ matrix.engine }}) — ${{ steps.live_verify_avatar_media.outcome }}"
-            echo
-            echo '```'
-            tail -n 40 live-verify-avatar-media-output.log
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-
-  live-verify-set-forced-language:
-    name: 🔴🌐 Live verification (setForcedLanguage)
-    needs: changes
-    if: |
-      github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
-      ((github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && needs.changes.outputs['set-forced-language'] == 'true')
-    runs-on: ubuntu-26.04
-    timeout-minutes: 20
-    environment: live-verify
-    steps:
-      - name: 📥 Check out the repo
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      - name: 🟢 Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
-        with:
-          node-version: 24
-
-      - name: 📦 Install dependencies
-        run: npm ci
-
-      - name: 🎭 Install chromium
-        run: npx playwright install --with-deps chromium
-
-      - name: 🔴🌐 setForcedLanguage persists force_language + agent asr.language, no base_directive marker → real headless Chromium conversation replies in the forced language → cleanup
-        id: live_verify_set_forced_language
-        env:
-          AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
-          AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
-        run: |
-          set -o pipefail
-          npm run live-verify:set-forced-language 2>&1 | tee live-verify-set-forced-language-output.log
-
-      - name: 📤 Upload live-verify-set-forced-language artifact
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: live-verify-set-forced-language-artifacts
-          path: |
-            live-verify-artifacts/
-            live-verify-set-forced-language-output.log
-          retention-days: 30
-
-      - name: 📝 Write job summary (with embedded screenshot)
-        if: always()
-        run: |
-          {
-            echo "### 🔴🌐 Live verification (setForcedLanguage) — ${{ steps.live_verify_set_forced_language.outcome }}"
-            echo
-            echo '```'
-            tail -n 40 live-verify-set-forced-language-output.log
-            echo '```'
-            shot=$(ls -t live-verify-artifacts/*.png 2>/dev/null | head -n 1 || true)
-            if [ -n "$shot" ]; then
-              echo
-              echo "Forced-language conversation ($shot):"
-              echo
-              b64=$(base64 -w 0 "$shot" 2>/dev/null || base64 "$shot")
-              echo "![forced-language conversation](data:image/png;base64,$b64)"
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
-
-  live-verify-session-complete:
-    name: 🔴🌐 Live verification (session_completed signal, ${{ matrix.engine }})
-    needs: changes
-    if: |
-      github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
-      ((github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && needs.changes.outputs['session-complete'] == 'true')
-    runs-on: ubuntu-26.04
-    timeout-minutes: 20
-    environment: live-verify
-    strategy:
-      fail-fast: false
-      matrix:
-        # webkit here is desktop Safari's engine, not iOS Safari — real mobile
-        # OS backgrounding/tab-kill behavior isn't reachable from any Playwright
-        # engine, see manual-testing/session-complete/ for that coverage.
-        engine: [chromium, firefox, webkit]
-    steps:
-      - name: 📥 Check out the repo
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      - name: 🟢 Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
-        with:
-          node-version: 24
-
-      - name: 📦 Install dependencies
-        run: npm ci
-
-      - name: 🎭 Install ${{ matrix.engine }}
-        run: npx playwright install --with-deps ${{ matrix.engine }}
-
-      - name: 🔴🌐 Real conversation KS, real headless ${{ matrix.engine }}, real pagehide/visibilitychange/BroadcastChannel, real /thread/session_completed → cleanup
-        id: live_verify_session_complete
-        env:
-          AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
-          AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
-          LIVE_VERIFY_BROWSER: ${{ matrix.engine }}
-        run: |
-          set -o pipefail
-          npm run live-verify:session-complete 2>&1 | tee live-verify-session-complete-output.log
-
-      - name: 📤 Upload live-verify-session-complete artifact
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: live-verify-session-complete-artifacts-${{ matrix.engine }}
-          path: |
-            live-verify-artifacts/
-            live-verify-session-complete-output.log
-          retention-days: 30
-
-      - name: 📝 Write job summary
-        if: always()
-        run: |
-          {
-            echo "### 🔴🌐 Live verification (session_completed signal, ${{ matrix.engine }}) — ${{ steps.live_verify_session_complete.outcome }}"
-            echo
-            echo '```'
-            tail -n 60 live-verify-session-complete-output.log
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-
-  live-verify-intellects-conversations:
-    name: 🔴 Live verification (intellects snapshot/restore/capabilities + conversations)
-    needs: changes
-    if: |
-      github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
-      ((github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && needs.changes.outputs['intellects-conversations'] == 'true')
-    runs-on: ubuntu-26.04
-    timeout-minutes: 20
-    environment: live-verify
-    steps:
-      - name: 📥 Check out the repo
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      - name: 🟢 Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
-        with:
-          node-version: 24
-
-      - name: 🔴 Scratch intellect → capabilities/prompts/snapshot-restore → conversations send/status → cleanup, against the real Kaltura API
+      # Scratch intellect → capabilities/prompts/snapshot-restore → conversations send/status → cleanup, against the real Kaltura API
+      - name: Resources · Intellects
         id: live_verify_intellects_conversations
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' && (needs.changes.outputs.all == 'true' || needs.changes.outputs['intellects-conversations'] == 'true') }}
+        timeout-minutes: 15
         env:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
           AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
@@ -1527,47 +639,35 @@ jobs:
           set -o pipefail
           npm run live-verify:intellects-conversations 2>&1 | tee live-verify-intellects-conversations-output.log
 
-      - name: 📤 Upload live-verify-intellects-conversations artifact
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: live-verify-intellects-conversations-artifacts
-          path: |
-            live-verify-artifacts/
-            live-verify-intellects-conversations-output.log
-          retention-days: 30
-
-      - name: 📝 Write job summary
-        if: always()
+      # Knowledge addRecord/getRecord/list/updateRecord/addSource/removeSource/entryStatus/deleteRecord → cleanup, against the real Kaltura API
+      - name: Resources · Knowledge
+        id: live_verify_knowledge
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' && (needs.changes.outputs.all == 'true' || needs.changes.outputs['knowledge'] == 'true') }}
+        timeout-minutes: 15
+        env:
+          AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
+          AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
         run: |
-          {
-            echo "### 🔴 Live verification (intellects/conversations) — ${{ steps.live_verify_intellects_conversations.outcome }}"
-            echo
-            echo '```'
-            tail -n 40 live-verify-intellects-conversations-output.log
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+          set -o pipefail
+          npm run live-verify:knowledge 2>&1 | tee live-verify-knowledge-output.log
 
-  live-verify-tools:
-    name: 🔴 Live verification (tools add/get/delete + unavailable-by-default gate)
-    needs: changes
-    if: |
-      github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
-      ((github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && needs.changes.outputs['tools'] == 'true')
-    runs-on: ubuntu-26.04
-    timeout-minutes: 20
-    environment: live-verify
-    steps:
-      - name: 📥 Check out the repo
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      # Skills add/get/list/update(rename)/delete → cleanup, against the real Kaltura API
+      - name: Resources · Skills
+        id: live_verify_skills
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' && (needs.changes.outputs.all == 'true' || needs.changes.outputs['skills'] == 'true') }}
+        timeout-minutes: 15
+        env:
+          AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
+          AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
+        run: |
+          set -o pipefail
+          npm run live-verify:skills 2>&1 | tee live-verify-skills-output.log
 
-      - name: 🟢 Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
-        with:
-          node-version: 24
-
-      - name: 🔴 Scratch tool add/get/delete + code/csv unavailable-by-default 403 gate, against the real Kaltura API
+      # Scratch tool add/get/delete + code/csv unavailable-by-default 403 gate, against the real Kaltura API
+      - name: Resources · Tools
         id: live_verify_tools
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' && (needs.changes.outputs.all == 'true' || needs.changes.outputs['tools'] == 'true') }}
+        timeout-minutes: 15
         env:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
           AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
@@ -1575,52 +675,17 @@ jobs:
           set -o pipefail
           npm run live-verify:tools 2>&1 | tee live-verify-tools-output.log
 
-      - name: 📤 Upload live-verify-tools artifact
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: live-verify-tools-artifacts
-          path: |
-            live-verify-artifacts/
-            live-verify-tools-output.log
-          retention-days: 30
-
-      - name: 📝 Write job summary
-        if: always()
-        run: |
-          {
-            echo "### 🔴 Live verification (tools) — ${{ steps.live_verify_tools.outcome }}"
-            echo
-            echo '```'
-            tail -n 40 live-verify-tools-output.log
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-
-  live-verify-mcp:
-    name: 🔴 Live verification (MCP server integration)
-    needs: changes
-    if: |
-      github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
-      ((github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && needs.changes.outputs['mcp'] == 'true')
-    runs-on: ubuntu-26.04
-    timeout-minutes: 20
-    environment: live-verify
-    steps:
-      - name: 📥 Check out the repo
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      - name: 🟢 Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
-        with:
-          node-version: 24
-
-      - name: 🚇 Install cloudflared
+      - name: Resources · MCP servers · install cloudflared
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' && (needs.changes.outputs.all == 'true' || needs.changes.outputs['mcp'] == 'true') }}
+        timeout-minutes: 15
         run: |
           curl -sSfL -o cloudflared https://github.com/cloudflare/cloudflared/releases/download/2026.9.3/cloudflared-linux-amd64
           echo "77e26d8d900e0b8469f416239d14b5f296525fdf79fee6f511ef55609e3fbac2  cloudflared" | sha256sum -c -
           sudo install -m 0755 cloudflared /usr/local/bin/cloudflared
 
-      - name: 🟢 Start the reference MCP server
+      - name: Resources · MCP servers · start the reference server
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' && (needs.changes.outputs.all == 'true' || needs.changes.outputs['mcp'] == 'true') }}
+        timeout-minutes: 15
         run: |
           node examples/mcp-live-showcase/server.mjs > mcp-server.log 2>&1 &
           for i in $(seq 1 20); do
@@ -1629,8 +694,10 @@ jobs:
             sleep 0.5
           done
 
-      - name: 🚇 Open a cloudflared quick tunnel and capture its public URL
+      - name: Resources · MCP servers · open a cloudflared tunnel
         id: tunnel
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' && (needs.changes.outputs.all == 'true' || needs.changes.outputs['mcp'] == 'true') }}
+        timeout-minutes: 15
         run: |
           cloudflared tunnel --url http://localhost:8877 > cloudflared.log 2>&1 &
           url=""
@@ -1647,8 +714,11 @@ jobs:
             sleep 1
           done
 
-      - name: 🔴 setMcpServers/describe, tool calls, auth headers, allowedTools, OAuth consent, against the real Kaltura API (production)
+      # setMcpServers/describe, tool calls, auth headers, allowedTools, OAuth consent, against the real Kaltura API (production)
+      - name: Resources · MCP servers
         id: live_verify_mcp
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' && (needs.changes.outputs.all == 'true' || needs.changes.outputs['mcp'] == 'true') }}
+        timeout-minutes: 15
         env:
           NVP1_AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
           NVP1_AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
@@ -1661,8 +731,9 @@ jobs:
           node scripts/live-verify-mcp.mjs --target=nvp1 --phase=provision 2>&1 | tee live-verify-mcp-provision-output.log
           node scripts/live-verify-mcp.mjs --target=nvp1 --phase=verify 2>&1 | tee live-verify-mcp-verify-output.log
 
-      - name: 🧹 Clean up provisioned intellects
-        if: always()
+      - name: Resources · MCP servers · clean up provisioned intellects
+        if: ${{ always() && steps.setup.outcome == 'success' && (needs.changes.outputs.all == 'true' || needs.changes.outputs['mcp'] == 'true') }}
+        timeout-minutes: 15
         env:
           NVP1_AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
           NVP1_AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
@@ -1674,14 +745,15 @@ jobs:
           set -o pipefail
           node scripts/live-verify-mcp.mjs --target=nvp1 --phase=cleanup 2>&1 | tee live-verify-mcp-cleanup-output.log
 
-      - name: 📤 Upload live-verify-mcp artifact
+      - name: 📤 Upload artifacts
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: live-verify-mcp-artifacts
+          name: live-verify-api-artifacts
           path: |
             live-verify-artifacts/
-            live-verify-mcp-*-output.log
+            live-verify-output.log
+            live-verify-*-output.log
             mcp-server.log
             cloudflared.log
           retention-days: 30
@@ -1689,16 +761,439 @@ jobs:
       - name: 📝 Write job summary
         if: always()
         run: |
-          {
-            echo "### 🔴 Live verification (MCP server integration) — ${{ steps.live_verify_mcp.outcome }}"
-            echo
-            echo '```'
-            tail -n 60 live-verify-mcp-verify-output.log 2>/dev/null || tail -n 60 live-verify-mcp-provision-output.log 2>/dev/null || true
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+          if [ -f live-verify-output.log ]; then
+            echo >> "$GITHUB_STEP_SUMMARY"
+            {
+              echo "### Smoke — ${{ steps.live_verify.outcome }}"
+              echo
+              echo '```'
+              tail -n 40 live-verify-output.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -f live-verify-conversation-surface-output.log ]; then
+            echo >> "$GITHUB_STEP_SUMMARY"
+            {
+              echo "### Conversation · Push, analysis, feedback, followups, composition — ${{ steps.live_verify_conversation_surface.outcome }}"
+              echo
+              echo '```'
+              tail -n 40 live-verify-conversation-surface-output.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -f live-verify-threads-messages-feedback-output.log ]; then
+            echo >> "$GITHUB_STEP_SUMMARY"
+            {
+              echo "### Conversation · Threads, messages, share, followups — ${{ steps.live_verify_threads_messages_feedback.outcome }}"
+              echo
+              echo '```'
+              tail -n 40 live-verify-threads-messages-feedback-output.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -f live-verify-request-vars-output.log ]; then
+            echo >> "$GITHUB_STEP_SUMMARY"
+            {
+              echo "### Conversation · request_vars and sys__* variables — ${{ steps.live_verify_request_vars.outcome }}"
+              echo
+              echo '```'
+              tail -n 40 live-verify-request-vars-output.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -f live-verify-site-nav-output.log ]; then
+            echo >> "$GITHUB_STEP_SUMMARY"
+            {
+              echo "### Conversation · go_to site navigation — ${{ steps.live_verify_site_nav.outcome }}"
+              echo
+              echo '```'
+              tail -n 40 live-verify-site-nav-output.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -f live-verify-session-types-output.log ]; then
+            echo >> "$GITHUB_STEP_SUMMARY"
+            {
+              echo "### Conversation · Session types and token reach — ${{ steps.live_verify_session_types.outcome }}"
+              echo
+              echo '```'
+              tail -n 40 live-verify-session-types-output.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -f live-verify-capabilities-output.log ]; then
+            echo >> "$GITHUB_STEP_SUMMARY"
+            {
+              echo "### Resources · Read paths and lifecycle — ${{ steps.live_verify_capabilities.outcome }}"
+              echo
+              echo '```'
+              tail -n 40 live-verify-capabilities-output.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -f live-verify-agents-output.log ]; then
+            echo >> "$GITHUB_STEP_SUMMARY"
+            {
+              echo "### Resources · Agents — ${{ steps.live_verify_agents.outcome }}"
+              echo
+              echo '```'
+              tail -n 40 live-verify-agents-output.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -f live-verify-avatars-output.log ]; then
+            echo >> "$GITHUB_STEP_SUMMARY"
+            {
+              echo "### Resources · Avatars — ${{ steps.live_verify_avatars.outcome }}"
+              echo
+              echo '```'
+              tail -n 40 live-verify-avatars-output.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -f live-verify-catalog-output.log ]; then
+            echo >> "$GITHUB_STEP_SUMMARY"
+            {
+              echo "### Resources · Catalog — ${{ steps.live_verify_catalog.outcome }}"
+              echo
+              echo '```'
+              tail -n 40 live-verify-catalog-output.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -f live-verify-intellects-conversations-output.log ]; then
+            echo >> "$GITHUB_STEP_SUMMARY"
+            {
+              echo "### Resources · Intellects — ${{ steps.live_verify_intellects_conversations.outcome }}"
+              echo
+              echo '```'
+              tail -n 40 live-verify-intellects-conversations-output.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -f live-verify-knowledge-output.log ]; then
+            echo >> "$GITHUB_STEP_SUMMARY"
+            {
+              echo "### Resources · Knowledge — ${{ steps.live_verify_knowledge.outcome }}"
+              echo
+              echo '```'
+              tail -n 40 live-verify-knowledge-output.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -f live-verify-skills-output.log ]; then
+            echo >> "$GITHUB_STEP_SUMMARY"
+            {
+              echo "### Resources · Skills — ${{ steps.live_verify_skills.outcome }}"
+              echo
+              echo '```'
+              tail -n 40 live-verify-skills-output.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -f live-verify-tools-output.log ]; then
+            echo >> "$GITHUB_STEP_SUMMARY"
+            {
+              echo "### Resources · Tools — ${{ steps.live_verify_tools.outcome }}"
+              echo
+              echo '```'
+              tail -n 40 live-verify-tools-output.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -f live-verify-mcp-provision-output.log ]; then
+            echo >> "$GITHUB_STEP_SUMMARY"
+            {
+              echo "### Resources · MCP servers — ${{ steps.live_verify_mcp.outcome }}"
+              echo
+              echo '```'
+              tail -n 60 live-verify-mcp-verify-output.log 2>/dev/null || tail -n 60 live-verify-mcp-provision-output.log 2>/dev/null || true
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  live-verify-browser:
+    name: Browser (${{ matrix.engine }})
+    needs: changes
+    if: |
+      github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
+      ((github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && needs.changes.outputs['group-browser'] == 'true')
+    runs-on: ubuntu-26.04
+    timeout-minutes: 40
+    environment: live-verify
+    strategy:
+      fail-fast: false
+      matrix:
+        # The changes job picks the engines (its `engines` output): chromium for every
+        # browser script, firefox for the ones that run on it, webkit for session_completed.
+        #
+        # firefox: Playwright's bundled headless Firefox has no H264 in
+        # RTCRtpReceiver.getCapabilities('video') until its OpenH264 GMP plugin is
+        # fetched (off by default in this launch profile — the SRS WHEP server only
+        # serves H264 video, so without it the server answers Firefox's VP8/VP9/AV1
+        # offer with `a=inactive` and no frame arrives). live-verify-browser.mjs
+        # enables the GMP fetch via firefoxUserPrefs and waits (measured 20-40s
+        # against Mozilla's real update service, 120s budget) before navigating.
+        #
+        # webkit never runs the chroma-key and mic script. Linux WebKitGTK has no
+        # built-in H264 decoder, and apt-installing GStreamer's H264 plugins
+        # doesn't fix it either — Playwright's WebKit build on Linux doesn't
+        # decode through them, so this leg can never pass on ubuntu-26.04.
+        # A macos-14 runner (real AVFoundation decode) was tried instead and
+        # hit a worse, unresolved blocker: the job hangs indefinitely
+        # requesting camera/mic permissions, almost certainly macOS's TCC
+        # privacy prompt with no UI to dismiss headlessly. Real-Safari
+        # coverage for this path is manual — see
+        # manual-testing/voice-video/README.md. webkit still runs the
+        # session_completed script here and in ci.yml's
+        # noise-suppressor matrix (a different workflow file), since both
+        # pass on it.
+        engine: ${{ fromJSON(needs.changes.outputs.engines) }}
+    steps:
+      - name: 📥 Check out the repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: 🟢 Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+
+      - name: 📦 Install dependencies
+        run: npm ci
+
+      - name: 🎭 Install ${{ matrix.engine }}
+        id: setup
+        run: npx playwright install --with-deps ${{ matrix.engine }}
+
+      # Provision a real avatar → render in headless ${{ matrix.engine }} → verify chroma-key + mic audio flow → cleanup
+      - name: Media · Chroma-key and mic (${{ matrix.engine }})
+        id: live_verify_browser
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' && (needs.changes.outputs.all == 'true' || needs.changes.outputs['browser'] == 'true') && matrix.engine != 'webkit' }}
+        timeout-minutes: 15
+        env:
+          AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
+          AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
+          LIVE_VERIFY_BROWSER: ${{ matrix.engine }}
+        run: |
+          set -o pipefail
+          node scripts/live-verify-browser.mjs 2>&1 | tee live-verify-browser-output.log
+
+      # Provision a real avatar → headless ${{ matrix.engine }} → simple (one videoEl) and split (videoEl + audioEl) layouts → readiness, placement, audio+video flow, controls, teardown → cleanup
+      - name: Media · Avatar layouts (${{ matrix.engine }})
+        id: live_verify_avatar_media
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' && (needs.changes.outputs.all == 'true' || needs.changes.outputs['avatar-media'] == 'true') && matrix.engine != 'webkit' }}
+        timeout-minutes: 15
+        env:
+          AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
+          AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
+          LIVE_VERIFY_BROWSER: ${{ matrix.engine }}
+        run: |
+          set -o pipefail
+          npm run live-verify:avatar-media 2>&1 | tee live-verify-avatar-media-output.log
+
+      # Real conversation KS, real headless ${{ matrix.engine }}, real pagehide/visibilitychange/BroadcastChannel, real /thread/session_completed → cleanup
+      - name: Session · session_completed signal (${{ matrix.engine }})
+        id: live_verify_session_complete
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' && (needs.changes.outputs.all == 'true' || needs.changes.outputs['session-complete'] == 'true') }}
+        timeout-minutes: 15
+        env:
+          AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
+          AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
+          LIVE_VERIFY_BROWSER: ${{ matrix.engine }}
+        run: |
+          set -o pipefail
+          npm run live-verify:session-complete 2>&1 | tee live-verify-session-complete-output.log
+
+      # Provision an agent with a Jinja2 opening phrase → check what landed on the intellect and avatar → voice the opening with and without requestVars → silent opening → cleanup
+      - name: Session · Opening phrase and Jinja2 variables
+        id: live_verify_opening_phrase
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' && (needs.changes.outputs.all == 'true' || needs.changes.outputs['opening-phrase'] == 'true') && matrix.engine == 'chromium' }}
+        timeout-minutes: 15
+        env:
+          AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
+          AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
+        run: |
+          set -o pipefail
+          node scripts/live-verify-opening-phrase.mjs --env prod 2>&1 | tee live-verify-opening-phrase-output.log
+
+      # Provision 3 agents (silent+kickoff, Jinja2, Jinja2 <blank> + kickoff) → measure connect timing (3 runs each) → check startup KPIs per arm → cleanup
+      - name: Session · Startup KPIs (connect timing)
+        id: live_verify_connect_timing
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' && (needs.changes.outputs.all == 'true' || needs.changes.outputs['kickoff'] == 'true') && matrix.engine == 'chromium' }}
+        timeout-minutes: 15
+        env:
+          AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
+          AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
+        run: |
+          set -o pipefail
+          node scripts/live-verify-connect-timing.mjs --env prod --compare jinja --runs 9 2>&1 | tee live-verify-connect-timing-output.log
+
+      # Provision a silent-opening agent → run the kickoff scenario matrix → cleanup
+      - name: Session · Kickoff scenarios
+        id: live_verify_kickoff
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' && (needs.changes.outputs.all == 'true' || needs.changes.outputs['kickoff'] == 'true') && matrix.engine == 'chromium' }}
+        timeout-minutes: 15
+        env:
+          AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
+          AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
+        run: |
+          set -o pipefail
+          node scripts/live-verify-kickoff.mjs --env prod 2>&1 | tee live-verify-kickoff-output.log
+
+      # setForcedLanguage persists force_language + agent asr.language, no base_directive marker → real headless Chromium conversation replies in the forced language → cleanup
+      - name: Session · setForcedLanguage
+        id: live_verify_set_forced_language
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' && (needs.changes.outputs.all == 'true' || needs.changes.outputs['set-forced-language'] == 'true') && matrix.engine == 'chromium' }}
+        timeout-minutes: 15
+        env:
+          AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
+          AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
+        run: |
+          set -o pipefail
+          npm run live-verify:set-forced-language 2>&1 | tee live-verify-set-forced-language-output.log
+
+      # Real conversation, contextId/contextType wire-payload keys + sys__context_id/sys__context_type prompt rendering, with and without context, against the real Kaltura API
+      - name: Session · Context id and type fields
+        id: live_verify_context_fields
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' && (needs.changes.outputs.all == 'true' || needs.changes.outputs['context-fields'] == 'true') && matrix.engine == 'chromium' }}
+        timeout-minutes: 15
+        env:
+          AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
+          AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
+        run: |
+          set -o pipefail
+          npm run live-verify:context-fields 2>&1 | tee live-verify-context-fields-output.log
+
+      - name: 📤 Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: live-verify-browser-artifacts-${{ matrix.engine }}
+          path: |
+            live-verify-artifacts/
+            live-verify-*-output.log
+          retention-days: 90
+
+      - name: 📝 Write job summary
+        if: always()
+        run: |
+          if [ -f live-verify-browser-output.log ]; then
+            echo >> "$GITHUB_STEP_SUMMARY"
+            {
+              echo "### Media · Chroma-key and mic (${{ matrix.engine }}) — ${{ steps.live_verify_browser.outcome }}"
+              echo
+              echo '```'
+              tail -n 40 live-verify-browser-output.log
+              echo '```'
+              shot=$(ls -t live-verify-artifacts/ci-live-verify-browser-*.png 2>/dev/null | head -n 1 || true)
+              if [ -n "$shot" ]; then
+                echo
+                echo "Composited chroma-key output ($shot):"
+                echo
+                b64=$(base64 -w 0 "$shot" 2>/dev/null || base64 "$shot")
+                echo "![chroma-key composited output](data:image/png;base64,$b64)"
+              fi
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -f live-verify-avatar-media-output.log ]; then
+            echo >> "$GITHUB_STEP_SUMMARY"
+            {
+              echo "### Media · Avatar layouts (${{ matrix.engine }}) — ${{ steps.live_verify_avatar_media.outcome }}"
+              echo
+              echo '```'
+              tail -n 40 live-verify-avatar-media-output.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -f live-verify-session-complete-output.log ]; then
+            echo >> "$GITHUB_STEP_SUMMARY"
+            {
+              echo "### Session · session_completed signal (${{ matrix.engine }}) — ${{ steps.live_verify_session_complete.outcome }}"
+              echo
+              echo '```'
+              tail -n 60 live-verify-session-complete-output.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -f live-verify-opening-phrase-output.log ]; then
+            echo >> "$GITHUB_STEP_SUMMARY"
+            {
+              echo "### Session · Opening phrase and Jinja2 variables — ${{ steps.live_verify_opening_phrase.outcome }}"
+              echo
+              for md in live-verify-artifacts/opening-phrase-*.md; do
+                [ -f "$md" ] && cat "$md" && echo
+              done
+              echo '```'
+              tail -n 40 live-verify-opening-phrase-output.log 2>/dev/null || true
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -f live-verify-connect-timing-output.log ]; then
+            echo >> "$GITHUB_STEP_SUMMARY"
+            {
+              echo "### Silent opening + kickoff — timing ${{ steps.live_verify_connect_timing.outcome }}, scenarios ${{ steps.live_verify_kickoff.outcome }}"
+              echo
+              echo "#### Startup KPIs (prod, headless Chromium, median ms per arm, cell = median ≤ budget result; a miss fails the timing step)"
+              echo
+              node -e '
+                const fs = require("node:fs");
+                const dir = "live-verify-artifacts";
+                const files = fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => /^connect-timing-.*\.json$/.test(f)).sort() : [];
+                if (!files.length) { console.log("No connect-timing report was written."); process.exit(0); }
+                const arms = JSON.parse(fs.readFileSync(dir + "/" + files.at(-1), "utf8")).data?.compare?.arms ?? {};
+                const names = Object.keys(arms);
+                if (!names.length) { console.log("The connect-timing report has no per-arm results."); process.exit(0); }
+                const labels = arms[names[0]].kpi.map((k) => k.label);
+                console.log("| arm | runs | " + labels.join(" | ") + " |");
+                console.log("|---|---|" + labels.map(() => "---|").join(""));
+                for (const name of names) {
+                  const cells = arms[name].kpi.map((k) => (k.medianMs ?? "n/a") + " ≤ " + k.budgetMs + " " + k.status);
+                  console.log("| " + [name, arms[name].runs, ...cells].join(" | ") + " |");
+                }
+              ' 2>/dev/null || echo "Could not read the connect-timing report."
+              echo
+              echo "<details><summary>Full reports</summary>"
+              echo
+              for md in live-verify-artifacts/connect-timing-*.md live-verify-artifacts/kickoff-*.md; do
+                [ -f "$md" ] && cat "$md" && echo
+              done
+              echo '```'
+              tail -n 40 live-verify-kickoff-output.log 2>/dev/null || true
+              echo '```'
+              echo "</details>"
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -f live-verify-set-forced-language-output.log ]; then
+            echo >> "$GITHUB_STEP_SUMMARY"
+            {
+              echo "### Session · setForcedLanguage — ${{ steps.live_verify_set_forced_language.outcome }}"
+              echo
+              echo '```'
+              tail -n 40 live-verify-set-forced-language-output.log
+              echo '```'
+              shot=$(ls -t live-verify-artifacts/set-forced-language-runtime-check-*.png 2>/dev/null | head -n 1 || true)
+              if [ -n "$shot" ]; then
+                echo
+                echo "Forced-language conversation ($shot):"
+                echo
+                b64=$(base64 -w 0 "$shot" 2>/dev/null || base64 "$shot")
+                echo "![forced-language conversation](data:image/png;base64,$b64)"
+              fi
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -f live-verify-context-fields-output.log ]; then
+            echo >> "$GITHUB_STEP_SUMMARY"
+            {
+              echo "### Session · Context id and type fields — ${{ steps.live_verify_context_fields.outcome }}"
+              echo
+              echo '```'
+              tail -n 40 live-verify-context-fields-output.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
 
   # The one required status check for live verification (branch protection:
-  # "🔴 Live verification"). It waits for every live job, then:
+  # "Live verification"). It waits for every live job, then:
   #   - fails if any live job failed or was cancelled,
   #   - fails a fork PR that touches live-tested paths (no secrets there), and
   #   - fails if a job mapped to a changed path did not succeed (a `skipped`
@@ -1707,13 +1202,13 @@ jobs:
   # A Dependabot PR passes with a notice. Jobs whose paths did not change stay
   # skipped and neutral.
   live-verify-gate:
-    name: 🔴 Live verification
-    needs: [changes, live-verify, live-verify-capabilities, live-verify-conversation-surface, live-verify-request-vars, live-verify-context-fields, live-verify-site-nav, live-verify-threads-messages-feedback, live-verify-session-types, live-verify-skills, live-verify-catalog, live-verify-knowledge, live-verify-avatars, live-verify-agents, live-verify-browser, live-verify-kickoff, live-verify-opening-phrase, live-verify-avatar-media, live-verify-set-forced-language, live-verify-session-complete, live-verify-intellects-conversations, live-verify-tools, live-verify-mcp]
+    name: Live verification
+    needs: [changes, live-verify-api, live-verify-browser]
     if: always()
     runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
-      - name: 🔴 Every live job that ran passed, and every job mapped to a changed path ran
+      - name: Every live job that ran passed, and every job mapped to a changed path ran
         env:
           NEEDS: ${{ toJSON(needs) }}
           IS_FORK: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
@@ -1725,7 +1220,7 @@ jobs:
             echo "$bad"
             exit 1
           fi
-          touched=$(jq -r '[.changes.outputs[]] | any(. == "true")' <<<"$NEEDS")
+          touched=$(jq -r '[.changes.outputs["group-api"], .changes.outputs["group-browser"]] | any(. == "true")' <<<"$NEEDS")
           if [ "$touched" = true ] && [ "$IS_DEPENDABOT" = true ]; then
             echo "::notice::Dependabot PRs get no live secrets. The nightly run verifies this change after merge."
             exit 0
@@ -1734,7 +1229,7 @@ jobs:
             echo "::error::This fork PR changes paths covered by live verification, and GitHub gives fork PRs no secrets. A maintainer opens a replacement PR from a branch in this repo to run the live jobs."
             exit 1
           fi
-          not_run=$(jq -r '. as $n | $n.changes.outputs | to_entries[] | select(.value == "true") | (if .key == "smoke" then "live-verify" else "live-verify-" + .key end) as $j | select($n[$j].result != "success") | "\($j): \($n[$j].result)"' <<<"$NEEDS")
+          not_run=$(jq -r '. as $n | ["api","browser"][] | select($n.changes.outputs["group-" + .] == "true") | "live-verify-" + . | select($n[.].result != "success") | "\(.): \($n[.].result)"' <<<"$NEEDS")
           if [ -n "$not_run" ]; then
             echo "::error::Live jobs mapped to changed paths did not succeed:"
             echo "$not_run"

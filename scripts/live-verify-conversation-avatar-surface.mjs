@@ -95,23 +95,18 @@ try {
   // feedback/add and feedback/list are independent backend calls (write vs.
   // search-indexed read) — the just-added row can take a moment to become
   // list-visible, so poll briefly instead of asserting on the first read.
+  // Scope to this thread: an unfiltered list walks every message the partner
+  // has (minutes, while parallel live jobs keep writing), so it outlasts the
+  // deadline and can page past the new row.
   let feedbackRows = [];
   let foundFeedback = false;
   const feedbackDeadline = Date.now() + 10_000;
   do {
-    feedbackRows = await kaltura.feedback.list(admin, { pageSize: 30 });
+    feedbackRows = await kaltura.feedback.list(admin, { filter: { threadIdEquals: threadId } });
     foundFeedback = feedbackRows.some((r) => r.message_id === messageId || r.messageId === messageId);
     if (!foundFeedback && Date.now() < feedbackDeadline) await new Promise((r) => setTimeout(r, 1000));
   } while (!foundFeedback && Date.now() < feedbackDeadline);
-  if (!foundFeedback && feedbackRows.length === 0) {
-    // Some accounts don't expose feedback rows via list/report at all — an
-    // empty list, not just a missing row, means there's nothing this account
-    // can ever show us here, so skip rather than hard-fail on an account
-    // limitation unrelated to the SDK code under test.
-    record('feedback.list', true, { skipped: 'this account exposes zero feedback rows via list; cannot confirm list-visibility here.' });
-  } else {
-    record('feedback.list', foundFeedback, { count: feedbackRows.length, foundFeedback });
-  }
+  record('feedback.list', foundFeedback, { count: feedbackRows.length, foundFeedback });
 
   // ── Followups#list ──────────────────────────────────────────────────────
   const followupRows = await kaltura.followups.list(admin, { pageSize: 5 });

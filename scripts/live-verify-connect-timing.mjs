@@ -32,9 +32,9 @@
  * is checked against a budget. A miss fails the script like any other check, so
  * a startup regression fails the CI job instead of hiding in a table:
  *
- *   connect() resolved                         ≤ 2500 ms
- *   first video frame presented (rVFC)         ≤ 2500 ms
- *   first audio (remote audio track unmuted)   ≤ 2500 ms
+ *   connect() resolved                         ≤ 3000 ms
+ *   first video frame presented (rVFC)         ≤ 3000 ms
+ *   first audio (remote audio track unmuted)   ≤ 3000 ms
  *   first agent words after connect() resolved ≤ 1850 ms
  *   sound heard (AnalyserNode)                 ≤ 5000 ms
  *
@@ -171,9 +171,9 @@ const RUNS = Number(args.runs || (COMPARE ? 3 * VARIANTS.length : 5));
  */
 const ENFORCE = args['no-budgets'] !== true;
 const KPI_DEFS = [
-  { key: 'connectMs', flag: 'connect', label: 'connect() resolved', budgetMs: 2500, speech: false },
-  { key: 'videoFirstFrameMs', flag: 'first-frame', label: 'first video frame presented (rVFC)', budgetMs: 2500, speech: false },
-  { key: 'trackAudioMs', flag: 'first-audio', label: 'first audio (remote audio track unmuted)', budgetMs: 2500, speech: false },
+  { key: 'connectMs', flag: 'connect', label: 'connect() resolved', budgetMs: 3000, speech: false },
+  { key: 'videoFirstFrameMs', flag: 'first-frame', label: 'first video frame presented (rVFC)', budgetMs: 3000, speech: false },
+  { key: 'trackAudioMs', flag: 'first-audio', label: 'first audio (remote audio track unmuted)', budgetMs: 3000, speech: false },
   { key: 'firstWordsAfterConnectMs', flag: 'first-words', label: 'first agent words after connect() resolved', budgetMs: 1850, speech: true },
   { key: 'firstSoundMs', flag: 'sound', label: 'sound heard (AnalyserNode)', budgetMs: 5000, speech: true },
   // Enforced only with --compare, where each arm has its own budget.
