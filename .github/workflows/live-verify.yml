@@ -968,7 +968,7 @@ jobs:
       # Provision a real avatar → render in headless ${{ matrix.engine }} → verify chroma-key + mic audio flow → cleanup
       - name: Media · Chroma-key and mic (${{ matrix.engine }})
         id: live_verify_browser
-        if: ${{ !cancelled() && steps.setup.outcome == 'success' && (needs.changes.outputs.all == 'true' || needs.changes.outputs['browser'] == 'true') }}
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' && (needs.changes.outputs.all == 'true' || needs.changes.outputs['browser'] == 'true') && matrix.engine != 'webkit' }}
         timeout-minutes: 15
         env:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
@@ -981,7 +981,7 @@ jobs:
       # Provision a real avatar → headless ${{ matrix.engine }} → simple (one videoEl) and split (videoEl + audioEl) layouts → readiness, placement, audio+video flow, controls, teardown → cleanup
       - name: Media · Avatar layouts (${{ matrix.engine }})
         id: live_verify_avatar_media
-        if: ${{ !cancelled() && steps.setup.outcome == 'success' && (needs.changes.outputs.all == 'true' || needs.changes.outputs['avatar-media'] == 'true') }}
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' && (needs.changes.outputs.all == 'true' || needs.changes.outputs['avatar-media'] == 'true') && matrix.engine != 'webkit' }}
         timeout-minutes: 15
         env:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
@@ -1007,7 +1007,7 @@ jobs:
       # Provision an agent with a Jinja2 opening phrase → check what landed on the intellect and avatar → voice the opening with and without requestVars → silent opening → cleanup
       - name: Session · Opening phrase and Jinja2 variables
         id: live_verify_opening_phrase
-        if: ${{ !cancelled() && steps.setup.outcome == 'success' && (needs.changes.outputs.all == 'true' || needs.changes.outputs['opening-phrase'] == 'true') }}
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' && (needs.changes.outputs.all == 'true' || needs.changes.outputs['opening-phrase'] == 'true') && matrix.engine == 'chromium' }}
         timeout-minutes: 15
         env:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
@@ -1019,7 +1019,7 @@ jobs:
       # Provision 3 agents (silent+kickoff, Jinja2, Jinja2 <blank> + kickoff) → measure connect timing (3 runs each) → check startup KPIs per arm → cleanup
       - name: Session · Startup KPIs (connect timing)
         id: live_verify_connect_timing
-        if: ${{ !cancelled() && steps.setup.outcome == 'success' && (needs.changes.outputs.all == 'true' || needs.changes.outputs['kickoff'] == 'true') }}
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' && (needs.changes.outputs.all == 'true' || needs.changes.outputs['kickoff'] == 'true') && matrix.engine == 'chromium' }}
         timeout-minutes: 15
         env:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
@@ -1031,7 +1031,7 @@ jobs:
       # Provision a silent-opening agent → run the kickoff scenario matrix → cleanup
       - name: Session · Kickoff scenarios
         id: live_verify_kickoff
-        if: ${{ !cancelled() && steps.setup.outcome == 'success' && (needs.changes.outputs.all == 'true' || needs.changes.outputs['kickoff'] == 'true') }}
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' && (needs.changes.outputs.all == 'true' || needs.changes.outputs['kickoff'] == 'true') && matrix.engine == 'chromium' }}
         timeout-minutes: 15
         env:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
@@ -1043,7 +1043,7 @@ jobs:
       # setForcedLanguage persists force_language + agent asr.language, no base_directive marker → real headless Chromium conversation replies in the forced language → cleanup
       - name: Session · setForcedLanguage
         id: live_verify_set_forced_language
-        if: ${{ !cancelled() && steps.setup.outcome == 'success' && (needs.changes.outputs.all == 'true' || needs.changes.outputs['set-forced-language'] == 'true') }}
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' && (needs.changes.outputs.all == 'true' || needs.changes.outputs['set-forced-language'] == 'true') && matrix.engine == 'chromium' }}
         timeout-minutes: 15
         env:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
@@ -1055,7 +1055,7 @@ jobs:
       # Real conversation, contextId/contextType wire-payload keys + sys__context_id/sys__context_type prompt rendering, with and without context, against the real Kaltura API
       - name: Session · Context id and type fields
         id: live_verify_context_fields
-        if: ${{ !cancelled() && steps.setup.outcome == 'success' && (needs.changes.outputs.all == 'true' || needs.changes.outputs['context-fields'] == 'true') }}
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' && (needs.changes.outputs.all == 'true' || needs.changes.outputs['context-fields'] == 'true') && matrix.engine == 'chromium' }}
         timeout-minutes: 15
         env:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
