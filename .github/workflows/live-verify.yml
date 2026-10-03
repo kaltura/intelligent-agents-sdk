@@ -117,7 +117,7 @@ concurrency:
 
 jobs:
   changes:
-    name: 🔍 Detect changed paths
+    name: Detect changed paths
     runs-on: ubuntu-26.04
     timeout-minutes: 5
     outputs:
@@ -447,7 +447,7 @@ jobs:
               - '.github/workflows/live-verify.yml'
 
   live-verify:
-    name: 🔴 Live verification (smoke)
+    name: API · Smoke
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
@@ -464,7 +464,7 @@ jobs:
         with:
           node-version: 24
 
-      - name: 🔴 Session creation → one converse turn → cleanup, against the real Kaltura API
+      - name: Session creation → one converse turn → cleanup, against the real Kaltura API
         id: live_verify
         env:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
@@ -487,7 +487,7 @@ jobs:
         if: always()
         run: |
           {
-            echo "### 🔴 Live verification — ${{ steps.live_verify.outcome }}"
+            echo "### Live verification — ${{ steps.live_verify.outcome }}"
             echo
             echo '```'
             tail -n 40 live-verify-output.log
@@ -495,7 +495,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   live-verify-capabilities:
-    name: 🔴 Live verification (Knowledge/Application/Avatars/Lifecycle)
+    name: API · Knowledge, applications, avatars, lifecycle
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
@@ -512,7 +512,7 @@ jobs:
         with:
           node-version: 24
 
-      - name: 🔴 Knowledge#listRecords, Application#getCustomPrompts, Avatars#listTemplates, Lifecycle create→get/list→match→update→delete, against the real Kaltura API
+      - name: Knowledge#listRecords, Application#getCustomPrompts, Avatars#listTemplates, Lifecycle create→get/list→match→update→delete, against the real Kaltura API
         id: live_verify_capabilities
         env:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
@@ -535,7 +535,7 @@ jobs:
         if: always()
         run: |
           {
-            echo "### 🔴 Live verification (Knowledge/Application/Avatars/Lifecycle) — ${{ steps.live_verify_capabilities.outcome }}"
+            echo "### Live verification (Knowledge/Application/Avatars/Lifecycle) — ${{ steps.live_verify_capabilities.outcome }}"
             echo
             echo '```'
             tail -n 40 live-verify-capabilities-output.log
@@ -543,7 +543,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   live-verify-conversation-surface:
-    name: 🔴 Live verification (Threads/Feedback/Followups/Avatars composition/Catalog Face+Background)
+    name: API · Threads, feedback, followups, avatar composition, catalog face+background
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
@@ -560,7 +560,7 @@ jobs:
         with:
           node-version: 24
 
-      - name: 🔴 Threads#push/setAnalysis/clearAnalysis, Feedback#add/list/report, Followups#list, Avatars#create/update (face+background, templateId+background), Catalog#createFace/createBackground, against the real Kaltura API
+      - name: Threads#push/setAnalysis/clearAnalysis, Feedback#add/list/report, Followups#list, Avatars#create/update (face+background, templateId+background), Catalog#createFace/createBackground, against the real Kaltura API
         id: live_verify_conversation_surface
         env:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
@@ -583,7 +583,7 @@ jobs:
         if: always()
         run: |
           {
-            echo "### 🔴 Live verification (Threads/Feedback/Followups/Avatars composition/Catalog Face+Background) — ${{ steps.live_verify_conversation_surface.outcome }}"
+            echo "### Live verification (Threads/Feedback/Followups/Avatars composition/Catalog Face+Background) — ${{ steps.live_verify_conversation_surface.outcome }}"
             echo
             echo '```'
             tail -n 40 live-verify-conversation-surface-output.log
@@ -591,7 +591,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   live-verify-request-vars:
-    name: 🔴 Live verification (request_vars persistence/merge/tool interpolation/sys__*)
+    name: API · request_vars and sys__* variables
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
@@ -608,7 +608,7 @@ jobs:
         with:
           node-version: 24
 
-      - name: 🔴 Per-thread request_vars persistence/merge, tool-template interpolation, sys__* injection, large page_context, fresh-thread scope reset, against the real Kaltura API
+      - name: Per-thread request_vars persistence/merge, tool-template interpolation, sys__* injection, large page_context, fresh-thread scope reset, against the real Kaltura API
         id: live_verify_request_vars
         env:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
@@ -631,7 +631,7 @@ jobs:
         if: always()
         run: |
           {
-            echo "### 🔴 Live verification (request_vars persistence/merge/tool interpolation/sys__*) — ${{ steps.live_verify_request_vars.outcome }}"
+            echo "### Live verification (request_vars persistence/merge/tool interpolation/sys__*) — ${{ steps.live_verify_request_vars.outcome }}"
             echo
             echo '```'
             tail -n 40 live-verify-request-vars-output.log
@@ -639,7 +639,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   live-verify-context-fields:
-    name: 🔴🌐 Live verification (sys__context_id/sys__context_type wire fields)
+    name: Browser · sys__context_id and sys__context_type wire fields
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
@@ -662,7 +662,7 @@ jobs:
       - name: 🎭 Install chromium
         run: npx playwright install --with-deps chromium
 
-      - name: 🔴🌐 Real conversation, contextId/contextType wire-payload keys + sys__context_id/sys__context_type prompt rendering, with and without context, against the real Kaltura API
+      - name: Real conversation, contextId/contextType wire-payload keys + sys__context_id/sys__context_type prompt rendering, with and without context, against the real Kaltura API
         id: live_verify_context_fields
         env:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
@@ -685,7 +685,7 @@ jobs:
         if: always()
         run: |
           {
-            echo "### 🔴🌐 Live verification (sys__context_id/sys__context_type wire fields) — ${{ steps.live_verify_context_fields.outcome }}"
+            echo "### Live verification (sys__context_id/sys__context_type wire fields) — ${{ steps.live_verify_context_fields.outcome }}"
             echo
             echo '```'
             tail -n 40 live-verify-context-fields-output.log
@@ -693,7 +693,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   live-verify-site-nav:
-    name: 🔴 Live verification (go_to site navigation)
+    name: API · go_to site navigation
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
@@ -710,7 +710,7 @@ jobs:
         with:
           node-version: 24
 
-      - name: 🔴 goToTool echo → idempotent update → SITE MAP intellect → one mapped go_to → zero unmapped go_to → cleanup, against the real Kaltura API
+      - name: goToTool echo → idempotent update → SITE MAP intellect → one mapped go_to → zero unmapped go_to → cleanup, against the real Kaltura API
         id: live_verify_site_nav
         env:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
@@ -733,7 +733,7 @@ jobs:
         if: always()
         run: |
           {
-            echo "### 🔴 Live verification (go_to site navigation) — ${{ steps.live_verify_site_nav.outcome }}"
+            echo "### Live verification (go_to site navigation) — ${{ steps.live_verify_site_nav.outcome }}"
             echo
             echo '```'
             tail -n 40 live-verify-site-nav-output.log
@@ -742,7 +742,7 @@ jobs:
 
 
   live-verify-threads-messages-feedback:
-    name: 🔴 Live verification (threads/messages/feedback/followups)
+    name: API · Threads, messages, feedback, followups
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
@@ -759,7 +759,7 @@ jobs:
         with:
           node-version: 24
 
-      - name: 🔴 Scratch thread via converse → get/rename/transcript, messages.list/share, feedback.add, followups.getSuggested → delete → cleanup, against the real Kaltura API
+      - name: Scratch thread via converse → get/rename/transcript, messages.list/share, feedback.add, followups.getSuggested → delete → cleanup, against the real Kaltura API
         id: live_verify_threads_messages_feedback
         env:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
@@ -782,7 +782,7 @@ jobs:
         if: always()
         run: |
           {
-            echo "### 🔴 Live verification (threads/messages/feedback/followups) — ${{ steps.live_verify_threads_messages_feedback.outcome }}"
+            echo "### Live verification (threads/messages/feedback/followups) — ${{ steps.live_verify_threads_messages_feedback.outcome }}"
             echo
             echo '```'
             tail -n 40 live-verify-threads-messages-feedback-output.log
@@ -790,7 +790,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   live-verify-session-types:
-    name: 🔴 Live verification (session types and token reach)
+    name: API · Session types and token reach
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
@@ -810,7 +810,7 @@ jobs:
       - name: 📦 Install dependencies
         run: npm ci
 
-      - name: 🔴 User vs admin session reach per token kind, no-userId and widget shared identity, persona, per-user appInit, revoke → cleanup, against the real Kaltura API
+      - name: User vs admin session reach per token kind, no-userId and widget shared identity, persona, per-user appInit, revoke → cleanup, against the real Kaltura API
         id: live_verify_session_types
         env:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
@@ -833,7 +833,7 @@ jobs:
         if: always()
         run: |
           {
-            echo "### 🔴 Live verification (session types and token reach): ${{ steps.live_verify_session_types.outcome }}"
+            echo "### Live verification (session types and token reach): ${{ steps.live_verify_session_types.outcome }}"
             echo
             echo '```'
             tail -n 40 live-verify-session-types-output.log
@@ -841,7 +841,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   live-verify-skills:
-    name: 🔴 Live verification (skills)
+    name: API · Skills
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
@@ -858,7 +858,7 @@ jobs:
         with:
           node-version: 24
 
-      - name: 🔴 Skills add/get/list/update(rename)/delete → cleanup, against the real Kaltura API
+      - name: Skills add/get/list/update(rename)/delete → cleanup, against the real Kaltura API
         id: live_verify_skills
         env:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
@@ -881,7 +881,7 @@ jobs:
         if: always()
         run: |
           {
-            echo "### 🔴 Live verification (skills) — ${{ steps.live_verify_skills.outcome }}"
+            echo "### Live verification (skills) — ${{ steps.live_verify_skills.outcome }}"
             echo
             echo '```'
             tail -n 40 live-verify-skills-output.log
@@ -889,7 +889,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   live-verify-catalog:
-    name: 🔴 Live verification (catalog)
+    name: API · Catalog
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
@@ -906,7 +906,7 @@ jobs:
         with:
           node-version: 24
 
-      - name: 🔴 Catalog createVisual/get/list/update(rename)/delete → cleanup, against the real Kaltura API
+      - name: Catalog createVisual/get/list/update(rename)/delete → cleanup, against the real Kaltura API
         id: live_verify_catalog
         env:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
@@ -929,7 +929,7 @@ jobs:
         if: always()
         run: |
           {
-            echo "### 🔴 Live verification (catalog) — ${{ steps.live_verify_catalog.outcome }}"
+            echo "### Live verification (catalog) — ${{ steps.live_verify_catalog.outcome }}"
             echo
             echo '```'
             tail -n 40 live-verify-catalog-output.log
@@ -937,7 +937,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   live-verify-knowledge:
-    name: 🔴 Live verification (knowledge write path)
+    name: API · Knowledge write path
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
@@ -954,7 +954,7 @@ jobs:
         with:
           node-version: 24
 
-      - name: 🔴 Knowledge addRecord/getRecord/list/updateRecord/addSource/removeSource/entryStatus/deleteRecord → cleanup, against the real Kaltura API
+      - name: Knowledge addRecord/getRecord/list/updateRecord/addSource/removeSource/entryStatus/deleteRecord → cleanup, against the real Kaltura API
         id: live_verify_knowledge
         env:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
@@ -977,7 +977,7 @@ jobs:
         if: always()
         run: |
           {
-            echo "### 🔴 Live verification (knowledge write path) — ${{ steps.live_verify_knowledge.outcome }}"
+            echo "### Live verification (knowledge write path) — ${{ steps.live_verify_knowledge.outcome }}"
             echo
             echo '```'
             tail -n 40 live-verify-knowledge-output.log
@@ -985,7 +985,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   live-verify-avatars:
-    name: 🔴 Live verification (avatars write path)
+    name: API · Avatars write path
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
@@ -1002,7 +1002,7 @@ jobs:
         with:
           node-version: 24
 
-      - name: 🔴 Scratch Visual → avatars create/get/update(openingPhrase)/delete → cleanup, against the real Kaltura API
+      - name: Scratch Visual → avatars create/get/update(openingPhrase)/delete → cleanup, against the real Kaltura API
         id: live_verify_avatars
         env:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
@@ -1025,7 +1025,7 @@ jobs:
         if: always()
         run: |
           {
-            echo "### 🔴 Live verification (avatars write path) — ${{ steps.live_verify_avatars.outcome }}"
+            echo "### Live verification (avatars write path) — ${{ steps.live_verify_avatars.outcome }}"
             echo
             echo '```'
             tail -n 40 live-verify-avatars-output.log
@@ -1033,7 +1033,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   live-verify-agents:
-    name: 🔴 Live verification (agents)
+    name: API · Agents
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
@@ -1050,7 +1050,7 @@ jobs:
         with:
           node-version: 24
 
-      - name: 🔴 Scratch intellect + avatar → agents create/get/list/update(rename)/delete → cleanup, against the real Kaltura API
+      - name: Scratch intellect + avatar → agents create/get/list/update(rename)/delete → cleanup, against the real Kaltura API
         id: live_verify_agents
         env:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
@@ -1073,7 +1073,7 @@ jobs:
         if: always()
         run: |
           {
-            echo "### 🔴 Live verification (agents) — ${{ steps.live_verify_agents.outcome }}"
+            echo "### Live verification (agents) — ${{ steps.live_verify_agents.outcome }}"
             echo
             echo '```'
             tail -n 40 live-verify-agents-output.log
@@ -1081,7 +1081,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   live-verify-browser:
-    name: 🔴🌐 Live browser verification (${{ matrix.engine }})
+    name: Browser · Chroma-key and mic audio (${{ matrix.engine }})
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
@@ -1129,7 +1129,7 @@ jobs:
       - name: 🎭 Install ${{ matrix.engine }}
         run: npx playwright install --with-deps ${{ matrix.engine }}
 
-      - name: 🔴🌐 Provision a real avatar → render in headless ${{ matrix.engine }} → verify chroma-key + mic audio flow → cleanup
+      - name: Provision a real avatar → render in headless ${{ matrix.engine }} → verify chroma-key + mic audio flow → cleanup
         id: live_verify_browser
         env:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
@@ -1153,7 +1153,7 @@ jobs:
         if: always()
         run: |
           {
-            echo "### 🔴🌐 Live browser verification (${{ matrix.engine }}) — ${{ steps.live_verify_browser.outcome }}"
+            echo "### Live browser verification (${{ matrix.engine }}) — ${{ steps.live_verify_browser.outcome }}"
             echo
             echo '```'
             tail -n 40 live-verify-browser-output.log
@@ -1169,7 +1169,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   live-verify-kickoff:
-    name: 🔴🌐 Live verification (silent opening + kickoff + startup KPIs, chromium)
+    name: Browser · Silent opening, kickoff, startup KPIs (chromium)
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
@@ -1192,7 +1192,7 @@ jobs:
       - name: 🎭 Install chromium
         run: npx playwright install --with-deps chromium
 
-      - name: 🔴🌐 Provision 3 agents (silent+kickoff, Jinja2, Jinja2 <blank> + kickoff) → measure connect timing (3 runs each) → check startup KPIs per arm → cleanup
+      - name: Provision 3 agents (silent+kickoff, Jinja2, Jinja2 <blank> + kickoff) → measure connect timing (3 runs each) → check startup KPIs per arm → cleanup
         id: live_verify_connect_timing
         env:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
@@ -1201,7 +1201,7 @@ jobs:
           set -o pipefail
           node scripts/live-verify-connect-timing.mjs --env prod --compare jinja --runs 9 2>&1 | tee live-verify-connect-timing-output.log
 
-      - name: 🔴🌐 Provision a silent-opening agent → run the kickoff scenario matrix → cleanup
+      - name: Provision a silent-opening agent → run the kickoff scenario matrix → cleanup
         id: live_verify_kickoff
         if: always()
         env:
@@ -1226,7 +1226,7 @@ jobs:
         if: always()
         run: |
           {
-            echo "### 🔴🌐 Silent opening + kickoff — timing ${{ steps.live_verify_connect_timing.outcome }}, scenarios ${{ steps.live_verify_kickoff.outcome }}"
+            echo "### Silent opening + kickoff — timing ${{ steps.live_verify_connect_timing.outcome }}, scenarios ${{ steps.live_verify_kickoff.outcome }}"
             echo
             echo "#### Startup KPIs (prod, headless Chromium, median ms per arm, cell = median ≤ budget result; a miss fails the timing step)"
             echo
@@ -1259,7 +1259,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   live-verify-opening-phrase:
-    name: 🔴🌐 Live verification (intellect-owned opening phrase + Jinja2 client variables, chromium)
+    name: Browser · Opening phrase and Jinja2 client variables (chromium)
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
@@ -1282,7 +1282,7 @@ jobs:
       - name: 🎭 Install chromium
         run: npx playwright install --with-deps chromium
 
-      - name: 🔴🌐 Provision an agent with a Jinja2 opening phrase → check what landed on the intellect and avatar → voice the opening with and without requestVars → silent opening → cleanup
+      - name: Provision an agent with a Jinja2 opening phrase → check what landed on the intellect and avatar → voice the opening with and without requestVars → silent opening → cleanup
         id: live_verify_opening_phrase
         env:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
@@ -1305,7 +1305,7 @@ jobs:
         if: always()
         run: |
           {
-            echo "### 🔴🌐 Intellect-owned opening phrase + Jinja2 client variables — ${{ steps.live_verify_opening_phrase.outcome }}"
+            echo "### Intellect-owned opening phrase + Jinja2 client variables — ${{ steps.live_verify_opening_phrase.outcome }}"
             echo
             for md in live-verify-artifacts/opening-phrase-*.md; do
               [ -f "$md" ] && cat "$md" && echo
@@ -1316,7 +1316,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   live-verify-avatar-media:
-    name: 🔴🌐 Live verification (avatar media simple+split, ${{ matrix.engine }})
+    name: Browser · Avatar media, simple and split (${{ matrix.engine }})
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
@@ -1345,7 +1345,7 @@ jobs:
       - name: 🎭 Install ${{ matrix.engine }}
         run: npx playwright install --with-deps ${{ matrix.engine }}
 
-      - name: 🔴🌐 Provision a real avatar → headless ${{ matrix.engine }} → simple (one videoEl) and split (videoEl + audioEl) layouts → readiness, placement, audio+video flow, controls, teardown → cleanup
+      - name: Provision a real avatar → headless ${{ matrix.engine }} → simple (one videoEl) and split (videoEl + audioEl) layouts → readiness, placement, audio+video flow, controls, teardown → cleanup
         id: live_verify_avatar_media
         env:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
@@ -1369,7 +1369,7 @@ jobs:
         if: always()
         run: |
           {
-            echo "### 🔴🌐 Live verification (avatar media simple+split, ${{ matrix.engine }}) — ${{ steps.live_verify_avatar_media.outcome }}"
+            echo "### Live verification (avatar media simple+split, ${{ matrix.engine }}) — ${{ steps.live_verify_avatar_media.outcome }}"
             echo
             echo '```'
             tail -n 40 live-verify-avatar-media-output.log
@@ -1377,7 +1377,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   live-verify-set-forced-language:
-    name: 🔴🌐 Live verification (setForcedLanguage)
+    name: Browser · setForcedLanguage (chromium)
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
@@ -1400,7 +1400,7 @@ jobs:
       - name: 🎭 Install chromium
         run: npx playwright install --with-deps chromium
 
-      - name: 🔴🌐 setForcedLanguage persists force_language + agent asr.language, no base_directive marker → real headless Chromium conversation replies in the forced language → cleanup
+      - name: setForcedLanguage persists force_language + agent asr.language, no base_directive marker → real headless Chromium conversation replies in the forced language → cleanup
         id: live_verify_set_forced_language
         env:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
@@ -1423,7 +1423,7 @@ jobs:
         if: always()
         run: |
           {
-            echo "### 🔴🌐 Live verification (setForcedLanguage) — ${{ steps.live_verify_set_forced_language.outcome }}"
+            echo "### Live verification (setForcedLanguage) — ${{ steps.live_verify_set_forced_language.outcome }}"
             echo
             echo '```'
             tail -n 40 live-verify-set-forced-language-output.log
@@ -1439,7 +1439,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   live-verify-session-complete:
-    name: 🔴🌐 Live verification (session_completed signal, ${{ matrix.engine }})
+    name: Browser · session_completed signal (${{ matrix.engine }})
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
@@ -1469,7 +1469,7 @@ jobs:
       - name: 🎭 Install ${{ matrix.engine }}
         run: npx playwright install --with-deps ${{ matrix.engine }}
 
-      - name: 🔴🌐 Real conversation KS, real headless ${{ matrix.engine }}, real pagehide/visibilitychange/BroadcastChannel, real /thread/session_completed → cleanup
+      - name: Real conversation KS, real headless ${{ matrix.engine }}, real pagehide/visibilitychange/BroadcastChannel, real /thread/session_completed → cleanup
         id: live_verify_session_complete
         env:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
@@ -1493,7 +1493,7 @@ jobs:
         if: always()
         run: |
           {
-            echo "### 🔴🌐 Live verification (session_completed signal, ${{ matrix.engine }}) — ${{ steps.live_verify_session_complete.outcome }}"
+            echo "### Live verification (session_completed signal, ${{ matrix.engine }}) — ${{ steps.live_verify_session_complete.outcome }}"
             echo
             echo '```'
             tail -n 60 live-verify-session-complete-output.log
@@ -1501,7 +1501,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   live-verify-intellects-conversations:
-    name: 🔴 Live verification (intellects snapshot/restore/capabilities + conversations)
+    name: API · Intellects and conversations
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
@@ -1518,7 +1518,7 @@ jobs:
         with:
           node-version: 24
 
-      - name: 🔴 Scratch intellect → capabilities/prompts/snapshot-restore → conversations send/status → cleanup, against the real Kaltura API
+      - name: Scratch intellect → capabilities/prompts/snapshot-restore → conversations send/status → cleanup, against the real Kaltura API
         id: live_verify_intellects_conversations
         env:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
@@ -1541,7 +1541,7 @@ jobs:
         if: always()
         run: |
           {
-            echo "### 🔴 Live verification (intellects/conversations) — ${{ steps.live_verify_intellects_conversations.outcome }}"
+            echo "### Live verification (intellects/conversations) — ${{ steps.live_verify_intellects_conversations.outcome }}"
             echo
             echo '```'
             tail -n 40 live-verify-intellects-conversations-output.log
@@ -1549,7 +1549,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   live-verify-tools:
-    name: 🔴 Live verification (tools add/get/delete + unavailable-by-default gate)
+    name: API · Tools
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
@@ -1566,7 +1566,7 @@ jobs:
         with:
           node-version: 24
 
-      - name: 🔴 Scratch tool add/get/delete + code/csv unavailable-by-default 403 gate, against the real Kaltura API
+      - name: Scratch tool add/get/delete + code/csv unavailable-by-default 403 gate, against the real Kaltura API
         id: live_verify_tools
         env:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
@@ -1589,7 +1589,7 @@ jobs:
         if: always()
         run: |
           {
-            echo "### 🔴 Live verification (tools) — ${{ steps.live_verify_tools.outcome }}"
+            echo "### Live verification (tools) — ${{ steps.live_verify_tools.outcome }}"
             echo
             echo '```'
             tail -n 40 live-verify-tools-output.log
@@ -1597,7 +1597,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   live-verify-mcp:
-    name: 🔴 Live verification (MCP server integration)
+    name: API · MCP server integration
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
@@ -1647,7 +1647,7 @@ jobs:
             sleep 1
           done
 
-      - name: 🔴 setMcpServers/describe, tool calls, auth headers, allowedTools, OAuth consent, against the real Kaltura API (production)
+      - name: setMcpServers/describe, tool calls, auth headers, allowedTools, OAuth consent, against the real Kaltura API (production)
         id: live_verify_mcp
         env:
           NVP1_AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
@@ -1690,7 +1690,7 @@ jobs:
         if: always()
         run: |
           {
-            echo "### 🔴 Live verification (MCP server integration) — ${{ steps.live_verify_mcp.outcome }}"
+            echo "### Live verification (MCP server integration) — ${{ steps.live_verify_mcp.outcome }}"
             echo
             echo '```'
             tail -n 60 live-verify-mcp-verify-output.log 2>/dev/null || tail -n 60 live-verify-mcp-provision-output.log 2>/dev/null || true
@@ -1698,7 +1698,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   # The one required status check for live verification (branch protection:
-  # "🔴 Live verification"). It waits for every live job, then:
+  # "Live verification"). It waits for every live job, then:
   #   - fails if any live job failed or was cancelled,
   #   - fails a fork PR that touches live-tested paths (no secrets there), and
   #   - fails if a job mapped to a changed path did not succeed (a `skipped`
@@ -1707,13 +1707,13 @@ jobs:
   # A Dependabot PR passes with a notice. Jobs whose paths did not change stay
   # skipped and neutral.
   live-verify-gate:
-    name: 🔴 Live verification
+    name: Live verification
     needs: [changes, live-verify, live-verify-capabilities, live-verify-conversation-surface, live-verify-request-vars, live-verify-context-fields, live-verify-site-nav, live-verify-threads-messages-feedback, live-verify-session-types, live-verify-skills, live-verify-catalog, live-verify-knowledge, live-verify-avatars, live-verify-agents, live-verify-browser, live-verify-kickoff, live-verify-opening-phrase, live-verify-avatar-media, live-verify-set-forced-language, live-verify-session-complete, live-verify-intellects-conversations, live-verify-tools, live-verify-mcp]
     if: always()
     runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
-      - name: 🔴 Every live job that ran passed, and every job mapped to a changed path ran
+      - name: Every live job that ran passed, and every job mapped to a changed path ran
         env:
           NEEDS: ${{ toJSON(needs) }}
           IS_FORK: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
