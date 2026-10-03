@@ -117,7 +117,7 @@ concurrency:
 
 jobs:
   changes:
-    name: Detect changed paths
+    name: Setup · Detect changed paths
     runs-on: ubuntu-26.04
     timeout-minutes: 5
     outputs:
@@ -495,7 +495,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   live-verify-capabilities:
-    name: API · Knowledge, applications, avatars, lifecycle
+    name: API · Resources · Read paths and lifecycle
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
@@ -543,7 +543,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   live-verify-conversation-surface:
-    name: API · Threads, feedback, followups, avatar composition, catalog face+background
+    name: API · Conversation · Push, analysis, feedback, followups, composition
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
@@ -591,7 +591,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   live-verify-request-vars:
-    name: API · request_vars and sys__* variables
+    name: API · Conversation · request_vars and sys__* variables
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
@@ -639,7 +639,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   live-verify-context-fields:
-    name: Browser · sys__context_id and sys__context_type wire fields
+    name: Browser · Session · Context id and type fields
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
@@ -693,7 +693,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   live-verify-site-nav:
-    name: API · go_to site navigation
+    name: API · Conversation · go_to site navigation
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
@@ -742,7 +742,7 @@ jobs:
 
 
   live-verify-threads-messages-feedback:
-    name: API · Threads, messages, feedback, followups
+    name: API · Conversation · Threads, messages, share, followups
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
@@ -790,7 +790,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   live-verify-session-types:
-    name: API · Session types and token reach
+    name: API · Conversation · Session types and token reach
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
@@ -841,7 +841,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   live-verify-skills:
-    name: API · Skills
+    name: API · Resources · Skills
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
@@ -889,7 +889,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   live-verify-catalog:
-    name: API · Catalog
+    name: API · Resources · Catalog
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
@@ -937,7 +937,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   live-verify-knowledge:
-    name: API · Knowledge write path
+    name: API · Resources · Knowledge
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
@@ -985,7 +985,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   live-verify-avatars:
-    name: API · Avatars write path
+    name: API · Resources · Avatars
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
@@ -1033,7 +1033,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   live-verify-agents:
-    name: API · Agents
+    name: API · Resources · Agents
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
@@ -1081,7 +1081,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   live-verify-browser:
-    name: Browser · Chroma-key and mic audio (${{ matrix.engine }})
+    name: Browser · Media · Chroma-key and mic (${{ matrix.engine }})
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
@@ -1169,7 +1169,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   live-verify-kickoff:
-    name: Browser · Silent opening, kickoff, startup KPIs (chromium)
+    name: Browser · Session · Silent opening, kickoff, startup KPIs (chromium)
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
@@ -1259,7 +1259,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   live-verify-opening-phrase:
-    name: Browser · Opening phrase and Jinja2 client variables (chromium)
+    name: Browser · Session · Opening phrase and Jinja2 variables (chromium)
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
@@ -1316,7 +1316,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   live-verify-avatar-media:
-    name: Browser · Avatar media, simple and split (${{ matrix.engine }})
+    name: Browser · Media · Avatar layouts (${{ matrix.engine }})
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
@@ -1377,7 +1377,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   live-verify-set-forced-language:
-    name: Browser · setForcedLanguage (chromium)
+    name: Browser · Session · setForcedLanguage (chromium)
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
@@ -1439,7 +1439,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   live-verify-session-complete:
-    name: Browser · session_completed signal (${{ matrix.engine }})
+    name: Browser · Session · session_completed signal (${{ matrix.engine }})
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
@@ -1501,7 +1501,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   live-verify-intellects-conversations:
-    name: API · Intellects and conversations
+    name: API · Resources · Intellects
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
@@ -1549,7 +1549,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   live-verify-tools:
-    name: API · Tools
+    name: API · Resources · Tools
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
@@ -1597,7 +1597,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   live-verify-mcp:
-    name: API · MCP server integration
+    name: API · Resources · MCP servers
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' ||
