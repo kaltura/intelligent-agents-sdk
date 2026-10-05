@@ -6,6 +6,9 @@
  * GitHub-CDN URL pinned to a release tag (no npm install, no bundler); bump
  * SDK_TAG when a new SDK version ships.
  *
+ * Nova is anonymous and stateless: the page stores nothing about the visitor
+ * and sends no visitor id. Every page load starts a new conversation thread.
+ *
  * One conversation, two transports: KalturaAgentSession runs Nova over live
  * avatar video (WebRTC + socket) or text-only chat (HTTP streaming), and
  * switchMode() moves between them mid-conversation on the same thread.
@@ -62,9 +65,9 @@ const WIDGET_ID = '1_g7ntgoq2';
 // session with no visitor question yet sends this as its first turn
 // (`kickoff`). Video greets through the intellect's opening phrase instead
 // (see NOVA_GREET). Nova's system prompt (provision.mjs obeyRules) is keyed
-// on this exact string: greet on a fresh thread, greet back on a continued
-// one, no tool calls. The eval harness (tests/eval/personas.mjs
-// KICKOFF_TRIGGER) sends the same string. Keep all three in sync.
+// on this exact string: welcome the visitor, no tool calls. The eval harness
+// (tests/eval/personas.mjs KICKOFF_TRIGGER) sends the same string. Keep all
+// three in sync.
 const KICKOFF_TRIGGER = 'Session started. Greet the visitor.';
 
 // Client variable read by Nova's intellect opening phrase (provision.mjs).
@@ -72,32 +75,6 @@ const KICKOFF_TRIGGER = 'Session started. Greet the visitor.';
 // silent opening. A sent value sticks to the thread for later joins, so it
 // is cleared with '' after the greeting, never by omitting the key.
 const NOVA_GREET = 'nova_greet';
-
-/**
- * `nova:uid` — a random UUID with no PII, minted only when the visitor
- * actually starts a conversation (never on a passive page view). It's this
- * browser's stable, first-party-only identity for the conversation backend's
- * audit trail (the SDK's opaque `subjectId`). Purely functional, never used
- * for tracking. Every page load starts a brand-new conversation thread —
- * Nova never resumes a prior visit's chat.
- */
-const STORE_UID = 'nova:uid';
-
-function storeGet(key) {
-  try { return localStorage.getItem(key); } catch { return null; }
-}
-function storeSet(key, value) {
-  try { localStorage.setItem(key, value); } catch { /* storage disabled — session still works */ }
-}
-
-function visitorId() {
-  let id = storeGet(STORE_UID);
-  if (!id) {
-    id = crypto.randomUUID();
-    storeSet(STORE_UID, id);
-  }
-  return id;
-}
 
 const els = {
   widget: document.getElementById('nova-widget'),
@@ -402,7 +379,6 @@ async function connect(pendingPrompt, mode = 'avatar') {
     session = new KalturaAgentSession({
       token: init.ks,
       mode,
-      subjectId: visitorId(),
       requestVars: { [NOVA_GREET]: greet ? 'yes' : '' },
       // Sent by the SDK once, on the first transport: after the opening turn
       // ends (video) or once the transport is up (chat).
