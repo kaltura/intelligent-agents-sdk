@@ -477,3 +477,162 @@ test('oauth2 counts an explicit undefined `scopes`/`flow` as present and rejects
     assert.throws(() => authOf({ ...OAUTH, [key]: undefined }), (e) => e.code === 'bad_request' && e.detail.includes(key), key);
   }
 });
+
+// ---------- code tool ----------
+
+const CODE_SRC = 'def main(city: str):\n    return {"city": city}';
+const codeCfg = (over = {}) => ({ name: 'fx_rate', description: 'Convert currency.', code: CODE_SRC, ...over });
+const CODE_403 = "Tool type 'code' is unavailable by default, call support";
+
+test('code builder emits the exact wire shape, with no optional keys when none are passed', () => {
+  assert.deepEqual(code(codeCfg()), { name: 'fx_rate', type: 'code', description: 'Convert currency.', code: CODE_SRC });
+});
+
+test('code builder maps args/displayName/addToHistory to the snake_case wire form and keeps code verbatim', () => {
+  const t = code(codeCfg({
+    args: { city: { type: 'str', prompt: 'City name', required: true } },
+    displayName: 'FX rate',
+    addToHistory: false,
+  }));
+  assert.deepEqual(t, {
+    name: 'fx_rate', type: 'code', description: 'Convert currency.',
+    args: { city: { type: 'str', prompt: 'City name', required: true } },
+    display_name: 'FX rate', add_to_history: false, code: CODE_SRC,
+  });
+  assert.equal(t.code, CODE_SRC, 'source is not trimmed or rewritten');
+});
+
+test('code builder rejects missing, empty and non-string code with bad_request', () => {
+  for (const c of [undefined, null, '', '   \n', 42, {}, ['def main(): pass']]) {
+    assert.throws(() => code(codeCfg({ code: c })), (e) => e.code === 'bad_request' && /non-empty `code` string/.test(e.detail), String(c));
+  }
+});
+
+test('code builder applies the shared name/description/args/displayName/addToHistory rules', () => {
+  const rejects = (over, re) => assert.throws(() => code(codeCfg(over)), (e) => e.code === 'bad_request' && re.test(e.detail), JSON.stringify(over));
+  rejects({ name: 'has space' }, /`name` must match/);
+  rejects({ name: '' }, /`name` must match/);
+  rejects({ name: undefined }, /`name` must match/);
+  rejects({ description: '  ' }, /`description` is required/);
+  rejects({ description: undefined }, /`description` is required/);
+  rejects({ displayName: 5 }, /`displayName` must be a string/);
+  rejects({ addToHistory: 'yes' }, /`addToHistory` must be a boolean/);
+  rejects({ args: { city: { type: 'datetime', prompt: 'x' } } }, /type/i);
+  rejects({ args: { city: { type: 'str' } } }, /prompt/i);
+  assert.throws(() => code(null), (e) => e.code === 'bad_request');
+  assert.throws(() => code(undefined), (e) => e.code === 'bad_request');
+});
+
+test('code builder checks the config before the code, so a bad name wins over bad code', () => {
+  assert.throws(() => code({ name: 'bad name', description: 'd', code: '' }), /`name` must match/);
+});
+
+test('code builder is PURE: it never mutates its input and calls do not share state', () => {
+  const cfg = codeCfg({ args: { city: { type: 'str', prompt: 'City' } } });
+  const snapshot = JSON.parse(JSON.stringify(cfg));
+  const a = code(cfg);
+  const b = code(cfg);
+  assert.deepEqual(cfg, snapshot);
+  assert.notEqual(a, b);
+  assert.notEqual(a.args, b.args, 'args are copied per call');
+  a.code = 'changed';
+  assert.equal(code(cfg).code, CODE_SRC);
+});
+
+test('code tool round-trips through validate() with and without optional fields', () => {
+  const plain = code(codeCfg());
+  assert.deepEqual(validate(plain), plain);
+  const full = code(codeCfg({ args: { n: { type: 'int', prompt: 'Count', required: false, default: 3 } }, displayName: 'FX', addToHistory: true }));
+  assert.deepEqual(validate(full), full);
+});
+
+test('validate() rejects a code wire tool with empty or missing code, and bad shared fields', () => {
+  const ok = code(codeCfg());
+  assert.throws(() => validate({ ...ok, code: '' }), (e) => e.code === 'bad_request' && /non-empty/.test(e.detail));
+  const noCode = { ...ok }; delete noCode.code;
+  assert.throws(() => validate(noCode), (e) => e.code === 'bad_request' && /non-empty/.test(e.detail));
+  assert.throws(() => validate({ ...ok, name: 'bad name' }), (e) => e.code === 'bad_request');
+  assert.throws(() => validate({ ...ok, add_to_history: 'no' }), (e) => e.code === 'bad_request');
+});
+
+test('mgmt.tools.add sends a code tool as {name, config} to v1/tool/add and returns the entity', async () => {
+  const { mgmt, ff } = harness([
+    { match: 'v1/tool/add', respond: (req) => ({ status: 200, body: { id: 'tool-c1', name: req.body.name, config: req.body.config, partner_id: 123 } }) },
+  ]);
+  const tool = code(codeCfg({ args: { city: { type: 'str', prompt: 'City', required: true } } }));
+  const res = await mgmt.tools.add(tool, ADMIN_KS);
+  assert.equal(res.id, 'tool-c1');
+  assert.deepEqual(res.config, tool);
+  assert.equal(ff.calls.length, 1);
+  assert.match(ff.calls[0].url, /v1\/tool\/add$/);
+  assert.deepEqual(ff.calls[0].body, { name: 'fx_rate', config: tool });
+});
+
+test('mgmt.tools.add validates a code tool BEFORE any network call', async () => {
+  const { mgmt, ff } = harness([]);
+  await assert.rejects(() => mgmt.tools.add({ name: 'c', type: 'code', description: 'd', code: '  ' }, ADMIN_KS), (e) => e.code === 'bad_request');
+  assert.equal(ff.calls.length, 0);
+});
+
+test('mgmt.tools.add maps the "unavailable by default" 403 to a typed forbidden error', async () => {
+  const { mgmt, ff } = harness([
+    { match: 'v1/tool/add', respond: () => ({ status: 403, body: { detail: CODE_403 } }) },
+  ]);
+  await assert.rejects(() => mgmt.tools.add(code(codeCfg()), ADMIN_KS), (e) => {
+    assert.equal(e.code, 'forbidden');
+    assert.equal(e.status, 403);
+    assert.match(JSON.stringify(e.detail ?? e.message), /unavailable by default/);
+    return true;
+  });
+  assert.equal(ff.calls.length, 1, 'one attempt, no retry on 403');
+});
+
+test('mgmt.tools.update re-sends a code config and maps the same 403', async () => {
+  const tool = code(codeCfg({ code: 'def main():\n    return 1' }));
+  const ok = harness([
+    { match: 'v1/tool/update', respond: (req) => ({ status: 200, body: { id: req.body.id, name: req.body.name, config: req.body.config } }) },
+  ]);
+  const res = await ok.mgmt.tools.update('tool-c1', { config: tool }, ADMIN_KS);
+  assert.deepEqual(res.config, tool);
+  assert.deepEqual(ok.ff.calls[0].body, { id: 'tool-c1', config: tool });
+
+  const denied = harness([{ match: 'v1/tool/update', respond: () => ({ status: 403, body: { detail: CODE_403 } }) }]);
+  await assert.rejects(() => denied.mgmt.tools.update('tool-c1', { config: tool }, ADMIN_KS), (e) => e.code === 'forbidden' && e.status === 403);
+
+  const bad = harness([]);
+  await assert.rejects(() => bad.mgmt.tools.update('tool-c1', { config: { ...tool, code: '' } }, ADMIN_KS), (e) => e.code === 'bad_request');
+  assert.equal(bad.ff.calls.length, 0);
+});
+
+test('mgmt.tools.get returns a stored code tool unchanged, and list passes through code entries', async () => {
+  const tool = code(codeCfg());
+  const get = harness([{ match: 'v1/tool/get', respond: () => ({ status: 200, body: { id: 'tool-c1', name: 'fx_rate', config: tool } }) }]);
+  assert.deepEqual((await get.mgmt.tools.get('tool-c1', ADMIN_KS)).config, tool);
+  const list = harness([{ match: 'v1/tool/list', respond: () => ({ status: 200, body: { objects: [{ id: 'tool-c1', name: 'fx_rate', config: tool }] } }) }]);
+  const page = await list.mgmt.tools.list(ADMIN_KS);
+  assert.equal(page[0].config.type, 'code');
+  assert.equal(page[0].config.code, tool.code);
+});
+
+test('a created code tool is linked to an intellect by id via intellectConfig.setToolIds', async () => {
+  const tool = code(codeCfg());
+  const ff = fakeFetch([
+    { match: 'v1/tool/add', respond: (req) => ({ status: 200, body: { id: 'tool-c1', name: req.body.name, config: req.body.config } }) },
+    { match: 'v1/intellect/get', respond: () => ({ status: 200, body: { id: 7, name: 'i', config: { tool_ids: [] } } }) },
+    { match: 'v1/intellect/update', respond: (req) => ({ status: 200, body: { id: 7, config: req.body.config ?? req.body } }) },
+  ]);
+  const mgmt = new Management({ partnerId: '123', fetch: ff });
+  const { id } = await mgmt.tools.add(tool, ADMIN_KS);
+  await mgmt.intellectConfig.setToolIds(7, [id], ADMIN_KS);
+  const update = ff.calls.find((c) => /v1\/intellect\/update$/.test(c.url));
+  assert.ok(update, 'an intellect update was sent');
+  assert.match(JSON.stringify(update.body), /"tool_ids":\["tool-c1"\]/);
+});
+
+test('mgmt.tools.add and update reject a conversation token for code tools before any network call', async () => {
+  const { mgmt, ff } = harness([]);
+  const convToken = { ks: 'djJ8conv', kind: 'conversation' };
+  await assert.rejects(async () => mgmt.tools.add(code(codeCfg()), convToken), (e) => e.code === 'wrong_token_scope');
+  await assert.rejects(async () => mgmt.tools.update('tool-c1', { config: code(codeCfg()) }, convToken), (e) => e.code === 'wrong_token_scope');
+  assert.equal(ff.calls.length, 0);
+});
