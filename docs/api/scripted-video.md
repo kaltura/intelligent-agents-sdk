@@ -2,6 +2,8 @@
 
 # Scripted-Video (STV-only) Sessions
 
+> **Deprecated.** This API will be removed in the next major version. Build with agents instead: start at [Getting Started](../../GETTING-STARTED.md).
+
 > **When to use this:** pre-authored speech only — you supply every line. Interactive conversation, knowledge grounding, tool calls, and analytics come from full agentic sessions. See [what you'd take on yourself](https://kaltura.github.io/intelligent-agents-sdk/explanation/inside-a-live-conversation/#what-youd-take-on-yourself) before choosing this path.
 
 A second, INDEPENDENT session type — `https://api.avatar.us.kaltura.ai/v1/avatar-session/*` — that sits next to, not on top of, everything in Phases 1–4 above. No LLM, no ASR, no socket.io: REST + WHEP only. The avatar speaks exactly the audio you hand it, in the order you hand it. Use this when YOU are the script (IVR-style flows, pre-recorded/TTS'd announcements, kiosk greetings) rather than the conversational brain. SDK: `mgmt.avatarSessions` (management) + `KalturaScriptedVideoSession` (experience, browser-side playback).
@@ -56,4 +58,3 @@ view.disconnect();
 
 `connect()` only runs from `'idle'` or `'disconnected'`. After `disconnect()`, the same instance connects again with a fresh peer connection. From any other state it throws `invalid_state`. From `'error'`, call `disconnect()` first. The view emits `stateChange` (`{state}`) on every state change.
 
-See the runnable example: [`examples/scripted-video-session.mjs`](../../examples/scripted-video-session.mjs) + [`examples/scripted-video-session.html`](../../examples/scripted-video-session.html).

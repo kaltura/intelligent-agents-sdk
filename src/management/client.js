@@ -201,6 +201,7 @@ export class Management {
     this.avatars = new Avatars(ctx);
     // Scripted-video (STV-only) session lifecycle — a separate, brain-free backend from
     // `application`/the conversational runtime. See avatar-sessions.js's class doc.
+    /** @deprecated Removed in the next major version. Build with agents instead. */
     this.avatarSessions = new AvatarSessions(ctx);
     this.catalog = new Catalog(ctx);
     this.application = new Application(ctx);

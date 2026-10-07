@@ -1,0 +1,12 @@
+{
+  "name": "kaltura-agents",
+  "owner": { "name": "Kaltura" },
+  "metadata": { "description": "Claude Code plugins for building apps with the Kaltura Intelligent Agents SDK." },
+  "plugins": [
+    {
+      "name": "kaltura-app-builder",
+      "source": "./app-builder-skill",
+      "description": "Guides Claude Code through building an app with Kaltura AI agents and avatars, reading the official docs live."
+    }
+  ]
+}

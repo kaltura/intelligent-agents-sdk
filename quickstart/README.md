@@ -46,3 +46,4 @@ Full pattern, event order and guarantees: [docs/START-THE-CONVERSATION.md](../do
 | Use your own voice | [Catalog & Assets](../docs/api/design.md#upload-a-custom-voice-clone) |
 | Use your own portrait | [Catalog & Assets](../docs/api/design.md#upload-a-custom-visual-portrait--animated-avatar) |
 | Drive your UI from the avatar (slide navigation etc.) | [docs/CLIENT-COMMANDS.md](../docs/CLIENT-COMMANDS.md) |
+| Let Claude Code build it with you | [Using Claude Code or another coding agent](../README.md#using-claude-code-or-another-coding-agent) |

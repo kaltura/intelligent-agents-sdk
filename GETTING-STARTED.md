@@ -127,6 +127,7 @@ You now know how to create an agent and talk to it. Here's where to go for more:
 | Use your **own voice** for the avatar | [Catalog & Assets](docs/api/design.md#upload-a-custom-voice-clone) |
 | Use your **own face/portrait** for the avatar | [Catalog & Assets](docs/api/design.md#upload-a-custom-visual-portrait--animated-avatar) |
 | Build a real app with the JavaScript SDK | [README.md](README.md#quick-start) |
+| Let Claude Code build it with you | [Using Claude Code or another coding agent](README.md#using-claude-code-or-another-coding-agent) |
 | Make the avatar drive your UI (slides, widgets, navigation) | [docs/CLIENT-COMMANDS.md](docs/CLIENT-COMMANDS.md) |
 | Pause the avatar for a video/interactive element, then resume | [docs/PAUSE-RESUME-RECIPE.md](docs/PAUSE-RESUME-RECIPE.md) |
 | Auto-summarize every conversation and email a human when it's ready | [docs/lifecycle/recipes.md](docs/lifecycle/recipes.md) |

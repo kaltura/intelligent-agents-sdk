@@ -79,6 +79,23 @@ jobs:
             fi
           done
 
+      - name: 📦 Smoke-test the npm install route that the app-builder skill uses
+        run: |
+          TAG="${{ github.ref_name }}"
+          dir="$(mktemp -d)"
+          cd "$dir"
+          npm init -y >/dev/null
+          npm install "github:kaltura/intelligent-agents-sdk#${TAG}"
+          node --input-type=module -e "
+            const map = JSON.parse(await (await import('node:fs/promises')).readFile('node_modules/@kaltura/intelligent-agents/package.json', 'utf8')).exports;
+            for (const key of Object.keys(map)) {
+              if (key.includes('*')) continue;
+              const spec = key === '.' ? '@kaltura/intelligent-agents' : '@kaltura/intelligent-agents/' + key.slice(2);
+              await import(spec);
+              console.log('  ✓ import ' + spec);
+            }
+          "
+
       - name: 📦 Create the GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}

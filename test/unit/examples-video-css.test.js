@@ -19,13 +19,6 @@ describe('examples: <video> is framed with object-fit', () => {
     const style = html.match(/<style>([\s\S]*?)<\/style>/)[1];
     assert.match(style, /#avatar\s+video\s*\{[^}]*object-fit\s*:\s*cover/);
   });
-
-  test('scripted-video-session.html — bare <video id="video">, styled via the bare "video" selector', () => {
-    const html = read('examples/scripted-video-session.html');
-    assert.match(html, /<video\s+id="video"/);
-    const style = html.match(/<style>([\s\S]*?)<\/style>/)[1];
-    assert.match(style, /(?<![#.\w-])video\s*\{[^}]*object-fit\s*:\s*cover/);
-  });
 });
 
 describe('videoEl JSDoc cross-links docs/ARCHITECTURE.md', () => {

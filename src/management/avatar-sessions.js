@@ -22,6 +22,9 @@
 import { KalturaError } from '../core/errors.js';
 import { uuidv4 } from '../core/ids.js';
 
+/**
+ * @deprecated Scripted-video sessions are deprecated and will be removed in the next major version. Build with agents instead: `mgmt.provision()` and the conversational session classes.
+ */
 export class AvatarSessions {
   /** @param {import('./client.js').Ctx} ctx */
   constructor(ctx) {

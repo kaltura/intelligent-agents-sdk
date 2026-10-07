@@ -32,6 +32,7 @@ No build step and no npm registry publish (`"private": true`, no `publishConfig`
 ## Contents
 
 - [Quick start](#quick-start)
+- [Using Claude Code or another coding agent](#using-claude-code-or-another-coding-agent)
 - [Architecture](#architecture)
 - [Management](#management)
 - [Experience](#experience)
@@ -86,12 +87,18 @@ open examples/browser-experience.html
 
 # browser: Presenter / deck walkthrough demo (needs a local server implementing /appInit to actually connect)
 open examples/deck-presenter.html
-
-# server + browser: scripted-video (STV-only) session — no brain, you provide the audio
-export AVATAR_ID=…   # a visual-catalog id from mgmt.avatars.list(ks)
-node examples/scripted-video-session.mjs
-open http://localhost:8790
 ```
+
+### Using Claude Code or another coding agent
+
+Install the Claude Code plugin, then ask Claude to add a Kaltura avatar to your app. It reads the official docs live and walks you through credentials, setup and a first run.
+
+```bash
+/plugin marketplace add kaltura/intelligent-agents-sdk
+/plugin install kaltura-app-builder@kaltura-agents
+```
+
+Other coding agents can start from [llms.txt](https://kaltura.github.io/intelligent-agents-sdk/llms.txt). Details: [app-builder-skill/README.md](app-builder-skill/README.md).
 
 ### Browser via jsDelivr (no bundler, no npm install)
 
@@ -1187,6 +1194,8 @@ An unknown provider id creates **nothing** and raises a typed `voice_not_found_e
 
 ## Scripted-Video (STV-only) Sessions
 
+> **Deprecated.** This API will be removed in the next major version. Build with agents instead: start at [Getting Started](GETTING-STARTED.md).
+
 A second, independent backend (`avatar-session/*`) for a brain-free avatar: no LLM, no ASR, no socket.io — you drive it entirely from your own server by handing it pre-rendered speech audio. Use it when you already have the text (and optionally the TTS audio) and just need a talking-head video, e.g. reading back a scripted announcement or a pre-approved script.
 
 ```js
@@ -1216,7 +1225,7 @@ view.disconnect();
 
 `connect()` runs from the `idle` or `disconnected` state, so the same instance can reconnect after `disconnect()`. The session emits `stateChange` (`{state}`) on every state change.
 
-`create` authenticates with your own **admin KS** (`mgmt.sessions.createAdminToken({ userId })`); every call after it (`initClient`/`say`/`interrupt`/`keepAlive`/`end`) authenticates with the **session's own Bearer token** instead. `create()`'s return value is a receipt (`{sessionId, token, isExpired(), secondsRemaining()}`), pass it straight to the other methods rather than re-deriving a KS. `say()` sends pre-rendered speech audio. It is the only way to make the avatar speak. The SDK has no text-to-speech call. See [API-REFERENCE.md § Scripted-Video (STV-only) Sessions](docs/api/scripted-video.md) for the full auth/lifecycle table, and `examples/scripted-video-session.mjs` + `.html` for a complete runnable server+browser pair (including a stand-in for your real TTS call).
+`create` authenticates with your own **admin KS** (`mgmt.sessions.createAdminToken({ userId })`); every call after it (`initClient`/`say`/`interrupt`/`keepAlive`/`end`) authenticates with the **session's own Bearer token** instead. `create()`'s return value is a receipt (`{sessionId, token, isExpired(), secondsRemaining()}`), pass it straight to the other methods rather than re-deriving a KS. `say()` sends pre-rendered speech audio. It is the only way to make the avatar speak. The SDK has no text-to-speech call. See [API-REFERENCE.md § Scripted-Video (STV-only) Sessions](docs/api/scripted-video.md) for the full auth/lifecycle table.
 
 ---
 
@@ -1267,7 +1276,7 @@ await mgmt.knowledge.deleteRecord(rec.id, ks, { confirmPermanent: true });
 | [docs/START-THE-CONVERSATION.md](docs/START-THE-CONVERSATION.md) | Choosing the first turn: scripted Jinja2 opening or silent opening (`SILENT_OPENING`) + `kickoff`, the preset-question pattern, what fires on the wire, the `speak()` hold |
 | [docs/lifecycle/README.md](docs/lifecycle/README.md) | Event-driven rules: reference + [recipe](docs/lifecycle/recipes.md) — auto-summarize conversations and email a human when analysis lands |
 | `examples/` | One runnable example per use-case |
-| [.claude/skills/agentic-avatar/SKILL.md](.claude/skills/agentic-avatar/SKILL.md) | Agent Skill — load this SDK's whole surface into Claude Code or any [agentskills.io](https://agentskills.io)-compatible agent |
+| [app-builder-skill/README.md](app-builder-skill/README.md) | Claude Code plugin that guides you through building an app with this SDK |
 
 ## License
 

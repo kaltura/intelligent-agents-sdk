@@ -136,7 +136,7 @@ There are two session modes, and they are NOT interchangeable. Scripted sessions
 | Use for | **scripted / puppet** avatars (you drive the words) | **interactive agentic** avatars (autonomous conversation) |
 <!-- /nova-target -->
 
-The protocol above describes the **interactive** path. The scripted path has no text-in of its own: the SDK wraps only `say-audio`. You provide pre-rendered speech audio (for example, from your own TTS call) and its duration. Full auth/lifecycle details: [API-REFERENCE.md § Scripted-Video (STV-only) Sessions](api/scripted-video.md). Runnable example: `examples/scripted-video-session.mjs` + `.html`.
+The protocol above describes the **interactive** path. The scripted path has no text-in of its own: the SDK wraps only `say-audio`. You provide pre-rendered speech audio (for example, from your own TTS call) and its duration. Full auth/lifecycle details: [API-REFERENCE.md § Scripted-Video (STV-only) Sessions](api/scripted-video.md).
 
 ### Audio-mode / phone-mode agents (partial support)
 
