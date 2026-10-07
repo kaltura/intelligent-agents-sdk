@@ -974,7 +974,7 @@ describe('15. App-builder skill', () => {
   });
 
   test('no deprecated or banned names appear', () => {
-    const banned = [...BANNED, ...deprecatedSymbols().map((s) => new RegExp(`\\b${s.replace(/\$/g, '\\$')}\\b`))];
+    const banned = [...BANNED, ...deprecatedSymbols().map((s) => new RegExp(`\\b${s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`))];
     const hits = [];
     for (const [f, text] of Object.entries(texts())) {
       for (const re of banned) if (re.test(text)) hits.push(`${f}: ${re}`);
