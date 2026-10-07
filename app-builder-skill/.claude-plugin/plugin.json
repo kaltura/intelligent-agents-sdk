@@ -1,0 +1,8 @@
+{
+  "name": "kaltura-app-builder",
+  "description": "Guides Claude Code through building an app with Kaltura AI agents and avatars, reading the official docs live.",
+  "author": { "name": "Kaltura" },
+  "license": "MIT",
+  "repository": "https://github.com/kaltura/intelligent-agents-sdk",
+  "homepage": "https://kaltura.github.io/intelligent-agents-sdk/"
+}

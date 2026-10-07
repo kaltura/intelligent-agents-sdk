@@ -59,6 +59,10 @@ jobs:
               - 'scripts/**'
               - 'tools/**'
               - 'examples/**'
+              - 'app-builder-skill/**'
+              - '.claude-plugin/**'
+              - 'AGENTS.md'
+              - 'CLAUDE.md'
               - 'package.json'
               - 'package-lock.json'
               - 'jsconfig.json'
@@ -434,6 +438,14 @@ jobs:
       - name: 📦 Install devDependencies (jsdom/axe-core for the a11y suite)
         timeout-minutes: 5
         run: npm ci
+
+      - name: 🔌 Validate the Claude Code plugin and marketplace manifests
+        timeout-minutes: 5
+        run: |
+          # Pinned. Bump it when Claude Code's plugin schema changes (see AGENTS.md).
+          npm install --global @anthropic-ai/claude-code@2.1.292
+          claude plugin validate ./app-builder-skill
+          claude plugin validate .
 
       - name: 🔍 Run the docs CI gate (secrets, GFM, cross-doc links, SDK invariants)
         id: docs_gate

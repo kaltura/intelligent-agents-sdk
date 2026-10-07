@@ -32,6 +32,7 @@ No build step and no npm registry publish (`"private": true`, no `publishConfig`
 ## Contents
 
 - [Quick start](#quick-start)
+- [Using Claude Code or another coding agent](#using-claude-code-or-another-coding-agent)
 - [Architecture](#architecture)
 - [Management](#management)
 - [Experience](#experience)
@@ -92,6 +93,17 @@ export AVATAR_ID=…   # a visual-catalog id from mgmt.avatars.list(ks)
 node examples/scripted-video-session.mjs
 open http://localhost:8790
 ```
+
+### Using Claude Code or another coding agent
+
+Install the Claude Code plugin, then ask Claude to add a Kaltura avatar to your app. It reads the official docs live and walks you through credentials, setup and a first run.
+
+```bash
+/plugin marketplace add kaltura/intelligent-agents-sdk
+/plugin install kaltura-app-builder@kaltura-agents
+```
+
+Other coding agents can start from [llms.txt](https://kaltura.github.io/intelligent-agents-sdk/llms.txt). Details: [app-builder-skill/README.md](app-builder-skill/README.md).
 
 ### Browser via jsDelivr (no bundler, no npm install)
 
@@ -1267,7 +1279,7 @@ await mgmt.knowledge.deleteRecord(rec.id, ks, { confirmPermanent: true });
 | [docs/START-THE-CONVERSATION.md](docs/START-THE-CONVERSATION.md) | Choosing the first turn: scripted Jinja2 opening or silent opening (`SILENT_OPENING`) + `kickoff`, the preset-question pattern, what fires on the wire, the `speak()` hold |
 | [docs/lifecycle/README.md](docs/lifecycle/README.md) | Event-driven rules: reference + [recipe](docs/lifecycle/recipes.md) — auto-summarize conversations and email a human when analysis lands |
 | `examples/` | One runnable example per use-case |
-| [.claude/skills/agentic-avatar/SKILL.md](.claude/skills/agentic-avatar/SKILL.md) | Agent Skill — load this SDK's whole surface into Claude Code or any [agentskills.io](https://agentskills.io)-compatible agent |
+| [app-builder-skill/README.md](app-builder-skill/README.md) | Claude Code plugin that guides you through building an app with this SDK |
 
 ## License
 

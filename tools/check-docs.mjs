@@ -48,6 +48,9 @@ const DOCS = [
   'docs/lifecycle/README.md', 'docs/lifecycle/recipes.md',
   'docs/SITE-NAV.md',
   'SECURITY.md', 'SDK_CONSTITUTION.md',
+  'app-builder-skill/README.md',
+  'app-builder-skill/skills/build-kaltura-agent-app/SKILL.md',
+  'app-builder-skill/skills/build-kaltura-agent-app/references/paths.md',
 ];
 
 /** Read a file relative to ROOT, return empty string if missing. */
@@ -874,5 +877,135 @@ describe('14. Regions', () => {
       }
     }
     assert.deepEqual(missing, [], `undocumented error codes: ${missing.join(', ')}`);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// 15. App-builder skill — pointers only, nothing deprecated, nothing stale
+// ═══════════════════════════════════════════════════════════════════════
+describe('15. App-builder skill', () => {
+  const SKILL_DIR = 'app-builder-skill/skills/build-kaltura-agent-app';
+  const SKILL = `${SKILL_DIR}/SKILL.md`;
+  const SKILL_FILES = [SKILL, `${SKILL_DIR}/references/paths.md`];
+  const SITE_BASE = 'https://kaltura.github.io/intelligent-agents-sdk';
+  // Scripted-video names stay out of the skill. Symbols tagged @deprecated in src/ are added below.
+  const BANNED = [/scripted[-_ ]?video/i, /avatarSessions/, /ScriptedVideo/];
+  const INTERNAL = [/\.claude\/skills/, /ovp-genie/, /ovp-agentic-api/, /conversation-manager/, /eself-ai/, /ovp-pipelines/];
+
+  /** Text of every skill markdown file, keyed by path. */
+  const texts = () => Object.fromEntries(SKILL_FILES.map((f) => [f, read(f)]));
+
+  /** Names of public symbols marked @deprecated in src/. */
+  function deprecatedSymbols() {
+    const names = new Set();
+    for (const f of trackedFiles().filter((p) => p.startsWith('src/') && p.endsWith('.js'))) {
+      const lines = read(f).split('\n');
+      lines.forEach((line, i) => {
+        if (!line.includes('@deprecated')) return;
+        const next = lines.slice(i + 1).find((l) => l.trim() && !/^\s*(\*|\/\*)/.test(l)) || '';
+        const m = next.match(/^\s*(?:export\s+)?(?:default\s+)?(?:async\s+|static\s+|get\s+|set\s+)*(?:function\*?\s+|class\s+|const\s+|let\s+)?([A-Za-z_$][\w$]*)/);
+        if (m) names.add(m[1]);
+      });
+    }
+    return [...names];
+  }
+
+  test('frontmatter name matches the directory and the description fits', () => {
+    const fm = read(SKILL).match(/^---\n([\s\S]*?)\n---/);
+    assert.ok(fm, 'SKILL.md needs YAML frontmatter');
+    const name = fm[1].match(/^name:\s*(.+)$/m)?.[1].trim();
+    const description = fm[1].match(/^description:\s*(.+)$/m)?.[1].trim() ?? '';
+    assert.equal(name, 'build-kaltura-agent-app', 'name must equal the skill directory name');
+    assert.ok(description.length > 0 && description.length < 1024, `description must be 1-1023 chars, got ${description.length}`);
+  });
+
+  test('line budgets hold', () => {
+    assert.ok(read(SKILL).split('\n').length <= 150, 'SKILL.md is over 150 lines. Move detail into the docs, not the skill.');
+    assert.ok(read(SKILL_FILES[1]).split('\n').length <= 100, 'references/paths.md is over 100 lines');
+  });
+
+  test('only bash and json code fences, no code to copy', () => {
+    const bad = [];
+    for (const [f, text] of Object.entries(texts())) {
+      for (const m of text.matchAll(/^```(.*)$/gm)) {
+        if (m[1] && !['bash', 'json'].includes(m[1].trim())) bad.push(`${f}: \`\`\`${m[1]}`);
+      }
+    }
+    assert.deepEqual(bad, [], `skill code fences must be bash or json: ${bad.join('; ')}`);
+  });
+
+  test('every Management call named in the skill exists', async () => {
+    const { Management } = await import('../src/management/index.js');
+    const kaltura = new Management({ partnerId: 1, adminSecret: 'x' });
+    const missing = [];
+    for (const [f, text] of Object.entries(texts())) {
+      for (const m of text.matchAll(/\b(?:kaltura|mgmt)\.(\w+)\.(\w+)\(/g)) {
+        if (typeof kaltura[m[1]]?.[m[2]] !== 'function') missing.push(`${f}: ${m[0]}`);
+      }
+    }
+    assert.deepEqual(missing, [], `skill names Management methods that do not exist: ${missing.join('; ')}`);
+  });
+
+  test('every named import from the package is a real export', async () => {
+    const exportsMap = JSON.parse(read('package.json')).exports;
+    const missing = [];
+    for (const [f, text] of Object.entries(texts())) {
+      for (const m of text.matchAll(/import\s*\{([^}]+)\}\s*from\s*'@kaltura\/intelligent-agents([^']*)'/g)) {
+        const target = exportsMap[`.${m[2]}`];
+        if (!target) { missing.push(`${f}: no export path ${m[2] || '.'}`); continue; }
+        const mod = await import(join(ROOT, target));
+        for (const name of m[1].split(',').map((s) => s.trim()).filter(Boolean)) {
+          if (!(name in mod)) missing.push(`${f}: ${name} is not exported from ${m[2] || '.'}`);
+        }
+      }
+    }
+    assert.deepEqual(missing, [], `skill imports do not resolve: ${missing.join('; ')}`);
+  });
+
+  test('every example the skill points to exists', () => {
+    const missing = [];
+    for (const [f, text] of Object.entries(texts())) {
+      for (const m of text.matchAll(/`((?:[\w./-]*\/)?[\w-]+\.(?:mjs|html))`/g)) {
+        const rel = m[1].replace(/^.*examples\//, '');
+        if (!existsSync(join(ROOT, 'examples', rel))) missing.push(`${f}: ${m[1]}`);
+      }
+    }
+    assert.deepEqual(missing, [], `skill points to missing examples: ${missing.join('; ')}`);
+  });
+
+  test('no deprecated or banned names appear', () => {
+    const banned = [...BANNED, ...deprecatedSymbols().map((s) => new RegExp(`\\b${s.replace(/\$/g, '\\$')}\\b`))];
+    const hits = [];
+    for (const [f, text] of Object.entries(texts())) {
+      for (const re of banned) if (re.test(text)) hits.push(`${f}: ${re}`);
+    }
+    assert.deepEqual(hits, [], `skill mentions deprecated names: ${hits.join('; ')}`);
+  });
+
+  test('no internal names', () => {
+    const files = [...SKILL_FILES, 'app-builder-skill/README.md', 'app-builder-skill/.claude-plugin/plugin.json', '.claude-plugin/marketplace.json'];
+    const hits = [];
+    for (const f of files) for (const re of INTERNAL) if (re.test(read(f))) hits.push(`${f}: ${re}`);
+    assert.deepEqual(hits, [], `internal names in the skill package: ${hits.join('; ')}`);
+  });
+
+  test('every URL in the skill points at the official docs site', () => {
+    const bad = [];
+    for (const [f, text] of Object.entries(texts())) {
+      for (const m of text.matchAll(/https?:\/\/[^\s)>`'"]+/g)) {
+        if (!m[0].startsWith(SITE_BASE)) bad.push(`${f}: ${m[0]}`);
+      }
+    }
+    assert.deepEqual(bad, [], `skill URLs must start with ${SITE_BASE}: ${bad.join('; ')}`);
+  });
+
+  test('plugin and marketplace manifests are consistent', () => {
+    const plugin = JSON.parse(read('app-builder-skill/.claude-plugin/plugin.json'));
+    const market = JSON.parse(read('.claude-plugin/marketplace.json'));
+    const entry = market.plugins.find((p) => p.name === plugin.name);
+    assert.ok(entry, 'marketplace.json must list the plugin');
+    assert.equal(entry.source, './app-builder-skill');
+    assert.equal(plugin.version, undefined, 'plugin.json must not set version, or users stop tracking commits');
+    assert.equal(entry.version, undefined, 'marketplace entry must not set version');
   });
 });

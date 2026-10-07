@@ -1,2 +1,7 @@
 # Default owner for everything in this repo, unless a more specific rule below matches.
 * @zoharbabin
+
+# The app-builder skill must stay in step with the docs and the public API.
+/app-builder-skill/ @zoharbabin
+/.claude-plugin/ @zoharbabin
+/AGENTS.md @zoharbabin
