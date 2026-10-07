@@ -340,6 +340,10 @@ test('/llms.txt lists the docs pages', async ({ request }) => {
   expect(res.ok()).toBe(true);
   const body = await res.text();
   expect(body).toContain('/getting-started/');
+  // Agents fetch these links directly, so every one must be absolute.
+  const links = [...body.matchAll(/\]\(([^)]+)\)/g)].map((m) => m[1]);
+  expect(links.length).toBeGreaterThan(5);
+  for (const href of links) expect(href).toMatch(/^https:\/\//);
 });
 
 for (const width of [390, 768, 1024, 1440]) {

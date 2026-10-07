@@ -8,6 +8,6 @@ eleventyExcludeFromCollections: true
 {% for section in nav %}
 ## {{ section.group }}
 {% for p in section.pages %}
-- [{{ p.title | safe }}]({{ pathPrefix }}{{ p.url }})
+- [{{ p.title | safe }}]({{ site.url }}{{ p.url }})
 {%- endfor %}
 {% endfor %}
