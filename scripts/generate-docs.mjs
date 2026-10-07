@@ -19,7 +19,7 @@ const GITHUB_BLOB_BASE = 'https://github.com/kaltura/intelligent-agents-sdk/blob
 // facing, not user-facing). Anything else new at the SDK repo's root or under docs/
 // must get a manifest entry — see checkSourceCoverage — so a new doc file can never
 // silently miss the site the way docs/lifecycle/ once did.
-const ROOT_DOC_IGNORE = new Set(['README.md', 'CODE_OF_CONDUCT.md', 'CONTRIBUTING.md', 'SDK_CONSTITUTION.md']);
+const ROOT_DOC_IGNORE = new Set(['README.md', 'CODE_OF_CONDUCT.md', 'CONTRIBUTING.md', 'SDK_CONSTITUTION.md', 'AGENTS.md', 'CLAUDE.md']);
 
 // docs/ subtree files intentionally never ported to the site: the source doc stays
 // in the SDK repo (readable on GitHub) but doesn't get a public site page. Scripted-
