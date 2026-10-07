@@ -346,6 +346,23 @@ test('/llms.txt lists the docs pages', async ({ request }) => {
   for (const href of links) expect(href).toMatch(/^https:\/\//);
 });
 
+test('every llms.txt link is a markdown twin an agent can read', async ({ request }) => {
+  const body = await (await request.get('/llms.txt')).text();
+  const link = [...body.matchAll(/\]\((https:\/\/[^)]+\.md)\)/g)][0]?.[1];
+  expect(link).toBeTruthy();
+  const res = await request.get(new URL(link).pathname.replace(/^\/intelligent-agents-sdk/, ''));
+  expect(res.ok()).toBe(true);
+  const md = await res.text();
+  expect(md.startsWith('#')).toBe(true);
+  expect(md).not.toContain('<html');
+});
+
+test('doc pages point to their markdown twin', async ({ page }) => {
+  await page.goto(DOC);
+  const href = await page.locator('link[rel="alternate"][type="text/markdown"]').getAttribute('href');
+  expect(href).toMatch(/^https:\/\/.+\/index\.md$/);
+});
+
 for (const width of [390, 768, 1024, 1440]) {
   test(`no horizontal overflow at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 });

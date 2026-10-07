@@ -9,6 +9,9 @@
   {%- set metaDescription = description or site.description %}
   <meta name="description" content="{{ metaDescription }}">
   <link rel="canonical" href="{{ site.url }}{{ page.url }}">
+  {%- if page.url != "/" %}
+  <link rel="alternate" type="text/markdown" href="{{ site.url }}{{ page.url | twinUrl }}">
+  {%- endif %}
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="{{ site.name }}">
   <meta property="og:title" content="{{ metaTitle }}">

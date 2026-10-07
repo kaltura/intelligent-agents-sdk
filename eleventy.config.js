@@ -53,6 +53,20 @@ module.exports = function (eleventyConfig) {
     console.log(`[11ty] Wrote ${file} (${records} records)`);
   });
 
+  // Markdown twins (scripts/lib/markdown-twins.js): each nav page is also
+  // written as <url>index.md for coding agents. The page set is the sidebar nav,
+  // the same list llms.txt is built from.
+  const { twinUrl, writeTwins } = require('./scripts/lib/markdown-twins.js');
+  eleventyConfig.addFilter('twinUrl', twinUrl);
+  eleventyConfig.on('eleventy.after', ({ dir, results }) => {
+    const nav = require('./src/_data/nav.js');
+    const pageUrls = new Set();
+    const walk = (pages) => pages.forEach((p) => { pageUrls.add(p.url); walk(p.children); });
+    nav.forEach((s) => walk(s.pages));
+    const n = writeTwins(results, pageUrls, require('./src/_data/site.js').url, dir.output);
+    console.log(`[11ty] Wrote ${n} markdown twins`);
+  });
+
   const md = markdownIt({ html: true, breaks: false, linkify: true }).use(
     markdownItAnchor,
     { slugify: githubSlugify }
