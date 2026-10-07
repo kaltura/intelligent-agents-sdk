@@ -6,7 +6,7 @@ eleventyExcludeFromCollections: true
 
 > Zero-dependency JavaScript SDK for building and operating Kaltura Agentic Avatars: conversational agents with a visual, human-like avatar interface.
 
-Coding agents: read this index, then fetch the pages you need before writing code. Every link below is the page's markdown source. Install the SDK with `npm install "github:kaltura/intelligent-agents-sdk#semver:^1"`. Claude Code users can install the `kaltura-app-builder` plugin, see {{ site.url }}{{ '/guides/build-with-coding-agents/' | twinUrl }}.
+Coding agents: read this index, then fetch the pages you need before writing code. Every link below is the page's markdown source. Install the SDK with `npm install "github:kaltura/intelligent-agents-sdk#semver:^1"`. Claude Code users can install the `kaltura-app-builder` plugin. Guide: {{ site.url }}{{ '/guides/build-with-coding-agents/' | twinUrl }}
 {% macro entries(pages, indent) -%}
 {% for p in pages %}
 {{ indent }}- [{{ p.title | safe }}]({{ site.url }}{{ p.url | twinUrl }})
