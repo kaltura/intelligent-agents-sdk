@@ -64,6 +64,8 @@ address and ask it to read the pages it needs before it writes code:
 https://kaltura.github.io/intelligent-agents-sdk/llms.txt
 ```
 
+Every link in it is a page's markdown source. Any page is also available as markdown by adding `index.md` to its address.
+
 To get the code, run this in your project:
 
 ```bash
