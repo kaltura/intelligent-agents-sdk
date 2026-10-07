@@ -10,8 +10,8 @@ The official docs are the source of truth. This skill only gives the order of st
 
 ## Rule 0: read before you write
 
-1. Fetch `https://kaltura.github.io/intelligent-agents-sdk/llms.txt`. It lists every docs page with a one-line summary.
-2. Fetch the pages you need, using the table in `references/paths.md`.
+1. Fetch `https://kaltura.github.io/intelligent-agents-sdk/llms.txt` with your web fetch tool. It lists every docs page with a one-line summary. With no fetch tool, run `curl -sL <url>` instead.
+2. Fetch the pages you need the same way, using the table in `references/paths.md`.
 3. Read example code from `node_modules/@kaltura/intelligent-agents/examples/` after Step 3.
 4. Use only method, class and option names you saw in the docs or the installed package. If you cannot find one, say so and ask. Never guess a name.
 5. Suggest only what the docs recommend for building agents.

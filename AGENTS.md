@@ -57,10 +57,10 @@ Before each release, run the skill evals locally with your own Claude login:
 
 ```bash
 claude plugin validate ./app-builder-skill
-claude plugin eval ./app-builder-skill
+claude plugin eval ./app-builder-skill --allow-tools "WebFetch(domain:kaltura.github.io)" "Bash(node -v)" "Bash(git --version)"
 ```
 
-Cases are in `app-builder-skill/evals/`. When the Claude Code major version changes, re-read the plugin and agentskills.io docs and confirm `claude plugin validate` still passes.
+Cases are in `app-builder-skill/evals/`. Add `--runs 1 --ablation none` for a quick pass. When the Claude Code major version changes, re-read the plugin and agentskills.io docs and confirm `claude plugin validate` still passes. Bump the pinned `@anthropic-ai/claude-code` version in `ci.yml` at the same time.
 
 ## Release order
 
