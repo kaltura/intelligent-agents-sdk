@@ -144,7 +144,7 @@ There are two session modes, and they are NOT interchangeable. Scripted sessions
 
 </div>
 
-The protocol above describes the **interactive** path. The scripted path has no text-in of its own: the SDK wraps only `say-audio`. You provide pre-rendered speech audio (for example, from your own TTS call) and its duration. Full auth/lifecycle details: [API-REFERENCE.md § Scripted-Video (STV-only) Sessions](https://github.com/kaltura/intelligent-agents-sdk/blob/main/docs/api/scripted-video.md). Runnable example: `examples/scripted-video-session.mjs` + `.html`.
+The protocol above describes the **interactive** path. The scripted path has no text-in of its own: the SDK wraps only `say-audio`. You provide pre-rendered speech audio (for example, from your own TTS call) and its duration. Full auth/lifecycle details: [API-REFERENCE.md § Scripted-Video (STV-only) Sessions](https://github.com/kaltura/intelligent-agents-sdk/blob/main/docs/api/scripted-video.md).
 
 ### Audio-mode / phone-mode agents (partial support)
 

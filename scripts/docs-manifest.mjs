@@ -50,6 +50,16 @@ export const manifest = [
 
   // ---- How-to Guides ----
   {
+    target: 'guides/build-with-coding-agents.md',
+    url: '/guides/build-with-coding-agents/',
+    title: 'Build with Claude Code and other coding agents',
+    description: 'Install the Kaltura App Builder plugin so Claude Code builds an app with Kaltura AI agents for you. Other coding agents can start from llms.txt.',
+    eyebrow: 'How-to Guide',
+    group: 'How-to Guides',
+    navTitle: 'Build with coding agents',
+    generated: false,
+  },
+  {
     source: 'docs/START-THE-CONVERSATION.md',
     target: 'guides/start-the-conversation.md',
     url: '/guides/start-the-conversation/',
