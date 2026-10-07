@@ -51,6 +51,9 @@ import { KalturaError } from '../core/errors.js';
 import { turnServers, iceConfig, whepUrlHasPrivateIp, whepResourceUrl } from './wire.js';
 import { AvatarMedia } from './avatar-media.js';
 
+/**
+ * @deprecated Scripted-video sessions are deprecated and will be removed in the next major version. Build with agents instead: `mgmt.provision()` and the conversational session classes.
+ */
 export class KalturaScriptedVideoSession extends Emitter {
   /**
    * @param {object} cfg

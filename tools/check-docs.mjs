@@ -903,7 +903,7 @@ describe('15. App-builder skill', () => {
       lines.forEach((line, i) => {
         if (!line.includes('@deprecated')) return;
         const next = lines.slice(i + 1).find((l) => l.trim() && !/^\s*(\*|\/\*)/.test(l)) || '';
-        const m = next.match(/^\s*(?:export\s+)?(?:default\s+)?(?:async\s+|static\s+|get\s+|set\s+)*(?:function\*?\s+|class\s+|const\s+|let\s+)?([A-Za-z_$][\w$]*)/);
+        const m = next.match(/^\s*(?:export\s+)?(?:default\s+)?(?:async\s+|static\s+|get\s+|set\s+)*(?:function\*?\s+|class\s+|const\s+|let\s+|this\.)?([A-Za-z_$][\w$]*)/);
         if (m) names.add(m[1]);
       });
     }

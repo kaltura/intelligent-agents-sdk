@@ -19,7 +19,7 @@ Every endpoint is shown as a raw HTTP call plus its SDK wrapper. The SDK is what
 | [Agent Components](docs/api/build.md) | Generate an agent profile, create/configure an intellect, preview a prompt, tools (`api`/`csv`/`code`), secrets, ground in your content (RAG), create an avatar, create an agent |
 | [Widget & Runtime Init](docs/api/deploy.md) | Resolve widget ID, initialize the browser runtime |
 | [Conversation & Analytics](docs/api/operate.md) | Converse (headless HTTP), reserved `sys__*` template variables, status, threads, feedback and follow-ups, usage analytics, knowledge search (MCP) |
-| [Scripted-Video (STV-only) Sessions](docs/api/scripted-video.md) | Pre-authored speech sessions — auth, lifecycle, `say-audio` |
+| [Scripted-Video (STV-only) Sessions](docs/api/scripted-video.md) | Deprecated. Pre-authored speech sessions — auth, lifecycle, `say-audio` |
 | [Management Operations](docs/api/management-operations.md) | CRUD tables for agents, avatars, intellects, tools, skills, threads, messages/feedback/followups, knowledge records, lifecycle |
 | [Lifecycle Rules](docs/lifecycle/README.md) | Event-driven rules + InsightSettings (reusable custom-insight definitions) + EmailTemplates (`sendInsightEmail`'s `templateId`) — reference + [recipe](docs/lifecycle/recipes.md) |
 | [External API Integrations](docs/EXTERNAL-API-INTEGRATIONS.md) | Wiring a brain-called tool to a durable write against your own external API (CRM, spreadsheet, ticketing), including the backend-managed OAuth2 flow |
