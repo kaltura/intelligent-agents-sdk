@@ -30,6 +30,7 @@ interface.
         <button type="button" class="nova-chip" data-prompt="Is this SDK free to use, and do I need a Kaltura account?">Is it free to use?</button>
         <button type="button" class="nova-chip" data-prompt="Take me to the Getting Started guide.">Take me to Getting Started</button>
         <button type="button" class="nova-chip" data-prompt="We already have our own AI. What does Kaltura's runtime add?">I have my own AI — why Kaltura?</button>
+        <button type="button" class="nova-chip" data-prompt="Can I use this SDK with Claude Code or another coding agent?">Can I use Claude Code?</button>
       </div>
     </div>
     <div class="nova-hero-visual" id="nova-hero-slot"></div>
@@ -99,6 +100,24 @@ Once a tag is pinned, jsDelivr serves the SDK straight from GitHub. No
 Pin the tag for anything you ship. jsDelivr caches a tagged path forever, so
 a pin is both stable and fast. See [Getting Started](/getting-started/) for
 where `token` and the other connection values come from.
+
+## Build with Claude Code
+
+<div data-nova-target="build-with-claude-code" data-nova-label="Build with Claude Code">
+
+Let your coding agent do the setup. Install the plugin once, then ask Claude
+Code to add a Kaltura avatar to your app. It reads this site live, so it never
+works from an out-of-date copy.
+
+```bash
+/plugin marketplace add kaltura/intelligent-agents-sdk
+/plugin install kaltura-app-builder@kaltura-agents
+```
+
+Other agents can start from [llms.txt](/llms.txt). Full steps:
+[Build with Claude Code and other coding agents](/guides/build-with-coding-agents/).
+
+</div>
 
 ## Where to go next
 

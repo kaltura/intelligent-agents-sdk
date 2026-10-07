@@ -26,7 +26,7 @@ Every endpoint is shown as a raw HTTP call plus its SDK wrapper. The SDK is what
 | [Agent Components](/reference/api/build/) | Generate an agent profile, create/configure an intellect, preview a prompt, tools (`api`/`csv`/`code`), secrets, ground in your content (RAG), create an avatar, create an agent |
 | [Widget & Runtime Init](/reference/api/deploy/) | Resolve widget ID, initialize the browser runtime |
 | [Conversation & Analytics](/reference/api/operate/) | Converse (headless HTTP), reserved `sys__*` template variables, status, threads, feedback and follow-ups, usage analytics, knowledge search (MCP) |
-| [Scripted-Video (STV-only) Sessions](https://github.com/kaltura/intelligent-agents-sdk/blob/main/docs/api/scripted-video.md) | Pre-authored speech sessions — auth, lifecycle, `say-audio` |
+| [Scripted-Video (STV-only) Sessions](https://github.com/kaltura/intelligent-agents-sdk/blob/main/docs/api/scripted-video.md) | Deprecated. Pre-authored speech sessions — auth, lifecycle, `say-audio` |
 | [Management Operations](/reference/api/management-operations/) | CRUD tables for agents, avatars, intellects, tools, skills, threads, messages/feedback/followups, knowledge records, lifecycle |
 | [Lifecycle Rules](/reference/lifecycle/) | Event-driven rules + InsightSettings (reusable custom-insight definitions) + EmailTemplates (`sendInsightEmail`'s `templateId`) — reference + [recipe](/guides/lifecycle-recipes/) |
 | [External API Integrations](/guides/external-api-integrations/) | Wiring a brain-called tool to a durable write against your own external API (CRM, spreadsheet, ticketing), including the backend-managed OAuth2 flow |

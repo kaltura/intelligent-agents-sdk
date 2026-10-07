@@ -19,6 +19,11 @@ module.exports = [
     "group": "How-to Guides",
     "pages": [
       {
+        "title": "Build with coding agents",
+        "url": "/guides/build-with-coding-agents/",
+        "children": []
+      },
+      {
         "title": "Start the Conversation",
         "url": "/guides/start-the-conversation/",
         "children": []

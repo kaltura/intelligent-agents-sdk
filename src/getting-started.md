@@ -135,6 +135,7 @@ You now know how to create an agent and talk to it. Here's where to go for more:
 | Use your **own voice** for the avatar | [Catalog & Assets](/reference/api/design/#upload-a-custom-voice-clone) |
 | Use your **own face/portrait** for the avatar | [Catalog & Assets](/reference/api/design/#upload-a-custom-visual-portrait--animated-avatar) |
 | Build a real app with the JavaScript SDK | [README.md](https://github.com/kaltura/intelligent-agents-sdk/blob/main/README.md#quick-start) |
+| Let Claude Code build it with you | [Using Claude Code or another coding agent](https://github.com/kaltura/intelligent-agents-sdk/blob/main/README.md#using-claude-code-or-another-coding-agent) |
 | Make the avatar drive your UI (slides, widgets, navigation) | [Client-Side Commands](/guides/client-commands/) |
 | Pause the avatar for a video/interactive element, then resume | [Pause for Video/Interactive Content, Then Resume](/guides/pause-resume/) |
 | Auto-summarize every conversation and email a human when it's ready | [Lifecycle Recipes](/guides/lifecycle-recipes/) |
