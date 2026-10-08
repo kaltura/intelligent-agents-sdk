@@ -65,7 +65,7 @@ Only the brain **thread** resumes across sessions (via `threadId`). Details: [Sy
 
 `availabilityResult.details` is passed through from the server as an optional, informational object. The SDK does not read it. Treat it as optional.
 
-For what a custom (no-Kaltura-lib) client must implement to work with this model, see [Minimal Reimplementation Recipe's "Implications for a Custom Client"](/reference/architecture-recipe/#implications-for-a-custom-no-kaltura-lib-client).
+For what a custom (no-Kaltura-lib) client must implement to work with this model, see [ARCHITECTURE-RECIPE.md's "Implications for a Custom Client"](https://github.com/kaltura/intelligent-agents-sdk/blob/main/docs/ARCHITECTURE-RECIPE.md#implications-for-a-custom-no-kaltura-lib-client).
 
 ## Related docs
 

@@ -61,7 +61,7 @@ Create (`POST /v1/intellect/add`) isn't listed here. See [Agent Components · Cr
 
 Deleting an agent does **not** delete its avatar or intellect.
 
-`mgmt.setForcedLanguage({ configId, agentId, language, languageName?, asrProvider? }, ks)` forces the reply language. It sets `force_language` on the intellect (the backend enforces it at runtime) and the agent's `asr.language`/`asr.provider` in one call. `languageName` is required only for a `language` code not in the SDK's built-in `LANGUAGE_NAMES` map; `asrProvider` defaults to `'kaltura'`. Idempotent; `language: null` clears both (resets `asr.language` to `'en'`). See [README § Forcing the reply language](https://github.com/kaltura/intelligent-agents-sdk/blob/main/README.md#forcing-the-reply-language-setforcedlanguage).
+`mgmt.setForcedLanguage({ configId, agentId, language, languageName?, asrProvider? }, ks)` forces the reply language and the speech-recognition language in one idempotent call. Usage and options: [Languages](/guides/languages/).
 
 Typed setters on `mgmt.intellectConfig` for the other single-purpose fields, all `(configId, value, ks)` and idempotent:
 
