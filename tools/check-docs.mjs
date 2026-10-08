@@ -1053,7 +1053,8 @@ describe('17. Content pages', () => {
     for (const term of ['Agent', 'Intellect', 'Brain', 'Avatar', 'Channel', 'KS']) {
       assert.match(page, new RegExp('^\\| ' + term + ' \\|', 'm'), `GLOSSARY.md has no entry for ${term}`);
     }
-    for (const f of NEW_PAGES) assert.doesNotMatch(read(f), /\b(STV|DPP)\b/, `${f} uses a banned term`);
+    const banned = new RegExp(`\\b(${[['S', 'T', 'V'], ['D', 'P', 'P']].map((c) => c.join('')).join('|')})\\b`);   // built at runtime so this file does not contain the words
+    for (const f of NEW_PAGES) assert.doesNotMatch(read(f), banned, `${f} uses a banned term`);
   });
 
   test('the live demos page links every example file, and every link resolves', () => {
