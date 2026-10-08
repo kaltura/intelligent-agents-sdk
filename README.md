@@ -812,6 +812,8 @@ The empty `204` means an update works but the agent cannot confirm it from the r
 
 The upsert key goes into the URL. An unencoded `@` in the URL makes the call fail, so the key arg prompt tells the agent to pass the key percent-encoded (`@` as `%40`, `+` as `%2B`, `/` as `%2F`). Args are inserted as written, with no encoding by the tool. In your own tools, use `{Name}` for an arg in the URL or body, and `{{secrets.NAME}}` or `{{ sys__thread_id }}` for secrets and request variables. Headers take secrets and request variables only, not args.
 
+An omitted optional arg is written into the request as the text `None`, and an empty string is written as blank. So the optional arg prompts ask the agent to pass an empty string when the visitor did not give a value. If you write your own tool, mark an arg `required` or give it the same instruction, or the text `None` ends up in the CRM field.
+
 ### Salesforce access tokens
 
 A Salesforce access token expires. The default org session timeout is 2 hours. After that Salesforce answers `401` and the agent reports a failed save. Pick one option.

@@ -49,10 +49,12 @@ function fakeOrg() {
   return { leads, fetch: fakeFetch(routes) };
 }
 
-test('renderTemplate fills {{ vars }} and {args} and blanks unknown ones', () => {
+test('renderTemplate fills {{ vars }} and {args}, and writes "None" for an omitted arg', () => {
   const scope = { args: { x: 1 }, vars: { sys__thread_id: 't1', secrets: { S: 'sec' } } };
-  assert.equal(renderTemplate('a {x} b {{ sys__thread_id }} c {nope} {{secrets.S}}', scope), 'a 1 b t1 c  sec');
-  assert.equal(renderTemplate('Bearer {{secrets.S}} {x}', { args: {}, vars: scope.vars }), 'Bearer sec ');
+  assert.equal(renderTemplate('a {x} b {{ sys__thread_id }} c {nope} {{secrets.S}}', scope), 'a 1 b t1 c None sec');
+  assert.equal(renderTemplate('Bearer {{secrets.S}} {x}', { args: {}, vars: scope.vars }), 'Bearer sec None');
+  assert.equal(renderTemplate('[{x}]', { args: { x: '' }, vars: {} }), '[]', 'an empty string is blank');
+  assert.equal(renderTemplate('{x}', { args: { x: 'a{b}c' }, vars: {} }), 'a{b}c', 'braces inside a value are kept');
 });
 
 test('renderRequest builds the exact request the tool config describes', () => {
@@ -62,7 +64,7 @@ test('renderRequest builds the exact request the tool config describes', () => {
   assert.equal(req.url, `${INSTANCE}/services/data/v68.0/sobjects/Lead/Email/a%40b.co`);
   assert.equal(req.headers.Authorization, `Bearer ${TOKEN}`);
   assert.equal(req.body.LastName, 'L');
-  assert.equal(req.body.Phone, '', 'the helper renders an omitted arg as empty (runtime behavior is not verified)');
+  assert.equal(req.body.Phone, 'None', 'an omitted optional arg is written as the text None');
   assert.equal(req.body.LeadSource, 'Web');
   assert.match(req.body.Description, /Thread: thr-1\. Consent to be contacted: true\./);
 });
@@ -91,7 +93,7 @@ test('callTool maps a 201 and an empty 204, and exposes the raw error body', asy
   const second = await callTool(org.fetch, tool, ctx);
   assert.equal(second.status, 204);
   assert.deepEqual(second.mapped, { result: undefined, success: undefined });
-  const failed = await callTool(org.fetch, tool, { ...ctx, args: { ...ctx.args, Company: undefined } });
+  const failed = await callTool(org.fetch, tool, { ...ctx, args: { ...ctx.args, Company: '' } });
   assert.equal(failed.status, 400);
   assert.equal(failed.json[0].errorCode, 'REQUIRED_FIELD_MISSING');
   assert.deepEqual(failed.json[0].fields, ['Company']);
