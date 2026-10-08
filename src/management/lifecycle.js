@@ -49,6 +49,53 @@ function requireNonEmptyString(v, where, field) {
   }
 }
 
+/** @param {unknown} v */
+const isId = (v) => typeof v === 'string' && v.trim().length > 0;
+
+/**
+ * True for an `object.agent_id` condition that names real agent ids:
+ * `eq` with a non-empty string, or `in` with a non-empty array of them.
+ * @param {any} c
+ */
+function isAgentCondition(c) {
+  if (!c || typeof c !== 'object' || c.field !== 'object.agent_id') return false;
+  if (c.operator === 'eq') return isId(c.value);
+  if (c.operator === 'in') return Array.isArray(c.value) && c.value.length > 0 && c.value.every(isId);
+  return false;
+}
+
+/**
+ * Refuse a `thread` rule that has no `object.agent_id` condition (operator
+ * `eq` with an id, or `in` with a list of ids). Without one the rule runs
+ * for every agent on the partner.
+ * @param {unknown} eventConditions @param {string} where
+ */
+function requireAgentScope(eventConditions, where) {
+  if (Array.isArray(eventConditions) && eventConditions.some(isAgentCondition)) return;
+  throw new KalturaError({
+    type: 'about:blank', title: 'unscoped lifecycle rule', code: 'lifecycle_unscoped',
+    detail: `${where}: a thread rule needs an agent condition, or it runs for every agent on the partner. Add {field:'object.agent_id', operator:'eq', value:'<agent-uuid>'} (a non-empty id; operator 'in' takes a non-empty array of ids) to eventConditions, or pass { partnerWide: true } to run on every agent on purpose.`,
+  });
+}
+
+/**
+ * Refuse a `sendInsightEmail` rule on `analysis_updated` that has no
+ * `changed_keys` condition. The action has no once-per-thread guard, so
+ * without one it sends on every analysis update.
+ * @param {unknown} eventConditions @param {string} where
+ */
+function requireEmailTrigger(eventConditions, where) {
+  const keyed = Array.isArray(eventConditions) && eventConditions.some(
+    (c) => c && typeof c === 'object' && c.field === 'changed_keys' && (c.operator === 'has_all' || c.operator === 'has_any')
+      && Array.isArray(c.value) && c.value.length > 0 && c.value.every(isId),
+  );
+  if (keyed) return;
+  throw new KalturaError({
+    type: 'about:blank', title: 'unfiltered email rule', code: 'lifecycle_email_unfiltered',
+    detail: `${where}: a sendInsightEmail rule on analysis_updated sends on every analysis update unless it names the insight keys it waits for. Add {field:'changed_keys', operator:'has_all', value:['SUMMARY', ...]} to eventConditions, or pass { emailOnEveryUpdate: true } to send on every update on purpose.`,
+  });
+}
+
 export class Lifecycle {
   /** @param {import('./client.js').Ctx} ctx */
   constructor(ctx) { this._ = ctx; }
@@ -56,10 +103,25 @@ export class Lifecycle {
   /**
    * Create a lifecycle rule. WRITE — NOT idempotent (a repeat call creates a
    * second rule, same as {@link Tools#add}).
+   *
+   * A `thread` rule must scope itself to an agent: `eventConditions` needs an
+   * entry with `field:'object.agent_id'` and operator `eq` (a non-empty id)
+   * or `in` (a non-empty array of ids). A rule without one runs for every
+   * agent on the partner, so the SDK throws `KalturaError` with
+   * `code:'lifecycle_unscoped'` before any request. Pass
+   * `{ partnerWide: true }` to run on every agent on purpose. Other
+   * `objectType` values are not checked.
+   *
+   * A `sendInsightEmail` rule on `analysis_updated` must also name the insight
+   * keys it waits for: a `changed_keys` condition with operator `has_all` or
+   * `has_any` and a non-empty array of keys. Otherwise it sends on every
+   * analysis update, so the SDK throws `code:'lifecycle_email_unfiltered'`.
+   * Pass `{ emailOnEveryUpdate: true }` to send on every update on purpose.
    * @param {{name:string, systemName:string, eventType:string, objectType:string, eventConditions?:Array<{field:string,operator:string,value:unknown}>, action:object}} body
    * @param {string} ks (admin)
+   * @param {{partnerWide?:boolean, emailOnEveryUpdate?:boolean}} [opts] `partnerWide:true` skips the agent-scope check. `emailOnEveryUpdate:true` skips the email-trigger check
    */
-  async create(body, ks) {
+  async create(body, ks, opts = {}) {
     this._.assertAdmin(ks, 'lifecycle.create');
     if (!body || typeof body !== 'object' || Array.isArray(body)) {
       throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: 'lifecycle.create needs a {name, systemName, eventType, objectType, eventConditions?, action} object.' });
@@ -70,6 +132,10 @@ export class Lifecycle {
     requireNonEmptyString(body.objectType, 'lifecycle.create', 'objectType');
     if (!body.action || typeof body.action !== 'object') {
       throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: 'lifecycle.create action must be an object (e.g. {actionType:"triggerInsightSettingsKai", insightSettingsIds:[...]}).' });
+    }
+    if (body.objectType === 'thread' && opts.partnerWide !== true) requireAgentScope(body.eventConditions, 'lifecycle.create');
+    if (body.eventType === 'analysis_updated' && /** @type {any} */ (body.action).actionType === 'sendInsightEmail' && opts.emailOnEveryUpdate !== true) {
+      requireEmailTrigger(body.eventConditions, 'lifecycle.create');
     }
     /** @type {Record<string,unknown>} */
     const wire = { name: body.name, systemName: body.systemName, eventType: body.eventType, objectType: body.objectType, action: body.action };
@@ -105,11 +171,28 @@ export class Lifecycle {
   /**
    * Update a lifecycle rule's name/systemName/eventType/objectType/status/
    * eventConditions/action. WRITE — idempotent.
+   *
+   * The agent-scope rule from {@link Lifecycle#create} applies when the patch
+   * includes `eventConditions`. The patch's `objectType` decides whether the
+   * rule is a `thread` rule; without one the SDK assumes `thread`. The new
+   * conditions then need an `object.agent_id` entry with operator `eq` or
+   * `in` and real ids, or the SDK throws `code:'lifecycle_unscoped'` before
+   * any request. `{ partnerWide: true }` skips the check.
+   *
+   * The email-trigger rule from {@link Lifecycle#create} applies when the
+   * patch sets a `sendInsightEmail` `action` together with `eventConditions`
+   * (and an `eventType` of `analysis_updated`, or none). `{ emailOnEveryUpdate:
+   * true }` skips it.
+   *
+   * Send the full `eventConditions` list, not only the new condition. The SDK
+   * cannot see stored conditions, so a patch that leaves out
+   * `eventConditions` is not checked.
    * @param {string} id
    * @param {{name?:string, systemName?:string, eventType?:string, objectType?:string, status?:string, eventConditions?:Array<object>, action?:object}} patch
    * @param {string} ks (admin)
+   * @param {{partnerWide?:boolean, emailOnEveryUpdate?:boolean}} [opts] `partnerWide:true` skips the agent-scope check. `emailOnEveryUpdate:true` skips the email-trigger check
    */
-  async update(id, patch, ks) {
+  async update(id, patch, ks, opts = {}) {
     this._.assertAdmin(ks, 'lifecycle.update');
     requireRuleId(id, 'lifecycle.update');
     if (!patch || typeof patch !== 'object' || Array.isArray(patch)) {
@@ -118,6 +201,13 @@ export class Lifecycle {
     const fields = ['name', 'systemName', 'eventType', 'objectType', 'status', 'eventConditions', 'action'];
     if (!fields.some((f) => patch[f] !== undefined)) {
       throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: `lifecycle.update needs at least one of ${fields.join('/')}.` });
+    }
+    if (patch.eventConditions !== undefined && (patch.objectType === undefined || patch.objectType === 'thread') && opts.partnerWide !== true) {
+      requireAgentScope(patch.eventConditions, 'lifecycle.update');
+    }
+    if (patch.eventConditions !== undefined && /** @type {any} */ (patch.action)?.actionType === 'sendInsightEmail'
+      && (patch.eventType === undefined || patch.eventType === 'analysis_updated') && opts.emailOnEveryUpdate !== true) {
+      requireEmailTrigger(patch.eventConditions, 'lifecycle.update');
     }
     /** @type {Record<string,unknown>} */
     const wire = { id };

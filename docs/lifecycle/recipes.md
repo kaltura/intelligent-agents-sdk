@@ -41,6 +41,7 @@ await mgmt.lifecycle.create({
   systemName: 'auto_summary_v1',
   eventType: 'session_ended',
   objectType: 'thread',
+  eventConditions: [{ field: 'object.agent_id', operator: 'eq', value: '<agent-uuid>' }],
   action: { actionType: 'triggerInsightSettingsKai', insightSettingsIds: [topic.id, nextStep.id] },
 }, adminKs);
 ```
@@ -59,6 +60,10 @@ await mgmt.lifecycle.create({
   systemName: 'analysis_alert_v1',
   eventType: 'analysis_updated',
   objectType: 'thread',
+  eventConditions: [
+    { field: 'object.agent_id', operator: 'eq', value: '<agent-uuid>' },
+    { field: 'changed_keys', operator: 'has_all', value: ['SUMMARY', 'TOPIC', 'CUSTOM'] },
+  ],
   action: {
     actionType: 'sendInsightEmail',
     recipients: ['support-lead-kaltura-user-id'],
@@ -83,13 +88,7 @@ Pick whatever `prompt` fits your use case for `CUSTOM`. The template only cares 
 
 ## Scoping the alert to one agent
 
-`eventConditions` lets Recipe B fire only for a specific agent instead of every agent on the partner:
-
-```js
-eventConditions: [{ field: 'object.agent_id', operator: 'eq', value: '<agent-uuid>' }]
-```
-
-This only works if the conversation itself was started with a KS that carries the agent id. A token minted without an agent id leaves every thread's `agent_id` as `"default"`, so it can never match. Mint with `createAgentToken({ agentId })` (see [Conversation token or agent token?](../api/authentication.md#conversation-token-or-agent-token)), and see [`README.md`'s scoping section](README.md#scoping-a-rule-to-one-agent) for the full explanation.
+Both recipes use `eventConditions` with `object.agent_id`. The SDK requires it: see [Scope every rule to an agent](README.md#scope-every-rule-to-an-agent). The rule only matches conversations started with a KS that carries the agent id. A token minted without one leaves every thread's `agent_id` as `"default"`, so it can never match. Mint with `createAgentToken({ agentId })` (see [Conversation token or agent token?](../api/authentication.md#conversation-token-or-agent-token)), and see [`README.md`'s scoping section](README.md#scoping-a-rule-to-one-agent) for the full explanation.
 
 ---
 
@@ -145,6 +144,8 @@ node examples/lifecycle-insights-and-email.mjs
 | A rule references a real `insightSettingsIds` id but that insight never gets extracted | The referenced `InsightSettings` entity has `status:'disabled'` | `mgmt.insightSettings.update(id, {status:'active'}, ks)` |
 | `sendInsightEmail` rule never sends anything, no error anywhere | The paired `triggerInsightSettingsKai` rule doesn't produce every key the preset needs | Match Recipe A's `InsightSettings.key` values to the preset's requirements exactly (see the gotcha above) |
 | A `sendInsightEmail` rule attached to `session_ended` does nothing | That action only fires on `analysis_updated` | Change `eventType` to `analysis_updated` |
+| `lifecycle.create` or `update` throws `lifecycle_unscoped` | A `thread` rule has no `object.agent_id` condition (`eq` with an id, or `in` with a non-empty array of ids), so it would run for every agent on the partner | Add `{field:'object.agent_id', operator:'eq', value:'<agent-uuid>'}`, or pass `{ partnerWide: true }` to run on every agent on purpose |
+| `lifecycle.create` or `update` throws `lifecycle_email_unfiltered` | A `sendInsightEmail` rule on `analysis_updated` has no `changed_keys` condition, so it would send on every analysis update | Add `{field:'changed_keys', operator:'has_all', value:['SUMMARY', ...]}`, or pass `{ emailOnEveryUpdate: true }` to send on every update on purpose |
 | `eventConditions` on `object.agent_id` never matches | The thread was created with a token minted without an agent id | Mint with `mgmt.sessions.createAgentToken({agentId})` |
 | `lifecycle.match` 400s: `eventData.object.user_id: Invalid input...` | A required field missing from the dry-run `object` | Always pass `agent_id`, `thread_id`, and `user_id` together |
 | An `InsightSettings` entity 400s or its rule silently produces nothing | No `prompt` supplied | `prompt` is required on every `InsightSettings` entity, there's no built-in fallback for any key |
