@@ -149,6 +149,16 @@ test('salesforceLeadUpsert defaults: fields, required args, consent arg', () => 
   assert.match(tool.description, /ONLY if the result shows success true or an id/);
 });
 
+test('optional args ask for an empty string, required args do not', () => {
+  const lead = salesforceLeadUpsert(LEAD_CFG);
+  assert.match(lead.args.Phone.prompt, /pass an empty string/);
+  assert.match(lead.args.Country.prompt, /pass an empty string/);
+  for (const k of ['LastName', 'Company', 'Email']) assert.doesNotMatch(lead.args[k].prompt, /empty string/, k);
+  const hs = hubspotContactUpsert({ secretName: 'HS' });
+  assert.match(hs.args.firstname.prompt, /pass an empty string/);
+  assert.doesNotMatch(hs.args.email.prompt, /empty string/);
+});
+
 test('salesforceLeadUpsert strips a trailing slash and accepts overrides', () => {
   const tool = salesforceLeadUpsert({
     ...LEAD_CFG,

@@ -30,6 +30,10 @@ const SALESFORCE_RESULT_RULES = 'Tell the visitor the details are saved ONLY if 
  * then empty. An error status never reaches the mapping: the agent only gets
  * a generic "API returned error status" line.
  */
+// An omitted optional arg is written as the text "None", while an empty string
+// is written as blank. So optional args ask for an empty string instead.
+const OPTIONAL_ARG_HINT = ' Optional. If the visitor did not give it, pass an empty string.';
+
 const SALESFORCE_RESPONSE_MAPPING = {
   result: 'id',
   success: 'success',
@@ -65,7 +69,7 @@ export function hubspotContactUpsert(cfg = {}) {
   /** @type {Record<string,{type:string,prompt:string,required:boolean}>} */
   const args = {};
   for (const prop of props) {
-    args[prop] = { type: 'str', prompt: `Contact ${prop}`, required: prop === 'email' };
+    args[prop] = { type: 'str', prompt: `Contact ${prop}${prop === 'email' ? '' : OPTIONAL_ARG_HINT}`, required: prop === 'email' };
   }
 
   return api({
@@ -144,7 +148,7 @@ function buildSalesforceUpsert(o) {
   for (const field of fields) {
     const prompt = field === externalIdField
       ? `${sobject} ${field}. It goes into a URL: pass it percent-encoded: "@" as "%40", "+" as "%2B", "/" as "%2F".`
-      : `${sobject} ${field}`;
+      : `${sobject} ${field}${required.has(field) ? '' : OPTIONAL_ARG_HINT}`;
     args[field] = { type: 'str', prompt, required: required.has(field) };
   }
   Object.assign(args, o.extraArgs);

@@ -48,8 +48,9 @@ export function encodeKeyArg(value) {
 /**
  * Fill a tool template the way the tool runtime does. `{{ path }}` reads
  * request variables and secrets (`secrets.NAME`, `sys__thread_id`). `{Name}`
- * reads a tool arg, inserted raw with no percent-encoding. A missing value
- * becomes ''.
+ * reads a tool arg, inserted raw with no percent-encoding. An omitted arg
+ * becomes the text "None" and an empty string becomes blank, as on the runtime.
+ * A missing `{{ }}` value becomes ''.
  * @param {string} text @param {{args:Record<string,unknown>, vars:Record<string,any>}} scope
  */
 export function renderTemplate(text, scope) {
@@ -59,7 +60,7 @@ export function renderTemplate(text, scope) {
       for (const seg of path.split('.')) node = node == null ? undefined : node[seg];
       return node == null ? '' : String(node);
     })
-    .replace(/\{(\w+)\}/g, (_m, name) => (scope.args[name] == null ? '' : String(scope.args[name])));
+    .replace(/\{(\w+)\}/g, (_m, name) => (scope.args[name] == null ? 'None' : String(scope.args[name])));
 }
 
 /**
@@ -153,9 +154,9 @@ export async function runLeadChecks({ fetch: fetchFn, instanceUrl, token, tag, c
     check('2b-no-duplicate-lead', ids.length === 1, { leadsWithThisEmail: ids.length });
     if (ids[0]) check('2c-company-updated', (await getLead(ids[0])).Company === 'Live Verify Co 2', undefined);
 
-    // 3 and 4 missing required fields
+    // 3 and 4 missing required fields (an empty string is written as blank; an omitted arg would be written as "None")
     for (const field of ['Company', 'LastName']) {
-      const missing = await callTool(fetchFn, tool, { args: { ...full, [field]: undefined }, secrets, threadId });
+      const missing = await callTool(fetchFn, tool, { args: { ...full, [field]: '' }, secrets, threadId });
       if (missing.mapped.result) toDelete.add(missing.mapped.result);
       check(`3-missing-${field}`, missing.status === 400 && missing.json?.[0]?.errorCode === 'REQUIRED_FIELD_MISSING' && String(missing.json?.[0]?.fields).includes(field), { status: missing.status, errorCode: missing.json?.[0]?.errorCode });
     }
