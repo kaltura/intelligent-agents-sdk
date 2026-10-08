@@ -14,7 +14,7 @@ import { fakeFetch } from '../fakes/fetch.js';
 const INSTANCE = 'https://fake.develop.my.salesforce.com';
 const TOKEN = 'fake-token-' + 'x'.repeat(8);
 
-/** A fake org: upsert by email, required-field and email validation, bad-token 401, query, get, delete. */
+/** A fake org: upsert by email (201 insert, 200 update, 300 for two matches), required-field and email validation, bad-token 401, create, query, get, delete. */
 function fakeOrg() {
   /** @type {Map<string, Record<string,string>>} */
   const leads = new Map();
@@ -28,10 +28,19 @@ function fakeOrg() {
         if (!/^[^@\s]+@[^@\s]+\.\w+$/.test(email)) return { status: 400, body: [{ message: 'Email: invalid email address', errorCode: 'INVALID_EMAIL_ADDRESS', fields: ['Email'] }] };
         const missing = ['LastName', 'Company'].filter((f) => !req.body[f]);
         if (missing.length) return { status: 400, body: [{ message: `Required fields are missing: [${missing}]`, errorCode: 'REQUIRED_FIELD_MISSING', fields: missing }] };
-        const existing = [...leads.entries()].find(([, l]) => l.Email === email);
-        if (existing) { leads.set(existing[0], { ...existing[1], ...req.body }); return { status: 204 }; }
+        const matches = [...leads.entries()].filter(([, l]) => l.Email === email);
+        if (matches.length > 1) return { status: 300, body: matches.map(([id]) => `/services/data/v68.0/sobjects/Lead/${id}`) };
+        if (matches.length === 1) { leads.set(matches[0][0], { ...matches[0][1], ...req.body }); return { status: 200, body: { id: matches[0][0], success: true, errors: [], created: false } }; }
         const id = `00Q${++seq}`;
         leads.set(id, { Email: email, ...req.body });
+        return { status: 201, body: { id, success: true, errors: [] } };
+      },
+    },
+    {
+      match: /\/sobjects\/Lead$/,
+      respond: (/** @type {any} */ req) => {
+        const id = `00Q${++seq}`;
+        leads.set(id, { ...req.body });
         return { status: 201, body: { id, success: true, errors: [] } };
       },
     },
@@ -82,7 +91,7 @@ test('renderRequest refuses a raw @ in the URL', () => {
   assert.throws(() => renderRequest(tool, { args: { Email: 'a@b.co' }, secrets: { SF_TOKEN: TOKEN }, threadId: 't' }), /raw @/);
 });
 
-test('callTool maps a 201 and an empty 204, and exposes the raw error body', async () => {
+test('callTool maps a 201 and a 200, and exposes the raw error body', async () => {
   const org = fakeOrg();
   const tool = salesforceLeadUpsert({ secretName: 'SF_TOKEN', instanceUrl: INSTANCE });
   const ctx = { args: { Email: 'a%40b.co', LastName: 'L', Company: 'C', consent: true }, secrets: { SF_TOKEN: TOKEN }, threadId: 't' };
@@ -91,8 +100,8 @@ test('callTool maps a 201 and an empty 204, and exposes the raw error body', asy
   assert.equal(first.mapped.success, true);
   assert.ok(first.mapped.result);
   const second = await callTool(org.fetch, tool, ctx);
-  assert.equal(second.status, 204);
-  assert.deepEqual(second.mapped, { result: undefined, success: undefined });
+  assert.equal(second.status, 200);
+  assert.deepEqual(second.mapped, { result: first.mapped.result, success: true });
   const failed = await callTool(org.fetch, tool, { ...ctx, args: { ...ctx.args, Company: '' } });
   assert.equal(failed.status, 400);
   assert.equal(failed.json[0].errorCode, 'REQUIRED_FIELD_MISSING');
@@ -104,7 +113,8 @@ test('runLeadChecks passes every step against the fake org and deletes its Leads
   const { results, cleanup } = await runLeadChecks({ fetch: org.fetch, instanceUrl: INSTANCE, token: TOKEN, tag: 'abc' });
   const failing = results.filter((r) => !r.ok);
   assert.deepEqual(failing, [], JSON.stringify(failing));
-  assert.ok(results.length >= 9);
+  assert.ok(results.length >= 10);
+  assert.equal(results.find((r) => r.step === '2d-two-leads-one-email')?.ok, true);
   assert.equal(org.leads.size, 0, 'cleanup left no Leads');
   assert.equal(cleanup.failed, 0);
   assert.ok(cleanup.deleted >= 1);

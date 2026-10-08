@@ -120,15 +120,23 @@ export async function runLeadChecks({ fetch: fetchFn, instanceUrl, token, tag, c
   const base = `${instanceUrl}/services/data/${API_VERSION}`;
   const auth = { Authorization: `Bearer ${token}` };
   // The upsert key goes into the URL, where a raw @ fails: the model writes it as %40.
-  const full = { FirstName: 'Sdk', LastName: 'LiveVerify', Company: 'Live Verify Co', Email: encodeKeyArg(email), Phone: '555-0100', Country: 'US', consent: true };
+  const full = { FirstName: 'Sdk', LastName: 'LiveVerify', Company: 'Live Verify Co', Email: encodeKeyArg(email), Phone: '555-0100', Country: 'United States', consent: true };
 
   /** @type {{step:string, ok:boolean, detail?:unknown}[]} */
   const results = [];
   const check = (/** @type {string} */ step, /** @type {boolean} */ ok, /** @type {unknown} */ detail) => results.push({ step, ok, detail });
   const toDelete = new Set();
+  const multiEmail = `sdk-live-verify-${tag}-twins@example.com`;
+  /** @type {string[]} */
+  const multi = [];
 
   /** @param {string} id */
   const getLead = async (id) => (await fetchFn(`${base}/sobjects/Lead/${id}`, { headers: auth })).json();
+  // allowSave lets a second Lead with the same email past the standard duplicate rule.
+  const createLead = async (/** @type {string} */ LastName, /** @type {string} */ Company) => {
+    const res = await fetchFn(`${base}/sobjects/Lead`, { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json', 'Sforce-Duplicate-Rule-Header': 'allowSave=true' }, body: JSON.stringify({ LastName, Company, Email: multiEmail }) });
+    return /** @type {string} */ ((await res.json()).id);
+  };
   const leadsFor = async (/** @type {string} */ addr) => {
     const res = await fetchFn(`${base}/query?q=${encodeURIComponent(`SELECT Id FROM Lead WHERE Email = '${addr}'`)}`, { headers: auth });
     const body = await res.json();
@@ -146,13 +154,21 @@ export async function runLeadChecks({ fetch: fetchFn, instanceUrl, token, tag, c
         { LeadSource: lead.LeadSource, Description: lead.Description });
     }
 
-    // 2 update with the same email: no second Lead, empty 204 body
+    // 2 update with the same email: no second Lead, 200 with the same id
     const updated = await callTool(fetchFn, tool, { args: { ...full, Company: 'Live Verify Co 2' }, secrets, threadId });
     const ids = await leadsFor(email);
     ids.forEach((id) => toDelete.add(id));
-    check('2-update-same-email', updated.status === 204 && updated.mapped.result == null && updated.mapped.success == null, { status: updated.status, mapped: updated.mapped });
+    check('2-update-same-email', updated.status === 200 && updated.mapped.success === true && updated.mapped.result === created.mapped.result && updated.json?.created === false, { status: updated.status, mapped: updated.mapped });
     check('2b-no-duplicate-lead', ids.length === 1, { leadsWithThisEmail: ids.length });
     if (ids[0]) check('2c-company-updated', (await getLead(ids[0])).Company === 'Live Verify Co 2', undefined);
+
+    // 2d two Leads with one email: Salesforce answers 300 with their URLs and writes nothing
+    multi.push(await createLead('TwinA', 'Twin A Co'), await createLead('TwinB', 'Twin B Co'));
+    multi.forEach((id) => toDelete.add(id));
+    const ambiguous = await callTool(fetchFn, tool, { args: { ...full, Email: encodeKeyArg(multiEmail), Company: 'Live Verify Co 3' }, secrets, threadId });
+    const twins = await Promise.all(multi.map(getLead));
+    check('2d-two-leads-one-email', ambiguous.status === 300 && Array.isArray(ambiguous.json) && ambiguous.json.length === 2 && twins.every((l) => /^Twin [AB] Co$/.test(l.Company)),
+      { status: ambiguous.status, matches: Array.isArray(ambiguous.json) ? ambiguous.json.length : undefined, mapped: ambiguous.mapped });
 
     // 3 and 4 missing required fields (an empty string is written as blank; an omitted arg would be written as "None")
     for (const field of ['Company', 'LastName']) {
@@ -172,7 +188,7 @@ export async function runLeadChecks({ fetch: fetchFn, instanceUrl, token, tag, c
     check('unexpected-error', false, { message: err instanceof Error ? err.message : String(err) });
   } finally {
     // Cleanup runs even after a failure. A leftover by email is caught too.
-    try { (await leadsFor(email)).forEach((id) => toDelete.add(id)); } catch { /* best effort */ }
+    try { for (const addr of [email, multiEmail]) (await leadsFor(addr)).forEach((id) => toDelete.add(id)); } catch { /* best effort */ }
   }
 
   let deleted = 0;

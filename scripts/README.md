@@ -70,7 +70,7 @@ The resolved target's `fetch` refuses any host outside the target's own URLs. So
 
 `live-verify-regions.mjs` needs no credentials. It sends one unauthenticated request to every non-null base URL in `REGIONS` and checks that each host answers over TLS with the same status and content type as nvp1. Run it after changing `REGIONS`.
 
-`live-verify-salesforce-lead.mjs` is the exception to the partner-credentials rule. It needs a Salesforce Developer Edition org or sandbox (`SALESFORCE_INSTANCE_URL`, `SALESFORCE_ACCESS_TOKEN`), sends nothing to the Kaltura backend, checks Salesforce itself and the SDK's request shapes (not the agent tool runtime), requires an `https:` URL on a `.salesforce.com` or `.force.com` host, and exits 0 with a "skipped" message when the variables are missing.
+The two Salesforce scripts need a Salesforce Developer Edition org or sandbox (`SALESFORCE_INSTANCE_URL`, `SALESFORCE_ACCESS_TOKEN`). They require an `https:` URL on a `.salesforce.com` or `.force.com` host, and exit 0 with a "skipped" message when the variables are missing. `live-verify-salesforce-lead.mjs` is the exception to the partner-credentials rule: it sends nothing to the Kaltura backend and checks Salesforce itself and the SDK's request shapes. `live-verify-salesforce-agent.mjs` also needs partner credentials and a `TARGET`, and runs real conversations. It stores the token as a write-only agent secret and deletes the agent and tool at the end.
 
 ### Which script to run
 
@@ -86,7 +86,8 @@ The resolved target's `fetch` refuses any host outside the target's own URLs. So
 | `live-verify-context-fields.mjs` | `contextId`/`contextType` actually reach the prompt at runtime |
 | `live-verify-request-vars.mjs` | Every documented `request_vars` behavior over `converseOnce` |
 | `live-verify-site-nav.mjs` | The `go_to` contract end to end |
-| `live-verify-salesforce-lead.mjs` | `salesforceLeadUpsert` against a Salesforce dev org or sandbox: create, update, missing field, invalid email, bad token, cleanup. Needs `SALESFORCE_INSTANCE_URL` and `SALESFORCE_ACCESS_TOKEN`, prints `skipped` without them. Talks to Salesforce only, no Kaltura backend |
+| `live-verify-salesforce-lead.mjs` | `salesforceLeadUpsert` against a Salesforce dev org or sandbox: create, update, two Leads with one email, missing field, invalid email, bad token, cleanup. Needs `SALESFORCE_INSTANCE_URL` and `SALESFORCE_ACCESS_TOKEN`, prints `skipped` without them. Talks to Salesforce only, no Kaltura backend |
+| `live-verify-salesforce-agent.mjs` | Seven scripted conversations with a real agent that has `salesforceLeadUpsert`: full data, missing company, duplicate email, invalid email, visitor refuses, two Leads with one email, expired token. Each outcome is checked with a SOQL query. `SALESFORCE_REVOKE_TOKEN=1` revokes the real token for the expiry case, so run it last |
 | `live-verify-mcp.mjs` | `setMcpServers`/`describe` end to end against a CI-hosted reference MCP server, exposed through a tunnel. Takes `--target` and `--phase=provision\|verify\|cleanup`. See the script header |
 | `live-verify-session-types.mjs` | What each token kind can reach: own vs other users' threads, OVP reach, no-userId and widget shared identity, agent persona, per-user `appInit`, `revoke()`. `--skip-revoke` skips the revoke check. `--with-share` also runs the `messages.share` success path, which leaves an undeletable clone per run: use it only after a change to `messages.share` |
 | `live-verify-set-forced-language.mjs`, `live-verify-force-language.mjs` | A forced language changes the reply, not just storage |

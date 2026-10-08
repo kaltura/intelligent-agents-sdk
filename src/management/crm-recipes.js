@@ -26,9 +26,8 @@ const SALESFORCE_RESULT_RULES = 'Tell the visitor the details are saved ONLY if 
 
 /**
  * Response mapping shared by the Salesforce builders. A successful insert
- * returns `{id, success}`. An update returns an empty body, so both keys are
- * then empty. An error status never reaches the mapping: the agent only gets
- * a generic "API returned error status" line.
+ * or update returns `{id, success}`. An error status never reaches the
+ * mapping: the agent only gets a generic "API returned error status" line.
  */
 // An omitted optional arg is written as the text "None", while an empty string
 // is written as blank. So optional args ask for an empty string instead.
@@ -117,6 +116,7 @@ function parseInstanceUrl(fn, value) {
  * @param {string[]} [o.alsoRequired]   Fields the object needs besides the upsert key.
  * @param {Record<string,string>} [o.fixedBody]  Literal or templated body values the agent does not supply.
  * @param {Record<string,{type:string,prompt:string,required:boolean}>} [o.extraArgs]  Extra tool args that are not Salesforce fields.
+ * @param {Record<string,string>} [o.fieldHints]  Extra prompt text per field, added to the field's arg prompt.
  * @param {(fields:string[], key:string) => string} o.describe  Default description.
  * @returns {import('./tools.js').GenieToolConfig}
  */
@@ -148,7 +148,7 @@ function buildSalesforceUpsert(o) {
   for (const field of fields) {
     const prompt = field === externalIdField
       ? `${sobject} ${field}. It goes into a URL: pass it percent-encoded: "@" as "%40", "+" as "%2B", "/" as "%2F".`
-      : `${sobject} ${field}${required.has(field) ? '' : OPTIONAL_ARG_HINT}`;
+      : `${sobject} ${field}${o.fieldHints?.[field] ? `. ${o.fieldHints[field]}` : ''}${required.has(field) ? '' : OPTIONAL_ARG_HINT}`;
     args[field] = { type: 'str', prompt, required: required.has(field) };
   }
   Object.assign(args, o.extraArgs);
@@ -169,9 +169,8 @@ function buildSalesforceUpsert(o) {
         ...o.fixedBody,
       },
     },
-    // An upsert PATCH returns 201 + {id, success} on insert and an EMPTY 204 on
-    // update, so both keys are empty on update. The default description tells
-    // the agent that an empty result is "unconfirmed", never "saved".
+    // An upsert PATCH returns 201 + {id, success} on insert and 200 + {id, success}
+    // on update (API v46.0 and later). An empty result is "unconfirmed", never "saved".
     responseMapping: { ...SALESFORCE_RESPONSE_MAPPING },
   });
 }
@@ -182,10 +181,9 @@ function buildSalesforceUpsert(o) {
  * External ID field. Requires a Salesforce Connected App OAuth2 access token
  * stored as a secret. Salesforce access tokens expire (about 2 hours by
  * default), so see README.md ("AI-SDR / CRM lead capture") for the token options.
- * The result carries `result` (the id) and `success` on insert, and nothing on
- * update (an empty 204). A failure reaches the agent only as a generic error
- * status. The default description tells the agent not to say "saved" on an
- * empty or failed result.
+ * The result carries `result` (the id) and `success` on insert and on update.
+ * A failure reaches the agent only as a generic error status. The default
+ * description tells the agent not to say "saved" on an empty or failed result.
  *
  * Tool args are filled into the URL and body as `{Name}`. They go in raw, and
  * a raw `@` in the URL makes the call fail, so the upsert key arg tells the
@@ -229,8 +227,9 @@ export function salesforceContactUpsert(cfg = {}) {
  *
  * Salesforce access tokens expire (about 2 hours by default). See README.md
  * ("AI-SDR / CRM lead capture") for the token options. The result fields are
- * the same as {@link salesforceContactUpsert}: an empty result (an update) is
- * unconfirmed, and the default description tells the agent so.
+ * the same as {@link salesforceContactUpsert}. If two Leads already have the
+ * same email, Salesforce answers 300 and writes nothing, and the agent gets a
+ * generic error status.
  *
  * @param {object} [cfg]
  * @param {string} [cfg.secretName]       Name of the Salesforce access-token secret (set via `setSecrets`). REQUIRED (runtime-checked, like `salesforceContactUpsert`).
@@ -260,6 +259,7 @@ export function salesforceLeadUpsert(cfg = {}) {
     defaultFields: ['FirstName', 'LastName', 'Company', 'Email', 'Phone', 'Country'],
     defaultName: 'salesforce_lead_upsert',
     alsoRequired: ['LastName', 'Company'],
+    fieldHints: { Country: 'Use the full country name, such as "United States". A code such as "US" is rejected by orgs that use country picklists.' },
     fixedBody: { LeadSource: leadSource, Description: requireConsent ? `${note} Consent to be contacted: {consent}.` : note },
     extraArgs: requireConsent
       ? { consent: { type: 'bool', prompt: 'True only if the visitor clearly agreed to be contacted about their request. If they refused or did not answer, do not call this tool.', required: true } }

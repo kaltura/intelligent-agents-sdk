@@ -800,6 +800,8 @@ Defaults and options:
 
 Salesforce has no standard Lead consent field, so consent is recorded in `Description`.
 
+`Country` takes the full country name, such as `United States`. An org that uses country picklists rejects a code such as `US` with `FIELD_INTEGRITY_EXCEPTION`, so the arg prompt asks the agent for the full name.
+
 ### What the agent can say
 
 Salesforce answers an upsert in three ways. The tool maps `result` (the id) and `success`, and the default description tells the agent what to do with each answer.
@@ -807,10 +809,12 @@ Salesforce answers an upsert in three ways. The tool maps `result` (the id) and 
 | Salesforce answer | Tool result | Agent says |
 |---|---|---|
 | `201` with an id (new record) | `success: true`, `result` is the id | Saved |
-| Any error status, such as a missing required field, an invalid email or an expired token | No mapped values. The agent only gets a generic "API returned error status" line | Could not save |
-| `204` with an empty body (update of an existing record) | `result` and `success` are empty | Could not confirm. Never "saved" |
+| `200` with an id (update of an existing record) | `success: true`, `result` is the id | Saved |
+| Any error status, such as a missing required field, an invalid email, an expired token or `300` (see below) | No mapped values. The agent only gets a generic "API returned error status" line | Could not save |
 
-The empty `204` means an update works but the agent cannot confirm it from the result. If you need a confirmed answer on updates, use the customer endpoint below, which can always return `saved: true`. A custom `description` replaces the default guidance, so keep these rules in it. The same applies to `salesforceContactUpsert`. `hubspotContactUpsert` returns `contact_id` on success. On an error status it gets the same generic line.
+An empty result is never treated as saved: the agent says it could not confirm. A custom `description` replaces the default guidance, so keep these rules in it. The same applies to `salesforceContactUpsert`.
+
+If two or more Leads already have the same email, an `Email`-keyed upsert is ambiguous. Salesforce answers `300` with the record URLs and changes nothing, so the agent says it could not save. Merge or delete the duplicates in Salesforce. `hubspotContactUpsert` returns `contact_id` on success. On an error status it gets the same generic line.
 
 The upsert key goes into the URL. An unencoded `@` in the URL makes the call fail, so the key arg prompt tells the agent to pass the key percent-encoded (`@` as `%40`, `+` as `%2B`, `/` as `%2F`). Args are inserted as written, with no encoding by the tool. In your own tools, use `{Name}` for an arg in the URL or body, and `{{secrets.NAME}}` or `{{ sys__thread_id }}` for secrets and request variables. Headers take secrets and request variables only, not args.
 
@@ -863,7 +867,7 @@ const { id } = await mgmt.tools.add(tool, ks);
 await mgmt.intellectConfig.setToolIds(configId, [id], ks);
 ```
 
-All builders validate their config (via `tools.api()`) and throw a typed error for a missing `secretName`/`instanceUrl` before any write. See `src/management/crm-recipes.js` for the full arg list. `instanceUrl` must be an `https:` origin with no path, query or credentials. Both Salesforce builders require `LastName` in `fieldsToCapture`. For a check against a real Salesforce dev or sandbox org, run `npm run live-verify:salesforce-lead` (see [scripts/README.md](scripts/README.md)). It checks Salesforce itself and the SDK's request shapes. It does not check the agent tool runtime.
+All builders validate their config (via `tools.api()`) and throw a typed error for a missing `secretName`/`instanceUrl` before any write. See `src/management/crm-recipes.js` for the full arg list. `instanceUrl` must be an `https:` origin with no path, query or credentials. Both Salesforce builders require `LastName` in `fieldsToCapture`. For a check against a real Salesforce dev or sandbox org, run `npm run live-verify:salesforce-lead` (Salesforce and the SDK's request shapes) and `npm run live-verify:salesforce-agent` (scripted conversations with a real agent). See [scripts/README.md](scripts/README.md).
 
 The `authentication` block of an `api` tool supports the OAuth2 authorization-code flow only (viewer consent). It takes `client_id`, `client_secret` (a `secrets.<name>` reference), `token_url` and `auth_url`, all required. It has no `flow` or `scopes` option. Client-credentials providers such as the Marketo REST API do not fit it. For Airtable, Google Sheets/Forms, or any other REST target, and for the OAuth2 flow itself, see [docs/EXTERNAL-API-INTEGRATIONS.md](docs/EXTERNAL-API-INTEGRATIONS.md).
 
