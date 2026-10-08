@@ -1055,6 +1055,8 @@ describe('17. Content pages', () => {
     }
     const banned = new RegExp(`\\b(${[['S', 'T', 'V'], ['D', 'P', 'P']].map((c) => c.join('')).join('|')})\\b`);   // built at runtime so this file does not contain the words
     for (const f of NEW_PAGES) assert.doesNotMatch(read(f), banned, `${f} uses a banned term`);
+    const retired = new RegExp(['avatar' + 'Sessions', 'scripted[-_ ]?' + 'video'].join('|'), 'i');   // same: no retired scripted-video names in the new pages
+    for (const f of NEW_PAGES) assert.doesNotMatch(read(f), retired, `${f} names a retired scripted-video API`);
   });
 
   test('the live demos page links every example file, and every link resolves', () => {

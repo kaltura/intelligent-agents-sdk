@@ -23,7 +23,7 @@ Short definitions of the terms the SDK docs use, and a table of which ID goes wh
 |---|---|---|---|
 | `configId` | The intellect (the brain) | `provision()`, or `intellects.create` | `converse()` and `converseOnce()`, `sessions.createConversationToken`, `intellectConfig` calls, `setForcedLanguage` |
 | `agentId` | The agent | `provision()`, or `agents.create` | `sessions.createAgentToken`, `application.resolveWidgetId`, `agents.update`, labeling threads so [lifecycle rules](lifecycle/README.md#scoping-a-rule-to-one-agent) can match them, `setForcedLanguage` |
-| `avatarId` | The avatar (a 24-character hex string) | `provision()`, or `avatars.create` | `avatarIds` when you create an agent, and `avatarSessions.create({ visualConfig: { id } })` for a brain-free avatar |
+| `avatarId` | The avatar (a 24-character hex string) | `provision()`, or `avatars.create` | `avatarIds` when you create an agent |
 | `widgetId` | The public widget of one agent | `provision()`, or `application.resolveWidgetId(agentId, ks)` | `sessions.createWidgetToken({ widgetId })` for a browser embed with no secret |
 
 `provision()` returns all four. Keep `configId` and `agentId` on your server. Hand the browser a token, or a `widgetId`, never an admin secret.
