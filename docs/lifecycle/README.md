@@ -90,7 +90,7 @@ await mgmt.lifecycle.create({
   systemName: 'analysis_alert_v1',
   eventType: 'analysis_updated',
   objectType: 'thread',
-  eventConditions: [{ field: 'object.agent_id', operator: 'eq', value: '<agent-uuid>' }],
+  eventConditions: [{ field: 'object.agent_id', operator: 'eq', value: '<agent-uuid>' }, { field: 'changed_keys', operator: 'has_all', value: ['SUMMARY'] }],
   action: { actionType: 'sendInsightEmail', recipients: ['<support-lead-kaltura-user-id>'], templateId: template.id },
 }, ks);
 ```
@@ -103,7 +103,7 @@ This is the one resource in this SDK that authenticates with a plain `Authorizat
 
 ## Scope every rule to an agent
 
-A rule with no agent condition runs for every agent on the partner. So `create` and `update` refuse an unscoped `thread` rule by default. Add an `object.agent_id` condition with operator `eq` or `in`:
+A rule with no agent condition runs for every agent on the partner. So `create` and `update` refuse an unscoped `thread` rule by default. Add an `object.agent_id` condition: operator `eq` with an agent id, or `in` with a non-empty array of agent ids. An empty or blank value does not count:
 
 ```js
 eventConditions: [{ field: 'object.agent_id', operator: 'eq', value: '<agent-uuid>' }]
@@ -116,7 +116,20 @@ await mgmt.lifecycle.create(rule, ks, { partnerWide: true });
 await mgmt.lifecycle.update(id, { eventConditions: [] }, ks, { partnerWide: true });
 ```
 
-`update` checks only a patch that includes `eventConditions`. It treats the rule as a `thread` rule unless the patch sets another `objectType`.
+`update` checks only a patch that includes `eventConditions`. It treats the rule as a `thread` rule unless the patch sets another `objectType`. Send the full `eventConditions` list in the patch, not only the new condition.
+
+### Email rules need `changed_keys`
+
+A `sendInsightEmail` rule on `analysis_updated` sends on every analysis update unless it names the insight keys it waits for. So `create` and `update` refuse one without a `changed_keys` condition (operator `has_all` or `has_any`, with a non-empty array of keys). The call throws `KalturaError` with `code: 'lifecycle_email_unfiltered'` before any request:
+
+```js
+eventConditions: [
+  { field: 'object.agent_id', operator: 'eq', value: '<agent-uuid>' },
+  { field: 'changed_keys', operator: 'has_all', value: ['SUMMARY', 'TOPIC', 'CUSTOM'] },
+]
+```
+
+To send on every update on purpose, pass `{ emailOnEveryUpdate: true }` as the last argument. On `update`, the check runs when the patch sets a `sendInsightEmail` `action` together with `eventConditions`.
 
 ---
 
@@ -130,7 +143,7 @@ await mgmt.lifecycle.create({
   systemName: 'analysis_alert_v1',
   eventType: 'analysis_updated',
   objectType: 'thread',
-  eventConditions: [{ field: 'object.agent_id', operator: 'eq', value: '<agent-uuid>' }],
+  eventConditions: [{ field: 'object.agent_id', operator: 'eq', value: '<agent-uuid>' }, { field: 'changed_keys', operator: 'has_all', value: ['SUMMARY', 'TOPIC', 'CUSTOM'] }],
   action: { actionType: 'sendInsightEmail', recipients: ['<support-lead-kaltura-user-id>'], presetType: 'conversationInsightExample' },
 }, ks);
 ```
@@ -196,10 +209,10 @@ All against `https://api.avatar.us.kaltura.ai`. SDK: `mgmt.lifecycle`.
 
 | Method | Endpoint | Kind | Notes |
 |---|---|---|---|
-| `lifecycle.create(body, ks, opts?)` | `POST /v1/lifecycle/create` | WRITE, not idempotent | mirrors `Tools#add`. `opts.partnerWide`: see [Scope every rule to an agent](#scope-every-rule-to-an-agent) |
+| `lifecycle.create(body, ks, opts?)` | `POST /v1/lifecycle/create` | WRITE, not idempotent | mirrors `Tools#add`. `opts.partnerWide`, `opts.emailOnEveryUpdate`: see [Scope every rule to an agent](#scope-every-rule-to-an-agent) |
 | `lifecycle.get(id, ks)` | `POST /v1/lifecycle/get` | READ | |
 | `lifecycle.list(ks, opts)` | `POST /v1/lifecycle/list` | READ | `{offset,limit}` pager; `opts.filter` (`eventTypeEqual`, `statusEqual`, `systemNameEqual`) and `opts.orderBy` (`+createdAt`/`-createdAt`) pass through 1:1 |
-| `lifecycle.update(id, patch, ks, opts?)` | `POST /v1/lifecycle/update` | WRITE, idempotent | mirrors `Tools#update`. `opts.partnerWide`: see [Scope every rule to an agent](#scope-every-rule-to-an-agent) |
+| `lifecycle.update(id, patch, ks, opts?)` | `POST /v1/lifecycle/update` | WRITE, idempotent | mirrors `Tools#update`. `opts.partnerWide`, `opts.emailOnEveryUpdate`: see [Scope every rule to an agent](#scope-every-rule-to-an-agent) |
 | `lifecycle.delete(id, ks, confirm)` | `POST /v1/lifecycle/delete` | WRITE, destructive | `requireConfirm` gate; response is `{removed, success, _meta}`. The deleted id comes back as `removed`, not `id` |
 | `lifecycle.match(objectType, eventType, eventData, ks)` | `POST /v1/lifecycle/match` | READ (dry-run) | see [Discovery and dry-run testing](#discovery-and-dry-run-testing) |
 | `lifecycle.listObjects(ks)` | `POST /v1/lifecycle/listObjects` | READ | |

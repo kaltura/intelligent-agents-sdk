@@ -177,6 +177,104 @@ test('lifecycle.update accepts agent-scoped conditions (eq and in), partnerWide:
   assert.equal('partnerWide' in ff.calls[2].body, false);
 });
 
+test('an agent condition with an empty, blank or wrong-typed value does not count as scope (create and update)', async () => {
+  const { mgmt, ff } = harness([
+    { match: 'lifecycle/create', respond: (req) => ({ status: 200, body: { ...RULE, ...req.body } }) },
+    { match: 'lifecycle/update', respond: (req) => ({ status: 200, body: { ...RULE, ...req.body } }) },
+  ]);
+  const badValues = [
+    { operator: 'eq', value: '' },
+    { operator: 'eq', value: '   ' },
+    { operator: 'eq', value: 123 },
+    { operator: 'eq', value: ['a1'] },
+    { operator: 'eq', value: null },
+    { operator: 'in', value: [] },
+    { operator: 'in', value: ['a1', ''] },
+    { operator: 'in', value: [1] },
+    { operator: 'in', value: 'a1' },
+  ];
+  for (const bad of badValues) {
+    const eventConditions = [{ field: 'object.agent_id', ...bad }];
+    await assert.rejects(
+      () => mgmt.lifecycle.create(/** @type {any} */ ({ ...CREATE_BODY, eventConditions }), ADMIN_KS),
+      (e) => e.code === 'lifecycle_unscoped',
+      `create ${JSON.stringify(bad)}`,
+    );
+    await assert.rejects(
+      () => mgmt.lifecycle.update(RULE.id, { eventConditions }, ADMIN_KS),
+      (e) => e.code === 'lifecycle_unscoped',
+      `update ${JSON.stringify(bad)}`,
+    );
+  }
+  assert.equal(ff.calls.length, 0, 'the check fires before any HTTP call');
+  await mgmt.lifecycle.create({ ...CREATE_BODY, eventConditions: [{ field: 'object.agent_id', operator: 'eq', value: '   ' }] }, ADMIN_KS, { partnerWide: true });
+  assert.equal(ff.calls.length, 1, 'partnerWide skips the value check too');
+});
+
+const EMAIL_BODY = {
+  ...CREATE_BODY, eventType: 'analysis_updated',
+  action: { actionType: 'sendInsightEmail', recipients: ['u1'], presetType: 'conversationInsightExample' },
+};
+const KEYS_COND = { field: 'changed_keys', operator: 'has_all', value: ['SUMMARY', 'TOPIC'] };
+
+test('lifecycle.create rejects a sendInsightEmail rule on analysis_updated without a changed_keys condition, before any network call', async () => {
+  const { mgmt, ff } = harness([
+    { match: 'lifecycle/create', respond: (req) => ({ status: 200, body: { ...RULE, ...req.body } }) },
+  ]);
+  const unfiltered = [
+    [AGENT_SCOPE[0]],
+    [AGENT_SCOPE[0], { field: 'changed_keys', operator: 'has_all', value: [] }],
+    [AGENT_SCOPE[0], { field: 'changed_keys', operator: 'has_all', value: ['SUMMARY', ''] }],
+    [AGENT_SCOPE[0], { field: 'changed_keys', operator: 'not_empty', value: ['SUMMARY'] }],
+    [AGENT_SCOPE[0], { field: 'changed_keys', operator: 'has_any', value: 'SUMMARY' }],
+    [AGENT_SCOPE[0], { field: 'object.user_id', operator: 'eq', value: 'u1' }],
+  ];
+  for (const eventConditions of unfiltered) {
+    await assert.rejects(
+      () => mgmt.lifecycle.create(/** @type {any} */ ({ ...EMAIL_BODY, eventConditions }), ADMIN_KS),
+      (e) => e.code === 'lifecycle_email_unfiltered' && e.name === 'KalturaError' && /emailOnEveryUpdate/.test(e.detail) && /changed_keys/.test(e.detail),
+      JSON.stringify(eventConditions),
+    );
+  }
+  assert.equal(ff.calls.length, 0, 'the check fires before any HTTP call');
+});
+
+test('lifecycle.create accepts an email rule with changed_keys (has_all or has_any), emailOnEveryUpdate:true, a session_ended email rule, and other actions on analysis_updated', async () => {
+  const { mgmt, ff } = harness([
+    { match: 'lifecycle/create', respond: (req) => ({ status: 200, body: { ...RULE, ...req.body } }) },
+  ]);
+  await mgmt.lifecycle.create({ ...EMAIL_BODY, eventConditions: [AGENT_SCOPE[0], KEYS_COND] }, ADMIN_KS);
+  await mgmt.lifecycle.create({ ...EMAIL_BODY, eventConditions: [AGENT_SCOPE[0], { ...KEYS_COND, operator: 'has_any' }] }, ADMIN_KS);
+  await mgmt.lifecycle.create({ ...EMAIL_BODY, eventConditions: AGENT_SCOPE }, ADMIN_KS, { emailOnEveryUpdate: true });
+  await mgmt.lifecycle.create({ ...EMAIL_BODY, eventType: 'session_ended', eventConditions: AGENT_SCOPE }, ADMIN_KS);
+  await mgmt.lifecycle.create({ ...EMAIL_BODY, action: RULE.action, eventConditions: AGENT_SCOPE }, ADMIN_KS);
+  assert.equal(ff.calls.length, 5);
+  assert.equal('emailOnEveryUpdate' in ff.calls[2].body, false, 'the option is not sent');
+});
+
+test('lifecycle.update applies the email check only when the patch sets a sendInsightEmail action with eventConditions', async () => {
+  const { mgmt, ff } = harness([
+    { match: 'lifecycle/update', respond: (req) => ({ status: 200, body: { ...RULE, ...req.body } }) },
+  ]);
+  await assert.rejects(
+    () => mgmt.lifecycle.update(RULE.id, { action: EMAIL_BODY.action, eventConditions: AGENT_SCOPE }, ADMIN_KS),
+    (e) => e.code === 'lifecycle_email_unfiltered',
+  );
+  await assert.rejects(
+    () => mgmt.lifecycle.update(RULE.id, { eventType: 'analysis_updated', action: EMAIL_BODY.action, eventConditions: AGENT_SCOPE }, ADMIN_KS),
+    (e) => e.code === 'lifecycle_email_unfiltered',
+  );
+  assert.equal(ff.calls.length, 0, 'the check fires before any HTTP call');
+
+  await mgmt.lifecycle.update(RULE.id, { action: EMAIL_BODY.action, eventConditions: [...AGENT_SCOPE, KEYS_COND] }, ADMIN_KS);
+  await mgmt.lifecycle.update(RULE.id, { action: EMAIL_BODY.action, eventConditions: AGENT_SCOPE }, ADMIN_KS, { emailOnEveryUpdate: true });
+  await mgmt.lifecycle.update(RULE.id, { eventType: 'session_ended', action: EMAIL_BODY.action, eventConditions: AGENT_SCOPE }, ADMIN_KS);
+  await mgmt.lifecycle.update(RULE.id, { action: EMAIL_BODY.action }, ADMIN_KS);
+  await mgmt.lifecycle.update(RULE.id, { eventConditions: AGENT_SCOPE }, ADMIN_KS);
+  assert.equal(ff.calls.length, 5);
+  assert.equal('emailOnEveryUpdate' in ff.calls[1].body, false, 'the option is not sent');
+});
+
 test('lifecycle.delete requires confirmPermanent, then deletes by id, returning {removed, success, _meta} (no in-use scan)', async () => {
   const { mgmt, ff } = harness([
     { match: 'lifecycle/delete', respond: () => ({ status: 200, body: { success: true } }) },
