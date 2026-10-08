@@ -118,7 +118,7 @@ const session = new KalturaAvatarSession({ token, /* … */, requestVars: { user
 session.updateRequestVars({ account_tier: 'enterprise' }); // user_name keeps 'Ada'
 ```
 
-`updateRequestVars(vars)` merges `vars` into the session's map, so send only the keys that changed. For a full per-turn context blob the brain reads fresh every turn (not just `{{var}}` substitution), use `session.setDynamicPrompt()` instead. The two mechanisms are distinct.
+`updateRequestVars(vars)` merges `vars` into the session's map, so send only the keys that changed. To send a whole context blob, call `session.setDynamicPrompt(data)`. It is sugar over `updateRequestVars()`: it stores `data` as JSON in the `page_context` request variable. The prompt must reference `{{page_context}}`.
 
 For the full picture of when to use `request_vars` vs. `setDynamicPrompt()` vs. actively nudging the brain with `speak()` vs. answering a brain-initiated request with `submitStructuredDataForm()` — and a worked example showing how they compose — see [Dynamic Data Injection](/guides/dynamic-data-injection/).
 
@@ -541,7 +541,7 @@ A duplicate turn (`isNewTurn:false`, e.g. a server-side `tap-to-talk` retrigger 
 
 The `Presenter` helper (`./experience/presenter`, its own subpath so apps that don't need it never pay for its module graph) manages a deck walkthrough end to end:
 
-- Per-slide Dynamic Prompt (**DPP**) injection via `session.setDynamicPrompt()` — a structured context blob telling the brain what's on screen right now.
+- Per-slide context sent as request variables: the Presenter calls `session.setDynamicPrompt()` (sugar over `updateRequestVars()`), so the brain knows what's on screen right now.
 - Navigation via ONE deterministic, silent, idempotent mechanism: `onToolCall('navigate_to_slide')` — no speech-parsing fallback.
 - Duplicate-nav suppression.
 - A sequential resume point (`reason:'resume'`).
@@ -556,7 +556,7 @@ All of it is pure logic over an injected `session`/`storage`, fully unit-testabl
 | `covered` | Visited slide numbers |
 | `questions` | Questions recorded so far |
 | `lastNav` | `{target, reason, at}` |
-| `lastDppSlide` | The `slide:` sub-object last sent in a DPP |
+| `lastContextSlide` | The number of the slide whose context was last sent |
 | `secondsOnCurrentSlide` | Seconds spent on the current slide |
 | `memory` | The current session-memory object |
 
@@ -566,29 +566,29 @@ All of it is pure logic over an injected `session`/`storage`, fully unit-testabl
 |--------|---------|
 | `start()` | Begin the walkthrough |
 | `goTo(n, reason)` | Navigate to slide `n` |
-| `refreshDpp()` | Resend the current slide's Dynamic Prompt |
+| `refreshContext()` | Resend the current slide's context |
 | `saveMemory()` | Persist "welcome back" session memory |
 | `clearMemory()` | Clear session memory |
 | `recordQuestion(text)` | Record a question observed outside ASR (e.g. typed chat) |
 | `appendSlide(slide)` | Grow the deck at runtime (e.g. a brain-driven `create_slide` command); pushes onto `slides`, grows `total`, and returns the new 1-based slide number without navigating |
-| `destroy()` (alias `stop()`) | Remove every listener this Presenter registered on `session`, and make every other method above a no-op from then on. Idempotent. Call it before discarding a Presenter whose session stays connected (e.g. swapping decks mid-session) — otherwise the old instance keeps injecting DPPs/navigating/saving memory alongside any replacement, and (in dev) a skipped `destroy()`/`stop()` logs a `console.warn` the moment the replacement is constructed |
+| `destroy()` (alias `stop()`) | Remove every listener this Presenter registered on `session`, and make every other method above a no-op from then on. Idempotent. Call it before discarding a Presenter whose session stays connected (e.g. swapping decks mid-session) — otherwise the old instance keeps injecting slide context/navigating/saving memory alongside any replacement, and (in dev) a skipped `destroy()`/`stop()` logs a `console.warn` the moment the replacement is constructed |
 
 **App hooks** (each exists because a real app needed to extend one specific seam without forking the class):
 
 | Hook | Signature | Purpose |
 |------|-----------|---------|
-| `extendDpp` | `(slide, ctx)` | Merges app-specific fields into every DPP sent (e.g. an engagement block built from `secondsOnCurrentSlide`) |
+| `extendContext` | `(slide, ctx)` | Merges app-specific fields into every context payload sent (e.g. an engagement block built from `secondsOnCurrentSlide`) |
 | `extraMemory` / `restoreMemory` | `(questions)` / `(memory)` | Write/read pair for persisting app-specific fields alongside Presenter's own "welcome back" session memory, instead of layering a second storage call |
 | `onTurnText` | `(text, full)` | Fires with the per-turn accumulated avatar text — the same text Presenter itself uses internally — so an app can drive its own analytics or triggers off it |
-| `onSlideChange` | `(n, slide, reason)` | Your renderer hook, called right after the DPP goes out (e.g. to page a PDF viewer to the new slide) |
-| `metaFor` | `(category)` | Returns per-category DPP meta flags (`disclaimer_required`/`non_gaap_cited`) when your compliance categories differ from the financial/legal default |
-| `dppSlide` | `(slide, ctx)` | Full-replace hook for the DPP's `slide:` sub-object when your slide shape doesn't match the default `{title, talking_points, category, content, narrator_guidance}` vocabulary (e.g. `body`/`topics`/`track`/`level`) |
+| `onSlideChange` | `(n, slide, reason)` | Your renderer hook, called right after the slide context goes out (e.g. to page a PDF viewer to the new slide) |
+| `metaFor` | `(category)` | Returns per-category meta flags (`disclaimer_required`/`non_gaap_cited`) when your compliance categories differ from the financial/legal default |
+| `slideContext` | `(slide, ctx)` | Full-replace hook for the payload's `slide:` sub-object when your slide shape doesn't match the default `{title, talking_points, category, content, narrator_guidance}` vocabulary (e.g. `body`/`topics`/`track`/`level`) |
 
 The constructor option `oneNavPerTurn: true` guards against a brain "restart" firing two different nav targets within the same spoken turn — the second is silently suppressed until the next turn.
 
-The constructor option `deckOutline: true` adds a full-deck `{slide_num, title}[]` outline to every DPP as `dpp.outline`. This is the SDK-native alternative to hand-rolling a topic→slide mapping into `BASE_DIRECTIVE`, which also goes stale after a runtime `appendSlide()` since `BASE_DIRECTIVE` is static. Duplicate titles are disambiguated automatically (the colliding slide's first talking point, or its slide number if it has none). Default is `false`: no `outline` key at all unless requested.
+The constructor option `deckOutline: true` adds a full-deck `{slide_num, title}[]` outline to every context payload as `outline`. This is the SDK-native alternative to hand-rolling a topic→slide mapping into `BASE_DIRECTIVE`, which also goes stale after a runtime `appendSlide()` since `BASE_DIRECTIVE` is static. Duplicate titles are disambiguated automatically (the colliding slide's first talking point, or its slide number if it has none). Default is `false`: no `outline` key at all unless requested.
 
-See `examples/deck-presenter.html` for a self-contained runnable demo: construct Presenter right after the session, before `connect()`, with `requireDisclosureAck: true` and the `extendDpp`/`extraMemory`/`restoreMemory` hooks in action.
+See `examples/deck-presenter.html` for a self-contained runnable demo: construct Presenter right after the session, before `connect()`, with `requireDisclosureAck: true` and the `extendContext`/`extraMemory`/`restoreMemory` hooks in action.
 
 ---
 

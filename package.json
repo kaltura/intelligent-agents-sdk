@@ -5,9 +5,9 @@
   "main": "index.js",
   "scripts": {
     "build": "node -e \"require('node:fs').rmSync('_site',{recursive:true,force:true})\" && eleventy",
-    "generate": "node scripts/generate-docs.mjs && npm run build && node scripts/check-anchors.mjs && node scripts/check-sections-manifest.mjs && node scripts/check-markdown-twins.mjs && node scripts/check-manifest-coverage.mjs && node scripts/check-excluded-pages.mjs && node scripts/check-sdk-pin-sync.mjs",
+    "generate": "node scripts/generate-docs.mjs && npm run build && node scripts/check-anchors.mjs && node scripts/check-sections-manifest.mjs && node scripts/check-markdown-twins.mjs && node scripts/check-manifest-coverage.mjs && node scripts/check-excluded-pages.mjs && node scripts/check-banned-terms.mjs && node scripts/check-sdk-pin-sync.mjs",
     "pretest": "npm run build",
-    "test": "node scripts/check-anchors.mjs && node scripts/check-sections-manifest.mjs && node scripts/check-markdown-twins.mjs && node scripts/check-excluded-pages.mjs && playwright test"
+    "test": "node scripts/check-anchors.mjs && node scripts/check-sections-manifest.mjs && node scripts/check-markdown-twins.mjs && node scripts/check-excluded-pages.mjs && node scripts/check-banned-terms.mjs && playwright test"
   },
   "keywords": [],
   "author": "",
