@@ -46,6 +46,7 @@ import { meta } from './ids.js';
 import { KalturaError } from './errors.js';
 import { redact } from './redact.js';
 import { REGIONS } from './endpoints.js';
+import { pickResponseHeaders } from './response-headers.js';
 
 /** @typedef {'admin'|'conversation'|'agent'|'widget'} TokenKind */
 /** @typedef {'user'|'admin'} SessionType  OVP session type: `'user'` = type 0, `'admin'` = type 2. */
@@ -275,10 +276,10 @@ export class Sessions {
   async createWidgetToken(opts) {
     const url = `${this._ovp}/service/session/action/startWidgetSession`;
     const form = new URLSearchParams({ format: '1', widgetId: opts.widgetId });
-    const { data, requestId } = await this._http.request({ method: 'POST', url, body: form, headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
+    const { data, requestId, headers } = await this._http.request({ method: 'POST', url, body: form, headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
     const ks = data && typeof data === 'object' ? data.ks : data;
     if (!ks || typeof ks !== 'string') {
-      throw new KalturaError({ type: 'about:blank', title: 'widget session failed', code: 'session_failed', detail: 'startWidgetSession returned no ks', body: data });
+      throw new KalturaError({ type: 'about:blank', title: 'widget session failed', code: 'session_failed', detail: 'startWidgetSession returned no ks', headers: pickResponseHeaders(headers), body: data });
     }
     this._audit('token.mint', 'success', { kind: 'widget', privileges: `widget:${opts.widgetId}`, entitlementEnforced: true, requestId });
     return this._receipt(ks, 'widget', true, `widget:${opts.widgetId}`, 0);
@@ -331,9 +332,9 @@ export class Sessions {
       type: KS_TYPE[sessionType], expiry: String(ttlSeconds), privileges,
     });
     if (userId !== undefined) form.set('userId', userId);
-    let data, requestId;
+    let data, requestId, headers;
     try {
-      ({ data, requestId } = await this._http.request({ method: 'POST', url, body: form, headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }));
+      ({ data, requestId, headers } = await this._http.request({ method: 'POST', url, body: form, headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }));
     } catch (err) {
       this._audit('token.mint', 'fail', { kind, sessionType, privileges, entitlementEnforced, reason: err && err.code, subjectId: userId });
       throw err;
@@ -341,7 +342,7 @@ export class Sessions {
     const ks = typeof data === 'string' ? data : (data && data.ks);
     if (!ks || typeof ks !== 'string' || !ks.startsWith('djJ8')) {
       this._audit('token.mint', 'fail', { kind, sessionType, privileges, entitlementEnforced, reason: 'no_ks', subjectId: userId });
-      throw new KalturaError({ type: 'about:blank', title: 'session start failed', code: 'session_failed', detail: 'session/start did not return a KS', body: data });
+      throw new KalturaError({ type: 'about:blank', title: 'session start failed', code: 'session_failed', detail: 'session/start did not return a KS', headers: pickResponseHeaders(headers), body: data });
     }
     const expiresAt = Math.floor(Date.now() / 1000) + ttlSeconds;
     this._audit('token.mint', 'success', { kind, sessionType, privileges, entitlementEnforced, expiresAt, requestId, subjectId: userId });

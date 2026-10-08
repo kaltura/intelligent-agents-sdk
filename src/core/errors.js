@@ -20,6 +20,7 @@ import { redact, redactString } from './redact.js';
  * @property {string} [instance]      The request path/instance.
  * @property {string} code            Stable machine-readable code (SDK-assigned).
  * @property {string} [requestId]     Correlation id echoed from the response, if any.
+ * @property {Record<string,string>} [headers]  Diagnostic response headers (see response-headers.js), when a response arrived.
  * @property {unknown} [body]         The (redacted) upstream response body.
  */
 
@@ -35,6 +36,7 @@ export class KalturaError extends Error {
     /** @type {string|undefined} */ this.instance = problem.instance;
     /** @type {string} */ this.code = problem.code;
     /** @type {string|undefined} */ this.requestId = problem.requestId;
+    /** @type {Record<string,string>|undefined} */ this.headers = problem.headers && Object.keys(problem.headers).length ? { ...problem.headers } : undefined;
     /** @type {unknown} */ this.body = redact(problem.body);
   }
 
@@ -43,7 +45,7 @@ export class KalturaError extends Error {
     return {
       type: this.type, title: this.title, status: this.status,
       detail: this.detail, instance: this.instance, code: this.code,
-      requestId: this.requestId, body: this.body,
+      requestId: this.requestId, headers: this.headers, body: this.body,
     };
   }
 }
@@ -81,9 +83,9 @@ function codeForStatus(status) {
 
 /**
  * Build a KalturaError from an HTTP response that failed.
- * @param {{status:number, path:string, body:unknown, requestId?:string}} ctx
+ * @param {{status:number, path:string, body:unknown, requestId?:string, headers?:Record<string,string>}} ctx
  */
-export function errorFromResponse({ status, path, body, requestId }) {
+export function errorFromResponse({ status, path, body, requestId, headers }) {
   const upstreamMsg = extractMessage(body);
   let code = codeForStatus(status);
   for (const [re, c] of CODE_BY_PATTERN) if (upstreamMsg && re.test(upstreamMsg)) { code = c; break; }
@@ -95,6 +97,7 @@ export function errorFromResponse({ status, path, body, requestId }) {
     instance: path,
     code,
     requestId,
+    headers,
     body,
   });
 }

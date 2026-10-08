@@ -36,6 +36,7 @@ import { provision } from './provision.js';
 import { setForcedLanguage } from './set-forced-language.js';
 import { inspectKs } from './ks-inspect.js';
 import { resolveEndpoints } from '../core/endpoints.js';
+import { pickResponseHeaders } from '../core/response-headers.js';
 
 /** `userId` on the read-only admin token that looks up an agent's configId (see `Sessions.createAgentToken`). */
 const CONFIG_LOOKUP_USER_ID = 'intelligent-agents-sdk';
@@ -75,6 +76,7 @@ export class Management {
    * @param {boolean} [cfg.allowInsecureTransport]  Allow an http:// base URL to a public host (testing only, warns). http to localhost or a private host always just warns.
    * @param {typeof fetch} [cfg.fetch]
    * @param {(level:string,msg:string,data?:unknown)=>void} [cfg.logger]   Verbose, redacted DEBUG sink (chatty). Also receives insecure-transport warnings (else `console.warn`).
+   * @param {(info:import('../core/response-headers.js').ResponseInfo)=>void} [cfg.onResponse]   Called for every received response, success or failure, once per attempt, with `{ method, path, status, ok, attempt, requestId, headers }`. `headers` holds the diagnostic response headers (`x-*`, `via`, `server`, ...), redacted. A throwing hook is ignored. Failures also carry them on `err.headers`.
    * @param {(event:object)=>void} [cfg.onAuditEvent]   Discrete, redacted SECURITY events for your SIEM (token.mint/token.revoke/guard.reject/auth.fail/privileged.call). No-op if omitted (zero cost). NIST AU-2/AU-3, SOC 2 CC7.
    * @param {() => (string|Promise<string>)} [cfg.getAdminSecret]   Vault/KMS callback fetched per-mint (never retained); takes precedence over adminSecret.
    * @param {number} [cfg.timeoutMs]
@@ -90,7 +92,7 @@ export class Management {
     // Crash-safe, redaction-clean structured audit emitter (no-op if no hook).
     const audit = makeAuditEmitter(cfg.onAuditEvent, partnerId, 'management');
     this._audit = audit;
-    const http = new Http({ fetch: cfg.fetch, logger: cfg.logger, timeoutMs: cfg.timeoutMs, audit });
+    const http = new Http({ fetch: cfg.fetch, logger: cfg.logger, timeoutMs: cfg.timeoutMs, audit, onResponse: cfg.onResponse });
 
     /** @type {Sessions} */
     this.sessions = new Sessions({
@@ -136,13 +138,16 @@ export class Management {
           if (signal?.aborted) throw errorFromResponse({ status: 0, path: `/${path}`, body: 'aborted by caller', requestId: '' });
           throw err;
         }
+        const requestId = res.headers?.get?.('x-request-id') || res.headers?.get?.('x-kaltura-request-id') || '';
+        const headers = pickResponseHeaders(res.headers);
+        http.notifyResponse({ method: 'POST', path: `/${path}`, status: res.status, ok: res.ok, attempt: 1, requestId, headers });
         if (!res.ok) {
           // Route through errorFromResponse so a 422 maps to a typed validation_error and the
           // server's actual message (incl. an array-shaped `detail`) surfaces in `.detail`,
           // not buried in a stringified body (the force_experience-typo trap).
           const t = await res.text();
           let parsed = t; try { parsed = JSON.parse(t); } catch { /* keep text */ }
-          const err = errorFromResponse({ status: res.status, path: `/${path}`, body: parsed, requestId: res.headers.get?.('x-request-id') || '' });
+          const err = errorFromResponse({ status: res.status, path: `/${path}`, body: parsed, requestId, headers });
           audit('auth.fail', 'fail', { action: `POST /${path}`, reason: `HTTP ${res.status}` });
           throw err;
         }
@@ -153,9 +158,9 @@ export class Management {
       // upload tokens). JSON-in/JSON-out (format=1); the KS rides in the body, not a header.
       ovp: async (service, action, params, ks) => {
         const url = `${ovpUrl}/service/${service}/action/${action}`;
-        const { data } = await http.request({ method: 'POST', url, json: true, body: { ks: ksString(ks), format: 1, ...params } });
+        const { data, headers } = await http.request({ method: 'POST', url, json: true, body: { ks: ksString(ks), format: 1, ...params } });
         if (data && typeof data === 'object' && data.objectType === 'KalturaAPIException') {
-          throw new KalturaError({ type: 'about:blank', title: data.code || 'kaltura error', code: 'ovp_error', detail: data.message, instance: `/${service}/${action}`, body: data });
+          throw new KalturaError({ type: 'about:blank', title: data.code || 'kaltura error', code: 'ovp_error', detail: data.message, instance: `/${service}/${action}`, headers: pickResponseHeaders(headers), body: data });
         }
         return data;
       },
