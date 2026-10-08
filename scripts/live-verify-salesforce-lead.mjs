@@ -13,13 +13,13 @@
  * SALESFORCE_CONFIRM_NON_PROD=1 to confirm it is not production. That flag
  * never relaxes the https and domain rules.
  *
- * Steps: create, update the same email (no second Lead), missing Company,
- * missing LastName, invalid email, bad token, then cleanup of every Lead it
- * made. The logic lives in `scripts/lib/salesforce-lead-check.mjs`.
+ * Steps: create, update the same email (no second Lead), two Leads with one
+ * email (the upsert answers 300 and writes nothing), missing Company, missing
+ * LastName, invalid email, bad token, then cleanup of every Lead it made. The logic lives in `scripts/lib/salesforce-lead-check.mjs`.
  *
  * This script checks Salesforce itself and the SDK's request shapes. It does
- * not check the agent tool runtime (how Kaltura renders the templates or what
- * the agent sees on an error) and it runs no agent conversation. It sends
+ * not check the agent tool runtime and it runs no agent conversation: see
+ * `live-verify-salesforce-agent.mjs` for that. It sends
  * nothing to the Kaltura backend, so there is no region or URL override to
  * set. The token is never printed.
  *

@@ -153,6 +153,7 @@ test('optional args ask for an empty string, required args do not', () => {
   const lead = salesforceLeadUpsert(LEAD_CFG);
   assert.match(lead.args.Phone.prompt, /pass an empty string/);
   assert.match(lead.args.Country.prompt, /pass an empty string/);
+  assert.match(lead.args.Country.prompt, /full country name.*"United States"/, 'a country code is rejected by orgs that use country picklists');
   for (const k of ['LastName', 'Company', 'Email']) assert.doesNotMatch(lead.args[k].prompt, /empty string/, k);
   const hs = hubspotContactUpsert({ secretName: 'HS' });
   assert.match(hs.args.firstname.prompt, /pass an empty string/);
