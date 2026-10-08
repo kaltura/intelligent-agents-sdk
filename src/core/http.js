@@ -5,7 +5,9 @@
  *   and is fully unit-testable with a fake. Defaults to `globalThis.fetch`
  *   (native in Node ≥18 and all browsers).
  * - Every failed response becomes an {@link KalturaError} (RFC 9457).
- * - HTTP-200-with-exception bodies (a KalturaAPIException in a 200 response) are caught too.
+ * - HTTP-200-with-exception bodies (a KalturaAPIException or an error-only envelope in a 200
+ *   response) are caught too, and a 2xx body that opens like JSON (`{` or `[`) but does not parse throws
+ *   `invalid_response` instead of returning the raw string.
  * - A `requestId` is attached to every call (echoed from the server when it
  *   sends one, else a client-generated correlation id) and rides on errors.
  * - The diagnostic response headers (`x-kaltura-session`, `x-session-id`, ...)
@@ -211,6 +213,19 @@ export class Http {
         throw kErr;
       }
 
+      // A 2xx body that opens like a JSON object or array but does not parse is a truncated or
+      // corrupt reply. Handing the raw string back would surface later as a confusing `undefined`
+      // field. Other strings pass: a bare value such as the session-start token is legitimate.
+      if (typeof data === 'string' && /^[[{]/.test(data.trim())) {
+        throw new KalturaError({
+          type: 'https://docs.kaltura.com/agentic/errors/invalid_response',
+          title: 'invalid response',
+          status: res.status,
+          detail: `HTTP ${res.status} from ${path} returned a body that is not valid JSON: ${data.slice(0, 200)}`,
+          instance: path, code: 'invalid_response', requestId, headers: Object.keys(respHeaders).length ? respHeaders : undefined,
+          body: data.slice(0, 2000),
+        });
+      }
       const okErr = errorFromOkBody(data, path);
       if (okErr) { okErr.requestId = requestId; okErr.headers = Object.keys(respHeaders).length ? respHeaders : undefined; throw okErr; }
       return { data, requestId, status: res.status, headers: res.headers };

@@ -37,6 +37,7 @@ import { setForcedLanguage } from './set-forced-language.js';
 import { inspectKs } from './ks-inspect.js';
 import { resolveEndpoints } from '../core/endpoints.js';
 import { pickResponseHeaders } from '../core/response-headers.js';
+import { converseBodyOrThrow } from '../core/stream.js';
 
 /** `userId` on the read-only admin token that looks up an agent's configId (see `Sessions.createAgentToken`). */
 const CONFIG_LOOKUP_USER_ID = 'intelligent-agents-sdk';
@@ -53,7 +54,7 @@ const CONFIG_LOOKUP_USER_ID = 'intelligent-agents-sdk';
  * @property {(path:string, ks:KsLike)=>Promise<{data:any,requestId:string}>} genieGet
  * @property {(path:string, body:unknown, ks:KsLike, opts?:{signal?:AbortSignal})=>Promise<ReadableStream<Uint8Array>>} genieStream
  * @property {(service:string, action:string, params:object, ks:KsLike)=>Promise<any>} ovp Kaltura OVP single call (`ovpUrl`).
- * @property {(calls:object[], ks:KsLike)=>Promise<any>} ovpMulti Kaltura OVP multirequest (chained calls).
+ * @property {(calls:object[], ks:KsLike, opts?:{tolerate?:(exception:any)=>boolean})=>Promise<any>} ovpMulti Kaltura OVP multirequest (chained calls). Throws `ovp_error` for the first failed call, unless `opts.tolerate(exception)` returns true for it.
  * @property {(uploadTokenId:string, fd:FormData, ks:KsLike)=>Promise<any>} ovpUpload Upload file bytes to an upload token.
  * @property {(path:string, body:unknown, ks:KsLike, opts?:{idempotencyKey?:string})=>Promise<{data:any,requestId:string}>} messaging Bearer-authed (not `Authorization: KS …`) call on the Kaltura Messaging API — see email-templates.js.
  * @property {(ks:KsLike, where:string)=>string} assertAdmin Throws `wrong_token_scope` for a non-admin token. Returns the raw KS string.
@@ -152,7 +153,7 @@ export class Management {
           throw err;
         }
         if (!res.body) throw new KalturaError({ type: 'about:blank', title: 'no stream body', code: 'server_error', detail: 'converse response had no readable body.' });
-        return res.body;
+        return converseBodyOrThrow(res, { path: `/${path}`, requestId, headers });
       },
       // OVP (`ovpUrl`) — the core Kaltura media plane (categories, entries,
       // upload tokens). JSON-in/JSON-out (format=1); the KS rides in the body, not a header.
@@ -165,10 +166,18 @@ export class Management {
         return data;
       },
       // OVP multirequest — chained calls with {n:result:field} substitution (the upload pattern).
-      ovpMulti: async (calls, ks) => {
+      ovpMulti: async (calls, ks, opts) => {
         const body = { apiVersion: '19.14.0', format: 1 };
         calls.forEach((c, i) => { body[i] = { ks: ksString(ks), ...c }; });
-        const { data } = await http.request({ method: 'POST', url: `${ovpUrl}/service/multirequest`, json: true, body });
+        const { data, headers } = await http.request({ method: 'POST', url: `${ovpUrl}/service/multirequest`, json: true, body });
+        // A multirequest answers HTTP 200 with one result per call, and a failed call is a
+        // KalturaAPIException in its slot. Raise the first one unless `opts.tolerate` accepts it.
+        const results = Array.isArray(data) ? data : [data];
+        const i = results.findIndex((r) => r?.objectType === 'KalturaAPIException' && !(opts?.tolerate?.(r)));
+        if (i >= 0) {
+          const c = calls[i] || {};
+          throw new KalturaError({ type: 'about:blank', title: results[i].code || 'kaltura error', code: 'ovp_error', detail: `${c.service || 'multirequest'}/${c.action || i}: ${results[i].message}`, instance: `/service/multirequest[${i}]`, headers: pickResponseHeaders(headers), body: results[i] });
+        }
         return data;
       },
       // Upload file bytes to an upload token (uploadtoken/upload, multipart).

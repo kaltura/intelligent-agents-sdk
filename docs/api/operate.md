@@ -49,10 +49,31 @@ Both session classes (`KalturaAvatarSession`, `KalturaChatSession`) detect the p
 | `"text"` | Response content — concatenate `content` fields. On an avatar-enabled intellect, spoken content streams as `"avatar"` (and `"avatar-filler"`) instead, accumulated the same way. |
 | `"tool"` / `"tool_response"` | Server tool call + result; `content` carries client commands |
 | `"unisphere-tool"` | GenUI widget — `metadata.runtimeName` names the widget |
-| `"error"` | Brain error |
+| `"error"` | The server refused or failed the turn. See [Refusals that arrive with HTTP 200](#refusals-that-arrive-with-http-200). |
 | `"user-interruption"` | User barged in |
 
 Key envelope fields: `threadId` (save for follow-ups), `messageId` (save for feedback), `isFinal:true` (stream done).
+
+### Refusals that arrive with HTTP 200
+
+The server reports some refusals in the stream, not in the HTTP status. The status is 200 and the body holds one `"error"` segment. The common case is a `threadId` that belongs to a different user: the segment reads `No permission for thread`, nothing is written, and the turn has no text.
+
+The SDK raises these as a `KalturaError` so an empty reply is never mistaken for success:
+
+| Where | Default | Opt out |
+|---|---|---|
+| `conversations.send`, `converseOnce` | Throws | `onErrorSegment: 'return'`. The result carries the segments in `errors`. |
+| `KalturaChatSession.sendText` | Rejects and emits `error` | `onErrorSegment: 'warn'` in the constructor. Emits `warning` and resolves. |
+| `converse` stream, `collectConverse` | Yields every segment and returns them in `errors`. You decide. | n/a |
+
+| `error.code` | Meaning | What to do |
+|---|---|---|
+| `thread_access_denied` | The `threadId` belongs to a different user. | Start without that `threadId`, or mint the token with the `userId` that created the thread. |
+| `stream_error` | Any other `error` segment. | Read `error.detail` and `error.body.errors`. |
+
+`error.body` holds `errors` (the segments), `threadId`, and `partial` (the text, `threadId` and `messageId` that arrived before the refusal). A stream line that is not JSON, such as a proxy error page, becomes an `error` segment too, so it is never dropped.
+
+The same rule applies to every HTTP call. A 200 reply whose body is an error is thrown, with the server text in `error.detail`. The shapes caught: a `KalturaAPIException`, `{error: "..."}`, `{success: false}`, and a body with only status and message keys and a status of 400 or above. A 200 reply that starts like JSON but does not parse throws `invalid_response`. A failed call inside a Kaltura multirequest throws `ovp_error` naming the call.
 
 **Stop a running turn:**
 

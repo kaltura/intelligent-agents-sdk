@@ -77,6 +77,7 @@ What each token can reach:
 
 - **Always pass a per-user `userId`** when you mint a conversation or agent token. Any stable opaque id works. The user needs no registration.
 - **Widget tokens can't separate users.** Keep each `threadId` on your server, stored per user. To separate users in a browser, use the [per-visitor path](docs/api/deploy.md#per-visitor-browser-path).
+- **A `threadId` owned by another user is refused.** The server answers HTTP 200 with an `error` segment. The SDK throws `thread_access_denied`: [Refusals that arrive with HTTP 200](docs/api/operate.md#refusals-that-arrive-with-http-200).
 - Which methods take which token: [Threads](docs/api/operate.md#threads).
 
 `subjectId` is for audit only. It is not an access boundary. Use `userId` on the token for that.

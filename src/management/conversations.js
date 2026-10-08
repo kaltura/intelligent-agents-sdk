@@ -13,6 +13,7 @@
  * `search`) need an admin token. See docs/api/operate.md.
  */
 import { parseConverseStream, collectConverse, SPIRAL_RECOVERY_PREFIX } from '../core/stream.js';
+import { errorFromErrorSegments } from '../core/errors.js';
 import { paginate } from './paginate.js';
 import { meta } from '../core/ids.js';
 import { requireConfirm } from './agents.js';
@@ -210,17 +211,42 @@ export class Conversations {
    * than once — if the nudge turn also comes back empty, that result is returned
    * as-is with `spiralRecovered:false`. Off by default: without the flag,
    * `spiralStopped` is returned as-is and no follow-up turn is sent.
-   * @param {object} opts {userMessage, threadId?, sse?, model_type?, force_experience?, request_vars?, capabilities?, recoverFromSpiral?}
+   *
+   * ERROR SEGMENTS: the server reports some refusals in-band (HTTP 200 plus a `type:"error"`
+   * segment), for example `No permission for thread` when `threadId` belongs to another user.
+   * `send` throws a {@link KalturaError} for them: `code:'thread_access_denied'` for that
+   * refusal, else `code:'stream_error'`, with the segment(s) and whatever text arrived first in
+   * `error.body`. Pass `onErrorSegment:'return'` to get the result back instead; the segments
+   * are then in `result.errors`.
+   * @param {object} opts {userMessage, threadId?, sse?, model_type?, force_experience?, request_vars?, capabilities?, recoverFromSpiral?, onErrorSegment?: 'throw'|'return'}
    * @param {import('./client.js').KsLike} ks conversation or agent token
-   * @returns {Promise<{text:string, threadId:string, messageId:string, segments:object[], toolCalls:object[], experiences:Record<string,object[]>, experiencesList:object[], kindCounts:object, spiralStopped:boolean, truncated:boolean, toolCallsInvalid:object[], oauthRequired:object[], spiralRecovered?:boolean, firstAttempt?:object, _meta:object}>}
+   * @returns {Promise<{text:string, threadId:string, messageId:string, segments:object[], toolCalls:object[], experiences:Record<string,object[]>, experiencesList:object[], kindCounts:object, errors:object[], spiralStopped:boolean, truncated:boolean, toolCallsInvalid:object[], oauthRequired:object[], spiralRecovered?:boolean, firstAttempt?:object, _meta:object}>}
    */
   async send(opts, ks) {
-    const first = await collectConverse(this.stream(opts, ks));
+    if (opts?.onErrorSegment !== undefined && opts.onErrorSegment !== 'throw' && opts.onErrorSegment !== 'return') {
+      throw new KalturaError({ type: 'about:blank', title: 'bad onErrorSegment', code: 'bad_request', detail: `conversations.send onErrorSegment must be 'throw' or 'return', got ${JSON.stringify(opts.onErrorSegment)}.` });
+    }
+    const first = this._throwOnErrorSegment(await collectConverse(this.stream(opts, ks)), opts);
     if (!opts.recoverFromSpiral || !first.spiralStopped || first.text) return first;
     const nudgeOpts = { ...opts, threadId: first.threadId || opts.threadId, userMessage: `${SPIRAL_RECOVERY_PREFIX}${opts.userMessage}` };
     delete nudgeOpts.recoverFromSpiral;
-    const retry = await collectConverse(this.stream(nudgeOpts, ks));
+    const retry = this._throwOnErrorSegment(await collectConverse(this.stream(nudgeOpts, ks)), nudgeOpts);
     return { ...retry, spiralRecovered: !(retry.spiralStopped && !retry.text), firstAttempt: { toolCalls: first.toolCalls, spiralStopped: first.spiralStopped } };
+  }
+
+  /**
+   * Raise a collected turn's `error` segments as a {@link KalturaError} (`thread_access_denied`
+   * for a thread the token's user does not own, else `stream_error`), unless the caller set
+   * `onErrorSegment:'return'`. The refusal arrives as HTTP 200, so without this it would look
+   * like an empty reply.
+   * @param {Awaited<ReturnType<typeof collectConverse>>} result @param {{threadId?:string, onErrorSegment?:'throw'|'return'}} opts
+   */
+  _throwOnErrorSegment(result, opts) {
+    if (opts.onErrorSegment === 'return' || !result.errors.length) return result;
+    throw errorFromErrorSegments(result.errors, {
+      path: '/assistant/converse', threadId: opts.threadId || result.threadId,
+      partial: { text: result.text, threadId: result.threadId, messageId: result.messageId },
+    });
   }
 
   /** Assistant status/consent/avatar config. READ (GET). @param {import('./client.js').KsLike} ks conversation or agent token */
@@ -842,14 +868,10 @@ export class Knowledge {
     fd.append('fileData', opts.file, opts.name);
     await this._.ovpUpload(tokenId, fd, ks);
     // 3) attach content + assign to the knowledge category (multirequest)
-    const done = await this._.ovpMulti([
+    await this._.ovpMulti([
       { service: 'document_documents', action: 'addContent', entryId, resource: { objectType: 'KalturaUploadedFileTokenResource', token: tokenId } },
       { service: 'categoryentry', action: 'add', categoryEntry: { objectType: 'KalturaCategoryEntry', categoryId: opts.categoryId, entryId } },
-    ], ks);
-    const doneErr = Array.isArray(done)
-      ? done.find((r) => r?.objectType === 'KalturaAPIException' && !isDuplicateCategoryEntry(r))
-      : (done?.objectType === 'KalturaAPIException' ? done : null);
-    if (doneErr) throw new KalturaError({ type: 'about:blank', title: doneErr.code, code: 'ovp_error', detail: doneErr.message, body: doneErr });
+    ], ks, { tolerate: isDuplicateCategoryEntry });
     return { entryId, categoryId: opts.categoryId };
   }
 
@@ -886,12 +908,10 @@ export class Knowledge {
     entryFd.append('fileData', new Blob([opts.markdown], { type: 'text/markdown' }), name);
     await this._.ovpUpload(entryTokenId, entryFd, ks);
     // 2) attach content to the entry + assign to the knowledge category (multirequest)
-    const linked = await this._.ovpMulti([
+    await this._.ovpMulti([
       { service: 'baseentry', action: 'updateContent', entryId, resource: { objectType: 'KalturaUploadedFileTokenResource', token: entryTokenId } },
       { service: 'categoryentry', action: 'add', categoryEntry: { objectType: 'KalturaCategoryEntry', categoryId: opts.categoryId, entryId } },
-    ], ks);
-    const linkErr = (linked || []).find((r) => r?.objectType === 'KalturaAPIException' && !isDuplicateCategoryEntry(r));
-    if (linkErr) throw new KalturaError({ type: 'about:blank', title: linkErr.code, code: 'ovp_error', detail: linkErr.message, body: linkErr });
+    ], ks, { tolerate: isDuplicateCategoryEntry });
     // 3) what actually makes the content searchable: a SEPARATE
     // KalturaMarkdownAsset attachment, uploaded via its own token.
     const assetToken = await this._.ovp('uploadtoken', 'add', { uploadToken: { objectType: 'KalturaUploadToken', fileName: name } }, ks);
