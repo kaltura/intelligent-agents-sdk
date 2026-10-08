@@ -1275,6 +1275,9 @@ await mgmt.knowledge.deleteRecord(rec.id, ks, { confirmPermanent: true });
 | [docs/VOICE-INPUT-MODES.md](docs/VOICE-INPUT-MODES.md) | Choosing open-mic vs. push-to-talk, and the UX/accessibility/safety details around each |
 | [docs/START-THE-CONVERSATION.md](docs/START-THE-CONVERSATION.md) | Choosing the first turn: scripted Jinja2 opening or silent opening (`SILENT_OPENING`) + `kickoff`, the preset-question pattern, what fires on the wire, the `speak()` hold |
 | [docs/lifecycle/README.md](docs/lifecycle/README.md) | Event-driven rules: reference + [recipe](docs/lifecycle/recipes.md) — auto-summarize conversations and email a human when analysis lands |
+| [docs/GLOSSARY.md](docs/GLOSSARY.md) | Terms (agent, intellect, brain, KS) and which ID goes where (`configId`, `agentId`, `avatarId`, `widgetId`) |
+| [docs/LANGUAGES.md](docs/LANGUAGES.md) | Pinning the agent's reply and speech-recognition language with `setForcedLanguage` |
+| [docs/LIVE-DEMOS.md](docs/LIVE-DEMOS.md) | The runnable demos in `examples/` and how to start them |
 | `examples/` | One runnable example per use-case |
 | [app-builder-skill/README.md](app-builder-skill/README.md) | Claude Code plugin that guides you through building an app with this SDK |
 
