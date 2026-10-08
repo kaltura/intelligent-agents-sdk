@@ -604,6 +604,28 @@ test('mgmt.tools.update re-sends a code config and maps the same 403', async () 
   assert.equal(bad.ff.calls.length, 0);
 });
 
+const CSV_403 = "Tool type 'csv' is unavailable by default, call support";
+
+test('mgmt.tools.add and update map the csv 403 to a typed forbidden error', async () => {
+  const tool = csv({ name: 'rates', description: 'lookup', csv: 'a,b\n1,2' });
+  const denied = harness([
+    { match: 'v1/tool/add', respond: () => ({ status: 403, body: { detail: CSV_403 } }) },
+    { match: 'v1/tool/update', respond: () => ({ status: 403, body: { detail: CSV_403 } }) },
+  ]);
+  const isDenied = (e) => e.code === 'forbidden' && e.status === 403 && /Tool type 'csv' is unavailable by default/.test(JSON.stringify(e.detail ?? e.message));
+  await assert.rejects(() => denied.mgmt.tools.add(tool, ADMIN_KS), isDenied);
+  await assert.rejects(() => denied.mgmt.tools.update('tool-r1', { config: tool }, ADMIN_KS), isDenied);
+  assert.equal(denied.ff.calls.length, 2, 'one attempt each, no retry on 403');
+});
+
+test('mgmt.tools.update sends only id and name for a name-only patch, so it never carries a config', async () => {
+  const { mgmt, ff } = harness([
+    { match: 'v1/tool/update', respond: (req) => ({ status: 200, body: { id: req.body.id, name: req.body.name } }) },
+  ]);
+  await mgmt.tools.update('tool-c1', { name: 'fx_rate_v2' }, ADMIN_KS);
+  assert.deepEqual(ff.calls[0].body, { id: 'tool-c1', name: 'fx_rate_v2' });
+});
+
 test('mgmt.tools.get returns a stored code tool unchanged, and list passes through code entries', async () => {
   const tool = code(codeCfg());
   const get = harness([{ match: 'v1/tool/get', respond: () => ({ status: 200, body: { id: 'tool-c1', name: 'fx_rate', config: tool } }) }]);

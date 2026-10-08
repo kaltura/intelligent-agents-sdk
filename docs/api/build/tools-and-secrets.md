@@ -77,7 +77,16 @@ Python in a server sandbox. Define `def main(...)`. Each declared arg is passed 
 }
 ```
 
-**`csv` and `code` are unavailable by default.** `POST /v1/tool/add` and `/update` reply HTTP 403 (`Tool type 'csv'/'code' is unavailable by default, call support`) for a real partner until Kaltura support enables the type on your account. `api` and `client` need no such enablement. SDK: `tools.csv(...)`/`tools.code(...)` still validate and build the config locally; the 403 comes back from `mgmt.tools.add`/`update`'s network call.
+**You cannot create `csv` or `code` tools yourself.** `POST /v1/tool/add` replies HTTP 403 (`Tool type 'csv'/'code' is unavailable by default, call support`). So does `/v1/tool/update` when its `config` is a `csv` or `code` config. No account setting changes this. Contact Kaltura support to have one set up. `api` and `client` tools have no such limit.
+
+| Call | Result |
+|---|---|
+| `add` with a `csv` or `code` config | 403, nothing is created |
+| `update` with a `csv` or `code` config | 403, the tool is unchanged |
+| `update` with only `name` (no `config`) | works |
+| `get`, `list`, `delete` | work on any tool type |
+
+SDK: `tools.csv(...)`/`tools.code(...)` still validate and build the config locally. The 403 comes back from `mgmt.tools.add`/`update` as a `KalturaError` with `code: 'forbidden'`.
 
 ### `client` tool
 
