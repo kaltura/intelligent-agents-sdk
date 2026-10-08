@@ -1138,16 +1138,7 @@ await session.sendText('Look up open tickets for this account.');
 
 ### Forcing the reply language (`setForcedLanguage`)
 
-`force_language` on the intellect is enforced by the backend at runtime: replies come back in that language whatever the user writes or speaks. `mgmt.setForcedLanguage()` sets it together with the agent's `asr.language`, so speech recognition matches:
-
-```js
-await mgmt.setForcedLanguage({ configId, agentId, language: 'he' }, admin.ks);
-// writes: intellect.force_language = 'Hebrew', agent.asr.language = 'he'
-
-await mgmt.setForcedLanguage({ configId, agentId, language: null }, admin.ks); // clear
-```
-
-Idempotent. `language` is an ISO 639-1 code. Pass `languageName` for a code that is not in `LANGUAGE_NAMES` (exported from `./management`). `base_directive` is left alone.
+`mgmt.setForcedLanguage()` pins the language an agent speaks and listens in. Usage, options and how to clear it: [docs/LANGUAGES.md](docs/LANGUAGES.md).
 
 ---
 

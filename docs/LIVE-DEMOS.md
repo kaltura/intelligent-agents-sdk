@@ -1,6 +1,6 @@
 # Live demos
 
-The `examples/` folder has four browser demos, four server scripts and an MCP server. They run on your machine against your own agent. They are not hosted.
+The `examples/` folder has four browser demos, four server scripts and an MCP server. They are not hosted. Run them from a clone of the repo. The browser demos and three of the scripts run against your own agent, so they need your partner id and admin secret. `genui-graded-question.mjs` and the MCP server need no credentials.
 
 ## Run a browser demo
 
@@ -25,12 +25,26 @@ With an admin secret and no `AGENTIC_WIDGET_ID`, the server provisions a throwaw
 
 ## Server scripts
 
-| File | Shows |
-|---|---|
-| [server-token.mjs](../examples/server-token.mjs) | Provision an agent from a one-line brief, mint a conversation token and run a headless smoke test |
-| [request-vars-live-context.mjs](../examples/request-vars-live-context.mjs) | Live app context sent to the agent as request variables |
-| [lifecycle-insights-and-email.mjs](../examples/lifecycle-insights-and-email.mjs) | Summarize every conversation and email a human when the summary is ready |
-| [genui-graded-question.mjs](../examples/genui-graded-question.mjs) | The `graded-question` GenUI widget, multiple-choice and free-text |
-| [mcp-live-showcase/server.mjs](../examples/mcp-live-showcase/server.mjs) | A reference MCP server, open and OAuth-protected, to try `mcp_servers` against a live agent. See [MCP integrations](MCP-INTEGRATIONS.md) |
+Set your credentials once for the scripts that need them:
+
+```bash
+export AGENTIC_PARTNER_ID=…
+export AGENTIC_ADMIN_SECRET=…
+```
+
+| Run | Needs credentials | Shows |
+|---|---|---|
+| [`node examples/server-token.mjs "A friendly yoga receptionist"`](../examples/server-token.mjs) | Yes | Provision an agent from a one-line brief (the argument is optional), mint a conversation token and run a headless smoke test |
+| [`node examples/request-vars-live-context.mjs`](../examples/request-vars-live-context.mjs) | Yes | Live app context sent to the agent as request variables |
+| [`node examples/lifecycle-insights-and-email.mjs`](../examples/lifecycle-insights-and-email.mjs) | Yes | Summarize every conversation and email a human when the summary is ready. Set `DEMO_RECIPIENT_USER_ID` to choose the recipient |
+| [`node examples/genui-graded-question.mjs`](../examples/genui-graded-question.mjs) | No | The `graded-question` GenUI widget, multiple-choice and free-text. It prints the widget descriptor and the `onAction('answer', ...)` payloads. No network and no browser |
+
+## MCP server
+
+```bash
+node examples/mcp-live-showcase/server.mjs --port 8877
+```
+
+[mcp-live-showcase/server.mjs](../examples/mcp-live-showcase/server.mjs) is a reference MCP server with an open mount (`/mcp`) and an OAuth-protected mount (`/mcp/oauth`). It needs no credentials. The port defaults to 8877 and can also come from `PORT`. To try `mcp_servers` against a live agent, the backend must reach the server, so put it behind an HTTPS tunnel that forwards the `Host` header. See [MCP integrations](MCP-INTEGRATIONS.md).
 
 Related: [Getting started](../GETTING-STARTED.md) and the [Presenter](../README.md#presenter) reference.
