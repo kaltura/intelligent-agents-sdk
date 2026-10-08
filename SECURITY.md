@@ -214,7 +214,9 @@ In the browser, FIPS validation is a property of the OS/browser crypto module. D
 
 The SDK is a thin client. It contacts only the Kaltura endpoints you configure (`agenticUrl`/`genieUrl`/`ovpUrl`/`messagingUrl`/`conversationManagerUrl`/`srsBaseUrl`/`turnServerUrl`). There is no telemetry or hidden beacon. The optional `./experience/analytics` module sends KAVA application events to `analytics.kaltura.com`, and only when your code calls it. Point every URL at your in-boundary (e.g. US-Gov) hosts to keep all data within your authorization boundary.
 
-`region` picks every `Management` base URL and the sessions' `genieUrl` from one [`REGIONS`](docs/api/authentication.md#regions-and-base-urls) entry. `Management` never falls back to another region: a service the region lacks throws `region_unavailable` instead of reaching a US host. `region` does not change the analytics host. `KalturaAvatarSession` gets `conversationManagerUrl`, `srsBaseUrl` and `turnServerUrl` from `appInit`. If you omit `conversationManagerUrl`, it uses the US host.
+Session hosts come from `appInit`, not from your config. `appInit` returns the `conversationManagerUrl`, `srsBaseUrl` and `turnServerUrl` for your partner's region. Pass them to `KalturaAvatarSession` unchanged (`new KalturaAvatarSession({ token, ...appInit })`). Do not hard-code them. If you omit `conversationManagerUrl`, the session falls back to the US host.
+
+The `region` option covers the rest. It fills the four `Management` base URLs (`agenticUrl`, `genieUrl`, `ovpUrl`, `messagingUrl`) and the session `genieUrl` from one [`REGIONS`](docs/api/authentication.md#regions-and-base-urls) entry. `Management` never falls back to another region: a service the region lacks throws `region_unavailable` instead of reaching a US host. `region` does not change the analytics host.
 
 This residency guarantee covers the SDK's own configured endpoints only. A `lifecycle` rule's `sendInsightEmail` action is a server-side, operator-configured email delivery of thread-derived content to an arbitrary `recipients` list. It has no residency control and isn't covered by the URL-pinning above.
 

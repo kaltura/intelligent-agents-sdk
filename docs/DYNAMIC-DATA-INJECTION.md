@@ -40,7 +40,7 @@ Three properties make this channel do the heavy lifting:
 
 ### Page context: `setDynamicPrompt()`
 
-For "what's on screen right now" — the current slide, page section, or task state — you don't hand-pick variables. `setDynamicPrompt(data)` serializes any JSON-safe object into one well-known request variable, `page_context`, and sends it through the same channel:
+For "what's on screen right now" — the current slide, page section, or task state — you don't hand-pick variables. `setDynamicPrompt(data)` is sugar over `updateRequestVars()`. It serializes any JSON-safe object into one well-known request variable, `page_context`, and sends it through the same channel:
 
 ```js
 session.setDynamicPrompt({

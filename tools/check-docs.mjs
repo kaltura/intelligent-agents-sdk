@@ -881,6 +881,48 @@ describe('14. Regions', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════
+// 16. Docs accuracy — wording that must not come back
+// ═══════════════════════════════════════════════════════════════════════
+describe('16. Docs accuracy', () => {
+  test('no tracked line calls BYO-LLM "not supported", and the module map points to the Account Manager', () => {
+    const bad = [];
+    for (const f of scanFiles()) {
+      read(f).split('\n').forEach((line, i) => {
+        if (/BYO-LLM/i.test(line) && /not (yet )?supported/i.test(line)) bad.push(`${f}:${i + 1}`);
+      });
+    }
+    assert.deepEqual(bad, [], `BYO-LLM described as unsupported: ${bad.join(', ')}`);
+    const map = read('docs/architecture-reference/module-map-and-data-flow.md');
+    assert.match(map, /BYO-LLM[^\n]*possible[^\n]*Account Manager/, 'module map must say an external LLM is possible and name the Account Manager');
+  });
+
+  test('the term DPP is gone from every tracked markdown file', () => {
+    const hits = [];
+    for (const f of scanFiles().filter((x) => x.endsWith('.md'))) {
+      if (/\bDPPs?\b/.test(read(f))) hits.push(f);
+    }
+    assert.deepEqual(hits, [], `"DPP" found in: ${hits.join(', ')}. Say "request variables" or "page context".`);
+  });
+
+  test('SECURITY.md residency section says session hosts come from appInit and names the region option', () => {
+    const sec = read('SECURITY.md');
+    const start = sec.indexOf('## Data residency');
+    assert.ok(start >= 0, 'Data residency section missing');
+    const rest = sec.slice(start + 3);
+    const end = rest.indexOf('\n## ');
+    const section = rest.slice(0, end < 0 ? undefined : end);
+    assert.match(section, /Session hosts come from `appInit`/);
+    assert.match(section, /unchanged/);
+    assert.match(section, /`region` option/);
+    assert.match(section, /`REGIONS`/);
+  });
+
+  test('the architecture recipe stays in the repo (the site just does not publish it)', () => {
+    assert.ok(existsSync(join(ROOT, 'docs/ARCHITECTURE-RECIPE.md')));
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════
 // 15. App-builder skill — pointers only, nothing deprecated, nothing stale
 // ═══════════════════════════════════════════════════════════════════════
 describe('15. App-builder skill', () => {

@@ -128,9 +128,9 @@ export class Intellects {
    * Create an intellect with the SDK defaults applied + the resolved `type`
    * echoed. WRITE — NOT idempotent (auto-sends an Idempotency-Key). Defaults
    * `type:'internal'` and `status:2` (ACTIVE — opt out with `status:1` for
-   * PENDING). REJECTS `url`/`protocol` with `bad_request`: the `type:external`
-   * (BYO-LLM) config is not supported on the public API, and the SDK offers no
-   * path to create one. The echoed `type` is SDK-resolved, not
+   * PENDING). REJECTS `url`/`protocol` with `bad_request`: an external LLM
+   * (BYO-LLM) is not self-serve (ask your Kaltura Account Manager), and the SDK
+   * offers no path to create one. The echoed `type` is SDK-resolved, not
    * server-confirmed. `warnings` is present only when the client-tool
    * readiness lint finds something. @param {object} body @param {string} ks (admin)
    * @returns {Promise<{configId:number|undefined, type:string, status:number, raw:any, warnings?:any[], _meta:object}>}
@@ -139,7 +139,7 @@ export class Intellects {
     this._.assertAdmin(ks, 'intellects.create');
     if (!body || typeof body !== 'object' || Array.isArray(body)) throw badReq('intellects.create needs a body object.');
     if (body.url !== undefined || body.protocol !== undefined) {
-      throw badReq('intellects.create does not support `url`/`protocol`: the external (BYO-LLM) intellect type is not yet supported on the public API.');
+      throw badReq('intellects.create does not support `url`/`protocol`: an external LLM (BYO-LLM) is not self-serve. Ask your Kaltura Account Manager.');
     }
     const type = body.type ?? 'internal';
     const status = body.status ?? 2;
