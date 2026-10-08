@@ -13,6 +13,19 @@ A zero-dependency JavaScript SDK for building and operating **Kaltura Agentic
 Avatars**: Kaltura's conversational agents with a visual, human-like avatar
 interface.
 
+<div class="home-cc" data-nova-target="build-with-claude-code" data-nova-label="Build with Claude Code">
+
+## Build with Claude Code
+
+Install the plugin, then ask Claude Code to add a Kaltura avatar to your app. [Other agents and full steps](/guides/build-with-coding-agents/).
+
+```bash
+/plugin marketplace add kaltura/intelligent-agents-sdk
+/plugin install kaltura-app-builder@kaltura-agents
+```
+
+</div>
+
 <section class="nova-hero" aria-labelledby="nova-hero-heading">
   <div class="nova-hero-inner">
     <div class="nova-hero-copy">
@@ -100,24 +113,6 @@ Once a tag is pinned, jsDelivr serves the SDK straight from GitHub. No
 Pin the tag for anything you ship. jsDelivr caches a tagged path forever, so
 a pin is both stable and fast. See [Getting Started](/getting-started/) for
 where `token` and the other connection values come from.
-
-## Build with Claude Code
-
-<div data-nova-target="build-with-claude-code" data-nova-label="Build with Claude Code">
-
-Let your coding agent do the setup. Install the plugin once, then ask Claude
-Code to add a Kaltura avatar to your app. It reads this site live, so it never
-works from an out-of-date copy.
-
-```bash
-/plugin marketplace add kaltura/intelligent-agents-sdk
-/plugin install kaltura-app-builder@kaltura-agents
-```
-
-Other agents can start from [llms.txt](/llms.txt). Full steps:
-[Build with Claude Code and other coding agents](/guides/build-with-coding-agents/).
-
-</div>
 
 ## Where to go next
 

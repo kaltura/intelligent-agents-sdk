@@ -2064,7 +2064,7 @@ body.home .content-wrapper {
   max-width: none;
 }
 
-body.home .content-wrapper > :not(.nova-hero) {
+body.home .content-wrapper > :not(.nova-hero, .home-cc) {
   max-width: var(--page-max);
 }
 
@@ -2072,6 +2072,53 @@ body.home .content-wrapper > :not(.nova-hero) {
    are already a short list in the sidebar's own order. */
 body.home .page-toc {
   display: none;
+}
+
+/* "Build with Claude Code" strip: sits above the hero so it is visible on load. */
+.home-cc {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.25rem 2rem;
+  max-width: 1100px;
+  margin: 1.25rem 0 0;
+  padding: 0.6rem 1rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--elevated-bg);
+}
+
+.home-cc h2 {
+  grid-column: 1;
+  margin: 0;
+  padding: 0;
+  border: none;
+  font-size: 1.05rem;
+}
+
+.home-cc p {
+  grid-column: 1;
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--secondary-text);
+}
+
+.home-cc :is(pre, .code-block, .code-wrap) {
+  font-size: 0.85rem;
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  margin: 0;
+}
+
+@media (max-width: 800px) {
+  .home-cc {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .home-cc :is(pre, .code-block, .code-wrap) {
+    grid-column: 1;
+    grid-row: auto;
+  }
 }
 
 body.home .nova-hero {
@@ -2232,7 +2279,7 @@ html:not(.nova-ready) :is(.nova-hero-prompts, .nova-placeholder, .nova-chat-star
    the same dark stage on purpose. */
 @media (min-width: 901px) {
   :root {
-    --stage-h: clamp(500px, calc(100svh - 290px), 680px);
+    --stage-h: clamp(500px, calc(100svh - 400px), 680px);
     --copy-w: clamp(21rem, 34vw, 32rem);
     --copy-h: min(27rem, calc(var(--stage-h) - 4rem));
     --input-h: 3.25rem;
