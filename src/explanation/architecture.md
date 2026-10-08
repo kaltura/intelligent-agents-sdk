@@ -32,7 +32,7 @@ Symbol names below are the stable contracts to navigate by. Exact details live i
 - Building an app? [Backend API Reference](/reference/api-reference/)
 - Driving your UI from the avatar? [Client-Side Commands](/guides/client-commands/)
 
-This page is the map. The exact field-by-field mechanics (connect sequence, ASR/STV wire shapes, scaling internals, SDK module routing, failure-mode tables) live in **[System Internals Reference](/reference/architecture-reference/)**. A from-scratch reimplementation recipe lives in **[Minimal Reimplementation Recipe](/reference/architecture-recipe/)**.
+This page is the map. The exact field-by-field mechanics (connect sequence, ASR/STV wire shapes, scaling internals, SDK module routing, failure-mode tables) live in **[System Internals Reference](/reference/architecture-reference/)**. A from-scratch reimplementation recipe lives in **[ARCHITECTURE-RECIPE.md](https://github.com/kaltura/intelligent-agents-sdk/blob/main/docs/ARCHITECTURE-RECIPE.md)**.
 
 **Contents**
 

@@ -7,7 +7,7 @@ eyebrow: Reference
 
 # System Internals Reference
 
-This is the exact field-by-field mechanics behind [Platform Overview](/explanation/architecture/): the connect sequence, wire shapes, scaling internals, SDK module routing, and failure-mode tables. Read ARCHITECTURE.md first for the big picture. Consult these docs for an exact field, timeout, or module boundary. For a from-scratch reimplementation walkthrough, see [Minimal Reimplementation Recipe](/reference/architecture-recipe/). For the exhaustive socket-event-by-event capture, see [Wire Protocol](/reference/wire-protocol/).
+This is the exact field-by-field mechanics behind [Platform Overview](/explanation/architecture/): the connect sequence, wire shapes, scaling internals, SDK module routing, and failure-mode tables. Read ARCHITECTURE.md first for the big picture. Consult these docs for an exact field, timeout, or module boundary. For a from-scratch reimplementation walkthrough, see [ARCHITECTURE-RECIPE.md](https://github.com/kaltura/intelligent-agents-sdk/blob/main/docs/ARCHITECTURE-RECIPE.md). For the exhaustive socket-event-by-event capture, see [Wire Protocol](/reference/wire-protocol/).
 
 | Doc | Covers |
 |---|---|

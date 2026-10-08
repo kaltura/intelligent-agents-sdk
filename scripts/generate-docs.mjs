@@ -22,12 +22,15 @@ const GITHUB_BLOB_BASE = 'https://github.com/kaltura/intelligent-agents-sdk/blob
 const ROOT_DOC_IGNORE = new Set(['README.md', 'CODE_OF_CONDUCT.md', 'CONTRIBUTING.md', 'SDK_CONSTITUTION.md', 'AGENTS.md', 'CLAUDE.md']);
 
 // docs/ subtree files intentionally never ported to the site: the source doc stays
-// in the SDK repo (readable on GitHub) but doesn't get a public site page. Scripted-
-// video sessions are a narrow, brain-free niche next to the full agentic avatar —
-// a dedicated site page reads as parity with the main product and confuses customers
-// into thinking it's an equivalent path. Any generated page that links to one of
-// these falls back to a GitHub blob URL instead (see the link-rewrite step below).
-const DOCS_SUBTREE_IGNORE = new Set(['docs/api/scripted-video.md']);
+// in the SDK repo (readable on GitHub) but doesn't get a public site page, nav entry,
+// llms.txt line or assistant knowledge-base page. Any generated page that links to one
+// of these falls back to a GitHub blob URL instead (see the link-rewrite step below).
+//   - docs/api/scripted-video.md: a narrow, brain-free niche next to the full agentic
+//     avatar. A dedicated site page reads as parity with the main product and confuses
+//     customers into thinking it's an equivalent path.
+//   - docs/ARCHITECTURE-RECIPE.md: a from-scratch client recipe. The supported way in is
+//     the SDK, so the site does not present the recipe as a route.
+export const DOCS_SUBTREE_IGNORE = new Set(['docs/api/scripted-video.md', 'docs/ARCHITECTURE-RECIPE.md']);
 
 function walkMarkdown(dir, base = dir) {
   const out = [];

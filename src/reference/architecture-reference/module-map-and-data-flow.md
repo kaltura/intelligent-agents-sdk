@@ -100,7 +100,7 @@ Omitted top-level fields are preserved on update. But `capabilities`/`secrets` a
 
 ### Known limits
 
-- **External (BYO-LLM) intellects are not supported.** `intellects.create` rejects a body containing `url`/`protocol` with a typed `bad_request`.
+- **An external LLM (BYO-LLM) is possible, but not self-serve.** Ask your Kaltura Account Manager to set it up. The SDK does not create one: `intellects.create` rejects a body containing `url`/`protocol` with a typed `bad_request`.
 - **Secrets are write-only**: values never read back. The no-leak guarantee is the name-only response contract, not `redact()`. Client-side encryption and BYOK are server-managed, not buildable.
 - **`previewPrompt`/`snapshot`/`restore` are client-side**: a replica of the author layer only (server-injected capability-conditional prompt blocks are not reproducible), plus a browser-local history (the server has no versioning).
 - **`agent/list` filter keys are narrow.** `filter` is forwarded as-is; the server accepts only `agentId`, `adminTagsIn`, `adminTagsNotIn`, `searchValue`, and 400s on anything else. Tag the **agent** with `adminTags` at create time to group. Avatars carry no tag field, but `avatar/create` accepts and stores it silently (never echoed back), while `avatar/update` 400s on it. See `Avatars.create`'s JSDoc.

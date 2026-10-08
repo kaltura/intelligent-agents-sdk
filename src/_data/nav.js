@@ -54,6 +54,16 @@ module.exports = [
         "children": []
       },
       {
+        "title": "Languages",
+        "url": "/guides/languages/",
+        "children": []
+      },
+      {
+        "title": "Live Demos",
+        "url": "/guides/live-demos/",
+        "children": []
+      },
+      {
         "title": "Structured Data Forms",
         "url": "/guides/structured-data-forms/",
         "children": []
@@ -171,11 +181,6 @@ module.exports = [
         "children": []
       },
       {
-        "title": "Minimal Reimplementation Recipe",
-        "url": "/reference/architecture-recipe/",
-        "children": []
-      },
-      {
         "title": "System Internals Reference",
         "url": "/reference/architecture-reference/",
         "children": [
@@ -272,6 +277,11 @@ module.exports = [
             "children": []
           }
         ]
+      },
+      {
+        "title": "Glossary",
+        "url": "/reference/glossary/",
+        "children": []
       },
       {
         "title": "Use-Case Catalog",

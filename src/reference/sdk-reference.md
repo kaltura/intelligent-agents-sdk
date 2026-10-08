@@ -802,7 +802,13 @@ An unknown provider id creates **nothing** and raises a typed `voice_not_found_e
 
 `avatars.update()` also accepts `background` alone, to swap only the background against the avatar's current face. The model animates the composed result at runtime. Video-clip ingest is not available through this API.
 
-**Embed snippet** (`mgmt.agents.getEmbedScript(agentId, embedType, ks)`) returns the ready-to-paste HTML `<script type='module'>` that renders the agent's chat widget on any page. `embedType` is one of `contained` (inline box), `page` (full page), or `floater` (floating launcher) — validated against the exported `EMBED_TYPES` before any network call.
+**Embed snippet or SDK?** There are two ways to put an agent on a page. Pick by how much you want to build.
+
+| | Avatar Studio embed | This SDK |
+|---|---|---|
+| For | Teams that do not build on the SDK runtime and want an agent on a page off the shelf | Teams that want to customize everything |
+| What you get | A self-contained widget that ships its own look and controls | `KalturaAvatarSession` and `KalturaChatSession` with your own layout, controls, [client commands](/guides/client-commands/), GenUI and analytics |
+| Pick it when | The stock widget is enough | The stock widget is not enough |
 
 ---
 

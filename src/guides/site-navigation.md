@@ -214,7 +214,7 @@ Construct it once per session, right after the session. `destroy()` unsubscribes
 
 ### Telling the brain where the visitor is
 
-Send the current page and its keys as `page_context` through `session.setDynamicPrompt()` (or `requestVars` at connect). The manifest already has the keys:
+Send the current page and its keys as the `page_context` request variable. `session.setDynamicPrompt()` sets it for you, or pass `requestVars` at connect. The manifest already has the keys:
 
 ```js
 const page = resolvePath(nav.manifest, location.pathname);
