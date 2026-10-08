@@ -15,7 +15,7 @@ The official docs are the source of truth. This skill only gives the order of st
 3. Read example code from `node_modules/@kaltura/intelligent-agents/examples/` after Step 3.
 4. Use only method, class and option names you saw in the docs or the installed package. If you cannot find one, say so and ask. Never guess a name.
 5. Suggest only what the docs recommend for building agents.
-6. If the docs cannot be fetched, say what is blocked and ask the user to allow it. In the same reply, apply the Hard rules below to the request. For example, warn that `csv` and `code` tools need account enablement and offer an `api` tool.
+6. If the docs cannot be fetched, say what is blocked and ask the user to allow it. In the same reply, apply the Hard rules below to the request. For example, warn that `csv` and `code` tools cannot be created with an admin session (Kaltura support sets them up) and offer an `api` tool.
 
 ## Step 0: check the machine
 
@@ -87,7 +87,7 @@ These are reminders. The docs page behind each link is the source.
 - The Admin Secret stays on the server. Never put it in browser code, a public repo or a log. [Authentication](https://kaltura.github.io/intelligent-agents-sdk/reference/api/authentication/)
 - Give each end user a scoped, short-lived token with a per-user id. [Authentication](https://kaltura.github.io/intelligent-agents-sdk/reference/api/authentication/)
 - An agent that calls tools needs `kaltura_genie_experiences` set to `'off'` when it is created. Setting it later does not take effect for about a day. [Client commands](https://kaltura.github.io/intelligent-agents-sdk/guides/client-commands/)
-- `csv` and `code` tools must be enabled for the account first. Offer an `api` tool when they are not. [Tools and secrets](https://kaltura.github.io/intelligent-agents-sdk/reference/api/build/tools-and-secrets/)
+- `csv` and `code` tools cannot be created with an admin session. The call replies 403. Offer an `api` tool, or ask the user to contact Kaltura support. [Tools and secrets](https://kaltura.github.io/intelligent-agents-sdk/reference/api/build/tools-and-secrets/)
 - Register event listeners before calling `connect()`. [SDK reference](https://kaltura.github.io/intelligent-agents-sdk/reference/sdk-reference/)
 - Show users that they are talking to an AI avatar. [SDK reference](https://kaltura.github.io/intelligent-agents-sdk/reference/sdk-reference/)
 
