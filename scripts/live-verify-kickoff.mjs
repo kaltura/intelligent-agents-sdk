@@ -149,6 +149,8 @@ async function dumpEvents(id, pages) {
 
 /** @typedef {{pageErrors: string[], pages: import('playwright').Page[], network: import('./live-verify-kickoff-shared.mjs').NetRecord[]}} Sink */
 /** @type {Record<string, {name: string, run: (ctx: {context: import('playwright').BrowserContext, sink: Sink, id: string}) => Promise<void>, context?: () => Promise<import('playwright').BrowserContext>}>} */
+// A sound that starts this close to the end of the silent opening is the reply that follows it, not the opening.
+const OPENING_SOUND_JITTER_MS = 100;
 const SCENARIOS = {
   V2: {
     name: 'silent opening audibility',
@@ -180,7 +182,7 @@ const SCENARIOS = {
       const resolved = find(evs, 'connect:resolved');
       const ctxRunning = !!find(evs, 'audioctx:state', { where: (d) => d.state === 'running' });
       const openingSound = find(evs, 'audio:soundStart', { from: resolved.index });
-      const soundDuringOpening = openingSound && openingSound.tRel <= openingStop.tRel;
+      const soundDuringOpening = openingSound && openingSound.tRel <= openingStop.tRel - OPENING_SOUND_JITTER_MS;
       const replySound = find(evs, 'audio:soundStart', { from: replyStart.index });
       if (ctxRunning) {
         report.check(`${id}: no sound heard during the silent opening`, !soundDuringOpening, { soundAtMs: soundDuringOpening ? openingSound.tRel - resolved.tRel : null, openingEndMs: openingStop.tRel - resolved.tRel });

@@ -120,6 +120,8 @@ import {
 import { callHook } from './live-verify-hooks-shared.mjs';
 
 const { args, target, runId, outDir } = bootstrap(process.argv.slice(2), 'connect-timing');
+// A sound that starts this close to the end of the silent opening is the reply that follows it, not the opening.
+const OPENING_SOUND_JITTER_MS = 100;
 const COMPARE = typeof args.compare === 'string' ? args.compare : null;
 const KICKOFF = args['no-kickoff'] === true ? null : (typeof args.kickoff === 'string' ? args.kickoff : 'Greet the user in one short sentence and ask how you can help.');
 const OPENING = typeof args.opening === 'string' && args.opening.trim() ? args.opening : null;
@@ -351,7 +353,7 @@ try {
       const ctxRunning = !!find(evs, 'audioctx:state', { where: (d) => d.state === 'running' });
       const firstSoundAfterTalk = talkStart ? find(evs, 'audio:soundStart', { from: talkStart.index }) : null;
       const openingSound = openingStop ? find(evs, 'audio:soundStart', { from: resolved.index, where: () => true }) : null;
-      const openingSoundInWindow = openingSound && openingStop && openingSound.tRel <= openingStop.tRel ? openingSound : null;
+      const openingSoundInWindow = openingSound && openingStop && openingSound.tRel <= openingStop.tRel - OPENING_SOUND_JITTER_MS ? openingSound : null;
       const kickoffOut = v.kickoff ? find(evs, 'socket:out', { from: start.index, where: (d) => d.ev === 'onTextEntered' && d.text === v.kickoff }) : null;
       const firstTickWith = (/** @type {(d:any)=>boolean} */ pred) => find(evs, 'stats:sample', { from: start.index, where: pred });
       const lastSample = all(evs, 'stats:sample').at(-1)?.detail;
