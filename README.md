@@ -800,26 +800,30 @@ Salesforce has no standard Lead consent field, so consent is recorded in `Descri
 
 ### What the agent can say
 
-Salesforce answers an upsert in three ways. The tool maps them to `result`, `success`, `error_code`, `error_message` and `error_fields`, and the default description tells the agent what to do with each.
+Salesforce answers an upsert in three ways. The tool maps `result` (the id) and `success`, and the default description tells the agent what to do with each answer.
 
 | Salesforce answer | Tool result | Agent says |
 |---|---|---|
 | `201` with an id (new record) | `success: true`, `result` is the id | Saved |
-| Error, such as `REQUIRED_FIELD_MISSING`, `INVALID_EMAIL_ADDRESS` or `INVALID_SESSION_ID` (expired token) | `error_code`, `error_message`, `error_fields` | Could not save, and what to fix |
-| `204` with an empty body (update of an existing record) | all fields empty | Could not confirm. Never "saved" |
+| Any error status, such as a missing required field, an invalid email or an expired token | No mapped values. The agent only gets a generic "API returned error status" line | Could not save |
+| `204` with an empty body (update of an existing record) | `result` and `success` are empty | Could not confirm. Never "saved" |
 
-The empty `204` means an update works but the agent cannot confirm it from the result. If you need a confirmed answer on updates, use the customer endpoint below, which can always return `saved: true`. A custom `description` replaces the default guidance, so keep these rules in it. The same applies to `salesforceContactUpsert`. `hubspotContactUpsert` returns `contact_id` on success and `error_message` on failure.
+The empty `204` means an update works but the agent cannot confirm it from the result. If you need a confirmed answer on updates, use the customer endpoint below, which can always return `saved: true`. A custom `description` replaces the default guidance, so keep these rules in it. The same applies to `salesforceContactUpsert`. `hubspotContactUpsert` returns `contact_id` on success. On an error status it gets the same generic line.
+
+The upsert key goes into the URL. An unencoded `@` in the URL makes the call fail, so the key arg prompt tells the agent to write `@` as `%40`. Args are inserted as written, with no encoding by the tool. In your own tools, use `{Name}` for an arg in the URL or body, and `{{secrets.NAME}}` or `{{ sys__thread_id }}` for secrets and request variables. Headers take secrets and request variables only, not args.
 
 ### Salesforce access tokens
 
-A Salesforce access token expires. The default org session timeout is 2 hours. After that the tool fails with `401 INVALID_SESSION_ID`, which the agent reports as a failed save. Pick one option.
+A Salesforce access token expires. The default org session timeout is 2 hours. After that Salesforce answers `401` and the agent reports a failed save. Pick one option.
 
 | Option | How | Use when |
 |---|---|---|
 | **(b) Customer endpoint (default)** | The agent calls your own HTTPS endpoint. It holds the Salesforce credentials, refreshes the token itself and does the upsert. The tool only holds a long-lived secret for your endpoint. | Almost always. Kaltura never holds a Salesforce token. |
 | (a) Scheduled refresh | Your server refreshes the token and calls `mgmt.intellects.secrets.set(...)` again before it expires. The SDK does not ship this job. | You want the agent to call Salesforce directly and can run a refresh job well inside the timeout, for example hourly. |
 
-Option (b) is a plain `api` tool. Your endpoint takes the fields as JSON and answers `{ "saved": true, "lead_id": "..." }` or `{ "saved": false, "error": "..." }`:
+The direct Salesforce tools put the visitor's email into the request URL, because the upsert key is part of the path. The visitor controls that text. For production, use option (b): your endpoint validates and encodes the email before it calls Salesforce. Treat the direct tools as a quick start and for dev orgs.
+
+Option (b) is a plain `api` tool. Your endpoint takes the fields as JSON. Answer `200` with `{ "saved": true, "lead_id": "..." }` or `{ "saved": false }`. A `4xx` or `5xx` reaches the agent only as a generic error line, so use `200` with `saved: false` for failures the agent should handle:
 
 ```js
 import { tools } from '@kaltura/intelligent-agents/management';
@@ -836,9 +840,9 @@ const tool = tools.api({
     url: 'https://your-server.example.com/leads',
     method: 'POST',
     headers: { Authorization: 'Bearer {{secrets.LEADS_ENDPOINT_TOKEN}}', 'Content-Type': 'application/json' },
-    body: { LastName: '{{args.LastName}}', Company: '{{args.Company}}', Email: '{{args.Email}}', threadId: '{{ sys__thread_id }}' },
+    body: { LastName: '{LastName}', Company: '{Company}', Email: '{Email}', threadId: '{{ sys__thread_id }}' },
   },
-  responseMapping: { saved: 'saved', lead_id: 'lead_id', error: 'error' },
+  responseMapping: { saved: 'saved', lead_id: 'lead_id' },
 });
 ```
 
@@ -855,7 +859,7 @@ const { id } = await mgmt.tools.add(tool, ks);
 await mgmt.intellectConfig.setToolIds(configId, [id], ks);
 ```
 
-All builders validate their config (via `tools.api()`) and throw a typed error for a missing `secretName`/`instanceUrl` before any write. See `src/management/crm-recipes.js` for the full arg list. For a check against a real Salesforce dev org or sandbox, run `npm run live-verify:salesforce-lead` (see [scripts/README.md](scripts/README.md)).
+All builders validate their config (via `tools.api()`) and throw a typed error for a missing `secretName`/`instanceUrl` before any write. See `src/management/crm-recipes.js` for the full arg list. `instanceUrl` must be an `https:` origin with no path, query or credentials. Both Salesforce builders require `LastName` in `fieldsToCapture`. For a check against a real Salesforce dev or sandbox org, run `npm run live-verify:salesforce-lead` (see [scripts/README.md](scripts/README.md)). It checks Salesforce itself and the SDK's request shapes. It does not check the agent tool runtime.
 
 The `authentication` block of an `api` tool supports the OAuth2 authorization-code flow only (viewer consent). It takes `client_id`, `client_secret` (a `secrets.<name>` reference), `token_url` and `auth_url`, all required. It has no `flow` or `scopes` option. Client-credentials providers such as the Marketo REST API do not fit it. For Airtable, Google Sheets/Forms, or any other REST target, and for the OAuth2 flow itself, see [docs/EXTERNAL-API-INTEGRATIONS.md](docs/EXTERNAL-API-INTEGRATIONS.md).
 

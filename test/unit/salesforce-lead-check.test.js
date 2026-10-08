@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { renderTemplate, renderRequest, callTool, runLeadChecks } from '../../scripts/lib/salesforce-lead-check.mjs';
+import { renderTemplate, renderRequest, callTool, runLeadChecks, orgUrlProblem } from '../../scripts/lib/salesforce-lead-check.mjs';
 import { salesforceLeadUpsert } from '../../src/management/crm-recipes.js';
 import { fakeFetch } from '../fakes/fetch.js';
 
@@ -49,36 +49,44 @@ function fakeOrg() {
   return { leads, fetch: fakeFetch(routes) };
 }
 
-test('renderTemplate fills known paths and blanks unknown ones', () => {
-  assert.equal(renderTemplate('a {{args.x}} b {{ sys__thread_id }} c {{args.nope}}', { args: { x: 1 }, sys__thread_id: 't1' }), 'a 1 b t1 c ');
+test('renderTemplate fills {{ vars }} and {args} and blanks unknown ones', () => {
+  const scope = { args: { x: 1 }, vars: { sys__thread_id: 't1', secrets: { S: 'sec' } } };
+  assert.equal(renderTemplate('a {x} b {{ sys__thread_id }} c {nope} {{secrets.S}}', scope), 'a 1 b t1 c  sec');
+  assert.equal(renderTemplate('Bearer {{secrets.S}} {x}', { args: {}, vars: scope.vars }), 'Bearer sec ');
 });
 
 test('renderRequest builds the exact request the tool config describes', () => {
   const tool = salesforceLeadUpsert({ secretName: 'SF_TOKEN', instanceUrl: INSTANCE });
-  const req = renderRequest(tool, { args: { Email: 'a@b.co', LastName: 'L', Company: 'C', consent: true }, secrets: { SF_TOKEN: TOKEN }, threadId: 'thr-1' });
+  const req = renderRequest(tool, { args: { Email: 'a%40b.co', LastName: 'L', Company: 'C', consent: true }, secrets: { SF_TOKEN: TOKEN }, threadId: 'thr-1' });
   assert.equal(req.method, 'PATCH');
-  assert.equal(req.url, `${INSTANCE}/services/data/v68.0/sobjects/Lead/Email/a@b.co`);
+  assert.equal(req.url, `${INSTANCE}/services/data/v68.0/sobjects/Lead/Email/a%40b.co`);
   assert.equal(req.headers.Authorization, `Bearer ${TOKEN}`);
   assert.equal(req.body.LastName, 'L');
   assert.equal(req.body.Phone, '', 'an omitted optional arg renders empty');
   assert.equal(req.body.LeadSource, 'Web');
-  assert.match(req.body.Description, /Thread: thr-1\./);
+  assert.match(req.body.Description, /Thread: thr-1\. Consent to be contacted: true\./);
 });
 
-test('callTool maps a 201, an empty 204 and an error array', async () => {
+test('renderRequest refuses a raw @ in the URL', () => {
+  const tool = salesforceLeadUpsert({ secretName: 'SF_TOKEN', instanceUrl: INSTANCE });
+  assert.throws(() => renderRequest(tool, { args: { Email: 'a@b.co' }, secrets: { SF_TOKEN: TOKEN }, threadId: 't' }), /raw @/);
+});
+
+test('callTool maps a 201 and an empty 204, and exposes the raw error body', async () => {
   const org = fakeOrg();
   const tool = salesforceLeadUpsert({ secretName: 'SF_TOKEN', instanceUrl: INSTANCE });
-  const ctx = { args: { Email: 'a@b.co', LastName: 'L', Company: 'C', consent: true }, secrets: { SF_TOKEN: TOKEN }, threadId: 't' };
+  const ctx = { args: { Email: 'a%40b.co', LastName: 'L', Company: 'C', consent: true }, secrets: { SF_TOKEN: TOKEN }, threadId: 't' };
   const first = await callTool(org.fetch, tool, ctx);
   assert.equal(first.status, 201);
   assert.equal(first.mapped.success, true);
   assert.ok(first.mapped.result);
   const second = await callTool(org.fetch, tool, ctx);
   assert.equal(second.status, 204);
-  assert.deepEqual(second.mapped, { result: undefined, success: undefined, error_code: undefined, error_message: undefined, error_fields: undefined });
+  assert.deepEqual(second.mapped, { result: undefined, success: undefined });
   const failed = await callTool(org.fetch, tool, { ...ctx, args: { ...ctx.args, Company: undefined } });
-  assert.equal(failed.mapped.error_code, 'REQUIRED_FIELD_MISSING');
-  assert.deepEqual(failed.mapped.error_fields, ['Company']);
+  assert.equal(failed.status, 400);
+  assert.equal(failed.json[0].errorCode, 'REQUIRED_FIELD_MISSING');
+  assert.deepEqual(failed.json[0].fields, ['Company']);
 });
 
 test('runLeadChecks passes every step against the fake org and deletes its Leads', async () => {
@@ -109,4 +117,27 @@ test('the check never puts the token in a result', async () => {
   const org = fakeOrg();
   const { results } = await runLeadChecks({ fetch: org.fetch, instanceUrl: INSTANCE, token: TOKEN, tag: 'ghi' });
   assert.ok(!JSON.stringify(results).includes(TOKEN));
+});
+
+test('orgUrlProblem enforces https, the Salesforce domain and the dev-org pattern', () => {
+  assert.equal(orgUrlProblem('https://acme.develop.my.salesforce.com'), null);
+  assert.equal(orgUrlProblem('https://acme--qa.sandbox.my.salesforce.com/'), null);
+  assert.equal(orgUrlProblem('https://acme-dev-ed.my.salesforce.com'), null);
+  assert.match(orgUrlProblem('https://acme.my.salesforce.com') || '', /dev or sandbox/);
+  assert.equal(orgUrlProblem('https://acme.my.salesforce.com', true), null, 'the confirm flag allows a non-dev host');
+  for (const confirm of [false, true]) {
+    assert.match(orgUrlProblem('http://acme.develop.my.salesforce.com', confirm) || '', /https/);
+    assert.match(orgUrlProblem('https://acme.develop.example.com', confirm) || '', /not a \.salesforce\.com or \.force\.com/);
+    assert.match(orgUrlProblem('https://evil.com/.develop.my.salesforce.com', confirm) || '', /not a \.salesforce\.com|no path/);
+    assert.match(orgUrlProblem('https://salesforce.com.evil.com', confirm) || '', /not a \.salesforce\.com/);
+    assert.match(orgUrlProblem('https://acme.develop.my.salesforce.com/x', confirm) || '', /no path/);
+    assert.match(orgUrlProblem('not a url', confirm) || '', /not a valid URL/);
+  }
+});
+
+test('runLeadChecks refuses an unsafe org URL before any request', async () => {
+  const org = fakeOrg();
+  await assert.rejects(runLeadChecks({ fetch: org.fetch, instanceUrl: 'http://fake.develop.my.salesforce.com', token: TOKEN, tag: 'x' }), /refusing to run/);
+  await assert.rejects(runLeadChecks({ fetch: org.fetch, instanceUrl: 'https://fake.example.com', token: TOKEN, tag: 'x', confirmNonProd: true }), /refusing to run/);
+  assert.equal(org.fetch.calls.length, 0);
 });

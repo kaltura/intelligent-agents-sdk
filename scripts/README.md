@@ -70,7 +70,7 @@ The resolved target's `fetch` refuses any host outside the target's own URLs. So
 
 `live-verify-regions.mjs` needs no credentials. It sends one unauthenticated request to every non-null base URL in `REGIONS` and checks that each host answers over TLS with the same status and content type as nvp1. Run it after changing `REGIONS`.
 
-`live-verify-salesforce-lead.mjs` is the exception to the partner-credentials rule. It needs a Salesforce Developer Edition org or sandbox (`SALESFORCE_INSTANCE_URL`, `SALESFORCE_ACCESS_TOKEN`), sends nothing to the Kaltura backend, and exits 0 with a "skipped" message when the variables are missing.
+`live-verify-salesforce-lead.mjs` is the exception to the partner-credentials rule. It needs a Salesforce Developer Edition org or sandbox (`SALESFORCE_INSTANCE_URL`, `SALESFORCE_ACCESS_TOKEN`), sends nothing to the Kaltura backend, checks Salesforce itself and the SDK's request shapes (not the agent tool runtime), requires an `https:` URL on a `.salesforce.com` or `.force.com` host, and exits 0 with a "skipped" message when the variables are missing.
 
 ### Which script to run
 

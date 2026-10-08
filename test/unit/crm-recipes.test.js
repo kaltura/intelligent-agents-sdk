@@ -58,23 +58,49 @@ test('salesforceContactUpsert throws when externalIdField not in fieldsToCapture
   );
 });
 
-test('hubspotContactUpsert says create, not upsert, and maps the failure fields', () => {
+test('salesforceContactUpsert requires LastName when fieldsToCapture is given', () => {
+  assert.throws(
+    () => salesforceContactUpsert({ secretName: 'SF', instanceUrl: 'https://x.sf.com', fieldsToCapture: ['Email', 'FirstName'] }),
+    /must include "LastName"/,
+  );
+  assert.ok(salesforceContactUpsert({ secretName: 'SF', instanceUrl: 'https://x.sf.com', fieldsToCapture: ['Email', 'LastName'] }));
+});
+
+test('both Salesforce builders accept only a clean https origin as instanceUrl', () => {
+  for (const build of [salesforceContactUpsert, salesforceLeadUpsert]) {
+    const bad = [
+      'http://x.my.salesforce.com',
+      'https://x.my.salesforce.com/services',
+      'https://x.my.salesforce.com/?a=1',
+      'https://x.my.salesforce.com?',
+      'https://x.my.salesforce.com/#frag',
+      'https://user:pw@x.my.salesforce.com',
+      'x.my.salesforce.com',
+      'javascript:alert(1)',
+    ];
+    for (const instanceUrl of bad) {
+      assert.throws(() => build({ secretName: 'SF', instanceUrl }), /instanceUrl must be an https origin/, instanceUrl);
+    }
+    const tool = build({ secretName: 'SF', instanceUrl: 'https://X.my.salesforce.com/' });
+    assert.ok(tool.request.url.startsWith('https://x.my.salesforce.com/services/data/'), 'origin is normalized, no double slash');
+  }
+});
+
+test('hubspotContactUpsert says create, not upsert, and maps only the success fields', () => {
   const tool = hubspotContactUpsert({ secretName: 'HS' });
   assert.match(tool.description, /Create a new contact/);
   assert.match(tool.description, /does not update/);
   assert.doesNotMatch(tool.description, /upsert/i);
   assert.match(tool.description, /ONLY if the result has a contact_id/);
   assert.equal(tool.response_mapping.contact_id, 'id');
-  assert.equal(tool.response_mapping.error_message, 'message');
+  assert.deepEqual(tool.response_mapping, { contact_id: 'id', result: 'properties' });
 });
 
-test('salesforceContactUpsert maps success and error fields and warns about an empty result', () => {
+test('salesforceContactUpsert maps success only and warns about an empty result', () => {
   const tool = salesforceContactUpsert({ secretName: 'SF', instanceUrl: 'https://x.my.salesforce.com' });
-  assert.deepEqual(tool.response_mapping, {
-    result: 'id', success: 'success', error_code: '0.errorCode', error_message: '0.message', error_fields: '0.fields',
-  });
+  assert.deepEqual(tool.response_mapping, { result: 'id', success: 'success' });
   assert.match(tool.description, /result is empty, you cannot confirm/);
-  assert.match(tool.description, /never say it is saved/);
+  assert.match(tool.description, /never say it is saved/i);
   assert.match(tool.request.url, /\/services\/data\/v59\.0\/sobjects\/Contact\/Email\//, 'Contact URL is unchanged');
 });
 
@@ -96,17 +122,17 @@ test('salesforceLeadUpsert builds the exact request shape', () => {
   assert.equal(tool.type, 'api');
   assert.equal(tool.name, 'salesforce_lead_upsert');
   assert.equal(tool.request.method, 'PATCH');
-  assert.equal(tool.request.url, 'https://myorg.develop.my.salesforce.com/services/data/v68.0/sobjects/Lead/Email/{{args.Email}}');
+  assert.equal(tool.request.url, 'https://myorg.develop.my.salesforce.com/services/data/v68.0/sobjects/Lead/Email/{Email}');
   assert.equal(tool.request.headers.Authorization, 'Bearer {{secrets.SF_TOKEN}}');
   assert.equal(tool.request.headers['Content-Type'], 'application/json');
   assert.deepEqual(tool.request.body, {
-    FirstName: '{{args.FirstName}}',
-    LastName: '{{args.LastName}}',
-    Company: '{{args.Company}}',
-    Phone: '{{args.Phone}}',
-    Country: '{{args.Country}}',
+    FirstName: '{FirstName}',
+    LastName: '{LastName}',
+    Company: '{Company}',
+    Phone: '{Phone}',
+    Country: '{Country}',
     LeadSource: 'Web',
-    Description: 'Captured by a Kaltura AI agent. Thread: {{ sys__thread_id }}. Consent to be contacted: {{args.consent}}.',
+    Description: 'Captured by a Kaltura AI agent. Thread: {{ sys__thread_id }}. Consent to be contacted: {consent}.',
   });
 });
 
@@ -116,8 +142,10 @@ test('salesforceLeadUpsert defaults: fields, required args, consent arg', () => 
   const required = Object.entries(tool.args).filter(([, a]) => a.required).map(([k]) => k);
   assert.deepEqual(required, ['LastName', 'Company', 'Email', 'consent']);
   assert.equal(tool.args.consent.type, 'bool');
-  assert.deepEqual(Object.keys(tool.response_mapping), ['result', 'success', 'error_code', 'error_message', 'error_fields']);
+  assert.deepEqual(Object.keys(tool.response_mapping), ['result', 'success']);
   assert.match(tool.description, /upsert on Email/);
+  assert.match(tool.args.Email.prompt, /write "@" as "%40"/, 'the key arg tells the model to encode @');
+  assert.ok(!JSON.stringify(tool.request.headers).includes('{Email}'), 'headers never take args');
   assert.match(tool.description, /ONLY if the result shows success true or an id/);
 });
 
@@ -132,7 +160,7 @@ test('salesforceLeadUpsert strips a trailing slash and accepts overrides', () =>
     fieldsToCapture: ['LastName', 'Company', 'Ext_Id__c'],
   });
   assert.equal(tool.name, 'my_lead_tool');
-  assert.equal(tool.request.url, 'https://myorg.my.salesforce.com/services/data/v70.0/sobjects/Lead/Ext_Id__c/{{args.Ext_Id__c}}');
+  assert.equal(tool.request.url, 'https://myorg.my.salesforce.com/services/data/v70.0/sobjects/Lead/Ext_Id__c/{Ext_Id__c}');
   assert.equal(tool.request.body.LeadSource, 'Partner Referral');
   assert.ok(!('Ext_Id__c' in tool.request.body), 'the upsert key is in the URL, not the body');
   assert.equal(tool.args.Ext_Id__c.required, true);
@@ -166,4 +194,19 @@ test('salesforceLeadUpsert refuses LeadSource or Description in fieldsToCapture'
 test('salesforceLeadUpsert validates apiVersion and leadSource', () => {
   assert.throws(() => salesforceLeadUpsert({ ...LEAD_CFG, apiVersion: '68' }), /apiVersion/);
   assert.throws(() => salesforceLeadUpsert({ ...LEAD_CFG, leadSource: '' }), /leadSource/);
+});
+
+test('salesforceLeadUpsert refuses a captured field that collides with the consent arg', () => {
+  assert.throws(
+    () => salesforceLeadUpsert({ ...LEAD_CFG, fieldsToCapture: ['Email', 'LastName', 'Company', 'consent'] }),
+    /"consent" is a tool argument set by the builder/,
+  );
+  // With consent off the name is free to use as a field.
+  assert.ok(salesforceLeadUpsert({ ...LEAD_CFG, requireConsent: false, fieldsToCapture: ['Email', 'LastName', 'Company', 'consent'] }));
+});
+
+test('salesforceLeadUpsert requireConsent must be a boolean', () => {
+  for (const v of ['false', 0, null, {}]) {
+    assert.throws(() => salesforceLeadUpsert({ ...LEAD_CFG, requireConsent: v }), /requireConsent must be a boolean/);
+  }
 });

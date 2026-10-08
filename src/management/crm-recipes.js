@@ -20,22 +20,19 @@
  */
 import { api } from './tools.js';
 
-const HUBSPOT_RESULT_RULES = 'Tell the visitor the contact is saved ONLY if the result has a contact_id. If the result has error_message, say you could not save it (for example the email already exists) and do not say it is saved.';
+const HUBSPOT_RESULT_RULES = 'Tell the visitor the contact is saved ONLY if the result has a contact_id. If the call fails or returns an error status (for example the email already exists), say you could not save it. Never say it is saved otherwise.';
 
-const SALESFORCE_RESULT_RULES = 'Tell the visitor the details are saved ONLY if the result shows success true or an id. If the result has error_code, say you could not save it and use error_message and error_fields to ask for what to fix. If the result is empty, you cannot confirm the save: say you could not confirm it, and never say it is saved.';
+const SALESFORCE_RESULT_RULES = 'Tell the visitor the details are saved ONLY if the result shows success true or an id. If the call fails or returns an error status, say you could not save it. If the result is empty, you cannot confirm the save: say you could not confirm it. Never say it is saved otherwise.';
 
 /**
  * Response mapping shared by the Salesforce builders. A successful insert
- * returns `{id, success}`. An error returns a one-item array with
- * `errorCode`, `message` and `fields`. An update returns an empty body, so
- * every key is then absent.
+ * returns `{id, success}`. An update returns an empty body, so both keys are
+ * then empty. An error status never reaches the mapping: the agent only gets
+ * a generic "API returned error status" line.
  */
 const SALESFORCE_RESPONSE_MAPPING = {
   result: 'id',
   success: 'success',
-  error_code: '0.errorCode',
-  error_message: '0.message',
-  error_fields: '0.fields',
 };
 
 /**
@@ -45,8 +42,8 @@ const SALESFORCE_RESPONSE_MAPPING = {
  * call with a conflict if a contact with the same email already exists. Use
  * it for new-lead capture, not for updating an existing contact. The agent
  * collects the fields listed in `propertiesToCapture` and writes them to the
- * new HubSpot contact. The result carries `contact_id` on success and
- * `error_message` on failure (such as that conflict).
+ * new HubSpot contact. The result carries `contact_id` on success. A failure
+ * (such as that conflict) reaches the agent only as a generic error status.
  *
  * @param {object} [cfg]
  * @param {string} [cfg.secretName]      Name of the HubSpot private-app token secret (set via `setSecrets`) — REQUIRED (checked at runtime; declared optional in the JSDoc only so an omitted `cfg` degrades to the same TypeError below instead of crashing on `undefined.secretName`).
@@ -83,11 +80,24 @@ export function hubspotContactUpsert(cfg = {}) {
         'Content-Type': 'application/json',
       },
       body: {
-        properties: Object.fromEntries(props.map((p) => [p, `{{args.${p}}}`])),
+        properties: Object.fromEntries(props.map((p) => [p, `{${p}}`])),
       },
     },
-    responseMapping: { contact_id: 'id', result: 'properties', error_message: 'message', error_category: 'category' },
+    responseMapping: { contact_id: 'id', result: 'properties' },
   });
+}
+
+/**
+ * Validate a Salesforce instance URL: an `https:` origin with no credentials,
+ * path, query or hash. Returns the origin without a trailing slash.
+ * @param {string} fn @param {string} value
+ */
+function parseInstanceUrl(fn, value) {
+  const hint = `${fn}: cfg.instanceUrl must be an https origin such as "https://yourorg.my.salesforce.com" (no path, query or credentials).`;
+  let u;
+  try { u = new URL(value); } catch { throw new TypeError(hint); }
+  if (u.protocol !== 'https:' || u.username || u.password || u.pathname !== '/' || u.search || u.hash || /[?#]/.test(value)) throw new TypeError(hint);
+  return u.origin;
 }
 
 /**
@@ -111,7 +121,7 @@ function buildSalesforceUpsert(o) {
   const secretName = cfg.secretName;
   if (!secretName || typeof secretName !== 'string') throw new TypeError(`${fn}: cfg.secretName is required (the Salesforce access-token secret name).`);
   if (!cfg.instanceUrl || typeof cfg.instanceUrl !== 'string') throw new TypeError(`${fn}: cfg.instanceUrl is required (e.g. "https://yourorg.my.salesforce.com").`);
-  const instanceUrl = cfg.instanceUrl.replace(/\/$/, '');
+  const instanceUrl = parseInstanceUrl(fn, cfg.instanceUrl);
   const externalIdField = cfg.externalIdField || 'Email';
   const fields = cfg.fieldsToCapture || o.defaultFields;
   if (!Array.isArray(fields) || fields.length === 0 || fields.some((f) => typeof f !== 'string' || !f.trim())) {
@@ -124,12 +134,18 @@ function buildSalesforceUpsert(o) {
   for (const f of Object.keys(o.fixedBody || {})) {
     if (fields.includes(f)) throw new TypeError(`${fn}: "${f}" is set by the builder and cannot be in fieldsToCapture.`);
   }
+  for (const f of Object.keys(o.extraArgs || {})) {
+    if (fields.includes(f)) throw new TypeError(`${fn}: "${f}" is a tool argument set by the builder and cannot be in fieldsToCapture.`);
+  }
   const required = new Set([externalIdField, ...(o.alsoRequired || [])]);
 
   /** @type {Record<string,{type:string,prompt:string,required:boolean}>} */
   const args = {};
   for (const field of fields) {
-    args[field] = { type: 'str', prompt: `${sobject} ${field}`, required: required.has(field) };
+    const prompt = field === externalIdField
+      ? `${sobject} ${field}. It goes into a URL: write "@" as "%40" and percent-encode other special characters.`
+      : `${sobject} ${field}`;
+    args[field] = { type: 'str', prompt, required: required.has(field) };
   }
   Object.assign(args, o.extraArgs);
 
@@ -138,22 +154,20 @@ function buildSalesforceUpsert(o) {
     description: cfg.description || o.describe(fields, externalIdField),
     args,
     request: {
-      url: `${instanceUrl}/services/data/${o.apiVersion}/sobjects/${sobject}/${externalIdField}/{{args.${externalIdField}}}`,
+      url: `${instanceUrl}/services/data/${o.apiVersion}/sobjects/${sobject}/${externalIdField}/{${externalIdField}}`,
       method: 'PATCH',
       headers: {
         Authorization: `Bearer {{secrets.${secretName}}}`,
         'Content-Type': 'application/json',
       },
       body: {
-        ...Object.fromEntries(fields.filter((f) => f !== externalIdField).map((f) => [f, `{{args.${f}}}`])),
+        ...Object.fromEntries(fields.filter((f) => f !== externalIdField).map((f) => [f, `{${f}}`])),
         ...o.fixedBody,
       },
     },
-    // An upsert PATCH returns 201 + {id, success} on insert, a one-item error
-    // array on failure, and an EMPTY 204 on update. `responseMapping` dot-paths
-    // point inside the response, so each key below is simply absent when the
-    // response lacks it. The default description tells the agent that an
-    // empty result is "unconfirmed", never "saved".
+    // An upsert PATCH returns 201 + {id, success} on insert and an EMPTY 204 on
+    // update, so both keys are empty on update. The default description tells
+    // the agent that an empty result is "unconfirmed", never "saved".
     responseMapping: { ...SALESFORCE_RESPONSE_MAPPING },
   });
 }
@@ -164,16 +178,20 @@ function buildSalesforceUpsert(o) {
  * External ID field. Requires a Salesforce Connected App OAuth2 access token
  * stored as a secret. Salesforce access tokens expire (about 2 hours by
  * default), so see README.md ("AI-SDR / CRM lead capture") for the token options.
- * The result carries `result` (the id) and `success` on insert, `error_code`,
- * `error_message` and `error_fields` on failure, and nothing on update (an
- * empty 204). The default description tells the agent not to say "saved" on
- * an empty or failed result.
+ * The result carries `result` (the id) and `success` on insert, and nothing on
+ * update (an empty 204). A failure reaches the agent only as a generic error
+ * status. The default description tells the agent not to say "saved" on an
+ * empty or failed result.
+ *
+ * Tool args are filled into the URL and body as `{Name}`. They go in raw, and
+ * a raw `@` in the URL makes the call fail, so the upsert key arg tells the
+ * model to write `@` as `%40`.
  *
  * @param {object} [cfg]
  * @param {string} [cfg.secretName]       Name of the Salesforce access-token secret (set via `setSecrets`) — REQUIRED (checked at runtime; declared optional in the JSDoc only so an omitted `cfg` degrades to the same TypeError below instead of crashing on `undefined.secretName`).
- * @param {string} [cfg.instanceUrl]      Salesforce instance URL (e.g. `https://yourorg.my.salesforce.com`) — REQUIRED (same runtime-checked contract as `secretName` above).
+ * @param {string} [cfg.instanceUrl]      Salesforce instance URL (e.g. `https://yourorg.my.salesforce.com`). It must be an `https:` origin with no path, query or credentials. REQUIRED (same runtime-checked contract as `secretName` above).
  * @param {string} [cfg.externalIdField]  External ID field on Contact used for upsert (default: `'Email'`).
- * @param {string[]} [cfg.fieldsToCapture] Salesforce field API names to capture (default: `['Email','FirstName','LastName']`).
+ * @param {string[]} [cfg.fieldsToCapture] Salesforce field API names to capture (default: `['Email','FirstName','LastName']`). Must include `LastName` and the upsert key.
  * @param {string} [cfg.name]             Tool name (default: `'salesforce_contact_upsert'`).
  * @param {string} [cfg.description]      Tool description fed to the LLM (default: auto-generated). A custom value replaces the "say saved only on success" guidance.
  * @returns {import('./tools.js').GenieToolConfig}
@@ -186,6 +204,7 @@ export function salesforceContactUpsert(cfg = {}) {
     cfg,
     defaultFields: ['Email', 'FirstName', 'LastName'],
     defaultName: 'salesforce_contact_upsert',
+    alsoRequired: ['LastName'],
     describe: (fields) => `Create or update a Salesforce Contact (upsert). Collect the user's information (${fields.join(', ')}) and call this tool to save them. ${SALESFORCE_RESULT_RULES}`,
   });
 }
@@ -211,7 +230,7 @@ export function salesforceContactUpsert(cfg = {}) {
  *
  * @param {object} [cfg]
  * @param {string} [cfg.secretName]       Name of the Salesforce access-token secret (set via `setSecrets`). REQUIRED (runtime-checked, like `salesforceContactUpsert`).
- * @param {string} [cfg.instanceUrl]      Salesforce instance URL (e.g. `https://yourorg.my.salesforce.com`). REQUIRED (runtime-checked).
+ * @param {string} [cfg.instanceUrl]      Salesforce instance URL (e.g. `https://yourorg.my.salesforce.com`). Same rules as `salesforceContactUpsert`. REQUIRED (runtime-checked).
  * @param {string} [cfg.externalIdField]  Upsert key on Lead (default: `'Email'`). It must be in `fieldsToCapture`. A custom External ID field needs field access granted to the integration user.
  * @param {string[]} [cfg.fieldsToCapture] Lead field API names to capture (default: `['FirstName','LastName','Company','Email','Phone','Country']`). Must include `LastName`, `Company` and the upsert key. `LeadSource` and `Description` are set by the builder and cannot be listed.
  * @param {string} [cfg.leadSource]       Fixed `LeadSource` value (default: `'Web'`). Must be a valid Lead Source value in the org.
@@ -226,6 +245,7 @@ export function salesforceLeadUpsert(cfg = {}) {
   if (typeof apiVersion !== 'string' || !/^v\d{2,3}\.0$/.test(apiVersion)) throw new TypeError('salesforceLeadUpsert: apiVersion must look like "v68.0".');
   const leadSource = cfg.leadSource === undefined ? 'Web' : cfg.leadSource;
   if (typeof leadSource !== 'string' || !leadSource.trim()) throw new TypeError('salesforceLeadUpsert: leadSource must be a non-empty string.');
+  if (cfg.requireConsent !== undefined && typeof cfg.requireConsent !== 'boolean') throw new TypeError('salesforceLeadUpsert: requireConsent must be a boolean.');
   const requireConsent = cfg.requireConsent !== false;
   const note = 'Captured by a Kaltura AI agent. Thread: {{ sys__thread_id }}.';
   return buildSalesforceUpsert({
@@ -236,7 +256,7 @@ export function salesforceLeadUpsert(cfg = {}) {
     defaultFields: ['FirstName', 'LastName', 'Company', 'Email', 'Phone', 'Country'],
     defaultName: 'salesforce_lead_upsert',
     alsoRequired: ['LastName', 'Company'],
-    fixedBody: { LeadSource: leadSource, Description: requireConsent ? `${note} Consent to be contacted: {{args.consent}}.` : note },
+    fixedBody: { LeadSource: leadSource, Description: requireConsent ? `${note} Consent to be contacted: {consent}.` : note },
     extraArgs: requireConsent
       ? { consent: { type: 'bool', prompt: 'True only if the visitor clearly agreed to be contacted about their request. If they refused or did not answer, do not call this tool.', required: true } }
       : undefined,

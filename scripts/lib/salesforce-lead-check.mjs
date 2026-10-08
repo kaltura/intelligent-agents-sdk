@@ -5,41 +5,72 @@
  * `test/unit/salesforce-lead-check.test.js`).
  *
  * It renders the tool's request itself (a plain `{{ path }}` substitution) and
- * sends it to Salesforce. That proves the request shape and the response
- * mapping. It does NOT prove how the Kaltura server renders the same
- * templates, and it does not run an agent conversation.
+ * sends it to Salesforce. It checks Salesforce itself and the SDK's request
+ * shapes. It does NOT check the agent tool runtime: how Kaltura renders the
+ * same templates, what the agent sees on an error, or any conversation.
  *
  * Never prints the token. Every Lead it creates is deleted at the end.
  */
 import { salesforceLeadUpsert, tools } from '../../src/management/index.js';
 
 const SECRET_NAME = 'SF_TOKEN';
+const DEV_HOST = /(\.develop\.|\.sandbox\.|\.scratch\.|-dev-ed\.)/;
 const API_VERSION = 'v68.0';
 
 /**
- * Replace `{{ a.b }}` with the value at that path in `ctx`. Missing values become ''.
- * @param {string} text @param {Record<string,any>} ctx
+ * Check that an org URL is safe to write test Leads to. Always requires an
+ * `https:` URL on a `.salesforce.com` or `.force.com` host. Unless
+ * `confirmNonProd` is true, the host must also look like a dev, sandbox or
+ * scratch org. `confirmNonProd` never relaxes the https or domain rules.
+ * @param {string} instanceUrl @param {boolean} [confirmNonProd]
+ * @returns {string|null} A reason to refuse, or null when the URL is fine.
  */
-export function renderTemplate(text, ctx) {
-  return text.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_m, path) => {
-    let node = ctx;
-    for (const seg of path.split('.')) node = node == null ? undefined : node[seg];
-    return node == null ? '' : String(node);
-  });
+export function orgUrlProblem(instanceUrl, confirmNonProd = false) {
+  let u;
+  try { u = new URL(instanceUrl); } catch { return 'the org URL is not a valid URL'; }
+  if (u.protocol !== 'https:') return 'the org URL must use https';
+  if (u.username || u.password || (u.pathname !== '/' && u.pathname !== '') || u.search || u.hash) return 'the org URL must be a plain origin with no path, query or credentials';
+  const host = u.hostname.toLowerCase();
+  if (!host.endsWith('.salesforce.com') && !host.endsWith('.force.com')) return `${host} is not a .salesforce.com or .force.com host`;
+  if (!confirmNonProd && !DEV_HOST.test(host)) return `${host} does not look like a dev or sandbox org (set SALESFORCE_CONFIRM_NON_PROD=1 to confirm it is not production)`;
+  return null;
 }
 
 /**
- * Render a tool's `request` block.
+ * Fill a tool template the way the tool runtime does. `{{ path }}` reads
+ * request variables and secrets (`secrets.NAME`, `sys__thread_id`). `{Name}`
+ * reads a tool arg, inserted raw with no percent-encoding. A missing value
+ * becomes ''.
+ * @param {string} text @param {{args:Record<string,unknown>, vars:Record<string,any>}} scope
+ */
+export function renderTemplate(text, scope) {
+  return text
+    .replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_m, path) => {
+      let node = scope.vars;
+      for (const seg of path.split('.')) node = node == null ? undefined : node[seg];
+      return node == null ? '' : String(node);
+    })
+    .replace(/\{(\w+)\}/g, (_m, name) => (scope.args[name] == null ? '' : String(scope.args[name])));
+}
+
+/**
+ * Render a tool's `request` block. Throws when the URL still has a raw `@`,
+ * because the tool call fails in that case. Header values get request
+ * variables and secrets only, never args.
  * @param {import('../../src/management/tools.js').GenieToolConfig} tool
  * @param {{args:Record<string,unknown>, secrets:Record<string,string>, threadId:string}} ctx
  */
 export function renderRequest(tool, ctx) {
   const req = /** @type {any} */ (tool.request);
-  const scope = { args: ctx.args, secrets: ctx.secrets, sys__thread_id: ctx.threadId };
+  const vars = { secrets: ctx.secrets, sys__thread_id: ctx.threadId };
+  const scope = { args: ctx.args, vars };
+  const noArgs = { args: {}, vars };
+  const url = renderTemplate(req.url, scope);
+  if (url.includes('@')) throw new Error('the rendered URL has a raw @, which makes the tool call fail. Write it as %40.');
   return {
-    url: renderTemplate(req.url, scope),
+    url,
     method: req.method,
-    headers: Object.fromEntries(Object.entries(req.headers).map(([k, v]) => [k, renderTemplate(String(v), scope)])),
+    headers: Object.fromEntries(Object.entries(req.headers).map(([k, v]) => [k, renderTemplate(String(v), noArgs)])),
     body: Object.fromEntries(Object.entries(req.body).map(([k, v]) => [k, renderTemplate(String(v), scope)])),
   };
 }
@@ -66,16 +97,20 @@ export async function callTool(fetchFn, tool, ctx) {
  * @param {string} o.instanceUrl  Org URL, no trailing slash.
  * @param {string} o.token        Access token (never printed).
  * @param {string} o.tag          Short unique run tag used in test emails.
+ * @param {boolean} [o.confirmNonProd]  Allow an org host that does not look like dev or sandbox. The https and domain rules still apply.
  * @returns {Promise<{results:{step:string, ok:boolean, detail?:unknown}[], cleanup:{deleted:number, failed:number}}>}
  */
-export async function runLeadChecks({ fetch: fetchFn, instanceUrl, token, tag }) {
+export async function runLeadChecks({ fetch: fetchFn, instanceUrl, token, tag, confirmNonProd = false }) {
+  const problem = orgUrlProblem(instanceUrl, confirmNonProd);
+  if (problem) throw new Error(`refusing to run: ${problem}.`);
   const tool = salesforceLeadUpsert({ secretName: SECRET_NAME, instanceUrl, apiVersion: API_VERSION });
   const secrets = { [SECRET_NAME]: token };
   const threadId = `live-verify-${tag}`;
   const email = `sdk-live-verify-${tag}@example.com`;
   const base = `${instanceUrl}/services/data/${API_VERSION}`;
   const auth = { Authorization: `Bearer ${token}` };
-  const full = { FirstName: 'Sdk', LastName: 'LiveVerify', Company: 'Live Verify Co', Email: email, Phone: '555-0100', Country: 'US', consent: true };
+  // The upsert key goes into the URL, where a raw @ fails: the model writes it as %40.
+  const full = { FirstName: 'Sdk', LastName: 'LiveVerify', Company: 'Live Verify Co', Email: email.replace('@', '%40'), Phone: '555-0100', Country: 'US', consent: true };
 
   /** @type {{step:string, ok:boolean, detail?:unknown}[]} */
   const results = [];
@@ -105,7 +140,7 @@ export async function runLeadChecks({ fetch: fetchFn, instanceUrl, token, tag })
     const updated = await callTool(fetchFn, tool, { args: { ...full, Company: 'Live Verify Co 2' }, secrets, threadId });
     const ids = await leadsFor(email);
     ids.forEach((id) => toDelete.add(id));
-    check('2-update-same-email', updated.status === 204 && updated.mapped.result === undefined && updated.mapped.error_code === undefined, { status: updated.status, mapped: updated.mapped });
+    check('2-update-same-email', updated.status === 204 && updated.mapped.result == null && updated.mapped.success == null, { status: updated.status, mapped: updated.mapped });
     check('2b-no-duplicate-lead', ids.length === 1, { leadsWithThisEmail: ids.length });
     if (ids[0]) check('2c-company-updated', (await getLead(ids[0])).Company === 'Live Verify Co 2', undefined);
 
@@ -113,16 +148,16 @@ export async function runLeadChecks({ fetch: fetchFn, instanceUrl, token, tag })
     for (const field of ['Company', 'LastName']) {
       const missing = await callTool(fetchFn, tool, { args: { ...full, [field]: undefined }, secrets, threadId });
       if (missing.mapped.result) toDelete.add(missing.mapped.result);
-      check(`3-missing-${field}`, missing.status === 400 && missing.mapped.error_code === 'REQUIRED_FIELD_MISSING' && String(missing.mapped.error_fields).includes(field), { status: missing.status, mapped: missing.mapped });
+      check(`3-missing-${field}`, missing.status === 400 && missing.json?.[0]?.errorCode === 'REQUIRED_FIELD_MISSING' && String(missing.json?.[0]?.fields).includes(field), { status: missing.status, errorCode: missing.json?.[0]?.errorCode });
     }
 
     // 5 invalid email
     const bad = await callTool(fetchFn, tool, { args: { ...full, Email: 'not-an-email' }, secrets, threadId });
-    check('5-invalid-email', bad.status === 400 && bad.mapped.error_code === 'INVALID_EMAIL_ADDRESS', { status: bad.status, mapped: bad.mapped });
+    check('5-invalid-email', bad.status === 400 && bad.json?.[0]?.errorCode === 'INVALID_EMAIL_ADDRESS', { status: bad.status, errorCode: bad.json?.[0]?.errorCode });
 
-    // 6 bad token: the tool must report a failure, never an empty success
+    // 6 bad token: Salesforce answers 401. In the tool runtime the agent only sees a generic error status.
     const expired = await callTool(fetchFn, tool, { args: full, secrets: { [SECRET_NAME]: 'invalid-token' }, threadId });
-    check('6-bad-token', expired.status === 401 && expired.mapped.error_code === 'INVALID_SESSION_ID', { status: expired.status, mapped: expired.mapped });
+    check('6-bad-token', expired.status === 401 && expired.json?.[0]?.errorCode === 'INVALID_SESSION_ID', { status: expired.status, errorCode: expired.json?.[0]?.errorCode });
   } catch (err) {
     check('unexpected-error', false, { message: err instanceof Error ? err.message : String(err) });
   } finally {

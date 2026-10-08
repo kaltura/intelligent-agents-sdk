@@ -56,7 +56,7 @@ const tool = api({
       token_url: 'https://auth.example.com/oauth/token',
       auth_url: 'https://auth.example.com/oauth/authorize',
     },
-    body: { email: '{{args.email}}' },
+    body: { email: '{email}' },
   },
   responseMapping: { result: 'result' },
 });
@@ -130,9 +130,9 @@ const leadTool = salesforceLeadUpsert({
 });
 ```
 
-One real Salesforce quirk these builders account for: an upsert-by-external-ID `PATCH` returns `201 {id, success}` on insert, a one-item error array (`errorCode`, `message`, `fields`) on failure, and `204` with an **empty body** on update. Their `responseMapping` maps `result`, `success`, `error_code`, `error_message` and `error_fields`, each absent when the response lacks it. The default description tells the agent to say "saved" only when `success` or an id is present, and to say it could not confirm the save when the result is empty. The Lead builder also writes a fixed `LeadSource`, and a `Description` with the thread id and the visitor's consent answer.
+One real Salesforce quirk these builders account for: an upsert-by-external-ID `PATCH` returns `201 {id, success}` on insert, an error status on failure, and `204` with an **empty body** on update. Their `responseMapping` maps `result` and `success`, each empty on a `204`. An error status never reaches the mapping: the agent gets a generic "API returned error status" line. The default description tells the agent to say "saved" only when `success` or an id is present, and to say it could not confirm the save when the result is empty or the call failed. The upsert key is part of the URL and an unencoded `@` there makes the call fail, so the key arg prompt tells the agent to write `@` as `%40`. The Lead builder also writes a fixed `LeadSource`, and a `Description` with the thread id and the visitor's consent answer.
 
-**These builders authenticate with a static secret**, exactly like the HubSpot one. They do *not* use the OAuth2 `authentication` block described above. A Salesforce access token expires (the default org session timeout is 2 hours), so *you* must refresh it, or route the call through your own endpoint that holds the Salesforce credentials. The README section above compares both options. The platform won't refresh the token for you unless you use the OAuth2 `authentication` block (authorization-code flow only).
+**These builders authenticate with a static secret**, exactly like the HubSpot one. They do *not* use the OAuth2 `authentication` block described above. A Salesforce access token expires (the default org session timeout is 2 hours), so *you* must refresh it, or route the call through your own endpoint that holds the Salesforce credentials. The README section above compares both options. The direct tools also put the visitor's email in the request URL, so production setups should prefer the customer endpoint, which validates and encodes it. The platform won't refresh the token for you unless you use the OAuth2 `authentication` block (authorization-code flow only).
 
 ### Marketo — two valid integration paths
 
