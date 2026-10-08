@@ -61,7 +61,7 @@ A code that is not in `LANGUAGE_NAMES` and has no `languageName` throws `bad_req
 | Setting | Where |
 |---|---|
 | Voice language | `catalog.createVoice(file, { name, description, language })`. ISO 639-1 code, defaults to `"en"`. See [Design](/reference/api/design/) |
-| Conversation language the runtime reports | `languageCode` in the `clientConfiguration` event. See [client configuration](/reference/wire-protocol/client-configuration/) |
+| Conversation language on the wire | The `clientConfiguration` message carries a `languageCode` field. It is part of the wire protocol, not an SDK option you set. See [client configuration](/reference/wire-protocol/client-configuration/) |
 
 ## Which language is supported, and how to ask for one
 
