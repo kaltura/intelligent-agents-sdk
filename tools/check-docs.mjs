@@ -884,14 +884,15 @@ describe('14. Regions', () => {
 // 16. Docs accuracy — wording that must not come back
 // ═══════════════════════════════════════════════════════════════════════
 describe('16. Docs accuracy', () => {
-  test('no tracked line calls BYO-LLM "not supported", and the module map points to the Account Manager', () => {
+  test('BYO-LLM is never called unsupported, and the module map points to the Account Manager', () => {
     const bad = [];
+    const unsupported = new RegExp('not (yet )?' + 'supported', 'i');
     for (const f of scanFiles()) {
       read(f).split('\n').forEach((line, i) => {
-        if (/BYO-LLM/i.test(line) && /not (yet )?supported/i.test(line)) bad.push(`${f}:${i + 1}`);
+        if (/BYO-LLM/i.test(line) && unsupported.test(line)) bad.push(`${f}:${i + 1}`);
       });
     }
-    assert.deepEqual(bad, [], `BYO-LLM described as unsupported: ${bad.join(', ')}`);
+    assert.deepEqual(bad, [], `BYO-LLM called unsupported at: ${bad.join(', ')}`);
     const map = read('docs/architecture-reference/module-map-and-data-flow.md');
     assert.match(map, /BYO-LLM[^\n]*possible[^\n]*Account Manager/, 'module map must say an external LLM is possible and name the Account Manager');
   });
