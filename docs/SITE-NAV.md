@@ -233,8 +233,6 @@ The question is what happens to the avatar when the visitor moves to another pag
 | Normal multi-page theme (full page load) | The page and its session are destroyed. The next page must start a new session. | [Resume the thread](#normal-multi-page-theme-resume-the-thread) |
 | Page-transition library (Barba.js, Swup, htmx boost) | Same document, but the library swaps part of the DOM. The avatar survives only if it is outside the swapped part or is preserved. | [Per-library rules](#page-transition-libraries) |
 
-Checked with headless Chromium against the real session classes on stock WordPress, plain static pages, Barba.js, Swup, htmx and a hand-rolled history-API router.
-
 ### Normal multi-page theme: resume the thread
 
 Every page load creates a new `KalturaAvatarSession`. The old one is gone with its page. What carries over is the thread. Save `session.threadId` and pass it as `cfg.threadId` on the next page. The `join` of the new session carries it, so the agent continues the same conversation.
@@ -243,11 +241,14 @@ Every page load creates a new `KalturaAvatarSession`. The old one is gone with i
 import { KalturaAvatarSession } from '@kaltura/intelligent-agents/experience';
 import { SiteNavigator } from '@kaltura/intelligent-agents/experience/site-nav';
 
-// Your server returns the same fields as appInit: token, conversationManagerUrl, srsBaseUrl, turnServerUrl.
-const cfg = await (await fetch('/api/avatar-session')).json();
+// Your server mints a per-visitor token, calls appInit and returns its ks and host fields.
+const { ks, conversationManagerUrl, srsBaseUrl, turnServerUrl } = await (await fetch('/api/avatar-session')).json();
 
 const session = new KalturaAvatarSession({
-  ...cfg,
+  token: ks,
+  conversationManagerUrl,
+  srsBaseUrl,
+  turnServerUrl,
   videoEl: document.querySelector('#avatar-video'),
   audioEl: document.querySelector('#avatar-audio'),
   socketFactory: (url, opts) => io(url, opts),
@@ -275,11 +276,13 @@ What the visitor gets and what they do not:
 | Conversation memory | Kept, through `threadId`. |
 | Connection, video, audio | Rebuilt. Expect a short gap while the new session connects. |
 | Microphone | The new page calls `getUserMedia` again. The browser's permission rules decide whether it asks again. |
-| Autoplay | Usually allowed, but not guaranteed. One load in testing started paused. Handle `playback_blocked` as above. |
+| Autoplay | Usually allowed, but not guaranteed. A page load can still start paused. Handle `playback_blocked` as above. |
 | Opening phrase | Plays again on every join, also on a resumed thread. Guard it with `sys__is_new_thread`. See [START-THE-CONVERSATION.md](START-THE-CONVERSATION.md#personalize-the-opening). |
 | `go_to` | `navigate` loads the new page, so the navigator dies with the old page. The URL already carries `#<section-id>`, so the browser scrolls to the section. A new navigator starts on the new page. |
 | Back button | Reloads the page and resumes the thread. Chromium did not restore a page with a live WebRTC connection from its back/forward cache. |
 | End-of-thread signal | The old page sends it on `pagehide` (see [README § Ending a conversation cleanly](../README.md#ending-a-conversation-cleanly-session_completed-signal)). Memory continues after that signal, so the next page can still resume. |
+
+Keeping the `threadId` in the browser is safe only with a per-visitor token (`createAgentToken({ agentId, userId })`, see [Per-visitor browser path](api/deploy.md#per-visitor-browser-path)). With a widget token, anyone who has a `threadId` can continue that thread, so keep each `threadId` per user on your server instead. See [SECURITY.md § Session type](../SECURITY.md#session-type).
 
 `sessionStorage` is per tab. Use `localStorage` only if a returning visitor in a new tab should also resume.
 
@@ -331,23 +334,16 @@ if (!window.avatarSession) {
 
 ### WordPress
 
-Both paths need the same server piece: an endpoint on your site that mints the visitor's token and returns the `appInit` fields. The admin secret stays on the server. Never print it into a page or a script. Use the [per-visitor browser path](api/deploy.md#per-visitor-browser-path) and a stable `userId` per visitor (the WordPress user id, or an opaque id in a cookie for anonymous visitors). Keep each `threadId` per user on the server when you use a widget token. See [SECURITY.md § Session type](../SECURITY.md#session-type).
+Both paths need the same server piece: an endpoint on your site that mints the visitor's token and returns the `ks` and host fields from `appInit`. The admin secret stays on the server. Never print it into a page or a script. Use the [per-visitor browser path](api/deploy.md#per-visitor-browser-path) and a stable `userId` per visitor (the WordPress user id, or an opaque id in a cookie for anonymous visitors). Keep each `threadId` per user on the server when you use a widget token. See [SECURITY.md § Session type](../SECURITY.md#session-type).
 
 | Path | When | Setup |
 |---|---|---|
-| 1. Footer script, resume on each page | Any theme that loads full pages. This is the default. | Print the avatar markup and the module script from the theme footer or a footer hook. Use the [multi-page pattern](#normal-multi-page-theme-resume-the-thread). Verified on a stock WordPress theme: new session per page, saved `threadId` sent in every `join`. |
+| 1. Footer script, resume on each page | Any theme that loads full pages. This is the default. | Print the avatar markup and the module script from the theme footer or a footer hook. Use the [multi-page pattern](#normal-multi-page-theme-resume-the-thread). |
 | 2. Keep the avatar alive | The theme already uses a page-transition library. | Use the matching row in [Page-transition libraries](#page-transition-libraries): avatar outside the swapped container, one boot, `SiteNavigator` calling the library's navigate. |
 
 Build `sections.json` from your published pages with `buildSectionsManifest` (see [The manifest](#the-manifest-sectionsjson)). Re-run it when content changes.
 
-Recommendation on an official WordPress plugin: **no-go for now**. Path 1 is one token endpoint and about 20 lines of footer script. The parts that differ per site are the theme's transition library, the caching setup and where the secret lives, and a plugin cannot own those. The token endpoint also has to call the Kaltura REST API from PHP, because `Management` is JavaScript. That is a second implementation to keep in step with the SDK.
-
-If demand justifies one later, the smallest design is:
-
-- A settings screen that stores the partner id and admin secret server-side only.
-- One REST route that mints a per-visitor token and returns the `appInit` fields.
-- A footer script pinned to an SDK git tag from jsDelivr, with the multi-page pattern above.
-- No theme integration. Path 2 stays a documented recipe.
+`Management` is JavaScript. A PHP site mints the token by calling the same Kaltura REST endpoints from PHP, or by calling a small Node service that runs `Management`. Either way the admin secret never leaves the server.
 
 ## Taking it to another app
 
