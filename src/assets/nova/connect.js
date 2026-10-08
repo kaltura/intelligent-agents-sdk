@@ -96,7 +96,7 @@ function sessionKind() {
 // The page owns the label and the address, so the model never picks a URL.
 const SIGNUP_LINK_TOOL = 'show_signup_link';
 const SIGNUP_URL = 'https://corp.kaltura.com/pricing/conversational-agent/';
-const SIGNUP_LABEL = 'Start a free trial';
+const SIGNUP_LABEL = 'Sign up';
 
 const els = {
   widget: document.getElementById('nova-widget'),

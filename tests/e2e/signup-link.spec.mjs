@@ -31,7 +31,7 @@ test('show_signup_link adds a sign-up button with the fixed address', async ({ p
   const cta = page.locator('#nova-transcript a.nova-cta');
   await expect(cta).toHaveCount(1);
   await expect(cta).toBeVisible();
-  await expect(cta).toHaveText('Start a free trial');
+  await expect(cta).toHaveText('Sign up');
   await expect(cta).toHaveAttribute('href', SIGNUP_URL);
   await expect(cta).toHaveAttribute('target', '_blank');
   await expect(cta).toHaveAttribute('rel', /noopener/);
@@ -42,7 +42,7 @@ test('show_signup_link ignores any argument the model sends', async ({ page }) =
   const cta = page.locator('#nova-transcript a.nova-cta');
   await expect(cta).toHaveCount(1);
   await expect(cta).toHaveAttribute('href', SIGNUP_URL);
-  await expect(cta).toHaveText('Start a free trial');
+  await expect(cta).toHaveText('Sign up');
 });
 
 test('a repeated show_signup_link call still shows one button', async ({ page }) => {
