@@ -76,6 +76,22 @@ const KICKOFF_TRIGGER = 'Session started. Greet the visitor.';
 // is cleared with '' after the greeting, never by omitting the key.
 const NOVA_GREET = 'nova_greet';
 
+// Client variable that marks a session as not coming from a real visitor, so
+// metrics can leave it out. It is only sent for a developer run
+// ('dev': the page is served from this machine) or a browser driven by
+// automation ('automated': navigator.webdriver is set). A real visitor sends
+// no such variable. Like NOVA_GREET it is a request var, so it stays on the
+// thread.
+const NOVA_SESSION_KIND = 'nova_session_kind';
+
+/** @returns {'automated' | 'dev' | null} */
+function sessionKind() {
+  if (navigator.webdriver) return 'automated';
+  const host = location.hostname;
+  if (host === 'localhost' || host.endsWith('.localhost') || host === '[::1]' || /^127(\.\d{1,3}){3}$/.test(host)) return 'dev';
+  return null;
+}
+
 const els = {
   widget: document.getElementById('nova-widget'),
   video: document.getElementById('nova-video'),
@@ -376,10 +392,11 @@ async function connect(pendingPrompt, mode = 'avatar') {
     if (pendingPrompt) kickoff = { text: pendingPrompt, echo: false };
     else if (!greet) kickoff = KICKOFF_TRIGGER;
 
+    const kind = sessionKind();
     session = new KalturaAgentSession({
       token: init.ks,
       mode,
-      requestVars: { [NOVA_GREET]: greet ? 'yes' : '' },
+      requestVars: { [NOVA_GREET]: greet ? 'yes' : '', ...(kind ? { [NOVA_SESSION_KIND]: kind } : {}) },
       // Sent by the SDK once, on the first transport: after the opening turn
       // ends (video) or once the transport is up (chat).
       ...(kickoff ? { kickoff } : {}),
