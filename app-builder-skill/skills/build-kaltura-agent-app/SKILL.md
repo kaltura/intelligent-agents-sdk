@@ -15,6 +15,7 @@ The official docs are the source of truth. This skill only gives the order of st
 3. Read example code from `node_modules/@kaltura/intelligent-agents/examples/` after Step 3.
 4. Use only method, class and option names you saw in the docs or the installed package. If you cannot find one, say so and ask. Never guess a name.
 5. Suggest only what the docs recommend for building agents.
+6. If the docs cannot be fetched, say what is blocked and ask the user to allow it. In the same reply, apply the Hard rules below to the request. For example, warn that `csv` and `code` tools need account enablement and offer an `api` tool.
 
 ## Step 0: check the machine
 
