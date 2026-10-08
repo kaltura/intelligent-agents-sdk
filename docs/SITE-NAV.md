@@ -274,12 +274,12 @@ What the visitor gets and what they do not:
 | Item | After a full page load |
 |---|---|
 | Conversation memory | Kept, through `threadId`. |
-| Connection, video, audio | Rebuilt. Expect a short gap while the new session connects. |
+| Connection, video, audio | Rebuilt. Expect a gap of a few seconds while the new session connects (about 2 s in a live test). |
 | Microphone | The new page calls `getUserMedia` again. The browser's permission rules decide whether it asks again. |
 | Autoplay | Usually allowed, but not guaranteed. A page load can still start paused. Handle `playback_blocked` as above. |
 | Opening phrase | Plays again on every join, also on a resumed thread. Guard it with `sys__is_new_thread`. See [START-THE-CONVERSATION.md](START-THE-CONVERSATION.md#personalize-the-opening). |
 | `go_to` | `navigate` loads the new page, so the navigator dies with the old page. The URL already carries `#<section-id>`, so the browser scrolls to the section. A new navigator starts on the new page. |
-| Back button | Reloads the page and resumes the thread. Chromium did not restore a page with a live WebRTC connection from its back/forward cache. |
+| Back button | Reloads the page and resumes the thread. Chromium does not restore the page from its back/forward cache: `notRestoredReasons` lists `mediastream` and `rtc`. |
 | End-of-thread signal | The old page sends it on `pagehide` (see [README § Ending a conversation cleanly](../README.md#ending-a-conversation-cleanly-session_completed-signal)). Memory continues after that signal, so the next page can still resume. |
 
 Keeping the `threadId` in the browser is safe only with a per-visitor token (`createAgentToken({ agentId, userId })`, see [Per-visitor browser path](api/deploy.md#per-visitor-browser-path)). With a widget token, anyone who has a `threadId` can continue that thread, so keep each `threadId` per user on your server instead. See [SECURITY.md § Session type](../SECURITY.md#session-type).
@@ -306,8 +306,8 @@ All of these keep one document, so the session, the mic permission and the WebRT
 
 | Library | Pattern that works | Boot script |
 |---|---|---|
-| Barba.js | Avatar outside the container. Navigate with `barba.go(url)`. If the avatar must be inside the container, the old `<video>` is detached and pauses and the new one is empty. Keep `audioEl` outside the container so the voice continues, and rebind the picture (below). | Inline scripts in the new container do not run again. |
-| Swup | Avatar outside the `#swup` container. Navigate with `swup.navigate(url)`. Load the UMD build. | Inline scripts do not run again. |
+| Barba.js | Avatar outside the container. Navigate with `barba.go(url)`. If the avatar must be inside the container, the old `<video>` is detached and the picture stops, while the voice continues. Rebind the picture (below). | Inline scripts in the new container do not run again. |
+| Swup | Avatar outside the `#swup` container. Navigate with `swup.navigate(url)`. Load the UMD build. If the avatar is inside the container, the picture stops in the same way. Rebind it in `content:replace` (below). | Inline scripts do not run again. |
 | htmx `hx-boost` | Put `hx-preserve="true"` and an `id` on the avatar element. Without it, each swap builds a new session and the old ones keep their sockets and mic. | htmx runs inline scripts in swapped content again. Put the boot script in `<head>` and guard against a second boot. |
 
 Barba rebind. Read the new container from the hook data. At `afterEnter` both containers are in the DOM, so `getElementById` finds the old element.
@@ -324,6 +324,15 @@ barba.init({ preventRunning: true });
 new SiteNavigator({ session, manifestUrl, navigate: (url) => barba.go(url) });
 ```
 
+Swup rebind. `content:replace` runs after the new content is in the DOM, so `getElementById` finds the new element.
+
+```js
+swup.hooks.on('content:replace', () => {
+  const video = document.getElementById('avatar-video');
+  if (video) session.setVideoEl(video);
+});
+```
+
 Boot guard for htmx or any setup where the script can run twice:
 
 ```js
@@ -334,16 +343,67 @@ if (!window.avatarSession) {
 
 ### WordPress
 
-Both paths need the same server piece: an endpoint on your site that mints the visitor's token and returns the `ks` and host fields from `appInit`. The admin secret stays on the server. Never print it into a page or a script. Use the [per-visitor browser path](api/deploy.md#per-visitor-browser-path) and a stable `userId` per visitor (the WordPress user id, or an opaque id in a cookie for anonymous visitors). Keep each `threadId` per user on the server when you use a widget token. See [SECURITY.md § Session type](../SECURITY.md#session-type).
+Verified on a WordPress block theme (Twenty Twenty-Five) with a footer script, with Barba.js and with Swup, against a live backend. The avatar markup and the boot module are printed from the footer. Persistent-container rules for Barba.js and Swup are in [Page-transition libraries](#page-transition-libraries).
 
 | Path | When | Setup |
 |---|---|---|
-| 1. Footer script, resume on each page | Any theme that loads full pages. This is the default. | Print the avatar markup and the module script from the theme footer or a footer hook. Use the [multi-page pattern](#normal-multi-page-theme-resume-the-thread). |
-| 2. Keep the avatar alive | The theme already uses a page-transition library. | Use the matching row in [Page-transition libraries](#page-transition-libraries): avatar outside the swapped container, one boot, `SiteNavigator` calling the library's navigate. |
+| 1. Footer script, resume on each page | Any theme that loads full pages. This is the default. | Use the [multi-page pattern](#normal-multi-page-theme-resume-the-thread). Verified: the thread, and with it the conversation memory, carried to the next page. A new visitor did not get it. |
+| 2. Keep the avatar alive | The theme already uses a page-transition library. | Avatar outside the swapped container, one boot, `SiteNavigator` calling the library's navigate, plus the two [block theme fixes](#block-themes-with-a-page-transition-library). Verified: one session, one thread and moving video across link clicks, `go_to`, Back and Forward. |
+
+**Token endpoint.** Add a route on your site that mints the visitor's token and returns the `ks` and host fields from `appInit`, as in the [per-visitor browser path](api/deploy.md#per-visitor-browser-path). A PHP route that makes those two calls over HTTP worked. A small Node service that runs `Management` works too.
+
+| Rule | Why |
+|---|---|
+| The admin secret lives only in the server's environment. | A scan of every page, script and JSON response from the verified site found no secret. |
+| Use a stable `userId`: the WordPress user id, or an opaque id in an HttpOnly cookie for anonymous visitors. | The thread belongs to that identity. |
+| Send `Cache-Control: no-store` on the route. | One visitor's token must never be served to another. |
+| Fetch the token from the boot script at run time. Do not print it into the page. | A cached page would freeze an expiring token. |
+
+Keep each `threadId` per user on the server when you use a widget token. See [SECURITY.md § Session type](../SECURITY.md#session-type).
 
 Build `sections.json` from your published pages with `buildSectionsManifest` (see [The manifest](#the-manifest-sectionsjson)). Re-run it when content changes.
 
-`Management` is JavaScript. A PHP site mints the token by calling the same Kaltura REST endpoints from PHP, or by calling a small Node service that runs `Management`. Either way the admin secret never leaves the server.
+#### Block themes with a page-transition library
+
+A router that swaps only one container breaks two things on a block theme. Both reproduced in Chromium, Firefox and WebKit.
+
+1. **Back and Forward reload the page.** The theme's Interactivity API reloads on `popstate` when the history entry has no `wpInteractivityId`. Barba.js and Swup write entries without it, so the avatar restarts on every Back. Keep the id on every entry the router writes. Run this once, before the router starts:
+
+```js
+for (const method of ['pushState', 'replaceState']) {
+  const original = history[method].bind(history);
+  history[method] = (state, ...rest) => {
+    const id = history.state?.wpInteractivityId;
+    return original(state && typeof state === 'object' && id !== undefined ? { ...state, wpInteractivityId: id } : state, ...rest);
+  };
+}
+```
+
+2. **The new page is only half applied.** The container swap leaves out the body classes, the per-page block styles (`<style id="wp-block-…-inline-css">`) and the inline scripts. Copy them from the fetched page after each swap:
+
+```js
+function syncPage(html, container) {
+  const next = new DOMParser().parseFromString(html, 'text/html');
+  document.body.className = next.body.className;
+  for (const el of next.querySelectorAll('style[id], link[rel="stylesheet"][id]')) {
+    if (!document.getElementById(el.id)) document.head.append(el.cloneNode(true));
+  }
+  container.querySelectorAll('script').forEach((old) => {
+    const fresh = document.createElement('script');
+    for (const attr of old.attributes) fresh.setAttribute(attr.name, attr.value);
+    fresh.textContent = old.textContent;
+    old.replaceWith(fresh);
+  });
+}
+// Barba.js: skip the first load, the page already ran its scripts.
+barba.hooks.afterEnter((data) => { if (data.current.container) syncPage(data.next.html, data.next.container); });
+// Swup:
+swup.hooks.on('page:view', (visit) => syncPage(visit.to.html, document.getElementById('swup')));
+```
+
+With both fixes, the transitioned page matched a direct load of the same URL (title, body classes, style ids).
+
+Not tested: whether a browser asks for the microphone again after a full page load (the tests granted it), caching plugins, and other themes or page-builder plugins.
 
 ## Taking it to another app
 
