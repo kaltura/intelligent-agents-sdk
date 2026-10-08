@@ -105,7 +105,7 @@ const session = new KalturaAvatarSession({ ...runtimeConfig, kickoff: 'Greet the
 await session.connect();
 ```
 
-**Talking on behalf of a real, known user?** Mint the conversation token yourself with `userId` instead of letting `converseOnce()` auto-mint an anonymous one. This binds the [KS](/reference/api/authentication/#authentication) (Kaltura Session token) to that user. The user gets their own threads, and `{{ sys__user_id }}` resolves in prompts:
+**Talking on behalf of a real, known user?** Mint the conversation token yourself with `userId` instead of letting `converseOnce()` auto-mint an anonymous one. This binds the [KS](/reference/api/authentication/#authentication) (Kaltura Session) to that user. The user gets their own threads, and `{{ sys__user_id }}` resolves in prompts:
 
 ```js
 const conv = await kaltura.sessions.createConversationToken({
@@ -141,6 +141,9 @@ You now know how to create an agent and talk to it. Here's where to go for more:
 | Auto-summarize every conversation and email a human when it's ready | [Lifecycle Recipes](/guides/lifecycle-recipes/) |
 | Put structured widgets on screen (quizzes, carousels, code blocks) | [GenUI Reference](/reference/genui-reference/) |
 | Understand how the whole system works under the hood | [Platform Overview](/explanation/architecture/) |
+| Look up a term, or find which ID (`configId`, `agentId`, `avatarId`, `widgetId`) to use where | [Glossary](/reference/glossary/) |
+| Make the agent speak and listen in one language | [Languages](/guides/languages/) |
+| Run every demo in `examples/` | [Live Demos](/guides/live-demos/) |
 | See a complete browser example with a live avatar | [examples/browser-experience.html](https://github.com/kaltura/intelligent-agents-sdk/blob/main/examples/browser-experience.html) |
 | See a complete avatar-guided slide deck | [examples/deck-presenter.html](https://github.com/kaltura/intelligent-agents-sdk/blob/main/examples/deck-presenter.html) |
 
