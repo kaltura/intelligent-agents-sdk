@@ -15,7 +15,7 @@ A rule is `{name, systemName, eventType, objectType, eventConditions?, action}`:
 - `name`: a required, human-readable label.
 - `systemName`: a required, caller-chosen identifier (e.g. `auto_summary_v1`), filterable via `list`'s `systemNameEqual`.
 - `eventType`: e.g. `session_ended`, `analysis_updated`.
-- `objectType`: only `thread`.
+- `objectType`: only `thread`. A `thread` rule must be scoped to an agent, see [Scope every rule to an agent](#scope-every-rule-to-an-agent).
 - `eventConditions[]`: `{field, operator, value}` matchers, e.g. `{field:'object.agent_id', operator:'eq', value:'<uuid>'}`, `{field:'changed_keys', operator:'has_all', value:[...]}`. `field` is a dot-path into the event payload (see [Discovery and dry-run testing](#discovery-and-dry-run-testing) for which paths exist per event). A `{path, op}` shaped entry is rejected with a 400.
 - `action`: a plain object, passed straight through, not built by the SDK. See [The action types](#the-action-types) below.
 
@@ -50,11 +50,12 @@ await mgmt.lifecycle.create({
   systemName: 'auto_summary_v1',
   eventType: 'session_ended',
   objectType: 'thread',
+  eventConditions: [{ field: 'object.agent_id', operator: 'eq', value: '<agent-uuid>' }],
   action: { actionType: 'triggerInsightSettingsKai', insightSettingsIds: [sentiment.id, topic.id] },
 }, ks);
 ```
 
-Every conversation gets a structured recap the moment it ends, with zero app-side code. The built-in summary insight is deliberately not requested here. Every partner already has an always-on preset rule that produces one for free. Its summary lands in the same analysis as this rule's own insights.
+Every conversation with that agent gets a structured recap the moment it ends, with zero app-side code. The built-in summary insight is deliberately not requested here. Every partner already has an always-on preset rule that produces one for free. Its summary lands in the same analysis as this rule's own insights.
 
 ### `InsightSettings`: reusable insight definitions
 
@@ -97,6 +98,25 @@ await mgmt.lifecycle.create({
 `appGuid`, `name`, `subject`, `body`, `toAttributePath`, and `msgParamsMap` are required. `body`/`subject`/`fromName` can reference the tokens declared in `msgParamsMap` (e.g. `{recipient.firstName}`). The rest of the CRUD surface (`get`/`list`/`update`/`delete`) is in the [method table](#full-crud--discovery-method-table) below.
 
 This is the one resource in this SDK that authenticates with a plain `Authorization: Bearer <KS>` header instead of the `Authorization: KS <ks>` scheme every other resource uses. It's the same admin KS, sent in a different header because this resource lives on a different host.
+
+---
+
+## Scope every rule to an agent
+
+A rule with no agent condition runs for every agent on the partner. So `create` and `update` refuse an unscoped `thread` rule by default. Add an `object.agent_id` condition with operator `eq` or `in`:
+
+```js
+eventConditions: [{ field: 'object.agent_id', operator: 'eq', value: '<agent-uuid>' }]
+```
+
+Without it, the call throws `KalturaError` with `code: 'lifecycle_unscoped'` before any request. To run on every agent on purpose, pass `{ partnerWide: true }` as the last argument:
+
+```js
+await mgmt.lifecycle.create(rule, ks, { partnerWide: true });
+await mgmt.lifecycle.update(id, { eventConditions: [] }, ks, { partnerWide: true });
+```
+
+`update` checks only a patch that includes `eventConditions`. It treats the rule as a `thread` rule unless the patch sets another `objectType`.
 
 ---
 
@@ -176,10 +196,10 @@ All against `https://api.avatar.us.kaltura.ai`. SDK: `mgmt.lifecycle`.
 
 | Method | Endpoint | Kind | Notes |
 |---|---|---|---|
-| `lifecycle.create(body, ks)` | `POST /v1/lifecycle/create` | WRITE, not idempotent | mirrors `Tools#add` |
+| `lifecycle.create(body, ks, opts?)` | `POST /v1/lifecycle/create` | WRITE, not idempotent | mirrors `Tools#add`. `opts.partnerWide`: see [Scope every rule to an agent](#scope-every-rule-to-an-agent) |
 | `lifecycle.get(id, ks)` | `POST /v1/lifecycle/get` | READ | |
 | `lifecycle.list(ks, opts)` | `POST /v1/lifecycle/list` | READ | `{offset,limit}` pager; `opts.filter` (`eventTypeEqual`, `statusEqual`, `systemNameEqual`) and `opts.orderBy` (`+createdAt`/`-createdAt`) pass through 1:1 |
-| `lifecycle.update(id, patch, ks)` | `POST /v1/lifecycle/update` | WRITE, idempotent | mirrors `Tools#update` |
+| `lifecycle.update(id, patch, ks, opts?)` | `POST /v1/lifecycle/update` | WRITE, idempotent | mirrors `Tools#update`. `opts.partnerWide`: see [Scope every rule to an agent](#scope-every-rule-to-an-agent) |
 | `lifecycle.delete(id, ks, confirm)` | `POST /v1/lifecycle/delete` | WRITE, destructive | `requireConfirm` gate; response is `{removed, success, _meta}`. The deleted id comes back as `removed`, not `id` |
 | `lifecycle.match(objectType, eventType, eventData, ks)` | `POST /v1/lifecycle/match` | READ (dry-run) | see [Discovery and dry-run testing](#discovery-and-dry-run-testing) |
 | `lifecycle.listObjects(ks)` | `POST /v1/lifecycle/listObjects` | READ | |

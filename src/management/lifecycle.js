@@ -49,6 +49,22 @@ function requireNonEmptyString(v, where, field) {
   }
 }
 
+/**
+ * Refuse a `thread` rule that has no `object.agent_id` condition (operator
+ * `eq` or `in`). Without one the rule runs for every agent on the partner.
+ * @param {unknown} eventConditions @param {string} where
+ */
+function requireAgentScope(eventConditions, where) {
+  const scoped = Array.isArray(eventConditions) && eventConditions.some(
+    (c) => c && typeof c === 'object' && c.field === 'object.agent_id' && (c.operator === 'eq' || c.operator === 'in'),
+  );
+  if (scoped) return;
+  throw new KalturaError({
+    type: 'about:blank', title: 'unscoped lifecycle rule', code: 'lifecycle_unscoped',
+    detail: `${where}: a thread rule with no agent condition runs for every agent on the partner. Add {field:'object.agent_id', operator:'eq', value:'<agent-uuid>'} to eventConditions, or pass { partnerWide: true } to run on every agent on purpose.`,
+  });
+}
+
 export class Lifecycle {
   /** @param {import('./client.js').Ctx} ctx */
   constructor(ctx) { this._ = ctx; }
@@ -56,10 +72,18 @@ export class Lifecycle {
   /**
    * Create a lifecycle rule. WRITE — NOT idempotent (a repeat call creates a
    * second rule, same as {@link Tools#add}).
+   *
+   * A `thread` rule must scope itself to an agent: `eventConditions` needs an
+   * entry with `field:'object.agent_id'` and operator `eq` or `in`. A rule
+   * without one runs for every agent on the partner, so the SDK throws
+   * `KalturaError` with `code:'lifecycle_unscoped'` before any request. Pass
+   * `{ partnerWide: true }` to run on every agent on purpose. Other
+   * `objectType` values are not checked.
    * @param {{name:string, systemName:string, eventType:string, objectType:string, eventConditions?:Array<{field:string,operator:string,value:unknown}>, action:object}} body
    * @param {string} ks (admin)
+   * @param {{partnerWide?:boolean}} [opts] `partnerWide:true` skips the agent-scope check
    */
-  async create(body, ks) {
+  async create(body, ks, opts = {}) {
     this._.assertAdmin(ks, 'lifecycle.create');
     if (!body || typeof body !== 'object' || Array.isArray(body)) {
       throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: 'lifecycle.create needs a {name, systemName, eventType, objectType, eventConditions?, action} object.' });
@@ -71,6 +95,7 @@ export class Lifecycle {
     if (!body.action || typeof body.action !== 'object') {
       throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: 'lifecycle.create action must be an object (e.g. {actionType:"triggerInsightSettingsKai", insightSettingsIds:[...]}).' });
     }
+    if (body.objectType === 'thread' && opts.partnerWide !== true) requireAgentScope(body.eventConditions, 'lifecycle.create');
     /** @type {Record<string,unknown>} */
     const wire = { name: body.name, systemName: body.systemName, eventType: body.eventType, objectType: body.objectType, action: body.action };
     if (body.eventConditions !== undefined) wire.eventConditions = body.eventConditions;
@@ -105,11 +130,20 @@ export class Lifecycle {
   /**
    * Update a lifecycle rule's name/systemName/eventType/objectType/status/
    * eventConditions/action. WRITE — idempotent.
+   *
+   * The agent-scope rule from {@link Lifecycle#create} applies when the patch
+   * includes `eventConditions`. The patch's `objectType` decides whether the
+   * rule is a `thread` rule; without one the SDK assumes `thread`. The new
+   * conditions then need an `object.agent_id` entry with operator `eq` or
+   * `in`, or the SDK throws `code:'lifecycle_unscoped'` before any request.
+   * `{ partnerWide: true }` skips the check. A patch without `eventConditions`
+   * is not checked.
    * @param {string} id
    * @param {{name?:string, systemName?:string, eventType?:string, objectType?:string, status?:string, eventConditions?:Array<object>, action?:object}} patch
    * @param {string} ks (admin)
+   * @param {{partnerWide?:boolean}} [opts] `partnerWide:true` skips the agent-scope check
    */
-  async update(id, patch, ks) {
+  async update(id, patch, ks, opts = {}) {
     this._.assertAdmin(ks, 'lifecycle.update');
     requireRuleId(id, 'lifecycle.update');
     if (!patch || typeof patch !== 'object' || Array.isArray(patch)) {
@@ -118,6 +152,9 @@ export class Lifecycle {
     const fields = ['name', 'systemName', 'eventType', 'objectType', 'status', 'eventConditions', 'action'];
     if (!fields.some((f) => patch[f] !== undefined)) {
       throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: `lifecycle.update needs at least one of ${fields.join('/')}.` });
+    }
+    if (patch.eventConditions !== undefined && (patch.objectType === undefined || patch.objectType === 'thread') && opts.partnerWide !== true) {
+      requireAgentScope(patch.eventConditions, 'lifecycle.update');
     }
     /** @type {Record<string,unknown>} */
     const wire = { id };
