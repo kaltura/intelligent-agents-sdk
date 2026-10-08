@@ -40,6 +40,7 @@ import { makeAuditEmitter } from '../core/session.js';
 import { sanitizeJson } from '../core/safety.js';
 import { resolveEndpoints } from '../core/endpoints.js';
 import { randId } from '../core/ids.js';
+import { pickResponseHeaders, makeResponseNotifier } from '../core/response-headers.js';
 import {
   parseConverseStream, parseToolCall, parseToolResponseName, parseOAuthRequired, canonicalJson,
   validateToolArgs, SPOKEN_TYPES,
@@ -70,6 +71,7 @@ export class KalturaChatSession extends Emitter {
    * @param {Record<string, 'on'|'off'>} [cfg.capabilities] Per-request capability overrides (validated now; sent verbatim on every turn). Omit to use the intellect's configured defaults.
    * @param {typeof fetch} [cfg.fetch] Injectable fetch (default global) — for tests/instrumentation.
    * @param {(level:string, msg:string, ...rest:any[])=>void} [cfg.logger]
+   * @param {(info:import('../core/response-headers.js').ResponseInfo)=>void} [cfg.onResponse] Called when the converse call gets a response (success or failure) with `{ method, path, status, ok, attempt, requestId, headers }`. `headers` holds the diagnostic response headers, redacted. Failures also carry them on `err.headers`. A throwing hook is ignored.
    * @param {(e:object)=>void} [cfg.onAuditEvent] Structured audit hook (same event stream as the avatar transport).
    * @param {string} [cfg.subjectId] Opaque operator-assigned subject id stamped onto audit events (never a name/PHI).
    * @param {string|number} [cfg.partnerId] Override for the audit partner id (else read from a plaintext token, if possible).
@@ -106,6 +108,7 @@ export class KalturaChatSession extends Emitter {
     super();
     if (!cfg || !cfg.token) throw new KalturaError({ type: 'about:blank', title: 'token required', code: 'bad_request', detail: 'new KalturaChatSession({ token }) needs a conversation KS.' });
     this._log = cfg.logger || (() => {});
+    this._notify = makeResponseNotifier(cfg.onResponse, this._log);
     this._warned = new Set();
     const raw = typeof cfg.token === 'object' && typeof cfg.token.ks === 'string' ? cfg.token.ks : cfg.token;
     if (typeof raw !== 'string' || !raw) throw new KalturaError({ type: 'about:blank', title: 'token required', code: 'bad_request', detail: 'token must be a KS string or a { ks } object.' });
@@ -369,10 +372,13 @@ export class KalturaChatSession extends Emitter {
       body: JSON.stringify(body),
       signal,
     });
+    const requestId = res.headers?.get?.('x-request-id') || '';
+    const headers = pickResponseHeaders(res.headers);
+    this._notify({ method: 'POST', path: '/assistant/converse', status: res.status, ok: res.ok, attempt: 1, requestId, headers });
     if (!res.ok) {
       const t = await res.text();
       let parsed = t; try { parsed = JSON.parse(t); } catch { /* keep text */ }
-      throw errorFromResponse({ status: res.status, path: '/assistant/converse', body: parsed, requestId: res.headers?.get?.('x-request-id') || '' });
+      throw errorFromResponse({ status: res.status, path: '/assistant/converse', body: parsed, requestId, headers });
     }
     if (!res.body) throw new KalturaError({ type: 'about:blank', title: 'no stream body', code: 'server_error', detail: 'converse response had no readable body.' });
     return res.body;

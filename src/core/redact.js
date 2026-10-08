@@ -70,3 +70,13 @@ function redactSensitiveKey(v) {
   if (typeof v === 'string') return v ? '<redacted>' : v;
   return redact(v);
 }
+
+/**
+ * Scrub a response-header value. Server trace ids (`X-Kaltura-Session`,
+ * `X-Proxy-Session`) are 32 hex chars, the same shape as an admin secret, so
+ * the bare-hex rule is NOT applied here. KS tokens and private IPs still are.
+ * @param {string} s
+ */
+export function redactHeaderValue(s) {
+  return s.replace(KS_RE, '<KS>').replace(PRIVATE_IP_RE, '<private-ip>');
+}

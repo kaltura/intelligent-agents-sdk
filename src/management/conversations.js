@@ -1360,6 +1360,7 @@ export function remapConverseError(e) {
     detail: 'This intellect has allow_client_variables=false — request_vars are rejected. Enable it via intellects.setClientVariablesEnabled(configId, true) before sending request_vars.',
     instance: e.instance,
     requestId: e.requestId,
+    headers: e.headers,
     body: e.body,
   });
 }

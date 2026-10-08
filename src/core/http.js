@@ -8,6 +8,9 @@
  * - HTTP-200-with-exception bodies (a KalturaAPIException in a 200 response) are caught too.
  * - A `requestId` is attached to every call (echoed from the server when it
  *   sends one, else a client-generated correlation id) and rides on errors.
+ * - The diagnostic response headers (`x-kaltura-session`, `x-session-id`, ...)
+ *   ride on errors as `headers` and reach the `onResponse` hook for every
+ *   response, success or failure.
  * - Diagnostic logging routes through {@link redact}; a token can't leak.
  * - Retries use truncated exponential backoff + jitter. A network-layer error
  *   (no response received) retries on every method. A 429/502/503/504
@@ -22,6 +25,7 @@
 import { errorFromResponse, errorFromOkBody } from './errors.js';
 import { redact } from './redact.js';
 import { uuidv4 } from './ids.js';
+import { pickResponseHeaders, makeResponseNotifier } from './response-headers.js';
 import { KalturaError } from './errors.js';
 
 /**
@@ -29,6 +33,7 @@ import { KalturaError } from './errors.js';
  * @property {typeof fetch} [fetch]      Injected fetch (default globalThis.fetch).
  * @property {(level:string,msg:string,data?:unknown)=>void} [logger] Redacted diagnostic sink.
  * @property {(type:string,outcome:string,fields?:object)=>void} [audit] Structured security-event emitter (auth.fail on 401/403).
+ * @property {(info:import('./response-headers.js').ResponseInfo)=>void} [onResponse] Called for every received response, success or failure, once per attempt, with the filtered diagnostic headers.
  * @property {number} [timeoutMs]        Per-request timeout in ms (default 30 000).
  * @property {number} [maxRetries]       Max retry attempts on transient failures (default 3).
  * @property {number} [baseDelayMs]      Base backoff delay in ms (default 200).
@@ -59,12 +64,24 @@ export class Http {
     /** @type {typeof fetch} */ this._fetch = f.bind(globalThis);
     this._log = opts.logger || (() => {});
     this._audit = typeof opts.audit === 'function' ? opts.audit : () => {};
+    this._notify = makeResponseNotifier(opts.onResponse, this._log);
     this._timeoutMs = opts.timeoutMs ?? 30000;
     this._maxRetries = opts.maxRetries ?? 3;
     this._baseDelayMs = opts.baseDelayMs ?? 200;
     this._maxDelayMs = opts.maxDelayMs ?? 10000;
     this._delayFn = opts.delayFn ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
     this._maxResponseBytes = opts.maxResponseBytes ?? 10 * 1024 * 1024; // 10 MiB
+  }
+
+  /**
+   * Report a received response to the `onResponse` hook and the debug log.
+   * `request()` calls it for every attempt. Call it yourself for a response
+   * that bypasses `request()` (a raw stream). A throwing hook is swallowed.
+   * @param {import('./response-headers.js').ResponseInfo} info
+   */
+  notifyResponse(info) {
+    this._log('debug', `⋯ ${info.status} ${info.path} headers`, info.headers);
+    this._notify(info);
   }
 
   /**
@@ -149,6 +166,7 @@ export class Http {
             detail: `Response Content-Length ${cl} bytes exceeds limit of ${this._maxResponseBytes} bytes`,
             instance: path,
             code: 'response_too_large',
+            headers: pickResponseHeaders(res.headers),
           });
         }
         // Read the body incrementally so a chunked response without an honest
@@ -171,14 +189,16 @@ export class Http {
       clearTimeout(t);
 
       const requestId = res.headers.get('x-request-id') || res.headers.get('x-kaltura-request-id') || uuidv4();
+      const respHeaders = pickResponseHeaders(res.headers);
       const data = parseBody(text, res.headers.get('content-type') || '');
       this._log('debug', `← ${res.status} ${path}`, redact(data));
+      this.notifyResponse({ method, path, status: res.status, ok: res.ok, attempt: attempt + 1, requestId, headers: respHeaders });
 
       // Auth failures are security-relevant (OWASP "always log"; NIST AU-2).
       if (res.status === 401 || res.status === 403) this._audit('auth.fail', 'fail', { action: `${method} ${path}`, reason: `HTTP ${res.status}`, requestId });
 
       if (!res.ok) {
-        const kErr = errorFromResponse({ status: res.status, path, body: data, requestId });
+        const kErr = errorFromResponse({ status: res.status, path, body: data, requestId, headers: respHeaders });
         // Only retry transient server errors; do NOT retry auth/validation/client errors
         if (RETRIABLE_STATUSES.has(res.status) && isSafeToRetryHttpError && attempt < this._maxRetries) {
           lastErr = kErr; continue;
@@ -187,7 +207,7 @@ export class Http {
       }
 
       const okErr = errorFromOkBody(data, path);
-      if (okErr) { okErr.requestId = requestId; throw okErr; }
+      if (okErr) { okErr.requestId = requestId; okErr.headers = Object.keys(respHeaders).length ? respHeaders : undefined; throw okErr; }
       return { data, requestId, status: res.status, headers: res.headers };
     }
     // Should only reach here if all retries exhausted
