@@ -394,6 +394,8 @@ export class KalturaAvatarSession extends Emitter {
       presenceHeartbeatMs: cfg.presenceHeartbeatMs ?? 4000,
       presenceStaleMs: cfg.presenceStaleMs ?? 12000,
     });
+    // A resumed thread (cfg.threadId) counts as known from the start, so a page unload completes it.
+    if (this._threadId) this._completer.noteThreadId(this._threadId);
 
     /** @type {'idle'|'preparing'|'connecting'|'connected'|'reconnecting'|'resuming'|'disconnecting'|'disconnected'|'error'} */
     this.state = 'idle';
