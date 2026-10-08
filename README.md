@@ -804,7 +804,7 @@ Two things worth knowing that have their own dedicated writeups:
 
 ## Presenter
 
-The `Presenter` helper (`./experience/presenter`, its own subpath so apps that don't need it never pay for its module graph) manages a deck walkthrough end to end. It handles per-slide **context injection** via `session.setDynamicPrompt()` (a structured `page_context` payload telling the brain what's on screen right now), navigation via ONE deterministic, silent, idempotent mechanism (`onToolCall('navigate_to_slide')`, no speech-parsing fallback), duplicate-nav suppression, a sequential resume point (`reason:'resume'`), and session memory ("welcome back"). All of it is pure logic over an injected `session`/`storage`, fully unit-testable.
+The `Presenter` helper (`./experience/presenter`, its own subpath so apps that don't need it never pay for its module graph) manages a deck walkthrough end to end. It handles per-slide **context injection** (the current slide goes to the brain as a structured `page_context` request variable, so it knows what's on screen right now), navigation via ONE deterministic, silent, idempotent mechanism (`onToolCall('navigate_to_slide')`, no speech-parsing fallback), duplicate-nav suppression, a sequential resume point (`reason:'resume'`), and session memory ("welcome back"). All of it is pure logic over an injected `session`/`storage`, fully unit-testable.
 
 <details>
 <summary><strong>Full API</strong> — getters, methods, app hooks</summary>
