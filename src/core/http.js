@@ -155,6 +155,7 @@ export class Http {
       let res, text;
       try {
         res = await this._fetch(url, { method, headers: h, body: payload, signal: sig });
+        const received = pickResponseHeaders(res.headers);
         // Enforce response size budget before reading the body (P-1)
         const cl = res.headers.get('content-length');
         if (cl && parseInt(cl, 10) > this._maxResponseBytes) {
@@ -166,16 +167,20 @@ export class Http {
             detail: `Response Content-Length ${cl} bytes exceeds limit of ${this._maxResponseBytes} bytes`,
             instance: path,
             code: 'response_too_large',
-            headers: pickResponseHeaders(res.headers),
+            headers: received,
           });
         }
         // Read the body incrementally so a chunked response without an honest
         // Content-Length is never fully buffered before the size guard fires (P-1).
-        text = await readBodyWithLimit(res, this._maxResponseBytes, path, ctrl);
+        text = await readBodyWithLimit(res, this._maxResponseBytes, path, ctrl, received);
       } catch (err) {
         clearTimeout(t);
         // response_too_large is not retriable — re-throw immediately
-        if (err instanceof KalturaError && err.code === 'response_too_large') throw err;
+        if (err instanceof KalturaError && err.code === 'response_too_large') {
+          const reqId = res.headers.get('x-request-id') || res.headers.get('x-kaltura-request-id') || uuidv4();
+          this.notifyResponse({ method, path, status: res.status, ok: false, attempt: attempt + 1, requestId: reqId, headers: err.headers || {} });
+          throw err;
+        }
         const aborted = ctrl.signal.aborted;
         const kErr = errorFromResponse({
           status: NETWORK_ERROR_STATUS, path,
@@ -221,10 +226,10 @@ export class Http {
  * Falls back to `res.text()` when no streaming body is available (e.g. a
  * test fake, or a runtime without a spec-compliant `ReadableStream` body) —
  * with a post-hoc length check.
- * @param {Response} res @param {number} maxBytes @param {string} path @param {AbortController} ctrl
+ * @param {Response} res @param {number} maxBytes @param {string} path @param {AbortController} ctrl @param {Record<string,string>} headers
  * @returns {Promise<string>}
  */
-async function readBodyWithLimit(res, maxBytes, path, ctrl) {
+async function readBodyWithLimit(res, maxBytes, path, ctrl, headers) {
   const body = res.body;
   if (!body || typeof body.getReader !== 'function') {
     const text = await res.text();
@@ -236,6 +241,7 @@ async function readBodyWithLimit(res, maxBytes, path, ctrl) {
         detail: `Response body ${text.length} bytes exceeds limit of ${maxBytes} bytes`,
         instance: path,
         code: 'response_too_large',
+        headers,
       });
     }
     return text;
@@ -261,6 +267,7 @@ async function readBodyWithLimit(res, maxBytes, path, ctrl) {
         detail: `Response body exceeds limit of ${maxBytes} bytes (aborted after ${total} bytes)`,
         instance: path,
         code: 'response_too_large',
+        headers,
       });
     }
     out += decoder.decode(value, { stream: true });

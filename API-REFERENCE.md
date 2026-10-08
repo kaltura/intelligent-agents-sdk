@@ -67,12 +67,13 @@ Upstream error text is also normalized to a stable `err.code`, regardless of the
 
 ### Response headers (debugging and log search)
 
-The SDK keeps the tracing headers of every response: `x-*` (minus browser-hardening ones), `via`, `server`, `age`, `retry-after`, `traceparent`, `tracestate`. Names are lowercase. Values are redacted.
+The SDK keeps the tracing headers of every response: `x-*` (minus browser-hardening ones), `via`, `server`, `age`, `retry-after`, `traceparent`, `tracestate`. Names are lowercase. Values are redacted. Headers whose name suggests a credential (token, key, secret, auth, cookie, `ks`) and client-IP headers are dropped.
 
 | Where | How |
 |---|---|
 | A failed call | `err.headers` (also in `err.toJSON()`). `undefined` when the response had none. |
-| Every response, success or failure | `onResponse` hook on `new Management({ onResponse })` or `new KalturaChatSession({ onResponse })`. |
+| Every `Management` HTTP response, success or failure | `onResponse` hook on `new Management({ onResponse })`. |
+| Every converse response | `onResponse` hook on `new KalturaChatSession({ onResponse })`. Tool-result posts are not reported. |
 | Debug log | The `logger` receives a `⋯ <status> <path> headers` line. |
 
 ```js
@@ -86,7 +87,7 @@ try { await mgmt.agents.get(agentId, ks); }
 catch (err) { log.error({ code: err.code, requestId: err.requestId, headers: err.headers }); }
 ```
 
-`onResponse` fires once per attempt, so a retried call shows every try. A hook that throws is ignored. `requestId` is the server's id when it sends one, else an id the SDK makes up. Quote the header ids, not a made-up `requestId`, when you ask Kaltura support to trace a call.
+`onResponse` fires once per attempt, so a retried call shows every try. A hook that throws is ignored. `requestId` is the server's id when it sends one, else an id the SDK makes up (empty on streamed converse calls). Quote the header ids, not a made-up `requestId`, when you ask Kaltura support to trace a call.
 
 In a browser, `fetch` only exposes the headers the server lists in `Access-Control-Expose-Headers`, so `headers` may be sparse there.
 

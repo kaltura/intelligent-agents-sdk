@@ -18,13 +18,13 @@ const res = (status, hdrs, body = '{}') => ({
 
 test('pickResponseHeaders keeps ids, lowercases names, drops cookies and hardening noise', () => {
   const h = new Headers({
-    'X-Kaltura-Session': `${TRACE}, 1791405054`, 'X-Session-Id': 'abc123def456', 'X-Me': 'pod-a',
+    'X-Kaltura-Session': `${TRACE}, 1791405054`, 'X-Session-Id': 'abc123def456', 'X-Edge-Node': 'node-a',
     Via: '1.1 edge (CloudFront)', Server: 'Kaltura', 'Retry-After': '3',
     'Set-Cookie': 'sid=secret', Authorization: 'KS x', 'Content-Type': 'application/json',
     'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY',
   });
   assert.deepEqual(pickResponseHeaders(h), {
-    'x-kaltura-session': `${TRACE}, 1791405054`, 'x-session-id': 'abc123def456', 'x-me': 'pod-a',
+    'x-kaltura-session': `${TRACE}, 1791405054`, 'x-session-id': 'abc123def456', 'x-edge-node': 'node-a',
     via: '1.1 edge (CloudFront)', server: 'Kaltura', 'retry-after': '3',
   });
 });
@@ -49,11 +49,11 @@ test('makeResponseNotifier swallows a throwing hook and logs a warning', () => {
 });
 
 test('Http: failure carries headers on err.headers and toJSON()', async () => {
-  const http = new Http({ fetch: async () => res(403, { 'x-session-id': 'abc123def456', 'x-me': 'pod-a' }, '{"error":"nope"}') });
+  const http = new Http({ fetch: async () => res(403, { 'x-session-id': 'abc123def456', 'x-edge-node': 'node-a' }, '{"error":"nope"}') });
   await assert.rejects(() => http.postJson({ url: 'https://x/y', ks: 'k', body: {} }), (e) => {
     assert.ok(e instanceof KalturaError);
     assert.equal(e.headers['x-session-id'], 'abc123def456');
-    assert.equal(e.toJSON().headers['x-me'], 'pod-a');
+    assert.equal(e.toJSON().headers['x-edge-node'], 'node-a');
     return true;
   });
 });
@@ -116,9 +116,52 @@ test('ChatSession converse: onResponse and err.headers on a failed call', async 
   const seen = [];
   const s = new KalturaChatSession({
     token: 'djJ8' + 'C'.repeat(40), genieUrl: 'https://genie.example.com',
-    fetch: async () => res(500, { 'x-me': 'pod-g' }, '{"message":"x"}'), onResponse: (i) => seen.push(i),
+    fetch: async () => res(500, { 'x-edge-node': 'node-g' }, '{"message":"x"}'), onResponse: (i) => seen.push(i),
   });
-  await assert.rejects(() => s._converseFetch({}, undefined), (e) => e.headers?.['x-me'] === 'pod-g');
+  await assert.rejects(() => s._converseFetch({}, undefined), (e) => e.headers?.['x-edge-node'] === 'node-g');
   assert.equal(seen[0].path, '/assistant/converse');
   assert.equal(seen[0].status, 500);
+});
+
+test('pickResponseHeaders drops credential-named and client-IP headers, and scrubs hex in other values', () => {
+  const h = new Headers({
+    'x-auth-token': 'Bearer abc', 'x-api-key': 'k', 'x-csrf-token': 'c', 'x-amz-security-token': 't', 'x-ks': KS,
+    'x-forwarded-for': '203.0.113.9', 'x-debug': `secret=${TRACE}`, 'x-request-id': TRACE,
+  });
+  assert.deepEqual(pickResponseHeaders(h), { 'x-debug': 'secret=<secret>', 'x-request-id': TRACE });
+});
+
+test('makeResponseNotifier hands the hook a copy, so a mutating hook cannot change what others see', () => {
+  const info = { headers: { 'x-a': '1' } };
+  makeResponseNotifier((i) => { i.headers['x-a'] = 'changed'; })(info);
+  assert.equal(info.headers['x-a'], '1');
+});
+
+for (const [name, mk] of [
+  ['Content-Length over the limit', () => ({ ...res(200, { 'content-length': '5000', 'x-request-id': TRACE }), text: async () => 'x' })],
+  ['body over the limit (text fallback)', () => res(200, { 'x-request-id': TRACE }, 'y'.repeat(5000))],
+  ['body over the limit (stream)', () => {
+    const r = res(200, { 'x-request-id': TRACE });
+    r.body = new ReadableStream({ start(c) { c.enqueue(new Uint8Array(5000)); c.close(); } });
+    return r;
+  }],
+]) {
+  test(`Http: response_too_large (${name}) keeps headers and fires onResponse`, async () => {
+    const seen = [];
+    const http = new Http({ fetch: async () => mk(), maxResponseBytes: 100, onResponse: (i) => seen.push(i) });
+    await assert.rejects(() => http.postJson({ url: 'https://x/y', ks: 'k', body: {} }), (e) => e.code === 'response_too_large' && e.headers?.['x-request-id'] === TRACE);
+    assert.equal(seen.length, 1);
+    assert.equal(seen[0].ok, false);
+    assert.equal(seen[0].headers['x-request-id'], TRACE);
+  });
+}
+
+test('Management genieStream: works with a fetch fake that has no headers, and reports headers when present', async () => {
+  const body = new ReadableStream({ start(c) { c.close(); } });
+  const bare = new Management({ partnerId: 1, adminSecret: 'x', fetch: async () => ({ ok: true, status: 200, body }) });
+  assert.ok(await bare._ctx.genieStream('assistant/converse', {}, KS));
+  const seen = [];
+  const full = new Management({ partnerId: 1, adminSecret: 'x', fetch: async () => ({ ...res(200, { 'x-request-id': TRACE }), body }), onResponse: (i) => seen.push(i) });
+  await full._ctx.genieStream('assistant/converse', {}, KS);
+  assert.equal(seen[0].requestId, TRACE);
 });

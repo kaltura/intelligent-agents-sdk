@@ -372,7 +372,7 @@ export class KalturaChatSession extends Emitter {
       body: JSON.stringify(body),
       signal,
     });
-    const requestId = res.headers?.get?.('x-request-id') || '';
+    const requestId = res.headers?.get?.('x-request-id') || res.headers?.get?.('x-kaltura-request-id') || '';
     const headers = pickResponseHeaders(res.headers);
     this._notify({ method: 'POST', path: '/assistant/converse', status: res.status, ok: res.ok, attempt: 1, requestId, headers });
     if (!res.ok) {

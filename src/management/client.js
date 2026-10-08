@@ -138,7 +138,7 @@ export class Management {
           if (signal?.aborted) throw errorFromResponse({ status: 0, path: `/${path}`, body: 'aborted by caller', requestId: '' });
           throw err;
         }
-        const requestId = res.headers.get?.('x-request-id') || '';
+        const requestId = res.headers?.get?.('x-request-id') || res.headers?.get?.('x-kaltura-request-id') || '';
         const headers = pickResponseHeaders(res.headers);
         http.notifyResponse({ method: 'POST', path: `/${path}`, status: res.status, ok: res.ok, attempt: 1, requestId, headers });
         if (!res.ok) {

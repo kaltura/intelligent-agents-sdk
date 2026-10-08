@@ -1,18 +1,23 @@
 /**
- * Response-header diagnostics. The Kaltura backends and the edge in front of
- * them stamp each response with ids (`x-kaltura-session`, `x-session-id`,
- * `x-proxy-session`, `x-amz-cf-id`, ...). Support and log search need them, so
- * the SDK keeps them: on `KalturaError.headers` for failures and in the
+ * Response-header diagnostics. The Kaltura servers and the edge in front of
+ * them stamp each response with ids (`x-kaltura-session`, `x-session-id`, ...).
+ * Support and log search need them, so the SDK keeps them: on `KalturaError.headers` for failures and in the
  * `onResponse` hook for every response.
  *
  * Kept: `x-*`, `via`, `server`, `age`, `retry-after`, `traceparent`,
- * `tracestate`. Dropped: cookies, auth headers and browser-hardening noise.
- * Values pass through {@link redactHeaderValue}.
+ * `tracestate`. Dropped: cookies, auth headers, headers whose name suggests a
+ * credential (token, key, secret, auth, cookie, ks), client-IP headers and
+ * browser-hardening noise. Trace-id headers keep their 32-hex ids; every other
+ * value gets the full {@link redactString} scrub.
  */
-import { redactHeaderValue } from './redact.js';
+import { redactString, redactHeaderValue } from './redact.js';
 
 const KEEP_EXACT = new Set(['via', 'server', 'age', 'retry-after', 'traceparent', 'tracestate']);
-const DROP_X = new Set(['x-content-type-options', 'x-frame-options', 'x-xss-protection', 'x-powered-by', 'x-dns-prefetch-control', 'x-permitted-cross-domain-policies', 'x-download-options']);
+const DROP_X = new Set(['x-content-type-options', 'x-frame-options', 'x-xss-protection', 'x-powered-by', 'x-dns-prefetch-control', 'x-permitted-cross-domain-policies', 'x-download-options', 'x-forwarded-for', 'x-real-ip', 'x-client-ip']);
+// A name that hints at a credential. Dropped, whatever the value looks like.
+const SENSITIVE_NAME = /secret|password|credential|token|key|auth|cookie|csrf|(^|-)ks($|-)/;
+// Trace-id headers keep their 32-hex ids. Other values get the bare-hex scrub too.
+const TRACE_NAME = /session|request|trace|correlation|(^|-)id$/;
 
 /**
  * @typedef {object} ResponseInfo
@@ -21,7 +26,7 @@ const DROP_X = new Set(['x-content-type-options', 'x-frame-options', 'x-xss-prot
  * @property {number} status
  * @property {boolean} ok
  * @property {number} attempt         1-based attempt number (a retried call reports each attempt).
- * @property {string} requestId       Server id when sent, else the SDK's correlation id.
+ * @property {string} requestId       Server id when sent, else the SDK's correlation id (`''` on streamed converse calls with no server id).
  * @property {Record<string,string>} headers  Filtered, redacted, lowercase names. `{}` when none matched.
  */
 
@@ -38,7 +43,8 @@ export function pickResponseHeaders(headers) {
     if (typeof k !== 'string' || typeof v !== 'string') return;
     const name = k.toLowerCase();
     if (!(KEEP_EXACT.has(name) || (name.startsWith('x-') && !DROP_X.has(name)))) return;
-    out[name] = redactHeaderValue(v);
+    if (SENSITIVE_NAME.test(name)) return;
+    out[name] = TRACE_NAME.test(name) ? redactHeaderValue(v) : redactString(v);
   };
   const h = /** @type {any} */ (headers);
   if (typeof h.forEach === 'function') h.forEach(add);
@@ -54,6 +60,6 @@ export function pickResponseHeaders(headers) {
 export function makeResponseNotifier(hook, log) {
   if (typeof hook !== 'function') return () => {};
   return (info) => {
-    try { hook(info); } catch (err) { log?.('warn', 'onResponse hook threw', String((err && /** @type {any} */ (err).message) || err)); }
+    try { hook({ ...info, headers: { ...info.headers } }); } catch (err) { log?.('warn', 'onResponse hook threw', String((err && /** @type {any} */ (err).message) || err)); }
   };
 }
