@@ -33,6 +33,7 @@ Email `security@kaltura.com` with details and a PoC if available. Please do not 
 - [Shared-responsibility control matrix](#shared-responsibility-control-matrix-nist-800-53)
 - [FIPS mode](#fips-mode-how-to)
 - [Data residency](#data-residency-sc-7)
+- [Data handling and deletion](#data-handling-and-deletion)
 - [Framework crosswalks](#framework-crosswalks)
 - [HIPAA](#hipaa-45-cfr-part-164)
 - [HITRUST CSF](#hitrust-csf-incl-the-ai-security-assessment)
@@ -230,6 +231,22 @@ The `region` option covers the rest. It fills the four `Management` base URLs (`
 This residency guarantee covers the SDK's own configured endpoints only. A `lifecycle` rule's `sendInsightEmail` action is a server-side, operator-configured email delivery of thread-derived content to an arbitrary `recipients` list. It has no residency control and isn't covered by the URL-pinning above.
 
 A deployment that must protect PHI/PII boundaries and uses this action is responsible for its own recipient vetting and residency review. The HIPAA BAA (below) names avatar/ASR/TTS/brain subprocessors, not an email-delivery subprocessor for insight content.
+
+## Data handling and deletion
+
+The SDK stores no conversation data itself. The one exception is Presenter session memory, which stays off unless you pass a `storage` object. How long Kaltura keeps data is a property of your account: ask your Kaltura Account Manager.
+
+Every delete needs an admin token (a user-session token can also delete its own threads) and `{ confirmPermanent: true }`.
+
+| Data | Read or list | Delete |
+|---|---|---|
+| Threads | `threads.list`, `get`, `transcript` | `threads.delete(ids, ks, confirm)`. Deletes are soft: [behavior and result shape](/reference/api/operate/#threads) |
+| Messages | `messages.list`, `get`, `report` | No method. The SDK cannot delete a single message |
+| Knowledge records | `knowledge.list`, `getRecord` | `knowledge.deleteRecord(id, ks, confirm)`. It refuses while an intellect still lists the record, unless you pass `force: true`. `knowledge.removeSource` removes one source from a record |
+| Agents, avatars, intellects | `agents.list`, `avatars.list`, `intellects.list` | `agents.delete`, `avatars.delete`, `intellects.delete`. None cascades: deleting an agent keeps its avatar and intellect |
+| Tools, skills, secrets, catalog items, lifecycle rules, insight settings, email templates | `list` or `get` on each | `delete` on each |
+
+To erase everything for one end user, list their threads with `filter.userIdEquals`, then pass the ids to `threads.delete`. The SDK has no single call for this and no way to see when a soft delete is purged.
 
 ## Framework crosswalks
 
