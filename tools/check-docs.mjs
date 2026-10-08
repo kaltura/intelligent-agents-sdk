@@ -921,6 +921,16 @@ describe('16. Docs accuracy', () => {
   test('the architecture recipe stays in the repo (the site just does not publish it)', () => {
     assert.ok(existsSync(join(ROOT, 'docs/ARCHITECTURE-RECIPE.md')));
   });
+
+  test('the lifecycle page owns the action-type count, and it matches the creatable types in lifecycle.js', () => {
+    const creatable = [...read('src/management/lifecycle.js').matchAll(/^ \* - `\{actionType:'(\w+)'/gm)].map((m) => m[1]);
+    const words = ['one', 'two', 'three', 'four', 'five', 'six'];
+    assert.ok(creatable.length > 0, 'no creatable action types found in lifecycle.js');
+    assert.match(read('docs/lifecycle/README.md'), new RegExp(`You can create ${words[creatable.length - 1]} \`actionType\` values`));
+    const count = /\b(all|the|every)?\s*(\d+|one|two|three|four|five|six)\s+(creatable\s+)?action ?types?\b/i;
+    const offenders = DOCS.filter((f) => f !== 'docs/lifecycle/README.md' && count.test(read(f)));
+    assert.deepEqual(offenders, [], `these pages state an action-type count (link to docs/lifecycle/README.md instead): ${offenders.join(', ')}`);
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════
