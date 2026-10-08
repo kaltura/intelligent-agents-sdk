@@ -116,6 +116,7 @@ This works identically in a text and an avatar/voice session — same event, sam
 - **An unreachable or erroring server doesn't fail the conversation.** The agent proceeds with that server's tools absent from the model's view. Check a server's health yourself (a plain HTTP check against its endpoint). A working conversation is not proof that a given server is reachable.
 - **`allowedPrompts`/`allowedResources` have no effect.** They validate and store, but the model can only call tools. It cannot invoke a prompt or read a resource.
 - **Only one `oauth_required` surfaces per turn.** If a turn touches several OAuth-gated servers with no cached consent, only the first one raises `oauth_required`. Resolve it and send another turn to trigger the next one.
+- **Agents call MCP servers. The SDK cannot expose an agent as one.** No Management API publishes an agent or intellect as an MCP server. The one MCP endpoint the SDK documents is [knowledge search](api/operate.md#knowledge-search-mcp).
 
 ## Related docs
 

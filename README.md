@@ -235,6 +235,8 @@ Pass a per-user `userId` to every conversation or agent token. A token without o
 
 ## Experience
 
+**Browsers and mobile.** The live runtime needs a browser with WebRTC and `getUserMedia`, served over HTTPS. CI runs the avatar media path and the noise-suppressor check in desktop Chromium, Firefox and WebKit. Real iOS and Android devices are covered only by a [manual test plan](manual-testing/voice-video/README.md). There is no native iOS or Android SDK.
+
 ```js
 import { KalturaAvatarSession } from '@kaltura/intelligent-agents/experience';
 
