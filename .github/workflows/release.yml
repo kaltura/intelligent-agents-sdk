@@ -134,6 +134,22 @@ jobs:
       - name: 🎭 Install Chromium
         run: npx playwright install --with-deps chromium
 
+      - name: 🧹 Purge jsDelivr's cached @latest, @major and @major.minor for every src/ file
+        # jsDelivr caches range refs per file, so after a new tag they serve the previous release until purged.
+        # Best effort: the verify step below is the check.
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          V="${TAG#v}"
+          MAJOR="${V%%.*}"
+          MINOR="${V%.*}"
+          for ref in latest "$MAJOR" "$MINOR"; do
+            { git ls-files src; echo package.json; } \
+              | jq -R -s --arg ref "$ref" '{path: (split("\n") | map(select(length > 0)) | map("/gh/kaltura/intelligent-agents-sdk@" + $ref + "/" + .))}' \
+              | curl -sS --fail-with-body -X POST https://purge.jsdelivr.net/ -H 'Content-Type: application/json' --data-binary @- \
+              | jq -r '"@'"$ref"' purge: " + (.status // "unknown")' || echo "@$ref purge request failed, continuing"
+          done
+
       - name: 🌐 Every src/ file byte-identical on @tag, @latest, @major, @major.minor; exports import in headless Chromium; previous tag still served
         id: verify_distribution
         env:
