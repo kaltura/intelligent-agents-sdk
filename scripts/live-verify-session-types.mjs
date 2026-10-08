@@ -184,11 +184,11 @@ try {
         if (r.threadId && r.threadId !== threadA) threads.add(r.threadId);
         outcome = { threw: false, sameThread: r.threadId === threadA };
       } catch (err) {
-        outcome = { threw: true, status: /** @type {any} */ (err)?.status };
+        outcome = { threw: true, status: /** @type {any} */ (err)?.status, code: /** @type {any} */ (err)?.code };
       }
       const transcript = await kaltura.threads.transcript(threadA, admin);
       const leaked = String(transcript?.data ?? '').includes(marker);
-      report.check('user B cannot continue user A thread', !leaked && (!outcome.threw || outcome.status >= 400), { ...outcome, markerInThreadA: leaked });
+      report.check('user B cannot continue user A thread', !leaked && (!outcome.threw || outcome.code === 'thread_access_denied' || outcome.status >= 400), { ...outcome, markerInThreadA: leaked });
     });
 
     await step('user B delete of user A thread deletes nothing', async () => {
