@@ -20,6 +20,8 @@ function harness(routes) {
   return { mgmt, ff };
 }
 
+const AGENT_SCOPE = [{ field: 'object.agent_id', operator: 'eq', value: 'agent-uuid-1' }];
+
 const RULE = {
   id: '507f1f77bcf86cd799439011', partnerId: 123, name: 'Summarize after call', systemName: 'summarize_after_call',
   status: 'active', eventType: 'session_ended', objectType: 'thread', eventConditions: [],
@@ -37,13 +39,13 @@ test('lifecycle.create validates {name, systemName, eventType, objectType, actio
   assert.equal(ff.calls.length, 0, 'no transport before validation passes');
 
   const res = await mgmt.lifecycle.create(
-    { name: 'Summarize after call', systemName: 'summarize_after_call', eventType: 'session_ended', objectType: 'thread', action: RULE.action },
+    { name: 'Summarize after call', systemName: 'summarize_after_call', eventType: 'session_ended', objectType: 'thread', eventConditions: AGENT_SCOPE, action: RULE.action },
     ADMIN_KS,
   );
   assert.equal(res.systemName, 'summarize_after_call');
   assert.match(ff.calls[0].url, /lifecycle\/create$/);
   assert.deepEqual(ff.calls[0].body, {
-    name: 'Summarize after call', systemName: 'summarize_after_call', eventType: 'session_ended', objectType: 'thread', action: RULE.action,
+    name: 'Summarize after call', systemName: 'summarize_after_call', eventType: 'session_ended', objectType: 'thread', eventConditions: AGENT_SCOPE, action: RULE.action,
   });
 });
 
@@ -57,6 +59,55 @@ test('lifecycle.create passes eventConditions through when given', async () => {
     ADMIN_KS,
   );
   assert.deepEqual(ff.calls[0].body.eventConditions, conditions);
+});
+
+const CREATE_BODY = { name: 'x', systemName: 's', eventType: 'session_ended', objectType: 'thread', action: RULE.action };
+
+test('lifecycle.create rejects an unscoped thread rule with lifecycle_unscoped, before any network call', async () => {
+  const { mgmt, ff } = harness([
+    { match: 'lifecycle/create', respond: (req) => ({ status: 200, body: { ...RULE, ...req.body } }) },
+  ]);
+  const unscoped = [
+    CREATE_BODY,
+    { ...CREATE_BODY, eventConditions: [] },
+    { ...CREATE_BODY, eventConditions: [{ field: 'changed_keys', operator: 'has_all', value: ['SUMMARY'] }] },
+    { ...CREATE_BODY, eventConditions: [{ field: 'object.user_id', operator: 'eq', value: 'u1' }] },
+    { ...CREATE_BODY, eventConditions: [{ field: 'object.agent_id', operator: 'neq', value: 'a1' }] },
+  ];
+  for (const body of unscoped) {
+    await assert.rejects(
+      () => mgmt.lifecycle.create(/** @type {any} */ (body), ADMIN_KS),
+      (e) => e.code === 'lifecycle_unscoped' && e.name === 'KalturaError' && /partnerWide/.test(e.detail) && /object\.agent_id/.test(e.detail),
+    );
+  }
+  assert.equal(ff.calls.length, 0, 'the check fires before any HTTP call');
+});
+
+test('lifecycle.create accepts object.agent_id with operator in', async () => {
+  const { mgmt, ff } = harness([
+    { match: 'lifecycle/create', respond: (req) => ({ status: 200, body: { ...RULE, ...req.body } }) },
+  ]);
+  const conditions = [{ field: 'object.agent_id', operator: 'in', value: ['a1', 'a2'] }];
+  await mgmt.lifecycle.create({ ...CREATE_BODY, eventConditions: conditions }, ADMIN_KS);
+  assert.deepEqual(ff.calls[0].body.eventConditions, conditions);
+});
+
+test('lifecycle.create with partnerWide:true accepts an unscoped thread rule and does not send the option', async () => {
+  const { mgmt, ff } = harness([
+    { match: 'lifecycle/create', respond: (req) => ({ status: 200, body: { ...RULE, ...req.body } }) },
+  ]);
+  await mgmt.lifecycle.create(CREATE_BODY, ADMIN_KS, { partnerWide: true });
+  assert.equal(ff.calls.length, 1);
+  assert.equal('partnerWide' in ff.calls[0].body, false);
+  assert.equal('eventConditions' in ff.calls[0].body, false);
+});
+
+test('lifecycle.create does not check a non-thread objectType', async () => {
+  const { mgmt, ff } = harness([
+    { match: 'lifecycle/create', respond: (req) => ({ status: 200, body: { ...RULE, ...req.body } }) },
+  ]);
+  await mgmt.lifecycle.create({ ...CREATE_BODY, objectType: 'other' }, ADMIN_KS);
+  assert.equal(ff.calls.length, 1);
 });
 
 test('lifecycle.get fetches by id; requires a non-empty string id', async () => {
@@ -95,6 +146,133 @@ test('lifecycle.update validates BEFORE any network call, then posts a patch to 
   const res = await mgmt.lifecycle.update(RULE.id, { status: 'inactive' }, ADMIN_KS);
   assert.equal(res.status, 'inactive');
   assert.deepEqual(ff.calls[0].body, { id: RULE.id, status: 'inactive' });
+});
+
+test('lifecycle.update rejects eventConditions without an agent scope, before any network call', async () => {
+  const { mgmt, ff } = harness([
+    { match: 'lifecycle/update', respond: (req) => ({ status: 200, body: { ...RULE, ...req.body } }) },
+  ]);
+  await assert.rejects(() => mgmt.lifecycle.update(RULE.id, { eventConditions: [] }, ADMIN_KS), (e) => e.code === 'lifecycle_unscoped');
+  await assert.rejects(
+    () => mgmt.lifecycle.update(RULE.id, { eventConditions: [{ field: 'changed_keys', operator: 'has_all', value: ['SUMMARY'] }] }, ADMIN_KS),
+    (e) => e.code === 'lifecycle_unscoped',
+  );
+  await assert.rejects(
+    () => mgmt.lifecycle.update(RULE.id, { objectType: 'thread', eventConditions: [] }, ADMIN_KS),
+    (e) => e.code === 'lifecycle_unscoped',
+  );
+  assert.equal(ff.calls.length, 0, 'the check fires before any HTTP call');
+});
+
+test('lifecycle.update accepts agent-scoped conditions (eq and in), partnerWide:true, patches without eventConditions, and non-thread objectType', async () => {
+  const { mgmt, ff } = harness([
+    { match: 'lifecycle/update', respond: (req) => ({ status: 200, body: { ...RULE, ...req.body } }) },
+  ]);
+  await mgmt.lifecycle.update(RULE.id, { eventConditions: AGENT_SCOPE }, ADMIN_KS);
+  await mgmt.lifecycle.update(RULE.id, { eventConditions: [{ field: 'object.agent_id', operator: 'in', value: ['a1'] }] }, ADMIN_KS);
+  await mgmt.lifecycle.update(RULE.id, { eventConditions: [] }, ADMIN_KS, { partnerWide: true });
+  await mgmt.lifecycle.update(RULE.id, { name: 'renamed' }, ADMIN_KS);
+  await mgmt.lifecycle.update(RULE.id, { objectType: 'other', eventConditions: [] }, ADMIN_KS);
+  assert.equal(ff.calls.length, 5);
+  assert.equal('partnerWide' in ff.calls[2].body, false);
+});
+
+test('an agent condition with an empty, blank or wrong-typed value does not count as scope (create and update)', async () => {
+  const { mgmt, ff } = harness([
+    { match: 'lifecycle/create', respond: (req) => ({ status: 200, body: { ...RULE, ...req.body } }) },
+    { match: 'lifecycle/update', respond: (req) => ({ status: 200, body: { ...RULE, ...req.body } }) },
+  ]);
+  const badValues = [
+    { operator: 'eq', value: '' },
+    { operator: 'eq', value: '   ' },
+    { operator: 'eq', value: 123 },
+    { operator: 'eq', value: ['a1'] },
+    { operator: 'eq', value: null },
+    { operator: 'in', value: [] },
+    { operator: 'in', value: ['a1', ''] },
+    { operator: 'in', value: [1] },
+    { operator: 'in', value: 'a1' },
+  ];
+  for (const bad of badValues) {
+    const eventConditions = [{ field: 'object.agent_id', ...bad }];
+    await assert.rejects(
+      () => mgmt.lifecycle.create(/** @type {any} */ ({ ...CREATE_BODY, eventConditions }), ADMIN_KS),
+      (e) => e.code === 'lifecycle_unscoped',
+      `create ${JSON.stringify(bad)}`,
+    );
+    await assert.rejects(
+      () => mgmt.lifecycle.update(RULE.id, { eventConditions }, ADMIN_KS),
+      (e) => e.code === 'lifecycle_unscoped',
+      `update ${JSON.stringify(bad)}`,
+    );
+  }
+  assert.equal(ff.calls.length, 0, 'the check fires before any HTTP call');
+  await mgmt.lifecycle.create({ ...CREATE_BODY, eventConditions: [{ field: 'object.agent_id', operator: 'eq', value: '   ' }] }, ADMIN_KS, { partnerWide: true });
+  assert.equal(ff.calls.length, 1, 'partnerWide skips the value check too');
+});
+
+const EMAIL_BODY = {
+  ...CREATE_BODY, eventType: 'analysis_updated',
+  action: { actionType: 'sendInsightEmail', recipients: ['u1'], presetType: 'conversationInsightExample' },
+};
+const KEYS_COND = { field: 'changed_keys', operator: 'has_all', value: ['SUMMARY', 'TOPIC'] };
+
+test('lifecycle.create rejects a sendInsightEmail rule on analysis_updated without a changed_keys condition, before any network call', async () => {
+  const { mgmt, ff } = harness([
+    { match: 'lifecycle/create', respond: (req) => ({ status: 200, body: { ...RULE, ...req.body } }) },
+  ]);
+  const unfiltered = [
+    [AGENT_SCOPE[0]],
+    [AGENT_SCOPE[0], { field: 'changed_keys', operator: 'has_all', value: [] }],
+    [AGENT_SCOPE[0], { field: 'changed_keys', operator: 'has_all', value: ['SUMMARY', ''] }],
+    [AGENT_SCOPE[0], { field: 'changed_keys', operator: 'not_empty', value: ['SUMMARY'] }],
+    [AGENT_SCOPE[0], { field: 'changed_keys', operator: 'has_any', value: 'SUMMARY' }],
+    [AGENT_SCOPE[0], { field: 'object.user_id', operator: 'eq', value: 'u1' }],
+  ];
+  for (const eventConditions of unfiltered) {
+    await assert.rejects(
+      () => mgmt.lifecycle.create(/** @type {any} */ ({ ...EMAIL_BODY, eventConditions }), ADMIN_KS),
+      (e) => e.code === 'lifecycle_email_unfiltered' && e.name === 'KalturaError' && /emailOnEveryUpdate/.test(e.detail) && /changed_keys/.test(e.detail),
+      JSON.stringify(eventConditions),
+    );
+  }
+  assert.equal(ff.calls.length, 0, 'the check fires before any HTTP call');
+});
+
+test('lifecycle.create accepts an email rule with changed_keys (has_all or has_any), emailOnEveryUpdate:true, a session_ended email rule, and other actions on analysis_updated', async () => {
+  const { mgmt, ff } = harness([
+    { match: 'lifecycle/create', respond: (req) => ({ status: 200, body: { ...RULE, ...req.body } }) },
+  ]);
+  await mgmt.lifecycle.create({ ...EMAIL_BODY, eventConditions: [AGENT_SCOPE[0], KEYS_COND] }, ADMIN_KS);
+  await mgmt.lifecycle.create({ ...EMAIL_BODY, eventConditions: [AGENT_SCOPE[0], { ...KEYS_COND, operator: 'has_any' }] }, ADMIN_KS);
+  await mgmt.lifecycle.create({ ...EMAIL_BODY, eventConditions: AGENT_SCOPE }, ADMIN_KS, { emailOnEveryUpdate: true });
+  await mgmt.lifecycle.create({ ...EMAIL_BODY, eventType: 'session_ended', eventConditions: AGENT_SCOPE }, ADMIN_KS);
+  await mgmt.lifecycle.create({ ...EMAIL_BODY, action: RULE.action, eventConditions: AGENT_SCOPE }, ADMIN_KS);
+  assert.equal(ff.calls.length, 5);
+  assert.equal('emailOnEveryUpdate' in ff.calls[2].body, false, 'the option is not sent');
+});
+
+test('lifecycle.update applies the email check only when the patch sets a sendInsightEmail action with eventConditions', async () => {
+  const { mgmt, ff } = harness([
+    { match: 'lifecycle/update', respond: (req) => ({ status: 200, body: { ...RULE, ...req.body } }) },
+  ]);
+  await assert.rejects(
+    () => mgmt.lifecycle.update(RULE.id, { action: EMAIL_BODY.action, eventConditions: AGENT_SCOPE }, ADMIN_KS),
+    (e) => e.code === 'lifecycle_email_unfiltered',
+  );
+  await assert.rejects(
+    () => mgmt.lifecycle.update(RULE.id, { eventType: 'analysis_updated', action: EMAIL_BODY.action, eventConditions: AGENT_SCOPE }, ADMIN_KS),
+    (e) => e.code === 'lifecycle_email_unfiltered',
+  );
+  assert.equal(ff.calls.length, 0, 'the check fires before any HTTP call');
+
+  await mgmt.lifecycle.update(RULE.id, { action: EMAIL_BODY.action, eventConditions: [...AGENT_SCOPE, KEYS_COND] }, ADMIN_KS);
+  await mgmt.lifecycle.update(RULE.id, { action: EMAIL_BODY.action, eventConditions: AGENT_SCOPE }, ADMIN_KS, { emailOnEveryUpdate: true });
+  await mgmt.lifecycle.update(RULE.id, { eventType: 'session_ended', action: EMAIL_BODY.action, eventConditions: AGENT_SCOPE }, ADMIN_KS);
+  await mgmt.lifecycle.update(RULE.id, { action: EMAIL_BODY.action }, ADMIN_KS);
+  await mgmt.lifecycle.update(RULE.id, { eventConditions: AGENT_SCOPE }, ADMIN_KS);
+  assert.equal(ff.calls.length, 5);
+  assert.equal('emailOnEveryUpdate' in ff.calls[1].body, false, 'the option is not sent');
 });
 
 test('lifecycle.delete requires confirmPermanent, then deletes by id, returning {removed, success, _meta} (no in-use scan)', async () => {

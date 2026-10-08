@@ -38,6 +38,11 @@ if (!partnerId || !adminSecret) { console.error('Set AGENTIC_PARTNER_ID + AGENTI
 // are resolved as Kaltura user ids, not raw email addresses (see the guide).
 const recipientUserId = process.env.DEMO_RECIPIENT_USER_ID || 'demo-support-lead';
 
+// Rules must be scoped to an agent (the SDK refuses unscoped thread rules).
+// Replace with a real agent id to scope the demo rules to that agent.
+const demoAgentId = process.env.DEMO_AGENT_ID || 'demo-agent';
+const agentScope = { field: 'object.agent_id', operator: 'eq', value: demoAgentId };
+
 const kaltura = new Management({ partnerId, adminSecret });
 const admin = await kaltura.sessions.createAdminToken({ userId: 'admin@example.com' });
 
@@ -75,6 +80,7 @@ try {
     systemName: `demo_recipe_summary_${Date.now()}`,
     eventType: 'session_ended',
     objectType: 'thread',
+    eventConditions: [agentScope],
     action: {
       actionType: 'triggerInsightSettingsKai',
       insightSettingsIds: [topicSetting.id, customSetting.id],
@@ -93,7 +99,7 @@ try {
     systemName: `demo_recipe_email_${Date.now()}`,
     eventType: 'analysis_updated',
     objectType: 'thread',
-    eventConditions: [{ field: 'changed_keys', operator: 'has_all', value: ['SUMMARY', 'TOPIC', 'CUSTOM'] }],
+    eventConditions: [agentScope, { field: 'changed_keys', operator: 'has_all', value: ['SUMMARY', 'TOPIC', 'CUSTOM'] }],
     action: {
       actionType: 'sendInsightEmail',
       recipients: [recipientUserId],
@@ -110,7 +116,7 @@ try {
   // never actually checks that our own rule matched.
   const flattenMatchedRuleIds = (matchedRules) => matchedRules.flatMap((entry) => (entry.isGrouped ? entry.rules.map((r) => r.id) : [entry.id]));
 
-  const syntheticObject = { agent_id: 'demo-agent', thread_id: 'demo-thread', user_id: 'demo-user' };
+  const syntheticObject = { agent_id: demoAgentId, thread_id: 'demo-thread', user_id: 'demo-user' };
   const sessionEndedMatch = await kaltura.lifecycle.match('thread', 'session_ended', { object: syntheticObject }, admin);
   const sessionEndedIds = flattenMatchedRuleIds(sessionEndedMatch.matchedRules);
   console.log('session_ended would match rule ids:', sessionEndedIds);
@@ -127,7 +133,7 @@ try {
 } finally {
   // 6. Clean up — lifecycle rules and insight settings have no in-use scan,
   // so delete is immediate. Every deletion is attempted independently: if
-  // one fails, the rest (still-live, partner-wide) must still be cleaned up
+  // one fails, the rest (still-live) must still be cleaned up
   // — not skipped because an earlier delete in the same block threw. Errors
   // are collected rather than thrown here (no-unsafe-finally): throwing
   // inside a finally block would silently replace any error from the try
