@@ -62,7 +62,7 @@ test('renderRequest builds the exact request the tool config describes', () => {
   assert.equal(req.url, `${INSTANCE}/services/data/v68.0/sobjects/Lead/Email/a%40b.co`);
   assert.equal(req.headers.Authorization, `Bearer ${TOKEN}`);
   assert.equal(req.body.LastName, 'L');
-  assert.equal(req.body.Phone, '', 'an omitted optional arg renders empty');
+  assert.equal(req.body.Phone, '', 'the helper renders an omitted arg as empty (runtime behavior is not verified)');
   assert.equal(req.body.LeadSource, 'Web');
   assert.match(req.body.Description, /Thread: thr-1\. Consent to be contacted: true\./);
 });

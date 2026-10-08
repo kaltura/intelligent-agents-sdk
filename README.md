@@ -810,7 +810,7 @@ Salesforce answers an upsert in three ways. The tool maps `result` (the id) and 
 
 The empty `204` means an update works but the agent cannot confirm it from the result. If you need a confirmed answer on updates, use the customer endpoint below, which can always return `saved: true`. A custom `description` replaces the default guidance, so keep these rules in it. The same applies to `salesforceContactUpsert`. `hubspotContactUpsert` returns `contact_id` on success. On an error status it gets the same generic line.
 
-The upsert key goes into the URL. An unencoded `@` in the URL makes the call fail, so the key arg prompt tells the agent to write `@` as `%40`. Args are inserted as written, with no encoding by the tool. In your own tools, use `{Name}` for an arg in the URL or body, and `{{secrets.NAME}}` or `{{ sys__thread_id }}` for secrets and request variables. Headers take secrets and request variables only, not args.
+The upsert key goes into the URL. An unencoded `@` in the URL makes the call fail, so the key arg prompt tells the agent to pass the key percent-encoded (`@` as `%40`, `+` as `%2B`, `/` as `%2F`). Args are inserted as written, with no encoding by the tool. In your own tools, use `{Name}` for an arg in the URL or body, and `{{secrets.NAME}}` or `{{ sys__thread_id }}` for secrets and request variables. Headers take secrets and request variables only, not args.
 
 ### Salesforce access tokens
 

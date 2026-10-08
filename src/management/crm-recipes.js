@@ -143,7 +143,7 @@ function buildSalesforceUpsert(o) {
   const args = {};
   for (const field of fields) {
     const prompt = field === externalIdField
-      ? `${sobject} ${field}. It goes into a URL: write "@" as "%40" and percent-encode other special characters.`
+      ? `${sobject} ${field}. It goes into a URL: pass it percent-encoded: "@" as "%40", "+" as "%2B", "/" as "%2F".`
       : `${sobject} ${field}`;
     args[field] = { type: 'str', prompt, required: required.has(field) };
   }
@@ -185,7 +185,7 @@ function buildSalesforceUpsert(o) {
  *
  * Tool args are filled into the URL and body as `{Name}`. They go in raw, and
  * a raw `@` in the URL makes the call fail, so the upsert key arg tells the
- * model to write `@` as `%40`.
+ * model to pass it percent-encoded (`@` as `%40`, `+` as `%2B`, `/` as `%2F`).
  *
  * @param {object} [cfg]
  * @param {string} [cfg.secretName]       Name of the Salesforce access-token secret (set via `setSecrets`) — REQUIRED (checked at runtime; declared optional in the JSDoc only so an omitted `cfg` degrades to the same TypeError below instead of crashing on `undefined.secretName`).

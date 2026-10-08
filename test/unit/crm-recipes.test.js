@@ -144,7 +144,7 @@ test('salesforceLeadUpsert defaults: fields, required args, consent arg', () => 
   assert.equal(tool.args.consent.type, 'bool');
   assert.deepEqual(Object.keys(tool.response_mapping), ['result', 'success']);
   assert.match(tool.description, /upsert on Email/);
-  assert.match(tool.args.Email.prompt, /write "@" as "%40"/, 'the key arg tells the model to encode @');
+  assert.match(tool.args.Email.prompt, /"@" as "%40", "\+" as "%2B", "\/" as "%2F"/, 'the key arg tells the model to percent-encode');
   assert.ok(!JSON.stringify(tool.request.headers).includes('{Email}'), 'headers never take args');
   assert.match(tool.description, /ONLY if the result shows success true or an id/);
 });
