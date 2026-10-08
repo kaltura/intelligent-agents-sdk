@@ -82,8 +82,8 @@ export {
 // Converse stream helpers: segment classification + the runtime-name set +
 // the client-side-command tool-call parser (the headless peer of session.onToolCall).
 export { GENUI_RUNTIMES, segmentKind, parseToolCall, parseToolResponseName, parseOAuthRequired } from '../core/stream.js';
-// CRM AI-SDR recipes: validated api-tool builders for HubSpot/Salesforce contact upsert.
-export { hubspotContactUpsert, salesforceContactUpsert } from './crm-recipes.js';
+// CRM AI-SDR recipes: validated api-tool builders (HubSpot contact create, Salesforce Contact and Lead upsert).
+export { hubspotContactUpsert, salesforceContactUpsert, salesforceLeadUpsert } from './crm-recipes.js';
 // Site navigation: fire-and-forget `go_to` client tool + SITE MAP / rules prompt blocks
 // (provisioning side) and the compact section-key contract shared with
 // `@kaltura/intelligent-agents/experience/site-nav` and any site build.

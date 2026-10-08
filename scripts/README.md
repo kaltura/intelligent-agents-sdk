@@ -70,6 +70,8 @@ The resolved target's `fetch` refuses any host outside the target's own URLs. So
 
 `live-verify-regions.mjs` needs no credentials. It sends one unauthenticated request to every non-null base URL in `REGIONS` and checks that each host answers over TLS with the same status and content type as nvp1. Run it after changing `REGIONS`.
 
+`live-verify-salesforce-lead.mjs` is the exception to the partner-credentials rule. It needs a Salesforce Developer Edition org or sandbox (`SALESFORCE_INSTANCE_URL`, `SALESFORCE_ACCESS_TOKEN`), sends nothing to the Kaltura backend, and exits 0 with a "skipped" message when the variables are missing.
+
 ### Which script to run
 
 | Script | Covers |
@@ -84,6 +86,7 @@ The resolved target's `fetch` refuses any host outside the target's own URLs. So
 | `live-verify-context-fields.mjs` | `contextId`/`contextType` actually reach the prompt at runtime |
 | `live-verify-request-vars.mjs` | Every documented `request_vars` behavior over `converseOnce` |
 | `live-verify-site-nav.mjs` | The `go_to` contract end to end |
+| `live-verify-salesforce-lead.mjs` | `salesforceLeadUpsert` against a Salesforce dev org or sandbox: create, update, missing field, invalid email, bad token, cleanup. Needs `SALESFORCE_INSTANCE_URL` and `SALESFORCE_ACCESS_TOKEN`, prints `skipped` without them. Talks to Salesforce only, no Kaltura backend |
 | `live-verify-mcp.mjs` | `setMcpServers`/`describe` end to end against a CI-hosted reference MCP server, exposed through a tunnel. Takes `--target` and `--phase=provision\|verify\|cleanup`. See the script header |
 | `live-verify-session-types.mjs` | What each token kind can reach: own vs other users' threads, OVP reach, no-userId and widget shared identity, agent persona, per-user `appInit`, `revoke()`. `--skip-revoke` skips the revoke check. `--with-share` also runs the `messages.share` success path, which leaves an undeletable clone per run: use it only after a change to `messages.share` |
 | `live-verify-set-forced-language.mjs`, `live-verify-force-language.mjs` | A forced language changes the reply, not just storage |
