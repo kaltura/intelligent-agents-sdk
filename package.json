@@ -54,6 +54,7 @@
     "live-verify:site-nav": "node scripts/live-verify-site-nav.mjs",
     "live-verify:force-language": "node scripts/live-verify-force-language.mjs",
     "live-verify:regions": "node scripts/live-verify-regions.mjs",
+    "live-verify:salesforce-lead": "node scripts/live-verify-salesforce-lead.mjs",
     "live-verify:set-forced-language": "node scripts/live-verify-set-forced-language.mjs",
     "live-verify:threads-messages-feedback": "node scripts/live-verify-threads-messages-feedback.mjs",
     "live-verify:session-types": "node scripts/live-verify-session-types.mjs",

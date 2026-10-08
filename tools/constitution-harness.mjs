@@ -147,10 +147,12 @@ if (/createConversationToken/.test(coreSessionSrc)) {
 if (
   /hubspotContactUpsert/.test(crmSrc) &&
   /salesforceContactUpsert/.test(crmSrc) &&
+  /salesforceLeadUpsert/.test(crmSrc) &&
   /hubspotContactUpsert/.test(mgmtIndexSrc) &&
-  /salesforceContactUpsert/.test(mgmtIndexSrc)
+  /salesforceContactUpsert/.test(mgmtIndexSrc) &&
+  /salesforceLeadUpsert/.test(mgmtIndexSrc)
 ) {
-  ok('#10 — hubspotContactUpsert + salesforceContactUpsert present and re-exported');
+  ok('#10 — hubspotContactUpsert + salesforceContactUpsert + salesforceLeadUpsert present and re-exported');
 } else {
   ng('#10 — CRM recipe surface incomplete', '');
 }

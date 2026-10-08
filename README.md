@@ -751,26 +751,115 @@ Headless `collectConverse()` gets the corrected named-tool args for free but doe
 
 ## AI-SDR / CRM lead capture
 
-`./management` ships validated `api` tool builders for common CRM contact-capture integrations, so an AI-SDR or concierge agent doesn't need to hand-write the HTTP tool config. `salesforceContactUpsert` is a true upsert by external ID (create-or-update). `hubspotContactUpsert` is create-only: HubSpot rejects the call with a conflict if a contact with that email already exists, so use it for new-lead capture, not for updating an existing contact.
+`./management` ships validated `api` tool builders for CRM capture, so an AI-SDR or concierge agent doesn't need a hand-written HTTP tool config. They are pure config builders: no network call, no secret value in the config.
+
+| Builder | CRM object | What the call does |
+|---|---|---|
+| `salesforceLeadUpsert` | Lead | Upsert on a key (default `Email`). `LastName` and `Company` are required. |
+| `salesforceContactUpsert` | Contact | Upsert on a key (default `Email`). |
+| `hubspotContactUpsert` | Contact | Create only. HubSpot rejects the call with a conflict if the email exists. The name is kept for compatibility. |
+
+### Lead or Contact
+
+| Your situation | Use |
+|---|---|
+| Visitor is a new prospect, sales works Leads | `salesforceLeadUpsert` |
+| The person is already an account contact, or your org has no Lead workflow | `salesforceContactUpsert` |
+| HubSpot | `hubspotContactUpsert`, new contacts only |
+
+### Salesforce Lead
 
 ```js
-import { hubspotContactUpsert, salesforceContactUpsert } from '@kaltura/intelligent-agents/management';
+import { salesforceLeadUpsert } from '@kaltura/intelligent-agents/management';
 
-// pure config builder — no network call, no secret VALUE here
-const tool = hubspotContactUpsert({ secretName: 'HUBSPOT_TOKEN' });
-// or: salesforceContactUpsert({ secretName: 'SF_TOKEN', instanceUrl: 'https://yourorg.my.salesforce.com' })
+const tool = salesforceLeadUpsert({
+  secretName: 'SF_TOKEN',
+  instanceUrl: 'https://yourorg.my.salesforce.com',
+});
 
 // inject the secret VALUE server-side (never in the tool config)
-await mgmt.intellects.secrets.set(configId, { HUBSPOT_TOKEN: process.env.HUBSPOT_TOKEN }, ks);
+await mgmt.intellects.secrets.set(configId, { SF_TOKEN: accessToken }, ks);
 
-// tools are a separate, partner-level entity — create it, then link it
+// tools are a separate, partner-level entity: create it, then link it
 const { id } = await mgmt.tools.add(tool, ks);
 await mgmt.intellectConfig.setToolIds(configId, [id], ks);
 ```
 
-Both recipes validate their config (via `tools.api()`) and throw a typed error for a missing `secretName`/`instanceUrl` before any write. See `src/management/crm-recipes.js` for the full arg list (`propertiesToCapture`/`fieldsToCapture`, `externalIdField`).
+Defaults and options:
 
-The Salesforce update path can return a `204` with an empty body, so `salesforceContactUpsert`'s `responseMapping` maps `result` from the response's `id` field only when the response has one (an insert). Treat the write itself, not the mapped output, as the success signal.
+| Item | Default | Option |
+|---|---|---|
+| Captured fields | `FirstName, LastName, Company, Email, Phone, Country` | `fieldsToCapture` (must keep `LastName`, `Company` and the key) |
+| Upsert key | `Email`, accepted by Salesforce as a Lead upsert key | `externalIdField` (a custom External ID field needs field access for the integration user) |
+| `LeadSource` | `Web`, set by the builder | `leadSource` (must be a valid value in your org) |
+| `Description` | `Captured by a Kaltura AI agent. Thread: <thread id>. Consent to be contacted: <answer>.` | not configurable |
+| Consent | A required boolean `consent` arg. The prompt tells the agent to call the tool only after the visitor agrees. | `requireConsent: false` |
+| API version | `v68.0` | `apiVersion` |
+
+Salesforce has no standard Lead consent field, so consent is recorded in `Description`.
+
+### What the agent can say
+
+Salesforce answers an upsert in three ways. The tool maps `result` (the id) and `success`, and the default description tells the agent what to do with each answer.
+
+| Salesforce answer | Tool result | Agent says |
+|---|---|---|
+| `201` with an id (new record) | `success: true`, `result` is the id | Saved |
+| Any error status, such as a missing required field, an invalid email or an expired token | No mapped values. The agent only gets a generic "API returned error status" line | Could not save |
+| `204` with an empty body (update of an existing record) | `result` and `success` are empty | Could not confirm. Never "saved" |
+
+The empty `204` means an update works but the agent cannot confirm it from the result. If you need a confirmed answer on updates, use the customer endpoint below, which can always return `saved: true`. A custom `description` replaces the default guidance, so keep these rules in it. The same applies to `salesforceContactUpsert`. `hubspotContactUpsert` returns `contact_id` on success. On an error status it gets the same generic line.
+
+The upsert key goes into the URL. An unencoded `@` in the URL makes the call fail, so the key arg prompt tells the agent to pass the key percent-encoded (`@` as `%40`, `+` as `%2B`, `/` as `%2F`). Args are inserted as written, with no encoding by the tool. In your own tools, use `{Name}` for an arg in the URL or body, and `{{secrets.NAME}}` or `{{ sys__thread_id }}` for secrets and request variables. Headers take secrets and request variables only, not args.
+
+### Salesforce access tokens
+
+A Salesforce access token expires. The default org session timeout is 2 hours. After that Salesforce answers `401` and the agent reports a failed save. Pick one option.
+
+| Option | How | Use when |
+|---|---|---|
+| **(b) Customer endpoint (default)** | The agent calls your own HTTPS endpoint. It holds the Salesforce credentials, refreshes the token itself and does the upsert. The tool only holds a long-lived secret for your endpoint. | Almost always. Kaltura never holds a Salesforce token. |
+| (a) Scheduled refresh | Your server refreshes the token and calls `mgmt.intellects.secrets.set(...)` again before it expires. The SDK does not ship this job. | You want the agent to call Salesforce directly and can run a refresh job well inside the timeout, for example hourly. |
+
+The direct Salesforce tools put the visitor's email into the request URL, because the upsert key is part of the path. The visitor controls that text. For production, use option (b): your endpoint validates and encodes the email before it calls Salesforce. Treat the direct tools as a quick start and for dev orgs.
+
+Option (b) is a plain `api` tool. Your endpoint takes the fields as JSON. Answer `200` with `{ "saved": true, "lead_id": "..." }` or `{ "saved": false }`. A `4xx` or `5xx` reaches the agent only as a generic error line, so use `200` with `saved: false` for failures the agent should handle:
+
+```js
+import { tools } from '@kaltura/intelligent-agents/management';
+
+const tool = tools.api({
+  name: 'save_lead',
+  description: 'Save the visitor as a sales lead after they agree to be contacted. Say it is saved ONLY if the result has saved true. Otherwise say you could not save it.',
+  args: {
+    LastName: { type: 'str', prompt: 'Last name', required: true },
+    Company: { type: 'str', prompt: 'Company', required: true },
+    Email: { type: 'str', prompt: 'Email', required: true },
+  },
+  request: {
+    url: 'https://your-server.example.com/leads',
+    method: 'POST',
+    headers: { Authorization: 'Bearer {{secrets.LEADS_ENDPOINT_TOKEN}}', 'Content-Type': 'application/json' },
+    body: { LastName: '{LastName}', Company: '{Company}', Email: '{Email}', threadId: '{{ sys__thread_id }}' },
+  },
+  responseMapping: { saved: 'saved', lead_id: 'lead_id' },
+});
+```
+
+Your endpoint must authenticate every request itself. See the security note in [docs/api/build/tools-and-secrets.md](docs/api/build/tools-and-secrets.md).
+
+### HubSpot and the rest
+
+```js
+import { hubspotContactUpsert } from '@kaltura/intelligent-agents/management';
+
+const tool = hubspotContactUpsert({ secretName: 'HUBSPOT_TOKEN' });
+await mgmt.intellects.secrets.set(configId, { HUBSPOT_TOKEN: process.env.HUBSPOT_TOKEN }, ks);
+const { id } = await mgmt.tools.add(tool, ks);
+await mgmt.intellectConfig.setToolIds(configId, [id], ks);
+```
+
+All builders validate their config (via `tools.api()`) and throw a typed error for a missing `secretName`/`instanceUrl` before any write. See `src/management/crm-recipes.js` for the full arg list. `instanceUrl` must be an `https:` origin with no path, query or credentials. Both Salesforce builders require `LastName` in `fieldsToCapture`. For a check against a real Salesforce dev or sandbox org, run `npm run live-verify:salesforce-lead` (see [scripts/README.md](scripts/README.md)). It checks Salesforce itself and the SDK's request shapes. It does not check the agent tool runtime.
 
 The `authentication` block of an `api` tool supports the OAuth2 authorization-code flow only (viewer consent). It takes `client_id`, `client_secret` (a `secrets.<name>` reference), `token_url` and `auth_url`, all required. It has no `flow` or `scopes` option. Client-credentials providers such as the Marketo REST API do not fit it. For Airtable, Google Sheets/Forms, or any other REST target, and for the OAuth2 flow itself, see [docs/EXTERNAL-API-INTEGRATIONS.md](docs/EXTERNAL-API-INTEGRATIONS.md).
 
