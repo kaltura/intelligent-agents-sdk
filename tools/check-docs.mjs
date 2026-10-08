@@ -896,12 +896,11 @@ describe('16. Docs accuracy', () => {
     assert.match(map, /BYO-LLM[^\n]*possible[^\n]*Account Manager/, 'module map must say an external LLM is possible and name the Account Manager');
   });
 
-  test('the term DPP is gone from every tracked markdown file', () => {
-    const hits = [];
-    for (const f of scanFiles().filter((x) => x.endsWith('.md'))) {
-      if (/\bDPPs?\b/.test(read(f))) hits.push(f);
-    }
-    assert.deepEqual(hits, [], `"DPP" found in: ${hits.join(', ')}. Say "request variables" or "page context".`);
+  test('the retired per-slide-context acronym is gone from every tracked markdown file', () => {
+    const term = ['D', 'P', 'P'].join('');   // built at runtime so this file does not contain the word itself
+    const re = new RegExp(`\\b${term}s?\\b`);
+    const hits = scanFiles().filter((f) => f.endsWith('.md') && re.test(read(f)));
+    assert.deepEqual(hits, [], `"${term}" found in: ${hits.join(', ')}. Say "request variables" or "page context".`);
   });
 
   test('SECURITY.md residency section says session hosts come from appInit and names the region option', () => {
