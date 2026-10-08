@@ -165,6 +165,30 @@ export function appendTranscript(who, text) {
   followOrOffer(wasPinned || who === 'you');
 }
 
+/**
+ * A link button on its own transcript line, for a client tool that offers the
+ * visitor a page action. The caller passes a fixed label and URL, never text
+ * from the model. Opens in a new tab. Does nothing if a link with the same
+ * `key` is already in the transcript, so a repeated tool call adds no second
+ * button.
+ */
+export function appendActionLink(key, label, url) {
+  if (transcriptEl.querySelector(`[data-action="${key}"]`)) return;
+  const wasPinned = isPinned();
+  const p = document.createElement('p');
+  p.className = 'nova-action';
+  const a = document.createElement('a');
+  a.className = 'nova-cta';
+  a.dataset.action = key;
+  a.href = url;
+  a.target = '_blank';
+  a.rel = 'noopener noreferrer';
+  a.textContent = label;
+  p.append(a);
+  transcriptEl.insertBefore(p, thinkingEl);
+  followOrOffer(wasPinned);
+}
+
 function paint(body, cls) {
   if (cls === 'nova-nova') renderMarkdown(body, body.dataset.raw);
   else body.textContent = body.dataset.raw;
