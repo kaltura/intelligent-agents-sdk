@@ -94,9 +94,8 @@ function sessionKind() {
 
 // Client tool with no arguments. Nova calls it after she answers "is it free?".
 // The page owns the label and the address, so the model never picks a URL.
-// Same free-trial page the Getting started guide links to.
 const SIGNUP_LINK_TOOL = 'show_signup_link';
-const SIGNUP_URL = 'https://subscription.kaltura.com/purchase-manager/purchase-manager/avatar-studio-free-trial';
+const SIGNUP_URL = 'https://corp.kaltura.com/pricing/conversational-agent/';
 const SIGNUP_LABEL = 'Start a free trial';
 
 const els = {

@@ -5,7 +5,7 @@ import { test, expect } from './fixtures.mjs';
 // types a question (this starts a text chat), answers the three backend
 // calls locally, and streams a reply with the tool call in it.
 
-const SIGNUP_URL = 'https://subscription.kaltura.com/purchase-manager/purchase-manager/avatar-studio-free-trial';
+const SIGNUP_URL = 'https://corp.kaltura.com/pricing/conversational-agent/';
 
 async function askWithReply(page, segments) {
   await page.route(/\/service\/session\/action\/startWidgetSession/, (route) =>
