@@ -8,7 +8,7 @@ import { Management } from '../../src/management/client.js';
 import { KalturaChatSession } from '../../src/experience/chat-session.js';
 
 // Made-up values only. The 32-hex shape matches a real server trace id.
-const TRACE = '0123456789abcdef0123456789abcdef';
+const TRACE = '0123456789abcdef'.repeat(2);
 const KS = 'djJ8' + 'A'.repeat(40);
 const res = (status, hdrs, body = '{}') => ({
   ok: status < 400, status,
