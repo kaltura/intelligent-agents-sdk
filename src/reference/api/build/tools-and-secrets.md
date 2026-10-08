@@ -71,10 +71,18 @@ Inline lookup table:
 
 ### `code` tool
 
-Python in a server sandbox:
+Python in a server sandbox. Define `def main(...)`. Each declared arg is passed to it by name, so the parameter names must match the `args` keys. Whatever `main` returns goes back to the model:
 
 ```json
-{ "name": "fx_rate", "config": { "type": "code", "description": "Convert currency", "code": "def main(request_config):\n    return 'ok'" } }
+{
+  "name": "fx_rate",
+  "config": {
+    "type": "code",
+    "description": "Convert an amount between currencies",
+    "args": { "amount": { "type": "float", "prompt": "Amount to convert", "required": true } },
+    "code": "def main(amount):\n    return {'usd': round(amount * 1.08, 2)}"
+  }
+}
 ```
 
 **`csv` and `code` are unavailable by default.** `POST /v1/tool/add` and `/update` reply HTTP 403 (`Tool type 'csv'/'code' is unavailable by default, call support`) for a real partner until Kaltura support enables the type on your account. `api` and `client` need no such enablement. SDK: `tools.csv(...)`/`tools.code(...)` still validate and build the config locally; the 403 comes back from `mgmt.tools.add`/`update`'s network call.
