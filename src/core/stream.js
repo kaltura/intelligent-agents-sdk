@@ -12,6 +12,7 @@
  * @module core/stream
  */
 import { meta } from './ids.js';
+import { errorFromOkBody } from './errors.js';
 
 /**
  * @typedef {object} ConverseSegment
@@ -25,6 +26,25 @@ import { meta } from './ids.js';
  * @property {{widgetName?:string, runtimeName?:string, subtype?:string, tool_name?:string, tool_display_name?:string}} [metadata]
  * @property {{id:string, name?:string, args?:object, type?:string, wait_for_response?:boolean}} [tool_metadata]  Present on some `type:"tool"` segments (wire-protocol/events-catalog.md §4e); see {@link parseToolCall}.
  */
+
+/**
+ * The readable body of a 2xx converse response. A reply typed plain `application/json` (not
+ * `x-ndjson` or `event-stream`) is a single JSON document, not a segment stream. If it is an
+ * error body, throw it as a {@link KalturaError} so it is never parsed into a blank segment.
+ * Otherwise hand back a one-chunk stream of the same bytes.
+ * @param {Response} res @param {{path:string, requestId?:string, headers?:Record<string,string>}} ctx
+ * @returns {Promise<ReadableStream<Uint8Array>>}
+ */
+export async function converseBodyOrThrow(res, ctx) {
+  const type = (res.headers?.get?.('content-type') || '').toLowerCase();
+  if (!res.body || !/^application\/json\b/.test(type)) return res.body;
+  const text = await res.text();
+  let parsed; try { parsed = JSON.parse(text); } catch { parsed = undefined; }
+  const err = errorFromOkBody(parsed, ctx.path);
+  if (err) { err.requestId = ctx.requestId || err.requestId; err.headers = ctx.headers && Object.keys(ctx.headers).length ? ctx.headers : undefined; throw err; }
+  const bytes = new TextEncoder().encode(text);
+  return new ReadableStream({ start(c) { c.enqueue(bytes); c.close(); } });
+}
 
 /**
  * @param {ReadableStream<Uint8Array>} stream
@@ -83,7 +103,12 @@ function parseLine(raw, sse) {
     line = line.slice(5).trim();
     if (!line || line === '[DONE]') return null;
   }
-  try { return JSON.parse(line); } catch { return null; }
+  try { return JSON.parse(line); } catch {
+    // A line that is not JSON is never dropped silently: it surfaces as an `error` segment so
+    // `conversations.send` and `KalturaChatSession` raise it (a proxy or gateway error page, or a
+    // truncated final line, would otherwise vanish and look like an empty reply).
+    return { type: 'error', content: `Unparseable stream line: ${line.slice(0, 200)}`, isFinal: true, metadata: { subtype: 'unparseable_stream_line' } };
+  }
 }
 
 /**
@@ -416,6 +441,9 @@ export function parseOAuthRequired(seg) {
  *   order (the same objects grouped under `experiences`), for callers that want
  *   a stream rather than a by-runtime map.
  * - `kindCounts` — `{spoken,control,experience,error}` tally via `segmentKind`.
+ * - `errors` — the `type:"error"` segments, in arrival order. The server reports some
+ *   refusals in-band (HTTP 200 plus an `error` segment). `collectConverse` only collects them;
+ *   `conversations.send` throws on them by default (see `onErrorSegment`).
  * - `toolCalls` — flat array of `{name,args,raw}` for every `type:"tool"`
  *   segment ({@link parseToolCall}), in arrival order. This is the headless
  *   peer of `session.on('toolCall')` — read it to act on client-side commands
@@ -470,6 +498,7 @@ export async function collectConverse(segments, opts = {}) {
   /** @type {{call:ToolCall, errors:string[]}[]} */ const toolCallsInvalid = [];
   /** @type {ReturnType<typeof parseOAuthRequired>[]} */ const oauthRequired = [];
   const kindCounts = { spoken: 0, control: 0, experience: 0, error: 0 };
+  /** @type {ConverseSegment[]} */ const errors = [];
   const seenKeys = new Set();
   const perTool = Object.create(null);
   let rawToolSegments = 0;   // total type:"tool" segments seen (incl. dropped dupes) — spiral signal
@@ -481,7 +510,9 @@ export async function collectConverse(segments, opts = {}) {
       break;
     }
     all.push(s);
-    kindCounts[segmentKind(s)]++;
+    const kind = segmentKind(s);
+    kindCounts[kind]++;
+    if (kind === 'error') errors.push(s);
     if (s.threadId && !threadId) threadId = s.threadId;
     if (s.messageId && !messageId) messageId = s.messageId;
     if (s.type && SPOKEN_TYPES.has(s.type) && s.content) text += s.content;
@@ -533,6 +564,7 @@ export async function collectConverse(segments, opts = {}) {
     toolCallsInvalid,
     oauthRequired,
     kindCounts,
+    errors,
     spiralStopped,
     truncated,
     _meta: meta({ source: 'sdk/core/stream', scope: 'converse-stream (client-collected)' }),

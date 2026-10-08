@@ -99,7 +99,9 @@ export class Agents {
    * `live`), the delete is REFUSED unless you ALSO pass `{ allowProtected: true }`.
    * This is the guardrail against a blind cleanup-by-tag sweep nuking a real,
    * in-use agent. The check reads the agent with `agent/get`. If that lookup
-   * fails, the delete proceeds. `confirm.skipProtectedCheck:true` skips the
+   * fails, the delete is refused with that error, so a guard that cannot run never lets
+   * a delete through. A missing agent (`not_found` / `agent_not_found`) is the one exception: there is nothing
+   * to protect, and the delete reports its own result. `confirm.skipProtectedCheck:true` skips the
    * guard and the lookup entirely.
    * {@link PROTECTED_TAGS} is frozen and not caller-extendable. Run your own
    * tag check first if you need extra protected markers.
@@ -111,7 +113,7 @@ export class Agents {
     requireConfirm(confirm, 'agents.delete', agentId);
     if (!confirm.allowProtected && !confirm.skipProtectedCheck) {
       // Look up the agent's tags; refuse if any is protected (production marker).
-      const agent = await this.get(agentId, ks).catch(() => null);
+      const agent = await this.get(agentId, ks).catch((e) => { if (e?.status === 404 || e?.code === 'not_found' || e?.code === 'agent_not_found') return null; throw e; });
       const hit = agent && matchProtectedTag(agent.adminTags);
       if (hit) {
         throw new KalturaError({

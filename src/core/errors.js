@@ -102,15 +102,34 @@ export function errorFromResponse({ status, path, body, requestId, headers }) {
   });
 }
 
+/** Keys an error-only envelope may carry. A body with any other key is a real payload. */
+const ERROR_ENVELOPE_KEYS = new Set(['error', 'message', 'detail', 'code', 'status', 'statusCode', 'success', 'ok', 'requestId', 'request_id']);
+
+/** @param {unknown} v */
+function errorText(v) {
+  if (typeof v === 'string') return v;
+  if (v && typeof v === 'object') {
+    const o = /** @type {Record<string, unknown>} */ (v);
+    if (typeof o.message === 'string') return o.message;
+    if (typeof o.detail === 'string') return o.detail;
+  }
+  return undefined;
+}
+
 /**
- * Some endpoints return HTTP 200 with a KalturaAPIException body instead of a
- * failing status. Detect that and raise it as a real error.
+ * Some endpoints return HTTP 200 with an error in the body instead of a
+ * failing status. Detect that and raise it as a real error. Recognized shapes:
+ * a `KalturaAPIException`, `{code, message, args}`, `{message, error:true}`,
+ * and an error-ONLY envelope: `{error: string|{message}}`, `{success:false}`
+ * or `{status|statusCode: >=400}` whose keys are all envelope keys
+ * (error/message/detail/code/status/statusCode/success/ok/requestId). A body
+ * that also carries any other key is treated as a real payload.
  * @param {unknown} body
  * @param {string} path
  * @returns {KalturaError|null}
  */
 export function errorFromOkBody(body, path) {
-  if (!body || typeof body !== 'object') return null;
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return null;
   const b = /** @type {Record<string, unknown>} */ (body);
   const code = typeof b.code === 'string' ? b.code : undefined;
   const message = typeof b.message === 'string' ? b.message : undefined;
@@ -119,17 +138,58 @@ export function errorFromOkBody(body, path) {
     b.objectType === 'KalturaAPIException' ||
     (code && message && b.args !== undefined) ||
     (message && b.error === true);
-  if (!looksLikeException) return null;
+  let detail = message;
+  let wireStatus;
+  if (!looksLikeException) {
+    const keys = Object.keys(b);
+    const envelopeOnly = keys.length > 0 && keys.every((k) => ERROR_ENVELOPE_KEYS.has(k));
+    const numStatus = [b.status, b.statusCode].find((v) => typeof v === 'number' && v >= 400);
+    const failed = (b.error && b.error !== true) || b.success === false || b.ok === false || numStatus !== undefined;
+    if (!envelopeOnly || !failed) return null;
+    detail = errorText(b.error) || message || errorText(b.detail) || (code ? String(code) : undefined);
+    wireStatus = numStatus;
+  }
   let sdkCode = 'api_exception';
-  for (const [re, c] of CODE_BY_PATTERN) if (re.test(`${code || ''} ${message || ''}`)) { sdkCode = c; break; }
+  for (const [re, c] of CODE_BY_PATTERN) if (re.test(`${code || ''} ${detail || ''}`)) { sdkCode = c; break; }
   return new KalturaError({
     type: BASE + sdkCode,
     title: code || 'api exception',
     status: 200,
-    detail: message,
+    detail: detail || `HTTP 200 from ${path} carried an error body`,
     instance: path,
     code: sdkCode,
-    body,
+    body: wireStatus === undefined ? body : { ...b, wireStatus },
+  });
+}
+
+/**
+ * Turn the `type:"error"` segments of a converse stream into one
+ * {@link KalturaError}. The server reports some refusals IN-BAND: the HTTP
+ * status is 200 and the refusal arrives as an `error` segment. Returns `null`
+ * when the stream has none. `partial` rides in `body` so a caller can see what
+ * the turn produced before it failed.
+ * @param {Array<{type?:string, content?:unknown, threadId?:string, messageId?:string, [k:string]:unknown}>} segments
+ * @param {{path?:string, requestId?:string, threadId?:string, partial?:object}} [ctx]
+ * @returns {KalturaError|null}
+ */
+export function errorFromErrorSegments(segments, ctx = {}) {
+  const errs = segments.filter((s) => s && s.type === 'error');
+  if (!errs.length) return null;
+  const text = errs.map((s) => (typeof s.content === 'string' && s.content ? s.content : JSON.stringify(s))).join('; ').slice(0, 500);
+  const denied = /No permission for thread/i.test(text);
+  const code = denied ? 'thread_access_denied' : 'stream_error';
+  const hint = denied
+    ? `${ctx.threadId ? `Thread ${ctx.threadId} ` : 'The thread '}belongs to a different user. Start the session without this threadId, or mint the token with the userId that created the thread.`
+    : '';
+  return new KalturaError({
+    type: BASE + code,
+    title: code.replace(/_/g, ' '),
+    status: 200,
+    detail: `The server refused the turn: ${text.replace(/[.\s]+$/, '')}.${hint ? ` ${hint}` : ''}`,
+    instance: ctx.path,
+    code,
+    requestId: ctx.requestId,
+    body: { errors: errs, ...(ctx.threadId ? { threadId: ctx.threadId } : {}), ...(ctx.partial ? { partial: ctx.partial } : {}) },
   });
 }
 

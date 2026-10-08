@@ -18,7 +18,7 @@ Filter keys: `agentId`, `adminTagsIn`, `adminTagsNotIn`, `searchValue` (case-ins
 
 The request also takes a top-level `orderBy` (`+createdAt`, `-createdAt`, `+updatedAt`, `-updatedAt`; anything else 400s) — a separate field from `filter`. This differs from Threads/Messages below, where `orderBy` nests inside `filter`. SDK: `mgmt.agents.list(ks, opts)` passes `opts.filter` through as-is and does not take `orderBy`.
 
-`mgmt.agents.delete` refuses to delete an agent whose `adminTags` match a production marker (`prod`, `production`, `keep`, `do-not-delete`, `live` — see `PROTECTED_TAGS` in `src/management/agents.js`). It only proceeds when called with `{confirmPermanent:true, allowProtected:true}`. This guards against an automated cleanup-by-tag sweep deleting a real, in-use agent.
+`mgmt.agents.delete` refuses to delete an agent whose `adminTags` match a production marker (`prod`, `production`, `keep`, `do-not-delete`, `live` — see `PROTECTED_TAGS` in `src/management/agents.js`). It only proceeds when called with `{confirmPermanent:true, allowProtected:true}`. This guards against an automated cleanup-by-tag sweep deleting a real, in-use agent. The check reads the agent first. If that read fails (other than the agent not existing), the delete is refused with that error. `{skipProtectedCheck:true}` skips the read and the guard.
 
 ## Avatars — `https://api.avatar.us.kaltura.ai`
 

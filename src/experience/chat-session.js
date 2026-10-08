@@ -34,7 +34,7 @@ import { Emitter } from './emitter.js';
 import { assertRequestVars, remapConverseError } from '../management/conversations.js';
 import { validateCapabilities } from '../management/capabilities.js';
 import { inspectKs } from '../management/ks-inspect.js';
-import { KalturaError, errorFromResponse } from '../core/errors.js';
+import { KalturaError, errorFromResponse, errorFromErrorSegments } from '../core/errors.js';
 import { normalizeKickoff } from '../core/opening.js';
 import { makeAuditEmitter } from '../core/session.js';
 import { sanitizeJson } from '../core/safety.js';
@@ -43,7 +43,7 @@ import { randId } from '../core/ids.js';
 import { pickResponseHeaders, makeResponseNotifier } from '../core/response-headers.js';
 import {
   parseConverseStream, parseToolCall, parseToolResponseName, parseOAuthRequired, canonicalJson,
-  validateToolArgs, SPOKEN_TYPES,
+  validateToolArgs, SPOKEN_TYPES, converseBodyOrThrow,
 } from '../core/stream.js';
 import { createSessionCompleter } from './session-complete.js';
 
@@ -99,6 +99,12 @@ export class KalturaChatSession extends Emitter {
    * @param {string} [cfg.presenceChannelPrefix] Default `'kaltura-agents:thread'`.
    * @param {number} [cfg.presenceHeartbeatMs] Default 4000.
    * @param {number} [cfg.presenceStaleMs] Default 12000.
+   * @param {'throw'|'warn'} [cfg.onErrorSegment] What `sendText()` does when the server refuses a turn
+   *   in-band (HTTP 200 plus a `type:"error"` segment, for example `No permission for thread` for a
+   *   `threadId` another user owns). `'throw'` (default) emits `error` and rejects with a
+   *   {@link KalturaError} (`thread_access_denied` or `stream_error`, segments in `err.body`).
+   *   `'warn'` resolves with the segments as before and emits a `warning` with the same code.
+   *   Any other value throws `bad_request`.
    * @param {string|{text:string, echo?:boolean}} [cfg.kickoff]  A first turn the SDK sends for you on `connect()`,
    *   exactly once per session object, through the same serialized path as `sendText()`. Its user-side
    *   `transcript` echo is skipped unless `echo: true`. Empty/whitespace text sends nothing. Any other
@@ -122,6 +128,10 @@ export class KalturaChatSession extends Emitter {
     if (cfg.capabilities !== undefined) validateCapabilities(cfg.capabilities, 'KalturaChatSession capabilities');
     this._capabilities = cfg.capabilities;
     { const f = cfg.fetch || globalThis.fetch; this._fetch = typeof f === 'function' ? f.bind(globalThis) : f; }
+    if (cfg.onErrorSegment !== undefined && cfg.onErrorSegment !== 'throw' && cfg.onErrorSegment !== 'warn') {
+      throw new KalturaError({ type: 'about:blank', title: 'bad onErrorSegment', code: 'bad_request', detail: `KalturaChatSession onErrorSegment must be 'throw' or 'warn', got ${JSON.stringify(cfg.onErrorSegment)}.` });
+    }
+    this._onErrorSegment = cfg.onErrorSegment ?? 'throw';
     this._threadId = cfg.threadId;
     this._lastMessageId = undefined;
     const info = inspectKs(raw);
@@ -326,6 +336,12 @@ export class KalturaChatSession extends Emitter {
           this.emit('transcript', { text: seg.content, type: 'final', speechId: null, words: [] });
         }
       }
+      const segErr = errorFromErrorSegments(segments, {
+        path: '/assistant/converse', threadId: this._threadId,
+        partial: { text: collectedText, threadId: this._threadId, messageId: this._lastMessageId },
+      });
+      if (segErr && this._onErrorSegment === 'throw') throw segErr;
+      if (segErr) this.emit('warning', { code: segErr.code, message: segErr.detail, detail: segErr.body });
       this._audit('turn.converse', 'success', { action: 'sendText' });
       if (!segments.length) this._checkEmptyTurn();
       return { text: collectedText, threadId: this._threadId, messageId: this._lastMessageId, segments };
@@ -381,7 +397,7 @@ export class KalturaChatSession extends Emitter {
       throw errorFromResponse({ status: res.status, path: '/assistant/converse', body: parsed, requestId, headers });
     }
     if (!res.body) throw new KalturaError({ type: 'about:blank', title: 'no stream body', code: 'server_error', detail: 'converse response had no readable body.' });
-    return res.body;
+    return converseBodyOrThrow(res, { path: '/assistant/converse', requestId, headers });
   }
 
   /**
