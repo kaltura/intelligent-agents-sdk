@@ -63,7 +63,7 @@ const tool = api({
       token_url: 'https://auth.example.com/oauth/token',
       auth_url: 'https://auth.example.com/oauth/authorize',
     },
-    body: { email: '{{args.email}}' },
+    body: { email: '{email}' },
   },
   responseMapping: { result: 'result' },
 });
@@ -98,7 +98,7 @@ Two read-only checks, both worth running after setup and before believing an int
 
 ## Example: CRM / marketing-automation integration
 
-A CRM or marketing-automation write is a routine instance of the pattern above: the same secret → tool → link steps, pointed at a CRM's contact-upsert endpoint. The SDK ships two ready-made builders for the most common cases.
+A CRM or marketing-automation write is a routine instance of the pattern above: the same secret → tool → link steps, pointed at a CRM's contact-upsert endpoint. The SDK ships three ready-made builders for the most common cases: HubSpot contact create, Salesforce Contact upsert and Salesforce Lead upsert. The walkthrough, the Contact-or-Lead table and the token options are in the README section [AI-SDR / CRM lead capture](https://github.com/kaltura/intelligent-agents-sdk/blob/main/README.md#ai-sdr--crm-lead-capture).
 
 ### HubSpot
 
@@ -121,20 +121,26 @@ This is a pure config builder. No network call happens inside `hubspotContactUps
 
 ### Salesforce
 
-`salesforceContactUpsert()` (same file) wraps Salesforce's REST `sobjects` upsert-by-external-ID endpoint (`PATCH {instanceUrl}/services/data/v59.0/sobjects/Contact/{externalIdField}/{value}`), again using a static bearer token in the `Authorization` header:
+`salesforceContactUpsert()` and `salesforceLeadUpsert()` (same file) wrap Salesforce's REST `sobjects` upsert-by-external-ID endpoint (`PATCH {instanceUrl}/services/data/{version}/sobjects/{Contact|Lead}/{externalIdField}/{value}`), again using a static bearer token in the `Authorization` header:
 
 ```js
-const tool = salesforceContactUpsert({
+const contactTool = salesforceContactUpsert({
   secretName: 'SF_TOKEN',
   instanceUrl: 'https://yourorg.my.salesforce.com',
   externalIdField: 'Email',
   fieldsToCapture: ['Email', 'FirstName', 'LastName'],
 });
+
+// A Lead needs LastName and Company. LeadSource and Description are set by the builder.
+const leadTool = salesforceLeadUpsert({
+  secretName: 'SF_TOKEN',
+  instanceUrl: 'https://yourorg.my.salesforce.com',
+});
 ```
 
-One real Salesforce quirk this builder accounts for: an upsert-by-external-ID `PATCH` returns `201 {id: ...}` on insert but `204` with an **empty body** on update. There's no field guaranteed present on both, so its `responseMapping` only maps `result: 'id'` (present when it exists) rather than assuming a shape that breaks on the update path. The point of this tool is the side effect (the contact write), not what it echoes back.
+One real Salesforce quirk these builders account for: an upsert-by-external-ID `PATCH` returns `201 {id, success}` on insert, an error status on failure, and `204` with an **empty body** on update. Their `responseMapping` maps `result` and `success`, each empty on a `204`. An error status never reaches the mapping: the agent gets a generic "API returned error status" line. The default description tells the agent to say "saved" only when `success` or an id is present, and to say it could not confirm the save when the result is empty or the call failed. The upsert key is part of the URL and an unencoded `@` there makes the call fail, so the key arg prompt tells the agent to pass the key percent-encoded (`@` as `%40`, `+` as `%2B`, `/` as `%2F`). An omitted optional arg is written as the text "None" and an empty string as blank, so the optional arg prompts ask for an empty string. The Lead builder also writes a fixed `LeadSource`, and a `Description` with the thread id and the visitor's consent answer.
 
-**This builder authenticates with a static secret**, exactly like the HubSpot one. It does *not* use the OAuth2 `authentication` block described above. That's fine for a Salesforce Connected App access token you mint and rotate yourself, but it does mean *you* are responsible for refreshing that token before it expires; the platform won't refresh it for you unless you use the OAuth2 `authentication` block (authorization-code flow only).
+**These builders authenticate with a static secret**, exactly like the HubSpot one. They do *not* use the OAuth2 `authentication` block described above. A Salesforce access token expires (the default org session timeout is 2 hours), so *you* must refresh it, or route the call through your own endpoint that holds the Salesforce credentials. The README section above compares both options. The direct tools also put the visitor's email in the request URL, so production setups should prefer the customer endpoint, which validates and encodes it. The platform won't refresh the token for you unless you use the OAuth2 `authentication` block (authorization-code flow only).
 
 ### Marketo — two valid integration paths
 

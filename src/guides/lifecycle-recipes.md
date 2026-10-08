@@ -165,7 +165,7 @@ node examples/lifecycle-insights-and-email.mjs
 
 | Doc | What it adds |
 |---|---|
-| [Lifecycle Rules](/reference/lifecycle/) | The full field-by-field reference: every rule shape, all three action types, `InsightSettings`, the full CRUD + discovery method table |
+| [Lifecycle Rules](/reference/lifecycle/) | The full field-by-field reference: every rule shape, the action types, `InsightSettings`, the full CRUD + discovery method table |
 | [`examples/lifecycle-insights-and-email.mjs`](https://github.com/kaltura/intelligent-agents-sdk/blob/main/examples/lifecycle-insights-and-email.mjs) | The runnable example this recipe walks through |
 | [Getting Started](/getting-started/) | Where `configId`/`agentId` and the admin token in the examples above come from |
 
