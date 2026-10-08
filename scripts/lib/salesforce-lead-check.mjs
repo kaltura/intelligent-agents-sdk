@@ -37,6 +37,15 @@ export function orgUrlProblem(instanceUrl, confirmNonProd = false) {
 }
 
 /**
+ * Percent-encode every reserved character in an upsert key, the way the key
+ * arg prompt asks the model to (`@` as `%40`, `+` as `%2B`, `/` as `%2F`).
+ * @param {string} value
+ */
+export function encodeKeyArg(value) {
+  return encodeURIComponent(value);
+}
+
+/**
  * Fill a tool template the way the tool runtime does. `{{ path }}` reads
  * request variables and secrets (`secrets.NAME`, `sys__thread_id`). `{Name}`
  * reads a tool arg, inserted raw with no percent-encoding. A missing value
@@ -110,7 +119,7 @@ export async function runLeadChecks({ fetch: fetchFn, instanceUrl, token, tag, c
   const base = `${instanceUrl}/services/data/${API_VERSION}`;
   const auth = { Authorization: `Bearer ${token}` };
   // The upsert key goes into the URL, where a raw @ fails: the model writes it as %40.
-  const full = { FirstName: 'Sdk', LastName: 'LiveVerify', Company: 'Live Verify Co', Email: email.replace('@', '%40'), Phone: '555-0100', Country: 'US', consent: true };
+  const full = { FirstName: 'Sdk', LastName: 'LiveVerify', Company: 'Live Verify Co', Email: encodeKeyArg(email), Phone: '555-0100', Country: 'US', consent: true };
 
   /** @type {{step:string, ok:boolean, detail?:unknown}[]} */
   const results = [];

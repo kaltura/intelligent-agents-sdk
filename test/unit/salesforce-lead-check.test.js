@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { renderTemplate, renderRequest, callTool, runLeadChecks, orgUrlProblem } from '../../scripts/lib/salesforce-lead-check.mjs';
+import { renderTemplate, renderRequest, encodeKeyArg, callTool, runLeadChecks, orgUrlProblem } from '../../scripts/lib/salesforce-lead-check.mjs';
 import { salesforceLeadUpsert } from '../../src/management/crm-recipes.js';
 import { fakeFetch } from '../fakes/fetch.js';
 
@@ -65,6 +65,14 @@ test('renderRequest builds the exact request the tool config describes', () => {
   assert.equal(req.body.Phone, '', 'the helper renders an omitted arg as empty (runtime behavior is not verified)');
   assert.equal(req.body.LeadSource, 'Web');
   assert.match(req.body.Description, /Thread: thr-1\. Consent to be contacted: true\./);
+});
+
+test('encodeKeyArg encodes every @, + and / (not just the first)', () => {
+  assert.equal(encodeKeyArg('a@b@c.co'), 'a%40b%40c.co');
+  assert.equal(encodeKeyArg('a+b/c@d.co'), 'a%2Bb%2Fc%40d.co');
+  const tool = salesforceLeadUpsert({ secretName: 'SF_TOKEN', instanceUrl: INSTANCE });
+  const req = renderRequest(tool, { args: { Email: encodeKeyArg('x@y@z.co') }, secrets: { SF_TOKEN: TOKEN }, threadId: 't' });
+  assert.ok(!req.url.includes('@'), 'no raw @ survives in the URL');
 });
 
 test('renderRequest refuses a raw @ in the URL', () => {
