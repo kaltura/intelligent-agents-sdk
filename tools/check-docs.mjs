@@ -881,7 +881,7 @@ describe('14. Regions', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════
-// 16. Docs accuracy — wording that must not come back
+// 16. Docs accuracy: wording that must not come back
 // ═══════════════════════════════════════════════════════════════════════
 describe('16. Docs accuracy', () => {
   test('BYO-LLM is never called unsupported, and the module map points to the Account Manager', () => {
