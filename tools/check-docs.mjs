@@ -12,7 +12,7 @@
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { execSync, spawnSync } from 'node:child_process';
 import { join, dirname, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -45,6 +45,7 @@ const DOCS = [
   'docs/CLIENT-COMMANDS.md', 'docs/DYNAMIC-DATA-INJECTION.md',
   'docs/STRUCTURED-DATA-FORMS.md', 'docs/EXTERNAL-API-INTEGRATIONS.md', 'docs/MCP-INTEGRATIONS.md',
   'docs/VOICE-INPUT-MODES.md', 'docs/USE-CASES.md', 'docs/START-THE-CONVERSATION.md',
+  'docs/GLOSSARY.md', 'docs/LANGUAGES.md', 'docs/LIVE-DEMOS.md',
   'docs/lifecycle/README.md', 'docs/lifecycle/recipes.md',
   'docs/SITE-NAV.md',
   'SECURITY.md', 'SDK_CONSTITUTION.md',
@@ -1049,5 +1050,71 @@ describe('15. App-builder skill', () => {
     assert.equal(entry.source, './app-builder-skill');
     assert.equal(plugin.version, undefined, 'plugin.json must not set version, or users stop tracking commits');
     assert.equal(entry.version, undefined, 'marketplace entry must not set version');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// 17. Content pages — languages, glossary, live demos, KS wording
+// ═══════════════════════════════════════════════════════════════════════
+describe('17. Content pages', () => {
+  const NEW_PAGES = ['docs/LANGUAGES.md', 'docs/GLOSSARY.md', 'docs/LIVE-DEMOS.md'];
+
+  test('every new page exists, is in the DOCS list and is linked from the README', () => {
+    const readme = read('README.md');
+    for (const page of NEW_PAGES) {
+      assert.ok(existsSync(join(ROOT, page)), `${page} is missing`);
+      assert.ok(DOCS.includes(page), `${page} is not in the DOCS list`);
+      assert.ok(readme.includes(`](${page})`), `README.md does not link ${page}`);
+    }
+  });
+
+  test('the languages page documents exactly the options setForcedLanguage takes', () => {
+    const page = read('docs/LANGUAGES.md');
+    const src = read('src/management/set-forced-language.js');
+    const opts = [...src.matchAll(/@param \{[^}]+\} \[?opts\.(\w+)/g)].map((m) => m[1]);
+    assert.deepEqual(opts.sort(), ['agentId', 'asrProvider', 'configId', 'language', 'languageName']);
+    for (const o of opts) assert.ok(page.includes('`' + o + '`'), `LANGUAGES.md does not document option ${o}`);
+    for (const t of ['force_language', 'asr.language', 'LANGUAGE_NAMES', 'language: null']) {
+      assert.ok(page.includes(t), `LANGUAGES.md does not mention ${t}`);
+    }
+    assert.match(src, /opts\.asrProvider \|\| 'kaltura'/);
+    assert.match(page, /Defaults to `"kaltura"`/);
+  });
+
+  test('the languages page makes no language-count claim', () => {
+    assert.doesNotMatch(read('docs/LANGUAGES.md'), /\b(dozens|top \d+|\d+\+? languages)\b/i);
+  });
+
+  test('the glossary ID table covers the four IDs provision() returns, and avoids banned terms', () => {
+    const page = read('docs/GLOSSARY.md');
+    const provision = read('src/management/provision.js');
+    for (const id of ['configId', 'avatarId', 'agentId', 'widgetId']) {
+      assert.ok(provision.includes(id), `provision.js no longer returns ${id}`);
+      assert.match(page, new RegExp('^\\| `' + id + '` \\|', 'm'), `GLOSSARY.md has no ID-table row for ${id}`);
+    }
+    for (const term of ['Agent', 'Intellect', 'Brain', 'Avatar', 'Channel', 'KS']) {
+      assert.match(page, new RegExp('^\\| ' + term + ' \\|', 'm'), `GLOSSARY.md has no entry for ${term}`);
+    }
+    const banned = new RegExp(`\\b(${[['S', 'T', 'V'], ['D', 'P', 'P']].map((c) => c.join('')).join('|')})\\b`);   // built at runtime so this file does not contain the words
+    for (const f of NEW_PAGES) assert.doesNotMatch(read(f), banned, `${f} uses a banned term`);
+    const retired = new RegExp(['avatar' + 'Sessions', 'scripted[-_ ]?' + 'video'].join('|'), 'i');   // same: no retired scripted-video names in the new pages
+    for (const f of NEW_PAGES) assert.doesNotMatch(read(f), retired, `${f} names a retired scripted-video API`);
+  });
+
+  test('the live demos page links every example file, and every link resolves', () => {
+    const page = read('docs/LIVE-DEMOS.md');
+    const files = readdirSync(join(ROOT, 'examples')).filter((f) => /\.(html|mjs)$/.test(f) && f !== 'dev-server.mjs');
+    for (const f of files) assert.ok(page.includes(`(../examples/${f})`), `LIVE-DEMOS.md does not link examples/${f}`);
+    for (const m of page.matchAll(/\]\((\.\.\/examples\/[^)#]+)\)/g)) {
+      assert.ok(existsSync(join(ROOT, 'docs', m[1])), `LIVE-DEMOS.md links a missing file: ${m[1]}`);
+    }
+  });
+
+  test('authentication.md explains how a KS is minted, and no page says "Kaltura Session token"', () => {
+    const auth = read('docs/api/authentication.md');
+    assert.match(auth, /How a KS is minted/);
+    assert.match(auth, /session\.start/);
+    const bad = scanFiles().filter((f) => f.endsWith('.md') && /Kaltura Session( \(KS\))? token/.test(read(f)));
+    assert.deepEqual(bad, [], `imprecise KS wording in: ${bad.join(', ')}`);
   });
 });

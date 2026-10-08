@@ -4,7 +4,9 @@
 
 ## Authentication
 
-Every call requires a Kaltura Session (KS) token in the `Authorization` header.
+Every call carries a KS (Kaltura Session) in the `Authorization` header. A KS is a signed string. It says who is calling and what they may do.
+
+**How a KS is minted.** You will not find one in a console. Your server mints it with the Kaltura `session.start` call, using your partner id and admin secret from Settings → Integration Settings. The `curl` below does it by hand. In code, `mgmt.sessions.createAdminToken()` does the same call. The admin secret stays on your server. Browsers only get a conversation, agent or widget KS (see the table below).
 
 **Mint an admin KS:**
 
