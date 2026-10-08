@@ -2012,6 +2012,28 @@ html.nova-live .nova-widget:not(.dock-mode):not(.drawer-mode) .nova-figure {
   display: none;
 }
 
+/* Sign-up button a client tool adds to the transcript (see transcript.js). */
+.nova-transcript .nova-action {
+  margin: 0.6rem 0;
+}
+
+.nova-cta {
+  display: inline-block;
+  padding: 0.4rem 0.9rem;
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: #fff;
+  background: var(--ds-primary);
+  border-radius: 999px;
+  text-decoration: none;
+}
+
+.nova-cta:hover,
+.nova-cta:focus-visible {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 /* Starter questions in the chat drawer, until the visitor sends their first line. */
 .nova-suggest {
   display: none;

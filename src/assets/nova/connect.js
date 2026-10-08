@@ -22,7 +22,7 @@
 import './router.js';
 import { withPrefix } from './router.js';
 import { initDock, enterDrawerMode, exitDrawerMode } from './dock.js';
-import { initTranscript, appendTranscript, clearTranscript, showThinking, hideThinking } from './transcript.js';
+import { initTranscript, appendTranscript, appendActionLink, clearTranscript, showThinking, hideThinking } from './transcript.js';
 import { initHighlighter } from './highlighter.js';
 import { initSiteNav } from './site-nav.js';
 import { SDK_BASE } from './sdk.js';
@@ -91,6 +91,12 @@ function sessionKind() {
   if (host === 'localhost' || host.endsWith('.localhost') || host === '[::1]' || /^127(\.\d{1,3}){3}$/.test(host)) return 'dev';
   return null;
 }
+
+// Client tool with no arguments. Nova calls it after she answers "is it free?".
+// The page owns the label and the address, so the model never picks a URL.
+const SIGNUP_LINK_TOOL = 'show_signup_link';
+const SIGNUP_URL = 'https://corp.kaltura.com/pricing/conversational-agent/';
+const SIGNUP_LABEL = 'Sign up';
 
 const els = {
   widget: document.getElementById('nova-widget'),
@@ -460,6 +466,13 @@ async function connect(pendingPrompt, mode = 'avatar') {
       localEchoes = [];
       if (m === 'avatar') hideThinking();
       setStatus(m === 'chat' ? 'Text chat — same conversation, no video.' : 'Live video — same conversation.');
+    });
+
+    // Fire-and-forget on the backend (it does not wait for a reply), so the
+    // return value only reaches the SDK's local 'toolCallResult' event.
+    session.onToolCall(SIGNUP_LINK_TOOL, () => {
+      appendActionLink('signup', SIGNUP_LABEL, SIGNUP_URL);
+      return { ok: true };
     });
 
     siteNav = initSiteNav(session);
