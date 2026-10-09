@@ -34,6 +34,7 @@ All capacity codes are `KalturaError` values. `status` is an SDK number, not an 
 | `capacity_unavailable` | `6001` | Yes, later | `connect()`, and the session `error` event |
 | `tier_exceeded` | `6002` | No. Check the plan with your Kaltura contact. | `connect()`, and the session `error` event |
 | `capacity_timeout` | none | Yes, call `waitForCapacity()` again | `waitForCapacity()` only |
+
 **During `connect()`:**
 
 - The SDK sends `stvNewSession` at once and also polls `checkAvailability` on the same socket. The poll never disconnects, so stickiness is kept.
