@@ -11,7 +11,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { REGIONS } from '../../src/management/index.js';
+import { REGIONS, Management } from '../../src/management/index.js';
 
 export const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 
@@ -50,12 +50,13 @@ export function loadEnvFile(path) {
  * without a messaging URL fails `emailTemplates.*` instead of reaching production.
  * @param {string} spec
  * @param {string} [label] How the caller names the option in error messages.
+ * @param {number} [exitCode] The process exit code on error. Defaults to 1.
  * @returns {{name:string, partnerId:string, adminSecret:string, agenticUrl:string, genieUrl:string, ovpUrl:string, messagingUrl?:string, fetch:typeof fetch}}
  */
-export function resolveTarget(spec, label = 'TARGET') {
+export function resolveTarget(spec, label = 'TARGET', exitCode = 1) {
   const fail = (/** @type {string} */ msg) => {
     console.error(`${label} ${spec}: ${msg}`);
-    process.exit(1);
+    process.exit(exitCode);
   };
   const need = (/** @type {string[]} */ keys) => {
     const missing = keys.filter((k) => !process.env[k]);
@@ -96,4 +97,18 @@ export function resolveTarget(spec, label = 'TARGET') {
     return fetch(input, init); // nosemgrep: scripts.harness.no-raw-fetch-bypass
   };
   return { ...t, fetch: guarded };
+}
+
+/**
+ * A `Management` client for a resolved target. A non-production target with no
+ * messaging URL gets the `frp2` region as its base, which has no Messaging host.
+ * Its `emailTemplates.*` calls then fail with the SDK's own `region_unavailable`
+ * error. Without this, they would silently use the production Messaging host.
+ * Every URL the target does set still wins over the region.
+ * @param {ReturnType<typeof resolveTarget>} target
+ * @returns {Management}
+ */
+export function managementFor(target) {
+  const noMessaging = target.name !== 'prod' && !target.messagingUrl;
+  return new Management(noMessaging ? { ...target, region: 'frp2' } : target);
 }

@@ -150,6 +150,7 @@ node examples/lifecycle-insights-and-email.mjs
 | `lifecycle.match` 400s: `eventData.object.user_id: Invalid input...` | A required field missing from the dry-run `object` | Pass `agent_id`, `thread_id`, and `user_id` together, plus `origin: 0` where `describeFields` lists `object.origin` |
 | An `InsightSettings` entity 400s or its rule silently produces nothing | No `prompt` supplied | `prompt` is required on every `InsightSettings` entity, there's no built-in fallback for any key |
 | You want to change the built-in `SUMMARY` insight's prompt | It has no customization lever, no field on any entity changes it | Give your own insight settings distinct `key`s and use those instead (see [`README.md`](README.md#every-session-already-gets-a-summary-for-free)) |
+| A rule saved fine but nothing happens, or you inherited a partner's rules | A setting, template or agent the rule points at was deleted or disabled after it was saved | Run `mgmt.lifecycle.audit(ks)`. Every finding names the rule and the fix. See [Audit your rules](README.md#audit-your-rules) |
 | You create a `triggerDtcKai` rule and expect to pass fields on the action | It takes no caller-supplied fields, it derives insights from the target intellect's configured lead-capture form fields | Configure `intellectConfig.user_properties_forms` on the intellect instead; leave the action `{actionType:'triggerDtcKai'}` |
 
 ---
