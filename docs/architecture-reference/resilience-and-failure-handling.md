@@ -67,7 +67,7 @@ A cold reconnect makes up to `timeouts.coldAttempts` (2) attempts, `timeouts.col
 
 ### Timeouts
 
-All keys go in `cfg.timeouts`. Unset keys keep the default.
+All keys go in `cfg.timeouts` of a `KalturaAvatarSession`. In a `KalturaAgentSession`, put it inside the `avatar` option. Unset keys keep the default.
 
 | Key | Default | Meaning |
 |---|---|---|

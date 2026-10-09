@@ -314,9 +314,14 @@ Every element gets one `srcObject` write and one `play()` per binding. In the me
 | `muteAudioOutput()`, `unmuteAudioOutput()`, `audioOutputMuted` | Mute the avatar's voice (not your microphone, that's `mute()`). Acts on whichever element carries the audio and follows it across rebinds. |
 | `setAudioOutputVolume(0..1)`, `audioOutputVolume` | Playback volume, clamped. |
 | `setAudioOutput(deviceId)` | Routes the audio-carrying element via `setSinkId`. Throws `bad_request` when `deviceId` is not a string. Resolves `false`, never throws, when the element has no `setSinkId` or rejects the id. An accepted id follows the audio across rebinds; a rejected id is dropped and the previous one stays. Set before `connect()`, the id is applied on the first bind. `''` selects the system default on every browser. |
-| `prepare()` | Opens the socket and joins ahead of `connect()`. Idempotent, no microphone, no avatar session. See [Start faster](docs/architecture-reference/connection-and-handshake.md#start-faster). |
-| `timings`, event `connectTimings` | Phase times of the last `connect()` in ms. See [Start faster](docs/architecture-reference/connection-and-handshake.md#start-faster). |
 | `startPlayback()` | Retries `play()` on every bound element. Call from a click after a `playback_blocked` warning. Resolves `true` when everything is playing. |
+
+Two more members speed up and measure `connect()` ([Start faster](docs/architecture-reference/connection-and-handshake.md#start-faster)):
+
+| Member | Behavior |
+|---|---|
+| `prepare()` | Opens the socket and joins ahead of `connect()`. Idempotent, no microphone, no avatar session. |
+| `timings`, event `connectTimings` | Phase times of the last `connect()` in ms. |
 
 Media recovery (an STV re-subscribe after a stall) never touches your elements: the new tracks are swapped into the same streams, and only an element that the browser paused meanwhile (Firefox does this) gets one `play()` call. The one exception is an element whose `srcObject` your app replaced itself (for example set to `null` to hide the avatar): recovery binds it again. On Chromium a remote audio track is only decoded while some media element plays it, so a headless app that mixes `avatarStream` through Web Audio must keep a muted `<audio>` bound to the track; Firefox and WebKit do not need it. Calling `disconnect()` from inside a `'track'` listener is safe.
 

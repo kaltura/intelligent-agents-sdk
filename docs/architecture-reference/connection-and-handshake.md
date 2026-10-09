@@ -137,6 +137,8 @@ The opening line itself can't be interrupted. Typed text sent during it is held 
 | `asrReady` | The microphone uplink is negotiated |
 | `approved`, `connected` | `approvedPermissions` sent, state `connected` |
 
+The rows group related phases and are not in time order. `firstFrame` is also absent when there is no `videoEl`, when the browser has no `requestVideoFrameCallback`, or when no frame arrived in time (`mediaReady` then has `degraded: true`).
+
 **Tuning.** `timeouts` overrides any wait in the table above (`overall`, `serverConnect`, `joinRoom`, `joinComplete`, `agent`, `asr`, `firstFrame`, `prepareIdle`) and the WHEP, recovery and watchdog limits (`whepTry`, `whepTries`, `whepBackoff`, `whepRelease`, `recover`, `healthTick`, `videoStall`, `coldAttempts`, `coldBackoff`; defaults in [Resilience](resilience-and-failure-handling.md)). `reconnectionDelay` (default 250 ms) and `reconnectionDelayMax` (default 2000 ms) set how soon and how often a dropped socket retries.
 
 ## The `join` payload (step 2): carries the agent/brain config
