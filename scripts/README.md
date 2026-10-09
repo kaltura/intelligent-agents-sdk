@@ -77,6 +77,7 @@ The two Salesforce scripts need a Salesforce Developer Edition org or sandbox (`
 | Script | Covers |
 |---|---|
 | `live-verify.mjs` | Smoke test: admin token → intellect → conversation token → one turn → delete |
+| `live-verify-matrix.mjs` | Runs the scripts above on every target, one at a time, and prints one table (script × target). `--targets prod,nvq2:1` (default), `--scripts a,b`, `--out DIR`, `--list`. Logs go to `DIR/<target>/<script>.log`. A target without credentials fails every script. Exits 1 on any non-pass |
 | `live-verify-kickoff.mjs` | Every silent-opening + `kickoff` scenario, one fresh browser context each |
 | `live-verify-connect-timing.mjs` | Startup KPIs: time to `connect()`, first video frame, first audio, first agent words |
 | `live-verify-opening-phrase.mjs` | `provision()` writes the opening phrase to the intellect only, a Jinja2 `{% if %}` phrase renders per session from `requestVars`, and `SILENT_OPENING` on the intellect alone gives a silent opening turn |
