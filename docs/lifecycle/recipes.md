@@ -117,7 +117,7 @@ const { matchedRules } = await mgmt.lifecycle.match(
 );
 ```
 
-`object.agent_id`, `object.thread_id`, and `object.user_id` are all required strings for `objectType:'thread'`. Omit one and it 400s naming the missing path. Expect to see your own rule nested inside a grouped `matchedRules[]` entry's `rules[]` array, together with `preset__summary_on_session_ended`.
+`object.agent_id`, `object.thread_id`, and `object.user_id` are all required strings for `objectType:'thread'`. Some environments also require `object.origin` (a number, `0` = standard). Pass every `object.*` field that `describeFields` reports for your environment. Omit one and it 400s naming the missing path. Expect to see your own rule nested inside a grouped `matchedRules[]` entry's `rules[]` array, together with `preset__summary_on_session_ended`.
 
 Every partner has that preset rule by default. It's not something you configured (see [`README.md`'s note on grouped matches](README.md#discovery-and-dry-run-testing)). Run this after creating each rule to confirm it matches before you ever touch a real conversation.
 
@@ -147,7 +147,7 @@ node examples/lifecycle-insights-and-email.mjs
 | `lifecycle.create` or `update` throws `lifecycle_unscoped` | A `thread` rule has no `object.agent_id` condition (`eq` with an id, or `in` with a non-empty array of ids), so it would run for every agent on the partner | Add `{field:'object.agent_id', operator:'eq', value:'<agent-uuid>'}`, or pass `{ partnerWide: true }` to run on every agent on purpose |
 | `lifecycle.create` or `update` throws `lifecycle_email_unfiltered` | A `sendInsightEmail` rule on `analysis_updated` has no `changed_keys` condition, so it would send on every analysis update | Add `{field:'changed_keys', operator:'has_all', value:['SUMMARY', ...]}`, or pass `{ emailOnEveryUpdate: true }` to send on every update on purpose |
 | `eventConditions` on `object.agent_id` never matches | The thread was created with a token minted without an agent id | Mint with `mgmt.sessions.createAgentToken({agentId})` |
-| `lifecycle.match` 400s: `eventData.object.user_id: Invalid input...` | A required field missing from the dry-run `object` | Always pass `agent_id`, `thread_id`, and `user_id` together |
+| `lifecycle.match` 400s: `eventData.object.user_id: Invalid input...` | A required field missing from the dry-run `object` | Pass `agent_id`, `thread_id`, and `user_id` together, plus `origin: 0` where `describeFields` lists `object.origin` |
 | An `InsightSettings` entity 400s or its rule silently produces nothing | No `prompt` supplied | `prompt` is required on every `InsightSettings` entity, there's no built-in fallback for any key |
 | You want to change the built-in `SUMMARY` insight's prompt | It has no customization lever, no field on any entity changes it | Give your own insight settings distinct `key`s and use those instead (see [`README.md`](README.md#every-session-already-gets-a-summary-for-free)) |
 | You create a `triggerDtcKai` rule and expect to pass fields on the action | It takes no caller-supplied fields, it derives insights from the target intellect's configured lead-capture form fields | Configure `intellectConfig.user_properties_forms` on the intellect instead; leave the action `{actionType:'triggerDtcKai'}` |
