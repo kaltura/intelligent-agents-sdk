@@ -7,6 +7,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { setImmediate } from 'node:timers';
 import { KalturaScriptedVideoSession } from '../../src/experience/scripted-video-session.js';
 import { FakeRTCPeerConnection, FakeVideoEl, FakeMediaStreamCtor } from '../fakes/rtc.js';
 import { fakeFetch } from '../fakes/fetch.js';
@@ -64,6 +65,21 @@ test('connect() negotiates WHEP, routes both tracks to videoEl (one srcObject, o
   assert.deepEqual(v.avatarStream.getTracks().map((t) => t.kind).sort(), ['audio', 'video']);
   assert.equal(f.calls.length, 1);
   assert.equal(f.calls[0].headers['content-type'], 'application/sdp');
+});
+
+test('connect() retries a WHEP POST that failed on the network, and a DELETE carries a deadline signal', async () => {
+  let n = 0;
+  const f = (url, init) => {
+    if (init.method === 'DELETE') { f.deleteSignal = init.signal; return Promise.resolve({ ok: true, status: 200 }); }
+    if (++n === 1) return Promise.reject(new TypeError('network down'));
+    return Promise.resolve({ ok: true, status: 201, text: async () => 'v=0\r\nfake-answer\r\n', headers: { get: () => 'https://media.example.com/whep/abc123/viewer-1' } });
+  };
+  const v = view({ fetch: f });
+  await v.connect();
+  assert.equal(n, 2, 'the second POST answered');
+  v.disconnect();
+  await new Promise((r) => setImmediate(r));
+  assert.ok(f.deleteSignal, 'the release DELETE has an abort signal');
 });
 
 test('connect() with cfg.audioEl splits: video on videoEl, audio on audioEl, one srcObject + one play() each', async () => {

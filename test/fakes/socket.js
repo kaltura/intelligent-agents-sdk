@@ -32,6 +32,8 @@ export class FakeSocket {
   server(ev, payload) {
     for (const fn of [...(this._h.get(ev) || [])]) fn(payload);
   }
+  /** Counts calls only: a test decides when the "reconnect" lands (`dropAndRecover`, or setting `connected`). */
+  connect() { this.connectCalls = (this.connectCalls || 0) + 1; return this; }
   disconnect() { this.connected = false; this.server('disconnect', 'io client disconnect'); }
   /** Register an emit observer (used by the scripted autoresponder). */
   onEmit(fn) { this._onEmit = fn; }

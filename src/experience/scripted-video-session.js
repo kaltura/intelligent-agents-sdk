@@ -49,7 +49,11 @@
 import { Emitter } from './emitter.js';
 import { KalturaError } from '../core/errors.js';
 import { turnServers, iceConfig, whepUrlHasPrivateIp, whepResourceUrl } from './wire.js';
+import { whepPost } from './whep.js';
+import { fetchWithTimeout } from './fetch-timeout.js';
 import { AvatarMedia } from './avatar-media.js';
+
+const WHEP_RELEASE_TIMEOUT_MS = 3000;
 
 /**
  * @deprecated Scripted-video sessions are deprecated and will be removed in the next major version. Build with agents instead: `mgmt.provision()` and the conversational session classes.
@@ -163,7 +167,7 @@ export class KalturaScriptedVideoSession extends Emitter {
       if (pc !== this._pc) throw connectAbortedErr();
       await pc.setLocalDescription(offer);
       if (pc !== this._pc) throw connectAbortedErr();
-      const res = await this._fetch(this._whepUrl, { method: 'POST', headers: { 'Content-Type': 'application/sdp' }, body: offer.sdp });
+      const res = await whepPost({ fetch: this._fetch, url: this._whepUrl, sdp: offer.sdp });
       if (!res.ok) {
         throw new KalturaError({ type: 'about:blank', title: 'WHEP negotiation failed', status: res.status, code: 'whep_failed', detail: whepStatusHint(res.status) });
       }
@@ -214,7 +218,7 @@ export class KalturaScriptedVideoSession extends Emitter {
     // Best-effort: a failed DELETE here doesn't matter to the caller (the peer
     // connection is already being torn down) but IS worth auditing:
     // mirrors KalturaAvatarSession's own WHEP cleanup.
-    Promise.resolve().then(() => this._fetch(loc, { method: 'DELETE' })).catch((err) => this.emit('warning', { code: 'whep_delete_failed', message: String((err && err.message) || err) }));
+    Promise.resolve().then(() => fetchWithTimeout(this._fetch, loc, { method: 'DELETE' }, WHEP_RELEASE_TIMEOUT_MS)).catch((err) => this.emit('warning', { code: 'whep_delete_failed', message: String((err && err.message) || err) }));
   }
 
   _teardown() {

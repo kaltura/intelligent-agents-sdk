@@ -48,6 +48,7 @@ const H = {
   fetches: [],        // { url, method } every call the SDK made to the injected fetch
   sendKinds: ['video', 'audio'],
   whepDelayMs: 0,     // hold every WHEP POST answer this long (slow-server simulation)
+  whepScript: [],     // one entry per WHEP POST, consumed in order: 'reset' throws a network error, {status} answers with that status; empty = serve normally
   shape: 'twoVA',     // twoVA/twoAV = one MediaStream per track (distinct msid); oneVA/oneAV = both tracks in one receiver stream; *AV = audio m-line first, so audio 'ontrack' fires first
   delay: null,        // { kind, ms } → that kind starts sending late (replaceTrack(null) → replaceTrack(track))
   blockPlay: false,   // autoplay cells: instrumented play() rejects NotAllowedError while true
@@ -141,9 +142,12 @@ const httpRes = (status, body = '', location = null) => ({
 });
 async function whepFetch(url, init = {}) {
   const method = init.method || 'GET';
-  H.fetches.push({ url: String(url), method });
+  H.fetches.push({ url: String(url), method, keepalive: init.keepalive === true });
   if (!String(url).includes('/rtc/v1/whep')) return httpRes(200);
   if (method === 'DELETE') return httpRes(200);
+  const fault = H.whepScript.shift();
+  if (fault === 'reset') throw new TypeError('harness: connection reset');
+  if (fault?.status) return httpRes(fault.status);
   if (H.whepDelayMs) await sleep(H.whepDelayMs);
   const pc = findOfferer(init.body);
   if (!pc) throw new Error('harness: WHEP offer matches no LoopbackRTC peer');
@@ -1441,6 +1445,76 @@ S['prepare'] = async (c) => {
   c.check('video paints', ...pair2(await paints(v)));
 };
 
+// A reset on the first WHEP POST is retried: connect() still succeeds with real video.
+S['whep-reset-once'] = async (c) => {
+  const v = makeEl();
+  H.whepScript = ['reset'];
+  const { session, ev } = await connected({ videoEl: v, timeouts: { whepBackoff: 100 } });
+  const posts = H.fetches.filter((f) => f.method === 'POST' && f.url.includes('/rtc/v1/whep'));
+  c.check('connected', session.state === 'connected', session.state);
+  c.check('second POST after the reset', posts.length === 2, posts.length);
+  c.check('mediaReady has real dimensions, not degraded', ev.of('mediaReady')[0]?.videoWidth === 160 && !ev.of('mediaReady')[0]?.degraded, ev.of('mediaReady'));
+  c.check('no warnings', ev.count('warning') === 0, ev.of('warning'));
+  c.check('video paints', ...pair2(await paints(v)));
+};
+
+// A 404 on the WHEP POST asks for a new avatar session on the live socket, then POSTs again.
+S['whep-404'] = async (c) => {
+  const v = makeEl();
+  H.whepScript = [{ status: 404 }];
+  const { session, socket, ev } = await connected({ videoEl: v });
+  c.check('connected', session.state === 'connected', session.state);
+  c.check('two stvNewSession on one socket', socket.emitsOf('stvNewSession').length === 2, socket.emitsOf('stvNewSession').length);
+  c.check('one join only', socket.emitsOf('join').length === 1, socket.emitsOf('join').length);
+  c.check('mediaReady has real dimensions', ev.of('mediaReady')[0]?.videoWidth === 160, ev.of('mediaReady'));
+  c.check('video paints', ...pair2(await paints(v)));
+};
+
+// Closing the STV peer from outside fires no event; the watchdog still recovers it.
+S['pc-closed'] = async (c) => {
+  const v = makeEl();
+  const { session, ev } = await connected({ videoEl: v, timeouts: { healthTick: 300 } });
+  c.check('paints before', ...pair2(await paints(v)));
+  const pc0 = stv(session);
+  const t0 = performance.now();
+  pc0.close();
+  const deadline = t0 + 6000;
+  while (performance.now() < deadline && !ev.of('mediaRecovered').some((p) => p.channel === 'stv')) await sleep(50);
+  c.check('mediaRecovered for stv', ev.of('mediaRecovered').some((p) => p.channel === 'stv'), { ms: Math.round(performance.now() - t0), ev: ev.of('mediaRecovered') });
+  c.check('new peer', stv(session) !== pc0);
+  c.check('paints after', ...pair2(await paints(v)));
+  c.check('audio flows on the new peer', ...pair2(await flowing(stv(session), 'audio')));
+};
+
+// A sender that stops while ICE stays connected is caught by the video-flow check.
+S['video-stall'] = async (c) => {
+  const v = makeEl();
+  const { session, ev } = await connected({ videoEl: v, timeouts: { healthTick: 300, videoStall: 1200 } });
+  c.check('paints before', ...pair2(await paints(v)));
+  const pc0 = stv(session);
+  const sender = H.peers.map((p) => p.pc).flatMap((p) => p.getSenders()).find((s) => s.track?.kind === 'video');
+  await sender.replaceTrack(null);
+  const t0 = performance.now();
+  const deadline = t0 + 8000;
+  while (performance.now() < deadline && !ev.of('mediaRecovered').some((p) => p.channel === 'stv')) await sleep(50);
+  c.check('mediaRecovered for stv', ev.of('mediaRecovered').some((p) => p.channel === 'stv'), { ms: Math.round(performance.now() - t0), ev: ev.of('mediaRecovered') });
+  c.check('new peer', stv(session) !== pc0);
+  c.check('paints after', ...pair2(await paints(v)));
+};
+
+// A real pagehide (not a bfcache freeze) releases the WHEP resource with a keepalive DELETE.
+S['pagehide'] = async (c) => {
+  const v = makeEl();
+  const { session } = await connected({ videoEl: v });
+  window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: false }));
+  await sleep(50);
+  const del = H.fetches.filter((f) => f.method === 'DELETE' && f.url.includes('/rtc/v1/whep'));
+  c.check('one WHEP DELETE', del.length === 1, del);
+  c.check('DELETE carries keepalive', del[0]?.keepalive === true, del);
+  c.check('state is disconnected', session.state === 'disconnected', session.state);
+  c.check('element released', v.srcObject === null);
+};
+
 S['scripted'] = async (c) => {
   const v = makeEl();
   const session = new KalturaScriptedVideoSession({
@@ -1479,7 +1553,7 @@ async function cleanup() {
   for (const p of H.peers) { try { p.pc.close(); } catch { /* */ } p.media?.stop(); }
   for (const p of H.pcs) { try { p.close(); } catch { /* */ } }
   H.pcs = []; H.peers = []; H.fetches = [];
-  H.sendKinds = ['video', 'audio']; H.whepDelayMs = 0; H.delay = null; H.blockPlay = false; H.gestureSession = null; H.gestureResolve = null;
+  H.sendKinds = ['video', 'audio']; H.whepDelayMs = 0; H.whepScript = []; H.delay = null; H.blockPlay = false; H.gestureSession = null; H.gestureResolve = null;
   H.shape = 'twoVA'; H.blockEls.clear(); H.holdSink = null; H.holdSinkRelease = null; H.lat = [];
   stage.replaceChildren();
 }

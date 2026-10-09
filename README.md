@@ -474,7 +474,7 @@ session.on('toolSpiralRecovering', ({ lastTurnText }) => {
 });
 ```
 
-Two ICE-level failure modes (zero-candidates fail-fast, and telling a transient drop apart from a server-gone WHEP 404) get distinct, faster handling — see [ARCHITECTURE-REFERENCE.md § Resilience & Failure Handling](docs/architecture-reference/resilience-and-failure-handling.md#resilience--failure-handling) for the exact timings and the `connectivityChanged` `detail` values.
+The session also recovers without an ICE event: a health watchdog catches a peer closed from outside and a video stream that stops arriving, a WHEP `404` or `409` gets a new avatar session on the live socket, a failed cold reconnect is tried twice, and an `online` event retries a down socket at once. Each WHEP request has a deadline and bounded retries. Zero-candidates fail-fast has its own faster path. See [ARCHITECTURE-REFERENCE.md § Resilience & Failure Handling](docs/architecture-reference/resilience-and-failure-handling.md#resilience--failure-handling) for the exact timings and the `connectivityChanged` `detail` values.
 
 ### Devices and media quality
 
@@ -594,7 +594,7 @@ await session.completeThread();
 | `sessionCompleteOnEnd` | `true` | Master switch. `false` disables the signal entirely: no POST, no listeners. |
 | `sessionCompletePath` | `'/thread/session_completed'` | Escape hatch if the route ever moves. |
 | `sessionCompleteTimeoutMs` | `5000` | Abort budget for `completeThread()`'s POST. Never applied on the tab-close path — an abort timer can't run on a dying page. |
-| `pageLifecycleAware` | `true` in a browser | Wire `pagehide`/`visibilitychange`/`pageshow`. Silent no-op in Node/SSR, same posture as `networkAware`. |
+| `pageLifecycleAware` | `true` in a browser | Wire `pagehide`/`visibilitychange`/`pageshow`. A real page exit (not a bfcache freeze) also releases the WHEP resource and closes the socket, even mid-`connect()` ([details](docs/architecture-reference/resilience-and-failure-handling.md#page-exit)). Silent no-op in Node/SSR, same posture as `networkAware`. |
 | `hiddenGraceMs` | `30000` | After the page goes hidden (tab switch, minimize, lock), wait this long, then complete — catches iOS Safari / Chrome Android tab-kills where `pagehide` never fires. Any activity (a turn, avatar speech) re-arms this timer, so a hidden tab that's still talking is never completed mid-turn. Cancelled by returning to visible. |
 | `completeOnHiddenGrace` | `true` | Kill-switch for the heuristic above. |
 | `completeOnBfcache` | `true` | Fire on `pagehide` with `persisted:true` — the SDK can't survive a back-forward-cache round-trip anyway (socket/WHEP are already torn down, no auto-resume). |

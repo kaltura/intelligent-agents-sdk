@@ -502,12 +502,12 @@ test('R-k/P9: mediaReady fires exactly once per _connectStv() call: once on conn
   const fetch = async (url, init) => {
     if (init?.method === 'DELETE') return whepOk();
     whepPosts += 1;
-    if (whepPosts === 3) return { ok: false, status: 404, text: async () => 'gone', headers: { get: () => null } };
+    if (whepPosts === 3 || whepPosts === 4) return { ok: false, status: 404, text: async () => 'gone', headers: { get: () => null } };
     return whepOk();
   };
   const videoEl = new FakeVideoEl({ autoCanPlay: true });
   const { session, socket } = newSession({ videoEl, fetch });
-  scriptHappyPath(socket);
+  scriptHappyPath(socket, { resumingOnRecreate: false });
   const ready = count(session, 'mediaReady');
   await session.connect();
   assert.equal(ready.v, 1, 'initial connect');

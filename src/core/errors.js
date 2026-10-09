@@ -22,6 +22,8 @@ import { redact, redactString } from './redact.js';
  * @property {string} [requestId]     Correlation id echoed from the response, if any.
  * @property {Record<string,string>} [headers]  Diagnostic response headers (see response-headers.js), when a response arrived.
  * @property {unknown} [body]         The (redacted) upstream response body.
+ * @property {string} [phase]         The connect step that failed, on a live-session error (`serverConnect`, `join`, `joinComplete`, `agent`, `asr`, `whep`, `connect`, `reconnect`).
+ * @property {boolean} [retryable]    True when trying the same call again can succeed. Absent when the SDK has no opinion.
  */
 
 export class KalturaError extends Error {
@@ -38,6 +40,8 @@ export class KalturaError extends Error {
     /** @type {string|undefined} */ this.requestId = problem.requestId;
     /** @type {Record<string,string>|undefined} */ this.headers = problem.headers && Object.keys(problem.headers).length ? { ...problem.headers } : undefined;
     /** @type {unknown} */ this.body = redact(problem.body);
+    /** @type {string|undefined} */ this.phase = problem.phase;
+    /** @type {boolean|undefined} */ this.retryable = problem.retryable;
   }
 
   /** RFC 9457 JSON representation (already redacted). */
@@ -46,6 +50,8 @@ export class KalturaError extends Error {
       type: this.type, title: this.title, status: this.status,
       detail: this.detail, instance: this.instance, code: this.code,
       requestId: this.requestId, headers: this.headers, body: this.body,
+      ...(this.phase !== undefined && { phase: this.phase }),
+      ...(this.retryable !== undefined && { retryable: this.retryable }),
     };
   }
 }

@@ -572,3 +572,33 @@ export function textsSent(evs) {
 
 /** @param {number} ms */
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// ---------------------------------------------------------------------------
+// Client-side WHEP fault injection (shared by the fault scripts)
+// ---------------------------------------------------------------------------
+
+/** A WHEP POST is the only cross-origin HTTP request whose body is an SDP offer. */
+const isWhepPost = (/** @type {import('playwright').Request} */ r) => r.method() === 'POST' && (r.postData() || '').startsWith('v=0');
+const CORS = { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': '*', 'access-control-expose-headers': '*' };
+
+/**
+ * Route every cross-origin request, handing each WHEP POST to `onPost(n, route)` (n counts from 1).
+ * `onPost` returns true when it handled the route. Everything else passes through.
+ * @param {import('playwright').BrowserContext} context
+ * @param {string} origin
+ * @param {(n: number, route: import('playwright').Route) => Promise<boolean|void>} onPost
+ */
+export async function routeWhep(context, origin, onPost) {
+  let posts = 0;
+  await context.route((url) => url.origin !== origin, async (route) => {
+    if (isWhepPost(route.request()) && (await onPost(++posts, route))) return;
+    await route.continue().catch(() => {});
+  });
+  return { posts: () => posts };
+}
+
+/** Answer a WHEP POST with an empty body and `status`, with the CORS headers a browser needs to read it. */
+export const fulfillStatus = (/** @type {import('playwright').Route} */ route, /** @type {number} */ status) => route.fulfill({ status, headers: CORS, body: '' }).catch(() => {});
+
+/** Count of socket frames the page sent with this event name. @param {HarnessEvent[]} evs @param {string} name */
+export const sent = (evs, name) => all(evs, 'socket:out', (d) => d?.ev === name).length;

@@ -158,12 +158,12 @@ const SCENARIOS = {
     const fetch = async (url, init) => {
       if (init?.method === 'DELETE') return { ok: true, status: 200, text: async () => '', headers: { get: () => null } };
       whepPosts++;
-      if (whepPosts === 2) return { ok: false, status: 404, text: async () => 'gone', headers: { get: () => null } };
+      if (whepPosts === 2 || whepPosts === 3) return { ok: false, status: 404, text: async () => 'gone', headers: { get: () => null } };
       return okWhep();
     };
     const videoEl = new FakeVideoEl({ autoCanPlay: true });
     const s = setup({ videoEl, fetch });
-    scriptHappyPath(s.socket);
+    scriptHappyPath(s.socket, { resumingOnRecreate: false });
     await s.session.connect();
     s.snap('afterConnect');
     const reconnected = waitFor(s.session, 'reconnected');

@@ -78,14 +78,14 @@ test('ASR failure while WHEP is still pending → one rejection, no unhandled re
   } finally { trap.off(); }
 });
 
-test('WHEP failure while the ASR answer never arrives → rejects whep_failed at once, no unhandled rejection', async () => {
+test('WHEP failure while the ASR answer never arrives → rejects stv_session_gone at once, no unhandled rejection', async () => {
   const trap = trapUnhandled();
   try {
     const failingWhep = async () => ({ ok: false, status: 404, text: async () => 'no such stream', headers: { get: () => null } });
     const { session, socket } = newSession({ fetch: failingWhep });
     scriptHappyPath(socket, { asrAnswer: () => new Promise(() => { /* ASR lane hangs */ }) });
     const started = Date.now();
-    await assert.rejects(() => session.connect(), (e) => e.code === 'whep_failed');
+    await assert.rejects(() => session.connect(), (e) => e.code === 'stv_session_gone' && e.retryable === true);
     assert.ok(Date.now() - started < 2000, 'did not wait out the 30s ASR step timeout');
     assert.equal(session.state, 'error');
     assert.ok(!socket.didEmit('approvedPermissions'));
