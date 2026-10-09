@@ -98,13 +98,13 @@ export class Report {
   /** @param {string} name @param {boolean} ok @param {any} [detail] */
   check(name, ok, detail) {
     this.checks.push({ name, ok: !!ok, detail, at: new Date().toISOString() });
-    console.log(`[${ok ? 'ok' : 'FAIL'}] ${name}${detail !== undefined ? ` — ${JSON.stringify(detail)}` : ''}`);
+    console.log(redact(`[${ok ? 'ok' : 'FAIL'}] ${name}${detail !== undefined ? ` — ${JSON.stringify(detail)}` : ''}`));
     return !!ok;
   }
   /** @param {string} name @param {any} [detail] */
   note(name, detail) {
     this.checks.push({ name, ok: true, detail, at: new Date().toISOString() });
-    console.log(`[note] ${name}${detail !== undefined ? ` — ${JSON.stringify(detail)}` : ''}`);
+    console.log(redact(`[note] ${name}${detail !== undefined ? ` — ${JSON.stringify(detail)}` : ''}`));
   }
   get failed() { return this.checks.some((c) => !c.ok); }
   /**
@@ -116,8 +116,8 @@ export class Report {
     this.meta.ok = !this.failed;
     const json = resolve(outDir, `${this.meta.runId}.json`);
     const md = resolve(outDir, `${this.meta.runId}.md`);
-    writeFileSync(json, JSON.stringify({ ...this.meta, checks: this.checks, data: this.data }, null, 2));
-    writeFileSync(md, markdown);
+    writeFileSync(json, redact(JSON.stringify({ ...this.meta, checks: this.checks, data: this.data }, null, 2)));
+    writeFileSync(md, redact(markdown));
     console.log(`\nartifacts: ${json}\n           ${md}`);
   }
 }

@@ -9,3 +9,24 @@ test('live-verify redact hides KS tokens, query strings, avatar stream and sessi
   assert.equal(redact('ks djJ8abcDEF012_-xyz end'), 'ks <KS> end');
   assert.equal(redact('id 123e4567-e89b-12d3-a456-426614174000.'), 'id <uuid>.');
 });
+
+test('Report.check and Report.note redact what they print and write', async () => {
+  const { Report } = await import('../../scripts/live-verify-kickoff-shared.mjs');
+  const { mkdtempSync, readFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const line = 'DELETE /rtc/v1/stv/KdB5IACdO9wCfbJsUMO0O1_nIEVm3nM6Do3gno6GTzk/whep/session/cc9f7e2f-608e-49fc-b20b-3d9ff2c99767';
+  const printed = [];
+  const orig = console.log;
+  console.log = (s) => printed.push(String(s));
+  const dir = mkdtempSync(join(tmpdir(), 'redact-'));
+  try {
+    const r = new Report({ runId: 't', target: 'x' });
+    r.check('c', true, { line });
+    r.note('n', [line]);
+    r.write(dir, `| ${line} |`);
+  } finally { console.log = orig; }
+  const all = [...printed, readFileSync(join(dir, 't.json'), 'utf8'), readFileSync(join(dir, 't.md'), 'utf8')].join('\n');
+  assert.doesNotMatch(all, /KdB5IACd|cc9f7e2f/);
+  assert.match(all, /stv\/<id>\/whep\/session\/<id>/);
+});
