@@ -18,6 +18,9 @@ export class FakeRTCPeerConnection {
     this.ontrack = null;
     this.oniceconnectionstatechange = null;
     this.onicegatheringstatechange = null;
+    this.onconnectionstatechange = null;
+    this.connectionState = 'new';
+    this.signalingState = 'stable';
     this.closed = false;
     FakeRTCPeerConnection.instances.push(this);
   }
@@ -84,7 +87,18 @@ export class FakeRTCPeerConnection {
   async addIceCandidate() { /* no-op */ }
   /** ICE restart (R7): real RTCPeerConnection re-gathers candidates; here just record it. */
   restartIce() { this.iceRestarted = (this.iceRestarted || 0) + 1; }
-  close() { this.closed = true; }
+  /** Like a real peer: a local `close()` changes the states but fires no `connectionstatechange`. */
+  close() { this.closed = true; this.connectionState = 'closed'; this.signalingState = 'closed'; }
+  /** Test helper: drive the aggregate connection state and fire `connectionstatechange`. @param {string} state */
+  setConnectionState(state) { this.connectionState = state; this.onconnectionstatechange?.(); }
+  /**
+   * Test helper: set the next getStats() report to one inbound video stream. Raise the numbers
+   * between watchdog ticks to model flowing video; keep them equal to model a stall.
+   * @param {{bytesReceived?: number, framesDecoded?: number, packetsReceived?: number}} [s]
+   */
+  setInboundVideo({ bytesReceived = 0, framesDecoded = 0, packetsReceived = 0 } = {}) {
+    this.setStats([{ id: 'in-video', type: 'inbound-rtp', kind: 'video', bytesReceived, framesDecoded, packetsReceived }]);
+  }
   /**
    * Test helper: simulate a media track arriving. e.track and e.streams[0] share the same
    * track instance, matching real RTCPeerConnection.
@@ -211,9 +225,11 @@ FakeAudioWorkletNode.reset = () => { FakeAudioWorkletNode.instances = []; FakeAu
  * A media element double (`<video>` or `<audio>`). `autoCanPlay:false` makes the test fire
  * canplay manually (greeting-gate test). Every write the SDK can make is counted so tests
  * can pin "srcObject set once, play() once, no redundant muted/volume writes".
+ * `rvfc:false` leaves out `requestVideoFrameCallback`, like a browser without it; with it, a
+ * test calls `fireFrame(w, h)` to present a frame.
  */
 export class FakeVideoEl {
-  constructor({ autoCanPlay = true } = {}) {
+  constructor({ autoCanPlay = true, rvfc = true } = {}) {
     this._srcObject = null;
     this.readyState = autoCanPlay ? 4 : 0;
     this._auto = autoCanPlay;
@@ -233,6 +249,20 @@ export class FakeVideoEl {
     /** @type {Array<[string, string]>} */ this.attributeWrites = [];
     /** @type {string[]} */ this.setSinkIdCalls = [];
     this._failPlay = { times: 0, name: 'NotAllowedError' };
+    if (rvfc) {
+      /** @type {Map<number, Function>} */ this._frameCbs = new Map();
+      this._frameSeq = 0;
+      this.presentedFrames = 0;
+      this.requestVideoFrameCallback = (cb) => { const id = ++this._frameSeq; this._frameCbs.set(id, cb); return id; };
+      this.cancelVideoFrameCallback = (id) => { this._frameCbs.delete(id); };
+    }
+  }
+  /** Test helper: present one frame of the given size and run the pending `requestVideoFrameCallback` callbacks. */
+  fireFrame(width = 640, height = 480) {
+    this.videoWidth = width; this.videoHeight = height; this.presentedFrames += 1;
+    const cbs = [...this._frameCbs.values()];
+    this._frameCbs.clear();
+    for (const cb of cbs) cb(0, { width, height, presentedFrames: this.presentedFrames });
   }
   get srcObject() { return this._srcObject; }
   set srcObject(v) { this.srcObjectAssignments += 1; this._srcObject = v; }
