@@ -34,6 +34,7 @@ const choice = browserChoice(args);
 const HEADED = choice.headed || choice.browser === 'chrome';
 const SETUP = `${choice.browser} ${HEADED ? 'headed' : 'headless'}`;
 const RELEASE_BUDGET_MS = 3000;   // time after the close until the server shows no viewer
+const LATE_BUDGET_MS = 15000;    // diagnostic only: how late a missed release happens
 
 const report = new Report({ runId, target: target.name });
 report.data.scenarios = [];
@@ -83,17 +84,23 @@ async function probe(/** @type {string} */ url) {
   const res = await globalThis.fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/sdp' }, body: 'v=0\r\n', signal: AbortSignal.timeout(5000) });
   const location = res.headers.get('location');
   if (res.status < 300 && location) await globalThis.fetch(whepResourceUrl(location, url), { method: 'DELETE', signal: AbortSignal.timeout(5000) }).catch(() => {});
-  return { status: res.status, sentAt };
+  return { status: res.status, sentAt, tookMs: Date.now() - sentAt };
 }
 
-/** Poll until the probe stops answering 409. Returns the ms from `since` to the probe that found the viewer gone (its send time, because the freeing probe can take seconds to answer), or null at the budget. */
-async function releasedWithin(/** @type {string} */ url, /** @type {number} */ since) {
-  while (Date.now() - since <= RELEASE_BUDGET_MS) {
-    const { status, sentAt } = await probe(url);
-    if (status !== 409) return sentAt - since;
+/**
+ * Poll until the probe stops answering 409. Returns the ms from `since` to the probe that found the viewer gone
+ * (its send time, because the freeing probe can take seconds to answer), or null at the budget. `trail` lists each
+ * probe as "status@sentMs/tookMs" so a late release can be told from a probe that was slow.
+ */
+async function releasedWithin(/** @type {string} */ url, /** @type {number} */ since, /** @type {number} */ budgetMs = RELEASE_BUDGET_MS) {
+  /** @type {string[]} */ const trail = [];
+  while (Date.now() - since <= budgetMs) {
+    const { status, sentAt, tookMs } = await probe(url);
+    trail.push(`${status}@${sentAt - since}/${tookMs}`);
+    if (status !== 409) return { ms: sentAt - since, trail };
     await sleep(100);
   }
-  return null;
+  return { ms: null, trail };
 }
 
 const SCENARIOS = {
@@ -110,8 +117,9 @@ const SCENARIOS = {
       report.check(`${id}: a viewer is attached before the close`, (await probe(url)).status === 409);
       const at = Date.now();
       await page.close();
-      const ms = await releasedWithin(url, at);
-      report.check(`${id}: viewer gone within ${RELEASE_BUDGET_MS} ms of the close`, ms !== null, { ms });
+      const { ms, trail } = await releasedWithin(url, at);
+      report.check(`${id}: viewer gone within ${RELEASE_BUDGET_MS} ms of the close`, ms !== null, { ms, probes: trail });
+      if (ms === null) report.note(`${id}: late release (up to ${LATE_BUDGET_MS} ms)`, JSON.stringify((await releasedWithin(url, at, LATE_BUDGET_MS)).ms));
       report.note(`${id}: WHEP DELETE requests seen from the closed page`, JSON.stringify(deletes));
       report.data.timings = { ...report.data.timings, U1_release_ms: ms };
     },
@@ -131,8 +139,8 @@ const SCENARIOS = {
       report.check(`${id}: the avatar stream answered`, status >= 200 && status < 300, { status });
       const at = Date.now();
       await page.close();
-      const ms = await releasedWithin(url, at);
-      report.check(`${id}: viewer gone within ${RELEASE_BUDGET_MS} ms of the close`, ms !== null, { ms });
+      const { ms, trail } = await releasedWithin(url, at);
+      report.check(`${id}: viewer gone within ${RELEASE_BUDGET_MS} ms of the close`, ms !== null, { ms, probes: trail });
       report.data.timings = { ...report.data.timings, U2_release_ms: ms };
       await connecting;
     },
