@@ -23,6 +23,20 @@ function walk(dir) {
   });
 }
 
+/** The text of the call that opens on `lines[start]`, up to its closing parenthesis. */
+function callText(lines, start) {
+  let depth = 0, seen = false, out = '';
+  for (let i = start; i < lines.length && i < start + 40; i++) {
+    for (const ch of lines[i]) {
+      out += ch;
+      if (ch === '(') { depth++; seen = true; } else if (ch === ')') depth--;
+      if (seen && depth === 0) return out;
+    }
+    out += '\n';
+  }
+  return out;
+}
+
 test('every fetch call in src/ has a deadline or an allowlisted reason', () => {
   const offenders = [];
   const bare = {};
@@ -34,9 +48,7 @@ test('every fetch call in src/ has a deadline or an allowlisted reason', () => {
       const t = line.trim();
       if (t.startsWith('//') || t.startsWith('*') || t.startsWith('/*')) return;
       if (/\b(whepPost|fetchWithTimeout)\(/.test(line)) return;
-      // The request options sit within the next few lines.
-      const window = lines.slice(i, i + 8).join('\n');
-      if (/signal\b/.test(window)) return;
+      if (/\bsignal\b/.test(callText(lines, i))) return;
       if (ALLOWED[rel]) { bare[rel] = (bare[rel] ?? 0) + 1; return; }
       offenders.push(`${rel}:${i + 1}: ${t}`);
     });

@@ -53,6 +53,22 @@ test('pagehide releases the WHEP resource with keepalive, closes the peers and t
   } finally { bus.restore(); }
 });
 
+test('pagehide sends session_completed before the WHEP DELETE', async () => {
+  const bus = pageBus();
+  try {
+    const order = [];
+    const ok = { ok: true, status: 200, text: async () => '', json: async () => ({}), headers: { get: () => null } };
+    const whep = fakeWhepFetch([{}], { fallback: async (url) => { order.push(String(url).split('/').pop()); return ok; } });
+    const fetch = (url, init) => { if (init?.method === 'DELETE') order.push('DELETE'); return whep(url, init); };
+    const { session } = build([{}], { sessionCompleteOnEnd: true, threadId: 'thread-1', fetch });
+    await session.connect();
+    order.length = 0;
+    bus.pagehide(false);
+    await delay(20);
+    assert.deepEqual(order, ['session_completed', 'DELETE']);
+  } finally { bus.restore(); }
+});
+
 test('a persisted pagehide (bfcache) leaves the session alone', async () => {
   const bus = pageBus();
   try {
