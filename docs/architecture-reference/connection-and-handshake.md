@@ -85,10 +85,10 @@ Overall connecting timeout: 30s. It bounds every wait in the table, including th
 | `agent` | 6 and 7 |
 | `asr` | 9 |
 | `whep` | 10, the WHEP request (`whep_timeout`, `whep_failed`, `stv_session_gone`) |
-| `connect` | Any other failure in `connect()` |
-| `reconnect` | A cold reconnect that ran out of attempts |
+| `connect` | A fatal server event (`capacity_unavailable`, `tier_exceeded`, `bad_request`) or any other failure in `connect()` |
+| `reconnect` | The socket or a cold reconnect ran out of attempts (`reconnect_failed`) |
 
-`error.retryable` is `true` on `timeout`, `whep_timeout`, a `whep_failed` caused by the network, `stv_session_gone` and `reconnect_failed`, because the same call can succeed on a later try. A `whep_failed` that carries an HTTP status does not set it. Both fields are also in `error.toJSON()`.
+`error.retryable` is `true` on `timeout`, `capacity_unavailable`, `whep_timeout`, a `whep_failed` caused by the network, `stv_session_gone` and `reconnect_failed`, because the same call can succeed on a later try. A `whep_failed` that carries an HTTP status does not set it. Both fields are also in `error.toJSON()`.
 
 **Why step 3 has two timeouts.** `joinComplete` can arrive later than `clientConfiguration` under load. The SDK budgets the two waits separately: `clientConfiguration` gets 5s (`TIMEOUTS.joinRoom`), `joinComplete` gets 20s (`TIMEOUTS.joinComplete`). A single 5s budget for both causes spurious `JoinRoomTimeout` failures on loaded rooms.
 
@@ -99,6 +99,8 @@ The 30s deadline is set once, at the start of `connect()`. It keeps running thro
 The opening line itself can't be interrupted. Typed text sent during it is held (`speak()`) until `stvFinishedTalking`. For the fastest interruptible start, give the avatar a silent opening phrase (`SILENT_OPENING`) and let the session's `kickoff` option send the first turn on that event. See [START-THE-CONVERSATION.md](../START-THE-CONVERSATION.md).
 
 ---
+
+**Connecting again.** `disconnect()` clears the token. Call `setToken()` with a fresh conversation KS before the next `connect()` or `prepare()`, or they reject with `invalid_state`. From the `error` state, call `disconnect()` first.
 
 ## Start faster
 

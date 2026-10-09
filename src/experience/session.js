@@ -179,7 +179,7 @@ export class KalturaAvatarSession extends Emitter {
    * @param {number} [cfg.maxReconnectAttempts]  Passed through as socket.io's own `reconnectionAttempts` (caps its native reconnection engine) AND surfaced as `attempt`/`maxAttempts` on `reconnecting`/`connectivityChanged`. Default 5.
    * @param {number} [cfg.reconnectionDelay]  First wait, in ms, before socket.io retries a dropped socket. Default 250.
    * @param {number} [cfg.reconnectionDelayMax]  Longest wait, in ms, between those retries. Default 2000.
-   * @param {Partial<{overall:number, serverConnect:number, joinRoom:number, joinComplete:number, agent:number, asr:number, firstFrame:number, prepareIdle:number}>} [cfg.timeouts]  Override any connect wait, in ms. Unset keys keep their default (`overall` 30000, `serverConnect` 10000, `joinRoom` 5000, `joinComplete` 20000, `agent` 10000, `asr` 30000, `firstFrame` 6000, `prepareIdle` 60000).
+   * @param {Partial<{overall:number, serverConnect:number, joinRoom:number, joinComplete:number, agent:number, asr:number, firstFrame:number, prepareIdle:number, whepTry:number, whepTries:number, whepBackoff:number, whepRelease:number, recover:number, healthTick:number, videoStall:number, coldAttempts:number, coldBackoff:number}>} [cfg.timeouts]  Override any wait, in ms (`whepTries` and `coldAttempts` are counts). Unset keys keep their default: `overall` 30000, `serverConnect` 10000, `joinRoom` 5000, `joinComplete` 20000, `agent` 10000, `asr` 30000, `firstFrame` 6000, `prepareIdle` 60000, `whepTry` 5000, `whepTries` 3, `whepBackoff` 1000, `whepRelease` 3000, `recover` 15000, `healthTick` 1000, `videoStall` 4000, `coldAttempts` 2, `coldBackoff` 500. What each one bounds: docs/architecture-reference/connection-and-handshake.md and resilience-and-failure-handling.md.
    * @param {number} [cfg.reconnectWindowMs]  Bounds the 'reconnecting' state independent of socket.io's own attempt count — if no recovery lands within this window, the session ends cleanly rather than hanging. Default 22000.
    * @param {Record<string, string|number|boolean|null>} [cfg.requestVars]  Join-time `{{var}}` values — seeds the session's canonical request_vars map, sent on every `join`/reconnect `buildJoin()` call and updated mid-session by {@link updateRequestVars}/{@link setDynamicPrompt}; validated with the same `assertRequestVars` as {@link updateRequestVars}.
    * @param {number} [cfg.localVadThreshold]  Client-side VAD threshold gating `localSpeakingChanged`: the summed byte-frequency level (0 to 4080) at or above which the mic counts as speaking. Default 300.
@@ -553,7 +553,8 @@ export class KalturaAvatarSession extends Emitter {
    * every pending wait is canceled, including the media handshake request and a
    * cold reconnect's capacity wait, and any answer that lands late is released.
    * @returns {Promise<void>}
-   * @throws {KalturaError} `invalid_state` unless the state is `idle` or `disconnected`.
+   * @throws {KalturaError} `invalid_state` unless the state is `idle` or `disconnected`, or when the
+   *   session has no token (`disconnect()` clears it: call `setToken()` before connecting again).
    */
   async connect() {
     if (this.state !== 'idle' && this.state !== 'disconnected') {

@@ -273,7 +273,7 @@ session.speak('Tell me about onboarding.');
 
 The SDK binds the avatar's tracks to the elements you pass and applies no CSS of its own — size the box yourself with `object-fit: cover` (aspect-agnostic, no letterbox/pillarbox bars). **Pass both `videoEl` and `audioEl`** so the picture and the voice live on separate elements: a UI re-render that replaces the `<video>` then costs you the picture for a moment, not the whole avatar. With `videoEl` alone the SDK merges both tracks onto that one element, and omitting `videoEl` gives you `session.avatarStream` for headless rendering — see [Avatar audio and video rendering](#avatar-audio-and-video-rendering) below and [docs/ARCHITECTURE.md § Displaying the Avatar Video](docs/ARCHITECTURE.md#displaying-the-avatar-video).
 
-**Don't hide a loading spinner on `'streamReady'`** — it fires at the initial signaling handshake, before any video track exists. Listen for `'mediaReady'` instead: it fires once per connect, unconditionally, with `{mode:'video', videoWidth, videoHeight}` when the first video frame is painted (dimensions are `0` when there is no `videoEl`; use `'videoMetadata'` if you need real dimensions), `{mode:'video', videoWidth:0, videoHeight:0, degraded:true}` when no frame arrived (see warning `media_no_video`), or `{mode:'audio'}` immediately if the session falls back to audio-only (capacity limited).
+**Don't hide a loading spinner on `'streamReady'`.** It fires at the initial signaling handshake, before any video track exists. Listen for `'mediaReady'` instead: it fires once per connect, unconditionally, with `{mode:'video', videoWidth, videoHeight}` when the first video frame is painted (dimensions are `0` when there is no `videoEl`; use `'videoMetadata'` if you need real dimensions), `{mode:'video', videoWidth:0, videoHeight:0, degraded:true}` when no frame arrived (see warning `media_no_video`), or `{mode:'audio'}` immediately if the session falls back to audio-only (capacity limited).
 
 ```js
 session.on('mediaReady', ({ mode }) => spinner.hidden = true);   // covers both video and audio-only sessions
@@ -474,7 +474,7 @@ session.on('toolSpiralRecovering', ({ lastTurnText }) => {
 });
 ```
 
-The session also recovers without an ICE event: a health watchdog catches a peer closed from outside and a video stream that stops arriving, a WHEP `404` or `409` gets a new avatar session on the live socket, a failed cold reconnect is tried twice, and an `online` event retries a down socket at once. Each WHEP request has a deadline and bounded retries. Zero-candidates fail-fast has its own faster path. See [ARCHITECTURE-REFERENCE.md § Resilience & Failure Handling](docs/architecture-reference/resilience-and-failure-handling.md#resilience--failure-handling) for the exact timings and the `connectivityChanged` `detail` values.
+The session also recovers without an ICE event: a health watchdog catches a peer closed from outside and a video stream that stops arriving, a WHEP `404` or `409` gets a new avatar session on the live socket, a failed cold reconnect is tried twice, and an `online` event retries a down socket at once. Each WHEP request has a deadline and bounded retries. Zero-candidates fail-fast has its own faster path. See [ARCHITECTURE-REFERENCE.md § Resilience & Failure Handling](docs/architecture-reference/resilience-and-failure-handling.md#resilience--failure-handling) for the exact timings and event payloads.
 
 ### Devices and media quality
 

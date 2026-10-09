@@ -38,7 +38,7 @@ The SDK emits `mediaRecovering { channel, state }` when recovery starts and `med
 | ASR (mic uplink) | `ice-restart` | Restarts ICE on the same peer and re-offers over the socket with `is_reconnect: true`. Mute state is kept. Waits up to 30 s for the answer. |
 | STV (avatar video) | `re-subscribe` | Waits for the `DELETE` of the old WHEP resource, then sends a new WHEP offer. A `404` or `409` first asks for a new avatar session on the live socket ([details](../wire-protocol/audio-channels.md#6-stv-downlink-pc2--avatar-videoaudio--you)). Then it resumes playback if the browser paused the element. |
 
-If in-place recovery fails or takes longer than `timeouts.recover` (15 s), the SDK emits `connectivityChanged` with `state:'recover_failed'` and does a cold reconnect. Each channel has its own 1.5 s grace timer, so the two peers recover independently.
+If in-place recovery fails, the SDK emits `connectivityChanged` with `state:'recover_failed'` and does a cold reconnect. `timeouts.recover` (15 s) bounds the STV re-subscribe. The ASR restart waits up to 30 s for its answer. Each channel has its own grace timer, so the two peers recover independently.
 
 The same recovery runs when the browser fires `online` after an `offline` and a peer is still in a down ICE state. Both events also emit `connectivityChanged` with `channel:'network'`. If the control socket is down while `reconnecting`, `online` makes it retry at once instead of waiting out its backoff. Turn this off with `networkAware:false`.
 
@@ -51,11 +51,19 @@ A peer can die without an ICE event: closing it from outside fires nothing, and 
 | Peer state | A peer is `failed` or `closed` |
 | Video flow (STV) | The incoming video bytes have not grown for `timeouts.videoStall` (4 s) |
 
-Both go through the same recovery as an ICE failure and emit the same events. A peer that reports no video receiver is not judged. The watchdog stops on `disconnect()`.
+Both go through the same recovery as an ICE failure and emit the same events. A peer that reports no video receiver is not judged. A sender that stays stalled gets two re-subscribes in a row. If video still does not flow, the next stall does a cold reconnect. The watchdog stops on `disconnect()`.
 
 ### Cold reconnect retries
 
-A cold reconnect makes up to `timeouts.coldAttempts` (2) attempts, `timeouts.coldBackoff` (500 ms) apart. A failed first attempt emits `connectivityChanged { channel:'socket', state:'reconnect_retry' }`. When the last attempt fails, the session ends with the attempt's error and then `ended` with `reconnect_failed`. `disconnect()` during the backoff cancels the retry.
+A cold reconnect makes up to `timeouts.coldAttempts` (2) attempts, `timeouts.coldBackoff` (500 ms) apart. A failed first attempt emits `connectivityChanged { channel:'socket', state:'reconnect_retry' }`. When the last attempt fails, the session emits `error` and then `ended`, both with `reconnect_failed` (`phase: 'reconnect'`, `retryable: true`). `error.cause` holds the last attempt's error. `disconnect()` during the backoff cancels the retry.
+
+### Recovery events
+
+| Event | Payload |
+|---|---|
+| `reconnecting` | `{reason, attempt, maxAttempts}`; `cold: true` when the SDK rebuilds the session |
+| `reconnected` | `{recovered}`: `true` when the socket kept its state, `false` after a cold reconnect |
+| `connectivityChanged` | `{channel, state}` plus `reason`, `attempt`, `maxAttempts` (socket drop) or `detail` (`recover_failed`, `reconnect_retry`). `channel` is `asr`, `stv`, `socket` or `network`. `state` is the ICE state, `connected`, `disconnected`, `offline`, `online`, `recover_failed` or `reconnect_retry` |
 
 ### Timeouts
 
