@@ -154,7 +154,7 @@ Sending the signal twice for the same thread is safe. The SDK never awaits it on
 
 ### Page exit
 
-A `pagehide` that is not a bfcache freeze runs `disconnect()`. The session sends `session_completed` first, then `DELETE`s the WHEP resource with `keepalive` so the request outlives the page, closes both peers and closes the socket. It is installed when `connect()` starts, so a tab closed mid-connect is cleaned up too. A request already in flight is aborted, and a `DELETE` can only name a resource whose answer has arrived. A `pagehide` with `persisted:true` leaves the session alone, as in the table above. Turn the whole page-lifecycle handling off with `pageLifecycleAware:false`.
+A `pagehide` that is not a bfcache freeze runs `disconnect()`. The session sends `session_completed` first, then `DELETE`s the WHEP resource with `keepalive` so the request outlives the page, closes both peers and closes the socket. It is installed when `connect()` starts, so a tab closed mid-connect is cleaned up too. A request already in flight is aborted, and a `DELETE` can only name a resource whose answer has arrived. The browser decides whether a request sent while a page closes completes, so the release is best effort. A `pagehide` with `persisted:true` leaves the session alone, as in the table above. Turn the whole page-lifecycle handling off with `pageLifecycleAware:false`.
 
 ### What the SDK implements (don't regress)
 

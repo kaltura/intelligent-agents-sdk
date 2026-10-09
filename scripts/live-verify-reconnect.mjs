@@ -7,7 +7,7 @@
  * |----|----------------------------------------------|---------|
  * | C1 | the avatar video peer is closed from the page | `mediaRecovering` then `mediaRecovered` (stv, re-subscribe) within RECOVER_BUDGET_MS, video decodes again, no socket reconnect |
  * | C2 | the video and mic peers are closed together   | the closed mic peer cannot restart ICE, so the session rebuilds: `reconnected` within REBUILD_BUDGET_MS, two open peers, video decodes |
- * | C3 | the first re-subscribe answers 404             | recovery still lands within RECOVER_BUDGET_MS with a new avatar session on the same socket (one `join`, no socket reconnect) |
+ * | C3 | the first re-subscribe answers 404             | recovery still lands within RECOVER_404_BUDGET_MS with a new avatar session on the same socket (one `join`, no socket reconnect) |
  * | C4 | the browser is offline for OFFLINE_MS         | the session is `connected` again within BACK_BUDGET_MS of the network returning, and video decodes |
  *
  * Usage
@@ -32,6 +32,7 @@ const choice = browserChoice(args);
 const HEADED = choice.headed || choice.browser === 'chrome';
 const SETUP = `${choice.browser} ${HEADED ? 'headed' : 'headless'}`;
 const RECOVER_BUDGET_MS = 2500;   // watchdog tick (up to 1 s) + one re-subscribe
+const RECOVER_404_BUDGET_MS = 3500;   // the same plus a new avatar session; CI runners were measured at 2.9 s, a laptop at 1.6 s
 const REBUILD_BUDGET_MS = 8000;   // a closed mic peer cannot restart ICE, so the session rebuilds
 const OFFLINE_MS = 6000;
 const BACK_BUDGET_MS = 3000;
@@ -146,7 +147,7 @@ const SCENARIOS = {
       const { value, events: evs } = await recovered(page, 'stv', at);
       const ms = value.t - at;
       report.check(`${id}: the 404 was served`, served.done, { posts: route.posts() });
-      report.check(`${id}: recovered within ${RECOVER_BUDGET_MS} ms`, ms <= RECOVER_BUDGET_MS, { ms });
+      report.check(`${id}: recovered within ${RECOVER_404_BUDGET_MS} ms`, ms <= RECOVER_404_BUDGET_MS, { ms });
       report.check(`${id}: a new avatar session on the same socket`, sent(evs, 'stvNewSession') === 2 && sent(evs, 'join') === 1, { stvNewSession: sent(evs, 'stvNewSession'), join: sent(evs, 'join') });
       report.check(`${id}: no socket reconnect`, !all(evs, 'reconnecting').length, all(evs, 'reconnecting').length);
       const flow = await videoDecodes(page);

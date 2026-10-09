@@ -53,22 +53,33 @@ let origin = '';
 const joins = (/** @type {Ev[]} */ evs) => all(evs, 'socket:out', (d) => d?.ev === 'join').length;
 const sent = (/** @type {Ev[]} */ evs, /** @type {string} */ name) => all(evs, 'socket:out', (d) => d?.ev === name).length;
 
-/** Time connect() takes in one fresh page, optionally after prepare(). `joinMs` is the socket + join time from the page's own timings. */
+/** Server answers that say "try again" (the SDK marks them retryable). One pair run should not fail the script on one of them. */
+const TRANSIENT = new Set(['timeout', 'capacity_unavailable']);
+
+/** Time connect() takes in one fresh page, optionally after prepare(). `joinMs` is the socket + join time from the page's own timings. A transient server answer is retried in a fresh page, up to 3 tries. */
 async function timedConnect(/** @type {import('playwright').BrowserContext} */ context, /** @type {any} */ sink, /** @type {boolean} */ prepared) {
-  const page = await openHarness(context, origin, { mode: 'avatar' }, sink);
-  if (prepared) {
-    const p = await callHook(page, 'testPrepare');
-    if (!p.ok) throw new Error(`prepare failed: ${p.code} ${p.message}`);
+  for (let attempt = 1; ; attempt++) {
+    const page = await openHarness(context, origin, { mode: 'avatar' }, sink);
+    /** @param {string} what @param {{code?: string, message?: string}} r */
+    const failed = async (what, r) => {
+      await callHook(page, 'testDisconnect').catch(() => {});
+      if (attempt < 3 && TRANSIENT.has(String(r.code))) { report.note(`${what} gave ${r.code} on try ${attempt}, trying again`, String(r.message).slice(0, 120)); return true; }
+      throw new Error(`${what} failed: ${r.code} ${r.message}`);
+    };
+    if (prepared) {
+      const p = await callHook(page, 'testPrepare');
+      if (!p.ok) { await failed('prepare', p); continue; }
+    }
+    const t0 = Date.now();
+    const c = await callHook(page, 'testConnect');
+    const ms = Date.now() - t0;
+    if (!c.ok) { await failed('connect', c); continue; }
+    const { events: evs } = await waitFor(page, (e) => find(e, 'connectTimings'), 5000, 'connectTimings');
+    const timings = find(evs, 'connectTimings')?.detail;
+    const joinMs = timings?.joinComplete;
+    await callHook(page, 'testDisconnect').catch(() => {});
+    return { ms, joinMs, timings };
   }
-  const t0 = Date.now();
-  const c = await callHook(page, 'testConnect');
-  const ms = Date.now() - t0;
-  if (!c.ok) throw new Error(`connect failed: ${c.code} ${c.message}`);
-  const { events: evs } = await waitFor(page, (e) => find(e, 'connectTimings'), 5000, 'connectTimings');
-  const timings = find(evs, 'connectTimings')?.detail;
-  const joinMs = timings?.joinComplete;
-  await callHook(page, 'testDisconnect').catch(() => {});
-  return { ms, joinMs, timings };
 }
 
 const SCENARIOS = {
