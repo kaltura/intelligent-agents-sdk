@@ -259,7 +259,7 @@ test('regression: disconnect() from a track listener settles connect() at once w
   assert.equal(videoEl.srcObject, null, 'teardown still cleared the element');
   release();   // the late answer must not resurrect anything or throw
   await delay(20);
-  assert.equal(session.state, 'error');
+  assert.equal(session.state, 'disconnected');
 });
 
 test('stored mute / volume / sink id survive teardown and are already in place on the next connect (no extra writes)', async () => {

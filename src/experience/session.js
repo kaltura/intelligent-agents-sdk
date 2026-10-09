@@ -631,8 +631,12 @@ export class KalturaAvatarSession extends Emitter {
       this._audit('session.connect', 'success', { kind: 'conversation', entitlementEnforced: this._entitlementEnforced, action: this.mode });
       this._maybeSendKickoff();   // held by speak() until the opening turn ends; no-op when disclosure is pending
     } catch (err) {
-      this._setState('error');
-      this._teardownTransports();
+      // A disconnect() that cancelled this connect has already torn down and settled on 'disconnected'.
+      const st = /** @type {string} */ (this.state);
+      if (st !== 'disconnected' && st !== 'disconnecting') {
+        this._setState('error');
+        this._teardownTransports();
+      }
       const out = err instanceof KalturaError ? err : new KalturaError({ type: 'about:blank', title: 'connect failed', code: 'connect_failed', detail: String(err && err.message || err), phase: 'connect' });
       /** @type {any} */ (out).timings = this._finishTimings(false);
       throw out;
@@ -1127,10 +1131,12 @@ export class KalturaAvatarSession extends Emitter {
    * @param {{expired:()=>boolean}} [overall]
    */
   async _recreateStvSession(overall) {
+    const gen = this._sessionGen;
     this._closePeer(this._pcStv); this._pcStv = null;
     await this._releaseCurrentWhep();
-    if (!this._socket || this._isEnding()) throw connectAbortedErr();
+    if (!this._socket || this._isEnding() || gen !== this._sessionGen) throw connectAbortedErr();
     await this._createSessionWithCapacity(this._socket, overall || deadline(this._timeouts.recover));
+    if (gen !== this._sessionGen || this._isEnding()) throw connectAbortedErr();   // a cold reconnect or a disconnect took over while we waited
     if (this.mode === 'audio') {
       throw new KalturaError({ type: 'https://docs.kaltura.com/agentic/errors/stv_session_gone', title: 'STV session gone', code: 'stv_session_gone', phase: 'whep', detail: 'The server did not return a video stream session.', retryable: true });
     }

@@ -76,7 +76,8 @@ test('disconnect() while connect() waits for the first frame rejects connect() a
   assert.equal(await p, 'connect_failed');
   await delay(300);
   assert.equal(states.includes('connected'), false);
-  assert.notEqual(session.state, 'connected');
+  assert.equal(states.includes('error'), false, 'a requested disconnect is not an error');
+  assert.equal(session.state, 'disconnected');
   assert.equal(session._healthTimer, null, 'no watchdog left running');
 });
 
@@ -138,4 +139,25 @@ test('every teardown DELETE of the WHEP resource uses keepalive', async () => {
   await delay(20);
   assert.ok(fetch.deletes.length >= 1);
   assert.ok(fetch.deletes.every((d) => d.keepalive === true));
+});
+
+test('a cold reconnect that lands while a 404 repair waits for the new STV session is not undone by it', async () => {
+  const { session, sockets } = build({ whep: [{}, { status: 404 }, {}] });
+  await session.connect();
+  const sock = sockets[0];
+  const real = sock._onEmit; let stv = 0;
+  sock.onEmit((ev, p, so) => { if (ev === 'stvNewSession' && ++stv >= 1) { setTimeout(() => real(ev, p, so), 300); return; } real(ev, p, so); });
+  const retries = [];
+  session.on('connectivityChanged', (p) => { if (p.state === 'reconnect_retry') retries.push(p); });
+  session._pcStv.setIce('failed');
+  await until(() => stv >= 1);   // the repair is parked on the delayed stvNewSession reply
+  const reconnected = new Promise((r) => session.once('reconnected', r));
+  session._coldReconnect('test');
+  await reconnected;
+  await delay(400);   // the stale reply lands now
+  assert.deepEqual(retries, [], 'the cold reconnect did not burn an attempt');
+  assert.equal(session.state, 'connected');
+  const live = FakeRTCPeerConnection.instances.filter((p) => !p.closed && p.transceivers.some((t) => t.kind === 'video'));
+  assert.equal(live.length, 1, 'one live STV peer');
+  session.disconnect();
 });

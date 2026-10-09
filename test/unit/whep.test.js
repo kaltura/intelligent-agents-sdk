@@ -123,6 +123,21 @@ test('no retry once the caller deadline has passed', async () => {
   assert.equal(f.calls.length, 1);
 });
 
+test('the timeout detail counts the tries actually made', async (t) => {
+  useTimers(); t.after(() => mock.timers.reset());
+  const f = fakeWhepFetch([{ hang: true }]);
+  const o = outcome(post(f, { overall: { expired: () => true } }));
+  await flush(); tick(5000); await flush();
+  assert.equal(o.error?.code, 'whep_timeout');
+  assert.match(o.error.detail, /after 1 try\./);
+});
+
+test('tries below 1 still makes one POST', async () => {
+  const f = fakeWhepFetch([{ reset: true }]);
+  await assert.rejects(post(f, { tries: 0 }), (e) => e.code === 'whep_failed' && !/undefined/.test(e.detail));
+  assert.equal(f.calls.length, 1);
+});
+
 test('timeouts, tries and backoff are overridable', async (t) => {
   useTimers(); t.after(() => mock.timers.reset());
   const f = fakeWhepFetch([{ hang: true }]);

@@ -37,6 +37,7 @@
  */
 
 import { Teardown } from './teardown.js';
+import { fetchWithTimeout } from './fetch-timeout.js';
 import { safeUrl } from '../core/safety.js';
 import { normalizePath, resolveTarget, validateSectionsManifest } from '../core/site-keys.js';
 
@@ -45,6 +46,8 @@ const liveNavigators = new WeakMap();
 
 /** Default size guard for a fetched manifest (P-1). */
 const DEFAULT_MANIFEST_MAX_BYTES = 512 * 1024;
+/** Deadline for the manifest request (headers), so a hung host cannot stall the widget. */
+const MANIFEST_TIMEOUT_MS = 10000;
 
 /** Linear-time `/\/+$/` strip: `pathPrefix` is host-supplied, so no backtracking regex on it. */
 function trimTrailingSlashes(s) {
@@ -151,7 +154,7 @@ export class SiteNavigator {
       const href = safeUrl(url);
       if (!href) throw new Error('unsafe manifest URL');
       if (!f) throw new Error('fetch is not available');
-      const res = await f(href, { headers: { accept: 'application/json' } });
+      const res = await fetchWithTimeout(f, href, { headers: { accept: 'application/json' } }, MANIFEST_TIMEOUT_MS);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const declared = Number(res.headers?.get?.('content-length'));
       if (declared > maxBytes) throw new Error(`${declared} bytes exceeds the ${maxBytes} byte limit`);

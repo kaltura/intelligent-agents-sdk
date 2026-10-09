@@ -103,7 +103,7 @@ The connect-time keys (`overall`, `joinRoom`, and the rest) are in [Connection &
 | All agent slots busy | `throwToNoAgent` | Availability poll. See [Scale & Sticky Sessions](scale-and-sticky-sessions.md#scale--sticky-sessions). |
 | Plan/tier exceeded | `throwToExceededTier` | Fails with `tier_exceeded`. |
 | Connect hangs | Per-step timeouts and the 30 s deadline | `connect()` rejects with `timeout` and `error.phase`. See the [connect sequence](connection-and-handshake.md#full-connect-sequence-state-machine-order). |
-| Tool reply gets no answer | 15 s deadline | `respondToTool()` returns `{ok:false, reason:'timeout'}`. The call stays pending, so you can retry. |
+| Tool reply gets no answer | 15 s deadline | `respondToTool()` returns `{ok:false, reason:'timeout'}`. The call stays pending, so you can retry. The first reply may still have arrived, so make the tool's side effect safe to repeat. |
 | Brain stalls mid-conversation | Watchdog | `brainStalled`, repeating every `brainStallMs` (default 12000) until output lands. |
 | Tool-call spiral (same command retried with no narration) | Two-tier circuit breaker | Soft signal (`toolSpiralDetected`), then a hard cold reconnect. See [below](#tool-call-spiral-what-happened-and-how-its-mitigated). |
 | Tab backgrounded / network change | `online`/`offline`/`visibilitychange` listeners | Media recovery as above. See the `session_completed` section for the page-lifecycle signal. |

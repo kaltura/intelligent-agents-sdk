@@ -26,6 +26,7 @@ import {
   browserChoice, launchBrowser, contextOptions, openHarness, sleep,
 } from './live-verify-kickoff-shared.mjs';
 import { callHook } from './live-verify-hooks-shared.mjs';
+import { whepResourceUrl } from '../src/experience/wire.js';
 
 const { args, target, runId, outDir } = bootstrap(process.argv.slice(2), 'unload');
 const ONLY = typeof args.only === 'string' ? new Set(args.only.split(',').map((s) => s.trim().toUpperCase())) : null;
@@ -66,7 +67,7 @@ async function probe(/** @type {string} */ url) {
   const sentAt = Date.now();
   const res = await globalThis.fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/sdp' }, body: 'v=0\r\n', signal: AbortSignal.timeout(5000) });
   const location = res.headers.get('location');
-  if (res.status < 300 && location) await globalThis.fetch(new URL(location, url), { method: 'DELETE', signal: AbortSignal.timeout(5000) }).catch(() => {});
+  if (res.status < 300 && location) await globalThis.fetch(whepResourceUrl(location, url), { method: 'DELETE', signal: AbortSignal.timeout(5000) }).catch(() => {});
   return { status: res.status, sentAt };
 }
 

@@ -236,7 +236,6 @@
         "track:audio",
         "stateChange:disconnecting",
         "stateChange:disconnected",
-        "stateChange:error",
         "connect:rejected:connect_failed"
       ],
       "counters": {

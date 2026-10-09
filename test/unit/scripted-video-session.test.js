@@ -11,6 +11,7 @@ import { setImmediate } from 'node:timers';
 import { KalturaScriptedVideoSession } from '../../src/experience/scripted-video-session.js';
 import { FakeRTCPeerConnection, FakeVideoEl, FakeMediaStreamCtor } from '../fakes/rtc.js';
 import { fakeFetch } from '../fakes/fetch.js';
+import { fakeWhepFetch } from '../fakes/whep.js';
 
 const TURN = { url: 'turn.example.com', username: 'kaltura', credential: 'avatar' };
 
@@ -339,6 +340,27 @@ test('disconnect() while connect() awaits the WHEP POST: connect() rejects, stat
 
   await v.connect();
   assert.equal(v.state, 'connected');
+});
+
+test('disconnect() during a stuck WHEP POST stops at once: connect() rejects and no retry goes out', { timeout: 3000 }, async () => {
+  const f = fakeWhepFetch([{ hang: true }, {}]);
+  const v = view({ fetch: f });
+  const attempt = v.connect();
+  await new Promise((r) => setTimeout(r, 20));
+  v.disconnect();
+  await assert.rejects(() => attempt, (e) => e.code === 'connect_failed');
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(f.posts.length, 1, 'no second try after disconnect()');
+});
+
+test('the release DELETE uses keepalive', async () => {
+  const f = fakeWhepFetch([{}]);
+  const v = view({ fetch: f });
+  await v.connect();
+  v.disconnect();
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(f.deletes.length, 1);
+  assert.equal(f.deletes[0].keepalive, true);
 });
 
 test('disconnect() while connect() awaits playback: connect() rejects and the state is not flipped back to connected', async () => {

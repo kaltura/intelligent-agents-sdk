@@ -26,13 +26,14 @@ export const WHEP_DEFAULTS = Object.freeze({ whepTry: 5000, whepTries: 3, whepBa
  */
 export async function whepPost({ fetch: doFetch, url, sdp, signal, timeoutMs = WHEP_DEFAULTS.whepTry, tries = WHEP_DEFAULTS.whepTries, backoffMs = WHEP_DEFAULTS.whepBackoff, overall }) {
   /** @type {any} */ let last;
-  let timedOut = false;
+  let timedOut = false, made = 0;
+  tries = Math.max(1, tries);
   for (let attempt = 1; attempt <= tries; attempt++) {
     if (signal?.aborted) throw abortErr();
     const ac = typeof AbortController === 'function' ? new AbortController() : null;
     const onAbort = () => ac?.abort();
     signal?.addEventListener?.('abort', onAbort, { once: true });
-    timedOut = false;
+    timedOut = false; made = attempt;
     const timer = setTimeout(() => { timedOut = true; ac?.abort(); }, timeoutMs);
     try {
       return await doFetch(url, { method: 'POST', headers: { 'Content-Type': 'application/sdp' }, body: sdp, signal: ac?.signal });
@@ -47,7 +48,7 @@ export async function whepPost({ fetch: doFetch, url, sdp, signal, timeoutMs = W
     else break;
   }
   if (timedOut) {
-    throw new KalturaError({ type: 'https://docs.kaltura.com/agentic/errors/whep_timeout', title: 'WHEP timeout', code: 'whep_timeout', phase: 'whep', retryable: true, detail: `The avatar stream request got no answer after ${tries} tries.` });
+    throw new KalturaError({ type: 'https://docs.kaltura.com/agentic/errors/whep_timeout', title: 'WHEP timeout', code: 'whep_timeout', phase: 'whep', retryable: true, detail: `The avatar stream request got no answer after ${made} ${made === 1 ? 'try' : 'tries'}.` });
   }
   throw new KalturaError({ type: 'about:blank', title: 'WHEP failed', code: 'whep_failed', phase: 'whep', retryable: true, detail: `The avatar stream request failed on the network: ${String(last?.message || last)}` });
 }

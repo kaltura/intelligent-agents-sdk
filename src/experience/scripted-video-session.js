@@ -97,6 +97,7 @@ export class KalturaScriptedVideoSession extends Emitter {
     this._inOntrack = false;   // true only while the peer's ontrack handler runs (see _teardown)
     /** @type {(() => void)|null} */ this._cancelPlayable = null;
     this._whepLocation = null;
+    /** @type {AbortController|null} */ this._whepAbort = null;
     /** @type {'idle'|'connecting'|'connected'|'disconnecting'|'disconnected'|'error'} */
     this.state = 'idle';
   }
@@ -167,7 +168,8 @@ export class KalturaScriptedVideoSession extends Emitter {
       if (pc !== this._pc) throw connectAbortedErr();
       await pc.setLocalDescription(offer);
       if (pc !== this._pc) throw connectAbortedErr();
-      const res = await whepPost({ fetch: this._fetch, url: this._whepUrl, sdp: offer.sdp });
+      this._whepAbort = typeof AbortController === 'function' ? new AbortController() : null;
+      const res = await whepPost({ fetch: this._fetch, url: this._whepUrl, sdp: offer.sdp, signal: this._whepAbort?.signal });
       if (!res.ok) {
         throw new KalturaError({ type: 'about:blank', title: 'WHEP negotiation failed', status: res.status, code: 'whep_failed', detail: whepStatusHint(res.status) });
       }
@@ -218,7 +220,7 @@ export class KalturaScriptedVideoSession extends Emitter {
     // Best-effort: a failed DELETE here doesn't matter to the caller (the peer
     // connection is already being torn down) but IS worth auditing:
     // mirrors KalturaAvatarSession's own WHEP cleanup.
-    Promise.resolve().then(() => fetchWithTimeout(this._fetch, loc, { method: 'DELETE' }, WHEP_RELEASE_TIMEOUT_MS)).catch((err) => this.emit('warning', { code: 'whep_delete_failed', message: String((err && err.message) || err) }));
+    Promise.resolve().then(() => fetchWithTimeout(this._fetch, loc, { method: 'DELETE', keepalive: true }, WHEP_RELEASE_TIMEOUT_MS)).catch((err) => this.emit('warning', { code: 'whep_delete_failed', message: String((err && err.message) || err) }));
   }
 
   _teardown() {
@@ -226,6 +228,7 @@ export class KalturaScriptedVideoSession extends Emitter {
     // dispatch (sync or microtask), which is what disconnect() from a 'track' listener does — so
     // defer the close to a macrotask in that case. The reference is dropped right away regardless.
     const pc = this._pc; this._pc = null;
+    this._whepAbort?.abort(); this._whepAbort = null;   // stops a WHEP POST (and its retries) still in flight
     if (pc) { const close = () => { try { pc.close(); } catch { /* already closed */ } }; if (this._inOntrack) setTimeout(close, 0); else close(); }
     this._cancelPlayable?.(); this._cancelPlayable = null;
     this._avatarMedia.teardown();

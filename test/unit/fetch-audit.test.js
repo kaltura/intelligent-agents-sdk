@@ -44,7 +44,7 @@ test('every fetch call in src/ has a deadline or an allowlisted reason', () => {
     const rel = relative(ROOT, file);
     const lines = readFileSync(file, 'utf8').split('\n');
     lines.forEach((line, i) => {
-      if (!/\b_?fetch\(/.test(line) && !/http\._fetch\(/.test(line)) return;
+      if (!/\b(_?fetch|fetchImpl|f)\(/.test(line) && !/http\._fetch\(/.test(line)) return;
       const t = line.trim();
       if (t.startsWith('//') || t.startsWith('*') || t.startsWith('/*')) return;
       if (/\b(whepPost|fetchWithTimeout)\(/.test(line)) return;

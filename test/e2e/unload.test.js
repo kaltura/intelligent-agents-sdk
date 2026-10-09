@@ -91,7 +91,7 @@ test('pagehide during connect() cleans up and connect() rejects', async () => {
     bus.pagehide(false);
     const err = await p;
     assert.equal(err.code, 'connect_failed');
-    assert.notEqual(session.state, 'connected');
+    assert.equal(session.state, 'disconnected');
     assert.equal(socket.connected, false);
     assert.equal(bus.count('pagehide'), 0);
     assert.equal(fetch.posts.length, 1);
