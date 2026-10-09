@@ -229,7 +229,7 @@ FakeAudioWorkletNode.reset = () => { FakeAudioWorkletNode.instances = []; FakeAu
  * test calls `fireFrame(w, h)` to present a frame.
  */
 export class FakeVideoEl {
-  constructor({ autoCanPlay = true, rvfc = true } = {}) {
+  constructor({ autoCanPlay = true, rvfc = false } = {}) {
     this._srcObject = null;
     this.readyState = autoCanPlay ? 4 : 0;
     this._auto = autoCanPlay;

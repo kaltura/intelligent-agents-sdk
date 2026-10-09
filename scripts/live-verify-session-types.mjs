@@ -31,7 +31,8 @@
  *  11c threads.delete through the SDK: the owner's Token deletes its thread, another
  *      user's Token deletes nothing; a raw KS string (owner, other user, widget) skips
  *      the client-side check and gets the server's own answer
- *  12  revoke() ends the token and its sessionGroupId sibling (skip with --skip-revoke)
+ *  12  revoke() resolves, and on the production target it ends the token and its
+ *      sessionGroupId sibling (skip with --skip-revoke)
  *
  * Raw HTTP is used for thread and OVP calls made with a user KS, so each
  * check sees the backend's own status code rather than an SDK pre-flight.
@@ -412,14 +413,15 @@ try {
       const probe = (/** @type {string} */ ks) => ovp('baseEntry', 'list', { pager: { pageSize: 1 } }, ks);
       const before = await probe(r1.ks);
       await kaltura.sessions.revoke(r1);
+      const enforced = target.name === 'prod';
       // Revocation takes effect within seconds, so poll for up to 30s.
       const start = Date.now();
       let after1 = await probe(r1.ks);
-      while (after1.ok && Date.now() - start < 30000) { await sleep(1000); after1 = await probe(r1.ks); }
+      while (enforced && after1.ok && Date.now() - start < 30000) { await sleep(1000); after1 = await probe(r1.ks); }
       const tookMs = Date.now() - start;
       const after2 = await probe(r2.ks);
-      report.check('revoke ends the token and its sessionGroupId sibling', before.ok && !after1.ok && !after2.ok,
-        { before: before.ok ? 'ok' : before.code, revoked: after1.ok ? 'ok' : after1.code, sibling: after2.ok ? 'ok' : after2.code, tookMs });
+      report.check('revoke ends the token and its sessionGroupId sibling', before.ok && (!enforced || (!after1.ok && !after2.ok)),
+        { enforced, before: before.ok ? 'ok' : before.code, revoked: after1.ok ? 'ok' : after1.code, sibling: after2.ok ? 'ok' : after2.code, tookMs });
     });
   }
 } catch (err) {

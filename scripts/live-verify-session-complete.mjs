@@ -121,7 +121,7 @@ async function openPage(context, port, { token, threadId, hiddenGraceMs, genieUr
   if (token) qs.set('token', token);
   if (threadId) qs.set('threadId', threadId);
   if (hiddenGraceMs != null) qs.set('hiddenGraceMs', String(hiddenGraceMs));
-  if (genieUrl) qs.set('genieUrl', genieUrl);
+  qs.set('genieUrl', genieUrl || target.genieUrl);
 
   await page.goto(`http://127.0.0.1:${port}/scripts/live-verify-session-complete.html?${qs}`, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => window.__ready === true, null, { timeout: 10000 });

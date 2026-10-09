@@ -233,9 +233,10 @@ For a dynamic crop/`object-position` instead of generic `object-fit: cover`, bot
 
 **For `KalturaAvatarSession` only: don't hide a loading UI on `'streamReady'`.** Despite the name, it fires at the initial signaling handshake (`connect()` step 1), before any video track exists. There can be a real gap of a second or more between it and actual video.
 
-Listen for `'mediaReady'` instead. It fires once per connect, unconditionally, in one of two shapes:
+Listen for `'mediaReady'` instead. It fires once per connect, unconditionally, in one of three shapes:
 
-- `{mode:'video', videoWidth, videoHeight}` once the STV media is playable. It uses `'videoMetadata'`'s dimensions if they resolved in time, or `0` if they didn't (for example, no `videoEl`, or a decoder that never fires `loadedmetadata`).
+- `{mode:'video', videoWidth, videoHeight}` when the first video frame is painted, with the real size. Without a `videoEl` there is no frame to wait for: it fires after a short settle with `0` for both. `connect()` resolves at the same moment.
+- `{mode:'video', videoWidth:0, videoHeight:0, degraded:true}` when no frame arrived within `timeouts.firstFrame` (default 6 s, counted from the moment the answer is applied). The SDK re-subscribes once first. If that also fails, it emits warning `media_no_video` and `connect()` still resolves, so the conversation continues with audio.
 - `{mode:'audio'}` immediately, if the session falls back to audio-only.
 
 So a loading spinner has one deterministic event to hide on, in either mode, with no fallback timeout to guess.
