@@ -19,6 +19,9 @@ import { createServer } from 'node:http';
 import { chromium, firefox, webkit } from 'playwright';
 import { Management, SILENT_OPENING, SILENT_OPENING_LABEL } from '../src/management/index.js';
 import { loadEnvFile, resolveTarget } from './lib/target.mjs';
+import { redact } from './lib/redact.mjs';
+
+export { redact };
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 export const repoRoot = resolve(__dirname, '..');
@@ -453,17 +456,6 @@ export function contextOptions(extra = {}) {
   return { ...(chromiumLike ? { permissions: ['microphone'] } : {}), ...extra };
 }
 
-/**
- * Strip anything that must not land in an artifact: KS tokens and URL query
- * strings (the socket URL carries the partner id as a query parameter).
- * @param {string} text
- */
-export function redact(text) {
-  return text
-    .replace(/djJ8[A-Za-z0-9_=+/-]+/g, '<KS>')
-    .replace(/((?:https?|wss?):\/\/[^\s"'?]+)\?[^\s"']*/g, '$1?<query>');
-}
-
 /** @typedef {{t:number, kind:'request'|'response'|'failed', method:string, url:string, status?:number, error?:string, resourceType:string}} NetRecord */
 
 /**
@@ -537,7 +529,7 @@ export function netProblems(net) {
   for (const r of dropAbortedAfterResponse(net)) {
     if (r.kind === 'request') continue;
     if (r.kind === 'response' && (r.status ?? 0) < 400) continue;
-    out.push(`${r.method} ${r.url.replace(/^https?:\/\//, '')} → ${r.kind === 'failed' ? `FAILED ${r.error}` : r.status}`);
+    out.push(`${r.method} ${redact(r.url.replace(/^https?:\/\//, ''))} → ${r.kind === 'failed' ? `FAILED ${r.error}` : r.status}`);
   }
   return out;
 }

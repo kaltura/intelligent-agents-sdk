@@ -45,11 +45,9 @@ const agent = await ensureAgent(kaltura, admin.ks, {
   keep: !!args.keep,
 });
 report.note('agent', agent.reused ? 'reused --agent-json ids' : 'provisioned throwaway agent');
-const { server, origin } = await startServer(() => mintPageInit(kaltura, agent, target.genieUrl));
-const browser = await launchBrowser(choice);
-const gmpMs = await warmFirefoxMedia(browser);
-if (gmpMs) report.note('firefox-openh264-ready', `${gmpMs} ms`);
-report.note('setup', SETUP);
+/** @type {import('node:http').Server | undefined} */ let server;
+let origin = '';
+/** @type {import('playwright').Browser | undefined} */ let browser;
 
 /** @typedef {import('./live-verify-kickoff-shared.mjs').HarnessEvent} Ev */
 const joins = (/** @type {Ev[]} */ evs) => all(evs, 'socket:out', (d) => d?.ev === 'join').length;
@@ -142,12 +140,17 @@ const SCENARIOS = {
 };
 
 try {
+  ({ server, origin } = await startServer(() => mintPageInit(kaltura, agent, target.genieUrl)));
+  browser = await launchBrowser(choice);
+  report.note('setup', SETUP);
+  const gmpMs = await warmFirefoxMedia(browser);
+  if (gmpMs) report.note('firefox-openh264-ready', `${gmpMs} ms`);
   for (const [id, sc] of Object.entries(SCENARIOS)) {
     if (ONLY && !ONLY.has(id)) continue;
     console.log(`\n== ${id}: ${sc.name}`);
     const t0 = Date.now();
     const sink = { pageErrors: /** @type {string[]} */ ([]), pages: [], network: /** @type {any[]} */ ([]) };
-    const context = await browser.newContext(contextOptions());
+    const context = await /** @type {import('playwright').Browser} */ (browser).newContext(contextOptions());
     const before = report.checks.length;
     let error = null;
     try {
@@ -156,16 +159,16 @@ try {
       error = String(/** @type {any} */ (err)?.message || err);
       report.check(`${id}: completed`, false, { error, pageErrors: sink.pageErrors.slice(0, 5) });
     } finally {
-      await sleep(300);
+      await sleep(300);   // late request events land before the problems are read
       const problems = netProblems(sink.network);
       if (problems.length) report.note(`${id}: HTTP requests that failed or returned 4xx/5xx`, problems.slice(0, 10));
       report.data.scenarios.push({ id, name: sc.name, ok: report.checks.slice(before).every((c) => c.ok), checks: report.checks.length - before, ms: Date.now() - t0, error });
-      await context.close();
+      await context.close().catch(() => {});
     }
   }
 } finally {
-  await browser.close();
-  server.close();
+  await browser?.close().catch(() => {});
+  server?.close();
   await agent.cleanup();
   if (!agent.reused && !args.keep) {
     const gone = await verifyDeleted(kaltura, admin.ks, agent);

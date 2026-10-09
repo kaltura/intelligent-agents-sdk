@@ -59,7 +59,7 @@ const SCENARIOS = {
       const route = await routeWhep(context, origin, async (n) => { if (n === 1) await sleep(SLOW_MS); });
       const page = await openHarness(context, origin, { mode: 'avatar' }, sink);
       const connect = await callHook(page, 'testConnect');
-      report.check(`${id}: the WHEP POST was seen`, route.posts() >= 1, { posts: route.posts() });
+      report.check(`${id}: one WHEP POST, answered in time and not retried`, route.posts() === 1, { posts: route.posts() });
       report.check(`${id}: connect() resolved`, connect.ok, connect.ok ? undefined : connect);
       if (!connect.ok) return;
       const { events: evs } = await waitFor(page, (e) => find(e, 'connectTimings'), 5000, 'connectTimings');
@@ -166,15 +166,15 @@ try {
       error = String(/** @type {any} */ (err)?.message || err);
       report.check(`${id}: completed`, false, { error, pageErrors: sink.pageErrors.slice(0, 5) });
     } finally {
-      await sleep(300);
+      await sleep(300);   // late request events land before the problems are read
       const problems = netProblems(sink.network);
       if (problems.length) report.note(`${id}: HTTP requests that failed or returned 4xx/5xx`, problems.slice(0, 10));
       report.data.scenarios.push({ id, name: sc.name, ok: report.checks.slice(before).every((c) => c.ok), checks: report.checks.length - before, ms: Date.now() - t0, error });
-      await context.close();
+      await context.close().catch(() => {});
     }
   }
 } finally {
-  await browser?.close();
+  await browser?.close().catch(() => {});
   server?.close();
   await agent.cleanup();
   if (!agent.reused && !args.keep) {

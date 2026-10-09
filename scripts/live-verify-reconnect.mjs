@@ -204,11 +204,11 @@ try {
       const problems = netProblems(sink.network);
       if (problems.length) report.note(`${id}: HTTP requests that failed or returned 4xx/5xx`, problems.slice(0, 10));
       report.data.scenarios.push({ id, name: sc.name, ok: report.checks.slice(before).every((c) => c.ok), checks: report.checks.length - before, ms: Date.now() - t0, error });
-      await context.close();
+      await context.close().catch(() => {});
     }
   }
 } finally {
-  await browser?.close();
+  await browser?.close().catch(() => {});
   server?.close();
   await agent.cleanup();
   if (!agent.reused && !args.keep) {

@@ -10,7 +10,7 @@
  * | id | fault                                        | asserts |
  * |----|----------------------------------------------|---------|
  * | U1 | the page is closed while connected            | before the close a viewer is attached (409), within RELEASE_BUDGET_MS after it the viewer is gone |
- * | U2 | the page is closed while connect() is running | the same, closed after the avatar stream answered and before connect() resolved |
+ * | U2 | the page is closed while connect() is running | within RELEASE_BUDGET_MS after the close the viewer is gone. The page closes right after the avatar stream answered, so a viewer may not be attached yet. U2 proves the outcome, U1 proves the release |
  *
  * Usage
  *   node scripts/live-verify-unload.mjs                       # --env prod
@@ -34,7 +34,8 @@ const choice = browserChoice(args);
 const HEADED = choice.headed || choice.browser === 'chrome';
 const SETUP = `${choice.browser} ${HEADED ? 'headed' : 'headless'}`;
 const RELEASE_BUDGET_MS = 3000;   // time after the close until the server shows no viewer
-const LATE_BUDGET_MS = 15000;    // diagnostic only: how late a missed release happens
+const LATE_BUDGET_MS = 15000;    // diagnostic only: how long after the budget the viewer is still checked
+const PROBE_TIMEOUT_MS = 10000;  // one probe; an answer can take seconds
 
 const report = new Report({ runId, target: target.name });
 report.data.scenarios = [];
@@ -63,44 +64,35 @@ function watchWhep(context) {
   return posts;
 }
 
-/**
- * Record each WHEP DELETE the context sends, with how it ended ("200", "failed" or "none yet").
- * @param {import('playwright').BrowserContext} context
- */
-function watchDeletes(context) {
-  /** @type {string[]} */
-  const seen = [];
-  context.on('request', (req) => {
-    if (req.method() !== 'DELETE') return;
-    const i = seen.push('none yet') - 1;
-    req.response().then((r) => { seen[i] = String(r?.status() ?? 'failed'); }, () => { seen[i] = 'failed'; });
-  });
-  return seen;
-}
-
 /** Ask the server whether a viewer is attached to the avatar session behind `url`. 409 means yes. Frees the probe's own viewer. */
 async function probe(/** @type {string} */ url) {
   const sentAt = Date.now();
-  const res = await globalThis.fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/sdp' }, body: 'v=0\r\n', signal: AbortSignal.timeout(5000) });
+  const res = await globalThis.fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/sdp' }, body: 'v=0\r\n', signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) });
   const location = res.headers.get('location');
   if (res.status < 300 && location) await globalThis.fetch(whepResourceUrl(location, url), { method: 'DELETE', signal: AbortSignal.timeout(5000) }).catch(() => {});
   return { status: res.status, sentAt, tookMs: Date.now() - sentAt };
 }
 
 /**
- * Poll until the probe stops answering 409. Returns the ms from `since` to the probe that found the viewer gone
- * (its send time, because the freeing probe can take seconds to answer), or null at the budget. `trail` lists each
- * probe as "status@sentMs/tookMs" so a late release can be told from a probe that was slow.
+ * Probe every 250 ms without waiting for the previous answer (one answer can take seconds) until a probe
+ * finds the viewer gone or the budget ends. Returns the ms from `since` to the earliest probe that was
+ * sent and found it gone (its send time, because the freeing probe can take seconds to answer), or null.
+ * A probe that errors is unknown, neither released nor attached. `trail` lists each probe as
+ * "status@sentMs/tookMs" so a late release can be told from a slow probe.
  */
 async function releasedWithin(/** @type {string} */ url, /** @type {number} */ since, /** @type {number} */ budgetMs = RELEASE_BUDGET_MS) {
   /** @type {string[]} */ const trail = [];
-  while (Date.now() - since <= budgetMs) {
-    const { status, sentAt, tookMs } = await probe(url);
-    trail.push(`${status}@${sentAt - since}/${tookMs}`);
-    if (status !== 409) return { ms: sentAt - since, trail };
-    await sleep(100);
+  /** @type {Promise<void>[]} */ const probes = [];
+  /** @type {number | null} */ let ms = null;
+  while (Date.now() - since <= budgetMs && ms === null) {
+    probes.push(probe(url).then(({ status, sentAt, tookMs }) => {
+      trail.push(`${status}@${sentAt - since}/${tookMs}`);
+      if (status !== 409 && sentAt - since <= budgetMs) ms = ms === null ? sentAt - since : Math.min(ms, sentAt - since);
+    }, (err) => { trail.push(`error@${Date.now() - since}:${String(err?.name || err).slice(0, 40)}`); }));
+    await sleep(250);
   }
-  return { ms: null, trail };
+  await Promise.race([Promise.allSettled(probes), sleep(PROBE_TIMEOUT_MS)]);
+  return { ms, trail };
 }
 
 const SCENARIOS = {
@@ -108,7 +100,6 @@ const SCENARIOS = {
     name: 'the page is closed while connected',
     async run({ context, sink, id }) {
       const posts = watchWhep(context);
-      const deletes = watchDeletes(context);
       const page = await openHarness(context, origin, { mode: 'avatar' }, sink);
       const connect = await callHook(page, 'testConnect');
       report.check(`${id}: connect() resolved`, connect.ok, connect.ok ? undefined : connect);
@@ -120,7 +111,6 @@ const SCENARIOS = {
       const { ms, trail } = await releasedWithin(url, at);
       report.check(`${id}: viewer gone within ${RELEASE_BUDGET_MS} ms of the close`, ms !== null, { ms, probes: trail });
       if (ms === null) report.note(`${id}: late release (up to ${LATE_BUDGET_MS} ms)`, JSON.stringify((await releasedWithin(url, at, LATE_BUDGET_MS)).ms));
-      report.note(`${id}: WHEP DELETE requests seen from the closed page`, JSON.stringify(deletes));
       report.data.timings = { ...report.data.timings, U1_release_ms: ms };
     },
   },
@@ -135,8 +125,11 @@ const SCENARIOS = {
       report.check(`${id}: a WHEP POST was seen`, posts.length > 0);
       if (!posts.length) return;
       const { url, answered } = posts[0];
-      const status = await answered;
+      const status = await Promise.race([answered, sleep(15000).then(() => 0)]);
       report.check(`${id}: the avatar stream answered`, status >= 200 && status < 300, { status });
+      if (!(status >= 200 && status < 300)) return;
+      // No pre-close probe: during connect() a probe can win the viewer slot and take seconds to answer,
+      // so it would change what is measured. U1 proves a viewer is attached when the page is closed.
       const at = Date.now();
       await page.close();
       const { ms, trail } = await releasedWithin(url, at);
@@ -168,11 +161,11 @@ try {
       report.check(`${id}: completed`, false, { error, pageErrors: sink.pageErrors.slice(0, 5) });
     } finally {
       report.data.scenarios.push({ id, name: sc.name, ok: report.checks.slice(before).every((c) => c.ok), checks: report.checks.length - before, ms: Date.now() - t0, error });
-      await context.close();
+      await context.close().catch(() => {});
     }
   }
 } finally {
-  await browser?.close();
+  await browser?.close().catch(() => {});
   server?.close();
   await agent.cleanup();
   if (!agent.reused && !args.keep) {

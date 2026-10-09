@@ -115,7 +115,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
   bootstrap, Report, mdTable, stats, management, ensureAgent, verifyDeleted, mintPageInit, startServer, resourceHints, SOCKET_IO_CDN, repoRoot,
-  browserChoice, launchBrowser, contextOptions, openHarness, whepSummary, netProblems, waitFor, find, all, isOpeningSpeechId, textsSent, SILENT_OPENING,
+  browserChoice, launchBrowser, contextOptions, openHarness, whepSummary, netProblems, waitFor, find, all, isOpeningSpeechId, textsSent, SILENT_OPENING, redact,
 } from './live-verify-kickoff-shared.mjs';
 import { callHook } from './live-verify-hooks-shared.mjs';
 
@@ -261,7 +261,7 @@ const resourceMetrics = (res) => {
     whepTao: whep?.tao ?? null,
     sdkLoadedAtMs: sdkEnd,
     sdkModules: sdk.length,
-    crossOrigin: res.entries.filter((e) => !e.url.startsWith('/')).map((e) => ({ url: e.url.replace(/\?.*$/, ''), initiator: e.initiator, startRel: e.startRel, durationMs: e.durationMs, tao: e.tao, reused: e.reusedConnection })),
+    crossOrigin: res.entries.filter((e) => !e.url.startsWith('/')).map((e) => ({ url: redact(e.url.replace(/\?.*$/, '')), initiator: e.initiator, startRel: e.startRel, durationMs: e.durationMs, tao: e.tao, reused: e.reusedConnection })),
   };
 };
 
