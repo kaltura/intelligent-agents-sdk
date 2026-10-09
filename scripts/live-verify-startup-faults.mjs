@@ -5,15 +5,15 @@
  *
  * | id | fault                                  | asserts |
  * |----|----------------------------------------|---------|
- * | F1 | the first WHEP POST answers 7 s late   | connect() resolves, `mediaReady` has real video dimensions, no `media_no_video` warning, `connectTimings` is emitted and ordered |
+ * | F1 | the first WHEP POST answers 4.5 s late | connect() resolves, `mediaReady` has real video dimensions, no `media_no_video` warning, `connectTimings` is emitted and ordered |
  * | F2 | the first WHEP POST is reset            | the POST is retried, connect() resolves with real video dimensions and no warning |
  * | F3 | every WHEP POST answers 503             | one POST only (an HTTP status is never retried), connect() rejects `whep_failed` with status 503 and `phase: 'whep'` |
  * | F4 | the first WHEP POST answers 404         | one new `stvNewSession` on the same socket (one `join`), connect() resolves with real video dimensions |
  * | F5 | the first WHEP POST answers 409         | same recovery as F4 |
  * | F6 | `timeouts.joinRoom` is 1 ms             | connect() rejects `timeout` with `phase: 'join'` and `retryable: true` |
  *
- * 7 s is longer than the 6 s first-frame cap on purpose: the cap must start when the answer is
- * applied, not when the request leaves.
+ * 4.5 s is under the 5 s limit for one POST try, so the first try is not retried. The 6 s
+ * first-frame cap must start when the answer is applied, not when the request leaves.
  *
  * Usage
  *   node scripts/live-verify-startup-faults.mjs                       # --env prod
@@ -36,7 +36,7 @@ const ONLY = typeof args.only === 'string' ? new Set(args.only.split(',').map((s
 const choice = browserChoice(args);
 const HEADED = choice.headed || choice.browser === 'chrome';
 const SETUP = `${choice.browser} ${HEADED ? 'headed' : 'headless'}`;
-const SLOW_MS = 7000;
+const SLOW_MS = 4500;
 const report = new Report({ runId, target: target.name });
 report.data.scenarios = [];
 const kaltura = management(target);

@@ -62,6 +62,21 @@ function watchWhep(context) {
   return posts;
 }
 
+/**
+ * Record each WHEP DELETE the context sends, with how it ended ("200", "failed" or "none yet").
+ * @param {import('playwright').BrowserContext} context
+ */
+function watchDeletes(context) {
+  /** @type {string[]} */
+  const seen = [];
+  context.on('request', (req) => {
+    if (req.method() !== 'DELETE') return;
+    const i = seen.push('none yet') - 1;
+    req.response().then((r) => { seen[i] = String(r?.status() ?? 'failed'); }, () => { seen[i] = 'failed'; });
+  });
+  return seen;
+}
+
 /** Ask the server whether a viewer is attached to the avatar session behind `url`. 409 means yes. Frees the probe's own viewer. */
 async function probe(/** @type {string} */ url) {
   const sentAt = Date.now();
@@ -86,6 +101,7 @@ const SCENARIOS = {
     name: 'the page is closed while connected',
     async run({ context, sink, id }) {
       const posts = watchWhep(context);
+      const deletes = watchDeletes(context);
       const page = await openHarness(context, origin, { mode: 'avatar' }, sink);
       const connect = await callHook(page, 'testConnect');
       report.check(`${id}: connect() resolved`, connect.ok, connect.ok ? undefined : connect);
@@ -96,6 +112,7 @@ const SCENARIOS = {
       await page.close();
       const ms = await releasedWithin(url, at);
       report.check(`${id}: viewer gone within ${RELEASE_BUDGET_MS} ms of the close`, ms !== null, { ms });
+      report.note(`${id}: WHEP DELETE requests seen from the closed page`, JSON.stringify(deletes));
       report.data.timings = { ...report.data.timings, U1_release_ms: ms };
     },
   },
