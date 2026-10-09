@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { KalturaError, errorFromResponse, errorFromOkBody } from '../../src/core/errors.js';
 
 test('maps HTTP statuses to stable codes', () => {
+  assert.equal(errorFromResponse({ status: 402, path: '/x', body: null }).code, 'payment_required');
   assert.equal(errorFromResponse({ status: 400, path: '/x', body: null }).code, 'bad_request');
   assert.equal(errorFromResponse({ status: 403, path: '/x', body: null }).code, 'forbidden');
   assert.equal(errorFromResponse({ status: 404, path: '/x', body: null }).code, 'not_found');
@@ -59,4 +60,11 @@ test('errorFromOkBody maps INVALID_INSIGHT_SETTINGS to a machine-readable code',
 test('missing discriminator (intellect update) maps', () => {
   const e = errorFromResponse({ status: 422, path: '/v1/intellect/update', body: { message: 'union_tag_not_found' } });
   assert.equal(e.code, 'missing_discriminator');
+});
+
+test('payment_required carries the plan hint, with or without an upstream message', () => {
+  const hint = 'The account is over a usage limit or not entitled. Check the plan with your Kaltura contact.';
+  assert.equal(errorFromResponse({ status: 402, path: '/x', body: null }).detail, `HTTP 402 from /x. ${hint}`);
+  assert.equal(errorFromResponse({ status: 402, path: '/x', body: { message: 'Quota hit.' } }).detail, `Quota hit. ${hint}`);
+  assert.equal(errorFromResponse({ status: 403, path: '/x', body: null }).detail, 'HTTP 403 from /x', 'other codes get no hint');
 });
