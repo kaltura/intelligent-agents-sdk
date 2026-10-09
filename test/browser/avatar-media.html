@@ -346,7 +346,7 @@ function newSession(cfg = {}, script = {}) {
   scriptHappyPath(socket, { asrAnswer, ...script });
   trackLatency(session);
   live.add(session);
-  return { session, socket, rescript: () => scriptHappyPath(socket, { asrAnswer, ...script }) };
+  return { session, socket, rescript: () => { session.setToken(CONV_KS); scriptHappyPath(socket, { asrAnswer, ...script }); } };
 }
 function record(session) {
   const ev = {
