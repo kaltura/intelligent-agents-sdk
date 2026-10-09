@@ -115,7 +115,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
   bootstrap, Report, mdTable, stats, management, ensureAgent, verifyDeleted, mintPageInit, startServer, resourceHints, SOCKET_IO_CDN, repoRoot,
-  browserChoice, launchBrowser, contextOptions, openHarness, whepSummary, netProblems, waitFor, find, all, isOpeningSpeechId, textsSent, SILENT_OPENING, redact,
+  browserChoice, launchBrowser, contextOptions, openHarness, whepSummary, netProblems, waitFor, find, all, sleep, isOpeningSpeechId, textsSent, SILENT_OPENING, redact,
 } from './live-verify-kickoff-shared.mjs';
 import { callHook } from './live-verify-hooks-shared.mjs';
 
@@ -124,6 +124,9 @@ const { args, target, runId, outDir } = bootstrap(process.argv.slice(2), 'connec
 const OPENING_SOUND_JITTER_MS = 250;
 // connect() resolves on the first frame; the rest is the approval step.
 const CONNECT_AFTER_FRAME_MS = 60;
+/** A connect that fails with `capacity_unavailable` is redone this many times per script run, after this wait. */
+const CAPACITY_RETRIES = 2;
+const CAPACITY_WAIT_MS = 5000;
 const COMPARE = typeof args.compare === 'string' ? args.compare : null;
 const KICKOFF = args['no-kickoff'] === true ? null : (typeof args.kickoff === 'string' ? args.kickoff : 'Greet the user in one short sentence and ask how you can help.');
 const OPENING = typeof args.opening === 'string' && args.opening.trim() ? args.opening : null;
@@ -295,6 +298,7 @@ try {
   if (HINTS !== 'off') report.note('resource hints under test', HINT_TAGS.map((h) => `${h.rel}${h.as ? ` as=${h.as}` : ''}${h.crossorigin ? ' crossorigin' : ''}`));
   browser = await launchBrowser(choice);
 
+  let capacityRetries = 0;
   for (let i = 1; i <= RUNS; i++) {
     const context = await browser.newContext(contextOptions());
     /** @type {{pageErrors: string[], pages: import('playwright').Page[], network: import('./live-verify-kickoff-shared.mjs').NetRecord[]}} */
@@ -314,6 +318,15 @@ try {
       run.pageReadyMs = ready?.sinceNavMs ?? null;
       report.check(`${tag}: resource hints ${arm === 'on' ? 'present' : 'absent'} in <head> (${arm} arm)`, arm === 'on' ? run.hintTags === HINT_TAGS.length : run.hintTags === 0, { hintTags: run.hintTags, expected: arm === 'on' ? HINT_TAGS.length : 0 });
       const connect = await callHook(page, 'testConnect');
+      if (!connect.ok && connect.code === 'capacity_unavailable' && capacityRetries < CAPACITY_RETRIES) {
+        // The server had no free avatar capacity. That is not what this script measures: wait and redo the run.
+        capacityRetries++;
+        report.note(`${tag}: capacity_unavailable`, `retry ${capacityRetries} of ${CAPACITY_RETRIES} after ${CAPACITY_WAIT_MS} ms`);
+        await sleep(CAPACITY_WAIT_MS);
+        run.redone = true;
+        i--;
+        continue;
+      }
       report.check(`${tag}: connect() resolved`, connect.ok, connect.ok ? undefined : connect);
       if (!connect.ok) { run.error = connect; continue; }
 
@@ -486,7 +499,7 @@ try {
       const problems = netProblems(sink.network);
       if (problems.length) report.note(`${tag}: HTTP requests that failed or returned 4xx/5xx`, problems.slice(0, 10));
       if (sink.pageErrors.length) report.note(`${tag}: page errors`, sink.pageErrors.slice(0, 5));
-      report.data.runs.push(run);
+      if (!run.redone) report.data.runs.push(run);
       await context.close();
     }
   }

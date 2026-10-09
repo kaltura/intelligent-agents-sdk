@@ -75,6 +75,12 @@ async function videoDecodes(/** @type {import('playwright').Page} */ page) {
   return { ok: a >= 0 && b > a, from: a, to: b };
 }
 
+/** Precondition: video decodes before the fault, so a later "no video" is a recovery failure and not a stream that never started. */
+async function flowsBefore(/** @type {import('playwright').Page} */ page, /** @type {string} */ id) {
+  const flow = await videoDecodes(page);
+  report.check(`${id}: video decodes before the fault`, flow.ok, flow);
+}
+
 /** Wait for `mediaRecovered` on `channel` after `since` (a Date.now() stamp). */
 const recovered = (/** @type {import('playwright').Page} */ page, /** @type {string} */ channel, /** @type {number} */ since) =>
   waitFor(page, (e) => find(e, 'mediaRecovered', { where: (d, ev) => d?.channel === channel && ev.t >= since }), 15000, `mediaRecovered ${channel}`);
@@ -87,6 +93,7 @@ const SCENARIOS = {
       const connect = await callHook(page, 'testConnect');
       report.check(`${id}: connect() resolved`, connect.ok, connect.ok ? undefined : connect);
       if (!connect.ok) return;
+      await flowsBefore(page, id);
       const at = await closePeers(page, 'video');
       const { value, events: evs } = await recovered(page, 'stv', at);
       const ms = value.t - at;
@@ -107,6 +114,7 @@ const SCENARIOS = {
       const connect = await callHook(page, 'testConnect');
       report.check(`${id}: connect() resolved`, connect.ok, connect.ok ? undefined : connect);
       if (!connect.ok) return;
+      await flowsBefore(page, id);
       const at = await closePeers(page, 'both');
       const { value, events: evs } = await waitFor(page, (e) => find(e, 'reconnected', { where: (_d, ev) => ev.t >= at }), 20000, 'reconnected');
       const ms = value.t - at;
@@ -132,6 +140,7 @@ const SCENARIOS = {
       const connect = await callHook(page, 'testConnect');
       report.check(`${id}: connect() resolved`, connect.ok, connect.ok ? undefined : connect);
       if (!connect.ok) return;
+      await flowsBefore(page, id);
       armed = true;
       const at = await closePeers(page, 'video');
       const { value, events: evs } = await recovered(page, 'stv', at);
@@ -153,6 +162,7 @@ const SCENARIOS = {
       const connect = await callHook(page, 'testConnect');
       report.check(`${id}: connect() resolved`, connect.ok, connect.ok ? undefined : connect);
       if (!connect.ok) return;
+      await flowsBefore(page, id);
       await context.setOffline(true);
       await sleep(OFFLINE_MS);
       const sawFault = (await events(page)).some((e) => ['reconnecting', 'mediaRecovering'].includes(e.type) || (e.type === 'connectivityChanged' && e.detail?.state !== 'connected'));
