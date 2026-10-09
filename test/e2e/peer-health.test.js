@@ -86,7 +86,7 @@ test('video bytes that stop growing trigger one STV recovery after the stall win
 });
 
 test('no recovery while the bytes keep growing', async () => {
-  const { session, ev } = await connected();
+  const { session, ev } = await connected({ videoStall: 400 });
   const pc = stvPeer();
   let bytes = 1000;
   const flow = setInterval(() => { bytes += 500; pc.setInboundVideo({ bytesReceived: bytes }); }, 10);

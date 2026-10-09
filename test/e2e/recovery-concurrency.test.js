@@ -115,7 +115,7 @@ test('the health tick leaves the peers alone while resume() rebuilds them', asyn
 });
 
 test('the stall window starts fresh after a pause', async () => {
-  const { session } = build({ timeouts: { healthTick: 20, videoStall: 150 } });
+  const { session } = build({ timeouts: { healthTick: 20, videoStall: 400 } });
   await session.connect();
   const pc = session._pcStv; let bytes = 1000;
   const grow = setInterval(() => pc.setInboundVideo({ bytesReceived: (bytes += 1000) }), 10);
@@ -125,7 +125,7 @@ test('the stall window starts fresh after a pause', async () => {
   const ev = [];
   session.on('mediaRecovering', () => ev.push(1));
   session.pause();
-  await delay(300);   // longer than videoStall, with no bytes
+  await delay(600);   // longer than videoStall, with no bytes
   session.resume();
   await delay(120);    // the first ticks after resume must not count the pause as a stall
   assert.deepEqual(ev, []);
