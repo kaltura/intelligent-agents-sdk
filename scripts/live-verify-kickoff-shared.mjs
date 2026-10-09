@@ -402,12 +402,41 @@ export function launchBrowser({ browser = 'chromium', headed = false } = {}) {
         // and the media server (H264 only) answers the video section `inactive`. This pref lets
         // Firefox use the platform hardware H264 decoder instead, the same way stock Firefox with
         // OpenH264 would receive the stream.
-        'media.webrtc.hw.h264.enabled': true,
+        // A CI runner has no hardware decoder, and the pref makes Firefox list H264 without one.
+        // There the OpenH264 plugin is the decoder: `warmFirefoxMedia` waits for its download.
+        ...(process.env.CI ? {} : { 'media.webrtc.hw.h264.enabled': true }),
+        'media.gmp-manager.updateEnabled': true,
+        'media.gmp-provider.enabled': true,
+        'media.gmp-gmpopenh264.enabled': true,
+        'media.gmp-gmpopenh264.autoupdate': true,
       },
     });
   }
   if (browser === 'webkit') return webkit.launch({ headless: !headed });
   throw new Error(`unknown browser ${browser}`);
+}
+
+/**
+ * Firefox only: wait until it can decode H264 (the media server sends nothing else). On a fresh
+ * CI profile the OpenH264 plugin download takes about half a minute. A no-op for other engines.
+ * Call once after `launchBrowser`, before the first session.
+ * @param {import('playwright').Browser} browser
+ * @param {{timeoutMs?: number}} [opts]
+ * @returns {Promise<number>} ms waited
+ */
+export async function warmFirefoxMedia(browser, { timeoutMs = 120000 } = {}) {
+  if (activeBrowser.name !== 'firefox') return 0;
+  const t0 = Date.now();
+  const context = await browser.newContext();
+  try {
+    const page = await context.newPage();
+    await page.goto('data:text/html,<h1>gmp warmup</h1>');
+    await page.waitForFunction(
+      () => globalThis.RTCRtpReceiver.getCapabilities('video').codecs.some((c) => /h264/i.test(c.mimeType)),
+      null, { timeout: timeoutMs, polling: 2000 },
+    );
+  } finally { await context.close(); }
+  return Date.now() - t0;
 }
 
 export function browserInfo() { return { ...activeBrowser }; }
