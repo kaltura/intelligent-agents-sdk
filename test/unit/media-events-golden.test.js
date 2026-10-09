@@ -217,6 +217,7 @@ const SCENARIOS = {
     scriptHappyPath(s.socket);
     await s.session.connect();
     s.session.disconnect();
+    s.session.setToken(CONV_KS);
     scriptHappyPath(s.socket);
     await s.session.connect();
     s.snap('afterConnect');

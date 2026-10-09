@@ -39,11 +39,17 @@ test('the first attempt fails, the second succeeds: reconnected, session stays u
 
 test('both attempts fail: ended with reconnect_failed after exactly two tries', async () => {
   const { session, socket, fetch, ev } = await connected([{}, { status: 503 }]);
+  let err;
+  session.on('error', (e) => { err = e; });
   socket.dropAndRecover('transport close', { recovered: false });
   await delay(400);
-  assert.deepEqual(ev, ['reconnecting', 'error:whep_failed', 'ended:reconnect_failed']);
+  assert.deepEqual(ev, ['reconnecting', 'error:reconnect_failed', 'ended:reconnect_failed']);
   assert.equal(fetch.posts.length, 3);
   assert.equal(session.state, 'disconnected');
+  assert.equal(err.phase, 'reconnect');
+  assert.equal(err.retryable, true);
+  assert.equal(err.cause?.code, 'whep_failed', 'the last failure is kept as cause');
+  assert.equal(Object.keys(err).includes('cause'), false, 'cause stays out of enumerable fields');
 });
 
 test('coldAttempts: 1 turns the retry off', async () => {

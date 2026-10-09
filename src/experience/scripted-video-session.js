@@ -169,11 +169,11 @@ export class KalturaScriptedVideoSession extends Emitter {
       await pc.setLocalDescription(offer);
       if (pc !== this._pc) throw connectAbortedErr();
       this._whepAbort = typeof AbortController === 'function' ? new AbortController() : null;
-      const res = await whepPost({ fetch: this._fetch, url: this._whepUrl, sdp: offer.sdp, signal: this._whepAbort?.signal });
+      const { res, body } = await whepPost({ fetch: this._fetch, url: this._whepUrl, sdp: offer.sdp, signal: this._whepAbort?.signal });
+      const answerSdp = await body();
       if (!res.ok) {
         throw new KalturaError({ type: 'about:blank', title: 'WHEP negotiation failed', status: res.status, code: 'whep_failed', detail: whepStatusHint(res.status) });
       }
-      const answerSdp = await res.text();
       const loc = res.headers?.get?.('Location');
       const resolvedLoc = loc ? whepResourceUrl(loc, this._whepUrl) : null;
       // Re-check the resolved Location for a private address (mirrors

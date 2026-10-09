@@ -69,9 +69,13 @@ test('a closed ASR peer is handed to recovery', async () => {
 
 test('video bytes that stop growing trigger one STV recovery after the stall window', async () => {
   const { session, ev } = await connected({ videoStall: 400 });
-  const pc = stvPeer();
-  let bytes = 1000;
-  const flow = setInterval(() => { if (bytes < 4000) bytes += 500; pc.setInboundVideo({ bytesReceived: bytes }); }, 10);
+  const first = stvPeer();
+  let bytes = 1000, fresh = 0;
+  // The first peer stops at 4000 bytes. The peer that replaces it gets a healthy stream.
+  const flow = setInterval(() => {
+    const cur = stvPeer();
+    if (cur === first) { if (bytes < 4000) bytes += 500; first.setInboundVideo({ bytesReceived: bytes }); } else { fresh += 500; cur.setInboundVideo({ bytesReceived: fresh }); }
+  }, 10);
   await delay(150);
   assert.deepEqual(ev, [], 'growing bytes: healthy');
   await delay(1000);

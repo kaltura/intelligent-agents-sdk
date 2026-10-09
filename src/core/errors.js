@@ -24,6 +24,7 @@ import { redact, redactString } from './redact.js';
  * @property {unknown} [body]         The (redacted) upstream response body.
  * @property {string} [phase]         The connect step that failed, on a live-session error (`serverConnect`, `join`, `joinComplete`, `agent`, `asr`, `whep`, `connect`, `reconnect`).
  * @property {boolean} [retryable]    True when trying the same call again can succeed. Absent when the SDK has no opinion.
+ * @property {unknown} [cause]        The error this one wraps, when the SDK replaced it with a clearer one.
  */
 
 export class KalturaError extends Error {
@@ -42,6 +43,7 @@ export class KalturaError extends Error {
     /** @type {unknown} */ this.body = redact(problem.body);
     /** @type {string|undefined} */ this.phase = problem.phase;
     /** @type {boolean|undefined} */ this.retryable = problem.retryable;
+    if (problem.cause !== undefined) Object.defineProperty(this, 'cause', { value: problem.cause, enumerable: false, writable: true, configurable: true });
   }
 
   /** RFC 9457 JSON representation (already redacted). */

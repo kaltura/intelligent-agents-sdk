@@ -18,7 +18,7 @@ test('defaults: 5 s per try, 3 tries, 1 s backoff', () => {
 
 test('first try answers: one POST, no wait, SDP content type', async () => {
   const f = fakeWhepFetch([{}]);
-  const res = await post(f);
+  const { res } = await post(f);
   assert.equal(res.status, 201);
   assert.equal(f.calls.length, 1);
   assert.equal(f.calls[0].headers['content-type'], 'application/sdp');
@@ -35,7 +35,7 @@ test('a connection reset retries once and the second try wins', async (t) => {
   tick(1); await flush();
   assert.equal(f.calls.length, 2);
   await flush();
-  assert.equal(o.value?.status, 201);
+  assert.equal(o.value?.res.status, 201);
 });
 
 test('a try that gets no answer is aborted at 5 s and retried', async (t) => {
@@ -47,13 +47,13 @@ test('a try that gets no answer is aborted at 5 s and retried', async (t) => {
   assert.equal(f.calls[0].aborted, true);
   tick(1000); await flush(); await flush();
   assert.equal(f.calls.length, 2);
-  assert.equal(o.value?.status, 201);
+  assert.equal(o.value?.res.status, 201);
 });
 
 test('an HTTP status is returned as is, never retried', async () => {
   for (const status of [404, 409, 503]) {
     const f = fakeWhepFetch([{ status }, {}]);
-    const res = await post(f);
+    const { res } = await post(f);
     assert.equal(res.status, status);
     assert.equal(f.calls.length, 1, `${status} not retried`);
   }
@@ -145,4 +145,35 @@ test('timeouts, tries and backoff are overridable', async (t) => {
   await flush(); tick(100); await flush(); tick(10); await flush(); tick(100); await flush(); await flush();
   assert.equal(f.calls.length, 2);
   assert.equal(o.error?.code, 'whep_timeout');
+});
+
+test('body() returns the answer text', async () => {
+  const f = fakeWhepFetch([{ sdp: 'v=0\r\nanswer\r\n' }]);
+  const { body } = await post(f);
+  assert.equal(await body(), 'v=0\r\nanswer\r\n');
+});
+
+test('an answer body that never arrives times out as whep_timeout after the try limit', async (t) => {
+  useTimers(); t.after(() => mock.timers.reset());
+  const f = fakeWhepFetch([{ hangBody: true }]);
+  const { body } = await post(f);
+  const o = outcome(body());
+  await flush();
+  assert.equal(o.done, undefined, 'still waiting');
+  tick(WHEP_DEFAULTS.whepTry); await flush();
+  assert.equal(o.error?.code, 'whep_timeout');
+  assert.equal(o.error.phase, 'whep');
+  assert.equal(f.calls.length, 1, 'a body timeout is not retried by whepPost');
+});
+
+test('a caller abort stops a stalled answer body', async (t) => {
+  useTimers(); t.after(() => mock.timers.reset());
+  const f = fakeWhepFetch([{ hangBody: true }]);
+  const ac = new AbortController();
+  const { body } = await post(f, { signal: ac.signal });
+  const o = outcome(body());
+  await flush();
+  ac.abort();
+  await flush();
+  assert.equal(o.error?.name, 'AbortError');
 });

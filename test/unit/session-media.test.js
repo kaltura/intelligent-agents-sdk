@@ -115,6 +115,7 @@ test('R-i: connect → disconnect → connect: fresh streams, old tracks ended, 
   session.disconnect();
   assert.ok(firstTracks.every((t) => t.readyState === 'ended'));
   assert.equal(videoEl.srcObject, null);
+  session.setToken(CONV_KS);
   scriptHappyPath(socket);
   await session.connect();
   assert.notEqual(session.avatarStream, first, 'a new canonical stream per connect');
@@ -270,6 +271,7 @@ test('stored mute / volume / sink id survive teardown and are already in place o
   scriptHappyPath(socket);
   await session.connect();
   session.disconnect();
+  session.setToken(CONV_KS);
   scriptHappyPath(socket);
   await session.connect();
   assert.equal(videoEl.muted, true); assert.equal(videoEl.volume, 0.3); assert.equal(videoEl.sinkId, 'spk-9');
