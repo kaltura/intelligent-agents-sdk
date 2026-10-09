@@ -65,7 +65,7 @@ Step 11 runs once both lanes are done. The first lane to fail rejects `connect()
 | 6 | Wait agent | ← `showAgent` | agent joined | 10s (`AgentResponseTimeout`) |
 | 7 | Wait ready | ← `askPermissions` `{constraints:{audio,video}}` | ready for the mic | 10s (`AgentResponseTimeout`) |
 | 9 | Connect ASR (mic uplink), lane A, after 6→7 | `asr-webrtc-*` handshake ([§5](../wire-protocol/audio-channels.md#5-asr-uplink-pc1--microphone--server)) | - | 30s per wait (`ASRConnectionFailed`) |
-| 10 | Subscribe STV video (WHEP) **and wait until it is *playable*, or give up waiting**, lane B, starts right after step 5 | → WHEP `POST` (no timeout of its own) → wait for the video track, then `<video>` `canplay` + ~300ms settle. Without `canplay` within 2s of the track, or without any track within 6s of the subscribe start, the gate settles anyway | first decoded frame, or a fallback timer elapsing | 6s cap from subscribe start (2s after the track if `canplay` is missing); settles either way |
+| 10 | Subscribe STV video (WHEP) **and wait until it is *playable*, or give up waiting**, lane B, starts right after step 5 | → WHEP `POST` (no timeout of its own) → wait for the video track, then for the first painted frame (`requestVideoFrameCallback`). Where that API is missing, the tab is hidden, the stream has no video track, or media is being recovered, the gate is `<video>` `canplay` + 100ms. With no `videoEl`, the gate is a 300ms settle | first painted frame | `timeouts.firstFrame` (6s), counted from the moment the answer is applied. At the cap with no frame the SDK re-subscribes once, then continues with warning `media_no_video` and `mediaReady {degraded:true}` |
 | 11 | Emit `disclosure`, then approve (this starts the spoken greeting), once lanes A and B are both done | → `approvedPermissions` `{room}` | - | - |
 | 12 | Opening turn runs. With a silent opening phrase (`SILENT_OPENING`) it produces no speech and ends in about 0.5 s. A configured `kickoff` is sent on its `stvFinishedTalking` ([guide](../START-THE-CONVERSATION.md)) | ← `stvStartedTalking` … ← `stvFinishedTalking`, then → `onTextEntered {text}` | `stvFinishedTalking` | - |
 | → | **CONNECTED** | listen for `agent_raw_text`, `generatingSpeech`, `stvStartedTalking` | — | — |
@@ -84,6 +84,43 @@ The 30s deadline is set once, at the start of `connect()`. It keeps running thro
 The opening line itself can't be interrupted. Typed text sent during it is held (`speak()`) until `stvFinishedTalking`. For the fastest interruptible start, give the avatar a silent opening phrase (`SILENT_OPENING`) and let the session's `kickoff` option send the first turn on that event. See [START-THE-CONVERSATION.md](../START-THE-CONVERSATION.md).
 
 ---
+
+## Start faster
+
+**`prepare()`.** `await session.prepare()` does steps 1 to 3 ahead of time: it opens the socket, sends `join` and waits for the join ack. Call it when the user is likely to start soon (page load, hover over the start button). The later `connect()` skips those steps. `prepare()` never asks for the microphone and never creates an avatar session, so a prepared page costs nothing until `connect()`.
+
+| Rule | Behavior |
+|---|---|
+| Idempotent | A second call returns the first call's promise. It does nothing while a connect runs or after one finished. |
+| `connect()` during a prepare | Waits for it, then reuses the socket. |
+| Unused | After `timeouts.prepareIdle` (60 s) the socket is closed with warning `prepare_expired`. A later `connect()` starts fresh. |
+| Dropped or failed | `connect()` starts fresh. A failed `prepare()` rejects with the same errors as steps 1 to 3. |
+| Inputs | The `join` is sent at once. Set `threadId`, `requestVars`, `contextId` and the other join inputs in the constructor. |
+| `streamReady` | Fires from `connect()`, so listeners attached before `connect()` still see it. |
+
+**Resource hints.** Add these to the page `<head>` so the browser opens the connections while the page loads. The origins are the ones you pass as `conversationManagerUrl` and `srsBaseUrl`, and your TURN host.
+
+```html
+<link rel="preconnect" href="https://MESSAGING_HOST">
+<link rel="preconnect" href="https://MESSAGING_HOST" crossorigin>
+<link rel="preconnect" href="https://SRS_HOST" crossorigin>
+<link rel="dns-prefetch" href="https://TURN_HOST">
+```
+
+**Connect timings.** `session.timings` returns the phases of the current or last `connect()` in ms from the start of that call. A phase that was not reached is absent. After a successful connect the session emits `connectTimings` once with the same object. A failed `connect()` attaches the phases it reached to `error.timings`.
+
+| Phase | Reached when |
+|---|---|
+| `micRequested` | The microphone request started (absent with `micStartMode: 'deferred'`) |
+| `socketOpen`, `serverConnected`, `joinComplete` | Steps 1 to 3. With `prepare()` they are all about 0 |
+| `stvNewSessionReply` | The server answered `stvNewSession` |
+| `whepSent`, `whepAnswer` | The WHEP `POST` left and its answer arrived |
+| `iceConnectedStv` | The video peer's ICE connected |
+| `firstTrack`, `firstFrame`, `mediaReady` | First downlink track, first painted frame, `mediaReady` emitted |
+| `asrReady` | The microphone uplink is negotiated |
+| `approved`, `connected` | `approvedPermissions` sent, state `connected` |
+
+**Tuning.** `timeouts` overrides any wait in the table above (`overall`, `serverConnect`, `joinRoom`, `joinComplete`, `agent`, `asr`, `firstFrame`, `prepareIdle`). `reconnectionDelay` (default 250 ms) and `reconnectionDelayMax` (default 2000 ms) set how soon and how often a dropped socket retries.
 
 ## The `join` payload (step 2): carries the agent/brain config
 

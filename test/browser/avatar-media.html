@@ -47,6 +47,7 @@ const H = {
   peers: [],          // { pc, media } loopback answerers built by the WHEP/ASR stubs
   fetches: [],        // { url, method } every call the SDK made to the injected fetch
   sendKinds: ['video', 'audio'],
+  whepDelayMs: 0,     // hold every WHEP POST answer this long (slow-server simulation)
   shape: 'twoVA',     // twoVA/twoAV = one MediaStream per track (distinct msid); oneVA/oneAV = both tracks in one receiver stream; *AV = audio m-line first, so audio 'ontrack' fires first
   delay: null,        // { kind, ms } → that kind starts sending late (replaceTrack(null) → replaceTrack(track))
   blockPlay: false,   // autoplay cells: instrumented play() rejects NotAllowedError while true
@@ -143,6 +144,7 @@ async function whepFetch(url, init = {}) {
   H.fetches.push({ url: String(url), method });
   if (!String(url).includes('/rtc/v1/whep')) return httpRes(200);
   if (method === 'DELETE') return httpRes(200);
+  if (H.whepDelayMs) await sleep(H.whepDelayMs);
   const pc = findOfferer(init.body);
   if (!pc) throw new Error('harness: WHEP offer matches no LoopbackRTC peer');
   const media = senderMedia();
@@ -251,7 +253,7 @@ async function flowing(pc, kind, ms = 4000, min = 5) {
   let s = null;
   while (performance.now() - t0 < ms) {
     s = await inboundStats(pc, kind);
-    if (s && s.packets >= min) return { ok: true, ...s, ms: Math.round(performance.now() - t0) };
+    if (s && s.packets >= min) return { ok: true, ...s, ms: Math.round(performance.now() - t0), at: performance.now() };
     await sleep(100);
   }
   return { ok: false, ...(s || { packets: 0 }) };
@@ -541,7 +543,7 @@ S['late-audio'] = async (c) => {
   const early = await inboundStats(stv(session), 'audio');
   const a = await flowing(stv(session), 'audio', 5000);
   c.check('audio starts flowing later', a.ok, { early, late: a });
-  c.check('mediaReady fired before audio arrived', readyAt < performance.now() - a.ms, { readyAt, audioAfterMs: a.ms });
+  c.check('mediaReady fired before audio arrived', readyAt < a.at - 500, { readyAt, audioAt: a.at, audioAfterMs: a.ms, timings: session.timings });
   c.check('mediaReady once', ev.count('mediaReady') === 1, ev.count('mediaReady'));
   c.check('element still playing', !v.paused, v.paused);
 };
@@ -961,7 +963,7 @@ S['recording-ops'] = async (c) => {
   await sleep(900);
   try { rec2.stop(); } catch { /* already inactive */ }
   await Promise.race([stopped2, sleep(1000)]);
-  c.check('B6: MediaRecorder(videoEl.captureStream()) produced bytes', bytes2 > 0, { bytes: bytes2, mimeType: rec2.mimeType, blobType });
+  c.check('B6: MediaRecorder(videoEl.captureStream()) produced bytes', bytes2 > 0, { bytes: bytes2, mimeType: rec2.mimeType, blobType, paused: v.paused, ready: v.readyState, capTracks: cs.getTracks().map((t) => `${t.kind}:${t.readyState}${t.muted ? ':muted' : ''}`), srcTracks: v.srcObject?.getTracks().map((t) => `${t.kind}:${t.readyState}${t.muted ? ':muted' : ''}`) });
   // Firefox leaves `mimeType` empty when the app requested no type; the blob it hands back still declares one.
   const container = rec2.mimeType || blobType;
   if (!container) c.skip('B6 the element capture recorded into a video container', 'the engine reports no mimeType on the recorder or on its blobs when the app requests none');
@@ -1396,6 +1398,49 @@ S['compat-patterns'] = async (c) => {
   c.check('release on disconnect', v.srcObject === null);
 };
 
+// connect() resolves on a painted frame: mediaReady carries real dimensions and the element has a frame to draw.
+S['first-frame-gate'] = async (c) => {
+  const v = makeEl();
+  const { session, ev } = await connected({ videoEl: v });
+  const mr = ev.of('mediaReady')[0];
+  c.check('mediaReady carries real dimensions, not degraded', mr?.videoWidth === 160 && mr?.videoHeight === 120 && !mr?.degraded, mr);
+  c.check('a frame is drawable the moment connect() resolves', v.videoWidth > 0 && v.readyState >= 2, { w: v.videoWidth, readyState: v.readyState });
+  c.check('video paints', ...pair2(await paints(v)));
+  const t = session.timings;
+  c.check('timings are ordered up to mediaReady', t.whepSent <= t.whepAnswer && t.whepAnswer <= t.mediaReady && t.mediaReady <= t.connected, t);
+  c.check('no media_no_video warning', !ev.of('warning').some((w) => w?.code === 'media_no_video'), ev.of('warning'));
+};
+
+// A slow WHEP answer must not eat the first-frame cap: the cap starts once the answer is applied.
+S['slow-whep'] = async (c) => {
+  const v = makeEl();
+  H.whepDelayMs = 2500;
+  const { session, ev, connectMs } = await connected({ videoEl: v, timeouts: { firstFrame: 1500 } });
+  const mr = ev.of('mediaReady')[0];
+  c.check('connect() waited for the slow answer', connectMs >= 2400, connectMs);
+  c.check('mediaReady has real dimensions (cap counted from the answer)', mr?.videoWidth === 160 && !mr?.degraded, mr);
+  c.check('no media_no_video warning', !ev.of('warning').some((w) => w?.code === 'media_no_video'), ev.of('warning'));
+  c.check('mediaReady once', ev.count('mediaReady') === 1, ev.count('mediaReady'));
+  c.check('video paints', ...pair2(await paints(v)));
+};
+
+// prepare() opens the socket and joins; connect() reuses it and sends no second join.
+S['prepare'] = async (c) => {
+  const v = makeEl();
+  const { session, socket } = newSession({ videoEl: v });
+  const ev = record(session);
+  await session.prepare();
+  c.check('state stays idle after prepare()', session.state === 'idle', session.state);
+  c.check('one join, no stvNewSession yet', socket.emitsOf('join').length === 1 && !socket.didEmit('stvNewSession'), socket.emitsOf('join').length);
+  c.check('no peers built by prepare()', H.pcs.length === 0, H.pcs.length);
+  await session.connect();
+  c.check('connected', session.state === 'connected', session.state);
+  c.check('still one join after connect()', socket.emitsOf('join').length === 1, socket.emitsOf('join').length);
+  c.check('mediaReady once with real dimensions', ev.count('mediaReady') === 1 && ev.of('mediaReady')[0]?.videoWidth === 160, ev.of('mediaReady'));
+  c.check('handshake phases cost nothing in connect()', session.timings.joinComplete <= 50, session.timings);
+  c.check('video paints', ...pair2(await paints(v)));
+};
+
 S['scripted'] = async (c) => {
   const v = makeEl();
   const session = new KalturaScriptedVideoSession({
@@ -1434,7 +1479,7 @@ async function cleanup() {
   for (const p of H.peers) { try { p.pc.close(); } catch { /* */ } p.media?.stop(); }
   for (const p of H.pcs) { try { p.close(); } catch { /* */ } }
   H.pcs = []; H.peers = []; H.fetches = [];
-  H.sendKinds = ['video', 'audio']; H.delay = null; H.blockPlay = false; H.gestureSession = null; H.gestureResolve = null;
+  H.sendKinds = ['video', 'audio']; H.whepDelayMs = 0; H.delay = null; H.blockPlay = false; H.gestureSession = null; H.gestureResolve = null;
   H.shape = 'twoVA'; H.blockEls.clear(); H.holdSink = null; H.holdSinkRelease = null; H.lat = [];
   stage.replaceChildren();
 }
