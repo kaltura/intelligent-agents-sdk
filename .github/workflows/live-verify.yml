@@ -142,6 +142,7 @@ jobs:
       knowledge: ${{ steps.filter.outputs.knowledge }}
       avatars: ${{ steps.filter.outputs.avatars }}
       agents: ${{ steps.filter.outputs.agents }}
+      lifecycle-audit: ${{ steps.filter.outputs.lifecycle-audit }}
       browser: ${{ steps.filter.outputs.browser }}
       kickoff: ${{ steps.filter.outputs.kickoff }}
       opening-phrase: ${{ steps.filter.outputs.opening-phrase }}
@@ -336,6 +337,23 @@ jobs:
               - 'src/core/ids.js'
               - 'src/core/redact.js'
               - '.github/workflows/live-verify.yml'
+            lifecycle-audit:
+              - 'scripts/live-verify-lifecycle-audit.mjs'
+              - 'scripts/lifecycle-audit.mjs'
+              - 'scripts/lib/target.mjs'
+              - 'src/management/lifecycle.js'
+              - 'src/management/lifecycle-rules.js'
+              - 'src/management/lifecycle-audit.js'
+              - 'src/management/audit-report.js'
+              - 'src/management/doctor.js'
+              - 'src/management/intellect-config.js'
+              - 'src/management/client.js'
+              - 'src/core/http.js'
+              - 'src/core/errors.js'
+              - 'src/core/session.js'
+              - 'src/core/ids.js'
+              - 'src/core/redact.js'
+              - '.github/workflows/live-verify.yml'
             browser:
               - 'scripts/live-verify-browser.mjs'
               - 'src/experience/**'
@@ -471,7 +489,7 @@ jobs:
           has() { [ "$RUN_ALL" = true ] || [ "$(jq -r --arg k "$1" '.[$k]' <<<"$FLAGS")" = true ]; }
           any() { local k; for k in "$@"; do has "$k" && return 0; done; return 1; }
           api=false
-          any smoke conversation-surface threads-messages-feedback request-vars site-nav session-types capabilities agents avatars catalog intellects-conversations knowledge skills tools mcp && api=true
+          any smoke conversation-surface threads-messages-feedback request-vars site-nav session-types capabilities agents lifecycle-audit avatars catalog intellects-conversations knowledge skills tools mcp && api=true
           engines=()
           any browser avatar-media session-complete opening-phrase kickoff set-forced-language context-fields && engines+=(chromium)
           any browser avatar-media session-complete && engines+=(firefox)
@@ -602,6 +620,18 @@ jobs:
         run: |
           set -o pipefail
           npm run live-verify:agents 2>&1 | tee live-verify-agents-output.log
+
+      # Scratch agent + insight settings + planted lifecycle rules → lifecycle.audit, doctor, intellectConfig.audit and the audit CLI report the expected findings → cleanup
+      - name: Resources · Lifecycle audit
+        id: live_verify_lifecycle_audit
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' && (needs.changes.outputs.all == 'true' || needs.changes.outputs['lifecycle-audit'] == 'true') }}
+        timeout-minutes: 15
+        env:
+          AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
+          AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
+        run: |
+          set -o pipefail
+          npm run live-verify:lifecycle-audit 2>&1 | tee live-verify-lifecycle-audit-output.log
 
       # Scratch Visual → avatars create/get/update(openingPhrase)/delete → cleanup, against the real Kaltura API
       - name: Resources · Avatars
@@ -838,6 +868,16 @@ jobs:
               echo
               echo '```'
               tail -n 40 live-verify-agents-output.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -f live-verify-lifecycle-audit-output.log ]; then
+            echo >> "$GITHUB_STEP_SUMMARY"
+            {
+              echo "### Resources · Lifecycle audit — ${{ steps.live_verify_lifecycle_audit.outcome }}"
+              echo
+              echo '```'
+              tail -n 40 live-verify-lifecycle-audit-output.log
               echo '```'
             } >> "$GITHUB_STEP_SUMMARY"
           fi

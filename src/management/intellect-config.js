@@ -48,8 +48,10 @@ import { KalturaError } from '../core/errors.js';
 import { meta } from '../core/ids.js';
 import { requireInt } from './intellect-body.js';
 import { validateCapabilities, assertCapability, assertCapabilityState, mergeCapabilityWrite, CAPABILITIES } from './capabilities.js';
-import { ARG_TYPES } from './tools.js';
-import { MASK, maskExisting } from './secrets.js';
+import { ARG_TYPES, clientToolReadiness } from './tools.js';
+import { MASK, maskExisting, validateSecretRefs } from './secrets.js';
+import { lintPrompts } from './prompt-lint.js';
+import { auditReport, isNotFound } from './audit-report.js';
 
 /**
  * The closed set of structured-data-form call stages — WHEN the agent emits the
@@ -155,11 +157,41 @@ export class IntellectConfig {
   /**
    * @param {import('./client.js').Ctx} ctx
    * @param {import('./intellects.js').Intellects} intellects The raw Intellects resource (for delegation of brain config + capability setters).
+   * @param {{tools?:import('./tools.js').Tools, skills?:import('./skills.js').Skills}} [siblings] The resources {@link IntellectConfig#audit} reads to check tool and skill ids.
    */
-  constructor(ctx, intellects) {
+  constructor(ctx, intellects, siblings = {}) {
     this._ = ctx;
     /** @type {import('./intellects.js').Intellects} */
     this._intellects = intellects;
+    this._siblings = siblings;
+  }
+
+  /**
+   * Check one intellect's saved config for mistakes. READ only, it changes
+   * nothing. Reads the intellect, then each tool and skill it lists, by id. Then
+   * it runs {@link auditIntellectConfig}, which lists the finding codes.
+   * @param {number} configId @param {string} ks (admin)
+   * @returns {Promise<import('./audit-report.js').AuditReport>}
+   */
+  async audit(configId, ks) {
+    this._.assertAdmin(ks, 'intellectConfig.audit');
+    requireInt(configId, 'intellectConfig.audit configId');
+    const config = await this._intellects.get(configId, ks);
+    const { tools, skills } = this._siblings;
+    /** @param {{get:(id:string, ks:string)=>Promise<any>}|undefined} resource @param {unknown[]} ids */
+    const fetchAll = async (resource, ids) => {
+      if (!resource) return null;
+      const found = [];
+      for (const id of new Set(ids.map(String))) {
+        try { found.push(await resource.get(id, ks)); } catch (e) { if (!isNotFound(e)) throw e; }
+      }
+      return found;
+    };
+    const toolIds = [...(config?.tool_ids ?? []), ...(config?.thread_start_tools ?? [])];
+    const skillIds = (config?.skill_ids ?? []).map((/** @type {any} */ s) => s?.id ?? s);
+    const [toolList, skillList] = [await fetchAll(tools, toolIds), await fetchAll(skills, skillIds)];
+    const findings = auditIntellectConfig(config, { tools: toolList, skills: skillList });
+    return auditReport(findings, { intellects: 1, tools: toolList?.length ?? 0, skills: skillList?.length ?? 0 });
   }
 
   /**
@@ -740,4 +772,107 @@ export function buildUserPropertiesForms(forms) {
     });
     return { call_stage: stage, properties };
   });
+}
+
+/** Map a `lintPrompts` severity onto the audit severities. @param {string} s @returns {'error'|'warn'|'info'} */
+const lintSeverity = (s) => (s === 'error' ? 'error' : s === 'warning' ? 'warn' : 'info');
+
+/**
+ * What {@link auditIntellectConfig} may check references against.
+ * @typedef {object} IntellectAuditContext
+ * @property {Array<{id:string, config?:unknown}>|null} [tools] The tools that exist, with their config if known. `null` or omitted skips the `tool_not_found` check and the secret scan of tool configs.
+ * @property {Array<{id:string}>|null} [skills] The skills that exist. `null` or omitted skips the `skill_not_found` check.
+ */
+
+/**
+ * Audit one intellect's config. PURE: no network, never throws on odd input.
+ * Reuses the SDK's own validators, so it flags what they would refuse or warn
+ * about on a write, in a config that is already saved.
+ *
+ * | code | severity | what it flags |
+ * |---|---|---|
+ * | `external_intellect` | info | An external intellect has no brain config, so nothing else is checked. |
+ * | `invalid_user_properties_forms` | error | {@link buildUserPropertiesForms} rejects the forms. |
+ * | `secret_ref_unresolved` | error | A `{{secrets.NAME}}` reference names a secret the intellect does not have. |
+ * | `secret_ref_bad_prefix` | error | A `{{variables.secrets.NAME}}` reference renders empty. Use `{{secrets.NAME}}`. |
+ * | `prompt_<code>` | per finding | A {@link lintPrompts} finding, for example `prompt_duplicate_key`. |
+ * | `capabilities_invalid` | warn | {@link validateCapabilities} rejects the capability map. |
+ * | `client_tools_not_ready` | warn | {@link clientToolReadiness} warns about the tool setup. |
+ * | `knowledge_ids_over_cap` | error | `knowledge_ids` holds more than one record. |
+ * | `tool_not_found` | error | `tool_ids` or `thread_start_tools` names a tool that does not exist. |
+ * | `skill_not_found` | error | `skill_ids` names a skill that does not exist. |
+ * @param {Record<string, any>} config The intellect, as `intellects.get` returns it.
+ * @param {IntellectAuditContext} [ctx]
+ * @returns {import('./audit-report.js').AuditFinding[]}
+ */
+export function auditIntellectConfig(config, ctx = {}) {
+  /** @type {import('./audit-report.js').AuditFinding[]} */
+  const findings = [];
+  const cfg = config && typeof config === 'object' ? config : {};
+  const configId = typeof cfg.id === 'number' ? cfg.id : undefined;
+  /** @param {'error'|'warn'|'info'} severity @param {string} code @param {string} field @param {string} message @param {string} fix */
+  const add = (severity, code, field, message, fix) => {
+    findings.push({ severity, code, ...(configId !== undefined ? { configId } : {}), field, message, fix });
+  };
+  if (cfg.type === 'external') {
+    add('info', 'external_intellect', 'type', 'An external intellect has no brain config to audit.', 'Audit the intellect your system hosts instead.');
+    return findings;
+  }
+
+  const forms = cfg.user_properties_forms;
+  if (Array.isArray(forms) && forms.length > 0) {
+    try { buildUserPropertiesForms(forms); } catch (e) {
+      add('error', 'invalid_user_properties_forms', 'user_properties_forms', String(/** @type {any} */ (e)?.detail ?? e), 'Fix the forms with intellectConfig.setUserPropertiesForms.');
+    }
+  }
+
+  const toolIds = [...(Array.isArray(cfg.tool_ids) ? cfg.tool_ids : []), ...(Array.isArray(cfg.thread_start_tools) ? cfg.thread_start_tools : [])].map(String);
+  const toolConfigs = (ctx.tools ?? []).filter((t) => toolIds.includes(String(t.id))).map((t) => t.config);
+  const refs = validateSecretRefs({
+    secretNames: Object.keys(cfg.secrets && typeof cfg.secrets === 'object' ? cfg.secrets : {}),
+    tools: toolConfigs, prompts: cfg.prompts, mcpServers: cfg.mcp_servers,
+  });
+  for (const r of refs.unresolved) {
+    add('error', 'secret_ref_unresolved', r.where, `{{secrets.${r.ref}}} in ${r.where} names a secret this intellect does not have, so it renders empty.`, 'Add the secret with intellectConfig.setSecrets, or fix the name.');
+  }
+  for (const r of refs.badPrefix) {
+    add('error', 'secret_ref_bad_prefix', r.where, `{{variables.secrets.${r.ref}}} in ${r.where} renders empty.`, `Write {{secrets.${r.ref}}} instead.`);
+  }
+
+  if (Array.isArray(cfg.prompts)) {
+    // A saved intellect does not store which request variables the app will send, so an unknown variable is not a defect here.
+    for (const f of lintPrompts(cfg.prompts, { allowClientVariables: cfg.allow_client_variables === true }).findings.filter((x) => x.code !== 'unknown_variable')) {
+      add(lintSeverity(f.severity), `prompt_${f.code}`, f.path ?? 'prompts', f.message, 'Run lintPrompts on the prompts to see this finding in context.');
+    }
+  }
+
+  if (cfg.capabilities && typeof cfg.capabilities === 'object' && !Array.isArray(cfg.capabilities)) {
+    try { validateCapabilities(cfg.capabilities, 'intellectConfig.audit'); } catch (e) {
+      add('warn', 'capabilities_invalid', 'capabilities', String(/** @type {any} */ (e)?.detail ?? e), 'Use only names and states listed in CAPABILITIES and CAPABILITY_STATE.');
+    }
+  }
+  for (const w of clientToolReadiness(cfg).warnings) {
+    add('warn', 'client_tools_not_ready', 'tool_ids', w, 'Set capabilities:{kaltura_genie_experiences:"off"} on the intellect.');
+  }
+
+  if (Array.isArray(cfg.knowledge_ids) && cfg.knowledge_ids.length > 1) {
+    add('error', 'knowledge_ids_over_cap', 'knowledge_ids', `knowledge_ids holds ${cfg.knowledge_ids.length} records. An intellect takes one.`, 'Keep one record with intellectConfig.setKnowledgeIds.');
+  }
+
+  if (ctx.tools) {
+    const known = new Set(ctx.tools.map((t) => String(t.id)));
+    for (const field of ['tool_ids', 'thread_start_tools']) {
+      for (const id of (Array.isArray(cfg[field]) ? cfg[field] : []).map(String).filter((x) => !known.has(x))) {
+        add('error', 'tool_not_found', field, `${field} lists tool ${id}, which does not exist.`, `Drop it with intellectConfig.${field === 'tool_ids' ? 'setToolIds' : 'setThreadStartTools'}.`);
+      }
+    }
+  }
+  if (ctx.skills) {
+    const known = new Set(ctx.skills.map((s) => String(s.id)));
+    for (const entry of Array.isArray(cfg.skill_ids) ? cfg.skill_ids : []) {
+      const id = String(entry?.id ?? entry);
+      if (!known.has(id)) add('error', 'skill_not_found', 'skill_ids', `skill_ids lists skill ${id}, which does not exist.`, 'Drop it with intellectConfig.setSkillIds.');
+    }
+  }
+  return findings;
 }

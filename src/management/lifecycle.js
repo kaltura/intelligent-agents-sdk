@@ -32,8 +32,11 @@
  */
 import { paginate } from './paginate.js';
 import { uuidv4, meta } from '../core/ids.js';
-import { requireConfirm } from './agents.js';
+import { requireConfirm, resolveIntellectId } from './agents.js';
 import { KalturaError } from '../core/errors.js';
+import { hasAgentScope, hasEmailTrigger, scopedAgentIds } from './lifecycle-rules.js';
+import { auditLifecycleRules } from './lifecycle-audit.js';
+import { auditReport, isNotFound } from './audit-report.js';
 
 /** @param {unknown} v @param {string} where */
 function requireRuleId(v, where) {
@@ -49,21 +52,6 @@ function requireNonEmptyString(v, where, field) {
   }
 }
 
-/** @param {unknown} v */
-const isId = (v) => typeof v === 'string' && v.trim().length > 0;
-
-/**
- * True for an `object.agent_id` condition that names real agent ids:
- * `eq` with a non-empty string, or `in` with a non-empty array of them.
- * @param {any} c
- */
-function isAgentCondition(c) {
-  if (!c || typeof c !== 'object' || c.field !== 'object.agent_id') return false;
-  if (c.operator === 'eq') return isId(c.value);
-  if (c.operator === 'in') return Array.isArray(c.value) && c.value.length > 0 && c.value.every(isId);
-  return false;
-}
-
 /**
  * Refuse a `thread` rule that has no `object.agent_id` condition (operator
  * `eq` with an id, or `in` with a list of ids). Without one the rule runs
@@ -71,7 +59,7 @@ function isAgentCondition(c) {
  * @param {unknown} eventConditions @param {string} where
  */
 function requireAgentScope(eventConditions, where) {
-  if (Array.isArray(eventConditions) && eventConditions.some(isAgentCondition)) return;
+  if (hasAgentScope(eventConditions)) return;
   throw new KalturaError({
     type: 'about:blank', title: 'unscoped lifecycle rule', code: 'lifecycle_unscoped',
     detail: `${where}: a thread rule needs an agent condition, or it runs for every agent on the partner. Add {field:'object.agent_id', operator:'eq', value:'<agent-uuid>'} (a non-empty id; operator 'in' takes a non-empty array of ids) to eventConditions, or pass { partnerWide: true } to run on every agent on purpose.`,
@@ -85,11 +73,7 @@ function requireAgentScope(eventConditions, where) {
  * @param {unknown} eventConditions @param {string} where
  */
 function requireEmailTrigger(eventConditions, where) {
-  const keyed = Array.isArray(eventConditions) && eventConditions.some(
-    (c) => c && typeof c === 'object' && c.field === 'changed_keys' && (c.operator === 'has_all' || c.operator === 'has_any')
-      && Array.isArray(c.value) && c.value.length > 0 && c.value.every(isId),
-  );
-  if (keyed) return;
+  if (hasEmailTrigger(eventConditions)) return;
   throw new KalturaError({
     type: 'about:blank', title: 'unfiltered email rule', code: 'lifecycle_email_unfiltered',
     detail: `${where}: a sendInsightEmail rule on analysis_updated sends on every analysis update unless it names the insight keys it waits for. Add {field:'changed_keys', operator:'has_all', value:['SUMMARY', ...]} to eventConditions, or pass { emailOnEveryUpdate: true } to send on every update on purpose.`,
@@ -97,8 +81,83 @@ function requireEmailTrigger(eventConditions, where) {
 }
 
 export class Lifecycle {
-  /** @param {import('./client.js').Ctx} ctx */
-  constructor(ctx) { this._ = ctx; }
+  /**
+   * @param {import('./client.js').Ctx} ctx
+   * @param {{insightSettings:import('./insight-settings.js').InsightSettings, agents:import('./agents.js').Agents, emailTemplates:import('./email-templates.js').EmailTemplates, intellects:import('./intellects.js').Intellects}} [siblings] The resources {@link Lifecycle#audit} reads. Without them `audit` throws.
+   */
+  constructor(ctx, siblings) {
+    this._ = ctx;
+    this._siblings = siblings;
+  }
+
+  /**
+   * Check the partner's existing lifecycle rules for mistakes. READ only, it
+   * changes nothing. Reads every rule, insight setting and agent (all pages).
+   * It reads each email template a rule pins, and each intellect a
+   * `triggerDtcKai` rule needs, by id. Then it runs {@link auditLifecycleRules}.
+   *
+   * If the Messaging host is not available (`region_unavailable`), the template
+   * checks are skipped and the report says `skipped: ['templates']`. Any other
+   * error is thrown.
+   *
+   * Finding codes: `unscoped_rule`, `agent_not_found`, `duplicate_agent_ids`,
+   * `insight_setting_missing`, `insight_setting_disabled`,
+   * `too_many_insight_settings`, `email_on_session_ended`, `email_unfiltered`,
+   * `changed_keys_unproduced`, `template_missing_or_deleted`,
+   * `template_tokens_unproduced`, `dtc_without_forms`, `rule_disabled`.
+   * @param {string} ks (admin)
+   * @param {{agentIds?:string[], pageSize?:number}} [opts] `agentIds` keeps only findings for rules that run for one of those agents, including rules with no agent scope.
+   * @returns {Promise<import('./audit-report.js').AuditReport>}
+   */
+  async audit(ks, opts = {}) {
+    this._.assertAdmin(ks, 'lifecycle.audit');
+    const s = this._siblings;
+    if (!s) throw new KalturaError({ type: 'about:blank', title: 'audit unavailable', code: 'bad_request', detail: 'lifecycle.audit needs the sibling resources. Use mgmt.lifecycle from a Management instance.' });
+    const { pageSize } = opts;
+    const [rules, insightSettings, agents] = await Promise.all([
+      this.list(ks, { pageSize }).all(), s.insightSettings.list(ks, { pageSize }).all(), s.agents.list(ks, { pageSize }).all(),
+    ]);
+    const live = rules.filter((r) => r.status === undefined || r.status === 'active');
+    /** @type {string[]} */
+    const skipped = [];
+
+    /** @type {Array<any>|null} */
+    let emailTemplates = [];
+    const templateIds = [...new Set(live.map((r) => r.action?.templateId).filter((id) => typeof id === 'string' && id))];
+    try {
+      for (const id of templateIds) {
+        try { emailTemplates.push(await s.emailTemplates.get(id, ks)); } catch (e) { if (!isNotFound(e)) throw e; }
+      }
+    } catch (e) {
+      if (/** @type {any} */ (e)?.code !== 'region_unavailable') throw e;
+      emailTemplates = null;
+      skipped.push('templates');
+    }
+
+    /** @type {Record<string, any>} */
+    const intellects = {};
+    /** @type {Map<number, any>} */
+    const fetched = new Map();
+    const dtcAgentIds = new Set(live.filter((r) => r.action?.actionType === 'triggerDtcKai').flatMap((r) => scopedAgentIds(r.eventConditions)));
+    for (const agent of agents) {
+      const agentId = agent.agentId ?? agent.id;
+      if (!dtcAgentIds.has(agentId)) continue;
+      const configId = resolveIntellectId(agent.intellect);
+      if (configId === undefined) continue;
+      if (!fetched.has(configId)) {
+        fetched.set(configId, await s.intellects.get(configId, ks).catch((e) => { if (isNotFound(e)) return null; throw e; }));
+      }
+      intellects[agentId] = fetched.get(configId);
+    }
+
+    let findings = auditLifecycleRules(rules, { insightSettings, agents, emailTemplates, intellects });
+    const only = opts.agentIds;
+    if (only) {
+      const keep = new Set(rules.filter((r) => { const ids = scopedAgentIds(r.eventConditions); return ids.length === 0 || ids.some((id) => only.includes(id)); }).map((r) => r.id));
+      findings = findings.filter((f) => keep.has(/** @type {string} */ (f.ruleId)));
+    }
+    return auditReport(findings, { rules: rules.length, insightSettings: insightSettings.length, agents: agents.length, emailTemplates: emailTemplates?.length ?? 0, intellects: fetched.size }, skipped);
+  }
 
   /**
    * Create a lifecycle rule. WRITE — NOT idempotent (a repeat call creates a

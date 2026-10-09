@@ -203,6 +203,59 @@ const { matchedRules } = await mgmt.lifecycle.match(
 
 ---
 
+## Audit your rules
+
+A rule can be valid when you save it and still do nothing later. An insight setting gets deleted, a template is removed, an agent is deleted. The backend never says so. `lifecycle.audit` reads your rules and what they point at, and lists the problems. It changes nothing.
+
+```js
+const report = await mgmt.lifecycle.audit(ks, { agentIds: ['<agent-uuid>'] }); // agentIds is optional
+// { findings: [{ severity, code, ruleId, message, fix }], summary: { error, warn, info }, checked: { rules, ... }, skipped: [] }
+```
+
+`agentIds` limits the check to those agents and the rules that run for them. Rules with no agent scope are always included.
+
+| Code | Severity | Meaning |
+|---|---|---|
+| `unscoped_rule` | warn | A `thread` rule has no agent condition, so it runs for every agent |
+| `agent_not_found` | warn | The rule names an agent id the partner does not have |
+| `duplicate_agent_ids` | info | The same agent id appears twice in the rule's conditions |
+| `insight_setting_missing` | warn | `insightSettingsIds` holds an id with no insight setting. The id is skipped |
+| `insight_setting_disabled` | warn | A listed insight setting is `disabled`. It is skipped |
+| `too_many_insight_settings` | error | More than 20 `insightSettingsIds` |
+| `email_on_session_ended` | error | `sendInsightEmail` only fires on `analysis_updated` |
+| `email_unfiltered` | warn | A `sendInsightEmail` rule on `analysis_updated` has no `changed_keys` filter |
+| `changed_keys_unproduced` | warn | The `changed_keys` filter waits for a key no active rule on those agents writes |
+| `template_missing_or_deleted` | error | The pinned `templateId` does not exist or is deleted |
+| `template_tokens_unproduced` | warn | The template or preset needs a key no active rule on those agents writes |
+| `dtc_without_forms` | warn | `triggerDtcKai` on an agent whose intellect has no `user_properties_forms` |
+| `rule_disabled` | info | The rule is not active. It gets no other finding |
+
+The key checks (`changed_keys_unproduced`, `template_tokens_unproduced`) are skipped for agents covered by an active `triggerDtcKai` rule, because the keys it writes are not documented.
+
+Templates live on the Messaging host. If the target has none, the template checks are skipped and the report says `skipped: ['templates']`.
+
+`mgmt.doctor(ks, opts?)` runs the same check, then audits the intellect of each agent with `mgmt.intellectConfig.audit(configId, ks)`. It also reports `orphan_insight_setting` and `orphan_email_template` (both `info`) for entities no rule uses. It skips the orphan checks when you pass `agentIds`.
+
+| Intellect code | Severity | Meaning |
+|---|---|---|
+| `external_intellect` | info | An external intellect has no brain config, so nothing else is checked |
+| `invalid_user_properties_forms` | error | The forms fail the same validation `setUserPropertiesForms` applies |
+| `secret_ref_unresolved` | error | `{{secrets.NAME}}` names a secret the intellect does not have |
+| `secret_ref_bad_prefix` | error | `{{variables.secrets.NAME}}` renders empty. Write `{{secrets.NAME}}` |
+| `prompt_<code>` | per finding | A prompt lint finding, for example `prompt_duplicate_key` |
+| `capabilities_invalid` | warn | The capability map holds an unknown name or state |
+| `client_tools_not_ready` | warn | The client tool setup would not work |
+| `knowledge_ids_over_cap` | error | `knowledge_ids` holds more than one record |
+| `tool_not_found` | error | `tool_ids` or `thread_start_tools` names a tool that does not exist |
+| `skill_not_found` | error | `skill_ids` names a skill that does not exist |
+| `intellect_not_found` | error | `doctor` only. An agent points at an intellect that does not exist |
+
+The pure functions `auditLifecycleRules(rules, ctx)` and `auditIntellectConfig(config, ctx)` are exported from `./management` if you already hold the data.
+
+To run it from a terminal or CI, use `npm run audit:lifecycle`. It exits 0 when nothing reaches `--fail-on`, 1 when something does, and 2 on a usage, auth or request error. Flags are in [`scripts/README.md`](../../scripts/README.md#lifecycle-audit-cli).
+
+---
+
 ## Full CRUD + discovery method table
 
 All against `https://api.avatar.us.kaltura.ai`. SDK: `mgmt.lifecycle`.
@@ -218,6 +271,8 @@ All against `https://api.avatar.us.kaltura.ai`. SDK: `mgmt.lifecycle`.
 | `lifecycle.listObjects(ks)` | `POST /v1/lifecycle/listObjects` | READ | |
 | `lifecycle.listEvents(objectType, ks)` | `POST /v1/lifecycle/listEvents` | READ | |
 | `lifecycle.describeFields(objectType, eventType, ks)` | `POST /v1/lifecycle/describeFields` | READ | |
+| `lifecycle.audit(ks, opts?)` | reads only: lists rules, insight settings and agents, gets each pinned template and each `triggerDtcKai` intellect | READ | see [Audit your rules](#audit-your-rules). `opts.agentIds`, `opts.pageSize`. Admin KS |
+| `doctor(ks, opts?)` | reads only | READ | rules, intellects, and unused settings and templates. See [Audit your rules](#audit-your-rules) |
 
 `InsightSettings`, SDK: `mgmt.insightSettings`:
 
@@ -246,4 +301,5 @@ All against `https://api.avatar.us.kaltura.ai`. SDK: `mgmt.lifecycle`.
 | Doc | What it adds |
 |---|---|
 | [`recipes.md`](recipes.md) | Hands-on walkthrough of `triggerInsightSettingsKai` + `sendInsightEmail` chained together, common pitfalls, and a runnable example |
+| [`scripts/README.md`](../../scripts/README.md#lifecycle-audit-cli) | The `audit:lifecycle` command and its exit codes |
 | [`docs/api/management-operations.md`](../api/management-operations.md) | Where Lifecycle sits alongside the other CRUD entities (agents, avatars, intellects, tools, skills, knowledge) |

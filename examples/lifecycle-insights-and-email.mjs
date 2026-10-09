@@ -17,7 +17,8 @@
  *   5. Dry-run both rules with match() — instant, synthetic, no real
  *      thread needed. This is how you verify wiring before a real
  *      conversation ever happens.
- *   6. Clean up both rules and both insight settings.
+ *   6. Audit the rules with lifecycle.audit() and print what it finds.
+ *   7. Clean up both rules and both insight settings.
  *
  * This example proves the rules are wired correctly with match() rather
  * than waiting for a real event. See docs/lifecycle/recipes.md for the
@@ -130,8 +131,14 @@ try {
   const analysisUpdatedIds = flattenMatchedRuleIds(analysisUpdatedMatch.matchedRules);
   console.log('analysis_updated would match rule ids:', analysisUpdatedIds);
   if (!analysisUpdatedIds.includes(emailRule.id)) throw new Error(`Dry run did not match the email rule (${emailRule.id}) — check eventConditions/changed_keys.`);
+
+  // 6. Audit the rules. Read-only. With the placeholder agent id above, expect an
+  // agent_not_found warning. Every finding has a code, a message and a fix.
+  const audit = await kaltura.lifecycle.audit(admin, { agentIds: [demoAgentId] });
+  console.log('Audit summary:', audit.summary);
+  for (const f of audit.findings) console.log(`  [${f.severity}] ${f.code}: ${f.message} Fix: ${f.fix}`);
 } finally {
-  // 6. Clean up — lifecycle rules and insight settings have no in-use scan,
+  // 7. Clean up — lifecycle rules and insight settings have no in-use scan,
   // so delete is immediate. Every deletion is attempted independently: if
   // one fails, the rest (still-live) must still be cleaned up
   // — not skipped because an earlier delete in the same block threw. Errors

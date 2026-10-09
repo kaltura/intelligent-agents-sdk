@@ -1235,6 +1235,8 @@ await session.sendText('Look up open tickets for this account.');
 
 `patch()` only accepts keys in `EDITABLE_FIELDS`, rejecting anything else before the network call — `describe()`'s `editable` map is exactly that set. Knowledge grounding via `knowledge_ids` is fully public and ungated. (Event-driven session/thread rules ARE supported, see [docs/lifecycle/README.md](docs/lifecycle/README.md).)
 
+`intellectConfig.audit(configId, ks)` checks a saved intellect for mistakes, `lifecycle.audit(ks)` does the same for lifecycle rules, and `mgmt.doctor(ks)` runs both across every agent. All three only read and return findings with a `severity`, `code` and `fix`. See [Audit your rules](docs/lifecycle/README.md#audit-your-rules).
+
 ### Forcing the reply language (`setForcedLanguage`)
 
 `mgmt.setForcedLanguage()` pins the language an agent speaks and listens in. Usage, options and how to clear it: [docs/LANGUAGES.md](docs/LANGUAGES.md).

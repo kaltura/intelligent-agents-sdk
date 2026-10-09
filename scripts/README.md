@@ -93,10 +93,28 @@ The two Salesforce scripts need a Salesforce Developer Edition org or sandbox (`
 | `live-verify-set-forced-language.mjs`, `live-verify-force-language.mjs` | A forced language changes the reply, not just storage |
 | `live-verify-capabilities.mjs` | Capability resolution plus the Lifecycle domain |
 | `live-verify-agents.mjs`, `live-verify-avatars.mjs`, `live-verify-catalog.mjs`, `live-verify-tools.mjs`, `live-verify-skills.mjs`, `live-verify-knowledge.mjs`, `live-verify-intellects-conversations.mjs`, `live-verify-threads-messages-feedback.mjs`, `live-verify-conversation-avatar-surface.mjs` | The write path of one management resource each |
+| `live-verify-lifecycle-audit.mjs` | `lifecycle.audit`, `doctor` and `intellectConfig.audit` report the expected findings for planted rule defects and none for a clean set, and `lifecycle-audit.mjs` exits 0, 1 and 2 as documented. Scoped to one throwaway agent. Covers the no-messaging-host skip on named targets |
 | `live-verify-regions.mjs` | Every `REGIONS` host answers over TLS like nvp1. No credentials |
 | `live-verify-threads-messages-feedback.mjs --with-share` | Also runs the `messages.share` step (step 6), which leaves an undeletable clone per run. Off by default: use it only after a change to `messages.share` |
 
 Every one of these has an `npm run live-verify:<name>` script except `live-verify.mjs` and `live-verify-mcp.mjs` (CI runs both with `node`). Four have no npm script and no CI job. Run them with `node scripts/<name>.mjs`: `live-verify-intellect-config.mjs`, `live-verify-knowledge-kms.mjs`, `live-verify-feedback-flow.mjs`, `live-check-feedback-unfiltered.mjs`. Two more have an npm script but no CI job: `live-verify-force-language.mjs` and `live-verify-regions.mjs`, run by hand with `npm run live-verify:force-language` and `npm run live-verify:regions`.
+
+### Lifecycle audit CLI
+
+`lifecycle-audit.mjs` (`npm run audit:lifecycle`) is a tool, not a test. It is read-only. It uses the same `TARGET` rules as the live scripts. Finding codes: [Audit your rules](../docs/lifecycle/README.md#audit-your-rules).
+
+```bash
+npm run audit:lifecycle -- [--agent <id>]... [--doctor] [--json] [--fail-on warn|error]
+```
+
+| Flag | Effect |
+|---|---|
+| `--agent <id>` | Check only that agent and the rules that run for it. Repeatable |
+| `--doctor` | Also audit each agent's intellect and list unused insight settings and templates |
+| `--json` | Print `{target, findings, summary, checked, skipped}` |
+| `--fail-on warn\|error` | Lowest severity that gives exit code 1. Default `error` |
+
+Exit code 0: nothing at or above `--fail-on`. 1: something is. 2: usage, credentials or request error. Secret values are never printed.
 
 Read the header comment of a script before running it. Each one states what it asserts and why that coverage exists.
 

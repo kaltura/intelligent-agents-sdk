@@ -64,6 +64,8 @@
     "live-verify:knowledge": "node scripts/live-verify-knowledge.mjs",
     "live-verify:avatars": "node scripts/live-verify-avatars.mjs",
     "live-verify:agents": "node scripts/live-verify-agents.mjs",
+    "live-verify:lifecycle-audit": "node scripts/live-verify-lifecycle-audit.mjs",
+    "audit:lifecycle": "node scripts/lifecycle-audit.mjs",
     "live-verify:intellects-conversations": "node scripts/live-verify-intellects-conversations.mjs",
     "live-verify:tools": "node scripts/live-verify-tools.mjs",
     "live-verify:kickoff": "node scripts/live-verify-kickoff.mjs",
