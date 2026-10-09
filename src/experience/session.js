@@ -736,7 +736,7 @@ export class KalturaAvatarSession extends Emitter {
   /**
    * Phase times of the current or last `connect()`, in ms from the start of that call. A phase
    * the connect has not reached yet is absent. Empty before the first `connect()`.
-   * @returns {Record<string, number>}
+   * @returns {import('../core/errors.js').ConnectTimings}
    */
   get timings() { return { ...(this._timings || this._lastTimings || {}) }; }
 
@@ -3616,7 +3616,7 @@ function micError(err) {
   return new KalturaError({ type: `https://docs.kaltura.com/agentic/errors/${code}`, title: code.replace(/_/g, ' '), code, detail, body: redact(String(err && err.message || err)) });
 }
 function timeoutErr(label, phase) {
-  return new KalturaError({ type: 'https://docs.kaltura.com/agentic/errors/timeout', title: 'timeout', code: 'timeout', detail: `${label}: timed out waiting for the server.`, phase, retryable: true });
+  return new KalturaError({ type: 'https://docs.kaltura.com/agentic/errors/timeout', title: 'timeout', code: 'timeout', detail: `${label}: timed out waiting for the server${phase ? ` (step: ${phase})` : ''}. Trying again can help.`, phase, retryable: true });
 }
 /** One connect lane finishing after the session was torn down (the other lane failed first, or the app disconnected). */
 function noTokenErr() {

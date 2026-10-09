@@ -90,9 +90,22 @@ Overall connecting timeout: 30s. It bounds every wait in the table, including th
 
 `error.retryable` is `true` on `timeout`, `capacity_unavailable`, `whep_timeout`, a `whep_failed` caused by the network, `stv_session_gone` and `reconnect_failed`, because the same call can succeed on a later try. A `whep_failed` that carries an HTTP status does not set it. Both fields are also in `error.toJSON()`.
 
-**Why step 3 has two timeouts.** `joinComplete` can arrive later than `clientConfiguration` under load. The SDK budgets the two waits separately: `clientConfiguration` gets 5s (`TIMEOUTS.joinRoom`), `joinComplete` gets 20s (`TIMEOUTS.joinComplete`). A single 5s budget for both causes spurious `JoinRoomTimeout` failures on loaded rooms.
+```js
+// Retry a connect that can succeed later. Give up on anything else.
+for (let attempt = 1; ; attempt++) {
+  try { await session.connect(); break; }
+  catch (err) {
+    if (!err.retryable || attempt === 3) throw err;
+    await new Promise((r) => setTimeout(r, 1000 * attempt));
+    session.disconnect();
+    session.setToken(await mintFreshToken());   // disconnect() clears the token
+  }
+}
+```
 
-The 30s deadline is set once, at the start of `connect()`. It keeps running through every later step, including the capacity queue, and is **not** paused or extended when the queue activates. If no slot frees up before it runs out, `connect()` rejects with `ConnectTimeout`. To wait longer for a slot, call `waitForCapacity({maxWaitMs, pollIntervalMs})` **before** `connect()`. It is a separate, opt-in poll with its own bound: `maxWaitMs` defaults to 300000ms. See [Capacity & the queue](scale-and-sticky-sessions.md#capacity--the-queue-throwtonoagent--throwtoexceededtier).
+**Why step 3 has two timeouts.** `joinComplete` can arrive later than `clientConfiguration` under load. The SDK budgets the two waits separately: `clientConfiguration` gets 5s (`TIMEOUTS.joinRoom`), `joinComplete` gets 20s (`TIMEOUTS.joinComplete`). A single 5s budget for both causes spurious `timeout` failures with phase `join` on loaded rooms.
+
+The 30s deadline is set once, at the start of `connect()`. It keeps running through every later step, including the capacity queue, and is **not** paused or extended when the queue activates. If no slot frees up before it runs out, `connect()` rejects with `timeout`. To wait longer for a slot, call `waitForCapacity({maxWaitMs, pollIntervalMs})` **before** `connect()`. It is a separate, opt-in poll with its own bound: `maxWaitMs` defaults to 300000ms. See [Capacity & the queue](scale-and-sticky-sessions.md#capacity--the-queue-throwtonoagent--throwtoexceededtier).
 
 **Why `approvedPermissions` waits for playable video.** `approvedPermissions` is what makes the agent start speaking. ICE `connected` fires about 2s before the first frame decodes, so approving early clips the greeting. `_approve` (`src/experience/session.js`) waits for `<video>` to reach `canplay` (`HAVE_FUTURE_DATA`). The fallback timers (2s after the track, 6s after the subscribe starts) mean a stalled video track can't block approval forever. Do the same in a custom client.
 

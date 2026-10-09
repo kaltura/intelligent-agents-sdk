@@ -85,7 +85,6 @@
       session.speak(nudge).then((sent) => record('nudge:sent', { sent }));
     }
 
-    window.addEventListener('beforeunload', () => session.disconnect());
 
     // For raw socket/WebRTC wire frames underneath these SDK-level events
     // (e.g. distinguishing stvSpeechChunk boundaries, or exact ICE/WS timing),

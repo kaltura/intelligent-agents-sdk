@@ -12,6 +12,26 @@
 import { redact, redactString } from './redact.js';
 
 /**
+ * Phase times of a `connect()`, in ms from the start of that call. A phase that was not reached
+ * is absent. `firstFrame` is also absent when no frame was painted in time.
+ * @typedef {object} ConnectTimings
+ * @property {number} [micRequested]        The microphone request started.
+ * @property {number} [socketOpen]          The socket opened.
+ * @property {number} [serverConnected]     The server acknowledged the connection.
+ * @property {number} [joinComplete]        The room join finished.
+ * @property {number} [stvNewSessionReply]  The avatar session was created.
+ * @property {number} [whepSent]            The WHEP subscribe request left.
+ * @property {number} [whepAnswer]          The WHEP answer arrived.
+ * @property {number} [iceConnectedStv]     The video peer's ICE connected.
+ * @property {number} [firstTrack]          The first downlink track arrived.
+ * @property {number} [firstFrame]          The first video frame was painted.
+ * @property {number} [mediaReady]          `mediaReady` was emitted.
+ * @property {number} [asrReady]            The microphone uplink was negotiated.
+ * @property {number} [approved]            `approvedPermissions` was sent.
+ * @property {number} [connected]           The state became `connected`.
+ */
+
+/**
  * @typedef {object} ProblemDetail
  * @property {string} type            A URI-reference identifying the problem class.
  * @property {string} title           Short human-readable summary.
@@ -24,6 +44,7 @@ import { redact, redactString } from './redact.js';
  * @property {unknown} [body]         The (redacted) upstream response body.
  * @property {string} [phase]         The connect step that failed, on a live-session error (`serverConnect`, `join`, `joinComplete`, `agent`, `asr`, `whep`, `connect`, `reconnect`).
  * @property {boolean} [retryable]    True when trying the same call again can succeed. Absent when the SDK has no opinion.
+ * @property {ConnectTimings} [timings]  The connect phases reached before a failed `connect()` (set by the live session, not by the constructor).
  * @property {unknown} [cause]        The error this one wraps, when the SDK replaced it with a clearer one.
  */
 
