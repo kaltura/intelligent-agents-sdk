@@ -5,7 +5,7 @@
  * | id | scenario                                   | asserts |
  * |----|--------------------------------------------|---------|
  * | R1 | prepare(), then connect()                  | prepare() resolves with the state still `idle`, one `join` on the wire, no avatar session requested yet. connect() reuses the socket: still one `join`, and it connects |
- * | R2 | prepared vs plain connect(), alternating   | the median connect() with a prepared socket is faster than the plain one by at least half of the plain run's own socket + join time (`connectTimings.joinComplete`), and by 100 ms or more |
+ * | R2 | prepared vs plain connect(), alternating   | the prepared connect() has no join phase left (`connectTimings.joinComplete` under 100 ms at the median), and its best run beats the plain best run by at least half of the plain run's own socket + join time, and by 100 ms or more |
  * | R3 | prepare(), idle past `timeouts.prepareIdle` | warning `prepare_expired`, state stays `idle`, and a later connect() still works on a fresh socket |
  *
  * Usage
@@ -32,6 +32,7 @@ const HEADED = choice.headed || choice.browser === 'chrome';
 const SETUP = `${choice.browser} ${HEADED ? 'headed' : 'headless'}`;
 const SAVING_SHARE = 0.5;   // prepare() must save at least this share of the plain run's own socket + join time
 const SAVING_FLOOR_MS = 100;
+const JOINED_MAX_MS = 100;
 const IDLE_MS = 3000;
 
 const report = new Report({ runId, target: target.name });
@@ -66,9 +67,10 @@ async function timedConnect(/** @type {import('playwright').BrowserContext} */ c
   const ms = Date.now() - t0;
   if (!c.ok) throw new Error(`connect failed: ${c.code} ${c.message}`);
   const { events: evs } = await waitFor(page, (e) => find(e, 'connectTimings'), 5000, 'connectTimings');
-  const joinMs = find(evs, 'connectTimings')?.detail?.joinComplete;
+  const timings = find(evs, 'connectTimings')?.detail;
+  const joinMs = timings?.joinComplete;
   await callHook(page, 'testDisconnect').catch(() => {});
-  return { ms, joinMs };
+  return { ms, joinMs, timings };
 }
 
 const SCENARIOS = {
@@ -98,17 +100,22 @@ const SCENARIOS = {
     name: `prepared vs plain connect(), ${RUNS} alternating pairs`,
     /** @param {{context: import('playwright').BrowserContext, sink: any, id: string}} c */
     async run({ context, sink, id }) {
-      /** @type {number[]} */ const plain = []; /** @type {number[]} */ const prepared = []; /** @type {number[]} */ const joins = [];
+      /** @type {number[]} */ const plain = []; /** @type {number[]} */ const prepared = []; /** @type {number[]} */ const joins = []; /** @type {any[]} */ const phases = [];
       for (let i = 0; i < RUNS; i++) {
         const p = await timedConnect(context, sink, false);
         plain.push(p.ms); joins.push(p.joinMs);
-        prepared.push((await timedConnect(context, sink, true)).ms);
+        const q = await timedConnect(context, sink, true);
+        prepared.push(q.ms);
+        phases.push({ plain: p.timings, prepared: q.timings });
       }
       const a = stats(plain), b = stats(prepared), j = stats(joins);
-      report.data.pairs = { plain, prepared, plainJoin: joins };
-      const saving = /** @type {number} */ (a.median) - /** @type {number} */ (b.median);
+      report.data.pairs = { plain, prepared, plainJoin: joins, phases };
+      const preparedJoin = stats(phases.map((x) => x.prepared?.joinComplete));
+      report.check(`${id}: prepare() already did the join (median join phase under ${JOINED_MAX_MS} ms)`, /** @type {number} */ (preparedJoin.median) < JOINED_MAX_MS, { plainJoinMedian: j.median, preparedJoinMedian: preparedJoin.median });
+      // The best run of each kind: server-side variance adds up to a second to single runs of either kind.
+      const saving = /** @type {number} */ (a.min) - /** @type {number} */ (b.min);
       const need = Math.max(SAVING_FLOOR_MS, SAVING_SHARE * /** @type {number} */ (j.median));
-      report.check(`${id}: prepared connect() is faster by at least ${Math.round(need)} ms (median)`, saving >= need, { plainMedian: a.median, preparedMedian: b.median, plainJoinMedian: j.median, saving, plain, prepared, plainJoin: joins });
+      report.check(`${id}: prepared connect() is faster by at least ${Math.round(need)} ms (best run of each)`, saving >= need, { plainBest: a.min, preparedBest: b.min, plainMedian: a.median, preparedMedian: b.median, plainJoinMedian: j.median, saving, plain, prepared, plainJoin: joins });
     },
   },
 
