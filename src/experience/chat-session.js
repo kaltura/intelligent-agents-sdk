@@ -440,7 +440,8 @@ export class KalturaChatSession extends Emitter {
    * ACK a `wait_for_response:true` client tool call — the exact peer of
    * `KalturaAvatarSession.respondToTool` (same `/assistant/tool_response`
    * POST, same KS auth, same graceful `{ok:false, reason:'unknown_or_stale'}`
-   * degradation, and `{ok:false, reason:'http_error', status}` on an HTTP 4xx/5xx;
+   * degradation, `{ok:false, reason:'http_error', status}` on an HTTP 4xx/5xx and
+   * `{ok:false, reason:'timeout'}` after 15 s with no answer;
    * see that method's doc for the full contract). Because chat
    * segments are parsed mid-stream, calling this from an `onToolCall` handler
    * unblocks the brain within the SAME turn.

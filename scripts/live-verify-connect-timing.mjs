@@ -504,7 +504,7 @@ try {
     }
   }
 } finally {
-  if (browser) await browser.close();
+  if (browser) await browser.close().catch(() => {});
   for (const a of arms) a.server?.close();
   for (const a of arms) {
     if (a.agent.reused && OPENING) await kaltura.intellectConfig.setOpeningPhrase(a.agent.configId, SILENT_OPENING, admin.ks).catch((e) => console.warn(`reset opening phrase failed: ${e?.message || e}`));

@@ -32,14 +32,13 @@
  * signaling server", not "video is visible"; don't use it to hide a loading
  * UI. Use 'mediaReady' (below) or 'videoMetadata' instead.
  *
- * 'mediaReady' fires exactly once per connect, unconditionally — unlike
- * 'videoMetadata', it does NOT require `videoEl` and does NOT wait
- * indefinitely on the decoder: `{mode:'video', videoWidth, videoHeight}` once
- * the STV media is playable, using 'videoMetadata's dimensions if they
- * resolved in time or `0` if they didn't (headless, or a decoder that never
- * fires `loadedmetadata`) — or `{mode:'audio'}` immediately when the session
- * falls back to audio-only (no STV capacity). This is the event to gate a
- * loading UI on.
+ * 'mediaReady' fires exactly once per connect, unconditionally, and does
+ * NOT require `videoEl`. Its shapes: `{mode:'video', videoWidth, videoHeight}`
+ * when the first video frame is painted (`0` for both without a `videoEl`),
+ * `{mode:'video', videoWidth:0, videoHeight:0, degraded:true}` when no frame
+ * arrived within `timeouts.firstFrame` (with warning 'media_no_video'), or
+ * `{mode:'audio'}` when the session falls back to audio-only (no STV
+ * capacity). This is the event to gate a loading UI on.
  *
  * Does NOT police `token`'s entitlement scope — a real KS's privileges are
  * AES-encrypted with the partner secret and unreadable client-side (see
@@ -2312,11 +2311,13 @@ export class KalturaAvatarSession extends Emitter {
    *
    * `{ok:true}` means the POST returned a 2xx status. An HTTP 4xx/5xx response returns
    * `{ok:false, reason:'http_error', status}` and keeps the call pending, so you can retry with the same id.
+   * A POST with no answer in 15 s returns `{ok:false, reason:'timeout'}` and also keeps the call pending.
    * @param {string} id `call.toolMetadata.id` from the tool call being acknowledged.
    * @param {object} response JSON-serializable result the brain should see (must be a plain object).
    * @returns {Promise<{ok:boolean, reason?:string, status?:number}>} `reason` is `'unknown_or_stale'` (no pending
    *   ACK for `id`, or it is older than 10 minutes), `'session_rebuilt'`
-   *   (a cold reconnect landed while the POST was in flight) or `'http_error'` (with the HTTP `status`).
+   *   (a cold reconnect landed while the POST was in flight), `'http_error'` (with the HTTP `status`) or
+   *   `'timeout'` (no answer in 15 s).
    * @throws {KalturaError} `invalid_state` when the session is not connected; `bad_request`
    *   for an empty `id` or a `response` that is not a plain object.
    * @example

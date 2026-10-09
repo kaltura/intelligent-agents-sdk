@@ -48,7 +48,8 @@ test('every fetch call in src/ has a deadline or an allowlisted reason', () => {
       const t = line.trim();
       if (t.startsWith('//') || t.startsWith('*') || t.startsWith('/*')) return;
       if (/\b(whepPost|fetchWithTimeout)\(/.test(line)) return;
-      if (/\bsignal\b/.test(callText(lines, i))) return;
+      // `signal` must be an option of the call (`signal:`, `signal,` or `signal }`), not a word in a comment.
+      if (/\bsignal\s*[:,}]/.test(callText(lines, i).replace(/\/\/.*$/gm, ''))) return;
       if (ALLOWED[rel]) { bare[rel] = (bare[rel] ?? 0) + 1; return; }
       offenders.push(`${rel}:${i + 1}: ${t}`);
     });
