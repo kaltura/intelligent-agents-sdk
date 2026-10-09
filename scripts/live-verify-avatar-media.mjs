@@ -107,7 +107,7 @@ async function runMode(context, port, mode) {
   const pageErrors = [];
   const consoleLog = [];
   const page = await context.newPage();
-  page.on('console', (msg) => { consoleLog.push(`[${msg.type()}] ${msg.text()}`); if (msg.type() === 'error') pageErrors.push(msg.text()); });
+  page.on('console', (msg) => { consoleLog.push(`[${msg.type()}] ${msg.text()}`); if (msg.type() === 'error') pageErrors.push(`${msg.text()} ${msg.location().url ?? ''}`.trim()); });
   page.on('pageerror', (err) => pageErrors.push(String(err)));
   await page.addInitScript(() => {
     window.__pcs = [];
@@ -223,7 +223,7 @@ try {
   const init = await kaltura.application.appInit(widget.ks);
   record('app-init', true, { conversationManagerUrl: init.conversationManagerUrl, srsBaseUrl: init.srsBaseUrl });
 
-  server = await startServer(init);
+  server = await startServer({ ...init, genieUrl: target.genieUrl });
   const port = server.address().port;
 
   browser = await engine.launch(LAUNCH[engineName]);

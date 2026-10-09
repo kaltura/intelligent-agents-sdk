@@ -144,6 +144,8 @@ jobs:
       agents: ${{ steps.filter.outputs.agents }}
       browser: ${{ steps.filter.outputs.browser }}
       kickoff: ${{ steps.filter.outputs.kickoff }}
+      startup-faults: ${{ steps.filter.outputs.startup-faults }}
+      prepare: ${{ steps.filter.outputs.prepare }}
       opening-phrase: ${{ steps.filter.outputs.opening-phrase }}
       avatar-media: ${{ steps.filter.outputs.avatar-media }}
       set-forced-language: ${{ steps.filter.outputs.set-forced-language }}
@@ -368,6 +370,38 @@ jobs:
               - 'package.json'
               - 'package-lock.json'
               - '.github/workflows/live-verify.yml'
+            startup-faults:
+              - 'scripts/live-verify-startup-faults.mjs'
+              - 'scripts/live-verify-kickoff.html'
+              - 'scripts/live-verify-kickoff-shared.mjs'
+              - 'scripts/live-verify-hooks-shared.mjs'
+              - 'scripts/lib/target.mjs'
+              - 'src/experience/**'
+              - 'src/management/client.js'
+              - 'src/core/http.js'
+              - 'src/core/errors.js'
+              - 'src/core/session.js'
+              - 'src/core/ids.js'
+              - 'src/core/redact.js'
+              - 'package.json'
+              - 'package-lock.json'
+              - '.github/workflows/live-verify.yml'
+            prepare:
+              - 'scripts/live-verify-prepare.mjs'
+              - 'scripts/live-verify-kickoff.html'
+              - 'scripts/live-verify-kickoff-shared.mjs'
+              - 'scripts/live-verify-hooks-shared.mjs'
+              - 'scripts/lib/target.mjs'
+              - 'src/experience/**'
+              - 'src/management/client.js'
+              - 'src/core/http.js'
+              - 'src/core/errors.js'
+              - 'src/core/session.js'
+              - 'src/core/ids.js'
+              - 'src/core/redact.js'
+              - 'package.json'
+              - 'package-lock.json'
+              - '.github/workflows/live-verify.yml'
             opening-phrase:
               - 'scripts/live-verify-opening-phrase.mjs'
               - 'scripts/live-verify-hooks-shared.mjs'
@@ -473,8 +507,8 @@ jobs:
           api=false
           any smoke conversation-surface threads-messages-feedback request-vars site-nav session-types capabilities agents avatars catalog intellects-conversations knowledge skills tools mcp && api=true
           engines=()
-          any browser avatar-media session-complete opening-phrase kickoff set-forced-language context-fields && engines+=(chromium)
-          any browser avatar-media session-complete && engines+=(firefox)
+          any browser avatar-media session-complete opening-phrase kickoff startup-faults prepare set-forced-language context-fields && engines+=(chromium)
+          any browser avatar-media session-complete startup-faults && engines+=(firefox)
           any session-complete && engines+=(webkit)
           browser=false
           [ "${#engines[@]}" -gt 0 ] && browser=true
@@ -1027,6 +1061,30 @@ jobs:
         run: |
           set -o pipefail
           node scripts/live-verify-connect-timing.mjs --env prod --compare jinja --runs 9 2>&1 | tee live-verify-connect-timing-output.log
+
+      # Delay the first WHEP POST by 7 s in the browser → connect() still resolves with real video dimensions (the first-frame cap starts at the answer) → cleanup
+      - name: Session · Startup faults (${{ matrix.engine }})
+        id: live_verify_startup_faults
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' && (needs.changes.outputs.all == 'true' || needs.changes.outputs['startup-faults'] == 'true') && matrix.engine != 'webkit' }}
+        timeout-minutes: 15
+        env:
+          AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
+          AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
+        run: |
+          set -o pipefail
+          node scripts/live-verify-startup-faults.mjs --env prod --browser ${{ matrix.engine }} 2>&1 | tee live-verify-startup-faults-output.log
+
+      # prepare() joins ahead of connect() → connect() reuses the socket and is faster → an unused prepared socket expires with a warning → cleanup
+      - name: Session · prepare()
+        id: live_verify_prepare
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' && (needs.changes.outputs.all == 'true' || needs.changes.outputs['prepare'] == 'true') && matrix.engine == 'chromium' }}
+        timeout-minutes: 15
+        env:
+          AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
+          AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
+        run: |
+          set -o pipefail
+          node scripts/live-verify-prepare.mjs --env prod 2>&1 | tee live-verify-prepare-output.log
 
       # Provision a silent-opening agent → run the kickoff scenario matrix → cleanup
       - name: Session · Kickoff scenarios

@@ -25,6 +25,7 @@
     const session = new KalturaAvatarSession({
       token: init.ks, conversationManagerUrl: init.conversationManagerUrl,
       srsBaseUrl: init.srsBaseUrl, turnServerUrl: init.turnServerUrl,
+      genieUrl: init.genieUrl,
       videoEl, audioEl: mode === 'split' ? audioEl : null,
       socketFactory: (url, opts) => io(url, opts),
     });

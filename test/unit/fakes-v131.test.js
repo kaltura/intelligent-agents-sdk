@@ -30,7 +30,7 @@ test('FakeRTCPeerConnection: setInboundVideo shapes the getStats report', async 
 });
 
 test('FakeVideoEl: fireFrame runs pending rVFC callbacks once and sets the size', () => {
-  const el = new FakeVideoEl();
+  const el = new FakeVideoEl({ rvfc: true });
   const seen = [];
   el.requestVideoFrameCallback((now, meta) => seen.push(meta));
   const cancelled = el.requestVideoFrameCallback(() => seen.push('cancelled'));
@@ -42,8 +42,8 @@ test('FakeVideoEl: fireFrame runs pending rVFC callbacks once and sets the size'
   assert.equal(seen.length, 1, 'callbacks are one-shot');
 });
 
-test('FakeVideoEl: rvfc:false leaves the API out', () => {
-  const el = new FakeVideoEl({ rvfc: false });
+test('FakeVideoEl: the frame callback API is opt-in', () => {
+  const el = new FakeVideoEl();
   assert.equal(el.requestVideoFrameCallback, undefined);
   assert.equal(el.cancelVideoFrameCallback, undefined);
 });
