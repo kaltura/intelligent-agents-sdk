@@ -174,7 +174,7 @@ await mgmt.lifecycle.listEvents('thread', ks);                     // { objectTy
 await mgmt.lifecycle.describeFields('thread', 'session_ended', ks); // { objectType, eventType, fields: [{ path, type, description }, ...] }
 ```
 
-**Dry-run a rule before a real event fires it**: `match(objectType, eventType, eventData, ks)`, where `eventData` is `{ object?, changed_keys? }` (not a bare `object` field). For `objectType:'thread'`, `object` needs `agent_id`, `thread_id`, and `user_id`, all strings. Omitting any one returns a 400:
+**Dry-run a rule before a real event fires it**: `match(objectType, eventType, eventData, ks)`, where `eventData` is `{ object?, changed_keys? }` (not a bare `object` field). For `objectType:'thread'`, `object` needs `agent_id`, `thread_id`, and `user_id`, all strings. Where `describeFields` lists `object.origin`, pass `origin: 0` (a number, standard) too. Omitting any required field returns a 400:
 
 ```js
 const { matchedRules } = await mgmt.lifecycle.match(

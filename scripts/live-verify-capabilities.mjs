@@ -128,9 +128,12 @@ try {
   const foundInList = list.some((r) => r.id === ruleId);
   record('lifecycle.list', foundInList, { count: list.length, foundInList });
 
+  // Some environments also require `object.origin` (0 = standard); send it when describeFields lists it.
+  const eventFields = (await kaltura.lifecycle.describeFields('thread', 'session_ended', admin)).fields;
+  const needsOrigin = eventFields.some((f) => f.path === 'object.origin');
   const matched = await kaltura.lifecycle.match(
     'thread', 'session_ended',
-    { object: { agent_id: `${runId}-agent`, thread_id: `${runId}-thread`, user_id: `${runId}-user` } },
+    { object: { agent_id: `${runId}-agent`, thread_id: `${runId}-thread`, user_id: `${runId}-user`, ...(needsOrigin ? { origin: 0 } : {}) } },
     admin,
   );
   const allRuleIds = (matched.matchedRules || []).flatMap((g) => g.rules.map((r) => r.id));
