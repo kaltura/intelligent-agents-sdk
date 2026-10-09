@@ -27,6 +27,7 @@ const TABLE = [
   ['secret_ref: tool configs the intellect does not use are ignored', base(), { tools: [{ id: 't9', config: { x: '{{secrets.API}}' } }] }, []],
   ['prompt_duplicate_key (lint finding, warn)', base({ prompts: [prompt('a'), prompt('b')] }), {}, ['prompt_duplicate_key']],
   ['prompt_renderer_skip (lint finding, warn)', base({ prompts: [prompt('')] }), {}, ['prompt_renderer_skip']],
+  ['client variable with allow_client_variables is not reported (the app supplies it at request time)', base({ allow_client_variables: true, prompts: [prompt('Page: {{page_context}}')] }), {}, []],
   ['capabilities_invalid', base({ capabilities: { not_a_capability: 'on' } }), {}, ['capabilities_invalid']],
   ['client_tools_not_ready: tools with no capabilities', base({ tool_ids: ['t1'] }), { tools: [{ id: 't1' }] }, ['client_tools_not_ready']],
   ['client_tools_not_ready: experiences not off', base({ tool_ids: ['t1'], capabilities: { kaltura_genie_experiences: 'on' } }), { tools: [{ id: 't1' }] }, ['client_tools_not_ready']],

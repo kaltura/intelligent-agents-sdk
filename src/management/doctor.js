@@ -1,5 +1,5 @@
 /**
- * Doctor — one read-only health check over a partner's agents. Runs the
+ * Doctor: one read-only health check over a partner's agents. Runs the
  * lifecycle audit, then the intellect audit for each agent's intellect, then
  * looks for insight settings and email templates that no rule uses. Reached
  * through `mgmt.doctor(ks, opts)`.

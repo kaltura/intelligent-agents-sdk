@@ -840,8 +840,9 @@ export function auditIntellectConfig(config, ctx = {}) {
   }
 
   if (Array.isArray(cfg.prompts)) {
-    for (const f of lintPrompts(cfg.prompts, { allowClientVariables: cfg.allow_client_variables === true }).findings) {
-      add(lintSeverity(f.severity), `prompt_${f.code}`, f.path ?? 'prompts', f.message, 'See lintPrompts for this finding code.');
+    // A saved intellect does not store which request variables the app will send, so an unknown variable is not a defect here.
+    for (const f of lintPrompts(cfg.prompts, { allowClientVariables: cfg.allow_client_variables === true }).findings.filter((x) => x.code !== 'unknown_variable')) {
+      add(lintSeverity(f.severity), `prompt_${f.code}`, f.path ?? 'prompts', f.message, 'Run lintPrompts on the prompts to see this finding in context.');
     }
   }
 

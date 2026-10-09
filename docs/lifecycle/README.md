@@ -205,7 +205,7 @@ const { matchedRules } = await mgmt.lifecycle.match(
 
 ## Audit your rules
 
-A rule can be valid when you save it and still do nothing later. An insight setting gets deleted, a template is removed, an agent is renamed. The backend never says so. `lifecycle.audit` reads your rules and what they point at, and lists the problems. It changes nothing.
+A rule can be valid when you save it and still do nothing later. An insight setting gets deleted, a template is removed, an agent is deleted. The backend never says so. `lifecycle.audit` reads your rules and what they point at, and lists the problems. It changes nothing.
 
 ```js
 const report = await mgmt.lifecycle.audit(ks, { agentIds: ['<agent-uuid>'] }); // agentIds is optional
