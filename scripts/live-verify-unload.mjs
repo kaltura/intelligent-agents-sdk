@@ -23,7 +23,7 @@
  */
 import {
   bootstrap, Report, mdTable, management, ensureAgent, verifyDeleted, mintPageInit, startServer,
-  browserChoice, launchBrowser, contextOptions, openHarness, sleep,
+  browserChoice, launchBrowser, warmFirefoxMedia, contextOptions, openHarness, sleep,
 } from './live-verify-kickoff-shared.mjs';
 import { callHook } from './live-verify-hooks-shared.mjs';
 import { whepResourceUrl } from '../src/experience/wire.js';
@@ -126,6 +126,8 @@ try {
   ({ server, origin } = await startServer(() => mintPageInit(kaltura, agent, target.genieUrl)));
   browser = await launchBrowser(choice);
   report.note('setup', SETUP);
+  const gmpMs = await warmFirefoxMedia(/** @type {import('playwright').Browser} */ (browser));
+  if (gmpMs) report.note('firefox-openh264-ready', `${gmpMs} ms`);
   for (const [id, sc] of Object.entries(SCENARIOS)) {
     if (ONLY && !ONLY.has(id)) continue;
     console.log(`\n== ${id}: ${sc.name}`);

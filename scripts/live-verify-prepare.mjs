@@ -20,7 +20,7 @@
  */
 import {
   bootstrap, Report, mdTable, management, ensureAgent, verifyDeleted, mintPageInit, startServer,
-  browserChoice, launchBrowser, contextOptions, openHarness, netProblems, waitFor, find, all, sleep, stats, events,
+  browserChoice, launchBrowser, warmFirefoxMedia, contextOptions, openHarness, netProblems, waitFor, find, all, sleep, stats, events,
 } from './live-verify-kickoff-shared.mjs';
 import { callHook } from './live-verify-hooks-shared.mjs';
 
@@ -45,6 +45,8 @@ const agent = await ensureAgent(kaltura, admin.ks, {
 report.note('agent', agent.reused ? 'reused --agent-json ids' : 'provisioned throwaway agent');
 const { server, origin } = await startServer(() => mintPageInit(kaltura, agent, target.genieUrl));
 const browser = await launchBrowser(choice);
+const gmpMs = await warmFirefoxMedia(browser);
+if (gmpMs) report.note('firefox-openh264-ready', `${gmpMs} ms`);
 report.note('setup', SETUP);
 
 /** @typedef {import('./live-verify-kickoff-shared.mjs').HarnessEvent} Ev */
