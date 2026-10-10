@@ -266,6 +266,36 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/jav
 const HARNESS_PATH = '/scripts/live-verify-kickoff.html';
 export const SOCKET_IO_CDN = 'https://cdn.socket.io/4.7.5/socket.io.min.js';
 
+/** @type {Promise<Buffer>|undefined} */ let socketIoBody;
+/** Fetch the socket.io client once per run, with retries. A CDN timeout then cannot fail a scenario. */
+function loadSocketIo() {
+  socketIoBody ??= (async () => {
+    let last;
+    for (let i = 0; i < 4; i++) {
+      try {
+        const res = await fetch(SOCKET_IO_CDN, { signal: AbortSignal.timeout(10_000) });
+        if (res.ok) return Buffer.from(await res.arrayBuffer());
+        last = new Error(`HTTP ${res.status}`);
+      } catch (err) { last = err; }
+      await new Promise((r) => setTimeout(r, 500 * (i + 1)));
+    }
+    throw last;
+  })().catch((err) => { socketIoBody = undefined; throw err; });
+  return socketIoBody;
+}
+
+/** @type {WeakSet<import('playwright').BrowserContext>} */ const socketIoRouted = new WeakSet();
+/** Serve the socket.io client from the Node side so the page never waits on the CDN. The page's own integrity check still applies. @param {import('playwright').BrowserContext} context */
+async function routeSocketIo(context) {
+  if (socketIoRouted.has(context)) return;
+  socketIoRouted.add(context);
+  await context.route(SOCKET_IO_CDN, async (route) => {
+    try {
+      await route.fulfill({ status: 200, contentType: 'text/javascript', headers: { 'access-control-allow-origin': '*' }, body: await loadSocketIo() });
+    } catch { await route.continue().catch(() => {}); }
+  });
+}
+
 /** @typedef {{rel: string, href: string, as?: string, crossorigin?: string}} ResourceHint */
 
 /**
@@ -474,6 +504,7 @@ export function contextOptions(extra = {}) {
  * @param {{pageErrors?: string[], pages?: import('playwright').Page[], network?: NetRecord[]}} [sink]
  */
 export async function openHarness(context, origin, params, sink) {
+  await routeSocketIo(context);
   const page = await context.newPage();
   sink?.pages?.push(page);
   page.on('pageerror', (e) => sink?.pageErrors?.push(redact(String(e?.message || e))));
