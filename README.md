@@ -261,7 +261,7 @@ await session.connect();
 session.speak('Tell me about onboarding.');
 ```
 
-**Attach every listener before `connect()`.** Some events fire before `connect()` resolves: `streamReady`, `capacityChanged`, `mediaReady`, `connectTimings`, `disclosure`, and a `warning` (an early mic warning, or `media_no_video`). `KalturaAgentSession` also emits `transportChanged` before its `connect()` resolves and `modeChanged` before `switchMode()` resolves. A listener added after the `await` misses them, so call `.on(...)` first on every session class.
+**Attach every listener before `connect()`.** Some events fire before `connect()` resolves: `streamReady`, `capacityChanged`, `mediaReady`, `connectTimings`, `disclosure`, and a `warning` (an early mic warning, or `media_no_video`). `KalturaAgentSession` also emits `transportChanged` before its `connect()` resolves and `modeChanged` before `switchMode()` resolves. A listener added after the `await` misses them, so call `.on(...)` first. On a `KalturaAgentSession`, `mediaReady`, `connectTimings`, `mediaRecovering` and `mediaRecovered` are forwarded, but `streamReady`, `capacityChanged` and `disclosure` stay on the transport: listen for them on `session.transport` inside a `transportChanged` handler.
 
 **How `speak(text)` works:** it injects `text` into the conversation on the same path as the viewer's own voice transcript — the brain treats it as a new turn and replies in its own words, not a verbatim echo of `text`. Need exact scripted playback instead? See [docs/api/scripted-video.md](docs/api/scripted-video.md).
 
