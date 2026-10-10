@@ -69,6 +69,8 @@
     "live-verify:kickoff": "node scripts/live-verify-kickoff.mjs",
     "live-verify:opening-phrase": "node scripts/live-verify-opening-phrase.mjs",
     "live-verify:startup-faults": "node scripts/live-verify-startup-faults.mjs",
+    "live-verify:reconnect": "node scripts/live-verify-reconnect.mjs",
+    "live-verify:unload": "node scripts/live-verify-unload.mjs",
     "live-verify:prepare": "node scripts/live-verify-prepare.mjs",
     "live-verify:connect-timing": "node scripts/live-verify-connect-timing.mjs",
     "live-verify:matrix": "node scripts/live-verify-matrix.mjs",

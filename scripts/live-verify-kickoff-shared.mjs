@@ -19,6 +19,9 @@ import { createServer } from 'node:http';
 import { chromium, firefox, webkit } from 'playwright';
 import { Management, SILENT_OPENING, SILENT_OPENING_LABEL } from '../src/management/index.js';
 import { loadEnvFile, resolveTarget } from './lib/target.mjs';
+import { redact } from './lib/redact.mjs';
+
+export { redact };
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 export const repoRoot = resolve(__dirname, '..');
@@ -95,13 +98,13 @@ export class Report {
   /** @param {string} name @param {boolean} ok @param {any} [detail] */
   check(name, ok, detail) {
     this.checks.push({ name, ok: !!ok, detail, at: new Date().toISOString() });
-    console.log(`[${ok ? 'ok' : 'FAIL'}] ${name}${detail !== undefined ? ` — ${JSON.stringify(detail)}` : ''}`);
+    console.log(redact(`[${ok ? 'ok' : 'FAIL'}] ${name}${detail !== undefined ? ` — ${JSON.stringify(detail)}` : ''}`));
     return !!ok;
   }
   /** @param {string} name @param {any} [detail] */
   note(name, detail) {
     this.checks.push({ name, ok: true, detail, at: new Date().toISOString() });
-    console.log(`[note] ${name}${detail !== undefined ? ` — ${JSON.stringify(detail)}` : ''}`);
+    console.log(redact(`[note] ${name}${detail !== undefined ? ` — ${JSON.stringify(detail)}` : ''}`));
   }
   get failed() { return this.checks.some((c) => !c.ok); }
   /**
@@ -113,8 +116,8 @@ export class Report {
     this.meta.ok = !this.failed;
     const json = resolve(outDir, `${this.meta.runId}.json`);
     const md = resolve(outDir, `${this.meta.runId}.md`);
-    writeFileSync(json, JSON.stringify({ ...this.meta, checks: this.checks, data: this.data }, null, 2));
-    writeFileSync(md, markdown);
+    writeFileSync(json, redact(JSON.stringify({ ...this.meta, checks: this.checks, data: this.data }, null, 2)));
+    writeFileSync(md, redact(markdown));
     console.log(`\nartifacts: ${json}\n           ${md}`);
   }
 }
@@ -262,6 +265,36 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/jav
 
 const HARNESS_PATH = '/scripts/live-verify-kickoff.html';
 export const SOCKET_IO_CDN = 'https://cdn.socket.io/4.7.5/socket.io.min.js';
+
+/** @type {Promise<Buffer>|undefined} */ let socketIoBody;
+/** Fetch the socket.io client once per run, with retries. A CDN timeout then cannot fail a scenario. */
+function loadSocketIo() {
+  socketIoBody ??= (async () => {
+    let last;
+    for (let i = 0; i < 4; i++) {
+      try {
+        const res = await fetch(SOCKET_IO_CDN, { signal: AbortSignal.timeout(10_000) });
+        if (res.ok) return Buffer.from(await res.arrayBuffer());
+        last = new Error(`HTTP ${res.status}`);
+      } catch (err) { last = err; }
+      await new Promise((r) => setTimeout(r, 500 * (i + 1)));
+    }
+    throw last;
+  })().catch((err) => { socketIoBody = undefined; throw err; });
+  return socketIoBody;
+}
+
+/** @type {WeakSet<import('playwright').BrowserContext>} */ const socketIoRouted = new WeakSet();
+/** Serve the socket.io client from the Node side so the page never waits on the CDN. The page's own integrity check still applies. @param {import('playwright').BrowserContext} context */
+async function routeSocketIo(context) {
+  if (socketIoRouted.has(context)) return;
+  socketIoRouted.add(context);
+  await context.route(SOCKET_IO_CDN, async (route) => {
+    try {
+      await route.fulfill({ status: 200, contentType: 'text/javascript', headers: { 'access-control-allow-origin': '*' }, body: await loadSocketIo() });
+    } catch { await route.continue().catch(() => {}); }
+  });
+}
 
 /** @typedef {{rel: string, href: string, as?: string, crossorigin?: string}} ResourceHint */
 
@@ -453,17 +486,6 @@ export function contextOptions(extra = {}) {
   return { ...(chromiumLike ? { permissions: ['microphone'] } : {}), ...extra };
 }
 
-/**
- * Strip anything that must not land in an artifact: KS tokens and URL query
- * strings (the socket URL carries the partner id as a query parameter).
- * @param {string} text
- */
-export function redact(text) {
-  return text
-    .replace(/djJ8[A-Za-z0-9_=+/-]+/g, '<KS>')
-    .replace(/((?:https?|wss?):\/\/[^\s"'?]+)\?[^\s"']*/g, '$1?<query>');
-}
-
 /** @typedef {{t:number, kind:'request'|'response'|'failed', method:string, url:string, status?:number, error?:string, resourceType:string}} NetRecord */
 
 /**
@@ -482,6 +504,7 @@ export function redact(text) {
  * @param {{pageErrors?: string[], pages?: import('playwright').Page[], network?: NetRecord[]}} [sink]
  */
 export async function openHarness(context, origin, params, sink) {
+  await routeSocketIo(context);
   const page = await context.newPage();
   sink?.pages?.push(page);
   page.on('pageerror', (e) => sink?.pageErrors?.push(redact(String(e?.message || e))));
@@ -537,7 +560,7 @@ export function netProblems(net) {
   for (const r of dropAbortedAfterResponse(net)) {
     if (r.kind === 'request') continue;
     if (r.kind === 'response' && (r.status ?? 0) < 400) continue;
-    out.push(`${r.method} ${r.url.replace(/^https?:\/\//, '')} → ${r.kind === 'failed' ? `FAILED ${r.error}` : r.status}`);
+    out.push(`${r.method} ${redact(r.url.replace(/^https?:\/\//, ''))} → ${r.kind === 'failed' ? `FAILED ${r.error}` : r.status}`);
   }
   return out;
 }
@@ -601,3 +624,33 @@ export function textsSent(evs) {
 
 /** @param {number} ms */
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// ---------------------------------------------------------------------------
+// Client-side WHEP fault injection (shared by the fault scripts)
+// ---------------------------------------------------------------------------
+
+/** A WHEP POST is the only cross-origin HTTP request whose body is an SDP offer. */
+const isWhepPost = (/** @type {import('playwright').Request} */ r) => r.method() === 'POST' && (r.postData() || '').startsWith('v=0');
+const CORS = { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': '*', 'access-control-expose-headers': '*' };
+
+/**
+ * Route every cross-origin request, handing each WHEP POST to `onPost(n, route)` (n counts from 1).
+ * `onPost` returns true when it handled the route. Everything else passes through.
+ * @param {import('playwright').BrowserContext} context
+ * @param {string} origin
+ * @param {(n: number, route: import('playwright').Route) => Promise<boolean|void>} onPost
+ */
+export async function routeWhep(context, origin, onPost) {
+  let posts = 0;
+  await context.route((url) => url.origin !== origin, async (route) => {
+    if (isWhepPost(route.request()) && (await onPost(++posts, route))) return;
+    await route.continue().catch(() => {});
+  });
+  return { posts: () => posts };
+}
+
+/** Answer a WHEP POST with an empty body and `status`, with the CORS headers a browser needs to read it. */
+export const fulfillStatus = (/** @type {import('playwright').Route} */ route, /** @type {number} */ status) => route.fulfill({ status, headers: CORS, body: '' }).catch(() => {});
+
+/** Count of socket frames the page sent with this event name. @param {HarnessEvent[]} evs @param {string} name */
+export const sent = (evs, name) => all(evs, 'socket:out', (d) => d?.ev === name).length;

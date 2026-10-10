@@ -287,12 +287,14 @@ test('resume() after a server release frees the subscription the paused session 
 // ─────────────────────────── avatar media across recovery (plan §5.5.9) ───────────────────────────
 
 /** WHEP fetch whose Nth POST (1-based) fails with `status`; every other POST succeeds; DELETE always ok. */
-function whepFailingAt(n, status = 404) {
+// Fails POST number `n` and the `count - 1` after it. A 404 or 409 makes the SDK re-create the STV session
+// and POST once more, so a failure that must reach the cold reconnect has to outlast that second POST.
+function whepFailingAt(n, status = 404, count = 2) {
   let posts = 0;
   return async (url, init) => {
     if (init?.method === 'DELETE') return { ok: true, status: 200, text: async () => '', headers: { get: () => null } };
     posts++;
-    if (posts === n) return { ok: false, status, text: async () => 'gone', headers: { get: () => null } };
+    if (posts >= n && posts < n + count) return { ok: false, status, text: async () => 'gone', headers: { get: () => null } };
     return { ok: true, status: 201, text: async () => 'v=0\r\nanswer\r\n', headers: { get: () => 'https://srs/whep/r/' + posts } };
   };
 }
@@ -323,7 +325,7 @@ test('R-q: re-subscribe fails (WHEP 404) → cold reconnect; the element is neve
   // so the app's element keeps its srcObject and never re-plays.
   const videoEl = new FakeVideoEl({ autoCanPlay: true });
   const { session, socket } = newSession({ videoEl, fetch: whepFailingAt(2) });
-  scriptHappyPath(socket);
+  scriptHappyPath(socket, { resumingOnRecreate: false });   // a 404 re-creates the STV session on the live socket
   await session.connect();
   session.muteAudioOutput(); session.setAudioOutputVolume(0.4);
   assert.equal(await session.setAudioOutput('spk-7'), true);
@@ -421,7 +423,7 @@ test('pause → server release → resume() whose rebuild fails: session ends wi
   const fetch = async (url, init) => {
     if (init?.method === 'DELETE') return { ok: true, status: 200 };
     whepPosts++;
-    if (whepPosts === 2) return { ok: false, status: 404, text: async () => 'gone', headers: { get: () => null } };
+    if (whepPosts === 2 || whepPosts === 3) return { ok: false, status: 404, text: async () => 'gone', headers: { get: () => null } };
     return { ok: true, status: 201, text: async () => 'v=0\r\nanswer\r\n', headers: { get: () => 'https://srs/whep/r/' + whepPosts } };
   };
   const { session, socket } = newSession({ fetch });
@@ -436,9 +438,9 @@ test('pause → server release → resume() whose rebuild fails: session ends wi
   session.on('ended', (p) => events.push(['ended', p.reason]));
 
   scriptHappyPath(socket);   // the rebuild asks for a fresh stvNewSession; its WHEP POST then 404s
-  await assert.rejects(() => session.resume(), (e) => e.code === 'whep_failed');
+  await assert.rejects(() => session.resume(), (e) => e.code === 'stv_session_gone');
   assert.equal(session.state, 'disconnected');
-  assert.deepEqual(events, [['error', 'whep_failed'], ['ended', 'resume_failed']]);
+  assert.deepEqual(events, [['error', 'stv_session_gone'], ['ended', 'resume_failed']]);
   assert.equal(socket.emitsOf('approvedPermissions').length, approvesBefore, 'a failed rebuild never approves');
   assert.equal(session._pcStv, null);
   assert.equal(session._pcAsr, null);
@@ -458,7 +460,7 @@ test('STV: WHEP 404 on re-subscribe (session truly gone) → cold reconnect with
     return { ok: false, status: 404, text: async () => 'gone' };
   };
   const { session, socket } = newSession({ fetch });
-  scriptHappyPath(socket);
+  scriptHappyPath(socket, { resumingOnRecreate: false });   // a 404 re-creates the STV session on the live socket
   await session.connect();
   const ev = [];
   ['reconnecting', 'reconnected'].forEach((e) => session.on(e, (p) => ev.push([e, p])));
@@ -485,11 +487,11 @@ test('_coldReconnect() while paused holds the approve and clears _sessionRelease
   const fetch = async (url, init) => {
     if (init?.method === 'DELETE') return { ok: true, status: 200, text: async () => '', headers: { get: () => null } };
     whepPosts++;
-    if (whepPosts === 2) return { ok: false, status: 404, text: async () => 'gone' };   // the re-subscribe that's "gone"
+    if (whepPosts === 2 || whepPosts === 3) return { ok: false, status: 404, text: async () => 'gone' };   // the re-subscribe that's "gone", and the retry on the re-created session
     return { ok: true, status: 201, text: async () => 'v=0\r\nanswer\r\n', headers: { get: () => 'https://srs/whep/r/' + whepPosts } };
   };
   const { session, socket } = newSession({ fetch });
-  scriptHappyPath(socket);
+  scriptHappyPath(socket, { resumingOnRecreate: false });   // a 404 re-creates the STV session on the live socket
   await session.connect();
 
   // Enter the exact pre-condition: paused, with the server having already released the

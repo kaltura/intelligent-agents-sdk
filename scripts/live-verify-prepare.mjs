@@ -5,7 +5,7 @@
  * | id | scenario                                   | asserts |
  * |----|--------------------------------------------|---------|
  * | R1 | prepare(), then connect()                  | prepare() resolves with the state still `idle`, one `join` on the wire, no avatar session requested yet. connect() reuses the socket: still one `join`, and it connects |
- * | R2 | prepared vs plain connect(), alternating   | the median connect() with a prepared socket is faster than the plain one by at least MIN_SAVING_MS |
+ * | R2 | prepared vs plain connect(), alternating   | the prepared connect() has no join phase left (`connectTimings.joinComplete` under 100 ms at the median), and its best run beats the plain best run by at least half of the plain run's own socket + join time, and by 100 ms or more |
  * | R3 | prepare(), idle past `timeouts.prepareIdle` | warning `prepare_expired`, state stays `idle`, and a later connect() still works on a fresh socket |
  *
  * Usage
@@ -30,7 +30,9 @@ const RUNS = Math.max(1, Number(typeof args.runs === 'string' ? args.runs : 3) |
 const choice = browserChoice(args);
 const HEADED = choice.headed || choice.browser === 'chrome';
 const SETUP = `${choice.browser} ${HEADED ? 'headed' : 'headless'}`;
-const MIN_SAVING_MS = 400;   // socket + join cost; measured ~520 ms on prod
+const SAVING_SHARE = 0.5;   // prepare() must save at least this share of the plain run's own socket + join time
+const SAVING_FLOOR_MS = 100;
+const JOINED_MAX_MS = 100;
 const IDLE_MS = 3000;
 
 const report = new Report({ runId, target: target.name });
@@ -43,29 +45,41 @@ const agent = await ensureAgent(kaltura, admin.ks, {
   keep: !!args.keep,
 });
 report.note('agent', agent.reused ? 'reused --agent-json ids' : 'provisioned throwaway agent');
-const { server, origin } = await startServer(() => mintPageInit(kaltura, agent, target.genieUrl));
-const browser = await launchBrowser(choice);
-const gmpMs = await warmFirefoxMedia(browser);
-if (gmpMs) report.note('firefox-openh264-ready', `${gmpMs} ms`);
-report.note('setup', SETUP);
+/** @type {import('node:http').Server | undefined} */ let server;
+let origin = '';
+/** @type {import('playwright').Browser | undefined} */ let browser;
 
 /** @typedef {import('./live-verify-kickoff-shared.mjs').HarnessEvent} Ev */
 const joins = (/** @type {Ev[]} */ evs) => all(evs, 'socket:out', (d) => d?.ev === 'join').length;
 const sent = (/** @type {Ev[]} */ evs, /** @type {string} */ name) => all(evs, 'socket:out', (d) => d?.ev === name).length;
 
-/** Time connect() takes in one fresh page, optionally after prepare(). */
+/** Server answers that say "try again" (the SDK marks them retryable). One pair run should not fail the script on one of them. */
+const TRANSIENT = new Set(['timeout', 'capacity_unavailable']);
+
+/** Time connect() takes in one fresh page, optionally after prepare(). `joinMs` is the socket + join time from the page's own timings. A transient server answer is retried in a fresh page, up to 3 tries. */
 async function timedConnect(/** @type {import('playwright').BrowserContext} */ context, /** @type {any} */ sink, /** @type {boolean} */ prepared) {
-  const page = await openHarness(context, origin, { mode: 'avatar' }, sink);
-  if (prepared) {
-    const p = await callHook(page, 'testPrepare');
-    if (!p.ok) throw new Error(`prepare failed: ${p.code} ${p.message}`);
+  for (let attempt = 1; ; attempt++) {
+    const page = await openHarness(context, origin, { mode: 'avatar' }, sink);
+    /** @param {string} what @param {{code?: string, message?: string}} r */
+    const failed = async (what, r) => {
+      await callHook(page, 'testDisconnect').catch(() => {});
+      if (attempt < 3 && TRANSIENT.has(String(r.code))) { report.note(`${what} gave ${r.code} on try ${attempt}, trying again`, String(r.message).slice(0, 120)); return true; }
+      throw new Error(`${what} failed: ${r.code} ${r.message}`);
+    };
+    if (prepared) {
+      const p = await callHook(page, 'testPrepare');
+      if (!p.ok) { await failed('prepare', p); continue; }
+    }
+    const t0 = Date.now();
+    const c = await callHook(page, 'testConnect');
+    const ms = Date.now() - t0;
+    if (!c.ok) { await failed('connect', c); continue; }
+    const { events: evs } = await waitFor(page, (e) => find(e, 'connectTimings'), 5000, 'connectTimings');
+    const timings = find(evs, 'connectTimings')?.detail;
+    const joinMs = timings?.joinComplete;
+    await callHook(page, 'testDisconnect').catch(() => {});
+    return { ms, joinMs, timings };
   }
-  const t0 = Date.now();
-  const c = await callHook(page, 'testConnect');
-  const ms = Date.now() - t0;
-  if (!c.ok) throw new Error(`connect failed: ${c.code} ${c.message}`);
-  await callHook(page, 'testDisconnect').catch(() => {});
-  return ms;
 }
 
 const SCENARIOS = {
@@ -95,15 +109,22 @@ const SCENARIOS = {
     name: `prepared vs plain connect(), ${RUNS} alternating pairs`,
     /** @param {{context: import('playwright').BrowserContext, sink: any, id: string}} c */
     async run({ context, sink, id }) {
-      /** @type {number[]} */ const plain = []; /** @type {number[]} */ const prepared = [];
+      /** @type {number[]} */ const plain = []; /** @type {number[]} */ const prepared = []; /** @type {number[]} */ const joins = []; /** @type {any[]} */ const phases = [];
       for (let i = 0; i < RUNS; i++) {
-        plain.push(await timedConnect(context, sink, false));
-        prepared.push(await timedConnect(context, sink, true));
+        const p = await timedConnect(context, sink, false);
+        plain.push(p.ms); joins.push(p.joinMs);
+        const q = await timedConnect(context, sink, true);
+        prepared.push(q.ms);
+        phases.push({ plain: p.timings, prepared: q.timings });
       }
-      const a = stats(plain), b = stats(prepared);
-      report.data.pairs = { plain, prepared };
-      const saving = /** @type {number} */ (a.median) - /** @type {number} */ (b.median);
-      report.check(`${id}: prepared connect() is at least ${MIN_SAVING_MS} ms faster (median)`, saving >= MIN_SAVING_MS, { plainMedian: a.median, preparedMedian: b.median, saving, plain, prepared });
+      const a = stats(plain), b = stats(prepared), j = stats(joins);
+      report.data.pairs = { plain, prepared, plainJoin: joins, phases };
+      const preparedJoin = stats(phases.map((x) => x.prepared?.joinComplete));
+      report.check(`${id}: prepare() already did the join (median join phase under ${JOINED_MAX_MS} ms)`, /** @type {number} */ (preparedJoin.median) < JOINED_MAX_MS, { plainJoinMedian: j.median, preparedJoinMedian: preparedJoin.median });
+      // The best run of each kind: server-side variance adds up to a second to single runs of either kind.
+      const saving = /** @type {number} */ (a.min) - /** @type {number} */ (b.min);
+      const need = Math.max(SAVING_FLOOR_MS, SAVING_SHARE * /** @type {number} */ (j.median));
+      report.check(`${id}: prepared connect() is faster by at least ${Math.round(need)} ms (best run of each)`, saving >= need, { plainBest: a.min, preparedBest: b.min, plainMedian: a.median, preparedMedian: b.median, plainJoinMedian: j.median, saving, plain, prepared, plainJoin: joins });
     },
   },
 
@@ -130,12 +151,17 @@ const SCENARIOS = {
 };
 
 try {
+  ({ server, origin } = await startServer(() => mintPageInit(kaltura, agent, target.genieUrl)));
+  browser = await launchBrowser(choice);
+  report.note('setup', SETUP);
+  const gmpMs = await warmFirefoxMedia(browser);
+  if (gmpMs) report.note('firefox-openh264-ready', `${gmpMs} ms`);
   for (const [id, sc] of Object.entries(SCENARIOS)) {
     if (ONLY && !ONLY.has(id)) continue;
     console.log(`\n== ${id}: ${sc.name}`);
     const t0 = Date.now();
     const sink = { pageErrors: /** @type {string[]} */ ([]), pages: [], network: /** @type {any[]} */ ([]) };
-    const context = await browser.newContext(contextOptions());
+    const context = await /** @type {import('playwright').Browser} */ (browser).newContext(contextOptions());
     const before = report.checks.length;
     let error = null;
     try {
@@ -144,16 +170,16 @@ try {
       error = String(/** @type {any} */ (err)?.message || err);
       report.check(`${id}: completed`, false, { error, pageErrors: sink.pageErrors.slice(0, 5) });
     } finally {
-      await sleep(300);
+      await sleep(300);   // late request events land before the problems are read
       const problems = netProblems(sink.network);
       if (problems.length) report.note(`${id}: HTTP requests that failed or returned 4xx/5xx`, problems.slice(0, 10));
       report.data.scenarios.push({ id, name: sc.name, ok: report.checks.slice(before).every((c) => c.ok), checks: report.checks.length - before, ms: Date.now() - t0, error });
-      await context.close();
+      await context.close().catch(() => {});
     }
   }
 } finally {
-  await browser.close();
-  server.close();
+  await browser?.close().catch(() => {});
+  server?.close();
   await agent.cleanup();
   if (!agent.reused && !args.keep) {
     const gone = await verifyDeleted(kaltura, admin.ks, agent);

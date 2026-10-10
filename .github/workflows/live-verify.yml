@@ -146,6 +146,8 @@ jobs:
       kickoff: ${{ steps.filter.outputs.kickoff }}
       startup-faults: ${{ steps.filter.outputs.startup-faults }}
       prepare: ${{ steps.filter.outputs.prepare }}
+      reconnect: ${{ steps.filter.outputs.reconnect }}
+      unload: ${{ steps.filter.outputs.unload }}
       opening-phrase: ${{ steps.filter.outputs.opening-phrase }}
       avatar-media: ${{ steps.filter.outputs.avatar-media }}
       set-forced-language: ${{ steps.filter.outputs.set-forced-language }}
@@ -178,6 +180,11 @@ jobs:
               - 'src/core/session.js'
               - 'src/core/ids.js'
               - 'src/core/redact.js'
+              - 'src/core/endpoints.js'
+              - 'src/core/kaltura-media.js'
+              - 'src/core/response-headers.js'
+              - 'src/core/safety.js'
+              - 'src/core/transport-guard.js'
               - '.github/workflows/live-verify.yml'
             capabilities:
               - 'scripts/live-verify-capabilities.mjs'
@@ -194,6 +201,11 @@ jobs:
               - 'src/core/session.js'
               - 'src/core/ids.js'
               - 'src/core/redact.js'
+              - 'src/core/endpoints.js'
+              - 'src/core/kaltura-media.js'
+              - 'src/core/response-headers.js'
+              - 'src/core/safety.js'
+              - 'src/core/transport-guard.js'
               - '.github/workflows/live-verify.yml'
             conversation-surface:
               - 'scripts/live-verify-conversation-avatar-surface.mjs'
@@ -206,6 +218,11 @@ jobs:
               - 'src/core/session.js'
               - 'src/core/ids.js'
               - 'src/core/redact.js'
+              - 'src/core/endpoints.js'
+              - 'src/core/kaltura-media.js'
+              - 'src/core/response-headers.js'
+              - 'src/core/safety.js'
+              - 'src/core/transport-guard.js'
               - '.github/workflows/live-verify.yml'
             request-vars:
               - 'scripts/live-verify-request-vars.mjs'
@@ -218,6 +235,11 @@ jobs:
               - 'src/core/session.js'
               - 'src/core/ids.js'
               - 'src/core/redact.js'
+              - 'src/core/endpoints.js'
+              - 'src/core/kaltura-media.js'
+              - 'src/core/response-headers.js'
+              - 'src/core/safety.js'
+              - 'src/core/transport-guard.js'
               - '.github/workflows/live-verify.yml'
             context-fields:
               - 'scripts/live-verify-context-fields.mjs'
@@ -234,6 +256,11 @@ jobs:
               - 'src/core/session.js'
               - 'src/core/ids.js'
               - 'src/core/redact.js'
+              - 'src/core/endpoints.js'
+              - 'src/core/kaltura-media.js'
+              - 'src/core/response-headers.js'
+              - 'src/core/safety.js'
+              - 'src/core/transport-guard.js'
               - 'package.json'
               - 'package-lock.json'
               - '.github/workflows/live-verify.yml'
@@ -248,6 +275,11 @@ jobs:
               - 'src/core/session.js'
               - 'src/core/ids.js'
               - 'src/core/redact.js'
+              - 'src/core/endpoints.js'
+              - 'src/core/kaltura-media.js'
+              - 'src/core/response-headers.js'
+              - 'src/core/safety.js'
+              - 'src/core/transport-guard.js'
               - '.github/workflows/live-verify.yml'
             threads-messages-feedback:
               - 'scripts/live-verify-threads-messages-feedback.mjs'
@@ -258,6 +290,11 @@ jobs:
               - 'src/core/session.js'
               - 'src/core/ids.js'
               - 'src/core/redact.js'
+              - 'src/core/endpoints.js'
+              - 'src/core/kaltura-media.js'
+              - 'src/core/response-headers.js'
+              - 'src/core/safety.js'
+              - 'src/core/transport-guard.js'
               - '.github/workflows/live-verify.yml'
             session-types:
               - 'scripts/live-verify-session-types.mjs'
@@ -284,6 +321,11 @@ jobs:
               - 'src/core/session.js'
               - 'src/core/ids.js'
               - 'src/core/redact.js'
+              - 'src/core/endpoints.js'
+              - 'src/core/kaltura-media.js'
+              - 'src/core/response-headers.js'
+              - 'src/core/safety.js'
+              - 'src/core/transport-guard.js'
               - 'package.json'
               - 'package-lock.json'
               - '.github/workflows/live-verify.yml'
@@ -296,6 +338,11 @@ jobs:
               - 'src/core/session.js'
               - 'src/core/ids.js'
               - 'src/core/redact.js'
+              - 'src/core/endpoints.js'
+              - 'src/core/kaltura-media.js'
+              - 'src/core/response-headers.js'
+              - 'src/core/safety.js'
+              - 'src/core/transport-guard.js'
               - '.github/workflows/live-verify.yml'
             catalog:
               - 'scripts/live-verify-catalog.mjs'
@@ -306,6 +353,11 @@ jobs:
               - 'src/core/session.js'
               - 'src/core/ids.js'
               - 'src/core/redact.js'
+              - 'src/core/endpoints.js'
+              - 'src/core/kaltura-media.js'
+              - 'src/core/response-headers.js'
+              - 'src/core/safety.js'
+              - 'src/core/transport-guard.js'
               - '.github/workflows/live-verify.yml'
             knowledge:
               - 'scripts/live-verify-knowledge.mjs'
@@ -317,6 +369,11 @@ jobs:
               - 'src/core/session.js'
               - 'src/core/ids.js'
               - 'src/core/redact.js'
+              - 'src/core/endpoints.js'
+              - 'src/core/kaltura-media.js'
+              - 'src/core/response-headers.js'
+              - 'src/core/safety.js'
+              - 'src/core/transport-guard.js'
               - '.github/workflows/live-verify.yml'
             avatars:
               - 'scripts/live-verify-avatars.mjs'
@@ -327,6 +384,11 @@ jobs:
               - 'src/core/session.js'
               - 'src/core/ids.js'
               - 'src/core/redact.js'
+              - 'src/core/endpoints.js'
+              - 'src/core/kaltura-media.js'
+              - 'src/core/response-headers.js'
+              - 'src/core/safety.js'
+              - 'src/core/transport-guard.js'
               - '.github/workflows/live-verify.yml'
             agents:
               - 'scripts/live-verify-agents.mjs'
@@ -337,6 +399,11 @@ jobs:
               - 'src/core/session.js'
               - 'src/core/ids.js'
               - 'src/core/redact.js'
+              - 'src/core/endpoints.js'
+              - 'src/core/kaltura-media.js'
+              - 'src/core/response-headers.js'
+              - 'src/core/safety.js'
+              - 'src/core/transport-guard.js'
               - '.github/workflows/live-verify.yml'
             browser:
               - 'scripts/live-verify-browser.mjs'
@@ -348,6 +415,11 @@ jobs:
               - 'src/core/session.js'
               - 'src/core/ids.js'
               - 'src/core/redact.js'
+              - 'src/core/endpoints.js'
+              - 'src/core/kaltura-media.js'
+              - 'src/core/response-headers.js'
+              - 'src/core/safety.js'
+              - 'src/core/transport-guard.js'
               - 'package.json'
               - 'package-lock.json'
               - '.github/workflows/live-verify.yml'
@@ -367,6 +439,11 @@ jobs:
               - 'src/core/session.js'
               - 'src/core/ids.js'
               - 'src/core/redact.js'
+              - 'src/core/endpoints.js'
+              - 'src/core/kaltura-media.js'
+              - 'src/core/response-headers.js'
+              - 'src/core/safety.js'
+              - 'src/core/transport-guard.js'
               - 'package.json'
               - 'package-lock.json'
               - '.github/workflows/live-verify.yml'
@@ -383,6 +460,53 @@ jobs:
               - 'src/core/session.js'
               - 'src/core/ids.js'
               - 'src/core/redact.js'
+              - 'src/core/endpoints.js'
+              - 'src/core/kaltura-media.js'
+              - 'src/core/response-headers.js'
+              - 'src/core/safety.js'
+              - 'src/core/transport-guard.js'
+              - 'package.json'
+              - 'package-lock.json'
+              - '.github/workflows/live-verify.yml'
+            reconnect:
+              - 'scripts/live-verify-reconnect.mjs'
+              - 'scripts/live-verify-kickoff.html'
+              - 'scripts/live-verify-kickoff-shared.mjs'
+              - 'scripts/live-verify-hooks-shared.mjs'
+              - 'scripts/lib/target.mjs'
+              - 'src/experience/**'
+              - 'src/management/client.js'
+              - 'src/core/http.js'
+              - 'src/core/errors.js'
+              - 'src/core/session.js'
+              - 'src/core/ids.js'
+              - 'src/core/redact.js'
+              - 'src/core/endpoints.js'
+              - 'src/core/kaltura-media.js'
+              - 'src/core/response-headers.js'
+              - 'src/core/safety.js'
+              - 'src/core/transport-guard.js'
+              - 'package.json'
+              - 'package-lock.json'
+              - '.github/workflows/live-verify.yml'
+            unload:
+              - 'scripts/live-verify-unload.mjs'
+              - 'scripts/live-verify-kickoff.html'
+              - 'scripts/live-verify-kickoff-shared.mjs'
+              - 'scripts/live-verify-hooks-shared.mjs'
+              - 'scripts/lib/target.mjs'
+              - 'src/experience/**'
+              - 'src/management/client.js'
+              - 'src/core/http.js'
+              - 'src/core/errors.js'
+              - 'src/core/session.js'
+              - 'src/core/ids.js'
+              - 'src/core/redact.js'
+              - 'src/core/endpoints.js'
+              - 'src/core/kaltura-media.js'
+              - 'src/core/response-headers.js'
+              - 'src/core/safety.js'
+              - 'src/core/transport-guard.js'
               - 'package.json'
               - 'package-lock.json'
               - '.github/workflows/live-verify.yml'
@@ -399,6 +523,11 @@ jobs:
               - 'src/core/session.js'
               - 'src/core/ids.js'
               - 'src/core/redact.js'
+              - 'src/core/endpoints.js'
+              - 'src/core/kaltura-media.js'
+              - 'src/core/response-headers.js'
+              - 'src/core/safety.js'
+              - 'src/core/transport-guard.js'
               - 'package.json'
               - 'package-lock.json'
               - '.github/workflows/live-verify.yml'
@@ -414,6 +543,11 @@ jobs:
               - 'src/core/session.js'
               - 'src/core/ids.js'
               - 'src/core/redact.js'
+              - 'src/core/endpoints.js'
+              - 'src/core/kaltura-media.js'
+              - 'src/core/response-headers.js'
+              - 'src/core/safety.js'
+              - 'src/core/transport-guard.js'
               - 'package.json'
               - 'package-lock.json'
               - '.github/workflows/live-verify.yml'
@@ -429,6 +563,11 @@ jobs:
               - 'src/core/session.js'
               - 'src/core/ids.js'
               - 'src/core/redact.js'
+              - 'src/core/endpoints.js'
+              - 'src/core/kaltura-media.js'
+              - 'src/core/response-headers.js'
+              - 'src/core/safety.js'
+              - 'src/core/transport-guard.js'
               - 'package.json'
               - 'package-lock.json'
               - '.github/workflows/live-verify.yml'
@@ -442,6 +581,11 @@ jobs:
               - 'src/core/session.js'
               - 'src/core/ids.js'
               - 'src/core/redact.js'
+              - 'src/core/endpoints.js'
+              - 'src/core/kaltura-media.js'
+              - 'src/core/response-headers.js'
+              - 'src/core/safety.js'
+              - 'src/core/transport-guard.js'
               - 'package.json'
               - 'package-lock.json'
               - '.github/workflows/live-verify.yml'
@@ -456,6 +600,11 @@ jobs:
               - 'src/core/session.js'
               - 'src/core/ids.js'
               - 'src/core/redact.js'
+              - 'src/core/endpoints.js'
+              - 'src/core/kaltura-media.js'
+              - 'src/core/response-headers.js'
+              - 'src/core/safety.js'
+              - 'src/core/transport-guard.js'
               - 'package.json'
               - 'package-lock.json'
               - '.github/workflows/live-verify.yml'
@@ -469,6 +618,11 @@ jobs:
               - 'src/core/session.js'
               - 'src/core/ids.js'
               - 'src/core/redact.js'
+              - 'src/core/endpoints.js'
+              - 'src/core/kaltura-media.js'
+              - 'src/core/response-headers.js'
+              - 'src/core/safety.js'
+              - 'src/core/transport-guard.js'
               - '.github/workflows/live-verify.yml'
             tools:
               - 'scripts/live-verify-tools.mjs'
@@ -479,6 +633,11 @@ jobs:
               - 'src/core/session.js'
               - 'src/core/ids.js'
               - 'src/core/redact.js'
+              - 'src/core/endpoints.js'
+              - 'src/core/kaltura-media.js'
+              - 'src/core/response-headers.js'
+              - 'src/core/safety.js'
+              - 'src/core/transport-guard.js'
               - '.github/workflows/live-verify.yml'
             mcp:
               - 'scripts/live-verify-mcp.mjs'
@@ -490,6 +649,11 @@ jobs:
               - 'src/core/session.js'
               - 'src/core/ids.js'
               - 'src/core/redact.js'
+              - 'src/core/endpoints.js'
+              - 'src/core/kaltura-media.js'
+              - 'src/core/response-headers.js'
+              - 'src/core/safety.js'
+              - 'src/core/transport-guard.js'
               - '.github/workflows/live-verify.yml'
 
       # One flag per job, so the PR checks list shows API, Browser (one row per
@@ -507,8 +671,8 @@ jobs:
           api=false
           any smoke conversation-surface threads-messages-feedback request-vars site-nav session-types capabilities agents avatars catalog intellects-conversations knowledge skills tools mcp && api=true
           engines=()
-          any browser avatar-media session-complete opening-phrase kickoff startup-faults prepare set-forced-language context-fields && engines+=(chromium)
-          any browser avatar-media session-complete startup-faults && engines+=(firefox)
+          any browser avatar-media session-complete opening-phrase kickoff startup-faults reconnect unload prepare set-forced-language context-fields && engines+=(chromium)
+          any browser avatar-media session-complete startup-faults reconnect unload && engines+=(firefox)
           any session-complete && engines+=(webkit)
           browser=false
           [ "${#engines[@]}" -gt 0 ] && browser=true
@@ -1062,7 +1226,7 @@ jobs:
           set -o pipefail
           node scripts/live-verify-connect-timing.mjs --env prod --compare jinja --runs 9 2>&1 | tee live-verify-connect-timing-output.log
 
-      # Delay the first WHEP POST by 7 s in the browser → connect() still resolves with real video dimensions (the first-frame cap starts at the answer) → cleanup
+      # Inject WHEP and socket faults in the browser (a late, reset, 503 or 404 answer) → connect() still resolves or fails with the documented code → cleanup
       - name: Session · Startup faults (${{ matrix.engine }})
         id: live_verify_startup_faults
         if: ${{ !cancelled() && steps.setup.outcome == 'success' && (needs.changes.outputs.all == 'true' || needs.changes.outputs['startup-faults'] == 'true') && matrix.engine != 'webkit' }}
@@ -1073,6 +1237,30 @@ jobs:
         run: |
           set -o pipefail
           node scripts/live-verify-startup-faults.mjs --env prod --browser ${{ matrix.engine }} 2>&1 | tee live-verify-startup-faults-output.log
+
+      # Close the avatar video peer, close both peers, answer a re-subscribe with 404, go offline 6 s → each recovers and video decodes again → cleanup
+      - name: Session · Reconnect (${{ matrix.engine }})
+        id: live_verify_reconnect
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' && (needs.changes.outputs.all == 'true' || needs.changes.outputs['reconnect'] == 'true') && matrix.engine != 'webkit' }}
+        timeout-minutes: 15
+        env:
+          AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
+          AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
+        run: |
+          set -o pipefail
+          node scripts/live-verify-reconnect.mjs --env prod --browser ${{ matrix.engine }} 2>&1 | tee live-verify-reconnect-output.log
+
+      # Close the page while connected and while connect() runs → the server shows no viewer on the avatar session → cleanup
+      - name: Session · Unload (${{ matrix.engine }})
+        id: live_verify_unload
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' && (needs.changes.outputs.all == 'true' || needs.changes.outputs['unload'] == 'true') && matrix.engine != 'webkit' }}
+        timeout-minutes: 15
+        env:
+          AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
+          AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
+        run: |
+          set -o pipefail
+          node scripts/live-verify-unload.mjs --env prod --browser ${{ matrix.engine }} 2>&1 | tee live-verify-unload-output.log
 
       # prepare() joins ahead of connect() → connect() reuses the socket and is faster → an unused prepared socket expires with a warning → cleanup
       - name: Session · prepare()

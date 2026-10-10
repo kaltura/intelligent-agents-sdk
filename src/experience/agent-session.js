@@ -51,7 +51,7 @@ import { sanitizeJson } from '../core/safety.js';
 
 /**
  * Events forwarded 1:1 from whichever transport is attached (`ended` is handled
- * separately so the facade can add its own reason). The last row only fires in
+ * separately so the facade can add its own reason). The last two rows only fire in
  * avatar mode; a chat transport never emits those names.
  */
 const FORWARDED_EVENTS = [
@@ -61,6 +61,7 @@ const FORWARDED_EVENTS = [
   'error', 'warning', 'responsePending', 'responseSettled',
   'agentActionDenied',
   'speechChunk', 'avatarStartTalking', 'avatarStopTalking', 'interrupted',
+  'mediaReady', 'connectTimings', 'mediaRecovering', 'mediaRecovered',
 ];
 
 /** Max sendText() calls buffered while a switchMode() is in flight. */
@@ -357,6 +358,14 @@ export class KalturaAgentSession extends Emitter {
    * @returns {string|undefined}
    */
   get threadId() { return this._transport ? (this._transport.threadId ?? this._threadId) : this._threadId; }
+
+  /**
+   * Phase times of the current or last `connect()` of the live transport, in ms
+   * (read-only). `undefined` in chat mode and before the first connect. See
+   * `KalturaAvatarSession#timings`.
+   * @returns {object|undefined}
+   */
+  get timings() { return this._transport?.timings; }
 
   /**
    * The live transport instance (read-only) — `KalturaAvatarSession` or

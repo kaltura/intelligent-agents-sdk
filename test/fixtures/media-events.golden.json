@@ -168,7 +168,6 @@
         "mediaRecovering:stv",
         "stateChange:reconnecting",
         "reconnecting:stv session gone (404)",
-        "stateChange:resuming",
         "track:video",
         "track:audio",
         "mediaReady:video:0x0",
@@ -237,7 +236,7 @@
         "track:audio",
         "stateChange:disconnecting",
         "stateChange:disconnected",
-        "stateChange:connected"
+        "connect:rejected:connect_failed"
       ],
       "counters": {
         "afterConnect": {

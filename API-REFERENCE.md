@@ -58,6 +58,8 @@ The SDK wraps every error into a `KalturaError` with a stable `err.code`. Branch
 | 403 | `forbidden` | Wrong KS type: admin KS for management, `geniegpcid` for conversations. Also: a user session without `userId` on thread get, list or delete. A user session asking for another user's thread gets 404 instead. See [SECURITY.md § Session type](SECURITY.md#session-type) |
 | 405 | `method_not_allowed` | Use `GET` for `/assistant/status`; everything else is `POST` |
 
+A `KalturaAvatarSession` (and `KalturaAgentSession` while in avatar mode) adds two fields to its errors. `err.phase` names the connect step that failed. `err.retryable` says whether trying again can succeed. See [connect timeouts](docs/architecture-reference/connection-and-handshake.md#full-connect-sequence-state-machine-order).
+
 Upstream error text is also normalized to a stable `err.code`, regardless of the HTTP status the backend returned it with:
 
 | Upstream detail contains | `err.code` | Fix |

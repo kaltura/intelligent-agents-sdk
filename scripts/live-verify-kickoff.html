@@ -372,7 +372,7 @@
       rec('connect:start', {});
       startTicker();
       try { await session.connect(); rec('connect:resolved', { state: session.state, mode: session.mode }); return { ok: true, state: session.state }; }
-      catch (e) { rec('connect:rejected', { code: e?.code, message: e?.message }); return { ok: false, code: e?.code, message: e?.message }; }
+      catch (e) { rec('connect:rejected', { code: e?.code, phase: e?.phase, status: e?.status, retryable: e?.retryable, message: e?.message }); return { ok: false, code: e?.code, phase: e?.phase, status: e?.status, retryable: e?.retryable, message: e?.message }; }
     };
     window.testPrepare = async () => {
       rec('prepare:start', {});

@@ -80,8 +80,10 @@ The two Salesforce scripts need a Salesforce Developer Edition org or sandbox (`
 | `live-verify-matrix.mjs` | Runs the scripts above on every target, one at a time, and prints one table (script × target). `--targets prod,nvq2:1` (default), `--scripts a,b`, `--out DIR`, `--list`. Logs go to `DIR/<target>/<script>.log`. A target without credentials fails every script. Exits 1 on any non-pass |
 | `live-verify-kickoff.mjs` | Every silent-opening + `kickoff` scenario, one fresh browser context each |
 | `live-verify-connect-timing.mjs` | Startup KPIs: time to `connect()`, first video frame, first audio, first agent words |
-| `live-verify-startup-faults.mjs` | `connect()` under client-side faults injected in the browser (nothing is broken on the server). Today: the first WHEP POST answers 7 s late, and `connect()` still resolves with real video dimensions and no `media_no_video` warning |
-| `live-verify-prepare.mjs` | `session.prepare()`: joins ahead of `connect()` with state still `idle`, `connect()` reuses the socket (one `join`) and is at least 400 ms faster at the median, and an unused prepared socket expires with `prepare_expired` |
+| `live-verify-startup-faults.mjs` | `connect()` under client-side faults injected in the browser (nothing is broken on the server): a WHEP POST that answers 4.5 s late, is reset, answers 503, 404 or 409, and a join that times out. Asserts the connect result, the retry count, `error.phase` and `retryable` |
+| `live-verify-reconnect.mjs` | Recovery after the connection is lost, with faults injected in the browser: the avatar video peer closed (re-subscribe within 2.5 s), both peers closed (session rebuild, two open peers), a re-subscribe answered 404 (new avatar session on the same socket), and the browser offline for 6 s (connected again within 3 s of the network returning) |
+| `live-verify-unload.mjs` | Closing the page while connected, and while `connect()` runs, leaves no viewer attached to the avatar session on the server. The check is made from Node after the close |
+| `live-verify-prepare.mjs` | `session.prepare()`: joins ahead of `connect()` with state still `idle`, `connect()` reuses the socket (one `join`) and has no join phase left and its best run is faster than the plain best run by at least half of the plain run's socket and join time, and an unused prepared socket expires with `prepare_expired` |
 | `live-verify-opening-phrase.mjs` | `provision()` writes the opening phrase to the intellect only, a Jinja2 `{% if %}` phrase renders per session from `requestVars`, and `SILENT_OPENING` on the intellect alone gives a silent opening turn |
 | `live-verify-browser.mjs` | Browser smoke test: real WHEP downlink, real WebRTC, real media element |
 | `live-verify-avatar-media.mjs` | The merged-stream media path against a real downlink |
@@ -107,9 +109,9 @@ Four helper modules are not scripts and are never run directly: `lib/target.mjs`
 
 ### Flags
 
-Six scripts take the CLI flags below: `live-verify-kickoff.mjs`, `live-verify-connect-timing.mjs`, `live-verify-opening-phrase.mjs`, `live-verify-session-types.mjs`, `live-verify-startup-faults.mjs` and `live-verify-prepare.mjs` (they share `live-verify-kickoff-shared.mjs`). `live-verify-mcp.mjs` takes its own flags, listed in its header. Every other script is configured by env vars alone.
+Eight scripts take the CLI flags below: `live-verify-kickoff.mjs`, `live-verify-connect-timing.mjs`, `live-verify-opening-phrase.mjs`, `live-verify-session-types.mjs`, `live-verify-startup-faults.mjs`, `live-verify-reconnect.mjs`, `live-verify-unload.mjs` and `live-verify-prepare.mjs` (they share `live-verify-kickoff-shared.mjs`). `live-verify-mcp.mjs` takes its own flags, listed in its header. Every other script is configured by env vars alone.
 
-Shared by all six (`live-verify-session-types.mjs` drives no browser, so it ignores `--browser`, `--headed` and `--kickoff`):
+Shared by all eight (`live-verify-session-types.mjs` drives no browser, so it ignores `--browser`, `--headed` and `--kickoff`):
 
 | Flag | Effect |
 |---|---|
@@ -123,7 +125,7 @@ Shared by all six (`live-verify-session-types.mjs` drives no browser, so it igno
 | `--agent-json PATH` | Reuse the agent described in `PATH` (`{configId, widgetId}`, plus `agentId` for `live-verify-session-types.mjs`) instead of provisioning one. Deletes nothing |
 | `--skip-revoke` | `live-verify-session-types.mjs` only: skip the `revoke()` check |
 
-`live-verify-startup-faults.mjs` and `live-verify-prepare.mjs` take `--only IDS` too, and `live-verify-prepare.mjs` adds `--runs N` (alternating plain and prepared pairs, default 3).
+`live-verify-startup-faults.mjs`, `live-verify-reconnect.mjs`, `live-verify-unload.mjs` and `live-verify-prepare.mjs` take `--only IDS` too, and `live-verify-prepare.mjs` adds `--runs N` (alternating plain and prepared pairs, default 3).
 
 `live-verify-kickoff.mjs` and `live-verify-opening-phrase.mjs` add `--only IDS` (run these scenario ids only) and `--dump-events` (write the page's full event log for every scenario, not just failures). `--kickoff TEXT` has no effect on `live-verify-opening-phrase.mjs`, which never sends a kickoff.
 

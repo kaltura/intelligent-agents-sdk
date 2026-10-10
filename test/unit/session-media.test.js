@@ -115,6 +115,7 @@ test('R-i: connect → disconnect → connect: fresh streams, old tracks ended, 
   session.disconnect();
   assert.ok(firstTracks.every((t) => t.readyState === 'ended'));
   assert.equal(videoEl.srcObject, null);
+  session.setToken(CONV_KS);
   scriptHappyPath(socket);
   await session.connect();
   assert.notEqual(session.avatarStream, first, 'a new canonical stream per connect');
@@ -259,7 +260,7 @@ test('regression: disconnect() from a track listener settles connect() at once w
   assert.equal(videoEl.srcObject, null, 'teardown still cleared the element');
   release();   // the late answer must not resurrect anything or throw
   await delay(20);
-  assert.equal(session.state, 'error');
+  assert.equal(session.state, 'disconnected');
 });
 
 test('stored mute / volume / sink id survive teardown and are already in place on the next connect (no extra writes)', async () => {
@@ -270,6 +271,7 @@ test('stored mute / volume / sink id survive teardown and are already in place o
   scriptHappyPath(socket);
   await session.connect();
   session.disconnect();
+  session.setToken(CONV_KS);
   scriptHappyPath(socket);
   await session.connect();
   assert.equal(videoEl.muted, true); assert.equal(videoEl.volume, 0.3); assert.equal(videoEl.sinkId, 'spk-9');
@@ -502,12 +504,12 @@ test('R-k/P9: mediaReady fires exactly once per _connectStv() call: once on conn
   const fetch = async (url, init) => {
     if (init?.method === 'DELETE') return whepOk();
     whepPosts += 1;
-    if (whepPosts === 3) return { ok: false, status: 404, text: async () => 'gone', headers: { get: () => null } };
+    if (whepPosts === 3 || whepPosts === 4) return { ok: false, status: 404, text: async () => 'gone', headers: { get: () => null } };
     return whepOk();
   };
   const videoEl = new FakeVideoEl({ autoCanPlay: true });
   const { session, socket } = newSession({ videoEl, fetch });
-  scriptHappyPath(socket);
+  scriptHappyPath(socket, { resumingOnRecreate: false });
   const ready = count(session, 'mediaReady');
   await session.connect();
   assert.equal(ready.v, 1, 'initial connect');
