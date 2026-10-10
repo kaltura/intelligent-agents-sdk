@@ -119,7 +119,7 @@ const SCENARIOS = {
           continue;
         }
         if (ms === null && choice.browser === 'firefox') {
-          // Reproduced locally (about 1 close in 14) and on CI (3 of 3 closes). Sending the DELETE first changed nothing.
+          // Firefox's own HTTP log shows these closes: the session_completed request left, but the DELETE and its CORS preflight never did. Reproduced locally (about 1 close in 8) and on CI (3 of 3 closes). Sending the DELETE first changed nothing.
           report.note(`${id}: Firefox dropped the release on all ${attempts} closes (best effort, not a failure)`, JSON.stringify({ probes: trail }));
         } else {
           report.check(`${id}: viewer gone within ${RELEASE_BUDGET_MS} ms of the close`, ms !== null, { ms, probes: trail, attempt });
