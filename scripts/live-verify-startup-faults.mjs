@@ -11,6 +11,7 @@
  * | F4 | the first WHEP POST answers 404         | one new `stvNewSession` on the same socket (one `join`), connect() resolves with real video dimensions |
  * | F5 | the first WHEP POST answers 409         | same recovery as F4 |
  * | F6 | `timeouts.joinRoom` is 1 ms             | connect() rejects `timeout` with `phase: 'join'` and `retryable: true` |
+ * | F7 | the tab is hidden while connecting      | connect() resolves through the canplay gate with real video dimensions, no `media_no_video`, under the 6 s no-frame cap |
  *
  * 4.5 s is under the 5 s limit for one POST try, so the first try is not retried. The 6 s
  * first-frame cap must start when the answer is applied, not when the request leaves.
@@ -141,6 +142,28 @@ const SCENARIOS = {
       const connect = await callHook(page, 'testConnect');
       report.check(`${id}: connect() rejected timeout`, !connect.ok && connect.code === 'timeout', connect);
       report.check(`${id}: error.phase is join and retryable`, connect.phase === 'join' && connect.retryable === true, connect);
+      await callHook(page, 'testDisconnect').catch(() => {});
+    },
+  },
+  F7: {
+    name: 'the tab is hidden while connecting',
+    async run({ context, sink, id }) {
+      // A hidden tab never paints, so its first-frame callback would never fire.
+      await context.addInitScript(() => {
+        Object.defineProperty(document, 'hidden', { value: true, configurable: true });
+        Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+      });
+      const page = await openHarness(context, origin, { mode: 'avatar' }, sink);
+      const connect = await callHook(page, 'testConnect');
+      report.check(`${id}: connect() resolved`, connect.ok, connect.ok ? undefined : connect);
+      if (!connect.ok) return;
+      const { events: evs } = await waitFor(page, (e) => find(e, 'connectTimings'), 5000, 'connectTimings');
+      const ready = all(evs, 'mediaReady');
+      const mr = ready[0]?.detail;
+      report.check(`${id}: mediaReady fired once with real video dimensions`, ready.length === 1 && mr?.mode === 'video' && mr.videoWidth > 0 && !mr.degraded, mr);
+      report.check(`${id}: no media_no_video warning`, !all(evs, 'warning', (d) => d?.code === 'media_no_video').length, all(evs, 'warning').map((e) => e.detail?.code));
+      const t = find(evs, 'connectTimings')?.detail;
+      report.check(`${id}: connect() did not wait for the 6 s no-frame cap`, t?.connected < 6000, { connected: t?.connected });
       await callHook(page, 'testDisconnect').catch(() => {});
     },
   },
