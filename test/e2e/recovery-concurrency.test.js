@@ -142,7 +142,7 @@ test('every teardown DELETE of the WHEP resource uses keepalive', async () => {
 });
 
 test('a cold reconnect that lands while a 404 repair waits for the new STV session is not undone by it', async () => {
-  const { session, sockets } = build({ whep: [{}, { status: 404 }, {}] });
+  const { session, sockets, fetch } = build({ whep: [{}, { status: 404 }, {}] });
   await session.connect();
   const sock = sockets[0];
   const real = sock._onEmit; let stv = 0;
@@ -159,5 +159,26 @@ test('a cold reconnect that lands while a 404 repair waits for the new STV sessi
   assert.equal(session.state, 'connected');
   const live = FakeRTCPeerConnection.instances.filter((p) => !p.closed && p.transceivers.some((t) => t.kind === 'video'));
   assert.equal(live.length, 1, 'one live STV peer');
+  assert.equal(fetch.posts.length, 3, "initial POST, the 404, and the cold rebuild; no POST after the stale reply");
+  session.disconnect();
+});
+
+test('a repair that waits for the first frame and is overtaken by a cold reconnect never reports mediaRecovered', async () => {
+  const el = new FakeVideoEl({ autoCanPlay: false, rvfc: true });
+  const { session } = build({ videoEl: el, timeouts: { firstFrame: 5000 } });
+  const connecting = session.connect();
+  await until(() => el._frameCbs.size === 1);
+  el.fireFrame();
+  await connecting;
+  const recovered = [];
+  session.on('mediaRecovered', (p) => recovered.push(p));
+  session._pcStv.setIce('failed');
+  await until(() => typeof session._cancelStvPlayable === 'function');   // the repair waits for its frame
+  const reconnected = new Promise((r) => session.once('reconnected', r));
+  session._coldReconnect('test').catch(() => {});
+  const stop = setInterval(() => el.fireFrame(), 10);
+  try { await reconnected; await delay(100); } finally { clearInterval(stop); }
+  assert.deepEqual(recovered, []);
+  assert.deepEqual(session._mediaRecovering, { asr: false, stv: false });
   session.disconnect();
 });
