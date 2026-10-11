@@ -73,7 +73,7 @@ Step 11 runs once both lanes are done. The first lane to fail rejects `connect()
 | 6 | Wait agent | ← `showAgent` | agent joined | 10s (`AgentResponseTimeout`) |
 | 7 | Wait ready | ← `askPermissions` `{constraints:{audio,video}}` | ready for the mic | 10s (`AgentResponseTimeout`) |
 | 9 | Connect ASR (mic uplink), lane A, after 6→7 | `asr-webrtc-*` handshake ([§5](/reference/wire-protocol/audio-channels/#5-asr-uplink-pc1--microphone--server)) | - | 30s per wait (`ASRConnectionFailed`) |
-| 10 | Subscribe STV video (WHEP) **and wait until it is *playable*, or give up waiting**, lane B, starts right after step 5 | → WHEP `POST` (5 s per try, 3 tries; [details](/reference/wire-protocol/audio-channels/#6-stv-downlink-pc2--avatar-videoaudio--you)) → wait for the video track, then for the first painted frame (`requestVideoFrameCallback`). Where that API is missing, the tab is hidden, the stream has no video track, or media is being recovered, the gate is `<video>` `canplay` + 100ms. With no `videoEl`, the gate is a 300ms settle | first painted frame | `timeouts.firstFrame` (6s), counted from the moment the answer is applied. At the cap with no frame the SDK re-subscribes once, then continues with warning `media_no_video` and `mediaReady {degraded:true}` |
+| 10 | Subscribe STV video (WHEP) **and wait until it is *playable*, or give up waiting**, lane B, starts right after step 5 | → WHEP `POST` (5 s per try, 3 tries; [details](/reference/wire-protocol/audio-channels/#6-stv-downlink-pc2--avatar-videoaudio--you)) → wait for the video track, then for the first painted frame (`requestVideoFrameCallback`). Where that API is missing, the tab is hidden, the stream has no video track, or media is being recovered, the gate is `<video>` `canplay` + 100ms. With no `videoEl`, the gate is a 300ms settle. Every gate also waits for the peer's ICE to be `connected` | first painted frame | `timeouts.firstFrame` (6s), counted from the moment the answer is applied. At the cap with no frame the SDK re-subscribes once, then continues with warning `media_no_video` and `mediaReady {degraded:true}`. If ICE never connected, the second miss rejects with [`ice_failed`](/reference/architecture-reference/resilience-and-failure-handling/#ice-diagnostics) instead |
 | 11 | Emit `disclosure`, then approve (this starts the spoken greeting), once lanes A and B are both done | → `approvedPermissions` `{room}` | - | - |
 | 12 | Opening turn runs. With a silent opening phrase (`SILENT_OPENING`) it produces no speech and ends in about 0.5 s. A configured `kickoff` is sent on its `stvFinishedTalking` ([guide](/guides/start-the-conversation/)) | ← `stvStartedTalking` … ← `stvFinishedTalking`, then → `onTextEntered {text}` | `stvFinishedTalking` | - |
 | → | **CONNECTED** | listen for `agent_raw_text`, `generatingSpeech`, `stvStartedTalking` | — | — |
@@ -94,10 +94,11 @@ Overall connecting timeout: 30s. It bounds every wait in the table, including th
 | `agent` | 6 and 7 |
 | `asr` | 9 |
 | `whep` | 10, the WHEP request (`whep_timeout`, `whep_failed`, `stv_session_gone`) |
+| `ice` | The avatar peer never reached ICE `connected` (`ice_failed`). See [ICE diagnostics](/reference/architecture-reference/resilience-and-failure-handling/#ice-diagnostics) |
 | `connect` | A fatal server event (`capacity_unavailable`, `tier_exceeded`, `bad_request`) or any other failure in `connect()` |
 | `reconnect` | The socket or a cold reconnect ran out of attempts (`reconnect_failed`) |
 
-`error.retryable` is `true` on `timeout`, `capacity_unavailable`, `whep_timeout`, a `whep_failed` caused by the network, `stv_session_gone` and `reconnect_failed`, because the same call can succeed on a later try. A `whep_failed` that carries an HTTP status does not set it. Both fields are also in `error.toJSON()`.
+`error.retryable` is `true` on `timeout`, `capacity_unavailable`, `whep_timeout`, a `whep_failed` caused by the network, `stv_session_gone`, `ice_failed` and `reconnect_failed`, because the same call can succeed on a later try. A `whep_failed` that carries an HTTP status does not set it. Both fields are also in `error.toJSON()`.
 
 ```js
 // Retry a connect that can succeed later. Give up on anything else.
@@ -161,7 +162,7 @@ The opening line itself can't be interrupted. Typed text sent during it is held 
 
 The rows group related phases and are not in time order. `firstFrame` is also absent when there is no `videoEl`, when the browser has no `requestVideoFrameCallback`, or when no frame arrived in time (`mediaReady` then has `degraded: true`).
 
-**Tuning.** `timeouts` overrides any wait in the table above (`overall`, `serverConnect`, `joinRoom`, `joinComplete`, `agent`, `asr`, `firstFrame`, `prepareIdle`) and the WHEP, recovery and watchdog limits (`whepTry`, `whepTries`, `whepBackoff`, `whepRelease`, `recover`, `healthTick`, `videoStall`, `coldAttempts`, `coldBackoff`; defaults in [Resilience](/reference/architecture-reference/resilience-and-failure-handling/)). `reconnectionDelay` (default 250 ms) and `reconnectionDelayMax` (default 2000 ms) set how soon and how often a dropped socket retries.
+**Tuning.** `timeouts` overrides any wait in the table above (`overall`, `serverConnect`, `joinRoom`, `joinComplete`, `agent`, `asr`, `firstFrame`, `prepareIdle`) and the WHEP, recovery and watchdog limits (`whepTry`, `whepTries`, `whepBackoff`, `whepRelease`, `recover`, `healthTick`, `videoStall`, `iceStuck`, `coldAttempts`, `coldBackoff`; defaults in [Resilience](/reference/architecture-reference/resilience-and-failure-handling/)). `reconnectionDelay` (default 250 ms) and `reconnectionDelayMax` (default 2000 ms) set how soon and how often a dropped socket retries.
 
 ## The `join` payload (step 2): carries the agent/brain config
 
