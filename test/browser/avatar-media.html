@@ -1493,7 +1493,10 @@ S['video-stall'] = async (c) => {
   c.check('paints before', ...pair2(await paints(v)));
   const pc0 = stv(session);
   const sender = H.peers.map((p) => p.pc).flatMap((p) => p.getSenders()).find((s) => s.track?.kind === 'video');
-  await sender.replaceTrack(null);
+  // Stop the encoder. replaceTrack(null) is not a stall: Firefox keeps sending a tiny frame about every second.
+  const params = sender.getParameters();
+  params.encodings[0].active = false;
+  await sender.setParameters(params);
   const t0 = performance.now();
   const deadline = t0 + 8000;
   while (performance.now() < deadline && !ev.of('mediaRecovered').some((p) => p.channel === 'stv')) await sleep(50);
