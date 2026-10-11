@@ -302,6 +302,7 @@ test('connect() after a disconnect() with a still-pending acquire: the new sessi
   await session.connect();
   session.disconnect();
   // Second connect on the same object: fresh prompt (the first one is still open).
+  session.setToken('djJ8' + Buffer.from('v2|123|geniegpcid:1222').toString('base64url'));
   const socket2 = new FakeSocket();
   session._socketFactory = () => socket2;
   scriptHappyPath(socket2);

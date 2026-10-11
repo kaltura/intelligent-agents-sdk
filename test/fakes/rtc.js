@@ -51,7 +51,7 @@ export class FakeRTCPeerConnection {
   /** Test helper: set the next getStats() report (connectivity-beacon tests). @param {Array<object>} entries */
   setStats(entries) { this._statsEntries = entries; }
   async getStats() { return new Map((this._statsEntries || []).map((s, i) => [s.id || String(i), s])); }
-  async createOffer() { return { type: 'offer', sdp: 'v=0\r\nfake-offer\r\n' }; }
+  async createOffer() { if (this.closed) throw Object.assign(new Error('The RTCPeerConnection\'s signalingState is \'closed\'.'), { name: 'InvalidStateError' }); return { type: 'offer', sdp: 'v=0\r\nfake-offer\r\n' }; }
   async setLocalDescription(d) {
     this.localDescription = d;
     // Model trickle ICE: emit one relay candidate, then the end-of-candidates null.

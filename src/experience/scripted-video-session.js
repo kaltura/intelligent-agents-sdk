@@ -49,7 +49,11 @@
 import { Emitter } from './emitter.js';
 import { KalturaError } from '../core/errors.js';
 import { turnServers, iceConfig, whepUrlHasPrivateIp, whepResourceUrl } from './wire.js';
+import { whepPost } from './whep.js';
+import { fetchWithTimeout } from './fetch-timeout.js';
 import { AvatarMedia } from './avatar-media.js';
+
+const WHEP_RELEASE_TIMEOUT_MS = 3000;
 
 /**
  * @deprecated Scripted-video sessions are deprecated and will be removed in the next major version. Build with agents instead: `mgmt.provision()` and the conversational session classes.
@@ -93,6 +97,7 @@ export class KalturaScriptedVideoSession extends Emitter {
     this._inOntrack = false;   // true only while the peer's ontrack handler runs (see _teardown)
     /** @type {(() => void)|null} */ this._cancelPlayable = null;
     this._whepLocation = null;
+    /** @type {AbortController|null} */ this._whepAbort = null;
     /** @type {'idle'|'connecting'|'connected'|'disconnecting'|'disconnected'|'error'} */
     this.state = 'idle';
   }
@@ -163,11 +168,12 @@ export class KalturaScriptedVideoSession extends Emitter {
       if (pc !== this._pc) throw connectAbortedErr();
       await pc.setLocalDescription(offer);
       if (pc !== this._pc) throw connectAbortedErr();
-      const res = await this._fetch(this._whepUrl, { method: 'POST', headers: { 'Content-Type': 'application/sdp' }, body: offer.sdp });
+      this._whepAbort = typeof AbortController === 'function' ? new AbortController() : null;
+      const { res, body } = await whepPost({ fetch: this._fetch, url: this._whepUrl, sdp: offer.sdp, signal: this._whepAbort?.signal });
+      const answerSdp = await body();
       if (!res.ok) {
         throw new KalturaError({ type: 'about:blank', title: 'WHEP negotiation failed', status: res.status, code: 'whep_failed', detail: whepStatusHint(res.status) });
       }
-      const answerSdp = await res.text();
       const loc = res.headers?.get?.('Location');
       const resolvedLoc = loc ? whepResourceUrl(loc, this._whepUrl) : null;
       // Re-check the resolved Location for a private address (mirrors
@@ -214,7 +220,7 @@ export class KalturaScriptedVideoSession extends Emitter {
     // Best-effort: a failed DELETE here doesn't matter to the caller (the peer
     // connection is already being torn down) but IS worth auditing:
     // mirrors KalturaAvatarSession's own WHEP cleanup.
-    Promise.resolve().then(() => this._fetch(loc, { method: 'DELETE' })).catch((err) => this.emit('warning', { code: 'whep_delete_failed', message: String((err && err.message) || err) }));
+    Promise.resolve().then(() => fetchWithTimeout(this._fetch, loc, { method: 'DELETE', keepalive: true }, WHEP_RELEASE_TIMEOUT_MS)).catch((err) => this.emit('warning', { code: 'whep_delete_failed', message: String((err && err.message) || err) }));
   }
 
   _teardown() {
@@ -222,6 +228,7 @@ export class KalturaScriptedVideoSession extends Emitter {
     // dispatch (sync or microtask), which is what disconnect() from a 'track' listener does — so
     // defer the close to a macrotask in that case. The reference is dropped right away regardless.
     const pc = this._pc; this._pc = null;
+    this._whepAbort?.abort(); this._whepAbort = null;   // stops a WHEP POST (and its retries) still in flight
     if (pc) { const close = () => { try { pc.close(); } catch { /* already closed */ } }; if (this._inOntrack) setTimeout(close, 0); else close(); }
     this._cancelPlayable?.(); this._cancelPlayable = null;
     this._avatarMedia.teardown();

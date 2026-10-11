@@ -3,7 +3,7 @@
 // every turn, mid-stream tool dispatch with the same semantics as the live
 // socket (dedup, schema gate, fused recovery), and the KS-authenticated
 // waitForResponse ACK (respondToTool → /assistant/tool_response).
-import { test } from 'node:test';
+import { test, mock } from 'node:test';
 import assert from 'node:assert/strict';
 import { KalturaChatSession, KalturaError } from '../../src/experience/index.js';
 import { fakeFetch } from '../fakes/fetch.js';
@@ -299,6 +299,28 @@ test('respondToTool: HTTP 4xx/5xx returns {ok:false, reason:"http_error", status
   ackStatus = 200;
   assert.deepEqual(await session.respondToTool('inv-9', { a: 1 }), { ok: true });
   assert.deepEqual(await session.respondToTool('inv-9', { a: 1 }), { ok: false, reason: 'unknown_or_stale' }, 'ACK consumed after success');
+});
+
+test('respondToTool: no answer in 15 s returns {ok:false, reason:"timeout"} and keeps the call pending', async () => {
+  let hang = true;
+  const base = fakeFetch([
+    { match: '/assistant/tool_response', respond: () => ({ body: {} }) },
+    { match: '/assistant/converse', respond: () => ({ body: TOOL_TURN }) },
+  ]);
+  const fetch = (url, init) => (hang && String(url).endsWith('/assistant/tool_response')
+    ? new Promise((_, reject) => init.signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' }))))
+    : base(url, init));
+  const { session } = newSession({ fetch });
+  await session.connect();
+  await session.sendText('probe');
+  mock.timers.enable({ apis: ['setTimeout'] });
+  try {
+    const pending = session.respondToTool('inv-9', { a: 1 });
+    mock.timers.tick(15000);
+    assert.deepEqual(await pending, { ok: false, reason: 'timeout' });
+  } finally { mock.timers.reset(); }
+  hang = false;
+  assert.deepEqual(await session.respondToTool('inv-9', { a: 1 }), { ok: true });
 });
 
 test('semantic dedup within a turn, reset across turns; argsSchema gates dispatch', async () => {

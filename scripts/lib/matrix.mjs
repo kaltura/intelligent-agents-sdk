@@ -32,6 +32,8 @@ export const MATRIX_SCRIPTS = [
   { name: 'opening-phrase', file: 'live-verify-opening-phrase.mjs', envFlag: true },
   { name: 'kickoff', file: 'live-verify-kickoff.mjs', envFlag: true },
   { name: 'startup-faults', file: 'live-verify-startup-faults.mjs', envFlag: true },
+  { name: 'reconnect', file: 'live-verify-reconnect.mjs', envFlag: true },
+  { name: 'unload', file: 'live-verify-unload.mjs', envFlag: true },
   { name: 'prepare', file: 'live-verify-prepare.mjs', envFlag: true },
   { name: 'connect-timing', file: 'live-verify-connect-timing.mjs', envFlag: true, args: ['--runs', '9'] },
 ];

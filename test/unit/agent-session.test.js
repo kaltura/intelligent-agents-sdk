@@ -116,6 +116,25 @@ test('forwards the reply-rendering avatar events; disclosure and micStarted stay
   assert.deepEqual(got.micStarted, [], 'pairs with transport.startMic()/micStream');
 });
 
+test('forwards the media lifecycle events and exposes the transport timings', async () => {
+  const { session, made } = newSession();
+  await session.connect();
+  const t = made.avatar[0];
+  const names = ['mediaReady', 'connectTimings', 'mediaRecovering', 'mediaRecovered'];
+  const got = {};
+  for (const ev of names) { got[ev] = []; session.on(ev, (p) => got[ev].push(p)); }
+  t.emit('mediaReady', { mode: 'video', videoWidth: 640, degraded: false });
+  t.emit('connectTimings', { connected: 1500 });
+  t.emit('mediaRecovering', { channel: 'stv', state: 'failed' });
+  t.emit('mediaRecovered', { channel: 'stv', method: 're-subscribe' });
+  assert.deepEqual(got.mediaReady, [{ mode: 'video', videoWidth: 640, degraded: false }]);
+  assert.deepEqual(got.connectTimings, [{ connected: 1500 }]);
+  assert.deepEqual(got.mediaRecovering, [{ channel: 'stv', state: 'failed' }]);
+  assert.deepEqual(got.mediaRecovered, [{ channel: 'stv', method: 're-subscribe' }]);
+  t.timings = { connected: 1500 };
+  assert.deepEqual(session.timings, { connected: 1500 });
+});
+
 test('connect is once-only; failure lands in failed with reason transport_failed', async () => {
   const boom = Object.assign(new Error('socket down'), { code: 'connect_failed' });
   const { session, made } = newSession({ prep: (t) => { t.connectImpl = () => { throw boom; }; } });

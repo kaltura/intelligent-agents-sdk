@@ -89,7 +89,6 @@
     // Manual controls — the avatar navigates by calling the navigate_to_slide tool, never by speech.
     document.getElementById('next').onclick = () => presenter.goTo(presenter.current + 1);
     document.getElementById('prev').onclick = () => presenter.goTo(presenter.current - 1);
-    window.addEventListener('beforeunload', () => session.disconnect());
   </script>
 </body>
 </html>

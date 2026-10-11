@@ -201,6 +201,7 @@ Authorization: KS <conversation ks>
 | `{ ok: false, reason: 'unknown_or_stale' }` | No pending ACK for `id`: unknown, already acked, or too old. |
 | `{ ok: false, reason: 'session_rebuilt' }` | A cold reconnect landed while the POST was in flight. |
 | `{ ok: false, reason: 'http_error', status }` | The POST returned 4xx or 5xx. The call stays pending, so you can retry with the same `id`. |
+| `{ ok: false, reason: 'timeout' }` | The POST got no answer in 15 s. The call stays pending, so you can retry with the same `id`. |
 
 It throws `invalid_state` when the session is not connected, on a network failure, and `bad_request` for an empty `id` or a `response` that is not a plain object. See [CLIENT-COMMANDS.md](../CLIENT-COMMANDS.md) for the app-level contract (`onToolCall` → `respondToTool`).
 

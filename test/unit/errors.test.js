@@ -77,3 +77,8 @@ test('trailing dots and whitespace are trimmed from the upstream message, even w
   errorFromResponse({ status: 402, path: '/x', body: { message: long } });
   assert.ok(Date.now() - t0 < 500, 'linear time on a long run of whitespace');
 });
+
+test('payment_required is marked not retryable; other statuses give no opinion', () => {
+  assert.equal(errorFromResponse({ status: 402, path: '/x', body: null }).retryable, false);
+  assert.equal(errorFromResponse({ status: 403, path: '/x', body: null }).retryable, undefined);
+});

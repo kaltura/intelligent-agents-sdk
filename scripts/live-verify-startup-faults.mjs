@@ -5,10 +5,16 @@
  *
  * | id | fault                                  | asserts |
  * |----|----------------------------------------|---------|
- * | F1 | the first WHEP POST answers 7 s late   | connect() resolves, `mediaReady` has real video dimensions, no `media_no_video` warning, `connectTimings` is emitted and ordered |
+ * | F1 | the first WHEP POST answers 4.5 s late | connect() resolves, `mediaReady` has real video dimensions, no `media_no_video` warning, `connectTimings` is emitted and ordered |
+ * | F2 | the first WHEP POST is reset            | the POST is retried, connect() resolves with real video dimensions and no warning |
+ * | F3 | every WHEP POST answers 503             | one POST only (an HTTP status is never retried), connect() rejects `whep_failed` with status 503 and `phase: 'whep'` |
+ * | F4 | the first WHEP POST answers 404         | one new `stvNewSession` on the same socket (one `join`), connect() resolves with real video dimensions |
+ * | F5 | the first WHEP POST answers 409         | same recovery as F4 |
+ * | F6 | `timeouts.joinRoom` is 1 ms             | connect() rejects `timeout` with `phase: 'join'` and `retryable: true` |
+ * | F7 | the tab is hidden while connecting      | connect() resolves through the canplay gate with real video dimensions, no `media_no_video`, under the 6 s no-frame cap |
  *
- * 7 s is longer than the 6 s first-frame cap on purpose: the cap must start when the answer is
- * applied, not when the request leaves.
+ * 4.5 s is under the 5 s limit for one POST try, so the first try is not retried. The 6 s
+ * first-frame cap must start when the answer is applied, not when the request leaves.
  *
  * Usage
  *   node scripts/live-verify-startup-faults.mjs                       # --env prod
@@ -22,6 +28,7 @@
 import {
   bootstrap, Report, mdTable, management, ensureAgent, verifyDeleted, mintPageInit, startServer,
   browserChoice, launchBrowser, warmFirefoxMedia, contextOptions, openHarness, netProblems, waitFor, find, all, sleep,
+  routeWhep, fulfillStatus, sent,
 } from './live-verify-kickoff-shared.mjs';
 import { callHook } from './live-verify-hooks-shared.mjs';
 
@@ -30,10 +37,7 @@ const ONLY = typeof args.only === 'string' ? new Set(args.only.split(',').map((s
 const choice = browserChoice(args);
 const HEADED = choice.headed || choice.browser === 'chrome';
 const SETUP = `${choice.browser} ${HEADED ? 'headed' : 'headless'}`;
-/** A WHEP POST is the only cross-origin HTTP request whose body is an SDP offer. */
-const isWhepPost = (/** @type {import('playwright').Request} */ r) => r.method() === 'POST' && (r.postData() || '').startsWith('v=0');
-const SLOW_MS = 7000;
-
+const SLOW_MS = 4500;
 const report = new Report({ runId, target: target.name });
 report.data.scenarios = [];
 const kaltura = management(target);
@@ -43,11 +47,9 @@ const agent = await ensureAgent(kaltura, admin.ks, {
   keep: !!args.keep,
 });
 report.note('agent', agent.reused ? 'reused --agent-json ids' : 'provisioned throwaway agent');
-const { server, origin } = await startServer(() => mintPageInit(kaltura, agent, target.genieUrl));
-const browser = await launchBrowser(choice);
-report.note('setup', SETUP);
-const gmpMs = await warmFirefoxMedia(browser);
-if (gmpMs) report.note('firefox-openh264-ready', `${gmpMs} ms`);
+/** @type {import('node:http').Server | undefined} */ let server;
+let origin = '';
+/** @type {import('playwright').Browser | undefined} */ let browser;
 
 /** @typedef {import('./live-verify-kickoff-shared.mjs').HarnessEvent} Ev */
 const SCENARIOS = {
@@ -55,14 +57,10 @@ const SCENARIOS = {
     name: `the first WHEP POST answers ${SLOW_MS / 1000} s late`,
     /** @param {{context: import('playwright').BrowserContext, sink: any, id: string}} c */
     async run({ context, sink, id }) {
-      let posts = 0;
-      await context.route((url) => url.origin !== origin, async (route) => {
-        if (isWhepPost(route.request()) && ++posts === 1) await sleep(SLOW_MS);
-        await route.continue().catch(() => {});
-      });
+      const route = await routeWhep(context, origin, async (n) => { if (n === 1) await sleep(SLOW_MS); });
       const page = await openHarness(context, origin, { mode: 'avatar' }, sink);
       const connect = await callHook(page, 'testConnect');
-      report.check(`${id}: the WHEP POST was seen`, posts >= 1, { posts });
+      report.check(`${id}: one WHEP POST, answered in time and not retried`, route.posts() === 1, { posts: route.posts() });
       report.check(`${id}: connect() resolved`, connect.ok, connect.ok ? undefined : connect);
       if (!connect.ok) return;
       const { events: evs } = await waitFor(page, (e) => find(e, 'connectTimings'), 5000, 'connectTimings');
@@ -77,15 +75,112 @@ const SCENARIOS = {
       await callHook(page, 'testDisconnect').catch(() => {});
     },
   },
+  F2: {
+    name: 'the first WHEP POST is reset',
+    async run({ context, sink, id }) {
+      const route = await routeWhep(context, origin, async (n, r) => { if (n === 1) { await r.abort('connectionreset').catch(() => {}); return true; } });
+      const page = await openHarness(context, origin, { mode: 'avatar' }, sink);
+      const connect = await callHook(page, 'testConnect');
+      report.check(`${id}: connect() resolved`, connect.ok, connect.ok ? undefined : connect);
+      report.check(`${id}: the POST was retried`, route.posts() >= 2, { posts: route.posts() });
+      if (!connect.ok) return;
+      const { events: evs } = await waitFor(page, (e) => find(e, 'connectTimings'), 5000, 'connectTimings');
+      const mr = all(evs, 'mediaReady')[0]?.detail;
+      report.check(`${id}: mediaReady has real video dimensions`, mr?.mode === 'video' && mr.videoWidth > 0 && !mr.degraded, mr);
+      report.check(`${id}: no warnings`, !all(evs, 'warning').length, all(evs, 'warning').map((e) => e.detail?.code));
+      await callHook(page, 'testDisconnect').catch(() => {});
+    },
+  },
+  F3: {
+    name: 'every WHEP POST answers 503',
+    async run({ context, sink, id }) {
+      const route = await routeWhep(context, origin, async (_n, r) => { await fulfillStatus(r, 503); return true; });
+      const page = await openHarness(context, origin, { mode: 'avatar' }, sink);
+      const connect = await callHook(page, 'testConnect');
+      report.check(`${id}: connect() rejected whep_failed with status 503`, !connect.ok && connect.code === 'whep_failed' && connect.status === 503, connect);
+      report.check(`${id}: error.phase is whep`, connect.phase === 'whep', connect);
+      report.check(`${id}: an HTTP status is not retried`, route.posts() === 1, { posts: route.posts() });
+      await callHook(page, 'testDisconnect').catch(() => {});
+    },
+  },
+  F4: {
+    name: 'the first WHEP POST answers 404',
+    async run({ context, sink, id }) {
+      const route = await routeWhep(context, origin, async (n, r) => { if (n === 1) { await fulfillStatus(r, 404); return true; } });
+      const page = await openHarness(context, origin, { mode: 'avatar' }, sink);
+      const connect = await callHook(page, 'testConnect');
+      report.check(`${id}: connect() resolved`, connect.ok, connect.ok ? undefined : connect);
+      report.check(`${id}: a second POST followed`, route.posts() === 2, { posts: route.posts() });
+      if (!connect.ok) return;
+      const { events: evs } = await waitFor(page, (e) => find(e, 'connectTimings'), 5000, 'connectTimings');
+      report.check(`${id}: a new avatar session on the same socket`, sent(evs, 'stvNewSession') === 2 && sent(evs, 'join') === 1, { stvNewSession: sent(evs, 'stvNewSession'), join: sent(evs, 'join') });
+      const mr = all(evs, 'mediaReady')[0]?.detail;
+      report.check(`${id}: mediaReady has real video dimensions`, mr?.mode === 'video' && mr.videoWidth > 0 && !mr.degraded, mr);
+      await callHook(page, 'testDisconnect').catch(() => {});
+    },
+  },
+  F5: {
+    name: 'the first WHEP POST answers 409',
+    async run({ context, sink, id }) {
+      const route = await routeWhep(context, origin, async (n, r) => { if (n === 1) { await fulfillStatus(r, 409); return true; } });
+      const page = await openHarness(context, origin, { mode: 'avatar' }, sink);
+      const connect = await callHook(page, 'testConnect');
+      report.check(`${id}: connect() resolved`, connect.ok, connect.ok ? undefined : connect);
+      report.check(`${id}: a second POST followed`, route.posts() === 2, { posts: route.posts() });
+      if (!connect.ok) return;
+      const { events: evs } = await waitFor(page, (e) => find(e, 'connectTimings'), 5000, 'connectTimings');
+      report.check(`${id}: a new avatar session on the same socket`, sent(evs, 'stvNewSession') === 2 && sent(evs, 'join') === 1, { stvNewSession: sent(evs, 'stvNewSession'), join: sent(evs, 'join') });
+      const mr = all(evs, 'mediaReady')[0]?.detail;
+      report.check(`${id}: mediaReady has real video dimensions`, mr?.mode === 'video' && mr.videoWidth > 0 && !mr.degraded, mr);
+      await callHook(page, 'testDisconnect').catch(() => {});
+    },
+  },
+  F6: {
+    name: 'timeouts.joinRoom is 1 ms',
+    async run({ context, sink, id }) {
+      const page = await openHarness(context, origin, { mode: 'avatar', timeouts: JSON.stringify({ joinRoom: 1 }) }, sink);
+      const connect = await callHook(page, 'testConnect');
+      report.check(`${id}: connect() rejected timeout`, !connect.ok && connect.code === 'timeout', connect);
+      report.check(`${id}: error.phase is join and retryable`, connect.phase === 'join' && connect.retryable === true, connect);
+      await callHook(page, 'testDisconnect').catch(() => {});
+    },
+  },
+  F7: {
+    name: 'the tab is hidden while connecting',
+    async run({ context, sink, id }) {
+      // A hidden tab never paints, so its first-frame callback would never fire.
+      await context.addInitScript(() => {
+        Object.defineProperty(document, 'hidden', { value: true, configurable: true });
+        Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+      });
+      const page = await openHarness(context, origin, { mode: 'avatar' }, sink);
+      const connect = await callHook(page, 'testConnect');
+      report.check(`${id}: connect() resolved`, connect.ok, connect.ok ? undefined : connect);
+      if (!connect.ok) return;
+      const { events: evs } = await waitFor(page, (e) => find(e, 'connectTimings'), 5000, 'connectTimings');
+      const ready = all(evs, 'mediaReady');
+      const mr = ready[0]?.detail;
+      report.check(`${id}: mediaReady fired once with real video dimensions`, ready.length === 1 && mr?.mode === 'video' && mr.videoWidth > 0 && !mr.degraded, mr);
+      report.check(`${id}: no media_no_video warning`, !all(evs, 'warning', (d) => d?.code === 'media_no_video').length, all(evs, 'warning').map((e) => e.detail?.code));
+      const t = find(evs, 'connectTimings')?.detail;
+      report.check(`${id}: connect() did not wait for the 6 s no-frame cap`, t?.connected < 6000, { connected: t?.connected });
+      await callHook(page, 'testDisconnect').catch(() => {});
+    },
+  },
 };
 
 try {
+  ({ server, origin } = await startServer(() => mintPageInit(kaltura, agent, target.genieUrl)));
+  browser = await launchBrowser(choice);
+  report.note('setup', SETUP);
+  const gmpMs = await warmFirefoxMedia(/** @type {import('playwright').Browser} */ (browser));
+  if (gmpMs) report.note('firefox-openh264-ready', `${gmpMs} ms`);
   for (const [id, sc] of Object.entries(SCENARIOS)) {
     if (ONLY && !ONLY.has(id)) continue;
     console.log(`\n== ${id}: ${sc.name}`);
     const t0 = Date.now();
     const sink = { pageErrors: /** @type {string[]} */ ([]), pages: [], network: /** @type {any[]} */ ([]) };
-    const context = await browser.newContext(contextOptions());
+    const context = await /** @type {import('playwright').Browser} */ (browser).newContext(contextOptions());
     const before = report.checks.length;
     let error = null;
     try {
@@ -94,16 +189,16 @@ try {
       error = String(/** @type {any} */ (err)?.message || err);
       report.check(`${id}: completed`, false, { error, pageErrors: sink.pageErrors.slice(0, 5) });
     } finally {
-      await sleep(300);
+      await sleep(300);   // late request events land before the problems are read
       const problems = netProblems(sink.network);
       if (problems.length) report.note(`${id}: HTTP requests that failed or returned 4xx/5xx`, problems.slice(0, 10));
       report.data.scenarios.push({ id, name: sc.name, ok: report.checks.slice(before).every((c) => c.ok), checks: report.checks.length - before, ms: Date.now() - t0, error });
-      await context.close();
+      await context.close().catch(() => {});
     }
   }
 } finally {
-  await browser.close();
-  server.close();
+  await browser?.close().catch(() => {});
+  server?.close();
   await agent.cleanup();
   if (!agent.reused && !args.keep) {
     const gone = await verifyDeleted(kaltura, admin.ks, agent);

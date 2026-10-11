@@ -1,7 +1,7 @@
 // KalturaAvatarSession's STV pc.ontrack emits 'track', the
 // same shape KalturaScriptedVideoSession already emits, with or without a
 // videoEl, and without disturbing the existing srcObject/play() attach path.
-import { test } from 'node:test';
+import { test, mock } from 'node:test';
 import assert from 'node:assert/strict';
 import { KalturaAvatarSession } from '../../src/experience/index.js';
 import { FakeSocket, scriptHappyPath, textsEntered as sentTexts, markerCount } from '../fakes/socket.js';
@@ -592,6 +592,31 @@ test('respondToTool: 2xx returns {ok:true}; HTTP 4xx/5xx returns {ok:false, reas
   assert.deepEqual(await session.respondToTool('inv-1', { a: 1 }), { ok: false, reason: 'unknown_or_stale' }, 'the ACK is consumed after success');
   assert.equal(acks.length, 2);
   assert.equal(acks[0].tool_id, 'inv-1');
+  session.disconnect();
+});
+
+test('respondToTool: a POST that gets no answer in 15 s returns {ok:false, reason:"timeout"} and the call stays pending for a retry', async () => {
+  let hang = true;
+  const fetch = async (url, init) => {
+    if (String(url).endsWith('/assistant/tool_response')) {
+      if (hang) return new Promise((_, reject) => init.signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' }))));
+      return { ok: true, status: 200, text: async () => '', headers: { get: () => null } };
+    }
+    return { ok: true, status: 201, text: async () => 'v=0\r\nanswer\r\n', headers: { get: () => 'https://srs/whep/resource/1' } };
+  };
+  const { session, socket } = newSession({ cfg: { fetch, genieUrl: 'https://genie.example' } });
+  scriptHappyPath(socket);
+  await session.connect();
+  socket.server('agent_raw_text', { speechId: 's1', delta: JSON.stringify({ type: 'tool', content: 'save_note {"a":1}', tool_metadata: { id: 'inv-1', wait_for_response: true, type: 'client' } }) });
+  await delay(0);
+  mock.timers.enable({ apis: ['setTimeout'] });
+  try {
+    const pending = session.respondToTool('inv-1', { a: 1 });
+    mock.timers.tick(15000);
+    assert.deepEqual(await pending, { ok: false, reason: 'timeout' });
+  } finally { mock.timers.reset(); }
+  hang = false;
+  assert.deepEqual(await session.respondToTool('inv-1', { a: 1 }), { ok: true }, 'the retry goes through');
   session.disconnect();
 });
 

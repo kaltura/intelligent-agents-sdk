@@ -296,7 +296,7 @@ For the full module-by-module map, see **[ARCHITECTURE-REFERENCE.md's "SDK Modul
 
 ## Resilience & Failure Handling — Overview
 
-How the system behaves under network failures, disconnects, and device problems. `KalturaAvatarSession` recovers in three layers: the control socket (Socket.IO reconnect, then a cold reconnect if state was lost), the WebRTC media peers (ICE restart for ASR, WHEP re-subscribe for STV), and a cold reconnect of the whole session as the last step. A custom client that skips `KalturaAvatarSession` must implement these itself.
+How the system behaves under network failures, disconnects, and device problems. `KalturaAvatarSession` recovers in three layers: the control socket (Socket.IO reconnect, then a cold reconnect if state was lost), the WebRTC media peers (ICE restart for ASR, WHEP re-subscribe for STV), and a cold reconnect of the whole session as the last step (two attempts). A health watchdog catches peers that die without an ICE event, and closing the tab releases the server side. A custom client that skips `KalturaAvatarSession` must implement these itself.
 
 See **[ARCHITECTURE-REFERENCE.md's "Resilience & Failure Handling"](architecture-reference/resilience-and-failure-handling.md#resilience--failure-handling)** for the recovery layers and the failure-mode matrix. It also covers device-permission handling, and the tool-call-spiral circuit breaker mechanism.
 

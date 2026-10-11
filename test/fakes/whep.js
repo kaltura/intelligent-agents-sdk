@@ -3,7 +3,7 @@
  * `steps` (the last step repeats), so a test can model a slow answer, a dropped connection, an
  * HTTP error, or a POST the server accepted but whose response never arrived.
  *
- * A step is `{ status?, sdp?, location?, delayMs?, reset?, hang? }`:
+ * A step is `{ status?, sdp?, location?, delayMs?, reset?, hang?, hangBody? }`:
  *
  * | field | effect |
  * |---|---|
@@ -12,6 +12,7 @@
  * | `delayMs` | wait this long (a timer, so `mock.timers` controls it) before answering |
  * | `reset` | reject with a network `TypeError` after `delayMs` |
  * | `hang` | never answer; the call ends only when its `signal` aborts |
+ * | `hangBody` | answer the headers, then never deliver the body (`text()` never settles) |
  *
  * Requests that are not WHEP (`match`, default `/whep|rtc\/v1/`) go to `fallback`. A DELETE
  * answers `deleteStatus` (default 200). Every call is recorded with its method, URL, headers
@@ -19,7 +20,7 @@
  */
 
 /**
- * @param {Array<{status?:number, sdp?:string, location?:string, delayMs?:number, reset?:boolean, hang?:boolean}>} steps
+ * @param {Array<{status?:number, sdp?:string, location?:string, delayMs?:number, reset?:boolean, hang?:boolean, hangBody?:boolean}>} steps
  * @param {{match?:RegExp, deleteStatus?:number, fallback?:typeof fetch}} [opts]
  */
 export function fakeWhepFetch(steps, opts = {}) {
@@ -57,7 +58,9 @@ export function fakeWhepFetch(steps, opts = {}) {
     });
     const status = step.status ?? 201;
     const ok = status >= 200 && status < 300;
-    return response(status, ok ? (step.sdp ?? 'v=0\r\nfake-answer\r\n') : 'whep error', ok ? { location: step.location ?? `${u.replace(/\/$/, '')}/viewer/${posts}` } : {});
+    const res = response(status, ok ? (step.sdp ?? 'v=0\r\nfake-answer\r\n') : 'whep error', ok ? { location: step.location ?? `${u.replace(/\/$/, '')}/viewer/${posts}` } : {});
+    if (step.hangBody) res.text = () => new Promise(() => {});
+    return res;
   };
   fn.calls = calls;
   /** POSTs the fake has seen. */
