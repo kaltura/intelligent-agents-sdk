@@ -30,7 +30,10 @@ const ROOT_DOC_IGNORE = new Set(['README.md', 'CODE_OF_CONDUCT.md', 'CONTRIBUTIN
 //     customers into thinking it's an equivalent path.
 //   - docs/ARCHITECTURE-RECIPE.md: a from-scratch client recipe. The supported way in is
 //     the SDK, so the site does not present the recipe as a route.
+//   - docs/internal/**: contributor docs, never published (see DOCS_INTERNAL_PREFIX).
 export const DOCS_SUBTREE_IGNORE = new Set(['docs/api/scripted-video.md', 'docs/ARCHITECTURE-RECIPE.md']);
+export const DOCS_INTERNAL_PREFIX = 'docs/internal/';
+export const isIgnoredDoc = (p) => DOCS_SUBTREE_IGNORE.has(p) || p.startsWith(DOCS_INTERNAL_PREFIX);
 
 function walkMarkdown(dir, base = dir) {
   const out = [];
@@ -44,7 +47,7 @@ function walkMarkdown(dir, base = dir) {
 
 export function checkSourceCoverage(sdkDir) {
   const rootMd = readdirSync(sdkDir).filter((n) => n.endsWith('.md') && !ROOT_DOC_IGNORE.has(n));
-  const docsMd = walkMarkdown(resolve(sdkDir, 'docs')).map((p) => `docs/${p}`).filter((p) => !DOCS_SUBTREE_IGNORE.has(p));
+  const docsMd = walkMarkdown(resolve(sdkDir, 'docs')).map((p) => `docs/${p}`).filter((p) => !isIgnoredDoc(p));
   const discovered = new Set([...rootMd, ...docsMd]);
   const manifestSources = new Set(manifest.filter((e) => e.source).map((e) => e.source));
   const missing = [...discovered].filter((s) => !manifestSources.has(s));

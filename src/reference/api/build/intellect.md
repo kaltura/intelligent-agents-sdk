@@ -46,6 +46,8 @@ Returns the full intellect object. **Save `id`** — this is your `configId`.
 | `1` | PENDING |
 | `0` | FOR_DELETION |
 
+**External LLM (BYO-LLM).** It is possible, but not self-serve. Ask your Kaltura Account Manager to set it up. `intellects.create` rejects a body that contains `url` or `protocol` with a typed `bad_request`.
+
 ---
 
 ## Configure an Intellect

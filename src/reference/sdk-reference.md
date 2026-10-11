@@ -170,11 +170,11 @@ Build the control as click-to-toggle, not press-and-hold. It's more usable for l
 
 ### Resilience: brain stalls and tool-call spirals
 
-`KalturaAvatarSession` watches for a brain that goes quiet or loops instead of answering — see [System Internals Reference](/reference/architecture-reference/resilience-and-failure-handling/#resilience--failure-handling) for the full failure-mode matrix.
+`KalturaAvatarSession` watches for a brain that goes quiet or loops instead of answering — see [Architecture Reference](/reference/architecture-reference/resilience-and-failure-handling/#resilience--failure-handling) for the full failure-mode matrix.
 
 - **Brain-stall watchdog** (`brainStallMs`, default on) — emits `brainStalled` (`{count}`), repeating for as long as nothing perceivable (spoken/avatar content or a GenUI widget) follows a turn.
 - **Dead-air masking** (`responsePending`/`responseSettled`) — `responsePending` (`{}`) fires the moment a turn starts awaiting the brain's first perceivable output (spoken/avatar/GenUI content). `responseSettled` (`{}`) fires once that output arrives, the turn ends, an interruption occurs, or the session tears down. Use this pair to show or hide a "thinking…" affordance instead of leaving the avatar's face frozen during the gap. See `examples/browser-experience.html` for a working example.
-- **Tool-call spiral circuit breaker** — constructor options `toolSpiralLimit` (default 10, per turn) and `hardToolSpiralLimit` (default `toolSpiralLimit * 3`, session-scoped). Events: `toolSpiralDetected` (soft) and `toolSpiralRecovering` (`{count, limit, lastTurnText}`, hard, triggers a cold reconnect). `recoverFromSpiral` (default `true`) auto-resends the abandoned turn's text once on reconnect and emits `spiralRecovered {text}`. Set it to `false` to handle recovery yourself via `lastTurnText`. See [System Internals Reference § Tool-call spiral](/reference/architecture-reference/resilience-and-failure-handling/#tool-call-spiral-what-happened-and-how-its-mitigated) for why the two tiers exist and how recovery works.
+- **Tool-call spiral circuit breaker** — constructor options `toolSpiralLimit` (default 10, per turn) and `hardToolSpiralLimit` (default `toolSpiralLimit * 3`, session-scoped). Events: `toolSpiralDetected` (soft) and `toolSpiralRecovering` (`{count, limit, lastTurnText}`, hard, triggers a cold reconnect). `recoverFromSpiral` (default `true`) auto-resends the abandoned turn's text once on reconnect and emits `spiralRecovered {text}`. Set it to `false` to handle recovery yourself via `lastTurnText`. See [Architecture Reference § Tool-call spiral](/reference/architecture-reference/resilience-and-failure-handling/#tool-call-spiral) for why the two tiers exist and how recovery works.
 
 ```js
 const session = new KalturaAvatarSession({ token, /* … */, recoverFromSpiral: false });
@@ -963,6 +963,6 @@ const suggestions = await mgmt.followups.getSuggested(ks);
 | [Getting Started](/getting-started/) | First working agent in about five minutes |
 | [Backend API Reference](/reference/api-reference/) | The raw HTTP endpoints behind every SDK method here |
 | [Platform Overview](/explanation/architecture/) | How `./management` and `./experience` fit into the backend services and runtime protocol as a whole |
-| [System Internals Reference](/reference/architecture-reference/) | The module-by-module data-flow map and failure-mode tables behind this page's SDK surface |
+| [Architecture Reference](/reference/architecture-reference/) | The connect sequence, recovery behavior and failure-mode tables behind this page's SDK surface |
 | [Wire Protocol](/reference/wire-protocol/) | The exact socket/WebRTC wire shapes `KalturaAvatarSession` speaks |
 | [Security](/reference/security/) | The control matrix and KS-handling guidance behind this SDK's auth model |
