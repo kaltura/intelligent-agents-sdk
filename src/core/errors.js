@@ -142,6 +142,7 @@ export function errorFromResponse({ status, path, body, requestId, headers }) {
     detail: hint ? `${trimTrailingDots(base)}. ${hint}` : base,
     instance: path,
     code,
+    retryable: code === 'payment_required' ? false : undefined,
     requestId,
     headers,
     body,
