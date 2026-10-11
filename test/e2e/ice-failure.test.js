@@ -32,6 +32,7 @@ function setup({ firstFrame = 150, timeouts = {} } = {}) {
     fetch: whep, getUserMedia: fakeGetUserMedia(), mediaStreamConstructor: FakeMediaStreamCtor,
     timeouts: { firstFrame, ...timeouts },
   });
+  FakeRTCPeerConnection.iceUpOnAnswer = false;   // this file starts from a peer that never connects
   return { session, socket, el, whep };
 }
 
@@ -117,10 +118,57 @@ test('the stuck-ICE watchdog looks again while the session is still joining', as
   asr.setIce('checking');
   await delay(80);
   assert.ok(session._iceNewTimers.asr, 'the timer fired once and was armed again');
+  const recovering = [];
+  session.on('mediaRecovering', (e) => recovering.push(e.channel));
   el.fireFrame(1280, 720);
   await p;
+  await until(() => recovering.includes('asr'), 500);
+  assert.equal(asr.iceRestarted, 1, 'the peer that stayed stuck is recovered after connect()');
   session.disconnect();
   assert.equal(session._iceNewTimers.asr, null, 'disconnect clears it');
+});
+
+test('without a video element, connect() waits for ICE and fails with ice_failed when it never connects', async () => {
+  FakeRTCPeerConnection.reset();
+  const socket = new FakeSocket();
+  scriptHappyPath(socket);
+  const session = new KalturaAvatarSession({
+    token: CONV_KS, srsBaseUrl: 'https://srs.example', turnServerUrl: 'turn.example.com',
+    socketFactory: () => socket, rtcConstructor: FakeRTCPeerConnection, fetch: fakeWhepFetch([{}]),
+    getUserMedia: fakeGetUserMedia(), mediaStreamConstructor: FakeMediaStreamCtor, timeouts: { firstFrame: 150 },
+  });
+  FakeRTCPeerConnection.iceUpOnAnswer = false;
+  const err = await session.connect().then(() => null, (e) => e);
+  assert.equal(err?.code, 'ice_failed');
+});
+
+test('without frame callbacks, connect() resolves only after ICE is connected', async () => {
+  FakeRTCPeerConnection.reset();
+  const socket = new FakeSocket();
+  scriptHappyPath(socket);
+  const session = new KalturaAvatarSession({
+    token: CONV_KS, srsBaseUrl: 'https://srs.example', turnServerUrl: 'turn.example.com',
+    videoEl: new FakeVideoEl(), socketFactory: () => socket, rtcConstructor: FakeRTCPeerConnection, fetch: fakeWhepFetch([{}]),
+    getUserMedia: fakeGetUserMedia(), mediaStreamConstructor: FakeMediaStreamCtor, timeouts: { firstFrame: 5000 },
+  });
+  FakeRTCPeerConnection.iceUpOnAnswer = false;
+  let resolved = false;
+  const p = session.connect().then(() => { resolved = true; });
+  await until(() => FakeRTCPeerConnection.instances.some((pc) => isStv(pc) && pc.remoteDescription));
+  await delay(150);
+  assert.equal(resolved, false, 'a track and canplay are not enough while ICE is still checking');
+  FakeRTCPeerConnection.instances.find(isStv).setIce('connected');
+  await p;
+  session.disconnect();
+});
+
+test('getIceReport() after disconnect says the peer is closed', async () => {
+  const { session } = setup();
+  const stop = forEachStvPeer((pc) => pc.setIce('failed'));
+  await session.connect().catch(() => {});
+  stop();
+  session.disconnect();
+  assert.equal((await session.getIceReport()).stv?.cause, 'closed');
 });
 
 test('getIceReport() is empty before connect and describes both peers after', async () => {

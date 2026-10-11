@@ -927,7 +927,7 @@ export class KalturaAvatarSession extends Emitter {
    * is rejected as `ConnectTimeout`, same rule as every socket wait in `_await`.
    * The `timeouts.firstFrame` cap starts when the answer is applied, so a slow WHEP POST
    * never eats it. With no frame at the cap the stream is re-subscribed once (`attempt` 0);
-   * a second miss resolves with warning `media_no_video` and `mediaReady {degraded:true}`.
+   * a second miss resolves with warning `media_no_video` and `mediaReady {degraded:true}`, unless the peer's ICE never connected: that rejects with `ice_failed`.
    * @param {{expired:()=>boolean}} [overall] @param {number} [attempt] 0 for the first subscribe, 1 for the re-subscribe
    */
   async _connectStv(overall, attempt = 0) {
@@ -943,7 +943,7 @@ export class KalturaAvatarSession extends Emitter {
     pc.addTransceiver('audio', { direction: 'recvonly' });
     this._applyVideoCodecPreference(videoTransceiver);
     pc.oniceconnectionstatechange = () => {
-      if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') this._mark('iceConnectedStv');
+      if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') { this._mark('iceConnectedStv'); iceUpNow(); }
       this.emit('connectivityChanged', { channel: 'stv', state: pc.iceConnectionState });
       if (pc.iceConnectionState === 'failed' && pc === this._pcStv) iceFailNow();   // no point waiting out the first-frame cap
       this._onIceStateChange('stv', pc);
@@ -954,6 +954,7 @@ export class KalturaAvatarSession extends Emitter {
     let cancelPlayable = () => {};
     let startCap = () => {};
     let iceFailNow = () => {};
+    let iceUpNow = () => {};
     // Exposed on `this` so _teardownTransports() can reach it — disconnect()/_endWith() called
     // mid-connect (after this point, before `await playable` below resolves) closes _pcStv but
     // otherwise has no handle into this closure's pending timers.
@@ -993,7 +994,15 @@ export class KalturaAvatarSession extends Emitter {
       const listen = (el, ev, fn) => { if (listeners.some((l) => l.el === el && l.ev === ev)) return; listeners.push({ el, ev, fn }); el.addEventListener(ev, fn, { once: true }); };
       const unlisten = () => { for (const l of listeners) l.el.removeEventListener?.(l.ev, l.fn); listeners.length = 0; };
       const finish = () => { for (const id of timers) clearTimeout(id); timers.clear(); unlisten(); cancelFrame(); emitMediaReady(this._avatarMedia.videoEl); resolve(true); };
-      const settle = (ms = 300) => { if (!done) { done = true; arm(finish, ms); } };   // jitter settle for the paths with no frame callback
+      // Jitter settle for the paths with no frame callback. It waits for ICE: a track exists as soon
+      // as the answer is applied, long before any media can flow. The cap fails a peer that never connects.
+      let settleMs = null;
+      const settle = (ms = 300) => {
+        if (done) return;
+        if (!ICE_UP.has(pc.iceConnectionState)) { settleMs = ms; return; }
+        done = true; arm(finish, ms);
+      };
+      iceUpNow = () => { if (settleMs != null) { const ms = settleMs; settleMs = null; settle(ms); } };
       // First painted frame with a real size: the earliest moment a user sees the avatar.
       const watchFrame = (v) => {
         if (frameId != null) return;
@@ -3008,7 +3017,7 @@ export class KalturaAvatarSession extends Emitter {
         if (st !== 'new' && st !== 'checking') return;
         if (this.state === 'connected') this._recoverMedia(channel, pc);
         // Still joining: look again shortly, so a peer that is stuck by the time connect() resolves is not forgotten.
-        else if ((this.state === 'connecting' || this.state === 'reconnecting') && pc === (channel === 'asr' ? this._pcAsr : this._pcStv)) arm(2000);
+        else if ((this.state === 'connecting' || this.state === 'reconnecting') && pc === (channel === 'asr' ? this._pcAsr : this._pcStv)) arm(Math.min(2000, this._timeouts.iceStuck));
       }, ms);
       timer.unref?.();
       this._iceNewTimers[channel] = timer;

@@ -236,7 +236,7 @@ For a dynamic crop/`object-position` instead of generic `object-fit: cover`, bot
 Listen for `'mediaReady'` instead. It fires once per connect, unconditionally, in one of three shapes:
 
 - `{mode:'video', videoWidth, videoHeight}` when the first video frame is painted, with the real size. Without a `videoEl` there is no frame to wait for: it fires after a short settle with `0` for both. `connect()` resolves at the same moment.
-- `{mode:'video', videoWidth:0, videoHeight:0, degraded:true}` when no frame arrived within `timeouts.firstFrame` (default 6 s, counted from the moment the answer is applied). The SDK re-subscribes once first. If that also fails, it emits warning `media_no_video` and `connect()` still resolves, so the conversation continues with audio.
+- `{mode:'video', videoWidth:0, videoHeight:0, degraded:true}` when no frame arrived within `timeouts.firstFrame` (default 6 s, counted from the moment the answer is applied). The SDK re-subscribes once first. If that also fails, it emits warning `media_no_video` and `connect()` still resolves, so the conversation continues with audio. A peer whose ICE never connected is different: `connect()` rejects with `ice_failed` ([ICE diagnostics](architecture-reference/resilience-and-failure-handling.md#ice-diagnostics)).
 - `{mode:'audio'}` immediately, if the session falls back to audio-only.
 
 So a loading spinner has one deterministic event to hide on, in either mode, with no fallback timeout to guess.

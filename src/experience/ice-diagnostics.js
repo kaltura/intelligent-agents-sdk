@@ -5,17 +5,20 @@
  */
 
 const MAX_ERRORS = 8;
-const IPV4 = /\b\d{1,3}(?:\.\d{1,3}){3}\b/g;
-const IPV6 = /\b(?:[0-9a-f]{1,4}:){2,7}[0-9a-f]{0,4}\b/gi;
 
 /** @typedef {{ code: number, text: string, scheme: string }} IceServerError A failed STUN or TURN request. `scheme` is `stun`, `turn`, `turns` or `unknown`. */
 /** @typedef {{ host: number, srflx: number, prflx: number, relay: number }} IceCandidateCounts Local candidates gathered, by type. */
 /** @typedef {{ channel: 'asr'|'stv', iceConnectionState: string, connectionState: string, gatheringState: string, candidates: IceCandidateCounts, errors: IceServerError[], cause: string, hint: string }} IceSnapshot */
 /** @typedef {IceSnapshot & { selectedPair: { localType: string, remoteType: string, protocol: string } | null }} IceReport */
 
-/** @param {unknown} s */
+/**
+ * Keep plain words only. Any other token (an address, a port, a host name, a URL, a `key=value`
+ * pair) is replaced, so nothing that identifies a host or a credential survives.
+ * @param {unknown} s
+ */
 function scrub(s) {
-  return String(s ?? '').replace(IPV4, '<ip>').replace(IPV6, '<ip>').slice(0, 160);
+  return String(s ?? '').slice(0, 300).split(/\s+/).filter(Boolean)
+    .map((w) => (/^[A-Za-z][A-Za-z'-]*[.,;]?$/.test(w) ? w : '<redacted>')).join(' ').slice(0, 160);
 }
 
 /** @param {unknown} url */
@@ -73,12 +76,13 @@ export class IceTrace {
     try {
       if (typeof this.pc?.getStats === 'function') {
         let timer;
-        const stats = await Promise.race([
-          this.pc.getStats(),
-          new Promise((resolve) => { timer = setTimeout(() => resolve(null), timeoutMs); timer.unref?.(); }),
-        ]);
-        clearTimeout(timer);
-        selectedPair = stats ? pickPair(stats) : null;
+        try {
+          const stats = await Promise.race([
+            this.pc.getStats(),
+            new Promise((resolve) => { timer = setTimeout(() => resolve(null), timeoutMs); timer.unref?.(); }),
+          ]);
+          selectedPair = stats ? pickPair(stats) : null;
+        } finally { clearTimeout(timer); }
       }
     } catch { /* stats are best effort */ }
     return { ...snap, selectedPair };
@@ -106,21 +110,23 @@ function pickPair(stats) {
 
 /**
  * Name the most likely cause from what a peer gathered and what its servers answered.
- * @param {{ iceConnectionState: string, gatheringState: string, candidates: IceCandidateCounts, errors: IceServerError[] }} s
+ * @param {{ iceConnectionState: string, connectionState?: string, gatheringState: string, candidates: IceCandidateCounts, errors: IceServerError[] }} s
  * @returns {{ cause: string, hint: string }}
  */
 export function diagnoseIce(s) {
   const up = s.iceConnectionState === 'connected' || s.iceConnectionState === 'completed';
   if (up) return { cause: 'connected', hint: 'The media path is up.' };
-  const auth = s.errors.find((e) => e.code === 401 || e.code === 403 || e.code === 438);
+  if (s.iceConnectionState === 'closed' || s.connectionState === 'closed') return { cause: 'closed', hint: 'The connection was closed.' };
+  // A relay address means the relay accepted the credentials, so a 401 seen on the way (the normal challenge) is not a rejection.
+  const turnErrors = s.errors.filter((e) => e.scheme !== 'stun' && e.scheme !== 'stuns');
+  const auth = s.candidates.relay === 0 && turnErrors.find((e) => e.code === 401 || e.code === 403 || e.code === 438);
   if (auth) return { cause: 'turn_credentials_rejected', hint: 'The relay server rejected the credentials. Check the TURN settings the session was given.' };
-  const unreachable = s.errors.find((e) => e.code === 701 || (e.code >= 300 && e.code < 400));
-  if (s.candidates.relay === 0 && (unreachable || s.errors.length)) {
+  if (s.candidates.relay === 0 && turnErrors.length) {
     return { cause: 'turn_unreachable', hint: 'No relay address could be allocated. A firewall or proxy may block the relay server. Allow outbound UDP and TCP on ports 80 and 443 to the relay host, or try another network.' };
   }
   const total = s.candidates.host + s.candidates.srflx + s.candidates.prflx + s.candidates.relay;
   if (s.gatheringState === 'complete' && total === 0) {
-    return { cause: 'no_candidates', hint: 'The browser found no network address to use. Check that the device is online and that a VPN or privacy setting is not hiding its network interfaces.' };
+    return { cause: 'no_candidates', hint: 'The browser gathered no network address. Check that the device is online, that a VPN or privacy setting is not hiding its network interfaces, and that outbound UDP and TCP on ports 80 and 443 to the relay host are allowed.' };
   }
   if (s.candidates.relay > 0) {
     return { cause: 'no_route', hint: 'A relay address was allocated but the media server could not be reached through it. This is usually a short network problem. Try again.' };

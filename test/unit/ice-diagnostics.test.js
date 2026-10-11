@@ -22,6 +22,17 @@ test('diagnoseIce names the cause for each failure shape', () => {
   assert.match(diag({ errors: [{ code: 701, text: '', scheme: 'turn' }] }).hint, /ports 80 and 443/);
 });
 
+test('diagnoseIce: an allocated relay overrides a 401, and STUN-only errors are not a TURN failure', () => {
+  assert.equal(diag({ errors: [{ code: 401, text: '', scheme: 'turn' }], candidates: counts({ relay: 1 }) }).cause, 'no_route');
+  assert.equal(diag({ errors: [{ code: 701, text: '', scheme: 'stun' }], candidates: counts({ host: 1 }) }).cause, 'no_route');
+  assert.equal(diag({ errors: [{ code: 401, text: '', scheme: 'stun' }] }).cause, 'no_route');
+});
+
+test('diagnoseIce: a closed peer says so', () => {
+  assert.equal(diag({ iceConnectionState: 'closed' }).cause, 'closed');
+  assert.equal(diag({ connectionState: 'closed' }).cause, 'closed');
+});
+
 test('IceTrace counts local candidates by type and ignores the end marker', () => {
   const pc = new FakeRTCPeerConnection();
   const trace = new IceTrace('stv', pc);
@@ -48,7 +59,27 @@ test('IceTrace keeps server errors without any address, and dedupes them', () =>
   assert.deepEqual(snap.errors.map((e) => [e.code, e.scheme]), [[701, 'turn'], [401, 'turns']]);
   const json = JSON.stringify(snap);
   assert.doesNotMatch(json, /203\.0\.113\.5|2001:db8|turn\.example\.com/);
-  assert.match(snap.errors[0].text, /<ip>/);
+  assert.match(snap.errors[0].text, /<redacted>/);
+});
+
+test('error text keeps plain words only, whatever shape the address or secret has', () => {
+  const pc = new FakeRTCPeerConnection();
+  const trace = new IceTrace('stv', pc);
+  const leaks = [
+    '2001:db8::1', '::1', 'fe80::1%en0', '[2001:db8::1]:3478', '2001:DB8::ff00:42:8329', '1.2.3.4:3478',
+    'turn.example.com:443', '0d6a2c1e-1111-4222-8333-444455556666.local', 'turns:host:443?transport=tcp&username=bob&credential=s3cr3t',
+  ];
+  leaks.forEach((l, i) => pc.fireCandidateError({ errorCode: 500 + i, errorText: `Failed to reach ${l} now` }));
+  const all = JSON.stringify(trace.snapshot());
+  for (const l of leaks) for (const part of l.split(/[\s=&?]/)) assert.ok(!part || !all.includes(part), `leaked ${part}`);
+  assert.equal(trace.snapshot().errors[0].text, 'Failed to reach <redacted> now');
+});
+
+test('plain server sentences are kept', () => {
+  const pc = new FakeRTCPeerConnection();
+  const trace = new IceTrace('stv', pc);
+  pc.fireCandidateError({ errorText: 'STUN host lookup received error.' });
+  assert.equal(trace.snapshot().errors[0].text, 'STUN host lookup received error.');
 });
 
 test('IceTrace stores at most eight distinct errors and clips long text', () => {

@@ -129,11 +129,11 @@ FakeRTCPeerConnection.instances = [];
 /** Test switch: model Firefox leaving a queued negotiation promise unsettled after `close()`. */
 FakeRTCPeerConnection.hangUnsettledOnClose = false;
 /** Test switch: an STV peer reports ICE `connected` once its answer is applied (a quiet state change, no event). */
-FakeRTCPeerConnection.iceUpOnAnswer = false;
+FakeRTCPeerConnection.iceUpOnAnswer = true;
 FakeRTCPeerConnection.reset = () => {
   FakeRTCPeerConnection.instances = [];
   FakeRTCPeerConnection.hangUnsettledOnClose = false;
-  FakeRTCPeerConnection.iceUpOnAnswer = false;
+  FakeRTCPeerConnection.iceUpOnAnswer = true;
 };
 
 let trackSeq = 0;

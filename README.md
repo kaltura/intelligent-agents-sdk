@@ -362,7 +362,7 @@ Non-fatal problems on this path arrive as `warning` events, `{ code, message, ..
 | Code | When | What to do |
 |---|---|---|
 | `playback_blocked` | The browser refused `play()` (autoplay policy). Payload has `kind: 'video' \| 'audio'`. | Show a "tap to start" control and call `startPlayback()` from it. |
-| `media_no_video` | No video frame arrived, even after one re-subscribe. `connect()` still resolves and `mediaReady` carries `degraded: true`. | Show the avatar as audio-only, or offer a reconnect. |
+| `media_no_video` | No video frame arrived, even after one re-subscribe, though the media path is up. `connect()` still resolves and `mediaReady` carries `degraded: true`. A media path that never came up rejects with `ice_failed` instead. | Show the avatar as audio-only, or offer a reconnect. |
 | `prepare_expired` | A `prepare()`d socket was not used within `timeouts.prepareIdle` and was closed. | Nothing. `connect()` starts a new handshake. |
 | `media_attach_failed` | A downlink track could not be routed (no `MediaStream` constructor, bad element). Payload has `kind: 'video' \| 'audio'` and `detail`. | Fall back to the `'track'` event or fix the element. |
 | `whep_delete_failed` | `KalturaScriptedVideoSession` only. The WHEP `DELETE` that releases this viewer failed. Harmless on a hangup: the server releases the session itself once the socket closes. A later re-subscribe to the same session can come back `409` while the old viewer is still held. | Nothing; informational. |
