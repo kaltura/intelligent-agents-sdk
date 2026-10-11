@@ -31,6 +31,7 @@ import { Skills } from './skills.js';
 import { Lifecycle } from './lifecycle.js';
 import { InsightSettings } from './insight-settings.js';
 import { EmailTemplates } from './email-templates.js';
+import { Doctor } from './doctor.js';
 import { Conversations, Threads, Messages, Feedback, Followups, Knowledge } from './conversations.js';
 import { provision } from './provision.js';
 import { setForcedLanguage } from './set-forced-language.js';
@@ -223,28 +224,45 @@ export class Management {
     // Facade over the raw Intellects surface: one merge-safe patch() primitive + typed
     // field setters + describe() (every EDITABLE_FIELDS value). Shares the intellects instance
     // so capability/secret writes use a single read-merge-write path (no divergence).
-    this.intellectConfig = new IntellectConfig(ctx, this.intellects);
     // Standalone, PARTNER-LEVEL Tool entity CRUD (`/v1/tool/*`) — NOT intellect-scoped.
     // Link a created tool to an intellect via `intellectConfig.setToolIds` or `tool_ids`.
     this.tools = new Tools(ctx);
     // Standalone, PARTNER-LEVEL Skill entity CRUD (`/v1/skill/*`) — uuid-id
     // named behaviors, distinct from Tools.
     this.skills = new Skills(ctx);
+    // `tools` and `skills` are passed in so `intellectConfig.audit` can check the ids an intellect lists.
+    this.intellectConfig = new IntellectConfig(ctx, this.intellects, { tools: this.tools, skills: this.skills });
     this.conversations = new Conversations(ctx);
     this.threads = new Threads(ctx);
     this.messages = new Messages(ctx);
     this.feedback = new Feedback(ctx);
     this.followups = new Followups(ctx);
     this.knowledge = new Knowledge(ctx);
-    // Event-driven rule engine (`/lifecycle/*`) — react to session/thread
-    // events (e.g. session_ended) with server-owned actions, no polling.
-    this.lifecycle = new Lifecycle(ctx);
     // Reusable insight definitions (`/insight-settings/*`) a lifecycle rule's
     // `triggerInsightSettingsKai` action references by id.
     this.insightSettings = new InsightSettings(ctx);
     // Kaltura Messaging API email templates (`email-template/*`) — the `templateId` a
     // lifecycle rule's `sendInsightEmail` action can pin instead of a `presetType`.
     this.emailTemplates = new EmailTemplates(ctx);
+    // Event-driven rule engine (`/lifecycle/*`) — react to session/thread
+    // events (e.g. session_ended) with server-owned actions, no polling.
+    // The siblings are what `lifecycle.audit` reads.
+    this.lifecycle = new Lifecycle(ctx, { insightSettings: this.insightSettings, agents: this.agents, emailTemplates: this.emailTemplates, intellects: this.intellects });
+    // Read-only health check behind `doctor()`.
+    this._doctor = new Doctor(ctx, { lifecycle: this.lifecycle, intellectConfig: this.intellectConfig, agents: this.agents, insightSettings: this.insightSettings, emailTemplates: this.emailTemplates });
+  }
+
+  /**
+   * Health check over the partner's agents. READ only, it changes nothing. One
+   * report with the lifecycle audit ({@link Lifecycle#audit}), the intellect
+   * audit of each agent's intellect ({@link IntellectConfig#audit}) and the
+   * insight settings and email templates no rule uses. See {@link Doctor#run}.
+   * @param {string} ks (admin)
+   * @param {{agentIds?:string[], pageSize?:number}} [opts] `agentIds` limits the check to those agents and the rules that run for them.
+   * @returns {Promise<import('./audit-report.js').AuditReport>} `{findings, summary:{error,warn,info}, checked, skipped}`
+   */
+  doctor(ks, opts) {
+    return this._doctor.run(ks, opts);
   }
 
   /**
