@@ -55,8 +55,12 @@ The SDK wraps every error into a `KalturaError` with a stable `err.code`. Branch
 | Status | `err.code` | Fix |
 |--------|-----|-----|
 | 400 | `bad_request` | Fix the request body |
+| 402 | `payment_required` | The account is over a usage limit or not entitled. Check the plan with your Kaltura contact. Never retried. |
 | 403 | `forbidden` | Wrong KS type: admin KS for management, `geniegpcid` for conversations. Also: a user session without `userId` on thread get, list or delete. A user session asking for another user's thread gets 404 instead. See [SECURITY.md § Session type](SECURITY.md#session-type) |
 | 405 | `method_not_allowed` | Use `GET` for `/assistant/status`; everything else is `POST` |
+| 6001 | `capacity_unavailable` | No free avatar slot. Retry later or call `waitForCapacity()`. See [Capacity & the queue](docs/architecture-reference/scale-and-sticky-sessions.md#capacity--the-queue-throwtonoagent--throwtoexceededtier) |
+| 6002 | `tier_exceeded` | The account plan limit is reached. Not retryable. See [Capacity & the queue](docs/architecture-reference/scale-and-sticky-sessions.md#capacity--the-queue-throwtonoagent--throwtoexceededtier) |
+| none | `capacity_timeout` | `waitForCapacity()` found no free slot in time. See [Capacity & the queue](docs/architecture-reference/scale-and-sticky-sessions.md#capacity--the-queue-throwtonoagent--throwtoexceededtier) |
 
 Upstream error text is also normalized to a stable `err.code`, regardless of the HTTP status the backend returned it with:
 

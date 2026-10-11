@@ -66,7 +66,7 @@
     });
 
     // Every event the SDK's session emits — see docs/architecture-reference/conversation-flow.md.
-    for (const evt of ['disclosure', 'responsePending', 'responseSettled', 'transcript', 'speechChunk', 'avatarStartTalking', 'avatarStopTalking', 'turnEnd', 'interrupted', 'warning', 'error', 'ended']) {
+    for (const evt of ['disclosure', 'mediaReady', 'connectTimings', 'responsePending', 'responseSettled', 'transcript', 'speechChunk', 'avatarStartTalking', 'avatarStopTalking', 'turnEnd', 'interrupted', 'warning', 'error', 'ended']) {
       session.on(evt, (payload) => record(evt, payload));
     }
 
@@ -74,7 +74,7 @@
     if (kickoff) record('kickoff:config', session.kickoff);
     record('connect:start');
     await session.connect();
-    record('connect:resolved', { speaking: session.speaking, kickoff: session.kickoff });
+    record('connect:resolved', { speaking: session.speaking, kickoff: session.kickoff, timings: session.timings });
 
     // ?nudge=<text>: at this moment the opening line is committed but session.speaking is
     // still false; speak() holds the text until that line finishes, so 'nudge:sent' should
