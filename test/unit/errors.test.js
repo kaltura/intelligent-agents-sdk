@@ -68,3 +68,12 @@ test('payment_required carries the plan hint, with or without an upstream messag
   assert.equal(errorFromResponse({ status: 402, path: '/x', body: { message: 'Quota hit.' } }).detail, `Quota hit. ${hint}`);
   assert.equal(errorFromResponse({ status: 403, path: '/x', body: null }).detail, 'HTTP 403 from /x', 'other codes get no hint');
 });
+
+test('trailing dots and whitespace are trimmed from the upstream message, even when the text is very long', () => {
+  const hint = 'The account is over a usage limit or not entitled. Check the plan with your Kaltura contact.';
+  assert.equal(errorFromResponse({ status: 402, path: '/x', body: { message: 'Quota hit . \t\n' } }).detail, `Quota hit. ${hint}`);
+  const long = `x${'\t'.repeat(200000)}y`;
+  const t0 = Date.now();
+  errorFromResponse({ status: 402, path: '/x', body: { message: long } });
+  assert.ok(Date.now() - t0 < 500, 'linear time on a long run of whitespace');
+});

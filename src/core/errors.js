@@ -89,6 +89,13 @@ function codeForStatus(status) {
   return 'error';
 }
 
+/** Drop trailing dots and whitespace. A scan from the end stays linear, unlike `/[.\s]+$/` on long text. @param {string} s */
+function trimTrailingDots(s) {
+  let end = s.length;
+  while (end > 0 && /[.\s]/.test(s[end - 1])) end--;
+  return s.slice(0, end);
+}
+
 /**
  * Build a KalturaError from an HTTP response that failed.
  * @param {{status:number, path:string, body:unknown, requestId?:string, headers?:Record<string,string>}} ctx
@@ -103,7 +110,7 @@ export function errorFromResponse({ status, path, body, requestId, headers }) {
     type: BASE + code,
     title: code.replace(/_/g, ' '),
     status,
-    detail: hint ? `${base.replace(/[.\s]+$/, '')}. ${hint}` : base,
+    detail: hint ? `${trimTrailingDots(base)}. ${hint}` : base,
     instance: path,
     code,
     requestId,
@@ -195,7 +202,7 @@ export function errorFromErrorSegments(segments, ctx = {}) {
     type: BASE + code,
     title: code.replace(/_/g, ' '),
     status: 200,
-    detail: `The server refused the turn: ${text.replace(/[.\s]+$/, '')}.${hint ? ` ${hint}` : ''}`,
+    detail: `The server refused the turn: ${trimTrailingDots(text)}.${hint ? ` ${hint}` : ''}`,
     instance: ctx.path,
     code,
     requestId: ctx.requestId,
