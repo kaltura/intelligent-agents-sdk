@@ -47,7 +47,7 @@ const EXPECTED_CELLS = [
   'races-recover', 'races-split-in-listener', 'races-disconnect-mid-play', 'races-start-playback', 'races-double-disconnect',
   'autoplay-simple', 'autoplay-split', 'autoplay-split-audio-blocked', 'autoplay-rebind-rearm',
   'teardown', 'leaks-connect-cycles', 'leaks-audio-el-toggles', 'controls-before-connect',
-  'chroma-key', 'compat-patterns', 'scripted',
+  'chroma-key', 'compat-patterns', 'first-frame-gate', 'slow-whep', 'prepare', 'scripted',
 ];
 
 /**

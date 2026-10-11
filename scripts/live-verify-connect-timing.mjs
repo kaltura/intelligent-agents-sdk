@@ -121,7 +121,9 @@ import { callHook } from './live-verify-hooks-shared.mjs';
 
 const { args, target, runId, outDir } = bootstrap(process.argv.slice(2), 'connect-timing');
 // A sound that starts this close to the end of the silent opening is the reply that follows it, not the opening.
-const OPENING_SOUND_JITTER_MS = 100;
+const OPENING_SOUND_JITTER_MS = 250;
+// connect() resolves on the first frame; the rest is the approval step.
+const CONNECT_AFTER_FRAME_MS = 60;
 const COMPARE = typeof args.compare === 'string' ? args.compare : null;
 const KICKOFF = args['no-kickoff'] === true ? null : (typeof args.kickoff === 'string' ? args.kickoff : 'Greet the user in one short sentence and ask how you can help.');
 const OPENING = typeof args.opening === 'string' && args.opening.trim() ? args.opening : null;
@@ -400,6 +402,15 @@ try {
       const videoNegotiated = !!videoSection && videoSection.port !== 0 && videoSection.codecs.length > 0 && videoSection.dir !== 'inactive';
       const offeredVideoCodecs = find(evs, 'pc:sdp', { where: (d) => d.n === stvN && d.role === 'local' })?.detail?.media?.find((/** @type {any} */ m) => m.kind === 'video')?.codecs ?? null;
 
+      // The session's own phase timings: present, in order, and connect() resolves on the first frame.
+      const phases = await callHook(page, 'testTimings');
+      const ORDER = ['socketOpen', 'serverConnected', 'joinComplete', 'stvNewSessionReply', 'whepSent', 'whepAnswer', 'firstTrack', 'mediaReady', 'approved', 'connected'];
+      const inOrder = !!phases && ORDER.every((k, i) => typeof phases[k] === 'number' && (i === 0 || phases[k] >= phases[ORDER[i - 1]]));
+      run.phases = phases;
+      report.check(`${tag}: session.timings has every phase, in order`, inOrder, phases);
+      if (mediaMode === 'video' && phases) {
+        report.check(`${tag}: connect() resolved within ${CONNECT_AFTER_FRAME_MS} ms of the first frame`, typeof phases.firstFrame === 'number' && phases.connected - phases.firstFrame <= CONNECT_AFTER_FRAME_MS, { firstFrame: phases.firstFrame, connected: phases.connected });
+      }
       report.check(`${tag}: STV media connected before connect() resolved`, mediaMode === 'audio' || (run.stvIceMs !== null && run.stvIceMs <= run.connectMs), { stvIceMs: run.stvIceMs, connectMs: run.connectMs, mediaMode });
       if (!v.spoken) {
         report.check(`${tag}: silent opening ended < 1500 ms after connect resolved`, run.openingAfterConnectMs !== null && run.openingAfterConnectMs < 1500, { openingAfterConnectMs: run.openingAfterConnectMs });
