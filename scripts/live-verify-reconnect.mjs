@@ -31,7 +31,7 @@ const ONLY = typeof args.only === 'string' ? new Set(args.only.split(',').map((s
 const choice = browserChoice(args);
 const HEADED = choice.headed || choice.browser === 'chrome';
 const SETUP = `${choice.browser} ${HEADED ? 'headed' : 'headless'}`;
-const RECOVER_BUDGET_MS = 2500;   // watchdog tick (up to 1 s) + one re-subscribe
+const RECOVER_BUDGET_MS = 3000;   // watchdog tick (up to 1 s) + one re-subscribe; a CI Firefox run took 2.6 s, a laptop 1.4 s
 const RECOVER_404_BUDGET_MS = 3500;   // the same plus a new avatar session; CI runners were measured at 2.9 s, a laptop at 1.6 s
 const REBUILD_BUDGET_MS = 8000;   // a closed mic peer cannot restart ICE, so the session rebuilds
 const OFFLINE_MS = 6000;
