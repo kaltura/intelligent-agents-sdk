@@ -35,6 +35,7 @@ import { assertRequestVars, remapConverseError } from '../management/conversatio
 import { validateCapabilities } from '../management/capabilities.js';
 import { inspectKs } from '../management/ks-inspect.js';
 import { KalturaError, errorFromResponse, errorFromErrorSegments } from '../core/errors.js';
+import { fetchWithTimeout, TOOL_RESPONSE_TIMEOUT_MS } from './fetch-timeout.js';
 import { normalizeKickoff } from '../core/opening.js';
 import { makeAuditEmitter } from '../core/session.js';
 import { sanitizeJson } from '../core/safety.js';
@@ -439,7 +440,8 @@ export class KalturaChatSession extends Emitter {
    * ACK a `wait_for_response:true` client tool call — the exact peer of
    * `KalturaAvatarSession.respondToTool` (same `/assistant/tool_response`
    * POST, same KS auth, same graceful `{ok:false, reason:'unknown_or_stale'}`
-   * degradation, and `{ok:false, reason:'http_error', status}` on an HTTP 4xx/5xx;
+   * degradation, `{ok:false, reason:'http_error', status}` on an HTTP 4xx/5xx and
+   * `{ok:false, reason:'timeout'}` after 15 s with no answer;
    * see that method's doc for the full contract). Because chat
    * segments are parsed mid-stream, calling this from an `onToolCall` handler
    * unblocks the brain within the SAME turn.
@@ -458,11 +460,18 @@ export class KalturaChatSession extends Emitter {
       return { ok: false, reason: 'unknown_or_stale' };
     }
     const gen = this._sessionGen;
-    const res = await this._fetch(`${this._genieUrl}/assistant/tool_response`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `KS ${this._token}` },
-      body: JSON.stringify({ tool_name: pending.name, tool_id: id, tool_invocation_id: id, response: sanitizeJson(response) }),
-    });
+    let res;
+    try {
+      res = await fetchWithTimeout(this._fetch, `${this._genieUrl}/assistant/tool_response`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `KS ${this._token}` },
+        body: JSON.stringify({ tool_name: pending.name, tool_id: id, tool_invocation_id: id, response: sanitizeJson(response) }),
+      }, TOOL_RESPONSE_TIMEOUT_MS);
+    } catch (err) {
+      // A timed-out POST keeps the pending entry, so the app can retry with the same id.
+      if (/** @type {any} */ (err)?.code === 'timeout') { this._audit('tool.ack', 'fail', { reason: 'timeout' }); return { ok: false, reason: 'timeout' }; }
+      throw err;
+    }
     if (gen !== this._sessionGen) { this._pendingToolAcks.delete(id); this._audit('tool.ack', 'fail', { reason: 'session_rebuilt' }); return { ok: false, reason: 'session_rebuilt' }; }
     // A rejected POST keeps the pending entry, so the app can retry with the same id.
     if (res && res.ok === false) { this._audit('tool.ack', 'fail', { reason: 'http_error', status: res.status }); return { ok: false, reason: 'http_error', status: res.status }; }

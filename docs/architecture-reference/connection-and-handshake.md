@@ -65,7 +65,7 @@ Step 11 runs once both lanes are done. The first lane to fail rejects `connect()
 | 6 | Wait agent | ← `showAgent` | agent joined | 10s (`AgentResponseTimeout`) |
 | 7 | Wait ready | ← `askPermissions` `{constraints:{audio,video}}` | ready for the mic | 10s (`AgentResponseTimeout`) |
 | 9 | Connect ASR (mic uplink), lane A, after 6→7 | `asr-webrtc-*` handshake ([§5](../wire-protocol/audio-channels.md#5-asr-uplink-pc1--microphone--server)) | - | 30s per wait (`ASRConnectionFailed`) |
-| 10 | Subscribe STV video (WHEP) **and wait until it is *playable*, or give up waiting**, lane B, starts right after step 5 | → WHEP `POST` (no timeout of its own) → wait for the video track, then `<video>` `canplay` + ~300ms settle. Without `canplay` within 2s of the track, or without any track within 6s of the subscribe start, the gate settles anyway | first decoded frame, or a fallback timer elapsing | 6s cap from subscribe start (2s after the track if `canplay` is missing); settles either way |
+| 10 | Subscribe STV video (WHEP) **and wait until it is *playable*, or give up waiting**, lane B, starts right after step 5 | → WHEP `POST` (5 s per try, 3 tries; [details](../wire-protocol/audio-channels.md#6-stv-downlink-pc2--avatar-videoaudio--you)) → wait for the video track, then for the first painted frame (`requestVideoFrameCallback`). Where that API is missing, the tab is hidden, the stream has no video track, or media is being recovered, the gate is `<video>` `canplay` + 100ms. With no `videoEl`, the gate is a 300ms settle | first painted frame | `timeouts.firstFrame` (6s), counted from the moment the answer is applied. At the cap with no frame the SDK re-subscribes once, then continues with warning `media_no_video` and `mediaReady {degraded:true}` |
 | 11 | Emit `disclosure`, then approve (this starts the spoken greeting), once lanes A and B are both done | → `approvedPermissions` `{room}` | - | - |
 | 12 | Opening turn runs. With a silent opening phrase (`SILENT_OPENING`) it produces no speech and ends in about 0.5 s. A configured `kickoff` is sent on its `stvFinishedTalking` ([guide](../START-THE-CONVERSATION.md)) | ← `stvStartedTalking` … ← `stvFinishedTalking`, then → `onTextEntered {text}` | `stvFinishedTalking` | - |
 | → | **CONNECTED** | listen for `agent_raw_text`, `generatingSpeech`, `stvStartedTalking` | — | — |
@@ -75,15 +75,84 @@ Step 8 is unused. In audio/phone mode there is no STV session, so lane B is skip
 
 Overall connecting timeout: 30s. It bounds every wait in the table, including the two ASR waits and the WHEP answer. An event or WHEP answer that lands after the deadline rejects `connect()` with `ConnectTimeout`.
 
-**Why step 3 has two timeouts.** `joinComplete` can arrive later than `clientConfiguration` under load. The SDK budgets the two waits separately: `clientConfiguration` gets 5s (`TIMEOUTS.joinRoom`), `joinComplete` gets 20s (`TIMEOUTS.joinComplete`). A single 5s budget for both causes spurious `JoinRoomTimeout` failures on loaded rooms.
+**Timeout errors.** Every wait in the table rejects with `code: 'timeout'`. The names in the table (`JoinRoomTimeout` and the rest) are labels in `detail`, not codes. Branch on `error.phase`, which names the step that ran out:
 
-The 30s deadline is set once, at the start of `connect()`. It keeps running through every later step, including the capacity queue, and is **not** paused or extended when the queue activates. If no slot frees up before it runs out, `connect()` rejects with `ConnectTimeout`. To wait longer for a slot, call `waitForCapacity({maxWaitMs, pollIntervalMs})` **before** `connect()`. It is a separate, opt-in poll with its own bound: `maxWaitMs` defaults to 300000ms. See [Capacity & the queue](scale-and-sticky-sessions.md#capacity--the-queue-throwtonoagent--throwtoexceededtier).
+| `error.phase` | Step |
+|---|---|
+| `serverConnect` | 1 |
+| `join` | 3, `clientConfiguration` |
+| `joinComplete` | 3, `joinComplete` |
+| `agent` | 6 and 7 |
+| `asr` | 9 |
+| `whep` | 10, the WHEP request (`whep_timeout`, `whep_failed`, `stv_session_gone`) |
+| `connect` | A fatal server event (`capacity_unavailable`, `tier_exceeded`, `bad_request`) or any other failure in `connect()` |
+| `reconnect` | The socket or a cold reconnect ran out of attempts (`reconnect_failed`) |
+
+`error.retryable` is `true` on `timeout`, `capacity_unavailable`, `whep_timeout`, a `whep_failed` caused by the network, `stv_session_gone` and `reconnect_failed`, because the same call can succeed on a later try. A `whep_failed` that carries an HTTP status does not set it. Both fields are also in `error.toJSON()`.
+
+```js
+// Retry a connect that can succeed later. Give up on anything else.
+for (let attempt = 1; ; attempt++) {
+  try { await session.connect(); break; }
+  catch (err) {
+    if (!err.retryable || attempt === 3) throw err;
+    await new Promise((r) => setTimeout(r, 1000 * attempt));
+    session.disconnect();
+    session.setToken(await mintFreshToken());   // disconnect() clears the token
+  }
+}
+```
+
+**Why step 3 has two timeouts.** `joinComplete` can arrive later than `clientConfiguration` under load. The SDK budgets the two waits separately: `clientConfiguration` gets 5s (`TIMEOUTS.joinRoom`), `joinComplete` gets 20s (`TIMEOUTS.joinComplete`). A single 5s budget for both causes spurious `timeout` failures with phase `join` on loaded rooms.
+
+The 30s deadline is set once, at the start of `connect()`. It keeps running through every later step, including the capacity queue, and is **not** paused or extended when the queue activates. If no slot frees up before it runs out, `connect()` rejects with `timeout`. To wait longer for a slot, call `waitForCapacity({maxWaitMs, pollIntervalMs})` **before** `connect()`. It is a separate, opt-in poll with its own bound: `maxWaitMs` defaults to 300000ms. See [Capacity & the queue](scale-and-sticky-sessions.md#capacity--the-queue-throwtonoagent--throwtoexceededtier).
 
 **Why `approvedPermissions` waits for playable video.** `approvedPermissions` is what makes the agent start speaking. ICE `connected` fires about 2s before the first frame decodes, so approving early clips the greeting. `_approve` (`src/experience/session.js`) waits for `<video>` to reach `canplay` (`HAVE_FUTURE_DATA`). The fallback timers (2s after the track, 6s after the subscribe starts) mean a stalled video track can't block approval forever. Do the same in a custom client.
 
 The opening line itself can't be interrupted. Typed text sent during it is held (`speak()`) until `stvFinishedTalking`. For the fastest interruptible start, give the avatar a silent opening phrase (`SILENT_OPENING`) and let the session's `kickoff` option send the first turn on that event. See [START-THE-CONVERSATION.md](../START-THE-CONVERSATION.md).
 
 ---
+
+**Connecting again.** `disconnect()` clears the token. Call `setToken()` with a fresh conversation KS before the next `connect()` or `prepare()`, or they reject with `invalid_state`. From the `error` state, call `disconnect()` first.
+
+## Start faster
+
+**`prepare()`.** `await session.prepare()` does steps 1 to 3 ahead of time: it opens the socket, sends `join` and waits for the join ack. Call it when the user is likely to start soon (page load, hover over the start button). The later `connect()` skips those steps. `prepare()` never asks for the microphone and never creates an avatar session, so a prepared page costs nothing until `connect()`.
+
+| Rule | Behavior |
+|---|---|
+| Idempotent | A second call returns the first call's promise. It does nothing while a connect runs or after one finished. |
+| `connect()` during a prepare | Waits for it, then reuses the socket. |
+| Unused | After `timeouts.prepareIdle` (60 s) the socket is closed with warning `prepare_expired`. A later `connect()` starts fresh. |
+| Dropped or failed | `connect()` starts fresh. A failed `prepare()` rejects with the same errors as steps 1 to 3. |
+| Inputs | The `join` is sent at once. Set `threadId`, `requestVars`, `contextId` and the other join inputs in the constructor. |
+| `streamReady` | Fires from `connect()`, so listeners attached before `connect()` still see it. |
+
+**Resource hints.** Add these to the page `<head>` so the browser opens the connections while the page loads. The origins are the ones you pass as `conversationManagerUrl` and `srsBaseUrl`, and your TURN host.
+
+```html
+<link rel="preconnect" href="https://MESSAGING_HOST">
+<link rel="preconnect" href="https://MESSAGING_HOST" crossorigin>
+<link rel="preconnect" href="https://SRS_HOST" crossorigin>
+<link rel="dns-prefetch" href="https://TURN_HOST">
+```
+
+**Connect timings.** `session.timings` returns the phases of the current or last `connect()` in ms from the start of that call. A phase that was not reached is absent. After a successful connect the session emits `connectTimings` once with the same object. A failed `connect()` attaches the phases it reached to `error.timings`.
+
+| Phase | Reached when |
+|---|---|
+| `micRequested` | The microphone request started (absent with `micStartMode: 'deferred'`) |
+| `socketOpen`, `serverConnected`, `joinComplete` | Steps 1 to 3. With `prepare()` they are all about 0 |
+| `stvNewSessionReply` | The server answered `stvNewSession` |
+| `whepSent`, `whepAnswer` | The WHEP `POST` left and its answer arrived |
+| `iceConnectedStv` | The video peer's ICE connected |
+| `firstTrack`, `firstFrame`, `mediaReady` | First downlink track, first painted frame, `mediaReady` emitted |
+| `asrReady` | The microphone uplink is negotiated |
+| `approved`, `connected` | `approvedPermissions` sent, state `connected` |
+
+The rows group related phases and are not in time order. `firstFrame` is also absent when there is no `videoEl`, when the browser has no `requestVideoFrameCallback`, or when no frame arrived in time (`mediaReady` then has `degraded: true`).
+
+**Tuning.** `timeouts` overrides any wait in the table above (`overall`, `serverConnect`, `joinRoom`, `joinComplete`, `agent`, `asr`, `firstFrame`, `prepareIdle`) and the WHEP, recovery and watchdog limits (`whepTry`, `whepTries`, `whepBackoff`, `whepRelease`, `recover`, `healthTick`, `videoStall`, `coldAttempts`, `coldBackoff`; defaults in [Resilience](resilience-and-failure-handling.md)). `reconnectionDelay` (default 250 ms) and `reconnectionDelayMax` (default 2000 ms) set how soon and how often a dropped socket retries.
 
 ## The `join` payload (step 2): carries the agent/brain config
 

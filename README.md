@@ -261,7 +261,7 @@ await session.connect();
 session.speak('Tell me about onboarding.');
 ```
 
-**Attach every listener before `connect()`.** Some events fire before `connect()` resolves: `streamReady`, `capacityChanged`, `mediaReady`, `disclosure`, and an early mic `warning`. `KalturaAgentSession` also emits `transportChanged` before its `connect()` resolves and `modeChanged` before `switchMode()` resolves. A listener added after the `await` misses them, so call `.on(...)` first on every session class.
+**Attach every listener before `connect()`.** Some events fire before `connect()` resolves: `streamReady`, `capacityChanged`, `mediaReady`, `connectTimings`, `disclosure`, and a `warning` (an early mic warning, or `media_no_video`). `KalturaAgentSession` also emits `transportChanged` before its `connect()` resolves and `modeChanged` before `switchMode()` resolves. A listener added after the `await` misses them, so call `.on(...)` first. On a `KalturaAgentSession`, `mediaReady`, `connectTimings`, `mediaRecovering` and `mediaRecovered` are forwarded, but `streamReady`, `capacityChanged` and `disclosure` stay on the transport: listen for them on `session.transport` inside a `transportChanged` handler.
 
 **How `speak(text)` works:** it injects `text` into the conversation on the same path as the viewer's own voice transcript — the brain treats it as a new turn and replies in its own words, not a verbatim echo of `text`. Need exact scripted playback instead? See [docs/api/scripted-video.md](docs/api/scripted-video.md).
 
@@ -273,7 +273,7 @@ session.speak('Tell me about onboarding.');
 
 The SDK binds the avatar's tracks to the elements you pass and applies no CSS of its own — size the box yourself with `object-fit: cover` (aspect-agnostic, no letterbox/pillarbox bars). **Pass both `videoEl` and `audioEl`** so the picture and the voice live on separate elements: a UI re-render that replaces the `<video>` then costs you the picture for a moment, not the whole avatar. With `videoEl` alone the SDK merges both tracks onto that one element, and omitting `videoEl` gives you `session.avatarStream` for headless rendering — see [Avatar audio and video rendering](#avatar-audio-and-video-rendering) below and [docs/ARCHITECTURE.md § Displaying the Avatar Video](docs/ARCHITECTURE.md#displaying-the-avatar-video).
 
-**Don't hide a loading spinner on `'streamReady'`** — it fires at the initial signaling handshake, before any video track exists. Listen for `'mediaReady'` instead: it fires once per connect, unconditionally, with `{mode:'video', videoWidth, videoHeight}` once the STV media is playable (dimensions are `0` if the decoder never resolved them, e.g. no `videoEl` — use `'videoMetadata'` if you need real dimensions), or `{mode:'audio'}` immediately if the session falls back to audio-only (capacity limited).
+**Don't hide a loading spinner on `'streamReady'`.** It fires at the initial signaling handshake, before any video track exists. Listen for `'mediaReady'` instead: it fires once per connect, unconditionally, with `{mode:'video', videoWidth, videoHeight}` when the first video frame is painted (dimensions are `0` when there is no `videoEl`; use `'videoMetadata'` if you need real dimensions), `{mode:'video', videoWidth:0, videoHeight:0, degraded:true}` when no frame arrived (see warning `media_no_video`), or `{mode:'audio'}` immediately if the session falls back to audio-only (capacity limited).
 
 ```js
 session.on('mediaReady', ({ mode }) => spinner.hidden = true);   // covers both video and audio-only sessions
@@ -316,6 +316,13 @@ Every element gets one `srcObject` write and one `play()` per binding. In the me
 | `setAudioOutput(deviceId)` | Routes the audio-carrying element via `setSinkId`. Throws `bad_request` when `deviceId` is not a string. Resolves `false`, never throws, when the element has no `setSinkId` or rejects the id. An accepted id follows the audio across rebinds; a rejected id is dropped and the previous one stays. Set before `connect()`, the id is applied on the first bind. `''` selects the system default on every browser. |
 | `startPlayback()` | Retries `play()` on every bound element. Call from a click after a `playback_blocked` warning. Resolves `true` when everything is playing. |
 
+Two more members speed up and measure `connect()` ([Start faster](docs/architecture-reference/connection-and-handshake.md#start-faster)):
+
+| Member | Behavior |
+|---|---|
+| `prepare()` | Opens the socket and joins ahead of `connect()`. Idempotent, no microphone, no avatar session. |
+| `timings`, event `connectTimings` | Phase times of the last `connect()` in ms. |
+
 Media recovery (an STV re-subscribe after a stall) never touches your elements: the new tracks are swapped into the same streams, and only an element that the browser paused meanwhile (Firefox does this) gets one `play()` call. The one exception is an element whose `srcObject` your app replaced itself (for example set to `null` to hide the avatar): recovery binds it again. On Chromium a remote audio track is only decoded while some media element plays it, so a headless app that mixes `avatarStream` through Web Audio must keep a muted `<audio>` bound to the track; Firefox and WebKit do not need it. Calling `disconnect()` from inside a `'track'` listener is safe.
 
 **Multiple avatars on one page.** Each avatar is its own session with its own elements. Sessions share nothing: mute, volume and output device are per session.
@@ -354,6 +361,8 @@ Non-fatal problems on this path arrive as `warning` events, `{ code, message, ..
 | Code | When | What to do |
 |---|---|---|
 | `playback_blocked` | The browser refused `play()` (autoplay policy). Payload has `kind: 'video' \| 'audio'`. | Show a "tap to start" control and call `startPlayback()` from it. |
+| `media_no_video` | No video frame arrived, even after one re-subscribe. `connect()` still resolves and `mediaReady` carries `degraded: true`. | Show the avatar as audio-only, or offer a reconnect. |
+| `prepare_expired` | A `prepare()`d socket was not used within `timeouts.prepareIdle` and was closed. | Nothing. `connect()` starts a new handshake. |
 | `media_attach_failed` | A downlink track could not be routed (no `MediaStream` constructor, bad element). Payload has `kind: 'video' \| 'audio'` and `detail`. | Fall back to the `'track'` event or fix the element. |
 | `whep_delete_failed` | `KalturaScriptedVideoSession` only. The WHEP `DELETE` that releases this viewer failed. Harmless on a hangup: the server releases the session itself once the socket closes. A later re-subscribe to the same session can come back `409` while the old viewer is still held. | Nothing; informational. |
 | `empty_turn_with_request_vars` | The intellect rejected `request_vars` because `allow_client_variables` is off (see the `{{var}}` section). | Enable the intellect flag. |
@@ -470,7 +479,7 @@ session.on('toolSpiralRecovering', ({ lastTurnText }) => {
 });
 ```
 
-Two ICE-level failure modes (zero-candidates fail-fast, and telling a transient drop apart from a server-gone WHEP 404) get distinct, faster handling — see [ARCHITECTURE-REFERENCE.md § Resilience & Failure Handling](docs/architecture-reference/resilience-and-failure-handling.md#resilience--failure-handling) for the exact timings and the `connectivityChanged` `detail` values.
+The session also recovers without an ICE event: a health watchdog catches a peer closed from outside and a video stream that stops arriving, a WHEP `404` or `409` gets a new avatar session on the live socket, a failed cold reconnect is tried twice, and an `online` event retries a down socket at once. Each WHEP request has a deadline and bounded retries. Zero-candidates fail-fast has its own faster path. See [ARCHITECTURE-REFERENCE.md § Resilience & Failure Handling](docs/architecture-reference/resilience-and-failure-handling.md#resilience--failure-handling) for the exact timings and event payloads.
 
 ### Devices and media quality
 
@@ -590,7 +599,7 @@ await session.completeThread();
 | `sessionCompleteOnEnd` | `true` | Master switch. `false` disables the signal entirely: no POST, no listeners. |
 | `sessionCompletePath` | `'/thread/session_completed'` | Escape hatch if the route ever moves. |
 | `sessionCompleteTimeoutMs` | `5000` | Abort budget for `completeThread()`'s POST. Never applied on the tab-close path — an abort timer can't run on a dying page. |
-| `pageLifecycleAware` | `true` in a browser | Wire `pagehide`/`visibilitychange`/`pageshow`. Silent no-op in Node/SSR, same posture as `networkAware`. |
+| `pageLifecycleAware` | `true` in a browser | Wire `pagehide`/`visibilitychange`/`pageshow`. A real page exit (not a bfcache freeze) also releases the WHEP resource and closes the socket, even mid-`connect()` ([details](docs/architecture-reference/resilience-and-failure-handling.md#page-exit)). Silent no-op in Node/SSR, same posture as `networkAware`. |
 | `hiddenGraceMs` | `30000` | After the page goes hidden (tab switch, minimize, lock), wait this long, then complete — catches iOS Safari / Chrome Android tab-kills where `pagehide` never fires. Any activity (a turn, avatar speech) re-arms this timer, so a hidden tab that's still talking is never completed mid-turn. Cancelled by returning to visible. |
 | `completeOnHiddenGrace` | `true` | Kill-switch for the heuristic above. |
 | `completeOnBfcache` | `true` | Fire on `pagehide` with `persisted:true` — the SDK can't survive a back-forward-cache round-trip anyway (socket/WHEP are already torn down, no auto-resume). |
@@ -1234,6 +1243,8 @@ await session.sendText('Look up open tickets for this account.');
 `intellectConfig.describe(configId, ks)` returns every writable field under `editable` (`null` when the server did not echo it) plus `capabilityNames`. Wire it directly to a settings UI.
 
 `patch()` only accepts keys in `EDITABLE_FIELDS`, rejecting anything else before the network call — `describe()`'s `editable` map is exactly that set. Knowledge grounding via `knowledge_ids` is fully public and ungated. (Event-driven session/thread rules ARE supported, see [docs/lifecycle/README.md](docs/lifecycle/README.md).)
+
+`intellectConfig.audit(configId, ks)` checks a saved intellect for mistakes, `lifecycle.audit(ks)` does the same for lifecycle rules, and `mgmt.doctor(ks)` runs both across every agent. All three only read and return findings with a `severity`, `code` and `fix`. See [Audit your rules](docs/lifecycle/README.md#audit-your-rules).
 
 ### Forcing the reply language (`setForcedLanguage`)
 

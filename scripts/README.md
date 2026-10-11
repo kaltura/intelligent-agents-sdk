@@ -77,8 +77,13 @@ The two Salesforce scripts need a Salesforce Developer Edition org or sandbox (`
 | Script | Covers |
 |---|---|
 | `live-verify.mjs` | Smoke test: admin token → intellect → conversation token → one turn → delete |
+| `live-verify-matrix.mjs` | Runs the scripts above on every target, one at a time, and prints one table (script × target). `--targets prod,nvq2:1` (default), `--scripts a,b`, `--out DIR`, `--list`. Logs go to `DIR/<target>/<script>.log`. A target without credentials fails every script. Exits 1 on any non-pass |
 | `live-verify-kickoff.mjs` | Every silent-opening + `kickoff` scenario, one fresh browser context each |
 | `live-verify-connect-timing.mjs` | Startup KPIs: time to `connect()`, first video frame, first audio, first agent words |
+| `live-verify-startup-faults.mjs` | `connect()` under client-side faults injected in the browser (nothing is broken on the server): a WHEP POST that answers 4.5 s late, is reset, answers 503, 404 or 409, and a join that times out. Asserts the connect result, the retry count, `error.phase` and `retryable` |
+| `live-verify-reconnect.mjs` | Recovery after the connection is lost, with faults injected in the browser: the avatar video peer closed (re-subscribe within 2.5 s), both peers closed (session rebuild, two open peers), a re-subscribe answered 404 (new avatar session on the same socket), and the browser offline for 6 s (connected again within 3 s of the network returning) |
+| `live-verify-unload.mjs` | Closing the page while connected, and while `connect()` runs, leaves no viewer attached to the avatar session on the server. The check is made from Node after the close |
+| `live-verify-prepare.mjs` | `session.prepare()`: joins ahead of `connect()` with state still `idle`, `connect()` reuses the socket (one `join`) and has no join phase left and its best run is faster than the plain best run by at least half of the plain run's socket and join time, and an unused prepared socket expires with `prepare_expired` |
 | `live-verify-opening-phrase.mjs` | `provision()` writes the opening phrase to the intellect only, a Jinja2 `{% if %}` phrase renders per session from `requestVars`, and `SILENT_OPENING` on the intellect alone gives a silent opening turn |
 | `live-verify-browser.mjs` | Browser smoke test: real WHEP downlink, real WebRTC, real media element |
 | `live-verify-avatar-media.mjs` | The merged-stream media path against a real downlink |
@@ -93,10 +98,28 @@ The two Salesforce scripts need a Salesforce Developer Edition org or sandbox (`
 | `live-verify-set-forced-language.mjs`, `live-verify-force-language.mjs` | A forced language changes the reply, not just storage |
 | `live-verify-capabilities.mjs` | Capability resolution plus the Lifecycle domain |
 | `live-verify-agents.mjs`, `live-verify-avatars.mjs`, `live-verify-catalog.mjs`, `live-verify-tools.mjs`, `live-verify-skills.mjs`, `live-verify-knowledge.mjs`, `live-verify-intellects-conversations.mjs`, `live-verify-threads-messages-feedback.mjs`, `live-verify-conversation-avatar-surface.mjs` | The write path of one management resource each |
+| `live-verify-lifecycle-audit.mjs` | `lifecycle.audit`, `doctor` and `intellectConfig.audit` report the expected findings for planted rule defects and none for a clean set, and `lifecycle-audit.mjs` exits 0, 1 and 2 as documented. Scoped to one throwaway agent. Covers the no-messaging-host skip on named targets |
 | `live-verify-regions.mjs` | Every `REGIONS` host answers over TLS like nvp1. No credentials |
 | `live-verify-threads-messages-feedback.mjs --with-share` | Also runs the `messages.share` step (step 6), which leaves an undeletable clone per run. Off by default: use it only after a change to `messages.share` |
 
 Every one of these has an `npm run live-verify:<name>` script except `live-verify.mjs` and `live-verify-mcp.mjs` (CI runs both with `node`). Four have no npm script and no CI job. Run them with `node scripts/<name>.mjs`: `live-verify-intellect-config.mjs`, `live-verify-knowledge-kms.mjs`, `live-verify-feedback-flow.mjs`, `live-check-feedback-unfiltered.mjs`. Two more have an npm script but no CI job: `live-verify-force-language.mjs` and `live-verify-regions.mjs`, run by hand with `npm run live-verify:force-language` and `npm run live-verify:regions`.
+
+### Lifecycle audit CLI
+
+`lifecycle-audit.mjs` (`npm run audit:lifecycle`) is a tool, not a test. It is read-only. It uses the same `TARGET` rules as the live scripts. Finding codes: [Audit your rules](../docs/lifecycle/README.md#audit-your-rules).
+
+```bash
+npm run audit:lifecycle -- [--agent <id>]... [--doctor] [--json] [--fail-on warn|error]
+```
+
+| Flag | Effect |
+|---|---|
+| `--agent <id>` | Check only that agent and the rules that run for it. Repeatable |
+| `--doctor` | Also audit each agent's intellect and list unused insight settings and templates |
+| `--json` | Print `{target, findings, summary, checked, skipped}` |
+| `--fail-on warn\|error` | Lowest severity that gives exit code 1. Default `error` |
+
+Exit code 0: nothing at or above `--fail-on`. 1: something is. 2: usage, credentials or request error. Secret values are never printed.
 
 Read the header comment of a script before running it. Each one states what it asserts and why that coverage exists.
 
@@ -104,9 +127,9 @@ Four helper modules are not scripts and are never run directly: `lib/target.mjs`
 
 ### Flags
 
-Four scripts take the CLI flags below: `live-verify-kickoff.mjs`, `live-verify-connect-timing.mjs`, `live-verify-opening-phrase.mjs` and `live-verify-session-types.mjs` (they share `live-verify-kickoff-shared.mjs`). `live-verify-mcp.mjs` takes its own flags, listed in its header. Every other script is configured by env vars alone.
+Eight scripts take the CLI flags below: `live-verify-kickoff.mjs`, `live-verify-connect-timing.mjs`, `live-verify-opening-phrase.mjs`, `live-verify-session-types.mjs`, `live-verify-startup-faults.mjs`, `live-verify-reconnect.mjs`, `live-verify-unload.mjs` and `live-verify-prepare.mjs` (they share `live-verify-kickoff-shared.mjs`). `live-verify-mcp.mjs` takes its own flags, listed in its header. Every other script is configured by env vars alone.
 
-Shared by all four (`live-verify-session-types.mjs` drives no browser, so it ignores `--browser`, `--headed` and `--kickoff`):
+Shared by all eight (`live-verify-session-types.mjs` drives no browser, so it ignores `--browser`, `--headed` and `--kickoff`):
 
 | Flag | Effect |
 |---|---|
@@ -119,6 +142,8 @@ Shared by all four (`live-verify-session-types.mjs` drives no browser, so it ign
 | `--keep` | Do not delete the throwaway agent at the end |
 | `--agent-json PATH` | Reuse the agent described in `PATH` (`{configId, widgetId}`, plus `agentId` for `live-verify-session-types.mjs`) instead of provisioning one. Deletes nothing |
 | `--skip-revoke` | `live-verify-session-types.mjs` only: skip the `revoke()` check |
+
+`live-verify-startup-faults.mjs`, `live-verify-reconnect.mjs`, `live-verify-unload.mjs` and `live-verify-prepare.mjs` take `--only IDS` too, and `live-verify-prepare.mjs` adds `--runs N` (alternating plain and prepared pairs, default 3).
 
 `live-verify-kickoff.mjs` and `live-verify-opening-phrase.mjs` add `--only IDS` (run these scenario ids only) and `--dump-events` (write the page's full event log for every scenario, not just failures). `--kickoff TEXT` has no effect on `live-verify-opening-phrase.mjs`, which never sends a kickoff.
 

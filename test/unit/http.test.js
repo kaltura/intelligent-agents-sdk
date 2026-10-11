@@ -266,3 +266,39 @@ test('S-1: chunked body without Content-Length is aborted mid-stream, not fully 
   // long before all 20 chunks (10 000 bytes) are pulled — i.e. aborted mid-stream.
   assert.ok(pulled <= 5, `expected reading to stop shortly after the limit was crossed, but pulled ${pulled}/${totalChunks} chunks`);
 });
+
+// ── 402 payment_required (real Http, real local server) ──────────────────────
+
+test('402 maps to payment_required and is never retried (real server, one request)', async () => {
+  const { createServer } = await import('node:http');
+  let requests = 0;
+  const server = createServer((req, res) => {
+    requests++;
+    req.resume();
+    res.writeHead(402, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ message: 'Usage limit reached' }));
+  });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  try {
+    const { port } = /** @type {import('node:net').AddressInfo} */ (server.address());
+    const http = new Http({ maxRetries: 3, delayFn: () => Promise.resolve() });
+    const url = `http://127.0.0.1:${port}/agent/list`;
+    const calls = [
+      { method: 'GET' },
+      { method: 'POST', body: {}, json: true, idempotencyKey: 'idem-1' },
+    ];
+    for (const call of calls) {
+      requests = 0;
+      await assert.rejects(() => http.request({ url, ks: 'k', ...call }), (e) => {
+        assert.ok(e instanceof KalturaError);
+        assert.equal(e.code, 'payment_required');
+        assert.equal(e.status, 402);
+        assert.equal(e.detail, 'Usage limit reached. The account is over a usage limit or not entitled. Check the plan with your Kaltura contact.');
+        return true;
+      });
+      assert.equal(requests, 1, `${call.method}: 402 is not retryable, so exactly one request`);
+    }
+  } finally {
+    await new Promise((r) => server.close(r));
+  }
+});

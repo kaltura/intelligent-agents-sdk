@@ -115,13 +115,18 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
   bootstrap, Report, mdTable, stats, management, ensureAgent, verifyDeleted, mintPageInit, startServer, resourceHints, SOCKET_IO_CDN, repoRoot,
-  browserChoice, launchBrowser, contextOptions, openHarness, whepSummary, netProblems, waitFor, find, all, isOpeningSpeechId, textsSent, SILENT_OPENING,
+  browserChoice, launchBrowser, contextOptions, openHarness, whepSummary, netProblems, waitFor, find, all, sleep, isOpeningSpeechId, textsSent, SILENT_OPENING, redact,
 } from './live-verify-kickoff-shared.mjs';
 import { callHook } from './live-verify-hooks-shared.mjs';
 
 const { args, target, runId, outDir } = bootstrap(process.argv.slice(2), 'connect-timing');
 // A sound that starts this close to the end of the silent opening is the reply that follows it, not the opening.
-const OPENING_SOUND_JITTER_MS = 100;
+const OPENING_SOUND_JITTER_MS = 250;
+// connect() resolves on the first frame; the rest is the approval step.
+const CONNECT_AFTER_FRAME_MS = 60;
+/** A connect that fails with `capacity_unavailable` is redone this many times per script run, after this wait. */
+const CAPACITY_RETRIES = 2;
+const CAPACITY_WAIT_MS = 5000;
 const COMPARE = typeof args.compare === 'string' ? args.compare : null;
 const KICKOFF = args['no-kickoff'] === true ? null : (typeof args.kickoff === 'string' ? args.kickoff : 'Greet the user in one short sentence and ask how you can help.');
 const OPENING = typeof args.opening === 'string' && args.opening.trim() ? args.opening : null;
@@ -259,7 +264,7 @@ const resourceMetrics = (res) => {
     whepTao: whep?.tao ?? null,
     sdkLoadedAtMs: sdkEnd,
     sdkModules: sdk.length,
-    crossOrigin: res.entries.filter((e) => !e.url.startsWith('/')).map((e) => ({ url: e.url.replace(/\?.*$/, ''), initiator: e.initiator, startRel: e.startRel, durationMs: e.durationMs, tao: e.tao, reused: e.reusedConnection })),
+    crossOrigin: res.entries.filter((e) => !e.url.startsWith('/')).map((e) => ({ url: redact(e.url.replace(/\?.*$/, '')), initiator: e.initiator, startRel: e.startRel, durationMs: e.durationMs, tao: e.tao, reused: e.reusedConnection })),
   };
 };
 
@@ -293,6 +298,7 @@ try {
   if (HINTS !== 'off') report.note('resource hints under test', HINT_TAGS.map((h) => `${h.rel}${h.as ? ` as=${h.as}` : ''}${h.crossorigin ? ' crossorigin' : ''}`));
   browser = await launchBrowser(choice);
 
+  let capacityRetries = 0;
   for (let i = 1; i <= RUNS; i++) {
     const context = await browser.newContext(contextOptions());
     /** @type {{pageErrors: string[], pages: import('playwright').Page[], network: import('./live-verify-kickoff-shared.mjs').NetRecord[]}} */
@@ -312,6 +318,15 @@ try {
       run.pageReadyMs = ready?.sinceNavMs ?? null;
       report.check(`${tag}: resource hints ${arm === 'on' ? 'present' : 'absent'} in <head> (${arm} arm)`, arm === 'on' ? run.hintTags === HINT_TAGS.length : run.hintTags === 0, { hintTags: run.hintTags, expected: arm === 'on' ? HINT_TAGS.length : 0 });
       const connect = await callHook(page, 'testConnect');
+      if (!connect.ok && connect.code === 'capacity_unavailable' && capacityRetries < CAPACITY_RETRIES) {
+        // The server had no free avatar capacity. That is not what this script measures: wait and redo the run.
+        capacityRetries++;
+        report.note(`${tag}: capacity_unavailable`, `retry ${capacityRetries} of ${CAPACITY_RETRIES} after ${CAPACITY_WAIT_MS} ms`);
+        await sleep(CAPACITY_WAIT_MS);
+        run.redone = true;
+        i--;
+        continue;
+      }
       report.check(`${tag}: connect() resolved`, connect.ok, connect.ok ? undefined : connect);
       if (!connect.ok) { run.error = connect; continue; }
 
@@ -400,6 +415,15 @@ try {
       const videoNegotiated = !!videoSection && videoSection.port !== 0 && videoSection.codecs.length > 0 && videoSection.dir !== 'inactive';
       const offeredVideoCodecs = find(evs, 'pc:sdp', { where: (d) => d.n === stvN && d.role === 'local' })?.detail?.media?.find((/** @type {any} */ m) => m.kind === 'video')?.codecs ?? null;
 
+      // The session's own phase timings: present, in order, and connect() resolves on the first frame.
+      const phases = await callHook(page, 'testTimings');
+      const ORDER = ['socketOpen', 'serverConnected', 'joinComplete', 'stvNewSessionReply', 'whepSent', 'whepAnswer', 'firstTrack', 'mediaReady', 'approved', 'connected'];
+      const inOrder = !!phases && ORDER.every((k, i) => typeof phases[k] === 'number' && (i === 0 || phases[k] >= phases[ORDER[i - 1]]));
+      run.phases = phases;
+      report.check(`${tag}: session.timings has every phase, in order`, inOrder, phases);
+      if (mediaMode === 'video' && phases) {
+        report.check(`${tag}: connect() resolved within ${CONNECT_AFTER_FRAME_MS} ms of the first frame`, typeof phases.firstFrame === 'number' && phases.connected - phases.firstFrame <= CONNECT_AFTER_FRAME_MS, { firstFrame: phases.firstFrame, connected: phases.connected });
+      }
       report.check(`${tag}: STV media connected before connect() resolved`, mediaMode === 'audio' || (run.stvIceMs !== null && run.stvIceMs <= run.connectMs), { stvIceMs: run.stvIceMs, connectMs: run.connectMs, mediaMode });
       if (!v.spoken) {
         report.check(`${tag}: silent opening ended < 1500 ms after connect resolved`, run.openingAfterConnectMs !== null && run.openingAfterConnectMs < 1500, { openingAfterConnectMs: run.openingAfterConnectMs });
@@ -475,12 +499,12 @@ try {
       const problems = netProblems(sink.network);
       if (problems.length) report.note(`${tag}: HTTP requests that failed or returned 4xx/5xx`, problems.slice(0, 10));
       if (sink.pageErrors.length) report.note(`${tag}: page errors`, sink.pageErrors.slice(0, 5));
-      report.data.runs.push(run);
+      if (!run.redone) report.data.runs.push(run);
       await context.close();
     }
   }
 } finally {
-  if (browser) await browser.close();
+  if (browser) await browser.close().catch(() => {});
   for (const a of arms) a.server?.close();
   for (const a of arms) {
     if (a.agent.reused && OPENING) await kaltura.intellectConfig.setOpeningPhrase(a.agent.configId, SILENT_OPENING, admin.ks).catch((e) => console.warn(`reset opening phrase failed: ${e?.message || e}`));

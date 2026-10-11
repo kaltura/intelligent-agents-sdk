@@ -32,14 +32,13 @@
  * signaling server", not "video is visible"; don't use it to hide a loading
  * UI. Use 'mediaReady' (below) or 'videoMetadata' instead.
  *
- * 'mediaReady' fires exactly once per connect, unconditionally — unlike
- * 'videoMetadata', it does NOT require `videoEl` and does NOT wait
- * indefinitely on the decoder: `{mode:'video', videoWidth, videoHeight}` once
- * the STV media is playable, using 'videoMetadata's dimensions if they
- * resolved in time or `0` if they didn't (headless, or a decoder that never
- * fires `loadedmetadata`) — or `{mode:'audio'}` immediately when the session
- * falls back to audio-only (no STV capacity). This is the event to gate a
- * loading UI on.
+ * 'mediaReady' fires exactly once per connect, unconditionally, and does
+ * NOT require `videoEl`. Its shapes: `{mode:'video', videoWidth, videoHeight}`
+ * when the first video frame is painted (`0` for both without a `videoEl`),
+ * `{mode:'video', videoWidth:0, videoHeight:0, degraded:true}` when no frame
+ * arrived within `timeouts.firstFrame` (with warning 'media_no_video'), or
+ * `{mode:'audio'}` when the session falls back to audio-only (no STV
+ * capacity). This is the event to gate a loading UI on.
  *
  * Does NOT police `token`'s entitlement scope — a real KS's privileges are
  * AES-encrypted with the partner secret and unreadable client-side (see
@@ -66,6 +65,8 @@ import { assertSecureTransport } from '../core/transport-guard.js';
 import { resolveEndpoints } from '../core/endpoints.js';
 import { createSessionCompleter } from './session-complete.js';
 import { AvatarMedia } from './avatar-media.js';
+import { whepPost, WHEP_DEFAULTS } from './whep.js';
+import { fetchWithTimeout, TOOL_RESPONSE_TIMEOUT_MS } from './fetch-timeout.js';
 
 // Backstop for a pending tool-ACK entry the app never acknowledges:
 // `_dispatchToolCall`/`respondToTool` clear entries on ACK/disconnect/cold-reconnect,
@@ -77,12 +78,23 @@ const PENDING_TOOL_ACK_MAX_AGE_MS = 10 * 60_000;
 // `joinRoom` (5 s) covers `clientConfiguration`. `joinComplete` has its own, longer budget
 // (20 s): under load it can arrive after 5 s, and a 5 s cap surfaced a JoinRoomTimeout while
 // join was about to complete. Both are bounded by `overall`.
-const TIMEOUTS = { overall: 30000, serverConnect: 10000, joinRoom: 5000, joinComplete: 20000, agent: 10000, asr: 30000 };
+// `firstFrame` is how long the video may take to paint its first frame once the WHEP answer is applied.
+// `prepareIdle` is how long a `prepare()`d socket may sit unused before it is closed.
+// Override any of these with `cfg.timeouts`.
+const TIMEOUTS = { overall: 30000, serverConnect: 10000, joinRoom: 5000, joinComplete: 20000, agent: 10000, asr: 30000, firstFrame: 6000, prepareIdle: 60000, whepTry: WHEP_DEFAULTS.whepTry, whepTries: WHEP_DEFAULTS.whepTries, whepBackoff: WHEP_DEFAULTS.whepBackoff, whepRelease: 3000, recover: 15000, healthTick: 1000, videoStall: 4000, coldAttempts: 2, coldBackoff: 500 };
+
+// Socket.IO reconnection backoff. Its own defaults (1000 ms, max 5000 ms) make a dropped socket
+// wait a full second before the first retry; these start sooner. Override with
+// `cfg.reconnectionDelay` / `cfg.reconnectionDelayMax`.
+const RECONNECTION_DELAY_MS = 250;
+const RECONNECTION_DELAY_MAX_MS = 2000;
 
 // How long to wait in 'reconnecting' for Socket.IO connection-state recovery before
 // giving up and ending the session cleanly (never a silent hang). Overridable via
 // cfg.reconnectWindowMs.
 const RECONNECT_WINDOW_MS = 22000;
+/** Re-subscribes the stall watchdog tries before it rebuilds the whole session. */
+const MAX_STALL_RESUBSCRIBES = 2;
 
 // Media (WebRTC) ICE states that mean the peer is in trouble. 'disconnected' is often
 // transient (ICE may self-heal); 'failed' is terminal for that connection and needs an
@@ -99,13 +111,19 @@ const RECOVERABLE_DISCONNECT = new Set(['transport error', 'transport close', 'f
 // stage). See cfg.micConstraints.
 const DEFAULT_MIC_CONSTRAINTS = Object.freeze({ echoCancellation: true, noiseSuppression: true, autoGainControl: true });
 
+/** The connect step each awaited socket event belongs to: the `phase` on a `timeout` error. */
+const PHASE_BY_EVENT = Object.freeze({
+  onServerConnected: 'serverConnect', clientConfiguration: 'join', joinComplete: 'joinComplete',
+  showAgent: 'agent', askPermissions: 'agent', 'asr-webrtc-ready': 'asr', 'asr-webrtc-answer': 'asr',
+});
+
 /** Socket error events → stable SDK codes (WIRE-PROTOCOL §4b). */
 const FATAL_CODE = {
-  throwToNoAgent: { code: 'capacity_unavailable', num: 6001, retry: true },
-  throwToExceededTier: { code: 'tier_exceeded', num: 6002, retry: false },
-  throwToBadRequest: { code: 'bad_request', num: 400, retry: false },
-  removePeer: { code: 'peer_removed', num: 401, retry: false },
-  unsupportedClient: { code: 'unsupported_client', num: 0, retry: false },
+  throwToNoAgent: { code: 'capacity_unavailable', num: 6001, retry: true, detail: 'No avatar capacity is free right now. Try again shortly.' },
+  throwToExceededTier: { code: 'tier_exceeded', num: 6002, retry: false, detail: 'The account is over its plan limit for live conversations.' },
+  throwToBadRequest: { code: 'bad_request', num: 400, retry: false, detail: 'The server rejected the request as invalid.' },
+  removePeer: { code: 'peer_removed', num: 401, retry: false, detail: 'The server removed this participant from the conversation.' },
+  unsupportedClient: { code: 'unsupported_client', num: 0, retry: false, detail: 'The server does not support this client.' },
 };
 
 /**
@@ -158,6 +176,9 @@ export class KalturaAvatarSession extends Emitter {
    * @param {(level:string,msg:string,data?:unknown)=>void} [cfg.logger]
    * @param {boolean} [cfg.recoverFromSpiral]  After a `tool_spiral_hard_limit` cold reconnect succeeds, auto-resend the abandoned turn (nudged to answer in words only) so the user's question isn't silently dropped — see `_checkHardToolSpiral`/`_coldReconnect`. Default true; set false to only get `toolSpiralRecovering`'s `lastTurnText` and handle the resend yourself.
    * @param {number} [cfg.maxReconnectAttempts]  Passed through as socket.io's own `reconnectionAttempts` (caps its native reconnection engine) AND surfaced as `attempt`/`maxAttempts` on `reconnecting`/`connectivityChanged`. Default 5.
+   * @param {number} [cfg.reconnectionDelay]  First wait, in ms, before socket.io retries a dropped socket. Default 250.
+   * @param {number} [cfg.reconnectionDelayMax]  Longest wait, in ms, between those retries. Default 2000.
+   * @param {Partial<{overall:number, serverConnect:number, joinRoom:number, joinComplete:number, agent:number, asr:number, firstFrame:number, prepareIdle:number, whepTry:number, whepTries:number, whepBackoff:number, whepRelease:number, recover:number, healthTick:number, videoStall:number, coldAttempts:number, coldBackoff:number}>} [cfg.timeouts]  Override any wait, in ms (`whepTries` and `coldAttempts` are counts). Unset keys keep their default: `overall` 30000, `serverConnect` 10000, `joinRoom` 5000, `joinComplete` 20000, `agent` 10000, `asr` 30000, `firstFrame` 6000, `prepareIdle` 60000, `whepTry` 5000, `whepTries` 3, `whepBackoff` 1000, `whepRelease` 3000, `recover` 15000, `healthTick` 1000, `videoStall` 4000, `coldAttempts` 2, `coldBackoff` 500. What each one bounds: docs/architecture-reference/connection-and-handshake.md and resilience-and-failure-handling.md.
    * @param {number} [cfg.reconnectWindowMs]  Bounds the 'reconnecting' state independent of socket.io's own attempt count — if no recovery lands within this window, the session ends cleanly rather than hanging. Default 22000.
    * @param {Record<string, string|number|boolean|null>} [cfg.requestVars]  Join-time `{{var}}` values — seeds the session's canonical request_vars map, sent on every `join`/reconnect `buildJoin()` call and updated mid-session by {@link updateRequestVars}/{@link setDynamicPrompt}; validated with the same `assertRequestVars` as {@link updateRequestVars}.
    * @param {number} [cfg.localVadThreshold]  Client-side VAD threshold gating `localSpeakingChanged`: the summed byte-frequency level (0 to 4080) at or above which the mic counts as speaking. Default 300.
@@ -317,6 +338,15 @@ export class KalturaAvatarSession extends Emitter {
     // their own (e.g. from sessionStorage) to survive a tab reload.
     this._stickyId = cfg.stickyId || randId(16);
     this._maxReconnect = cfg.maxReconnectAttempts ?? 5;
+    // Clock for `timings`: `performance.now()` in a browser, `cfg.now` when injected.
+    this._clock = cfg.now || (typeof globalThis.performance?.now === 'function' ? () => globalThis.performance.now() : () => Date.now());
+    /** @type {{socket:any, roomId:string, onConn:any, cc:any, ready:boolean, idleTimer:any, done:Promise<void>}|null} */ this._prep = null;   // a prepare() that connect() has not consumed yet
+    /** @type {Record<string, number>|null} */ this._timings = null;   // open only while connect() runs
+    /** @type {Record<string, number>|null} */ this._lastTimings = null;
+    this._timingsT0 = 0;
+    this._reconnectionDelay = cfg.reconnectionDelay ?? RECONNECTION_DELAY_MS;
+    this._reconnectionDelayMax = cfg.reconnectionDelayMax ?? RECONNECTION_DELAY_MAX_MS;
+    this._timeouts = { ...TIMEOUTS, ...(cfg.timeouts || {}) };
     this._reconnectWindowMs = cfg.reconnectWindowMs ?? RECONNECT_WINDOW_MS;
     // Brain-liveness watchdog: after the user's turn, if no brain/avatar activity within
     // this window, surface a 'brainStalled' warning. 0 disables. Default 12s.
@@ -370,6 +400,7 @@ export class KalturaAvatarSession extends Emitter {
     this._completeOnServerEnd = !!cfg.completeOnServerEnd;
     // Signal genie the moment the conversation truly ends (tab close, backgrounding, an
     // explicit disconnect). See session-complete.js.
+    this._pageLifecycleAware = cfg.pageLifecycleAware ?? (typeof document !== 'undefined' && typeof document.addEventListener === 'function');
     this._completer = createSessionCompleter({
       fetch: this._fetch,
       genieUrl: this._genieUrl,
@@ -381,7 +412,7 @@ export class KalturaAvatarSession extends Emitter {
       now: this._now,
       enabled: cfg.sessionCompleteOnEnd ?? true,
       timeoutMs: cfg.sessionCompleteTimeoutMs ?? 5000,
-      pageLifecycleAware: cfg.pageLifecycleAware ?? (typeof document !== 'undefined' && typeof document.addEventListener === 'function'),
+      pageLifecycleAware: this._pageLifecycleAware,
       hiddenGraceMs: cfg.hiddenGraceMs ?? 30000,
       completeOnHiddenGrace: cfg.completeOnHiddenGrace ?? true,
       completeOnBfcache: cfg.completeOnBfcache ?? true,
@@ -421,10 +452,15 @@ export class KalturaAvatarSession extends Emitter {
     this._reconnectTimer = null;     // bounds the 'reconnecting' state (RECONNECT_WINDOW_MS)
     this._brainStallTimer = null;    // brain-liveness watchdog
     this._brainStallFireCount = 0;   // how many times it has fired since the last clear (repeats, doesn't go stale)
-    this._iceGraceTimer = null;      // cancellable ICE-disconnected grace window
+    this._iceGraceTimers = { asr: null, stv: null };   // cancellable ICE-disconnected grace window, one per channel
     this._iceNewTimers = { asr: null, stv: null };  // stuck-in-'new'/'checking' watchdogs (never reach 'failed')
+    this._healthTimer = null;                       // peer health tick, runs while connected
+    this._videoFlow = { pc: null, bytes: -1, since: 0, busy: false };   // inbound video byte count the tick last saw
+    this._stallRecoveries = 0;       // back-to-back stall recoveries that brought no video; reset when bytes grow
     this._mediaRecovering = { asr: false, stv: false };  // in-flight per-channel media recovery
+    this._resuming = false;          // resume() is rebuilding the peers: the health tick must not "recover" them
     this._netHandlers = null;        // online/offline/visibilitychange unsubscribers
+    this._unloadHandler = null;      // pagehide unsubscriber, installed for the whole connect() so a tab closed mid-connect is cleaned up
     this._coldReconnecting = false;  // a full session rebuild is in flight
     this._sessionGen = 0;            // bumped on every cold reconnect — lets an in-flight respondToTool detect it's now stale
     this._socket = null;
@@ -516,49 +552,61 @@ export class KalturaAvatarSession extends Emitter {
    * every pending wait is canceled, including the media handshake request and a
    * cold reconnect's capacity wait, and any answer that lands late is released.
    * @returns {Promise<void>}
-   * @throws {KalturaError} `invalid_state` unless the state is `idle` or `disconnected`.
+   * @throws {KalturaError} `invalid_state` unless the state is `idle` or `disconnected`, or when the
+   *   session has no token (`disconnect()` clears it: call `setToken()` before connecting again).
    */
   async connect() {
     if (this.state !== 'idle' && this.state !== 'disconnected') {
-      throw new KalturaError({ type: 'about:blank', title: 'already connecting', code: 'invalid_state', detail: `connect() called in state "${this.state}".` });
+      throw new KalturaError({ type: 'about:blank', title: 'connect() not allowed in this state', code: 'invalid_state', detail: `connect() called in state "${this.state}". It runs from "idle" or "disconnected". From "error", call disconnect() first.` });
     }
+    if (!this._token) throw noTokenErr();
     this._setState('preparing');
+    this._wireUnload();
+    this._timings = {}; this._timingsT0 = this._clock();
     // Step 0 — mic (no camera), started here and NOT awaited: the permission prompt and the
     // device open run alongside the socket handshake. If the stream lands before _connectAsr
     // it is added as a real track; otherwise _connectAsr negotiates the same trackless
     // sendonly slot deferred mode uses and _attachMic() replaceTrack()s into it. A failed
     // acquire is one `warning` (with a mic error code), never a connect() failure: typed turns work with
     // no mic and startMic() retries. Skipped whole in deferred mode (startMic() acquires).
-    if (this._micStartMode !== 'deferred') this._startMicInBackground();
+    if (this._micStartMode !== 'deferred') { this._startMicInBackground(); this._mark('micRequested'); }
 
-    this._roomId = randId(12);
-    const overall = deadline(TIMEOUTS.overall);
+    // A prepare() already did steps 1 to 3 (or is still doing them). Use it when it worked;
+    // when it failed or expired, fall through to a fresh handshake.
+    let prep = this._prep;
+    if (prep) {
+      await prep.done.catch(() => { /* a failed prepare cleared itself: connect fresh */ });
+      if (/** @type {string} */ (this.state) !== 'preparing') {
+        const aborted = connectAbortedErr();
+        /** @type {any} */ (aborted).timings = this._finishTimings(false);
+        throw aborted;
+      }
+      if (this._prep !== prep || !prep.ready) prep = null;
+    }
+    const overall = deadline(this._timeouts.overall);
 
     this._setState('connecting');
-    const socket = this._socketFactory(this._cmUrl, {
-      path: '/socket.io', transports: ['websocket'],
-      reconnection: true, reconnectionAttempts: this._maxReconnect,
-      auth: { token: this._token },
-      query: { partnerId: this._partnerId, billed_client: '', stickyId: this._stickyId, level: 'published', debugMode: true },
-    });
-    this._socket = socket;
-    this._wireSocket(socket);
-
     try {
-      // Step 1 — server handshake. Signaling only, no video track yet — see the
-      // class doc above for why this isn't the event to gate a loading UI on.
-      const onConn = await this._await(socket, 'onServerConnected', TIMEOUTS.serverConnect, 'ConnectionTimeout', overall);
-      this.emit('streamReady', { finalUrl: onConn?.finalUrl, agentName: onConn?.agentName, hostName: onConn?.hostName });
-
-      // Step 2 — join.
-      socket.emit('join', buildJoin({ room: this._roomId, ks: this._token, threadId: this._threadId, entryId: this._entryId, contextId: this._contextId, contextType: this._contextType, userAgent: ua(), isMobile: false, requestVars: this._requestVars, capabilities: this._capabilities }));
-
-      // Step 3 — clientConfiguration AND joinComplete (both required).
-      const [cc] = await Promise.all([
-        this._await(socket, 'clientConfiguration', TIMEOUTS.joinRoom, 'JoinRoomTimeout', overall),
-        this._await(socket, 'joinComplete', TIMEOUTS.joinComplete, 'JoinRoomTimeout', overall),
-      ]);
-      this._clientConfig = cc?.clientConfiguration || cc;
+      let socket;
+      if (prep) {
+        this._prep = null;
+        clearTimeout(prep.idleTimer);
+        socket = prep.socket;
+        this._roomId = prep.roomId;
+      } else {
+        this._roomId = randId(12);
+        socket = this._socketFactory(this._cmUrl, this._socketOptions());
+        this._socket = socket;
+        this._wireSocket(socket);
+      }
+      if (prep) {
+        // Steps 1 to 3 are done: report them as of now (the app listens from connect()).
+        this._clientConfig = prep.cc;
+        this._mark('socketOpen'); this._mark('serverConnected'); this._mark('joinComplete');
+        this.emit('streamReady', { finalUrl: prep.onConn?.finalUrl, agentName: prep.onConn?.agentName, hostName: prep.onConn?.hostName });
+      } else {
+        await this._handshake(socket, this._roomId, overall);
+      }
 
       // Step 4/5 — capacity-aware session create.
       await this._createSessionWithCapacity(socket, overall);
@@ -579,7 +627,11 @@ export class KalturaAvatarSession extends Emitter {
       // deployments / biometric-consent jurisdictions), `_approve()` holds it until
       // acknowledgeDisclosure() instead of emitting.
       this._approve(socket);
+      this._mark('approved');
+      if (this._isEnding()) throw connectAbortedErr();
       this._setState('connected');
+      this._mark('connected');
+      this._finishTimings();
       this._wireNetwork();
       this._wireLifecycle();
       this._touchActivity();   // HIPAA auto-logoff: start the idle clock
@@ -587,10 +639,119 @@ export class KalturaAvatarSession extends Emitter {
       this._audit('session.connect', 'success', { kind: 'conversation', entitlementEnforced: this._entitlementEnforced, action: this.mode });
       this._maybeSendKickoff();   // held by speak() until the opening turn ends; no-op when disclosure is pending
     } catch (err) {
-      this._setState('error');
-      this._teardownTransports();
-      throw err instanceof KalturaError ? err : new KalturaError({ type: 'about:blank', title: 'connect failed', code: 'connect_failed', detail: String(err && err.message || err) });
+      // A disconnect() that cancelled this connect has already torn down and settled on 'disconnected'.
+      const st = /** @type {string} */ (this.state);
+      if (st !== 'disconnected' && st !== 'disconnecting') {
+        this._setState('error');
+        this._teardownTransports();
+      }
+      const out = err instanceof KalturaError ? err : new KalturaError({ type: 'about:blank', title: 'connect failed', code: 'connect_failed', detail: String(err && err.message || err), phase: 'connect' });
+      /** @type {any} */ (out).timings = this._finishTimings(false);
+      throw out;
     }
+  }
+
+  /**
+   * Steps 1 to 3: server handshake, join, wait for the join ack. Shared by `connect()` and `prepare()`.
+   * @param {any} socket @param {string} room @param {{expired:()=>boolean}} overall
+   */
+  async _handshake(socket, room, overall) {
+    // Step 1 — server handshake. Signaling only, no video track yet — see the
+    // class doc above for why this isn't the event to gate a loading UI on.
+    const onConn = await this._await(socket, 'onServerConnected', this._timeouts.serverConnect, 'ConnectionTimeout', overall);
+    this._mark('serverConnected');
+    // `prepare()` has no listener-ready connect() yet: it keeps `onConn` and connect() emits `streamReady`.
+    if (!this._prep) this.emit('streamReady', { finalUrl: onConn?.finalUrl, agentName: onConn?.agentName, hostName: onConn?.hostName });
+
+    // Step 2 — join.
+    socket.emit('join', buildJoin({ room, ks: this._token, threadId: this._threadId, entryId: this._entryId, contextId: this._contextId, contextType: this._contextType, userAgent: ua(), isMobile: false, requestVars: this._requestVars, capabilities: this._capabilities }));
+
+    // Step 3 — clientConfiguration AND joinComplete (both required).
+    const [cc] = await Promise.all([
+      this._await(socket, 'clientConfiguration', this._timeouts.joinRoom, 'JoinRoomTimeout', overall),
+      this._await(socket, 'joinComplete', this._timeouts.joinComplete, 'JoinRoomTimeout', overall),
+    ]);
+    this._clientConfig = cc?.clientConfiguration || cc;
+    this._mark('joinComplete');
+    return onConn;
+  }
+
+  /**
+   * Do the socket handshake ahead of `connect()`: open the socket, join, wait for the join ack.
+   * Call it when the user is likely to start soon (page load, hover over the start button), then
+   * call `connect()` on the click, which skips those steps. It never asks for the microphone and
+   * never creates an avatar session. Idempotent. Does nothing while a connect is running or after
+   * one finished. A prepared socket that `connect()` has not used within `timeouts.prepareIdle`
+   * (60 s) is closed with warning `prepare_expired`, and a later `connect()` starts fresh.
+   * Set `threadId`, `requestVars`, `contextId` and the other join inputs before calling it: the
+   * join is sent now. Rejects with the same errors as `connect()` for steps 1 to 3.
+   * @returns {Promise<void>}
+   */
+  prepare() {
+    if (this._prep) return this._prep.done;
+    if (this.state !== 'idle' && this.state !== 'disconnected') return Promise.resolve();
+    if (!this._token) return Promise.reject(noTokenErr());
+    const roomId = randId(12);
+    const socket = this._socketFactory(this._cmUrl, this._socketOptions());
+    this._socket = socket;
+    this._wireSocket(socket);
+    const overall = deadline(this._timeouts.overall);
+    /** @type {NonNullable<typeof this._prep>} */
+    const prep = { socket, roomId, onConn: null, cc: null, ready: false, idleTimer: null, done: Promise.resolve() };
+    this._prep = prep;
+    prep.done = (async () => {
+      try {
+        prep.onConn = await this._handshake(socket, roomId, overall);
+        prep.cc = this._clientConfig;
+        if (this._prep !== prep) throw connectAbortedErr();   // dropped while waiting
+        prep.ready = true;
+        const t = setTimeout(() => this._dropPrepared('prepare_expired'), this._timeouts.prepareIdle);
+        t.unref?.();
+        prep.idleTimer = t;
+      } catch (err) {
+        if (this._prep === prep) this._dropPrepared();
+        throw err;
+      }
+    })();
+    prep.done.catch(() => { /* the caller of prepare() or connect() observes it */ });
+    return prep.done;
+  }
+
+  /**
+   * Close a prepared socket nobody used. Safe to call twice. @param {string} [warnCode] emitted as a `warning` when set
+   */
+  _dropPrepared(warnCode) {
+    const prep = this._prep;
+    if (!prep) return;
+    this._prep = null;
+    clearTimeout(prep.idleTimer);
+    try { prep.socket.removeAllListeners?.(); prep.socket.disconnect?.(); } catch { /* already closed */ }
+    for (const cancel of [...this._pendingAwaits]) cancel();
+    this._pendingAwaits.clear();
+    if (this._socket === prep.socket) this._socket = null;
+    this._clientConfig = null;
+    if (warnCode) this.emit('warning', { code: warnCode, message: 'The prepared connection was not used in time and was closed. connect() starts a new one.' });
+  }
+
+  /**
+   * Phase times of the current or last `connect()`, in ms from the start of that call. A phase
+   * the connect has not reached yet is absent. Empty before the first `connect()`.
+   * @returns {import('../core/errors.js').ConnectTimings}
+   */
+  get timings() { return { ...(this._timings || this._lastTimings || {}) }; }
+
+  /** Record a connect phase once, as ms since `connect()` began. No-op outside the first connect. @param {string} phase */
+  _mark(phase) {
+    if (this._timings && !(phase in this._timings)) this._timings[phase] = Math.max(0, Math.round(this._clock() - this._timingsT0));
+  }
+
+  /** Close the timing window. Emits `connectTimings` on success. @param {boolean} [ok] @returns {Record<string, number>} */
+  _finishTimings(ok = true) {
+    const t = { ...(this._timings || {}) };
+    this._timings = null;
+    this._lastTimings = t;
+    if (ok) this.emit('connectTimings', t);
+    return t;
   }
 
   // ─────────────────────────── capacity (step 4/5) ───────────────────────────
@@ -624,6 +785,7 @@ export class KalturaAvatarSession extends Emitter {
       const create = () => { if (requested) return; requested = true; socket.emit('stvNewSession', buildStvNewSession(this._roomId)); };
       const poll = () => { if (!settled) socket.emit('checkAvailability', {}); };   // capacity query, independent of create()
       const onSession = (p) => {
+        this._mark('stvNewSessionReply');
         if (isAudioMode(p)) {
           this.mode = 'audio'; this._sessionId = null; this._webrtcUrl = null;
           // No STV session is coming — 'videoMetadata' will never fire, so tell
@@ -660,15 +822,15 @@ export class KalturaAvatarSession extends Emitter {
       create();
       poll();
       /** @type {ReturnType<typeof setInterval>} */
-      const guard = setInterval(() => { if (overall.expired()) finish(reject, timeoutErr('ConnectTimeout')); }, 250);
+      const guard = setInterval(() => { if (overall.expired()) finish(reject, timeoutErr('ConnectTimeout', 'connect')); }, 250);
       guard.unref?.();
     });
   }
 
   /** Steps 6 & 7. @param {any} socket @param {{expired:()=>boolean}} overall */
   async _waitAgentAndPermissions(socket, overall) {
-    await this._await(socket, 'showAgent', TIMEOUTS.agent, 'AgentResponseTimeout', overall);
-    await this._await(socket, 'askPermissions', TIMEOUTS.agent, 'AgentResponseTimeout', overall);
+    await this._await(socket, 'showAgent', this._timeouts.agent, 'AgentResponseTimeout', overall);
+    await this._await(socket, 'askPermissions', this._timeouts.agent, 'AgentResponseTimeout', overall);
   }
 
   /**
@@ -684,7 +846,7 @@ export class KalturaAvatarSession extends Emitter {
    * @param {any} socket @param {{expired:()=>boolean}} overall @param {{skipAgentWait?:boolean}} [opts]
    */
   async _runConnectSequence(socket, overall, opts = {}) {
-    const stv = this.mode !== 'audio' ? this._connectStv(overall) : Promise.resolve();
+    const stv = this.mode !== 'audio' ? this._subscribeStv(overall) : Promise.resolve();
     const asr = (async () => {
       if (!opts.skipAgentWait) await this._waitAgentAndPermissions(socket, overall);
       await this._connectAsr(socket, overall);
@@ -699,11 +861,12 @@ export class KalturaAvatarSession extends Emitter {
   /** @param {any} socket @param {{expired:()=>boolean}} [overall] */
   async _connectAsr(socket, overall) {
     socket.emit('asr-webrtc-init', { sessionId: socket.id });
-    await this._await(socket, 'asr-webrtc-ready', TIMEOUTS.asr, 'ASRConnectionFailed', overall);
+    await this._await(socket, 'asr-webrtc-ready', this._timeouts.asr, 'ASRConnectionFailed', overall);
     const pc = createPeerConnection(this._RTC, iceConfig('asr', this._turn, this._isFirefox));
     this._pcAsr = pc;
     pc.oniceconnectionstatechange = () => { this.emit('connectivityChanged', { channel: 'asr', state: pc.iceConnectionState }); this._onIceStateChange('asr', pc); };
     pc.onicecandidate = (e) => { if (e.candidate) socket.emit('asr-webrtc-ice-candidate', { candidate: e.candidate }); };
+    pc.onconnectionstatechange = () => this._onPeerState('asr', pc);
     this._armIceNewWatchdog('asr', pc);
     // One listener per live peer: a resume() that reuses the socket re-runs this step, and a
     // listener left bound to the previous (closed) peer would reject every later candidate.
@@ -722,53 +885,112 @@ export class KalturaAvatarSession extends Emitter {
     const offer = await this._cancelable(pc.createOffer());
     await this._cancelable(pc.setLocalDescription(offer));
     socket.emit('asr-webrtc-offer', { offer, is_reconnect: false });
-    const ans = await this._await(socket, 'asr-webrtc-answer', TIMEOUTS.asr, 'ASRConnectionFailed', overall);
+    const ans = await this._await(socket, 'asr-webrtc-answer', this._timeouts.asr, 'ASRConnectionFailed', overall);
     await this._cancelable(pc.setRemoteDescription(ans.answer));
+    this._mark('asrReady');
   }
 
   // ─────────────────────────── STV downlink (step 10) ───────────────────────────
 
   /**
-   * WHEP subscribe, then resolve only when the video is playable (greeting-clip fix).
+   * WHEP subscribe, then resolve when the first video frame is painted (greeting-clip fix).
    * `overall` is the connect() deadline: a WHEP answer that lands after it has passed
    * is rejected as `ConnectTimeout`, same rule as every socket wait in `_await`.
-   * @param {{expired:()=>boolean}} [overall]
+   * The `timeouts.firstFrame` cap starts when the answer is applied, so a slow WHEP POST
+   * never eats it. With no frame at the cap the stream is re-subscribed once (`attempt` 0);
+   * a second miss resolves with warning `media_no_video` and `mediaReady {degraded:true}`.
+   * @param {{expired:()=>boolean}} [overall] @param {number} [attempt] 0 for the first subscribe, 1 for the re-subscribe
    */
-  async _connectStv(overall) {
+  async _connectStv(overall, attempt = 0) {
     const pc = createPeerConnection(this._RTC, iceConfig('stv', this._turn, this._isFirefox));
+    if (this._pcStv) {   // never orphan a peer that is still installed, nor its subscription, nor its first-frame wait
+      this._cancelStvPlayable?.();
+      this._closePeer(this._pcStv);
+      this._releaseCurrentWhep();
+    }
     this._pcStv = pc;
     const videoTransceiver = pc.addTransceiver('video', { direction: 'recvonly' });
     pc.addTransceiver('audio', { direction: 'recvonly' });
     this._applyVideoCodecPreference(videoTransceiver);
-    pc.oniceconnectionstatechange = () => { this.emit('connectivityChanged', { channel: 'stv', state: pc.iceConnectionState }); this._onIceStateChange('stv', pc); };
+    pc.oniceconnectionstatechange = () => {
+      if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') this._mark('iceConnectedStv');
+      this.emit('connectivityChanged', { channel: 'stv', state: pc.iceConnectionState });
+      this._onIceStateChange('stv', pc);
+    };
+    pc.onconnectionstatechange = () => this._onPeerState('stv', pc);
     this._armIceNewWatchdog('stv', pc);
 
     let cancelPlayable = () => {};
+    let startCap = () => {};
     // Exposed on `this` so _teardownTransports() can reach it — disconnect()/_endWith() called
     // mid-connect (after this point, before `await playable` below resolves) closes _pcStv but
     // otherwise has no handle into this closure's pending timers.
-    this._cancelStvPlayable = () => cancelPlayable();
+    const myCancel = () => cancelPlayable();
+    this._cancelStvPlayable = myCancel;
+    const releaseHandle = () => { if (this._cancelStvPlayable === myCancel) this._cancelStvPlayable = null; };   // a newer subscribe owns the handle now
+    /** Resolves `true` when the video is ready, `false` when the cap passed with no frame (first attempt only), `undefined` when cancelled. @type {Promise<boolean|undefined>} */
     const playable = new Promise((resolve) => {
       let done = false;
       let videoMetadataSent = false;
       let mediaReadySent = false;
+      let trackSeen = false;
+      let frameGated = false;     // the first-frame callback decides readiness, not canplay + settle
+      let frameId = null;
+      /** @type {any} */ let frameEl = null;
       /** @type {Set<any>} */ const timers = new Set();
       const arm = (fn, ms) => { const id = setTimeout(fn, ms); timers.add(id); id.unref?.(); return id; };
       // Guaranteed exactly once per connect, unlike 'videoMetadata': falls back to
       // whatever dimensions are known (possibly 0) if the decoder never fires
       // 'loadedmetadata' before canplay/hard-cap settle, or if there's no videoEl at all.
-      const emitMediaReady = (v) => {
+      const emitMediaReady = (v, degraded = false) => {
         if (mediaReadySent) return;
         mediaReadySent = true;
-        this.emit('mediaReady', { mode: 'video', videoWidth: v?.videoWidth || 0, videoHeight: v?.videoHeight || 0 });
+        this._mark('mediaReady');
+        this.emit('mediaReady', { mode: 'video', videoWidth: v?.videoWidth || 0, videoHeight: v?.videoHeight || 0, ...(degraded ? { degraded: true } : {}) });
+      };
+      const cancelFrame = () => { if (frameId != null) { try { frameEl?.cancelVideoFrameCallback?.(frameId); } catch { /* element gone */ } frameId = null; } };
+      const emitVideoMetadata = (v) => {
+        if (videoMetadataSent) return;
+        videoMetadataSent = true;
+        this.emit('videoMetadata', { videoWidth: v.videoWidth, videoHeight: v.videoHeight });
+        if (!frameGated) emitMediaReady(v);   // a gated session reports mediaReady at the first frame
       };
       // Readiness listeners on the video element, removed on finish/cancel so a swapped or
       // torn-down element never keeps a stale closure alive (one listener per event max).
       /** @type {Array<{ el: any, ev: string, fn: () => void }>} */ const listeners = [];
       const listen = (el, ev, fn) => { if (listeners.some((l) => l.el === el && l.ev === ev)) return; listeners.push({ el, ev, fn }); el.addEventListener(ev, fn, { once: true }); };
       const unlisten = () => { for (const l of listeners) l.el.removeEventListener?.(l.ev, l.fn); listeners.length = 0; };
-      const finish = () => { for (const id of timers) clearTimeout(id); timers.clear(); unlisten(); emitMediaReady(this._avatarMedia.videoEl); resolve(); };
-      const settle = () => { if (!done) { done = true; arm(finish, 300); } }; // +300ms jitter settle
+      const finish = () => { for (const id of timers) clearTimeout(id); timers.clear(); unlisten(); cancelFrame(); emitMediaReady(this._avatarMedia.videoEl); resolve(true); };
+      const settle = (ms = 300) => { if (!done) { done = true; arm(finish, ms); } };   // jitter settle for the paths with no frame callback
+      // First painted frame with a real size: the earliest moment a user sees the avatar.
+      const watchFrame = (v) => {
+        if (frameId != null) return;
+        frameEl = v;
+        const onFrame = (_now, meta) => {
+          frameId = null;
+          if (done) return;
+          if ((meta?.width ?? v.videoWidth) > 0) {
+            this._mark('firstFrame');
+            emitVideoMetadata(v);
+            done = true;
+            finish();
+          } else frameId = v.requestVideoFrameCallback(onFrame);
+        };
+        frameId = v.requestVideoFrameCallback(onFrame);
+      };
+      // The no-frame cap. The path without a frame callback keeps the old behaviour (settle).
+      startCap = () => arm(() => {
+        if (done) return;
+        const v = this._avatarMedia.videoEl;
+        if (!(frameGated && v && !(v.videoWidth > 0))) { settle(); return; }
+        done = true;
+        for (const id of timers) clearTimeout(id);
+        timers.clear(); unlisten(); cancelFrame();
+        if (attempt === 0) { resolve(false); return; }
+        this.emit('warning', { code: 'media_no_video', message: 'No video frame arrived after a re-subscribe. The conversation continues with audio.' });
+        emitMediaReady(v, true);
+        resolve(true);
+      }, this._timeouts.firstFrame);
       // If the WHEP handshake itself fails (thrown below, before `await playable`), or the
       // session tears down mid-connect (disconnect()/_endWith() via _teardownTransports(),
       // through `this._cancelStvPlayable` above), the hard-cap timer would otherwise survive
@@ -776,8 +998,9 @@ export class KalturaAvatarSession extends Emitter {
       // instead. Also resolves `playable` itself (never emitting mediaReady, since
       // mediaReadySent is now true) so `await playable` below can't hang forever waiting on
       // a track/timer that will never come from a peer connection teardown already closed.
-      cancelPlayable = () => { done = true; mediaReadySent = true; for (const id of timers) clearTimeout(id); timers.clear(); unlisten(); resolve(); };
+      cancelPlayable = () => { done = true; mediaReadySent = true; for (const id of timers) clearTimeout(id); timers.clear(); unlisten(); cancelFrame(); resolve(undefined); };
       const onTrack = (e) => {
+        if (!trackSeen) { trackSeen = true; this._mark('firstTrack'); }
         try {
           this._avatarMedia.attach(e.track, e.streams);
         } catch (err) {
@@ -788,18 +1011,19 @@ export class KalturaAvatarSession extends Emitter {
         const v = this._avatarMedia.videoEl;
         if (v) {
           // ontrack fires once per track (video + audio) — gate so 'videoMetadata' fires at most once.
+          // A hidden tab never paints, so its frame callback would never fire: use the fallback gate there.
+          // Only a first connect waits for a painted frame. An audio-only stream has none to wait for, and a
+          // recovery re-subscribe keeps the canplay + settle gate (its element may be paused until the resume below).
+          const hasVideo = e.track?.kind === 'video' || (e.streams?.[0]?.getVideoTracks?.().length ?? 0) > 0;
+          const canWatch = hasVideo && !this._mediaRecovering.stv && typeof v.requestVideoFrameCallback === 'function' && !(typeof document !== 'undefined' && document.hidden);
+          if (canWatch && !frameGated) frameGated = true;
           if (!videoMetadataSent && typeof v.addEventListener === 'function') {
-            const emitVideoMetadata = () => {
-              if (videoMetadataSent) return;
-              videoMetadataSent = true;
-              this.emit('videoMetadata', { videoWidth: v.videoWidth, videoHeight: v.videoHeight });
-              emitMediaReady(v);
-            };
-            if (v.videoWidth || v.videoHeight) emitVideoMetadata();
-            else listen(v, 'loadedmetadata', emitVideoMetadata);
+            if (v.videoWidth || v.videoHeight) emitVideoMetadata(v);
+            else listen(v, 'loadedmetadata', () => emitVideoMetadata(v));
           }
-          if (v.readyState >= 3) settle();
-          else if (typeof v.addEventListener === 'function') { listen(v, 'canplay', settle); arm(() => { if (!done) settle(); }, 2000); }
+          if (frameGated) watchFrame(v);
+          else if (v.readyState >= 3) settle(100);
+          else if (typeof v.addEventListener === 'function') { listen(v, 'canplay', () => settle(100)); arm(() => { if (!done) settle(100); }, 2000); }
           else settle();
         } else settle(); // audio-only / headless: nothing to gate on
       };
@@ -808,7 +1032,6 @@ export class KalturaAvatarSession extends Emitter {
         this._inOntrack = true;           // a 'track' listener may call disconnect(): see _closePeer()
         try { onTrack(e); } finally { this._inOntrack = false; }
       };
-      arm(() => { if (!done) settle(); }, 6000); // hard cap
     });
 
     try {
@@ -825,13 +1048,18 @@ export class KalturaAvatarSession extends Emitter {
       // `.then` releases the session it names — that Location is never stored on `this`.
       const ac = typeof AbortController === 'function' ? new AbortController() : null;
       let canceled = false;
-      const req = Promise.resolve(this._fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/sdp' }, body: offer.sdp, signal: ac?.signal }));
-      req.then((r) => {
-        if (!canceled || !r?.ok) return;
+      this._mark('whepSent');
+      const req = whepPost({ fetch: this._fetch, url, sdp: offer.sdp, signal: ac?.signal, timeoutMs: this._timeouts.whepTry, tries: this._timeouts.whepTries, backoffMs: this._timeouts.whepBackoff, overall });
+      req.then(({ res: r, body: readBody }) => {
+        if (!canceled) return;
+        readBody().catch(() => {});   // clears the try's timer
+        if (!r?.ok) return;
         const lateLoc = r.headers?.get?.('Location');
-        if (lateLoc) this._releaseWhep(whepResourceUrl(lateLoc, url));
+        const late = lateLoc ? whepResourceUrl(lateLoc, url) : null;
+        if (late && !whepUrlHasPrivateIp(late)) this._releaseWhep(late);
       }, () => { /* aborted or failed after the cancel — nothing was allocated that we can name */ });
-      const res = await this._cancelable(req, () => { canceled = true; ac?.abort(); });
+      const { res, body: readBody } = await this._cancelable(req, () => { canceled = true; ac?.abort(); });
+      this._mark('whepAnswer');
       // The WHEP server's Location is RELATIVE: path-absolute from the media server's own
       // root ("/whep/session/{sid}/viewer/{vid}"), or "/rtc/v1/whip/?action=delete&…" in
       // the srsBaseUrl fallback form. Build the release URL from the request URL NOW (see
@@ -839,16 +1067,24 @@ export class KalturaAvatarSession extends Emitter {
       // request URL carries, and the DELETE would name no viewer the server has.
       const loc = res.headers?.get?.('Location');
       const resolvedLoc = loc ? whepResourceUrl(loc, url) : null;
-      // Reading the body is a network wait too. A cancel here already has the answer's
-      // Location in hand, so release the session it names before rejecting.
-      const answerSdp = await this._cancelable(res.text(), () => { if (res.ok && resolvedLoc) this._releaseWhep(resolvedLoc); });
+      // A Location on a private address is unreachable from a browser, and no DELETE may go
+      // to it either, so stop before any release path below can name it.
+      if (resolvedLoc && whepUrlHasPrivateIp(resolvedLoc)) {
+        readBody().catch(() => {});
+        throw new KalturaError({ type: 'https://docs.kaltura.com/agentic/errors/whep_private_ip', title: 'WHEP private IP', code: 'whep_private_ip', phase: 'whep', detail: 'STV WHEP Location resolved to a private IP — unreachable from a browser.' });
+      }
+      // Reading the body is a network wait too, bounded by the same try deadline. A cancel
+      // here already has the answer's Location in hand, so release the session it names
+      // before rejecting.
+      const releaseNamed = () => { if (res.ok && resolvedLoc) this._releaseWhep(resolvedLoc); };
+      const answerSdp = await this._cancelable(readBody().catch((err) => { releaseNamed(); throw err; }), () => { ac?.abort(); releaseNamed(); });
       // Both aborts below have to release before they throw: the server allocated an STV
       // session for the answer it just sent, and neither path ever reaches the
       // `this._whepLocation = resolvedLoc` assignment that teardown releases from.
       if (overall?.expired()) {
         // The overall deadline ran out while this POST was in flight.
         if (res.ok && resolvedLoc) this._releaseWhep(resolvedLoc);
-        throw timeoutErr('ConnectTimeout');
+        throw timeoutErr('ConnectTimeout', 'whep');
       }
       if (pc !== this._pcStv) {
         // The other connect lane failed (or the app disconnected) while this POST was in
@@ -857,24 +1093,92 @@ export class KalturaAvatarSession extends Emitter {
         if (res.ok && resolvedLoc) this._releaseWhep(resolvedLoc);
         throw connectAbortedErr();
       }
-      if (!res.ok) throw new KalturaError({ type: 'about:blank', title: 'WHEP failed', status: res.status, code: 'whep_failed', detail: whepStatusHint(res.status), body: redact(answerSdp).slice?.(0, 200) });
-      // The resolved Location is checked separately for a private IP, since it is
-      // only known post-response (additive to the pre-request check). It is stored only
-      // after the check, so teardown never sends a DELETE to a rejected URL.
-      if (resolvedLoc && whepUrlHasPrivateIp(resolvedLoc)) {
-        throw new KalturaError({ type: 'https://docs.kaltura.com/agentic/errors/whep_private_ip', title: 'WHEP private IP', code: 'whep_private_ip', detail: 'STV WHEP Location resolved to a private IP — unreachable from a browser.' });
-      }
+      if (!res.ok) throw new KalturaError({ type: 'about:blank', title: 'WHEP failed', status: res.status, code: 'whep_failed', phase: 'whep', detail: whepStatusHint(res.status), body: redact(answerSdp).slice?.(0, 200) });
       this._whepLocation = resolvedLoc;
       // Cancelable: this is the call that fires `ontrack`, so a `track` listener that calls
       // disconnect() closes `pc` while this very promise is pending.
       await this._cancelable(pc.setRemoteDescription({ type: 'answer', sdp: answerSdp }));
+      startCap();
     } catch (err) {
       cancelPlayable();
-      this._cancelStvPlayable = null;
+      releaseHandle();
       throw err;
     }
-    await playable;
-    this._cancelStvPlayable = null;
+    const ready = await playable;
+    releaseHandle();
+    // Cancelled while waiting for the first frame: teardown or a cold rebuild closed this peer.
+    // Succeeding here would report a connected session that has no media.
+    if (ready === undefined || pc !== this._pcStv) throw connectAbortedErr();
+    if (ready === false && attempt === 0) await this._resubscribeStv(overall);
+  }
+
+  /**
+   * `_connectStv` plus one repair. A WHEP 404 means the server dropped the STV session, and a
+   * 409 means a viewer is still attached (often the answer to a try whose reply was lost).
+   * Both are fixed the same way: ask the live socket for a new STV session and subscribe
+   * again, once. A second 404 or 409 is `stv_session_gone`.
+   * @param {{expired:()=>boolean}} [overall] @param {number} [attempt]
+   */
+  async _subscribeStv(overall, attempt = 0) {
+    try {
+      return await this._connectStv(overall, attempt);
+    } catch (err) {
+      const e = /** @type {any} */ (err);
+      const status = e?.code === 'whep_failed' ? e.status : undefined;
+      if ((status !== 404 && status !== 409) || this._isEnding() || overall?.expired()) throw err;
+      await this._recreateStvSession(overall);
+      try {
+        return await this._connectStv(overall, attempt);
+      } catch (err2) {
+        const e2 = /** @type {any} */ (err2);
+        if (e2?.code === 'whep_failed' && (e2.status === 404 || e2.status === 409)) {
+          throw new KalturaError({ type: 'https://docs.kaltura.com/agentic/errors/stv_session_gone', title: 'STV session gone', code: 'stv_session_gone', status: e2.status, phase: 'whep', detail: 'The avatar stream session was gone or taken, and a new one was refused as well.', retryable: true });
+        }
+        throw err2;
+      }
+    }
+  }
+
+  /**
+   * Drop the current STV subscription and ask the server for a fresh STV session on the
+   * live socket (no new join, no new ASR).
+   * @param {{expired:()=>boolean}} [overall]
+   */
+  async _recreateStvSession(overall) {
+    const gen = this._sessionGen;
+    this._closePeer(this._pcStv); this._pcStv = null;
+    await this._releaseCurrentWhep();
+    if (!this._socket || this._isEnding() || gen !== this._sessionGen) throw connectAbortedErr();
+    await this._createSessionWithCapacity(this._socket, overall || deadline(this._timeouts.recover));
+    if (gen !== this._sessionGen || this._isEnding()) throw connectAbortedErr();   // a cold reconnect or a disconnect took over while we waited
+    if (this.mode === 'audio') {
+      throw new KalturaError({ type: 'https://docs.kaltura.com/agentic/errors/stv_session_gone', title: 'STV session gone', code: 'stv_session_gone', phase: 'whep', detail: 'The server did not return a video stream session.', retryable: true });
+    }
+  }
+
+  /** True once the session is ending or ended: no repair should start. */
+  _isEnding() { return this.state === 'disconnected' || this.state === 'disconnecting' || this.state === 'error'; }
+
+  /**
+   * The first subscribe produced no video frame within the cap. Drop it and subscribe once more.
+   * If that attempt fails for any reason other than a teardown or the connect deadline, the
+   * connect still succeeds: `mediaReady {degraded:true}` and warning `media_no_video` tell the
+   * app the avatar has no picture.
+   * @param {{expired:()=>boolean}} [overall]
+   */
+  async _resubscribeStv(overall) {
+    const gen = this._sessionGen;
+    this._closePeer(this._pcStv); this._pcStv = null;
+    await this._releaseCurrentWhep();
+    if (this._isEnding() || gen !== this._sessionGen) throw connectAbortedErr();   // a disconnect() or a cold rebuild landed during the DELETE
+    try {
+      await this._subscribeStv(overall, 1);
+    } catch (err) {
+      const e = /** @type {any} */ (err);
+      if (e?.title === 'connect aborted' || e?.code === 'timeout' || overall?.expired()) throw err;
+      this.emit('warning', { code: 'media_no_video', message: 'No video frame arrived and the re-subscribe failed. The conversation continues with audio.', detail: String(e?.message || e) });
+      this.emit('mediaReady', { mode: 'video', videoWidth: 0, videoHeight: 0, degraded: true });
+    }
   }
 
   /**
@@ -883,13 +1187,20 @@ export class KalturaAvatarSession extends Emitter {
    * `_releaseCurrentWhep()` for the session's live subscription, and directly by
    * `_connectStv` for an answer that landed after the session was already torn down
    * (that Location was never stored, so there is nothing to clear).
-   * @param {string} loc
+   * @param {string} loc @param {{keepalive?:boolean}} [opts]
+   * @returns {Promise<void>} Never rejects.
    */
-  _releaseWhep(loc) {
-    if (!this._fetch) return;
-    Promise.resolve().then(() => this._fetch(loc, { method: 'DELETE' }))
+  _releaseWhep(loc, { keepalive = true } = {}) {
+    if (!this._fetch) return Promise.resolve();
+    const ac = typeof AbortController === 'function' ? new AbortController() : null;
+    const timer = setTimeout(() => ac?.abort(), this._timeouts.whepRelease);
+    timer.unref?.();
+    let req;
+    try { req = Promise.resolve(this._fetch(loc, { method: 'DELETE', keepalive, signal: ac?.signal })); } catch (e) { req = Promise.reject(e); }
+    return req
       .then((r) => { if (r && r.ok === false) this._audit('whep.release', 'fail', { action: 'DELETE', reason: `HTTP ${r.status}` }); })
-      .catch((e) => this._audit('whep.release', 'fail', { action: 'DELETE', reason: String(e && e.message || e) }));
+      .catch((e) => this._audit('whep.release', 'fail', { action: 'DELETE', reason: String(e && e.message || e) }))
+      .finally(() => clearTimeout(timer));
   }
 
   /**
@@ -897,12 +1208,15 @@ export class KalturaAvatarSession extends Emitter {
    * closes or replaces `_pcStv` goes through here: teardown, media recovery, cold
    * reconnect, resume. Clearing the field first makes it idempotent, so a second call (or
    * a teardown right after a re-subscribe) never sends a second DELETE for the same
-   * Location.
+   * Location. The returned promise never rejects. Recovery awaits it, so the next POST
+   * never races the DELETE of the viewer it replaces.
+   * @param {{keepalive?:boolean}} [opts]
+   * @returns {Promise<void>}
    */
-  _releaseCurrentWhep() {
+  _releaseCurrentWhep(opts) {
     const loc = this._whepLocation;
     this._whepLocation = null;
-    if (loc) this._releaseWhep(loc);
+    return loc ? this._releaseWhep(loc, opts) : Promise.resolve();
   }
 
   /**
@@ -1175,12 +1489,7 @@ export class KalturaAvatarSession extends Emitter {
   async waitForCapacity(opts = {}) {
     const maxWaitMs = opts.maxWaitMs ?? 300000;
     const pollIntervalMs = opts.pollIntervalMs ?? 5000;
-    const socket = this._socketFactory(this._cmUrl, {
-      path: '/socket.io', transports: ['websocket'],
-      reconnection: true, reconnectionAttempts: this._maxReconnect,
-      auth: { token: this._token },
-      query: { partnerId: this._partnerId, billed_client: '', stickyId: this._stickyId, level: 'published', debugMode: true },
-    });
+    const socket = this._socketFactory(this._cmUrl, this._socketOptions());
     return new Promise((resolve, reject) => {
       let settled = false;
       /** @type {ReturnType<typeof setTimeout>} */ let pollTimer;
@@ -1602,8 +1911,9 @@ export class KalturaAvatarSession extends Emitter {
     if (!this._sessionReleased) { this._socket.emit('resumeConversation', {}); return; }
     // released → expect a fresh stvNewSession; rebuild transports on it.
     this._sessionReleased = false;
-    const overall = deadline(TIMEOUTS.overall);
+    const overall = deadline(this._timeouts.overall);
     this._socket.emit('resumeConversation', {});
+    this._resuming = true;
     try {
       await this._createSessionWithCapacity(this._socket, overall);
       // Releasing before the re-subscribe: `_runConnectSequence` overwrites `_whepLocation`.
@@ -1619,6 +1929,8 @@ export class KalturaAvatarSession extends Emitter {
       const e = err instanceof KalturaError ? err : new KalturaError({ type: 'about:blank', title: 'resume failed', code: 'resume_failed', detail: String(err && err.message || err) });
       this._endWith(e, 'resume_failed');
       throw e;
+    } finally {
+      this._resuming = false;
     }
   }
 
@@ -1999,11 +2311,13 @@ export class KalturaAvatarSession extends Emitter {
    *
    * `{ok:true}` means the POST returned a 2xx status. An HTTP 4xx/5xx response returns
    * `{ok:false, reason:'http_error', status}` and keeps the call pending, so you can retry with the same id.
+   * A POST with no answer in 15 s returns `{ok:false, reason:'timeout'}` and also keeps the call pending.
    * @param {string} id `call.toolMetadata.id` from the tool call being acknowledged.
    * @param {object} response JSON-serializable result the brain should see (must be a plain object).
    * @returns {Promise<{ok:boolean, reason?:string, status?:number}>} `reason` is `'unknown_or_stale'` (no pending
    *   ACK for `id`, or it is older than 10 minutes), `'session_rebuilt'`
-   *   (a cold reconnect landed while the POST was in flight) or `'http_error'` (with the HTTP `status`).
+   *   (a cold reconnect landed while the POST was in flight), `'http_error'` (with the HTTP `status`) or
+   *   `'timeout'` (no answer in 15 s).
    * @throws {KalturaError} `invalid_state` when the session is not connected; `bad_request`
    *   for an empty `id` or a `response` that is not a plain object.
    * @example
@@ -2026,11 +2340,18 @@ export class KalturaAvatarSession extends Emitter {
     }
     this._touchActivity();
     const gen = this._sessionGen;
-    const res = await this._fetch(`${this._genieUrl}/assistant/tool_response`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `KS ${this._token}` },
-      body: JSON.stringify({ tool_name: pending.name, tool_id: id, tool_invocation_id: id, response: sanitizeJson(response) }),
-    });
+    let res;
+    try {
+      res = await fetchWithTimeout(this._fetch, `${this._genieUrl}/assistant/tool_response`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `KS ${this._token}` },
+        body: JSON.stringify({ tool_name: pending.name, tool_id: id, tool_invocation_id: id, response: sanitizeJson(response) }),
+      }, TOOL_RESPONSE_TIMEOUT_MS);
+    } catch (err) {
+      // A timed-out POST keeps the pending entry, so the app can retry with the same id.
+      if (/** @type {any} */ (err)?.code === 'timeout') { this._audit('tool.ack', 'fail', { reason: 'timeout' }); return { ok: false, reason: 'timeout' }; }
+      throw err;
+    }
     // A cold reconnect mid-flight replaced the session this POST targeted.
     if (gen !== this._sessionGen) { this._pendingToolAcks.delete(id); this._audit('tool.ack', 'fail', { reason: 'session_rebuilt' }); return { ok: false, reason: 'session_rebuilt' }; }
     // A rejected POST keeps the pending entry, so the app can retry with the same id.
@@ -2271,9 +2592,21 @@ export class KalturaAvatarSession extends Emitter {
 
   // ─────────────────────────── internals ───────────────────────────
 
+  /** socket.io options for every socket this session opens (connect, cold reconnect, capacity wait). */
+  _socketOptions() {
+    return {
+      path: '/socket.io', transports: ['websocket'],
+      reconnection: true, reconnectionAttempts: this._maxReconnect,
+      reconnectionDelay: this._reconnectionDelay, reconnectionDelayMax: this._reconnectionDelayMax,
+      auth: { token: this._token },
+      query: { partnerId: this._partnerId, billed_client: '', stickyId: this._stickyId, level: 'published', debugMode: true },
+    };
+  }
+
   /** @param {any} socket */
   _wireSocket(socket) {
     socket.on('connect', () => {
+      this._mark('socketOpen');
       this.emit('connectivityChanged', { channel: 'socket', state: 'connected' });
       // A `connect` while we were 'reconnecting' is a Socket.IO reconnection. Whether the
       // SESSION survived depends on `socket.recovered`:
@@ -2302,10 +2635,11 @@ export class KalturaAvatarSession extends Emitter {
       }
     });
     // socket.io exhausted its reconnection attempts — terminal, never a silent hang.
-    socket.on('reconnect_failed', () => { if (this.state === 'reconnecting') this._endWith(new KalturaError({ type: 'about:blank', title: 'reconnect failed', code: 'reconnect_failed', detail: 'Socket.IO exhausted its reconnection attempts; the session could not be restored.' }), 'reconnect_failed'); });
+    socket.on('reconnect_failed', () => { if (this.state === 'reconnecting') this._endWith(new KalturaError({ type: 'https://docs.kaltura.com/agentic/errors/reconnect_failed', title: 'reconnect failed', code: 'reconnect_failed', phase: 'reconnect', retryable: true, detail: 'The connection could not be restored after repeated attempts.' }), 'reconnect_failed'); });
     socket.on('disconnect', (r) => {
       const recoverable = RECOVERABLE_DISCONNECT.has(r);
       this.emit('connectivityChanged', { channel: 'socket', state: 'disconnected', reason: r, recoverable, attempt: this._reconnectAttempt, maxAttempts: this._maxReconnect });
+      if (this._prep && this._prep.socket === socket && this._prep.ready) this._dropPrepared();   // a prepared socket that dropped is useless: connect() starts fresh
       if (this.state !== 'connected' && this.state !== 'reconnecting') return;
       if (recoverable) {
         // Let socket.io's reconnection and connection-state recovery do their thing
@@ -2493,8 +2827,8 @@ export class KalturaAvatarSession extends Emitter {
     socket.on('stvTaskFail', () => this.emit('error', new KalturaError({ type: 'about:blank', title: 'STV task failed', code: 'stv_task_fail', detail: 'The server failed to render/send the avatar video.' })));
 
     // Fatal error events.
-    for (const [ev, info] of Object.entries(FATAL_CODE)) {
-      socket.on(ev, (p) => this.emit('error', new KalturaError({ type: `https://docs.kaltura.com/agentic/errors/${info.code}`, title: info.code.replace(/_/g, ' '), code: info.code, detail: `${ev}${info.num ? ` (${info.num})` : ''}${p?.code ? ` ${p.code}` : ''}`, status: info.num || undefined })));
+    for (const ev of Object.keys(FATAL_CODE)) {
+      socket.on(ev, () => this.emit('error', fatalError(ev)));
     }
   }
 
@@ -2512,9 +2846,9 @@ export class KalturaAvatarSession extends Emitter {
    */
   _await(socket, event, ms, label, overall) {
     return new Promise((resolve, reject) => {
-      const ok = (payload) => { done(); if (overall && overall.expired()) return reject(timeoutErr('ConnectTimeout')); resolve(payload); };
+      const ok = (payload) => { done(); if (overall && overall.expired()) return reject(timeoutErr('ConnectTimeout', 'connect')); resolve(payload); };
       const cancel = () => { done(); reject(connectAbortedErr()); };
-      const t = setTimeout(() => { done(); reject(timeoutErr(label)); }, ms);
+      const t = setTimeout(() => { done(); reject(timeoutErr(label, PHASE_BY_EVENT[event])); }, ms);
       // Declared last so it can close over all three above; every caller of it runs later.
       const done = () => { clearTimeout(t); socket.off?.(event, ok); this._pendingAwaits.delete(cancel); };
       t.unref?.();
@@ -2651,17 +2985,35 @@ export class KalturaAvatarSession extends Emitter {
     if (!ICE_DOWN.has(st) || this._mediaRecovering[channel]) return;
     if (st === 'disconnected') {
       // Grace: ICE frequently returns to 'connected' on its own. Recover only if it doesn't.
-      this._iceGraceTimer = setTimeout(() => { if (this.state === 'connected' && ICE_DOWN.has(pc.iceConnectionState)) this._recoverMedia(channel, pc); }, 1500);
-      this._iceGraceTimer.unref?.();
+      if (this._iceGraceTimers[channel]) clearTimeout(this._iceGraceTimers[channel]);
+      const t = setTimeout(() => { this._iceGraceTimers[channel] = null; if (this.state === 'connected' && ICE_DOWN.has(pc.iceConnectionState)) this._recoverMedia(channel, pc); }, 1500);
+      t.unref?.();
+      this._iceGraceTimers[channel] = t;
       return;
     }
     this._recoverMedia(channel, pc);                 // 'failed' → act now
+  }
+
+  /** `connectionState` `failed` or `closed` on a live session: recover that channel now. @param {'asr'|'stv'} channel @param {any} pc */
+  _onPeerState(channel, pc) {
+    if (this.state !== 'connected' || this.paused || this._sessionReleased || this._mediaRecovering[channel]) return;
+    if (pc !== (channel === 'asr' ? this._pcAsr : this._pcStv) || !peerIsDead(pc)) return;
+    this._recoverMedia(channel, pc);
+  }
+
+  /** Rejects with a `timeout` (phase `whep`) when a recovery step outlives `timeouts.recover`. @param {Promise<any>} p */
+  _withinRecoverBudget(p) {
+    let t;
+    const limit = new Promise((_, reject) => { t = setTimeout(() => reject(timeoutErr('RecoverTimeout', 'whep')), this._timeouts.recover); t.unref?.(); });
+    p.catch(() => { /* observed here when the budget wins */ });
+    return Promise.race([p, limit]).finally(() => clearTimeout(t));
   }
 
   /** Recover one media channel: ICE restart first, then escalate to a full cold rebuild. @param {'asr'|'stv'} channel @param {any} pc */
   async _recoverMedia(channel, pc) {
     if (this._mediaRecovering[channel] || this.state !== 'connected') return;
     this._mediaRecovering[channel] = true;
+    const gen = this._sessionGen;
     this.emit('mediaRecovering', { channel, state: pc?.iceConnectionState });
     try {
       // Try an ICE restart on the existing peer (fast path) when the platform supports it.
@@ -2670,24 +3022,32 @@ export class KalturaAvatarSession extends Emitter {
         const offer = await pc.createOffer({ iceRestart: true });
         await pc.setLocalDescription(offer);
         this._socket.emit('asr-webrtc-offer', { offer, is_reconnect: true });
-        const ans = await this._await(this._socket, 'asr-webrtc-answer', TIMEOUTS.asr, 'ASRConnectionFailed');
+        const ans = await this._await(this._socket, 'asr-webrtc-answer', this._timeouts.asr, 'ASRConnectionFailed');
         await pc.setRemoteDescription(ans.answer);
+        // A cold rebuild that began during the awaits above owns the media now: this peer is gone.
+        if (gen !== this._sessionGen || this.state !== 'connected') return;
         this._mediaRecovering[channel] = false;
         this.emit('mediaRecovered', { channel, method: 'ice-restart' });
         return;
       }
       // STV is a WHEP subscription: re-subscribe to the same session (new offer → new answer).
       if (channel === 'stv' && this._webrtcUrl) {
-        try { this._pcStv?.close?.(); } catch { /* */ } this._pcStv = null;
+        this._closePeer(this._pcStv); this._pcStv = null;
         // `_connectStv()` overwrites `_whepLocation` with the new subscription, so release the
-        // old one here or the server keeps an egress session nothing will ever DELETE.
-        this._releaseCurrentWhep();
-        await this._connectStv();
+        // old one here or the server keeps an egress session nothing will ever DELETE. The
+        // DELETE finishes before the new POST goes out, so the POST never meets the old viewer (409).
+        await this._releaseCurrentWhep();
+        // A cold rebuild that began during the DELETE owns the media now: a new peer here would leak.
+        if (gen !== this._sessionGen) return;
+        if (this.state !== 'connected') { this._mediaRecovering[channel] = false; return; }
+        await this._withinRecoverBudget(this._subscribeStv(deadline(this._timeouts.recover)));
+        if (gen !== this._sessionGen || this.state !== 'connected') return;
         // The new tracks are swapped into the SAME streams (no srcObject write). Firefox pauses a
         // media element whose tracks all ended before the replacements arrived; Chromium/WebKit do
         // not. Resume only what is paused, a no-op everywhere else (a refusal here only logs at
         // debug level, it never raises the `playback_blocked` warning).
         await this._avatarMedia.resumePlayback();
+        if (gen !== this._sessionGen || this.state !== 'connected') return;
         this._mediaRecovering[channel] = false;
         this.emit('mediaRecovered', { channel, method: 're-subscribe' });
         return;
@@ -2697,8 +3057,10 @@ export class KalturaAvatarSession extends Emitter {
       // Fast path failed → the server session is likely gone; escalate to a full rebuild.
       // A WHEP 404 (session truly gone server-side) gets a distinct, greppable reason from
       // any other in-place-restart failure — both still cold-reconnect the same way today.
+      if (gen !== this._sessionGen) return;   // a cold rebuild owns the media (and the flag) now
       this._mediaRecovering[channel] = false;
-      const stvSessionGone = channel === 'stv' && err?.status === 404;
+      if (this.state !== 'connected') return;   // the session ended or is already rebuilding: nothing to escalate
+      const stvSessionGone = channel === 'stv' && (err?.status === 404 || err?.code === 'stv_session_gone');
       this.emit('connectivityChanged', { channel, state: 'recover_failed', detail: String(err && err.message || err) });
       this._coldReconnect(stvSessionGone ? 'stv session gone (404)' : `media ${channel} ${pc?.iceConnectionState || 'failed'}`).catch((e) => this._endWith(e));
     }
@@ -2847,6 +3209,10 @@ export class KalturaAvatarSession extends Emitter {
       this.emit('connectivityChanged', { channel: 'network', state: 'online' });
       // Returning from offline: nudge a stalled media channel to recover promptly.
       if (this.state === 'connected') { for (const ch of /** @type {readonly ('asr'|'stv')[]} */ (['asr', 'stv'])) { const pc = ch === 'asr' ? this._pcAsr : this._pcStv; if (pc && ICE_DOWN.has(pc.iceConnectionState)) this._recoverMedia(ch, pc); } }
+      // A dropped socket waits out its reconnection backoff, and a bare connect() does not cut that
+      // wait short. The network is back now, so drop the pending retry and open the socket again.
+      // The socket is already down, so disconnect() emits no `disconnect` event.
+      if (this.state === 'reconnecting' && this._socket && this._socket.connected === false) { this._socket.disconnect?.(); this._socket.connect?.(); }
     };
     globalThis.addEventListener('online', onOnline);
     globalThis.addEventListener('offline', onOffline);
@@ -2858,6 +3224,24 @@ export class KalturaAvatarSession extends Emitter {
   _wireLifecycle() { this._completer.wire(); }
   /** Remove the session-completion page-lifecycle listeners. Idempotent. */
   _unwireLifecycle() { this._completer.unwire(); }
+
+  /**
+   * Release server-side resources when the page goes away. A non-persisted `pagehide` runs
+   * `disconnect()`: the completion signal first, then the WHEP DELETE (keepalive), the peers and
+   * the socket. A persisted one (bfcache) is left alone, as the completer already decides.
+   * Installed at the start of `connect()`, so a tab closed mid-connect is cleaned up too.
+   * Shares `cfg.pageLifecycleAware` with the completer.
+   */
+  _wireUnload() {
+    if (this._unloadHandler || !this._pageLifecycleAware || typeof globalThis.addEventListener !== 'function') return;
+    const onHide = (/** @type {any} */ ev) => {
+      if (ev?.persisted) return;
+      this.disconnect({ reason: 'pagehide' });
+    };
+    globalThis.addEventListener('pagehide', onHide);
+    this._unloadHandler = () => { try { globalThis.removeEventListener('pagehide', onHide); } catch { /* */ } };
+  }
+  _unwireUnload() { if (this._unloadHandler) { this._unloadHandler(); this._unloadHandler = null; } }
 
   /** Bound the 'reconnecting' state — if recovery doesn't land in the window, end cleanly (no hang). */
   _armReconnectTimer() {
@@ -2896,10 +3280,12 @@ export class KalturaAvatarSession extends Emitter {
    * existing socket is already a new connection and is safe to reuse as-is. The media-recovery-escalation and
    * tool-spiral-hard-limit call sites invoke this directly from `state === 'connected'`
    * — the control socket never dropped, so it must be replaced.
-   * @param {string} why
+   * A failed attempt is tried once more on a brand-new socket after `timeouts.coldBackoff`
+   * (`timeouts.coldAttempts` tries in all). Only then does the session end with `reconnect_failed`.
+   * @param {string} why @param {number} [attempt] 0 for the first try
    */
-  async _coldReconnect(why) {
-    if (this._coldReconnecting) return;
+  async _coldReconnect(why, attempt = 0) {
+    if (this._coldReconnecting && attempt === 0) return;   // a retry is the same reconnect: the flag stays set across the backoff
     this._coldReconnecting = true;
     this._clearReconnectTimer();
     // A cold reconnect gets a brand-new server-side session — any ACK the old session was
@@ -2909,20 +3295,26 @@ export class KalturaAvatarSession extends Emitter {
     // and returns `session_rebuilt` instead of reporting the ACK as delivered.
     this._pendingToolAcks.clear();
     this._sessionGen++;
+    // A media recovery that was in flight belongs to the old generation and stops itself at its
+    // next await. Clear its flag so recovery works again on the rebuilt peers.
+    this._mediaRecovering = { asr: false, stv: false };
     // Same for the kickoff echo filter: the echo rides the server session the kickoff was typed
     // into, so it can never arrive on the rebuilt one. Left armed, it would strip the next user
     // utterance that happens to repeat the kickoff text. The kickoff itself is not re-sent
     // (`_kickoffSent` stays true — one kickoff per session object).
     this._kickoffEcho = null;
-    const reuseSocket = this.state === 'reconnecting';   // see doc comment above
-    if (!reuseSocket) { this._setState('reconnecting'); this.emit('reconnecting', { reason: why, attempt: ++this._reconnectAttempt, maxAttempts: this._maxReconnect, cold: true }); }
-    const overall = deadline(TIMEOUTS.overall);
+    const reuseSocket = attempt === 0 && this.state === 'reconnecting';   // see doc comment above; a retry always opens a fresh socket
+    if (attempt === 0 && !reuseSocket) { this._setState('reconnecting'); this.emit('reconnecting', { reason: why, attempt: ++this._reconnectAttempt, maxAttempts: this._maxReconnect, cold: true }); }
+    if (this._isEnding()) { this._coldReconnecting = false; return; }   // disconnect() landed between the trigger and here
+    const overall = deadline(this._timeouts.overall);
     try {
       // Drop the dead media peers before rebuilding, and release the STV subscription they
       // held: the rebuild below allocates a new one over the same field.
+      this._cancelStvPlayable?.();
       try { this._pcAsr?.close?.(); } catch { /* */ } this._pcAsr = null;
       try { this._pcStv?.close?.(); } catch { /* */ } this._pcStv = null;
-      this._releaseCurrentWhep();
+      await this._releaseCurrentWhep();
+      if (this._isEnding()) return;   // disconnect() during the DELETE: teardown already ran, do not rebuild
       let socket = this._socket;
       if (!reuseSocket) {
         // The control socket never dropped — discard it and open a genuinely fresh
@@ -2930,28 +3322,23 @@ export class KalturaAvatarSession extends Emitter {
         // exact bug this guards against).
         const old = this._socket;
         try { old?.removeAllListeners?.(); } catch { /* */ }
-        socket = this._socketFactory(this._cmUrl, {
-          path: '/socket.io', transports: ['websocket'],
-          reconnection: true, reconnectionAttempts: this._maxReconnect,
-          auth: { token: this._token },
-          query: { partnerId: this._partnerId, billed_client: '', stickyId: this._stickyId, level: 'published', debugMode: true },
-        });
+        socket = this._socketFactory(this._cmUrl, this._socketOptions());
         if (socket !== old) { try { old?.disconnect?.(); } catch { /* */ } }
         this._socket = socket;
         this._wireSocket(socket);
         // A genuinely new connection starts unconnected — wait for its own handshake
         // (mirrors connect()'s step 1) before joining. Skip only if the factory handed
         // back an already-live socket (e.g. test doubles that reuse one instance).
-        if (socket.connected === false) await this._await(socket, 'onServerConnected', TIMEOUTS.serverConnect, 'ConnectionTimeout', overall);
+        if (socket.connected === false) await this._await(socket, 'onServerConnected', this._timeouts.serverConnect, 'ConnectionTimeout', overall);
       } else if (!socket || socket.connected === false) {
-        throw new KalturaError({ type: 'about:blank', title: 'no socket', code: 'reconnect_failed', detail: 'cold reconnect needs a live socket.' });
+        throw new KalturaError({ type: 'about:blank', title: 'no socket', code: 'reconnect_failed', phase: 'reconnect', retryable: true, detail: 'cold reconnect needs a live socket.' });
       }
       // Re-join the room (threadId carries brain memory forward), then re-run the session create.
       this._roomId = randId(12);
       socket.emit('join', buildJoin({ room: this._roomId, ks: this._token, threadId: this._threadId, entryId: this._entryId, contextId: this._contextId, contextType: this._contextType, userAgent: ua(), isMobile: false, requestVars: this._requestVars, capabilities: this._capabilities }));
       await Promise.all([
-        this._await(socket, 'clientConfiguration', TIMEOUTS.joinRoom, 'JoinRoomTimeout', overall),
-        this._await(socket, 'joinComplete', TIMEOUTS.joinComplete, 'JoinRoomTimeout', overall),
+        this._await(socket, 'clientConfiguration', this._timeouts.joinRoom, 'JoinRoomTimeout', overall),
+        this._await(socket, 'joinComplete', this._timeouts.joinComplete, 'JoinRoomTimeout', overall),
       ]);
       await this._createSessionWithCapacity(socket, overall);
       await this._runConnectSequence(socket, overall);
@@ -3010,14 +3397,31 @@ export class KalturaAvatarSession extends Emitter {
           .catch((e) => this._log('error', 'spiral recovery resend blocked/failed', e));
       }
     } catch (err) {
-      this._endWith(err instanceof KalturaError ? err : new KalturaError({ type: 'about:blank', title: 'cold reconnect failed', code: 'reconnect_failed', detail: String(err && err.message || err) }), 'reconnect_failed');
+      if (!this._isEnding() && attempt + 1 < this._timeouts.coldAttempts) {
+        this.emit('connectivityChanged', { channel: 'socket', state: 'reconnect_retry', detail: String(err && /** @type {any} */ (err).message || err) });
+        await this._sleepUnlessEnding(this._timeouts.coldBackoff);
+        if (!this._isEnding()) return await this._coldReconnect(why, attempt + 1);
+        return;
+      }
+      this._endWith(new KalturaError({ type: 'https://docs.kaltura.com/agentic/errors/reconnect_failed', title: 'reconnect failed', code: 'reconnect_failed', detail: `The session could not be restored: ${String(err && /** @type {any} */ (err).message || err)}`, phase: 'reconnect', retryable: true, cause: err }), 'reconnect_failed');
     } finally {
       this._coldReconnecting = false;
     }
   }
 
+  /** Wait `ms`, or less if the session ends first. @param {number} ms */
+  _sleepUnlessEnding(ms) {
+    return new Promise((resolve) => {
+      const finish = () => { clearTimeout(t); this._pendingAwaits.delete(finish); resolve(undefined); };
+      const t = setTimeout(finish, ms);
+      t.unref?.();
+      this._pendingAwaits.add(finish);
+    });
+  }
+
   _teardownTransports() {
     this._clearReconnectTimer();
+    if (this._prep) { clearTimeout(this._prep.idleTimer); this._prep = null; }
     // Shared by disconnect() and _endWith() — any ACK still pending when the session ends
     // can never be delivered (cleared on disconnect, not left to grow unbounded).
     this._pendingToolAcks.clear();
@@ -3032,14 +3436,16 @@ export class KalturaAvatarSession extends Emitter {
     this._silentOpening = false;
     this.speaking = false;
     this._clearBrainWatchdog();
+    this._stopHealthWatchdog();
     this._settleResponsePending();   // never leave the pending signal stuck across teardown
     this._clearIdleTimers();
-    if (this._iceGraceTimer) { clearTimeout(this._iceGraceTimer); this._iceGraceTimer = null; }
+    for (const ch of /** @type {const} */ (['asr', 'stv'])) { if (this._iceGraceTimers[ch]) { clearTimeout(this._iceGraceTimers[ch]); this._iceGraceTimers[ch] = null; } }
     for (const ch of /** @type {const} */ (['asr', 'stv'])) {
       if (this._iceNewTimers[ch]) { clearTimeout(this._iceNewTimers[ch]); this._iceNewTimers[ch] = null; }
     }
     this._unwireNetwork();
     this._unwireLifecycle();
+    this._unwireUnload();
     // Teardown landing mid-connect (_connectStv() still awaiting `playable`) must cancel its
     // pending mediaReady timers too — otherwise the hard-cap fires up to 6s later on a session
     // that's already disconnected/errored, violating mediaReady's "once per connect" contract.
@@ -3049,8 +3455,9 @@ export class KalturaAvatarSession extends Emitter {
     this._closePeer(this._pcStv);
     // Closing the downlink peer locally does not free the server's egress session: DELETE the
     // WHEP resource too. Every path that kills the transports reaches this (disconnect(),
-    // _endWith(), connect()'s catch), so no path can leak the subscription.
-    this._releaseCurrentWhep();
+    // _endWith(), connect()'s catch), so no path can leak the subscription. It rides keepalive
+    // because teardown is often the last thing a page does, and a DELETE is safe to send twice.
+    this._releaseCurrentWhep({ keepalive: true });
     // Stop the STV downlink's tracks and clear the elements' srcObject — otherwise the last
     // frame and any buffered audio linger after disconnect(). Element bindings survive, so
     // a later connect() re-binds the same elements.
@@ -3080,10 +3487,85 @@ export class KalturaAvatarSession extends Emitter {
     if (this._inOntrack) setTimeout(close, 0); else close();
   }
 
-  _setState(s) { this.state = s; this.emit('stateChange', { state: s }); }
+  _setState(s) {
+    this.state = s;
+    if (s === 'connected') this._startHealthWatchdog();
+    this.emit('stateChange', { state: s });
+  }
+
+  /** Start the peer health tick (idempotent). It only acts while `connected`, so it can keep running across a recovery. */
+  _startHealthWatchdog() {
+    if (this._healthTimer) return;
+    this._healthTimer = setInterval(() => this._healthTick(), this._timeouts.healthTick);
+    /** @type {any} */ (this._healthTimer).unref?.();
+  }
+
+  _stopHealthWatchdog() {
+    if (this._healthTimer) { clearInterval(this._healthTimer); this._healthTimer = null; }
+    this._videoFlow = { pc: null, bytes: -1, since: 0, busy: false };
+    this._stallRecoveries = 0;
+  }
+
+  /**
+   * A peer can die with no ICE event: an external `close()` fires nothing, and a stalled sender
+   * keeps ICE `connected` while no video arrives. Each tick catches both, then hands the channel
+   * to `_recoverMedia`. Skipped while paused or released, when no media is expected.
+   */
+  _healthTick() {
+    if (this.state !== 'connected' || this.paused || this._sessionReleased || this._resuming) {
+      this._videoFlow = { pc: null, bytes: -1, since: 0, busy: false };   // the stall window starts fresh when checks resume
+      return;
+    }
+    for (const ch of /** @type {const} */ (['asr', 'stv'])) {
+      const pc = ch === 'asr' ? this._pcAsr : this._pcStv;
+      if (pc && !this._mediaRecovering[ch] && peerIsDead(pc)) this._recoverMedia(ch, pc);
+    }
+    this._checkVideoFlow();
+  }
+
+  /** Recover the STV channel when its inbound video bytes have not grown for `timeouts.videoStall`. */
+  _checkVideoFlow() {
+    const pc = this._pcStv, flow = this._videoFlow;
+    if (!pc || this.mode === 'audio' || this._mediaRecovering.stv || typeof pc.getStats !== 'function' || flow.busy) return;
+    if (flow.pc !== pc) { this._videoFlow = { pc, bytes: -1, since: this._now(), busy: false }; }
+    const cur = this._videoFlow;
+    cur.busy = true;
+    Promise.resolve(pc.getStats()).then((report) => {
+      cur.busy = false;
+      if (this._videoFlow !== cur || this._pcStv !== pc || this.state !== 'connected') return;
+      let bytes = -1;
+      report.forEach?.((r) => { if (r.type === 'inbound-rtp' && (r.kind || r.mediaType) === 'video') bytes = Math.max(bytes, r.bytesReceived ?? 0); });
+      // A peer that never got a packet reports no video receiver. After a stall recovery that
+      // means "still stalled"; before one it means there is nothing to judge yet.
+      if (bytes < 0) { if (!this._stallRecoveries) return; bytes = 0; }
+      const now = this._now();
+      if (bytes > cur.bytes) {
+        if (cur.bytes >= 0 && bytes > 0) this._stallRecoveries = 0;   // video flows again
+        cur.bytes = bytes; cur.since = now;
+        return;
+      }
+      if (now - cur.since >= this._timeouts.videoStall && !this._mediaRecovering.stv) {
+        this._videoFlow = { pc: null, bytes: -1, since: 0, busy: false };
+        if (this._stallRecoveries >= MAX_STALL_RESUBSCRIBES) {
+          // Re-subscribing did not bring the video back: the session itself is bad.
+          this._stallRecoveries = 0;
+          this.emit('connectivityChanged', { channel: 'stv', state: 'recover_failed', detail: 'video stalled after re-subscribe' });
+          this._coldReconnect('video stalled').catch((e) => this._endWith(e));
+          return;
+        }
+        this._stallRecoveries++;
+        this._recoverMedia('stv', pc);
+      }
+    }, () => { cur.busy = false; });
+  }
 }
 
 // ─────────────────────────── helpers ───────────────────────────
+
+/** True when a peer has failed or been closed, which fires no ICE event when closed from outside. @param {any} pc */
+function peerIsDead(pc) {
+  return pc.connectionState === 'failed' || pc.connectionState === 'closed' || pc.signalingState === 'closed';
+}
 
 /**
  * Turns that typed text cannot interrupt (and is dropped during): the
@@ -3108,9 +3590,16 @@ function openingText(speechId, text) {
 }
 
 
+/** The SDK error for a fatal socket event. */
+function fatalError(event) {
+  const info = FATAL_CODE[event];
+  return new KalturaError({ type: `https://docs.kaltura.com/agentic/errors/${info.code}`, title: info.code.replace(/_/g, ' '), code: info.code, status: info.num || undefined, detail: info.detail, retryable: info.retry });
+}
+/** A fatal socket event that ended `connect()`. */
 function fatal(event) {
-  const info = FATAL_CODE[event] || { code: 'connect_failed', num: 0 };
-  return new KalturaError({ type: `https://docs.kaltura.com/agentic/errors/${info.code}`, title: info.code.replace(/_/g, ' '), code: info.code, status: info.num || undefined, detail: `${event}${info.num ? ` (${info.num})` : ''}` });
+  const err = fatalError(event);
+  err.phase = 'connect';
+  return err;
 }
 /** Map a getUserMedia rejection to a distinct SDK code + actionable guidance. */
 function micError(err) {
@@ -3126,12 +3615,15 @@ function micError(err) {
   const [code, detail] = M[name] || ['devices_permission_denied', 'getUserMedia({audio:true}) was denied or unavailable.'];
   return new KalturaError({ type: `https://docs.kaltura.com/agentic/errors/${code}`, title: code.replace(/_/g, ' '), code, detail, body: redact(String(err && err.message || err)) });
 }
-function timeoutErr(label) {
-  return new KalturaError({ type: 'https://docs.kaltura.com/agentic/errors/timeout', title: 'timeout', code: 'timeout', detail: `${label}: timed out waiting for the server.` });
+function timeoutErr(label, phase) {
+  return new KalturaError({ type: 'https://docs.kaltura.com/agentic/errors/timeout', title: 'timeout', code: 'timeout', detail: `${label}: timed out waiting for the server${phase ? ` (step: ${phase})` : ''}. Trying again can help.`, phase, retryable: true });
 }
 /** One connect lane finishing after the session was torn down (the other lane failed first, or the app disconnected). */
+function noTokenErr() {
+  return new KalturaError({ type: 'about:blank', title: 'no token', code: 'invalid_state', detail: 'The session has no token: disconnect() clears it. Call setToken() with a fresh conversation KS before connecting again.' });
+}
 function connectAbortedErr() {
-  return new KalturaError({ type: 'about:blank', title: 'connect aborted', code: 'connect_failed', detail: 'The session was torn down while this handshake was in flight.' });
+  return new KalturaError({ type: 'about:blank', title: 'connect aborted', code: 'connect_failed', phase: 'connect', retryable: true, detail: 'The session was torn down while this handshake was in flight.' });
 }
 function deadline(ms) { const end = Date.now() + ms; return { expired: () => Date.now() > end }; }
 function whepStatusHint(status) {

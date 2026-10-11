@@ -12,6 +12,26 @@
 import { redact, redactString } from './redact.js';
 
 /**
+ * Phase times of a `connect()`, in ms from the start of that call. A phase that was not reached
+ * is absent. `firstFrame` is also absent when no frame was painted in time.
+ * @typedef {object} ConnectTimings
+ * @property {number} [micRequested]        The microphone request started.
+ * @property {number} [socketOpen]          The socket opened.
+ * @property {number} [serverConnected]     The server acknowledged the connection.
+ * @property {number} [joinComplete]        The room join finished.
+ * @property {number} [stvNewSessionReply]  The avatar session was created.
+ * @property {number} [whepSent]            The WHEP subscribe request left.
+ * @property {number} [whepAnswer]          The WHEP answer arrived.
+ * @property {number} [iceConnectedStv]     The video peer's ICE connected.
+ * @property {number} [firstTrack]          The first downlink track arrived.
+ * @property {number} [firstFrame]          The first video frame was painted.
+ * @property {number} [mediaReady]          `mediaReady` was emitted.
+ * @property {number} [asrReady]            The microphone uplink was negotiated.
+ * @property {number} [approved]            `approvedPermissions` was sent.
+ * @property {number} [connected]           The state became `connected`.
+ */
+
+/**
  * @typedef {object} ProblemDetail
  * @property {string} type            A URI-reference identifying the problem class.
  * @property {string} title           Short human-readable summary.
@@ -22,6 +42,10 @@ import { redact, redactString } from './redact.js';
  * @property {string} [requestId]     Correlation id echoed from the response, if any.
  * @property {Record<string,string>} [headers]  Diagnostic response headers (see response-headers.js), when a response arrived.
  * @property {unknown} [body]         The (redacted) upstream response body.
+ * @property {string} [phase]         The connect step that failed, on a live-session error (`serverConnect`, `join`, `joinComplete`, `agent`, `asr`, `whep`, `connect`, `reconnect`).
+ * @property {boolean} [retryable]    True when trying the same call again can succeed. Absent when the SDK has no opinion.
+ * @property {ConnectTimings} [timings]  The connect phases reached before a failed `connect()` (set by the live session, not by the constructor).
+ * @property {unknown} [cause]        The error this one wraps, when the SDK replaced it with a clearer one.
  */
 
 export class KalturaError extends Error {
@@ -38,6 +62,9 @@ export class KalturaError extends Error {
     /** @type {string|undefined} */ this.requestId = problem.requestId;
     /** @type {Record<string,string>|undefined} */ this.headers = problem.headers && Object.keys(problem.headers).length ? { ...problem.headers } : undefined;
     /** @type {unknown} */ this.body = redact(problem.body);
+    /** @type {string|undefined} */ this.phase = problem.phase;
+    /** @type {boolean|undefined} */ this.retryable = problem.retryable;
+    if (problem.cause !== undefined) Object.defineProperty(this, 'cause', { value: problem.cause, enumerable: false, writable: true, configurable: true });
   }
 
   /** RFC 9457 JSON representation (already redacted). */
@@ -46,6 +73,8 @@ export class KalturaError extends Error {
       type: this.type, title: this.title, status: this.status,
       detail: this.detail, instance: this.instance, code: this.code,
       requestId: this.requestId, headers: this.headers, body: this.body,
+      ...(this.phase !== undefined && { phase: this.phase }),
+      ...(this.retryable !== undefined && { retryable: this.retryable }),
     };
   }
 }
@@ -67,10 +96,18 @@ const CODE_BY_PATTERN = [
   [/union_tag_not_found/i, 'missing_discriminator'],
 ];
 
+/** Actionable next step appended to `detail` for codes that need one.
+ * @type {Record<string,string>}
+ */
+const HINT_BY_CODE = {
+  payment_required: 'The account is over a usage limit or not entitled. Check the plan with your Kaltura contact.',
+};
+
 /** @param {number} status */
 function codeForStatus(status) {
   if (status === 400) return 'bad_request';
   if (status === 401) return 'unauthorized';
+  if (status === 402) return 'payment_required';
   if (status === 403) return 'forbidden';
   if (status === 404) return 'not_found';
   if (status === 405) return 'method_not_allowed';
@@ -81,6 +118,13 @@ function codeForStatus(status) {
   return 'error';
 }
 
+/** Drop trailing dots and whitespace. A scan from the end stays linear, unlike `/[.\s]+$/` on long text. @param {string} s */
+function trimTrailingDots(s) {
+  let end = s.length;
+  while (end > 0 && /[.\s]/.test(s[end - 1])) end--;
+  return s.slice(0, end);
+}
+
 /**
  * Build a KalturaError from an HTTP response that failed.
  * @param {{status:number, path:string, body:unknown, requestId?:string, headers?:Record<string,string>}} ctx
@@ -89,13 +133,16 @@ export function errorFromResponse({ status, path, body, requestId, headers }) {
   const upstreamMsg = extractMessage(body);
   let code = codeForStatus(status);
   for (const [re, c] of CODE_BY_PATTERN) if (upstreamMsg && re.test(upstreamMsg)) { code = c; break; }
+  const base = upstreamMsg || `HTTP ${status} from ${path}`;
+  const hint = HINT_BY_CODE[code];
   return new KalturaError({
     type: BASE + code,
     title: code.replace(/_/g, ' '),
     status,
-    detail: upstreamMsg || `HTTP ${status} from ${path}`,
+    detail: hint ? `${trimTrailingDots(base)}. ${hint}` : base,
     instance: path,
     code,
+    retryable: code === 'payment_required' ? false : undefined,
     requestId,
     headers,
     body,
@@ -185,7 +232,7 @@ export function errorFromErrorSegments(segments, ctx = {}) {
     type: BASE + code,
     title: code.replace(/_/g, ' '),
     status: 200,
-    detail: `The server refused the turn: ${text.replace(/[.\s]+$/, '')}.${hint ? ` ${hint}` : ''}`,
+    detail: `The server refused the turn: ${trimTrailingDots(text)}.${hint ? ` ${hint}` : ''}`,
     instance: ctx.path,
     code,
     requestId: ctx.requestId,

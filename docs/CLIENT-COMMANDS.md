@@ -115,13 +115,7 @@ Multiple handlers for one name all run in registration order. A throwing handler
 
 A handler's return value (or thrown/rejected error) is captured and re-emitted as `'toolCallResult'` (`{call, ok, value|error}`). This is **local/app-observable only** unless the tool was built with `waitForResponse:true`. Only then does `session.respondToTool(call.toolMetadata.id, response)` actually carry a result back to the model.
 
-`respondToTool` resolves `{ok:true}` when the ACK POST returns 2xx. Otherwise it resolves `{ok:false, reason, status?}`:
-
-| `reason` | Meaning |
-|---|---|
-| `unknown_or_stale` | No pending ACK for that id, or it is too old. |
-| `session_rebuilt` | A cold reconnect landed while the POST was in flight. |
-| `http_error` | The POST returned 4xx/5xx (`status` is set). The call stays pending, so you can retry with the same id. |
+`respondToTool` resolves `{ok:true}` when the ACK POST returns 2xx. Otherwise it resolves `{ok:false, reason}`. See the [result table](wire-protocol/events-catalog.md#the-wait_for_response-ack--one-wire-contract-two-transports) for every `reason`.
 
 A network failure throws. A disconnected session throws `invalid_state`.
 

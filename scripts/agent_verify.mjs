@@ -614,7 +614,7 @@ section('Part 6 — Media path');
   const problems = [];
 
   // The single release helper, clearing the field before the DELETE so a second call is a no-op.
-  const helper = /_releaseCurrentWhep\(\)\s*\{\s*\n\s*const loc = this\._whepLocation;\s*\n\s*this\._whepLocation = null;/.test(sessionSrc);
+  const helper = /_releaseCurrentWhep\(\w*\)\s*\{\s*\n\s*const loc = this\._whepLocation;\s*\n\s*this\._whepLocation = null;/.test(sessionSrc);
   if (!helper) problems.push('src/experience/session.js: _releaseCurrentWhep() must read _whepLocation, clear it, then release (idempotent)');
 
   // Exactly one site stores a Location. More than one means a path can overwrite without releasing.
@@ -625,7 +625,7 @@ section('Part 6 — Media path');
   lines.forEach((text, i) => {
     if (!/this\._pcStv\?\.close|_closePeer\(this\._pcStv\)/.test(text)) return;
     const window = lines.slice(i, i + 7).join('\n');
-    if (!/this\._releaseCurrentWhep\(\)/.test(window)) problems.push(`src/experience/session.js:${i + 1}: closes _pcStv without a nearby _releaseCurrentWhep() → ${text.trim()}`);
+    if (!/this\._releaseCurrentWhep\(/.test(window)) problems.push(`src/experience/session.js:${i + 1}: closes _pcStv without a nearby _releaseCurrentWhep() → ${text.trim()}`);
   });
 
   // The three abort lanes in _connectStv (disconnect during the body read, deadline

@@ -59,6 +59,10 @@ export { validateSecretRefs } from './secrets.js';
 // `sendInsightEmail` action can pin. The resource instance lives on `mgmt.emailTemplates`;
 // the class export is for typing/extension.
 export { EmailTemplates } from './email-templates.js';
+// Audit tools: pure checks you can run on data you already hold. `mgmt.lifecycle.audit`,
+// `mgmt.intellectConfig.audit` and `mgmt.doctor` fetch the data and call these.
+export { auditLifecycleRules, MAX_INSIGHT_SETTINGS_PER_RULE } from './lifecycle-audit.js';
+export { Doctor } from './doctor.js';
 // Prompt authoring depth: linters + client-side system-prompt preview +
 // the ONE canonical page-context block (spread into setPrompts wherever an
 // intellect receives page context via setDynamicPrompt / request_vars).
@@ -68,7 +72,7 @@ export {
 } from './prompt-lint.js';
 // Intellect-config helpers.
 export {
-  IntellectConfig, buildUserPropertiesForms, EDITABLE_FIELDS, CALL_STAGES, SKILL_MODES,
+  IntellectConfig, buildUserPropertiesForms, auditIntellectConfig, EDITABLE_FIELDS, CALL_STAGES, SKILL_MODES,
   MODEL_IDS, THINKING_LEVELS, SUMMARY_CONTENT_TYPES,
 } from './intellect-config.js';
 export { LANGUAGE_NAMES } from './set-forced-language.js';
