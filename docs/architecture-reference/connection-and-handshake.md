@@ -85,10 +85,11 @@ Overall connecting timeout: 30s. It bounds every wait in the table, including th
 | `agent` | 6 and 7 |
 | `asr` | 9 |
 | `whep` | 10, the WHEP request (`whep_timeout`, `whep_failed`, `stv_session_gone`) |
+| `ice` | The avatar peer never reached ICE `connected` (`ice_failed`). See [ICE diagnostics](resilience-and-failure-handling.md#ice-diagnostics) |
 | `connect` | A fatal server event (`capacity_unavailable`, `tier_exceeded`, `bad_request`) or any other failure in `connect()` |
 | `reconnect` | The socket or a cold reconnect ran out of attempts (`reconnect_failed`) |
 
-`error.retryable` is `true` on `timeout`, `capacity_unavailable`, `whep_timeout`, a `whep_failed` caused by the network, `stv_session_gone` and `reconnect_failed`, because the same call can succeed on a later try. A `whep_failed` that carries an HTTP status does not set it. Both fields are also in `error.toJSON()`.
+`error.retryable` is `true` on `timeout`, `capacity_unavailable`, `whep_timeout`, a `whep_failed` caused by the network, `stv_session_gone`, `ice_failed` and `reconnect_failed`, because the same call can succeed on a later try. A `whep_failed` that carries an HTTP status does not set it. Both fields are also in `error.toJSON()`.
 
 ```js
 // Retry a connect that can succeed later. Give up on anything else.
@@ -152,7 +153,7 @@ The opening line itself can't be interrupted. Typed text sent during it is held 
 
 The rows group related phases and are not in time order. `firstFrame` is also absent when there is no `videoEl`, when the browser has no `requestVideoFrameCallback`, or when no frame arrived in time (`mediaReady` then has `degraded: true`).
 
-**Tuning.** `timeouts` overrides any wait in the table above (`overall`, `serverConnect`, `joinRoom`, `joinComplete`, `agent`, `asr`, `firstFrame`, `prepareIdle`) and the WHEP, recovery and watchdog limits (`whepTry`, `whepTries`, `whepBackoff`, `whepRelease`, `recover`, `healthTick`, `videoStall`, `coldAttempts`, `coldBackoff`; defaults in [Resilience](resilience-and-failure-handling.md)). `reconnectionDelay` (default 250 ms) and `reconnectionDelayMax` (default 2000 ms) set how soon and how often a dropped socket retries.
+**Tuning.** `timeouts` overrides any wait in the table above (`overall`, `serverConnect`, `joinRoom`, `joinComplete`, `agent`, `asr`, `firstFrame`, `prepareIdle`) and the WHEP, recovery and watchdog limits (`whepTry`, `whepTries`, `whepBackoff`, `whepRelease`, `recover`, `healthTick`, `videoStall`, `iceStuck`, `coldAttempts`, `coldBackoff`; defaults in [Resilience](resilience-and-failure-handling.md)). `reconnectionDelay` (default 250 ms) and `reconnectionDelayMax` (default 2000 ms) set how soon and how often a dropped socket retries.
 
 ## The `join` payload (step 2): carries the agent/brain config
 

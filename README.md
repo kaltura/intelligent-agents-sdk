@@ -322,6 +322,7 @@ Two more members speed up and measure `connect()` ([Start faster](docs/architect
 |---|---|
 | `prepare()` | Opens the socket and joins ahead of `connect()`. Idempotent, no microphone, no avatar session. |
 | `timings`, event `connectTimings` | Phase times of the last `connect()` in ms. |
+| `getIceReport()` | Async, read-only. Safe summary of both media peers: candidates, STUN and TURN errors, likely cause and selected pair. See [ICE diagnostics](docs/architecture-reference/resilience-and-failure-handling.md#ice-diagnostics). |
 
 Media recovery (an STV re-subscribe after a stall) never touches your elements: the new tracks are swapped into the same streams, and only an element that the browser paused meanwhile (Firefox does this) gets one `play()` call. The one exception is an element whose `srcObject` your app replaced itself (for example set to `null` to hide the avatar): recovery binds it again. On Chromium a remote audio track is only decoded while some media element plays it, so a headless app that mixes `avatarStream` through Web Audio must keep a muted `<audio>` bound to the track; Firefox and WebKit do not need it. Calling `disconnect()` from inside a `'track'` listener is safe.
 

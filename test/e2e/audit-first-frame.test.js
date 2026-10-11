@@ -65,6 +65,7 @@ test('a video size known before the first frame does not make connect() ready ea
 // ff8: the cap path with a known size ends through settle(); the pending frame callback must be cancelled
 test('the cap settle path cancels the pending frame callback', async () => {
   const { session, el, ready } = setup({ firstFrame: 80 });
+  FakeRTCPeerConnection.iceUpOnAnswer = true;
   el.videoWidth = 640; el.videoHeight = 360;
   await session.connect();
   assert.equal(ready.length, 1);

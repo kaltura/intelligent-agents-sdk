@@ -12,6 +12,7 @@
  * | F5 | the first WHEP POST answers 409         | same recovery as F4 |
  * | F6 | `timeouts.joinRoom` is 1 ms             | connect() rejects `timeout` with `phase: 'join'` and `retryable: true` |
  * | F7 | the tab is hidden while connecting      | connect() resolves through the canplay gate with real video dimensions, no `media_no_video`, under the 6 s no-frame cap |
+ * | F8 | every WHEP answer points at an unreachable address | two POSTs, connect() rejects `ice_failed` with `phase: 'ice'`, `retryable: true`, a sanitized `error.ice` for the avatar peer, well before `overall` |
  *
  * 3.5 s is well under the 5 s limit for one POST try, so a slow runner cannot push the first try past it. The 6 s
  * first-frame cap must start when the answer is applied, not when the request leaves.
@@ -164,6 +165,28 @@ const SCENARIOS = {
       report.check(`${id}: no media_no_video warning`, !all(evs, 'warning', (d) => d?.code === 'media_no_video').length, all(evs, 'warning').map((e) => e.detail?.code));
       const t = find(evs, 'connectTimings')?.detail;
       report.check(`${id}: connect() did not wait for the 6 s no-frame cap`, t?.connected < 6000, { connected: t?.connected });
+      await callHook(page, 'testDisconnect').catch(() => {});
+    },
+  },
+  F8: {
+    name: 'every WHEP answer points at an unreachable address',
+    async run({ context, sink, id }) {
+      // The answer is real, but its candidates point at a documentation-range address. The peer can never connect.
+      const route = await routeWhep(context, origin, async (_n, r) => {
+        const res = await r.fetch();
+        const body = (await res.text()).replace(/^(a=candidate:\S+ \d+ \S+ \d+ )\S+( \d+ typ .*)$/gm, '$1192.0.2.1$2');
+        await r.fulfill({ response: res, body });
+        return true;
+      });
+      const page = await openHarness(context, origin, { mode: 'avatar', timeouts: JSON.stringify({ firstFrame: 2500 }) }, sink);
+      const t0 = Date.now();
+      const connect = await callHook(page, 'testConnect');
+      report.check(`${id}: connect() rejected ice_failed`, !connect.ok && connect.code === 'ice_failed', connect);
+      report.check(`${id}: phase is ice and retryable`, connect.phase === 'ice' && connect.retryable === true, connect);
+      report.check(`${id}: one subscribe and one re-subscribe`, route.posts() === 2, { posts: route.posts() });
+      report.check(`${id}: the failure came well before the 30 s overall limit`, Date.now() - t0 < 15000, { ms: Date.now() - t0 });
+      report.check(`${id}: error.ice names the avatar peer and a cause`, connect.ice?.channel === 'stv' && !!connect.ice.cause && connect.ice.cause !== 'connected', connect.ice);
+      report.check(`${id}: error.ice holds no IP address`, !/\b\d{1,3}(?:\.\d{1,3}){3}\b/.test(JSON.stringify(connect.ice ?? {})), connect.ice);
       await callHook(page, 'testDisconnect').catch(() => {});
     },
   },

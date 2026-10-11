@@ -42,9 +42,10 @@ import { redact, redactString } from './redact.js';
  * @property {string} [requestId]     Correlation id echoed from the response, if any.
  * @property {Record<string,string>} [headers]  Diagnostic response headers (see response-headers.js), when a response arrived.
  * @property {unknown} [body]         The (redacted) upstream response body.
- * @property {string} [phase]         The connect step that failed, on a live-session error (`serverConnect`, `join`, `joinComplete`, `agent`, `asr`, `whep`, `connect`, `reconnect`).
+ * @property {string} [phase]         The connect step that failed, on a live-session error (`serverConnect`, `join`, `joinComplete`, `agent`, `asr`, `whep`, `ice`, `connect`, `reconnect`).
  * @property {boolean} [retryable]    True when trying the same call again can succeed. Absent when the SDK has no opinion.
  * @property {ConnectTimings} [timings]  The connect phases reached before a failed `connect()` (set by the live session, not by the constructor).
+ * @property {object} [ice]          Sanitized ICE snapshot (candidate counts by type, STUN/TURN error codes, a cause and a hint) on an `ice_failed` error. No addresses or credentials.
  * @property {unknown} [cause]        The error this one wraps, when the SDK replaced it with a clearer one.
  */
 
@@ -64,6 +65,7 @@ export class KalturaError extends Error {
     /** @type {unknown} */ this.body = redact(problem.body);
     /** @type {string|undefined} */ this.phase = problem.phase;
     /** @type {boolean|undefined} */ this.retryable = problem.retryable;
+    /** @type {object|undefined} */ this.ice = problem.ice;
     if (problem.cause !== undefined) Object.defineProperty(this, 'cause', { value: problem.cause, enumerable: false, writable: true, configurable: true });
   }
 
@@ -75,6 +77,7 @@ export class KalturaError extends Error {
       requestId: this.requestId, headers: this.headers, body: this.body,
       ...(this.phase !== undefined && { phase: this.phase }),
       ...(this.retryable !== undefined && { retryable: this.retryable }),
+      ...(this.ice !== undefined && { ice: this.ice }),
     };
   }
 }
@@ -100,7 +103,7 @@ const CODE_BY_PATTERN = [
  * @type {Record<string,string>}
  */
 const HINT_BY_CODE = {
-  payment_required: 'The account is over a usage limit or not entitled. Check the plan with your Kaltura contact.',
+  payment_required: 'The server refused the request as Payment Required, which points to a plan or entitlement limit. Check the plan with your Kaltura contact. A temporary load limit is not reported this way: a live conversation gets the retryable capacity_unavailable instead.',
 };
 
 /** @param {number} status */

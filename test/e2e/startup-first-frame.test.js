@@ -95,6 +95,7 @@ test('no videoEl: mediaReady is still emitted once with zero size', async () => 
 
 test('no frame at the cap: one re-subscribe that releases the first one, then a degraded mediaReady', async () => {
   const { session, whep, ready, warnings } = setup({ firstFrame: 120 });
+  FakeRTCPeerConnection.iceUpOnAnswer = true;   // media path is up, only the picture is missing
   await session.connect();
   assert.equal(whep.posts.length, 2, 'exactly one re-subscribe');
   assert.equal(whep.deletes.length, 1, 'the first subscription is released');
@@ -119,6 +120,7 @@ test('a frame after the re-subscribe is a normal mediaReady, with no warning', a
 
 test('a failed re-subscribe still resolves connect(), degraded, with the reason in the warning', async () => {
   const { session, whep, ready, warnings } = setup({ firstFrame: 100, steps: [{ status: 201 }, { status: 503 }] });
+  FakeRTCPeerConnection.iceUpOnAnswer = true;
   await session.connect();
   assert.equal(whep.posts.length, 2);
   assert.equal(ready.length, 1);
