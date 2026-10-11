@@ -96,10 +96,18 @@ const CODE_BY_PATTERN = [
   [/union_tag_not_found/i, 'missing_discriminator'],
 ];
 
+/** Actionable next step appended to `detail` for codes that need one.
+ * @type {Record<string,string>}
+ */
+const HINT_BY_CODE = {
+  payment_required: 'The account is over a usage limit or not entitled. Check the plan with your Kaltura contact.',
+};
+
 /** @param {number} status */
 function codeForStatus(status) {
   if (status === 400) return 'bad_request';
   if (status === 401) return 'unauthorized';
+  if (status === 402) return 'payment_required';
   if (status === 403) return 'forbidden';
   if (status === 404) return 'not_found';
   if (status === 405) return 'method_not_allowed';
@@ -110,6 +118,13 @@ function codeForStatus(status) {
   return 'error';
 }
 
+/** Drop trailing dots and whitespace. A scan from the end stays linear, unlike `/[.\s]+$/` on long text. @param {string} s */
+function trimTrailingDots(s) {
+  let end = s.length;
+  while (end > 0 && /[.\s]/.test(s[end - 1])) end--;
+  return s.slice(0, end);
+}
+
 /**
  * Build a KalturaError from an HTTP response that failed.
  * @param {{status:number, path:string, body:unknown, requestId?:string, headers?:Record<string,string>}} ctx
@@ -118,11 +133,13 @@ export function errorFromResponse({ status, path, body, requestId, headers }) {
   const upstreamMsg = extractMessage(body);
   let code = codeForStatus(status);
   for (const [re, c] of CODE_BY_PATTERN) if (upstreamMsg && re.test(upstreamMsg)) { code = c; break; }
+  const base = upstreamMsg || `HTTP ${status} from ${path}`;
+  const hint = HINT_BY_CODE[code];
   return new KalturaError({
     type: BASE + code,
     title: code.replace(/_/g, ' '),
     status,
-    detail: upstreamMsg || `HTTP ${status} from ${path}`,
+    detail: hint ? `${trimTrailingDots(base)}. ${hint}` : base,
     instance: path,
     code,
     requestId,
@@ -214,7 +231,7 @@ export function errorFromErrorSegments(segments, ctx = {}) {
     type: BASE + code,
     title: code.replace(/_/g, ' '),
     status: 200,
-    detail: `The server refused the turn: ${text.replace(/[.\s]+$/, '')}.${hint ? ` ${hint}` : ''}`,
+    detail: `The server refused the turn: ${trimTrailingDots(text)}.${hint ? ` ${hint}` : ''}`,
     instance: ctx.path,
     code,
     requestId: ctx.requestId,
