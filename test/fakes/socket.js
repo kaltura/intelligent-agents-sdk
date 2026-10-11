@@ -64,9 +64,12 @@ export const markerCount = (socket) => socket.emitsOf('onTextEntered').filter((p
  *
  * `opts.webrtcUrl` overrides the `webrtc_url` the fake server sends in `stvNewSession`
  * (for tests that need the real prefixed STV shape rather than the srsBaseUrl fallback form).
+ * `opts.webrtcUrls` gives one URL per `stvNewSession` (a re-create gets the next one), `opts.delayStvReplyMs`
+ * delays the reply (slow-server tests), and `opts.resumingOnRecreate:false` drops the `resumingSession`
+ * event that precedes a second reply.
  * @param {FakeSocket} socket
  * @param {{audioMode?:boolean, capacityBusyTimes?:number, clientConfig?:object, noCapacity?:boolean, tierExceeded?:boolean,
- *   openingLine?:boolean, webrtcUrl?:string, asrAnswer?: (offer: {type:string, sdp:string}) => Promise<{type:string, sdp:string}>}} [opts]
+ *   openingLine?:boolean, webrtcUrl?:string, webrtcUrls?:string[], delayStvReplyMs?:number, resumingOnRecreate?:boolean, asrAnswer?: (offer: {type:string, sdp:string}) => Promise<{type:string, sdp:string}>}} [opts]
  */
 export function scriptHappyPath(socket, opts = {}) {
   let busyLeft = opts.capacityBusyTimes || 0;
@@ -75,6 +78,7 @@ export function scriptHappyPath(socket, opts = {}) {
   // attached the relevant listener before the event arrives — modelling real
   // network framing (frames don't all arrive in one synchronous burst).
   const soon = (fn) => setTimeout(fn, 0);
+  const later = (ms, fn) => setTimeout(fn, ms);
 
   // Step 1 — initial server handshake, after connect()'s setup has run.
   soon(() => {
@@ -92,16 +96,20 @@ export function scriptHappyPath(socket, opts = {}) {
       if (busyLeft > 0) { busyLeft--; socket.server('availabilityResult', { available: false, details: { activeCalls: 10, maxCalls: 10 } }); }
       else socket.server('availabilityResult', { available: true, details: { activeCalls: 1, maxCalls: 10 } });
     });
-    else if (ev === 'stvNewSession') soon(() => {
+    else if (ev === 'stvNewSession') later(opts.delayStvReplyMs || 0, () => {
       if (opts.noCapacity) { socket.server('throwToNoAgent', {}); return; }          // capacity exhausted
       if (opts.tierExceeded) { socket.server('throwToExceededTier', {}); return; }   // plan limit
       // A SECOND stvNewSession only happens on a resume() rebuild path (the first
       // is the initial connect) — per WIRE-PROTOCOL.md, the real server sends
       // `resumingSession` before rebuilding, preceding `conversationResumed`.
+      // `resumingOnRecreate:false` models a plain re-create on a live socket instead.
       stvNewSessionCount += 1;
-      if (stvNewSessionCount > 1) socket.server('resumingSession', {});
+      if (stvNewSessionCount > 1 && opts.resumingOnRecreate !== false) socket.server('resumingSession', {});
+      // `webrtcUrls[n]` is the URL of the n-th session (the last entry repeats).
+      const urls = opts.webrtcUrls;
+      const url = urls ? urls[Math.min(stvNewSessionCount - 1, urls.length - 1)] : opts.webrtcUrl;
       if (opts.audioMode) socket.server('stvNewSession', { status: 'audio/phone mode - no STV session' });
-      else socket.server('stvNewSession', { session_id: 'sess-123', status: 'session started', webrtc_url: opts.webrtcUrl || 'https://srs.example/rtc/v1/whep/?app=app&stream=sess-123' });
+      else socket.server('stvNewSession', { session_id: stvNewSessionCount === 1 ? 'sess-123' : `sess-${stvNewSessionCount}`, status: 'session started', webrtc_url: url || 'https://srs.example/rtc/v1/whep/?app=app&stream=sess-123' });
       // Agent + permissions arrive on a later tick (after the session reply is processed).
       soon(() => { socket.server('showAgent', {}); soon(() => socket.server('askPermissions', { constraints: { audio: true, video: !opts.audioMode } })); });
     });
