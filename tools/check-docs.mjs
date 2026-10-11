@@ -31,9 +31,8 @@ const DOCS = [
   'docs/api/deploy.md', 'docs/api/operate.md', 'docs/api/scripted-video.md',
   'docs/api/management-operations.md',
   'docs/ARCHITECTURE.md', 'docs/ARCHITECTURE-REFERENCE.md', 'docs/ARCHITECTURE-RECIPE.md',
-  'docs/architecture-reference/connection-and-handshake.md', 'docs/architecture-reference/channels.md',
-  'docs/architecture-reference/conversation-flow.md', 'docs/architecture-reference/scale-and-sticky-sessions.md',
-  'docs/architecture-reference/module-map-and-data-flow.md', 'docs/architecture-reference/resilience-and-failure-handling.md',
+  'docs/architecture-reference/connection-and-handshake.md', 'docs/architecture-reference/scale-and-sticky-sessions.md',
+  'docs/architecture-reference/resilience-and-failure-handling.md',
   'docs/WIRE-PROTOCOL.md',
   'docs/wire-protocol/connection-basics.md', 'docs/wire-protocol/events-catalog.md',
   'docs/wire-protocol/audio-channels.md', 'docs/wire-protocol/client-configuration.md',
@@ -53,6 +52,10 @@ const DOCS = [
   'app-builder-skill/skills/build-kaltura-agent-app/SKILL.md',
   'app-builder-skill/skills/build-kaltura-agent-app/references/paths.md',
 ];
+
+/** Contributor docs. Link and anchor checks cover them. They are never published. */
+const INTERNAL_DOCS = readdirSync(join(ROOT, 'docs/internal'))
+  .filter((f) => f.endsWith('.md')).map((f) => `docs/internal/${f}`);
 
 /** Read a file relative to ROOT, return empty string if missing. */
 function read(rel) {
@@ -443,7 +446,7 @@ describe('6. Cross-doc links', () => {
     }
 
     const broken = [];
-    for (const rel of DOCS) {
+    for (const rel of [...DOCS, ...INTERNAL_DOCS]) {
       const full = join(ROOT, rel);
       if (!existsSync(full)) continue;
       const content = readFileSync(full, 'utf8');
@@ -471,7 +474,7 @@ describe('6. Cross-doc links', () => {
 
   test('all same-file #anchor links resolve', () => {
     const broken = [];
-    for (const rel of DOCS) {
+    for (const rel of [...DOCS, ...INTERNAL_DOCS]) {
       const full = join(ROOT, rel);
       if (!existsSync(full)) continue;
       const content = readFileSync(full, 'utf8');
@@ -894,8 +897,8 @@ describe('16. Docs accuracy', () => {
       });
     }
     assert.deepEqual(bad, [], `BYO-LLM called unsupported at: ${bad.join(', ')}`);
-    const map = read('docs/architecture-reference/module-map-and-data-flow.md');
-    assert.match(map, /BYO-LLM[^\n]*possible[^\n]*Account Manager/, 'module map must say an external LLM is possible and name the Account Manager');
+    const page = read('docs/api/build/intellect.md');
+    assert.match(page, /BYO-LLM[^\n]*possible[^\n]*Account Manager/, 'intellect.md must say an external LLM is possible and name the Account Manager');
   });
 
   test('the retired per-slide-context acronym is gone from every tracked markdown file', () => {
@@ -1126,5 +1129,74 @@ describe('17. Content pages', () => {
     assert.match(auth, /session\.start/);
     const bad = scanFiles().filter((f) => f.endsWith('.md') && /Kaltura Session( \(KS\))? token/.test(read(f)));
     assert.deepEqual(bad, [], `imprecise KS wording in: ${bad.join(', ')}`);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// 18. Doc tiers and style — see docs/internal/DOCS-GUIDE.md
+// ═══════════════════════════════════════════════════════════════════════
+describe('18. Doc tiers and style', () => {
+  const BANNER = '> **Internal SDK development doc.**';
+  const INTERNAL_ROOT = ['AGENTS.md', 'CONTRIBUTING.md', 'SDK_CONSTITUTION.md'];
+  const USER_ROOT = ['README.md', 'API-REFERENCE.md', 'GETTING-STARTED.md', 'SECURITY.md'];
+  const LINE_BUDGET = 250;
+  // Ratchet: pages already over budget may not grow. Remove an entry once the page is under budget.
+  const OVER_BUDGET = {
+    'README.md': 1388, 'docs/SITE-NAV.md': 449, 'SECURITY.md': 355, 'docs/lifecycle/README.md': 305,
+    'docs/ARCHITECTURE.md': 301, 'docs/START-THE-CONVERSATION.md': 251,
+  };
+  const userDocs = () => trackedFiles().filter((f) => f.endsWith('.md')
+    && (USER_ROOT.includes(f) || (f.startsWith('docs/') && !f.startsWith('docs/internal/'))));
+  /** Lines outside code fences, as [lineNumber, text]. */
+  const prose = (rel) => {
+    let fenced = false;
+    const out = [];
+    read(rel).split('\n').forEach((line, i) => {
+      if (/^\s*(```|~~~)/.test(line)) { fenced = !fenced; return; }
+      if (!fenced) out.push([i + 1, line]);
+    });
+    return out;
+  };
+  const scan = (re) => userDocs().flatMap((f) => prose(f).filter(([, l]) => re.test(l)).map(([n, l]) => `${f}:${n}: ${l.trim().slice(0, 90)}`));
+
+  test('every internal doc starts with the internal banner', () => {
+    for (const f of [...INTERNAL_DOCS, ...INTERNAL_ROOT]) assert.ok(read(f).startsWith(BANNER), `${f} must start with the internal banner`);
+  });
+
+  test('user docs never link to docs/internal/', () => {
+    const bad = [];
+    for (const f of userDocs()) {
+      for (const m of read(f).matchAll(/\]\(([^)#\s]+)/g)) {
+        if (/^[a-z]+:/i.test(m[1])) continue;
+        if (normalize(join(dirname(f), m[1])).startsWith('docs/internal')) bad.push(`${f} → ${m[1]}`);
+      }
+    }
+    assert.deepEqual(bad, [], `user docs link to internal docs:\n  ${bad.join('\n  ')}`);
+  });
+
+  test('user docs name no private (underscore) symbol', () => {
+    const hits = scan(/`(?:this\.)?_(?!meta\b)[a-zA-Z]\w*(?:\(\))?`/);
+    assert.deepEqual(hits, [], `private symbols in user docs:\n  ${hits.join('\n  ')}`);
+  });
+
+  test('user prose has no hedge phrases', () => {
+    const hits = scan(/\b(you may want to|you might want to|you could|consider (?:using|adding|setting|an?|the|whether)|usually|probably|perhaps)\b/i);
+    assert.deepEqual(hits, [], `hedged wording in user docs:\n  ${hits.join('\n  ')}`);
+  });
+
+  test('user prose has no history or status notes', () => {
+    const hits = scan(/\b(formerly|previously|used to|no longer|was renamed|as of v\d|since v\d|prior to v\d|older SDK versions)\b/i);
+    assert.deepEqual(hits, [], `history notes in user docs:\n  ${hits.join('\n  ')}`);
+  });
+
+  test(`user docs stay under ${LINE_BUDGET} lines, and over-budget pages do not grow`, () => {
+    const bad = [];
+    for (const f of userDocs()) {
+      const n = read(f).split('\n').length - 1;
+      const cap = OVER_BUDGET[f] ?? LINE_BUDGET;
+      if (n > cap) bad.push(`${f}: ${n} lines, limit ${cap}`);
+      if (f in OVER_BUDGET && n <= LINE_BUDGET) bad.push(`${f}: ${n} lines, now under budget. Remove it from OVER_BUDGET.`);
+    }
+    assert.deepEqual(bad, [], `length budget:\n  ${bad.join('\n  ')}`);
   });
 });

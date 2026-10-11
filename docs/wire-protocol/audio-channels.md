@@ -2,7 +2,7 @@
 
 # Audio Channels
 
-What the SDK does on the two peer connections. For a client-side code walkthrough, see [Audio & Video Wiring](../architecture-reference/channels.md).
+What the SDK does on the two peer connections.
 
 ## 5. ASR uplink (pc1) — microphone → server
 

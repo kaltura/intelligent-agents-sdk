@@ -1,3 +1,5 @@
+> **Internal SDK development doc.** For people changing the SDK, not for app builders. Published in this repository only, never on the docs site. [Index](docs/internal/README.md).
+
 # SDK Constitution
 
 Strict, testable engineering rules for `@kaltura/intelligent-agents`.

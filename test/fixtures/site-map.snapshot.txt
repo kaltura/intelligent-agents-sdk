@@ -2,7 +2,7 @@ Home — @kaltura/intelligent-agents
 /: meet-nova, one-avatar-three, why-sdk, quick-start-browser, security-compliance, license
 
 Platform Architecture — @kaltura/intelligent-agents
-/explanation/architecture/: three-planes, backend-services-map, text-conversation-flow, video-runtime-protocol, two-session-modes, displaying-avatar-video, sdk-module-map, resilience-failure-handling
+/explanation/architecture/: three-planes, backend-services-map, text-conversation-flow, video-runtime-protocol, two-session-modes, displaying-avatar-video, sdk-entry-points, resilience-failure-handling
 
 Case Study: Nova — @kaltura/intelligent-agents
 /explanation/case-study-nova/: checking-whether-knowledge, running-evals-against
@@ -79,17 +79,8 @@ Architecture Recipe — @kaltura/intelligent-agents
 Architecture Reference — @kaltura/intelligent-agents
 /reference/architecture-reference/
 
-Architecture Reference · Channels — @kaltura/intelligent-agents
-/reference/architecture-reference/channels/: asr-channel-microphone, stv-channel-avatar
-
 Architecture Reference · Connection and Handshake — @kaltura/intelligent-agents
 /reference/architecture-reference/connection-and-handshake/: endpoints-credentials, socketio-connection, full-connect-sequence, join-payload-step
-
-Architecture Reference · Conversation Flow — @kaltura/intelligent-agents
-/reference/architecture-reference/conversation-flow/: conversation-phase-streams, sending-user-input, complete-message-catalog
-
-Architecture Reference · Module Map and Data Flow — @kaltura/intelligent-agents
-/reference/architecture-reference/module-map-and-data-flow/
 
 Architecture Reference · Resilience and Failure Handling — @kaltura/intelligent-agents
 /reference/architecture-reference/resilience-and-failure-handling/

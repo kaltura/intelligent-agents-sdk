@@ -172,19 +172,15 @@ Put three rules in the system prompt:
 
 But a spiral can exhaust the segment budget before the brain ever reaches a spoken sentence, leaving `text: ''` with nothing to fall back to in that same turn.
 
-Headless HTTP has no live-socket `interrupt()`/`_coldReconnect()` to fall back on (that's the live-session mechanism in [ARCHITECTURE-REFERENCE.md](architecture-reference/resilience-and-failure-handling.md#tool-call-spiral-what-happened-and-how-its-mitigated)). The only lever is a new turn.
+Headless HTTP has no live socket to interrupt or rebuild (that is the live-session mechanism in [Tool-call spiral](architecture-reference/resilience-and-failure-handling.md#tool-call-spiral)). The only lever is a new turn.
 
 `conversations.send({..., recoverFromSpiral: true})` (or `converseOnce(cfg, msg, {recoverFromSpiral: true})`) opts into exactly that. When the first attempt comes back `spiralStopped:true` with empty text, it sends ONE follow-up turn on the same thread, prefixing the original message with `SPIRAL_RECOVERY_PREFIX` ("Please answer in words only this turn, without calling any tool. "). The follow-up asks for a spoken answer with no tool calls.
 
 The result carries `spiralRecovered` (boolean) and `firstAttempt: {toolCalls, spiralStopped}` for diagnostics. It never retries more than once, and is off by default.
 
-#### SDK side (live session): see ARCHITECTURE-REFERENCE.md
+#### SDK side (live session)
 
-`collectConverse()`'s guard does not run on the live socket path. `KalturaAvatarSession` streams `agent_raw_text` directly, so a spiral there doesn't block a request (there is none to time out). `KalturaAvatarSession` instead runs a brain-stall watchdog plus a two-tier tool-call-spiral circuit breaker (soft signal, then a hard cold-reconnect recovery). The threshold table and reconnect semantics are documented once, in [ARCHITECTURE-REFERENCE.md's "Tool-call spiral: what happened and how it's mitigated"](architecture-reference/resilience-and-failure-handling.md#tool-call-spiral-what-happened-and-how-its-mitigated). Read that for the mechanism. This doc covers only what an app author needs to configure (the budget above) and the headless equivalent (previous section).
-
-#### Root cause of one class of spiral
-
-A duplicate-turn edge case (`isNewTurn:false`) can let an already-successful tool call replay as if new, directly feeding a spiral rather than merely tripping its detectors. The `agent_start_speech` handler guards against this: it clears/promotes tool-call dedup state only when `isNewTurn` is true. See [ARCHITECTURE-REFERENCE.md's "Tool-call spiral: what happened and how it's mitigated"](architecture-reference/resilience-and-failure-handling.md#tool-call-spiral-what-happened-and-how-its-mitigated) for the full mechanism.
+`collectConverse()`'s guard does not run on the live socket path. `KalturaAvatarSession` streams `agent_raw_text` directly, so a spiral there doesn't block a request (there is none to time out). `KalturaAvatarSession` instead runs a brain-stall watchdog plus a two-tier tool-call-spiral circuit breaker (soft signal, then a hard cold-reconnect recovery). The steps, events and limits are in [Tool-call spiral](architecture-reference/resilience-and-failure-handling.md#tool-call-spiral). This doc covers only what an app author needs to configure (the budget above) and the headless equivalent (previous section).
 
 ### The LLM has no real-time clock
 

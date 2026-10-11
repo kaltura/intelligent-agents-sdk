@@ -24,7 +24,7 @@ await session.resume();   // async: hands the turn loop back
 
 **On a connected session, `resume()` is safe in every case that matters for this recipe:** immediately after `pause()` (zero delay), when the session was never paused, and when it was already resumed. On a session that is not connected it rejects with `invalid_state`.
 
-It's also safe when the SDK's own connectivity recovery rebuilt the session *while* you were paused. A stalled/expired media channel can trigger an internal `_coldReconnect()` that rebuilds the transports on its own, without your app calling `resume()` (see [WIRE-PROTOCOL.md](WIRE-PROTOCOL.md) for the recovery events). Your pause survives that rebuild. The SDK keeps `session.paused` true and *holds* the rebuilt session's start signal instead of letting the avatar speak over your content.
+It's also safe when the SDK's own connectivity recovery rebuilt the session *while* you were paused. A stalled or expired media channel makes the SDK rebuild the transports on its own, without your app calling `resume()` (see [WIRE-PROTOCOL.md](WIRE-PROTOCOL.md) for the recovery events). Your pause survives that rebuild. The SDK keeps `session.paused` true and *holds* the rebuilt session's start signal instead of letting the avatar speak over your content.
 
 The moment you call `resume()`, the SDK releases that held signal: the rebuilt session starts and the avatar speaks its opening line. (No `resumeConversation` is sent on this path, since the fresh session was never paused server-side. There's nothing to "resume," only a start to release.)
 

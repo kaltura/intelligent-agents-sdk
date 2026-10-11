@@ -122,7 +122,7 @@ new Management({ partnerId, adminSecret, onAuditEvent: (e) => siem.write(e) });
 | `agent.action.deny` | `onAgentAction` denies an agent-initiated action |
 | `clone.consent` | A `consentRef` is recorded on a voice/visual clone upload |
 | `whep.release` | The WHEP (WebRTC-HTTP Egress Protocol) video resource fails to release cleanly on disconnect |
-| `session.complete` | The session-completion signal (`POST /thread/session_completed`) fires on disconnect, tab-close, backgrounding, or bfcache freeze. It reuses the session's own conversation KS and mints no new credential. `action` carries the trigger reason (`disconnect`, `pagehide`, `hidden_grace`, `suppressed:peers=N`, …). See [ARCHITECTURE-REFERENCE.md § Session-completion signal](docs/architecture-reference/resilience-and-failure-handling.md#session-completion-signal-session_completed-telling-the-backend-a-conversation-is-truly-over) |
+| `session.complete` | The session-completion signal (`POST /thread/session_completed`) fires on disconnect, tab-close, backgrounding, or bfcache freeze. It reuses the session's own conversation KS and mints no new credential. `action` carries the trigger reason (`disconnect`, `pagehide`, `hidden_grace`, `suppressed:peers=N`, …). See [README.md § Ending a conversation cleanly](README.md#ending-a-conversation-cleanly-session_completed-signal) |
 
 ### Event fields
 

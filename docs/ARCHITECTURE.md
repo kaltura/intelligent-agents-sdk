@@ -25,7 +25,7 @@ Symbol names below are the stable contracts to navigate by. Exact details live i
 - Building an app? [API-REFERENCE.md](../API-REFERENCE.md)
 - Driving your UI from the avatar? [CLIENT-COMMANDS.md](CLIENT-COMMANDS.md)
 
-This page is the map. The exact field-by-field mechanics (connect sequence, ASR/STV wire shapes, scaling internals, SDK module routing, failure-mode tables) live in **[ARCHITECTURE-REFERENCE.md](ARCHITECTURE-REFERENCE.md)**. A from-scratch reimplementation recipe lives in **[ARCHITECTURE-RECIPE.md](ARCHITECTURE-RECIPE.md)**.
+This page is the map. The exact field-by-field mechanics (connect sequence, scaling and sticky routing, recovery layers, failure-mode tables) live in **[ARCHITECTURE-REFERENCE.md](ARCHITECTURE-REFERENCE.md)**. A from-scratch reimplementation recipe lives in **[ARCHITECTURE-RECIPE.md](ARCHITECTURE-RECIPE.md)**.
 
 **Contents**
 
@@ -34,7 +34,7 @@ This page is the map. The exact field-by-field mechanics (connect sequence, ASR/
 - [Text Conversation Flow](#text-conversation-flow)
 - [Video Runtime Protocol — The Big Picture](#video-runtime-protocol--the-big-picture)
 - [Two Session Modes (choose the right one)](#two-session-modes-choose-the-right-one)
-- [SDK Module Map — Overview](#sdk-module-map--overview)
+- [SDK Entry Points](#sdk-entry-points)
 - [Resilience & Failure Handling — Overview](#resilience--failure-handling--overview)
 
 ---
@@ -71,7 +71,6 @@ Full explanation and plug points: [Inside a Live Conversation](https://kaltura.g
 | session server | `conversation.avatar.us.kaltura.ai` | Live-avatar control plane (Socket.IO): session orchestration, ASR signaling relay, brain output stream |
 | STV + media relay | the egress host in `appInit`'s `srsBaseUrl` | Video origin. Sends clients the talking face over **WHEP**. Details: [wire-protocol/audio-channels.md §6](wire-protocol/audio-channels.md#6-stv-downlink-pc2--avatar-videoaudio--you). The SDK's `whepUrlHasPrivateIp()` guard checks every WHEP URL and throws `whep_private_ip` if it points at a private address, since a browser can't reach it. |
 | TURN | the `turnServerUrl` value returned by `appInit` | WebRTC relay for both media legs. Pass `turnServerUrl` and `turnCredentials` (`{username, credential, expiry?}`, also from `appInit`) to the session. URLs and ICE policy: [wire-protocol/audio-channels.md](wire-protocol/audio-channels.md#5-asr-uplink-pc1--microphone--server). |
-| ML services | internal | Machine-learning services behind `application/generateAgentProfile` |
 
 The hosts above are the US (`nvp1`) defaults. The management, brain and OVP base URLs come from `REGIONS[region]` or an explicit `*Url` option ([Regions and base URLs](api/authentication.md#regions-and-base-urls)). The session server, media relay and TURN hosts always come from `appInit`.
 
@@ -79,7 +78,7 @@ The hosts above are the US (`nvp1`) defaults. The management, brain and OVP base
 
 ## Text Conversation Flow
 
-The simplest intelligent path: no video, fully headless. Client calls `POST https://genie.nvp1.ovp.kaltura.com/assistant/converse` with a conversation token (`geniegpcid:<configId>`) or an agent token (`agentid:<agentId>`). The response is an NDJSON (or SSE) stream of segments. The brain runs server-side. Segment `type` values and parsing rules are identical to the avatar's `agent_raw_text` stream (see [ARCHITECTURE-REFERENCE.md's "Conversation Phase"](architecture-reference/conversation-flow.md#conversation-phase-what-streams-while-connected)). Full endpoint details: [API-REFERENCE.md](../API-REFERENCE.md).
+The simplest intelligent path: no video, fully headless. Client calls `POST https://genie.nvp1.ovp.kaltura.com/assistant/converse` with a conversation token (`geniegpcid:<configId>`) or an agent token (`agentid:<agentId>`). The response is an NDJSON (or SSE) stream of segments. The brain runs server-side. Segment `type` values and parsing rules are identical to the avatar's `agent_raw_text` stream (see the [events catalog](wire-protocol/events-catalog.md)). Full endpoint details: [API-REFERENCE.md](../API-REFERENCE.md).
 
 ---
 
@@ -280,17 +279,14 @@ The full behavior contract, the misuse guard, and the `videoEl` source element t
 
 ---
 
-## SDK Module Map — Overview
+## SDK Entry Points
 
-For the public surface, entry points, and how-tos, read [README.md](../README.md). Its ["Architecture" section](../README.md#architecture) has the module-to-resource map.
+| Entry point | Class | Runs in | Token it takes |
+|---|---|---|---|
+| `./management` | `Management` | Server | The admin secret. It mints the tokens below. |
+| `./experience` | `KalturaAvatarSession` | Browser | A short-lived, non-admin conversation KS from `application.appInit` |
 
-Both SDK entry points share one core. `src/core/*` is the shared leaf layer that both `./management` and `./experience` depend on (`http.js` transport, `errors.js`, `session.js`, `stream.js`, `redact.js`, `safety.js`, `ids.js`, `knowledge-enums.js`, `kaltura-media.js`, `net-guard.js`, `opening.js`, `site-keys.js`, `transport-guard.js`). Core never imports from `management/` or `experience/`.
-
-`./management` (`Management`, `src/management/client.js`) checks the token kind via `assertAdmin`/`assertConversation` before any network call. It reads the kind a minted `Token` records (`admin`, `conversation`, `agent`, `widget`). A raw encrypted KS string cannot be inspected client-side, so the server decides.
-
-`./experience` (`KalturaAvatarSession`, `src/experience/session.js`) is the live socket+WHEP runtime described in "Video Runtime Protocol" above. It takes only an enriched conversation KS from `application.appInit` (short-lived, non-admin), and socket.io is injected into it, never bundled.
-
-For the full module-by-module map, see **[ARCHITECTURE-REFERENCE.md's "SDK Module Map & Data Flow"](architecture-reference/module-map-and-data-flow.md#sdk-module-map--data-flow)**. It covers each management module's exposed surface and which backend door it writes to, the capabilities-resolution return shape, and the GenUI rendering layer.
+`Management` checks the token kind before any network call. It reads the kind a minted `Token` records (`admin`, `conversation`, `agent`, `widget`). A raw encrypted KS string cannot be inspected client-side, so the server decides. `KalturaAvatarSession` is the live socket and WHEP runtime described in "Video Runtime Protocol" above. Socket.IO is injected into it, never bundled. Entry points, modules and how-tos: [README.md § Architecture](../README.md#architecture).
 
 ---
 
@@ -298,8 +294,8 @@ For the full module-by-module map, see **[ARCHITECTURE-REFERENCE.md's "SDK Modul
 
 How the system behaves under network failures, disconnects, and device problems. `KalturaAvatarSession` recovers in three layers: the control socket (Socket.IO reconnect, then a cold reconnect if state was lost), the WebRTC media peers (ICE restart for ASR, WHEP re-subscribe for STV), and a cold reconnect of the whole session as the last step (two attempts). A health watchdog catches peers that die without an ICE event, and closing the tab releases the server side. A custom client that skips `KalturaAvatarSession` must implement these itself.
 
-See **[ARCHITECTURE-REFERENCE.md's "Resilience & Failure Handling"](architecture-reference/resilience-and-failure-handling.md#resilience--failure-handling)** for the recovery layers and the failure-mode matrix. It also covers device-permission handling, and the tool-call-spiral circuit breaker mechanism.
+Recovery layers, the failure-mode matrix, device-permission handling and the tool-call spiral breaker: **[Resilience & Failure Handling](architecture-reference/resilience-and-failure-handling.md#resilience--failure-handling)**.
 
 A conversation ending cleanly is a separate concern from recovering from failure. On tab-close, backgrounding, bfcache freeze, or an explicit `disconnect()`, the SDK tells the backend the thread is genuinely over (`POST /thread/session_completed`). End-of-conversation lifecycle rules fire right away.
 
-See [ARCHITECTURE-REFERENCE.md's "Session-completion signal"](architecture-reference/resilience-and-failure-handling.md#session-completion-signal-session_completed-telling-the-backend-a-conversation-is-truly-over) for the condensed decision table. See [README.md § Ending a conversation cleanly](../README.md#ending-a-conversation-cleanly-session_completed-signal) for the app-facing config surface.
+App-facing config and the trigger table: [README.md § Ending a conversation cleanly](../README.md#ending-a-conversation-cleanly-session_completed-signal).

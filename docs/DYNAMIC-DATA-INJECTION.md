@@ -162,7 +162,7 @@ This routes the value back into the conversation so the brain can act on it. Tre
 
 ## How they work together — a worked example
 
-Consider an interactive product walkthrough: viewer identity is known at connect, the UI advances through sections as the viewer explores, and partway through, the agent asks the viewer for an email address via a structured data form.
+Example, an interactive product walkthrough: viewer identity is known at connect, the UI advances through sections as the viewer explores, and partway through, the agent asks the viewer for an email address via a structured data form.
 
 <!-- nova-target: dynamic-data-worked-example | Dynamic data injection worked example -->
 

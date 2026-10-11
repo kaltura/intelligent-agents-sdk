@@ -1,3 +1,5 @@
+> **Internal SDK development doc.** For people changing the SDK, not for app builders. Published in this repository only, never on the docs site. [Index](docs/internal/README.md).
+
 # Contributing
 
 Kaltura maintainers push directly; everyone else contributes via the standard GitHub fork workflow: fork this repo, clone your fork, push a branch to your fork, then open a PR from that branch back to `kaltura/intelligent-agents-sdk`'s `main`.

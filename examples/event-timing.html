@@ -65,7 +65,7 @@
       kickoff,
     });
 
-    // Every event the SDK's session emits — see docs/architecture-reference/conversation-flow.md.
+    // Every event the SDK's session emits — see docs/wire-protocol/events-catalog.md.
     for (const evt of ['disclosure', 'mediaReady', 'connectTimings', 'responsePending', 'responseSettled', 'transcript', 'speechChunk', 'avatarStartTalking', 'avatarStopTalking', 'turnEnd', 'interrupted', 'warning', 'error', 'ended']) {
       session.on(evt, (payload) => record(evt, payload));
     }

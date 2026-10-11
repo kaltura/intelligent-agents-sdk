@@ -19,8 +19,8 @@ test('site-keys: snapshot of the real docs site is stable and deterministic', ()
   assert.equal(renderSiteMap(a), snapshot.trimEnd());
   assert.deepEqual(a, b, 'input order does not change the manifest');
   assert.equal(a.version, MANIFEST_VERSION);
-  assert.equal(a.pages.length, 49);
-  assert.equal(a.pages.reduce((n, p) => n + p.sections.length, 0), 174);
+  assert.equal(a.pages.length, 46);
+  assert.equal(a.pages.reduce((n, p) => n + p.sections.length, 0), 169);
   for (const p of a.pages) {
     const seen = new Set();
     for (const s of p.sections) { assert.ok(!seen.has(s.key), `${p.path} duplicate key ${s.key}`); seen.add(s.key); assert.match(s.key, /^[^\s,:]+$/); }
