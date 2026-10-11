@@ -1,13 +1,13 @@
 ---
 layout: base.njk
-title: "System Internals Reference · Resilience and Failure Handling"
+title: "Architecture Reference · Resilience and Failure Handling"
 description: "The three reconnection tiers, device permissions, the failure-mode matrix, the tool-call-spiral breaker, and the session-completion signal."
 eyebrow: Reference
 ---
 
 # Resilience & Failure Handling
 
-[← Back to System Internals Reference](/reference/architecture-reference/)
+[← Back to Architecture Reference](/reference/architecture-reference/)
 
 
 How `KalturaAvatarSession` behaves under network failures, disconnects, and device problems. Recovery has three layers. Each escalates to the next:
@@ -140,68 +140,34 @@ The connect-time keys (`overall`, `joinRoom`, and the rest) are in [Connection &
 | Connect hangs | Per-step timeouts and the 30 s deadline | `connect()` rejects with `timeout` and `error.phase`. See the [connect sequence](/reference/architecture-reference/connection-and-handshake/#full-connect-sequence-state-machine-order). |
 | Tool reply gets no answer | 15 s deadline | `respondToTool()` returns `{ok:false, reason:'timeout'}`. The call stays pending, so you can retry. The first reply may still have arrived, so make the tool's side effect safe to repeat. |
 | Brain stalls mid-conversation | Watchdog | `brainStalled`, repeating every `brainStallMs` (default 12000) until output lands. |
-| Tool-call spiral (same command retried with no narration) | Two-tier circuit breaker | Soft signal (`toolSpiralDetected`), then a hard cold reconnect. See [below](#tool-call-spiral-what-happened-and-how-its-mitigated). |
-| Tab backgrounded / network change | `online`/`offline`/`visibilitychange` listeners | Media recovery as above. See the `session_completed` section for the page-lifecycle signal. |
+| Tool-call spiral (same command retried with no narration) | Two-tier circuit breaker | Soft signal (`toolSpiralDetected`), then a hard cold reconnect. See [Tool-call spiral](#tool-call-spiral). |
+| Tab backgrounded / network change | `online`/`offline`/`visibilitychange` listeners | Media recovery as above. See [Session completion](#session-completion). |
 
-### Tool-call spiral: what happened and how it's mitigated
+### Tool-call spiral
 
-A tool-eager brain can retry the same client command dozens or hundreds of times in one turn instead of narrating. `KalturaAvatarSession` defends against this with a two-tier circuit breaker.
+A brain can retry the same client command again and again instead of narrating. `KalturaAvatarSession` breaks the loop in two steps. `KalturaChatSession` has the first step only, because a chat turn has no socket to rebuild.
 
-**Soft tier: signal only.** Once a *turn* accumulates `toolSpiralLimit` (default 10) raw `type:"tool"` segments, counted before dedup since a spiral is the same call repeating, the SDK emits `toolSpiralDetected` once. The soft tier only signals. It never calls `interrupt()`, because interrupting does not stop a spiral that is already running, and it can truncate the turn's own narration.
+| Step | Trigger | Event | SDK action |
+|---|---|---|---|
+| Soft | `toolSpiralLimit` (default 10) tool segments in one turn | `toolSpiralDetected {count, limit}` | Signal only. The SDK does not interrupt the turn. |
+| Hard | `hardToolSpiralLimit` (default `toolSpiralLimit * 3`) tool segments since the last spoken or GenUI output | `toolSpiralRecovering {count, limit, lastTurnText}` | Cold reconnect. `threadId` is replayed, so brain memory continues. |
+| Resend | The cold reconnect succeeds and `recoverFromSpiral` is `true` (default) | `spiralRecovered {text}` | The SDK resends the abandoned turn once, with a short nudge prefix. |
 
-A legitimate turn can double its raw tool-segment count when `speak()`'s barge-in branch (still-playing TTS audio from a prior turn) spawns a parallel tap-to-talk stream for the same question. For example, a 3-tool turn duplicates into 6 raw segments this way. The default limit of 10 is high enough to absorb that duplication without tripping the breaker on an ordinary turn.
+Set `recoverFromSpiral:false` to resend the turn yourself from `lastTurnText`. Set any of the three limits to `0` to turn that step off. Options and a code sample: [README § Resilience: brain stalls and tool-call spirals](https://github.com/kaltura/intelligent-agents-sdk/blob/main/README.md#resilience-brain-stalls-and-tool-call-spirals). Prompt-side prevention: [Client-Side Commands](/guides/client-commands/).
 
-**Hard tier: the actual fix.** A **session-scoped hard counter** (`hardToolSpiralLimit`, default `toolSpiralLimit * 3`) counts raw tool segments since the last perceivable output. Turn boundaries do not reset it. Once it's crossed, the SDK emits `toolSpiralRecovering` (carrying `lastTurnText`, the abandoned turn) and forces `_coldReconnect()`. This is the same full media rebuild used for a dead media channel, replaying `threadId` so brain memory continues. It turns an uncontrolled `JoinRoomTimeout` into a deliberate, bounded reconnect.
+### Session completion
 
-The control socket is still live at this point, unlike a genuine transport drop. So `_coldReconnect()` opens a brand-new socket through the same factory `connect()` uses, then re-`join`s on it. It detects this case when `this.state !== 'reconnecting'` at entry. After a genuine transport drop, `state` is already `'reconnecting'`, and the SDK re-`join`s on the socket Socket.IO reopened.
-
-The hard guard re-arms on a successful cold reconnect, not just on perceivable output. A spiral never produces spoken or GenUI content, so that is the only reset that can fire while one runs. Without the re-arm, a second spiral later in the same session would find the guard latched from the first recovery.
-
-A cold reconnect restores connectivity and brain memory (`threadId`) but abandons the turn that triggered it. With `recoverFromSpiral` (default `true`), the SDK auto-resends that turn's tracked text once, from `speak()` or ASR's `userTranscription`. It prefixes the resend with `SPIRAL_RECOVERY_PREFIX` (the same nudge used on the headless `Conversations#send({recoverFromSpiral:true})` path), and emits `spiralRecovered {text}`. `recoverFromSpiral:false` suppresses the resend and leaves it to the app via `lastTurnText`. All three thresholds (`brainStallMs`, `toolSpiralLimit`, `hardToolSpiralLimit`) are configurable at construction; `0` disables any of them. Author-side mitigation (a tool-call budget in the system prompt) and the headless-path equivalent are covered in [Client-Side Commands](/guides/client-commands/)'s "Tool spirals starve the voice".
-
-`KalturaChatSession` (the HTTP text transport) ports the soft tier only: `cfg.toolSpiralLimit` (default 10, same counting rule) emits the same `toolSpiralDetected {count, limit}` once per turn. There's no hard tier here. A chat turn is one stateless HTTPS request with no socket to cold-reconnect, so a stuck turn is bounded by the caller's own `sendText({signal})` abort.
-
-### Session-completion signal (`session_completed`): telling the backend a conversation is truly over
-
-`KalturaAvatarSession`, `KalturaChatSession`, and `KalturaAgentSession` all POST `{genieUrl}/thread/session_completed` (`{"id":"<threadId>"}`, the same conversation KS as every other client call) the moment a conversation genuinely ends. This includes tab-close, backgrounding, and bfcache freeze. It never fires on an internal transition like a mode switch, and never ends a thread another tab is still using. Full config surface: [README.md § Ending a conversation cleanly](https://github.com/kaltura/intelligent-agents-sdk/blob/main/README.md#ending-a-conversation-cleanly-session_completed-signal). Request shape: [Conversation & Analytics § Session-Completion Signal](/reference/api/operate/#session-completion-signal).
-
-| Trigger | Fires? | Why |
-|---|---|---|
-| App calls `disconnect()` / `stop()` | yes | Unambiguous hangup |
-| Idle auto-logoff (`idleTimeoutMs`, default 15 min) | yes | Real end of session |
-| `pagehide` (tab/window closed, navigated away) | yes | The main case this signal exists for |
-| `pagehide` with `persisted:true` (bfcache freeze) | yes, by default | The SDK can't survive the freeze anyway: media/socket are already torn down |
-| Hidden longer than `hiddenGraceMs` (default 30s) | yes, by default | Catches iOS Safari / Chrome Android tab-kills where `pagehide` never fires |
-| Server ends the conversation (`conversationEnded`) | no, by default (`completeOnServerEnd`) | The server already ends the thread |
-| `KalturaAgentSession.switchMode()` tearing down the old transport | no | Thread continuity is the entire point of switching modes |
-| Fatal/unrecoverable error (`_endWith()`) | no | An error isn't a clean end; the app may reconnect and continue the same thread |
-| A second tab on the same thread is still alive (`crossTabPresence`, same-origin/same-device only via `BroadcastChannel`) | no, suppressed | Avoids ending a thread another tab is actively using; the last tab standing still fires |
-
-Sending the signal twice for the same thread is safe. The SDK never awaits it on the unload path. It uses `fetch(url, {keepalive:true})`, not `navigator.sendBeacon`, because `sendBeacon` can't carry the `Authorization` header. Duplicate tabs on different devices are out of scope by design (`BroadcastChannel` is same-origin/same-device only).
+All three session classes send `session_completed` when a conversation truly ends: `disconnect()`, idle logoff, tab close, or a long background. Triggers, options and the cross-tab rule: [README § Ending a conversation cleanly](https://github.com/kaltura/intelligent-agents-sdk/blob/main/README.md#ending-a-conversation-cleanly-session_completed-signal). Request shape: [Conversation & Analytics § Session-Completion Signal](/reference/api/operate/#session-completion-signal).
 
 ### Page exit
 
-A `pagehide` that is not a bfcache freeze runs `disconnect()`. The session sends `session_completed` first, then `DELETE`s the WHEP resource with `keepalive` so the request outlives the page, closes both peers and closes the socket. It is installed when `connect()` starts, so a tab closed mid-connect is cleaned up too. A request already in flight is aborted, and a `DELETE` can only name a resource whose answer has arrived. The browser decides whether a request sent while a page closes completes, so the release is best effort. A `pagehide` with `persisted:true` leaves the session alone, as in the table above. Turn the whole page-lifecycle handling off with `pageLifecycleAware:false`.
-
-### What the SDK implements (don't regress)
-
-- Per-step connect timeouts and the 30 s connect deadline.
-- Clean teardown, including a WHEP `DELETE` for the viewer slot, also on page exit.
-- A deadline on every control request, a bounded WHEP retry, and a health watchdog that catches silent peer death.
-- A mic problem never fails `connect()`. It emits a `warning`.
-- TURN relay for connectivity behind hostile NATs ([details](/reference/wire-protocol/audio-channels/#5-asr-uplink-pc1--microphone--server)).
-- Socket recovery within `reconnectWindowMs`, with a clean end otherwise.
-- ICE restart for ASR and re-subscribe for STV, then cold reconnect.
-- Mute-state preservation across ASR recovery.
-- Capacity queue (`waitForCapacity`) instead of a hard failure.
-- A repeating brain-stall watchdog and a two-tier tool-call-spiral breaker.
-- Distinct mic error codes and `online`/`offline`/`visibilitychange` handling.
+A `pagehide` that is not a bfcache freeze runs `disconnect()`. The session sends `session_completed` first, then `DELETE`s the WHEP resource with `keepalive` so the request outlives the page, closes both peers and closes the socket. It is installed when `connect()` starts, so a tab closed mid-connect is cleaned up too. A request already in flight is aborted, and a `DELETE` can only name a resource whose answer has arrived. The browser decides whether a request sent while a page closes completes, so the release is best effort. A `pagehide` with `persisted:true` (bfcache freeze) leaves the session alone. Turn the whole page-lifecycle handling off with `pageLifecycleAware:false`.
 
 ## Related docs
 
 | Doc | Covers |
 |---|---|
-| [System Internals Reference · Scale and Sticky Sessions](/reference/architecture-reference/scale-and-sticky-sessions/) | `throwToNoAgent`/`throwToExceededTier` and the availability queue |
-| [System Internals Reference · Connection and Handshake](/reference/architecture-reference/connection-and-handshake/) | Endpoints & Credentials, TURN/relay policy |
-| [System Internals Reference](/reference/architecture-reference/) | Back to the index |
+| [Architecture Reference · Scale and Sticky Sessions](/reference/architecture-reference/scale-and-sticky-sessions/) | `throwToNoAgent`/`throwToExceededTier` and the availability queue |
+| [Architecture Reference · Connection and Handshake](/reference/architecture-reference/connection-and-handshake/) | Endpoints & Credentials, TURN/relay policy |
+| [Architecture Reference](/reference/architecture-reference/) | Back to the index |
 

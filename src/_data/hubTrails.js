@@ -52,23 +52,7 @@ module.exports = {
   "/reference/architecture-reference/connection-and-handshake/": {
     "trail": [
       {
-        "title": "System Internals Reference",
-        "url": "/reference/architecture-reference/"
-      }
-    ]
-  },
-  "/reference/architecture-reference/channels/": {
-    "trail": [
-      {
-        "title": "System Internals Reference",
-        "url": "/reference/architecture-reference/"
-      }
-    ]
-  },
-  "/reference/architecture-reference/conversation-flow/": {
-    "trail": [
-      {
-        "title": "System Internals Reference",
+        "title": "Architecture Reference",
         "url": "/reference/architecture-reference/"
       }
     ]
@@ -76,15 +60,7 @@ module.exports = {
   "/reference/architecture-reference/scale-and-sticky-sessions/": {
     "trail": [
       {
-        "title": "System Internals Reference",
-        "url": "/reference/architecture-reference/"
-      }
-    ]
-  },
-  "/reference/architecture-reference/module-map-and-data-flow/": {
-    "trail": [
-      {
-        "title": "System Internals Reference",
+        "title": "Architecture Reference",
         "url": "/reference/architecture-reference/"
       }
     ]
@@ -92,7 +68,7 @@ module.exports = {
   "/reference/architecture-reference/resilience-and-failure-handling/": {
     "trail": [
       {
-        "title": "System Internals Reference",
+        "title": "Architecture Reference",
         "url": "/reference/architecture-reference/"
       }
     ]

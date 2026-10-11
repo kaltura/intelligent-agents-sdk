@@ -62,6 +62,8 @@ Both session classes (`KalturaAvatarSession`, `KalturaChatSession`) detect the p
 
 Key envelope fields: `threadId` (save for follow-ups), `messageId` (save for feedback), `isFinal:true` (stream done).
 
+**Token-kind check timing.** `conversations.send(...)` and `converseOnce(...)` check the token kind before they return. `conversations.stream(...)` is an async generator, so its check runs on the first iteration. Iterate it, or use `send`, to get the check up front.
+
 ### Refusals that arrive with HTTP 200
 
 The server reports some refusals in the stream, not in the HTTP status. The status is 200 and the body holds one `"error"` segment. The common case is a `threadId` that belongs to a different user: the segment reads `No permission for thread`, nothing is written, and the turn has no text.
@@ -107,7 +109,7 @@ Before any network call, the SDK's own `request_vars` pre-flight guard rejects a
 | `sys__is_new_thread` | `true` on the first turn of a new thread, `false` otherwise | |
 | `sys__avatar_enabled` | Whether the current thread has a live avatar attached | Used in a Skill's `condition` to gate it to avatar-only sessions, e.g. `{{ sys__avatar_enabled }}` — see [Configure an Intellect § skill_ids](/reference/api/build/intellect/#configure-an-intellect). |
 | `sys__avatar_share_screen_enabled` | Whether the current avatar session has screen-share analysis enabled | Also usable in a Skill's `condition`, e.g. `{{ sys__avatar_enabled and not sys__avatar_share_screen_enabled }}` to gate a skill to avatar sessions that are NOT sharing a screen. |
-| `sys__context_id` | The category/entry id the current context (and its knowledge base, if any) is scoped to | Set via `KalturaAvatarSession`'s `contextId` constructor option, sent on the live socket `join` payload — see [System Internals Reference · Connection and Handshake § The `join` payload](/reference/architecture-reference/connection-and-handshake/#the-join-payload-step-2-carries-the-agentbrain-config). Empty when no context was set at join. |
+| `sys__context_id` | The category/entry id the current context (and its knowledge base, if any) is scoped to | Set via `KalturaAvatarSession`'s `contextId` constructor option, sent on the live socket `join` payload — see [Architecture Reference · Connection and Handshake § The `join` payload](/reference/architecture-reference/connection-and-handshake/#the-join-payload-step-2-carries-the-agentbrain-config). Empty when no context was set at join. |
 | `sys__context_type` | The type of that context (e.g. an `entry` vs. a `category`) | Set via `KalturaAvatarSession`'s `contextType` constructor option, alongside `contextId`; empty when no context was set at join. |
 | `sys__ks` | The raw KS (Kaltura Session) for the current request | ⚠️ **Security warning: never reference `sys__ks` in a prompt whose output could be echoed back to a user or logged.** It is a live credential. Rendering it as plain text in a model response, chat transcript, or log can leak that credential. See [Security & Compliance](/reference/security/#ks-kaltura-session-guidance-for-agents-ac-3--ac-6--ia-2). |
 | `sys__user_obj.first_name` / `.last_name` / `.title` / `.company` / `.gender` / `.email` | Attributes of the bound-user object | Verify these resolve with `intellects.previewPrompt()` before shipping a prompt — the rendered preview flags unresolved references with a `reserved_user_attr_unresolved` warning. |

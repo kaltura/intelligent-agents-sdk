@@ -1,20 +1,17 @@
 ---
 layout: base.njk
-title: "System Internals Reference"
-description: "The exact field-by-field mechanics behind the SDK's architecture: the connect sequence, wire shapes, scaling internals, SDK module routing, and failure-mode tables."
+title: "Architecture Reference"
+description: "The connect sequence, recovery behavior, scaling and sticky sessions, and failure-mode tables behind the SDK's architecture."
 eyebrow: Reference
 ---
 
-# System Internals Reference
+# Architecture Reference
 
-This is the exact field-by-field mechanics behind [Platform Overview](/explanation/architecture/): the connect sequence, wire shapes, scaling internals, SDK module routing, and failure-mode tables. Read ARCHITECTURE.md first for the big picture. Consult these docs for an exact field, timeout, or module boundary. For a from-scratch reimplementation walkthrough, see [ARCHITECTURE-RECIPE.md](https://github.com/kaltura/intelligent-agents-sdk/blob/main/docs/ARCHITECTURE-RECIPE.md). For the exhaustive socket-event-by-event capture, see [Wire Protocol](/reference/wire-protocol/).
+Exact timings, steps and failure handling behind [Platform Overview](/explanation/architecture/). Read ARCHITECTURE.md first for the big picture. For a from-scratch client, see [ARCHITECTURE-RECIPE.md](https://github.com/kaltura/intelligent-agents-sdk/blob/main/docs/ARCHITECTURE-RECIPE.md). For every socket event, see [Wire Protocol](/reference/wire-protocol/).
 
 | Doc | Covers |
 |---|---|
-| [System Internals Reference · Connection and Handshake](/reference/architecture-reference/connection-and-handshake/) | Endpoints & Credentials, Socket.IO Connection, Full Connect Sequence, the `join` payload |
-| [System Internals Reference · Audio & Video Wiring](/reference/architecture-reference/channels/) | ASR Channel: Microphone Uplink, STV Channel: Avatar Video Downlink |
-| [System Internals Reference · Conversation Flow](/reference/architecture-reference/conversation-flow/) | Conversation Phase (brain output, talking state, lifecycle events), Sending User Input, Complete Message Catalog |
-| [System Internals Reference · Scale and Sticky Sessions](/reference/architecture-reference/scale-and-sticky-sessions/) | Sticky routing, the capacity queue and `waitForCapacity`, connection vs. session recovery |
-| [System Internals Reference · Module Map and Data Flow](/reference/architecture-reference/module-map-and-data-flow/) | SDK module map, `resolveCapabilities` shape, the GenUI layer, DTO routing rules, known limits |
-| [System Internals Reference · Resilience and Failure Handling](/reference/architecture-reference/resilience-and-failure-handling/) | Recovery layers, device permissions, the failure-mode matrix, the tool-call-spiral breaker, session-completion signal |
+| [Architecture Reference · Connection and Handshake](/reference/architecture-reference/connection-and-handshake/) | Endpoints and credentials, the full connect sequence, connect timeouts and errors, `prepare()`, connect timings |
+| [Architecture Reference · Scale and Sticky Sessions](/reference/architecture-reference/scale-and-sticky-sessions/) | Sticky routing, the capacity queue and `waitForCapacity` |
+| [Architecture Reference · Resilience and Failure Handling](/reference/architecture-reference/resilience-and-failure-handling/) | Recovery layers, ICE diagnostics, device permissions, the failure-mode matrix, the tool-call spiral breaker, page exit |
 

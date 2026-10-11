@@ -181,7 +181,7 @@ module.exports = [
         "children": []
       },
       {
-        "title": "System Internals Reference",
+        "title": "Architecture Reference",
         "url": "/reference/architecture-reference/",
         "children": [
           {
@@ -190,23 +190,8 @@ module.exports = [
             "children": []
           },
           {
-            "title": "Audio & Video Wiring",
-            "url": "/reference/architecture-reference/channels/",
-            "children": []
-          },
-          {
-            "title": "Conversation Flow",
-            "url": "/reference/architecture-reference/conversation-flow/",
-            "children": []
-          },
-          {
             "title": "Scale and Sticky Sessions",
             "url": "/reference/architecture-reference/scale-and-sticky-sessions/",
-            "children": []
-          },
-          {
-            "title": "Module Map and Data Flow",
-            "url": "/reference/architecture-reference/module-map-and-data-flow/",
             "children": []
           },
           {
