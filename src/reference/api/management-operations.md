@@ -185,7 +185,7 @@ Before deleting a record, `mgmt.knowledge.deleteRecord` lists every intellect an
 
 ## Lifecycle — `https://api.avatar.us.kaltura.ai`
 
-An event-driven rule engine, not embedded in an intellect. SDK: `mgmt.lifecycle`. Full reference (rule shape, action types, CRUD + discovery methods) and a worked recipe: **[Lifecycle Rules](/reference/lifecycle/)**.
+An event-driven rule engine, not embedded in an intellect. SDK: `mgmt.lifecycle`. Full reference (rule shape, action types, CRUD + discovery methods) and a worked recipe: **[Lifecycle Rules](/reference/lifecycle/)**. To check existing rules, and a partner's agents and intellects, for mistakes, use `mgmt.lifecycle.audit`, `mgmt.intellectConfig.audit` and `mgmt.doctor`. They only read. See [Audit your rules](/reference/lifecycle/#audit-your-rules).
 
 ## Insight Settings — `https://api.avatar.us.kaltura.ai`
 
