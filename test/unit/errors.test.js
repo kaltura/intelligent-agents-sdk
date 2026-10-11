@@ -63,14 +63,14 @@ test('missing discriminator (intellect update) maps', () => {
 });
 
 test('payment_required carries the plan hint, with or without an upstream message', () => {
-  const hint = 'The account is over a usage limit or not entitled. Check the plan with your Kaltura contact.';
+  const hint = 'The server refused the request as Payment Required, which points to a plan or entitlement limit. Check the plan with your Kaltura contact. A temporary load limit is not reported this way: a live conversation gets the retryable capacity_unavailable instead.';
   assert.equal(errorFromResponse({ status: 402, path: '/x', body: null }).detail, `HTTP 402 from /x. ${hint}`);
   assert.equal(errorFromResponse({ status: 402, path: '/x', body: { message: 'Quota hit.' } }).detail, `Quota hit. ${hint}`);
   assert.equal(errorFromResponse({ status: 403, path: '/x', body: null }).detail, 'HTTP 403 from /x', 'other codes get no hint');
 });
 
 test('trailing dots and whitespace are trimmed from the upstream message, even when the text is very long', () => {
-  const hint = 'The account is over a usage limit or not entitled. Check the plan with your Kaltura contact.';
+  const hint = 'The server refused the request as Payment Required, which points to a plan or entitlement limit. Check the plan with your Kaltura contact. A temporary load limit is not reported this way: a live conversation gets the retryable capacity_unavailable instead.';
   assert.equal(errorFromResponse({ status: 402, path: '/x', body: { message: 'Quota hit . \t\n' } }).detail, `Quota hit. ${hint}`);
   const long = `x${'\t'.repeat(200000)}y`;
   const t0 = Date.now();

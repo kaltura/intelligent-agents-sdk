@@ -293,7 +293,7 @@ test('402 maps to payment_required and is never retried (real server, one reques
         assert.ok(e instanceof KalturaError);
         assert.equal(e.code, 'payment_required');
         assert.equal(e.status, 402);
-        assert.equal(e.detail, 'Usage limit reached. The account is over a usage limit or not entitled. Check the plan with your Kaltura contact.');
+        assert.equal(e.detail, 'Usage limit reached. The server refused the request as Payment Required, which points to a plan or entitlement limit. Check the plan with your Kaltura contact. A temporary load limit is not reported this way: a live conversation gets the retryable capacity_unavailable instead.');
         return true;
       });
       assert.equal(requests, 1, `${call.method}: 402 is not retryable, so exactly one request`);

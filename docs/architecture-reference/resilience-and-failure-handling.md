@@ -31,7 +31,7 @@ A custom client that does not use `KalturaAvatarSession` must implement these la
 | `new` or `checking` for 10 s, or gathering ends with no candidates | Recovers. |
 | `connected` / `completed` | Clears the recovery flag. |
 
-The SDK emits `mediaRecovering { channel, state }` when recovery starts and `mediaRecovered { channel, method }` when it works. Every ICE state change also emits `connectivityChanged { channel, state }`.
+The SDK emits `mediaRecovering { channel, state, cause }` when recovery starts and `mediaRecovered { channel, method }` when it works. Every ICE state change also emits `connectivityChanged { channel, state }`.
 
 | Channel | In-place recovery (`method`) | Details |
 |---|---|---|
@@ -41,6 +41,24 @@ The SDK emits `mediaRecovering { channel, state }` when recovery starts and `med
 If in-place recovery fails, the SDK emits `connectivityChanged` with `state:'recover_failed'` and does a cold reconnect. `timeouts.recover` (15 s) bounds the STV re-subscribe. The ASR restart waits up to 30 s for its answer. Each channel has its own grace timer, so the two peers recover independently.
 
 The same recovery runs when the browser fires `online` after an `offline` and a peer is still in a down ICE state. Both events also emit `connectivityChanged` with `channel:'network'`. If the control socket is down while `reconnecting`, `online` makes it retry at once instead of waiting out its backoff. Turn this off with `networkAware:false`.
+
+### ICE diagnostics
+
+Each peer keeps a safe summary of what it gathered and what its STUN and TURN servers answered. No address, port or credential is stored. `cause` names the most likely reason a path is not up:
+
+| `cause` | Meaning | What to do |
+|---|---|---|
+| `connected` | The media path is up | Nothing |
+| `turn_credentials_rejected` | The relay refused the credentials and no relay address was allocated | Check the TURN settings the session was given |
+| `turn_unreachable` | No relay address could be allocated | Allow outbound UDP and TCP on ports 80 and 443 to the relay host, or use another network |
+| `no_candidates` | The browser found no network address | Check the device is online, a VPN or privacy setting is not hiding its interfaces, and outbound UDP and TCP on ports 80 and 443 to the relay host are allowed |
+| `no_route` | Addresses exist but the media server was not reached | Try again, or use another network |
+| `closed` | The peer was closed (for example after `disconnect()`) | Nothing |
+| `still_gathering` | The browser was still looking for a path | Try again on a faster network |
+
+`await session.getIceReport()` returns `{ asr, stv }`. Each is `null` before that peer exists, or an `IceReport`: `channel`, the three peer states, `candidates` by type (`host`, `srflx`, `prflx`, `relay`), `errors` (`code`, `text`, `scheme`), `cause`, `hint` and `selectedPair` (`localType`, `remoteType`, `protocol`, or `null`). It never rejects and is safe to log or attach to a support ticket.
+
+`connect()` fails with `ice_failed` (`phase: 'ice'`, `retryable: true`, `error.ice` is the same summary) when the avatar peer never reaches ICE `connected`. This holds with or without a `<video>` element and with or without a frame callback: `connect()` never resolves while ICE is down. ICE `failed` ends the wait at once. Otherwise the wait ends at `timeouts.firstFrame`. The first miss re-subscribes once. The second miss rejects. A peer that is connected but shows no frame is a different case: `connect()` resolves with `media_no_video`. An ASR peer that fails while `connect()` is still running is recovered as soon as the session is `connected`.
 
 ### Peer health watchdog
 
@@ -75,6 +93,7 @@ All keys go in `cfg.timeouts` of a `KalturaAvatarSession`. In a `KalturaAgentSes
 | `whepRelease` | 3000 ms | WHEP `DELETE` deadline |
 | `recover` | 15000 ms | One media recovery |
 | `healthTick`, `videoStall` | 1000 ms, 4000 ms | Watchdog interval, video stall limit |
+| `iceStuck` | 10000 ms | A peer still in ICE `new` or `checking` this long is recovered |
 | `coldAttempts`, `coldBackoff` | 2, 500 ms | Cold reconnect attempts, wait between them |
 
 The connect-time keys (`overall`, `joinRoom`, and the rest) are in [Connection & Handshake](connection-and-handshake.md#start-faster).

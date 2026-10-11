@@ -167,6 +167,12 @@ async function whepFetch(url, init = {}) {
   }
   await peer.setLocalDescription(await peer.createAnswer());
   await gathered(peer);                                          // non-trickle answer: the SDK posts once and reads the body
+  if (fault?.unreachable) {
+    // A valid answer whose candidates point at a documentation-range address, with no candidate
+    // exchange: the offerer's ICE can never connect.
+    const sdp = peer.localDescription.sdp.replace(/^(a=candidate:\S+ \d+ \S+ \d+ )\S+( \d+ typ .*)$/gm, '$1192.0.2.1$2');
+    return httpRes(201, sdp, `${WHEP_BASE}resource/${H.peers.length}`);
+  }
   pair(pc, peer);
   for (const l of late) setTimeout(() => { l.sender.replaceTrack(l.track).catch(() => {}); }, l.ms);
   return httpRes(201, peer.localDescription.sdp, `${WHEP_BASE}resource/${H.peers.length}`);
@@ -1468,6 +1474,23 @@ S['whep-404'] = async (c) => {
   c.check('one join only', socket.emitsOf('join').length === 1, socket.emitsOf('join').length);
   c.check('mediaReady has real dimensions', ev.of('mediaReady')[0]?.videoWidth === 160, ev.of('mediaReady'));
   c.check('video paints', ...pair2(await paints(v)));
+};
+
+// A peer whose ICE can never connect: connect() re-subscribes once, then fails with a typed, sanitized ice_failed.
+S['ice-failed'] = async (c) => {
+  const v = makeEl();
+  H.whepScript = [{ unreachable: true }, { unreachable: true }];
+  const { session } = newSession({ videoEl: v, timeouts: { firstFrame: 1500 } });
+  const err = await session.connect().then(() => null, (e) => e);
+  const posts = H.fetches.filter((f) => f.method === 'POST' && f.url.includes('/rtc/v1/whep'));
+  c.check('connect() rejected ice_failed', err?.code === 'ice_failed', err && { code: err.code, detail: err.detail });
+  c.check('phase ice, retryable', err?.phase === 'ice' && err?.retryable === true, err && { phase: err.phase, retryable: err.retryable });
+  c.check('error.ice names the avatar peer and a cause', err?.ice?.channel === 'stv' && !!err.ice.cause && err.ice.cause !== 'connected', err?.ice);
+  c.check('no IP address in the error', !/\b\d{1,3}(?:\.\d{1,3}){3}\b/.test(JSON.stringify(err?.toJSON?.() ?? {})), err?.ice);
+  c.check('one subscribe and one re-subscribe', posts.length === 2, posts.length);
+  c.check('session ended in error', session.state === 'error', session.state);
+  const report = await session.getIceReport();
+  c.check('getIceReport describes the stv peer', report.stv?.channel === 'stv' && report.stv.selectedPair === null, report);
 };
 
 // Closing the STV peer from outside fires no event; the watchdog still recovers it.

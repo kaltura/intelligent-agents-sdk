@@ -62,6 +62,7 @@ export class FakeRTCPeerConnection {
   }
   async setRemoteDescription(d) {
     this.remoteDescription = d;
+    if (FakeRTCPeerConnection.iceUpOnAnswer && this.transceivers.some((t) => t.kind === 'video' && t.direction === 'recvonly')) this.iceConnectionState = 'connected';
     // Model the STV WHEP answer delivering recvonly media: fire ontrack on the
     // next tick (the ASR peer has no recvonly video transceiver, so it won't).
     if (!this._autoTrackDisabled && this.transceivers.some((t) => t.kind === 'video' && t.direction === 'recvonly')) {
@@ -82,6 +83,13 @@ export class FakeRTCPeerConnection {
       queueMicrotask(() => { this.fireTrack('video'); this.fireTrack('audio'); });
     }
   }
+  /** Like a real peer: extra listeners next to the `on*` handlers a session sets. */
+  addEventListener(type, fn) { ((this._listeners ||= {})[type] ||= []).push(fn); }
+  _dispatch(type, ev) { this[`on${type}`]?.(ev); for (const fn of this._listeners?.[type] || []) fn(ev); }
+  /** Test helper: gather one local candidate. @param {string} [type] host, srflx, prflx or relay */
+  fireCandidate(type = 'relay') { this._dispatch('icecandidate', { candidate: { type, candidate: `candidate:1 1 udp 2 1.2.3.4 3478 typ ${type}` } }); }
+  /** Test helper: a STUN or TURN request failed. @param {{errorCode?: number, errorText?: string, url?: string}} [e] */
+  fireCandidateError(e = {}) { this._dispatch('icecandidateerror', { errorCode: 701, errorText: 'STUN host lookup received error.', url: 'turn:turn.example.com:443?transport=udp', ...e }); }
   /** Test helper: suppress the auto ontrack (to test the playability gate manually). */
   disableAutoTrack() { this._autoTrackDisabled = true; return this; }
   async addIceCandidate() { /* no-op */ }
@@ -120,9 +128,12 @@ export class FakeRTCPeerConnection {
 FakeRTCPeerConnection.instances = [];
 /** Test switch: model Firefox leaving a queued negotiation promise unsettled after `close()`. */
 FakeRTCPeerConnection.hangUnsettledOnClose = false;
+/** Test switch: an STV peer reports ICE `connected` once its answer is applied (a quiet state change, no event). */
+FakeRTCPeerConnection.iceUpOnAnswer = true;
 FakeRTCPeerConnection.reset = () => {
   FakeRTCPeerConnection.instances = [];
   FakeRTCPeerConnection.hangUnsettledOnClose = false;
+  FakeRTCPeerConnection.iceUpOnAnswer = true;
 };
 
 let trackSeq = 0;

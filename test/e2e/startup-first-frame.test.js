@@ -94,7 +94,7 @@ test('no videoEl: mediaReady is still emitted once with zero size', async () => 
 });
 
 test('no frame at the cap: one re-subscribe that releases the first one, then a degraded mediaReady', async () => {
-  const { session, whep, ready, warnings } = setup({ firstFrame: 120 });
+  const { session, whep, ready, warnings } = setup({ firstFrame: 120 });   // media path is up, only the picture is missing
   await session.connect();
   assert.equal(whep.posts.length, 2, 'exactly one re-subscribe');
   assert.equal(whep.deletes.length, 1, 'the first subscription is released');

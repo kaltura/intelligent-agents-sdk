@@ -57,6 +57,7 @@ import { assertRequestVars } from '../management/conversations.js';
 import { KalturaError } from '../core/errors.js';
 import { isSilentOpening, normalizeKickoff, SILENT_OPENING_LABEL } from '../core/opening.js';
 import { redact } from '../core/redact.js';
+import { IceTrace } from './ice-diagnostics.js';
 import { randId } from '../core/ids.js';
 import { makeAuditEmitter } from '../core/session.js';
 import { sanitizeJson, clampInbound } from '../core/safety.js';
@@ -81,7 +82,7 @@ const PENDING_TOOL_ACK_MAX_AGE_MS = 10 * 60_000;
 // `firstFrame` is how long the video may take to paint its first frame once the WHEP answer is applied.
 // `prepareIdle` is how long a `prepare()`d socket may sit unused before it is closed.
 // Override any of these with `cfg.timeouts`.
-const TIMEOUTS = { overall: 30000, serverConnect: 10000, joinRoom: 5000, joinComplete: 20000, agent: 10000, asr: 30000, firstFrame: 6000, prepareIdle: 60000, whepTry: WHEP_DEFAULTS.whepTry, whepTries: WHEP_DEFAULTS.whepTries, whepBackoff: WHEP_DEFAULTS.whepBackoff, whepRelease: 3000, recover: 15000, healthTick: 1000, videoStall: 4000, coldAttempts: 2, coldBackoff: 500 };
+const TIMEOUTS = { overall: 30000, serverConnect: 10000, joinRoom: 5000, joinComplete: 20000, agent: 10000, asr: 30000, firstFrame: 6000, prepareIdle: 60000, whepTry: WHEP_DEFAULTS.whepTry, whepTries: WHEP_DEFAULTS.whepTries, whepBackoff: WHEP_DEFAULTS.whepBackoff, whepRelease: 3000, recover: 15000, healthTick: 1000, videoStall: 4000, iceStuck: 10000, coldAttempts: 2, coldBackoff: 500 };
 
 // Socket.IO reconnection backoff. Its own defaults (1000 ms, max 5000 ms) make a dropped socket
 // wait a full second before the first retry; these start sooner. Override with
@@ -100,6 +101,7 @@ const MAX_STALL_RESUBSCRIBES = 2;
 // transient (ICE may self-heal); 'failed' is terminal for that connection and needs an
 // ICE restart / re-negotiation. We act on both, escalating from restart → rebuild.
 const ICE_DOWN = new Set(['failed', 'disconnected']);
+const ICE_UP = new Set(['connected', 'completed']);
 
 // Socket.IO disconnect reasons after which the SDK waits in 'reconnecting' for
 // connection-state recovery. Any other reason (io server/client disconnect, namespace
@@ -178,7 +180,7 @@ export class KalturaAvatarSession extends Emitter {
    * @param {number} [cfg.maxReconnectAttempts]  Passed through as socket.io's own `reconnectionAttempts` (caps its native reconnection engine) AND surfaced as `attempt`/`maxAttempts` on `reconnecting`/`connectivityChanged`. Default 5.
    * @param {number} [cfg.reconnectionDelay]  First wait, in ms, before socket.io retries a dropped socket. Default 250.
    * @param {number} [cfg.reconnectionDelayMax]  Longest wait, in ms, between those retries. Default 2000.
-   * @param {Partial<{overall:number, serverConnect:number, joinRoom:number, joinComplete:number, agent:number, asr:number, firstFrame:number, prepareIdle:number, whepTry:number, whepTries:number, whepBackoff:number, whepRelease:number, recover:number, healthTick:number, videoStall:number, coldAttempts:number, coldBackoff:number}>} [cfg.timeouts]  Override any wait, in ms (`whepTries` and `coldAttempts` are counts). Unset keys keep their default: `overall` 30000, `serverConnect` 10000, `joinRoom` 5000, `joinComplete` 20000, `agent` 10000, `asr` 30000, `firstFrame` 6000, `prepareIdle` 60000, `whepTry` 5000, `whepTries` 3, `whepBackoff` 1000, `whepRelease` 3000, `recover` 15000, `healthTick` 1000, `videoStall` 4000, `coldAttempts` 2, `coldBackoff` 500. What each one bounds: docs/architecture-reference/connection-and-handshake.md and resilience-and-failure-handling.md.
+   * @param {Partial<{overall:number, serverConnect:number, joinRoom:number, joinComplete:number, agent:number, asr:number, firstFrame:number, prepareIdle:number, whepTry:number, whepTries:number, whepBackoff:number, whepRelease:number, recover:number, healthTick:number, videoStall:number, iceStuck:number, coldAttempts:number, coldBackoff:number}>} [cfg.timeouts]  Override any wait, in ms (`whepTries` and `coldAttempts` are counts). Unset keys keep their default: `overall` 30000, `serverConnect` 10000, `joinRoom` 5000, `joinComplete` 20000, `agent` 10000, `asr` 30000, `firstFrame` 6000, `prepareIdle` 60000, `whepTry` 5000, `whepTries` 3, `whepBackoff` 1000, `whepRelease` 3000, `recover` 15000, `healthTick` 1000, `videoStall` 4000, `coldAttempts` 2, `coldBackoff` 500. What each one bounds: docs/architecture-reference/connection-and-handshake.md and resilience-and-failure-handling.md.
    * @param {number} [cfg.reconnectWindowMs]  Bounds the 'reconnecting' state independent of socket.io's own attempt count — if no recovery lands within this window, the session ends cleanly rather than hanging. Default 22000.
    * @param {Record<string, string|number|boolean|null>} [cfg.requestVars]  Join-time `{{var}}` values — seeds the session's canonical request_vars map, sent on every `join`/reconnect `buildJoin()` call and updated mid-session by {@link updateRequestVars}/{@link setDynamicPrompt}; validated with the same `assertRequestVars` as {@link updateRequestVars}.
    * @param {number} [cfg.localVadThreshold]  Client-side VAD threshold gating `localSpeakingChanged`: the summed byte-frequency level (0 to 4080) at or above which the mic counts as speaking. Default 300.
@@ -453,6 +455,7 @@ export class KalturaAvatarSession extends Emitter {
     this._brainStallTimer = null;    // brain-liveness watchdog
     this._brainStallFireCount = 0;   // how many times it has fired since the last clear (repeats, doesn't go stale)
     this._iceGraceTimers = { asr: null, stv: null };   // cancellable ICE-disconnected grace window, one per channel
+    /** @type {{asr: IceTrace|null, stv: IceTrace|null}} */ this._ice = { asr: null, stv: null };   // per-channel ICE diagnostics, replaced with each peer
     this._iceNewTimers = { asr: null, stv: null };  // stuck-in-'new'/'checking' watchdogs (never reach 'failed')
     this._healthTimer = null;                       // peer health tick, runs while connected
     this._videoFlow = { pc: null, bytes: -1, since: 0, busy: false };   // inbound video byte count the tick last saw
@@ -630,6 +633,7 @@ export class KalturaAvatarSession extends Emitter {
       this._mark('approved');
       if (this._isEnding()) throw connectAbortedErr();
       this._setState('connected');
+      this._recheckMedia();
       this._mark('connected');
       this._finishTimings();
       this._wireNetwork();
@@ -739,6 +743,30 @@ export class KalturaAvatarSession extends Emitter {
    * @returns {import('../core/errors.js').ConnectTimings}
    */
   get timings() { return { ...(this._timings || this._lastTimings || {}) }; }
+
+  /**
+   * Why the media peers are or are not connected, for a log or a support ticket. Per channel
+   * (`asr` is the microphone uplink, `stv` the avatar downlink): the peer states, candidates
+   * gathered by type, STUN/TURN error codes, the selected path type (`relay`, `srflx`, `host`),
+   * and a `cause` with a plain-words `hint`. Holds no IP address, port or credential, so it is
+   * safe to attach to a bug report. A channel with no peer yet is `null`. Read-only. Never rejects.
+   * @returns {Promise<{asr: import('./ice-diagnostics.js').IceReport|null, stv: import('./ice-diagnostics.js').IceReport|null}>}
+   */
+  async getIceReport() {
+    const [asr, stv] = await Promise.all([this._ice.asr?.report() ?? null, this._ice.stv?.report() ?? null]);
+    return { asr, stv };
+  }
+
+  /** The typed error for a peer that never connected. @param {'asr'|'stv'} channel */
+  _iceFailedError(channel) {
+    const ice = this._ice[channel]?.snapshot();
+    const what = channel === 'stv' ? 'avatar video and voice' : 'microphone';
+    return new KalturaError({
+      type: 'https://docs.kaltura.com/agentic/errors/ice_failed', title: 'ICE failed', code: 'ice_failed', phase: 'ice', retryable: true,
+      detail: `The ${what} connection could not be established${ice ? ` (${ice.cause}). ${ice.hint}` : '.'}`,
+      ...(ice && { ice }),
+    });
+  }
 
   /** Record a connect phase once, as ms since `connect()` began. No-op outside the first connect. @param {string} phase */
   _mark(phase) {
@@ -864,6 +892,7 @@ export class KalturaAvatarSession extends Emitter {
     await this._await(socket, 'asr-webrtc-ready', this._timeouts.asr, 'ASRConnectionFailed', overall);
     const pc = createPeerConnection(this._RTC, iceConfig('asr', this._turn, this._isFirefox));
     this._pcAsr = pc;
+    this._ice.asr = new IceTrace('asr', pc, this._now);
     pc.oniceconnectionstatechange = () => { this.emit('connectivityChanged', { channel: 'asr', state: pc.iceConnectionState }); this._onIceStateChange('asr', pc); };
     pc.onicecandidate = (e) => { if (e.candidate) socket.emit('asr-webrtc-ice-candidate', { candidate: e.candidate }); };
     pc.onconnectionstatechange = () => this._onPeerState('asr', pc);
@@ -898,7 +927,7 @@ export class KalturaAvatarSession extends Emitter {
    * is rejected as `ConnectTimeout`, same rule as every socket wait in `_await`.
    * The `timeouts.firstFrame` cap starts when the answer is applied, so a slow WHEP POST
    * never eats it. With no frame at the cap the stream is re-subscribed once (`attempt` 0);
-   * a second miss resolves with warning `media_no_video` and `mediaReady {degraded:true}`.
+   * a second miss resolves with warning `media_no_video` and `mediaReady {degraded:true}`, unless the peer's ICE never connected: that rejects with `ice_failed`.
    * @param {{expired:()=>boolean}} [overall] @param {number} [attempt] 0 for the first subscribe, 1 for the re-subscribe
    */
   async _connectStv(overall, attempt = 0) {
@@ -909,12 +938,14 @@ export class KalturaAvatarSession extends Emitter {
       this._releaseCurrentWhep();
     }
     this._pcStv = pc;
+    this._ice.stv = new IceTrace('stv', pc, this._now);
     const videoTransceiver = pc.addTransceiver('video', { direction: 'recvonly' });
     pc.addTransceiver('audio', { direction: 'recvonly' });
     this._applyVideoCodecPreference(videoTransceiver);
     pc.oniceconnectionstatechange = () => {
-      if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') this._mark('iceConnectedStv');
+      if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') { this._mark('iceConnectedStv'); iceUpNow(); }
       this.emit('connectivityChanged', { channel: 'stv', state: pc.iceConnectionState });
+      if (pc.iceConnectionState === 'failed' && pc === this._pcStv) iceFailNow();   // no point waiting out the first-frame cap
       this._onIceStateChange('stv', pc);
     };
     pc.onconnectionstatechange = () => this._onPeerState('stv', pc);
@@ -922,13 +953,15 @@ export class KalturaAvatarSession extends Emitter {
 
     let cancelPlayable = () => {};
     let startCap = () => {};
+    let iceFailNow = () => {};
+    let iceUpNow = () => {};
     // Exposed on `this` so _teardownTransports() can reach it — disconnect()/_endWith() called
     // mid-connect (after this point, before `await playable` below resolves) closes _pcStv but
     // otherwise has no handle into this closure's pending timers.
     const myCancel = () => cancelPlayable();
     this._cancelStvPlayable = myCancel;
     const releaseHandle = () => { if (this._cancelStvPlayable === myCancel) this._cancelStvPlayable = null; };   // a newer subscribe owns the handle now
-    /** Resolves `true` when the video is ready, `false` when the cap passed with no frame (first attempt only), `undefined` when cancelled. @type {Promise<boolean|undefined>} */
+    /** Resolves `true` when the video is ready, `false` when the cap passed with no frame (first attempt only), `'ice'` when the peer never connected on the re-subscribe, `undefined` when cancelled. @type {Promise<boolean|'ice'|undefined>} */
     const playable = new Promise((resolve) => {
       let done = false;
       let videoMetadataSent = false;
@@ -961,7 +994,15 @@ export class KalturaAvatarSession extends Emitter {
       const listen = (el, ev, fn) => { if (listeners.some((l) => l.el === el && l.ev === ev)) return; listeners.push({ el, ev, fn }); el.addEventListener(ev, fn, { once: true }); };
       const unlisten = () => { for (const l of listeners) l.el.removeEventListener?.(l.ev, l.fn); listeners.length = 0; };
       const finish = () => { for (const id of timers) clearTimeout(id); timers.clear(); unlisten(); cancelFrame(); emitMediaReady(this._avatarMedia.videoEl); resolve(true); };
-      const settle = (ms = 300) => { if (!done) { done = true; arm(finish, ms); } };   // jitter settle for the paths with no frame callback
+      // Jitter settle for the paths with no frame callback. It waits for ICE: a track exists as soon
+      // as the answer is applied, long before any media can flow. The cap fails a peer that never connects.
+      let settleMs = null;
+      const settle = (ms = 300) => {
+        if (done) return;
+        if (!ICE_UP.has(pc.iceConnectionState)) { settleMs = ms; return; }
+        done = true; arm(finish, ms);
+      };
+      iceUpNow = () => { if (settleMs != null) { const ms = settleMs; settleMs = null; settle(ms); } };
       // First painted frame with a real size: the earliest moment a user sees the avatar.
       const watchFrame = (v) => {
         if (frameId != null) return;
@@ -979,8 +1020,18 @@ export class KalturaAvatarSession extends Emitter {
         frameId = v.requestVideoFrameCallback(onFrame);
       };
       // The no-frame cap. The path without a frame callback keeps the old behaviour (settle).
+      // A peer whose ICE never connected has no media at all (the avatar's voice rides the same peer),
+      // so it is not a "slow first frame": the first try re-subscribes, the second fails with `ice_failed`.
+      iceFailNow = () => {
+        if (done) return;
+        done = true;
+        for (const id of timers) clearTimeout(id);
+        timers.clear(); unlisten(); cancelFrame();
+        resolve(attempt === 0 ? false : 'ice');
+      };
       startCap = () => arm(() => {
         if (done) return;
+        if (!ICE_UP.has(pc.iceConnectionState)) { iceFailNow(); return; }
         const v = this._avatarMedia.videoEl;
         if (!(frameGated && v && !(v.videoWidth > 0))) { settle(); return; }
         done = true;
@@ -1109,6 +1160,7 @@ export class KalturaAvatarSession extends Emitter {
     // Cancelled while waiting for the first frame: teardown or a cold rebuild closed this peer.
     // Succeeding here would report a connected session that has no media.
     if (ready === undefined || pc !== this._pcStv) throw connectAbortedErr();
+    if (ready === 'ice') throw this._iceFailedError('stv');
     if (ready === false && attempt === 0) await this._resubscribeStv(overall);
   }
 
@@ -1175,7 +1227,7 @@ export class KalturaAvatarSession extends Emitter {
       await this._subscribeStv(overall, 1);
     } catch (err) {
       const e = /** @type {any} */ (err);
-      if (e?.title === 'connect aborted' || e?.code === 'timeout' || overall?.expired()) throw err;
+      if (e?.title === 'connect aborted' || e?.code === 'timeout' || e?.code === 'ice_failed' || overall?.expired()) throw err;
       this.emit('warning', { code: 'media_no_video', message: 'No video frame arrived and the re-subscribe failed. The conversation continues with audio.', detail: String(e?.message || e) });
       this.emit('mediaReady', { mode: 'video', videoWidth: 0, videoHeight: 0, degraded: true });
     }
@@ -1922,6 +1974,7 @@ export class KalturaAvatarSession extends Emitter {
       await this._runConnectSequence(this._socket, overall, { skipAgentWait: true });
       this._approve(this._socket);
       this._setState('connected');
+      this._recheckMedia();
     } catch (err) {
       // The old transports are already gone and the rebuild failed, so the session cannot
       // carry a conversation any more: end it (error + ended, transports torn down) instead
@@ -2957,13 +3010,19 @@ export class KalturaAvatarSession extends Emitter {
         this._recoverMedia(channel, pc);
       }
     };
-    const timer = setTimeout(() => {
-      this._iceNewTimers[channel] = null;
-      const st = pc.iceConnectionState;
-      if ((st === 'new' || st === 'checking') && this.state === 'connected') this._recoverMedia(channel, pc);
-    }, 10000);
-    timer.unref?.();
-    this._iceNewTimers[channel] = timer;
+    const arm = (ms) => {
+      const timer = setTimeout(() => {
+        this._iceNewTimers[channel] = null;
+        const st = pc.iceConnectionState;
+        if (st !== 'new' && st !== 'checking') return;
+        if (this.state === 'connected') this._recoverMedia(channel, pc);
+        // Still joining: look again shortly, so a peer that is stuck by the time connect() resolves is not forgotten.
+        else if ((this.state === 'connecting' || this.state === 'reconnecting') && pc === (channel === 'asr' ? this._pcAsr : this._pcStv)) arm(Math.min(2000, this._timeouts.iceStuck));
+      }, ms);
+      timer.unref?.();
+      this._iceNewTimers[channel] = timer;
+    };
+    arm(this._timeouts.iceStuck);
   }
 
   /**
@@ -3001,6 +3060,20 @@ export class KalturaAvatarSession extends Emitter {
     this._recoverMedia(channel, pc);
   }
 
+  /**
+   * Once the session is live, look at each peer again. An ICE change that came while the state was
+   * still `connecting` or `reconnecting` was ignored on purpose, and no later event repeats it, so a
+   * peer that failed during connect() would stay dead.
+   */
+  _recheckMedia() {
+    for (const ch of /** @type {readonly ('asr'|'stv')[]} */ (['asr', 'stv'])) {
+      const pc = ch === 'asr' ? this._pcAsr : this._pcStv;
+      if (!pc) continue;
+      this._onIceStateChange(ch, pc);
+      this._onPeerState(ch, pc);
+    }
+  }
+
   /** Rejects with a `timeout` (phase `whep`) when a recovery step outlives `timeouts.recover`. @param {Promise<any>} p */
   _withinRecoverBudget(p) {
     let t;
@@ -3014,7 +3087,7 @@ export class KalturaAvatarSession extends Emitter {
     if (this._mediaRecovering[channel] || this.state !== 'connected') return;
     this._mediaRecovering[channel] = true;
     const gen = this._sessionGen;
-    this.emit('mediaRecovering', { channel, state: pc?.iceConnectionState });
+    this.emit('mediaRecovering', { channel, state: pc?.iceConnectionState, cause: this._ice[channel]?.snapshot().cause });
     try {
       // Try an ICE restart on the existing peer (fast path) when the platform supports it.
       if (channel === 'asr' && typeof pc?.restartIce === 'function' && this._socket?.connected !== false) {
@@ -3360,6 +3433,7 @@ export class KalturaAvatarSession extends Emitter {
       // rebuilt session was never approved, so there is nothing to resume yet.
       this._sessionReleased = false;
       this._setState('connected');
+      this._recheckMedia();
       // Re-arm the hard-spiral breaker: a spiral never emits a spoken/genui segment, so
       // _wireSocket's own reset (line ~967) structurally can't fire while one is active,
       // and this success path is the only other place the session recovers cleanly. Without

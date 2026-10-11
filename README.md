@@ -322,6 +322,7 @@ Two more members speed up and measure `connect()` ([Start faster](docs/architect
 |---|---|
 | `prepare()` | Opens the socket and joins ahead of `connect()`. Idempotent, no microphone, no avatar session. |
 | `timings`, event `connectTimings` | Phase times of the last `connect()` in ms. |
+| `getIceReport()` | Async, read-only. Safe summary of both media peers: candidates, STUN and TURN errors, likely cause and selected pair. See [ICE diagnostics](docs/architecture-reference/resilience-and-failure-handling.md#ice-diagnostics). |
 
 Media recovery (an STV re-subscribe after a stall) never touches your elements: the new tracks are swapped into the same streams, and only an element that the browser paused meanwhile (Firefox does this) gets one `play()` call. The one exception is an element whose `srcObject` your app replaced itself (for example set to `null` to hide the avatar): recovery binds it again. On Chromium a remote audio track is only decoded while some media element plays it, so a headless app that mixes `avatarStream` through Web Audio must keep a muted `<audio>` bound to the track; Firefox and WebKit do not need it. Calling `disconnect()` from inside a `'track'` listener is safe.
 
@@ -361,7 +362,7 @@ Non-fatal problems on this path arrive as `warning` events, `{ code, message, ..
 | Code | When | What to do |
 |---|---|---|
 | `playback_blocked` | The browser refused `play()` (autoplay policy). Payload has `kind: 'video' \| 'audio'`. | Show a "tap to start" control and call `startPlayback()` from it. |
-| `media_no_video` | No video frame arrived, even after one re-subscribe. `connect()` still resolves and `mediaReady` carries `degraded: true`. | Show the avatar as audio-only, or offer a reconnect. |
+| `media_no_video` | No video frame arrived, even after one re-subscribe, though the media path is up. `connect()` still resolves and `mediaReady` carries `degraded: true`. A media path that never came up rejects with `ice_failed` instead. | Show the avatar as audio-only, or offer a reconnect. |
 | `prepare_expired` | A `prepare()`d socket was not used within `timeouts.prepareIdle` and was closed. | Nothing. `connect()` starts a new handshake. |
 | `media_attach_failed` | A downlink track could not be routed (no `MediaStream` constructor, bad element). Payload has `kind: 'video' \| 'audio'` and `detail`. | Fall back to the `'track'` event or fix the element. |
 | `whep_delete_failed` | `KalturaScriptedVideoSession` only. The WHEP `DELETE` that releases this viewer failed. Harmless on a hangup: the server releases the session itself once the socket closes. A later re-subscribe to the same session can come back `409` while the old viewer is still held. | Nothing; informational. |
