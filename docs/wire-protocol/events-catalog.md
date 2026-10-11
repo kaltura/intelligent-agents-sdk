@@ -15,7 +15,7 @@ Direction: `→` the client emits, `←` the server emits. This catalog covers t
 | `asr-webrtc-offer` | `{ offer:{type,sdp}, is_reconnect }` | SDP offer for the mic uplink. `is_reconnect` is `true` when the SDK renegotiates after an ICE failure. Awaits `asr-webrtc-answer`. |
 | `asr-webrtc-ice-candidate` | `{ candidate:{candidate,sdpMLineIndex} }` | Trickle a local ICE candidate for the ASR peer. |
 | `approvedPermissions` | `{ room }` | Mic and video are ready. **Starts the opening greeting.** |
-| `onTextEntered` | `{ text, isFinal, isSpeechStart? }` | **Drive the avatar by text** instead of voice. The text is treated like a spoken transcript. `isFinal:false` marks a partial. `isSpeechStart:true` with `text:''` is the barge-in marker: it interrupts the avatar mid-sentence, and does nothing if the avatar is idle. `speak()` sends the marker first and then the real text. `interrupt()` sends the marker alone. |
+| `onTextEntered` | `{ text, isFinal, isSpeechStart? }` | **Drive the avatar by text** instead of voice. The text is treated like a spoken transcript. `isFinal:false` marks a partial. `isSpeechStart:true` with `text:''` is the barge-in marker: it interrupts the avatar mid-sentence, and does nothing if the avatar is idle. `speak()` sends the marker first and then the real text. `interrupt()` sends the marker alone. HTTP `/assistant/converse` is a separate stateless chat that never reaches the avatar's speech engine, so the avatar stays silent if you use it to inject text. |
 | `debug_text_entered` | `{ text, isFinal }` | A mirror of the final `onTextEntered`, sent by `speak()` only when the session was constructed with debug mode on. |
 | `tapToTalkStart` / `tapToTalkEnd` | `{}` | Push-to-talk capture window, sent by `startTapToTalk()` / `endTapToTalk()`. See below. |
 | `muteUser` / `unmuteUser` | `{}` | The `micEnabled` setter notifies the server of a mic mute or unmute. The mute itself is client-side (`track.enabled`). The payload has no data. |
@@ -211,7 +211,7 @@ It throws `invalid_state` when the session is not connected, on a network failur
 
 #### Session-completion signal — tell the backend a conversation is truly over
 
-The request shape and auth are in [operate.md § Session-Completion Signal](../api/operate.md#session-completion-signal). The response has no payload to parse. See [ARCHITECTURE-REFERENCE.md § Session-completion signal](../architecture-reference/resilience-and-failure-handling.md#session-completion-signal-session_completed-telling-the-backend-a-conversation-is-truly-over) for the trigger table, and [README.md § Ending a conversation cleanly](../../README.md#ending-a-conversation-cleanly-session_completed-signal) for the config surface.
+The request shape and auth are in [operate.md § Session-Completion Signal](../api/operate.md#session-completion-signal). The response has no payload to parse. Triggers and config: [README.md § Ending a conversation cleanly](../../README.md#ending-a-conversation-cleanly-session_completed-signal).
 
 ### 4f. `speechId` — the per-utterance key (and the barge-in mechanism)
 

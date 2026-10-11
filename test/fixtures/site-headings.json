@@ -75,8 +75,8 @@
         "level": 2
       },
       {
-        "id": "sdk-module-map--overview",
-        "text": "SDK Module Map — Overview",
+        "id": "sdk-entry-points",
+        "text": "SDK Entry Points",
         "level": 2
       },
       {
@@ -774,27 +774,6 @@
     "headings": []
   },
   {
-    "path": "/reference/architecture-reference/channels/",
-    "title": "Architecture Reference · Channels — @kaltura/intelligent-agents",
-    "headings": [
-      {
-        "id": "asr-channel--microphone-uplink-step-9",
-        "text": "ASR Channel — Microphone Uplink (step 9)",
-        "level": 2
-      },
-      {
-        "id": "stv-channel--avatar-video-downlink-after-connected",
-        "text": "STV Channel — Avatar Video Downlink (after CONNECTED)",
-        "level": 2
-      },
-      {
-        "id": "related-docs",
-        "text": "Related docs",
-        "level": 2
-      }
-    ]
-  },
-  {
     "path": "/reference/architecture-reference/connection-and-handshake/",
     "title": "Architecture Reference · Connection and Handshake — @kaltura/intelligent-agents",
     "headings": [
@@ -818,43 +797,6 @@
         "text": "The join payload (step 2) — this carries the agent/brain config",
         "level": 2
       },
-      {
-        "id": "related-docs",
-        "text": "Related docs",
-        "level": 2
-      }
-    ]
-  },
-  {
-    "path": "/reference/architecture-reference/conversation-flow/",
-    "title": "Architecture Reference · Conversation Flow — @kaltura/intelligent-agents",
-    "headings": [
-      {
-        "id": "conversation-phase--what-streams-while-connected",
-        "text": "Conversation Phase — What Streams While Connected",
-        "level": 2
-      },
-      {
-        "id": "sending-user-input",
-        "text": "Sending User Input",
-        "level": 2
-      },
-      {
-        "id": "complete-message-catalog",
-        "text": "Complete Message Catalog",
-        "level": 2
-      },
-      {
-        "id": "related-docs",
-        "text": "Related docs",
-        "level": 2
-      }
-    ]
-  },
-  {
-    "path": "/reference/architecture-reference/module-map-and-data-flow/",
-    "title": "Architecture Reference · Module Map and Data Flow — @kaltura/intelligent-agents",
-    "headings": [
       {
         "id": "related-docs",
         "text": "Related docs",

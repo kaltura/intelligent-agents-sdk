@@ -276,7 +276,7 @@ What the visitor gets and what they do not:
 | Conversation memory | Kept, through `threadId`. |
 | Connection, video, audio | Rebuilt. Expect a gap of a few seconds while the new session connects (about 2 s in a live test). |
 | Microphone | The new page calls `getUserMedia` again. The browser's permission rules decide whether it asks again. |
-| Autoplay | Usually allowed, but not guaranteed. A page load can still start paused. Handle `playback_blocked` as above. |
+| Autoplay | Allowed in most browsers, not guaranteed. A page load can still start paused. Handle `playback_blocked` as above. |
 | Opening phrase | Plays again on every join, also on a resumed thread. Guard it with `sys__is_new_thread`. See [START-THE-CONVERSATION.md](START-THE-CONVERSATION.md#personalize-the-opening). |
 | `go_to` | `navigate` loads the new page, so the navigator dies with the old page. The URL already carries `#<section-id>`, so the browser scrolls to the section. A new navigator starts on the new page. |
 | Back button | Reloads the page and resumes the thread. Chromium does not restore the page from its back/forward cache: `notRestoredReasons` lists `mediastream` and `rtc`. |

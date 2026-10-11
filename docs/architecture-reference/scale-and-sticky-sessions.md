@@ -1,10 +1,10 @@
-[← Back to System Internals Reference](../ARCHITECTURE-REFERENCE.md)
+[← Back to Architecture Reference](../ARCHITECTURE-REFERENCE.md)
 
 # Scale & Sticky Sessions
 
 Three things matter to a client: sticky routing, capacity handling, and what survives a reconnect.
 
-### Sticky routing: `stickyId`
+## Sticky routing: `stickyId`
 
 Send the same `stickyId` on every socket connection, and do not rotate it mid-session.
 
@@ -16,7 +16,7 @@ Send the same `stickyId` on every socket connection, and do not rotate it mid-se
 
 The STV video channel needs no stickiness. It is a plain WHEP stream, independent of the control socket.
 
-### Capacity & the queue (`throwToNoAgent` / `throwToExceededTier`)
+## Capacity & the queue (`throwToNoAgent` / `throwToExceededTier`)
 
 The number of live avatars is limited. There are two "full" signals:
 
@@ -51,17 +51,11 @@ All capacity codes are `KalturaError` values. `status` is an SDK number, not an 
 
 It opens its own light socket, uses no slot, and resolves `{ available: true, details? }` as soon as a slot is free. It also emits `capacityChanged` on each reply. See [connection-and-handshake.md](connection-and-handshake.md#full-connect-sequence-state-machine-order).
 
-### Connection recovery vs. session recovery
+## What survives a reconnect
 
-| Scenario | What the SDK does |
-|---|---|
-| **Short transport blip** | Socket.IO reconnects with backoff. If its state was recovered (`socket.recovered === true`), the SDK returns to `connected` with no re-`join`. Events: `reconnecting`, then `reconnected { recovered: true }`. |
-| **Drop that Socket.IO cannot recover** (or recovery fails) | Cold reconnect: new socket, re-`join`, new STV session, rebuilt ASR and WHEP. It uses the same `stickyId` and replays `threadId`. |
-| **No recovery within `reconnectWindowMs`** (default 22000) | The session ends cleanly (`reconnect_timeout`). |
+Only the brain **thread** resumes across sessions, via `threadId`. The recovery layers are in [resilience-and-failure-handling.md](resilience-and-failure-handling.md).
 
-Only the brain **thread** resumes across sessions (via `threadId`). Details: [resilience-and-failure-handling.md](resilience-and-failure-handling.md).
-
-### Slot data
+## Slot data
 
 `availabilityResult.details` is passed through from the server as an optional, informational object. The SDK does not read it. Treat it as optional.
 

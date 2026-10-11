@@ -11,7 +11,7 @@ Short definitions of the terms the SDK docs use, and a table of which ID goes wh
 | Brain | Informal word for what the intellect drives at runtime: the model that decides what the agent says and does. Docs use "brain" for the runtime and "intellect" for the configuration you edit |
 | Avatar | The face and voice half of an agent. Its id is `avatarId` |
 | Widget | A public, secret-free handle to one agent. Safe to ship in browser code. Its id is `widgetId` |
-| Channel | One of the two live WebRTC connections of an avatar session: the microphone channel going up and the video channel coming down. See [Audio & Video Wiring](architecture-reference/channels.md) |
+| Channel | One of the two live WebRTC connections of an avatar session: the microphone channel going up and the video channel coming down. See [Audio Channels](wire-protocol/audio-channels.md) |
 | Session | One live conversation between a user and an agent. The SDK has no separate "room" object. A session owns its channels |
 | Thread | The stored history of a conversation. Its id is `threadId` |
 | KS | Kaltura Session. The signed string that proves who is calling and what they may do. Every API call carries one. How to mint one: [Authentication](api/authentication.md#authentication) |

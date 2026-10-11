@@ -31,7 +31,7 @@ await mgmt.intellectConfig.setUserPropertiesForms(configId, [
 
 `buildUserPropertiesForms()` accepts only the six base types. It validates before any network call and throws `bad_request` on an invalid stage, an empty `properties` array, or any other type, including `email`, `phone` and `text`.
 
-You can pass one form object or an array of several. Each stage gets its own field set. That means you could ask for a booking date early in the conversation and a payment preference later, or ask for an email early and a phone number later, in the same conversation.
+You can pass one form object or an array of several. Each stage gets its own field set. For example, ask for a booking date early and a payment preference later, or an email early and a phone number later, in the same conversation.
 
 ## What configuring a stage actually does
 

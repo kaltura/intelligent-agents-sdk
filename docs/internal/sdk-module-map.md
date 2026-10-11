@@ -1,13 +1,13 @@
-[← Back to System Internals Reference](../ARCHITECTURE-REFERENCE.md)
+> **Internal SDK development doc.** For people changing the SDK, not for app builders. Published in this repository only, never on the docs site. [Index](README.md).
 
-# SDK Module Map & Data Flow
+# SDK Module Map
 
-This section is the **source-of-truth map** of the SDK's internals: how a call flows from a typed method to the right backend, and the routing/data-flow rules README doesn't cover.
+Where each part of the SDK lives, and which backend host each management module writes to. Public behavior is in [README.md](../../README.md) and [API-REFERENCE.md](../../API-REFERENCE.md).
 
-### Two entry points, one shared core
+## Two entry points, one shared core
 
 - **`./management`** (`Management`, `src/management/client.js`): the REST control plane. It holds the admin secret, mints tokens, and routes to the two REST hosts (Agentic API and brain API) and OVP. It enforces the token-kind guard via `assertAdmin`/`assertConversation` (`assertKind` in `client.js`) **before any network call**. Resource namespaces hang off it: `sessions`, `agents`, `avatars`, `avatarSessions`, `catalog`, `application`, `intellects`, `intellectConfig`, `tools`, `skills`, `conversations`, `threads`, `messages`, `feedback`, `followups`, `knowledge`, `lifecycle`, `insightSettings`. `tools` and `skills` are standalone, partner-level entities. An intellect only references them via `tool_ids`/`skill_ids`. One sub-resource mounts on `intellects`: `intellects.secrets`.
-- **`./experience`** (`KalturaAvatarSession`, `src/experience/session.js`): the live socket+WHEP runtime from [ARCHITECTURE.md's "Video Runtime Protocol"](../ARCHITECTURE.md#video-runtime-protocol--the-big-picture). It takes only an enriched conversation KS from `application.appInit` (short-lived, non-admin). socket.io is INJECTED (`socketFactory`), never bundled. Two optional plugin subpaths hang off this same live runtime without loading into apps that don't need them: `./experience/presenter` (the `Presenter` deck helper) and `./experience/genui` (the `ExperienceRenderer` GenUI layer).
+- **`./experience`** (`KalturaAvatarSession`, `src/experience/session.js`): the live socket+WHEP runtime from [ARCHITECTURE.md § Video Runtime Protocol](../ARCHITECTURE.md#video-runtime-protocol--the-big-picture). It takes only an enriched conversation KS from `application.appInit` (short-lived, non-admin). socket.io is INJECTED (`socketFactory`), never bundled. Two optional plugin subpaths hang off this same live runtime without loading into apps that don't need them: `./experience/presenter` (the `Presenter` deck helper) and `./experience/genui` (the `ExperienceRenderer` GenUI layer).
 - **`src/core/*`**: the shared leaf layer both fronts depend on.
   - `http.js` (transport)
   - `errors.js` (`KalturaError`, RFC 9457)
@@ -20,9 +20,7 @@ This section is the **source-of-truth map** of the SDK's internals: how a call f
 
   Core never imports from `management/` or `experience/`. It stays a leaf.
 
-> **Branch security on the minted `Token`, never on `inspectKs(realKs).kind`.** The public `inspectKs` export (`@kaltura/intelligent-agents/management`, `src/management/ks-inspect.js`) decodes only a KSv2 token's **plaintext header**. It reliably returns `{partnerId}`. But a real encrypted KS has its privileges AES-encrypted, so `inspectKs` returns `kind:'opaque'`, `disableEntitlement:null`, `encrypted:true`. `kind`/`disableEntitlement` are populated **only** for unencrypted test tokens. To decide what a token may do, read the `.kind` of the minted `Token` object instead. It records what it was minted with: `admin`/`conversation`/`agent`/`widget`. Don't use `inspectKs` of an opaque production KS for that decision.
-
-### Management modules (what each does, where it writes)
+## Management modules
 
 | Module (`src/management/`) | Exposes | Backend the writes hit |
 |---|---|---|
@@ -39,37 +37,7 @@ This section is the **source-of-truth map** of the SDK's internals: how a call f
 | `insight-settings.js` | `InsightSettings` (`mgmt.insightSettings`: `create`/`get`/`update`/`delete`/`list` over reusable `{key, title, prompt, valueType, status}` insight definitions). Referenced by a `lifecycle` rule's `action.insightSettingsIds`, not embedded in the rule itself. | the Agentic API's `insight-settings/*` |
 | `provision.js` | `provision()`: the agent factory; optional `knowledge`/`tools`/`capabilities` blocks layer after the core create (`tools` creates each Tool entity via `mgmt.tools.add`, then links the successful ids in one `intellectConfig.setToolIds` write). | both hosts |
 
-The top-level headless converse surface lives on the `Management` class itself: `converse(configId, message, opts?, ks?)` (AsyncGenerator over `conversations.stream`) and `converseOnce(...)` (delegates to `conversations.send`). Both auto-mint a conversation token from `configId` when `ks` is omitted, so the admin secret never leaves the server.
-
-`opts` carries `{threadId, sse, model_type, force_experience, request_vars, capabilities, recoverFromSpiral}`. `assertRequestVars` rejects reserved keys and non-scalar values before the wire.
-
-`opts.capabilities` is a per-message `{name:state}` override, validated client-side. A capability marked `disabled` in a stored layer can't be turned on per message. For example, `converse(cfg, msg, {capabilities:{use_web_search:'on'}})` has no effect if `use_web_search` is `disabled` there. See `resolveCapabilities` below for how the layers combine.
-
-`opts.recoverFromSpiral:true` on `conversations.send`/`converseOnce` sends one same-thread nudge retry (`SPIRAL_RECOVERY_PREFIX`) when the first attempt comes back `spiralStopped:true` with empty text. See `stream.js`'s `collectConverse` entry above for what it's recovering from.
-
-> **Scope-guard timing on the streaming path.** `conversations.stream(...)` is an **async generator**, so its `assertConversation(ks)` scope check fires on the **first** `.next()`/iteration, not at call time. `const g = k.conversations.stream(opts, adminKs)` without iterating gets no guard yet. This is despite the client's "before any network call" framing, which holds for the non-generator methods. For **eager** scope validation, use `conversations.send(...)`/`converseOnce(...)` instead: they assert the token kind synchronously before returning. The non-generator reads (`conversations.status`, all `agents`/`avatars`/`catalog` calls) guard at call time, as documented.
-
-### `resolveCapabilities` return shape (the 16 names are nested, not top-level)
-
-`resolveCapabilities(layers)` (`src/management/capabilities.js`) returns a **two-key** object, `{ capabilities, _meta }`, so `Object.keys(result).length === 2`. The 16 `AssistantCapability` states live **under `.capabilities`**, keyed by name, NOT at the top level:
-
-```js
-const { capabilities, _meta } = k.intellects.resolveCapabilities({
-  partnerConfig: stored,                       // from intellects.getCapabilities
-  request: { use_web_search: 'off' },          // per-turn override to model
-});
-capabilities.avatar.state;          // 'on' | 'off' | 'disabled'
-capabilities.avatar.resolvedFrom;   // which layer won
-```
-
-Each per-name entry is `{ state, resolvedFrom, vetoed, layers }`:
-
-- `resolvedFrom` is one of `request | partner_config | env | default | disabled_veto`. **`default` only appears when you pass an explicit empty `env: {}`**. When `env` is **omitted**, the resolver supplies `CAPABILITY_DEFAULTS` *as the env layer*. So an unset capability resolves `resolvedFrom:'env'` (for example, `resolveCapabilities({}).capabilities.avatar.resolvedFrom === 'env'`).
-- `vetoed:true` (with `resolvedFrom:'disabled_veto'`, `state:'off'`) when `env` or `partnerConfig` marks the capability `disabled`. This is a hard override that no per-request `on` can lift.
-
-A **freshly created** intellect returns an **empty `capabilities {}`** from `getCapabilities` (nothing stored yet), so every name then resolves from the env/default layer until you `setCapability`/`setCapabilities`.
-
-### Experience GenUI layer
+## Experience GenUI layer
 
 `src/experience/genui/` turns brain `unisphere-tool` segments into framework-agnostic render descriptors:
 
@@ -80,28 +48,13 @@ A **freshly created** intellect returns an **empty `capabilities {}`** from `get
 
 `session.js` wires the **guardrail gate**. Each `agent_raw_text` delta is classified by `classifyAgentAction` (`wire.js`, reading `seg.metadata.runtimeName`/`widgetName` plus the adapter-normalized `seg.type` with `-tool` stripped). When a capability policy or `onAgentAction` hook is present, the delta runs through `_gateAgentAction` before `emit('brainSegment', d)`. This is default-allow, so existing nav/GenUI flows are untouched; a veto emits `agentActionDenied` plus an `agent.action.deny` audit event. `Presenter` exposes `covered`/`questions`/`lastNav` (`{target, reason, at}`). `session.micEnabled` is a read getter.
 
-### Routing rule: the intellect DTO is the whole writable surface
+## Write routing: the intellect DTO
 
-The intellect DTO (`v1/intellect/*`) is the one real door for every writable field: `prompts`, `base_directive`, `glossary`, `capabilities`, `tool_ids`, `skill_ids`, `thread_start_tools`, `secrets`, `user_properties_forms`, `mcp_servers`, `allow_client_variables`, `knowledge_ids`, `avatar_summary_config`, `force_language`, `opening_phrase`, `model_configuration`, `name`/`description`/`tags`/`status`. It's writable with a **partner admin KS**, ungated.
+The intellect DTO (`v1/intellect/*`) is the only write path for every writable field: `prompts`, `base_directive`, `glossary`, `capabilities`, `tool_ids`, `skill_ids`, `thread_start_tools`, `secrets`, `user_properties_forms`, `mcp_servers`, `allow_client_variables`, `knowledge_ids`, `avatar_summary_config`, `force_language`, `opening_phrase`, `model_configuration`, `name`/`description`/`tags`/`status`. It's writable with a **partner admin KS**, ungated.
 
-**Knowledge linkage rides this same door.** First call `POST /v1/knowledge/add` on the brain host, which returns an `{id,...}` record. Then pass the returned id as `knowledge_ids` in the intellect create/update DTO. Linkage plus `use_knowledge_base:'on'` persist with no separate linking call.
+**Knowledge linkage uses the same path.** First call `POST /v1/knowledge/add` on the brain host, which returns an `{id,...}` record. Then pass the returned id as `knowledge_ids` in the intellect create/update DTO. Linkage plus `use_knowledge_base:'on'` persist with no separate linking call.
 
 Omitted top-level fields are preserved on update. But `capabilities`/`secrets` are **full-replace sub-dicts**, so the SDK read-merge-writes them, via `mergeCapabilityWrite` or the secrets mask-and-keep guard. `IntellectConfig.patch` is the one place that logic lives.
 
 `EDITABLE_FIELDS` in `intellect-config.js` is the exact list of keys `v1/intellect/get` echoes and `v1/intellect/update` accepts for a partner admin KS. `patch()` rejects any other key before the network call, and `describe()` returns exactly these keys. When adding a field setter, first confirm the key round-trips through `intellect/update` and `intellect/get` with a partner admin KS. Then add it to `EDITABLE_FIELDS`.
 
-### Known limits
-
-- **An external LLM (BYO-LLM) is possible, but not self-serve.** Ask your Kaltura Account Manager to set it up. The SDK does not create one: `intellects.create` rejects a body containing `url`/`protocol` with a typed `bad_request`.
-- **Secrets are write-only**: values never read back. The no-leak guarantee is the name-only response contract, not `redact()`. Client-side encryption and BYOK are server-managed, not buildable.
-- **`previewPrompt`/`snapshot`/`restore` are client-side**: a replica of the author layer only (server-injected capability-conditional prompt blocks are not reproducible), plus a browser-local history (the server has no versioning).
-- **`agent/list` filter keys are narrow.** `filter` is forwarded as-is; the server accepts only `agentId`, `adminTagsIn`, `adminTagsNotIn`, `searchValue`, and 400s on anything else. Tag the **agent** with `adminTags` at create time to group. Avatars carry no tag field, but `avatar/create` accepts and stores it silently (never echoed back), while `avatar/update` 400s on it. See `Avatars.create`'s JSDoc.
-
-The SDK's own `node:test` suite (`test/`) exercises every one of these surfaces against the real backend and against injected fakes. See `README.md` for the full command list.
-
-## Related docs
-
-| Doc | Covers |
-|---|---|
-| [resilience-and-failure-handling.md](resilience-and-failure-handling.md) | Failure modes, TURN/relay, and the tool-call-spiral breaker touched on above |
-| [../ARCHITECTURE-REFERENCE.md](../ARCHITECTURE-REFERENCE.md) | Back to the index |

@@ -1,3 +1,5 @@
+> **Internal SDK development doc.** For people changing the SDK, not for app builders. Published in this repository only, never on the docs site. [Index](docs/internal/README.md).
+
 # AGENTS.md
 
 Guide for people and coding agents working on the SDK itself. To build an app with the SDK, use the plugin in [app-builder-skill/README.md](app-builder-skill/README.md).
@@ -33,11 +35,7 @@ Full list: [SDK_CONSTITUTION.md](SDK_CONSTITUTION.md).
 
 ## Docs
 
-- Update docs in the same PR as the behavior change.
-- Each fact lives in one place. Link to it, do not copy it.
-- Docs describe the current state and what is planned. No history blocks, no "formerly" notes.
-- Write plain English at B2 level. No hard wraps inside a paragraph.
-- A new root `*.md` or `docs/**` page needs a site manifest entry on `gh-pages-src` before the next tag, or the release check fails.
+Read [docs/internal/DOCS-GUIDE.md](docs/internal/DOCS-GUIDE.md) before you edit any `.md` file. It defines the user and internal doc tiers, the content and length rules, and what `tools/check-docs.mjs` enforces. Update docs in the same PR as the behavior change.
 
 ## Public boundary
 
