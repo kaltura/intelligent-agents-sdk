@@ -13,8 +13,4 @@ assignees: ''
 
 ## Proposed shape
 
-<!-- The method/option/event you'd add, and which entry point it lives under (./management, ./experience, ./experience/presenter, ./experience/genui, ./experience/site-nav, ./experience/chroma-key, ./experience/noise-suppressor, ./experience/analytics). If it maps to a real backend endpoint, link it. -->
-
-## Known limits
-
-<!-- The SDK favors a typed {applied:false, reason} receipt over a silent success when it can't verify a write went through (see src/management/provision.js). If this needs a gated/undocumented backend behavior, say so: it may need the same pattern. -->
+<!-- The method/option/event you'd add, and which entry point it lives under (./management, ./experience, ./experience/presenter, ./experience/genui, ./experience/site-nav, ./experience/chroma-key, ./experience/noise-suppressor, ./experience/analytics). Show the SDK call you expected to write and the result you expected back. -->

@@ -1138,12 +1138,14 @@ describe('17. Content pages', () => {
 describe('18. Doc tiers and style', () => {
   const BANNER = '> **Contributor doc.**';
   const CONTRIBUTOR_ROOT = ['AGENTS.md', 'CONTRIBUTING.md', 'SDK_CONSTITUTION.md'];
+  const CONTRIBUTOR_EXTRA = trackedFiles().filter((f) => f === 'scripts/README.md' || f === 'test/browser/README.md' || /^manual-testing\/.*README\.md$/.test(f));
+  /** Link targets a user doc must never point to: every contributor-tier path. */
+  const CONTRIBUTOR_TARGET = /^(docs\/contributor(\/|$)|CONTRIBUTING\.md$|SDK_CONSTITUTION\.md$|AGENTS\.md$|scripts\/README\.md$|manual-testing(\/|$)|test(\/|$))/;
   const USER_ROOT = ['README.md', 'API-REFERENCE.md', 'GETTING-STARTED.md', 'SECURITY.md'];
   const LINE_BUDGET = 250;
   // Ratchet: pages already over budget may not grow. Remove an entry once the page is under budget.
   const OVER_BUDGET = {
-    'README.md': 1388, 'docs/SITE-NAV.md': 449, 'SECURITY.md': 355, 'docs/lifecycle/README.md': 305,
-    'docs/ARCHITECTURE.md': 301, 'docs/START-THE-CONVERSATION.md': 251,
+    'README.md': 1232, 'docs/SITE-NAV.md': 430, 'SECURITY.md': 353, 'docs/lifecycle/README.md': 289,
   };
   const userDocs = () => trackedFiles().filter((f) => f.endsWith('.md')
     && (USER_ROOT.includes(f) || (f.startsWith('docs/') && !f.startsWith('docs/contributor/'))));
@@ -1160,15 +1162,15 @@ describe('18. Doc tiers and style', () => {
   const scan = (re) => userDocs().flatMap((f) => prose(f).filter(([, l]) => re.test(l)).map(([n, l]) => `${f}:${n}: ${l.trim().slice(0, 90)}`));
 
   test('every contributor doc starts with the contributor banner', () => {
-    for (const f of [...CONTRIBUTOR_DOCS, ...CONTRIBUTOR_ROOT]) assert.ok(read(f).startsWith(BANNER), `${f} must start with the contributor banner`);
+    for (const f of [...CONTRIBUTOR_DOCS, ...CONTRIBUTOR_ROOT, ...CONTRIBUTOR_EXTRA]) assert.ok(read(f).startsWith(BANNER), `${f} must start with the contributor banner`);
   });
 
-  test('user docs never link to docs/contributor/', () => {
+  test('user docs never link to contributor docs', () => {
     const bad = [];
     for (const f of userDocs()) {
       for (const m of read(f).matchAll(/\]\(([^)#\s]+)/g)) {
         if (/^[a-z]+:/i.test(m[1])) continue;
-        if (normalize(join(dirname(f), m[1])).startsWith('docs/contributor')) bad.push(`${f} → ${m[1]}`);
+        if (CONTRIBUTOR_TARGET.test(normalize(join(dirname(f), m[1])))) bad.push(`${f} → ${m[1]}`);
       }
     }
     assert.deepEqual(bad, [], `user docs link to contributor docs:\n  ${bad.join('\n  ')}`);
@@ -1187,6 +1189,12 @@ describe('18. Doc tiers and style', () => {
   test('user prose has no history or status notes', () => {
     const hits = scan(/\b(formerly|previously|used to|no longer|was renamed|as of v\d|since v\d|prior to v\d|older SDK versions)\b/i);
     assert.deepEqual(hits, [], `history notes in user docs:\n  ${hits.join('\n  ')}`);
+  });
+
+  test('docs have no em dashes outside code fences', () => {
+    const files = [...userDocs(), ...CONTRIBUTOR_ROOT, ...CONTRIBUTOR_EXTRA, ...CONTRIBUTOR_DOCS];
+    const hits = files.flatMap((f) => prose(f).filter(([, l]) => l.includes('\u2014')).map(([n, l]) => `${f}:${n}: ${l.trim().slice(0, 90)}`));
+    assert.deepEqual(hits, [], `em dashes (use a period, comma, "and" or "but"):\n  ${hits.join('\n  ')}`);
   });
 
   test(`user docs stay under ${LINE_BUDGET} lines, and over-budget pages do not grow`, () => {

@@ -144,7 +144,7 @@ export class Intellects {
     const type = body.type ?? 'internal';
     const status = body.status ?? 2;
     // Client-tool readiness lint: tools without kaltura_genie_experiences:'off' can be overridden by the built-in experience tool.
-    // Capabilities set post-create are defeated by the ~24h cache.
+    // Capabilities set post-create are not reliable.
     // Surface as warnings on the receipt so authoring UIs / AI agents see them.
     const readiness = clientToolReadiness({ ...body, type, status });
     const raw = await this.add({ ...body, type, status }, ks);

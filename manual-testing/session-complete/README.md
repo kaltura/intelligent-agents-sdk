@@ -1,10 +1,12 @@
+> **Contributor doc.** For people changing the SDK, not for app builders. Public in this repository, not published on the docs site. [Index](../../docs/contributor/README.md).
+
 # Manual test plan: `session_completed` lifecycle signal
 
-This covers everything about the `session_completed` signal (`src/experience/session-complete.js`) that automation can't verify. The automated coverage (`npm run live-verify:session-complete`, run against Chromium, Firefox, and WebKit on every merge; see `scripts/live-verify-session-complete.mjs` and `.github/workflows/live-verify.yml`) already proves the mechanism works correctly across desktop browser engines, against the real Kaltura backend. What it *can't* reach is real mobile OS behavior. Playwright's `webkit` engine is desktop Safari's rendering engine, not the real iOS Safari runtime, and no browser-automation tool can simulate real OS-level backgrounding, memory-pressure tab kills, or force-quit. That gap is what this folder is for.
+This covers everything about the `session_completed` signal (`src/experience/session-complete.js`) that automation can't verify. The automated coverage (`npm run live-verify:session-complete`, run against Chromium, Firefox, and WebKit on every merge; see `scripts/live-verify-session-complete.mjs` and `.github/workflows/live-verify.yml`) already proves the mechanism works correctly across desktop browser engines, against a live deployment. What it *can't* reach is real mobile OS behavior. Playwright's `webkit` engine is desktop Safari's rendering engine, not the real iOS Safari runtime, and no browser-automation tool can simulate real OS-level backgrounding, memory-pressure tab kills, or force-quit. That gap is what this folder is for.
 
 ## What you're testing
 
-When a conversation ends, the SDK POSTs `{genieUrl}/thread/session_completed` so the backend's lifecycle rules (summaries, insights, CRM pushes) fire within seconds instead of waiting for the ~10-minute idle timeout. The full design rationale, config options, and decision table live in `README.md`'s "Ending a conversation cleanly (`session_completed` signal)" section at the repo root, read that first if you haven't. The short version: it fires on tab-close (`pagehide`), on a back-forward-cache freeze, after 30 seconds of being hidden (the mobile-tab-kill fallback), and on an explicit `disconnect()` or `completeThread()` call. It's idempotent and suppressed while another tab on the same device still has the thread open.
+When a conversation ends, the SDK POSTs `{genieUrl}/thread/session_completed` so the thread completes within seconds instead of waiting for an idle timeout. The full design rationale, config options, and decision table live in `README.md`'s "Ending a conversation cleanly (`session_completed` signal)" section at the repo root, read that first if you haven't. The short version: it fires on tab-close (`pagehide`), on a back-forward-cache freeze, after 30 seconds of being hidden (the mobile-tab-kill fallback), and on an explicit `disconnect()` or `completeThread()` call. It's idempotent and suppressed while another tab on the same device still has the thread open.
 
 ## Setup
 
@@ -15,14 +17,14 @@ When a conversation ends, the SDK POSTs `{genieUrl}/thread/session_completed` so
    node manual-testing/session-complete/mint.mjs
    ```
    This mints a throwaway intellect and a 4-hour conversation token, then serves the test app over your LAN and prints a URL like `http://192.168.x.x:4787/manual-testing/session-complete/app.html?token=...`.
-3. Open that URL on each device you're testing. All devices must be on the same Wi-Fi network as the machine running `mint.mjs` (it binds to your LAN IP, not just localhost). For a device that can't reach your LAN (a real cellular connection, a separate network), tunnel the port instead (e.g. `ngrok http 4787`) and use the tunnel's HTTPS URL in place of the LAN one printed above. Some mobile browser features, like BroadcastChannel-based presence, work identically over HTTP or HTTPS. Still, prefer HTTPS when tunneling, since it's closer to a real production deployment.
+3. Open that URL on each device you're testing. All devices must be on the same Wi-Fi network as the machine running `mint.mjs` (it binds to your LAN IP, not just localhost). For a device that can't reach your LAN (a real cellular connection, a separate network), tunnel the port instead (e.g. `ngrok http 4787`) and use the tunnel's HTTPS URL in place of the LAN one printed above. Some mobile browser features, like BroadcastChannel-based presence, work identically over HTTP or HTTPS. Still, prefer HTTPS when tunneling, since it matches how a deployed app is served.
 4. When you're done testing, press Ctrl+C in the `mint.mjs` terminal. It deletes the throwaway intellect automatically.
 
 Leave the `mint.mjs` terminal visible for the whole session. It's your primary source of truth (see below).
 
 ## Why the terminal log is the one that counts
 
-The app's `genieUrl` is pointed back at `mint.mjs` itself (`location.origin`), which transparently proxies every real `/assistant/*` and `/thread/*` call through to the real production backend. That's deliberate. For the flows this document exists to test (a tab that gets killed, a phone that gets locked, a browser that force-quits), the page may die before it gets a chance to render, log, or run any JavaScript at all. The on-page log panel is convenient for the golden-path flows where the page survives. But the `mint.mjs` terminal is the only log that's guaranteed to show what actually happened, because it's server-side and unaffected by the page's own death. For every flow below, treat a terminal line like this as the real result:
+The app's `genieUrl` is pointed back at `mint.mjs` itself (`location.origin`), which transparently proxies every `/assistant/*` and `/thread/*` call through to the live deployment you minted against. That's deliberate. For the flows this document exists to test (a tab that gets killed, a phone that gets locked, a browser that force-quits), the page may die before it gets a chance to render, log, or run any JavaScript at all. The on-page log panel is convenient for the golden-path flows where the page survives. But the `mint.mjs` terminal is the only log that's guaranteed to show what actually happened, because it runs outside the page and is unaffected by the page's own death. For every flow below, treat a terminal line like this as the real result:
 
 ```
 [2026-09-01T17:14:57.449Z] session_completed  thread=<id>  auth=present  from=<ip>
@@ -59,7 +61,7 @@ Connect → Send test turn → background the app → wait 10 seconds → return
 
 ### 5. Force-quit / OS-level kill
 
-Connect → Send test turn → force-quit the browser app entirely (iOS: swipe up in the app switcher; Android: swipe away from recents) immediately, well before the 30-second grace period would elapse on its own. This is the one flow with an accepted gap: if the OS kills the process before `hiddenGraceMs` elapses, no signal can fire from the client at all, and the backend's ~10-minute idle timeout is the real fallback. Record whether the terminal shows a line within the grace window regardless (sometimes the OS gives the backgrounded page enough time to still fire before actually suspending it). Either outcome is informative, but a missing line here is not a bug, it's the documented limit of client-side signaling.
+Connect → Send test turn → force-quit the browser app entirely (iOS: swipe up in the app switcher; Android: swipe away from recents) immediately, well before the 30-second grace period would elapse on its own. This is the one flow with an accepted gap: if the OS kills the process before `hiddenGraceMs` elapses, no signal can fire from the client at all, and the thread then completes only through the idle timeout. Record whether the terminal shows a line within the grace window regardless (sometimes the OS gives the backgrounded page enough time to still fire before actually suspending it). Either outcome is informative, but a missing line here is not a bug, it's the documented limit of client-side signaling.
 
 ### 6. Real back-forward-cache round trip
 
@@ -75,7 +77,7 @@ Open the test URL inside an in-app browser that lacks `BroadcastChannel` support
 
 ### 9. Offline / airplane mode during disconnect
 
-Connect → Send test turn → enable airplane mode (or otherwise cut network) → immediately tap Disconnect (final). Expect the on-page log to show `disconnect() returned` (it's synchronous and always returns immediately) but **no** corresponding terminal line, since the POST itself can't reach the network. Then disable airplane mode and wait about 10 minutes if you want to confirm the server's idle timeout eventually closes the thread server-side. This is optional and slow, mark it as skipped if you don't have time.
+Connect → Send test turn → enable airplane mode (or otherwise cut network) → immediately tap Disconnect (final). Expect the on-page log to show `disconnect() returned` (it's synchronous and always returns immediately) but **no** corresponding terminal line, since the POST itself can't reach the network. Then disable airplane mode. Optionally, wait and confirm that the thread still completes through the idle timeout. This is slow, so mark it as skipped if you don't have time.
 
 ### 10. Low-power / battery-saver mode
 

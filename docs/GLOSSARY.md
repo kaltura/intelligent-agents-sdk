@@ -7,8 +7,8 @@ Short definitions of the terms the SDK docs use, and a table of which ID goes wh
 | Term | Meaning |
 |---|---|
 | Agent | The deployed actor. It combines one intellect with one or more avatars. Its id is `agentId` |
-| Intellect | An agent's brain configuration: prompts, tools, capabilities and knowledge. Its id is `configId`. The API calls the same object a config |
-| Brain | Informal word for what the intellect drives at runtime: the model that decides what the agent says and does. Docs use "brain" for the runtime and "intellect" for the configuration you edit |
+| Intellect | An agent's configuration: prompts, tools, capabilities and knowledge. Its id is `configId`. The API calls the same object a config |
+| Brain | Informal word for what the intellect drives at runtime: the model that decides what the agent says and does. Docs say "agent" for the runtime and "intellect" for the configuration you edit. The word survives in API names such as `brainStalled` and `brainSegment` |
 | Avatar | The face and voice half of an agent. Its id is `avatarId` |
 | Widget | A public, secret-free handle to one agent. Safe to ship in browser code. Its id is `widgetId` |
 | Channel | One of the two live WebRTC connections of an avatar session: the microphone channel going up and the video channel coming down. See [Audio Channels](wire-protocol/audio-channels.md) |
@@ -21,7 +21,7 @@ Short definitions of the terms the SDK docs use, and a table of which ID goes wh
 
 | ID | Identifies | You get it from | You use it for |
 |---|---|---|---|
-| `configId` | The intellect (the brain) | `provision()`, or `intellects.create` | `converse()` and `converseOnce()`, `sessions.createConversationToken`, `intellectConfig` calls, `setForcedLanguage` |
+| `configId` | The intellect | `provision()`, or `intellects.create` | `converse()` and `converseOnce()`, `sessions.createConversationToken`, `intellectConfig` calls, `setForcedLanguage` |
 | `agentId` | The agent | `provision()`, or `agents.create` | `sessions.createAgentToken`, `application.resolveWidgetId`, `agents.update`, labeling threads so [lifecycle rules](lifecycle/README.md#scoping-a-rule-to-one-agent) can match them, `setForcedLanguage` |
 | `avatarId` | The avatar (a 24-character hex string) | `provision()`, or `avatars.create` | `avatarIds` when you create an agent |
 | `widgetId` | The public widget of one agent | `provision()`, or `application.resolveWidgetId(agentId, ks)` | `sessions.createWidgetToken({ widgetId })` for a browser embed with no secret |

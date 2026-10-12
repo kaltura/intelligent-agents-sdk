@@ -1,3 +1,5 @@
+> **Contributor doc.** For people changing the SDK, not for app builders. Public in this repository, not published on the docs site. [Index](../docs/contributor/README.md).
+
 # Harnesses and verification scripts
 
 Everything in `scripts/` is a verification entry point. Nothing here ships in the package: `src/` is the SDK, these are the checks that prove it works.
@@ -14,7 +16,7 @@ Tier 1 and 2 run on every PR. Tier 3 runs on PRs too, but only some of it (see [
 
 ## Tier 1: offline tests
 
-Plain `node:test`, no browser, no network. Layers live under `test/unit`, `test/integration`, `test/e2e`, `test/evals`. See [README.md → Testing](../README.md#testing) for what each layer covers.
+Plain `node:test`, no browser, no network. Layers live under `test/unit`, `test/integration`, `test/e2e`, `test/evals`.
 
 ```bash
 npm test          # all layers
@@ -55,7 +57,7 @@ export AGENTIC_PARTNER_ID=1234567
 export AGENTIC_ADMIN_SECRET=your-admin-secret
 ```
 
-Set `TARGET` to run against another environment. The scripts built on `live-verify-kickoff-shared.mjs` take the same value as `--env`, and `live-verify-mcp.mjs` takes it as `--target` (default `nvq2`).
+Use `prod` unless you have access to another environment. Environments such as the QA target `nvq2` are open to Kaltura employees and certified partners only. Set `TARGET` to use one. The scripts built on `live-verify-kickoff-shared.mjs` take the same value as `--env`, and `live-verify-mcp.mjs` takes it as `--target` (default `nvq2`).
 
 | `TARGET` | Credentials | URLs |
 |---|---|---|
@@ -77,7 +79,7 @@ The two Salesforce scripts need a Salesforce Developer Edition org or sandbox (`
 | Script | Covers |
 |---|---|
 | `live-verify.mjs` | Smoke test: admin token → intellect → conversation token → one turn → delete |
-| `live-verify-matrix.mjs` | Runs the scripts above on every target, one at a time, and prints one table (script × target). `--targets prod,nvq2:1` (default), `--scripts a,b`, `--out DIR`, `--list`. Logs go to `DIR/<target>/<script>.log`. A target without credentials fails every script. Exits 1 on any non-pass |
+| `live-verify-matrix.mjs` | Runs the scripts above on every target, one at a time, and prints one table (script × target). `--targets prod,nvq2:1` (default, needs `nvq2` access; pass `--targets prod` without it), `--scripts a,b`, `--out DIR`, `--list`. Logs go to `DIR/<target>/<script>.log`. A target without credentials fails every script. Exits 1 on any non-pass |
 | `live-verify-kickoff.mjs` | Every silent-opening + `kickoff` scenario, one fresh browser context each |
 | `live-verify-connect-timing.mjs` | Startup KPIs: time to `connect()`, first video frame, first audio, first agent words |
 | `live-verify-startup-faults.mjs` | `connect()` under client-side faults injected in the browser (nothing is broken on the server): a WHEP POST that answers 3.5 s late, is reset, answers 503, 404 or 409, a join that times out, and an answer whose media address is unreachable (`ice_failed`). Asserts the connect result, the retry count, `error.phase` and `retryable` |
@@ -95,14 +97,19 @@ The two Salesforce scripts need a Salesforce Developer Edition org or sandbox (`
 | `live-verify-salesforce-agent.mjs` | Seven scripted conversations with a real agent that has `salesforceLeadUpsert`: full data, missing company, duplicate email, invalid email, visitor refuses, two Leads with one email, expired token. Each outcome is checked with a SOQL query. `SALESFORCE_REVOKE_TOKEN=1` revokes the real token for the expiry case, so run it last |
 | `live-verify-mcp.mjs` | `setMcpServers`/`describe` end to end against a CI-hosted reference MCP server, exposed through a tunnel. Takes `--target` and `--phase=provision\|verify\|cleanup`. See the script header |
 | `live-verify-session-types.mjs` | What each token kind can reach: own vs other users' threads, OVP reach, no-userId and widget shared identity, agent persona, per-user `appInit`, `revoke()`. `--skip-revoke` skips the revoke check. `--with-share` also runs the `messages.share` success path, which leaves an undeletable clone per run: use it only after a change to `messages.share` |
+| `live-verify-thread-access.mjs` | A token for one user sending another user's `threadId`: `KalturaChatSession` and `conversations.send` reject with `thread_access_denied`, `onErrorSegment: 'return'` returns the refusal in `result.errors`, `'warn'` emits `warning`, and the owner's thread keeps working. Uses `TARGET`, one throwaway intellect and one thread, deleted at the end |
 | `live-verify-set-forced-language.mjs`, `live-verify-force-language.mjs` | A forced language changes the reply, not just storage |
 | `live-verify-capabilities.mjs` | Capability resolution plus the Lifecycle domain |
 | `live-verify-agents.mjs`, `live-verify-avatars.mjs`, `live-verify-catalog.mjs`, `live-verify-tools.mjs`, `live-verify-skills.mjs`, `live-verify-knowledge.mjs`, `live-verify-intellects-conversations.mjs`, `live-verify-threads-messages-feedback.mjs`, `live-verify-conversation-avatar-surface.mjs` | The write path of one management resource each |
 | `live-verify-lifecycle-audit.mjs` | `lifecycle.audit`, `doctor` and `intellectConfig.audit` report the expected findings for planted rule defects and none for a clean set, and `lifecycle-audit.mjs` exits 0, 1 and 2 as documented. Scoped to one throwaway agent. Covers the no-messaging-host skip on named targets |
+| `live-verify-intellect-config.mjs` | Every `intellectConfig` setter on one scratch intellect, deleted at the end |
+| `live-verify-knowledge-kms.mjs` | Linking a real Knowledge record to an intellect, and the linkage and status reads that depend on it |
+| `live-verify-feedback-flow.mjs` | A real conversation, feedback on a reply, then read-back through `feedback.list` and `messages.list`. Waits 5 minutes. Can run a second target, `alt` |
+| `live-check-feedback-unfiltered.mjs` | Read-only: does an unfiltered feedback read return anything for this partner. Can run a second target, `alt` |
 | `live-verify-regions.mjs` | Every `REGIONS` host answers over TLS like nvp1. No credentials |
 | `live-verify-threads-messages-feedback.mjs --with-share` | Also runs the `messages.share` step (step 6), which leaves an undeletable clone per run. Off by default: use it only after a change to `messages.share` |
 
-Every one of these has an `npm run live-verify:<name>` script except `live-verify.mjs` and `live-verify-mcp.mjs` (CI runs both with `node`). Four have no npm script and no CI job. Run them with `node scripts/<name>.mjs`: `live-verify-intellect-config.mjs`, `live-verify-knowledge-kms.mjs`, `live-verify-feedback-flow.mjs`, `live-check-feedback-unfiltered.mjs`. Two more have an npm script but no CI job: `live-verify-force-language.mjs` and `live-verify-regions.mjs`, run by hand with `npm run live-verify:force-language` and `npm run live-verify:regions`.
+Every one of these has an `npm run live-verify:<name>` script except `live-verify.mjs` and `live-verify-mcp.mjs` (CI runs both with `node`). Five have no npm script and no CI job. Run them with `node scripts/<name>.mjs`: `live-verify-intellect-config.mjs`, `live-verify-knowledge-kms.mjs`, `live-verify-feedback-flow.mjs`, `live-check-feedback-unfiltered.mjs`, `live-verify-thread-access.mjs`. Five more have an npm script but no CI job: `live-verify-force-language.mjs`, `live-verify-regions.mjs`, `live-verify-matrix.mjs`, `live-verify-salesforce-lead.mjs` and `live-verify-salesforce-agent.mjs`. Run them by hand, for example `npm run live-verify:regions`.
 
 ### Lifecycle audit CLI
 
@@ -181,8 +188,8 @@ Three entry points are easy to confuse. They do different things.
 
 | Command | What it is |
 |---|---|
-| `npm run verify` (`agent_verify.mjs`) | The Constitution verifier. One check per rule id in [SDK_CONSTITUTION.md](../SDK_CONSTITUTION.md). Exits 0 when every rule passes |
-| `npm run harness` (`harness/run.mjs`) | Runs three gates in order: `npm run verify`, a semgrep SAST pass, `npm run docs:gate`. Reuses the existing gates rather than duplicating them |
+| `npm run verify` (`agent_verify.mjs`) | The Constitution verifier. One check per rule id in [SDK_CONSTITUTION.md](../SDK_CONSTITUTION.md), then the full test suite. Exits 0 when every rule and every test passes |
+| `npm run harness` (`harness/run.mjs`) | Runs three gates in order: `npm run verify` (Constitution rules and the test suite), a semgrep SAST pass, `npm run docs:gate`. Reuses the existing gates rather than duplicating them |
 | `npm run harness:constitution` (`tools/constitution-harness.mjs`) | Supplements `agent_verify.mjs` with the few checks a rule-presence scan cannot express: numeric thresholds, an accumulation guard, the fetch-injectability contract, and closure checks on named symbols |
 
 ## What CI runs
@@ -193,7 +200,7 @@ Three entry points are easy to confuse. They do different things.
 | `live-verify.yml` | One job per CI-run live script. Runs on manual dispatch, on every PR from a branch in this repo (only jobs whose paths changed), and in the merge queue (same path filter). Fork and Dependabot PRs get no secrets, so no live job runs there: a fork PR that touches live paths fails the `Live verification` check until a maintainer opens a replacement PR from a branch in this repo, and a Dependabot PR passes with a notice. A nightly schedule (03:00 UTC) runs every job and is the startup-KPI trend run |
 | `release.yml` | `npm run verify:distribution -- <tag>`, which checks the published jsDelivr tree matches the tag |
 
-The four local-only scripts, plus `live-verify-force-language.mjs` and `live-verify-regions.mjs`, have no CI job. Run them by hand when you touch their surface.
+Ten live scripts have no CI job (named under the script table). Run them by hand when you touch their surface.
 
 ## Extending
 

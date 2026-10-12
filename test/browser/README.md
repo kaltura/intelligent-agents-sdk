@@ -1,3 +1,5 @@
+> **Contributor doc.** For people changing the SDK, not for app builders. Public in this repository, not published on the docs site. [Index](../../docs/contributor/README.md).
+
 # The avatar-media browser harness
 
 `avatar-media.html` proves the merged-stream media path (`src/experience/avatar-media.js`) in a real browser engine, through the public session API only. Node tests cannot cover it: autoplay policy, `setSinkId`, `MediaRecorder`, element capture and `requestVideoFrameCallback` only exist in a browser, and each engine implements them differently.

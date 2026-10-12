@@ -2,59 +2,114 @@
 
 # SDK Module Map
 
-Where each part of the SDK lives, and which backend host each management module writes to. Public behavior is in [README.md](../../README.md) and [API-REFERENCE.md](../../API-REFERENCE.md).
+Where each part of the SDK lives, and which endpoints each management module calls. Public behavior is in [README.md](../../README.md) and [API-REFERENCE.md](../../API-REFERENCE.md).
 
-## Two entry points, one shared core
+## Entry points
 
-- **`./management`** (`Management`, `src/management/client.js`): the REST control plane. It holds the admin secret, mints tokens, and routes to the two REST hosts (Agentic API and brain API) and OVP. It enforces the token-kind guard via `assertAdmin`/`assertConversation` (`assertKind` in `client.js`) **before any network call**. Resource namespaces hang off it: `sessions`, `agents`, `avatars`, `avatarSessions`, `catalog`, `application`, `intellects`, `intellectConfig`, `tools`, `skills`, `conversations`, `threads`, `messages`, `feedback`, `followups`, `knowledge`, `lifecycle`, `insightSettings`. `tools` and `skills` are standalone, partner-level entities. An intellect only references them via `tool_ids`/`skill_ids`. One sub-resource mounts on `intellects`: `intellects.secrets`.
-- **`./experience`** (`KalturaAvatarSession`, `src/experience/session.js`): the live socket+WHEP runtime from [ARCHITECTURE.md § Video Runtime Protocol](../ARCHITECTURE.md#video-runtime-protocol--the-big-picture). It takes only an enriched conversation KS from `application.appInit` (short-lived, non-admin). socket.io is INJECTED (`socketFactory`), never bundled. Two optional plugin subpaths hang off this same live runtime without loading into apps that don't need them: `./experience/presenter` (the `Presenter` deck helper) and `./experience/genui` (the `ExperienceRenderer` GenUI layer).
-- **`src/core/*`**: the shared leaf layer both fronts depend on.
-  - `http.js` (transport)
-  - `errors.js` (`KalturaError`, RFC 9457)
-  - `session.js` (`Sessions` token-minter + `makeAuditEmitter`)
-  - `stream.js` (converse NDJSON/SSE parser + `collectConverse`/`segmentKind`/`GENUI_RUNTIMES`, the closed enum of GenUI runtime names the brain's `unisphere-tool` segments can carry)
-  - `redact.js`
-  - `safety.js`
-  - `ids.js` (`meta()` receipts)
-  - `knowledge-enums.js` (`CHAPTER_TYPE`/`STRATEGY`/`EMBED`/`MODALITIES`/`normalizeModality`/`buildIndexerObjects`)
+| Export | Source | Runs in | Role |
+|---|---|---|---|
+| `.` | `src/index.js` | both | Re-exports the shared names |
+| `./management` | `src/management/client.js` (`Management`) | server | REST control plane. Holds the admin secret, mints tokens, calls `agenticUrl`, `genieUrl`, `ovpUrl` and `messagingUrl`. Checks the token kind (`assertAdmin`/`assertConversation`) before any network call |
+| `./experience` | `src/experience/session.js` (`KalturaAvatarSession`) | browser | Live socket and WHEP runtime. Takes only a conversation KS from `application.appInit`. socket.io is injected (`socketFactory`), never bundled. See [ARCHITECTURE.md](../ARCHITECTURE.md#video-runtime-protocol-the-big-picture) |
+| `./experience/presenter` | `presenter.js` | browser | `Presenter` deck helper |
+| `./experience/site-nav` | `site-nav.js` | browser | Browser half of the `go_to` site navigation contract |
+| `./experience/chroma-key` | `chroma-key.js` | browser | Attaches a transparent-background compositor to the avatar `<video>` |
+| `./experience/genui` | `genui/index.js` | browser | `ExperienceRenderer` and the GenUI widgets |
+| `./experience/noise-suppressor` | `noise-suppressor.js` | browser | `AudioWorklet` noise gate for `cfg.noiseProcessor` |
+| `./experience/analytics` | `analytics.js` | browser | KAVA application events |
 
-  Core never imports from `management/` or `experience/`. It stays a leaf.
+Namespaces on `Management`: `sessions`, `agents`, `avatars`, `avatarSessions`, `catalog`, `application`, `intellects` (with `intellects.secrets`), `intellectConfig`, `tools`, `skills`, `conversations`, `threads`, `messages`, `feedback`, `followups`, `knowledge`, `lifecycle`, `insightSettings`, `emailTemplates`. `tools` and `skills` are standalone, partner-level entities. An intellect references them through `tool_ids` and `skill_ids`.
 
-## Management modules
+## Core (`src/core/`)
 
-| Module (`src/management/`) | Exposes | Backend the writes hit |
+The shared leaf layer. Core never imports from `management/` or `experience/`.
+
+| File | Holds |
+|---|---|
+| `http.js` | Transport |
+| `errors.js` | `KalturaError` (RFC 9457) |
+| `session.js` | `Sessions` token minter, `makeAuditEmitter` |
+| `endpoints.js` | `REGIONS` and `resolveEndpoints` |
+| `transport-guard.js` | TLS check for transport URLs |
+| `net-guard.js` | Private, loopback and link-local host detector |
+| `stream.js` | Converse NDJSON/SSE parser, `collectConverse`, `segmentKind`, `GENUI_RUNTIMES` (the closed list of GenUI runtime names a segment can carry) |
+| `redact.js` | Secret redaction |
+| `safety.js` | `safeText`/`safeUrl` for untrusted output |
+| `ids.js` | `meta()` receipts |
+| `response-headers.js` | Response-header diagnostics kept on `KalturaError.headers` |
+| `opening.js` | Silent opening phrase |
+| `site-keys.js` | Compact site-map contract shared by the site build, `management/site-nav` and `experience/site-nav` |
+| `kaltura-media.js` | Thumbnail, player-embed and iframe URL helpers |
+| `knowledge-enums.js` | `CHAPTER_TYPE`/`STRATEGY`/`EMBED`/`MODALITIES`, `normalizeModality`, `buildIndexerObjects` |
+
+## Management modules (`src/management/`)
+
+| Module | Exposes | Endpoints called |
 |---|---|---|
-| `intellects.js` | `Intellects`: DTO CRUD (`add`/`get`/`update`/`delete`), prompt authoring (`setPrompts`/`previewPrompt`/`snapshot`/`restore`/`diffSnapshots`), capabilities (`getCapabilities`/`setCapability`/`setCapabilities`/`resolveCapabilities`), `setClientVariablesEnabled`. Mounts `secrets` (tools are a separate top-level resource; see `tools.js`). | the brain `v1/intellect/*` |
-| `intellect-config.js` | `IntellectConfig` (`mgmt.intellectConfig`): the ONE shared `patch(configId, patch\|fn, ks)` primitive + typed field setters incl. `setToolIds` (the intellect-side `tool_ids` reference list), `setSkillIds`, `setThreadStartTools`, `setModelConfiguration`, `setOpeningPhrase`, `setAvatarSummaryConfig` + `describe()` (every `EDITABLE_FIELDS` value). Exports the closed enums `SKILL_MODES`, `MODEL_IDS`, `THINKING_LEVELS`, `SUMMARY_CONTENT_TYPES`. `buildUserPropertiesForms`. | the brain `v1/intellect/update` (read-modify-write, full-replace dicts; `tool_ids` is a plain array write) |
-| `set-forced-language.js` | `setForcedLanguage` (`mgmt.setForcedLanguage`): forces the reply language by writing `force_language` on the intellect (via `intellectConfig.patch`; the backend enforces it at runtime) and the agent's `asr.language` (via `agents.update`) in one idempotent call. Strips the marker block older SDK versions appended to `base_directive`. `LANGUAGE_NAMES` (ISO 639-1 code → display name). | the brain `v1/intellect/update` + Agentic API `agent/update` |
-| `capabilities.js` | `CAPABILITIES`/`CAPABILITY_STATE`/`CAPABILITY_DEFAULTS`/`CAPABILITY_INFO`, `assertCapability`/`assertCapabilityState`/`validateCapabilities`, `resolveCapabilities` (pure layered resolver), `mergeCapabilityWrite`. Re-exported from BOTH entry points. | pure, no network |
-| `tools.js` | `tools.api`/`csv`/`code` builders + `tools.client` (authors a native, silent client-side command tool with no server-side call, requires `kaltura_genie_experiences:'off'`; see [CLIENT-COMMANDS.md](../CLIENT-COMMANDS.md)) + `tools.clientToolReadiness` + `tools.validate`, `class Tools` (`mgmt.tools`: `add`/`get`/`list`/`update`/`remove` over the standalone Tool entity), `applyResponseMapping`. | the brain `v1/tool/*` (partner-level entity CRUD, **not** `intellect/update`; link via `intellectConfig.setToolIds`'s `tool_ids`) |
-| `skills.js` | `Skills` (`mgmt.skills`: `add`/`get`/`update`/`list`/`delete` over the standalone, partner-level Skill entity; `delete` checks for intellects still referencing the id before acting). | the brain `v1/skill/*` (partner-level entity CRUD, **not** `intellect/update`; link via `intellectConfig.setSkillIds`'s `skill_ids`) |
-| `secrets.js` | `IntellectSecrets` (`mgmt.intellects.secrets`: `listNames`/`has`/`set`/`remove`/`replaceAll`/`validate`), `validateSecretRefs`. Write-only values; name-only read contract (no `redact()` reliance). | the brain `v1/intellect/update` `config.secrets` (mask-and-keep merge) |
-| `prompt-lint.js` | pure: `lintPrompts`/`validatePromptVars`/`lintGlossary`/`assembleSystemPrompt`/`SYS_VARS`. Client-side prompt-preview replica (author layer only). | pure, no network |
-| `conversations.js` | `Conversations` (`stream`/`send`, `assertRequestVars`), `Threads`/`Messages`/`Feedback`/`Followups`, `Knowledge` (`addRecord` + `knowledge_ids` linkage, ungated; `uploadDocument`, `createCategory`/`findOrCreateCategory` (plain entry containers), `corpusStatus`, `getLinkage`, `setEnabled`, `search`, `isIndexed`, `entryStatus`). | the brain's `assistant/converse` (converse); the brain's `v1/knowledge/add` + intellect `knowledge_ids` (ungated); OVP `category/*`+upload (containers) |
-| `lifecycle.js` | `Lifecycle` (`mgmt.lifecycle`: `create`/`get`/`update`/`delete`/`list` over event-driven rules `{eventType, objectType, eventConditions, action}`, plus read-only `match`/`listObjects`/`listEvents`/`describeFields`). A rule's `action` can trigger an insight extraction, an insight email, or the built-in lead-capture insight. | the Agentic API's `lifecycle/*` |
-| `insight-settings.js` | `InsightSettings` (`mgmt.insightSettings`: `create`/`get`/`update`/`delete`/`list` over reusable `{key, title, prompt, valueType, status}` insight definitions). Referenced by a `lifecycle` rule's `action.insightSettingsIds`, not embedded in the rule itself. | the Agentic API's `insight-settings/*` |
-| `provision.js` | `provision()`: the agent factory; optional `knowledge`/`tools`/`capabilities` blocks layer after the core create (`tools` creates each Tool entity via `mgmt.tools.add`, then links the successful ids in one `intellectConfig.setToolIds` write). | both hosts |
+| `client.js` | `Management`, token-kind guard | none of its own |
+| `agents.js` | `Agents` (`mgmt.agents`): agent CRUD | `agent/*` |
+| `avatars.js` | `Avatars` (`mgmt.avatars`): avatar CRUD, template list | `avatar/*`, `avatar-template/list` |
+| `avatar-sessions.js` | `AvatarSessions` (`mgmt.avatarSessions`): scripted-video sessions, `say()` | `avatar-session/*` |
+| `catalog.js` | `Catalog` (`mgmt.catalog`): visual and voice presets, custom uploads | `catalog-item/*`, `catalog/clone-consent` |
+| `application.js` | `Application` (`mgmt.application`): `appInit`, profile generation, widget resolution, custom prompts | `application/*` |
+| `intellects.js` | `Intellects`: `add`/`get`/`update`/`delete`, prompt authoring (`setPrompts`/`previewPrompt`/`snapshot`/`restore`/`diffSnapshots`), capabilities (`getCapabilities`/`setCapability`/`setCapabilities`/`resolveCapabilities`), `setClientVariablesEnabled`. Mounts `secrets` | `v1/intellect/*` |
+| `intellect-config.js` | `IntellectConfig`: the one `patch(configId, patch\|fn, ks)` primitive, `audit`, `describe`, `buildUserPropertiesForms`. Setters: `setCapabilities`, `setCapability`, `setToolIds`, `setSkillIds`, `setThreadStartTools`, `setModelConfiguration`, `setOpeningPhrase`, `setAvatarSummaryConfig`, `setSecrets`, `listSecretNames`, `setUserPropertiesForms`, `clearUserPropertiesForms`, `setAllowClientVariables`, `setMetadata`, `setKnowledgeIds`, `setMcpServers`. Enums: `SKILL_MODES`, `MODEL_IDS`, `THINKING_LEVELS`, `SUMMARY_CONTENT_TYPES`, `CALL_STAGES` | `v1/intellect/update` (read, merge, write) |
+| `intellect-body.js` | Small helpers shared by `intellects.js`, `secrets.js` and `intellect-config.js` | none |
+| `secrets.js` | `IntellectSecrets` (`mgmt.intellects.secrets`): `listNames`/`has`/`set`/`delete`/`replaceAll`/`validate`, `validateSecretRefs`. Values are write-only | `v1/intellect/update` |
+| `tools.js` | Builders `tools.api`/`csv`/`code`/`client`, `clientToolReadiness`, `validate`, `Tools` (`add`/`get`/`list`/`update`/`delete`), `applyResponseMapping`. `tools.client` needs `kaltura_genie_experiences:'off'`, see [CLIENT-COMMANDS.md](../CLIENT-COMMANDS.md) | `v1/tool/*` |
+| `skills.js` | `Skills` (`add`/`get`/`update`/`list`/`delete`). `delete` first checks for intellects that still reference the id | `v1/skill/*` |
+| `capabilities.js` | `CAPABILITIES`, `CAPABILITY_STATE`, `CAPABILITY_DEFAULTS`, `CAPABILITY_INFO`, `assertCapability`, `validateCapabilities`, `resolveCapabilities`, `mergeCapabilityWrite`. Exported from both entry points | none |
+| `prompt-lint.js` | `lintPrompts`, `validatePromptVars`, `lintGlossary`, `assembleSystemPrompt`, `SYS_VARS`. Client-side prompt preview | none |
+| `set-forced-language.js` | `setForcedLanguage`: writes `force_language` on the intellect and `asr.language` on the agent in one idempotent call. `LANGUAGE_NAMES` | `v1/intellect/update`, `agent/update` |
+| `conversations.js` | `Conversations` (`stream`/`send`), `Threads`, `Messages`, `Feedback`, `Followups`, `Knowledge` (`addRecord`, `uploadDocument`, `createCategory`, `findOrCreateCategory`, `corpusStatus`, `getLinkage`, `setEnabled`, `search`, `isIndexed`, `entryStatus`) | `assistant/converse`, `v1/knowledge/add`, OVP `category/*` and upload |
+| `lifecycle.js` | `Lifecycle`: rule CRUD, `match`, `listObjects`, `listEvents`, `describeFields`, `audit` | `lifecycle/*` |
+| `lifecycle-rules.js` | Rule-condition predicates used by `Lifecycle` on create and update, and by the audit | none |
+| `lifecycle-audit.js` | `auditLifecycleRules`: pure audit of existing rules | none |
+| `insight-settings.js` | `InsightSettings`: reusable insight definitions. A rule references them through `action.insightSettingsIds` | `insight-settings/*` |
+| `email-templates.js` | `EmailTemplates` (`mgmt.emailTemplates`): template CRUD. A rule references a template by `id` | `email-template/*` (messaging API) |
+| `doctor.js` | `Doctor`: read-only health check over a partner's agents (lifecycle audit, then intellect audit per agent) | reads only |
+| `audit-report.js` | Report shape shared by `lifecycle.audit`, `intellectConfig.audit` and `doctor` | none |
+| `ks-inspect.js` | Local KS header decode, no network | none |
+| `crm-recipes.js` | Validated `api` tool configs for common CRM lead and contact capture | none |
+| `site-nav.js` | Builds the `go_to` client tool and the site-map prompt blocks | none |
+| `paginate.js` | One pager shape over the two endpoint families | none |
+| `provision.js` | `provision()`: the agent factory. The optional `knowledge`, `tools` and `capabilities` blocks run after the core create. `tools` creates each Tool with `mgmt.tools.add`, then links the ids in one `intellectConfig.setToolIds` write | all of the above |
 
-## Experience GenUI layer
+## Experience modules (`src/experience/`)
 
-`src/experience/genui/` turns brain `unisphere-tool` segments into framework-agnostic render descriptors:
+| Module | Holds |
+|---|---|
+| `session.js` | `KalturaAvatarSession`: socket, ASR and WHEP state machine |
+| `chat-session.js` | `KalturaChatSession`: text-only transport on the same thread |
+| `agent-session.js` | `KalturaAgentSession`: one conversation, switchable transports |
+| `scripted-video-session.js` | `KalturaScriptedVideoSession`: video and audio downlink for scripted-video sessions |
+| `wire.js` | Pure builders for socket payloads and ICE config, `classifyAgentAction` |
+| `whep.js` | WHEP POST with per-try timeout and bounded retries |
+| `avatar-media.js` | Routes the downlink video and audio tracks to the app's elements |
+| `ice-diagnostics.js` | Gathered-candidate summary and plain-words cause, with no addresses or credentials |
+| `captions.js` | `CaptionService` |
+| `transcript.js` | Transcript and barge-in tracker keyed by `speechId` |
+| `session-complete.js` | `session_completed` POST |
+| `fetch-timeout.js` | Fetch with a hard deadline for short control requests |
+| `emitter.js` | Zero-dependency event emitter the sessions extend |
+| `teardown.js` | Subscription tracker for classes that listen on a session |
+| `slidenav.js` | Spoken slide-number parser |
 
-- `parse.js`: pure. `normalizeRuntime` (strips the wire `-tool` suffix), `RUNTIMES` (the nine first-class widgets), `parseWidget`/`parseContent` (forgiving JSON-then-line parser; unknown keys map to `.raw`, never throws), `isKnownRuntime`.
-- `segments.js`: `SegmentAssembler` buffers deltas and flushes a complete widget on `runtimeName`/`speechId` change or turn end.
-- `renderer.js`: `ExperienceRenderer`, **dual-mode**. LIVE `start()` subscribes to `session.on('brainSegment')`. HEADLESS `render(runtime, widget)` is fed from `Management.conversations.stream()` (the reliable widget path, since the live runtime hardcodes `force_experience:'avatar_only'`). Unknown runtimes yield a safe `{kind:'unknown'}` fallback plus `onUnhandled`, never thrown, never faked.
-- `renderers/*.js`: one default renderer per runtime, each routing untrusted LLM output through `core/safety.js` (`safeText`/`safeUrl`, no `innerHTML`).
+## GenUI layer (`src/experience/genui/`)
 
-`session.js` wires the **guardrail gate**. Each `agent_raw_text` delta is classified by `classifyAgentAction` (`wire.js`, reading `seg.metadata.runtimeName`/`widgetName` plus the adapter-normalized `seg.type` with `-tool` stripped). When a capability policy or `onAgentAction` hook is present, the delta runs through `_gateAgentAction` before `emit('brainSegment', d)`. This is default-allow, so existing nav/GenUI flows are untouched; a veto emits `agentActionDenied` plus an `agent.action.deny` audit event. `Presenter` exposes `covered`/`questions`/`lastNav` (`{target, reason, at}`). `session.micEnabled` is a read getter.
+Turns `unisphere-tool` segments into framework-agnostic render descriptors.
+
+- `parse.js`: pure. `normalizeRuntime` (strips the wire `-tool` suffix), `RUNTIMES` (the first-class widgets), `parseWidget`/`parseContent` (forgiving parser; unknown keys go to `.raw`, never throws), `isKnownRuntime`.
+- `segments.js`: `SegmentAssembler` buffers deltas and flushes a complete widget on `runtimeName` or `speechId` change, or at turn end.
+- `renderer.js`: `ExperienceRenderer`, dual mode. Live `start()` subscribes to `session.on('brainSegment')`. Headless `render(runtime, widget)` is fed from `Management.conversations.stream()`. The live runtime sends `force_experience:'avatar_only'`, so headless is the reliable widget path. An unknown runtime yields `{kind:'unknown'}` and calls `onUnhandled`. It never throws.
+- `renderers/*.js`: one default renderer per runtime. Each routes untrusted output through `core/safety.js` (`safeText`/`safeUrl`, no `innerHTML`).
+
+`session.js` runs the guardrail gate. `classifyAgentAction` (`wire.js`) classifies each `agent_raw_text` delta from `seg.metadata.runtimeName`/`widgetName` and the normalized `seg.type`. When a capability policy or an `onAgentAction` hook is set, the delta passes `_gateAgentAction` before `emit('brainSegment', d)`. The default is allow. A veto emits `agentActionDenied` and an `agent.action.deny` audit event.
 
 ## Write routing: the intellect DTO
 
-The intellect DTO (`v1/intellect/*`) is the only write path for every writable field: `prompts`, `base_directive`, `glossary`, `capabilities`, `tool_ids`, `skill_ids`, `thread_start_tools`, `secrets`, `user_properties_forms`, `mcp_servers`, `allow_client_variables`, `knowledge_ids`, `avatar_summary_config`, `force_language`, `opening_phrase`, `model_configuration`, `name`/`description`/`tags`/`status`. It's writable with a **partner admin KS**, ungated.
+Every writable intellect field goes through `v1/intellect/*` with an admin token: `prompts`, `base_directive`, `glossary`, `capabilities`, `tool_ids`, `skill_ids`, `thread_start_tools`, `secrets`, `user_properties_forms`, `mcp_servers`, `allow_client_variables`, `knowledge_ids`, `avatar_summary_config`, `force_language`, `opening_phrase`, `model_configuration`, `name`, `description`, `tags`, `status`.
 
-**Knowledge linkage uses the same path.** First call `POST /v1/knowledge/add` on the brain host, which returns an `{id,...}` record. Then pass the returned id as `knowledge_ids` in the intellect create/update DTO. Linkage plus `use_knowledge_base:'on'` persist with no separate linking call.
-
-Omitted top-level fields are preserved on update. But `capabilities`/`secrets` are **full-replace sub-dicts**, so the SDK read-merge-writes them, via `mergeCapabilityWrite` or the secrets mask-and-keep guard. `IntellectConfig.patch` is the one place that logic lives.
-
-`EDITABLE_FIELDS` in `intellect-config.js` is the exact list of keys `v1/intellect/get` echoes and `v1/intellect/update` accepts for a partner admin KS. `patch()` rejects any other key before the network call, and `describe()` returns exactly these keys. When adding a field setter, first confirm the key round-trips through `intellect/update` and `intellect/get` with a partner admin KS. Then add it to `EDITABLE_FIELDS`.
-
+- **Knowledge**: call `POST /v1/knowledge/add`, then pass the returned id in `knowledge_ids` on the intellect create or update. Set `use_knowledge_base:'on'`. No separate link call exists.
+- **Partial updates**: omitted top-level fields stay as they are. For `capabilities` and `secrets` the SDK reads the current value, merges your change and writes the whole object (`mergeCapabilityWrite`, the secrets merge). `IntellectConfig.patch` is the one place for this logic.
+- **`EDITABLE_FIELDS`** in `intellect-config.js` lists the keys `patch()` accepts. `patch()` rejects any other key before the network call, and `describe()` returns exactly these keys. To add a field, confirm the key round-trips through `intellect/get` and `intellect/update`, then add it to `EDITABLE_FIELDS`.

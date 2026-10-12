@@ -51,7 +51,7 @@ export {
 // navigate_to_slide / show_widget / call_page_function, with tool_metadata ACK support
 // (`waitForResponse`/`session.respondToTool`). `clientToolReadiness` lints the two
 // deployment gotchas any tool-referencing intellect hits (experiences can override custom tools + the
-// 24h capability cache).
+// capabilities being read only at creation).
 export { tools, clientToolReadiness, client, applyResponseMapping, findIntellectsReferencingTool, TOOL_TYPES, HTTP_METHODS, ARG_TYPES } from './tools.js';
 // Secrets ref-checker: the CRUD class lives on `mgmt.intellects.secrets`; this is the pure helper.
 export { validateSecretRefs } from './secrets.js';

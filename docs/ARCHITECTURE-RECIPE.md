@@ -13,7 +13,7 @@ A from-scratch reimplementation of the live avatar runtime, using nothing but `s
 3. socket = io(conversationManagerUrl, {path:'/socket.io', transports:['websocket'],
        auth:{token:ks}, query:{partnerId, level:'published', stickyId, billed_client:'', debugMode:true}})
 
-4. Run the connect sequence ([full state-machine order](architecture-reference/connection-and-handshake.md#full-connect-sequence-state-machine-order)): join → stvNewSession → showAgent → askPermissions
+4. Run the connect sequence: join → stvNewSession → showAgent → askPermissions
    → asr-webrtc handshake (publish mic pc via socket relay)
 
 5. STV: WHEP POST {webrtc_url} from stvNewSession (fallback: {srsBaseUrl}/rtc/v1/whep/?app=app&stream={session_id}) with recvonly offer,
@@ -22,14 +22,16 @@ A from-scratch reimplementation of the live avatar runtime, using nothing but `s
 
 6. ONLY NOW → approvedPermissions  (gating on playable video avoids clipping the greeting)
 
-7. Listen: agent_raw_text (brain text), generatingSpeech, stvStartedTalking/stvFinishedTalking (turn state)
+7. Listen: agent_raw_text (agent text), generatingSpeech, stvStartedTalking/stvFinishedTalking (turn state)
 
-8. User speaks → ASR pc carries audio → server transcribes → brain → avatar speaks (STV) + agent_raw_text
+8. User speaks → ASR pc carries audio → server transcribes → agent replies → avatar speaks (STV) + agent_raw_text
    (or inject text: emit onTextEntered {text, isFinal:true}, the same event speak() always emits.
    If the client was built with debug:true, it also emits debug_text_entered with the same payload,
    right after onTextEntered)
 ```
 <!-- /nova-target -->
+
+Step 4 follows the [full connect sequence](architecture-reference/connection-and-handshake.md#full-connect-sequence-state-machine-order).
 
 Dependencies: `socket.io-client` + the browser's native `RTCPeerConnection`. Nothing else. `KalturaAvatarSession` is a wrapper around exactly these steps (ASR = the socket-relayed offer/answer; STV = the WHEP subscribe).
 
@@ -37,14 +39,13 @@ Dependencies: `socket.io-client` + the browser's native `RTCPeerConnection`. Not
 
 If you reimplement the protocol per the recipe above, you MUST:
 
-1. **Send a stable `stickyId` query param** on the socket (random 16-char, once per session). Without it, connections can reach different server instances and the handshake fails intermittently under load.
-2. **Emit `stvNewSession` right away. Don't gate it on `checkAvailability` first.** Poll `checkAvailability` → `availabilityResult` *in parallel* instead:
-   - Many agents never send `availabilityResult` at all, so waiting for it before `stvNewSession` just adds dead time.
-   - If a poll comes back `available:false`, back off and re-poll (see the delay schedule below) without touching `stvNewSession`.
-   - `throwToNoAgent` is terminal, not something to recover from on the same socket. The socket is closed right after it.
-   - If it arrives, treat the socket as dead. Open a fresh socket (new `stickyId`, so you're not pinned back to the same full instance) and retry `join`/`stvNewSession` from there.
-3. **Treat `throwToExceededTier` as fatal.** Don't retry: it's a plan limit, not a capacity limit.
-4. **Keep the socket alive during queue waits.** Only do a fresh `connect()` (new `stickyId`) on a permanent transport loss.
+1. **Send the same `stickyId` on every socket connection.** Generate a random 16-character string once per session. Send it as the `stickyId` query param, also on a reconnect. Never rotate it mid-session ([Sticky routing](architecture-reference/scale-and-sticky-sessions.md#sticky-routing-stickyid)).
+2. **Emit `stvNewSession` right away. Don't gate it on `checkAvailability` first.** Poll `checkAvailability` → `availabilityResult` *in parallel* on the same socket instead:
+   - Don't wait for `availabilityResult` before `stvNewSession`. Waiting only adds dead time.
+   - If a poll comes back `available:false`, back off and re-poll without touching `stvNewSession`. The delays are in [Capacity & the queue](architecture-reference/scale-and-sticky-sessions.md#capacity--the-queue-throwtonoagent--throwtoexceededtier).
+   - `throwToNoAgent` is terminal on that socket. The socket closes right after it. Open a fresh socket with the same `stickyId` and retry `join`/`stvNewSession`.
+3. **Treat `throwToExceededTier` as fatal.** Don't retry: it is a plan limit, not a capacity limit.
+4. **Keep the socket alive during queue waits.** Open a fresh socket only after a permanent transport loss, and keep the same `stickyId`.
 5. Let the **STV/WHEP** video channel reconnect independently. It carries no sticky state.
 
-See [ARCHITECTURE-REFERENCE.md's "Scale & Sticky Sessions"](architecture-reference/scale-and-sticky-sessions.md#scale--sticky-sessions) for why each of these matters.
+Details for each rule: [Scale & Sticky Sessions](architecture-reference/scale-and-sticky-sessions.md#scale--sticky-sessions).

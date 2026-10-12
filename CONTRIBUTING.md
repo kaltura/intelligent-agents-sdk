@@ -2,15 +2,13 @@
 
 # Contributing
 
-Kaltura maintainers push directly; everyone else contributes via the standard GitHub fork workflow: fork this repo, clone your fork, push a branch to your fork, then open a PR from that branch back to `kaltura/intelligent-agents-sdk`'s `main`.
+Kaltura maintainers push directly. Everyone else uses the standard GitHub fork workflow: fork this repo, push a branch to your fork, then open a PR from that branch to `main` in `kaltura/intelligent-agents-sdk`.
 
 ## Before you start
 
-New to the SDK itself? Read [GETTING-STARTED.md](GETTING-STARTED.md) first to see it run end to end (including a zero-credential offline demo) before diving into the contribution workflow below.
+Read [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md). It applies to every issue, PR and review.
 
-Read [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) — it applies to every interaction in this repo (issues, PRs, reviews).
-
-Read [SDK_CONSTITUTION.md](SDK_CONSTITUTION.md) next. It's the rulebook this SDK is held to, and every rule in it is machine-checked. A change that reads correctly but breaks a rule (e.g. adds a runtime dependency, adds a module-level `let`, or calls `eval()`) fails CI before a human ever reviews it.
+Read [SDK_CONSTITUTION.md](SDK_CONSTITUTION.md) next. Every rule in it is machine-checked, so a change that breaks one fails CI before a human reviews it.
 
 ## Setup
 
@@ -21,35 +19,29 @@ npm ci
 npm test
 ```
 
-The SDK has zero runtime dependencies. `npm ci` installs the dev tools only (jsdom and axe-core for the a11y tests, eslint, madge, typescript, playwright). The test runner is `node:test` (Node.js ≥18 built-in). If `npm test` doesn't pass on a clean checkout before you change anything, stop and report it rather than building on top of a broken baseline.
+The SDK has zero runtime dependencies. `npm ci` installs the dev tools only (jsdom and axe-core for the a11y tests, eslint, madge, typescript, playwright). The test runner is `node:test` (Node.js 18 or later). If `npm test` fails on a clean checkout, stop and report it.
 
 ## Making a change
 
-1. Add or update tests under `test/unit`, `test/integration`, `test/e2e`, or `test/evals` — whichever matches the surface you're touching. See [README.md → Testing](README.md#testing) for what each layer covers.
-2. Node tests can't reach every surface. Media, WebRTC and autoplay behavior needs the real-browser harness, and the management and runtime wire contracts need a live backend. [scripts/README.md](scripts/README.md) explains the three verification tiers, which one matches your change, and how to extend each; [test/browser/README.md](test/browser/README.md) is the guide to the media harness page itself.
-3. Run the full local gate before opening a PR:
-
-   ```bash
-   npm test          # all test layers
-   npm run verify     # SDK_CONSTITUTION.md rules (scripts/agent_verify.mjs)
-   npm run docs:gate  # docs/code drift, secrets, GFM hygiene (tools/check-docs.mjs)
-   ```
-
-4. If you touched a documented behavior (an endpoint, a payload shape, a wire event, a capability), update the doc in the **same change** — `docs:gate` fails the build on drift, and reviewers should not need to chase it down.
-5. Keep the change scoped. This SDK favors small, reviewable diffs over broad refactors; see [SDK_CONSTITUTION.md](SDK_CONSTITUTION.md) for the specific engineering rules (no module-level mutable state, no dynamic `eval`, zero runtime deps, JSDoc on every exported symbol, etc.).
+1. Add or update tests under `test/unit`, `test/integration`, `test/e2e`, or `test/evals`, whichever matches the surface you change.
+2. Node tests cannot reach every surface. Media, WebRTC and autoplay behavior needs the real-browser harness, and the management and runtime wire contracts need a live backend. [scripts/README.md](scripts/README.md) explains the three verification tiers, which one matches your change, and how to extend each. [test/browser/README.md](test/browser/README.md) covers the media harness page.
+3. Run every gate in the [Commands table in AGENTS.md](AGENTS.md#commands) before you open a PR.
+4. If you touched a documented behavior (an endpoint, a payload shape, a wire event, a capability), update the doc in the **same change**. `npm run docs:gate` fails the build on drift.
+5. Keep the change scoped. Small, reviewable diffs beat broad refactors.
+6. Keep backend detail out of code, docs, tests, commit messages and the PR. See "Public boundary" in [AGENTS.md](AGENTS.md#public-boundary).
 
 ## Opening a PR
 
-- Describe *why*, not just *what* — the diff already shows what changed.
-- Confirm in the PR description that `npm test`, `npm run verify`, and `npm run docs:gate` all pass locally; CI re-runs all three and blocks merge on any failure.
+- Describe *why*. The diff already shows what changed.
+- Confirm that the gates in [AGENTS.md](AGENTS.md#commands) pass locally. CI re-runs them and blocks merge on any failure.
 
 ## Commit and branch conventions
 
-This repo's history (`git log --oneline`) mixes two styles: a short, capitalized, imperative summary line (e.g. "Add release automation and CI test reporting", "Document the lifecycle rule engine") and Conventional Commits prefixes (e.g. `feat(management): describe the customer-admin intellect surface exactly`, `build(deps): bump github/codeql-action/init`). Either is fine — lead with a verb, describe the *what* in one line, and add a `type(scope):` or `Prefix:` tag when a commit is scoped to one area. Branch names follow the same informal `type/short-description` pattern (e.g. `feat/`, `fix/`, `chore/`, `docs/`), but nothing enforces it.
+This repo's history (`git log --oneline`) mixes two styles: a short, capitalized, imperative summary line (e.g. "Add release automation and CI test reporting") and Conventional Commits prefixes (e.g. `feat(management): describe the customer-admin intellect surface exactly`). Either is fine. Lead with a verb, describe the *what* in one line, and add a `type(scope):` or `Prefix:` tag when a commit is scoped to one area. Branch names follow the same informal `type/short-description` pattern (e.g. `feat/`, `fix/`, `chore/`, `docs/`), but nothing enforces it.
 
 ## Licensing (external contributors)
 
-This repo is [MIT licensed](LICENSE). By opening a PR, you agree your contribution is licensed under that same MIT license — no separate CLA is required.
+This repo is [MIT licensed](LICENSE). By opening a PR, you agree your contribution is licensed under that same MIT license. No separate CLA is required.
 
 ## Reporting a security issue
 

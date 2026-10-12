@@ -127,7 +127,7 @@ const AVATAR_SUMMARY_CONFIG_KEYS = Object.freeze(['prompt', 'analysis', 'templat
 const IDENTIFIER_RE = /^[A-Za-z_][A-Za-z0-9_]*/;
 
 /**
- * The leading identifier of every `{{ ... }}` expression in a Jinja2 template,
+ * The leading identifier of every `{{ ... }}` expression in a template,
  * in order (`{{ items | join(", ") }}` yields `items`). Plain index scan, so the
  * cost is linear in the template length whatever the input looks like.
  * @param {string} template @returns {string[]}
@@ -302,7 +302,7 @@ export class IntellectConfig {
    * reference-list write like `tool_ids`/`knowledge_ids`). This only edits the
    * reference list — create/edit a Skill body via `mgmt.skills.add` first,
    * then pass its `id` here. Pass `[]` to detach every skill. An optional
-   * `condition` is a Jinja2 expression over thread variables (for example
+   * `condition` is a template expression over thread variables (for example
    * `sys__avatar_enabled`); the skill is active only when it is truthy.
    * @param {number} configId @param {Array<{id:string, mode:'adhoc'|'adhoc-save'|'preloaded', condition?:string}>} skillIds @param {string} ks (admin)
    * @returns {Promise<{applied:boolean, result?:any, sent?:object, _meta:object}>}
@@ -411,7 +411,7 @@ export class IntellectConfig {
    * session on this intellect. The intellect owns the opening line; `provision()`
    * writes it here and leaves the avatar's `openingPhrase` unset.
    *
-   * The phrase is a Jinja2 template rendered per session. It can read client
+   * The phrase is a template rendered per session. It can read client
    * variables (`KalturaAvatarSession({ requestVars })`, once
    * `intellects.setClientVariablesEnabled(configId, true, ks)` is on) and the
    * `sys__*` variables (e.g. `sys__is_new_thread`). A missing variable renders
@@ -443,7 +443,7 @@ export class IntellectConfig {
    * summary for avatar sessions. Every key is optional; `null` restores the
    * defaults (`analysis: { summary }`, `template: '{{ summary }}'`,
    * `content_type: 'text'`). `prompt` adds rules for the summary model;
-   * `analysis` maps output keys to descriptions; `template` is Jinja2 over the
+   * `analysis` maps output keys to descriptions; `template` is a template over the
    * `analysis` keys; `content_type` is one of {@link SUMMARY_CONTENT_TYPES}.
    * Every `{{ key }}` in `template` must be an `analysis` key (or `summary` when
    * `analysis` is unset). The summary reaches the client as a `summary` message
