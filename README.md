@@ -424,7 +424,7 @@ const session = new KalturaAvatarSession({ token, /* … */, requestVars: { user
 session.updateRequestVars({ account_tier: 'enterprise' });
 ```
 
-`updateRequestVars(vars)` **merges** what you pass into the session's canonical map. Send only the keys that changed. Omitted keys keep their values. Values persist on the thread for every later turn, so there is no per-turn resend. The SDK also re-sends the full map on reconnect. `session.setDynamicPrompt(data)` is sugar over the same channel. It serializes `data` into the single variable `page_context`. Pair it with the `PAGE_CONTEXT_PROMPT` block exported from `./management` so the prompt references `{{page_context}}`.
+`updateRequestVars(vars)` **merges** what you pass into the session's variable map. Merge, persistence and reconnect rules: [docs/DYNAMIC-DATA-INJECTION.md](docs/DYNAMIC-DATA-INJECTION.md). `session.setDynamicPrompt(data)` is sugar over the same channel. It serializes `data` into the single variable `page_context`. Pair it with the `PAGE_CONTEXT_PROMPT` block exported from `./management` so the prompt references `{{page_context}}`.
 
 The intellect's `allow_client_variables` flag must be on. It is on by default. Pin it with `intellects.setClientVariablesEnabled(configId, true, adminKs)`. If it is off, the turn fails in one of two ways:
 

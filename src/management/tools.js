@@ -589,15 +589,14 @@ export async function findIntellectsReferencingTool(ctx, toolId, ks) {
  * Genie `/v1/tool/*` (NOT intellect-scoped, NOT `intellect/update`). Mounted
  * at `mgmt.tools`. A Tool is `{id, name, config, partner_id, created_at,
  * updated_at}`; `config` is the flat output of `tools.api`/`csv`/`code`/
- * `client`. `name` is unique per partner — `add` may be rejected
- * server-side on a duplicate; `update` is the idempotent re-edit path.
+ * `client`. `name` is unique per partner; `update` is the idempotent re-edit path.
  *
  * Creating a Tool does NOT attach it to anything — link it to an intellect via
  * `tool_ids` (see `intellectConfig.setToolIds`, or pass `tool_ids` directly to
  * `intellects.create`/`update`).
  *
- * Names are unique in a shared namespace. A conflict returns 409. The same
- * applies to {@link Skills}.
+ * A duplicate `name` (on `add`, or a rename in `update`) returns HTTP 409
+ * (`code:'conflict'`). The same applies to {@link Skills}.
  *
  * SHARED-BY-NAME HAZARD: because `name` is the lookup key callers upsert
  * against (see `src/management/provision.js`'s `applyTools`, or an app's
@@ -617,7 +616,7 @@ export class Tools {
 
   /**
    * Create a Tool entity. WRITE — NOT idempotent (a repeat call creates a
-   * second entity; a duplicate `name` may be rejected server-side). Validates
+   * second entity; a duplicate `name` returns HTTP 409). Validates
    * the tool BEFORE any network call. `tool` may be a raw builder output
    * (already a {@link GenieToolConfig}) — it is re-validated either way.
    *
