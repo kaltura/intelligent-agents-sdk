@@ -16,8 +16,7 @@
  * `{sessionId, token}` object `create` returns, not a KS.
  *
  * Speech is audio only: generate the audio with your own TTS and pass it to
- * {@link AvatarSessions#say}. The SDK has no text-to-speech method and no
- * emotion or queue-status methods.
+ * {@link AvatarSessions#say}.
  */
 import { KalturaError } from '../core/errors.js';
 import { uuidv4 } from '../core/ids.js';
