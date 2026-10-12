@@ -30,10 +30,10 @@ const ROOT_DOC_IGNORE = new Set(['README.md', 'CODE_OF_CONDUCT.md', 'CONTRIBUTIN
 //     customers into thinking it's an equivalent path.
 //   - docs/ARCHITECTURE-RECIPE.md: a from-scratch client recipe. The supported way in is
 //     the SDK, so the site does not present the recipe as a route.
-//   - docs/internal/**: contributor docs, never published (see DOCS_INTERNAL_PREFIX).
+//   - docs/contributor/**: contributor docs for people changing the SDK. Public in the SDK repo, never published here (see DOCS_CONTRIBUTOR_PREFIX).
 export const DOCS_SUBTREE_IGNORE = new Set(['docs/api/scripted-video.md', 'docs/ARCHITECTURE-RECIPE.md']);
-export const DOCS_INTERNAL_PREFIX = 'docs/internal/';
-export const isIgnoredDoc = (p) => DOCS_SUBTREE_IGNORE.has(p) || p.startsWith(DOCS_INTERNAL_PREFIX);
+export const DOCS_CONTRIBUTOR_PREFIX = 'docs/contributor/';
+export const isIgnoredDoc = (p) => DOCS_SUBTREE_IGNORE.has(p) || p.startsWith(DOCS_CONTRIBUTOR_PREFIX);
 
 function walkMarkdown(dir, base = dir) {
   const out = [];
