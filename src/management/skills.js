@@ -2,14 +2,14 @@
  * Skills — CRUD over the standalone, PARTNER-LEVEL Skill entity via the brain's
  * `/v1/skill/*` (NOT intellect-scoped). Mounted at `mgmt.skills`. A Skill is
  * `{id (uuid), name, description, instructions, partner_id, created_at,
- * updated_at}` — a named, reusable behavior description the brain can draw on
+ * updated_at}` — a named, reusable behavior description the agent can draw on
  * (add returns the full entity; delete → get 404s "Skill not
  * found"; another partner's id 403s). `update()` below is the idempotent
  * re-edit path (renames re-check the same
  * partner-unique-name constraint as `add`, 409 on conflict).
  *
- * Names are unique in a shared namespace. A conflict returns 409. The same
- * applies to {@link Tools} (see its class doc).
+ * Names are unique per partner. A duplicate returns HTTP 409
+ * (`code:'conflict'`). The same applies to {@link Tools} (see its class doc).
  *
  * SHARED-BY-NAME HAZARD: because `name` is the lookup key callers upsert
  * against (see `src/management/provision.js`'s `applyTools` for the
