@@ -1,4 +1,4 @@
-> **Internal SDK development doc.** For people changing the SDK, not for app builders. Published in this repository only, never on the docs site. [Index](README.md).
+> **Contributor doc.** For people changing the SDK, not for app builders. Public in this repository, not published on the docs site. [Index](README.md).
 
 # SDK Module Map
 

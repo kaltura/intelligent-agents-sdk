@@ -1,4 +1,4 @@
-> **Internal SDK development doc.** For people changing the SDK, not for app builders. Published in this repository only, never on the docs site. [Index](README.md).
+> **Contributor doc.** For people changing the SDK, not for app builders. Public in this repository, not published on the docs site. [Index](README.md).
 
 # Docs Guide
 
@@ -8,13 +8,15 @@ Rules for every `.md` file in this repo. `node tools/check-docs.mjs` enforces th
 
 | Tier | Where | Reader | Published |
 |---|---|---|---|
-| User docs | `README.md`, `API-REFERENCE.md`, `GETTING-STARTED.md`, `SECURITY.md`, `docs/**` except `docs/internal/` | Developers and coding agents building an app with the SDK | Docs site and the docs assistant |
-| Internal docs | `docs/internal/**`, `AGENTS.md`, `CONTRIBUTING.md`, `SDK_CONSTITUTION.md`, `CODE_OF_CONDUCT.md`, `scripts/README.md` | People changing the SDK | This repository only |
+| User docs | `README.md`, `API-REFERENCE.md`, `GETTING-STARTED.md`, `SECURITY.md`, `docs/**` except `docs/contributor/` | Developers and coding agents building an app with the SDK | Docs site and the docs assistant |
+| Contributor docs | `docs/contributor/**`, `AGENTS.md`, `CONTRIBUTING.md`, `SDK_CONSTITUTION.md`, `CODE_OF_CONDUCT.md`, `scripts/README.md` | People changing the SDK | This repository only. Public, not on the docs site |
 
-- Every file in `docs/internal/` starts with the internal banner (see [README.md](README.md)). **Checked.**
-- User docs never link to internal docs. **Checked.**
-- A fact a contributor needs but an app builder does not goes in an internal doc. If a caller can observe it, it goes in a user doc.
-- A new user doc needs a site manifest entry on `gh-pages-src` before the next tag. Internal docs need none.
+- Every file in `docs/contributor/` starts with the contributor banner (see [README.md](README.md)). **Checked.**
+- User docs never link to contributor docs. **Checked.**
+- A fact a contributor needs but an app builder does not goes in a contributor doc. If a caller can observe it, it goes in a user doc.
+- A new user doc needs a site manifest entry on `gh-pages-src` before the next tag. Contributor docs need none.
+
+Contributor docs are public like every other file here. "Contributor" means the reader, not secrecy. No doc, in either tier, holds Kaltura-internal or backend detail (see Public boundary below).
 
 ## Content rules
 
