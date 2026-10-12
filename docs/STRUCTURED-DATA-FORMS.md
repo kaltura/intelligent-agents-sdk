@@ -6,7 +6,7 @@ This page shows how to make an agent ask the viewer for structured, typed data m
 
 ## What it is and isn't
 
-You configure it once, at [intellect](../README.md#architecture) creation or update, as a list of "stages":
+You configure `user_properties_forms` once, at [intellect](../README.md#architecture) creation or update, as a list of "stages":
 
 <!-- nova-target: structured-data-forms-example | Configure structured data forms example -->
 
@@ -20,7 +20,7 @@ await mgmt.intellectConfig.setUserPropertiesForms(configId, [
 ```
 <!-- /nova-target -->
 
-`callStage` is one of `start` / `middle` / `end` (`CALL_STAGES` in `src/management/intellect-config.js`). Each property is `{key, type}`. Two sets of `type` values exist:
+`callStage` (sent as `call_stage`) is one of `start` / `middle` / `end` (`CALL_STAGES` in `src/management/intellect-config.js`). Each property is `{key, type}`. Two sets of `type` values exist:
 
 | Type kind | Values |
 |---|---|
