@@ -16,7 +16,7 @@ eyebrow: Reference
 POST https://genie.nvp1.ovp.kaltura.com/assistant/converse
 ```
 
-Requires a conversation KS (see [Authentication § KS types](/reference/api/authentication/#authentication)):
+Requires a conversation KS (see [Authentication](/reference/api/authentication/#authentication)):
 
 ```bash
 CONV_KS=$(curl -s -X POST "https://www.kaltura.com/api_v3/service/session/action/start" \
@@ -39,13 +39,13 @@ CONV_KS=$(curl -s -X POST "https://www.kaltura.com/api_v3/service/session/action
 | `threadId` | Omit for new conversation; pass previous value for memory |
 | `sse` | `false` = NDJSON (default); `true` = SSE |
 | `model_type` | Optional. The SDK does not set `model_type`; the default is `fast`. |
-| `force_experience` | Must be one of `markdown`, `summarization`, `flashcards`, `avatar_only`. Anything else throws a `validation_error` before any network call. A hint to the brain about which experience to render, not a guaranteed outcome. |
-| `request_vars` | `{{var}}` interpolation values. Needs `allow_client_variables:true` on the intellect. It is on by default (see [Authentication § The Five Services](/reference/api/authentication/#the-five-services) for what an intellect is). Values **persist on the thread**: the server merges each message's map into what's stored, so send only deltas. A new thread starts clean. They interpolate into both prompt blocks and server-side `api`-tool templates. Reserved `sys__*` keys (including `sys__user_id`) are server-injected and rejected if you try to set them yourself. See § Bind a session to a real end-user identity above for how `sys__user_id` gets populated. Semantics in depth: [Dynamic Data Injection](/guides/dynamic-data-injection/). |
+| `force_experience` | Must be one of `markdown`, `summarization`, `flashcards`, `avatar_only`. Anything else throws a `validation_error` before any network call. A hint about which experience to render, not a guaranteed outcome. |
+| `request_vars` | `{{var}}` interpolation values. Needs `allow_client_variables:true` on the intellect. It is on by default (see [Authentication § The Five Services](/reference/api/authentication/#the-five-services) for what an intellect is). Values **persist on the thread**, so send only the values that changed. A new thread starts clean. They interpolate into prompts and `api` tool templates. Reserved `sys__*` keys (including `sys__user_id`) are set by the server. The SDK rejects a client-supplied value for them. For how `sys__user_id` gets its value, see [Authentication § Bind a session to a real end-user identity](/reference/api/authentication/#authentication). Semantics in depth: [Dynamic Data Injection](/guides/dynamic-data-injection/). |
 | `capabilities` | Per-message capability override |
 
 **`allow_client_variables`** must be on to send `request_vars`. It is on by default. Pin it with `mgmt.intellects.setClientVariablesEnabled(configId, true, adminKs)` (WRITE, admin KS; also exposed as `mgmt.intellectConfig.setClientVariablesEnabled`).
 
-With it off, the rejection is **silent on the streaming paths**. The turn streams back empty: no HTTP error on `converse`, no socket error.
+With it off, the turn streams back empty on the streaming paths. There is no HTTP error on `converse` and no socket error.
 
 Both session classes (`KalturaAvatarSession`, `KalturaChatSession`) detect the pattern and emit a once-per-session `warning` event (`code: 'empty_turn_with_request_vars'`, variable names only, never values). The management converse helpers map a 403 that reports disabled client variables to a typed `client_variables_disabled` error. `KalturaChatSession.sendText()` can fail either way when it sends request variables: the empty turn with the warning, or a rejected promise with `client_variables_disabled`.
 
@@ -54,9 +54,9 @@ Both session classes (`KalturaAvatarSession`, `KalturaChatSession`) detect the p
 | `type` | Meaning |
 |--------|---------|
 | `"think"` | Processing (show spinner) |
-| `"text"` | Response content — concatenate `content` fields. On an avatar-enabled intellect, spoken content streams as `"avatar"` (and `"avatar-filler"`) instead, accumulated the same way. |
+| `"text"` | Response content. Concatenate `content` fields. On an avatar-enabled intellect, spoken content streams as `"avatar"` (and `"avatar-filler"`) instead, accumulated the same way. |
 | `"tool"` / `"tool_response"` | Server tool call + result; `content` carries client commands |
-| `"unisphere-tool"` | GenUI widget — `metadata.runtimeName` names the widget |
+| `"unisphere-tool"` | GenUI widget. `metadata.runtimeName` names the widget |
 | `"error"` | The server refused or failed the turn. See [Refusals that arrive with HTTP 200](#refusals-that-arrive-with-http-200). |
 | `"user-interruption"` | User barged in |
 
@@ -83,20 +83,20 @@ The SDK raises these as a `KalturaError` so an empty reply is never mistaken for
 
 `error.body` holds `errors` (the segments), `threadId`, and `partial` (the text, `threadId` and `messageId` that arrived before the refusal). A stream line that is not JSON, such as a proxy error page, becomes an `error` segment too, so it is never dropped.
 
-The same rule applies to every HTTP call. A 200 reply whose body is an error is thrown, with the server text in `error.detail`. The shapes caught: a `KalturaAPIException`, `{error: "..."}`, `{success: false}`, and a body with only status and message keys and a status of 400 or above. A 200 reply that starts like JSON but does not parse throws `invalid_response`. A failed call inside a Kaltura multirequest throws `ovp_error` naming the call.
+The same rule applies to every HTTP call. A 200 reply whose body is an error is thrown, with the server text in `error.detail`. The SDK throws for an exception object, `{error: "..."}`, `{success: false}`, and a body with only status and message keys and a status of 400 or above. A 200 reply that starts like JSON but does not parse throws `invalid_response`. A failed call inside a Kaltura multirequest throws `ovp_error` naming the call.
 
 **Stop a running turn:**
 
 | Session | Call |
 |---|---|
-| `KalturaAvatarSession` | `session.interrupt()` sends a barge-in so the avatar yields the turn. It does not cancel a running brain turn, and the SDK has no call that does. It throws `invalid_state` when the session is not connected or a tap-to-talk capture is open. |
+| `KalturaAvatarSession` | `session.interrupt()` sends a barge-in so the avatar yields the turn. It does not cancel a running turn on the server, and the SDK has no call that does. It throws `invalid_state` when the session is not connected or a tap-to-talk capture is open. |
 | `KalturaChatSession` | Pass `signal` to `sendText(text, { signal })` and abort it. The request is cancelled and the turn rejects with code `aborted`. |
 
 ---
 
 ## Reserved Template Variables (`sys__*`)
 
-The server sets these on every turn. They're available to `{{ ... }}` interpolation in `base_directive` / `prompts[].value` / `glossary` (see [Configure an Intellect](/reference/api/build/intellect/#configure-an-intellect)) and in a Skill's `instructions` text (see [§ Skills](/reference/api/management-operations/#skills--httpsgenienvp1ovpkalturacom)), regardless of `allow_client_variables`.
+The server sets these on every turn. They're available to `{{ ... }}` interpolation in `base_directive` / `prompts[].value` / `glossary` (see [Configure an Intellect](/reference/api/build/intellect/#configure-an-intellect)) and in a Skill's `instructions` text (see [§ Skills](/reference/api/management-operations/#skills)), regardless of `allow_client_variables`.
 
 Before any network call, the SDK's own `request_vars` pre-flight guard rejects a client-supplied value for any key in the table below, plus `secrets` (see `request_vars` above):
 
@@ -104,16 +104,16 @@ Before any network call, the SDK's own `request_vars` pre-flight guard rejects a
 |----------|-------------|-------|
 | `sys__thread_id` | Current conversation thread id | |
 | `sys__message_id` | Current message id | |
-| `sys__user_id` | The bound end-user id | Empty by default (a KS with no `userId`). Bind a real identity with `Sessions.createConversationToken({ configId, userId })` or `createAgentToken({ agentId, userId })` (or `createAdminToken({ userId })`) so this resolves server-side instead of always being empty, see § Bind a session to a real end-user identity above. |
+| `sys__user_id` | The bound end-user id | Empty by default (a KS with no `userId`). Bind a real identity with `Sessions.createConversationToken({ configId, userId })` or `createAgentToken({ agentId, userId })` (or `createAdminToken({ userId })`) so this variable resolves to a real id instead of staying empty. See [Authentication § Bind a session to a real end-user identity](/reference/api/authentication/#authentication). |
 | `sys__user_message` | The current turn's user text | |
 | `sys__is_new_thread` | `true` on the first turn of a new thread, `false` otherwise | |
-| `sys__avatar_enabled` | Whether the current thread has a live avatar attached | Used in a Skill's `condition` to gate it to avatar-only sessions, e.g. `{{ sys__avatar_enabled }}` — see [Configure an Intellect § skill_ids](/reference/api/build/intellect/#configure-an-intellect). |
+| `sys__avatar_enabled` | Whether the current thread has a live avatar attached | Used in a Skill's `condition` to gate it to avatar-only sessions, e.g. `{{ sys__avatar_enabled }}`. See [Configure an Intellect § skill_ids](/reference/api/build/intellect/#configure-an-intellect). |
 | `sys__avatar_share_screen_enabled` | Whether the current avatar session has screen-share analysis enabled | Also usable in a Skill's `condition`, e.g. `{{ sys__avatar_enabled and not sys__avatar_share_screen_enabled }}` to gate a skill to avatar sessions that are NOT sharing a screen. |
-| `sys__context_id` | The category/entry id the current context (and its knowledge base, if any) is scoped to | Set via `KalturaAvatarSession`'s `contextId` constructor option, sent on the live socket `join` payload — see [Architecture Reference · Connection and Handshake § The `join` payload](/reference/architecture-reference/connection-and-handshake/#the-join-payload-step-2-carries-the-agentbrain-config). Empty when no context was set at join. |
+| `sys__context_id` | The category/entry id the current context (and its knowledge base, if any) is scoped to | Set via `KalturaAvatarSession`'s `contextId` constructor option, sent on the live socket `join` payload. See [Architecture Reference · Connection and Handshake § The `join` payload](/reference/architecture-reference/connection-and-handshake/#the-join-payload-step-2-carries-the-agent-config). Empty when no context was set at join. |
 | `sys__context_type` | The type of that context (e.g. an `entry` vs. a `category`) | Set via `KalturaAvatarSession`'s `contextType` constructor option, alongside `contextId`; empty when no context was set at join. |
 | `sys__ks` | The raw KS (Kaltura Session) for the current request | ⚠️ **Security warning: never reference `sys__ks` in a prompt whose output could be echoed back to a user or logged.** It is a live credential. Rendering it as plain text in a model response, chat transcript, or log can leak that credential. See [Security & Compliance](/reference/security/#ks-kaltura-session-guidance-for-agents-ac-3--ac-6--ia-2). |
-| `sys__user_obj.first_name` / `.last_name` / `.title` / `.company` / `.gender` / `.email` | Attributes of the bound-user object | Verify these resolve with `intellects.previewPrompt()` before shipping a prompt — the rendered preview flags unresolved references with a `reserved_user_attr_unresolved` warning. |
-| `secrets.<NAME>` | A named secret configured on the intellect | Write-only — see [§ Secrets](/reference/api/build/tools-and-secrets/#secrets-write-only). |
+| `sys__user_obj.first_name` / `.last_name` / `.title` / `.company` / `.gender` / `.email` | Attributes of the bound-user object | Verify these resolve with `intellects.previewPrompt()` before shipping a prompt. The rendered preview flags unresolved references with a `reserved_user_attr_unresolved` warning. |
+| `secrets.<NAME>` | A named secret configured on the intellect | Write-only. See [§ Secrets](/reference/api/build/tools-and-secrets/#secrets-write-only). |
 
 ---
 
@@ -143,11 +143,11 @@ In this SDK, `threads.list`, `get`, `rename`, `delete`, `transcript`, `setAnalys
 
 **Thread list response** fields per object: `id`, `title`, `created_at`, `updated_at`, `status`.
 
-**Transcript response:** `{"status":"success","data":"human: …\nai: …"}` — plain text, one turn per line.
+**Transcript response:** `{"status":"success","data":"human: …\nai: …"}`. Plain text, one turn per line.
 
-**Delete** returns `{totalCount, objects[]}`: the threads it actually deleted. Any id it did not delete (one that does not exist, or another user's thread under a user session) is left out, and the status is still 200. So check `objects`, not the status: `totalCount: 0` means nothing was deleted. Deletes are soft. The data is purged on a schedule.
+**Delete** returns `{totalCount, objects[]}`: the threads it actually deleted. Any id it did not delete (one that does not exist, or another user's thread under a user session) is left out, and the status is still 200. So check `objects`, not the status: `totalCount: 0` means nothing was deleted.
 
-SDK: `mgmt.threads.{list, get, rename, delete, transcript}`. Three more write operations live only on the SDK (`setAnalysis`, `clearAnalysis`, `push`); see [Management Operations § Threads](/reference/api/management-operations/#threads--httpsgenienvp1ovpkalturacom) for their request shapes.
+SDK: `mgmt.threads.{list, get, rename, delete, transcript}`. Three more write operations live only on the SDK (`setAnalysis`, `clearAnalysis`, `push`); see [Management Operations § Threads](/reference/api/management-operations/#threads) for their request shapes.
 
 > **Compliance note.** See [Security & Compliance](/reference/security/#shared-responsibility-control-matrix-nist-800-53) for what the SDK provides versus what the operator must configure.
 
@@ -167,34 +167,34 @@ Call this the moment a conversation is genuinely over, so end-of-conversation li
 
 ## Thread History and Context Size
 
-There is no documented cap on how long a thread's history can grow. The full transcript is sent as model context on every turn, so the context each turn carries grows with thread length. Plan long-running threads accordingly: start a fresh thread per task, and delete threads you don't need.
+The full transcript is sent as model context on every turn, so each turn carries more context as the thread grows. For long-running work, start a fresh thread per task and delete threads you do not need.
 
 ---
 
 ## Feedback and Follow-ups (SDK)
 
-Feedback and follow-up suggestions route through internal Genie paths — use the SDK rather than calling them directly.
+Use the SDK for feedback and follow-up suggestions. It handles the routes for you.
 
-- `mgmt.feedback.add({message_id, is_positive, comment?}, convKs)` — thumbs up/down on a message. `message_id` comes from the converse stream.
+- `mgmt.feedback.add({message_id, is_positive, comment?}, convKs)`: thumbs up/down on a message. `message_id` comes from the converse stream.
 - `mgmt.feedback.list(ks, opts)`: admin-only feedback listing, filterable by `messageIdEquals`/`messageIdsIn`/`threadIdEquals`/`agentIdEquals`/`isPositiveEquals`. ⚠️ SENSITIVE: contains end-user ids/names + verbatim question/feedback text. Treat as PII; scope and redact before sharing.
-- `mgmt.followups.getSuggested(ks)` — starter questions for the partner/agent. The returned set can vary between calls — don't assume a stable, fixed list. Per-answer follow-ups stream inline as `unisphere-tool` segments when `capabilities.generate_followup_questions:"on"`.
-- `mgmt.followups.list(ks, opts)` — raw partner-wide follow-up/starter question record listing (distinct from `getSuggested`'s per-agent shortlist).
+- `mgmt.followups.getSuggested(ks)`: starter questions for the partner or agent. The set can differ between calls. Per-answer follow-ups stream inline as `unisphere-tool` segments when `capabilities.generate_followup_questions:"on"`.
+- `mgmt.followups.list(ks, opts)`: raw partner-wide follow-up and starter question records (distinct from `getSuggested`'s per-agent shortlist).
 
 ---
 
 ## Usage Analytics
 
-Partner-scoped read-only CSV — contains end-user IDs and verbatim questions (treat as PII).
+Partner-scoped read-only CSV. It contains end-user IDs and verbatim questions (treat as PII).
 
 SDK: `mgmt.messages.report(ks)` (raw CSV) / `mgmt.messages.reportSummary(ks)` (volume + feedback ratio + top questions, with a `_meta` provenance receipt).
 
-`mgmt.messages.get(id, ks)` (`POST {genieUrl}/message/get`) fetches one message record directly, without paging through `messages.list()`. An unknown id throws a typed `not_found`; one belonging to another partner throws `forbidden` instead.
+`mgmt.messages.get(id, ks)` (`POST {genieUrl}/message/get`) fetches one message record directly, without paging through `messages.list()`. A message that does not exist, or that the token cannot read, throws a typed `not_found` or `forbidden` error.
 
 ---
 
 ## Knowledge Search (MCP)
 
-The backend exposes your indexed content over the [MCP](https://modelcontextprotocol.io) protocol at this one endpoint. This is separate from [MCP Integrations](/guides/mcp-integrations/), which wires an intellect to *external* MCP servers via `intellectConfig.setMcpServers`.
+Your indexed content is available over the [MCP](https://modelcontextprotocol.io) protocol at this one endpoint. This is separate from [MCP Integrations](/guides/mcp-integrations/), which wires an intellect to *external* MCP servers via `intellectConfig.setMcpServers`.
 
 ```
 POST https://genie.nvp1.ovp.kaltura.com/mcp/search
@@ -203,15 +203,15 @@ POST https://genie.nvp1.ovp.kaltura.com/mcp/search
 
 Returns `{status, data}`. A partner with no indexed content returns a `"couldn't find relevant information"` error response. SDK: `mgmt.knowledge.search(query, ks, opts)`.
 
-`opts` passes through five optional tuning params, all accepted as-is by the backend:
+`opts` passes through five optional tuning params:
 
 | Param | Default |
 |---|---|
 | `top_n` | 5 |
-| `with_line_numbers` | — |
+| `with_line_numbers` | none |
 | `margins_in_seconds` | 15 |
-| `include_sources` | — |
-| `entry_description` | — |
+| `include_sources` | none |
+| `entry_description` | none |
 
 `include_sources:true` changes the success shape's `chapters` from `null` to an array, and `text` to `null`.
 

@@ -7,89 +7,80 @@ eyebrow: Explanation
 
 # Platform Architecture — Agentic Avatar System
 
-This page is for **platform developers**. It explains how the whole system works end to end:
+This page is the map for platform developers. It shows how the SDK reaches the agentic backend, end to end. It gives enough detail to reimplement any layer with only a Socket.IO client and standard WebRTC, with no dependency on Kaltura's apps, widgets or libraries.
 
-- the backend services
-- the text-conversation flow
-- the live-video wire protocol
-- how it scales
-- how it handles failures
+The SDK works across four layers:
 
-It gives enough detail to reimplement any layer with **zero dependency** on Kaltura's apps, widgets, or libraries. All you need is a Socket.IO client and standard WebRTC.
-
-**Source of truth.** This page describes the protocol as the live system implements it, across four layers:
-
-- the **management API**: agents, avatars, catalog, intellects (an agent's brain — its prompts, tools, and knowledge), application
-- the **brain API**: conversations, threads, messages, feedback, followups
+- the **management API**: agents, avatars, catalog, intellects (an agent's prompts, tools and knowledge), application
+- the **conversation API**: conversations, threads, messages, feedback, followups
 - the **live-avatar control plane**: the Socket.IO session plus the ASR/STV WebRTC media
 - the **scripted-video control API**: `/v1/avatar-session/*`
 
 Symbol names below are the stable contracts to navigate by. Exact details live in [Wire Protocol](/reference/wire-protocol/).
 
-**Companion docs.**
-
-- New here? [Getting Started](/getting-started/)
-- Building an app? [Backend API Reference](/reference/api-reference/)
-- Driving your UI from the avatar? [Client-Side Commands](/guides/client-commands/)
-
-This page is the map. The exact field-by-field mechanics (connect sequence, scaling and sticky routing, recovery layers, failure-mode tables) live in **[Architecture Reference](/reference/architecture-reference/)**. A from-scratch reimplementation recipe lives in **[ARCHITECTURE-RECIPE.md](https://github.com/kaltura/intelligent-agents-sdk/blob/main/docs/ARCHITECTURE-RECIPE.md)**.
+| Need | Go to |
+|---|---|
+| First agent | [Getting Started](/getting-started/) |
+| Build an app | [Backend API Reference](/reference/api-reference/) |
+| Drive your UI from the avatar | [Client-Side Commands](/guides/client-commands/) |
+| Connect sequence, scaling, sticky routing, recovery, failure tables | [Architecture Reference](/reference/architecture-reference/) |
+| Reimplementation recipe | [ARCHITECTURE-RECIPE.md](https://github.com/kaltura/intelligent-agents-sdk/blob/main/docs/ARCHITECTURE-RECIPE.md) |
+| Render the avatar video in your page | [README.md § Avatar audio and video rendering](https://github.com/kaltura/intelligent-agents-sdk/blob/main/README.md#avatar-audio-and-video-rendering) |
 
 **Contents**
 
 - [The Three Planes](#the-three-planes)
 - [Backend Services Map](#backend-services-map)
 - [Text Conversation Flow](#text-conversation-flow)
-- [Video Runtime Protocol — The Big Picture](#video-runtime-protocol--the-big-picture)
+- [Video Runtime Protocol: The Big Picture](#video-runtime-protocol-the-big-picture)
 - [Two Session Modes (choose the right one)](#two-session-modes-choose-the-right-one)
 - [SDK Entry Points](#sdk-entry-points)
-- [Resilience & Failure Handling — Overview](#resilience--failure-handling--overview)
+- [Resilience & Failure Handling: Overview](#resilience--failure-handling-overview)
 
 ---
 
 ## The Three Planes
 
-The system is three planes. An app uses only the planes it needs.
+An app uses only the planes it needs.
 
-| Plane | What it does | Backend host | Where documented |
+| Plane | What it does | SDK option | Where documented |
 |-------|-------------|-------------|------------------|
-| **Management** | Create/configure agents, avatars, intellects, catalog, sessions | `api.avatar.us.kaltura.ai` | [Backend API Reference](/reference/api-reference/) |
-| **Conversation (text)** | The AI brain: chat, memory, structured output | `genie.nvp1.ovp.kaltura.com` | "Text Conversation Flow" below |
-| **Runtime (video)** | Live photorealistic talking avatar over WebRTC | the session server + media relay + brain | "Video Runtime Protocol" below |
+| **Management** | Create and configure agents, avatars, intellects, catalog, sessions | `agenticUrl` | [Backend API Reference](/reference/api-reference/) |
+| **Conversation (text)** | Chat, memory, structured output | `genieUrl` | "Text Conversation Flow" below |
+| **Runtime (video)** | Live photorealistic talking avatar over WebRTC | `conversationManagerUrl`, `srsBaseUrl`, `turnServerUrl` | "Video Runtime Protocol" below |
 
-### The three flows in every live conversation
-
-The planes above describe *infrastructure*. A live conversation itself runs **three flows** at once:
-
-1. **Conversation Control**: turn-taking, interruptions, and real-time sync between speech recognition, voice, avatar video, language models, emotion, recording, and device coverage. Handled by Kaltura, always.
-2. **Agent Orchestration**: the server-side reasoning loop that runs while the person talks. It covers knowledge grounding (RAG — pulling relevant facts from your knowledge base before answering), tool calls, and routing to expert agents. Handled by Kaltura, always.
-3. **Your Expertise**: your knowledge bases, APIs, models, and expert agents. You plug these into flow 2 (Agent Orchestration).
-
-Full explanation and plug points: [Inside a Live Conversation](https://kaltura.github.io/intelligent-agents-sdk/explanation/inside-a-live-conversation/).
+A live conversation also runs three flows at once: conversation control, agent orchestration and your own expertise. See [Inside a Live Conversation](https://kaltura.github.io/intelligent-agents-sdk/explanation/inside-a-live-conversation/).
 
 ---
 
 ## Backend Services Map
 
-| Service | Public host | Responsibility |
-|---|---|---|
-| management API | `api.avatar.us.kaltura.ai/v1` | Agents, avatars, catalog (incl. ElevenLabs voice cloning), `application/*` utilities. Routes follow a `<prefix>/<action>` convention (e.g. catalog prefix is `catalog-item`). |
-| scripted-video control API | `api.avatar.us.kaltura.ai/v1/avatar-session/*` | The **scripted-video** control API: `avatar-session/create` (KS) → `init-client` → `keep-alive` (10s) → `end`. A distinct service from the management API. Only the host/path prefix is shared. |
-| brain API | `genie.nvp1.ovp.kaltura.com` | The brain: `assistant/converse`, intellect CRUD, threads, messages, feedback, followups |
-| session server | `conversation.avatar.us.kaltura.ai` | Live-avatar control plane (Socket.IO): session orchestration, ASR signaling relay, brain output stream |
-| STV + media relay | the egress host in `appInit`'s `srsBaseUrl` | Video origin. Sends clients the talking face over **WHEP**. Details: [Wire Protocol · Audio Channels §6](/reference/wire-protocol/audio-channels/#6-stv-downlink-pc2--avatar-videoaudio--you). The SDK's `whepUrlHasPrivateIp()` guard checks every WHEP URL and throws `whep_private_ip` if it points at a private address, since a browser can't reach it. |
-| TURN | the `turnServerUrl` value returned by `appInit` | WebRTC relay for both media legs. Pass `turnServerUrl` and `turnCredentials` (`{username, credential, expiry?}`, also from `appInit`) to the session. URLs and ICE policy: [Wire Protocol · Audio Channels](/reference/wire-protocol/audio-channels/#5-asr-uplink-pc1--microphone--server). |
+The SDK talks to six endpoints. Each has an option that overrides it.
 
-The hosts above are the US (`nvp1`) defaults. The management, brain and OVP base URLs come from `REGIONS[region]` or an explicit `*Url` option ([Regions and base URLs](/reference/api/authentication/#regions-and-base-urls)). The session server, media relay and TURN hosts always come from `appInit`.
+| Connection | SDK option | Value comes from | What the SDK uses it for |
+|---|---|---|---|
+| Management API | `agenticUrl` | `REGIONS[region]` or the option | Agents, avatars, catalog, `application/*` utilities, scripted-video sessions (`avatar-session/*`) |
+| Conversation API | `genieUrl` | `REGIONS[region]` or the option | `assistant/converse`, intellect CRUD, threads, messages, feedback, followups. Also the direct POSTs a session sends itself: tool ACKs and the session-completed signal |
+| Kaltura OVP | `ovpUrl` | `REGIONS[region]` or the option | Media-plane calls such as categories and entries. `Management` sends the admin secret here |
+| Live-session socket | `conversationManagerUrl` | `appInit` | The Socket.IO control plane |
+| Avatar video | `srsBaseUrl` | `appInit` | WHEP video. The SDK builds the WHEP URL from it when `stvNewSession` has no `webrtc_url`. See [Wire Protocol · Audio Channels §6](/reference/wire-protocol/audio-channels/#6-stv-downlink-pc2-avatar-videoaudio--you) |
+| TURN | `turnServerUrl`, `turnCredentials` | `appInit` | WebRTC relay for both media legs. `turnCredentials` is `{username, credential, expiry?}`. See [Wire Protocol · Audio Channels §5](/reference/wire-protocol/audio-channels/#5-asr-uplink-pc1-microphone--server) |
+
+The scripted-video control API (`avatar-session/*`) is a separate API from the management API, reached through `agenticUrl`. Details: [Scripted-Video Sessions](https://github.com/kaltura/intelligent-agents-sdk/blob/main/docs/api/scripted-video.md).
+
+`REGIONS[region]` and the explicit `*Url` options are described in [Regions and base URLs](/reference/api/authentication/#regions-and-base-urls). The socket, video and TURN values always come from `appInit`.
+
+The SDK checks every WHEP URL with `whepUrlHasPrivateIp()`. A URL that points at a private address makes `connect()` throw `whep_private_ip`, because a browser can't reach it.
 
 ---
 
 ## Text Conversation Flow
 
-The simplest intelligent path: no video, fully headless. Client calls `POST https://genie.nvp1.ovp.kaltura.com/assistant/converse` with a conversation token (`geniegpcid:<configId>`) or an agent token (`agentid:<agentId>`). The response is an NDJSON (or SSE) stream of segments. The brain runs server-side. Segment `type` values and parsing rules are identical to the avatar's `agent_raw_text` stream (see the [events catalog](/reference/wire-protocol/events-catalog/)). Full endpoint details: [Backend API Reference](/reference/api-reference/).
+The simplest path: no video, fully headless. The client calls `POST {genieUrl}/assistant/converse` with a conversation token or an agent token ([token kinds](/reference/api/authentication/)). The response is an NDJSON (or SSE) stream of segments. Segment `type` values and parsing rules are the same as the avatar's `agent_raw_text` stream (see the [events catalog](/reference/wire-protocol/events-catalog/)). Endpoint details: [Backend API Reference](/reference/api-reference/).
 
 ---
 
-## Video Runtime Protocol — The Big Picture
+## Video Runtime Protocol: The Big Picture
 
 The live talking avatar: the full bidirectional protocol.
 
@@ -97,27 +88,27 @@ A full interactive agentic avatar is **three concurrent channels** over one Sock
 
 ```
                           ┌───────────────────────────────────────────────┐
-                          │   conversation.avatar.us.kaltura.ai           │
-                          │   (Socket.IO control plane + agent brain)     │
+                          │   conversationManagerUrl                      │
+                          │   (Socket.IO control plane)                   │
    ┌──────────┐  socket   │                                               │
    │          │◄─────────►│  • handshake / join / session                 │
-   │  YOUR    │           │  • agent_raw_text  (brain output, NDJSON)     │
+   │  YOUR    │           │  • agent_raw_text  (agent output, NDJSON)     │
    │  BROWSER │           │  • stvStartedTalking / stvFinishedTalking     │
    │  CLIENT  │           │  • ASR WebRTC signaling relay                 │
    │          │           └───────────────────────────────────────────────┘
    │          │  WebRTC (ASR, mic→server)   via socket-relayed SDP/ICE
-   │          │═════════════════════════════════════════►  speech-to-text + brain
+   │          │═════════════════════════════════════════►  speech-to-text
    │          │
    │          │  WebRTC (STV, server→video) via WHEP (HTTP SDP)
-   │  <video> │◄═════════════════════════════════════════  STV media relay (srsBaseUrl)
+   │  <video> │◄═════════════════════════════════════════  avatar video (srsBaseUrl)
    └──────────┘
 ```
 
 - **Control plane**: one Socket.IO connection. It carries the handshake, the agent's streaming text, talking state, and ASR signaling.
-- **ASR channel (uplink)**: a WebRTC peer connection that publishes your **microphone** to the server. SDP offer/answer and ICE are relayed **through the Socket.IO connection** (custom `asr-webrtc-*` events). The server runs speech-to-text, then feeds the brain.
+- **ASR channel (uplink)**: a WebRTC peer connection that publishes your **microphone**. SDP offer/answer and ICE are relayed **through the Socket.IO connection** (custom `asr-webrtc-*` events). Your speech comes back as the agent's reply.
 - **STV channel (downlink)**: a WebRTC peer connection that receives the **avatar video and audio**. It uses standard **WHEP** (plain SDP over HTTP), independent of the socket.
 
-The brain runs entirely server-side. The client never calls an LLM. It only publishes audio, receives video, and receives the brain's text as `agent_raw_text` deltas, in the same format as the `/assistant/converse` NDJSON.
+The client never calls an LLM. It only publishes audio, receives video, and receives the agent's text as `agent_raw_text` deltas, in the same format as the `/assistant/converse` NDJSON.
 
 > For the exact connect sequence, wire shapes, endpoints, and scaling model, see **[Architecture Reference](/reference/architecture-reference/)**.  
 >  
@@ -133,157 +124,19 @@ There are two session modes, and they are NOT interchangeable. Scripted sessions
 
 <div data-nova-target="two-runtime-sdk-paths-table" data-nova-label="Two session modes comparison">
 
-| | scripted-video client (`/v1/avatar-session`) | interactive avatar client (`conversation.avatar` socket) |
+| | scripted-video client (`/v1/avatar-session`) | interactive avatar client (`conversationManagerUrl` socket) |
 |---|---|---|
 | Avatar video (STV/WHEP) | ✅ | ✅ |
 | Mic / ASR uplink | ❌ | ✅ (`asr-webrtc-*`) |
-| Brain | ❌ (you supply every line of text) | ✅ (server-side, streams `agent_raw_text`) |
-| You call | `mgmt.avatarSessions.say()` (audio only, see below) | nothing: the user speaks, the brain answers |
+| Agent | ❌ (you supply every line of text) | ✅ (streams `agent_raw_text`) |
+| You call | `mgmt.avatarSessions.say()` (audio only, see below) | nothing: the user speaks, the agent answers |
 | Use for | **scripted / puppet** avatars (you drive the words) | **interactive agentic** avatars (autonomous conversation) |
 
 </div>
 
-The protocol above describes the **interactive** path. The scripted path has no text-in of its own: the SDK wraps only `say-audio`. You provide pre-rendered speech audio (for example, from your own TTS call) and its duration. Full auth/lifecycle details: [API-REFERENCE.md § Scripted-Video (STV-only) Sessions](https://github.com/kaltura/intelligent-agents-sdk/blob/main/docs/api/scripted-video.md).
+The protocol above describes the **interactive** path. The scripted path has no text-in of its own: the SDK wraps only `say-audio`. You provide pre-rendered speech audio (for example, from your own TTS call) and its duration. Full auth/lifecycle details: [Scripted-Video sessions](https://github.com/kaltura/intelligent-agents-sdk/blob/main/docs/api/scripted-video.md).
 
-### Audio-mode / phone-mode agents (partial support)
-
-An agent with no avatar attached (create it with `avatarIds` omitted) is an audio/phone-mode agent. `stvNewSession` replies with a "no STV session" status instead of a video session. The `clientConfiguration` carries `audioMode`/`phoneMode` flags (see [Wire Protocol · Client Configuration §7](/reference/wire-protocol/client-configuration/#clientconfiguration-fields-per-session-agent-config)). `KalturaAvatarSession` detects this and sets `session.mode = 'audio'`, which skips the STV video pipeline entirely.
-
-**This SDK does not implement the audio-mode WebRTC downlink** ([Wire Protocol · Audio Channels §5b](/reference/wire-protocol/audio-channels/#5b-audio-mode-webrtc-separate-from-the-asr-uplink)) that carries the agent's spoken audio when there's no STV session.
-
-So today, `mode:'audio'` is detected but not functional end to end. The mic uplink (ASR) still connects, but you won't receive the agent's spoken reply through this SDK. Audio/phone mode is not a supported feature of this SDK.
-
----
-
-## Displaying the Avatar Video
-
-### How the SDK splits video and audio
-
-The STV downlink carries two tracks: video and audio. Each track has its own `recvonly` transceiver, and each arrives in a separate `pc.ontrack` event.
-
-Each track arrives with its own `MediaStream`, so `e.streams[0]` is a *different* stream per event. The classic `videoEl.srcObject = e.streams[0]` pattern silently drops whichever track landed first. The SDK never does that.
-
-`src/experience/avatar-media.js` (internal; both `KalturaAvatarSession` and `KalturaScriptedVideoSession` own one) builds its own streams from the raw tracks:
-
-| Stream | Holds | Exposed as |
-|---|---|---|
-| canonical | every live downlink track (video + audio) | `session.avatarStream`: hand it to a `MediaRecorder`, a Web Audio graph, or a second element once |
-| video | video, plus audio when there is no `audioEl` | `cfg.videoEl.srcObject` |
-| audio | audio only (split mode) | `cfg.audioEl.srcObject` |
-
-### Split, merged, or headless
-
-You can bind the avatar stream to your UI in three ways:
-
-- **Split** (`videoEl` + `audioEl`, recommended): the picture goes to the video element, the voice to the audio element.
-- **Merged** (one `videoEl` only): the element plays both tracks. Fine when the app owns that element for the whole session.
-- **Headless** (no `videoEl`): nothing is bound. Consume `avatarStream` or the `'track'` event yourself.
-
-Split has one big advantage. Browsers pause a media element the moment it leaves the document. If your UI framework unmounts the `<video>` (a re-render, a route change, a conditional block), a merged element takes the voice down with the picture. A split `<audio>` kept on a stable node keeps the conversation audible until `setVideoEl(newEl)` restores the picture. Split also keeps sound when the video is a muted, off-screen texture source (chroma-key compositing) or part of a mixed multi-avatar layout.
-
-Each element gets exactly one `srcObject` write and one `play()` call per binding. The SDK applies no CSS.
-
-`setVideoEl(el)` and `setAudioEl(el)` rebind at runtime in any state. Pass `null` to unbind, or pass `null` to `setAudioEl` to merge audio back into `videoEl`.
-
-`disconnect()` stops every track and nulls each bound element's `srcObject`. The elements themselves belong to the app: the SDK never creates, moves, or removes them.
-
-### Recovery behavior
-
-Media recovery (an STV re-subscribe after a stall) swaps the new tracks *inside* the same three streams. The elements are never touched, so there's no second `srcObject` write. A compositor, recorder, or Web Audio graph attached to `avatarStream` or to the element keeps working across recovery.
-
-There is one exception: if the app replaced an element's `srcObject` itself, `attach()` binds it again. This means a self-hidden avatar comes back on recovery just as it did before.
-
-Firefox pauses a media element whose tracks all ended before the replacements arrived. After the swap, the SDK calls `resumePlayback()`, which retries `play()` only on elements that report `paused === true` (a no-op on Chromium and WebKit). A refusal there only logs at debug level. It never raises the `playback_blocked` warning.
-
-### Audio controls
-
-Audio controls act on whichever element carries the audio track (`audioEl` if set, else `videoEl`), and they follow it across rebinds:
-
-- `muteAudioOutput()` / `unmuteAudioOutput()`
-- `setAudioOutputVolume(0..1)`
-- `setAudioOutput(deviceId)`: wraps `setSinkId`. It resolves `false`, never throws, when the platform lacks it or no element is bound yet. The device id is stored and applied to the next element bound.
-- `startPlayback()`: retries `play()` on every bound element from a user gesture, after a `playback_blocked` warning. It resolves `true` once all of them are playing.
-
-Chromium only decodes a remote audio track while some media element plays it. A headless app that mixes `avatarStream` through Web Audio on Chromium must keep a muted `<audio>` bound to the track: `el.muted = true; el.srcObject = new MediaStream(session.avatarStream.getAudioTracks()); el.play()`. Firefox and WebKit decode without one.
-
-### Sizing the video box
-
-The backend's rendered aspect ratio is not a published contract (see [Upload a Custom Visual](/reference/api/design/#upload-a-custom-visual-portrait--animated-avatar) on `catalog.createVisual` preprocessing). So size the box with `object-fit: cover` rather than assuming a fixed aspect ratio. It fills the box and crops evenly, no matter what the stream's actual aspect ratio turns out to be:
-
-```css
-.avatar-box {
-  width: 320px;
-  aspect-ratio: 1 / 1;      /* pick whatever the fixed side of YOUR layout needs */
-  overflow: hidden;
-  border-radius: 12px;      /* optional */
-}
-.avatar-box video {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;        /* fills the box, crops evenly, no letterbox/pillarbox bars */
-}
-```
-
-For a circular picture-in-picture mask, swap `border-radius` + `overflow: hidden` for `clip-path: circle(50%)` on `.avatar-box` (or directly on the `<video>`).
-
-`object-fit: cover` never shows bars, regardless of the source's actual aspect ratio. That's why it's the right default, even without a published backend resolution to size against.
-
-### Headless and custom rendering
-
-Omit `videoEl` entirely for a headless or custom-render integration (canvas, WebGL, a circular-mask renderer). Both `KalturaAvatarSession` and `KalturaScriptedVideoSession` fire a `'track'` event (`{track, streams}`) the moment their STV peer's `ontrack` fires, whether or not `videoEl` is configured. `avatarStream` holds every live track in one stream that stays stable across recovery.
-
-Calling `disconnect()` from inside a `'track'` listener is safe. The SDK defers the peer's `close()` to the next macrotask, because Chromium hangs the renderer when a peer connection is closed from within its own `ontrack` dispatch.
-
-For a dynamic crop/`object-position` instead of generic `object-fit: cover`, both classes also fire `'videoMetadata'` (`{videoWidth, videoHeight}`) once per connect, as soon as the decoder resolves the stream's actual dimensions. There's no fixed or published output resolution to hardcode against. This event is the source of truth.
-
-### Loading UI: `streamReady` vs `mediaReady`
-
-**For `KalturaAvatarSession` only: don't hide a loading UI on `'streamReady'`.** Despite the name, it fires at the initial signaling handshake (`connect()` step 1), before any video track exists. There can be a real gap of a second or more between it and actual video.
-
-Listen for `'mediaReady'` instead. It fires once per connect, unconditionally, in one of three shapes:
-
-- `{mode:'video', videoWidth, videoHeight}` when the first video frame is painted, with the real size. Without a `videoEl` there is no frame to wait for: it fires after a short settle with `0` for both. `connect()` resolves at the same moment.
-- `{mode:'video', videoWidth:0, videoHeight:0, degraded:true}` when no frame arrived within `timeouts.firstFrame` (default 6 s, counted from the moment the answer is applied). The SDK re-subscribes once first. If that also fails, it emits warning `media_no_video` and `connect()` still resolves, so the conversation continues with audio. A peer whose ICE never connected is different: `connect()` rejects with `ice_failed` ([ICE diagnostics](/reference/architecture-reference/resilience-and-failure-handling/#ice-diagnostics)).
-- `{mode:'audio'}` immediately, if the session falls back to audio-only.
-
-So a loading spinner has one deterministic event to hide on, in either mode, with no fallback timeout to guess.
-
-`KalturaScriptedVideoSession` has no signaling handshake and emits neither event.
-
-### Compositing a transparent-background avatar (chroma key)
-
-The rendered avatar stream is opaque. There's no alpha channel or published green/blue-screen backdrop to key against as a platform guarantee.
-
-If your layout needs the avatar composited over arbitrary page content (not a fixed rectangle), key it live yourself. Use a compositor shaped like `chroma-key-video` (bring your own), through `./experience/chroma-key`'s `attachChromaKeyAvatar()`:
-
-```js
-import { KalturaAvatarSession } from '@kaltura/intelligent-agents/experience';
-import { attachChromaKeyAvatar } from '@kaltura/intelligent-agents/experience/chroma-key';
-// Your dependency, not the SDK's. There is no npm package for chroma-key-video.
-// Load it by bundling https://github.com/kaltura/chroma-key-video locally, or
-// straight from jsDelivr's GitHub-CDN mode, pinned to a released tag:
-import { ChromaKeyVideo } from 'https://cdn.jsdelivr.net/gh/kaltura/chroma-key-video@v1.2.0/src/chromakey.js';
-
-// The keyed source <video> is muted and off-screen, so give the voice its own element:
-const videoEl = document.createElement('video');
-const audioEl = document.querySelector('audio');
-// token: short-lived conversation token from your backend
-const session = new KalturaAvatarSession({ token, videoEl, audioEl });
-const player = attachChromaKeyAvatar({
-  session, videoEl: session.videoEl, ChromaKeyVideo,
-  options: { autoTune: true },
-  container: document.getElementById('composited'),
-});
-await session.connect();
-```
-
-This follows the same pattern as `object-fit: cover` above, but one layer earlier. `attachChromaKeyAvatar()` constructs the injected `ChromaKeyVideo` class against the session's own video element (`session.videoEl`), not a second reference.
-
-It keeps its lifecycle in lockstep with the session's. `player.destroy()` fires automatically on the session's `'ended'` event, a fatal `'error'`, or the session's own `disconnect()`/`stop()` (its documented human-in-the-loop kill switch, for example a "leave call" button). So `session.disconnect()` alone is enough teardown.
-
-It never reimplements chroma-keying, matting, or WebGL context-loss recovery itself, and it returns the constructed player instance unwrapped. Listen on `player` directly for its own events, never on `session`.
-
-The full behavior contract, the misuse guard, and the `videoEl` source element together show the SDK's zero-dependency rule in miniature. See [README.md § `./experience/chroma-key`](https://github.com/kaltura/intelligent-agents-sdk/blob/main/README.md#experiencechroma-key) for the details.
+Agents with no avatar run in audio/phone mode, which this SDK does not support end to end. See [Wire Protocol · Audio Channels §5b](/reference/wire-protocol/audio-channels/#5b-audio-mode-webrtc-separate-from-the-asr-uplink).
 
 ---
 
@@ -294,17 +147,17 @@ The full behavior contract, the misuse guard, and the `videoEl` source element t
 | `./management` | `Management` | Server | The admin secret. It mints the tokens below. |
 | `./experience` | `KalturaAvatarSession` | Browser | A short-lived, non-admin conversation KS from `application.appInit` |
 
-`Management` checks the token kind before any network call. It reads the kind a minted `Token` records (`admin`, `conversation`, `agent`, `widget`). A raw encrypted KS string cannot be inspected client-side, so the server decides. `KalturaAvatarSession` is the live socket and WHEP runtime described in "Video Runtime Protocol" above. Socket.IO is injected into it, never bundled. Entry points, modules and how-tos: [README.md § Architecture](https://github.com/kaltura/intelligent-agents-sdk/blob/main/README.md#architecture).
+`Management` checks the token kind before any network call whenever the kind is known client-side. A minted `Token` records its kind (`admin`, `conversation`, `agent`, `widget`). A raw encrypted KS string can't be inspected, so `Management` sends the call without that check. `KalturaAvatarSession` is the live socket and WHEP runtime described in "Video Runtime Protocol" above. Socket.IO is injected into it, never bundled. Entry points, modules and how-tos: [README.md § Architecture](https://github.com/kaltura/intelligent-agents-sdk/blob/main/README.md#architecture).
 
 ---
 
-## Resilience & Failure Handling — Overview
+## Resilience & Failure Handling: Overview
 
 How the system behaves under network failures, disconnects, and device problems. `KalturaAvatarSession` recovers in three layers: the control socket (Socket.IO reconnect, then a cold reconnect if state was lost), the WebRTC media peers (ICE restart for ASR, WHEP re-subscribe for STV), and a cold reconnect of the whole session as the last step (two attempts). A health watchdog catches peers that die without an ICE event, and closing the tab releases the server side. A custom client that skips `KalturaAvatarSession` must implement these itself.
 
 Recovery layers, the failure-mode matrix, device-permission handling and the tool-call spiral breaker: **[Resilience & Failure Handling](/reference/architecture-reference/resilience-and-failure-handling/#resilience--failure-handling)**.
 
-A conversation ending cleanly is a separate concern from recovering from failure. On tab-close, backgrounding, bfcache freeze, or an explicit `disconnect()`, the SDK tells the backend the thread is genuinely over (`POST /thread/session_completed`). End-of-conversation lifecycle rules fire right away.
+A conversation ending cleanly is a separate concern from recovering from failure. On tab-close, backgrounding, bfcache freeze, or an explicit `disconnect()`, the SDK sends `POST /thread/session_completed` to mark the thread as over.
 
 App-facing config and the trigger table: [README.md § Ending a conversation cleanly](https://github.com/kaltura/intelligent-agents-sdk/blob/main/README.md#ending-a-conversation-cleanly-session_completed-signal).
 

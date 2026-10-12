@@ -25,7 +25,7 @@ That's it. You do **not** need to install anything from Kaltura.
 
 ---
 
-## Step 1 — Get your credentials (~1 minute)
+## Step 1: Get your credentials (~1 minute)
 
 Your Partner ID and Admin Secret are your keys to the system.
 
@@ -37,7 +37,7 @@ Your Partner ID and Admin Secret are your keys to the system.
 
 ---
 
-## Step 2 — Set up the project (~1 minute)
+## Step 2: Set up the project (~1 minute)
 
 Clone the repository and install the quickstart's dependencies:
 
@@ -64,9 +64,9 @@ export AGENTIC_ADMIN_SECRET=your_admin_secret_here
 
 ---
 
-## Step 3 — Create your own agent from scratch (1–3 minutes)
+## Step 3: Create your own agent from scratch (1–3 minutes)
 
-This one command builds a brand-new agent (brain, face, voice, and all) from a plain-English description:
+This one command builds a brand-new agent (intellect, face, voice, and all) from a plain-English description:
 
 ```bash
 node create-agent.mjs "A friendly yoga studio receptionist who helps people book classes and answers questions about memberships"
@@ -78,7 +78,7 @@ It prints three status lines (`[1/3]` to `[3/3]`) and a heads-up before the slow
 
 ---
 
-## Step 4 — Talk to your agent again (~30 seconds)
+## Step 4: Talk to your agent again (~30 seconds)
 
 `create-agent.mjs` already sent one smoke-test message for you. To send more, use the SDK's headless `converseOnce()` directly. Save this as a small script (or adapt `quickstart/create-agent.mjs`):
 
@@ -160,18 +160,4 @@ You now know how to create an agent and talk to it. Here's where to go for more:
 **How do I label the agents I create so I can find mine later?** Tag the **agent** (not the avatar) via `adminTags` on `agents.create()`, then filter with `agents.list(admin.ks, { filter: { adminTagsIn: ['<tag>'] } })`. Details under [Create an Agent](/reference/api/build/avatar-and-agent/#create-an-agent).
 
 **Can I use my own face or voice?** Yes, both. See [Catalog & Assets](/reference/api/design/#upload-a-custom-visual-portrait--animated-avatar) (visual) and [→ Custom Voice](/reference/api/design/#upload-a-custom-voice-clone).
-
----
-
-## Appendix — Verify your checkout offline (~2 minutes)
-
-You don't need a Kaltura account to confirm the SDK runs correctly on your machine. Run it offline, no network, no secrets, using the same fakes the test suite is built on.
-
-```bash
-git clone https://github.com/kaltura/intelligent-agents-sdk.git
-cd intelligent-agents-sdk
-npm test
-```
-
-That runs the full suite (unit + integration + e2e + evals) against `test/fakes/fetch.js`, `test/fakes/socket.js`, and `test/fakes/rtc.js`. These are deterministic stand-ins for the real HTTP/socket/WebRTC backends. It takes a few minutes.
 

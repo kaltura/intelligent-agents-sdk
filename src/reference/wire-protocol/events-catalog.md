@@ -10,13 +10,13 @@ eyebrow: Reference
 [← Back to Wire Protocol](/reference/wire-protocol/)
 
 
-Direction: `→` the client emits, `←` the server emits. This catalog covers the events `KalturaAvatarSession` sends and handles. The [golden fixture](https://github.com/kaltura/intelligent-agents-sdk/blob/main/test/fixtures/golden-session.json) holds one real capture.
+Direction: `→` the client emits, `←` the server emits. This catalog lists the events `KalturaAvatarSession` sends and receives. A row says so when the SDK has no handler for an event. The [golden fixture](https://github.com/kaltura/intelligent-agents-sdk/blob/main/test/fixtures/golden-session.json) holds one real capture.
 
 ### 4a. Client → Server (emit)
 
 | Event | Payload | Meaning |
 |---|---|---|
-| `join` | `{ room, channel, kaltura:{ ks, entryId?, contextId?, contextType?, threadId?, request_vars?, force_experience:"avatar_only", capabilities:{ avatar:"on", generate_followup_questions:"on", … } }, userAgent, userAgentHints, isMobile, channel_password:null, peer_name:"unknown", peer_video:false, peer_audio:true, client? }` | Join the room. Carries the agent config. `channel` identifies the room. `entryId`, `contextId` and `contextType` come from the `KalturaAvatarSession` constructor options of the same names. `force_experience` is always `avatar_only` ([§7](/reference/wire-protocol/client-configuration/#structured-experiences-force_experience--unisphere-tool)). Full field list: [Architecture Reference · Connection and Handshake § The `join` payload](/reference/architecture-reference/connection-and-handshake/#the-join-payload-step-2-carries-the-agentbrain-config). |
+| `join` | `{ room, channel, kaltura:{ ks, entryId?, contextId?, contextType?, threadId?, request_vars?, force_experience:"avatar_only", capabilities:{ avatar:"on", generate_followup_questions:"on", … } }, userAgent, userAgentHints, isMobile, channel_password:null, peer_name:"unknown", peer_video:false, peer_audio:true, client? }` | Join the room. Carries the agent config. `channel` identifies the room. `entryId`, `contextId` and `contextType` come from the `KalturaAvatarSession` constructor options of the same names. `force_experience` is always `avatar_only` ([§7](/reference/wire-protocol/client-configuration/#structured-experiences-force_experience--unisphere-tool)). Full field list: [Architecture Reference · Connection and Handshake § The `join` payload](/reference/architecture-reference/connection-and-handshake/#the-join-payload-step-2-carries-the-agent-config). |
 | `stvNewSession` | `{ room_id }` | Ask for the avatar video (STV) session. The SDK never sends `cast_mode`. |
 | `checkAvailability` | `{}` | Capacity query. The reply is `availabilityResult`. The SDK sends it in parallel with `stvNewSession` during `connect()`, from `waitForCapacity()`, and from `keepAlive()`. |
 | `asr-webrtc-init` | `{ sessionId }` (the client's socket id) | Start ASR signaling for the mic uplink. |
@@ -42,7 +42,7 @@ Direction: `→` the client emits, `←` the server emits. This catalog covers t
 
 For the app-level decision of when to use this mode and how to design its UI, see [Voice Input Modes](/guides/voice-input-modes/).
 
-### 4b. Server → Client (on) — handshake/session phase
+### 4b. Server → Client (on): handshake/session phase
 
 | Event | Payload | Meaning |
 |---|---|---|
@@ -58,22 +58,22 @@ For the app-level decision of when to use this mode and how to design its UI, se
 | `throwToBadRequest` / `removePeer` | `{}` | Fatal disconnect reasons. `KalturaError` `code:'bad_request'` (`status:400`) / `code:'peer_removed'` (`status:401`). |
 | `availabilityResult` | `{ available, details? }` (or `{ error, available:false }`) | Reply to `checkAvailability`. The socket stays open. The SDK re-emits it as `capacityChanged { available, details }`. During `connect()`, an `available:false` reply schedules the next poll on the backoff `[30,45,60,90,120,180,240,300,360]s` (±15% jitter). |
 
-### 4c. Server → Client (on) — ASR signaling (relayed over the socket)
+### 4c. Server → Client (on): ASR signaling (relayed over the socket)
 
 | Event | Payload | Meaning |
 |---|---|---|
 | `asr-webrtc-ready` | `{}` | ASR signaling is ready. Send the offer. |
 | `asr-webrtc-answer` | `{ answer:{type:"answer", sdp} }` | SDP answer for the mic uplink. |
 | `asr-ice-candidate` | `{ uid, type:"ice_candidate", candidate, sdpMLineIndex }` | A remote ICE candidate for the ASR peer. The SDK passes it to `addIceCandidate`. |
-| `asr-webrtc-error` | `{ error? }` | ASR signaling error. |
+| `asr-webrtc-error` | `{ error? }` | ASR signaling error. The SDK has no handler for it. |
 
-### 4d. Server → Client (on) — conversation phase
+### 4d. Server → Client (on): conversation phase
 
-These fire once `approvedPermissions` is sent. Many payloads carry a `speechId`, the per-utterance identifier ([§4f](#4f-speechid--the-per-utterance-key-and-the-barge-in-mechanism)).
+These fire once `approvedPermissions` is sent. Many payloads carry a `speechId`, the per-utterance identifier ([§4f](#4f-speechid-the-per-utterance-key-and-the-barge-in-mechanism)).
 
 | Event | Payload | Meaning |
 |---|---|---|
-| `agent_raw_text` | `{ speechId, turnId, delta:"<JSON string>" }` | The agent's streaming output. `delta` is a JSON string. Parse it ([§4e](#4e-agent_raw_textdelta--the-brain-stream-parsed)). |
+| `agent_raw_text` | `{ speechId, turnId, delta:"<JSON string>" }` | The agent's streaming output. `delta` is a JSON string. Parse it ([§4e](#4e-agent_raw_textdelta-the-agent-stream-parsed)). |
 | `agent_start_speech` | `{ speechId, turnId, isNewTurn }` | A new speech segment begins. `isNewTurn` is `false` when new ASR or typed text continues the turn in flight (a correction or extension of what the user just said), and `true` for a fresh turn. The SDK only reads this field. |
 | `agent_end_turn` | `{ speechId, turnId }` | The agent's turn is complete. |
 | `generatingSpeech` | `{ text, speechId }` | **Clean sentence text** the avatar will speak, with authoritative word spacing. Arrives before audio. |
@@ -84,7 +84,7 @@ These fire once `approvedPermissions` is sent. Many payloads carry a `speechId`,
 | `agentTurnToTalk` | `{ userTranscription? }` | The user's turn finished and the agent takes over. `userTranscription` is present only when the turn came from user speech. |
 | `agentInterrupted` | `{}` | Barge-in. The user spoke, or sent the `onTextEntered { isSpeechStart:true }` marker, and cut the avatar off mid-sentence. |
 | `userStartedTalking` | `{}` | The user started speaking. Fires without debug mode. |
-| `hideTapToTalkButton` / `showTapToTalkButton` | `{}` | UI hint: hide or show the tap-to-talk affordance for this agent config. The SDK does not act on them. |
+| `hideTapToTalkButton` / `showTapToTalkButton` | `{}` | UI hint: hide or show the tap-to-talk affordance for this agent config. The SDK has no handler for them. |
 | `conversationTimeWarning` | `{ remainingTime }` (seconds) | Time-limit warning. The SDK emits `timeWarning`. |
 | `conversationTimeExpired` | `{}` | The session time expired. Sent right before `conversationEnded`. The SDK emits `timeExpired`. |
 | `conversationEnded` | `{}` | The conversation ended. The SDK emits `ended` and disconnects. |
@@ -99,9 +99,9 @@ These fire once `approvedPermissions` is sent. Many payloads carry a `speechId`,
 | `debug_stvTaskGenerated` | `{ text, speechId, duration }` | Raw text chunks before audio. Diagnostic. |
 | `debug_conversationStateChange` | `{ state, preparingAnswerState }` | Turn-state diagnostic. Treat the values as opaque strings. |
 
-The four `debug_*` events arrive because the SDK connects with `debugMode: true` ([§2](/reference/wire-protocol/connection-basics/#2-socketio-connection)). The SDK's captions and transcripts do not read them.
+The four `debug_*` events arrive because the SDK connects with `debugMode: true` ([§2](/reference/wire-protocol/connection-basics/#2-socketio-connection)). The SDK has no handler for them. Its captions and transcripts do not read them.
 
-### 4e. `agent_raw_text.delta` — the brain stream (parsed)
+### 4e. `agent_raw_text.delta`: the agent stream (parsed)
 
 `delta` is a JSON string. Parsed shape:
 
@@ -127,7 +127,7 @@ The set of `type` values is open-ended. Ignore types you don't handle.
 | `share` | `{canShare:bool}`. `segmentStart` and `segmentEnd` together mean the message is complete. |
 | `thread` | For example an auto-title. |
 
-On the avatar socket, the SDK resolves a `unisphere-tool` segment to its `metadata.runtimeName` without the `-tool` suffix, so runtime clients work with the normalized name. Every segment type is delivered. The avatar session joins with `force_experience: 'avatar_only'`, so the spoken content arrives mainly as `avatar` and `avatar-filler` segments, and `think`, `tool`, `unisphere-tool`, `share`, `thread` and `error` stream alongside for the transcript and UI. The `avatar-filler` phrasing can't be reliably steered with `base_directive`. See the `avatar_filler` note in [GenUI · Authoring and Consuming Widgets](/reference/genui/authoring-and-consuming/#authoring--which-capability-turns-each-widget-on).
+On the avatar socket, the SDK resolves a `unisphere-tool` segment to its `metadata.runtimeName` without the `-tool` suffix, so runtime clients work with the normalized name. Every segment type is delivered. The avatar session joins with `force_experience: 'avatar_only'`, so the spoken content arrives mainly as `avatar` and `avatar-filler` segments, and `think`, `tool`, `unisphere-tool`, `share`, `thread` and `error` stream alongside for the transcript and UI. The `avatar-filler` phrasing can't be reliably steered with `base_directive`. See the `avatar_filler` note in [GenUI · Authoring and Consuming Widgets](/reference/genui/authoring-and-consuming/#authoring-which-capability-turns-each-widget-on).
 
 #### Three kinds of `tool` segments
 
@@ -137,7 +137,7 @@ On the avatar socket, the SDK resolves a `unisphere-tool` segment to its `metada
 | External web search | Only when `isWebSearchEnabled` is on | When off, the agent may *narrate* a search but emits **no** `tool` segment. |
 | Partner-configured tool (`tool_ids`) | The client-side-command channel | A `tool` segment is not spoken, so its name and args ride silently for the host app to act on (`navigate_to_slide`, `call_page_function`, realtime content). |
 
-Parse a tool call with `parseToolCall(seg)`, `session.onToolCall(name)`, or `collectConverse().toolCalls`. Author the tool with `tools.client(...)`. See [External API Integrations § Don't skip `kaltura_genie_experiences: 'off'`](/guides/external-api-integrations/#dont-skip-kaltura_genie_experiences-off) for why a command-driven intellect (the agent's brain configuration: its prompts, tools, and capabilities) must turn that capability off, and only at creation time.
+Parse a tool call with `parseToolCall(seg)`, `session.onToolCall(name)`, or `collectConverse().toolCalls`. Author the tool with `tools.client(...)`. See [External API Integrations § Don't skip `kaltura_genie_experiences: 'off'`](/guides/external-api-integrations/#dont-skip-kaltura_genie_experiences-off) for why a command-driven intellect (the agent's configuration: its prompts, tools and capabilities) must turn that capability off, and only at creation time.
 
 #### Fused multi-tool `tool` segments
 
@@ -173,19 +173,13 @@ const oauth = parseOAuthRequired(seg);
 // { authUrl: "https://…/authorize?…", toolName: "jira_search", toolDisplayName: "Jira" } | null
 ```
 
-Or register a handler on the session. `session.onOAuthRequired(handler)` exists on `KalturaAvatarSession`, `KalturaChatSession`, and the mode-switching `KalturaAgentSession` facade (same signature on all three, re-registered automatically on a mode switch):
+Or register a handler with `session.onOAuthRequired(handler)`. It exists on `KalturaAvatarSession`, `KalturaChatSession` and the `KalturaAgentSession` facade, with one signature, and survives a mode switch. A code sample is in [MCP Integrations § OAuth-gated servers](/guides/mcp-integrations/#oauth-gated-servers).
 
-```js
-const unsubscribe = session.onOAuthRequired(({ authUrl, toolName, toolDisplayName }) => {
-  // send the end user to authUrl to complete the OAuth consent flow
-});
-```
+Unlike `onToolCall(name, handler)`, `onOAuthRequired` takes no `name`: there is one OAuth event shape, not one per tool. Each handler runs isolated (a throw in one doesn't block the others) and fires once per distinct `authUrl` per turn. The session also re-emits a plain `oauthRequired` event, and an `oauthRequiredResult` event carrying each handler's return value. Headless callers get the same data from `collectConverse().oauthRequired`, an array in arrival order.
 
-Unlike `onToolCall(name, handler)`, `onOAuthRequired` takes no `name`: there is one OAuth event shape, not one per tool. Each handler runs isolated (a throw in one doesn't block the others) and fires once per distinct `authUrl` per turn. The session also re-emits a plain `oauthRequired` event, and an `oauthRequiredResult` event carrying each handler's return value, for callers who prefer `.on(...)`. Headless callers get the same data from `collectConverse().oauthRequired`, an array in arrival order.
+To show the link, build a [`show-link` GenUI widget](/reference/genui/widgets/#6-show-link-rendershowlink-links) card client-side (`{kind:'show-link', data:{url, label, description, safe}}`) from `authUrl` and `toolDisplayName`.
 
-**Rendering.** Feed the parsed `authUrl` and `toolDisplayName` into the [`show-link` GenUI widget](/reference/genui/widgets/#6-show-link-rendershowlink--links) shape (`{kind:'show-link', data:{url, label, description, safe}}`) for a "sign in to `<toolDisplayName>`" prompt. You build that card client-side from the `onOAuthRequired` result.
-
-#### The `wait_for_response` ACK — one wire contract, two transports
+#### The `wait_for_response` ACK: one wire contract, two transports
 
 A `tools.client` tool built with `waitForResponse:true` blocks the agent's turn until the host app supplies a result. The wait lasts up to the tool's `timeout` seconds (default 30). The ACK is **not a socket event**. On both transports it is the same plain HTTPS POST, authorized by the session's own conversation KS. The agent speaks the acked value in the *same* turn:
 
@@ -213,15 +207,15 @@ Authorization: KS <conversation ks>
 
 It throws `invalid_state` when the session is not connected, on a network failure, and `bad_request` for an empty `id` or a `response` that is not a plain object. See [Client-Side Commands](/guides/client-commands/) for the app-level contract (`onToolCall` → `respondToTool`).
 
-> `init_response` is a WebSocket-only event. It arrives as the `delta` of the first `agent_raw_text` event (carrying `openingPhrase`, `threadId` and `messageId`). It never appears in an `/assistant/converse` HTTP stream. `openingPhrase` is the intellect's `opening_phrase`, rendered for this session (Jinja2 over `request_vars` and `sys__*`). With a silent opening phrase (`SILENT_OPENING`) the opening turn still fires `stvStartedTalking` and `stvFinishedTalking` (about 0.5 s apart) but no audible speech, and the SDK surfaces that turn as `SILENT_OPENING_LABEL` (`[silence]`) on `transcript`, `speechChunk` and `avatarStopTalking`. A configured `kickoff` is sent on that `stvFinishedTalking`, and its first `think` delta fires `responsePending`. See [Start the Conversation](/guides/start-the-conversation/).
+> `init_response` is a WebSocket-only event. It arrives as the `delta` of the first `agent_raw_text` event (carrying `openingPhrase`, `threadId` and `messageId`). It never appears in an `/assistant/converse` HTTP stream. `openingPhrase` is the intellect's `opening_phrase`, rendered for this session (a template over `request_vars` and `sys__*`). With a silent opening phrase (`SILENT_OPENING`) the opening turn still fires `stvStartedTalking` and `stvFinishedTalking` (about 0.5 s apart) but no audible speech, and the SDK surfaces that turn as `SILENT_OPENING_LABEL` (`[silence]`) on `transcript`, `speechChunk` and `avatarStopTalking`. A configured `kickoff` is sent on that `stvFinishedTalking`, and its first `think` delta fires `responsePending`. See [Start the Conversation](/guides/start-the-conversation/).
 
 > **Stored-only message types.** Two message types never stream. They appear only when you read a thread back (`mgmt.messages` / `mgmt.threads`, and the thread `transcript` as `opening: ...`). `opening` is the rendered `opening_phrase`, the thread's first assistant message: `{ type: 'opening', content: [{ type: 'avatar', content: '<rendered phrase>', metadata: {} }] }`. `summary` is the rendered `avatar_summary_config` template, present after an avatar session ends: `{ type: 'summary', content: [{ type: 'text', content: '<rendered template>', metadata: {} }] }`.
 
-#### Session-completion signal — tell the backend a conversation is truly over
+#### Session-completion signal: tell the backend a conversation is truly over
 
 The request shape and auth are in [Conversation & Analytics § Session-Completion Signal](/reference/api/operate/#session-completion-signal). The response has no payload to parse. Triggers and config: [README.md § Ending a conversation cleanly](https://github.com/kaltura/intelligent-agents-sdk/blob/main/README.md#ending-a-conversation-cleanly-session_completed-signal).
 
-### 4f. `speechId` — the per-utterance key (and the barge-in mechanism)
+### 4f. `speechId`: the per-utterance key (and the barge-in mechanism)
 
 `speechId` appears on `agent_raw_text`, `agent_start_speech`, `agent_end_turn`, `generatingSpeech`, `stvSpeechChunk`, `debug_stvTaskGenerated` and `stvFinishedGenerating`. It identifies one agent utterance. Group a turn's events by `speechId`, never by timestamp, because barge-ins interleave turns.
 

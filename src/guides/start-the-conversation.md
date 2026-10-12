@@ -11,7 +11,7 @@ The intellect's `opening_phrase` owns the first turn of every avatar join. There
 
 | You want | Use |
 |---|---|
-| Sound as soon as possible, a large prompt or knowledge base, a first line you can write in advance | A scripted Jinja2 opening ([§ Personalize the opening](#personalize-the-opening)) |
+| Sound as soon as possible, a large prompt or knowledge base, a first line you can write in advance | A scripted template opening ([§ Personalize the opening](#personalize-the-opening)) |
 | A greeting the model writes, that the user can interrupt and that can call tools | `SILENT_OPENING` + `kickoff` ([§ The `kickoff` option](#the-kickoff-option)) |
 
 ```js
@@ -38,7 +38,7 @@ Attach your `session.on(...)` listeners before `connect()`. Some events fire bef
 
 Medians in live runs, measured from the moment `connect()` resolves (headless Chromium, production):
 
-| | Scripted Jinja2 opening | `SILENT_OPENING` + `kickoff` |
+| | Scripted template opening | `SILENT_OPENING` + `kickoff` |
 |---|---|---|
 | First words (first `speechChunk`) | about 0.2 s | about 1 s |
 | First sound heard | about 0.7 s | about 1.6 s |
@@ -54,8 +54,6 @@ Trade-offs:
 - A scripted opening makes sound about 0.9 s sooner. But the user cannot interrupt it, and a `kickoff` or a typed `speak()` waits until the whole line has been spoken. Keep it to one or two short sentences.
 - `SILENT_OPENING` + `kickoff` starts later, but the first reply is an ordinary model turn: it follows your whole prompt, can use tools, and stops the moment the user talks.
 - Do not combine a spoken scripted line with a `kickoff`. The user hears the line, then waits for the kickoff reply. For a preset question, use [§ Open with a preset question](#open-with-a-preset-question).
-
-Measure both on your own partner with `npm run live-verify:connect-timing:compare`. To pad each arm's prompt with N KB of neutral text, add `-- --prompt-kb N`, for example `npm run live-verify:connect-timing:compare -- --prompt-kb 25`.
 
 ## Where the opening phrase lives
 
@@ -78,7 +76,7 @@ await kaltura.avatars.update({ id: avatarId, openingPhrase: null }, ks);   // vo
 
 ## Personalize the opening
 
-`opening_phrase` is a Jinja2 template. The server renders it on every avatar join, before the first turn, so the same intellect can greet every visitor differently:
+`opening_phrase` is a template. Write `{{ name }}` to insert a variable and `{% if name %}...{% else %}...{% endif %}` for conditions. It is rendered on every avatar join, before the first turn, so the same intellect can greet every visitor differently:
 
 ```js
 await kaltura.intellectConfig.setOpeningPhrase(
@@ -105,9 +103,7 @@ Rules:
 4. **A request variable stays set on the thread**, also on later joins. To turn a flag off, see [Dynamic Data Injection § The context channel](/guides/dynamic-data-injection/#the-context-channel-request-variables).
 5. **Text chat has no opening turn.** In chat, send the greeting or preset question as the `kickoff` or as the first message.
 
-The rendered text reaches the browser as the opening `speechChunk` / `transcript` events and is stored on the thread as an `opening` message. A `<blank>` branch never surfaces as `<blank>`. An opening event that carries text shows `SILENT_OPENING_LABEL` (`[silence]`) instead.
-
-`scripts/live-verify-opening-phrase.mjs` is the CI-verified example of this path: it provisions a throwaway agent, sets `{% if %}` templates, and asserts the spoken opening with and without `requestVars`, the preset-question branch, and a re-join of the same thread. `test/integration/intellect-config.test.js` and `test/integration/avatars-catalog.test.js` cover the same calls without a live backend.
+The rendered text reaches the browser as the opening `speechChunk` / `transcript` events. A `<blank>` branch never surfaces as `<blank>`. An opening event that carries text shows `SILENT_OPENING_LABEL` (`[silence]`) instead.
 
 ### Open with a preset question
 
@@ -171,20 +167,20 @@ Keep it short. A long kickoff delays the first words, because the model reads it
 
 ## What happens on the wire
 
-Event order for an avatar session with `SILENT_OPENING` and a `kickoff`, with typical timings from live headless-browser runs against a fake mic (`npm run live-verify:connect-timing`):
+Event order for an avatar session with `SILENT_OPENING` and a `kickoff`, with typical timings from live headless-browser runs against a fake mic:
 
-| Step | What you observe | Typical time |
-|---|---|---|
-| 1 | `connect()` starts. The mic prompt, the socket handshake and the media negotiation run alongside each other. | 0 |
-| 2 | `connect()` resolves, `state === 'connected'`. The silent opening turn is already committed. The first video frame and the first audio are normally presented a little before this. | 1.5 to 2.2 s |
-| 3 | `avatarStartTalking`, then one `transcript`/`speechChunk` and `avatarStopTalking`, all with `text: '[silence]'` (`SILENT_OPENING_LABEL`) for the opening turn. | ends about 0.3 s after step 2 |
-| 4 | The SDK sends the kickoff. `session.kickoff.sent` becomes `true`. | same tick as step 3 |
-| 5 | `responsePending` fires when the server acknowledges the turn (its first think delta). Show a "thinking" indicator here. | tens of ms after step 4 |
-| 6 | `speechChunk` / `transcript {type:'agent'}` / `avatarStartTalking` for the agent's first real words. `responseSettled` fires. | about 1 s after step 2 |
+| Step | What you observe |
+|---|---|
+| 1 | `connect()` starts. The mic prompt, the socket handshake and the media negotiation run alongside each other. |
+| 2 | `connect()` resolves, `state === 'connected'`. The silent opening turn is already committed. The first video frame and the first audio are normally presented a little before this. |
+| 3 | `avatarStartTalking`, then one `transcript`/`speechChunk` and `avatarStopTalking`, all with `text: '[silence]'` (`SILENT_OPENING_LABEL`) for the opening turn. |
+| 4 | The SDK sends the kickoff. `session.kickoff.sent` becomes `true`. |
+| 5 | `responsePending` fires when the server acknowledges the turn. Show a "thinking" indicator here. |
+| 6 | `speechChunk` / `transcript {type:'agent'}` / `avatarStartTalking` for the agent's first real words. `responseSettled` fires. |
+
+Step 3 ends about 0.3 s after step 2. The agent's first words come about 1 s after step 2.
 
 With a scripted opening, step 3 carries the rendered line instead of `[silence]`. Its first `speechChunk` arrives about 0.2 s after step 2, and the turn ends when the whole line has been spoken.
-
-These are tracked startup KPIs. `scripts/live-verify-connect-timing.mjs` checks the medians for `connect()`, first video frame, first audio, first words and sound heard against fixed budgets and fails when one is missed. `--compare jinja` runs the silent + kickoff path, a scripted opening and the preset-question pattern side by side, each with its own budgets. CI runs it on pull requests that touch its paths (not fork or Dependabot PRs, which get no secrets), in the merge queue, on manual dispatch, and on a nightly schedule. The budgets and how they were calibrated are in the script header. Run it yourself with `npm run live-verify:connect-timing`; `--browser` picks the engine and `--headed` shows the run.
 
 `avatarStartTalking` and `avatarStopTalking` still fire for the silent opening. They drive the hold described next, so an app that toggles a "speaking" indicator on them sees a brief flicker of under a second. The silent turn's `transcript`, `speechChunk` and `avatarStopTalking.text` all carry `SILENT_OPENING_LABEL` (`[silence]`), the same marker captions use for a silent stretch, so a transcript view can render it as-is or skip entries equal to the label. The raw phrase never reaches a listener.
 

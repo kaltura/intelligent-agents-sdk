@@ -10,7 +10,7 @@ eyebrow: Reference
 [← Back to Agent Components](/reference/api/build/)
 
 
-## Step 1 — Create a knowledge record
+## Step 1: Create a knowledge record
 
 ```
 POST https://genie.nvp1.ovp.kaltura.com/v1/knowledge/add
@@ -22,7 +22,7 @@ POST https://genie.nvp1.ovp.kaltura.com/v1/knowledge/add
 
 Returns `{ "id": 42, ... }`. Save the `id`.
 
-**Don't already know the id?** `mgmt.knowledge.list(ks, opts)` discovers a partner's existing records — pass `opts.filter.nameLike` to search by name. Use it to build a "pick an existing knowledge base" picker instead of hardcoding ids. A common flow is letting a user attach a knowledge base they created earlier to a brand-new agent.
+**Don't already know the id?** `mgmt.knowledge.list(ks, opts)` discovers a partner's existing records. Pass `opts.filter.nameLike` to search by name. Use it to build a "pick an existing knowledge base" picker instead of hardcoding ids. A common flow is letting a user attach a knowledge base they created earlier to a brand-new agent.
 
 This call is distinct from `knowledge.listCategoryEntries(categoryId, ks)`, which lists media *entries* inside one category, not Knowledge *record* containers.
 
@@ -31,7 +31,7 @@ const page = await mgmt.knowledge.list(ks, { pageSize: 20, filter: { nameLike: '
 page[0]; // { id: 42, name: 'Product Documentation', status: 'READY', config: { sources: [...] }, ... }
 ```
 
-## Step 2 — Link it to the intellect (at create or update)
+## Step 2: Link it to the intellect (at create or update)
 
 ```json
 {
@@ -41,15 +41,15 @@ page[0]; // { id: 42, name: 'Product Documentation', status: 'READY', config: { 
 }
 ```
 
-Writes through the intellect object: no `partner-config/update`, no 403. RAG retrieval works after async indexing.
+This is a normal intellect write. Retrieval works once indexing finishes.
 
-> **`knowledge_ids` is capped at one record**, despite the plural array shape — the server rejects more. The SDK's `intellectConfig.setKnowledgeIds()` enforces this client-side with a typed `bad_request` before any network call. To ground one agent in several content sources, upload them all into a single knowledge record.
+> **`knowledge_ids` is capped at one record**, despite the plural array shape. `intellectConfig.setKnowledgeIds()` throws a typed `bad_request` before any network call if you pass more. To ground one agent in several content sources, upload them all into a single knowledge record.
 
-## Step 3 — Upload content into a category
+## Step 3: Upload content into a category
 
-`knowledge.uploadDocument()` (SDK) or the Kaltura OVP media ingest APIs put the actual media entries into a media category. `knowledge.createCategory()` creates that category if you don't already have one. A category is just a container; on its own it's not connected to the knowledge record from Step 1.
+`knowledge.uploadDocument()` (SDK) or the Kaltura OVP media ingest APIs put the actual media entries into a media category. `knowledge.createCategory()` creates that category if you don't already have one. A category is only a container. It is not connected to the knowledge record from Step 1 until Step 4.
 
-## Step 4 — Point the record at that category
+## Step 4: Point the record at that category
 
 A source names which content modalities to embed via `indexers[]`. Build that array with `buildIndexerObjects()` instead of hand-assembling it:
 
@@ -65,7 +65,7 @@ await mgmt.knowledge.addSource(
 
 `knowledge.addSource(id, source, ks)` is the step that actually makes the uploaded content retrievable. A knowledge record with no `config.sources[]` entry has nothing to search, even with `knowledge_ids` linked and `use_knowledge_base: "on"`.
 
-`knowledge.removeSource(id, source, ks)` is the inverse. Both calls read-merge-write one entry of `config.sources[]` without disturbing the others, and are idempotent, but not safe to call concurrently for the same record id: two overlapping calls read the same pre-write `config.sources`, so the second write silently drops the first's change. Don't hand-assemble `config.sources` via `updateRecord({config}, ks)` directly unless you intend a full replace: the backend overwrites the entire `config` on that field.
+`knowledge.removeSource(id, source, ks)` is the inverse. Both calls change one entry of `config.sources[]` without disturbing the others, and are idempotent. Call them one at a time for the same record id, because two overlapping calls can lose one of the changes. To change sources, use these two calls. If you call `updateRecord({config}, ks)` directly, send the full `config`.
 
 `buildIndexerObjects()` defaults to all three modalities (in this order: `document`, `caption`, `ocr`) when called with no arguments or an empty array:
 
@@ -77,17 +77,17 @@ await mgmt.knowledge.addSource(
 
 ## Full SDK sequence
 
-`knowledge.addRecord()` → `knowledge.createCategory()` (or reuse an existing category) → `knowledge.uploadDocument()` → `knowledge.addSource()` → `intellectConfig.setKnowledgeIds()` → `knowledge.setEnabled(configId, true, ks)` (equivalent to the `capabilities.use_knowledge_base` write in Step 2). Skipping `addSource` is the most common way to end up with a linked, enabled, but silently empty knowledge base.
+`knowledge.addRecord()` → `knowledge.createCategory()` (or reuse an existing category) → `knowledge.uploadDocument()` → `knowledge.addSource()` → `intellectConfig.setKnowledgeIds()` → `knowledge.setEnabled(configId, true, ks)` (equivalent to the `capabilities.use_knowledge_base` write in Step 2). Skipping `addSource` leaves a linked, enabled knowledge base with nothing to search.
 
-Re-pointing an existing intellect to a new or different knowledge record works the same way — call `setKnowledgeIds()` again with the new id. It's a normal `v1/intellect/update` write, no separate linking call, no gate.
+Re-pointing an existing intellect to a new or different knowledge record works the same way. Call `setKnowledgeIds()` again with the new id. It is a normal intellect update, with no separate linking call.
 
 ## Checking whether indexing has finished
 
-`knowledge.isIndexed(id, ks)` reads `knowledge.getRecord(id, ks).status`. But `status` is the knowledge record's own container-lifecycle flag (`"READY"`/`"DELETED"`), not an indexing-completion signal. It reads `"READY"` immediately once the record exists, before any entry has been indexed. That happens because a knowledge base is open-ended — you can always add more entries — so there's no single "fully indexed" state for the record as a whole. Don't treat `isIndexed()` returning `ready:true` as proof your content is searchable yet.
+`knowledge.isIndexed(id, ks)` reads `knowledge.getRecord(id, ks).status`. That status reads `"READY"` as soon as the record exists, before any entry is indexed. Do not treat `isIndexed()` returning `ready:true` as proof your content is searchable.
 
-Don't use `knowledge.search()` as a substitute either. Its "couldn't find relevant information" reply fires alike for an unindexed knowledge base, an indexed knowledge base with `use_knowledge_base:'off'`, or a genuine no-match query, so it can't signal indexing status. `knowledge.corpusStatus()` only counts entries that exist in the category, not whether they've finished embedding.
+Don't use `knowledge.search()` as a substitute either. Its "couldn't find relevant information" reply is the same for an unindexed knowledge base, an indexed knowledge base with `use_knowledge_base:'off'`, and a query with no match, so it does not show indexing status. `knowledge.corpusStatus()` only counts entries in the category, not whether they finished indexing.
 
-`knowledge.entryStatus(knowledgeId, entryIds, ks)` is the official per-entry indexing-status check, and the correct way to verify specific uploaded content has finished indexing. Poll it instead of guessing with a fixed wait:
+`knowledge.entryStatus(knowledgeId, entryIds, ks)` is the per-entry indexing-status check. Use it to verify that specific uploaded content has finished indexing. Poll it instead of using a fixed wait:
 
 ```js
 async function pollUntilIndexed(mgmt, knowledgeId, entryIds, ks, { intervalMs = 5000, timeoutMs = 90000 } = {}) {
@@ -95,7 +95,7 @@ async function pollUntilIndexed(mgmt, knowledgeId, entryIds, ks, { intervalMs = 
   const pending = new Set(entryIds);
   while (pending.size && Date.now() < deadline) {
     const { entries } = await mgmt.knowledge.entryStatus(knowledgeId, [...pending], ks);
-    // entries omits an id until it's finished indexing, then reports its documents' status.
+    // entries omits an id until it has finished indexing, then reports its documents' status.
     for (const entry of entries) {
       if (entry.documents?.every((d) => d.status)) pending.delete(entry.entry_id);
     }
@@ -105,7 +105,7 @@ async function pollUntilIndexed(mgmt, knowledgeId, entryIds, ks, { intervalMs = 
 }
 ```
 
-Resolve that poll **before** you create or update the intellect, and send `use_knowledge_base:'on'` in that same `intellectConfig` call alongside `knowledge_ids`, not as a follow-up capability patch. Partner config is cached for up to 24h server-side (see [Client-Side Commands's Gotcha 2](/guides/client-commands/#gotcha-2--partner-config-is-cached-24h-set-capabilities-at-creation-not-after)). A two-step create-then-flip risks the cache latching onto the transient `off` value from step one and never seeing step two's `on`. A single write after the poll avoids that race entirely for a fresh create.
+Resolve that poll **before** you create or update the intellect. Send `use_knowledge_base:'on'` in that same `intellectConfig` call alongside `knowledge_ids`, not as a follow-up capability patch. Why: [Client-Side Commands § Gotcha 2](/guides/client-commands/#gotcha-2-set-capabilities-at-creation-not-after).
 
 ---
 

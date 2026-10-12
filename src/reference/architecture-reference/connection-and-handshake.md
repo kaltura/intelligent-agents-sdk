@@ -24,7 +24,7 @@ eyebrow: Reference
 
 ### TURN configuration
 
-Pass `turnServerUrl` and `turnCredentials` from `appInit` to the session. The TURN URLs, credentials and ICE policy are in [Wire Protocol · Audio Channels](/reference/wire-protocol/audio-channels/#5-asr-uplink-pc1--microphone--server).
+Pass `turnServerUrl` and `turnCredentials` from `appInit` to the session. The TURN URLs, credentials and ICE policy are in [Wire Protocol · Audio Channels](/reference/wire-protocol/audio-channels/#5-asr-uplink-pc1-microphone--server).
 
 ---
 
@@ -55,11 +55,11 @@ Step 11 runs once both lanes are done. The first lane to fail rejects `connect()
 | 5 | Wait session | ← `stvNewSession` `{session_id, status, webrtc_url?}` (or ← `throwToNoAgent`) | sets `sessionId` + `webrtcUrl` | - |
 | 6 | Wait agent | ← `showAgent` | agent joined | 10s (`AgentResponseTimeout`) |
 | 7 | Wait ready | ← `askPermissions` `{constraints:{audio,video}}` | ready for the mic | 10s (`AgentResponseTimeout`) |
-| 9 | Connect ASR (mic uplink), lane A, after 6→7 | `asr-webrtc-*` handshake ([§5](/reference/wire-protocol/audio-channels/#5-asr-uplink-pc1--microphone--server)) | - | 30s per wait (`ASRConnectionFailed`) |
-| 10 | Subscribe STV video (WHEP) **and wait until it is *playable*, or give up waiting**, lane B, starts right after step 5 | → WHEP `POST` (5 s per try, 3 tries; [details](/reference/wire-protocol/audio-channels/#6-stv-downlink-pc2--avatar-videoaudio--you)) → wait for the [playable-video gate](#step-10-the-playable-video-gate) | first painted frame | `timeouts.firstFrame` (6s), counted from the moment the answer is applied. See the [gate](#step-10-the-playable-video-gate) for what happens at the cap |
+| 9 | Connect ASR (mic uplink), lane A, after 6→7 | `asr-webrtc-*` handshake ([§5](/reference/wire-protocol/audio-channels/#5-asr-uplink-pc1-microphone--server)) | - | 30s per wait (`timeout`, `phase: 'asr'`) |
+| 10 | Subscribe STV video (WHEP) **and wait until it is *playable*, or give up waiting**, lane B, starts right after step 5 | → WHEP `POST` (5 s per try, 3 tries; [details](/reference/wire-protocol/audio-channels/#6-stv-downlink-pc2-avatar-videoaudio--you)) → wait for the [playable-video gate](#step-10-the-playable-video-gate) | first painted frame | `timeouts.firstFrame` (6s), counted from the moment the answer is applied. See the [gate](#step-10-the-playable-video-gate) for what happens at the cap |
 | 11 | Emit `disclosure`, then approve (this starts the spoken greeting), once lanes A and B are both done | → `approvedPermissions` `{room}` | - | - |
 | 12 | Opening turn runs. With a silent opening phrase (`SILENT_OPENING`) it produces no speech and ends in about 0.5 s. A configured `kickoff` is sent on its `stvFinishedTalking` ([guide](/guides/start-the-conversation/)) | ← `stvStartedTalking` … ← `stvFinishedTalking`, then → `onTextEntered {text}` | `stvFinishedTalking` | - |
-| → | **CONNECTED** | listen for `agent_raw_text`, `generatingSpeech`, `stvStartedTalking` | — | — |
+| → | **CONNECTED** | listen for `agent_raw_text`, `generatingSpeech`, `stvStartedTalking` | - | - |
 
 </div>
 
@@ -156,12 +156,12 @@ The rows group related phases and are not in time order. `firstFrame` is also ab
 
 **Tuning.** `timeouts` overrides any wait in the table above (`overall`, `serverConnect`, `joinRoom`, `joinComplete`, `agent`, `asr`, `firstFrame`, `prepareIdle`) and the WHEP, recovery and watchdog limits (`whepTry`, `whepTries`, `whepBackoff`, `whepRelease`, `recover`, `healthTick`, `videoStall`, `iceStuck`, `coldAttempts`, `coldBackoff`; defaults in [Resilience](/reference/architecture-reference/resilience-and-failure-handling/)). `reconnectionDelay` (default 250 ms) and `reconnectionDelayMax` (default 2000 ms) set how soon and how often a dropped socket retries.
 
-## The `join` payload (step 2): carries the agent/brain config
+## The `join` payload (step 2): carries the agent config
 
 Field-by-field shape: [events catalog](/reference/wire-protocol/events-catalog/#4a-client--server-emit).
 
 
-- **Which intellect loads.** The `geniegpcid:<configId>` in the KS selects the intellect (the agent's brain configuration). An agent token also carries `agentid:<agentId>`.
+- **Which intellect loads.** The `geniegpcid:<configId>` in the KS selects the intellect (the agent's configuration). An agent token also carries `agentid:<agentId>`.
 - **Always send `kaltura.ks`.** A `join` without it never gets `clientConfiguration` or `joinComplete`, and the connect stalls until the timeout.
 - **`force_experience` is always `avatar_only`.** `buildJoin` sets it on every call. See [Wire Protocol · Client Configuration](/reference/wire-protocol/client-configuration/#structured-experiences-force_experience--unisphere-tool) for what that means for widgets.
 - **`capabilities` and `request_vars` are client-controlled.** They are sent at `join`. You can update them mid-session with the `updateGenieContext` event ([events catalog](/reference/wire-protocol/events-catalog/#4a-client--server-emit)).

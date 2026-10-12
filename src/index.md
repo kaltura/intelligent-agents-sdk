@@ -2,16 +2,14 @@
 layout: base.njk
 title: "Home"
 ogTitle: "Meet Nova, the live avatar built with @kaltura/intelligent-agents"
-description: "A zero-dependency JavaScript SDK for building and operating Kaltura Agentic Avatars — conversational agents with a visual, human-like avatar interface."
+description: "A zero-dependency JavaScript SDK for building and operating Kaltura Agentic Avatars: conversational agents with a visual, human-like avatar interface."
 eyebrow: Agentic Avatars SDK
 bodyClass: home
 ---
 
 # @kaltura/intelligent-agents
 
-A zero-dependency JavaScript SDK for building and operating **Kaltura Agentic
-Avatars**: Kaltura's conversational agents with a visual, human-like avatar
-interface.
+A zero-dependency JavaScript SDK for building and operating **Kaltura Agentic Avatars**: Kaltura's conversational agents with a visual, human-like avatar interface.
 
 <div class="home-cc" data-nova-target="build-with-claude-code" data-nova-label="Build with Claude Code">
 
@@ -31,10 +29,7 @@ Install the plugin, then ask Claude Code to add a Kaltura avatar to your app. [O
     <div class="nova-hero-copy">
       <div class="nova-hero-card">
         <h2 id="nova-hero-heading">Meet Nova</h2>
-        <p>Nova is a live Kaltura Agentic Avatar, provisioned with this SDK's own
-        Management API and grounded on this site's own documentation. She knows
-        every page here. Ask her what the SDK does, whether it fits your use
-        case, or which page to read next. She'll take you there herself.</p>
+        <p>Nova is a live Kaltura Agentic Avatar, provisioned with this SDK's own Management API and grounded on this site's own documentation. She knows every page here. Ask her what the SDK does, whether it fits your use case, or which page to read next. She'll take you there herself.</p>
       </div>
       <div class="nova-hero-prompts" role="group" aria-label="Suggested questions for Nova">
         <span class="nova-hero-prompts-label">Try asking:</span>
@@ -42,7 +37,7 @@ Install the plugin, then ask Claude Code to add a Kaltura avatar to your app. [O
         <button type="button" class="nova-chip" data-prompt="Show me a quick code example to get started.">Show me a code example</button>
         <button type="button" class="nova-chip" data-prompt="Is this SDK free to use, and do I need a Kaltura account?">Is it free to use?</button>
         <button type="button" class="nova-chip" data-prompt="Take me to the Getting Started guide.">Take me to Getting Started</button>
-        <button type="button" class="nova-chip" data-prompt="We already have our own AI. What does Kaltura's runtime add?">I have my own AI — why Kaltura?</button>
+        <button type="button" class="nova-chip" data-prompt="We already have our own AI. What does Kaltura's runtime add?">I have my own AI. Why Kaltura?</button>
         <button type="button" class="nova-chip" data-prompt="Can I use this SDK with Claude Code or another coding agent?">Can I use Claude Code?</button>
       </div>
     </div>
@@ -50,12 +45,12 @@ Install the plugin, then ask Claude Code to add a Kaltura avatar to your app. [O
   </div>
 </section>
 
-Two entry points, plus optional plugin subpaths that don't bloat the base
-runtime:
+Two entry points, plus optional plugin subpaths that don't bloat the base runtime:
 
 - **`./management`**: provision, configure, and measure agents (server-side)
 - **`./experience`**: the live interactive runtime, a socket connection plus WHEP video streaming (browser)
 - **`./experience/presenter`**: the `Presenter` deck-walkthrough plugin
+- **`./experience/site-nav`**: `SiteNavigator`, which moves the visitor to the page and section the agent names (one `go_to` tool)
 - **`./experience/genui`**: renders GenUI widgets, on-screen UI elements the agent can generate, using `ExperienceRenderer`/`mountWidget`
 - **`./experience/analytics`**: `KavaAnalytics`, client-only analytics events (KAVA)
 - **`./experience/noise-suppressor`**: a zero-dependency AudioWorklet noise gate
@@ -73,22 +68,14 @@ Kaltura runs the first two the moment you connect. Yours plugs into the third. [
 
 ## Why this SDK
 
-- **Readable source, no build step.** Raw ESM you can read line by line.
-  Import it straight from a [jsDelivr CDN URL](#quick-start-in-the-browser)
-  pinned to a git tag. No install step, no bundler-only `node_modules`
-  black box.
-- **Zero runtime dependencies.** No extra dependencies to audit for
-  supply-chain risk.
-- **Self-serve cloning.** Voice and visual cloning are SDK calls, not a
-  support ticket.
-- **Security designed in.** Pre-redacted audit events, short-lived tokens,
-  and a NIST 800-53 control matrix. Built for enterprise, HIPAA, and
-  HITRUST deployments from the start.
+- **Readable source, no build step.** Raw ESM you can read line by line. Import it straight from a [jsDelivr CDN URL](#quick-start-in-the-browser) pinned to a git tag. No install step, no bundler-only `node_modules` black box.
+- **Zero runtime dependencies.** No extra dependencies to audit for supply-chain risk.
+- **Self-serve cloning.** Voice and visual cloning are SDK calls, not a support ticket.
+- **Security designed in.** Pre-redacted audit events, short-lived tokens, and a NIST 800-53 control matrix. Built for enterprise, HIPAA, and HITRUST deployments from the start. Details: [Security & Compliance](/reference/security/).
 
 ## Quick start in the browser
 
-Once a tag is pinned, jsDelivr serves the SDK straight from GitHub. No
-`npm install`, no bundler:
+Once a tag is pinned, jsDelivr serves the SDK straight from GitHub. No `npm install`, no bundler:
 
 <div data-nova-target="jsdelivr-quickstart" data-nova-label="Quick-start browser code example">
 
@@ -110,50 +97,37 @@ Once a tag is pinned, jsDelivr serves the SDK straight from GitHub. No
 
 </div>
 
-Pin the tag for anything you ship. jsDelivr caches a tagged path forever, so
-a pin is both stable and fast. See [Getting Started](/getting-started/) for
-where `token` and the other connection values come from.
+Pin the tag for anything you ship. A pinned tag always serves the same code. See [Getting Started](/getting-started/) for where `token` and the other connection values come from.
 
 ## Where to go next
 
 <div data-nova-target="where-to-go-next" data-nova-label="Where to go next">
 
-**New to the SDK?** Start with [Getting Started](/getting-started/). Go from
-zero to a talking AI avatar in about five minutes, once you have a Kaltura
-account.
+**New to the SDK?** Start with [Getting Started](/getting-started/). Go from zero to a talking AI avatar in about five minutes, once you have a Kaltura account.
 
-**Building a real app?** The How-to Guides cover the specific problems apps
-run into:
+**Building a real app?** The How-to Guides cover the specific problems apps run into:
 
-- Driving your UI from the avatar
-- Injecting per-request data
-- Choosing a voice-input mode
-- Collecting structured form data
-- Reimplementing the runtime from scratch
+- [Driving your UI from the avatar](/guides/client-commands/)
+- [Injecting per-request data](/guides/dynamic-data-injection/)
+- [Choosing a voice-input mode](/guides/voice-input-modes/)
+- [Collecting structured form data](/guides/structured-data-forms/)
 
-**Need to look something up?** The Reference section covers every endpoint,
-socket event, GenUI widget, and architecture detail:
+**Need to look something up?** The Reference section covers every endpoint, socket event, GenUI widget, and architecture detail:
 
-- API Reference
-- Wire Protocol
-- GenUI Reference
-- The full use-case catalog
+- [API Reference](/reference/api-reference/)
+- [SDK Reference](/reference/sdk-reference/)
+- [Wire Protocol](/reference/wire-protocol/)
+- [GenUI Reference](/reference/genui-reference/)
+- [The full use-case catalog](/reference/use-cases/)
 
-**Want the bigger picture?** Platform Overview, under Explanation, covers
-the two backends, the live-video runtime, and how the pieces fit together.
-Read it when you want to understand *why*, not just *how*.
+**Want the bigger picture?** [Platform Overview](/explanation/architecture/), under Explanation, covers the two backends, the live-video runtime, and how the pieces fit together. Read it when you want to understand *why*, not just *how*.
 
 </div>
 
 ## Security and compliance
 
-Zero runtime dependencies, short-lived tokens, pre-redacted audit events, and
-a NIST 800-53 control matrix. Built for enterprise, HIPAA, and HITRUST
-deployments. See [`SECURITY.md`](https://github.com/kaltura/intelligent-agents-sdk/blob/main/SECURITY.md) in the repository for the full control
-matrix.
+The full control matrix is in [Security & Compliance](/reference/security/).
 
 ## License
 
-MIT. You don't need a Kaltura account or credentials to read, fork, or build
-on this SDK's source. To call the live APIs it wraps, you need a Kaltura
-account with the Agentic Avatar feature enabled.
+MIT. You don't need a Kaltura account or credentials to read, fork, or build on this SDK's source. To call the live APIs it wraps, you need a Kaltura account with the Agentic Avatar feature enabled.

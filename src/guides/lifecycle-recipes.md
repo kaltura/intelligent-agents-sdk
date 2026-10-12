@@ -125,9 +125,9 @@ const { matchedRules } = await mgmt.lifecycle.match(
 );
 ```
 
-`object.agent_id`, `object.thread_id`, and `object.user_id` are all required strings for `objectType:'thread'`. Some environments also require `object.origin` (a number, `0` = standard). Pass every `object.*` field that `describeFields` reports for your environment. Omit one and it 400s naming the missing path. Expect to see your own rule nested inside a grouped `matchedRules[]` entry's `rules[]` array, together with `preset__summary_on_session_ended`.
+`object.agent_id`, `object.thread_id`, and `object.user_id` are all required strings for `objectType:'thread'`. Some environments also require `object.origin` (a number, `0` = standard). Pass every `object.*` field that `describeFields` reports for your environment. Omit one and it 400s naming the missing path. Expect to see your own rule nested inside a grouped `matchedRules[]` entry's `rules[]` array, together with the built-in summary rule.
 
-Every partner has that preset rule by default. It's not something you configured (see [`Lifecycle Rules`'s note on grouped matches](/reference/lifecycle/#discovery-and-dry-run-testing)). Run this after creating each rule to confirm it matches before you ever touch a real conversation.
+Every partner has that built-in rule by default. It's not something you configured (see [`Lifecycle Rules`'s note on grouped matches](/reference/lifecycle/#discovery-and-dry-run-testing)). Run this after creating each rule to confirm it matches before you ever touch a real conversation.
 
 ---
 

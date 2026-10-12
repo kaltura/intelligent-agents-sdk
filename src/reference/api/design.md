@@ -10,6 +10,8 @@ eyebrow: Reference
 [← Back to the API Reference index](/reference/api-reference/)
 
 
+Browse preset voices and visuals, and upload your own voice, portrait, face or background. Read this before you create an avatar from custom media.
+
 ## Browse the Catalog
 
 ```
@@ -23,9 +25,9 @@ POST https://api.avatar.us.kaltura.ai/v1/catalog-item/list
 }
 ```
 
-Change `typeEqual` to `"Voice"` for voices. Each item has an `itemId` — pass it to avatar creation.
+Change `typeEqual` to `"Voice"` for voices. Each item has an `itemId`. Pass it to avatar creation.
 
-**Visual preset fields:** `itemId`, `attributes.visual.{name, genderPresentation, skinTone, ageGroup, hairColor, clothing, background}`, `imageUrl`, `loadingVideo`. These are raw backend asset URLs, not the rendered composite the live video stream shows: an upload echo for a custom visual, or a preset asset URL for a catalog item.
+**Visual preset fields:** `itemId`, `attributes.visual.{name, genderPresentation, skinTone, ageGroup, hairColor, clothing, background}`, `imageUrl`, `loadingVideo`. These are asset URLs for previews. They are not the rendered composite that the live video stream shows.
 
 **Voice preset fields:** `itemId`, `attributes.voice.{name, description, language}`, `voiceSampleUrl`.
 
@@ -45,12 +47,12 @@ attributes={"voice":{"name":"My Voice","description":"non-empty description","la
 adminTags=custom
 ```
 
-Returns a catalog item whose `itemId` is the ElevenLabs clone. Pair with any avatar's `voice.id`.
+Returns a catalog item whose `itemId` is the cloned voice. Pair it with any avatar's `voice.id`.
 
 **Gotchas:**
 
 - `description` must be non-empty.
-- Audio under ~6 s returns `500`.
+- Use an audio sample longer than about 6 seconds.
 - Send `adminTags=custom` bare, not as a JSON array string.
 
 **SDK shortcut:** `catalog.createVoice(mp3Blob, { name, description, language?, consentRef? }, adminKs)`. It enforces the non-empty `description` client-side and tags the item `adminTags:['custom']`, so `catalog.list` filtered on that tag finds it. `language` is an ISO 639-1 code and defaults to `'en'`.
@@ -64,7 +66,7 @@ POST https://api.avatar.us.kaltura.ai/v1/catalog-item/createVoiceFromElevenLabs 
 POST https://api.avatar.us.kaltura.ai/v1/catalog-item/createVoiceFromCartesia     {"voiceId":"<provider-voice-id>"}
 ```
 
-An unknown provider id creates **nothing**. It replies with an HTTP-200 `KalturaAPIException` envelope (`VOICE_DOES_NOT_EXIST_ON_ELEVEN_LABS` / `VOICE_DOES_NOT_EXIST_ON_CARTESIA`), and the SDK maps these to typed `voice_not_found_elevenlabs` / `voice_not_found_cartesia` errors. SDK: `mgmt.catalog.importVoiceFromElevenLabs(voiceId, ks)` / `importVoiceFromCartesia(voiceId, ks)`.
+An unknown provider id creates **nothing**. The SDK throws a typed `voice_not_found_elevenlabs` / `voice_not_found_cartesia` error. SDK: `mgmt.catalog.importVoiceFromElevenLabs(voiceId, ks)` / `importVoiceFromCartesia(voiceId, ks)`.
 
 ---
 
@@ -80,18 +82,16 @@ attributes={"visual":{"name":"My Portrait","genderPresentation":"Feminine","back
 adminTags=custom
 ```
 
-Returns a catalog item whose `itemId` is the catalog visual. Pass it as `visual.id` in `avatar/create` (or `visualId` in `provision`). The renderer animates the portrait live at runtime. No manual step is involved: upload, create the avatar, start a session.
+Returns a catalog item whose `itemId` is the catalog visual. Pass it as `visual.id` in `avatar/create` (or `visualId` in `provision`). The portrait is animated live at runtime. No manual step is involved: upload, create the avatar, start a session.
 
-### How the renderer frames your photo
-
-The renderer applies one fixed rule to every source image: it scales the image so the face is a fixed fraction of the canvas height, then centers the face on the canvas. Everything else follows from that rule.
+### How your photo renders
 
 | Your source photo | What renders |
 |---|---|
-| The face fills most of the frame (a tight headshot) | The whole image is scaled down until the face reaches the target size. The canvas around it stays black. |
-| The face is a small part of a large frame (a padded portrait) | The image is cropped in around the face and fills the canvas edge to edge. No borders. |
+| The face fills most of the frame (a tight headshot) | The whole image shrinks. The canvas around it stays black. |
+| The face is a small part of a large frame (a padded portrait) | The image fills the canvas edge to edge. No borders. |
 
-A padded source can always be cropped in. A tight source can only be scaled down, and that scaling is what produces the borders. Pad more, never less.
+Pad more, never less.
 
 ![Tight headshot crops shrink onto the render canvas with black borders; a generously padded portrait scales to fill it edge-to-edge](/assets/img/avatar-photo-framing.svg)
 
@@ -103,7 +103,7 @@ Prepare the source image to this spec before upload. A photo that meets it rende
 |---|---|
 | Canvas | Square, 2600×2600 px. Minimum 2048×2048 px. |
 | Head height (chin to top of hair) | 20 to 25% of the canvas height. |
-| Head position | Centered on the canvas, horizontally and vertically. The renderer centers on the face, so equal room on every side gives it the most to work with. |
+| Head position | Centered on the canvas, horizontally and vertically. Equal room on every side gives the best result. |
 | Body | Shoulders and upper chest visible. Arms relaxed, not raised. |
 | Background | One continuous background that reaches every edge. No borders, letterbox bars, or transparent areas. |
 | Subject | One person, facing the camera, eyes open, mouth closed, even lighting. No sunglasses, hats that hide the hairline, or hands near the face. |
@@ -158,7 +158,7 @@ adminTags=custom
 
 Send `type=Background` for a backdrop image instead.
 
-**SDK shortcut:** `catalog.createFace(imageBlob, attrs, adminKs)` / `catalog.createBackground(imageBlob, attrs, adminKs)` — same `attrs` shape as `createVisual`. Composing the two halves into an avatar: [Agent Components · Create an Avatar and an Agent § Compose from a custom Face and Background](/reference/api/build/avatar-and-agent/#compose-from-a-custom-face-and-background).
+**SDK shortcut:** `catalog.createFace(imageBlob, attrs, adminKs)` / `catalog.createBackground(imageBlob, attrs, adminKs)`. Same `attrs` shape as `createVisual`. Composing the two halves into an avatar: [Agent Components · Create an Avatar and an Agent § Compose from a custom Face and Background](/reference/api/build/avatar-and-agent/#compose-from-a-custom-face-and-background).
 
 ---
 
@@ -170,6 +170,4 @@ Each step lives on its own page. Follow them in order:
 2. Create the avatar with `visual: { id: itemId }`, then the agent: [Agent Components · Create an Avatar and an Agent](/reference/api/build/avatar-and-agent/).
 3. Resolve the widget id and initialize the browser runtime: [Widget & Runtime Init](/reference/api/deploy/).
 4. Start the conversation from the browser with a silent opening and `kickoff`: [Start the Conversation](/guides/start-the-conversation/).
-
-Steps 1 and 2 are covered by the SDK's integration tests (`test/integration/avatars-catalog.test.js`).
 

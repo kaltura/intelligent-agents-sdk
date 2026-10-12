@@ -1,14 +1,13 @@
 ---
 layout: base.njk
 title: "Inside a Live Conversation"
-description: "Every live Agentic Avatar conversation runs three flows at once. Kaltura runs two of them. Your AI stack is the third — here's where it plugs in."
+description: "Every live Agentic Avatar conversation runs three flows at once. Kaltura runs two of them. Your AI stack is the third. Here is where it plugs in."
 eyebrow: Explanation
 ---
 
 # Inside a Live Conversation
 
-> **TL;DR:** Your AI stack is one of three flows in a live conversation.
-> Kaltura runs the other two. Plug yours in. The code below shows how.
+> **TL;DR:** Your AI stack is one of three flows in a live conversation. Kaltura runs the other two. Plug yours in. The code below shows how.
 
 ```js
 import { Management, tools } from '@kaltura/intelligent-agents/management';
@@ -17,7 +16,7 @@ const kaltura = new Management({
   partnerId: process.env.AGENTIC_PARTNER_ID,
   adminSecret: process.env.AGENTIC_ADMIN_SECRET,
 });
-const { ks: adminKs } = await kaltura.sessions.createAdminToken();
+const { ks: adminKs } = await kaltura.sessions.createAdminToken({ userId: 'admin@example.com' });
 const configId = 'YOUR_CONFIG_ID'; // from Getting Started: create-agent.mjs prints it
 
 // Plug one of your APIs into the orchestration flow (swap in your own endpoint):
@@ -35,9 +34,7 @@ const reply = await kaltura.converseOnce(configId, 'How many euros is one US dol
 console.log(reply.text);
 ```
 
-When someone talks with an Agentic Avatar, three flows run at once. You see
-one avatar. Underneath, two engineered systems keep the conversation coherent
-in real time, and your expertise feeds the answers.
+When someone talks with an Agentic Avatar, three flows run at once. You see one avatar. Underneath, two engineered systems keep the conversation coherent in real time, and your expertise feeds the answers.
 
 ## The three flows
 
@@ -46,31 +43,23 @@ in real time, and your expertise feeds the answers.
 | Flow | Name | What it covers | Who runs it |
 |---|---|---|---|
 | 1 | **Conversation Control** | Turn-taking and interruptions, real-time sync of speech recognition, voice, avatar video, and language models, expression and emotion control, session recording, device and cross-platform coverage, screen share. [Read more →](/explanation/architecture/) | Kaltura, always |
-| 2 | **Agent Orchestration** | The server-side reasoning loop that runs while the person talks: grounding answers in knowledge (RAG), calling tools, routing to expert agents. [Read more →](/reference/api/build/knowledge-rag/#ground-the-agent-in-your-content-rag) | Kaltura, always |
+| 2 | **Agent Orchestration** | The server-side loop that runs while the person talks: grounding answers in knowledge (RAG), calling tools, routing to expert agents. [Read more →](/reference/api/build/knowledge-rag/#ground-the-agent-in-your-content-rag) | Kaltura, always |
 | 3 | **Your Expertise** | Your knowledge bases, your APIs and data, your own models and expert agents, your IP. [Read more →](/guides/external-api-integrations/) | You, plugged into flow 2 |
 
 </div>
 
 ## Bring your own expertise
 
-Your existing AI stack isn't a replacement for flows 1 and 2. It's flow 3.
-The SDK ships the plug points today:
+Your existing AI stack isn't a replacement for flows 1 and 2. It's flow 3. The SDK ships these plug points:
 
-- **Knowledge base grounding**: index your content and the agent cites it
-  live (`use_knowledge_base`). See [Ground the Agent](/reference/api/build/knowledge-rag/#ground-the-agent-in-your-content-rag).
-- **External API and tool integrations**: the agent calls your endpoints
-  mid-conversation, with server-held secrets. See
-  [External API Integrations](/guides/external-api-integrations/).
-- **Per-message variables** (`request_vars`): inject your own context, per
-  turn, from your backend. See the [Backend API Reference](/reference/api-reference/).
-- **Client-side commands**: the agent drives your page UI through functions
-  you define. See [Client-Side Commands](/guides/client-commands/).
+- **Knowledge base grounding**: index your content and the agent cites it live (`use_knowledge_base`). See [Ground the Agent](/reference/api/build/knowledge-rag/#ground-the-agent-in-your-content-rag).
+- **External API and tool integrations**: the agent calls your endpoints mid-conversation, with server-held secrets. See [External API Integrations](/guides/external-api-integrations/).
+- **Request variables** (`request_vars`): inject your own context from your app and use it in prompts. See [Dynamic Data Injection](/guides/dynamic-data-injection/).
+- **Client-side commands**: the agent drives your page UI through functions you define. See [Client-Side Commands](/guides/client-commands/).
 
 ## What you'd take on yourself
 
-Scripted avatar sessions (puppet mode: you supply every line of speech) skip
-flows 1 and 2. Use only those, and this list becomes yours to build and
-operate:
+Scripted avatar sessions (puppet mode: you supply every line of speech) skip flows 1 and 2. Use only those, and this list becomes yours to build and operate:
 
 <div data-nova-target="build-yourself-checklist" data-nova-label="What you'd build yourself without the agentic runtime">
 
@@ -88,17 +77,11 @@ operate:
 
 ## Analytics come with the runtime
 
-Full agentic sessions feed engagement analytics out of the box, through
-`./experience/analytics`. See [KAVA analytics](/reference/sdk-reference/#kava-analytics-opt-in-client-only-application-events)
-for Kaltura's built-in analytics events. A self-built pipeline has to
-recreate that measurement loop too.
+Full agentic sessions feed engagement analytics out of the box, through `./experience/analytics`. See [KAVA analytics](/reference/sdk-reference/#kava-analytics-opt-in-client-only-application-events) for the built-in analytics events. A self-built pipeline has to recreate that measurement loop too.
 
 ## Where scripted sessions do fit
 
-Pre-authored narration, puppet-style playback, and demo reels are real use
-cases. You author every word, and the avatar performs it. That's what
-[scripted avatar sessions](https://github.com/kaltura/intelligent-agents-sdk/blob/main/docs/api/scripted-video.md)
-are for. For anything a visitor talks back to, you want all three flows.
+Pre-authored narration, puppet-style playback, and demo reels are real use cases. You author every word, and the avatar performs it. That's what [scripted avatar sessions](https://github.com/kaltura/intelligent-agents-sdk/blob/main/docs/api/scripted-video.md) are for. For anything a visitor talks back to, you want all three flows.
 
 ## Next steps
 

@@ -7,10 +7,7 @@ eyebrow: How-to Guide
 
 # Build with Claude Code and other coding agents
 
-> **TL;DR:** Install the `kaltura-app-builder` plugin, open an empty folder in
-> Claude Code, and say "Add a Kaltura avatar to my app." The plugin walks you
-> through credentials, setup and a first run. It reads this site live, so it is
-> always current.
+> **TL;DR:** Install the `kaltura-app-builder` plugin, open an empty folder in Claude Code, and say "Add a Kaltura avatar to my app." The plugin walks you through credentials, setup and a first run. It reads this site live, so it follows the current docs.
 
 ## Install
 
@@ -36,9 +33,7 @@ Open an empty folder in Claude Code and say one of these:
 - "Build an avatar that walks visitors through my slide deck."
 - "Teach yourself the Kaltura agents SDK so you can help me."
 
-Claude checks your setup, asks one question to pick the right path, installs
-the SDK, and builds from the official examples. You type the Admin Secret into
-a `.env` file yourself. It never goes into the chat.
+Claude checks your setup, asks one question to pick the right path, installs the SDK, and builds from the official examples. You type the Admin Secret into a `.env` file yourself. It never goes into the chat.
 
 ## What the plugin does
 
@@ -57,14 +52,13 @@ a `.env` file yourself. It never goes into the chat.
 
 ## Other coding agents
 
-Cursor, Codex and other agents can use the same docs. Give the agent this
-address and ask it to read the pages it needs before it writes code:
+Cursor, Codex and other agents can use the same docs. Give the agent this address and ask it to read the pages it needs before it writes code:
 
 ```text
 https://kaltura.github.io/intelligent-agents-sdk/llms.txt
 ```
 
-Every link in it is a page's markdown source. Any page is also available as markdown by adding `index.md` to its address.
+Every link in it is a page's markdown source. Any page is also available as markdown when you add `index.md` to its address.
 
 To get the code, run this in your project:
 
@@ -72,5 +66,4 @@ To get the code, run this in your project:
 npm install "github:kaltura/intelligent-agents-sdk#semver:^1"
 ```
 
-Then read [Getting Started](/getting-started/) for the first agent, or the
-[SDK Reference](/reference/sdk-reference/) for every class and option.
+Then read [Getting Started](/getting-started/) for the first agent, or the [SDK Reference](/reference/sdk-reference/) for every class and option.

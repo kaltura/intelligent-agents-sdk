@@ -10,9 +10,9 @@ eyebrow: How-to Guide
 Let the agent move the visitor to the right page and section of your site while it answers. One client tool, two string arguments, no result to wait for, so it can never spiral or leave the avatar silent.
 
 ```text
-brain:    go_to({ path: "/guides/pause-resume/", section: "edge-case-dont" })
+agent:    go_to({ path: "/guides/pause-resume/", section: "edge-case-dont" })
 browser:  navigate("/guides/pause-resume/#the-edge-case-dont-leave-the-avatar-stuck-paused") → scroll → point
-brain:    "Pause before the video starts and resume on its ended event..."
+agent:    "Pause before the video starts and resume on its ended event..."
 ```
 
 Three pieces, one shared contract:
@@ -27,7 +27,7 @@ Three pieces, one shared contract:
 
 A navigation tool needs no answer from the page. The tool is provisioned with `wait_for_response: false`, so the turn continues without waiting for the browser, and the browser never sends anything back. There is nothing to ACK, time out on, or retry.
 
-The model writes its spoken answer in the same turn. Compare [Client-Side Commands § Tool spirals](/guides/client-commands/#tool-spirals-starve-the-voice--budget-tools-per-turn) for what happens to tools that do wait.
+The model writes its spoken answer in the same turn. Compare [Client-Side Commands § Tool spirals](/guides/client-commands/#tool-spirals-starve-the-voice-budget-tools-per-turn) for what happens to tools that do wait.
 
 Two consequences shape the browser side:
 
@@ -111,7 +111,7 @@ Deterministic, so a docs change re-keys only the page it touched:
 
 `renderSiteMap(manifest)` gives the prompt text: two lines per page, the page title and then `path: key1, key2`, with a blank line between pages. About 45 tokens per page. The title lets the model match what a visitor calls a page ("the wire protocol page") to its path. The path line carries only the path and the keys: a label next to the path gets copied into `go_to` as part of the path.
 
-`siteMapPrompt(manifest)` wraps it as a prompt block and warns (never throws) when the estimate passes `maxTokens` (default 3000). `test/fixtures/site-map.snapshot.txt` holds the rendered SITE MAP of the docs site.
+`siteMapPrompt(manifest)` wraps it as a prompt block and warns (never throws) when the estimate passes `maxTokens` (default 3000).
 
 ## Provisioning
 
@@ -141,7 +141,7 @@ await m.intellects.create({
 | `goToTool({ name?, siteLabel?, timeout?, displayName? })` | The client tool config. Wire shape: `{ name: 'go_to', type: 'client', wait_for_response: false, timeout: 5, args: { path, section } }`. Same options produce the same config, so an upsert by name is idempotent. Pass it to `tools.add()` or `tools.update(id, { config })`. |
 | `siteMapPrompt(manifest, { key?, label?, maxTokens?, warn? })` | The SITE MAP prompt block (`type: 'custom'`). |
 | `SITE_NAV_RULES_PROMPT` | Frozen prompt block with four rules: call once when a SITE MAP page covers the topic, never call when none does, never two calls per reply, never mention the screen. |
-| `PAGE_CONTEXT_PROMPT` | Optional. Renders `{{page_context}}` so the browser can tell the brain which page the visitor is on. Needs `allow_client_variables` on. It is on by default. Pin it with `intellects.setClientVariablesEnabled(configId, true, adminKs)`. See [Dynamic Data Injection](/guides/dynamic-data-injection/). |
+| `PAGE_CONTEXT_PROMPT` | Optional. Renders `{{page_context}}` so the browser can tell the agent which page the visitor is on. Needs `allow_client_variables` on. It is on by default. Pin it with `intellects.setClientVariablesEnabled(configId, true, adminKs)`. See [Dynamic Data Injection](/guides/dynamic-data-injection/). |
 | `loadSectionsManifest(url, { fetch?, maxBytes?, timeoutMs? })` | Fetches and validates the manifest at provisioning time. Size-guarded (512 KiB), 15 s timeout, throws `KalturaError` with `code` `bad_arg`, `http_error`, `network_error`, `timeout`, `too_large` or `bad_manifest`. |
 | `SITE_NAV_TOOL_NAME` | `'go_to'`. Change the tool name only if you also rewrite the rules prompt. |
 | `estimateTokens(text)` | Rough estimate (characters / 3.2) used for the budget warning. |
@@ -212,7 +212,7 @@ Construct it once per session, right after the session. `destroy()` unsubscribes
 { dropped: true, reason: 'unknown_path' | 'once_per_turn' | 'no_manifest' | 'unsafe_url', args }
 ```
 
-### Telling the brain where the visitor is
+### Telling the agent where the visitor is
 
 Send the current page and its keys as the `page_context` request variable. `session.setDynamicPrompt()` sets it for you, or pass `requestVars` at connect. The manifest already has the keys:
 
@@ -284,7 +284,7 @@ What the visitor gets and what they do not:
 | Connection, video, audio | Rebuilt. Expect a gap of a few seconds while the new session connects (about 2 s in a live test). |
 | Microphone | The new page calls `getUserMedia` again. The browser's permission rules decide whether it asks again. |
 | Autoplay | Allowed in most browsers, not guaranteed. A page load can still start paused. Handle `playback_blocked` as above. |
-| Opening phrase | Plays again on every join, also on a resumed thread. Guard it with `sys__is_new_thread`. See [Start the Conversation](/guides/start-the-conversation/#personalize-the-opening). |
+| Opening phrase | Plays again on every join, also on a resumed thread. See [Start the Conversation](/guides/start-the-conversation/#personalize-the-opening) for the first-visit guard. |
 | `go_to` | `navigate` loads the new page, so the navigator dies with the old page. The URL already carries `#<section-id>`, so the browser scrolls to the section. A new navigator starts on the new page. |
 | Back button | Reloads the page and resumes the thread. Chromium does not restore the page from its back/forward cache: `notRestoredReasons` lists `mediastream` and `rtc`. |
 | End-of-thread signal | The old page sends it on `pagehide` (see [README § Ending a conversation cleanly](https://github.com/kaltura/intelligent-agents-sdk/blob/main/README.md#ending-a-conversation-cleanly-session_completed-signal)). Memory continues after that signal, so the next page can still resume. |
@@ -419,25 +419,6 @@ Not tested: whether a browser asks for the microphone again after a full page lo
 3. Browser: `new SiteNavigator({ session, manifestUrl, navigate })`.
 4. Optional: `point` for a visual pointer, `onNavigate` for analytics, `lang` and `stopWords` for a non-English site, `overrides` for keys that read badly.
 
-Extension points:
-
-| Hook | Purpose |
-|---|---|
-| `manifest.version` | Format evolution. |
-| `section.kind` | `heading` or `target`. |
-| `overrides` | Hand-fix a weak key. |
-| `depth` | Include h3 keys on a small site. |
-| `stopWords[lang]` | Localized sites. |
-| `toolCallName` | Several navigators on one session. |
-| `maxTokens` | Caps the site map's size on very large sites. Split the site or lower `depth` when it fires. |
-
-Non-goals: multi-argument actions (`action: 'open' | 'highlight'`), server-side routing, search over page bodies, replacing the knowledge base. One tool, two args.
-
-## Testing
-
-- `npm test` covers the key algorithm, manifest build/validate/resolve, the prompt builders and the browser plugin offline (`test/unit/site-keys.test.js`, `test/unit/site-nav-management.test.js`, `test/unit/site-nav.test.js`). `test/fixtures/site-map.snapshot.txt` pins the rendered SITE MAP for the docs site so a key change is a visible diff.
-- `npm run live-verify:site-nav` (`scripts/live-verify-site-nav.mjs`) runs against the real Kaltura API: tool echo shape, idempotent update, prompt echo, one mapped ask producing exactly one resolvable `go_to`, one unmapped ask producing none, then deletes everything it created. CI runs it on every merge and on PRs that touch its paths, except fork and Dependabot PRs, which get no secrets. Tool names are unique in a shared namespace. A conflict returns 409. So on a partner that already runs a live `go_to` tool the script records a skip, exits 0, and leaves that tool untouched. Point `AGENTIC_PARTNER_ID` at a partner without a live `go_to` deployment to run it for real.
-
 ## Security
 
 - Only manifest paths are navigable. The model cannot invent a destination.
@@ -452,6 +433,6 @@ Non-goals: multi-argument actions (`action: 'open' | 'highlight'`), server-side 
 |---|---|
 | [README.md § Site navigation](https://github.com/kaltura/intelligent-agents-sdk/blob/main/README.md#site-navigation-sitenavigator) | Quick start and export tables. |
 | [Client-Side Commands](/guides/client-commands/) | The general client-command contract this tool is built on, and why waiting tools spiral. |
-| [Dynamic Data Injection](/guides/dynamic-data-injection/) | `page_context` and the other ways to keep the brain in sync with the page. |
+| [Dynamic Data Injection](/guides/dynamic-data-injection/) | `page_context` and the other ways to keep the agent in sync with the page. |
 | [Security & Compliance](/reference/security/) | The output-handling rules the plugin follows. |
 
