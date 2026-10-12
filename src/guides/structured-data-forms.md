@@ -11,9 +11,7 @@ This page shows how to make an agent ask the viewer for structured, typed data m
 
 `user_properties_forms` is a general-purpose "collect typed fields from the viewer" primitive. The fields, the instruction the agent acts on, rendering, and reporting all work identically no matter what the fields represent. The one place this shows up in the SDK's own surface is naming: the method you call to report values back is `session.submitStructuredDataForm()`, over a wire event named `setFormLeadInfo`. Both are named after the feature's most common use case, not its only one.
 
-Every claim below is anchored to this repo's SDK (`src/`) and to what a caller observes on the wire.
-
-## What it is — and isn't
+## What it is and isn't
 
 You configure it once, at [intellect](https://github.com/kaltura/intelligent-agents-sdk/blob/main/README.md#architecture) creation or update, as a list of "stages":
 
@@ -43,12 +41,12 @@ You can pass one form object or an array of several. Each stage gets its own fie
 
 ## What configuring a stage actually does
 
-Each configured stage becomes an instruction for that conversation. When the stage arrives, the agent emits a fenced `user_properties_form` block listing exactly that stage's fields, in addition to its normal spoken reply. Two consequences:
+Each configured stage becomes an instruction for that conversation. When the stage arrives, the agent asks for exactly that stage's fields, in addition to its normal spoken reply. Your app receives the request as a form widget (see below). Two consequences:
 
 - **Timing is approximate.** The model interprets `call_stage` as a general instruction, not a deterministic trigger. A `start` stage can fire on the very first turn. Treat the stage as a signal for when the form appears, not an exact turn number.
 - **Pre-fill is real.** If the agent has already heard a value for a configured field earlier in the conversation (e.g. the viewer mentioned their preferred date in passing), it attaches a `known_value` to that field. Your form should pre-fill it rather than ask again.
 
-The form's heading copy is server-supplied: read-back of `user_properties_forms` carries `id`/`title`/`secondary_title` defaults you didn't send. **`buildUserPropertiesForms()` doesn't expose either heading field.** It accepts `callStage`/`properties` only. To show your own copy (e.g. "Tell us about your issue" on a support form), render the widget yourself and replace the descriptor's `data.title`; see "How to customize or style the form" below.
+The form arrives with a default heading. **`buildUserPropertiesForms()` doesn't accept a heading.** It accepts `callStage`/`properties` only. To show your own copy (e.g. "Tell us about your issue" on a support form), render the widget yourself and replace the descriptor's `data.title`; see "How to customize or style the form" below.
 
 ## What's possible / what's not
 
@@ -65,9 +63,9 @@ The form's heading copy is server-supplied: read-back of `user_properties_forms`
 - No conditional logic beyond the model's own judgment. There's no "only ask if X wasn't already provided" you can express declaratively.
 - No precise timing control. `call_stage` is an instruction the model interprets, not a deterministic trigger pinned to a specific turn number.
 - Not a general dynamic-form builder. It's a flat list of typed fields per stage, not richer patterns (multi-step wizards, validation rules, fields dependent on other fields).
-- Editable only through the SDK's `intellect/*` surface. `user_properties_forms` is authored once at provisioning time via the SDK against the [brain](https://github.com/kaltura/intelligent-agents-sdk/blob/main/README.md#architecture)'s API, not tunable per-session through any other surface.
+- Not tunable per session. You author `user_properties_forms` once at provisioning time through the SDK's intellect configuration (`mgmt.intellectConfig`).
 
-## How the SDK handles it — two observation points, one descriptor
+## How the SDK handles it: two observation points, one descriptor
 
 The model's form emission reaches your app through **one of two equivalent paths**, both normalized to the same shape by the SDK:
 
@@ -129,11 +127,9 @@ For durable, structured access, forward the values yourself. Bridge the submitte
 
 ## Not to be confused with `kaltura_genie_experiences`
 
-If your intellect also uses custom `tool_ids` (e.g. a closed set of client commands like `navigate_to_slide`/`show_widget`), set `capabilities: { kaltura_genie_experiences: 'off' }` or `'disabled'`. See [External API Integrations § Don't skip `kaltura_genie_experiences: 'off'`](/guides/external-api-integrations/#dont-skip-kaltura_genie_experiences-off) for what that capability does and why.
+Intellects that use custom `tool_ids` need `kaltura_genie_experiences` off. See [External API Integrations § Don't skip `kaltura_genie_experiences: 'off'`](/guides/external-api-integrations/#dont-skip-kaltura_genie_experiences-off).
 
-**This does not touch `user_properties_forms` at all.** The two mechanisms are independent code paths. `kaltura_genie_experiences` governs the widget families like flashcards, summarization, followups, sources and content galleries. `user_properties_forms` is its own config field, and the instruction it produces is unrelated to the experiences capability.
-
-With `kaltura_genie_experiences: 'disabled'`, an agent still fires a genuine `show_widget` call with `kind: "user_properties_form"` and a genuine `user-properties-form-tool` segment. Disabling experiences only removes the model's own competing navigation/formatting instinct. It has no effect on structured-data-form logic.
+**That setting does not affect `user_properties_forms`.** The two are independent. `kaltura_genie_experiences` governs the widget families like flashcards, summarization, followups, sources and content galleries. `user_properties_forms` is its own config field. With experiences off, your forms still arrive as a `show_widget` call with `kind: "user_properties_form"` or as a `user-properties-form-tool` segment.
 
 ## Related docs
 

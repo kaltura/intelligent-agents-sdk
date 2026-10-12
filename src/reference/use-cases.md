@@ -13,7 +13,6 @@ Each use case maps to a runnable script or example in this repo, or the equivale
 
 - UC-1 has a quickstart script.
 - UC-7 and UC-12 use the browser example app.
-- UC-13 is exercised by an integration test.
 
 <div data-nova-target="use-case-catalog-table" data-nova-label="Use-Case Catalog: all 13 use cases mapped to SDK entry points">
 
@@ -31,7 +30,7 @@ Each use case maps to a runnable script or example in this repo, or the equivale
 | UC-10 | **Slide-Deck Walkthrough** | Deck talking points in prompts; deterministic `navigate_to_slide` client-command tool call for nav; optional GenUI widget via `show_widget` | `examples/deck-presenter.html` |
 | UC-11 | **Usage Analytics** | Aggregated client-side; includes `_meta` provenance receipt | `mgmt.messages.reportSummary(ks)` |
 | UC-12 | **Anonymous End-User Embed** | `resolveWidgetId` once (server) → `sessions.createWidgetToken` (browser, no secret) → `appInit` → enriched KS. To separate users: [per-visitor path](/reference/api/deploy/#per-visitor-browser-path) | `examples/browser-experience.html` |
-| UC-13 | **Custom Portrait Avatar** | `catalog-item/create` with portrait JPEG → `catalogItemId` → `avatar/create visual.id` → `appInit` → `KalturaAvatarSession` connects with the portrait animating live | [§ End-to-end recipe](/reference/api/design/#end-to-end-custom-portrait-avatar-server-to-browser) + `test/integration/avatars-catalog.test.js` |
+| UC-13 | **Custom Portrait Avatar** | `catalog-item/create` with portrait JPEG → `catalogItemId` → `avatar/create visual.id` → `appInit` → `KalturaAvatarSession` connects with the portrait animating live | [§ End-to-end recipe](/reference/api/design/#end-to-end-custom-portrait-avatar-server-to-browser) |
 
 </div>
 
@@ -42,5 +41,5 @@ Each use case maps to a runnable script or example in this repo, or the equivale
 | Knowledge-grounded support bot | UC-3 + `capabilities.use_knowledge_base:on` + [§ Ground the Agent](/reference/api/build/knowledge-rag/#ground-the-agent-in-your-content-rag) |
 | Multi-brand personas | UC-5 (voice) + UC-2 (`{{locale}}` var) |
 | Lead-capture avatar | UC-7 + `user_properties_forms` |
-| Scheduled / proactive avatar | UC-7 + your scheduler calls `speak()` on the socket |
+| Scheduled / proactive avatar | UC-7 + your scheduler calls `session.speak(text)` on the `KalturaAvatarSession` |
 

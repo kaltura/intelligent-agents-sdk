@@ -16,7 +16,7 @@ How `KalturaAvatarSession` behaves under network failures, disconnects, and devi
 |---|---|---|---|
 | 1. Control socket | the websocket only | Socket.IO reconnects with backoff. If the socket state was recovered, the session goes straight back to `connected`. If not, the SDK does a cold reconnect (layer 3). The `reconnecting` state is bounded by `reconnectWindowMs` (default 22000). | `connectivityChanged` (`channel:'socket'`), `reconnecting`, `reconnected` |
 | 2. Media peers (ASR + STV) | one peer connection at a time | Watches ICE state, peer state and incoming video. Recovers in place first. If that fails, escalates to layer 3. | `connectivityChanged`, `mediaRecovering`, `mediaRecovered` |
-| 3. Cold reconnect | the whole conversation | Opens a new socket, re-`join`s, and rebuilds both media peers. Replays `threadId` so brain memory continues. Tries twice before it gives up. | `reconnecting`, `reconnected` |
+| 3. Cold reconnect | the whole conversation | Opens a new socket, re-`join`s, and rebuilds both media peers. Replays `threadId` so the conversation memory continues. Tries twice before it gives up. | `reconnecting`, `reconnected` |
 
 A non-recoverable failure ends the session cleanly (`ended`, or an error such as `reconnect_failed` or `reconnect_timeout`). It never hangs.
 
@@ -44,7 +44,7 @@ The SDK emits `mediaRecovering { channel, state, cause }` when recovery starts a
 | Channel | In-place recovery (`method`) | Details |
 |---|---|---|
 | ASR (mic uplink) | `ice-restart` | Restarts ICE on the same peer and re-offers over the socket with `is_reconnect: true`. Mute state is kept. Waits up to 30 s for the answer. |
-| STV (avatar video) | `re-subscribe` | Waits for the `DELETE` of the old WHEP resource, then sends a new WHEP offer. A `404` or `409` first asks for a new avatar session on the live socket ([details](/reference/wire-protocol/audio-channels/#6-stv-downlink-pc2--avatar-videoaudio--you)). Then it resumes playback if the browser paused the element. |
+| STV (avatar video) | `re-subscribe` | Waits for the `DELETE` of the old WHEP resource, then sends a new WHEP offer. A `404` or `409` first asks for a new avatar session on the live socket ([details](/reference/wire-protocol/audio-channels/#6-stv-downlink-pc2-avatar-videoaudio--you)). Then it resumes playback if the browser paused the element. |
 
 If in-place recovery fails, the SDK emits `connectivityChanged` with `state:'recover_failed'` and does a cold reconnect. `timeouts.recover` (15 s) bounds the STV re-subscribe. The ASR restart waits up to 30 s for its answer. Each channel has its own grace timer, so the two peers recover independently.
 
@@ -139,21 +139,21 @@ The connect-time keys (`overall`, `joinRoom`, and the rest) are in [Connection &
 | Plan/tier exceeded | `throwToExceededTier` | Fails with `tier_exceeded`. |
 | Connect hangs | Per-step timeouts and the 30 s deadline | `connect()` rejects with `timeout` and `error.phase`. See the [connect sequence](/reference/architecture-reference/connection-and-handshake/#full-connect-sequence-state-machine-order). |
 | Tool reply gets no answer | 15 s deadline | `respondToTool()` returns `{ok:false, reason:'timeout'}`. The call stays pending, so you can retry. The first reply may still have arrived, so make the tool's side effect safe to repeat. |
-| Brain stalls mid-conversation | Watchdog | `brainStalled`, repeating every `brainStallMs` (default 12000) until output lands. |
+| Agent stalls mid-conversation | Watchdog | `brainStalled`, repeating every `brainStallMs` (default 12000) until output lands. |
 | Tool-call spiral (same command retried with no narration) | Two-tier circuit breaker | Soft signal (`toolSpiralDetected`), then a hard cold reconnect. See [Tool-call spiral](#tool-call-spiral). |
 | Tab backgrounded / network change | `online`/`offline`/`visibilitychange` listeners | Media recovery as above. See [Session completion](#session-completion). |
 
 ### Tool-call spiral
 
-A brain can retry the same client command again and again instead of narrating. `KalturaAvatarSession` breaks the loop in two steps. `KalturaChatSession` has the first step only, because a chat turn has no socket to rebuild.
+An agent can retry the same client command again and again instead of narrating. `KalturaAvatarSession` breaks the loop in two steps. `KalturaChatSession` has the first step only, because a chat turn has no socket to rebuild.
 
 | Step | Trigger | Event | SDK action |
 |---|---|---|---|
 | Soft | `toolSpiralLimit` (default 10) tool segments in one turn | `toolSpiralDetected {count, limit}` | Signal only. The SDK does not interrupt the turn. |
-| Hard | `hardToolSpiralLimit` (default `toolSpiralLimit * 3`) tool segments since the last spoken or GenUI output | `toolSpiralRecovering {count, limit, lastTurnText}` | Cold reconnect. `threadId` is replayed, so brain memory continues. |
+| Hard | `hardToolSpiralLimit` (default `toolSpiralLimit * 3`) tool segments since the last spoken or GenUI output | `toolSpiralRecovering {count, limit, lastTurnText}` | Cold reconnect. `threadId` is replayed, so the conversation memory continues. |
 | Resend | The cold reconnect succeeds and `recoverFromSpiral` is `true` (default) | `spiralRecovered {text}` | The SDK resends the abandoned turn once, with a short nudge prefix. |
 
-Set `recoverFromSpiral:false` to resend the turn yourself from `lastTurnText`. Set any of the three limits to `0` to turn that step off. Options and a code sample: [README § Resilience: brain stalls and tool-call spirals](https://github.com/kaltura/intelligent-agents-sdk/blob/main/README.md#resilience-brain-stalls-and-tool-call-spirals). Prompt-side prevention: [Client-Side Commands](/guides/client-commands/).
+Set `recoverFromSpiral:false` to resend the turn yourself from `lastTurnText`. Set any of the three limits to `0` to turn that step off. Options and a code sample: [README § Resilience: agent stalls and tool-call spirals](https://github.com/kaltura/intelligent-agents-sdk/blob/main/README.md#resilience-agent-stalls-and-tool-call-spirals). Prompt-side prevention: [Client-Side Commands](/guides/client-commands/).
 
 ### Session completion
 

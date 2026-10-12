@@ -164,7 +164,7 @@ This applies whether the conversation happens over `mgmt.conversations.send()`/`
 
 ## Every session already gets a SUMMARY, for free
 
-A system-seeded rule, `preset__summary_on_session_ended`, produces one fixed summary insight on every `session_ended` event, for every agent. It has no opt-out, and no field lets you change its prompt. `match` returns it (see [Discovery and dry-run testing](#discovery-and-dry-run-testing)).
+Every `session_ended` event produces one fixed summary insight, for every agent. It has no opt-out, and no field lets you change its prompt. `match` lists the built-in rule that produces it (see [Discovery and dry-run testing](#discovery-and-dry-run-testing)).
 
 When you create your own `triggerInsightSettingsKai` rule on `session_ended`, the result is one combined `thread_metadata.analysis` containing the preset's summary plus whatever your `insightSettingsIds` asked for.
 
@@ -192,22 +192,7 @@ const { matchedRules } = await mgmt.lifecycle.match(
 );
 ```
 
-**`match` can return rules you never created.** Every partner has a system-seeded preset rule with `id: "preset__summary_on_session_ended"`. You cannot create its `action.actionType`. This preset matches every `session_ended`/`thread` event. `matchedRules[]` groups related rules under a shared `groupKey` with `isGrouped:true`. Don't mistake a grouped preset for something you configured:
-
-```js
-{
-  matchedRules: [
-    {
-      rules: [
-        { id: 'preset__summary_on_session_ended', action: { actionType: '<system-internal>' } },
-        { id: 'rule-you-created', action: { actionType: 'triggerInsightSettingsKai', insightSettingsIds: ['<your-insight-setting-id>'] } },
-      ],
-      isGrouped: true,
-      groupKey: '_default_all_kai_triggers',
-    },
-  ],
-}
-```
+**`match` can return rules you never created.** Every partner has a built-in rule that matches every `session_ended`/`thread` event, and you cannot create its action type. `matchedRules[]` can group it with your own rules under `isGrouped:true`. Don't mistake a grouped built-in rule for something you configured.
 
 ---
 
@@ -246,7 +231,7 @@ Templates live on the Messaging host. If the target has none, the template check
 
 | Intellect code | Severity | Meaning |
 |---|---|---|
-| `external_intellect` | info | An external intellect has no brain config, so nothing else is checked |
+| `external_intellect` | info | An external intellect has no editable config, so nothing else is checked |
 | `invalid_user_properties_forms` | error | The forms fail the same validation `setUserPropertiesForms` applies |
 | `secret_ref_unresolved` | error | `{{secrets.NAME}}` names a secret the intellect does not have |
 | `secret_ref_bad_prefix` | error | `{{variables.secrets.NAME}}` renders empty. Write `{{secrets.NAME}}` |
@@ -260,7 +245,7 @@ Templates live on the Messaging host. If the target has none, the template check
 
 The pure functions `auditLifecycleRules(rules, ctx)` and `auditIntellectConfig(config, ctx)` are exported from `./management` if you already hold the data.
 
-To run it from a terminal or CI, use `npm run audit:lifecycle`. It exits 0 when nothing reaches `--fail-on`, 1 when something does, and 2 on a usage, auth or request error. Flags are in [`scripts/README.md`](https://github.com/kaltura/intelligent-agents-sdk/blob/main/scripts/README.md#lifecycle-audit-cli).
+To run it from a terminal or CI, use `npm run audit:lifecycle`. Run `npm run audit:lifecycle -- --help` for the flags. It exits 0 when nothing reaches `--fail-on`, 1 when something does, and 2 on a usage, auth or request error.
 
 ---
 
@@ -309,6 +294,5 @@ All against `https://api.avatar.us.kaltura.ai`. SDK: `mgmt.lifecycle`.
 | Doc | What it adds |
 |---|---|
 | [Lifecycle Recipes](/guides/lifecycle-recipes/) | Hands-on walkthrough of `triggerInsightSettingsKai` + `sendInsightEmail` chained together, common pitfalls, and a runnable example |
-| [`scripts/README.md`](https://github.com/kaltura/intelligent-agents-sdk/blob/main/scripts/README.md#lifecycle-audit-cli) | The `audit:lifecycle` command and its exit codes |
 | [Management Operations](/reference/api/management-operations/) | Where Lifecycle sits alongside the other CRUD entities (agents, avatars, intellects, tools, skills, knowledge) |
 

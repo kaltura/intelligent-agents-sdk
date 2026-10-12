@@ -21,7 +21,7 @@ A user turn, as captured:
 ← debug_conversationStateChange {…}                                          (diagnostic)
 ← debug_llm_input {userInput}
 ← agent_start_speech {speechId, turnId}
-← agent_raw_text delta type=think → (then) type=avatar (streamed)             (brain output)
+← agent_raw_text delta type=think → (then) type=avatar (streamed)             (agent output)
 ← generatingSpeech {text}                                                     (clean sentences)
 ← debug_stvTaskGenerated {text, duration}                                     (raw chunks, pre-audio)
 ← agentTurnToTalk {userTranscription?}
@@ -38,7 +38,6 @@ A user turn, as captured:
 **Runtime behavior for integrators reasoning about turns:**
 
 - **Turn segmentation.** `agent_start_speech.isNewTurn` is `false` when new ASR/typed text continues the turn already in flight (e.g. a correction or extension of what the user just said). It's `true` for a fresh turn. The SDK reads this field and does not compute continuation itself.
-- **Audio/phone mode allocates no STV**: the `stvNewSession` reply is `{status:"audio/phone mode - no STV session"}` (no `webrtc_url`, no WHEP downlink), and the SDK skips WHEP; see [Wire Protocol · Events Catalog](/reference/wire-protocol/events-catalog/#4b-server--client-on--handshakesession-phase).
 
 ## 9. Reproduce / re-capture
 

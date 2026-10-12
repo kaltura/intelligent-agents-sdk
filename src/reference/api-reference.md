@@ -7,13 +7,13 @@ eyebrow: Reference
 
 # Backend API Reference — Kaltura Agentic Avatars
 
-Every endpoint, the full agent lifecycle, and a verified use-case catalog — copy-paste ready. This page is the index; the reference itself lives in focused files under [`docs/api/`](https://github.com/kaltura/intelligent-agents-sdk/blob/main/docs/api/).
+Every endpoint, the full agent lifecycle, and a verified use-case catalog, copy-paste ready. This page is the index. The reference itself lives in focused files under [`docs/api/`](https://github.com/kaltura/intelligent-agents-sdk/blob/main/docs/api/).
 
 **New here?** Start with [Getting Started](/getting-started/). Runtime details live in [Platform Overview](/explanation/architecture/). The zero-dependency SDK is in [`README.md`](https://github.com/kaltura/intelligent-agents-sdk/blob/main/README.md).
 
-**Credentials** — all examples need `AGENTIC_PARTNER_ID` and `AGENTIC_ADMIN_SECRET` ([Rich Media CMS → Settings → Integration Settings](https://kmc.kaltura.com/index.php/kmcng/settings/integrationSettings)). Set them in a local `.env` file, or pass them inline. To use a `.env` file, create it in the repo root with `AGENTIC_PARTNER_ID=...` and `AGENTIC_ADMIN_SECRET=...` on their own lines — `.gitignore` already excludes it. Never hardcode the secret.
+**Credentials.** All examples need a partner ID and an admin secret ([Rich Media CMS → Settings → Integration Settings](https://kmc.kaltura.com/index.php/kmcng/settings/integrationSettings)). The examples read them from `AGENTIC_PARTNER_ID` and `AGENTIC_ADMIN_SECRET` in the environment. The SDK itself never reads a `.env` file. Setup steps: [Getting Started](/getting-started/#step-1-get-your-credentials-1-minute). Never hardcode the secret.
 
-Every endpoint is shown as a raw HTTP call plus its SDK wrapper. The SDK is what ships in this repo — see [`README.md`](https://github.com/kaltura/intelligent-agents-sdk/blob/main/README.md) for the full `Management` method list.
+Every endpoint is shown as a raw HTTP call plus its SDK wrapper. See [`README.md`](https://github.com/kaltura/intelligent-agents-sdk/blob/main/README.md) for the full `Management` method list.
 
 ---
 
@@ -26,19 +26,13 @@ Every endpoint is shown as a raw HTTP call plus its SDK wrapper. The SDK is what
 | [Agent Components](/reference/api/build/) | Generate an agent profile, create/configure an intellect, preview a prompt, tools (`api`/`csv`/`code`), secrets, ground in your content (RAG), create an avatar, create an agent |
 | [Widget & Runtime Init](/reference/api/deploy/) | Resolve widget ID, initialize the browser runtime |
 | [Conversation & Analytics](/reference/api/operate/) | Converse (headless HTTP), reserved `sys__*` template variables, status, threads, feedback and follow-ups, usage analytics, knowledge search (MCP) |
-| [Scripted-Video (STV-only) Sessions](https://github.com/kaltura/intelligent-agents-sdk/blob/main/docs/api/scripted-video.md) | Deprecated. Pre-authored speech sessions — auth, lifecycle, `say-audio` |
+| [Scripted-Video (STV-only) Sessions](https://github.com/kaltura/intelligent-agents-sdk/blob/main/docs/api/scripted-video.md) | Deprecated. Pre-authored speech sessions: auth, lifecycle, `say-audio` |
 | [Management Operations](/reference/api/management-operations/) | CRUD tables for agents, avatars, intellects, tools, skills, threads, messages/feedback/followups, knowledge records, lifecycle |
-| [Lifecycle Rules](/reference/lifecycle/) | Event-driven rules + InsightSettings (reusable custom-insight definitions) + EmailTemplates (`sendInsightEmail`'s `templateId`) — reference + [recipe](/guides/lifecycle-recipes/) |
-| [External API Integrations](/guides/external-api-integrations/) | Wiring a brain-called tool to a durable write against your own external API (CRM, spreadsheet, ticketing), including the backend-managed OAuth2 flow |
-| [MCP Integrations](/guides/mcp-integrations/) | Wiring a whole [MCP](https://modelcontextprotocol.io) server's tool surface at once — auth, multi-server namespacing, OAuth-gated servers |
+| [Lifecycle Rules](/reference/lifecycle/) | Event-driven rules + InsightSettings (reusable custom-insight definitions) + EmailTemplates (`sendInsightEmail`'s `templateId`). Reference and [recipe](/guides/lifecycle-recipes/) |
+| [External API Integrations](/guides/external-api-integrations/) | Wiring an agent-called tool to a durable write against your own external API (CRM, spreadsheet, ticketing), including the managed OAuth2 flow |
+| [MCP Integrations](/guides/mcp-integrations/) | Wiring a whole [MCP](https://modelcontextprotocol.io) server's tool surface at once: auth, multi-server namespacing, OAuth-gated servers |
 | [Use-Case Catalog](/reference/use-cases/) | All 13 use cases (UC-1 through UC-13) mapped to mechanisms and runnable scripts |
 | [Site navigation](/guides/site-navigation/) | Fire-and-forget `go_to` tool, compact SITE MAP prompt, `sections.json` manifest, browser `SiteNavigator` plugin |
-
-**Section shorthand.** Docs and source comments cite sections as `API-REFERENCE.md § <name>` — find the section in the table above. Common ones:
-
-- § Tools, § Secrets, § Ground the Agent, § Configure an Intellect — [Agent Components](/reference/api/build/)
-- § Converse, § Threads — [Conversation & Analytics](/reference/api/operate/)
-- § Initialize the Runtime — [Widget & Runtime Init](/reference/api/deploy/)
 
 ---
 
@@ -57,9 +51,9 @@ See the full [Use-Case Catalog](/reference/use-cases/) for all 13, each mapped t
 
 ## Common Errors
 
-The SDK wraps every error into a `KalturaError` with a stable `err.code`. Branch on that, not on prose or the raw upstream body.
+The SDK wraps every error into a `KalturaError` with a stable `err.code`. Branch on that, not on message text or the raw response body.
 
-| Status | `err.code` | Fix |
+| Status or error number | `err.code` | Fix |
 |--------|-----|-----|
 | 400 | `bad_request` | Fix the request body |
 | 402 | `payment_required` | The server refused the request as Payment Required, which points to a plan or entitlement limit. Check the plan with your Kaltura contact. The SDK never retries it, and `err.retryable` is `false`. A temporary load limit is not a 402: a live conversation reports it as the retryable `capacity_unavailable`. |
@@ -72,12 +66,12 @@ The SDK wraps every error into a `KalturaError` with a stable `err.code`. Branch
 
 A `KalturaAvatarSession` (and `KalturaAgentSession` while in avatar mode) adds two fields to its errors. `err.phase` names the connect step that failed. `err.retryable` says whether trying again can succeed. See [connect timeouts](/reference/architecture-reference/connection-and-handshake/#full-connect-sequence-state-machine-order).
 
-Upstream error text is also normalized to a stable `err.code`, regardless of the HTTP status the backend returned it with:
+A missing agent or intellect gets its own `err.code`, whatever the HTTP status:
 
-| Upstream detail contains | `err.code` | Fix |
+| Situation | `err.code` | Fix |
 |---|-----|-----|
-| `AGENT_NOT_FOUND` | `agent_not_found` | Check the `agentId` |
-| `AGENT_PARTNER_CONFIG_NOT_FOUND` | `intellect_not_found` | Create the intellect first |
+| The agent does not exist | `agent_not_found` | Check the `agentId` |
+| The agent has no intellect | `intellect_not_found` | Create the intellect first |
 
 ### Response headers (debugging and log search)
 

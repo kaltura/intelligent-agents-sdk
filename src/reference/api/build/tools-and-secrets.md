@@ -12,7 +12,7 @@ eyebrow: Reference
 
 ## Tools (api / csv / code)
 
-Tools are a standalone entity scoped to your whole partner account, with their own CRUD API (`/v1/tool/add|get|list|update|delete`, Genie host). They are **not** embedded in an intellect — an intellect only carries the `tool_ids` (an array of tool uuid strings) it may call.
+Tools are a standalone entity scoped to your whole partner account, with their own CRUD API (`/v1/tool/add|get|list|update|delete`, conversation host). They are **not** embedded in an intellect. An intellect only carries the `tool_ids` (an array of tool uuid strings) it may call.
 
 **SDK:**
 - `import { tools } from '@kaltura/intelligent-agents/management'` builds and validates a tool's `config` before any network call.
@@ -47,7 +47,7 @@ Calls an external HTTP endpoint. `POST /v1/tool/add`:
 }
 ```
 
-Returns a `Tool` — `{id, name, config, partner_id, created_at, updated_at}`. Link its `id` into an intellect:
+Returns a `Tool`: `{id, name, config, partner_id, created_at, updated_at}`. Link its `id` into an intellect:
 
 ```json
 { "id": 42, "type": "internal", "status": 2, "tool_ids": ["<the returned id>"] }
@@ -57,9 +57,9 @@ sent to `POST /v1/intellect/update`.
 
 The `authentication` block supports the OAuth2 authorization-code flow only (the viewer gives consent). It takes `client_id`, `client_secret` (a `secrets.<name>` reference), `token_url` and `auth_url`, all required. There is no `flow` or `scopes` option. Providers that use the client-credentials flow (for example the Marketo REST API) do not fit this block.
 
-`response_mapping`, `response_template`, and `response_chapters` are mutually exclusive. Reference secrets as `"secrets.NAME"` — never plaintext.
+`response_mapping`, `response_template`, and `response_chapters` are mutually exclusive. Reference secrets as `"secrets.NAME"`, never as plaintext.
 
-**Security note:** an `api` tool's `request` fires server-to-server, outside the SDK's reach. The model or system prompt that led to the call is not a security boundary. Your endpoint must independently authenticate and authorize each request (validate the caller's Kaltura Session and permissions), the same way you would for any other server-to-server API call. Treat interpolated `request_vars` (client-suppliable when `allow_client_variables:true` — see [Converse](/reference/api/operate/#converse)) as untrusted input, never as an authorization claim.
+**Security note:** an `api` tool's `request` fires server-to-server, outside the SDK's reach. The model or system prompt that led to the call is not a security boundary. Your endpoint must independently authenticate and authorize each request (validate the caller's Kaltura Session and permissions), the same way you would for any other server-to-server API call. Treat interpolated `request_vars` (client-suppliable when `allow_client_variables:true`, see [Converse](/reference/api/operate/#converse)) as untrusted input, never as an authorization claim.
 
 ### `csv` tool
 
@@ -71,7 +71,7 @@ Inline lookup table:
 
 ### `code` tool
 
-Python in a server sandbox. Define `def main(...)`. Each declared arg is passed to it by name, so the parameter names must match the `args` keys. Whatever `main` returns goes back to the model:
+Python that runs on the server. Define `def main(...)`. Each declared arg is passed to it by name, so the parameter names must match the `args` keys. Whatever `main` returns goes back to the model:
 
 ```json
 {
@@ -85,7 +85,7 @@ Python in a server sandbox. Define `def main(...)`. Each declared arg is passed 
 }
 ```
 
-**You cannot create `csv` or `code` tools yourself.** `POST /v1/tool/add` replies HTTP 403 (`Tool type 'csv'/'code' is unavailable by default, call support`). So does `/v1/tool/update` when its `config` is a `csv` or `code` config. No account setting changes this. Contact Kaltura support to have one set up. `api` and `client` tools have no such limit.
+**You cannot create `csv` or `code` tools yourself.** `POST /v1/tool/add` returns HTTP 403 for a `csv` or `code` config. So does `/v1/tool/update` when its `config` is a `csv` or `code` config. No account setting changes this. Contact Kaltura support to have one set up. `api` and `client` tools have no such limit.
 
 | Call | Result |
 |---|---|
@@ -98,7 +98,7 @@ SDK: `tools.csv(...)`/`tools.code(...)` still validate and build the config loca
 
 ### `client` tool
 
-A native function-calling tool that makes no server-side call at all. The model calls it, the backend emits a silent `type:"tool"` segment (see [Wire Protocol](/reference/wire-protocol/)), and that's the entire contract — no `request` block, no echo endpoint, no response shaper:
+A native function-calling tool that makes no server-side call. The model calls it, the server emits a `type:"tool"` segment (see [Wire Protocol](/reference/wire-protocol/)), and that is the whole contract. There is no `request` block, no echo endpoint and no response shaper:
 
 ```json
 {
@@ -112,11 +112,11 @@ A native function-calling tool that makes no server-side call at all. The model 
 }
 ```
 
-`wait_for_response` (SDK: `waitForResponse`) controls whether the model's turn blocks on a real acknowledgment (ACK) from the client. **Omitting it is not the same as `false`** — the backend's own wire default for an absent field is `true` (blocking); pass `false` explicitly for fire-and-forget dispatch. When `true`, the backend polls up to `timeout` seconds (default 30) for an ACK via `POST /assistant/tool_response` (SDK: `session.respondToTool(id, response)`).
+`wait_for_response` (SDK: `waitForResponse`) controls whether the model's turn blocks on a real acknowledgment (ACK) from the client. **Omitting it blocks, the same as `true`.** Pass `false` explicitly for fire-and-forget dispatch. When `true`, the turn waits up to `timeout` seconds (default 30) for an ACK via `POST /assistant/tool_response` (SDK: `session.respondToTool(id, response)`).
 
 ### Client-tool gotcha
 
-This requirement applies at authoring time to any tool-referencing intellect (client, api, csv, or code): **`kaltura_genie_experiences` must be `'off'` at creation.** The experiences capability injects a system rule that overrides custom tool calls. Set it to `'off'` when you call `intellect/add` — partner config is cached ~24 h server-side, so updating it later has no immediate effect.
+This requirement applies at authoring time to any tool-referencing intellect (client, api, csv, or code): **`kaltura_genie_experiences` must be `'off'` at creation.** With the experiences capability on, the model can skip your custom tool calls. Set it to `'off'` when you call `intellect/add`. Changing it later does not take effect right away: see [Client-Side Commands § Gotcha 2](/guides/client-commands/#gotcha-2-set-capabilities-at-creation-not-after).
 
 Use `tools.client(...)` in the SDK, which validates the tool before any network call; `clientToolReadiness(body)` lints an intellect body's `tool_ids` + `capabilities` for this gotcha.
 
@@ -124,7 +124,7 @@ Use `tools.client(...)` in the SDK, which validates the tool before any network 
 
 ## Secrets (write-only)
 
-`secrets` is a dict `{name: value}` on `config`. A read masks every value as `"***"`. A `"***"` value on update is preserved server-side — read-modify-write never clobbers a sibling. Reference as `"secrets.NAME"` in tool configs or `{{secrets.NAME}}` in prompts.
+`secrets` is a dict `{name: value}` on `config`. A read masks every value as `"***"`. A `"***"` value on update is preserved, so a read-modify-write never overwrites a sibling. Reference as `"secrets.NAME"` in tool configs or `{{secrets.NAME}}` in prompts.
 
 **SDK:** `mgmt.intellects.secrets.{listNames, has, set, delete, replaceAll, validate}`. `delete(configId, name, ks, confirm)` is permanent and requires `confirm = { confirmPermanent: true }`.
 

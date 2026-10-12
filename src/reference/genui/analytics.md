@@ -49,8 +49,8 @@ new ExperienceRenderer({
       analytics.buttonClicked({
         buttonType: 'Select',
         buttonName: 'genui-followup-chip',
-        buttonValue: payload.question,   // which chip — makes this event distinguishable per question
-        buttonInfo: 'GenUI followups widget — suggested-question chip clicked',
+        buttonValue: payload.question,   // which chip, makes this event distinguishable per question
+        buttonInfo: 'GenUI followups widget, suggested-question chip clicked',
       });
       session.speak(payload.question);
     } else if (action === 'open') {
@@ -59,7 +59,7 @@ new ExperienceRenderer({
         buttonType: 'Open',
         buttonName: 'genui-show-link-card',
         buttonValue: payload.url,
-        buttonInfo: 'GenUI show-link widget — link card opened',
+        buttonInfo: 'GenUI show-link widget, link card opened',
       });
     }
   },
@@ -68,17 +68,17 @@ new ExperienceRenderer({
 
 Two rules keep the two events distinguishable and non-duplicated:
 
-- **A different `buttonName` per widget/interaction type** (`genui-followup-chip` vs. `genui-show-link-card`) — this is what a KAVA dashboard groups and filters on. Don't reuse one generic name across widget kinds.
-- **`buttonValue` carries the specific choice** (the exact question text, the exact URL) rather than a boolean or the widget kind — the kind already lives in `buttonName`. Two clicks on two different chips inside the SAME `followups` widget still produce two distinct, non-duplicate rows, because each carries a different `buttonValue`.
+- **A different `buttonName` per widget/interaction type** (`genui-followup-chip` vs. `genui-show-link-card`), this is what a KAVA dashboard groups and filters on. Don't reuse one generic name across widget kinds.
+- **`buttonValue` carries the specific choice** (the exact question text, the exact URL) rather than a boolean or the widget kind, the kind already lives in `buttonName`. Two clicks on two different chips inside the SAME `followups` widget still produce two distinct, non-duplicate rows, because each carries a different `buttonValue`.
 
 Apply the same two-line pattern to any other `onAction` intent:
 
-- `'play'` (`{entryId, url, embedUrl}`) — a video-gallery clip was opened.
-- `'submit'` (`{values}`) — a `user-properties-form` was submitted. Report only that it happened and which fields were filled, not the raw values if they're personal data. See [Structured Data Forms](/guides/structured-data-forms/) for where that data durably belongs instead.
+- `'play'` (`{entryId, url, embedUrl}`): a video-gallery clip was opened.
+- `'submit'` (`{values}`): a `user-properties-form` was submitted. Report only that it happened and which fields were filled, not the raw values if they're personal data. See [Structured Data Forms](/guides/structured-data-forms/) for where that data durably belongs instead.
 
 ## Why the two events stay distinct
 
-`followups-tool` and `show-link-tool` (the second requires enabling the `show_link` capability — OFF by default, see [GenUI · Authoring and Consuming Widgets](/reference/genui/authoring-and-consuming/#authoring--which-capability-turns-each-widget-on)) can arrive in the same turn. Run through the two `buttonClicked()` calls above, the resulting payloads share the same `partnerId`/`sessionId` (same conversation), but differ in `buttonName`/`buttonType`/`buttonValue`. That makes them two distinguishable, non-duplicated events tied to one conversation, not two copies of the same one. To test this without landing rows on your live KAVA data, pass an injected transport to `KavaAnalytics`.
+`followups-tool` and `show-link-tool` (the second requires enabling the `show_link` capability, which is off by default, see [GenUI · Authoring and Consuming Widgets](/reference/genui/authoring-and-consuming/#authoring-which-capability-turns-each-widget-on)) can arrive in the same turn. Run through the two `buttonClicked()` calls above, the resulting payloads share the same `partnerId`/`sessionId` (same conversation), but differ in `buttonName`/`buttonType`/`buttonValue`. That makes them two distinguishable, non-duplicated events tied to one conversation, not two copies of the same one. To test this without landing rows on your live KAVA data, pass an injected transport to `KavaAnalytics`.
 
 ## Related docs
 

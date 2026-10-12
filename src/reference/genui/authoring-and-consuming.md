@@ -10,32 +10,32 @@ eyebrow: Reference
 [← Back to GenUI Reference](/reference/genui-reference/)
 
 
-## Authoring — which capability turns each widget on
+## Authoring: which capability turns each widget on
 
-Capabilities are set **at intellect creation** (the agent's configuration). Partner config caches for about 24 hours, so set capabilities up front. Source of truth: `src/management/capabilities.js` (`CAPABILITY_INFO`, `CAPABILITY_DEFAULTS`, `OFF_BY_DEFAULT`).
+Set capabilities **at intellect creation** (the agent's configuration). Do not change them after creation, see [Client-Side Commands](/guides/client-commands/#gotcha-2-set-capabilities-at-creation-not-after). Source of truth: `src/management/capabilities.js` (`CAPABILITY_INFO`, `CAPABILITY_DEFAULTS`, `OFF_BY_DEFAULT`).
 
 `kind` is `tool`, `segment`, `mode`, or `prompt`. This only names the mechanism that gates the capability on or off. It says nothing about whether the capability's *content* is persona-steerable.
 
-`avatar_filler` (`kind: 'prompt'`) is the exception to watch for. Its filler phrasing is server-generated per turn and is NOT reliably steerable via `base_directive`, even though it streams as a "spoken" segment alongside `avatar`/`text` (see [Wire Protocol · Events Catalog § 4e](/reference/wire-protocol/events-catalog/#4e-agent_raw_textdelta--the-brain-stream-parsed)). Disable the capability if the default phrasing doesn't fit your persona.
+`avatar_filler` (`kind: 'prompt'`) is the exception to watch for. Its filler phrasing is NOT reliably steerable via `base_directive`, even though it streams as a "spoken" segment alongside `avatar`/`text` (see [Wire Protocol · Events Catalog](/reference/wire-protocol/events-catalog/)). Disable the capability if the default phrasing doesn't fit your persona.
 
 | Capability | Default | Kind | Gates runtime | Notes |
 |---|---|---|---|---|
-| `kaltura_genie_experiences` | **ON** | mode | (master) | Master switch for structured GenUI. Leaving it on injects a competing instruction that out-competes a custom tool — turn it OFF for command-only agents; see [External API Integrations § Don't skip `kaltura_genie_experiences: 'off'`](/guides/external-api-integrations/#dont-skip-kaltura_genie_experiences-off) |
-| `generate_followup_questions` | **ON** | segment | `followups` | — |
+| `kaltura_genie_experiences` | **ON** | mode | (master) | Master switch for structured GenUI. Leaving it on can make the agent prefer built-in widgets over a custom tool. Turn it OFF for command-only agents. See [External API Integrations § Don't skip `kaltura_genie_experiences: 'off'`](/guides/external-api-integrations/#dont-skip-kaltura_genie_experiences-off) |
+| `generate_followup_questions` | **ON** | segment | `followups` | None |
 | `include_sources` | **ON** | segment | `sources` | Pairs with `use_knowledge_base` (RAG) |
-| `video_gallery` | **OFF** | segment | `video-gallery` (and `content-gallery`) | — |
-| `external_video` | **OFF** | segment | `external-video` | — |
-| `show_link` | **OFF** | segment | `show-link` | — |
-| `avatar_show_content` | **OFF** | prompt | (avatar visual push) | — |
+| `video_gallery` | **OFF** | segment | `video-gallery` (and `content-gallery`) | None |
+| `external_video` | **OFF** | segment | `external-video` | None |
+| `show_link` | **OFF** | segment | `show-link` | None |
+| `avatar_show_content` | **OFF** | prompt | (avatar visual push) | None |
 | `use_knowledge_base` | **ON** | tool | (feeds `sources`) | `async_search_knowledge_base` RAG |
 
 The structured data-collection form (`user-properties-form`) is configured via the intellect's `user_properties_forms` field, not a boolean capability. On the wire this field is a LIST of `{call_stage, properties:[{key,type}]}` forms. `setUserPropertiesForms` accepts a single form object and wraps it into a one-element list.
 
-The nine `OFF_BY_DEFAULT` capabilities are: `avatar`, `avatar_filler`, `avatar_show_content`, `video_gallery`, `external_video`, `show_link`, `use_web_search`, `screen_share_analysis`, and `think_process`. Note that `think_process` gates a `think` segment, not a GenUI widget, so it's out of scope for the table above.
+Every capability and its default is listed in [Configure an Intellect](/reference/api/build/intellect/#configure-an-intellect).
 
 ## Consuming widgets in your app
 
-**The 2-line happy path** — pass a DOM Element as `mount` and the SDK renders for you, live:
+**The 2-line happy path:** pass a DOM Element as `mount` and the SDK renders for you, live:
 
 ```js
 import { ExperienceRenderer } from '@kaltura/intelligent-agents/experience/genui';
@@ -50,12 +50,12 @@ new ExperienceRenderer({
 
 `mountWidget` (`genui/renderers/mount.js`, exported from `./experience/genui`) is the SDK's last-mile descriptor→DOM renderer:
 
-- Zero-dep and isomorphic — returns `null` with no DOM.
+- Zero-dep and isomorphic. Returns `null` with no DOM.
 - **Never `innerHTML`.**
 - Accessible by construction.
-- Ships **zero styling** — it emits the `kgenui` / `kgenui__*` class contract for you to theme.
+- Ships **zero styling**. It emits the `kgenui` / `kgenui__*` class contract for you to theme.
 
-Call it directly — `mountWidget(descriptor, targetEl, { replace?, onAction? })` — or let `ExperienceRenderer` call it when `mount` is an Element (or `target`).
+Call it directly with `mountWidget(descriptor, targetEl, { replace?, onAction? })`, or let `ExperienceRenderer` call it when `mount` is an Element (or `target`).
 
 ### `ExperienceRenderer` options
 
@@ -67,14 +67,14 @@ Call it directly — `mountWidget(descriptor, targetEl, { replace?, onAction? })
 
 In the live socket runtime, `.start()` subscribes to `session.on('brainSegment')` and flushes on `turnEnd`/`avatarStopTalking`, resetting on `interrupted`. `clearOnTurnStart` (default `true`) also resets the assembler and `clear()`s `rendered`/`last` on the session's `turnStart` event (re-emitted from the raw `agent_start_speech` socket event). So a widget from turn N never lingers into turn N+1. Set `false` for intentional cross-turn persistence.
 
-Headless, call `.render(runtimeName, widget)` (or `.render(segment)`) per segment from a `conversations.stream()` feed — the reliable path.
+Headless, call `.render(runtimeName, widget)` (or `.render(segment)`) per segment from a `conversations.stream()` feed. This is the reliable path.
 
 ### Registration, fallback, and provenance
 
 - `.register(runtimeName, fn)` adds/overrides a renderer (name normalized); `.has`, `.runtimes`, `.last`, `.rendered`, `.clear()`. `replace:true` keeps only the latest widget per turn.
 - An unknown runtime renders `{kind:'unknown', data:{runtime, model}}` and fires `onUnhandled` (never throws). A throwing custom renderer degrades to `{kind:'error', ...}`.
 - `_meta` receipt stamps `{partnerId, source:'experience/genui', scope:'conversation (entitlement ON)', known, firstClass}`. `known` means this instance has a renderer for it (a registered 10th runtime is `known:true`). `firstClass` means it's one of the built-in set.
-- `graded-question` ([GenUI · Per-Runtime Widget Detail § 10](/reference/genui/widgets/#10-graded-question-rendergradedquestion--a-host-registered-10th-runtime)) is a concrete, shipped example of a registered 10th runtime. It's exported (`renderGradedQuestion`) but deliberately excluded from `DEFAULT_RENDERERS`/`RUNTIMES`, so it stays `known:false` until a host explicitly registers it.
+- `graded-question` ([GenUI · Per-Runtime Widget Detail § 10](/reference/genui/widgets/#10-graded-question-rendergradedquestion-a-host-registered-10th-runtime)) is a concrete, shipped example of a registered 10th runtime. It's exported (`renderGradedQuestion`) but deliberately excluded from `DEFAULT_RENDERERS`/`RUNTIMES`, so it stays `known:false` until a host explicitly registers it.
 
 ### `onAction`, `WIDGET_KINDS`, and the hand-rolled escape hatch
 
@@ -84,11 +84,11 @@ Headless, call `.render(runtimeName, widget)` (or `.render(segment)`) per segmen
 - `'submit'` `{values}` → `session.submitStructuredDataForm`
 - `'play'` `{entryId, url, embedUrl}`
 - `'open'` `{url}`
-- `'answer'` `{questionId, variant, correct, value, explanation, optionId?}` — a `graded-question` was answered (see [GenUI · Per-Runtime Widget Detail § 10](/reference/genui/widgets/#10-graded-question-rendergradedquestion--a-host-registered-10th-runtime))
+- `'answer'` `{questionId, variant, correct, value, explanation, optionId?}`: a `graded-question` was answered (see [GenUI · Per-Runtime Widget Detail § 10](/reference/genui/widgets/#10-graded-question-rendergradedquestion-a-host-registered-10th-runtime))
 
-`WIDGET_KINDS` (exported) is the frozen list of every `kind` (the nine first-class GenUI runtimes, plus `unknown` and `error`) — use it for an exhaustive host switch or a parity test.
+`WIDGET_KINDS` (exported) is the frozen list of every `kind` (the nine first-class GenUI runtimes, plus `unknown` and `error`). Use it for an exhaustive host switch or a parity test.
 
-You can still read `seg.metadata.runtimeName` and build DOM yourself (use `renderSafeLink`/`safeText`/`safeUrl` so nothing un-sanitized hits the DOM). Prefer `mountWidget` — the hand-rolled path is for a fully custom design system only.
+You can still read `seg.metadata.runtimeName` and build DOM yourself (use `renderSafeLink`/`safeText`/`safeUrl` so nothing un-sanitized hits the DOM). Prefer `mountWidget`. The hand-rolled path is for a fully custom design system only.
 
 ### Markdown rendering (opt-in)
 
@@ -106,13 +106,13 @@ A markdown table renders through the `tableEl` builder (`genui/renderers/dom-hel
 
 This is markdown-**in**-plain-text rendering, not a new wire segment type. The underlying descriptor is still `{kind:'summary', data:{summary, ...}}`. Only the render path changes.
 
-It is `never innerHTML`. Every text run is built via `textContent`/`createTextNode`, so a raw `<script>` tag in the LLM output is inert text, not markup. Every extracted URL goes through `safeUrl` too — a `javascript:` or other unsafe-scheme link degrades to plain safe text, never a dead or unsafe `href`.
+It is `never innerHTML`. Every text run is built via `textContent`/`createTextNode`, so a raw `<script>` tag in the LLM output is inert text, not markup. Every extracted URL goes through `safeUrl` too. A `javascript:` or other unsafe-scheme link degrades to plain safe text, never a dead or unsafe `href`.
 
 Without `opts.markdown`, the summary renders as flat escaped text.
 
 ### Theming + a11y contract (`kgenui` classes)
 
-`mountWidget` emits semantic, accessible DOM and a stable `kgenui`/`kgenui__*` class contract. Theme it in your CSS — the SDK ships none.
+`mountWidget` emits semantic, accessible DOM and a stable `kgenui`/`kgenui__*` class contract. Theme it in your CSS. The SDK ships none.
 
 | Scope | Classes |
 |---|---|
@@ -141,7 +141,7 @@ The SDK ships zero CSS for these class names. Style the `.kgenui__*` block in yo
 
 ## `screen_share_analysis` / `sendScreenShot(data)`
 
-`screen_share_analysis` is the capability that lets an agent receive and reason about a still image of the user's screen. Turn it on via `mgmt.intellects.setCapability(configId, 'screen_share_analysis', 'on', ks)` (it's `OFF_BY_DEFAULT` — see above). On a live session, call `session.sendScreenShot(data)` (`data` is an `ArrayBuffer`/`Uint8Array` image capture) to push one still for vision analysis. It throws unless the server's `clientConfiguration.isScreenShareEnabled` is true, which only happens once the capability is on for that intellect.
+`screen_share_analysis` is the capability that lets an agent receive and reason about a still image of the user's screen. Turn it on via `mgmt.intellects.setCapability(configId, 'screen_share_analysis', 'on', ks)` (it's off by default). On a live session, call `session.sendScreenShot(data)` (`data` is an `ArrayBuffer`/`Uint8Array` image capture) to push one still for vision analysis. It throws unless the server's `clientConfiguration.isScreenShareEnabled` is true, which only happens once the capability is on for that intellect.
 
 ## Related docs
 
