@@ -40,7 +40,7 @@ All capacity codes are `KalturaError` values. `status` is an SDK number, not an 
 - The SDK sends `stvNewSession` at once and also polls `checkAvailability` on the same socket. The poll never disconnects, so stickiness is kept.
 - Every `availabilityResult` is re-emitted as `capacityChanged { available, details }`.
 - If `available` is `false`, the SDK polls again after a delay. The delays are `[30s, 45s, 60s, 90s, 120s, 180s, 240s, 300s, 360s]` with ±15% jitter. After the last one it keeps using 360s.
-- The wait shares the 30 s overall connect deadline. It is **not** paused while queued, so a long wait can end in `ConnectTimeout`.
+- The wait shares the 30 s overall connect deadline. It is **not** paused while queued, so a long wait can end in a `timeout` error.
 
 **Waiting longer, before `connect()`:** `waitForCapacity({ maxWaitMs, pollIntervalMs })`.
 
@@ -53,11 +53,11 @@ It opens its own light socket, uses no slot, and resolves `{ available: true, de
 
 ## What survives a reconnect
 
-Only the brain **thread** resumes across sessions, via `threadId`. The recovery layers are in [resilience-and-failure-handling.md](resilience-and-failure-handling.md).
+Only the conversation **thread** resumes across sessions, via `threadId`. The recovery layers are in [resilience-and-failure-handling.md](resilience-and-failure-handling.md).
 
 ## Slot data
 
-`availabilityResult.details` is passed through from the server as an optional, informational object. The SDK does not read it. Treat it as optional.
+`capacityChanged.details` is an optional, informational object. The SDK passes it through and does not read it.
 
 For what a custom (no-Kaltura-lib) client must implement to work with this model, see [ARCHITECTURE-RECIPE.md's "Implications for a Custom Client"](../ARCHITECTURE-RECIPE.md#implications-for-a-custom-no-kaltura-lib-client).
 

@@ -7,7 +7,7 @@
  * it with `mgmt.intellectConfig.setToolIds(configId, [toolId], ks)`.
  * No network calls; no secrets stored here (inject via `mgmt.intellects.secrets.set`).
  *
- * See README.md ("AI-SDR / CRM lead capture") for a walkthrough.
+ * See docs/EXTERNAL-API-INTEGRATIONS.md for a walkthrough.
  *
  * Each tool maps the CRM response to fields the agent can read, and its
  * default description tells the agent to say "saved" only when the result
@@ -180,7 +180,7 @@ function buildSalesforceUpsert(o) {
  * Upserts a contact using Salesforce REST API sobjects endpoint with a named
  * External ID field. Requires a Salesforce Connected App OAuth2 access token
  * stored as a secret. Salesforce access tokens expire (about 2 hours by
- * default), so see README.md ("AI-SDR / CRM lead capture") for the token options.
+ * default), so see docs/EXTERNAL-API-INTEGRATIONS.md for the token options.
  * The result carries `result` (the id) and `success` on insert and on update.
  * A failure reaches the agent only as a generic error status. The default
  * description tells the agent not to say "saved" on an empty or failed result.
@@ -225,8 +225,8 @@ export function salesforceContactUpsert(cfg = {}) {
  * contacted. The value is written to `Description` (Salesforce has no standard
  * Lead consent field). Set `requireConsent: false` to drop it.
  *
- * Salesforce access tokens expire (about 2 hours by default). See README.md
- * ("AI-SDR / CRM lead capture") for the token options. The result fields are
+ * Salesforce access tokens expire (about 2 hours by default). See
+ * docs/EXTERNAL-API-INTEGRATIONS.md for the token options. The result fields are
  * the same as {@link salesforceContactUpsert}. If two Leads already have the
  * same email, Salesforce answers 300 and writes nothing, and the agent gets a
  * generic error status.

@@ -13,8 +13,8 @@ The SDK's committed fixture at [`test/fixtures/golden-session.json`](https://git
 | Channel | Transport | Direction | Carries | Details |
 |---|---|---|---|---|
 | **Control plane** | Socket.IO (WebSocket) to `conversationManagerUrl` (default `https://conversation.avatar.us.kaltura.ai`) | duplex | handshake, session setup, agent text stream, turn and talking state, ASR signaling | [§2](#2-socketio-connection)–[§3](#3-connect-sequence-state-machine-order), [events catalog](events-catalog.md) |
-| **ASR uplink** | WebRTC `RTCPeerConnection` (pc1) | client → server | your microphone (Opus); SDP/ICE relayed **over the socket** | [§5](audio-channels.md#5-asr-uplink-pc1--microphone--server) |
-| **STV downlink** | WebRTC `RTCPeerConnection` (pc2) via **WHEP** | server → client | avatar video (H264) and audio (Opus); SDP over **plain HTTP** | [§6](audio-channels.md#6-stv-downlink-pc2--avatar-videoaudio--you) |
+| **ASR uplink** | WebRTC `RTCPeerConnection` (pc1) | client → server | your microphone (Opus); SDP/ICE relayed **over the socket** | [§5](audio-channels.md#5-asr-uplink-pc1-microphone--server) |
+| **STV downlink** | WebRTC `RTCPeerConnection` (pc2) via **WHEP** | server → client | avatar video (H264) and audio (Opus); SDP over **plain HTTP** | [§6](audio-channels.md#6-stv-downlink-pc2-avatar-videoaudio--you) |
 <!-- /nova-target -->
 
 The two peer connections are separate. WHEP is receive-only and the ASR uplink is send-only. They negotiate and fail independently.
@@ -42,7 +42,7 @@ io(conversationManagerUrl, {          // from appInit
 | `partnerId` | your partner id | Identifies the Kaltura account. |
 | `stickyId` | 16 random characters, fresh per session (override with the `stickyId` option, read with `getStickyId()`) | Sent as a socket query param on the WebSocket connection. The SDK keeps the same value for the whole session, including a cold reconnect. Do not rotate it mid-session. |
 | `level` | always `published` | The SDK does not expose an option for it. |
-| `debugMode` | always `true` | Turns on the `debug_*` events. The SDK's caption and transcript features read `stvSpeechChunk` and `generatingSpeech`, not the `debug_*` events ([§4d](events-catalog.md#4d-server--client-on--conversation-phase)). |
+| `debugMode` | always `true` | Turns on the `debug_*` events. The SDK's caption and transcript features read `stvSpeechChunk` and `generatingSpeech`, not the `debug_*` events ([§4d](events-catalog.md#4d-server--client-on-conversation-phase)). |
 | `billed_client` | always `""` | No effect. |
 
 ---
@@ -66,5 +66,5 @@ open socket → join → clientConfiguration + joinComplete → stvNewSession
 |---|---|
 | [events-catalog.md](events-catalog.md) | The full socket-event-by-event catalog |
 | [audio-channels.md](audio-channels.md) | ASR uplink and STV downlink wire mechanics |
-| [../START-THE-CONVERSATION.md](../START-THE-CONVERSATION.md) | Scripted Jinja2 opening or silent opening plus `kickoff`: how to choose, and what fires on the wire |
+| [../START-THE-CONVERSATION.md](../START-THE-CONVERSATION.md) | Scripted template opening or silent opening plus `kickoff`: how to choose, and what fires on the wire |
 | [../WIRE-PROTOCOL.md](../WIRE-PROTOCOL.md) | Back to the index |

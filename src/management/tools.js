@@ -363,7 +363,7 @@ export function code(cfg) {
  *  - `kaltura_genie_experiences` is not explicitly `'off'` (it can make the
  *    model prefer its built-in experience tool), or
  *  - no `capabilities` are set at all on this CREATE (flipping them later is
- *    defeated by the ~24h partner-config cache; set them at creation).
+ *    not reliable; set them at creation).
  * @param {object} [body] An intellect create/update body.
  * @returns {{ok:boolean, warnings:string[]}}
  */
@@ -373,7 +373,7 @@ export function clientToolReadiness(body) {
   if (hasTools) {
     const caps = (body && body.capabilities && typeof body.capabilities === 'object') ? body.capabilities : null;
     if (!caps) {
-      warnings.push('This intellect references tools (tool_ids) but sets no capabilities. The kaltura_genie_experiences capability is on by default and can make the model prefer its built-in experience tool over your custom tools. Set capabilities:{kaltura_genie_experiences:"off"} at CREATION (the ~24h partner-config cache defeats flipping it later).');
+      warnings.push('This intellect references tools (tool_ids) but sets no capabilities. The kaltura_genie_experiences capability is on by default and can make the model prefer its built-in experience tool over your custom tools. Set capabilities:{kaltura_genie_experiences:"off"} at CREATION (flipping it later is not reliable).');
     } else if (caps.kaltura_genie_experiences !== 'off') {
       warnings.push('This intellect references tools (tool_ids) but kaltura_genie_experiences is not "off". It can make the model prefer its built-in experience tool over your custom tools. Set kaltura_genie_experiences:"off" unless you also want GenUI experiences.');
     }
@@ -405,10 +405,9 @@ export function clientToolReadiness(body) {
  *     make the model prefer its built-in experience tool over your custom
  *     tools. Turn it OFF on a tool-driven intellect
  *     (`capabilities:{kaltura_genie_experiences:'off'}`).
- *  2. Capability changes can take ~24h to apply, so a capability flipped on an
- *     EXISTING intellect won't take effect until it expires. Set capabilities
- *     at CREATION (`intellects.create({capabilities:{...}})`) — a fresh
- *     intellect has no cache entry and loads clean immediately.
+ *  2. Capabilities are read when the intellect is created, so a capability
+ *     flipped on an EXISTING intellect is not reliable. Set capabilities
+ *     at CREATION (`intellects.create({capabilities:{...}})`).
  *
  * `waitForResponse` controls whether the model's turn BLOCKS on a real
  * client-supplied result. **Omitting it is NOT the same as passing `false`** —

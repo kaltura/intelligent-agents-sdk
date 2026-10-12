@@ -26,6 +26,6 @@ You need a Kaltura account, your Partner ID and your Admin Secret. The skill wal
 
 Point them at `https://kaltura.github.io/intelligent-agents-sdk/llms.txt`.
 
-## Maintainers
+## Feedback
 
-Run `node tools/check-docs.mjs`. See `AGENTS.md`.
+Found a problem with the plugin? [Open an issue](https://github.com/kaltura/intelligent-agents-sdk/issues).

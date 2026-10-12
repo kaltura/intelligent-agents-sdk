@@ -86,7 +86,7 @@ These are reminders. The docs page behind each link is the source.
 
 - The Admin Secret stays on the server. Never put it in browser code, a public repo or a log. [Authentication](https://kaltura.github.io/intelligent-agents-sdk/reference/api/authentication/)
 - Give each end user a scoped, short-lived token with a per-user id. [Authentication](https://kaltura.github.io/intelligent-agents-sdk/reference/api/authentication/)
-- An agent that calls tools needs `kaltura_genie_experiences` set to `'off'` when it is created. Setting it later does not take effect for about a day. [Client commands](https://kaltura.github.io/intelligent-agents-sdk/guides/client-commands/)
+- An agent that calls tools needs `kaltura_genie_experiences` set to `'off'` when it is created. Set it in `intellects.create()`, not in a later update. [Client commands](https://kaltura.github.io/intelligent-agents-sdk/guides/client-commands/)
 - `csv` and `code` tools cannot be created with an admin session. The call replies 403. Offer an `api` tool, or ask the user to contact Kaltura support. [Tools and secrets](https://kaltura.github.io/intelligent-agents-sdk/reference/api/build/tools-and-secrets/)
 - Register event listeners before calling `connect()`. [SDK reference](https://kaltura.github.io/intelligent-agents-sdk/reference/sdk-reference/)
 - Show users that they are talking to an AI avatar. [SDK reference](https://kaltura.github.io/intelligent-agents-sdk/reference/sdk-reference/)

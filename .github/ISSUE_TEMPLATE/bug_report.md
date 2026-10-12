@@ -6,6 +6,8 @@ labels: bug
 assignees: ''
 ---
 
+> **Do not paste tokens (KS), admin secrets or partner ids.** Replace them with placeholders in code, logs and screenshots. This issue is public.
+
 ## What happened
 
 <!-- What you called, what you expected, what you got instead. -->
@@ -13,7 +15,7 @@ assignees: ''
 ## Minimal repro
 
 ```js
-// The smallest snippet that reproduces this — ideally using an injected fake
+// The smallest snippet that reproduces this. Ideally use an injected fake
 // (test/fakes/fetch.js, socket.js, rtc.js) rather than a live backend.
 ```
 

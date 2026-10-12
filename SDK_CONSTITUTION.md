@@ -4,11 +4,11 @@
 
 Strict, testable engineering rules for `@kaltura/intelligent-agents`.
 
-Each rule is machine-verifiable by `scripts/agent_verify.mjs`. The verify script is the only valid proof of compliance — a natural-language declaration of "done" is not acceptable.
+Each rule is machine-verifiable by `scripts/agent_verify.mjs`. The verify script is the only valid proof of compliance. A natural-language declaration of "done" is not acceptable.
 
 ---
 
-## Part 1 — Isolation (multiple instances)
+## Part 1: Isolation (multiple instances)
 
 **Rule I-1: No module-level mutable state.**  
 Every module-level variable in `src/` must be `const` and must not be mutated after its initializer runs. Arrays, Sets, Maps, and plain objects that are module-level must be either `Object.freeze()`d or provably local to the function that reads them.
@@ -20,8 +20,8 @@ The SDK must never assign a property to `window`, `globalThis`, or `self`. Reads
 
 *Verify:* grep for `globalThis\.\w+\s*=` / `window\.\w+\s*=` / `self\.\w+\s*=` in `src/`. No matches is the passing state.
 
-**Rule I-3: Class-based encapsulation — no cross-instance state leakage.**  
-All configuration (`partnerId`, `adminSecret`, endpoints, tokens) must be stored as instance properties of the class that owns them. Submodule classes must receive their context from the owning `Management` or `KalturaAvatarSession` instance only — never from a shared module-level cache or singleton.
+**Rule I-3: Class-based encapsulation, no cross-instance state leakage.**  
+All configuration (`partnerId`, `adminSecret`, endpoints, tokens) must be stored as instance properties of the class that owns them. Submodule classes must receive their context from the owning `Management` or `KalturaAvatarSession` instance only, never from a shared module-level cache or singleton.
 
 *Verify:* Instantiate two `Management` objects with different credentials in the same process and run ten concurrent token mints across both; confirm no credential bleed. This test lives in `test/unit/isolation.test.js`.
 
@@ -32,7 +32,7 @@ Any event listener added to `window`, `globalThis`, `document`, or a socket MUST
 
 ---
 
-## Part 2 — Security (AppSec / CSP compliance)
+## Part 2: Security (AppSec / CSP compliance)
 
 **Rule S-1: No `eval()`, `new Function()`, or equivalent dynamic code execution.**  
 `eval`, `new Function(…)`, `Function()`, `setTimeout(string, …)`, `setInterval(string, …)`, and `document.write()` are banned in `src/`.
@@ -42,10 +42,10 @@ Any event listener added to `window`, `globalThis`, `document`, or a socket MUST
 **Rule S-2: No `innerHTML`, `outerHTML`, or `insertAdjacentHTML` assignments.**  
 All DOM mutation must go through `textContent`, `createElement`/`appendChild`, or similar structural DOM APIs. Comment nodes (`createComment`) are fine.
 
-*Verify:* grep for `\.innerHTML\s*=` / `\.outerHTML\s*=` / `insertAdjacentHTML\s*\(` in `src/`. Zero assignment matches required. (Comment strings that say "no innerHTML" are not matches — grep for the assignment operator specifically.)
+*Verify:* grep for `\.innerHTML\s*=` / `\.outerHTML\s*=` / `insertAdjacentHTML\s*\(` in `src/`. Zero assignment matches required. (Comment strings that say "no innerHTML" are not matches. Grep for the assignment operator specifically.)
 
 **Rule S-3: All user-supplied URLs must pass through `safeUrl()`.**  
-Any URL that originates from untrusted input (LLM output, user message, external API response) before being set as `href`, `src`, or passed to `fetch` must be validated by `core/safety.js#safeUrl`. `safeUrl` returns `''` for `javascript:`, `data:`, and authority-relative `//host` patterns. It also returns `''` for any URL carrying embedded userinfo credentials (`https://user:pass@host/...`) — a phishing/link-spoofing vector distinct from classic XSS, since an attacker-controlled label could otherwise point at a credential-dressed host that looks trusted.
+Any URL that originates from untrusted input (LLM output, user message, external API response) before being set as `href`, `src`, or passed to `fetch` must be validated by `core/safety.js#safeUrl`. `safeUrl` returns `''` for `javascript:`, `data:`, and authority-relative `//host` patterns. It also returns `''` for any URL carrying embedded userinfo credentials (`https://user:pass@host/...`). This is a phishing/link-spoofing vector distinct from classic XSS, since an attacker-controlled label could otherwise point at a credential-dressed host that looks trusted.
 
 *Verify:* The `safeUrl` unit test in `test/unit/safety.test.js` asserts that `javascript:`/`data:`/`vbscript:` schemes, authority-relative `//host` URLs, and embedded-userinfo URLs (`user:pass@host`) all resolve to `''`, while the https/http/mailto/tel allowlist and relative paths pass through unchanged.
 
@@ -57,7 +57,7 @@ JSON objects arriving from any external source (LLM, API response, user input) m
 **Rule S-5: Admin secret non-enumerable and non-serializable.**  
 `_adminSecret` must be stored with `Object.defineProperty` as `{ enumerable: false, configurable: false, writable: false }`. It must not appear in `JSON.stringify(instance)` or in a `for…in` loop over the instance.
 
-*Verify:* `test/unit/isolation.test.js` "admin secret non-enumerable" test.
+*Verify:* `test/unit/isolation.test.js` "admin secret is non-enumerable and never serialized" and `test/unit/audit.test.js` "admin secret is non-enumerable (cannot be JSON.stringify'd off the instance)".
 
 **Rule S-6: No hard-coded credentials or token literals.**  
 `src/` must contain no string matching a KS token pattern (`djJ8…`) or a 32-character hex secret, outside of test fakes and the redaction regex itself.
@@ -66,7 +66,7 @@ JSON objects arriving from any external source (LLM, API response, user input) m
 
 ---
 
-## Part 3 — Resiliency
+## Part 3: Resiliency
 
 **Rule R-1: Exponential backoff on transient network failures.**  
 `Http.request()` must retry using truncated exponential backoff with jitter. A network-layer error (status 0, no response received) is retried on every method. A received HTTP 429, 502, 503, or 504 is retried only for `GET`/`HEAD`, or for another method that carries an `Idempotency-Key` (see Rule R-3). A plain `POST`/`PUT`/`PATCH`/`DELETE` without one is not retried on a received transient status, since the server may already have processed it. Non-retriable failure codes (400, 401, 403, 404, 405, 409, 422) must NOT be retried. Retrying auth failures wastes quota and delays the caller.
@@ -105,7 +105,7 @@ Held `speak()`/`kickoff` text is released by `stvFinishedTalking` or `agentInter
 
 ---
 
-## Part 4 — Performance
+## Part 4: Performance
 
 **Rule P-1: Response payload size budget.**  
 `Http.request()` must enforce a configurable maximum response body size. The default limit is 10 MiB. If `Content-Length` exceeds the limit before reading, or if the accumulated body text exceeds the limit, throw a `KalturaError` with `code: 'response_too_large'`.
@@ -122,7 +122,7 @@ The SDK must not call `JSON.parse` on arbitrarily large strings without a size g
 
 ---
 
-## Part 5 — DX and Clean Code
+## Part 5: DX and Clean Code
 
 **Rule D-1: All public exports must carry JSDoc.**  
 Every `export`ed `class`, `function`, and `const` in `src/` must have a JSDoc block with at minimum: a one-line description plus `@param` for every named parameter and `@returns` for non-void returns.
@@ -134,18 +134,18 @@ Private / internal helpers (unexported, or named with `_`) are exempt.
 **Rule D-2: No dead code (exported symbols with zero consumers).**  
 Symbols that are exported from an internal module but neither re-exported from an entry point (`src/management/index.js`, `src/experience/index.js`) nor used by any other module in `src/` are dead. Flag them. Do not delete without confirming they are also absent from `tools/`, `examples/`, `quickstart/` and `test/`.
 
-*Verify:* `agent_verify.mjs` cross-references exports vs. imports. Any symbol exported but never imported anywhere is flagged as dead code (warning, not error, on first pass — must be manually confirmed before deletion).
+*Verify:* `agent_verify.mjs` cross-references exports vs. imports. Any symbol exported but never imported anywhere is flagged as dead code (warning, not error, on first pass, and must be manually confirmed before deletion).
 
 **Rule D-3: No `TODO`, `FIXME`, or `HACK` comments in shipped code.**  
 These comments indicate incomplete implementations. Track them as a GitHub issue instead.
 
 *Verify:* grep `src/` for `TODO\|FIXME\|HACK\|XXX\|STUB`. Zero matches required.
 
-**Rule D-4: Lifecycle discipline — typed `invalid_state`, idempotent teardown.**  
+**Rule D-4: Lifecycle discipline, typed `invalid_state` and idempotent teardown.**  
 Every session class (`KalturaAvatarSession`, `KalturaChatSession`, `KalturaAgentSession`, `KalturaScriptedVideoSession`) must:
 
 - (a) throw a `KalturaError` with `code: 'invalid_state'` when a lifecycle method is called from a state where it cannot act (`sendText()` before `connect()`, a second `connect()`, any post-`disconnect()` call);
-- (b) make teardown-shaped methods (`disconnect()`) and same-target transitions (`switchMode(<current mode>)`) idempotent no-ops — a repeat call must not throw, change state, or emit a duplicate `ended`.
+- (b) make teardown-shaped methods (`disconnect()`) and same-target transitions (`switchMode(<current mode>)`) idempotent no-ops. A repeat call must not throw, change state, or emit a duplicate `ended`.
 
 This is deliberately NOT blanket idempotency: constructive lifecycle calls (`connect()`, `switchMode(<other mode>)`) stay once-only and throw typed `invalid_state` on misuse, so callers discover sequencing bugs immediately instead of silently double-connecting.
 
@@ -160,7 +160,7 @@ The `kickoff` option on `KalturaAvatarSession`, `KalturaChatSession` and `Kaltur
 
 ---
 
-## Part 6 — Media path
+## Part 6: Media path
 
 **Rule M-1: The avatar media path is pure track routing.**  
 `src/experience/avatar-media.js` owns how downlink tracks reach the app's elements (one merged stream on `videoEl`, or video/audio split across `videoEl` + `audioEl`, or headless via `avatarStream`). It must not create DOM, read `document`, install timers, or write to `console`. Elements come from the app; readiness timing stays in `session.js`; diagnostics go through the injected logger. This keeps the media path deterministic, testable over fakes, and free of hidden global side effects when several avatars share one page.
@@ -173,15 +173,15 @@ When the opening phrase is `SILENT_OPENING` (`<blank>`), the opening turn surfac
 *Verify:* `test/unit/kickoff.test.js` "silent opening" tests: `<blank>` on the opening speech id surfaces as `[silence]` on transcript/speechChunk/stop and the raw phrase never reaches a listener; a spoken opening still surfaces; `<blank>` on a normal reply is not relabelled.
 
 **Rule M-3: The downlink subscription is released wherever it is dropped or replaced.**  
-Closing the downlink peer locally does not free the server's side of the subscription. Every path that closes or replaces that peer (teardown from `disconnect()`/`ended`/`error`, media recovery after an ICE drop, a cold reconnect, `resume()`) releases the subscription through one idempotent helper, which clears the stored location before sending the release, so no path leaks one and no path releases the same one twice. Exactly one site stores a location, so a re-subscribe can never overwrite an unreleased one. A subscription answered after the session already gave up (the app disconnected while the answer was being read, the connect deadline expired, or the other connect lane failed) is released on the spot, because it is never stored.
+Every path that closes or replaces the downlink peer (teardown from `disconnect()`/`ended`/`error`, media recovery after an ICE drop, a cold reconnect, `resume()`) releases the subscription through one idempotent helper, which clears the stored location before sending the release, so no path leaks one and no path releases the same one twice. Exactly one site stores a location, so a re-subscribe can never overwrite an unreleased one. A subscription answered after the session already gave up (the app disconnected while the answer was being read, the connect deadline expired, or the other connect lane failed) is released on the spot, because it is never stored.
 
-*Verify:* `agent_verify.mjs` checks the single store site, the clear-then-release helper shape, a release near every peer close, and all three abort lanes; `connect.test.js`, `connect-concurrency.test.js`, `connect-cancel.test.js` and `resilience.test.js` count the releases over disconnect, the error path, a disconnect mid-handshake, the connect deadline, ICE recovery, cold reconnect and `resume()`.
+*Verify:* `agent_verify.mjs` checks the single store site, the clear-then-release helper shape, a release near every peer close, and all three abort lanes; `test/e2e/connect.test.js`, `test/e2e/connect-concurrency.test.js`, `test/e2e/connect-cancel.test.js` and `test/e2e/resilience.test.js` count the releases over disconnect, the error path, a disconnect mid-handshake, the connect deadline, ICE recovery, cold reconnect and `resume()`.
 
 ---
 
 ## Compliance summary
 
-This table summarizes what each rule checks, not whether it currently passes — for current pass/fail status, run `npm run verify` (`scripts/agent_verify.mjs`), the only valid proof of compliance per the note at the top of this document.
+This table summarizes what each rule checks, not whether it currently passes. For current pass/fail status, run `npm run verify` (`scripts/agent_verify.mjs`), the only valid proof of compliance per the note at the top of this document.
 
 | Rule | Category | What it checks | How to verify |
 |------|----------|-----------------|---------------|
@@ -193,7 +193,7 @@ This table summarizes what each rule checks, not whether it currently passes —
 | S-2 | Security | No `innerHTML`/`outerHTML`/`insertAdjacentHTML` assignments | grep |
 | S-3 | Security | Untrusted URLs pass through `safeUrl` | safety.test.js |
 | S-4 | Security | Untrusted JSON passes through `sanitizeJson` | safety.test.js + security.test.js |
-| S-5 | Security | Admin secret is non-enumerable | isolation.test.js |
+| S-5 | Security | Admin secret is non-enumerable | isolation.test.js + audit.test.js |
 | S-6 | Security | No hardcoded credentials or token literals | grep |
 | R-1 | Resiliency | Exponential backoff with jitter in `Http.request()` | see R-5 |
 | R-2 | Resiliency | GETs retried on any transient failure | http.test.js |
@@ -206,7 +206,7 @@ This table summarizes what each rule checks, not whether it currently passes —
 | P-2 | Performance | JSON parsing happens post-read, size-guarded | see P-1 |
 | P-3 | Performance | Zero runtime dependencies | package.json |
 | D-1 | DX | All public exports carry JSDoc | scan |
-| D-2 | DX | See Rule D-2 above — candidate dead exports (warning, not error) | `node scripts/agent_verify.mjs` |
+| D-2 | DX | See Rule D-2 above. Candidate dead exports (warning, not error) | `node scripts/agent_verify.mjs` |
 | D-3 | DX | No TODO/FIXME/HACK/XXX/STUB found | grep |
 | D-4 | DX | Typed `invalid_state` on lifecycle misuse; idempotent teardown/same-target no-ops; media setters state-independent | grep + lifecycle tests |
 | D-5 | DX | `kickoff` sent at most once per session object; never on `resume()`/reconnect/`switchMode()` | kickoff.test.js + chat/agent-session tests |
@@ -214,4 +214,4 @@ This table summarizes what each rule checks, not whether it currently passes —
 | M-2 | Media | Silent opening surfaces as `SILENT_OPENING_LABEL` on `transcript`/`speechChunk`/`avatarStopTalking.text`, never as the raw phrase | kickoff.test.js |
 | M-3 | Media | Every path that drops or replaces the downlink releases its subscription exactly once | grep + connect/connect-concurrency/connect-cancel/resilience tests |
 
-Rule D-2 warns rather than errors by design — see Rule D-2 above for why.
+Rule D-2 warns rather than errors by design. See Rule D-2 above for why.

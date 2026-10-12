@@ -2,9 +2,11 @@
 
 # Management Operations
 
-All use the **admin KS** (`createAdminToken`), except where a section says otherwise.
+Endpoint and request reference for every `Management` operation: agents, avatars, intellects, tools, skills, threads, messages, knowledge, lifecycle and insight settings.
 
-## Agents — `https://api.avatar.us.kaltura.ai`
+All operations use the **admin KS** (`createAdminToken`), except where a section says otherwise. Agents, Avatars, Lifecycle and Insight Settings call the management host (`https://api.avatar.us.kaltura.ai`). Everything else calls the conversation host (`https://genie.nvp1.ovp.kaltura.com`). Hosts for other regions: [Regions and base URLs](authentication.md#regions-and-base-urls).
+
+## Agents
 
 | Operation | Endpoint | Body |
 |-----------|----------|------|
@@ -16,31 +18,29 @@ All use the **admin KS** (`createAdminToken`), except where a section says other
 
 Filter keys: `agentId`, `adminTagsIn`, `adminTagsNotIn`, `searchValue` (case-insensitive substring match on `displayName`/`agentId`). An unrecognized key 400s.
 
-The request also takes a top-level `orderBy` (`+createdAt`, `-createdAt`, `+updatedAt`, `-updatedAt`; anything else 400s) — a separate field from `filter`. This differs from Threads/Messages below, where `orderBy` nests inside `filter`. SDK: `mgmt.agents.list(ks, opts)` passes `opts.filter` through as-is and does not take `orderBy`.
+The request also takes a top-level `orderBy` (`+createdAt`, `-createdAt`, `+updatedAt`, `-updatedAt`; anything else 400s). It sits next to `filter`, not inside it. Threads and Messages below take `orderBy` inside `filter`. SDK: `mgmt.agents.list(ks, opts)` passes `opts.filter` through as-is and does not take `orderBy`.
 
-`mgmt.agents.delete` refuses to delete an agent whose `adminTags` match a production marker (`prod`, `production`, `keep`, `do-not-delete`, `live` — see `PROTECTED_TAGS` in `src/management/agents.js`). It only proceeds when called with `{confirmPermanent:true, allowProtected:true}`. This guards against an automated cleanup-by-tag sweep deleting a real, in-use agent. The check reads the agent first. If that read fails (other than the agent not existing), the delete is refused with that error. `{skipProtectedCheck:true}` skips the read and the guard.
+`mgmt.agents.delete` refuses to delete an agent whose `adminTags` match a production marker (`prod`, `production`, `keep`, `do-not-delete`, `live`; the exported `PROTECTED_TAGS`). Pass `{confirmPermanent:true, allowProtected:true}` to delete it anyway. This stops a cleanup-by-tag sweep from deleting an agent that is in use. The SDK reads the agent first. If that read fails (other than the agent not existing), the delete is refused with that error. `{skipProtectedCheck:true}` skips the read and the guard.
 
-## Avatars — `https://api.avatar.us.kaltura.ai`
+## Avatars
 
 | Operation | Endpoint | Body |
 |-----------|----------|------|
-| Create | `POST /v1/avatar/create` | `{"voice":{"id":"...","speed"?:1.0}, "visual"?:{"id":"...","motionControl"?:{...}}, "face"?:{"id":"..."}, "background"?:{"type":"color"\|"visual","value"?:"..."}, "templateId"?:"...", "name"?:"...", "openingPhrase"?:"..."}` (leave `openingPhrase` unset: the intellect's `opening_phrase` owns the opening line, see [START-THE-CONVERSATION.md](../START-THE-CONVERSATION.md#where-the-opening-phrase-lives)). Visual resolution rules: [build/avatar-and-agent.md § Three ways to get a visual](build/avatar-and-agent.md#three-ways-to-get-a-visual). |
+| Create | `POST /v1/avatar/create` | `{"voice":{"id":"...","speed"?:1.0}, "visual"?:{"id":"...","motionControl"?:{...}}, "face"?:{"id":"..."}, "background"?:{"type":"color"\|"visual","value"?:"..."}, "templateId"?:"...", "name"?:"...", "openingPhrase"?:"..."}` (leave `openingPhrase` unset. The intellect's `opening_phrase` sets the opening line, see [START-THE-CONVERSATION.md](../START-THE-CONVERSATION.md#where-the-opening-phrase-lives).) Visual resolution rules: [build/avatar-and-agent.md § Three ways to get a visual](build/avatar-and-agent.md#three-ways-to-get-a-visual). |
 | List | `POST /v1/avatar/list` | `{"pager":{"offset":0,"limit":30}}` |
-| Get | `POST /v1/avatar/get` | `{"id":"24-char-hex"}`. A missing or unknown id throws `code:'api_exception'` (not a stable `avatar_not_found` code), but `title` carries a specific `'AVATAR_NOT_FOUND'` marker. Branch on `title`, not `code` (a malformed id gets a distinct `code:'bad_request'`) |
-| Update | `POST /v1/avatar/update` | `{"id":"24-char-hex", ...fields}` — PATCH semantics (omitted fields are preserved); `templateId` is create-only (400 on update) |
+| Get | `POST /v1/avatar/get` | `{"id":"24-char-hex"}`. A missing or unknown id throws `code:'api_exception'` with `title:'AVATAR_NOT_FOUND'`. Branch on `title`, not `code`. A malformed id throws `code:'bad_request'` |
+| Update | `POST /v1/avatar/update` | `{"id":"24-char-hex", ...fields}`. Omitted fields are preserved. `templateId` is create-only (400 on update) |
 | Delete | `POST /v1/avatar/delete` | `{"id":"24-char-hex"}` |
-| List templates | `POST /v1/avatar-template/list` | `{"pager":{"offset":0,"limit":30}}` — curated presets, each pairing a `voice` with either a ready `visual` or a `face`/`background` pair ([build/avatar-and-agent.md § Three ways to get a visual](build/avatar-and-agent.md#three-ways-to-get-a-visual)). SDK: `mgmt.avatars.listTemplates(ks, opts)`; `opts.idsIn` filters to specific template ids. |
+| List templates | `POST /v1/avatar-template/list` | `{"pager":{"offset":0,"limit":30}}`. Curated presets, each pairing a `voice` with either a ready `visual` or a `face`/`background` pair ([build/avatar-and-agent.md § Three ways to get a visual](build/avatar-and-agent.md#three-ways-to-get-a-visual)). SDK: `mgmt.avatars.listTemplates(ks, opts)`; `opts.idsIn` filters to specific template ids. |
 
-**Recomposing on update is asymmetric, unlike create** (where `face`/`background` must travel together). The rule depends on the avatar's existing state:
+**Changing the look on update.** On create, `face` and `background` travel together. On update:
 
-- `background` alone recomposes against the avatar's current face — a valid "just change the background" update.
-- `face` alone is accepted but silently a no-op: there's nothing to pair it with, so the existing visual is left untouched.
-
-`avatars.update` does NOT reject either half alone.
+- To change the background, send `background` alone. It applies to the avatar's current face.
+- To change the face, send `face` and `background` together.
 
 Avatars carry no `adminTags`. `avatars.create` and `avatars.update` throw `bad_request` before any network call if you pass it. Tag the parent **agent** instead.
 
-## Intellects — `https://genie.nvp1.ovp.kaltura.com`
+## Intellects
 
 | Operation | Endpoint | Body |
 |-----------|----------|------|
@@ -60,20 +60,20 @@ Typed setters on `mgmt.intellectConfig` for the other single-purpose fields, all
 | Setter | Field | Clear with |
 |---|---|---|
 | `setModelConfiguration` | `model_configuration` (`model_id` in `MODEL_IDS`, `max_output_tokens`, `thinking_level` in `THINKING_LEVELS`, `temperature`) | `null` |
-| `setOpeningPhrase` | `opening_phrase` (the opening line of every avatar session; Jinja2 over `requestVars` + `sys__*`; `SILENT_OPENING` for no spoken opening, see [START-THE-CONVERSATION.md](../START-THE-CONVERSATION.md#personalize-the-opening)) | `null` |
+| `setOpeningPhrase` | `opening_phrase` (the opening line of every avatar session; a template over `requestVars` and `sys__*`; `SILENT_OPENING` for no spoken opening, see [START-THE-CONVERSATION.md](../START-THE-CONVERSATION.md#personalize-the-opening)) | `null` |
 | `setThreadStartTools` | `thread_start_tools`: unique tool ids run in order when a thread starts, before the first user turn[^1] | `[]` |
 | `setAvatarSummaryConfig` | `avatar_summary_config` (`prompt`, `analysis`, `template`, `content_type` in `SUMMARY_CONTENT_TYPES`)[^2] | `null` |
 | `setSkillIds` | `skill_ids` (`{ id, mode, condition? }`, `mode` in `SKILL_MODES`) | `[]` |
 
 Each validates client-side and throws `bad_request` before any network call. See [build/intellect.md](build/intellect.md) for field semantics.
 
-[^1]: Only `api` and `code` tools run at thread start; other tool types have no effect there. An `api` tool with `wait_for_response` is awaited; every other tool is fire-and-forget, and a failing tool does not fail the conversation. It never appears as a `tool` segment in the stream.
+[^1]: Use `api` and `code` tools here. An `api` tool with `wait_for_response` is awaited. Every other tool runs without waiting. A failing tool does not fail the conversation. A thread-start tool never appears as a `tool` segment in the stream.
 
 [^2]: `null` restores the defaults (`analysis: { summary }`, `template: '{{ summary }}'`, `content_type: 'text'`). Every `{{ key }}` in `template` must be an `analysis` key (or `summary` when `analysis` is unset). The SDK rejects a mismatch client-side. The summary is skipped entirely when the thread has no human messages.
 
-## Tools — `https://genie.nvp1.ovp.kaltura.com`
+## Tools
 
-A standalone, partner-level entity, not embedded in an intellect. Names are unique in a shared namespace. A conflict returns 409, even when the name does not appear in your own `list()`. The same applies to Skills below.
+A standalone, partner-level entity, not embedded in an intellect. A name that is already in use returns 409. Skills below follow the same rule.
 
 | Operation | Endpoint | Body |
 |-----------|----------|------|
@@ -85,21 +85,21 @@ A standalone, partner-level entity, not embedded in an intellect. Names are uniq
 
 `mgmt.tools.delete` refuses by default with a typed `tool_in_use` error naming every intellect still listing the id in `tool_ids`. Pass `{confirmPermanent:true, force:true}` to delete anyway. Drop the id from each intellect's `tool_ids` first via `mgmt.intellectConfig.setToolIds`.
 
-## Skills — `https://genie.nvp1.ovp.kaltura.com`
+## Skills
 
-A standalone, partner-level reusable-instruction entity: `{id (uuid), name, description, instructions}`. SDK: `mgmt.skills`. Names are unique in a shared namespace. A conflict returns 409, even when the name does not appear in your own `list()`. The same applies to Tools above.
+A standalone, partner-level reusable-instruction entity: `{id (uuid), name, description, instructions}`. SDK: `mgmt.skills`. A name that is already in use returns 409. Tools above follow the same rule.
 
 | Operation | Endpoint | Body |
 |-----------|----------|------|
 | List | `POST /v1/skill/list` | `{"filter":{"objectType":"SkillListFilter"},"pager":{"pageIndex":1,"pageSize":30}}` |
 | Get | `POST /v1/skill/get` | `{"id":"SKILL_UUID"}` |
 | Add | `POST /v1/skill/add` | `{"name":"...", "description":"...", "instructions"?}` |
-| Update | `POST /v1/skill/update` | `{"id":"SKILL_UUID", "name"?, "description"?, "instructions"?}`. Idempotent; renames follow the same name rule as Add (409 on conflict) |
-| Delete | `POST /v1/skill/delete` | `{"id":"SKILL_UUID"}` — replies `{id}`; a follow-up get 404s |
+| Update | `POST /v1/skill/update` | `{"id":"SKILL_UUID", "name"?, "description"?, "instructions"?}`. Idempotent. A rename to a name already in use returns 409 |
+| Delete | `POST /v1/skill/delete` | `{"id":"SKILL_UUID"}`. Replies `{id}`. A follow-up get returns 404 |
 
-Before deleting a Skill, `mgmt.skills.delete` lists every intellect and refuses with a typed `skill_in_use` error naming each one still referencing the id in `skill_ids`. It only proceeds when called with `{confirmPermanent:true, force:true}`. Tools' `mgmt.tools.delete` carries the identical `tool_in_use` guard.
+Before deleting a Skill, `mgmt.skills.delete` lists every intellect and refuses with a typed `skill_in_use` error naming each one still referencing the id in `skill_ids`. Pass `{confirmPermanent:true, force:true}` to delete anyway. `mgmt.tools.delete` has the same guard with a `tool_in_use` error.
 
-## Threads — `https://genie.nvp1.ovp.kaltura.com`
+## Threads
 
 Token rules per method: [operate.md § Threads](operate.md#threads). `threads.push` needs an admin token. Which threads a token can reach: [SECURITY.md § Session type](../../SECURITY.md#session-type). SDK: `mgmt.threads.{list, get, rename, setAnalysis, clearAnalysis, push, delete, transcript}`.
 
@@ -108,9 +108,9 @@ Token rules per method: [operate.md § Threads](operate.md#threads). `threads.pu
 | List | `POST /v1/thread/list` | `{"filter":{"objectType":"ListThreadFilter"},"pager":{"pageIndex":1,"pageSize":30}}` |
 | Get | `POST /v1/thread/get` | `{"id":"UUID"}` |
 | Rename | `POST /v1/thread/update` | `{"id":"UUID","title":"New name"}` |
-| Set analysis | `POST /v1/thread/update` | `{"id":"UUID","thread_metadata":{"analysis":{...}}}` — shallow merge one level under `analysis`; a changed key fires the lifecycle `analysis_updated` event. SDK: `mgmt.threads.setAnalysis(id, patch, ks)`. |
-| Clear analysis | `POST /v1/thread/update` | `{"id":"UUID","thread_metadata":{}}` — wipes `analysis` (the only field `ThreadMetadata` has). SDK: `mgmt.threads.clearAnalysis(id, ks)`. |
-| Push | `POST /thread/push` (no `v1/` prefix on this route) | `{"id":"UUID","content":"...","request_vars"?:{...},"system_message"?:"..."}` — `delivered:false` in the reply means no live socket is attached. The message still persists: it shows up in Messages list as `type:4` (`MessageType.EXTERNAL_PUSH`). `content` over a server-side, partner-configurable length cap returns `413 content exceeds max_message_length` — not checked client-side. SDK: `mgmt.threads.push({id,content,request_vars?,system_message?}, ks)`. |
+| Set analysis | `POST /v1/thread/update` | `{"id":"UUID","thread_metadata":{"analysis":{...}}}`. SDK: `mgmt.threads.setAnalysis(id, patch, ks)`. |
+| Clear analysis | `POST /v1/thread/update` | `{"id":"UUID","thread_metadata":{}}`. Clears `analysis`. SDK: `mgmt.threads.clearAnalysis(id, ks)`. |
+| Push | `POST /thread/push` (no `v1/` prefix on this route) | `{"id":"UUID","content":"...","request_vars"?:{...},"system_message"?:"..."}`. `delivered:false` in the reply means no live socket is attached. The message is still saved and appears in the Messages list. SDK: `mgmt.threads.push({id,content,request_vars?,system_message?}, ks)`. |
 | Delete | `POST /v1/thread/delete` | `{"thread_ids":["UUID"]}`. See [operate.md § Threads](operate.md#threads) for delete behavior |
 | Transcript | `POST /v1/thread/get_transcripts` | `{"id":"UUID"}` |
 
@@ -118,77 +118,77 @@ Token rules per method: [operate.md § Threads](operate.md#threads). `threads.pu
 
 Rules to know:
 
-- `orderBy` goes INSIDE `filter` (one of `+createdAt`, `-createdAt`, `+updatedAt`, `-updatedAt`). A top-level `orderBy` 422s.
-- `statusEquals`/`statusIn` take `0`/`1`. A numeric string (`"0"`) is silently coerced and accepted, but a non-numeric string 422s.
-- An unknown filter key 422s. `partnerIdIn` always 422s.
-- Pager is `{pageIndex, pageSize}` (1-based) — `{offset, limit}` is ignored and returns the default page of 30.
-- `pageSize` is capped server-side at 500; a higher value 422s. This applies to every Genie-backed list/report pager in this section (Threads, Messages, Feedback, Followups).
+- Put `orderBy` inside `filter` (one of `+createdAt`, `-createdAt`, `+updatedAt`, `-updatedAt`).
+- Send `statusEquals`/`statusIn` as numbers, `0` or `1`.
+- Use only the filter fields listed above. `partnerIdIn` is not supported.
+- Pager is `{pageIndex, pageSize}` (1-based). Use `pageIndex`/`pageSize`, not `{offset, limit}`.
+- `pageSize` is at most 500. This applies to every list and report pager in this section (Threads, Messages, Feedback, Followups).
 
-SDK: `mgmt.threads.list(ks, opts)` merges `opts.filter` under the fixed `objectType`, so it can't be overridden. It translates `agentIdEquals` to the server's own agent-scoping filter key on the wire. There's no server-side "in" equivalent for it: `agentIdIn` throws a `validation_error` before any network call rather than being silently dropped.
+SDK: `mgmt.threads.list(ks, opts)` merges `opts.filter` under the fixed `objectType`, so it can't be overridden. `agentIdEquals` filters threads by agent. There is no "in" form: `agentIdIn` throws a `validation_error` before any network call.
 
-`request_vars` on `push` is validated by the SDK's own reserved-name guard before any network call, identically to `converse` — see [operate.md § Reserved Template Variables](operate.md#reserved-template-variables-sys__).
+`request_vars` on `push` goes through the same reserved-name check as `converse`, before any network call. See [operate.md § Reserved Template Variables](operate.md#reserved-template-variables-sys__).
 
 See [operate.md § Threads](operate.md#threads) for response shapes and delete behavior.
 
-## Messages, Feedback & Followups — `https://genie.nvp1.ovp.kaltura.com`
+## Messages, Feedback & Followups
 
 SDK: `mgmt.messages`, `mgmt.feedback`, `mgmt.followups`. `messages.list`, `get` and `share` accept an admin, conversation or agent token (see [operate.md § Threads](operate.md#threads)). `messages.report`, `messages.reportSummary`, `feedback.list` and `followups.list` need an admin token.
 
 | Operation | Endpoint | Body |
 |-----------|----------|------|
-| List messages | `POST /message/list` | `{"filter":{"objectType":"GenieListMessageFilter"},"pager":{"pageIndex":1,"pageSize":50}}` — `opts.threadId` is sugar for `filter.threadIdEquals` and wins if both are given. |
+| List messages | `POST /message/list` | `{"filter":{"objectType":"GenieListMessageFilter"},"pager":{"pageIndex":1,"pageSize":50}}`. `opts.threadId` is sugar for `filter.threadIdEquals` and wins if both are given. |
 | Share a message | `POST /message/share` | `{"id":"MSG_ID","newTitle":"..."}` → `{"status":"success","data":{"newMessageId":"..."}}`. SDK: `mgmt.messages.share(id, newTitle, ks)` unwraps this and returns `{newMessageId}`. It throws `server_error` if no id comes back. The clone is readable with `messages.get` and cannot be deleted. |
-| Message report (CSV) | `POST /message/report` | `{"filter":{"objectType":"GenieListMessageFilter"}}` — ⚠️ SENSITIVE: contains end-user ids/names + verbatim question/feedback text. SDK: `mgmt.messages.report(ks, opts)` (raw CSV) / `reportSummary(ks, opts)` (parsed, with a `_meta` provenance receipt) — `reportSummary` defaults `pageSize` to 500 (the server-side max) when omitted. |
-| Add feedback | `POST /feedback/add` | `{"schemaVersion":1,"data":{"message_id":"...","is_positive":true,"comment"?:"..."}}` — idempotent for a given `(message_id, is_positive)` pair. Any KS (conversation or admin). Writes `is_positive`/`comment` onto the rated message itself, which is why `mgmt.feedback.list` (below) can read feedback back from `mgmt.messages`. |
-| List feedback | *(sourced from `/message/list`, not a dedicated endpoint)* | `mgmt.feedback.list(ks, opts)` — see below for details. |
-| Suggested followups | `POST /followup/get-suggested-questions?new_response=true` | `{}` — starter questions for the partner/agent, NOT thread-scoped. The returned set can vary between calls — don't assume a stable, fixed list; `[]` when none configured. Distinct from per-answer followups (`capabilities.generate_followup_questions:on` on converse). SDK: `mgmt.followups.getSuggested(ks)`. |
-| List followup records | `POST /followup/list` | `{"filter":{"objectType":"GenieListQuestionFilter"},"pager":{"pageIndex":1,"pageSize":30}}` — the raw partner-wide record listing, not the shortlist above. |
+| Message report (CSV) | `POST /message/report` | `{"filter":{"objectType":"GenieListMessageFilter"}}`. ⚠️ SENSITIVE: contains end-user ids and names plus verbatim question and feedback text. SDK: `mgmt.messages.report(ks, opts)` (raw CSV) or `reportSummary(ks, opts)` (parsed, with a `_meta` provenance receipt). `reportSummary` uses `pageSize` 500 (the maximum) when you omit it. |
+| Add feedback | `POST /feedback/add` | `{"schemaVersion":1,"data":{"message_id":"...","is_positive":true,"comment"?:"..."}}`. Idempotent for a given `(message_id, is_positive)` pair. Any KS (conversation or admin). Read ratings back with `mgmt.feedback.list` (below). |
+| List feedback | *(built on `/message/list`, no dedicated endpoint)* | `mgmt.feedback.list(ks, opts)`. Details below. |
+| Suggested followups | `POST /followup/get-suggested-questions?new_response=true` | `{}`. Starter questions for the partner or agent, not scoped to a thread. The set can differ between calls. Returns `[]` when none are configured. Distinct from per-answer followups (`capabilities.generate_followup_questions:on` on converse). SDK: `mgmt.followups.getSuggested(ks)`. |
+| List followup records | `POST /followup/list` | `{"filter":{"objectType":"GenieListQuestionFilter"},"pager":{"pageIndex":1,"pageSize":30}}`. The raw partner-wide record listing, not the shortlist above. |
 
-**List feedback in depth.** `mgmt.feedback.list(ks, opts)` is the correct, permanent way to read feedback, not a stopgap. It queries `POST /message/list` (and, for `filter.agentIdEquals`, `POST /v1/thread/list` first) and returns only the messages carrying a rating.
+**List feedback in depth.** `mgmt.feedback.list(ks, opts)` reads feedback. It queries `POST /message/list` (and, for `filter.agentIdEquals`, `POST /v1/thread/list` first) and returns only the messages that carry a rating.
 
-Filter: `messageIdEquals`, `messageIdsIn`, `threadIdEquals`, `agentIdEquals`, `isPositiveEquals`. `agentIdEquals` only matches threads opened with a token minted with that `agentId` (`createAgentToken`, or `createConversationToken` with `agentId`). Threads opened without one carry `agent_id: "default"` and never match. It costs one thread query per matching thread. With none of `messageIdEquals`/`messageIdsIn`/`threadIdEquals`/`agentIdEquals` set, it walks every message for the partner, scope it.
+Filter: `messageIdEquals`, `messageIdsIn`, `threadIdEquals`, `agentIdEquals`, `isPositiveEquals`. `agentIdEquals` matches only threads opened with a token minted with that `agentId` (`createAgentToken`, or `createConversationToken` with `agentId`). It costs one thread query per matching thread. Set at least one of `messageIdEquals`, `messageIdsIn`, `threadIdEquals` or `agentIdEquals`. With none set, it reads every message for the partner.
 
-Unlike every other `list()` in this SDK, `await`ing `feedback.list(...)` collects **every** matching row across all underlying pages, not just the first page. The rows are filtered client-side, so there's no single-page shortcut. A narrow filter matters more here than elsewhere.
+Unlike every other `list()` in this SDK, `await`ing `feedback.list(...)` collects **every** matching row across all underlying pages, not just the first page. Use a narrow filter.
 
 Row shape: `{message_id, thread_id, genie_id, user_id, is_positive, comment, created_at, updated_at}`. ⚠️ SENSITIVE: comments are end-user-entered text.
 
-Messages filter fields: `createdAtGreaterThanOrEqual`, `createdAtLessThanOrEqual`, `genieIdEquals`, `idEquals`, `idsIn`, `isPositiveEquals`, `isPositiveIn`, `orderBy`, `threadIdEquals`, `updatedAtGreaterThanOrEqual`, `updatedAtLessThanOrEqual`, `userIdEquals`. Unlike Threads, an unknown key here is silently ignored (200), not rejected. Only `filter.orderBy` sorts — a top-level `orderBy` is accepted but has no effect.
+Messages filter fields: `createdAtGreaterThanOrEqual`, `createdAtLessThanOrEqual`, `genieIdEquals`, `idEquals`, `idsIn`, `isPositiveEquals`, `isPositiveIn`, `orderBy`, `threadIdEquals`, `updatedAtGreaterThanOrEqual`, `updatedAtLessThanOrEqual`, `userIdEquals`. Send only the keys listed. Sort with `filter.orderBy`.
 
-`threads.list`/`messages.list`/`followups.list` merge `opts.filter` under a fixed, mandatory `objectType` the caller can't override. `feedback.list` has its own filter shape (above), not that pattern.
+`threads.list`, `messages.list` and `followups.list` merge `opts.filter` under a fixed `objectType` that you cannot override. `feedback.list` has its own filter shape (above).
 
-## Knowledge records — `https://genie.nvp1.ovp.kaltura.com`
+## Knowledge records
 
-Full record lifecycle. SDK: `mgmt.knowledge`. Linkage to an intellect is via `knowledge_ids` — see § Ground the Agent.
+Full record lifecycle. SDK: `mgmt.knowledge`. An intellect links to a record through `knowledge_ids`. See [build/knowledge-rag.md § Ground the Agent](build/knowledge-rag.md#ground-the-agent-in-your-content-rag).
 
 | Operation | Endpoint | Body |
 |-----------|----------|------|
-| List | `POST /v1/knowledge/list` | `{"filter":{},"pager":{"pageIndex":1,"pageSize":30}}` — discover records without knowing ids up front. SDK: `mgmt.knowledge.list(ks, opts)`. Distinct from `mgmt.knowledge.listCategoryEntries(categoryId, ks)`, which lists KMS entries inside one category, not Knowledge record containers. |
+| List | `POST /v1/knowledge/list` | `{"filter":{},"pager":{"pageIndex":1,"pageSize":30}}`. Finds records without knowing ids up front. SDK: `mgmt.knowledge.list(ks, opts)`. Distinct from `mgmt.knowledge.listCategoryEntries(categoryId, ks)`, which lists KMS entries inside one category, not Knowledge record containers. |
 | Add | `POST /v1/knowledge/add` | `{"name":"..."}` |
 | Get | `POST /v1/knowledge/get` | `{"id":2049}` |
-| Update | `POST /v1/knowledge/update` | `{"id":2049, ...fields}` — `config` is accepted but is a FULL REPLACE on the backend; use `addSource`/`removeSource` below instead of hand-assembling `config.sources` |
-| Delete | `POST /v1/knowledge/delete` | `{"id":2049}` — HTTP 200, body `null`; a follow-up get 404s |
+| Update | `POST /v1/knowledge/update` | `{"id":2049, ...fields}`. When you send `config`, send the full config. To change sources, use `addSource`/`removeSource` below. |
+| Delete | `POST /v1/knowledge/delete` | `{"id":2049}`. Returns HTTP 200 with body `null`. A follow-up get returns 404. |
 | Per-entry status | `POST /v1/knowledge/entry_status` | `{"knowledge_id":2049, "entry_ids":["0_abc123"]}`. SDK: `mgmt.knowledge.entryStatus(id, entryIds, ks)`. |
 
-`mgmt.knowledge.isIndexed(id, ks)` wraps Get and reads `status`/`config.sources[].indexers[].index_position`. `status` is the record's own container-lifecycle flag, not an indexing-completion signal: see [build/knowledge-rag.md § Ground the Agent](build/knowledge-rag.md#ground-the-agent-in-your-content-rag) for why, and for the real indexing-completion check.
+`mgmt.knowledge.isIndexed(id, ks)` wraps Get and reads `status`/`config.sources[].indexers[].index_position`. `status` does not tell you that indexing is complete. For the completion check, see [build/knowledge-rag.md § Ground the Agent](build/knowledge-rag.md#ground-the-agent-in-your-content-rag).
 
-`mgmt.knowledge.addSource(id, source, ks)` / `removeSource(id, source, ks)` read-merge-write one source into/out of `config.sources` without disturbing the others. Both skip the write (`applied:false`) when an identical source object is already present / already absent. Not safe to call concurrently for the same record id: two overlapping calls read the same pre-write `config.sources`, so the second write silently drops the first's change.
+`mgmt.knowledge.addSource(id, source, ks)` / `removeSource(id, source, ks)` read-merge-write one source into/out of `config.sources` without disturbing the others. Both skip the write (`applied:false`) when an identical source object is already present / already absent. Call them one at a time for the same record id. Two overlapping calls can lose one of the changes.
 
-Before deleting a record, `mgmt.knowledge.deleteRecord` lists every intellect and refuses with a typed `knowledge_in_use` error naming each one still carrying the id in `knowledge_ids`. It only proceeds when called with `{confirmPermanent:true, force:true}` — the same guard `mgmt.tools.delete`/`mgmt.skills.delete` run for their own entities.
+Before deleting a record, `mgmt.knowledge.deleteRecord` lists every intellect and refuses with a typed `knowledge_in_use` error naming each one still carrying the id in `knowledge_ids`. Pass `{confirmPermanent:true, force:true}` to delete anyway. `mgmt.tools.delete` and `mgmt.skills.delete` use the same guard.
 
-## Lifecycle — `https://api.avatar.us.kaltura.ai`
+## Lifecycle
 
 An event-driven rule engine, not embedded in an intellect. SDK: `mgmt.lifecycle`. Full reference (rule shape, action types, CRUD + discovery methods) and a worked recipe: **[docs/lifecycle/README.md](../lifecycle/README.md)**. To check existing rules, and a partner's agents and intellects, for mistakes, use `mgmt.lifecycle.audit`, `mgmt.intellectConfig.audit` and `mgmt.doctor`. They only read. See [Audit your rules](../lifecycle/README.md#audit-your-rules).
 
-## Insight Settings — `https://api.avatar.us.kaltura.ai`
+## Insight Settings
 
-Reusable custom-insight definitions (`key`/`title`/`prompt`/`valueType`), referenced by id from a lifecycle rule's `triggerInsightSettingsKai` action — not embedded in an intellect. SDK: `mgmt.insightSettings`. See [docs/lifecycle/README.md](../lifecycle/README.md).
+Reusable custom-insight definitions (`key`/`title`/`prompt`/`valueType`), referenced by id from a lifecycle rule's `triggerInsightSettingsKai` action. Not embedded in an intellect. SDK: `mgmt.insightSettings`. See [docs/lifecycle/README.md](../lifecycle/README.md).
 
 | Operation | Endpoint | Body |
 |-----------|----------|------|
-| Create | `POST /v1/insight-settings/create` | `{"key":"NEXT_STEP","title":"Next step","prompt":"...","valueType":"string"}` — all 4 fields required |
+| Create | `POST /v1/insight-settings/create` | `{"key":"NEXT_STEP","title":"Next step","prompt":"...","valueType":"string"}`. All 4 fields required |
 | Get | `POST /v1/insight-settings/get` | `{"id":"<id>"}` |
 | List | `POST /v1/insight-settings/list` | `{"filter":{"statusEqual":"active"},"pager":{"offset":0,"limit":30}}` |
-| Update | `POST /v1/insight-settings/update` | `{"id":"<id>", ...fields}` — any of `key`/`title`/`prompt`/`valueType`/`status` |
-| Delete | `POST /v1/insight-settings/delete` | `{"id":"<id>"}` — succeeds even while a lifecycle rule still references the id; that rule keeps firing and just skips the deleted id, with no error anywhere |
+| Update | `POST /v1/insight-settings/update` | `{"id":"<id>", ...fields}`. Any of `key`/`title`/`prompt`/`valueType`/`status` |
+| Delete | `POST /v1/insight-settings/delete` | `{"id":"<id>"}`. Remove the id from every lifecycle rule that references it before you delete it |
 
 Full reference and a worked recipe: **[docs/lifecycle/README.md § InsightSettings](../lifecycle/README.md#insightsettings-reusable-insight-definitions)**.

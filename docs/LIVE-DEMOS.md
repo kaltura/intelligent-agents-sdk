@@ -45,6 +45,6 @@ export AGENTIC_ADMIN_SECRET=…
 node examples/mcp-live-showcase/server.mjs --port 8877
 ```
 
-[mcp-live-showcase/server.mjs](../examples/mcp-live-showcase/server.mjs) is a reference MCP server with an open mount (`/mcp`) and an OAuth-protected mount (`/mcp/oauth`). It needs no credentials. The port defaults to 8877 and can also come from `PORT`. To try `mcp_servers` against a live agent, the backend must reach the server, so put it behind an HTTPS tunnel that forwards the `Host` header. See [MCP integrations](MCP-INTEGRATIONS.md).
+[mcp-live-showcase/server.mjs](../examples/mcp-live-showcase/server.mjs) is a reference MCP server with an open mount (`/mcp`) and an OAuth-protected mount (`/mcp/oauth`). It needs no credentials. The port defaults to 8877 and can also come from `PORT`. To try `mcp_servers` against a live agent, the agentic backend must reach the server, so put it behind an HTTPS tunnel that forwards the `Host` header. See [MCP integrations](MCP-INTEGRATIONS.md).
 
 Related: [Getting started](../GETTING-STARTED.md) and the [Presenter](../README.md#presenter) reference.

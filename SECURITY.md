@@ -2,7 +2,7 @@
 
 Defaults are secure. Where a strict setting would hurt usability, the SDK keeps a usable default and gives you an option to tighten it, noted in this file.
 
-- No runtime dependencies, no install scripts. The SDK is sourced directly from git (`src/`), not a package registry, so there's zero transitive supply-chain surface. Enforced in CI.
+- No runtime dependencies, no install scripts. The SDK is sourced directly from git (`src/`), not a package registry, so there's zero transitive supply-chain surface.
 - All cryptography is delegated to the platform. The SDK never rolls its own crypto: TLS and DTLS-SRTP (the encryption protocol securing WebRTC audio and video) come from the host (Node `tls`/`crypto`, browser WebCrypto/TLS). Run Node/OpenSSL in FIPS mode and a FIPS-validated OS/browser to operate in a FIPS-validated configuration (NIST SC-13).
 - Secrets never reach the client. The Admin Secret lives only server-side, in `Management`. The browser `KalturaAvatarSession` takes only a short-lived, entitlement-ON user-session token.
 
@@ -159,7 +159,7 @@ Every event carries this AU-3 content shape:
 
 - `KalturaAvatarSession` rejects non-TLS `conversationManagerUrl`/`srsBaseUrl` (`insecure_transport`). The same rule covers every `Management` base URL and the sessions' `genieUrl`.
 - A base URL that is empty, does not parse, uses a scheme other than `https`/`http`, or carries a username or password throws `bad_request` at construction.
-- Loopback and private hosts (`localhost`/`127.0.0.1`, RFC 1918 ranges, link-local, and their IPv6 equivalents; see `isPrivateOrLoopbackHost` in `src/core/net-guard.js`) are allowed for dev, with a loud one-time warning.
+- Loopback and private hosts (`localhost`/`127.0.0.1`, RFC 1918 ranges, link-local, and their IPv6 equivalents) are allowed for dev, with a loud one-time warning.
 - Cleartext to a public host requires an explicit `allowInsecureTransport:true` (dev/test only, never production).
 - Pass server-minted ephemeral TURN credentials (`turnCredentials` from appInit, RFC 7635). Without them the SDK uses its default TURN credentials and warns.
 
@@ -178,11 +178,11 @@ Every event carries this AU-3 content shape:
 
 ## Isolation & multi-tenancy (NIST SC-4 / AC-6(4))
 
-No SDK module holds credential or tenant state at module scope. The admin secret, KS, and partnerId live only as (non-enumerable) instance fields. A single process can safely run N `Management` and M `KalturaAvatarSession` instances for different tenants, each with fully independent tokens, transports, and teardown. Nothing is shared or global (tested in `test/unit/isolation.test.js`).
+No SDK module holds credential or tenant state at module scope. The admin secret, KS, and partnerId live only as (non-enumerable) instance fields. A single process can safely run N `Management` and M `KalturaAvatarSession` instances for different tenants, each with fully independent tokens, transports, and teardown. Nothing is shared or global.
 
 ## Supply-chain integrity (SLSA / OpenSSF / EO 14028)
 
-- Zero runtime dependencies, no install lifecycle scripts (CI-enforced).
+- Zero runtime dependencies, no install lifecycle scripts.
 - No registry publish step. The SDK is consumed straight from its git tags (`src/`, imported by path or served via jsDelivr's GitHub CDN). There is no npm package.
 
 ## Shared-responsibility control matrix (NIST 800-53)
@@ -220,9 +220,7 @@ Session hosts come from `appInit`, not from your config. `appInit` returns the `
 
 The `region` option covers the rest. It fills the four `Management` base URLs (`agenticUrl`, `genieUrl`, `ovpUrl`, `messagingUrl`) and the session `genieUrl` from one [`REGIONS`](docs/api/authentication.md#regions-and-base-urls) entry. `Management` never falls back to another region: a service the region lacks throws `region_unavailable` instead of reaching a US host. `region` does not change the analytics host.
 
-This residency guarantee covers the SDK's own configured endpoints only. A `lifecycle` rule's `sendInsightEmail` action is a server-side, operator-configured email delivery of thread-derived content to an arbitrary `recipients` list. It has no residency control and isn't covered by the URL-pinning above.
-
-A deployment that must protect PHI/PII boundaries and uses this action is responsible for its own recipient vetting and residency review. The HIPAA BAA (below) names avatar/ASR/TTS/brain subprocessors, not an email-delivery subprocessor for insight content.
+This residency guarantee covers the SDK's own configured endpoints only. A `lifecycle` rule's `sendInsightEmail` action sends thread-derived content to the `recipients` you list, and the URL-pinning above does not apply to it. Your code decides which recipients and regions are allowed. A deployment that must protect PHI/PII boundaries vets the `recipients` list and reviews residency before it uses this action.
 
 ## Data handling and deletion
 
@@ -273,7 +271,7 @@ The SDK is an AI Application Provider component you can largely inherit in a HIT
 | Log AI inputs/outputs (AI.PI.a) | Security + turn audit via `onAuditEvent` (content-free by default) | SIEM storage/retention |
 | Model rate limiting / DoS | Client-side `maxTurnsPerMinute` valve | Authoritative server-side quota (inherited) |
 | **Humans can intervene (AI.NI.a, non-inheritable)** | `stop()` / `disconnect()`, `revoke()`, barge-in (`interrupt()`), `requireDisclosureAck`, `onAgentAction` veto | Wire at least one to a visible UI control |
-| Output filtering / prompt-injection | `safeUrl`/`safeText`/`renderSafeLink` (output); `onBeforeSend` hook (input) | Model-side guardrails (inherited); red-team the intellect (the SDK's term for the agent's configured brain, its prompts, tools, and knowledge linkage) |
+| Output filtering / prompt-injection | `safeUrl`/`safeText`/`renderSafeLink` (output); `onBeforeSend` hook (input) | Model-side guardrails (inherited); red-team the intellect (the agent's configured prompts, tools, and knowledge linkage) |
 | AI supply chain | Zero deps, no install scripts, no registry publish step | Due-diligence review |
 | AI transparency to end-user | Disclosure-before-speech + `getDisclosure()` | Render it accessibly |
 | Audit retention / tamper-evidence | Emits records | 6-year-or-longer tamper-evident storage |
@@ -286,9 +284,9 @@ The SDK is an AI Application Provider component you can largely inherit in a HIT
 |---|---|
 | **LLM01 Prompt Injection** | `onBeforeSend(text, ctx)` input-filter hook (block/transform). Model-side detection is operator/platform. |
 | **LLM02 Sensitive Info Disclosure** | Redaction of secrets in logs/audit. `onBeforeSend` lets you mask outbound PII. Never put secrets in any request variable, including the `page_context` payload `setDynamicPrompt` sends. Values persist on the thread and interpolate into prompts and server-side tool calls. |
-| **LLM03 Supply Chain** | Zero runtime deps, no install scripts, no registry publish step, SRI on the injected socket.io (CI-gated). |
-| **LLM05 Improper Output Handling** | `safeUrl` (scheme allow-list), `safeText`, `renderSafeLink` (DOM-built, never `innerHTML`), inbound clamping of captions/segments. Treat avatar text/GenUI (the SDK's on-screen widget layer: flashcards, forms, images rendered from brain output) as untrusted. |
-| **LLM06 Excessive Agency** | `onAgentAction` gate + declarative `agentActions` policy + `capabilities` surface + `requireDisclosureAck`/`requireActionAck` HITL. |
+| **LLM03 Supply Chain** | Zero runtime deps, no install scripts, no registry publish step, SRI on the injected socket.io. |
+| **LLM05 Improper Output Handling** | `safeUrl` (scheme allow-list), `safeText`, `renderSafeLink` (DOM-built, never `innerHTML`), inbound clamping of captions/segments. Treat avatar text/GenUI (the SDK's on-screen widget layer: flashcards, forms, images rendered from agent output) as untrusted. |
+| **LLM06 Excessive Agency** | `onAgentAction` gate + declarative `agentActions` policy + `capabilities` surface + `requireDisclosureAck` HITL. |
 | **LLM07 System-Prompt Leakage** | Documented: never embed secrets/authz rules in the provisioned prompt or any request variable (`setDynamicPrompt` included). |
 | **LLM10 Unbounded Consumption** | Client `maxTurnsPerMinute` valve (`rate_limited`); server quota is authoritative. |
 | LLM04 / LLM08 / LLM09 | Operator: data/model poisoning, RAG/embedding ACLs, and misinformation/overreliance UX are out of a client SDK's control. |
@@ -297,14 +295,14 @@ Bounded-parser contract: nav/action commands parsed out of avatar text must be b
 
 ### OWASP Agentic (Agentic Security Initiative / Top 10 for Agentic Apps)
 
-The avatar's brain is an agent (navigates, renders GenUI, captures leads, searches knowledge). The SDK is the client boundary where agent-initiated actions surface.
+The avatar is an agent (navigates, renders GenUI, captures leads, searches knowledge). The SDK is the client boundary where agent-initiated actions surface.
 
 | Threat | Control |
 |---|---|
 | **ASI 01 Goal Hijack** / **ASI 02 Tool Misuse** | `onAgentAction(action)` chokepoint. Every agent-initiated action (`navigate`/`render-genui`/`structured-data-form`/…) passes through it before taking effect. Veto via false/throw. **Operator (server-side `api`/`code`/`csv` tools):** these fire server-to-server, outside the SDK's reach. Independently authorize each call against the caller's real session/permissions. Never treat model/system-prompt tool scoping, or a client-suppliable `request_vars` value, as an authorization claim. See [Tools and Secrets § Tools](docs/api/build/tools-and-secrets.md#tools-api--csv--code). |
 | **ASI 03 Identity & Privilege Abuse** | Scoped user-session token (per-user `userId`), entitlement ON, short TTL, revocable; least-privilege `restrictions`; `agentActions` policy (e.g. `navigate:'off'`). |
 | **ASI 06 Memory & Context Poisoning** | `Presenter` session memory is bounded and operator-cleared via `clearMemory()`. Persisted memory is replayed context. The operator owns the storage choice. |
-| **ASI 08 Cascading Failures** | Reconnect-window bound, media-recovery escalation, brain-liveness watchdog, client rate valve. |
+| **ASI 08 Cascading Failures** | Reconnect-window bound, media-recovery escalation, agent-stall watchdog, client rate valve. |
 | **ASI 09 Human-Agent Trust** | Disclosure-before-speech + `getDisclosure()`; `requireDisclosureAck`. |
 | **T8 Repudiation** | `agent.action.allow`/`agent.action.deny` audit events. |
 | ASI 05 RCE | The SDK never `eval`s agent output; nav uses a bounded parser. |
