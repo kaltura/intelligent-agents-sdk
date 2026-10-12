@@ -270,7 +270,7 @@ const session = new KalturaAvatarSession({ token, /* … */, requestVars: { user
 session.updateRequestVars({ account_tier: 'enterprise' });
 ```
 
-`updateRequestVars(vars)` **merges** what you pass into the session's canonical map. Send only the keys that changed. Omitted keys keep their values. Values persist on the thread for every later turn, so there is no per-turn resend. The SDK also re-sends the full map on reconnect. `session.setDynamicPrompt(data)` is sugar over the same channel. It serializes `data` into the single variable `page_context`. Pair it with the `PAGE_CONTEXT_PROMPT` block exported from `./management` so the prompt references `{{page_context}}`.
+`updateRequestVars(vars)` **merges** what you pass into the session's variable map. Merge, persistence and reconnect rules: [Dynamic Data Injection](/guides/dynamic-data-injection/). `session.setDynamicPrompt(data)` is sugar over the same channel. It serializes `data` into the single variable `page_context`. Pair it with the `PAGE_CONTEXT_PROMPT` block exported from `./management` so the prompt references `{{page_context}}`.
 
 The intellect's `allow_client_variables` flag must be on. It is on by default. Pin it with `intellects.setClientVariablesEnabled(configId, true, adminKs)`. If it is off, the turn fails in one of two ways:
 
@@ -983,6 +983,15 @@ const v = await mgmt.catalog.importVoiceFromElevenLabs('EXAVITQu4vr4xnSDxMaL', k
 An unknown provider id creates **nothing** and raises a typed `voice_not_found_elevenlabs` / `voice_not_found_cartesia` error.
 
 **Custom face works self-serve** (`mgmt.catalog`, `mgmt.avatars`): upload a portrait image via `catalog.createVisual`, pass `itemId` as `visualId` in `provision`/`avatars.create`. The model animates the portrait at runtime. Video-clip ingest is not available through this API. Composing a face and background, and curated templates: [Avatar and agent](/reference/api/build/avatar-and-agent/).
+
+**Embed snippet or SDK?** There are two ways to put an agent on a page. Pick by how much you want to build.
+
+| | Avatar Studio embed | This SDK |
+|---|---|---|
+| For | Teams that want an agent on a page off the shelf, without building on the SDK runtime | Teams that want to customize everything |
+| What you get | A self-contained widget with its own look and controls. Simple to set up and use | `KalturaAvatarSession` and `KalturaChatSession` with your own layout, controls, [client commands](/guides/client-commands/), GenUI and analytics |
+| Control | Less low-level access and control | Full low-level access and control |
+| Pick it when | The stock widget is enough | The stock widget is not enough |
 
 ---
 

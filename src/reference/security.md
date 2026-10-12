@@ -253,7 +253,7 @@ A client SDK can implement technical controls and generate the records, but it c
 
 ### HIPAA (45 CFR Part 164)
 
-> Gating item: Kaltura offers a Business Associate Agreement, covering Kaltura and its avatar/ASR/TTS/brain subprocessors, as required before any PHI flows (164.308(b), 164.502(e)). Contact your Kaltura Account Manager or Customer Success Manager to execute one.
+> Gating item: Kaltura offers a Business Associate Agreement, covering Kaltura and its avatar/ASR/TTS/brain subprocessors, as required before any PHI flows. Contact your Kaltura Account Manager or Customer Success Manager to execute one.
 
 | Safeguard (CFR) | SDK provides | Operator responsible |
 |---|---|---|
@@ -267,7 +267,7 @@ A client SDK can implement technical controls and generate the records, but it c
 | **164.402 Breach / safe harbor** | PHI encrypted in transit + no token/PHI at rest → supports the encryption safe harbor for the SDK-controlled path | At-rest encryption; breach detection + 164.404/164.410 notification |
 | **164.316(b)(2) Retention** | Emits the records | Tamper-evident storage + 6-year retention |
 
-PHI note: a patient may speak PHI to the avatar, so captions, transcripts, screenshots, and request-variable context (`setDynamicPrompt`'s `page_context`) can carry PHI. The SDK surfaces these to your app but persists none of them. Treat them as PHI in your app. Remember that request variables persist on the conversation thread server-side for the rest of the thread.
+PHI note: a patient may speak PHI to the avatar, so captions, transcripts, screenshots, and request-variable context (`setDynamicPrompt`'s `page_context`) can carry PHI. The SDK surfaces these to your app but persists none of them. Treat them as PHI in your app.
 
 ### HITRUST CSF (incl. the AI Security Assessment)
 
@@ -285,14 +285,14 @@ The SDK is an AI Application Provider component you can largely inherit in a HIT
 | AI transparency to end-user | Disclosure-before-speech + `getDisclosure()` | Render it accessibly |
 | Audit retention / tamper-evidence | Emits records | 6-year-or-longer tamper-evident storage |
 
-> Prompt-injection note: the prototype-pollution scrub on `setDynamicPrompt`/inbound is object-injection defense, not prompt-injection defense. `redact()` is log-scoped, not an output content filter. Don't pass unsanitized end-user text into `setDynamicPrompt` or any request variable. Request variables are thread-persistent, so a poisoned value outlives its turn and keeps interpolating into prompts and server-side tool calls for the rest of the thread. Instruction/data separation, source allow-listing, and model guardrails are operator/platform duties.
+> Prompt-injection note: the prototype-pollution scrub on `setDynamicPrompt`/inbound is object-injection defense, not prompt-injection defense. `redact()` is log-scoped, not an output content filter. Don't pass unsanitized end-user text into `setDynamicPrompt` or any request variable. Request variables stay on the thread, so see [Dynamic Data Injection](/guides/dynamic-data-injection/) for what that means for a poisoned value. Instruction/data separation, source allow-listing, and model guardrails are operator/platform duties.
 
 ### OWASP Top 10 for LLM Applications (2025)
 
 | Item | Status |
 |---|---|
 | **LLM01 Prompt Injection** | `onBeforeSend(text, ctx)` input-filter hook (block/transform). Model-side detection is operator/platform. |
-| **LLM02 Sensitive Info Disclosure** | Redaction of secrets in logs/audit. `onBeforeSend` lets you mask outbound PII. Never put secrets in any request variable, including the `page_context` payload `setDynamicPrompt` sends. Values persist on the thread and interpolate into prompts and server-side tool calls. |
+| **LLM02 Sensitive Info Disclosure** | Redaction of secrets in logs/audit. `onBeforeSend` lets you mask outbound PII. Never put secrets in any request variable, including the `page_context` payload `setDynamicPrompt` sends. |
 | **LLM03 Supply Chain** | Zero runtime deps, no install scripts, no registry publish step, SRI on the injected socket.io. |
 | **LLM05 Improper Output Handling** | `safeUrl` (scheme allow-list), `safeText`, `renderSafeLink` (DOM-built, never `innerHTML`), inbound clamping of captions/segments. Treat avatar text/GenUI (the SDK's on-screen widget layer: flashcards, forms, images rendered from agent output) as untrusted. |
 | **LLM06 Excessive Agency** | `onAgentAction` gate + declarative `agentActions` policy + `capabilities` surface + `requireDisclosureAck` HITL. |
