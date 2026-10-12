@@ -108,7 +108,7 @@ Token rules per method: [operate.md § Threads](operate.md#threads). `threads.pu
 | List | `POST /v1/thread/list` | `{"filter":{"objectType":"ListThreadFilter"},"pager":{"pageIndex":1,"pageSize":30}}` |
 | Get | `POST /v1/thread/get` | `{"id":"UUID"}` |
 | Rename | `POST /v1/thread/update` | `{"id":"UUID","title":"New name"}` |
-| Set analysis | `POST /v1/thread/update` | `{"id":"UUID","thread_metadata":{"analysis":{...}}}`. SDK: `mgmt.threads.setAnalysis(id, patch, ks)`. |
+| Set analysis | `POST /v1/thread/update` | `{"id":"UUID","thread_metadata":{"analysis":{...}}}`. Shallow merge one level under `analysis`. A key whose value changes fires `analysis_updated`. A patch that changes nothing fires no event. SDK: `mgmt.threads.setAnalysis(id, patch, ks)`. |
 | Clear analysis | `POST /v1/thread/update` | `{"id":"UUID","thread_metadata":{}}`. Clears `analysis`. SDK: `mgmt.threads.clearAnalysis(id, ks)`. |
 | Push | `POST /thread/push` (no `v1/` prefix on this route) | `{"id":"UUID","content":"...","request_vars"?:{...},"system_message"?:"..."}`. `delivered:false` in the reply means no live socket is attached. The message is still saved and appears in the Messages list. SDK: `mgmt.threads.push({id,content,request_vars?,system_message?}, ks)`. |
 | Delete | `POST /v1/thread/delete` | `{"thread_ids":["UUID"]}`. See [operate.md § Threads](operate.md#threads) for delete behavior |
