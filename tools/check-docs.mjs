@@ -54,8 +54,8 @@ const DOCS = [
 ];
 
 /** Contributor docs. Link and anchor checks cover them. They are never published. */
-const INTERNAL_DOCS = readdirSync(join(ROOT, 'docs/internal'))
-  .filter((f) => f.endsWith('.md')).map((f) => `docs/internal/${f}`);
+const CONTRIBUTOR_DOCS = readdirSync(join(ROOT, 'docs/contributor'))
+  .filter((f) => f.endsWith('.md')).map((f) => `docs/contributor/${f}`);
 
 /** Read a file relative to ROOT, return empty string if missing. */
 function read(rel) {
@@ -446,7 +446,7 @@ describe('6. Cross-doc links', () => {
     }
 
     const broken = [];
-    for (const rel of [...DOCS, ...INTERNAL_DOCS]) {
+    for (const rel of [...DOCS, ...CONTRIBUTOR_DOCS]) {
       const full = join(ROOT, rel);
       if (!existsSync(full)) continue;
       const content = readFileSync(full, 'utf8');
@@ -474,7 +474,7 @@ describe('6. Cross-doc links', () => {
 
   test('all same-file #anchor links resolve', () => {
     const broken = [];
-    for (const rel of [...DOCS, ...INTERNAL_DOCS]) {
+    for (const rel of [...DOCS, ...CONTRIBUTOR_DOCS]) {
       const full = join(ROOT, rel);
       if (!existsSync(full)) continue;
       const content = readFileSync(full, 'utf8');
@@ -1133,11 +1133,11 @@ describe('17. Content pages', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════
-// 18. Doc tiers and style — see docs/internal/DOCS-GUIDE.md
+// 18. Doc tiers and style — see docs/contributor/DOCS-GUIDE.md
 // ═══════════════════════════════════════════════════════════════════════
 describe('18. Doc tiers and style', () => {
-  const BANNER = '> **Internal SDK development doc.**';
-  const INTERNAL_ROOT = ['AGENTS.md', 'CONTRIBUTING.md', 'SDK_CONSTITUTION.md'];
+  const BANNER = '> **Contributor doc.**';
+  const CONTRIBUTOR_ROOT = ['AGENTS.md', 'CONTRIBUTING.md', 'SDK_CONSTITUTION.md'];
   const USER_ROOT = ['README.md', 'API-REFERENCE.md', 'GETTING-STARTED.md', 'SECURITY.md'];
   const LINE_BUDGET = 250;
   // Ratchet: pages already over budget may not grow. Remove an entry once the page is under budget.
@@ -1146,7 +1146,7 @@ describe('18. Doc tiers and style', () => {
     'docs/ARCHITECTURE.md': 301, 'docs/START-THE-CONVERSATION.md': 251,
   };
   const userDocs = () => trackedFiles().filter((f) => f.endsWith('.md')
-    && (USER_ROOT.includes(f) || (f.startsWith('docs/') && !f.startsWith('docs/internal/'))));
+    && (USER_ROOT.includes(f) || (f.startsWith('docs/') && !f.startsWith('docs/contributor/'))));
   /** Lines outside code fences, as [lineNumber, text]. */
   const prose = (rel) => {
     let fenced = false;
@@ -1159,19 +1159,19 @@ describe('18. Doc tiers and style', () => {
   };
   const scan = (re) => userDocs().flatMap((f) => prose(f).filter(([, l]) => re.test(l)).map(([n, l]) => `${f}:${n}: ${l.trim().slice(0, 90)}`));
 
-  test('every internal doc starts with the internal banner', () => {
-    for (const f of [...INTERNAL_DOCS, ...INTERNAL_ROOT]) assert.ok(read(f).startsWith(BANNER), `${f} must start with the internal banner`);
+  test('every contributor doc starts with the contributor banner', () => {
+    for (const f of [...CONTRIBUTOR_DOCS, ...CONTRIBUTOR_ROOT]) assert.ok(read(f).startsWith(BANNER), `${f} must start with the contributor banner`);
   });
 
-  test('user docs never link to docs/internal/', () => {
+  test('user docs never link to docs/contributor/', () => {
     const bad = [];
     for (const f of userDocs()) {
       for (const m of read(f).matchAll(/\]\(([^)#\s]+)/g)) {
         if (/^[a-z]+:/i.test(m[1])) continue;
-        if (normalize(join(dirname(f), m[1])).startsWith('docs/internal')) bad.push(`${f} → ${m[1]}`);
+        if (normalize(join(dirname(f), m[1])).startsWith('docs/contributor')) bad.push(`${f} → ${m[1]}`);
       }
     }
-    assert.deepEqual(bad, [], `user docs link to internal docs:\n  ${bad.join('\n  ')}`);
+    assert.deepEqual(bad, [], `user docs link to contributor docs:\n  ${bad.join('\n  ')}`);
   });
 
   test('user docs name no private (underscore) symbol', () => {

@@ -1,4 +1,4 @@
-> **Internal SDK development doc.** For people changing the SDK, not for app builders. Published in this repository only, never on the docs site. [Index](docs/internal/README.md).
+> **Contributor doc.** For people changing the SDK, not for app builders. Public in this repository, not published on the docs site. [Index](docs/contributor/README.md).
 
 # AGENTS.md
 
@@ -35,7 +35,7 @@ Full list: [SDK_CONSTITUTION.md](SDK_CONSTITUTION.md).
 
 ## Docs
 
-Read [docs/internal/DOCS-GUIDE.md](docs/internal/DOCS-GUIDE.md) before you edit any `.md` file. It defines the user and internal doc tiers, the content and length rules, and what `tools/check-docs.mjs` enforces. Update docs in the same PR as the behavior change.
+Read [docs/contributor/DOCS-GUIDE.md](docs/contributor/DOCS-GUIDE.md) before you edit any `.md` file. It defines the user and contributor doc tiers, the content and length rules, and what `tools/check-docs.mjs` enforces. Update docs in the same PR as the behavior change.
 
 ## Public boundary
 
