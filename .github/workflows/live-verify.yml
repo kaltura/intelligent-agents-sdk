@@ -138,6 +138,7 @@ jobs:
       threads-messages-feedback: ${{ steps.filter.outputs.threads-messages-feedback }}
       session-types: ${{ steps.filter.outputs.session-types }}
       skills: ${{ steps.filter.outputs.skills }}
+      authoring: ${{ steps.filter.outputs.authoring }}
       catalog: ${{ steps.filter.outputs.catalog }}
       knowledge: ${{ steps.filter.outputs.knowledge }}
       avatars: ${{ steps.filter.outputs.avatars }}
@@ -327,6 +328,22 @@ jobs:
               - 'src/core/response-headers.js'
               - 'src/core/safety.js'
               - 'src/core/transport-guard.js'
+              - 'package.json'
+              - 'package-lock.json'
+              - '.github/workflows/live-verify.yml'
+            authoring:
+              - 'scripts/live-verify-authoring.mjs'
+              - 'src/management/condition.js'
+              - 'src/management/tools.js'
+              - 'src/management/prompt-lint.js'
+              - 'src/management/intellect-config.js'
+              - 'src/management/client.js'
+              - 'src/core/http.js'
+              - 'src/core/errors.js'
+              - 'src/core/session.js'
+              - 'src/core/ids.js'
+              - 'src/core/redact.js'
+              - 'src/core/endpoints.js'
               - 'package.json'
               - 'package-lock.json'
               - '.github/workflows/live-verify.yml'
@@ -891,6 +908,18 @@ jobs:
           set -o pipefail
           npm run live-verify:skills 2>&1 | tee live-verify-skills-output.log
 
+      # Conditions, prompt types, var tool and {arg} placeholders, against the real Kaltura API
+      - name: Resources · Authoring
+        id: live_verify_authoring
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' && (needs.changes.outputs.all == 'true' || needs.changes.outputs['authoring'] == 'true') }}
+        timeout-minutes: 15
+        env:
+          AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
+          AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
+        run: |
+          set -o pipefail
+          npm run live-verify:authoring 2>&1 | tee live-verify-authoring-output.log
+
       # Scratch tool add/get/delete + code/csv unavailable-by-default 403 gate, against the real Kaltura API
       - name: Resources · Tools
         id: live_verify_tools
@@ -1116,6 +1145,16 @@ jobs:
               echo
               echo '```'
               tail -n 40 live-verify-knowledge-output.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -f live-verify-authoring-output.log ]; then
+            echo >> "$GITHUB_STEP_SUMMARY"
+            {
+              echo "### Resources · Authoring — ${{ steps.live_verify_authoring.outcome }}"
+              echo
+              echo '```'
+              tail -n 40 live-verify-authoring-output.log
               echo '```'
             } >> "$GITHUB_STEP_SUMMARY"
           fi

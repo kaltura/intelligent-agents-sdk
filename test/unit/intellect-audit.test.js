@@ -38,6 +38,13 @@ const TABLE = [
   ['tool_not_found: skipped when tools are unknown', base({ tool_ids: ['gone'], capabilities: { kaltura_genie_experiences: 'off' } }), { tools: null }, []],
   ['skill_not_found', base({ skill_ids: [{ id: 's1', mode: 'adhoc' }, { id: 'gone', mode: 'adhoc' }] }), { skills: [{ id: 's1' }] }, ['skill_not_found']],
   ['skill_not_found: skipped when skills are unknown', base({ skill_ids: [{ id: 'gone', mode: 'adhoc' }] }), {}, []],
+  ['skill_condition_template', base({ skill_ids: [{ id: 's1', mode: 'adhoc', condition: '{{ sys__avatar_enabled }}' }] }), { skills: [{ id: 's1' }] }, ['skill_condition_template']],
+  ['conditions the server echoes as null are fine', base({ prompts: [prompt('a', { condition: null })], skill_ids: [{ id: 's1', mode: 'adhoc', condition: null }] }), { skills: [{ id: 's1' }] }, []],
+  ['skill condition: a bare expression is fine', base({ skill_ids: [{ id: 's1', mode: 'adhoc', condition: 'not sys__avatar_enabled' }] }), { skills: [{ id: 's1' }] }, []],
+  ['tool_condition_template', base({ tool_ids: ['t1'], capabilities: { kaltura_genie_experiences: 'off' } }), { tools: [{ id: 't1', config: { condition: '{% if x %}y{% endif %}' } }] }, ['tool_condition_template']],
+  ['tool condition: a bare expression is fine', base({ tool_ids: ['t1'], capabilities: { kaltura_genie_experiences: 'off' } }), { tools: [{ id: 't1', config: { condition: 'sys__avatar_enabled' } }] }, []],
+  ['prompt_bad_condition (lint finding, error)', base({ prompts: [prompt('Be kind.', { condition: '{{ plan }}' })] }), {}, ['prompt_bad_condition']],
+  ['prompt types system and knowledge are fine', base({ prompts: [prompt('a', { key: 'a', type: 'system' }), prompt('b', { key: 'b', type: 'knowledge', condition: 'plan == "pro"' })] }), {}, []],
 ];
 
 for (const [name, config, ctx, expected] of TABLE) {

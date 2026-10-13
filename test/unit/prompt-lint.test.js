@@ -11,6 +11,7 @@ import {
   lintPersonaIdentity,
   assembleSystemPrompt,
   PAGE_CONTEXT_PROMPT,
+  PROMPT_TYPES,
 } from '../../src/management/prompt-lint.js';
 
 /** Pure prompt-authoring lint/preview helpers. No network, no KS. */
@@ -121,11 +122,31 @@ test('lintPrompts: empty value/headerTemplate → renderer_skip warning + skippe
 test('lintPrompts: missing key and wrong type are ERRORS', () => {
   const r = lintPrompts([
     { headerTemplate: 'H', type: 'custom', value: 'v' },
-    { key: 'x', headerTemplate: 'H', type: 'system', value: 'v' },
+    { key: 'x', headerTemplate: 'H', type: 'bogus', value: 'v' },
   ]);
   assert.equal(r.ok, false);
   assert.equal(hasFinding(r.findings, 'missing_key'), true);
   assert.equal(hasFinding(r.findings, 'bad_type'), true);
+});
+
+test('lintPrompts: custom, system and knowledge types are all accepted', () => {
+  const r = lintPrompts(PROMPT_TYPES.map((type) => ({ key: type, headerTemplate: 'H', type, value: 'v' })));
+  assert.deepEqual(PROMPT_TYPES, ['custom', 'system', 'knowledge']);
+  assert.equal(r.ok, true);
+  assert.equal(hasFinding(r.findings, 'bad_type'), false);
+});
+
+test('lintPrompts: a bare condition passes, a template or empty condition is a bad_condition ERROR', () => {
+  const block = (condition) => ({ key: 'k', headerTemplate: 'H', type: 'custom', value: 'v', condition });
+  assert.equal(lintPrompts([block('sys__avatar_enabled')]).ok, true);
+  assert.equal(lintPrompts([block('not sys__avatar_enabled and plan == "pro"')]).ok, true);
+  assert.equal(lintPrompts([block(null)]).ok, true, 'the server stores an unset condition as null');
+  for (const bad of ['{{ sys__avatar_enabled }}', '{% if x %}1{% endif %}', '', 5]) {
+    const r = lintPrompts([block(bad)]);
+    assert.equal(r.ok, false, JSON.stringify(bad));
+    assert.equal(hasFinding(r.findings, 'bad_condition'), true);
+    assert.equal(r.findings.find((f) => f.code === 'bad_condition').path, 'prompts[0].condition');
+  }
 });
 
 test('lintPrompts: duplicate keys warn', () => {
@@ -590,4 +611,21 @@ test('assembleSystemPrompt: unresolved sys__context_id is flagged (reserved_var_
   assert.equal(r.warnings.length, 1);
   assert.equal(r.warnings[0].code, 'reserved_var_unresolved');
   assert.match(r.warnings[0].message, /sys__context_id/);
+});
+
+test('assembleSystemPrompt: renders every type, lists conditional keys, and says conditions are not evaluated', () => {
+  const r = assembleSystemPrompt({
+    baseDirective: 'Base.',
+    prompts: [
+      { key: 'a', headerTemplate: 'A', type: 'custom', value: 'alpha' },
+      { key: 'b', headerTemplate: 'B', type: 'knowledge', value: 'beta', condition: 'sys__avatar_enabled' },
+      { key: 'c', headerTemplate: 'C', type: 'system', value: 'gamma', condition: 'plan == "pro"' },
+    ],
+  });
+  assert.match(r.text, /## A\nalpha/);
+  assert.match(r.text, /## B\nbeta/);
+  assert.match(r.text, /## C\ngamma/);
+  assert.deepEqual(r.conditionalKeys, ['b', 'c']);
+  assert.match(r._meta.note, /conditions are not evaluated/i);
+  assert.deepEqual(assembleSystemPrompt({ prompts: [{ key: 'a', headerTemplate: 'A', type: 'custom', value: 'x' }] }).conditionalKeys, []);
 });

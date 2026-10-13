@@ -504,9 +504,13 @@ test('intellectConfig.setSkillIds passes adhoc-save + condition through and reje
   await cfg.setSkillIds(1481, skills, ADMIN);
   const sent = f.calls.find((c) => c.url.includes('/v1/intellect/update')).body;
   assert.deepEqual(sent.skill_ids, skills);
+  await cfg.setSkillIds(1481, [{ id: 'skill-1', mode: 'adhoc', condition: null }], ADMIN); // the server echoes an unset condition as null
   f.calls.length = 0;
   await assert.rejects(() => cfg.setSkillIds(1481, [{ id: 'skill-1', mode: 'adhoc', condition: '' }], ADMIN), (e) => e.code === 'bad_request' && /condition/.test(e.detail));
   await assert.rejects(() => cfg.setSkillIds(1481, [{ id: 'skill-1', mode: 'adhoc', condition: 5 }], ADMIN), (e) => e.code === 'bad_request');
+  for (const templated of ['{{ sys__avatar_enabled }}', '{{ not sys__avatar_enabled }}', '{% if x %}1{% endif %}']) {
+    await assert.rejects(() => cfg.setSkillIds(1481, [{ id: 'skill-1', mode: 'adhoc', condition: templated }], ADMIN), (e) => e.code === 'bad_request' && /bare expression/.test(e.detail), templated);
+  }
   await assert.rejects(() => cfg.setSkillIds(1481, [{ id: 'skill-1', mode: 'adhoc', when: 'x' }], ADMIN), (e) => e.code === 'bad_request' && /when/.test(e.detail));
   assert.equal(f.calls.length, 0);
 });

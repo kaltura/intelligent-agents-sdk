@@ -112,7 +112,9 @@ export class Skills {
 
   /**
    * Get a Skill by id. READ. A deleted or unknown id → typed `not_found`;
-   * another partner's id → typed `forbidden`.
+   * another partner's id → typed `forbidden`. A shared skill (`partner_id: 0`,
+   * listed by {@link Skills#list}) also returns `not_found`, although
+   * `setSkillIds` can attach it.
    * @param {string} id @param {string} ks (admin)
    */
   async get(id, ks) {
@@ -123,7 +125,9 @@ export class Skills {
 
   /**
    * List Skills for the authenticated partner. READ. Async-iterable +
-   * awaitable (first page) — mirrors {@link Tools#list}.
+   * awaitable (first page) — mirrors {@link Tools#list}. The list also holds
+   * shared skills that every partner can attach, marked `partner_id: 0`; filter
+   * on `partner_id` to see only your own. You cannot edit or delete a shared skill.
    * @param {string} ks (admin) @param {{filter?:object, pageSize?:number}} [opts]
    */
   list(ks, opts = {}) {

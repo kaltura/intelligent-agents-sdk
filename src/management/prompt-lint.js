@@ -6,6 +6,7 @@
  *
  * These helpers model the prompt-rendering rules:
  *   - each prompt block renders as `## {headerTemplate}\n{value}`, joined;
+ *   - a block's optional `condition` is NOT evaluated here: the block always renders in the replica;
  *   - blocks with an empty `value` OR empty `headerTemplate` are SKIPPED;
  *   - `base_directive` is prepended (an empty one is not replaced by a default here);
  *   - `glossary`, when set, is appended;
@@ -20,6 +21,7 @@
 import { KalturaError } from '../core/errors.js';
 import { meta } from '../core/ids.js';
 import { RESERVED_VARS } from './conversations.js';
+import { conditionProblem } from './condition.js';
 
 /**
  * Server-provided variable namespaces addressed by a dotted prefix (e.g.
@@ -103,6 +105,12 @@ function reservedVarWarning(name, info) {
     message: `\`{{${name}}}\` is a reserved system variable with no value in this preview's requestVars — it renders as an empty/literal placeholder here, which may not match its live behavior. Supply "${name}" in requestVars to simulate the value the server would set.`,
   };
 }
+
+/**
+ * Allowed values of a prompt block's `type`.
+ * @type {readonly string[]}
+ */
+export const PROMPT_TYPES = Object.freeze(['custom', 'system', 'knowledge']);
 
 /**
  * One finding from a lint pass.
@@ -296,7 +304,13 @@ export const PAGE_CONTEXT_PROMPT = Object.freeze({
 
 /**
  * Lint a `prompts[]` list (the `List[DynamicPrompt]` DTO). Each block must be
- * `{key, label, headerTemplate, type:"custom", value}`. Surfaces structural
+ * `{key, label, headerTemplate, type, value, condition?}`. `type` is
+ * `"custom"` (the default for hand-written blocks), `"system"` or `"knowledge"`
+ * (see {@link PROMPT_TYPES}). `condition`, when set, is a bare expression over
+ * thread variables (for example `sys__avatar_enabled`); the block applies only
+ * while it is truthy. A template-style condition (`{{ }}`) is a
+ * `bad_condition` ERROR because the server answers it with an empty reply.
+ * Surfaces structural
  * errors (invalid block, missing/empty key, wrong `type`, non-string fields),
  * structural WARNINGS (missing `type`, duplicate keys) and
  * renderer-skip WARNINGS (empty `value` OR empty `headerTemplate` ⇒ the block
@@ -353,7 +367,7 @@ export function lintPrompts(prompts, opts = {}) {
   prompts.forEach((block, i) => {
     const path = `prompts[${i}]`;
     if (!isPlainObject(block)) {
-      findings.push({ severity: 'error', code: 'invalid_block', message: `${path} must be an object {key,label,headerTemplate,type:"custom",value}.`, path });
+      findings.push({ severity: 'error', code: 'invalid_block', message: `${path} must be an object {key,label,headerTemplate,type,value}.`, path });
       return;
     }
     const key = block.key;
@@ -368,10 +382,15 @@ export function lintPrompts(prompts, opts = {}) {
       }
     }
 
-    if (block.type !== undefined && block.type !== 'custom') {
-      findings.push({ severity: 'error', code: 'bad_type', message: `${path}.type must be "custom" (got ${JSON.stringify(block.type)}).`, path: `${path}.type` });
+    if (block.type !== undefined && !PROMPT_TYPES.includes(block.type)) {
+      findings.push({ severity: 'error', code: 'bad_type', message: `${path}.type must be one of ${PROMPT_TYPES.map((t) => `"${t}"`).join(', ')} (got ${JSON.stringify(block.type)}).`, path: `${path}.type` });
     } else if (block.type === undefined) {
-      findings.push({ severity: 'warning', code: 'missing_type', message: `${path}.type should be "custom" (the only DynamicPrompt type).`, path: `${path}.type` });
+      findings.push({ severity: 'warning', code: 'missing_type', message: `${path}.type should be set: "custom" for your own instructions.`, path: `${path}.type` });
+    }
+
+    if (block.condition != null) { // the server stores an unset condition as null
+      const problem = conditionProblem(block.condition);
+      if (problem) findings.push({ severity: 'error', code: 'bad_condition', message: `${path}.condition ${problem}.`, path: `${path}.condition` });
     }
 
     if (block.label !== undefined && typeof block.label !== 'string') {
@@ -671,6 +690,9 @@ export const SERVER_DEFAULT_DIRECTIVE_MARKER = '<<server default directive>>';
  *   - When `base_directive` is empty, the server falls back to its built-in
  *     directive; rather than fabricate it, this renders
  *     {@link SERVER_DEFAULT_DIRECTIVE_MARKER}.
+ *   - A block's `condition` is not evaluated. Every non-empty block renders;
+ *     `conditionalKeys` lists the keys that apply live only while their
+ *     condition is truthy.
  *   - `{{var}}` placeholders are interpolated ONLY when you pass `requestVars`
  *     (system vars too); otherwise they are left literal. `sys__*` values you
  *     pass are a SIMULATION of what the server sets per turn.
@@ -696,6 +718,7 @@ export const SERVER_DEFAULT_DIRECTIVE_MARKER = '<<server default directive>>';
  * @returns {{
  *   text: string,
  *   skippedKeys: string[],
+ *   conditionalKeys: string[],
  *   usedDefaultDirective: boolean,
  *   unresolvedVariables: string[],
  *   warnings?: LintFinding[],
@@ -745,6 +768,7 @@ export function assembleSystemPrompt(subset = {}) {
   parts.push(usedDefaultDirective ? SERVER_DEFAULT_DIRECTIVE_MARKER : baseDirective.trim());
 
   const skippedKeys = [];
+  const conditionalKeys = [];
   for (const block of prompts) {
     const header = isPlainObject(block) && typeof block.headerTemplate === 'string' ? block.headerTemplate : '';
     const value = isPlainObject(block) && typeof block.value === 'string' ? block.value : '';
@@ -752,6 +776,7 @@ export function assembleSystemPrompt(subset = {}) {
       if (isPlainObject(block) && typeof block.key === 'string' && block.key) skippedKeys.push(block.key);
       continue;
     }
+    if (isPlainObject(block) && block.condition !== undefined && block.condition !== null && block.condition !== '' && typeof block.key === 'string') conditionalKeys.push(block.key);
     parts.push(`## ${header}\n${value}`);
   }
 
@@ -790,6 +815,7 @@ export function assembleSystemPrompt(subset = {}) {
   return {
     text,
     skippedKeys,
+    conditionalKeys,
     usedDefaultDirective,
     unresolvedVariables: unresolved,
     ...(warnings.length ? { warnings } : {}),
@@ -798,7 +824,7 @@ export function assembleSystemPrompt(subset = {}) {
       scope: 'system-prompt',
       renderer: 'client-side-replica',
       rendererBasis: 'server prompt renderer (author layer only)',
-      note: 'Author layer only. Server-injected capability-conditional template blocks and the built-in default directive are NOT reproduced, so this is not byte-exact.',
+      note: 'Author layer only. Server-injected capability-conditional template blocks and the built-in default directive are NOT reproduced, so this is not byte-exact. Block conditions are not evaluated: every non-empty block renders, and conditionalKeys lists the ones that apply only while their condition is truthy.',
     }),
   };
 }

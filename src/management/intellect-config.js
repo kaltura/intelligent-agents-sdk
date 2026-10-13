@@ -47,6 +47,7 @@
 import { KalturaError } from '../core/errors.js';
 import { meta } from '../core/ids.js';
 import { requireInt } from './intellect-body.js';
+import { assertCondition, conditionProblem } from './condition.js';
 import { validateCapabilities, assertCapability, assertCapabilityState, mergeCapabilityWrite, CAPABILITIES } from './capabilities.js';
 import { ARG_TYPES, clientToolReadiness } from './tools.js';
 import { MASK, maskExisting, validateSecretRefs } from './secrets.js';
@@ -301,9 +302,13 @@ export class IntellectConfig {
    * (see {@link SKILL_MODES}). WRITE — idempotent, UNGATED (direct
    * reference-list write like `tool_ids`/`knowledge_ids`). This only edits the
    * reference list — create/edit a Skill body via `mgmt.skills.add` first,
-   * then pass its `id` here. Pass `[]` to detach every skill. An optional
-   * `condition` is a template expression over thread variables (for example
-   * `sys__avatar_enabled`); the skill is active only when it is truthy.
+   * then pass its `id` here. Pass `[]` to detach every skill. The `id` may
+   * also be a shared skill from `mgmt.skills.list` (`partner_id: 0`). An
+   * optional `condition` is a BARE expression over thread variables (for
+   * example `sys__avatar_enabled` or `not sys__avatar_enabled`); the skill is
+   * active only when it is truthy. Do not wrap it in `{{ }}`: the server then
+   * returns an empty reply, so the SDK rejects `{{`, `{%` and `{#` with
+   * `bad_request` before the write.
    * @param {number} configId @param {Array<{id:string, mode:'adhoc'|'adhoc-save'|'preloaded', condition?:string}>} skillIds @param {string} ks (admin)
    * @returns {Promise<{applied:boolean, result?:any, sent?:object, _meta:object}>}
    */
@@ -318,9 +323,7 @@ export class IntellectConfig {
       if (!SKILL_MODES.includes(entry.mode)) {
         throw bad(`intellectConfig.setSkillIds: entry.mode must be one of ${SKILL_MODES.join('/')}, got ${JSON.stringify(entry.mode)}.`);
       }
-      if (entry.condition !== undefined && (typeof entry.condition !== 'string' || !entry.condition.trim())) {
-        throw bad(`intellectConfig.setSkillIds: entry.condition must be a non-empty Jinja2 expression string when present, got ${JSON.stringify(entry.condition)}.`);
-      }
+      if (entry.condition != null) assertCondition(entry.condition, 'intellectConfig.setSkillIds: entry.condition');
       for (const k of Object.keys(entry)) {
         if (k !== 'id' && k !== 'mode' && k !== 'condition') {
           throw bad(`intellectConfig.setSkillIds: unknown entry key "${k}". Allowed: id, mode, condition.`);
@@ -801,6 +804,8 @@ const lintSeverity = (s) => (s === 'error' ? 'error' : s === 'warning' ? 'warn' 
  * | `knowledge_ids_over_cap` | error | `knowledge_ids` holds more than one record. |
  * | `tool_not_found` | error | `tool_ids` or `thread_start_tools` names a tool that does not exist. |
  * | `skill_not_found` | error | `skill_ids` names a skill that does not exist. |
+ * | `skill_condition_template` | error | A `skill_ids[].condition` is wrapped in `{{ }}` or `{% %}`. The server answers every turn with an empty reply. |
+ * | `tool_condition_template` | error | A linked tool's `condition` is wrapped in `{{ }}` or `{% %}`. |
  * @param {Record<string, any>} config The intellect, as `intellects.get` returns it.
  * @param {IntellectAuditContext} [ctx]
  * @returns {import('./audit-report.js').AuditFinding[]}
@@ -866,6 +871,15 @@ export function auditIntellectConfig(config, ctx = {}) {
         add('error', 'tool_not_found', field, `${field} lists tool ${id}, which does not exist.`, `Drop it with intellectConfig.${field === 'tool_ids' ? 'setToolIds' : 'setThreadStartTools'}.`);
       }
     }
+  }
+  for (const [i, entry] of (Array.isArray(cfg.skill_ids) ? cfg.skill_ids : []).entries()) {
+    const problem = entry?.condition == null ? null : conditionProblem(entry.condition);
+    if (problem) add('error', 'skill_condition_template', `skill_ids[${i}].condition`, `skill_ids[${i}].condition ${problem}.`, 'Rewrite it as a bare expression with intellectConfig.setSkillIds, for example "sys__avatar_enabled".');
+  }
+  for (const t of (ctx.tools ?? []).filter((x) => toolIds.includes(String(x.id)))) {
+    const condition = /** @type {any} */ (t.config)?.condition;
+    const problem = condition == null ? null : conditionProblem(condition);
+    if (problem) add('error', 'tool_condition_template', `tool ${t.id}.condition`, `Tool ${t.id} condition ${problem}.`, 'Rewrite it as a bare expression with tools.update.');
   }
   if (ctx.skills) {
     const known = new Set(ctx.skills.map((s) => String(s.id)));

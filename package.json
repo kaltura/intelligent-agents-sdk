@@ -60,6 +60,7 @@
     "live-verify:threads-messages-feedback": "node scripts/live-verify-threads-messages-feedback.mjs",
     "live-verify:session-types": "node scripts/live-verify-session-types.mjs",
     "live-verify:skills": "node scripts/live-verify-skills.mjs",
+    "live-verify:authoring": "node scripts/live-verify-authoring.mjs",
     "live-verify:catalog": "node scripts/live-verify-catalog.mjs",
     "live-verify:knowledge": "node scripts/live-verify-knowledge.mjs",
     "live-verify:avatars": "node scripts/live-verify-avatars.mjs",

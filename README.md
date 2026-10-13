@@ -1144,17 +1144,17 @@ A name conflict returns 409. The same applies to Tools.
 
 Before deleting, `mgmt.skills.delete` lists every intellect and refuses with a typed `skill_in_use` error naming each one still referencing the id in `skill_ids`, unless called with `{confirmPermanent:true, force:true}`. `mgmt.tools.delete` has the same `tool_in_use` guard.
 
-Attach a Skill to an intellect via `intellectConfig.setSkillIds`. The intellect only holds a reference list (`{id, mode, condition?}` entries), the skill body itself lives in `mgmt.skills`. `mode` is one of the exported `SKILL_MODES`: `'preloaded'` (instructions go in the system prompt every turn), `'adhoc'` (the agent loads it on demand and does not remember it), or `'adhoc-save'` (`adhoc`, plus auto-load on later turns once used). `condition` is an optional template expression over thread variables that must be truthy for the skill to apply:
+Attach a Skill to an intellect via `intellectConfig.setSkillIds`. The intellect only holds a reference list (`{id, mode, condition?}` entries), the skill body itself lives in `mgmt.skills`. `mode` is one of the exported `SKILL_MODES`: `'preloaded'` (instructions go in the system prompt every turn), `'adhoc'` (the agent loads it on demand and does not remember it), or `'adhoc-save'` (`adhoc`, plus auto-load on later turns once used). `condition` is an optional bare expression over thread variables that must be truthy for the skill to apply (no `{{ }}`; see [Conditions](docs/api/build/intellect.md#conditions)):
 
 ```js
 await mgmt.intellectConfig.setSkillIds(configId, [
   { id: skill.id, mode: 'adhoc' },
-  { id: avatarOnlySkill.id, mode: 'preloaded', condition: '{{ sys__avatar_enabled }}' },
+  { id: avatarOnlySkill.id, mode: 'preloaded', condition: 'sys__avatar_enabled' },
 ], ks);
 // pass [] to detach every skill
 ```
 
-A skill id owned by another partner is rejected with a 403 `forbidden`.
+A skill id owned by another partner is rejected with a 403 `forbidden`. `mgmt.skills.list` also returns shared skills (`partner_id: 0`). You can attach them, but `skills.get` returns `not_found` for them.
 
 **Provider voice import** (`mgmt.catalog`) creates a catalog Voice item directly from an ElevenLabs or Cartesia voice id, with no audio upload:
 
