@@ -97,6 +97,8 @@ A standalone, partner-level reusable-instruction entity: `{id (uuid), name, desc
 | Update | `POST /v1/skill/update` | `{"id":"SKILL_UUID", "name"?, "description"?, "instructions"?}`. Idempotent. A rename to a name already in use returns 409 |
 | Delete | `POST /v1/skill/delete` | `{"id":"SKILL_UUID"}`. Replies `{id}`. A follow-up get returns 404 |
 
+**Shared skills.** `List` also returns shared skills (`partner_id: 0`) that you did not create. You can attach them with `setSkillIds`, but `Get` on one returns 404 `not_found`. Read a shared skill's `id` and `name` from `List`.
+
 Before deleting a Skill, `mgmt.skills.delete` lists every intellect and refuses with a typed `skill_in_use` error naming each one still referencing the id in `skill_ids`. Pass `{confirmPermanent:true, force:true}` to delete anyway. `mgmt.tools.delete` has the same guard with a `tool_in_use` error.
 
 ## Threads
