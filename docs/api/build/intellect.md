@@ -81,6 +81,8 @@ POST https://genie.nvp1.ovp.kaltura.com/v1/intellect/update
 | `value` | Your content |
 | `condition` | Optional. The block applies only while this [condition](#conditions) is true |
 
+`type` accepts only `custom`, `system` and `knowledge`. `lintPrompts` reports any other value as `bad_type`.
+
 Call `mgmt.application.getCustomPrompts(ks)` to get the `key` and `headerTemplate` values. It returns the current schema for this block: a 5-entry array (`goal`, `targetAudience`, `restrictedTopics`, `name`, `knowledge`), each shaped as `{key, label, headerTemplate, type}` (every entry returned has `type: "custom"`; your own blocks can use any of the three `type` values above).
 
 Use this call to render a "describe your agent" form. The labels and instructions you show always match the current prompt blocks, so you do not keep hardcoded copy in sync by hand.
@@ -108,7 +110,7 @@ const fields = await mgmt.application.getCustomPrompts(ks);
 | `knowledge_ids` | Knowledge record IDs for RAG. Create them with `POST /v1/knowledge/add` |
 | `name` / `description` / `tags` | Labels for organizing intellects |
 | `tool_ids` | Tool entity uuid references. Create and list the entities themselves via [Tools](../build/tools-and-secrets.md#tools-api--csv--code--client--var) (`mgmt.tools`), then link the ids here via `intellectConfig.setToolIds` |
-| `skill_ids` | Skill references `{ id, mode, condition? }`. `mode` is one of `SKILL_MODES` (`adhoc`, `adhoc-save`, `preloaded`); `condition` is an optional [condition](#conditions) (e.g. `sys__avatar_enabled`). Partner-level Skill CRUD lives at `mgmt.skills`; link via `intellectConfig.setSkillIds`. `skills.list` also returns shared skills (`partner_id: 0`) that you can link but not read with `skills.get`. A skill id you cannot use is rejected with 403 `forbidden` |
+| `skill_ids` | Skill references `{ id, mode, condition? }`. `mode` is one of `SKILL_MODES` (`adhoc`, `adhoc-save`, `preloaded`); `condition` is an optional [condition](#conditions) (e.g. `sys__avatar_enabled`). Partner-level Skill CRUD lives at `mgmt.skills`; link via `intellectConfig.setSkillIds`. Shared skills in `skills.list` can be linked too: see [Skills](../management-operations.md#skills). A skill id you cannot use is rejected with 403 `forbidden` |
 | `mcp_servers` | MCP server configs the intellect can call. Set via `intellectConfig.setMcpServers`. See [MCP-INTEGRATIONS.md](../../MCP-INTEGRATIONS.md) |
 | `secrets` | Named secrets for tool OAuth (write-only, masked on read) |
 | `user_properties_forms` | Lead-capture form fields |
