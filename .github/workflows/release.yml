@@ -1,9 +1,9 @@
 name: Release
 
 # Runs only when a git tag matching v*.*.* is pushed (e.g. v1.0.0). Creates a
-# GitHub Release with notes GitHub auto-generates from the merged PRs since the
-# previous tag (--generate-notes) — no hand-maintained CHANGELOG.md to drift
-# out of sync with what actually shipped. Does NOT publish to npm (npm publish
+# GitHub Release from .github/release-notes/<tag>.md, written by hand in the
+# version bump PR (format: AGENTS.md "Release notes"). The job fails before
+# anything is created when that file is missing. Does NOT publish to npm (npm publish
 # stays disabled by design; jsDelivr serves this repo's raw files straight from
 # the tag — see README.md's Quick start).
 on:
@@ -24,6 +24,12 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
+
+      - name: 📝 Release notes file exists and starts with the tag heading
+        run: |
+          f=".github/release-notes/${{ github.ref_name }}.md"
+          test -s "$f" || { echo "::error::missing $f. Write the release notes in the version bump PR (AGENTS.md, Release notes)."; exit 1; }
+          head -n 1 "$f" | grep -qx "## ${{ github.ref_name }}" || { echo "::error::$f must start with '## ${{ github.ref_name }}'"; exit 1; }
 
       - name: 📚 Every SDK doc has an entry in the docs site manifest (gh-pages-src)
         # Runs before the Release is created, so a doc missing from the site
@@ -102,7 +108,7 @@ jobs:
         run: |
           gh release create "${{ github.ref_name }}" \
             --title "${{ github.ref_name }}" \
-            --generate-notes
+            --notes-file ".github/release-notes/${{ github.ref_name }}.md"
 
       - name: 📚 Fire the docs site's generate-docs workflow
         env:
