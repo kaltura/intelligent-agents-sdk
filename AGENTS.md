@@ -66,6 +66,20 @@ Cases are in `app-builder-skill/evals/`. Add `--runs 1 --ablation none` for a qu
 
 1. Merge the SDK PR.
 2. Add any new manifest entries or ignores on `gh-pages-src`.
-3. Tag. The release workflow checks docs coverage, jsDelivr and the npm install route.
+3. Tag. The release workflow checks the release notes file, docs coverage, jsDelivr and the npm install route.
 4. Merge the docs site sync PR.
 5. Bump the SDK pin in Nova (`docs-site-avatar`).
+
+## Release notes
+
+Write them by hand in the version bump PR, as `.github/release-notes/vX.Y.Z.md`. The release workflow publishes that file and fails without it. Do not use auto-generated notes.
+
+| Part | Rule |
+|---|---|
+| Heading | `## vX.Y.Z` on the first line |
+| Summary | One or two sentences. Say if anything can break existing code |
+| Sections | `### Added`, `### Changed`, `### Fixed`, `### Behavior change`, `### Docs and skill`. Keep only the ones that apply |
+| Bullets | One line each, what a caller sees, PR number last |
+| Tables | Only for before/after comparisons |
+| Last line | `**Full Changelog**` compare link |
+| Never | Internal repo names, backend detail, unpatched bugs, merge-commit titles pasted as bullets |
