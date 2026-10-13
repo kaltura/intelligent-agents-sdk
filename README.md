@@ -1154,7 +1154,7 @@ await mgmt.intellectConfig.setSkillIds(configId, [
 // pass [] to detach every skill
 ```
 
-A skill id owned by another partner is rejected with a 403 `forbidden`. Shared skills in `skills.list`: see [Skills](docs/api/management-operations.md#skills).
+Shared skills and rejected ids: [Skills](docs/api/management-operations.md#skills).
 
 **Provider voice import** (`mgmt.catalog`) creates a catalog Voice item directly from an ElevenLabs or Cartesia voice id, with no audio upload:
 

@@ -34,6 +34,8 @@ const TABLE = [
   ['knowledge_ids_over_cap', base({ knowledge_ids: [1, 2] }), {}, ['knowledge_ids_over_cap']],
   ['knowledge_ids: one record is fine', base({ knowledge_ids: [1] }), {}, []],
   ['tool_not_found: tool_ids', base({ tool_ids: ['t1', 'gone'], capabilities: { kaltura_genie_experiences: 'off' } }), { tools: [{ id: 't1' }] }, ['tool_not_found']],
+  ['tool ids read back as {id, condition} objects are found', base({ tool_ids: [{ id: 't1', condition: null }], thread_start_tools: [{ id: 't1', condition: 'sys__avatar_enabled' }], capabilities: { kaltura_genie_experiences: 'off' } }), { tools: [{ id: 't1' }] }, []],
+  ['tool_not_found: object entry', base({ tool_ids: [{ id: 'gone', condition: null }], capabilities: { kaltura_genie_experiences: 'off' } }), { tools: [{ id: 't1' }] }, ['tool_not_found']],
   ['tool_not_found: thread_start_tools', base({ thread_start_tools: ['gone'] }), { tools: [] }, ['tool_not_found']],
   ['tool_not_found: skipped when tools are unknown', base({ tool_ids: ['gone'], capabilities: { kaltura_genie_experiences: 'off' } }), { tools: null }, []],
   ['skill_not_found', base({ skill_ids: [{ id: 's1', mode: 'adhoc' }, { id: 'gone', mode: 'adhoc' }] }), { skills: [{ id: 's1' }] }, ['skill_not_found']],
@@ -44,6 +46,15 @@ const TABLE = [
   ['tool_condition_template', base({ tool_ids: ['t1'], capabilities: { kaltura_genie_experiences: 'off' } }), { tools: [{ id: 't1', config: { condition: '{% if x %}y{% endif %}' } }] }, ['tool_condition_template']],
   ['tool condition: a bare expression is fine', base({ tool_ids: ['t1'], capabilities: { kaltura_genie_experiences: 'off' } }), { tools: [{ id: 't1', config: { condition: 'sys__avatar_enabled' } }] }, []],
   ['prompt_bad_condition (lint finding, error)', base({ prompts: [prompt('Be kind.', { condition: '{{ plan }}' })] }), {}, ['prompt_bad_condition']],
+  ['prompt_suspect_condition (lint finding, warn)', base({ prompts: [prompt('a', { condition: 'plan == "pro" AND x' })] }), {}, ['prompt_suspect_condition']],
+  ['skill_condition_suspect', base({ skill_ids: [{ id: 's1', mode: 'adhoc', condition: 'a && b' }] }), { skills: [{ id: 's1' }] }, ['skill_condition_suspect']],
+  ['tool_condition_suspect', base({ tool_ids: ['t1'], capabilities: { kaltura_genie_experiences: 'off' } }), { tools: [{ id: 't1', config: { condition: '!sys__avatar_enabled' } }] }, ['tool_condition_suspect']],
+  ['a quoted AND in a condition is fine', base({ prompts: [prompt('a', { condition: 'plan != "AND" and visits is defined and visits > 2' })], skill_ids: [{ id: 's1', mode: 'adhoc', condition: "plan in ['pro', 'team']" }] }), { skills: [{ id: 's1' }] }, []],
+  ['tool_arg_unused: api arg that no placeholder uses', base({ tool_ids: ['t1'], capabilities: { kaltura_genie_experiences: 'off' } }), { tools: [{ id: 't1', config: { type: 'api', args: { order_id: {} }, request: { url: 'https://api.example.com/order' } } }] }, ['tool_arg_unused']],
+  ['tool_arg_unused: placeholders in url and nested body count as use', base({ tool_ids: ['t1'], capabilities: { kaltura_genie_experiences: 'off' } }), { tools: [{ id: 't1', config: { type: 'api', args: { a: {}, b: {} }, request: { url: 'https://api.example.com/{a}', body: { x: [{ y: 'v-{b}' }] } } } }] }, []],
+  ['tool_arg_unused: only api tools are checked', base({ tool_ids: ['t1'], capabilities: { kaltura_genie_experiences: 'off' } }), { tools: [{ id: 't1', config: { type: 'var', args: { plan: {} } } }] }, []],
+  ['a variable a linked var tool sets needs no allow_client_variables', base({ tool_ids: ['t1'], capabilities: { kaltura_genie_experiences: 'off' }, prompts: [prompt('Plan: {{plan}}')] }), { tools: [{ id: 't1', config: { type: 'var', args: { plan: {} } } }] }, []],
+  ['a variable no linked var tool sets still needs the gate', base({ tool_ids: ['t1'], capabilities: { kaltura_genie_experiences: 'off' }, prompts: [prompt('Plan: {{other}}')] }), { tools: [{ id: 't1', config: { type: 'var', args: { plan: {} } } }] }, ['prompt_client_variable_not_allowed']],
   ['prompt types system and knowledge are fine', base({ prompts: [prompt('a', { key: 'a', type: 'system' }), prompt('b', { key: 'b', type: 'knowledge', condition: 'plan == "pro"' })] }), {}, []],
 ];
 
@@ -76,11 +87,12 @@ test('auditIntellectConfig: odd input does not throw', () => {
 
 // ---- intellectConfig.audit (wire) ----
 
-function harness(config, { tools = {}, skills = {}, cfg = {} } = {}) {
+function harness(config, { tools = {}, skills = {}, listed = [], cfg = {} } = {}) {
   const ff = fakeFetch([
     { match: 'v1/intellect/get', respond: () => (config ? { body: config } : { status: 404, body: { message: 'not found' } }) },
     { match: 'v1/tool/get', respond: (req) => (tools[req.body.id] ? { body: tools[req.body.id] } : { status: 404, body: { message: 'not found' } }) },
     { match: 'v1/skill/get', respond: (req) => (skills[req.body.id] ? { body: skills[req.body.id] } : { status: 404, body: { message: 'not found' } }) },
+    { match: 'v1/skill/list', respond: () => ({ body: { totalCount: listed.length, objects: listed } }) },
   ]);
   return { mgmt: new Management({ partnerId: '123', fetch: ff, ...cfg }), ff };
 }
@@ -96,7 +108,24 @@ test('intellectConfig.audit reads the intellect, then each tool and skill once, 
   assert.deepEqual(report.summary, { error: 3, warn: 0, info: 0 });
   assert.deepEqual(report.checked, { intellects: 1, tools: 1, skills: 1 });
   assert.equal(ff.calls.filter((c) => c.url.endsWith('v1/tool/get')).length, 2, 't1 once, gone once');
-  for (const c of ff.calls) assert.match(c.url, /\/get$/, 'read-only');
+  for (const c of ff.calls) assert.match(c.url, /\/(get|list)$/, 'read-only');
+});
+
+test('intellectConfig.audit accepts an attached shared skill that skills.get cannot read', async () => {
+  const config = base({ skill_ids: [{ id: 'shared-1', mode: 'adhoc' }, { id: 'gone', mode: 'adhoc' }] });
+  const { mgmt, ff } = harness(config, { listed: [{ id: 'shared-1', partner_id: 0 }, { id: 'other', partner_id: 123 }] });
+  const report = await mgmt.intellectConfig.audit(7, ADMIN_KS);
+  const missing = report.findings.filter((f) => f.code === 'skill_not_found');
+  assert.equal(missing.length, 1, 'only the id that is neither yours nor shared');
+  assert.match(missing[0].message, /gone/);
+  assert.equal(report.checked.skills, 1, 'the shared skill is counted');
+  assert.equal(ff.calls.filter((c) => c.url.endsWith('v1/skill/list')).length, 1, 'the list is read once for all ids');
+});
+
+test('intellectConfig.audit does not read the skill list when every skill can be read by id', async () => {
+  const { mgmt, ff } = harness(base({ skill_ids: [{ id: 's1', mode: 'adhoc' }] }), { skills: { s1: { id: 's1' } } });
+  await mgmt.intellectConfig.audit(7, ADMIN_KS);
+  assert.equal(ff.calls.filter((c) => c.url.endsWith('v1/skill/list')).length, 0);
 });
 
 test('intellectConfig.audit surfaces a missing intellect and rejects bad input', async () => {

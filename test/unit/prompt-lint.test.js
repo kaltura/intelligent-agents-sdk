@@ -149,6 +149,37 @@ test('lintPrompts: a bare condition passes, a template or empty condition is a b
   }
 });
 
+test('lintPrompts: a suspect condition is a suspect_condition WARNING, not an error', () => {
+  const block = (condition) => ({ key: 'k', headerTemplate: 'H', type: 'custom', value: 'v', condition });
+  for (const c of ['a AND b', 'a && b', '!a', 'plan = "pro"', 'len(x) > 1', 'x == true', 'visits > 2']) {
+    const r = lintPrompts([block(c)]);
+    assert.equal(r.ok, true, c);
+    const f = r.findings.find((x) => x.code === 'suspect_condition');
+    assert.equal(f?.severity, 'warning', c);
+    assert.equal(f.path, 'prompts[0].condition');
+  }
+  assert.equal(hasFinding(lintPrompts([block('visits is defined and visits > 2')]).findings, 'suspect_condition'), false);
+  assert.equal(hasFinding(lintPrompts([block('{{ a AND b }}')]).findings, 'suspect_condition'), false, 'a bad_condition block gets no second finding');
+});
+
+test('validatePromptVars: toolVars names are not unknown and not gated by allow_client_variables', () => {
+  const unknown = validatePromptVars('Plan {{plan}}', {});
+  assert.equal(hasFinding(unknown.findings, 'unknown_variable'), true);
+  const known = validatePromptVars('Plan {{plan}}', { toolVars: ['plan'] });
+  assert.deepEqual(known.findings, []);
+  const gateOff = validatePromptVars('Plan {{plan}}', { toolVars: ['plan'], allowClientVariables: false });
+  assert.deepEqual(gateOff.findings, []);
+  assert.equal(hasFinding(validatePromptVars('Plan {{other}}', { toolVars: ['plan'], allowClientVariables: false }).findings, 'client_variable_not_allowed'), true);
+});
+
+test('lintPrompts: toolVars reach every block header and value', () => {
+  const blocks = [{ key: 'k', headerTemplate: 'Mode {{au_mode}}', type: 'custom', value: 'Plan {{plan}}' }];
+  assert.equal(lintPrompts(blocks, { allowClientVariables: false }).ok, false);
+  const r = lintPrompts(blocks, { allowClientVariables: false, toolVars: ['au_mode', 'plan'] });
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.findings, []);
+});
+
 test('lintPrompts: duplicate keys warn', () => {
   const r = lintPrompts([
     { key: 'dup', headerTemplate: 'H', type: 'custom', value: 'v' },

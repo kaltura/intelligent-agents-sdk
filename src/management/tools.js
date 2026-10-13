@@ -166,7 +166,10 @@ function assertMappingPaths(mapping, where) {
  * in `config.secrets`).
  * `url` and a string `body` may hold `{argName}` placeholders, which the server
  * fills from the model's args. Any other brace text in them makes the call
- * fail, so it is rejected here. Returns the wire-ready request object. PURE.
+ * fail, so it is rejected here. In an object `body`, an undeclared `{name}` in
+ * any string value is rejected the same way. `params` is accepted but the
+ * server does not send it: put query values in the `url`. Returns the
+ * wire-ready request object. PURE.
  * @param {object} request
  * @param {string[]} [argNames] Names of the tool's declared args.
  * @returns {object}
@@ -203,6 +206,7 @@ function buildRequest(request, argNames = []) {
   }
   if (request.body !== undefined) {
     if (typeof request.body === 'string') assertBraceTokens(request.body, argNames, 'request.body');
+    else assertBodyPlaceholders(request.body, argNames);
     out.body = request.body; // JSON object or raw string both legal
   }
   if (request.authentication != null) out.authentication = buildAuth(request.authentication);
@@ -229,6 +233,57 @@ function stripTemplateSpans(text) {
     pos = end + 2;
   }
   return out + text.slice(pos);
+}
+
+/**
+ * Every string value inside a JSON-like value, with its path, for example
+ * `request.body.a.b[0]`. PURE.
+ * @param {unknown} value @param {string} path
+ * @returns {Generator<[string, string]>}
+ */
+function* stringLeaves(value, path) {
+  if (typeof value === 'string') yield [path, value];
+  else if (Array.isArray(value)) for (const [i, v] of value.entries()) yield* stringLeaves(v, `${path}[${i}]`);
+  else if (value && typeof value === 'object') for (const [k, v] of Object.entries(value)) yield* stringLeaves(v, `${path}.${k}`);
+}
+
+/** The `{name}` placeholders in `text`, outside `{{ }}` and `{% %}` spans. PURE. @param {string} text @returns {string[]} */
+function placeholderNames(text) {
+  return [...stripTemplateSpans(text).matchAll(/\{([A-Za-z0-9_-]+)\}/g)].map((m) => m[1]);
+}
+
+/**
+ * Reject a `{name}` that the tool does not declare, in any string value of an
+ * object `request.body`, at any depth. Other brace text is left alone here:
+ * only an undeclared name is known to fail the call. PURE.
+ * @param {unknown} body @param {string[]} argNames
+ */
+function assertBodyPlaceholders(body, argNames) {
+  for (const [path, text] of stringLeaves(body, 'request.body')) {
+    for (const name of placeholderNames(text)) {
+      if (!argNames.includes(name)) {
+        bad('bad_placeholder', `${path} has {${name}}, but the tool declares no arg named "${name}". The server fills {argName} from the tool's args; declare the arg or remove the braces.`);
+      }
+    }
+  }
+}
+
+/**
+ * The names of an `api` tool's declared args that no `{argName}` in its
+ * `request.url` or `request.body` uses. The server sends an arg only through
+ * such a placeholder, so these args are asked from the model and then dropped.
+ * Returns `[]` for any other tool type. PURE, never throws.
+ * @param {unknown} config A tool config, as `tools.get(id).config` returns it.
+ * @returns {string[]}
+ */
+export function unusedApiArgs(config) {
+  const cfg = /** @type {any} */ (config);
+  if (!cfg || typeof cfg !== 'object' || cfg.type !== 'api' || !cfg.args || typeof cfg.args !== 'object') return [];
+  const used = new Set();
+  for (const part of [cfg.request?.url, cfg.request?.body]) {
+    for (const [, text] of stringLeaves(part, '')) for (const name of placeholderNames(text)) used.add(name);
+  }
+  return Object.keys(cfg.args).filter((name) => !used.has(name));
 }
 
 /**
@@ -322,11 +377,13 @@ function buildShared(cfg, target) {
  * {@link GenieToolConfig}; throws {@link KalturaError} on bad input.
  *
  * `{argName}` in `request.url`, and in `request.body` (each string value of an
- * object body), is replaced with the value the model passed for that arg.
- * Headers are NOT filled this way. Brace text in a string `url` or `body` that
- * is not a declared `{argName}` fails the call, so it is rejected here with
- * `bad_placeholder`: percent-encode braces in the url and pass a JSON body as
- * an object, not a string.
+ * object body, at any depth), is replaced with the value the model passed for
+ * that arg. Headers and `request.params` are NOT filled this way, and
+ * `params` is not sent at all. An arg that no placeholder uses is never sent.
+ * Brace text in a string `url` or `body` that is not a declared `{argName}`
+ * fails the call, so it is rejected here with `bad_placeholder`:
+ * percent-encode braces in the url and pass a JSON body as an object, not a
+ * string. In an object body only an undeclared `{name}` is rejected.
  * @param {object} cfg {name, description, request, args?, responseMapping?, responseTemplate?, responseChapters?, variablesMapping?, condition?, displayName?, addToHistory?}
  * @example <caption>the model's `city` fills the url</caption>
  * tools.api({
@@ -645,6 +702,18 @@ function evalPath(root, path) {
 /** The pure builder/validator namespace exported as `tools` (+ the closed enum sets). */
 export const tools = { api, csv, code, client, var: varTool, clientToolReadiness, validate, validateArgs, applyResponseMapping, TOOL_TYPES, HTTP_METHODS, ARG_TYPES };
 
+/**
+ * The tool id in one `tool_ids` / `thread_start_tools` entry. The server reads
+ * these lists back as `[{id, condition}]` objects, and accepts plain strings on
+ * write, so every reader of a list goes through this. PURE.
+ * @param {unknown} entry A string id or an `{id, condition?}` object.
+ * @returns {string|undefined} Undefined when the entry holds no usable id.
+ */
+export function toolRefId(entry) {
+  const id = typeof entry === 'string' ? entry : /** @type {any} */ (entry)?.id;
+  return typeof id === 'string' && id ? id : undefined;
+}
+
 /** @param {unknown} v @param {string} name */
 function requireToolId(v, name) {
   if (typeof v !== 'string' || !v) bad('bad_request', `${name} must be a non-empty string (the Tool entity's id).`);
@@ -682,7 +751,7 @@ export async function findIntellectsReferencingTool(ctx, toolId, ks) {
         if (e?.code === 'not_found' || e?.code === 'intellect_not_found') return null;
         throw e;
       });
-      if (Array.isArray(full?.tool_ids) && full.tool_ids.includes(toolId)) refs.push(item.id);
+      if (Array.isArray(full?.tool_ids) && full.tool_ids.some((e) => toolRefId(e) === toolId)) refs.push(item.id);
     }
     const total = page?.totalCount;
     if (objects.length === 0 || (typeof total === 'number' && pageIndex * pageSize >= total)) break;
@@ -695,7 +764,7 @@ export async function findIntellectsReferencingTool(ctx, toolId, ks) {
  * Genie `/v1/tool/*` (NOT intellect-scoped, NOT `intellect/update`). Mounted
  * at `mgmt.tools`. A Tool is `{id, name, config, partner_id, created_at,
  * updated_at}`; `config` is the flat output of `tools.api`/`csv`/`code`/
- * `client`. `name` is unique per partner; `update` is the idempotent re-edit path.
+ * `client`/`var`. `name` is unique per partner; `update` is the idempotent re-edit path.
  *
  * Creating a Tool does NOT attach it to anything — link it to an intellect via
  * `tool_ids` (see `intellectConfig.setToolIds`, or pass `tool_ids` directly to

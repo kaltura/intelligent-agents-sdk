@@ -95,3 +95,18 @@ test('doctor needs an admin token', async () => {
   await assert.rejects(() => mgmt.doctor({ ks: 'x', kind: 'conversation' }), (e) => e.code === 'wrong_token_scope');
   assert.equal(ff.calls.length, 0);
 });
+
+test('doctor reports prompt condition findings for a saved intellect', async () => {
+  const prompts = [
+    { key: 'tpl', headerTemplate: 'T', value: 'v', type: 'custom', condition: '{{ sys__avatar_enabled }}' },
+    { key: 'sus', headerTemplate: 'S', value: 'v', type: 'custom', condition: 'plan = "pro"' },
+    { key: 'ok', headerTemplate: 'O', value: 'v', type: 'custom', condition: null },
+  ];
+  const { mgmt } = harness({ intellects: { 10: { id: 10, type: 'brain', prompts } }, rules: [] });
+  const report = await mgmt.doctor(ADMIN_KS, { agentIds: ['a1'] });
+  const bad = report.findings.find((f) => f.code === 'prompt_bad_condition');
+  const suspect = report.findings.find((f) => f.code === 'prompt_suspect_condition');
+  assert.equal(bad?.severity, 'error');
+  assert.equal(suspect?.severity, 'warn');
+  assert.equal(report.findings.filter((f) => /condition/.test(f.code)).length, 2, 'the null condition adds nothing');
+});

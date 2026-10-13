@@ -19,6 +19,7 @@ import {
 } from './capabilities.js';
 import { lintPrompts, lintGlossary, assembleSystemPrompt } from './prompt-lint.js';
 import { clientToolReadiness } from './tools.js';
+import { assertPromptConditions } from './condition.js';
 import { IntellectSecrets } from './secrets.js';
 import { stripServerManaged, requireInt } from './intellect-body.js';
 
@@ -83,11 +84,17 @@ export class Intellects {
    * server-side — a NON-SERVING brain that converse/agent-binding won't use. Pass
    * `status:2` (ACTIVE) explicitly, or call {@link create} (which defaults it to
    * 2 for you). This raw path does NOT inject a default.
+   *
+   * A `prompts[].condition` that is not a bare expression (for example
+   * `{{ plan }}`) throws `bad_request` before the write. `add`, `create`,
+   * `update` and `intellectConfig.patch` check only that. `setPrompts` runs the
+   * full lint instead.
    * @param {object} body {type,status,prompts?,base_directive?,glossary?,capabilities?,knowledge_ids?,tool_ids?,user_properties_forms?,secrets?}
    * @param {string} ks
    */
   async add(body, ks) {
     this._.assertAdmin(ks, 'intellects.add');
+    assertPromptConditions(body?.prompts, 'intellects.add');
     return (await this._.genie('v1/intellect/add', body, ks, { idempotencyKey: uuidv4() })).data;
   }
 
@@ -96,11 +103,14 @@ export class Intellects {
    * `{id, type}`. `type` is a required discriminator: omitting it throws
    * `code:'missing_discriminator'` before any network call. See
    * docs/api/build/intellect.md § Configure an Intellect for the full prompt shape.
+   * A `prompts[].condition` that is not a bare expression throws `bad_request`
+   * before the write (see {@link Intellects#add}).
    * @param {object} body {id,type,...}
    * @param {string} ks
    */
   async update(body, ks) {
     this._.assertAdmin(ks, 'intellects.update');
+    assertPromptConditions(body?.prompts, 'intellects.update');
     if (!body || body.type === undefined) {
       throw new KalturaError({ type: 'about:blank', title: 'type required', code: 'missing_discriminator', detail: 'intellects.update body must include {id, type} — type is a required discriminator (else HTTP 422).' });
     }
@@ -275,7 +285,7 @@ export class Intellects {
    * ERROR finding aborts the write with `code:'prompt_lint_failed'`; WARNINGS
    * (e.g. an unknown `{{var}}`) do NOT block unless you pass `{lint:'strict'}`.
    * Writes `prompts`, plus `base_directive`/`glossary`/`status` when given. @param {number} configId @param {Array<object>} prompts @param {string} ks (admin)
-   * @param {{baseDirective?:string, glossary?:string, status?:number, knownVars?:string[], lint?:boolean|'strict'}} [opts]
+   * @param {{baseDirective?:string, glossary?:string, status?:number, knownVars?:string[], toolVars?:string[], lint?:boolean|'strict'}} [opts] `toolVars`: names that `var` tools set; see {@link lintPrompts}.
    */
   async setPrompts(configId, prompts, ks, opts = {}) {
     this._.assertAdmin(ks, 'intellects.setPrompts');
@@ -284,7 +294,7 @@ export class Intellects {
     const doLint = opts.lint !== false;
     let lint;
     if (doLint) {
-      lint = lintPrompts(prompts, { knownVars: opts.knownVars });
+      lint = lintPrompts(prompts, { knownVars: opts.knownVars, toolVars: opts.toolVars });
       if (opts.glossary !== undefined) {
         const g = lintGlossary(opts.glossary, { knownVars: opts.knownVars });
         for (const f of g.findings) lint.findings.push(f);

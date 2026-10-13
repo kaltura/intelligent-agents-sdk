@@ -33,7 +33,7 @@ import { lintPersonaIdentity } from './prompt-lint.js';
  * @param {number} [opts.maxConversationLength]
  * @param {string} [opts.idempotencyKey]
  * @param {Record<string,'on'|'off'|'disabled'>} [opts.capabilities]   OPTIONAL — capability patch applied AFTER configure via `mgmt.intellects.setCapabilities` (read-merge-write full-replace sub-dict). Off by default.
- * @param {object[]} [opts.tools]            OPTIONAL — typed tool definitions (see `tools.api/csv/code`), each created as a standalone Tool entity via `mgmt.tools.add` and linked via `mgmt.intellectConfig.setToolIds`. Off by default.
+ * @param {object[]} [opts.tools]            OPTIONAL — typed tool definitions (see `tools.api/csv/code/client/var`), each created as a standalone Tool entity via `mgmt.tools.add` and linked via `mgmt.intellectConfig.setToolIds`. Off by default.
  * @param {object} [opts.knowledge]          OPTIONAL — RAG corpus + linkage. `{name?, parentId?, description?, categoryId?, autoLink?}`. createCategory (OVP), and when `autoLink:true` the full `knowledge.addRecord` -> `knowledge.addSource` -> `intellectConfig.setKnowledgeIds` -> `knowledge.setEnabled` sequence, are all ungated — a failure records `{linked:false, reason}` and NEVER fails the provision. Off by default.
  * @returns {Promise<{name:string,configId:number,avatarId:string,agentId:string,widgetId:string,profile:object,personaLint:object,blocks?:object,_meta:object}>}
  * @throws {import('../core/errors.js').KalturaError} `code:'bad_request'` (before any network call) if `openingPhrase` is given but is not a non-empty string.

@@ -76,12 +76,13 @@ POST https://genie.nvp1.ovp.kaltura.com/v1/intellect/update
 | Field | Purpose |
 |-------|---------|
 | `key` | Any string that labels the block. Common: `goal`, `targetAudience`, `restrictedTopics`, `name` |
+| `label` | Optional string. The display name for forms |
 | `headerTemplate` | Prepended before the value in the system prompt |
-| `type` | One of `"custom"`, `"system"` or `"knowledge"`. Use `"custom"` for your own instructions. The model follows all three |
+| `type` | Expected. One of `"custom"`, `"system"` or `"knowledge"`. Use `"custom"` for your own instructions. The model follows all three |
 | `value` | Your content |
 | `condition` | Optional. The block applies only while this [condition](#conditions) is true |
 
-`type` accepts only `custom`, `system` and `knowledge`. `lintPrompts` reports any other value as `bad_type`.
+`lintPrompts` reports a missing `type` as the warning `missing_type` and any value other than the three above as `bad_type`. A block whose `headerTemplate` or `value` is empty or only whitespace is skipped. It adds nothing to the prompt, and `lintPrompts` warns `renderer_skip`.
 
 Call `mgmt.application.getCustomPrompts(ks)` to get the `key` and `headerTemplate` values. It returns the current schema for this block: a 5-entry array (`goal`, `targetAudience`, `restrictedTopics`, `name`, `knowledge`), each shaped as `{key, label, headerTemplate, type}` (every entry returned has `type: "custom"`; your own blocks can use any of the three `type` values above).
 
@@ -102,15 +103,15 @@ const fields = await mgmt.application.getCustomPrompts(ks);
 | `force_language` | Display name of the forced reply language (e.g. `"Hebrew"`). Replies come back in that language whatever the user writes or speaks. `null` or `""` clears it. Set it via `mgmt.setForcedLanguage`, which also sets the agent's `asr.language` so speech recognition matches |
 | `opening_phrase` | The line spoken as the first turn of every avatar session, a template rendered once per session. The intellect owns it. `null` clears it; `SILENT_OPENING` makes the opening silent so the browser sends the first turn with `kickoff`. Set via `intellectConfig.setOpeningPhrase`. Guide: [START-THE-CONVERSATION.md § Personalize the opening](../../START-THE-CONVERSATION.md#personalize-the-opening) |
 | `model_configuration` | `{ model_id?, max_output_tokens?, thinking_level?, temperature? }`; every key optional, `null` uses the defaults. `model_id` is one of `MODEL_IDS`, `thinking_level` one of `THINKING_LEVELS` (`low`/`high`, Gemini only, Claude ignores it), `temperature` 0..1. Set via `intellectConfig.setModelConfiguration`. Which models answer depends on your partner's region: verify with `converseOnce` after switching |
-| `thread_start_tools` | Tool ids that run once when a thread starts, before the first turn. Use `api` and `code` tools. The result feeds the model and is not surfaced as a `tool` segment. Set via `intellectConfig.setThreadStartTools`; `[]` clears |
+| `thread_start_tools` | Tool ids that run once when a thread starts, before the first turn. Use an `api` tool: a customer cannot create a `code` tool ([Tools](tools-and-secrets.md#code-tool)). The result feeds the model and is not surfaced as a `tool` segment. Set via `intellectConfig.setThreadStartTools` (same entry forms as `tool_ids`); `[]` clears |
 | `avatar_summary_config` | `{ prompt?, analysis?, template?, content_type? }` for the end-of-session summary of avatar sessions. `analysis` maps output keys to descriptions, `template` is a template over those keys, `content_type` is one of `SUMMARY_CONTENT_TYPES` (`text`/`html`/`html_with_js`). The summary is stored on the thread as a `summary` message. `null` restores defaults. Set via `intellectConfig.setAvatarSummaryConfig` |
 | `glossary` | Domain terms (e.g. `"HLS: HTTP Live Streaming"`) |
-| `capabilities` | Enable or disable features. See the table below |
+| `capabilities` | Enable or disable features. See [Capabilities](#capabilities) |
 | `allow_client_variables` | Allow `{{vars}}` injection per request. On by default for a new intellect |
 | `knowledge_ids` | Knowledge record IDs for RAG. Create them with `POST /v1/knowledge/add` |
 | `name` / `description` / `tags` | Labels for organizing intellects |
-| `tool_ids` | Tool entity uuid references. Create and list the entities themselves via [Tools](../build/tools-and-secrets.md#tools-api--csv--code--client--var) (`mgmt.tools`), then link the ids here via `intellectConfig.setToolIds` |
-| `skill_ids` | Skill references `{ id, mode, condition? }`. `mode` is one of `SKILL_MODES` (`adhoc`, `adhoc-save`, `preloaded`); `condition` is an optional [condition](#conditions) (e.g. `sys__avatar_enabled`). Partner-level Skill CRUD lives at `mgmt.skills`; link via `intellectConfig.setSkillIds`. Shared skills in `skills.list` can be linked too: see [Skills](../management-operations.md#skills). A skill id you cannot use is rejected with 403 `forbidden` |
+| `tool_ids` | Tool entity uuid references. Create and list the entities themselves via [Tools](../build/tools-and-secrets.md#tools-api--csv--code--client--var) (`mgmt.tools`), then link the ids here via `intellectConfig.setToolIds`. Read back as `[{id, condition}]`. Write a plain id or `{id, condition}` to attach a tool only while a [condition](#condition-grammar) holds |
+| `skill_ids` | Skill references `{ id, mode, condition? }`. `mode` is one of `SKILL_MODES` (`adhoc`, `adhoc-save`, `preloaded`); `condition` is an optional [condition](#conditions) (e.g. `sys__avatar_enabled`). Partner-level Skill CRUD lives at `mgmt.skills`; link via `intellectConfig.setSkillIds`. Shared skills and unusable ids: [Skills](../management-operations.md#skills) |
 | `mcp_servers` | MCP server configs the intellect can call. Set via `intellectConfig.setMcpServers`. See [MCP-INTEGRATIONS.md](../../MCP-INTEGRATIONS.md) |
 | `secrets` | Named secrets for tool OAuth (write-only, masked on read) |
 | `user_properties_forms` | Lead-capture form fields |
@@ -131,11 +132,30 @@ await mgmt.intellectConfig.setSkillIds(configId, [
 ], ks);
 ```
 
-Do not wrap it in `{{ }}` or `{% %}`. The server answers a template-style condition with an empty reply and no error. The SDK rejects it with `bad_request` on write, `lintPrompts` reports `bad_condition`, and `intellectConfig.audit` flags a saved one.
+Do not wrap it in `{{ }}`, `{% %}` or `{# #}`. The server answers a template-style condition with an empty reply and no error. The SDK rejects the delimiters on write, `lintPrompts` reports `bad_condition`, and `intellectConfig.audit` flags a saved one.
 
-Variables you can use: the `sys__*` variables in [Reserved Template Variables](../operate.md#reserved-template-variables-sys__), and any variable a [`var` tool](tools-and-secrets.md#var-tool) has set earlier in the same thread.
+| Write path | A bad condition |
+|---|---|
+| `setSkillIds`, the `tools.*` builders, `intellects.add`, `create` and `update`, `intellectConfig.patch` | Throws `bad_request` |
+| `intellects.setPrompts` | Throws `prompt_lint_failed`. The error body lists the findings. `{ lint: false }` skips the lint. `'strict'` also fails on warnings |
 
-**Capabilities.** Each is `"on"` / `"off"` / `"disabled"`:
+Variables you can use: the `sys__*` variables in [Reserved Template Variables](../operate.md#reserved-template-variables-sys__), and any variable a [`var` tool](tools-and-secrets.md#var-tool) has set. A `var` tool value is visible from the next turn of the same thread, not the same turn. The later call wins, and a new thread does not see it.
+
+#### Condition grammar
+
+The server evaluates the expression. An unknown name is falsy, with no error. Request variables sent with the call are text. A `var` tool `int` arg keeps its type.
+
+| Result | Forms |
+|---|---|
+| Works | Lowercase `and`, `or`, `not`. `==` and `!=`. `in [..]` and `not in [..]`. Parentheses. Single or double quoted strings. `x is defined` and `x is not defined`. String methods: `plan.startswith('p')`. Filters: `plan\|upper == 'PRO'`. Number compare on a `var` tool int: `visits == 5` |
+| No error, never matches | Unquoted `plan == pro` (read as a name). Lowercase `true` and `false` (read as names, so `flag == true` is false) |
+| Empty reply for the whole turn, no error | Uppercase `AND` and `NOT`. `&&`, `\|\|` and `!`. A single `=`. `x is "pro"`. `len()` and `int()`. Ordering compare against a number when the name is unset or is text (`visits > 2`). Dotted access on an unset name |
+
+Guard an ordering compare: `visits is defined and visits > 2`. The SDK warns about the empty-reply forms: `suspect_condition` from `lintPrompts`, and `prompt_suspect_condition`, `skill_condition_suspect` and `tool_condition_suspect` from `intellectConfig.audit`. `previewPrompt` does not evaluate conditions, so check a new condition with one live turn.
+
+### Capabilities
+
+Each is `"on"` / `"off"` / `"disabled"`:
 
 | Key | Default | What it does |
 |-----|---------|-------------|
