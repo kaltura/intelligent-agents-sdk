@@ -93,7 +93,7 @@ Reserved `sys__*` keys (like `sys__user_id` and `sys__thread_id`) are server-inj
 
 ### Server-side tools read them too
 
-Request variables aren't limited to prompt text. A server-side `api` tool's request template can interpolate them (`{{account_id}}` in a URL, header, or body), so a value your app set turns into a parameter of a backend call the agent makes. This includes variables from earlier turns that were never mentioned in conversation. See [Tools and Secrets § Tools](api/build/tools-and-secrets.md#tools-api--csv--code--client--var).
+Request variables aren't limited to prompt text. A server-side `api` tool's request template can interpolate them (`{{account_id}}` in a URL, header, or body), so a value your app set turns into a parameter of a backend call the agent makes. This includes variables from earlier turns that were never mentioned in conversation. Arg placeholders in a tool follow the table in [Tools and Secrets](api/build/tools-and-secrets.md#api-tool).
 
 **Security stance:** request variables are client-suppliable *and* thread-persistent. Never treat one as an authorization claim; your endpoints must independently authorize every call. A poisoned value also outlives its turn: it keeps interpolating into prompts and tool calls for the rest of the thread. Don't pass unsanitized end-user text into `setDynamicPrompt`, and never put secrets in any request variable.
 

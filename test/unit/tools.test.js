@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { tools, TOOL_TYPES, api, csv, code, client, clientToolReadiness, validate, validateArgs, applyResponseMapping } from '../../src/management/tools.js';
+import { tools, TOOL_TYPES, api, csv, code, client, clientToolReadiness, unusedApiArgs, validate, validateArgs, applyResponseMapping } from '../../src/management/tools.js';
 import { fakeFetch } from '../fakes/fetch.js';
 import { Management } from '../../src/management/client.js';
 
@@ -252,6 +252,32 @@ test('validateArgs rejects missing prompt and bad arg name; digit-start and hyph
   assert.throws(() => validateArgs({ 'has space': { prompt: 'p', type: 'str' } }), /hyphen/);
 });
 
+test('validate() accepts the nulls the server echoes for unset display_name and condition, on every tool type', () => {
+  const echoed = { display_name: null, condition: null };
+  for (const t of [api(apiCfg()), csv({ name: 'rates', description: 'lookup', csv: 'code,rate\nUSD,1.0' }), code(codeCfg()), client({ name: 'c', description: 'd' }), tools.var({ name: 'v', description: 'd', args: { mode: { prompt: 'Mode', type: 'str' } } })]) {
+    const out = validate({ ...t, ...echoed });
+    assert.equal(out.display_name, undefined, `${t.type}: null display_name is dropped`);
+    assert.equal(out.condition, undefined, `${t.type}: null condition is dropped`);
+  }
+  assert.throws(() => validate({ ...api(apiCfg()), display_name: 5 }), (e) => e.code === 'bad_request' && /displayName/.test(e.detail));
+});
+
+test('validate() accepts an api tool as the server echoes it, with null for every field left unset', () => {
+  const echoed = {
+    ...api(apiCfg()),
+    display_name: null, condition: null, args: null, variables_mapping: null, response_template: null, response_chapters: null,
+    request: { url: URL, method: 'GET', timeout: 10, headers: null, params: null, body: null, authentication: null },
+  };
+  const out = validate(echoed);
+  assert.deepEqual(out.response_mapping, { answer: 'data.value' });
+  assert.equal(out.request.authentication, undefined);
+  assert.equal(out.response_template, undefined);
+  const templated = validate({ ...echoed, response_mapping: null, response_template: 'v: {{ a }}' });
+  assert.equal(templated.response_template, 'v: {{ a }}');
+  assert.equal(templated.response_mapping, undefined);
+  assert.throws(() => validate({ ...echoed, response_mapping: null }), (e) => e.code === 'bad_request' && /response shaper/.test(e.detail));
+});
+
 test('validate() re-checks an assembled wire tool and routes by type', () => {
   const t = api(apiCfg());
   assert.deepEqual(validate(t), t); // round-trips clean
@@ -405,6 +431,19 @@ test('delete refuses with tool_in_use when an intellect still carries the id in 
     (e) => e.code === 'tool_in_use' && /42/.test(e.detail),
   );
   assert.equal(ff.calls.some((c) => /v1\/tool\/delete$/.test(c.url)), false, 'refuses before the destructive call');
+});
+
+test('delete finds a reference stored as {id, condition} (the shape the server reads back)', async () => {
+  const { mgmt, ff } = harness([
+    { match: 'v1/tool/delete', respond: () => ({ status: 200, body: {} }) },
+    { match: 'v1/intellect/list', respond: () => ({ status: 200, body: { totalCount: 1, objects: [{ id: 42 }] } }) },
+    { match: 'v1/intellect/get', respond: () => ({ status: 200, body: { id: 42, tool_ids: [{ id: 'tool-1', condition: null }] } }) },
+  ]);
+  await assert.rejects(
+    () => mgmt.tools.delete('tool-1', ADMIN_KS, { confirmPermanent: true }),
+    (e) => e.code === 'tool_in_use' && /42/.test(e.detail),
+  );
+  assert.equal(ff.calls.some((c) => /v1\/tool\/delete$/.test(c.url)), false);
 });
 
 test('delete with {force:true} skips the reference check entirely', async () => {
@@ -713,6 +752,30 @@ test('api tool: stray braces in a string body or url are a bad_placeholder error
   rejects(() => api(apiCfg({ request: { url: URL, method: 'post', body: '{"a":1}' } })), 'bad_placeholder', /object/);
   rejects(() => api(apiCfg({ request: { url: 'https://api.example.com/{', method: 'get' } })), 'bad_placeholder', /brace/);
   assert.deepEqual(api(apiCfg({ request: { url: URL, method: 'post', body: { a: 1 } } })).request.body, { a: 1 });
+});
+
+test('api tool: an undeclared {name} in an object body is a bad_placeholder error at any depth, naming the path', () => {
+  rejects(() => api(apiCfg({ request: { url: URL, method: 'post', body: { q: '{nope}' } } })), 'bad_placeholder', /request\.body\.q has \{nope\}/);
+  rejects(() => api(apiCfg({ request: { url: URL, method: 'post', body: { a: { b: ['x', 'y {nope}'] } } } })), 'bad_placeholder', /request\.body\.a\.b\[1\]/);
+});
+
+test('api tool: object body accepts declared {arg}, {{ }} spans, other brace text and non-string values', () => {
+  const args = { city: { prompt: 'City', type: 'str', required: true } };
+  const body = { a: { b: ['{city}'] }, tpl: '{{ secrets.X }}', n: 1, ok: true, none: null, raw: 'a { b' };
+  assert.deepEqual(api(apiCfg({ args, request: { url: URL, method: 'post', body } })).request.body, body);
+});
+
+test('unusedApiArgs lists declared args that no url or body placeholder uses', () => {
+  const args = { city: { prompt: 'c', type: 'str' }, unit: { prompt: 'u', type: 'str' }, deep: { prompt: 'd', type: 'str' }, tpl: { prompt: 't', type: 'str' } };
+  const cfg = { type: 'api', args, request: { url: 'https://api.example.com/w?c={city}', method: 'post', body: { a: [{ b: '{deep}' }], t: '{{ tpl }}' } } };
+  assert.deepEqual(unusedApiArgs(cfg), ['unit', 'tpl']);
+  assert.deepEqual(unusedApiArgs({ ...cfg, request: { ...cfg.request, body: 'x={unit}' } }), ['deep', 'tpl']);
+});
+
+test('unusedApiArgs returns [] for non-api tools, no args and bad input', () => {
+  assert.deepEqual(unusedApiArgs({ type: 'client', args: { a: {} } }), []);
+  assert.deepEqual(unusedApiArgs({ type: 'api', request: { url: URL } }), []);
+  for (const v of [null, undefined, 'x', 5]) assert.deepEqual(unusedApiArgs(v), []);
 });
 
 test('api tool: {{ }} template spans in url and body are not treated as placeholders', () => {

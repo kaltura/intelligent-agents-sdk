@@ -79,6 +79,9 @@ name: Live verification
 # opening turn, a `<blank>` branch + kickoff asks a preset question, and each
 # re-join replays the opening (sys__is_new_thread, a var cleared with '').
 # See scripts/live-verify-opening-phrase.mjs.
+# live-verify-avatar-flag checks that sys__avatar_enabled is true in a browser
+# avatar session and false in a plain conversation, for a prompt block, a
+# compound condition and a skill. See scripts/live-verify-avatar-flag.mjs.
 # live-verify-mcp covers setMcpServers/describe end to end against a real,
 # CI-hosted reference MCP server (examples/mcp-live-showcase/server.mjs),
 # exposed over a cloudflared quick tunnel so the real backend can call back
@@ -151,6 +154,7 @@ jobs:
       reconnect: ${{ steps.filter.outputs.reconnect }}
       unload: ${{ steps.filter.outputs.unload }}
       opening-phrase: ${{ steps.filter.outputs.opening-phrase }}
+      avatar-flag: ${{ steps.filter.outputs.avatar-flag }}
       avatar-media: ${{ steps.filter.outputs.avatar-media }}
       set-forced-language: ${{ steps.filter.outputs.set-forced-language }}
       session-complete: ${{ steps.filter.outputs.session-complete }}
@@ -566,6 +570,12 @@ jobs:
               - 'package.json'
               - 'package-lock.json'
               - '.github/workflows/live-verify.yml'
+            avatar-flag:
+              - 'scripts/live-verify-avatar-flag.mjs'
+              - 'scripts/live-verify-hooks-shared.mjs'
+              - 'scripts/live-verify-kickoff-shared.mjs'
+              - 'src/management/condition.js'
+              - 'src/management/intellect-config.js'
             opening-phrase:
               - 'scripts/live-verify-opening-phrase.mjs'
               - 'scripts/live-verify-hooks-shared.mjs'
@@ -706,7 +716,7 @@ jobs:
           api=false
           any smoke conversation-surface threads-messages-feedback request-vars site-nav session-types capabilities agents lifecycle-audit avatars catalog intellects-conversations knowledge skills tools mcp && api=true
           engines=()
-          any browser avatar-media session-complete opening-phrase kickoff startup-faults reconnect unload prepare set-forced-language context-fields && engines+=(chromium)
+          any browser avatar-media session-complete opening-phrase avatar-flag kickoff startup-faults reconnect unload prepare set-forced-language context-fields && engines+=(chromium)
           any browser avatar-media session-complete startup-faults reconnect unload && engines+=(firefox)
           any session-complete && engines+=(webkit)
           browser=false
@@ -1293,6 +1303,18 @@ jobs:
           set -o pipefail
           node scripts/live-verify-opening-phrase.mjs --env prod 2>&1 | tee live-verify-opening-phrase-output.log
 
+      # Provision an agent → gate a prompt block, a compound condition and a skill on sys__avatar_enabled → same question in an avatar session and a plain conversation → cleanup
+      - name: Session · Avatar flag in conditions
+        id: live_verify_avatar_flag
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' && (needs.changes.outputs.all == 'true' || needs.changes.outputs['avatar-flag'] == 'true') && matrix.engine == 'chromium' }}
+        timeout-minutes: 15
+        env:
+          AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
+          AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
+        run: |
+          set -o pipefail
+          node scripts/live-verify-avatar-flag.mjs --env prod 2>&1 | tee live-verify-avatar-flag-output.log
+
       # Provision 3 agents (silent+kickoff, Jinja2, Jinja2 <blank> + kickoff) → measure connect timing (3 runs each) → check startup KPIs per arm → cleanup
       - name: Session · Startup KPIs (connect timing)
         id: live_verify_connect_timing
@@ -1450,6 +1472,19 @@ jobs:
               done
               echo '```'
               tail -n 40 live-verify-opening-phrase-output.log 2>/dev/null || true
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -f live-verify-avatar-flag-output.log ]; then
+            echo >> "$GITHUB_STEP_SUMMARY"
+            {
+              echo "### Session · Avatar flag in conditions — ${{ steps.live_verify_avatar_flag.outcome }}"
+              echo
+              for md in live-verify-artifacts/avatar-flag-*.md; do
+                [ -f "$md" ] && cat "$md" && echo
+              done
+              echo '```'
+              tail -n 40 live-verify-avatar-flag-output.log 2>/dev/null || true
               echo '```'
             } >> "$GITHUB_STEP_SUMMARY"
           fi

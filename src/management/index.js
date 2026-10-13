@@ -45,8 +45,8 @@ export {
   assertCapability, assertCapabilityState, validateCapabilities,
   mergeCapabilityWrite, resolveCapabilities,
 } from './capabilities.js';
-// Custom LLM-callable tools: typed builders + validators for api/csv/code/client tools.
-// `tools.api/csv/code` build a validated GenieToolConfig; `tools.validate` checks one.
+// Custom LLM-callable tools: typed builders + validators for api/csv/code/client/var tools.
+// `tools.api/csv/code/client/var` build a validated GenieToolConfig; `tools.validate` checks one.
 // `tools.client` builds a native type:"client" tool — the silent type:"tool" channel for
 // navigate_to_slide / show_widget / call_page_function, with tool_metadata ACK support
 // (`waitForResponse`/`session.respondToTool`). `clientToolReadiness` lints the two

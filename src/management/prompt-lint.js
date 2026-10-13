@@ -21,7 +21,7 @@
 import { KalturaError } from '../core/errors.js';
 import { meta } from '../core/ids.js';
 import { RESERVED_VARS } from './conversations.js';
-import { conditionProblem } from './condition.js';
+import { conditionProblem, conditionWarnings } from './condition.js';
 
 /**
  * Server-provided variable namespaces addressed by a dotted prefix (e.g.
@@ -143,7 +143,10 @@ function summarize(findings) {
  * reference (`{{secrets.MY_KEY}}`). Flags malformed `{{` that is never closed.
  *
  * @param {string} text
- * @param {{allowClientVariables?: boolean, knownVars?: string[], path?: string}} [opts]
+ * @param {{allowClientVariables?: boolean, knownVars?: string[], toolVars?: string[], path?: string}} [opts]
+ *   `toolVars` are variable names that `var` tools set (their arg names). They
+ *   are neither client variables nor unknown: no finding, and they do not need
+ *   `allow_client_variables`.
  *   `allowClientVariables` (default `true`) mirrors the intellect's
  *   `allow_client_variables` gate: when `false`, any non-system variable is a
  *   `client_variable_not_allowed` ERROR (a converse call sending
@@ -178,6 +181,7 @@ export function validatePromptVars(text, opts = {}) {
   }
   const allow = opts.allowClientVariables !== false;
   const known = new Set(Array.isArray(opts.knownVars) ? opts.knownVars : []);
+  const toolVars = new Set(Array.isArray(opts.toolVars) ? opts.toolVars : []);
   const pathPrefix = typeof opts.path === 'string' && opts.path ? `${opts.path} ` : '';
 
   /** @type {LintFinding[]} */
@@ -243,6 +247,8 @@ export function validatePromptVars(text, opts = {}) {
       if (!system.includes(raw)) system.push(raw);
       continue;
     }
+
+    if (toolVars.has(raw)) continue; // set by a `var` tool on an earlier turn, not sent by the client
 
     // A client variable.
     if (!client.includes(raw)) client.push(raw);
@@ -310,6 +316,8 @@ export const PAGE_CONTEXT_PROMPT = Object.freeze({
  * thread variables (for example `sys__avatar_enabled`); the block applies only
  * while it is truthy. A template-style condition (`{{ }}`) is a
  * `bad_condition` ERROR because the server answers it with an empty reply.
+ * A form that is known to blank the turn or never match (`AND`, `&&`, `!`, a
+ * single `=`, `len()`, `true`) is a `suspect_condition` WARNING.
  * Surfaces structural
  * errors (invalid block, missing/empty key, wrong `type`, non-string fields),
  * structural WARNINGS (missing `type`, duplicate keys) and
@@ -328,7 +336,10 @@ export const PAGE_CONTEXT_PROMPT = Object.freeze({
  *     per-reference `client_variable_not_allowed` ERROR.
  *
  * @param {Array<object>} prompts
- * @param {{allowClientVariables?: boolean, knownVars?: string[]}} [opts]
+ * @param {{allowClientVariables?: boolean, knownVars?: string[], toolVars?: string[]}} [opts]
+ *   `toolVars`: names that `var` tools set. A `{{name}}` for one of them is
+ *   not a client variable, so it needs no `allow_client_variables` and gives no
+ *   `unknown_variable`. Pass the arg names of the `var` tools linked to the intellect.
  * @returns {{
  *   ok: boolean,
  *   summary: {errors:number, warnings:number, ok:boolean},
@@ -391,6 +402,7 @@ export function lintPrompts(prompts, opts = {}) {
     if (block.condition != null) { // the server stores an unset condition as null
       const problem = conditionProblem(block.condition);
       if (problem) findings.push({ severity: 'error', code: 'bad_condition', message: `${path}.condition ${problem}.`, path: `${path}.condition` });
+      for (const w of conditionWarnings(block.condition)) findings.push({ severity: 'warning', code: 'suspect_condition', message: `${path}.condition ${w}.`, path: `${path}.condition` });
     }
 
     if (block.label !== undefined && typeof block.label !== 'string') {
@@ -418,7 +430,7 @@ export function lintPrompts(prompts, opts = {}) {
     // Variable scan over both the header and the value (both are interpolated).
     for (const [field, txt] of [['headerTemplate', header], ['value', value]]) {
       if (txt.indexOf('{{') < 0) continue;
-      const v = validatePromptVars(txt, { allowClientVariables: opts.allowClientVariables, knownVars: opts.knownVars, path: `${path}.${field}` });
+      const v = validatePromptVars(txt, { allowClientVariables: opts.allowClientVariables, knownVars: opts.knownVars, toolVars: opts.toolVars, path: `${path}.${field}` });
       for (const f of v.findings) findings.push({ ...f, path: f.path || `${path}.${field}` });
       for (const name of v.variables) if (!variables.includes(name)) variables.push(name);
       for (const name of v.clientVariables) if (!clientVariables.includes(name)) clientVariables.push(name);

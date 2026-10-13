@@ -107,11 +107,11 @@ jsDelivr serves any file straight from a pushed tag by its real repo path. It ha
 </script>
 ```
 
-`@latest` resolves to the newest tag, so this URL always matches the current README without an editing pass on every release. It is **not cached the same way** as a tagged path. jsDelivr re-checks it periodically, so what it serves can change without warning. For anything you ship, pin to a real tag (for example `@v1.33.0`). jsDelivr caches a tagged path forever, so a pin is both stable and fast:
+`@latest` resolves to the newest tag, so this URL always matches the current README without an editing pass on every release. It is **not cached the same way** as a tagged path. jsDelivr re-checks it periodically, so what it serves can change without warning. For anything you ship, pin to a real tag (for example `@v1.34.0`). jsDelivr caches a tagged path forever, so a pin is both stable and fast:
 
 ```html
 <script type="module">
-  import { KalturaAvatarSession } from 'https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.33.0/src/experience/index.js';
+  import { KalturaAvatarSession } from 'https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.34.0/src/experience/index.js';
 </script>
 ```
 
@@ -1154,7 +1154,7 @@ await mgmt.intellectConfig.setSkillIds(configId, [
 // pass [] to detach every skill
 ```
 
-A skill id owned by another partner is rejected with a 403 `forbidden`. Shared skills in `skills.list`: see [Skills](docs/api/management-operations.md#skills).
+Shared skills and rejected ids: [Skills](docs/api/management-operations.md#skills).
 
 **Provider voice import** (`mgmt.catalog`) creates a catalog Voice item directly from an ElevenLabs or Cartesia voice id, with no audio upload:
 

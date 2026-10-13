@@ -45,6 +45,7 @@ function check(step, ok, detail) {
 const kaltura = new Management(target);
 let admin;
 let skillId;
+let otherSkillId;
 
 try {
   admin = await kaltura.sessions.createAdminToken({ userId: 'sdk-live-verify' });
@@ -76,10 +77,22 @@ try {
   check('4-skills-update-returns-new-values', updated.name === newName && updated.description === newDescription, { name: updated.name, description: updated.description });
   const gotAfterUpdate = await kaltura.skills.get(skillId, admin);
   check('4-skills-update-persists', gotAfterUpdate.name === newName && gotAfterUpdate.description === newDescription, { name: gotAfterUpdate.name, description: gotAfterUpdate.description });
+
+  // 4b: a skill name is unique per partner: a second add or a rename onto it answers 409 conflict.
+  const base = { description: 'Scratch skill created by scripts/live-verify-skills.mjs', instructions: 'Never invoked live. This is a CI coverage probe.' };
+  const dupAdd = await kaltura.skills.add({ ...base, name: newName }, admin).then(() => null, (e) => e);
+  check('4b-skills-add-duplicate-name-409', dupAdd?.status === 409 && dupAdd?.code === 'conflict', { status: dupAdd?.status, code: dupAdd?.code });
+  const other = await kaltura.skills.add({ ...base, name: `live-verify-skill-other-${RUN_TAG}` }, admin);
+  otherSkillId = other.id;
+  const dupRename = await kaltura.skills.update(otherSkillId, { name: newName }, admin).then(() => null, (e) => e);
+  check('4b-skills-rename-onto-existing-name-409', dupRename?.status === 409 && dupRename?.code === 'conflict', { status: dupRename?.status, code: dupRename?.code });
 } catch (err) {
   failed = true;
   record('live-verify-skills', false, { message: err?.detail || err?.message || String(err), code: err?.code });
 } finally {
+  if (otherSkillId) {
+    try { await kaltura.skills.delete(otherSkillId, admin, { confirmPermanent: true }); record('5-skills-delete-other', true, { otherSkillId }); } catch (err) { failed = true; record('5-skills-delete-other', false, { otherSkillId, message: err?.detail || err?.message || String(err) }); }
+  }
   // 5: skills.delete — plain delete (no intellect references this scratch skill).
   if (skillId) {
     try {

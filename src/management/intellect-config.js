@@ -9,7 +9,7 @@
  * there are ALSO dedicated sub-resources with extra operations the facade does
  * not duplicate — prefer those when you need their depth:
  *   - tool_ids → `mgmt.tools` is the SEPARATE, partner-level Tool entity CRUD
- *               (`api`/`csv`/`code` builders, `validate`, `add`/`get`/`list`/
+ *               (`api`/`csv`/`code`/`client`/`var` builders, `validate`, `add`/`get`/`list`/
  *               `update`/`remove`). This facade's `setToolIds` only writes the
  *               INTELLECT-side reference list — create/edit the tool bodies
  *               themselves via `mgmt.tools`.
@@ -47,9 +47,9 @@
 import { KalturaError } from '../core/errors.js';
 import { meta } from '../core/ids.js';
 import { requireInt } from './intellect-body.js';
-import { assertCondition, conditionProblem } from './condition.js';
+import { assertCondition, assertPromptConditions, conditionProblem, conditionWarnings } from './condition.js';
 import { validateCapabilities, assertCapability, assertCapabilityState, mergeCapabilityWrite, CAPABILITIES } from './capabilities.js';
-import { ARG_TYPES, clientToolReadiness } from './tools.js';
+import { ARG_TYPES, clientToolReadiness, toolRefId, unusedApiArgs } from './tools.js';
 import { MASK, maskExisting, validateSecretRefs } from './secrets.js';
 import { lintPrompts } from './prompt-lint.js';
 import { auditReport, isNotFound } from './audit-report.js';
@@ -154,6 +154,28 @@ function bad(detail, code = 'bad_request') {
   return new KalturaError({ type: 'about:blank', title: code.replace(/_/g, ' '), code, detail });
 }
 
+/**
+ * Check a `tool_ids` / `thread_start_tools` write: an array of tool ids, each a
+ * string or `{id, condition?}`. Entries pass through unchanged.
+ * @param {unknown} entries @param {string} where
+ * @returns {Array<string|{id:string, condition?:string|null}>}
+ */
+function toolRefs(entries, where) {
+  if (!Array.isArray(entries)) throw bad(`${where} needs an array of Tool ids.`);
+  entries.forEach((e, i) => {
+    if (typeof e === 'string' ? e : toolRefId(e)) {
+      if (typeof e === 'object') {
+        const extra = Object.keys(e).find((k) => k !== 'id' && k !== 'condition');
+        if (extra) throw bad(`${where}: unknown entry key "${extra}" at [${i}]. Allowed: id, condition.`);
+        if (e.condition != null) assertCondition(e.condition, `${where}: [${i}].condition`);
+      }
+      return;
+    }
+    throw bad(`${where} needs each entry to be a non-empty Tool id string or {id, condition?} (bad entry at [${i}]).`);
+  });
+  return /** @type {any} */ (entries);
+}
+
 export class IntellectConfig {
   /**
    * @param {import('./client.js').Ctx} ctx
@@ -169,8 +191,10 @@ export class IntellectConfig {
 
   /**
    * Check one intellect's saved config for mistakes. READ only, it changes
-   * nothing. Reads the intellect, then each tool and skill it lists, by id. Then
-   * it runs {@link auditIntellectConfig}, which lists the finding codes.
+   * nothing. Reads the intellect, then each tool and skill it lists, by id. A
+   * shared skill cannot be read by id, so an id that `skills.get` does not find
+   * is looked up in `skills.list`. Then it runs {@link auditIntellectConfig},
+   * which lists the finding codes.
    * @param {number} configId @param {string} ks (admin)
    * @returns {Promise<import('./audit-report.js').AuditReport>}
    */
@@ -179,18 +203,29 @@ export class IntellectConfig {
     requireInt(configId, 'intellectConfig.audit configId');
     const config = await this._intellects.get(configId, ks);
     const { tools, skills } = this._siblings;
-    /** @param {{get:(id:string, ks:string)=>Promise<any>}|undefined} resource @param {unknown[]} ids */
-    const fetchAll = async (resource, ids) => {
+    /** @param {{get:(id:string, ks:string)=>Promise<any>}|undefined} resource @param {unknown[]} ids @param {(id:string)=>Promise<any>} [fallback] Tried for an id that `get` does not find. */
+    const fetchAll = async (resource, ids, fallback) => {
       if (!resource) return null;
       const found = [];
       for (const id of new Set(ids.map(String))) {
-        try { found.push(await resource.get(id, ks)); } catch (e) { if (!isNotFound(e)) throw e; }
+        try { found.push(await resource.get(id, ks)); } catch (e) {
+          if (!isNotFound(e)) throw e;
+          const other = await fallback?.(id);
+          if (other) found.push(other);
+        }
       }
       return found;
     };
-    const toolIds = [...(config?.tool_ids ?? []), ...(config?.thread_start_tools ?? [])];
+    /** @type {any[]|undefined} */
+    let listed;
+    // A shared skill (partner_id 0) is attachable and listed, but `get` answers not_found.
+    const fromList = async (/** @type {string} */ id) => {
+      listed ??= await skills.list(ks).all();
+      return listed.find((s) => String(s.id) === id);
+    };
+    const toolIds = [...(config?.tool_ids ?? []), ...(config?.thread_start_tools ?? [])].map(toolRefId).filter(Boolean);
     const skillIds = (config?.skill_ids ?? []).map((/** @type {any} */ s) => s?.id ?? s);
-    const [toolList, skillList] = [await fetchAll(tools, toolIds), await fetchAll(skills, skillIds)];
+    const [toolList, skillList] = [await fetchAll(tools, toolIds), await fetchAll(skills, skillIds, fromList)];
     const findings = auditIntellectConfig(config, { tools: toolList, skills: skillList });
     return auditReport(findings, { intellects: 1, tools: toolList?.length ?? 0, skills: skillList?.length ?? 0 });
   }
@@ -225,6 +260,7 @@ export class IntellectConfig {
     if (!resolved || typeof resolved !== 'object' || Array.isArray(resolved)) {
       throw bad('intellectConfig.patch: the patch function must return a partial config object.');
     }
+    assertPromptConditions(resolved.prompts, 'intellectConfig.patch');
     // Allowlist: only EDITABLE_FIELDS (plus the immutable `type`, checked below) may be sent.
     for (const k of Object.keys(resolved)) {
       if (k !== 'type' && !EDITABLE_SET.has(k)) {
@@ -281,16 +317,16 @@ export class IntellectConfig {
    * no length cap. This only edits the reference list, to
    * create/edit a tool BODY, use `mgmt.tools.add`/`update`/`remove` first, then
    * pass its `id` here. Pass `[]` to detach every tool.
-   * @param {number} configId @param {string[]} toolIds @param {string} ks (admin)
+   * Each entry is a tool id, or `{id, condition}` to attach the tool only while
+   * the {@link assertCondition condition} holds (the shape `get` reads back, so
+   * a read-modify-write round trip is accepted as is).
+   * @param {number} configId @param {Array<string|{id:string, condition?:string|null}>} toolIds @param {string} ks (admin)
    * @returns {Promise<{applied:boolean, result?:any, sent?:object, _meta:object}>}
    */
   async setToolIds(configId, toolIds, ks) {
     this._.assertAdmin(ks, 'intellectConfig.setToolIds');
     requireInt(configId, 'intellectConfig.setToolIds configId');
-    if (!Array.isArray(toolIds) || toolIds.some((id) => typeof id !== 'string' || !id)) {
-      throw bad('intellectConfig.setToolIds needs an array of non-empty string Tool ids.');
-    }
-    const { result, sent } = await this.patch(configId, { tool_ids: toolIds }, ks);
+    const { result, sent } = await this.patch(configId, { tool_ids: toolRefs(toolIds, 'intellectConfig.setToolIds') }, ks);
     return { applied: true, result, sent, _meta: meta({ partnerId: this._.partnerId, source: 'genie/intellect.tool_ids', scope: `configId:${configId}` }) };
   }
 
@@ -345,19 +381,18 @@ export class IntellectConfig {
    * is server-side only: it does not appear as a `tool` segment in the stream.
    * The backend stores unknown ids without complaint, so check them against
    * `mgmt.tools.list` yourself. WRITE, idempotent. Pass `[]` to clear.
-   * @param {number} configId @param {string[]} toolIds @param {string} ks (admin)
+   * Entries take the same forms as {@link IntellectConfig#setToolIds}.
+   * @param {number} configId @param {Array<string|{id:string, condition?:string|null}>} toolIds @param {string} ks (admin)
    * @returns {Promise<{applied:boolean, result?:any, sent?:object, _meta:object}>}
    */
   async setThreadStartTools(configId, toolIds, ks) {
     this._.assertAdmin(ks, 'intellectConfig.setThreadStartTools');
     requireInt(configId, 'intellectConfig.setThreadStartTools configId');
-    if (!Array.isArray(toolIds) || toolIds.some((id) => typeof id !== 'string' || !id)) {
-      throw bad('intellectConfig.setThreadStartTools needs an array of non-empty string Tool ids.');
-    }
-    if (new Set(toolIds).size !== toolIds.length) {
+    const refs = toolRefs(toolIds, 'intellectConfig.setThreadStartTools');
+    if (new Set(refs.map(toolRefId)).size !== refs.length) {
       throw bad('intellectConfig.setThreadStartTools: tool ids must be unique.');
     }
-    const { result, sent } = await this.patch(configId, { thread_start_tools: toolIds }, ks);
+    const { result, sent } = await this.patch(configId, { thread_start_tools: refs }, ks);
     return { applied: true, result, sent, _meta: meta({ partnerId: this._.partnerId, source: 'genie/intellect.thread_start_tools', scope: `configId:${configId}` }) };
   }
 
@@ -784,7 +819,7 @@ const lintSeverity = (s) => (s === 'error' ? 'error' : s === 'warning' ? 'warn' 
  * What {@link auditIntellectConfig} may check references against.
  * @typedef {object} IntellectAuditContext
  * @property {Array<{id:string, config?:unknown}>|null} [tools] The tools that exist, with their config if known. `null` or omitted skips the `tool_not_found` check and the secret scan of tool configs.
- * @property {Array<{id:string}>|null} [skills] The skills that exist. `null` or omitted skips the `skill_not_found` check.
+ * @property {Array<{id:string}>|null} [skills] The skills the intellect can use: its own and the shared ones. `null` or omitted skips the `skill_not_found` check.
  */
 
 /**
@@ -798,14 +833,17 @@ const lintSeverity = (s) => (s === 'error' ? 'error' : s === 'warning' ? 'warn' 
  * | `invalid_user_properties_forms` | error | {@link buildUserPropertiesForms} rejects the forms. |
  * | `secret_ref_unresolved` | error | A `{{secrets.NAME}}` reference names a secret the intellect does not have. |
  * | `secret_ref_bad_prefix` | error | A `{{variables.secrets.NAME}}` reference renders empty. Use `{{secrets.NAME}}`. |
- * | `prompt_<code>` | per finding | A {@link lintPrompts} finding, for example `prompt_duplicate_key`. |
+ * | `prompt_<code>` | per finding | A {@link lintPrompts} finding with a `prompt_` prefix, for example `prompt_duplicate_key`, `prompt_bad_condition` or `prompt_suspect_condition`. A variable that a linked `var` tool sets is not flagged. |
  * | `capabilities_invalid` | warn | {@link validateCapabilities} rejects the capability map. |
  * | `client_tools_not_ready` | warn | {@link clientToolReadiness} warns about the tool setup. |
  * | `knowledge_ids_over_cap` | error | `knowledge_ids` holds more than one record. |
  * | `tool_not_found` | error | `tool_ids` or `thread_start_tools` names a tool that does not exist. |
- * | `skill_not_found` | error | `skill_ids` names a skill that does not exist. |
- * | `skill_condition_template` | error | A `skill_ids[].condition` is wrapped in `{{ }}` or `{% %}`. The server answers every turn with an empty reply. |
- * | `tool_condition_template` | error | A linked tool's `condition` is wrapped in `{{ }}` or `{% %}`. |
+ * | `skill_not_found` | error | `skill_ids` names a skill that is neither yours nor a shared skill. |
+ * | `skill_condition_template` | error | A `skill_ids[].condition` is empty, not a string, or holds `{{ }}`, `{% %}` or `{# #}`. The server answers every turn with an empty reply. |
+ * | `skill_condition_suspect` | warn | A `skill_ids[].condition` uses a form that blanks the turn or never matches, such as `AND`, `&&`, `!`, a single `=` or `len()`. |
+ * | `tool_condition_template` | error | A linked tool's `condition` is empty, not a string, or holds `{{ }}`, `{% %}` or `{# #}`. |
+ * | `tool_condition_suspect` | warn | A linked tool's `condition` uses a form that blanks the turn or never matches. |
+ * | `tool_arg_unused` | warn | A linked `api` tool declares an arg that no `{arg}` in its url or body uses, so it is never sent. |
  * @param {Record<string, any>} config The intellect, as `intellects.get` returns it.
  * @param {IntellectAuditContext} [ctx]
  * @returns {import('./audit-report.js').AuditFinding[]}
@@ -831,7 +869,7 @@ export function auditIntellectConfig(config, ctx = {}) {
     }
   }
 
-  const toolIds = [...(Array.isArray(cfg.tool_ids) ? cfg.tool_ids : []), ...(Array.isArray(cfg.thread_start_tools) ? cfg.thread_start_tools : [])].map(String);
+  const toolIds = [...(Array.isArray(cfg.tool_ids) ? cfg.tool_ids : []), ...(Array.isArray(cfg.thread_start_tools) ? cfg.thread_start_tools : [])].map((e) => toolRefId(e) ?? String(e));
   const toolConfigs = (ctx.tools ?? []).filter((t) => toolIds.includes(String(t.id))).map((t) => t.config);
   const refs = validateSecretRefs({
     secretNames: Object.keys(cfg.secrets && typeof cfg.secrets === 'object' ? cfg.secrets : {}),
@@ -846,7 +884,9 @@ export function auditIntellectConfig(config, ctx = {}) {
 
   if (Array.isArray(cfg.prompts)) {
     // A saved intellect does not store which request variables the app will send, so an unknown variable is not a defect here.
-    for (const f of lintPrompts(cfg.prompts, { allowClientVariables: cfg.allow_client_variables === true }).findings.filter((x) => x.code !== 'unknown_variable')) {
+    // A variable that a linked `var` tool sets is not a client variable, so it needs no gate.
+    const toolVars = toolConfigs.flatMap((/** @type {any} */ c) => (c?.type === 'var' && c.args && typeof c.args === 'object' ? Object.keys(c.args) : []));
+    for (const f of lintPrompts(cfg.prompts, { allowClientVariables: cfg.allow_client_variables === true, toolVars }).findings.filter((x) => x.code !== 'unknown_variable')) {
       add(lintSeverity(f.severity), `prompt_${f.code}`, f.path ?? 'prompts', f.message, 'Run lintPrompts on the prompts to see this finding in context.');
     }
   }
@@ -867,7 +907,7 @@ export function auditIntellectConfig(config, ctx = {}) {
   if (ctx.tools) {
     const known = new Set(ctx.tools.map((t) => String(t.id)));
     for (const field of ['tool_ids', 'thread_start_tools']) {
-      for (const id of (Array.isArray(cfg[field]) ? cfg[field] : []).map(String).filter((x) => !known.has(x))) {
+      for (const id of (Array.isArray(cfg[field]) ? cfg[field] : []).map((e) => toolRefId(e) ?? String(e)).filter((x) => !known.has(x))) {
         add('error', 'tool_not_found', field, `${field} lists tool ${id}, which does not exist.`, `Drop it with intellectConfig.${field === 'tool_ids' ? 'setToolIds' : 'setThreadStartTools'}.`);
       }
     }
@@ -875,11 +915,16 @@ export function auditIntellectConfig(config, ctx = {}) {
   for (const [i, entry] of (Array.isArray(cfg.skill_ids) ? cfg.skill_ids : []).entries()) {
     const problem = entry?.condition == null ? null : conditionProblem(entry.condition);
     if (problem) add('error', 'skill_condition_template', `skill_ids[${i}].condition`, `skill_ids[${i}].condition ${problem}.`, 'Rewrite it as a bare expression with intellectConfig.setSkillIds, for example "sys__avatar_enabled".');
+    else for (const w of conditionWarnings(entry?.condition)) add('warn', 'skill_condition_suspect', `skill_ids[${i}].condition`, `skill_ids[${i}].condition ${w}.`, 'Rewrite it with intellectConfig.setSkillIds. A wrong condition can blank every turn.');
   }
   for (const t of (ctx.tools ?? []).filter((x) => toolIds.includes(String(x.id)))) {
     const condition = /** @type {any} */ (t.config)?.condition;
     const problem = condition == null ? null : conditionProblem(condition);
     if (problem) add('error', 'tool_condition_template', `tool ${t.id}.condition`, `Tool ${t.id} condition ${problem}.`, 'Rewrite it as a bare expression with tools.update.');
+    else for (const w of conditionWarnings(condition)) add('warn', 'tool_condition_suspect', `tool ${t.id}.condition`, `Tool ${t.id} condition ${w}.`, 'Rewrite it with tools.update. A wrong condition can blank every turn.');
+    for (const name of unusedApiArgs(t.config)) {
+      add('warn', 'tool_arg_unused', `tool ${t.id}.args.${name}`, `Tool ${t.id} declares arg "${name}", but no {${name}} in its request url or body uses it. The arg is never sent.`, `Put {${name}} in request.url or in a string value of request.body, or remove the arg, with tools.update.`);
+    }
   }
   if (ctx.skills) {
     const known = new Set(ctx.skills.map((s) => String(s.id)));

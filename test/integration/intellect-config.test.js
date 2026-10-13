@@ -96,6 +96,75 @@ test('intellects.setPrompts lints, aborts on an error finding with NO write', as
   assert.ok(!f.calls.some((c) => c.url.includes('/v1/intellect/update')), 'no write on lint failure');
 });
 
+test('intellects.setPrompts: a templated block condition fails lint with NO write; lint:false skips it', async () => {
+  const { m, f } = mkMgmt([getDto(), updateEcho]);
+  const prompts = [{ key: 'k', headerTemplate: 'H', value: 'v', type: 'custom', condition: '{{ sys__avatar_enabled }}' }];
+  await assert.rejects(() => m.intellects.setPrompts(1481, prompts, ADMIN), (e) => e.code === 'prompt_lint_failed' && e.body.findings.some((x) => x.code === 'bad_condition'));
+  assert.ok(!f.calls.some((c) => c.url.includes('/v1/intellect/update')), 'no write on a bad condition');
+  await m.intellects.setPrompts(1481, prompts, ADMIN, { lint: false });
+  assert.ok(f.calls.some((c) => c.url.includes('/v1/intellect/update')), 'lint:false writes');
+});
+
+test("intellects.setPrompts: a suspect condition warns, and 'strict' turns the warning into a failure", async () => {
+  const { m, f } = mkMgmt([getDto(), updateEcho]);
+  const prompts = [{ key: 'k', headerTemplate: 'H', value: 'v', type: 'custom', condition: 'a AND b' }];
+  const r = await m.intellects.setPrompts(1481, prompts, ADMIN);
+  assert.ok(r.lint.findings.some((x) => x.code === 'suspect_condition'));
+  f.calls.length = 0;
+  await assert.rejects(() => m.intellects.setPrompts(1481, prompts, ADMIN, { lint: 'strict' }), (e) => e.code === 'prompt_lint_failed');
+  assert.ok(!f.calls.some((c) => c.url.includes('/v1/intellect/update')));
+});
+
+test('intellects.setPrompts: toolVars names are not reported as unknown variables', async () => {
+  const { m } = mkMgmt([getDto(), updateEcho]);
+  const prompts = [{ key: 'k', headerTemplate: 'H', value: 'Plan {{plan}}', type: 'custom' }];
+  const plain = await m.intellects.setPrompts(1481, prompts, ADMIN);
+  assert.ok(plain.lint.findings.some((x) => x.code === 'unknown_variable'));
+  await assert.rejects(() => m.intellects.setPrompts(1481, prompts, ADMIN, { lint: 'strict' }), (e) => e.code === 'prompt_lint_failed');
+  const r = await m.intellects.setPrompts(1481, prompts, ADMIN, { toolVars: ['plan'], lint: 'strict' });
+  assert.deepEqual(r.lint.findings, []);
+});
+
+test('intellects.add / update / create / patch refuse a templated prompt condition BEFORE any write', async () => {
+  const { m, cfg, f } = mkMgmt([getDto(), updateEcho, { match: '/v1/intellect/add', respond: () => ({ body: { id: 99 } }) }]);
+  const prompts = [{ key: 'k', headerTemplate: 'H', value: 'v', type: 'custom', condition: '{% if x %}1{% endif %}' }];
+  const badRequest = (e) => e.code === 'bad_request' && /prompts\[0\]\.condition/.test(e.detail);
+  await assert.rejects(() => m.intellects.add({ type: 'internal', status: 2, prompts }, ADMIN), badRequest);
+  await assert.rejects(() => m.intellects.update({ id: 1481, type: 'internal', status: 2, prompts }, ADMIN), badRequest);
+  await assert.rejects(() => m.intellects.create({ prompts }, ADMIN), badRequest);
+  await assert.rejects(() => cfg.patch(1481, { prompts }, ADMIN), badRequest);
+  assert.equal(f.calls.filter((c) => /\/v1\/intellect\/(add|update)$/.test(c.url)).length, 0, 'no write reached the server');
+});
+
+test('intellects.add / patch accept an unset (null) or bare prompt condition', async () => {
+  const { m, cfg, f } = mkMgmt([getDto(), updateEcho, { match: '/v1/intellect/add', respond: () => ({ body: { id: 99 } }) }]);
+  const prompts = [
+    { key: 'a', headerTemplate: 'H', value: 'v', type: 'custom', condition: null },
+    { key: 'b', headerTemplate: 'H', value: 'v', type: 'custom', condition: 'not sys__avatar_enabled' },
+  ];
+  await m.intellects.add({ type: 'internal', status: 2, prompts }, ADMIN);
+  await cfg.patch(1481, { prompts }, ADMIN);
+  assert.ok(f.calls.some((c) => c.url.includes('/v1/intellect/add')));
+  assert.ok(f.calls.some((c) => c.url.includes('/v1/intellect/update')));
+});
+
+test('intellects.previewPrompt: conditionalKeys lists rendered blocks with a condition, skippedKeys the empty ones', async () => {
+  const { m } = mkMgmt([getDto()]);
+  const p = await m.intellects.previewPrompt(1481, ADMIN, {
+    draftPrompts: [
+      { key: 'plain', headerTemplate: 'P', value: 'v', type: 'custom' },
+      { key: 'nulled', headerTemplate: 'N', value: 'v', type: 'custom', condition: null },
+      { key: 'gated', headerTemplate: 'G', value: 'v', type: 'custom', condition: 'sys__avatar_enabled' },
+      { key: 'empty', headerTemplate: 'E', value: '  ', type: 'custom', condition: 'sys__avatar_enabled' },
+    ],
+    draftBaseDirective: 'You are Ron.',
+    draftGlossary: '',
+    requestVars: {},
+  });
+  assert.deepEqual(p.conditionalKeys, ['gated']);
+  assert.deepEqual(p.skippedKeys, ['empty']);
+});
+
 test('intellects.setPrompts publishes a clean prompt list (full-replace)', async () => {
   const { m, f } = mkMgmt([getDto(), updateEcho]);
   const prompts = [{ key: 'goal', headerTemplate: 'Goal', value: 'Be concise', type: 'custom' }];
@@ -241,6 +310,22 @@ test('intellectConfig.setToolIds rejects a non-string-array BEFORE any network',
   await assert.rejects(() => cfg.setToolIds(1481, [1, 2], ADMIN), (e) => e.code === 'bad_request');
   await assert.rejects(() => cfg.setToolIds(1481, ['ok', ''], ADMIN), (e) => e.code === 'bad_request');
   assert.equal(f.calls.length, 0);
+});
+
+test('intellectConfig.setToolIds and setThreadStartTools accept the {id, condition} read-back shape and check the condition', async () => {
+  const { cfg, f } = mkMgmt([getDto(), updateEcho, getDto(), updateEcho]);
+  const refs = [{ id: 'tool-1', condition: null }, { id: 'tool-2', condition: 'sys__avatar_enabled' }, 'tool-3'];
+  await cfg.setToolIds(1481, refs, ADMIN);
+  await cfg.setThreadStartTools(1481, refs, ADMIN);
+  const sent = f.calls.filter((c) => c.url.includes('/v1/intellect/update')).map((c) => c.body);
+  assert.deepEqual(sent[0].tool_ids, refs);
+  assert.deepEqual(sent[1].thread_start_tools, refs);
+  const n = f.calls.length;
+  await assert.rejects(() => cfg.setToolIds(1481, [{ id: 'a', condition: '{{ x }}' }], ADMIN), (e) => e.code === 'bad_request' && /condition/.test(e.detail));
+  await assert.rejects(() => cfg.setToolIds(1481, [{ id: 'a', mode: 'x' }], ADMIN), (e) => e.code === 'bad_request' && /mode/.test(e.detail));
+  await assert.rejects(() => cfg.setToolIds(1481, [{ condition: 'x' }], ADMIN), (e) => e.code === 'bad_request');
+  await assert.rejects(() => cfg.setThreadStartTools(1481, ['a', { id: 'a' }], ADMIN), (e) => e.code === 'bad_request' && /unique/i.test(e.detail));
+  assert.equal(f.calls.length, n, 'rejected before any network call');
 });
 
 test('intellectConfig.setSkillIds writes the skill_ids reference list directly (plain array, no merge)', async () => {

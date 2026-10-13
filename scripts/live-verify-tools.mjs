@@ -17,6 +17,7 @@
  *   9  tools.get               — the denied updates changed nothing
  *  10  tools.update (-> api)   — re-sending an `api` config works
  *  11  tools.list              — the denied adds left no tool behind
+ *  6b  duplicate names        — adding or renaming onto an existing name is 409 conflict
  *  12  tools.delete            — scratch tools removed, re-`get` real-404s
  *
  * Credentials: AGENTIC_PARTNER_ID / AGENTIC_ADMIN_SECRET, from the
@@ -104,6 +105,12 @@ try {
   // 6: name-only patch — the gate looks at `config`, so this works.
   const renamed = await kaltura.tools.update(api.id, { name: names.apiRenamed }, admin);
   check('6-tools-update-name', renamed?.name === names.apiRenamed && renamed?.config?.type === 'api', { name: renamed?.name, type: renamed?.config?.type });
+
+  // 6b: a tool name is unique per partner.
+  const dupAdd = await kaltura.tools.add(tools.client({ name: names.client, description: 'live-verify duplicate' }), admin).then(() => null, (e) => e);
+  check('6b-tools-add-duplicate-name-409', dupAdd?.status === 409 && dupAdd?.code === 'conflict', { status: dupAdd?.status, code: dupAdd?.code });
+  const dupRename = await kaltura.tools.update(api.id, { name: names.client }, admin).then(() => null, (e) => e);
+  check('6b-tools-rename-onto-existing-name-409', dupRename?.status === 409 && dupRename?.code === 'conflict', { status: dupRename?.status, code: dupRename?.code });
 
   // 7, 8: config -> code / csv — 403 forbidden.
   await expectForbidden('7-tools-update-to-code', () => kaltura.tools.update(api.id, { config: codeConfig() }, admin));

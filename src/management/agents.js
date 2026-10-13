@@ -36,6 +36,31 @@ export function matchProtectedTag(tags) {
   return null;
 }
 
+/**
+ * Developer-facing `screenShare` → the field name the server uses. The server
+ * name can change, so the SDK keeps the two apart: apps use `screenShare`.
+ * Bodies without `screenShare` pass through untouched. Throws `bad_request` on a
+ * malformed value, or when the body also carries the server name.
+ * @param {any} body @param {string} where
+ */
+function screenShareToWire(body, where) {
+  if (!body || typeof body !== 'object' || body.screenShare === undefined) return body;
+  const { screenShare, ...rest } = body;
+  const bad = (detail) => new KalturaError({ type: 'about:blank', title: 'bad screenShare', code: 'bad_request', detail: `${where}: ${detail}` });
+  if (rest.legacyScreenShare !== undefined) throw bad('pass `screenShare` only; do not also pass `legacyScreenShare`.');
+  if (!screenShare || typeof screenShare !== 'object' || Array.isArray(screenShare)) throw bad('`screenShare` must be an object like { enabled: true, prompt: "..." }.');
+  if (screenShare.enabled !== undefined && typeof screenShare.enabled !== 'boolean') throw bad('`screenShare.enabled` must be a boolean.');
+  if (screenShare.prompt !== undefined && typeof screenShare.prompt !== 'string') throw bad('`screenShare.prompt` must be a string.');
+  return { ...rest, legacyScreenShare: screenShare };
+}
+
+/** An agent read back from the server, with its screen share setting under `screenShare`. @param {any} agent */
+function screenShareFromWire(agent) {
+  if (!agent || typeof agent !== 'object' || agent.legacyScreenShare === undefined) return agent;
+  const { legacyScreenShare, ...rest } = agent;
+  return { ...rest, screenShare: legacyScreenShare };
+}
+
 export class Agents {
   /** @param {import('./client.js').Ctx} ctx */
   constructor(ctx) { this._ = ctx; }
@@ -59,14 +84,17 @@ export class Agents {
     this._.assertAdmin(ks, 'agents.list');
     return paginate({
       style: 'offset', pageSize: opts.pageSize,
-      fetchPage: (pager) => this._.agentic('agent/list', { filter: opts.filter || {}, pager }, ks).then((r) => r.data),
+      fetchPage: (pager) => this._.agentic('agent/list', { filter: opts.filter || {}, pager }, ks).then((r) => {
+        const page = r.data;
+        return Array.isArray(page?.objects) ? { ...page, objects: page.objects.map(screenShareFromWire) } : page;
+      }),
     });
   }
 
   /** Get one agent. READ. @param {string} agentId @param {string} ks */
   async get(agentId, ks) {
     this._.assertAdmin(ks, 'agents.get');
-    return (await this._.agentic('agent/get', { agentId }, ks)).data;
+    return screenShareFromWire((await this._.agentic('agent/get', { agentId }, ks)).data);
   }
 
   /**
@@ -74,19 +102,25 @@ export class Agents {
    * automatically, but creation is not idempotent). `intellect.id` is the intellect's
    * configId — no separate genieId is needed (the request body's `intellect`
    * only takes `intellectType`+`id`).
-   * @param {object} body {displayName,intellect:{intellectType:'genie',id},avatarIds?,adminTags?,maxConversationLength?,widgetConfig?,embedConfig?}
+   * @param {object} body {displayName,intellect:{intellectType:'genie',id},avatarIds?,adminTags?,maxConversationLength?,widgetConfig?,embedConfig?,screenShare?:{enabled?:boolean,prompt?:string}}
    * @param {string} ks
    * @param {{idempotencyKey?:string}} [opts]
    */
   async create(body, ks, opts = {}) {
     this._.assertAdmin(ks, 'agents.create');
-    return (await this._.agentic('agent/create', body, ks, { idempotencyKey: opts.idempotencyKey || uuidv4() })).data;
+    const wire = screenShareToWire(body, 'agents.create');
+    return screenShareFromWire((await this._.agentic('agent/create', wire, ks, { idempotencyKey: opts.idempotencyKey || uuidv4() })).data);
   }
 
-  /** Update an agent. WRITE — idempotent for a given body. @param {object} body {agentId,...} @param {string} ks */
+  /**
+   * Update an agent. WRITE — idempotent for a given body. `screenShare` is
+   * `{enabled?, prompt?}`, the same as on {@link Agents#create}.
+   * @param {object} body {agentId,...} @param {string} ks
+   */
   async update(body, ks) {
     this._.assertAdmin(ks, 'agents.update');
-    return (await this._.agentic('agent/update', body, ks)).data;
+    const wire = screenShareToWire(body, 'agents.update');
+    return screenShareFromWire((await this._.agentic('agent/update', wire, ks)).data);
   }
 
   /**
