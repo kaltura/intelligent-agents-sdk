@@ -44,7 +44,8 @@ const choice = browserChoice(args);
 const HEADED = choice.headed || choice.browser === 'chrome';
 const SETUP = `${choice.browser} ${HEADED ? 'headed' : 'headless'}`;
 const TAG = Date.now().toString(36);
-const MARK = `AVFLAG${TAG.toUpperCase()}`;
+// A word the avatar can speak: a made-up token sometimes gets no audio, so no reply to wait for.
+const MARK = 'pomegranate';
 
 const report = new Report({ runId, target: target.name, browser: choice.browser, headed: HEADED });
 report.data.scenarios = [];
@@ -66,7 +67,7 @@ const made = { skills: [] };
 const ev = (/** @type {import('playwright').Page} */ page, /** @type {string} */ fn, /** @type {any} */ arg) => callHook(page, fn, arg);
 const hasMark = (/** @type {string} */ text, mark = MARK) => text.replace(/\s+/g, '').includes(mark);
 const baseRules = (value) => ({ key: 'rules', label: 'Rules', headerTemplate: 'Rules:', type: 'custom', value });
-const markBlock = (condition) => ({ key: 'gate', label: 'g', headerTemplate: 'Gate rule:', type: 'custom', value: `End every reply with the token ${MARK}.`, condition });
+const markBlock = (condition) => ({ key: 'gate', label: 'g', headerTemplate: 'Gate rule:', type: 'custom', value: `If the user message contains PING, reply with exactly: Pong, ${MARK}.`, condition });
 
 /** Put exactly these prompts and skills on the agent's intellect. */
 async function configure({ prompts, skillIds = [] }) {
@@ -99,13 +100,22 @@ async function avatarTurn(/** @type {import('playwright').Page} */ page, /** @ty
 
 /**
  * Run `turns` (messages sent in order on one thread) in the avatar session, then in a plain
- * conversation. Returns the last reply of each. The avatar side retries once on a missing marker.
+ * conversation. Returns the last reply of each. The avatar side makes up to 3 attempts, each on a
+ * fresh session, until the marker shows. A turn the avatar never finishes speaking counts as an
+ * empty attempt, so a slow video render does not read as a failed condition.
  */
 async function bothSides({ context, sink, id, turns, mark = MARK }) {
-  const page = await connectAvatar(context, sink, id);
   let avatar = '';
-  for (let attempt = 0; attempt < 2 && !hasMark(avatar, mark); attempt++) for (const t of turns) avatar = await avatarTurn(page, t);
-  await ev(page, 'testDisconnect').catch(() => {});
+  for (let attempt = 0; attempt < 3 && !hasMark(avatar, mark); attempt++) {
+    const page = await connectAvatar(context, sink, id);
+    try {
+      for (const t of turns) avatar = await avatarTurn(page, t);
+    } catch (err) {
+      avatar = '';
+      report.note(`${id}: attempt ${attempt + 1} ended early`, String(/** @type {any} */ (err)?.message).slice(0, 160));
+    }
+    await ev(page, 'testDisconnect').catch(() => {});
+  }
   const conv = await kaltura.sessions.createConversationToken({ configId: agent.configId });
   let threadId;
   let plain = { text: '' };
@@ -122,15 +132,15 @@ const SCENARIOS = {
   A1: {
     name: 'prompt block gated on sys__avatar_enabled',
     async run(ctx) {
-      await configure({ prompts: [baseRules('Be terse.'), markBlock('sys__avatar_enabled')] });
-      await bothSides({ ...ctx, turns: ['Say hi.'] });
+      await configure({ prompts: [baseRules('Be terse. If the user message contains PING and no gate rule applies, reply with exactly: Pong.'), markBlock('sys__avatar_enabled')] });
+      await bothSides({ ...ctx, turns: ['PING'] });
     },
   },
   A2: {
     name: 'prompt block gated on sys__avatar_enabled and not sys__avatar_share_screen_enabled',
     async run(ctx) {
-      await configure({ prompts: [baseRules('Be terse.'), markBlock('sys__avatar_enabled and not sys__avatar_share_screen_enabled')] });
-      await bothSides({ ...ctx, turns: ['Say hi.'] });
+      await configure({ prompts: [baseRules('Be terse. If the user message contains PING and no gate rule applies, reply with exactly: Pong.'), markBlock('sys__avatar_enabled and not sys__avatar_share_screen_enabled')] });
+      await bothSides({ ...ctx, turns: ['PING'] });
     },
   },
   A3: {
@@ -138,10 +148,10 @@ const SCENARIOS = {
     async run(ctx) {
       const skill = await kaltura.skills.add({
         name: `live-verify-avatar-flag-${TAG}`, description: 'Scratch skill for scripts/live-verify-avatar-flag.mjs',
-        instructions: `If the user message contains the word PING, reply with exactly the single token ${MARK} and nothing else.`,
+        instructions: `If the user message contains the word PING, reply with exactly: Pong, ${MARK}.`,
       }, admin.ks);
       made.skills.push(skill.id);
-      await configure({ prompts: [baseRules('Be terse. If the user message contains PING and no skill applies, reply PONG.')], skillIds: [{ id: skill.id, mode: 'preloaded', condition: 'sys__avatar_enabled' }] });
+      await configure({ prompts: [baseRules('Be terse. If the user message contains PING and no skill applies, reply with exactly: Pong.')], skillIds: [{ id: skill.id, mode: 'preloaded', condition: 'sys__avatar_enabled' }] });
       await bothSides({ ...ctx, turns: ['PING'] });
     },
   },

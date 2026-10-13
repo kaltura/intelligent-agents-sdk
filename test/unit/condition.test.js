@@ -57,5 +57,7 @@ test('conditionWarnings reads escaped quotes, ignores quoted operators and stays
   const started = process.hrtime.bigint();
   conditionWarnings(`'${'\\\''.repeat(50_000)}`);
   conditionWarnings(`"${'\\"'.repeat(50_000)}`);
+  conditionWarnings('A'.repeat(50_000));
+  conditionWarnings(`a${' '.repeat(50_000)}x`);
   assert.ok(Number(process.hrtime.bigint() - started) / 1e6 < 500, 'linear time');
 });

@@ -106,7 +106,7 @@ export function conditionWarnings(value) {
   if (conditionProblem(value) !== null) return [];
   const bare = stripQuoted(/** @type {string} */ (value));
   const out = SUSPECT_FORMS.filter(([re]) => re.test(bare)).map(([, message]) => message);
-  if (/[A-Za-z_]\w*\s*[<>]=?\s*-?\d/.test(bare) && !/\bis\s+defined\b/.test(bare)) {
+  if (/\w\s*[<>]=?\s*-?\d/.test(bare) && !/\bis\s+defined\b/.test(bare)) {
     out.push('compares with < or > against a number. This blanks the turn while the name is unset or holds text. Guard it, for example "visits is defined and visits > 2"');
   }
   return out;
