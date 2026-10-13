@@ -10,7 +10,7 @@ eyebrow: Reference
 [← Back to Agent Components](/reference/api/build/)
 
 
-## Tools (api / csv / code)
+## Tools (api / csv / code / client / var)
 
 Tools are a standalone entity scoped to your whole partner account, with their own CRUD API (`/v1/tool/add|get|list|update|delete`, conversation host). They are **not** embedded in an intellect. An intellect only carries the `tool_ids` (an array of tool uuid strings) it may call.
 
@@ -59,6 +59,20 @@ The `authentication` block supports the OAuth2 authorization-code flow only (the
 
 `response_mapping`, `response_template`, and `response_chapters` are mutually exclusive. Reference secrets as `"secrets.NAME"`, never as plaintext.
 
+**Fill the request from the model's args.** `{arg}` in `request.url`, and in the string values of an object `request.body`, is replaced with the value the model passed for that arg. Headers are not filled this way.
+
+```js
+tools.api({
+  name: 'city_weather',
+  description: 'Get the weather for a city.',
+  args: { city: { prompt: 'City name', type: 'str', required: true } },
+  request: { url: 'https://api.example.com/weather?city={city}', method: 'GET' },
+  responseMapping: { temperature: 'main.temp' },
+});
+```
+
+Any other brace text in a string `url` or `body` makes the call fail at run time, so `tools.api` rejects it with `bad_placeholder`. Percent-encode braces in the url, and pass a JSON body as an object, not a string.
+
 **Security note:** an `api` tool's `request` fires server-to-server, outside the SDK's reach. The model or system prompt that led to the call is not a security boundary. Your endpoint must independently authenticate and authorize each request (validate the caller's Kaltura Session and permissions), the same way you would for any other server-to-server API call. Treat interpolated `request_vars` (client-suppliable when `allow_client_variables:true`, see [Converse](/reference/api/operate/#converse)) as untrusted input, never as an authorization claim.
 
 ### `csv` tool
@@ -85,7 +99,7 @@ Python that runs on the server. Define `def main(...)`. Each declared arg is pas
 }
 ```
 
-**You cannot create `csv` or `code` tools yourself.** `POST /v1/tool/add` returns HTTP 403 for a `csv` or `code` config. So does `/v1/tool/update` when its `config` is a `csv` or `code` config. No account setting changes this. Contact Kaltura support to have one set up. `api` and `client` tools have no such limit.
+**You cannot create `csv` or `code` tools yourself.** `POST /v1/tool/add` returns HTTP 403 for a `csv` or `code` config. So does `/v1/tool/update` when its `config` is a `csv` or `code` config. No account setting changes this. Contact Kaltura support to have one set up. `api`, `client` and `var` tools have no such limit.
 
 | Call | Result |
 |---|---|
@@ -113,6 +127,25 @@ A native function-calling tool that makes no server-side call. The model calls i
 ```
 
 `wait_for_response` (SDK: `waitForResponse`) controls whether the model's turn blocks on a real acknowledgment (ACK) from the client. **Omitting it blocks, the same as `true`.** Pass `false` explicitly for fire-and-forget dispatch. When `true`, the turn waits up to `timeout` seconds (default 30) for an ACK via `POST /assistant/tool_response` (SDK: `session.respondToTool(id, response)`).
+
+### `var` tool
+
+Sets conversation variables. The model calls it, and each arg's value is stored under the arg's own name. It makes no network call, and an admin can create it.
+
+```js
+tools.var({
+  name: 'set_plan',
+  description: 'Record the plan the user says they are on.',
+  args: { plan: { prompt: 'The plan name, lowercase', type: 'str', required: true } },
+});
+```
+
+- The variable is available to [conditions](/reference/api/build/intellect/#conditions) and prompts from the next turn of the same thread. It does not carry over to a new thread.
+- Each arg name must be an identifier. It cannot start with `sys__` or be `secrets`. At least one arg is required.
+
+### Tool `condition`
+
+Every tool type takes an optional `condition`. The model is offered the tool only while it is true. See [Conditions](/reference/api/build/intellect/#conditions).
 
 ### Client-tool gotcha
 
