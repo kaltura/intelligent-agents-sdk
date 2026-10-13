@@ -10,11 +10,19 @@
  *   4  var tool                a value set on one turn is visible to a prompt
  *                              condition on the next turn of the same thread,
  *                              and does not leak into a new thread
- *   5  tool condition          a tool with a false condition is never offered
- *   6  {arg} placeholder       the model's arg fills an api tool's url
+ *   5  tool condition          a tool with a false condition is never offered,
+ *                              the same tool with a true condition is called
+ *   6  {arg} placeholder       the model's arg fills an api tool's url and the
+ *                              string values of its object body
  *   7  shared skills           skills.list marks shared skills with partner_id 0
  *   8  doctor                  intellectConfig.audit flags a saved templated
  *                              skill condition
+ *   9  server contract         a templated condition (skill, prompt, tool) gets an
+ *                              empty reply from the server: the reason the SDK
+ *                              rejects it before the write
+ *  10  null round trip         an unset condition reads back as null, and a tool
+ *                              or skill list read from the server is accepted
+ *                              again by tools.update / setSkillIds
  *
  * Throwaway resources only (intellects, tools, one skill), removed in `finally`.
  * Model-dependent checks retry once. Credentials: see scripts/lib/target.mjs.
@@ -109,6 +117,10 @@ try {
   };
   const control = await tryTwice(() => withCondition(undefined), hasMark);
   check('3-skill-control-fires', hasMark(control), { text: control.text?.slice(0, 80) });
+  const storedSkills = (await kaltura.intellects.get(skillIntellect.id, admin)).skill_ids ?? [];
+  check('3-unset-skill-condition-reads-null', storedSkills.length === 1 && storedSkills[0].condition === null, { skill_ids: storedSkills });
+  const writeBack = await kaltura.intellectConfig.setSkillIds(skillIntellect.id, storedSkills, admin).then(() => null, (e) => e);
+  check('3-skill-ids-read-from-server-accepted-by-setSkillIds', writeBack === null, writeBack ? errOf(writeBack) : { skill_ids: storedSkills.length });
   const on = await tryTwice(() => withCondition('not sys__avatar_enabled'), hasMark);
   check('3-skill-true-condition-fires', hasMark(on), { text: on.text?.slice(0, 80) });
   const off = await withCondition('sys__avatar_enabled');
@@ -140,33 +152,48 @@ try {
   const fresh = await kaltura.converseOnce(varIntellect.id, 'Say hi.', {});
   check('4-var-does-not-leak-to-new-thread', !hasMark(fresh), { text: fresh.text?.slice(0, 80) });
 
-  // 5: a tool with a false condition is never offered
-  const gatedCfg = tools.var({
-    name: `live_verify_gated_${TAG}`,
+  // 5: a tool with a false condition is never offered; the same tool with a true condition is called
+  const modeTool = (suffix, condition) => kaltura.tools.add(tools.var({
+    name: `live_verify_${suffix}_${TAG}`,
     description: 'Switch the reply mode. Call it with the mode name the user asks for.',
     args: { au_gated: { prompt: 'Mode name, lowercase', type: 'str', required: true } },
-    condition: 'sys__avatar_enabled',
-  });
-  const gatedTool = await kaltura.tools.add(gatedCfg, admin);
-  made.tools.push(gatedTool.id);
-  const gatedIntellect = await newIntellect([baseRules('Be terse. When the user asks to switch mode, call the mode tool, then reply "done".')]);
-  await kaltura.intellectConfig.setToolIds(gatedIntellect.id, [gatedTool.id], admin);
-  const gated = await kaltura.converseOnce(gatedIntellect.id, 'Switch mode to zebra.', {});
-  check('5-false-tool-condition-hides-tool', (gated.toolCalls ?? []).length === 0, { calls: (gated.toolCalls ?? []).map((c) => c.name) });
+    condition,
+  }), admin);
+  const modeIntellect = async (tool) => {
+    const intellect = await newIntellect([baseRules('Be terse. When the user asks to switch mode, call the mode tool, then reply "done".')]);
+    await kaltura.intellectConfig.setToolIds(intellect.id, [tool.id], admin);
+    return intellect;
+  };
+  const openTool = await modeTool('open', 'not sys__avatar_enabled');
+  const gatedTool = await modeTool('gated', 'sys__avatar_enabled');
+  made.tools.push(openTool.id, gatedTool.id);
+  const openIntellect = await modeIntellect(openTool);
+  const gatedIntellect = await modeIntellect(gatedTool);
+  const called = (r) => (r.toolCalls ?? []).length > 0;
+  const open = await tryTwice(() => kaltura.converseOnce(openIntellect.id, 'Switch mode to zebra.', {}), called);
+  check('5-true-tool-condition-offers-tool', called(open), { calls: (open.toolCalls ?? []).map((c) => c.name) });
+  // The model could skip a tool by chance, so the gated tool is asked twice and must stay uncalled both times.
+  const gatedRuns = [await kaltura.converseOnce(gatedIntellect.id, 'Switch mode to zebra.', {}), await kaltura.converseOnce(gatedIntellect.id, 'Please switch the mode to zebra now.', {})];
+  check('5-false-tool-condition-hides-tool', gatedRuns.every((r) => !called(r)), { calls: gatedRuns.map((r) => (r.toolCalls ?? []).map((c) => c.name)) });
 
-  // 6: {arg} placeholder fills the url
+  // 6: {arg} placeholder fills the url and the string values of an object body.
+  // The prefixes exist only in the tool, so seeing them in the reply proves the server filled the arg
+  // and the model did not just repeat the city from the user message.
   const argTool = await kaltura.tools.add(tools.api({
     name: `live_verify_city_${TAG}`,
     description: 'Look up a city. Call it with the city name.',
     args: { city: { prompt: 'City name', type: 'str', required: true } },
-    request: { url: 'https://httpbin.org/get?c={city}', method: 'GET' },
-    responseMapping: { echoed: 'args' },
+    request: { url: `https://httpbin.org/anything?c=URL${MARK}-{city}`, method: 'POST', body: { note: `BODY${MARK}-{city}`, count: 1 } },
+    responseMapping: { from_url: 'args.c', from_body: 'json.note', count: 'json.count' },
   }), admin);
   made.tools.push(argTool.id);
   const argIntellect = await newIntellect([baseRules('Call the tool for the city asked. Then print the tool result exactly, nothing else.')]);
   await kaltura.intellectConfig.setToolIds(argIntellect.id, [argTool.id], admin);
-  const filled = await tryTwice(() => kaltura.converseOnce(argIntellect.id, 'Look up Paris.', {}), (r) => /Paris/.test(r.text ?? ''));
-  check('6-arg-placeholder-filled', /Paris/.test(filled.text ?? '') && !/\{city\}/.test(filled.text ?? ''), { text: (filled.text ?? '').replace(/\s+/g, ' ').slice(0, 200) });
+  const filledOk = (r) => (r.text ?? '').includes(`URL${MARK}-Paris`) && (r.text ?? '').includes(`BODY${MARK}-Paris`);
+  const filled = await tryTwice(() => kaltura.converseOnce(argIntellect.id, 'Look up Paris.', {}), filledOk);
+  const filledText = (filled.text ?? '').replace(/\s+/g, ' ');
+  check('6-arg-placeholder-filled-in-url', filledText.includes(`URL${MARK}-Paris`), { text: filledText.slice(0, 200) });
+  check('6-arg-placeholder-filled-in-body', filledText.includes(`BODY${MARK}-Paris`) && !/\{city\}/.test(filledText), { text: filledText.slice(0, 200) });
 
   // 7: shared skills in skills.list
   const all = await kaltura.skills.list(admin).all();
@@ -181,6 +208,60 @@ try {
   await kaltura.intellectConfig.patch(skillIntellect.id, { skill_ids: [{ id: skill.id, mode: 'preloaded', condition: '{{ sys__avatar_enabled }}' }] }, admin);
   const report = await kaltura.intellectConfig.audit(skillIntellect.id, admin);
   check('8-doctor-flags-template-condition', report.findings.some((f) => f.code === 'skill_condition_template') && !report.findings.some((f) => f.code === 'prompt_bad_condition'), { codes: report.findings.map((f) => f.code) });
+
+  // 9: what the server does with a templated condition (the reason the SDK refuses to write one).
+  // The skill intellect still holds the templated condition from step 8. A prompt condition goes through
+  // intellects.add, which does not check it. The SDK blocks a templated tool condition, so that one is
+  // posted straight to the Genie endpoint, as a client that bypasses the SDK would.
+  const emptyReply = (r) => (r.text ?? '').trim() === '' && !hasMark(r);
+  const templatedSkill = await kaltura.converseOnce(skillIntellect.id, 'PING', {});
+  check('9-server-empty-reply-for-templated-skill-condition', emptyReply(templatedSkill), { text: templatedSkill.text?.slice(0, 80) });
+  const templatedPromptIntellect = await newIntellect([
+    baseRules('Be terse.'),
+    { key: 'tp', label: 't', headerTemplate: 'T:', type: 'custom', value: `End the reply with ${MARK}.`, condition: '{{ not sys__avatar_enabled }}' },
+  ]);
+  const templatedPrompt = await kaltura.converseOnce(templatedPromptIntellect.id, 'Say hi.', {});
+  check('9-server-empty-reply-for-templated-prompt-condition', emptyReply(templatedPrompt), { text: templatedPrompt.text?.slice(0, 80) });
+  const rawTool = {
+    type: 'var', name: `live_verify_templated_${TAG}`, description: 'Switch the reply mode. Call it with the mode name the user asks for.',
+    args: { au_templated: { prompt: 'Mode name, lowercase', type: 'str', required: true } }, condition: '{{ not sys__avatar_enabled }}',
+  };
+  const rawResp = await target.fetch(`${target.genieUrl}/v1/tool/add`, {
+    method: 'POST', headers: { Authorization: `KS ${admin.ks}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ name: rawTool.name, config: rawTool }),
+  });
+  const rawBody = await rawResp.json().catch(() => ({}));
+  check('9-templated-tool-condition-posted-without-sdk', rawResp.ok && typeof rawBody.id === 'string', { status: rawResp.status });
+  if (rawBody.id) {
+    made.tools.push(rawBody.id);
+    const templatedToolIntellect = await modeIntellect(rawBody);
+    const templatedTool = await kaltura.converseOnce(templatedToolIntellect.id, 'Switch mode to zebra.', {});
+    check('9-server-empty-reply-for-templated-tool-condition', emptyReply(templatedTool) && !called(templatedTool), { text: templatedTool.text?.slice(0, 80), calls: (templatedTool.toolCalls ?? []).length });
+  }
+
+  // 10: a tool read back from the server is accepted by tools.update, and an unset condition stays null
+  const roundTrip = async (id) => {
+    const before = await kaltura.tools.get(id, admin);
+    const err = await kaltura.tools.update(id, { config: before.config }, admin).then(() => null, (e) => e);
+    const after = await kaltura.tools.get(id, admin);
+    return { before, err, after };
+  };
+  const setCond = await roundTrip(varTool.id);
+  check('10-tool-with-condition-round-trips', setCond.err === null && setCond.after.config.condition === 'not sys__avatar_enabled', { err: setCond.err && errOf(setCond.err), condition: setCond.after.config.condition });
+  const unsetCond = await roundTrip(argTool.id);
+  check('10-unset-tool-condition-reads-null-and-round-trips', unsetCond.before.config.condition === null && unsetCond.err === null && unsetCond.after.config.condition === null, { err: unsetCond.err && errOf(unsetCond.err), before: unsetCond.before.config.condition, after: unsetCond.after.config.condition });
+  // The server echoes null for every field a tool leaves unset (display_name, request.authentication,
+  // the two response shapers not chosen, ...). Each tool type must accept its own read-back.
+  const templateTool = await kaltura.tools.add(tools.api({
+    name: `live_verify_template_${TAG}`, description: 'Echo a value. Not called by this script.',
+    request: { url: 'https://httpbin.org/anything', method: 'POST', headers: { 'X-Live-Verify': TAG }, params: { q: '1' }, body: { n: 1 } },
+    responseTemplate: 'value: {{ json.n }}',
+  }), admin);
+  const clientTool = await kaltura.tools.add(tools.client({ name: `live_verify_client_${TAG}`, description: 'Client-side tool. Not called by this script.' }), admin);
+  made.tools.push(templateTool.id, clientTool.id);
+  for (const [label, id] of [['api-template', templateTool.id], ['client', clientTool.id]]) {
+    const r = await roundTrip(id);
+    check(`10-${label}-tool-read-back-accepted-by-update`, r.err === null, { err: r.err && errOf(r.err) });
+  }
 } catch (err) {
   failed = true;
   record('live-verify-authoring', false, errOf(err));

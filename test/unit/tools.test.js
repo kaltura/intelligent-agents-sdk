@@ -252,6 +252,32 @@ test('validateArgs rejects missing prompt and bad arg name; digit-start and hyph
   assert.throws(() => validateArgs({ 'has space': { prompt: 'p', type: 'str' } }), /hyphen/);
 });
 
+test('validate() accepts the nulls the server echoes for unset display_name and condition, on every tool type', () => {
+  const echoed = { display_name: null, condition: null };
+  for (const t of [api(apiCfg()), csv({ name: 'rates', description: 'lookup', csv: 'code,rate\nUSD,1.0' }), code(codeCfg()), client({ name: 'c', description: 'd' }), tools.var({ name: 'v', description: 'd', args: { mode: { prompt: 'Mode', type: 'str' } } })]) {
+    const out = validate({ ...t, ...echoed });
+    assert.equal(out.display_name, undefined, `${t.type}: null display_name is dropped`);
+    assert.equal(out.condition, undefined, `${t.type}: null condition is dropped`);
+  }
+  assert.throws(() => validate({ ...api(apiCfg()), display_name: 5 }), (e) => e.code === 'bad_request' && /displayName/.test(e.detail));
+});
+
+test('validate() accepts an api tool as the server echoes it, with null for every field left unset', () => {
+  const echoed = {
+    ...api(apiCfg()),
+    display_name: null, condition: null, args: null, variables_mapping: null, response_template: null, response_chapters: null,
+    request: { url: URL, method: 'GET', timeout: 10, headers: null, params: null, body: null, authentication: null },
+  };
+  const out = validate(echoed);
+  assert.deepEqual(out.response_mapping, { answer: 'data.value' });
+  assert.equal(out.request.authentication, undefined);
+  assert.equal(out.response_template, undefined);
+  const templated = validate({ ...echoed, response_mapping: null, response_template: 'v: {{ a }}' });
+  assert.equal(templated.response_template, 'v: {{ a }}');
+  assert.equal(templated.response_mapping, undefined);
+  assert.throws(() => validate({ ...echoed, response_mapping: null }), (e) => e.code === 'bad_request' && /response shaper/.test(e.detail));
+});
+
 test('validate() re-checks an assembled wire tool and routes by type', () => {
   const t = api(apiCfg());
   assert.deepEqual(validate(t), t); // round-trips clean

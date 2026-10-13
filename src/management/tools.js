@@ -205,7 +205,7 @@ function buildRequest(request, argNames = []) {
     if (typeof request.body === 'string') assertBraceTokens(request.body, argNames, 'request.body');
     out.body = request.body; // JSON object or raw string both legal
   }
-  if (request.authentication !== undefined) out.authentication = buildAuth(request.authentication);
+  if (request.authentication != null) out.authentication = buildAuth(request.authentication);
   return out;
 }
 
@@ -303,7 +303,7 @@ function buildShared(cfg, target) {
   const args = validateArgs(cfg.args);
   if (args) target.args = args;
   if (cfg.condition != null) target.condition = assertCondition(cfg.condition, 'tool `condition`');
-  if (cfg.displayName !== undefined) {
+  if (cfg.displayName != null) {
     if (typeof cfg.displayName !== 'string') bad('bad_request', 'tool `displayName` must be a string.');
     target.display_name = cfg.displayName;
   }
@@ -344,14 +344,14 @@ export function api(cfg) {
   buildShared(cfg, tool);
   tool.request = buildRequest(cfg.request, Object.keys(tool.args ?? {}));
 
-  const modes = ['responseMapping', 'responseTemplate', 'responseChapters'].filter((k) => cfg[k] !== undefined);
+  const modes = ['responseMapping', 'responseTemplate', 'responseChapters'].filter((k) => cfg[k] != null);
   if (modes.length === 0) bad('bad_request', 'api tool needs exactly one response shaper: responseMapping, responseTemplate, or responseChapters.');
   if (modes.length > 1) bad('bad_request', `api tool must have EXACTLY ONE of responseMapping/responseTemplate/responseChapters, got ${modes.join(' + ')}.`);
 
-  if (cfg.responseMapping !== undefined) {
+  if (cfg.responseMapping != null) {
     assertMappingPaths(cfg.responseMapping, 'responseMapping');
     tool.response_mapping = cfg.responseMapping;
-  } else if (cfg.responseTemplate !== undefined) {
+  } else if (cfg.responseTemplate != null) {
     if (typeof cfg.responseTemplate !== 'string' || !cfg.responseTemplate.length) bad('bad_request', 'responseTemplate must be a non-empty format string.');
     tool.response_template = cfg.responseTemplate;
   } else {
@@ -366,7 +366,7 @@ export function api(cfg) {
     tool.response_chapters = out;
   }
 
-  if (cfg.variablesMapping !== undefined) {
+  if (cfg.variablesMapping != null) {
     assertMappingPaths(cfg.variablesMapping, 'variablesMapping');
     tool.variables_mapping = cfg.variablesMapping;
   }
