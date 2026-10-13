@@ -77,11 +77,11 @@ POST https://genie.nvp1.ovp.kaltura.com/v1/intellect/update
 |-------|---------|
 | `key` | Any string that labels the block. Common: `goal`, `targetAudience`, `restrictedTopics`, `name` |
 | `headerTemplate` | Prepended before the value in the system prompt |
-| `type` | `"custom"` for your own instructions. `"system"` and `"knowledge"` are also accepted, and the model follows all three |
+| `type` | One of `"custom"`, `"system"` or `"knowledge"`. Use `"custom"` for your own instructions. The model follows all three |
 | `value` | Your content |
 | `condition` | Optional. The block applies only while this [condition](#conditions) is true |
 
-Call `mgmt.application.getCustomPrompts(ks)` to get the `key` and `headerTemplate` values. It returns the current schema for this block: a 5-entry array (`goal`, `targetAudience`, `restrictedTopics`, `name`, `knowledge`), each shaped as `{key, label, headerTemplate, type}` (`type` is always `"custom"`, matching the `prompts[]` block shape above).
+Call `mgmt.application.getCustomPrompts(ks)` to get the `key` and `headerTemplate` values. It returns the current schema for this block: a 5-entry array (`goal`, `targetAudience`, `restrictedTopics`, `name`, `knowledge`), each shaped as `{key, label, headerTemplate, type}` (every entry returned has `type: "custom"`; your own blocks can use any of the three `type` values above).
 
 Use this call to render a "describe your agent" form. The labels and instructions you show always match the current prompt blocks, so you do not keep hardcoded copy in sync by hand.
 
