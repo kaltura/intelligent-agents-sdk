@@ -49,3 +49,13 @@ test('conditionWarnings stays quiet on valid forms and quoted text', () => {
 test('conditionWarnings returns [] for values conditionProblem already rejects', () => {
   for (const v of ['', '{{ a AND b }}', 5, null, undefined]) assert.deepEqual(conditionWarnings(v), []);
 });
+
+test('conditionWarnings reads escaped quotes, ignores quoted operators and stays linear on hostile input', () => {
+  assert.deepEqual(conditionWarnings(`plan == 'it\\'s AND fine'`), []);
+  assert.deepEqual(conditionWarnings(`plan == "a && b" and x`), []);
+  assert.equal(conditionWarnings(`plan == 'open AND x`).length, 1, 'an unterminated quote keeps its text');
+  const started = process.hrtime.bigint();
+  conditionWarnings(`'${'\\\''.repeat(50_000)}`);
+  conditionWarnings(`"${'\\"'.repeat(50_000)}`);
+  assert.ok(Number(process.hrtime.bigint() - started) / 1e6 < 500, 'linear time');
+});

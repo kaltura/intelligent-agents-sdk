@@ -61,7 +61,25 @@ export function assertPromptConditions(prompts, where) {
   });
 }
 
-const QUOTED = /'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*"/g;
+/**
+ * `value` with every quoted string replaced by `''`. One pass, so hostile input
+ * cannot make it slow. An unterminated quote keeps its text.
+ * @param {string} value
+ */
+function stripQuoted(value) {
+  let out = '';
+  let i = 0;
+  while (i < value.length) {
+    const quote = value[i];
+    if (quote !== "'" && quote !== '"') { out += quote; i += 1; continue; }
+    let j = i + 1;
+    while (j < value.length && value[j] !== quote) j += value[j] === '\\' ? 2 : 1;
+    if (j >= value.length) { out += value.slice(i); break; }
+    out += "''";
+    i = j + 1;
+  }
+  return out;
+}
 
 /** Rows: [pattern over the expression with quoted text removed, message]. @type {Array<[RegExp, string]>} */
 const SUSPECT_FORMS = [
@@ -86,7 +104,7 @@ const SUSPECT_FORMS = [
  */
 export function conditionWarnings(value) {
   if (conditionProblem(value) !== null) return [];
-  const bare = /** @type {string} */ (value).replace(QUOTED, "''");
+  const bare = stripQuoted(/** @type {string} */ (value));
   const out = SUSPECT_FORMS.filter(([re]) => re.test(bare)).map(([, message]) => message);
   if (/[A-Za-z_]\w*\s*[<>]=?\s*-?\d/.test(bare) && !/\bis\s+defined\b/.test(bare)) {
     out.push('compares with < or > against a number. This blanks the turn while the name is unset or holds text. Guard it, for example "visits is defined and visits > 2"');
