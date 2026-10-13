@@ -14,14 +14,13 @@
  * | A1 | prompt block, `sys__avatar_enabled`                        | marker           | no marker          |
  * | A2 | prompt block, `... and not sys__avatar_share_screen_enabled` | marker         | no marker          |
  * | A3 | skill, `sys__avatar_enabled`                               | marker           | no marker          |
+ * | A4 | `var` tool, `sys__avatar_enabled`                          | tool called      | tool never called  |
  *
- * Not covered:
- * - A tool condition in an avatar session. The avatar stream shows no tool event,
- *   so a call cannot be told from a skipped one. live-verify-authoring.mjs checks
- *   tool conditions in plain conversations only.
- * - `sys__avatar_share_screen_enabled` being TRUE. It needs a live screen-share
- *   capture, which a headless run cannot start. A2 shows it is false in an avatar
- *   session that is not sharing.
+ * A4 reads the saved thread for a `tool` segment, because the avatar stream shows no tool event.
+ *
+ * Not covered: `sys__avatar_share_screen_enabled` being TRUE. It needs a live
+ * screen-share capture, which a headless run cannot start. A2 shows it is false
+ * in an avatar session that is not sharing.
  *
  * Usage
  *   node scripts/live-verify-avatar-flag.mjs                        # --env prod, AGENTIC_* vars
@@ -29,12 +28,13 @@
  *   flags: --only IDS --browser chromium|chrome|firefox|webkit --headed --out DIR --keep
  *          --agent-json PATH --dump-events
  *
- * A model-dependent check retries once. Artifacts: see live-verify-opening-phrase.mjs.
+ * A model-dependent check retries up to 3 times on fresh sessions. Artifacts: see live-verify-opening-phrase.mjs.
  */
 import {
   bootstrap, Report, mdTable, management, ensureAgent, verifyDeleted, mintPageInit, startServer,
   browserChoice, launchBrowser, contextOptions, openHarness, whepSummary, netProblems, waitFor, find, all, isOpeningSpeechId, sleep,
 } from './live-verify-kickoff-shared.mjs';
+import { tools } from '../src/management/tools.js';
 import { callHook } from './live-verify-hooks-shared.mjs';
 
 const { args, target, runId, outDir } = bootstrap(process.argv.slice(2), 'avatar-flag');
@@ -63,16 +63,17 @@ const { server, origin } = await startServer(() => mintPageInit(kaltura, agent, 
 const browser = await launchBrowser(choice);
 report.note('setup', SETUP);
 
-const made = { skills: [] };
+const made = { skills: [], tools: [] };
 const ev = (/** @type {import('playwright').Page} */ page, /** @type {string} */ fn, /** @type {any} */ arg) => callHook(page, fn, arg);
 const hasMark = (/** @type {string} */ text, mark = MARK) => text.replace(/\s+/g, '').includes(mark);
 const baseRules = (value) => ({ key: 'rules', label: 'Rules', headerTemplate: 'Rules:', type: 'custom', value });
 const markBlock = (condition) => ({ key: 'gate', label: 'g', headerTemplate: 'Gate rule:', type: 'custom', value: `If the user message contains PING, reply with exactly: Pong, ${MARK}.`, condition });
 
 /** Put exactly these prompts and skills on the agent's intellect. */
-async function configure({ prompts, skillIds = [] }) {
+async function configure({ prompts, skillIds = [], toolIds = [] }) {
   await kaltura.intellects.setPrompts(agent.configId, prompts, admin.ks, { lint: false });
   await kaltura.intellectConfig.setSkillIds(agent.configId, skillIds, admin.ks);
+  await kaltura.intellectConfig.setToolIds(agent.configId, toolIds, admin.ks);
 }
 
 /** Connect an avatar session and wait for the opening turn to end. */
@@ -155,6 +156,38 @@ const SCENARIOS = {
       await bothSides({ ...ctx, turns: ['PING'] });
     },
   },
+  A4: {
+    name: 'var tool gated on sys__avatar_enabled',
+    async run(ctx) {
+      const toolName = `live_verify_avatar_flag_${TAG}`;
+      const tool = await kaltura.tools.add(tools.var({
+        name: toolName, description: 'Switch the reply mode. Call it with the mode name the user asks for.',
+        args: { af_mode: { prompt: 'Mode name, lowercase', type: 'str', required: true } }, condition: 'sys__avatar_enabled',
+      }), admin.ks);
+      made.tools.push(tool.id);
+      await configure({ prompts: [baseRules('Be terse. When the user asks to switch mode, call the mode tool, then reply "Done".')], toolIds: [tool.id] });
+      await kaltura.intellectConfig.setCapabilities(agent.configId, { kaltura_genie_experiences: 'off' }, admin.ks);
+      // The avatar stream shows no tool event, so read the saved thread for a `tool` segment.
+      let called = false;
+      for (let attempt = 0; attempt < 3 && !called; attempt++) {
+        const page = await connectAvatar(ctx.context, ctx.sink, ctx.id);
+        // Do not wait for speech: the reply after a tool call is not always spoken. Poll the thread.
+        await ev(page, 'testSendText', 'Switch mode to zebra.');
+        const threadId = (await ev(page, 'testState'))?.threadId;
+        for (let i = 0; threadId && i < 20 && !called; i++) {
+          await sleep(3000);
+          const msgs = await kaltura.messages.list(admin.ks, { threadId }).all();
+          const segments = msgs.flatMap((m) => (m.assistant?.messages ?? []).flatMap((x) => x.content ?? []));
+          called = segments.some((seg) => seg.type === 'tool' && String(seg.content).startsWith(toolName));
+        }
+        await ev(page, 'testDisconnect').catch(() => {});
+      }
+      report.check(`${ctx.id}: avatar session offers and calls the tool`, called);
+      const conv = await kaltura.sessions.createConversationToken({ configId: agent.configId });
+      const plain = [await kaltura.converseOnce(agent.configId, 'Switch mode to zebra.', {}, conv), await kaltura.converseOnce(agent.configId, 'Please switch the mode to zebra now.', {}, conv)];
+      report.check(`${ctx.id}: plain conversation never calls the tool`, plain.every((r) => (r.toolCalls ?? []).length === 0 && (r.text ?? '').trim() !== ''), { calls: plain.map((r) => (r.toolCalls ?? []).length) });
+    },
+  },
 };
 
 try {
@@ -188,6 +221,7 @@ try {
   server.close();
   await kaltura.intellectConfig.setSkillIds(agent.configId, [], admin.ks).catch(() => {});
   for (const id of made.skills) await kaltura.skills.delete(id, admin.ks, { confirmPermanent: true }).catch((e) => report.check('cleanup: skill deleted', false, { id, message: e?.detail || e?.message }));
+  for (const id of made.tools) await kaltura.tools.delete(id, admin.ks, { confirmPermanent: true, force: true }).catch((e) => report.check('cleanup: tool deleted', false, { id, message: e?.detail || e?.message }));
   await agent.cleanup();
   if (!agent.reused && !args.keep) {
     const gone = await verifyDeleted(kaltura, admin.ks, agent);
