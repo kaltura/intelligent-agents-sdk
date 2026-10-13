@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { tools, api, csv, code, client, clientToolReadiness, validate, validateArgs, applyResponseMapping } from '../../src/management/tools.js';
+import { tools, TOOL_TYPES, api, csv, code, client, clientToolReadiness, validate, validateArgs, applyResponseMapping } from '../../src/management/tools.js';
 import { fakeFetch } from '../fakes/fetch.js';
 import { Management } from '../../src/management/client.js';
 
@@ -657,4 +657,73 @@ test('mgmt.tools.add and update reject a conversation token for code tools befor
   await assert.rejects(async () => mgmt.tools.add(code(codeCfg()), convToken), (e) => e.code === 'wrong_token_scope');
   await assert.rejects(async () => mgmt.tools.update('tool-c1', { config: code(codeCfg()) }, convToken), (e) => e.code === 'wrong_token_scope');
   assert.equal(ff.calls.length, 0);
+});
+
+// ── var tool, condition, {arg} placeholders ──
+
+const rejects = (fn, code, re) => assert.throws(fn, (e) => e.code === code && re.test(e.detail), `${code} ${re}`);
+
+test('TOOL_TYPES includes var', () => {
+  assert.deepEqual([...TOOL_TYPES], ['api', 'csv', 'code', 'client', 'var']);
+});
+
+test('tools.var builds a var tool and validate() accepts it', () => {
+  const t = tools.var({ name: 'set_mode', description: 'Set the mode.', args: { reply_mode: { prompt: 'Mode', type: 'str', required: true } }, condition: 'sys__avatar_enabled' });
+  assert.deepEqual(t, { name: 'set_mode', type: 'var', description: 'Set the mode.', args: { reply_mode: { prompt: 'Mode', type: 'str', required: true } }, condition: 'sys__avatar_enabled' });
+  assert.deepEqual(validate(t), t);
+});
+
+test('tools.var needs at least one arg and rejects reserved or non-identifier names', () => {
+  rejects(() => tools.var({ name: 'v', description: 'd' }), 'bad_request', /at least one arg/);
+  for (const name of ['sys__mode', 'secrets', '1abc', 'has-dash']) {
+    rejects(() => tools.var({ name: 'v', description: 'd', args: { [name]: { prompt: 'p', type: 'str' } } }), 'bad_request', /identifier/);
+  }
+});
+
+test('condition passes through every tool type and a template-style condition is rejected', () => {
+  const c = 'sys__avatar_enabled';
+  assert.equal(api(apiCfg({ condition: c })).condition, c);
+  assert.equal(client({ name: 'c', description: 'd', condition: c }).condition, c);
+  assert.equal(csv({ name: 'c', description: 'd', csv: 'a,b\n1,2', condition: c }).condition, c);
+  assert.equal(code({ name: 'c', description: 'd', code: 'def f():\n    return 1', condition: c }).condition, c);
+  assert.equal(validate(client({ name: 'c', description: 'd', condition: c })).condition, c);
+  for (const bad of ['{{ sys__avatar_enabled }}', '{% if x %}1{% endif %}', '']) {
+    rejects(() => api(apiCfg({ condition: bad })), 'bad_request', /condition/);
+    rejects(() => client({ name: 'c', description: 'd', condition: bad }), 'bad_request', /condition/);
+  }
+  assert.equal(api(apiCfg()).condition, undefined);
+  assert.equal(client({ name: 'c', description: 'd', condition: null }).condition, undefined, 'a stored null condition means none');
+});
+
+test('api tool: {arg} placeholders in url and body are accepted when the arg is declared', () => {
+  const args = { city: { prompt: 'City', type: 'str', required: true } };
+  const t = api(apiCfg({ args, request: { url: 'https://api.example.com/w?c={city}', method: 'post', body: { q: '{city}' } } }));
+  assert.equal(t.request.url, 'https://api.example.com/w?c={city}');
+  assert.deepEqual(t.request.body, { q: '{city}' });
+  const s = api(apiCfg({ args, request: { url: URL, method: 'post', body: 'q={city}' } }));
+  assert.equal(s.request.body, 'q={city}');
+});
+
+test('api tool: an undeclared {name} in url or string body is a bad_placeholder error', () => {
+  rejects(() => api(apiCfg({ request: { url: 'https://api.example.com/w?c={nope}', method: 'get' } })), 'bad_placeholder', /no arg named "nope"/);
+  rejects(() => api(apiCfg({ request: { url: URL, method: 'post', body: 'q={nope}' } })), 'bad_placeholder', /no arg named "nope"/);
+});
+
+test('api tool: stray braces in a string body or url are a bad_placeholder error, an object body is fine', () => {
+  rejects(() => api(apiCfg({ request: { url: URL, method: 'post', body: '{"a":1}' } })), 'bad_placeholder', /object/);
+  rejects(() => api(apiCfg({ request: { url: 'https://api.example.com/{', method: 'get' } })), 'bad_placeholder', /brace/);
+  assert.deepEqual(api(apiCfg({ request: { url: URL, method: 'post', body: { a: 1 } } })).request.body, { a: 1 });
+});
+
+test('api tool: {{ }} template spans in url and body are not treated as placeholders', () => {
+  const t = api(apiCfg({ request: { url: 'https://api.example.com/{{ secrets.TENANT }}/q', method: 'post', body: '{{ secrets.X }}' } }));
+  assert.equal(t.request.url, 'https://api.example.com/{{ secrets.TENANT }}/q');
+});
+
+test('api tool: the placeholder scan is linear on hostile input', () => {
+  for (const evil of ['{{{{'.repeat(50_000), '{{%'.repeat(50_000), '{%'.repeat(50_000)]) {
+    const t0 = Date.now();
+    assert.throws(() => api(apiCfg({ request: { url: URL, method: 'post', body: evil } })), (e) => e.code === 'bad_placeholder');
+    assert.ok(Date.now() - t0 < 1000, 'must not be polynomial in the input length');
+  }
 });

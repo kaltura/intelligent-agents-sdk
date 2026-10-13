@@ -77,8 +77,9 @@ POST https://genie.nvp1.ovp.kaltura.com/v1/intellect/update
 |-------|---------|
 | `key` | Any string that labels the block. Common: `goal`, `targetAudience`, `restrictedTopics`, `name` |
 | `headerTemplate` | Prepended before the value in the system prompt |
-| `type` | Always `"custom"` |
+| `type` | `"custom"` for your own instructions. `"system"` and `"knowledge"` are also accepted, and the model follows all three |
 | `value` | Your content |
+| `condition` | Optional. The block applies only while this [condition](#conditions) is true |
 
 Call `mgmt.application.getCustomPrompts(ks)` to get the `key` and `headerTemplate` values. It returns the current schema for this block: a 5-entry array (`goal`, `targetAudience`, `restrictedTopics`, `name`, `knowledge`), each shaped as `{key, label, headerTemplate, type}` (`type` is always `"custom"`, matching the `prompts[]` block shape above).
 
@@ -106,11 +107,31 @@ const fields = await mgmt.application.getCustomPrompts(ks);
 | `allow_client_variables` | Allow `{{vars}}` injection per request. On by default for a new intellect |
 | `knowledge_ids` | Knowledge record IDs for RAG. Create them with `POST /v1/knowledge/add` |
 | `name` / `description` / `tags` | Labels for organizing intellects |
-| `tool_ids` | Tool entity uuid references. Create and list the entities themselves via [Tools](../build/tools-and-secrets.md#tools-api--csv--code) (`mgmt.tools`), then link the ids here via `intellectConfig.setToolIds` |
-| `skill_ids` | Skill references `{ id, mode, condition? }`. `mode` is one of `SKILL_MODES` (`adhoc`, `adhoc-save`, `preloaded`); `condition` is an optional template expression over thread variables (e.g. `{{ sys__avatar_enabled }}`). Partner-level Skill CRUD lives at `mgmt.skills`; link via `intellectConfig.setSkillIds`. A skill id you cannot use is rejected with 403 `forbidden` |
+| `tool_ids` | Tool entity uuid references. Create and list the entities themselves via [Tools](../build/tools-and-secrets.md#tools-api--csv--code--client--var) (`mgmt.tools`), then link the ids here via `intellectConfig.setToolIds` |
+| `skill_ids` | Skill references `{ id, mode, condition? }`. `mode` is one of `SKILL_MODES` (`adhoc`, `adhoc-save`, `preloaded`); `condition` is an optional [condition](#conditions) (e.g. `sys__avatar_enabled`). Partner-level Skill CRUD lives at `mgmt.skills`; link via `intellectConfig.setSkillIds`. `skills.list` also returns shared skills (`partner_id: 0`) that you can link but not read with `skills.get`. A skill id you cannot use is rejected with 403 `forbidden` |
 | `mcp_servers` | MCP server configs the intellect can call. Set via `intellectConfig.setMcpServers`. See [MCP-INTEGRATIONS.md](../../MCP-INTEGRATIONS.md) |
 | `secrets` | Named secrets for tool OAuth (write-only, masked on read) |
 | `user_properties_forms` | Lead-capture form fields |
+
+### Conditions
+
+A `condition` switches a skill, a prompt block or a tool on only while it is true. It is a **bare expression** over thread variables:
+
+| Where | Set with |
+|---|---|
+| Skill | `condition` in a `skill_ids` entry |
+| Prompt block | `condition` in a `prompts[]` block |
+| Tool | `condition` in the tool config, e.g. `tools.api({ ..., condition })` |
+
+```js
+await mgmt.intellectConfig.setSkillIds(configId, [
+  { id: skill.id, mode: 'preloaded', condition: 'sys__avatar_enabled and not sys__avatar_share_screen_enabled' },
+], ks);
+```
+
+Do not wrap it in `{{ }}` or `{% %}`. The server answers a template-style condition with an empty reply and no error. The SDK rejects it with `bad_request` on write, `lintPrompts` reports `bad_condition`, and `intellectConfig.audit` flags a saved one.
+
+Variables you can use: the `sys__*` variables in [Reserved Template Variables](../operate.md#reserved-template-variables-sys__), and any variable a [`var` tool](tools-and-secrets.md#var-tool) has set earlier in the same thread.
 
 **Capabilities.** Each is `"on"` / `"off"` / `"disabled"`:
 

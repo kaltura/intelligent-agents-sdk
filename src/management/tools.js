@@ -2,21 +2,21 @@
  * Tools — custom LLM-callable tools. A Tool is a PARTNER-LEVEL entity with its
  * OWN CRUD (`/v1/tool/add|get|list|update|delete`, Genie host, admin token) —
  * it is NOT embedded in an intellect. `Tool = {id, name, config, partner_id,
- * created_at, updated_at}`; `config` is the discriminated `api`/`csv`/`code`
- * shape built below. An intellect references the tools it may call by id via
+ * created_at, updated_at}`; `config` is the discriminated `api`/`csv`/`code`/
+ * `client`/`var` shape built below. An intellect references the tools it may call by id via
  * `tool_ids: string[]` (uncapped) on `CreateIntellect`/`UpdateIntellect` — link
  * with {@link import('./intellect-config.js').IntellectConfig#setToolIds} or by
  * passing `tool_ids` straight to `intellects.create`/`update`. Mounted at
  * `mgmt.tools`.
  *
  * This file is two things: (1) a PURE builder/validator namespace (`tools.api`/
- * `csv`/`code`/`validate`/`validateArgs` + `applyResponseMapping`) that runs
+ * `csv`/`code`/`client`/`var`/`validate`/`validateArgs` + `applyResponseMapping`) that runs
  * anywhere with no transport, and (2) a `Tools` resource class bound to the
  * management Ctx for the `/v1/tool/*` CRUD wire path.
  *
  * Wire shape of a tool's `config` (snake_case on the wire; camelCase at the SDK
  * door) — this is the flat builder output below, wrapped as `Tool.config`:
- *   {type, description, name?, display_name?, add_to_history?, args?,
+ *   {type, description, name?, display_name?, add_to_history?, args?, condition?,
  *    request:{url, method, headers?, params?, body?, authentication?, timeout?},
  *    response_mapping? | response_template? | response_chapters?,
  *    variables_mapping?, csv?, code?}
@@ -29,6 +29,7 @@ import { requireConfirm } from './agents.js';
 import { paginate } from './paginate.js';
 import { KalturaError } from '../core/errors.js';
 import { ARG_TYPE_NAMES } from '../core/stream.js';
+import { assertCondition } from './condition.js';
 
 /**
  * @typedef {object} GenieToolArg
@@ -41,11 +42,12 @@ import { ARG_TYPE_NAMES } from '../core/stream.js';
 /**
  * @typedef {object} GenieToolConfig A validated, wire-ready tool (snake_case).
  * @property {string} name
- * @property {'api'|'csv'|'code'|'client'} type
+ * @property {'api'|'csv'|'code'|'client'|'var'} type
  * @property {string} description
  * @property {string} [display_name]
  * @property {boolean} [add_to_history]
  * @property {Record<string,GenieToolArg>} [args]
+ * @property {string} [condition] Bare expression over thread variables. The tool is offered to the model only while it is truthy.
  * @property {object} [request]
  * @property {object} [response_mapping]
  * @property {string} [response_template]
@@ -63,15 +65,16 @@ const NAME_RE = /^[A-Za-z0-9_-]+$/;
  * Tool `type` discriminator — the closed set the backend understands. `api`
  * calls an HTTP endpoint, `csv` looks up rows in an inline table, `code` runs
  * sandboxed Python, `client` makes NO server-side call at all — see
- * {@link client}.
+ * {@link client}, and `var` sets conversation variables from its args — see
+ * {@link varTool}.
  *
  * `code` and `csv` tools cannot be created by a customer session. `add`, and
  * `update` with a `config` of that type, reply HTTP 403 (`Tool type '<type>'
  * is unavailable by default, call support`). Contact Kaltura support to have
- * one set up. `api` and `client` tools have no such limit.
- * @type {ReadonlyArray<'api'|'csv'|'code'|'client'>}
+ * one set up. `api`, `client` and `var` tools have no such limit.
+ * @type {ReadonlyArray<'api'|'csv'|'code'|'client'|'var'>}
  */
-export const TOOL_TYPES = Object.freeze(['api', 'csv', 'code', 'client']);
+export const TOOL_TYPES = Object.freeze(['api', 'csv', 'code', 'client', 'var']);
 
 /**
  * HTTP methods an `api` tool may use (closed set; defaults to GET).
@@ -161,14 +164,18 @@ function assertMappingPaths(mapping, where) {
  * `'secrets.<name>'` REFERENCE — a plaintext client secret is rejected by
  * construction (so the plaintext-leak class is impossible; the real value lives
  * in `config.secrets`).
- * Returns the wire-ready request object. PURE.
+ * `url` and a string `body` may hold `{argName}` placeholders, which the server
+ * fills from the model's args. Any other brace text in them makes the call
+ * fail, so it is rejected here. Returns the wire-ready request object. PURE.
  * @param {object} request
+ * @param {string[]} [argNames] Names of the tool's declared args.
  * @returns {object}
  */
-function buildRequest(request) {
+function buildRequest(request, argNames = []) {
   if (!request || typeof request !== 'object' || Array.isArray(request)) bad('bad_request', 'api tool needs a `request` object {url, method?, headers?, params?, body?, authentication?, timeout?}.');
   if (typeof request.url !== 'string' || !request.url) bad('bad_request', 'api tool `request.url` is required.');
   assertHttpUrl(request.url, 'request.url');
+  assertBraceTokens(request.url, argNames, 'request.url');
 
   const method = request.method === undefined ? 'GET' : String(request.method).toUpperCase();
   // `method` is an arbitrary uppercased string until this very check proves it's one of
@@ -194,9 +201,54 @@ function buildRequest(request) {
     if (typeof request.params !== 'object' || Array.isArray(request.params)) bad('bad_request', 'api tool `request.params` must be an object.');
     out.params = request.params;
   }
-  if (request.body !== undefined) out.body = request.body; // JSON object or raw string both legal
+  if (request.body !== undefined) {
+    if (typeof request.body === 'string') assertBraceTokens(request.body, argNames, 'request.body');
+    out.body = request.body; // JSON object or raw string both legal
+  }
   if (request.authentication !== undefined) out.authentication = buildAuth(request.authentication);
   return out;
+}
+
+/**
+ * Remove `{{ ... }}` and `{% ... %}` spans. One linear pass; an unclosed opener
+ * and everything after it is kept, so the caller still sees its braces.
+ * @param {string} text
+ * @returns {string}
+ */
+function stripTemplateSpans(text) {
+  let out = '';
+  let pos = 0;
+  for (;;) {
+    const a = text.indexOf('{{', pos);
+    const b = text.indexOf('{%', pos);
+    const start = a === -1 ? b : b === -1 ? a : Math.min(a, b);
+    if (start === -1) break;
+    const end = text.indexOf(text[start + 1] === '{' ? '}}' : '%}', start + 2);
+    if (end === -1) break;
+    out += text.slice(pos, start);
+    pos = end + 2;
+  }
+  return out + text.slice(pos);
+}
+
+/**
+ * The server fills `{argName}` placeholders in an `api` tool's `request.url`
+ * and in its `request.body` (when the body is an object, each string value).
+ * Brace text that is not a declared `{argName}` fails the call at run time
+ * with a generic tool error, so a string `url` or `body` is checked here.
+ * `{{ }}` and `{% %}` template spans are left alone. PURE.
+ * @param {string} text @param {string[]} argNames @param {string} where
+ */
+function assertBraceTokens(text, argNames, where) {
+  const rest = stripTemplateSpans(text).replace(/\{([A-Za-z0-9_-]+)\}/g, (_m, name) => {
+    if (!argNames.includes(name)) {
+      bad('bad_placeholder', `${where} has {${name}}, but the tool declares no arg named "${name}". The server fills {argName} from the tool's args; declare the arg or remove the braces.`);
+    }
+    return '';
+  });
+  if (/[{}]/.test(rest)) {
+    bad('bad_placeholder', `${where} has brace text that is not an {argName} placeholder. The server treats every brace in a string url or body as a placeholder, so the call fails. Percent-encode braces in the url, and pass a JSON body as an object instead of a string.`);
+  }
 }
 
 /** @param {string} url @param {string} where */
@@ -250,6 +302,7 @@ function buildShared(cfg, target) {
   target.description = cfg.description;
   const args = validateArgs(cfg.args);
   if (args) target.args = args;
+  if (cfg.condition != null) target.condition = assertCondition(cfg.condition, 'tool `condition`');
   if (cfg.displayName !== undefined) {
     if (typeof cfg.displayName !== 'string') bad('bad_request', 'tool `displayName` must be a string.');
     target.display_name = cfg.displayName;
@@ -267,14 +320,29 @@ function buildShared(cfg, target) {
  * `variablesMapping` (optional) extracts response fields into conversation
  * variables and is dot-path-checked. PURE — returns a wire-ready
  * {@link GenieToolConfig}; throws {@link KalturaError} on bad input.
- * @param {object} cfg {name, description, request, args?, responseMapping?, responseTemplate?, responseChapters?, variablesMapping?, displayName?, addToHistory?}
+ *
+ * `{argName}` in `request.url`, and in `request.body` (each string value of an
+ * object body), is replaced with the value the model passed for that arg.
+ * Headers are NOT filled this way. Brace text in a string `url` or `body` that
+ * is not a declared `{argName}` fails the call, so it is rejected here with
+ * `bad_placeholder`: percent-encode braces in the url and pass a JSON body as
+ * an object, not a string.
+ * @param {object} cfg {name, description, request, args?, responseMapping?, responseTemplate?, responseChapters?, variablesMapping?, condition?, displayName?, addToHistory?}
+ * @example <caption>the model's `city` fills the url</caption>
+ * tools.api({
+ *   name: 'city_weather',
+ *   description: 'Get the weather for a city.',
+ *   args: { city: { prompt: 'City name', type: 'str', required: true } },
+ *   request: { url: 'https://api.example.com/weather?city={city}', method: 'GET' },
+ *   responseMapping: { temperature: 'main.temp' },
+ * });
  * @returns {GenieToolConfig}
  */
 export function api(cfg) {
   /** @type {GenieToolConfig} */
   const tool = { name: '', type: 'api', description: '' };
   buildShared(cfg, tool);
-  tool.request = buildRequest(cfg.request);
+  tool.request = buildRequest(cfg.request, Object.keys(tool.args ?? {}));
 
   const modes = ['responseMapping', 'responseTemplate', 'responseChapters'].filter((k) => cfg[k] !== undefined);
   if (modes.length === 0) bad('bad_request', 'api tool needs exactly one response shaper: responseMapping, responseTemplate, or responseChapters.');
@@ -316,7 +384,7 @@ export function api(cfg) {
  * default, call support`). Contact Kaltura support to have one set up. This
  * builder still validates and returns a wire-ready config either way; the 403
  * comes back from the network call, not from here.
- * @param {object} cfg {name, description, csv, args?, displayName?, addToHistory?}
+ * @param {object} cfg {name, description, csv, args?, condition?, displayName?, addToHistory?}
  * @returns {GenieToolConfig}
  */
 export function csv(cfg) {
@@ -340,7 +408,7 @@ export function csv(cfg) {
  * default, call support`). Contact Kaltura support to have one set up. This
  * builder still validates and returns a wire-ready config either way; the 403
  * comes back from the network call, not from here.
- * @param {object} cfg {name, description, code, args?, displayName?, addToHistory?}
+ * @param {object} cfg {name, description, code, args?, condition?, displayName?, addToHistory?}
  * @returns {GenieToolConfig}
  */
 export function code(cfg) {
@@ -432,6 +500,7 @@ export function clientToolReadiness(body) {
  * @param {number} [cfg.timeout] Seconds to wait for the ACK when `waitForResponse` is `true`;
  *   integer 1..120 (same bound as an `api` tool's `request.timeout`). Default 30 (backend
  *   default when omitted).
+ * @param {string} [cfg.condition] Bare expression over thread variables (for example `sys__avatar_enabled`). The model is offered the tool only while it is truthy.
  * @param {string} [cfg.displayName] @param {boolean} [cfg.addToHistory]
  * @returns {GenieToolConfig}
  * @example <caption>a client tool the host ACKs with a real result</caption>
@@ -465,6 +534,41 @@ export function client(cfg) {
 }
 
 /**
+ * Build a validated `var` tool. When the model calls it, each arg's value is
+ * stored as a conversation variable with the arg's own name. Later turns of
+ * the same thread can read it in a prompt or skill `condition`, or as
+ * `{{ name }}` in prompt text. The variable does not carry over to a new thread.
+ * It makes no network call and needs no admin approval, unlike `csv` and `code`.
+ *
+ * Every arg name is the variable name, so it must be an identifier
+ * (letters, digits, underscore; not starting with a digit) and must not start
+ * with `sys__` or equal `secrets`: those names belong to the platform. At
+ * least one arg is required. PURE.
+ * @param {object} cfg {name, description, args, condition?, displayName?, addToHistory?}
+ * @returns {GenieToolConfig}
+ * @example <caption>switch a persona for the rest of the thread</caption>
+ * const setMode = tools.var({
+ *   name: 'set_mode',
+ *   description: 'Switch the reply mode when the user asks for it.',
+ *   args: { reply_mode: { prompt: 'The mode name, lowercase', type: 'str', required: true } },
+ * });
+ * // A prompt block with condition: "reply_mode == 'formal'" now applies from the next turn on.
+ */
+export function varTool(cfg) {
+  /** @type {GenieToolConfig} */
+  const tool = { name: '', type: 'var', description: '' };
+  buildShared(cfg, tool);
+  const names = Object.keys(tool.args ?? {});
+  if (!names.length) bad('bad_request', 'var tool needs at least one arg: each arg names the variable it sets.');
+  for (const name of names) {
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name) || name.startsWith('sys__') || name === 'secrets') {
+      bad('bad_request', `var tool arg "${name}" is the name of the variable it sets, so it must be an identifier (letters, digits, underscore, not starting with a digit) that does not start with "sys__" and is not "secrets".`);
+    }
+  }
+  return tool;
+}
+
+/**
  * Validate an already-assembled {@link GenieToolConfig} (the snake_case wire
  * shape) — re-runs the type-appropriate builder so a hand-built or round-tripped
  * tool is checked by the same rules. PURE; returns the re-validated tool.
@@ -477,18 +581,20 @@ export function validate(tool) {
     case 'api':
       return api({
         name: tool.name, description: tool.description, request: tool.request, args: tool.args,
-        displayName: tool.display_name, addToHistory: tool.add_to_history,
+        displayName: tool.display_name, addToHistory: tool.add_to_history, condition: tool.condition,
         responseMapping: tool.response_mapping,
         responseTemplate: tool.response_template,
         responseChapters: tool.response_chapters,
         variablesMapping: tool.variables_mapping,
       });
     case 'csv':
-      return csv({ name: tool.name, description: tool.description, csv: tool.csv, args: tool.args, displayName: tool.display_name, addToHistory: tool.add_to_history });
+      return csv({ name: tool.name, description: tool.description, csv: tool.csv, args: tool.args, condition: tool.condition, displayName: tool.display_name, addToHistory: tool.add_to_history });
     case 'code':
-      return code({ name: tool.name, description: tool.description, code: tool.code, args: tool.args, displayName: tool.display_name, addToHistory: tool.add_to_history });
+      return code({ name: tool.name, description: tool.description, code: tool.code, args: tool.args, condition: tool.condition, displayName: tool.display_name, addToHistory: tool.add_to_history });
     case 'client':
-      return client({ name: tool.name, description: tool.description, args: tool.args, displayName: tool.display_name, addToHistory: tool.add_to_history, waitForResponse: tool.wait_for_response, timeout: tool.timeout });
+      return client({ name: tool.name, description: tool.description, args: tool.args, condition: tool.condition, displayName: tool.display_name, addToHistory: tool.add_to_history, waitForResponse: tool.wait_for_response, timeout: tool.timeout });
+    case 'var':
+      return varTool({ name: tool.name, description: tool.description, args: tool.args, condition: tool.condition, displayName: tool.display_name, addToHistory: tool.add_to_history });
     default:
       bad('bad_request', `tool \`type\` must be one of ${TOOL_TYPES.join(', ')}, got ${JSON.stringify(tool.type)}.`);
   }
@@ -537,7 +643,7 @@ function evalPath(root, path) {
 }
 
 /** The pure builder/validator namespace exported as `tools` (+ the closed enum sets). */
-export const tools = { api, csv, code, client, clientToolReadiness, validate, validateArgs, applyResponseMapping, TOOL_TYPES, HTTP_METHODS, ARG_TYPES };
+export const tools = { api, csv, code, client, var: varTool, clientToolReadiness, validate, validateArgs, applyResponseMapping, TOOL_TYPES, HTTP_METHODS, ARG_TYPES };
 
 /** @param {unknown} v @param {string} name */
 function requireToolId(v, name) {

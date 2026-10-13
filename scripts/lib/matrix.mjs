@@ -16,6 +16,7 @@ export const MATRIX_SCRIPTS = [
   { name: 'catalog', file: 'live-verify-catalog.mjs' },
   { name: 'tools', file: 'live-verify-tools.mjs' },
   { name: 'skills', file: 'live-verify-skills.mjs' },
+  { name: 'authoring', file: 'live-verify-authoring.mjs' },
   { name: 'knowledge', file: 'live-verify-knowledge.mjs' },
   { name: 'capabilities', file: 'live-verify-capabilities.mjs' },
   { name: 'intellects-conversations', file: 'live-verify-intellects-conversations.mjs' },

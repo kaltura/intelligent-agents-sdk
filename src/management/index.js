@@ -67,7 +67,7 @@ export { Doctor } from './doctor.js';
 // the ONE canonical page-context block (spread into setPrompts wherever an
 // intellect receives page context via setDynamicPrompt / request_vars).
 export {
-  lintPrompts, validatePromptVars, lintGlossary, lintPersonaIdentity, assembleSystemPrompt, SYS_VARS, SYS_NAMESPACES,
+  lintPrompts, validatePromptVars, lintGlossary, lintPersonaIdentity, assembleSystemPrompt, SYS_VARS, SYS_NAMESPACES, PROMPT_TYPES,
   PAGE_CONTEXT_PROMPT,
 } from './prompt-lint.js';
 // Intellect-config helpers.

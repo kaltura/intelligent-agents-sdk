@@ -327,7 +327,7 @@ export class Intellects {
    * `warnings` is present ONLY when non-empty.
    * @param {number} configId @param {string} ks (admin)
    * @param {{requestVars?:Record<string,unknown>, draftPrompts?:Array<object>, draftBaseDirective?:string, draftGlossary?:string}} [opts]
-   * @returns {Promise<{text:string, skippedKeys:string[], usedDefaultDirective:boolean, unresolvedVariables:string[], warnings?:Array<{severity:string,code:string,message:string}>, _meta:{renderer:string, rendererBasis:string}&object}>}
+   * @returns {Promise<{text:string, skippedKeys:string[], conditionalKeys:string[], usedDefaultDirective:boolean, unresolvedVariables:string[], warnings?:Array<{severity:string,code:string,message:string}>, _meta:{renderer:string, rendererBasis:string}&object}>}
    */
   async previewPrompt(configId, ks, opts = {}) {
     this._.assertAdmin(ks, 'intellects.previewPrompt');

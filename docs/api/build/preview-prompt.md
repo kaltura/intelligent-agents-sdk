@@ -15,7 +15,10 @@ const p = await mgmt.intellects.previewPrompt(configId, adminKs, {
 p.text;                // the assembled system prompt, `{{var}}` interpolated
 p.unresolvedVariables; // names left literal because no value was supplied
 p.warnings;             // present ONLY when a reserved variable is unresolved (see below)
+p.conditionalKeys;     // keys of blocks that carry a `condition`
 ```
+
+The preview does not evaluate [conditions](intellect.md#conditions). Every non-empty block is rendered, and `conditionalKeys` lists the ones that apply live only while their condition is true.
 
 It is **not byte-exact** with the live prompt. Blocks the server adds at run time are not included. The `sys__*` values you pass via `requestVars` only *simulate* what the server sets per turn. They are not a live read.
 

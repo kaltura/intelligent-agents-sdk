@@ -53,6 +53,7 @@ Example: `deck-presenter.html`
 | Call the user's own API | `/guides/external-api-integrations/` |
 | Forms and structured data | `/guides/structured-data-forms/` |
 | Personalized greetings | `/guides/dynamic-data-injection/` |
+| Turn skills, prompts or tools on by state, or let the agent set a variable | `/reference/api/build/intellect/` and `/reference/api/build/tools-and-secrets/` |
 | Widgets in the conversation | `/reference/genui-reference/` |
 | Lifecycle actions and email | `/guides/lifecycle-recipes/` |
 | Security review | `/reference/security/` |
