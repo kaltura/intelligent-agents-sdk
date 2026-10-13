@@ -21,7 +21,7 @@
  * A4 reads the saved thread for a `tool` segment, because the avatar stream shows no tool event.
  *
  * A5 and A6 run only with `--share` or `--only`: they wait on a background vision call that sometimes does not land,
- * so they are not part of the default run that CI uses. They enable `legacyScreenShare` on the agent, ask PING,
+ * so they are not part of the default run that CI uses. They enable `screenShare` on the agent, ask PING,
  * simulate a share, then ask again. The page emits `screenShareStarted` on the session socket (the SDK has no public method for it) and sends one still with
  * `sendScreenShot()`. No real screen capture is involved, so they run headless.
  *
@@ -167,11 +167,11 @@ function sendStill(/** @type {import('playwright').Page} */ page, /** @type {boo
  * Enable screen share on the agent, then ask PING before and after a share runs in an avatar
  * session. The share is simulated: the page emits `screenShareStarted` on the session socket (the
  * SDK has no public method for it) and sends one still with `sendScreenShot()`. The agent's
- * `legacyScreenShare` is restored at the end. Up to 3 attempts, each on a fresh session.
+ * `screenShare` is restored at the end. Up to 3 attempts, each on a fresh session.
  */
 async function sharing({ context, sink, id }, { condition, before, after }) {
-  const previous = (await kaltura.agents.get(agent.agentId, admin.ks))?.legacyScreenShare ?? { enabled: false };
-  await kaltura.agents.update({ agentId: agent.agentId, legacyScreenShare: { enabled: true, prompt: 'Describe this screen in one short sentence.' } }, admin.ks);
+  const previous = (await kaltura.agents.get(agent.agentId, admin.ks))?.screenShare ?? { enabled: false };
+  await kaltura.agents.update({ agentId: agent.agentId, screenShare: { enabled: true, prompt: 'Describe this screen in one short sentence.' } }, admin.ks);
   try {
     await configure({ prompts: [baseRules('Be terse. If the user message contains PING and no gate rule applies, reply with exactly: Pong.'), markBlock(condition)] });
     let seen = { before: null, after: null };
@@ -198,7 +198,7 @@ async function sharing({ context, sink, id }, { condition, before, after }) {
     report.check(`${id}: marker ${before ? 'present' : 'absent'} before the share`, seen.before === before, seen);
     report.check(`${id}: marker ${after ? 'present' : 'absent'} after the share`, seen.after === after, seen);
   } finally {
-    await kaltura.agents.update({ agentId: agent.agentId, legacyScreenShare: previous }, admin.ks).catch((e) => report.check('cleanup: legacyScreenShare restored', false, { message: e?.detail || e?.message }));
+    await kaltura.agents.update({ agentId: agent.agentId, screenShare: previous }, admin.ks).catch((e) => report.check('cleanup: screenShare restored', false, { message: e?.detail || e?.message }));
   }
 }
 
@@ -267,7 +267,7 @@ const SCENARIOS = {
     },
   },
   A5: {
-    name: 'sys__avatar_share_screen_enabled flips to true once a screen share runs (agent legacyScreenShare enabled)',
+    name: 'sys__avatar_share_screen_enabled flips to true once a screen share runs (agent screenShare enabled)',
     async run(ctx) {
       await sharing(ctx, { condition: 'sys__avatar_share_screen_enabled', before: false, after: true });
     },

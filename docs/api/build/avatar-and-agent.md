@@ -95,7 +95,7 @@ POST https://api.avatar.us.kaltura.ai/v1/agent/create
 | `avatarIds` | Optional. Omit for a headless text-only agent |
 | `maxConversationLength` | Seconds. Omit to use the default |
 | `widgetConfig` / `embedConfig` | Optional config objects for the hosted widget and embed. Omit them unless you customize widget or embed behavior |
-| `legacyScreenShare` | Optional `{enabled, prompt}`. Set `enabled: true` and a `prompt` that says how to describe the shared screen to let an avatar session share its screen. `mgmt.agents.update` changes it later. The `sys__avatar_share_screen_enabled` variable is true only while a share runs |
+| `screenShare` | Optional `{enabled, prompt}`. Set `enabled: true` and a `prompt` that says how to describe the shared screen to let an avatar session share its screen. `mgmt.agents.update` changes it later. The `sys__avatar_share_screen_enabled` variable is true only while a share runs |
 
 Returns `agentId` (UUID). **Save this.**
 
