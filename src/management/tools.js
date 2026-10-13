@@ -209,7 +209,27 @@ function buildRequest(request, argNames = []) {
   return out;
 }
 
-const TEMPLATE_SPAN = /\{\{[\s\S]*?\}\}|\{%[\s\S]*?%\}/g;
+/**
+ * Remove `{{ ... }}` and `{% ... %}` spans. One linear pass; an unclosed opener
+ * and everything after it is kept, so the caller still sees its braces.
+ * @param {string} text
+ * @returns {string}
+ */
+function stripTemplateSpans(text) {
+  let out = '';
+  let pos = 0;
+  for (;;) {
+    const a = text.indexOf('{{', pos);
+    const b = text.indexOf('{%', pos);
+    const start = a === -1 ? b : b === -1 ? a : Math.min(a, b);
+    if (start === -1) break;
+    const end = text.indexOf(text[start + 1] === '{' ? '}}' : '%}', start + 2);
+    if (end === -1) break;
+    out += text.slice(pos, start);
+    pos = end + 2;
+  }
+  return out + text.slice(pos);
+}
 
 /**
  * The server fills `{argName}` placeholders in an `api` tool's `request.url`
@@ -220,7 +240,7 @@ const TEMPLATE_SPAN = /\{\{[\s\S]*?\}\}|\{%[\s\S]*?%\}/g;
  * @param {string} text @param {string[]} argNames @param {string} where
  */
 function assertBraceTokens(text, argNames, where) {
-  const rest = text.replace(TEMPLATE_SPAN, '').replace(/\{([A-Za-z0-9_-]+)\}/g, (_m, name) => {
+  const rest = stripTemplateSpans(text).replace(/\{([A-Za-z0-9_-]+)\}/g, (_m, name) => {
     if (!argNames.includes(name)) {
       bad('bad_placeholder', `${where} has {${name}}, but the tool declares no arg named "${name}". The server fills {argName} from the tool's args; declare the arg or remove the braces.`);
     }

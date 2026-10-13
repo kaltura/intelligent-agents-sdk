@@ -719,3 +719,11 @@ test('api tool: {{ }} template spans in url and body are not treated as placehol
   const t = api(apiCfg({ request: { url: 'https://api.example.com/{{ secrets.TENANT }}/q', method: 'post', body: '{{ secrets.X }}' } }));
   assert.equal(t.request.url, 'https://api.example.com/{{ secrets.TENANT }}/q');
 });
+
+test('api tool: the placeholder scan is linear on hostile input', () => {
+  for (const evil of ['{{{{'.repeat(50_000), '{{%'.repeat(50_000), '{%'.repeat(50_000)]) {
+    const t0 = Date.now();
+    assert.throws(() => api(apiCfg({ request: { url: URL, method: 'post', body: evil } })), (e) => e.code === 'bad_placeholder');
+    assert.ok(Date.now() - t0 < 1000, 'must not be polynomial in the input length');
+  }
+});
