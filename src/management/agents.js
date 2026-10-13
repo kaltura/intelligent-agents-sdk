@@ -74,7 +74,7 @@ export class Agents {
    * automatically, but creation is not idempotent). `intellect.id` is the intellect's
    * configId — no separate genieId is needed (the request body's `intellect`
    * only takes `intellectType`+`id`).
-   * @param {object} body {displayName,intellect:{intellectType:'genie',id},avatarIds?,adminTags?,maxConversationLength?,widgetConfig?,embedConfig?}
+   * @param {object} body {displayName,intellect:{intellectType:'genie',id},avatarIds?,adminTags?,maxConversationLength?,widgetConfig?,embedConfig?,legacyScreenShare?:{enabled?:boolean,prompt?:string}}
    * @param {string} ks
    * @param {{idempotencyKey?:string}} [opts]
    */

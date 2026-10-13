@@ -15,17 +15,20 @@
  * | A2 | prompt block, `... and not sys__avatar_share_screen_enabled` | marker         | no marker          |
  * | A3 | skill, `sys__avatar_enabled`                               | marker           | no marker          |
  * | A4 | `var` tool, `sys__avatar_enabled`                          | tool called      | tool never called  |
+ * | A5 | prompt block, `sys__avatar_share_screen_enabled`           | marker after a share | not run        |
+ * | A6 | prompt block, `... and not sys__avatar_share_screen_enabled` | no marker after a share | not run  |
  *
  * A4 reads the saved thread for a `tool` segment, because the avatar stream shows no tool event.
  *
- * Not covered: `sys__avatar_share_screen_enabled` being TRUE. It needs a live
- * screen-share capture, which a headless run cannot start. A2 shows it is false
- * in an avatar session that is not sharing.
+ * A5 and A6 run only with `--share` or `--only`: they wait on a background vision call that sometimes does not land,
+ * so they are not part of the default run that CI uses. They enable `legacyScreenShare` on the agent, ask PING,
+ * simulate a share, then ask again. The page emits `screenShareStarted` on the session socket (the SDK has no public method for it) and sends one still with
+ * `sendScreenShot()`. No real screen capture is involved, so they run headless.
  *
  * Usage
  *   node scripts/live-verify-avatar-flag.mjs                        # --env prod, AGENTIC_* vars
  *   node scripts/live-verify-avatar-flag.mjs --env nvq2 --only A1,A3
- *   flags: --only IDS --browser chromium|chrome|firefox|webkit --headed --out DIR --keep
+ *   flags: --only IDS --share --browser chromium|chrome|firefox|webkit --headed --out DIR --keep
  *          --agent-json PATH --dump-events
  *
  * A model-dependent check retries up to 3 times on fresh sessions. Artifacts: see live-verify-opening-phrase.mjs.
@@ -39,6 +42,8 @@ import { callHook } from './live-verify-hooks-shared.mjs';
 
 const { args, target, runId, outDir } = bootstrap(process.argv.slice(2), 'avatar-flag');
 const ONLY = typeof args.only === 'string' ? new Set(args.only.split(',').map((s) => s.trim().toUpperCase())) : null;
+// A5 and A6 depend on a background vision call that sometimes does not land, so they run only on request.
+const SHARE_ONLY = new Set(['A5', 'A6']);
 const REPLY_TIMEOUT = 60_000;
 const choice = browserChoice(args);
 const HEADED = choice.headed || choice.browser === 'chrome';
@@ -129,6 +134,74 @@ async function bothSides({ context, sink, id, turns, mark = MARK }) {
   report.check(`${id}: plain conversation reply has no marker`, !hasMark(plain.text ?? '', mark), { reply: (plain.text ?? '').slice(0, 120) });
 }
 
+/**
+ * Send `text` in the avatar session and return its reply from the saved thread. The spoken reply
+ * does not always finish when screen share is on, so this reads what the server stored instead.
+ * `known` is how many replies the thread already holds.
+ */
+async function savedReply(/** @type {import('playwright').Page} */ page, /** @type {string} */ text, known = 0) {
+  await ev(page, 'testSendText', text);
+  const threadId = (await ev(page, 'testState'))?.threadId;
+  for (let i = 0; threadId && i < 25; i++) {
+    await sleep(3000);
+    const msgs = await kaltura.messages.list(admin.ks, { threadId }).all();
+    const replies = msgs.flatMap((m) => (m.assistant?.messages ?? []).flatMap((x) => x.content ?? [])).filter((seg) => seg.type === 'avatar' && !/^\s*Hello there/.test(String(seg.content))).map((seg) => String(seg.content));
+    if (replies.length > known) return replies[known];
+  }
+  return '';
+}
+
+/** Send one still from the page. `start` also emits `screenShareStarted` first. Returns `sent` or an error code. */
+function sendStill(/** @type {import('playwright').Page} */ page, /** @type {boolean} */ start) {
+  return page.evaluate(async (begin) => {
+    const t = /** @type {any} */ (globalThis).session.transport ?? /** @type {any} */ (globalThis).session;
+    const c = document.createElement('canvas'); c.width = 640; c.height = 360;
+    const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, 640, 360); g.fillStyle = '#000'; g.font = '48px sans-serif'; g.fillText('INVOICE 4711', 40, 180);
+    const blob = await new Promise((r) => c.toBlob(r, 'image/png'));
+    if (begin) { t._socket.emit('screenShareStarted', {}); await new Promise((r) => setTimeout(r, 1000)); }
+    try { t.sendScreenShot(new Uint8Array(await blob.arrayBuffer())); return 'sent'; } catch (e) { return String(e?.code ?? e?.message); }
+  }, start);
+}
+
+/**
+ * Enable screen share on the agent, then ask PING before and after a share runs in an avatar
+ * session. The share is simulated: the page emits `screenShareStarted` on the session socket (the
+ * SDK has no public method for it) and sends one still with `sendScreenShot()`. The agent's
+ * `legacyScreenShare` is restored at the end. Up to 3 attempts, each on a fresh session.
+ */
+async function sharing({ context, sink, id }, { condition, before, after }) {
+  const previous = (await kaltura.agents.get(agent.agentId, admin.ks))?.legacyScreenShare ?? { enabled: false };
+  await kaltura.agents.update({ agentId: agent.agentId, legacyScreenShare: { enabled: true, prompt: 'Describe this screen in one short sentence.' } }, admin.ks);
+  try {
+    await configure({ prompts: [baseRules('Be terse. If the user message contains PING and no gate rule applies, reply with exactly: Pong.'), markBlock(condition)] });
+    let seen = { before: null, after: null };
+    for (let attempt = 0; attempt < 3 && !(seen.before === before && seen.after === after); attempt++) {
+      const page = await connectAvatar(context, sink, id);
+      try {
+        const first = await savedReply(page, 'PING');
+        const shot = await sendStill(page, true);
+        report.check(`${id}: sendScreenShot() accepted once screen share is enabled on the agent`, shot === 'sent', { shot });
+        // The still is analysed in the background. Send it again and ask again until the flag changes, up to 4 times.
+        let second = '';
+        for (let n = 1; n <= 4 && (!second || hasMark(second) !== after); n++) {
+          await sleep(5000);
+          if (n > 1) await sendStill(page, false);
+          second = await savedReply(page, 'PING', n);
+        }
+        seen = { before: first ? hasMark(first) : null, after: second ? hasMark(second) : null };
+        report.note(`${id}: attempt ${attempt + 1}`, { first: first.slice(0, 60), second: second.slice(0, 60) });
+      } catch (err) {
+        report.note(`${id}: attempt ${attempt + 1} ended early`, String(/** @type {any} */ (err)?.message).slice(0, 160));
+      }
+      await ev(page, 'testDisconnect').catch(() => {});
+    }
+    report.check(`${id}: marker ${before ? 'present' : 'absent'} before the share`, seen.before === before, seen);
+    report.check(`${id}: marker ${after ? 'present' : 'absent'} after the share`, seen.after === after, seen);
+  } finally {
+    await kaltura.agents.update({ agentId: agent.agentId, legacyScreenShare: previous }, admin.ks).catch((e) => report.check('cleanup: legacyScreenShare restored', false, { message: e?.detail || e?.message }));
+  }
+}
+
 const SCENARIOS = {
   A1: {
     name: 'prompt block gated on sys__avatar_enabled',
@@ -166,33 +239,50 @@ const SCENARIOS = {
       }), admin.ks);
       made.tools.push(tool.id);
       await configure({ prompts: [baseRules('Be terse. When the user asks to switch mode, call the mode tool, then reply "Done".')], toolIds: [tool.id] });
+      const priorExperiences = (await kaltura.intellects.get(agent.configId, admin.ks)).capabilities?.kaltura_genie_experiences;
       await kaltura.intellectConfig.setCapabilities(agent.configId, { kaltura_genie_experiences: 'off' }, admin.ks);
-      // The avatar stream shows no tool event, so read the saved thread for a `tool` segment.
-      let called = false;
-      for (let attempt = 0; attempt < 3 && !called; attempt++) {
-        const page = await connectAvatar(ctx.context, ctx.sink, ctx.id);
-        // Do not wait for speech: the reply after a tool call is not always spoken. Poll the thread.
-        await ev(page, 'testSendText', 'Switch mode to zebra.');
-        const threadId = (await ev(page, 'testState'))?.threadId;
-        for (let i = 0; threadId && i < 20 && !called; i++) {
-          await sleep(3000);
-          const msgs = await kaltura.messages.list(admin.ks, { threadId }).all();
-          const segments = msgs.flatMap((m) => (m.assistant?.messages ?? []).flatMap((x) => x.content ?? []));
-          called = segments.some((seg) => seg.type === 'tool' && String(seg.content).startsWith(toolName));
+      try {
+        // The avatar stream shows no tool event, so read the saved thread for a `tool` segment.
+        let called = false;
+        for (let attempt = 0; attempt < 3 && !called; attempt++) {
+          const page = await connectAvatar(ctx.context, ctx.sink, ctx.id);
+          // Do not wait for speech: the reply after a tool call is not always spoken. Poll the thread.
+          await ev(page, 'testSendText', 'Switch mode to zebra.');
+          const threadId = (await ev(page, 'testState'))?.threadId;
+          for (let i = 0; threadId && i < 20 && !called; i++) {
+            await sleep(3000);
+            const msgs = await kaltura.messages.list(admin.ks, { threadId }).all();
+            const segments = msgs.flatMap((m) => (m.assistant?.messages ?? []).flatMap((x) => x.content ?? []));
+            called = segments.some((seg) => seg.type === 'tool' && String(seg.content).startsWith(toolName));
+          }
+          await ev(page, 'testDisconnect').catch(() => {});
         }
-        await ev(page, 'testDisconnect').catch(() => {});
+        report.check(`${ctx.id}: avatar session offers and calls the tool`, called);
+        const conv = await kaltura.sessions.createConversationToken({ configId: agent.configId });
+        const plain = [await kaltura.converseOnce(agent.configId, 'Switch mode to zebra.', {}, conv), await kaltura.converseOnce(agent.configId, 'Please switch the mode to zebra now.', {}, conv)];
+        report.check(`${ctx.id}: plain conversation never calls the tool`, plain.every((r) => (r.toolCalls ?? []).length === 0 && (r.text ?? '').trim() !== ''), { calls: plain.map((r) => (r.toolCalls ?? []).length) });
+      } finally {
+        await kaltura.intellectConfig.setCapabilities(agent.configId, { kaltura_genie_experiences: priorExperiences ?? 'on' }, admin.ks).catch(() => {});
       }
-      report.check(`${ctx.id}: avatar session offers and calls the tool`, called);
-      const conv = await kaltura.sessions.createConversationToken({ configId: agent.configId });
-      const plain = [await kaltura.converseOnce(agent.configId, 'Switch mode to zebra.', {}, conv), await kaltura.converseOnce(agent.configId, 'Please switch the mode to zebra now.', {}, conv)];
-      report.check(`${ctx.id}: plain conversation never calls the tool`, plain.every((r) => (r.toolCalls ?? []).length === 0 && (r.text ?? '').trim() !== ''), { calls: plain.map((r) => (r.toolCalls ?? []).length) });
+    },
+  },
+  A5: {
+    name: 'sys__avatar_share_screen_enabled flips to true once a screen share runs (agent legacyScreenShare enabled)',
+    async run(ctx) {
+      await sharing(ctx, { condition: 'sys__avatar_share_screen_enabled', before: false, after: true });
+    },
+  },
+  A6: {
+    name: 'sys__avatar_enabled and not sys__avatar_share_screen_enabled flips to false once a screen share runs',
+    async run(ctx) {
+      await sharing(ctx, { condition: 'sys__avatar_enabled and not sys__avatar_share_screen_enabled', before: true, after: false });
     },
   },
 };
 
 try {
   for (const [id, sc] of Object.entries(SCENARIOS)) {
-    if (ONLY && !ONLY.has(id)) continue;
+    if (ONLY ? !ONLY.has(id) : SHARE_ONLY.has(id) && !args.share) continue;
     console.log(`\n== ${id}: ${sc.name}`);
     const t0 = Date.now();
     const sink = { pageErrors: [], pages: [], network: [] };
