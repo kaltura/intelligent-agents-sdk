@@ -1395,6 +1395,23 @@ html.nova-live .nova-widget:not(.dock-mode):not(.drawer-mode) .nova-figure {
   display: flex;
 }
 
+/* Shown on the docked bubble only while the visitor shares their screen. */
+.nova-dock-share {
+  display: none;
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 36px;
+  height: 36px;
+  z-index: 5;
+  background: var(--card-bg);
+  color: #d93025;
+}
+
+.nova-widget.dock-mode.is-sharing .nova-dock-share {
+  display: flex;
+}
+
 .nova-input-row {
   display: flex;
   align-items: center;

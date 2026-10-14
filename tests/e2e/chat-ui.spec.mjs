@@ -30,6 +30,7 @@ test('nova widget ships the chat-mode controls in their at-rest state', async ({
   await expect(share).toBeHidden();
   await expect(share).toBeDisabled();
   await expect(share).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.locator('#nova-dock-share')).toBeHidden();
 });
 
 test('chat-start affordance is a sibling of the placeholder, not nested in it', async ({ page }) => {

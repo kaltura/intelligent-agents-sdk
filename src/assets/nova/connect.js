@@ -113,6 +113,7 @@ const els = {
   mute: document.getElementById('nova-mute'),
   share: document.getElementById('nova-share'),
   shareIcon: document.getElementById('nova-share-icon'),
+  dockShare: document.getElementById('nova-dock-share'),
   muteIcon: document.getElementById('nova-mute-icon'),
   mode: document.getElementById('nova-mode'),
   modeIcon: document.getElementById('nova-mode-icon'),
@@ -334,8 +335,7 @@ function keyAvatar(transport) {
 function wireTransport(transport, mode) {
   els.widget.classList.toggle('chat-mode', mode === 'chat');
   els.mute.disabled = mode !== 'avatar';
-  // Screen share is a video-mode feature, and only where the browser can capture.
-  els.share.disabled = mode !== 'avatar' || !navigator.mediaDevices?.getDisplayMedia;
+  els.share.disabled = true; // syncShare() turns it on once the transport is connected
   showShareState(false);
   // Chat renders as the full-height side drawer; video renders in the hero
   // card / corner dock. Which buttons show in each mode is pure CSS keyed on
@@ -507,6 +507,7 @@ async function connect(pendingPrompt, mode = 'avatar') {
     els.end.disabled = false;
     els.newConvo.disabled = false;
     els.close.disabled = false;
+    syncShare();
     setStatus('Connected — ask Nova anything about the SDK.');
     if (kickoff && mode === 'chat') showThinking();
   } catch (e) {
@@ -548,6 +549,7 @@ async function toggleMode() {
     if (target === 'avatar') await ensureSocketIo();
     await session.switchMode(target);
     els.mode.disabled = false;
+    syncShare();
   } catch (e) {
     // A failed switch is terminal: the facade lands in `failed` and the old
     // transport is already gone. disconnect() → 'ended' → resetUi().
@@ -572,10 +574,16 @@ function toggleMute() {
   }
 }
 
+/** Screen share needs a connected video session and a browser that can capture. */
+function syncShare() {
+  els.share.disabled = !(session?.state === 'connected' && session.mode === 'avatar' && navigator.mediaDevices?.getDisplayMedia);
+}
+
 /** Icon and label for the share button; the SDK's `screenShareChanged` drives it. */
 function showShareState(active) {
   els.shareIcon.textContent = active ? 'stop_screen_share' : 'screen_share';
   els.share.setAttribute('aria-pressed', String(active));
+  els.widget.classList.toggle('is-sharing', active);
   const label = active ? 'Stop sharing your screen' : 'Share your screen with Nova';
   els.share.setAttribute('aria-label', label);
   els.share.title = label;
@@ -668,6 +676,7 @@ els.dockChat?.addEventListener('click', () => {
 });
 els.mute.addEventListener('click', toggleMute);
 els.share.addEventListener('click', toggleShare);
+els.dockShare?.addEventListener('click', toggleShare);
 // Chat mode's camera button and video mode's hang-up are the same action
 // seen from either side: switchMode() on the same thread. Hanging up video
 // doesn't end the conversation — it continues in the chat drawer; only the
