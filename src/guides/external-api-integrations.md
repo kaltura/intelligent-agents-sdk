@@ -174,7 +174,7 @@ Two argument rules apply to every `api` tool:
 - Percent-encode any value you put in a URL (`@` as `%40`, `+` as `%2B`, `/` as `%2F`). The recipe prompts already tell the agent to do this for the upsert key.
 - Mark an arg `required` when the call cannot work without it. The recipe prompts ask the agent to send an empty string for optional args. Do the same in your own tools.
 
-In a tool, write `{Name}` for an arg in the URL or body, and `{{secrets.NAME}}` or `{{ sys__thread_id }}` for secrets and request variables. Headers accept secrets and request variables only, not args.
+Placeholder rules for args: [Tools and Secrets](/reference/api/build/tools-and-secrets/#api-tool). Headers take `{{secrets.NAME}}` and request variables such as `{{ sys__thread_id }}`.
 
 #### Access tokens
 
@@ -225,7 +225,7 @@ Use Munchkin to get a lead into Marketo with no secret management. Use the REST 
 
 Each is a plain `api` tool with the same three steps:
 
-- **Airtable.** A personal access token as a `Bearer` header. `POST` to `https://api.airtable.com/v0/{baseId}/{tableName}` with `body: {fields: {...}}`.
+- **Airtable.** A personal access token as a `Bearer` header. `POST` to `https://api.airtable.com/v0/{baseId}/{tableName}` with `body: {fields: {...}}`. Declare `baseId` and `tableName` as tool args, because the tool fills `{baseId}` and `{tableName}` in the url from declared args.
 - **Google Sheets.** The Sheets API requires OAuth2. Viewer consent fits the `authentication` block. A service account does not.
 - **Google Forms.** Forms has no lead-write REST endpoint. Use a `client` tool that opens a pre-filled Forms URL (`viewform?usp=pp_url&entry.<id>=<value>`) for the viewer. This is a UX handoff, not a server-side write.
 - **Any other REST API.** A static secret in the `Authorization` header, or the OAuth2 block for the authorization-code flow.

@@ -203,9 +203,8 @@ A rule can be valid when you save it and still do nothing later. An insight sett
 ```js
 const report = await mgmt.lifecycle.audit(ks, { agentIds: ['<agent-uuid>'] }); // agentIds is optional
 // { findings: [{ severity, code, ruleId, message, fix }], summary: { error, warn, info }, checked: { rules, ... }, skipped: [] }
+// agentIds limits the check to those agents and the rules that run for them. Rules with no agent scope are always included.
 ```
-
-`agentIds` limits the check to those agents and the rules that run for them. Rules with no agent scope are always included.
 
 | Code | Severity | Meaning |
 |---|---|---|
@@ -223,9 +222,7 @@ const report = await mgmt.lifecycle.audit(ks, { agentIds: ['<agent-uuid>'] }); /
 | `dtc_without_forms` | warn | `triggerDtcKai` on an agent whose intellect has no `user_properties_forms` |
 | `rule_disabled` | info | The rule is not active. It gets no other finding |
 
-The key checks (`changed_keys_unproduced`, `template_tokens_unproduced`) are skipped for agents covered by an active `triggerDtcKai` rule, because the keys it writes are not documented.
-
-Templates live on the Messaging host. If the target has none, the template checks are skipped and the report says `skipped: ['templates']`.
+The key checks (`changed_keys_unproduced`, `template_tokens_unproduced`) are skipped for agents covered by an active `triggerDtcKai` rule, because the keys it writes are not documented. Templates live on the Messaging host. If the target has none, the template checks are skipped and the report says `skipped: ['templates']`.
 
 `mgmt.doctor(ks, opts?)` runs the same check, then audits the intellect of each agent with `mgmt.intellectConfig.audit(configId, ks)`. It also reports `orphan_insight_setting` and `orphan_email_template` (both `info`) for entities no rule uses. It skips the orphan checks when you pass `agentIds`.
 
@@ -235,17 +232,20 @@ Templates live on the Messaging host. If the target has none, the template check
 | `invalid_user_properties_forms` | error | The forms fail the same validation `setUserPropertiesForms` applies |
 | `secret_ref_unresolved` | error | `{{secrets.NAME}}` names a secret the intellect does not have |
 | `secret_ref_bad_prefix` | error | `{{variables.secrets.NAME}}` renders empty. Write `{{secrets.NAME}}` |
-| `prompt_<code>` | per finding | A prompt lint finding, for example `prompt_duplicate_key` |
+| `prompt_<code>` | per finding | The lint code with a `prompt_` prefix, for example `prompt_duplicate_key`, `prompt_bad_condition`, `prompt_suspect_condition` |
 | `capabilities_invalid` | warn | The capability map holds an unknown name or state |
 | `client_tools_not_ready` | warn | The client tool setup would not work |
 | `knowledge_ids_over_cap` | error | `knowledge_ids` holds more than one record |
 | `tool_not_found` | error | `tool_ids` or `thread_start_tools` names a tool that does not exist |
-| `skill_not_found` | error | `skill_ids` names a skill that does not exist |
+| `skill_not_found` | error | `skill_ids` names a skill that is neither yours nor shared |
+| `skill_condition_template` | error | A `skill_ids[].condition` is empty, not a string, or contains `{{ }}`, `{% %}` or `{# #}` |
+| `skill_condition_suspect` | warn | A `skill_ids[].condition` uses a form that blanks the turn or never matches, such as `AND`, `&&`, `!`, a single `=` or `len()` |
+| `tool_condition_template` | error | A linked tool's `condition` is empty, not a string, or contains `{{ }}`, `{% %}` or `{# #}` |
+| `tool_condition_suspect` | warn | A linked tool's `condition` uses a form that blanks the turn or never matches |
+| `tool_arg_unused` | warn | A linked `api` tool declares an arg that no `{arg}` in its url or body uses, so it is never sent |
 | `intellect_not_found` | error | `doctor` only. An agent points at an intellect that does not exist |
 
-The pure functions `auditLifecycleRules(rules, ctx)` and `auditIntellectConfig(config, ctx)` are exported from `./management` if you already hold the data.
-
-To run it from a terminal or CI, use `npm run audit:lifecycle`. Run `npm run audit:lifecycle -- --help` for the flags. It exits 0 when nothing reaches `--fail-on`, 1 when something does, and 2 on a usage, auth or request error.
+The pure functions `auditLifecycleRules(rules, ctx)` and `auditIntellectConfig(config, ctx)` are exported from `./management` if you already hold the data. To run it from a terminal or CI, use `npm run audit:lifecycle`. Run `npm run audit:lifecycle -- --help` for the flags. It exits 0 when nothing reaches `--fail-on`, 1 when something does, and 2 on a usage, auth or request error.
 
 ---
 
