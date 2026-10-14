@@ -25,7 +25,7 @@
  *         `oauthRequiredResult`, `error`, `warning`,
  *         `responsePending`, `responseSettled`, `agentActionDenied`, `ended`;
  *       - avatar mode only: `speechChunk`, `avatarStartTalking`,
- *         `avatarStopTalking`, `interrupted`.
+ *         `avatarStopTalking`, `interrupted`, `screenShareChanged`.
  *     Same payload shapes as the transport. Listeners registered on the facade
  *     survive every `switchMode()`.
  *
@@ -45,6 +45,7 @@
 import { Emitter } from './emitter.js';
 import { KalturaAvatarSession } from './session.js';
 import { KalturaChatSession } from './chat-session.js';
+import { unsupported } from './screen-share.js';
 import { KalturaError } from '../core/errors.js';
 import { assertRequestVars } from '../management/conversations.js';
 import { sanitizeJson } from '../core/safety.js';
@@ -60,7 +61,7 @@ const FORWARDED_EVENTS = [
   'oauthRequired', 'oauthRequiredResult',
   'error', 'warning', 'responsePending', 'responseSettled',
   'agentActionDenied',
-  'speechChunk', 'avatarStartTalking', 'avatarStopTalking', 'interrupted',
+  'speechChunk', 'avatarStartTalking', 'avatarStopTalking', 'interrupted', 'screenShareChanged',
   'mediaReady', 'connectTimings', 'mediaRecovering', 'mediaRecovered',
 ];
 
@@ -331,6 +332,27 @@ export class KalturaAgentSession extends Emitter {
   }
 
   /**
+   * Share the user's screen with the agent. Avatar mode only: in chat mode it throws
+   * `screen_share_unsupported`. Delegates to `KalturaAvatarSession#startScreenShare`, so the
+   * options, the other error codes and the `screenShareChanged {active}` event are the same.
+   * A `switchMode()` ends a running share and emits `screenShareChanged {active:false}`.
+   * @param {{stream?:MediaStream, intervalMs?:number, maxWidth?:number, quality?:number}} [opts]
+   * @returns {Promise<void>}
+   */
+  async startScreenShare(opts = {}) {
+    this._requireConnected('startScreenShare');
+    const t = this._transport;
+    if (typeof t.startScreenShare !== 'function') throw unsupported('Screen share needs avatar mode. Call switchMode("avatar") first.');
+    return t.startScreenShare(opts);
+  }
+
+  /** Stop a share started by {@link startScreenShare}. Does nothing when none is running, including in chat mode. */
+  stopScreenShare() { this._transport?.stopScreenShare?.(); }
+
+  /** True while a screen share started by {@link startScreenShare} is running. @returns {boolean} */
+  get screenSharing() { return !!this._transport?.screenSharing; }
+
+  /**
    * End the conversation. Idempotent; safe from any state. Tears down the
    * live transport (if any), drops the token, and emits a single
    * `ended {reason:'disconnected'}`. Terminal — construct a new
@@ -429,8 +451,10 @@ export class KalturaAgentSession extends Emitter {
     for (const list of this._toolRegistry.values()) for (const entry of list) entry.rebind(null);
     for (const entry of this._oauthRegistry) entry.rebind(null);
     const t = this._transport;
+    const wasSharing = !!t?.screenSharing;
     this._transport = null;
     if (t) { try { t.disconnect(opts); } catch (e) { this._cfg.logger?.('warn', 'transport disconnect threw', e); } }
+    if (wasSharing) this.emit('screenShareChanged', { active: false });   // the bridge is already detached
   }
 
   /** @param {string} where */

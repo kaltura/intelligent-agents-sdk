@@ -486,3 +486,57 @@ test('kickoff: a connect() that fails does not leave the kickoff pending for a l
   assert.equal(made.avatar[0].cfg.kickoff, 'Greet the user.');
   assert.equal(session._kickoffPending, false);
 });
+
+// ───────────────────────── screen share ─────────────────────────
+
+/** Gives a fake avatar transport the screen share surface of KalturaAvatarSession. */
+function withScreenShare(t) {
+  t.sharing = false;
+  Object.defineProperty(t, 'screenSharing', { get() { return this.sharing; } });
+  t.startScreenShare = async function (opts) { this.calls.push(['startScreenShare', opts]); this.sharing = true; this.emit('screenShareChanged', { active: true }); };
+  t.stopScreenShare = function () { this.calls.push(['stopScreenShare']); this.sharing = false; this.emit('screenShareChanged', { active: false }); };
+}
+
+test('screen share: startScreenShare/stopScreenShare delegate to the avatar transport and screenShareChanged is forwarded', async () => {
+  const { session, made } = newSession({ cfg: { mode: 'avatar' }, prep: (t) => { if (t.kind === 'avatar') withScreenShare(t); } });
+  await session.connect();
+  const seen = [];
+  session.on('screenShareChanged', (p) => seen.push(p));
+  assert.equal(session.screenSharing, false);
+  await session.startScreenShare({ intervalMs: 500 });
+  assert.deepEqual(made.avatar[0].calls.at(-1), ['startScreenShare', { intervalMs: 500 }]);
+  assert.equal(session.screenSharing, true);
+  session.stopScreenShare();
+  assert.equal(session.screenSharing, false);
+  assert.deepEqual(seen, [{ active: true }, { active: false }]);
+});
+
+test('screen share: throws invalid_state before connect and screen_share_unsupported in chat mode', async () => {
+  const { session } = newSession({ cfg: { mode: 'chat' } });
+  await assert.rejects(() => session.startScreenShare(), (e) => e.code === 'invalid_state');
+  await session.connect();
+  await assert.rejects(() => session.startScreenShare(), (e) => e.code === 'screen_share_unsupported');
+  assert.equal(session.screenSharing, false);
+  assert.doesNotThrow(() => session.stopScreenShare());
+});
+
+test('screen share: switchMode while sharing emits screenShareChanged {active:false} once', async () => {
+  const { session } = newSession({ cfg: { mode: 'avatar' }, prep: (t) => { if (t.kind === 'avatar') withScreenShare(t); } });
+  await session.connect();
+  await session.startScreenShare();
+  const seen = [];
+  session.on('screenShareChanged', (p) => seen.push(p));
+  await session.switchMode('chat');
+  assert.deepEqual(seen, [{ active: false }]);
+  assert.equal(session.screenSharing, false);
+});
+
+test('screen share: disconnect while sharing emits screenShareChanged {active:false}', async () => {
+  const { session } = newSession({ cfg: { mode: 'avatar' }, prep: (t) => { if (t.kind === 'avatar') withScreenShare(t); } });
+  await session.connect();
+  await session.startScreenShare();
+  const seen = [];
+  session.on('screenShareChanged', (p) => seen.push(p));
+  session.disconnect();
+  assert.deepEqual(seen, [{ active: false }]);
+});
