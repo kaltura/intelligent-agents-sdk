@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Kaltura Intelligent Agents — Screen-share debugging assistant</title>
+  <style>body{font-family:system-ui;margin:2rem;max-width:960px;display:grid;grid-template-columns:384px 1fr;gap:1.5rem} #avatar{width:384px;height:384px;background:#111;border-radius:12px;overflow:hidden} #avatar video{width:100%;height:100%;object-fit:cover} #cc{grid-column:1/-1;color:#a00;margin:0} h1{grid-column:1/-1;margin:0;font-size:1.4rem} .row{display:flex;gap:.5rem;margin:.75rem 0} input{flex:1;padding:.5rem} #share[aria-pressed=true]{background:#c00;color:#fff} #status{color:#666;font-size:.9rem} #log{white-space:pre-wrap;font-family:monospace;font-size:.8rem;background:#f6f6f6;padding:1rem;border-radius:8px;height:260px;overflow:auto}</style>
+</head>
+<body>
+  <h1>Debug with a screen-sharing avatar</h1>
+  <p id="cc"></p>
+  <div id="avatar"></div>
+  <div>
+    <div class="row">
+      <button id="share" aria-pressed="false">Share my screen</button>
+      <span id="status">Not sharing</span>
+    </div>
+    <p>Share your editor, terminal or app. Then ask: "What error do you see?" or "How can I make this faster?"</p>
+    <div class="row"><input id="msg" placeholder="Ask about what you share…" aria-label="Message" /><button id="say">Send</button></div>
+    <div id="log" role="log" aria-live="polite"></div>
+  </div>
+
+  <!-- socket.io is YOUR dependency — injected, never bundled by the SDK. -->
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js" integrity="sha384-2huaZvOR9iDzHqslqwpR87isEmrfxqyWOF7hr7BY6KG0+hVKLoEXMPUJw3ynWuhO" crossorigin="anonymous"></script>
+  <script type="module">
+    // Needs an agent with the `screenShare` setting on. Start the dev server with
+    // AGENTIC_SCREEN_SHARE=1 and it provisions one for you (see docs/LIVE-DEMOS.md).
+    import { KalturaAvatarSession } from '../src/experience/index.js';
+
+    const $ = (id) => document.getElementById(id);
+    const log = (m) => { $('log').textContent += m + '\n'; $('log').scrollTop = $('log').scrollHeight; };
+
+    const init = await fetch('/appInit').then((r) => r.json());
+
+    const video = document.createElement('video');
+    video.autoplay = true; video.playsInline = true;
+    $('avatar').appendChild(video);
+
+    const session = new KalturaAvatarSession({
+      token: init.ks, conversationManagerUrl: init.conversationManagerUrl,
+      srsBaseUrl: init.srsBaseUrl, turnServerUrl: init.turnServerUrl,
+      videoEl: video, socketFactory: (url, opts) => io(url, opts),
+      requireDisclosureAck: true,
+    });
+    session.on('disclosure', ({ disclosureText }) => {
+      $('cc').textContent = '⚠️ ' + disclosureText + ' ';
+      const ok = document.createElement('button');
+      ok.textContent = 'OK';
+      ok.onclick = () => { session.acknowledgeDisclosure(); $('cc').textContent = ''; };
+      $('cc').appendChild(ok);
+    });
+    session.on('transcript', ({ text, type }) => log(`[${type}] ${text}`));
+    session.on('error', (e) => log('✗ ' + e.code + ': ' + e.detail));
+    session.on('warning', (w) => log('! ' + w.code));
+
+    // The only screen-share wiring: one event for the UI, one call to toggle.
+    session.on('screenShareChanged', ({ active }) => {
+      $('share').setAttribute('aria-pressed', String(active));
+      $('share').textContent = active ? 'Stop sharing' : 'Share my screen';
+      $('status').textContent = active ? 'Sharing: the agent sees a new frame every 2 seconds' : 'Not sharing';
+    });
+    $('share').onclick = async () => {
+      if (session.screenSharing) { session.stopScreenShare(); return; }
+      try { await session.startScreenShare(); }
+      catch (e) { if (e.code !== 'screen_share_denied') log('✗ ' + e.code + ': ' + (e.detail || e.message)); }
+    };
+
+    await session.connect();
+    if (!session.capabilities.screenShare) {
+      $('share').disabled = true;
+      $('status').textContent = 'This agent has screenShare off. Turn it on with agents.update.';
+    }
+    log('connected');
+
+    $('say').onclick = () => {
+      if ($('msg').value.trim()) { session.speak($('msg').value.trim()); $('msg').value = ''; }
+    };
+  </script>
+</body>
+</html>

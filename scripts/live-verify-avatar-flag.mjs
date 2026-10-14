@@ -22,8 +22,7 @@
  *
  * A5 and A6 run only with `--share` or `--only`: they wait on a background vision call that sometimes does not land,
  * so they are not part of the default run that CI uses. They enable `screenShare` on the agent, ask PING,
- * simulate a share, then ask again. The page emits `screenShareStarted` on the session socket (the SDK has no public method for it) and sends one still with
- * `sendScreenShot()`. No real screen capture is involved, so they run headless.
+ * start a share, then ask again. The page calls `startScreenShare()` with a canvas stream, so no real screen capture is involved and they run headless.
  *
  * Usage
  *   node scripts/live-verify-avatar-flag.mjs                        # --env prod, AGENTIC_* vars
@@ -151,22 +150,27 @@ async function savedReply(/** @type {import('playwright').Page} */ page, /** @ty
   return '';
 }
 
-/** Send one still from the page. `start` also emits `screenShareStarted` first. Returns `sent` or an error code. */
-function sendStill(/** @type {import('playwright').Page} */ page, /** @type {boolean} */ start) {
-  return page.evaluate(async (begin) => {
+/**
+ * Start a real SDK screen share in the page, fed by a canvas stream instead of the browser's picker.
+ * The canvas shows a fixed invoice and is repainted so the stream keeps producing frames. Returns
+ * `started` or an error code.
+ */
+function startShare(/** @type {import('playwright').Page} */ page) {
+  return page.evaluate(async () => {
     const t = /** @type {any} */ (globalThis).session.transport ?? /** @type {any} */ (globalThis).session;
     const c = document.createElement('canvas'); c.width = 640; c.height = 360;
-    const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, 640, 360); g.fillStyle = '#000'; g.font = '48px sans-serif'; g.fillText('INVOICE 4711', 40, 180);
-    const blob = await new Promise((r) => c.toBlob(r, 'image/png'));
-    if (begin) { t._socket.emit('screenShareStarted', {}); await new Promise((r) => setTimeout(r, 1000)); }
-    try { t.sendScreenShot(new Uint8Array(await blob.arrayBuffer())); return 'sent'; } catch (e) { return String(e?.code ?? e?.message); }
-  }, start);
+    const g = c.getContext('2d');
+    let tick = 0;
+    const paint = () => { g.fillStyle = '#fff'; g.fillRect(0, 0, 640, 360); g.fillStyle = '#000'; g.font = '48px sans-serif'; g.fillText('INVOICE 4711', 40, 180); g.fillRect(0, 358, 1 + (tick++ % 2), 2); };
+    paint();
+    setInterval(paint, 200);
+    try { await t.startScreenShare({ stream: c.captureStream(5), intervalMs: 1000 }); return 'started'; } catch (e) { return String(e?.code ?? e?.message); }
+  });
 }
 
 /**
  * Enable screen share on the agent, then ask PING before and after a share runs in an avatar
- * session. The share is simulated: the page emits `screenShareStarted` on the session socket (the
- * SDK has no public method for it) and sends one still with `sendScreenShot()`. The agent's
+ * session. The share is real SDK code (`startScreenShare()`) fed by a canvas stream. The agent's
  * `screenShare` is restored at the end. Up to 3 attempts, each on a fresh session.
  */
 async function sharing({ context, sink, id }, { condition, before, after }) {
@@ -179,13 +183,12 @@ async function sharing({ context, sink, id }, { condition, before, after }) {
       const page = await connectAvatar(context, sink, id);
       try {
         const first = await savedReply(page, 'PING');
-        const shot = await sendStill(page, true);
-        report.check(`${id}: sendScreenShot() accepted once screen share is enabled on the agent`, shot === 'sent', { shot });
-        // The still is analysed in the background. Send it again and ask again until the flag changes, up to 4 times.
+        const shot = await startShare(page);
+        report.check(`${id}: startScreenShare() accepted once screen share is enabled on the agent`, shot === 'started', { shot });
+        // The SDK keeps sending stills, and the server analyses them in the background. Ask again until the flag changes, up to 4 times.
         let second = '';
         for (let n = 1; n <= 4 && (!second || hasMark(second) !== after); n++) {
           await sleep(5000);
-          if (n > 1) await sendStill(page, false);
           second = await savedReply(page, 'PING', n);
         }
         seen = { before: first ? hasMark(first) : null, after: second ? hasMark(second) : null };

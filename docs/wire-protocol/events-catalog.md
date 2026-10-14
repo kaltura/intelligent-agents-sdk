@@ -21,7 +21,9 @@ Direction: `→` the client emits, `←` the server emits. This catalog lists th
 | `muteUser` / `unmuteUser` | `{}` | The `micEnabled` setter notifies the server of a mic mute or unmute. The mute itself is client-side (`track.enabled`). The payload has no data. |
 | `pauseConversation` / `resumeConversation` | `{}` | `pause()` / `resume()`. |
 | `updateGenieContext` | `{ capabilities, request_vars, contextId?, contextType? }` | Mid-session context update, sent by `updateRequestVars()` and `setDynamicPrompt()`. Each emit replaces the stored context, so an omitted field is a clear. The SDK always sends the full shape: its own capabilities, the full `request_vars` map, and `contextId` / `contextType` when set. `setDynamicPrompt(data)` is the same emit, with the payload serialized into the `page_context` variable. |
-| `userScreenShareShot` | `{ data }` (ArrayBuffer) | A screen-share still for vision analysis, sent by `sendScreenShot()`. Needs `isScreenShareEnabled` in [`clientConfiguration`](client-configuration.md#7-clientconfiguration-fields-per-session-agent-config). |
+| `screenShareStarted` / `screenShareStopped` | `{}` | A screen share began or ended. Sent by `startScreenShare()` / `stopScreenShare()`. |
+| `userScreenSharePendingImage` | `{}` | A still is about to follow. Sent once right after `screenShareStarted`. |
+| `userScreenShareShot` | `{ data }` (ArrayBuffer, JPEG) | A screen-share still for vision analysis, sent every 2 seconds by `startScreenShare()` or once by `sendScreenShot()`. Needs `isScreenShareEnabled` in [`clientConfiguration`](client-configuration.md#7-clientconfiguration-fields-per-session-agent-config). |
 | `onHtmlElementClick` / `setFormLeadInfo` | `{ htmlText }` / `{ …fields }` | GenUI and structured-data-form callbacks, sent by `notifyHtmlElementClick(info)` and `submitStructuredDataForm(values)`. |
 
 #### `tapToTalkStart`/`tapToTalkEnd` in detail

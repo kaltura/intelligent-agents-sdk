@@ -19,6 +19,12 @@ describe('examples: <video> is framed with object-fit', () => {
     const style = html.match(/<style>([\s\S]*?)<\/style>/)[1];
     assert.match(style, /#avatar\s+video\s*\{[^}]*object-fit\s*:\s*cover/);
   });
+
+  test('screen-share-agent.html — video is appended into #avatar, styled via "#avatar video"', () => {
+    const html = read('examples/screen-share-agent.html');
+    const style = html.match(/<style>([\s\S]*?)<\/style>/)[1];
+    assert.match(style, /#avatar\s+video\s*\{[^}]*object-fit\s*:\s*cover/);
+  });
 });
 
 describe('videoEl JSDoc cross-links docs/ARCHITECTURE.md', () => {

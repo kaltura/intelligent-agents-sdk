@@ -56,6 +56,8 @@ Use this when users must be kept apart. The server mints the token and the brows
 
 That KS answers as the agent, keeps entitlement ON and keeps the user's identity. What it can reach: [SECURITY.md § Session type](../../SECURITY.md#session-type).
 
+The response also carries server-side flag fields, such as `legacyScreenShareEnabled`. Their names may change. Do not read them in your app. Use the SDK settings instead, for example the agent's `screenShare` ([agent fields](build/avatar-and-agent.md)).
+
 Feed this response straight into `new KalturaAvatarSession({ token: ks, conversationManagerUrl, srsBaseUrl, turnServerUrl, videoEl, socketFactory })` (`./experience`) to bring the runtime up in the browser.
 
 `appInit` does not return the conversation host. The session still makes two direct POSTs of its own, the `respondToTool()` ACKs and the session-completed signal, and it sends them to the `genieUrl` of the session's `region` (default `nvp1`, US). If your partner is in another region, pass the session the same `region` you gave `Management`. For a deployment not in [`REGIONS`](authentication.md#regions-and-base-urls), pass the same `genieUrl` instead. `KalturaAgentSession` takes `region` at the top level and `genieUrl` under `avatar` and `chat`.

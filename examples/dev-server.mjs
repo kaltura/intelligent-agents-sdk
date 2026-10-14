@@ -7,6 +7,9 @@
  * No AGENTIC_WIDGET_ID? Set AGENTIC_ADMIN_SECRET instead and it provisions a
  * throwaway agent on startup (admin secret stays server-side, never sent to the browser).
  *
+ * Set AGENTIC_SCREEN_SHARE=1 with the admin secret to turn the `screenShare` setting on for that
+ * throwaway agent (needed by examples/screen-share-agent.html).
+ *
  * Then open http://127.0.0.1:8091/examples/<example>.html — e.g. event-timing.html, browser-experience.html.
  * (repo-root-relative, so each example's `../src/...` import resolves correctly)
  *
@@ -47,6 +50,12 @@ if (!widgetId) {
   const admin = await kaltura.sessions.createAdminToken({ userId: 'admin@example.com' });
   const agent = await kaltura.provision({ brief: process.env.AGENTIC_BRIEF || 'A minimal test agent for example harnesses', ks: admin.ks });
   widgetId = agent.widgetId;
+  if (process.env.AGENTIC_SCREEN_SHARE) {
+    await kaltura.agents.update({
+      agentId: agent.agentId,
+      screenShare: { enabled: true, prompt: 'Describe the code, errors, logs and UI state on the screen. Quote error messages exactly and name files and line numbers when visible.' },
+    }, admin.ks);
+  }
   console.log('Provisioned a throwaway agent:', { configId: agent.configId, agentId: agent.agentId, widgetId });
 }
 

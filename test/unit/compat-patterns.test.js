@@ -182,6 +182,7 @@ const SHAPES = {
   'README.md quickstart': (videoEl) => ({ token: CONV_KS, conversationManagerUrl: 'https://cm.example', srsBaseUrl: 'https://srs.example', turnServerUrl: 'turn.example.com', videoEl }),
   'examples/browser-experience.html': (videoEl) => ({ token: CONV_KS, conversationManagerUrl: 'https://cm.example', srsBaseUrl: 'https://srs.example', turnServerUrl: 'turn.example.com', videoEl, isFirefox: false }),
   'examples/deck-presenter.html': (videoEl) => ({ token: CONV_KS, conversationManagerUrl: 'https://cm.example', srsBaseUrl: 'https://srs.example', turnServerUrl: 'turn.example.com', videoEl, isFirefox: false, requireDisclosureAck: true }),
+  'examples/screen-share-agent.html': (videoEl) => ({ token: CONV_KS, conversationManagerUrl: 'https://cm.example', srsBaseUrl: 'https://srs.example', turnServerUrl: 'turn.example.com', videoEl, requireDisclosureAck: true }),
   'examples/chroma-key-avatar.html': (videoEl) => ({ token: CONV_KS, conversationManagerUrl: 'https://cm.example', srsBaseUrl: 'https://srs.example', turnServerUrl: 'turn.example.com', videoEl }),
 };
 

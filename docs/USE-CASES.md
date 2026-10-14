@@ -7,7 +7,7 @@ Each use case maps to a runnable script or example in this repo, or the equivale
 - UC-1 has a quickstart script.
 - UC-7 and UC-12 use the browser example app.
 
-<!-- nova-target: use-case-catalog-table | Use-Case Catalog: all 13 use cases mapped to SDK entry points -->
+<!-- nova-target: use-case-catalog-table | Use-Case Catalog: all 14 use cases mapped to SDK entry points -->
 
 | # | Use case | Key mechanism | Script / SDK entry point |
 |---|----------|--------------|--------|
@@ -24,6 +24,7 @@ Each use case maps to a runnable script or example in this repo, or the equivale
 | UC-11 | **Usage Analytics** | Aggregated client-side; includes `_meta` provenance receipt | `mgmt.messages.reportSummary(ks)` |
 | UC-12 | **Anonymous End-User Embed** | `resolveWidgetId` once (server) → `sessions.createWidgetToken` (browser, no secret) → `appInit` → enriched KS. To separate users: [per-visitor path](api/deploy.md#per-visitor-browser-path) | `examples/browser-experience.html` |
 | UC-13 | **Custom Portrait Avatar** | `catalog-item/create` with portrait JPEG → `catalogItemId` → `avatar/create visual.id` → `appInit` → `KalturaAvatarSession` connects with the portrait animating live | [§ End-to-end recipe](api/design.md#end-to-end-custom-portrait-avatar-server-to-browser) |
+| UC-14 | **Screen-Share Debugging Assistant** | Agent `screenShare` setting on with a prompt that says what to report → `session.startScreenShare()` sends a still every 2 seconds → the avatar answers about the user's code, error or app | `examples/screen-share-agent.html` |
 <!-- /nova-target -->
 
 ## Composition patterns

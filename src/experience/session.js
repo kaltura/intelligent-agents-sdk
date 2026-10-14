@@ -68,6 +68,7 @@ import { createSessionCompleter } from './session-complete.js';
 import { AvatarMedia } from './avatar-media.js';
 import { whepPost, WHEP_DEFAULTS } from './whep.js';
 import { fetchWithTimeout, TOOL_RESPONSE_TIMEOUT_MS } from './fetch-timeout.js';
+import { SCREEN_SHARE_DEFAULTS, createStillCapturer, screenShareError, unsupported } from './screen-share.js';
 
 // Backstop for a pending tool-ACK entry the app never acknowledges:
 // `_dispatchToolCall`/`respondToTool` clear entries on ACK/disconnect/cold-reconnect,
@@ -151,6 +152,8 @@ export class KalturaAvatarSession extends Emitter {
    * @param {typeof RTCPeerConnection} [cfg.rtcConstructor]
    * @param {typeof fetch} [cfg.fetch]
    * @param {()=>Promise<any>} [cfg.getUserMedia]
+   * @param {(constraints:object)=>Promise<MediaStream>} [cfg.getDisplayMedia]  Replaces `navigator.mediaDevices.getDisplayMedia` for `startScreenShare()`. For tests and non-browser hosts.
+   * @param {(stream:MediaStream, opts:{maxWidth:number,quality:number})=>Promise<{grab:()=>Promise<ArrayBuffer>,close:()=>void}>} [cfg.screenCapture]  Replaces the built-in frame grabber for `startScreenShare()`. `grab()` returns one JPEG still.
    * @param {object|false} [cfg.micConstraints]  Browser-native `MediaTrackConstraints` merged into every `getUserMedia({audio})` call this session makes (`connect()`, `switchMic()`). Default `{echoCancellation:true, noiseSuppression:true, autoGainControl:true}` — the standard Tier-1 browser-native baseline. Pass `false` to send bare `audio:true` (e.g. when `cfg.noiseProcessor` expects RAW, unprocessed audio — stacking browser-native suppression under a second DSP stage double-processes the signal and can degrade quality). Pass a partial object to override individual fields.
    * @param {(stream:any)=>Promise<any>} [cfg.noiseProcessor]  Pluggable, externally-supplied DSP hook (BYO: a third-party lib's processor or a bespoke one; the SDK core bundles none). Called with the raw `MediaStream` from `getUserMedia` at `connect()` and every `switchMic()`; must resolve to a `MediaStream` (the same one, unmodified, is fine) or `{stream, stop}`, and that stream's audio track is what reaches the ASR uplink. `stop()` runs when the session releases the processor. A falsy result falls back to the raw stream. A throwing processor fails mic acquisition closed (raw stream stopped) with code `noise_processor_failed`: a `warning` during the background acquire in `connect()`, a thrown KalturaError from `startMic()`/`switchMic()`. A processor must not silently swallow its own setup failure. See `./experience/noise-suppressor` for a ready-made `AudioWorklet`-based implementation of this interface.
    * @param {'immediate'|'deferred'} [cfg.micStartMode]  When to acquire the mic. `'immediate'` (default) starts `getUserMedia` inside `connect()` but never waits on it: the permission prompt runs alongside the socket handshake, the track is attached the moment it lands (`micStarted` fires), and a denied/missing/busy mic emits one `warning` (`mic_permission_denied` / `mic_not_found` / `mic_in_use`) while the session connects mic-less — `speak()` works, `startMic()` retries. `'deferred'` connects with NO mic — the ASR uplink negotiates a sendonly audio slot with no track (the session-server handshake is byte-identical to the immediate path) — and the app calls {@link KalturaAvatarSession#startMic} later, from a real user gesture, so the browser's permission prompt is click-anchored. Until `startMic()` resolves, `startTapToTalk()`/`switchMic()` throw `mic_not_started`; typed turns (`speak()`) and `mute()`/`unmute()` work normally.
@@ -264,6 +267,10 @@ export class KalturaAvatarSession extends Emitter {
     // (same fix as core/http.js). A user-injected fetch is bound harmlessly.
     { const f = cfg.fetch || globalThis.fetch; this._fetch = typeof f === 'function' ? f.bind(globalThis) : f; }
     this._getUserMedia = cfg.getUserMedia || defaultGetUserMedia;
+    this._getDisplayMedia = cfg.getDisplayMedia || defaultGetDisplayMedia;
+    this._screenCapture = cfg.screenCapture || createStillCapturer;
+    /** The running share: `{stream, capturer, timer, ownsStream, intervalMs}`, or null. */
+    this._screenShare = null;
     if (cfg.micStartMode != null && cfg.micStartMode !== 'immediate' && cfg.micStartMode !== 'deferred') {
       throw new KalturaError({ type: 'about:blank', title: 'invalid micStartMode', code: 'bad_request', detail: `cfg.micStartMode must be 'immediate' or 'deferred' (got "${cfg.micStartMode}").` });
     }
@@ -2001,6 +2008,88 @@ export class KalturaAvatarSession extends Emitter {
    */
   sendScreenShot(data) { this._requireVision('isScreenShareEnabled', 'sendScreenShot'); this._socket.emit('userScreenShareShot', { data }); }
 
+  /** True while a screen share started by `startScreenShare()` is running. */
+  get screenSharing() { return !!this._screenShare; }
+
+  /**
+   * Share the user's screen with the agent. The browser shows its screen picker,
+   * then the SDK sends a JPEG still every `intervalMs` until `stopScreenShare()`,
+   * `disconnect()`, or the user ends the share from the browser. The agent sees
+   * the stills as text, so an answer can lag a share by a few seconds.
+   *
+   * Needs the agent's `screenShare` setting on (`agents.create` / `agents.update`)
+   * and a connected session. Otherwise it throws `capability_disabled` or
+   * `invalid_state`. A cancelled picker throws `screen_share_denied`. A browser
+   * without `getDisplayMedia` throws `screen_share_unsupported`. Does nothing when a share
+   * is already running. Emits `screenShareChanged` with `{ active }` on start and stop.
+   * Capture errors during a share arrive as a `warning` with code `screen_share_capture_failed`.
+   *
+   * @param {{stream?:MediaStream, intervalMs?:number, maxWidth?:number, quality?:number}} [opts]
+   *   `stream`: a display stream you already hold, instead of showing the picker. The SDK
+   *   does not stop its tracks. `intervalMs` (default 2000), `maxWidth` px (default 1500), `quality` JPEG 0 to 1 (default 0.5).
+   * @returns {Promise<void>}
+   */
+  async startScreenShare(opts = {}) {
+    this._requireVision('isScreenShareEnabled', 'startScreenShare');
+    if (this._screenShare) return;
+    const { intervalMs, maxWidth, quality } = { ...SCREEN_SHARE_DEFAULTS, ...opts };
+    const ownsStream = !opts.stream;
+    let stream = opts.stream;
+    if (!stream) {
+      try { stream = await this._getDisplayMedia({ video: { width: { max: maxWidth } }, audio: false }); }
+      catch (err) { throw err instanceof KalturaError ? err : screenShareError(err); }
+    }
+    const release = () => { if (ownsStream) stream.getTracks().forEach((t) => t.stop()); };
+    try {
+      this._requireVision('isScreenShareEnabled', 'startScreenShare');   // the session may have ended behind the picker
+      if (this._screenShare) { release(); return; }
+      const capturer = await this._screenCapture(stream, { maxWidth, quality });
+      const share = { stream, capturer, timer: null, ownsStream, intervalMs };
+      if (this.state !== 'connected' || this._screenShare) { capturer.close(); throw new KalturaError({ type: 'about:blank', title: 'not connected', code: 'invalid_state', detail: 'startScreenShare() lost its session while starting.' }); }
+      this._screenShare = share;
+      stream.getVideoTracks().forEach((t) => t.addEventListener?.('ended', () => { if (this._screenShare === share) this.stopScreenShare(); }));
+      this._socket.emit('screenShareStarted', {});
+      this._socket.emit('userScreenSharePendingImage', {});
+      this.emit('screenShareChanged', { active: true });
+      this._screenShareTick(share);
+    } catch (err) {
+      release();
+      throw err;
+    }
+  }
+
+  /** Stop a screen share started by `startScreenShare()`. Does nothing when none is running. Emits `screenShareChanged` with `{ active: false }`. */
+  stopScreenShare() {
+    if (!this._screenShare) return;
+    const socket = this._socket;
+    this._endScreenShare();
+    socket?.emit?.('screenShareStopped', {});
+  }
+
+  /** Grab and send one still, then schedule the next. One in flight at a time. @param {NonNullable<KalturaAvatarSession['_screenShare']>} share */
+  async _screenShareTick(share) {
+    share.timer = null;
+    if (this._screenShare !== share) return;
+    try {
+      const data = await share.capturer.grab();
+      if (this._screenShare === share) this._socket?.emit('userScreenShareShot', { data });
+    } catch (err) {
+      this.emit('warning', { code: 'screen_share_capture_failed', message: `A screen share frame could not be captured: ${err?.detail || err?.message || err}` });
+    }
+    if (this._screenShare === share) share.timer = setTimeout(() => this._screenShareTick(share), share.intervalMs);
+  }
+
+  /** Stop the capture loop and release the stream and frame grabber. No socket traffic. */
+  _endScreenShare() {
+    const share = this._screenShare;
+    if (!share) return;
+    this._screenShare = null;
+    if (share.timer) clearTimeout(share.timer);
+    try { share.capturer.close(); } catch { /* already closed */ }
+    if (share.ownsStream) share.stream.getTracks().forEach((t) => t.stop());
+    this.emit('screenShareChanged', { active: false });
+  }
+
   /**
    * Emit the session's FULL genie context to the `updateGenieContext` socket
    * event (see docs/wire-protocol/events-catalog.md): the canonical
@@ -3538,6 +3627,7 @@ export class KalturaAvatarSession extends Emitter {
     this._avatarMedia.teardown();
     try { this._hwMuteTimers.forEach(clearTimeout); this._hwMuteTimers = []; } catch { /* */ }
     this._stopVad();
+    this._endScreenShare();
     this._stopStatsBeacon();
     this._releaseNoiseProcessor();
     try { this._micStream?.getTracks?.().forEach((t) => { t.onmute = t.onunmute = null; t.stop?.(); }); } catch { /* */ }
@@ -3707,6 +3797,11 @@ function whepStatusHint(status) {
   return `WHEP HTTP ${status}.`;
 }
 function ua() { return (typeof navigator !== 'undefined' && navigator.userAgent) || 'kaltura-intelligent-agents-sdk'; }
+async function defaultGetDisplayMedia(constraints) {
+  const md = globalThis.navigator?.mediaDevices;
+  if (!md?.getDisplayMedia) throw unsupported('This browser cannot share a screen (getDisplayMedia is missing). Use a current desktop browser, or pass cfg.getDisplayMedia.');
+  return md.getDisplayMedia(constraints);
+}
 async function defaultGetUserMedia(constraints) {
   if (typeof navigator === 'undefined' || !navigator.mediaDevices) throw new Error('getUserMedia unavailable — inject one for non-browser use.');
   return navigator.mediaDevices.getUserMedia(constraints);
