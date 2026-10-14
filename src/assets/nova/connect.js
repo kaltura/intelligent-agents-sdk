@@ -207,7 +207,11 @@ let session = null;
 const popout = initPopout({
   isLive: () => session?.state === 'connected' && session.mode === 'avatar',
   avatar: document.getElementById('nova-avatar'),
+  controls: [mirrorButton(els.mute), pauseControl(), mirrorButton(els.share)],
 });
+// The pop-out buttons follow the page's own buttons (icon, label, disabled).
+new MutationObserver(() => popout.refresh())
+  .observe(document.querySelector('.nova-controls'), { subtree: true, attributes: true, characterData: true, childList: true });
 let siteNav = null;
 let highlighter = null;
 let connecting = false;
@@ -587,6 +591,51 @@ function toggleMute() {
 /** Screen share needs a connected video session and a browser that can capture. */
 function syncShare() {
   els.share.disabled = !(session?.state === 'connected' && session.mode === 'avatar' && navigator.mediaDevices?.getDisplayMedia);
+}
+
+/** A pop-out control that shows and clicks one of the page's own icon buttons. */
+function mirrorButton(btn) {
+  return {
+    read: () => ({
+      icon: btn.querySelector('.material-symbols-outlined').textContent,
+      label: btn.getAttribute('aria-label'),
+      disabled: btn.disabled,
+    }),
+    click: () => btn.click(),
+  };
+}
+
+/** Pause or resume the live turn loop. Only the pop-out offers it; the page shows the paused state in its status line. */
+function pauseControl() {
+  return {
+    read: () => {
+      const paused = !!session?.transport?.paused;
+      return {
+        icon: paused ? 'play_arrow' : 'pause',
+        label: paused ? 'Resume' : 'Pause',
+        disabled: !(session?.state === 'connected' && session.mode === 'avatar'),
+      };
+    },
+    click: togglePause,
+  };
+}
+
+async function togglePause() {
+  const t = session?.transport;
+  if (!t || session.mode !== 'avatar') return;
+  try {
+    if (t.paused) {
+      await t.resume();
+      setStatus('');
+    } else {
+      t.pause();
+      setStatus('Paused. Nova is not listening.');
+      offerStatusAction('Resume', togglePause);
+    }
+  } catch (e) {
+    setStatus(`Could not ${t.paused ? 'resume' : 'pause'}: ${e.detail || e.message || e.code || 'unknown error'}`);
+  }
+  popout.refresh();
 }
 
 /** Pop out only in a connected video session; chat and a closed Nova stay put. */

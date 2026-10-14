@@ -13,6 +13,7 @@ async function setup(page, { supported = true, live = true } = {}) {
     const { initPopout } = await import('/assets/nova/popout.js');
     document.body.insertAdjacentHTML('beforeend', '<div id="t-home"><span id="t-before"></span><div id="t-avatar" class="nova-avatar"><video></video></div><span id="t-after"></span></div>');
     const frame = document.createElement('iframe');
+    frame.style.cssText = 'position:fixed;top:0;left:0;width:340px;height:340px;z-index:2147483647';
     document.body.append(frame);
     const state = { handler: undefined, live, closes: 0, requests: 0, hidden: [] };
     const popup = {
@@ -27,7 +28,9 @@ async function setup(page, { supported = true, live = true } = {}) {
       fakeWin.documentPictureInPicture = { window: null, requestWindow: async () => { state.requests += 1; return popup; } };
     }
     const avatar = document.getElementById('t-avatar');
-    state.popout = initPopout({ isLive: () => state.live, avatar, win: fakeWin });
+    state.ctl = [{ icon: 'mic', label: 'Mute', disabled: false, clicks: 0 }, { icon: 'screen_share', label: 'Share', disabled: true, clicks: 0 }];
+    const controls = state.ctl.map((c) => ({ read: () => c, click: () => { c.clicks += 1; } }));
+    state.popout = initPopout({ isLive: () => state.live, avatar, controls, win: fakeWin });
     window.__pip = { state, popup, avatar, frame };
   }, { supported, live });
 }
@@ -93,4 +96,38 @@ test('arm twice and disarm twice are harmless', async ({ page }) => {
   await setup(page);
   await page.evaluate(() => { const { popout } = window.__pip.state; popout.arm(); popout.arm(); popout.disarm(); popout.disarm(); });
   expect(await page.evaluate(() => window.__pip.state.handler)).toBe(null);
+});
+
+test('hover buttons mirror the page controls and forward clicks', async ({ page }) => {
+  await setup(page);
+  await page.evaluate(() => { window.__pip.state.popout.arm(); return window.__pip.state.handler(); });
+  const buttons = () => page.evaluate(() => [...window.__pip.frame.contentDocument.querySelectorAll('.nova-pip-bar button')]
+    .map((b) => ({ label: b.getAttribute('aria-label'), disabled: b.disabled, d: b.querySelector('path').getAttribute('d').slice(0, 12) })));
+
+  const first = await buttons();
+  expect(first.map((b) => [b.label, b.disabled])).toEqual([['Mute', false], ['Share', true]]);
+
+  await page.evaluate(() => {
+    const { state, frame } = window.__pip;
+    frame.contentDocument.querySelector('.nova-pip-bar button').click();
+    Object.assign(state.ctl[0], { icon: 'mic_off', label: 'Unmute' });
+    Object.assign(state.ctl[1], { disabled: false });
+    state.popout.refresh();
+  });
+  const after = await buttons();
+  expect(after.map((b) => [b.label, b.disabled])).toEqual([['Unmute', false], ['Share', false]]);
+  expect(after[0].d).not.toBe(first[0].d);
+  expect(await page.evaluate(() => window.__pip.state.ctl.map((c) => c.clicks))).toEqual([1, 0]);
+});
+
+test('hover buttons stay hidden until the pointer is over the window', async ({ page }) => {
+  await setup(page);
+  await page.evaluate(() => { window.__pip.state.popout.arm(); return window.__pip.state.handler(); });
+  const opacity = () => page.evaluate(() => {
+    const w = window.__pip.frame.contentWindow;
+    return w.getComputedStyle(w.document.querySelector('.nova-pip-bar')).opacity;
+  });
+  expect(await opacity()).toBe('0');
+  await page.locator('iframe').hover();
+  await expect.poll(opacity).toBe('1');
 });
