@@ -54,6 +54,8 @@ export AGENTIC_ADMIN_SECRET=your_admin_secret_here
 
 > **Prefer a file over exporting every time?** Create a `.env` file in the repo root (one directory up from `quickstart/`) with `AGENTIC_PARTNER_ID=...` and `AGENTIC_ADMIN_SECRET=...` on their own lines. `create-agent.mjs` reads it automatically if present. It's already covered by `.gitignore`, so it never gets committed.
 
+> **Using the SDK in your own project?** Run `npm install "github:kaltura/intelligent-agents-sdk#semver:^1"`. It installs the latest 1.x from GitHub, because the package is not on the npm registry. Then import from `@kaltura/intelligent-agents/management` (server) and `@kaltura/intelligent-agents/experience` (browser).
+
 ---
 
 ## Step 3: Create your own agent from scratch (1–3 minutes)
