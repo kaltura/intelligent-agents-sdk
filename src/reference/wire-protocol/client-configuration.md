@@ -17,7 +17,7 @@ The server sends `clientConfiguration` once per connect. The SDK keeps it and ex
 | `isTapToTalk` | `false` | Push-to-talk vs open-mic. A fixed, per-agent choice, not a live toggle. Read as `capabilities.tapToTalk`. `startTapToTalk()` and `endTapToTalk()` throw `capability_disabled` when it is `false` (see the `tapToTalkStart`/`tapToTalkEnd` row in the [events catalog](/reference/wire-protocol/events-catalog/) for why mixing modes is unsafe). |
 | `interruptionsEnabled` | `true` | Read as `capabilities.interruptions`. `false` means the user can't talk over the avatar. |
 | `isWebSearchEnabled` | `false` | Read as `capabilities.webSearch`. Web-search tools produce `tool`/`tool_response` deltas only when it is `true`. When `false`, the agent can still say it will "look that up", but no `tool` segment fires. |
-| `isScreenShareEnabled` | `false` | Read as `capabilities.screenShare`. `sendScreenShot()` throws `capability_disabled` when it is `false`. |
+| `isScreenShareEnabled` | `false` | Read as `capabilities.screenShare`. `startScreenShare()` and `sendScreenShot()` throw `capability_disabled` when it is `false`. It becomes `true` when the agent's `screenShare` setting is on. |
 | `isCameraAnalysisEnabled` | `false` | Read as `capabilities.cameraAnalysis`. |
 
 The payload also carries `languageCode`, `showTranscription`, `audioMode`, `phoneMode`, `pauseConversationEnabled`, `shouldAggregateCurrentTurn`, `initialHtml`, `youtubeUrl`, `visualPhotos`, `visualVideos`, `agentPersonaName`, `userName`, `configuration` and `nluFeatures`. The SDK passes them through on `session.clientConfig` and does not act on them.

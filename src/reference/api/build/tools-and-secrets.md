@@ -12,7 +12,7 @@ eyebrow: Reference
 
 ## Tools (api / csv / code / client / var)
 
-Tools are a standalone entity scoped to your whole partner account, with their own CRUD API (`/v1/tool/add|get|list|update|delete`, conversation host). They are **not** embedded in an intellect. An intellect only carries the `tool_ids` (an array of tool uuid strings) it may call.
+Tools are a standalone entity scoped to your whole partner account, with their own CRUD API (`/v1/tool/add|get|list|update|delete`, conversation host). They are **not** embedded in an intellect. An intellect only carries the `tool_ids` (an array of tool uuid strings) it may call. The server reads them back as `{id, condition}` objects and accepts either form on write.
 
 **SDK:**
 - `import { tools } from '@kaltura/intelligent-agents/management'` builds and validates a tool's `config` before any network call.
@@ -21,7 +21,7 @@ Tools are a standalone entity scoped to your whole partner account, with their o
 
 ### `api` tool
 
-Calls an external HTTP endpoint. `POST /v1/tool/add`:
+Calls an external HTTP endpoint. Put `{arg_name}` in the url or body to send an arg. An arg that no placeholder uses is never sent, and `intellectConfig.audit` warns `tool_arg_unused`. `POST /v1/tool/add`:
 
 ```json
 {
@@ -31,7 +31,7 @@ Calls an external HTTP endpoint. `POST /v1/tool/add`:
     "description": "Look up an order by id",
     "args": { "order_id": { "prompt": "the order number", "type": "str", "required": true } },
     "request": {
-      "url": "https://api.example.com/order",
+      "url": "https://api.example.com/order?id={order_id}",
       "method": "GET",
       "timeout": 10,
       "authentication": {
@@ -59,7 +59,17 @@ The `authentication` block supports the OAuth2 authorization-code flow only (the
 
 `response_mapping`, `response_template`, and `response_chapters` are mutually exclusive. Reference secrets as `"secrets.NAME"`, never as plaintext.
 
-**Fill the request from the model's args.** `{arg}` in `request.url`, and in the string values of an object `request.body`, is replaced with the value the model passed for that arg. Headers are not filled this way.
+**Fill the request from the model's args.** `{arg}` is replaced with the value the model passed for that arg. This table is the single home for the placeholder rules:
+
+| Where | `{arg}` for a declared arg | Other brace text |
+|---|---|---|
+| `request.url` | Filled | `bad_placeholder` |
+| String `request.body` | Filled | `bad_placeholder` |
+| Object `request.body` | Filled in every string value, at any depth (nested objects and lists included) | An undeclared `{name}` is `bad_placeholder`, and the message names the path, for example `request.body.a.b[0]`. Other brace text is left alone |
+| `request.headers` | Not filled. The literal text is sent | Sent as written |
+| `request.params` | Accepted, but the server does not send them. Put query values in the url | None |
+
+The builder check skips `{{ ... }}` and `{% ... %}` spans in the url and in a string body. The server renders a `{{ name }}` span in a body value, and an unknown name renders empty.
 
 ```js
 tools.api({
@@ -71,7 +81,15 @@ tools.api({
 });
 ```
 
-Any other brace text in a string `url` or `body` makes the call fail at run time, so `tools.api` rejects it with `bad_placeholder`. Percent-encode braces in the url, and pass a JSON body as an object, not a string.
+Brace text in a string `url` or `body` that is not a declared `{arg}` makes the call fail at run time, so `tools.api` rejects it. Percent-encode braces in the url, and pass a JSON body as an object, not a string.
+
+What the builder rejects:
+
+| Input | Code |
+|---|---|
+| An undeclared `{name}` in the url or body | `bad_placeholder` |
+| A url that starts with a placeholder, such as `{base}/x`. The url must parse as http(s) first | `invalid_url` |
+| A hyphen in a `responseMapping` path. Paths are dot-separated names or list indices, so `headers.X-Request-Id` fails. Map `headers` as a whole, or use `responseTemplate` | `bad_jsonpath` |
 
 **Security note:** an `api` tool's `request` fires server-to-server, outside the SDK's reach. The model or system prompt that led to the call is not a security boundary. Your endpoint must independently authenticate and authorize each request (validate the caller's Kaltura Session and permissions), the same way you would for any other server-to-server API call. Treat interpolated `request_vars` (client-suppliable when `allow_client_variables:true`, see [Converse](/reference/api/operate/#converse)) as untrusted input, never as an authorization claim.
 
@@ -141,7 +159,13 @@ tools.var({
 ```
 
 - The variable is available to [conditions](/reference/api/build/intellect/#conditions) and prompts from the next turn of the same thread. It does not carry over to a new thread.
+- `{{plan}}` in prompt text renders whether `allow_client_variables` is on or off.
 - Each arg name must be an identifier. It cannot start with `sys__` or be `secrets`. At least one arg is required.
+- `lintPrompts` and `intellects.setPrompts` flag an unknown `{{plan}}` as the warning `unknown_variable`, or as the error `client_variable_not_allowed` when the gate is off. Pass the arg names as `toolVars` to clear it. `intellectConfig.audit` passes the linked `var` tools' arg names itself, so it reports nothing.
+
+```js
+lintPrompts(blocks, { toolVars: ['plan'] });
+```
 
 ### Tool `condition`
 

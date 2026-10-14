@@ -141,7 +141,11 @@ The SDK ships zero CSS for these class names. Style the `.kgenui__*` block in yo
 
 ## `screen_share_analysis` / `sendScreenShot(data)`
 
-`screen_share_analysis` is the capability that lets an agent receive and reason about a still image of the user's screen. Turn it on via `mgmt.intellects.setCapability(configId, 'screen_share_analysis', 'on', ks)` (it's off by default). On a live session, call `session.sendScreenShot(data)` (`data` is an `ArrayBuffer`/`Uint8Array` image capture) to push one still for vision analysis. It throws unless the server's `clientConfiguration.isScreenShareEnabled` is true, which only happens once the capability is on for that intellect.
+An avatar agent can look at the user's screen. Turn it on with the agent's `screenShare` setting ([agent fields](/reference/api/build/avatar-and-agent/)). Setting the `screen_share_analysis` capability on the intellect is not enough.
+
+On a live session, call `session.startScreenShare()`. It opens the browser's screen picker and sends a still image every 2 seconds. `session.stopScreenShare()` ends it, and so does the user's own "stop sharing" control. See [Screen share](/reference/api/build/avatar-and-agent/#screen-share) for options, events and error codes.
+
+`session.sendScreenShot(data)` sends one still you captured yourself (`data` is an `ArrayBuffer` or `Uint8Array`). Use it only when you need your own capture path. Both calls throw `capability_disabled` unless the agent's `screenShare` setting is on.
 
 ## Related docs
 

@@ -7,7 +7,7 @@ eyebrow: How-to Guide
 
 # Live Demos
 
-The `examples/` folder has four browser demos, four server scripts and an MCP server. They are not hosted. Run them from a clone of the repo. The browser demos and three of the scripts run against your own agent, so they need your partner id and admin secret. `genui-graded-question.mjs` and the MCP server need no credentials.
+The `examples/` folder has five browser demos, four server scripts and an MCP server. They are not hosted. Run them from a clone of the repo. The browser demos and three of the scripts run against your own agent, so they need your partner id and admin secret. `genui-graded-question.mjs` and the MCP server need no credentials.
 
 ## Run a browser demo
 
@@ -19,7 +19,7 @@ export AGENTIC_ADMIN_SECRET=…
 node examples/dev-server.mjs
 ```
 
-With an admin secret and no `AGENTIC_WIDGET_ID`, the server provisions a throwaway agent on start. To use an existing agent, set `AGENTIC_WIDGET_ID` instead. Then open a demo from the list below at `http://127.0.0.1:8091/examples/<file>.html`. The server listens on loopback only.
+With an admin secret and no `AGENTIC_WIDGET_ID`, the server provisions a throwaway agent on start. To use an existing agent, set `AGENTIC_WIDGET_ID` instead. For the screen-share demo, also set `AGENTIC_SCREEN_SHARE=1`. The throwaway agent then has its `screenShare` setting on. An existing agent needs that setting on already. Then open a demo from the list below at `http://127.0.0.1:8091/examples/<file>.html`. The server listens on loopback only.
 
 ## Browser demos
 
@@ -27,6 +27,7 @@ With an admin secret and no `AGENTIC_WIDGET_ID`, the server provisions a throwaw
 |---|---|
 | [browser-experience.html](https://github.com/kaltura/intelligent-agents-sdk/blob/main/examples/browser-experience.html) | The smallest live avatar: type or speak, and watch transcript, disclosure, thinking and barge-in events |
 | [deck-presenter.html](https://github.com/kaltura/intelligent-agents-sdk/blob/main/examples/deck-presenter.html) | The avatar walking a slide deck with the `Presenter` helper |
+| [screen-share-agent.html](https://github.com/kaltura/intelligent-agents-sdk/blob/main/examples/screen-share-agent.html) | A debugging assistant. The user shares their screen with `startScreenShare()` and asks the avatar about the code, error or app on it |
 | [chroma-key-avatar.html](https://github.com/kaltura/intelligent-agents-sdk/blob/main/examples/chroma-key-avatar.html) | The avatar video chroma-keyed with `attachChromaKeyAvatar`, so it sits over your own page |
 | [event-timing.html](https://github.com/kaltura/intelligent-agents-sdk/blob/main/examples/event-timing.html) | Every SDK event with a timestamp since `connect()` |
 

@@ -23,7 +23,7 @@ Every endpoint is shown as a raw HTTP call plus its SDK wrapper. See [`README.md
 |------|--------|
 | [Authentication & Services](/reference/api/authentication/) | KS types and minting (`agentId`, `userId`, `sessionType`), `userId` binding, the five services and their base URLs, regions (`region`, `REGIONS`) |
 | [Catalog & Assets](/reference/api/design/) | Browse the catalog, custom voice (clone), provider voice import, custom visual (portrait, photo spec), custom face/background, end-to-end portrait recipe |
-| [Agent Components](/reference/api/build/) | Generate an agent profile, create/configure an intellect, preview a prompt, tools (`api`/`csv`/`code`), secrets, ground in your content (RAG), create an avatar, create an agent |
+| [Agent Components](/reference/api/build/) | Generate an agent profile, create/configure an intellect, preview a prompt, tools (`api`/`csv`/`code`/`client`/`var`), secrets, ground in your content (RAG), create an avatar, create an agent |
 | [Widget & Runtime Init](/reference/api/deploy/) | Resolve widget ID, initialize the browser runtime |
 | [Conversation & Analytics](/reference/api/operate/) | Converse (headless HTTP), reserved `sys__*` template variables, status, threads, feedback and follow-ups, usage analytics, knowledge search (MCP) |
 | [Scripted-Video (STV-only) Sessions](https://github.com/kaltura/intelligent-agents-sdk/blob/main/docs/api/scripted-video.md) | Deprecated. Pre-authored speech sessions: auth, lifecycle, `say-audio` |
@@ -31,7 +31,7 @@ Every endpoint is shown as a raw HTTP call plus its SDK wrapper. See [`README.md
 | [Lifecycle Rules](/reference/lifecycle/) | Event-driven rules + InsightSettings (reusable custom-insight definitions) + EmailTemplates (`sendInsightEmail`'s `templateId`). Reference and [recipe](/guides/lifecycle-recipes/) |
 | [External API Integrations](/guides/external-api-integrations/) | Wiring an agent-called tool to a durable write against your own external API (CRM, spreadsheet, ticketing), including the managed OAuth2 flow |
 | [MCP Integrations](/guides/mcp-integrations/) | Wiring a whole [MCP](https://modelcontextprotocol.io) server's tool surface at once: auth, multi-server namespacing, OAuth-gated servers |
-| [Use-Case Catalog](/reference/use-cases/) | All 13 use cases (UC-1 through UC-13) mapped to mechanisms and runnable scripts |
+| [Use-Case Catalog](/reference/use-cases/) | All 14 use cases (UC-1 through UC-14) mapped to mechanisms and runnable scripts |
 | [Site navigation](/guides/site-navigation/) | Fire-and-forget `go_to` tool, compact SITE MAP prompt, `sections.json` manifest, browser `SiteNavigator` plugin |
 
 ---
