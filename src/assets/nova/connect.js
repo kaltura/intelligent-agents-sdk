@@ -347,10 +347,6 @@ function wireTransport(transport, mode) {
   document.getElementById('nova-avatar')?.classList.remove('is-keyed');
   if (mode === 'avatar') {
     keyAvatar(transport);
-    transport.on('screenShareChanged', ({ active }) => {
-      showShareState(active);
-      setStatus(active ? 'Sharing your screen with Nova. Hide passwords and keys first. Select Stop sharing to end.' : 'Screen share stopped.');
-    });
     transport.on('avatarStartTalking', () => els.videoWrap?.classList.add('is-talking'));
     transport.on('avatarStopTalking', () => els.videoWrap?.classList.remove('is-talking'));
     transport.on('interrupted', () => els.videoWrap?.classList.remove('is-talking'));
@@ -471,6 +467,11 @@ async function connect(pendingPrompt, mode = 'avatar') {
     // already put on the status line.
     session.on('ended', ({ reason } = {}) => resetUi(reason));
     session.on('transportChanged', ({ mode: m, transport }) => wireTransport(transport, m));
+    // The facade forwards this event and emits active:false when a mode switch drops the transport.
+    session.on('screenShareChanged', ({ active }) => {
+      showShareState(active);
+      setStatus(active ? 'Sharing your screen with Nova. Hide passwords and keys first. Select Stop sharing to end.' : 'Screen share stopped.');
+    });
     session.on('modeChanged', ({ mode: m }) => {
       localEchoes = [];
       if (m === 'avatar') hideThinking();
@@ -591,11 +592,10 @@ function showShareState(active) {
 
 /** Start or stop sharing the visitor's screen. Must run from a click: the browser shows its own picker. */
 async function toggleShare() {
-  const t = session?.transport;
-  if (!t || session.mode !== 'avatar') return;
-  if (t.screenSharing) { t.stopScreenShare(); return; }
+  if (session?.mode !== 'avatar') return;
+  if (session.screenSharing) { session.stopScreenShare(); return; }
   try {
-    await t.startScreenShare();
+    await session.startScreenShare();
   } catch (e) {
     if (e.code === 'screen_share_denied') setStatus('Screen share cancelled.');
     else if (e.code === 'screen_share_unsupported') setStatus('This browser cannot share a screen.');
