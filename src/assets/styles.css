@@ -1304,12 +1304,19 @@ html.nova-live .nova-widget:not(.dock-mode):not(.drawer-mode) .nova-figure {
   cursor: default;
 }
 
+/* Screen share is on: the button stays lit until the visitor stops it. */
+.nova-btn[aria-pressed="true"] {
+  outline: 2px solid currentColor;
+  outline-offset: -2px;
+}
+
 /* Mute/End only mean anything once a session exists — connect.js disables
    them at rest and enables them on session.connect(); showing them
    greyed-out the whole time reads as a redundant affordance next to the
    video itself, which is the click target that starts a session. Hide
    instead of just dimming. */
 #nova-mute:disabled,
+#nova-share:disabled,
 #nova-mode:disabled,
 #nova-new:disabled,
 #nova-end:disabled,
@@ -1325,6 +1332,7 @@ html.nova-live .nova-widget:not(.dock-mode):not(.drawer-mode) .nova-figure {
 .nova-widget:not(.chat-mode) #nova-new,
 .nova-widget:not(.chat-mode) #nova-close,
 .nova-widget.chat-mode #nova-mute,
+.nova-widget.chat-mode #nova-share,
 .nova-widget.chat-mode #nova-end {
   display: none;
 }
@@ -1384,6 +1392,23 @@ html.nova-live .nova-widget:not(.dock-mode):not(.drawer-mode) .nova-figure {
 }
 
 .nova-widget.dock-mode .nova-dock-chat {
+  display: flex;
+}
+
+/* Shown on the docked bubble only while the visitor shares their screen. */
+.nova-dock-share {
+  display: none;
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 36px;
+  height: 36px;
+  z-index: 5;
+  background: var(--card-bg);
+  color: #d93025;
+}
+
+.nova-widget.dock-mode.is-sharing .nova-dock-share {
   display: flex;
 }
 

@@ -212,6 +212,9 @@
           <button class="nova-btn" id="nova-mute" disabled aria-label="Mute">
             <span class="material-symbols-outlined" aria-hidden="true" id="nova-mute-icon">mic</span>
           </button>
+          <button class="nova-btn" id="nova-share" disabled aria-pressed="false" aria-label="Share your screen with Nova" title="Share your screen with Nova">
+            <span class="material-symbols-outlined" aria-hidden="true" id="nova-share-icon">screen_share</span>
+          </button>
           <button class="nova-btn" id="nova-mode" disabled aria-label="Switch to live video" title="Switch to live video">
             <span class="material-symbols-outlined" aria-hidden="true" id="nova-mode-icon">videocam</span>
           </button>
@@ -248,6 +251,11 @@
          for the corner of a small circle instead of overlaid on full video. -->
     <button class="nova-btn nova-dock-chat" id="nova-dock-chat" type="button" aria-label="Chat without video" title="Chat without video">
       <span class="material-symbols-outlined" aria-hidden="true">chat</span>
+    </button>
+    <!-- Docked bubble while the visitor shares their screen: the controls are
+         folded away in the dock, so this badge is the always-visible way to stop. -->
+    <button class="nova-btn nova-dock-share" id="nova-dock-share" type="button" aria-label="Stop sharing your screen" title="Stop sharing your screen">
+      <span class="material-symbols-outlined" aria-hidden="true">stop_screen_share</span>
     </button>
   </div>
   <script type="module" src="/assets/site/ui.js"></script>
