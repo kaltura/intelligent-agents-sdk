@@ -127,6 +127,8 @@ shareButton.addEventListener('click', () => {
 session.on('screenShareChanged', ({ active }) => shareButton.setAttribute('aria-pressed', String(active)));
 ```
 
+`KalturaAgentSession` has the same `startScreenShare()`, `stopScreenShare()`, `screenSharing` and `screenShareChanged`. In chat mode `startScreenShare()` throws `screen_share_unsupported`. A `switchMode()` ends a running share.
+
 The SDK sends a JPEG still every 2 seconds until `stopScreenShare()`, `disconnect()` or the user's own "stop sharing" control. The agent reads the stills as text, so answers can lag by a few seconds.
 
 | Option (`startScreenShare(opts)`) | Default | Meaning |
