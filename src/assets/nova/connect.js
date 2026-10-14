@@ -659,7 +659,8 @@ async function toggleShare() {
   if (session?.mode !== 'avatar') return;
   if (session.screenSharing) { session.stopScreenShare(); return; }
   try {
-    await session.startScreenShare();
+    // Tuned live for reading small code and status-bar text (1080p to 1440p screens) at modest size.
+    await session.startScreenShare({ maxWidth: 1600, quality: 0.65 });
   } catch (e) {
     if (e.code === 'screen_share_denied') setStatus('Screen share cancelled.');
     else if (e.code === 'screen_share_unsupported') setStatus('This browser cannot share a screen.');
