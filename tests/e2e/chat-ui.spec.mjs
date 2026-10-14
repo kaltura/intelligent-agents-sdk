@@ -24,6 +24,12 @@ test('nova widget ships the chat-mode controls in their at-rest state', async ({
   // Mute/end keep their pre-session hidden state alongside the new toggle.
   await expect(page.locator('#nova-mute')).toBeHidden();
   await expect(page.locator('#nova-end')).toBeHidden();
+
+  // Screen share is video-only: hidden and disabled until an avatar session connects.
+  const share = page.locator('#nova-share');
+  await expect(share).toBeHidden();
+  await expect(share).toBeDisabled();
+  await expect(share).toHaveAttribute('aria-pressed', 'false');
 });
 
 test('chat-start affordance is a sibling of the placeholder, not nested in it', async ({ page }) => {
