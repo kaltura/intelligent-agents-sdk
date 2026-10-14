@@ -25,6 +25,7 @@ import { initDock, enterDrawerMode, exitDrawerMode } from './dock.js';
 import { initTranscript, appendTranscript, appendActionLink, clearTranscript, showThinking, hideThinking } from './transcript.js';
 import { initHighlighter } from './highlighter.js';
 import { initSiteNav } from './site-nav.js';
+import { initPopout } from './popout.js';
 import { SDK_BASE } from './sdk.js';
 
 // Every way to start Nova stays hidden until this module has the SDK and has
@@ -202,6 +203,11 @@ function closeDrawer() {
 }
 
 let session = null;
+// Floats Nova over other tabs and apps while a video conversation is live.
+const popout = initPopout({
+  isLive: () => session?.state === 'connected' && session.mode === 'avatar',
+  avatar: document.getElementById('nova-avatar'),
+});
 let siteNav = null;
 let highlighter = null;
 let connecting = false;
@@ -337,6 +343,7 @@ function wireTransport(transport, mode) {
   els.mute.disabled = mode !== 'avatar';
   els.share.disabled = true; // syncShare() turns it on once the transport is connected
   showShareState(false);
+  if (mode === 'chat') popout.disarm();
   // Chat renders as the full-height side drawer; video renders in the hero
   // card / corner dock. Which buttons show in each mode is pure CSS keyed on
   // .chat-mode — video: mute + hang-up (drops to chat); chat: video toggle,
@@ -509,6 +516,7 @@ async function connect(pendingPrompt, mode = 'avatar') {
     els.newConvo.disabled = false;
     els.close.disabled = false;
     syncShare();
+    syncPopout();
     setStatus('Connected — ask Nova anything about the SDK.');
     if (kickoff && mode === 'chat') showThinking();
   } catch (e) {
@@ -551,6 +559,7 @@ async function toggleMode() {
     await session.switchMode(target);
     els.mode.disabled = false;
     syncShare();
+    syncPopout();
   } catch (e) {
     // A failed switch is terminal: the facade lands in `failed` and the old
     // transport is already gone. disconnect() → 'ended' → resetUi().
@@ -578,6 +587,12 @@ function toggleMute() {
 /** Screen share needs a connected video session and a browser that can capture. */
 function syncShare() {
   els.share.disabled = !(session?.state === 'connected' && session.mode === 'avatar' && navigator.mediaDevices?.getDisplayMedia);
+}
+
+/** Pop out only in a connected video session; chat and a closed Nova stay put. */
+function syncPopout() {
+  if (session?.state === 'connected' && session.mode === 'avatar') popout.arm();
+  else popout.disarm();
 }
 
 /** Icon and label for the share button; the SDK's `screenShareChanged` drives it. */
@@ -620,6 +635,7 @@ function newConversation() {
 
 function resetUi(reason) {
   session = null;
+  popout.disarm();
   siteNav?.destroy();
   siteNav = null;
   highlighter?.destroy();
