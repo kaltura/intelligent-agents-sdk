@@ -24,7 +24,7 @@ Every endpoint is shown as a raw HTTP call plus its SDK wrapper. See [`README.md
 | [Lifecycle Rules](docs/lifecycle/README.md) | Event-driven rules + InsightSettings (reusable custom-insight definitions) + EmailTemplates (`sendInsightEmail`'s `templateId`). Reference and [recipe](docs/lifecycle/recipes.md) |
 | [External API Integrations](docs/EXTERNAL-API-INTEGRATIONS.md) | Wiring an agent-called tool to a durable write against your own external API (CRM, spreadsheet, ticketing), including the managed OAuth2 flow |
 | [MCP Integrations](docs/MCP-INTEGRATIONS.md) | Wiring a whole [MCP](https://modelcontextprotocol.io) server's tool surface at once: auth, multi-server namespacing, OAuth-gated servers |
-| [Use-Case Catalog](docs/USE-CASES.md) | All 13 use cases (UC-1 through UC-13) mapped to mechanisms and runnable scripts |
+| [Use-Case Catalog](docs/USE-CASES.md) | All 14 use cases (UC-1 through UC-14) mapped to mechanisms and runnable scripts |
 | [Site navigation](docs/SITE-NAV.md) | Fire-and-forget `go_to` tool, compact SITE MAP prompt, `sections.json` manifest, browser `SiteNavigator` plugin |
 
 ---

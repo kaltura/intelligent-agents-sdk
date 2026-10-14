@@ -88,7 +88,7 @@ test('appInit: avatars[] preview/loading fields pass through unmodified, includi
 // tools/check-docs.mjs (markdown-only scope).
 test('appInit: JSDoc documents that previewImageUrl/loadingVideoUrl are raw backend asset URLs', async () => {
   const src = await readFile(new URL('../../src/management/application.js', import.meta.url), 'utf8');
-  const jsdoc = src.slice(src.indexOf('/**', src.indexOf('async appInit') - 1500), src.indexOf('async appInit'));
+  const jsdoc = src.slice(src.indexOf('/**', src.indexOf('async appInit') - 2500), src.indexOf('async appInit'));
   assert.match(jsdoc, /raw backend asset URLs/i);
 });
 
@@ -96,7 +96,7 @@ test('appInit: JSDoc documents that previewImageUrl/loadingVideoUrl are raw back
 // widget bakes in fails with api_exception, not a silent empty result.
 test('appInit: JSDoc documents the agentid-privilege permission gate', async () => {
   const src = await readFile(new URL('../../src/management/application.js', import.meta.url), 'utf8');
-  const jsdoc = src.slice(src.indexOf('/**', src.indexOf('async appInit') - 1500), src.indexOf('async appInit'));
+  const jsdoc = src.slice(src.indexOf('/**', src.indexOf('async appInit') - 2500), src.indexOf('async appInit'));
   assert.match(jsdoc, /PERMISSION GATE/);
   assert.match(jsdoc, /agentid/);
 });

@@ -138,6 +138,7 @@ You now know how to create an agent and talk to it. Here's where to go for more:
 | Run every demo in `examples/` | [docs/LIVE-DEMOS.md](docs/LIVE-DEMOS.md) |
 | See a complete browser example with a live avatar | [examples/browser-experience.html](examples/browser-experience.html) |
 | See a complete avatar-guided slide deck | [examples/deck-presenter.html](examples/deck-presenter.html) |
+| Let the avatar see the user's screen | [examples/screen-share-agent.html](examples/screen-share-agent.html) |
 
 ---
 

@@ -99,6 +99,44 @@ POST https://api.avatar.us.kaltura.ai/v1/agent/create
 
 Returns `agentId` (UUID). **Save this.**
 
+## Screen share
+
+The agent can look at the user's screen and help with what it sees. Two steps:
+
+1. Turn it on for the agent. The `prompt` tells the vision step what to report.
+
+```js
+await mgmt.agents.update({ agentId, screenShare: { enabled: true, prompt: 'Describe code, errors and UI state.' } }, ks);
+```
+
+2. In the browser, call `session.startScreenShare()` from a click. The browser shows its screen picker.
+
+```js
+shareButton.addEventListener('click', () => {
+  if (session.screenSharing) session.stopScreenShare();
+  else session.startScreenShare().catch((e) => { if (e.code !== 'screen_share_denied') throw e; });
+});
+session.on('screenShareChanged', ({ active }) => shareButton.setAttribute('aria-pressed', String(active)));
+```
+
+The SDK sends a JPEG still every 2 seconds until `stopScreenShare()`, `disconnect()` or the user's own "stop sharing" control. The agent reads the stills as text, so answers can lag by a few seconds.
+
+| Option (`startScreenShare(opts)`) | Default | Meaning |
+|---|---|---|
+| `intervalMs` | `2000` | Time between stills |
+| `maxWidth` | `1500` | Wider stills (px) are scaled down |
+| `quality` | `0.5` | JPEG quality, 0 to 1 |
+| `stream` | none | A display stream you already hold. The SDK then skips the picker and does not stop its tracks |
+
+| Error code | When |
+|---|---|
+| `capability_disabled` | The agent's `screenShare` setting is off |
+| `screen_share_denied` | The user cancelled the picker or blocked access |
+| `screen_share_unsupported` | The browser has no `getDisplayMedia` |
+| `screen_share_failed` | The browser could not start the capture |
+
+A failed capture during a share arrives as a `warning` event with code `screen_share_capture_failed`, and the share continues. `session.sendScreenShot(data)` sends one still you captured yourself. Full app: [examples/screen-share-agent.html](../../../examples/screen-share-agent.html).
+
 ---
 
 ## Related docs

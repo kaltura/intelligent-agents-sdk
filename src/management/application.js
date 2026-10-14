@@ -46,6 +46,11 @@ export class Application {
    * metadata, not modeled). READ (no resource
    * mutation).
    *
+   * Flag fields such as `legacyScreenShareEnabled` are the server's own names
+   * and may change or go away. Do not read them in app code. Use the SDK
+   * instead: set `screenShare` on the agent (`agents.create` / `agents.update`)
+   * and call `startScreenShare()` on the session. Those names stay stable.
+   *
    * PERMISSION GATE: the KS must carry the `agentid:<uuid>` privilege (a
    * widget KS from {@link resolveWidgetId}'s widget, an agent token, or a
    * conversation token minted with `agentId`). An admin or plain

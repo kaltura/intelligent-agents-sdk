@@ -81,7 +81,9 @@ name: Live verification
 # See scripts/live-verify-opening-phrase.mjs.
 # live-verify-avatar-flag checks that sys__avatar_enabled is true in a browser
 # avatar session and false in a plain conversation, for a prompt block, a
-# compound condition and a skill. See scripts/live-verify-avatar-flag.mjs.
+# compound condition and a skill. Manual and nightly runs also start a real
+# screen share (--share) and check sys__avatar_share_screen_enabled flips to
+# true. See scripts/live-verify-avatar-flag.mjs.
 # live-verify-mcp covers setMcpServers/describe end to end against a real,
 # CI-hosted reference MCP server (examples/mcp-live-showcase/server.mjs),
 # exposed over a cloudflared quick tunnel so the real backend can call back
@@ -576,6 +578,8 @@ jobs:
               - 'scripts/live-verify-kickoff-shared.mjs'
               - 'src/management/condition.js'
               - 'src/management/intellect-config.js'
+              - 'src/management/agents.js'
+              - 'src/experience/screen-share.js'
             opening-phrase:
               - 'scripts/live-verify-opening-phrase.mjs'
               - 'scripts/live-verify-hooks-shared.mjs'
@@ -1311,9 +1315,14 @@ jobs:
         env:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
           AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
+          RUN_ALL: ${{ github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' }}
         run: |
           set -o pipefail
-          node scripts/live-verify-avatar-flag.mjs --env prod 2>&1 | tee live-verify-avatar-flag-output.log
+          # The screen-share scenarios (A5, A6) wait on a background vision call that sometimes misses,
+          # so they run only on manual and nightly runs, never on PRs or the merge queue.
+          SHARE=""
+          if [ "$RUN_ALL" = true ]; then SHARE="--share"; fi
+          node scripts/live-verify-avatar-flag.mjs --env prod $SHARE 2>&1 | tee live-verify-avatar-flag-output.log
 
       # Provision 3 agents (silent+kickoff, Jinja2, Jinja2 <blank> + kickoff) → measure connect timing (3 runs each) → check startup KPIs per arm → cleanup
       - name: Session · Startup KPIs (connect timing)
