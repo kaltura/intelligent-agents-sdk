@@ -1074,7 +1074,7 @@ await mgmt.intellectConfig.patch(configId, { base_directive: 'Be concise.' }, ks
 
 // typed setters
 await mgmt.intellects.setCapability(configId, 'use_knowledge_base', 'on', ks);
-const { id: toolId } = await mgmt.tools.add(myTool, ks);       // tools are a separate, partner-level entity
+const { id: toolId } = await mgmt.tools.add(myTool, ks);       // myTool from tools.api(), see Tools and Secrets
 await mgmt.intellectConfig.setToolIds(configId, [toolId], ks); // then link it
 await mgmt.intellects.secrets.set(configId, { API_KEY: value }, ks);  // write-only
 await mgmt.intellectConfig.setKnowledgeIds(configId, [knowledgeId], ks);
@@ -1159,7 +1159,7 @@ Shared skills and rejected ids: [Skills](docs/api/management-operations.md#skill
 **Provider voice import** (`mgmt.catalog`) creates a catalog Voice item directly from an ElevenLabs or Cartesia voice id, with no audio upload:
 
 ```js
-const v = await mgmt.catalog.importVoiceFromElevenLabs('EXAVITQu4vr4xnSDxMaL', ks); // ElevenLabs' own public sample voice id, safe to use as-is
+const v = await mgmt.catalog.importVoiceFromElevenLabs('<elevenlabs-voice-id>', ks); // a voice in your ElevenLabs library that has samples
 // or: await mgmt.catalog.importVoiceFromCartesia('<cartesia-voice-id>', ks);
 ```
 
