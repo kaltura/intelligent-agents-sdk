@@ -1,5 +1,5 @@
 /**
- * Secret redaction — the single chokepoint every log line, error, and emitted
+ * Secret redaction. The single chokepoint every log line, error, and emitted
  * record passes through. Kaltura KS tokens (`djJ8…`), bare hex secrets, and
  * RFC1918 private IPs must NEVER leave the process in cleartext.
  * `tools/check-docs.mjs` scans tracked files for exactly these patterns.
@@ -8,11 +8,16 @@
  * output through {@link redact}, so a token can't leak through a stray
  * console.log or a thrown error message.
  *
- * Three layers: (1) string-pattern scrub (KS / 32-hex / private-IP); (2)
- * sensitive-key wholesale redaction (`secret`/`password`/`credential`/`token`/
- * `ks`); (3) a STRUCTURAL `request_vars` rule — converse client variables hold
- * arbitrary PII scalars under arbitrary keys that match no pattern, so the
- * whole sub-tree is replaced by key-name.
+ * Three layers:
+ * 1. String-pattern scrub (KS, 32-hex, private IP).
+ * 2. Sensitive-key redaction of the whole value (each string, for an array). This covers any key with
+ *    `secret`, `password`, `credential`, `token` or `ks` in it, and the exact
+ *    keys `authorization`, `proxy-authorization`, `cookie`, `set-cookie`,
+ *    `x-api-key` and `apikey` in any case (`api_key` and `api-key` too). An `authentication` object keeps its
+ *    shape, but its `value` is always hidden, even when it is an object.
+ * 3. A structural `request_vars` rule. Converse client variables hold
+ *    arbitrary PII scalars under arbitrary keys that match no pattern, so the
+ *    whole sub-tree is replaced by key name.
  */
 
 import { PRIVATE_IP_RE } from './net-guard.js';
@@ -21,6 +26,8 @@ import { PRIVATE_IP_RE } from './net-guard.js';
 const KS_RE = /djJ8[A-Za-z0-9_\-+/=]{16,}/g;
 /** A bare Kaltura admin secret is 32 lowercase hex chars. */
 const HEX32_RE = /\b[a-f0-9]{32}\b/g;
+/** Keys whose value is redacted wholesale: name fragments plus the exact credential header keys. */
+const SENSITIVE_KEY_RE = /secret|password|credential|token|\bks\b|^(?:(?:proxy-)?authorization|(?:set-)?cookie|x-api-key|api[-_]?key)$/i;
 
 /**
  * Redact secrets from any value. Strings are scrubbed in place; objects/arrays
@@ -47,10 +54,18 @@ export function redact(value) {
         out[k] = '<request_vars-redacted>';
         continue;
       }
+      // An `authentication` object keeps its shape (`type` stays readable); only `value` is hidden.
+      if (k === 'authentication' && v && typeof v === 'object' && !Array.isArray(v)) {
+        const a = /** @type {Record<string, unknown>} */ (redact(v));
+        if ('value' in a) {
+          const av = /** @type {any} */ (v).value;
+          a.value = av && typeof av !== 'string' ? '<redacted>' : redactSensitiveKey(av);
+        }
+        out[k] = a;
+        continue;
+      }
       // Redact whole values of obviously-sensitive keys regardless of shape.
-      out[k] = /secret|password|credential|token|\bks\b/i.test(k)
-        ? redactSensitiveKey(v)
-        : redact(v);
+      out[k] = SENSITIVE_KEY_RE.test(k) ? redactSensitiveKey(v) : redact(v);
     }
     return /** @type {T} */ (out);
   }
@@ -68,6 +83,8 @@ export function redactString(s) {
 /** @param {unknown} v */
 function redactSensitiveKey(v) {
   if (typeof v === 'string') return v ? '<redacted>' : v;
+  // A header can repeat (`Set-Cookie: [...]`): every string in the list is the secret.
+  if (Array.isArray(v)) return v.map(redactSensitiveKey);
   return redact(v);
 }
 

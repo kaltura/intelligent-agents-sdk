@@ -11,6 +11,8 @@ Tools are a standalone entity scoped to your whole partner account, with their o
 - `mgmt.tools` is the CRUD surface. `add` and `update` both check the tool name before any network call.
 - `mgmt.intellectConfig.setToolIds` (or `tool_ids` passed straight to `intellects.create`/`update`) links a tool to an intellect.
 
+**Per-turn call cap.** Each tool can run only a limited number of times in one turn. Calls past the cap return a short result instead of running. Design a tool so one call does the work. The cap cannot be changed from the SDK.
+
 ### `api` tool
 
 Calls an external HTTP endpoint. Put `{arg_name}` in the url or body to send an arg. An arg that no placeholder uses is never sent, and `intellectConfig.audit` warns `tool_arg_unused`. `POST /v1/tool/add`:
@@ -123,16 +125,16 @@ Python that runs on the server. Define `def main(...)`. Each declared arg is pas
 }
 ```
 
-**You cannot create `csv` or `code` tools yourself.** `POST /v1/tool/add` returns HTTP 403 for a `csv` or `code` config. So does `/v1/tool/update` when its `config` is a `csv` or `code` config. No account setting changes this. Contact Kaltura support to have one set up. `api`, `client` and `var` tools have no such limit.
+**Only accounts Kaltura support has enabled can create `csv` or `code` tools.** On other accounts `POST /v1/tool/add` returns HTTP 403 for a `csv` or `code` config, and so does `/v1/tool/update` when its `config` is one. Contact Kaltura support to enable them. `api`, `client` and `var` tools have no such limit.
 
 | Call | Result |
 |---|---|
-| `add` with a `csv` or `code` config | 403, nothing is created |
-| `update` with a `csv` or `code` config | 403, the tool is unchanged |
+| `add` with a `csv` or `code` config (account not enabled) | 403, nothing is created |
+| `update` with a `csv` or `code` config (account not enabled) | 403, the tool is unchanged |
 | `update` with only `name` (no `config`) | works |
 | `get`, `list`, `delete` | work on any tool type |
 
-SDK: `tools.csv(...)`/`tools.code(...)` still validate and build the config locally. The 403 comes back from `mgmt.tools.add`/`update` as a `KalturaError` with `code: 'forbidden'`.
+SDK: `tools.csv(...)`/`tools.code(...)` still validate and build the config locally. The 403 on an account that is not enabled comes back from `mgmt.tools.add`/`update` as a `KalturaError` with `code: 'forbidden'`.
 
 ### `client` tool
 
@@ -189,7 +191,7 @@ Use `tools.client(...)` in the SDK, which validates the tool before any network 
 
 ## Secrets (write-only)
 
-`secrets` is a dict `{name: value}` on `config`. A read masks every value as `"***"`. A `"***"` value on update is preserved, so a read-modify-write never overwrites a sibling. Reference a secret as `{{secrets.NAME}}` in prompts and in any string of a tool config, including the OAuth2 `client_secret`. `tools.api` also takes the bare `secrets.NAME` for `client_secret` and saves it as `{{secrets.NAME}}`. `intellectConfig.audit` checks these references in linked tools.
+`secrets` is a dict `{name: value}` on `config`. A read masks every value as `"***"`. A `"***"` value on update is preserved, so a read-modify-write never overwrites a sibling. Reference a secret as `{{secrets.NAME}}` in prompts and in any string of a tool config, including the OAuth2 `client_secret`. `tools.api` also takes the bare `secrets.NAME` for `client_secret` and saves it as `{{secrets.NAME}}`. `intellectConfig.audit` checks these references in linked tools. A value cannot start with `enc:`; the SDK throws `bad_request` before the request.
 
 **SDK:** `mgmt.intellects.secrets.{listNames, has, set, delete, replaceAll, validate}`. `delete(configId, name, ks, confirm)` is permanent and requires `confirm = { confirmPermanent: true }`.
 

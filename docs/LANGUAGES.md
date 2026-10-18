@@ -17,7 +17,7 @@ One call writes two fields, so the agent speaks and listens in the same language
 
 | Field | Set to | Effect |
 |---|---|---|
-| `force_language` on the intellect | The display name, for example `"Hebrew"` | Replies come back in that language, whatever language the user writes or speaks |
+| `force_language` on the intellect | The English name of the language, for example `"Hebrew"`. Use the same form if you set the field yourself | Replies come back in that language, whatever language the user writes or speaks |
 | `asr.language` on the agent | The code, for example `"he"` | Speech recognition matches the language |
 
 The call is idempotent. It needs an admin token, so run it on your server.
@@ -36,10 +36,10 @@ This clears `force_language` and resets `asr.language` to `"en"`.
 |---|---|
 | `configId`, `agentId` | Both required. `configId` is the intellect the agent points at |
 | `language` | An ISO 639-1 code from `LANGUAGE_CODES`, such as `"he"`, or `null` to clear |
-| `languageName` | The display name written to `force_language`. Required when the code is not in `LANGUAGE_NAMES` |
+| `languageName` | The English name written to `force_language`. Required when the code is not in `LANGUAGE_NAMES` |
 | `asrProvider` | Passed through to `agents.update`. Defaults to `"kaltura"` |
 
-`LANGUAGE_CODES` and `LANGUAGE_NAMES` are exported from `@kaltura/intelligent-agents/management`. `LANGUAGE_CODES` lists the codes `setForcedLanguage` accepts. `LANGUAGE_NAMES` maps some of them to display names. Neither is a list of supported languages.
+`LANGUAGE_CODES` and `LANGUAGE_NAMES` are exported from `@kaltura/intelligent-agents/management`. `LANGUAGE_CODES` lists the codes `setForcedLanguage` accepts. `LANGUAGE_NAMES` maps some of them to English names. Neither is a list of supported languages.
 
 ```js
 import { LANGUAGE_CODES, LANGUAGE_NAMES } from '@kaltura/intelligent-agents/management';

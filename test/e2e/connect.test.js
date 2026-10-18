@@ -135,7 +135,8 @@ test('post-connect: speak injects onTextEntered (brain), never HTTP converse', a
   session.disconnect();
 });
 
-test('post-connect: setDynamicPrompt / notifyHtmlElementClick / submitStructuredDataForm emit documented events', async () => {
+test('post-connect: setDynamicPrompt / notifyHtmlElementClick / submitStructuredDataForm emit documented events', async (t) => {
+  t.mock.method(console, 'warn', () => {});
   const { session, socket } = newSession();
   scriptHappyPath(socket);
   await session.connect();
@@ -485,6 +486,62 @@ test('resilience: a NON-recoverable drop → ended (no reconnect)', async () => 
   assert.equal(session.state, 'disconnected');
   assert.equal(ended.reason, 'io server disconnect');
   assert.equal(reconnecting, false);
+});
+
+test('submitStructuredDataForm warns once per session that it only records the submission', async (t) => {
+  const warn = t.mock.method(console, 'warn', () => {});
+  const { session, socket } = newSession();
+  scriptHappyPath(socket);
+  await session.connect();
+  session.submitStructuredDataForm({ email: 'ada@example.com' });
+  session.submitStructuredDataForm({ email: 'ada@example.com' });
+  assert.equal(socket.emitsOf('setFormLeadInfo').length, 2, 'both calls still emit');
+  assert.equal(warn.mock.callCount(), 1, 'one console warning per session');
+  const msg = String(warn.mock.calls[0].arguments[0]);
+  assert.ok(msg.includes('speak()') && msg.includes('updateRequestVars()'), msg);
+  assert.ok(!msg.includes('ada@example.com'), 'the warning never carries viewer values');
+  session.disconnect();
+});
+
+test('submitStructuredDataForm warning is per session instance', async (t) => {
+  const warn = t.mock.method(console, 'warn', () => {});
+  for (let i = 0; i < 2; i++) {
+    const { session, socket } = newSession();
+    scriptHappyPath(socket);
+    await session.connect();
+    session.submitStructuredDataForm({ email: 'a@b.co' });
+    session.disconnect();
+  }
+  assert.equal(warn.mock.callCount(), 2);
+});
+
+test('submitStructuredDataForm on a disconnected session throws invalid_state and does not warn', (t) => {
+  const warn = t.mock.method(console, 'warn', () => {});
+  const { session } = newSession();
+  assert.throws(() => session.submitStructuredDataForm({ a: 1 }), (e) => e.code === 'invalid_state');
+  assert.equal(warn.mock.callCount(), 0);
+});
+
+test('resilience: pause expiry passes message and transcription through when present', async () => {
+  const { session, socket } = newSession();
+  scriptHappyPath(socket);
+  await session.connect();
+  const seen = [];
+  session.on('timeExpired', (p) => seen.push(p));
+  session.pause();
+  const transcription = [{ role: 'user', text: 'hi' }];
+  socket.server('pauseSessionExpired', { message: 'Session expired', transcription });
+  assert.deepEqual(seen[0], { type: 'pause_expiry', message: 'Session expired', transcription });
+  session.disconnect();
+  const b = newSession();
+  scriptHappyPath(b.socket);
+  await b.session.connect();
+  const seen2 = [];
+  b.session.on('timeExpired', (p) => seen2.push(p));
+  b.session.pause();
+  b.socket.server('pauseSessionExpired', { message: 42, transcription: 'nope' });
+  assert.deepEqual(seen2[0], { type: 'pause_expiry' }, 'wrong-typed fields are dropped');
+  b.session.disconnect();
 });
 
 test('resilience: pause expiry → timeExpired{pause_expiry}, NOT ended; resume rebuilds STV', async () => {

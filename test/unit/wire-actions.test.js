@@ -20,7 +20,7 @@ test('spoken/control/empty segments are NOT actions (default-allow flow)', () =>
 
 test('sources / followups classify as render-genui and are NOT a distinct vetoable type', () => {
   // Real segments carry runtime in metadata.runtimeName + a `-tool` typed segment.
-  const sources = classifyAgentAction({ type: 'sources-tool', metadata: { runtimeName: 'sources-tool', widgetName: 'unisphere.widget.genie' }, content: { items: [] } });
+  const sources = classifyAgentAction({ type: 'sources-tool', metadata: { runtimeName: 'sources-tool', widgetName: 'unisphere.widget.genie-tools' }, content: { items: [] } });
   assert.equal(sources.type, 'render-genui');
   assert.equal(sources.runtime, 'sources');
   const followups = classifyAgentAction({ type: 'followups-tool', metadata: { runtimeName: 'followups-tool' } });
@@ -50,10 +50,10 @@ test('user-properties-form classifies as structured-data-form', () => {
 });
 
 test('reads metadata.runtimeName even when seg.type is generic (server adapter shape)', () => {
-  const a = classifyAgentAction({ type: 'unisphere-tool', metadata: { runtimeName: 'flashcards-tool', widgetName: 'unisphere.widget.genie' }, content: 'x' });
+  const a = classifyAgentAction({ type: 'unisphere-tool', metadata: { runtimeName: 'flashcards-tool', widgetName: 'unisphere.widget.genie-tools' }, content: 'x' });
   assert.equal(a.type, 'render-genui');
   assert.equal(a.runtime, 'flashcards');
-  assert.equal(a.widgetName, 'unisphere.widget.genie');
+  assert.equal(a.widgetName, 'unisphere.widget.genie-tools');
 });
 
 test('navigate is SYNTHETIC (no real typed nav segment) — classified only for the fixture', () => {

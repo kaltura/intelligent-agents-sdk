@@ -77,6 +77,9 @@ import { SCREEN_SHARE_DEFAULTS, createStillCapturer, screenShareError, unsupport
 // largest `client({timeout})` bound (120s, `tools.js`), so it only sweeps calls the app never acknowledged.
 const PENDING_TOOL_ACK_MAX_AGE_MS = 10 * 60_000;
 
+// One-time `submitStructuredDataForm()` notice (fixed text, never carries viewer values).
+const FORM_RECORDS_ONLY_MSG = '[KalturaAvatarSession] submitStructuredDataForm() records the submission only. It does not change what the agent knows. To give the agent the values, send them in a message with speak(), or as request variables with updateRequestVars() that your prompt reads.';
+
 // `joinRoom` (5 s) covers `clientConfiguration`. `joinComplete` has its own, longer budget
 // (20 s): under load it can arrive after 5 s, and a 5 s cap surfaced a JoinRoomTimeout while
 // join was about to complete. Both are bounded by `overall`.
@@ -2193,15 +2196,22 @@ export class KalturaAvatarSession extends Emitter {
   }
 
   /**
-   * Submit the structured-data-form values the agent asked for (via
-   * `user_properties_forms`). Emits `setFormLeadInfo` on the socket and returns
-   * nothing. The SDK reads nothing back. APP-initiated, so it is UNGATED: the
-   * `_gateAgentAction` guardrail is for AGENT-pushed actions, not your own calls.
+   * Record the viewer's structured-data-form submission. Emits `setFormLeadInfo`
+   * on the socket and returns nothing. It does NOT change what the agent knows:
+   * send the values in a message (`speak()`) or as request variables
+   * (`updateRequestVars()`) to make the agent act on them. Logs one
+   * `console.warn` per session the first time it is called. APP-initiated, so it
+   * is UNGATED: the `_gateAgentAction` guardrail is for AGENT-pushed actions,
+   * not your own calls.
    * @param {object} values e.g. `{ email, phone }` or any other configured fields
    */
   submitStructuredDataForm(values) {
     this._requireConnected('submitStructuredDataForm');
     this._touchActivity();
+    if (!this._warned.has('form-records-only')) {
+      this._warned.add('form-records-only');
+      if (typeof console !== 'undefined') console.warn(FORM_RECORDS_ONLY_MSG);
+    }
     this._socket.emit('setFormLeadInfo', sanitizeJson(values || {}));
   }
 
@@ -2846,7 +2856,14 @@ export class KalturaAvatarSession extends Emitter {
     // Pause/resume lifecycle: a pause that EXPIRES
     // server-side releases STV+ASR but persists the session. It is NOT an 'ended'. resume()
     // then needs a fresh stvNewSession (handled in resume()).
-    socket.on('pauseSessionExpired', () => { this._sessionReleased = true; this.emit('timeExpired', { type: 'pause_expiry' }); });
+    socket.on('pauseSessionExpired', (p) => {
+      this._sessionReleased = true;
+      /** @type {{type:'pause_expiry', message?:string, transcription?:unknown[]}} */
+      const ev = { type: 'pause_expiry' };
+      if (typeof p?.message === 'string') ev.message = p.message;
+      if (Array.isArray(p?.transcription)) ev.transcription = p.transcription;
+      this.emit('timeExpired', ev);
+    });
     socket.on('sessionReadyForResume', () => { this._sessionReleased = true; this.emit('resumeReady', { ready: true }); });
     socket.on('resumingSession', () => this._setState('resuming'));
     socket.on('pauseExpiryWarning', (p) => this.emit('pauseExpiryWarning', { secondsRemaining: Number.isFinite(p?.secondsRemaining) ? p.secondsRemaining : undefined }));

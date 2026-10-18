@@ -68,10 +68,10 @@ const NAME_RE = /^[A-Za-z0-9_-]+$/;
  * {@link client}, and `var` sets conversation variables from its args — see
  * {@link varTool}.
  *
- * `code` and `csv` tools cannot be created by a customer session. `add`, and
- * `update` with a `config` of that type, reply HTTP 403 (`Tool type '<type>'
- * is unavailable by default, call support`). Contact Kaltura support to have
- * one set up. `api`, `client` and `var` tools have no such limit.
+ * Only accounts Kaltura support has enabled can create `code` and `csv` tools.
+ * On other accounts `add`, and `update` with a `config` of that type, reply HTTP
+ * 403. Contact Kaltura support to enable them. `api`, `client` and `var` tools
+ * have no such limit.
  * @type {ReadonlyArray<'api'|'csv'|'code'|'client'|'var'>}
  */
 export const TOOL_TYPES = Object.freeze(['api', 'csv', 'code', 'client', 'var']);
@@ -465,10 +465,9 @@ export function api(cfg) {
  * must be a non-empty string with a parseable
  * header row (≥1 column). PURE.
  *
- * A customer session cannot create this type: `tools.add`, and `tools.update`
- * with this `config`, reply HTTP 403 (`Tool type 'csv' is unavailable by
- * default, call support`). Contact Kaltura support to have one set up. This
- * builder still validates and returns a wire-ready config either way; the 403
+ * Only accounts Kaltura support has enabled can create this type: on other
+ * accounts `tools.add`, and `tools.update` with this `config`, reply HTTP 403.
+ * Contact Kaltura support to enable it. This builder still validates and returns a wire-ready config either way; the 403
  * comes back from the network call, not from here.
  * @param {object} cfg {name, description, csv, args?, condition?, displayName?, addToHistory?}
  * @returns {GenieToolConfig}
@@ -489,10 +488,9 @@ export function csv(cfg) {
  * Build a validated `code` tool — Python run in a server sandbox that computes
  * a result string the LLM consumes. `code` must be a non-empty string. PURE.
  *
- * A customer session cannot create this type: `tools.add`, and `tools.update`
- * with this `config`, reply HTTP 403 (`Tool type 'code' is unavailable by
- * default, call support`). Contact Kaltura support to have one set up. This
- * builder still validates and returns a wire-ready config either way; the 403
+ * Only accounts Kaltura support has enabled can create this type: on other
+ * accounts `tools.add`, and `tools.update` with this `config`, reply HTTP 403.
+ * Contact Kaltura support to enable it. This builder still validates and returns a wire-ready config either way; the 403
  * comes back from the network call, not from here.
  * @param {object} cfg {name, description, code, args?, condition?, displayName?, addToHistory?}
  * @returns {GenieToolConfig}
@@ -817,9 +815,9 @@ export async function findIntellectsReferencingTool(ctx, toolId, ks) {
  * affects every intellect that references it, not just the one the caller
  * has in mind. `delete()` below checks for exactly this before acting.
  *
- * `code`/`csv` tools cannot be created by a customer session — see
- * {@link TOOL_TYPES}. `add`, and `update` with a `config` of that type, reply
- * HTTP 403 (`code:'forbidden'`). A name-only `update` of an existing tool,
+ * Only accounts Kaltura support has enabled can create `code`/`csv` tools, see
+ * {@link TOOL_TYPES}. On other accounts `add`, and `update` with a `config` of
+ * that type, reply HTTP 403 (`code:'forbidden'`). A name-only `update` of an existing tool,
  * `get`, `list` and `delete` are not affected.
  */
 export class Tools {

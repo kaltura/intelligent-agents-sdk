@@ -36,7 +36,7 @@ const admin = await mgmt.sessions.createAdminToken({ userId: 'admin@example.com'
 | Agent | 0 (user) | `agentid:<agentId>,geniegpcid:<configId>,setrole:PLAYBACK_BASE_ROLE` | Talking as one agent. Entitlement ON |
 | Widget | n/a | auto-derived from `widgetId` | End-user embed. No admin secret in the browser |
 
-Conversation and agent tokens are **user sessions** by default. Pass `sessionType: 'admin'` to get an admin-level session (type 2, no forced role) instead. It reaches everything its `role` and privileges allow, so mint it on your server only. `restrictions.role` is only allowed with `sessionType: 'admin'`. A second `setrole`, `agentid` or `geniegpcid` in `extraPrivileges` throws `bad_request`. What each token kind can reach: [SECURITY.md § Session type](../../SECURITY.md#session-type).
+Conversation and agent tokens are **user sessions** by default. Pass `sessionType: 'admin'` to get an admin-level session (type 2, no forced role) instead. It reaches everything its `role` and privileges allow, so mint it on your server only. `restrictions.role` is only allowed with `sessionType: 'admin'`. A second `setrole`, `agentid` or `geniegpcid` in `extraPrivileges` throws `bad_request`. What each token kind can reach: [SECURITY.md § Session type](../../SECURITY.md#session-type). `extraPrivileges` can also mark thread origin ([Threads](operate.md#threads)).
 
 ### Conversation token or agent token?
 
@@ -74,7 +74,7 @@ AGENT_KS=$(curl -s -X POST "https://www.kaltura.com/api_v3/service/session/actio
   -d "privileges=agentid:1_abc123,geniegpcid:1389,setrole:PLAYBACK_BASE_ROLE" | tr -d '"')
 ```
 
-**Keep `disableentitlement` server-side, for management/admin operations only.** A minted `Token` records its kind, and the SDK rejects a token of the wrong kind before any network call. A raw KS string is encrypted, so the SDK can't read its kind. It still rejects the raw string of a widget token this `Management` instance minted recently. Other raw strings go to the server, which decides. Never hand an admin KS string to an end-user session. See [SECURITY.md](../../SECURITY.md#ks-kaltura-session-guidance-for-agents-ac-3--ac-6--ia-2) and Kaltura's own [KS/privilege reference](https://kaltura.md/KALTURA_SESSION_GUIDE/).
+**Keep `disableentitlement` server-side, for management/admin operations only.** A minted `Token` records its kind, and the SDK rejects a token of the wrong kind before any network call. A raw KS string is encrypted, so the SDK can't read its kind. It still rejects the raw string of a widget token this `Management` instance minted recently. Other raw strings go to the server, which decides. Agent, avatar and catalog management calls are admin-only by design. The SDK refuses a minted non-admin token with `wrong_token_scope` before any request. Never hand an admin KS string to an end-user session. See [SECURITY.md](../../SECURITY.md#ks-kaltura-session-guidance-for-agents-ac-3--ac-6--ia-2) and Kaltura's own [KS/privilege reference](https://kaltura.md/KALTURA_SESSION_GUIDE/).
 
 **Bind a session to a real end-user identity (`userId`).** The reserved `{{ sys__user_id }}` template variable (see [Reserved Template Variables](operate.md#reserved-template-variables-sys__)) resolves to an empty string unless the KS carries a real identity.
 

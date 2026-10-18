@@ -387,7 +387,7 @@ export class Threads {
   /**
    * Get a thread. READ.
    * @param {string} id @param {string} ks
-   * @returns {Promise<{id:string, title:string, status:number, created_at:string, updated_at:string, thread_metadata:{analysis?:object}, [key:string]:*}>}
+   * @returns {Promise<{id:string, title:string, status:number, created_at:string, updated_at:string, user_id:string, partner_id:number, agent_id?:string, context_id?:string, origin:number, thread_metadata:{analysis?:object}, [key:string]:*}>}
    */
   async get(id, ks) {
     this._.assertUserOrAdmin(ks, 'threads.get');
@@ -410,9 +410,11 @@ export class Threads {
   }
 
   /**
-   * Rename a thread. WRITE — idempotent for a given title.
+   * Rename a thread. WRITE, idempotent for a given title. A very long title
+   * (300 characters, for example) fails with `server_error` and leaves the stored
+   * title unchanged.
    * @param {string} id @param {string} title @param {string} ks
-   * @returns {Promise<{id:string, title:string, status:number, created_at:string, updated_at:string, thread_metadata:{analysis?:object}, [key:string]:*}>} the updated thread.
+   * @returns {Promise<{id:string, title:string, status:number, created_at:string, updated_at:string, user_id:string, partner_id:number, agent_id?:string, context_id?:string, origin:number, thread_metadata:{analysis?:object}, [key:string]:*}>} the updated thread.
    */
   async rename(id, title, ks) {
     this._.assertUserOrAdmin(ks, 'threads.rename');
@@ -526,9 +528,8 @@ export class Messages {
 
   /**
    * Get one message by id (`POST /message/get`). READ. Returns the full
-   * message record — live-confirmed against production. An unknown id
-   * throws a typed `not_found`; one belonging to another partner throws
-   * `forbidden` ("Not authorized for this message") instead of `not_found`.
+   * message record. Live-confirmed against production. An unknown id,
+   * or one belonging to another partner, throws a typed `not_found`.
    * @param {string} id @param {string} ks (admin, conversation or agent token)
    */
   async get(id, ks) {

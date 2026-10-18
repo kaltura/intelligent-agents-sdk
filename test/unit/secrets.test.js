@@ -125,6 +125,24 @@ test('set rejects the literal "***" and empty values BEFORE any network call', a
   assert.equal(h.fetch.calls.length, before, 'no fetch happened on invalid input');
 });
 
+test('set and replaceAll reject a value starting with enc: before any request', async () => {
+  const h = harness({ secrets: { A: 'aaa' } });
+  const before = h.fetch.calls.length;
+  await assert.rejects(
+    () => h.secrets.set(7, { X: 'enc:abc' }, ADMIN),
+    (e) => e.code === 'bad_request' && /cannot start with "enc:"/.test(e.detail),
+  );
+  await assert.rejects(
+    () => h.secrets.replaceAll(7, { X: 'enc:abc' }, ADMIN, { confirmPermanent: true }),
+    (e) => e.code === 'bad_request' && /cannot start with "enc:"/.test(e.detail),
+  );
+  assert.equal(h.fetch.calls.length, before, 'no fetch happened on a rejected value');
+  // The guard is case-sensitive and prefix-only.
+  await h.secrets.set(7, { Y: 'ENC:x', Z: 'x enc:' }, ADMIN);
+  assert.equal(h.store.secrets.Y, 'ENC:x');
+  assert.equal(h.store.secrets.Z, 'x enc:');
+});
+
 test('has reports presence only', async () => {
   const h = harness({ secrets: { A: 'aaa' } });
   assert.equal(await h.secrets.has(7, 'A', ADMIN), true);

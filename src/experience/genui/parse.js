@@ -7,7 +7,7 @@
  * `brainSegment` event in `experience/session.js`): a widget arrives as a
  * `unisphere-tool` segment shaped `{ type, content, metadata:{ widgetName,
  * runtimeName }, speechId?, threadId? }`. All nine UI segments share
- * `widgetName:"unisphere.widget.genie"`; the host keys off `runtimeName`
+ * `widgetName:"unisphere.widget.genie-tools"`; the host keys off `runtimeName`
  * (stripping the `-tool` suffix) to pick a renderer.
  *
  * HONESTY: `force_experience` is a HINT, not a guarantee. The brain may emit
@@ -20,7 +20,7 @@ import { GENUI_RUNTIMES, genuiRuntimeAlias } from '../../core/stream.js';
 import { parseYamlBlock } from './yaml.js';
 
 /** The shared `widgetName` every built-in GenUI runtime segment carries. */
-export const GENUI_WIDGET_NAME = 'unisphere.widget.genie';
+export const GENUI_WIDGET_NAME = 'unisphere.widget.genie-tools';
 
 /**
  * The nine built-in GenUI runtime names AFTER `-tool` stripping (the keys the

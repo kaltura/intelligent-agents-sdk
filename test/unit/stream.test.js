@@ -28,6 +28,22 @@ test('parses NDJSON into segments', async () => {
   assert.equal(segs[1].content, 'Hello ');
 });
 
+test('converse segments keep start_time, end_time and human', async () => {
+  const nd = [
+    '{"type":"think","content":"","threadId":"t1","messageId":"m1","human":"hi"}',
+    '{"type":"tool","content":"lookup {}","start_time":1700000000,"end_time":1700000001}',
+    '{"type":"tool_response","content":"ok","start_time":1700000001,"end_time":1700000002}',
+  ].join('\n') + '\n';
+  const segs = [];
+  for await (const x of parseConverseStream(streamFrom(nd))) segs.push(x);
+  assert.equal(segs[0].human, 'hi');
+  assert.equal(segs[1].start_time, 1700000000);
+  assert.equal(segs[1].end_time, 1700000001);
+  assert.equal(segs[2].end_time, 1700000002);
+  const r = await collectConverse(parseConverseStream(streamFrom(nd)));
+  assert.equal(r.segments[1].start_time, 1700000000);
+});
+
 test('collectConverse assembles text + thread/message + experiences', async () => {
   const r = await collectConverse(parseConverseStream(streamFrom(NDJSON)));
   assert.equal(r.text, 'Hello world');

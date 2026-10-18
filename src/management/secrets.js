@@ -66,7 +66,7 @@ export class IntellectSecrets {
    * FULL `config.secrets` dict: existing secrets are re-sent as `"***"` (so the
    * merge-keep guard preserves them) and the supplied `{name:value}` pairs
    * overwrite/insert. A literal `"***"` value is REJECTED (it is the keep
-   * sentinel, not a storable value); empty values are rejected too.
+   * sentinel, not a storable value); empty values and values starting with `enc:` are rejected too.
    * @param {number} configId
    * @param {Record<string,string>} entries `{name: plaintextValue}`
    * @param {string} ks (admin)
@@ -87,6 +87,9 @@ export class IntellectSecrets {
       }
       if (v === MASK) {
         throw badRequest('secrets.set', `cannot store the literal "${MASK}" for "${name}" — it is the merge-keep sentinel, not a value.`);
+      }
+      if (v.startsWith('enc:')) {
+        throw badRequest('secrets.set', `value for "${name}" cannot start with "enc:". Store a value without that prefix.`);
       }
     }
     const { secrets: existing, type } = await this._read(configId, ks);
@@ -133,7 +136,7 @@ export class IntellectSecrets {
   /**
    * Replace the ENTIRE secrets dict with the supplied set (any name not present
    * here is dropped). WRITE — DESTRUCTIVE. Same value rules as {@link set}
-   * (no literal `"***"`, no empty). Unlike `set`, prior secrets are NOT
+   * (no literal `"***"`, no empty, no `enc:` prefix). Unlike `set`, prior secrets are NOT
    * preserved — they are removed unless re-supplied.
    * @param {number} configId
    * @param {Record<string,string>} entries `{name: plaintextValue}` (may be empty to clear all)
@@ -158,6 +161,9 @@ export class IntellectSecrets {
       }
       if (v === MASK) {
         throw badRequest('secrets.replaceAll', `cannot store the literal "${MASK}" for "${name}".`);
+      }
+      if (v.startsWith('enc:')) {
+        throw badRequest('secrets.replaceAll', `value for "${name}" cannot start with "enc:". Store a value without that prefix.`);
       }
       next[name] = v;
     }

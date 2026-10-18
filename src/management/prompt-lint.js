@@ -827,6 +827,9 @@ export const SERVER_DEFAULT_DIRECTIVE_MARKER = '<<server default directive>>';
  *   - A block's `condition` is not evaluated. Every non-empty block renders;
  *     `conditionalKeys` lists the keys that apply live only while their
  *     condition is truthy.
+ *   - Skills are not included.
+ *   - Knowledge-typed prompt blocks render inline here. A live turn places them
+ *     in a separate context block, so the live prompt differs from this preview.
  *   - `{{var}}` placeholders are interpolated ONLY when you pass `requestVars`
  *     (system vars too); otherwise they are left literal. `sys__*` values you
  *     pass are a SIMULATION of what the server sets per turn.

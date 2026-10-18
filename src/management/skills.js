@@ -4,7 +4,7 @@
  * `{id (uuid), name, description, instructions, partner_id, created_at,
  * updated_at}` — a named, reusable behavior description the agent can draw on
  * (add returns the full entity; delete → get 404s "Skill not
- * found"; another partner's id 403s). `update()` below is the idempotent
+ * found"; another partner's id also 404s). `update()` below is the idempotent
  * re-edit path (renames re-check the same
  * partner-unique-name constraint as `add`, 409 on conflict).
  *
@@ -25,6 +25,13 @@ import { uuidv4, meta } from '../core/ids.js';
 import { requireConfirm } from './agents.js';
 import { KalturaError } from '../core/errors.js';
 import { assertCondition } from './condition.js';
+
+/** @param {string} v @param {string} where */
+function requireSkillNameChars(v, where) {
+  if (!/^[a-zA-Z0-9_-]+$/.test(v)) {
+    throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: `${where} must use only letters, digits, "_" or "-". Replace spaces with "_".` });
+  }
+}
 
 /** @param {unknown} v @param {string} where */
 function requireSkillId(v, where) {
@@ -77,6 +84,7 @@ export class Skills {
    * The skill applies only while it is true. It is checked before any network
    * call, and a template form like `{{ x }}` throws `bad_request`. `null` or
    * `undefined` is not sent.
+   * `name` may use only letters, digits, `_` and `-` (no spaces).
    *
    * Also callable as {@link Skills#create} — same method, either name works.
    * @param {{name:string, description:string, instructions?:string, condition?:string|null}} body
@@ -91,6 +99,7 @@ export class Skills {
     if (typeof body.name !== 'string' || !body.name.trim()) {
       throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: 'skills.add name must be a non-empty string.' });
     }
+    requireSkillNameChars(body.name, 'skills.add name');
     if (typeof body.description !== 'string' || !body.description.trim()) {
       throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: 'skills.add description must be a non-empty string.' });
     }
@@ -120,8 +129,7 @@ export class Skills {
   }
 
   /**
-   * Get a Skill by id. READ. A deleted or unknown id → typed `not_found`;
-   * another partner's id → typed `forbidden`. A shared skill (`partner_id: 0`,
+   * Get a Skill by id. READ. A deleted, unknown or another partner's id → typed `not_found`. A shared skill (`partner_id: 0`,
    * listed by {@link Skills#list}) also returns `not_found`, although
    * `setSkillIds` can attach it.
    * @param {string} id @param {string} ks (admin)

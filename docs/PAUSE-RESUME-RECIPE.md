@@ -39,7 +39,7 @@ You don't need to listen for any event to know resume worked. `await session.res
 | Event | When it fires | Use it for |
 |---|---|---|
 | `'resumed'` | The server's own `conversationResumed` ack arrives, after a `resumeConversation` you sent from your own `resume()` call. (One path sends no `resumeConversation`, since it releases a session the SDK rebuilt mid-pause, so no `'resumed'` fires there. The promise resolving is still your signal.) | Optional confirmation toast/log. `resume()`'s promise already told you it's done. |
-| `'resumeReady'` / `'timeExpired'` (`{type:'pause_expiry'}`) | The pause window expired *while you were still paused, before you called `resume()`* | Optional "still there?" UI while paused long. Not required: `resume()` handles this transparently whenever you do call it. |
+| `'resumeReady'` / `'timeExpired'` (`{type:'pause_expiry', message?, transcription?}`) | The pause window expired *while you were still paused, before you called `resume()`* | Optional "still there?" UI while paused long. Not required: `resume()` handles this transparently whenever you do call it. |
 | `'pauseExpiryWarning'` (`{secondsRemaining}`) | The pause window ends soon and you are still paused | Call `extendPause()` to keep the pause, or `resume()` to end it. Optional. |
 
 ---

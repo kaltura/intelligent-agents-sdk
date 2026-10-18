@@ -36,6 +36,18 @@ test('avatars.update rejects a stray adminTags pre-network (the live reply is on
   assert.equal(f.calls.filter((c) => c.url.includes('/avatar/update')).length, 0);
 });
 
+test('avatars.create and update with adminTags throw bad_request that names the parent agent', async () => {
+  const f = fakeFetch([{ match: '/avatar/', respond: () => ({ body: { id: 'av1' } }) }]);
+  const k = new Management({ partnerId: 1234567, adminSecret: 'a'.repeat(32), fetch: f });
+  const check = (e) => e.code === 'bad_request'
+    && e.detail.includes('Tag the parent agent')
+    && !e.detail.includes('DTO')
+    && !e.detail.includes('\u2014');
+  await assert.rejects(() => k.avatars.create({ voice: { id: 'v' }, visual: { id: 'vis' }, adminTags: ['t'] }, ADMIN), check);
+  await assert.rejects(() => k.avatars.update({ id: 'av1', adminTags: ['t'] }, ADMIN), check);
+  assert.equal(f.calls.length, 0);
+});
+
 test('avatars.create WITHOUT adminTags posts normally to avatar/create', async () => {
   const f = fakeFetch([{ match: '/avatar/create', respond: () => ({ body: { id: 'av1' } }) }]);
   const k = new Management({ partnerId: 1234567, adminSecret: 'a'.repeat(32), fetch: f });
@@ -161,6 +173,22 @@ test('catalog.importVoiceFromElevenLabs/Cartesia post {voiceId}; empty voiceId r
   const ca = await k.catalog.importVoiceFromCartesia('ca-voice-1', ADMIN);
   assert.equal(ca.itemId, 'v-ca');
   assert.deepEqual(f.calls[1].body, { voiceId: 'ca-voice-1' });
+});
+
+test('catalog.importVoiceFrom* rejects a voiceId with characters outside letters, digits, _ and -', async () => {
+  const f = fakeFetch([
+    { match: '/catalog-item/createVoiceFromElevenLabs', respond: (req) => ({ body: { itemId: 'v-el', type: 'Voice', voiceId: req.body.voiceId } }) },
+    { match: '/catalog-item/createVoiceFromCartesia', respond: (req) => ({ body: { itemId: 'v-ca', type: 'Voice', voiceId: req.body.voiceId } }) },
+  ]);
+  const k = new Management({ partnerId: 1234567, adminSecret: 'a'.repeat(32), fetch: f });
+  for (const id of ['bad id!', 'a.b']) {
+    await assert.rejects(() => k.catalog.importVoiceFromElevenLabs(id, ADMIN), (e) => e.code === 'bad_request' && /letters, digits/.test(e.detail));
+    await assert.rejects(() => k.catalog.importVoiceFromCartesia(id, ADMIN), (e) => e.code === 'bad_request');
+  }
+  assert.equal(f.calls.length, 0, 'no transport for an invalid voiceId');
+  const el = await k.catalog.importVoiceFromElevenLabs('el-voice_1', ADMIN);
+  assert.equal(el.itemId, 'v-el');
+  assert.equal(f.calls.length, 1);
 });
 
 test('an unknown provider voiceId raises the typed voice_not_found error from the HTTP-200 exception envelope', async () => {

@@ -43,7 +43,7 @@ Items come from `model.sources`, `model.items`, or `model.citations`. Each item:
 
 A source is a URL, an entry, or both. No URL is derived from `entryId`.
 
-Descriptor: `{kind:'sources', data:{sources:[{title, url, snippet, score?, entryId?, type?, duration?, hasShort?}]}}`. `score`'s presence is not a claimed backend guarantee.
+Descriptor: `{kind:'sources', data:{sources:[{title, url, snippet, score?, entryId?, type?, duration?, hasShort?}]}}`. `score`'s presence is not a claimed backend guarantee. The list can be shorter than the knowledge search hits, or empty. It is not limited to the items the agent cited.
 
 ### 4. summary (`renderSummary`)
 
@@ -135,7 +135,7 @@ Form level:
 | `formId` | `form_id`, `formId` | A non-negative integer (`0` is valid) or a digit string of 1 to 9 digits, which becomes a number. Anything else is `null`. Sent back in the submit payload |
 
 Descriptor: `{kind:'user-properties-form', data:{title, secondaryTitle, formId, fields:[{key, type, label, knownValue, required, description}]}}`.
-- **Report back:** the default path (when `user_properties_forms` is configured) has the host call **`session.submitStructuredDataForm(info)`** (`session.js`). This `sanitizeJson`s the object and emits the socket event **`setFormLeadInfo`**. It is a fire-and-forget emit with no read-back. An app can take a different, durable path instead. Skip configuring `user_properties_forms` entirely, and reach this same `user-properties-form` widget as one enum value of its own `show_widget` **client** tool (with `kaltura_genie_experiences` OFF). Render it into your own dedicated host UI. On submit, bridge the collected values into `request_vars`, so the agent itself can call a server-side **api** tool that persists them wherever you point it. See [../STRUCTURED-DATA-FORMS.md](../STRUCTURED-DATA-FORMS.md).
+- **Report back:** on `submit`, send the values to the agent with `speak()` or `updateRequestVars()`. `session.submitStructuredDataForm(values)` only records the submission ([details](../STRUCTURED-DATA-FORMS.md#reading-back-what-the-viewer-submitted)). An app can take a different, durable path instead. Skip configuring `user_properties_forms` entirely, and reach this same `user-properties-form` widget as one enum value of its own `show_widget` **client** tool (with `kaltura_genie_experiences` OFF). Render it into your own dedicated host UI. On submit, bridge the collected values into `request_vars`, so the agent itself can call a server-side **api** tool that persists them wherever you point it. See [../STRUCTURED-DATA-FORMS.md](../STRUCTURED-DATA-FORMS.md).
 - For the full picture, see [../STRUCTURED-DATA-FORMS.md](../STRUCTURED-DATA-FORMS.md) and [../EXTERNAL-API-INTEGRATIONS.md](../EXTERNAL-API-INTEGRATIONS.md). They cover configuration, reading back what the viewer submitted, and how to deliver the collected data somewhere durable.
 
 ### 9. content-gallery (`renderContentGallery`): image/content cards

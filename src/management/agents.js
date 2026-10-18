@@ -107,6 +107,7 @@ export class Agents {
    * 429 or 5xx. `intellect.id` is the intellect's
    * configId — no separate genieId is needed (the request body's `intellect`
    * only takes `intellectType`+`id`).
+   * `maxConversationLength` is seconds, 1 to 3600; out of range is a 400.
    * @param {object} body {displayName,intellect:{intellectType:'genie',id},avatarIds?,adminTags?,maxConversationLength?,widgetConfig?,embedConfig?,screenShare?:{enabled?:boolean,prompt?:string},asr?:AgentAsr}
    * @param {string} ks
    * @param {{idempotencyKey?:string}} [opts]

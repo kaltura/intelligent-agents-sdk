@@ -18,7 +18,7 @@ function assertNoAvatarTags(body, where) {
   if (body && typeof body === 'object' && body.adminTags !== undefined) {
     throw new KalturaError({
       type: 'about:blank', title: 'avatars carry no tags', code: 'bad_request',
-      detail: `${where}: the avatar DTO rejects "adminTags" (avatars carry no tag field). Tag the parent AGENT instead — agents.create/agents.update({ adminTags: [...] }).`,
+      detail: `${where}: avatars carry no tag field. Tag the parent agent instead: agents.create or agents.update({ adminTags: [...] }).`,
     });
   }
 }
@@ -170,13 +170,13 @@ export class Avatars {
    *
    * `name` (≤255 chars) labels the avatar; over 255 is a 400.
    *
-   * DOMAIN FAILURES ARRIVE AS HTTP 200: an incomplete/invalid composition is a
-   * `KalturaAPIException` body, not an HTTP error — check `objectType`, not
-   * status. Codes: `AVATAR_MISSING_VISUAL_RESOLUTION` (face/background/template
-   * incomplete), `AVATAR_FAILED_TO_COMPOSE_VISUAL` (e.g. a bogus face id),
-   * `AVATAR_MISSING_VOICE`, `AVATAR_NOT_FOUND`. The SDK pre-network guard below
-   * catches the incomplete-pairing case for free, before the wire call — on
-   * create, that includes an incomplete pair sent alongside `visual`.
+   * Domain failures arrive in an HTTP 200 body. The SDK throws `KalturaError`
+   * with `code:'api_exception'` and the failure code in `err.title`:
+   * `AVATAR_MISSING_VISUAL_RESOLUTION` (face/background/template incomplete),
+   * `AVATAR_FAILED_TO_COMPOSE_VISUAL` (for example a bogus face id),
+   * `AVATAR_MISSING_VOICE`, `AVATAR_NOT_FOUND`. Branch on `title`. The
+   * pre-network guard below catches the incomplete-pairing case before the
+   * request, including an incomplete pair sent alongside `visual` on create.
    *
    * @param {object} body {voice:{id,speed?},visual?:{id,motionControl?:{speaking,nonSpeaking}},face?:{id},background?:{type:'color'|'visual',value?:string},name?:string,templateId?:string,openingPhrase?:string} — leave `openingPhrase` unset (see above)
    * @param {string} ks @param {{idempotencyKey?:string}} [opts]
