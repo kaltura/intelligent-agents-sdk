@@ -122,6 +122,13 @@ test('lifecycle.get fetches by id; requires a non-empty string id', async () => 
   assert.equal(ff.calls[0].body.id, RULE.id);
 });
 
+test('lifecycle.get on a missing rule throws lifecycle_rule_not_found', async () => {
+  const { mgmt } = harness([
+    { match: 'lifecycle/get', respond: () => ({ status: 200, body: { objectType: 'KalturaAPIException', code: 'LIFECYCLE_RULE_NOT_FOUND', message: 'Rule 000000000000000000000000 not found' } }) },
+  ]);
+  await assert.rejects(() => mgmt.lifecycle.get('000000000000000000000000', ADMIN_KS), { code: 'lifecycle_rule_not_found', title: 'LIFECYCLE_RULE_NOT_FOUND', status: 200 });
+});
+
 test('lifecycle.list uses the {offset,limit} pager (NOT Genie pageIndex/pageSize), passes filter + orderBy through', async () => {
   const { mgmt, ff } = harness([
     { match: 'lifecycle/list', respond: () => ({ status: 200, body: { totalCount: 1, objects: [RULE] } }) },

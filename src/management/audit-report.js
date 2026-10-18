@@ -28,9 +28,10 @@
 
 /**
  * True for an error that means "that resource does not exist": HTTP 404, a
- * code ending in `not_found`, or a title ending in `_NOT_FOUND` (a read of a
- * missing rule, insight setting or template fails with
- * `code:'api_exception'` and a title such as `LIFECYCLE_RULE_NOT_FOUND`). PURE.
+ * code ending in `not_found` (such as `lifecycle_rule_not_found` or
+ * `insight_setting_not_found`), or a title ending in `_NOT_FOUND` (a read of
+ * a missing email template fails with `code:'api_exception'` and a title
+ * such as `TEMPLATE_NOT_FOUND`). PURE.
  * @param {any} err
  * @returns {boolean}
  */

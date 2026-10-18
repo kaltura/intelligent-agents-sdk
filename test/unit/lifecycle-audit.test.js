@@ -4,6 +4,7 @@ import { fakeFetch } from '../fakes/fetch.js';
 import { Management } from '../../src/management/client.js';
 import { auditLifecycleRules, MAX_INSIGHT_SETTINGS_PER_RULE } from '../../src/management/lifecycle-audit.js';
 import { isNotFound } from '../../src/management/audit-report.js';
+import { errorFromOkBody } from '../../src/core/errors.js';
 import { hasAgentScope, scopedAgentIds, changedKeysFilter, hasEmailTrigger, isAgentCondition } from '../../src/management/lifecycle-rules.js';
 
 /**
@@ -168,10 +169,16 @@ test('isNotFound accepts a 404, a *not_found code, and a *_NOT_FOUND title', () 
   assert.equal(isNotFound({ status: 404 }), true);
   assert.equal(isNotFound({ code: 'not_found' }), true);
   assert.equal(isNotFound({ code: 'api_exception', status: 200, title: 'TEMPLATE_NOT_FOUND' }), true);
-  assert.equal(isNotFound({ code: 'api_exception', status: 200, title: 'LIFECYCLE_RULE_NOT_FOUND' }), true);
+  assert.equal(isNotFound({ code: 'lifecycle_rule_not_found', status: 200, title: 'LIFECYCLE_RULE_NOT_FOUND' }), true);
+  assert.equal(isNotFound({ code: 'insight_setting_not_found', status: 200, title: 'INSIGHT_SETTING_NOT_FOUND' }), true);
   assert.equal(isNotFound({ code: 'api_exception', status: 200, title: 'SOMETHING_ELSE' }), false);
   assert.equal(isNotFound({ status: 500 }), false);
   assert.equal(isNotFound(undefined), false);
+});
+
+test('isNotFound is true for the SDK error a missing rule produces', () => {
+  assert.equal(isNotFound(errorFromOkBody({ objectType: 'KalturaAPIException', code: 'LIFECYCLE_RULE_NOT_FOUND', message: 'x' }, '/lifecycle/get')), true);
+  assert.equal(isNotFound(errorFromOkBody({ objectType: 'KalturaAPIException', code: 'INSIGHT_SETTING_NOT_FOUND', message: 'x' }, '/insight-settings/get')), true);
 });
 
 // ---- lifecycle.audit (wire) ----
