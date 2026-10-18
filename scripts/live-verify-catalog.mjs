@@ -4,6 +4,8 @@
  *
  * Exercises the Catalog write path:
  *
+ *   1b catalog.createVisual — attribute values outside the accepted lists reject with bad_request
+ *      and the error lists the accepted values
  *   1  catalog.createVisual — upload a scratch custom Visual (1x1 PNG)
  *   2  catalog.get          — visible, right shape
  *   3  catalog.list         — filtered to Visual, the new item appears
@@ -72,10 +74,25 @@ function check(step, ok, detail) {
 const kaltura = new Management(target);
 let admin;
 let itemId;
+let strayItemId;
 
 try {
   admin = await kaltura.sessions.createAdminToken({ userId: 'sdk-live-verify' });
   record('admin-token-mint', true, { secondsRemaining: admin.secondsRemaining() });
+
+  // 1b: attribute values outside the accepted lists are rejected, and the error lists the accepted values.
+  const badFile = new Blob([PNG_1PX], { type: 'image/png' });
+  try {
+    const stray = await kaltura.catalog.createVisual(badFile, {
+      name: `Live Verify Bad Attrs ${RUN_TAG}`, genderPresentation: 'Feminine',
+      background: 'Bogus', skinTone: 'Dark', ageGroup: 'Teen', hairColor: 'Green',
+    }, admin);
+    strayItemId = stray.itemId;
+    check('1b-create-visual-bad-attrs-rejects', false, { message: 'expected a rejection, got a created item', itemId: strayItemId });
+  } catch (err) {
+    const detail = err?.detail ?? '';
+    check('1b-create-visual-bad-attrs-rejects', err?.code === 'bad_request' && err?.status === 400 && ['Color', 'MediumTan', 'OlderAdult', 'Blonde'].every((v) => detail.includes(v)), { code: err?.code, status: err?.status, message: err?.body?.message });
+  }
 
   // 1: catalog.createVisual
   const file = new Blob([PNG_1PX], { type: 'image/png' });
@@ -165,6 +182,15 @@ try {
   failed = true;
   record('live-verify-catalog', false, { message: err?.detail || err?.message || String(err), code: err?.code });
 } finally {
+  if (strayItemId) {
+    try {
+      await kaltura.catalog.delete(strayItemId, admin, { confirmPermanent: true });
+      record('1b-stray-item-delete', true, { strayItemId });
+    } catch (err) {
+      failed = true;
+      record('1b-stray-item-delete', false, { strayItemId, message: err?.detail || err?.message || String(err) });
+    }
+  }
   // 5: catalog.delete — scratch item removed, re-get real-404s.
   if (itemId) {
     try {

@@ -21,6 +21,20 @@ import { KalturaError } from '../core/errors.js';
  * @property {string[]} [adminTagsIn]
  */
 
+/**
+ * @typedef {object} VisualAttrs
+ * @property {string} name
+ * @property {'Masculine'|'Feminine'} genderPresentation
+ * @property {'Color'|'Image'} [background]
+ * @property {'MediumTan'|'Light'|'LightMedium'} [skinTone]
+ * @property {'YoungAdult'|'OlderAdult'} [ageGroup]
+ * @property {'Black'|'Brown'|'Blonde'|'Red'|'Gray'} [hairColor]
+ * @property {string[]} [hairStyle]
+ * @property {string[]} [clothing]
+ * @property {boolean} [glasses]
+ * @property {string} [consentRef]  Opaque consent reference, echoed on the `_consent` receipt.
+ */
+
 export class Catalog {
   /** @param {import('./client.js').Ctx} ctx */
   constructor(ctx) { this._ = ctx; }
@@ -75,7 +89,7 @@ export class Catalog {
    * );
    *
    * @param {Blob|File} file
-   * @param {{name:string,description:string,language?:string,consentRef?:string}} attrs  `language`: ISO 639-1 code (e.g. `'en'`, `'he'`), defaults to `'en'`. `consentRef`: an opaque URI/attestation id for the source individual's voice-clone consent (NO FAKES Act / CA AB 1836 / FTC impersonation). Echoed on the result `_consent` receipt + audit; the SDK can't verify it but carries it auditably.
+   * @param {{name:string,description:string,language?:string,consentRef?:string}} attrs  `language`: a language code, for example `'en'` or `'he'`; defaults to `'en'`. A code outside the accepted list returns `bad_request` (400), and the error lists the accepted codes. `consentRef`: an opaque URI/attestation id for the source individual's voice-clone consent (NO FAKES Act / CA AB 1836 / FTC impersonation). Echoed on the result `_consent` receipt + audit; the SDK can't verify it but carries it auditably.
    * @param {string} ks
    */
   async createVoice(file, attrs, ks) {
@@ -100,7 +114,7 @@ export class Catalog {
    * {@link Avatars#create}'s `body.background`, the `{type:'color'|'visual',
    * value}` composition selector used to compose a Visual from a Face.
    * @param {Blob|File} file
-   * @param {{name:string,genderPresentation:'Masculine'|'Feminine',background?:string,skinTone?:string,ageGroup?:string,hairColor?:string,hairStyle?:string[],clothing?:string[],glasses?:boolean,consentRef?:string}} attrs  `consentRef`: an opaque URI/attestation id for likeness consent — echoed on the result `_consent` receipt + audit (same contract as {@link createVoice}). The SDK records it; it does not verify it.
+   * @param {VisualAttrs} attrs  `consentRef`: an opaque URI/attestation id for likeness consent — echoed on the result `_consent` receipt + audit (same contract as {@link createVoice}). The SDK records it; it does not verify it.
    * @param {string} ks
    */
   async createVisual(file, attrs, ks) {
@@ -132,7 +146,7 @@ export class Catalog {
    * pass separately (alongside this method's `itemId`) to compose the Face
    * over a Background.
    * @param {Blob|File} file
-   * @param {{name:string,genderPresentation:'Masculine'|'Feminine',background?:string,skinTone?:string,ageGroup?:string,hairColor?:string,hairStyle?:string[],clothing?:string[],glasses?:boolean,consentRef?:string}} attrs
+   * @param {VisualAttrs} attrs
    * @param {string} ks
    */
   async createFace(file, attrs, ks) {
@@ -152,7 +166,7 @@ export class Catalog {
    * {@link Avatars#create}'s `body.background`, the composition selector this
    * item's `itemId` is passed as `value` for.
    * @param {Blob|File} file
-   * @param {{name:string,genderPresentation:'Masculine'|'Feminine',background?:string,skinTone?:string,ageGroup?:string,hairColor?:string,hairStyle?:string[],clothing?:string[],glasses?:boolean,consentRef?:string}} attrs
+   * @param {VisualAttrs} attrs
    * @param {string} ks
    */
   async createBackground(file, attrs, ks) {
@@ -256,7 +270,7 @@ export class Catalog {
 
 /**
  * Shared 9-field `visual` attributes object for createVisual/createFace/createBackground.
- * @param {{name:string,genderPresentation:'Masculine'|'Feminine',background?:string,skinTone?:string,ageGroup?:string,hairColor?:string,hairStyle?:string[],clothing?:string[],glasses?:boolean}} attrs
+ * @param {VisualAttrs} attrs
  */
 function visualAttrs(attrs) {
   return {

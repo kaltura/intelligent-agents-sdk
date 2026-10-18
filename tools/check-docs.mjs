@@ -1000,6 +1000,20 @@ describe('16. Docs accuracy', () => {
     assert.deepEqual(bad, [], `catalog adminTagsIn and agentScope effects are not documented: ${bad.join(' | ')}`);
   });
 
+  test('the visual attribute table in design.md matches the VisualAttrs unions in catalog.js', () => {
+    const src = read('src/management/catalog.js');
+    const typedef = src.match(/@typedef \{object\} VisualAttrs([\s\S]*?)\*\//)?.[1] ?? '';
+    const unions = [...typedef.matchAll(/@property \{((?:'[^']+'\|?)+)\} \[?(\w+)\]?/g)].map((m) => [m[2], unionValues(m[1])]);
+    assert.ok(unions.length >= 5, 'VisualAttrs has no string unions in catalog.js');
+    const text = read('docs/api/design.md');
+    for (const [attr, values] of unions) {
+      const row = text.split('\n').find((l) => l.startsWith(`| \`${attr}\` |`));
+      assert.ok(row, `design.md needs a visual attribute row for ${attr}`);
+      const cells = [...row.split('|')[2].matchAll(/`([^`]+)`/g)].map((m) => m[1]);
+      assert.deepEqual(cells, values, `design.md row for ${attr} must list exactly ${values.join(', ')}`);
+    }
+  });
+
   test('the agents orderBy values in management-operations.md match agents.js', () => {
     const src = read('src/management/agents.js');
     const values = unionValues(src.match(/orderBy\?:((?:'[^']+'\|?)+)/)?.[1] ?? '');
