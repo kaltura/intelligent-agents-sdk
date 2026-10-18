@@ -949,6 +949,16 @@ describe('16. Docs accuracy', () => {
     assert.deepEqual(missing, [], `renderer fields not documented in docs/genui/widgets.md: ${missing.join(', ')}`);
   });
 
+  test('tool docs show client_secret only as {{secrets.NAME}}, and name the builtin tool names the audit warns about', () => {
+    const bare = /client_secret['"]?\s*[:=]\s*['"]secrets\./;
+    const offenders = DOCS.filter((f) => read(f).split('\n').some((l) => bare.test(l)));
+    assert.deepEqual(offenders, [], `client_secret is saved as {{secrets.NAME}}; these pages show the bare form: ${offenders.join(', ')}`);
+    const builtin = [...read('src/management/intellect-config.js').matchAll(/BUILTIN_TOOL_NAMES = Object\.freeze\(\[([^\]]+)\]/g)][0]?.[1].match(/\w+/g) ?? [];
+    assert.ok(builtin.length > 0, 'BUILTIN_TOOL_NAMES not found in intellect-config.js');
+    const row = read('docs/lifecycle/README.md').split('\n').find((l) => l.startsWith('| `tool_name_builtin`')) ?? '';
+    assert.deepEqual(builtin.filter((n) => !row.includes(`\`${n}\``)), [], 'the tool_name_builtin row in docs/lifecycle/README.md must list every built-in tool name');
+  });
+
   test('the lifecycle page owns the action-type count, and it matches the creatable types in lifecycle.js', () => {
     const creatable = [...read('src/management/lifecycle.js').matchAll(/^ \* - `\{actionType:'(\w+)'/gm)].map((m) => m[1]);
     const words = ['one', 'two', 'three', 'four', 'five', 'six'];

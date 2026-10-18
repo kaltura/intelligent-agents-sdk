@@ -14,8 +14,8 @@ An external API integration is a custom `api` tool linked to your intellect thro
 2. **Build and register the tool.** `tools.api({..., request: {..., headers: {Authorization: 'Bearer {{secrets.NAME}}'}}})`, then `mgmt.tools.add(tool, adminKs)`. A tool is its own partner-level entity, not part of the intellect.
 3. **Link it.** `mgmt.intellectConfig.setToolIds(configId, [toolId], adminKs)`.
 
-- **Secret references use one exact syntax.** Write `{{secrets.<name>}}` inside any string field of the `request` block. Do not write `{{variables.secrets.<name>}}`. The OAuth2 `client_secret` uses the bare form `secrets.<name>` (see below).
-- **Validate after wiring.** `mgmt.intellects.secrets.validate(configId, adminKs)` scans every tool and prompt for secret references. It lists references to secrets that are not stored (`unresolved`) and the wrong prefix above (`badPrefix`).
+- **Secret references use one exact syntax.** Write `{{secrets.<name>}}` inside any string field of the `request` block. Do not write `{{variables.secrets.<name>}}`.
+- **Validate after wiring.** `mgmt.intellectConfig.audit(configId, adminKs)` checks secret references in the linked tools, the prompts and the MCP server headers. It reports a missing secret as `secret_ref_unresolved` and the wrong prefix as `secret_ref_bad_prefix`.
 
 To run your own page-side JavaScript instead of a server-side HTTP call, use a `type: "client"` tool (`tools.client()`) and `session.onToolCall(name, handler)`. See [CLIENT-COMMANDS.md](CLIENT-COMMANDS.md). Everything below assumes a server-side `api` tool.
 
@@ -32,7 +32,7 @@ To run your own page-side JavaScript instead of a server-side HTTP call, use a `
 
 ## When you need OAuth2 (authorization-code flow)
 
-The `authentication` block supports the authorization-code flow only. The viewer grants consent through an `auth_url` your app opens. Pass the block instead of a static bearer header. All four fields are required: `client_id`, `client_secret` (a `secrets.<name>` reference), `token_url` and `auth_url`. There is no `flow` or `scopes` option.
+The `authentication` block supports the authorization-code flow only. The viewer grants consent through an `auth_url` your app opens. Pass the block instead of a static bearer header. All four fields are required: `client_id`, `client_secret` (`{{secrets.NAME}}`), `token_url` and `auth_url`. There is no `flow` or `scopes` option.
 
 <!-- nova-target: external-api-oauth2-example | Real OAuth2 authorization-code flow example -->
 
@@ -49,7 +49,7 @@ const tool = api({
     authentication: {
       type: 'oauth2',
       client_id: 'YOUR_CLIENT_ID',
-      client_secret: 'secrets.EXAMPLE_CLIENT_SECRET',
+      client_secret: '{{secrets.EXAMPLE_CLIENT_SECRET}}',
       token_url: 'https://auth.example.com/oauth/token',
       auth_url: 'https://auth.example.com/oauth/authorize',
     },
@@ -60,7 +60,7 @@ const tool = api({
 ```
 <!-- /nova-target -->
 
-The SDK validates the block before any network call. `type` is optional, and must be `'oauth2'` if set. Unknown keys are rejected. `token_url` and `auth_url` must be http(s) URLs. `client_secret` must match `/^secrets\.[A-Za-z_][A-Za-z0-9_]*$/`. A plaintext secret is rejected, so it never lands in a tool config.
+The SDK validates the block before any network call. `type` is optional, and must be `'oauth2'` if set. Unknown keys are rejected. `token_url` and `auth_url` must be http(s) URLs. `client_secret` must be `{{secrets.NAME}}`. A plaintext secret is rejected, so it never lands in a tool config.
 
 What to build for:
 
@@ -82,7 +82,7 @@ Set the capability at creation. Flipping it on an existing intellect does not ap
 
 Run both checks after setup and before you rely on the integration:
 
-- `mgmt.intellects.secrets.validate(configId, adminKs)` flags unresolved references and the `badPrefix` mistake.
+- `mgmt.intellectConfig.audit(configId, adminKs)` flags missing secrets and the wrong prefix in tools, prompts and MCP headers.
 - A live test conversation where you supply the field values yourself. Confirm the tool fires (`collectConverse(...).toolCalls` headless, or the `type:"tool"` segment on a live session) and that the target API shows the expected write. A tool config can validate and still fail at the HTTP layer: wrong URL, expired token, wrong field names.
 
 ## Example: CRM / marketing-automation integration
@@ -164,7 +164,7 @@ If two or more Leads share the email, an `Email`-keyed upsert is ambiguous. Sale
 Two argument rules apply to every `api` tool:
 
 - Percent-encode any value you put in a URL (`@` as `%40`, `+` as `%2B`, `/` as `%2F`). The recipe prompts already tell the agent to do this for the upsert key.
-- Mark an arg `required` when the call cannot work without it. The recipe prompts ask the agent to send an empty string for optional args. Do the same in your own tools.
+- Mark an arg `required` when the call cannot work without it. The recipe prompts ask the agent to send an empty string for optional args. Do the same in your own tools. An arg sent without `required` is saved as required (`tools.get` shows `required: true`), so pass `required: false` for an optional one.
 
 Placeholder rules for args: [Tools and Secrets](api/build/tools-and-secrets.md#api-tool). Headers take `{{secrets.NAME}}` and request variables such as `{{ sys__thread_id }}`.
 
