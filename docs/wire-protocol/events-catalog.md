@@ -18,6 +18,7 @@ Direction: `→` the client emits, `←` the server emits. This catalog lists th
 | `onTextEntered` | `{ text, isFinal, isSpeechStart? }` | **Drive the avatar by text** instead of voice. The text is treated like a spoken transcript. `isFinal:false` marks a partial. `isSpeechStart:true` with `text:''` is the barge-in marker: it interrupts the avatar mid-sentence, and does nothing if the avatar is idle. `speak()` sends the marker first and then the real text. `interrupt()` sends the marker alone. HTTP `/assistant/converse` is a separate stateless chat that never reaches the avatar's speech engine, so the avatar stays silent if you use it to inject text. |
 | `debug_text_entered` | `{ text, isFinal }` | A mirror of the final `onTextEntered`, sent by `speak()` only when the session was constructed with debug mode on. |
 | `tapToTalkStart` / `tapToTalkEnd` | `{}` | Push-to-talk capture window, sent by `startTapToTalk()` / `endTapToTalk()`. See below. |
+| `setTapToTalkMode` | `{ enabled }` (boolean) | Switch the session between tap-to-talk (`true`) and open mic (`false`). Sent by `setTapToTalkMode(enabled)`. The reply is `showTapToTalkButton` or `hideTapToTalkButton`. |
 | `muteUser` / `unmuteUser` | `{}` | The `micEnabled` setter notifies the server of a mic mute or unmute. The mute itself is client-side (`track.enabled`). The payload has no data. |
 | `pauseConversation` / `resumeConversation` | `{}` | `pause()` / `resume()`. |
 | `extendPause` | `{}` | Start the pause window again while paused. Sent by `extendPause()`. No reply event. |
@@ -33,7 +34,7 @@ Direction: `→` the client emits, `←` the server emits. This catalog lists th
 
 **Do not use this pair for typed-text barge-in.** Wrapping `onTextEntered` in it creates a duplicate turn.
 
-**Use it only on an agent configured with `isTapToTalk: true`.** Mixing tap-to-talk with an open-mic agent gives unreliable turn-taking. The SDK enforces this: `startTapToTalk()` throws `capability_disabled` unless `capabilities.tapToTalk` is set.
+**Use it only while the session is in tap-to-talk mode:** an agent configured with `isTapToTalk: true`, or after `setTapToTalkMode(true)`. Mixing tap-to-talk with open-mic turn-taking is unreliable. The SDK enforces this: `startTapToTalk()` throws `capability_disabled` unless `capabilities.tapToTalk` is set.
 
 For the app-level decision of when to use this mode and how to design its UI, see [VOICE-INPUT-MODES.md](../VOICE-INPUT-MODES.md).
 
@@ -79,7 +80,7 @@ These fire once `approvedPermissions` is sent. Many payloads carry a `speechId`,
 | `agentTurnToTalk` | `{ userTranscription? }` | The user's turn finished and the agent takes over. `userTranscription` is present only when the turn came from user speech. |
 | `agentInterrupted` | `{}` | Barge-in. The user spoke, or sent the `onTextEntered { isSpeechStart:true }` marker, and cut the avatar off mid-sentence. |
 | `userStartedTalking` | `{}` | The user started speaking. Fires without debug mode. |
-| `hideTapToTalkButton` / `showTapToTalkButton` | `{}` | UI hint: hide or show the tap-to-talk affordance for this agent config. The SDK has no handler for them. |
+| `hideTapToTalkButton` / `showTapToTalkButton` | `{}` | UI hint: hide or show the tap-to-talk control. The server sends one in reply to `setTapToTalkMode` (`false` hides, `true` shows). The SDK has no handler for them. |
 | `conversationTimeWarning` | `{ remainingTime }` (seconds) | Time-limit warning. The SDK emits `timeWarning`. |
 | `conversationTimeExpired` | `{}` | The session time expired. Sent right before `conversationEnded`. The SDK emits `timeExpired`. |
 | `conversationEnded` | `{}` | The conversation ended. The SDK emits `ended` and disconnects. |

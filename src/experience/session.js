@@ -485,6 +485,8 @@ export class KalturaAvatarSession extends Emitter {
     this._whepLocation = null;
     this._micEnabled = true;
     this._tapToTalkActive = false;
+    /** @type {boolean|null} Mode set by setTapToTalkMode(), or null. Sent again after a cold reconnect. */
+    this._tapToTalkMode = null;
     this._hwMuteTimers = [];   // pending 5s debounce timers for OS/hardware mic mute (see _initHardwareMuteWatch)
     this._tracker = new TranscriptTracker();
     this._capacityTimer = null;
@@ -571,6 +573,7 @@ export class KalturaAvatarSession extends Emitter {
     }
     if (!this._token) throw noTokenErr();
     this._setState('preparing');
+    this._tapToTalkMode = null;   // a new connect() starts from the agent's configured mode
     this._wireUnload();
     this._timings = {}; this._timingsT0 = this._clock();
     // Step 0 — mic (no camera), started here and NOT awaited: the permission prompt and the
@@ -1397,14 +1400,14 @@ export class KalturaAvatarSession extends Emitter {
   /**
    * Start a tap-to-talk voice capture — the server's push-to-talk mode, DISTINCT from
    * typed-text `speak()`/`interrupt()`. The always-on ASR uplink
-   * keeps streaming audio the whole session; this just tells the server (`tapToTalkStart`
-   * → `onTapToTalkStart`) to flip into tap-mode and start a fresh capture window.
+   * keeps streaming audio the whole session; this tells the server (`tapToTalkStart`)
+   * to start a fresh capture window.
    * Call `endTapToTalk()` to close the window and let the server mint the turn from
    * whatever it captured.
    *
-   * Gated on `clientConfiguration.isTapToTalk`: it throws `capability_disabled` for an
-   * agent configured for open-mic (`isTapToTalk:false`). Check `capabilities.tapToTalk`
-   * before offering tap-to-talk UI.
+   * Gated on `capabilities.tapToTalk` (the agent's `isTapToTalk`, or the last
+   * `setTapToTalkMode()`): it throws `capability_disabled` in open-mic mode. Check
+   * `capabilities.tapToTalk` before offering tap-to-talk UI.
    * @throws {KalturaError} `invalid_state` (not connected, or a capture is already open),
    *   `mic_not_started` (no live mic yet), `capability_disabled`, or `disclosure_required`
    *   (`requireDisclosureAck:true` and not yet acknowledged).
@@ -1415,7 +1418,7 @@ export class KalturaAvatarSession extends Emitter {
       throw new KalturaError({ type: 'about:blank', title: 'mic not started', code: 'mic_not_started', detail: 'startTapToTalk() requires a live mic — this session connected with micStartMode:"deferred"; call startMic() from a user gesture first.' });
     }
     if (!this._clientConfig?.isTapToTalk) {
-      throw new KalturaError({ type: 'about:blank', title: 'tap-to-talk disabled', code: 'capability_disabled', detail: 'startTapToTalk() requires clientConfiguration.isTapToTalk=true on this agent.' });
+      throw new KalturaError({ type: 'about:blank', title: 'tap-to-talk disabled', code: 'capability_disabled', detail: 'startTapToTalk() needs tap-to-talk mode. Use an agent with isTapToTalk=true, or call setTapToTalkMode(true) first.' });
     }
     if (this._tapToTalkActive) {
       throw new KalturaError({ type: 'about:blank', title: 'already tapped', code: 'invalid_state', detail: 'startTapToTalk() called while already active — call endTapToTalk() first.' });
@@ -1459,6 +1462,30 @@ export class KalturaAvatarSession extends Emitter {
    * @returns {boolean}
    */
   get tapToTalkActive() { return this._tapToTalkActive; }
+
+  /**
+   * Switch this live session between tap-to-talk (`true`) and open mic (`false`).
+   * Updates `capabilities.tapToTalk` and `clientConfig.isTapToTalk` at once, so
+   * `startTapToTalk()` follows the new mode. The server answers with
+   * `showTapToTalkButton` or `hideTapToTalkButton`; the SDK does not wait for it.
+   * A cold reconnect sends the mode again. A new `connect()` starts from the agent's
+   * configured mode.
+   * @param {boolean} enabled  `true` for tap-to-talk, `false` for open mic.
+   * @throws {KalturaError} `invalid_state` when not connected, or `false` while a tap is
+   *   open (call `endTapToTalk()` first); `bad_request` when `enabled` is not a boolean.
+   */
+  setTapToTalkMode(enabled) {
+    this._requireConnected('setTapToTalkMode');
+    if (typeof enabled !== 'boolean') {
+      throw new KalturaError({ type: 'about:blank', title: 'bad tap-to-talk mode', code: 'bad_request', detail: 'setTapToTalkMode(enabled) needs true (tap-to-talk) or false (open mic).' });
+    }
+    if (!enabled && this._tapToTalkActive) {
+      throw new KalturaError({ type: 'about:blank', title: 'tap open', code: 'invalid_state', detail: 'setTapToTalkMode(false) called while a tap is open. Call endTapToTalk() first.' });
+    }
+    this._clientConfig = { ...this._clientConfig, isTapToTalk: enabled };
+    this._tapToTalkMode = enabled;
+    this._socket.emit('setTapToTalkMode', { enabled });
+  }
 
   /**
    * Acknowledge the AI disclosure (EU AI Act Art. 50). Only needed when the session
@@ -2569,9 +2596,10 @@ export class KalturaAvatarSession extends Emitter {
    * Read-only capability surface derived from the agent's clientConfiguration
    * (least-privilege visibility — LLM06). e.g. `{ screenShare, cameraAnalysis,
    * webSearch, interruptions, tapToTalk }`. Available after connect. `tapToTalk`
-   * reflects the agent's configured input mode (push-to-talk vs open-mic) — apps
-   * can use it to decide whether `startTapToTalk()`/`endTapToTalk()` should be the
-   * primary voice control or an optional secondary one.
+   * reflects the session's input mode (push-to-talk vs open mic): the agent's configured
+   * mode, or the last `setTapToTalkMode()`. Apps can use it to decide whether
+   * `startTapToTalk()`/`endTapToTalk()` should be the primary voice control or an
+   * optional secondary one.
    */
   get capabilities() {
     const c = this._clientConfig || {};
@@ -3529,6 +3557,8 @@ export class KalturaAvatarSession extends Emitter {
         this._await(socket, 'clientConfiguration', this._timeouts.joinRoom, 'JoinRoomTimeout', overall),
         this._await(socket, 'joinComplete', this._timeouts.joinComplete, 'JoinRoomTimeout', overall),
       ]);
+      // The join reply is discarded here, so the server needs the switched mode again.
+      if (this._tapToTalkMode !== null) socket.emit('setTapToTalkMode', { enabled: this._tapToTalkMode });
       await this._createSessionWithCapacity(socket, overall);
       await this._runConnectSequence(socket, overall);
       // `approvedPermissions` is what makes the avatar speak —

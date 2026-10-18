@@ -64,8 +64,8 @@ A tap window that never closes (tab closed mid-recording, app crash, network dro
 
 ## Implementation checklist
 
-1. Decide the agent's mode **at provisioning time**. `isTapToTalk` is a fixed per-agent deployment choice (set wherever your app builds its intellect/session config), not something your UI code branches on live.
-2. Build the UI conditionally on `session.capabilities.tapToTalk` (derived from `clientConfiguration.isTapToTalk`). Render a tap-to-talk control only when true. Never render both a tap-to-talk control and an open-mic affordance for the same session.
+1. Pick the agent's default mode **at provisioning time** with `isTapToTalk` (set wherever your app builds its intellect/session config). To switch a live session, call `session.setTapToTalkMode(enabled)`, then re-render from `session.capabilities.tapToTalk`.
+2. Build the UI conditionally on `session.capabilities.tapToTalk` (from `clientConfiguration.isTapToTalk`, updated by `setTapToTalkMode()`). Render a tap-to-talk control only when true. Never render both a tap-to-talk control and an open-mic affordance for the same session.
 3. Wire click-to-toggle calling `session.startTapToTalk()`/`session.endTapToTalk()`, updating `aria-pressed` and an icon/level indicator on `tapToTalkStarted`/`tapToTalkEnded`. See the conditional-UI example in [README.md](../README.md#tap-to-talk-push-to-talk-voice).
 4. Add the silence/max-duration/abandonment safeguards above; the SDK does not impose them for you.
 5. Update any UI copy that currently assumes continuous listening (e.g. a text-input placeholder like "...or just speak naturally"). That copy is wrong for a tap-to-talk agent and should describe the button instead.

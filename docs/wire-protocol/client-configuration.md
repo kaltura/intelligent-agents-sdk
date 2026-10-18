@@ -6,7 +6,7 @@ The server sends `clientConfiguration` once per connect. The SDK keeps it and ex
 
 | Field | Example | What the SDK does with it |
 |---|---|---|
-| `isTapToTalk` | `false` | Push-to-talk vs open-mic. A fixed, per-agent choice, not a live toggle. Read as `capabilities.tapToTalk`. `startTapToTalk()` and `endTapToTalk()` throw `capability_disabled` when it is `false` (see the `tapToTalkStart`/`tapToTalkEnd` row in the [events catalog](events-catalog.md) for why mixing modes is unsafe). |
+| `isTapToTalk` | `false` | Push-to-talk vs open-mic, set per agent. Read as `capabilities.tapToTalk`. `setTapToTalkMode(enabled)` switches a live session and updates this value. `startTapToTalk()` throws `capability_disabled` when it is `false` (see the `tapToTalkStart`/`tapToTalkEnd` row in the [events catalog](events-catalog.md) for why mixing modes is unsafe). |
 | `interruptionsEnabled` | `true` | Read as `capabilities.interruptions`. `false` means the user can't talk over the avatar. |
 | `isWebSearchEnabled` | `false` | Read as `capabilities.webSearch`. Web-search tools produce `tool`/`tool_response` deltas only when it is `true`. When `false`, the agent can still say it will "look that up", but no `tool` segment fires. |
 | `isScreenShareEnabled` | `false` | Read as `capabilities.screenShare`. `startScreenShare()` and `sendScreenShot()` throw `capability_disabled` when it is `false`. It becomes `true` when the agent's `screenShare` setting is on. |
