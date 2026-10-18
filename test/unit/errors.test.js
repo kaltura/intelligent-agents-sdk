@@ -82,3 +82,23 @@ test('payment_required is marked not retryable; other statuses give no opinion',
   assert.equal(errorFromResponse({ status: 402, path: '/x', body: null }).retryable, false);
   assert.equal(errorFromResponse({ status: 403, path: '/x', body: null }).retryable, undefined);
 });
+
+test('a 400 with a message array puts the joined messages in detail', () => {
+  const body = { message: ['a must be one of: x, y', 'b should not exist'], error: 'Bad Request', statusCode: 400 };
+  const e = errorFromResponse({ status: 400, path: '/x', body });
+  assert.equal(e.code, 'bad_request');
+  assert.ok(e.detail.includes('a must be one of: x, y; b should not exist'));
+  assert.deepEqual(e.body.message, body.message);
+});
+
+test('a message array skips non-strings and an empty array falls back to error', () => {
+  const e = errorFromResponse({ status: 400, path: '/x', body: { message: [1, null, ''], error: 'Bad Request' } });
+  assert.equal(e.detail, 'Bad Request');
+  assert.equal(errorFromResponse({ status: 400, path: '/x', body: { message: [], error: 'Bad Request' } }).detail, 'Bad Request');
+});
+
+test('a long message array is cut to 500 chars in detail and kept whole in body', () => {
+  const e = errorFromResponse({ status: 400, path: '/x', body: { message: ['y'.repeat(800)], error: 'Bad Request' } });
+  assert.equal(e.detail.length, 500);
+  assert.equal(e.body.message[0].length, 800);
+});
