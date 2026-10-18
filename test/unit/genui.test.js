@@ -805,6 +805,39 @@ test('SegmentAssembler: realistic wire shape — only the FIRST fragment carries
   assert.equal(out[0].model.summary, 'hi there');
 });
 
+test('SegmentAssembler: two back-to-back widgets of the same runtime with no speechId stay separate (HTTP stream shape)', () => {
+  const out = [];
+  const a = new SegmentAssembler({ onWidget: (w) => out.push(w) });
+  const meta = { widgetName: 'unisphere.widget.genie-tools', runtimeName: 'video-tool' };
+  a.ingest({ type: 'unisphere-tool', content: '', segmentNumber: 8, metadata: meta, segmentStart: true });
+  a.ingest({ type: 'unisphere-tool', content: 'url: "https://a.example.com/one"\n', segmentNumber: 8 });
+  a.ingest({ type: 'unisphere-tool', content: '', segmentNumber: 8, segmentEnd: true });
+  a.ingest({ type: 'unisphere-tool', content: '', segmentNumber: 10, metadata: meta, segmentStart: true });
+  a.ingest({ type: 'unisphere-tool', content: 'url: "https://a.example.com/two"\n', segmentNumber: 10 });
+  a.flush('stop');
+  assert.equal(out.length, 2);
+  assert.deepEqual(out.map((w) => w.model.url), ['https://a.example.com/one', 'https://a.example.com/two']);
+});
+
+test('SegmentAssembler: segmentStart alone opens a new widget of the same runtime', () => {
+  const out = [];
+  const a = new SegmentAssembler({ onWidget: (w) => out.push(w) });
+  a.ingest({ type: 'unisphere-tool', metadata: { runtimeName: 'summary-tool' }, content: 'summary: one', segmentStart: true });
+  a.ingest({ type: 'unisphere-tool', metadata: { runtimeName: 'summary-tool' }, content: 'summary: two', segmentStart: true });
+  a.flush();
+  assert.deepEqual(out.map((w) => w.model.summary), ['one', 'two']);
+});
+
+test('SegmentAssembler: a continuation from another segment closes the open widget and is not appended', () => {
+  const out = [];
+  const a = new SegmentAssembler({ onWidget: (w) => out.push(w) });
+  a.ingest({ type: 'unisphere-tool', metadata: { runtimeName: 'summary-tool' }, content: 'summary: hi', segmentNumber: 3 });
+  assert.equal(a.ingest({ type: 'unisphere-tool', content: ' stray', segmentNumber: 4 }), false);
+  assert.equal(a.pending, false);
+  assert.equal(out.length, 1);
+  assert.equal(out[0].model.summary, 'hi');
+});
+
 test('SegmentAssembler: a metadata-less fragment with no buffer open is still ignored as a non-widget segment', () => {
   const out = [];
   const a = new SegmentAssembler({ onWidget: (w) => out.push(w) });

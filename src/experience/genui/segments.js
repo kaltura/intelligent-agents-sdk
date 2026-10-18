@@ -9,8 +9,11 @@
  * flushes when:
  *   - a fragment with a DIFFERENT normalized `runtime` arrives, OR
  *   - a fragment with a different `speechId` arrives, OR
+ *   - a fragment starts a new widget: `segmentStart:true`, or a `segmentNumber`
+ *     different from the open widget's (two back-to-back widgets of the same
+ *     runtime with no speechId, as the HTTP stream sends them), OR
  *   - `onTurnEnd(speechId)` is called (end of the brain turn).
- * String-content fragments for the same runtime+speechId are concatenated;
+ * String-content fragments for the same runtime+speechId+segmentNumber are concatenated;
  * object-content fragments REPLACE (a parsed object is already whole).
  *
  * Pure over an injected `onWidget(parsedWidget)` callback — zero-dep, no DOM,
@@ -36,7 +39,7 @@ export class SegmentAssembler {
     this._onWidget = (cfg && typeof cfg.onWidget === 'function') ? cfg.onWidget : () => {};
     /** @type {(info:any)=>void} */
     this._onMalformed = (cfg && typeof cfg.onMalformed === 'function') ? cfg.onMalformed : () => {};
-    /** Open buffer for the in-flight widget, or null. @type {null|{runtime:string,runtimeName:string,speechId:(string|null),strParts:string[],obj:(Record<string,unknown>|null)}} */
+    /** Open buffer for the in-flight widget, or null. @type {null|{runtime:string,runtimeName:string,speechId:(string|null),segmentNumber:(number|null),strParts:string[],obj:(Record<string,unknown>|null)}} */
     this._open = null;
   }
 
@@ -63,7 +66,11 @@ export class SegmentAssembler {
     // speechId of its own to boundary-check against; it unconditionally belongs to whatever
     // widget is currently open. Dropping it would silently discard every
     // fragment after the first, leaving an empty/truncated model at flush time.
+    const segmentNumber = typeof s.segmentNumber === 'number' ? s.segmentNumber : null;
+    const otherSegment = (open) => segmentNumber !== null && open.segmentNumber !== null && open.segmentNumber !== segmentNumber;
     if (!runtime && this._open && s.type === 'unisphere-tool') {
+      // A continuation from another segment belongs to no open widget: close the open one.
+      if (otherSegment(this._open)) { this.flush('boundary'); return false; }
       if (typeof content === 'string') this._open.strParts.push(content);
       else if (content && typeof content === 'object') this._open.obj = /** @type {Record<string,unknown>} */ (content);
       return true;
@@ -72,12 +79,13 @@ export class SegmentAssembler {
 
     const speechId = typeof s.speechId === 'string' ? s.speechId : (typeof s.speech_id === 'string' ? s.speech_id : null);
 
-    // Boundary: a different runtime or speechId closes the current widget — this is an
-    // INTERRUPTION, not a natural end, so a truncated body here is malformed.
-    if (this._open && (this._open.runtime !== runtime || this._open.speechId !== speechId)) this.flush('boundary');
+    // Boundary: a different runtime, speechId or segment, or a new segmentStart, closes the
+    // current widget. This is an INTERRUPTION, not a natural end, so a truncated body here is malformed.
+    if (this._open && (this._open.runtime !== runtime || this._open.speechId !== speechId
+      || s.segmentStart === true || otherSegment(this._open))) this.flush('boundary');
 
     if (!this._open) {
-      this._open = { runtime, runtimeName: pickString(runtimeName) || runtime, speechId, strParts: [], obj: null };
+      this._open = { runtime, runtimeName: pickString(runtimeName) || runtime, speechId, segmentNumber, strParts: [], obj: null };
     }
     if (typeof content === 'string') this._open.strParts.push(content);
     else if (content && typeof content === 'object') this._open.obj = /** @type {Record<string,unknown>} */ (content);
@@ -90,7 +98,7 @@ export class SegmentAssembler {
    * shaped string body mid-write (starts with `{`/`[` but doesn't parse — a
    * genuinely truncated widget, not a small-but-complete one). Idempotent — no-op
    * when nothing is buffered.
-   * @param {string} [reason]  `'boundary'` (a different runtime/speechId arrived),
+   * @param {string} [reason]  `'boundary'` (a different runtime, speechId or segment arrived),
    *   `'turnEnd'`, or `'stop'`. Omit for any other natural flush (e.g. `avatarStopTalking`).
    * @returns {boolean} true if a widget or malformed signal was flushed.
    */
