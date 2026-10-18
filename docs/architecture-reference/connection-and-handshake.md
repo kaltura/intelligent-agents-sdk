@@ -9,14 +9,14 @@
 | Control socket | `wss://conversation.avatar.us.kaltura.ai` path `/socket.io` (session option `conversationManagerUrl`) |
 | STV WHEP base | `srsBaseUrl` from `appInit` |
 | STV WHEP signaling | `POST {webrtc_url}` if `stvNewSession` returned one, else `POST {srsBaseUrl}/rtc/v1/whep/?app=app&stream={session_id}` (body: plain SDP, `Content-Type: application/sdp`). `whepUrl()` in `src/experience/wire.js` |
-| TURN | `turnServerUrl` and `turnCredentials` from `appInit`. See [TURN configuration](#turn-configuration) below. |
+| TURN | `turnServerUrl` from `appInit`. See [TURN configuration](#turn-configuration) below. |
 | Auth | Socket.IO `auth: { token: <conversation KS> }` and `query.partnerId` |
 
-`conversationManagerUrl`, `srsBaseUrl`, `turnServerUrl`, `turnCredentials` and the conversation `ks` come from **`POST https://api.avatar.us.kaltura.ai/v1/application/appInit`** (see [API-REFERENCE.md](../../API-REFERENCE.md)). The agent is identified by `partnerId` (from the KS) and the KS itself.
+`conversationManagerUrl`, `srsBaseUrl`, `turnServerUrl` and the conversation `ks` come from **`POST https://api.avatar.us.kaltura.ai/v1/application/appInit`** (see [API-REFERENCE.md](../../API-REFERENCE.md)). The agent is identified by `partnerId` (from the KS) and the KS itself.
 
 ### TURN configuration
 
-Pass `turnServerUrl` and `turnCredentials` from `appInit` to the session. The TURN URLs, credentials and ICE policy are in [wire-protocol/audio-channels.md](../wire-protocol/audio-channels.md#5-asr-uplink-pc1-microphone--server).
+Pass `turnServerUrl` from `appInit` to the session. The TURN URLs, credentials and ICE policy are in [wire-protocol/audio-channels.md](../wire-protocol/audio-channels.md#5-asr-uplink-pc1-microphone--server).
 
 ---
 

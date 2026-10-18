@@ -119,9 +119,15 @@ test('audit hook is crash-safe: a throwing sink never breaks connect', async () 
   s.disconnect();
 });
 
-test('ephemeral TURN credentials are used over the static fallback', () => {
-  const { s } = mk({ turnServerUrl: 'turn.example', turnCredentials: { username: 'eph-user', credential: 'eph-cred', expiry: 9999 } });
+test('turnCredentials override the default TURN credentials', () => {
+  const { s } = mk({ turnServerUrl: 'turn.example', turnCredentials: { username: 'own-user', credential: 'own-cred', expiry: 9999 } });
   // Reach into the resolved ICE for the ASR channel via the stored turn config.
-  assert.equal(s._turn.username, 'eph-user');
-  assert.equal(s._turn.credential, 'eph-cred');
+  assert.equal(s._turn.username, 'own-user');
+  assert.equal(s._turn.credential, 'own-cred');
+});
+
+test('no [security] TURN warning when turnCredentials is omitted', () => {
+  const logs = [];
+  mk({ turnServerUrl: 'turn.example', logger: (lvl, msg) => logs.push(String(msg)) });
+  assert.deepEqual(logs.filter((m) => /TURN/.test(m)), []);
 });

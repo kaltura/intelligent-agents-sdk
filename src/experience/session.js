@@ -171,7 +171,7 @@ export class KalturaAvatarSession extends Emitter {
    *   so the first words are an interruptible model reply. Goes through the same path as `speak()`, so the reply is interruptible.
    *   Never re-sent on `resume()` or a reconnect. Its server echo is dropped from `transcript {type:'user'}`
    *   unless `echo: true`. Empty/whitespace text sends nothing. Any other type throws `bad_request`.
-   * @param {{username:string,credential:string,expiry?:number}} [cfg.turnCredentials]  Server-minted EPHEMERAL TURN creds (RFC 7635). When omitted, the SDK's default TURN credentials apply and a one-time security warning is logged.
+   * @param {{username:string,credential:string,expiry?:number}} [cfg.turnCredentials]  TURN username and credential for `turnServerUrl`. `appInit` returns none. When omitted, the SDK's default TURN credentials apply.
    * @param {boolean} [cfg.allowInsecureTransport]  Permit ws/http transport (localhost/dev ONLY — emits a loud warning; never in production).
    * @param {(event:object)=>void} [cfg.onAuditEvent]  Redacted structured security events (session.connect/disconnect/auth.fail/protocol.violation). NIST AU-2/AU-3.
    * @param {string} [cfg.preferredVideoCodec]  Force a specific codec for the STV downlink via `setCodecPreferences`. Leave unset. The default is H264; any other value (`'VP8'`, `'VP9'`, `'AV1'`) still negotiates successfully but the video track never produces a frame (audio is unaffected, no error is thrown).
@@ -251,9 +251,8 @@ export class KalturaAvatarSession extends Emitter {
     this._allowInsecure = !!cfg.allowInsecureTransport;
     assertSecureTransport(this._cmUrl, 'conversationManagerUrl', this._allowInsecure, (m) => this._warnOnce('insecure-cm', m));
     assertSecureTransport(this._srsBaseUrl, 'srsBaseUrl', this._allowInsecure, (m) => this._warnOnce('insecure-srs', m));
-    // Prefer server-minted EPHEMERAL TURN creds (RFC 7635); the SDK's default TURN credentials are a flagged fallback.
+    // The SDK's default TURN credentials apply unless the caller passes its own.
     this._turn = turnServers(cfg.turnServerUrl, cfg.turnCredentials || {});
-    if (cfg.turnServerUrl && !cfg.turnCredentials) this._warnOnce('static-turn', 'Using STATIC fallback TURN credentials — pass server-minted ephemeral turnCredentials (from appInit) for production (RFC 7635).');
     this._socketFactory = cfg.socketFactory;
     this._RTC = cfg.rtcConstructor || globalThis.RTCPeerConnection;
     this._RTCRtpReceiver = cfg.rtcRtpReceiverConstructor || globalThis.RTCRtpReceiver;
@@ -2648,7 +2647,7 @@ export class KalturaAvatarSession extends Emitter {
     return this._completer.finalize('manual');
   }
 
-  /** Emit a one-time warning through the logger (insecure transport / static TURN). @param {string} key @param {string} msg */
+  /** Emit a one-time warning through the logger (insecure transport). @param {string} key @param {string} msg */
   _warnOnce(key, msg) { if (this._warned && !this._warned.has(key)) { this._warned.add(key); this._log('warn', '[security] ' + msg); } }
 
   /**
