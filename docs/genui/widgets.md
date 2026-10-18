@@ -6,16 +6,17 @@ Each renderer lives in `src/experience/genui/renderers/<name>.js`, takes `(model
 
 ### 1. flashcards (`renderFlashcards`)
 
-Cards come from `model.cards`, `model.items`, or `model.flashcards`. Each card:
+Cards come from `model.cards`, `model.items`, `model.flashcards`, or `model.keypoints`. Each card:
 
 | Field | Source keys (model) | Constraint |
 |---|---|---|
-| `front` | `front`, `question`, `term` | ≤1000 chars |
-| `back` | `back`, `answer`, `definition` | ≤4000 chars |
+| `front` | `front`, `question`, `term`, `title` | ≤1000 chars |
+| `back` | `back`, `answer`, `definition`, `summary` | ≤4000 chars |
 | `title` | `title` | ≤300 chars |
 | `label` | `label`, `front` | ≤120 chars, the flip toggle's accessible name |
+| `clips` | `citation.clips`, `clips` | see [Clip fields](#clip-fields), omitted when empty |
 
-Descriptor: `{kind:'flashcards', data:{title, cards:[{front, back, label}]}}`.
+Descriptor: `{kind:'flashcards', data:{title, cards:[{front, back, label, clips?}]}}`. `mountWidget` does not show card clips. Read them from the descriptor.
 
 ### 2. followups (`renderFollowups`)
 

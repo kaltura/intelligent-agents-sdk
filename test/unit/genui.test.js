@@ -225,6 +225,47 @@ test('renderer shape: flashcards', () => {
   assert.deepEqual(d.data.cards, [{ front: 'Q', back: 'A', label: 'Q' }]);   // label = accessible name (falls back to front)
 });
 
+test('renderer shape: flashcards reads keypoints (title → front, summary → back)', () => {
+  const model = fixtureModel('flashcards-keypoints', 'flashcards-tool');
+  const d = new ExperienceRenderer(CTX).render('flashcards', model);
+  assert.equal(d.data.cards.length, 5);
+  assert.equal(d.data.cards[0].front, 'Understanding the dominant base');
+  assert.match(d.data.cards[0].back, /^The dominant share of a layout should use a \*\*neutral base\*\*/);
+  assert.equal(d.data.cards[0].label, 'Understanding the dominant base');
+});
+
+test('flashcards: keypoint citation.clips become card.clips', () => {
+  const model = fixtureModel('flashcards-keypoints', 'flashcards-tool');
+  const { cards } = new ExperienceRenderer(CTX).render('flashcards', model).data;
+  assert.equal(cards[0].clips.length, 1);
+  assert.equal(cards[0].clips[0].entryId, '1_aaaaaaaa');
+  assert.equal(cards[0].clips[0].startTime, 84);
+  assert.equal(cards[0].clips[0].endTime, 106);
+  assert.match(cards[0].clips[0].thumbnailUrl, /1_aaaaaaaa/);
+  assert.deepEqual(cards[1].clips.map((c) => c.startTime), [113, 130]);
+  assert.equal(cards[2].clips[0].entryId, '1_bbbbbbbb');
+});
+
+test('flashcards: a keypoint with clips: [] or an empty citation gives a card with no clips key', () => {
+  const model = fixtureModel('flashcards-keypoints', 'flashcards-tool');
+  const { cards } = new ExperienceRenderer().render('flashcards', model).data;
+  assert.equal(cards[3].front, 'A point with no clips');
+  assert.ok(!('clips' in cards[3]));
+  assert.ok(!('clips' in cards[4]));
+});
+
+test('flashcards: explicit cards win over keypoints, and front/back keys win over title/summary (guard)', () => {
+  const d = new ExperienceRenderer().render('flashcards', {
+    cards: [{ question: 'Q', answer: 'A', title: 'T', summary: 'S' }], keypoints: [{ title: 'K', summary: 'KS' }],
+  });
+  assert.deepEqual(d.data.cards, [{ front: 'Q', back: 'A', label: 'Q' }]);
+});
+
+test('flashcards: card clips also read a top-level clips key', () => {
+  const d = new ExperienceRenderer().render('flashcards', { cards: [{ front: 'F', back: 'B', clips: [{ entry_id: '1_a', start_time: 4 }] }] });
+  assert.equal(d.data.cards[0].clips[0].startTime, 4);
+});
+
 test('renderer shape: followups (string + object items)', () => {
   const d = new ExperienceRenderer().render('followups', { questions: ['q1', { text: 'q2' }, ''] });
   assert.deepEqual(d.data.questions, ['q1', 'q2']);   // empty dropped
