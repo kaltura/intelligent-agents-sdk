@@ -12,17 +12,40 @@ import { uuidv4, meta } from '../core/ids.js';
 import { requireConfirm } from './agents.js';
 import { KalturaError } from '../core/errors.js';
 
+/**
+ * @typedef {object} CatalogListFilter
+ * @property {'Visual'|'Voice'|'Face'|'Background'} [typeEqual]
+ * @property {string} [itemIdEqual]  One catalog itemId.
+ * @property {string[]} [idsIn]      Catalog itemIds.
+ * @property {string} [languageEqual] A voice language code, for example 'en'.
+ * @property {string[]} [adminTagsIn]
+ */
+
 export class Catalog {
   /** @param {import('./client.js').Ctx} ctx */
   constructor(ctx) { this._ = ctx; }
 
-  /** List catalog items. READ. @param {string} ks @param {{type?:'Visual'|'Voice',pageSize?:number}} [opts] */
+  /**
+   * List catalog items. READ. Async-iterable + awaitable (first page).
+   * `filter` keys and `orderBy` values: docs/api/design.md#browse-the-catalog.
+   * `opts.type` is a shortcut for `filter.typeEqual`. Passing both with different
+   * values throws `bad_request` before any network call.
+   * @example <caption>Newest voices first</caption>
+   * const voices = await k.catalog.list(adminKs, { type: 'Voice', orderBy: '-createdAt' }).all();
+   * @param {string} ks
+   * @param {{type?:'Visual'|'Voice'|'Face'|'Background', filter?:CatalogListFilter, orderBy?:'+createdAt'|'-createdAt', agentScope?:string, pageSize?:number}} [opts]
+   */
   list(ks, opts = {}) {
     this._.assertAdmin(ks, 'catalog.list');
-    const filter = opts.type ? { typeEqual: opts.type } : undefined;
+    const filter = catalogFilter(opts);
+    const base = {
+      ...(filter ? { filter } : {}),
+      ...(opts.orderBy ? { orderBy: opts.orderBy } : {}),
+      ...(opts.agentScope ? { agentScope: opts.agentScope } : {}),
+    };
     return paginate({
       style: 'offset', pageSize: opts.pageSize ?? 100,
-      fetchPage: (pager) => this._.agentic('catalog-item/list', filter ? { filter, pager } : { pager }, ks).then((r) => r.data),
+      fetchPage: (pager) => this._.agentic('catalog-item/list', { ...base, pager }, ks).then((r) => r.data),
     });
   }
 
@@ -37,18 +60,15 @@ export class Catalog {
    * Requirements: MP3 44.1 kHz, at least about 6 s of clear speech, ≤10 MB, NON-EMPTY
    * description (a clip under about 6 s fails with a server error). The returned
    * `itemId` is the clone — pair it with any avatar's `voice.id`. The item is
-   * tagged `adminTags:['custom']` in the single-parse shape, so it is reliably
-   * findable by `catalog.list` filtered on that tag (see {@link appendAdminTags}).
+   * tagged `adminTags:['custom']` in the single-parse shape (see {@link appendAdminTags}).
    *
-   * @example <caption>End-to-end: clone a voice → confirm it's tagged+findable → use it on an avatar</caption>
+   * @example <caption>End-to-end: clone a voice → fetch it by id → use it on an avatar</caption>
    * const clone = await k.catalog.createVoice(
    *   mp3File,
    *   { name: 'Narrator', description: 'Calm documentary narrator', consentRef: 'consent://signed/2026-001' },
    *   adminKs,
    * );
-   * // round-trip: the 'custom' tag must find the just-cloned item
-   * const customVoices = await k.catalog.list(adminKs, { type: 'Voice' }).all();
-   * const found = customVoices.find((v) => v.itemId === clone.itemId);  // truthy — tag parsed once
+   * const [item] = await k.catalog.list(adminKs, { filter: { itemIdEqual: clone.itemId } });
    * const avatar = await k.avatars.create(
    *   { voice: { id: clone.itemId }, visual: { id: presetVisualId } },
    *   adminKs,
@@ -246,6 +266,23 @@ function visualAttrs(attrs) {
   };
 }
 
+/**
+ * Build the `filter` for `catalog.list`: the caller's `filter` copied, with `type` merged in as `typeEqual`.
+ * @param {{type?:string, filter?:object}} opts @returns {object|undefined}
+ */
+function catalogFilter(opts) {
+  const f = opts.filter;
+  if (f !== null && f !== undefined && (typeof f !== 'object' || Array.isArray(f))) {
+    const got = Array.isArray(f) ? 'an array' : `a ${typeof f}`;
+    throw new KalturaError({ type: 'about:blank', title: 'filter must be an object', code: 'bad_request', detail: `catalog.list: opts.filter must be an object, for example { typeEqual: 'Voice' }. Got ${got}.` });
+  }
+  if (opts.type && f?.typeEqual && f.typeEqual !== opts.type) {
+    throw new KalturaError({ type: 'about:blank', title: 'conflicting type', code: 'bad_request', detail: `catalog.list: opts.type is '${opts.type}' but opts.filter.typeEqual is '${f.typeEqual}'. Pass only one of them.` });
+  }
+  const merged = { ...f, ...(opts.type ? { typeEqual: opts.type } : {}) };
+  return Object.keys(merged).length ? merged : undefined;
+}
+
 /** @param {unknown} v @param {string} where */
 function requireVoiceId(v, where) {
   if (typeof v !== 'string' || !v.trim()) {
@@ -276,7 +313,7 @@ export function newFormData(detail = 'Uploads need global FormData (Node ≥18 /
  * field into a one-element array, but does NOT split a comma-joined value —
  * `fd.append('adminTags', 'a,b')` stores ONE literal tag `"a,b"`, not two.
  * `JSON.stringify(tags)` is wrong too: it double-encodes (stored as
- * `["[\"custom\"]"]`, then unfindable by `adminTagsIn`). JSON BODY requests
+ * `["[\"custom\"]"]`, which is not the tag you sent). JSON BODY requests
  * carry a real array and must NOT use this.
  * @param {FormData} fd @param {string[]} tags
  */

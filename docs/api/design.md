@@ -13,17 +13,28 @@ POST https://api.avatar.us.kaltura.ai/v1/catalog-item/list
 ```json
 {
   "filter": { "typeEqual": "Visual" },
+  "orderBy": "-createdAt",
   "pager": { "offset": 0, "limit": 100 }
 }
 ```
 
-Change `typeEqual` to `"Voice"` for voices. Each item has an `itemId`. Pass it to avatar creation.
+Each item has an `itemId`. Pass it to avatar creation.
+
+| `filter` key | Value |
+|---|---|
+| `typeEqual` | `"Visual"`, `"Voice"`, `"Face"` or `"Background"` |
+| `itemIdEqual` | One `itemId` |
+| `idsIn` | An array of `itemId`s |
+| `languageEqual` | A voice language code, for example `"en"` |
+| `adminTagsIn` | An array of tags |
+
+Any other filter key returns `bad_request` (400). The request also takes a top-level `orderBy` and a top-level `agentScope` string. `orderBy` is `"+createdAt"` or `"-createdAt"`. `"-createdAt"` sorts newest first. Any other `orderBy` returns `bad_request` (400), and the error lists both values.
 
 **Visual preset fields:** `itemId`, `attributes.visual.{name, genderPresentation, skinTone, ageGroup, hairColor, clothing, background}`, `imageUrl`, `loadingVideo`. These are asset URLs for previews. They are not the rendered composite that the live video stream shows.
 
 **Voice preset fields:** `itemId`, `attributes.voice.{name, description, language}`, `voiceSampleUrl`.
 
-SDK: `mgmt.catalog.list(ks, { type: 'Visual' })` or `{ type: 'Voice' }`.
+SDK: `mgmt.catalog.list(ks, { type, filter, orderBy, agentScope })`. `type` is a shortcut for `filter.typeEqual`. Passing both with different values throws `bad_request` before any request.
 
 ---
 
@@ -47,7 +58,7 @@ Returns a catalog item whose `itemId` is the cloned voice. Pair it with any avat
 - Use an audio sample longer than about 6 seconds.
 - Send `adminTags=custom` bare, not as a JSON array string.
 
-**SDK shortcut:** `catalog.createVoice(mp3Blob, { name, description, language?, consentRef? }, adminKs)`. It enforces the non-empty `description` client-side and tags the item `adminTags:['custom']`, so `catalog.list` filtered on that tag finds it. `language` is an ISO 639-1 code and defaults to `'en'`.
+**SDK shortcut:** `catalog.createVoice(mp3Blob, { name, description, language?, consentRef? }, adminKs)`. It enforces the non-empty `description` client-side and tags the item `adminTags:['custom']`. `language` is an ISO 639-1 code and defaults to `'en'`.
 
 ## Import a Provider Voice by id (no audio upload)
 
