@@ -26,7 +26,7 @@ Direction: `→` the client emits, `←` the server emits. This catalog lists th
 | `screenShareStarted` / `screenShareStopped` | `{}` | A screen share began or ended. Sent by `startScreenShare()` / `stopScreenShare()`. |
 | `userScreenSharePendingImage` | `{}` | A still is about to follow. Sent once right after `screenShareStarted`. |
 | `userScreenShareShot` | `{ data }` (ArrayBuffer, JPEG) | A screen-share still for vision analysis, sent every 2 seconds by `startScreenShare()` or once by `sendScreenShot()`. Needs `isScreenShareEnabled` in [`clientConfiguration`](client-configuration.md#7-clientconfiguration-fields-per-session-agent-config). |
-| `onHtmlElementClick` / `setFormLeadInfo` | `{ htmlText }` / `{ …fields }` | GenUI and structured-data-form callbacks, sent by `notifyHtmlElementClick(info)` and `submitStructuredDataForm(values)`. |
+| `onHtmlElementClick` / `setFormLeadInfo` | `{ htmlText }` / `{ …fields }` | GenUI and structured-data-form callbacks, sent by `notifyHtmlElementClick(info)` and `submitStructuredDataForm(values)`. `setFormLeadInfo` records the submission and does not change what the agent knows. |
 
 #### `tapToTalkStart`/`tapToTalkEnd` in detail
 
@@ -88,7 +88,7 @@ These fire once `approvedPermissions` is sent. Many payloads carry a `speechId`,
 | `smartTurnStatus` | `{ status, timeout_ms?, probability? }` | End-of-turn indicator for the user's speech. The SDK re-emits it as `smartTurnStatus { status, timeoutMs, probability }` and does not act on it. |
 | `pauseExpiryWarning` | `{ secondsRemaining }` | The pause window ends soon. The SDK emits `pauseExpiryWarning { secondsRemaining }`. |
 | `sessionReadyForResume` | `{}` | The session can be resumed on the same instance. The SDK emits `resumeReady`. |
-| `pauseSessionExpired` | `{}` | The pause window ended before `resumeConversation` arrived. The session can't be resumed as it was. The SDK emits `timeExpired` with `{type:'pause_expiry'}`, distinct from a hard `conversationEnded`. |
+| `pauseSessionExpired` | `{ message?, transcription? }` | The pause window ended before `resumeConversation` arrived. The session can't be resumed as it was. The SDK emits `timeExpired` with `{type:'pause_expiry', message?, transcription?}`, distinct from a hard `conversationEnded`. |
 | `resumingSession` | `{}` | The server accepted `resumeConversation` and is rebuilding the media pipeline. It precedes `conversationResumed`. The SDK moves to the `resuming` state. |
 | `conversationResumed` | `{}` | The paused turn loop has resumed. The SDK emits `resumed`. |
 | `debug_vad_speech_detected` | `{ transcript, isFinal, segmentType, isSpeechStartEvent }` | Interim and final speech recognition. Only `isFinal:true` commits. Diagnostic. |

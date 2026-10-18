@@ -54,7 +54,7 @@ The form arrives with a default heading. To show your own copy (e.g. "Tell us ab
 - The field types in `FORM_FIELD_TYPES`: six base types plus `email`, `phone` and `text`.
 - A `required` flag and a `description` per field when the incoming form carries them. The default renderer maps them to `aria-required`/`aria-describedby`.
 - Model-side pre-fill (`known_value`) from information already in the transcript.
-- Reporting the collected values back over the wire via `session.submitStructuredDataForm(values)`. It works identically for any field shape.
+- Reporting the collected values: record them with `session.submitStructuredDataForm(values)`, and send them to the agent with `speak()` or `updateRequestVars()` ([§ Reading back](#reading-back-what-the-viewer-submitted)). Both work identically for any field shape.
 
 **Not possible / not designed for:**
 
@@ -106,12 +106,12 @@ Two independent axes:
   }));
   ```
 
-Or skip the SDK's default DOM builder entirely by passing a mount **function** instead of an `Element`. You get the descriptor and build any UI you want (React, a modal, whatever), calling `session.submitStructuredDataForm(values)` yourself when the viewer submits.
+Or skip the SDK's default DOM builder entirely by passing a mount **function** instead of an `Element`. You get the descriptor and build any UI you want (React, a modal, whatever), calling `updateRequestVars()` or `speak()` with the values yourself when the viewer submits (and `submitStructuredDataForm(values)` if you want the submission recorded).
 - **Visual styling.** The default DOM path emits plain, unstyled class names only: `.kgenui__form`, `.kgenui__field`, `.kgenui__label`, `.kgenui__input`, `.kgenui__help`, `.kgenui__submit`. The SDK ships **zero CSS**. Any consumer styles the same class names in their own stylesheet.
 
 ## Reading back what the viewer submitted
 
-`session.submitStructuredDataForm(info)` is a fire-and-forget socket emit of `setFormLeadInfo`. It returns nothing and has no acknowledgment. The SDK has no call that returns the submitted values as structured `{key: value}` data.
+`session.submitStructuredDataForm(values)` records the submission. It emits `setFormLeadInfo`, returns nothing, and has no acknowledgment. It does not change what the agent knows. To make the agent act on the values, send them in a message with `speak()`, or as request variables with `updateRequestVars()` that your prompt reads. The SDK logs one console warning per session the first time you call it. The SDK has no call that returns the submitted values as structured `{key: value}` data.
 
 `threads.transcript(threadId, ks)` returns the plain-text transcript of the thread (`human:` / `ai:` lines, in the result's `data` field). It carries what the viewer said and typed and what the model replied. It does not carry the raw form object.
 

@@ -431,7 +431,7 @@ The intellect's `allow_client_variables` flag must be on. It is on by default. P
 - **Silent empty turn.** The turn comes back empty with no error on the wire. Both session classes detect it and emit a once-per-session `warning` event, `{ code: 'empty_turn_with_request_vars', message, requestVarKeys }` (variable names only, never values).
 - **Loud error.** The request gets a 403 and the call rejects with a `KalturaError` with code `client_variables_disabled`. `KalturaChatSession.sendText()` also emits `error`, and the session stays connected.
 
-For merge and persistence semantics, size headroom, tool interpolation, the `lintPrompts` pre-flight, and a worked example composing `request_vars` with `speak()` and `submitStructuredDataForm()`, see [docs/DYNAMIC-DATA-INJECTION.md](docs/DYNAMIC-DATA-INJECTION.md).
+For merge and persistence semantics, size headroom, tool interpolation, the `lintPrompts` pre-flight, and a worked example composing `request_vars` with `speak()`, see [docs/DYNAMIC-DATA-INJECTION.md](docs/DYNAMIC-DATA-INJECTION.md).
 
 ### Tap-to-talk (push-to-talk voice)
 
