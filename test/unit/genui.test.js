@@ -176,6 +176,15 @@ test('parseWidget extracts widgetName/runtimeName/runtime/model from a live segm
   assert.deepEqual(w.model, { questions: ['q1', 'q2'] });
 });
 
+test('GENUI_WIDGET_NAME is the live widget name', () => {
+  assert.equal(GENUI_WIDGET_NAME, 'unisphere.widget.genie-tools');
+});
+
+test('parseWidget fills the shared widget name when a segment has only runtimeName', () => {
+  const w = parseWidget({ type: 'unisphere-tool', metadata: { runtimeName: 'followups-tool' }, content: '' });
+  assert.equal(w.widgetName, 'unisphere.widget.genie-tools');
+});
+
 test('parseWidget handles a flattened headless feed + string content', () => {
   const w = parseWidget({ runtimeName: 'summary', content: '```\nsummary: Q1 was strong\n```' });
   assert.equal(w.runtime, 'summary');
@@ -785,7 +794,7 @@ test('SegmentAssembler concatenates string fragments for same runtime+speechId, 
 test('SegmentAssembler: realistic wire shape — only the FIRST fragment carries metadata, later fragments carry bare content and still get appended', () => {
   const out = [];
   const a = new SegmentAssembler({ onWidget: (w) => out.push(w) });
-  a.ingest({ type: 'unisphere-tool', metadata: { widgetName: 'unisphere.widget.genie', runtimeName: 'summary-tool' }, content: '' });
+  a.ingest({ type: 'unisphere-tool', metadata: { widgetName: 'unisphere.widget.genie-tools', runtimeName: 'summary-tool' }, content: '' });
   a.ingest({ type: 'unisphere-tool', content: '{"summary":"hi ' });               // no metadata key at all
   a.ingest({ type: 'unisphere-tool', content: 'there"}' });                       // no metadata key at all
   assert.equal(a.pending, true);

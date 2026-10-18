@@ -20,7 +20,7 @@ The payload also carries `languageCode`, `showTranscription`, `audioMode`, `phon
 
 `force_experience` on `converse` (e.g. `"flashcards"`) is a **hint, not a guarantee**. The agent decides which structured widget(s) to emit based on the prompt and its intellect (the agent's configuration: prompts, tools and capabilities). Each comes back as `unisphere-tool` segments. The first carries `metadata:{ widgetName, runtimeName }`, then the content streams as a YAML body (e.g. `title:` / `questions:`), a subset that `parseContent` reads (see [model-and-runtimes.md](../genui/model-and-runtimes.md)). For example:
 
-- `force_experience:"flashcards"` + a teachable prompt ("Teach me about video codecs") → **both** `flashcards-tool` and `followups-tool` runtimes in one turn (`widgetName:"unisphere.widget.genie"`).
+- `force_experience:"flashcards"` + a teachable prompt ("Teach me about video codecs") → **both** `flashcards-tool` and `followups-tool` runtimes in one turn (`widgetName:"unisphere.widget.genie-tools"`).
 - The same `force_experience` + a vague prompt ("show me something interesting") → **only** `followups-tool`.
 - So: render whatever `runtimeName` arrives; don't assume `force_experience` maps 1:1 to a widget. `capabilities.generate_followup_questions:"on"` independently yields the `followups-tool`.
 

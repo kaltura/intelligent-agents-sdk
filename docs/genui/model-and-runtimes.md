@@ -4,7 +4,7 @@
 
 ## The model in one paragraph
 
-The agent shows a **GenUI widget** by sending a stream segment of `type:"unisphere-tool"`, shaped `{ type, content, metadata:{ widgetName, runtimeName }, speechId?, threadId? }`. **All widgets share `widgetName:"unisphere.widget.genie"`**. The host keys off `metadata.runtimeName` (stripping the `-tool` suffix) to pick a renderer.
+The agent shows a **GenUI widget** by sending a stream segment of `type:"unisphere-tool"`, shaped `{ type, content, metadata:{ widgetName, runtimeName }, speechId?, threadId? }`. **All widgets share `widgetName:"unisphere.widget.genie-tools"`** (`GENUI_WIDGET_NAME`). Pick a renderer from `metadata.runtimeName` (stripping the `-tool` suffix), not `widgetName`.
 
 The SDK turns each segment into a framework-agnostic descriptor `{kind, data}` that your app maps to DOM. Nothing here emits HTML. Every string and URL is run through `core/safety.js` first.
 
@@ -32,7 +32,7 @@ Wire `runtimeName` → normalized dispatch key (the renderer registry key). Sour
 ## How a widget reaches your screen (the data flow)
 
 1. **Author.** At intellect creation (the agent's configuration), enable the gating capability (see [authoring-and-consuming.md](authoring-and-consuming.md)). The capability lets the agent show that widget.
-2. **Emit.** The agent sends a widget with `widgetName:"unisphere.widget.genie"` and a `runtimeName`. It arrives as a `unisphere-tool` segment.
+2. **Emit.** The agent sends a widget with `widgetName:"unisphere.widget.genie-tools"` and a `runtimeName`. It arrives as a `unisphere-tool` segment.
 3. **Stream.** Segments arrive as `agent_raw_text` deltas (live socket) or SSE/NDJSON lines (HTTP converse). A single widget can span **multiple fragments**.
 4. **Assemble.** `SegmentAssembler` (`genui/segments.js`) buffers fragments and flushes a complete widget on a boundary change (different `runtime` or `speechId`, or turn end). If that boundary change interrupts a JSON body before it finishes writing, the fragment is flagged malformed (`onMalformed`) instead of flushed as a widget. `ExperienceRenderer` then mounts the same typed `{kind:'error', data:{runtime, message}}` fallback it uses for a throwing custom renderer.
 5. **Parse.** `parseWidget(segment)` (`parse.js`) returns `{widgetName, runtimeName, runtime, model}`. `parseContent` is forgiving and never throws: object content is used as-is; string content is JSON-parsed first, else parsed as a YAML subset (block maps and lists, flow `[]`/`{}`, quoted and block scalars; no YAML 1.1 coercions, so `yes` or `1_000` stay strings). Lines it can't read go to `.raw`.

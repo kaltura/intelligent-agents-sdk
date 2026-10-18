@@ -4,7 +4,7 @@ GenUI is everything an agent can put **on screen** beyond spoken text: flashcard
 
 This page is the authoritative map. For each runtime, it covers the enabling capability, the exact wire shape, the SDK function and keys that parse and render it, and the restrictions that bite in practice.
 
-> **Naming note.** `unisphere-tool` and `unisphere.widget.genie` below are the agentic backend's literal, on-the-wire constant values. A naming decision made outside this SDK set them, and they're preserved verbatim here because changing them would break real interoperability. They are unrelated to "GenUI," this doc's own name for the feature. Don't read them as a reference to a different product.
+> **Naming note.** `unisphere-tool` and `unisphere.widget.genie-tools` below are the agentic backend's literal, on-the-wire constant values. A naming decision made outside this SDK set them, and they're preserved verbatim here because changing them would break real interoperability. They are unrelated to "GenUI," this doc's own name for the feature. Don't read them as a reference to a different product.
 
 | Doc | Covers |
 |---|---|

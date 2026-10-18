@@ -37,7 +37,7 @@ async function connect(cfg = {}) {
 
 /** A render-genui brain segment as the server streams it (JSON in agent_raw_text.delta). */
 function genuiDelta() {
-  return { delta: JSON.stringify({ type: 'flashcards-tool', metadata: { runtimeName: 'flashcards-tool', widgetName: 'unisphere.widget.genie' }, content: 'q1' }) };
+  return { delta: JSON.stringify({ type: 'flashcards-tool', metadata: { runtimeName: 'flashcards-tool', widgetName: 'unisphere.widget.genie-tools' }, content: 'q1' }) };
 }
 
 // ─────────────────────────── #9 session-level guardrail gate ───────────────────────────
