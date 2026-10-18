@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { performance } from 'node:perf_hooks';
 import {
   SYS_VARS,
   SYS_NAMESPACES,
@@ -109,6 +110,35 @@ test('validatePromptVars keeps a system namespace through a filter', () => {
   const r = validatePromptVars('{{ secrets.K | upper }}');
   assert.deepEqual(r.systemVariables, ['secrets.K']);
   assert.deepEqual(r.clientVariables, []);
+});
+
+test('validatePromptVars joins a dotted name written with spaces around the dot', () => {
+  const r = validatePromptVars('{{ secrets . API_KEY | upper }}', { allowClientVariables: false });
+  assert.deepEqual(r.variables, ['secrets.API_KEY']);
+  assert.deepEqual(r.systemVariables, ['secrets.API_KEY']);
+  assert.deepEqual(r.findings, []);
+  assert.deepEqual(validatePromptVars('{{ a .b . c }}').variables, ['a.b.c']);
+  assert.deepEqual(validatePromptVars('{{ items[0] . name }}').variables, ['items']);
+  assert.deepEqual(validatePromptVars("{{ plan . startswith('p') }}").variables, ['plan']);
+});
+
+test('validatePromptVars treats a bare system namespace read by index or method as system', () => {
+  for (const t of ["{{ secrets['API_KEY'] | upper }}", "{{ secrets.get('API_KEY') | upper }}", "{{ secrets . get('K') }}", '{{ secrets }}']) {
+    const r = validatePromptVars(t, { allowClientVariables: false });
+    assert.deepEqual(r.systemVariables, ['secrets'], t);
+    assert.deepEqual(r.clientVariables, [], t);
+    assert.deepEqual(r.findings, [], t);
+    assert.deepEqual(validatePromptVars(t, { allowClientVariables: true }).findings, [], t);
+  }
+});
+
+test('validatePromptVars stays linear on hostile whitespace and dot input', () => {
+  for (const unit of [' ', ' . ', 'a ', 'a . ', '. ', "a['x'] . "]) {
+    const text = `{{ ${unit.repeat(20000)} }}`;
+    const t0 = performance.now();
+    validatePromptVars(text);
+    assert.ok(performance.now() - t0 < 1000, JSON.stringify(unit));
+  }
 });
 
 test('validatePromptVars ignores an attribute after an index', () => {

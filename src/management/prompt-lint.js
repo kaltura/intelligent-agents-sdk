@@ -141,6 +141,7 @@ const PLAIN_NAME = /^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$/;
 const NUMBER = /^\d[\d_]*(\.\d[\d_]*)?([eE][+-]?\d[\d_]*)?$/;
 const EXPR_KEYWORDS = new Set(['and', 'or', 'not', 'in', 'is', 'if', 'else', 'true', 'false', 'none', 'True', 'False', 'None']);
 const EXPR_LITERALS = new Set(['true', 'false', 'none', 'True', 'False', 'None']);
+const IDENT = /[A-Za-z_]\w*/y;
 const TOKEN = /\s+|(?<str>'')|(?<num>(?<![\w.])\d(?:[\w.]|(?<=[eE])[+-])*)|(?<name>[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)|(?<close>[)\]])|(?<op>[\s\S])/gy;
 
 /**
@@ -165,12 +166,15 @@ function expressionNames(raw) {
   let operand = false;
   let afterIs = false;
   let afterPipe = false;
+  let afterDot = false;
   let invalid = false;
   TOKEN.lastIndex = 0;
   let m;
   while (TOKEN.lastIndex < s.length && (m = TOKEN.exec(s)) !== null) {
     if (m[0].trim() === '') continue;
     const g = m.groups || {};
+    const attr = afterDot;
+    afterDot = false;
     if (g.str !== undefined) { operand = false; afterIs = false; afterPipe = false; continue; }
     if (g.num !== undefined) {
       if (!NUMBER.test(g.num) || operand) invalid = true;
@@ -178,9 +182,23 @@ function expressionNames(raw) {
       continue;
     }
     if (g.name !== undefined) {
-      const word = g.name;
-      if (m.index > 0 && s[m.index - 1] === '.') { operand = true; afterIs = false; afterPipe = false; continue; } // attribute after `]` or `)`
-      const end = TOKEN.lastIndex;
+      if (attr) { operand = true; afterIs = false; afterPipe = false; continue; } // attribute after `]` or `)`
+      // Jinja allows spaces around the dots of an attribute chain: join them.
+      let word = g.name;
+      let end = TOKEN.lastIndex;
+      for (;;) {
+        let j = end;
+        while (j < s.length && /\s/.test(s[j])) j++;
+        if (s[j] !== '.') break;
+        j++;
+        while (j < s.length && /\s/.test(s[j])) j++;
+        IDENT.lastIndex = j;
+        const id = IDENT.exec(s);
+        if (!id) break;
+        word += `.${id[0]}`;
+        end = IDENT.lastIndex;
+      }
+      TOKEN.lastIndex = end;
       if (EXPR_KEYWORDS.has(word)) {
         if (word === 'is') afterIs = true;
         else if (!(word === 'not' && afterIs)) afterIs = false;
@@ -214,6 +232,7 @@ function expressionNames(raw) {
     const ch = m[0];
     if (ch === '(' || ch === '[') stack.push(ch);
     afterPipe = ch === '|';
+    afterDot = ch === '.';
     operand = false;
   }
   if (stack.length) return { names: [], problem: 'unbalanced' };
@@ -311,7 +330,7 @@ export function validatePromptVars(text, opts = {}) {
 
     const dot = name.indexOf('.');
     const ns = dot >= 0 ? name.slice(0, dot) : '';
-    const isSystem = SYS_VAR_SET.has(name) || (ns && SYS_NS_SET.has(ns));
+    const isSystem = SYS_VAR_SET.has(name) || SYS_NS_SET.has(name) || (ns && SYS_NS_SET.has(ns));
     if (isSystem) {
       if (first) system.push(name);
       return;
