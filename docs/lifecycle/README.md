@@ -19,6 +19,19 @@ A rule is `{name, systemName, eventType, objectType, eventConditions?, action}`:
 - `eventConditions[]`: `{field, operator, value}` matchers, e.g. `{field:'object.agent_id', operator:'eq', value:'<uuid>'}`, `{field:'changed_keys', operator:'has_all', value:[...]}`. `field` is a dot-path into the event payload (see [Discovery and dry-run testing](#discovery-and-dry-run-testing) for which paths exist per event). A `{path, op}` shaped entry is rejected with a 400.
 - `action`: a plain object, passed straight through, not built by the SDK. See [The action types](#the-action-types) below.
 
+`operator` is one of nine values:
+
+| `operator` | `value` | Matches when the field |
+|---|---|---|
+| `eq`, `neq` | One value of the field's type | equals, or does not equal, `value` |
+| `gt`, `lt` | A number | is greater, or less, than `value` |
+| `in` | An array of values of the field's type | equals one of the items |
+| `contains` | One string | contains `value`. On `changed_keys`, holds the key `value` |
+| `has_any`, `has_all` | An array of strings | is an array that holds any, or all, of the items |
+| `not_empty` | Required. A non-empty value of the field's type | Match behavior is not confirmed. Use another operator |
+
+`describeFields` gives each field's type. A `value` of the wrong type returns 400 on `create`: a string for `gt`, a single value for `in`, an array for `contains`, or no `value` for `not_empty`. An operator that does not fit the field is accepted and never matches, for example `has_any` with `[1]` on the number field `object.origin`. An unknown operator returns 400 and lists the nine.
+
 ---
 
 ## The action types
@@ -38,7 +51,7 @@ You can create four `actionType` values. `match` output can also list built-in r
 
 A `templateId` is more durable than a `presetType`. It points at a template you created yourself via [`mgmt.emailTemplates`](#emailtemplates-managing-the-templates-sendinsightemail-references) (see below). A `presetType` uses a preset template instead.
 
-**`createBadges`** takes `{ badges: [{ badgeId, type, score?, scoreAction? }] }`, a non-empty list with unique `badgeId`s. `badgeId` is the insight key whose value sets the badge, and uses letters, digits, `_` and `-`. A `type:'boolean'` badge needs `score`, given when the insight is true. A `type:'numeric'` badge takes its score from the insight value, so it must not set `score`. `scoreAction` is `'upsert'` (set the score) or `'delta'` (add to it). A conversation with no user id earns no badge. Run it on `analysis_updated` with a `changed_keys` filter on the badge keys. A wrong shape returns 400, and `err.body.message` names the field.
+**`createBadges`** takes `{ badges: [{ badgeId, type, score?, scoreAction? }] }`, a non-empty list with unique `badgeId`s. `badgeId` is the insight key whose value sets the badge, and uses letters, digits, `_` and `-`. A `type:'boolean'` badge needs `score`, given when the insight is true. A `type:'numeric'` badge takes its score from the insight value, so it must not set `score`. `scoreAction` is `'upsert'` (set the score) or `'delta'` (add to it). Add a `changed_keys` filter on the badge keys, as `lifecycle.audit` advises (`badges_unfiltered`). A wrong shape returns 400, and `err.body.message` names the field.
 
 ```js
 const sentiment = await mgmt.insightSettings.create({

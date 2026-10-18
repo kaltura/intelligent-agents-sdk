@@ -31,9 +31,8 @@
  *   whose value sets the badge. A `boolean` badge needs `score` and is given
  *   when the insight is true. A `numeric` badge takes its score from the
  *   insight value and must not set `score`. `scoreAction` sets (`upsert`) or
- *   adds to (`delta`) the user's score. A conversation with no user id earns
- *   no badge. Run it on `analysis_updated` with a `changed_keys` filter on
- *   the badge keys.
+ *   adds to (`delta`) the user's score. Add a `changed_keys` filter on the
+ *   badge keys, as `lifecycle.audit` advises (`badges_unfiltered`).
  *
  * Every session also gets one fixed, built-in summary insight for free. It
  * comes from a built-in rule (id starts with `preset__`) that
@@ -187,6 +186,10 @@ export class Lifecycle {
    * `has_any` and a non-empty array of keys. Otherwise it sends on every
    * analysis update, so the SDK throws `code:'lifecycle_email_unfiltered'`.
    * Pass `{ emailOnEveryUpdate: true }` to send on every update on purpose.
+   *
+   * Each `eventConditions[].operator` is one of `eq`, `neq`, `gt`, `lt`, `in`,
+   * `contains`, `has_any`, `has_all` or `not_empty`. A `value` of the wrong
+   * type returns 400. See `docs/lifecycle/README.md`.
    * @param {{name:string, systemName:string, eventType:string, objectType:string, eventConditions?:Array<{field:string,operator:string,value:unknown}>, action:object}} body
    * @param {string} ks (admin)
    * @param {{partnerWide?:boolean, emailOnEveryUpdate?:boolean}} [opts] `partnerWide:true` skips the agent-scope check. `emailOnEveryUpdate:true` skips the email-trigger check
