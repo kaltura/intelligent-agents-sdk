@@ -505,6 +505,99 @@ test('mountWidget video-gallery: play payload carries startTime and endTime', as
   } finally { delete globalThis.document; }
 });
 
+test('content-gallery: a text slide block keeps line breaks', () => {
+  const model = fixtureModel('content-text-slide', 'content-gallery-tool');
+  const { items } = new ExperienceRenderer(CTX).render('content-gallery', model).data;
+  assert.equal(items.length, 1);
+  assert.equal(items[0].type, 'text');
+  assert.ok(items[0].description.startsWith('### The Rule of Thirds'));
+  assert.ok(items[0].description.includes('\n'));
+  assert.ok(!('clips' in items[0]));
+});
+
+test('content-gallery: a video slide gets clips and its first clip\'s thumbnail', () => {
+  const model = fixtureModel('content-video-slide', 'content-gallery-tool');
+  const { items } = new ExperienceRenderer(CTX).render('content-gallery', model).data;
+  assert.equal(items[0].type, 'video');
+  assert.equal(items[0].clips.length, 1);
+  assert.equal(items[0].clips[0].entryId, '1_aaaaaaaa');
+  assert.equal(items[0].clips[0].startTime, 84);
+  assert.match(items[0].imageUrl, /1_aaaaaaaa/);
+  assert.equal(items[0].imageUrl, items[0].clips[0].thumbnailUrl);
+});
+
+test('content-gallery: a video slide with text: null is not an empty item', () => {
+  const model = fixtureModel('content-video-slide', 'content-gallery-tool');
+  const { items } = new ExperienceRenderer().render('content-gallery', model).data;   // no partnerId: no derived thumbnail
+  assert.equal(items.length, 1);
+  assert.equal(items[0].description, '');
+  assert.equal(items[0].imageUrl, '');
+  assert.equal(items[0].clips.length, 1);
+});
+
+test('content-gallery: type is always a string; fully empty items are dropped', () => {
+  const d = new ExperienceRenderer().render('content-gallery', { items: [{}, { title: 'a' }, { slide_type: 'text', text: '' }, null, { slide_type: 'text', text: 'x' }, { type: 'image', imageUrl: 'https://k.com/i.png' }] });
+  assert.equal(d.data.items.length, 3);   // a slide with only a type is empty
+  assert.deepEqual(d.data.items.map((i) => i.type), ['', 'text', 'image']);
+});
+
+test('content-gallery: the first clip fills imageUrl and url when the slide has none; explicit values win', () => {
+  const d = new ExperienceRenderer().render('content-gallery', {
+    slides: [
+      { title: 'a', imageUrl: 'https://k.com/own.png', url: 'https://k.com/own', clips: [{ entry_id: '1_a', thumbnail: 'https://k.com/clip.png', video_link: 'https://k.com/clip' }] },
+      { title: 'b', clips: [{ entry_id: '1_a', thumbnail: 'https://k.com/clip.png', video_link: 'https://k.com/clip' }] },
+    ],
+  });
+  assert.equal(d.data.items[0].imageUrl, 'https://k.com/own.png');
+  assert.equal(d.data.items[0].url, 'https://k.com/own');
+  assert.equal(d.data.items[1].imageUrl, 'https://k.com/clip.png');
+  assert.equal(d.data.items[1].url, 'https://k.com/clip');
+});
+
+test('mountWidget content-gallery: description folds line breaks to spaces', async () => {
+  globalThis.document = fakeDom();
+  try {
+    const { mountWidget } = await import('../../src/experience/genui/renderers/mount.js');
+    const root = mountWidget({ kind: 'content-gallery', data: { items: [{ title: 'T', description: 'a\nb\n\n  c' }] } }, document.createElement('div'));
+    const p = findAll(root, (n) => n.className === 'kgenui__text')[0];
+    assert.equal(p.textContent, 'a b c');
+  } finally { delete globalThis.document; }
+});
+
+test('mountWidget content-gallery: a video slide renders a play button that mounts the player and emits play', async () => {
+  const listeners = [];
+  globalThis.document = listenerCapturingDom(listeners);
+  try {
+    const { mountWidget } = await import('../../src/experience/genui/renderers/mount.js');
+    const model = fixtureModel('content-video-slide', 'content-gallery-tool');
+    const descriptor = new ExperienceRenderer(CTX).render('content-gallery', model);
+    const actions = [];
+    const root = mountWidget(descriptor, document.createElement('div'), { onAction: (a, p) => actions.push([a, p]) });
+    const btn = findAll(root, (n) => n.tagName === 'BUTTON')[0];
+    assert.equal(btn.getAttribute('aria-label'), 'Play: 1_aaaaaaaa, 1:24-2:24');
+    listeners.find((l) => l.ev === 'click').fn();
+    const stage = findAll(root, (n) => n.className === 'kgenui__player')[0];
+    assert.equal(stage.hidden, false);
+    assert.equal(findAll(stage, (n) => n.tagName === 'IFRAME').length, 1);
+    assert.equal(actions[0][0], 'play');
+    assert.equal(actions[0][1].entryId, '1_aaaaaaaa');
+    assert.equal(actions[0][1].startTime, 84);
+    assert.equal(actions[0][1].endTime, 144);
+  } finally { delete globalThis.document; }
+});
+
+test('mountWidget content-gallery: a video slide without partnerId still mounts a play button, and a slide without clips mounts no player', async () => {
+  globalThis.document = fakeDom();
+  try {
+    const { mountWidget } = await import('../../src/experience/genui/renderers/mount.js');
+    const model = fixtureModel('content-video-slide', 'content-gallery-tool');
+    const video = mountWidget(new ExperienceRenderer().render('content-gallery', model), document.createElement('div'));
+    assert.equal(findAll(video, (n) => n.tagName === 'BUTTON').length, 1);
+    const plain = mountWidget({ kind: 'content-gallery', data: { items: [{ title: 'T' }] } }, document.createElement('div'));
+    assert.equal(findAll(plain, (n) => n.className === 'kgenui__player').length, 0);
+  } finally { delete globalThis.document; }
+});
+
 // ─────────────────────────── SegmentAssembler ───────────────────────────
 
 test('SegmentAssembler ignores non-widget segments', () => {

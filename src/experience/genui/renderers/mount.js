@@ -201,16 +201,27 @@ const BUILDERS = {
 
   'content-gallery'(root, data, onAction) {
     titleEl(root, data.title);
+    // A shared inline player surface for video slides, as in video-gallery.
+    const stage = el('div', 'kgenui__player');
+    stage.hidden = true;
+    let hasVideo = false;
     gallery(root, asArray(data.items), (it) => {
       const card = el('li', 'kgenui__card');
-      const img = safeImg(it && it.imageUrl, safeText((it && it.alt) || (it && it.title), 300));
-      if (img) card.appendChild(img);
+      const clip = it && Array.isArray(it.clips) ? it.clips[0] : null;
+      if (clip) {
+        hasVideo = true;
+        card.appendChild(playButton({ ...clip, title: it.title, alt: it.alt }, stage, onAction));
+      } else {
+        const img = safeImg(it && it.imageUrl, safeText((it && it.alt) || (it && it.title), 300));
+        if (img) card.appendChild(img);
+      }
       if (it && it.title) card.appendChild(el('span', 'kgenui__title', safeText(it.title, 500)));
-      if (it && it.description) card.appendChild(el('p', 'kgenui__text', safeText(it.description, 2000)));
+      if (it && it.description) card.appendChild(el('p', 'kgenui__text', safeText(String(it.description).replace(/\s*\n\s*/g, ' '), 2000)));
       if (it && it.url) { const a = link(it.url, safeText(it.title || 'Open', 300), onAction); if (a) card.appendChild(a); }
       else if (it && it.id) { card.dataset.id = String(it.id); }
       return card;
     });
+    if (hasVideo) root.appendChild(stage);
   },
 
   'user-properties-form'(root, data, onAction) {

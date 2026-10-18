@@ -114,7 +114,7 @@ Without `opts.markdown`, the summary renders as flat escaped text.
 | flashcards | `kgenui__flip`, `kgenui__back` |
 | sources | `kgenui__source`, `kgenui__snippet`, `kgenui__score` |
 | summary | `kgenui__bullet` |
-| video-gallery | `kgenui__player`, `kgenui__play`, `kgenui__play-glyph` |
+| video-gallery, content-gallery (video slides) | `kgenui__player`, `kgenui__play`, `kgenui__play-glyph` |
 | external-video | `kgenui__embed` (iframe wrap) |
 | user-properties-form | `kgenui__form`, `kgenui__field`, `kgenui__label`, `kgenui__help` |
 | user-properties-form and graded-question (free-text input/submit) | `kgenui__input`, `kgenui__submit` |

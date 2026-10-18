@@ -130,13 +130,17 @@ Items come from `model.items`, `model.slides`, or `model.cards`. Each item:
 | Field | Source keys (model) | Constraint |
 |---|---|---|
 | `id` | `id`, `slideId`, `key` | ≤100 chars, addressable, slides are ordered, mirrors `entryId` |
+| `type` | `slide_type`, `type` | ≤40 chars, `''` when absent (for example `text` or `video`) |
 | `title` | `title`, `name`, `heading` | ≤500 chars |
-| `description` | `description`, `text`, `body` | ≤2000 chars |
-| `imageUrl` | `imageUrl`, `image`, `thumbnail` | via `safeUrl` |
-| `url` | `url`, `link`, `href` | via `safeUrl` |
+| `description` | `description`, `text`, `body` | ≤2000 chars, via `safeSource`, keeps line breaks |
+| `imageUrl` | `imageUrl`, `image`, `thumbnail`, then the first clip's `thumbnailUrl` | via `safeUrl` |
+| `url` | `url`, `link`, `href`, then the first clip's `url` | via `safeUrl` |
 | `alt` | `alt`, `title`, `description` | ≤300 chars, the image's accessible name |
+| `clips` | `citation.clips`, `clips` | see [Clip fields](#clip-fields), omitted when empty |
 
-Descriptor: `{kind:'content-gallery', data:{title, items:[{id, title, description, imageUrl, url, alt}]}}`. This is the **image-bearing** widget (a deck/gallery of cards with thumbnails). The `video_gallery` capability permits both `video-gallery-tool` **and** `content-gallery-tool`.
+An item with no `id`, `title`, `description`, image, link or clips is dropped. `mountWidget` shows a play button for the first clip of a video slide and folds description line breaks to spaces. The descriptor keeps the line breaks.
+
+Descriptor: `{kind:'content-gallery', data:{title, items:[{id, type, title, description, imageUrl, url, alt, clips?}]}}`. This is the **image-bearing** widget (a deck/gallery of cards with thumbnails). The `video_gallery` capability permits both `video-gallery-tool` **and** `content-gallery-tool`.
 - **Multi-item only.** The renderer always wraps `items` in a CSS grid sized for several thumbnails (`.kgenui__gallery`, `repeat(auto-fill, minmax(120px,1fr))`). It does not branch on item count. So a single, image-less item stretches to the grid's full row width inside the widget's full-slot frame and reads as an oversized, awkward card. A `:has(> .kgenui__gallery > li:only-child)` CSS rule can give that case a flex/centered treatment instead. A `show_widget` tool description can also steer the agent toward `summary` for a single text-only point. Prefer `content-gallery` for 2+ image-bearing items, and `summary` for one.
 
 ### 10. graded-question (`renderGradedQuestion`): a host-registered "10th runtime"
