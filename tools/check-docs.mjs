@@ -1023,6 +1023,19 @@ describe('16. Docs accuracy', () => {
     const stale = scanFiles().filter((f) => f.endsWith('.md') && /does not take `orderBy`/.test(read(f)));
     assert.deepEqual(stale, [], `these pages say agents.list does not take orderBy: ${stale.join(', ')}`);
   });
+
+  test('the agent asr row names the providers in agents.js and no doc uses asr.languages', () => {
+    const src = read('src/management/agents.js');
+    const providers = unionValues(src.match(/@property \{((?:'[^']+'\|?)+)\}\s+provider/)?.[1] ?? '');
+    assert.ok(providers.length > 0, 'agents.js has no AgentAsr provider union');
+    const row = read('docs/api/build/avatar-and-agent.md').split('\n').find((l) => l.startsWith('| `asr` |'));
+    assert.ok(row, 'avatar-and-agent.md needs an asr row in the agent field table');
+    const clause = row.match(/`provider` is ([^.]*)\./)?.[1] ?? '';
+    const cells = [...clause.matchAll(/`"([^"]+)"`/g)].map((m) => m[1]);
+    assert.deepEqual(cells, providers, `the asr row must list exactly ${providers.join(', ')}`);
+    const stale = scanFiles().filter((f) => f.endsWith('.md') && /asr\.languages/.test(read(f)));
+    assert.deepEqual(stale, [], `these pages mention asr.languages: ${stale.join(', ')}`);
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════

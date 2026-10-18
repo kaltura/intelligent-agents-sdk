@@ -16,6 +16,8 @@
  *   7  agents.update        — rename persists on a follow-up get (a pause first, so A is the newest update)
  *   7b agents.list orderBy  — -createdAt gives [B, A], -updatedAt gives [A, B]; the other orders are logged
  *   7c agents.list orderBy  — an unknown value rejects with bad_request listing the four values
+ *   7d agents asr           — the default is {language:'en', provider:'kaltura'}, an update persists,
+ *      and a provider or language outside the accepted values rejects with bad_request
  *   8  agents.delete        — scratch agent removed (adminTags carries no PROTECTED_TAGS match, so the plain path runs), re-`get` real-404s
  *
  * Cleanup order matters: agent first (it references the avatar+intellect),
@@ -170,6 +172,24 @@ try {
     check('7c-list-bad-orderBy', false, { message: 'expected a rejection' });
   } catch (err) {
     check('7c-list-bad-orderBy', err?.code === 'bad_request' && err?.status === 400 && ['+createdAt', '-createdAt', '+updatedAt', '-updatedAt'].every((v) => err.detail.includes(v)), { code: err?.code, status: err?.status, detail: err?.detail });
+  }
+
+  // 7d: agent asr. The default is {language:'en', provider:'kaltura'}. An update persists.
+  const asrDefault = (await kaltura.agents.get(agentId, admin)).asr;
+  check('7d-asr-default', asrDefault?.language === 'en' && asrDefault?.provider === 'kaltura', { asr: asrDefault });
+  await kaltura.agents.update({ agentId, asr: { language: 'he', provider: 'kaltura' } }, admin);
+  const asrSet = (await kaltura.agents.get(agentId, admin)).asr;
+  check('7d-asr-update-persists', asrSet?.language === 'he' && asrSet?.provider === 'kaltura', { asr: asrSet });
+  for (const [name, asr, expected] of [
+    ['7d-asr-bad-provider', { language: 'en', provider: 'bogus' }, ['kaltura', 'kaltura-hebrew', 'elevenlabs', 'soniox']],
+    ['7d-asr-bad-language', { language: 'zz', provider: 'kaltura' }, []],
+  ]) {
+    try {
+      await kaltura.agents.update({ agentId, asr }, admin);
+      check(name, false, { message: 'expected a rejection' });
+    } catch (err) {
+      check(name, err?.code === 'bad_request' && err?.status === 400 && expected.every((v) => err.detail.includes(v)), { code: err?.code, status: err?.status, detail: err?.detail });
+    }
   }
 } catch (err) {
   failed = true;

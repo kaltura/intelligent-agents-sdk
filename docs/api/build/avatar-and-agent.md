@@ -96,6 +96,7 @@ POST https://api.avatar.us.kaltura.ai/v1/agent/create
 | `maxConversationLength` | Seconds. Omit to use the default |
 | `widgetConfig` / `embedConfig` | Optional config objects for the hosted widget and embed. Omit them unless you customize widget or embed behavior |
 | `screenShare` | Optional `{enabled, prompt}`. Set `enabled: true` and a `prompt` that says how to describe the shared screen to let an avatar session share its screen. `mgmt.agents.update` changes it later. The `sys__avatar_share_screen_enabled` variable is true only while a share runs |
+| `asr` | Optional `{language, provider}` for speech recognition. `language` is a language code, for example `"en"`. `provider` is `"kaltura"`, `"kaltura-hebrew"`, `"elevenlabs"` or `"soniox"`. Omit it to get `{"language":"en","provider":"kaltura"}`. A `provider` or `language` outside the accepted values returns `bad_request` (400). `mgmt.agents.update` changes it later. To pin one language for replies and recognition together, see [Languages](../../LANGUAGES.md) |
 
 Returns `agentId` (UUID). **Save this.**
 
