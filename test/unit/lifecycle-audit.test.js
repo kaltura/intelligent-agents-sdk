@@ -83,6 +83,7 @@ const TABLE = [
   ['insight_setting_disabled', insightRule({ action: { actionType: 'triggerInsightSettingsKai', insightSettingsIds: ['s3'] } }), {}, ['insight_setting_disabled']],
   ['too_many_insight_settings: over the limit', insightRule({ action: { actionType: 'triggerInsightSettingsKai', insightSettingsIds: Array(MAX_INSIGHT_SETTINGS_PER_RULE + 1).fill('s1') } }), {}, ['too_many_insight_settings']],
   ['too_many_insight_settings: exactly the limit is fine', insightRule({ action: { actionType: 'triggerInsightSettingsKai', insightSettingsIds: Array(MAX_INSIGHT_SETTINGS_PER_RULE).fill('s1') } }), {}, []],
+  ['sendInsightEmail: a {{object.user_id}} recipient is not flagged', emailRule({ action: { actionType: 'sendInsightEmail', recipients: ['{{object.user_id}}'], presetType: 'conversationInsightExample' } }), {}, []],
   ['email_on_session_ended', emailRule({ eventType: 'session_ended' }), {}, ['email_on_session_ended']],
   ['email_unfiltered', emailRule({ eventConditions: scope('a1') }), {}, ['email_unfiltered']],
   ['email_unfiltered: an empty changed_keys list does not count', emailRule({ eventConditions: [...scope('a1'), changed('has_all', [])] }), {}, ['email_unfiltered']],

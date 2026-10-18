@@ -54,7 +54,9 @@ export class InsightSettings {
 
   /**
    * Create an insight setting. WRITE — NOT idempotent (a repeat call creates
-   * a second entity, same as {@link Lifecycle#create}).
+   * a second entity, same as {@link Lifecycle#create}). `prompt` can hold
+   * `{{path}}` placeholders into the event. `key` uses letters, digits, `_`,
+   * `.` and `-`. Another key returns 400.
    * @param {{key:string, title:string, prompt:string, valueType:string}} body
    * @param {string} ks (admin)
    */
@@ -72,7 +74,8 @@ export class InsightSettings {
   }
 
   /**
-   * Get an insight setting by id. READ.
+   * Get an insight setting by id. READ. `id` is the 24-character hex id
+   * `create` returned. Another string returns 400.
    * @param {string} id @param {string} ks (admin)
    */
   async get(id, ks) {
@@ -98,7 +101,8 @@ export class InsightSettings {
 
   /**
    * Update an insight setting's key/title/prompt/valueType/status. WRITE —
-   * idempotent.
+   * idempotent. `id` is the 24-character hex id `create` returned. Another
+   * string returns 400.
    * @param {string} id
    * @param {{key?:string, title?:string, prompt?:string, valueType?:string, status?:string}} patch
    * @param {string} ks (admin)
@@ -129,7 +133,8 @@ export class InsightSettings {
    * in `action.insightSettingsIds` keeps a dangling reference — the rule's
    * next dispatch simply skips it (only `active` ids resolve), but consider
    * dropping it from the rule via `lifecycle.update` first if the rule is
-   * still meant to fire.
+   * still meant to fire. `id` is the 24-character hex id `create` returned.
+   * Another string returns 400.
    * @param {string} id @param {string} ks (admin) @param {{confirmPermanent:boolean}} confirm
    * @returns {Promise<{removed:string, success:boolean, _meta:object}>}
    */

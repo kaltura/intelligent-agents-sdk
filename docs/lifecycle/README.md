@@ -34,7 +34,7 @@ You can create four `actionType` values. `match` output can also list built-in r
 
 **`triggerInsightSettingsKai`** takes `{ insightSettingsIds: string[] }`, up to 20 ids, each referencing an `InsightSettings` entity created via `mgmt.insightSettings.create()`. An id that doesn't exist, or isn't owned by your partner, is rejected on create/update with a 400. Only ids whose insight setting has `status:'active'` produce an insight. A `disabled` one is skipped.
 
-**`sendInsightEmail`** mails a rendered insight summary to `recipients`. These are Kaltura user ids, not raw email addresses. Use either an explicit `templateId` or an auto-created `presetType` template; the template's `subject`/`body` reference single-brace tokens declared in `msgParamsMap`, e.g. `{SUMMARY}` or `{recipient.firstName}`. This action only fires on `eventType:'analysis_updated'`. On a `session_ended` rule it does nothing.
+**`sendInsightEmail`** mails a rendered insight summary to `recipients`. These are Kaltura user ids, not raw email addresses. Use either an explicit `templateId` or an auto-created `presetType` template; the template's `subject`/`body` reference single-brace tokens declared in `msgParamsMap`, e.g. `{SUMMARY}` or `{recipient.firstName}`. This action only fires on `eventType:'analysis_updated'`. On a `session_ended` rule it does nothing. An entry can also be a `{{path}}` into the event, such as `{{object.user_id}}` for the conversation's own user. A path the event does not have stays as written. The action has no `subject` field. Set the subject in the template.
 
 A `templateId` is more durable than a `presetType`. It points at a template you created yourself via [`mgmt.emailTemplates`](#emailtemplates-managing-the-templates-sendinsightemail-references) (see below). A `presetType` uses a preset template instead.
 
@@ -72,7 +72,7 @@ await mgmt.insightSettings.update(setting.id, { status: 'disabled' }, ks);      
 await mgmt.insightSettings.delete(setting.id, ks, { confirmPermanent: true });            // WRITE, destructive
 ```
 
-`valueType` is one of `'string'`/`'number'`/`'boolean'`/`'arrayString'`/`'arrayNumber'`/`'arrayBoolean'`. `prompt` is required. There's no built-in fallback prompt for any key name. `status` (`'active'`/`'disabled'`) controls whether a lifecycle rule referencing this id actually extracts it the next time it fires. Deleting the entity instead just leaves any referencing rule's `insightSettingsIds` dangling. That id is simply skipped going forward.
+`valueType` is one of `'string'`/`'number'`/`'boolean'`/`'arrayString'`/`'arrayNumber'`/`'arrayBoolean'`. `prompt` is required. There's no built-in fallback prompt for any key name. `prompt` can hold the same `{{path}}` placeholders as `recipients`. `key` uses letters, digits, `_`, `.` and `-`, within a length limit. Another key returns 400 that shows the allowed pattern. Insight setting ids are 24-character hex strings. `status` (`'active'`/`'disabled'`) controls whether a lifecycle rule referencing this id actually extracts it the next time it fires. Deleting the entity instead just leaves any referencing rule's `insightSettingsIds` dangling. That id is simply skipped going forward.
 
 ### `EmailTemplates`: managing the templates `sendInsightEmail` references
 
@@ -166,7 +166,7 @@ const { matchedRules } = await mgmt.lifecycle.match(
 );
 ```
 
-**`match` can return rules you never created.** Every partner has a built-in rule that matches every `session_ended`/`thread` event, and you cannot create its action type. `matchedRules[]` can group it with your own rules under `isGrouped:true`. Don't mistake a grouped built-in rule for something you configured.
+**`match` can return rules you never created.** Built-in rules have ids that start with `preset__`. One matches every `session_ended`/`thread` event, and you cannot create its action type. `matchedRules[]` can group built-in rules with your own under `isGrouped:true`. Don't mistake a grouped built-in rule for something you configured.
 
 **Only standard conversations run actions.** A thread with any `origin` other than `0` runs no rule, and `match` with that `origin` returns no rules.
 

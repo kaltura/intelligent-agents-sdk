@@ -18,7 +18,9 @@
  *   skipped (the rest of the action still fires).
  * - `{actionType:'sendInsightEmail', recipients:string[], templateId?:string,
  *   presetType?:string}` — only fires on `eventType:'analysis_updated'`; a
- *   `session_ended` rule with this action type does nothing.
+ *   `session_ended` rule with this action type does nothing. A `recipients`
+ *   entry can be a `{{path}}` into the event, e.g. `{{object.user_id}}`. The
+ *   action has no `subject` field; set it in the template.
  * - `{actionType:'triggerDtcKai'}` — takes no caller-supplied fields.
  *   Extracts one insight per lead-capture field configured on the target
  *   intellect (`intellectConfig.user_properties_forms`) and is
@@ -33,11 +35,10 @@
  *   no badge. Run it on `analysis_updated` with a `changed_keys` filter on
  *   the badge keys.
  *
- * Every session also gets one fixed, built-in summary insight for free —
- * it comes from a preset rule visible via {@link
- * Lifecycle#match} but never creatable, updatable, or customizable by a
- * caller. See `docs/lifecycle/README.md` for the full explanation. Mounted
- * at `mgmt.lifecycle`.
+ * Every session also gets one fixed, built-in summary insight for free. It
+ * comes from a built-in rule (id starts with `preset__`) that
+ * {@link Lifecycle#match} lists but a caller cannot create, update or
+ * customize. See `docs/lifecycle/README.md`. Mounted at `mgmt.lifecycle`.
  */
 import { paginate } from './paginate.js';
 import { uuidv4, meta } from '../core/ids.js';
@@ -310,9 +311,10 @@ export class Lifecycle {
    * missing field. Only `origin: 0` runs actions: with any other `origin`
    * the response lists no rules.
    *
-   * The response can include rules the caller never created. The preset rule
-   * `preset__summary_on_session_ended` matches every `session_ended`/`thread`
-   * event and shows up in `matchedRules[]` alongside the caller's own.
+   * The response can include built-in rules the caller never created (ids
+   * start with `preset__`). `preset__summary_on_session_ended` matches every
+   * `session_ended`/`thread` event and shows up in `matchedRules[]` alongside
+   * the caller's own.
    * Related rules are grouped: `matchedRules[].isGrouped` is `true` when two
    * or more rules share a `groupKey` and dispatch as one composite action.
    * Example mixed response:
