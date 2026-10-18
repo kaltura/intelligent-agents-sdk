@@ -77,7 +77,7 @@ At `timeouts.firstFrame` with no frame, the SDK re-subscribes once. A second mis
 | `join` | 3, `clientConfiguration` |
 | `joinComplete` | 3, `joinComplete` |
 | `agent` | 6 and 7 |
-| `asr` | 9 |
+| `asr` | 9. A server `asr-webrtc-error` ends this step at once with the same error |
 | `whep` | 10, the WHEP request (`whep_timeout`, `whep_failed`, `stv_session_gone`) |
 | `ice` | The avatar peer never reached ICE `connected` (`ice_failed`). See [ICE diagnostics](resilience-and-failure-handling.md#ice-diagnostics) |
 | `connect` | A fatal server event (`capacity_unavailable`, `tier_exceeded`, `unsupported_client`) or any other failure in `connect()` |

@@ -60,7 +60,7 @@ For the app-level decision of when to use this mode and how to design its UI, se
 | `asr-webrtc-ready` | `{}` | ASR signaling is ready. Send the offer. |
 | `asr-webrtc-answer` | `{ answer:{type:"answer", sdp} }` | SDP answer for the mic uplink. |
 | `asr-ice-candidate` | `{ uid, type:"ice_candidate", candidate, sdpMLineIndex }` | A remote ICE candidate for the ASR peer. The SDK passes it to `addIceCandidate`. |
-| `asr-webrtc-error` | `{ error? }` | ASR signaling error. The SDK has no handler for it. |
+| `asr-webrtc-error` | `{ error? }` | ASR signaling error. While the SDK waits for `asr-webrtc-ready` or `asr-webrtc-answer` (in `connect()`, `resume()`, a reconnect or a media recovery), that wait fails at once with the same `KalturaError` as an ASR timeout (`code:'timeout'`, `phase:'asr'`), with the payload in `error.body`. At any other time the SDK ignores it. |
 
 ### 4d. Server → Client (on): conversation phase
 

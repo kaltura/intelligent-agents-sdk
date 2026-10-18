@@ -896,7 +896,7 @@ export class KalturaAvatarSession extends Emitter {
   /** @param {any} socket @param {{expired:()=>boolean}} [overall] */
   async _connectAsr(socket, overall) {
     socket.emit('asr-webrtc-init', { sessionId: socket.id });
-    await this._await(socket, 'asr-webrtc-ready', this._timeouts.asr, 'ASRConnectionFailed', overall);
+    await this._await(socket, 'asr-webrtc-ready', this._timeouts.asr, 'ASRConnectionFailed', overall, 'asr-webrtc-error');
     const pc = createPeerConnection(this._RTC, iceConfig('asr', this._turn, this._isFirefox));
     this._pcAsr = pc;
     this._ice.asr = new IceTrace('asr', pc, this._now);
@@ -921,7 +921,7 @@ export class KalturaAvatarSession extends Emitter {
     const offer = await this._cancelable(pc.createOffer());
     await this._cancelable(pc.setLocalDescription(offer));
     socket.emit('asr-webrtc-offer', { offer, is_reconnect: false });
-    const ans = await this._await(socket, 'asr-webrtc-answer', this._timeouts.asr, 'ASRConnectionFailed', overall);
+    const ans = await this._await(socket, 'asr-webrtc-answer', this._timeouts.asr, 'ASRConnectionFailed', overall, 'asr-webrtc-error');
     await this._cancelable(pc.setRemoteDescription(ans.answer));
     this._mark('asrReady');
   }
@@ -3006,17 +3006,20 @@ export class KalturaAvatarSession extends Emitter {
    * failing. The two connect lanes run concurrently, so either lane can be the one left waiting.
    * @returns {Promise<any>}
    * @param {any} socket @param {string} event @param {number} ms @param {string} label @param {{expired:()=>boolean}} [overall]
+   * @param {string} [failOn]  A server event that fails this wait at once (the ASR waits pass 'asr-webrtc-error').
    */
-  _await(socket, event, ms, label, overall) {
+  _await(socket, event, ms, label, overall, failOn) {
     return new Promise((resolve, reject) => {
       const ok = (payload) => { done(); if (overall && overall.expired()) return reject(timeoutErr('ConnectTimeout', 'connect')); resolve(payload); };
       const cancel = (err = connectAbortedErr()) => { done(); reject(err); };
       const t = setTimeout(() => { done(); reject(timeoutErr(label, PHASE_BY_EVENT[event])); }, ms);
       // Declared last so it can close over all three above; every caller of it runs later.
-      const done = () => { clearTimeout(t); socket.off?.(event, ok); this._pendingAwaits.delete(cancel); };
+      const fail = (p) => { done(); reject(asrSignalErr(p)); };
+      const done = () => { clearTimeout(t); socket.off?.(event, ok); if (failOn) socket.off?.(failOn, fail); this._pendingAwaits.delete(cancel); };
       t.unref?.();
       this._pendingAwaits.add(cancel);
       socket.once ? socket.once(event, ok) : socket.on(event, ok);
+      if (failOn) socket.once ? socket.once(failOn, fail) : socket.on(failOn, fail);
     });
   }
 
@@ -3208,7 +3211,7 @@ export class KalturaAvatarSession extends Emitter {
         const offer = await pc.createOffer({ iceRestart: true });
         await pc.setLocalDescription(offer);
         this._socket.emit('asr-webrtc-offer', { offer, is_reconnect: true });
-        const ans = await this._await(this._socket, 'asr-webrtc-answer', this._timeouts.asr, 'ASRConnectionFailed');
+        const ans = await this._await(this._socket, 'asr-webrtc-answer', this._timeouts.asr, 'ASRConnectionFailed', undefined, 'asr-webrtc-error');
         await pc.setRemoteDescription(ans.answer);
         // A cold rebuild that began during the awaits above owns the media now: this peer is gone.
         if (gen !== this._sessionGen || this.state !== 'connected') return;
@@ -3805,6 +3808,10 @@ function micError(err) {
 }
 function timeoutErr(label, phase) {
   return new KalturaError({ type: 'https://docs.kaltura.com/agentic/errors/timeout', title: 'timeout', code: 'timeout', detail: `${label}: timed out waiting for the server${phase ? ` (step: ${phase})` : ''}. Trying again can help.`, phase, retryable: true });
+}
+/** The server reported a mic-uplink signaling error. Same code, phase and retry hint as the ASR timeout it replaces. @param {unknown} p */
+function asrSignalErr(p) {
+  return new KalturaError({ type: 'https://docs.kaltura.com/agentic/errors/timeout', title: 'timeout', code: 'timeout', phase: 'asr', retryable: true, detail: 'ASRConnectionFailed: the server reported a signaling error while setting up the microphone link (step: asr). Trying again can help.', body: p });
 }
 /** One connect lane finishing after the session was torn down (the other lane failed first, or the app disconnected). */
 function noTokenErr() {
