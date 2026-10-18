@@ -3046,7 +3046,7 @@ export class KalturaAvatarSession extends Emitter {
       t.unref?.();
       this._pendingAwaits.add(cancel);
       socket.once ? socket.once(event, ok) : socket.on(event, ok);
-      if (failOn) socket.once ? socket.once(failOn, fail) : socket.on(failOn, fail);
+      if (failOn) socket.on(failOn, fail);   // done() removes it, so a plain `on` is enough
     });
   }
 

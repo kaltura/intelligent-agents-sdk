@@ -74,6 +74,14 @@ test('the avatar lane is torn down and no wait is left', async () => {
   assert.equal(session.state, 'error');
 });
 
+test('no asr-webrtc-error listener is left after a clean connect()', async () => {
+  const { session, socket } = newSession({ cfg: ASR });
+  scriptHappyPath(socket);
+  await session.connect();
+  assert.equal(socket._h.get('asr-webrtc-error')?.size ?? 0, 0);
+  session.disconnect();
+});
+
 test('disconnect() during the ASR wait still rejects with connect_failed', async () => {
   const trap = trapUnhandled();
   try {
