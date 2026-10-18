@@ -155,3 +155,21 @@ test('yaml: a body indented as a whole parses as if flush-left', () => {
   assert.deepStrictEqual(parseContent('\n    items:\n      - x\n      - y\n'), { items: ['x', 'y'] });
   assert.deepStrictEqual(parseContent(' title: A\nsummary: B'), { title: 'A', summary: 'B' });
 });
+
+test('yaml: a multi-line flow list or map keeps quoted line breaks and folds plain ones', () => {
+  assert.deepStrictEqual(parseContent("t: ['one\n\n  two']"), { t: ['one\ntwo'] });
+  assert.deepStrictEqual(parseContent("t: {a: 'one\n\n  two'}"), { t: { a: 'one\ntwo' } });
+  assert.deepStrictEqual(parseContent('t: ["a\\\n  b"]'), { t: ['ab'] });
+  assert.deepStrictEqual(parseContent('t: {a: "a\\\n  b"}'), { t: { a: 'ab' } });
+  assert.deepStrictEqual(parseContent('t: ["a\n  b"]'), { t: ['a b'] });
+  assert.deepStrictEqual(parseContent('t: [a\n  b, c\n\n  d]'), { t: ['a b', 'c\nd'] });
+  assert.deepStrictEqual(parseContent('t: {a: x\n  y, b: 1}'), { t: { a: 'x y', b: 1 } });
+});
+
+test('yaml: a flow list or map closes at the key indentation without eating the next entry', () => {
+  assert.deepStrictEqual(parseContent('questions: [\n  "One?",\n  "Two?"\n]'), { questions: ['One?', 'Two?'] });
+  assert.deepStrictEqual(parseContent('questions: [\n  "One?",\n  "Two?"\n]\nnext: 1'), { questions: ['One?', 'Two?'], next: 1 });
+  assert.deepStrictEqual(parseContent('q: {\n  a: 1,\n  b: 2\n}\nz: 3'), { q: { a: 1, b: 2 }, z: 3 });
+  assert.deepStrictEqual(parseContent('q:\n  r: [\n    1,\n    2\n  ]\n  s: 2'), { q: { r: [1, 2], s: 2 } });
+  assert.deepStrictEqual(parseContent('a: [1,\n  2\nb: 3'), { a: '[1, 2', b: 3 });
+});

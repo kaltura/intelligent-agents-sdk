@@ -147,8 +147,15 @@ function parseValue(st, rest, indent, mapValue, depth) {
   }
   if (v[0] === '[' || v[0] === '{') {
     const save = st.i;
-    const text = gather(st, v, indent).join(' ');
-    const f = parseFlow(text);
+    const parts = gather(st, v, indent);
+    let f = parseFlow(parts.join('\n'));
+    if (f === undefined) {
+      const c = closerLine(st, indent);
+      if (c >= 0) {
+        f = parseFlow(parts.join('\n') + '\n' + lines[c].trim());
+        if (f !== undefined) st.i = c + 1;
+      }
+    }
     if (f !== undefined) return f;
     st.i = save;
   }
@@ -175,6 +182,21 @@ function gather(st, first, indent) {
     st.i = j;
   }
   return out;
+}
+
+/**
+ * Find a line after the gathered ones that holds only closing `]` / `}` at exactly `indent` (a flow collection closed at its key's column).
+ * @param {YamlState} st @param {number} indent
+ * @returns {number} The line index, or -1.
+ */
+function closerLine(st, indent) {
+  const { lines } = st;
+  let j = st.i;
+  while (j < lines.length && isBlank(lines[j])) j++;
+  if (j >= lines.length || indentOf(lines[j]) !== indent) return -1;
+  const t = lines[j].trim();
+  for (let k = 0; k < t.length; k++) if (t[k] !== ']' && t[k] !== '}') return -1;
+  return j;
 }
 
 /**
@@ -339,7 +361,7 @@ function blockScalar(st, indent, style, chomp, explicit) {
 }
 
 /**
- * Parse a flow collection (`[...]` or `{...}`) held on one logical line.
+ * Parse a flow collection (`[...]` or `{...}`); physical line breaks stay in `s` so quoted scalars fold them.
  * @param {string} s
  * @returns {unknown[] | Record<string, unknown> | undefined} `undefined` when `s` is not one valid flow collection.
  */
@@ -400,7 +422,7 @@ function parseFlow(s) {
     }
     const tok = s.slice(start, p).trim();
     if (!tok) throw new SyntaxError('flow scalar');
-    return coerceScalar(tok);
+    return tok.includes('\n') ? fold(tok.split('\n').map((x) => x.trim())) : coerceScalar(tok);
   };
   try {
     const v = node(0, false);
