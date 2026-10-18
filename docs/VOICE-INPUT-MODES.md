@@ -20,11 +20,11 @@ Text input is not voice-mode-exclusive: an avatar session accepts typed turns to
 
 ## The one rule that overrides everything else here
 
-**Pick one VOICE mode per agent, at configuration time. Never offer both voice modes live in the same session.** (Chat text-only input is exempt. Typed turns don't touch the VAD/capture machinery this rule protects, so text can coexist with either voice mode, or replace voice entirely.)
+**Use one VOICE mode at a time. Pick the default per agent at configuration time, and never offer both voice modes at once.** (Chat text-only input is exempt. Typed turns don't touch the VAD/capture machinery this rule protects, so text can coexist with either voice mode, or replace voice entirely.)
 
 This is not a UI-polish preference. It is a correctness requirement.
 
-**Don't rely on anything else to catch a mismatch for you.** The SDK's own client-side gate (`startTapToTalk()` throws `capability_disabled` unless `session.capabilities.tapToTalk`) stops your UI from opening a tap-to-talk window on an agent configured for open-mic. Build your UI to match the agent's single configured mode. Never render a tap-to-talk control against an open-mic agent, or vice versa. Mixing them produces double-cut or missed turns (see [WIRE-PROTOCOL.md](WIRE-PROTOCOL.md)'s `tapToTalkStart`/`tapToTalkEnd` row for the event pair involved).
+**Don't rely on anything else to catch a mismatch for you.** The SDK's own client-side gate (`startTapToTalk()` throws `capability_disabled` unless `session.capabilities.tapToTalk`) stops your UI from opening a tap-to-talk window while the session is in open-mic mode. Build your UI to match the session's current mode. Never render a tap-to-talk control in open-mic mode, or vice versa. Mixing them produces double-cut or missed turns (see [WIRE-PROTOCOL.md](WIRE-PROTOCOL.md)'s `tapToTalkStart`/`tapToTalkEnd` row for the event pair involved).
 
 ## Deciding which mode fits your app
 
