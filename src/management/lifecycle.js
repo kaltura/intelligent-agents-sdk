@@ -303,10 +303,12 @@ export class Lifecycle {
   /**
    * Dry-run event matching: "if this event happened right now, which rules
    * would fire?" READ. `eventData` is `{object?:object, changed_keys?:string[]}`
-   * — NOT a bare `object` field at the top level. For `objectType:'thread'`
-   * (both `session_ended` and `analysis_updated`), `object` needs all 3 of
-   * `agent_id`, `thread_id`, `user_id` as strings. Omitting any one returns a
-   * 400 that names the missing field.
+   * (not a bare `object` field at the top level). For `objectType:'thread'`
+   * (both `session_ended` and `analysis_updated`), `object` needs `agent_id`,
+   * `thread_id` and `user_id` (strings) and `origin` (an integer, `0` for a
+   * standard conversation). Omitting any one returns a 400 that names the
+   * missing field. Only `origin: 0` runs actions: with any other `origin`
+   * the response lists no rules.
    *
    * The response can include rules the caller never created. The preset rule
    * `preset__summary_on_session_ended` matches every `session_ended`/`thread`

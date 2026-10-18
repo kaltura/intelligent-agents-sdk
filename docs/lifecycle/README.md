@@ -132,7 +132,7 @@ To send on every update on purpose, pass `{ emailOnEveryUpdate: true }` as the l
 
 ## Scoping a rule to one agent
 
-`eventConditions` can only filter on fields [`describeFields`](#discovery-and-dry-run-testing) actually reports. For `thread`/`analysis_updated` that's `object.agent_id`, `object.thread_id`, `object.user_id`, and `changed_keys` (which insight keys were updated). It does **not** include an insight's computed value. There is no `object.sentiment` field to filter on. A sentiment score only exists as the *output* of a `triggerInsightSettingsKai` action, not an input `eventConditions` can inspect.
+`eventConditions` can only filter on fields [`describeFields`](#discovery-and-dry-run-testing) actually reports. For `thread`/`analysis_updated` that's `object.agent_id`, `object.thread_id`, `object.user_id`, `object.origin` (an integer, `0` for a standard conversation), and `changed_keys` (which insight keys were updated). It does **not** include an insight's computed value. There is no `object.sentiment` field to filter on. A sentiment score only exists as the *output* of a `triggerInsightSettingsKai` action, not an input `eventConditions` can inspect.
 
 **A rule filtering on `object.agent_id` only matches threads created with an agent id on the token.** A token minted without one leaves the thread's `agent_id` as `"default"`, which never matches a rule scoped to a real agent uuid. Mint with `createAgentToken({ agentId, userId })`, or `createConversationToken` with `agentId`. See [Conversation token or agent token?](../api/authentication.md#conversation-token-or-agent-token). This applies whether the conversation happens over `mgmt.conversations.send()`/`.stream()` or a real avatar/socket session. The agent binding lives in the KS, not in the call.
 
@@ -156,17 +156,19 @@ await mgmt.lifecycle.listEvents('thread', ks);                     // { objectTy
 await mgmt.lifecycle.describeFields('thread', 'session_ended', ks); // { objectType, eventType, fields: [{ path, type, description }, ...] }
 ```
 
-**Dry-run a rule before a real event fires it**: `match(objectType, eventType, eventData, ks)`, where `eventData` is `{ object?, changed_keys? }` (not a bare `object` field). For `objectType:'thread'`, `object` needs `agent_id`, `thread_id`, and `user_id`, all strings. Where `describeFields` lists `object.origin`, pass `origin: 0` (a number, standard) too. Omitting any required field returns a 400:
+**Dry-run a rule before a real event fires it**: `match(objectType, eventType, eventData, ks)`, where `eventData` is `{ object?, changed_keys? }` (not a bare `object` field). For `objectType:'thread'`, `object` needs `agent_id`, `thread_id` and `user_id` (strings) and `origin` (an integer, `0` for a standard conversation). Omitting any one returns a 400 that names it:
 
 ```js
 const { matchedRules } = await mgmt.lifecycle.match(
   'thread', 'session_ended',
-  { object: { agent_id: 'agent-1', thread_id: 'thread-1', user_id: 'user-1' } },
+  { object: { agent_id: 'agent-1', thread_id: 'thread-1', user_id: 'user-1', origin: 0 } },
   ks,
 );
 ```
 
 **`match` can return rules you never created.** Every partner has a built-in rule that matches every `session_ended`/`thread` event, and you cannot create its action type. `matchedRules[]` can group it with your own rules under `isGrouped:true`. Don't mistake a grouped built-in rule for something you configured.
+
+**Only standard conversations run actions.** A thread with any `origin` other than `0` runs no rule, and `match` with that `origin` returns no rules.
 
 ---
 

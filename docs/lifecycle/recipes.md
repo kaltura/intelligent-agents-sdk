@@ -112,12 +112,12 @@ Waiting for a real conversation to end and a real analysis to land is not how yo
 ```js
 const { matchedRules } = await mgmt.lifecycle.match(
   'thread', 'session_ended',
-  { object: { agent_id: 'agent-1', thread_id: 'thread-1', user_id: 'user-1' } },
+  { object: { agent_id: 'agent-1', thread_id: 'thread-1', user_id: 'user-1', origin: 0 } },
   adminKs,
 );
 ```
 
-`object.agent_id`, `object.thread_id`, and `object.user_id` are all required strings for `objectType:'thread'`. Some environments also require `object.origin` (a number, `0` = standard). Pass every `object.*` field that `describeFields` reports for your environment. Omit one and it 400s naming the missing path. Expect to see your own rule nested inside a grouped `matchedRules[]` entry's `rules[]` array, together with the built-in summary rule.
+`object` needs `agent_id`, `thread_id`, `user_id` and `origin`, see [Discovery and dry-run testing](README.md#discovery-and-dry-run-testing). Omit one and it 400s naming the missing path. Expect to see your own rule nested inside a grouped `matchedRules[]` entry's `rules[]` array, together with the built-in summary rule.
 
 Every partner has that built-in rule by default. It's not something you configured (see [`README.md`'s note on grouped matches](README.md#discovery-and-dry-run-testing)). Run this after creating each rule to confirm it matches before you ever touch a real conversation.
 
@@ -148,7 +148,8 @@ node examples/lifecycle-insights-and-email.mjs
 | `lifecycle.create` or `update` throws `lifecycle_email_unfiltered` | A `sendInsightEmail` rule on `analysis_updated` has no `changed_keys` condition, so it would send on every analysis update | Add `{field:'changed_keys', operator:'has_all', value:['SUMMARY', ...]}`, or pass `{ emailOnEveryUpdate: true }` to send on every update on purpose |
 | `lifecycle.create` 400s on a badge and `err.body.message` talks about the score range | A `type:'boolean'` badge has no `score` | Set `score` on every boolean badge. See [The action types](README.md#the-action-types) |
 | `eventConditions` on `object.agent_id` never matches | The thread was created with a token minted without an agent id | Mint with `mgmt.sessions.createAgentToken({agentId})` |
-| `lifecycle.match` 400s: `eventData.object.user_id: Invalid input...` | A required field missing from the dry-run `object` | Pass `agent_id`, `thread_id`, and `user_id` together, plus `origin: 0` where `describeFields` lists `object.origin` |
+| `lifecycle.match` 400s: `eventData.object.user_id: Invalid input...` | A required field missing from the dry-run `object` | Pass `agent_id`, `thread_id`, `user_id` and `origin: 0` together |
+| A rule matches in `match` but never runs on a real thread | The thread's `origin` is not `0` | Actions run only for standard conversations. See [Discovery and dry-run testing](README.md#discovery-and-dry-run-testing) |
 | An `InsightSettings` entity 400s or its rule silently produces nothing | No `prompt` supplied | `prompt` is required on every `InsightSettings` entity, there's no built-in fallback for any key |
 | You want to change the built-in `SUMMARY` insight's prompt | It has no customization lever, no field on any entity changes it | Give your own insight settings distinct `key`s and use those instead (see [`README.md`](README.md#every-session-already-gets-a-summary-for-free)) |
 | A rule saved fine but nothing happens, or you inherited a partner's rules | A setting, template or agent the rule points at was deleted or disabled after it was saved | Run `mgmt.lifecycle.audit(ks)`. Every finding names the rule and the fix. See [Audit your rules](README.md#audit-your-rules) |

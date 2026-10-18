@@ -345,12 +345,12 @@ test('lifecycle.match posts {objectType, eventType, eventData} and returns match
       }),
     },
   ]);
-  const res = await mgmt.lifecycle.match('thread', 'session_ended', { object: { thread_id: 't1' }, changed_keys: ['SESSIONSUMMARY'] }, ADMIN_KS);
+  const res = await mgmt.lifecycle.match('thread', 'session_ended', { object: { agent_id: 'a1', thread_id: 't1', user_id: 'u1', origin: 0 }, changed_keys: ['SESSIONSUMMARY'] }, ADMIN_KS);
   assert.equal(res.matchedRules.length, 1);
   assert.equal(res.matchedRules[0].isGrouped, true);
   assert.equal(res.matchedRules[0].rules.some((r) => r.id.startsWith('preset__')), true);
   assert.deepEqual(ff.calls[0].body, {
-    objectType: 'thread', eventType: 'session_ended', eventData: { object: { thread_id: 't1' }, changed_keys: ['SESSIONSUMMARY'] },
+    objectType: 'thread', eventType: 'session_ended', eventData: { object: { agent_id: 'a1', thread_id: 't1', user_id: 'u1', origin: 0 }, changed_keys: ['SESSIONSUMMARY'] },
   });
 });
 

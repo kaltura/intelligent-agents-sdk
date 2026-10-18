@@ -117,7 +117,7 @@ try {
   // never actually checks that our own rule matched.
   const flattenMatchedRuleIds = (matchedRules) => matchedRules.flatMap((entry) => (entry.isGrouped ? entry.rules.map((r) => r.id) : [entry.id]));
 
-  const syntheticObject = { agent_id: demoAgentId, thread_id: 'demo-thread', user_id: 'demo-user' };
+  const syntheticObject = { agent_id: demoAgentId, thread_id: 'demo-thread', user_id: 'demo-user', origin: 0 };
   const sessionEndedMatch = await kaltura.lifecycle.match('thread', 'session_ended', { object: syntheticObject }, admin);
   const sessionEndedIds = flattenMatchedRuleIds(sessionEndedMatch.matchedRules);
   console.log('session_ended would match rule ids:', sessionEndedIds);
