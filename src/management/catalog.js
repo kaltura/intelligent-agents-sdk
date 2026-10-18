@@ -70,7 +70,7 @@ export class Catalog {
   }
 
   /**
-   * Clone a CUSTOM VOICE from an uploaded sample. WRITE — NOT idempotent.
+   * Clone a CUSTOM VOICE from an uploaded sample. WRITE, NOT idempotent.
    * Requirements: MP3 44.1 kHz, at least about 6 s of clear speech, ≤10 MB, NON-EMPTY
    * description (a clip under about 6 s fails with a server error). The returned
    * `itemId` is the clone — pair it with any avatar's `voice.id`. The item is
@@ -303,7 +303,7 @@ function requireVoiceId(v, where) {
     throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: `${where} voiceId must be a non-empty string (the provider-side voice id).` });
   }
   if (!/^[A-Za-z0-9_-]+$/.test(v)) {
-    throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: `${where} voiceId must contain only letters, digits, "_" or "-" (the provider-side voice id).` });
+    throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: `${where} voiceId must contain only letters, digits, "_" or "-". Copy the id from the voice provider's dashboard.` });
   }
 }
 

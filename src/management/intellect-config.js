@@ -561,9 +561,9 @@ export class IntellectConfig {
 
   /**
    * Set / insert named secrets (read-merge-write the full `config.secrets` dict;
-   * prior secrets re-sent as the mask sentinel so the server keeps them). WRITE
-   * — idempotent. Rejects a literal `"***"`, empty values and values starting with `enc:`. WRITE-ONLY: values
-   * are never read back. @param {number} configId @param {Record<string,string>} entries @param {string} ks (admin)
+   * prior secrets re-sent as the mask sentinel so the server keeps them). WRITE,
+   * idempotent. Rejects a literal `"***"`, empty values and values starting with
+   * `enc:`. WRITE-ONLY: values are never read back. @param {number} configId @param {Record<string,string>} entries @param {string} ks (admin)
    */
   async setSecrets(configId, entries, ks) {
     this._.assertAdmin(ks, 'intellectConfig.setSecrets');

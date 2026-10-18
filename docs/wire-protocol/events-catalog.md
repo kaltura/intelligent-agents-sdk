@@ -136,7 +136,7 @@ The set of `type` values is open-ended. Ignore types you don't handle.
 | `avatar`, `avatar-filler` | Spoken text for the avatar. |
 | `share` | `{canShare:bool}`. `segmentStart` and `segmentEnd` together mean the message is complete. |
 | `thread` | For example an auto-title. |
-| `used_sources` | A control segment listing the ids of the sources the model used. Not display text. Ignore it unless you track citations. |
+| `used_sources` | A control segment, not display text. Ignore it unless you track citations. |
 
 On the avatar socket, the SDK resolves a `unisphere-tool` segment to its `metadata.runtimeName` without the `-tool` suffix, so runtime clients work with the normalized name. Every segment type is delivered. The avatar session joins with `force_experience: 'avatar_only'`, so the spoken content arrives mainly as `avatar` and `avatar-filler` segments, and `think`, `tool`, `unisphere-tool`, `share`, `thread` and `error` stream alongside for the transcript and UI. The `avatar-filler` phrasing can't be reliably steered with `base_directive`. See the `avatar_filler` note in [genui/authoring-and-consuming.md](../genui/authoring-and-consuming.md#authoring-which-capability-turns-each-widget-on).
 

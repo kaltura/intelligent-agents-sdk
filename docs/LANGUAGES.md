@@ -36,10 +36,10 @@ This clears `force_language` and resets `asr.language` to `"en"`.
 |---|---|
 | `configId`, `agentId` | Both required. `configId` is the intellect the agent points at |
 | `language` | An ISO 639-1 code from `LANGUAGE_CODES`, such as `"he"`, or `null` to clear |
-| `languageName` | The display name written to `force_language`. Required when the code is not in `LANGUAGE_NAMES` |
+| `languageName` | The English name written to `force_language`. Required when the code is not in `LANGUAGE_NAMES` |
 | `asrProvider` | Passed through to `agents.update`. Defaults to `"kaltura"` |
 
-`LANGUAGE_CODES` and `LANGUAGE_NAMES` are exported from `@kaltura/intelligent-agents/management`. `LANGUAGE_CODES` lists the codes `setForcedLanguage` accepts. `LANGUAGE_NAMES` maps some of them to display names. Neither is a list of supported languages.
+`LANGUAGE_CODES` and `LANGUAGE_NAMES` are exported from `@kaltura/intelligent-agents/management`. `LANGUAGE_CODES` lists the codes `setForcedLanguage` accepts. `LANGUAGE_NAMES` maps some of them to English names. Neither is a list of supported languages.
 
 ```js
 import { LANGUAGE_CODES, LANGUAGE_NAMES } from '@kaltura/intelligent-agents/management';

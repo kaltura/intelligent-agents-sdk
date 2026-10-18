@@ -49,6 +49,10 @@ test('does not redact lookalike keys', () => {
   assert.deepEqual(redact(input), input);
 });
 
+test('redacts an object authentication.value wholesale', () => {
+  assert.deepEqual(redact({ authentication: { type: 'custom', value: { foo: 'bar' } } }), { authentication: { type: 'custom', value: '<redacted>' } });
+});
+
 test('value is redacted only under authentication', () => {
   assert.deepEqual(redact({ value: 'x' }), { value: 'x' });
   assert.deepEqual(redact({ other: { value: 'x' } }), { other: { value: 'x' } });

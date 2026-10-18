@@ -410,7 +410,7 @@ export class Threads {
   }
 
   /**
-   * Rename a thread. WRITE — idempotent for a given title. A very long title
+   * Rename a thread. WRITE, idempotent for a given title. A very long title
    * (300 characters, for example) fails with `server_error` and leaves the stored
    * title unchanged.
    * @param {string} id @param {string} title @param {string} ks
@@ -528,7 +528,7 @@ export class Messages {
 
   /**
    * Get one message by id (`POST /message/get`). READ. Returns the full
-   * message record — live-confirmed against production. An unknown id,
+   * message record. Live-confirmed against production. An unknown id,
    * or one belonging to another partner, throws a typed `not_found`.
    * @param {string} id @param {string} ks (admin, conversation or agent token)
    */

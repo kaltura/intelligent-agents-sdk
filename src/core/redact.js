@@ -1,5 +1,5 @@
 /**
- * Secret redaction — the single chokepoint every log line, error, and emitted
+ * Secret redaction. The single chokepoint every log line, error, and emitted
  * record passes through. Kaltura KS tokens (`djJ8…`), bare hex secrets, and
  * RFC1918 private IPs must NEVER leave the process in cleartext.
  * `tools/check-docs.mjs` scans tracked files for exactly these patterns.
@@ -8,13 +8,16 @@
  * output through {@link redact}, so a token can't leak through a stray
  * console.log or a thrown error message.
  *
- * Three layers: (1) string-pattern scrub (KS / 32-hex / private-IP); (2)
- * sensitive-key wholesale redaction (`secret`/`password`/`credential`/`token`/
- * `ks` anywhere in the key, and the exact header keys `authorization`, `cookie`,
- * `x-api-key`, `apikey` in any case, `api_key`/`api-key` too; an `authentication`
- * object keeps its shape with `value` redacted); (3) a STRUCTURAL `request_vars` rule — converse client variables hold
- * arbitrary PII scalars under arbitrary keys that match no pattern, so the
- * whole sub-tree is replaced by key-name.
+ * Three layers:
+ * 1. String-pattern scrub (KS, 32-hex, private IP).
+ * 2. Sensitive-key redaction of the whole value. This covers any key with
+ *    `secret`, `password`, `credential`, `token` or `ks` in it, and the exact
+ *    keys `authorization`, `cookie`, `x-api-key` and `apikey` in any case
+ *    (`api_key` and `api-key` too). An `authentication` object keeps its
+ *    shape, but its `value` is always hidden, even when it is an object.
+ * 3. A structural `request_vars` rule. Converse client variables hold
+ *    arbitrary PII scalars under arbitrary keys that match no pattern, so the
+ *    whole sub-tree is replaced by key name.
  */
 
 import { PRIVATE_IP_RE } from './net-guard.js';
@@ -54,7 +57,10 @@ export function redact(value) {
       // An `authentication` object keeps its shape (`type` stays readable); only `value` is hidden.
       if (k === 'authentication' && v && typeof v === 'object' && !Array.isArray(v)) {
         const a = /** @type {Record<string, unknown>} */ (redact(v));
-        if ('value' in a) a.value = redactSensitiveKey(/** @type {any} */ (v).value);
+        if ('value' in a) {
+          const av = /** @type {any} */ (v).value;
+          a.value = av && typeof av === 'object' ? '<redacted>' : redactSensitiveKey(av);
+        }
         out[k] = a;
         continue;
       }
