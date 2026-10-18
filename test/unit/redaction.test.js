@@ -95,3 +95,10 @@ test('never throws on odd input', () => {
   assert.doesNotThrow(() => redact(42));
   assert.equal(redact(null), null);
 });
+
+test('redacts proxy-authorization, set-cookie and a non-string authentication.value', () => {
+  const out = redact({ 'Proxy-Authorization': 'Basic abc', 'Set-Cookie': 'sid=1', authentication: { type: 'x', value: 12345 } });
+  assert.equal(out['Proxy-Authorization'], '<redacted>');
+  assert.equal(out['Set-Cookie'], '<redacted>');
+  assert.equal(out.authentication.value, '<redacted>');
+});

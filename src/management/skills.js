@@ -26,6 +26,13 @@ import { requireConfirm } from './agents.js';
 import { KalturaError } from '../core/errors.js';
 import { assertCondition } from './condition.js';
 
+/** @param {string} v @param {string} where */
+function requireSkillNameChars(v, where) {
+  if (!/^[a-zA-Z0-9_-]+$/.test(v)) {
+    throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: `${where} must use only letters, digits, "_" or "-". Replace spaces with "_".` });
+  }
+}
+
 /** @param {unknown} v @param {string} where */
 function requireSkillId(v, where) {
   if (typeof v !== 'string' || !v.trim()) {
@@ -77,7 +84,7 @@ export class Skills {
    * The skill applies only while it is true. It is checked before any network
    * call, and a template form like `{{ x }}` throws `bad_request`. `null` or
    * `undefined` is not sent.
-   * `name` may use only letters, digits, `_` and `-` (no spaces).
+   * `name` may use only letters, digits, `_` and `-` (no spaces). `update` applies the same rule to a rename.
    *
    * Also callable as {@link Skills#create} — same method, either name works.
    * @param {{name:string, description:string, instructions?:string, condition?:string|null}} body
@@ -92,9 +99,7 @@ export class Skills {
     if (typeof body.name !== 'string' || !body.name.trim()) {
       throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: 'skills.add name must be a non-empty string.' });
     }
-    if (!/^[a-zA-Z0-9_-]+$/.test(body.name)) {
-      throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: 'skills.add name must use only letters, digits, "_" or "-". Replace spaces with "_".' });
-    }
+    requireSkillNameChars(body.name, 'skills.add name');
     if (typeof body.description !== 'string' || !body.description.trim()) {
       throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: 'skills.add description must be a non-empty string.' });
     }
@@ -170,6 +175,7 @@ export class Skills {
     const body = { id };
     if (patch.name !== undefined) {
       if (typeof patch.name !== 'string' || !patch.name.trim()) throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: 'skills.update patch.name must be a non-empty string.' });
+      requireSkillNameChars(patch.name, 'skills.update patch.name');
       body.name = patch.name;
     }
     if (patch.description !== undefined) {

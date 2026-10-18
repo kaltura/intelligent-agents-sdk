@@ -12,8 +12,8 @@
  * 1. String-pattern scrub (KS, 32-hex, private IP).
  * 2. Sensitive-key redaction of the whole value. This covers any key with
  *    `secret`, `password`, `credential`, `token` or `ks` in it, and the exact
- *    keys `authorization`, `cookie`, `x-api-key` and `apikey` in any case
- *    (`api_key` and `api-key` too). An `authentication` object keeps its
+ *    keys `authorization`, `proxy-authorization`, `cookie`, `set-cookie`,
+ *    `x-api-key` and `apikey` in any case (`api_key` and `api-key` too). An `authentication` object keeps its
  *    shape, but its `value` is always hidden, even when it is an object.
  * 3. A structural `request_vars` rule. Converse client variables hold
  *    arbitrary PII scalars under arbitrary keys that match no pattern, so the
@@ -27,7 +27,7 @@ const KS_RE = /djJ8[A-Za-z0-9_\-+/=]{16,}/g;
 /** A bare Kaltura admin secret is 32 lowercase hex chars. */
 const HEX32_RE = /\b[a-f0-9]{32}\b/g;
 /** Keys whose value is redacted wholesale: name fragments plus the exact credential header keys. */
-const SENSITIVE_KEY_RE = /secret|password|credential|token|\bks\b|^(?:authorization|cookie|x-api-key|api[-_]?key)$/i;
+const SENSITIVE_KEY_RE = /secret|password|credential|token|\bks\b|^(?:(?:proxy-)?authorization|(?:set-)?cookie|x-api-key|api[-_]?key)$/i;
 
 /**
  * Redact secrets from any value. Strings are scrubbed in place; objects/arrays
@@ -59,7 +59,7 @@ export function redact(value) {
         const a = /** @type {Record<string, unknown>} */ (redact(v));
         if ('value' in a) {
           const av = /** @type {any} */ (v).value;
-          a.value = av && typeof av === 'object' ? '<redacted>' : redactSensitiveKey(av);
+          a.value = av && typeof av !== 'string' ? '<redacted>' : redactSensitiveKey(av);
         }
         out[k] = a;
         continue;
