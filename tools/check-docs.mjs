@@ -925,6 +925,30 @@ describe('16. Docs accuracy', () => {
     assert.ok(existsSync(join(ROOT, 'docs/ARCHITECTURE-RECIPE.md')));
   });
 
+  test('every field a GenUI renderer returns is named in its docs/genui/widgets.md section', async () => {
+    const r = (name) => import(`../src/experience/genui/renderers/${name}.js`);
+    const clip = { entry_id: '1_a', start_time: 1, end_time: 2, video_link: 'https://example.com/v' };
+    const ctx = { partnerId: '1' };
+    const cases = [
+      ['flashcards', (await r('flashcards')).renderFlashcards({ cards: [{ front: 'f', back: 'b', clips: [clip] }] }, ctx).data.cards[0]],
+      ['sources', (await r('sources')).renderSources({ sources: [{ title: 't', entry_id: '1_a', type: 'video', duration: 1, has_short: true, score: 1 }] }).data.sources[0]],
+      ['summary', (await r('summary')).renderSummary({ summary: 's', bullets: ['b'], chapters: ['c'] }).data],
+      ['video-gallery', (await r('video-gallery')).renderVideoGallery({ videos: [clip] }, ctx).data.videos[0]],
+      ['content-gallery', (await r('content-gallery')).renderContentGallery({ items: [{ title: 't', clips: [clip] }] }, ctx).data.items[0]],
+    ];
+    const doc = read('docs/genui/widgets.md');
+    const missing = [];
+    for (const [name, out] of cases) {
+      const start = doc.search(new RegExp(`^### \\d+\\. ${name} `, 'm'));
+      assert.ok(start >= 0, `widgets.md has no section for ${name}`);
+      const rest = doc.slice(start + 4);
+      const end = rest.search(/^### /m);
+      const section = rest.slice(0, end < 0 ? undefined : end);
+      for (const key of Object.keys(out)) if (!section.includes('`' + key + '`') && !section.includes('`' + key + ',')) missing.push(`${name}.${key}`);
+    }
+    assert.deepEqual(missing, [], `renderer fields not documented in docs/genui/widgets.md: ${missing.join(', ')}`);
+  });
+
   test('the lifecycle page owns the action-type count, and it matches the creatable types in lifecycle.js', () => {
     const creatable = [...read('src/management/lifecycle.js').matchAll(/^ \* - `\{actionType:'(\w+)'/gm)].map((m) => m[1]);
     const words = ['one', 'two', 'three', 'four', 'five', 'six'];
