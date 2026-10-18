@@ -236,3 +236,64 @@ test('knowledge.search rejects a widget Token before any request', async () => {
   await assert.rejects(async () => mgmt.knowledge.search('q', { ks: CONV_TOKEN.ks, kind: 'widget' }), (e) => e.code === 'wrong_token_scope');
   assert.equal(ff.calls.length, 0);
 });
+
+// threads.delete warns for ids its own response left out, and only on the current contract.
+function deleteHarness(respond, logger) {
+  const ff = fakeFetch([{ match: 'v1/thread/delete', respond }]);
+  return new Management({ partnerId: '123', fetch: ff, logger });
+}
+const CONFIRM = { confirmPermanent: true };
+
+test('threads.delete: every id deleted gives no warning and the server body unchanged', async () => {
+  const warns = [];
+  const body = { totalCount: 2, objects: [{ id: 'a', title: 'x' }, { id: 'b' }] };
+  const m = deleteHarness(() => ({ status: 200, body }), (l, msg) => l === 'warn' && warns.push([l, msg]));
+  assert.deepEqual(await m.threads.delete(['a', 'b'], ADMIN_KS, CONFIRM), body);
+  assert.deepEqual(warns, []);
+});
+
+test('threads.delete: a partial or empty delete logs one warning naming the missing ids', async () => {
+  const warns = [];
+  const partial = deleteHarness(() => ({ status: 200, body: { totalCount: 1, objects: [{ id: 'a' }] } }), (l, msg) => l === 'warn' && warns.push([l, msg]));
+  const res = await partial.threads.delete(['a', 'b', 'b'], ADMIN_KS, CONFIRM);
+  assert.deepEqual(res, { totalCount: 1, objects: [{ id: 'a' }] }, 'no field is added to the result');
+  assert.equal(warns.length, 1);
+  assert.equal(warns[0][0], 'warn');
+  assert.match(warns[0][1], /did not report 1 of 2 thread ids as deleted.*: b$/);
+
+  const none = [];
+  const empty = deleteHarness(() => ({ status: 200, body: { totalCount: 0, objects: [] } }), (l, msg) => l === 'warn' && none.push(msg));
+  await empty.threads.delete(['t1', 't2', 't3', 't4', 't5', 't6', 't7'], ADMIN_KS, CONFIRM);
+  assert.equal(none.length, 1);
+  assert.match(none[0], /7 of 7 .*t1, t2, t3, t4, t5, \+2 more$/);
+});
+
+test('threads.delete: any other status or shape is returned as-is with no warning', async () => {
+  const shapes = [
+    { status: 202, body: { jobId: 'j1' } },
+    { status: 202, body: { totalCount: 0, objects: [] } },
+    { status: 200, body: { accepted: ['a'] } },
+    { status: 200, body: { totalCount: 1, objects: [{ thread_id: 'a' }] } },
+    { status: 200, body: { totalCount: 1, objects: [null] } },
+    { status: 200, body: {} },
+  ];
+  for (const s of shapes) {
+    const warns = [];
+    const m = deleteHarness(() => s, (l, msg) => l === 'warn' && warns.push(msg));
+    assert.deepEqual(await m.threads.delete(['a'], ADMIN_KS, CONFIRM), s.body, JSON.stringify(s));
+    assert.deepEqual(warns, [], JSON.stringify(s));
+  }
+});
+
+test('threads.delete: a throwing warn sink never breaks the delete; default sink is console.warn', async () => {
+  const body = { totalCount: 0, objects: [] };
+  const m = deleteHarness(() => ({ status: 200, body }), (level) => { if (level === 'warn') throw new Error('warn sink down'); });
+  assert.deepEqual(await m.threads.delete(['a'], ADMIN_KS, CONFIRM), body);
+
+  const orig = console.warn; const seen = [];
+  console.warn = (msg) => seen.push(msg);
+  try { await deleteHarness(() => ({ status: 200, body })).threads.delete(['a'], ADMIN_KS, CONFIRM); }
+  finally { console.warn = orig; }
+  assert.equal(seen.length, 1);
+  assert.match(seen[0], /^\[threads\.delete\] /);
+});
