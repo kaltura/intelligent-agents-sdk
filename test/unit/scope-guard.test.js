@@ -140,7 +140,7 @@ test('a minted widget Token gets wrong_token_scope on all ten relaxed methods, b
   assert.equal(ff.calls.length, 0);
 });
 
-// ── G1-19: the raw string of a widget token this instance minted is refused ──
+// ── the raw string of a widget token this instance minted is refused ──
 const WKS = (n) => 'djJ8' + Buffer.from(`widget-${n}`).toString('base64url');
 
 /** A Management whose startWidgetSession returns the next string from `nextKs`. */

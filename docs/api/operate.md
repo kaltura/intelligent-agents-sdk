@@ -129,7 +129,7 @@ Returns `{aiConsent, avatar, identifiedUser}`. `avatar` is non-null when the age
 
 ## Threads
 
-In this SDK, `threads.list`, `get`, `rename`, `delete`, `transcript`, `setAnalysis`, `clearAnalysis`, `messages.list`, `get`, `share`, `followups.getSuggested` and `knowledge.search` accept an admin, conversation or agent token. A widget token is rejected with `wrong_token_scope` before any request. So is the raw string of a widget token this `Management` instance minted recently. Other raw KS strings are sent as is, and the server answers 403 for a widget KS. See [Authentication § Token kinds](authentication.md#authentication). What each token reaches: [SECURITY.md § Session type](../../SECURITY.md#session-type). `threads.push`, `messages.report`, `messages.reportSummary`, `feedback.list` and `followups.list` need an admin token. Pager: `{"pageIndex":1,"pageSize":30}`.
+In this SDK, `threads.list`, `get`, `rename`, `delete`, `transcript`, `setAnalysis`, `clearAnalysis`, `messages.list`, `get`, `share`, `followups.getSuggested` and `knowledge.search` accept an admin, conversation or agent token. A widget token is rejected with `wrong_token_scope` before any request. How raw KS strings are checked: [Authentication](authentication.md#authentication). What each token reaches: [SECURITY.md § Session type](../../SECURITY.md#session-type). `threads.push`, `messages.report`, `messages.reportSummary`, `feedback.list` and `followups.list` need an admin token. Pager: `{"pageIndex":1,"pageSize":30}`.
 
 | Operation | Endpoint | Body |
 |-----------|----------|------|
@@ -153,7 +153,7 @@ In this SDK, `threads.list`, `get`, `rename`, `delete`, `transcript`, `setAnalys
 
 Filter with `originEquals: 2` or `originIn: [0, 2]`. `originIn: [0, 1, 2, 3, 4]` returns threads of all origins.
 
-**What a user token lists.** A conversation or agent token with a `userId` reaches that user's threads with the agent named in the token. The rows are for standard threads (`origin: 0`):
+**What a user token lists.** A conversation or agent token with a `userId` reaches that user's threads with the agent named in the token. The table covers standard threads (`origin: 0`).
 
 | Token | `threads.list` returns | `threads.get` of a thread from another agent or user |
 |---|---|---|

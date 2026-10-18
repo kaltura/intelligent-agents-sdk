@@ -406,7 +406,7 @@ test('a userId containing CR/LF is sanitized (one-lined, no raw newline) in both
   assert.doesNotMatch(String(call.body), /%0D%0A|\r|\n/);
 });
 
-// ── G1-25: warn once when a minted KS is long ──
+// ── warn once when a minted KS is long ──
 const longKs = (n) => 'djJ8' + 'A'.repeat(n - 4);
 function longKsFetch(ks) {
   return fakeFetch([{ match: '/service/session/action/start', respond: () => ({ body: `"${ks}"` }) }]);

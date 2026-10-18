@@ -112,8 +112,8 @@ Always pass a per-user `userId`.
 
 | Privilege | Value | What you observe |
 |---|---|---|
-| `threadOrigin` | `evaluation` | New threads get `origin: 2` and are left out of the default thread list. See [Threads](operate.md#threads) |
-| `threadOrigin` | `preview` | New threads get `origin: 1` and are left out of the default thread list |
+| `threadOrigin` | `evaluation` | Marks new threads as evaluation threads. See [Threads](operate.md#threads) |
+| `threadOrigin` | `preview` | Marks new threads as preview threads. See [Threads](operate.md#threads) |
 | `preview` | `true` | Same as `threadOrigin:preview` |
 | `genieentryids` | an entry id | Names an entry for the conversation |
 | `geniecategoryid` | a category id | Names a category for the conversation |
