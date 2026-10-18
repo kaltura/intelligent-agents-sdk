@@ -13,6 +13,7 @@ const p = await mgmt.intellects.previewPrompt(configId, adminKs, {
   requestVars: { sys__user_id: 'learner-123', topic: 'billing' },
 });
 p.text;                // the assembled system prompt, `{{var}}` interpolated
+p.usedDefaultDirective; // true when base_directive is empty. text then starts with <<server default directive>> as a stand-in
 p.unresolvedVariables; // names left literal because no value was supplied
 p.warnings;             // present ONLY when a reserved variable is unresolved (see below)
 p.conditionalKeys;     // keys of rendered blocks that carry a non-empty `condition`
@@ -23,9 +24,11 @@ The preview does not evaluate [conditions](intellect.md#conditions). Every non-e
 
 It is **not byte-exact** with the live prompt. Blocks the server adds at run time are not included. The `sys__*` values you pass via `requestVars` only *simulate* what the server sets per turn. They are not a live read.
 
+The preview fills only plain `{{name}}` and dotted-path references. A filter expression such as `{{ nick | default('guest') }}` and any `{% %}` tag stay as written in `text`, and are not listed in `unresolvedVariables`.
+
 **Reserved variables** (`sys__*`, `secrets.*`) are listed in [operate.md § Reserved Template Variables](../operate.md#reserved-template-variables-sys__). `secrets.NAME` is write-only: `previewPrompt()` never has the raw value, so it cannot confirm that a secret is set. A prompt that references one of the `sys__user_obj.*` attributes gets a `reserved_user_attr_unresolved` warning when the preview has no bound value for it. Bind every variable the prompt uses before shipping.
 
-**Unresolvable reserved-variable warnings:** say a prompt references one of the variables above, and no value is available in the simulated context (no `requestVars` entry, or an explicit `null`/`undefined`). In that case `previewPrompt()` returns a `warnings[]` entry naming the variable and explaining why, instead of rendering the placeholder as empty text.
+**Unresolvable reserved-variable warnings:** say a prompt references one of the variables above, and no value is available in the simulated context (no `requestVars` entry, or an explicit `null`/`undefined`). In that case `previewPrompt()` also returns a `warnings[]` entry naming the variable and explaining why. The placeholder stays literal in `text` when the key is missing, and renders empty when the value is `null` or `undefined`.
 
 `warnings` is an **additive** field. It appears only when there is something to report.
 

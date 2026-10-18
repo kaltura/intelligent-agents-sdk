@@ -26,7 +26,9 @@ The Bearer token is valid about 24h (decoded from the JWT's own `exp` claim) and
 | Keep alive | `POST /v1/avatar-session/{sessionId}/keep-alive` | Bearer | `{}` |
 | End | `POST /v1/avatar-session/{sessionId}/end` | Bearer | `{}` |
 
-`say-audio` is the only way to make the avatar speak. There is no text input. Generate the audio yourself with any TTS provider, measure its duration (e.g. `ffprobe`), and pass both to `say-audio`. An inaccurate duration desyncs the mouth from the audio but does not error. The call is async and queued: it resolves in about 100ms once the turn is accepted, not once playback finishes. Call `interrupt` to cut off whatever's currently playing.
+`say-audio` is the only way to make the avatar speak. There is no text input. Generate the audio yourself with any TTS provider, measure its duration (e.g. `ffprobe`), and pass both to `say-audio`. An inaccurate duration desyncs the mouth from the audio but does not error. The call is async and queued: it resolves once the turn is accepted, not once playback finishes. Call `interrupt` to cut off whatever's currently playing.
+
+Call `keepAlive` about every 10 seconds while the session is idle. It makes one call and starts no timer, so drive it from your own `setInterval`.
 
 ```js
 import { Management } from '@kaltura/intelligent-agents/management';

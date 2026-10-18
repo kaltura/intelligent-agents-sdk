@@ -126,7 +126,7 @@ A very long KS is refused with 401. Long `extraPrivileges` or `restrictions` val
 
 ## The Five Services
 
-An agent is built from five services that layer on top of each other. All calls use `POST` with JSON (`GET /assistant/status` is the one exception).
+An agent is built from five services that layer on top of each other. All calls use `POST` with JSON, except catalog uploads (multipart form data) and `GET /assistant/status`.
 
 | Service | Role | Base URL |
 |---------|------|----------|

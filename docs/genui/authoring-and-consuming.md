@@ -47,7 +47,7 @@ new ExperienceRenderer({
 - Accessible by construction.
 - Ships **zero styling**. It emits the `kgenui` / `kgenui__*` class contract for you to theme.
 
-Call it directly with `mountWidget(descriptor, targetEl, { replace?, onAction? })`, or let `ExperienceRenderer` call it when `mount` is an Element (or `target`).
+Call it directly with `mountWidget(descriptor, targetEl, { replace?, onAction?, markdown?, onMount? })`, or let `ExperienceRenderer` call it when `mount` is an Element (or `target`). `markdown` is described in [Markdown rendering](#markdown-rendering-opt-in). `onMount` is described in the [README GenUI section](../../README.md#genui).
 
 ### `ExperienceRenderer` options
 
@@ -57,7 +57,7 @@ Call it directly with `mountWidget(descriptor, targetEl, { replace?, onAction? }
 
 ### Live vs. headless dispatch
 
-In the live socket runtime, `.start()` subscribes to `session.on('brainSegment')` and flushes on `turnEnd`/`avatarStopTalking`, resetting on `interrupted`. `clearOnTurnStart` (default `true`) also resets the assembler and `clear()`s `rendered`/`last` on the session's `turnStart` event (re-emitted from the raw `agent_start_speech` socket event). So a widget from turn N never lingers into turn N+1. Set `false` for intentional cross-turn persistence.
+In the live socket runtime, `.start()` subscribes to `session.on('brainSegment')` and flushes on `turnEnd`/`avatarStopTalking`, resetting on `interrupted`. `clearOnTurnStart` (default `true`) also resets the assembler and `clear()`s `rendered`/`last` on the session's `turnStart` event (re-emitted from the raw `agent_start_speech` socket event). So a widget from turn N never lingers into turn N+1. Set `false` for intentional cross-turn persistence. `.stop()` removes the session listeners and flushes any in-flight widget. Call it when the session ends or the view unmounts.
 
 Headless, call `.render(runtimeName, widget)` (or `.render(segment)`) per segment from a `conversations.stream()` feed. This is the reliable path.
 
@@ -65,7 +65,7 @@ Headless, call `.render(runtimeName, widget)` (or `.render(segment)`) per segmen
 
 - `.register(runtimeName, fn)` adds/overrides a renderer (name normalized); `.has`, `.runtimes`, `.last`, `.rendered`, `.clear()`. `replace:true` keeps only the latest widget per turn.
 - An unknown runtime renders `{kind:'unknown', data:{runtime, model}}` and fires `onUnhandled` (never throws). A throwing custom renderer degrades to `{kind:'error', ...}`.
-- `_meta` receipt stamps `{partnerId, source:'experience/genui', scope:'conversation (entitlement ON)', known, firstClass}`. `known` means this instance has a renderer for it (a registered 10th runtime is `known:true`). `firstClass` means it's one of the built-in set.
+- `_meta` receipt stamps `{generatedAt, partnerId, source:'experience/genui', scope:'conversation (entitlement ON)', known, firstClass}`. `known` means this instance has a renderer for it (a registered 10th runtime is `known:true`). `firstClass` means it's one of the built-in set.
 - `graded-question` ([widgets.md § 10](widgets.md#10-graded-question-rendergradedquestion-a-host-registered-10th-runtime)) is a concrete, shipped example of a registered 10th runtime. It's exported (`renderGradedQuestion`) but deliberately excluded from `DEFAULT_RENDERERS`/`RUNTIMES`, so it stays `known:false` until a host explicitly registers it.
 
 A partner prompt can make the agent emit a runtime outside the built-ins, for example `demo-tool`. `classifyAgentAction` returns `{type:'render-genui', runtime:'demo'}` for its first segment and `null` for its continuation chunks.
@@ -121,7 +121,7 @@ Without `opts.markdown`, the summary renders as flat escaped text.
 | user-properties-form | `kgenui__form`, `kgenui__field`, `kgenui__label`, `kgenui__help` |
 | user-properties-form and graded-question (free-text input/submit) | `kgenui__input`, `kgenui__submit` |
 | graded-question | `kgenui__prompt`, `kgenui__feedback`, `kgenui__explanation`, `kgenui__options-group`, `kgenui__options`, `kgenui__option-label`, `kgenui__radio`, `kgenui__answer-echo` |
-| Opt-in markdown (`{markdown:true}`) | `kgenui__markdown`, `kgenui__md-h`, `kgenui__md-p`, `kgenui__md-list`, `kgenui__md-code`, `kgenui__md-pre`, `kgenui__md-link`, and the shared `kgenui__table` (also used by other structured-table output) |
+| Opt-in markdown (`{markdown:true}`) | `kgenui__markdown`, `kgenui__md-h`, `kgenui__md-p`, `kgenui__md-list`, `kgenui__md-code`, `kgenui__md-pre`, `kgenui__md-link`, and `kgenui__table` (a GFM table in markdown output) |
 
 Built-in accessibility:
 

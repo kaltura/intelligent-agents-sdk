@@ -29,9 +29,9 @@ import { lintPersonaIdentity } from './prompt-lint.js';
  * @param {string} [opts.voiceId]            Override the auto-picked preset voice.
  * @param {string} [opts.visualId]           Override the auto-picked preset visual.
  * @param {string} [opts.openingPhrase]      The opening line, written to the intellect's `opening_phrase` only. The avatar is created without a phrase, so the intellect decides what the first turn says. Wins over the generated profile's phrase. Defaults to the profile's phrase, then `'Hello!'`. May be a Jinja2 template (see docs/START-THE-CONVERSATION.md § Personalize the opening). Pass `SILENT_OPENING` for a silent opening turn and start the conversation from the client with `kickoff` instead. Must be a non-empty string when given.
- * @param {string[]} [opts.adminTags]
- * @param {number} [opts.maxConversationLength]
- * @param {string} [opts.idempotencyKey]
+ * @param {string[]} [opts.adminTags]   Tags on the agent (default `['provisioned']`).
+ * @param {number} [opts.maxConversationLength]   Agent setting (default 600).
+ * @param {string} [opts.idempotencyKey]   Base key sent with the avatar and agent create calls, as `<key>-avatar` and `<key>-agent` (default: a fresh uuid).
  * @param {Record<string,'on'|'off'|'disabled'>} [opts.capabilities]   OPTIONAL — capability patch applied AFTER configure via `mgmt.intellects.setCapabilities` (read-merge-write full-replace sub-dict). Off by default.
  * @param {object[]} [opts.tools]            OPTIONAL — typed tool definitions (see `tools.api/csv/code/client/var`), each created as a standalone Tool entity via `mgmt.tools.add` and linked via `mgmt.intellectConfig.setToolIds`. Off by default.
  * @param {object} [opts.knowledge]          OPTIONAL — RAG corpus + linkage. `{name?, parentId?, description?, categoryId?, autoLink?}`. createCategory (OVP), and when `autoLink:true` the full `knowledge.addRecord` -> `knowledge.addSource` -> `intellectConfig.setKnowledgeIds` -> `knowledge.setEnabled` sequence, are all ungated — a failure records `{linked:false, reason}` and NEVER fails the provision. Off by default.

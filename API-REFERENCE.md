@@ -38,7 +38,7 @@ Every endpoint is shown as a raw HTTP call plus its SDK wrapper. See [`README.md
 - An anonymous embeddable widget (UC-12)
 - A fleet of A/B-tested personas (UC-5)
 
-See the full [Use-Case Catalog](docs/USE-CASES.md) for all 13, each mapped to its key mechanism and a runnable script/tool.
+See the full [Use-Case Catalog](docs/USE-CASES.md), each use case mapped to its key mechanism and a runnable script or tool.
 
 ---
 

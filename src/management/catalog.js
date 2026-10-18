@@ -74,7 +74,7 @@ export class Catalog {
    * Requirements: MP3 44.1 kHz, at least about 6 s of clear speech, ≤10 MB, NON-EMPTY
    * description (a clip under about 6 s fails with a server error). The returned
    * `itemId` is the clone — pair it with any avatar's `voice.id`. The item is
-   * tagged `adminTags:['custom']` in the single-parse shape (see {@link appendAdminTags}).
+   * tagged `adminTags:["custom"]`.
    *
    * @example <caption>End-to-end: clone a voice → fetch it by id → use it on an avatar</caption>
    * const clone = await k.catalog.createVoice(
@@ -246,8 +246,8 @@ export class Catalog {
 
   /**
    * Multipart upload primitive for createVoice, createVisual, createFace and
-   * createBackground. Tags go out through {@link appendAdminTags} (one
-   * `adminTags` field per tag).
+   * createBackground. Tags go out as one
+   * `adminTags` field per tag.
    * @param {Blob|File} file @param {object} attributes @param {import('./client.js').KsLike} ks @param {string} [mime]
    * @param {string} [consentRef] @param {string} [kind] @param {string} [type] Explicit catalog item type (`'Face'`/`'Background'`) — required for those two, since an image MIME alone defaults to `Visual`. Omitted for voice/visual: the API infers the type from the uploaded file's own content (image → Visual, audio → Voice), not from `attributes`.
    */

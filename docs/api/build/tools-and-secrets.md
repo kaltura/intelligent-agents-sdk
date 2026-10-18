@@ -51,7 +51,7 @@ sent to `POST /v1/intellect/update`.
 
 The `authentication` block supports the OAuth2 authorization-code flow only (the viewer gives consent). It takes `client_id`, `client_secret` (`{{secrets.NAME}}`, see [Secrets](#secrets-write-only)), `token_url` and `auth_url`, all required. There is no `flow` or `scopes` option. Providers that use the client-credentials flow (for example the Marketo REST API) do not fit this block.
 
-`response_mapping`, `response_template`, and `response_chapters` are mutually exclusive. `response_chapters` is `{iterate_on, content, link}`, all dot-paths: `iterate_on` is the path to a list, and `content` and `link` are read from each item. `wait_for_response` (SDK: `waitForResponse`) is accepted on an `api` tool too, and `tools.update` keeps it.
+An `api` tool needs exactly one of `response_mapping`, `response_template` and `response_chapters`. `response_chapters` is `{iterate_on, content, link}`, all dot-paths: `iterate_on` is the path to a list, and `content` and `link` are read from each item. `wait_for_response` (SDK: `waitForResponse`) is accepted on an `api` tool too, and `tools.update` keeps it.
 
 **Fill the request from the model's args.** `{arg}` is replaced with the value the model passed for that arg. This table is the single home for the placeholder rules:
 

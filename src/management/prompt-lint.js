@@ -431,7 +431,7 @@ export const PAGE_CONTEXT_PROMPT = Object.freeze({
 });
 
 /**
- * Lint a `prompts[]` list (the `List[DynamicPrompt]` DTO). Each block must be
+ * Lint a `prompts[]` list. Each block must be
  * `{key, label, headerTemplate, type, value, condition?}`. `type` is
  * `"custom"` (the default for hand-written blocks), `"system"` or `"knowledge"`
  * (see {@link PROMPT_TYPES}). `condition`, when set, is a bare expression over

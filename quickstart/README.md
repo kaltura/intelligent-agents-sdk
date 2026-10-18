@@ -12,7 +12,7 @@ node create-agent.mjs "A friendly yoga studio receptionist who helps people book
 
 `npm install` links the SDK from the parent folder (`file:..`). Credentials: [GETTING-STARTED.md Step 2](../GETTING-STARTED.md#step-2-set-up-the-project-1-minute) covers `export`, PowerShell and the `.env` option.
 
-The script takes 1 to 3 minutes and prints one status line per step:
+The script can take up to a minute and prints one status line per step:
 
 1. Creates the intellect, avatar and agent, with a silent opening (`openingPhrase: SILENT_OPENING`).
 2. Sends a test message through the headless conversation path.

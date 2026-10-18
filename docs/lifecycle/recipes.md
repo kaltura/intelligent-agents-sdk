@@ -46,9 +46,9 @@ await mgmt.lifecycle.create({
 }, adminKs);
 ```
 
-Notice there's no `SUMMARY` insight setting here. Every partner already gets one for free, see [`README.md`'s action-type table](README.md#the-action-types) for why. `TOPIC` and `CUSTOM` are both included here because Recipe B's email preset needs all three of `SUMMARY`/`TOPIC`/`CUSTOM` present, see the gotcha below.
+Notice there's no `SUMMARY` insight setting here. Every partner already gets one for free, see [Every session already gets a SUMMARY, for free](README.md#every-session-already-gets-a-summary-for-free) for why. `TOPIC` and `CUSTOM` are both included here because Recipe B's email preset needs all three of `SUMMARY`/`TOPIC`/`CUSTOM` present, see the gotcha below.
 
-`prompt` is required on **every** `InsightSettings` entity. There's no built-in fallback prompt for any key name, including `TOPIC` or `CUSTOM`. `valueType` is required too. Omit either and `insightSettings.create` 400s. Every conversation gets a structured recap with zero app-side code: no cron job polling for "threads that just ended," no app server involved at all.
+Every [`InsightSettings`](README.md#insightsettings-reusable-insight-definitions) entity needs a `prompt` and a `valueType`. Omit either and `insightSettings.create` throws `bad_request` before any request. Every conversation gets a structured recap with zero app-side code: no cron job polling for "threads that just ended," no app server involved at all.
 
 ---
 
@@ -80,7 +80,7 @@ Three things about this action that aren't obvious from the field names:
 
 ### The gotcha that will bite you first: token mismatch
 
-`conversationInsightExample`'s template needs three insight values by key: **`SUMMARY`, `TOPIC`, and `CUSTOM`** (exactly those keys, case-sensitive). `AGENTNAME`, `CTAURL`, and `USER` are filled in automatically, so you never provide those. If the thread's analysis doesn't have all three of `SUMMARY`/`TOPIC`/`CUSTOM`, the email send is skipped, and nothing surfaces to your app or the SDK. `SUMMARY` comes free from the always-on system preset (see [`README.md`](README.md#every-session-already-gets-a-summary-for-free)). Recipe A's own `InsightSettings` above supply the other two, with `key:'TOPIC'` and `key:'CUSTOM'` matching exactly what the template looks for.
+`conversationInsightExample`'s template needs three insight values by key: **`SUMMARY`, `TOPIC`, and `CUSTOM`** (exactly those keys, case-sensitive). `AGENTNAME`, `CTAURL`, and `USER` are filled in automatically, so you never provide those. If the thread's analysis doesn't have all three of `SUMMARY`/`TOPIC`/`CUSTOM`, the email send is skipped at run time with no error. `mgmt.lifecycle.audit(ks)` flags the mismatch as `template_tokens_unproduced`. See [Audit your rules](README.md#audit-your-rules). `SUMMARY` comes free from the always-on system preset (see [`README.md`](README.md#every-session-already-gets-a-summary-for-free)). Recipe A's own `InsightSettings` above supply the other two, with `key:'TOPIC'` and `key:'CUSTOM'` matching exactly what the template looks for.
 
 Pick whatever `prompt` fits your use case for `CUSTOM`. The template only cares about the `key`, never the prompt text.
 
@@ -94,7 +94,7 @@ Both recipes use `eventConditions` with `object.agent_id`. The SDK requires it: 
 
 ## Reading the results back
 
-Once `triggerInsightSettingsKai` finishes (it runs asynchronously, expect a short delay, not instant), the values land in the thread's `thread_metadata.analysis`, keyed by each `InsightSettings.key`:
+Once `triggerInsightSettingsKai` finishes (it runs asynchronously, so the values are not there the moment the session ends), the values land in the thread's `thread_metadata.analysis`, keyed by each `InsightSettings.key`:
 
 ```js
 const thread = await mgmt.threads.get(threadId, adminKs);
@@ -125,13 +125,16 @@ Every partner has that built-in rule by default. It's not something you configur
 
 ## Minimal runnable example
 
-[`examples/lifecycle-insights-and-email.mjs`](../../examples/lifecycle-insights-and-email.mjs) creates the `InsightSettings` and both rules above, dry-run tests each with `match()`, lists and inspects them, then cleans up. All against the real API, no waiting for a real session to end:
+[`examples/lifecycle-insights-and-email.mjs`](../../examples/lifecycle-insights-and-email.mjs) lists the filterable fields, creates the `InsightSettings` and both rules above, dry-run tests each with `match()`, audits them with `lifecycle.audit()`, then cleans up. All against the real API, no waiting for a real session to end:
 
 ```bash
 export AGENTIC_PARTNER_ID=1234567
 export AGENTIC_ADMIN_SECRET=your_admin_secret_here
+export DEMO_AGENT_ID=<your-agent-id>
 node examples/lifecycle-insights-and-email.mjs
 ```
+
+`DEMO_AGENT_ID` defaults to a placeholder agent, which the audit flags as `agent_not_found`. Set it to a real agent id.
 
 ---
 
@@ -139,10 +142,10 @@ node examples/lifecycle-insights-and-email.mjs
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `insightSettings.create` 400s: `valueType must be one of...` | `valueType` omitted or not one of the supported types | Add a valid `valueType` to every `InsightSettings` entity |
+| `insightSettings.create` throws `bad_request`: `valueType must be one of...` | `valueType` omitted or not one of the supported types | Add a valid `valueType` to every `InsightSettings` entity |
 | `lifecycle.create` 400s: `action.insightSettingsIds.0 not found` | An id in `insightSettingsIds` doesn't exist, or belongs to a different partner | Create the `InsightSettings` entity first and use the id it returns |
 | A rule references a real `insightSettingsIds` id but that insight never gets extracted | The referenced `InsightSettings` entity has `status:'disabled'` | `mgmt.insightSettings.update(id, {status:'active'}, ks)` |
-| `sendInsightEmail` rule never sends anything, no error anywhere | The paired `triggerInsightSettingsKai` rule doesn't produce every key the preset needs | Match Recipe A's `InsightSettings.key` values to the preset's requirements exactly (see the gotcha above) |
+| `sendInsightEmail` rule never sends anything, no error at run time | The paired `triggerInsightSettingsKai` rule doesn't produce every key the preset needs | Match Recipe A's `InsightSettings.key` values to the preset's requirements exactly (see the gotcha above). `mgmt.lifecycle.audit(ks)` flags it as `template_tokens_unproduced`. See [Audit your rules](README.md#audit-your-rules) |
 | A `sendInsightEmail` rule attached to `session_ended` does nothing | That action only fires on `analysis_updated` | Change `eventType` to `analysis_updated` |
 | `lifecycle.create` or `update` throws `lifecycle_unscoped` | A `thread` rule has no `object.agent_id` condition (`eq` with an id, or `in` with a non-empty array of ids), so it would run for every agent on the partner | Add `{field:'object.agent_id', operator:'eq', value:'<agent-uuid>'}`, or pass `{ partnerWide: true }` to run on every agent on purpose |
 | `lifecycle.create` or `update` throws `lifecycle_email_unfiltered` | A `sendInsightEmail` rule on `analysis_updated` has no `changed_keys` condition, so it would send on every analysis update | Add `{field:'changed_keys', operator:'has_all', value:['SUMMARY', ...]}`, or pass `{ emailOnEveryUpdate: true }` to send on every update on purpose |
@@ -150,10 +153,10 @@ node examples/lifecycle-insights-and-email.mjs
 | `eventConditions` on `object.agent_id` never matches | The thread was created with a token minted without an agent id | Mint with `mgmt.sessions.createAgentToken({agentId})` |
 | `lifecycle.match` 400s: `eventData.object.user_id: Invalid input...` | A required field missing from the dry-run `object` | Pass `agent_id`, `thread_id`, `user_id` and `origin: 0` together |
 | A rule matches in `match` but never runs on a real thread | The thread's `origin` is not `0` | Actions run only for standard conversations. See [Discovery and dry-run testing](README.md#discovery-and-dry-run-testing) |
-| An `InsightSettings` entity 400s or its rule silently produces nothing | No `prompt` supplied | `prompt` is required on every `InsightSettings` entity, there's no built-in fallback for any key |
-| You want to change the built-in `SUMMARY` insight's prompt | It has no customization lever, no field on any entity changes it | Give your own insight settings distinct `key`s and use those instead (see [`README.md`](README.md#every-session-already-gets-a-summary-for-free)) |
+| `insightSettings.create` throws `bad_request` for a missing `prompt` | Every `InsightSettings` entity needs a `prompt` | See [InsightSettings](README.md#insightsettings-reusable-insight-definitions) |
+| You want to change the built-in `SUMMARY` insight's prompt | No field changes it. See [Every session already gets a SUMMARY](README.md#every-session-already-gets-a-summary-for-free) | Give your own insight settings distinct `key`s and use those instead |
 | A rule saved fine but nothing happens, or you inherited a partner's rules | A setting, template or agent the rule points at was deleted or disabled after it was saved | Run `mgmt.lifecycle.audit(ks)`. Every finding names the rule and the fix. See [Audit your rules](README.md#audit-your-rules) |
-| You create a `triggerDtcKai` rule and expect to pass fields on the action | It takes no caller-supplied fields, it derives insights from the target intellect's configured lead-capture form fields | Configure `intellectConfig.user_properties_forms` on the intellect instead; leave the action `{actionType:'triggerDtcKai'}` |
+| You create a `triggerDtcKai` rule and expect to pass fields on the action | It takes no caller-supplied fields. See [The action types](README.md#the-action-types) | Configure `intellectConfig.user_properties_forms` on the intellect instead; leave the action `{actionType:'triggerDtcKai'}` |
 
 ---
 

@@ -459,9 +459,7 @@ export class Threads {
    * {@link Messages#list} with `type: 4`, marking it as an externally pushed
    * message rather than a normal turn).
    *
-   * `content` has a server-side length cap — too long is `413 content
-   * exceeds max_message_length`. The SDK does not check this client-side
-   * (the cap is a partner-configurable setting, not a fixed constant).
+   * The SDK does not check message length client-side.
    * @param {{id:string, content:string, request_vars?:object, system_message?:string}} opts
    * @param {string} ks
    * @returns {Promise<{status:string, data:unknown, messageId:string, delivered:boolean}>}
@@ -574,6 +572,8 @@ export class Messages {
    * Parsed analytics summary with a `_meta` provenance receipt
    * ({generatedAt,partnerId,source,scope}). READ. `topQuestions` contain
    * user-entered text (treat as PII).
+   * Summarizes one report page of up to `pageSize` rows (default 500). Rows
+   * beyond that page are not included.
    * @param {string} ks @param {{pageSize?:number}} [opts]
    */
   async reportSummary(ks, opts = {}) {
@@ -842,7 +842,7 @@ export class Knowledge {
    * indexed KB with `use_knowledge_base:'off'`, or a genuine no-match query,
    * the backend replies the same `{status:'error', data:"…couldn't find
    * relevant information…"}` (returned as-is, not thrown) — so this can't
-   * tell those cases apart. Use {@link isIndexed} for indexing status instead.
+   * tell those cases apart. Use {@link entryStatus} to check whether entries have finished indexing.
    *
    * The backend accepts all five tuning params. `include_sources:true`
    * changes the success shape: `chapters` becomes an array and `text`
@@ -1087,7 +1087,7 @@ export class Knowledge {
 
   /**
    * Idempotent create: return the category named `name` if it exists, else create
-   * it. WRITE — idempotent on `name`. Wraps {@link findCategory}+{@link createCategory}.
+   * it. WRITE. Idempotent on `name` only: the lookup does not use `parentId`. `parentId` is used only when a new category is created. Wraps {@link findCategory}+{@link createCategory}.
    * @param {object} opts {name, parentId?, description?} @param {string} ks (admin)
    */
   async findOrCreateCategory(opts, ks) {
@@ -1117,8 +1117,8 @@ export class Knowledge {
    * normal pre-setup state, not an error. Pass the explicit container id(s) to
    * inspect a corpus before it's linked to any intellect.
    *
-   * Counts entries that EXIST — not whether they've finished indexing. Use
-   * {@link isIndexed} for that.
+   * Counts entries that EXIST, not whether they have finished indexing. Use
+   * {@link entryStatus} for that.
    * @param {object} opts {categoryId?, categoryIds?, configId?}
    * @param {string} ks (admin)
    * @returns {Promise<{entryCount:number, populated:boolean, categoryIds:number[], perCategory:Record<number,number>, _meta:object}>}

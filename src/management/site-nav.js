@@ -29,7 +29,7 @@ import { renderSiteMap, validateSectionsManifest } from '../core/site-keys.js';
 /** Tool name the rules prompt and the browser plugin default to. */
 export const SITE_NAV_TOOL_NAME = 'go_to';
 
-/** Default manifest size guard for {@link loadSectionsManifest} (P-1). */
+/** Default maximum manifest size in bytes for {@link loadSectionsManifest}. */
 const DEFAULT_MANIFEST_MAX_BYTES = 512 * 1024;
 
 /** @param {string} code @param {string} detail @param {number} [status] @returns {KalturaError} */
@@ -44,7 +44,7 @@ function err(code, detail, status) {
  * @param {object} [opts]
  * @param {string} [opts.name='go_to'] Tool name. Keep `go_to` unless you also change {@link SITE_NAV_RULES_PROMPT}.
  * @param {string} [opts.siteLabel='the docs site'] How the site is named in the tool description, e.g. `'the Acme help center'`.
- * @param {number} [opts.timeout=5] Backend timeout in seconds (integer 1..120). Irrelevant for a fire-and-forget tool but required by the API.
+ * @param {number} [opts.timeout=5] Timeout in seconds (integer 1..120, default 5). It only applies when a tool waits for a response, which this fire-and-forget tool does not.
  * @param {string} [opts.displayName] Optional human label shown in tooling.
  * @returns {object} Wire-shaped tool config (`type: 'client'`, `wait_for_response: false`).
  */

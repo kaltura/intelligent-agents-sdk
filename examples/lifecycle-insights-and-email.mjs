@@ -10,8 +10,8 @@
  *   3. Create rule A: on session_ended, extract those two insights. SUMMARY
  *      (the third key the built-in email preset needs) isn't requested here
  *      — every standard conversation already gets one from the always-on system
- *      preset, and it merges into the same batch — see the guide's "action
- *      types" section.
+ *      preset, and it merges into the same batch — see "Every session already
+ *      gets a SUMMARY, for free" in docs/lifecycle/README.md.
  *   4. Create rule B: on analysis_updated, email a human using the
  *      zero-setup 'conversationInsightExample' preset.
  *   5. Dry-run both rules with match() — instant, synthetic, no real
@@ -24,7 +24,7 @@
  * than waiting for a real event. See docs/lifecycle/recipes.md for the
  * full walkthrough.
  *
- * Run: AGENTIC_PARTNER_ID=… AGENTIC_ADMIN_SECRET=… node examples/lifecycle-insights-and-email.mjs
+ * Run: AGENTIC_PARTNER_ID=… AGENTIC_ADMIN_SECRET=… DEMO_AGENT_ID=… DEMO_RECIPIENT_USER_ID=… node examples/lifecycle-insights-and-email.mjs
  *
  * NOTE (dev-local path): the import below resolves against the repo's src/ tree.
  * npm consumers should instead import from '@kaltura/intelligent-agents/management'.

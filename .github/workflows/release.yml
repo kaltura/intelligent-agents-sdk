@@ -17,7 +17,7 @@ permissions:
 
 jobs:
   release:
-    name: 📦 Draft GitHub Release from merged PRs
+    name: 📦 Publish the GitHub Release from the release notes file
     runs-on: ubuntu-26.04
     steps:
       - name: 📥 Check out the repo

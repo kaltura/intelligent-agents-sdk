@@ -28,7 +28,7 @@ A rule is `{name, systemName, eventType, objectType, eventConditions?, action}`:
 | `in` | An array of values of the field's type | equals one of the items |
 | `contains` | One string | contains `value`. On `changed_keys`, holds the key `value` |
 | `has_any`, `has_all` | An array of strings | is an array that holds any, or all, of the items |
-| `not_empty` | Required. A non-empty value of the field's type | Match behavior is not confirmed. Use another operator |
+| `not_empty` | Required. A non-empty value of the field's type | Accepted, but never matches. Use another operator |
 
 `describeFields` gives each field's type. A `value` of the wrong type returns 400 on `create`: a string for `gt`, a single value for `in`, an array for `contains`, or no `value` for `not_empty`. An operator that does not fit the field is accepted and never matches, for example `has_any` with `[1]` on the number field `object.origin`. An unknown operator returns 400 and lists the nine.
 
@@ -51,7 +51,7 @@ You can create four `actionType` values. `match` output can also list built-in r
 
 A `templateId` is more durable than a `presetType`. It points at a template you created yourself via [`mgmt.emailTemplates`](#emailtemplates-managing-the-templates-sendinsightemail-references) (see below). A `presetType` uses a preset template instead.
 
-**`createBadges`** takes `{ badges: [{ badgeId, type, score?, scoreAction? }] }`, a non-empty list with unique `badgeId`s. `badgeId` is the insight key whose value sets the badge, and uses letters, digits, `_` and `-`. A `type:'boolean'` badge needs `score`, given when the insight is true. A `type:'numeric'` badge takes its score from the insight value, so it must not set `score`. `scoreAction` is `'upsert'` (set the score) or `'delta'` (add to it). Add a `changed_keys` filter on the badge keys, as `lifecycle.audit` advises (`badges_unfiltered`). A wrong shape returns 400, and `err.body.message` names the field.
+**`createBadges`** takes `{ badges: [{ badgeId, type, score?, scoreAction? }] }`, a non-empty list with unique `badgeId`s. `badgeId` is the insight key whose value sets the badge, and uses letters, digits, `_` and `-`. A `type:'boolean'` badge needs `score`, given when the insight is true. A `type:'numeric'` badge takes its score from the insight value, so it must not set `score`. `scoreAction` is `'upsert'` (set the score) or `'delta'` (add to it). Add a `changed_keys` filter on the badge keys, as `lifecycle.audit` advises (`badges_unfiltered`). A wrong shape returns 400, and `err.detail` names the field.
 
 ```js
 const sentiment = await mgmt.insightSettings.create({
@@ -89,7 +89,7 @@ await mgmt.insightSettings.delete(setting.id, ks, { confirmPermanent: true });  
 
 ### `EmailTemplates`: managing the templates `sendInsightEmail` references
 
-An email template is `{id, appGuid, name, subject, body, toAttributePath, msgParamsMap, status, ...}` on its own host, separate from the rest of this SDK. Mounted at `mgmt.emailTemplates`:
+An email template is `{id, appGuid, name, subject, body, toAttributePath, msgParamsMap, status, ...}` on its own host, separate from the rest of this SDK, mounted at `mgmt.emailTemplates`. Not every region has this host. See [Regions and base URLs](../api/authentication.md#regions-and-base-urls).
 
 ```js
 const template = await mgmt.emailTemplates.create({
@@ -130,7 +130,7 @@ await mgmt.lifecycle.update(id, { eventConditions: [] }, ks, { partnerWide: true
 
 ### Email rules need `changed_keys`
 
-A `sendInsightEmail` rule on `analysis_updated` sends on every analysis update unless it names the insight keys it waits for. So `create` and `update` refuse one without a `changed_keys` condition (operator `has_all` or `has_any`, with a non-empty array of keys). The call throws `KalturaError` with `code: 'lifecycle_email_unfiltered'` before any request:
+A `sendInsightEmail` rule on `analysis_updated` sends on every analysis update unless it names the insight keys it waits for. So `create` and `update` refuse one without a `changed_keys` condition (operator `has_all` or `has_any` with a non-empty array of keys, or `contains` with one key). The call throws `KalturaError` with `code: 'lifecycle_email_unfiltered'` before any request:
 
 ```js
 eventConditions: [
@@ -179,9 +179,9 @@ const { matchedRules } = await mgmt.lifecycle.match(
 );
 ```
 
-**`match` can return rules you never created.** Built-in rules have ids that start with `preset__`. One matches every `session_ended`/`thread` event of a standard conversation, and you cannot create its action type. `matchedRules[]` can group built-in rules with your own under `isGrouped:true`. Don't mistake a grouped built-in rule for something you configured.
+**`match` can return rules you never created.** Built-in rules have ids that start with `preset__`. One or more match every `session_ended`/`thread` event of a standard conversation, and you cannot create their action types. `matchedRules[]` can group built-in rules with your own under `isGrouped:true`. Don't mistake a grouped built-in rule for something you configured.
 
-**Only standard conversations run actions.** A thread with any `origin` other than `0` runs no rule, and `match` with that `origin` returns no rules.
+**Only standard conversations run actions.** A thread with any `origin` other than `0` runs no rule, and `match` with that `origin` returns no rules. A preview or evaluation token starts such a thread. See [Threads](../api/operate.md#threads).
 
 ---
 
@@ -243,31 +243,31 @@ The pure functions `auditLifecycleRules(rules, ctx)` and `auditIntellectConfig(c
 
 ## Full CRUD + discovery method table
 
-All against `https://api.avatar.us.kaltura.ai`. SDK: `mgmt.lifecycle`.
+Calls go to your region's `agenticUrl` (default `https://api.avatar.us.kaltura.ai/v1`). See [Regions and base URLs](../api/authentication.md#regions-and-base-urls). SDK: `mgmt.lifecycle`.
 
 | Method | Endpoint | Kind | Notes |
 |---|---|---|---|
 | `lifecycle.create(body, ks, opts?)` | `POST /v1/lifecycle/create` | WRITE, not idempotent | mirrors `Tools#add`. `opts.partnerWide`, `opts.emailOnEveryUpdate`: see [Scope every rule to an agent](#scope-every-rule-to-an-agent) |
-| `lifecycle.get(id, ks)` | `POST /v1/lifecycle/get` | READ | |
+| `lifecycle.get(id, ks)` | `POST /v1/lifecycle/get` | READ | Missing id throws `lifecycle_rule_not_found`. See [Common errors](../../API-REFERENCE.md#common-errors) |
 | `lifecycle.list(ks, opts)` | `POST /v1/lifecycle/list` | READ | `{offset,limit}` pager; `opts.filter` (`statusEqual`, `systemNameEqual`, `actionTypeIn`, `eventCondition`) and `opts.orderBy` (`+createdAt`/`-createdAt`) pass through 1:1. `eventCondition` is `{fieldEqual, operatorEqual?, operatorIn?, value}` with one string or number `value`. There is no event-type filter: check `rule.eventType` on the results. |
-| `lifecycle.update(id, patch, ks, opts?)` | `POST /v1/lifecycle/update` | WRITE, idempotent | mirrors `Tools#update`. `opts.partnerWide`, `opts.emailOnEveryUpdate`: see [Scope every rule to an agent](#scope-every-rule-to-an-agent) |
-| `lifecycle.delete(id, ks, confirm)` | `POST /v1/lifecycle/delete` | WRITE, destructive | `requireConfirm` gate; response is `{removed, success, _meta}`. The deleted id comes back as `removed`, not `id` |
+| `lifecycle.update(id, patch, ks, opts?)` | `POST /v1/lifecycle/update` | WRITE, idempotent | mirrors `Tools#update`. `opts.partnerWide`, `opts.emailOnEveryUpdate`: see [Scope every rule to an agent](#scope-every-rule-to-an-agent). Missing id throws `lifecycle_rule_not_found` |
+| `lifecycle.delete(id, ks, confirm)` | `POST /v1/lifecycle/delete` | WRITE, destructive | Needs `{ confirmPermanent: true }`. Missing id throws `lifecycle_rule_not_found`. Response is `{removed, success, _meta}`. The deleted id comes back as `removed`, not `id` |
 | `lifecycle.match(objectType, eventType, eventData, ks)` | `POST /v1/lifecycle/match` | READ (dry-run) | see [Discovery and dry-run testing](#discovery-and-dry-run-testing) |
 | `lifecycle.listObjects(ks)` | `POST /v1/lifecycle/listObjects` | READ | |
 | `lifecycle.listEvents(objectType, ks)` | `POST /v1/lifecycle/listEvents` | READ | |
 | `lifecycle.describeFields(objectType, eventType, ks)` | `POST /v1/lifecycle/describeFields` | READ | |
 | `lifecycle.audit(ks, opts?)` | reads only: lists rules, insight settings and agents, gets each pinned template and each `triggerDtcKai` intellect | READ | see [Audit your rules](#audit-your-rules). `opts.agentIds`, `opts.pageSize`. Admin KS |
-| `doctor(ks, opts?)` | reads only | READ | rules, intellects, and unused settings and templates. See [Audit your rules](#audit-your-rules) |
+| `mgmt.doctor(ks, opts?)` | reads only | READ | rules, intellects, and unused settings and templates. See [Audit your rules](#audit-your-rules) |
 
 `InsightSettings`, SDK: `mgmt.insightSettings`:
 
 | Method | Endpoint | Kind | Notes |
 |---|---|---|---|
 | `insightSettings.create(body, ks)` | `POST /v1/insight-settings/create` | WRITE, not idempotent | |
-| `insightSettings.get(id, ks)` | `POST /v1/insight-settings/get` | READ | |
+| `insightSettings.get(id, ks)` | `POST /v1/insight-settings/get` | READ | Missing id throws `insight_setting_not_found` |
 | `insightSettings.list(ks, opts)` | `POST /v1/insight-settings/list` | READ | `{offset,limit}` pager; `opts.filter` (`statusEqual`, `idsIn`) and `opts.orderBy` pass through 1:1 |
-| `insightSettings.update(id, patch, ks)` | `POST /v1/insight-settings/update` | WRITE, idempotent | |
-| `insightSettings.delete(id, ks, confirm)` | `POST /v1/insight-settings/delete` | WRITE, destructive | `requireConfirm` gate; response is `{removed, success, _meta}`. The deleted id comes back as `removed`, not `id`; does not cascade, see [`InsightSettings`](#insightsettings-reusable-insight-definitions) |
+| `insightSettings.update(id, patch, ks)` | `POST /v1/insight-settings/update` | WRITE, idempotent | Missing id throws `insight_setting_not_found` |
+| `insightSettings.delete(id, ks, confirm)` | `POST /v1/insight-settings/delete` | WRITE, destructive | Needs `{ confirmPermanent: true }`. Missing id throws `insight_setting_not_found`. Response is `{removed, success, _meta}`. The deleted id comes back as `removed`, not `id`; does not cascade, see [`InsightSettings`](#insightsettings-reusable-insight-definitions) |
 
 `EmailTemplates`, SDK: `mgmt.emailTemplates`. Separate host from the rest of this SDK. Uses `Authorization: Bearer <KS>`, not `Authorization: KS <ks>`:
 
@@ -277,7 +277,7 @@ All against `https://api.avatar.us.kaltura.ai`. SDK: `mgmt.lifecycle`.
 | `emailTemplates.get(id, ks)` | `POST email-template/get` | READ | |
 | `emailTemplates.list(ks, opts)` | `POST email-template/list` | READ | `{offset,limit}` pager; `opts.filter` (`idIn`, `appGuidIn`, `nameEq`, `status`, ...) passes through 1:1 |
 | `emailTemplates.update(id, patch, ks)` | `POST email-template/update` | WRITE, idempotent | `version` increments on every call |
-| `emailTemplates.delete(id, ks, confirm)` | `POST email-template/delete` | WRITE, destructive | `requireConfirm` gate; soft-delete (`status:'deleted'`); a rule still pinning this id as `templateId` silently stops sending, see [`EmailTemplates`](#emailtemplates-managing-the-templates-sendinsightemail-references) |
+| `emailTemplates.delete(id, ks, confirm)` | `POST email-template/delete` | WRITE, destructive | Needs `{ confirmPermanent: true }`. Soft-delete (`status:'deleted'`); a rule still pinning this id as `templateId` silently stops sending, see [`EmailTemplates`](#emailtemplates-managing-the-templates-sendinsightemail-references) |
 
 ---
 

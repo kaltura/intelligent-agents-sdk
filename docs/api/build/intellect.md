@@ -181,6 +181,8 @@ Each is `"on"` / `"off"` / `"disabled"`:
 
 > When you set `capabilities` directly, send the full dict. To change one key, use `mgmt.intellects.setCapability`. It reads the current dict and re-sends it with your change.
 
+`setCapability` and `setCapabilities` throw `capability_vetoed` when you set a stored `disabled` back to `on`, unless you pass `{ force: true }`. An unknown capability name throws `unknown_capability`.
+
 **Note:** `force_experience` is not an intellect field. It is a per-call option on `converse()` (values `"markdown"`, `"summarization"`, `"flashcards"`, `"avatar_only"`; a hint, not a guarantee). See [Converse](../operate.md#converse).
 
 ---

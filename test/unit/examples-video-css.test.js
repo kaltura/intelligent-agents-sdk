@@ -1,5 +1,5 @@
 // Every example's <video> element is framed with object-fit, and the videoEl JSDoc in both
-// session classes cross-links docs/ARCHITECTURE.md's new section.
+// session classes cross-links the README section on avatar audio and video rendering.
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -27,18 +27,18 @@ describe('examples: <video> is framed with object-fit', () => {
   });
 });
 
-describe('videoEl JSDoc cross-links docs/ARCHITECTURE.md', () => {
+describe('videoEl JSDoc cross-links README.md#avatar-audio-and-video-rendering', () => {
   test('KalturaAvatarSession (session.js)', () => {
     const src = read('src/experience/session.js');
     const line = src.split('\n').find((l) => l.includes('@param {HTMLVideoElement|null} [cfg.videoEl]'));
     assert.ok(line, 'expected a @param {HTMLVideoElement|null} [cfg.videoEl] JSDoc line');
-    assert.match(line, /ARCHITECTURE\.md.*Displaying the Avatar Video/);
+    assert.match(line, /README\.md#avatar-audio-and-video-rendering/);
   });
 
   test('KalturaScriptedVideoSession (scripted-video-session.js)', () => {
     const src = read('src/experience/scripted-video-session.js');
     const line = src.split('\n').find((l) => l.includes('@param {HTMLVideoElement|null} [cfg.videoEl]'));
     assert.ok(line, 'expected a @param {HTMLVideoElement|null} [cfg.videoEl] JSDoc line');
-    assert.match(line, /ARCHITECTURE\.md.*Displaying the Avatar Video/);
+    assert.match(line, /README\.md#avatar-audio-and-video-rendering/);
   });
 });

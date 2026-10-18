@@ -38,13 +38,13 @@ CONV_KS=$(curl -s -X POST "https://www.kaltura.com/api_v3/service/session/action
 | `context_type` | Optional. `entry`, `category`, `ancestor_category` or `global`. |
 | `preload_entry_ids` | Optional. Array of entry ids to add to the turn's context. |
 | `exclude_entry_ids` | Optional. Array of entry ids to keep out of the turn's context. |
-| `metadata` | Optional. `{ voice_start_time, voice_end_time }`, both numbers. Saved with the user's message. |
+| `metadata` | Optional. `{ voice_start_time?, voice_end_time? }`. Each value you send must be a finite number. Saved with the user's message. |
 
 The SDK checks `context_type`, `context_id`, both entry id lists and `metadata` before it sends the converse request, and throws `validation_error` for a bad value. It sends only the fields in this table.
 
 **`allow_client_variables`** must be on to send `request_vars`. It is on by default. Pin it with `mgmt.intellects.setClientVariablesEnabled(configId, true, adminKs)` (WRITE, admin KS; also exposed as `mgmt.intellectConfig.setClientVariablesEnabled`).
 
-With it off, the turn streams back empty on the streaming paths. There is no HTTP error on `converse` and no socket error.
+With it off, the turn streams back empty on the streaming paths. There is no HTTP error on `converse` and no socket error. `conversations.send` and `converseOnce` throw `empty_reply` in this case (see [Refusals that arrive with HTTP 200](#refusals-that-arrive-with-http-200)). Pass `onErrorSegment: 'return'` to get the empty result instead.
 
 Both session classes (`KalturaAvatarSession`, `KalturaChatSession`) detect the pattern and emit a once-per-session `warning` event (`code: 'empty_turn_with_request_vars'`, variable names only, never values). The management converse helpers map a 403 that reports disabled client variables to a typed `client_variables_disabled` error. `KalturaChatSession.sendText()` can fail either way when it sends request variables: the empty turn with the warning, or a rejected promise with `client_variables_disabled`.
 
@@ -79,7 +79,7 @@ The SDK raises these as a `KalturaError` so an empty reply is never mistaken for
 |---|---|---|
 | `thread_access_denied` | The `threadId` belongs to a different user. | Start without that `threadId`, or mint the token with the `userId` that created the thread. |
 | `stream_error` | Any other `error` segment. | Read `error.detail` and `error.body.errors`. |
-| `empty_reply` | The reply had no segments (`conversations.send`, `converseOnce` only). | If you sent `context_id`, check it. `onErrorSegment: 'return'` returns the empty result. |
+| `empty_reply` | The reply had no content: no segments, or only empty final chunks and empty `think` markers (`conversations.send`, `converseOnce` only). | If you sent `context_id`, check it. If you sent `request_vars`, check that `allow_client_variables` is on. `onErrorSegment: 'return'` returns the empty result. |
 
 `error.body` holds `errors` (the segments), `threadId`, and `partial` (the text, `threadId` and `messageId` that arrived before the refusal). For `empty_reply`, `error.body` holds `segments`. A stream line that is not JSON, such as a proxy error page, becomes an `error` segment too, so it is never dropped.
 
@@ -162,7 +162,7 @@ Filter with `originEquals: 2` or `originIn: [0, 2]`. `originIn: [0, 1, 2, 3, 4]`
 | Same `userId`, other `agentId` | None of the first agent's threads | 404 |
 | `userId`, no `agentId` | None of that user's agent threads | 404 |
 
-**Thread record** (`threads.get`, `threads.rename`): the list fields plus `user_id`, `partner_id`, `agent_id`, `context_id`, `origin` and `thread_metadata`. Renaming to a very long title (300 characters, for example) fails with `server_error` and leaves the stored title unchanged.
+**Thread record** (`threads.get`, `threads.rename`): the list fields plus `user_id`, `partner_id`, `context_id` and `thread_metadata`. Renaming to a very long title (300 characters, for example) fails with `server_error` and leaves the stored title unchanged.
 
 **Thread origin.** Mint the token with `extraPrivileges: 'threadOrigin:preview'` or `'threadOrigin:evaluation'` to mark the threads it starts (origin `1` or `2`). Those threads are hidden from the default `threads.list`; list them with `originIn`. A number, such as `threadOrigin:3` or `threadOrigin:1`, gives origin `0`, a standard conversation.
 
@@ -198,10 +198,12 @@ The full transcript is sent as model context on every turn, so each turn carries
 
 Use the SDK for feedback and follow-up suggestions. It handles the routes for you.
 
-- `mgmt.feedback.add({message_id, is_positive, comment?}, convKs)`: thumbs up/down on a message. `message_id` comes from the converse stream.
-- `mgmt.feedback.list(ks, opts)`: admin-only feedback listing, filterable by `messageIdEquals`/`messageIdsIn`/`threadIdEquals`/`agentIdEquals`/`isPositiveEquals`. ⚠️ SENSITIVE: contains end-user ids/names + verbatim question/feedback text. Treat as PII; scope and redact before sharing.
-- `mgmt.followups.getSuggested(ks, { contextId?, contextType? })`: starter questions for the partner or agent. The set can differ between calls. Per-answer follow-ups stream inline as `unisphere-tool` segments when `capabilities.generate_followup_questions:"on"`.
-- `mgmt.followups.list(ks, opts)`: raw partner-wide follow-up and starter question records (distinct from `getSuggested`'s per-agent shortlist).
+- `mgmt.feedback.add({message_id, is_positive, comment?}, convKs)`: thumbs up or down on a message. `message_id` comes from the converse stream.
+- `mgmt.feedback.list(ks, opts)`: admin-only feedback listing. ⚠️ SENSITIVE: contains end-user ids, names and verbatim text. Treat as PII.
+- `mgmt.followups.getSuggested(ks, opts)`: starter questions for the partner or agent.
+- `mgmt.followups.list(ks, opts)`: raw partner-wide follow-up records.
+
+Filters, row shapes and cost: [management-operations.md § Messages, Feedback & Followups](management-operations.md#messages-feedback--followups).
 
 ---
 

@@ -461,7 +461,7 @@ export function api(cfg) {
 
 /**
  * Build a validated `csv` tool — an inline CSV lookup table. `args` are
- * OPTIONAL (the server's `csv_preload` derives them from the columns). The CSV
+ * OPTIONAL. The server derives them from the columns. The CSV
  * must be a non-empty string with a parseable
  * header row (≥1 column). PURE.
  *
@@ -551,11 +551,8 @@ export function clientToolReadiness(body) {
  * `variablesMapping`, with the same rules. `tools.get` returns them and
  * `tools.update` keeps them.
  *
- * WHY THIS WORKS (and the GenUI experience path does NOT): a native tool is
- * bound to the LLM, so calling it is normal agent behavior — it does NOT trip
- * the "I can't run code / I'm a knowledge assistant" refusal a custom GenUI
- * block does. The `type:"tool"` segment is also NOT in the TTS gate, so the
- * voice track stays clean. Confirmed with `navigate_to_slide` / `call_page_function`.
+ * A client tool is a normal agent tool call. Its `type:"tool"` segment is not
+ * spoken (see docs/CLIENT-COMMANDS.md).
  *
  * TWO DEPLOYMENT GOTCHAS (author-time discipline; see {@link clientToolReadiness}):
  *  1. The `kaltura_genie_experiences` capability is on by default and can

@@ -3,13 +3,14 @@
  * provisioning side (`management/site-nav`) and the browser plugin
  * (`experience/site-nav`). Pure functions, zero dependencies, isomorphic.
  *
- * A site map is rendered into the intellect prompt as one line per page:
+ * A site map is rendered into the intellect prompt as one block per page: an
+ * optional title line, then the path line:
  *
  *     /guides/pause-resume/: what-is, edge-case-dont, salesforce-example
  *
  * Each word after the colon is a **section key**: 2–3 content words of a
- * heading, stop words removed, lower-cased, hyphen-joined. Keys are short so the
- * whole map costs ~25 tokens per page, and they are what the brain passes back
+ * heading, stop words removed, lower-cased, hyphen-joined. Keys are short, and
+ * they are what the brain passes back
  * in `go_to({ path, section })`. The browser resolves that pair against the
  * same manifest (`resolvePath` / `resolveSection`), so a slightly wrong key or
  * path still lands on the right element.

@@ -25,8 +25,8 @@
  * hatch. When videoEl IS configured, also fires 'videoMetadata'
  * ({videoWidth, videoHeight}) once per connect, as soon as the decoder
  * resolves the stream's native dimensions (the backend's actual output
- * resolution isn't a published/fixed contract — see docs/ARCHITECTURE.md §
- * Displaying the Avatar Video).
+ * resolution isn't a published/fixed contract — see
+ * README.md#avatar-audio-and-video-rendering).
  *
  * Also fires 'stateChange' ({state}), 'connectivityChanged' ({state}: the
  * peer's ICE connection state) and 'warning' ({code, message, ...}, e.g.
@@ -63,7 +63,7 @@ export class KalturaScriptedVideoSession extends Emitter {
    * @param {object} cfg
    * @param {string} cfg.whepUrl  From `avatarSessions.initClient()`.
    * @param {{url:string, username?:string, credential?:string}} cfg.turn  The `turn` object from `initClient()` (bare TURN host + creds — passed through {@link turnServers}).
-   * @param {HTMLVideoElement|null} [cfg.videoEl]  Element that renders the avatar: video plus audio, unless `cfg.audioEl` is set. Omit for headless/custom rendering (listen for 'track' or read {@link KalturaScriptedVideoSession#avatarStream}). The SDK sets `.srcObject` once and calls `play()` once per binding — size/frame it yourself with `object-fit: cover`. See docs/ARCHITECTURE.md § Displaying the Avatar Video.
+   * @param {HTMLVideoElement|null} [cfg.videoEl]  Element that renders the avatar: video plus audio, unless `cfg.audioEl` is set. Omit for headless/custom rendering (listen for 'track' or read {@link KalturaScriptedVideoSession#avatarStream}). The SDK sets `.srcObject` once and calls `play()` once per binding — size/frame it yourself with `object-fit: cover`. See README.md#avatar-audio-and-video-rendering.
    * @param {HTMLAudioElement|null} [cfg.audioEl]  Recommended: a dedicated element for the avatar's audio track (split shape). Keep it on a stable DOM node so a UI re-render that replaces the `<video>` does not silence the avatar. Swap at runtime with {@link KalturaScriptedVideoSession#setAudioEl}.
    * @param {typeof RTCPeerConnection} [cfg.rtcConstructor]
    * @param {typeof fetch} [cfg.fetch]
@@ -111,7 +111,7 @@ export class KalturaScriptedVideoSession extends Emitter {
    * `disconnect()` first, then `connect()`. A `disconnect()` during `connect()`
    * rejects it with `connect_failed` and leaves the state at `'disconnected'`.
    * @returns {Promise<void>}
-   * @throws {KalturaError} `invalid_state` from any other state (`'connecting'`, `'connected'`, `'disconnecting'`, `'error'`); `whep_failed` on a non-2xx WHEP response; `whep_private_ip` when the response Location resolves to a private/loopback address; `connect_failed` for any other error.
+   * @throws {KalturaError} `invalid_state` from any other state (`'connecting'`, `'connected'`, `'disconnecting'`, `'error'`); `whep_timeout` when every WHEP try timed out; `whep_failed` on a non-2xx response or when the last try failed on the network; `whep_private_ip` when the response Location resolves to a private/loopback address; `connect_failed` for any other error.
    */
   async connect() {
     if (this.state !== 'idle' && this.state !== 'disconnected') {
@@ -272,8 +272,8 @@ export class KalturaScriptedVideoSession extends Emitter {
   /**
    * Route the avatar's audio to a speaker device (`HTMLMediaElement.setSinkId`).
    * @param {string} deviceId
-   * @returns {Promise<boolean>}  `false` (never throws) when unsupported or rejected.
-   * @throws {KalturaError} `bad_request` when `deviceId` is not a string.
+   * @returns {Promise<boolean>}  `false` when the browser has no `setSinkId`, no element is set, or the device call rejects.
+   * @throws {KalturaError} Rejects with `bad_request` when `deviceId` is not a string.
    */
   setAudioOutput(deviceId) { return this._avatarMedia.setSinkId(deviceId); }
   /**
