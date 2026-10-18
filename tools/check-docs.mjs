@@ -1073,6 +1073,34 @@ describe('16. Docs accuracy', () => {
     const cells = [...clause.matchAll(/`"([^"]+)"`/g)].map((m) => m[1]);
     assert.deepEqual(cells, providers, `the asr row must list exactly ${providers.join(', ')}`);
   });
+
+  test('thread scope is never described as account-wide', () => {
+    const re = /by account, not (by )?user/i;
+    const hits = scanFiles().filter((f) => f.endsWith('.md') && re.test(read(f)));
+    assert.deepEqual(hits, [], `these pages describe thread scope as account-wide: ${hits.join(', ')}`);
+  });
+
+  test('thread filter docs name agentIdIn and the origin filters', () => {
+    const line = read('docs/api/management-operations.md').split('\n').find((l) => l.startsWith('**Filter fields (list):**')) || '';
+    for (const key of ['agentIdIn', 'originEquals', 'originIn']) assert.ok(line.includes(`\`${key}\``), `management-operations.md filter fields line must name ${key}`);
+    const throws = scanFiles().filter((f) => f.endsWith('.md') && read(f).split('\n').some((l) => /agentIdIn[^.\n]*\bthrows?\b/i.test(l)));
+    assert.deepEqual(throws, [], `these pages say agentIdIn throws: ${throws.join(', ')}`);
+  });
+
+  test('genieentryids is never described as a restriction, and authentication.md names the extra privileges', () => {
+    const bad = scanFiles().filter((f) => f.endsWith('.md')).filter((f) => read(f).split('\n').some((l) => l.includes('genieentryids') && /restrict|limit|only|access|secur/i.test(l)));
+    assert.deepEqual(bad, [], `these pages describe genieentryids like an access control: ${bad.join(', ')}`);
+    const auth = read('docs/api/authentication.md');
+    for (const name of ['threadOrigin', 'preview', 'genieentryids', 'geniecategoryid', 'genieancestorid', 'genieid']) {
+      assert.ok(auth.includes(`\`${name}\``), `authentication.md must name the ${name} privilege`);
+    }
+  });
+
+  test('an Idempotency-Key is never called retry-safe', () => {
+    const re = /(Idempotency-Key|idempotency key)[^.\n]*\b(is|are) (retry-safe|safe to retry)/i;
+    const hits = scanFiles().filter((f) => f.endsWith('.md') && re.test(read(f)));
+    assert.deepEqual(hits, [], `these pages call an idempotency key retry-safe: ${hits.join(', ')}`);
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════

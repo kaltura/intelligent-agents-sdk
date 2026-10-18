@@ -71,7 +71,7 @@ What each token can reach:
 | Token | Threads | OVP admin APIs |
 |---|---|---|
 | **Admin type (type 2)**: `createAdminToken()`, or `sessionType: 'admin'` | Every user's threads | Yes, within the `role` and privileges you set |
-| **Conversation/agent with `userId`** (user session) | Own threads: read, continue, list, delete | No |
+| **Conversation/agent with `userId`** (user session) | Own threads with the agent named in the token: read, continue, list, delete | No |
 | **Conversation/agent without `userId`** | One identity for all holders. Read, list and delete return 403 | No |
 | **Widget** | Same as without `userId` | No |
 

@@ -74,7 +74,7 @@ AGENT_KS=$(curl -s -X POST "https://www.kaltura.com/api_v3/service/session/actio
   -d "privileges=agentid:1_abc123,geniegpcid:1389,setrole:PLAYBACK_BASE_ROLE" | tr -d '"')
 ```
 
-**Keep `disableentitlement` server-side, for management/admin operations only.** A minted `Token` records its kind, and the SDK rejects a token of the wrong kind before any network call. A raw KS string is encrypted and unreadable client-side, so the SDK passes it through and the server enforces its scope. Never hand an admin KS string to an end-user session. See [SECURITY.md](../../SECURITY.md#ks-kaltura-session-guidance-for-agents-ac-3--ac-6--ia-2) and Kaltura's own [KS/privilege reference](https://kaltura.md/KALTURA_SESSION_GUIDE/).
+**Keep `disableentitlement` server-side, for management/admin operations only.** A minted `Token` records its kind, and the SDK rejects a token of the wrong kind before any network call. A raw KS string is encrypted, so the SDK can't read its kind. It still rejects the raw string of a widget token this `Management` instance minted recently. Other raw strings go to the server, which decides. Never hand an admin KS string to an end-user session. See [SECURITY.md](../../SECURITY.md#ks-kaltura-session-guidance-for-agents-ac-3--ac-6--ia-2) and Kaltura's own [KS/privilege reference](https://kaltura.md/KALTURA_SESSION_GUIDE/).
 
 **Bind a session to a real end-user identity (`userId`).** The reserved `{{ sys__user_id }}` template variable (see [Reserved Template Variables](operate.md#reserved-template-variables-sys__)) resolves to an empty string unless the KS carries a real identity.
 
@@ -107,6 +107,20 @@ Always pass a per-user `userId`.
 **Revoke a token.** `mgmt.sessions.revoke(tokenOrKs)` ends the session (`session/end`). Tokens minted with the same `restrictions.sessionGroupId` are revoked together.
 
 **Restrictions.** `restrictions` compiles to KS privileges: `ipRestrict`, `uriRestrict`, `sessionGroupId`, `role` (admin sessions only) and `actionsLimit`. `actionsLimit` is a positive integer. Use it only for sessions that run a known, fixed number of API actions. Each string value is one `key:value` privilege in a comma-separated list, so it must not contain a comma or whitespace (`bad_request`). `:` and `/` are fine inside a value, and so is a `*` wildcard where the privilege supports it.
+
+**Extra privileges the agent reads.** Pass these through `extraPrivileges`. The SDK has no typed option for them. Use one `key:value` per privilege, with no comma in the value.
+
+| Privilege | Value | What you observe |
+|---|---|---|
+| `threadOrigin` | `evaluation` | New threads get `origin: 2` and are left out of the default thread list. See [Threads](operate.md#threads) |
+| `threadOrigin` | `preview` | New threads get `origin: 1` and are left out of the default thread list |
+| `preview` | `true` | Same as `threadOrigin:preview` |
+| `genieentryids` | an entry id | Names an entry for the conversation |
+| `geniecategoryid` | a category id | Names a category for the conversation |
+| `genieancestorid` | a category id | Names an ancestor category for the conversation |
+| `genieid` | an agent id | Names an agent for the conversation |
+
+A very long KS is refused with 401. Long `extraPrivileges` or `restrictions` values make a KS that long. The SDK logs a warning when a minted KS is over 4,500 characters.
 
 ---
 
