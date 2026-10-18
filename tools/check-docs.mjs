@@ -953,7 +953,7 @@ describe('16. Docs accuracy', () => {
       [(l) => /`turnCredentials`[^.]*appInit/.test(l), 'say `appInit` returns no TURN credentials; the SDK default applies unless `turnCredentials` is passed'],
     ];
     const bad = [];
-    for (const f of scanFiles().filter((x) => x.endsWith('.md') || x.startsWith('src/'))) {
+    for (const f of scanFiles().filter((x) => x.endsWith('.md') || x.startsWith('src/') || x.startsWith('scripts/'))) {
       read(f).split('\n').forEach((line, i) => {
         for (const [hit, fix] of rules) if (hit(line)) bad.push(`${f}:${i + 1} (${fix})`);
       });

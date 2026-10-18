@@ -82,7 +82,8 @@ test('pauseExpiryWarning is re-emitted with secondsRemaining', async () => {
   session.on('pauseExpiryWarning', (p) => seen.push(p));
   socket.server('pauseExpiryWarning', { secondsRemaining: 7 });
   socket.server('pauseExpiryWarning', {});
-  assert.deepEqual(seen, [{ secondsRemaining: 7 }, { secondsRemaining: undefined }]);
+  socket.server('pauseExpiryWarning', { secondsRemaining: '7' });
+  assert.deepEqual(seen, [{ secondsRemaining: 7 }, { secondsRemaining: undefined }, { secondsRemaining: undefined }]);
   session.disconnect();
 });
 

@@ -417,7 +417,7 @@ try {
       const before = await probe(r1.ks);
       await kaltura.sessions.revoke(r1);
       const enforced = target.name === 'prod';
-      // Revocation takes effect within seconds, so poll for up to 30s.
+      // Poll for up to 30s for the revoked token to stop working.
       const start = Date.now();
       let after1 = await probe(r1.ks);
       while (enforced && after1.ok && Date.now() - start < 30000) { await sleep(1000); after1 = await probe(r1.ks); }

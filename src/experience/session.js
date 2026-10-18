@@ -126,7 +126,7 @@ const FATAL_CODE = {
   throwToExceededTier: { code: 'tier_exceeded', num: 6002, retry: false, detail: 'The account is over its plan limit for live conversations.' },
   throwToBadRequest: { code: 'bad_request', num: 400, retry: false, detail: 'The server rejected the request as invalid.' },
   removePeer: { code: 'peer_removed', num: 401, retry: false, detail: 'The server removed this participant from the conversation.' },
-  unsupportedClient: { code: 'unsupported_client', num: 0, retry: false, detail: 'The server refused this session. Check that the token is valid and the agent exists, get a new token, then call connect() again.' },
+  unsupportedClient: { code: 'unsupported_client', num: 0, retry: false, detail: 'The server refused this session. Get a new token and call connect() again.' },
 };
 
 /**
@@ -2847,7 +2847,7 @@ export class KalturaAvatarSession extends Emitter {
     socket.on('pauseSessionExpired', () => { this._sessionReleased = true; this.emit('timeExpired', { type: 'pause_expiry' }); });
     socket.on('sessionReadyForResume', () => { this._sessionReleased = true; this.emit('resumeReady', { ready: true }); });
     socket.on('resumingSession', () => this._setState('resuming'));
-    socket.on('pauseExpiryWarning', (p) => this.emit('pauseExpiryWarning', { secondsRemaining: p?.secondsRemaining }));
+    socket.on('pauseExpiryWarning', (p) => this.emit('pauseExpiryWarning', { secondsRemaining: Number.isFinite(p?.secondsRemaining) ? p.secondsRemaining : undefined }));
 
     // Brain stream. Genuine visible/audible output proves the pipeline is alive → clear the
     // watchdog. EXCEPTION: `type:"tool"`/`"tool_response"` (and `"think"`) segments are SILENT
@@ -3015,7 +3015,7 @@ export class KalturaAvatarSession extends Emitter {
     for (const ev of Object.keys(FATAL_CODE)) {
       socket.on(ev, () => {
         this.emit('error', fatalError(ev));
-        // The server closes the socket after this event, so no setup wait can succeed.
+        // After this event the connection ends, so no setup wait can succeed.
         // A live session (outside a resume() rebuild) keeps its path: the disconnect ends it.
         if (ev === 'unsupportedClient' && (this.state !== 'connected' || this._resuming)) this._failPending(fatal(ev));
       });
@@ -3027,7 +3027,7 @@ export class KalturaAvatarSession extends Emitter {
    * deadline). Cleans up its listener.
    *
    * Cancelable: the wait registers itself in `_pendingAwaits`, and teardown rejects it with
-   * `connect_failed` (or with the error passed to its cancel function, see `_failPending`) right away. Without that, a `disconnect()` landing mid-handshake removes
+   * `connect_failed` right away. `_failPending` can reject it with a different error instead. Without that, a `disconnect()` landing mid-handshake removes
    * the socket's listeners while this wait is still armed, so the event it needs can never
    * arrive and `connect()` would hang for the full timeout (up to `TIMEOUTS.asr`, 30 s) before
    * failing. The two connect lanes run concurrently, so either lane can be the one left waiting.
