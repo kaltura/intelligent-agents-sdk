@@ -117,6 +117,7 @@ function codeForStatus(status) {
   if (status === 404) return 'not_found';
   if (status === 405) return 'method_not_allowed';
   if (status === 409) return 'conflict';
+  if (status === 413) return 'payload_too_large';
   if (status === 422) return 'validation_error';
   if (status === 429) return 'rate_limited';
   if (status >= 500) return 'server_error';

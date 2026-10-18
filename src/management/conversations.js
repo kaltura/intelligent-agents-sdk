@@ -459,7 +459,10 @@ export class Threads {
    * {@link Messages#list} with `type: 4`, marking it as an externally pushed
    * message rather than a normal turn).
    *
-   * The SDK does not check message length client-side.
+   * The SDK does not check message length client-side. A 403 that reports
+   * disabled client variables throws `client_variables_disabled`, the same as
+   * converse. A body or `request_vars` over the server's size limit throws
+   * `payload_too_large`.
    * @param {{id:string, content:string, request_vars?:object, system_message?:string}} opts
    * @param {string} ks
    * @returns {Promise<{status:string, data:unknown, messageId:string, delivered:boolean}>}
@@ -470,7 +473,11 @@ export class Threads {
     const body = { id: opts.id, content: opts.content };
     if (opts.request_vars !== undefined) body.request_vars = opts.request_vars;
     if (opts.system_message !== undefined) body.system_message = opts.system_message;
-    return (await this._.genie('thread/push', body, ks)).data;
+    try {
+      return (await this._.genie('thread/push', body, ks)).data;
+    } catch (e) {
+      throw remapConverseError(e);
+    }
   }
 
   /**
@@ -619,7 +626,8 @@ export class Feedback {
   /**
    * Rate a message. WRITE — idempotent for a (message_id,is_positive) pair.
    * @param {object} opts {message_id, is_positive, comment?}
-   * @param {string} ks
+   * @param {string} ks  Conversation token of the user who sent the message.
+   *   A token for any other user, admin included, can get `forbidden`.
    */
   async add(opts, ks) {
     this._.assertAny(ks, 'feedback.add');

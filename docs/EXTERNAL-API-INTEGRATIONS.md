@@ -15,7 +15,7 @@ An external API integration is a custom `api` tool linked to your intellect thro
 3. **Link it.** `mgmt.intellectConfig.setToolIds(configId, [toolId], adminKs)`.
 
 - **Secret references use one exact syntax.** Write `{{secrets.<name>}}` inside any string field of the `request` block. Do not write `{{variables.secrets.<name>}}`.
-- **Validate after wiring.** `mgmt.intellectConfig.audit(configId, adminKs)` checks secret references in the linked tools, the prompts and the MCP server headers. It reports a missing secret as `secret_ref_unresolved` and the wrong prefix as `secret_ref_bad_prefix`.
+- **Validate after wiring.** `mgmt.intellectConfig.audit(configId, adminKs)` checks secret references in the linked tools, the prompts and the MCP server headers. It reports a missing secret as `secret_ref_unresolved`, the wrong prefix as `secret_ref_bad_prefix`, and an OAuth2 tool saved with the bare `secrets.NAME` as `secret_ref_bare`.
 
 To run your own page-side JavaScript instead of a server-side HTTP call, use a `type: "client"` tool (`tools.client()`) and `session.onToolCall(name, handler)`. See [CLIENT-COMMANDS.md](CLIENT-COMMANDS.md). Everything below assumes a server-side `api` tool.
 

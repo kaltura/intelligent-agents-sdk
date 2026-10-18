@@ -28,7 +28,7 @@ Each item has an `itemId`. Pass it to avatar creation.
 | `languageEqual` | A voice language code, for example `"en"` |
 | `adminTagsIn` | An array of tags |
 
-Any other filter key returns `bad_request` (400). The request also takes a top-level `orderBy` and a top-level `agentScope` string. `orderBy` is `"+createdAt"` or `"-createdAt"`. `"-createdAt"` sorts newest first. Any other `orderBy` returns `bad_request` (400), and the error lists both values.
+Any other filter key returns `bad_request` (400). The request also takes a top-level `orderBy` and a top-level `agentScope` string. `orderBy` is `"+createdAt"` or `"-createdAt"`. `"-createdAt"` sorts newest first. `"+createdAt"` is accepted but does not change the order. Any other `orderBy` returns `bad_request` (400), and the error lists both values.
 
 **Visual preset fields:** `itemId`, `attributes.visual.{name, genderPresentation, skinTone, ageGroup, hairColor, clothing, background}`, `imageUrl`, `loadingVideo`. These are asset URLs for previews. They are not the rendered composite that the live video stream shows.
 

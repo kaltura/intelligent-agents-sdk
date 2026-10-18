@@ -184,7 +184,7 @@ export class Lifecycle {
    *
    * A `sendInsightEmail` rule on `analysis_updated` must also name the insight
    * keys it waits for: a `changed_keys` condition with operator `has_all` or
-   * `has_any` and a non-empty array of keys. Otherwise it sends on every
+   * `has_any` and a non-empty array of keys, or `contains` with one key. Otherwise it sends on every
    * analysis update, so the SDK throws `code:'lifecycle_email_unfiltered'`.
    * Pass `{ emailOnEveryUpdate: true }` to send on every update on purpose.
    *

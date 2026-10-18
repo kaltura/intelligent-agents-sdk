@@ -417,10 +417,11 @@ try {
       const before = await probe(r1.ks);
       await kaltura.sessions.revoke(r1);
       const enforced = target.name === 'prod';
-      // Poll for up to 30s for the revoked token to stop working.
+      // Poll for up to 90s for the revoked token to stop working. Most runs
+      // take about 10s, but one prod run took longer than 30s.
       const start = Date.now();
       let after1 = await probe(r1.ks);
-      while (enforced && after1.ok && Date.now() - start < 30000) { await sleep(1000); after1 = await probe(r1.ks); }
+      while (enforced && after1.ok && Date.now() - start < 90000) { await sleep(1000); after1 = await probe(r1.ks); }
       const tookMs = Date.now() - start;
       const after2 = await probe(r2.ks);
       report.check('revoke ends the token and its sessionGroupId sibling', before.ok && (!enforced || (!after1.ok && !after2.ok)),

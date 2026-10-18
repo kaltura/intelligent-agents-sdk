@@ -71,7 +71,7 @@ await mgmt.lifecycle.create({
 }, ks);
 ```
 
-Every conversation with that agent gets a structured recap the moment it ends, with zero app-side code. The built-in summary insight is deliberately not requested here. Every partner already has an always-on preset rule that produces one for every standard conversation. Its summary lands in the same analysis as this rule's own insights.
+Every conversation with that agent gets a structured recap once it ends, with zero app-side code. The session classes send the end signal on `disconnect()` and on tab close. If you drive the socket yourself, send it too: see [Ending a conversation cleanly](../../README.md#ending-a-conversation-cleanly-session_completed-signal). The built-in summary insight is deliberately not requested here. Every partner already has an always-on preset rule that produces one for every standard conversation. Its summary lands in the same analysis as this rule's own insights.
 
 ### `InsightSettings`: reusable insight definitions
 
@@ -153,9 +153,7 @@ To send on every update on purpose, pass `{ emailOnEveryUpdate: true }` as the l
 
 ## Every session already gets a SUMMARY, for free
 
-Every `session_ended` event of a standard conversation (`origin: 0`) produces one fixed summary insight, for every agent. It has no opt-out, and no field lets you change its prompt. `match` lists the built-in rule that produces it (see [Discovery and dry-run testing](#discovery-and-dry-run-testing)).
-
-When you create your own `triggerInsightSettingsKai` rule on `session_ended`, the result is one combined `thread_metadata.analysis` containing the preset's summary plus whatever your `insightSettingsIds` asked for. Give your own insight settings distinct `key`s from the built-in summary to avoid any ambiguity about which one's result lands where.
+Every `session_ended` event of a standard conversation (`origin: 0`) produces one fixed summary insight, for every agent. It has no opt-out, and no field lets you change its prompt. `match` lists the built-in rule that produces it (see [Discovery and dry-run testing](#discovery-and-dry-run-testing)). When you create your own `triggerInsightSettingsKai` rule on `session_ended`, the result is one combined `thread_metadata.analysis` containing the preset's summary plus whatever your `insightSettingsIds` asked for. Give your own insight settings distinct `key`s from the built-in summary to avoid any ambiguity about which one's result lands where.
 
 ---
 
@@ -223,6 +221,7 @@ The key checks (`changed_keys_unproduced`, `template_tokens_unproduced`, `badge_
 | `invalid_user_properties_forms` | error | The forms fail the same validation `setUserPropertiesForms` applies |
 | `secret_ref_unresolved` | error | `{{secrets.NAME}}` names a secret the intellect does not have |
 | `secret_ref_bad_prefix` | error | `{{variables.secrets.NAME}}` renders empty. Write `{{secrets.NAME}}` |
+| `secret_ref_bare` | error | A linked `api` tool's OAuth2 `client_secret` is the bare `secrets.NAME`, so the tool sends that text. Re-save the tool with `tools.update` |
 | `prompt_<code>` | per finding | The lint code with a `prompt_` prefix, for example `prompt_duplicate_key`, `prompt_bad_condition`, `prompt_suspect_condition` |
 | `capabilities_invalid` | warn | The capability map holds an unknown name or state |
 | `client_tools_not_ready` | warn | The client tool setup would not work |

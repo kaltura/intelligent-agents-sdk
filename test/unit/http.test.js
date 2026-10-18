@@ -82,6 +82,27 @@ test('R-1: 429 is retried for GET requests', async () => {
   assert.equal(calls, 3);
 });
 
+for (const status of [502, 504]) {
+  test(`R-1: ${status} GET is retried, a keyed POST is not`, async () => {
+    let calls = 0;
+    const fake = async () => {
+      calls++;
+      if (calls < 2) return { ok: false, status, headers: { get: () => null }, text: async () => 'Bad Gateway' };
+      return { ok: true, status: 200, headers: { get: () => null }, text: async () => '{"ok":true}' };
+    };
+    const http = new Http({ fetch: fake, maxRetries: 3, delayFn: () => Promise.resolve() });
+    const { data } = await http.request({ method: 'GET', url: 'https://x/y', ks: 'k' });
+    assert.deepEqual(data, { ok: true });
+    assert.equal(calls, 2);
+
+    calls = 0;
+    const failing = async () => { calls++; return { ok: false, status, headers: { get: () => null }, text: async () => 'err' }; };
+    const post = new Http({ fetch: failing, maxRetries: 3, delayFn: () => Promise.resolve() });
+    await assert.rejects(() => post.postJson({ url: 'https://x/create', ks: 'k', body: {}, idempotencyKey: 'idem-1' }), (e) => e.code === 'server_error' && e.status === status);
+    assert.equal(calls, 1, `a keyed POST that got a ${status} may already have run, so it is not retried`);
+  });
+}
+
 test('R-1: non-retriable 401 is NOT retried', async () => {
   let calls = 0;
   const fake = async () => {
