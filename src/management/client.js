@@ -285,7 +285,7 @@ export class Management {
    * gives the end user their own threads. See {@link Sessions#createConversationToken}.
    * @param {number} configId
    * @param {string} message
-   * @param {{agentId?:string,userId?:string|number,threadId?:string,sse?:boolean,model_type?:string,force_experience?:string,request_vars?:object,capabilities?:object}} [opts]
+   * @param {{agentId?:string,userId?:string|number,threadId?:string,sse?:boolean,model_type?:string,force_experience?:string,request_vars?:object,capabilities?:object,context_id?:string,context_type?:'entry'|'category'|'ancestor_category'|'global',preload_entry_ids?:string[],exclude_entry_ids?:string[],metadata?:{voice_start_time?:number,voice_end_time?:number}}} [opts]
    * @param {string|{ks:string}} [ks]  Conversation token; minted from configId if omitted.
    * @returns {AsyncGenerator<object>}
    */

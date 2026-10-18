@@ -30,10 +30,17 @@ CONV_KS=$(curl -s -X POST "https://www.kaltura.com/api_v3/service/session/action
 | `userMessage` | Required |
 | `threadId` | Omit for new conversation; pass previous value for memory |
 | `sse` | `false` = NDJSON (default); `true` = SSE |
-| `model_type` | Optional. The SDK does not set `model_type`; the default is `fast`. |
+| `model_type` | Optional. `fast` or `smart`, lowercase. Omit it to use the default, `fast`. |
 | `force_experience` | Must be one of `markdown`, `summarization`, `flashcards`, `avatar_only`. Anything else throws a `validation_error` before any network call. A hint about which experience to render, not a guaranteed outcome. |
 | `request_vars` | `{{var}}` interpolation values. Needs `allow_client_variables:true` on the intellect. It is on by default (see [Authentication § The Five Services](authentication.md#the-five-services) for what an intellect is). They interpolate into prompts and `api` tool templates. Reserved `sys__*` keys (including `sys__user_id`) are set by the server. The SDK rejects a client-supplied value for them. For how `sys__user_id` gets its value, see [Authentication § Bind a session to a real end-user identity](authentication.md#authentication). Semantics in depth: [docs/DYNAMIC-DATA-INJECTION.md](../DYNAMIC-DATA-INJECTION.md). |
 | `capabilities` | Per-message capability override |
+| `context_id` | Optional. The id of the category or entry the turn is about, as a string. With `context_type: 'entry'` it must look like `0_abcd1234`. |
+| `context_type` | Optional. `entry`, `category`, `ancestor_category` or `global`. |
+| `preload_entry_ids` | Optional. Array of entry ids to add to the turn's context. |
+| `exclude_entry_ids` | Optional. Array of entry ids to keep out of the turn's context. |
+| `metadata` | Optional. `{ voice_start_time, voice_end_time }`, both numbers. Saved with the user's message. |
+
+The SDK checks `context_type`, `context_id`, both entry id lists and `metadata` before it sends the converse request, and throws `validation_error` for a bad value. It sends only the fields in this table.
 
 **`allow_client_variables`** must be on to send `request_vars`. It is on by default. Pin it with `mgmt.intellects.setClientVariablesEnabled(configId, true, adminKs)` (WRITE, admin KS; also exposed as `mgmt.intellectConfig.setClientVariablesEnabled`).
 
@@ -72,8 +79,9 @@ The SDK raises these as a `KalturaError` so an empty reply is never mistaken for
 |---|---|---|
 | `thread_access_denied` | The `threadId` belongs to a different user. | Start without that `threadId`, or mint the token with the `userId` that created the thread. |
 | `stream_error` | Any other `error` segment. | Read `error.detail` and `error.body.errors`. |
+| `empty_reply` | The reply had no segments (`conversations.send`, `converseOnce` only). | If you sent `context_id`, check it. `onErrorSegment: 'return'` returns the empty result. |
 
-`error.body` holds `errors` (the segments), `threadId`, and `partial` (the text, `threadId` and `messageId` that arrived before the refusal). A stream line that is not JSON, such as a proxy error page, becomes an `error` segment too, so it is never dropped.
+`error.body` holds `errors` (the segments), `threadId`, and `partial` (the text, `threadId` and `messageId` that arrived before the refusal). For `empty_reply`, `error.body` holds `segments`. A stream line that is not JSON, such as a proxy error page, becomes an `error` segment too, so it is never dropped.
 
 The same rule applies to every HTTP call. A 200 reply whose body is an error is thrown, with the server text in `error.detail`. The SDK throws for an exception object, `{error: "..."}`, `{success: false}`, and a body with only status and message keys and a status of 400 or above. A 200 reply that starts like JSON but does not parse throws `invalid_response`. A failed call inside a Kaltura multirequest throws `ovp_error` naming the call.
 
@@ -101,8 +109,8 @@ Before any network call, the SDK's own `request_vars` pre-flight guard rejects a
 | `sys__is_new_thread` | `true` on the first turn of a new thread, `false` otherwise | |
 | `sys__avatar_enabled` | Whether the current thread has a live avatar attached | Used in a skill, prompt block or tool `condition` to gate it to avatar-only sessions, as a bare expression with no `{{ }}`, e.g. `condition: 'sys__avatar_enabled'`. See [Conditions](build/intellect.md#conditions). |
 | `sys__avatar_share_screen_enabled` | True while the avatar session has a screen share running. The agent needs `screenShare.enabled` ([agent fields](build/avatar-and-agent.md)). False in plain conversations that never share | Also usable in a skill, prompt block or tool `condition`, e.g. `sys__avatar_enabled and not sys__avatar_share_screen_enabled` to gate a skill to avatar sessions that are NOT sharing a screen. |
-| `sys__context_id` | The category/entry id the current context (and its knowledge base, if any) is scoped to | Set via `KalturaAvatarSession`'s `contextId` constructor option, sent on the live socket `join` payload. See [connection-and-handshake.md § The `join` payload](../architecture-reference/connection-and-handshake.md#the-join-payload-step-2-carries-the-agent-config). Empty when no context was set at join. |
-| `sys__context_type` | The type of that context (e.g. an `entry` vs. a `category`) | Set via `KalturaAvatarSession`'s `contextType` constructor option, alongside `contextId`; empty when no context was set at join. |
+| `sys__context_id` | The category/entry id the current context (and its knowledge base, if any) is scoped to | Set via `KalturaAvatarSession`'s `contextId` constructor option, sent on the live socket `join` payload. See [connection-and-handshake.md § The `join` payload](../architecture-reference/connection-and-handshake.md#the-join-payload-step-2-carries-the-agent-config). Empty when no context was set at join. On HTTP converse, set it with `context_id`. |
+| `sys__context_type` | The type of that context (e.g. an `entry` vs. a `category`) | Set via `KalturaAvatarSession`'s `contextType` constructor option, alongside `contextId`; empty when no context was set at join. On HTTP converse, set it with `context_type`. |
 | `sys__ks` | The raw KS (Kaltura Session) for the current request | ⚠️ **Security warning: never reference `sys__ks` in a prompt whose output could be echoed back to a user or logged.** It is a live credential. Rendering it as plain text in a model response, chat transcript, or log can leak that credential. See [SECURITY.md](../../SECURITY.md#ks-kaltura-session-guidance-for-agents-ac-3--ac-6--ia-2). |
 | `sys__user_obj.first_name` / `.last_name` / `.title` / `.company` / `.gender` / `.email` | Attributes of the bound-user object | Verify these resolve with `intellects.previewPrompt()` before shipping a prompt. The rendered preview flags unresolved references with a `reserved_user_attr_unresolved` warning. |
 | `secrets.<NAME>` | A named secret configured on the intellect | Write-only. See [§ Secrets](build/tools-and-secrets.md#secrets-write-only). |
@@ -169,7 +177,7 @@ Use the SDK for feedback and follow-up suggestions. It handles the routes for yo
 
 - `mgmt.feedback.add({message_id, is_positive, comment?}, convKs)`: thumbs up/down on a message. `message_id` comes from the converse stream.
 - `mgmt.feedback.list(ks, opts)`: admin-only feedback listing, filterable by `messageIdEquals`/`messageIdsIn`/`threadIdEquals`/`agentIdEquals`/`isPositiveEquals`. ⚠️ SENSITIVE: contains end-user ids/names + verbatim question/feedback text. Treat as PII; scope and redact before sharing.
-- `mgmt.followups.getSuggested(ks)`: starter questions for the partner or agent. The set can differ between calls. Per-answer follow-ups stream inline as `unisphere-tool` segments when `capabilities.generate_followup_questions:"on"`.
+- `mgmt.followups.getSuggested(ks, { contextId?, contextType? })`: starter questions for the partner or agent. The set can differ between calls. Per-answer follow-ups stream inline as `unisphere-tool` segments when `capabilities.generate_followup_questions:"on"`.
 - `mgmt.followups.list(ks, opts)`: raw partner-wide follow-up and starter question records (distinct from `getSuggested`'s per-agent shortlist).
 
 ---

@@ -306,7 +306,7 @@ try {
   // or tool condition, so those two are posted straight to the Genie endpoint, as a client that bypasses
   // the SDK would.
   const emptyReply = (r) => (r.text ?? '').trim() === '' && !hasMark(r);
-  const templatedSkill = await kaltura.converseOnce(skillIntellect.id, 'PING', {});
+  const templatedSkill = await kaltura.converseOnce(skillIntellect.id, 'PING', { onErrorSegment: 'return' });
   check('9-server-empty-reply-for-templated-skill-condition', emptyReply(templatedSkill), { text: templatedSkill.text?.slice(0, 80) });
   // intellects.add now refuses a templated prompt condition, so this one is posted straight to the endpoint.
   const rawPrompts = [
@@ -320,7 +320,7 @@ try {
   check('9-templated-prompt-condition-posted-without-sdk', rawIntellectResp.ok && rawIntellect.id != null, { status: rawIntellectResp.status });
   const templatedPromptIntellect = { id: rawIntellect.id };
   made.intellects.push(rawIntellect.id);
-  const templatedPrompt = await kaltura.converseOnce(templatedPromptIntellect.id, 'Say hi.', {});
+  const templatedPrompt = await kaltura.converseOnce(templatedPromptIntellect.id, 'Say hi.', { onErrorSegment: 'return' });
   check('9-server-empty-reply-for-templated-prompt-condition', emptyReply(templatedPrompt), { text: templatedPrompt.text?.slice(0, 80) });
   const rawTool = {
     type: 'var', name: `live_verify_templated_${TAG}`, description: 'Switch the reply mode. Call it with the mode name the user asks for.',
@@ -334,7 +334,7 @@ try {
   if (rawBody.id) {
     made.tools.push(rawBody.id);
     const templatedToolIntellect = await modeIntellect(rawBody);
-    const templatedTool = await kaltura.converseOnce(templatedToolIntellect.id, 'Switch mode to zebra.', {});
+    const templatedTool = await kaltura.converseOnce(templatedToolIntellect.id, 'Switch mode to zebra.', { onErrorSegment: 'return' });
     check('9-server-empty-reply-for-templated-tool-condition', emptyReply(templatedTool) && !called(templatedTool), { text: templatedTool.text?.slice(0, 80), calls: (templatedTool.toolCalls ?? []).length });
     const toolReport = await kaltura.intellectConfig.audit(templatedToolIntellect.id, admin);
     check('9-doctor-flags-template-tool-condition', toolReport.findings.some((f) => f.code === 'tool_condition_template'), { codes: toolReport.findings.map((f) => f.code) });
@@ -389,7 +389,7 @@ try {
       prompts: [baseRules('Be terse. Greet the user in one short sentence.'), { key: 'gate', label: 'g', headerTemplate: 'Gate rule:', type: 'custom', value: `End the reply with the token ${MARK}.`, condition: expr }],
     }, admin);
     made.intellects.push(intellect.id);
-    const run = () => kaltura.converseOnce(intellect.id, 'Say hi.', { request_vars: { plan: 'pro', n: '7' } });
+    const run = () => kaltura.converseOnce(intellect.id, 'Say hi.', { request_vars: { plan: 'pro', n: '7' }, onErrorSegment: 'return' });
     const reply = expect === 'match' ? await tryTwice(run, hasMark) : await run();
     const got = hasMark(reply) ? 'match' : nonEmpty(reply) ? 'nomatch' : 'blank';
     const warned = conditionWarnings(expr).length > 0;

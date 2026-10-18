@@ -64,6 +64,15 @@ export const RESERVED_VARS = Object.freeze([
 const RESERVED_USER_OBJ = 'sys__user_obj';
 const RESERVED_PREFIX = `${RESERVED_USER_OBJ}.`;
 
+// Every converse body key the SDK sends besides userMessage and sse. tools/check-docs.mjs
+// checks this list against the Converse field table in docs/api/operate.md.
+const CONVERSE_FIELDS = Object.freeze(['threadId', 'model_type', 'force_experience', 'request_vars', 'capabilities',
+  'context_id', 'context_type', 'preload_entry_ids', 'exclude_entry_ids', 'metadata']);
+const CONTEXT_TYPES = Object.freeze(['entry', 'category', 'ancestor_category', 'global']);
+const SUGGEST_CONTEXT_TYPES = Object.freeze(CONTEXT_TYPES.filter((t) => t !== 'entry'));
+const ENTRY_ID = /^\d_[0-9a-z]{8}$/;
+const VOICE_KEYS = Object.freeze(['voice_start_time', 'voice_end_time']);
+
 /**
  * Validate a per-turn `request_vars` map (the `{{ X }}` template interpolation
  * payload). PURE — no network. Rejects, with a typed `KalturaError`
@@ -107,6 +116,43 @@ export function assertRequestVars(vars, where = 'request_vars') {
   return /** @type {Record<string, string|number|boolean|null>} */ (vars);
 }
 
+/** A value for an error message: JSON, cut to 80 chars. @param {unknown} v */
+const shown = (v) => { const j = JSON.stringify(v) ?? String(v); return j.length > 80 ? `${j.slice(0, 77)}...` : j; };
+
+/**
+ * Check the typed converse options (`context_id`, `context_type`, `preload_entry_ids`,
+ * `exclude_entry_ids`, `metadata`) before any request. `undefined` means omitted; `null`
+ * is not a value for these keys. Throws `validation_error`; returns nothing.
+ * @param {Record<string, any>} opts @param {string} where
+ */
+function assertConverseOptions(opts, where) {
+  const bad = (title, detail) => { throw new KalturaError({ type: 'https://docs.kaltura.com/agentic/errors/validation_error', title, code: 'validation_error', detail: `${where}.${detail}` }); };
+  const { context_id: id, context_type: type, metadata: md } = opts;
+  if (type !== undefined && !CONTEXT_TYPES.includes(type)) bad('invalid context_type', `context_type must be one of: ${CONTEXT_TYPES.join(', ')} (got ${shown(type)}).`);
+  if (id !== undefined && (typeof id !== 'string' || id === '')) bad('invalid context_id', `context_id must be a non-empty string (got ${shown(id)}). Pass a category id as a string, like "12345", or omit context_id.`);
+  if (id !== undefined && type === 'entry' && !ENTRY_ID.test(id)) bad('invalid context_id', `context_id must be an entry id like 0_abcd1234 when context_type is "entry" (got ${shown(id)}).`);
+  for (const key of ['preload_entry_ids', 'exclude_entry_ids']) {
+    const list = opts[key];
+    if (list === undefined) continue;
+    if (!Array.isArray(list)) bad('invalid entry id list', `${key} must be an array of entry ids like ["0_abcd1234"] (got ${list === null ? 'null, omit the key instead' : typeof list}).`);
+    const i = list.findIndex((e) => typeof e !== 'string' || !ENTRY_ID.test(e));
+    if (i >= 0) bad('invalid entry id list', `${key} must be an array of entry ids like ["0_abcd1234"] (item ${i} is ${shown(list[i])}).`);
+  }
+  if (md === undefined) return;
+  if (md === null || typeof md !== 'object' || Array.isArray(md)) bad('invalid metadata', `metadata must be an object like { voice_start_time: 1.5, voice_end_time: 3 } (got ${md === null ? 'null, omit the key instead' : Array.isArray(md) ? 'array' : typeof md}).`);
+  for (const [k, v] of Object.entries(md)) {
+    if (!VOICE_KEYS.includes(k)) bad('invalid metadata', `metadata takes only ${VOICE_KEYS.join(' and ')} (got ${shown(k)}).`);
+    if (!Number.isFinite(v)) bad('invalid metadata', `metadata.${k} must be a finite number (got ${shown(v)}).`);
+  }
+}
+
+/**
+ * True unless the segment is an empty final chunk: no `type` or a final chunk, with `content`
+ * `undefined`, `null` or `''`, and not an `error`. Extra fields on the chunk do not matter.
+ * @param {{type?:string, content?:unknown, isFinal?:boolean}} seg
+ */
+const isReplySegment = (seg) => seg.type === 'error' || !(seg.content === undefined || seg.content === null || seg.content === '') || !(seg.isFinal === true || !seg.type);
+
 // ─────────────────────────── Converse (headless text) ───────────────────────────
 
 export class Conversations {
@@ -145,7 +191,9 @@ export class Conversations {
    * );
    * console.log(reply.text);
    *
-   * @param {object} opts {userMessage, threadId?, sse?, model_type?, force_experience?, request_vars?, capabilities?, signal?}
+   * @param {object} opts {userMessage, threadId?, sse?, model_type?, force_experience?, request_vars?, capabilities?, context_id?, context_type?, preload_entry_ids?, exclude_entry_ids?, metadata?, signal?}
+   *   `context_type` is one of `entry|category|ancestor_category|global`, `context_id` a non-empty string (an entry id like `0_abcd1234` when `context_type` is `entry`),
+   *   `preload_entry_ids`/`exclude_entry_ids` arrays of entry ids, `metadata` `{voice_start_time?, voice_end_time?}` finite numbers. A bad value throws `validation_error` before the converse request; any other key is not sent.
    *   `force_experience` must be one of EXPERIENCES (markdown|summarization|flashcards|avatar_only); anything else throws `validation_error` before any request is sent.
    *   `capabilities` is a per-message `{name:state}` override (validated pre-network); a stored `disabled` capability still wins.
    *   `signal` (optional `AbortSignal`) lets the caller cancel a stalled or unbounded-length
@@ -169,10 +217,11 @@ export class Conversations {
     // every value on/off/disabled). A stored `disabled` still wins at
     // runtime; this just rejects typos before the wire.
     if (opts.capabilities !== undefined) validateCapabilities(opts.capabilities, 'conversations.stream.capabilities');
+    assertConverseOptions(opts, 'conversations.stream');
     const body = { userMessage: opts.userMessage, sse: opts.sse ?? false };
-    // model_type stays lowercase ('fast'); OMIT to use the server default. There is no 'DEFAULT'
+    // model_type is lowercase 'fast' or 'smart'; OMIT to use the server default. There is no 'DEFAULT'
     // literal (docs/api/operate.md § Converse). Passed through verbatim, no normalization.
-    for (const k of ['threadId', 'model_type', 'force_experience', 'request_vars', 'capabilities']) {
+    for (const k of CONVERSE_FIELDS) {
       if (opts[k] !== undefined) body[k] = opts[k];
     }
     let stream;
@@ -208,8 +257,9 @@ export class Conversations {
    * words, no tool calls" instruction, and returns THAT result with
    * `spiralRecovered:true` added (`firstAttempt` carries the discarded empty
    * attempt's `toolCalls`/`spiralStopped` for diagnostics). Never retries more
-   * than once — if the nudge turn also comes back empty, that result is returned
-   * as-is with `spiralRecovered:false`. Off by default: without the flag,
+   * than once. If the nudge turn is itself another spiral, that result is returned
+   * as-is with `spiralRecovered:false`; a nudge turn with no segments throws `empty_reply`
+   * (see EMPTY REPLY below). Off by default: without the flag,
    * `spiralStopped` is returned as-is and no follow-up turn is sent.
    *
    * ERROR SEGMENTS: the server reports some refusals in-band (HTTP 200 plus a `type:"error"`
@@ -218,7 +268,12 @@ export class Conversations {
    * refusal, else `code:'stream_error'`, with the segment(s) and whatever text arrived first in
    * `error.body`. Pass `onErrorSegment:'return'` to get the result back instead; the segments
    * are then in `result.errors`.
-   * @param {object} opts {userMessage, threadId?, sse?, model_type?, force_experience?, request_vars?, capabilities?, recoverFromSpiral?, onErrorSegment?: 'throw'|'return'}
+   *
+   * EMPTY REPLY: a turn that comes back with HTTP 200 and no reply segment (no segments, or only
+   * empty final chunks) throws `code:'empty_reply'`, with the segments and `threadId` in
+   * `error.body`. If you sent `context_id`, check it. `onErrorSegment:'return'` returns the empty
+   * result instead. The raw `stream` and `collectConverse` never throw for it.
+   * @param {object} opts {userMessage, threadId?, sse?, model_type?, force_experience?, request_vars?, capabilities?, context_id?, context_type?, preload_entry_ids?, exclude_entry_ids?, metadata?, recoverFromSpiral?, onErrorSegment?: 'throw'|'return'} (option rules: see {@link stream})
    * @param {import('./client.js').KsLike} ks conversation or agent token
    * @returns {Promise<{text:string, threadId:string, messageId:string, segments:object[], toolCalls:object[], experiences:Record<string,object[]>, experiencesList:object[], kindCounts:object, errors:object[], spiralStopped:boolean, truncated:boolean, toolCallsInvalid:object[], oauthRequired:object[], spiralRecovered?:boolean, firstAttempt?:object, _meta:object}>}
    */
@@ -236,16 +291,28 @@ export class Conversations {
 
   /**
    * Raise a collected turn's `error` segments as a {@link KalturaError} (`thread_access_denied`
-   * for a thread the token's user does not own, else `stream_error`), unless the caller set
-   * `onErrorSegment:'return'`. The refusal arrives as HTTP 200, so without this it would look
-   * like an empty reply.
-   * @param {Awaited<ReturnType<typeof collectConverse>>} result @param {{threadId?:string, onErrorSegment?:'throw'|'return'}} opts
+   * for a thread the token's user does not own, else `stream_error`), and a turn with no reply
+   * segment as `empty_reply`, unless the caller set `onErrorSegment:'return'`. Both arrive as
+   * HTTP 200, so without this they would look like an empty reply.
+   * @param {Awaited<ReturnType<typeof collectConverse>>} result @param {{threadId?:string, context_id?:string, onErrorSegment?:'throw'|'return'}} opts
    */
   _throwOnErrorSegment(result, opts) {
-    if (opts.onErrorSegment === 'return' || !result.errors.length) return result;
-    throw errorFromErrorSegments(result.errors, {
-      path: '/assistant/converse', threadId: opts.threadId || result.threadId,
-      partial: { text: result.text, threadId: result.threadId, messageId: result.messageId },
+    if (opts.onErrorSegment === 'return') return result;
+    const threadId = opts.threadId || result.threadId;
+    if (result.errors.length) {
+      throw errorFromErrorSegments(result.errors, {
+        path: '/assistant/converse', threadId,
+        partial: { text: result.text, threadId: result.threadId, messageId: result.messageId },
+      });
+    }
+    if (result.segments.some(isReplySegment)) return result;
+    throw new KalturaError({
+      type: 'https://docs.kaltura.com/agentic/errors/empty_reply', title: 'empty reply', status: 200,
+      code: 'empty_reply', instance: '/assistant/converse',
+      detail: opts.context_id !== undefined
+        ? 'The reply had no segments (HTTP 200). Check context_id.'
+        : "The reply had no segments (HTTP 200). Pass onErrorSegment:'return' to get the empty result instead of this error.",
+      body: { segments: result.segments, ...(threadId ? { threadId } : {}) },
     });
   }
 
@@ -629,11 +696,25 @@ export class Followups {
    * vary between calls — don't assume a stable, fixed list. (Per-answer
    * followups are a different feature — set
    * capabilities.generate_followup_questions:on on converse.)
+   *
+   * `opts.contextType` is `category`, `ancestor_category` or `global`, with an optional
+   * `opts.contextId` string. `entry` is not supported: it throws `validation_error`, as does any
+   * other bad value, before the request. With no options the body is `{}`.
    * @param {string} ks
+   * @param {{contextId?:string, contextType?:'category'|'ancestor_category'|'global'}} [opts]
    */
-  async getSuggested(ks) {
+  async getSuggested(ks, opts = {}) {
     this._.assertAny(ks, 'followups.getSuggested');
-    const r = (await this._.genie('followup/get-suggested-questions?new_response=true', {}, ks)).data;
+    const { contextId } = opts ?? {};
+    /** @type {string|undefined} */ const contextType = opts?.contextType;
+    const bad = (detail) => { throw new KalturaError({ type: 'https://docs.kaltura.com/agentic/errors/validation_error', title: 'invalid context', code: 'validation_error', detail: `followups.getSuggested ${detail}` }); };
+    if (contextType === 'entry') bad(`does not take contextType "entry". Use ${SUGGEST_CONTEXT_TYPES.map((t) => `"${t}"`).join(', ')}, or omit it.`);
+    if (contextType !== undefined && !SUGGEST_CONTEXT_TYPES.includes(contextType)) bad(`contextType must be one of: ${SUGGEST_CONTEXT_TYPES.join(', ')} (got ${shown(contextType)}).`);
+    if (contextId !== undefined && (typeof contextId !== 'string' || contextId === '')) bad(`contextId must be a non-empty string (got ${shown(contextId)}). Pass a category id as a string, like "12345".`);
+    const body = {};
+    if (contextId !== undefined) body.context_id = contextId;
+    if (contextType !== undefined) body.context_type = contextType;
+    const r = (await this._.genie('followup/get-suggested-questions?new_response=true', body, ks)).data;
     return Array.isArray(r?.data) ? r.data : (r?.data?.questions || r?.questions || []);
   }
 

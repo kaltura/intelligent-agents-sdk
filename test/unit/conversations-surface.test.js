@@ -147,6 +147,39 @@ test('followups.list merges opts.filter under GenieListQuestionFilter objectType
   assert.deepEqual(ff.calls[0].body.filter.idsIn, ['q1']);
 });
 
+const SUGGEST_ROUTE = { match: 'followup/get-suggested-questions', respond: () => ({ status: 200, body: { data: [] } }) };
+
+test('followups.getSuggested sends {} with no options', async () => {
+  const { mgmt, ff } = harness([SUGGEST_ROUTE]);
+  await mgmt.followups.getSuggested(ADMIN_KS);
+  assert.deepEqual(ff.calls[0].body, {});
+});
+
+test('followups.getSuggested sends context_id and context_type', async () => {
+  const { mgmt, ff } = harness([SUGGEST_ROUTE]);
+  await mgmt.followups.getSuggested(ADMIN_KS, { contextId: '12345', contextType: 'category' });
+  await mgmt.followups.getSuggested(ADMIN_KS, { contextType: 'global' });
+  assert.deepEqual(ff.calls[0].body, { context_id: '12345', context_type: 'category' });
+  assert.deepEqual(ff.calls[1].body, { context_type: 'global' });
+});
+
+test('followups.getSuggested rejects contextType entry before any request', async () => {
+  const { mgmt, ff } = harness([SUGGEST_ROUTE]);
+  await assert.rejects(
+    () => mgmt.followups.getSuggested(ADMIN_KS, { contextType: 'entry', contextId: '0_abcd1234' }),
+    (e) => e.code === 'validation_error' && /does not take contextType "entry"/.test(e.detail),
+  );
+  assert.equal(ff.calls.length, 0);
+});
+
+test('followups.getSuggested rejects an unknown contextType and a non-string contextId', async () => {
+  const { mgmt, ff } = harness([SUGGEST_ROUTE]);
+  await assert.rejects(() => mgmt.followups.getSuggested(ADMIN_KS, { contextType: 'bogus' }), (e) => e.code === 'validation_error' && /one of: category, ancestor_category, global/.test(e.detail));
+  await assert.rejects(() => mgmt.followups.getSuggested(ADMIN_KS, { contextId: 1 }), (e) => e.code === 'validation_error' && /contextId must be a non-empty string/.test(e.detail));
+  await assert.rejects(() => mgmt.followups.getSuggested(ADMIN_KS, { contextId: '' }), (e) => e.code === 'validation_error');
+  assert.equal(ff.calls.length, 0);
+});
+
 test('admin-only conversation methods reject a conversation token with wrong_token_scope', async () => {
   const { mgmt } = harness([]);
   await assert.rejects(async () => mgmt.threads.push({ id: 't1', content: 'x' }, CONV_TOKEN), (e) => e.code === 'wrong_token_scope');

@@ -173,6 +173,80 @@ test('conversations.send: a JSON error body typed application/json throws instea
   await assert.rejects(() => mgmt.conversations.send({ userMessage: 'hi' }, CONV_TOKEN), (e) => /conversation unavailable/.test(e.detail));
 });
 
+// ── empty_reply: a 200 with no reply segment ──
+
+const SPIRAL = Array.from({ length: 20 }, (_, i) => JSON.stringify({ type: 'tool', content: `show_widget {"kind":"followups","data":"{\\"q\\":${i}}"}` })).join('\n') + '\n';
+
+test('conversations.send throws empty_reply on a 200 with no segments', async () => {
+  const { mgmt } = mgmtFor('');
+  await assert.rejects(
+    () => mgmt.conversations.send({ userMessage: 'hi' }, CONV_TOKEN),
+    (e) => e.code === 'empty_reply' && e.status === 200 && Array.isArray(e.body.segments) && e.body.segments.length === 0 && !/context_id/.test(e.detail) && /onErrorSegment/.test(e.detail),
+  );
+});
+
+test('empty_reply says check context_id only when context_id was sent', async () => {
+  const { mgmt } = mgmtFor('');
+  await assert.rejects(
+    () => mgmt.conversations.send({ userMessage: 'hi', context_type: 'category', context_id: '1' }, CONV_TOKEN),
+    (e) => e.code === 'empty_reply' && /Check context_id\./.test(e.detail),
+  );
+});
+
+test('a single empty final chunk is still an empty reply', async () => {
+  const { mgmt } = mgmtFor('{"type":"think","content":"","isFinal":true,"extra":{"n":1}}\n');
+  await assert.rejects(() => mgmt.conversations.send({ userMessage: 'hi' }, CONV_TOKEN), (e) => e.code === 'empty_reply');
+});
+
+test('a normal reply with extra fields on its final chunk is returned', async () => {
+  const body = OK_REPLY + '{"type":"think","content":"","isFinal":true,"extra":{"n":1}}\n';
+  const { mgmt } = mgmtFor(body);
+  const r = await mgmt.conversations.send({ userMessage: 'hi' }, CONV_TOKEN);
+  assert.equal(r.text, 'Hi');
+});
+
+test("onErrorSegment:'return' returns the empty result", async () => {
+  const { mgmt } = mgmtFor('');
+  const r = await mgmt.conversations.send({ userMessage: 'hi', onErrorSegment: 'return' }, CONV_TOKEN);
+  assert.equal(r.segments.length, 0);
+  assert.equal(r.errors.length, 0);
+});
+
+test('converse stream on an empty 200 yields nothing and does not throw', async () => {
+  const { mgmt } = mgmtFor('');
+  const out = [];
+  for await (const seg of mgmt.conversations.stream({ userMessage: 'hi' }, CONV_TOKEN)) out.push(seg);
+  assert.deepEqual(out, []);
+});
+
+test('thread_access_denied wins over empty_reply', async () => {
+  const { mgmt } = mgmtFor(JSON.stringify({ role: 'assistant', type: 'error', content: 'No permission for thread', isFinal: true, extra: { n: 1 } }) + '\n');
+  await assert.rejects(() => mgmt.conversations.send({ userMessage: 'hi', threadId: 'foreign-1' }, CONV_TOKEN), (e) => e.code === 'thread_access_denied');
+});
+
+test('converseOnce throws empty_reply too', async () => {
+  const { mgmt } = mgmtFor('');
+  await assert.rejects(() => mgmt.converseOnce(1, 'x', {}, CONV_TOKEN), (e) => e.code === 'empty_reply');
+});
+
+test('the spiral-recovery retry throws empty_reply when the nudge has no segments', async () => {
+  let n = 0;
+  const { mgmt } = mgmtFor(() => (++n === 1 ? SPIRAL : ''));
+  await assert.rejects(
+    () => mgmt.conversations.send({ userMessage: 'hi', recoverFromSpiral: true }, CONV_TOKEN),
+    (e) => e.code === 'empty_reply',
+  );
+  assert.equal(n, 2);
+});
+
+test('empty_reply carries the threadId that was sent', async () => {
+  const { mgmt } = mgmtFor('');
+  await assert.rejects(
+    () => mgmt.conversations.send({ userMessage: 'hi', threadId: 't-1' }, CONV_TOKEN),
+    (e) => e.code === 'empty_reply' && e.body.threadId === 't-1',
+  );
+});
+
 // ───────────────────────── KalturaChatSession ─────────────────────────
 
 function chat(reply, cfg = {}) {
