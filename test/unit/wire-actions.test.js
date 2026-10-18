@@ -36,6 +36,13 @@ test('the GenUI runtimes all classify as render-genui (except user-properties-fo
   }
 });
 
+test('video-tool classifies as render-genui with runtime external-video', () => {
+  const a = classifyAgentAction({ type: 'unisphere-tool', metadata: { runtimeName: 'video-tool' } });
+  assert.equal(a.type, 'render-genui');
+  assert.equal(a.runtime, 'external-video');
+  assert.equal(a.runtimeName, 'video-tool');
+});
+
 test('user-properties-form classifies as structured-data-form', () => {
   const a = classifyAgentAction({ type: 'user-properties-form-tool', metadata: { runtimeName: 'user-properties-form-tool' } });
   assert.equal(a.type, 'structured-data-form');

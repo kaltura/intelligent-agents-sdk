@@ -29,6 +29,58 @@ test('normalizeRuntime strips -tool and tolerates pre-stripped / non-string', ()
   assert.equal(normalizeRuntime(42), '');
 });
 
+test('normalizeRuntime maps video-tool and video to external-video', () => {
+  assert.equal(normalizeRuntime('video-tool'), 'external-video');
+  assert.equal(normalizeRuntime('video'), 'external-video');
+  assert.equal(normalizeRuntime(' video-tool '), 'external-video');
+  assert.equal(normalizeRuntime('external-video-tool'), 'external-video');
+  assert.equal(normalizeRuntime('video-gallery-tool'), 'video-gallery');
+});
+
+test('normalizeRuntime alias lookup ignores prototype names (guard)', () => {
+  for (const n of ['constructor', '__proto__', 'toString', 'hasOwnProperty']) assert.equal(normalizeRuntime(n), n);
+});
+
+test('isKnownRuntime(video-tool) is true; RUNTIMES stays nine', () => {
+  assert.equal(isKnownRuntime('video-tool'), true);
+  assert.equal(isKnownRuntime('video'), true);
+  assert.equal(RUNTIMES.length, 9);
+  assert.ok(!RUNTIMES.includes('video'));
+});
+
+test('SegmentAssembler assembles video-tool fragments as one external-video widget', () => {
+  const out = [];
+  const a = new SegmentAssembler({ onWidget: (w) => out.push(w) });
+  a.ingest({ type: 'unisphere-tool', metadata: { widgetName: 'unisphere.widget.genie', runtimeName: 'video-tool' }, content: '' });
+  a.ingest({ type: 'unisphere-tool', content: 'url: https://www.youtube.com/watch?v=dQw4w9WgXcQ' });
+  a.flush('turnEnd');
+  assert.equal(out.length, 1);
+  assert.equal(out[0].runtime, 'external-video');
+  assert.equal(out[0].runtimeName, 'video-tool');
+  assert.equal(out[0].model.url, 'https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+});
+
+test('ExperienceRenderer renders a video-tool widget with the external-video renderer', () => {
+  const r = new ExperienceRenderer(CTX);
+  assert.equal(r.has('video-tool'), true);
+  const d = r.render('video-tool', { url: 'https://www.kaltura.com/p/1234567/sp/123456700/embed/x', title: 'T' });
+  assert.equal(d.kind, 'external-video');
+  assert.equal(d.runtime, 'external-video');
+  assert.equal(d.runtimeName, 'video-tool');
+  assert.equal(d._meta.firstClass, true);
+  assert.equal(d.data.embedUrl, '');
+  assert.equal(d.data.url, 'https://www.kaltura.com/p/1234567/sp/123456700/embed/x');
+});
+
+test('register("video", fn) overrides external-video', () => {
+  const seen = [];
+  const r = new ExperienceRenderer().register('video', (m) => { seen.push(m); return { kind: 'custom', data: {} }; });
+  assert.equal(r.has('external-video-tool'), true);
+  assert.equal(r.render('external-video', { url: 'https://y.com/v' }).kind, 'custom');
+  assert.equal(r.render('video-tool', { url: 'https://y.com/v' }).kind, 'custom');
+  assert.equal(seen.length, 2);
+});
+
 test('RUNTIMES is the frozen nine-name set, all known', () => {
   assert.equal(RUNTIMES.length, 9);
   assert.ok(Object.isFrozen(RUNTIMES));

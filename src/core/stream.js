@@ -132,6 +132,16 @@ export const GENUI_RUNTIMES = Object.freeze([
   'content-gallery-tool',
 ]);
 
+/** Alias runtime names (after `-tool` stripping) and the first-class runtime each one renders as. Null-prototype so `constructor` never matches. */
+const RUNTIME_ALIASES = Object.freeze({ __proto__: null, video: 'external-video' });
+
+/**
+ * Map a `-tool`-stripped GenUI runtime alias (such as `video`) to its first-class runtime. Aliases are not in {@link GENUI_RUNTIMES}.
+ * @param {string} runtime A `-tool`-stripped runtime name.
+ * @returns {string} The first-class runtime, or `runtime` unchanged when it is not an alias.
+ */
+export function genuiRuntimeAlias(runtime) { return RUNTIME_ALIASES[runtime] || runtime; }
+
 /** Spoken/visible prose types — accumulated into `text`. */
 export const SPOKEN_TYPES = new Set(['text', 'avatar', 'avatar-filler']);
 

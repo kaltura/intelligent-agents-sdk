@@ -27,7 +27,7 @@ Wire `runtimeName` → normalized dispatch key (the renderer registry key). Sour
 | 9 | `content-gallery-tool` | `content-gallery` | Gallery of content slides/cards (with **images**) |
 <!-- /nova-target -->
 
-`normalizeRuntime(name)` (`parse.js`) strips a trailing `-tool` and trims; it tolerates an already-normalized name and a non-string (→ `''`). `isKnownRuntime(name)` tests membership in this set. Any other runtime is NOT in this set and falls through to a safe fallback (see [safety-and-restrictions.md](safety-and-restrictions.md)).
+`normalizeRuntime(name)` (`parse.js`) strips a trailing `-tool` and trims; it tolerates an already-normalized name and a non-string (→ `''`). It also maps the alias `video-tool` (or `video`) to `external-video`: that widget renders with the external-video renderer, `onAgentAction` sees `runtime:'external-video'`, and `runtimeName` keeps the wire value. A renderer registered under `video` replaces the external-video one. `isKnownRuntime(name)` tests membership in this set. Any other runtime is NOT in this set and falls through to a safe fallback (see [safety-and-restrictions.md](safety-and-restrictions.md)).
 
 ## How a widget reaches your screen (the data flow)
 

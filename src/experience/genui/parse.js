@@ -16,7 +16,7 @@
  * malformed content (never throws).
  */
 
-import { GENUI_RUNTIMES } from '../../core/stream.js';
+import { GENUI_RUNTIMES, genuiRuntimeAlias } from '../../core/stream.js';
 import { parseYamlBlock } from './yaml.js';
 
 /** The shared `widgetName` every built-in GenUI runtime segment carries. */
@@ -38,14 +38,15 @@ const RUNTIME_SET = new Set(RUNTIMES);
 
 /**
  * Normalize a wire `runtimeName` to its dispatch key by stripping a trailing
- * `-tool`. Tolerates an already-stripped name, surrounding whitespace, and a
+ * `-tool`, then mapping an alias such as `video-tool` to `external-video`.
+ * Tolerates an already-stripped name, surrounding whitespace, and a
  * non-string (→ `''`). Pure, never throws.
  * @param {unknown} runtimeName e.g. `"flashcards-tool"` or `"flashcards"`
  * @returns {string} e.g. `"flashcards"`
  */
 export function normalizeRuntime(runtimeName) {
   if (typeof runtimeName !== 'string') return '';
-  return runtimeName.trim().replace(/-tool$/, '');
+  return genuiRuntimeAlias(runtimeName.trim().replace(/-tool$/, ''));
 }
 
 /** True if `name` (normalized) is one of the nine first-class runtimes. @param {unknown} name */

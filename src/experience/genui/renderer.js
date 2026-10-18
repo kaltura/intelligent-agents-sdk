@@ -103,8 +103,8 @@ export class ExperienceRenderer {
 
   /**
    * Register (or override) a renderer for a runtime. The name is normalized
-   * (`flashcards-tool` and `flashcards` are the same key). Returns `this` for
-   * chaining. Throws `bad_request` (BEFORE any use) on a bad name/fn.
+   * (`flashcards-tool` and `flashcards` are the same key, and `video` or
+   * `video-tool` is `external-video`). Returns `this` for chaining. Throws `bad_request` (BEFORE any use) on a bad name/fn.
    * @param {string} runtimeName @param {(model:Record<string,unknown>, ctx?:object)=>{kind:string,data:object}} fn
    * @returns {this}
    * @throws {KalturaError} `bad_request` when the name is empty or `fn` is not a function.
