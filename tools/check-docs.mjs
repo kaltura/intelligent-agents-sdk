@@ -967,6 +967,73 @@ describe('16. Docs accuracy', () => {
     const offenders = DOCS.filter((f) => f !== 'docs/lifecycle/README.md' && count.test(read(f)));
     assert.deepEqual(offenders, [], `these pages state an action-type count (link to docs/lifecycle/README.md instead): ${offenders.join(', ')}`);
   });
+
+  // Catalog and agents: the typedefs in src/management are the source for the docs tables.
+  const section = (text, heading) => {
+    const start = text.indexOf(`## ${heading}`);
+    assert.ok(start >= 0, `section "${heading}" missing`);
+    const rest = text.slice(start + 3);
+    const end = rest.indexOf('\n## ');
+    return rest.slice(0, end < 0 ? undefined : end);
+  };
+  /** Values of a quoted string union like `'+a'|'-a'` as a list. */
+  const unionValues = (union) => [...union.matchAll(/'([^']+)'/g)].map((m) => m[1]);
+
+  test('catalog filter keys and orderBy values in design.md match catalog.js', () => {
+    const src = read('src/management/catalog.js');
+    const typedef = src.match(/@typedef \{object\} CatalogListFilter([\s\S]*?)\*\//)?.[1] ?? '';
+    const keys = [...typedef.matchAll(/@property \{[^}]+\} \[(\w+)\]/g)].map((m) => m[1]);
+    assert.ok(keys.length > 0, 'CatalogListFilter has no properties in catalog.js');
+    const orderBy = unionValues(src.match(/orderBy\?:((?:'[^']+'\|?)+)/)?.[1] ?? '');
+    assert.ok(orderBy.length > 0, 'catalog.list has no orderBy union in catalog.js');
+    const text = section(read('docs/api/design.md'), 'Browse the Catalog');
+    const rows = [...text.matchAll(/^\| `(\w+)` \|/gm)].map((m) => m[1]);
+    assert.deepEqual(rows, keys, 'the filter key table in design.md must list the CatalogListFilter keys, in order');
+    for (const v of orderBy) assert.ok(text.includes(`\`"${v}"\``), `design.md must name orderBy value "${v}"`);
+  });
+
+  test('design.md says nothing about what adminTagsIn or agentScope do on the catalog', () => {
+    const text = section(read('docs/api/design.md'), 'Browse the Catalog');
+    const effect = /\b(finds?|returns?|matches|narrows?|limits?|scopes? to)\b/i;
+    const parts = text.split('\n').flatMap((l) => (l.startsWith('|') ? [l] : l.split(/(?<=[.!?])\s+/)));
+    const bad = parts.filter((p) => /`(adminTagsIn|agentScope)`/.test(p) && effect.test(p));
+    assert.deepEqual(bad, [], `catalog adminTagsIn and agentScope effects are not documented: ${bad.join(' | ')}`);
+  });
+
+  test('the visual attribute table in design.md matches the VisualAttrs unions in catalog.js', () => {
+    const src = read('src/management/catalog.js');
+    const typedef = src.match(/@typedef \{object\} VisualAttrs([\s\S]*?)\*\//)?.[1] ?? '';
+    const unions = [...typedef.matchAll(/@property \{((?:'[^']+'\|?)+)\} \[?(\w+)\]?/g)].map((m) => [m[2], unionValues(m[1])]);
+    assert.ok(unions.length >= 5, 'VisualAttrs has no string unions in catalog.js');
+    const text = read('docs/api/design.md');
+    for (const [attr, values] of unions) {
+      const row = text.split('\n').find((l) => l.startsWith(`| \`${attr}\` |`));
+      assert.ok(row, `design.md needs a visual attribute row for ${attr}`);
+      const cells = [...row.split('|')[2].matchAll(/`([^`]+)`/g)].map((m) => m[1]);
+      assert.deepEqual(cells, values, `design.md row for ${attr} must list exactly ${values.join(', ')}`);
+    }
+  });
+
+  test('the agents orderBy values in management-operations.md match agents.js', () => {
+    const src = read('src/management/agents.js');
+    const values = unionValues(src.match(/orderBy\?:((?:'[^']+'\|?)+)/)?.[1] ?? '');
+    assert.ok(values.length > 0, 'agents.list has no orderBy union in agents.js');
+    const text = section(read('docs/api/management-operations.md'), 'Agents');
+    for (const v of values) assert.ok(text.includes(`\`${v}\``), `management-operations.md must name orderBy value ${v}`);
+    const stale = scanFiles().filter((f) => f.endsWith('.md') && /does not take `orderBy`/.test(read(f)));
+    assert.deepEqual(stale, [], `these pages say agents.list does not take orderBy: ${stale.join(', ')}`);
+  });
+
+  test('the agent asr row names the providers in agents.js', () => {
+    const src = read('src/management/agents.js');
+    const providers = unionValues(src.match(/@property \{((?:'[^']+'\|?)+)\}\s+provider/)?.[1] ?? '');
+    assert.ok(providers.length > 0, 'agents.js has no AgentAsr provider union');
+    const row = read('docs/api/build/avatar-and-agent.md').split('\n').find((l) => l.startsWith('| `asr` |'));
+    assert.ok(row, 'avatar-and-agent.md needs an asr row in the agent field table');
+    const clause = row.match(/`provider` is ([^.]*)\./)?.[1] ?? '';
+    const cells = [...clause.matchAll(/`"([^"]+)"`/g)].map((m) => m[1]);
+    assert.deepEqual(cells, providers, `the asr row must list exactly ${providers.join(', ')}`);
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════

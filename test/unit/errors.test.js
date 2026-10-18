@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { KalturaError, errorFromResponse, errorFromOkBody } from '../../src/core/errors.js';
+import { KalturaError, errorFromResponse, errorFromOkBody, errorFromErrorSegments } from '../../src/core/errors.js';
 
 test('maps HTTP statuses to stable codes', () => {
   assert.equal(errorFromResponse({ status: 402, path: '/x', body: null }).code, 'payment_required');
@@ -81,4 +81,43 @@ test('trailing dots and whitespace are trimmed from the upstream message, even w
 test('payment_required is marked not retryable; other statuses give no opinion', () => {
   assert.equal(errorFromResponse({ status: 402, path: '/x', body: null }).retryable, false);
   assert.equal(errorFromResponse({ status: 403, path: '/x', body: null }).retryable, undefined);
+});
+
+test('a 400 with a message array puts the joined messages in detail', () => {
+  const body = { message: ['a must be one of: x, y', 'b should not exist'], error: 'Bad Request', statusCode: 400 };
+  const e = errorFromResponse({ status: 400, path: '/x', body });
+  assert.equal(e.code, 'bad_request');
+  assert.ok(e.detail.includes('a must be one of: x, y; b should not exist'));
+  assert.deepEqual(e.body.message, body.message);
+});
+
+test('a message array skips non-strings and an empty array falls back to error', () => {
+  const e = errorFromResponse({ status: 400, path: '/x', body: { message: [1, null, ''], error: 'Bad Request' } });
+  assert.equal(e.detail, 'Bad Request');
+  assert.equal(errorFromResponse({ status: 400, path: '/x', body: { message: [], error: 'Bad Request' } }).detail, 'Bad Request');
+});
+
+test('a long message array is cut to 500 chars in detail and kept whole in body', () => {
+  const e = errorFromResponse({ status: 400, path: '/x', body: { message: ['y'.repeat(800)], error: 'Bad Request' } });
+  assert.equal(e.detail.length, 500);
+  assert.equal(e.body.message[0].length, 800);
+});
+
+test('a message array is redacted before it is cut, so a secret straddling the cutoff is hidden', () => {
+  const secret = 'a1b2c3d4e5f60718'.repeat(2);
+  const e = errorFromResponse({ status: 400, path: '/x', body: { message: ['x'.repeat(480), `secret ${secret}`], error: 'Bad Request' } });
+  assert.ok(!e.detail.includes(secret.slice(0, 8)), e.detail);
+  assert.ok(!e.message.includes(secret.slice(0, 8)), e.message);
+});
+
+test('string bodies, detail arrays and error segments are redacted before they are cut', () => {
+  const secret = 'a1b2c3d4e5f60718'.repeat(2);
+  const long = `${'x'.repeat(480)} secret ${secret}`;
+  const fromString = errorFromResponse({ status: 500, path: '/x', body: long });
+  const fromDetail = errorFromResponse({ status: 422, path: '/x', body: { detail: [{ msg: 'x'.repeat(480) }, { msg: `secret ${secret}` }] } });
+  const fromSegments = errorFromErrorSegments([{ type: 'error', content: long }]);
+  for (const e of [fromString, fromDetail, fromSegments]) {
+    assert.ok(!e.detail.includes(secret.slice(0, 8)), e.detail);
+    assert.ok(!e.message.includes(secret.slice(0, 8)), e.message);
+  }
 });

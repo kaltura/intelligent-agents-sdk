@@ -225,7 +225,8 @@ export function errorFromOkBody(body, path) {
 export function errorFromErrorSegments(segments, ctx = {}) {
   const errs = segments.filter((s) => s && s.type === 'error');
   if (!errs.length) return null;
-  const text = errs.map((s) => (typeof s.content === 'string' && s.content ? s.content : JSON.stringify(s))).join('; ').slice(0, 500);
+  const joined = errs.map((s) => (typeof s.content === 'string' && s.content ? s.content : JSON.stringify(s))).join('; ');
+  const text = redactString(joined).slice(0, 500);
   const denied = /No permission for thread/i.test(text);
   const code = denied ? 'thread_access_denied' : 'stream_error';
   const hint = denied
@@ -245,16 +246,20 @@ export function errorFromErrorSegments(segments, ctx = {}) {
 
 /** @param {unknown} body */
 function extractMessage(body) {
-  if (typeof body === 'string') return body.slice(0, 500);
+  if (typeof body === 'string') return redactString(body).slice(0, 500);
   if (body && typeof body === 'object') {
     const b = /** @type {Record<string, unknown>} */ (body);
     if (typeof b.message === 'string') return b.message;
+    if (Array.isArray(b.message)) {
+      const msgs = b.message.filter((m) => typeof m === 'string' && m);
+      if (msgs.length) return redactString(msgs.join('; ')).slice(0, 500);
+    }
     if (typeof b.detail === 'string') return b.detail;
     // 422 validation errors return detail as an array of {loc, msg, type}; join the msgs
     // so the actionable text (e.g. "Input should be 'markdown','flashcards'…") surfaces.
     if (Array.isArray(b.detail)) {
       const msgs = b.detail.map((d) => (d && typeof d === 'object' && d.msg) ? String(d.msg) : (typeof d === 'string' ? d : '')).filter(Boolean);
-      if (msgs.length) return msgs.join('; ').slice(0, 500);
+      if (msgs.length) return redactString(msgs.join('; ')).slice(0, 500);
     }
     if (typeof b.error === 'string') return b.error;
   }

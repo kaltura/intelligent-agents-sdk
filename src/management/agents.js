@@ -8,6 +8,13 @@ import { uuidv4 } from '../core/ids.js';
 import { KalturaError } from '../core/errors.js';
 
 /**
+ * Speech recognition settings on an agent.
+ * @typedef {object} AgentAsr
+ * @property {string} language  A language code, for example 'en'.
+ * @property {'kaltura'|'kaltura-hebrew'|'elevenlabs'|'soniox'} provider
+ */
+
+/**
  * Admin-tag patterns that mark a PRODUCTION / keep resource. `agents.delete`
  * refuses to delete an agent carrying any of these unless `allowProtected:true`
  * is passed — the guardrail against an automated cleanup-by-tag sweep nuking a
@@ -67,24 +74,21 @@ export class Agents {
 
   /**
    * List agents. READ. Async-iterable + awaitable (first page).
+   * `filter` is sent as-is (default `{}`). `orderBy` is sent top-level next to
+   * `filter`. Keys, values and sort behavior:
+   * docs/api/management-operations.md#agents.
    *
-   * `filter` is passed through to `agent/list` as-is (default `{}`). Keys:
-   * `agentId`, `adminTagsIn`, `adminTagsNotIn`, `searchValue` (case-insensitive
-   * substring on `displayName`/`agentId`); an unrecognized key returns
-   * `bad_request`. The wire request also takes a top-level `orderBy`
-   * (`+createdAt`, `-createdAt`, `+updatedAt`, `-updatedAt`), which this
-   * method does not take.
+   * @example <caption>Newest agents first, filtered by an admin tag</caption>
+   * const newest = await k.agents.list(adminKs, { filter: { adminTagsIn: ['lobby'] }, orderBy: '-createdAt' }).all();
    *
-   * @example <caption>Filter by an admin tag</caption>
-   * const tagged = await k.agents.list(adminKs, { filter: { adminTagsIn: ['lobby'] } }).all();
-   *
-   * @param {string} ks @param {{filter?:object,pageSize?:number}} [opts]
+   * @param {string} ks
+   * @param {{filter?:object, orderBy?:'+createdAt'|'-createdAt'|'+updatedAt'|'-updatedAt', pageSize?:number}} [opts]
    */
   list(ks, opts = {}) {
     this._.assertAdmin(ks, 'agents.list');
     return paginate({
       style: 'offset', pageSize: opts.pageSize,
-      fetchPage: (pager) => this._.agentic('agent/list', { filter: opts.filter || {}, pager }, ks).then((r) => {
+      fetchPage: (pager) => this._.agentic('agent/list', { filter: opts.filter || {}, ...(opts.orderBy ? { orderBy: opts.orderBy } : {}), pager }, ks).then((r) => {
         const page = r.data;
         return Array.isArray(page?.objects) ? { ...page, objects: page.objects.map(screenShareFromWire) } : page;
       }),
@@ -102,7 +106,7 @@ export class Agents {
    * automatically, but creation is not idempotent). `intellect.id` is the intellect's
    * configId — no separate genieId is needed (the request body's `intellect`
    * only takes `intellectType`+`id`).
-   * @param {object} body {displayName,intellect:{intellectType:'genie',id},avatarIds?,adminTags?,maxConversationLength?,widgetConfig?,embedConfig?,screenShare?:{enabled?:boolean,prompt?:string}}
+   * @param {object} body {displayName,intellect:{intellectType:'genie',id},avatarIds?,adminTags?,maxConversationLength?,widgetConfig?,embedConfig?,screenShare?:{enabled?:boolean,prompt?:string},asr?:AgentAsr}
    * @param {string} ks
    * @param {{idempotencyKey?:string}} [opts]
    */
@@ -115,6 +119,7 @@ export class Agents {
   /**
    * Update an agent. WRITE — idempotent for a given body. `screenShare` is
    * `{enabled?, prompt?}`, the same as on {@link Agents#create}.
+   * `asr` is `{language, provider}` (see {@link AgentAsr}), sent as-is.
    * @param {object} body {agentId,...} @param {string} ks
    */
   async update(body, ks) {

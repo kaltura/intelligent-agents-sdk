@@ -81,28 +81,28 @@ test('catalog.createFace/createBackground send an explicit type field ("Face"/"B
 
   const face = await k.catalog.createFace(
     file,
-    { name: 'QA face', genderPresentation: 'Feminine', background: 'Solid', skinTone: 'Dark', hairColor: 'Black' },
+    { name: 'QA face', genderPresentation: 'Feminine', background: 'Color', skinTone: 'MediumTan', hairColor: 'Black' },
     ADMIN,
   );
   assert.equal(face.itemId, 'item-2');
   let call = f.calls.find((c) => c.url.includes('/catalog-item/create'));
   assert.equal(call.body.get('type'), 'Face');
   let attributes = JSON.parse(call.body.get('attributes'));
-  assert.equal(attributes.visual.background, 'Solid', 'non-default background attr must land in the multipart attributes payload');
-  assert.equal(attributes.visual.skinTone, 'Dark');
+  assert.equal(attributes.visual.background, 'Color', 'non-default background attr must land in the multipart attributes payload');
+  assert.equal(attributes.visual.skinTone, 'MediumTan');
   assert.equal(attributes.visual.hairColor, 'Black');
 
   f.calls.length = 0;
   await k.catalog.createBackground(
     file,
-    { name: 'QA bg', genderPresentation: 'Masculine', background: 'Outdoor', ageGroup: 'Senior', hairStyle: ['Long'] },
+    { name: 'QA bg', genderPresentation: 'Masculine', background: 'Image', ageGroup: 'OlderAdult', hairStyle: ['Long'] },
     ADMIN,
   );
   call = f.calls.find((c) => c.url.includes('/catalog-item/create'));
   assert.equal(call.body.get('type'), 'Background');
   attributes = JSON.parse(call.body.get('attributes'));
-  assert.equal(attributes.visual.background, 'Outdoor', 'non-default background attr must land in the multipart attributes payload');
-  assert.equal(attributes.visual.ageGroup, 'Senior');
+  assert.equal(attributes.visual.background, 'Image', 'non-default background attr must land in the multipart attributes payload');
+  assert.equal(attributes.visual.ageGroup, 'OlderAdult');
   assert.deepEqual(attributes.visual.hairStyle, ['Long']);
 });
 

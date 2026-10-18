@@ -53,7 +53,7 @@ A code outside `LANGUAGE_CODES` throws `bad_request` before any network call, ev
 
 | Setting | Where |
 |---|---|
-| Voice language | `catalog.createVoice(file, { name, description, language })`. ISO 639-1 code, defaults to `"en"`. See [Design](api/design.md) |
+| Voice language | `catalog.createVoice(file, { name, description, language })`. A language code from the accepted list, defaults to `"en"`. See [Design](api/design.md) |
 | Conversation language on the wire | The `clientConfiguration` message carries a `languageCode` field. It is part of the wire protocol, not an SDK option you set. See [client configuration](wire-protocol/client-configuration.md) |
 
 ## Which language is supported, and how to ask for one

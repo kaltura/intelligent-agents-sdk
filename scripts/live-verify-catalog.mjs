@@ -4,9 +4,16 @@
  *
  * Exercises the Catalog write path:
  *
+ *   1b catalog.createVisual: attribute values outside the accepted lists reject with bad_request
+ *      and the error lists the accepted values
  *   1  catalog.createVisual — upload a scratch custom Visual (1x1 PNG)
  *   2  catalog.get          — visible, right shape
  *   3  catalog.list         — filtered to Visual, the new item appears
+ *   3b-3d  list filters    : itemIdEqual, idsIn, and type + idsIn narrow to the right items
+ *   3e list orderBy        : -createdAt sorts newest first; +createdAt resolves (order logged)
+ *   3f list languageEqual  : voices filtered to 'en' carry language 'en'
+ *   3g list rejections     : a bad orderBy and an unknown filter key reject with bad_request
+ *   3h list adminTagsIn, agentScope: both resolve (contents are not asserted)
  *   4  catalog.update       — rename persists on a follow-up get
  *   4b catalog.importVoiceFromElevenLabs — an unknown provider voiceId creates
  *      nothing server-side, so the rejection path is free to exercise live
@@ -67,10 +74,25 @@ function check(step, ok, detail) {
 const kaltura = new Management(target);
 let admin;
 let itemId;
+let strayItemId;
 
 try {
   admin = await kaltura.sessions.createAdminToken({ userId: 'sdk-live-verify' });
   record('admin-token-mint', true, { secondsRemaining: admin.secondsRemaining() });
+
+  // 1b: attribute values outside the accepted lists are rejected, and the error lists the accepted values.
+  const badFile = new Blob([PNG_1PX], { type: 'image/png' });
+  try {
+    const stray = await kaltura.catalog.createVisual(badFile, {
+      name: `Live Verify Bad Attrs ${RUN_TAG}`, genderPresentation: 'Feminine',
+      background: 'Bogus', skinTone: 'Dark', ageGroup: 'Teen', hairColor: 'Green',
+    }, admin);
+    strayItemId = stray.itemId;
+    check('1b-create-visual-bad-attrs-rejects', false, { message: 'expected a rejection, got a created item', itemId: strayItemId });
+  } catch (err) {
+    const detail = err?.detail ?? '';
+    check('1b-create-visual-bad-attrs-rejects', err?.code === 'bad_request' && err?.status === 400 && ['Color', 'MediumTan', 'OlderAdult', 'Blonde'].every((v) => detail.includes(v)), { code: err?.code, status: err?.status, message: err?.body?.message });
+  }
 
   // 1: catalog.createVisual
   const file = new Blob([PNG_1PX], { type: 'image/png' });
@@ -89,6 +111,51 @@ try {
   const visuals = await kaltura.catalog.list(admin, { type: 'Visual' }).all();
   const found = visuals.find((v) => v.itemId === itemId);
   check('3-catalog-list-contains-item', !!found, { count: visuals.length, foundOurs: !!found });
+
+  // 3b-3d: filter keys narrow the list.
+  const byId = await kaltura.catalog.list(admin, { filter: { itemIdEqual: itemId } }).all();
+  check('3b-list-itemIdEqual', byId.length === 1 && byId[0].itemId === itemId, { ids: byId.map((v) => v.itemId) });
+  const otherId = visuals.find((v) => v.itemId !== itemId)?.itemId;
+  check('3c-preset-visual-exists', !!otherId, { otherId });
+  const byIds = await kaltura.catalog.list(admin, { filter: { idsIn: [itemId, otherId] } }).all();
+  check('3c-list-idsIn', byIds.length === 2 && byIds.some((v) => v.itemId === itemId) && byIds.some((v) => v.itemId === otherId), { ids: byIds.map((v) => v.itemId) });
+  const typedIds = await kaltura.catalog.list(admin, { type: 'Visual', filter: { idsIn: [itemId] } }).all();
+  check('3d-list-type-and-idsIn', typedIds.length === 1 && typedIds[0].itemId === itemId, { ids: typedIds.map((v) => v.itemId) });
+
+  // 3e: orderBy. -createdAt sorts newest first. +createdAt only has to resolve.
+  const newest = (await kaltura.catalog.list(admin, { type: 'Visual', orderBy: '-createdAt' })).slice(0, 50);
+  const stamps = newest.map((v) => v.createdAt).filter((t) => t !== undefined);
+  if (stamps.length < 2) {
+    record('3e-list-orderBy-newest-first', true, { note: 'items carry no createdAt, order not asserted', items: newest.length });
+  } else {
+    check('3e-list-orderBy-newest-first', stamps.every((t, i) => i === 0 || t <= stamps[i - 1]), { first5: stamps.slice(0, 5) });
+  }
+  const oldest = await kaltura.catalog.list(admin, { type: 'Visual', orderBy: '+createdAt' });
+  check('3e-list-orderBy-plus-createdAt-resolves', Array.isArray(oldest), { first5: oldest.slice(0, 5).map((v) => v.createdAt) });
+
+  // 3f: languageEqual narrows voices.
+  const enVoices = await kaltura.catalog.list(admin, { type: 'Voice', filter: { languageEqual: 'en' } });
+  const langs = enVoices.map((v) => v.attributes?.voice?.language).filter((l) => l !== undefined);
+  check('3f-list-languageEqual', enVoices.length > 0 && langs.length > 0 && langs.every((l) => l === 'en'), { items: enVoices.length, withLanguage: langs.length, languages: [...new Set(langs)] });
+
+  // 3g: an unknown orderBy value and an unknown filter key are rejected, and the error says why.
+  for (const [name, opts, expected] of [
+    ['3g-list-bad-orderBy', { orderBy: 'createdAt' }, ['+createdAt', '-createdAt']],
+    ['3g-list-unknown-filter-key', { filter: { bogusKey: 1 } }, ['bogusKey']],
+  ]) {
+    try {
+      await kaltura.catalog.list(admin, opts);
+      check(name, false, { message: 'expected a rejection' });
+    } catch (err) {
+      check(name, err?.code === 'bad_request' && err?.status === 400 && expected.every((e) => err.detail.includes(e)), { code: err?.code, status: err?.status, detail: err?.detail });
+    }
+  }
+
+  // 3h: adminTagsIn and agentScope are accepted. Their effect is not asserted.
+  const tagged = await kaltura.catalog.list(admin, { type: 'Voice', filter: { adminTagsIn: ['custom'] } });
+  check('3h-list-adminTagsIn-resolves', Array.isArray(tagged), { items: tagged.length });
+  const scoped = await kaltura.catalog.list(admin, { agentScope: 'x' });
+  check('3h-list-agentScope-resolves', Array.isArray(scoped), { items: scoped.length });
 
   // 4: catalog.update — rename persists.
   const newAttrs = { name: `Live Verify Visual Renamed ${RUN_TAG}`, genderPresentation: 'Feminine' };
@@ -115,6 +182,15 @@ try {
   failed = true;
   record('live-verify-catalog', false, { message: err?.detail || err?.message || String(err), code: err?.code });
 } finally {
+  if (strayItemId) {
+    try {
+      await kaltura.catalog.delete(strayItemId, admin, { confirmPermanent: true });
+      record('1b-stray-item-delete', true, { strayItemId });
+    } catch (err) {
+      failed = true;
+      record('1b-stray-item-delete', false, { strayItemId, message: err?.detail || err?.message || String(err) });
+    }
+  }
   // 5: catalog.delete — scratch item removed, re-get real-404s.
   if (itemId) {
     try {

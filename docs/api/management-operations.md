@@ -11,14 +11,14 @@ All operations use the **admin KS** (`createAdminToken`), except where a section
 | Operation | Endpoint | Body |
 |-----------|----------|------|
 | Create | `POST /v1/agent/create` | `{"displayName":"...", "intellect":{...}, "avatarIds":["24-char-hex"], "adminTags"?:["..."]}` |
-| List | `POST /v1/agent/list` | `{"filter":{},"pager":{"offset":0,"limit":30}}` |
+| List | `POST /v1/agent/list` | `{"filter":{},"orderBy"?:"-updatedAt","pager":{"offset":0,"limit":30}}` |
 | Get | `POST /v1/agent/get` | `{"agentId":"UUID"}` |
 | Update | `POST /v1/agent/update` | `{"agentId":"UUID", ...fields}` |
 | Delete | `POST /v1/agent/delete` | `{"agentId":"UUID"}` |
 
 Filter keys: `agentId`, `adminTagsIn`, `adminTagsNotIn`, `searchValue` (case-insensitive substring match on `displayName`/`agentId`). An unrecognized key 400s.
 
-The request also takes a top-level `orderBy` (`+createdAt`, `-createdAt`, `+updatedAt`, `-updatedAt`; anything else 400s). It sits next to `filter`, not inside it. Threads and Messages below take `orderBy` inside `filter`. SDK: `mgmt.agents.list(ks, opts)` passes `opts.filter` through as-is and does not take `orderBy`.
+The request also takes a top-level `orderBy`, next to `filter`, not inside it. `-createdAt` and `-updatedAt` sort newest first. `+createdAt` is ignored. `+updatedAt` cannot be told apart from no `orderBy`. Any other value returns `bad_request` (400), and the error lists the four accepted values. Threads and Messages below take `orderBy` inside `filter`. SDK: `mgmt.agents.list(ks, { filter, orderBy })` sends both as-is.
 
 `mgmt.agents.delete` refuses to delete an agent whose `adminTags` match a production marker (`prod`, `production`, `keep`, `do-not-delete`, `live`; the exported `PROTECTED_TAGS`). Pass `{confirmPermanent:true, allowProtected:true}` to delete it anyway. This stops a cleanup-by-tag sweep from deleting an agent that is in use. The SDK reads the agent first. If that read fails (other than the agent not existing), the delete is refused with that error. `{skipProtectedCheck:true}` skips the read and the guard.
 
