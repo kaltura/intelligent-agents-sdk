@@ -251,7 +251,7 @@ function extractMessage(body) {
     if (typeof b.message === 'string') return b.message;
     if (Array.isArray(b.message)) {
       const msgs = b.message.filter((m) => typeof m === 'string' && m);
-      if (msgs.length) return msgs.join('; ').slice(0, 500);
+      if (msgs.length) return redactString(msgs.join('; ')).slice(0, 500);
     }
     if (typeof b.detail === 'string') return b.detail;
     // 422 validation errors return detail as an array of {loc, msg, type}; join the msgs

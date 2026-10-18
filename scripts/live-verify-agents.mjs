@@ -29,6 +29,7 @@ import { writeFileSync, mkdirSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Management } from '../src/management/index.js';
+import { isNotFound } from '../src/management/audit-report.js';
 import { resolveTarget } from './lib/target.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -206,7 +207,7 @@ try {
         failed = true;
         record('8-agents-delete-second-reget-still-found', false, { agentIdB });
       } catch (err) {
-        record('8-agents-delete-second-reget-not-found', true, { agentIdB, code: err?.code });
+        check('8-agents-delete-second-reget-not-found', isNotFound(err), { agentIdB, code: err?.code, status: err?.status });
       }
     } catch (err) {
       failed = true;
@@ -222,7 +223,7 @@ try {
         failed = true;
         record('8-agents-delete-reget-still-found', false, { agentId });
       } catch (err) {
-        record('8-agents-delete-reget-not-found', true, { agentId, code: err?.code, message: err?.detail || err?.message });
+        check('8-agents-delete-reget-not-found', isNotFound(err), { agentId, code: err?.code, status: err?.status, message: err?.detail || err?.message });
       }
     } catch (err) {
       failed = true;

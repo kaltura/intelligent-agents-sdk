@@ -102,3 +102,10 @@ test('a long message array is cut to 500 chars in detail and kept whole in body'
   assert.equal(e.detail.length, 500);
   assert.equal(e.body.message[0].length, 800);
 });
+
+test('a message array is redacted before it is cut, so a secret straddling the cutoff is hidden', () => {
+  const secret = 'a1b2c3d4e5f60718'.repeat(2);
+  const e = errorFromResponse({ status: 400, path: '/x', body: { message: ['x'.repeat(480), `secret ${secret}`], error: 'Bad Request' } });
+  assert.ok(!e.detail.includes(secret.slice(0, 8)), e.detail);
+  assert.ok(!e.message.includes(secret.slice(0, 8)), e.message);
+});
