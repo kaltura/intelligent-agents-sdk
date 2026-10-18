@@ -134,7 +134,7 @@ await mgmt.intellectConfig.setSkillIds(configId, [
 ], ks);
 ```
 
-Do not wrap it in `{{ }}`, `{% %}` or `{# #}`. The server answers a template-style condition with an empty reply (HTTP 200). The SDK rejects the delimiters on write, `lintPrompts` reports `bad_condition`, and `intellectConfig.audit` flags a saved one.
+Do not wrap it in `{{ }}`, `{% %}` or `{# #}`. The server answers a template-style condition with an empty reply and no error. The SDK rejects the delimiters on write, `lintPrompts` reports `bad_condition`, and `intellectConfig.audit` flags a saved one.
 
 | Write path | A bad condition |
 |---|---|
@@ -151,7 +151,7 @@ The server evaluates the expression. An unknown name is falsy, with no error. Re
 |---|---|
 | Works | Lowercase `and`, `or`, `not`. `==` and `!=`. `in [..]` and `not in [..]`. Parentheses. Single or double quoted strings. `x is defined` and `x is not defined`. String methods: `plan.startswith('p')`. Filters: `plan\|upper == 'PRO'`. Number compare on a `var` tool int: `visits == 5` |
 | No error, never matches | Unquoted `plan == pro` (read as a name). Lowercase `true` and `false` (read as names, so `flag == true` is false) |
-| Empty reply for the whole turn (HTTP 200) | Uppercase `AND` and `NOT`. `&&`, `\|\|` and `!`. A single `=`. `x is "pro"`. `len()` and `int()`. Ordering compare against a number when the name is unset or is text (`visits > 2`). Dotted access on an unset name |
+| Empty reply for the whole turn, no error | Uppercase `AND` and `NOT`. `&&`, `\|\|` and `!`. A single `=`. `x is "pro"`. `len()` and `int()`. Ordering compare against a number when the name is unset or is text (`visits > 2`). Dotted access on an unset name |
 
 Guard an ordering compare: `visits is defined and visits > 2`. The SDK warns about the empty-reply forms: `suspect_condition` from `lintPrompts`, and `prompt_suspect_condition`, `skill_condition_suspect` and `tool_condition_suspect` from `intellectConfig.audit`. `previewPrompt` does not evaluate conditions, so check a new condition with one live turn.
 
