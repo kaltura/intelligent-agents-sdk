@@ -93,7 +93,7 @@ A standalone, partner-level reusable-instruction entity: `{id (uuid), name, desc
 |-----------|----------|------|
 | List | `POST /v1/skill/list` | `{"filter":{"objectType":"SkillListFilter"},"pager":{"pageIndex":1,"pageSize":30}}` |
 | Get | `POST /v1/skill/get` | `{"id":"SKILL_UUID"}` |
-| Add | `POST /v1/skill/add` | `{"name":"...", "description":"...", "instructions"?, "condition"?}` `name` may use only letters, digits, `_` and `-`. The SDK throws `bad_request` before the request otherwise. |
+| Add | `POST /v1/skill/add` | `{"name":"...", "description":"...", "instructions"?, "condition"?}`. `name` may use only letters, digits, `_` and `-`. The SDK throws `bad_request` before the request otherwise. |
 | Update | `POST /v1/skill/update` | `{"id":"SKILL_UUID", "name"?, "description"?, "instructions"?, "condition"?}`. Idempotent. `condition: ''` clears it. A rename to a name already in use returns 409 |
 | Delete | `POST /v1/skill/delete` | `{"id":"SKILL_UUID"}`. Replies `{id}`. A follow-up get returns 404 |
 
