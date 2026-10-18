@@ -21,7 +21,7 @@
  *   - 'play'      {entryId?, url?, embedUrl?, startTime?, endTime?}
  *                                              → a video-gallery clip's thumbnail was clicked (times in seconds, or `null`)
  *   - 'open'      {url}                       → a link/source/content card was activated
- *   - 'submit'    {values}                    → a structured-data form was submitted (→ session.submitStructuredDataForm)
+ *   - 'submit'    {values, formId}            → a structured-data form was submitted (→ session.submitStructuredDataForm)
  *   - 'answer'    {questionId, variant, correct, value, explanation, optionId?}
  *                                              → a `graded-question` was answered; `correct` is
  *                                                `boolean|null` (`null` = no answer key authored, ungraded)
@@ -233,6 +233,7 @@ const BUILDERS = {
 
   'user-properties-form'(root, data, onAction) {
     titleEl(root, data.title);
+    if (data.secondaryTitle) root.appendChild(el('p', 'kgenui__text', safeText(data.secondaryTitle, 300)));
     const form = el('form', 'kgenui__form');
     const values = {};
     for (const f of asArray(data.fields)) {
@@ -263,7 +264,7 @@ const BUILDERS = {
     const submit = el('button', 'kgenui__submit', 'Submit');
     submit.type = 'submit';
     form.appendChild(submit);
-    form.addEventListener('submit', (e) => { if (e && e.preventDefault) e.preventDefault(); onAction('submit', { values: { ...values } }); });
+    form.addEventListener('submit', (e) => { if (e && e.preventDefault) e.preventDefault(); onAction('submit', { values: { ...values }, formId: data.formId ?? null }); });
     root.appendChild(form);
   },
 
