@@ -6,16 +6,17 @@ Each renderer lives in `src/experience/genui/renderers/<name>.js`, takes `(model
 
 ### 1. flashcards (`renderFlashcards`)
 
-Cards come from `model.cards`, `model.items`, or `model.flashcards`. Each card:
+Cards come from `model.cards`, `model.items`, `model.flashcards`, or `model.keypoints`. Each card:
 
 | Field | Source keys (model) | Constraint |
 |---|---|---|
-| `front` | `front`, `question`, `term` | ≤1000 chars |
-| `back` | `back`, `answer`, `definition` | ≤4000 chars |
+| `front` | `front`, `question`, `term`, `title` | ≤1000 chars |
+| `back` | `back`, `answer`, `definition`, `summary` | ≤4000 chars |
 | `title` | `title` | ≤300 chars |
 | `label` | `label`, `front` | ≤120 chars, the flip toggle's accessible name |
+| `clips` | `citation.clips`, `clips` | see [Clip fields](#clip-fields), omitted when empty |
 
-Descriptor: `{kind:'flashcards', data:{title, cards:[{front, back, label}]}}`.
+Descriptor: `{kind:'flashcards', data:{title, cards:[{front, back, label, clips?}]}}`. `mountWidget` does not show card clips. Read them from the descriptor.
 
 ### 2. followups (`renderFollowups`)
 
@@ -35,8 +36,14 @@ Items come from `model.sources`, `model.items`, or `model.citations`. Each item:
 | `url` | `url`, `link`, `href` (via `safeUrl`) | unsafe scheme → `''` |
 | `snippet` | `snippet`, `text`, `content` | ≤2000 chars |
 | `score` | `score`, `relevance`, `similarity` | forward-compatible passthrough, omitted when absent/non-numeric, never `0` |
+| `entryId` | `entryId`, `entry_id` | ≤100 chars, omitted when absent |
+| `type` | `type` | ≤40 chars, omitted when absent |
+| `duration` | `duration` | seconds: a number ≥0, omitted otherwise |
+| `hasShort` | `hasShort`, `has_short` | boolean, omitted otherwise |
 
-Descriptor: `{kind:'sources', data:{sources:[{title, url, snippet, score?}]}}`. `score`'s presence is not a claimed backend guarantee.
+A source is a URL, an entry, or both. No URL is derived from `entryId`.
+
+Descriptor: `{kind:'sources', data:{sources:[{title, url, snippet, score?, entryId?, type?, duration?, hasShort?}]}}`. `score`'s presence is not a claimed backend guarantee.
 
 ### 4. summary (`renderSummary`)
 
@@ -44,26 +51,42 @@ Descriptor: `{kind:'sources', data:{sources:[{title, url, snippet, score?}]}}`. 
 |---|---|---|
 | `summary` | `summary`, `text`, `content`, `raw` | ≤8000 chars; via `safeSource`, preserves `\n`/`\r`/`\t` so markdown structure survives |
 | `bullets` | `bullets`, `points`, `items` | ≤1000 chars per item |
+| `chapters` | `chapters`, each a string or `{title\|text\|label\|summary}` | ≤1000 chars per item, empty dropped, kept verbatim and in order. `[]` when absent |
 | `title` | `title` | ≤300 chars |
 
-Descriptor: `{kind:'summary', data:{title, summary, bullets:[string]}}`. The summary stays untrusted (LLM output); by default `mountWidget` renders it as flat escaped text. Pass `mountWidget(descriptor, el, {markdown:true})` to opt into a first-party, allow-listed markdown-to-DOM renderer instead, see [authoring-and-consuming.md § Markdown rendering (opt-in)](authoring-and-consuming.md#markdown-rendering-opt-in). The SDK never emits raw HTML either way.
+Descriptor: `{kind:'summary', data:{title, summary, bullets:[string], chapters:[string]}}`. The summary stays untrusted (LLM output); by default `mountWidget` renders it as flat escaped text. Pass `mountWidget(descriptor, el, {markdown:true})` to opt into a first-party, allow-listed markdown-to-DOM renderer instead, see [authoring-and-consuming.md § Markdown rendering (opt-in)](authoring-and-consuming.md#markdown-rendering-opt-in). The SDK never emits raw HTML either way.
 
 ### 5. video-gallery (`renderVideoGallery`): Kaltura clips
 
-Items come from `model.videos`, `model.entries`, or `model.items`. Each item:
+Items come from `model.videos`, `model.entries`, `model.items`, `model.citation.clips`, or `model.clips`. Each item:
 
 | Field | Source keys (model) | Constraint |
 |---|---|---|
 | `entryId` | `entryId`, `entry_id`, `id` | ≤100 chars, preserved verbatim, host plays via the Kaltura player |
 | `title` | `title`, `name` | ≤500 chars |
 | `thumbnailUrl` | `thumbnailUrl`, `thumbnail`, `thumb` | via `safeUrl` |
-| `url` | `url`, `playUrl`, `link` | via `safeUrl` |
+| `startTime`, `endTime` | `startTime`/`start_time`/`start`, `endTime`/`end_time`/`end` | seconds: a number or numeric string ≥0, else `null`. Always present |
+| `url` | `url`, `playUrl`, `link`, `video_link` | via `safeUrl` |
 | `embedUrl` | *(output, derived, not read from the model)* | `playerEmbedUrl(entryId, partnerId, {uiConfId})` (`core/kaltura-media.js`) when the render ctx has `partnerId`; `''` otherwise |
 | `duration` | `duration`, `length` | string-kept, ≤40 chars, to tolerate `"1:23"` or a seconds count |
 | `description` | `description` | ≤2000 chars |
 | `alt` | `alt`, `title` | ≤300 chars, the image's accessible name |
 
-Descriptor: `{kind:'video-gallery', data:{title, videos:[{entryId, title, thumbnailUrl, url, embedUrl, duration, description, alt}]}}`. This is the **in-platform video** widget: the host renders the Kaltura player against `entryId`.
+Descriptor: `{kind:'video-gallery', data:{title, videos:[{entryId, startTime, endTime, title, thumbnailUrl, url, embedUrl, duration, description, alt}]}}`. This is the **in-platform video** widget: the host renders the Kaltura player against `entryId`.
+
+#### Clip fields
+
+A clip is one span of a Kaltura entry. Video-gallery items and the `clips` of other widgets share this shape.
+
+| Field | Meaning |
+|---|---|
+| `entryId` | Kaltura entry id |
+| `startTime`, `endTime` | Seconds, or `null` when absent |
+| `thumbnailUrl` | The given thumbnail, else derived from `entryId` when the render ctx has `partnerId` |
+| `url` | Link to the clip, scheme-checked |
+| `embedUrl` | Player iframe URL derived from `entryId`, as above |
+
+A clip under `citation.clips` carries no title. `mountWidget` labels the play button by the item title, else the entry id, plus the time range.
 
 ### 6. show-link (`renderShowLink`): links
 
@@ -114,13 +137,17 @@ Items come from `model.items`, `model.slides`, or `model.cards`. Each item:
 | Field | Source keys (model) | Constraint |
 |---|---|---|
 | `id` | `id`, `slideId`, `key` | ≤100 chars, addressable, slides are ordered, mirrors `entryId` |
+| `type` | `slide_type`, `type` | ≤40 chars, `''` when absent (for example `text` or `video`) |
 | `title` | `title`, `name`, `heading` | ≤500 chars |
-| `description` | `description`, `text`, `body` | ≤2000 chars |
-| `imageUrl` | `imageUrl`, `image`, `thumbnail` | via `safeUrl` |
-| `url` | `url`, `link`, `href` | via `safeUrl` |
+| `description` | `description`, `text`, `body` | ≤2000 chars, via `safeSource`, keeps line breaks |
+| `imageUrl` | `imageUrl`, `image`, `thumbnail`, then the first clip's `thumbnailUrl` | via `safeUrl` |
+| `url` | `url`, `link`, `href`, then the first clip's `url` | via `safeUrl` |
 | `alt` | `alt`, `title`, `description` | ≤300 chars, the image's accessible name |
+| `clips` | `citation.clips`, `clips` | see [Clip fields](#clip-fields), omitted when empty |
 
-Descriptor: `{kind:'content-gallery', data:{title, items:[{id, title, description, imageUrl, url, alt}]}}`. This is the **image-bearing** widget (a deck/gallery of cards with thumbnails). The `video_gallery` capability permits both `video-gallery-tool` **and** `content-gallery-tool`.
+An item with no `id`, `title`, `description`, image, link or clips is dropped. `mountWidget` shows a play button for the first clip of a video slide and folds description line breaks to spaces. The descriptor keeps the line breaks.
+
+Descriptor: `{kind:'content-gallery', data:{title, items:[{id, type, title, description, imageUrl, url, alt, clips?}]}}`. This is the **image-bearing** widget (a deck/gallery of cards with thumbnails). The `video_gallery` capability permits both `video-gallery-tool` **and** `content-gallery-tool`.
 - **Multi-item only.** The renderer always wraps `items` in a CSS grid sized for several thumbnails (`.kgenui__gallery`, `repeat(auto-fill, minmax(120px,1fr))`). It does not branch on item count. So a single, image-less item stretches to the grid's full row width inside the widget's full-slot frame and reads as an oversized, awkward card. A `:has(> .kgenui__gallery > li:only-child)` CSS rule can give that case a flex/centered treatment instead. A `show_widget` tool description can also steer the agent toward `summary` for a single text-only point. Prefer `content-gallery` for 2+ image-bearing items, and `summary` for one.
 
 ### 10. graded-question (`renderGradedQuestion`): a host-registered "10th runtime"

@@ -18,7 +18,7 @@
 - **`force_experience` is a hint.** Never assume the requested experience arrived; the renderer parses whatever shows up.
 - **Runtimes outside this set** are NOT in `RUNTIMES`. The renderer routes them to `{kind:'unknown'}` and `onUnhandled` rather than faking a known kind.
 - **`sources` needs a knowledge base to cite from.** Ground a new agent via `knowledge.addRecord` and `knowledge_ids` (ungated; see [Ground the Agent in Your Content](../api/build/knowledge-rag.md#ground-the-agent-in-your-content-rag)). `sources` then renders the real retrieved citations.
-- **`entryId` playback needs the Kaltura player.** `video-gallery` preserves `entryId`. When `embedUrl` is present (it requires `partnerId`; `uiConfId` is optional and only pins a specific player uiConf), the SDK renders an inline player. Without it, the host renders by `entryId`.
+- **`entryId` playback needs the Kaltura player.** `video-gallery` preserves `entryId`. When `embedUrl` is present (it requires `partnerId`; `uiConfId` is optional and only pins a specific player uiConf), the SDK renders an inline player of the whole entry. It does not apply `startTime` or `endTime`; to play only the clip, seek in the host from the `'play'` action payload. Without `embedUrl`, the host renders by `entryId`.
 
 ## Related docs
 

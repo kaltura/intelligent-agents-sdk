@@ -74,7 +74,7 @@ Headless, call `.render(runtimeName, widget)` (or `.render(segment)`) per segmen
 
 - `'followup'` `{question}` → `session.speak`
 - `'submit'` `{values}` → `session.submitStructuredDataForm`
-- `'play'` `{entryId, url, embedUrl}`
+- `'play'` `{entryId, url, embedUrl, startTime, endTime}`: a video clip was clicked, times in seconds or `null`
 - `'open'` `{url}`
 - `'answer'` `{questionId, variant, correct, value, explanation, optionId?}`: a `graded-question` was answered (see [widgets.md § 10](widgets.md#10-graded-question-rendergradedquestion-a-host-registered-10th-runtime))
 
@@ -113,8 +113,8 @@ Without `opts.markdown`, the summary renders as flat escaped text.
 | followups | `kgenui__chip`, `kgenui__chips` |
 | flashcards | `kgenui__flip`, `kgenui__back` |
 | sources | `kgenui__source`, `kgenui__snippet`, `kgenui__score` |
-| summary | `kgenui__bullet` |
-| video-gallery | `kgenui__player`, `kgenui__play`, `kgenui__play-glyph` |
+| summary | `kgenui__bullet`, `kgenui__chapters`, `kgenui__chapter` |
+| video-gallery, content-gallery (video slides) | `kgenui__player`, `kgenui__play`, `kgenui__play-glyph` |
 | external-video | `kgenui__embed` (iframe wrap) |
 | user-properties-form | `kgenui__form`, `kgenui__field`, `kgenui__label`, `kgenui__help` |
 | user-properties-form and graded-question (free-text input/submit) | `kgenui__input`, `kgenui__submit` |

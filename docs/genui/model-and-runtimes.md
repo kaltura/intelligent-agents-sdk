@@ -18,7 +18,7 @@ Wire `runtimeName` → normalized dispatch key (the renderer registry key). Sour
 |---|---|---|---|
 | 1 | `flashcards-tool` | `flashcards` | Study Q/A cards |
 | 2 | `followups-tool` | `followups` | Suggested next-question chips |
-| 3 | `sources-tool` | `sources` | RAG citation cards (with URLs) |
+| 3 | `sources-tool` | `sources` | Source cards (a URL or an entry id) |
 | 4 | `summary-tool` | `summary` | Text/markdown summary and bullets |
 | 5 | `video-gallery-tool` | `video-gallery` | Gallery of **Kaltura** clips (by `entryId`) |
 | 6 | `show-link-tool` | `show-link` | A single link card |
@@ -27,7 +27,7 @@ Wire `runtimeName` → normalized dispatch key (the renderer registry key). Sour
 | 9 | `content-gallery-tool` | `content-gallery` | Gallery of content slides/cards (with **images**) |
 <!-- /nova-target -->
 
-`normalizeRuntime(name)` (`parse.js`) strips a trailing `-tool` and trims; it tolerates an already-normalized name and a non-string (→ `''`). `isKnownRuntime(name)` tests membership in this set. Any other runtime is NOT in this set and falls through to a safe fallback (see [safety-and-restrictions.md](safety-and-restrictions.md)).
+`normalizeRuntime(name)` (`parse.js`) strips a trailing `-tool` and trims; it tolerates an already-normalized name and a non-string (→ `''`). It also maps the alias `video-tool` (or `video`) to `external-video`: that widget renders with the external-video renderer, `onAgentAction` sees `runtime:'external-video'`, and `runtimeName` keeps the wire value. A renderer registered under `video` replaces the external-video one. `isKnownRuntime(name)` tests membership in this set. Any other runtime is NOT in this set and falls through to a safe fallback (see [safety-and-restrictions.md](safety-and-restrictions.md)).
 
 ## How a widget reaches your screen (the data flow)
 
@@ -35,7 +35,7 @@ Wire `runtimeName` → normalized dispatch key (the renderer registry key). Sour
 2. **Emit.** The agent sends a widget with `widgetName:"unisphere.widget.genie"` and a `runtimeName`. It arrives as a `unisphere-tool` segment.
 3. **Stream.** Segments arrive as `agent_raw_text` deltas (live socket) or SSE/NDJSON lines (HTTP converse). A single widget can span **multiple fragments**.
 4. **Assemble.** `SegmentAssembler` (`genui/segments.js`) buffers fragments and flushes a complete widget on a boundary change (different `runtime` or `speechId`, or turn end). If that boundary change interrupts a JSON body before it finishes writing, the fragment is flagged malformed (`onMalformed`) instead of flushed as a widget. `ExperienceRenderer` then mounts the same typed `{kind:'error', data:{runtime, message}}` fallback it uses for a throwing custom renderer.
-5. **Parse.** `parseWidget(segment)` (`parse.js`) returns `{widgetName, runtimeName, runtime, model}`. `parseContent` is forgiving and never throws: object content is used as-is; string content is JSON-parsed first, else parsed as a loose `key: value` block, else preserved under `.raw`.
+5. **Parse.** `parseWidget(segment)` (`parse.js`) returns `{widgetName, runtimeName, runtime, model}`. `parseContent` is forgiving and never throws: object content is used as-is; string content is JSON-parsed first, else parsed as a YAML subset (block maps and lists, flow `[]`/`{}`, quoted and block scalars; no YAML 1.1 coercions, so `yes` or `1_000` stay strings). Lines it can't read go to `.raw`.
 6. **Render.** The renderer dispatches `model` to the runtime's renderer and returns `{kind, data, runtime, runtimeName, _meta}`. Your `mount(descriptor)` turns it into DOM.
 
 ## Two delivery paths (this is the #1 gotcha)

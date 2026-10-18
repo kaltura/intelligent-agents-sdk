@@ -1,0 +1,12 @@
+slides:
+- slide_type: "text"
+  text: |
+    ### The Rule of Thirds
+    
+    This guideline helps create balanced layouts by splitting the page:
+    
+    *   **Base:** Used for backgrounds and large areas.
+    *   **Support:** Used for secondary elements.
+    *   **Accent:** Reserved for the most important actions.
+    
+    *Note: this is a guideline, not a strict law.*

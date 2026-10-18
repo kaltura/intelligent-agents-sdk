@@ -65,7 +65,7 @@ Two rules keep the two events distinguishable and non-duplicated:
 
 Apply the same two-line pattern to any other `onAction` intent:
 
-- `'play'` (`{entryId, url, embedUrl}`): a video-gallery clip was opened.
+- `'play'`: a video-gallery clip was opened.
 - `'submit'` (`{values}`): a `user-properties-form` was submitted. Report only that it happened and which fields were filled, not the raw values if they're personal data. See [../STRUCTURED-DATA-FORMS.md](../STRUCTURED-DATA-FORMS.md) for where that data durably belongs instead.
 
 ## Why the two events stay distinct

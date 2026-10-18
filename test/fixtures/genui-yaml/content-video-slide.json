@@ -1,0 +1,22 @@
+{
+  "slides": [
+    {
+      "slide_type": "video",
+      "text": null,
+      "citation": {
+        "clips": [
+          {
+            "start_index": 35,
+            "last_index": 60,
+            "entry_id": "1_aaaaaaaa",
+            "start_time": 84,
+            "end_time": 144,
+            "type": "CAPTION",
+            "thumbnail": null,
+            "video_link": null
+          }
+        ]
+      }
+    }
+  ]
+}

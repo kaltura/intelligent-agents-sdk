@@ -7,24 +7,26 @@
  * `summary` is run through `safeSource` (not `safeText`) so line breaks survive
  * for that opt-in markdown path — flat-text rendering already collapses
  * whitespace visually via CSS, so preserving `\n` here doesn't change the
- * default look.
+ * default look. `chapters` are timed outline lines (strings, or rows with a
+ * `title`, `text`, `label` or `summary`), kept verbatim and in order.
  */
 import { safeText, safeSource } from '../../../core/safety.js';
 
 /**
  * @param {Record<string, unknown>} model
- * @returns {{kind:'summary', data:{title:string, summary:string, bullets:string[]}}}
+ * @returns {{kind:'summary', data:{title:string, summary:string, bullets:string[], chapters:string[]}}}
  */
 export function renderSummary(model = {}) {
   if (!model || typeof model !== 'object') model = {};   // total over null/scalars
   // A caller may mis-nest the whole {title,summary,bullets} shape one level deep inside
   // `summary` itself (seen live from the brain) — string-coercing that object renders the
   // literal "[object Object]", so unwrap it here rather than trusting the caller's shape.
-  let { title, summary, bullets: rawBullets } = model;
+  let { title, summary, bullets: rawBullets, chapters: rawChapters } = model;
   if (summary && typeof summary === 'object') {
     const nested = /** @type {any} */ (summary);
     title = title ?? nested.title;
     rawBullets = rawBullets ?? nested.bullets ?? nested.points ?? nested.items;
+    rawChapters = rawChapters ?? nested.chapters;
     summary = nested.summary ?? nested.text ?? nested.content ?? nested.raw ?? '';
   }
   const summaryText = safeSource(summary ?? model.text ?? model.content ?? model.raw ?? '', 8000);
@@ -38,5 +40,8 @@ export function renderSummary(model = {}) {
   const bullets = src
     .map((b) => safeText((b && typeof b === 'object') ? (/** @type {any} */ (b).summary ?? /** @type {any} */ (b).text ?? /** @type {any} */ (b).label ?? /** @type {any} */ (b).content ?? '') : b, 1000))
     .filter(Boolean);
-  return { kind: 'summary', data: { title: safeText(title ?? '', 300), summary: summaryText, bullets } };
+  const chapters = (Array.isArray(rawChapters) ? rawChapters : [])
+    .map((c) => safeText((c && typeof c === 'object') ? (/** @type {any} */ (c).title ?? /** @type {any} */ (c).text ?? /** @type {any} */ (c).label ?? /** @type {any} */ (c).summary ?? '') : c, 1000))
+    .filter(Boolean);
+  return { kind: 'summary', data: { title: safeText(title ?? '', 300), summary: summaryText, bullets, chapters } };
 }

@@ -3,7 +3,7 @@
  * configs the live runtime expects (WIRE-PROTOCOL §2–§6). No I/O, no state —
  * unit-testable in isolation and reused by the session machine.
  */
-import { parseToolCall, GENUI_RUNTIMES } from '../core/stream.js';
+import { parseToolCall, GENUI_RUNTIMES, genuiRuntimeAlias } from '../core/stream.js';
 import { isPrivateOrLoopbackHost } from '../core/net-guard.js';
 
 /** Default session-server host (overridden by appInit's conversationManagerUrl). */
@@ -62,7 +62,7 @@ export function modelTypeWire(sel) {
  * Mapping (→ `_gateAgentAction` action types):
  *   - `type:"tool"` native function call → `tool-call` (runtime = the tool name)
  *   - `user-properties-form`            → `structured-data-form`
- *   - any other genui runtime (the nine built-in tools)  → `render-genui`
+ *   - any other genui runtime (the nine built-in tools, plus aliases such as `video-tool` → `external-video`)  → `render-genui`
  *   - `navigate` (synthetic only)       → `navigate`
  *   - spoken/control/empty              → `null` (not gated)
  *
@@ -89,9 +89,10 @@ export function classifyAgentAction(seg) {
   const metadata = (s.metadata && typeof s.metadata === 'object') ? s.metadata : {};
   const runtimeName = pickStr(metadata.runtimeName, s.runtimeName, s.runtime_name);
   const widgetName = pickStr(metadata.widgetName, s.widgetName, s.widget_name);
-  // Normalize the segment type / runtime by stripping the trailing `-tool`.
+  // Normalize the segment type / runtime by stripping the trailing `-tool`, then map aliases.
   const typeKey = stripTool(s.type);
-  const runtime = stripTool(runtimeName) || (RUNTIME_KEYS.has(typeKey) ? typeKey : '');
+  const typeRuntime = genuiRuntimeAlias(typeKey);
+  const runtime = genuiRuntimeAlias(stripTool(runtimeName)) || (RUNTIME_KEYS.has(typeRuntime) ? typeRuntime : '');
 
   // Synthetic navigate (no real typed nav segment — see Presenter for real nav).
   if (typeKey === 'navigate' || runtime === 'navigate') {

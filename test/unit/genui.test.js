@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 
 import {
   normalizeRuntime, isKnownRuntime, parseContent, parseWidget,
@@ -9,8 +10,14 @@ import { SegmentAssembler } from '../../src/experience/genui/segments.js';
 import { ExperienceRenderer } from '../../src/experience/genui/renderer.js';
 import { DEFAULT_RENDERERS } from '../../src/experience/genui/renderers/index.js';
 import { renderFollowups } from '../../src/experience/genui/renderers/followups.js';
+import * as vg from '../../src/experience/genui/renderers/video-gallery.js';
 
 /** GenUI segment→widget layer. Pure parse + dispatch + fallback + each default renderer shape. */
+
+/** Parse a YAML fixture body the way a live widget segment reaches the renderers. */
+const fixtureModel = (name, runtimeName) =>
+  parseWidget({ runtimeName, content: readFileSync(new URL(`../fixtures/genui-yaml/${name}.yaml`, import.meta.url), 'utf8') }).model;
+const CTX = { partnerId: '1234567', uiConfId: '58022082' };
 
 // ─────────────────────────── normalizeRuntime ───────────────────────────
 
@@ -20,6 +27,58 @@ test('normalizeRuntime strips -tool and tolerates pre-stripped / non-string', ()
   assert.equal(normalizeRuntime('  user-properties-form-tool  '), 'user-properties-form');
   assert.equal(normalizeRuntime(null), '');
   assert.equal(normalizeRuntime(42), '');
+});
+
+test('normalizeRuntime maps video-tool and video to external-video', () => {
+  assert.equal(normalizeRuntime('video-tool'), 'external-video');
+  assert.equal(normalizeRuntime('video'), 'external-video');
+  assert.equal(normalizeRuntime(' video-tool '), 'external-video');
+  assert.equal(normalizeRuntime('external-video-tool'), 'external-video');
+  assert.equal(normalizeRuntime('video-gallery-tool'), 'video-gallery');
+});
+
+test('normalizeRuntime alias lookup ignores prototype names (guard)', () => {
+  for (const n of ['constructor', '__proto__', 'toString', 'hasOwnProperty']) assert.equal(normalizeRuntime(n), n);
+});
+
+test('isKnownRuntime(video-tool) is true; RUNTIMES stays nine', () => {
+  assert.equal(isKnownRuntime('video-tool'), true);
+  assert.equal(isKnownRuntime('video'), true);
+  assert.equal(RUNTIMES.length, 9);
+  assert.ok(!RUNTIMES.includes('video'));
+});
+
+test('SegmentAssembler assembles video-tool fragments as one external-video widget', () => {
+  const out = [];
+  const a = new SegmentAssembler({ onWidget: (w) => out.push(w) });
+  a.ingest({ type: 'unisphere-tool', metadata: { widgetName: 'unisphere.widget.genie', runtimeName: 'video-tool' }, content: '' });
+  a.ingest({ type: 'unisphere-tool', content: 'url: https://www.youtube.com/watch?v=dQw4w9WgXcQ' });
+  a.flush('turnEnd');
+  assert.equal(out.length, 1);
+  assert.equal(out[0].runtime, 'external-video');
+  assert.equal(out[0].runtimeName, 'video-tool');
+  assert.equal(out[0].model.url, 'https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+});
+
+test('ExperienceRenderer renders a video-tool widget with the external-video renderer', () => {
+  const r = new ExperienceRenderer(CTX);
+  assert.equal(r.has('video-tool'), true);
+  const d = r.render('video-tool', { url: 'https://www.kaltura.com/p/1234567/sp/123456700/embed/x', title: 'T' });
+  assert.equal(d.kind, 'external-video');
+  assert.equal(d.runtime, 'external-video');
+  assert.equal(d.runtimeName, 'video-tool');
+  assert.equal(d._meta.firstClass, true);
+  assert.equal(d.data.embedUrl, '');
+  assert.equal(d.data.url, 'https://www.kaltura.com/p/1234567/sp/123456700/embed/x');
+});
+
+test('register("video", fn) overrides external-video', () => {
+  const seen = [];
+  const r = new ExperienceRenderer().register('video', (m) => { seen.push(m); return { kind: 'custom', data: {} }; });
+  assert.equal(r.has('external-video-tool'), true);
+  assert.equal(r.render('external-video', { url: 'https://y.com/v' }).kind, 'custom');
+  assert.equal(r.render('video-tool', { url: 'https://y.com/v' }).kind, 'custom');
+  assert.equal(seen.length, 2);
 });
 
 test('RUNTIMES is the frozen nine-name set, all known', () => {
@@ -218,6 +277,47 @@ test('renderer shape: flashcards', () => {
   assert.deepEqual(d.data.cards, [{ front: 'Q', back: 'A', label: 'Q' }]);   // label = accessible name (falls back to front)
 });
 
+test('renderer shape: flashcards reads keypoints (title → front, summary → back)', () => {
+  const model = fixtureModel('flashcards-keypoints', 'flashcards-tool');
+  const d = new ExperienceRenderer(CTX).render('flashcards', model);
+  assert.equal(d.data.cards.length, 5);
+  assert.equal(d.data.cards[0].front, 'Understanding the dominant base');
+  assert.match(d.data.cards[0].back, /^The dominant share of a layout should use a \*\*neutral base\*\*/);
+  assert.equal(d.data.cards[0].label, 'Understanding the dominant base');
+});
+
+test('flashcards: keypoint citation.clips become card.clips', () => {
+  const model = fixtureModel('flashcards-keypoints', 'flashcards-tool');
+  const { cards } = new ExperienceRenderer(CTX).render('flashcards', model).data;
+  assert.equal(cards[0].clips.length, 1);
+  assert.equal(cards[0].clips[0].entryId, '1_aaaaaaaa');
+  assert.equal(cards[0].clips[0].startTime, 84);
+  assert.equal(cards[0].clips[0].endTime, 106);
+  assert.match(cards[0].clips[0].thumbnailUrl, /1_aaaaaaaa/);
+  assert.deepEqual(cards[1].clips.map((c) => c.startTime), [113, 130]);
+  assert.equal(cards[2].clips[0].entryId, '1_bbbbbbbb');
+});
+
+test('flashcards: a keypoint with clips: [] or an empty citation gives a card with no clips key', () => {
+  const model = fixtureModel('flashcards-keypoints', 'flashcards-tool');
+  const { cards } = new ExperienceRenderer().render('flashcards', model).data;
+  assert.equal(cards[3].front, 'A point with no clips');
+  assert.ok(!('clips' in cards[3]));
+  assert.ok(!('clips' in cards[4]));
+});
+
+test('flashcards: explicit cards win over keypoints, and front/back keys win over title/summary (guard)', () => {
+  const d = new ExperienceRenderer().render('flashcards', {
+    cards: [{ question: 'Q', answer: 'A', title: 'T', summary: 'S' }], keypoints: [{ title: 'K', summary: 'KS' }],
+  });
+  assert.deepEqual(d.data.cards, [{ front: 'Q', back: 'A', label: 'Q' }]);
+});
+
+test('flashcards: card clips also read a top-level clips key', () => {
+  const d = new ExperienceRenderer().render('flashcards', { cards: [{ front: 'F', back: 'B', clips: [{ entry_id: '1_a', start_time: 4 }] }] });
+  assert.equal(d.data.cards[0].clips[0].startTime, 4);
+});
+
 test('renderer shape: followups (string + object items)', () => {
   const d = new ExperienceRenderer().render('followups', { questions: ['q1', { text: 'q2' }, ''] });
   assert.deepEqual(d.data.questions, ['q1', 'q2']);   // empty dropped
@@ -229,6 +329,36 @@ test('renderer shape: sources (url scheme-checked)', () => {
   });
   assert.equal(d.data.sources[0].url, 'https://k.com/a');
   assert.equal(d.data.sources[1].url, '');            // dangerous scheme stripped
+});
+
+test('renderer shape: sources keeps entryId, type, duration, hasShort', () => {
+  const model = fixtureModel('sources-entries', 'sources-tool');
+  const d = new ExperienceRenderer().render('sources', model);
+  assert.equal(d.data.sources.length, 3);
+  assert.deepEqual(d.data.sources[0], { title: 'Choosing Colors Step By Step', url: '', snippet: '', entryId: '1_aaaaaaaa', type: 'video', duration: 2486, hasShort: true });
+  assert.equal(d.data.sources[1].hasShort, false);
+});
+
+test('sources: camelCase metadata keys work; a web source keeps exactly title, url, snippet', () => {
+  const web = new ExperienceRenderer().render('sources', { sources: [{ title: 'W', url: 'https://k.com/a', snippet: 's' }] });
+  assert.deepEqual(web.data.sources, [{ title: 'W', url: 'https://k.com/a', snippet: 's' }]);
+  const camel = new ExperienceRenderer().render('sources', { sources: [{ title: 'E', entryId: '1_a', hasShort: true, duration: 0 }] });
+  assert.equal(camel.data.sources[0].entryId, '1_a');
+  assert.equal(camel.data.sources[0].hasShort, true);
+  assert.equal(camel.data.sources[0].duration, 0);
+});
+
+test('sources: non-numeric duration and non-boolean has_short are omitted (guard)', () => {
+  const d = new ExperienceRenderer().render('sources', { sources: [{ title: 'E', duration: '2486', has_short: 'yes' }, { title: 'F', duration: -1, has_short: 1 }, { title: 'G', duration: null, type: '', entry_id: '' }] });
+  for (const s of d.data.sources) assert.deepEqual(Object.keys(s).sort(), ['snippet', 'title', 'url']);
+});
+
+test('sources: a long plain title folded at 80 columns joins with one space (guard)', () => {
+  const model = fixtureModel('sources-folded-title', 'sources-tool');
+  const { sources } = new ExperienceRenderer().render('sources', model).data;
+  assert.equal(sources[0].title, 'How To Select Colors Step By Step for a Design System That Scales Across Many Products and Teams');
+  assert.equal(sources[1].title, 'Café colors — a short guide');
+  assert.equal(sources[2].title, "It's the rule of thirds: explained");
 });
 
 test('renderer shape: summary (bullets + text)', () => {
@@ -276,6 +406,50 @@ test('renderer shape: summary unwraps a mis-nested {summary:{title,bullets}} pay
     'Non-GAAP measures are reconciled in the appendix.',
   ]);
   assert.ok(!d.data.summary.includes('[object Object]'));
+});
+
+test('renderer shape: summary keeps chapters in order', () => {
+  const model = fixtureModel('summary-chapters', 'summary-tool');
+  const d = new ExperienceRenderer().render('summary', model);
+  assert.equal(d.data.chapters.length, 5);
+  assert.equal(d.data.chapters[0], '0:00-1:30 | Introduction: How thirds help a layout stay balanced and calm');
+  assert.ok(d.data.chapters[4].startsWith('8:30-9:00 | Variations'));
+  assert.deepEqual(d.data.bullets, []);
+});
+
+test('summary: chapter object rows read title/text/label/summary; empty rows dropped', () => {
+  const d = new ExperienceRenderer().render('summary', { summary: 's', chapters: [{ title: 'A' }, { text: 'B' }, { label: 'C' }, { summary: 'D' }, {}, '', null, 'E'] });
+  assert.deepEqual(d.data.chapters, ['A', 'B', 'C', 'D', 'E']);
+});
+
+test('summary: nested summary unwrap carries chapters', () => {
+  const d = new ExperienceRenderer().render('summary', { summary: { summary: 'S', chapters: ['0:00 | One'] } });
+  assert.deepEqual(d.data.chapters, ['0:00 | One']);
+  const top = new ExperienceRenderer().render('summary', { summary: { summary: 'S', chapters: ['inner'] }, chapters: ['outer'] });
+  assert.deepEqual(top.data.chapters, ['outer']);
+});
+
+test('summary: chapters is [] when absent or not a list', () => {
+  assert.deepEqual(new ExperienceRenderer().render('summary', { summary: 's' }).data.chapters, []);
+  assert.deepEqual(new ExperienceRenderer().render('summary', { summary: 's', chapters: 'x' }).data.chapters, []);
+});
+
+test('mountWidget summary: chapters render as an ordered kgenui__chapters list', async () => {
+  globalThis.document = fakeDom();
+  try {
+    const { mountWidget } = await import('../../src/experience/genui/renderers/mount.js');
+    const model = fixtureModel('summary-chapters', 'summary-tool');
+    const root = mountWidget(new ExperienceRenderer().render('summary', model), document.createElement('div'));
+    const ol = findAll(root, (n) => n.tagName === 'OL');
+    assert.equal(ol.length, 1);
+    assert.ok(ol[0].className.includes('kgenui__chapters'));
+    assert.equal(ol[0].children.length, 5);
+    assert.ok(ol[0].children.every((li) => li.className === 'kgenui__chapter'));
+    assert.ok(ol[0].children[0].textContent.startsWith('0:00-1:30 | Introduction'));
+    // chapters alone are content: the widget mounts
+    const only = mountWidget({ kind: 'summary', data: { chapters: ['0:00 | A'] } }, document.createElement('div'));
+    assert.ok(only);
+  } finally { delete globalThis.document; }
 });
 
 test('renderer shape: video-gallery (entryId preserved, urls checked)', () => {
@@ -353,6 +527,211 @@ test('renderer shape: content-gallery (urls checked)', () => {
   });
   assert.equal(d.data.items[0].imageUrl, 'https://k.com/i.png');
   assert.equal(d.data.items[0].url, '');               // vbscript blocked
+});
+
+// ─────────────────────────── video-gallery clips ───────────────────────────
+
+test('video-gallery: citation.clips become videos (entryId, startTime, endTime)', () => {
+  const model = fixtureModel('video-gallery-clips', 'video-gallery-tool');
+  const d = new ExperienceRenderer().render('video-gallery', model);
+  assert.equal(d.data.videos.length, 3);
+  assert.deepEqual(d.data.videos.map((v) => v.startTime), [0, 84, 202]);
+  assert.deepEqual(d.data.videos.map((v) => v.endTime), [26, 200, 280]);
+  assert.deepEqual(d.data.videos.map((v) => v.entryId), ['1_aaaaaaaa', '1_aaaaaaaa', '1_bbbbbbbb']);
+  assert.deepEqual(d.data.videos.map((v) => v.title), ['', '', '']);   // a clip has no title
+});
+
+test('video-gallery: null clip thumbnail is derived from partnerId; null video_link gives url ""', () => {
+  const model = fixtureModel('video-gallery-clips', 'video-gallery-tool');
+  const v = new ExperienceRenderer(CTX).render('video-gallery', model).data.videos[0];
+  assert.match(v.thumbnailUrl, /1_aaaaaaaa/);
+  assert.match(v.embedUrl, /1_aaaaaaaa/);
+  assert.equal(v.url, '');
+});
+
+test('video-gallery: startTime/endTime are null when absent, negative or non-numeric; numeric strings count', () => {
+  const r = (o) => new ExperienceRenderer().render('video-gallery', { videos: [{ entryId: '1_a', ...o }] }).data.videos[0];
+  assert.deepEqual([r({}).startTime, r({}).endTime], [null, null]);
+  assert.deepEqual([r({ startTime: -3, endTime: 'soon' }).startTime, r({ startTime: -3, endTime: 'soon' }).endTime], [null, null]);
+  assert.deepEqual([r({ start_time: '12', end_time: 30.5 }).startTime, r({ start_time: '12', end_time: 30.5 }).endTime], [12, 30.5]);
+  assert.deepEqual([r({ start: 5, end: 9 }).startTime, r({ start: 5, end: 9 }).endTime], [5, 9]);
+  assert.equal(r({ startTime: Infinity }).startTime, null);
+});
+
+test('video-gallery: videos key wins over citation.clips (guard)', () => {
+  const d = new ExperienceRenderer().render('video-gallery', {
+    videos: [{ entryId: '1_first' }], citation: { clips: [{ entry_id: '1_clip' }] }, clips: [{ entry_id: '1_other' }],
+  });
+  assert.deepEqual(d.data.videos.map((v) => v.entryId), ['1_first']);
+});
+
+test('video-gallery: top-level clips are read after citation.clips; video_link is a url alias', () => {
+  const a = new ExperienceRenderer().render('video-gallery', { clips: [{ entry_id: '1_x', video_link: 'https://k.com/v' }] });
+  assert.equal(a.data.videos[0].entryId, '1_x');
+  assert.equal(a.data.videos[0].url, 'https://k.com/v');
+  const b = new ExperienceRenderer().render('video-gallery', { citation: 'text', clips: [{ entry_id: '1_y' }] });
+  assert.equal(b.data.videos[0].entryId, '1_y');
+});
+
+test('renderClips: non-array gives []; a clip with no entryId and no url is dropped', () => {
+  assert.equal(typeof vg.renderClips, 'function');
+  assert.deepEqual(vg.renderClips(undefined), []);
+  assert.deepEqual(vg.renderClips('x'), []);
+  assert.deepEqual(vg.renderClips({}), []);
+  const out = vg.renderClips([null, {}, 7, { start_time: 3 }, { entry_id: '1_a', start_time: 3 }, { video_link: 'https://k.com/v' }], CTX);
+  assert.equal(out.length, 2);
+  assert.equal(out[0].entryId, '1_a');
+  assert.equal(out[0].startTime, 3);
+  assert.equal(out[1].url, 'https://k.com/v');
+  assert.deepEqual(Object.keys(out[0]).sort(), ['embedUrl', 'endTime', 'entryId', 'startTime', 'thumbnailUrl', 'url']);
+});
+
+test('renderClips: blocks an unsafe url scheme and uses no partnerId guess', () => {
+  const [c] = vg.renderClips([{ entry_id: '1_a', video_link: 'javascript:x()', thumbnail: 'data:x' }]);
+  assert.equal(c.url, '');
+  assert.equal(c.thumbnailUrl, '');
+  assert.equal(c.embedUrl, '');
+});
+
+async function mountClips(videos, onAction) {
+  const listeners = [];
+  globalThis.document = listenerCapturingDom(listeners);
+  const { mountWidget } = await import('../../src/experience/genui/renderers/mount.js');
+  const root = mountWidget({ kind: 'video-gallery', data: { videos } }, document.createElement('div'), { onAction });
+  return { root, listeners };
+}
+
+test('mountWidget video-gallery: untitled clip shows its time range and labels the button by entry id + range', async () => {
+  try {
+    const { root } = await mountClips([{ entryId: '1_aaaaaaaa', title: '', startTime: 84, endTime: 200, thumbnailUrl: '', duration: '' }], () => {});
+    const btn = findAll(root, (n) => n.tagName === 'BUTTON')[0];
+    assert.equal(btn.getAttribute('aria-label'), 'Play: 1_aaaaaaaa, 1:24-3:20');
+    const meta = findAll(root, (n) => n.className === 'kgenui__meta').map((n) => n.textContent);
+    assert.deepEqual(meta, ['1:24-3:20']);
+  } finally { delete globalThis.document; }
+});
+
+test('mountWidget video-gallery: start without end shows one time; titled clip keeps its title in the label', async () => {
+  try {
+    const { root } = await mountClips([{ entryId: '1_a', title: 'Intro', startTime: 65, endTime: null }, { entryId: '1_b', title: 'Plain', startTime: null, endTime: null }], () => {});
+    const btns = findAll(root, (n) => n.tagName === 'BUTTON');
+    assert.equal(btns[0].getAttribute('aria-label'), 'Play: Intro, 1:05');
+    assert.equal(btns[1].getAttribute('aria-label'), 'Play: Plain');
+    const meta = findAll(root, (n) => n.className === 'kgenui__meta').map((n) => n.textContent);
+    assert.deepEqual(meta, ['1:05']);
+  } finally { delete globalThis.document; }
+});
+
+test('mountWidget video-gallery: play payload carries startTime and endTime', async () => {
+  try {
+    const actions = [];
+    const { listeners } = await mountClips([{ entryId: '1_a', title: '', startTime: 84, endTime: 106, url: 'https://k.com/v', embedUrl: '' }], (a, p) => actions.push([a, p]));
+    listeners.find((l) => l.ev === 'click').fn();
+    assert.deepEqual(actions, [['play', { entryId: '1_a', url: 'https://k.com/v', embedUrl: '', startTime: 84, endTime: 106 }]]);
+  } finally { delete globalThis.document; }
+});
+
+test('content-gallery: a text slide block keeps line breaks', () => {
+  const model = fixtureModel('content-text-slide', 'content-gallery-tool');
+  const { items } = new ExperienceRenderer(CTX).render('content-gallery', model).data;
+  assert.equal(items.length, 1);
+  assert.equal(items[0].type, 'text');
+  assert.ok(items[0].description.startsWith('### The Rule of Thirds'));
+  assert.ok(items[0].description.includes('\n'));
+  assert.ok(!('clips' in items[0]));
+});
+
+test('content-gallery: a video slide gets clips and its first clip\'s thumbnail', () => {
+  const model = fixtureModel('content-video-slide', 'content-gallery-tool');
+  const { items } = new ExperienceRenderer(CTX).render('content-gallery', model).data;
+  assert.equal(items[0].type, 'video');
+  assert.equal(items[0].clips.length, 1);
+  assert.equal(items[0].clips[0].entryId, '1_aaaaaaaa');
+  assert.equal(items[0].clips[0].startTime, 84);
+  assert.match(items[0].imageUrl, /1_aaaaaaaa/);
+  assert.equal(items[0].imageUrl, items[0].clips[0].thumbnailUrl);
+});
+
+test('content-gallery: a video slide with text: null is not an empty item', () => {
+  const model = fixtureModel('content-video-slide', 'content-gallery-tool');
+  const { items } = new ExperienceRenderer().render('content-gallery', model).data;   // no partnerId: no derived thumbnail
+  assert.equal(items.length, 1);
+  assert.equal(items[0].description, '');
+  assert.equal(items[0].imageUrl, '');
+  assert.equal(items[0].clips.length, 1);
+});
+
+test('content-gallery: type is always a string; fully empty items are dropped', () => {
+  const d = new ExperienceRenderer().render('content-gallery', { items: [{}, { title: 'a' }, { slide_type: 'text', text: '' }, null, { slide_type: 'text', text: 'x' }, { type: 'image', imageUrl: 'https://k.com/i.png' }] });
+  assert.equal(d.data.items.length, 3);   // a slide with only a type is empty
+  assert.deepEqual(d.data.items.map((i) => i.type), ['', 'text', 'image']);
+});
+
+test('content-gallery: the first clip fills imageUrl and url when the slide has none; explicit values win', () => {
+  const d = new ExperienceRenderer().render('content-gallery', {
+    slides: [
+      { title: 'a', imageUrl: 'https://k.com/own.png', url: 'https://k.com/own', clips: [{ entry_id: '1_a', thumbnail: 'https://k.com/clip.png', video_link: 'https://k.com/clip' }] },
+      { title: 'b', clips: [{ entry_id: '1_a', thumbnail: 'https://k.com/clip.png', video_link: 'https://k.com/clip' }] },
+    ],
+  });
+  assert.equal(d.data.items[0].imageUrl, 'https://k.com/own.png');
+  assert.equal(d.data.items[0].url, 'https://k.com/own');
+  assert.equal(d.data.items[1].imageUrl, 'https://k.com/clip.png');
+  assert.equal(d.data.items[1].url, 'https://k.com/clip');
+});
+
+test('mountWidget content-gallery: description folds line breaks to spaces', async () => {
+  globalThis.document = fakeDom();
+  try {
+    const { mountWidget } = await import('../../src/experience/genui/renderers/mount.js');
+    const root = mountWidget({ kind: 'content-gallery', data: { items: [{ title: 'T', description: 'a\nb\n\n  c' }] } }, document.createElement('div'));
+    const p = findAll(root, (n) => n.className === 'kgenui__text')[0];
+    assert.equal(p.textContent, 'a b c');
+  } finally { delete globalThis.document; }
+});
+
+test('mountWidget content-gallery: a long run of spaces in a description folds in linear time', async () => {
+  globalThis.document = fakeDom();
+  try {
+    const { mountWidget } = await import('../../src/experience/genui/renderers/mount.js');
+    const t0 = Date.now();
+    mountWidget({ kind: 'content-gallery', data: { items: [{ title: 'T', description: 'a' + ' '.repeat(200000) + 'b' }] } }, document.createElement('div'));
+    assert.ok(Date.now() - t0 < 500);
+  } finally { delete globalThis.document; }
+});
+
+test('mountWidget content-gallery: a video slide renders a play button that mounts the player and emits play', async () => {
+  const listeners = [];
+  globalThis.document = listenerCapturingDom(listeners);
+  try {
+    const { mountWidget } = await import('../../src/experience/genui/renderers/mount.js');
+    const model = fixtureModel('content-video-slide', 'content-gallery-tool');
+    const descriptor = new ExperienceRenderer(CTX).render('content-gallery', model);
+    const actions = [];
+    const root = mountWidget(descriptor, document.createElement('div'), { onAction: (a, p) => actions.push([a, p]) });
+    const btn = findAll(root, (n) => n.tagName === 'BUTTON')[0];
+    assert.equal(btn.getAttribute('aria-label'), 'Play: 1_aaaaaaaa, 1:24-2:24');
+    listeners.find((l) => l.ev === 'click').fn();
+    const stage = findAll(root, (n) => n.className === 'kgenui__player')[0];
+    assert.equal(stage.hidden, false);
+    assert.equal(findAll(stage, (n) => n.tagName === 'IFRAME').length, 1);
+    assert.equal(actions[0][0], 'play');
+    assert.equal(actions[0][1].entryId, '1_aaaaaaaa');
+    assert.equal(actions[0][1].startTime, 84);
+    assert.equal(actions[0][1].endTime, 144);
+  } finally { delete globalThis.document; }
+});
+
+test('mountWidget content-gallery: a video slide without partnerId still mounts a play button, and a slide without clips mounts no player', async () => {
+  globalThis.document = fakeDom();
+  try {
+    const { mountWidget } = await import('../../src/experience/genui/renderers/mount.js');
+    const model = fixtureModel('content-video-slide', 'content-gallery-tool');
+    const video = mountWidget(new ExperienceRenderer().render('content-gallery', model), document.createElement('div'));
+    assert.equal(findAll(video, (n) => n.tagName === 'BUTTON').length, 1);
+    const plain = mountWidget({ kind: 'content-gallery', data: { items: [{ title: 'T' }] } }, document.createElement('div'));
+    assert.equal(findAll(plain, (n) => n.className === 'kgenui__player').length, 0);
+  } finally { delete globalThis.document; }
 });
 
 // ─────────────────────────── SegmentAssembler ───────────────────────────
@@ -1220,5 +1599,18 @@ test('two mounted graded-question widgets in one process never share selection/a
     assert.equal(actionsB.length, 1);
     assert.equal(actionsB[0][1].correct, true);
     assert.equal(actionsA.length, 1, 'B\'s answer never re-fires or mutates A\'s already-recorded action');
+  } finally { delete globalThis.document; }
+});
+
+test('mountWidget content-gallery: a video slide with its own image keeps that image on the play button', async () => {
+  globalThis.document = listenerCapturingDom([]);
+  try {
+    const { mountWidget } = await import('../../src/experience/genui/renderers/mount.js');
+    const descriptor = new ExperienceRenderer(CTX).render('content-gallery', {
+      items: [{ title: 'T', imageUrl: 'https://img.example.com/slide.png', clips: [{ entryId: '1_aaaaaaaa', startTime: 1 }] }],
+    });
+    const root = mountWidget(descriptor, document.createElement('div'), { onAction: () => {} });
+    const img = findAll(root, (n) => n.tagName === 'IMG')[0];
+    assert.equal(img.src || img.getAttribute('src'), 'https://img.example.com/slide.png');
   } finally { delete globalThis.document; }
 });

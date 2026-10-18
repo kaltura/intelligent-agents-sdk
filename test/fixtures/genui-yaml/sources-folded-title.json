@@ -1,0 +1,26 @@
+{
+  "sources": [
+    {
+      "duration": 2486,
+      "entry_id": "1_aaaaaaaa",
+      "has_short": true,
+      "title": "How To Select Colors Step By Step for a Design System That Scales Across Many Products and Teams",
+      "type": "video"
+    },
+    {
+      "duration": 377,
+      "entry_id": "1_bbbbbbbb",
+      "has_short": false,
+      "title": "Café colors — a short guide",
+      "type": "video"
+    },
+    {
+      "duration": 90,
+      "entry_id": "1_cccccccc",
+      "has_short": false,
+      "title": "It's the rule of thirds: explained",
+      "type": "video",
+      "citation": {}
+    }
+  ]
+}

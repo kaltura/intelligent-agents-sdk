@@ -32,7 +32,7 @@ The shared leaf layer. Core never imports from `management/` or `experience/`.
 | `endpoints.js` | `REGIONS` and `resolveEndpoints` |
 | `transport-guard.js` | TLS check for transport URLs |
 | `net-guard.js` | Private, loopback and link-local host detector |
-| `stream.js` | Converse NDJSON/SSE parser, `collectConverse`, `segmentKind`, `GENUI_RUNTIMES` (the closed list of GenUI runtime names a segment can carry) |
+| `stream.js` | Converse NDJSON/SSE parser, `collectConverse`, `segmentKind`, `GENUI_RUNTIMES` (the closed list of GenUI runtime names a segment can carry), `genuiRuntimeAlias` (maps a runtime alias such as `video` to its first-class runtime) |
 | `redact.js` | Secret redaction |
 | `safety.js` | `safeText`/`safeUrl` for untrusted output |
 | `ids.js` | `meta()` receipts |
@@ -100,7 +100,8 @@ The shared leaf layer. Core never imports from `management/` or `experience/`.
 
 Turns `unisphere-tool` segments into framework-agnostic render descriptors.
 
-- `parse.js`: pure. `normalizeRuntime` (strips the wire `-tool` suffix), `RUNTIMES` (the first-class widgets), `parseWidget`/`parseContent` (forgiving parser; unknown keys go to `.raw`, never throws), `isKnownRuntime`.
+- `parse.js`: pure. `normalizeRuntime` (strips the wire `-tool` suffix and maps aliases), `RUNTIMES` (the first-class widgets), `parseWidget`/`parseContent` (forgiving parser; unparsed lines go to `.raw`, never throws), `isKnownRuntime`.
+- `yaml.js`: pure, internal. The YAML subset `parseContent` uses for string bodies. Not exported.
 - `segments.js`: `SegmentAssembler` buffers deltas and flushes a complete widget on `runtimeName` or `speechId` change, or at turn end.
 - `renderer.js`: `ExperienceRenderer`, dual mode. Live `start()` subscribes to `session.on('brainSegment')`. Headless `render(runtime, widget)` is fed from `Management.conversations.stream()`. The live runtime sends `force_experience:'avatar_only'`, so headless is the reliable widget path. An unknown runtime yields `{kind:'unknown'}` and calls `onUnhandled`. It never throws.
 - `renderers/*.js`: one default renderer per runtime. Each routes untrusted output through `core/safety.js` (`safeText`/`safeUrl`, no `innerHTML`).

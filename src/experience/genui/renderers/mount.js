@@ -18,7 +18,8 @@
  * INTERACTIVITY: pass `opts.onAction(action, payload)` to receive user intent the
  * widget can't fulfil itself — the host wires these to the session:
  *   - 'followup'  {question}                  → e.g. session.speak(question)
- *   - 'play'      {entryId?, url?, embedUrl?} → a video-gallery clip's thumbnail was clicked
+ *   - 'play'      {entryId?, url?, embedUrl?, startTime?, endTime?}
+ *                                              → a video-gallery clip's thumbnail was clicked (times in seconds, or `null`)
  *   - 'open'      {url}                       → a link/source/content card was activated
  *   - 'submit'    {values}                    → a structured-data form was submitted (→ session.submitStructuredDataForm)
  *   - 'answer'    {questionId, variant, correct, value, explanation, optionId?}
@@ -100,6 +101,13 @@ const BUILDERS = {
       else root.appendChild(el('p', 'kgenui__text', safeText(data.summary, 8000)));
     }
     listEl(root, asArray(data.bullets), (b) => el('li', 'kgenui__bullet', safeText(b, 1000)));
+    const chapters = asArray(data.chapters);
+    if (chapters.length) {
+      const ol = el('ol', 'kgenui__list kgenui__chapters');
+      ol.setAttribute('role', 'list');
+      for (const c of chapters) ol.appendChild(el('li', 'kgenui__chapter', safeText(c, 1000)));
+      root.appendChild(ol);
+    }
   },
 
   flashcards(root, data) {
@@ -188,21 +196,10 @@ const BUILDERS = {
     stage.hidden = true;
     gallery(root, asArray(data.videos), (v) => {
       const card = el('li', 'kgenui__card');
-      const img = safeImg(v && v.thumbnailUrl, safeText((v && v.alt) || (v && v.title), 300));
-      // The thumbnail plays the clip — a focusable button wrapping the image.
-      const btn = el('button', 'kgenui__play');
-      btn.type = 'button';
-      btn.setAttribute('aria-label', 'Play: ' + safeText((v && v.title) || (v && v.entryId), 300));
-      if (img) btn.appendChild(img);
-      else btn.appendChild(el('span', 'kgenui__play-glyph', '▶'));
-      btn.addEventListener('click', () => {
-        // Real player inline when we have an embed URL; always surface the intent too.
-        const frame = (v && v.embedUrl) ? safeIframe(v.embedUrl, safeText((v && v.title) || 'Video', 300)) : null;
-        if (frame) { stage.replaceChildren(frame); stage.hidden = false; stage.scrollIntoView?.({ block: 'nearest' }); }
-        onAction('play', { entryId: v && v.entryId, url: v && v.url, embedUrl: v && v.embedUrl });
-      });
-      card.appendChild(btn);
+      card.appendChild(playButton(v, stage, onAction));
       if (v && v.title) card.appendChild(el('span', 'kgenui__title', safeText(v.title, 500)));
+      const range = fmtRange(v && v.startTime, v && v.endTime);
+      if (range) card.appendChild(el('span', 'kgenui__meta', range));
       if (v && v.duration) card.appendChild(el('span', 'kgenui__meta', safeText(v.duration, 40)));
       return card;
     });
@@ -211,16 +208,27 @@ const BUILDERS = {
 
   'content-gallery'(root, data, onAction) {
     titleEl(root, data.title);
+    // A shared inline player surface for video slides, as in video-gallery.
+    const stage = el('div', 'kgenui__player');
+    stage.hidden = true;
+    let hasVideo = false;
     gallery(root, asArray(data.items), (it) => {
       const card = el('li', 'kgenui__card');
-      const img = safeImg(it && it.imageUrl, safeText((it && it.alt) || (it && it.title), 300));
-      if (img) card.appendChild(img);
+      const clip = it && Array.isArray(it.clips) ? it.clips[0] : null;
+      if (clip) {
+        hasVideo = true;
+        card.appendChild(playButton({ ...clip, thumbnailUrl: it.imageUrl || clip.thumbnailUrl, title: it.title, alt: it.alt }, stage, onAction));
+      } else {
+        const img = safeImg(it && it.imageUrl, safeText((it && it.alt) || (it && it.title), 300));
+        if (img) card.appendChild(img);
+      }
       if (it && it.title) card.appendChild(el('span', 'kgenui__title', safeText(it.title, 500)));
-      if (it && it.description) card.appendChild(el('p', 'kgenui__text', safeText(it.description, 2000)));
+      if (it && it.description) card.appendChild(el('p', 'kgenui__text', safeText(String(it.description).split('\n').map((l) => l.trim()).filter(Boolean).join(' '), 2000)));
       if (it && it.url) { const a = link(it.url, safeText(it.title || 'Open', 300), onAction); if (a) card.appendChild(a); }
       else if (it && it.id) { card.dataset.id = String(it.id); }
       return card;
     });
+    if (hasVideo) root.appendChild(stage);
   },
 
   'user-properties-form'(root, data, onAction) {
@@ -407,6 +415,41 @@ function gallery(root, items, makeCard) {
   ul.setAttribute('role', 'list');
   for (const it of items) ul.appendChild(makeCard(it));
   root.appendChild(ul);
+}
+/** `1:24` or `1:02:03` from seconds. */
+function fmtTime(sec) {
+  const t = Math.floor(sec);
+  const h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), s = t % 60;
+  const ss = String(s).padStart(2, '0');
+  return h ? `${h}:${String(m).padStart(2, '0')}:${ss}` : `${m}:${ss}`;
+}
+/** `1:24-1:46`, or `1:24` without an end; `''` without a numeric start. */
+function fmtRange(start, end) {
+  if (typeof start !== 'number' || !Number.isFinite(start)) return '';
+  return typeof end === 'number' && Number.isFinite(end) ? `${fmtTime(start)}-${fmtTime(end)}` : fmtTime(start);
+}
+/**
+ * The play button of a clip: a focusable `<button>` around the thumbnail (or a glyph).
+ * Click mounts the clip's Kaltura player in `stage` when it has an embed URL, and always fires `onAction('play', ...)`.
+ */
+function playButton(v, stage, onAction) {
+  const img = safeImg(v && v.thumbnailUrl, safeText((v && v.alt) || (v && v.title), 300));
+  const range = fmtRange(v && v.startTime, v && v.endTime);
+  const btn = el('button', 'kgenui__play');
+  btn.type = 'button';
+  btn.setAttribute('aria-label', 'Play: ' + safeText((v && v.title) || (v && v.entryId), 300) + (range ? ', ' + range : ''));
+  if (img) btn.appendChild(img);
+  else btn.appendChild(el('span', 'kgenui__play-glyph', '▶'));
+  btn.addEventListener('click', () => {
+    // Real player inline when we have an embed URL; always surface the intent too.
+    const frame = (v && v.embedUrl) ? safeIframe(v.embedUrl, safeText((v && v.title) || 'Video', 300)) : null;
+    if (frame) { stage.replaceChildren(frame); stage.hidden = false; stage.scrollIntoView?.({ block: 'nearest' }); }
+    onAction('play', {
+      entryId: v && v.entryId, url: v && v.url, embedUrl: v && v.embedUrl,
+      startTime: v && v.startTime, endTime: v && v.endTime,
+    });
+  });
+  return btn;
 }
 /** A scheme-checked external link with a screen-reader "new tab" cue + an optional onAction('open'). */
 function link(url, label, onAction) {
