@@ -20,28 +20,28 @@ export const EXPERIENCES = ['markdown', 'summarization', 'flashcards', 'avatar_o
 /**
  * The `model_type` wire values (LOWERCASE, see the Converse section of
  * docs/api/operate.md). There is no `'DEFAULT'` literal: the field is
- * omitted to use the server default. The only explicit value the SDK ever
- * sends is `'fast'`, and only when the caller asks for it; `primary` is a
- * sentinel meaning "omit".
+ * omitted to use the server default. The explicit values are `'fast'` and
+ * `'smart'`, sent only when the caller asks for them; `primary` is a sentinel
+ * meaning "omit".
  *
  * The SDK cannot prove which model replied. Callers can assert acceptance,
  * not model identity.
- * @type {{readonly fast:'fast', readonly primary:null}}
+ * @type {{readonly fast:'fast', readonly smart:'smart', readonly primary:null}}
  */
-export const MODEL_TYPES = Object.freeze({ fast: 'fast', primary: null });
+export const MODEL_TYPES = Object.freeze({ fast: 'fast', smart: 'smart', primary: null });
 
 /**
  * Normalize a caller-supplied model selector to its wire value, or `undefined`
- * (= OMIT the field). Accepts `'fast'` (any case),
- * `'primary'`/`'default'`/empty/null (→ omit). Anything else throws via the
- * caller's validator; here we only canonicalize the two documented choices.
- * Pure, never throws.
+ * (= OMIT the field). Accepts `'fast'` or `'smart'` (any case, trimmed),
+ * `'primary'`/`'default'`/empty/null (→ omit). Anything else is also omitted;
+ * here we only canonicalize the two documented choices. Pure, never throws.
  * @param {unknown} sel
- * @returns {('fast'|undefined)}
+ * @returns {('fast'|'smart'|undefined)}
  */
 export function modelTypeWire(sel) {
   if (typeof sel !== 'string') return undefined;
-  return sel.trim().toLowerCase() === 'fast' ? 'fast' : undefined;
+  const v = sel.trim().toLowerCase();
+  return v === 'fast' || v === 'smart' ? v : undefined;
 }
 
 /**

@@ -111,3 +111,10 @@ test('a video-tool type with no runtimeName classifies as render-genui for exter
   assert.equal(a.type, 'render-genui');
   assert.equal(a.runtime, 'external-video');
 });
+
+test('MODEL_TYPES has smart; modelTypeWire maps smart in any case', () => {
+  assert.equal(MODEL_TYPES.smart, 'smart');
+  assert.equal(modelTypeWire('SMART'), 'smart');
+  assert.equal(modelTypeWire(' Smart '), 'smart');
+  assert.equal(modelTypeWire('bogus'), undefined);
+});
