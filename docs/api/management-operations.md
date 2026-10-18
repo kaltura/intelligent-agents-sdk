@@ -116,7 +116,7 @@ Token rules per method: [operate.md § Threads](operate.md#threads). `threads.pu
 | Delete | `POST /v1/thread/delete` | `{"thread_ids":["UUID"]}`. See [operate.md § Threads](operate.md#threads) for delete behavior |
 | Transcript | `POST /v1/thread/get_transcripts` | `{"id":"UUID"}` |
 
-**Filter fields (list):** `agentIdEquals`, `contextIdEqual`, `createdAtGreaterThanOrEqual`, `createdAtLessThanOrEqual`, `idEquals`, `idsIn`, `isEverywhere`, `orderBy`, `partnerIdEquals`, `statusEquals`, `statusIn`, `updatedAtGreaterThanOrEqual`, `updatedAtLessThanOrEqual`, `userIdEquals`.
+**Filter fields (list):** `agentIdEquals`, `agentIdIn`, `contextIdEqual`, `createdAtGreaterThanOrEqual`, `createdAtLessThanOrEqual`, `idEquals`, `idsIn`, `isEverywhere`, `orderBy`, `originEquals`, `originIn`, `partnerIdEquals`, `statusEquals`, `statusIn`, `updatedAtGreaterThanOrEqual`, `updatedAtLessThanOrEqual`, `userIdEquals`. Origin values: [operate.md § Threads](operate.md#threads).
 
 Rules to know:
 
@@ -126,7 +126,7 @@ Rules to know:
 - Pager is `{pageIndex, pageSize}` (1-based). Use `pageIndex`/`pageSize`, not `{offset, limit}`.
 - `pageSize` is at most 500. This applies to every list and report pager in this section (Threads, Messages, Feedback, Followups).
 
-SDK: `mgmt.threads.list(ks, opts)` merges `opts.filter` under the fixed `objectType`, so it can't be overridden. `agentIdEquals` filters threads by agent. There is no "in" form: `agentIdIn` throws a `validation_error` before any network call.
+SDK: `mgmt.threads.list(ks, opts)` merges `opts.filter` under the fixed `objectType`, so it can't be overridden. `agentIdEquals` filters by one agent, `agentIdIn` by several.
 
 `request_vars` on `push` goes through the same reserved-name check as `converse`, before any network call. See [operate.md § Reserved Template Variables](operate.md#reserved-template-variables-sys__).
 

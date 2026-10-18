@@ -129,7 +129,7 @@ Returns `{aiConsent, avatar, identifiedUser}`. `avatar` is non-null when the age
 
 ## Threads
 
-In this SDK, `threads.list`, `get`, `rename`, `delete`, `transcript`, `setAnalysis`, `clearAnalysis` and `messages.list`, `get`, `share` accept an admin, conversation or agent token. A widget token is rejected with `wrong_token_scope` before any request. A raw KS string is sent as is, and the server answers 403 for a widget KS. What each token reaches: [SECURITY.md § Session type](../../SECURITY.md#session-type). `threads.push`, `messages.report`, `messages.reportSummary`, `feedback.list` and `followups.list` need an admin token. Pager: `{"pageIndex":1,"pageSize":30}`.
+In this SDK, `threads.list`, `get`, `rename`, `delete`, `transcript`, `setAnalysis`, `clearAnalysis`, `messages.list`, `get`, `share`, `followups.getSuggested` and `knowledge.search` accept an admin, conversation or agent token. A widget token is rejected with `wrong_token_scope` before any request. How raw KS strings are checked: [Authentication](authentication.md#authentication). What each token reaches: [SECURITY.md § Session type](../../SECURITY.md#session-type). `threads.push`, `messages.report`, `messages.reportSummary`, `feedback.list` and `followups.list` need an admin token. Pager: `{"pageIndex":1,"pageSize":30}`.
 
 | Operation | Endpoint | Body |
 |-----------|----------|------|
@@ -141,7 +141,26 @@ In this SDK, `threads.list`, `get`, `rename`, `delete`, `transcript`, `setAnalys
 
 `...` = `https://genie.nvp1.ovp.kaltura.com`
 
-**Thread list response** fields per object: `id`, `title`, `created_at`, `updated_at`, `status`.
+**Thread list response** fields per object: `id`, `title`, `created_at`, `updated_at`, `status`, `origin`, `agent_id`.
+
+**Origin.** Every thread has a numeric `origin`. The list returns only `origin: 0` unless the filter names an origin.
+
+| `origin` | Thread | How it is made |
+|---|---|---|
+| 0 | Standard | Default |
+| 1 | Preview | A token minted with `extraPrivileges: 'threadOrigin:preview'` or `'preview:true'` |
+| 2 | Evaluation | A token minted with `extraPrivileges: 'threadOrigin:evaluation'` |
+
+Filter with `originEquals: 2` or `originIn: [0, 2]`. `originIn: [0, 1, 2, 3, 4]` returns threads of all origins.
+
+**What a user token lists.** A conversation or agent token with a `userId` reaches that user's threads with the agent named in the token. The table covers standard threads (`origin: 0`).
+
+| Token | `threads.list` returns | `threads.get` of a thread from another agent or user |
+|---|---|---|
+| Admin | Every user and agent | Found |
+| `userId` + `agentId` | That user's threads with that agent | 404 |
+| Same `userId`, other `agentId` | None of the first agent's threads | 404 |
+| `userId`, no `agentId` | None of that user's agent threads | 404 |
 
 **Transcript response:** `{"status":"success","data":"human: …\nai: …"}`. Plain text, one turn per line.
 
@@ -186,7 +205,7 @@ Use the SDK for feedback and follow-up suggestions. It handles the routes for yo
 
 Partner-scoped read-only CSV. It contains end-user IDs and verbatim questions (treat as PII).
 
-SDK: `mgmt.messages.report(ks)` (raw CSV) / `mgmt.messages.reportSummary(ks)` (volume + feedback ratio + top questions, with a `_meta` provenance receipt).
+SDK: `mgmt.messages.report(ks)` (raw CSV) / `mgmt.messages.reportSummary(ks)` (volume, feedback ratio and top questions, with a `_meta` provenance receipt). Messages pushed into a thread are not counted as messages.
 
 `mgmt.messages.get(id, ks)` (`POST {genieUrl}/message/get`) fetches one message record directly, without paging through `messages.list()`. A message that does not exist, or that the token cannot read, throws a typed `not_found` or `forbidden` error.
 

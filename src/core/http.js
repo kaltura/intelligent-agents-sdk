@@ -16,8 +16,8 @@
  * - Diagnostic logging routes through {@link redact}; a token can't leak.
  * - Retries use truncated exponential backoff + jitter. A network-layer error
  *   (no response received) retries on every method. A 429/502/503/504
- *   response retries only for GET/HEAD or a request carrying an idempotency
- *   key — retrying an already-sent write without one could double it.
+ *   response retries only for GET/HEAD. A write may already have run, so it is
+ *   not retried on a received status, with or without an idempotency key.
  * - Response bodies are size-capped at `maxResponseBytes` (default 10 MiB),
  *   enforced incrementally while streaming the body (not after buffering it
  *   in full) so a chunked response without an honest Content-Length can't
@@ -92,7 +92,7 @@ export class Http {
    * @param {string} req.url            Absolute URL.
    * @param {string} req.ks             KS token for the Authorization header.
    * @param {unknown} [req.body]        JSON body (omitted if undefined).
-   * @param {string} [req.idempotencyKey] Sent as `Idempotency-Key` on creates.
+   * @param {string} [req.idempotencyKey] Sent as the Idempotency-Key header. It does not make the request retriable.
    * @returns {Promise<{data:any, requestId:string}>}
    */
   async postJson(req) {
@@ -102,8 +102,7 @@ export class Http {
   /**
    * Generic request with full control. Returns parsed JSON (or text) + requestId.
    * Retries with exponential backoff: a network-layer error retries on every
-   * method; a 429/502/503/504 response retries only for GET/HEAD or a
-   * request carrying `idempotencyKey`.
+   * method; a 429/502/503/504 response retries only for GET/HEAD.
    * @param {object} req
    * @param {string} req.method
    * @param {string} req.url
@@ -111,7 +110,7 @@ export class Http {
    * @param {unknown} [req.body]
    * @param {boolean} [req.json]        Serialize body as JSON + set content-type.
    * @param {Record<string,string>} [req.headers]
-   * @param {string} [req.idempotencyKey]
+   * @param {string} [req.idempotencyKey] Sent as the Idempotency-Key header. It does not make the request retriable.
    * @param {AbortSignal} [req.signal]
    * @returns {Promise<{data:any, requestId:string, status:number, headers:Headers}>}
    */
@@ -119,12 +118,6 @@ export class Http {
     const { method, url, ks, body, json, headers = {}, idempotencyKey, signal } = req;
     const path = pathOf(url);
     const isGet = method === 'GET' || method === 'HEAD';
-    // Gates retry of a received transient HTTP status (429/502/503/504) below:
-    // only GET/HEAD or a request carrying an idempotency key may retry one,
-    // since the server may already have processed a plain POST/PUT/PATCH/DELETE.
-    // A network-layer error (no response received) retries on every method
-    // regardless of this flag — see the catch block below.
-    const isSafeToRetryHttpError = isGet || !!idempotencyKey;
 
     const h = { ...headers };
     if (ks) h['Authorization'] = `KS ${ks}`;
@@ -189,8 +182,10 @@ export class Http {
           body: aborted ? `request timed out after ${this._timeoutMs}ms` : String(err && err.message || err),
           requestId: '',
         });
-        // Network errors (status 0) are retriable on all methods
-        if (attempt < this._maxRetries) { lastErr = kErr; continue; }
+        // Network errors (status 0, no response received) retry on all methods. Once a
+        // response arrived, only GET/HEAD retry: the server may already have run a write.
+        const noResponse = res === undefined;
+        if ((noResponse || isGet) && attempt < this._maxRetries) { lastErr = kErr; continue; }
         throw kErr;
       }
       clearTimeout(t);
@@ -206,8 +201,9 @@ export class Http {
 
       if (!res.ok) {
         const kErr = errorFromResponse({ status: res.status, path, body: data, requestId, headers: respHeaders });
-        // Only retry transient server errors; do NOT retry auth/validation/client errors
-        if (RETRIABLE_STATUSES.has(res.status) && isSafeToRetryHttpError && attempt < this._maxRetries) {
+        // Only GET/HEAD retry a received transient status: a write may already have run.
+        // A network-layer error (no response received) retries on every method, see the catch block.
+        if (RETRIABLE_STATUSES.has(res.status) && isGet && attempt < this._maxRetries) {
           lastErr = kErr; continue;
         }
         throw kErr;

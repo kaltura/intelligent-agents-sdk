@@ -77,13 +77,7 @@ Both are routed to `ExperienceRenderer` (`src/experience/genui/renderer.js`), wh
 - Runs every string through `safeText` (XSS-safe truncation).
 - Drops any field with no key.
 
-The output is a framework-agnostic descriptor:
-
-```js
-{ kind: 'user-properties-form', data: { title, fields: [
-  { key, type, label, knownValue, required, description }
-] } }
-```
+The output is a framework-agnostic descriptor. Its shape and limits are in [genui/widgets.md](genui/widgets.md#8-user-properties-form-renderuserpropertiesform-structured-data-collection).
 
 ## How the form is rendered
 
@@ -95,7 +89,7 @@ If you hand `mountWidget` (`src/experience/genui/renderers/mount.js`) a real DOM
 - Fields pre-filled from `knownValue`.
 - A submit button.
 
-It never uses `innerHTML`, so text supplied by the model can't inject markup. On submit, it calls your `opts.onAction('submit', {values})` callback.
+It never uses `innerHTML`, so text supplied by the model can't inject markup. On submit, it calls your `opts.onAction('submit', {values, formId})` callback. `formId` is the descriptor's `formId`, or `null`. A non-empty `secondaryTitle` shows under the title.
 
 `user_properties_forms` is not the only way to reach the widget. An app can instead reach the same `user-properties-form` widget through a different path: keep `kaltura_genie_experiences` off, and expose the widget as one enum value of your own native `show_widget` **client** tool. The model then decides when to call it, based on your own prompt-level timing rules, with no `call_stage`-driven form needed at all.
 

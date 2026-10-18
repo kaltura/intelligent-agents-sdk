@@ -50,8 +50,9 @@ The SDK wraps every error into a `KalturaError` with a stable `err.code`. Branch
 |--------|-----|-----|
 | 400 | `bad_request` | Fix the request body |
 | 402 | `payment_required` | The server refused the request as Payment Required, which points to a plan or entitlement limit. Check the plan with your Kaltura contact. The SDK never retries it, and `err.retryable` is `false`. A temporary load limit is not a 402: a live conversation reports it as the retryable `capacity_unavailable`. |
-| 403 | `forbidden` | Wrong KS type: admin KS for management, `geniegpcid` for conversations. Also: a user session without `userId` on thread get, list or delete. A user session asking for another user's thread gets 404 instead. See [SECURITY.md § Session type](SECURITY.md#session-type) |
+| 403 | `forbidden` | Wrong KS type: admin KS for management, `geniegpcid` for conversations. Also: a user session without `userId` on thread get, list or delete. A user session asking for another user's thread, or a thread opened with another agent, gets 404 instead. See [SECURITY.md § Session type](SECURITY.md#session-type) |
 | 405 | `method_not_allowed` | Use `GET` for `/assistant/status`; everything else is `POST` |
+| 429 / 502 / 503 / 504 | `rate_limited` / `server_error` | Only GET requests are retried for you. Most SDK calls are POST, and a POST is not retried after one of these answers, because it may already have run. Before you send a create again, check with list or get. |
 | 6001 | `capacity_unavailable` | No free avatar slot. Retry later or call `waitForCapacity()`. See [Capacity & the queue](docs/architecture-reference/scale-and-sticky-sessions.md#capacity--the-queue-throwtonoagent--throwtoexceededtier) |
 | 6002 | `tier_exceeded` | The account plan limit is reached. Not retryable. See [Capacity & the queue](docs/architecture-reference/scale-and-sticky-sessions.md#capacity--the-queue-throwtonoagent--throwtoexceededtier) |
 | none | `ice_failed` | The avatar media path never connected. `err.ice` says why. Retryable. See [ICE diagnostics](docs/architecture-reference/resilience-and-failure-handling.md#ice-diagnostics) |

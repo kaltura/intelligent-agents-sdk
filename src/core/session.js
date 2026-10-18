@@ -87,6 +87,11 @@ const DEFAULT_TTL = { admin: 3600, conversation: 1800, agent: 1800 };
 // Reject absurd lifetimes on browser-bound kinds (a multi-year conversation token is a
 // multi-year leak window). Admin is server-side and may legitimately run longer flows.
 const MAX_TTL = { conversation: 86400, agent: 86400, admin: 7 * 86400 };
+// A widget KS is encrypted, so its kind can't be read from the string. Each Sessions
+// instance remembers the strings of its newest widget mints so the typed guards can refuse them.
+const WIDGET_KS_MEMORY = 32;
+// A minted KS longer than this makes the server answer 401. Warn once per instance.
+const KS_LENGTH_WARN = 4500;
 
 /** Mints, tracks, and revokes Kaltura Session (KS) tokens — see the module docstring above for the two-KS-type security invariant. */
 export class Sessions {
@@ -97,6 +102,8 @@ export class Sessions {
   _adminSecret;
   /** @type {(() => (string|Promise<string>))|undefined} */
   _getAdminSecret;
+  /** @type {Set<string>} Raw KS strings of this instance's newest widget mints (non-enumerable, at most {@link WIDGET_KS_MEMORY}). */
+  _widgetKs;
 
   /**
    * @param {object} cfg
@@ -108,6 +115,7 @@ export class Sessions {
    * @param {(event:object)=>void} [cfg.onAuditEvent]  Redacted structured security events (token.mint/token.revoke/...).
    * @param {(agentId:string) => Promise<string|number|undefined>} [cfg.resolveConfigId]  Looks up an agent's
    *   intellect config id for {@link Sessions.createAgentToken}. `Management` wires this for you.
+   * @param {(msg:string)=>void} [cfg.warn]  Receives a warning when a minted KS is long. Default `console.warn`.
    */
   constructor(cfg) {
     this._partnerId = String(cfg.partnerId);
@@ -119,6 +127,10 @@ export class Sessions {
     this._http = cfg.http;
     this._resolveConfigId = cfg.resolveConfigId;
     this._audit = makeAuditEmitter(cfg.onAuditEvent, this._partnerId, 'ovp/session');
+    // Non-enumerable, like the secret: util.inspect and JSON.stringify never print the strings.
+    Object.defineProperty(this, '_widgetKs', { value: new Set(), enumerable: false });
+    this._warn = cfg.warn ?? ((m) => console.warn(m));
+    this._warnedLongKs = false;
   }
 
   /**
@@ -356,11 +368,31 @@ export class Sessions {
   }
 
   /**
+   * The kind of a raw KS string this instance minted recently. Only `'widget'` is remembered.
+   * @param {string} raw
+   * @returns {'widget'|undefined}
+   */
+  _mintedKindOf(raw) {
+    return this._widgetKs.has(raw) ? 'widget' : undefined;
+  }
+
+  /**
    * @param {string} [userId] Present only when the caller bound a real end-user identity.
    * @param {SessionType} [sessionType] Absent for widget tokens.
    * @returns {Token}
    */
   _receipt(ks, kind, entitlementEnforced, privileges, expiresAt, userId, sessionType) {
+    if (kind === 'widget') {
+      this._widgetKs.delete(ks);
+      this._widgetKs.add(ks);
+      if (this._widgetKs.size > WIDGET_KS_MEMORY) this._widgetKs.delete(this._widgetKs.values().next().value);
+    } else {
+      this._widgetKs.delete(ks);
+    }
+    if (ks.length > KS_LENGTH_WARN && !this._warnedLongKs) {
+      this._warnedLongKs = true;
+      try { this._warn(`Minted KS is ${ks.length} characters, close to the length the server refuses with 401 (unauthorized). Shorten extraPrivileges or restrictions.`); } catch { /* a throwing logger must not fail a mint */ }
+    }
     const st = sessionType !== undefined ? { sessionType } : {};
     const token = {
       ks, kind, ...st, entitlementEnforced, privileges, expiresAt,

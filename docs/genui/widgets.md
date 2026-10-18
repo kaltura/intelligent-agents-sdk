@@ -126,7 +126,15 @@ Fields come from `model.fields`, `model.properties`, or `model.items`. A field w
 
 `required`/`description` let a host wire `aria-required`/`aria-describedby`/`inputmode`.
 
-Descriptor: `{kind:'user-properties-form', data:{title, fields:[{key, type, label, knownValue, required, description}]}}`.
+Form level:
+
+| Field | Source keys (model) | Constraint |
+|---|---|---|
+| `title` | `title` | ≤300 chars |
+| `secondaryTitle` | `secondary_title`, `secondaryTitle` | ≤300 chars, default `''`. Shown under the title when not empty |
+| `formId` | `form_id`, `formId` | A non-negative integer (`0` is valid) or a digit string of 1 to 9 digits, which becomes a number. Anything else is `null`. Sent back in the submit payload |
+
+Descriptor: `{kind:'user-properties-form', data:{title, secondaryTitle, formId, fields:[{key, type, label, knownValue, required, description}]}}`.
 - **Report back:** the default path (when `user_properties_forms` is configured) has the host call **`session.submitStructuredDataForm(info)`** (`session.js`). This `sanitizeJson`s the object and emits the socket event **`setFormLeadInfo`**. It is a fire-and-forget emit with no read-back. An app can take a different, durable path instead. Skip configuring `user_properties_forms` entirely, and reach this same `user-properties-form` widget as one enum value of its own `show_widget` **client** tool (with `kaltura_genie_experiences` OFF). Render it into your own dedicated host UI. On submit, bridge the collected values into `request_vars`, so the agent itself can call a server-side **api** tool that persists them wherever you point it. See [../STRUCTURED-DATA-FORMS.md](../STRUCTURED-DATA-FORMS.md).
 - For the full picture, see [../STRUCTURED-DATA-FORMS.md](../STRUCTURED-DATA-FORMS.md) and [../EXTERNAL-API-INTEGRATIONS.md](../EXTERNAL-API-INTEGRATIONS.md). They cover configuration, reading back what the viewer submitted, and how to deliver the collected data somewhere durable.
 

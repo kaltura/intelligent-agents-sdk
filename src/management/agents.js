@@ -102,8 +102,9 @@ export class Agents {
   }
 
   /**
-   * Create an agent. WRITE, NOT idempotent (the SDK sends an Idempotency-Key
-   * automatically, but creation is not idempotent). `intellect.id` is the intellect's
+   * Create an agent. WRITE, NOT idempotent. Sends an `Idempotency-Key` header
+   * (`opts.idempotencyKey`, else a random one). A create is not retried after a
+   * 429 or 5xx. `intellect.id` is the intellect's
    * configId — no separate genieId is needed (the request body's `intellect`
    * only takes `intellectType`+`id`).
    * @param {object} body {displayName,intellect:{intellectType:'genie',id},avatarIds?,adminTags?,maxConversationLength?,widgetConfig?,embedConfig?,screenShare?:{enabled?:boolean,prompt?:string},asr?:AgentAsr}

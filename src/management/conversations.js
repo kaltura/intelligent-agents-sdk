@@ -7,10 +7,11 @@
  * `agentid` (an agent token, or a conversation token minted with `agentId`)
  * labels the thread with the real `agent_id` for lifecycle-rule matching
  * (see docs/lifecycle/README.md). `threads.*` (except `push`) and
- * `messages.list/get/share` accept an admin token or a per-user conversation or
- * agent token (a per-user token manages only its own threads). `threads.push`,
- * the reports, `feedback.list`, `followups.list` and `knowledge.*` (except
- * `search`) need an admin token. See docs/api/operate.md.
+ * `messages.list/get/share`, `followups.getSuggested` and `knowledge.search`
+ * accept an admin token or a per-user conversation or agent token, not a widget
+ * token (a per-user token manages only its own threads with its own agent).
+ * `threads.push`, the reports, `feedback.list`, `followups.list` and the other
+ * `knowledge.*` methods need an admin token. See docs/api/operate.md.
  */
 import { parseConverseStream, collectConverse, SPIRAL_RECOVERY_PREFIX } from '../core/stream.js';
 import { errorFromErrorSegments } from '../core/errors.js';
@@ -34,8 +35,8 @@ const GENIE_QUESTION_FILTER = 'GenieListQuestionFilter';
 // queries (list + count-only) always agree on what "in the knowledge base" means.
 const KNOWLEDGE_ENTRY_STATUS_TYPE_FILTER = { statusIn: '-1,-2,0,1,2,7,4', typeIn: '1,7,10' };
 
-// categoryEntry is unique per (categoryId, entryId), and the transport retries
-// transient failures (429/502/503/504/network — see core/http.js). A retry can
+// categoryEntry is unique per (categoryId, entryId), and the transport retries a
+// POST after a network error (no response received, see core/http.js). A retry can
 // re-run a categoryentry.add the server already applied; Kaltura then reports
 // CATEGORY_ENTRY_ALREADY_EXISTS ("Entry already assigned to this category").
 // The link exists — that's the outcome the caller asked for, not a failure.
@@ -357,25 +358,23 @@ export class Threads {
    *  - threads opened with a token minted without an agent id carry
    *    `agent_id: "default"`, so an `agentIdEquals` filter for a real agent
    *    id never matches them. Mint with `agentId` (either token kind).
-   *  - There is no "in" filter for agent ids: `agentIdIn` throws a pre-flight
-   *    `validation_error` instead of being silently ignored. Call `list` once
-   *    per agent id.
+   *  - `agentIdIn` (array of agent ids) lists the threads of several agents in
+   *    one call. It is sent as is.
+   *  - With no origin filter the list returns standard threads only
+   *    (`origin: 0`). `originEquals` (number) or `originIn` (number[]) selects
+   *    other origins, for example `originEquals: 2` for evaluation threads.
+   *  - A user token (conversation or agent token with `userId`) lists only that
+   *    user's threads with the token's agent.
    *
-   * Filter fields: `agentIdEquals`, `contextIdEqual`,
+   * Filter fields: `agentIdEquals`, `agentIdIn`, `contextIdEqual`,
    * `createdAtGreaterThanOrEqual`, `createdAtLessThanOrEqual`, `idEquals`,
-   * `idsIn`, `isEverywhere`, `orderBy`, `partnerIdEquals`, `statusEquals`,
-   * `statusIn`, `updatedAtGreaterThanOrEqual`, `updatedAtLessThanOrEqual`,
-   * `userIdEquals`.
+   * `idsIn`, `isEverywhere`, `orderBy`, `originEquals`, `originIn`,
+   * `partnerIdEquals`, `statusEquals`, `statusIn`,
+   * `updatedAtGreaterThanOrEqual`, `updatedAtLessThanOrEqual`, `userIdEquals`.
    * @param {string} ks @param {{filter?:object,pageSize?:number}} [opts]
    */
   list(ks, opts = {}) {
     this._.assertUserOrAdmin(ks, 'threads.list');
-    if (opts.filter && opts.filter.agentIdIn !== undefined) {
-      throw new KalturaError({
-        type: 'https://docs.kaltura.com/agentic/errors/validation_error', title: 'unsupported filter key',
-        code: 'validation_error', detail: 'threads.list filter.agentIdIn has no server-side equivalent — call threads.list once per agent id with filter.agentIdEquals instead.',
-      });
-    }
     const { agentIdEquals, ...restFilter } = opts.filter || {};
     const filter = { ...restFilter, objectType: GENIE_THREAD_FILTER };
     if (agentIdEquals !== undefined) filter.genieIdEquals = agentIdEquals;
@@ -713,7 +712,7 @@ export class Followups {
    * @param {{contextId?:string, contextType?:'category'|'ancestor_category'|'global'}} [opts]
    */
   async getSuggested(ks, opts = {}) {
-    this._.assertAny(ks, 'followups.getSuggested');
+    this._.assertUserOrAdmin(ks, 'followups.getSuggested');
     /** @type {{contextId?:string, contextType?:string}} */ const { contextId, contextType } = opts ?? {};
     const bad = (detail) => failValidation('invalid context', `followups.getSuggested ${detail}`);
     if (contextType === 'entry') bad(`does not take contextType "entry". Use ${SUGGEST_CONTEXT_TYPES.map((t) => `"${t}"`).join(', ')}, or omit it.`);
@@ -851,7 +850,7 @@ export class Knowledge {
    * @param {{top_n?:number, with_line_numbers?:boolean, margins_in_seconds?:number, include_sources?:boolean, entry_description?:boolean}} [opts]
    */
   async search(query, ks, opts = {}) {
-    this._.assertAny(ks, 'knowledge.search');
+    this._.assertUserOrAdmin(ks, 'knowledge.search');
     const body = { query };
     if (opts.top_n !== undefined) body.top_n = opts.top_n;
     if (opts.with_line_numbers !== undefined) body.with_line_numbers = opts.with_line_numbers;
@@ -1230,6 +1229,34 @@ export class Knowledge {
   }
 
   /**
+   * Create an upload slot for one file in a Knowledge record (`POST /v1/knowledge/upload`).
+   * WRITE, NOT idempotent: each call creates a new entry and upload token. Sends no file
+   * bytes. Upload the bytes to `upload_token_id` and attach them to `entry_id` with the
+   * Kaltura upload APIs. {@link Knowledge#uploadDocument} does the whole flow from a category id.
+   * A record with no category gets a new one, and later calls without `categoryId` reuse it.
+   * An unsupported file extension gives `bad_request` with the server's list of types.
+   * A `categoryId` the record does not use gives `bad_request`.
+   * @param {number} id Knowledge record id.
+   * @param {{fileName:string, name?:string, categoryId?:string|number, description?:string, tags?:string[], language?:string}} opts
+   * @param {string} ks (admin)
+   * @returns {Promise<{upload_token_id:string, entry_id:string, category_id:string}>}
+   */
+  async upload(id, opts, ks) {
+    this._.assertAdmin(ks, 'knowledge.upload');
+    requireRecordId(id, 'knowledge.upload');
+    const fileName = opts?.fileName;
+    if (typeof fileName !== 'string' || !/\.[^./\\]+$/.test(fileName)) {
+      throw new KalturaError({ type: 'about:blank', title: 'file name required', code: 'bad_request', detail: "knowledge.upload needs { fileName } with an extension, for example 'guide.pdf'." });
+    }
+    const body = { id, name: opts.name ?? fileName, file_name: fileName };
+    if (opts.categoryId !== undefined) body.category_id = String(opts.categoryId);
+    if (opts.description !== undefined) body.description = opts.description;
+    if (opts.tags !== undefined) body.tags = opts.tags;
+    if (opts.language !== undefined) body.language = opts.language;
+    return (await this._.genie('v1/knowledge/upload', body, ks)).data;
+  }
+
+  /**
    * List Knowledge records for the authenticated partner
    * (`POST /v1/knowledge/list`). READ. Async-iterable + awaitable (first
    * page) — mirrors {@link Tools#list}/{@link Skills#list}'s Genie
@@ -1488,22 +1515,24 @@ function newFormData() {
  * Aggregate a conversation-report CSV into volume/feedback/top-questions with a
  * provenance receipt. Pure function (no I/O). Returns volume counts, positive/
  * negative feedback totals, distinct thread count, and the top 5 most-asked
- * questions.
+ * questions. Rows with an empty Question (messages pushed into a thread) are not
+ * counted in `totals.messages` or `feedback`. They still count toward `totals.threads`.
  * @param {string} csv @param {string} partnerId
  */
 export function summarizeReport(csv, partnerId) {
   const rows = parseCsv(csv);
   const col = (r, name) => (r[name] || '').trim();
-  const pos = rows.filter((r) => ['1', 'true', 'positive'].includes(col(r, 'Feedback reaction').toLowerCase())).length;
-  const neg = rows.filter((r) => ['0', 'false', 'negative'].includes(col(r, 'Feedback reaction').toLowerCase())).length;
+  const asked = rows.filter((r) => col(r, 'Question'));
+  const pos = asked.filter((r) => ['1', 'true', 'positive'].includes(col(r, 'Feedback reaction').toLowerCase())).length;
+  const neg = asked.filter((r) => ['0', 'false', 'negative'].includes(col(r, 'Feedback reaction').toLowerCase())).length;
   const threads = new Set(rows.map((r) => col(r, 'Thread Id')).filter(Boolean));
   /** @type {Map<string,number>} */ const qCount = new Map();
   for (const r of rows) { const q = col(r, 'Question'); if (q) qCount.set(q, (qCount.get(q) || 0) + 1); }
   const topQuestions = [...qCount.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([question, count]) => ({ question, count }));
   return {
     _meta: meta({ partnerId, source: 'genie/message/report', scope: 'partner (admin KS, disableentitlement)' }),
-    totals: { messages: rows.length, threads: threads.size },
-    feedback: { positive: pos, negative: neg, unrated: rows.length - pos - neg, positiveRatio: (pos + neg) ? round3(pos / (pos + neg)) : null },
+    totals: { messages: asked.length, threads: threads.size },
+    feedback: { positive: pos, negative: neg, unrated: asked.length - pos - neg, positiveRatio: (pos + neg) ? round3(pos / (pos + neg)) : null },
     topQuestions,
   };
 }

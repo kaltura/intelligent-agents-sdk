@@ -121,28 +121,95 @@ test('R-2: GET requires no idempotency key to be retry-safe', async () => {
   assert.equal(calls, 2, 'GET retried on 503 with no idempotency key involved');
 });
 
-test('R-3: POST with idempotency-key is retried on 503', async () => {
-  let calls = 0;
-  const fake = async () => {
-    calls++;
-    if (calls < 3) return { ok: false, status: 503, headers: { get: () => null }, text: async () => 'err' };
-    return { ok: true, status: 200, headers: { get: () => null }, text: async () => '{"id":"new"}' };
-  };
-  const http = new Http({ fetch: fake, maxRetries: 3, delayFn: () => Promise.resolve() });
-  const { data } = await http.postJson({ url: 'https://x/create', ks: 'k', body: {}, idempotencyKey: 'idem-1' });
-  assert.deepEqual(data, { id: 'new' });
-  assert.equal(calls, 3);
-});
-
-test('R-3: POST without idempotency-key is retried on network error (status 0) but not on 503', async () => {
+test('R-3: POST with idempotency-key is NOT retried on 503', async () => {
   let calls = 0;
   const fake = async () => {
     calls++;
     return { ok: false, status: 503, headers: { get: () => null }, text: async () => 'err' };
   };
   const http = new Http({ fetch: fake, maxRetries: 3, delayFn: () => Promise.resolve() });
+  await assert.rejects(() => http.postJson({ url: 'https://x/create', ks: 'k', body: {}, idempotencyKey: 'idem-1' }), (e) => e.code === 'server_error');
+  assert.equal(calls, 1, 'a keyed POST that got a 503 may already have run, so it is not retried');
+});
+
+test('R-3: POST with idempotency-key is NOT retried on 429', async () => {
+  let calls = 0;
+  const fake = async () => {
+    calls++;
+    return { ok: false, status: 429, headers: { get: () => null }, text: async () => 'slow down' };
+  };
+  const http = new Http({ fetch: fake, maxRetries: 3, delayFn: () => Promise.resolve() });
+  await assert.rejects(() => http.postJson({ url: 'https://x/create', ks: 'k', body: {}, idempotencyKey: 'idem-1' }), (e) => e.code === 'rate_limited');
+  assert.equal(calls, 1);
+});
+
+test('R-3: Idempotency-Key header is still forwarded on POST', async () => {
+  let seen;
+  const fake = async (_url, init) => {
+    seen = init.headers;
+    return { ok: true, status: 200, headers: { get: () => null }, text: async () => '{"id":"new"}' };
+  };
+  const http = new Http({ fetch: fake, maxRetries: 3, delayFn: () => Promise.resolve() });
+  await http.postJson({ url: 'https://x/create', ks: 'k', body: {}, idempotencyKey: 'idem-1' });
+  assert.equal(seen['Idempotency-Key'], 'idem-1');
+});
+
+test('R-3: POST without idempotency-key is retried on network error (status 0) but not on 503', async () => {
+  let calls = 0;
+  const flaky = async () => {
+    calls++;
+    if (calls < 2) throw new TypeError('fetch failed');
+    return { ok: true, status: 200, headers: { get: () => null }, text: async () => '{"id":"new"}' };
+  };
+  const retried = new Http({ fetch: flaky, maxRetries: 3, delayFn: () => Promise.resolve() });
+  const { data } = await retried.postJson({ url: 'https://x/create', ks: 'k', body: {} });
+  assert.deepEqual(data, { id: 'new' });
+  assert.equal(calls, 2, 'a network error retries a POST');
+
+  calls = 0;
+  const fake = async () => {
+    calls++;
+    return { ok: false, status: 503, headers: { get: () => null }, text: async () => 'err' };
+  };
+  const http = new Http({ fetch: fake, maxRetries: 3, delayFn: () => Promise.resolve() });
   await assert.rejects(() => http.postJson({ url: 'https://x/create', ks: 'k', body: {} }));
-  assert.equal(calls, 1, 'POST without idempotency key must not be retried on 503');
+  assert.equal(calls, 1, 'POST must not be retried on 503');
+});
+
+test('R-3: POST with idempotency-key is retried on a network error', async () => {
+  let calls = 0;
+  const fake = async () => {
+    calls++;
+    if (calls < 2) throw new TypeError('fetch failed');
+    return { ok: true, status: 200, headers: { get: () => null }, text: async () => '{"id":"new"}' };
+  };
+  const http = new Http({ fetch: fake, maxRetries: 3, delayFn: () => Promise.resolve() });
+  await http.postJson({ url: 'https://x/create', ks: 'k', body: {}, idempotencyKey: 'idem-1' });
+  assert.equal(calls, 2);
+});
+
+test('R-3: POST whose 503 body read fails is NOT retried (a response was received)', async () => {
+  let calls = 0;
+  const fake = async () => {
+    calls++;
+    return { ok: false, status: 503, headers: { get: () => null }, text: async () => { throw new TypeError('terminated'); } };
+  };
+  const http = new Http({ fetch: fake, maxRetries: 3, delayFn: () => Promise.resolve() });
+  await assert.rejects(() => http.postJson({ url: 'https://x/create', ks: 'k', body: {}, idempotencyKey: 'idem-1' }));
+  assert.equal(calls, 1, 'the server answered, so the write may already have run');
+});
+
+test('R-2: GET whose body read fails is still retried', async () => {
+  let calls = 0;
+  const fake = async () => {
+    calls++;
+    if (calls < 2) return { ok: false, status: 503, headers: { get: () => null }, text: async () => { throw new TypeError('terminated'); } };
+    return { ok: true, status: 200, headers: { get: () => null }, text: async () => '{"ok":true}' };
+  };
+  const http = new Http({ fetch: fake, maxRetries: 3, delayFn: () => Promise.resolve() });
+  const { data } = await http.request({ method: 'GET', url: 'https://x/y', ks: 'k' });
+  assert.deepEqual(data, { ok: true });
+  assert.equal(calls, 2);
 });
 
 test('R-1: network error (status 0) is always retried regardless of method', async () => {

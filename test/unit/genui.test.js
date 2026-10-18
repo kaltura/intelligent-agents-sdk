@@ -521,6 +521,29 @@ test('renderer shape: user-properties-form (type coercion + known_value)', () =>
   assert.equal(d.data.fields[1].type, 'str');          // unknown type → str
 });
 
+test('user-properties-form keeps form_id 0 and secondary_title', () => {
+  const d = new ExperienceRenderer().render('user-properties-form', {
+    title: 'Lead', secondary_title: 'Tell us more', form_id: 0, properties: [{ key: 'email' }],
+  });
+  assert.equal(d.data.formId, 0);
+  assert.equal(d.data.secondaryTitle, 'Tell us more');
+  const camel = new ExperienceRenderer().render('user-properties-form', { secondaryTitle: 'Hi', formId: 7, fields: [] });
+  assert.equal(camel.data.formId, 7);
+  assert.equal(camel.data.secondaryTitle, 'Hi');
+  assert.equal(new ExperienceRenderer().render('user-properties-form', { properties: [] }).data.secondaryTitle, '');
+});
+
+test('user-properties-form formId: "3" becomes 3; "abc", 1.5, -1 and absent become null', () => {
+  const idOf = (v) => new ExperienceRenderer().render('user-properties-form', { form_id: v, properties: [] }).data.formId;
+  assert.equal(idOf('3'), 3);
+  assert.equal(idOf('abc'), null);
+  assert.equal(idOf(1.5), null);
+  assert.equal(idOf(-1), null);
+  assert.equal(idOf('1234567890'), null);
+  assert.equal(idOf(undefined), null);
+  assert.equal(new ExperienceRenderer().render('user-properties-form', { properties: [] }).data.formId, null);
+});
+
 test('renderer shape: content-gallery (urls checked)', () => {
   const d = new ExperienceRenderer().render('content-gallery', {
     items: [{ title: 'C', description: 'd', imageUrl: 'https://k.com/i.png', url: 'vbscript:x' }],
@@ -1218,6 +1241,40 @@ test('mountWidget form submit + followup click fire onAction', async () => {
     click.fn();
     assert.equal(actions[0][0], 'followup');
     assert.equal(actions[0][1].question, 'Why?');
+  } finally { delete globalThis.document; }
+});
+
+test('mount submit payload carries formId', async () => {
+  const listeners = [];
+  const baseMake = fakeDom().createElement;
+  globalThis.document = { createElement: (t) => { const n = baseMake(t); n.addEventListener = (ev, fn) => listeners.push({ node: n, ev, fn }); return n; } };
+  try {
+    const { mountWidget } = await import('../../src/experience/genui/renderers/mount.js');
+    const actions = [];
+    const onAction = (a, p) => actions.push([a, p]);
+    const fields = [{ key: 'email', type: 'email', label: 'Email', knownValue: 'a@b.com' }];
+    mountWidget({ kind: 'user-properties-form', data: { title: 'Lead', secondaryTitle: 'Tell us more', formId: 0, fields } }, document.createElement('div'), { onAction });
+    listeners.find((l) => l.ev === 'submit').fn();
+    assert.deepEqual(actions[0], ['submit', { values: { email: 'a@b.com' }, formId: 0 }]);
+    listeners.length = 0;
+    mountWidget({ kind: 'user-properties-form', data: { title: 'Lead', fields } }, document.createElement('div'), { onAction });
+    listeners.find((l) => l.ev === 'submit').fn();
+    assert.deepEqual(actions[1], ['submit', { values: { email: 'a@b.com' }, formId: null }]);
+  } finally { delete globalThis.document; }
+});
+
+test('mount renders a non-empty secondaryTitle after the title', async () => {
+  globalThis.document = fakeDom();
+  try {
+    const { mountWidget } = await import('../../src/experience/genui/renderers/mount.js');
+    const root = mountWidget({ kind: 'user-properties-form', data: { title: 'Lead', secondaryTitle: 'Tell us more', formId: 1, fields: [{ key: 'email', type: 'str' }] } }, document.createElement('div'));
+    const kids = root.children;
+    const titleIdx = kids.findIndex((c) => c.tagName === 'H3');
+    assert.ok(titleIdx >= 0);
+    assert.equal(kids[titleIdx + 1].tagName, 'P');
+    assert.equal(kids[titleIdx + 1].textContent, 'Tell us more');
+    const none = mountWidget({ kind: 'user-properties-form', data: { title: 'Lead', fields: [{ key: 'email', type: 'str' }] } }, document.createElement('div'));
+    assert.equal(none.children.filter((c) => c.tagName === 'P').length, 0);
   } finally { delete globalThis.document; }
 });
 

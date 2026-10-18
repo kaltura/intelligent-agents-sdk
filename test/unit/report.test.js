@@ -35,6 +35,15 @@ test('summarizeReport aggregates totals, feedback ratio, top questions + provena
   assert.ok(s._meta.scope.includes('disableentitlement'));
 });
 
+test('summarizeReport does not count pushed rows (empty Question) as messages or unrated', () => {
+  const pushed = CSV + 'g1,ctx,2026-01-03,u4,Dee,th3,q4,,text,,N/A,\n';
+  const s = summarizeReport(pushed, 'p');
+  assert.equal(s.totals.messages, 3);
+  assert.equal(s.totals.threads, 3, 'a pushed message still belongs to a real thread');
+  assert.equal(s.feedback.unrated, 1);
+  assert.equal(s.feedback.positiveRatio, 0.5);
+});
+
 test('positiveRatio is null when there is no feedback', () => {
   const csv = 'Thread Id,Question,Feedback reaction\nth1,q,\n';
   assert.equal(summarizeReport(csv, 'p').feedback.positiveRatio, null);

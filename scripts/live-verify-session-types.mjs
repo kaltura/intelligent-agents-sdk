@@ -29,8 +29,9 @@
  *      agent Token, fails with a server status for another user's Token, and a widget
  *      Token is refused client-side with wrong_token_scope on all ten
  *  11c threads.delete through the SDK: the owner's Token deletes its thread, another
- *      user's Token deletes nothing; a raw KS string (owner, other user, widget) skips
- *      the client-side check and gets the server's own answer
+ *      user's Token deletes nothing; a raw KS string (owner, other user) skips the
+ *      client-side check and gets the server's own answer; the raw string of a widget
+ *      this instance minted gets wrong_token_scope, an instance that did not mint it sends it on and gets 403
  *  12  revoke() resolves, and on the production target it ends the token and its
  *      sessionGroupId sibling (skip with --skip-revoke)
  *
@@ -316,14 +317,16 @@ try {
         { otherUserDeleted: byB?.totalCount, stillThereAfterOtherUser: stillThere, ownerDeleted: byA?.totalCount, gone });
     });
 
-    await step('SDK: a raw KS string passes through and the server enforces scope', async () => {
+    await step('SDK: the minting instance rejects its widget string, an instance that did not mint it sends it to the server', async () => {
       const widget = await kaltura.sessions.createWidgetToken({ widgetId });
+      const mine = await kaltura.threads.get(threadA, widget.ks).then(() => null, (e) => e);
+      const kaltura2 = management(target);
+      const asOther = await kaltura2.threads.get(threadA, widget.ks).then(() => null, (e) => e);
       const own = await kaltura.threads.get(threadA, tokA.ks);
-      const other = await kaltura.threads.get(threadA, tokB.ks).then(() => null, (e) => e);
-      const asWidget = await kaltura.threads.get(threadA, widget.ks).then(() => null, (e) => e);
-      report.check('SDK: a raw KS string passes through and the server enforces scope',
-        own?.id === threadA && other?.status === 404 && asWidget?.status === 403 && asWidget?.code !== 'wrong_token_scope',
-        { own: own?.id === threadA, otherUser: other?.status, widgetString: asWidget?.status, widgetCode: asWidget?.code });
+      const otherUser = await kaltura.threads.get(threadA, tokB.ks).then(() => null, (e) => e);
+      report.check('SDK: the minting instance rejects its widget string, an instance that did not mint it sends it to the server',
+        mine?.code === 'wrong_token_scope' && asOther?.status === 403 && asOther?.code !== 'wrong_token_scope' && own?.id === threadA && otherUser?.status === 404,
+        { ownWidgetString: mine?.code, otherInstanceWidgetString: asOther?.status, otherInstanceCode: asOther?.code, own: own?.id === threadA, otherUser: otherUser?.status });
     });
 
     await step('user A deletes its own thread', async () => {

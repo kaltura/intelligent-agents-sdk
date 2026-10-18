@@ -29,13 +29,15 @@ test('threads.list merges opts.filter UNDER the fixed objectType (caller cannot 
   assert.equal(ff.calls[0].body.filter.agentIdEquals, undefined, 'the SDK-only key name never reaches the wire');
 });
 
-test('threads.list rejects filter.agentIdIn BEFORE any network call (no server-side "in" equivalent exists)', async () => {
-  const { mgmt, ff } = harness([]);
-  assert.throws(
-    () => mgmt.threads.list(ADMIN_KS, { filter: { agentIdIn: ['a1', 'a2'] } }),
-    (e) => e.code === 'validation_error',
-  );
-  assert.equal(ff.calls.length, 0);
+test('threads.list forwards filter.agentIdIn unchanged', async () => {
+  const { mgmt, ff } = harness([
+    { match: 'v1/thread/list', respond: () => ({ status: 200, body: { objects: [], totalCount: 0 } }) },
+  ]);
+  await mgmt.threads.list(ADMIN_KS, { filter: { agentIdIn: ['a1', 'a2'] } }).all();
+  assert.equal(ff.calls.length, 1);
+  assert.deepEqual(ff.calls[0].body.filter.agentIdIn, ['a1', 'a2']);
+  assert.equal(ff.calls[0].body.filter.objectType, 'ListThreadFilter');
+  assert.equal(ff.calls[0].body.filter.genieIdIn, undefined, 'agentIdIn is not mapped to a genie* key');
 });
 
 test('threads.setAnalysis sends {id, thread_metadata:{analysis:patch}}; rejects a non-object patch before the network call', async () => {
@@ -221,4 +223,16 @@ test('own-thread methods accept admin, conversation and agent tokens; reject wid
     await assert.rejects(async () => call(), (e) => e.code === 'wrong_token_scope');
   }
   assert.equal(ff.calls.length, 0, 'widget tokens are rejected before any network call');
+});
+
+test('followups.getSuggested rejects a widget Token before any request', async () => {
+  const { mgmt, ff } = harness([]);
+  await assert.rejects(async () => mgmt.followups.getSuggested({ ks: CONV_TOKEN.ks, kind: 'widget' }), (e) => e.code === 'wrong_token_scope');
+  assert.equal(ff.calls.length, 0);
+});
+
+test('knowledge.search rejects a widget Token before any request', async () => {
+  const { mgmt, ff } = harness([]);
+  await assert.rejects(async () => mgmt.knowledge.search('q', { ks: CONV_TOKEN.ks, kind: 'widget' }), (e) => e.code === 'wrong_token_scope');
+  assert.equal(ff.calls.length, 0);
 });
