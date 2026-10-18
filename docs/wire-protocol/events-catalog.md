@@ -20,6 +20,7 @@ Direction: `→` the client emits, `←` the server emits. This catalog lists th
 | `tapToTalkStart` / `tapToTalkEnd` | `{}` | Push-to-talk capture window, sent by `startTapToTalk()` / `endTapToTalk()`. See below. |
 | `muteUser` / `unmuteUser` | `{}` | The `micEnabled` setter notifies the server of a mic mute or unmute. The mute itself is client-side (`track.enabled`). The payload has no data. |
 | `pauseConversation` / `resumeConversation` | `{}` | `pause()` / `resume()`. |
+| `extendPause` | `{}` | Start the pause window again while paused. Sent by `extendPause()`. No reply event. |
 | `updateGenieContext` | `{ capabilities, request_vars, contextId?, contextType? }` | Mid-session context update, sent by `updateRequestVars()` and `setDynamicPrompt()`. Each emit replaces the stored context, so an omitted field is a clear. The SDK always sends the full shape: its own capabilities, the full `request_vars` map, and `contextId` / `contextType` when set. `setDynamicPrompt(data)` is the same emit, with the payload serialized into the `page_context` variable. |
 | `screenShareStarted` / `screenShareStopped` | `{}` | A screen share began or ended. Sent by `startScreenShare()` / `stopScreenShare()`. |
 | `userScreenSharePendingImage` | `{}` | A still is about to follow. Sent once right after `screenShareStarted`. |
@@ -84,6 +85,7 @@ These fire once `approvedPermissions` is sent. Many payloads carry a `speechId`,
 | `conversationEnded` | `{}` | The conversation ended. The SDK emits `ended` and disconnects. |
 | `stvTaskFail` | `{}` | Avatar video rendering failed. The SDK emits an `error` with `code:'stv_task_fail'`. |
 | `smartTurnStatus` | `{ status, timeout_ms?, probability? }` | End-of-turn indicator for the user's speech. The SDK re-emits it as `smartTurnStatus { status, timeoutMs, probability }` and does not act on it. |
+| `pauseExpiryWarning` | `{ secondsRemaining }` | The pause window ends soon. The SDK emits `pauseExpiryWarning { secondsRemaining }`. |
 | `sessionReadyForResume` | `{}` | The session can be resumed on the same instance. The SDK emits `resumeReady`. |
 | `pauseSessionExpired` | `{}` | The pause window ended before `resumeConversation` arrived. The session can't be resumed as it was. The SDK emits `timeExpired` with `{type:'pause_expiry'}`, distinct from a hard `conversationEnded`. |
 | `resumingSession` | `{}` | The server accepted `resumeConversation` and is rebuilding the media pipeline. It precedes `conversationResumed`. The SDK moves to the `resuming` state. |

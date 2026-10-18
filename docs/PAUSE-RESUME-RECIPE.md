@@ -1,6 +1,6 @@
 # Recipe: Pause the Avatar for Video/Interactive Content, Then Resume
 
-How to pause a live avatar conversation while you show a video, quiz, or any other on-screen content, then hand the turn back to the avatar cleanly. This covers both the happy path (content plays to completion) and the case where it's skipped or never finishes (don't leave the avatar stuck paused). Built entirely from two existing `KalturaAvatarSession` methods, with no new SDK surface and no server-side glue.
+How to pause a live avatar conversation while you show a video, quiz, or any other on-screen content, then hand the turn back to the avatar cleanly. This covers both the happy path (content plays to completion) and the case where it's skipped or never finishes (don't leave the avatar stuck paused). Built from existing `KalturaAvatarSession` methods, with no server-side glue.
 
 ---
 
@@ -22,6 +22,8 @@ await session.resume();   // async: hands the turn loop back
 
 **You never need to branch on which path it takes.** Always just `await session.resume()`. It picks the right one for you. The length of the pause window isn't a published constant. Don't rely on an exact number. Always resume via one of the triggers below, rather than assuming a pause lasts as long as you need it to.
 
+**Need a longer pause?** Call `session.extendPause()` while paused, for example when `pauseExpiryWarning` fires and your content is still on screen. Each accepted call starts the pause window again. The server sends no reply. `extendPause()` returns `true` when it sent the request, and `false` when there was nothing to extend (not paused, the window already ended, or the SDK rebuilt the session during the pause). It throws `invalid_state` unless the session is connected.
+
 **On a connected session, `resume()` is safe in every case that matters for this recipe:** immediately after `pause()` (zero delay), when the session was never paused, and when it was already resumed. On a session that is not connected it rejects with `invalid_state`.
 
 It's also safe when the SDK's own connectivity recovery rebuilt the session *while* you were paused. A stalled or expired media channel makes the SDK rebuild the transports on its own, without your app calling `resume()` (see [WIRE-PROTOCOL.md](WIRE-PROTOCOL.md) for the recovery events). Your pause survives that rebuild. The SDK keeps `session.paused` true and *holds* the rebuilt session's start signal instead of letting the avatar speak over your content.
@@ -32,12 +34,13 @@ In every one of these cases, `resume()` returns cleanly with `session.paused ===
 
 `resume()` can still reject for reasons unrelated to pause duration (a genuinely dead session, a real network failure mid-rebuild). Treat any rejection defensively regardless: catch it, and if `session.state` is still `'connected'`, the session is fine and there's nothing further to do. If the long-path rebuild itself fails, the session is never left half-connected: `resume()` rejects with the rebuild error, and the session emits `error` and then `ended {reason:'resume_failed'}` with `session.state === 'disconnected'`. Call `connect()` again to start over.
 
-You don't need to listen for any event to know resume worked. `await session.resume()` resolving is the only signal your app needs. Two events exist for optional UX polish, but neither is required:
+You don't need to listen for any event to know resume worked. `await session.resume()` resolving is the only signal your app needs. A few events exist for optional UX polish, but none is required:
 
 | Event | When it fires | Use it for |
 |---|---|---|
 | `'resumed'` | The server's own `conversationResumed` ack arrives, after a `resumeConversation` you sent from your own `resume()` call. (One path sends no `resumeConversation`, since it releases a session the SDK rebuilt mid-pause, so no `'resumed'` fires there. The promise resolving is still your signal.) | Optional confirmation toast/log. `resume()`'s promise already told you it's done. |
 | `'resumeReady'` / `'timeExpired'` (`{type:'pause_expiry'}`) | The pause window expired *while you were still paused, before you called `resume()`* | Optional "still there?" UI while paused long. Not required: `resume()` handles this transparently whenever you do call it. |
+| `'pauseExpiryWarning'` (`{secondsRemaining}`) | The pause window ends soon and you are still paused | Call `extendPause()` to keep the pause, or `resume()` to end it. Optional. |
 
 ---
 
@@ -145,6 +148,6 @@ Whichever path fires, it calls the same `resume()`. `resume()` handles the cheap
 | Doc | What it adds |
 |---|---|
 | [CLIENT-COMMANDS.md](CLIENT-COMMANDS.md) | The sibling mechanism for letting the avatar drive *your* UI (as opposed to this recipe, where *you* drive the avatar's pause state) |
-| [WIRE-PROTOCOL.md](WIRE-PROTOCOL.md) | The exact `pauseConversation`/`resumeConversation`/`pauseSessionExpired`/`sessionReadyForResume`/`conversationResumed` wire shapes |
+| [WIRE-PROTOCOL.md](WIRE-PROTOCOL.md) | The exact `pauseConversation`/`resumeConversation`/`extendPause`/`pauseExpiryWarning`/`pauseSessionExpired`/`sessionReadyForResume`/`conversationResumed` wire shapes |
 | [GETTING-STARTED.md](../GETTING-STARTED.md) | Where `/appInit` and the live avatar session come from in the first place |
 | [examples/browser-experience.html](../examples/browser-experience.html) | The base live-avatar page this recipe extends |

@@ -1946,6 +1946,21 @@ export class KalturaAvatarSession extends Emitter {
   /** Pause the live turn loop. */
   pause() { this._requireConnected('pause'); this.paused = true; this._socket.emit('pauseConversation', {}); }
   /**
+   * Ask the server to start the pause window again while paused. Sends `extendPause`.
+   * Each accepted call starts the window from the beginning. The server sends no reply:
+   * a later `pauseExpiryWarning`, `timeExpired` or `resumeReady` shows where the window stands.
+   * Sends nothing and returns `false` when there is no pause to extend: not paused, the
+   * window already ended, or the SDK rebuilt the session during the pause and waits for `resume()`.
+   * @returns {boolean} `true` when the request was sent.
+   * @throws {KalturaError} `invalid_state` when the session is not connected.
+   */
+  extendPause() {
+    this._requireConnected('extendPause');
+    if (!this.paused || this._sessionReleased || this._pausedPendingApprove) return false;
+    this._socket.emit('extendPause', {});
+    return true;
+  }
+  /**
    * Resume the live turn loop. If the pause expired (`sessionReadyForResume` /
    * `pauseSessionExpired`), the old STV/ASR transports are dead, so resume()
    * rebuilds them against the FRESH `stvNewSession` received on resume. Within
@@ -2805,6 +2820,7 @@ export class KalturaAvatarSession extends Emitter {
     socket.on('pauseSessionExpired', () => { this._sessionReleased = true; this.emit('timeExpired', { type: 'pause_expiry' }); });
     socket.on('sessionReadyForResume', () => { this._sessionReleased = true; this.emit('resumeReady', { ready: true }); });
     socket.on('resumingSession', () => this._setState('resuming'));
+    socket.on('pauseExpiryWarning', (p) => this.emit('pauseExpiryWarning', { secondsRemaining: p?.secondsRemaining }));
 
     // Brain stream. Genuine visible/audible output proves the pipeline is alive → clear the
     // watchdog. EXCEPTION: `type:"tool"`/`"tool_response"` (and `"think"`) segments are SILENT
