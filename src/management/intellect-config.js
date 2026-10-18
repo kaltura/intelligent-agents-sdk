@@ -54,6 +54,9 @@ import { MASK, maskExisting, validateSecretRefs } from './secrets.js';
 import { lintPrompts } from './prompt-lint.js';
 import { auditReport, isNotFound } from './audit-report.js';
 
+/** Names of the tools every agent already has (see {@link CAPABILITIES}). A linked tool with one of these names gets a `tool_name_builtin` warning. */
+const BUILTIN_TOOL_NAMES = Object.freeze(['async_search_knowledge_base', 'search_entries', 'search_web']);
+
 /**
  * The closed set of structured-data-form call stages — WHEN the agent emits the
  * `user_properties_form` (backend enum). `start` asks up front, `middle` after
@@ -818,7 +821,7 @@ const lintSeverity = (s) => (s === 'error' ? 'error' : s === 'warning' ? 'warn' 
 /**
  * What {@link auditIntellectConfig} may check references against.
  * @typedef {object} IntellectAuditContext
- * @property {Array<{id:string, config?:unknown}>|null} [tools] The tools that exist, with their config if known. `null` or omitted skips the `tool_not_found` check and the secret scan of tool configs.
+ * @property {Array<{id:string, name?:string, config?:unknown}>|null} [tools] The tools that exist, with their config if known. `null` or omitted skips the `tool_not_found` check and the secret scan of tool configs.
  * @property {Array<{id:string}>|null} [skills] The skills the intellect can use: its own and the shared ones. `null` or omitted skips the `skill_not_found` check.
  */
 
@@ -843,6 +846,7 @@ const lintSeverity = (s) => (s === 'error' ? 'error' : s === 'warning' ? 'warn' 
  * | `skill_condition_suspect` | warn | A `skill_ids[].condition` uses a form that blanks the turn or never matches, such as `AND`, `&&`, `!`, a single `=` or `len()`. |
  * | `tool_condition_template` | error | A linked tool's `condition` is empty, not a string, or holds `{{ }}`, `{% %}` or `{# #}`. |
  * | `tool_condition_suspect` | warn | A linked tool's `condition` uses a form that blanks the turn or never matches. |
+ * | `tool_name_builtin` | warn | A linked tool has the same name as a built-in tool (`async_search_knowledge_base`, `search_entries` or `search_web`). |
  * | `tool_arg_unused` | warn | A linked `api` tool declares an arg that no `{arg}` in its url or body uses, so it is never sent. |
  * @param {Record<string, any>} config The intellect, as `intellects.get` returns it.
  * @param {IntellectAuditContext} [ctx]
@@ -918,6 +922,8 @@ export function auditIntellectConfig(config, ctx = {}) {
     else for (const w of conditionWarnings(entry?.condition)) add('warn', 'skill_condition_suspect', `skill_ids[${i}].condition`, `skill_ids[${i}].condition ${w}.`, 'Rewrite it with intellectConfig.setSkillIds. A wrong condition can blank every turn.');
   }
   for (const t of (ctx.tools ?? []).filter((x) => toolIds.includes(String(x.id)))) {
+    const builtin = [t.name, /** @type {any} */ (t.config)?.name].find((n) => typeof n === 'string' && BUILTIN_TOOL_NAMES.includes(n));
+    if (builtin) add('warn', 'tool_name_builtin', `tool ${t.id}.name`, `Tool ${t.id} is named "${builtin}", the same name as a built-in tool.`, 'Give it a name of its own with tools.update.');
     const condition = /** @type {any} */ (t.config)?.condition;
     const problem = condition == null ? null : conditionProblem(condition);
     if (problem) add('error', 'tool_condition_template', `tool ${t.id}.condition`, `Tool ${t.id} condition ${problem}.`, 'Rewrite it as a bare expression with tools.update.');
