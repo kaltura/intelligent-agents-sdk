@@ -179,7 +179,7 @@ const { matchedRules } = await mgmt.lifecycle.match(
 );
 ```
 
-**`match` can return rules you never created.** Built-in rules have ids that start with `preset__`. One matches every `session_ended`/`thread` event, and you cannot create its action type. `matchedRules[]` can group built-in rules with your own under `isGrouped:true`. Don't mistake a grouped built-in rule for something you configured.
+**`match` can return rules you never created.** Built-in rules have ids that start with `preset__`. One matches every `session_ended`/`thread` event of a standard conversation, and you cannot create its action type. `matchedRules[]` can group built-in rules with your own under `isGrouped:true`. Don't mistake a grouped built-in rule for something you configured.
 
 **Only standard conversations run actions.** A thread with any `origin` other than `0` runs no rule, and `match` with that `origin` returns no rules.
 
