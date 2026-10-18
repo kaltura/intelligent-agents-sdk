@@ -67,24 +67,21 @@ export class Agents {
 
   /**
    * List agents. READ. Async-iterable + awaitable (first page).
+   * `filter` is sent as-is (default `{}`). `orderBy` is sent top-level next to
+   * `filter`. Keys, values and sort behavior:
+   * docs/api/management-operations.md#agents.
    *
-   * `filter` is passed through to `agent/list` as-is (default `{}`). Keys:
-   * `agentId`, `adminTagsIn`, `adminTagsNotIn`, `searchValue` (case-insensitive
-   * substring on `displayName`/`agentId`); an unrecognized key returns
-   * `bad_request`. The wire request also takes a top-level `orderBy`
-   * (`+createdAt`, `-createdAt`, `+updatedAt`, `-updatedAt`), which this
-   * method does not take.
+   * @example <caption>Newest agents first, filtered by an admin tag</caption>
+   * const newest = await k.agents.list(adminKs, { filter: { adminTagsIn: ['lobby'] }, orderBy: '-createdAt' }).all();
    *
-   * @example <caption>Filter by an admin tag</caption>
-   * const tagged = await k.agents.list(adminKs, { filter: { adminTagsIn: ['lobby'] } }).all();
-   *
-   * @param {string} ks @param {{filter?:object,pageSize?:number}} [opts]
+   * @param {string} ks
+   * @param {{filter?:object, orderBy?:'+createdAt'|'-createdAt'|'+updatedAt'|'-updatedAt', pageSize?:number}} [opts]
    */
   list(ks, opts = {}) {
     this._.assertAdmin(ks, 'agents.list');
     return paginate({
       style: 'offset', pageSize: opts.pageSize,
-      fetchPage: (pager) => this._.agentic('agent/list', { filter: opts.filter || {}, pager }, ks).then((r) => {
+      fetchPage: (pager) => this._.agentic('agent/list', { filter: opts.filter || {}, ...(opts.orderBy ? { orderBy: opts.orderBy } : {}), pager }, ks).then((r) => {
         const page = r.data;
         return Array.isArray(page?.objects) ? { ...page, objects: page.objects.map(screenShareFromWire) } : page;
       }),

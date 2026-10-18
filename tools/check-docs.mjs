@@ -999,6 +999,16 @@ describe('16. Docs accuracy', () => {
     const bad = parts.filter((p) => /`(adminTagsIn|agentScope)`/.test(p) && effect.test(p));
     assert.deepEqual(bad, [], `catalog adminTagsIn and agentScope effects are not documented: ${bad.join(' | ')}`);
   });
+
+  test('the agents orderBy values in management-operations.md match agents.js', () => {
+    const src = read('src/management/agents.js');
+    const values = unionValues(src.match(/orderBy\?:((?:'[^']+'\|?)+)/)?.[1] ?? '');
+    assert.ok(values.length > 0, 'agents.list has no orderBy union in agents.js');
+    const text = section(read('docs/api/management-operations.md'), 'Agents');
+    for (const v of values) assert.ok(text.includes(`\`${v}\``), `management-operations.md must name orderBy value ${v}`);
+    const stale = scanFiles().filter((f) => f.endsWith('.md') && /does not take `orderBy`/.test(read(f)));
+    assert.deepEqual(stale, [], `these pages say agents.list does not take orderBy: ${stale.join(', ')}`);
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════
