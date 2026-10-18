@@ -152,6 +152,7 @@ const TOKEN = /\s+|(?<str>'')|(?<num>(?<![\w.])\d(?:[\w.]|(?<=[eE])[+-])*)|(?<na
  * Limits: this is a shape check, not a Jinja parser. It accepts some invalid
  * expressions (`a ? b : c`, `x if y` without `else`) and flags `a-b` (no spaces)
  * as invalid although Jinja reads it as subtraction. Write `a - b`.
+ * An expression that contains `{` or `}` (a dict literal) is not scanned.
  * @param {string} raw trimmed body, never empty
  * @returns {{names: string[], problem: 'unbalanced'|'invalid'|null}}
  */
