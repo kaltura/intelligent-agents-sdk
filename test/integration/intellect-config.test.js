@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Management, SILENT_OPENING } from '../../src/management/index.js';
-import { IntellectConfig, EDITABLE_FIELDS, MODEL_IDS } from '../../src/management/intellect-config.js';
+import { IntellectConfig, EDITABLE_FIELDS, MODEL_IDS, THINKING_LEVELS } from '../../src/management/intellect-config.js';
 import { fakeFetch } from '../fakes/fetch.js';
 
 /**
@@ -467,6 +467,27 @@ test('intellectConfig.setModelConfiguration writes a validated object; null rese
   await cfg.setModelConfiguration(1481, null, ADMIN);
   sent = f.calls.find((c) => c.url.includes('/v1/intellect/update')).body;
   assert.equal(sent.model_configuration, null);
+  f.calls.length = 0;
+  const modern = { model_id: 'us.anthropic.claude-sonnet-5', thinking_level: 'medium', include_thoughts: true };
+  await cfg.setModelConfiguration(1481, modern, ADMIN);
+  sent = f.calls.find((c) => c.url.includes('/v1/intellect/update')).body;
+  assert.deepEqual(sent.model_configuration, modern, 'sonnet-5 id, medium level and include_thoughts sent verbatim');
+});
+
+test('intellectConfig.setModelConfiguration sends a model id that is not in MODEL_IDS', async () => {
+  const { cfg, f } = mkMgmt([getDto(), updateEcho]);
+  await cfg.setModelConfiguration(1481, { model_id: 'my-custom-model' }, ADMIN);
+  const sent = f.calls.find((c) => c.url.includes('/v1/intellect/update')).body;
+  assert.deepEqual(sent.model_configuration, { model_id: 'my-custom-model' });
+});
+
+test('intellectConfig.setModelConfiguration accepts every THINKING_LEVELS value and a boolean include_thoughts', async () => {
+  for (const thinking_level of THINKING_LEVELS) {
+    const { cfg, f } = mkMgmt([getDto(), updateEcho]);
+    await cfg.setModelConfiguration(1481, { thinking_level, include_thoughts: false }, ADMIN);
+    const sent = f.calls.find((c) => c.url.includes('/v1/intellect/update')).body;
+    assert.deepEqual(sent.model_configuration, { thinking_level, include_thoughts: false });
+  }
 });
 
 test('intellectConfig.setModelConfiguration rejects bad values BEFORE any network', async () => {
@@ -474,11 +495,15 @@ test('intellectConfig.setModelConfiguration rejects bad values BEFORE any networ
   const bad = (config, re) => assert.rejects(() => cfg.setModelConfiguration(1481, /** @type {any} */ (config), ADMIN), (e) => e.code === 'bad_request' && (!re || re.test(e.detail)));
   await bad('gemini-2.5-flash');
   await bad([]);
-  await bad({ model_id: 'gpt-4o' }, /model_id/);
-  await bad({ model_id: 42 }, /model_id/);
+  await bad({ model_id: '' }, /model_id must be a non-empty string/);
+  await bad({ model_id: '   ' }, /model_id must be a non-empty string/);
+  await bad({ model_id: 42 }, /model_id must be a non-empty string/);
+  await bad({ model_id: null }, /model_id must be a non-empty string/);
   await bad({ max_output_tokens: 0 }, /max_output_tokens/);
   await bad({ max_output_tokens: 1.5 }, /max_output_tokens/);
-  await bad({ thinking_level: 'medium' }, /thinking_level/);
+  await bad({ thinking_level: 'xhigh' }, /thinking_level must be one of none\/minimal\/low\/medium\/high/);
+  await bad({ include_thoughts: 'yes' }, /include_thoughts must be true or false/);
+  await bad({ include_thoughts: 1 }, /include_thoughts must be true or false/);
   await bad({ temperature: 1.5 }, /temperature/);
   await bad({ temperature: -0.1 }, /temperature/);
   await bad({ temperature: NaN }, /temperature/);

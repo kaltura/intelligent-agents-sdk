@@ -26,13 +26,15 @@ test('EDITABLE_FIELDS is the frozen 20-key customer-writable surface', () => {
 test('SKILL_MODES / THINKING_LEVELS / SUMMARY_CONTENT_TYPES / CALL_STAGES are frozen with exact values', () => {
   for (const e of [SKILL_MODES, THINKING_LEVELS, SUMMARY_CONTENT_TYPES, CALL_STAGES, MODEL_IDS]) assert.ok(Object.isFrozen(e));
   assert.deepEqual([...SKILL_MODES], ['adhoc', 'adhoc-save', 'preloaded']);
-  assert.deepEqual([...THINKING_LEVELS], ['low', 'high']);
+  assert.deepEqual([...THINKING_LEVELS], ['none', 'minimal', 'low', 'medium', 'high']);
   assert.deepEqual([...SUMMARY_CONTENT_TYPES], ['text', 'html', 'html_with_js']);
   assert.deepEqual([...CALL_STAGES], ['start', 'middle', 'end']);
 });
 
-test('MODEL_IDS lists the twelve selectable model ids (Claude Sonnet/Haiku us+eu, Gemini)', () => {
+test('MODEL_IDS lists the known model ids (Claude Sonnet 5, Sonnet 4, Haiku us+eu, Gemini)', () => {
   assert.deepEqual([...MODEL_IDS], [
+    'us.anthropic.claude-sonnet-5',
+    'eu.anthropic.claude-sonnet-5',
     'us.anthropic.claude-sonnet-4-20250514-v1:0',
     'eu.anthropic.claude-sonnet-4-20250514-v1:0',
     'us.anthropic.claude-haiku-4-5-20251001-v1:0',

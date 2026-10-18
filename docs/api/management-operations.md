@@ -59,7 +59,7 @@ Typed setters on `mgmt.intellectConfig` for the other single-purpose fields, all
 
 | Setter | Field | Clear with |
 |---|---|---|
-| `setModelConfiguration` | `model_configuration` (`model_id` in `MODEL_IDS`, `max_output_tokens`, `thinking_level` in `THINKING_LEVELS`, `temperature`) | `null` |
+| `setModelConfiguration` | `model_configuration` (`model_id`, `max_output_tokens`, `thinking_level` in `THINKING_LEVELS`, `include_thoughts`, `temperature`) | `null` |
 | `setOpeningPhrase` | `opening_phrase` (the opening line of every avatar session; a template over `requestVars` and `sys__*`; `SILENT_OPENING` for no spoken opening, see [START-THE-CONVERSATION.md](../START-THE-CONVERSATION.md#personalize-the-opening)) | `null` |
 | `setThreadStartTools` | `thread_start_tools`: unique tool ids run in order when a thread starts, before the first user turn[^1] | `[]` |
 | `setAvatarSummaryConfig` | `avatar_summary_config` (`prompt`, `analysis`, `template`, `content_type` in `SUMMARY_CONTENT_TYPES`)[^2] | `null` |

@@ -92,11 +92,15 @@ const EDITABLE_SET = new Set(EDITABLE_FIELDS);
 export const SKILL_MODES = Object.freeze(['adhoc', 'adhoc-save', 'preloaded']);
 
 /**
- * The closed set of `model_configuration.model_id` values. `us.`/`eu.` prefixes
- * pick the Claude region; Gemini ids are global.
+ * Known `model_configuration.model_id` values. `us.`/`eu.` prefixes pick the
+ * Claude region; Gemini ids are global. `setModelConfiguration` sends any
+ * non-empty string, so you can send an id that is not listed here. Check a new
+ * id with one live turn.
  * @type {readonly string[]}
  */
 export const MODEL_IDS = Object.freeze([
+  'us.anthropic.claude-sonnet-5',
+  'eu.anthropic.claude-sonnet-5',
   'us.anthropic.claude-sonnet-4-20250514-v1:0',
   'eu.anthropic.claude-sonnet-4-20250514-v1:0',
   'us.anthropic.claude-haiku-4-5-20251001-v1:0',
@@ -112,12 +116,12 @@ export const MODEL_IDS = Object.freeze([
 ]);
 
 /**
- * The closed set of `model_configuration.thinking_level` values. Gemini only;
- * Claude models ignore it. Unset means thinking off (except when
- * `avatar_show_content` is on, where the backend defaults it to `low`).
- * @type {ReadonlyArray<'low'|'high'>}
+ * The `model_configuration.thinking_level` values. Not every model uses it:
+ * check the effect with one live turn. Unset means thinking off (except when
+ * `avatar_show_content` is on, where the default is `low`).
+ * @type {ReadonlyArray<'none'|'minimal'|'low'|'medium'|'high'>}
  */
-export const THINKING_LEVELS = Object.freeze(['low', 'high']);
+export const THINKING_LEVELS = Object.freeze(['none', 'minimal', 'low', 'medium', 'high']);
 
 /**
  * The closed set of `avatar_summary_config.content_type` values: how the client
@@ -126,7 +130,7 @@ export const THINKING_LEVELS = Object.freeze(['low', 'high']);
  */
 export const SUMMARY_CONTENT_TYPES = Object.freeze(['text', 'html', 'html_with_js']);
 
-const MODEL_CONFIGURATION_KEYS = Object.freeze(['model_id', 'max_output_tokens', 'thinking_level', 'temperature']);
+const MODEL_CONFIGURATION_KEYS = Object.freeze(['model_id', 'max_output_tokens', 'thinking_level', 'include_thoughts', 'temperature']);
 const AVATAR_SUMMARY_CONFIG_KEYS = Object.freeze(['prompt', 'analysis', 'template', 'content_type']);
 const IDENTIFIER_RE = /^[A-Za-z_][A-Za-z0-9_]*/;
 
@@ -404,15 +408,15 @@ export class IntellectConfig {
   /**
    * Set `model_configuration` (the chat model and its sampling limits). Every
    * key is optional; `null` restores the backend defaults. Validated
-   * client-side: `model_id` must be in {@link MODEL_IDS}, `thinking_level` in
-   * {@link THINKING_LEVELS} (Gemini only; Claude ignores it), `max_output_tokens`
-   * a positive integer, `temperature` a number in [0, 1] (Claude sampling
-   * temperature; Gemini applies it as top_p). Unknown keys are rejected.
-   * With the `avatar_show_content` capability on, the backend fills unset
-   * `thinking_level` with `low` and `max_output_tokens` with 4096.
+   * client-side: `model_id` a non-empty string (known ids: {@link MODEL_IDS}),
+   * `thinking_level` in {@link THINKING_LEVELS} (not every model uses it),
+   * `include_thoughts` a boolean, `max_output_tokens` a positive integer,
+   * `temperature` a number in [0, 1]. Unknown keys are rejected.
+   * With the `avatar_show_content` capability on, unset `thinking_level`
+   * defaults to `low` and unset `max_output_tokens` to 4096.
    * WRITE, idempotent.
    * @param {number} configId
-   * @param {{model_id?:string, max_output_tokens?:number, thinking_level?:'low'|'high', temperature?:number}|null} config
+   * @param {{model_id?:string, max_output_tokens?:number, thinking_level?:'none'|'minimal'|'low'|'medium'|'high', include_thoughts?:boolean, temperature?:number}|null} config
    * @param {string} ks (admin)
    * @returns {Promise<{applied:boolean, result?:any, sent?:object, _meta:object}>}
    */
@@ -421,21 +425,24 @@ export class IntellectConfig {
     requireInt(configId, 'intellectConfig.setModelConfiguration configId');
     if (config !== null) {
       if (!config || typeof config !== 'object' || Array.isArray(config)) {
-        throw bad('intellectConfig.setModelConfiguration needs a { model_id?, max_output_tokens?, thinking_level?, temperature? } object or null.');
+        throw bad('intellectConfig.setModelConfiguration needs a { model_id?, max_output_tokens?, thinking_level?, include_thoughts?, temperature? } object or null.');
       }
       for (const k of Object.keys(config)) {
         if (!MODEL_CONFIGURATION_KEYS.includes(k)) {
           throw bad(`intellectConfig.setModelConfiguration: unknown key "${k}". Allowed: ${MODEL_CONFIGURATION_KEYS.join(', ')}.`);
         }
       }
-      if (config.model_id !== undefined && !MODEL_IDS.includes(config.model_id)) {
-        throw bad(`intellectConfig.setModelConfiguration: model_id must be one of ${MODEL_IDS.join(', ')}, got ${JSON.stringify(config.model_id)}.`);
+      if (config.model_id !== undefined && (typeof config.model_id !== 'string' || !config.model_id.trim())) {
+        throw bad(`intellectConfig.setModelConfiguration: model_id must be a non-empty string, got ${JSON.stringify(config.model_id)}. Known ids are in MODEL_IDS.`);
       }
       if (config.max_output_tokens !== undefined && (!Number.isInteger(config.max_output_tokens) || config.max_output_tokens <= 0)) {
         throw bad(`intellectConfig.setModelConfiguration: max_output_tokens must be a positive integer, got ${JSON.stringify(config.max_output_tokens)}.`);
       }
       if (config.thinking_level !== undefined && !THINKING_LEVELS.includes(config.thinking_level)) {
         throw bad(`intellectConfig.setModelConfiguration: thinking_level must be one of ${THINKING_LEVELS.join('/')}, got ${JSON.stringify(config.thinking_level)}.`);
+      }
+      if (config.include_thoughts !== undefined && typeof config.include_thoughts !== 'boolean') {
+        throw bad(`intellectConfig.setModelConfiguration: include_thoughts must be true or false, got ${JSON.stringify(config.include_thoughts)}.`);
       }
       if (config.temperature !== undefined && (typeof config.temperature !== 'number' || Number.isNaN(config.temperature) || config.temperature < 0 || config.temperature > 1)) {
         throw bad(`intellectConfig.setModelConfiguration: temperature must be a number between 0 and 1, got ${JSON.stringify(config.temperature)}.`);
