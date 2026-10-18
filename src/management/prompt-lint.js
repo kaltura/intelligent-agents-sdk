@@ -141,8 +141,6 @@ const PLAIN_NAME = /^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$/;
 const NUMBER = /^\d[\d_]*(\.\d[\d_]*)?([eE][+-]?\d[\d_]*)?$/;
 const EXPR_KEYWORDS = new Set(['and', 'or', 'not', 'in', 'is', 'if', 'else', 'true', 'false', 'none', 'True', 'False', 'None']);
 const EXPR_LITERALS = new Set(['true', 'false', 'none', 'True', 'False', 'None']);
-const KWARG_AHEAD = /\s*=(?!=)/y;
-const CALL_AHEAD = /\s*\(/y;
 const TOKEN = /\s+|(?<str>'')|(?<num>(?<![\w.])\d(?:[\w.]|(?<=[eE])[+-])*)|(?<name>[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)|(?<close>[)\]])|(?<op>[\s\S])/gy;
 
 /**
@@ -193,11 +191,11 @@ function expressionNames(raw) {
       if (afterIs || afterPipe) { afterIs = false; afterPipe = false; operand = false; continue; }
       if (operand) invalid = true;
       operand = true;
-      KWARG_AHEAD.lastIndex = end;
-      if (KWARG_AHEAD.test(s)) continue; // keyword argument
+      let next = end;
+      while (next < s.length && /\s/.test(s[next])) next++;
+      if (s[next] === '=' && s[next + 1] !== '=') continue; // keyword argument
       let chain = word;
-      CALL_AHEAD.lastIndex = end;
-      if (CALL_AHEAD.test(s)) {
+      if (s[next] === '(') {
         const dot = chain.lastIndexOf('.');
         if (dot < 0) continue; // function call
         chain = chain.slice(0, dot);
