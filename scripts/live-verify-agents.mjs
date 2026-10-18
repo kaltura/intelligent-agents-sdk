@@ -14,9 +14,9 @@
  *   6  agents.list          — the new agent appears
  *   6b a second scratch agent with the same tags, created after a pause
  *   7  agents.update        — rename persists on a follow-up get (a pause first, so A is the newest update)
- *   7b agents.list orderBy  — -createdAt gives [B, A], -updatedAt gives [A, B]; the other orders are logged
- *   7c agents.list orderBy  — an unknown value rejects with bad_request listing the four values
- *   7d agents asr           — the default is {language:'en', provider:'kaltura'}, an update persists,
+ *   7b agents.list orderBy : -createdAt gives [B, A], -updatedAt gives [A, B]; the other orders are logged
+ *   7c agents.list orderBy : an unknown value rejects with bad_request listing the four values
+ *   7d agents asr          : the default is {language:'en', provider:'kaltura'}, an update persists,
  *      and a provider or language outside the accepted values rejects with bad_request
  *   8  agents.delete        — scratch agent removed (adminTags carries no PROTECTED_TAGS match, so the plain path runs), re-`get` real-404s
  *

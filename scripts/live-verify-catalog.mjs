@@ -4,16 +4,16 @@
  *
  * Exercises the Catalog write path:
  *
- *   1b catalog.createVisual — attribute values outside the accepted lists reject with bad_request
+ *   1b catalog.createVisual: attribute values outside the accepted lists reject with bad_request
  *      and the error lists the accepted values
  *   1  catalog.createVisual — upload a scratch custom Visual (1x1 PNG)
  *   2  catalog.get          — visible, right shape
  *   3  catalog.list         — filtered to Visual, the new item appears
- *   3b-3d  list filters     — itemIdEqual, idsIn, and type + idsIn narrow to the right items
- *   3e list orderBy         — -createdAt sorts newest first; +createdAt resolves (order logged)
- *   3f list languageEqual   — voices filtered to 'en' carry language 'en'
- *   3g list rejections      — a bad orderBy and an unknown filter key reject with bad_request
- *   3h list adminTagsIn, agentScope — both resolve (contents are not asserted)
+ *   3b-3d  list filters    : itemIdEqual, idsIn, and type + idsIn narrow to the right items
+ *   3e list orderBy        : -createdAt sorts newest first; +createdAt resolves (order logged)
+ *   3f list languageEqual  : voices filtered to 'en' carry language 'en'
+ *   3g list rejections     : a bad orderBy and an unknown filter key reject with bad_request
+ *   3h list adminTagsIn, agentScope: both resolve (contents are not asserted)
  *   4  catalog.update       — rename persists on a follow-up get
  *   4b catalog.importVoiceFromElevenLabs — an unknown provider voiceId creates
  *      nothing server-side, so the rejection path is free to exercise live
