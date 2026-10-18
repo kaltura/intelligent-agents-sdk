@@ -20,11 +20,11 @@ Text input is not voice-mode-exclusive: an avatar session accepts typed turns to
 
 ## The one rule that overrides everything else here
 
-**Pick one VOICE mode per agent, at configuration time. Never offer both voice modes live in the same session.** (Chat text-only input is exempt. Typed turns don't touch the VAD/capture machinery this rule protects, so text can coexist with either voice mode, or replace voice entirely.)
+**Use one VOICE mode at a time. Pick the default per agent at configuration time, and never offer both voice modes at once.** (Chat text-only input is exempt. Typed turns don't touch the VAD/capture machinery this rule protects, so text can coexist with either voice mode, or replace voice entirely.)
 
 This is not a UI-polish preference. It is a correctness requirement.
 
-**Don't rely on anything else to catch a mismatch for you.** The SDK's own client-side gate (`startTapToTalk()` throws `capability_disabled` unless `session.capabilities.tapToTalk`) stops your UI from opening a tap-to-talk window on an agent configured for open-mic. Build your UI to match the agent's single configured mode. Never render a tap-to-talk control against an open-mic agent, or vice versa. Mixing them produces double-cut or missed turns (see [WIRE-PROTOCOL.md](WIRE-PROTOCOL.md)'s `tapToTalkStart`/`tapToTalkEnd` row for the event pair involved).
+**Don't rely on anything else to catch a mismatch for you.** The SDK's own client-side gate (`startTapToTalk()` throws `capability_disabled` unless `session.capabilities.tapToTalk`) stops your UI from opening a tap-to-talk window while the session is in open-mic mode. Build your UI to match the session's current mode. Never render a tap-to-talk control in open-mic mode, or vice versa. Mixing them produces double-cut or missed turns (see [WIRE-PROTOCOL.md](WIRE-PROTOCOL.md)'s `tapToTalkStart`/`tapToTalkEnd` row for the event pair involved).
 
 ## Deciding which mode fits your app
 
@@ -64,8 +64,8 @@ A tap window that never closes (tab closed mid-recording, app crash, network dro
 
 ## Implementation checklist
 
-1. Decide the agent's mode **at provisioning time**. `isTapToTalk` is a fixed per-agent deployment choice (set wherever your app builds its intellect/session config), not something your UI code branches on live.
-2. Build the UI conditionally on `session.capabilities.tapToTalk` (derived from `clientConfiguration.isTapToTalk`). Render a tap-to-talk control only when true. Never render both a tap-to-talk control and an open-mic affordance for the same session.
+1. Pick the agent's default mode **at provisioning time** with `isTapToTalk` (set wherever your app builds its intellect/session config). To switch a live session, call `session.setTapToTalkMode(enabled)`, then re-render from `session.capabilities.tapToTalk`.
+2. Build the UI conditionally on `session.capabilities.tapToTalk` (from `clientConfiguration.isTapToTalk`, updated by `setTapToTalkMode()`). Render a tap-to-talk control only when true. Never render both a tap-to-talk control and an open-mic affordance for the same session.
 3. Wire click-to-toggle calling `session.startTapToTalk()`/`session.endTapToTalk()`, updating `aria-pressed` and an icon/level indicator on `tapToTalkStarted`/`tapToTalkEnded`. See the conditional-UI example in [README.md](../README.md#tap-to-talk-push-to-talk-voice).
 4. Add the silence/max-duration/abandonment safeguards above; the SDK does not impose them for you.
 5. Update any UI copy that currently assumes continuous listening (e.g. a text-input placeholder like "...or just speak naturally"). That copy is wrong for a tap-to-talk agent and should describe the button instead.

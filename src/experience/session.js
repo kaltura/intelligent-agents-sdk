@@ -126,7 +126,7 @@ const FATAL_CODE = {
   throwToExceededTier: { code: 'tier_exceeded', num: 6002, retry: false, detail: 'The account is over its plan limit for live conversations.' },
   throwToBadRequest: { code: 'bad_request', num: 400, retry: false, detail: 'The server rejected the request as invalid.' },
   removePeer: { code: 'peer_removed', num: 401, retry: false, detail: 'The server removed this participant from the conversation.' },
-  unsupportedClient: { code: 'unsupported_client', num: 0, retry: false, detail: 'The server does not support this client.' },
+  unsupportedClient: { code: 'unsupported_client', num: 0, retry: false, detail: 'The server refused this session. Get a new token and call connect() again.' },
 };
 
 /**
@@ -171,7 +171,7 @@ export class KalturaAvatarSession extends Emitter {
    *   so the first words are an interruptible model reply. Goes through the same path as `speak()`, so the reply is interruptible.
    *   Never re-sent on `resume()` or a reconnect. Its server echo is dropped from `transcript {type:'user'}`
    *   unless `echo: true`. Empty/whitespace text sends nothing. Any other type throws `bad_request`.
-   * @param {{username:string,credential:string,expiry?:number}} [cfg.turnCredentials]  Server-minted EPHEMERAL TURN creds (RFC 7635). When omitted, the SDK's default TURN credentials apply and a one-time security warning is logged.
+   * @param {{username:string,credential:string,expiry?:number}} [cfg.turnCredentials]  TURN username and credential for `turnServerUrl`. `appInit` returns none. When omitted, the SDK's default TURN credentials apply.
    * @param {boolean} [cfg.allowInsecureTransport]  Permit ws/http transport (localhost/dev ONLY — emits a loud warning; never in production).
    * @param {(event:object)=>void} [cfg.onAuditEvent]  Redacted structured security events (session.connect/disconnect/auth.fail/protocol.violation). NIST AU-2/AU-3.
    * @param {string} [cfg.preferredVideoCodec]  Force a specific codec for the STV downlink via `setCodecPreferences`. Leave unset. The default is H264; any other value (`'VP8'`, `'VP9'`, `'AV1'`) still negotiates successfully but the video track never produces a frame (audio is unaffected, no error is thrown).
@@ -251,9 +251,8 @@ export class KalturaAvatarSession extends Emitter {
     this._allowInsecure = !!cfg.allowInsecureTransport;
     assertSecureTransport(this._cmUrl, 'conversationManagerUrl', this._allowInsecure, (m) => this._warnOnce('insecure-cm', m));
     assertSecureTransport(this._srsBaseUrl, 'srsBaseUrl', this._allowInsecure, (m) => this._warnOnce('insecure-srs', m));
-    // Prefer server-minted EPHEMERAL TURN creds (RFC 7635); the SDK's default TURN credentials are a flagged fallback.
+    // The SDK's default TURN credentials apply unless the caller passes its own.
     this._turn = turnServers(cfg.turnServerUrl, cfg.turnCredentials || {});
-    if (cfg.turnServerUrl && !cfg.turnCredentials) this._warnOnce('static-turn', 'Using STATIC fallback TURN credentials — pass server-minted ephemeral turnCredentials (from appInit) for production (RFC 7635).');
     this._socketFactory = cfg.socketFactory;
     this._RTC = cfg.rtcConstructor || globalThis.RTCPeerConnection;
     this._RTCRtpReceiver = cfg.rtcRtpReceiverConstructor || globalThis.RTCRtpReceiver;
@@ -485,6 +484,8 @@ export class KalturaAvatarSession extends Emitter {
     this._whepLocation = null;
     this._micEnabled = true;
     this._tapToTalkActive = false;
+    /** @type {boolean|null} Mode set by setTapToTalkMode(), or null. Sent again after a cold reconnect. */
+    this._tapToTalkMode = null;
     this._hwMuteTimers = [];   // pending 5s debounce timers for OS/hardware mic mute (see _initHardwareMuteWatch)
     this._tracker = new TranscriptTracker();
     this._capacityTimer = null;
@@ -530,7 +531,7 @@ export class KalturaAvatarSession extends Emitter {
     this._pendingToolAcks = new Map();
     // Cancel hooks for every in-flight `_await` (one per pending socket wait). Teardown runs
     // them so a handshake torn down mid-flight settles at once instead of on its own timeout.
-    /** @type {Set<() => void>} */
+    /** @type {Set<(err?: KalturaError) => void>} */
     this._pendingAwaits = new Set();
     // Tool-call spiral circuit breaker state (see `_toolSpiralLimit` above). Counts RAW
     // `type:"tool"` segments per turn (before dedup — a spiral's repeats are exactly
@@ -571,6 +572,7 @@ export class KalturaAvatarSession extends Emitter {
     }
     if (!this._token) throw noTokenErr();
     this._setState('preparing');
+    this._tapToTalkMode = null;   // a new connect() starts from the agent's configured mode
     this._wireUnload();
     this._timings = {}; this._timingsT0 = this._clock();
     // Step 0 — mic (no camera), started here and NOT awaited: the permission prompt and the
@@ -815,7 +817,7 @@ export class KalturaAvatarSession extends Emitter {
       // Teardown (disconnect(), the other lane failing) rejects this wait at once, like `_await`
       // does for a plain socket wait: the listeners below go with it, so no `stvNewSession`
       // could ever answer, and nothing keeps polling `checkAvailability` on a dead session.
-      const cancel = () => finish(reject, connectAbortedErr());
+      const cancel = (err = connectAbortedErr()) => finish(reject, err);
       this._pendingAwaits.add(cancel);
       const create = () => { if (requested) return; requested = true; socket.emit('stvNewSession', buildStvNewSession(this._roomId)); };
       const poll = () => { if (!settled) socket.emit('checkAvailability', {}); };   // capacity query, independent of create()
@@ -896,7 +898,7 @@ export class KalturaAvatarSession extends Emitter {
   /** @param {any} socket @param {{expired:()=>boolean}} [overall] */
   async _connectAsr(socket, overall) {
     socket.emit('asr-webrtc-init', { sessionId: socket.id });
-    await this._await(socket, 'asr-webrtc-ready', this._timeouts.asr, 'ASRConnectionFailed', overall);
+    await this._await(socket, 'asr-webrtc-ready', this._timeouts.asr, 'ASRConnectionFailed', overall, 'asr-webrtc-error');
     const pc = createPeerConnection(this._RTC, iceConfig('asr', this._turn, this._isFirefox));
     this._pcAsr = pc;
     this._ice.asr = new IceTrace('asr', pc, this._now);
@@ -921,7 +923,7 @@ export class KalturaAvatarSession extends Emitter {
     const offer = await this._cancelable(pc.createOffer());
     await this._cancelable(pc.setLocalDescription(offer));
     socket.emit('asr-webrtc-offer', { offer, is_reconnect: false });
-    const ans = await this._await(socket, 'asr-webrtc-answer', this._timeouts.asr, 'ASRConnectionFailed', overall);
+    const ans = await this._await(socket, 'asr-webrtc-answer', this._timeouts.asr, 'ASRConnectionFailed', overall, 'asr-webrtc-error');
     await this._cancelable(pc.setRemoteDescription(ans.answer));
     this._mark('asrReady');
   }
@@ -1162,8 +1164,10 @@ export class KalturaAvatarSession extends Emitter {
       releaseHandle();
       throw err;
     }
-    const ready = await playable;
-    releaseHandle();
+    // Cancelable like the negotiation above: a refusal (or a teardown) while the first frame is
+    // awaited rejects at once, with the refusal's own error.
+    let ready;
+    try { ready = await this._cancelable(playable, cancelPlayable); } finally { releaseHandle(); }
     // Cancelled while waiting for the first frame: teardown or a cold rebuild closed this peer.
     // Succeeding here would report a connected session that has no media.
     if (ready === undefined || pc !== this._pcStv) throw connectAbortedErr();
@@ -1234,7 +1238,7 @@ export class KalturaAvatarSession extends Emitter {
       await this._subscribeStv(overall, 1);
     } catch (err) {
       const e = /** @type {any} */ (err);
-      if (e?.title === 'connect aborted' || e?.code === 'timeout' || e?.code === 'ice_failed' || overall?.expired()) throw err;
+      if (e?.title === 'connect aborted' || e?.code === 'timeout' || e?.code === 'ice_failed' || e?.code === 'unsupported_client' || overall?.expired()) throw err;
       this.emit('warning', { code: 'media_no_video', message: 'No video frame arrived and the re-subscribe failed. The conversation continues with audio.', detail: String(e?.message || e) });
       this.emit('mediaReady', { mode: 'video', videoWidth: 0, videoHeight: 0, degraded: true });
     }
@@ -1397,14 +1401,14 @@ export class KalturaAvatarSession extends Emitter {
   /**
    * Start a tap-to-talk voice capture — the server's push-to-talk mode, DISTINCT from
    * typed-text `speak()`/`interrupt()`. The always-on ASR uplink
-   * keeps streaming audio the whole session; this just tells the server (`tapToTalkStart`
-   * → `onTapToTalkStart`) to flip into tap-mode and start a fresh capture window.
+   * keeps streaming audio the whole session; this tells the server (`tapToTalkStart`)
+   * to start a fresh capture window.
    * Call `endTapToTalk()` to close the window and let the server mint the turn from
    * whatever it captured.
    *
-   * Gated on `clientConfiguration.isTapToTalk`: it throws `capability_disabled` for an
-   * agent configured for open-mic (`isTapToTalk:false`). Check `capabilities.tapToTalk`
-   * before offering tap-to-talk UI.
+   * Gated on `capabilities.tapToTalk` (the agent's `isTapToTalk`, or the last
+   * `setTapToTalkMode()`): it throws `capability_disabled` in open-mic mode. Check
+   * `capabilities.tapToTalk` before offering tap-to-talk UI.
    * @throws {KalturaError} `invalid_state` (not connected, or a capture is already open),
    *   `mic_not_started` (no live mic yet), `capability_disabled`, or `disclosure_required`
    *   (`requireDisclosureAck:true` and not yet acknowledged).
@@ -1415,7 +1419,7 @@ export class KalturaAvatarSession extends Emitter {
       throw new KalturaError({ type: 'about:blank', title: 'mic not started', code: 'mic_not_started', detail: 'startTapToTalk() requires a live mic — this session connected with micStartMode:"deferred"; call startMic() from a user gesture first.' });
     }
     if (!this._clientConfig?.isTapToTalk) {
-      throw new KalturaError({ type: 'about:blank', title: 'tap-to-talk disabled', code: 'capability_disabled', detail: 'startTapToTalk() requires clientConfiguration.isTapToTalk=true on this agent.' });
+      throw new KalturaError({ type: 'about:blank', title: 'tap-to-talk disabled', code: 'capability_disabled', detail: 'startTapToTalk() needs tap-to-talk mode. Use an agent with isTapToTalk=true, or call setTapToTalkMode(true) first.' });
     }
     if (this._tapToTalkActive) {
       throw new KalturaError({ type: 'about:blank', title: 'already tapped', code: 'invalid_state', detail: 'startTapToTalk() called while already active — call endTapToTalk() first.' });
@@ -1459,6 +1463,30 @@ export class KalturaAvatarSession extends Emitter {
    * @returns {boolean}
    */
   get tapToTalkActive() { return this._tapToTalkActive; }
+
+  /**
+   * Switch this live session between tap-to-talk (`true`) and open mic (`false`).
+   * Updates `capabilities.tapToTalk` and `clientConfig.isTapToTalk` at once, so
+   * `startTapToTalk()` follows the new mode. The server answers with
+   * `showTapToTalkButton` or `hideTapToTalkButton`; the SDK does not wait for it.
+   * A cold reconnect sends the mode again. A new `connect()` starts from the agent's
+   * configured mode.
+   * @param {boolean} enabled  `true` for tap-to-talk, `false` for open mic.
+   * @throws {KalturaError} `invalid_state` when not connected, or `false` while a tap is
+   *   open (call `endTapToTalk()` first); `bad_request` when `enabled` is not a boolean.
+   */
+  setTapToTalkMode(enabled) {
+    this._requireConnected('setTapToTalkMode');
+    if (typeof enabled !== 'boolean') {
+      throw new KalturaError({ type: 'about:blank', title: 'bad tap-to-talk mode', code: 'bad_request', detail: 'setTapToTalkMode(enabled) needs true (tap-to-talk) or false (open mic).' });
+    }
+    if (!enabled && this._tapToTalkActive) {
+      throw new KalturaError({ type: 'about:blank', title: 'tap open', code: 'invalid_state', detail: 'setTapToTalkMode(false) called while a tap is open. Call endTapToTalk() first.' });
+    }
+    this._clientConfig = { ...this._clientConfig, isTapToTalk: enabled };
+    this._tapToTalkMode = enabled;
+    this._socket.emit('setTapToTalkMode', { enabled });
+  }
 
   /**
    * Acknowledge the AI disclosure (EU AI Act Art. 50). Only needed when the session
@@ -1945,6 +1973,21 @@ export class KalturaAvatarSession extends Emitter {
 
   /** Pause the live turn loop. */
   pause() { this._requireConnected('pause'); this.paused = true; this._socket.emit('pauseConversation', {}); }
+  /**
+   * Ask the server to start the pause window again while paused. Sends `extendPause`.
+   * Each accepted call starts the window from the beginning. The server sends no reply:
+   * a later `pauseExpiryWarning`, `timeExpired` or `resumeReady` shows where the window stands.
+   * Sends nothing and returns `false` when there is no pause to extend: not paused, the
+   * window already ended, or the SDK rebuilt the session during the pause and waits for `resume()`.
+   * @returns {boolean} `true` when the request was sent.
+   * @throws {KalturaError} `invalid_state` when the session is not connected.
+   */
+  extendPause() {
+    this._requireConnected('extendPause');
+    if (!this.paused || this._sessionReleased || this._pausedPendingApprove) return false;
+    this._socket.emit('extendPause', {});
+    return true;
+  }
   /**
    * Resume the live turn loop. If the pause expired (`sessionReadyForResume` /
    * `pauseSessionExpired`), the old STV/ASR transports are dead, so resume()
@@ -2554,9 +2597,10 @@ export class KalturaAvatarSession extends Emitter {
    * Read-only capability surface derived from the agent's clientConfiguration
    * (least-privilege visibility — LLM06). e.g. `{ screenShare, cameraAnalysis,
    * webSearch, interruptions, tapToTalk }`. Available after connect. `tapToTalk`
-   * reflects the agent's configured input mode (push-to-talk vs open-mic) — apps
-   * can use it to decide whether `startTapToTalk()`/`endTapToTalk()` should be the
-   * primary voice control or an optional secondary one.
+   * reflects the session's input mode (push-to-talk vs open mic): the agent's configured
+   * mode, or the last `setTapToTalkMode()`. Apps can use it to decide whether
+   * `startTapToTalk()`/`endTapToTalk()` should be the primary voice control or an
+   * optional secondary one.
    */
   get capabilities() {
     const c = this._clientConfig || {};
@@ -2605,7 +2649,7 @@ export class KalturaAvatarSession extends Emitter {
     return this._completer.finalize('manual');
   }
 
-  /** Emit a one-time warning through the logger (insecure transport / static TURN). @param {string} key @param {string} msg */
+  /** Emit a one-time warning through the logger (insecure transport). @param {string} key @param {string} msg */
   _warnOnce(key, msg) { if (this._warned && !this._warned.has(key)) { this._warned.add(key); this._log('warn', '[security] ' + msg); } }
 
   /**
@@ -2805,6 +2849,7 @@ export class KalturaAvatarSession extends Emitter {
     socket.on('pauseSessionExpired', () => { this._sessionReleased = true; this.emit('timeExpired', { type: 'pause_expiry' }); });
     socket.on('sessionReadyForResume', () => { this._sessionReleased = true; this.emit('resumeReady', { ready: true }); });
     socket.on('resumingSession', () => this._setState('resuming'));
+    socket.on('pauseExpiryWarning', (p) => this.emit('pauseExpiryWarning', { secondsRemaining: Number.isFinite(p?.secondsRemaining) ? p.secondsRemaining : undefined }));
 
     // Brain stream. Genuine visible/audible output proves the pipeline is alive → clear the
     // watchdog. EXCEPTION: `type:"tool"`/`"tool_response"` (and `"think"`) segments are SILENT
@@ -2970,7 +3015,12 @@ export class KalturaAvatarSession extends Emitter {
 
     // Fatal error events.
     for (const ev of Object.keys(FATAL_CODE)) {
-      socket.on(ev, () => this.emit('error', fatalError(ev)));
+      socket.on(ev, () => {
+        this.emit('error', fatalError(ev));
+        // After this event the connection ends, so no setup wait can succeed.
+        // A live session (outside a resume() rebuild) keeps its path: the disconnect ends it.
+        if (ev === 'unsupportedClient' && (this.state !== 'connected' || this._resuming)) this._failPending(fatal(ev));
+      });
     }
   }
 
@@ -2979,25 +3029,32 @@ export class KalturaAvatarSession extends Emitter {
    * deadline). Cleans up its listener.
    *
    * Cancelable: the wait registers itself in `_pendingAwaits`, and teardown rejects it with
-   * `connect_failed` right away. Without that, a `disconnect()` landing mid-handshake removes
+   * `connect_failed` right away (`_failPending` can reject it with a different error instead).
+   * Without that, a `disconnect()` landing mid-handshake removes
    * the socket's listeners while this wait is still armed, so the event it needs can never
    * arrive and `connect()` would hang for the full timeout (up to `TIMEOUTS.asr`, 30 s) before
    * failing. The two connect lanes run concurrently, so either lane can be the one left waiting.
    * @returns {Promise<any>}
    * @param {any} socket @param {string} event @param {number} ms @param {string} label @param {{expired:()=>boolean}} [overall]
+   * @param {string} [failOn]  A server event that fails this wait at once (the ASR waits pass 'asr-webrtc-error').
    */
-  _await(socket, event, ms, label, overall) {
+  _await(socket, event, ms, label, overall, failOn) {
     return new Promise((resolve, reject) => {
       const ok = (payload) => { done(); if (overall && overall.expired()) return reject(timeoutErr('ConnectTimeout', 'connect')); resolve(payload); };
-      const cancel = () => { done(); reject(connectAbortedErr()); };
+      const cancel = (err = connectAbortedErr()) => { done(); reject(err); };
       const t = setTimeout(() => { done(); reject(timeoutErr(label, PHASE_BY_EVENT[event])); }, ms);
       // Declared last so it can close over all three above; every caller of it runs later.
-      const done = () => { clearTimeout(t); socket.off?.(event, ok); this._pendingAwaits.delete(cancel); };
+      const fail = (p) => cancel(asrSignalErr(p));
+      const done = () => { clearTimeout(t); socket.off?.(event, ok); if (failOn) socket.off?.(failOn, fail); this._pendingAwaits.delete(cancel); };
       t.unref?.();
       this._pendingAwaits.add(cancel);
       socket.once ? socket.once(event, ok) : socket.on(event, ok);
+      if (failOn) socket.on(failOn, fail);   // done() removes it, so a plain `on` is enough
     });
   }
+
+  /** Reject every in-flight handshake wait with `err`. Each wait removes itself, so loop over a copy. @param {KalturaError} err */
+  _failPending(err) { for (const cancel of [...this._pendingAwaits]) cancel(err); }
 
   /**
    * Race a peer-connection negotiation promise against teardown, the same way `_await` races a
@@ -3006,7 +3063,7 @@ export class KalturaAvatarSession extends Emitter {
    * `setRemoteDescription()` unsettled forever once the connection is closed. A `disconnect()`
    * landing mid-negotiation (a `track` listener that calls it, an `error` on the other lane)
    * would then hang `connect()` with no timeout to fall back on, because these are not socket
-   * waits. Registered in `_pendingAwaits`, so teardown rejects it with `connect_failed` at once.
+   * waits. Registered in `_pendingAwaits`, so teardown rejects it with `connect_failed` (or with the error passed to its cancel function) at once.
    * Also used for the WHEP subscribe request, which is not a socket wait either.
    * @template T @param {Promise<T>} p
    * @param {() => void} [onCancel]  Runs when teardown cancels the wait, before the rejection
@@ -3015,10 +3072,10 @@ export class KalturaAvatarSession extends Emitter {
    */
   _cancelable(p, onCancel) {
     return new Promise((resolve, reject) => {
-      const cancel = () => {
+      const cancel = (err = connectAbortedErr()) => {
         this._pendingAwaits.delete(cancel);
         try { onCancel?.(); } catch { /* best effort — the rejection below is what matters */ }
-        reject(connectAbortedErr());
+        reject(err);
       };
       this._pendingAwaits.add(cancel);
       p.then(
@@ -3184,7 +3241,7 @@ export class KalturaAvatarSession extends Emitter {
         const offer = await pc.createOffer({ iceRestart: true });
         await pc.setLocalDescription(offer);
         this._socket.emit('asr-webrtc-offer', { offer, is_reconnect: true });
-        const ans = await this._await(this._socket, 'asr-webrtc-answer', this._timeouts.asr, 'ASRConnectionFailed');
+        const ans = await this._await(this._socket, 'asr-webrtc-answer', this._timeouts.asr, 'ASRConnectionFailed', undefined, 'asr-webrtc-error');
         await pc.setRemoteDescription(ans.answer);
         // A cold rebuild that began during the awaits above owns the media now: this peer is gone.
         if (gen !== this._sessionGen || this.state !== 'connected') return;
@@ -3502,6 +3559,8 @@ export class KalturaAvatarSession extends Emitter {
         this._await(socket, 'clientConfiguration', this._timeouts.joinRoom, 'JoinRoomTimeout', overall),
         this._await(socket, 'joinComplete', this._timeouts.joinComplete, 'JoinRoomTimeout', overall),
       ]);
+      // The join reply is discarded here, so the server needs the switched mode again.
+      if (this._tapToTalkMode !== null) socket.emit('setTapToTalkMode', { enabled: this._tapToTalkMode });
       await this._createSessionWithCapacity(socket, overall);
       await this._runConnectSequence(socket, overall);
       // `approvedPermissions` is what makes the avatar speak —
@@ -3781,6 +3840,10 @@ function micError(err) {
 }
 function timeoutErr(label, phase) {
   return new KalturaError({ type: 'https://docs.kaltura.com/agentic/errors/timeout', title: 'timeout', code: 'timeout', detail: `${label}: timed out waiting for the server${phase ? ` (step: ${phase})` : ''}. Trying again can help.`, phase, retryable: true });
+}
+/** The server reported a mic-uplink signaling error. Same code, phase and retry hint as the ASR timeout it replaces. @param {unknown} p */
+function asrSignalErr(p) {
+  return new KalturaError({ type: 'https://docs.kaltura.com/agentic/errors/timeout', title: 'timeout', code: 'timeout', phase: 'asr', retryable: true, detail: 'ASRConnectionFailed: the server reported a signaling error while setting up the microphone link (step: asr). Trying again can help.', body: p });
 }
 /** One connect lane finishing after the session was torn down (the other lane failed first, or the app disconnected). */
 function noTokenErr() {

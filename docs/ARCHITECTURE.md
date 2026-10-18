@@ -57,7 +57,7 @@ The SDK talks to six endpoints. Each has an option that overrides it.
 | Kaltura OVP | `ovpUrl` | `REGIONS[region]` or the option | Media-plane calls such as categories and entries. `Management` sends the admin secret here |
 | Live-session socket | `conversationManagerUrl` | `appInit` | The Socket.IO control plane |
 | Avatar video | `srsBaseUrl` | `appInit` | WHEP video. The SDK builds the WHEP URL from it when `stvNewSession` has no `webrtc_url`. See [audio-channels.md §6](wire-protocol/audio-channels.md#6-stv-downlink-pc2-avatar-videoaudio--you) |
-| TURN | `turnServerUrl`, `turnCredentials` | `appInit` | WebRTC relay for both media legs. `turnCredentials` is `{username, credential, expiry?}`. See [audio-channels.md §5](wire-protocol/audio-channels.md#5-asr-uplink-pc1-microphone--server) |
+| TURN | `turnServerUrl` | `appInit` | WebRTC relay for both media legs. Credentials: [audio-channels.md §5](wire-protocol/audio-channels.md#5-asr-uplink-pc1-microphone--server) |
 
 The scripted-video control API (`avatar-session/*`) is a separate API from the management API, reached through `agenticUrl`. Details: [Scripted-Video Sessions](api/scripted-video.md).
 

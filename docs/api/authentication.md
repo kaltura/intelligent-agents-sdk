@@ -106,7 +106,7 @@ Always pass a per-user `userId`.
 
 **Revoke a token.** `mgmt.sessions.revoke(tokenOrKs)` ends the session (`session/end`). Tokens minted with the same `restrictions.sessionGroupId` are revoked together.
 
-**Restrictions.** `restrictions` compiles to KS privileges: `ipRestrict`, `uriRestrict`, `sessionGroupId`, `role` (admin sessions only) and `actionsLimit`. `actionsLimit` is a positive integer. Use it only for sessions that run a known, fixed number of API actions. Each string value is one `key:value` privilege in a comma-separated list, so it must not contain a comma or whitespace (`bad_request`). `:` and `/` are fine inside a value, and so is a `*` wildcard where the privilege supports it.
+**Restrictions.** Each `restrictions` key you set adds one KS privilege to the token: `ipRestrict` → `iprestrict:<value>`, `uriRestrict` → `urirestrict:<value>`, `sessionGroupId` → `sessionid:<value>`, `role` → `setrole:<value>` (admin sessions only) and `actionsLimit` → `actionslimit:<n>`. `actionsLimit` must be a positive integer. Each string value is one `key:value` privilege in a comma-separated list, so it must not contain a comma or whitespace (`bad_request`). `:` and `/` are fine inside a value, and so is a `*` wildcard where the privilege supports it.
 
 **Extra privileges the agent reads.** Pass these through `extraPrivileges`. The SDK has no typed option for them. Use one `key:value` per privilege, with no comma in the value.
 

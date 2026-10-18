@@ -439,7 +439,7 @@ For the app-level decision of whether to use this at all, and the UI, accessibil
 
 `startTapToTalk()`/`endTapToTalk()` are a distinct voice-input mode from typed-text `speak()`/`interrupt()`. The mic uplink is connected once `connect()` resolves. Tapping opens a capture window (`tapToTalkStart`). Releasing closes it and produces the turn from what was captured (`tapToTalkEnd`). That turn arrives through the same `agentTurnToTalk`/`transcript` pipeline as any open-mic turn. There is no separate transcript path to wire up.
 
-`startTapToTalk()` throws `capability_disabled` unless `session.capabilities.tapToTalk` (from `clientConfiguration.isTapToTalk`) is true. Treat `isTapToTalk` as a fixed, per-agent deployment choice, never a live per-session toggle. Build the UI conditionally on the flag:
+`startTapToTalk()` throws `capability_disabled` unless `session.capabilities.tapToTalk` is true. It starts from the agent's `clientConfiguration.isTapToTalk`. `setTapToTalkMode(enabled)` switches a live session and updates the flag. `setTapToTalkMode(false)` throws `invalid_state` while a tap is open. Build the UI conditionally on the flag:
 
 ```js
 if (session.capabilities.tapToTalk) {
@@ -650,9 +650,9 @@ Designed for enterprise, HIPAA, HITRUST, and regulated frameworks. Full control 
 | Control | What the SDK does |
 |---------|------------------|
 | **Two-token invariant** | `disableentitlement` reachable only via `sessions.createAdminToken()`. No client surface can escalate. `createConversationToken()`/`createAgentToken()` mint user sessions (KS type 0) and actively refuse any `extraPrivileges` value that would disable entitlement: the SDK throws a typed `entitlement_violation` error before any network call. Pass a per-user `userId` so each token reaches only that user's threads ([Session type](SECURITY.md#session-type)) |
-| **Short-lived tokens** | Admin: 1h default; conversation/agent: 30min default. `revoke()` ends a token within seconds, and tokens that share a `restrictions.sessionGroupId` are revoked together; `setToken()` for mid-session rotation; `restrictions` for least privilege |
+| **Short-lived tokens** | Admin: 1h default; conversation/agent: 30min default. `revoke()` calls `session/end` for a token, and tokens that share a `restrictions.sessionGroupId` are revoked together; `setToken()` for mid-session rotation; `restrictions` for least privilege |
 | **Audit stream** | `onAuditEvent` emits structured, pre-redacted events (`token.mint`, `guard.reject`, `tool.invoke`, …) to your SIEM |
-| **Transport** | `https`/`wss` enforced; cleartext rejected; ephemeral TURN credentials preferred |
+| **Transport** | `https`/`wss` enforced; cleartext rejected |
 | **Browser hygiene** | Token is memory-only, non-enumerable, dropped on `disconnect()`; prototype-pollution scrub on `setDynamicPrompt`; AI disclosure gate before first speech (EU AI Act Art. 50) |
 | **Supply chain** | Zero runtime deps, no registry install step. Sourced straight from git |
 

@@ -85,8 +85,8 @@ What each token can reach:
 ## Token lifecycle (RFC 9700 OAuth 2.0 Security BCP; NIST AC family)
 
 - Short-lived by default: browser-bound tokens (`conversation`/`agent`) default to 30 minutes, admin to 1 hour. Short TTL is the primary revocation lever for a stateless KS (RFC 9700 §6.1). Override per call with `ttlSeconds`, up to 86400 s (24 h) for browser-bound kinds and 7 days for admin; longer throws `ttl_too_long`. To refresh, your server mints a fresh token and the browser calls `session.setToken(freshKs)`, with no reconnect.
-- Least privilege / binding (RFC 9700 §2.3, §4.10): tighten a token with the structured `restrictions` option instead of hand-crafting privilege strings. `{ role, actionsLimit, ipRestrict, uriRestrict, sessionGroupId }` compiles to the matching Kaltura privileges (`setrole`/`actionslimit`/`iprestrict`/`urirestrict`/`sessionid`). `role` needs `sessionType: 'admin'`. All restrictions are optional; none is set by default. Values and limits: [Authentication](docs/api/authentication.md).
-- Active revocation (RFC 9700 §5.2.1.1; SOC 2 CC6.2/CC6.3): `sessions.revoke(tokenOrKs)` ends a leaked token within seconds (Kaltura `session/end`). Tokens that share a `restrictions.sessionGroupId` are revoked together: revoking any member ends the whole family. Returns a receipt: `{ revokedAt, partnerId, _meta }`.
+- Token restrictions: set the optional `restrictions` option instead of writing privilege strings. Each key you set adds one Kaltura privilege to the token: `role` → `setrole`, `actionsLimit` → `actionslimit`, `ipRestrict` → `iprestrict`, `uriRestrict` → `urirestrict`, `sessionGroupId` → `sessionid`. `role` needs `sessionType: 'admin'`. None is set by default. Values and limits: [Authentication](docs/api/authentication.md).
+- Active revocation (RFC 9700 §5.2.1.1; SOC 2 CC6.2/CC6.3): `sessions.revoke(tokenOrKs)` sends Kaltura `session/end` for the token. Tokens that share a `restrictions.sessionGroupId` are revoked together: revoking any member ends the whole family. Returns a receipt: `{ revokedAt, partnerId, _meta }`.
 - Vault/KMS (NIST IA-5): pass `getAdminSecret: () => fetchFromVault()` to fetch the secret per-mint instead of holding it; it is never stored as an enumerable field.
 
 ## Audit logging (NIST AU-2 / AU-3 / AU-12; OWASP Logging; SOC 2 CC7)
@@ -161,7 +161,7 @@ Every event carries this AU-3 content shape:
 - A base URL that is empty, does not parse, uses a scheme other than `https`/`http`, or carries a username or password throws `bad_request` at construction.
 - Loopback and private hosts (`localhost`/`127.0.0.1`, RFC 1918 ranges, link-local, and their IPv6 equivalents) are allowed for dev, with a loud one-time warning.
 - Cleartext to a public host requires an explicit `allowInsecureTransport:true` (dev/test only, never production).
-- Pass server-minted ephemeral TURN credentials (`turnCredentials` from appInit, RFC 7635). Without them the SDK uses its default TURN credentials and warns.
+- The SDK uses its default TURN credentials unless you pass `turnCredentials`. See [audio-channels.md §5](docs/wire-protocol/audio-channels.md#5-asr-uplink-pc1-microphone--server).
 
 ## Browser hardening (OWASP ASVS / WebSocket CS)
 
@@ -338,7 +338,6 @@ const token = await mgmt.sessions.createConversationToken({
 // Browser: Experience
 new KalturaAvatarSession({
   token, conversationManagerUrl, srsBaseUrl, turnServerUrl,      // all https/wss
-  turnCredentials,                            // ephemeral (RFC 7635), not the SDK default
   allowInsecureTransport: false,              // never true in production
   requireDisclosureAck: true,                 // EU AI Act / biometric jurisdictions
   idleTimeoutMs: 900000,                      // HIPAA auto-logoff

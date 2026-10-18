@@ -20,14 +20,14 @@
  *
  * SECURITY POSTURE (grounded in RFC 9700 OAuth 2.0 Security BCP + NIST 800-53):
  *   - Least privilege (AC-6): a structured `restrictions` builder compiles to
- *     Kaltura KS privileges (setrole/actionslimit/iprestrict/urirestrict) so
- *     callers tighten scope without learning the KS DSL.
+ *     Kaltura KS privileges (setrole/actionslimit/iprestrict/urirestrict/sessionid),
+ *     so callers set them without learning the KS DSL.
  *   - Short-lived by default (RFC 9700 §6.1): browser-bound tokens default to
  *     30 min TTL; a short TTL is the primary revocation lever
  *     for a stateless KS. Absurd lifetimes on browser-bound kinds are rejected.
  *   - Active revocation (RFC 9700 §5.2.1.1, SOC 2 CC6.2/CC6.3): {@link
- *     Sessions.revoke} ends a leaked token within seconds; an optional `sessionGroupId`
- *     bakes `sessionid:<id>`, so one `revoke` on any member ends the whole family.
+ *     Sessions.revoke} sends Kaltura `session/end` for the token; an optional `sessionGroupId`
+ *     bakes `sessionid:<id>`, so one `revoke` on any member covers the whole family.
  *   - Auditability (NIST AU-2/AU-3): every mint/revoke fires a redacted audit
  *     event and returns a `scope` receipt; the admin secret is NEVER returned,
  *     logged, enumerable, or attached to a token. When a caller binds a real
@@ -67,9 +67,9 @@ import { pickResponseHeaders } from './response-headers.js';
 /**
  * @typedef {object} Restrictions  Structured least-privilege options (compiled to KS privileges).
  * @property {string|number} [role]         setrole:<id>: run as a specific (narrower) Kaltura role. Only with `sessionType: 'admin'`; a user session always runs as `PLAYBACK_BASE_ROLE`.
- * @property {number} [actionsLimit]        actionslimit:<n>, a positive integer: for sessions that run a known, fixed number of API actions.
- * @property {string} [ipRestrict]          iprestrict:<ip>: bind the token to a single client IP.
- * @property {string} [uriRestrict]         urirestrict:<prefix>: bind the token to a URI prefix. Values pass through as is (no comma or whitespace).
+ * @property {number} [actionsLimit]        actionslimit:<n>, a positive integer.
+ * @property {string} [ipRestrict]          iprestrict:<ip>: the client IP you pass, sent as is.
+ * @property {string} [uriRestrict]         urirestrict:<prefix>: the URI prefix you pass. Values pass through as is (no comma or whitespace).
  * @property {string} [sessionGroupId]      sessionid:<id>: group tokens so one revoke() kills the whole family.
  */
 

@@ -9,14 +9,14 @@
 | Control socket | `wss://conversation.avatar.us.kaltura.ai` path `/socket.io` (session option `conversationManagerUrl`) |
 | STV WHEP base | `srsBaseUrl` from `appInit` |
 | STV WHEP signaling | `POST {webrtc_url}` if `stvNewSession` returned one, else `POST {srsBaseUrl}/rtc/v1/whep/?app=app&stream={session_id}` (body: plain SDP, `Content-Type: application/sdp`). `whepUrl()` in `src/experience/wire.js` |
-| TURN | `turnServerUrl` and `turnCredentials` from `appInit`. See [TURN configuration](#turn-configuration) below. |
+| TURN | `turnServerUrl` from `appInit`. See [TURN configuration](#turn-configuration) below. |
 | Auth | Socket.IO `auth: { token: <conversation KS> }` and `query.partnerId` |
 
-`conversationManagerUrl`, `srsBaseUrl`, `turnServerUrl`, `turnCredentials` and the conversation `ks` come from **`POST https://api.avatar.us.kaltura.ai/v1/application/appInit`** (see [API-REFERENCE.md](../../API-REFERENCE.md)). The agent is identified by `partnerId` (from the KS) and the KS itself.
+`conversationManagerUrl`, `srsBaseUrl`, `turnServerUrl` and the conversation `ks` come from **`POST https://api.avatar.us.kaltura.ai/v1/application/appInit`** (see [API-REFERENCE.md](../../API-REFERENCE.md)). The agent is identified by `partnerId` (from the KS) and the KS itself.
 
 ### TURN configuration
 
-Pass `turnServerUrl` and `turnCredentials` from `appInit` to the session. The TURN URLs, credentials and ICE policy are in [wire-protocol/audio-channels.md](../wire-protocol/audio-channels.md#5-asr-uplink-pc1-microphone--server).
+Pass `turnServerUrl` from `appInit` to the session. The TURN URLs, credentials and ICE policy are in [wire-protocol/audio-channels.md](../wire-protocol/audio-channels.md#5-asr-uplink-pc1-microphone--server).
 
 ---
 
@@ -77,10 +77,10 @@ At `timeouts.firstFrame` with no frame, the SDK re-subscribes once. A second mis
 | `join` | 3, `clientConfiguration` |
 | `joinComplete` | 3, `joinComplete` |
 | `agent` | 6 and 7 |
-| `asr` | 9 |
+| `asr` | 9. A server `asr-webrtc-error` ends this step at once with the same error |
 | `whep` | 10, the WHEP request (`whep_timeout`, `whep_failed`, `stv_session_gone`) |
 | `ice` | The avatar peer never reached ICE `connected` (`ice_failed`). See [ICE diagnostics](resilience-and-failure-handling.md#ice-diagnostics) |
-| `connect` | A fatal server event (`capacity_unavailable`, `tier_exceeded`, `bad_request`) or any other failure in `connect()` |
+| `connect` | A fatal server event (`capacity_unavailable`, `tier_exceeded`, `unsupported_client`) or any other failure in `connect()` |
 | `reconnect` | The socket or a cold reconnect ran out of attempts (`reconnect_failed`) |
 
 `error.retryable` is `true` on `timeout`, `capacity_unavailable`, `whep_timeout`, a `whep_failed` caused by the network, `stv_session_gone`, `ice_failed` and `reconnect_failed`, because the same call can succeed on a later try. A `whep_failed` that carries an HTTP status does not set it. Both fields are also in `error.toJSON()`.
