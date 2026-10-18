@@ -694,9 +694,9 @@ test('mountWidget content-gallery: a long run of spaces in a description folds i
   globalThis.document = fakeDom();
   try {
     const { mountWidget } = await import('../../src/experience/genui/renderers/mount.js');
-    const t0 = performance.now();
+    const t0 = Date.now();
     mountWidget({ kind: 'content-gallery', data: { items: [{ title: 'T', description: 'a' + ' '.repeat(200000) + 'b' }] } }, document.createElement('div'));
-    assert.ok(performance.now() - t0 < 500);
+    assert.ok(Date.now() - t0 < 500);
   } finally { delete globalThis.document; }
 });
 
