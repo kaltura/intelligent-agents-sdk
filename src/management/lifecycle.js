@@ -226,8 +226,9 @@ export class Lifecycle {
    * List lifecycle rules for the authenticated partner. READ. Async-iterable
    * + awaitable (first page) — mirrors {@link Avatars#list}'s `{offset,limit}`
    * pager (agentic-hosted, NOT the Genie `{pageIndex,pageSize}` convention).
+   * There is no event-type filter. Check `rule.eventType` on the results.
    * @param {string} ks (admin)
-   * @param {{filter?:{eventTypeEqual?:string, statusEqual?:string, systemNameEqual?:string}, orderBy?:'+createdAt'|'-createdAt', pageSize?:number}} [opts]
+   * @param {{filter?:{statusEqual?:string, systemNameEqual?:string, actionTypeIn?:string[], eventCondition?:{fieldEqual:string, operatorEqual?:string, operatorIn?:string[], value:string|number}}, orderBy?:'+createdAt'|'-createdAt', pageSize?:number}} [opts]
    */
   list(ks, opts = {}) {
     this._.assertAdmin(ks, 'lifecycle.list');

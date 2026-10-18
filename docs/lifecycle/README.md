@@ -234,7 +234,7 @@ All against `https://api.avatar.us.kaltura.ai`. SDK: `mgmt.lifecycle`.
 |---|---|---|---|
 | `lifecycle.create(body, ks, opts?)` | `POST /v1/lifecycle/create` | WRITE, not idempotent | mirrors `Tools#add`. `opts.partnerWide`, `opts.emailOnEveryUpdate`: see [Scope every rule to an agent](#scope-every-rule-to-an-agent) |
 | `lifecycle.get(id, ks)` | `POST /v1/lifecycle/get` | READ | |
-| `lifecycle.list(ks, opts)` | `POST /v1/lifecycle/list` | READ | `{offset,limit}` pager; `opts.filter` (`eventTypeEqual`, `statusEqual`, `systemNameEqual`) and `opts.orderBy` (`+createdAt`/`-createdAt`) pass through 1:1 |
+| `lifecycle.list(ks, opts)` | `POST /v1/lifecycle/list` | READ | `{offset,limit}` pager; `opts.filter` (`statusEqual`, `systemNameEqual`, `actionTypeIn`, `eventCondition`) and `opts.orderBy` (`+createdAt`/`-createdAt`) pass through 1:1. `eventCondition` is `{fieldEqual, operatorEqual?, operatorIn?, value}` with one string or number `value`. There is no event-type filter: check `rule.eventType` on the results. |
 | `lifecycle.update(id, patch, ks, opts?)` | `POST /v1/lifecycle/update` | WRITE, idempotent | mirrors `Tools#update`. `opts.partnerWide`, `opts.emailOnEveryUpdate`: see [Scope every rule to an agent](#scope-every-rule-to-an-agent) |
 | `lifecycle.delete(id, ks, confirm)` | `POST /v1/lifecycle/delete` | WRITE, destructive | `requireConfirm` gate; response is `{removed, success, _meta}`. The deleted id comes back as `removed`, not `id` |
 | `lifecycle.match(objectType, eventType, eventData, ks)` | `POST /v1/lifecycle/match` | READ (dry-run) | see [Discovery and dry-run testing](#discovery-and-dry-run-testing) |

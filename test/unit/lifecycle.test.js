@@ -149,14 +149,15 @@ test('lifecycle.get on a missing rule throws lifecycle_rule_not_found', async ()
   await assert.rejects(() => mgmt.lifecycle.get('000000000000000000000000', ADMIN_KS), { code: 'lifecycle_rule_not_found', title: 'LIFECYCLE_RULE_NOT_FOUND', status: 200 });
 });
 
-test('lifecycle.list uses the {offset,limit} pager (NOT Genie pageIndex/pageSize), passes filter + orderBy through', async () => {
+test('lifecycle.list uses the {offset,limit} pager (NOT Genie pageIndex/pageSize), passes actionTypeIn, eventCondition and orderBy through', async () => {
   const { mgmt, ff } = harness([
     { match: 'lifecycle/list', respond: () => ({ status: 200, body: { totalCount: 1, objects: [RULE] } }) },
   ]);
-  const page = await mgmt.lifecycle.list(ADMIN_KS, { filter: { eventTypeEqual: 'session_ended' }, orderBy: '-createdAt' });
+  const filter = { statusEqual: 'active', actionTypeIn: ['createBadges'], eventCondition: { fieldEqual: 'object.agent_id', operatorEqual: 'eq', value: 'agent-1' } };
+  const page = await mgmt.lifecycle.list(ADMIN_KS, { filter, orderBy: '-createdAt' });
   assert.equal(page.length, 1);
   assert.equal(page[0].id, RULE.id);
-  assert.deepEqual(ff.calls[0].body.filter, { eventTypeEqual: 'session_ended' });
+  assert.deepEqual(ff.calls[0].body.filter, filter);
   assert.equal(ff.calls[0].body.orderBy, '-createdAt');
   assert.ok('offset' in ff.calls[0].body.pager && 'limit' in ff.calls[0].body.pager, 'offset/limit pager, not pageIndex/pageSize');
 });
