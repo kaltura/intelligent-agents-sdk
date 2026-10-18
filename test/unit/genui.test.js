@@ -1591,3 +1591,16 @@ test('two mounted graded-question widgets in one process never share selection/a
     assert.equal(actionsA.length, 1, 'B\'s answer never re-fires or mutates A\'s already-recorded action');
   } finally { delete globalThis.document; }
 });
+
+test('mountWidget content-gallery: a video slide with its own image keeps that image on the play button', async () => {
+  globalThis.document = listenerCapturingDom([]);
+  try {
+    const { mountWidget } = await import('../../src/experience/genui/renderers/mount.js');
+    const descriptor = new ExperienceRenderer(CTX).render('content-gallery', {
+      items: [{ title: 'T', imageUrl: 'https://img.example.com/slide.png', clips: [{ entryId: '1_aaaaaaaa', startTime: 1 }] }],
+    });
+    const root = mountWidget(descriptor, document.createElement('div'), { onAction: () => {} });
+    const img = findAll(root, (n) => n.tagName === 'IMG')[0];
+    assert.equal(img.src || img.getAttribute('src'), 'https://img.example.com/slide.png');
+  } finally { delete globalThis.document; }
+});

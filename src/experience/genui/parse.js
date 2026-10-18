@@ -72,7 +72,8 @@ export function parseContent(content) {
   }
   if (typeof content !== 'string') return { raw: content };
 
-  const trimmed = stripFence(content).trim();
+  const body = stripFence(content);
+  const trimmed = body.trim();
   if (!trimmed) return {};
 
   // 1) Try strict JSON first (object or array).
@@ -88,7 +89,7 @@ export function parseContent(content) {
   //    scalars). Lines it cannot place are kept verbatim under `.raw` so we
   //    never lose data.
   try {
-    const { map, leftover } = parseYamlBlock(trimmed);
+    const { map, leftover } = parseYamlBlock(body.replace(/^(?:[ \t]*\r?\n)+/, '').trimEnd());
     if (leftover.length) map.raw = leftover.join('\n');
     return Object.keys(map).length ? map : { raw: trimmed };
   } catch { return { raw: trimmed }; }

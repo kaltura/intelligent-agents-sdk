@@ -91,7 +91,8 @@ export function classifyAgentAction(seg) {
   const widgetName = pickStr(metadata.widgetName, s.widgetName, s.widget_name);
   // Normalize the segment type / runtime by stripping the trailing `-tool`, then map aliases.
   const typeKey = stripTool(s.type);
-  const runtime = genuiRuntimeAlias(stripTool(runtimeName)) || (RUNTIME_KEYS.has(typeKey) ? typeKey : '');
+  const typeRuntime = genuiRuntimeAlias(typeKey);
+  const runtime = genuiRuntimeAlias(stripTool(runtimeName)) || (RUNTIME_KEYS.has(typeRuntime) ? typeRuntime : '');
 
   // Synthetic navigate (no real typed nav segment — see Presenter for real nav).
   if (typeKey === 'navigate' || runtime === 'navigate') {

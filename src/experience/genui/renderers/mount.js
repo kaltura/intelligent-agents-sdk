@@ -217,7 +217,7 @@ const BUILDERS = {
       const clip = it && Array.isArray(it.clips) ? it.clips[0] : null;
       if (clip) {
         hasVideo = true;
-        card.appendChild(playButton({ ...clip, title: it.title, alt: it.alt }, stage, onAction));
+        card.appendChild(playButton({ ...clip, thumbnailUrl: it.imageUrl || clip.thumbnailUrl, title: it.title, alt: it.alt }, stage, onAction));
       } else {
         const img = safeImg(it && it.imageUrl, safeText((it && it.alt) || (it && it.title), 300));
         if (img) card.appendChild(img);

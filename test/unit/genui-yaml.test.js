@@ -149,3 +149,9 @@ test('yaml: lines it cannot place go to .raw, fences and JSON bodies are unchang
   assert.deepEqual(parseContent('- a\n- b'), { raw: '- a\n- b' });
   assert.deepEqual(parseContent('```yaml\na: 1\n```'), { a: 1 });
 });
+
+test('yaml: a body indented as a whole parses as if flush-left', () => {
+  assert.deepStrictEqual(parseContent('  title: A\n  summary: B'), { title: 'A', summary: 'B' });
+  assert.deepStrictEqual(parseContent('\n    items:\n      - x\n      - y\n'), { items: ['x', 'y'] });
+  assert.deepStrictEqual(parseContent(' title: A\nsummary: B'), { title: 'A', summary: 'B' });
+});

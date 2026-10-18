@@ -39,12 +39,18 @@ const ESC = Object.freeze({
 
 /**
  * Parse a YAML-subset block mapping into a plain object. Lines it cannot place are returned in `leftover`.
- * @param {string} text Fence-stripped, trimmed body.
+ * A body indented as a whole is dedented first, and the first line's own indentation is ignored.
+ * @param {string} text Fence-stripped body with no leading blank lines or trailing whitespace.
  * @returns {{map: Record<string, unknown>, leftover: string[]}}
  */
 export function parseYamlBlock(text) {
+  const lines = text.split(/\r?\n/);
+  let min = Infinity;
+  for (const l of lines) if (!isBlank(l)) min = Math.min(min, indentOf(l));
+  if (min > 0 && min < Infinity) for (let k = 0; k < lines.length; k++) lines[k] = lines[k].slice(Math.min(min, indentOf(lines[k])));
+  lines[0] = lines[0].trimStart();
   /** @type {YamlState} */
-  const st = { lines: text.split(/\r?\n/), i: 0, leftover: [] };
+  const st = { lines, i: 0, leftover: [] };
   /** @type {Record<string, unknown>} */
   const map = {};
   parseMap(st, 0, map, 0);
