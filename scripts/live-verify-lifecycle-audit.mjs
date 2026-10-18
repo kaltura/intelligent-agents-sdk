@@ -15,7 +15,8 @@
  *   3  planted defects     one rule per code: unscoped_rule, email_on_session_ended, email_unfiltered,
  *                          changed_keys_unproduced, insight_setting_disabled, insight_setting_missing,
  *                          agent_not_found, duplicate_agent_ids, template_tokens_unproduced,
- *                          rule_disabled, dtc_without_forms, template_missing_or_deleted
+ *                          rule_disabled, dtc_without_forms, template_missing_or_deleted, badges_unfiltered,
+ *                          badge_key_unproduced
  *   4  agentIds filter     rules of other agents drop out
  *   5  doctor              orphans and the template check (or the region_unavailable skip)
  *   6  intellectConfig     audit of the scratch intellect
@@ -120,6 +121,10 @@ try {
   await plant('setting_gone', { eventType: 'session_ended', eventConditions: scope(agentId), action: insight(sGone.id) }, ['insight_setting_missing']);
   await plant('rule_off', { eventType: 'session_ended', eventConditions: scope(agentId), action: insight(sTopic.id) }, ['rule_disabled']);
   await plant('template_gone', { eventType: 'analysis_updated', eventConditions: [...scope(agentId), changed('SUMMARY', 'TOPIC', 'CUSTOM')], action: { actionType: 'sendInsightEmail', recipients: [`lva-${tag}`], templateId: `lva-no-such-template-${tag}` } }, hasMessaging ? ['template_missing_or_deleted'] : []);
+
+  const badge = (id) => ({ actionType: 'createBadges', badges: [{ badgeId: id, type: 'boolean', score: 1 }] });
+  await plant('badges_unfiltered', { eventType: 'analysis_updated', eventConditions: scope(agentId), action: badge('TOPIC') }, ['badges_unfiltered']);
+  await plant('badge_unproduced', { eventType: 'analysis_updated', eventConditions: [...scope(agentId), changed(KEY('B'))], action: badge(KEY('B')) }, ['badge_key_unproduced']);
 
   // A rule can only name a setting that exists when it is saved, so these two are changed afterwards.
   await kaltura.insightSettings.update(sDisabled.id, { status: 'disabled' }, admin.ks);

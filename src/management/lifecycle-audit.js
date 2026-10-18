@@ -56,6 +56,8 @@ function overlaps(a, b) {
  * | `insight_setting_missing` | warn | `insightSettingsIds` holds an id with no insight setting. It is skipped. |
  * | `insight_setting_disabled` | warn | A referenced insight setting is `disabled`. It is skipped. |
  * | `too_many_insight_settings` | error | More than 20 `insightSettingsIds`. |
+ * | `badges_unfiltered` | warn | A `createBadges` rule on `analysis_updated` has no `changed_keys` filter. |
+ * | `badge_key_unproduced` | warn | A `badgeId` names an insight key no active rule on those agents writes. |
  * | `email_on_session_ended` | error | `sendInsightEmail` only fires on `analysis_updated`. |
  * | `email_unfiltered` | warn | A `sendInsightEmail` rule on `analysis_updated` has no `changed_keys` filter. |
  * | `changed_keys_unproduced` | warn | The `changed_keys` filter waits for a key no active rule on those agents produces. |
@@ -64,8 +66,9 @@ function overlaps(a, b) {
  * | `dtc_without_forms` | warn | `triggerDtcKai` on an agent whose intellect has no `user_properties_forms`. |
  * | `rule_disabled` | info | The rule is not active. |
  *
- * The key checks skip when an active `triggerDtcKai` rule covers the same
- * agents, since the keys it writes are not documented.
+ * The key checks (`changed_keys_unproduced`, `template_tokens_unproduced`,
+ * `badge_key_unproduced`) skip when an active `triggerDtcKai` rule covers the
+ * same agents, since the keys it writes are not documented.
  * @param {Array<any>} rules Lifecycle rules, as `lifecycle.list` returns them.
  * @param {LifecycleAuditContext} ctx
  * @returns {AuditFinding[]}
@@ -146,6 +149,21 @@ export function auditLifecycleRules(rules, ctx) {
           add('warn', 'dtc_without_forms', `Agent ${id} has an intellect with no user_properties_forms, so triggerDtcKai is skipped.`, 'Set user_properties_forms on the intellect, or remove the rule.', { agentId: id });
         }
       }
+    }
+
+    if (action.actionType === 'createBadges') {
+      const ids = (Array.isArray(action.badges) ? action.badges : []).map((b) => b?.badgeId).filter((id) => typeof id === 'string' && id);
+      if (rule.eventType === 'analysis_updated' && !changedKeysFilter(conditions)) {
+        add('warn', 'badges_unfiltered', 'The rule has no changed_keys filter, so it runs on every analysis update.',
+          "Add {field:'changed_keys', operator:'has_any', value:['<badgeId>', ...]} to eventConditions. Keep it as is only if you want every update.");
+      }
+      const produced = producedKeys(scope);
+      const missing = produced ? [...new Set(ids)].filter((id) => !produced.has(id)) : [];
+      if (missing.length) {
+        add('warn', 'badge_key_unproduced', `${missing.length > 1 ? 'Badges' : 'Badge'} ${missing.join(', ')} read${missing.length > 1 ? '' : 's'} insight key${missing.length > 1 ? 's' : ''} that no active rule on these agents writes, so the badge is never given.`,
+          'Add an insight setting with that key to a triggerInsightSettingsKai rule on the same agents, or change badgeId. Keys are case-sensitive.');
+      }
+      continue;
     }
 
     if (action.actionType !== 'sendInsightEmail') continue;

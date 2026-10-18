@@ -4,7 +4,7 @@
  * objectType, eventConditions[], action}`, when a matching event
  * fires (e.g. a thread's `session_ended`), every active rule (including
  * preset rules you did not create, see {@link
- * Lifecycle#match}) is evaluated and its `action` runs. Three
+ * Lifecycle#match}) is evaluated and its `action` runs. Four
  * action shapes are available to callers, passed through as plain objects
  * (not built by the SDK):
  *
@@ -23,6 +23,15 @@
  *   Extracts one insight per lead-capture field configured on the target
  *   intellect (`intellectConfig.user_properties_forms`) and is
  *   automatically skipped when none are configured.
+ * - `{actionType:'createBadges', badges:Array<{badgeId:string,
+ *   type:'boolean'|'numeric', score?:number, scoreAction?:'upsert'|'delta'}>}`:
+ *   gives the conversation's user a badge. `badgeId` is the insight key
+ *   whose value sets the badge. A `boolean` badge needs `score` and is given
+ *   when the insight is true. A `numeric` badge takes its score from the
+ *   insight value and must not set `score`. `scoreAction` sets (`upsert`) or
+ *   adds to (`delta`) the user's score. A conversation with no user id earns
+ *   no badge. Run it on `analysis_updated` with a `changed_keys` filter on
+ *   the badge keys.
  *
  * Every session also gets one fixed, built-in summary insight for free —
  * it comes from a preset rule visible via {@link
@@ -103,8 +112,9 @@ export class Lifecycle {
    * Finding codes: `unscoped_rule`, `agent_not_found`, `duplicate_agent_ids`,
    * `insight_setting_missing`, `insight_setting_disabled`,
    * `too_many_insight_settings`, `email_on_session_ended`, `email_unfiltered`,
-   * `changed_keys_unproduced`, `template_missing_or_deleted`,
-   * `template_tokens_unproduced`, `dtc_without_forms`, `rule_disabled`.
+   * `changed_keys_unproduced`, `badges_unfiltered`, `badge_key_unproduced`,
+   * `template_missing_or_deleted`, `template_tokens_unproduced`,
+   * `dtc_without_forms`, `rule_disabled`.
    * @param {string} ks (admin)
    * @param {{agentIds?:string[], pageSize?:number}} [opts] `agentIds` keeps only findings for rules that run for one of those agents, including rules with no agent scope.
    * @returns {Promise<import('./audit-report.js').AuditReport>}

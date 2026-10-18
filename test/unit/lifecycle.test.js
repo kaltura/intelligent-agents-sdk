@@ -110,6 +110,26 @@ test('lifecycle.create does not check a non-thread objectType', async () => {
   assert.equal(ff.calls.length, 1);
 });
 
+test('lifecycle.create passes a createBadges action through unchanged, even a boolean badge with no score', async () => {
+  const { mgmt, ff } = harness([
+    { match: 'lifecycle/create', respond: (req) => ({ status: 200, body: { id: 'r-badge', ...req.body } }) },
+  ]);
+  const conditions = [
+    { field: 'object.agent_id', operator: 'eq', value: 'agent-1' },
+    { field: 'changed_keys', operator: 'has_any', value: ['quiz_passed', 'points'] },
+  ];
+  const action = {
+    actionType: 'createBadges',
+    badges: [{ badgeId: 'quiz_passed', type: 'boolean', score: 1 }, { badgeId: 'points', type: 'numeric', scoreAction: 'delta' }],
+  };
+  await mgmt.lifecycle.create({ ...CREATE_BODY, eventType: 'analysis_updated', eventConditions: conditions, action }, ADMIN_KS);
+  assert.deepEqual(ff.calls[0].body.action, action);
+
+  const noScore = { actionType: 'createBadges', badges: [{ badgeId: 'q2', type: 'boolean' }] };
+  await mgmt.lifecycle.create({ ...CREATE_BODY, eventType: 'analysis_updated', eventConditions: conditions, action: noScore }, ADMIN_KS);
+  assert.deepEqual(ff.calls[1].body.action, noScore, 'no client pre-flight for badge shape');
+});
+
 test('lifecycle.get fetches by id; requires a non-empty string id', async () => {
   const { mgmt, ff } = harness([
     { match: 'lifecycle/get', respond: (req) => ({ status: 200, body: { ...RULE, id: req.body.id } }) },
