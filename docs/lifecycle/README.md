@@ -71,7 +71,7 @@ await mgmt.lifecycle.create({
 }, ks);
 ```
 
-Every conversation with that agent gets a structured recap the moment it ends, with zero app-side code. The built-in summary insight is deliberately not requested here. Every partner already has an always-on preset rule that produces one for every standard conversation. Its summary lands in the same analysis as this rule's own insights.
+Every conversation with that agent gets a structured recap once it ends, with zero app-side code. The session classes send the end signal on `disconnect()` and on tab close. If you drive the socket yourself, send it too: see [Ending a conversation cleanly](../../README.md#ending-a-conversation-cleanly-session_completed-signal). The built-in summary insight is deliberately not requested here. Every partner already has an always-on preset rule that produces one for every standard conversation. Its summary lands in the same analysis as this rule's own insights.
 
 ### `InsightSettings`: reusable insight definitions
 
