@@ -80,7 +80,7 @@ At `timeouts.firstFrame` with no frame, the SDK re-subscribes once. A second mis
 | `asr` | 9 |
 | `whep` | 10, the WHEP request (`whep_timeout`, `whep_failed`, `stv_session_gone`) |
 | `ice` | The avatar peer never reached ICE `connected` (`ice_failed`). See [ICE diagnostics](resilience-and-failure-handling.md#ice-diagnostics) |
-| `connect` | A fatal server event (`capacity_unavailable`, `tier_exceeded`, `bad_request`) or any other failure in `connect()` |
+| `connect` | A fatal server event (`capacity_unavailable`, `tier_exceeded`, `unsupported_client`) or any other failure in `connect()` |
 | `reconnect` | The socket or a cold reconnect ran out of attempts (`reconnect_failed`) |
 
 `error.retryable` is `true` on `timeout`, `capacity_unavailable`, `whep_timeout`, a `whep_failed` caused by the network, `stv_session_gone`, `ice_failed` and `reconnect_failed`, because the same call can succeed on a later try. A `whep_failed` that carries an HTTP status does not set it. Both fields are also in `error.toJSON()`.

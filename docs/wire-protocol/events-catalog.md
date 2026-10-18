@@ -48,7 +48,7 @@ For the app-level decision of when to use this mode and how to design its UI, se
 | `askPermissions` | `{ constraints:{ audio: boolean \| {echoCancellation}, video: boolean } }` | The server is ready for the mic. |
 | `throwToNoAgent` | `{}` | All agent slots are busy. The socket closes after it. `connect()` rejects with `KalturaError` `code:'capacity_unavailable'`, `status:6001`. To wait for a free slot, call `waitForCapacity()` before `connect()`. |
 | `throwToExceededTier` | `{}` | Account plan limit reached. `KalturaError` `code:'tier_exceeded'`, `status:6002`. No reconnect. |
-| `unsupportedClient` | `{ code }` | Fatal setup failure. The socket closes. `KalturaError` `code:'unsupported_client'`; the `code` value rides in the error's `detail`. |
+| `unsupportedClient` | `{ code }` | Fatal setup failure, for example a token the server refuses or an agent that does not exist. The socket closes. The SDK emits `error`, and `connect()` (or `prepare()`) rejects at once, both with `KalturaError` `code:'unsupported_client'`, `retryable:false`. The error does not include the payload. |
 | `throwToBadRequest` / `removePeer` | `{}` | Fatal disconnect reasons. `KalturaError` `code:'bad_request'` (`status:400`) / `code:'peer_removed'` (`status:401`). |
 | `availabilityResult` | `{ available, details? }` (or `{ error, available:false }`) | Reply to `checkAvailability`. The socket stays open. The SDK re-emits it as `capacityChanged { available, details }`. During `connect()`, an `available:false` reply schedules the next poll on the backoff `[30,45,60,90,120,180,240,300,360]s` (±15% jitter). |
 

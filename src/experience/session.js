@@ -126,7 +126,7 @@ const FATAL_CODE = {
   throwToExceededTier: { code: 'tier_exceeded', num: 6002, retry: false, detail: 'The account is over its plan limit for live conversations.' },
   throwToBadRequest: { code: 'bad_request', num: 400, retry: false, detail: 'The server rejected the request as invalid.' },
   removePeer: { code: 'peer_removed', num: 401, retry: false, detail: 'The server removed this participant from the conversation.' },
-  unsupportedClient: { code: 'unsupported_client', num: 0, retry: false, detail: 'The server does not support this client.' },
+  unsupportedClient: { code: 'unsupported_client', num: 0, retry: false, detail: 'The server refused this session. Check that the token is valid and the agent exists, get a new token, then call connect() again.' },
 };
 
 /**
@@ -530,7 +530,7 @@ export class KalturaAvatarSession extends Emitter {
     this._pendingToolAcks = new Map();
     // Cancel hooks for every in-flight `_await` (one per pending socket wait). Teardown runs
     // them so a handshake torn down mid-flight settles at once instead of on its own timeout.
-    /** @type {Set<() => void>} */
+    /** @type {Set<(err?: KalturaError) => void>} */
     this._pendingAwaits = new Set();
     // Tool-call spiral circuit breaker state (see `_toolSpiralLimit` above). Counts RAW
     // `type:"tool"` segments per turn (before dedup — a spiral's repeats are exactly
@@ -815,7 +815,7 @@ export class KalturaAvatarSession extends Emitter {
       // Teardown (disconnect(), the other lane failing) rejects this wait at once, like `_await`
       // does for a plain socket wait: the listeners below go with it, so no `stvNewSession`
       // could ever answer, and nothing keeps polling `checkAvailability` on a dead session.
-      const cancel = () => finish(reject, connectAbortedErr());
+      const cancel = (err = connectAbortedErr()) => finish(reject, err);
       this._pendingAwaits.add(cancel);
       const create = () => { if (requested) return; requested = true; socket.emit('stvNewSession', buildStvNewSession(this._roomId)); };
       const poll = () => { if (!settled) socket.emit('checkAvailability', {}); };   // capacity query, independent of create()
@@ -2970,7 +2970,12 @@ export class KalturaAvatarSession extends Emitter {
 
     // Fatal error events.
     for (const ev of Object.keys(FATAL_CODE)) {
-      socket.on(ev, () => this.emit('error', fatalError(ev)));
+      socket.on(ev, () => {
+        this.emit('error', fatalError(ev));
+        // The server closes the socket after this event, so no setup wait can succeed.
+        // A live session (outside a resume() rebuild) keeps its path: the disconnect ends it.
+        if (ev === 'unsupportedClient' && (this.state !== 'connected' || this._resuming)) this._failPending(fatal(ev));
+      });
     }
   }
 
@@ -2979,7 +2984,7 @@ export class KalturaAvatarSession extends Emitter {
    * deadline). Cleans up its listener.
    *
    * Cancelable: the wait registers itself in `_pendingAwaits`, and teardown rejects it with
-   * `connect_failed` right away. Without that, a `disconnect()` landing mid-handshake removes
+   * `connect_failed` (or with the error passed to its cancel function, see `_failPending`) right away. Without that, a `disconnect()` landing mid-handshake removes
    * the socket's listeners while this wait is still armed, so the event it needs can never
    * arrive and `connect()` would hang for the full timeout (up to `TIMEOUTS.asr`, 30 s) before
    * failing. The two connect lanes run concurrently, so either lane can be the one left waiting.
@@ -2989,7 +2994,7 @@ export class KalturaAvatarSession extends Emitter {
   _await(socket, event, ms, label, overall) {
     return new Promise((resolve, reject) => {
       const ok = (payload) => { done(); if (overall && overall.expired()) return reject(timeoutErr('ConnectTimeout', 'connect')); resolve(payload); };
-      const cancel = () => { done(); reject(connectAbortedErr()); };
+      const cancel = (err = connectAbortedErr()) => { done(); reject(err); };
       const t = setTimeout(() => { done(); reject(timeoutErr(label, PHASE_BY_EVENT[event])); }, ms);
       // Declared last so it can close over all three above; every caller of it runs later.
       const done = () => { clearTimeout(t); socket.off?.(event, ok); this._pendingAwaits.delete(cancel); };
@@ -2999,6 +3004,9 @@ export class KalturaAvatarSession extends Emitter {
     });
   }
 
+  /** Reject every in-flight handshake wait with `err`. Each wait removes itself, so loop over a copy. @param {KalturaError} err */
+  _failPending(err) { for (const cancel of [...this._pendingAwaits]) cancel(err); }
+
   /**
    * Race a peer-connection negotiation promise against teardown, the same way `_await` races a
    * socket wait. `close()` is not guaranteed to settle the operations already queued on a peer
@@ -3006,7 +3014,7 @@ export class KalturaAvatarSession extends Emitter {
    * `setRemoteDescription()` unsettled forever once the connection is closed. A `disconnect()`
    * landing mid-negotiation (a `track` listener that calls it, an `error` on the other lane)
    * would then hang `connect()` with no timeout to fall back on, because these are not socket
-   * waits. Registered in `_pendingAwaits`, so teardown rejects it with `connect_failed` at once.
+   * waits. Registered in `_pendingAwaits`, so teardown rejects it with `connect_failed` (or with the error passed to its cancel function) at once.
    * Also used for the WHEP subscribe request, which is not a socket wait either.
    * @template T @param {Promise<T>} p
    * @param {() => void} [onCancel]  Runs when teardown cancels the wait, before the rejection
@@ -3015,10 +3023,10 @@ export class KalturaAvatarSession extends Emitter {
    */
   _cancelable(p, onCancel) {
     return new Promise((resolve, reject) => {
-      const cancel = () => {
+      const cancel = (err = connectAbortedErr()) => {
         this._pendingAwaits.delete(cancel);
         try { onCancel?.(); } catch { /* best effort — the rejection below is what matters */ }
-        reject(connectAbortedErr());
+        reject(err);
       };
       this._pendingAwaits.add(cancel);
       p.then(
