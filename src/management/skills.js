@@ -84,7 +84,7 @@ export class Skills {
    * The skill applies only while it is true. It is checked before any network
    * call, and a template form like `{{ x }}` throws `bad_request`. `null` or
    * `undefined` is not sent.
-   * `name` may use only letters, digits, `_` and `-` (no spaces). `update` applies the same rule to a rename.
+   * `name` may use only letters, digits, `_` and `-` (no spaces).
    *
    * Also callable as {@link Skills#create} — same method, either name works.
    * @param {{name:string, description:string, instructions?:string, condition?:string|null}} body
@@ -175,7 +175,6 @@ export class Skills {
     const body = { id };
     if (patch.name !== undefined) {
       if (typeof patch.name !== 'string' || !patch.name.trim()) throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: 'skills.update patch.name must be a non-empty string.' });
-      requireSkillNameChars(patch.name, 'skills.update patch.name');
       body.name = patch.name;
     }
     if (patch.description !== undefined) {

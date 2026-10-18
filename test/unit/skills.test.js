@@ -144,7 +144,6 @@ test('skills.update validates BEFORE any network call, then posts a patch to v1/
   await assert.rejects(() => mgmt.skills.update(SKILL.id, /** @type {any} */ (null), ADMIN_KS), (e) => e.code === 'bad_request');
   await assert.rejects(() => mgmt.skills.update(SKILL.id, {}, ADMIN_KS), (e) => e.code === 'bad_request');
   await assert.rejects(() => mgmt.skills.update(SKILL.id, { name: '' }, ADMIN_KS), (e) => e.code === 'bad_request');
-  await assert.rejects(() => mgmt.skills.update(SKILL.id, { name: 'has space' }, ADMIN_KS), (e) => e.code === 'bad_request');
   await assert.rejects(() => mgmt.skills.update(SKILL.id, { instructions: /** @type {any} */ (42) }, ADMIN_KS), (e) => e.code === 'bad_request');
   assert.equal(ff.calls.length, 0, 'no transport before validation passes');
 
