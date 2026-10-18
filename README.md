@@ -107,11 +107,11 @@ jsDelivr serves any file straight from a pushed tag by its real repo path. It ha
 </script>
 ```
 
-`@latest` resolves to the newest tag, so this URL always matches the current README without an editing pass on every release. It is **not cached the same way** as a tagged path. jsDelivr re-checks it periodically, so what it serves can change without warning. For anything you ship, pin to a real tag (for example `@v1.35.0`). jsDelivr caches a tagged path forever, so a pin is both stable and fast:
+`@latest` resolves to the newest tag, so this URL always matches the current README without an editing pass on every release. It is **not cached the same way** as a tagged path. jsDelivr re-checks it periodically, so what it serves can change without warning. For anything you ship, pin to a real tag (for example `@v1.36.0`). jsDelivr caches a tagged path forever, so a pin is both stable and fast:
 
 ```html
 <script type="module">
-  import { KalturaAvatarSession } from 'https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.35.0/src/experience/index.js';
+  import { KalturaAvatarSession } from 'https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.36.0/src/experience/index.js';
 </script>
 ```
 
@@ -1074,7 +1074,7 @@ await mgmt.intellectConfig.patch(configId, { base_directive: 'Be concise.' }, ks
 
 // typed setters
 await mgmt.intellects.setCapability(configId, 'use_knowledge_base', 'on', ks);
-const { id: toolId } = await mgmt.tools.add(myTool, ks);       // tools are a separate, partner-level entity
+const { id: toolId } = await mgmt.tools.add(myTool, ks);       // myTool from tools.api(), see Tools and Secrets
 await mgmt.intellectConfig.setToolIds(configId, [toolId], ks); // then link it
 await mgmt.intellects.secrets.set(configId, { API_KEY: value }, ks);  // write-only
 await mgmt.intellectConfig.setKnowledgeIds(configId, [knowledgeId], ks);
@@ -1159,7 +1159,7 @@ Shared skills and rejected ids: [Skills](docs/api/management-operations.md#skill
 **Provider voice import** (`mgmt.catalog`) creates a catalog Voice item directly from an ElevenLabs or Cartesia voice id, with no audio upload:
 
 ```js
-const v = await mgmt.catalog.importVoiceFromElevenLabs('EXAVITQu4vr4xnSDxMaL', ks); // ElevenLabs' own public sample voice id, safe to use as-is
+const v = await mgmt.catalog.importVoiceFromElevenLabs('<elevenlabs-voice-id>', ks); // a voice in your ElevenLabs library that has samples
 // or: await mgmt.catalog.importVoiceFromCartesia('<cartesia-voice-id>', ks);
 ```
 
