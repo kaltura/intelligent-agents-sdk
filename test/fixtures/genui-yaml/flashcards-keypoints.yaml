@@ -1,0 +1,54 @@
+title: "The Rule of Thirds in Layout"
+summary: "A short guide to splitting a layout into thirds: where to put the base, the support and the accent so the page feels balanced."
+keypoints:
+- title: "Understanding the dominant base"
+  summary: "The dominant share of a layout should use a **neutral base** that gives the eye a place to rest. It keeps the page calm."
+  citation:
+    clips:
+    - start_index: 35
+      last_index: 44
+      entry_id: 1_aaaaaaaa
+      start_time: 84
+      end_time: 106
+      type: CAPTION
+      thumbnail: null
+      video_link: null
+- title: "The supporting color"
+  summary: "The next share goes to a **supporting color** that is important but less prominent than the accent. It shapes the identity of the page."
+  citation:
+    clips:
+    - start_index: 48
+      last_index: 53
+      entry_id: 1_aaaaaaaa
+      start_time: 113
+      end_time: 127
+      type: CAPTION
+      thumbnail: null
+      video_link: null
+    - start_index: 55
+      last_index: 59
+      entry_id: 1_aaaaaaaa
+      start_time: 130
+      end_time: 141
+      type: CAPTION
+      thumbnail: null
+      video_link: null
+- title: "The accent for action"
+  summary: "Reserve a small share for the **accent**, used for buttons and links that need attention."
+  citation:
+    clips:
+    - start_index: 3
+      last_index: 9
+      entry_id: 1_bbbbbbbb
+      start_time: 12
+      end_time: 40
+      type: CAPTION
+      thumbnail: null
+      video_link: null
+- title: "A point with no clips"
+  summary: "This point has an empty clip list."
+  citation:
+    clips: []
+- title: "A point with no citation"
+  summary: "This point has an empty citation block."
+  citation: {}

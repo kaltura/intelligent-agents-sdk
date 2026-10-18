@@ -1,0 +1,26 @@
+citation:
+  clips:
+  - start_index: 1
+    last_index: 11
+    entry_id: 1_aaaaaaaa
+    start_time: 0
+    end_time: 26
+    type: CAPTION
+    thumbnail: null
+    video_link: null
+  - start_index: 35
+    last_index: 81
+    entry_id: 1_aaaaaaaa
+    start_time: 84
+    end_time: 200
+    type: CAPTION
+    thumbnail: null
+    video_link: null
+  - start_index: 83
+    last_index: 114
+    entry_id: 1_bbbbbbbb
+    start_time: 202
+    end_time: 280
+    type: CAPTION
+    thumbnail: null
+    video_link: null

@@ -87,7 +87,7 @@ export function sanitizeJson(v, depth = 0) {
 /** Clamp untrusted inbound text to a sane max + strip non-printable control chars, but
  * KEEP \t/\n/\r (LLM05 inbound) — every `agent_raw_text`/`brainSegment` string this feeds
  * (GenUI `unisphere-tool` bodies, spoken captions) can be genuinely multi-line, and a
- * downstream line-oriented parser (e.g. genui/parse.js's YAML-ish block parser) depends on
+ * downstream line-oriented parser (e.g. the GenUI YAML-subset parser, genui/yaml.js) depends on
  * those newlines surviving. Stripping them would collapse a multi-line GenUI body into
  * one line before it ever reached the parser — see CONTROL_CHARS_SOURCE below, the same
  * carve-out `safeSource` already makes for verbatim content. @param {unknown} s @param {number} [max] */

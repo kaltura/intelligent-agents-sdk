@@ -1,0 +1,16 @@
+sources:
+- duration: 2486
+  entry_id: 1_aaaaaaaa
+  has_short: true
+  title: Choosing Colors Step By Step
+  type: video
+- duration: 377
+  entry_id: 1_bbbbbbbb
+  has_short: false
+  title: The Rule of Thirds
+  type: video
+- duration: 495
+  entry_id: 1_cccccccc
+  has_short: true
+  title: Layout Masterclass (2)
+  type: video

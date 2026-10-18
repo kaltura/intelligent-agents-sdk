@@ -35,7 +35,7 @@ Wire `runtimeName` → normalized dispatch key (the renderer registry key). Sour
 2. **Emit.** The agent sends a widget with `widgetName:"unisphere.widget.genie"` and a `runtimeName`. It arrives as a `unisphere-tool` segment.
 3. **Stream.** Segments arrive as `agent_raw_text` deltas (live socket) or SSE/NDJSON lines (HTTP converse). A single widget can span **multiple fragments**.
 4. **Assemble.** `SegmentAssembler` (`genui/segments.js`) buffers fragments and flushes a complete widget on a boundary change (different `runtime` or `speechId`, or turn end). If that boundary change interrupts a JSON body before it finishes writing, the fragment is flagged malformed (`onMalformed`) instead of flushed as a widget. `ExperienceRenderer` then mounts the same typed `{kind:'error', data:{runtime, message}}` fallback it uses for a throwing custom renderer.
-5. **Parse.** `parseWidget(segment)` (`parse.js`) returns `{widgetName, runtimeName, runtime, model}`. `parseContent` is forgiving and never throws: object content is used as-is; string content is JSON-parsed first, else parsed as a loose `key: value` block, else preserved under `.raw`.
+5. **Parse.** `parseWidget(segment)` (`parse.js`) returns `{widgetName, runtimeName, runtime, model}`. `parseContent` is forgiving and never throws: object content is used as-is; string content is JSON-parsed first, else parsed as a YAML subset (block maps and lists, flow `[]`/`{}`, quoted and block scalars; no YAML 1.1 coercions, so `yes` or `1_000` stay strings). Lines it can't read go to `.raw`.
 6. **Render.** The renderer dispatches `model` to the runtime's renderer and returns `{kind, data, runtime, runtimeName, _meta}`. Your `mount(descriptor)` turns it into DOM.
 
 ## Two delivery paths (this is the #1 gotcha)

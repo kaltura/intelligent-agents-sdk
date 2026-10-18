@@ -17,6 +17,7 @@
  */
 
 import { GENUI_RUNTIMES } from '../../core/stream.js';
+import { parseYamlBlock } from './yaml.js';
 
 /** The shared `widgetName` every built-in GenUI runtime segment carries. */
 export const GENUI_WIDGET_NAME = 'unisphere.widget.genie';
@@ -55,9 +56,10 @@ export function isKnownRuntime(name) {
 /**
  * Forgiving content parser: the segment `content` arrives EITHER as an already-
  * parsed object (the common `agent_raw_text` path — `session.js` `JSON.parse`s
- * the delta) OR as a fenced string body (JSON, or a loose `key: value` line
- * block when the model emits YAML-ish text). Returns a plain object model;
- * unrecognized text is preserved under `.raw` so nothing is silently dropped.
+ * the delta) OR as a fenced string body (JSON, or a YAML subset: block maps and
+ * lists, flow `[]`/`{}`, quoted and block scalars, no YAML 1.1 coercions).
+ * Returns a plain object model; unrecognized text is preserved under `.raw` so
+ * nothing is silently dropped.
  * NEVER throws.
  * @param {unknown} content
  * @returns {Record<string, unknown>}
@@ -81,80 +83,14 @@ export function parseContent(content) {
     } catch { /* fall through to line parser */ }
   }
 
-  // 2) Loose `key: value` line block (YAML-ish), with ONE level of nesting
-  //    support: `key:` followed by a `- sub: val` list, indented (the exact
-  //    shape Genie's own `user_properties_form` template streams for its
-  //    `fields:` list) OR flush-left (the
-  //    shape the built-in `followups` tool streams — e.g. `- "What...?"` with zero
-  //    leading whitespace). Anything else that isn't a clean
-  //    `key: value` line is kept verbatim under `.raw` so we never lose data.
-  /** @type {Record<string, unknown>} */
-  const model = {};
-  const leftover = [];
-  const lines = trimmed.split(/\r?\n/);
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const m = /^([A-Za-z_][\w-]*)\s*:(.*)$/.exec(line);
-    if (m) {
-      const key = m[1];
-      const val = m[2].trim();
-      if (!val && i + 1 < lines.length && /^\s*-\s/.test(lines[i + 1])) {
-        const { list, next } = parseYamlList(lines, i + 1);
-        model[key] = list;
-        i = next - 1;
-      } else {
-        model[key] = coerceScalar(val);
-      }
-    } else if (line.trim()) {
-      leftover.push(line.trim());
-    }
-  }
-  if (leftover.length) model.raw = leftover.join('\n');
-  return Object.keys(model).length ? model : { raw: trimmed };
-}
-
-/**
- * Parse a YAML list starting at `lines[start]` (a `- ` item), indented or
- * flush-left (dash indentation is whatever `lines[start]` uses — often `0`
- * for the live backend's `followups` shape). Each `- ` at the
- * list's own indentation starts a new item: a `- key: val` item starts a map
- * (any more-indented `key: value` line that follows fills that same map); a
- * plain `- value` item (no `key:` prefix, e.g. a quoted question string) is
- * pushed as a scalar via `coerceScalar`. A line back at or below the list's
- * indentation ends the list. Pure, never throws.
- * @param {string[]} lines @param {number} start
- * @returns {{list:Array<Record<string,unknown>|unknown>, next:number}}
- */
-function parseYamlList(lines, start) {
-  const list = [];
-  const dashIndent = /^(\s*)-/.exec(lines[start])[1].length;
-  let current = null;
-  let i = start;
-  for (; i < lines.length; i++) {
-    const line = lines[i];
-    if (!line.trim()) continue;
-    const dash = /^(\s*)-(.*)$/.exec(line);
-    if (dash && dash[1].length === dashIndent) {
-      const rest = dash[2].trim();
-      const kv = /^([A-Za-z_][\w-]*)\s*:(.*)$/.exec(rest);
-      if (kv) {
-        current = {};
-        list.push(current);
-        current[kv[1]] = coerceScalar(kv[2].trim());
-      } else {
-        current = null;   // scalar item — no nested `key: value` lines expected
-        list.push(coerceScalar(rest));
-      }
-      continue;
-    }
-    const kv = /^(\s+)([A-Za-z_][\w-]*)\s*:(.*)$/.exec(line);
-    if (kv && kv[1].length > dashIndent && current) {
-      current[kv[2]] = coerceScalar(kv[3].trim());
-      continue;
-    }
-    break;   // dedent to/below the list's own indentation — list is over
-  }
-  return { list, next: i };
+  // 2) YAML subset (block maps and lists, flow collections, quoted and block
+  //    scalars). Lines it cannot place are kept verbatim under `.raw` so we
+  //    never lose data.
+  try {
+    const { map, leftover } = parseYamlBlock(trimmed);
+    if (leftover.length) map.raw = leftover.join('\n');
+    return Object.keys(map).length ? map : { raw: trimmed };
+  } catch { return { raw: trimmed }; }
 }
 
 /**
@@ -194,33 +130,6 @@ export function parseWidget(segment) {
 function stripFence(s) {
   const m = /^```[^\n]*\n([\s\S]*?)\n?```\s*$/.exec(s.trim());
   return m ? m[1] : s;
-}
-
-/**
- * Coerce a bare scalar token from the line parser: `true`/`false`/`null`,
- * integers and decimals become typed values; anything else stays a string.
- * Also strips one matching pair of surrounding quotes
- * (`"..."` or `'...'`) — the live backend emits quoted string values (e.g. a
- * `show-link` widget's `link: "https://example.com/widgetron"`, see issue
- * #56) whose literal quote characters must not leak into the scalar. Only a
- * genuine surrounding pair is stripped — a lone leading/trailing quote (e.g.
- * an unbalanced quote, or an apostrophe that isn't paired) is left as-is.
- * @param {string} v
- */
-function coerceScalar(v) {
-  if (v === 'true') return true;
-  if (v === 'false') return false;
-  if (v === 'null') return null;
-  if (/^-?\d+$/.test(v)) return Number(v);
-  if (/^-?\d*\.\d+$/.test(v)) return Number(v);
-  if (v.length >= 2) {
-    const first = v[0];
-    const last = v[v.length - 1];
-    if ((first === '"' && last === '"') || (first === "'" && last === "'")) {
-      return v.slice(1, -1);
-    }
-  }
-  return v;
 }
 
 /** First defined non-empty string among the candidates, else ''. @param {...unknown} cands */

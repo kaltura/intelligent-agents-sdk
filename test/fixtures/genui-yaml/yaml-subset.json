@@ -1,0 +1,73 @@
+{
+  "block_literal": "line one\n\nline three\n",
+  "block_strip": "kept\nwithout a final break",
+  "block_keep": "kept with breaks\n\n",
+  "block_folded": "folded text that joins on one line\nand a new paragraph\n",
+  "folded_strip": "a b",
+  "flow_list": [
+    1,
+    2.5,
+    "three",
+    "four",
+    true,
+    null,
+    [
+      5,
+      6
+    ],
+    {
+      "k": "v"
+    }
+  ],
+  "flow_map": {
+    "a": 1,
+    "b": [
+      "x",
+      "y"
+    ],
+    "c": {
+      "d": "e"
+    }
+  },
+  "empty_list": [],
+  "empty_map": {},
+  "nested": {
+    "inner": {
+      "deeper": "value",
+      "list": [
+        "a",
+        "b"
+      ]
+    }
+  },
+  "nested_seq": [
+    [
+      1,
+      2
+    ],
+    [
+      3
+    ],
+    {
+      "name": "item",
+      "tags": [
+        "t1",
+        "t2"
+      ]
+    }
+  ],
+  "quoted_lookalikes": [
+    "yes",
+    "off",
+    "1_000",
+    "0x1F",
+    "1:30",
+    "1e3",
+    "~",
+    "null",
+    "true"
+  ],
+  "double": "tab\there \"q\" café — end",
+  "single": "It's fine",
+  "nothing": null
+}
