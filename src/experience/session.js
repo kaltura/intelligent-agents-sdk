@@ -3027,7 +3027,8 @@ export class KalturaAvatarSession extends Emitter {
    * deadline). Cleans up its listener.
    *
    * Cancelable: the wait registers itself in `_pendingAwaits`, and teardown rejects it with
-   * `connect_failed` right away. `_failPending` can reject it with a different error instead. Without that, a `disconnect()` landing mid-handshake removes
+   * `connect_failed` right away (`_failPending` can reject it with a different error instead).
+   * Without that, a `disconnect()` landing mid-handshake removes
    * the socket's listeners while this wait is still armed, so the event it needs can never
    * arrive and `connect()` would hang for the full timeout (up to `TIMEOUTS.asr`, 30 s) before
    * failing. The two connect lanes run concurrently, so either lane can be the one left waiting.
@@ -3041,7 +3042,7 @@ export class KalturaAvatarSession extends Emitter {
       const cancel = (err = connectAbortedErr()) => { done(); reject(err); };
       const t = setTimeout(() => { done(); reject(timeoutErr(label, PHASE_BY_EVENT[event])); }, ms);
       // Declared last so it can close over all three above; every caller of it runs later.
-      const fail = (p) => { done(); reject(asrSignalErr(p)); };
+      const fail = (p) => cancel(asrSignalErr(p));
       const done = () => { clearTimeout(t); socket.off?.(event, ok); if (failOn) socket.off?.(failOn, fail); this._pendingAwaits.delete(cancel); };
       t.unref?.();
       this._pendingAwaits.add(cancel);
