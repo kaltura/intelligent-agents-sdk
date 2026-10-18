@@ -390,12 +390,14 @@ export class IntellectConfig {
   /**
    * Set `thread_start_tools`: tool ids the backend runs in order when a new
    * thread starts, before the first user turn (chat and avatar paths alike).
-   * Only `api` and `code` tools run (other types are skipped server-side); an
-   * `api` tool with `wait_for_response` is awaited, everything else is
-   * fire-and-forget, and a failing tool does not fail the conversation. The call
-   * is server-side only: it does not appear as a `tool` segment in the stream.
-   * The backend stores unknown ids without complaint, so check them against
-   * `mgmt.tools.list` yourself. WRITE, idempotent. Pass `[]` to clear.
+   * Only `api` and `code` tools run; other types are skipped. An `api` tool with
+   * `wait_for_response:false` runs without waiting; the others are waited for.
+   * The result is not given to the model, a failing tool does not fail the
+   * conversation, and the call never appears as a `tool` segment. Unknown ids are
+   * accepted, so check them against `mgmt.tools.list` yourself. A `condition` on
+   * `sys__avatar_enabled` or `sys__avatar_share_screen_enabled` is evaluated before
+   * those are set: `sys__avatar_enabled` never passes and `not sys__avatar_enabled`
+   * always passes. WRITE, idempotent. Pass `[]` to clear.
    * Entries take the same forms as {@link IntellectConfig#setToolIds}.
    * @param {number} configId @param {Array<string|{id:string, condition?:string|null}>} toolIds @param {string} ks (admin)
    * @returns {Promise<{applied:boolean, result?:any, sent?:object, _meta:object}>}
@@ -560,7 +562,7 @@ export class IntellectConfig {
   /**
    * Set / insert named secrets (read-merge-write the full `config.secrets` dict;
    * prior secrets re-sent as the mask sentinel so the server keeps them). WRITE
-   * — idempotent. Rejects a literal `"***"` and empty values. WRITE-ONLY: values
+   * — idempotent. Rejects a literal `"***"`, empty values and values starting with `enc:`. WRITE-ONLY: values
    * are never read back. @param {number} configId @param {Record<string,string>} entries @param {string} ks (admin)
    */
   async setSecrets(configId, entries, ks) {
@@ -573,6 +575,7 @@ export class IntellectConfig {
       if (typeof name !== 'string' || !name.trim()) throw bad('secret name must be a non-empty string.');
       if (typeof v !== 'string' || v.length === 0) throw bad(`value for "${name}" must be a non-empty string.`);
       if (v === MASK) throw bad(`cannot store the literal "${MASK}" for "${name}" — it is the merge-keep sentinel, not a value.`);
+      if (v.startsWith('enc:')) throw bad(`value for "${name}" cannot start with "enc:". Store a value without that prefix.`);
     }
     return this.patch(configId, (cur) => {
       // `cur.secrets` is `unknown` (patch()'s generic whole-body param); the runtime guard

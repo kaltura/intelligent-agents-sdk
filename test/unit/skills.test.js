@@ -24,6 +24,28 @@ const SKILL = {
   instructions: null, partner_id: 123, created_at: '2026-08-01T00:00:00Z', updated_at: '2026-08-01T00:00:00Z',
 };
 
+test('skills.add rejects a name with spaces before any request', async () => {
+  const { mgmt, ff } = harness([
+    { match: 'v1/skill/add', respond: (req) => ({ status: 200, body: { ...SKILL, ...req.body } }) },
+  ]);
+  for (const name of ['my skill', 'a.b']) {
+    await assert.rejects(
+      () => mgmt.skills.add({ name, description: 'd' }, ADMIN_KS),
+      (e) => e.code === 'bad_request' && /letters, digits/.test(e.detail),
+    );
+  }
+  assert.equal(ff.calls.length, 0, 'no transport for an invalid name');
+});
+
+test('skills.add accepts letters, digits, _ and -', async () => {
+  const { mgmt, ff } = harness([
+    { match: 'v1/skill/add', respond: (req) => ({ status: 200, body: { ...SKILL, ...req.body } }) },
+  ]);
+  const res = await mgmt.skills.add({ name: 'Tone_guide-2', description: 'd' }, ADMIN_KS);
+  assert.equal(res.name, 'Tone_guide-2');
+  assert.equal(ff.calls.length, 1);
+});
+
 test('skills.add validates {name, description} BEFORE any network call, then posts v1/skill/add', async () => {
   const { mgmt, ff } = harness([
     { match: 'v1/skill/add', respond: (req) => ({ status: 200, body: { ...SKILL, ...req.body } }) },

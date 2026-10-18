@@ -381,6 +381,15 @@ test('intellectConfig.setSecrets re-sends prior secrets as the mask sentinel + r
   await assert.rejects(() => cfg.setSecrets(1481, { X: '***' }, ADMIN), (e) => e.code === 'bad_request');
 });
 
+test('intellectConfig.setSecrets rejects a value starting with enc:', async () => {
+  const { cfg, f } = mkMgmt([getDto(), updateEcho]);
+  await assert.rejects(
+    () => cfg.setSecrets(1481, { X: 'enc:abc' }, ADMIN),
+    (e) => e.code === 'bad_request' && /cannot start with "enc:"/.test(e.detail),
+  );
+  assert.equal(f.calls.length, 0);
+});
+
 test('intellectConfig.listSecretNames returns names only (never values)', async () => {
   const { cfg } = mkMgmt([getDto({ secrets: { A: '***', B: '***' } })]);
   const r = await cfg.listSecretNames(1481, ADMIN);

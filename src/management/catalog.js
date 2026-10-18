@@ -2,7 +2,7 @@
  * Catalog — the preset library of visuals (faces) and voices, plus custom
  * uploads. Agentic host, admin token. Reference: docs/api/design.md.
  *
- * IMPORTANT asymmetry: an uploaded VOICE clones for real (ElevenLabs)
+ * IMPORTANT asymmetry: an uploaded VOICE is cloned
  * and is immediately usable as a live voice. An uploaded VISUAL image becomes the
  * catalog item's visual content and is usable in avatar/create and avatar-session/create
  * for live animated sessions.
@@ -70,7 +70,7 @@ export class Catalog {
   }
 
   /**
-   * Clone a CUSTOM VOICE (real ElevenLabs clone). WRITE — NOT idempotent.
+   * Clone a CUSTOM VOICE from an uploaded sample. WRITE — NOT idempotent.
    * Requirements: MP3 44.1 kHz, at least about 6 s of clear speech, ≤10 MB, NON-EMPTY
    * description (a clip under about 6 s fails with a server error). The returned
    * `itemId` is the clone — pair it with any avatar's `voice.id`. The item is
@@ -179,7 +179,7 @@ export class Catalog {
    * Import an existing ElevenLabs voice by its provider voiceId as a new Voice
    * catalog item — no audio upload, no re-clone. WRITE — NOT idempotent (each
    * call creates a new catalog item). An unknown voiceId creates NOTHING: the
-   * server replies HTTP 200 with a `KalturaAPIException` envelope
+   * server replies HTTP 200 with an error body
    * (`VOICE_DOES_NOT_EXIST_ON_ELEVEN_LABS`), which the transport raises as a
    * typed error with `code:'voice_not_found_elevenlabs'`.
    * @param {string} voiceId The provider-side ElevenLabs voice id.
@@ -301,6 +301,9 @@ function catalogFilter(opts) {
 function requireVoiceId(v, where) {
   if (typeof v !== 'string' || !v.trim()) {
     throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: `${where} voiceId must be a non-empty string (the provider-side voice id).` });
+  }
+  if (!/^[A-Za-z0-9_-]+$/.test(v)) {
+    throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: `${where} voiceId must contain only letters, digits, "_" or "-" (the provider-side voice id).` });
   }
 }
 
