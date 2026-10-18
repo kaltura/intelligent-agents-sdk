@@ -10,7 +10,7 @@
  *
  * Three layers:
  * 1. String-pattern scrub (KS, 32-hex, private IP).
- * 2. Sensitive-key redaction of the whole value. This covers any key with
+ * 2. Sensitive-key redaction of the whole value (each string, for an array). This covers any key with
  *    `secret`, `password`, `credential`, `token` or `ks` in it, and the exact
  *    keys `authorization`, `proxy-authorization`, `cookie`, `set-cookie`,
  *    `x-api-key` and `apikey` in any case (`api_key` and `api-key` too). An `authentication` object keeps its
@@ -83,6 +83,8 @@ export function redactString(s) {
 /** @param {unknown} v */
 function redactSensitiveKey(v) {
   if (typeof v === 'string') return v ? '<redacted>' : v;
+  // A header can repeat (`Set-Cookie: [...]`): every string in the list is the secret.
+  if (Array.isArray(v)) return v.map(redactSensitiveKey);
   return redact(v);
 }
 

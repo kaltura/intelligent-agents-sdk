@@ -102,3 +102,10 @@ test('redacts proxy-authorization, set-cookie and a non-string authentication.va
   assert.equal(out['Set-Cookie'], '<redacted>');
   assert.equal(out.authentication.value, '<redacted>');
 });
+
+test('redacts every string in an array under a sensitive key', () => {
+  const out = redact({ headers: { 'Set-Cookie': ['sid=one', 'pref=two'], Authorization: ['Bearer abc'], Cookie: [['a=1']] } });
+  assert.deepEqual(out.headers['Set-Cookie'], ['<redacted>', '<redacted>']);
+  assert.deepEqual(out.headers.Authorization, ['<redacted>']);
+  assert.deepEqual(out.headers.Cookie, [['<redacted>']]);
+});
