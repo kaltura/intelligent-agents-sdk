@@ -120,8 +120,8 @@ export class AvatarSessions {
    * metadata) and pass it in. An inaccurate value doesn't error — it just
    * desyncs the avatar's mouth from the audio's actual length.
    *
-   * ASYNC/QUEUED: the call resolves in roughly 100ms once
-   * the server accepts the turn — it does NOT block until playback
+   * ASYNC/QUEUED: the call resolves once
+   * the server accepts the turn. It does NOT block until playback
    * finishes. Calling `say()` again before the previous turn finishes
    * queues it; call {@link interrupt} to cut off whatever's currently
    * playing (idempotent — safe with nothing playing).
@@ -129,7 +129,7 @@ export class AvatarSessions {
    * WRITE — not idempotent; each call enqueues a new speaking turn.
    *
    * @param {{sessionId:string, token:string}} session  From {@link create}.
-   * @param {Blob|ArrayBuffer|Uint8Array} audio  Encoded audio bytes (mp3, or whatever your TTS provider returns — only mp3 has been confirmed).
+   * @param {Blob|ArrayBuffer|Uint8Array} audio  Encoded audio bytes. A Blob keeps its own type. For other bytes, `opts.mimeType` applies (default "audio/mpeg").
    * @param {{duration?:number, turnId?:string, mimeType?:string}} [opts]  `duration` in seconds, > 0 — REQUIRED (checked at runtime; the JSDoc type is optional only so an omitted `opts` degrades to the same `bad_request` below instead of a raw TypeError). `turnId` defaults to a fresh uuid. `mimeType` defaults to `'audio/mpeg'`.
    * @returns {Promise<{turnId:string, success:boolean}>}
    * @throws {KalturaError} `bad_request` if `session` is missing or `opts.duration`/`audio` is missing.
@@ -153,10 +153,7 @@ export class AvatarSessions {
       });
     }
     const turnId = opts.turnId || uuidv4();
-    // The `audio instanceof Blob` check above already rules out Blob here at runtime, but a
-    // compound `&&` condition doesn't narrow the ternary's else-branch type (TS can't prove
-    // audio isn't Blob just because the OTHER half of the && was false) — cast to the
-    // Blob constructor's own accepted type rather than re-deriving the narrowed union.
+    // Cast to BlobPart: TS does not narrow the else-branch of the && condition.
     const blob = (typeof Blob !== 'undefined' && audio instanceof Blob) ? audio : new Blob([/** @type {BlobPart} */ (audio)], { type: opts.mimeType || 'audio/mpeg' });
     const fd = new FormData();
     fd.append('turnId', turnId);
@@ -212,7 +209,7 @@ export class AvatarSessions {
    * as "already gone," not a real failure, if you call this defensively
    * (e.g. from a cleanup/disconnect handler).
    *
-   * WRITE — DESTRUCTIVE, but safe to call more than once.
+   * WRITE. DESTRUCTIVE.
    *
    * @param {{sessionId:string, token:string}} session  From {@link create}.
    * @returns {Promise<object>}

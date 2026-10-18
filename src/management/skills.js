@@ -1,8 +1,8 @@
 /**
  * Skills — CRUD over the standalone, PARTNER-LEVEL Skill entity via the brain's
  * `/v1/skill/*` (NOT intellect-scoped). Mounted at `mgmt.skills`. A Skill is
- * `{id (uuid), name, description, instructions, partner_id, created_at,
- * updated_at}` — a named, reusable behavior description the agent can draw on
+ * `{id (uuid), name, description, instructions, condition?, partner_id,
+ * created_at, updated_at}` — a named, reusable behavior description the agent can draw on
  * (add returns the full entity; delete → get 404s "Skill not
  * found"; another partner's id also 404s). `update()` below is the idempotent
  * re-edit path (renames re-check the same
@@ -12,8 +12,7 @@
  * (`code:'conflict'`). The same applies to {@link Tools} (see its class doc).
  *
  * SHARED-BY-NAME HAZARD: because `name` is the lookup key callers upsert
- * against (see `src/management/provision.js`'s `applyTools` for the
- * identical pattern applied to Tools, or an app's own upsert-by-name helper),
+ * against (for example in a provisioning flow),
  * two independently-run provisioning flows for
  * the SAME name silently converge on the SAME Skill entity — deleting (or
  * unexpectedly editing) it affects every intellect that references it, not
@@ -89,7 +88,7 @@ export class Skills {
    * Also callable as {@link Skills#create} — same method, either name works.
    * @param {{name:string, description:string, instructions?:string, condition?:string|null}} body
    * @param {string} ks (admin)
-   * @returns {Promise<{id:string, name:string, description:string, instructions:string|null, partner_id:number, created_at:string, updated_at:string}>}
+   * @returns {Promise<{id:string, name:string, description:string, condition?:string|null, instructions:string|null, partner_id:number, created_at:string, updated_at:string}>}
    */
   async add(body, ks) {
     this._.assertAdmin(ks, 'skills.add');
@@ -122,7 +121,7 @@ export class Skills {
    * Alias for {@link Skills#add}. Same validation, same call, same result.
    * @param {{name:string, description:string, instructions?:string, condition?:string|null}} body
    * @param {string} ks (admin)
-   * @returns {Promise<{id:string, name:string, description:string, instructions:string|null, partner_id:number, created_at:string, updated_at:string}>}
+   * @returns {Promise<{id:string, name:string, description:string, condition?:string|null, instructions:string|null, partner_id:number, created_at:string, updated_at:string}>}
    */
   create(body, ks) {
     return this.add(body, ks);
@@ -133,6 +132,7 @@ export class Skills {
    * listed by {@link Skills#list}) also returns `not_found`, although
    * `setSkillIds` can attach it.
    * @param {string} id @param {string} ks (admin)
+   * @returns {Promise<{id:string, name:string, description:string, condition?:string|null, instructions:string|null, partner_id:number, created_at:string, updated_at:string}>}
    */
   async get(id, ks) {
     this._.assertAdmin(ks, 'skills.get');
@@ -163,7 +163,7 @@ export class Skills {
    * `null` is skipped.
    * @param {string} id @param {{name?:string, description?:string, instructions?:string, condition?:string|null}} patch
    * @param {string} ks (admin)
-   * @returns {Promise<{id:string, name:string, description:string, instructions:string|null, partner_id:number, created_at:string, updated_at:string}>}
+   * @returns {Promise<{id:string, name:string, description:string, condition?:string|null, instructions:string|null, partner_id:number, created_at:string, updated_at:string}>}
    */
   async update(id, patch, ks) {
     this._.assertAdmin(ks, 'skills.update');

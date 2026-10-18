@@ -139,7 +139,7 @@ Agents with no avatar run in audio/phone mode, which this SDK does not support e
 | `./management` | `Management` | Server | The admin secret. It mints the tokens below. |
 | `./experience` | `KalturaAvatarSession` | Browser | A short-lived, non-admin conversation KS from `application.appInit` |
 
-`Management` checks the token kind before any network call whenever the kind is known client-side. A minted `Token` records its kind (`admin`, `conversation`, `agent`, `widget`). A raw encrypted KS string can't be inspected, so `Management` sends the call without that check. `KalturaAvatarSession` is the live socket and WHEP runtime described in "Video Runtime Protocol" above. Socket.IO is injected into it, never bundled. Entry points, modules and how-tos: [README.md § Architecture](../README.md#architecture).
+`Management` checks the token kind before any network call whenever the kind is known client-side. A minted `Token` records its kind (`admin`, `conversation`, `agent`, `widget`). A raw encrypted KS string can't be inspected, so `Management` checks only the raw string of a widget token it minted recently. Other raw strings go to the server. Details: [authentication.md](api/authentication.md). `KalturaAvatarSession` is the live socket and WHEP runtime described in "Video Runtime Protocol" above. Socket.IO is injected into it, never bundled. Entry points, modules and how-tos: [README.md § Architecture](../README.md#architecture).
 
 ---
 

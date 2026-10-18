@@ -56,7 +56,7 @@ import { Management, SILENT_OPENING } from '@kaltura/intelligent-agents/manageme
 
 // ── Main ───────────────────────────────────────────────────────────────────
 console.log('');
-console.log('Kaltura Agentic Avatar — quickstart');
+console.log('Kaltura Agentic Avatar: quickstart');
 console.log('────────────────────────────────────');
 console.log(`Brief: "${brief}"`);
 console.log(`Partner ID: ${partnerId}`);
@@ -79,10 +79,10 @@ try {
 console.log('      Admin token minted.');
 
 // Step 2: Provision the agent — this creates intellect + avatar + agent in sequence.
-// It takes 1–3 minutes and prints no per-step progress, so we print a heads-up.
+// It can take up to a minute and prints no per-step progress, so we print a heads-up.
 console.log('');
 console.log('[2/3] Provisioning agent (brain + face + voice)...');
-console.log('      This takes 1–3 minutes — generating profile, building intellect,');
+console.log('      This can take up to a minute. Generating profile, building intellect,');
 console.log('      selecting voice/visual, creating avatar, wiring the agent...');
 console.log('');
 
@@ -109,7 +109,7 @@ try {
     console.error('Clean them up from a Node REPL with the same Management client:');
     if (agentId) console.error(`  await kaltura.agents.delete('${agentId}', adminToken, { confirmPermanent: true });`);
     if (avatarId) console.error(`  await kaltura.avatars.delete('${avatarId}', adminToken, { confirmPermanent: true });`);
-    if (configId) console.error(`  await kaltura.intellects.delete('${configId}', adminToken, { confirmPermanent: true });`);
+    if (configId) console.error(`  await kaltura.intellects.delete(${configId}, adminToken, { confirmPermanent: true });`);
   }
   process.exit(1);
 }
@@ -139,7 +139,7 @@ try {
   console.error('');
   console.error('converseOnce failed:', err?.detail || err?.message || err);
   console.error('');
-  console.error('The agent was created successfully — the conversation error is not fatal.');
+  console.error('The agent was created successfully. The conversation error is not fatal.');
   console.error('You can test conversation later with:');
   console.error(`  await kaltura.converseOnce('${configId}', 'Hello!');`);
   // Don't exit(1) — the agent itself is ready even if the smoke test failed.
@@ -155,18 +155,24 @@ if (reply?.text) {
   console.log('');
   console.log(' ', reply.text);
   console.log('');
+} else if (reply?.experiencesList?.length) {
+  console.log('  The agent answered with widgets, not text. See reply.experiencesList.');
+  console.log('');
+} else if (reply) {
+  console.log('  The reply had no text and no widgets. Check reply.toolCalls, reply.spiralStopped and reply.segments.');
+  console.log('');
 } else {
-  console.log('  (no reply — see error above)');
+  console.log('  The smoke test failed, see the error above.');
   console.log('');
 }
 
 console.log('IDs for embedding or extending this agent:');
 console.log('');
-console.log(`  configId:  ${configId}   — used for conversation tokens + intellect updates`);
-console.log(`  agentId:   ${agentId}    — used for management (update, delete)`);
-console.log(`  avatarId:  ${avatarId}   — used for avatar-session (live WebRTC video)`);
+console.log(`  configId:  ${configId}   (conversation tokens, intellect updates)`);
+console.log(`  agentId:   ${agentId}    (management: update, delete)`);
+console.log(`  avatarId:  ${avatarId}   (avatar-session, live WebRTC video)`);
 if (widgetId) {
-  console.log(`  widgetId:  ${widgetId}  — used for end-user widget tokens`);
+  console.log(`  widgetId:  ${widgetId}  (end-user widget tokens)`);
 }
 console.log('');
 
@@ -174,6 +180,9 @@ console.log('To embed a live talking avatar in a web page, see:');
 console.log('  docs/USE-CASES.md → UC-12 (Anonymous End-User Embed)');
 console.log('');
 
-console.log('To delete this agent later (deletion is permanent, hence the confirm flag):');
+console.log('To delete it later (deletion is permanent, hence the confirm flag).');
+console.log('Deleting the agent does not delete its avatar or intellect, so delete all three:');
 console.log(`  await kaltura.agents.delete('${agentId}', adminToken, { confirmPermanent: true });`);
+console.log(`  await kaltura.avatars.delete('${avatarId}', adminToken, { confirmPermanent: true });`);
+console.log(`  await kaltura.intellects.delete(${configId}, adminToken, { confirmPermanent: true });`);
 console.log('');

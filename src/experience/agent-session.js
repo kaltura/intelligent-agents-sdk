@@ -25,7 +25,8 @@
  *         `oauthRequiredResult`, `error`, `warning`,
  *         `responsePending`, `responseSettled`, `agentActionDenied`, `ended`;
  *       - avatar mode only: `speechChunk`, `avatarStartTalking`,
- *         `avatarStopTalking`, `interrupted`, `screenShareChanged`.
+ *         `avatarStopTalking`, `interrupted`, `screenShareChanged`,
+ *         `mediaReady`, `connectTimings`, `mediaRecovering`, `mediaRecovered`.
  *     Same payload shapes as the transport. Listeners registered on the facade
  *     survive every `switchMode()`.
  *
@@ -223,13 +224,15 @@ export class KalturaAgentSession extends Emitter {
   /**
    * Send one user text turn on the current transport. In chat mode this
    * resolves with the collected turn (see `KalturaChatSession.sendText`); in
-   * avatar mode it resolves `undefined` once dispatched — the reply arrives
-   * via `transcript` events, as always. While a switch is in flight the send
+   * avatar mode it resolves `true` once the text reached the server, or `false`
+   * if the session ended while the text was held (see
+   * {@link KalturaAvatarSession#speak}). The reply arrives via `transcript`
+   * events, as always. While a switch is in flight the send
    * is buffered and dispatched on the new transport (rejects if the switch
    * fails, or if more than {@link SWITCH_SEND_BUFFER_MAX} sends pile up).
    * @param {string} text
    * @param {{signal?: AbortSignal}} [opts] Chat mode only — abort the in-flight turn.
-   * @returns {Promise<object|undefined>}
+   * @returns {Promise<object|boolean>}
    */
   async sendText(text, opts = {}) {
     if (this.state === 'switching') {

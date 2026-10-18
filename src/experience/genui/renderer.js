@@ -48,7 +48,7 @@ export class ExperienceRenderer {
    * @param {import('../session.js').KalturaAvatarSession} [cfg.session]  Live source — subscribed in {@link start}.
    * @param {((descriptor:object)=>void)|Element} [cfg.mount]  Host sink. A FUNCTION receives each descriptor (full control). An ELEMENT (or `cfg.target`) is rendered into automatically via {@link mountWidget} — the 2-line happy path.
    * @param {Element} [cfg.target]  Alias for an Element `mount` (container to render widgets into).
-   * @param {(action:string, payload:object)=>void} [cfg.onAction]  Forwarded to `mountWidget` when rendering into an Element (followup/play/open/submit intents).
+   * @param {(action:string, payload:object)=>void} [cfg.onAction]  Forwarded to `mountWidget` when rendering into an Element (followup/play/open/submit/answer intents).
    * @param {Record<string,(model:Record<string,unknown>,ctx?:object)=>{kind:string,data:object}>} [cfg.renderers]  Extra/override renderers (by normalized runtime).
    * @param {boolean} [cfg.replace]  Ephemeral widgets re-render each turn. `rendered` holds only the latest descriptor (default false: accumulate). Also passed to `mountWidget` for Element mounts.
    * @param {boolean} [cfg.clearOnTurnStart]  LIVE mode: on the session's `turnStart` event for a new turn (`isNewTurn`), discard the in-flight buffer and `clear()` accumulated/`last` descriptors (default `true`). Set `false` for cross-turn persistence.

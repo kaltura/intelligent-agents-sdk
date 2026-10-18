@@ -10,16 +10,16 @@
  * not duplicate — prefer those when you need their depth:
  *   - tool_ids → `mgmt.tools` is the SEPARATE, partner-level Tool entity CRUD
  *               (`api`/`csv`/`code`/`client`/`var` builders, `validate`, `add`/`get`/`list`/
- *               `update`/`remove`). This facade's `setToolIds` only writes the
+ *               `update`/`delete`). This facade's `setToolIds` only writes the
  *               INTELLECT-side reference list — create/edit the tool bodies
  *               themselves via `mgmt.tools`.
  *   - skill_ids → `mgmt.skills` is the SEPARATE, partner-level Skill entity
- *               CRUD (`add`/`get`/`list`/`update`/`remove`, see
+ *               CRUD (`add`/`get`/`list`/`update`/`delete`, see
  *               docs/api/management-operations.md § Skills). This facade's `setSkillIds` only writes the INTELLECT-side
  *               reference list (`{id, mode, condition?}` entries, `mode` one of
  *               {@link SKILL_MODES}) — create/edit the skill bodies themselves
  *               via `mgmt.skills`.
- *   - secrets → `mgmt.intellects.secrets` (`set`/`remove`/`listNames`/`has`/`validate`).
+ *   - secrets → `mgmt.intellects.secrets` (`set`/`replaceAll`/`delete`/`listNames`/`has`/`validate`).
  *               The facade's `setSecrets`/`listSecretNames` cover the common cases.
  *
  * The shared primitive is {@link IntellectConfig#patch}: it reads the current
@@ -330,7 +330,7 @@ export class IntellectConfig {
    * `mgmt.tools`) this intellect may call. WRITE — idempotent. `tool_ids` is a
    * direct, ungated reference-list write (like `knowledge_ids`). The SDK applies
    * no length cap. This only edits the reference list, to
-   * create/edit a tool BODY, use `mgmt.tools.add`/`update`/`remove` first, then
+   * create/edit a tool BODY, use `mgmt.tools.add`/`update`/`delete` first, then
    * pass its `id` here. Pass `[]` to detach every tool.
    * Each entry is a tool id, or `{id, condition}` to attach the tool only while
    * the {@link assertCondition condition} holds (the shape `get` reads back, so
@@ -666,8 +666,7 @@ export class IntellectConfig {
 
   /**
    * Set `knowledge_ids` (≤1, partner-validated). WRITE — idempotent, UNGATED.
-   * `knowledge_ids` is in the `v1/intellect/update` DTO allow-list, so it
-   * writes through `patch()` directly — no separate linking call, no gate.
+   * It writes the field directly through `patch()`, no separate linking call.
    * Mint the record id first with `knowledge.addRecord()`; for a brand-new
    * agent you can also pass `knowledge_ids` straight to {@link Intellects#create}.
    * @param {number} configId @param {number[]} knowledgeIds @param {string} ks (admin)
@@ -688,8 +687,8 @@ export class IntellectConfig {
 
   /**
    * Set `mcp_servers` — the intellect's map of MCP servers the brain may call.
-   * WRITE — idempotent, UNGATED (`mcp_servers` is in the `v1/intellect/update`
-   * DTO allow-list). Pass `{}` to clear.
+   * WRITE — idempotent, UNGATED: writes the field directly through `patch()`,
+   * no separate linking call. Pass `{}` to clear.
    *
    * Each entry's `url` is required; `headers`, `allowedTools`,
    * `allowedPrompts`, and `allowedResources` are optional. `headers` values

@@ -159,7 +159,7 @@ The API accepts any subset of the attribute fields, including none. Video-clip i
 
 A value outside the lists above for `genderPresentation`, `background`, `skinTone`, `ageGroup` or `hairColor` returns `bad_request` (400), and the error lists the accepted values. A `glasses` value that is not a boolean also returns `bad_request`.
 
-**SDK shortcut:** `catalog.createVisual(imageBlob, { name, genderPresentation, ...attributes }, adminKs)` takes the attributes from the table above. It requires `name` and `genderPresentation` client-side (`bad_request` before any network call if either is missing) and defaults the rest to a consistent baseline look. Returns the server response as is: `{ itemId, loadingVideo }`.
+**SDK shortcut:** `catalog.createVisual(imageBlob, { name, genderPresentation, ...attributes }, adminKs)` takes the attributes from the table above. It requires `name` and `genderPresentation` client-side (`bad_request` before any network call if either is missing) and defaults the rest to a consistent baseline look. Returns the server response: `{ itemId, loadingVideo }`. Pass an optional `consentRef` and the result also carries a consent receipt. See [SECURITY.md](../../SECURITY.md) for the receipt.
 
 ## Upload a custom Face or Background (compose-a-visual path)
 

@@ -68,7 +68,7 @@ The intellect must have `allow_client_variables: true`, or every request variabl
 await mgmt.intellects.setClientVariablesEnabled(configId, true, adminKs);
 ```
 
-The rejection is **silent** on the live socket and in `KalturaChatSession`. The turn comes back as an empty reply: no HTTP error, no socket error. Both session classes (`KalturaAvatarSession` and `KalturaChatSession`) detect the pattern and emit a once-per-session `warning` event, `{ code: 'empty_turn_with_request_vars', message, requestVarKeys }` (variable *names* only, never values), pointing at the gate. A management converse call that receives the 403 throws `client_variables_disabled` instead. `KalturaChatSession.sendText()` can fail either way when it sends request variables: the silent empty turn with the warning, or a rejected promise with `client_variables_disabled`.
+The rejection is **silent** on the live socket and in `KalturaChatSession`. The turn comes back as an empty reply: no HTTP error, no socket error. Both session classes (`KalturaAvatarSession` and `KalturaChatSession`) detect the pattern and emit a once-per-session `warning` event, `{ code: 'empty_turn_with_request_vars', message, requestVarKeys }` (variable *names* only, never values), pointing at the gate. `conversations.send` and `converseOnce` throw `empty_reply` for the empty turn, and a 403 that reports disabled client variables throws `client_variables_disabled`. See [Refusals that arrive with HTTP 200](api/operate.md#refusals-that-arrive-with-http-200). `KalturaChatSession.sendText()` can fail either way when it sends request variables: the silent empty turn with the warning, or a rejected promise with `client_variables_disabled`.
 
 ```js
 session.on('warning', (w) => {

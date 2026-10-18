@@ -24,15 +24,15 @@ const HUBSPOT_RESULT_RULES = 'Tell the visitor the contact is saved ONLY if the 
 
 const SALESFORCE_RESULT_RULES = 'Tell the visitor the details are saved ONLY if the result shows success true or an id. If the call fails or returns an error status, say you could not save it. If the result is empty, you cannot confirm the save: say you could not confirm it. Never say it is saved otherwise.';
 
+// An omitted optional arg is written as the text "None", while an empty string
+// is written as blank. So optional args ask for an empty string instead.
+const OPTIONAL_ARG_HINT = ' Optional. If the visitor did not give it, pass an empty string.';
+
 /**
  * Response mapping shared by the Salesforce builders. A successful insert
  * or update returns `{id, success}`. An error status never reaches the
  * mapping: the agent only gets a generic "API returned error status" line.
  */
-// An omitted optional arg is written as the text "None", while an empty string
-// is written as blank. So optional args ask for an empty string instead.
-const OPTIONAL_ARG_HINT = ' Optional. If the visitor did not give it, pass an empty string.';
-
 const SALESFORCE_RESPONSE_MAPPING = {
   result: 'id',
   success: 'success',

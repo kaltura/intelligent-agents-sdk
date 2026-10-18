@@ -108,6 +108,8 @@ export class Agents {
    * configId — no separate genieId is needed (the request body's `intellect`
    * only takes `intellectType`+`id`).
    * `maxConversationLength` is seconds, 1 to 3600; out of range is a 400.
+   * `widgetConfig` is `{tips?, initialPage?:{title?, subtitle?, backgroundImageUrl?, initialQuestions?:[{text, answerType?:'markdown'|'flashcards'}]}, layouts?:{avatar?, chat?}, tapToTalk?}`
+   * and `embedConfig` is `{theme?}`. Field rules: docs/api/build/avatar-and-agent.md.
    * @param {object} body {displayName,intellect:{intellectType:'genie',id},avatarIds?,adminTags?,maxConversationLength?,widgetConfig?,embedConfig?,screenShare?:{enabled?:boolean,prompt?:string},asr?:AgentAsr}
    * @param {string} ks
    * @param {{idempotencyKey?:string}} [opts]
@@ -122,6 +124,7 @@ export class Agents {
    * Update an agent. WRITE — idempotent for a given body. `screenShare` is
    * `{enabled?, prompt?}`, the same as on {@link Agents#create}.
    * `asr` is `{language, provider}` (see {@link AgentAsr}), sent as-is.
+   * Sending `widgetConfig` or `embedConfig` replaces that whole object; omit it to keep it, `null` clears it.
    * @param {object} body {agentId,...} @param {string} ks
    */
   async update(body, ks) {

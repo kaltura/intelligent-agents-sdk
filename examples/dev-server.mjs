@@ -56,7 +56,7 @@ if (!widgetId) {
       screenShare: { enabled: true, prompt: 'Describe the code, errors, logs and UI state on the screen. Quote error messages exactly and name files and line numbers when visible.' },
     }, admin.ks);
   }
-  console.log('Provisioned a throwaway agent:', { configId: agent.configId, agentId: agent.agentId, widgetId });
+  console.log('Provisioned a throwaway agent:', { configId: agent.configId, agentId: agent.agentId, avatarId: agent.avatarId, widgetId });
 }
 
 // Resolved once, with a trailing separator, so a served path is a plain prefix

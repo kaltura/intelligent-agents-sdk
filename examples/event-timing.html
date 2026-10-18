@@ -9,8 +9,8 @@
 <body>
   <h1>Event timing harness</h1>
   <p>
-    Every SDK event with a timestamp relative to <code>connect()</code>. Useful for answering
-    "what fired, in what order, how long did it take" for any avatar-session hypothesis —
+    The core session events with a timestamp relative to <code>connect()</code>. Useful for answering
+    "what fired, in what order, how long did it take" for any avatar-session hypothesis,
     not tied to one app or bug.
   </p>
   <div id="avatar"></div>
@@ -65,7 +65,7 @@
       kickoff,
     });
 
-    // Every event the SDK's session emits — see docs/wire-protocol/events-catalog.md.
+    // The core session events. The full list is in docs/wire-protocol/events-catalog.md.
     for (const evt of ['disclosure', 'mediaReady', 'connectTimings', 'responsePending', 'responseSettled', 'transcript', 'speechChunk', 'avatarStartTalking', 'avatarStopTalking', 'turnEnd', 'interrupted', 'warning', 'error', 'ended']) {
       session.on(evt, (payload) => record(evt, payload));
     }

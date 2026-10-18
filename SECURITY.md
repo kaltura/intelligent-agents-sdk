@@ -192,7 +192,7 @@ The SDK generates and protects the records and enforces the client-side controls
 | Control | Family | SDK provides | Operator responsible |
 |---------|--------|--------------|----------------------|
 | AC-3, AC-6, IA-2 | Access / least privilege | Two-token invariant; user-session tokens by default ([Session type](#session-type)); structured `restrictions` | Role/entitlement config in Kaltura |
-| AC-12 | Session termination | Short TTLs; `revoke()`; `disconnect()` drops token + transports | Session-timeout policy |
+| AC-12 | Session termination | Short TTLs; `disconnect()` drops token + transports; `revoke()` sends `session/end` | Session-timeout policy |
 | AU-2, AU-3, AU-12 | Audit generation/content | Structured, redacted, correlated `AuditEvent`s via `onAuditEvent` | Wire the hook to a SIEM |
 | AU-4, AU-9, AU-10, AU-11 | Audit storage/integrity/retention | None | Tamper-evident storage, non-repudiation, retention |
 | SC-8 | Transmission confidentiality | https/wss enforced; cleartext rejected | TLS termination, cert management |
@@ -267,10 +267,10 @@ The SDK is an AI Application Provider component you can largely inherit in a HIT
 | HITRUST AI requirement | SDK provides | Operator / inherited |
 |---|---|---|
 | Encrypt traffic to/from the model | https/wss enforced; DTLS-SRTP | Platform/TLS |
-| Restrict access to interact with the model | Two-token invariant; entitlement ON; per-user user sessions; `revoke()` | Identity proofing |
+| Restrict access to interact with the model | Two-token invariant; entitlement ON; per-user user sessions; short TTLs | Identity proofing |
 | Log AI inputs/outputs (AI.PI.a) | Security + turn audit via `onAuditEvent` (content-free by default) | SIEM storage/retention |
 | Model rate limiting / DoS | Client-side `maxTurnsPerMinute` valve | Authoritative server-side quota (inherited) |
-| **Humans can intervene (AI.NI.a, non-inheritable)** | `stop()` / `disconnect()`, `revoke()`, barge-in (`interrupt()`), `requireDisclosureAck`, `onAgentAction` veto | Wire at least one to a visible UI control |
+| **Humans can intervene (AI.NI.a, non-inheritable)** | `stop()` / `disconnect()`, barge-in (`interrupt()`), `requireDisclosureAck`, `onAgentAction` veto | Wire at least one to a visible UI control |
 | Output filtering / prompt-injection | `safeUrl`/`safeText`/`renderSafeLink` (output); `onBeforeSend` hook (input) | Model-side guardrails (inherited); red-team the intellect (the agent's configured prompts, tools, and knowledge linkage) |
 | AI supply chain | Zero deps, no install scripts, no registry publish step | Due-diligence review |
 | AI transparency to end-user | Disclosure-before-speech + `getDisclosure()` | Render it accessibly |
@@ -300,7 +300,7 @@ The avatar is an agent (navigates, renders GenUI, captures leads, searches knowl
 | Threat | Control |
 |---|---|
 | **ASI 01 Goal Hijack** / **ASI 02 Tool Misuse** | `onAgentAction(action)` chokepoint. Every agent-initiated action (`navigate`/`render-genui`/`structured-data-form`/…) passes through it before taking effect. Veto via false/throw. **Operator (server-side `api`/`code`/`csv` tools):** these fire server-to-server, outside the SDK's reach. Independently authorize each call against the caller's real session/permissions. Never treat model/system-prompt tool scoping, or a client-suppliable `request_vars` value, as an authorization claim. See [Tools and Secrets § Tools](docs/api/build/tools-and-secrets.md#tools-api--csv--code--client--var). |
-| **ASI 03 Identity & Privilege Abuse** | Scoped user-session token (per-user `userId`), entitlement ON, short TTL, revocable; least-privilege `restrictions`; `agentActions` policy (e.g. `navigate:'off'`). |
+| **ASI 03 Identity & Privilege Abuse** | Scoped user-session token (per-user `userId`), entitlement ON, short TTL; least-privilege `restrictions`; `agentActions` policy (e.g. `navigate:'off'`). |
 | **ASI 06 Memory & Context Poisoning** | `Presenter` session memory is bounded and operator-cleared via `clearMemory()`. Persisted memory is replayed context. The operator owns the storage choice. |
 | **ASI 08 Cascading Failures** | Reconnect-window bound, media-recovery escalation, agent-stall watchdog, client rate valve. |
 | **ASI 09 Human-Agent Trust** | Disclosure-before-speech + `getDisclosure()`; `requireDisclosureAck`. |
@@ -332,7 +332,7 @@ const mgmt = new Management({
 const token = await mgmt.sessions.createConversationToken({
   configId, ttlSeconds: 1800,                 // short-lived (RFC 9700)
   userId: opaqueUserId,                       // per-user identity: reaches only this user's threads
-  restrictions: { sessionGroupId: caseId },   // revocable family
+  restrictions: { sessionGroupId: caseId },   // groups the sessions of one case
 });
 
 // Browser: Experience

@@ -120,16 +120,6 @@ export class Avatars {
    * network call when the body has an `adminTags` key. To group or identify
    * avatars, tag the PARENT AGENT instead: `agents.create({adminTags:[...]})`.
    *
-   * @example <caption>Tag the AGENT, not the avatar</caption>
-   * const avatar = await k.avatars.create(
-   *   { voice: { id: voiceId }, visual: { id: visualId } },
-   *   adminKs,
-   * );
-   * await k.agents.create(
-   *   { displayName: 'Lobby greeter', intellect, avatarIds: [avatar.id], adminTags: ['lobby'] },
-   *   adminKs,
-   * );
-   *
    * LEAVE `openingPhrase` UNSET. The intellect's `opening_phrase` owns the
    * opening line (`intellectConfig.setOpeningPhrase`, or `provision()`'s
    * `openingPhrase`, which writes the intellect only). An avatar phrase is a
@@ -178,6 +168,15 @@ export class Avatars {
    * pre-network guard below catches the incomplete-pairing case before the
    * request, including an incomplete pair sent alongside `visual` on create.
    *
+   * @example <caption>Tag the AGENT, not the avatar</caption>
+   * const avatar = await k.avatars.create(
+   *   { voice: { id: voiceId }, visual: { id: visualId } },
+   *   adminKs,
+   * );
+   * await k.agents.create(
+   *   { displayName: 'Lobby greeter', intellect, avatarIds: [avatar.id], adminTags: ['lobby'] },
+   *   adminKs,
+   * );
    * @param {object} body {voice:{id,speed?},visual?:{id,motionControl?:{speaking,nonSpeaking}},face?:{id},background?:{type:'color'|'visual',value?:string},name?:string,templateId?:string,openingPhrase?:string} — leave `openingPhrase` unset (see above)
    * @param {string} ks @param {{idempotencyKey?:string}} [opts]
    * @throws {import('../core/errors.js').KalturaError} `code:'bad_request'` if `adminTags` is passed, if `face`/`background` are incomplete/malformed, or if `background.value` for `type:'color'` isn't a 6-digit hex string (no alpha channel).
@@ -199,9 +198,6 @@ export class Avatars {
    * network call when the body has an `adminTags` key. Tag the parent AGENT
    * (`agents.update({adminTags})`) instead.
    *
-   * @example <caption>Clear a legacy avatar-level opening phrase so the intellect's `opening_phrase` owns the line; voice/visual untouched</caption>
-   * await k.avatars.update({ id: avatarId, openingPhrase: null }, adminKs);
-   *
    * Also accepts `face`+`background` to recompose the visual, but — UNLIKE
    * {@link create} — the pairing rule here is asymmetric and depends on the
    * avatar's EXISTING state, so this SDK does NOT reject either half alone:
@@ -214,6 +210,8 @@ export class Avatars {
    * `templateId` is REJECTED on update (400 `property templateId should not
    * exist`) — it's a create-only convenience.
    *
+   * @example <caption>Clear a legacy avatar-level opening phrase so the intellect's `opening_phrase` owns the line; voice/visual untouched</caption>
+   * await k.avatars.update({ id: avatarId, openingPhrase: null }, adminKs);
    * @param {object} body {id:string, face?:{id}, background?:{type:'color'|'visual',value?:string}, name?:string, openingPhrase?:string|null, ...} — `openingPhrase: null` clears it; omitted preserves it
    * @param {string} ks
    * @throws {import('../core/errors.js').KalturaError} `code:'bad_request'` if `adminTags` is passed, or if a present `background` is malformed.

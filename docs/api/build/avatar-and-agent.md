@@ -94,11 +94,42 @@ POST https://api.avatar.us.kaltura.ai/v1/agent/create
 | `intellect.id` | The intellect's configId, from intellect create. Pass it straight in, no discovery step |
 | `avatarIds` | Optional. Omit for a headless text-only agent |
 | `maxConversationLength` | Seconds, 1 to 3600. Omit to use the default |
-| `widgetConfig` / `embedConfig` | Optional config objects for the hosted widget and embed. Omit them unless you customize widget or embed behavior |
-| `screenShare` | Optional `{enabled, prompt}`. Set `enabled: true` and a `prompt` that says how to describe the shared screen to let an avatar session share its screen. `mgmt.agents.update` changes it later. The `sys__avatar_share_screen_enabled` variable is true only while a share runs |
+| `widgetConfig` / `embedConfig` | Optional settings for the hosted widget and embed. See [Widget and embed settings](#widget-and-embed-settings) |
+| `screenShare` | Optional `{enabled, prompt}`. Set `enabled: true` and a `prompt` that says how to describe the shared screen to let an avatar session share its screen. `mgmt.agents.update` changes it later. The reserved variable `sys__avatar_share_screen_enabled` is described in [Reserved Template Variables](../operate.md#reserved-template-variables-sys__) |
 | `asr` | Optional `{language, provider}` for speech recognition. `language` is a language code, for example `"en"`. `provider` is `"kaltura"`, `"kaltura-hebrew"`, `"elevenlabs"` or `"soniox"`. Omit it to get `{"language":"en","provider":"kaltura"}`. A `provider` or `language` outside the accepted values returns `bad_request` (400). `mgmt.agents.update` changes it later. To pin one language for replies and recognition together, see [Languages](../../LANGUAGES.md) |
 
 Returns `agentId` (UUID). **Save this.**
+
+## Widget and embed settings
+
+`widgetConfig` sets the hosted widget's start page and layout. `embedConfig` sets the embed theme.
+
+```js
+await mgmt.agents.update({
+  agentId,
+  widgetConfig: {
+    tips: 'Ask about pricing or setup.',
+    initialPage: { title: 'Support', subtitle: 'How can I help?', initialQuestions: [{ text: 'How do I start?', answerType: 'markdown' }] },
+    layouts: { avatar: true, chat: true },
+    tapToTalk: false,
+  },
+  embedConfig: { theme: 'dark' },
+}, ks);
+```
+
+| Field | Rule |
+|---|---|
+| `tips` | String, up to 10000 characters |
+| `initialPage.title` / `initialPage.subtitle` | Strings, up to 100 and 200 characters |
+| `initialPage.backgroundImageUrl` | A URL, or `null`. Stored and returned raw |
+| `initialPage.initialQuestions` | `[{ text, answerType }]`. `answerType` is `'markdown'` or `'flashcards'` |
+| `layouts` | `{ avatar, chat }`, both booleans |
+| `tapToTalk` | Boolean |
+| `embedConfig.theme` | String |
+
+- An update that sends `widgetConfig` replaces the whole object, nested fields included. Send every field you want to keep. Leave `widgetConfig` out to keep it as it is, or send `null` to clear it. `embedConfig` is separate: changing one does not touch the other.
+- A wrong type, a value over its limit or an unknown key returns `bad_request` (400), and the message names the field.
+- `application.appInit` returns the same `widgetConfig`, except the background comes back as `initialPage.background: { type: 'url', url }` instead of `backgroundImageUrl`, with the same raw URL.
 
 ## Screen share
 

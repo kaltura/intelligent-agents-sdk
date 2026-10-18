@@ -47,7 +47,7 @@ Wire `runtimeName` → normalized dispatch key (the renderer registry key). Sour
 
 - Valid values (single source of truth, `src/experience/wire.js` `EXPERIENCES`): **`'markdown'`, `'summarization'`, `'flashcards'`, `'avatar_only'`**.
 - Parameters are validated on the **first iteration** (entering `for await`) in `conversations.stream` (`conversations.js`), NOT at call time. An invalid value throws a typed `validation_error`.
-- It is a **HINT**: the agent decides which widget(s) to actually emit, based on the prompt and the intellect. Asking for `flashcards` may yield `flashcards-tool` **and** `followups-tool`, or neither. The renderer renders whatever `runtimeName` arrives. Tests are lenient by design.
+- It is a **HINT**: the agent decides which widget(s) to actually emit, based on the prompt and the intellect. Asking for `flashcards` may yield `flashcards-tool` **and** `followups-tool`, or neither. The renderer renders whatever `runtimeName` arrives.
 
 ## Related docs
 

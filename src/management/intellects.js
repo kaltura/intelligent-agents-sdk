@@ -261,11 +261,9 @@ export class Intellects {
   /**
    * Toggle `allow_client_variables`, the gate on per-request `request_vars`.
    * It is on by default; call this with `true` to pin it. When off, a converse
-   * call sending `request_vars` returns an empty turn or throws
-   * `client_variables_disabled`. WRITE, idempotent. NOTE: Genie `v1/intellect/update` changes only the top-level
-   * fields you send, but this defensively re-sends the
-   * WHOLE config (matching `Knowledge.setEnabled`) so a partial body can never
-   * reset status / wipe siblings. @param {number} configId @param {boolean} enabled @param {string} ks (admin)
+   * call sending `request_vars` throws `empty_reply` (the turn arrives empty). A 403
+   * that reports disabled client variables throws `client_variables_disabled`.
+   * WRITE, idempotent. Sends the whole config so sibling fields stay unchanged. @param {number} configId @param {boolean} enabled @param {string} ks (admin)
    */
   async setClientVariablesEnabled(configId, enabled, ks) {
     this._.assertAdmin(ks, 'intellects.setClientVariablesEnabled');
@@ -328,8 +326,8 @@ export class Intellects {
    * prompt differs from this preview.
    *
    * The rendered prompt is the `text` field; `_meta.renderer` is always
-   * `'client-side-replica'` and `_meta.rendererBasis` names the server function
-   * this mirrors (the author layer only — NOT byte-exact with the live prompt).
+   * `'client-side-replica'` and `_meta.rendererBasis` is a short label for what the
+   * preview mirrors (the author layer only; NOT byte-exact with the live prompt).
    *
    * HARDENING: a reference to a known reserved variable (any prompt-lint
    * `SYS_VARS` scalar name — including the bare `sys__user_obj` name — a

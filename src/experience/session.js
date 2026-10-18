@@ -24,8 +24,7 @@
  * When videoEl IS configured, 'videoMetadata' ({videoWidth, videoHeight})
  * fires once per connect, as soon as the decoder resolves the stream's
  * native dimensions — the backend's actual output resolution isn't a
- * published/fixed contract (see docs/ARCHITECTURE.md § Displaying the Avatar
- * Video), so this event is the only reliable source of truth for it.
+ * published/fixed contract (see README.md#avatar-audio-and-video-rendering), so this event is the only reliable source of truth for it.
  *
  * 'streamReady' fires much earlier, at the initial signaling handshake
  * (§3 step 1) — before any video track exists. It means "we reached the
@@ -150,7 +149,7 @@ export class KalturaAvatarSession extends Emitter {
    * @param {string} cfg.srsBaseUrl         From appInit (WHEP egress host).
    * @param {string} cfg.turnServerUrl      From appInit (TURN host).
    * @param {(url:string,opts:object)=>any} cfg.socketFactory  socket.io-compatible factory (INJECTED; never bundled).
-   * @param {HTMLVideoElement|null} [cfg.videoEl]  Element that renders the avatar: video plus audio, unless `cfg.audioEl` is set. Omit for headless/custom rendering (listen for 'track' or read {@link KalturaAvatarSession#avatarStream}). The SDK sets `.srcObject` once and calls `play()` once per binding — size/frame it yourself with `object-fit: cover`. Swap it at runtime with {@link KalturaAvatarSession#setVideoEl}. See docs/ARCHITECTURE.md § Displaying the Avatar Video.
+   * @param {HTMLVideoElement|null} [cfg.videoEl]  Element that renders the avatar: video plus audio, unless `cfg.audioEl` is set. Omit for headless/custom rendering (listen for 'track' or read {@link KalturaAvatarSession#avatarStream}). The SDK sets `.srcObject` once and calls `play()` once per binding — size/frame it yourself with `object-fit: cover`. Swap it at runtime with {@link KalturaAvatarSession#setVideoEl}. See README.md#avatar-audio-and-video-rendering.
    * @param {HTMLAudioElement|null} [cfg.audioEl]  Recommended: a dedicated element for the avatar's audio track (split shape: video on `videoEl`, audio here). Browsers pause a media element removed from the document, so keep this one on a stable DOM node; a UI re-render that replaces the `<video>` then costs the picture, not the voice. Also lets you route, mix, or record the voice independently. Swap at runtime with {@link KalturaAvatarSession#setAudioEl}; pass `null` there to merge audio back into `videoEl`.
    * @param {typeof RTCPeerConnection} [cfg.rtcConstructor]
    * @param {typeof fetch} [cfg.fetch]
@@ -186,7 +185,7 @@ export class KalturaAvatarSession extends Emitter {
    * @param {number} [cfg.maxReconnectAttempts]  Passed through as socket.io's own `reconnectionAttempts` (caps its native reconnection engine) AND surfaced as `attempt`/`maxAttempts` on `reconnecting`/`connectivityChanged`. Default 5.
    * @param {number} [cfg.reconnectionDelay]  First wait, in ms, before socket.io retries a dropped socket. Default 250.
    * @param {number} [cfg.reconnectionDelayMax]  Longest wait, in ms, between those retries. Default 2000.
-   * @param {Partial<{overall:number, serverConnect:number, joinRoom:number, joinComplete:number, agent:number, asr:number, firstFrame:number, prepareIdle:number, whepTry:number, whepTries:number, whepBackoff:number, whepRelease:number, recover:number, healthTick:number, videoStall:number, iceStuck:number, coldAttempts:number, coldBackoff:number}>} [cfg.timeouts]  Override any wait, in ms (`whepTries` and `coldAttempts` are counts). Unset keys keep their default: `overall` 30000, `serverConnect` 10000, `joinRoom` 5000, `joinComplete` 20000, `agent` 10000, `asr` 30000, `firstFrame` 6000, `prepareIdle` 60000, `whepTry` 5000, `whepTries` 3, `whepBackoff` 1000, `whepRelease` 3000, `recover` 15000, `healthTick` 1000, `videoStall` 4000, `coldAttempts` 2, `coldBackoff` 500. What each one bounds: docs/architecture-reference/connection-and-handshake.md and resilience-and-failure-handling.md.
+   * @param {Partial<{overall:number, serverConnect:number, joinRoom:number, joinComplete:number, agent:number, asr:number, firstFrame:number, prepareIdle:number, whepTry:number, whepTries:number, whepBackoff:number, whepRelease:number, recover:number, healthTick:number, videoStall:number, iceStuck:number, coldAttempts:number, coldBackoff:number}>} [cfg.timeouts]  Override any wait, in ms (`whepTries` and `coldAttempts` are counts). Unset keys keep their default: `overall` 30000, `serverConnect` 10000, `joinRoom` 5000, `joinComplete` 20000, `agent` 10000, `asr` 30000, `firstFrame` 6000, `prepareIdle` 60000, `whepTry` 5000, `whepTries` 3, `whepBackoff` 1000, `whepRelease` 3000, `recover` 15000, `healthTick` 1000, `videoStall` 4000, `iceStuck` 10000, `coldAttempts` 2, `coldBackoff` 500. What each one bounds: docs/architecture-reference/connection-and-handshake.md and resilience-and-failure-handling.md.
    * @param {number} [cfg.reconnectWindowMs]  Bounds the 'reconnecting' state independent of socket.io's own attempt count — if no recovery lands within this window, the session ends cleanly rather than hanging. Default 22000.
    * @param {Record<string, string|number|boolean|null>} [cfg.requestVars]  Join-time `{{var}}` values — seeds the session's canonical request_vars map, sent on every `join`/reconnect `buildJoin()` call and updated mid-session by {@link updateRequestVars}/{@link setDynamicPrompt}; validated with the same `assertRequestVars` as {@link updateRequestVars}.
    * @param {number} [cfg.localVadThreshold]  Client-side VAD threshold gating `localSpeakingChanged`: the summed byte-frequency level (0 to 4080) at or above which the mic counts as speaking. Default 300.
@@ -1877,8 +1876,8 @@ export class KalturaAvatarSession extends Emitter {
    * element that carries the audio track (`audioEl` if set, else `videoEl`). Works before
    * `connect()`; the device id is stored and re-applied when that element is swapped.
    * @param {string} deviceId  From `navigator.mediaDevices.enumerateDevices()`.
-   * @returns {Promise<boolean>}  `false` (never throws) when the browser has no `setSinkId`, no element is set, or the call rejects.
-   * @throws {KalturaError} `bad_request` when `deviceId` is not a string.
+   * @returns {Promise<boolean>}  `false` when the browser has no `setSinkId`, no element is set, or the device call rejects.
+   * @throws {KalturaError} Rejects with `bad_request` when `deviceId` is not a string.
    */
   async setAudioOutput(deviceId) { return this._avatarMedia.setSinkId(deviceId); }
 
@@ -2651,7 +2650,11 @@ export class KalturaAvatarSession extends Emitter {
    * buttons a same-device `BroadcastChannel` can't see). Idempotent while connected: a call
    * after the signal was already sent (by an earlier call or a page-lifecycle send) resolves
    * `{ok:true, reason:'already_sent'}`. After `disconnect()` it throws `invalid_state`.
-   * @returns {Promise<{ok:boolean, reason?:string, peers?:number}>}
+   * Failures resolve, they do not throw: `{ok:false, reason}` with `reason` one of `disabled`,
+   * `no_thread`, `no_token`, `http_error` (plus `status`), `network_error`. When another open
+   * tab of the same thread remains, it resolves `{ok:true, reason:'suppressed', peers}` and
+   * sends nothing.
+   * @returns {Promise<{ok:boolean, reason?:string, peers?:number, status?:number}>}
    * @throws {KalturaError} `invalid_state` when the session has already disconnected.
    */
   async completeThread() {

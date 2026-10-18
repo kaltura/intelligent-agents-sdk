@@ -52,7 +52,7 @@ The shared leaf layer. Core never imports from `management/` or `experience/`.
 | `avatar-sessions.js` | `AvatarSessions` (`mgmt.avatarSessions`): scripted-video sessions, `say()` | `avatar-session/*` |
 | `catalog.js` | `Catalog` (`mgmt.catalog`): visual and voice presets, custom uploads | `catalog-item/*`, `catalog/clone-consent` |
 | `application.js` | `Application` (`mgmt.application`): `appInit`, profile generation, widget resolution, custom prompts | `application/*` |
-| `intellects.js` | `Intellects`: `add`/`get`/`update`/`delete`, prompt authoring (`setPrompts`/`previewPrompt`/`snapshot`/`restore`/`diffSnapshots`), capabilities (`getCapabilities`/`setCapability`/`setCapabilities`/`resolveCapabilities`), `setClientVariablesEnabled`. Mounts `secrets` | `v1/intellect/*` |
+| `intellects.js` | `Intellects`: `list`/`get`/`add`/`create`/`update`/`delete`, prompt authoring (`setPrompts`/`previewPrompt`/`snapshot`/`restore`/`diffSnapshots`), capabilities (`getCapabilities`/`setCapability`/`setCapabilities`/`resolveCapabilities`), `setClientVariablesEnabled`. Mounts `secrets` | `v1/intellect/*` |
 | `intellect-config.js` | `IntellectConfig`: the one `patch(configId, patch\|fn, ks)` primitive, `audit`, `describe`, `buildUserPropertiesForms`. Setters: `setCapabilities`, `setCapability`, `setToolIds`, `setSkillIds`, `setThreadStartTools`, `setModelConfiguration`, `setOpeningPhrase`, `setAvatarSummaryConfig`, `setSecrets`, `listSecretNames`, `setUserPropertiesForms`, `clearUserPropertiesForms`, `setAllowClientVariables`, `setMetadata`, `setKnowledgeIds`, `setMcpServers`. Enums: `SKILL_MODES`, `MODEL_IDS`, `THINKING_LEVELS`, `SUMMARY_CONTENT_TYPES`, `CALL_STAGES`, `FORM_FIELD_TYPES` | `v1/intellect/update` (read, merge, write) |
 | `intellect-body.js` | Small helpers shared by `intellects.js`, `secrets.js` and `intellect-config.js` | none |
 | `secrets.js` | `IntellectSecrets` (`mgmt.intellects.secrets`): `listNames`/`has`/`set`/`delete`/`replaceAll`/`validate`, `validateSecretRefs`. Values are write-only | `v1/intellect/update` |
@@ -92,6 +92,7 @@ The shared leaf layer. Core never imports from `management/` or `experience/`.
 | `captions.js` | `CaptionService` |
 | `transcript.js` | Transcript and barge-in tracker keyed by `speechId` |
 | `session-complete.js` | `session_completed` POST |
+| `screen-share.js` | `startScreenShare()` support: defaults and the canvas still capturer |
 | `fetch-timeout.js` | Fetch with a hard deadline for short control requests |
 | `emitter.js` | Zero-dependency event emitter the sessions extend |
 | `teardown.js` | Subscription tracker for classes that listen on a session |

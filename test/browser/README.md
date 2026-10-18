@@ -17,7 +17,7 @@ VERIFY_AVATAR_MEDIA_ONLY=shapes-simple,swaps npm run verify:avatar-media
 VERIFY_AVATAR_MEDIA_DEBUG=1 npm run verify:avatar-media        # mirror page console to stdout
 ```
 
-`scripts/verify-avatar-media.mjs` serves the repo, opens the page, runs every cell in order, and exits non-zero on the first problem. Results land in `.harness-output/avatar-media-<engine>.json` (gitignored).
+`scripts/verify-avatar-media.mjs` serves the repo, opens the page, runs every cell in order, prints each failure, and exits non-zero if any cell fails, a skip is not on the allowed list, or the run is over budget. Results land in `.harness-output/avatar-media-<engine>.json` (gitignored).
 
 | Env var | Effect |
 |---|---|

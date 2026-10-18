@@ -7,15 +7,14 @@
 `src/core/safety.js`:
 
 - `safeText(s, max=2000)`: coerces to string, strips ASCII control chars (the C0 range `U+0000`-`U+001F` plus `U+007F` DEL), length-clamps.
-- `safeUrl(url, {allow})`: returns the URL only if its scheme is allow-listed (default `https|http|mailto|tel`). It blocks `javascript:`, `data:`, `vbscript:`, and unknown schemes. A scheme-relative path (`/foo`, `foo/bar`) is allowed, but an **authority-relative URL (`//host`, `\\host`) is rejected** (open-redirect / embed-hijack vector). An absolute URL with embedded userinfo (`https://user:pass@host/...`) is also rejected (phishing / link-spoofing vector). `external-video` additionally requires an absolute http(s) URL.
+- `safeUrl(url, {allow})`: returns the URL only if its scheme is allow-listed (default `https|http|mailto|tel`). It blocks `javascript:`, `data:`, `vbscript:`, and unknown schemes. A relative path (`/foo`, `foo/bar`) is allowed, but an **authority-relative URL (`//host`, `\\host`) is rejected** (open-redirect / embed-hijack vector). An absolute URL with embedded userinfo (`https://user:pass@host/...`) is also rejected (phishing / link-spoofing vector). `external-video` additionally requires an absolute http(s) URL.
 - `renderSafeLink(info, opts)`: builds a real `<a>` via `createElement`, `textContent`, and a scheme-checked `href` (never `innerHTML`). Sets `target=_blank` and `rel=noopener noreferrer`. Returns `null` outside a browser or for an unsafe URL.
 - `sanitizeJson(v)`: drops `__proto__`/`constructor`/`prototype` (used by `submitStructuredDataForm` and `setDynamicPrompt`). `clampInbound(s)` clamps inbound text.
 - No renderer emits HTML. The host renders the `{kind, data}` descriptor with `textContent` / DOM APIs. A `summary`'s markdown is the host's responsibility to sanitize.
 
 ## Restrictions & gotchas (read before you build)
 
-- **Live socket and widgets**: the live socket does not produce flashcards or summarization widgets. See [Two delivery paths](model-and-runtimes.md#two-delivery-paths-this-is-the-1-gotcha).
-- **`force_experience` is a hint.** Never assume the requested experience arrived; the renderer parses whatever shows up.
+- **Delivery paths and `force_experience`**: see [Two delivery paths](model-and-runtimes.md#two-delivery-paths-this-is-the-1-gotcha).
 - **Runtimes outside this set** are NOT in `RUNTIMES`. The renderer routes them to `{kind:'unknown'}` and `onUnhandled` rather than faking a known kind.
 - **`sources` needs a knowledge base to cite from.** Ground a new agent via `knowledge.addRecord` and `knowledge_ids` (ungated; see [Ground the Agent in Your Content](../api/build/knowledge-rag.md#ground-the-agent-in-your-content-rag)). `sources` then renders the real retrieved citations.
 - **`entryId` playback needs the Kaltura player.** `video-gallery` preserves `entryId`. When `embedUrl` is present (it requires `partnerId`; `uiConfId` is optional and only pins a specific player uiConf), the SDK renders an inline player of the whole entry. It does not apply `startTime` or `endTime`; to play only the clip, seek in the host from the `'play'` action payload. Without `embedUrl`, the host renders by `entryId`.

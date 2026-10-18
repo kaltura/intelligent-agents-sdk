@@ -20,7 +20,7 @@ What a contributor needs when changing the `go_to` site navigation code. App-fac
 | `depth` | Include h3 keys on a small site. |
 | `stopWords[lang]` | Localized sites. |
 | `toolCallName` | Several navigators on one session. |
-| `maxTokens` | Caps the site map's size on very large sites. Split the site or lower `depth` when it fires. |
+| `maxTokens` | `siteMapPrompt` option, default 3000. Logs a warning when the estimated site map is larger. It does not shrink the map. Split the site or lower `depth` when it fires. |
 
 ## Non-goals
 

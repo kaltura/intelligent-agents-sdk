@@ -38,13 +38,13 @@ VERIFY_BROWSER=webkit npm run verify:avatar-media  # chromium | firefox | webkit
 VERIFY_AVATAR_MEDIA_ONLY=shapes-simple,swaps npm run verify:avatar-media
 ```
 
-Both scripts write a JSON result to `.harness-output/` (gitignored, regenerated every run).
+`verify-avatar-media.mjs` writes `.harness-output/avatar-media-<engine>.json` (gitignored, regenerated every run). `verify-noise-suppressor.mjs` only prints its result.
 
 Adding or renaming a scenario in `avatar-media.html` means updating `EXPECTED_CELLS` in `verify-avatar-media.mjs` too, and an engine that cannot run a check has to be listed in `ALLOWED_SKIPS`. [test/browser/README.md](../test/browser/README.md) is the guide for that page.
 
 ## Tier 3: live backend
 
-Every `live-verify-*.mjs` script talks to a real deployment with real credentials. They provision throwaway objects, assert what a caller observes, and clean up after themselves.
+Every `live-verify-*.mjs` script talks to a real deployment with real credentials. They provision throwaway objects, assert what a caller observes, and clean up after themselves. The scripts that drive a browser (`live-verify-browser`, `live-verify-avatar-media`, `live-verify-session-complete` and the kickoff-based ones) need `npx playwright install chromium` on a fresh machine. Without it they fail with a missing `chromium_headless_shell`.
 
 ### Credentials
 
@@ -136,9 +136,9 @@ Four helper modules are not scripts and are never run directly: `lib/target.mjs`
 
 ### Flags
 
-Eight scripts take the CLI flags below: `live-verify-kickoff.mjs`, `live-verify-connect-timing.mjs`, `live-verify-opening-phrase.mjs`, `live-verify-session-types.mjs`, `live-verify-startup-faults.mjs`, `live-verify-reconnect.mjs`, `live-verify-unload.mjs` and `live-verify-prepare.mjs` (they share `live-verify-kickoff-shared.mjs`). `live-verify-mcp.mjs` takes its own flags, listed in its header. Every other script is configured by env vars alone.
+Nine scripts take the CLI flags below: `live-verify-kickoff.mjs`, `live-verify-connect-timing.mjs`, `live-verify-opening-phrase.mjs`, `live-verify-session-types.mjs`, `live-verify-startup-faults.mjs`, `live-verify-reconnect.mjs`, `live-verify-unload.mjs`, `live-verify-prepare.mjs` and `live-verify-avatar-flag.mjs` (they share `live-verify-kickoff-shared.mjs`). `live-verify-mcp.mjs` takes its own flags, listed in its header. Every other script is configured by env vars alone.
 
-Shared by all eight (`live-verify-session-types.mjs` drives no browser, so it ignores `--browser`, `--headed` and `--kickoff`):
+Shared by all nine (`live-verify-session-types.mjs` drives no browser, so it ignores `--browser`, `--headed` and `--kickoff`; `live-verify-avatar-flag.mjs` never sends a kickoff, so it ignores `--kickoff`):
 
 | Flag | Effect |
 |---|---|
@@ -152,7 +152,7 @@ Shared by all eight (`live-verify-session-types.mjs` drives no browser, so it ig
 | `--agent-json PATH` | Reuse the agent described in `PATH` (`{configId, widgetId}`, plus `agentId` for `live-verify-session-types.mjs`) instead of provisioning one. Deletes nothing |
 | `--skip-revoke` | `live-verify-session-types.mjs` only: skip the `revoke()` check |
 
-`live-verify-startup-faults.mjs`, `live-verify-reconnect.mjs`, `live-verify-unload.mjs` and `live-verify-prepare.mjs` take `--only IDS` too, and `live-verify-prepare.mjs` adds `--runs N` (alternating plain and prepared pairs, default 3).
+`live-verify-startup-faults.mjs`, `live-verify-reconnect.mjs`, `live-verify-unload.mjs`, `live-verify-prepare.mjs` and `live-verify-avatar-flag.mjs` take `--only IDS` too. `live-verify-avatar-flag.mjs` also adds `--share` (run the screen-share checks A5 and A6), and `live-verify-prepare.mjs` adds `--runs N` (alternating plain and prepared pairs, default 3).
 
 `live-verify-kickoff.mjs` and `live-verify-opening-phrase.mjs` add `--only IDS` (run these scenario ids only) and `--dump-events` (write the page's full event log for every scenario, not just failures). `--kickoff TEXT` has no effect on `live-verify-opening-phrase.mjs`, which never sends a kickoff.
 
@@ -198,9 +198,9 @@ Three entry points are easy to confuse. They do different things.
 
 | Workflow | Jobs |
 |---|---|
-| `ci.yml` | Offline tests with coverage, the 3-engine `avatar-media` matrix, the 3-engine `noise-suppressor` matrix, the Constitution verifier, lint/typecheck/circular, the docs gate, semgrep |
+| `ci.yml` | Offline tests with coverage, the 3-engine `avatar-media` matrix, the 3-engine `noise-suppressor` matrix, the Constitution verifier, lint/typecheck/circular, the docs gate, semgrep, workflow lint (actionlint) |
 | `live-verify.yml` | One job per CI-run live script. Runs on manual dispatch, on every PR from a branch in this repo (only jobs whose paths changed), and in the merge queue (same path filter). Fork and Dependabot PRs get no secrets, so no live job runs there: a fork PR that touches live paths fails the `Live verification` check until a maintainer opens a replacement PR from a branch in this repo, and a Dependabot PR passes with a notice. A nightly schedule (03:00 UTC) runs every job and is the startup-KPI trend run |
-| `release.yml` | `npm run verify:distribution -- <tag>`, which checks the published jsDelivr tree matches the tag |
+| `release.yml` | On a `v*.*.*` tag. Job `release`: release notes file check, docs manifest coverage, jsDelivr smoke test, npm install route test, create the GitHub Release, fire `generate-docs`. Job `distribution`: `npm run verify:distribution -- <tag>`, which checks the published jsDelivr tree matches the tag |
 
 Ten live scripts have no CI job (named under the script table). Run them by hand when you touch their surface.
 

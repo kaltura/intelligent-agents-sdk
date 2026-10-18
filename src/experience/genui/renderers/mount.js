@@ -19,7 +19,7 @@
  * widget can't fulfil itself — the host wires these to the session:
  *   - 'followup'  {question}                  → e.g. session.speak(question)
  *   - 'play'      {entryId?, url?, embedUrl?, startTime?, endTime?}
- *                                              → a video-gallery clip's thumbnail was clicked (times in seconds, or `null`)
+ *                                              → a video-gallery clip or a content-gallery video slide was clicked (times in seconds, or `null`)
  *   - 'open'      {url}                       → a link/source/content card was activated
  *   - 'submit'    {values, formId}            → a structured-data form was submitted. Send the values with speak() or updateRequestVars(); submitStructuredDataForm(values) only records the submission and does not send formId.
  *   - 'answer'    {questionId, variant, correct, value, explanation, optionId?}

@@ -137,8 +137,8 @@ export class AvatarMedia {
    * leaves the previous one in place.
    * @param {string} deviceId  From `enumerateDevices()`, or `''` for the system default (the spec
    *   value; Firefox rejects Chromium's `'default'` pseudo-id with NotFoundError).
-   * @returns {Promise<boolean>}  `false` (never throws) when the element has no `setSinkId` or it rejects.
-   * @throws {KalturaError} `bad_request` when `deviceId` is not a string.
+   * @returns {Promise<boolean>}  `false` when the element has no `setSinkId` or it rejects.
+   * @throws {KalturaError} Rejects with `bad_request` when `deviceId` is not a string.
    */
   async setSinkId(deviceId) {
     if (typeof deviceId !== 'string') throw badRequest('setSinkId(deviceId)', 'deviceId must be a string (from enumerateDevices()).');

@@ -25,6 +25,7 @@ export class Doctor {
    * - {@link Lifecycle#audit}: every rule.
    * - {@link IntellectConfig#audit}: the intellect of each agent, once per
    *   intellect. Each finding carries the `agentId` of the first agent that uses it.
+   * - An agent that points at an intellect that does not exist (`intellect_not_found`, error).
    * - Orphans: `orphan_insight_setting` and `orphan_email_template` (both `info`)
    *   for entities no rule uses. Skipped when `agentIds` is set, since an orphan
    *   belongs to no agent.
