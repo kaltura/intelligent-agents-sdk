@@ -160,7 +160,8 @@ export function auditLifecycleRules(rules, ctx) {
       const produced = producedKeys(scope);
       const missing = produced ? [...new Set(ids)].filter((id) => !produced.has(id)) : [];
       if (missing.length) {
-        add('warn', 'badge_key_unproduced', `${missing.length > 1 ? 'Badges' : 'Badge'} ${missing.join(', ')} read${missing.length > 1 ? '' : 's'} insight key${missing.length > 1 ? 's' : ''} that no active rule on these agents writes, so the badge is never given.`,
+        const many = missing.length > 1;
+        add('warn', 'badge_key_unproduced', `${many ? 'Badges' : 'Badge'} ${missing.join(', ')} read${many ? '' : 's'} insight key${many ? 's' : ''} that no active rule on these agents writes, so the badge is never given.`,
           'Add an insight setting with that key to a triggerInsightSettingsKai rule on the same agents, or change badgeId. Keys are case-sensitive.');
       }
       continue;
