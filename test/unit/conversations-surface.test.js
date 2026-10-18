@@ -83,6 +83,19 @@ test('threads.push rejects a reserved request_vars key BEFORE any network call',
   assert.equal(ff.calls.length, 0);
 });
 
+test('threads.push maps a client-variables 403 to client_variables_disabled, a 413 to payload_too_large, and leaves other 403s alone', async () => {
+  const reply = { status: 403, body: { detail: 'Client variables are not allowed' } };
+  const { mgmt } = harness([{ match: 'thread/push', respond: () => reply }]);
+  const push = () => mgmt.threads.push({ id: 't1', content: 'hi', request_vars: { name: 'x' } }, ADMIN_KS);
+  await assert.rejects(push, (e) => e.code === 'client_variables_disabled' && e.status === 403);
+
+  Object.assign(reply, { status: 413, body: { detail: 'variable too large (max 100000)' } });
+  await assert.rejects(push, (e) => e.code === 'payload_too_large' && e.status === 413 && /too large/.test(e.detail));
+
+  Object.assign(reply, { status: 403, body: { detail: 'Not authorized' } });
+  await assert.rejects(push, (e) => e.code === 'forbidden');
+});
+
 test('messages.list merges opts.filter under objectType; opts.threadId is sugar for filter.threadIdEquals', async () => {
   const { mgmt, ff } = harness([
     { match: 'message/list', respond: () => ({ status: 200, body: { objects: [], totalCount: 0 } }) },

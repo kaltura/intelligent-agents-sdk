@@ -198,7 +198,7 @@ The full transcript is sent as model context on every turn, so each turn carries
 
 Use the SDK for feedback and follow-up suggestions. It handles the routes for you.
 
-- `mgmt.feedback.add({message_id, is_positive, comment?}, convKs)`: thumbs up or down on a message. `message_id` comes from the converse stream.
+- `mgmt.feedback.add({message_id, is_positive, comment?}, convKs)`: thumbs up or down on a message. `message_id` comes from the converse stream. `convKs` is the token of the user who sent the message.
 - `mgmt.feedback.list(ks, opts)`: admin-only feedback listing. ⚠️ SENSITIVE: contains end-user ids, names and verbatim text. Treat as PII.
 - `mgmt.followups.getSuggested(ks, opts)`: starter questions for the partner or agent.
 - `mgmt.followups.list(ks, opts)`: raw partner-wide follow-up records.

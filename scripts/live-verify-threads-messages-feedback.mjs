@@ -86,7 +86,10 @@ try {
   record('intellect-create', true, { intellectId });
 
   // 1: scratch thread via a real conversation turn.
-  const turn = await kaltura.converseOnce(intellectId, `Say hello. Run tag: ${RUN_TAG}.`, {});
+  // The same conversation token rates the message in step 7: feedback must
+  // come from the user who sent it.
+  const conv = await kaltura.sessions.createConversationToken({ configId: intellectId, userId: 'sdk-live-verify-user' });
+  const turn = await kaltura.converseOnce(intellectId, `Say hello. Run tag: ${RUN_TAG}.`, {}, conv);
   threadId = turn.threadId;
   check('1-converse-creates-thread', !!threadId && !!turn.messageId, { threadId, messageId: turn.messageId, text: snippet(turn.text) });
 
@@ -122,7 +125,7 @@ try {
   }
 
   // 7: feedback.add — rates the message; call is idempotent for the same pair.
-  const fb = await kaltura.feedback.add({ message_id: turn.messageId, is_positive: true, comment: `live-verify ${RUN_TAG}` }, admin);
+  const fb = await kaltura.feedback.add({ message_id: turn.messageId, is_positive: true, comment: `live-verify ${RUN_TAG}` }, conv);
   check('7-feedback-add-succeeds', !!fb, { response: fb });
 
   // 8: followups.getSuggested — partner-level starter questions (may be []).

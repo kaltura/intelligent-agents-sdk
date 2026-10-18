@@ -7,6 +7,7 @@ test('maps HTTP statuses to stable codes', () => {
   assert.equal(errorFromResponse({ status: 400, path: '/x', body: null }).code, 'bad_request');
   assert.equal(errorFromResponse({ status: 403, path: '/x', body: null }).code, 'forbidden');
   assert.equal(errorFromResponse({ status: 404, path: '/x', body: null }).code, 'not_found');
+  assert.equal(errorFromResponse({ status: 413, path: '/x', body: null }).code, 'payload_too_large');
   assert.equal(errorFromResponse({ status: 422, path: '/x', body: null }).code, 'validation_error');
   assert.equal(errorFromResponse({ status: 429, path: '/x', body: null }).code, 'rate_limited');
   assert.equal(errorFromResponse({ status: 503, path: '/x', body: null }).code, 'server_error');

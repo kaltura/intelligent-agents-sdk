@@ -884,6 +884,7 @@ const lintSeverity = (s) => (s === 'error' ? 'error' : s === 'warning' ? 'warn' 
  * | `invalid_user_properties_forms` | error | {@link buildUserPropertiesForms} rejects the forms. |
  * | `secret_ref_unresolved` | error | A `{{secrets.NAME}}` reference names a secret the intellect does not have. |
  * | `secret_ref_bad_prefix` | error | A `{{variables.secrets.NAME}}` reference renders empty. Use `{{secrets.NAME}}`. |
+ * | `secret_ref_bare` | error | A linked `api` tool's OAuth2 `client_secret` is the bare `secrets.NAME`, so the tool sends that text, not the secret. Re-save the tool. |
  * | `prompt_<code>` | per finding | A {@link lintPrompts} finding with a `prompt_` prefix, for example `prompt_duplicate_key`, `prompt_bad_condition` or `prompt_suspect_condition`. A variable that a linked `var` tool sets is not flagged. |
  * | `capabilities_invalid` | warn | {@link validateCapabilities} rejects the capability map. |
  * | `client_tools_not_ready` | warn | {@link clientToolReadiness} warns about the tool setup. |
@@ -970,6 +971,10 @@ export function auditIntellectConfig(config, ctx = {}) {
     else for (const w of conditionWarnings(entry?.condition)) add('warn', 'skill_condition_suspect', `skill_ids[${i}].condition`, `skill_ids[${i}].condition ${w}.`, 'Rewrite it with intellectConfig.setSkillIds. A wrong condition can blank every turn.');
   }
   for (const t of (ctx.tools ?? []).filter((x) => toolIds.includes(String(x.id)))) {
+    const secret = /** @type {any} */ (t.config)?.request?.authentication?.client_secret;
+    if (typeof secret === 'string' && /^secrets\.[A-Za-z_][A-Za-z0-9_]*$/.test(secret.trim())) {
+      add('error', 'secret_ref_bare', `tool ${t.id}.request.authentication.client_secret`, `Tool ${t.id} stores the bare ${secret.trim()}, so it sends that text, not the secret.`, `Re-save it: const t = await mgmt.tools.get('${t.id}', ks); await mgmt.tools.update('${t.id}', { config: t.config }, ks).`);
+    }
     const builtin = [t.name, /** @type {any} */ (t.config)?.name].find((n) => typeof n === 'string' && BUILTIN_TOOL_NAMES.includes(n));
     if (builtin) add('warn', 'tool_name_builtin', `tool ${t.id}.name`, `Tool ${t.id} is named "${builtin}", the same name as a built-in tool.`, 'Give it a name of its own with tools.update.');
     const condition = /** @type {any} */ (t.config)?.condition;

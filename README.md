@@ -374,7 +374,7 @@ The same agent, thread, and tool contract as the avatar, over plain HTTPS. No mi
 import { KalturaChatSession } from '@kaltura/intelligent-agents/experience';
 
 const chat = new KalturaChatSession({ token });   // same conversation KS as the avatar
-chat.on('transcript', ({ text, type }) => render(type, text));
+chat.on('transcript', ({ text, type }) => render(type, text));   // one event per streamed chunk, append to the current reply
 chat.onToolCall('navigate_to_page', ({ page }) => router.go(page));
 
 await chat.connect();                             // no network, marks the session live

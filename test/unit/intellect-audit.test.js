@@ -36,6 +36,8 @@ const TABLE = [
   ['secret_ref: tool configs the intellect does not use are ignored', base(), { tools: [{ id: 't9', config: { x: '{{secrets.API}}' } }] }, []],
   ['tool_name_builtin: a linked tool named like a built-in', base({ tool_ids: ['t1'], capabilities: { kaltura_genie_experiences: 'off' } }), { tools: [{ id: 't1', name: 'search_web', config: { type: 'client', name: 'search_web' } }] }, ['tool_name_builtin']],
   ['tool_name_builtin: config.name counts', base({ tool_ids: ['t1'], capabilities: { kaltura_genie_experiences: 'off' } }), { tools: [{ id: 't1', config: { name: 'async_search_knowledge_base' } }] }, ['tool_name_builtin']],
+  ['secret_ref_bare: a linked OAuth2 tool saved with the bare secrets.NAME', base({ tool_ids: ['t1'], capabilities: { kaltura_genie_experiences: 'off' } }), { tools: [{ id: 't1', config: { type: 'api', request: { url: 'https://x', authentication: { client_secret: 'secrets.CS' } } } }] }, ['secret_ref_bare']],
+  ['secret_ref_bare: the {{secrets.NAME}} form is not flagged', base({ tool_ids: ['t1'], capabilities: { kaltura_genie_experiences: 'off' }, secrets: { CS: 'x' } }), { tools: [{ id: 't1', config: { type: 'api', request: { url: 'https://x', authentication: { client_secret: '{{secrets.CS}}' } } } }] }, []],
   ['tool_name_builtin: an unlinked tool is ignored', base(), { tools: [{ id: 't9', name: 'search_entries' }] }, []],
   ['tool_name_builtin: only exact names', base({ tool_ids: ['t1'], capabilities: { kaltura_genie_experiences: 'off' } }), { tools: [{ id: 't1', name: 'search_web_v2' }] }, []],
   ['prompt_duplicate_key (lint finding, warn)', base({ prompts: [prompt('a'), prompt('b')] }), {}, ['prompt_duplicate_key']],
