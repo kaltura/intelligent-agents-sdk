@@ -10,7 +10,9 @@
  *
  * Three layers: (1) string-pattern scrub (KS / 32-hex / private-IP); (2)
  * sensitive-key wholesale redaction (`secret`/`password`/`credential`/`token`/
- * `ks`); (3) a STRUCTURAL `request_vars` rule — converse client variables hold
+ * `ks` anywhere in the key, and the exact header keys `authorization`, `cookie`,
+ * `x-api-key`, `apikey` in any case, `api_key`/`api-key` too; an `authentication`
+ * object keeps its shape with `value` redacted); (3) a STRUCTURAL `request_vars` rule — converse client variables hold
  * arbitrary PII scalars under arbitrary keys that match no pattern, so the
  * whole sub-tree is replaced by key-name.
  */
@@ -21,6 +23,8 @@ import { PRIVATE_IP_RE } from './net-guard.js';
 const KS_RE = /djJ8[A-Za-z0-9_\-+/=]{16,}/g;
 /** A bare Kaltura admin secret is 32 lowercase hex chars. */
 const HEX32_RE = /\b[a-f0-9]{32}\b/g;
+/** Keys whose value is redacted wholesale: name fragments plus the exact credential header keys. */
+const SENSITIVE_KEY_RE = /secret|password|credential|token|\bks\b|^(?:authorization|cookie|x-api-key|api[-_]?key)$/i;
 
 /**
  * Redact secrets from any value. Strings are scrubbed in place; objects/arrays
@@ -47,10 +51,15 @@ export function redact(value) {
         out[k] = '<request_vars-redacted>';
         continue;
       }
+      // An `authentication` object keeps its shape (`type` stays readable); only `value` is hidden.
+      if (k === 'authentication' && v && typeof v === 'object' && !Array.isArray(v)) {
+        const a = /** @type {Record<string, unknown>} */ (redact(v));
+        if ('value' in a) a.value = redactSensitiveKey(/** @type {any} */ (v).value);
+        out[k] = a;
+        continue;
+      }
       // Redact whole values of obviously-sensitive keys regardless of shape.
-      out[k] = /secret|password|credential|token|\bks\b/i.test(k)
-        ? redactSensitiveKey(v)
-        : redact(v);
+      out[k] = SENSITIVE_KEY_RE.test(k) ? redactSensitiveKey(v) : redact(v);
     }
     return /** @type {T} */ (out);
   }

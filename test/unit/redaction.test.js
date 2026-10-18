@@ -31,6 +31,29 @@ test('redacts sensitive keys wholesale', () => {
   assert.equal(out.note, 'fine');
 });
 
+test('redacts Authorization, X-Api-Key, Cookie and apiKey header values in any case', () => {
+  const out = redact({ headers: { Authorization: 'Bearer sk_live_FAKE', 'x-api-key': 'k1', COOKIE: 'sid=1', apiKey: 'a1', api_key: 'a2', 'API-KEY': 'a3' } });
+  for (const v of Object.values(out.headers)) assert.equal(v, '<redacted>');
+});
+
+test('redacts authentication.value and keeps its type', () => {
+  assert.deepEqual(redact({ authentication: { type: 'bearer', value: 'FAKE' } }), { authentication: { type: 'bearer', value: '<redacted>' } });
+});
+
+test('does not redact the key named key', () => {
+  assert.deepEqual(redact({ key: 'email' }), { key: 'email' });
+});
+
+test('does not redact lookalike keys', () => {
+  const input = { apiKeyName: 'a', 'x-api-key-id': 'b', cookieConsent: 'c', authorizationUrl: 'd' };
+  assert.deepEqual(redact(input), input);
+});
+
+test('value is redacted only under authentication', () => {
+  assert.deepEqual(redact({ value: 'x' }), { value: 'x' });
+  assert.deepEqual(redact({ other: { value: 'x' } }), { other: { value: 'x' } });
+});
+
 test('structurally nukes the entire request_vars sub-tree, leaving siblings', () => {
   const out = redact({
     userMessage: 'hello',
