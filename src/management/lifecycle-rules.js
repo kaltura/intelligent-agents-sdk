@@ -44,17 +44,20 @@ export function scopedAgentIds(eventConditions) {
 }
 
 /**
- * The `changed_keys` condition a `sendInsightEmail` rule waits on:
- * operator `has_all` or `has_any` with a non-empty array of keys.
+ * The `changed_keys` condition a rule waits on: operator `has_all` or
+ * `has_any` with a non-empty array of keys, or `contains` with one key.
+ * A `contains` condition comes back as `has_all` with that one key.
  * @param {unknown} eventConditions
  * @returns {{field:'changed_keys', operator:'has_all'|'has_any', value:string[]}|undefined}
  */
 export function changedKeysFilter(eventConditions) {
   if (!Array.isArray(eventConditions)) return undefined;
-  return eventConditions.find(
-    (c) => c && typeof c === 'object' && c.field === 'changed_keys' && (c.operator === 'has_all' || c.operator === 'has_any')
-      && Array.isArray(c.value) && c.value.length > 0 && c.value.every(isId),
-  );
+  for (const c of eventConditions) {
+    if (!c || typeof c !== 'object' || c.field !== 'changed_keys') continue;
+    if (c.operator === 'contains' && isId(c.value)) return { ...c, operator: 'has_all', value: [c.value] };
+    if ((c.operator === 'has_all' || c.operator === 'has_any') && Array.isArray(c.value) && c.value.length > 0 && c.value.every(isId)) return c;
+  }
+  return undefined;
 }
 
 /**

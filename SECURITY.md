@@ -220,7 +220,7 @@ Session hosts come from `appInit`, not from your config. `appInit` returns the `
 
 The `region` option covers the rest. It fills the four `Management` base URLs (`agenticUrl`, `genieUrl`, `ovpUrl`, `messagingUrl`) and the session `genieUrl` from one [`REGIONS`](docs/api/authentication.md#regions-and-base-urls) entry. `Management` never falls back to another region: a service the region lacks throws `region_unavailable` instead of reaching a US host. `region` does not change the analytics host.
 
-This residency guarantee covers the SDK's own configured endpoints only. A `lifecycle` rule's `sendInsightEmail` action sends thread-derived content to the `recipients` you list, and the URL-pinning above does not apply to it. Your code decides which recipients and regions are allowed. A deployment that must protect PHI/PII boundaries vets the `recipients` list and reviews residency before it uses this action.
+This residency guarantee covers the SDK's own configured endpoints only. A `lifecycle` rule's `sendInsightEmail` action sends thread-derived content to the `recipients` you list, and the URL-pinning above does not apply to it. Your code decides which recipients and regions are allowed. A deployment that must protect PHI/PII boundaries vets the `recipients` list, including `{{path}}` entries such as `{{object.user_id}}` that send to the conversation's own user, and reviews residency before it uses this action.
 
 ## Data handling and deletion
 

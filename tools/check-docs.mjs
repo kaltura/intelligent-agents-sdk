@@ -1116,6 +1116,16 @@ describe('16. Docs accuracy', () => {
     const hits = scanFiles().filter((f) => f.endsWith('.md') && re.test(read(f)));
     assert.deepEqual(hits, [], `these pages call an idempotency key retry-safe: ${hits.join(', ')}`);
   });
+
+  test('the lifecycle page lists all nine condition operators, and create documents them', () => {
+    const ops = ['eq', 'neq', 'gt', 'lt', 'in', 'contains', 'has_any', 'has_all', 'not_empty'];
+    const readme = read('docs/lifecycle/README.md');
+    const jsdoc = read('src/management/lifecycle.js');
+    for (const op of ops) {
+      assert.ok(readme.includes(`\`${op}\``), `docs/lifecycle/README.md does not mention operator ${op}`);
+      assert.ok(jsdoc.includes(`\`${op}\``), `lifecycle.js does not mention operator ${op}`);
+    }
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════

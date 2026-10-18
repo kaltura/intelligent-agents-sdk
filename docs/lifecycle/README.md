@@ -19,23 +19,39 @@ A rule is `{name, systemName, eventType, objectType, eventConditions?, action}`:
 - `eventConditions[]`: `{field, operator, value}` matchers, e.g. `{field:'object.agent_id', operator:'eq', value:'<uuid>'}`, `{field:'changed_keys', operator:'has_all', value:[...]}`. `field` is a dot-path into the event payload (see [Discovery and dry-run testing](#discovery-and-dry-run-testing) for which paths exist per event). A `{path, op}` shaped entry is rejected with a 400.
 - `action`: a plain object, passed straight through, not built by the SDK. See [The action types](#the-action-types) below.
 
+`operator` is one of nine values:
+
+| `operator` | `value` | Matches when the field |
+|---|---|---|
+| `eq`, `neq` | One value of the field's type | equals, or does not equal, `value` |
+| `gt`, `lt` | A number | is greater, or less, than `value` |
+| `in` | An array of values of the field's type | equals one of the items |
+| `contains` | One string | contains `value`. On `changed_keys`, holds the key `value` |
+| `has_any`, `has_all` | An array of strings | is an array that holds any, or all, of the items |
+| `not_empty` | Required. A non-empty value of the field's type | Match behavior is not confirmed. Use another operator |
+
+`describeFields` gives each field's type. A `value` of the wrong type returns 400 on `create`: a string for `gt`, a single value for `in`, an array for `contains`, or no `value` for `not_empty`. An operator that does not fit the field is accepted and never matches, for example `has_any` with `[1]` on the number field `object.origin`. An unknown operator returns 400 and lists the nine.
+
 ---
 
 ## The action types
 
-You can create three `actionType` values. `match` output can also list a preset rule whose action type you cannot create, described [below](#every-session-already-gets-a-summary-for-free).
+You can create four `actionType` values. `match` output can also list built-in rules you did not create, described [below](#every-session-already-gets-a-summary-for-free).
 
 | `actionType` | What it does | Why / when you'd use it |
 |---|---|---|
 | `triggerInsightSettingsKai` | Runs an LLM over the conversation and writes back the insights named in `insightSettingsIds`. Each id points at a reusable [`InsightSettings`](#insightsettings-reusable-insight-definitions) entity you defined ahead of time | Whenever you need a specific piece of structured data pulled out of a conversation: a topic tag for a dashboard, a lead-quality score, a recommended next step. |
 | `sendInsightEmail` | Sends an email to a Kaltura user, filling an email template from the thread's already-extracted insight values | Whenever a human needs to know the moment a specific insight is ready, e.g. alert a support lead as soon as a conversation's analysis lands. |
 | `triggerDtcKai` | Takes no fields of your own. Turns each of the target intellect's configured lead-capture form fields (`intellectConfig.user_properties_forms`, e.g. name/company/email) into its own insight. It does nothing when none are configured | Whenever you already collect lead-capture fields on an intellect and want each one to also land as a conversation insight, with no per-field setup. |
+| `createBadges` | Gives the conversation's user a badge with a score, read from the insight keys the badges name | Whenever a conversation should earn the user something, e.g. a badge for passing a quiz the agent ran |
 
 **`triggerInsightSettingsKai`** takes `{ insightSettingsIds: string[] }`, up to 20 ids, each referencing an `InsightSettings` entity created via `mgmt.insightSettings.create()`. An id that doesn't exist, or isn't owned by your partner, is rejected on create/update with a 400. Only ids whose insight setting has `status:'active'` produce an insight. A `disabled` one is skipped.
 
-**`sendInsightEmail`** mails a rendered insight summary to `recipients`. These are Kaltura user ids, not raw email addresses. Use either an explicit `templateId` or an auto-created `presetType` template; the template's `subject`/`body` reference single-brace tokens declared in `msgParamsMap`, e.g. `{SUMMARY}` or `{recipient.firstName}`. This action only fires on `eventType:'analysis_updated'`. On a `session_ended` rule it does nothing.
+**`sendInsightEmail`** mails a rendered insight summary to `recipients`. These are Kaltura user ids, not raw email addresses. Use either an explicit `templateId` or an auto-created `presetType` template; the template's `subject`/`body` reference single-brace tokens declared in `msgParamsMap`, e.g. `{SUMMARY}` or `{recipient.firstName}`. This action only fires on `eventType:'analysis_updated'`. On a `session_ended` rule it does nothing. An entry can also be a `{{path}}` into the event, such as `{{object.user_id}}` for the conversation's own user. A path the event does not have stays as written. The action has no `subject` field. Set the subject in the template.
 
 A `templateId` is more durable than a `presetType`. It points at a template you created yourself via [`mgmt.emailTemplates`](#emailtemplates-managing-the-templates-sendinsightemail-references) (see below). A `presetType` uses a preset template instead.
+
+**`createBadges`** takes `{ badges: [{ badgeId, type, score?, scoreAction? }] }`, a non-empty list with unique `badgeId`s. `badgeId` is the insight key whose value sets the badge, and uses letters, digits, `_` and `-`. A `type:'boolean'` badge needs `score`, given when the insight is true. A `type:'numeric'` badge takes its score from the insight value, so it must not set `score`. `scoreAction` is `'upsert'` (set the score) or `'delta'` (add to it). Add a `changed_keys` filter on the badge keys, as `lifecycle.audit` advises (`badges_unfiltered`). A wrong shape returns 400, and `err.body.message` names the field.
 
 ```js
 const sentiment = await mgmt.insightSettings.create({
@@ -69,7 +85,7 @@ await mgmt.insightSettings.update(setting.id, { status: 'disabled' }, ks);      
 await mgmt.insightSettings.delete(setting.id, ks, { confirmPermanent: true });            // WRITE, destructive
 ```
 
-`valueType` is one of `'string'`/`'number'`/`'boolean'`/`'arrayString'`/`'arrayNumber'`/`'arrayBoolean'`. `prompt` is required. There's no built-in fallback prompt for any key name. `status` (`'active'`/`'disabled'`) controls whether a lifecycle rule referencing this id actually extracts it the next time it fires. Deleting the entity instead just leaves any referencing rule's `insightSettingsIds` dangling. That id is simply skipped going forward.
+`valueType` is one of `'string'`/`'number'`/`'boolean'`/`'arrayString'`/`'arrayNumber'`/`'arrayBoolean'`. `prompt` is required. There's no built-in fallback prompt for any key name. `prompt` can hold the same `{{path}}` placeholders as `recipients`. `key` uses letters, digits, `_`, `.` and `-`, within a length limit. Another key returns 400 that shows the allowed pattern. Insight setting ids are 24-character hex strings. `status` (`'active'`/`'disabled'`) controls whether a lifecycle rule referencing this id actually extracts it the next time it fires. Deleting the entity instead just leaves any referencing rule's `insightSettingsIds` dangling. That id is simply skipped going forward.
 
 ### `EmailTemplates`: managing the templates `sendInsightEmail` references
 
@@ -95,19 +111,13 @@ await mgmt.lifecycle.create({
 }, ks);
 ```
 
-`appGuid`, `name`, `subject`, `body`, `toAttributePath`, and `msgParamsMap` are required. `body`/`subject`/`fromName` can reference the tokens declared in `msgParamsMap` (e.g. `{recipient.firstName}`). The rest of the CRUD surface (`get`/`list`/`update`/`delete`) is in the [method table](#full-crud--discovery-method-table) below.
-
-This is the one resource in this SDK that authenticates with a plain `Authorization: Bearer <KS>` header instead of the `Authorization: KS <ks>` scheme every other resource uses. It's the same admin KS, sent in a different header because this resource lives on a different host.
+`appGuid`, `name`, `subject`, `body`, `toAttributePath`, and `msgParamsMap` are required. `body`/`subject`/`fromName` can reference the tokens declared in `msgParamsMap` (e.g. `{recipient.firstName}`). The rest of the CRUD surface (`get`/`list`/`update`/`delete`) is in the [method table](#full-crud--discovery-method-table) below. This is the one resource in this SDK that authenticates with a plain `Authorization: Bearer <KS>` header instead of the `Authorization: KS <ks>` scheme every other resource uses. It's the same admin KS, sent in a different header because this resource lives on a different host.
 
 ---
 
 ## Scope every rule to an agent
 
-A rule with no agent condition runs for every agent on the partner. So `create` and `update` refuse an unscoped `thread` rule by default. Add an `object.agent_id` condition: operator `eq` with an agent id, or `in` with a non-empty array of agent ids. An empty or blank value does not count:
-
-```js
-eventConditions: [{ field: 'object.agent_id', operator: 'eq', value: '<agent-uuid>' }]
-```
+A rule with no agent condition runs for every agent on the partner. So `create` and `update` refuse an unscoped `thread` rule by default. Add an `object.agent_id` condition: operator `eq` with an agent id, or `in` with a non-empty array of agent ids. An empty or blank value does not count. For example, `{ field: 'object.agent_id', operator: 'eq', value: '<agent-uuid>' }`.
 
 Without it, the call throws `KalturaError` with `code: 'lifecycle_unscoped'` before any request. To run on every agent on purpose, pass `{ partnerWide: true }` as the last argument:
 
@@ -135,18 +145,7 @@ To send on every update on purpose, pass `{ emailOnEveryUpdate: true }` as the l
 
 ## Scoping a rule to one agent
 
-`eventConditions` can only filter on fields [`describeFields`](#discovery-and-dry-run-testing) actually reports. For `thread`/`analysis_updated` that's `object.agent_id`, `object.thread_id`, `object.user_id`, and `changed_keys` (which insight keys were updated). It does **not** include an insight's computed value. There is no `object.sentiment` field to filter on. A sentiment score only exists as the *output* of a `triggerInsightSettingsKai` action, not an input `eventConditions` can inspect.
-
-```js
-await mgmt.lifecycle.create({
-  name: 'Email support lead when this agent\'s analysis updates',
-  systemName: 'analysis_alert_v1',
-  eventType: 'analysis_updated',
-  objectType: 'thread',
-  eventConditions: [{ field: 'object.agent_id', operator: 'eq', value: '<agent-uuid>' }, { field: 'changed_keys', operator: 'has_all', value: ['SUMMARY', 'TOPIC', 'CUSTOM'] }],
-  action: { actionType: 'sendInsightEmail', recipients: ['<support-lead-kaltura-user-id>'], presetType: 'conversationInsightExample' },
-}, ks);
-```
+`eventConditions` can only filter on fields [`describeFields`](#discovery-and-dry-run-testing) actually reports. For `thread`/`analysis_updated` that's `object.agent_id`, `object.thread_id`, `object.user_id`, `object.origin` (an integer, `0` for a standard conversation), and `changed_keys` (which insight keys were updated). It does **not** include an insight's computed value. There is no `object.sentiment` field to filter on. A sentiment score only exists as the *output* of a `triggerInsightSettingsKai` action, not an input `eventConditions` can inspect.
 
 **A rule filtering on `object.agent_id` only matches threads created with an agent id on the token.** A token minted without one leaves the thread's `agent_id` as `"default"`, which never matches a rule scoped to a real agent uuid. Mint with `createAgentToken({ agentId, userId })`, or `createConversationToken` with `agentId`. See [Conversation token or agent token?](../api/authentication.md#conversation-token-or-agent-token). This applies whether the conversation happens over `mgmt.conversations.send()`/`.stream()` or a real avatar/socket session. The agent binding lives in the KS, not in the call.
 
@@ -156,9 +155,7 @@ await mgmt.lifecycle.create({
 
 Every `session_ended` event produces one fixed summary insight, for every agent. It has no opt-out, and no field lets you change its prompt. `match` lists the built-in rule that produces it (see [Discovery and dry-run testing](#discovery-and-dry-run-testing)).
 
-When you create your own `triggerInsightSettingsKai` rule on `session_ended`, the result is one combined `thread_metadata.analysis` containing the preset's summary plus whatever your `insightSettingsIds` asked for.
-
-Give your own insight settings distinct `key`s from the built-in summary to avoid any ambiguity about which one's result lands where.
+When you create your own `triggerInsightSettingsKai` rule on `session_ended`, the result is one combined `thread_metadata.analysis` containing the preset's summary plus whatever your `insightSettingsIds` asked for. Give your own insight settings distinct `key`s from the built-in summary to avoid any ambiguity about which one's result lands where.
 
 ---
 
@@ -172,17 +169,19 @@ await mgmt.lifecycle.listEvents('thread', ks);                     // { objectTy
 await mgmt.lifecycle.describeFields('thread', 'session_ended', ks); // { objectType, eventType, fields: [{ path, type, description }, ...] }
 ```
 
-**Dry-run a rule before a real event fires it**: `match(objectType, eventType, eventData, ks)`, where `eventData` is `{ object?, changed_keys? }` (not a bare `object` field). For `objectType:'thread'`, `object` needs `agent_id`, `thread_id`, and `user_id`, all strings. Where `describeFields` lists `object.origin`, pass `origin: 0` (a number, standard) too. Omitting any required field returns a 400:
+**Dry-run a rule before a real event fires it**: `match(objectType, eventType, eventData, ks)`, where `eventData` is `{ object?, changed_keys? }` (not a bare `object` field). For `objectType:'thread'`, `object` needs `agent_id`, `thread_id` and `user_id` (strings) and `origin` (an integer, `0` for a standard conversation). Omitting any one returns a 400 that names it:
 
 ```js
 const { matchedRules } = await mgmt.lifecycle.match(
   'thread', 'session_ended',
-  { object: { agent_id: 'agent-1', thread_id: 'thread-1', user_id: 'user-1' } },
+  { object: { agent_id: 'agent-1', thread_id: 'thread-1', user_id: 'user-1', origin: 0 } },
   ks,
 );
 ```
 
-**`match` can return rules you never created.** Every partner has a built-in rule that matches every `session_ended`/`thread` event, and you cannot create its action type. `matchedRules[]` can group it with your own rules under `isGrouped:true`. Don't mistake a grouped built-in rule for something you configured.
+**`match` can return rules you never created.** Built-in rules have ids that start with `preset__`. One matches every `session_ended`/`thread` event, and you cannot create its action type. `matchedRules[]` can group built-in rules with your own under `isGrouped:true`. Don't mistake a grouped built-in rule for something you configured.
+
+**Only standard conversations run actions.** A thread with any `origin` other than `0` runs no rule, and `match` with that `origin` returns no rules.
 
 ---
 
@@ -204,6 +203,8 @@ const report = await mgmt.lifecycle.audit(ks, { agentIds: ['<agent-uuid>'] }); /
 | `insight_setting_missing` | warn | `insightSettingsIds` holds an id with no insight setting. The id is skipped |
 | `insight_setting_disabled` | warn | A listed insight setting is `disabled`. It is skipped |
 | `too_many_insight_settings` | error | More than 20 `insightSettingsIds` |
+| `badges_unfiltered` | warn | A `createBadges` rule on `analysis_updated` has no `changed_keys` filter |
+| `badge_key_unproduced` | warn | A `badgeId` names a key no active rule on those agents writes |
 | `email_on_session_ended` | error | `sendInsightEmail` only fires on `analysis_updated` |
 | `email_unfiltered` | warn | A `sendInsightEmail` rule on `analysis_updated` has no `changed_keys` filter |
 | `changed_keys_unproduced` | warn | The `changed_keys` filter waits for a key no active rule on those agents writes |
@@ -212,7 +213,7 @@ const report = await mgmt.lifecycle.audit(ks, { agentIds: ['<agent-uuid>'] }); /
 | `dtc_without_forms` | warn | `triggerDtcKai` on an agent whose intellect has no `user_properties_forms` |
 | `rule_disabled` | info | The rule is not active. It gets no other finding |
 
-The key checks (`changed_keys_unproduced`, `template_tokens_unproduced`) are skipped for agents covered by an active `triggerDtcKai` rule, because the keys it writes are not documented. Templates live on the Messaging host. If the target has none, the template checks are skipped and the report says `skipped: ['templates']`.
+The key checks (`changed_keys_unproduced`, `template_tokens_unproduced`, `badge_key_unproduced`) are skipped for agents covered by an active `triggerDtcKai` rule, because the keys it writes are not documented. Templates live on the Messaging host. If the target has none, the template checks are skipped and the report says `skipped: ['templates']`.
 
 `mgmt.doctor(ks, opts?)` runs the same check, then audits the intellect of each agent with `mgmt.intellectConfig.audit(configId, ks)`. It also reports `orphan_insight_setting` and `orphan_email_template` (both `info`) for entities no rule uses. It skips the orphan checks when you pass `agentIds`.
 
@@ -248,7 +249,7 @@ All against `https://api.avatar.us.kaltura.ai`. SDK: `mgmt.lifecycle`.
 |---|---|---|---|
 | `lifecycle.create(body, ks, opts?)` | `POST /v1/lifecycle/create` | WRITE, not idempotent | mirrors `Tools#add`. `opts.partnerWide`, `opts.emailOnEveryUpdate`: see [Scope every rule to an agent](#scope-every-rule-to-an-agent) |
 | `lifecycle.get(id, ks)` | `POST /v1/lifecycle/get` | READ | |
-| `lifecycle.list(ks, opts)` | `POST /v1/lifecycle/list` | READ | `{offset,limit}` pager; `opts.filter` (`eventTypeEqual`, `statusEqual`, `systemNameEqual`) and `opts.orderBy` (`+createdAt`/`-createdAt`) pass through 1:1 |
+| `lifecycle.list(ks, opts)` | `POST /v1/lifecycle/list` | READ | `{offset,limit}` pager; `opts.filter` (`statusEqual`, `systemNameEqual`, `actionTypeIn`, `eventCondition`) and `opts.orderBy` (`+createdAt`/`-createdAt`) pass through 1:1. `eventCondition` is `{fieldEqual, operatorEqual?, operatorIn?, value}` with one string or number `value`. There is no event-type filter: check `rule.eventType` on the results. |
 | `lifecycle.update(id, patch, ks, opts?)` | `POST /v1/lifecycle/update` | WRITE, idempotent | mirrors `Tools#update`. `opts.partnerWide`, `opts.emailOnEveryUpdate`: see [Scope every rule to an agent](#scope-every-rule-to-an-agent) |
 | `lifecycle.delete(id, ks, confirm)` | `POST /v1/lifecycle/delete` | WRITE, destructive | `requireConfirm` gate; response is `{removed, success, _meta}`. The deleted id comes back as `removed`, not `id` |
 | `lifecycle.match(objectType, eventType, eventData, ks)` | `POST /v1/lifecycle/match` | READ (dry-run) | see [Discovery and dry-run testing](#discovery-and-dry-run-testing) |

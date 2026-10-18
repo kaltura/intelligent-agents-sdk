@@ -55,6 +55,13 @@ test('insightSettings.get fetches by id; requires a non-empty string id', async 
   assert.equal(ff.calls[0].body.id, SETTING.id);
 });
 
+test('insightSettings.get on a missing setting throws insight_setting_not_found', async () => {
+  const { mgmt } = harness([
+    { match: 'insight-settings/get', respond: () => ({ status: 200, body: { objectType: 'KalturaAPIException', code: 'INSIGHT_SETTING_NOT_FOUND', message: 'Insight setting 000000000000000000000000 not found' } }) },
+  ]);
+  await assert.rejects(() => mgmt.insightSettings.get('000000000000000000000000', ADMIN_KS), { code: 'insight_setting_not_found', title: 'INSIGHT_SETTING_NOT_FOUND', status: 200 });
+});
+
 test('insightSettings.list uses the {offset,limit} pager, passes filter + orderBy through', async () => {
   const { mgmt, ff } = harness([
     { match: 'insight-settings/list', respond: () => ({ status: 200, body: { totalCount: 1, objects: [SETTING] } }) },

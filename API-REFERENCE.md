@@ -60,12 +60,14 @@ The SDK wraps every error into a `KalturaError` with a stable `err.code`. Branch
 
 A `KalturaAvatarSession` (and `KalturaAgentSession` while in avatar mode) adds two fields to its errors. `err.phase` names the connect step that failed. `err.retryable` says whether trying again can succeed. See [connect timeouts](docs/architecture-reference/connection-and-handshake.md#full-connect-sequence-state-machine-order).
 
-A missing agent or intellect gets its own `err.code`, whatever the HTTP status:
+A missing agent, intellect, lifecycle rule or insight setting gets its own `err.code`, whatever the HTTP status:
 
 | Situation | `err.code` | Fix |
 |---|-----|-----|
 | The agent does not exist | `agent_not_found` | Check the `agentId` |
 | The agent has no intellect | `intellect_not_found` | Create the intellect first |
+| The lifecycle rule does not exist | `lifecycle_rule_not_found` | Check the id with `lifecycle.list` |
+| The insight setting does not exist | `insight_setting_not_found` | Check the id with `insightSettings.list` |
 
 ### Response headers (debugging and log search)
 

@@ -93,6 +93,8 @@ const CODE_BY_PATTERN = [
   [/AGENT_NOT_FOUND/i, 'agent_not_found'],
   [/CATALOG_ITEM_NOT_FOUND/i, 'catalog_item_not_found'],
   [/INVALID_INSIGHT_SETTINGS/i, 'invalid_insight_settings'],
+  [/LIFECYCLE_RULE_NOT_FOUND/i, 'lifecycle_rule_not_found'],
+  [/INSIGHT_SETTING_NOT_FOUND/i, 'insight_setting_not_found'],
   [/VOICE_DOES_NOT_EXIST_ON_ELEVEN_LABS/i, 'voice_not_found_elevenlabs'],
   [/VOICE_DOES_NOT_EXIST_ON_CARTESIA/i, 'voice_not_found_cartesia'],
   [/Invalid filter type/i, 'invalid_filter'],

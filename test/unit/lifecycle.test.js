@@ -110,6 +110,26 @@ test('lifecycle.create does not check a non-thread objectType', async () => {
   assert.equal(ff.calls.length, 1);
 });
 
+test('lifecycle.create passes a createBadges action through unchanged, even a boolean badge with no score', async () => {
+  const { mgmt, ff } = harness([
+    { match: 'lifecycle/create', respond: (req) => ({ status: 200, body: { id: 'r-badge', ...req.body } }) },
+  ]);
+  const conditions = [
+    { field: 'object.agent_id', operator: 'eq', value: 'agent-1' },
+    { field: 'changed_keys', operator: 'has_any', value: ['quiz_passed', 'points'] },
+  ];
+  const action = {
+    actionType: 'createBadges',
+    badges: [{ badgeId: 'quiz_passed', type: 'boolean', score: 1 }, { badgeId: 'points', type: 'numeric', scoreAction: 'delta' }],
+  };
+  await mgmt.lifecycle.create({ ...CREATE_BODY, eventType: 'analysis_updated', eventConditions: conditions, action }, ADMIN_KS);
+  assert.deepEqual(ff.calls[0].body.action, action);
+
+  const noScore = { actionType: 'createBadges', badges: [{ badgeId: 'q2', type: 'boolean' }] };
+  await mgmt.lifecycle.create({ ...CREATE_BODY, eventType: 'analysis_updated', eventConditions: conditions, action: noScore }, ADMIN_KS);
+  assert.deepEqual(ff.calls[1].body.action, noScore, 'no client pre-flight for badge shape');
+});
+
 test('lifecycle.get fetches by id; requires a non-empty string id', async () => {
   const { mgmt, ff } = harness([
     { match: 'lifecycle/get', respond: (req) => ({ status: 200, body: { ...RULE, id: req.body.id } }) },
@@ -122,14 +142,22 @@ test('lifecycle.get fetches by id; requires a non-empty string id', async () => 
   assert.equal(ff.calls[0].body.id, RULE.id);
 });
 
-test('lifecycle.list uses the {offset,limit} pager (NOT Genie pageIndex/pageSize), passes filter + orderBy through', async () => {
+test('lifecycle.get on a missing rule throws lifecycle_rule_not_found', async () => {
+  const { mgmt } = harness([
+    { match: 'lifecycle/get', respond: () => ({ status: 200, body: { objectType: 'KalturaAPIException', code: 'LIFECYCLE_RULE_NOT_FOUND', message: 'Rule 000000000000000000000000 not found' } }) },
+  ]);
+  await assert.rejects(() => mgmt.lifecycle.get('000000000000000000000000', ADMIN_KS), { code: 'lifecycle_rule_not_found', title: 'LIFECYCLE_RULE_NOT_FOUND', status: 200 });
+});
+
+test('lifecycle.list uses the {offset,limit} pager (NOT Genie pageIndex/pageSize), passes actionTypeIn, eventCondition and orderBy through', async () => {
   const { mgmt, ff } = harness([
     { match: 'lifecycle/list', respond: () => ({ status: 200, body: { totalCount: 1, objects: [RULE] } }) },
   ]);
-  const page = await mgmt.lifecycle.list(ADMIN_KS, { filter: { eventTypeEqual: 'session_ended' }, orderBy: '-createdAt' });
+  const filter = { statusEqual: 'active', actionTypeIn: ['createBadges'], eventCondition: { fieldEqual: 'object.agent_id', operatorEqual: 'eq', value: 'agent-1' } };
+  const page = await mgmt.lifecycle.list(ADMIN_KS, { filter, orderBy: '-createdAt' });
   assert.equal(page.length, 1);
   assert.equal(page[0].id, RULE.id);
-  assert.deepEqual(ff.calls[0].body.filter, { eventTypeEqual: 'session_ended' });
+  assert.deepEqual(ff.calls[0].body.filter, filter);
   assert.equal(ff.calls[0].body.orderBy, '-createdAt');
   assert.ok('offset' in ff.calls[0].body.pager && 'limit' in ff.calls[0].body.pager, 'offset/limit pager, not pageIndex/pageSize');
 });
@@ -317,12 +345,12 @@ test('lifecycle.match posts {objectType, eventType, eventData} and returns match
       }),
     },
   ]);
-  const res = await mgmt.lifecycle.match('thread', 'session_ended', { object: { thread_id: 't1' }, changed_keys: ['SESSIONSUMMARY'] }, ADMIN_KS);
+  const res = await mgmt.lifecycle.match('thread', 'session_ended', { object: { agent_id: 'a1', thread_id: 't1', user_id: 'u1', origin: 0 }, changed_keys: ['SESSIONSUMMARY'] }, ADMIN_KS);
   assert.equal(res.matchedRules.length, 1);
   assert.equal(res.matchedRules[0].isGrouped, true);
   assert.equal(res.matchedRules[0].rules.some((r) => r.id.startsWith('preset__')), true);
   assert.deepEqual(ff.calls[0].body, {
-    objectType: 'thread', eventType: 'session_ended', eventData: { object: { thread_id: 't1' }, changed_keys: ['SESSIONSUMMARY'] },
+    objectType: 'thread', eventType: 'session_ended', eventData: { object: { agent_id: 'a1', thread_id: 't1', user_id: 'u1', origin: 0 }, changed_keys: ['SESSIONSUMMARY'] },
   });
 });
 

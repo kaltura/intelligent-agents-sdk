@@ -57,6 +57,32 @@ test('errorFromOkBody maps INVALID_INSIGHT_SETTINGS to a machine-readable code',
   assert.equal(e.code, 'invalid_insight_settings');
 });
 
+test('errorFromOkBody maps LIFECYCLE_RULE_NOT_FOUND to lifecycle_rule_not_found and keeps the upstream title', () => {
+  const e = errorFromOkBody(
+    { objectType: 'KalturaAPIException', code: 'LIFECYCLE_RULE_NOT_FOUND', message: 'Rule 000000000000000000000000 not found' },
+    '/lifecycle/get',
+  );
+  assert.equal(e.code, 'lifecycle_rule_not_found');
+  assert.equal(e.title, 'LIFECYCLE_RULE_NOT_FOUND');
+  assert.equal(e.status, 200);
+  assert.ok(e.type.endsWith('lifecycle_rule_not_found'));
+});
+
+test('errorFromOkBody maps INSIGHT_SETTING_NOT_FOUND to insight_setting_not_found and keeps the upstream title', () => {
+  const e = errorFromOkBody(
+    { objectType: 'KalturaAPIException', code: 'INSIGHT_SETTING_NOT_FOUND', message: 'Insight setting 000000000000000000000000 not found' },
+    '/insight-settings/get',
+  );
+  assert.equal(e.code, 'insight_setting_not_found');
+  assert.equal(e.title, 'INSIGHT_SETTING_NOT_FOUND');
+  assert.equal(e.status, 200);
+  assert.ok(e.type.endsWith('insight_setting_not_found'));
+});
+
+test('errorFromResponse keeps not_found for a 404 whose message has no upstream code', () => {
+  assert.equal(errorFromResponse({ status: 404, path: '/lifecycle/get', body: { message: 'Lifecycle rule not found' } }).code, 'not_found');
+});
+
 test('missing discriminator (intellect update) maps', () => {
   const e = errorFromResponse({ status: 422, path: '/v1/intellect/update', body: { message: 'union_tag_not_found' } });
   assert.equal(e.code, 'missing_discriminator');

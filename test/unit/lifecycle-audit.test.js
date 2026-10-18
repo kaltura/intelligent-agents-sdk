@@ -4,6 +4,7 @@ import { fakeFetch } from '../fakes/fetch.js';
 import { Management } from '../../src/management/client.js';
 import { auditLifecycleRules, MAX_INSIGHT_SETTINGS_PER_RULE } from '../../src/management/lifecycle-audit.js';
 import { isNotFound } from '../../src/management/audit-report.js';
+import { errorFromOkBody } from '../../src/core/errors.js';
 import { hasAgentScope, scopedAgentIds, changedKeysFilter, hasEmailTrigger, isAgentCondition } from '../../src/management/lifecycle-rules.js';
 
 /**
@@ -49,6 +50,14 @@ const dtcRule = (over = {}) => ({
   ...over,
 });
 
+const badgeRule = (over = {}) => ({
+  id: 'r1', systemName: 'badges', status: 'active', eventType: 'analysis_updated', objectType: 'thread',
+  eventConditions: [...scope('a1'), changed('has_any', ['TOPIC'])],
+  action: { actionType: 'createBadges', badges: [{ badgeId: 'TOPIC', type: 'boolean', score: 1 }] },
+  ...over,
+});
+const badges = (...ids) => ({ actionType: 'createBadges', badges: ids.map((badgeId) => ({ badgeId, type: 'boolean', score: 1 })) });
+
 const TEMPLATE = { id: 't1', status: 'enabled', msgParamsMap: { recipient: { type: 'User' }, SUMMARY: { type: 'String' }, TOPIC: { type: 'String' }, AGENTNAME: { type: 'String' } } };
 
 /** Audit with PRODUCER present and return the codes found on rule `r1`. */
@@ -74,6 +83,7 @@ const TABLE = [
   ['insight_setting_disabled', insightRule({ action: { actionType: 'triggerInsightSettingsKai', insightSettingsIds: ['s3'] } }), {}, ['insight_setting_disabled']],
   ['too_many_insight_settings: over the limit', insightRule({ action: { actionType: 'triggerInsightSettingsKai', insightSettingsIds: Array(MAX_INSIGHT_SETTINGS_PER_RULE + 1).fill('s1') } }), {}, ['too_many_insight_settings']],
   ['too_many_insight_settings: exactly the limit is fine', insightRule({ action: { actionType: 'triggerInsightSettingsKai', insightSettingsIds: Array(MAX_INSIGHT_SETTINGS_PER_RULE).fill('s1') } }), {}, []],
+  ['sendInsightEmail: a {{object.user_id}} recipient is not flagged', emailRule({ action: { actionType: 'sendInsightEmail', recipients: ['{{object.user_id}}'], presetType: 'conversationInsightExample' } }), {}, []],
   ['email_on_session_ended', emailRule({ eventType: 'session_ended' }), {}, ['email_on_session_ended']],
   ['email_unfiltered', emailRule({ eventConditions: scope('a1') }), {}, ['email_unfiltered']],
   ['email_unfiltered: an empty changed_keys list does not count', emailRule({ eventConditions: [...scope('a1'), changed('has_all', [])] }), {}, ['email_unfiltered']],
@@ -95,6 +105,20 @@ const TABLE = [
   ['dtc_without_forms: forms present', dtcRule(), { intellects: { a1: { user_properties_forms: [{ call_stage: 'start', properties: [{ key: 'name', type: 'str' }] }] } } }, []],
   ['dtc_without_forms: unreadable intellect is not flagged', dtcRule(), { intellects: { a1: null } }, []],
   ['dtc_without_forms: skipped without intellects', dtcRule(), {}, []],
+  ['createBadges: a badge on a produced key is clean', badgeRule(), {}, []],
+  ['badge_key_unproduced: no active rule writes the badgeId', badgeRule({ eventConditions: [...scope('a1'), changed('has_any', ['NOPE'])], action: badges('NOPE') }), {}, ['badge_key_unproduced']],
+  ['badge_key_unproduced: keys are case-sensitive', badgeRule({ action: badges('topic') }), {}, ['badge_key_unproduced']],
+  ['badge_key_unproduced: a producer on another agent does not count', badgeRule({ eventConditions: [...scope('a2'), changed('has_any', ['TOPIC'])] }), {}, ['badge_key_unproduced']],
+  ['badge_key_unproduced: one finding lists every missing badge', badgeRule({ action: badges('NOPE', 'NADA', 'TOPIC') }), {}, ['badge_key_unproduced']],
+  ['badges_unfiltered: no changed_keys filter on analysis_updated', badgeRule({ eventConditions: scope('a1') }), {}, ['badges_unfiltered']],
+  ['badges_unfiltered: a single-key contains filter counts', badgeRule({ eventConditions: [...scope('a1'), changed('contains', 'TOPIC')] }), {}, []],
+  ['badges_unfiltered: a contains filter with an empty key does not count', badgeRule({ eventConditions: [...scope('a1'), changed('contains', '')] }), {}, ['badges_unfiltered']],
+  ['badge_key_unproduced: still checked with a contains filter', badgeRule({ eventConditions: [...scope('a1'), changed('contains', 'NOPE')], action: badges('NOPE') }), {}, ['badge_key_unproduced']],
+  ['email_unfiltered: a single-key contains filter counts', emailRule({ eventConditions: [...scope('a1'), changed('contains', 'SUMMARY')] }), {}, []],
+  ['changed_keys_unproduced: contains with an unproduced key', emailRule({ eventConditions: [...scope('a1'), changed('contains', 'NOPE')] }), {}, ['changed_keys_unproduced']],
+  ['badges_unfiltered: not flagged on other event types', badgeRule({ eventType: 'session_ended', eventConditions: scope('a1') }), {}, []],
+  ['createBadges: odd badges input does not throw', badgeRule({ action: { actionType: 'createBadges', badges: 'x' } }), {}, []],
+  ['createBadges: entries without a string badgeId are ignored', badgeRule({ action: { actionType: 'createBadges', badges: [null, { type: 'boolean' }, { badgeId: 5 }] } }), {}, []],
   ['rule_disabled: only that finding', insightRule({ status: 'disabled', eventConditions: [], action: { actionType: 'triggerInsightSettingsKai', insightSettingsIds: ['gone'] } }), {}, ['rule_disabled']],
   ['clean email rule reports nothing', emailRule(), {}, []],
   ['clean insight rule reports nothing', insightRule(), {}, []],
@@ -113,6 +137,8 @@ test('auditLifecycleRules: severities are error for broken rules, warn for proba
   assert.equal(sev(insightRule({ action: { actionType: 'triggerInsightSettingsKai', insightSettingsIds: Array(21).fill('s1') } }), 'too_many_insight_settings'), 'error');
   assert.equal(sev(insightRule({ eventConditions: [] }), 'unscoped_rule'), 'warn');
   assert.equal(sev(emailRule({ eventConditions: scope('a1') }), 'email_unfiltered'), 'warn');
+  assert.equal(sev(badgeRule({ eventConditions: scope('a1') }), 'badges_unfiltered'), 'warn');
+  assert.equal(sev(badgeRule({ action: badges('NOPE') }), 'badge_key_unproduced'), 'warn');
   assert.equal(sev(insightRule({ status: 'disabled' }), 'rule_disabled'), 'info');
   assert.equal(sev(insightRule({ eventConditions: scope('a1', 'a1') }), 'duplicate_agent_ids'), 'info');
 });
@@ -135,8 +161,17 @@ test('auditLifecycleRules: a disabled producer or a disabled insight setting wri
 test('auditLifecycleRules: an overlapping triggerDtcKai rule skips the key checks', () => {
   const dtc = dtcRule({ id: 'd1' });
   assert.deepEqual(codesFor(emailRule({ eventConditions: [...scope('a1'), changed('has_all', ['NOPE'])] }), {}, [dtc]), []);
+  assert.deepEqual(codesFor(badgeRule({ action: badges('NOPE') }), {}, [dtc]), []);
   // A DTC rule on another agent does not hide the problem.
   assert.deepEqual(codesFor(emailRule({ eventConditions: [...scope('a1'), changed('has_all', ['NOPE'])] }), {}, [PRODUCER, dtcRule({ id: 'd1', eventConditions: scope('a2') })]), ['changed_keys_unproduced']);
+});
+
+test('auditLifecycleRules: badge_key_unproduced message names each missing badgeId', () => {
+  const findings = auditLifecycleRules([badgeRule({ action: badges('NOPE', 'NADA', 'TOPIC') }), PRODUCER], { insightSettings: SETTINGS, agents: AGENTS })
+    .filter((f) => f.ruleId === 'r1');
+  assert.equal(findings.length, 1);
+  assert.ok(findings[0].message.includes('NOPE') && findings[0].message.includes('NADA'));
+  assert.ok(!findings[0].message.includes('TOPIC'));
 });
 
 test('auditLifecycleRules: preset rules are never reported, and odd input does not throw', () => {
@@ -168,10 +203,16 @@ test('isNotFound accepts a 404, a *not_found code, and a *_NOT_FOUND title', () 
   assert.equal(isNotFound({ status: 404 }), true);
   assert.equal(isNotFound({ code: 'not_found' }), true);
   assert.equal(isNotFound({ code: 'api_exception', status: 200, title: 'TEMPLATE_NOT_FOUND' }), true);
-  assert.equal(isNotFound({ code: 'api_exception', status: 200, title: 'LIFECYCLE_RULE_NOT_FOUND' }), true);
+  assert.equal(isNotFound({ code: 'lifecycle_rule_not_found', status: 200, title: 'LIFECYCLE_RULE_NOT_FOUND' }), true);
+  assert.equal(isNotFound({ code: 'insight_setting_not_found', status: 200, title: 'INSIGHT_SETTING_NOT_FOUND' }), true);
   assert.equal(isNotFound({ code: 'api_exception', status: 200, title: 'SOMETHING_ELSE' }), false);
   assert.equal(isNotFound({ status: 500 }), false);
   assert.equal(isNotFound(undefined), false);
+});
+
+test('isNotFound is true for the SDK error a missing rule produces', () => {
+  assert.equal(isNotFound(errorFromOkBody({ objectType: 'KalturaAPIException', code: 'LIFECYCLE_RULE_NOT_FOUND', message: 'x' }, '/lifecycle/get')), true);
+  assert.equal(isNotFound(errorFromOkBody({ objectType: 'KalturaAPIException', code: 'INSIGHT_SETTING_NOT_FOUND', message: 'x' }, '/insight-settings/get')), true);
 });
 
 // ---- lifecycle.audit (wire) ----

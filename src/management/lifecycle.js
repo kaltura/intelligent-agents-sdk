@@ -4,7 +4,7 @@
  * objectType, eventConditions[], action}`, when a matching event
  * fires (e.g. a thread's `session_ended`), every active rule (including
  * preset rules you did not create, see {@link
- * Lifecycle#match}) is evaluated and its `action` runs. Three
+ * Lifecycle#match}) is evaluated and its `action` runs. Four
  * action shapes are available to callers, passed through as plain objects
  * (not built by the SDK):
  *
@@ -18,17 +18,26 @@
  *   skipped (the rest of the action still fires).
  * - `{actionType:'sendInsightEmail', recipients:string[], templateId?:string,
  *   presetType?:string}` — only fires on `eventType:'analysis_updated'`; a
- *   `session_ended` rule with this action type does nothing.
+ *   `session_ended` rule with this action type does nothing. A `recipients`
+ *   entry can be a `{{path}}` into the event, e.g. `{{object.user_id}}`. The
+ *   action has no `subject` field; set it in the template.
  * - `{actionType:'triggerDtcKai'}` — takes no caller-supplied fields.
  *   Extracts one insight per lead-capture field configured on the target
  *   intellect (`intellectConfig.user_properties_forms`) and is
  *   automatically skipped when none are configured.
+ * - `{actionType:'createBadges', badges:Array<{badgeId:string,
+ *   type:'boolean'|'numeric', score?:number, scoreAction?:'upsert'|'delta'}>}`:
+ *   gives the conversation's user a badge. `badgeId` is the insight key
+ *   whose value sets the badge. A `boolean` badge needs `score` and is given
+ *   when the insight is true. A `numeric` badge takes its score from the
+ *   insight value and must not set `score`. `scoreAction` sets (`upsert`) or
+ *   adds to (`delta`) the user's score. Add a `changed_keys` filter on the
+ *   badge keys, as `lifecycle.audit` advises (`badges_unfiltered`).
  *
- * Every session also gets one fixed, built-in summary insight for free —
- * it comes from a preset rule visible via {@link
- * Lifecycle#match} but never creatable, updatable, or customizable by a
- * caller. See `docs/lifecycle/README.md` for the full explanation. Mounted
- * at `mgmt.lifecycle`.
+ * Every session also gets one fixed, built-in summary insight for free. It
+ * comes from a built-in rule (id starts with `preset__`) that
+ * {@link Lifecycle#match} lists but a caller cannot create, update or
+ * customize. See `docs/lifecycle/README.md`. Mounted at `mgmt.lifecycle`.
  */
 import { paginate } from './paginate.js';
 import { uuidv4, meta } from '../core/ids.js';
@@ -103,8 +112,9 @@ export class Lifecycle {
    * Finding codes: `unscoped_rule`, `agent_not_found`, `duplicate_agent_ids`,
    * `insight_setting_missing`, `insight_setting_disabled`,
    * `too_many_insight_settings`, `email_on_session_ended`, `email_unfiltered`,
-   * `changed_keys_unproduced`, `template_missing_or_deleted`,
-   * `template_tokens_unproduced`, `dtc_without_forms`, `rule_disabled`.
+   * `changed_keys_unproduced`, `badges_unfiltered`, `badge_key_unproduced`,
+   * `template_missing_or_deleted`, `template_tokens_unproduced`,
+   * `dtc_without_forms`, `rule_disabled`.
    * @param {string} ks (admin)
    * @param {{agentIds?:string[], pageSize?:number}} [opts] `agentIds` keeps only findings for rules that run for one of those agents, including rules with no agent scope.
    * @returns {Promise<import('./audit-report.js').AuditReport>}
@@ -176,6 +186,10 @@ export class Lifecycle {
    * `has_any` and a non-empty array of keys. Otherwise it sends on every
    * analysis update, so the SDK throws `code:'lifecycle_email_unfiltered'`.
    * Pass `{ emailOnEveryUpdate: true }` to send on every update on purpose.
+   *
+   * Each `eventConditions[].operator` is one of `eq`, `neq`, `gt`, `lt`, `in`,
+   * `contains`, `has_any`, `has_all` or `not_empty`. A `value` of the wrong
+   * type returns 400. See `docs/lifecycle/README.md`.
    * @param {{name:string, systemName:string, eventType:string, objectType:string, eventConditions?:Array<{field:string,operator:string,value:unknown}>, action:object}} body
    * @param {string} ks (admin)
    * @param {{partnerWide?:boolean, emailOnEveryUpdate?:boolean}} [opts] `partnerWide:true` skips the agent-scope check. `emailOnEveryUpdate:true` skips the email-trigger check
@@ -216,8 +230,9 @@ export class Lifecycle {
    * List lifecycle rules for the authenticated partner. READ. Async-iterable
    * + awaitable (first page) — mirrors {@link Avatars#list}'s `{offset,limit}`
    * pager (agentic-hosted, NOT the Genie `{pageIndex,pageSize}` convention).
+   * There is no event-type filter. Check `rule.eventType` on the results.
    * @param {string} ks (admin)
-   * @param {{filter?:{eventTypeEqual?:string, statusEqual?:string, systemNameEqual?:string}, orderBy?:'+createdAt'|'-createdAt', pageSize?:number}} [opts]
+   * @param {{filter?:{statusEqual?:string, systemNameEqual?:string, actionTypeIn?:string[], eventCondition?:{fieldEqual:string, operatorEqual?:string, operatorIn?:string[], value:string|number}}, orderBy?:'+createdAt'|'-createdAt', pageSize?:number}} [opts]
    */
   list(ks, opts = {}) {
     this._.assertAdmin(ks, 'lifecycle.list');
@@ -292,14 +307,17 @@ export class Lifecycle {
   /**
    * Dry-run event matching: "if this event happened right now, which rules
    * would fire?" READ. `eventData` is `{object?:object, changed_keys?:string[]}`
-   * — NOT a bare `object` field at the top level. For `objectType:'thread'`
-   * (both `session_ended` and `analysis_updated`), `object` needs all 3 of
-   * `agent_id`, `thread_id`, `user_id` as strings. Omitting any one returns a
-   * 400 that names the missing field.
+   * (not a bare `object` field at the top level). For `objectType:'thread'`
+   * (both `session_ended` and `analysis_updated`), `object` needs `agent_id`,
+   * `thread_id` and `user_id` (strings) and `origin` (an integer, `0` for a
+   * standard conversation). Omitting any one returns a 400 that names the
+   * missing field. Only `origin: 0` runs actions: with any other `origin`
+   * the response lists no rules.
    *
-   * The response can include rules the caller never created. The preset rule
-   * `preset__summary_on_session_ended` matches every `session_ended`/`thread`
-   * event and shows up in `matchedRules[]` alongside the caller's own.
+   * The response can include built-in rules the caller never created (ids
+   * start with `preset__`). `preset__summary_on_session_ended` matches every
+   * `session_ended`/`thread` event and shows up in `matchedRules[]` alongside
+   * the caller's own.
    * Related rules are grouped: `matchedRules[].isGrouped` is `true` when two
    * or more rules share a `groupKey` and dispatch as one composite action.
    * Example mixed response:
