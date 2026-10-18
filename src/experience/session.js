@@ -1164,8 +1164,10 @@ export class KalturaAvatarSession extends Emitter {
       releaseHandle();
       throw err;
     }
-    const ready = await playable;
-    releaseHandle();
+    // Cancelable like the negotiation above: a refusal (or a teardown) while the first frame is
+    // awaited rejects at once, with the refusal's own error.
+    let ready;
+    try { ready = await this._cancelable(playable, cancelPlayable); } finally { releaseHandle(); }
     // Cancelled while waiting for the first frame: teardown or a cold rebuild closed this peer.
     // Succeeding here would report a connected session that has no media.
     if (ready === undefined || pc !== this._pcStv) throw connectAbortedErr();
@@ -1236,7 +1238,7 @@ export class KalturaAvatarSession extends Emitter {
       await this._subscribeStv(overall, 1);
     } catch (err) {
       const e = /** @type {any} */ (err);
-      if (e?.title === 'connect aborted' || e?.code === 'timeout' || e?.code === 'ice_failed' || overall?.expired()) throw err;
+      if (e?.title === 'connect aborted' || e?.code === 'timeout' || e?.code === 'ice_failed' || e?.code === 'unsupported_client' || overall?.expired()) throw err;
       this.emit('warning', { code: 'media_no_video', message: 'No video frame arrived and the re-subscribe failed. The conversation continues with audio.', detail: String(e?.message || e) });
       this.emit('mediaReady', { mode: 'video', videoWidth: 0, videoHeight: 0, degraded: true });
     }

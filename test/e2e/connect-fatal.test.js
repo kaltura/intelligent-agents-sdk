@@ -135,6 +135,48 @@ test('unsupportedClient while the WHEP request is in flight rejects at once and 
   assert.equal(session._whepLocation, null);
 }));
 
+test('unsupportedClient after the microphone step, while the first frame is awaited, rejects at once', trapped(async () => {
+  const videoEl = new FakeVideoEl({ rvfc: true });
+  const { session, socket } = newSession({ videoEl, cfg: { timeouts: SHORT } });
+  scriptHappyPath(socket);
+  const connecting = session.connect();
+  const settled = timedReject(() => connecting);
+  await until(() => session._timings?.asrReady != null && session._timings?.whepAnswer != null, 'ASR ready and WHEP answered, no frame yet');
+  await delay(20);
+  socket.server('unsupportedClient', { code: 'X' });
+  videoEl.fireFrame();   // a frame after the refusal must not let connect() succeed
+  const { err, ms } = await settled;
+  assertRefused(err, ms, 'first-frame wait');
+  assert.equal(session.state, 'error');
+  assert.equal(session._pendingAwaits.size, 0);
+  assert.equal(session._cancelStvPlayable, null, 'the first-frame gate is released');
+}));
+
+test('unsupportedClient during the first-frame re-subscribe rejects at once, with no degraded media', trapped(async () => {
+  const posts = [];
+  const fetch = (url, init) => {
+    if (init?.method === 'DELETE') return Promise.resolve({ ok: true, status: 200 });
+    posts.push(init?.signal);
+    if (posts.length > 1) return new Promise(() => { /* the re-subscribe is never answered */ });
+    return Promise.resolve(lateAnswer('/whep/resource/first'));
+  };
+  const videoEl = new FakeVideoEl({ rvfc: true });
+  const { session, socket } = newSession({ videoEl, fetch, cfg: { timeouts: { ...SHORT, firstFrame: 100 } } });
+  scriptHappyPath(socket);
+  const seen = [];
+  session.on('warning', (w) => seen.push(w.code));
+  session.on('mediaReady', (m) => seen.push(`mediaReady:${m.degraded ? 'degraded' : 'ok'}`));
+  const connecting = session.connect();
+  const settled = timedReject(() => connecting);
+  await until(() => posts.length === 2 && session._timings?.asrReady != null, 'ASR ready, re-subscribe request out');
+  socket.server('unsupportedClient', { code: 'X' });
+  const { err, ms } = await settled;
+  assertRefused(err, ms, 're-subscribe');
+  assert.equal(posts[1]?.aborted, true, 'the re-subscribe request was aborted');
+  assert.deepEqual(seen, [], 'no media_no_video warning and no degraded mediaReady');
+  assert.equal(session.state, 'error');
+}));
+
 test('the error event fires once and before the rejection', trapped(async () => {
   const { session, socket } = newSession({ cfg: { timeouts: SHORT } });
   scriptHappyPath(socket);
