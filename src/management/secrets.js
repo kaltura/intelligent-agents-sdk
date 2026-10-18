@@ -174,7 +174,7 @@ export class IntellectSecrets {
    * prompts and MCP server config names a known secret, and report unused
    * secrets. It does not see tools, because an intellect links them by
    * `tool_ids`. {@link IntellectConfig#audit} also scans the linked tools.
-   * READ — no state change.
+   * READ. No state change.
    * Reports unresolved refs in the result and does not throw for them (an OAuth
    * bootstrap may add the secret in a later call).
    * @param {number} configId

@@ -423,7 +423,7 @@ function buildResponseFields(cfg, tool, kind) {
  * `{iterate_on, content, link}`: `iterate_on` is the dot-path to a list, and
  * `content` and `link` are dot-paths read from each item.
  * `waitForResponse` (optional boolean) is sent as `wait_for_response` and kept by
- * `tools.update`. PURE — returns a wire-ready
+ * `tools.update`. PURE. Returns a wire-ready
  * {@link GenieToolConfig}; throws {@link KalturaError} on bad input.
  *
  * `{argName}` in `request.url`, and in `request.body` (each string value of an
@@ -543,7 +543,7 @@ export function clientToolReadiness(body) {
  * {@link import('../core/stream.js').parseToolCall} headless) and runs
  * whatever JS it wants — navigate a deck (`navigate_to_slide`), show a widget,
  * call a page function. It makes NO server-side call at all: no `request`
- * block and no echo endpoint — the model calls it, the
+ * block and no echo endpoint. The model calls it, the
  * backend emits the `type:"tool"` segment (with `tool_metadata.id`, see
  * {@link import('../core/stream.js').parseToolCall}), and that's the entire
  * server-side contract.
