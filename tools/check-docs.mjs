@@ -1126,6 +1126,31 @@ describe('16. Docs accuracy', () => {
       assert.ok(jsdoc.includes(`\`${op}\``), `lifecycle.js does not mention operator ${op}`);
     }
   });
+
+  test('docs never say submitStructuredDataForm feeds the agent', () => {
+    const re = /(submitStructuredDataForm|setFormLeadInfo)[^\n]*(feeds|is sent to the (agent|model)|reaches the (agent|model)|tells the (agent|model))/i;
+    const hits = scanFiles().filter((f) => f.endsWith('.md')).flatMap((f) => read(f).split('\n')
+      .map((l, i) => [i + 1, l]).filter(([, l]) => re.test(l)).map(([n]) => `${f}:${n}`));
+    assert.deepEqual(hits, [], `a form submission only records the values. Fix: ${hits.join(', ')}`);
+    assert.match(read('docs/STRUCTURED-DATA-FORMS.md'), /records the submission/);
+  });
+
+  test('the GenUI widget name literal in code and in docs is the same single value', () => {
+    const lit = read('src/experience/genui/parse.js').match(/GENUI_WIDGET_NAME = '([^']+)'/)?.[1];
+    assert.ok(lit, 'GENUI_WIDGET_NAME not found in parse.js');
+    const found = new Set(DOCS.flatMap((f) => [...read(f).matchAll(/unisphere\.widget\.[\w.-]+/g)].map((m) => m[0])));
+    assert.deepEqual([...found], [lit], `docs name a widget name other than ${lit}`);
+  });
+
+  test('docs keep out wording the live checks did not back', () => {
+    const rules = [
+      [/userScreenShareAvailableNotStarted/, 'unsupported socket event name'],
+      [/\btool[^\n]*\b30 ?s(econds?)?\b[^\n]*\b(timeout|clamp|cap)\b/i, 'a 30 s tool timeout cap'],
+    ];
+    const hits = scanFiles().filter((f) => f.endsWith('.md')).flatMap((f) => read(f).split('\n')
+      .flatMap((l, i) => rules.filter(([re]) => re.test(l)).map(([, why]) => `${f}:${i + 1} (${why})`)));
+    assert.deepEqual(hits, [], `unbacked wording:\n  ${hits.join('\n  ')}`);
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════
