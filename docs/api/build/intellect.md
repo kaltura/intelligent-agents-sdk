@@ -124,7 +124,7 @@ A `condition` switches a skill, a prompt block or a tool on only while it is tru
 
 | Where | Set with |
 |---|---|
-| Skill | `condition` in a `skill_ids` entry, or on the skill itself with `skills.add` / `skills.update`. Set it in one place, not both |
+| Skill | `condition` in a `skill_ids` entry, or on the skill itself with `skills.add` / `skills.update` |
 | Prompt block | `condition` in a `prompts[]` block |
 | Tool | `condition` in the tool config, e.g. `tools.api({ ..., condition })` |
 

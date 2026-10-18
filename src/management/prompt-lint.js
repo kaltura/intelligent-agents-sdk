@@ -141,12 +141,17 @@ const PLAIN_NAME = /^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$/;
 const NUMBER = /^\d[\d_]*(\.\d[\d_]*)?([eE][+-]?\d[\d_]*)?$/;
 const EXPR_KEYWORDS = new Set(['and', 'or', 'not', 'in', 'is', 'if', 'else', 'true', 'false', 'none', 'True', 'False', 'None']);
 const EXPR_LITERALS = new Set(['true', 'false', 'none', 'True', 'False', 'None']);
+const KWARG_AHEAD = /\s*=(?!=)/y;
+const CALL_AHEAD = /\s*\(/y;
 const TOKEN = /\s+|(?<str>'')|(?<num>(?<![\w.])\d(?:[\w.]|(?<=[eE])[+-])*)|(?<name>[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)|(?<close>[)\]])|(?<op>[\s\S])/gy;
 
 /**
  * The variable names a Jinja `{{ ... }}` body reads, in order of appearance,
  * without repeats. Filter, test, function and keyword names are not variables.
  * `problem` is set when the body is not a valid expression. PURE, one linear pass.
+ * Limits: this is a shape check, not a Jinja parser. It accepts some invalid
+ * expressions (`a ? b : c`, `x if y` without `else`) and flags `a-b` (no spaces)
+ * as invalid although Jinja reads it as subtraction. Write `a - b`.
  * @param {string} raw trimmed body, never empty
  * @returns {{names: string[], problem: 'unbalanced'|'invalid'|null}}
  */
@@ -154,8 +159,8 @@ function expressionNames(raw) {
   const s = stripQuoted(raw);
   if (/['"]/.test(s.replace(/''/g, ''))) return { names: [], problem: 'unbalanced' };
   if (/[A-Za-z0-9_]-[A-Za-z_]/.test(s)) return { names: [], problem: 'invalid' };
-  /** @type {string[]} */
-  const names = [];
+  /** @type {Set<string>} */
+  const names = new Set();
   /** @type {string[]} */
   const stack = [];
   let operand = false;
@@ -176,7 +181,7 @@ function expressionNames(raw) {
     if (g.name !== undefined) {
       const word = g.name;
       if (m.index > 0 && s[m.index - 1] === '.') { operand = true; afterIs = false; afterPipe = false; continue; } // attribute after `]` or `)`
-      const rest = s.slice(TOKEN.lastIndex);
+      const end = TOKEN.lastIndex;
       if (EXPR_KEYWORDS.has(word)) {
         if (word === 'is') afterIs = true;
         else if (!(word === 'not' && afterIs)) afterIs = false;
@@ -187,14 +192,16 @@ function expressionNames(raw) {
       if (afterIs || afterPipe) { afterIs = false; afterPipe = false; operand = false; continue; }
       if (operand) invalid = true;
       operand = true;
-      if (/^\s*=(?!=)/.test(rest)) continue; // keyword argument
+      KWARG_AHEAD.lastIndex = end;
+      if (KWARG_AHEAD.test(s)) continue; // keyword argument
       let chain = word;
-      if (/^\s*\(/.test(rest)) {
+      CALL_AHEAD.lastIndex = end;
+      if (CALL_AHEAD.test(s)) {
         const dot = chain.lastIndexOf('.');
         if (dot < 0) continue; // function call
         chain = chain.slice(0, dot);
       }
-      if (!names.includes(chain)) names.push(chain);
+      names.add(chain);
       continue;
     }
     afterIs = false;
@@ -212,7 +219,7 @@ function expressionNames(raw) {
   }
   if (stack.length) return { names: [], problem: 'unbalanced' };
   if (invalid) return { names: [], problem: 'invalid' };
-  return { names, problem: null };
+  return { names: [...names], problem: null };
 }
 
 /**
@@ -297,7 +304,8 @@ export function validatePromptVars(text, opts = {}) {
 
   /** @param {string} name */
   const classify = (name) => {
-    if (!seen.has(name)) {
+    const first = !seen.has(name);
+    if (first) {
       seen.add(name);
       all.push(name);
     }
@@ -306,14 +314,14 @@ export function validatePromptVars(text, opts = {}) {
     const ns = dot >= 0 ? name.slice(0, dot) : '';
     const isSystem = SYS_VAR_SET.has(name) || (ns && SYS_NS_SET.has(ns));
     if (isSystem) {
-      if (!system.includes(name)) system.push(name);
+      if (first) system.push(name);
       return;
     }
 
     if (toolVars.has(name)) return; // set by a `var` tool on an earlier turn, not sent by the client
 
     // A client variable.
-    if (!client.includes(name)) client.push(name);
+    if (first) client.push(name);
     if (!allow) {
       findings.push({
         severity: 'error',

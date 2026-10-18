@@ -74,8 +74,9 @@ export class Skills {
    * entity). `name` and `description` are required and validated BEFORE any
    * network call; `instructions` is optional (stored `null` when omitted).
    * `condition` is an optional bare expression such as `sys__avatar_enabled`.
-   * The skill applies only while it is true. It is checked before any network call, and a template form like
-   * `{{ x }}` throws `bad_request`. `null` or `undefined` is not sent.
+   * The skill applies only while it is true. It is checked before any network
+   * call, and a template form like `{{ x }}` throws `bad_request`. `null` or
+   * `undefined` is not sent.
    *
    * Also callable as {@link Skills#create} — same method, either name works.
    * @param {{name:string, description:string, instructions?:string, condition?:string|null}} body

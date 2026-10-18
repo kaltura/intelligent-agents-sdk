@@ -20,7 +20,13 @@ await mgmt.intellectConfig.setUserPropertiesForms(configId, [
 ```
 <!-- /nova-target -->
 
-`callStage` (sent as `call_stage`) is one of `start` / `middle` / `end` (`CALL_STAGES` in `src/management/intellect-config.js`). Each property is `{key, type}`. A form can also carry `title` and `secondaryTitle` (sent as `secondary_title`). Both are stored with the form. Read-back forms carry an integer `id`. An `id` you pass is sent as-is. When you omit it and exactly one stored form has the same `callStage`, the SDK sends that form's `id`. `type` is one of `FORM_FIELD_TYPES`, in two groups:
+`callStage` (sent as `call_stage`) is one of `start` / `middle` / `end` (`CALL_STAGES` in `src/management/intellect-config.js`). Each property is `{key, type}`.
+
+| Form field | Behavior |
+|---|---|
+| `title`, `secondaryTitle` | Optional. Stored with the form. `secondaryTitle` is sent as `secondary_title`. |
+| `id` | Read-back forms carry an integer `id`. An `id` you pass is sent as-is. When you omit it and exactly one stored form has the same `callStage`, the SDK sends that form's `id`. |
+| `type` | One of `FORM_FIELD_TYPES`, in two groups (below). |
 
 | Type kind | Values |
 |---|---|

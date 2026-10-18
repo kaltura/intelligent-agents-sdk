@@ -733,3 +733,17 @@ test('assembleSystemPrompt: renders every type, lists conditional keys, and says
   assert.match(r._meta.note, /conditions are not evaluated/i);
   assert.deepEqual(assembleSystemPrompt({ prompts: [{ key: 'a', headerTemplate: 'A', type: 'custom', value: 'x' }] }).conditionalKeys, []);
 });
+
+test('validatePromptVars: an expression with thousands of distinct names stays fast', () => {
+  const names = Array.from({ length: 50000 }, (_, i) => `v${i}`);
+  const t0 = Date.now();
+  const r = validatePromptVars(`{{ ${names.join(' + ')} }}`, { knownVars: names });
+  assert.ok(Date.now() - t0 < 1500, 'expression scan must not be quadratic');
+  assert.equal(r.variables.length, 50000);
+});
+
+test('validatePromptVars: spaced subtraction is accepted', () => {
+  const r = validatePromptVars('{{ a - b }}');
+  assert.deepEqual(r.variables, ['a', 'b']);
+  assert.equal(r.ok, true);
+});
