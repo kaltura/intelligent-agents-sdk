@@ -9,12 +9,14 @@
  * knowable client-side (a minted {@link Token}'s recorded `kind`, or a
  * plaintext/test KS). Conversation methods call `assertConversation`. Methods
  * a per-user conversation or agent token may also call on its own threads
- * (`threads.*` except `push`, `messages.list/get/share`) call
+ * (`threads.*` except `push`, `messages.list/get/share`,
+ * `followups.getSuggested`, `knowledge.search`) call
  * `assertUserOrAdmin`, which accepts admin, conversation and agent tokens and
- * rejects widget tokens. A raw encrypted KS string can't be inspected this
- * way, so every guard passes it through and the server decides. Every `Token`
- * the SDK mints is checked reliably, so mixing KS types by accident throws
- * `wrong_token_scope` before any network call.
+ * rejects widget tokens. A raw encrypted KS string can't be inspected. The typed
+ * guards still refuse the raw string of a widget token this instance minted
+ * recently (its newest 32 widget mints). Any other raw string passes and the
+ * server decides. Every `Token` the SDK mints is checked reliably, so mixing KS
+ * types by accident throws `wrong_token_scope` before any network call.
  */
 import { Http } from '../core/http.js';
 import { Sessions, makeAuditEmitter } from '../core/session.js';
@@ -59,7 +61,7 @@ const CONFIG_LOOKUP_USER_ID = 'intelligent-agents-sdk';
  * @property {(uploadTokenId:string, fd:FormData, ks:KsLike)=>Promise<any>} ovpUpload Upload file bytes to an upload token.
  * @property {(path:string, body:unknown, ks:KsLike, opts?:{idempotencyKey?:string})=>Promise<{data:any,requestId:string}>} messaging Bearer-authed (not `Authorization: KS …`) call on the Kaltura Messaging API — see email-templates.js.
  * @property {(ks:KsLike, where:string)=>string} assertAdmin Throws `wrong_token_scope` for a non-admin token. Returns the raw KS string.
- * @property {(ks:KsLike, where:string)=>string} assertUserOrAdmin Throws `wrong_token_scope` for a widget token. Accepts admin, conversation and agent tokens. Returns the raw KS string.
+ * @property {(ks:KsLike, where:string)=>string} assertUserOrAdmin Throws `wrong_token_scope` for a widget token, or for the raw KS string of a widget token this instance minted recently. Accepts admin, conversation and agent tokens. Returns the raw KS string.
  * @property {(ks:KsLike, where:string)=>string} assertConversation Throws `wrong_token_scope` for an admin token. Returns the raw KS string.
  * @property {(ks:KsLike, where:string)=>string} assertAny Throws `bad_request` if `ks` is empty. Accepts any kind. Returns the raw KS string.
  * @property {(type:string, outcome:string, fields?:object)=>void} audit Redacted structured security/audit event emitter (no-op if the caller passed no `onAuditEvent` hook).
@@ -77,7 +79,7 @@ export class Management {
    * @param {string} [cfg.messagingUrl]  Overrides the region value. If the region has no messaging service and you pass none, `emailTemplates.*` throws `region_unavailable`.
    * @param {boolean} [cfg.allowInsecureTransport]  Allow an http:// base URL to a public host (testing only, warns). http to localhost or a private host always just warns.
    * @param {typeof fetch} [cfg.fetch]
-   * @param {(level:string,msg:string,data?:unknown)=>void} [cfg.logger]   Verbose, redacted DEBUG sink (chatty). Also receives insecure-transport warnings (else `console.warn`).
+   * @param {(level:string,msg:string,data?:unknown)=>void} [cfg.logger]   Verbose, redacted DEBUG sink (chatty). Also receives insecure-transport and long-KS warnings (else `console.warn`).
    * @param {(info:import('../core/response-headers.js').ResponseInfo)=>void} [cfg.onResponse]   Called for every received response, success or failure, once per attempt, with `{ method, path, status, ok, attempt, requestId, headers }`. `headers` holds the diagnostic response headers (`x-*`, `via`, `server`, ...), redacted. A throwing hook is ignored. Failures also carry them on `err.headers`.
    * @param {(event:object)=>void} [cfg.onAuditEvent]   Discrete, redacted SECURITY events for your SIEM (token.mint/token.revoke/guard.reject/auth.fail/privileged.call). No-op if omitted (zero cost). NIST AU-2/AU-3, SOC 2 CC7.
    * @param {() => (string|Promise<string>)} [cfg.getAdminSecret]   Vault/KMS callback fetched per-mint (never retained); takes precedence over adminSecret.
@@ -99,6 +101,8 @@ export class Management {
     /** @type {Sessions} */
     this.sessions = new Sessions({
       partnerId, adminSecret: cfg.adminSecret, getAdminSecret: cfg.getAdminSecret, ovpUrl, http, onAuditEvent: cfg.onAuditEvent,
+      // A long KS is not a security event, so it skips the [security] prefix.
+      warn: (m) => (cfg.logger ? cfg.logger('warn', m) : console.warn(m)),
       // createAgentToken without configId: read the agent's intellect id. Not cached,
       // so a repointed agent never mints the old persona. Runs after this.agents exists.
       // The lookup admin token is short-lived since it is used once, and read-only.
@@ -107,6 +111,8 @@ export class Management {
         return resolveIntellectId((await this.agents.get(agentId, admin.ks)).intellect);
       },
     });
+
+    const mintedKind = (raw) => this.sessions._mintedKindOf(raw);
 
     /** @type {Ctx} */
     const ctx = {
@@ -198,9 +204,9 @@ export class Management {
       // `null` when the region has no messaging service: fail before any network call
       // rather than send this region's KS to another region's host.
       messaging: (path, body, ks, opts) => !messagingUrl ? Promise.reject(regionUnavailable('messagingUrl', 'emailTemplates', region)) : http.request({ method: 'POST', url: `${messagingUrl}/${path}`, headers: { Authorization: `Bearer ${ksString(ks)}` }, body, json: true, idempotencyKey: opts?.idempotencyKey }),
-      assertAdmin: (ks, where) => assertKind(ks, 'admin', where, audit),
-      assertConversation: (ks, where) => assertKind(ks, 'conversation', where, audit),
-      assertUserOrAdmin: (ks, where) => assertKind(ks, 'userOrAdmin', where, audit),
+      assertAdmin: (ks, where) => assertKind(ks, 'admin', where, audit, mintedKind),
+      assertConversation: (ks, where) => assertKind(ks, 'conversation', where, audit, mintedKind),
+      assertUserOrAdmin: (ks, where) => assertKind(ks, 'userOrAdmin', where, audit, mintedKind),
       assertAny: (ks, where) => {
         const raw = ksString(ks);
         if (!raw || typeof raw !== 'string') {
@@ -359,23 +365,26 @@ export function ksString(ks) {
 /**
  * Assert a KS is of the expected kind, then return the raw KS string for the call.
  * Throws a redacted error (the KS is never echoed). Resolution of "kind" is, in
- * order: (1) a minted {@link Token}'s recorded `kind`, always checked; (2) plaintext
- * privileges if present (test/unencrypted tokens); (3) a raw encrypted KS string,
- * whose privileges aren't client-readable, passes through and the server decides.
+ * order: (1) a minted {@link Token}'s recorded `kind`, or the kind remembered for the
+ * raw string (`kindOf`), always checked; (2) plaintext privileges if present
+ * (test/unencrypted tokens); (3) any other raw encrypted KS string, whose privileges
+ * aren't client-readable, passes through and the server decides.
  * Every token from `sessions.*` takes path (1), so it is always checked.
  * `'userOrAdmin'` accepts `admin`, `conversation` and `agent` and rejects `widget`.
- * Only a minted widget Token is refused client-side; a raw KS string is not checked and the server's answer is returned.
+ * A minted widget Token is refused client-side, and so is the raw string of a widget
+ * token this instance minted recently. Other raw strings are not checked.
  * @param {string|{ks:string,kind?:string,entitlementEnforced?:boolean}} ks
  * @param {'admin'|'conversation'|'userOrAdmin'} expected @param {string} where @param {(t:string,o:string,f?:object)=>void} [audit]
+ * @param {(raw:string)=>string|undefined} [kindOf] Kind this instance remembers for a raw string.
  * @returns {string} the raw KS
  */
-function assertKind(ks, expected, where, audit) {
+function assertKind(ks, expected, where, audit, kindOf) {
   const raw = ksString(ks);
   if (!raw || typeof raw !== 'string') {
     throw new KalturaError({ type: 'about:blank', title: 'KS required', code: 'bad_request', detail: `${where} needs a KS token (string or a minted Token).` });
   }
   // (1) Trust a minted Token's recorded kind.
-  const tokenKind = ks && typeof ks === 'object' ? ks.kind : undefined;
+  const tokenKind = (ks && typeof ks === 'object' ? ks.kind : undefined) ?? kindOf?.(raw);
   let isAdmin, isConversation;
   if (tokenKind) { isAdmin = tokenKind === 'admin'; isConversation = tokenKind !== 'admin'; }
   else {
@@ -397,7 +406,7 @@ function assertKind(ks, expected, where, audit) {
       audit?.('guard.reject', 'fail', { kind: 'widget', action: where, reason: 'user or admin token required' });
       throw new KalturaError({
         type: 'https://docs.kaltura.com/agentic/errors/wrong_token_scope', title: 'wrong token scope', code: 'wrong_token_scope',
-        detail: `${where} requires an admin, conversation or agent token. Got a widget token.`,
+        detail: `${where} requires an admin, conversation or agent token. Got a widget token. Mint a per-user token on your server with sessions.createConversationToken({ configId, agentId, userId }).`,
       });
     }
     return raw;

@@ -97,7 +97,7 @@ test('admin-only methods still reject a conversation token (threads.push)', asyn
   await assert.rejects(async () => m.threads.push({ id: 't1', content: 'x' }, CONV), (e) => e.code === 'wrong_token_scope');
 });
 
-test('relaxed own-thread methods send a raw KS string as-is (no client-side widget check, no wrong_token_scope)', async () => {
+test('relaxed own-thread methods send a raw KS string this instance did not mint as a widget as is', async () => {
   const RAW = 'raw-ks-string';
   const ok = { status: 200, body: { objects: [], totalCount: 0, id: 't1', totalCountRemoved: 0 } };
   const ff = fakeFetch([
@@ -138,4 +138,88 @@ test('a minted widget Token gets wrong_token_scope on all ten relaxed methods, b
   assert.equal(calls.length, 10);
   for (const call of calls) await assert.rejects(async () => call(), (e) => e.code === 'wrong_token_scope');
   assert.equal(ff.calls.length, 0);
+});
+
+// ── G1-19: the raw string of a widget token this instance minted is refused ──
+const WKS = (n) => 'djJ8' + Buffer.from(`widget-${n}`).toString('base64url');
+
+/** A Management whose startWidgetSession returns the next string from `nextKs`. */
+function widgetHarness(nextKs, extraRoutes = []) {
+  const ff = fakeFetch([
+    { match: '/service/session/action/startWidgetSession', respond: () => ({ body: { ks: nextKs() } }) },
+    { match: 'thread/list', respond: () => ({ status: 200, body: { objects: [], totalCount: 0 } }) },
+    { match: 'thread/push', respond: () => ({ status: 200, body: { delivered: false } }) },
+    { match: 'get-suggested-questions', respond: () => ({ status: 200, body: { objects: [] } }) },
+    { match: 'mcp/search', respond: () => ({ status: 200, body: { status: 'success', data: {} } }) },
+    { match: '/service/session/action/start', respond: () => ({ body: `"${nextKs()}"` }) },
+    ...extraRoutes,
+  ]);
+  return { ff, m: new Management({ partnerId: 999, adminSecret: 'x'.repeat(32), fetch: ff }) };
+}
+
+test('a raw widget KS string this instance minted is refused by threads.list, getSuggested and knowledge.search before any request', async () => {
+  const { ff, m } = widgetHarness(() => WKS(1));
+  const w = await m.sessions.createWidgetToken({ widgetId: '1_w' });
+  const before = ff.calls.length;
+  await assert.rejects(async () => m.threads.list(w.ks).all(), (e) => e.code === 'wrong_token_scope');
+  await assert.rejects(() => m.followups.getSuggested(w.ks), (e) => e.code === 'wrong_token_scope');
+  await assert.rejects(() => m.knowledge.search('q', w.ks), (e) => e.code === 'wrong_token_scope');
+  assert.equal(ff.calls.length, before, 'no request after the mint');
+});
+
+test('a raw minted widget string on an admin method gets wrong_token_scope', async () => {
+  const { ff, m } = widgetHarness(() => WKS(2));
+  const w = await m.sessions.createWidgetToken({ widgetId: '1_w' });
+  const before = ff.calls.length;
+  await assert.rejects(async () => m.threads.push({ id: 't1', content: 'x' }, w.ks), (e) => e.code === 'wrong_token_scope');
+  assert.equal(ff.calls.length, before);
+});
+
+test('a raw minted widget string still reaches a conversation method', async () => {
+  const { ff, m } = widgetHarness(() => WKS(3), [{ match: 'assistant/status', respond: () => ({ status: 200, body: { aiConsent: true } }) }]);
+  const w = await m.sessions.createWidgetToken({ widgetId: '1_w' });
+  const before = ff.calls.length;
+  await m.conversations.status(w.ks);
+  assert.equal(ff.calls.length, before + 1);
+});
+
+test('a raw widget string minted by another Management instance is sent to the server', async () => {
+  const a = widgetHarness(() => WKS(4));
+  const b = widgetHarness(() => WKS(5));
+  const w = await a.m.sessions.createWidgetToken({ widgetId: '1_w' });
+  await b.m.threads.list(w.ks).all();
+  assert.equal(b.ff.calls.filter((c) => c.url.includes('thread/list')).length, 1);
+});
+
+test('a conversation Token whose string matches a remembered widget string is allowed', async () => {
+  const { ff, m } = widgetHarness(() => WKS(6));
+  await m.sessions.createWidgetToken({ widgetId: '1_w' });
+  const conv = { ks: WKS(6), kind: 'conversation' };
+  await m.threads.list(conv).all();
+  assert.equal(ff.calls.filter((c) => c.url.includes('thread/list')).length, 1);
+});
+
+test('widget string memory keeps the newest 32 mints', async () => {
+  let n = 0;
+  const { m } = widgetHarness(() => WKS(100 + n++));
+  const tokens = [];
+  for (let i = 0; i < 33; i++) tokens.push(await m.sessions.createWidgetToken({ widgetId: '1_w' }));
+  await m.threads.list(tokens[0].ks).all(); // oldest is forgotten, so it goes to the server
+  await assert.rejects(async () => m.threads.list(tokens[32].ks).all(), (e) => e.code === 'wrong_token_scope');
+  await assert.rejects(async () => m.threads.list(tokens[1].ks).all(), (e) => e.code === 'wrong_token_scope');
+});
+
+test('a non-widget mint of the same string clears it', async () => {
+  const { m } = widgetHarness(() => WKS(7));
+  const w = await m.sessions.createWidgetToken({ widgetId: '1_w' });
+  await assert.rejects(async () => m.threads.list(w.ks).all(), (e) => e.code === 'wrong_token_scope');
+  await m.sessions.createAdminToken({ userId: 'ops-1' }); // same fake string, admin kind
+  await m.threads.list(w.ks).all();
+});
+
+test('the remembered widget strings are not enumerable', async () => {
+  const { m } = widgetHarness(() => WKS(8));
+  const w = await m.sessions.createWidgetToken({ widgetId: '1_w' });
+  assert.ok(!Object.keys(m.sessions).includes('_widgetKs'));
+  assert.ok(!JSON.stringify(m.sessions).includes(w.ks));
 });

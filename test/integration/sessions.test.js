@@ -405,3 +405,56 @@ test('a userId containing CR/LF is sanitized (one-lined, no raw newline) in both
   const call = f.calls.find((c) => c.url.includes('/session/action/start'));
   assert.doesNotMatch(String(call.body), /%0D%0A|\r|\n/);
 });
+
+// ── G1-25: warn once when a minted KS is long ──
+const longKs = (n) => 'djJ8' + 'A'.repeat(n - 4);
+function longKsFetch(ks) {
+  return fakeFetch([{ match: '/service/session/action/start', respond: () => ({ body: `"${ks}"` }) }]);
+}
+
+test('a minted KS over 4500 characters warns once per instance', async () => {
+  const warnings = [];
+  const s = new Sessions({ partnerId: 123, adminSecret: 'a'.repeat(32), http: new Http({ fetch: longKsFetch(longKs(4501)) }), warn: (m) => warnings.push(m) });
+  await s.createConversationToken({ configId: 1 });
+  await s.createConversationToken({ configId: 1 });
+  assert.equal(warnings.length, 1);
+});
+
+test('a minted KS of exactly 4500 characters does not warn', async () => {
+  const warnings = [];
+  const s = new Sessions({ partnerId: 123, adminSecret: 'a'.repeat(32), http: new Http({ fetch: longKsFetch(longKs(4500)) }), warn: (m) => warnings.push(m) });
+  await s.createConversationToken({ configId: 1 });
+  assert.equal(warnings.length, 0);
+});
+
+test('the long-KS warning does not contain the KS', async () => {
+  const warnings = [];
+  const ks = longKs(4600);
+  const s = new Sessions({ partnerId: 123, adminSecret: 'a'.repeat(32), http: new Http({ fetch: longKsFetch(ks) }), warn: (m) => warnings.push(m) });
+  await s.createConversationToken({ configId: 1 });
+  assert.match(warnings[0], /4600 characters/);
+  assert.ok(!warnings[0].includes(ks.slice(0, 40)));
+});
+
+test('a throwing warn hook does not fail the mint', async () => {
+  const s = new Sessions({ partnerId: 123, adminSecret: 'a'.repeat(32), http: new Http({ fetch: longKsFetch(longKs(4600)) }), warn: () => { throw new Error('boom'); } });
+  const t = await s.createConversationToken({ configId: 1 });
+  assert.equal(t.kind, 'conversation');
+});
+
+test('Management routes the long-KS warning to cfg.logger at level warn', async () => {
+  const logs = [];
+  const m = new Management({ partnerId: 123, adminSecret: 'a'.repeat(32), fetch: longKsFetch(longKs(4600)), logger: (level, msg) => logs.push([level, msg]) });
+  await m.sessions.createConversationToken({ configId: 1 });
+  const warns = logs.filter(([level, msg]) => level === 'warn' && /Minted KS is 4600 characters/.test(msg));
+  assert.equal(warns.length, 1);
+  assert.ok(!warns[0][1].startsWith('[security]'));
+});
+
+test('without cfg.warn the long-KS warning goes to console.warn', async (t) => {
+  const seen = [];
+  t.mock.method(console, 'warn', (m) => seen.push(m));
+  const s = new Sessions({ partnerId: 123, adminSecret: 'a'.repeat(32), http: new Http({ fetch: longKsFetch(longKs(4600)) }) });
+  await s.createConversationToken({ configId: 1 });
+  assert.equal(seen.length, 1);
+});
