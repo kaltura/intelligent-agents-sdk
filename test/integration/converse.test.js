@@ -338,3 +338,9 @@ test('model_type smart passes through verbatim', async () => {
   await m.conversations.send({ userMessage: 'x', model_type: 'smart' }, CONV_KS);
   assert.equal(converseCalls(f)[0].body.model_type, 'smart');
 });
+
+test('a value JSON cannot print still gives validation_error, not TypeError', async () => {
+  await rejectsBeforeRequest({ metadata: { voice_start_time: 5n } }, /metadata\.voice_start_time must be a finite number/);
+  const loop = {}; loop.self = loop;
+  await rejectsBeforeRequest({ context_id: loop }, /context_id must be a non-empty string/);
+});

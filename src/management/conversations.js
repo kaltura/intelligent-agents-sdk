@@ -117,7 +117,15 @@ export function assertRequestVars(vars, where = 'request_vars') {
 }
 
 /** A value for an error message: JSON, cut to 80 chars. @param {unknown} v */
-const shown = (v) => { const j = JSON.stringify(v) ?? String(v); return j.length > 80 ? `${j.slice(0, 77)}...` : j; };
+const shown = (v) => {
+  let j;
+  try { j = JSON.stringify(v); } catch { /* BigInt or a circular value */ }
+  j ??= String(v);
+  return j.length > 80 ? `${j.slice(0, 77)}...` : j;
+};
+
+/** Throw a `validation_error` {@link KalturaError}. @param {string} title @param {string} detail @returns {never} */
+const failValidation = (title, detail) => { throw new KalturaError({ type: 'https://docs.kaltura.com/agentic/errors/validation_error', title, code: 'validation_error', detail }); };
 
 /**
  * Check the typed converse options (`context_id`, `context_type`, `preload_entry_ids`,
@@ -126,7 +134,7 @@ const shown = (v) => { const j = JSON.stringify(v) ?? String(v); return j.length
  * @param {Record<string, any>} opts @param {string} where
  */
 function assertConverseOptions(opts, where) {
-  const bad = (title, detail) => { throw new KalturaError({ type: 'https://docs.kaltura.com/agentic/errors/validation_error', title, code: 'validation_error', detail: `${where}.${detail}` }); };
+  const bad = (title, detail) => failValidation(title, `${where}.${detail}`);
   const { context_id: id, context_type: type, metadata: md } = opts;
   if (type !== undefined && !CONTEXT_TYPES.includes(type)) bad('invalid context_type', `context_type must be one of: ${CONTEXT_TYPES.join(', ')} (got ${shown(type)}).`);
   if (id !== undefined && (typeof id !== 'string' || id === '')) bad('invalid context_id', `context_id must be a non-empty string (got ${shown(id)}). Pass a category id as a string, like "12345", or omit context_id.`);
@@ -151,7 +159,7 @@ function assertConverseOptions(opts, where) {
  * `undefined`, `null` or `''`, and not an `error`. Extra fields on the chunk do not matter.
  * @param {{type?:string, content?:unknown, isFinal?:boolean}} seg
  */
-const isReplySegment = (seg) => seg.type === 'error' || !(seg.content === undefined || seg.content === null || seg.content === '') || !(seg.isFinal === true || !seg.type);
+const isReplySegment = (seg) => seg.type === 'error' || (seg.content != null && seg.content !== '') || (!!seg.type && seg.isFinal !== true);
 
 // ─────────────────────────── Converse (headless text) ───────────────────────────
 
@@ -705,9 +713,8 @@ export class Followups {
    */
   async getSuggested(ks, opts = {}) {
     this._.assertAny(ks, 'followups.getSuggested');
-    const { contextId } = opts ?? {};
-    /** @type {string|undefined} */ const contextType = opts?.contextType;
-    const bad = (detail) => { throw new KalturaError({ type: 'https://docs.kaltura.com/agentic/errors/validation_error', title: 'invalid context', code: 'validation_error', detail: `followups.getSuggested ${detail}` }); };
+    /** @type {{contextId?:string, contextType?:string}} */ const { contextId, contextType } = opts ?? {};
+    const bad = (detail) => failValidation('invalid context', `followups.getSuggested ${detail}`);
     if (contextType === 'entry') bad(`does not take contextType "entry". Use ${SUGGEST_CONTEXT_TYPES.map((t) => `"${t}"`).join(', ')}, or omit it.`);
     if (contextType !== undefined && !SUGGEST_CONTEXT_TYPES.includes(contextType)) bad(`contextType must be one of: ${SUGGEST_CONTEXT_TYPES.join(', ')} (got ${shown(contextType)}).`);
     if (contextId !== undefined && (typeof contextId !== 'string' || contextId === '')) bad(`contextId must be a non-empty string (got ${shown(contextId)}). Pass a category id as a string, like "12345".`);
