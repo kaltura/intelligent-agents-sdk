@@ -86,7 +86,7 @@ What each token can reach:
 
 - Short-lived by default: browser-bound tokens (`conversation`/`agent`) default to 30 minutes, admin to 1 hour. Short TTL is the primary revocation lever for a stateless KS (RFC 9700 §6.1). Override per call with `ttlSeconds`, up to 86400 s (24 h) for browser-bound kinds and 7 days for admin; longer throws `ttl_too_long`. To refresh, your server mints a fresh token and the browser calls `session.setToken(freshKs)`, with no reconnect.
 - Token restrictions: set the optional `restrictions` option instead of writing privilege strings. Each key you set adds one Kaltura privilege to the token: `role` → `setrole`, `actionsLimit` → `actionslimit`, `ipRestrict` → `iprestrict`, `uriRestrict` → `urirestrict`, `sessionGroupId` → `sessionid`. `role` needs `sessionType: 'admin'`. None is set by default. Values and limits: [Authentication](docs/api/authentication.md).
-- Active revocation (RFC 9700 §5.2.1.1; SOC 2 CC6.2/CC6.3): `sessions.revoke(tokenOrKs)` sends Kaltura `session/end` for the token. Tokens that share a `restrictions.sessionGroupId` are revoked together: revoking any member ends the whole family. Returns a receipt: `{ revokedAt, partnerId, _meta }`.
+- Active revocation (RFC 9700 §5.2.1.1; SOC 2 CC6.2/CC6.3): `sessions.revoke(tokenOrKs)` sends Kaltura `session/end` for the token. Tokens minted with the same `restrictions.sessionGroupId` share one session id, so `revoke` on any of them targets the whole group. Returns a receipt: `{ revokedAt, partnerId, _meta }`.
 - Vault/KMS (NIST IA-5): pass `getAdminSecret: () => fetchFromVault()` to fetch the secret per-mint instead of holding it; it is never stored as an enumerable field.
 
 ## Audit logging (NIST AU-2 / AU-3 / AU-12; OWASP Logging; SOC 2 CC7)
@@ -102,7 +102,7 @@ new Management({ partnerId, adminSecret, onAuditEvent: (e) => siem.write(e) });
 | Event | Fires when |
 |---|---|
 | `token.mint` | A KS is minted (admin, conversation, agent, or widget) |
-| `token.revoke` | `sessions.revoke()` ends a token |
+| `token.revoke` | `sessions.revoke()` sends `session/end` for a token |
 | `token.refresh` | `setToken()` rotates a live session's token |
 | `guard.reject` | A call is rejected for carrying the wrong token kind (e.g. an admin token where a conversation token was required) |
 | `auth.fail` | A request returns HTTP 401 or 403. A failed `conversations.stream` request fires it for any error status |

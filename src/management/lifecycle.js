@@ -316,7 +316,7 @@ export class Lifecycle {
    *
    * The response can include built-in rules the caller never created (ids
    * start with `preset__`). `preset__summary_on_session_ended` matches every
-   * `session_ended`/`thread` event and shows up in `matchedRules[]` alongside
+   * `session_ended`/`thread` event with `origin: 0` and shows up in `matchedRules[]` alongside
    * the caller's own.
    * Related rules are grouped: `matchedRules[].isGrouped` is `true` when two
    * or more rules share a `groupKey` and dispatch as one composite action.

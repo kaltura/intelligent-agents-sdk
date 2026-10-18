@@ -228,7 +228,7 @@ test('unsupportedClient during prepare() rejects prepare() at once, and a later 
   session.disconnect();
 }));
 
-// ───────────────────────── config error frame (C1-05) ─────────────────────────
+// ───────────────────────── config error frame ─────────────────────────────────
 
 test('a config error followed by unsupportedClient rejects connect() at once', trapped(async () => {
   const { session, socket } = newSession({ cfg: { timeouts: SHORT } });

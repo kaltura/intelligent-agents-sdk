@@ -104,7 +104,7 @@ Always pass a per-user `userId`.
 
 **Widget tokens** (`createWidgetToken`) need no secret. Every visitor gets the same token. Reach and limits: [SECURITY.md § Session type](../../SECURITY.md#session-type). To separate users, use the [per-visitor path](deploy.md#per-visitor-browser-path).
 
-**Revoke a token.** `mgmt.sessions.revoke(tokenOrKs)` ends the session (`session/end`). Tokens minted with the same `restrictions.sessionGroupId` are revoked together.
+**Revoke a token.** `mgmt.sessions.revoke(tokenOrKs)` sends `session/end` for the token. Tokens minted with the same `restrictions.sessionGroupId` share one session id, so `revoke` on any of them targets the whole group.
 
 **Restrictions.** Each `restrictions` key you set adds one KS privilege to the token: `ipRestrict` → `iprestrict:<value>`, `uriRestrict` → `urirestrict:<value>`, `sessionGroupId` → `sessionid:<value>`, `role` → `setrole:<value>` (admin sessions only) and `actionsLimit` → `actionslimit:<n>`. `actionsLimit` must be a positive integer. Each string value is one `key:value` privilege in a comma-separated list, so it must not contain a comma or whitespace (`bad_request`). `:` and `/` are fine inside a value, and so is a `*` wildcard where the privilege supports it.
 

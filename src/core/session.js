@@ -70,7 +70,7 @@ import { pickResponseHeaders } from './response-headers.js';
  * @property {number} [actionsLimit]        actionslimit:<n>, a positive integer.
  * @property {string} [ipRestrict]          iprestrict:<ip>: the client IP you pass, sent as is.
  * @property {string} [uriRestrict]         urirestrict:<prefix>: the URI prefix you pass. Values pass through as is (no comma or whitespace).
- * @property {string} [sessionGroupId]      sessionid:<id>: group tokens so one revoke() kills the whole family.
+ * @property {string} [sessionGroupId]      sessionid:<id>: group tokens so one revoke() targets the whole group.
  */
 
 const DISABLE_ENTITLEMENT = 'disableentitlement';

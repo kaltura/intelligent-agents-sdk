@@ -211,7 +211,7 @@ Partner-scoped read-only CSV. It contains end-user IDs and verbatim questions (t
 
 SDK: `mgmt.messages.report(ks)` (raw CSV) / `mgmt.messages.reportSummary(ks)` (volume, feedback ratio and top questions, with a `_meta` provenance receipt). Messages pushed into a thread are not counted as messages.
 
-`mgmt.messages.get(id, ks)` (`POST {genieUrl}/message/get`) fetches one message record directly, without paging through `messages.list()`. A message that does not exist, or that the token cannot read, throws a typed `not_found` or `forbidden` error.
+`mgmt.messages.get(id, ks)` (`POST {genieUrl}/message/get`) fetches one message record directly, without paging through `messages.list()`. A message that does not exist, or that the token cannot read, throws a typed `not_found` error.
 
 ---
 
