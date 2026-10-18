@@ -65,6 +65,7 @@ const CONFIG_LOOKUP_USER_ID = 'intelligent-agents-sdk';
  * @property {(ks:KsLike, where:string)=>string} assertConversation Throws `wrong_token_scope` for an admin token. Returns the raw KS string.
  * @property {(ks:KsLike, where:string)=>string} assertAny Throws `bad_request` if `ks` is empty. Accepts any kind. Returns the raw KS string.
  * @property {(type:string, outcome:string, fields?:object)=>void} audit Redacted structured security/audit event emitter (no-op if the caller passed no `onAuditEvent` hook).
+ * @property {(msg:string)=>void} warn Caller-visible warning: `cfg.logger('warn', msg)`, else `console.warn`.
  */
 
 export class Management {
@@ -215,6 +216,7 @@ export class Management {
         return raw;
       },
       audit,
+      warn: (m) => (cfg.logger ? cfg.logger('warn', m) : console.warn(m)),
     };
     this._ctx = ctx;
 

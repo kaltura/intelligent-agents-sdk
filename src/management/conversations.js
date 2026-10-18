@@ -481,14 +481,41 @@ export class Threads {
    * an array — batch deletion by id is the common case for PII/GDPR cleanup.
    * Resolves `{totalCount, objects}` listing only the threads actually deleted;
    * an id that was not deleted is left out, so check it rather than assume success.
+   * Logs one warning (via `logger`, else `console.warn`) naming the requested ids the
+   * response left out. It reads only this response, and only an HTTP 200 with an
+   * `objects` array of `{id}`. Any other status or shape is returned as-is with no
+   * warning. The warning never throws and never changes the result.
    * @param {string[]} threadIds @param {string} ks @param {{confirmPermanent:boolean}} confirm
    */
   async delete(threadIds, ks, confirm) {
     this._.assertUserOrAdmin(ks, 'threads.delete');
     const ids = Array.isArray(threadIds) ? threadIds : [threadIds];
     requireConfirm(confirm, 'threads.delete', ids.join(','));
-    return (await this._.genie('v1/thread/delete', { thread_ids: ids }, ks)).data;
+    const res = await this._.genie('v1/thread/delete', { thread_ids: ids }, ks);
+    warnUndeleted(this._.warn, ids, res);
+    return res.data;
   }
+}
+
+/**
+ * Warn for requested thread ids that a `v1/thread/delete` response left out. Uses
+ * only the delete response (no later read, so a slower or async delete cannot race
+ * it) and only the current contract: HTTP 200 with `objects` of `{id}`. Any other
+ * status or shape, such as a future 202, is skipped. Never throws.
+ * @param {((msg:string)=>void)|undefined} warn @param {unknown[]} ids @param {{status?:number, data?:any}} res
+ */
+function warnUndeleted(warn, ids, res) {
+  try {
+    const objects = res?.data?.objects;
+    if (typeof warn !== 'function' || res?.status !== 200 || !Array.isArray(objects)) return;
+    if (!objects.every((o) => o && typeof o.id === 'string')) return;
+    const deleted = new Set(objects.map((o) => o.id));
+    const asked = [...new Set(ids)];
+    const missing = asked.filter((id) => !deleted.has(id));
+    if (!missing.length) return;
+    const shown = missing.slice(0, 5).join(', ') + (missing.length > 5 ? `, +${missing.length - 5} more` : '');
+    warn(`[threads.delete] The server did not report ${missing.length} of ${asked.length} thread ids as deleted (unknown, already deleted, or not deletable with this token): ${shown}`);
+  } catch { /* a warning must never break delete */ }
 }
 
 // ─────────────────────────── Messages + analytics ───────────────────────────
