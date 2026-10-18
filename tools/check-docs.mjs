@@ -949,7 +949,7 @@ describe('16. Docs accuracy', () => {
   test('revoke and TURN docs make no timing or ephemeral-credential claims', () => {
     const rules = [
       [(l) => /revok/i.test(l) && /within seconds/i.test(l), 'describe revoke as sending `session/end`, with no timing'],
-      [(l, f) => !f.startsWith('scripts/') && /revok/i.test(l) && /immediately|\b(ends|ended|kills)\b/i.test(l), 'describe revoke as sending `session/end`, with no outcome claim'],
+      [(l, f) => !f.startsWith('scripts/') && /revok/i.test(l) && /immediately|\b(ends|ended|kills|now)\b|revoked (together|with it)/i.test(l), 'describe revoke as sending `session/end`, with no outcome claim'],
       [(l) => /\bTURN\b|turnCredentials/.test(l) && /ephemeral|RFC 7635/i.test(l), 'describe TURN credentials as the SDK default unless `turnCredentials` is passed'],
       [(l) => /`turnCredentials`[^.]*appInit/.test(l), 'say `appInit` returns no TURN credentials; the SDK default applies unless `turnCredentials` is passed'],
     ];

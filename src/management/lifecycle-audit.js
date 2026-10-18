@@ -6,7 +6,7 @@
  */
 import { hasAgentScope, scopedAgentIds, changedKeysFilter, isAgentCondition } from './lifecycle-rules.js';
 
-/** Insight keys the always-on summary rule writes for every session. */
+/** Insight keys the always-on summary rule writes for every standard conversation. */
 const FREE_KEYS = ['SUMMARY'];
 /** Keys `conversationInsightExample` needs from the analysis. */
 const PRESET_KEYS = ['SUMMARY', 'TOPIC', 'CUSTOM'];

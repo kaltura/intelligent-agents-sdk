@@ -650,7 +650,7 @@ Designed for enterprise, HIPAA, HITRUST, and regulated frameworks. Full control 
 | Control | What the SDK does |
 |---------|------------------|
 | **Two-token invariant** | `disableentitlement` reachable only via `sessions.createAdminToken()`. No client surface can escalate. `createConversationToken()`/`createAgentToken()` mint user sessions (KS type 0) and actively refuse any `extraPrivileges` value that would disable entitlement: the SDK throws a typed `entitlement_violation` error before any network call. Pass a per-user `userId` so each token reaches only that user's threads ([Session type](SECURITY.md#session-type)) |
-| **Short-lived tokens** | Admin: 1h default; conversation/agent: 30min default. `revoke()` calls `session/end` for a token, and tokens that share a `restrictions.sessionGroupId` are revoked together; `setToken()` for mid-session rotation; `restrictions` for least privilege |
+| **Short-lived tokens** | Admin: 1h default; conversation/agent: 30min default. `revoke()` calls `session/end` for a token, and tokens that share a `restrictions.sessionGroupId` share one session id, so `revoke()` on any of them targets the whole group; `setToken()` for mid-session rotation; `restrictions` for least privilege |
 | **Audit stream** | `onAuditEvent` emits structured, pre-redacted events (`token.mint`, `guard.reject`, `tool.invoke`, …) to your SIEM |
 | **Transport** | `https`/`wss` enforced; cleartext rejected |
 | **Browser hygiene** | Token is memory-only, non-enumerable, dropped on `disconnect()`; prototype-pollution scrub on `setDynamicPrompt`; AI disclosure gate before first speech (EU AI Act Art. 50) |

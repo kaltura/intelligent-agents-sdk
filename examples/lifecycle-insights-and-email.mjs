@@ -9,7 +9,7 @@
  *      definitions a lifecycle rule references by id.
  *   3. Create rule A: on session_ended, extract those two insights. SUMMARY
  *      (the third key the built-in email preset needs) isn't requested here
- *      — every session already gets one for free from the always-on system
+ *      — every standard conversation already gets one from the always-on system
  *      preset, and it merges into the same batch — see the guide's "action
  *      types" section.
  *   4. Create rule B: on analysis_updated, email a human using the
@@ -73,8 +73,8 @@ try {
   console.log('Created insight settings:', topicSetting.id, customSetting.id);
 
   // 3. Rule A: extract both the instant a session ends. SUMMARY is
-  // deliberately not requested here — every session already gets one for
-  // free from the always-on system preset, and it merges into this same
+  // deliberately not requested here — every standard conversation already
+  // gets one from the always-on system preset, and it merges into this same
   // batch automatically.
   summaryRule = await kaltura.lifecycle.create({
     name: 'Demo — summarize on session end',

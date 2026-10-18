@@ -34,8 +34,9 @@
  *   adds to (`delta`) the user's score. Add a `changed_keys` filter on the
  *   badge keys, as `lifecycle.audit` advises (`badges_unfiltered`).
  *
- * Every session also gets one fixed, built-in summary insight for free. It
- * comes from a built-in rule (id starts with `preset__`) that
+ * Every standard conversation (`origin: 0`) also gets one fixed, built-in
+ * summary insight for free. It comes from a built-in rule (id starts with
+ * `preset__`) that
  * {@link Lifecycle#match} lists but a caller cannot create, update or
  * customize. See `docs/lifecycle/README.md`. Mounted at `mgmt.lifecycle`.
  */
