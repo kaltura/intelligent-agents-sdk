@@ -27,7 +27,7 @@
  *     for a stateless KS. Absurd lifetimes on browser-bound kinds are rejected.
  *   - Active revocation (RFC 9700 §5.2.1.1, SOC 2 CC6.2/CC6.3): {@link
  *     Sessions.revoke} sends Kaltura `session/end` for the token; an optional `sessionGroupId`
- *     bakes `sessionid:<id>`, so one `revoke` on any member covers the whole family.
+ *     bakes `sessionid:<id>`, so one `revoke` on any member targets the whole group.
  *   - Auditability (NIST AU-2/AU-3): every mint/revoke fires a redacted audit
  *     event and returns a `scope` receipt; the admin secret is NEVER returned,
  *     logged, enumerable, or attached to a token. When a caller binds a real
@@ -298,11 +298,11 @@ export class Sessions {
   }
 
   /**
-   * REVOKE a token now (Kaltura `session/end`) — the active revocation lever for a
+   * REVOKE a token: sends Kaltura `session/end`. The active revocation lever for a
    * leaked/abused token (RFC 9700 §5.2.1.1; SOC 2 CC6.2/CC6.3). Returns a redacted
    * `_meta` revocation receipt. If the token was minted with
-   * `restrictions.sessionGroupId` (→ `sessionid:<id>`), every token sharing that
-   * id is revoked with it.
+   * `restrictions.sessionGroupId` (→ `sessionid:<id>`), the call targets every
+   * token sharing that id.
    * @param {string|Token} tokenOrKs
    * @returns {Promise<{revokedAt:string, partnerId:string, _meta:object}>}
    */
