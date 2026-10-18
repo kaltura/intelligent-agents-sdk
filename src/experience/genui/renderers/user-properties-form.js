@@ -7,8 +7,9 @@
  * `session.submitStructuredDataForm`. Framework-agnostic `{kind:'user-properties-form', data}`.
  */
 import { safeText } from '../../../core/safety.js';
+import { FORM_FIELD_TYPE_NAMES } from '../../../core/stream.js';
 
-const FIELD_TYPES = new Set(['str', 'int', 'float', 'bool', 'list', 'dict', 'email', 'phone', 'text']);
+const FIELD_TYPES = new Set(FORM_FIELD_TYPE_NAMES);
 
 /**
  * @param {Record<string, unknown>} model

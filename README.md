@@ -1136,7 +1136,7 @@ await session.sendText('Look up open tickets for this account.');
 const skill = await mgmt.skills.add({ name: 'greeter', description: 'Greets warmly.', instructions: 'Always say hi.' }, ks);
 const page = await mgmt.skills.list(ks);          // async-iterable + awaitable first page
 const one = await mgmt.skills.get(skill.id, ks);
-await mgmt.skills.update(skill.id, { instructions: 'Always say hi, in one short sentence.' }, ks);  // idempotent; a name conflict returns 409
+await mgmt.skills.update(skill.id, { instructions: 'Always say hi, in one short sentence.' }, ks);  // idempotent; a name conflict returns 409; `condition` works here too, '' clears it
 await mgmt.skills.delete(skill.id, ks, { confirmPermanent: true });
 ```
 

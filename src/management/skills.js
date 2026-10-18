@@ -24,6 +24,7 @@ import { paginate } from './paginate.js';
 import { uuidv4, meta } from '../core/ids.js';
 import { requireConfirm } from './agents.js';
 import { KalturaError } from '../core/errors.js';
+import { assertCondition } from './condition.js';
 
 /** @param {unknown} v @param {string} where */
 function requireSkillId(v, where) {
@@ -72,16 +73,19 @@ export class Skills {
    * Create a Skill. WRITE — NOT idempotent (a repeat call creates a second
    * entity). `name` and `description` are required and validated BEFORE any
    * network call; `instructions` is optional (stored `null` when omitted).
+   * `condition` is an optional bare expression such as `sys__avatar_enabled`.
+   * The skill applies only while it is true. It is checked before any network call, and a template form like
+   * `{{ x }}` throws `bad_request`. `null` or `undefined` is not sent.
    *
    * Also callable as {@link Skills#create} — same method, either name works.
-   * @param {{name:string, description:string, instructions?:string}} body
+   * @param {{name:string, description:string, instructions?:string, condition?:string|null}} body
    * @param {string} ks (admin)
    * @returns {Promise<{id:string, name:string, description:string, instructions:string|null, partner_id:number, created_at:string, updated_at:string}>}
    */
   async add(body, ks) {
     this._.assertAdmin(ks, 'skills.add');
     if (!body || typeof body !== 'object' || Array.isArray(body)) {
-      throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: 'skills.add needs a {name, description, instructions?} object.' });
+      throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: 'skills.add needs a {name, description, instructions?, condition?} object.' });
     }
     if (typeof body.name !== 'string' || !body.name.trim()) {
       throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: 'skills.add name must be a non-empty string.' });
@@ -97,12 +101,16 @@ export class Skills {
       }
       wire.instructions = body.instructions;
     }
+    if (body.condition !== undefined && body.condition !== null) {
+      assertCondition(body.condition, 'skills.add condition');
+      wire.condition = body.condition;
+    }
     return (await this._.genie('v1/skill/add', wire, ks, { idempotencyKey: uuidv4() })).data;
   }
 
   /**
    * Alias for {@link Skills#add}. Same validation, same call, same result.
-   * @param {{name:string, description:string, instructions?:string}} body
+   * @param {{name:string, description:string, instructions?:string, condition?:string|null}} body
    * @param {string} ks (admin)
    * @returns {Promise<{id:string, name:string, description:string, instructions:string|null, partner_id:number, created_at:string, updated_at:string}>}
    */
@@ -139,10 +147,12 @@ export class Skills {
   }
 
   /**
-   * Update a Skill's name/description/instructions. WRITE — idempotent.
+   * Update a Skill's name/description/instructions/condition. WRITE — idempotent.
    * `/v1/skill/update` re-checks the partner-unique-name constraint on a
-   * rename (409 on conflict, same as `add`).
-   * @param {string} id @param {{name?:string, description?:string, instructions?:string}} patch
+   * rename (409 on conflict, same as `add`). `condition` is checked before any
+   * network call like in {@link Skills#add}. Pass `condition: ''` to clear it.
+   * `null` is skipped.
+   * @param {string} id @param {{name?:string, description?:string, instructions?:string, condition?:string|null}} patch
    * @param {string} ks (admin)
    * @returns {Promise<{id:string, name:string, description:string, instructions:string|null, partner_id:number, created_at:string, updated_at:string}>}
    */
@@ -150,10 +160,7 @@ export class Skills {
     this._.assertAdmin(ks, 'skills.update');
     requireSkillId(id, 'skills.update');
     if (!patch || typeof patch !== 'object' || Array.isArray(patch)) {
-      throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: 'skills.update needs a patch object {name?, description?, instructions?}.' });
-    }
-    if (patch.name === undefined && patch.description === undefined && patch.instructions === undefined) {
-      throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: 'skills.update needs at least one of name/description/instructions.' });
+      throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: 'skills.update needs a patch object {name?, description?, instructions?, condition?}.' });
     }
     /** @type {Record<string,unknown>} */
     const body = { id };
@@ -168,6 +175,13 @@ export class Skills {
     if (patch.instructions !== undefined) {
       if (typeof patch.instructions !== 'string') throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: 'skills.update patch.instructions, when given, must be a string.' });
       body.instructions = patch.instructions;
+    }
+    if (patch.condition !== undefined && patch.condition !== null) {
+      if (patch.condition !== '') assertCondition(patch.condition, 'skills.update condition');
+      body.condition = patch.condition;
+    }
+    if (Object.keys(body).length === 1) {
+      throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: 'skills.update needs at least one of name/description/instructions/condition.' });
     }
     return (await this._.genie('v1/skill/update', body, ks, { idempotencyKey: uuidv4() })).data;
   }

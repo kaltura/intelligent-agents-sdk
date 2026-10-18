@@ -73,11 +73,40 @@ test('setForcedLanguage with language:null clears force_language and resets asr.
   assert.equal(r.languageName, undefined);
 });
 
-test('setForcedLanguage accepts a languageName override for a code not in the built-in table', async () => {
+test('setForcedLanguage accepts a languageName override for a listed code that has no built-in name', async () => {
   const { m, f } = mkMgmt([getDto(), updateEcho, agentUpdateEcho]);
-  await m.setForcedLanguage({ configId: 1481, agentId: 'agent-1', language: 'xx', languageName: 'Xlanguage' }, ADMIN);
+  await m.setForcedLanguage({ configId: 1481, agentId: 'agent-1', language: 'sw', languageName: 'Swahili' }, ADMIN);
   const sent = f.calls.find((c) => c.url.includes('/v1/intellect/update')).body;
-  assert.equal(sent.force_language, 'Xlanguage');
+  assert.equal(sent.force_language, 'Swahili');
+  const agentSent = f.calls.find((c) => c.url.includes('/agent/update')).body;
+  assert.equal(agentSent.asr.language, 'sw');
+});
+
+test('setForcedLanguage rejects a code outside LANGUAGE_CODES before any write, even with languageName', async () => {
+  const { m, f } = mkMgmt([getDto(), updateEcho, agentUpdateEcho]);
+  await assert.rejects(
+    () => m.setForcedLanguage({ configId: 1481, agentId: 'agent-1', language: 'xx', languageName: 'Klingon' }, ADMIN),
+    (e) => e.code === 'bad_request' && /LANGUAGE_CODES/.test(e.detail),
+  );
+  assert.equal(f.calls.length, 0);
+});
+
+test('setForcedLanguage rejects el before any write', async () => {
+  const { m, f } = mkMgmt([getDto(), updateEcho, agentUpdateEcho]);
+  await assert.rejects(
+    () => m.setForcedLanguage({ configId: 1481, agentId: 'agent-1', language: 'el', languageName: 'Greek' }, ADMIN),
+    (e) => e.code === 'bad_request' && /"el"/.test(e.detail),
+  );
+  assert.equal(f.calls.length, 0);
+});
+
+test('setForcedLanguage asks for languageName when a listed code has no display name', async () => {
+  const { m, f } = mkMgmt([getDto(), updateEcho, agentUpdateEcho]);
+  await assert.rejects(
+    () => m.setForcedLanguage({ configId: 1481, agentId: 'agent-1', language: 'sw' }, ADMIN),
+    (e) => e.code === 'bad_request' && /languageName/.test(e.detail),
+  );
+  assert.equal(f.calls.length, 0);
 });
 
 test('setForcedLanguage rejects an unknown language code with no override, before any network call', async () => {

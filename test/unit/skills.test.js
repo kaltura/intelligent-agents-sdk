@@ -49,6 +49,37 @@ test('skills.add passes instructions through when given', async () => {
   assert.equal(ff.calls[0].body.instructions, 'Always say hi.');
 });
 
+test('skills.add sends a bare-expression condition', async () => {
+  const { mgmt, ff } = harness([
+    { match: 'v1/skill/add', respond: (req) => ({ status: 200, body: { ...SKILL, ...req.body } }) },
+  ]);
+  const res = await mgmt.skills.add({ name: 'greeter', description: 'd', condition: 'sys__avatar_enabled' }, ADMIN_KS);
+  assert.equal(ff.calls[0].body.condition, 'sys__avatar_enabled');
+  assert.equal(res.condition, 'sys__avatar_enabled');
+});
+
+test('skills.add rejects a template condition before any network call', async () => {
+  const { mgmt, ff } = harness([
+    { match: 'v1/skill/add', respond: (req) => ({ status: 200, body: { ...SKILL, ...req.body } }) },
+  ]);
+  for (const condition of ['{{ true }}', '{% if x %}', '', 42]) {
+    await assert.rejects(
+      () => mgmt.skills.add({ name: 'greeter', description: 'd', condition: /** @type {any} */ (condition) }, ADMIN_KS),
+      (e) => e.code === 'bad_request' && /skills\.add condition/.test(e.detail),
+    );
+  }
+  assert.equal(ff.calls.length, 0);
+});
+
+test('skills.add omits a null or undefined condition', async () => {
+  const { mgmt, ff } = harness([
+    { match: 'v1/skill/add', respond: (req) => ({ status: 200, body: { ...SKILL, ...req.body } }) },
+  ]);
+  await mgmt.skills.add({ name: 'a', description: 'd', condition: /** @type {any} */ (null) }, ADMIN_KS);
+  await mgmt.skills.add({ name: 'b', description: 'd', condition: undefined }, ADMIN_KS);
+  for (const c of ff.calls) assert.ok(!('condition' in c.body));
+});
+
 test('skills.create is an alias for skills.add — same validation, same wire call', async () => {
   const { mgmt, ff } = harness([
     { match: 'v1/skill/add', respond: (req) => ({ status: 200, body: { ...SKILL, ...req.body } }) },
@@ -97,6 +128,32 @@ test('skills.update validates BEFORE any network call, then posts a patch to v1/
   const res = await mgmt.skills.update(SKILL.id, { name: 'greeter2', description: 'd2' }, ADMIN_KS);
   assert.equal(res.name, 'greeter2');
   assert.deepEqual(ff.calls[0].body, { id: SKILL.id, name: 'greeter2', description: 'd2' });
+});
+
+test('skills.update accepts condition alone', async () => {
+  const { mgmt, ff } = harness([
+    { match: 'v1/skill/update', respond: (req) => ({ status: 200, body: { ...SKILL, ...req.body } }) },
+  ]);
+  await mgmt.skills.update(SKILL.id, { condition: 'not sys__avatar_enabled' }, ADMIN_KS);
+  assert.deepEqual(ff.calls[0].body, { id: SKILL.id, condition: 'not sys__avatar_enabled' });
+});
+
+test("skills.update condition '' clears it", async () => {
+  const { mgmt, ff } = harness([
+    { match: 'v1/skill/update', respond: (req) => ({ status: 200, body: { ...SKILL, ...req.body } }) },
+  ]);
+  await mgmt.skills.update(SKILL.id, { condition: '' }, ADMIN_KS);
+  assert.equal(ff.calls[0].body.condition, '');
+});
+
+test('skills.update rejects a template condition and a null-only patch before any network call', async () => {
+  const { mgmt, ff } = harness([
+    { match: 'v1/skill/update', respond: (req) => ({ status: 200, body: { ...SKILL, ...req.body } }) },
+  ]);
+  await assert.rejects(() => mgmt.skills.update(SKILL.id, { condition: '{{ x }}' }, ADMIN_KS), (e) => e.code === 'bad_request' && /skills\.update condition/.test(e.detail));
+  await assert.rejects(() => mgmt.skills.update(SKILL.id, { condition: /** @type {any} */ (42) }, ADMIN_KS), (e) => e.code === 'bad_request');
+  await assert.rejects(() => mgmt.skills.update(SKILL.id, { condition: /** @type {any} */ (null) }, ADMIN_KS), (e) => e.code === 'bad_request' && /at least one of name\/description\/instructions\/condition/.test(e.detail));
+  assert.equal(ff.calls.length, 0);
 });
 
 test('skills.delete requires confirmPermanent, then checks for referencing intellects, then deletes by id', async () => {

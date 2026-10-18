@@ -1,9 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  buildUserPropertiesForms, EDITABLE_FIELDS, SKILL_MODES, MODEL_IDS, THINKING_LEVELS, SUMMARY_CONTENT_TYPES, CALL_STAGES,
+  buildUserPropertiesForms, FORM_FIELD_TYPES, EDITABLE_FIELDS, SKILL_MODES, MODEL_IDS, THINKING_LEVELS, SUMMARY_CONTENT_TYPES, CALL_STAGES,
 } from '../../src/management/intellect-config.js';
 import * as mgmt from '../../src/management/index.js';
+import { ARG_TYPES } from '../../src/management/tools.js';
 
 /**
  * PURE unit tests for {@link buildUserPropertiesForms} and the exported enums. No network.
@@ -102,4 +103,40 @@ test('buildUserPropertiesForms: empty properties → bad_request', () => {
 
 test('buildUserPropertiesForms: bad property type → bad_request', () => {
   assert.throws(() => buildUserPropertiesForms([{ callStage: 'start', properties: [{ key: 'x', type: 'number' }] }]), (e) => e.code === 'bad_request');
+});
+
+test('FORM_FIELD_TYPES is ARG_TYPES plus email, phone, text; ARG_TYPES stays six', () => {
+  assert.ok(Object.isFrozen(FORM_FIELD_TYPES));
+  assert.deepEqual([...FORM_FIELD_TYPES], ['str', 'int', 'float', 'bool', 'list', 'dict', 'email', 'phone', 'text']);
+  assert.equal(ARG_TYPES.length, 6);
+  assert.deepEqual([...FORM_FIELD_TYPES].slice(0, 6), [...ARG_TYPES]);
+  assert.equal(mgmt.FORM_FIELD_TYPES, FORM_FIELD_TYPES);
+});
+
+test('buildUserPropertiesForms forwards title, secondaryTitle and id', () => {
+  const [a, b] = buildUserPropertiesForms([
+    { callStage: 'start', title: 'T', secondaryTitle: 'S', id: 0, properties: [{ key: 'x' }] },
+    { call_stage: 'end', title: '', secondary_title: 'S2', id: 4, properties: [{ key: 'y' }] },
+  ]);
+  assert.deepEqual(a, { call_stage: 'start', properties: [{ key: 'x', type: 'str' }], title: 'T', secondary_title: 'S', id: 0 });
+  assert.deepEqual(b, { call_stage: 'end', properties: [{ key: 'y', type: 'str' }], title: '', secondary_title: 'S2', id: 4 });
+});
+
+test('buildUserPropertiesForms omits null/undefined title, secondaryTitle and id', () => {
+  const [a] = buildUserPropertiesForms([{ callStage: 'start', title: null, secondaryTitle: undefined, id: null, properties: [{ key: 'x' }] }]);
+  assert.deepEqual(Object.keys(a).sort(), ['call_stage', 'properties']);
+});
+
+test('buildUserPropertiesForms rejects a non-string title/secondaryTitle and a bad id', () => {
+  const one = (extra) => () => buildUserPropertiesForms([{ callStage: 'start', properties: [{ key: 'x' }], ...extra }]);
+  const bad = (re) => (e) => e.code === 'bad_request' && re.test(e.detail);
+  assert.throws(one({ title: 42 }), bad(/user_properties_forms\[0\]\.title must be a string, got 42/));
+  assert.throws(one({ secondaryTitle: 42 }), bad(/\.secondaryTitle must be a string/));
+  assert.throws(one({ secondary_title: [] }), bad(/\.secondary_title must be a string/));
+  for (const id of [-1, 1.5, '3', NaN]) assert.throws(one({ id }), bad(/\.id must be a non-negative integer/));
+});
+
+test('buildUserPropertiesForms accepts email, phone and text', () => {
+  const [a] = buildUserPropertiesForms([{ callStage: 'start', properties: [{ key: 'e', type: 'email' }, { key: 'p', type: 'phone' }, { key: 't', type: 'text' }] }]);
+  assert.deepEqual(a.properties.map((p) => p.type), ['email', 'phone', 'text']);
 });

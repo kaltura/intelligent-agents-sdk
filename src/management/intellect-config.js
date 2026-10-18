@@ -49,13 +49,21 @@ import { meta } from '../core/ids.js';
 import { requireInt } from './intellect-body.js';
 import { assertCondition, assertPromptConditions, conditionProblem, conditionWarnings } from './condition.js';
 import { validateCapabilities, assertCapability, assertCapabilityState, mergeCapabilityWrite, CAPABILITIES } from './capabilities.js';
-import { ARG_TYPES, clientToolReadiness, toolRefId, unusedApiArgs } from './tools.js';
+import { FORM_FIELD_TYPE_NAMES } from '../core/stream.js';
+import { clientToolReadiness, toolRefId, unusedApiArgs } from './tools.js';
 import { MASK, maskExisting, validateSecretRefs } from './secrets.js';
 import { lintPrompts } from './prompt-lint.js';
 import { auditReport, isNotFound } from './audit-report.js';
 
 /** Names of the tools every agent already has (see {@link CAPABILITIES}). A linked tool with one of these names gets a `tool_name_builtin` warning. */
 const BUILTIN_TOOL_NAMES = Object.freeze(['async_search_knowledge_base', 'search_entries', 'search_web']);
+
+/**
+ * Field types a structured-data form property may use: the six tool-arg types
+ * (`ARG_TYPES`) plus `email`, `phone` and `text`.
+ * @type {readonly string[]}
+ */
+export const FORM_FIELD_TYPES = FORM_FIELD_TYPE_NAMES;
 
 /**
  * The closed set of structured-data-form call stages — WHEN the agent emits the
@@ -589,21 +597,34 @@ export class IntellectConfig {
   // ─────────────────────────── User properties / structured data forms ───────────────────────────
 
   /**
-   * Set `user_properties_forms` — the structured-data forms the agent emits, a
-   * LIST of `{call_stage, properties:[{key,type}]}` (one form per stage;
-   * a bare dict is rejected, and the list shape round-trips on read-back;
-   * stored forms may come back with extra default `id`/`title`/`secondary_title`
-   * fields).
-   * WRITE — idempotent. Validates every form (≥1 property, valid stage, valid
-   * arg types) before any network call. Accepts a single form object as a
-   * convenience — it is wrapped into a one-element list.
+   * Set `user_properties_forms`, a LIST of forms
+   * `{callStage, properties:[{key,type}], title?, secondaryTitle?, id?}`, one
+   * per stage. A bare dict is rejected. `title` and `secondaryTitle` (sent as
+   * `secondary_title`) are stored with the form. Read-back forms carry an
+   * integer `id`. An `id` you pass is sent as-is. When you omit it and exactly
+   * one stored form has the same `callStage`, the SDK sends that form's `id`.
+   * Types: {@link FORM_FIELD_TYPES}.
+   * WRITE, idempotent. Validates every form (at least one property, valid
+   * stage, valid types, string titles, integer id) before any network call.
+   * Accepts a single form object, which is wrapped into a one-element list.
    * @param {number} configId
-   * @param {object|object[]} forms One form `{callStage, properties:[{key,type}]}` or a list of them.
+   * @param {object|object[]} forms One form `{callStage, properties:[{key,type}], title?, secondaryTitle?, id?}` or a list of them.
    * @param {string} ks (admin)
    */
   async setUserPropertiesForms(configId, forms, ks) {
     const wire = buildUserPropertiesForms(forms);
-    return this.patch(configId, { user_properties_forms: wire }, ks);
+    return this.patch(configId, (cur) => {
+      const stored = Array.isArray(cur.user_properties_forms) ? cur.user_properties_forms : [];
+      return {
+        user_properties_forms: wire.map((form) => {
+          if (form.id !== undefined) return form;
+          if (wire.filter((w) => w.call_stage === form.call_stage).length !== 1) return form;
+          const same = stored.filter((s) => s && s.call_stage === form.call_stage);
+          const id = same.length === 1 ? same[0].id : undefined;
+          return Number.isInteger(id) && id >= 0 ? { ...form, id } : form;
+        }),
+      };
+    }, ks);
   }
 
   /** Clear `user_properties_forms`. WRITE — idempotent (sets it to null). @param {number} configId @param {string} ks (admin) */
@@ -795,12 +816,14 @@ export class IntellectConfig {
 }
 
 /**
- * Validate + build the `user_properties_forms` wire shape — a LIST of
- * `{call_stage, properties:[{key,type}]}` (a bare dict is rejected).
+ * Validate + build the `user_properties_forms` wire shape, a LIST of
+ * `{call_stage, properties:[{key,type}], title?, secondary_title?, id?}` (a
+ * bare dict is rejected). `title`, `secondaryTitle` (or `secondary_title`) and
+ * `id` are forwarded when given and omitted when `null` or `undefined`.
  * PURE; throws `bad_request` before any network call. A single
  * form object is accepted and wrapped into a one-element list.
- * @param {object|object[]} forms One `{callStage|call_stage, properties:[{key,type}]}` or a list of them.
- * @returns {{call_stage:string, properties:{key:string,type:string}[]}[]}
+ * @param {object|object[]} forms One `{callStage|call_stage, properties:[{key,type}], title?, secondaryTitle?|secondary_title?, id?}` or a list of them.
+ * @returns {{id?:number, title?:string, secondary_title?:string, call_stage:string, properties:{key:string,type:string}[]}[]}
  */
 export function buildUserPropertiesForms(forms) {
   const list = Array.isArray(forms) ? forms : [forms];
@@ -815,10 +838,26 @@ export function buildUserPropertiesForms(forms) {
     const properties = props.map((p, i) => {
       if (!p || typeof p !== 'object' || typeof p.key !== 'string' || !p.key.trim()) throw bad(`user_properties_forms[${f}].properties[${i}].key must be a non-empty string.`);
       const t = p.type ?? 'str';
-      if (!ARG_TYPES.includes(t)) throw bad(`user_properties_forms[${f}].properties[${i}].type must be one of ${ARG_TYPES.join(', ')}, got ${JSON.stringify(t)}.`);
+      if (!FORM_FIELD_TYPES.includes(t)) throw bad(`user_properties_forms[${f}].properties[${i}].type must be one of ${FORM_FIELD_TYPES.join(', ')}, got ${JSON.stringify(t)}.`);
       return { key: p.key, type: t };
     });
-    return { call_stage: stage, properties };
+    /** @type {{id?:number, title?:string, secondary_title?:string, call_stage:string, properties:{key:string,type:string}[]}} */
+    const out = { call_stage: stage, properties };
+    if (form.title != null) {
+      if (typeof form.title !== 'string') throw bad(`user_properties_forms[${f}].title must be a string, got ${JSON.stringify(form.title)}.`);
+      out.title = form.title;
+    }
+    const secondaryKey = form.secondaryTitle != null ? 'secondaryTitle' : 'secondary_title';
+    const secondary = form[secondaryKey];
+    if (secondary != null) {
+      if (typeof secondary !== 'string') throw bad(`user_properties_forms[${f}].${secondaryKey} must be a string, got ${JSON.stringify(secondary)}.`);
+      out.secondary_title = secondary;
+    }
+    if (form.id != null) {
+      if (!Number.isInteger(form.id) || form.id < 0) throw bad(`user_properties_forms[${f}].id must be a non-negative integer (the id a read returns), got ${JSON.stringify(form.id)}.`);
+      out.id = form.id;
+    }
+    return out;
   });
 }
 

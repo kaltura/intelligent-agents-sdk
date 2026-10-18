@@ -84,6 +84,79 @@ test('validatePromptVars flags an earlier unclosed {{ even when a later {{...}} 
   assert.equal(hasFinding(clean.findings, 'malformed_variable'), false);
 });
 
+test('validatePromptVars accepts a default() filter', () => {
+  const r = validatePromptVars("{{ nick | default('Bananabot') }}");
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.clientVariables, ['nick']);
+  assert.equal(hasFinding(r.findings, 'malformed_variable'), false);
+});
+
+test('validatePromptVars reads every name in a conditional expression', () => {
+  assert.deepEqual(validatePromptVars("{{ a if b else 'x' }}").variables, ['a', 'b']);
+});
+
+test('validatePromptVars skips test names', () => {
+  assert.deepEqual(validatePromptVars('{{ x is defined }}').variables, ['x']);
+  assert.deepEqual(validatePromptVars('{{ x is not none }}').variables, ['x']);
+});
+
+test('validatePromptVars skips filter args and kwargs', () => {
+  assert.deepEqual(validatePromptVars("{{ items|join(', ') }}").variables, ['items']);
+  assert.deepEqual(validatePromptVars('{{ s|truncate(length=10) }}').variables, ['s']);
+});
+
+test('validatePromptVars keeps a system namespace through a filter', () => {
+  const r = validatePromptVars('{{ secrets.K | upper }}');
+  assert.deepEqual(r.systemVariables, ['secrets.K']);
+  assert.deepEqual(r.clientVariables, []);
+});
+
+test('validatePromptVars ignores an attribute after an index', () => {
+  assert.deepEqual(validatePromptVars('{{ items[0].name }}').variables, ['items']);
+});
+
+test('validatePromptVars keeps the head of a method call', () => {
+  assert.deepEqual(validatePromptVars("{{ plan.startswith('p') }}").variables, ['plan']);
+});
+
+test('validatePromptVars flags unbalanced quotes or brackets', () => {
+  for (const t of ['{{ a(b }}', "{{ 'x }}", '{{ a[0 }}']) {
+    const r = validatePromptVars(t);
+    assert.equal(r.ok, false, t);
+    assert.equal(hasFinding(r.findings, 'malformed_variable'), true, t);
+  }
+});
+
+test('an expression reading a client name is client_variable_not_allowed when the gate is off', () => {
+  const r = validatePromptVars("{{ nick | default('x') }}", { allowClientVariables: false });
+  assert.equal(hasFinding(r.findings, 'client_variable_not_allowed'), true);
+  assert.equal(hasFinding(r.findings, 'malformed_variable'), false);
+  assert.match(r.findings[0].message, /`\{\{nick\}\}`/);
+});
+
+test('validatePromptVars keeps flagging names that are not expressions', () => {
+  for (const t of ['{{ 2x }}', '{{first-name}}', '{{ user name }}', '{{ a 1 }}']) {
+    const r = validatePromptVars(t);
+    assert.equal(r.ok, false, t);
+    assert.equal(hasFinding(r.findings, 'malformed_variable'), true, t);
+  }
+});
+
+test('validatePromptVars accepts number and literal expressions', () => {
+  const cases = [['{{ n + 1 }}', ['n']], ['{{ n-1 }}', ['n']], ['{{ 1e3 }}', []], ["{{ 'x' }}", []], ['{{ 42 }}', []]];
+  for (const [t, vars] of cases) {
+    const r = validatePromptVars(t);
+    assert.equal(hasFinding(r.findings, 'malformed_variable'), false, t);
+    assert.deepEqual(r.variables, vars, t);
+  }
+});
+
+test('validatePromptVars dedupes a name across a plain reference and an expression', () => {
+  const r = validatePromptVars('{{x}} {{ x | upper }}', { allowClientVariables: false });
+  assert.deepEqual(r.variables, ['x']);
+  assert.ok(r.findings.every((f) => f.message.includes('`{{x}}`')));
+});
+
 test('validatePromptVars deduplicates repeated references', () => {
   const r = validatePromptVars('{{topic}} and again {{topic}}');
   assert.deepEqual(r.variables, ['topic']);

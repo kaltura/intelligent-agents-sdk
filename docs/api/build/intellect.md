@@ -84,6 +84,8 @@ POST https://genie.nvp1.ovp.kaltura.com/v1/intellect/update
 
 `lintPrompts` reports a missing `type` as the warning `missing_type` and any value other than the three above as `bad_type`. A block whose `headerTemplate` or `value` is empty or only whitespace is skipped. It adds nothing to the prompt, and `lintPrompts` warns `renderer_skip`.
 
+Prompt blocks are Jinja2 templates, so a filter such as `{{ nick | default('guest') }}` works. `lintPrompts` checks the names a `{{ }}` expression reads. It does not check `{% %}` blocks.
+
 Call `mgmt.application.getCustomPrompts(ks)` to get the `key` and `headerTemplate` values. It returns the current schema for this block: a 5-entry array (`goal`, `targetAudience`, `restrictedTopics`, `name`, `knowledge`), each shaped as `{key, label, headerTemplate, type}` (every entry returned has `type: "custom"`; your own blocks can use any of the three `type` values above).
 
 Use this call to render a "describe your agent" form. The labels and instructions you show always match the current prompt blocks, so you do not keep hardcoded copy in sync by hand.
@@ -114,7 +116,7 @@ const fields = await mgmt.application.getCustomPrompts(ks);
 | `skill_ids` | Skill references `{ id, mode, condition? }`. `mode` is one of `SKILL_MODES` (`adhoc`, `adhoc-save`, `preloaded`); `condition` is an optional [condition](#conditions) (e.g. `sys__avatar_enabled`). Partner-level Skill CRUD lives at `mgmt.skills`; link via `intellectConfig.setSkillIds`. Shared skills and unusable ids: [Skills](../management-operations.md#skills) |
 | `mcp_servers` | MCP server configs the intellect can call. Set via `intellectConfig.setMcpServers`. See [MCP-INTEGRATIONS.md](../../MCP-INTEGRATIONS.md) |
 | `secrets` | Named secrets for tool OAuth (write-only, masked on read) |
-| `user_properties_forms` | Lead-capture form fields |
+| `user_properties_forms` | Structured-data forms the agent asks for. Set via `intellectConfig.setUserPropertiesForms`. Fields, types and titles: [STRUCTURED-DATA-FORMS.md](../../STRUCTURED-DATA-FORMS.md) |
 
 ### Conditions
 
@@ -122,7 +124,7 @@ A `condition` switches a skill, a prompt block or a tool on only while it is tru
 
 | Where | Set with |
 |---|---|
-| Skill | `condition` in a `skill_ids` entry |
+| Skill | `condition` in a `skill_ids` entry, or on the skill itself with `skills.add` / `skills.update`. Set it in one place, not both |
 | Prompt block | `condition` in a `prompts[]` block |
 | Tool | `condition` in the tool config, e.g. `tools.api({ ..., condition })` |
 
@@ -175,6 +177,7 @@ Each is `"on"` / `"off"` / `"disabled"`:
 | `screen_share_analysis` | OFF | Analyze a shared screen |
 | `avatar_show_content` | OFF | Enable in-avatar content display |
 | `think_process` | OFF | Stream the model's reasoning as `think` segments before the answer. When off, one short status placeholder `think` segment is still emitted |
+| `set_vars_tool` | OFF | Gives the agent a built-in `set_variable` tool |
 
 > When you set `capabilities` directly, send the full dict. To change one key, use `mgmt.intellects.setCapability`. It reads the current dict and re-sends it with your change.
 

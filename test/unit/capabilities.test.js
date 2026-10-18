@@ -17,20 +17,20 @@ import {
 const OFF_DEFAULTS = [
   'avatar', 'avatar_filler', 'avatar_show_content', 'video_gallery',
   'external_video', 'show_link', 'use_web_search', 'screen_share_analysis',
-  'think_process',
+  'think_process', 'set_vars_tool',
 ];
 
 // ── const tables ────────────────────────────────────────────────────────────
 
-test('CAPABILITIES is the frozen 16-name set in canonical order', () => {
-  assert.equal(CAPABILITIES.length, 16);
+test('CAPABILITIES is the frozen 17-name set in canonical order', () => {
+  assert.equal(CAPABILITIES.length, 17);
   assert.ok(Object.isFrozen(CAPABILITIES));
   assert.deepEqual([...CAPABILITIES], [
     'use_knowledge_base', 'use_content_search', 'use_get_entry_content',
     'generate_followup_questions', 'include_sources', 'use_related_files',
     'video_gallery', 'external_video', 'show_link', 'avatar', 'avatar_filler',
     'avatar_show_content', 'kaltura_genie_experiences', 'use_web_search',
-    'screen_share_analysis', 'think_process',
+    'screen_share_analysis', 'think_process', 'set_vars_tool',
   ]);
 });
 
@@ -39,7 +39,7 @@ test('CAPABILITY_STATE is the frozen on/off/disabled enum', () => {
   assert.deepEqual(CAPABILITY_STATE, { ON: 'on', OFF: 'off', DISABLED: 'disabled' });
 });
 
-test('CAPABILITY_DEFAULTS: 9 OFF, 7 ON (kaltura_genie_experiences ON); frozen snapshot', () => {
+test('CAPABILITY_DEFAULTS: 10 OFF, 7 ON (kaltura_genie_experiences ON); frozen snapshot', () => {
   assert.ok(Object.isFrozen(CAPABILITY_DEFAULTS));
   const off = CAPABILITIES.filter((c) => CAPABILITY_DEFAULTS[c] === 'off');
   const on = CAPABILITIES.filter((c) => CAPABILITY_DEFAULTS[c] === 'on');
@@ -47,11 +47,12 @@ test('CAPABILITY_DEFAULTS: 9 OFF, 7 ON (kaltura_genie_experiences ON); frozen sn
   assert.equal(on.length, 7);
   assert.equal(CAPABILITY_DEFAULTS.kaltura_genie_experiences, 'on');
   assert.equal(CAPABILITY_DEFAULTS.think_process, 'off');
+  assert.equal(CAPABILITY_DEFAULTS.set_vars_tool, 'off');
   // every capability has a default
   for (const c of CAPABILITIES) assert.ok(CAPABILITY_DEFAULTS[c] === 'on' || CAPABILITY_DEFAULTS[c] === 'off');
 });
 
-test('CAPABILITY_INFO covers all 16 with valid kind + defaultState matching CAPABILITY_DEFAULTS', () => {
+test('CAPABILITY_INFO covers every capability with valid kind + defaultState matching CAPABILITY_DEFAULTS', () => {
   const kinds = new Set(['tool', 'segment', 'mode', 'prompt']);
   assert.deepEqual(Object.keys(CAPABILITY_INFO).sort(), [...CAPABILITIES].sort());
   for (const c of CAPABILITIES) {
@@ -63,6 +64,7 @@ test('CAPABILITY_INFO covers all 16 with valid kind + defaultState matching CAPA
   }
   // segment caps carry a runtime name
   assert.equal(CAPABILITY_INFO.show_link.runtime, 'show-link');
+  assert.equal(CAPABILITY_INFO.set_vars_tool.kind, 'tool');
   assert.equal(CAPABILITY_INFO.generate_followup_questions.runtime, 'followups');
   assert.equal(CAPABILITY_INFO.think_process.kind, 'segment');
   assert.equal(CAPABILITY_INFO.think_process.runtime, 'think');
@@ -76,6 +78,10 @@ test('CAPABILITY_INFO summaries name no internal-only backend fields', () => {
 });
 
 // ── assertCapability / assertCapabilityState ─────────────────────────────────
+
+test('assertCapability accepts set_vars_tool', () => {
+  assert.equal(assertCapability('set_vars_tool'), 'set_vars_tool');
+});
 
 test('assertCapability accepts known, throws unknown_capability on typo', () => {
   assert.equal(assertCapability('avatar'), 'avatar');
@@ -146,7 +152,6 @@ test('mergeCapabilityWrite validates patch strictly; unknown current keys pass t
 test('resolve with no layers => every capability falls to default, resolvedFrom env (default snapshot)', () => {
   const { capabilities, _meta } = resolveCapabilities();
   assert.equal(Object.keys(capabilities).length, CAPABILITIES.length);
-  assert.equal(Object.keys(capabilities).length, 16);
   for (const c of CAPABILITIES) {
     assert.equal(capabilities[c].state, CAPABILITY_DEFAULTS[c], `${c}`);
     assert.equal(capabilities[c].vetoed, false);

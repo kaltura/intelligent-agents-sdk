@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { conditionProblem, assertCondition, assertPromptConditions, conditionWarnings } from '../../src/management/condition.js';
+import { conditionProblem, assertCondition, assertPromptConditions, conditionWarnings, stripQuoted } from '../../src/management/condition.js';
 
 /** Condition expression guard (PURE). */
 
@@ -60,4 +60,10 @@ test('conditionWarnings reads escaped quotes, ignores quoted operators and stays
   conditionWarnings('A'.repeat(50_000));
   conditionWarnings(`a${' '.repeat(50_000)}x`);
   assert.ok(Number(process.hrtime.bigint() - started) / 1e6 < 500, 'linear time');
+});
+
+test('stripQuoted replaces quoted strings and keeps an unterminated quote', () => {
+  assert.equal(stripQuoted(`a == 'x y' and b == "z"`), "a == '' and b == ''");
+  assert.equal(stripQuoted("a == 'it\\'s'"), "a == ''");
+  assert.equal(stripQuoted("a == 'open"), "a == 'open");
 });
