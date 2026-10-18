@@ -50,20 +50,35 @@ Descriptor: `{kind:'summary', data:{title, summary, bullets:[string]}}`. The sum
 
 ### 5. video-gallery (`renderVideoGallery`): Kaltura clips
 
-Items come from `model.videos`, `model.entries`, or `model.items`. Each item:
+Items come from `model.videos`, `model.entries`, `model.items`, `model.citation.clips`, or `model.clips`. Each item:
 
 | Field | Source keys (model) | Constraint |
 |---|---|---|
 | `entryId` | `entryId`, `entry_id`, `id` | ≤100 chars, preserved verbatim, host plays via the Kaltura player |
 | `title` | `title`, `name` | ≤500 chars |
 | `thumbnailUrl` | `thumbnailUrl`, `thumbnail`, `thumb` | via `safeUrl` |
-| `url` | `url`, `playUrl`, `link` | via `safeUrl` |
+| `startTime`, `endTime` | `startTime`/`start_time`/`start`, `endTime`/`end_time`/`end` | seconds: a number or numeric string ≥0, else `null`. Always present |
+| `url` | `url`, `playUrl`, `link`, `video_link` | via `safeUrl` |
 | `embedUrl` | *(output, derived, not read from the model)* | `playerEmbedUrl(entryId, partnerId, {uiConfId})` (`core/kaltura-media.js`) when the render ctx has `partnerId`; `''` otherwise |
 | `duration` | `duration`, `length` | string-kept, ≤40 chars, to tolerate `"1:23"` or a seconds count |
 | `description` | `description` | ≤2000 chars |
 | `alt` | `alt`, `title` | ≤300 chars, the image's accessible name |
 
-Descriptor: `{kind:'video-gallery', data:{title, videos:[{entryId, title, thumbnailUrl, url, embedUrl, duration, description, alt}]}}`. This is the **in-platform video** widget: the host renders the Kaltura player against `entryId`.
+Descriptor: `{kind:'video-gallery', data:{title, videos:[{entryId, startTime, endTime, title, thumbnailUrl, url, embedUrl, duration, description, alt}]}}`. This is the **in-platform video** widget: the host renders the Kaltura player against `entryId`.
+
+#### Clip fields
+
+A clip is one span of a Kaltura entry. Video-gallery items and the `clips` of other widgets share this shape.
+
+| Field | Meaning |
+|---|---|
+| `entryId` | Kaltura entry id |
+| `startTime`, `endTime` | Seconds, or `null` when absent |
+| `thumbnailUrl` | The given thumbnail, else derived from `entryId` when the render ctx has `partnerId` |
+| `url` | Link to the clip, scheme-checked |
+| `embedUrl` | Player iframe URL derived from `entryId`, as above |
+
+A clip has no title. `mountWidget` labels it by entry id and time range.
 
 ### 6. show-link (`renderShowLink`): links
 

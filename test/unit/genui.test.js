@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 
 import {
   normalizeRuntime, isKnownRuntime, parseContent, parseWidget,
@@ -9,8 +10,14 @@ import { SegmentAssembler } from '../../src/experience/genui/segments.js';
 import { ExperienceRenderer } from '../../src/experience/genui/renderer.js';
 import { DEFAULT_RENDERERS } from '../../src/experience/genui/renderers/index.js';
 import { renderFollowups } from '../../src/experience/genui/renderers/followups.js';
+import * as vg from '../../src/experience/genui/renderers/video-gallery.js';
 
 /** GenUI segment→widget layer. Pure parse + dispatch + fallback + each default renderer shape. */
+
+/** Parse a YAML fixture body the way a live widget segment reaches the renderers. */
+const fixtureModel = (name, runtimeName) =>
+  parseWidget({ runtimeName, content: readFileSync(new URL(`../fixtures/genui-yaml/${name}.yaml`, import.meta.url), 'utf8') }).model;
+const CTX = { partnerId: '1234567', uiConfId: '58022082' };
 
 // ─────────────────────────── normalizeRuntime ───────────────────────────
 
@@ -353,6 +360,108 @@ test('renderer shape: content-gallery (urls checked)', () => {
   });
   assert.equal(d.data.items[0].imageUrl, 'https://k.com/i.png');
   assert.equal(d.data.items[0].url, '');               // vbscript blocked
+});
+
+// ─────────────────────────── video-gallery clips ───────────────────────────
+
+test('video-gallery: citation.clips become videos (entryId, startTime, endTime)', () => {
+  const model = fixtureModel('video-gallery-clips', 'video-gallery-tool');
+  const d = new ExperienceRenderer().render('video-gallery', model);
+  assert.equal(d.data.videos.length, 3);
+  assert.deepEqual(d.data.videos.map((v) => v.startTime), [0, 84, 202]);
+  assert.deepEqual(d.data.videos.map((v) => v.endTime), [26, 200, 280]);
+  assert.deepEqual(d.data.videos.map((v) => v.entryId), ['1_aaaaaaaa', '1_aaaaaaaa', '1_bbbbbbbb']);
+  assert.deepEqual(d.data.videos.map((v) => v.title), ['', '', '']);   // a clip has no title
+});
+
+test('video-gallery: null clip thumbnail is derived from partnerId; null video_link gives url ""', () => {
+  const model = fixtureModel('video-gallery-clips', 'video-gallery-tool');
+  const v = new ExperienceRenderer(CTX).render('video-gallery', model).data.videos[0];
+  assert.match(v.thumbnailUrl, /1_aaaaaaaa/);
+  assert.match(v.embedUrl, /1_aaaaaaaa/);
+  assert.equal(v.url, '');
+});
+
+test('video-gallery: startTime/endTime are null when absent, negative or non-numeric; numeric strings count', () => {
+  const r = (o) => new ExperienceRenderer().render('video-gallery', { videos: [{ entryId: '1_a', ...o }] }).data.videos[0];
+  assert.deepEqual([r({}).startTime, r({}).endTime], [null, null]);
+  assert.deepEqual([r({ startTime: -3, endTime: 'soon' }).startTime, r({ startTime: -3, endTime: 'soon' }).endTime], [null, null]);
+  assert.deepEqual([r({ start_time: '12', end_time: 30.5 }).startTime, r({ start_time: '12', end_time: 30.5 }).endTime], [12, 30.5]);
+  assert.deepEqual([r({ start: 5, end: 9 }).startTime, r({ start: 5, end: 9 }).endTime], [5, 9]);
+  assert.equal(r({ startTime: Infinity }).startTime, null);
+});
+
+test('video-gallery: videos key wins over citation.clips (guard)', () => {
+  const d = new ExperienceRenderer().render('video-gallery', {
+    videos: [{ entryId: '1_first' }], citation: { clips: [{ entry_id: '1_clip' }] }, clips: [{ entry_id: '1_other' }],
+  });
+  assert.deepEqual(d.data.videos.map((v) => v.entryId), ['1_first']);
+});
+
+test('video-gallery: top-level clips are read after citation.clips; video_link is a url alias', () => {
+  const a = new ExperienceRenderer().render('video-gallery', { clips: [{ entry_id: '1_x', video_link: 'https://k.com/v' }] });
+  assert.equal(a.data.videos[0].entryId, '1_x');
+  assert.equal(a.data.videos[0].url, 'https://k.com/v');
+  const b = new ExperienceRenderer().render('video-gallery', { citation: 'text', clips: [{ entry_id: '1_y' }] });
+  assert.equal(b.data.videos[0].entryId, '1_y');
+});
+
+test('renderClips: non-array gives []; a clip with no entryId and no url is dropped', () => {
+  assert.equal(typeof vg.renderClips, 'function');
+  assert.deepEqual(vg.renderClips(undefined), []);
+  assert.deepEqual(vg.renderClips('x'), []);
+  assert.deepEqual(vg.renderClips({}), []);
+  const out = vg.renderClips([null, {}, 7, { start_time: 3 }, { entry_id: '1_a', start_time: 3 }, { video_link: 'https://k.com/v' }], CTX);
+  assert.equal(out.length, 2);
+  assert.equal(out[0].entryId, '1_a');
+  assert.equal(out[0].startTime, 3);
+  assert.equal(out[1].url, 'https://k.com/v');
+  assert.deepEqual(Object.keys(out[0]).sort(), ['embedUrl', 'endTime', 'entryId', 'startTime', 'thumbnailUrl', 'url']);
+});
+
+test('renderClips: blocks an unsafe url scheme and uses no partnerId guess', () => {
+  const [c] = vg.renderClips([{ entry_id: '1_a', video_link: 'javascript:x()', thumbnail: 'data:x' }]);
+  assert.equal(c.url, '');
+  assert.equal(c.thumbnailUrl, '');
+  assert.equal(c.embedUrl, '');
+});
+
+async function mountClips(videos, onAction) {
+  const listeners = [];
+  globalThis.document = listenerCapturingDom(listeners);
+  const { mountWidget } = await import('../../src/experience/genui/renderers/mount.js');
+  const root = mountWidget({ kind: 'video-gallery', data: { videos } }, document.createElement('div'), { onAction });
+  return { root, listeners };
+}
+
+test('mountWidget video-gallery: untitled clip shows its time range and labels the button by entry id + range', async () => {
+  try {
+    const { root } = await mountClips([{ entryId: '1_aaaaaaaa', title: '', startTime: 84, endTime: 200, thumbnailUrl: '', duration: '' }], () => {});
+    const btn = findAll(root, (n) => n.tagName === 'BUTTON')[0];
+    assert.equal(btn.getAttribute('aria-label'), 'Play: 1_aaaaaaaa, 1:24-3:20');
+    const meta = findAll(root, (n) => n.className === 'kgenui__meta').map((n) => n.textContent);
+    assert.deepEqual(meta, ['1:24-3:20']);
+  } finally { delete globalThis.document; }
+});
+
+test('mountWidget video-gallery: start without end shows one time; titled clip keeps its title in the label', async () => {
+  try {
+    const { root } = await mountClips([{ entryId: '1_a', title: 'Intro', startTime: 65, endTime: null }, { entryId: '1_b', title: 'Plain', startTime: null, endTime: null }], () => {});
+    const btns = findAll(root, (n) => n.tagName === 'BUTTON');
+    assert.equal(btns[0].getAttribute('aria-label'), 'Play: Intro, 1:05');
+    assert.equal(btns[1].getAttribute('aria-label'), 'Play: Plain');
+    const meta = findAll(root, (n) => n.className === 'kgenui__meta').map((n) => n.textContent);
+    assert.deepEqual(meta, ['1:05']);
+  } finally { delete globalThis.document; }
+});
+
+test('mountWidget video-gallery: play payload carries startTime and endTime', async () => {
+  try {
+    const actions = [];
+    const { listeners } = await mountClips([{ entryId: '1_a', title: '', startTime: 84, endTime: 106, url: 'https://k.com/v', embedUrl: '' }], (a, p) => actions.push([a, p]));
+    listeners.find((l) => l.ev === 'click').fn();
+    assert.deepEqual(actions, [['play', { entryId: '1_a', url: 'https://k.com/v', embedUrl: '', startTime: 84, endTime: 106 }]]);
+  } finally { delete globalThis.document; }
 });
 
 // ─────────────────────────── SegmentAssembler ───────────────────────────

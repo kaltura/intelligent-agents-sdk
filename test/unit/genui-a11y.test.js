@@ -62,7 +62,7 @@ const SAMPLES = {
   sources: { sources: [{ title: 'Annual report', url: 'https://example.com/report', snippet: 'Full detail.' }] },
   'show-link': { url: 'https://example.com/doc', label: 'Read the doc', description: 'Background info.' },
   'external-video': { title: 'Product demo', embedUrl: 'https://www.youtube-nocookie.com/embed/abc123' },
-  'video-gallery': { title: 'Clips', videos: [{ entryId: '1_a', title: 'Clip 1', thumbnailUrl: 'https://k.example/i.png', alt: 'Clip 1 thumbnail' }] },
+  'video-gallery': { title: 'Clips', videos: [{ entryId: '1_a', title: 'Clip 1', thumbnailUrl: 'https://k.example/i.png', alt: 'Clip 1 thumbnail' }, { entryId: '1_b', title: '', startTime: 84, endTime: 106, thumbnailUrl: 'https://k.example/j.png', alt: '' }] },
   'content-gallery': { title: 'Gallery', items: [{ title: 'Card', imageUrl: 'https://k.example/i.png', alt: 'Card image', description: 'A card.', url: 'https://example.com/card' }] },
   'user-properties-form': { title: 'Tell us about you', fields: [{ key: 'email', type: 'email', label: 'Email', required: true, description: 'We will not spam you.' }] },
 };
