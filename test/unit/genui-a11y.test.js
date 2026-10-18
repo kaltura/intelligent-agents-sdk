@@ -56,7 +56,7 @@ function formatViolations(violations) {
 }
 
 const SAMPLES = {
-  summary: { title: 'Q2 Results', summary: 'Revenue grew.', bullets: ['Up 10%', 'Down in EMEA'] },
+  summary: { title: 'Q2 Results', summary: 'Revenue grew.', bullets: ['Up 10%', 'Down in EMEA'], chapters: ['0:00-1:30 | Intro', '1:30-3:00 | Detail'] },
   flashcards: { title: 'Review', cards: [{ front: 'What is Kaltura?', back: 'A video platform.', label: 'Card 1' }] },
   followups: { questions: ['What about Q3?', 'Any risks?'] },
   sources: { sources: [{ title: 'Annual report', url: 'https://example.com/report', snippet: 'Full detail.' }] },

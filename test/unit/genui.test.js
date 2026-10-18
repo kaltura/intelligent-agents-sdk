@@ -408,6 +408,50 @@ test('renderer shape: summary unwraps a mis-nested {summary:{title,bullets}} pay
   assert.ok(!d.data.summary.includes('[object Object]'));
 });
 
+test('renderer shape: summary keeps chapters in order', () => {
+  const model = fixtureModel('summary-chapters', 'summary-tool');
+  const d = new ExperienceRenderer().render('summary', model);
+  assert.equal(d.data.chapters.length, 5);
+  assert.equal(d.data.chapters[0], '0:00-1:30 | Introduction: How thirds help a layout stay balanced and calm');
+  assert.ok(d.data.chapters[4].startsWith('8:30-9:00 | Variations'));
+  assert.deepEqual(d.data.bullets, []);
+});
+
+test('summary: chapter object rows read title/text/label/summary; empty rows dropped', () => {
+  const d = new ExperienceRenderer().render('summary', { summary: 's', chapters: [{ title: 'A' }, { text: 'B' }, { label: 'C' }, { summary: 'D' }, {}, '', null, 'E'] });
+  assert.deepEqual(d.data.chapters, ['A', 'B', 'C', 'D', 'E']);
+});
+
+test('summary: nested summary unwrap carries chapters', () => {
+  const d = new ExperienceRenderer().render('summary', { summary: { summary: 'S', chapters: ['0:00 | One'] } });
+  assert.deepEqual(d.data.chapters, ['0:00 | One']);
+  const top = new ExperienceRenderer().render('summary', { summary: { summary: 'S', chapters: ['inner'] }, chapters: ['outer'] });
+  assert.deepEqual(top.data.chapters, ['outer']);
+});
+
+test('summary: chapters is [] when absent or not a list', () => {
+  assert.deepEqual(new ExperienceRenderer().render('summary', { summary: 's' }).data.chapters, []);
+  assert.deepEqual(new ExperienceRenderer().render('summary', { summary: 's', chapters: 'x' }).data.chapters, []);
+});
+
+test('mountWidget summary: chapters render as an ordered kgenui__chapters list', async () => {
+  globalThis.document = fakeDom();
+  try {
+    const { mountWidget } = await import('../../src/experience/genui/renderers/mount.js');
+    const model = fixtureModel('summary-chapters', 'summary-tool');
+    const root = mountWidget(new ExperienceRenderer().render('summary', model), document.createElement('div'));
+    const ol = findAll(root, (n) => n.tagName === 'OL');
+    assert.equal(ol.length, 1);
+    assert.ok(ol[0].className.includes('kgenui__chapters'));
+    assert.equal(ol[0].children.length, 5);
+    assert.ok(ol[0].children.every((li) => li.className === 'kgenui__chapter'));
+    assert.ok(ol[0].children[0].textContent.startsWith('0:00-1:30 | Introduction'));
+    // chapters alone are content: the widget mounts
+    const only = mountWidget({ kind: 'summary', data: { chapters: ['0:00 | A'] } }, document.createElement('div'));
+    assert.ok(only);
+  } finally { delete globalThis.document; }
+});
+
 test('renderer shape: video-gallery (entryId preserved, urls checked)', () => {
   const d = new ExperienceRenderer().render('video-gallery', {
     videos: [{ entryId: '1_abc', title: 'V', url: 'https://k.com/v', thumbnailUrl: 'data:x' }],

@@ -101,6 +101,13 @@ const BUILDERS = {
       else root.appendChild(el('p', 'kgenui__text', safeText(data.summary, 8000)));
     }
     listEl(root, asArray(data.bullets), (b) => el('li', 'kgenui__bullet', safeText(b, 1000)));
+    const chapters = asArray(data.chapters);
+    if (chapters.length) {
+      const ol = el('ol', 'kgenui__list kgenui__chapters');
+      ol.setAttribute('role', 'list');
+      for (const c of chapters) ol.appendChild(el('li', 'kgenui__chapter', safeText(c, 1000)));
+      root.appendChild(ol);
+    }
   },
 
   flashcards(root, data) {

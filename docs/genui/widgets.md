@@ -51,9 +51,10 @@ Descriptor: `{kind:'sources', data:{sources:[{title, url, snippet, score?, entry
 |---|---|---|
 | `summary` | `summary`, `text`, `content`, `raw` | ≤8000 chars; via `safeSource`, preserves `\n`/`\r`/`\t` so markdown structure survives |
 | `bullets` | `bullets`, `points`, `items` | ≤1000 chars per item |
+| `chapters` | `chapters`, each a string or `{title\|text\|label\|summary}` | ≤1000 chars per item, empty dropped, kept verbatim and in order. `[]` when absent |
 | `title` | `title` | ≤300 chars |
 
-Descriptor: `{kind:'summary', data:{title, summary, bullets:[string]}}`. The summary stays untrusted (LLM output); by default `mountWidget` renders it as flat escaped text. Pass `mountWidget(descriptor, el, {markdown:true})` to opt into a first-party, allow-listed markdown-to-DOM renderer instead, see [authoring-and-consuming.md § Markdown rendering (opt-in)](authoring-and-consuming.md#markdown-rendering-opt-in). The SDK never emits raw HTML either way.
+Descriptor: `{kind:'summary', data:{title, summary, bullets:[string], chapters:[string]}}`. The summary stays untrusted (LLM output); by default `mountWidget` renders it as flat escaped text. Pass `mountWidget(descriptor, el, {markdown:true})` to opt into a first-party, allow-listed markdown-to-DOM renderer instead, see [authoring-and-consuming.md § Markdown rendering (opt-in)](authoring-and-consuming.md#markdown-rendering-opt-in). The SDK never emits raw HTML either way.
 
 ### 5. video-gallery (`renderVideoGallery`): Kaltura clips
 

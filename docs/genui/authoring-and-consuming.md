@@ -113,7 +113,7 @@ Without `opts.markdown`, the summary renders as flat escaped text.
 | followups | `kgenui__chip`, `kgenui__chips` |
 | flashcards | `kgenui__flip`, `kgenui__back` |
 | sources | `kgenui__source`, `kgenui__snippet`, `kgenui__score` |
-| summary | `kgenui__bullet` |
+| summary | `kgenui__bullet`, `kgenui__chapters`, `kgenui__chapter` |
 | video-gallery, content-gallery (video slides) | `kgenui__player`, `kgenui__play`, `kgenui__play-glyph` |
 | external-video | `kgenui__embed` (iframe wrap) |
 | user-properties-form | `kgenui__form`, `kgenui__field`, `kgenui__label`, `kgenui__help` |
