@@ -110,12 +110,11 @@ try {
   console.log('Created email rule:', emailRule.id);
 
   // 5. Dry-run both — proves the rules are wired correctly without waiting
-  // for a real conversation to end. matchedRules[] can be a flat list of
-  // rules OR a grouped entry ({isGrouped:true, rules:[...]}) — the system
-  // preset and a partner rule on the same event/objectType merge into one
-  // group, so a naive .map(r => r.id) only ever sees the group's key and
-  // never actually checks that our own rule matched.
-  const flattenMatchedRuleIds = (matchedRules) => matchedRules.flatMap((entry) => (entry.isGrouped ? entry.rules.map((r) => r.id) : [entry.id]));
+  // for a real conversation to end. Every matchedRules[] entry holds its rules
+  // in entry.rules ({isGrouped, rules:[...]}), and the system preset and a
+  // partner rule on the same event/objectType merge into one entry, so read
+  // entry.rules to check that our own rule matched.
+  const flattenMatchedRuleIds = (matchedRules) => matchedRules.flatMap((entry) => entry.rules.map((r) => r.id));
 
   const syntheticObject = { agent_id: demoAgentId, thread_id: 'demo-thread', user_id: 'demo-user', origin: 0 };
   const sessionEndedMatch = await kaltura.lifecycle.match('thread', 'session_ended', { object: syntheticObject }, admin);
