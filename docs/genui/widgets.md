@@ -86,7 +86,7 @@ A clip is one span of a Kaltura entry. Video-gallery items and the `clips` of ot
 | `url` | Link to the clip, scheme-checked |
 | `embedUrl` | Player iframe URL derived from `entryId`, as above |
 
-A clip has no title. `mountWidget` labels it by entry id and time range.
+A clip under `citation.clips` carries no title. `mountWidget` labels the play button by the item title, else the entry id, plus the time range.
 
 ### 6. show-link (`renderShowLink`): links
 
