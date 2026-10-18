@@ -690,6 +690,16 @@ test('mountWidget content-gallery: description folds line breaks to spaces', asy
   } finally { delete globalThis.document; }
 });
 
+test('mountWidget content-gallery: a long run of spaces in a description folds in linear time', async () => {
+  globalThis.document = fakeDom();
+  try {
+    const { mountWidget } = await import('../../src/experience/genui/renderers/mount.js');
+    const t0 = performance.now();
+    mountWidget({ kind: 'content-gallery', data: { items: [{ title: 'T', description: 'a' + ' '.repeat(200000) + 'b' }] } }, document.createElement('div'));
+    assert.ok(performance.now() - t0 < 500);
+  } finally { delete globalThis.document; }
+});
+
 test('mountWidget content-gallery: a video slide renders a play button that mounts the player and emits play', async () => {
   const listeners = [];
   globalThis.document = listenerCapturingDom(listeners);

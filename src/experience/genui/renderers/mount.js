@@ -223,7 +223,7 @@ const BUILDERS = {
         if (img) card.appendChild(img);
       }
       if (it && it.title) card.appendChild(el('span', 'kgenui__title', safeText(it.title, 500)));
-      if (it && it.description) card.appendChild(el('p', 'kgenui__text', safeText(String(it.description).replace(/\s*\n\s*/g, ' '), 2000)));
+      if (it && it.description) card.appendChild(el('p', 'kgenui__text', safeText(String(it.description).split('\n').map((l) => l.trim()).filter(Boolean).join(' '), 2000)));
       if (it && it.url) { const a = link(it.url, safeText(it.title || 'Open', 300), onAction); if (a) card.appendChild(a); }
       else if (it && it.id) { card.dataset.id = String(it.id); }
       return card;
