@@ -198,6 +198,13 @@ test('a single empty final chunk is still an empty reply', async () => {
   await assert.rejects(() => mgmt.conversations.send({ userMessage: 'hi' }, CONV_TOKEN), (e) => e.code === 'empty_reply');
 });
 
+test('an empty startup think marker plus an empty final think is still an empty reply', async () => {
+  const body = '{"type":"think","content":"","threadId":"t-1","messageId":"m-1"}\n{"type":"think","content":"","isFinal":true}\n';
+  const { mgmt } = mgmtFor(body);
+  await assert.rejects(() => mgmt.conversations.send({ userMessage: 'hi' }, CONV_TOKEN), (e) => e.code === 'empty_reply');
+  await assert.rejects(() => mgmt.converseOnce(1, 'x', {}, CONV_TOKEN), (e) => e.code === 'empty_reply');
+});
+
 test('a normal reply with extra fields on its final chunk is returned', async () => {
   const body = OK_REPLY + '{"type":"think","content":"","isFinal":true,"extra":{"n":1}}\n';
   const { mgmt } = mgmtFor(body);

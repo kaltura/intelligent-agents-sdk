@@ -155,11 +155,12 @@ function assertConverseOptions(opts, where) {
 }
 
 /**
- * True unless the segment is an empty final chunk: no `type` or a final chunk, with `content`
- * `undefined`, `null` or `''`, and not an `error`. Extra fields on the chunk do not matter.
+ * True unless the segment is empty: no `type`, a final chunk, or an empty `think` marker (the
+ * startup marker carries only `threadId`/`messageId`), with `content` `undefined`, `null` or `''`,
+ * and not an `error`. Extra fields on the chunk do not matter.
  * @param {{type?:string, content?:unknown, isFinal?:boolean}} seg
  */
-const isReplySegment = (seg) => seg.type === 'error' || (seg.content != null && seg.content !== '') || (!!seg.type && seg.isFinal !== true);
+const isReplySegment = (seg) => seg.type === 'error' || (seg.content != null && seg.content !== '') || (!!seg.type && seg.type !== 'think' && seg.isFinal !== true);
 
 // ─────────────────────────── Converse (headless text) ───────────────────────────
 
@@ -278,7 +279,7 @@ export class Conversations {
    * are then in `result.errors`.
    *
    * EMPTY REPLY: a turn that comes back with HTTP 200 and no reply segment (no segments, or only
-   * empty final chunks) throws `code:'empty_reply'`, with the segments and `threadId` in
+   * empty final chunks and empty `think` markers) throws `code:'empty_reply'`, with the segments and `threadId` in
    * `error.body`. If you sent `context_id`, check it. `onErrorSegment:'return'` returns the empty
    * result instead. The raw `stream` and `collectConverse` never throw for it.
    * @param {object} opts {userMessage, threadId?, sse?, model_type?, force_experience?, request_vars?, capabilities?, context_id?, context_type?, preload_entry_ids?, exclude_entry_ids?, metadata?, recoverFromSpiral?, onErrorSegment?: 'throw'|'return'} (option rules: see {@link stream})
