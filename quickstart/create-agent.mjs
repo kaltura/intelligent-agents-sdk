@@ -155,8 +155,11 @@ if (reply?.text) {
   console.log('');
   console.log(' ', reply.text);
   console.log('');
-} else if (reply) {
+} else if (reply?.experiencesList?.length) {
   console.log('  The agent answered with widgets, not text. See reply.experiencesList.');
+  console.log('');
+} else if (reply) {
+  console.log('  The reply had no text and no widgets. Check reply.toolCalls, reply.spiralStopped and reply.segments.');
   console.log('');
 } else {
   console.log('  The smoke test failed, see the error above.');
