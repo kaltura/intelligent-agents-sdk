@@ -17,7 +17,7 @@ One call writes two fields, so the agent speaks and listens in the same language
 
 | Field | Set to | Effect |
 |---|---|---|
-| `force_language` on the intellect | The display name, for example `"Hebrew"` | Replies come back in that language, whatever language the user writes or speaks |
+| `force_language` on the intellect | The English name of the language, for example `"Hebrew"`. Use the same form if you set the field yourself | Replies come back in that language, whatever language the user writes or speaks |
 | `asr.language` on the agent | The code, for example `"he"` | Speech recognition matches the language |
 
 The call is idempotent. It needs an admin token, so run it on your server.

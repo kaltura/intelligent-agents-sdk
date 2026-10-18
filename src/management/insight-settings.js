@@ -10,7 +10,8 @@
  * fires. Mounted at `mgmt.insightSettings`.
  *
  * `valueType` is one of {@link INSIGHT_VALUE_TYPES} (`string`, `number`,
- * `boolean`, `arrayString`, `arrayNumber`, `arrayBoolean`). `status` is one
+ * `boolean`, `arrayString`, `arrayNumber`, `arrayBoolean`). `number`/`arrayNumber`
+ * hold whole numbers only. `status` is one
  * of {@link INSIGHT_SETTING_STATUSES} (`active`, `disabled`) — `disabled`
  * settings are skipped when a rule resolves its insights at dispatch time,
  * but can still be referenced (and later re-enabled) without recreating the

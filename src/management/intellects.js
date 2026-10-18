@@ -323,7 +323,9 @@ export class Intellects {
    * ONLY the author layer — server-injected capability-conditional template
    * blocks and the built-in default directive are NOT reproduced (see prompt-lint
    * `assembleSystemPrompt`). `sys__*` values are a SIMULATION of what the server
-   * sets per turn.
+   * sets per turn. Skills are not included. Knowledge-typed prompt blocks render
+   * inline here; a live turn places them in a separate context block, so the live
+   * prompt differs from this preview.
    *
    * The rendered prompt is the `text` field; `_meta.renderer` is always
    * `'client-side-replica'` and `_meta.rendererBasis` names the server function

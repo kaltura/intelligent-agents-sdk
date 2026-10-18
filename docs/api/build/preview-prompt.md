@@ -4,7 +4,7 @@
 
 **SDK:** `mgmt.intellects.previewPrompt(configId, ks, opts)`. Requires an **admin KS**. This call only reads data and never writes.
 
-The SDK renders the returned `text` on the client. It is a replica of the author layer (`prompts[]`, `base_directive` and `glossary`). Use it to check a prompt template before shipping it.
+The SDK renders the returned `text` on the client. It is a replica of the author layer (`prompts[]`, `base_directive` and `glossary`). Use it to check a prompt template before shipping it. The preview does not include skill instructions. Knowledge-typed prompt blocks render inline here, while a live turn places them in a separate context block.
 
 By default, it fetches and renders the intellect's *current stored* config. Pass `draftPrompts`/`draftBaseDirective`/`draftGlossary` to preview an unsaved edit instead.
 

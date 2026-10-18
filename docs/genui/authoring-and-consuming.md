@@ -68,6 +68,8 @@ Headless, call `.render(runtimeName, widget)` (or `.render(segment)`) per segmen
 - `_meta` receipt stamps `{partnerId, source:'experience/genui', scope:'conversation (entitlement ON)', known, firstClass}`. `known` means this instance has a renderer for it (a registered 10th runtime is `known:true`). `firstClass` means it's one of the built-in set.
 - `graded-question` ([widgets.md § 10](widgets.md#10-graded-question-rendergradedquestion-a-host-registered-10th-runtime)) is a concrete, shipped example of a registered 10th runtime. It's exported (`renderGradedQuestion`) but deliberately excluded from `DEFAULT_RENDERERS`/`RUNTIMES`, so it stays `known:false` until a host explicitly registers it.
 
+A partner prompt can make the agent emit a runtime outside the built-ins, for example `demo-tool`. `classifyAgentAction` returns `{type:'render-genui', runtime:'demo'}` for its first segment and `null` for its continuation chunks.
+
 ### `onAction`, `WIDGET_KINDS`, and the hand-rolled escape hatch
 
 `onAction(action, payload)` surfaces interactions `mountWidget` can't fulfil itself:
@@ -138,6 +140,8 @@ An avatar agent can look at the user's screen. Turn it on with the agent's `scre
 On a live session, call `session.startScreenShare()`. It opens the browser's screen picker and sends a still image every 2 seconds. `session.stopScreenShare()` ends it, and so does the user's own "stop sharing" control. See [Screen share](../api/build/avatar-and-agent.md#screen-share) for options, events and error codes.
 
 `session.sendScreenShot(data)` sends one still you captured yourself (`data` is an `ArrayBuffer` or `Uint8Array`). Use it only when you need your own capture path. Both calls throw `capability_disabled` unless the agent's `screenShare` setting is on.
+
+While a screen share runs, the agent is told not to emit gallery or video widgets. This is guidance, not a block, so still handle one if it arrives.
 
 ## Related docs
 

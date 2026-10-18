@@ -43,7 +43,7 @@ Items come from `model.sources`, `model.items`, or `model.citations`. Each item:
 
 A source is a URL, an entry, or both. No URL is derived from `entryId`.
 
-Descriptor: `{kind:'sources', data:{sources:[{title, url, snippet, score?, entryId?, type?, duration?, hasShort?}]}}`. `score`'s presence is not a claimed backend guarantee.
+Descriptor: `{kind:'sources', data:{sources:[{title, url, snippet, score?, entryId?, type?, duration?, hasShort?}]}}`. `score`'s presence is not a claimed backend guarantee. The list can be shorter than the knowledge search hits, or empty. It is not limited to the items the agent cited.
 
 ### 4. summary (`renderSummary`)
 

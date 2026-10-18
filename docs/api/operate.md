@@ -96,7 +96,7 @@ The same rule applies to every HTTP call. A 200 reply whose body is an error is 
 
 ## Reserved Template Variables (`sys__*`)
 
-The server sets these on every turn. They're available to `{{ ... }}` interpolation in `base_directive` / `prompts[].value` / `glossary` (see [Configure an Intellect](build/intellect.md#configure-an-intellect)) and in a Skill's `instructions` text (see [§ Skills](management-operations.md#skills)), regardless of `allow_client_variables`.
+The server sets these on every turn. They're available to `{{ ... }}` interpolation in `base_directive` / `prompts[].value` / `glossary` (see [Configure an Intellect](build/intellect.md#configure-an-intellect)) and in the `instructions` of a skill attached with mode `'preloaded'` (see [§ Skills](management-operations.md#skills)), regardless of `allow_client_variables`.
 
 Before any network call, the SDK's own `request_vars` pre-flight guard rejects a client-supplied value for any key in the table below, plus `secrets` (see `request_vars` above):
 
@@ -107,8 +107,8 @@ Before any network call, the SDK's own `request_vars` pre-flight guard rejects a
 | `sys__user_id` | The bound end-user id | Empty by default (a KS with no `userId`). Bind a real identity with `Sessions.createConversationToken({ configId, userId })` or `createAgentToken({ agentId, userId })` (or `createAdminToken({ userId })`) so this variable resolves to a real id instead of staying empty. See [Authentication § Bind a session to a real end-user identity](authentication.md#authentication). |
 | `sys__user_message` | The current turn's user text | |
 | `sys__is_new_thread` | `true` on the first turn of a new thread, `false` otherwise | |
-| `sys__avatar_enabled` | Whether the current thread has a live avatar attached | Used in a skill, prompt block or tool `condition` to gate it to avatar-only sessions, as a bare expression with no `{{ }}`, e.g. `condition: 'sys__avatar_enabled'`. See [Conditions](build/intellect.md#conditions). |
-| `sys__avatar_share_screen_enabled` | True while the avatar session has a screen share running. The agent needs `screenShare.enabled` ([agent fields](build/avatar-and-agent.md)). False in plain conversations that never share | Also usable in a skill, prompt block or tool `condition`, e.g. `sys__avatar_enabled and not sys__avatar_share_screen_enabled` to gate a skill to avatar sessions that are NOT sharing a screen. |
+| `sys__avatar_enabled` | Whether the current thread has a live avatar attached | Used in a skill, prompt block or tool `condition` to gate it to avatar-only sessions, as a bare expression with no `{{ }}`, e.g. `condition: 'sys__avatar_enabled'`. See [Conditions](build/intellect.md#conditions). Not set yet when a thread-start tool's `condition` runs: there `sys__avatar_enabled` never passes and `not sys__avatar_enabled` always passes. |
+| `sys__avatar_share_screen_enabled` | True while the avatar session has a screen share running. The agent needs `screenShare.enabled` ([agent fields](build/avatar-and-agent.md)). False in plain conversations that never share | Also usable in a skill, prompt block or tool `condition`, e.g. `sys__avatar_enabled and not sys__avatar_share_screen_enabled` to gate a skill to avatar sessions that are NOT sharing a screen. Same limit for thread-start tool conditions. |
 | `sys__context_id` | The category/entry id the current context (and its knowledge base, if any) is scoped to | Set via `KalturaAvatarSession`'s `contextId` constructor option, sent on the live socket `join` payload. See [connection-and-handshake.md § The `join` payload](../architecture-reference/connection-and-handshake.md#the-join-payload-step-2-carries-the-agent-config). Empty when no context was set at join. On HTTP converse, set it with `context_id`. |
 | `sys__context_type` | The type of that context (e.g. an `entry` vs. a `category`) | Set via `KalturaAvatarSession`'s `contextType` constructor option, alongside `contextId`; empty when no context was set at join. On HTTP converse, set it with `context_type`. |
 | `sys__ks` | The raw KS (Kaltura Session) for the current request | ⚠️ **Security warning: never reference `sys__ks` in a prompt whose output could be echoed back to a user or logged.** It is a live credential. Rendering it as plain text in a model response, chat transcript, or log can leak that credential. See [SECURITY.md](../../SECURITY.md#ks-kaltura-session-guidance-for-agents-ac-3--ac-6--ia-2). |
@@ -161,6 +161,10 @@ Filter with `originEquals: 2` or `originIn: [0, 2]`. `originIn: [0, 1, 2, 3, 4]`
 | `userId` + `agentId` | That user's threads with that agent | 404 |
 | Same `userId`, other `agentId` | None of the first agent's threads | 404 |
 | `userId`, no `agentId` | None of that user's agent threads | 404 |
+
+**Thread record** (`threads.get`, `threads.rename`): the list fields plus `user_id`, `partner_id`, `agent_id`, `context_id`, `origin` and `thread_metadata`. Renaming to a very long title (300 characters, for example) fails with `server_error` and leaves the stored title unchanged.
+
+**Thread origin.** Mint the token with `extraPrivileges: 'threadOrigin:preview'` or `'threadOrigin:evaluation'` to mark the threads it starts (origin `1` or `2`). Those threads are hidden from the default `threads.list`; list them with `originIn`. A number, such as `threadOrigin:3` or `threadOrigin:1`, gives origin `0`, a standard conversation.
 
 **Transcript response:** `{"status":"success","data":"human: …\nai: …"}`. Plain text, one turn per line.
 

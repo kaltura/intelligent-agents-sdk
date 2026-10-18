@@ -67,7 +67,7 @@ Typed setters on `mgmt.intellectConfig` for the other single-purpose fields, all
 
 Each validates client-side and throws `bad_request` before any network call. See [build/intellect.md](build/intellect.md) for field semantics.
 
-[^1]: Use `api` and `code` tools here. An `api` tool with `wait_for_response` is awaited. Every other tool runs without waiting. A failing tool does not fail the conversation. A thread-start tool never appears as a `tool` segment in the stream.
+[^1]: Use `api` and `code` tools here. An `api` tool with `wait_for_response:false` runs without waiting; every other thread-start tool is waited for. The result is not given to the model. A failing tool does not fail the conversation. A thread-start tool never appears as a `tool` segment in the stream.
 
 [^2]: `null` restores the defaults (`analysis: { summary }`, `template: '{{ summary }}'`, `content_type: 'text'`). Every `{{ key }}` in `template` must be an `analysis` key (or `summary` when `analysis` is unset). The SDK rejects a mismatch client-side. The summary is skipped entirely when the thread has no human messages.
 
@@ -93,9 +93,11 @@ A standalone, partner-level reusable-instruction entity: `{id (uuid), name, desc
 |-----------|----------|------|
 | List | `POST /v1/skill/list` | `{"filter":{"objectType":"SkillListFilter"},"pager":{"pageIndex":1,"pageSize":30}}` |
 | Get | `POST /v1/skill/get` | `{"id":"SKILL_UUID"}` |
-| Add | `POST /v1/skill/add` | `{"name":"...", "description":"...", "instructions"?, "condition"?}` |
+| Add | `POST /v1/skill/add` | `{"name":"...", "description":"...", "instructions"?, "condition"?}` `name` may use only letters, digits, `_` and `-`. The SDK throws `bad_request` before the request otherwise. |
 | Update | `POST /v1/skill/update` | `{"id":"SKILL_UUID", "name"?, "description"?, "instructions"?, "condition"?}`. Idempotent. `condition: ''` clears it. A rename to a name already in use returns 409 |
 | Delete | `POST /v1/skill/delete` | `{"id":"SKILL_UUID"}`. Replies `{id}`. A follow-up get returns 404 |
+
+**Variables in skills.** The `instructions` of a skill attached with mode `'preloaded'` render `{{ variable }}` placeholders and template tags, like prompt blocks. A literal `{{` or `{%` in instructions is read as template syntax, so avoid it in plain text.
 
 **Shared skills.** A shared skill (`partner_id: 0`) appears in `skills.list` and can be attached with `setSkillIds`. `skills.get`, `skills.update` and `skills.delete` answer 404 `not_found` for it, so you cannot read, edit or delete it. `setSkillIds` rejects a skill id that does not exist or that you cannot use with 403 `forbidden`. `intellectConfig.audit` and `doctor` accept an attached shared skill.
 
@@ -145,6 +147,8 @@ SDK: `mgmt.messages`, `mgmt.feedback`, `mgmt.followups`. `messages.list`, `get` 
 | List feedback | *(built on `/message/list`, no dedicated endpoint)* | `mgmt.feedback.list(ks, opts)`. Details below. |
 | Suggested followups | `POST /followup/get-suggested-questions?new_response=true` | `{}`, or `{"context_id":"...","context_type":"category"}` to send a context. `context_type` is `category`, `ancestor_category` or `global`. `entry` is not supported, so the SDK throws `validation_error` before the call. Starter questions for the partner or agent, not scoped to a thread. The set can differ between calls. Returns `[]` when none are configured. Distinct from per-answer followups (`capabilities.generate_followup_questions:on` on converse). SDK: `mgmt.followups.getSuggested(ks, { contextId, contextType })`. |
 | List followup records | `POST /followup/list` | `{"filter":{"objectType":"GenieListQuestionFilter"},"pager":{"pageIndex":1,"pageSize":30}}`. The raw partner-wide record listing, not the shortlist above. |
+
+**Message record** (`messages.list`, `messages.get`): `id`, `thread_id`, `genie_id`, `user_id`, `partner_id`, `created_at`, `updated_at`, `human` (the user text), `assistant` (a list of typed parts), `type`, `is_positive`, `comment`. `type` marks the kind of message, for example `0` for a normal turn and `4` for a message added with `threads.push`.
 
 **List feedback in depth.** `mgmt.feedback.list(ks, opts)` reads feedback. It queries `POST /message/list` (and, for `filter.agentIdEquals`, `POST /v1/thread/list` first) and returns only the messages that carry a rating.
 
