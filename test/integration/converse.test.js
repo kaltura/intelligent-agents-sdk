@@ -241,3 +241,106 @@ test('model_type passes through lowercase fast verbatim (no DEFAULT, no normaliz
   await m2.conversations.send({ userMessage: 'x' }, CONV_KS);
   assert.ok(!('model_type' in f2.calls.find((c) => c.url.includes('/assistant/converse')).body));
 });
+
+// ── Closed converse field list: context, entry lists, metadata ──
+
+const OK_BODY = '{"type":"text","content":"ok"}\n';
+const converseCalls = (f) => f.calls.filter((c) => c.url.includes('/assistant/converse'));
+const okMgmt = () => {
+  const f = fakeFetch([{ match: '/assistant/converse', respond: () => ({ body: OK_BODY }) }]);
+  return { f, m: new Management({ partnerId: 123, adminSecret: 'a'.repeat(32), fetch: f }) };
+};
+const rejectsBeforeRequest = async (extra, detail) => {
+  const { f, m } = okMgmt();
+  await assert.rejects(
+    () => m.conversations.send({ userMessage: 'x', ...extra }, CONV_KS),
+    (e) => { assert.equal(e.code, 'validation_error'); assert.match(e.detail, detail); return true; },
+  );
+  assert.equal(converseCalls(f).length, 0, 'no converse request was sent');
+};
+
+test('stream forwards context_id, context_type, preload_entry_ids, exclude_entry_ids, metadata verbatim', async () => {
+  const { f, m } = okMgmt();
+  const extra = {
+    context_id: '12345', context_type: 'category',
+    preload_entry_ids: ['0_abcd1234'], exclude_entry_ids: ['1_wxyz9876'],
+    metadata: { voice_start_time: 1.5, voice_end_time: 3 },
+  };
+  await m.conversations.send({ userMessage: 'x', ...extra }, CONV_KS);
+  const body = converseCalls(f)[0].body;
+  for (const [k, v] of Object.entries(extra)) assert.deepEqual(body[k], v, k);
+});
+
+test('stream does not send a key outside the converse field list', async () => {
+  const { f, m } = okMgmt();
+  await m.conversations.send({ userMessage: 'x', not_a_field: 1 }, CONV_KS);
+  assert.ok(!('not_a_field' in converseCalls(f)[0].body));
+});
+
+test('context_type outside the four values throws validation_error before any request', async () => {
+  await rejectsBeforeRequest({ context_type: 'bogus' }, /one of: entry, category, ancestor_category, global/);
+});
+
+test('context_id must be a non-empty string', async () => {
+  for (const bad of [12345, '', null]) await rejectsBeforeRequest({ context_id: bad }, /context_id must be a non-empty string/);
+});
+
+test('entry context_id must look like an entry id', async () => {
+  await rejectsBeforeRequest({ context_type: 'entry', context_id: 'x' }, /like 0_abcd1234/);
+  const { f, m } = okMgmt();
+  await m.conversations.send({ userMessage: 'x', context_type: 'entry', context_id: '0_abcd1234' }, CONV_KS);
+  assert.equal(converseCalls(f)[0].body.context_id, '0_abcd1234');
+});
+
+test('category and global context pass without an id shape check', async () => {
+  const { f, m } = okMgmt();
+  await m.conversations.send({ userMessage: 'x', context_type: 'category', context_id: '12345' }, CONV_KS);
+  await m.conversations.send({ userMessage: 'x', context_type: 'global' }, CONV_KS);
+  const [a, b] = converseCalls(f).map((c) => c.body);
+  assert.equal(a.context_id, '12345');
+  assert.equal(b.context_type, 'global');
+  assert.ok(!('context_id' in b));
+});
+
+test('entry id lists must be arrays of entry ids', async () => {
+  for (const key of ['preload_entry_ids', 'exclude_entry_ids']) {
+    await rejectsBeforeRequest({ [key]: '0_abcd1234' }, new RegExp(`${key} must be an array of entry ids.*got string`));
+    await rejectsBeforeRequest({ [key]: ['0_abcd1234', 'x'] }, /item 1 is "x"/);
+    await rejectsBeforeRequest({ [key]: [1] }, /item 0 is 1/);
+    await rejectsBeforeRequest({ [key]: null }, /omit/);
+  }
+  const { f, m } = okMgmt();
+  await m.conversations.send({ userMessage: 'x', preload_entry_ids: [] }, CONV_KS);
+  assert.deepEqual(converseCalls(f)[0].body.preload_entry_ids, []);
+});
+
+test('metadata takes only the two voice fields as finite numbers', async () => {
+  await rejectsBeforeRequest({ metadata: { foo: 1 } }, /takes only voice_start_time and voice_end_time \(got "foo"\)/);
+  await rejectsBeforeRequest({ metadata: { voice_start_time: '1.5' } }, /metadata\.voice_start_time must be a finite number/);
+  await rejectsBeforeRequest({ metadata: { voice_end_time: NaN } }, /metadata\.voice_end_time must be a finite number/);
+  await rejectsBeforeRequest({ metadata: null }, /metadata must be an object/);
+  await rejectsBeforeRequest({ metadata: [] }, /metadata must be an object/);
+  const { f, m } = okMgmt();
+  await m.conversations.send({ userMessage: 'x', metadata: { voice_start_time: 1.5, voice_end_time: 3 } }, CONV_KS);
+  assert.deepEqual(converseCalls(f)[0].body.metadata, { voice_start_time: 1.5, voice_end_time: 3 });
+});
+
+test('converseOnce forwards the context options', async () => {
+  const { f, m } = okMgmt();
+  await m.converseOnce(1222, 'x', { context_type: 'category', context_id: '1' }, CONV_KS);
+  const body = converseCalls(f)[0].body;
+  assert.equal(body.context_type, 'category');
+  assert.equal(body.context_id, '1');
+});
+
+test('model_type smart passes through verbatim', async () => {
+  const { f, m } = okMgmt();
+  await m.conversations.send({ userMessage: 'x', model_type: 'smart' }, CONV_KS);
+  assert.equal(converseCalls(f)[0].body.model_type, 'smart');
+});
+
+test('a value JSON cannot print still gives validation_error, not TypeError', async () => {
+  await rejectsBeforeRequest({ metadata: { voice_start_time: 5n } }, /metadata\.voice_start_time must be a finite number/);
+  const loop = {}; loop.self = loop;
+  await rejectsBeforeRequest({ context_id: loop }, /context_id must be a non-empty string/);
+});

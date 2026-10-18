@@ -11,6 +11,7 @@ import {
   GENUI_RUNTIMES,
 } from '../../src/core/stream.js';
 import { streamFrom, streamFromChunks } from '../fakes/fetch.js';
+import { SegmentAssembler, parseWidget } from '../../src/experience/genui/index.js';
 
 const NDJSON = [
   '{"type":"think","content":"","threadId":"t1","messageId":"m1"}',
@@ -358,7 +359,7 @@ test('collectConverse adds _meta/experiencesList/kindCounts without breaking bac
   assert.equal(r._meta.source, 'sdk/core/stream');
   assert.match(r._meta.generatedAt, /^\d{4}-\d{2}-\d{2}T.*Z$/);
   assert.ok(r._meta.scope);
-  // additive: experiencesList is the flat array of unisphere-tool segments
+  // additive: experiencesList is one entry per widget
   assert.equal(r.experiencesList.length, 1);
   assert.equal(r.experiencesList[0], r.experiences['flashcards-tool'][0]);
   // additive: kindCounts tally (think=control, 2×text=spoken, 1 experience, share=control)
@@ -408,4 +409,111 @@ test('skips malformed lines without throwing', async () => {
   const bad = '{"type":"text","content":"ok"}\nNOT JSON\n{"type":"text","content":"!"}\n';
   const r = await collectConverse(parseConverseStream(streamFrom(bad)));
   assert.equal(r.text, 'ok!');
+});
+
+// ── One entry per streamed widget (fragments joined by segmentNumber) ──
+
+const WIDGET_JSON = '{"title":"Codecs","cards":[]}';
+const widgetFixture = () => [
+  { type: 'think', content: '', threadId: 't1', messageId: 'm1' },
+  { type: 'unisphere-tool', segmentNumber: 3, segmentStart: true, content: '', metadata: { runtimeName: 'flashcards-tool' } },
+  { type: 'unisphere-tool', segmentNumber: 3, content: WIDGET_JSON.slice(0, 10) },
+  { type: 'unisphere-tool', segmentNumber: 3, content: WIDGET_JSON.slice(10, 20) },
+  { type: 'unisphere-tool', segmentNumber: 3, content: WIDGET_JSON.slice(20), segmentEnd: true },
+  { type: 'unisphere-tool', segmentNumber: 4, segmentStart: true, content: { q: ['a'] }, metadata: { runtimeName: 'followups-tool' } },
+  { type: 'think', content: '', isFinal: true, extra: { n: 1 } },
+];
+async function* gen(list) { for (const x of list) yield x; }
+
+test('collectConverse joins streamed widget fragments by segmentNumber', async () => {
+  const fixture = widgetFixture();
+  const r = await collectConverse(gen(fixture));
+  assert.deepEqual(Object.keys(r.experiences), ['flashcards-tool', 'followups-tool']);
+  assert.equal(r.experiences['flashcards-tool'].length, 1);
+  assert.equal(JSON.parse(r.experiences['flashcards-tool'][0].content).title, 'Codecs');
+  assert.equal(r.experiencesList.length, 2);
+  assert.equal(r.experiencesList[0], r.experiences['flashcards-tool'][0]);
+  assert.equal(r.segments.length, fixture.length);
+  assert.equal(r.kindCounts.experience, 5, 'kindCounts counts raw segments');
+});
+
+test('collectConverse widgets match SegmentAssembler on the same stream', async () => {
+  const fixture = widgetFixture();
+  const r = await collectConverse(gen(fixture));
+  const assembled = [];
+  const asm = new SegmentAssembler({ onWidget: (w) => assembled.push(w) });
+  for (const seg of fixture) asm.ingest(seg);
+  asm.onTurnEnd();
+  const collected = r.experiencesList.map((e) => parseWidget(e));
+  assert.deepEqual(collected.map((w) => w.runtimeName), assembled.map((w) => w.runtimeName));
+  assert.deepEqual(collected.map((w) => w.model), assembled.map((w) => w.model));
+});
+
+test('collectConverse keeps two headers as two widgets', async () => {
+  const hdr = { type: 'unisphere-tool', content: '{"a":1}', metadata: { runtimeName: 'flashcards-tool' } };
+  const r = await collectConverse(gen([hdr, { ...hdr }]));
+  assert.equal(r.experiences['flashcards-tool'].length, 2);
+  assert.equal(r.experiencesList.length, 2);
+});
+
+test('collectConverse puts an orphan continuation under unknown', async () => {
+  const r = await collectConverse(gen([{ type: 'unisphere-tool', segmentNumber: 1, content: 'abc' }]));
+  assert.deepEqual(Object.keys(r.experiences), ['unknown']);
+  assert.equal(r.experiences.unknown.length, 1);
+});
+
+test('collectConverse starts a new unknown widget when the segmentNumber differs', async () => {
+  const r = await collectConverse(gen([
+    { type: 'unisphere-tool', segmentNumber: 1, content: '{"a"', metadata: { runtimeName: 'flashcards-tool' } },
+    { type: 'unisphere-tool', segmentNumber: 2, content: ':1}' },
+  ]));
+  assert.equal(r.experiences['flashcards-tool'].length, 1);
+  assert.equal(r.experiences.unknown.length, 1);
+  assert.equal(r.experiences['flashcards-tool'][0].content, '{"a"');
+});
+
+test('collectConverse lets object content replace string parts', async () => {
+  const obj = { title: 'T' };
+  const r = await collectConverse(gen([
+    { type: 'unisphere-tool', content: 'partial', metadata: { runtimeName: 'flashcards-tool' } },
+    { type: 'unisphere-tool', content: obj },
+  ]));
+  assert.deepEqual(r.experiences['flashcards-tool'][0].content, obj);
+});
+
+test('collectConverse keeps an object header body when a string continuation follows', async () => {
+  const obj = { title: 'T' };
+  const r = await collectConverse(gen([
+    { type: 'unisphere-tool', content: obj, metadata: { runtimeName: 'flashcards-tool' } },
+    { type: 'unisphere-tool', content: 'tail' },
+  ]));
+  assert.deepEqual(r.experiences['flashcards-tool'][0].content, obj);
+});
+
+test('collectConverse passes extra chunk fields through untouched', async () => {
+  const fixture = widgetFixture();
+  const last = fixture.at(-1);
+  const r = await collectConverse(gen(fixture));
+  assert.equal(r.segments.at(-1), last);
+  assert.deepEqual(r.segments.at(-1).extra, { n: 1 });
+});
+
+test('collectConverse does not mutate input segments', async () => {
+  const fixture = widgetFixture();
+  const before = JSON.parse(JSON.stringify(fixture));
+  await collectConverse(gen(fixture));
+  assert.deepEqual(fixture, before);
+});
+
+test('a single-fragment widget is the original segment object', async () => {
+  const fixture = widgetFixture();
+  const r = await collectConverse(gen(fixture));
+  assert.equal(r.experiencesList[1], fixture[5]);
+});
+
+test('collectConverse keeps a widget that was open when the stream was cut short', async () => {
+  const r = await collectConverse(gen(widgetFixture()), { maxSegments: 3 });
+  assert.equal(r.truncated, true);
+  assert.equal(r.experiencesList.length, 1);
+  assert.equal(r.experiencesList[0].content, WIDGET_JSON.slice(0, 10));
 });

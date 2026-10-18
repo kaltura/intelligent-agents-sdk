@@ -23,6 +23,7 @@ import { errorFromOkBody } from './errors.js';
  * @property {boolean} [isFinal]
  * @property {boolean} [segmentStart]
  * @property {boolean} [segmentEnd]
+ * @property {number} [segmentNumber]  Shared by every fragment of one streamed widget.
  * @property {{widgetName?:string, runtimeName?:string, subtype?:string, tool_name?:string, tool_display_name?:string}} [metadata]
  * @property {{id:string, name?:string, args?:object, type?:string, wait_for_response?:boolean}} [tool_metadata]  Present on some `type:"tool"` segments (wire-protocol/events-catalog.md §4e); see {@link parseToolCall}.
  */
@@ -455,10 +456,13 @@ export function parseOAuthRequired(seg) {
  * (`think`/`tool`/`unisphere-tool`/`share`/`thread`) are never added to `text`.
  *
  * Further result fields:
- * - `experiencesList` — flat array of the `unisphere-tool` segments in arrival
- *   order (the same objects grouped under `experiences`), for callers that want
- *   a stream rather than a by-runtime map.
- * - `kindCounts` — `{spoken,control,experience,error}` tally via `segmentKind`.
+ * - `experiencesList`: one entry per widget in arrival order (the same entries
+ *   grouped under `experiences`), for callers that want a stream rather than a
+ *   by-runtime map. A widget streamed as many `unisphere-tool` fragments with one
+ *   `segmentNumber` is joined into ONE entry: the first fragment with the string
+ *   `content` of all fragments concatenated (an object `content` replaces). A widget
+ *   with a single fragment is that segment object itself. `segments` stays the raw list.
+ * - `kindCounts`: `{spoken,control,experience,error}` tally via `segmentKind`; counts raw segments.
  * - `errors` — the `type:"error"` segments, in arrival order. The server reports some
  *   refusals in-band (HTTP 200 plus an `error` segment). `collectConverse` only collects them;
  *   `conversations.send` throws on them by default (see `onErrorSegment`).
@@ -512,6 +516,8 @@ export async function collectConverse(segments, opts = {}) {
   /** @type {ConverseSegment[]} */ const all = [];
   /** @type {Record<string, ConverseSegment[]>} */ const experiences = {};
   /** @type {ConverseSegment[]} */ const experiencesList = [];
+  /** @type {{seg:ConverseSegment, parts:string[], obj:(object|null), joined:boolean}[]} */ const widgets = [];
+  let openW = null;
   /** @type {ToolCall[]} */ const toolCalls = [];
   /** @type {{call:ToolCall, errors:string[]}[]} */ const toolCallsInvalid = [];
   /** @type {ReturnType<typeof parseOAuthRequired>[]} */ const oauthRequired = [];
@@ -535,9 +541,16 @@ export async function collectConverse(segments, opts = {}) {
     if (s.messageId && !messageId) messageId = s.messageId;
     if (s.type && SPOKEN_TYPES.has(s.type) && s.content) text += s.content;
     if (s.type === 'unisphere-tool') {
-      const rt = s.metadata?.runtimeName || 'unknown';
-      (experiences[rt] ||= []).push(s);
-      experiencesList.push(s);
+      // Only the first fragment of a streamed widget carries metadata.runtimeName (events-catalog.md §4e).
+      const continues = !s.metadata?.runtimeName && openW && (openW.seg.segmentNumber === undefined || s.segmentNumber === undefined || openW.seg.segmentNumber === s.segmentNumber);
+      if (continues) {
+        openW.joined = true;
+        if (typeof s.content === 'string') openW.parts.push(s.content);
+        else if (s.content && typeof s.content === 'object') openW.obj = s.content;
+      } else {
+        openW = { seg: s, parts: typeof s.content === 'string' ? [s.content] : [], obj: s.content && typeof s.content === 'object' ? s.content : null, joined: false };
+        widgets.push(openW);
+      }
     }
     const oauth = parseOAuthRequired(s);
     if (oauth) oauthRequired.push(oauth);
@@ -570,6 +583,11 @@ export async function collectConverse(segments, opts = {}) {
         break;
       }
     }
+  }
+  for (const w of widgets) {
+    const entry = w.joined ? { ...w.seg, content: w.obj ?? w.parts.join('') } : w.seg;
+    (experiences[w.seg.metadata?.runtimeName || 'unknown'] ||= []).push(entry);
+    experiencesList.push(entry);
   }
   return {
     text: text.trim(),

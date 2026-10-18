@@ -600,6 +600,45 @@ describe('7. SDK invariants', () => {
     assert.deepEqual(missingCode, [], `in catalogue but not in code: ${missingCode.join(', ')}`);
   });
 
+  test('converse field list matches the operate.md Converse field table', () => {
+    const src = read('src/management/conversations.js');
+    const m = src.match(/CONVERSE_FIELDS\s*=\s*Object\.freeze\(\[([\s\S]*?)\]\)/);
+    assert.ok(m, 'could not parse CONVERSE_FIELDS from conversations.js');
+    const codeSet = new Set(['userMessage', 'sse', ...(m[1].match(/'([A-Za-z_]+)'/g)?.map((x) => x.slice(1, -1)) ?? [])]);
+    const lines = read('docs/api/operate.md').split('\n');
+    const start = lines.findIndex((l) => /^\|\s*Field\s*\|\s*Notes\s*\|/.test(l));
+    assert.ok(start >= 0, 'no "| Field | Notes |" table in docs/api/operate.md');
+    const docSet = new Set();
+    for (const l of lines.slice(start + 2)) {
+      const row = l.match(/^\|\s*`([A-Za-z_]+)`\s*\|/);
+      if (!row) break;
+      docSet.add(row[1]);
+    }
+    const missingDoc = [...codeSet].filter((c) => !docSet.has(c));
+    const missingCode = [...docSet].filter((c) => !codeSet.has(c));
+    assert.deepEqual(missingDoc, [], `converse fields in code but not in the operate.md table: ${missingDoc.join(', ')}`);
+    assert.deepEqual(missingCode, [], `converse fields in the operate.md table but not in code: ${missingCode.join(', ')}`);
+  });
+
+  test('converse codes and enums are documented', async () => {
+    const operate = read('docs/api/operate.md');
+    const rowOf = (text, label) => text.split('\n').find((l) => l.startsWith(`| ${label}`) || l.startsWith(`| \`${label}\``)) ?? '';
+    for (const code of ['thread_access_denied', 'stream_error', 'empty_reply']) {
+      assert.ok(new RegExp(`^\\| \`${code}\` \\|`, 'm').test(operate), `error code ${code} has no row in docs/api/operate.md`);
+    }
+    const src = read('src/management/conversations.js');
+    const types = src.match(/CONTEXT_TYPES\s*=\s*Object\.freeze\(\[([^\]]*)\]\)/);
+    assert.ok(types, 'could not parse CONTEXT_TYPES from conversations.js');
+    const contextTypes = types[1].match(/'([a-z_]+)'/g).map((x) => x.slice(1, -1));
+    const typeRow = rowOf(operate, 'context_type');
+    for (const t of contextTypes) assert.ok(typeRow.includes(`\`${t}\``), `context_type value ${t} missing from the operate.md context_type row`);
+    const suggestRow = rowOf(read('docs/api/management-operations.md'), 'Suggested followups');
+    for (const t of contextTypes.filter((x) => x !== 'entry')) assert.ok(suggestRow.includes(`\`${t}\``), `getSuggested context type ${t} missing from the Suggested followups row`);
+    const { MODEL_TYPES } = await import('../src/experience/wire.js');
+    const modelRow = rowOf(operate, 'model_type');
+    for (const v of Object.values(MODEL_TYPES).filter(Boolean)) assert.ok(modelRow.includes(`\`${v}\``), `model_type value ${v} missing from the operate.md model_type row`);
+  });
+
   test('client-tool channel wired + documented', () => {
     assert.ok(read('src/management/tools.js').includes('export function client('), 'tools.client missing');
     assert.ok(read('src/management/tools.js').includes('export function clientToolReadiness'), 'tools.clientToolReadiness missing');
