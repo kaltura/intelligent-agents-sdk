@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { KalturaError, errorFromResponse, errorFromOkBody } from '../../src/core/errors.js';
+import { KalturaError, errorFromResponse, errorFromOkBody, errorFromErrorSegments } from '../../src/core/errors.js';
 
 test('maps HTTP statuses to stable codes', () => {
   assert.equal(errorFromResponse({ status: 402, path: '/x', body: null }).code, 'payment_required');
@@ -108,4 +108,16 @@ test('a message array is redacted before it is cut, so a secret straddling the c
   const e = errorFromResponse({ status: 400, path: '/x', body: { message: ['x'.repeat(480), `secret ${secret}`], error: 'Bad Request' } });
   assert.ok(!e.detail.includes(secret.slice(0, 8)), e.detail);
   assert.ok(!e.message.includes(secret.slice(0, 8)), e.message);
+});
+
+test('string bodies, detail arrays and error segments are redacted before they are cut', () => {
+  const secret = 'a1b2c3d4e5f60718'.repeat(2);
+  const long = `${'x'.repeat(480)} secret ${secret}`;
+  const fromString = errorFromResponse({ status: 500, path: '/x', body: long });
+  const fromDetail = errorFromResponse({ status: 422, path: '/x', body: { detail: [{ msg: 'x'.repeat(480) }, { msg: `secret ${secret}` }] } });
+  const fromSegments = errorFromErrorSegments([{ type: 'error', content: long }]);
+  for (const e of [fromString, fromDetail, fromSegments]) {
+    assert.ok(!e.detail.includes(secret.slice(0, 8)), e.detail);
+    assert.ok(!e.message.includes(secret.slice(0, 8)), e.message);
+  }
 });
