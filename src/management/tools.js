@@ -19,7 +19,7 @@
  *   {type, description, name?, display_name?, add_to_history?, args?, condition?,
  *    request:{url, method, headers?, params?, body?, authentication?, timeout?},
  *    response_mapping? | response_template? | response_chapters?,
- *    variables_mapping?, csv?, code?}
+ *    variables_mapping?, wait_for_response?, timeout?, csv?, code?}
  * The builder's own `name` becomes the standalone Tool entity's partner-unique
  * `name` (the lookup key for `add`/`update`) — the same value the model calls
  * mid-conversation.
@@ -35,7 +35,7 @@ import { assertCondition } from './condition.js';
  * @typedef {object} GenieToolArg
  * @property {string} prompt         LLM-facing description of the argument.
  * @property {'str'|'int'|'float'|'bool'|'list'|'dict'} type
- * @property {boolean} [required]
+ * @property {boolean} [required] Omitted means required: `tools.get` returns `required: true`. Pass `false` for an optional arg.
  * @property {unknown} [default]
  */
 
@@ -51,12 +51,12 @@ import { assertCondition } from './condition.js';
  * @property {object} [request]
  * @property {object} [response_mapping]
  * @property {string} [response_template]
- * @property {object} [response_chapters]
+ * @property {{iterate_on:string, content:string, link:string}} [response_chapters]
  * @property {object} [variables_mapping]
  * @property {string} [csv]
  * @property {string} [code]
- * @property {boolean} [wait_for_response]
- * @property {number} [timeout]
+ * @property {boolean} [wait_for_response] `api` and `client` tools.
+ * @property {number} [timeout] `client` tools. An `api` tool's timeout is `request.timeout`.
  */
 
 const NAME_RE = /^[A-Za-z0-9_-]+$/;
@@ -83,8 +83,9 @@ export const TOOL_TYPES = Object.freeze(['api', 'csv', 'code', 'client', 'var'])
 export const HTTP_METHODS = Object.freeze(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']);
 
 /**
- * The stored data types a tool ARGUMENT may declare (closed set). The model
- * fills each arg per its `type`; the backend rejects anything else. Re-exports
+ * The data types a tool ARGUMENT may declare. The SDK accepts only these six:
+ * {@link validateArgs} rejects any other `type` with `bad_request`. The model
+ * fills each arg per its `type`. Re-exports
  * `core/stream.js`'s {@link ARG_TYPE_NAMES} — core/ is the single source of
  * truth for this vocabulary (core/ must never import from management/, so the
  * canonical list lives there and this module derives from it, not vice versa).
@@ -129,19 +130,17 @@ export function validateArgs(args) {
 }
 
 /**
- * Structural dot-path sanity check (no eval, never executes). Matches the
- * server's path-extraction behavior exactly: a bare, dot-separated sequence of field
- * names and/or list indices (e.g. `json.items.0.id`) — NO leading `$` (the
- * backend has no root token) and NO bracket/wildcard syntax (the backend has
- * no indexer for either). Rejects whitespace, parens (function calls), `$`,
- * and empty segments (leading/trailing/doubled dots). PURE.
+ * Structural dot-path check (no eval). A path is a dot-separated list of field
+ * names and list indices, such as `json.items.0.id` or `headers.X-Request-Id`.
+ * A segment holds letters, digits, `_` and `-`. No leading `$`, no brackets or
+ * wildcards, no whitespace, parens or empty segments. PURE.
  * @param {string} path @param {string} where
  */
 function assertJsonPath(path, where) {
   if (typeof path !== 'string' || !path.length) bad('bad_jsonpath', `${where} must be a non-empty dot-path string.`);
   if (/[()\s;$]/.test(path)) bad('bad_jsonpath', `${where} contains illegal characters (no whitespace/parens/scripts/"$" allowed): ${JSON.stringify(path)}.`);
   for (const seg of path.split('.')) {
-    if (!/^[A-Za-z0-9_]+$/.test(seg)) {
+    if (!/^[A-Za-z0-9_-]+$/.test(seg)) {
       bad('bad_jsonpath', `${where} has an invalid segment ${JSON.stringify(seg)} in ${JSON.stringify(path)} — use dot-separated field names or list indices, e.g. "json.__client_command" or "items.0.id".`);
     }
   }
@@ -160,10 +159,10 @@ function assertMappingPaths(mapping, where) {
 /**
  * Validate the shared `{url, method?, headers?, params?, body?, authentication?,
  * timeout?}` request block of an `api` tool. `authentication`, when present,
- * must be `{type:'oauth2', ...}` with a `client_secret` that is a
- * `'secrets.<name>'` REFERENCE — a plaintext client secret is rejected by
- * construction (so the plaintext-leak class is impossible; the real value lives
- * in `config.secrets`).
+ * must be `{type:'oauth2', ...}` with a `client_secret` that is a secret
+ * reference, `{{secrets.<name>}}`. The bare `secrets.<name>` is accepted and
+ * saved as `{{secrets.<name>}}`. A plaintext client secret is rejected, so it
+ * never lands in a tool config. Header values must be strings.
  * `url` and a string `body` may hold `{argName}` placeholders, which the server
  * fills from the model's args. Any other brace text in them makes the call
  * fail, so it is rejected here. In an object `body`, an undeclared `{name}` in
@@ -196,8 +195,11 @@ function buildRequest(request, argNames = []) {
 
   /** @type {Record<string,unknown>} */
   const out = { url: request.url, method, timeout };
-  if (request.headers !== undefined) {
+  if (request.headers != null) {
     if (typeof request.headers !== 'object' || Array.isArray(request.headers)) bad('bad_request', 'api tool `request.headers` must be an object.');
+    for (const [k, v] of Object.entries(request.headers)) {
+      if (typeof v !== 'string') bad('bad_request', `api tool \`request.headers[${JSON.stringify(k)}]\` must be a string, got ${v === null ? 'null' : typeof v}. Pass it as a string, for example "1" instead of 1.`);
+    }
     out.headers = request.headers;
   }
   if (request.params !== undefined) {
@@ -314,13 +316,17 @@ function assertHttpUrl(url, where) {
 }
 
 const AUTH_KEYS = ['type', 'client_id', 'client_secret', 'token_url', 'auth_url'];
+const SECRET_REF_RE = /^(?:secrets\.([A-Za-z_][A-Za-z0-9_]*)|\{\{\s*secrets\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\})$/;
+const VARIABLES_REF_RE = /^\{\{\s*variables\.secrets\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}$/;
 
 /**
  * Validate an inline OAuth2 auth block. The block supports the OAuth2
  * authorization-code flow only (viewer consent). `client_id`, `client_secret`,
- * `token_url` and `auth_url` are all required. `client_secret` MUST be a
- * `secrets.<name>` reference: a plaintext secret is refused so no plaintext
- * path exists. `token_url` and `auth_url` are http(s)-validated. `scopes` and
+ * `token_url` and `auth_url` are all required. `client_secret` must be a
+ * secret reference. Write `{{secrets.<name>}}`. The bare `secrets.<name>` is
+ * accepted as input and always saved as `{{secrets.<name>}}`.
+ * `{{variables.secrets.<name>}}` and plaintext are refused. `token_url` and
+ * `auth_url` are http(s)-validated. `scopes` and
  * `flow` are not options and are rejected, as is any other unknown key (an
  * explicit `undefined` value still counts as present). Client-credentials
  * providers do not fit this block.
@@ -337,15 +343,18 @@ function buildAuth(auth) {
   }
   const { client_id, client_secret, token_url, auth_url } = auth;
   if (typeof client_id !== 'string' || !client_id) bad('bad_request', 'oauth2 authentication needs a non-empty `client_id`.');
-  if (client_secret === undefined) bad('bad_request', 'oauth2 authentication needs a `client_secret` that is a "secrets.<name>" reference.');
-  if (typeof client_secret !== 'string' || !/^secrets\.[A-Za-z_][A-Za-z0-9_]*$/.test(client_secret)) {
-    bad('bad_request', 'oauth2 `client_secret` MUST be a "secrets.<name>" reference (set the real value via intellects secrets first; plaintext is rejected by construction so it cannot leak).');
+  if (client_secret === undefined) bad('bad_request', 'oauth2 authentication needs a `client_secret`. Write "{{secrets.<name>}}" and store the value with mgmt.intellects.secrets.set(configId, { <name>: value }, adminKs).');
+  const secretRef = typeof client_secret === 'string' ? SECRET_REF_RE.exec(client_secret) : null;
+  if (!secretRef) {
+    const prefixed = typeof client_secret === 'string' ? VARIABLES_REF_RE.exec(client_secret) : null;
+    if (prefixed) bad('bad_request', `oauth2 \`client_secret\` "${client_secret}" never resolves. Write "{{secrets.${prefixed[1]}}}".`);
+    bad('bad_request', 'oauth2 `client_secret` must be a secret reference "{{secrets.<name>}}" (letters, digits, underscore). Store the value with mgmt.intellects.secrets.set(configId, { <name>: value }, adminKs). A plaintext value is rejected so it never lands in a tool config.');
   }
   if (token_url === undefined) bad('bad_request', 'oauth2 authentication needs a `token_url`.');
   if (auth_url === undefined) bad('bad_request', 'oauth2 authentication needs an `auth_url`.');
   assertHttpUrl(String(token_url), 'authentication.token_url');
   assertHttpUrl(String(auth_url), 'authentication.auth_url');
-  return { type: 'oauth2', client_id, client_secret, token_url, auth_url };
+  return { type: 'oauth2', client_id, client_secret: `{{secrets.${secretRef[1] ?? secretRef[2]}}}`, token_url, auth_url };
 }
 
 /** Shared base validation (name/description/args/display/history). Mutates into `target`. @param {object} cfg @param {GenieToolConfig} target */
@@ -368,12 +377,53 @@ function buildShared(cfg, target) {
   }
 }
 
+const SHAPERS = Object.freeze(['responseMapping', 'responseTemplate', 'responseChapters']);
+
+/**
+ * Check and copy the response fields of an `api` or `client` tool into `tool`:
+ * the response shaper, then `variablesMapping`. An `api` tool needs exactly one
+ * shaper. A `client` tool takes at most one. A `null` field counts as absent.
+ * @param {Record<string, any>} cfg @param {GenieToolConfig} tool @param {'api'|'client'} kind
+ */
+function buildResponseFields(cfg, tool, kind) {
+  const modes = SHAPERS.filter((k) => cfg[k] != null);
+  if (kind === 'api') {
+    if (modes.length === 0) bad('bad_request', 'api tool needs exactly one response shaper: responseMapping, responseTemplate, or responseChapters.');
+    if (modes.length > 1) bad('bad_request', `api tool must have EXACTLY ONE of responseMapping/responseTemplate/responseChapters, got ${modes.join(' + ')}.`);
+  } else if (modes.length > 1) {
+    bad('bad_request', `client tool takes at most one of responseMapping/responseTemplate/responseChapters, got ${modes.join(' + ')}.`);
+  }
+  if (cfg.responseMapping != null) {
+    assertMappingPaths(cfg.responseMapping, 'responseMapping');
+    tool.response_mapping = cfg.responseMapping;
+  } else if (cfg.responseTemplate != null) {
+    if (typeof cfg.responseTemplate !== 'string' || !cfg.responseTemplate.length) bad('bad_request', 'responseTemplate must be a non-empty format string.');
+    tool.response_template = cfg.responseTemplate;
+  } else if (cfg.responseChapters != null) {
+    const ch = cfg.responseChapters;
+    if (typeof ch !== 'object' || Array.isArray(ch)) bad('bad_request', 'responseChapters must be an object {iterate_on, content, link}, each a dot-path.');
+    for (const key of ['iterate_on', 'content', 'link']) {
+      if (typeof ch[key] !== 'string' || !ch[key]) bad('bad_request', `responseChapters.${key} is required: a dot-path such as "items" or "title".`);
+      assertJsonPath(ch[key], `responseChapters.${key}`);
+    }
+    tool.response_chapters = { iterate_on: ch.iterate_on, content: ch.content, link: ch.link };
+  }
+  if (cfg.variablesMapping != null) {
+    assertMappingPaths(cfg.variablesMapping, 'variablesMapping');
+    tool.variables_mapping = cfg.variablesMapping;
+  }
+}
+
 /**
  * Build a validated `api` tool. Exactly ONE of `responseMapping`,
  * `responseTemplate`, `responseChapters` must be supplied (the three are
  * mutually exclusive response shapers).
  * `variablesMapping` (optional) extracts response fields into conversation
- * variables and is dot-path-checked. PURE — returns a wire-ready
+ * variables and is dot-path-checked. `responseChapters` is
+ * `{iterate_on, content, link}`: `iterate_on` is the dot-path to a list, and
+ * `content` and `link` are dot-paths read from each item.
+ * `waitForResponse` (optional boolean) is sent as `wait_for_response` and kept by
+ * `tools.update`. PURE. Returns a wire-ready
  * {@link GenieToolConfig}; throws {@link KalturaError} on bad input.
  *
  * `{argName}` in `request.url`, and in `request.body` (each string value of an
@@ -384,7 +434,7 @@ function buildShared(cfg, target) {
  * fails the call, so it is rejected here with `bad_placeholder`:
  * percent-encode braces in the url and pass a JSON body as an object, not a
  * string. In an object body only an undeclared `{name}` is rejected.
- * @param {object} cfg {name, description, request, args?, responseMapping?, responseTemplate?, responseChapters?, variablesMapping?, condition?, displayName?, addToHistory?}
+ * @param {object} cfg {name, description, request, args?, responseMapping?, responseTemplate?, responseChapters?, variablesMapping?, waitForResponse?, condition?, displayName?, addToHistory?}
  * @example <caption>the model's `city` fills the url</caption>
  * tools.api({
  *   name: 'city_weather',
@@ -401,32 +451,11 @@ export function api(cfg) {
   buildShared(cfg, tool);
   tool.request = buildRequest(cfg.request, Object.keys(tool.args ?? {}));
 
-  const modes = ['responseMapping', 'responseTemplate', 'responseChapters'].filter((k) => cfg[k] != null);
-  if (modes.length === 0) bad('bad_request', 'api tool needs exactly one response shaper: responseMapping, responseTemplate, or responseChapters.');
-  if (modes.length > 1) bad('bad_request', `api tool must have EXACTLY ONE of responseMapping/responseTemplate/responseChapters, got ${modes.join(' + ')}.`);
-
-  if (cfg.responseMapping != null) {
-    assertMappingPaths(cfg.responseMapping, 'responseMapping');
-    tool.response_mapping = cfg.responseMapping;
-  } else if (cfg.responseTemplate != null) {
-    if (typeof cfg.responseTemplate !== 'string' || !cfg.responseTemplate.length) bad('bad_request', 'responseTemplate must be a non-empty format string.');
-    tool.response_template = cfg.responseTemplate;
-  } else {
-    const ch = cfg.responseChapters;
-    if (!ch || typeof ch !== 'object' || Array.isArray(ch)) bad('bad_request', 'responseChapters must be an object {iterate_on, content, link?}.');
-    if (typeof ch.iterate_on !== 'string' || !ch.iterate_on) bad('bad_request', 'responseChapters.iterate_on (dot-path to the list to iterate) is required.');
-    assertJsonPath(ch.iterate_on, 'responseChapters.iterate_on');
-    if (typeof ch.content !== 'string' || !ch.content) bad('bad_request', 'responseChapters.content (template per item) is required.');
-    /** @type {Record<string,unknown>} */
-    const out = { iterate_on: ch.iterate_on, content: ch.content };
-    if (ch.link !== undefined) { if (typeof ch.link !== 'string') bad('bad_request', 'responseChapters.link must be a string template.'); out.link = ch.link; }
-    tool.response_chapters = out;
+  if (cfg.waitForResponse != null) {
+    if (typeof cfg.waitForResponse !== 'boolean') bad('bad_request', 'api tool `waitForResponse` must be a boolean.');
+    tool.wait_for_response = cfg.waitForResponse;
   }
-
-  if (cfg.variablesMapping != null) {
-    assertMappingPaths(cfg.variablesMapping, 'variablesMapping');
-    tool.variables_mapping = cfg.variablesMapping;
-  }
+  buildResponseFields(cfg, tool, 'api');
   return tool;
 }
 
@@ -514,10 +543,15 @@ export function clientToolReadiness(body) {
  * {@link import('../core/stream.js').parseToolCall} headless) and runs
  * whatever JS it wants — navigate a deck (`navigate_to_slide`), show a widget,
  * call a page function. It makes NO server-side call at all: no `request`
- * block, no echo endpoint, no response shaper — the model calls it, the
+ * block and no echo endpoint. The model calls it, the
  * backend emits the `type:"tool"` segment (with `tool_metadata.id`, see
  * {@link import('../core/stream.js').parseToolCall}), and that's the entire
  * server-side contract.
+ *
+ * It takes the same optional response fields as an `api` tool: at most one of
+ * `responseMapping`, `responseTemplate`, `responseChapters`, plus
+ * `variablesMapping`, with the same rules. `tools.get` returns them and
+ * `tools.update` keeps them.
  *
  * WHY THIS WORKS (and the GenUI experience path does NOT): a native tool is
  * bound to the LLM, so calling it is normal agent behavior — it does NOT trip
@@ -557,6 +591,10 @@ export function clientToolReadiness(body) {
  * @param {number} [cfg.timeout] Seconds to wait for the ACK when `waitForResponse` is `true`;
  *   integer 1..120 (same bound as an `api` tool's `request.timeout`). Default 30 (backend
  *   default when omitted).
+ * @param {Record<string,string>} [cfg.responseMapping] Same rules as {@link api}.
+ * @param {string} [cfg.responseTemplate] Same rules as {@link api}.
+ * @param {{iterate_on:string, content:string, link:string}} [cfg.responseChapters] Same rules as {@link api}.
+ * @param {Record<string,string>} [cfg.variablesMapping] Same rules as {@link api}.
  * @param {string} [cfg.condition] Bare expression over thread variables (for example `sys__avatar_enabled`). The model is offered the tool only while it is truthy.
  * @param {string} [cfg.displayName] @param {boolean} [cfg.addToHistory]
  * @returns {GenieToolConfig}
@@ -577,16 +615,17 @@ export function client(cfg) {
   /** @type {GenieToolConfig} */
   const tool = { name: '', type: 'client', description: '' };
   buildShared(cfg, tool);
-  if (cfg.waitForResponse !== undefined) {
+  if (cfg.waitForResponse != null) {
     if (typeof cfg.waitForResponse !== 'boolean') bad('bad_request', 'client tool `waitForResponse` must be a boolean.');
     tool.wait_for_response = cfg.waitForResponse;
   }
-  if (cfg.timeout !== undefined) {
+  if (cfg.timeout != null) {
     if (typeof cfg.timeout !== 'number' || !Number.isInteger(cfg.timeout) || cfg.timeout < 1 || cfg.timeout > 120) {
       bad('bad_request', `client tool \`timeout\` must be an integer 1..120 (seconds), got ${JSON.stringify(cfg.timeout)}.`);
     }
     tool.timeout = cfg.timeout;
   }
+  buildResponseFields(cfg, tool, 'client');
   return tool;
 }
 
@@ -599,7 +638,7 @@ export function client(cfg) {
  *
  * Every arg name is the variable name, so it must be an identifier
  * (letters, digits, underscore; not starting with a digit) and must not start
- * with `sys__` or equal `secrets`: those names belong to the platform. At
+ * with `sys__` or `secrets`: those names belong to the platform. At
  * least one arg is required. PURE.
  * @param {object} cfg {name, description, args, condition?, displayName?, addToHistory?}
  * @returns {GenieToolConfig}
@@ -618,8 +657,8 @@ export function varTool(cfg) {
   const names = Object.keys(tool.args ?? {});
   if (!names.length) bad('bad_request', 'var tool needs at least one arg: each arg names the variable it sets.');
   for (const name of names) {
-    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name) || name.startsWith('sys__') || name === 'secrets') {
-      bad('bad_request', `var tool arg "${name}" is the name of the variable it sets, so it must be an identifier (letters, digits, underscore, not starting with a digit) that does not start with "sys__" and is not "secrets".`);
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name) || name.startsWith('sys__') || name.startsWith('secrets')) {
+      bad('bad_request', `var tool arg "${name}" is the name of the variable it sets, so it must be an identifier (letters, digits, underscore, not starting with a digit) that does not start with "sys__" or "secrets".`);
     }
   }
   return tool;
@@ -643,13 +682,14 @@ export function validate(tool) {
         responseTemplate: tool.response_template,
         responseChapters: tool.response_chapters,
         variablesMapping: tool.variables_mapping,
+        waitForResponse: tool.wait_for_response,
       });
     case 'csv':
       return csv({ name: tool.name, description: tool.description, csv: tool.csv, args: tool.args, condition: tool.condition, displayName: tool.display_name, addToHistory: tool.add_to_history });
     case 'code':
       return code({ name: tool.name, description: tool.description, code: tool.code, args: tool.args, condition: tool.condition, displayName: tool.display_name, addToHistory: tool.add_to_history });
     case 'client':
-      return client({ name: tool.name, description: tool.description, args: tool.args, condition: tool.condition, displayName: tool.display_name, addToHistory: tool.add_to_history, waitForResponse: tool.wait_for_response, timeout: tool.timeout });
+      return client({ name: tool.name, description: tool.description, args: tool.args, condition: tool.condition, displayName: tool.display_name, addToHistory: tool.add_to_history, waitForResponse: tool.wait_for_response, timeout: tool.timeout, responseMapping: tool.response_mapping, responseTemplate: tool.response_template, responseChapters: tool.response_chapters, variablesMapping: tool.variables_mapping });
     case 'var':
       return varTool({ name: tool.name, description: tool.description, args: tool.args, condition: tool.condition, displayName: tool.display_name, addToHistory: tool.add_to_history });
     default:
@@ -659,12 +699,9 @@ export function validate(tool) {
 
 /**
  * Apply a `response_mapping` (`{outputKey: dot-path}`) to a parsed JSON
- * response, returning `{outputKey: extractedValue}`. This mirrors the server's
- * response-mapping behavior exactly for client-side
- * preview/testing (the server runs the real call): a bare, dot-separated
- * sequence of field names and/or list indices — no `$` root, no brackets, no
- * wildcards (the backend has none). Missing paths yield `undefined`. PURE —
- * never throws on data.
+ * response, returning `{outputKey: extractedValue}`. Use it for a local preview
+ * or a test. Paths use the same syntax `tools.api` accepts. Missing paths yield
+ * `undefined`. PURE, never throws on data.
  * @param {unknown} resp        The parsed JSON response body.
  * @param {Record<string,string>} mapping  outputKey → dot-path.
  * @returns {Record<string,unknown>}
@@ -679,7 +716,7 @@ export function applyResponseMapping(resp, mapping) {
   return out;
 }
 
-/** Evaluate a bare dot-path expression against `root`, mirroring the server's path lookup. @param {unknown} root @param {string} path */
+/** Evaluate a dot-path against `root`. @param {unknown} root @param {string} path */
 function evalPath(root, path) {
   if (typeof path !== 'string' || !path.length) return undefined;
   let node = root;
@@ -840,7 +877,9 @@ export class Tools {
 
   /**
    * Update a Tool's name and/or config. WRITE — idempotent. `config`, when
-   * present, is re-validated (throws BEFORE any network call).
+   * present, is re-validated. `name`, when present, must match the same rule as
+   * `add` (letters, digits, underscore, hyphen). Both are checked before any
+   * network call.
    * @param {string} id @param {{name?:string, config?:GenieToolConfig}} patch @param {string} ks (admin)
    * @returns {Promise<{id:string, name:string, config:GenieToolConfig}>}
    */
@@ -852,7 +891,7 @@ export class Tools {
     /** @type {Record<string,unknown>} */
     const body = { id };
     if (patch.name !== undefined) {
-      if (typeof patch.name !== 'string' || !patch.name) bad('bad_request', 'tools.update patch.name must be a non-empty string.');
+      if (typeof patch.name !== 'string' || !NAME_RE.test(patch.name)) bad('bad_request', `tools.update patch.name must match ${NAME_RE} (letters, digits, underscore, or hyphen), got ${JSON.stringify(patch.name)}.`);
       body.name = patch.name;
     }
     if (patch.config !== undefined) body.config = validate(patch.config); // throws before network

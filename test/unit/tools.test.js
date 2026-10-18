@@ -58,6 +58,46 @@ test('client builds a native type:"client" tool with no request/authentication b
   assert.equal(t.authentication, undefined);
   assert.equal(t.wait_for_response, undefined, 'waitForResponse is optional, omitted when not passed');
   assert.equal(t.timeout, undefined);
+  for (const k of ['response_mapping', 'response_template', 'response_chapters', 'variables_mapping']) assert.equal(t[k], undefined, `${k} is omitted when not passed`);
+});
+
+test('client accepts one response shaper and variablesMapping, mapped to snake_case', () => {
+  const t = client({ name: 'c', description: 'd', responseTemplate: 'got {v}', variablesMapping: { v: 'value' } });
+  assert.equal(t.response_template, 'got {v}');
+  assert.deepEqual(t.variables_mapping, { v: 'value' });
+  assert.deepEqual(client({ name: 'c', description: 'd', responseMapping: { v: 'value' } }).response_mapping, { v: 'value' });
+  const chapters = { iterate_on: 'items', content: 'title', link: 'url' };
+  assert.deepEqual(client({ name: 'c', description: 'd', responseChapters: chapters }).response_chapters, chapters);
+});
+
+test('client rejects two shapers and bad paths with the api rules', () => {
+  assert.throws(() => client({ name: 'c', description: 'd', responseMapping: { v: 'value' }, responseTemplate: 'x' }), (e) => e.code === 'bad_request' && /at most one/.test(e.detail));
+  assert.throws(() => client({ name: 'c', description: 'd', responseMapping: { v: '$.x' } }), (e) => e.code === 'bad_jsonpath');
+  assert.throws(() => client({ name: 'c', description: 'd', variablesMapping: { v: 'a b' } }), (e) => e.code === 'bad_jsonpath');
+  assert.throws(() => client({ name: 'c', description: 'd', responseTemplate: '' }), (e) => e.code === 'bad_request');
+  assert.throws(() => client({ name: 'c', description: 'd', responseChapters: { iterate_on: 'items', content: 'title' } }), (e) => e.code === 'bad_request' && /responseChapters\.link/.test(e.detail));
+});
+
+test("validate() keeps a client tool's response fields and treats echoed nulls as absent", () => {
+  const withTemplate = client({ name: 'c', description: 'd', responseTemplate: 'got {v}', variablesMapping: { v: 'value' } });
+  const out = validate({ ...withTemplate, response_mapping: null, response_chapters: null, timeout: null, wait_for_response: false });
+  assert.equal(out.response_template, 'got {v}');
+  assert.deepEqual(out.variables_mapping, { v: 'value' });
+  assert.equal(out.wait_for_response, false);
+  for (const k of ['response_mapping', 'response_chapters', 'timeout']) assert.equal(out[k], undefined, `${k}: null is dropped`);
+});
+
+test('api maps waitForResponse to wait_for_response, omits it when unset, rejects a non-boolean', () => {
+  assert.equal(api(apiCfg({ waitForResponse: true })).wait_for_response, true);
+  assert.equal(api(apiCfg({ waitForResponse: false })).wait_for_response, false);
+  assert.equal(api(apiCfg()).wait_for_response, undefined);
+  assert.equal(api(apiCfg({ waitForResponse: null })).wait_for_response, undefined);
+  assert.throws(() => api(apiCfg({ waitForResponse: 'no' })), (e) => e.code === 'bad_request' && /waitForResponse/.test(e.detail));
+});
+
+test("validate() keeps an api tool's wait_for_response", () => {
+  assert.equal(validate(api(apiCfg({ waitForResponse: false }))).wait_for_response, false);
+  assert.equal(validate({ ...api(apiCfg()), wait_for_response: true }).wait_for_response, true);
 });
 
 test('client maps waitForResponse/timeout to snake_case', () => {
@@ -143,12 +183,25 @@ test('api builder rejects a malformed url with invalid_url', () => {
   assert.throws(() => api(apiCfg({ request: { url: 'not a url' } })), (e) => e.code === 'invalid_url');
 });
 
+test('api rejects a non-string header value and names the header', () => {
+  assert.throws(() => api(apiCfg({ request: { url: URL, headers: { 'X-N': 1 } } })), (e) => e.code === 'bad_request' && e.detail.includes('X-N') && e.detail.includes('string'));
+  assert.throws(() => api(apiCfg({ request: { url: URL, headers: { 'X-N': null } } })), (e) => e.code === 'bad_request' && e.detail.includes('null'));
+  assert.deepEqual(api(apiCfg({ request: { url: URL, headers: { 'X-N': '1' } } })).request.headers, { 'X-N': '1' });
+});
+
+test('api treats headers:null as absent', () => {
+  assert.equal(api(apiCfg({ request: { url: URL, headers: null } })).request.headers, undefined);
+});
+
 test('api builder rejects bad dot-path in responseMapping with bad_jsonpath', () => {
   let err;
   try { api(apiCfg({ responseMapping: { v: '$.data.value' } })); } catch (e) { err = e; } // leading $ not allowed
   assert.equal(err.code, 'bad_jsonpath');
   assert.throws(() => api(apiCfg({ responseMapping: { v: 'a(b)' } })), (e) => e.code === 'bad_jsonpath'); // parens
   assert.throws(() => api(apiCfg({ responseMapping: { v: 'a..b' } })), (e) => e.code === 'bad_jsonpath'); // empty segment
+  for (const bad of ['a b', 'a[0]', 'a.']) {
+    assert.throws(() => api(apiCfg({ responseMapping: { v: bad } })), (e) => e.code === 'bad_jsonpath', bad);
+  }
 });
 
 test('api builder requires EXACTLY ONE response mode', () => {
@@ -166,23 +219,60 @@ test('api builder requires EXACTLY ONE response mode', () => {
 test('api builder accepts responseTemplate and responseChapters modes', () => {
   const tmpl = api({ name: 'x', description: 'd', request: { url: URL }, responseTemplate: 'V={answer}' });
   assert.equal(tmpl.response_template, 'V={answer}');
-  const ch = api({ name: 'y', description: 'd', request: { url: URL }, responseChapters: { iterate_on: 'items', content: '{title}', link: '{url}' } });
-  assert.deepEqual(ch.response_chapters, { iterate_on: 'items', content: '{title}', link: '{url}' });
+  const ch = api({ name: 'y', description: 'd', request: { url: URL }, responseChapters: { iterate_on: 'items', content: 'title', link: 'url' } });
+  assert.deepEqual(ch.response_chapters, { iterate_on: 'items', content: 'title', link: 'url' });
+});
+
+test('responseChapters needs iterate_on, content and link, each a dot-path', () => {
+  const chapters = (over) => api({ name: 'y', description: 'd', request: { url: URL }, responseChapters: { iterate_on: 'items', content: 'title', link: 'url', ...over } });
+  assert.throws(() => api({ name: 'y', description: 'd', request: { url: URL }, responseChapters: { iterate_on: 'items', content: 'title' } }), (e) => e.code === 'bad_request' && /responseChapters\.link/.test(e.detail));
+  assert.throws(() => chapters({ content: '{title}' }), (e) => e.code === 'bad_jsonpath' && /responseChapters\.content/.test(e.detail));
+  assert.throws(() => chapters({ link: '{url}' }), (e) => e.code === 'bad_jsonpath' && /responseChapters\.link/.test(e.detail));
+  assert.throws(() => chapters({ iterate_on: '' }), (e) => e.code === 'bad_request' && /responseChapters\.iterate_on/.test(e.detail));
+  assert.throws(() => chapters({ content: '' }), (e) => e.code === 'bad_request' && /responseChapters\.content/.test(e.detail));
+  assert.throws(() => api({ name: 'y', description: 'd', request: { url: URL }, responseChapters: 'items' }), (e) => e.code === 'bad_request');
+  assert.deepEqual(chapters({ extra: 'dropped' }).response_chapters, { iterate_on: 'items', content: 'title', link: 'url' }, 'unknown keys are dropped');
+});
+
+test('dot-paths accept a hyphen in a segment', () => {
+  const t = api(apiCfg({ responseMapping: { rid: 'headers.X-Request-Id' }, variablesMapping: { v: 'headers.X-Request-Id' } }));
+  assert.deepEqual(t.response_mapping, { rid: 'headers.X-Request-Id' });
+  assert.deepEqual(t.variables_mapping, { v: 'headers.X-Request-Id' });
+  const ch = api({ name: 'y', description: 'd', request: { url: URL }, responseChapters: { iterate_on: 'items', content: 'title', link: 'meta.self-link' } });
+  assert.equal(ch.response_chapters.link, 'meta.self-link');
+});
+
+test('applyResponseMapping reads a hyphenated key', () => {
+  assert.deepEqual(applyResponseMapping({ headers: { 'X-Request-Id': 'r1' } }, { rid: 'headers.X-Request-Id' }), { rid: 'r1' });
 });
 
 const OAUTH = { type: 'oauth2', client_id: 'cid', client_secret: 'secrets.myOauth', token_url: 'https://auth/token', auth_url: 'https://auth/authorize' };
 const authOf = (auth) => api(apiCfg({ request: { url: URL, authentication: auth } })).request.authentication;
 
-test('oauth2 client_secret MUST be a secrets.<name> reference; plaintext rejected', () => {
+test('oauth2 client_secret takes {{secrets.NAME}} or the bare secrets.NAME alias and always saves {{secrets.NAME}}', () => {
+  for (const input of ['secrets.myOauth', '{{secrets.myOauth}}', '{{ secrets.myOauth }}']) {
+    const ok = authOf({ ...OAUTH, client_secret: input });
+    assert.equal(ok.client_secret, '{{secrets.myOauth}}', input);
+    assert.equal(ok.type, 'oauth2');
+    assert.deepEqual(Object.keys(ok).sort(), ['auth_url', 'client_id', 'client_secret', 'token_url', 'type']);
+  }
+  const built = api(apiCfg({ request: { url: URL, authentication: OAUTH } }));
+  assert.deepEqual(validate(built), built, 'the saved form validates to itself');
+  assert.deepEqual(validate(validate(built)), validate(built));
+});
+
+test('oauth2 client_secret rejects plaintext, the variables. prefix and malformed references', () => {
   let err;
   try { authOf({ ...OAUTH, client_secret: 'sk-plaintext-leak' }); } catch (e) { err = e; }
   assert.equal(err.code, 'bad_request');
   assert.match(err.detail, /secrets\.<name>/);
+  assert.match(err.detail, /intellects\.secrets\.set/);
+  assert.doesNotMatch(err.detail, /sk-plaintext-leak/, 'a rejected value is never echoed');
 
-  const ok = authOf(OAUTH);
-  assert.equal(ok.client_secret, 'secrets.myOauth');
-  assert.equal(ok.type, 'oauth2');
-  assert.deepEqual(Object.keys(ok).sort(), ['auth_url', 'client_id', 'client_secret', 'token_url', 'type']);
+  assert.throws(() => authOf({ ...OAUTH, client_secret: '{{variables.secrets.myOauth}}' }), (e) => e.code === 'bad_request' && e.detail.includes('{{secrets.myOauth}}'));
+  for (const bad of ['secrets.my-key', '{{secrets.myOauth}} x', '{{secrets.}}', 'secrets.', '']) {
+    assert.throws(() => authOf({ ...OAUTH, client_secret: bad }), (e) => e.code === 'bad_request', JSON.stringify(bad));
+  }
 });
 
 test('oauth2 requires client_id, token_url and auth_url', () => {
@@ -402,6 +492,20 @@ test('update requires at least one of name/config', async () => {
   const { mgmt, ff } = harness([]);
   await assert.rejects(() => mgmt.tools.update('tool-1', {}, ADMIN_KS), (e) => e.code === 'bad_request');
   assert.equal(ff.calls.length, 0);
+});
+
+test('mgmt.tools.update rejects a bad name before any network call', async () => {
+  const { mgmt, ff } = harness([
+    { match: 'v1/tool/update', respond: (req) => ({ status: 200, body: { id: req.body.id, name: req.body.name } }) },
+  ]);
+  for (const name of ['bad name', 'a/b', '']) {
+    await assert.rejects(() => mgmt.tools.update('tool-1', { name }, ADMIN_KS), (e) => e.code === 'bad_request' && /name/.test(e.detail), JSON.stringify(name));
+  }
+  await assert.rejects(() => mgmt.tools.update('tool-1', { name: 5 }, ADMIN_KS), (e) => e.code === 'bad_request');
+  assert.equal(ff.calls.length, 0, 'no transport for a bad name');
+  await mgmt.tools.update('tool-1', { name: 'ok-name_1' }, ADMIN_KS);
+  assert.equal(ff.calls.length, 1);
+  assert.equal(ff.calls[0].body.name, 'ok-name_1');
 });
 
 test('delete requires confirmPermanent, then checks for referencing intellects, then deletes by id', async () => {
@@ -714,9 +818,10 @@ test('tools.var builds a var tool and validate() accepts it', () => {
 
 test('tools.var needs at least one arg and rejects reserved or non-identifier names', () => {
   rejects(() => tools.var({ name: 'v', description: 'd' }), 'bad_request', /at least one arg/);
-  for (const name of ['sys__mode', 'secrets', '1abc', 'has-dash']) {
+  for (const name of ['sys__mode', 'secrets', 'secrets_x', 'secretsX', '1abc', 'has-dash']) {
     rejects(() => tools.var({ name: 'v', description: 'd', args: { [name]: { prompt: 'p', type: 'str' } } }), 'bad_request', /identifier/);
   }
+  assert.equal(tools.var({ name: 'v', description: 'd', args: { my_secrets: { prompt: 'p', type: 'str' } } }).type, 'var', 'only a leading "secrets" is reserved');
 });
 
 test('condition passes through every tool type and a template-style condition is rejected', () => {
@@ -789,4 +894,77 @@ test('api tool: the placeholder scan is linear on hostile input', () => {
     assert.throws(() => api(apiCfg({ request: { url: URL, method: 'post', body: evil } })), (e) => e.code === 'bad_placeholder');
     assert.ok(Date.now() - t0 < 1000, 'must not be polynomial in the input length');
   }
+});
+
+// ---------- round trip ----------
+
+/** Echo a saved config the way tools.get returns it: unset fields come back null, defaults filled in. */
+function serverEcho(cfg) {
+  const out = {
+    display_name: null, condition: null, add_to_history: false, log_request: false, log_response: false,
+    response_mapping: null, response_template: null, response_chapters: null, variables_mapping: null,
+    ...cfg,
+    wait_for_response: cfg.wait_for_response ?? true,
+    args: cfg.args ? Object.fromEntries(Object.entries(cfg.args).map(([k, a]) => [k, { required: true, default: null, ...a }])) : null,
+  };
+  if (cfg.type === 'client') out.timeout = cfg.timeout ?? null;
+  if (cfg.request) out.request = { headers: null, params: null, body: null, authentication: null, ...cfg.request };
+  return out;
+}
+
+/** A Management bound to an in-memory tool store with add/get/update. `seed` pre-fills rows. */
+const clone = (v) => JSON.parse(JSON.stringify(v));
+function toolStore(seed = []) {
+  const rows = new Map(seed.map((r) => [r.id, clone(r)]));
+  let n = 0;
+  return harness([
+    { match: 'v1/tool/add', respond: (req) => { const id = `tool-${++n}`; rows.set(id, { id, name: req.body.name, config: serverEcho(req.body.config) }); return { status: 200, body: clone(rows.get(id)) }; } },
+    { match: 'v1/tool/get', respond: (req) => ({ status: 200, body: clone(rows.get(req.body.id)) }) },
+    { match: 'v1/tool/update', respond: (req) => { const row = rows.get(req.body.id); if (req.body.name) row.name = req.body.name; if (req.body.config) row.config = serverEcho(req.body.config); return { status: 200, body: clone(row) }; } },
+  ]);
+}
+
+/** add, get, update(id, {config: got.config}), get. Returns both reads, the add body and the update body. */
+async function roundTrip(tool, seedId) {
+  const { mgmt, ff } = seedId ? toolStore([tool]) : toolStore();
+  const id = seedId ?? (await mgmt.tools.add(tool, ADMIN_KS)).id;
+  const first = await mgmt.tools.get(id, ADMIN_KS);
+  await mgmt.tools.update(id, { config: first.config }, ADMIN_KS);
+  const second = await mgmt.tools.get(id, ADMIN_KS);
+  const sent = ff.calls.find((c) => /v1\/tool\/update$/.test(c.url)).body.config;
+  const addBody = ff.calls.find((c) => /v1\/tool\/add$/.test(c.url))?.body.config;
+  return { first, second, sent, addBody };
+}
+
+test('round trip: a client tool keeps waitForResponse:false, timeout, responseTemplate and variablesMapping', async () => {
+  const { first, second, sent } = await roundTrip(client({ name: 'ask', description: 'd', waitForResponse: false, timeout: 15, responseTemplate: 'got {value}', variablesMapping: { v: 'value' } }));
+  assert.equal(first.config.wait_for_response, false);
+  assert.equal(sent.wait_for_response, false);
+  assert.equal(sent.timeout, 15);
+  assert.equal(sent.response_template, 'got {value}');
+  assert.deepEqual(sent.variables_mapping, { v: 'value' });
+  assert.deepEqual(second.config, first.config);
+});
+
+test('round trip: an api tool keeps waitForResponse:false and responseChapters with a hyphenated path', async () => {
+  const chapters = { iterate_on: 'data.items', content: 'title', link: 'meta.self-link' };
+  const { first, second, sent } = await roundTrip(api(apiCfg({ responseMapping: undefined, waitForResponse: false, responseChapters: chapters })));
+  assert.equal(first.config.wait_for_response, false);
+  assert.deepEqual(sent.response_chapters, chapters);
+  assert.equal(sent.wait_for_response, false);
+  assert.deepEqual(second.config, first.config);
+});
+
+test('round trip: a bare-form oauth2 client_secret is saved as {{secrets.NAME}} and stays that way', async () => {
+  const { first, second, sent, addBody } = await roundTrip(api(apiCfg({ request: { url: URL, authentication: OAUTH } })));
+  assert.equal(addBody.request.authentication.client_secret, '{{secrets.myOauth}}');
+  assert.equal(sent.request.authentication.client_secret, '{{secrets.myOauth}}');
+  assert.deepEqual(second.config, first.config);
+});
+
+test('round trip: re-saving a stored bare-form tool rewrites client_secret to {{secrets.NAME}}', async () => {
+  const stored = api(apiCfg({ request: { url: URL, authentication: OAUTH } }));
+  stored.request.authentication.client_secret = 'secrets.myOauth'; // as saved by an older release
+  const { second } = await roundTrip({ id: 'old-1', name: stored.name, config: serverEcho(stored) }, 'old-1');
+  assert.equal(second.config.request.authentication.client_secret, '{{secrets.myOauth}}');
 });

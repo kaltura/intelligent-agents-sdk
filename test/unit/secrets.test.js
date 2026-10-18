@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { Management } from '../../src/management/index.js';
 import { IntellectSecrets, validateSecretRefs, MASK } from '../../src/management/secrets.js';
 import { fakeFetch } from '../fakes/fetch.js';
+import { api } from '../../src/management/tools.js';
 
 /**
  * Secrets lifecycle. Secrets are WRITE-ONLY (masked "***" on read) with a
@@ -239,6 +240,15 @@ test('validateSecretRefs (toolConfig, secretNames) overload reports an unknown-n
   assert.equal(r.ok, false);
   assert.deepEqual(r.unresolved, [{ ref: 'GHOST', where: 'tools' }]);
   assert.deepEqual(r.unused, ['REAL']);
+});
+
+test('validateSecretRefs finds the client_secret that tools.api saved', () => {
+  const tool = api({
+    name: 'crm', description: 'd', request: { url: 'https://api.example.com/q', authentication: { client_id: 'c', client_secret: 'secrets.myOauth', token_url: 'https://auth.example.com/t', auth_url: 'https://auth.example.com/a' } },
+    responseMapping: { v: 'value' },
+  });
+  assert.deepEqual(validateSecretRefs(tool, []).unresolved, [{ ref: 'myOauth', where: 'tools' }]);
+  assert.equal(validateSecretRefs(tool, ['myOauth']).ok, true);
 });
 
 test('validateSecretRefs DISTINGUISHES the bad {{variables.secrets.X}} prefix from canonical refs', () => {

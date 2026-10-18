@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { fakeFetch } from '../fakes/fetch.js';
 import { Management } from '../../src/management/client.js';
+import { api } from '../../src/management/tools.js';
 import { auditIntellectConfig } from '../../src/management/intellect-config.js';
 
 /**
@@ -14,6 +15,12 @@ const prompt = (value, over = {}) => ({ type: 'custom', key: 'k1', label: 'L', h
 const FORM = { call_stage: 'start', properties: [{ key: 'name', type: 'str' }] };
 const base = (over = {}) => ({ id: 7, type: 'brain', ...over });
 
+const OAUTH_TOOL = api({
+  name: 'crm', description: 'd',
+  request: { url: 'https://api.example.com/q', authentication: { client_id: 'c', client_secret: 'secrets.myOauth', token_url: 'https://auth.example.com/t', auth_url: 'https://auth.example.com/a' } },
+  responseMapping: { v: 'value' },
+});
+
 /** [name, config, ctx, expected finding codes (sorted)] */
 const TABLE = [
   ['clean config', base({ prompts: [prompt('Be kind.')], tool_ids: ['t1'], capabilities: { kaltura_genie_experiences: 'off' } }), { tools: [{ id: 't1' }], skills: [] }, []],
@@ -24,7 +31,13 @@ const TABLE = [
   ['secret_ref: a known secret is fine', base({ prompts: [prompt('Key {{secrets.TOKEN}}')], secrets: { TOKEN: 'x' } }), {}, []],
   ['secret_ref_bad_prefix', base({ prompts: [prompt('Key {{variables.secrets.TOKEN}}')], secrets: { TOKEN: 'x' } }), {}, ['prompt_client_variable_not_allowed', 'secret_ref_bad_prefix']],
   ['secret_ref_unresolved: found in a tool config', base({ tool_ids: ['t1'], capabilities: { kaltura_genie_experiences: 'off' } }), { tools: [{ id: 't1', config: { request: { headers: { Authorization: 'Bearer {{secrets.API}}' } } } }] }, ['secret_ref_unresolved']],
+  ['secret_ref_unresolved: an oauth2 client_secret built by tools.api', base({ tool_ids: ['t1'], capabilities: { kaltura_genie_experiences: 'off' }, secrets: {} }), { tools: [{ id: 't1', config: OAUTH_TOOL }] }, ['secret_ref_unresolved']],
+  ['secret_ref: an oauth2 client_secret built by tools.api, secret stored', base({ tool_ids: ['t1'], capabilities: { kaltura_genie_experiences: 'off' }, secrets: { myOauth: '***' } }), { tools: [{ id: 't1', config: OAUTH_TOOL }] }, []],
   ['secret_ref: tool configs the intellect does not use are ignored', base(), { tools: [{ id: 't9', config: { x: '{{secrets.API}}' } }] }, []],
+  ['tool_name_builtin: a linked tool named like a built-in', base({ tool_ids: ['t1'], capabilities: { kaltura_genie_experiences: 'off' } }), { tools: [{ id: 't1', name: 'search_web', config: { type: 'client', name: 'search_web' } }] }, ['tool_name_builtin']],
+  ['tool_name_builtin: config.name counts', base({ tool_ids: ['t1'], capabilities: { kaltura_genie_experiences: 'off' } }), { tools: [{ id: 't1', config: { name: 'async_search_knowledge_base' } }] }, ['tool_name_builtin']],
+  ['tool_name_builtin: an unlinked tool is ignored', base(), { tools: [{ id: 't9', name: 'search_entries' }] }, []],
+  ['tool_name_builtin: only exact names', base({ tool_ids: ['t1'], capabilities: { kaltura_genie_experiences: 'off' } }), { tools: [{ id: 't1', name: 'search_web_v2' }] }, []],
   ['prompt_duplicate_key (lint finding, warn)', base({ prompts: [prompt('a'), prompt('b')] }), {}, ['prompt_duplicate_key']],
   ['prompt_renderer_skip (lint finding, warn)', base({ prompts: [prompt('')] }), {}, ['prompt_renderer_skip']],
   ['client variable with allow_client_variables is not reported (the app supplies it at request time)', base({ allow_client_variables: true, prompts: [prompt('Page: {{page_context}}')] }), {}, []],
@@ -75,6 +88,7 @@ test('auditIntellectConfig: severities and configId', () => {
   assert.equal(sev(base({ knowledge_ids: [1, 2] }), 'knowledge_ids_over_cap').configId, 7);
   assert.equal(sev(base({ capabilities: { nope: 'on' } }), 'capabilities_invalid').severity, 'warn');
   assert.equal(sev(base({ prompts: [prompt('a'), prompt('b')] }), 'prompt_duplicate_key').severity, 'warn');
+  assert.equal(sev(base({ tool_ids: ['t1'], capabilities: { kaltura_genie_experiences: 'off' } }), 'tool_name_builtin', { tools: [{ id: 't1', name: 'search_web' }] }).severity, 'warn');
   assert.equal(sev({ type: 'external' }, 'external_intellect').severity, 'info');
   assert.equal(sev({ type: 'external' }, 'external_intellect').configId, undefined);
 });

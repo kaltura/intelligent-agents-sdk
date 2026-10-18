@@ -148,9 +148,7 @@ await mgmt.lifecycle.create({
 }, ks);
 ```
 
-**A rule filtering on `object.agent_id` only matches threads created with an agent id on the token.** A token minted without one leaves the thread's `agent_id` as `"default"`, which never matches a rule scoped to a real agent uuid. Mint with `createAgentToken({ agentId, userId })`, or `createConversationToken` with `agentId`. See [Conversation token or agent token?](../api/authentication.md#conversation-token-or-agent-token).
-
-This applies whether the conversation happens over `mgmt.conversations.send()`/`.stream()` or a real avatar/socket session. The agent binding lives in the KS, not in the call.
+**A rule filtering on `object.agent_id` only matches threads created with an agent id on the token.** A token minted without one leaves the thread's `agent_id` as `"default"`, which never matches a rule scoped to a real agent uuid. Mint with `createAgentToken({ agentId, userId })`, or `createConversationToken` with `agentId`. See [Conversation token or agent token?](../api/authentication.md#conversation-token-or-agent-token). This applies whether the conversation happens over `mgmt.conversations.send()`/`.stream()` or a real avatar/socket session. The agent binding lives in the KS, not in the call.
 
 ---
 
@@ -235,6 +233,7 @@ The key checks (`changed_keys_unproduced`, `template_tokens_unproduced`) are ski
 | `tool_condition_template` | error | A linked tool's `condition` is empty, not a string, or contains `{{ }}`, `{% %}` or `{# #}` |
 | `tool_condition_suspect` | warn | A linked tool's `condition` uses a form that blanks the turn or never matches |
 | `tool_arg_unused` | warn | A linked `api` tool declares an arg that no `{arg}` in its url or body uses, so it is never sent |
+| `tool_name_builtin` | warn | A linked tool has the same name as a built-in tool (`async_search_knowledge_base`, `search_entries` or `search_web`) |
 | `intellect_not_found` | error | `doctor` only. An agent points at an intellect that does not exist |
 
 The pure functions `auditLifecycleRules(rules, ctx)` and `auditIntellectConfig(config, ctx)` are exported from `./management` if you already hold the data. To run it from a terminal or CI, use `npm run audit:lifecycle`. Run `npm run audit:lifecycle -- --help` for the flags. It exits 0 when nothing reaches `--fail-on`, 1 when something does, and 2 on a usage, auth or request error.

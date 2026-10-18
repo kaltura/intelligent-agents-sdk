@@ -170,9 +170,11 @@ export class IntellectSecrets {
   }
 
   /**
-   * Fetch the intellect and cross-check that every `{{secrets.X}}` reference in
-   * its tools / prompts / MCP server config resolves to a known secret name,
-   * and report dead (unused) secrets. READ — no state change.
+   * Fetch the intellect and check that every `{{secrets.X}}` reference in its
+   * prompts and MCP server config names a known secret, and report unused
+   * secrets. It does not see tools, because an intellect links them by
+   * `tool_ids`. {@link IntellectConfig#audit} also scans the linked tools.
+   * READ. No state change.
    * Reports unresolved refs in the result and does not throw for them (an OAuth
    * bootstrap may add the secret in a later call).
    * @param {number} configId
