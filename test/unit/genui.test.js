@@ -279,6 +279,36 @@ test('renderer shape: sources (url scheme-checked)', () => {
   assert.equal(d.data.sources[1].url, '');            // dangerous scheme stripped
 });
 
+test('renderer shape: sources keeps entryId, type, duration, hasShort', () => {
+  const model = fixtureModel('sources-entries', 'sources-tool');
+  const d = new ExperienceRenderer().render('sources', model);
+  assert.equal(d.data.sources.length, 3);
+  assert.deepEqual(d.data.sources[0], { title: 'Choosing Colors Step By Step', url: '', snippet: '', entryId: '1_aaaaaaaa', type: 'video', duration: 2486, hasShort: true });
+  assert.equal(d.data.sources[1].hasShort, false);
+});
+
+test('sources: camelCase metadata keys work; a web source keeps exactly title, url, snippet', () => {
+  const web = new ExperienceRenderer().render('sources', { sources: [{ title: 'W', url: 'https://k.com/a', snippet: 's' }] });
+  assert.deepEqual(web.data.sources, [{ title: 'W', url: 'https://k.com/a', snippet: 's' }]);
+  const camel = new ExperienceRenderer().render('sources', { sources: [{ title: 'E', entryId: '1_a', hasShort: true, duration: 0 }] });
+  assert.equal(camel.data.sources[0].entryId, '1_a');
+  assert.equal(camel.data.sources[0].hasShort, true);
+  assert.equal(camel.data.sources[0].duration, 0);
+});
+
+test('sources: non-numeric duration and non-boolean has_short are omitted (guard)', () => {
+  const d = new ExperienceRenderer().render('sources', { sources: [{ title: 'E', duration: '2486', has_short: 'yes' }, { title: 'F', duration: -1, has_short: 1 }, { title: 'G', duration: null, type: '', entry_id: '' }] });
+  for (const s of d.data.sources) assert.deepEqual(Object.keys(s).sort(), ['snippet', 'title', 'url']);
+});
+
+test('sources: a long plain title folded at 80 columns joins with one space (guard)', () => {
+  const model = fixtureModel('sources-folded-title', 'sources-tool');
+  const { sources } = new ExperienceRenderer().render('sources', model).data;
+  assert.equal(sources[0].title, 'How To Select Colors Step By Step for a Design System That Scales Across Many Products and Teams');
+  assert.equal(sources[1].title, 'Café colors — a short guide');
+  assert.equal(sources[2].title, "It's the rule of thirds: explained");
+});
+
 test('renderer shape: summary (bullets + text)', () => {
   const d = new ExperienceRenderer().render('summary', { title: 'T', summary: 'body', bullets: ['a', 'b', ''] });
   assert.equal(d.data.summary, 'body');

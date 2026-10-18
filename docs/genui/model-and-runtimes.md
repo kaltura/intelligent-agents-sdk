@@ -18,7 +18,7 @@ Wire `runtimeName` → normalized dispatch key (the renderer registry key). Sour
 |---|---|---|---|
 | 1 | `flashcards-tool` | `flashcards` | Study Q/A cards |
 | 2 | `followups-tool` | `followups` | Suggested next-question chips |
-| 3 | `sources-tool` | `sources` | RAG citation cards (with URLs) |
+| 3 | `sources-tool` | `sources` | Source cards (a URL or an entry id) |
 | 4 | `summary-tool` | `summary` | Text/markdown summary and bullets |
 | 5 | `video-gallery-tool` | `video-gallery` | Gallery of **Kaltura** clips (by `entryId`) |
 | 6 | `show-link-tool` | `show-link` | A single link card |

@@ -36,8 +36,14 @@ Items come from `model.sources`, `model.items`, or `model.citations`. Each item:
 | `url` | `url`, `link`, `href` (via `safeUrl`) | unsafe scheme → `''` |
 | `snippet` | `snippet`, `text`, `content` | ≤2000 chars |
 | `score` | `score`, `relevance`, `similarity` | forward-compatible passthrough, omitted when absent/non-numeric, never `0` |
+| `entryId` | `entryId`, `entry_id` | ≤100 chars, omitted when absent |
+| `type` | `type` | ≤40 chars, omitted when absent |
+| `duration` | `duration` | seconds: a number ≥0, omitted otherwise |
+| `hasShort` | `hasShort`, `has_short` | boolean, omitted otherwise |
 
-Descriptor: `{kind:'sources', data:{sources:[{title, url, snippet, score?}]}}`. `score`'s presence is not a claimed backend guarantee.
+A source is a URL, an entry, or both. No URL is derived from `entryId`.
+
+Descriptor: `{kind:'sources', data:{sources:[{title, url, snippet, score?, entryId?, type?, duration?, hasShort?}]}}`. `score`'s presence is not a claimed backend guarantee.
 
 ### 4. summary (`renderSummary`)
 
