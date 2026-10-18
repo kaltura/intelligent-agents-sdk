@@ -73,7 +73,7 @@ Headless, call `.render(runtimeName, widget)` (or `.render(segment)`) per segmen
 `onAction(action, payload)` surfaces interactions `mountWidget` can't fulfil itself:
 
 - `'followup'` `{question}` → `session.speak`
-- `'submit'` `{values, formId}` → `session.submitStructuredDataForm`
+- `'submit'` `{values, formId}` → `session.submitStructuredDataForm(values)`. That method takes only the values, so `formId` stays on the app side.
 - `'play'` `{entryId, url, embedUrl, startTime, endTime}`: a video clip was clicked, times in seconds or `null`
 - `'open'` `{url}`
 - `'answer'` `{questionId, variant, correct, value, explanation, optionId?}`: a `graded-question` was answered (see [widgets.md § 10](widgets.md#10-graded-question-rendergradedquestion-a-host-registered-10th-runtime))
