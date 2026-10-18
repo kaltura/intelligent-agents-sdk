@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Management, SILENT_OPENING } from '../../src/management/index.js';
-import { IntellectConfig, EDITABLE_FIELDS, MODEL_IDS } from '../../src/management/intellect-config.js';
+import { CAPABILITIES } from '../../src/management/capabilities.js';
+import { IntellectConfig, EDITABLE_FIELDS, MODEL_IDS, THINKING_LEVELS } from '../../src/management/intellect-config.js';
 import { fakeFetch } from '../fakes/fetch.js';
 
 /**
@@ -49,6 +50,15 @@ test('intellects.setCapability read-merge-writes the full dict, preserving sibli
   assert.ok(!('partner_id' in sent) && !('created_at' in sent), 'read-only keys stripped');
 });
 
+test("intellects.setCapability('set_vars_tool','on') sends the full dict with set_vars_tool on", async () => {
+  const { m, f } = mkMgmt([getDto(), updateEcho]);
+  await m.intellects.setCapability(1481, 'set_vars_tool', 'on', ADMIN);
+  const sent = f.calls.find((c) => c.url.includes('/v1/intellect/update')).body;
+  assert.equal(sent.capabilities.set_vars_tool, 'on');
+  assert.equal(sent.capabilities.avatar, 'on', 'sibling preserved');
+  assert.equal(f.calls.length, 2, 'one read, one write');
+});
+
 test('intellects.setCapability refuses re-enabling a stored disabled without force', async () => {
   const { m } = mkMgmt([getDto({ capabilities: { external_video: 'disabled' } }), updateEcho]);
   await assert.rejects(() => m.intellects.setCapability(1481, 'external_video', 'on', ADMIN), (e) => e.code === 'capability_vetoed');
@@ -67,10 +77,10 @@ test('intellects.setCapability rejects an unknown capability with NO network cal
   assert.equal(f.calls.length, 0, 'aborted before any fetch');
 });
 
-test('intellects.resolveCapabilities resolves all 16 with partner_config layer', async () => {
+test('intellects.resolveCapabilities resolves every capability with partner_config layer', async () => {
   const { m } = mkMgmt([getDto({ capabilities: { use_web_search: 'on' } })]);
   const r = await m.intellects.resolveCapabilities(1481, ADMIN);
-  assert.equal(Object.keys(r.capabilities).length, 16);
+  assert.equal(Object.keys(r.capabilities).length, CAPABILITIES.length);
   assert.equal(r.capabilities.use_web_search.state, 'on');
   assert.equal(r.capabilities.use_web_search.resolvedFrom, 'partner_config');
 });
@@ -113,6 +123,14 @@ test("intellects.setPrompts: a suspect condition warns, and 'strict' turns the w
   f.calls.length = 0;
   await assert.rejects(() => m.intellects.setPrompts(1481, prompts, ADMIN, { lint: 'strict' }), (e) => e.code === 'prompt_lint_failed');
   assert.ok(!f.calls.some((c) => c.url.includes('/v1/intellect/update')));
+});
+
+test('intellects.setPrompts accepts a Jinja filter prompt', async () => {
+  const { m, f } = mkMgmt([getDto(), updateEcho]);
+  const prompts = [{ key: 'name', headerTemplate: 'Your nickname is:', value: "{{ nick | default('Bananabot') }}", type: 'custom' }];
+  const r = await m.intellects.setPrompts(1481, prompts, ADMIN);
+  assert.ok(!r.lint.findings.some((x) => x.code === 'malformed_variable'));
+  assert.equal(f.calls.filter((c) => c.url.includes('/v1/intellect/update')).length, 1);
 });
 
 test('intellects.setPrompts: toolVars names are not reported as unknown variables', async () => {
@@ -381,6 +399,59 @@ test('intellectConfig.setUserPropertiesForms + clearUserPropertiesForms write th
   assert.equal(sent.user_properties_forms, null);
 });
 
+const storedForm = (over) => ({ id: 3, call_stage: 'start', title: '', secondary_title: '', properties: [{ key: 'email', type: 'str' }], ...over });
+const formsSent = (f) => f.calls.find((c) => c.url.includes('/v1/intellect/update')).body.user_properties_forms;
+
+test('intellectConfig.setUserPropertiesForms keeps the stored id for the same stage when id is omitted', async () => {
+  const { cfg, f } = mkMgmt([getDto({ user_properties_forms: [storedForm()] }), updateEcho]);
+  await cfg.setUserPropertiesForms(1481, [{ callStage: 'start', title: 'New', secondaryTitle: 'Sub', properties: [{ key: 'email' }] }], ADMIN);
+  assert.deepEqual(formsSent(f), [{ call_stage: 'start', properties: [{ key: 'email', type: 'str' }], title: 'New', secondary_title: 'Sub', id: 3 }]);
+  assert.equal(f.calls.length, 2, 'one read, one write');
+});
+
+test('intellectConfig.setUserPropertiesForms sends an explicit id unchanged', async () => {
+  const { cfg, f } = mkMgmt([getDto({ user_properties_forms: [storedForm()] }), updateEcho]);
+  await cfg.setUserPropertiesForms(1481, [{ callStage: 'start', id: 7, properties: [{ key: 'email' }] }], ADMIN);
+  assert.equal(formsSent(f)[0].id, 7);
+});
+
+test('intellectConfig.setUserPropertiesForms does not guess an id when two stored forms share a stage', async () => {
+  const { cfg, f } = mkMgmt([getDto({ user_properties_forms: [storedForm({ id: 3 }), storedForm({ id: 4 })] }), updateEcho]);
+  await cfg.setUserPropertiesForms(1481, [{ callStage: 'start', properties: [{ key: 'email' }] }], ADMIN);
+  assert.ok(!('id' in formsSent(f)[0]));
+});
+
+test('intellectConfig.setUserPropertiesForms does not guess an id when two new forms share a stage', async () => {
+  const { cfg, f } = mkMgmt([getDto({ user_properties_forms: [storedForm()] }), updateEcho]);
+  await cfg.setUserPropertiesForms(1481, [
+    { callStage: 'start', properties: [{ key: 'a' }] },
+    { callStage: 'start', properties: [{ key: 'b' }] },
+  ], ADMIN);
+  assert.ok(formsSent(f).every((x) => !('id' in x)));
+});
+
+test('intellectConfig.setUserPropertiesForms ignores a stored id that is not a non-negative integer or a stage with no match', async () => {
+  const { cfg, f } = mkMgmt([getDto({ user_properties_forms: [storedForm({ id: 'x' }), storedForm({ id: 5, call_stage: 'end' })] }), updateEcho]);
+  await cfg.setUserPropertiesForms(1481, [
+    { callStage: 'start', properties: [{ key: 'a' }] },
+    { callStage: 'middle', properties: [{ key: 'b' }] },
+  ], ADMIN);
+  assert.ok(formsSent(f).every((x) => !('id' in x)));
+});
+
+test('intellectConfig.setUserPropertiesForms sends no id when stored forms are null', async () => {
+  const { cfg, f } = mkMgmt([getDto({ user_properties_forms: null }), updateEcho]);
+  await cfg.setUserPropertiesForms(1481, [{ callStage: 'start', properties: [{ key: 'email' }] }], ADMIN);
+  assert.deepEqual(formsSent(f), [{ call_stage: 'start', properties: [{ key: 'email', type: 'str' }] }]);
+  assert.equal(f.calls.length, 2);
+});
+
+test('intellectConfig.setUserPropertiesForms validates before any network call', async () => {
+  const { cfg, f } = mkMgmt([getDto(), updateEcho]);
+  await assert.rejects(() => cfg.setUserPropertiesForms(1481, [{ callStage: 'start', title: 5, properties: [{ key: 'a' }] }], ADMIN), (e) => e.code === 'bad_request');
+  assert.equal(f.calls.length, 0);
+});
+
 test('intellectConfig.setMetadata patches only the supplied row fields', async () => {
   const { cfg, f } = mkMgmt([getDto(), updateEcho]);
   await cfg.setMetadata(1481, { name: 'New Name', tags: ['qa'] }, ADMIN);
@@ -417,8 +488,9 @@ test('intellectConfig.describe returns every EDITABLE_FIELDS key (null when the 
   assert.deepEqual(d.editable.secrets, { names: ['EXISTING'] }, 'secrets editable shows NAMES only');
   assert.equal(d.editable.opening_phrase, 'Hi {{ user_name }}');
   assert.equal(d.editable.model_configuration, null, 'absent on the DTO → null');
-  assert.equal(d.capabilityNames.length, 16);
+  assert.equal(d.capabilityNames.length, CAPABILITIES.length);
   assert.ok(d.capabilityNames.includes('think_process'));
+  assert.ok(d.capabilityNames.includes('set_vars_tool'));
 });
 
 // ─────────────────────────── new customer-writable fields ───────────────────────────
@@ -467,6 +539,27 @@ test('intellectConfig.setModelConfiguration writes a validated object; null rese
   await cfg.setModelConfiguration(1481, null, ADMIN);
   sent = f.calls.find((c) => c.url.includes('/v1/intellect/update')).body;
   assert.equal(sent.model_configuration, null);
+  f.calls.length = 0;
+  const modern = { model_id: 'us.anthropic.claude-sonnet-5', thinking_level: 'medium', include_thoughts: true };
+  await cfg.setModelConfiguration(1481, modern, ADMIN);
+  sent = f.calls.find((c) => c.url.includes('/v1/intellect/update')).body;
+  assert.deepEqual(sent.model_configuration, modern, 'sonnet-5 id, medium level and include_thoughts sent verbatim');
+});
+
+test('intellectConfig.setModelConfiguration sends a model id that is not in MODEL_IDS', async () => {
+  const { cfg, f } = mkMgmt([getDto(), updateEcho]);
+  await cfg.setModelConfiguration(1481, { model_id: 'my-custom-model' }, ADMIN);
+  const sent = f.calls.find((c) => c.url.includes('/v1/intellect/update')).body;
+  assert.deepEqual(sent.model_configuration, { model_id: 'my-custom-model' });
+});
+
+test('intellectConfig.setModelConfiguration accepts every THINKING_LEVELS value and a boolean include_thoughts', async () => {
+  for (const thinking_level of THINKING_LEVELS) {
+    const { cfg, f } = mkMgmt([getDto(), updateEcho]);
+    await cfg.setModelConfiguration(1481, { thinking_level, include_thoughts: false }, ADMIN);
+    const sent = f.calls.find((c) => c.url.includes('/v1/intellect/update')).body;
+    assert.deepEqual(sent.model_configuration, { thinking_level, include_thoughts: false });
+  }
 });
 
 test('intellectConfig.setModelConfiguration rejects bad values BEFORE any network', async () => {
@@ -474,11 +567,15 @@ test('intellectConfig.setModelConfiguration rejects bad values BEFORE any networ
   const bad = (config, re) => assert.rejects(() => cfg.setModelConfiguration(1481, /** @type {any} */ (config), ADMIN), (e) => e.code === 'bad_request' && (!re || re.test(e.detail)));
   await bad('gemini-2.5-flash');
   await bad([]);
-  await bad({ model_id: 'gpt-4o' }, /model_id/);
-  await bad({ model_id: 42 }, /model_id/);
+  await bad({ model_id: '' }, /model_id must be a non-empty string/);
+  await bad({ model_id: '   ' }, /model_id must be a non-empty string/);
+  await bad({ model_id: 42 }, /model_id must be a non-empty string/);
+  await bad({ model_id: null }, /model_id must be a non-empty string/);
   await bad({ max_output_tokens: 0 }, /max_output_tokens/);
   await bad({ max_output_tokens: 1.5 }, /max_output_tokens/);
-  await bad({ thinking_level: 'medium' }, /thinking_level/);
+  await bad({ thinking_level: 'xhigh' }, /thinking_level must be one of none\/minimal\/low\/medium\/high/);
+  await bad({ include_thoughts: 'yes' }, /include_thoughts must be true or false/);
+  await bad({ include_thoughts: 1 }, /include_thoughts must be true or false/);
   await bad({ temperature: 1.5 }, /temperature/);
   await bad({ temperature: -0.1 }, /temperature/);
   await bad({ temperature: NaN }, /temperature/);

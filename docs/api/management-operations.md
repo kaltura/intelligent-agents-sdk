@@ -59,7 +59,7 @@ Typed setters on `mgmt.intellectConfig` for the other single-purpose fields, all
 
 | Setter | Field | Clear with |
 |---|---|---|
-| `setModelConfiguration` | `model_configuration` (`model_id` in `MODEL_IDS`, `max_output_tokens`, `thinking_level` in `THINKING_LEVELS`, `temperature`) | `null` |
+| `setModelConfiguration` | `model_configuration` (`model_id`, `max_output_tokens`, `thinking_level` in `THINKING_LEVELS`, `include_thoughts`, `temperature`) | `null` |
 | `setOpeningPhrase` | `opening_phrase` (the opening line of every avatar session; a template over `requestVars` and `sys__*`; `SILENT_OPENING` for no spoken opening, see [START-THE-CONVERSATION.md](../START-THE-CONVERSATION.md#personalize-the-opening)) | `null` |
 | `setThreadStartTools` | `thread_start_tools`: unique tool ids run in order when a thread starts, before the first user turn[^1] | `[]` |
 | `setAvatarSummaryConfig` | `avatar_summary_config` (`prompt`, `analysis`, `template`, `content_type` in `SUMMARY_CONTENT_TYPES`)[^2] | `null` |
@@ -87,14 +87,14 @@ A standalone, partner-level entity, not embedded in an intellect. A name that is
 
 ## Skills
 
-A standalone, partner-level reusable-instruction entity: `{id (uuid), name, description, instructions}`. SDK: `mgmt.skills`. A name that is already in use returns 409. Tools above follow the same rule.
+A standalone, partner-level reusable-instruction entity: `{id (uuid), name, description, instructions, condition?}`. `condition` is a bare [condition](build/intellect.md#conditions) expression, checked before the call. A template form like `{{ x }}` throws `bad_request`. SDK: `mgmt.skills`. A name that is already in use returns 409. Tools above follow the same rule.
 
 | Operation | Endpoint | Body |
 |-----------|----------|------|
 | List | `POST /v1/skill/list` | `{"filter":{"objectType":"SkillListFilter"},"pager":{"pageIndex":1,"pageSize":30}}` |
 | Get | `POST /v1/skill/get` | `{"id":"SKILL_UUID"}` |
-| Add | `POST /v1/skill/add` | `{"name":"...", "description":"...", "instructions"?}` |
-| Update | `POST /v1/skill/update` | `{"id":"SKILL_UUID", "name"?, "description"?, "instructions"?}`. Idempotent. A rename to a name already in use returns 409 |
+| Add | `POST /v1/skill/add` | `{"name":"...", "description":"...", "instructions"?, "condition"?}` |
+| Update | `POST /v1/skill/update` | `{"id":"SKILL_UUID", "name"?, "description"?, "instructions"?, "condition"?}`. Idempotent. `condition: ''` clears it. A rename to a name already in use returns 409 |
 | Delete | `POST /v1/skill/delete` | `{"id":"SKILL_UUID"}`. Replies `{id}`. A follow-up get returns 404 |
 
 **Shared skills.** A shared skill (`partner_id: 0`) appears in `skills.list` and can be attached with `setSkillIds`. `skills.get`, `skills.update` and `skills.delete` answer 404 `not_found` for it, so you cannot read, edit or delete it. `setSkillIds` rejects a skill id that does not exist or that you cannot use with 403 `forbidden`. `intellectConfig.audit` and `doctor` accept an attached shared skill.
@@ -167,7 +167,7 @@ Full record lifecycle. SDK: `mgmt.knowledge`. An intellect links to a record thr
 | List | `POST /v1/knowledge/list` | `{"filter":{},"pager":{"pageIndex":1,"pageSize":30}}`. Finds records without knowing ids up front. SDK: `mgmt.knowledge.list(ks, opts)`. Distinct from `mgmt.knowledge.listCategoryEntries(categoryId, ks)`, which lists KMS entries inside one category, not Knowledge record containers. |
 | Add | `POST /v1/knowledge/add` | `{"name":"..."}` |
 | Get | `POST /v1/knowledge/get` | `{"id":2049}` |
-| Update | `POST /v1/knowledge/update` | `{"id":2049, ...fields}`. When you send `config`, send the full config. To change sources, use `addSource`/`removeSource` below. |
+| Update | `POST /v1/knowledge/update` | `{"id":2049, ...fields}`. Fields: `name`, `description`, `tags` (array of strings), `config`. When you send `config`, send the full config. To change sources, use `addSource`/`removeSource` below. |
 | Delete | `POST /v1/knowledge/delete` | `{"id":2049}`. Returns HTTP 200 with body `null`. A follow-up get returns 404. |
 | Per-entry status | `POST /v1/knowledge/entry_status` | `{"knowledge_id":2049, "entry_ids":["0_abc123"]}`. SDK: `mgmt.knowledge.entryStatus(id, entryIds, ks)`. |
 

@@ -35,19 +35,19 @@ This clears `force_language` and resets `asr.language` to `"en"`.
 | Option | Notes |
 |---|---|
 | `configId`, `agentId` | Both required. `configId` is the intellect the agent points at |
-| `language` | An ISO 639-1 code such as `"he"`, or `null` to clear |
+| `language` | An ISO 639-1 code from `LANGUAGE_CODES`, such as `"he"`, or `null` to clear |
 | `languageName` | The display name written to `force_language`. Required when the code is not in `LANGUAGE_NAMES` |
 | `asrProvider` | Passed through to `agents.update`. Defaults to `"kaltura"` |
 
-`LANGUAGE_NAMES` is exported from `@kaltura/intelligent-agents/management`. It maps codes to display names for the call above. It is a lookup table for this helper, not a list of supported languages.
+`LANGUAGE_CODES` and `LANGUAGE_NAMES` are exported from `@kaltura/intelligent-agents/management`. `LANGUAGE_CODES` lists the codes `setForcedLanguage` accepts. `LANGUAGE_NAMES` maps some of them to display names. Neither is a list of supported languages.
 
 ```js
-import { LANGUAGE_NAMES } from '@kaltura/intelligent-agents/management';
+import { LANGUAGE_CODES, LANGUAGE_NAMES } from '@kaltura/intelligent-agents/management';
 
-await mgmt.setForcedLanguage({ configId, agentId, language: 'xx', languageName: 'Your Language' }, admin.ks);
+await mgmt.setForcedLanguage({ configId, agentId, language: 'sw', languageName: 'Swahili' }, admin.ks);
 ```
 
-A code that is not in `LANGUAGE_NAMES` and has no `languageName` throws `bad_request` before any network call.
+A code outside `LANGUAGE_CODES` throws `bad_request` before any network call, even with a `languageName`. A code in `LANGUAGE_CODES` but not in `LANGUAGE_NAMES` needs `languageName`.
 
 ## Other language settings
 

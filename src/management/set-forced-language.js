@@ -14,21 +14,22 @@
 import { meta } from '../core/ids.js';
 import { KalturaError } from '../core/errors.js';
 import { requireInt } from './intellect-body.js';
+import { LANGUAGE_CODES } from './languages.js';
 
 const MARKER_RE = /\s*<!-- sdk:forced-language -->[\s\S]*?<!-- \/sdk:forced-language -->/g;
 
 /**
- * ISO 639-1 code -> English display name for `force_language`. Pass
- * `languageName` explicitly for any code not listed here.
+ * ISO 639-1 code -> English display name for `force_language`. Every key is in
+ * `LANGUAGE_CODES`. Pass `languageName` for any other code in `LANGUAGE_CODES`.
  * @type {Readonly<Record<string,string>>}
  */
 export const LANGUAGE_NAMES = Object.freeze({
   en: 'English', he: 'Hebrew', ar: 'Arabic', es: 'Spanish', fr: 'French',
   de: 'German', it: 'Italian', pt: 'Portuguese', ru: 'Russian', zh: 'Chinese',
   ja: 'Japanese', ko: 'Korean', hi: 'Hindi', nl: 'Dutch', pl: 'Polish',
-  tr: 'Turkish', sv: 'Swedish', da: 'Danish', fi: 'Finnish', el: 'Greek',
-  th: 'Thai', vi: 'Vietnamese', id: 'Indonesian', uk: 'Ukrainian', ro: 'Romanian',
-  hu: 'Hungarian', cs: 'Czech', no: 'Norwegian',
+  tr: 'Turkish', sv: 'Swedish', da: 'Danish', fi: 'Finnish', th: 'Thai',
+  vi: 'Vietnamese', id: 'Indonesian', uk: 'Ukrainian', ro: 'Romanian', hu: 'Hungarian',
+  cs: 'Czech', no: 'Norwegian',
 });
 
 /** @param {string} detail @param {string} [code] */
@@ -41,8 +42,8 @@ function bad(detail, code = 'bad_request') {
  * @param {object} opts
  * @param {number} opts.configId Intellect configId (the same one the target agent's `intellect.id` points at).
  * @param {string} opts.agentId
- * @param {string|null} opts.language ISO 639-1 code (e.g. `'he'`), or `null` to clear a previously-forced language.
- * @param {string} [opts.languageName] Display name written to `force_language` (required if `language` isn't in {@link LANGUAGE_NAMES}; ignored when clearing).
+ * @param {string|null} opts.language ISO 639-1 code from `LANGUAGE_CODES` (e.g. `'he'`), or `null` to clear a previously-forced language.
+ * @param {string} [opts.languageName] Display name written to `force_language` (required if `language` is not in {@link LANGUAGE_NAMES}; ignored when clearing).
  * @param {string} [opts.asrProvider] ASR provider passed through to `agents.update`. Defaults to `'kaltura'`.
  * @param {string} ks (admin)
  * @returns {Promise<{configId:number, agentId:string, language:string|null, languageName?:string, applied:{intellect:object, agent:object}, _meta:object}>}
@@ -61,6 +62,9 @@ export async function setForcedLanguage(mgmt, opts, ks) {
 
   let languageName;
   if (language !== null) {
+    if (!LANGUAGE_CODES.includes(language)) {
+      throw bad(`setForcedLanguage: "${language}" is not in LANGUAGE_CODES. Use an ISO 639-1 code from that list.`);
+    }
     const languageNameOverride = typeof opts.languageName === 'string' ? opts.languageName.trim() : '';
     languageName = languageNameOverride || LANGUAGE_NAMES[language];
     if (!languageName) {

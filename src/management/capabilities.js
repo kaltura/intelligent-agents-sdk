@@ -49,6 +49,7 @@ export const CAPABILITIES = Object.freeze([
   'use_web_search',
   'screen_share_analysis',
   'think_process',
+  'set_vars_tool',
 ]);
 
 /**
@@ -69,13 +70,13 @@ const CAPABILITY_SET = new Set(CAPABILITIES);
  * The OFF-by-default capabilities (the API's capability defaults):
  * `avatar`, `avatar_filler`, `avatar_show_content`, `video_gallery`,
  * `external_video`, `show_link`, `use_web_search`, `screen_share_analysis`,
- * `think_process`.
+ * `think_process`, `set_vars_tool`.
  * @type {readonly string[]}
  */
 const OFF_BY_DEFAULT = Object.freeze([
   'avatar', 'avatar_filler', 'avatar_show_content', 'video_gallery',
   'external_video', 'show_link', 'use_web_search', 'screen_share_analysis',
-  'think_process',
+  'think_process', 'set_vars_tool',
 ]);
 
 /**
@@ -121,6 +122,7 @@ export const CAPABILITY_INFO = Object.freeze({
   use_web_search: { kind: 'tool', defaultState: CAPABILITY_DEFAULTS.use_web_search, summary: 'search_web, live external web search. Off by default.' },
   screen_share_analysis: { kind: 'prompt', defaultState: CAPABILITY_DEFAULTS.screen_share_analysis, summary: 'Enables analysis of a user-shared screen.' },
   think_process: { kind: 'segment', runtime: 'think', defaultState: CAPABILITY_DEFAULTS.think_process, summary: 'Streams the model\'s reasoning as think segments before the answer. Off by default; when off, the stream still emits one short status placeholder think segment.' },
+  set_vars_tool: { kind: 'tool', defaultState: CAPABILITY_DEFAULTS.set_vars_tool, summary: 'set_variable, a built-in tool the agent can call. Off by default.' },
 });
 
 /**

@@ -220,6 +220,14 @@ export function segmentKind(seg) {
  */
 export const ARG_TYPE_NAMES = Object.freeze(['str', 'int', 'float', 'bool', 'list', 'dict']);
 
+/**
+ * Field types a structured-data form property may use: the six
+ * {@link ARG_TYPE_NAMES} plus `email`, `phone` and `text`, which the default
+ * renderer uses as input hints.
+ * @type {readonly string[]}
+ */
+export const FORM_FIELD_TYPE_NAMES = Object.freeze([...ARG_TYPE_NAMES, 'email', 'phone', 'text']);
+
 // Each ARG_TYPE_NAMES value needs its own distinct runtime check, so this can't be
 // generated from the name list mechanically — but the keys MUST exactly match
 // ARG_TYPE_NAMES (the single source of truth declared above), so a dev-time

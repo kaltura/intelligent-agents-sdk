@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { performance } from 'node:perf_hooks';
 import {
   SYS_VARS,
   SYS_NAMESPACES,
@@ -82,6 +83,108 @@ test('validatePromptVars flags an earlier unclosed {{ even when a later {{...}} 
   // No false positive: two well-formed references and stray SINGLE braces are fine.
   const clean = validatePromptVars('{{a}} mid {text} {{b.c}}');
   assert.equal(hasFinding(clean.findings, 'malformed_variable'), false);
+});
+
+test('validatePromptVars accepts a default() filter', () => {
+  const r = validatePromptVars("{{ nick | default('Bananabot') }}");
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.clientVariables, ['nick']);
+  assert.equal(hasFinding(r.findings, 'malformed_variable'), false);
+});
+
+test('validatePromptVars reads every name in a conditional expression', () => {
+  assert.deepEqual(validatePromptVars("{{ a if b else 'x' }}").variables, ['a', 'b']);
+});
+
+test('validatePromptVars skips test names', () => {
+  assert.deepEqual(validatePromptVars('{{ x is defined }}').variables, ['x']);
+  assert.deepEqual(validatePromptVars('{{ x is not none }}').variables, ['x']);
+});
+
+test('validatePromptVars skips filter args and kwargs', () => {
+  assert.deepEqual(validatePromptVars("{{ items|join(', ') }}").variables, ['items']);
+  assert.deepEqual(validatePromptVars('{{ s|truncate(length=10) }}').variables, ['s']);
+});
+
+test('validatePromptVars keeps a system namespace through a filter', () => {
+  const r = validatePromptVars('{{ secrets.K | upper }}');
+  assert.deepEqual(r.systemVariables, ['secrets.K']);
+  assert.deepEqual(r.clientVariables, []);
+});
+
+test('validatePromptVars joins a dotted name written with spaces around the dot', () => {
+  const r = validatePromptVars('{{ secrets . API_KEY | upper }}', { allowClientVariables: false });
+  assert.deepEqual(r.variables, ['secrets.API_KEY']);
+  assert.deepEqual(r.systemVariables, ['secrets.API_KEY']);
+  assert.deepEqual(r.findings, []);
+  assert.deepEqual(validatePromptVars('{{ a .b . c }}').variables, ['a.b.c']);
+  assert.deepEqual(validatePromptVars('{{ items[0] . name }}').variables, ['items']);
+  assert.deepEqual(validatePromptVars("{{ plan . startswith('p') }}").variables, ['plan']);
+});
+
+test('validatePromptVars treats a bare system namespace read by index or method as system', () => {
+  for (const t of ["{{ secrets['API_KEY'] | upper }}", "{{ secrets.get('API_KEY') | upper }}", "{{ secrets . get('K') }}", '{{ secrets }}']) {
+    const r = validatePromptVars(t, { allowClientVariables: false });
+    assert.deepEqual(r.systemVariables, ['secrets'], t);
+    assert.deepEqual(r.clientVariables, [], t);
+    assert.deepEqual(r.findings, [], t);
+    assert.deepEqual(validatePromptVars(t, { allowClientVariables: true }).findings, [], t);
+  }
+});
+
+test('validatePromptVars stays linear on hostile whitespace and dot input', () => {
+  for (const unit of [' ', ' . ', 'a ', 'a . ', '. ', "a['x'] . "]) {
+    const text = `{{ ${unit.repeat(20000)} }}`;
+    const t0 = performance.now();
+    validatePromptVars(text);
+    assert.ok(performance.now() - t0 < 1000, JSON.stringify(unit));
+  }
+});
+
+test('validatePromptVars ignores an attribute after an index', () => {
+  assert.deepEqual(validatePromptVars('{{ items[0].name }}').variables, ['items']);
+});
+
+test('validatePromptVars keeps the head of a method call', () => {
+  assert.deepEqual(validatePromptVars("{{ plan.startswith('p') }}").variables, ['plan']);
+});
+
+test('validatePromptVars flags unbalanced quotes or brackets', () => {
+  for (const t of ['{{ a(b }}', "{{ 'x }}", '{{ a[0 }}']) {
+    const r = validatePromptVars(t);
+    assert.equal(r.ok, false, t);
+    assert.equal(hasFinding(r.findings, 'malformed_variable'), true, t);
+  }
+});
+
+test('an expression reading a client name is client_variable_not_allowed when the gate is off', () => {
+  const r = validatePromptVars("{{ nick | default('x') }}", { allowClientVariables: false });
+  assert.equal(hasFinding(r.findings, 'client_variable_not_allowed'), true);
+  assert.equal(hasFinding(r.findings, 'malformed_variable'), false);
+  assert.match(r.findings[0].message, /`\{\{nick\}\}`/);
+});
+
+test('validatePromptVars keeps flagging names that are not expressions', () => {
+  for (const t of ['{{ 2x }}', '{{first-name}}', '{{ user name }}', '{{ a 1 }}']) {
+    const r = validatePromptVars(t);
+    assert.equal(r.ok, false, t);
+    assert.equal(hasFinding(r.findings, 'malformed_variable'), true, t);
+  }
+});
+
+test('validatePromptVars accepts number and literal expressions', () => {
+  const cases = [['{{ n + 1 }}', ['n']], ['{{ n-1 }}', ['n']], ['{{ 1e3 }}', []], ["{{ 'x' }}", []], ['{{ 42 }}', []]];
+  for (const [t, vars] of cases) {
+    const r = validatePromptVars(t);
+    assert.equal(hasFinding(r.findings, 'malformed_variable'), false, t);
+    assert.deepEqual(r.variables, vars, t);
+  }
+});
+
+test('validatePromptVars dedupes a name across a plain reference and an expression', () => {
+  const r = validatePromptVars('{{x}} {{ x | upper }}', { allowClientVariables: false });
+  assert.deepEqual(r.variables, ['x']);
+  assert.ok(r.findings.every((f) => f.message.includes('`{{x}}`')));
 });
 
 test('validatePromptVars deduplicates repeated references', () => {
@@ -659,4 +762,18 @@ test('assembleSystemPrompt: renders every type, lists conditional keys, and says
   assert.deepEqual(r.conditionalKeys, ['b', 'c']);
   assert.match(r._meta.note, /conditions are not evaluated/i);
   assert.deepEqual(assembleSystemPrompt({ prompts: [{ key: 'a', headerTemplate: 'A', type: 'custom', value: 'x' }] }).conditionalKeys, []);
+});
+
+test('validatePromptVars: an expression with thousands of distinct names stays fast', () => {
+  const names = Array.from({ length: 50000 }, (_, i) => `v${i}`);
+  const t0 = Date.now();
+  const r = validatePromptVars(`{{ ${names.join(' + ')} }}`, { knownVars: names });
+  assert.ok(Date.now() - t0 < 1500, 'expression scan must not be quadratic');
+  assert.equal(r.variables.length, 50000);
+});
+
+test('validatePromptVars: spaced subtraction is accepted', () => {
+  const r = validatePromptVars('{{ a - b }}');
+  assert.deepEqual(r.variables, ['a', 'b']);
+  assert.equal(r.ok, true);
 });

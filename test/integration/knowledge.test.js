@@ -426,10 +426,32 @@ test('updateRecord accepts a config patch and sends it verbatim on the wire', as
   assert.deepEqual(f.calls[0].body, { id: 7, config });
 });
 
-test('updateRecord still rejects a patch with none of name/description/config', async () => {
+test('updateRecord still rejects a patch with none of name/description/tags/config', async () => {
   const f = fakeFetch([]);
   const m = new Management({ partnerId: 1, adminSecret: 'a'.repeat(32), fetch: f });
-  await assert.rejects(() => m.knowledge.updateRecord(7, {}, ADMIN), (e) => e.code === 'bad_request');
+  await assert.rejects(() => m.knowledge.updateRecord(7, {}, ADMIN), (e) => e.code === 'bad_request' && /name\/description\/tags\/config/.test(e.detail));
+  assert.equal(f.calls.length, 0);
+});
+
+test('updateRecord sends tags, alone or with other fields', async () => {
+  const f = fakeFetch([
+    { match: '/v1/knowledge/update', respond: (req) => ({ body: { id: req.body.id, tags: req.body.tags } }) },
+  ]);
+  const m = new Management({ partnerId: 1, adminSecret: 'a'.repeat(32), fetch: f });
+  const res = await m.knowledge.updateRecord(7, { tags: ['a', 'b'] }, ADMIN);
+  assert.deepEqual(res.tags, ['a', 'b']);
+  assert.deepEqual(f.calls[0].body, { id: 7, tags: ['a', 'b'] });
+  await m.knowledge.updateRecord(7, { name: 'n', tags: [] }, ADMIN);
+  assert.deepEqual(f.calls[1].body, { id: 7, name: 'n', tags: [] });
+  assert.equal(f.calls.length, 2, 'a tags-only patch is one update call');
+});
+
+test('updateRecord rejects bad tags before any network call', async () => {
+  const f = fakeFetch([]);
+  const m = new Management({ partnerId: 1, adminSecret: 'a'.repeat(32), fetch: f });
+  for (const tags of ['a', [1], {}, null]) {
+    await assert.rejects(() => m.knowledge.updateRecord(7, { tags: /** @type {any} */ (tags) }, ADMIN), (e) => e.code === 'bad_request' && /tags must be an array of strings/.test(e.detail));
+  }
   assert.equal(f.calls.length, 0);
 });
 

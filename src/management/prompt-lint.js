@@ -21,7 +21,7 @@
 import { KalturaError } from '../core/errors.js';
 import { meta } from '../core/ids.js';
 import { RESERVED_VARS } from './conversations.js';
-import { conditionProblem, conditionWarnings } from './condition.js';
+import { conditionProblem, conditionWarnings, stripQuoted } from './condition.js';
 
 /**
  * Server-provided variable namespaces addressed by a dotted prefix (e.g.
@@ -137,10 +137,117 @@ function summarize(findings) {
   return { errors, warnings, ok: errors === 0 };
 }
 
+const PLAIN_NAME = /^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$/;
+const NUMBER = /^\d[\d_]*(\.\d[\d_]*)?([eE][+-]?\d[\d_]*)?$/;
+const EXPR_KEYWORDS = new Set(['and', 'or', 'not', 'in', 'is', 'if', 'else', 'true', 'false', 'none', 'True', 'False', 'None']);
+const EXPR_LITERALS = new Set(['true', 'false', 'none', 'True', 'False', 'None']);
+const IDENT = /[A-Za-z_]\w*/y;
+const TOKEN = /\s+|(?<str>'')|(?<num>(?<![\w.])\d(?:[\w.]|(?<=[eE])[+-])*)|(?<name>[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)|(?<close>[)\]])|(?<op>[\s\S])/gy;
+
 /**
- * Scan a string for `{{ ... }}` template references. Recognizes the two
- * documented syntaxes: a bare name (`{{user_name}}`) and a dotted namespace
- * reference (`{{secrets.MY_KEY}}`). Flags malformed `{{` that is never closed.
+ * The variable names a Jinja `{{ ... }}` body reads, in order of appearance,
+ * without repeats. Filter, test, function and keyword names are not variables.
+ * `problem` is set when the body is not a valid expression. PURE, one linear pass.
+ * Limits: this is a shape check, not a Jinja parser. It accepts some invalid
+ * expressions (`a ? b : c`, `x if y` without `else`) and flags `a-b` (no spaces)
+ * as invalid although Jinja reads it as subtraction. Write `a - b`.
+ * An expression that contains `{` or `}` (a dict literal) is not scanned.
+ * @param {string} raw trimmed body, never empty
+ * @returns {{names: string[], problem: 'unbalanced'|'invalid'|null}}
+ */
+function expressionNames(raw) {
+  const s = stripQuoted(raw);
+  if (/['"]/.test(s.replace(/''/g, ''))) return { names: [], problem: 'unbalanced' };
+  if (/[A-Za-z0-9_]-[A-Za-z_]/.test(s)) return { names: [], problem: 'invalid' };
+  /** @type {Set<string>} */
+  const names = new Set();
+  /** @type {string[]} */
+  const stack = [];
+  let operand = false;
+  let afterIs = false;
+  let afterPipe = false;
+  let afterDot = false;
+  let invalid = false;
+  TOKEN.lastIndex = 0;
+  let m;
+  while (TOKEN.lastIndex < s.length && (m = TOKEN.exec(s)) !== null) {
+    if (m[0].trim() === '') continue;
+    const g = m.groups || {};
+    const attr = afterDot;
+    afterDot = false;
+    if (g.str !== undefined) { operand = false; afterIs = false; afterPipe = false; continue; }
+    if (g.num !== undefined) {
+      if (!NUMBER.test(g.num) || operand) invalid = true;
+      operand = true; afterIs = false; afterPipe = false;
+      continue;
+    }
+    if (g.name !== undefined) {
+      if (attr) { operand = true; afterIs = false; afterPipe = false; continue; } // attribute after `]` or `)`
+      // Jinja allows spaces around the dots of an attribute chain: join them.
+      let word = g.name;
+      let end = TOKEN.lastIndex;
+      for (;;) {
+        let j = end;
+        while (j < s.length && /\s/.test(s[j])) j++;
+        if (s[j] !== '.') break;
+        j++;
+        while (j < s.length && /\s/.test(s[j])) j++;
+        IDENT.lastIndex = j;
+        const id = IDENT.exec(s);
+        if (!id) break;
+        word += `.${id[0]}`;
+        end = IDENT.lastIndex;
+      }
+      TOKEN.lastIndex = end;
+      if (EXPR_KEYWORDS.has(word)) {
+        if (word === 'is') afterIs = true;
+        else if (!(word === 'not' && afterIs)) afterIs = false;
+        operand = EXPR_LITERALS.has(word);
+        afterPipe = false;
+        continue;
+      }
+      if (afterIs || afterPipe) { afterIs = false; afterPipe = false; operand = false; continue; }
+      if (operand) invalid = true;
+      operand = true;
+      let next = end;
+      while (next < s.length && /\s/.test(s[next])) next++;
+      if (s[next] === '=' && s[next + 1] !== '=') continue; // keyword argument
+      let chain = word;
+      if (s[next] === '(') {
+        const dot = chain.lastIndexOf('.');
+        if (dot < 0) continue; // function call
+        chain = chain.slice(0, dot);
+      }
+      names.add(chain);
+      continue;
+    }
+    afterIs = false;
+    afterPipe = false;
+    if (g.close !== undefined) {
+      const open = stack.pop();
+      if ((g.close === ')' && open !== '(') || (g.close === ']' && open !== '[')) return { names: [], problem: 'unbalanced' };
+      operand = true;
+      continue;
+    }
+    const ch = m[0];
+    if (ch === '(' || ch === '[') stack.push(ch);
+    afterPipe = ch === '|';
+    afterDot = ch === '.';
+    operand = false;
+  }
+  if (stack.length) return { names: [], problem: 'unbalanced' };
+  if (invalid) return { names: [], problem: 'invalid' };
+  return { names: [...names], problem: null };
+}
+
+/**
+ * Scan a string for `{{ ... }}` references. Prompt text is a Jinja2 template.
+ * A reference is a name (`{{user_name}}`), a dotted name (`{{secrets.MY_KEY}}`)
+ * or an expression (`{{ nick | default('guest') }}`, `{{ a if b else 'x' }}`).
+ * For an expression, every name it reads is checked. Filter, test and function
+ * names are not variables. `{% %}` blocks are not checked. Flags a `{{` that is
+ * never closed, an expression with unbalanced quotes or brackets, and a
+ * reference that is neither a name nor a valid expression, such as `{{first-name}}`.
  *
  * @param {string} text
  * @param {{allowClientVariables?: boolean, knownVars?: string[], toolVars?: string[], path?: string}} [opts]
@@ -213,6 +320,43 @@ export function validatePromptVars(text, opts = {}) {
     });
   }
 
+  /** @param {string} name */
+  const classify = (name) => {
+    const first = !seen.has(name);
+    if (first) {
+      seen.add(name);
+      all.push(name);
+    }
+
+    const dot = name.indexOf('.');
+    const ns = dot >= 0 ? name.slice(0, dot) : '';
+    const isSystem = SYS_VAR_SET.has(name) || SYS_NS_SET.has(name) || (ns && SYS_NS_SET.has(ns));
+    if (isSystem) {
+      if (first) system.push(name);
+      return;
+    }
+
+    if (toolVars.has(name)) return; // set by a `var` tool on an earlier turn, not sent by the client
+
+    // A client variable.
+    if (first) client.push(name);
+    if (!allow) {
+      findings.push({
+        severity: 'error',
+        code: 'client_variable_not_allowed',
+        message: `\`{{${name}}}\` is a client variable but allow_client_variables is off — a converse call sending request variables produces a SILENT EMPTY TURN (no error is returned). Enable the gate via intellects.setClientVariablesEnabled(id, true) or remove the reference.`,
+        path: opts.path || undefined,
+      });
+    } else if (!known.has(name)) {
+      findings.push({
+        severity: 'warning',
+        code: 'unknown_variable',
+        message: `${pathPrefix}\`{{${name}}}\` is not a system variable and is not in knownVars — it renders empty unless supplied as a request variable.`,
+        path: opts.path || undefined,
+      });
+    }
+  };
+
   const re = /\{\{([^{}]*)\}\}/g;
   let m;
   while ((m = re.exec(text)) !== null) {
@@ -226,47 +370,25 @@ export function validatePromptVars(text, opts = {}) {
       });
       continue;
     }
-    if (!/^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$/.test(raw)) {
-      findings.push({
-        severity: 'error',
-        code: 'malformed_variable',
-        message: `\`{{${raw}}}\` is not a valid variable name (expected \`name\` or \`namespace.name\`).`,
-        path: opts.path || undefined,
-      });
-      continue;
+    let names;
+    if (PLAIN_NAME.test(raw)) {
+      names = [raw];
+    } else {
+      const expr = expressionNames(raw);
+      if (expr.problem) {
+        findings.push({
+          severity: 'error',
+          code: 'malformed_variable',
+          message: expr.problem === 'unbalanced'
+            ? `\`{{${raw}}}\` has unbalanced quotes or brackets.`
+            : `\`{{${raw}}}\` is not a valid variable name or expression.`,
+          path: opts.path || undefined,
+        });
+        continue;
+      }
+      names = expr.names;
     }
-    if (!seen.has(raw)) {
-      seen.add(raw);
-      all.push(raw);
-    }
-
-    const dot = raw.indexOf('.');
-    const ns = dot >= 0 ? raw.slice(0, dot) : '';
-    const isSystem = SYS_VAR_SET.has(raw) || (ns && SYS_NS_SET.has(ns));
-    if (isSystem) {
-      if (!system.includes(raw)) system.push(raw);
-      continue;
-    }
-
-    if (toolVars.has(raw)) continue; // set by a `var` tool on an earlier turn, not sent by the client
-
-    // A client variable.
-    if (!client.includes(raw)) client.push(raw);
-    if (!allow) {
-      findings.push({
-        severity: 'error',
-        code: 'client_variable_not_allowed',
-        message: `\`{{${raw}}}\` is a client variable but allow_client_variables is off — a converse call sending request variables produces a SILENT EMPTY TURN (no error is returned). Enable the gate via intellects.setClientVariablesEnabled(id, true) or remove the reference.`,
-        path: opts.path || undefined,
-      });
-    } else if (!known.has(raw)) {
-      findings.push({
-        severity: 'warning',
-        code: 'unknown_variable',
-        message: `${pathPrefix}\`{{${raw}}}\` is not a system variable and is not in knownVars — it renders empty unless supplied as a request variable.`,
-        path: opts.path || undefined,
-      });
-    }
+    for (const name of names) classify(name);
   }
 
   const sum = summarize(findings);

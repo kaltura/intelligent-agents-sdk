@@ -84,6 +84,8 @@ POST https://genie.nvp1.ovp.kaltura.com/v1/intellect/update
 
 `lintPrompts` reports a missing `type` as the warning `missing_type` and any value other than the three above as `bad_type`. A block whose `headerTemplate` or `value` is empty or only whitespace is skipped. It adds nothing to the prompt, and `lintPrompts` warns `renderer_skip`.
 
+Prompt blocks are Jinja2 templates, so a filter such as `{{ nick | default('guest') }}` works. `lintPrompts` checks the names a `{{ }}` expression reads. It does not check `{% %}` blocks.
+
 Call `mgmt.application.getCustomPrompts(ks)` to get the `key` and `headerTemplate` values. It returns the current schema for this block: a 5-entry array (`goal`, `targetAudience`, `restrictedTopics`, `name`, `knowledge`), each shaped as `{key, label, headerTemplate, type}` (every entry returned has `type: "custom"`; your own blocks can use any of the three `type` values above).
 
 Use this call to render a "describe your agent" form. The labels and instructions you show always match the current prompt blocks, so you do not keep hardcoded copy in sync by hand.
@@ -102,7 +104,7 @@ const fields = await mgmt.application.getCustomPrompts(ks);
 | `base_directive` | Global system instruction |
 | `force_language` | Display name of the forced reply language (e.g. `"Hebrew"`). Replies come back in that language whatever the user writes or speaks. `null` or `""` clears it. Set it via `mgmt.setForcedLanguage`, which also sets the agent's `asr.language` so speech recognition matches |
 | `opening_phrase` | The line spoken as the first turn of every avatar session, a template rendered once per session. The intellect owns it. `null` clears it; `SILENT_OPENING` makes the opening silent so the browser sends the first turn with `kickoff`. Set via `intellectConfig.setOpeningPhrase`. Guide: [START-THE-CONVERSATION.md § Personalize the opening](../../START-THE-CONVERSATION.md#personalize-the-opening) |
-| `model_configuration` | `{ model_id?, max_output_tokens?, thinking_level?, temperature? }`; every key optional, `null` uses the defaults. `model_id` is one of `MODEL_IDS`, `thinking_level` one of `THINKING_LEVELS` (`low`/`high`, Gemini only, Claude ignores it), `temperature` 0..1. Set via `intellectConfig.setModelConfiguration`. Which models answer depends on your partner's region: verify with `converseOnce` after switching |
+| `model_configuration` | `{ model_id?, max_output_tokens?, thinking_level?, include_thoughts?, temperature? }`; every key optional, `null` uses the defaults. `model_id` is any model id string; `MODEL_IDS` lists known ones. `thinking_level` is one of `THINKING_LEVELS` (`none`, `minimal`, `low`, `medium`, `high`). Not every model uses it, so check the effect with one live turn. `include_thoughts` is a boolean. `temperature` 0..1. Set via `intellectConfig.setModelConfiguration`. Which models answer depends on your partner's region: verify with `converseOnce` after switching |
 | `thread_start_tools` | Tool ids that run once when a thread starts, before the first turn. Use an `api` tool: a customer cannot create a `code` tool ([Tools](tools-and-secrets.md#code-tool)). The result feeds the model and is not surfaced as a `tool` segment. Set via `intellectConfig.setThreadStartTools` (same entry forms as `tool_ids`); `[]` clears |
 | `avatar_summary_config` | `{ prompt?, analysis?, template?, content_type? }` for the end-of-session summary of avatar sessions. `analysis` maps output keys to descriptions, `template` is a template over those keys, `content_type` is one of `SUMMARY_CONTENT_TYPES` (`text`/`html`/`html_with_js`). The summary is stored on the thread as a `summary` message. `null` restores defaults. Set via `intellectConfig.setAvatarSummaryConfig` |
 | `glossary` | Domain terms (e.g. `"HLS: HTTP Live Streaming"`) |
@@ -114,7 +116,7 @@ const fields = await mgmt.application.getCustomPrompts(ks);
 | `skill_ids` | Skill references `{ id, mode, condition? }`. `mode` is one of `SKILL_MODES` (`adhoc`, `adhoc-save`, `preloaded`); `condition` is an optional [condition](#conditions) (e.g. `sys__avatar_enabled`). Partner-level Skill CRUD lives at `mgmt.skills`; link via `intellectConfig.setSkillIds`. Shared skills and unusable ids: [Skills](../management-operations.md#skills) |
 | `mcp_servers` | MCP server configs the intellect can call. Set via `intellectConfig.setMcpServers`. See [MCP-INTEGRATIONS.md](../../MCP-INTEGRATIONS.md) |
 | `secrets` | Named secrets for tool OAuth (write-only, masked on read) |
-| `user_properties_forms` | Lead-capture form fields |
+| `user_properties_forms` | Structured-data forms the agent asks for. Set via `intellectConfig.setUserPropertiesForms`. Fields, types and titles: [STRUCTURED-DATA-FORMS.md](../../STRUCTURED-DATA-FORMS.md) |
 
 ### Conditions
 
@@ -122,7 +124,7 @@ A `condition` switches a skill, a prompt block or a tool on only while it is tru
 
 | Where | Set with |
 |---|---|
-| Skill | `condition` in a `skill_ids` entry |
+| Skill | `condition` in a `skill_ids` entry, or on the skill itself with `skills.add` / `skills.update` |
 | Prompt block | `condition` in a `prompts[]` block |
 | Tool | `condition` in the tool config, e.g. `tools.api({ ..., condition })` |
 
@@ -175,6 +177,7 @@ Each is `"on"` / `"off"` / `"disabled"`:
 | `screen_share_analysis` | OFF | Analyze a shared screen |
 | `avatar_show_content` | OFF | Enable in-avatar content display |
 | `think_process` | OFF | Stream the model's reasoning as `think` segments before the answer. When off, one short status placeholder `think` segment is still emitted |
+| `set_vars_tool` | OFF | Gives the agent a built-in `set_variable` tool |
 
 > When you set `capabilities` directly, send the full dict. To change one key, use `mgmt.intellects.setCapability`. It reads the current dict and re-sends it with your change.
 

@@ -1165,20 +1165,20 @@ export class Knowledge {
 
   /**
    * Update a Knowledge record (`POST /v1/knowledge/update`). WRITE — idempotent.
-   * Patches `name`/`description`/`config` and returns the updated record.
+   * Patches `name`/`description`/`tags`/`config` and returns the updated record.
    * Needs at least one field.
    *
    * ⚠️ `config` is a FULL-REPLACE field on the backend — passing
    * it here overwrites the ENTIRE config, including `sources` you didn't mean
    * to touch. Use {@link addSource}/{@link removeSource} to add or remove one
    * source without disturbing the others.
-   * @param {number} id @param {{name?:string, description?:string, config?:object}} patch @param {string} ks (admin)
+   * @param {number} id @param {{name?:string, description?:string, tags?:string[], config?:object}} patch @param {string} ks (admin)
    */
   async updateRecord(id, patch, ks) {
     this._.assertAdmin(ks, 'knowledge.updateRecord');
     requireRecordId(id, 'knowledge.updateRecord');
     if (!patch || typeof patch !== 'object' || Array.isArray(patch)) {
-      throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: 'knowledge.updateRecord needs a patch object {name?, description?, config?}.' });
+      throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: 'knowledge.updateRecord needs a patch object {name?, description?, tags?, config?}.' });
     }
     /** @type {Record<string,unknown>} */
     const body = { id };
@@ -1190,6 +1190,12 @@ export class Knowledge {
       if (typeof patch.description !== 'string') throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: 'knowledge.updateRecord patch.description must be a string.' });
       body.description = patch.description;
     }
+    if (patch.tags !== undefined) {
+      if (!Array.isArray(patch.tags) || patch.tags.some((t) => typeof t !== 'string')) {
+        throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: 'knowledge.updateRecord patch.tags must be an array of strings.' });
+      }
+      body.tags = patch.tags;
+    }
     if (patch.config !== undefined) {
       if (!patch.config || typeof patch.config !== 'object' || Array.isArray(patch.config)) {
         throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: 'knowledge.updateRecord patch.config must be an object.' });
@@ -1197,7 +1203,7 @@ export class Knowledge {
       body.config = patch.config;
     }
     if (Object.keys(body).length === 1) {
-      throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: 'knowledge.updateRecord needs at least one of name/description/config.' });
+      throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: 'knowledge.updateRecord needs at least one of name/description/tags/config.' });
     }
     return (await this._.genie('v1/knowledge/update', body, ks)).data;
   }

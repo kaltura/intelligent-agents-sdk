@@ -1,7 +1,8 @@
 /**
  * Condition expressions — PURE helpers shared by every place a `condition`
- * can be set: a skill reference (`skill_ids[].condition`), a prompt block
- * (`prompts[].condition`) and a tool (`tools.*({condition})`).
+ * can be set: a skill reference (`skill_ids[].condition`), a skill itself
+ * (`skills.add`/`skills.update`), a prompt block (`prompts[].condition`) and a
+ * tool (`tools.*({condition})`).
  *
  * A `condition` is a BARE expression over thread variables, for example
  * `sys__avatar_enabled` or `not sys__avatar_enabled and plan == "pro"`. It is
@@ -65,8 +66,9 @@ export function assertPromptConditions(prompts, where) {
  * `value` with every quoted string replaced by `''`. One pass, so hostile input
  * cannot make it slow. An unterminated quote keeps its text.
  * @param {string} value
+ * @returns {string}
  */
-function stripQuoted(value) {
+export function stripQuoted(value) {
   let out = '';
   let i = 0;
   while (i < value.length) {

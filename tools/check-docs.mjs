@@ -580,20 +580,19 @@ describe('7. SDK invariants', () => {
     }
   });
 
-  test('CAPABILITIES enum matches API-REFERENCE.md catalogue', () => {
-    const capSrc = read('src/management/capabilities.js');
-    const m = capSrc.match(/CAPABILITIES\s*=\s*Object\.freeze\(\[([\s\S]*?)\]\)/);
-    assert.ok(m, 'could not parse CAPABILITIES array from capabilities.js');
-    const codeSet = new Set(m[1].match(/'([a-z_]+)'/g)?.map((s) => s.slice(1, -1)) ?? []);
+  test('CAPABILITIES and their defaults match the intellect.md catalogue', async () => {
+    const { CAPABILITIES, CAPABILITY_DEFAULTS } = await import('../src/management/capabilities.js');
+    const codeSet = new Set(CAPABILITIES);
     assert.ok(codeSet.size > 0, 'CAPABILITIES array is empty');
 
     const docText = read('docs/api/build/intellect.md');
-    const catSet = new Set(
-      [...docText.matchAll(/^\|\s*`([a-z_]+)`\s*\|\s*(?:ON|OFF)\s*\|/gm)].map(
-        (x) => x[1],
-      ),
-    );
+    const rows = [...docText.matchAll(/^\|\s*`([a-z_]+)`\s*\|\s*(ON|OFF)\s*\|/gm)];
+    const catSet = new Set(rows.map((x) => x[1]));
     assert.ok(catSet.size > 0, 'no capability rows found in docs/api/build/intellect.md');
+    for (const [, name, col] of rows) {
+      if (!codeSet.has(name)) continue;
+      assert.equal(col, CAPABILITY_DEFAULTS[name] === 'off' ? 'OFF' : 'ON', `intellect.md lists ${name} as ${col}, code default is ${CAPABILITY_DEFAULTS[name]}`);
+    }
 
     const missingDoc  = [...codeSet].filter((c) => !catSet.has(c));
     const missingCode = [...catSet].filter((c) => !codeSet.has(c));
@@ -1121,11 +1120,18 @@ describe('17. Content pages', () => {
     const opts = [...src.matchAll(/@param \{[^}]+\} \[?opts\.(\w+)/g)].map((m) => m[1]);
     assert.deepEqual(opts.sort(), ['agentId', 'asrProvider', 'configId', 'language', 'languageName']);
     for (const o of opts) assert.ok(page.includes('`' + o + '`'), `LANGUAGES.md does not document option ${o}`);
-    for (const t of ['force_language', 'asr.language', 'LANGUAGE_NAMES', 'language: null']) {
+    for (const t of ['force_language', 'asr.language', 'LANGUAGE_CODES', 'LANGUAGE_NAMES', 'language: null']) {
       assert.ok(page.includes(t), `LANGUAGES.md does not mention ${t}`);
     }
     assert.match(src, /opts\.asrProvider \|\| 'kaltura'/);
     assert.match(page, /Defaults to `"kaltura"`/);
+  });
+
+  test('the structured-data forms page names every FORM_FIELD_TYPES value and the title keys', async () => {
+    const { FORM_FIELD_TYPES } = await import('../src/management/intellect-config.js');
+    const page = read('docs/STRUCTURED-DATA-FORMS.md');
+    for (const t of FORM_FIELD_TYPES) assert.ok(page.includes('`' + t + '`'), `STRUCTURED-DATA-FORMS.md does not name field type ${t}`);
+    for (const t of ['FORM_FIELD_TYPES', 'secondaryTitle', 'secondary_title']) assert.ok(page.includes(t), `STRUCTURED-DATA-FORMS.md does not mention ${t}`);
   });
 
   test('the languages page makes no language-count claim', () => {

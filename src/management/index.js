@@ -73,9 +73,10 @@ export {
 // Intellect-config helpers.
 export {
   IntellectConfig, buildUserPropertiesForms, auditIntellectConfig, EDITABLE_FIELDS, CALL_STAGES, SKILL_MODES,
-  MODEL_IDS, THINKING_LEVELS, SUMMARY_CONTENT_TYPES,
+  MODEL_IDS, THINKING_LEVELS, SUMMARY_CONTENT_TYPES, FORM_FIELD_TYPES,
 } from './intellect-config.js';
 export { LANGUAGE_NAMES } from './set-forced-language.js';
+export { LANGUAGE_CODES } from './languages.js';
 // The silent opening phrase — pass as `openingPhrase` to provision(), or to
 // intellectConfig.setOpeningPhrase, so the uninterruptible opening turn speaks nothing.
 export { SILENT_OPENING, SILENT_OPENING_LABEL, isSilentOpening } from '../core/opening.js';
