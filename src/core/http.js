@@ -182,8 +182,10 @@ export class Http {
           body: aborted ? `request timed out after ${this._timeoutMs}ms` : String(err && err.message || err),
           requestId: '',
         });
-        // Network errors (status 0) are retriable on all methods
-        if (attempt < this._maxRetries) { lastErr = kErr; continue; }
+        // Network errors (status 0, no response received) retry on all methods. Once a
+        // response arrived, only GET/HEAD retry: the server may already have run a write.
+        const noResponse = res === undefined;
+        if ((noResponse || isGet) && attempt < this._maxRetries) { lastErr = kErr; continue; }
         throw kErr;
       }
       clearTimeout(t);
