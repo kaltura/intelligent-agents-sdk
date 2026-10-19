@@ -15,10 +15,12 @@
  *   response, success or failure.
  * - Diagnostic logging routes through {@link redact}; a token can't leak.
  * - Retries use truncated exponential backoff + jitter. GET/HEAD retry on a
- *   network error or a 429/502/503/504 response. A write may already have run,
- *   so it retries only when the connection never opened (refused, DNS failure,
- *   connect timeout). It is not retried after a timeout, a dropped connection,
- *   or any received status, with or without an idempotency key.
+ *   network error or a 429/502/503/504 response. A POST sent with
+ *   `safeToResend` (a read, or a token mint) also retries on any network error.
+ *   Any other write may already have run, so it retries only when the connection
+ *   never opened (refused, DNS failure, connect timeout). It is not retried
+ *   after a timeout, a dropped connection, or any received status, with or
+ *   without an idempotency key.
  * - Response bodies are size-capped at `maxResponseBytes` (default 10 MiB),
  *   enforced incrementally while streaming the body (not after buffering it
  *   in full) so a chunked response without an honest Content-Length can't
@@ -97,6 +99,7 @@ export class Http {
    * @param {string} req.ks             KS token for the Authorization header.
    * @param {unknown} [req.body]        JSON body (omitted if undefined).
    * @param {string} [req.idempotencyKey] Sent as the Idempotency-Key header. It does not make the request retriable.
+   * @param {boolean} [req.safeToResend] See {@link Http#request}.
    * @returns {Promise<{data:any, requestId:string}>}
    */
   async postJson(req) {
@@ -106,7 +109,8 @@ export class Http {
   /**
    * Generic request with full control. Returns parsed JSON (or text) + requestId.
    * Retries with exponential backoff: GET/HEAD retry on a network error or a
-   * 429/502/503/504 response; other methods retry only when the connection never opened.
+   * 429/502/503/504 response. `safeToResend` requests retry on any network error.
+   * Other requests retry only when the connection never opened.
    * @param {object} req
    * @param {string} req.method
    * @param {string} req.url
@@ -116,12 +120,14 @@ export class Http {
    * @param {Record<string,string>} [req.headers]
    * @param {string} [req.idempotencyKey] Sent as the Idempotency-Key header. It does not make the request retriable.
    * @param {AbortSignal} [req.signal]
+   * @param {boolean} [req.safeToResend] The call changes nothing on the server (a read, or a token mint), so it is resent after a timeout or a dropped connection, like a GET.
    * @returns {Promise<{data:any, requestId:string, status:number, headers:Headers}>}
    */
   async request(req) {
-    const { method, url, ks, body, json, headers = {}, idempotencyKey, signal } = req;
+    const { method, url, ks, body, json, headers = {}, idempotencyKey, signal, safeToResend } = req;
     const path = pathOf(url);
     const isGet = method === 'GET' || method === 'HEAD';
+    const resendable = isGet || safeToResend === true;
 
     const h = { ...headers };
     if (ks) h['Authorization'] = `KS ${ks}`;
@@ -186,10 +192,10 @@ export class Http {
           body: aborted ? `request timed out after ${this._timeoutMs}ms` : String(err && err.message || err),
           requestId: '',
         });
-        // GET/HEAD retry on any network error. A write retries only if it never reached the
-        // server: after a timeout or a dropped connection it may already have run.
+        // GET/HEAD and safeToResend retry on any network error. A write retries only if it never
+        // reached the server: after a timeout or a dropped connection it may already have run.
         const notSent = res === undefined && !aborted && NOT_SENT_CODES.has(err?.cause?.code ?? err?.code);
-        if ((isGet || notSent) && attempt < this._maxRetries) { lastErr = kErr; continue; }
+        if ((resendable || notSent) && attempt < this._maxRetries) { lastErr = kErr; continue; }
         throw kErr;
       }
       clearTimeout(t);

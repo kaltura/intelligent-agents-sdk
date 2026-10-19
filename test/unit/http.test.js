@@ -225,6 +225,37 @@ test('R-3: POST is NOT retried after our own timeout', async () => {
   assert.equal(calls, 1, 'a timed-out write may have reached the server');
 });
 
+test('R-3: POST with safeToResend is retried after a dropped connection or a timeout, but not on 503', async () => {
+  for (const err of [netErr('ECONNRESET'), new TypeError('fetch failed')]) {
+    let calls = 0;
+    const flaky = async () => {
+      calls++;
+      if (calls < 2) throw err;
+      return { ok: true, status: 200, headers: { get: () => null }, text: async () => '{"objects":[]}' };
+    };
+    const http = new Http({ fetch: flaky, maxRetries: 3, delayFn: () => Promise.resolve() });
+    const { data } = await http.postJson({ url: 'https://x/list', ks: 'k', body: {}, safeToResend: true });
+    assert.deepEqual(data, { objects: [] });
+    assert.equal(calls, 2, 'a read changes nothing, so it is resent');
+  }
+
+  let calls = 0;
+  const slow = (url, init) => new Promise((resolve, reject) => {
+    calls++;
+    if (calls > 1) return resolve({ ok: true, status: 200, headers: { get: () => null }, text: async () => '{}' });
+    init.signal.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+  });
+  const timed = new Http({ fetch: slow, maxRetries: 3, timeoutMs: 5, delayFn: () => Promise.resolve() });
+  await timed.postJson({ url: 'https://x/list', ks: 'k', body: {}, safeToResend: true });
+  assert.equal(calls, 2, 'a timed-out read is resent');
+
+  let c503 = 0;
+  const busy = async () => { c503++; return { ok: false, status: 503, headers: { get: () => null }, text: async () => 'err' }; };
+  const http = new Http({ fetch: busy, maxRetries: 3, delayFn: () => Promise.resolve() });
+  await assert.rejects(() => http.postJson({ url: 'https://x/list', ks: 'k', body: {}, safeToResend: true }));
+  assert.equal(c503, 1, 'a received status is retried only for GET/HEAD');
+});
+
 test('R-3: POST whose 503 body read fails is NOT retried (a response was received)', async () => {
   let calls = 0;
   const fake = async () => {

@@ -285,7 +285,7 @@ section('Part 3 — Resiliency');
   const RULE_TEST_NEEDLES = {
     'R-1': ['R-1: 503 GET is retried up to maxRetries times then throws', 'R-1: non-retriable 401 is NOT retried'],
     'R-2': ['R-2: GET requires no idempotency key to be retry-safe'],
-    'R-3': ['R-3: POST with idempotency-key is NOT retried on 503', 'R-3: POST with idempotency-key is NOT retried on 429', 'R-3: POST is retried when the connection never opened', 'R-3: POST is NOT retried after a dropped connection', 'R-3: POST is NOT retried after our own timeout'],
+    'R-3': ['R-3: POST with idempotency-key is NOT retried on 503', 'R-3: POST with idempotency-key is NOT retried on 429', 'R-3: POST is retried when the connection never opened', 'R-3: POST is NOT retried after a dropped connection', 'R-3: POST is NOT retried after our own timeout', 'R-3: POST with safeToResend is retried after a dropped connection'],
     'R-4': ['R-4: abort signal stops retry loop immediately'],
     'R-5': ['R-5: delayFn is called between retries'],
   };
@@ -295,7 +295,8 @@ section('Part 3 — Resiliency');
   const getOnlyGate = /RETRIABLE_STATUSES\.has\(res\.status\)\s*&&\s*isGet\s*&&/.test(httpSrc)
     && !gateLines.some((l) => /idempotencyKey|isSafeToRetry/.test(l)) && !/isSafeToRetry/.test(httpSrc)
     && /const notSent = res === undefined && !aborted && NOT_SENT_CODES\.has\(/.test(httpSrc)
-    && /\(isGet \|\| notSent\) && attempt < this\._maxRetries/.test(httpSrc);
+    && /const resendable = isGet \|\| safeToResend === true;/.test(httpSrc)
+    && /\(resendable \|\| notSent\) && attempt < this\._maxRetries/.test(httpSrc);
   for (const [rule, needles] of Object.entries(RULE_TEST_NEEDLES)) {
     const missingTests = existsSync(httpTestFile) ? needles.filter((n) => !httpTestSrc.includes(n)) : needles;
     const ruleImplMissing = rule === 'R-3' && !getOnlyGate ? ['http.js retry gate must be GET/HEAD only for a received status (no idempotency key in the gate), and a write retries only on a not-sent error code'] : [];
