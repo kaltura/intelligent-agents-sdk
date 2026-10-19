@@ -35,7 +35,7 @@ await mgmt.intellectConfig.setUserPropertiesForms(configId, [
 
 `buildUserPropertiesForms()` accepts any type in `FORM_FIELD_TYPES`. It validates before any network call and throws `bad_request` on an invalid stage, an empty `properties` array, an unknown type, a non-string `title` or `secondaryTitle`, or a bad `id`.
 
-To remove every form, call `mgmt.intellectConfig.clearUserPropertiesForms(configId, adminKs)`. An empty list throws `bad_request`.
+To remove every form, call `mgmt.intellectConfig.clearUserPropertiesForms(configId, adminKs)`. `setUserPropertiesForms` with an empty list throws `bad_request`.
 
 You can pass one form object or an array of several. Each stage gets its own field set. For example, ask for a booking date early and a payment preference later, or an email early and a phone number later, in the same conversation.
 
