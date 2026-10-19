@@ -5,7 +5,7 @@ This page is the map for platform developers. It shows how the SDK reaches the a
 The SDK works across four layers:
 
 - the **management API**: agents, avatars, catalog, intellects (an agent's prompts, tools and knowledge), application
-- the **conversation API**: conversations, threads, messages, feedback, followups
+- the **conversation API**: conversations, threads, messages, feedback
 - the **live-avatar control plane**: the Socket.IO session plus the ASR/STV WebRTC media
 - the **scripted-video control API**: `/v1/avatar-session/*`
 
@@ -53,7 +53,7 @@ The SDK talks to six endpoints. Each has an option that overrides it.
 | Connection | SDK option | Value comes from | What the SDK uses it for |
 |---|---|---|---|
 | Management API | `agenticUrl` | `REGIONS[region]` or the option | Agents, avatars, catalog, `application/*` utilities, scripted-video sessions (`avatar-session/*`) |
-| Conversation API | `genieUrl` | `REGIONS[region]` or the option | `assistant/converse`, intellect CRUD, threads, messages, feedback, followups. Also the direct POSTs a session sends itself: tool ACKs and the session-completed signal |
+| Conversation API | `genieUrl` | `REGIONS[region]` or the option | `assistant/converse`, intellect CRUD, threads, messages, feedback. Also the direct POSTs a session sends itself: tool ACKs and the session-completed signal |
 | Kaltura OVP | `ovpUrl` | `REGIONS[region]` or the option | Media-plane calls such as categories and entries. `Management` sends the admin secret here |
 | Live-session socket | `conversationManagerUrl` | `appInit` | The Socket.IO control plane |
 | Avatar video | `srsBaseUrl` | `appInit` | WHEP video. The SDK builds the WHEP URL from it when `stvNewSession` has no `webrtc_url`. See [audio-channels.md §6](wire-protocol/audio-channels.md#6-stv-downlink-pc2-avatar-videoaudio--you) |

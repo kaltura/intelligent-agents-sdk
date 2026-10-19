@@ -4,10 +4,9 @@ import { fakeFetch } from '../fakes/fetch.js';
 import { Management } from '../../src/management/client.js';
 
 /**
- * Threads/Messages/Feedback/Followups additions: filter passthrough
+ * Threads/Messages/Feedback additions: filter passthrough
  * (`objectType` always injected, caller filter merged under it),
- * `Threads.setAnalysis`/`clearAnalysis`/`push`, `Feedback.list`/`report`,
- * `Followups.list`.
+ * `Threads.setAnalysis`/`clearAnalysis`/`push`, `Feedback.list`/`report`.
  */
 
 const ADMIN_KS = 'djJ8' + 'A'.repeat(40);
@@ -153,46 +152,9 @@ test('messages.share unwraps the {status, data:{newMessageId}} envelope; throws 
   await assert.rejects(() => failed.mgmt.messages.share('m1', 'copy', ADMIN_KS), (e) => e.code === 'server_error');
 });
 
-test('followups.list merges opts.filter under GenieListQuestionFilter objectType', async () => {
-  const { mgmt, ff } = harness([
-    { match: 'followup/list', respond: () => ({ status: 200, body: { objects: [], totalCount: 0 } }) },
-  ]);
-  await mgmt.followups.list(ADMIN_KS, { filter: { idsIn: ['q1'] } }).all();
-  assert.equal(ff.calls[0].body.filter.objectType, 'GenieListQuestionFilter');
-  assert.deepEqual(ff.calls[0].body.filter.idsIn, ['q1']);
-});
-
-const SUGGEST_ROUTE = { match: 'followup/get-suggested-questions', respond: () => ({ status: 200, body: { data: [] } }) };
-
-test('followups.getSuggested sends {} with no options', async () => {
-  const { mgmt, ff } = harness([SUGGEST_ROUTE]);
-  await mgmt.followups.getSuggested(ADMIN_KS);
-  assert.deepEqual(ff.calls[0].body, {});
-});
-
-test('followups.getSuggested sends context_id and context_type', async () => {
-  const { mgmt, ff } = harness([SUGGEST_ROUTE]);
-  await mgmt.followups.getSuggested(ADMIN_KS, { contextId: '12345', contextType: 'category' });
-  await mgmt.followups.getSuggested(ADMIN_KS, { contextType: 'global' });
-  assert.deepEqual(ff.calls[0].body, { context_id: '12345', context_type: 'category' });
-  assert.deepEqual(ff.calls[1].body, { context_type: 'global' });
-});
-
-test('followups.getSuggested rejects contextType entry before any request', async () => {
-  const { mgmt, ff } = harness([SUGGEST_ROUTE]);
-  await assert.rejects(
-    () => mgmt.followups.getSuggested(ADMIN_KS, { contextType: 'entry', contextId: '0_abcd1234' }),
-    (e) => e.code === 'validation_error' && /does not take contextType "entry"/.test(e.detail),
-  );
-  assert.equal(ff.calls.length, 0);
-});
-
-test('followups.getSuggested rejects an unknown contextType and a non-string contextId', async () => {
-  const { mgmt, ff } = harness([SUGGEST_ROUTE]);
-  await assert.rejects(() => mgmt.followups.getSuggested(ADMIN_KS, { contextType: 'bogus' }), (e) => e.code === 'validation_error' && /one of: category, ancestor_category, global/.test(e.detail));
-  await assert.rejects(() => mgmt.followups.getSuggested(ADMIN_KS, { contextId: 1 }), (e) => e.code === 'validation_error' && /contextId must be a non-empty string/.test(e.detail));
-  await assert.rejects(() => mgmt.followups.getSuggested(ADMIN_KS, { contextId: '' }), (e) => e.code === 'validation_error');
-  assert.equal(ff.calls.length, 0);
+test('Management has no followups namespace: starter questions live on the agent (widgetConfig.initialPage.initialQuestions)', () => {
+  const { mgmt } = harness([]);
+  assert.equal(mgmt.followups, undefined);
 });
 
 test('admin-only conversation methods reject a conversation token with wrong_token_scope', async () => {
@@ -201,7 +163,6 @@ test('admin-only conversation methods reject a conversation token with wrong_tok
   await assert.rejects(async () => mgmt.messages.report(CONV_TOKEN), (e) => e.code === 'wrong_token_scope');
   await assert.rejects(async () => mgmt.messages.reportSummary(CONV_TOKEN), (e) => e.code === 'wrong_token_scope');
   await assert.rejects(async () => mgmt.feedback.list(CONV_TOKEN).all(), (e) => e.code === 'wrong_token_scope');
-  await assert.rejects(async () => mgmt.followups.list(CONV_TOKEN).all(), (e) => e.code === 'wrong_token_scope');
 });
 
 test('own-thread methods accept admin, conversation and agent tokens; reject widget tokens', async () => {
@@ -236,12 +197,6 @@ test('own-thread methods accept admin, conversation and agent tokens; reject wid
     await assert.rejects(async () => call(), (e) => e.code === 'wrong_token_scope');
   }
   assert.equal(ff.calls.length, 0, 'widget tokens are rejected before any network call');
-});
-
-test('followups.getSuggested rejects a widget Token before any request', async () => {
-  const { mgmt, ff } = harness([]);
-  await assert.rejects(async () => mgmt.followups.getSuggested({ ks: CONV_TOKEN.ks, kind: 'widget' }), (e) => e.code === 'wrong_token_scope');
-  assert.equal(ff.calls.length, 0);
 });
 
 test('knowledge.search rejects a widget Token before any request', async () => {

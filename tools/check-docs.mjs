@@ -632,8 +632,6 @@ describe('7. SDK invariants', () => {
     const contextTypes = types[1].match(/'([a-z_]+)'/g).map((x) => x.slice(1, -1));
     const typeRow = rowOf(operate, 'context_type');
     for (const t of contextTypes) assert.ok(typeRow.includes(`\`${t}\``), `context_type value ${t} missing from the operate.md context_type row`);
-    const suggestRow = rowOf(read('docs/api/management-operations.md'), 'Suggested followups');
-    for (const t of contextTypes.filter((x) => x !== 'entry')) assert.ok(suggestRow.includes(`\`${t}\``), `getSuggested context type ${t} missing from the Suggested followups row`);
     const { MODEL_TYPES } = await import('../src/experience/wire.js');
     const modelRow = rowOf(operate, 'model_type');
     for (const v of Object.values(MODEL_TYPES).filter(Boolean)) assert.ok(modelRow.includes(`\`${v}\``), `model_type value ${v} missing from the operate.md model_type row`);
@@ -1107,7 +1105,7 @@ describe('16. Docs accuracy', () => {
     const bad = scanFiles().filter((f) => f.endsWith('.md')).filter((f) => read(f).split('\n').some((l) => l.includes('genieentryids') && /restrict|limit|only|access|secur/i.test(l)));
     assert.deepEqual(bad, [], `these pages describe genieentryids like an access control: ${bad.join(', ')}`);
     const auth = read('docs/api/authentication.md');
-    for (const name of ['threadOrigin', 'preview', 'genieentryids', 'geniecategoryid', 'genieancestorid', 'genieid']) {
+    for (const name of ['threadOrigin', 'preview', 'genieentryids', 'geniecategoryid', 'genieancestorid']) {
       assert.ok(auth.includes(`\`${name}\``), `authentication.md must name the ${name} privilege`);
     }
   });

@@ -1,16 +1,16 @@
 /**
  * Conversation plane (Genie): headless converse, threads, messages, feedback,
- * followups, knowledge search, and partner analytics. The conversation/converse
+ * knowledge search, and partner analytics. The conversation/converse
  * paths need a non-admin token: a CONVERSATION token
  * (`sessions.createConversationToken`) or an AGENT token
  * (`sessions.createAgentToken`), both entitlement ON. A token that carries
  * `agentid` (an agent token, or a conversation token minted with `agentId`)
  * labels the thread with the real `agent_id` for lifecycle-rule matching
  * (see docs/lifecycle/README.md). `threads.*` (except `push`) and
- * `messages.list/get/share`, `followups.getSuggested` and `knowledge.search`
+ * `messages.list/get/share` and `knowledge.search`
  * accept an admin token or a per-user conversation or agent token, not a widget
  * token (a per-user token manages only its own threads with its own agent).
- * `threads.push`, the reports, `feedback.list`, `followups.list` and the other
+ * `threads.push`, the reports, `feedback.list` and the other
  * `knowledge.*` methods need an admin token. See docs/api/operate.md.
  */
 import { parseConverseStream, collectConverse, SPIRAL_RECOVERY_PREFIX } from '../core/stream.js';
@@ -28,7 +28,6 @@ import { newFormData as sharedNewFormData } from './catalog.js';
 // 'GenieListThreadFilter' answers 422.
 const GENIE_THREAD_FILTER = 'ListThreadFilter';
 const GENIE_MESSAGE_FILTER = 'GenieListMessageFilter';
-const GENIE_QUESTION_FILTER = 'GenieListQuestionFilter';
 
 // Status/type scope for a knowledge-category media listing — shared by
 // Knowledge#listCategoryEntries and Knowledge#corpusStatus so the two entry-count
@@ -69,7 +68,6 @@ const RESERVED_PREFIX = `${RESERVED_USER_OBJ}.`;
 const CONVERSE_FIELDS = Object.freeze(['threadId', 'model_type', 'force_experience', 'request_vars', 'capabilities',
   'context_id', 'context_type', 'preload_entry_ids', 'exclude_entry_ids', 'metadata']);
 const CONTEXT_TYPES = Object.freeze(['entry', 'category', 'ancestor_category', 'global']);
-const SUGGEST_CONTEXT_TYPES = Object.freeze(CONTEXT_TYPES.filter((t) => t !== 'entry'));
 const ENTRY_ID = /^\d_[0-9a-z]{8}$/;
 const VOICE_KEYS = Object.freeze(['voice_start_time', 'voice_end_time']);
 
@@ -354,7 +352,7 @@ export class Threads {
    *    `partnerIdEquals` is accepted but the query is
    *    always scoped to the KS's own partner.
    *  - `pageSize` is capped server-side at 500 — a higher value 422s. Same
-   *    cap applies to Messages/Feedback/Followups pagers below.
+   *    cap applies to the Messages and Feedback pagers below.
    *  - threads opened with a token minted without an agent id carry
    *    `agent_id: "default"`, so an `agentIdEquals` filter for a real agent
    *    id never matches them. Mint with `agentId` (either token kind).
@@ -727,57 +725,6 @@ export class Feedback {
       then(resolve, reject) { return this.all().then(resolve, reject); },
       async all() { const out = []; for await (const r of rows()) out.push(r); return out; },
     };
-  }
-}
-
-export class Followups {
-  /** @param {import('./client.js').Ctx} ctx */
-  constructor(ctx) { this._ = ctx; }
-
-  /**
-   * STARTER questions for the partner/agent. READ. Empty body, NOT
-   * thread-scoped; returns `[]` when none configured. The returned set can
-   * vary between calls — don't assume a stable, fixed list. (Per-answer
-   * followups are a different feature — set
-   * capabilities.generate_followup_questions:on on converse.)
-   *
-   * `opts.contextType` is `category`, `ancestor_category` or `global`, with an optional
-   * `opts.contextId` string. `entry` is not supported: it throws `validation_error`, as does any
-   * other bad value, before the request. With no options the body is `{}`.
-   * @param {string} ks
-   * @param {{contextId?:string, contextType?:'category'|'ancestor_category'|'global'}} [opts]
-   */
-  async getSuggested(ks, opts = {}) {
-    this._.assertUserOrAdmin(ks, 'followups.getSuggested');
-    /** @type {{contextId?:string, contextType?:string}} */ const { contextId, contextType } = opts ?? {};
-    const bad = (detail) => failValidation('invalid context', `followups.getSuggested ${detail}`);
-    if (contextType === 'entry') bad(`does not take contextType "entry". Use ${SUGGEST_CONTEXT_TYPES.map((t) => `"${t}"`).join(', ')}, or omit it.`);
-    if (contextType !== undefined && !SUGGEST_CONTEXT_TYPES.includes(contextType)) bad(`contextType must be one of: ${SUGGEST_CONTEXT_TYPES.join(', ')} (got ${shown(contextType)}).`);
-    if (contextId !== undefined && (typeof contextId !== 'string' || contextId === '')) bad(`contextId must be a non-empty string (got ${shown(contextId)}). Pass a category id as a string, like "12345".`);
-    const body = {};
-    if (contextId !== undefined) body.context_id = contextId;
-    if (contextType !== undefined) body.context_type = contextType;
-    const r = (await this._.genie('followup/get-suggested-questions?new_response=true', body, ks)).data;
-    return Array.isArray(r?.data) ? r.data : (r?.data?.questions || r?.questions || []);
-  }
-
-  /**
-   * List follow-up/starter question records for the partner. READ.
-   * Async-iterable + awaitable (first page). `objectType` is mandatory and
-   * always sent; `opts.filter` is merged under it — a bare `{}` filter
-   * (no `objectType`) 400s `invalid_filter`. Distinct from
-   * {@link getSuggested}: this is the raw record listing (partner-wide,
-   * potentially thousands of rows), not the per-agent "suggested questions"
-   * shortlist.
-   * @param {string} ks @param {{filter?:object,pageSize?:number}} [opts]
-   */
-  list(ks, opts = {}) {
-    this._.assertAdmin(ks, 'followups.list');
-    const filter = { ...opts.filter, objectType: GENIE_QUESTION_FILTER };
-    return paginate({
-      style: 'index', pageSize: opts.pageSize,
-      fetchPage: (pager) => this._.genie('followup/list', { filter, pager }, ks).then((r) => r.data),
-    });
   }
 }
 

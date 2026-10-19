@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /**
- * Live threads/messages/feedback/followups verification — real Kaltura API,
+ * Live threads/messages/feedback verification — real Kaltura API,
  * no fakes, no mocks.
  *
  * Exercises the write paths: a scratch thread is created via a real
  * conversation turn, then driven through these SDK-level
- * Threads/Messages/Feedback/Followups methods:
+ * Threads/Messages/Feedback methods:
  *
  *   1  converseOnce → scratch thread + message
  *   2  threads.get          — the new thread is visible, right title/status
@@ -14,13 +14,12 @@
  *   5  messages.list        — filtered to this thread, contains the message
  *   6  messages.share       : clones the message under a new title, clone readable via messages.get (only with --with-share)
  *   7  feedback.add         — rates the message, is_positive persists
- *   8  followups.getSuggested — partner-level starter questions (may be [])
- *   9  threads.delete       — scratch thread removed, re-`get` real-404s
+ *   8  threads.delete       — scratch thread removed, re-`get` real-404s
  *
  * Each step is a hard assertion (run exits non-zero if it fails).
  *
- * `threads.setAnalysis`/`clearAnalysis`/`push`, `feedback.list` and
- * `followups.list` are covered by live-verify-conversation-avatar-surface.mjs.
+ * `threads.setAnalysis`/`clearAnalysis`/`push` and `feedback.list` are
+ * covered by live-verify-conversation-avatar-surface.mjs.
  *
  * Throwaway resources only (intellect + scratch thread), full cleanup in
  * `finally`, with independent re-verification that the thread is truly gone
@@ -127,29 +126,25 @@ try {
   // 7: feedback.add — rates the message; call is idempotent for the same pair.
   const fb = await kaltura.feedback.add({ message_id: turn.messageId, is_positive: true, comment: `live-verify ${RUN_TAG}` }, conv);
   check('7-feedback-add-succeeds', !!fb, { response: fb });
-
-  // 8: followups.getSuggested — partner-level starter questions (may be []).
-  const suggested = await kaltura.followups.getSuggested(admin);
-  check('8-followups-get-suggested-is-array', Array.isArray(suggested), { count: Array.isArray(suggested) ? suggested.length : null });
 } catch (err) {
   failed = true;
   record('live-verify-threads-messages-feedback', false, { message: err?.detail || err?.message || String(err), code: err?.code });
 } finally {
-  // 9: threads.delete — scratch thread removed, re-get real-404s.
+  // 8: threads.delete — scratch thread removed, re-get real-404s.
   if (threadId) {
     try {
       await kaltura.threads.delete([threadId], admin, { confirmPermanent: true });
-      record('9-threads-delete', true, { threadId });
+      record('8-threads-delete', true, { threadId });
       try {
         await kaltura.threads.get(threadId, admin);
         failed = true;
-        record('9-threads-delete-reget-still-found', false, { threadId });
+        record('8-threads-delete-reget-still-found', false, { threadId });
       } catch (err) {
-        record('9-threads-delete-reget-not-found', true, { threadId, code: err?.code, message: err?.detail || err?.message });
+        record('8-threads-delete-reget-not-found', true, { threadId, code: err?.code, message: err?.detail || err?.message });
       }
     } catch (err) {
       failed = true;
-      record('9-threads-delete', false, { threadId, message: err?.detail || err?.message || String(err) });
+      record('8-threads-delete', false, { threadId, message: err?.detail || err?.message || String(err) });
     }
   }
   if (intellectId) {

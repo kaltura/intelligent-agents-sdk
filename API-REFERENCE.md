@@ -20,7 +20,7 @@ Every endpoint is shown as a raw HTTP call plus its SDK wrapper. See [`README.md
 | [Widget & Runtime Init](docs/api/deploy.md) | Resolve widget ID, initialize the browser runtime |
 | [Conversation & Analytics](docs/api/operate.md) | Converse (headless HTTP), reserved `sys__*` template variables, status, threads, feedback and follow-ups, usage analytics, knowledge search (MCP) |
 | [Scripted-Video (STV-only) Sessions](docs/api/scripted-video.md) | Deprecated. Pre-authored speech sessions: auth, lifecycle, `say-audio` |
-| [Management Operations](docs/api/management-operations.md) | CRUD tables for agents, avatars, intellects, tools, skills, threads, messages/feedback/followups, knowledge records, lifecycle |
+| [Management Operations](docs/api/management-operations.md) | CRUD tables for agents, avatars, intellects, tools, skills, threads, messages/feedback, knowledge records, lifecycle |
 | [Lifecycle Rules](docs/lifecycle/README.md) | Event-driven rules + InsightSettings (reusable custom-insight definitions) + EmailTemplates (`sendInsightEmail`'s `templateId`). Reference and [recipe](docs/lifecycle/recipes.md) |
 | [External API Integrations](docs/EXTERNAL-API-INTEGRATIONS.md) | Wiring an agent-called tool to a durable write against your own external API (CRM, spreadsheet, ticketing), including the managed OAuth2 flow |
 | [MCP Integrations](docs/MCP-INTEGRATIONS.md) | Wiring a whole [MCP](https://modelcontextprotocol.io) server's tool surface at once: auth, multi-server namespacing, OAuth-gated servers |

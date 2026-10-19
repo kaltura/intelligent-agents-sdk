@@ -122,7 +122,7 @@ await mgmt.agents.update({
 | `tips` | String, up to 10000 characters |
 | `initialPage.title` / `initialPage.subtitle` | Strings, up to 100 and 200 characters |
 | `initialPage.backgroundImageUrl` | A URL, or `null`. Stored and returned raw |
-| `initialPage.initialQuestions` | `[{ text, answerType }]`. `answerType` is `'markdown'` or `'flashcards'` |
+| `initialPage.initialQuestions` | `[{ text, answerType }]`, the starter questions shown when a user opens the conversation. `answerType` is `'markdown'` or `'flashcards'` |
 | `layouts` | `{ avatar, chat }`, both booleans |
 | `tapToTalk` | Boolean |
 | `embedConfig.theme` | String |

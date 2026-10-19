@@ -18,7 +18,7 @@ Where each part of the SDK lives, and which endpoints each management module cal
 | `./experience/noise-suppressor` | `noise-suppressor.js` | browser | `AudioWorklet` noise gate for `cfg.noiseProcessor` |
 | `./experience/analytics` | `analytics.js` | browser | KAVA application events |
 
-Namespaces on `Management`: `sessions`, `agents`, `avatars`, `avatarSessions`, `catalog`, `application`, `intellects` (with `intellects.secrets`), `intellectConfig`, `tools`, `skills`, `conversations`, `threads`, `messages`, `feedback`, `followups`, `knowledge`, `lifecycle`, `insightSettings`, `emailTemplates`. `tools` and `skills` are standalone, partner-level entities. An intellect references them through `tool_ids` and `skill_ids`.
+Namespaces on `Management`: `sessions`, `agents`, `avatars`, `avatarSessions`, `catalog`, `application`, `intellects` (with `intellects.secrets`), `intellectConfig`, `tools`, `skills`, `conversations`, `threads`, `messages`, `feedback`, `knowledge`, `lifecycle`, `insightSettings`, `emailTemplates`. `tools` and `skills` are standalone, partner-level entities. An intellect references them through `tool_ids` and `skill_ids`.
 
 ## Core (`src/core/`)
 
@@ -63,7 +63,7 @@ The shared leaf layer. Core never imports from `management/` or `experience/`.
 | `prompt-lint.js` | `lintPrompts`, `validatePromptVars`, `lintGlossary`, `assembleSystemPrompt`, `SYS_VARS`. Client-side prompt preview | none |
 | `languages.js` | `LANGUAGE_CODES`: the ISO 639-1 codes `setForcedLanguage` accepts. Pure data | none |
 | `set-forced-language.js` | `setForcedLanguage`: writes `force_language` on the intellect and `asr.language` on the agent in one idempotent call. `LANGUAGE_NAMES` | `v1/intellect/update`, `agent/update` |
-| `conversations.js` | `Conversations` (`stream`/`send`), `Threads`, `Messages`, `Feedback`, `Followups`, `Knowledge` (`addRecord`, `upload`, `uploadDocument`, `createCategory`, `findOrCreateCategory`, `corpusStatus`, `getLinkage`, `setEnabled`, `search`, `isIndexed`, `entryStatus`) | `assistant/converse`, `v1/knowledge/add`, OVP `category/*` and upload |
+| `conversations.js` | `Conversations` (`stream`/`send`), `Threads`, `Messages`, `Feedback`, `Knowledge` (`addRecord`, `upload`, `uploadDocument`, `createCategory`, `findOrCreateCategory`, `corpusStatus`, `getLinkage`, `setEnabled`, `search`, `isIndexed`, `entryStatus`) | `assistant/converse`, `v1/knowledge/add`, OVP `category/*` and upload |
 | `lifecycle.js` | `Lifecycle`: rule CRUD, `match`, `listObjects`, `listEvents`, `describeFields`, `audit` | `lifecycle/*` |
 | `lifecycle-rules.js` | Rule-condition predicates used by `Lifecycle` on create and update, and by the audit | none |
 | `lifecycle-audit.js` | `auditLifecycleRules`: pure audit of existing rules | none |
