@@ -80,7 +80,7 @@ What each token can reach:
 | Token | Threads | OVP admin APIs |
 |---|---|---|
 | **Admin type (type 2)**: `createAdminToken()`, or `sessionType: 'admin'` | Every user's threads | Yes, within the `role` and privileges you set |
-| **Conversation/agent with `userId`** (user session) | Own threads: read, continue, list, delete | No |
+| **Conversation/agent with `userId`** (user session) | Own threads with the agent named in the token: read, continue, list, delete | No |
 | **Conversation/agent without `userId`** | One identity for all holders. Read, list and delete return 403 | No |
 | **Widget** | Same as without `userId` | No |
 
@@ -94,8 +94,8 @@ What each token can reach:
 ## Token lifecycle (RFC 9700 OAuth 2.0 Security BCP; NIST AC family)
 
 - Short-lived by default: browser-bound tokens (`conversation`/`agent`) default to 30 minutes, admin to 1 hour. Short TTL is the primary revocation lever for a stateless KS (RFC 9700 §6.1). Override per call with `ttlSeconds`, up to 86400 s (24 h) for browser-bound kinds and 7 days for admin; longer throws `ttl_too_long`. To refresh, your server mints a fresh token and the browser calls `session.setToken(freshKs)`, with no reconnect.
-- Least privilege / binding (RFC 9700 §2.3, §4.10): tighten a token with the structured `restrictions` option instead of hand-crafting privilege strings. `{ role, actionsLimit, ipRestrict, uriRestrict, sessionGroupId }` compiles to the matching Kaltura privileges (`setrole`/`actionslimit`/`iprestrict`/`urirestrict`/`sessionid`). `role` needs `sessionType: 'admin'`. All restrictions are optional; none is set by default. Values and limits: [Authentication](/reference/api/authentication/).
-- Active revocation (RFC 9700 §5.2.1.1; SOC 2 CC6.2/CC6.3): `sessions.revoke(tokenOrKs)` ends a leaked token within seconds (Kaltura `session/end`). Tokens that share a `restrictions.sessionGroupId` are revoked together: revoking any member ends the whole family. Returns a receipt: `{ revokedAt, partnerId, _meta }`.
+- Token restrictions: set the optional `restrictions` option instead of writing privilege strings. Each key you set adds one Kaltura privilege to the token: `role` → `setrole`, `actionsLimit` → `actionslimit`, `ipRestrict` → `iprestrict`, `uriRestrict` → `urirestrict`, `sessionGroupId` → `sessionid`. `role` needs `sessionType: 'admin'`. None is set by default. Values and limits: [Authentication](/reference/api/authentication/).
+- Active revocation (RFC 9700 §5.2.1.1; SOC 2 CC6.2/CC6.3): `sessions.revoke(tokenOrKs)` sends Kaltura `session/end` for the token. Tokens minted with the same `restrictions.sessionGroupId` share one session id, so `revoke` on any of them targets the whole group. Returns a receipt: `{ revokedAt, partnerId, _meta }`.
 - Vault/KMS (NIST IA-5): pass `getAdminSecret: () => fetchFromVault()` to fetch the secret per-mint instead of holding it; it is never stored as an enumerable field.
 
 ## Audit logging (NIST AU-2 / AU-3 / AU-12; OWASP Logging; SOC 2 CC7)
@@ -111,7 +111,7 @@ new Management({ partnerId, adminSecret, onAuditEvent: (e) => siem.write(e) });
 | Event | Fires when |
 |---|---|
 | `token.mint` | A KS is minted (admin, conversation, agent, or widget) |
-| `token.revoke` | `sessions.revoke()` ends a token |
+| `token.revoke` | `sessions.revoke()` sends `session/end` for a token |
 | `token.refresh` | `setToken()` rotates a live session's token |
 | `guard.reject` | A call is rejected for carrying the wrong token kind (e.g. an admin token where a conversation token was required) |
 | `auth.fail` | A request returns HTTP 401 or 403. A failed `conversations.stream` request fires it for any error status |
@@ -170,7 +170,7 @@ Every event carries this AU-3 content shape:
 - A base URL that is empty, does not parse, uses a scheme other than `https`/`http`, or carries a username or password throws `bad_request` at construction.
 - Loopback and private hosts (`localhost`/`127.0.0.1`, RFC 1918 ranges, link-local, and their IPv6 equivalents) are allowed for dev, with a loud one-time warning.
 - Cleartext to a public host requires an explicit `allowInsecureTransport:true` (dev/test only, never production).
-- Pass server-minted ephemeral TURN credentials (`turnCredentials` from appInit, RFC 7635). Without them the SDK uses its default TURN credentials and warns.
+- The SDK uses its default TURN credentials unless you pass `turnCredentials`. See [Wire Protocol · Audio Channels §5](/reference/wire-protocol/audio-channels/#5-asr-uplink-pc1-microphone--server).
 
 ## Browser hardening (OWASP ASVS / WebSocket CS)
 
@@ -201,7 +201,7 @@ The SDK generates and protects the records and enforces the client-side controls
 | Control | Family | SDK provides | Operator responsible |
 |---------|--------|--------------|----------------------|
 | AC-3, AC-6, IA-2 | Access / least privilege | Two-token invariant; user-session tokens by default ([Session type](#session-type)); structured `restrictions` | Role/entitlement config in Kaltura |
-| AC-12 | Session termination | Short TTLs; `revoke()`; `disconnect()` drops token + transports | Session-timeout policy |
+| AC-12 | Session termination | Short TTLs; `disconnect()` drops token + transports; `revoke()` sends `session/end` | Session-timeout policy |
 | AU-2, AU-3, AU-12 | Audit generation/content | Structured, redacted, correlated `AuditEvent`s via `onAuditEvent` | Wire the hook to a SIEM |
 | AU-4, AU-9, AU-10, AU-11 | Audit storage/integrity/retention | None | Tamper-evident storage, non-repudiation, retention |
 | SC-8 | Transmission confidentiality | https/wss enforced; cleartext rejected | TLS termination, cert management |
@@ -229,7 +229,7 @@ Session hosts come from `appInit`, not from your config. `appInit` returns the `
 
 The `region` option covers the rest. It fills the four `Management` base URLs (`agenticUrl`, `genieUrl`, `ovpUrl`, `messagingUrl`) and the session `genieUrl` from one [`REGIONS`](/reference/api/authentication/#regions-and-base-urls) entry. `Management` never falls back to another region: a service the region lacks throws `region_unavailable` instead of reaching a US host. `region` does not change the analytics host.
 
-This residency guarantee covers the SDK's own configured endpoints only. A `lifecycle` rule's `sendInsightEmail` action sends thread-derived content to the `recipients` you list, and the URL-pinning above does not apply to it. Your code decides which recipients and regions are allowed. A deployment that must protect PHI/PII boundaries vets the `recipients` list and reviews residency before it uses this action.
+This residency guarantee covers the SDK's own configured endpoints only. A `lifecycle` rule's `sendInsightEmail` action sends thread-derived content to the `recipients` you list, and the URL-pinning above does not apply to it. Your code decides which recipients and regions are allowed. A deployment that must protect PHI/PII boundaries vets the `recipients` list, including `{{path}}` entries such as `{{object.user_id}}` that send to the conversation's own user, and reviews residency before it uses this action.
 
 ## Data handling and deletion
 
@@ -276,10 +276,10 @@ The SDK is an AI Application Provider component you can largely inherit in a HIT
 | HITRUST AI requirement | SDK provides | Operator / inherited |
 |---|---|---|
 | Encrypt traffic to/from the model | https/wss enforced; DTLS-SRTP | Platform/TLS |
-| Restrict access to interact with the model | Two-token invariant; entitlement ON; per-user user sessions; `revoke()` | Identity proofing |
+| Restrict access to interact with the model | Two-token invariant; entitlement ON; per-user user sessions; short TTLs | Identity proofing |
 | Log AI inputs/outputs (AI.PI.a) | Security + turn audit via `onAuditEvent` (content-free by default) | SIEM storage/retention |
 | Model rate limiting / DoS | Client-side `maxTurnsPerMinute` valve | Authoritative server-side quota (inherited) |
-| **Humans can intervene (AI.NI.a, non-inheritable)** | `stop()` / `disconnect()`, `revoke()`, barge-in (`interrupt()`), `requireDisclosureAck`, `onAgentAction` veto | Wire at least one to a visible UI control |
+| **Humans can intervene (AI.NI.a, non-inheritable)** | `stop()` / `disconnect()`, barge-in (`interrupt()`), `requireDisclosureAck`, `onAgentAction` veto | Wire at least one to a visible UI control |
 | Output filtering / prompt-injection | `safeUrl`/`safeText`/`renderSafeLink` (output); `onBeforeSend` hook (input) | Model-side guardrails (inherited); red-team the intellect (the agent's configured prompts, tools, and knowledge linkage) |
 | AI supply chain | Zero deps, no install scripts, no registry publish step | Due-diligence review |
 | AI transparency to end-user | Disclosure-before-speech + `getDisclosure()` | Render it accessibly |
@@ -309,7 +309,7 @@ The avatar is an agent (navigates, renders GenUI, captures leads, searches knowl
 | Threat | Control |
 |---|---|
 | **ASI 01 Goal Hijack** / **ASI 02 Tool Misuse** | `onAgentAction(action)` chokepoint. Every agent-initiated action (`navigate`/`render-genui`/`structured-data-form`/…) passes through it before taking effect. Veto via false/throw. **Operator (server-side `api`/`code`/`csv` tools):** these fire server-to-server, outside the SDK's reach. Independently authorize each call against the caller's real session/permissions. Never treat model/system-prompt tool scoping, or a client-suppliable `request_vars` value, as an authorization claim. See [Tools and Secrets § Tools](/reference/api/build/tools-and-secrets/#tools-api--csv--code--client--var). |
-| **ASI 03 Identity & Privilege Abuse** | Scoped user-session token (per-user `userId`), entitlement ON, short TTL, revocable; least-privilege `restrictions`; `agentActions` policy (e.g. `navigate:'off'`). |
+| **ASI 03 Identity & Privilege Abuse** | Scoped user-session token (per-user `userId`), entitlement ON, short TTL; least-privilege `restrictions`; `agentActions` policy (e.g. `navigate:'off'`). |
 | **ASI 06 Memory & Context Poisoning** | `Presenter` session memory is bounded and operator-cleared via `clearMemory()`. Persisted memory is replayed context. The operator owns the storage choice. |
 | **ASI 08 Cascading Failures** | Reconnect-window bound, media-recovery escalation, agent-stall watchdog, client rate valve. |
 | **ASI 09 Human-Agent Trust** | Disclosure-before-speech + `getDisclosure()`; `requireDisclosureAck`. |
@@ -341,13 +341,12 @@ const mgmt = new Management({
 const token = await mgmt.sessions.createConversationToken({
   configId, ttlSeconds: 1800,                 // short-lived (RFC 9700)
   userId: opaqueUserId,                       // per-user identity: reaches only this user's threads
-  restrictions: { sessionGroupId: caseId },   // revocable family
+  restrictions: { sessionGroupId: caseId },   // groups the sessions of one case
 });
 
 // Browser: Experience
 new KalturaAvatarSession({
   token, conversationManagerUrl, srsBaseUrl, turnServerUrl,      // all https/wss
-  turnCredentials,                            // ephemeral (RFC 7635), not the SDK default
   allowInsecureTransport: false,              // never true in production
   requireDisclosureAck: true,                 // EU AI Act / biometric jurisdictions
   idleTimeoutMs: 900000,                      // HIPAA auto-logoff

@@ -7,7 +7,7 @@ eyebrow: How-to Guide
 
 # Site navigation — one fire-and-forget `go_to` tool for any website
 
-Let the agent move the visitor to the right page and section of your site while it answers. One client tool, two string arguments, no result to wait for, so it can never spiral or leave the avatar silent.
+Let the agent move the visitor to the right page and section of your site while it answers. One client tool, two string arguments, no result to wait for, so a turn never blocks on the browser. The tool description and `SITE_NAV_RULES_PROMPT` tell the model to call it once and then speak, and the plugin drops a second same-turn call (`oncePerTurn`).
 
 ```text
 agent:    go_to({ path: "/guides/pause-resume/", section: "edge-case-dont" })
@@ -27,7 +27,7 @@ Three pieces, one shared contract:
 
 A navigation tool needs no answer from the page. The tool is provisioned with `wait_for_response: false`, so the turn continues without waiting for the browser, and the browser never sends anything back. There is nothing to ACK, time out on, or retry.
 
-The model writes its spoken answer in the same turn. Compare [Client-Side Commands § Tool spirals](/guides/client-commands/#tool-spirals-starve-the-voice-budget-tools-per-turn) for what happens to tools that do wait.
+The model writes its spoken answer in the same turn. A fire-and-forget tool gives the model no result to stop on, so a same-turn duplicate is still possible. [Client-Side Commands § Tool side](/guides/client-commands/#tool-side-fire-and-forget-has-zero-result-signal) explains the mitigation this tool uses.
 
 Two consequences shape the browser side:
 
@@ -432,7 +432,7 @@ Not tested: whether a browser asks for the microphone again after a full page lo
 | Doc | What it adds |
 |---|---|
 | [README.md § Site navigation](https://github.com/kaltura/intelligent-agents-sdk/blob/main/README.md#site-navigation-sitenavigator) | Quick start and export tables. |
-| [Client-Side Commands](/guides/client-commands/) | The general client-command contract this tool is built on, and why waiting tools spiral. |
+| [Client-Side Commands](/guides/client-commands/) | The general client-command contract this tool is built on, and how tool spirals are limited. |
 | [Dynamic Data Injection](/guides/dynamic-data-injection/) | `page_context` and the other ways to keep the agent in sync with the page. |
 | [Security & Compliance](/reference/security/) | The output-handling rules the plugin follows. |
 

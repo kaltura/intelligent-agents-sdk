@@ -66,7 +66,7 @@ export AGENTIC_ADMIN_SECRET=your_admin_secret_here
 
 ---
 
-## Step 3: Create your own agent from scratch (1–3 minutes)
+## Step 3: Create your own agent from scratch
 
 This one command builds a brand-new agent (intellect, face, voice, and all) from a plain-English description:
 
@@ -74,7 +74,7 @@ This one command builds a brand-new agent (intellect, face, voice, and all) from
 node create-agent.mjs "A friendly yoga studio receptionist who helps people book classes and answers questions about memberships"
 ```
 
-It prints three status lines (`[1/3]` to `[3/3]`) and a heads-up before the slow provisioning step. At the end it sends a smoke-test message and prints the reply, plus the new IDs (`configId`, `agentId`, `avatarId`, `widgetId`) you need to embed or extend the agent. The agent is created with a silent opening (`openingPhrase: SILENT_OPENING`), so the browser decides how the conversation starts (see below).
+It prints three status lines (`[1/3]` to `[3/3]`) and a heads-up before the slow provisioning step. Provisioning can take up to a minute. At the end it sends a smoke-test message and prints the reply, plus the new IDs (`configId`, `agentId`, `avatarId`, `widgetId`) you need to embed or extend the agent. The agent is created with a silent opening (`openingPhrase: SILENT_OPENING`), so the browser decides how the conversation starts (see below).
 
 > Building an agent by hand instead of via the one-line brief? See [Agent Components](/reference/api/build/) in API-REFERENCE.md.
 
@@ -96,6 +96,8 @@ const reply = await kaltura.converseOnce('<configId from Step 3>', 'Hello! What 
 console.log(reply.text);
 ```
 
+For a widgets-only answer, see [the `converseOnce` return shape](https://github.com/kaltura/intelligent-agents-sdk/blob/main/README.md#management).
+
 Partner outside the US? Add `region: 'frp2'` (EU) to the `Management` config. See [Regions and base URLs](/reference/api/authentication/#regions-and-base-urls).
 
 `converseOnce()` mints its own conversation token from the `configId`. The admin secret never leaves your process. See [Conversation & Analytics](/reference/api/operate/) in API-REFERENCE.md for threaded conversations, streaming, and the full Management API surface.
@@ -103,6 +105,9 @@ Partner outside the US? Add `region: 'frp2'` (EU) to the `Management` config. Se
 **In the browser, let the agent speak first.** Pass `kickoff` to the session and the SDK sends that text as the first turn, once, as soon as the server accepts input. With the silent opening the quickstart set, the greeting is the agent's own reply. Scripted or silent opening: [Start the Conversation § Choose an opening](/guides/start-the-conversation/#choose-an-opening). Attach listeners first: [README.md § Experience](https://github.com/kaltura/intelligent-agents-sdk/blob/main/README.md#experience).
 
 ```js
+import { KalturaAvatarSession } from '@kaltura/intelligent-agents/experience';
+
+// runtimeConfig: your session options, built from appInit. See examples/browser-experience.html
 const session = new KalturaAvatarSession({ ...runtimeConfig, kickoff: 'Greet the user and briefly say how you can help.' });
 await session.connect();
 ```
@@ -156,9 +161,9 @@ You now know how to create an agent and talk to it. Here's where to go for more:
 
 **Do I need to keep the terminal open?** No. `create-agent.mjs` runs once and exits.
 
-**Will this cost money / use my quota?** Conversations and avatar sessions use your Kaltura plan's quota. Creating agents/avatars is cheap, but clean up test ones you don't need. See `agents.delete()` / `avatars.delete()` under [Management Operations](/reference/api/management-operations/) in API-REFERENCE.md.
+**Will this cost money / use my quota?** Conversations and avatar sessions use your Kaltura plan's quota. Creating agents/avatars is cheap, but clean up test ones you don't need. Deleting an agent leaves its avatar and intellect, so delete all three: `agents.delete()`, `avatars.delete()` and `intellects.delete()`. See [Management Operations](/reference/api/management-operations/) in API-REFERENCE.md.
 
-**How do I see everything I created?** Use the Management API's list calls: `kaltura.agents.list(admin.ks)` and `kaltura.avatars.list(admin.ks)`. See [Management Operations](/reference/api/management-operations/) in API-REFERENCE.md.
+**How do I see everything I created?** Mint an admin token once, `const admin = await kaltura.sessions.createAdminToken({ userId: 'admin@example.com' });`, then use the list calls: `kaltura.agents.list(admin.ks)` and `kaltura.avatars.list(admin.ks)`. See [Management Operations](/reference/api/management-operations/) in API-REFERENCE.md.
 
 **How do I label the agents I create so I can find mine later?** Tag the **agent** (not the avatar) via `adminTags` on `agents.create()`, then filter with `agents.list(admin.ks, { filter: { adminTagsIn: ['<tag>'] } })`. Details under [Create an Agent](/reference/api/build/avatar-and-agent/#create-an-agent).
 

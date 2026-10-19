@@ -36,18 +36,21 @@ page[0]; // { id: 42, name: 'Product Documentation', status: 'READY', config: { 
 ```json
 {
   "id": 1389,
+  "type": "internal",
   "knowledge_ids": [42],
   "capabilities": { "use_knowledge_base": "on" }
 }
 ```
 
-This is a normal intellect write. Retrieval works once indexing finishes.
+This is a normal intellect write. `capabilities` is a full-replace dict, so send the whole dict (see [Capabilities](/reference/api/build/intellect/#capabilities)). Retrieval works once indexing finishes.
 
 > **`knowledge_ids` is capped at one record**, despite the plural array shape. `intellectConfig.setKnowledgeIds()` throws a typed `bad_request` before any network call if you pass more. To ground one agent in several content sources, upload them all into a single knowledge record.
 
 ## Step 3: Upload content into a category
 
-`knowledge.uploadDocument()` (SDK) or the Kaltura OVP media ingest APIs put the actual media entries into a media category. `knowledge.createCategory()` creates that category if you don't already have one. A category is only a container. It is not connected to the knowledge record from Step 1 until Step 4.
+`knowledge.uploadDocument()` (SDK) or the Kaltura OVP media ingest APIs put the actual media entries into a media category. `knowledge.upload(id, { fileName }, ks)` starts an upload from the record id. It creates one entry and an upload token and returns `{upload_token_id, entry_id, category_id}`. It sends no file bytes, so you upload the file to the token yourself. When the record has no category, the call creates one and adds it to the record. Later calls without `categoryId` reuse it. A `categoryId` the record does not use gives `bad_request`. An unsupported file extension gives `bad_request` with the list of supported types.
+
+`knowledge.createCategory()` creates a category if you don't already have one. A category made this way is only a container. It is not connected to the knowledge record from Step 1 until Step 4.
 
 ## Step 4: Point the record at that category
 
@@ -87,21 +90,36 @@ Re-pointing an existing intellect to a new or different knowledge record works t
 
 Don't use `knowledge.search()` as a substitute either. Its "couldn't find relevant information" reply is the same for an unindexed knowledge base, an indexed knowledge base with `use_knowledge_base:'off'`, and a query with no match, so it does not show indexing status. `knowledge.corpusStatus()` only counts entries in the category, not whether they finished indexing.
 
-`knowledge.entryStatus(knowledgeId, entryIds, ks)` is the per-entry indexing-status check. Use it to verify that specific uploaded content has finished indexing. Poll it instead of using a fixed wait:
+`knowledge.entryStatus(knowledgeId, entryIds, ks)` is the per-entry indexing-status check. Use it to verify that specific uploaded content has finished indexing. Poll it instead of using a fixed wait. `entryIds` takes 1 to 500 ids. Each document has a `status`:
+
+| `status` | Meaning |
+|---|---|
+| `SUCCEEDED`, `TOO_SHORT` | Done |
+| `NO_CHAPTERS`, `PARSE_ERROR` | Failed |
+| `null` | Still queued |
+
+An id that is not indexed yet is missing from `entries`.
 
 ```js
+const DONE = new Set(['SUCCEEDED', 'TOO_SHORT']);
+const FAILED = new Set(['NO_CHAPTERS', 'PARSE_ERROR']);
+
 async function pollUntilIndexed(mgmt, knowledgeId, entryIds, ks, { intervalMs = 5000, timeoutMs = 90000 } = {}) {
   const deadline = Date.now() + timeoutMs;
   const pending = new Set(entryIds);
+  const failed = [];
   while (pending.size && Date.now() < deadline) {
     const { entries } = await mgmt.knowledge.entryStatus(knowledgeId, [...pending], ks);
-    // entries omits an id until it has finished indexing, then reports its documents' status.
     for (const entry of entries) {
-      if (entry.documents?.every((d) => d.status)) pending.delete(entry.entry_id);
+      const docs = entry.documents ?? [];
+      if (docs.length && docs.every((d) => DONE.has(d.status) || FAILED.has(d.status))) {
+        pending.delete(entry.entry_id);
+        if (docs.some((d) => FAILED.has(d.status))) failed.push(entry.entry_id);
+      }
     }
     if (pending.size) await new Promise((resolve) => setTimeout(resolve, intervalMs));
   }
-  return pending.size === 0; // false means the timeout ran out before every entry confirmed
+  return { done: pending.size === 0, failed }; // done:false means the timeout ran out. Fix every id in failed.
 }
 ```
 

@@ -36,9 +36,8 @@ new RTCPeerConnection({
 | Session option | Meaning |
 |---|---|
 | `turnServerUrl` | TURN host from `appInit`. The SDK expands it into the four URLs above. |
-| `turnCredentials` | `{ username, credential, expiry? }`, the ephemeral credentials from `appInit`. |
+| `turnCredentials` | Optional `{ username, credential }` for `turnServerUrl`. `appInit` returns none, so the SDK's default TURN credentials apply unless you pass your own. |
 
-- If you pass `turnServerUrl` without `turnCredentials`, the SDK uses built-in fallback credentials and logs a security warning. Always pass `turnCredentials` in production.
 - The STV downlink uses `iceTransportPolicy: "relay"`, except on Firefox (`isFirefox` option), where it is `"all"`.
 - Keep explicit ports and transports on every TURN URL. A bare `turn:host` yields no relay candidate and the uplink sends no packets silently.
 - WebKit rejects `?transport=` query strings. The SDK retries once without them, which drops the plain-TCP port 80 URL on that engine only.

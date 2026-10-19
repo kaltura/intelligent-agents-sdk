@@ -12,7 +12,7 @@ This page is the map for platform developers. It shows how the SDK reaches the a
 The SDK works across four layers:
 
 - the **management API**: agents, avatars, catalog, intellects (an agent's prompts, tools and knowledge), application
-- the **conversation API**: conversations, threads, messages, feedback, followups
+- the **conversation API**: conversations, threads, messages, feedback
 - the **live-avatar control plane**: the Socket.IO session plus the ASR/STV WebRTC media
 - the **scripted-video control API**: `/v1/avatar-session/*`
 
@@ -60,11 +60,11 @@ The SDK talks to six endpoints. Each has an option that overrides it.
 | Connection | SDK option | Value comes from | What the SDK uses it for |
 |---|---|---|---|
 | Management API | `agenticUrl` | `REGIONS[region]` or the option | Agents, avatars, catalog, `application/*` utilities, scripted-video sessions (`avatar-session/*`) |
-| Conversation API | `genieUrl` | `REGIONS[region]` or the option | `assistant/converse`, intellect CRUD, threads, messages, feedback, followups. Also the direct POSTs a session sends itself: tool ACKs and the session-completed signal |
+| Conversation API | `genieUrl` | `REGIONS[region]` or the option | `assistant/converse`, intellect CRUD, threads, messages, feedback. Also the direct POSTs a session sends itself: tool ACKs and the session-completed signal |
 | Kaltura OVP | `ovpUrl` | `REGIONS[region]` or the option | Media-plane calls such as categories and entries. `Management` sends the admin secret here |
 | Live-session socket | `conversationManagerUrl` | `appInit` | The Socket.IO control plane |
 | Avatar video | `srsBaseUrl` | `appInit` | WHEP video. The SDK builds the WHEP URL from it when `stvNewSession` has no `webrtc_url`. See [Wire Protocol · Audio Channels §6](/reference/wire-protocol/audio-channels/#6-stv-downlink-pc2-avatar-videoaudio--you) |
-| TURN | `turnServerUrl`, `turnCredentials` | `appInit` | WebRTC relay for both media legs. `turnCredentials` is `{username, credential, expiry?}`. See [Wire Protocol · Audio Channels §5](/reference/wire-protocol/audio-channels/#5-asr-uplink-pc1-microphone--server) |
+| TURN | `turnServerUrl` | `appInit` | WebRTC relay for both media legs. Credentials: [Wire Protocol · Audio Channels §5](/reference/wire-protocol/audio-channels/#5-asr-uplink-pc1-microphone--server) |
 
 The scripted-video control API (`avatar-session/*`) is a separate API from the management API, reached through `agenticUrl`. Details: [Scripted-Video Sessions](https://github.com/kaltura/intelligent-agents-sdk/blob/main/docs/api/scripted-video.md).
 
@@ -147,7 +147,7 @@ Agents with no avatar run in audio/phone mode, which this SDK does not support e
 | `./management` | `Management` | Server | The admin secret. It mints the tokens below. |
 | `./experience` | `KalturaAvatarSession` | Browser | A short-lived, non-admin conversation KS from `application.appInit` |
 
-`Management` checks the token kind before any network call whenever the kind is known client-side. A minted `Token` records its kind (`admin`, `conversation`, `agent`, `widget`). A raw encrypted KS string can't be inspected, so `Management` sends the call without that check. `KalturaAvatarSession` is the live socket and WHEP runtime described in "Video Runtime Protocol" above. Socket.IO is injected into it, never bundled. Entry points, modules and how-tos: [README.md § Architecture](https://github.com/kaltura/intelligent-agents-sdk/blob/main/README.md#architecture).
+`Management` checks the token kind before any network call whenever the kind is known client-side. A minted `Token` records its kind (`admin`, `conversation`, `agent`, `widget`). A raw encrypted KS string can't be inspected, so `Management` checks only the raw string of a widget token it minted recently. Other raw strings go to the server. Details: [Authentication & Services](/reference/api/authentication/). `KalturaAvatarSession` is the live socket and WHEP runtime described in "Video Runtime Protocol" above. Socket.IO is injected into it, never bundled. Entry points, modules and how-tos: [README.md § Architecture](https://github.com/kaltura/intelligent-agents-sdk/blob/main/README.md#architecture).
 
 ---
 
