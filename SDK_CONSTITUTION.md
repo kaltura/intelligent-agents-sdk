@@ -69,7 +69,7 @@ JSON objects arriving from any external source (LLM, API response, user input) m
 ## Part 3: Resiliency
 
 **Rule R-1: Exponential backoff on transient network failures.**  
-`Http.request()` must retry using truncated exponential backoff with jitter. A network-layer error (status 0, no response received) is retried on every method. A received HTTP 429, 502, 503, or 504 is retried only for `GET`/`HEAD`. Any other method is not retried on a received status, with or without an `Idempotency-Key` (see Rule R-3), since the server may already have processed it. Non-retriable failure codes (400, 401, 403, 404, 405, 409, 422) must NOT be retried. Retrying auth failures wastes quota and delays the caller.
+`Http.request()` must retry using truncated exponential backoff with jitter. `GET`/`HEAD` are retried on a network-layer error (status 0, no response received) and on a received HTTP 429, 502, 503, or 504. A POST marked `safeToResend` (a read such as `get`, `list` or `search`, or a token mint) is retried on any network-layer error, like a `GET`, but not on a received status. Any other method is retried only when the connection never opened (refused, DNS failure, connect timeout), with or without an `Idempotency-Key` (see Rule R-3). After a timeout, a dropped connection, or a received status, the server may already have processed it. Non-retriable failure codes (400, 401, 403, 404, 405, 409, 422) must NOT be retried. Retrying auth failures wastes quota and delays the caller.
 
 Retry parameters (defaults, all configurable via `HttpOptions`):
 - `maxRetries`: 3 (total attempts = 4)
@@ -83,9 +83,9 @@ Retry parameters (defaults, all configurable via `HttpOptions`):
 *Verify:* `test/unit/http.test.js` ("R-2: GET requires no idempotency key to be retry-safe") asserts a GET is retried on a transient failure with no `idempotencyKey` passed at all.
 
 **Rule R-3: An `Idempotency-Key` header does not make a write retriable.**  
-`Http.postJson()` accepts an `idempotencyKey` option and forwards it as the `Idempotency-Key` request header. The header does not change the retry rule: a POST is retried only after a network-layer failure (status 0, no response received). A caller that must not create twice checks with a list or get before it sends the create again.
+`Http.postJson()` accepts an `idempotencyKey` option and forwards it as the `Idempotency-Key` request header. The header does not change the retry rule: a POST is retried only when the connection never opened (refused, DNS failure, connect timeout). A caller that must not create twice checks with a list or get before it sends the create again.
 
-*Verify:* `test/unit/http.test.js` ("R-3: POST with idempotency-key is NOT retried on 503", "R-3: POST with idempotency-key is NOT retried on 429", "R-3: Idempotency-Key header is still forwarded on POST", "R-3: POST without idempotency-key is retried on network error (status 0) but not on 503").
+*Verify:* `test/unit/http.test.js` ("R-3: POST with idempotency-key is NOT retried on 503", "R-3: POST with idempotency-key is NOT retried on 429", "R-3: Idempotency-Key header is still forwarded on POST", "R-3: POST is retried when the connection never opened, but not on 503", "R-3: POST is NOT retried after a dropped connection, with or without idempotency-key", "R-3: POST is NOT retried after our own timeout", "R-3: POST with safeToResend is retried after a dropped connection or a timeout, but not on 503"). `test/unit/resend-reads.test.js` checks which `Management` calls set `safeToResend`.
 
 **Rule R-4: Retry budget does not consume the caller's `AbortSignal`.**  
 If the caller cancels via `signal`, the retry loop must stop immediately and throw without starting the next attempt. `mergeSignals()` handles per-attempt abort. Rule R-4 also requires that a cancelled signal breaks the retry loop.
@@ -93,7 +93,7 @@ If the caller cancels via `signal`, the retry loop must stop immediately and thr
 **Rule R-5: Retry behaviour must be fully exercisable offline.**  
 The backoff delay must be injectable (`delayFn` option, default `(ms) => new Promise(r => setTimeout(r, ms))`) so tests can pass `() => Promise.resolve()` and exercise all retry paths at zero wall-clock cost.
 
-*Verify:* `test/unit/http.test.js` must include tests that: (a) assert a 503 response is retried up to `maxRetries` times and then throws; (b) assert a 429 response is retried; (c) assert a 401 response is NOT retried; (d) assert a `POST`, with or without an idempotency key, IS retried on status-0 (network error, no response received) but NOT on a received HTTP error like 503 or 429 (the server may have processed it); (e) assert that if `signal.abort()` is called mid-retry loop, the loop stops.
+*Verify:* `test/unit/http.test.js` must include tests that: (a) assert a 503 response is retried up to `maxRetries` times and then throws; (b) assert a 429 response is retried; (c) assert a 401 response is NOT retried; (d) assert a `POST`, with or without an idempotency key, IS retried when the connection never opened but NOT after a timeout, a dropped connection, or a received HTTP error like 503 or 429 (the server may have processed it); (e) assert that if `signal.abort()` is called mid-retry loop, the loop stops.
 
 **Rule R-6: `connect()` never waits on, and never fails for, the microphone.**  
 Mic acquisition runs alongside the connect handshake. A denied, missing or busy mic emits one `warning` (`mic_permission_denied`, `mic_not_found`, `mic_in_use`) and the session connects mic-less; typed turns keep working. `startMic()` called explicitly still throws, because an explicit call wants the error. The only allowed `micStartMode` values are `'immediate'` and `'deferred'`.
@@ -199,7 +199,7 @@ This table summarizes what each rule checks, not whether it currently passes. Fo
 | S-6 | Security | No hardcoded credentials or token literals | grep |
 | R-1 | Resiliency | Exponential backoff with jitter in `Http.request()` | see R-5 |
 | R-2 | Resiliency | GETs retried on any transient failure | http.test.js |
-| R-3 | Resiliency | `Idempotency-Key` forwarded; POSTs retried only on status-0, keyed or not | see R-5 |
+| R-3 | Resiliency | `Idempotency-Key` forwarded; POSTs retried only when the connection never opened, keyed or not | see R-5 |
 | R-4 | Resiliency | Abort signal stops the retry loop immediately | http.test.js |
 | R-5 | Resiliency | Injectable `delayFn`, retries exercised at zero wall-clock cost | http.test.js |
 | R-6 | Resiliency | `connect()` never waits on or fails for the mic; denial → `warning`, session mic-less | mic-concurrency.test.js + deferred-mic.test.js |

@@ -14,10 +14,13 @@
  *   ride on errors as `headers` and reach the `onResponse` hook for every
  *   response, success or failure.
  * - Diagnostic logging routes through {@link redact}; a token can't leak.
- * - Retries use truncated exponential backoff + jitter. A network-layer error
- *   (no response received) retries on every method. A 429/502/503/504
- *   response retries only for GET/HEAD. A write may already have run, so it is
- *   not retried on a received status, with or without an idempotency key.
+ * - Retries use truncated exponential backoff + jitter. GET/HEAD retry on a
+ *   network error or a 429/502/503/504 response. A POST sent with
+ *   `safeToResend` (a read, or a token mint) also retries on any network error.
+ *   Any other write may already have run, so it retries only when the connection
+ *   never opened (refused, DNS failure, connect timeout). It is not retried
+ *   after a timeout, a dropped connection, or any received status, with or
+ *   without an idempotency key.
  * - Response bodies are size-capped at `maxResponseBytes` (default 10 MiB),
  *   enforced incrementally while streaming the body (not after buffering it
  *   in full) so a chunked response without an honest Content-Length can't
@@ -47,8 +50,11 @@ import { KalturaError } from './errors.js';
 /** HTTP status codes that are safe to retry (transient server/infra errors). */
 const RETRIABLE_STATUSES = new Set([429, 502, 503, 504]);
 
-/** Status 0 = network-layer error (no bytes sent/received). Always retriable. */
+/** Status 0 = network-layer error (no response received). */
 const NETWORK_ERROR_STATUS = 0;
+
+/** Connect-phase error codes: the request never reached the server, so a write is safe to resend. */
+const NOT_SENT_CODES = new Set(['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'ENETUNREACH', 'EHOSTUNREACH', 'UND_ERR_CONNECT_TIMEOUT']);
 
 /**
  * HTTP transport with injectable fetch, retry/backoff, and response size budgeting.
@@ -93,6 +99,7 @@ export class Http {
    * @param {string} req.ks             KS token for the Authorization header.
    * @param {unknown} [req.body]        JSON body (omitted if undefined).
    * @param {string} [req.idempotencyKey] Sent as the Idempotency-Key header. It does not make the request retriable.
+   * @param {boolean} [req.safeToResend] See {@link Http#request}.
    * @returns {Promise<{data:any, requestId:string}>}
    */
   async postJson(req) {
@@ -101,8 +108,9 @@ export class Http {
 
   /**
    * Generic request with full control. Returns parsed JSON (or text) + requestId.
-   * Retries with exponential backoff: a network-layer error retries on every
-   * method; a 429/502/503/504 response retries only for GET/HEAD.
+   * Retries with exponential backoff: GET/HEAD retry on a network error or a
+   * 429/502/503/504 response. `safeToResend` requests retry on any network error.
+   * Other requests retry only when the connection never opened.
    * @param {object} req
    * @param {string} req.method
    * @param {string} req.url
@@ -112,12 +120,14 @@ export class Http {
    * @param {Record<string,string>} [req.headers]
    * @param {string} [req.idempotencyKey] Sent as the Idempotency-Key header. It does not make the request retriable.
    * @param {AbortSignal} [req.signal]
+   * @param {boolean} [req.safeToResend] The call changes nothing on the server (a read, or a token mint), so it is resent after a timeout or a dropped connection, like a GET.
    * @returns {Promise<{data:any, requestId:string, status:number, headers:Headers}>}
    */
   async request(req) {
-    const { method, url, ks, body, json, headers = {}, idempotencyKey, signal } = req;
+    const { method, url, ks, body, json, headers = {}, idempotencyKey, signal, safeToResend } = req;
     const path = pathOf(url);
     const isGet = method === 'GET' || method === 'HEAD';
+    const resendable = isGet || safeToResend === true;
 
     const h = { ...headers };
     if (ks) h['Authorization'] = `KS ${ks}`;
@@ -182,10 +192,10 @@ export class Http {
           body: aborted ? `request timed out after ${this._timeoutMs}ms` : String(err && err.message || err),
           requestId: '',
         });
-        // Network errors (status 0, no response received) retry on all methods. Once a
-        // response arrived, only GET/HEAD retry: the server may already have run a write.
-        const noResponse = res === undefined;
-        if ((noResponse || isGet) && attempt < this._maxRetries) { lastErr = kErr; continue; }
+        // GET/HEAD and safeToResend retry on any network error. A write retries only if it never
+        // reached the server: after a timeout or a dropped connection it may already have run.
+        const notSent = res === undefined && !aborted && NOT_SENT_CODES.has(err?.cause?.code ?? err?.code);
+        if ((resendable || notSent) && attempt < this._maxRetries) { lastErr = kErr; continue; }
         throw kErr;
       }
       clearTimeout(t);
@@ -202,7 +212,7 @@ export class Http {
       if (!res.ok) {
         const kErr = errorFromResponse({ status: res.status, path, body: data, requestId, headers: respHeaders });
         // Only GET/HEAD retry a received transient status: a write may already have run.
-        // A network-layer error (no response received) retries on every method, see the catch block.
+        // A write retries only when the connection never opened, see the catch block.
         if (RETRIABLE_STATUSES.has(res.status) && isGet && attempt < this._maxRetries) {
           lastErr = kErr; continue;
         }

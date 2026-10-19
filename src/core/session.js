@@ -288,7 +288,7 @@ export class Sessions {
   async createWidgetToken(opts) {
     const url = `${this._ovp}/service/session/action/startWidgetSession`;
     const form = new URLSearchParams({ format: '1', widgetId: opts.widgetId });
-    const { data, requestId, headers } = await this._http.request({ method: 'POST', url, body: form, headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
+    const { data, requestId, headers } = await this._http.request({ method: 'POST', url, body: form, headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, safeToResend: true });
     const ks = data && typeof data === 'object' ? data.ks : data;
     if (!ks || typeof ks !== 'string') {
       throw new KalturaError({ type: 'about:blank', title: 'widget session failed', code: 'session_failed', detail: 'startWidgetSession returned no ks', headers: pickResponseHeaders(headers), body: data });
@@ -315,7 +315,7 @@ export class Sessions {
     const url = `${this._ovp}/service/session/action/end`;
     const form = new URLSearchParams({ format: '1', ks });
     try {
-      const { requestId } = await this._http.request({ method: 'POST', url, body: form, headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
+      const { requestId } = await this._http.request({ method: 'POST', url, body: form, headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, safeToResend: true });
       this._audit('token.revoke', 'success', { kind, requestId });
     } catch (err) {
       this._audit('token.revoke', 'fail', { kind, reason: err && err.code });
@@ -346,7 +346,7 @@ export class Sessions {
     if (userId !== undefined) form.set('userId', userId);
     let data, requestId, headers;
     try {
-      ({ data, requestId, headers } = await this._http.request({ method: 'POST', url, body: form, headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }));
+      ({ data, requestId, headers } = await this._http.request({ method: 'POST', url, body: form, headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, safeToResend: true }));
     } catch (err) {
       this._audit('token.mint', 'fail', { kind, sessionType, privileges, entitlementEnforced, reason: err && err.code, subjectId: userId });
       throw err;

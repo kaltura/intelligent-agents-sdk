@@ -45,6 +45,10 @@ import { converseBodyOrThrow } from '../core/stream.js';
 /** `userId` on the read-only admin token that looks up an agent's configId (see `Sessions.createAgentToken`). */
 const CONFIG_LOOKUP_USER_ID = 'intelligent-agents-sdk';
 
+/** Read actions: they change nothing, so the transport resends them after a timeout or a dropped connection. */
+const READ_ACTION = /^(get|list)|^(search|match|describeFields|resolveWidgetId|entry_status)$/;
+const isReadPath = (path) => READ_ACTION.test(String(path).split('?')[0].split('/').pop());
+
 /**
  * @typedef {string|{ks:string,kind?:string,entitlementEnforced?:boolean}} KsLike A raw KS string or a minted {@link import('../core/session.js').Token}.
  * @typedef {object} Ctx Internal context shared with every resource namespace.
@@ -118,7 +122,7 @@ export class Management {
     /** @type {Ctx} */
     const ctx = {
       partnerId,
-      agentic: (path, body, ks, opts) => http.postJson({ url: `${agenticUrl}/${path}`, ks: ksString(ks), body, idempotencyKey: opts?.idempotencyKey }),
+      agentic: (path, body, ks, opts) => http.postJson({ url: `${agenticUrl}/${path}`, ks: ksString(ks), body, idempotencyKey: opts?.idempotencyKey, safeToResend: isReadPath(path) }),
       agenticMultipart: (path, fd, ks, opts) => http.request({ method: 'POST', url: `${agenticUrl}/${path}`, ks: ksString(ks), body: fd, json: false, idempotencyKey: opts?.idempotencyKey }),
       // The scripted-video `avatar-session/*` API is the one agentic-host surface that does NOT
       // authenticate with a KS after creation — every call following `create` carries the
@@ -127,7 +131,7 @@ export class Management {
       // assignment entirely, leaving our own header in place (see avatar-sessions.js).
       avatarSessionCall: (path, body, bearerToken, opts) => http.request({ method: 'POST', url: `${agenticUrl}/${path}`, headers: { Authorization: `Bearer ${bearerToken}` }, body, json: true, idempotencyKey: opts?.idempotencyKey }),
       avatarSessionMultipart: (path, fd, bearerToken, opts) => http.request({ method: 'POST', url: `${agenticUrl}/${path}`, headers: { Authorization: `Bearer ${bearerToken}` }, body: fd, json: false, idempotencyKey: opts?.idempotencyKey }),
-      genie: (path, body, ks, opts) => http.postJson({ url: `${genieUrl}/${path}`, ks: ksString(ks), body, idempotencyKey: opts?.idempotencyKey }),
+      genie: (path, body, ks, opts) => http.postJson({ url: `${genieUrl}/${path}`, ks: ksString(ks), body, idempotencyKey: opts?.idempotencyKey, safeToResend: isReadPath(path) }),
       genieGet: (path, ks) => http.request({ method: 'GET', url: `${genieUrl}/${path}`, ks: ksString(ks) }),
       // Unlike every other endpoint here, this bypasses http.request()/postJson() (it needs the
       // raw ReadableStream body, not a parsed JSON response) — which means it also bypasses
@@ -167,7 +171,7 @@ export class Management {
       // upload tokens). JSON-in/JSON-out (format=1); the KS rides in the body, not a header.
       ovp: async (service, action, params, ks) => {
         const url = `${ovpUrl}/service/${service}/action/${action}`;
-        const { data, headers } = await http.request({ method: 'POST', url, json: true, body: { ks: ksString(ks), format: 1, ...params } });
+        const { data, headers } = await http.request({ method: 'POST', url, json: true, body: { ks: ksString(ks), format: 1, ...params }, safeToResend: isReadPath(action) });
         if (data && typeof data === 'object' && data.objectType === 'KalturaAPIException') {
           throw new KalturaError({ type: 'about:blank', title: data.code || 'kaltura error', code: 'ovp_error', detail: data.message, instance: `/${service}/${action}`, headers: pickResponseHeaders(headers), body: data });
         }
@@ -204,7 +208,7 @@ export class Management {
       // request skips that assignment, leaving our own header in place (mirrors avatarSessionCall).
       // `null` when the region has no messaging service: fail before any network call
       // rather than send this region's KS to another region's host.
-      messaging: (path, body, ks, opts) => !messagingUrl ? Promise.reject(regionUnavailable('messagingUrl', 'emailTemplates', region)) : http.request({ method: 'POST', url: `${messagingUrl}/${path}`, headers: { Authorization: `Bearer ${ksString(ks)}` }, body, json: true, idempotencyKey: opts?.idempotencyKey }),
+      messaging: (path, body, ks, opts) => !messagingUrl ? Promise.reject(regionUnavailable('messagingUrl', 'emailTemplates', region)) : http.request({ method: 'POST', url: `${messagingUrl}/${path}`, headers: { Authorization: `Bearer ${ksString(ks)}` }, body, json: true, idempotencyKey: opts?.idempotencyKey, safeToResend: isReadPath(path) }),
       assertAdmin: (ks, where) => assertKind(ks, 'admin', where, audit, mintedKind),
       assertConversation: (ks, where) => assertKind(ks, 'conversation', where, audit, mintedKind),
       assertUserOrAdmin: (ks, where) => assertKind(ks, 'userOrAdmin', where, audit, mintedKind),
