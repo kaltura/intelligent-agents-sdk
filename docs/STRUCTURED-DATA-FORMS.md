@@ -25,7 +25,7 @@ await mgmt.intellectConfig.setUserPropertiesForms(configId, [
 | Form field | Behavior |
 |---|---|
 | `title`, `secondaryTitle` | Optional. Stored with the form. `secondaryTitle` is sent as `secondary_title`. |
-| `id` | Read-back forms carry an integer `id`. An `id` you pass is sent as-is. When you omit it and exactly one stored form has the same `callStage`, the SDK sends that form's `id`. |
+| `id` | Read-back forms carry an integer `id`. An `id` you pass is sent as-is. When you omit it and exactly one stored form has the same `callStage`, the SDK sends that form's `id`. On read-back, `id` is the form's position in the list (0, 1, ...), whatever `id` you sent. |
 | `type` | One of `FORM_FIELD_TYPES`, in two groups (below). |
 
 | Type kind | Values |
@@ -34,6 +34,8 @@ await mgmt.intellectConfig.setUserPropertiesForms(configId, [
 | Form-only types, the default renderer's input hints (see "How the form is rendered" below) | `email`, `phone`, `text` |
 
 `buildUserPropertiesForms()` accepts any type in `FORM_FIELD_TYPES`. It validates before any network call and throws `bad_request` on an invalid stage, an empty `properties` array, an unknown type, a non-string `title` or `secondaryTitle`, or a bad `id`.
+
+To remove every form, call `mgmt.intellectConfig.clearUserPropertiesForms(configId, adminKs)`. An empty list throws `bad_request`.
 
 You can pass one form object or an array of several. Each stage gets its own field set. For example, ask for a booking date early and a payment preference later, or an email early and a phone number later, in the same conversation.
 
