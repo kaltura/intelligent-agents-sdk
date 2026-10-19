@@ -17,7 +17,7 @@ This page documents the `@kaltura/intelligent-agents` JavaScript SDK's own objec
 | [Experience](#experience) | [Skills and voice import](#skills-and-voice-import) |
 | [Client-side commands](#client-side-commands) | [Scripted-Video (STV-only) Sessions](#scripted-video-stv-only-sessions) |
 | [GenUI](#genui) | [RAG (knowledge base)](#rag-knowledge-base) |
-| [Presenter](#presenter) | [Threads, messages, feedback and follow-ups](#threads-messages-feedback-and-follow-ups) |
+| [Presenter](#presenter) | [Threads, messages and feedback](#threads-messages-and-feedback) |
 | [Site navigation](#site-navigation-sitenavigator) | [AI-SDR / CRM lead capture](#ai-sdr--crm-lead-capture) |
 | [Chroma-key Avatar Compositor](#chroma-key-avatar-compositor) | [Test your app offline](#test-your-app-offline) |
 | [Advanced / building-block exports](#advanced--building-block-exports) | [Accessibility (WCAG 2.2 AA / captions) + AI-disclosure gate](#accessibility-wcag-22-aa--captions--ai-disclosure-gate) |
@@ -1032,9 +1032,9 @@ await mgmt.knowledge.deleteRecord(rec.id, ks, { confirmPermanent: true });
 
 ---
 
-## Threads, messages, feedback and follow-ups
+## Threads, messages and feedback
 
-`mgmt.threads`, `mgmt.messages`, `mgmt.feedback` and `mgmt.followups` list, read, rate and clean up conversations. Methods, filters and PII handling are in [Management Operations](/reference/api/management-operations/#threads) and [Conversation & Analytics](/reference/api/operate/#threads).
+`mgmt.threads`, `mgmt.messages` and `mgmt.feedback` list, read, rate and clean up conversations. Methods, filters and PII handling are in [Management Operations](/reference/api/management-operations/#threads) and [Conversation & Analytics](/reference/api/operate/#threads).
 
 ---
 
