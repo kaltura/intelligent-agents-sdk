@@ -293,10 +293,12 @@ section('Part 3 — Resiliency');
   // and no retry-gate line may mention an idempotency key.
   const gateLines = httpSrc.split('\n').filter((l) => l.includes('RETRIABLE_STATUSES.has(res.status)'));
   const getOnlyGate = /RETRIABLE_STATUSES\.has\(res\.status\)\s*&&\s*isGet\s*&&/.test(httpSrc)
-    && !gateLines.some((l) => /idempotencyKey|isSafeToRetry/.test(l)) && !/isSafeToRetry/.test(httpSrc);
+    && !gateLines.some((l) => /idempotencyKey|isSafeToRetry/.test(l)) && !/isSafeToRetry/.test(httpSrc)
+    && /const notSent = res === undefined && !aborted && NOT_SENT_CODES\.has\(/.test(httpSrc)
+    && /\(isGet \|\| notSent\) && attempt < this\._maxRetries/.test(httpSrc);
   for (const [rule, needles] of Object.entries(RULE_TEST_NEEDLES)) {
     const missingTests = existsSync(httpTestFile) ? needles.filter((n) => !httpTestSrc.includes(n)) : needles;
-    const ruleImplMissing = rule === 'R-3' && !getOnlyGate ? ['http.js retry gate must be GET/HEAD only (no idempotency key in the gate)'] : [];
+    const ruleImplMissing = rule === 'R-3' && !getOnlyGate ? ['http.js retry gate must be GET/HEAD only for a received status (no idempotency key in the gate), and a write retries only on a not-sent error code'] : [];
     if (implOk && missingTests.length === 0 && ruleImplMissing.length === 0) {
       pass(rule, `Http retry/backoff — verified by test/unit/http.test.js (run below)`);
     } else {

@@ -105,8 +105,8 @@ export class Http {
 
   /**
    * Generic request with full control. Returns parsed JSON (or text) + requestId.
-   * Retries with exponential backoff: a network-layer error retries on every
-   * method; a 429/502/503/504 response retries only for GET/HEAD.
+   * Retries with exponential backoff: GET/HEAD retry on a network error or a
+   * 429/502/503/504 response; other methods retry only when the connection never opened.
    * @param {object} req
    * @param {string} req.method
    * @param {string} req.url
@@ -206,7 +206,7 @@ export class Http {
       if (!res.ok) {
         const kErr = errorFromResponse({ status: res.status, path, body: data, requestId, headers: respHeaders });
         // Only GET/HEAD retry a received transient status: a write may already have run.
-        // A network-layer error (no response received) retries on every method, see the catch block.
+        // A write retries only when the connection never opened, see the catch block.
         if (RETRIABLE_STATUSES.has(res.status) && isGet && attempt < this._maxRetries) {
           lastErr = kErr; continue;
         }

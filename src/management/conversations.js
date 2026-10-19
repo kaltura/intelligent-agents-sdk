@@ -35,9 +35,8 @@ const GENIE_QUESTION_FILTER = 'GenieListQuestionFilter';
 // queries (list + count-only) always agree on what "in the knowledge base" means.
 const KNOWLEDGE_ENTRY_STATUS_TYPE_FILTER = { statusIn: '-1,-2,0,1,2,7,4', typeIn: '1,7,10' };
 
-// categoryEntry is unique per (categoryId, entryId), and the transport retries a
-// POST after a network error (no response received, see core/http.js). A retry can
-// re-run a categoryentry.add the server already applied; Kaltura then reports
+// categoryEntry is unique per (categoryId, entryId). Adding a link that already
+// exists (a caller's retry, or a second call) makes Kaltura report
 // CATEGORY_ENTRY_ALREADY_EXISTS ("Entry already assigned to this category").
 // The link exists — that's the outcome the caller asked for, not a failure.
 const isDuplicateCategoryEntry = (e) => e?.code === 'CATEGORY_ENTRY_ALREADY_EXISTS' || /already assigned to this category/i.test(e?.message || '');
