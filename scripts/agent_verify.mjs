@@ -285,7 +285,7 @@ section('Part 3 — Resiliency');
   const RULE_TEST_NEEDLES = {
     'R-1': ['R-1: 503 GET is retried up to maxRetries times then throws', 'R-1: non-retriable 401 is NOT retried'],
     'R-2': ['R-2: GET requires no idempotency key to be retry-safe'],
-    'R-3': ['R-3: POST with idempotency-key is NOT retried on 503', 'R-3: POST with idempotency-key is NOT retried on 429', 'R-3: POST without idempotency-key is retried on network error'],
+    'R-3': ['R-3: POST with idempotency-key is NOT retried on 503', 'R-3: POST with idempotency-key is NOT retried on 429', 'R-3: POST is retried when the connection never opened', 'R-3: POST is NOT retried after a dropped connection', 'R-3: POST is NOT retried after our own timeout'],
     'R-4': ['R-4: abort signal stops retry loop immediately'],
     'R-5': ['R-5: delayFn is called between retries'],
   };
