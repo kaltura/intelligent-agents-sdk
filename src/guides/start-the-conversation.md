@@ -107,7 +107,9 @@ The rendered text reaches the browser as the opening `speechChunk` / `transcript
 
 ### Open with a preset question
 
-A page link or a suggestion pill can open the agent with a question already asked. Keep the scripted opening for everyone else, and make it silent when a flag is set:
+The starter questions a user sees when they first open the agent are set on the agent, not here: `widgetConfig.initialPage.initialQuestions` in [Widget and embed settings](/reference/api/build/avatar-and-agent/#widget-and-embed-settings).
+
+Your own page link or suggestion pill can also open the agent with a question already asked. Keep the scripted opening for everyone else, and make it silent when a flag is set:
 
 ```js
 import { SILENT_OPENING } from '@kaltura/intelligent-agents/management';
@@ -251,5 +253,6 @@ With `micStartMode: 'deferred'` the SDK does not touch the mic at all until you 
 | [Dynamic Data Injection § When speak() actually sends](/guides/dynamic-data-injection/#when-speak-actually-sends) | The hold behavior for every `speak()` call, not just the first. |
 | [Voice Input Modes](/guides/voice-input-modes/) | Open-mic vs push-to-talk, and mic-less sessions. |
 | [Wire Protocol · Connection Basics](/reference/wire-protocol/connection-basics/) | The connect sequence step by step, including where the opening turn starts. |
+| [Avatar & Agent § Widget and embed settings](/reference/api/build/avatar-and-agent/#widget-and-embed-settings) | The agent's starter questions, `initialPage.initialQuestions`. |
 | [Widget & Runtime Init](/reference/api/deploy/) | Minting the runtime token the browser needs before `connect()`. |
 
