@@ -605,7 +605,8 @@ export class IntellectConfig {
    * per stage. A bare dict is rejected. `title` and `secondaryTitle` (sent as
    * `secondary_title`) are stored with the form. Read-back forms carry an
    * integer `id`. An `id` you pass is sent as-is. When you omit it and exactly
-   * one stored form has the same `callStage`, the SDK sends that form's `id`.
+   * one stored form has the same `callStage`, the SDK sends that form's `id`. On read-back,
+   * `id` is the form's position in the list. To remove every form, use {@link clearUserPropertiesForms}.
    * Types: {@link FORM_FIELD_TYPES}.
    * WRITE, idempotent. Validates every form (at least one property, valid
    * stage, valid types, string titles, integer id) before any network call.

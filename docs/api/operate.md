@@ -79,7 +79,7 @@ The SDK raises these as a `KalturaError` so an empty reply is never mistaken for
 |---|---|---|
 | `thread_access_denied` | The `threadId` belongs to a different user. | Start without that `threadId`, or mint the token with the `userId` that created the thread. |
 | `stream_error` | Any other `error` segment. | Read `error.detail` and `error.body.errors`. |
-| `empty_reply` | The reply had no content: no segments, or only empty final chunks and empty `think` markers (`conversations.send`, `converseOnce` only). | If you sent `context_id`, check it. If you sent `request_vars`, check that `allow_client_variables` is on. `onErrorSegment: 'return'` returns the empty result. |
+| `empty_reply` | The reply had no content: no segments, or only empty final chunks and empty `think` markers (`conversations.send`, `converseOnce` only). A turn with only tool calls or sources is not empty: it resolves with `text: ''`, so check `toolCalls`. | If you sent `context_id`, check it. If you sent `request_vars`, check that `allow_client_variables` is on. `onErrorSegment: 'return'` returns the empty result. |
 
 `error.body` holds `errors` (the segments), `threadId`, and `partial` (the text, `threadId` and `messageId` that arrived before the refusal). For `empty_reply`, `error.body` holds `segments`. A stream line that is not JSON, such as a proxy error page, becomes an `error` segment too, so it is never dropped.
 

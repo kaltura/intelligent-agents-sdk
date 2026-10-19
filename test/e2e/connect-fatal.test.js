@@ -271,13 +271,16 @@ test('unsupportedClient during the resume() rebuild rejects resume() at once', t
     else base(ev, p, s);
   });
   const ended = [];
+  const errors = [];
   session.on('ended', (p) => ended.push(p.reason));
+  session.on('error', (e) => errors.push(e.code));
   session.pause();
   socket.server('pauseSessionExpired', {});
   const { err, ms } = await timedReject(() => session.resume());
   assert.ok(ms < 1000, `resume() settled on the frame (${ms} ms)`);
   assert.equal(err.code, 'unsupported_client');
   assert.deepEqual(ended, ['resume_failed']);
+  assert.deepEqual(errors, ['unsupported_client'], 'one error event, as on connect()');
 }));
 
 // ───────────────────────── cold reconnect ─────────────────────────
