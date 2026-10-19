@@ -149,7 +149,6 @@ function widgetHarness(nextKs, extraRoutes = []) {
     { match: '/service/session/action/startWidgetSession', respond: () => ({ body: { ks: nextKs() } }) },
     { match: 'thread/list', respond: () => ({ status: 200, body: { objects: [], totalCount: 0 } }) },
     { match: 'thread/push', respond: () => ({ status: 200, body: { delivered: false } }) },
-    { match: 'get-suggested-questions', respond: () => ({ status: 200, body: { objects: [] } }) },
     { match: 'mcp/search', respond: () => ({ status: 200, body: { status: 'success', data: {} } }) },
     { match: '/service/session/action/start', respond: () => ({ body: `"${nextKs()}"` }) },
     ...extraRoutes,
@@ -157,12 +156,11 @@ function widgetHarness(nextKs, extraRoutes = []) {
   return { ff, m: new Management({ partnerId: 999, adminSecret: 'x'.repeat(32), fetch: ff }) };
 }
 
-test('a raw widget KS string this instance minted is refused by threads.list, getSuggested and knowledge.search before any request', async () => {
+test('a raw widget KS string this instance minted is refused by threads.list and knowledge.search before any request', async () => {
   const { ff, m } = widgetHarness(() => WKS(1));
   const w = await m.sessions.createWidgetToken({ widgetId: '1_w' });
   const before = ff.calls.length;
   await assert.rejects(async () => m.threads.list(w.ks).all(), (e) => e.code === 'wrong_token_scope');
-  await assert.rejects(() => m.followups.getSuggested(w.ks), (e) => e.code === 'wrong_token_scope');
   await assert.rejects(() => m.knowledge.search('q', w.ks), (e) => e.code === 'wrong_token_scope');
   assert.equal(ff.calls.length, before, 'no request after the mint');
 });

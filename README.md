@@ -171,7 +171,7 @@ Regenerate this whenever you move your pin to a new tag. A hash is tied to that 
   Skills     : reusable instructions
   Conversations : stream / converse
   Threads / Messages : history
-  Feedback / Followups
+  Feedback
 ```
 
 **Core** (`src/core/`): injectable transports, RFC 9457 errors, NDJSON/SSE parser, redaction, idempotency, `_meta` receipts.

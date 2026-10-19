@@ -9,8 +9,7 @@
  * knowable client-side (a minted {@link Token}'s recorded `kind`, or a
  * plaintext/test KS). Conversation methods call `assertConversation`. Methods
  * a per-user conversation or agent token may also call on its own threads
- * (`threads.*` except `push`, `messages.list/get/share`,
- * `followups.getSuggested`, `knowledge.search`) call
+ * (`threads.*` except `push`, `messages.list/get/share`, `knowledge.search`) call
  * `assertUserOrAdmin`, which accepts admin, conversation and agent tokens and
  * rejects widget tokens. A raw encrypted KS string can't be inspected. The typed
  * guards still refuse the raw string of a widget token this instance minted
@@ -34,7 +33,7 @@ import { Lifecycle } from './lifecycle.js';
 import { InsightSettings } from './insight-settings.js';
 import { EmailTemplates } from './email-templates.js';
 import { Doctor } from './doctor.js';
-import { Conversations, Threads, Messages, Feedback, Followups, Knowledge } from './conversations.js';
+import { Conversations, Threads, Messages, Feedback, Knowledge } from './conversations.js';
 import { provision } from './provision.js';
 import { setForcedLanguage } from './set-forced-language.js';
 import { inspectKs } from './ks-inspect.js';
@@ -248,7 +247,6 @@ export class Management {
     this.threads = new Threads(ctx);
     this.messages = new Messages(ctx);
     this.feedback = new Feedback(ctx);
-    this.followups = new Followups(ctx);
     this.knowledge = new Knowledge(ctx);
     // Reusable insight definitions (`/insight-settings/*`) a lifecycle rule's
     // `triggerInsightSettingsKai` action references by id.

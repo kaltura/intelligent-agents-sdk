@@ -118,7 +118,6 @@ Always pass a per-user `userId`.
 | `genieentryids` | an entry id | Names an entry for the conversation |
 | `geniecategoryid` | a category id | Names a category for the conversation |
 | `genieancestorid` | a category id | Names an ancestor category for the conversation |
-| `genieid` | an agent id | Names an agent for the conversation |
 
 A very long KS is refused with 401. Long `extraPrivileges` or `restrictions` values make a KS that long. The SDK logs a warning when a minted KS is over 4,500 characters.
 

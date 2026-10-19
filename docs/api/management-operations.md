@@ -126,7 +126,7 @@ Rules to know:
 - Send `statusEquals`/`statusIn` as numbers, `0` or `1`.
 - Use only the filter fields listed above. `partnerIdIn` is not supported.
 - Pager is `{pageIndex, pageSize}` (1-based). Use `pageIndex`/`pageSize`, not `{offset, limit}`.
-- `pageSize` is at most 500. This applies to every list and report pager in this section (Threads, Messages, Feedback, Followups).
+- `pageSize` is at most 500. This applies to every list and report pager in this section (Threads, Messages, Feedback).
 
 SDK: `mgmt.threads.list(ks, opts)` merges `opts.filter` under the fixed `objectType`, so it can't be overridden. `agentIdEquals` filters by one agent, `agentIdIn` by several.
 
@@ -134,9 +134,9 @@ SDK: `mgmt.threads.list(ks, opts)` merges `opts.filter` under the fixed `objectT
 
 See [operate.md § Threads](operate.md#threads) for response shapes and delete behavior.
 
-## Messages, Feedback & Followups
+## Messages & Feedback
 
-SDK: `mgmt.messages`, `mgmt.feedback`, `mgmt.followups`. `messages.list`, `get` and `share` accept an admin, conversation or agent token (see [operate.md § Threads](operate.md#threads)). `messages.report`, `messages.reportSummary`, `feedback.list` and `followups.list` need an admin token.
+SDK: `mgmt.messages`, `mgmt.feedback`. `messages.list`, `get` and `share` accept an admin, conversation or agent token (see [operate.md § Threads](operate.md#threads)). `messages.report`, `messages.reportSummary` and `feedback.list` need an admin token.
 
 | Operation | Endpoint | Body |
 |-----------|----------|------|
@@ -145,8 +145,6 @@ SDK: `mgmt.messages`, `mgmt.feedback`, `mgmt.followups`. `messages.list`, `get` 
 | Message report (CSV) | `POST /message/report` | `{"filter":{"objectType":"GenieListMessageFilter"}}`. ⚠️ SENSITIVE: contains end-user ids and names plus verbatim question and feedback text. SDK: `mgmt.messages.report(ks, opts)` (raw CSV) or `reportSummary(ks, opts)` (parsed, with a `_meta` provenance receipt). `reportSummary` uses `pageSize` 500 (the maximum) when you omit it. It reads one page only, so the totals cover at most `pageSize` rows. |
 | Add feedback | `POST /feedback/add` | `{"schemaVersion":1,"data":{"message_id":"...","is_positive":true,"comment"?:"..."}}`. Idempotent for a given `(message_id, is_positive)` pair. Pass the conversation token of the user who sent the message. A token for any other user, admin included, can get `forbidden`. Read ratings back with `mgmt.feedback.list` (below). |
 | List feedback | *(built on `/message/list`, no dedicated endpoint)* | `mgmt.feedback.list(ks, opts)`. Details below. |
-| Suggested followups | `POST /followup/get-suggested-questions?new_response=true` | `{}`, or `{"context_id":"...","context_type":"category"}` to send a context. `context_type` is `category`, `ancestor_category` or `global`. `entry` is not supported, so the SDK throws `validation_error` before the call. Starter questions for the partner or agent, not scoped to a thread. The set can differ between calls. Returns `[]` when none are configured. Distinct from per-answer followups (`capabilities.generate_followup_questions:on` on converse). SDK: `mgmt.followups.getSuggested(ks, { contextId, contextType })`. |
-| List followup records | `POST /followup/list` | `{"filter":{"objectType":"GenieListQuestionFilter"},"pager":{"pageIndex":1,"pageSize":30}}`. The raw partner-wide record listing, not the shortlist above. |
 
 **Message record** (`messages.list`, `messages.get`): `id`, `thread_id`, `genie_id`, `user_id`, `partner_id`, `created_at`, `updated_at`, `human` (the user text), `assistant` (a list of typed parts), `type`, `is_positive`, `comment`. `type` marks the kind of message, for example `0` for a normal turn and `4` for a message added with `threads.push`.
 
@@ -160,7 +158,7 @@ Row shape: `{message_id, thread_id, genie_id, user_id, is_positive, comment, cre
 
 Messages filter fields: `createdAtGreaterThanOrEqual`, `createdAtLessThanOrEqual`, `genieIdEquals`, `idEquals`, `idsIn`, `isPositiveEquals`, `isPositiveIn`, `orderBy`, `threadIdEquals`, `updatedAtGreaterThanOrEqual`, `updatedAtLessThanOrEqual`, `userIdEquals`. Send only the keys listed. Sort with `filter.orderBy`.
 
-`threads.list`, `messages.list` and `followups.list` merge `opts.filter` under a fixed `objectType` that you cannot override. `feedback.list` has its own filter shape (above).
+`threads.list` and `messages.list` merge `opts.filter` under a fixed `objectType` that you cannot override. `feedback.list` has its own filter shape (above).
 
 ## Knowledge records
 

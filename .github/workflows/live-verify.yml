@@ -766,8 +766,8 @@ jobs:
           set -o pipefail
           node scripts/live-verify.mjs 2>&1 | tee live-verify-output.log
 
-      # Threads#push/setAnalysis/clearAnalysis, Feedback#add/list/report, Followups#list, Avatars#create/update (face+background, templateId+background), Catalog#createFace/createBackground, against the real Kaltura API
-      - name: Conversation · Push, analysis, feedback, followups, composition
+      # Threads#push/setAnalysis/clearAnalysis, Feedback#add/list, Avatars#create/update (face+background, templateId+background), Catalog#createFace/createBackground, against the real Kaltura API
+      - name: Conversation · Push, analysis, feedback, composition
         id: live_verify_conversation_surface
         if: ${{ !cancelled() && steps.setup.outcome == 'success' && (needs.changes.outputs.all == 'true' || needs.changes.outputs['conversation-surface'] == 'true') }}
         timeout-minutes: 15
@@ -778,8 +778,8 @@ jobs:
           set -o pipefail
           npm run live-verify:conversation-surface 2>&1 | tee live-verify-conversation-surface-output.log
 
-      # Scratch thread via converse → get/rename/transcript, messages.list/share, feedback.add, followups.getSuggested → delete → cleanup, against the real Kaltura API
-      - name: Conversation · Threads, messages, share, followups
+      # Scratch thread via converse → get/rename/transcript, messages.list/share, feedback.add → delete → cleanup, against the real Kaltura API
+      - name: Conversation · Threads, messages, share
         id: live_verify_threads_messages_feedback
         if: ${{ !cancelled() && steps.setup.outcome == 'success' && (needs.changes.outputs.all == 'true' || needs.changes.outputs['threads-messages-feedback'] == 'true') }}
         timeout-minutes: 15
@@ -1045,7 +1045,7 @@ jobs:
           if [ -f live-verify-conversation-surface-output.log ]; then
             echo >> "$GITHUB_STEP_SUMMARY"
             {
-              echo "### Conversation · Push, analysis, feedback, followups, composition — ${{ steps.live_verify_conversation_surface.outcome }}"
+              echo "### Conversation · Push, analysis, feedback, composition — ${{ steps.live_verify_conversation_surface.outcome }}"
               echo
               echo '```'
               tail -n 40 live-verify-conversation-surface-output.log
@@ -1055,7 +1055,7 @@ jobs:
           if [ -f live-verify-threads-messages-feedback-output.log ]; then
             echo >> "$GITHUB_STEP_SUMMARY"
             {
-              echo "### Conversation · Threads, messages, share, followups — ${{ steps.live_verify_threads_messages_feedback.outcome }}"
+              echo "### Conversation · Threads, messages, share — ${{ steps.live_verify_threads_messages_feedback.outcome }}"
               echo
               echo '```'
               tail -n 40 live-verify-threads-messages-feedback-output.log

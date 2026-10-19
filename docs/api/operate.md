@@ -129,7 +129,7 @@ Returns `{aiConsent, avatar, identifiedUser}`. `avatar` is non-null when the age
 
 ## Threads
 
-In this SDK, `threads.list`, `get`, `rename`, `delete`, `transcript`, `setAnalysis`, `clearAnalysis`, `messages.list`, `get`, `share`, `followups.getSuggested` and `knowledge.search` accept an admin, conversation or agent token. A widget token is rejected with `wrong_token_scope` before any request. How raw KS strings are checked: [Authentication](authentication.md#authentication). What each token reaches: [SECURITY.md § Session type](../../SECURITY.md#session-type). `threads.push`, `messages.report`, `messages.reportSummary`, `feedback.list` and `followups.list` need an admin token. Pager: `{"pageIndex":1,"pageSize":30}`.
+In this SDK, `threads.list`, `get`, `rename`, `delete`, `transcript`, `setAnalysis`, `clearAnalysis`, `messages.list`, `get`, `share` and `knowledge.search` accept an admin, conversation or agent token. A widget token is rejected with `wrong_token_scope` before any request. How raw KS strings are checked: [Authentication](authentication.md#authentication). What each token reaches: [SECURITY.md § Session type](../../SECURITY.md#session-type). `threads.push`, `messages.report`, `messages.reportSummary` and `feedback.list` need an admin token. Pager: `{"pageIndex":1,"pageSize":30}`.
 
 | Operation | Endpoint | Body |
 |-----------|----------|------|
@@ -194,16 +194,15 @@ The full transcript is sent as model context on every turn, so each turn carries
 
 ---
 
-## Feedback and Follow-ups (SDK)
+## Feedback (SDK)
 
-Use the SDK for feedback and follow-up suggestions. It handles the routes for you.
+Use the SDK for feedback. It handles the routes for you.
 
 - `mgmt.feedback.add({message_id, is_positive, comment?}, convKs)`: thumbs up or down on a message. `message_id` comes from the converse stream. `convKs` is the token of the user who sent the message.
 - `mgmt.feedback.list(ks, opts)`: admin-only feedback listing. ⚠️ SENSITIVE: contains end-user ids, names and verbatim text. Treat as PII.
-- `mgmt.followups.getSuggested(ks, opts)`: starter questions for the partner or agent.
-- `mgmt.followups.list(ks, opts)`: raw partner-wide follow-up records.
+Filters, row shapes and cost: [management-operations.md § Messages & Feedback](management-operations.md#messages--feedback).
 
-Filters, row shapes and cost: [management-operations.md § Messages, Feedback & Followups](management-operations.md#messages-feedback--followups).
+Starter questions belong to the agent. Set them with `widgetConfig.initialPage.initialQuestions`: [Widget and embed settings](build/avatar-and-agent.md#widget-and-embed-settings). Per-answer follow-ups stream inline when `capabilities.generate_followup_questions` is `on`.
 
 ---
 

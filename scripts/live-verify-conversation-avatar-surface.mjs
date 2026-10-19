@@ -2,12 +2,12 @@
 /**
  * Live-backend verification for these backend-touching capabilities:
  * real Kaltura API, no fakes: Threads#push/setAnalysis/clearAnalysis,
- * Feedback#add/list, Followups#list, Avatars#create/update
+ * Feedback#add/list, Avatars#create/update
  * composed both via face+background and via templateId+background,
  * Catalog#createFace/createBackground, and the filter-validation edge cases
  * documented in docs/api/management-operations.md (unknown filter keys,
  * partnerIdIn, statusEquals coercion, top-level orderBy, bare {} filters on
- * feedback/followup, unrecognized agent.list filter keys).
+ * feedback, unrecognized agent.list filter keys).
  *
  * Mints an admin token, opens one real conversation thread via converseOnce
  * to get a live threadId/messageId, then exercises each capability against
@@ -63,7 +63,7 @@ try {
   admin = await kaltura.sessions.createAdminToken({ userId: 'sdk-live-verify' });
   record('admin-token-mint', true, { secondsRemaining: admin.secondsRemaining() });
 
-  // ── Set up a real thread to exercise Threads/Feedback/Followups against ──
+  // ── Set up a real thread to exercise Threads/Feedback against ──────────
   const intellect = await kaltura.intellects.create(
     { name: runId, status: 2, base_directive: 'You are a CI smoke-test bot. Reply with exactly: ok' },
     admin,
@@ -108,10 +108,6 @@ try {
   } while (!foundFeedback && Date.now() < feedbackDeadline);
   record('feedback.list', foundFeedback, { count: feedbackRows.length, foundFeedback });
 
-  // ── Followups#list ──────────────────────────────────────────────────────
-  const followupRows = await kaltura.followups.list(admin, { pageSize: 5 });
-  record('followups.list', Array.isArray(followupRows), { count: followupRows.length });
-
   // ── Filter-validation edge cases — bypasses the SDK's own request-building
   // wrappers (list() always merges a fixed objectType and never exposes a
   // top-level orderBy), so these hit the backend's actual validation directly,
@@ -152,9 +148,6 @@ try {
 
   const feedbackBareFilter = await rawPost(`${genieRawUrl}/feedback/list`, { filter: {}, pager: { pageIndex: 1, pageSize: 5 } });
   record('feedback.list bare {} filter -> 400 invalid_filter', feedbackBareFilter.status === 400, { status: feedbackBareFilter.status, code: feedbackBareFilter.body?.code });
-
-  const followupBareFilter = await rawPost(`${genieRawUrl}/followup/list`, { filter: {}, pager: { pageIndex: 1, pageSize: 5 } });
-  record('followup.list bare {} filter -> 400 invalid_filter', followupBareFilter.status === 400, { status: followupBareFilter.status, code: followupBareFilter.body?.code });
 
   const agentUnknownFilterKey = await rawPost(`${agenticRawUrl}/agent/list`, { filter: { notARealFilterKey: 'x' }, pager: { offset: 0, limit: 5 } });
   record('agent.list unrecognized filter key -> 400', agentUnknownFilterKey.status === 400, { status: agentUnknownFilterKey.status });

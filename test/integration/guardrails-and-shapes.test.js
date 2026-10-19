@@ -122,7 +122,6 @@ test('#11 conversation resource methods send the EXACT documented request bodies
     { match: 'message/share', respond: (req) => { seen.share = { body: req.body }; return { body: { status: 'success', data: { newMessageId: 'm2' } } }; } },
     { match: 'message/list', respond: (req) => { seen.messages = { body: req.body }; return { body: { objects: [], totalCount: 0 } }; } },
     { match: 'feedback/add', respond: (req) => { seen.feedback = { body: req.body }; return { body: { id: 'f1' } }; } },
-    { match: 'followup/get-suggested-questions', respond: cap('followups') },
     { match: 'mcp/search', respond: (req) => { seen.mcp = { body: req.body }; return { body: { results: [] } }; } },
   ]);
   const m = new Management({ partnerId: 1234567, adminSecret: 'a'.repeat(32), fetch: f });
@@ -135,7 +134,6 @@ test('#11 conversation resource methods send the EXACT documented request bodies
   await m.messages.share(MID, 'Shared', ADMIN);
   await m.messages.list(ADMIN, { threadId: TID }).all();             // paginated → .all() drains one page
   await m.feedback.add({ message_id: MID, is_positive: true }, CONV_KS);
-  await m.followups.getSuggested(CONV_KS);
   await m.knowledge.search('q', ADMIN);
 
   // v1/thread/list filter — NO "Genie" prefix ('GenieListThreadFilter' 422s)
@@ -156,8 +154,6 @@ test('#11 conversation resource methods send the EXACT documented request bodies
   assert.equal(seen.feedback.body.schemaVersion, 1);
   assert.equal(seen.feedback.body.data.is_positive, true);
   assert.equal(seen.feedback.body.data.message_id, MID);
-  // followup/get-suggested-questions?new_response=true
-  assert.match(seen.followups.url, /new_response=true/);
   // mcp/search {query}
   assert.equal(seen.mcp.body.query, 'q');
 });
