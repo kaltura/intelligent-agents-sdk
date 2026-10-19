@@ -17,7 +17,7 @@ This page documents the `@kaltura/intelligent-agents` JavaScript SDK's own objec
 | [Experience](#experience) | [Skills and voice import](#skills-and-voice-import) |
 | [Client-side commands](#client-side-commands) | [Scripted-Video (STV-only) Sessions](#scripted-video-stv-only-sessions) |
 | [GenUI](#genui) | [RAG (knowledge base)](#rag-knowledge-base) |
-| [Presenter](#presenter) | [Threads, messages, feedback and follow-ups](#threads-messages-feedback-and-follow-ups) |
+| [Presenter](#presenter) | [Threads, messages and feedback](#threads-messages-and-feedback) |
 | [Site navigation](#site-navigation-sitenavigator) | [AI-SDR / CRM lead capture](#ai-sdr--crm-lead-capture) |
 | [Chroma-key Avatar Compositor](#chroma-key-avatar-compositor) | [Test your app offline](#test-your-app-offline) |
 | [Advanced / building-block exports](#advanced--building-block-exports) | [Accessibility (WCAG 2.2 AA / captions) + AI-disclosure gate](#accessibility-wcag-22-aa--captions--ai-disclosure-gate) |
@@ -52,7 +52,7 @@ console.log(result.text, result.threadId);
 
 `provision()` returns `{name, configId, avatarId, agentId, widgetId, profile, personaLint, blocks?, _meta}`. `personaLint` (see `lintPersonaIdentity` below) is a warning-only check for persona-name drift. It never fails `provision()`. Read `personaLint.findings` to surface or act on it. On a partial failure `provision()` throws a `KalturaError` with `code:'provision_failed'`. `err.body.failedStep` names the step that failed, and `err.body.createdSoFar` lists the ids already created (`{configId?, avatarId?, agentId?}`), so you can clean up an orphaned intellect, avatar or agent.
 
-`converseOnce` returns `{ text, threadId, messageId, segments, toolCalls, experiences, experiencesList, kindCounts, spiralStopped, truncated, _meta }`. `spiralStopped:true` means a tool spiral was detected and cut short. Check `toolCalls[0]` and re-prompt. `truncated:true` means the stream hit `maxSegments` (a runaway-segment guard, default 2000) before finishing. The gathered content is returned, but the turn is incomplete.
+`converseOnce` returns `{ text, threadId, messageId, segments, toolCalls, experiences, experiencesList, kindCounts, spiralStopped, truncated, _meta }`. `spiralStopped:true` means a tool spiral was detected and cut short. Check `toolCalls[0]` and re-prompt. `truncated:true` means the stream hit `maxSegments` (a runaway-segment guard, default 2000) before finishing. The gathered content is returned, but the turn is incomplete. `text` is `''` when the agent answers with widgets only. Read `experiencesList`. If both are empty, check `toolCalls`, `spiralStopped` and `segments`. A turn with no reply segment throws `empty_reply`, and `error.body.segments` holds what arrived. Pass `onErrorSegment: 'return'` to get the empty result instead. See [Refusals that arrive with HTTP 200](/reference/api/operate/#refusals-that-arrive-with-http-200).
 
 Pass `recoverFromSpiral: true` (to `converseOnce` or `conversations.send`) to recover from an empty spiral: a tool-call loop so long the agent never speaks in that turn (`spiralStopped:true` with `text:''`). The SDK resends the turn once with a recovery nudge. The result then carries `spiralRecovered` (`true`/`false`) and `firstAttempt: {toolCalls, spiralStopped}` from the discarded attempt. Off by default. The mechanism is the same as on a live session: see [Resilience](#resilience-agent-stalls-and-tool-call-spirals).
 
@@ -285,7 +285,7 @@ For the app-level decision of whether to use this at all, and the UI, accessibil
 
 `startTapToTalk()`/`endTapToTalk()` are a distinct voice-input mode from typed-text `speak()`/`interrupt()`. The mic uplink is connected once `connect()` resolves. Tapping opens a capture window (`tapToTalkStart`). Releasing closes it and produces the turn from what was captured (`tapToTalkEnd`). That turn arrives through the same `agentTurnToTalk`/`transcript` pipeline as any open-mic turn. There is no separate transcript path to wire up.
 
-`startTapToTalk()` throws `capability_disabled` unless `session.capabilities.tapToTalk` (from `clientConfiguration.isTapToTalk`) is true. Treat `isTapToTalk` as a fixed, per-agent deployment choice, never a live per-session toggle. Build the UI conditionally on the flag:
+`startTapToTalk()` throws `capability_disabled` unless `session.capabilities.tapToTalk` is true. It starts from the agent's `clientConfiguration.isTapToTalk`. `setTapToTalkMode(enabled)` switches a live session and updates the flag. `setTapToTalkMode(false)` throws `invalid_state` while a tap is open. Build the UI conditionally on the flag:
 
 ```js
 if (session.capabilities.tapToTalk) {
@@ -927,7 +927,7 @@ await session.sendText('Look up open tickets for this account.');
 
 `{{secrets.CRM_MCP_TOKEN}}` is the shared credential for every attendee. `account_id` rides in as a per-attendee request var the server-side prompt/tool can reference. Give each attendee their own credential instead of a shared one by templating the header itself with a bare `{{VAR}}` and setting it per session via `updateRequestVars`. See [MCP Integrations § A different credential per attendee](/guides/mcp-integrations/#a-different-credential-per-attendee). Per-attendee credentials need a per-attendee session. A widget-path session is one shared identity for every visitor, so give each attendee a token from `createAgentToken({ agentId, userId })` (see [Session tokens](#session-tokens)).
 
-`setModelConfiguration` picks the chat model and its sampling limits. `model_id` must be one of `MODEL_IDS`, `thinking_level` one of `THINKING_LEVELS` (`'low'`/`'high'`, Gemini only), `max_output_tokens` a positive integer, `temperature` 0..1. Pass `null` to return to the defaults. Which models answer depends on your partner's region, so run `converseOnce` once after switching.
+`setModelConfiguration` picks the chat model and its limits. Keys and allowed values: [Configure an Intellect](/reference/api/build/intellect/). Pass `null` to return to the defaults. Which models answer depends on your partner's region, so run `converseOnce` once after switching.
 
 `setOpeningPhrase` sets the intellect's `opening_phrase`, the line spoken as the first turn of every avatar join. It is a Jinja2 template. Pass `null` to clear it, or `SILENT_OPENING` for a silent opening so the browser can send the first turn with `kickoff`. How to choose, personalize the phrase and use `kickoff`: [Start the Conversation § Personalize the opening](/guides/start-the-conversation/#personalize-the-opening).
 
@@ -982,7 +982,7 @@ const v = await mgmt.catalog.importVoiceFromElevenLabs('<elevenlabs-voice-id>', 
 // or: await mgmt.catalog.importVoiceFromCartesia('<cartesia-voice-id>', ks);
 ```
 
-An unknown provider id creates **nothing** and raises a typed `voice_not_found_elevenlabs` / `voice_not_found_cartesia` error.
+An unknown provider id creates **nothing** and raises a typed `voice_not_found_elevenlabs` / `voice_not_found_cartesia` error. A `voiceId` with characters other than letters, digits, `_` or `-` throws `bad_request` before any request.
 
 **Custom face works self-serve** (`mgmt.catalog`, `mgmt.avatars`): upload a portrait image via `catalog.createVisual`, pass `itemId` as `visualId` in `provision`/`avatars.create`. The model animates the portrait at runtime. Video-clip ingest is not available through this API. Composing a face and background, and curated templates: [Avatar and agent](/reference/api/build/avatar-and-agent/).
 
@@ -1032,9 +1032,9 @@ await mgmt.knowledge.deleteRecord(rec.id, ks, { confirmPermanent: true });
 
 ---
 
-## Threads, messages, feedback and follow-ups
+## Threads, messages and feedback
 
-`mgmt.threads`, `mgmt.messages`, `mgmt.feedback` and `mgmt.followups` list, read, rate and clean up conversations. Methods, filters and PII handling are in [Management Operations](/reference/api/management-operations/#threads) and [Conversation & Analytics](/reference/api/operate/#threads).
+`mgmt.threads`, `mgmt.messages` and `mgmt.feedback` list, read, rate and clean up conversations. Methods, filters and PII handling are in [Management Operations](/reference/api/management-operations/#threads) and [Conversation & Analytics](/reference/api/operate/#threads).
 
 ---
 
