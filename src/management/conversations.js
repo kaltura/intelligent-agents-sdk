@@ -282,7 +282,8 @@ export class Conversations {
    * EMPTY REPLY: a turn that comes back with HTTP 200 and no reply segment (no segments, or only
    * empty final chunks and empty `think` markers) throws `code:'empty_reply'`, with the segments and `threadId` in
    * `error.body`. If you sent `context_id`, check it. `onErrorSegment:'return'` returns the empty
-   * result instead. The raw `stream` and `collectConverse` never throw for it.
+   * result instead. The raw `stream` and `collectConverse` never throw for it. A turn with only
+   * tool calls or sources is not empty: it resolves with `text:''`, so check `toolCalls`.
    * @param {object} opts {userMessage, threadId?, sse?, model_type?, force_experience?, request_vars?, capabilities?, context_id?, context_type?, preload_entry_ids?, exclude_entry_ids?, metadata?, recoverFromSpiral?, onErrorSegment?: 'throw'|'return'} (option rules: see {@link stream})
    * @param {import('./client.js').KsLike} ks conversation or agent token
    * @returns {Promise<{text:string, threadId:string, messageId:string, segments:object[], toolCalls:object[], experiences:Record<string,object[]>, experiencesList:object[], kindCounts:object, errors:object[], spiralStopped:boolean, truncated:boolean, toolCallsInvalid:object[], oauthRequired:object[], spiralRecovered?:boolean, firstAttempt?:object, _meta:object}>}

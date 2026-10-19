@@ -3039,7 +3039,11 @@ export class KalturaAvatarSession extends Emitter {
         this.emit('error', fatalError(ev));
         // After this event the connection ends, so no setup wait can succeed.
         // A live session (outside a resume() rebuild) keeps its path: the disconnect ends it.
-        if (ev === 'unsupportedClient' && (this.state !== 'connected' || this._resuming)) this._failPending(fatal(ev));
+        if (ev === 'unsupportedClient' && (this.state !== 'connected' || this._resuming)) {
+          const err = fatal(ev);
+          ANNOUNCED.add(err);   // already emitted above: _endWith() must not emit it again
+          this._failPending(err);
+        }
       });
     }
   }
@@ -3497,7 +3501,7 @@ export class KalturaAvatarSession extends Emitter {
   _endWith(err, reason) {
     if (this.state === 'disconnected' || this.state === 'disconnecting') return;
     this._clearReconnectTimer();
-    if (err) this.emit('error', err instanceof KalturaError ? err : new KalturaError({ type: 'about:blank', title: 'ended', code: 'ended', detail: String(err && err.message || err) }));
+    if (err && !ANNOUNCED.has(err)) this.emit('error', err instanceof KalturaError ? err : new KalturaError({ type: 'about:blank', title: 'ended', code: 'ended', detail: String(err && err.message || err) }));
     this._setState('disconnected');
     this.emit('ended', { reason: reason || (err && err.code) || 'ended' });
     this._teardownTransports();
@@ -3833,6 +3837,8 @@ function openingText(speechId, text) {
 }
 
 
+/** Fatal errors whose `error` event already fired, so `_endWith()` skips a second one. */
+const ANNOUNCED = new WeakSet();
 /** The SDK error for a fatal socket event. */
 function fatalError(event) {
   const info = FATAL_CODE[event];
