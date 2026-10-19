@@ -27,7 +27,7 @@ Every endpoint is shown as a raw HTTP call plus its SDK wrapper. See [`README.md
 | [Widget & Runtime Init](/reference/api/deploy/) | Resolve widget ID, initialize the browser runtime |
 | [Conversation & Analytics](/reference/api/operate/) | Converse (headless HTTP), reserved `sys__*` template variables, status, threads, feedback and follow-ups, usage analytics, knowledge search (MCP) |
 | [Scripted-Video (STV-only) Sessions](https://github.com/kaltura/intelligent-agents-sdk/blob/main/docs/api/scripted-video.md) | Deprecated. Pre-authored speech sessions: auth, lifecycle, `say-audio` |
-| [Management Operations](/reference/api/management-operations/) | CRUD tables for agents, avatars, intellects, tools, skills, threads, messages/feedback/followups, knowledge records, lifecycle |
+| [Management Operations](/reference/api/management-operations/) | CRUD tables for agents, avatars, intellects, tools, skills, threads, messages/feedback, knowledge records, lifecycle |
 | [Lifecycle Rules](/reference/lifecycle/) | Event-driven rules + InsightSettings (reusable custom-insight definitions) + EmailTemplates (`sendInsightEmail`'s `templateId`). Reference and [recipe](/guides/lifecycle-recipes/) |
 | [External API Integrations](/guides/external-api-integrations/) | Wiring an agent-called tool to a durable write against your own external API (CRM, spreadsheet, ticketing), including the managed OAuth2 flow |
 | [MCP Integrations](/guides/mcp-integrations/) | Wiring a whole [MCP](https://modelcontextprotocol.io) server's tool surface at once: auth, multi-server namespacing, OAuth-gated servers |
@@ -45,7 +45,7 @@ Every endpoint is shown as a raw HTTP call plus its SDK wrapper. See [`README.md
 - An anonymous embeddable widget (UC-12)
 - A fleet of A/B-tested personas (UC-5)
 
-See the full [Use-Case Catalog](/reference/use-cases/) for all 13, each mapped to its key mechanism and a runnable script/tool.
+See the full [Use-Case Catalog](/reference/use-cases/), each use case mapped to its key mechanism and a runnable script or tool.
 
 ---
 
@@ -57,8 +57,10 @@ The SDK wraps every error into a `KalturaError` with a stable `err.code`. Branch
 |--------|-----|-----|
 | 400 | `bad_request` | Fix the request body |
 | 402 | `payment_required` | The server refused the request as Payment Required, which points to a plan or entitlement limit. Check the plan with your Kaltura contact. The SDK never retries it, and `err.retryable` is `false`. A temporary load limit is not a 402: a live conversation reports it as the retryable `capacity_unavailable`. |
-| 403 | `forbidden` | Wrong KS type: admin KS for management, `geniegpcid` for conversations. Also: a user session without `userId` on thread get, list or delete. A user session asking for another user's thread gets 404 instead. See [Security & Compliance § Session type](/reference/security/#session-type) |
+| 403 | `forbidden` | Wrong KS type: admin KS for management, `geniegpcid` for conversations. Also: a user session without `userId` on thread get, list or delete. A user session asking for another user's thread, or a thread opened with another agent, gets 404 instead. See [Security & Compliance § Session type](/reference/security/#session-type) |
 | 405 | `method_not_allowed` | Use `GET` for `/assistant/status`; everything else is `POST` |
+| 413 | `payload_too_large` | The request, or one value in it, is over the server's size limit. `err.detail` gives the limit. Send less, for example smaller request variables. |
+| 429 / 502 / 503 / 504 | `rate_limited` / `server_error` | GET and HEAD are retried for you. Most SDK calls are POST. A read (`get`, `list`, `search`) or a token mint is also retried after a timeout or a dropped connection. A create, update or delete is retried only when the connection never opened. It is not retried after one of these answers, a timeout or a dropped connection, because it may already have run. Before you send a create again, check with list or get. |
 | 6001 | `capacity_unavailable` | No free avatar slot. Retry later or call `waitForCapacity()`. See [Capacity & the queue](/reference/architecture-reference/scale-and-sticky-sessions/#capacity--the-queue-throwtonoagent--throwtoexceededtier) |
 | 6002 | `tier_exceeded` | The account plan limit is reached. Not retryable. See [Capacity & the queue](/reference/architecture-reference/scale-and-sticky-sessions/#capacity--the-queue-throwtonoagent--throwtoexceededtier) |
 | none | `ice_failed` | The avatar media path never connected. `err.ice` says why. Retryable. See [ICE diagnostics](/reference/architecture-reference/resilience-and-failure-handling/#ice-diagnostics) |
@@ -66,12 +68,14 @@ The SDK wraps every error into a `KalturaError` with a stable `err.code`. Branch
 
 A `KalturaAvatarSession` (and `KalturaAgentSession` while in avatar mode) adds two fields to its errors. `err.phase` names the connect step that failed. `err.retryable` says whether trying again can succeed. See [connect timeouts](/reference/architecture-reference/connection-and-handshake/#full-connect-sequence-state-machine-order).
 
-A missing agent or intellect gets its own `err.code`, whatever the HTTP status:
+A missing agent, intellect, lifecycle rule or insight setting gets its own `err.code`, whatever the HTTP status:
 
 | Situation | `err.code` | Fix |
 |---|-----|-----|
 | The agent does not exist | `agent_not_found` | Check the `agentId` |
 | The agent has no intellect | `intellect_not_found` | Create the intellect first |
+| The lifecycle rule does not exist | `lifecycle_rule_not_found` | Check the id with `lifecycle.list` |
+| The insight setting does not exist | `insight_setting_not_found` | Check the id with `insightSettings.list` |
 
 ### Response headers (debugging and log search)
 

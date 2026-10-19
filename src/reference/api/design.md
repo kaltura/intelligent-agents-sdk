@@ -21,17 +21,28 @@ POST https://api.avatar.us.kaltura.ai/v1/catalog-item/list
 ```json
 {
   "filter": { "typeEqual": "Visual" },
+  "orderBy": "-createdAt",
   "pager": { "offset": 0, "limit": 100 }
 }
 ```
 
-Change `typeEqual` to `"Voice"` for voices. Each item has an `itemId`. Pass it to avatar creation.
+Each item has an `itemId`. Pass it to avatar creation.
+
+| `filter` key | Value |
+|---|---|
+| `typeEqual` | `"Visual"`, `"Voice"`, `"Face"` or `"Background"` |
+| `itemIdEqual` | One `itemId` |
+| `idsIn` | An array of `itemId`s |
+| `languageEqual` | A voice language code, for example `"en"` |
+| `adminTagsIn` | An array of tags |
+
+Any other filter key returns `bad_request` (400). The request also takes a top-level `orderBy` and a top-level `agentScope` string. `orderBy` is `"+createdAt"` or `"-createdAt"`. `"-createdAt"` sorts newest first. `"+createdAt"` is accepted but does not change the order. Any other `orderBy` returns `bad_request` (400), and the error lists both values.
 
 **Visual preset fields:** `itemId`, `attributes.visual.{name, genderPresentation, skinTone, ageGroup, hairColor, clothing, background}`, `imageUrl`, `loadingVideo`. These are asset URLs for previews. They are not the rendered composite that the live video stream shows.
 
 **Voice preset fields:** `itemId`, `attributes.voice.{name, description, language}`, `voiceSampleUrl`.
 
-SDK: `mgmt.catalog.list(ks, { type: 'Visual' })` or `{ type: 'Voice' }`.
+SDK: `mgmt.catalog.list(ks, { type, filter, orderBy, agentScope })`. `type` is a shortcut for `filter.typeEqual`. Passing both with different values throws `bad_request` before any request.
 
 ---
 
@@ -43,7 +54,7 @@ POST https://api.avatar.us.kaltura.ai/v1/catalog-item/create   (multipart/form-d
 
 ```
 file=@sample.mp3
-attributes={"voice":{"name":"My Voice","description":"non-empty description","language":"english"}}
+attributes={"voice":{"name":"My Voice","description":"non-empty description","language":"en"}}
 adminTags=custom
 ```
 
@@ -55,7 +66,7 @@ Returns a catalog item whose `itemId` is the cloned voice. Pair it with any avat
 - Use an audio sample longer than about 6 seconds.
 - Send `adminTags=custom` bare, not as a JSON array string.
 
-**SDK shortcut:** `catalog.createVoice(mp3Blob, { name, description, language?, consentRef? }, adminKs)`. It enforces the non-empty `description` client-side and tags the item `adminTags:['custom']`, so `catalog.list` filtered on that tag finds it. `language` is an ISO 639-1 code and defaults to `'en'`.
+**SDK shortcut:** `catalog.createVoice(mp3Blob, { name, description, language?, consentRef? }, adminKs)`. It enforces the non-empty `description` client-side and tags the item `adminTags:['custom']`. `language` is a language code, for example `"en"` or `"he"`, and defaults to `'en'`. A code outside the accepted list returns `bad_request` (400), and the error lists the accepted codes.
 
 ## Import a Provider Voice by id (no audio upload)
 
@@ -66,7 +77,7 @@ POST https://api.avatar.us.kaltura.ai/v1/catalog-item/createVoiceFromElevenLabs 
 POST https://api.avatar.us.kaltura.ai/v1/catalog-item/createVoiceFromCartesia     {"voiceId":"<provider-voice-id>"}
 ```
 
-An unknown provider id creates **nothing**. The SDK throws a typed `voice_not_found_elevenlabs` / `voice_not_found_cartesia` error. SDK: `mgmt.catalog.importVoiceFromElevenLabs(voiceId, ks)` / `importVoiceFromCartesia(voiceId, ks)`.
+An unknown provider id creates **nothing**. A `voiceId` with characters other than letters, digits, `_` or `-` throws `bad_request` before any request. The SDK throws a typed `voice_not_found_elevenlabs` / `voice_not_found_cartesia` error. SDK: `mgmt.catalog.importVoiceFromElevenLabs(voiceId, ks)` / `importVoiceFromCartesia(voiceId, ks)`.
 
 ---
 
@@ -141,7 +152,22 @@ Before upload, check the result against the spec table: square canvas, head heig
 
 The API accepts any subset of the attribute fields, including none. Video-clip ingest is not available through this API.
 
-**SDK shortcut:** `catalog.createVisual(imageBlob, { name, genderPresentation, background, skinTone, ageGroup, hairColor }, adminKs)` requires `name` and `genderPresentation` client-side (`bad_request` before any network call if either is missing) and defaults the rest to a consistent baseline look. Returns the server response as is: `{ itemId, loadingVideo }`.
+**Visual attribute values**
+
+| Attribute | Accepted values | SDK default |
+|---|---|---|
+| `genderPresentation` | `Masculine`, `Feminine` | required |
+| `background` | `Color`, `Image` | `Image` |
+| `skinTone` | `MediumTan`, `Light`, `LightMedium` | `Light` |
+| `ageGroup` | `YoungAdult`, `OlderAdult` | `YoungAdult` |
+| `hairColor` | `Black`, `Brown`, `Blonde`, `Red`, `Gray` | `Brown` |
+| `hairStyle` | An array of strings | `["Short"]` |
+| `clothing` | An array of strings | `["Casual"]` |
+| `glasses` | `true` or `false` | `false` |
+
+A value outside the lists above for `genderPresentation`, `background`, `skinTone`, `ageGroup` or `hairColor` returns `bad_request` (400), and the error lists the accepted values. A `glasses` value that is not a boolean also returns `bad_request`.
+
+**SDK shortcut:** `catalog.createVisual(imageBlob, { name, genderPresentation, ...attributes }, adminKs)` takes the attributes from the table above. It requires `name` and `genderPresentation` client-side (`bad_request` before any network call if either is missing) and defaults the rest to a consistent baseline look. Returns the server response: `{ itemId, loadingVideo }`. Pass an optional `consentRef` and the result also carries a consent receipt. See [Security & Compliance](/reference/security/) for the receipt.
 
 ## Upload a custom Face or Background (compose-a-visual path)
 

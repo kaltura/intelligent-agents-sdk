@@ -34,7 +34,7 @@ Three pieces. Author the command, the agent calls it, the page captures it.
 
 ### 1. Author the command (management plane)
 
-`tools.client({name, description, args?, waitForResponse?, timeout?})` builds a native `type:"client"` tool. Unlike the `api`/`csv`/`code` tool types, it has no `request` block, no echo endpoint, and no response shaper. The model calls it and the server emits the `type:"tool"` segment. That is the entire contract.
+`tools.client({name, description, args?, waitForResponse?, timeout?, responseMapping?, responseTemplate?, responseChapters?, variablesMapping?})` builds a native `type:"client"` tool. Unlike the `api`/`csv`/`code` tool types, it has no `request` block and no echo endpoint. For the response fields, see [Tools and Secrets](/reference/api/build/tools-and-secrets/#client-tool). The model calls it and the server emits the `type:"tool"` segment. That is the entire contract.
 
 <div data-nova-target="client-commands-example" data-nova-label="Author a client command example">
 

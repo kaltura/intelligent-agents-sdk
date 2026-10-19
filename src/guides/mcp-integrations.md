@@ -49,7 +49,7 @@ await mgmt.intellectConfig.setMcpServers(configId, {
 }, adminKs);
 ```
 
-`{{secrets.DOCS_MCP_TOKEN}}` is resolved when the call is made. The plaintext value never comes back to your app. Run `mgmt.intellects.secrets.validate(configId, adminKs)` after wiring headers. It scans tool, prompt, **and MCP server header** values for a reference to a secret name that does not exist. It also flags the `{{variables.secrets.X}}` prefix mistake. Only the bare `{{secrets.X}}` form resolves.
+`{{secrets.DOCS_MCP_TOKEN}}` is resolved when the call is made. The plaintext value never comes back to your app. Run `mgmt.intellects.secrets.validate(configId, adminKs)` after wiring headers. It scans prompt **and MCP server header** values for a reference to a secret name that does not exist. It also flags the `{{variables.secrets.X}}` prefix mistake. Only `{{secrets.X}}` resolves, not `{{variables.secrets.X}}`.
 
 ### A different credential per attendee
 

@@ -26,13 +26,15 @@ Direction: `→` the client emits, `←` the server emits. This catalog lists th
 | `onTextEntered` | `{ text, isFinal, isSpeechStart? }` | **Drive the avatar by text** instead of voice. The text is treated like a spoken transcript. `isFinal:false` marks a partial. `isSpeechStart:true` with `text:''` is the barge-in marker: it interrupts the avatar mid-sentence, and does nothing if the avatar is idle. `speak()` sends the marker first and then the real text. `interrupt()` sends the marker alone. HTTP `/assistant/converse` is a separate stateless chat that never reaches the avatar's speech engine, so the avatar stays silent if you use it to inject text. |
 | `debug_text_entered` | `{ text, isFinal }` | A mirror of the final `onTextEntered`, sent by `speak()` only when the session was constructed with debug mode on. |
 | `tapToTalkStart` / `tapToTalkEnd` | `{}` | Push-to-talk capture window, sent by `startTapToTalk()` / `endTapToTalk()`. See below. |
+| `setTapToTalkMode` | `{ enabled }` (boolean) | Switch the session between tap-to-talk (`true`) and open mic (`false`). Sent by `setTapToTalkMode(enabled)`. The reply is `showTapToTalkButton` or `hideTapToTalkButton`. |
 | `muteUser` / `unmuteUser` | `{}` | The `micEnabled` setter notifies the server of a mic mute or unmute. The mute itself is client-side (`track.enabled`). The payload has no data. |
 | `pauseConversation` / `resumeConversation` | `{}` | `pause()` / `resume()`. |
+| `extendPause` | `{}` | Start the pause window again while paused. Sent by `extendPause()`. No reply event. |
 | `updateGenieContext` | `{ capabilities, request_vars, contextId?, contextType? }` | Mid-session context update, sent by `updateRequestVars()` and `setDynamicPrompt()`. Each emit replaces the stored context, so an omitted field is a clear. The SDK always sends the full shape: its own capabilities, the full `request_vars` map, and `contextId` / `contextType` when set. `setDynamicPrompt(data)` is the same emit, with the payload serialized into the `page_context` variable. |
 | `screenShareStarted` / `screenShareStopped` | `{}` | A screen share began or ended. Sent by `startScreenShare()` / `stopScreenShare()`. |
 | `userScreenSharePendingImage` | `{}` | A still is about to follow. Sent once right after `screenShareStarted`. |
-| `userScreenShareShot` | `{ data }` (ArrayBuffer, JPEG) | A screen-share still for vision analysis, sent every 2 seconds by `startScreenShare()` or once by `sendScreenShot()`. Needs `isScreenShareEnabled` in [`clientConfiguration`](/reference/wire-protocol/client-configuration/#clientconfiguration-fields-per-session-agent-config). |
-| `onHtmlElementClick` / `setFormLeadInfo` | `{ htmlText }` / `{ …fields }` | GenUI and structured-data-form callbacks, sent by `notifyHtmlElementClick(info)` and `submitStructuredDataForm(values)`. |
+| `userScreenShareShot` | `{ data }` (ArrayBuffer, JPEG) | A screen-share still for vision analysis, sent by `startScreenShare()` every `intervalMs` (default 2000 ms) or once by `sendScreenShot()`. Needs `isScreenShareEnabled` in [`clientConfiguration`](/reference/wire-protocol/client-configuration/#clientconfiguration-fields-per-session-agent-config). |
+| `onHtmlElementClick` / `setFormLeadInfo` | `{ htmlText }` / `{ …fields }` | GenUI and structured-data-form callbacks, sent by `notifyHtmlElementClick(info)` and `submitStructuredDataForm(values)`. `setFormLeadInfo` records the submission and does not change what the agent knows. |
 
 #### `tapToTalkStart`/`tapToTalkEnd` in detail
 
@@ -40,23 +42,31 @@ Direction: `→` the client emits, `←` the server emits. This catalog lists th
 
 **Do not use this pair for typed-text barge-in.** Wrapping `onTextEntered` in it creates a duplicate turn.
 
-**Use it only on an agent configured with `isTapToTalk: true`.** Mixing tap-to-talk with an open-mic agent gives unreliable turn-taking. The SDK enforces this: `startTapToTalk()` throws `capability_disabled` unless `capabilities.tapToTalk` is set.
+**Use it only while the session is in tap-to-talk mode:** an agent configured with `isTapToTalk: true`, or after `setTapToTalkMode(true)`. Mixing tap-to-talk with open-mic turn-taking is unreliable. The SDK enforces this: `startTapToTalk()` throws `capability_disabled` unless `capabilities.tapToTalk` is set.
 
 For the app-level decision of when to use this mode and how to design its UI, see [Voice Input Modes](/guides/voice-input-modes/).
+
+**Raw socket only.** The server accepts these events. The SDK has no method for them.
+
+| Event | Payload | What happens |
+|---|---|---|
+| `reprocessTurn` | `{ speechId, messageId }` | The agent regenerates its reply to that turn, under a new `speechId`. |
+| `userCameraShot` | image data | Accepted. No event and no error comes back. |
+| `permissionsDenied` | `{ deny_reason }` | No reply event. The socket stays connected. |
 
 ### 4b. Server → Client (on): handshake/session phase
 
 | Event | Payload | Meaning |
 |---|---|---|
 | `onServerConnected` | `{ finalUrl, agentName?, hostName?, loadingVideoURL? }` | Handshake done. The SDK emits `streamReady` with `finalUrl`, `agentName` and `hostName`. |
-| `clientConfiguration` | `{ clientConfiguration:{ configuration, nluFeatures, languageCode, isTapToTalk, interruptionsEnabled, pauseConversationEnabled, showTranscription, isWebSearchEnabled, isScreenShareEnabled, isCameraAnalysisEnabled, audioMode, phoneMode, shouldAggregateCurrentTurn, youtubeUrl, initialHtml, visualPhotos:[], visualVideos:[], agentPersonaName, userName } }` | Per-session agent config. Field meanings: [§7](/reference/wire-protocol/client-configuration/#clientconfiguration-fields-per-session-agent-config). |
+| `clientConfiguration` | `{ clientConfiguration:{ configuration, nluFeatures, languageCode, isTapToTalk, interruptionsEnabled, pauseConversationEnabled, showTranscription, isWebSearchEnabled, isScreenShareEnabled, isCameraAnalysisEnabled, audioMode, phoneMode, shouldAggregateCurrentTurn, youtubeUrl, initialHtml, visualPhotos:[], visualVideos:[], agentPersonaName, userName, asr, forwardLoopMode, imaginativeAiMode, smartTurnConfig?, stvRecord? } }` | Per-session agent config. Field meanings: [§7](/reference/wire-protocol/client-configuration/#clientconfiguration-fields-per-session-agent-config). |
 | `joinComplete` | `{}` | Room join acknowledged. |
 | `stvNewSession` | normal: `{ session_id, status:"session started", webrtc_url? }`; **audio/phone mode**: `{ status:"audio/phone mode - no STV session" }` (no `session_id` or `webrtc_url`) | The STV session is created. `webrtc_url` is the WHEP play URL. The audio/phone variant skips STV ([§5b](/reference/wire-protocol/audio-channels/#5b-audio-mode-webrtc-separate-from-the-asr-uplink)). |
 | `showAgent` | `{}` | The agent has joined. |
 | `askPermissions` | `{ constraints:{ audio: boolean \| {echoCancellation}, video: boolean } }` | The server is ready for the mic. |
 | `throwToNoAgent` | `{}` | All agent slots are busy. The socket closes after it. `connect()` rejects with `KalturaError` `code:'capacity_unavailable'`, `status:6001`. To wait for a free slot, call `waitForCapacity()` before `connect()`. |
 | `throwToExceededTier` | `{}` | Account plan limit reached. `KalturaError` `code:'tier_exceeded'`, `status:6002`. No reconnect. |
-| `unsupportedClient` | `{ code }` | Fatal setup failure. The socket closes. `KalturaError` `code:'unsupported_client'`; the `code` value rides in the error's `detail`. |
+| `unsupportedClient` | `{ code }` | Fatal setup failure: the server refused the session. The socket closes. The SDK emits `error`, and `connect()` (or `prepare()`) rejects at once, both with `KalturaError` `code:'unsupported_client'`, `retryable:false`. The error does not include the payload. |
 | `throwToBadRequest` / `removePeer` | `{}` | Fatal disconnect reasons. `KalturaError` `code:'bad_request'` (`status:400`) / `code:'peer_removed'` (`status:401`). |
 | `availabilityResult` | `{ available, details? }` (or `{ error, available:false }`) | Reply to `checkAvailability`. The socket stays open. The SDK re-emits it as `capacityChanged { available, details }`. During `connect()`, an `available:false` reply schedules the next poll on the backoff `[30,45,60,90,120,180,240,300,360]s` (±15% jitter). |
 
@@ -67,7 +77,7 @@ For the app-level decision of when to use this mode and how to design its UI, se
 | `asr-webrtc-ready` | `{}` | ASR signaling is ready. Send the offer. |
 | `asr-webrtc-answer` | `{ answer:{type:"answer", sdp} }` | SDP answer for the mic uplink. |
 | `asr-ice-candidate` | `{ uid, type:"ice_candidate", candidate, sdpMLineIndex }` | A remote ICE candidate for the ASR peer. The SDK passes it to `addIceCandidate`. |
-| `asr-webrtc-error` | `{ error? }` | ASR signaling error. The SDK has no handler for it. |
+| `asr-webrtc-error` | `{ error? }` | ASR signaling error. While the SDK waits for `asr-webrtc-ready` or `asr-webrtc-answer` (in `connect()`, `resume()`, a reconnect or a media recovery), that wait fails at once with the same `KalturaError` as an ASR timeout (`code:'timeout'`, `phase:'asr'`), with the payload in `error.body`. At any other time the SDK ignores it. |
 
 ### 4d. Server → Client (on): conversation phase
 
@@ -86,14 +96,16 @@ These fire once `approvedPermissions` is sent. Many payloads carry a `speechId`,
 | `agentTurnToTalk` | `{ userTranscription? }` | The user's turn finished and the agent takes over. `userTranscription` is present only when the turn came from user speech. |
 | `agentInterrupted` | `{}` | Barge-in. The user spoke, or sent the `onTextEntered { isSpeechStart:true }` marker, and cut the avatar off mid-sentence. |
 | `userStartedTalking` | `{}` | The user started speaking. Fires without debug mode. |
-| `hideTapToTalkButton` / `showTapToTalkButton` | `{}` | UI hint: hide or show the tap-to-talk affordance for this agent config. The SDK has no handler for them. |
+| `hideTapToTalkButton` / `showTapToTalkButton` | `{}` | UI hint: hide or show the tap-to-talk control. The server sends one in reply to `setTapToTalkMode` (`false` hides, `true` shows). The SDK has no handler for them. |
 | `conversationTimeWarning` | `{ remainingTime }` (seconds) | Time-limit warning. The SDK emits `timeWarning`. |
 | `conversationTimeExpired` | `{}` | The session time expired. Sent right before `conversationEnded`. The SDK emits `timeExpired`. |
 | `conversationEnded` | `{}` | The conversation ended. The SDK emits `ended` and disconnects. |
+| `screenShotAnalysisReady` | `{}` | A screen-share still was analyzed. Arrives a few seconds after a still. The SDK has no handler for it. |
 | `stvTaskFail` | `{}` | Avatar video rendering failed. The SDK emits an `error` with `code:'stv_task_fail'`. |
 | `smartTurnStatus` | `{ status, timeout_ms?, probability? }` | End-of-turn indicator for the user's speech. The SDK re-emits it as `smartTurnStatus { status, timeoutMs, probability }` and does not act on it. |
+| `pauseExpiryWarning` | `{ secondsRemaining }` | The pause window ends soon. The SDK emits `pauseExpiryWarning { secondsRemaining }`. |
 | `sessionReadyForResume` | `{}` | The session can be resumed on the same instance. The SDK emits `resumeReady`. |
-| `pauseSessionExpired` | `{}` | The pause window ended before `resumeConversation` arrived. The session can't be resumed as it was. The SDK emits `timeExpired` with `{type:'pause_expiry'}`, distinct from a hard `conversationEnded`. |
+| `pauseSessionExpired` | `{ message?, transcription? }` | The pause window ended before `resumeConversation` arrived. The session can't be resumed as it was. The SDK emits `timeExpired` with `{type:'pause_expiry', message?, transcription?}`, distinct from a hard `conversationEnded`. |
 | `resumingSession` | `{}` | The server accepted `resumeConversation` and is rebuilding the media pipeline. It precedes `conversationResumed`. The SDK moves to the `resuming` state. |
 | `conversationResumed` | `{}` | The paused turn loop has resumed. The SDK emits `resumed`. |
 | `debug_vad_speech_detected` | `{ transcript, isFinal, segmentType, isSpeechStartEvent }` | Interim and final speech recognition. Only `isFinal:true` commits. Diagnostic. |
@@ -101,7 +113,9 @@ These fire once `approvedPermissions` is sent. Many payloads carry a `speechId`,
 | `debug_stvTaskGenerated` | `{ text, speechId, duration }` | Raw text chunks before audio. Diagnostic. |
 | `debug_conversationStateChange` | `{ state, preparingAnswerState }` | Turn-state diagnostic. Treat the values as opaque strings. |
 
-The four `debug_*` events arrive because the SDK connects with `debugMode: true` ([§2](/reference/wire-protocol/connection-basics/#2-socketio-connection)). The SDK has no handler for them. Its captions and transcripts do not read them.
+The four `debug_*` events depend on `debugMode`, which the SDK sends as `true` ([§2](/reference/wire-protocol/connection-basics/#2-socketio-connection)). The SDK has no handler for them. Its captions and transcripts do not read them.
+
+The server can also send other widget events (`show…` and `hide…` names, and `contactCollector`). The SDK has no handler for them and ignores them. Widgets arrive in the agent stream ([§4e](#4e-agent_raw_textdelta-the-agent-stream-parsed)).
 
 ### 4e. `agent_raw_text.delta`: the agent stream (parsed)
 
@@ -110,10 +124,12 @@ The four `debug_*` events arrive because the SDK connects with `debugMode: true`
 ```js
 { role:"assistant", type, content, segmentNumber, et,            // always present
   threadId?, messageId?, segmentStart?, segmentEnd?, isFinal?,    // conditional
+  start_time?, end_time?,                                         // tool and tool_response (Unix seconds)
+  human?,                                                         // first think segment
   metadata?:{widgetName?,runtimeName?} }                          // unisphere-tool segments
 ```
 
-Every segment has `role` (always `"assistant"`), `type`, `content`, `segmentNumber` and `et` (elapsed seconds). The rest are conditional. For example, `threadId` and `messageId` ride the first `think` segment, and `metadata` rides `unisphere-tool`.
+Every segment has `role` (always `"assistant"`), `type`, `content`, `segmentNumber` and `et` (elapsed seconds). The rest are conditional. For example, `threadId` and `messageId` ride the first `think` segment, and `metadata` rides `unisphere-tool`. `tool` and `tool_response` segments can carry `start_time` and `end_time` (Unix seconds). The first `think` segment can carry `human`, the user text for the turn.
 
 The set of `type` values is open-ended. Ignore types you don't handle.
 
@@ -128,6 +144,7 @@ The set of `type` values is open-ended. Ignore types you don't handle.
 | `avatar`, `avatar-filler` | Spoken text for the avatar. |
 | `share` | `{canShare:bool}`. `segmentStart` and `segmentEnd` together mean the message is complete. |
 | `thread` | For example an auto-title. |
+| `used_sources` | A control segment, not display text. Ignore it unless you track citations. |
 
 On the avatar socket, the SDK resolves a `unisphere-tool` segment to its `metadata.runtimeName` without the `-tool` suffix, so runtime clients work with the normalized name. Every segment type is delivered. The avatar session joins with `force_experience: 'avatar_only'`, so the spoken content arrives mainly as `avatar` and `avatar-filler` segments, and `think`, `tool`, `unisphere-tool`, `share`, `thread` and `error` stream alongside for the transcript and UI. The `avatar-filler` phrasing can't be reliably steered with `base_directive`. See the `avatar_filler` note in [GenUI · Authoring and Consuming Widgets](/reference/genui/authoring-and-consuming/#authoring-which-capability-turns-each-widget-on).
 

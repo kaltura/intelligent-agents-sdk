@@ -7,7 +7,7 @@ eyebrow: How-to Guide
 
 # Live Demos
 
-The `examples/` folder has five browser demos, four server scripts and an MCP server. They are not hosted. Run them from a clone of the repo. The browser demos and three of the scripts run against your own agent, so they need your partner id and admin secret. `genui-graded-question.mjs` and the MCP server need no credentials.
+The `examples/` folder has five browser demos, four server scripts and an MCP server. They are not hosted. Run them from a clone of the repo. The browser demos need your partner id, plus either an admin secret (to create a throwaway agent) or the widget id of an existing agent. Three of the scripts need the admin secret. `genui-graded-question.mjs` and the MCP server need no credentials.
 
 ## Run a browser demo
 
@@ -19,7 +19,7 @@ export AGENTIC_ADMIN_SECRET=…
 node examples/dev-server.mjs
 ```
 
-With an admin secret and no `AGENTIC_WIDGET_ID`, the server provisions a throwaway agent on start. To use an existing agent, set `AGENTIC_WIDGET_ID` instead. For the screen-share demo, also set `AGENTIC_SCREEN_SHARE=1`. The throwaway agent then has its `screenShare` setting on. An existing agent needs that setting on already. Then open a demo from the list below at `http://127.0.0.1:8091/examples/<file>.html`. The server listens on loopback only.
+With an admin secret and no `AGENTIC_WIDGET_ID`, the server provisions a throwaway agent on start. The server does not delete this agent. Set `AGENTIC_WIDGET_ID` to the logged widgetId to reuse it next time, or delete the agent, avatar and intellect yourself ([Management Operations](/reference/api/management-operations/)). For the screen-share demo, also set `AGENTIC_SCREEN_SHARE=1`. The throwaway agent then has its `screenShare` setting on. An existing agent needs that setting on already. Then open a demo from the list below at `http://127.0.0.1:8091/examples/<file>.html`. The server listens on loopback only.
 
 ## Browser demos
 
@@ -29,7 +29,7 @@ With an admin secret and no `AGENTIC_WIDGET_ID`, the server provisions a throwaw
 | [deck-presenter.html](https://github.com/kaltura/intelligent-agents-sdk/blob/main/examples/deck-presenter.html) | The avatar walking a slide deck with the `Presenter` helper |
 | [screen-share-agent.html](https://github.com/kaltura/intelligent-agents-sdk/blob/main/examples/screen-share-agent.html) | A debugging assistant. The user shares their screen with `startScreenShare()` and asks the avatar about the code, error or app on it |
 | [chroma-key-avatar.html](https://github.com/kaltura/intelligent-agents-sdk/blob/main/examples/chroma-key-avatar.html) | The avatar video chroma-keyed with `attachChromaKeyAvatar`, so it sits over your own page |
-| [event-timing.html](https://github.com/kaltura/intelligent-agents-sdk/blob/main/examples/event-timing.html) | Every SDK event with a timestamp since `connect()` |
+| [event-timing.html](https://github.com/kaltura/intelligent-agents-sdk/blob/main/examples/event-timing.html) | The core session events (connect timings, transcript, speech, turn, interrupt, warning, error, ended) with a timestamp since `connect()` |
 
 ## Server scripts
 
@@ -44,7 +44,7 @@ export AGENTIC_ADMIN_SECRET=…
 |---|---|---|
 | [`node examples/server-token.mjs "A friendly yoga receptionist"`](https://github.com/kaltura/intelligent-agents-sdk/blob/main/examples/server-token.mjs) | Yes | Provision an agent from a one-line brief (the argument is optional), mint a conversation token and run a headless smoke test |
 | [`node examples/request-vars-live-context.mjs`](https://github.com/kaltura/intelligent-agents-sdk/blob/main/examples/request-vars-live-context.mjs) | Yes | Live app context sent to the agent as request variables |
-| [`node examples/lifecycle-insights-and-email.mjs`](https://github.com/kaltura/intelligent-agents-sdk/blob/main/examples/lifecycle-insights-and-email.mjs) | Yes | Summarize every conversation and email a human when the summary is ready. Set `DEMO_RECIPIENT_USER_ID` to choose the recipient |
+| [`node examples/lifecycle-insights-and-email.mjs`](https://github.com/kaltura/intelligent-agents-sdk/blob/main/examples/lifecycle-insights-and-email.mjs) | Yes | Create the summary and email rules, dry-run them with `lifecycle.match`, audit them, then delete them. Set `DEMO_RECIPIENT_USER_ID` to choose the recipient and `DEMO_AGENT_ID` to use a real agent id |
 | [`node examples/genui-graded-question.mjs`](https://github.com/kaltura/intelligent-agents-sdk/blob/main/examples/genui-graded-question.mjs) | No | The `graded-question` GenUI widget, multiple-choice and free-text. It prints the widget descriptor and the `onAction('answer', ...)` payloads. No network and no browser |
 
 ## MCP server

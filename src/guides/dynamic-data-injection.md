@@ -17,7 +17,7 @@ The SDK gives you three mechanisms, each solving a different problem. The most c
 |---|---|---|
 | [Request variables](#the-context-channel-request-variables): `requestVars` / `updateRequestVars()` / `setDynamicPrompt()` | Everything the agent should *know*: viewer facts for `{{var}}` prompt slots, and a full structured page-context blob. Persists for the whole thread. | No, passive |
 | [`session.speak()`](#the-active-nudge-speak) | Actively provoke a new turn. The agent reacts immediately, in this turn | Yes, the only one that does |
-| [`session.submitStructuredDataForm()`](#answering-an-agent-initiated-request) | Answer a request the agent itself made for structured fields | No, feeds the answer back into the conversation |
+| [`session.submitStructuredDataForm()`](#answering-an-agent-initiated-request) | Record a form the agent asked for | No. Records the submission only; send the values with `speak()` or `updateRequestVars()` |
 
 Request variables are **passive**: they update what the agent will see, whenever its next turn happens to occur. `speak()` is the only **active** one: it's the trigger that makes a turn happen right now.
 
@@ -75,7 +75,7 @@ The intellect must have `allow_client_variables: true`, or every request variabl
 await mgmt.intellects.setClientVariablesEnabled(configId, true, adminKs);
 ```
 
-The rejection is **silent** on the live socket and in `KalturaChatSession`. The turn comes back as an empty reply: no HTTP error, no socket error. Both session classes (`KalturaAvatarSession` and `KalturaChatSession`) detect the pattern and emit a once-per-session `warning` event, `{ code: 'empty_turn_with_request_vars', message, requestVarKeys }` (variable *names* only, never values), pointing at the gate. A management converse call that receives the 403 throws `client_variables_disabled` instead. `KalturaChatSession.sendText()` can fail either way when it sends request variables: the silent empty turn with the warning, or a rejected promise with `client_variables_disabled`.
+The rejection is **silent** on the live socket and in `KalturaChatSession`. The turn comes back as an empty reply: no HTTP error, no socket error. Both session classes (`KalturaAvatarSession` and `KalturaChatSession`) detect the pattern and emit a once-per-session `warning` event, `{ code: 'empty_turn_with_request_vars', message, requestVarKeys }` (variable *names* only, never values), pointing at the gate. `conversations.send` and `converseOnce` throw `empty_reply` for the empty turn, and a 403 that reports disabled client variables throws `client_variables_disabled`. See [Refusals that arrive with HTTP 200](/reference/api/operate/#refusals-that-arrive-with-http-200). `KalturaChatSession.sendText()` can fail either way when it sends request variables: the silent empty turn with the warning, or a rejected promise with `client_variables_disabled`.
 
 ```js
 session.on('warning', (w) => {
@@ -162,10 +162,11 @@ Guardrails (`onBeforeSend`, `maxTurnsPerMinute`, tap-to-talk, disclosure) run wh
 The mechanisms above all push data from your app *to* the agent. There's also a path in the other direction: your agent's configuration can require the agent to ask the viewer for specific structured fields at some point in the conversation (an email, a booking date, a support ticket's category). See [Structured Data Forms](/guides/structured-data-forms/) for how to configure what it asks for. Once your UI collects the viewer's answer, hand it back with:
 
 ```js
-session.submitStructuredDataForm({ email: 'ada@example.com' });
+session.updateRequestVars({ email: 'ada@example.com' });
+session.speak('[FORM] The viewer submitted their email: ada@example.com.');
 ```
 
-This routes the value back into the conversation so the agent can act on it. Treat the moment your UI closes that form (submitted or explicitly declined) as a real, immediate event worth an active nudge too. See the worked example below.
+The agent acts on the values you send with `speak()` or `updateRequestVars()`. `submitStructuredDataForm()` only records the submission ([details](/guides/structured-data-forms/#reading-back-what-the-viewer-submitted)). Treat the moment your UI closes that form (submitted or explicitly declined) as a real, immediate event worth an active nudge too. See the worked example below.
 
 ## How they work together: a worked example
 
@@ -186,12 +187,12 @@ function onSectionChange(section) {
 
 // 3. The agent asks for an email; your UI renders the form and the viewer submits it.
 function onEmailFormClosed(email) {
-  if (email) session.submitStructuredDataForm({ email });
-  // The form closing either way is a real, immediate event. Update a variable, then
+  if (email) session.submitStructuredDataForm({ email }); // records the submission only
+  // The form closing either way is a real, immediate event. Update variables, then
   // nudge, exactly like a section change, rather than waiting for whatever turn
   // happens next to pick it up.
-  session.updateRequestVars({ email_form_status: email ? 'submitted' : 'declined' });
-  session.speak(`[EMAIL FORM] The form just closed. The viewer ${email ? 'submitted an email' : 'declined'}.`);
+  session.updateRequestVars({ email_form_status: email ? 'submitted' : 'declined', ...(email ? { email } : {}) });
+  session.speak(`[EMAIL FORM] The form just closed. The viewer ${email ? `submitted an email: ${email}` : 'declined'}.`);
 }
 ```
 
@@ -207,7 +208,7 @@ The pattern that repeats: **update context, then actively nudge, in that order, 
 | Give the agent a full snapshot of what's on screen, for whenever it next speaks | `setDynamicPrompt(data)` |
 | Make the agent react to something *right now*, not whenever it next happens to speak | `setDynamicPrompt()` + `speak()` |
 | Feed a value into a server-side `api` tool the agent calls | Any request variable the tool's template interpolates |
-| Get an answer back for a field the agent itself asked for | `submitStructuredDataForm()` |
+| Give the agent a field the viewer typed into a form the agent asked for | `updateRequestVars()` + `speak()` (and `submitStructuredDataForm()` to record it) |
 
 ## Related but distinct: client-side commands
 

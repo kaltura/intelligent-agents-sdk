@@ -43,7 +43,7 @@ const admin = await mgmt.sessions.createAdminToken({ userId: 'admin@example.com'
 | Agent | 0 (user) | `agentid:<agentId>,geniegpcid:<configId>,setrole:PLAYBACK_BASE_ROLE` | Talking as one agent. Entitlement ON |
 | Widget | n/a | auto-derived from `widgetId` | End-user embed. No admin secret in the browser |
 
-Conversation and agent tokens are **user sessions** by default. Pass `sessionType: 'admin'` to get an admin-level session (type 2, no forced role) instead. It reaches everything its `role` and privileges allow, so mint it on your server only. `restrictions.role` is only allowed with `sessionType: 'admin'`. A second `setrole`, `agentid` or `geniegpcid` in `extraPrivileges` throws `bad_request`. What each token kind can reach: [Security & Compliance § Session type](/reference/security/#session-type).
+Conversation and agent tokens are **user sessions** by default. Pass `sessionType: 'admin'` to get an admin-level session (type 2, no forced role) instead. It reaches everything its `role` and privileges allow, so mint it on your server only. `restrictions.role` is only allowed with `sessionType: 'admin'`. A second `setrole`, `agentid` or `geniegpcid` in `extraPrivileges` throws `bad_request`. What each token kind can reach: [Security & Compliance § Session type](/reference/security/#session-type). `extraPrivileges` can also mark thread origin ([Threads](/reference/api/operate/#threads)).
 
 ### Conversation token or agent token?
 
@@ -81,7 +81,7 @@ AGENT_KS=$(curl -s -X POST "https://www.kaltura.com/api_v3/service/session/actio
   -d "privileges=agentid:1_abc123,geniegpcid:1389,setrole:PLAYBACK_BASE_ROLE" | tr -d '"')
 ```
 
-**Keep `disableentitlement` server-side, for management/admin operations only.** A minted `Token` records its kind, and the SDK rejects a token of the wrong kind before any network call. A raw KS string is encrypted and unreadable client-side, so the SDK passes it through and the server enforces its scope. Never hand an admin KS string to an end-user session. See [Security & Compliance](/reference/security/#ks-kaltura-session-guidance-for-agents-ac-3--ac-6--ia-2) and Kaltura's own [KS/privilege reference](https://kaltura.md/KALTURA_SESSION_GUIDE/).
+**Keep `disableentitlement` server-side, for management/admin operations only.** A minted `Token` records its kind, and the SDK rejects a token of the wrong kind before any network call. A raw KS string is encrypted, so the SDK can't read its kind. It still rejects the raw string of a widget token this `Management` instance minted recently. Other raw strings go to the server, which decides. Agent, avatar and catalog management calls are admin-only by design. The SDK refuses a minted non-admin token with `wrong_token_scope` before any request. Never hand an admin KS string to an end-user session. See [Security & Compliance](/reference/security/#ks-kaltura-session-guidance-for-agents-ac-3--ac-6--ia-2) and Kaltura's own [KS/privilege reference](https://kaltura.md/KALTURA_SESSION_GUIDE/).
 
 **Bind a session to a real end-user identity (`userId`).** The reserved `{{ sys__user_id }}` template variable (see [Reserved Template Variables](/reference/api/operate/#reserved-template-variables-sys__)) resolves to an empty string unless the KS carries a real identity.
 
@@ -111,15 +111,28 @@ Always pass a per-user `userId`.
 
 **Widget tokens** (`createWidgetToken`) need no secret. Every visitor gets the same token. Reach and limits: [Security & Compliance § Session type](/reference/security/#session-type). To separate users, use the [per-visitor path](/reference/api/deploy/#per-visitor-browser-path).
 
-**Revoke a token.** `mgmt.sessions.revoke(tokenOrKs)` ends the session (`session/end`). Tokens minted with the same `restrictions.sessionGroupId` are revoked together.
+**Revoke a token.** `mgmt.sessions.revoke(tokenOrKs)` sends `session/end` for the token. Tokens minted with the same `restrictions.sessionGroupId` share one session id, so `revoke` on any of them targets the whole group.
 
-**Restrictions.** `restrictions` compiles to KS privileges: `ipRestrict`, `uriRestrict`, `sessionGroupId`, `role` (admin sessions only) and `actionsLimit`. `actionsLimit` is a positive integer. Use it only for sessions that run a known, fixed number of API actions. Each string value is one `key:value` privilege in a comma-separated list, so it must not contain a comma or whitespace (`bad_request`). `:` and `/` are fine inside a value, and so is a `*` wildcard where the privilege supports it.
+**Restrictions.** Each `restrictions` key you set adds one KS privilege to the token: `ipRestrict` → `iprestrict:<value>`, `uriRestrict` → `urirestrict:<value>`, `sessionGroupId` → `sessionid:<value>`, `role` → `setrole:<value>` (admin sessions only) and `actionsLimit` → `actionslimit:<n>`. `actionsLimit` must be a positive integer. Each string value is one `key:value` privilege in a comma-separated list, so it must not contain a comma or whitespace (`bad_request`). `:` and `/` are fine inside a value, and so is a `*` wildcard where the privilege supports it.
+
+**Extra privileges the agent reads.** Pass these through `extraPrivileges`. The SDK has no typed option for them. Use one `key:value` per privilege, with no comma in the value.
+
+| Privilege | Value | What you observe |
+|---|---|---|
+| `threadOrigin` | `evaluation` | Marks new threads as evaluation threads. See [Threads](/reference/api/operate/#threads) |
+| `threadOrigin` | `preview` | Marks new threads as preview threads. See [Threads](/reference/api/operate/#threads) |
+| `preview` | `true` | Same as `threadOrigin:preview` |
+| `genieentryids` | an entry id | Names an entry for the conversation |
+| `geniecategoryid` | a category id | Names a category for the conversation |
+| `genieancestorid` | a category id | Names an ancestor category for the conversation |
+
+A very long KS is refused with 401. Long `extraPrivileges` or `restrictions` values make a KS that long. The SDK logs a warning when a minted KS is over 4,500 characters.
 
 ---
 
 ## The Five Services
 
-An agent is built from five services that layer on top of each other. All calls use `POST` with JSON (`GET /assistant/status` is the one exception).
+An agent is built from five services that layer on top of each other. All calls use `POST` with JSON, except catalog uploads (multipart form data) and `GET /assistant/status`.
 
 | Service | Role | Base URL |
 |---------|------|----------|

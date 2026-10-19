@@ -28,14 +28,22 @@ await mgmt.intellectConfig.setUserPropertiesForms(configId, [
 
 </div>
 
-`callStage` (sent as `call_stage`) is one of `start` / `middle` / `end` (`CALL_STAGES` in `src/management/intellect-config.js`). Each property is `{key, type}`. Two sets of `type` values exist:
+`callStage` (sent as `call_stage`) is one of `start` / `middle` / `end` (`CALL_STAGES` in `src/management/intellect-config.js`). Each property is `{key, type}`.
+
+| Form field | Behavior |
+|---|---|
+| `title`, `secondaryTitle` | Optional. Stored with the form. `secondaryTitle` is sent as `secondary_title`. |
+| `id` | Read-back forms carry an integer `id`. An `id` you pass is sent as-is. When you omit it and exactly one stored form has the same `callStage`, the SDK sends that form's `id`. On read-back, `id` is the form's position in the list (0, 1, ...), whatever `id` you sent. |
+| `type` | One of `FORM_FIELD_TYPES`, in two groups (below). |
 
 | Type kind | Values |
 |---|---|
-| Base types you configure (`ARG_TYPES`, re-exported from `core/stream.js`'s `ARG_TYPE_NAMES`, the single source of truth) | `str`, `int`, `float`, `bool`, `list`, `dict` |
-| Renderer-only presentation hints, kept when an incoming form carries them (see "How the form is rendered" below) | `email`, `phone`, `text` |
+| Base types (`ARG_TYPES`, shared with tool args) | `str`, `int`, `float`, `bool`, `list`, `dict` |
+| Form-only types, the default renderer's input hints (see "How the form is rendered" below) | `email`, `phone`, `text` |
 
-`buildUserPropertiesForms()` accepts only the six base types. It validates before any network call and throws `bad_request` on an invalid stage, an empty `properties` array, or any other type, including `email`, `phone` and `text`.
+`buildUserPropertiesForms()` accepts any type in `FORM_FIELD_TYPES`. It validates before any network call and throws `bad_request` on an invalid stage, an empty `properties` array, an unknown type, a non-string `title` or `secondaryTitle`, or a bad `id`.
+
+To remove every form, call `mgmt.intellectConfig.clearUserPropertiesForms(configId, adminKs)`. `setUserPropertiesForms` with an empty list throws `bad_request`.
 
 You can pass one form object or an array of several. Each stage gets its own field set. For example, ask for a booking date early and a payment preference later, or an email early and a phone number later, in the same conversation.
 
@@ -46,17 +54,17 @@ Each configured stage becomes an instruction for that conversation. When the sta
 - **Timing is approximate.** The model interprets `call_stage` as a general instruction, not a deterministic trigger. A `start` stage can fire on the very first turn. Treat the stage as a signal for when the form appears, not an exact turn number.
 - **Pre-fill is real.** If the agent has already heard a value for a configured field earlier in the conversation (e.g. the viewer mentioned their preferred date in passing), it attaches a `known_value` to that field. Your form should pre-fill it rather than ask again.
 
-The form arrives with a default heading. **`buildUserPropertiesForms()` doesn't accept a heading.** It accepts `callStage`/`properties` only. To show your own copy (e.g. "Tell us about your issue" on a support form), render the widget yourself and replace the descriptor's `data.title`; see "How to customize or style the form" below.
+The form arrives with a default heading. To show your own copy (e.g. "Tell us about your issue" on a support form), render the widget yourself and replace the descriptor's `data.title`; see "How to customize or style the form" below.
 
 ## What's possible / what's not
 
 **Possible:**
 
 - Multiple stages (`start`/`middle`/`end`), each with its own field list. Each list can be any shape of structured data, not just contact info.
-- Six field types (`str`/`int`/`float`/`bool`/`list`/`dict`), plus `email`/`phone`/`text` as renderer-side presentation hints.
+- The field types in `FORM_FIELD_TYPES`: six base types plus `email`, `phone` and `text`.
 - A `required` flag and a `description` per field when the incoming form carries them. The default renderer maps them to `aria-required`/`aria-describedby`.
 - Model-side pre-fill (`known_value`) from information already in the transcript.
-- Reporting the collected values back over the wire via `session.submitStructuredDataForm(values)`. It works identically for any field shape.
+- Reporting the collected values: record them with `session.submitStructuredDataForm(values)`, and send them to the agent with `speak()` or `updateRequestVars()` ([§ Reading back](#reading-back-what-the-viewer-submitted)). Both work identically for any field shape.
 
 **Not possible / not designed for:**
 
@@ -79,13 +87,7 @@ Both are routed to `ExperienceRenderer` (`src/experience/genui/renderer.js`), wh
 - Runs every string through `safeText` (XSS-safe truncation).
 - Drops any field with no key.
 
-The output is a framework-agnostic descriptor:
-
-```js
-{ kind: 'user-properties-form', data: { title, fields: [
-  { key, type, label, knownValue, required, description }
-] } }
-```
+The output is a framework-agnostic descriptor. Its shape and limits are in [GenUI · Per-Runtime Widget Detail](/reference/genui/widgets/#8-user-properties-form-renderuserpropertiesform-structured-data-collection).
 
 ## How the form is rendered
 
@@ -97,7 +99,7 @@ If you hand `mountWidget` (`src/experience/genui/renderers/mount.js`) a real DOM
 - Fields pre-filled from `knownValue`.
 - A submit button.
 
-It never uses `innerHTML`, so text supplied by the model can't inject markup. On submit, it calls your `opts.onAction('submit', {values})` callback.
+It never uses `innerHTML`, so text supplied by the model can't inject markup. On submit, it calls your `opts.onAction('submit', {values, formId})` callback. `formId` is the descriptor's `formId`, or `null`. A non-empty `secondaryTitle` shows under the title.
 
 `user_properties_forms` is not the only way to reach the widget. An app can instead reach the same `user-properties-form` widget through a different path: keep `kaltura_genie_experiences` off, and expose the widget as one enum value of your own native `show_widget` **client** tool. The model then decides when to call it, based on your own prompt-level timing rules, with no `call_stage`-driven form needed at all.
 
@@ -114,12 +116,12 @@ Two independent axes:
   }));
   ```
 
-Or skip the SDK's default DOM builder entirely by passing a mount **function** instead of an `Element`. You get the descriptor and build any UI you want (React, a modal, whatever), calling `session.submitStructuredDataForm(values)` yourself when the viewer submits.
+Or skip the SDK's default DOM builder entirely by passing a mount **function** instead of an `Element`. You get the descriptor and build any UI you want (React, a modal, whatever), calling `updateRequestVars()` or `speak()` with the values yourself when the viewer submits (and `submitStructuredDataForm(values)` if you want the submission recorded).
 - **Visual styling.** The default DOM path emits plain, unstyled class names only: `.kgenui__form`, `.kgenui__field`, `.kgenui__label`, `.kgenui__input`, `.kgenui__help`, `.kgenui__submit`. The SDK ships **zero CSS**. Any consumer styles the same class names in their own stylesheet.
 
 ## Reading back what the viewer submitted
 
-`session.submitStructuredDataForm(info)` is a fire-and-forget socket emit of `setFormLeadInfo`. It returns nothing and has no acknowledgment. The SDK has no call that returns the submitted values as structured `{key: value}` data.
+`session.submitStructuredDataForm(values)` records the submission. It emits `setFormLeadInfo`, returns nothing, and has no acknowledgment. It does not change what the agent knows. To make the agent act on the values, send them in a message with `speak()`, or as request variables with `updateRequestVars()` that your prompt reads. The SDK logs one console warning per session the first time you call it. The SDK has no call that returns the submitted values as structured `{key: value}` data.
 
 `threads.transcript(threadId, ks)` returns the plain-text transcript of the thread (`human:` / `ai:` lines, in the result's `data` field). It carries what the viewer said and typed and what the model replied. It does not carry the raw form object.
 

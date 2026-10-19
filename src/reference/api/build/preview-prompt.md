@@ -12,7 +12,7 @@ eyebrow: Reference
 
 **SDK:** `mgmt.intellects.previewPrompt(configId, ks, opts)`. Requires an **admin KS**. This call only reads data and never writes.
 
-The SDK renders the returned `text` on the client. It is a replica of the author layer (`prompts[]`, `base_directive` and `glossary`). Use it to check a prompt template before shipping it.
+The SDK renders the returned `text` on the client. It is a replica of the author layer (`prompts[]`, `base_directive` and `glossary`). Use it to check a prompt template before shipping it. The preview does not include skill instructions. Knowledge-typed prompt blocks render inline here, while a live turn places them in a separate context block.
 
 By default, it fetches and renders the intellect's *current stored* config. Pass `draftPrompts`/`draftBaseDirective`/`draftGlossary` to preview an unsaved edit instead.
 
@@ -21,6 +21,7 @@ const p = await mgmt.intellects.previewPrompt(configId, adminKs, {
   requestVars: { sys__user_id: 'learner-123', topic: 'billing' },
 });
 p.text;                // the assembled system prompt, `{{var}}` interpolated
+p.usedDefaultDirective; // true when base_directive is empty. text then starts with <<server default directive>> as a stand-in
 p.unresolvedVariables; // names left literal because no value was supplied
 p.warnings;             // present ONLY when a reserved variable is unresolved (see below)
 p.conditionalKeys;     // keys of rendered blocks that carry a non-empty `condition`
@@ -31,9 +32,11 @@ The preview does not evaluate [conditions](/reference/api/build/intellect/#condi
 
 It is **not byte-exact** with the live prompt. Blocks the server adds at run time are not included. The `sys__*` values you pass via `requestVars` only *simulate* what the server sets per turn. They are not a live read.
 
+The preview fills only plain `{{name}}` and dotted-path references. A filter expression such as `{{ nick | default('guest') }}` and any `{% %}` tag stay as written in `text`, and are not listed in `unresolvedVariables`.
+
 **Reserved variables** (`sys__*`, `secrets.*`) are listed in [Conversation & Analytics § Reserved Template Variables](/reference/api/operate/#reserved-template-variables-sys__). `secrets.NAME` is write-only: `previewPrompt()` never has the raw value, so it cannot confirm that a secret is set. A prompt that references one of the `sys__user_obj.*` attributes gets a `reserved_user_attr_unresolved` warning when the preview has no bound value for it. Bind every variable the prompt uses before shipping.
 
-**Unresolvable reserved-variable warnings:** say a prompt references one of the variables above, and no value is available in the simulated context (no `requestVars` entry, or an explicit `null`/`undefined`). In that case `previewPrompt()` returns a `warnings[]` entry naming the variable and explaining why, instead of rendering the placeholder as empty text.
+**Unresolvable reserved-variable warnings:** say a prompt references one of the variables above, and no value is available in the simulated context (no `requestVars` entry, or an explicit `null`/`undefined`). In that case `previewPrompt()` also returns a `warnings[]` entry naming the variable and explaining why. The placeholder stays literal in `text` when the key is missing, and renders empty when the value is `null` or `undefined`.
 
 `warnings` is an **additive** field. It appears only when there is something to report.
 
