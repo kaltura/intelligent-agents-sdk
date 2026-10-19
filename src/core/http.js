@@ -14,10 +14,11 @@
  *   ride on errors as `headers` and reach the `onResponse` hook for every
  *   response, success or failure.
  * - Diagnostic logging routes through {@link redact}; a token can't leak.
- * - Retries use truncated exponential backoff + jitter. A network-layer error
- *   (no response received) retries on every method. A 429/502/503/504
- *   response retries only for GET/HEAD. A write may already have run, so it is
- *   not retried on a received status, with or without an idempotency key.
+ * - Retries use truncated exponential backoff + jitter. GET/HEAD retry on a
+ *   network error or a 429/502/503/504 response. A write may already have run,
+ *   so it retries only when the connection never opened (refused, DNS failure,
+ *   connect timeout). It is not retried after a timeout, a dropped connection,
+ *   or any received status, with or without an idempotency key.
  * - Response bodies are size-capped at `maxResponseBytes` (default 10 MiB),
  *   enforced incrementally while streaming the body (not after buffering it
  *   in full) so a chunked response without an honest Content-Length can't
@@ -47,8 +48,11 @@ import { KalturaError } from './errors.js';
 /** HTTP status codes that are safe to retry (transient server/infra errors). */
 const RETRIABLE_STATUSES = new Set([429, 502, 503, 504]);
 
-/** Status 0 = network-layer error (no bytes sent/received). Always retriable. */
+/** Status 0 = network-layer error (no response received). */
 const NETWORK_ERROR_STATUS = 0;
+
+/** Connect-phase error codes: the request never reached the server, so a write is safe to resend. */
+const NOT_SENT_CODES = new Set(['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'ENETUNREACH', 'EHOSTUNREACH', 'UND_ERR_CONNECT_TIMEOUT']);
 
 /**
  * HTTP transport with injectable fetch, retry/backoff, and response size budgeting.
@@ -182,10 +186,10 @@ export class Http {
           body: aborted ? `request timed out after ${this._timeoutMs}ms` : String(err && err.message || err),
           requestId: '',
         });
-        // Network errors (status 0, no response received) retry on all methods. Once a
-        // response arrived, only GET/HEAD retry: the server may already have run a write.
-        const noResponse = res === undefined;
-        if ((noResponse || isGet) && attempt < this._maxRetries) { lastErr = kErr; continue; }
+        // GET/HEAD retry on any network error. A write retries only if it never reached the
+        // server: after a timeout or a dropped connection it may already have run.
+        const notSent = res === undefined && !aborted && NOT_SENT_CODES.has(err?.cause?.code ?? err?.code);
+        if ((isGet || notSent) && attempt < this._maxRetries) { lastErr = kErr; continue; }
         throw kErr;
       }
       clearTimeout(t);

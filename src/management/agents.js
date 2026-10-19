@@ -104,7 +104,7 @@ export class Agents {
   /**
    * Create an agent. WRITE, NOT idempotent. Sends an `Idempotency-Key` header
    * (`opts.idempotencyKey`, else a random one). A create is not retried after a
-   * 429 or 5xx. `intellect.id` is the intellect's
+   * 429, 5xx, timeout or dropped connection. `intellect.id` is the intellect's
    * configId — no separate genieId is needed (the request body's `intellect`
    * only takes `intellectType`+`id`).
    * `maxConversationLength` is seconds, 1 to 3600; out of range is a 400.
