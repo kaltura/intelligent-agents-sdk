@@ -137,6 +137,14 @@ test('iceServersFor: server creds never go to a caller host (own creds, no serve
   assert.deepEqual(iceServersFor({ server: { ...server, urls: [] }, turnServerUrl: 'own.example', turnCredentials: own }), [turnServers('own.example', own)]);
 });
 
+for (const own of [{ username: 'own' }, { credential: 'own-c' }]) {
+  test(`iceServersFor: a partial override (${Object.keys(own)[0]} only) still counts as the caller's credentials`, () => {
+    const mine = [turnServers('own.example', own)];
+    assert.deepEqual(iceServersFor({ server: { ...server, urls: [] }, turnServerUrl: 'own.example', turnCredentials: own }), mine);
+    assert.deepEqual(iceServersFor({ server, turnServerUrl: 'own.example', turnCredentials: own }), mine);
+  });
+}
+
 test('iceServersFor: caller creds for another host are used alone (H2)', () => {
   const own = { username: 'own', credential: 'own-c' };
   assert.deepEqual(iceServersFor({ server, turnServerUrl: 'own.example', turnCredentials: own }), [turnServers('own.example', own)]);

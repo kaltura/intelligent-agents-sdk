@@ -62,7 +62,7 @@ export class KalturaScriptedVideoSession extends Emitter {
   /**
    * @param {object} cfg
    * @param {string} cfg.whepUrl  From `avatarSessions.initClient()`.
-   * @param {{url:string, username?:string, credential?:string, ttl?:number}} cfg.turn  The `turn` object from `initClient()`: the TURN host and the short-lived credentials for this session. Read with {@link normalizeServerTurn}, so a host with a port, full `turn:` URLs or a list also work. Without credentials, the SDK default ones apply.
+   * @param {{url:string, username?:string, credential?:string, password?:string, ttl?:number}} cfg.turn  The `turn` object from `initClient()`: the TURN host and the short-lived credentials for this session. Read with {@link normalizeServerTurn}, so a host with a port, full `turn:` URLs or a list also work. Without credentials, the SDK default ones apply.
    * @param {HTMLVideoElement|null} [cfg.videoEl]  Element that renders the avatar: video plus audio, unless `cfg.audioEl` is set. Omit for headless/custom rendering (listen for 'track' or read {@link KalturaScriptedVideoSession#avatarStream}). The SDK sets `.srcObject` once and calls `play()` once per binding — size/frame it yourself with `object-fit: cover`. See README.md#avatar-audio-and-video-rendering.
    * @param {HTMLAudioElement|null} [cfg.audioEl]  Recommended: a dedicated element for the avatar's audio track (split shape). Keep it on a stable DOM node so a UI re-render that replaces the `<video>` does not silence the avatar. Swap at runtime with {@link KalturaScriptedVideoSession#setAudioEl}.
    * @param {typeof RTCPeerConnection} [cfg.rtcConstructor]
@@ -80,11 +80,12 @@ export class KalturaScriptedVideoSession extends Emitter {
     // No credentials in `turn`: the default ones apply, for every URL form.
     const t = cfg.turn;
     const d = /** @type {{username:string, credential:string}} */ (turnServers('x'));
-    const noCreds = t && typeof t === 'object' && t.username == null && t.credential == null && /** @type {any} */ (t).password == null;
+    const noCreds = t && typeof t === 'object' && t.username == null && t.credential == null && t.password == null;
     const { entry } = normalizeServerTurn(noCreds ? { ...t, username: d.username, credential: d.credential } : t);
     // A host normalizing can't read (a single-label dev host): expand it as before.
-    const plainHost = typeof t?.url === 'string' && !t.url.includes(':') ? t.url : '';
-    const turn = entry?.urls.length ? entry : turnServers(plainHost, t || {});
+    const bare = typeof t?.url === 'string' ? t.url.trim().replace(/^turns?:/i, '').replace(/\/$/, '') : '';
+    const plainHost = bare.includes(':') ? '' : bare;
+    const turn = entry?.urls.length ? entry : turnServers(plainHost, { username: t?.username, credential: t?.credential ?? t?.password });
     if (!turn) {
       throw new KalturaError({ type: 'about:blank', title: 'turn required', code: 'bad_request', detail: 'new KalturaScriptedVideoSession() needs turn (the {url,username,credential} object from avatarSessions.initClient()).' });
     }

@@ -215,7 +215,7 @@ export function normalizeServerTurn(raw, receivedAt = Date.now()) {
  * The ICE server list for one peer. The server's per-session entry comes first, so it wins ties,
  * and the configured entry (`turnServerUrl` with `turnCredentials` or the SDK default) follows as
  * a fallback, so a peer connects whichever one the relay accepts. Both are gathered in parallel.
- * A server entry with no host uses `turnServerUrl`, unless the caller passed its own credentials
+ * A server entry with no host uses `turnServerUrl`, unless the caller passed its own credentials, even one field
  * (those belong to the caller's server, which must never get the session's credentials). Caller
  * credentials for a host the server entry doesn't name are used alone, as before.
  * @param {{server?: {urls:string[], username:string, credential:string}|null, turnServerUrl?: string, turnCredentials?: {username?:string, credential?:string}}} opts
@@ -224,8 +224,8 @@ export function normalizeServerTurn(raw, receivedAt = Date.now()) {
 export function iceServersFor({ server = null, turnServerUrl = '', turnCredentials }) {
   const fallback = turnServers(turnServerUrl, turnCredentials || {});
   const builtin = /** @type {{username:string, credential:string}} */ (turnServers('-'));
-  const ownCreds = !!(turnCredentials?.username && turnCredentials?.credential)
-    && !(turnCredentials.username === builtin.username && turnCredentials.credential === builtin.credential);
+  // Compare the resolved pair, so a caller field filled in with a default still counts as the caller's.
+  const ownCreds = !!fallback && !(fallback.username === builtin.username && fallback.credential === builtin.credential);
   let s = server;
   if (s && !s.urls.length) s = !ownCreds && fallback ? { ...s, urls: fallback.urls } : null;
   if (!s) return fallback ? [fallback] : [];

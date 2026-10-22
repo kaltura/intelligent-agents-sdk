@@ -437,6 +437,19 @@ test('a single-label dev host still expands, as before', async () => {
   assert.equal(s.urls.length, 4);
 });
 
+for (const url of ['turn:localhost', 'turns:localhost/']) {
+  test(`a single-label dev host as \`${url}\` still expands with its own credentials`, async () => {
+    const [s] = await peerServers({ url, username: 'u1', credential: 'c1' });
+    assert.equal(s.urls.length, 4);
+    assert.ok(s.username === 'u1' && s.credential === 'c1');
+  });
+}
+
+test('a single-label dev host reads `password` as the credential', async () => {
+  const [s] = await peerServers({ url: 'localhost', username: 'u1', password: 'p1' });
+  assert.ok(s.username === 'u1' && s.credential === 'p1');
+});
+
 test('a browser that rejects TURN query strings gets the URLs without them', async () => {
   class WebKitLike extends FakeRTCPeerConnection {
     constructor(c) {
