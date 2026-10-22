@@ -50,7 +50,7 @@ For the app-level decision of when to use this mode and how to design its UI, se
 
 | Event | Payload | Meaning |
 |---|---|---|
-| `onServerConnected` | `{ finalUrl, agentName?, hostName?, loadingVideoURL? }` | Handshake done. The SDK emits `streamReady` with `finalUrl`, `agentName` and `hostName`. |
+| `onServerConnected` | `{ finalUrl, agentName?, hostName?, loadingVideoURL?, turn?:{ url, username, credential, ttl } }` | Handshake done. The SDK emits `streamReady` with `finalUrl`, `agentName` and `hostName`. `turn` holds this session's TURN credentials ([§5](audio-channels.md#5-asr-uplink-pc1-microphone--server)); `ttl` is in seconds. |
 | `clientConfiguration` | `{ clientConfiguration:{ configuration, nluFeatures, languageCode, isTapToTalk, interruptionsEnabled, pauseConversationEnabled, showTranscription, isWebSearchEnabled, isScreenShareEnabled, isCameraAnalysisEnabled, audioMode, phoneMode, shouldAggregateCurrentTurn, youtubeUrl, initialHtml, visualPhotos:[], visualVideos:[], agentPersonaName, userName, asr, forwardLoopMode, imaginativeAiMode, smartTurnConfig?, stvRecord? } }` | Per-session agent config. Field meanings: [§7](client-configuration.md#7-clientconfiguration-fields-per-session-agent-config). |
 | `joinComplete` | `{}` | Room join acknowledged. |
 | `stvNewSession` | normal: `{ session_id, status:"session started", webrtc_url? }`; **audio/phone mode**: `{ status:"audio/phone mode - no STV session" }` (no `session_id` or `webrtc_url`) | The STV session is created. `webrtc_url` is the WHEP play URL. The audio/phone variant skips STV ([§5b](audio-channels.md#5b-audio-mode-webrtc-separate-from-the-asr-uplink)). |

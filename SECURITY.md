@@ -161,7 +161,7 @@ Every event carries this AU-3 content shape:
 - A base URL that is empty, does not parse, uses a scheme other than `https`/`http`, or carries a username or password throws `bad_request` at construction.
 - Loopback and private hosts (`localhost`/`127.0.0.1`, RFC 1918 ranges, link-local, and their IPv6 equivalents) are allowed for dev, with a loud one-time warning.
 - Cleartext to a public host requires an explicit `allowInsecureTransport:true` (dev/test only, never production).
-- The SDK uses its default TURN credentials unless you pass `turnCredentials`. See [audio-channels.md §5](docs/wire-protocol/audio-channels.md#5-asr-uplink-pc1-microphone--server).
+- The SDK uses the short-lived TURN credentials the server sends for each session, with its default TURN credentials (or your `turnCredentials`) as the fallback. It never logs them or puts them in events or errors. See [audio-channels.md §5](docs/wire-protocol/audio-channels.md#5-asr-uplink-pc1-microphone--server).
 
 ## Browser hardening (OWASP ASVS / WebSocket CS)
 

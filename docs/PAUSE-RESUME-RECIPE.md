@@ -18,7 +18,7 @@ await session.resume();   // async: hands the turn loop back
 **`resume()`** always sets `session.paused = false` immediately, then takes the right path for how the pause played out. There are two common paths, depending on how long you were paused (a third, rarer one is covered below):
 
 - **Short pause (the common case):** `resume()` sends `resumeConversation` and returns. It's near-instant.
-- **Long pause (the pause window ran out):** if the window expired before you called `resume()`, the SDK rebuilds the audio (and, in video mode, video) connection before it hands the turn loop back. This takes as long as a fresh connect, not the near-instant short path.
+- **Long pause (the pause window ran out):** if the window expired before you called `resume()`, the SDK rebuilds the audio (and, in video mode, video) connection before it hands the turn loop back. This takes as long as a fresh connect, not the near-instant short path. If the session's TURN credentials are about to expire, the SDK rebuilds on a fresh socket so it gets new ones. No app change is needed.
 
 **You never need to branch on which path it takes.** Always just `await session.resume()`. It picks the right one for you. The length of the pause window isn't a published constant. Don't rely on an exact number. Always resume via one of the triggers below, rather than assuming a pause lasts as long as you need it to.
 

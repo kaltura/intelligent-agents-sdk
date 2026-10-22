@@ -15,7 +15,7 @@ A second, independent session type at `https://api.avatar.us.kaltura.ai/v1/avata
 | `create` | `Authorization: KS <admin-ks>`, your normal admin token |
 | every call after `create` | `Authorization: Bearer <session-token>`, the JWT that `create` returns (not a KS) |
 
-The Bearer token is valid about 24h (decoded from the JWT's own `exp` claim) and grants full control of the session. Keep it server-side, exactly like an admin KS. The browser only ever needs the non-secret `{whepUrl, turn}` pair from `init-client`.
+The Bearer token is valid about 24h (decoded from the JWT's own `exp` claim) and grants full control of the session. Keep it server-side, exactly like an admin KS. The browser only ever needs the `{whepUrl, turn}` pair from `init-client`. `turn` holds short-lived TURN credentials for that one session.
 
 | Operation | Endpoint | Auth | Body |
 |-----------|----------|------|------|

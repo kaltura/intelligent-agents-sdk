@@ -387,3 +387,44 @@ test('whep_private_ip: the rejected Location is never DELETEd by a later disconn
   await new Promise((r) => setTimeout(r, 0));
   assert.deepEqual(f.calls.filter((c) => c.method === 'DELETE'), []);
 });
+
+// ── the `turn` object from initClient(), in whatever shape it comes ──
+
+const answer201 = () => fakeFetch([{ match: '/whep/abc123', respond: () => ({ status: 201, body: 'v=0\r\nfake-answer\r\n' }) }]);
+const peerServers = async (turn, extra = {}) => {
+  const v = view({ turn, fetch: answer201(), ...extra });
+  await v.connect();
+  const servers = FakeRTCPeerConnection.instances.at(-1).config.iceServers;
+  v.disconnect();
+  return servers;
+};
+
+test('turn with a bare host gets the four explicit TURN URLs and its own credentials', async () => {
+  const [s, ...rest] = await peerServers({ url: 'relay.example.net', username: 'u1', credential: 'c1' });
+  assert.equal(rest.length, 0);
+  assert.deepEqual(s.urls, ['turn:relay.example.net:80?transport=udp', 'turn:relay.example.net:443?transport=udp', 'turn:relay.example.net:80?transport=tcp', 'turns:relay.example.net:443?transport=tcp']);
+  assert.equal(s.username, 'u1');
+  assert.equal(s.credential, 'c1');
+});
+
+test('turn with full URLs, `urls` and `password` is read as given', async () => {
+  const [s] = await peerServers({ urls: ['turns:relay.example.net:5349?transport=tcp'], username: 'u1', password: 'c1' });
+  assert.deepEqual(s, { urls: ['turns:relay.example.net:5349?transport=tcp'], username: 'u1', credential: 'c1' });
+});
+
+test('turn with only a host still works on the default credentials, as before', async () => {
+  const [s] = await peerServers({ url: 'relay.example.net' });
+  assert.equal(s.urls.length, 4);
+  assert.ok(s.username && s.credential);
+});
+
+test('a browser that rejects TURN query strings gets the URLs without them', async () => {
+  class WebKitLike extends FakeRTCPeerConnection {
+    constructor(c) {
+      if (c.iceServers.some((s) => s.urls.some((u) => u.includes('?')))) throw new TypeError('Invalid TURN URL query string');
+      super(c);
+    }
+  }
+  const [s] = await peerServers({ url: 'relay.example.net', username: 'u1', credential: 'c1' }, { rtcConstructor: WebKitLike });
+  assert.deepEqual(s.urls, ['turn:relay.example.net:80', 'turn:relay.example.net:443', 'turns:relay.example.net:443']);
+});
