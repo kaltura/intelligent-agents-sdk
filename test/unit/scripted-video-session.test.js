@@ -9,6 +9,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { setImmediate } from 'node:timers';
 import { KalturaScriptedVideoSession } from '../../src/experience/scripted-video-session.js';
+import { turnServers } from '../../src/experience/wire.js';
 import { FakeRTCPeerConnection, FakeVideoEl, FakeMediaStreamCtor } from '../fakes/rtc.js';
 import { fakeFetch } from '../fakes/fetch.js';
 import { fakeWhepFetch } from '../fakes/whep.js';
@@ -416,6 +417,24 @@ test('turn with only a host still works on the default credentials, as before', 
   const [s] = await peerServers({ url: 'relay.example.net' });
   assert.equal(s.urls.length, 4);
   assert.ok(s.username && s.credential);
+});
+
+for (const [form, turn, urls] of [
+  ['host:port', { url: 'relay.example.net:3478' }, ['turn:relay.example.net:3478?transport=udp', 'turn:relay.example.net:3478?transport=tcp']],
+  ['a `turn:` URL', { url: 'turn:relay.example.net:443?transport=udp' }, ['turn:relay.example.net:443?transport=udp']],
+  ['a list', { urls: ['turn:relay.example.net:80?transport=udp', 'turns:relay.example.net:443?transport=tcp'] }, ['turn:relay.example.net:80?transport=udp', 'turns:relay.example.net:443?transport=tcp']],
+]) {
+  test(`turn as ${form} with no credentials uses the default credentials`, async () => {
+    const d = turnServers('x');
+    const [s] = await peerServers(turn);
+    assert.deepEqual(s.urls, urls);
+    assert.ok(s.username === d.username && s.credential === d.credential, 'default credentials');
+  });
+}
+
+test('a single-label dev host still expands, as before', async () => {
+  const [s] = await peerServers({ url: 'localhost' });
+  assert.equal(s.urls.length, 4);
 });
 
 test('a browser that rejects TURN query strings gets the URLs without them', async () => {

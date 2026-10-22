@@ -115,6 +115,32 @@ const TURN_REFRESH_MIN_TTL_S = 120;
 const TURN_SETUP_EVENTS = new Set(['onServerConnected', 'clientConfiguration', 'joinComplete', 'stvNewSession']);
 const TURN_EVENT_RE = /^(on)?[-_]?(turn|ice)[-_]?(credentials?|servers?|config(uration)?)$/i;
 
+/**
+ * Copy of a config object with no `turn`, at the top level or one level down (where the harvest
+ * reads it), so TURN credentials stay out of `session.clientConfig`.
+ * @param {any} c @returns {any}
+ */
+function withoutTurn(c) {
+  const isObj = (/** @type {any} */ v) => v && typeof v === 'object' && !Array.isArray(v);
+  if (!isObj(c)) return c;
+  const drop = (/** @type {any} */ o) => Object.fromEntries(Object.entries(o).filter(([k]) => k !== 'turn'));
+  return Object.fromEntries(Object.entries(c).filter(([k]) => k !== 'turn').map(([k, v]) => [k, isObj(v) && 'turn' in v ? drop(v) : v]));
+}
+
+/**
+ * URLs in an installed ICE list that only `entry` uses, in both forms a browser may report (with
+ * and without the query string). Empty when the list's first entry is not `entry`.
+ * @param {RTCIceServer[]} list @param {RTCIceServer} entry @returns {Set<string>}
+ */
+function serverOnlyUrls(list, entry) {
+  return new Set([list, withoutTurnQuery(list)].flatMap((l) => {
+    const first = l[0];
+    if (!first || first.username !== entry.username || first.credential !== entry.credential) return [];
+    const fb = new Set(l.slice(1).flatMap((x) => /** @type {string[]} */ ([]).concat(x.urls)));
+    return /** @type {string[]} */ ([]).concat(first.urls).filter((u) => !fb.has(u));
+  }));
+}
+
 // Socket.IO disconnect reasons after which the SDK waits in 'reconnecting' for
 // connection-state recovery. Any other reason (io server/client disconnect, namespace
 // disconnect) ends the session with no recovery.
@@ -270,8 +296,11 @@ export class KalturaAvatarSession extends Emitter {
     this._turnCredentials = cfg.turnCredentials;
     /** @type {{entry:{urls:string[],username:string,credential:string}, expiresAt:number|null, ttlSec:number|null, bad:boolean, refreshUsed:boolean}|null} */
     this._serverTurn = null;
+    /** @type {WeakMap<object, RTCIceServer[]>} ICE servers installed on each peer, for the 401 check. */
+    this._peerServers = new WeakMap();
     Object.defineProperty(this, '_turnCredentials', { enumerable: false });
     Object.defineProperty(this, '_serverTurn', { enumerable: false });
+    Object.defineProperty(this, '_peerServers', { enumerable: false });
     this._recoverCount = { asr: 0, stv: 0 };   // media recoveries per channel since its ICE was last up
     this._socketFactory = cfg.socketFactory;
     this._RTC = cfg.rtcConstructor || globalThis.RTCPeerConnection;
@@ -697,7 +726,9 @@ export class KalturaAvatarSession extends Emitter {
     const onConn = await this._await(socket, 'onServerConnected', this._timeouts.serverConnect, 'ConnectionTimeout', overall);
     this._mark('serverConnected');
     // `prepare()` has no listener-ready connect() yet: it keeps `onConn` and connect() emits `streamReady`.
-    if (!this._prep) this.emit('streamReady', { finalUrl: onConn?.finalUrl, agentName: onConn?.agentName, hostName: onConn?.hostName });
+    // Only the streamReady fields are kept: the reply also carries TURN credentials.
+    const ready = { finalUrl: onConn?.finalUrl, agentName: onConn?.agentName, hostName: onConn?.hostName };
+    if (!this._prep) this.emit('streamReady', ready);
 
     // Step 2 — join.
     socket.emit('join', buildJoin({ room, ks: this._token, threadId: this._threadId, entryId: this._entryId, contextId: this._contextId, contextType: this._contextType, userAgent: ua(), isMobile: false, requestVars: this._requestVars, capabilities: this._capabilities }));
@@ -708,10 +739,9 @@ export class KalturaAvatarSession extends Emitter {
       this._await(socket, 'joinComplete', this._timeouts.joinComplete, 'JoinRoomTimeout', overall),
     ]);
     const c = cc?.clientConfiguration || cc;
-    // TURN credentials are read by the harvest and stay out of the public config.
-    this._clientConfig = c && typeof c === 'object' && 'turn' in c ? Object.fromEntries(Object.entries(c).filter(([k]) => k !== 'turn')) : c;
+    this._clientConfig = withoutTurn(c);
     this._mark('joinComplete');
-    return onConn;
+    return ready;
   }
 
   /**
@@ -837,16 +867,12 @@ export class KalturaAvatarSession extends Emitter {
       servers = fallback;
       pc = createPeerConnection(this._RTC, iceConfig(channel, servers, this._isFirefox));
     }
-    if (st && servers.length > fallback.length) {
-      // Both URL forms: the browser reports the one it used, with or without the query string.
-      const serverOnly = new Set([servers, withoutTurnQuery(servers)].flatMap((list) => {
-        const fbUrls = new Set(list.slice(1).flatMap((s) => /** @type {string[]} */ (s.urls)));
-        return list[0]?.credential === servers[0].credential ? /** @type {string[]} */ (list[0].urls).filter((u) => !fbUrls.has(u)) : [];
-      }));
-      if (serverOnly.size) {
-        pc.addEventListener?.('icecandidateerror', (/** @type {any} */ e) => { if (Number(e?.errorCode) === 401 && serverOnly.has(e?.url)) st.bad = true; });
-      }
-    }
+    this._peerServers.set(pc, servers);
+    // Read at error time, so credentials applied to this peer later are checked too.
+    pc.addEventListener?.('icecandidateerror', (/** @type {any} */ e) => {
+      const cur = this._serverTurn;
+      if (Number(e?.errorCode) === 401 && cur && serverOnlyUrls(this._peerServers.get(pc) || [], cur.entry).has(e?.url)) cur.bad = true;
+    });
     return pc;
   }
 
@@ -891,6 +917,7 @@ export class KalturaAvatarSession extends Emitter {
         const cfg = pc.getConfiguration?.() || {};
         if (sameIceServers(cfg.iceServers, iceServers)) continue;
         try { pc.setConfiguration({ ...cfg, iceServers }); } catch { pc.setConfiguration({ ...cfg, iceServers: withoutTurnQuery(iceServers) }); }
+        this._peerServers.set(pc, iceServers);
       } catch { /* the peer keeps its servers: the recovery path still covers it */ }
     }
     if (this.state === 'connected') this._recheckMedia();

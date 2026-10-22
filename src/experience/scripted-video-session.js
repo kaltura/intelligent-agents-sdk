@@ -77,8 +77,14 @@ export class KalturaScriptedVideoSession extends Emitter {
     if (!cfg || !cfg.whepUrl) {
       throw new KalturaError({ type: 'about:blank', title: 'whepUrl required', code: 'bad_request', detail: 'new KalturaScriptedVideoSession() needs whepUrl (from avatarSessions.initClient()).' });
     }
-    const { entry } = normalizeServerTurn(cfg.turn);
-    const turn = entry?.urls.length ? entry : turnServers(typeof cfg.turn?.url === 'string' ? cfg.turn.url : '', cfg.turn || {});
+    // No credentials in `turn`: the default ones apply, for every URL form.
+    const t = cfg.turn;
+    const d = /** @type {{username:string, credential:string}} */ (turnServers('x'));
+    const noCreds = t && typeof t === 'object' && t.username == null && t.credential == null && /** @type {any} */ (t).password == null;
+    const { entry } = normalizeServerTurn(noCreds ? { ...t, username: d.username, credential: d.credential } : t);
+    // A host normalizing can't read (a single-label dev host): expand it as before.
+    const plainHost = typeof t?.url === 'string' && !t.url.includes(':') ? t.url : '';
+    const turn = entry?.urls.length ? entry : turnServers(plainHost, t || {});
     if (!turn) {
       throw new KalturaError({ type: 'about:blank', title: 'turn required', code: 'bad_request', detail: 'new KalturaScriptedVideoSession() needs turn (the {url,username,credential} object from avatarSessions.initClient()).' });
     }

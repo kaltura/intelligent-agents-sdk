@@ -161,7 +161,10 @@ const MAX_TTL_S = 30 * 86400;
 function expandTurnUrl(item) {
   // A scheme with no port is read as a bare host: it gets the explicit ports and transports.
   const s = item.replace(/\/$/, '').replace(/^turns?:(?=(\[[^\]]+\]|[^:?/]+)$)/i, '');
-  if (/^turns?:/i.test(s)) return TURN_URL_RE.test(s) ? [s] : [];
+  if (/^turns?:/i.test(s)) {
+    const port = /:(\d+)(?:\?|$)/.exec(s.replace(/^turns?:\[[^\]]*\]/i, ''))?.[1];
+    return TURN_URL_RE.test(s) && (port == null || (Number(port) >= 1 && Number(port) <= 65535)) ? [s] : [];
+  }
   const m = HOST_PORT_RE.exec(s);
   if (!m) return [];
   if (!m[2]) return /** @type {{urls:string[]}} */ (turnServers(m[1])).urls;

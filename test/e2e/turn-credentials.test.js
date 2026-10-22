@@ -82,6 +82,7 @@ test('no turn from the server: peers get the configured entry alone, as before',
 for (const [where, ev, wrap] of [
   ['clientConfiguration', 'clientConfiguration', (p) => ({ ...p, clientConfiguration: { ...p.clientConfiguration, turn: serverTurn() } })],
   ['an unwrapped clientConfiguration', 'clientConfiguration', (p) => ({ ...(p.clientConfiguration || p), turn: serverTurn() })],
+  ['a nested object of an unwrapped clientConfiguration', 'clientConfiguration', (p) => ({ ...(p.clientConfiguration || p), ice: { turn: serverTurn() } })],
   ['joinComplete', 'joinComplete', (p) => ({ ...p, turn: serverTurn() })],
   ['stvNewSession', 'stvNewSession', (p) => ({ ...p, turn: serverTurn() })],
   ['a nested object of stvNewSession', 'stvNewSession', (p) => ({ ...p, ice: { turn: serverTurn() } })],
@@ -382,6 +383,17 @@ test('server credentials never appear in logs, events or the serialized session'
   session.disconnect();
 });
 
+test('a 401 counts against credentials applied to a peer after it was built', async () => {
+  for (const first of [{ turn: serverTurn({ credential: 'cred-a' }) }, {}]) {
+    const { session, sockets } = await connected({ perSocket: () => first });
+    sockets[0].server('turnCredentials', serverTurn({ credential: 'cred-b' }));
+    assert.equal(stvPeer().config.iceServers[0].credential, 'cred-b');
+    stvPeer().fireCandidateError({ errorCode: 401, url: SERVER_URLS[0] });
+    assert.equal(session._serverTurn.bad, true, first.turn ? 'rotated credentials' : 'peer built with no server entry');
+    session.disconnect();
+  }
+});
+
 test('server credentials are dropped when the session ends', async () => {
   for (const end of [(s) => s.disconnect(), (s) => s._endWith(new Error('x'), 'test')]) {
     const { session } = await connected();
@@ -389,6 +401,15 @@ test('server credentials are dropped when the session ends', async () => {
     end(session);
     assert.equal(session._serverTurn, null);
   }
+});
+
+test('a prepared session holds no server credentials in its enumerable state', async () => {
+  const { session } = await connected({ connect: false });
+  await session.prepare();
+  assert.ok(session._serverTurn, 'credentials were read');
+  const dump = safeJson(session);
+  for (const secret of [SECRET_USER, SECRET_CRED]) assert.ok(!dump.includes(secret), 'secret leaked from prepare()');
+  session.disconnect();
 });
 
 test('the socket query names this SDK version', async () => {
