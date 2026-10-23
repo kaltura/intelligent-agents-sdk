@@ -161,7 +161,7 @@ Every event carries this AU-3 content shape:
 - A base URL that is empty, does not parse, uses a scheme other than `https`/`http`, or carries a username or password throws `bad_request` at construction.
 - Loopback and private hosts (`localhost`/`127.0.0.1`, RFC 1918 ranges, link-local, and their IPv6 equivalents) are allowed for dev, with a loud one-time warning.
 - Cleartext to a public host requires an explicit `allowInsecureTransport:true` (dev/test only, never production).
-- The SDK uses its default TURN credentials unless you pass `turnCredentials`. See [audio-channels.md §5](docs/wire-protocol/audio-channels.md#5-asr-uplink-pc1-microphone--server).
+- The SDK uses the short-lived TURN credentials the server sends for each session, with its default TURN credentials (or your `turnCredentials`) as the fallback. It never logs them or puts them in events or errors. See [audio-channels.md §5](docs/wire-protocol/audio-channels.md#5-asr-uplink-pc1-microphone--server).
 
 ## Browser hardening (OWASP ASVS / WebSocket CS)
 
@@ -214,9 +214,9 @@ In the browser, FIPS validation is a property of the OS/browser crypto module. D
 
 ## Data residency (SC-7)
 
-The SDK is a thin client. It contacts only the Kaltura endpoints you configure (`agenticUrl`/`genieUrl`/`ovpUrl`/`messagingUrl`/`conversationManagerUrl`/`srsBaseUrl`/`turnServerUrl`). There is no telemetry or hidden beacon. The optional `./experience/analytics` module sends KAVA application events to `analytics.kaltura.com`, and only when your code calls it. Point every URL at your in-boundary (e.g. US-Gov) hosts to keep all data within your authorization boundary.
+The SDK is a thin client. It contacts only the Kaltura endpoints you configure (`agenticUrl`/`genieUrl`/`ovpUrl`/`messagingUrl`/`conversationManagerUrl`/`srsBaseUrl`/`turnServerUrl`). There is no telemetry or hidden beacon. The one SDK-specific value on the wire is `sdk` (the SDK version) in the socket connect query, sent to your `conversationManagerUrl`. The optional `./experience/analytics` module sends KAVA application events to `analytics.kaltura.com`, and only when your code calls it. Point every URL at your in-boundary (e.g. US-Gov) hosts to keep all data within your authorization boundary.
 
-Session hosts come from `appInit`, not from your config. `appInit` returns the `conversationManagerUrl`, `srsBaseUrl` and `turnServerUrl` for your partner's region. Pass them to `KalturaAvatarSession` unchanged (`new KalturaAvatarSession({ ...appInit, token: appInit.ks })`). Do not hard-code them. If you omit `conversationManagerUrl`, the session falls back to the US host.
+Session hosts come from `appInit`, not from your config. `appInit` returns the `conversationManagerUrl`, `srsBaseUrl` and `turnServerUrl` for your partner's region. Pass them to `KalturaAvatarSession` unchanged (`new KalturaAvatarSession({ ...appInit, token: appInit.ks })`). Do not hard-code them. If you omit `conversationManagerUrl`, the session falls back to the US host. The session handshake can also carry a `turn` entry with a relay host and per-session credentials. The SDK uses the host from `turn` for media relay. When `turn` names no host, the SDK uses `turnServerUrl`. Check that your deployment's relay hosts stay inside your boundary ([TURN sources](docs/wire-protocol/audio-channels.md#5-asr-uplink-pc1-microphone--server)).
 
 The `region` option covers the rest. It fills the four `Management` base URLs (`agenticUrl`, `genieUrl`, `ovpUrl`, `messagingUrl`) and the session `genieUrl` from one [`REGIONS`](docs/api/authentication.md#regions-and-base-urls) entry. `Management` never falls back to another region: a service the region lacks throws `region_unavailable` instead of reaching a US host. `region` does not change the analytics host.
 

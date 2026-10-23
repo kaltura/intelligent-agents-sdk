@@ -6,9 +6,10 @@
  *
  * WHEP-only. No socket.io, no ASR/mic uplink, no session-server
  * coupling, no tool calls, no captions. Construct it with just the
- * non-secret `{whepUrl, turn}` pair from `avatarSessions.initClient()` —
- * mint that server-side; this class never needs the session's Bearer token
- * or your admin KS.
+ * `{whepUrl, turn}` pair from `avatarSessions.initClient()`, minted
+ * server-side. `turn` carries TURN credentials for this session: keep it out
+ * of logs like other session secrets. This class never needs the session's
+ * Bearer token or your admin KS.
  *
  * Speech is driven entirely from YOUR SERVER via `Management#avatarSessions`
  * (`say`/`interrupt`/`keepAlive`/`end`) — this class only shows what the
@@ -48,7 +49,7 @@
  */
 import { Emitter } from './emitter.js';
 import { KalturaError } from '../core/errors.js';
-import { turnServers, iceConfig, whepUrlHasPrivateIp, whepResourceUrl } from './wire.js';
+import { turnServers, iceConfig, createPeerConnection, normalizeServerTurn, whepUrlHasPrivateIp, whepResourceUrl } from './wire.js';
 import { whepPost } from './whep.js';
 import { fetchWithTimeout } from './fetch-timeout.js';
 import { AvatarMedia } from './avatar-media.js';
@@ -62,7 +63,7 @@ export class KalturaScriptedVideoSession extends Emitter {
   /**
    * @param {object} cfg
    * @param {string} cfg.whepUrl  From `avatarSessions.initClient()`.
-   * @param {{url:string, username?:string, credential?:string}} cfg.turn  The `turn` object from `initClient()` (bare TURN host + creds — passed through {@link turnServers}).
+   * @param {{url:string, username?:string, credential?:string, password?:string, ttl?:number}} cfg.turn  The `turn` object from `initClient()`: the TURN host and the credentials for this session. The server may issue short-lived ones. Read with {@link normalizeServerTurn}, so a host with a port, full `turn:` URLs or a list also work. Without credentials, the SDK default ones apply.
    * @param {HTMLVideoElement|null} [cfg.videoEl]  Element that renders the avatar: video plus audio, unless `cfg.audioEl` is set. Omit for headless/custom rendering (listen for 'track' or read {@link KalturaScriptedVideoSession#avatarStream}). The SDK sets `.srcObject` once and calls `play()` once per binding — size/frame it yourself with `object-fit: cover`. See README.md#avatar-audio-and-video-rendering.
    * @param {HTMLAudioElement|null} [cfg.audioEl]  Recommended: a dedicated element for the avatar's audio track (split shape). Keep it on a stable DOM node so a UI re-render that replaces the `<video>` does not silence the avatar. Swap at runtime with {@link KalturaScriptedVideoSession#setAudioEl}.
    * @param {typeof RTCPeerConnection} [cfg.rtcConstructor]
@@ -70,21 +71,34 @@ export class KalturaScriptedVideoSession extends Emitter {
    * @param {typeof MediaStream} [cfg.mediaStreamConstructor]
    * @param {(level: string, msg: string, data?: any) => void} [cfg.logger]  Receives non-fatal media diagnostics (e.g. a rejected `setSinkId`). Default: silent.
    * @param {boolean} [cfg.isFirefox]  Firefox needs `iceTransportPolicy:'all'` (see {@link iceConfig}).
-   * @throws {KalturaError} `bad_request` if `whepUrl`/`turn` is missing; `whep_private_ip` if `whepUrl` names a private/loopback address a browser cannot reach (fail-fast, no escape hatch, matches `KalturaAvatarSession`'s own WHEP check).
+   * @throws {KalturaError} `bad_request` if `whepUrl`/`turn` is missing or `turn` has no usable TURN URL; `whep_private_ip` if `whepUrl` names a private/loopback address a browser cannot reach (fail-fast, no escape hatch, matches `KalturaAvatarSession`'s own WHEP check).
    */
   constructor(cfg) {
     super();
     if (!cfg || !cfg.whepUrl) {
       throw new KalturaError({ type: 'about:blank', title: 'whepUrl required', code: 'bad_request', detail: 'new KalturaScriptedVideoSession() needs whepUrl (from avatarSessions.initClient()).' });
     }
-    if (!cfg.turn?.url) {
+    // No credentials in `turn`: the default ones apply, for every URL form.
+    const t = cfg.turn;
+    const d = /** @type {{username:string, credential:string}} */ (turnServers('x'));
+    const noCreds = t && typeof t === 'object' && t.username == null && t.credential == null && t.password == null;
+    const { entry } = normalizeServerTurn(noCreds ? { ...t, username: d.username, credential: d.credential } : t);
+    // A host normalizing can't read (a single-label dev host): expand it as before.
+    const bare = typeof t?.url === 'string' ? t.url.trim().replace(/^turns?:/i, '').replace(/\/$/, '') : '';
+    const plainHost = bare.includes(':') ? '' : bare;
+    const turn = entry?.urls.length ? entry : turnServers(plainHost, { username: t?.username, credential: t?.credential ?? t?.password });
+    if (!turn && t != null) {
+      throw new KalturaError({ type: 'about:blank', title: 'turn unusable', code: 'bad_request', detail: 'new KalturaScriptedVideoSession() got a turn object with no usable TURN URL. Pass the {url,username,credential} object from avatarSessions.initClient() as is.' });
+    }
+    if (!turn) {
       throw new KalturaError({ type: 'about:blank', title: 'turn required', code: 'bad_request', detail: 'new KalturaScriptedVideoSession() needs turn (the {url,username,credential} object from avatarSessions.initClient()).' });
     }
     if (whepUrlHasPrivateIp(cfg.whepUrl)) {
       throw new KalturaError({ type: 'https://docs.kaltura.com/agentic/errors/whep_private_ip', title: 'WHEP private IP', code: 'whep_private_ip', detail: 'initClient() returned a whepUrl resolving to a private/loopback address.' });
     }
     this._whepUrl = cfg.whepUrl;
-    this._turn = turnServers(cfg.turn.url, cfg.turn);
+    this._turn = turn;
+    Object.defineProperty(this, '_turn', { enumerable: false });   // credentials: never in a JSON.stringify of the session
     this._RTC = cfg.rtcConstructor || globalThis.RTCPeerConnection;
     const f = cfg.fetch || globalThis.fetch;
     this._fetch = typeof f === 'function' ? f.bind(globalThis) : f;
@@ -120,7 +134,7 @@ export class KalturaScriptedVideoSession extends Emitter {
     this._setState('connecting');
     let pc = null;
     try {
-      pc = new this._RTC(iceConfig('stv', this._turn, this._isFirefox));
+      pc = createPeerConnection(this._RTC, iceConfig('stv', this._turn, this._isFirefox));
       this._pc = pc;
       pc.addTransceiver('video', { direction: 'recvonly' });
       pc.addTransceiver('audio', { direction: 'recvonly' });

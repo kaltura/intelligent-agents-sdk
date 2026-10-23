@@ -948,8 +948,9 @@ describe('16. Docs accuracy', () => {
     const rules = [
       [(l) => /revok/i.test(l) && /within seconds/i.test(l), 'describe revoke as sending `session/end`, with no timing'],
       [(l, f) => !f.startsWith('scripts/') && /revok/i.test(l) && /immediately|\b(ends|ended|kills|now)\b|revoked (together|with it)/i.test(l), 'describe revoke as sending `session/end`, with no outcome claim'],
-      [(l) => /\bTURN\b|turnCredentials/.test(l) && /ephemeral|RFC 7635/i.test(l), 'describe TURN credentials as the SDK default unless `turnCredentials` is passed'],
-      [(l) => /`turnCredentials`[^.]*appInit/.test(l), 'say `appInit` returns no TURN credentials; the SDK default applies unless `turnCredentials` is passed'],
+      [(l) => /\bTURN\b|turnCredentials/.test(l) && /ephemeral|RFC 7635/i.test(l), 'call them the short-lived TURN credentials the server sends for each session'],
+      [(l, f) => !f.startsWith('.github/release-notes/') && /`turnCredentials`[^.]*appInit|appInit`? (?:returns|gives|sends) (?!none|no )[^.]*TURN credential/.test(l), 'say `appInit` returns no TURN credentials; the server sends them per session'],
+      [(l) => /(?:TURN|relay) credentials?[^.]*\b\d+\s*(?:h|hours?|s|sec|seconds?|min|minutes?|days?)\b|\b\d+\s*(?:h|hours?|s|sec|seconds?|min|minutes?|days?)\b[^.]*(?:TURN|relay) credentials?/i.test(l), 'name no TURN credential lifetime: the server sets it and may change it'],
     ];
     const bad = [];
     for (const f of scanFiles().filter((x) => x.endsWith('.md') || x.startsWith('src/') || x.startsWith('scripts/'))) {

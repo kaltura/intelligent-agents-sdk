@@ -18,7 +18,7 @@ await session.resume();   // async: hands the turn loop back
 **`resume()`** always sets `session.paused = false` immediately, then takes the right path for how the pause played out. There are two common paths, depending on how long you were paused (a third, rarer one is covered below):
 
 - **Short pause (the common case):** `resume()` sends `resumeConversation` and returns. It's near-instant.
-- **Long pause (the pause window ran out):** if the window expired before you called `resume()`, the SDK rebuilds the audio (and, in video mode, video) connection before it hands the turn loop back. This takes as long as a fresh connect, not the near-instant short path.
+- **Long pause (the pause window ran out):** if the window expired before you called `resume()`, the SDK rebuilds the audio (and, in video mode, video) connection before it hands the turn loop back. This takes as long as a fresh connect, not the near-instant short path. If the session's TURN credentials are about to expire, the SDK rebuilds on a fresh socket so it gets new ones. No app change is needed.
 
 **You never need to branch on which path it takes.** Always just `await session.resume()`. It picks the right one for you. The length of the pause window isn't a published constant. Don't rely on an exact number. Always resume via one of the triggers below, rather than assuming a pause lasts as long as you need it to.
 
@@ -32,7 +32,7 @@ The moment you call `resume()`, the SDK releases that held signal: the rebuilt s
 
 In every one of these cases, `resume()` returns cleanly with `session.paused === false` and never hangs. That's why the edge-case handling below is just "call `resume()` from every exit path, unconditionally."
 
-`resume()` can still reject for reasons unrelated to pause duration (a genuinely dead session, a real network failure mid-rebuild). Treat any rejection defensively regardless: catch it, and if `session.state` is still `'connected'`, the session is fine and there's nothing further to do. If the long-path rebuild itself fails, the session is never left half-connected: `resume()` rejects with the rebuild error, and the session emits `error` and then `ended {reason:'resume_failed'}` with `session.state === 'disconnected'`. Call `connect()` again to start over.
+`resume()` can still reject for reasons unrelated to pause duration (a genuinely dead session, a real network failure mid-rebuild). Treat any rejection defensively regardless: catch it, and if `session.state` is still `'connected'`, the session is fine and there's nothing further to do. If the long-path rebuild itself fails, the session is never left half-connected: `resume()` rejects with the rebuild error, and the session emits `error` and then `ended {reason:'resume_failed'}` with `session.state === 'disconnected'`. When the TURN credentials were about to expire, the SDK rebuilds on a fresh socket instead. If that fails, the session ends with `ended {reason:'reconnect_failed'}`, and `resume()` rejects with `resume_failed` whose `cause` is the `reconnect_failed` error. Call `connect()` again to start over.
 
 You don't need to listen for any event to know resume worked. `await session.resume()` resolving is the only signal your app needs. A few events exist for optional UX polish, but none is required:
 

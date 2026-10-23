@@ -40,6 +40,8 @@ The SDK emits `mediaRecovering { channel, state, cause }` when recovery starts a
 
 If in-place recovery fails, the SDK emits `connectivityChanged` with `state:'recover_failed'` and does a cold reconnect. `timeouts.recover` (15 s) bounds the STV re-subscribe. The ASR restart waits up to 30 s for its answer. Each channel has its own grace timer, so the two peers recover independently.
 
+Recoveries are bounded per channel. If a channel needs a third recovery and its ICE was never up since the first one, the session ends with `reconnect_failed` (`error.ice` holds the [ICE report](#ice-diagnostics) when there is one). ICE reaching `connected` resets the count.
+
 The same recovery runs when the browser fires `online` after an `offline` and a peer is still in a down ICE state. Both events also emit `connectivityChanged` with `channel:'network'`. If the control socket is down while `reconnecting`, `online` makes it retry at once instead of waiting out its backoff. Turn this off with `networkAware:false`.
 
 ### ICE diagnostics
@@ -120,6 +122,7 @@ The connect-time keys (`overall`, `joinRoom`, and the rest) are in [Connection &
 | User denies mic permission | `getUserMedia` rejects | `warning` with `mic_permission_denied`. The session connects without a mic. |
 | No mic / mic busy | `getUserMedia` rejects | `warning` with `mic_not_found` or `mic_in_use`. |
 | ASR/STV peer drops | ICE state | In-place recovery, then cold reconnect. |
+| ASR/STV peer keeps failing with no ICE up | Recovery count | The third recovery ends the session with `reconnect_failed`. |
 | Peer closed or failed with no ICE event, or video stops arriving | Health watchdog | In-place recovery, then cold reconnect. |
 | STV session gone (WHEP `404` or `409`) | WHEP status | One new avatar session on the live socket, then a new POST. A second `404` or `409` is `stv_session_gone`. |
 | WHEP POST gets no answer | Per-try deadline | Up to 3 tries. Then `whep_timeout` or `whep_failed`. |
